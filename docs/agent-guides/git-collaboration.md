@@ -39,7 +39,11 @@ Feature issue titles follow the template: `feat(<scope>): <lowercase short descr
 
 ## Commits
 
-Stage only reviewed files belonging to the issue. Inspect `git diff` and `git diff --cached` before committing. One commit should represent one coherent reason to change and must not accidentally include unrelated binary/source documents, generated artifacts, credentials, or teammate work. Before publishing requirement binaries, review them for personal contact information and confirm the target repository has the intended visibility.
+Plan commit slices before substantial implementation whenever a task spans multiple concerns. Each slice identifies one reviewable reason to change, its owning module or boundary, the expected artifacts, and the focused check that must pass. Commit a completed slice after that check passes instead of accumulating the entire task for one final commit. If the person or agent performing the work is not authorized to commit, keep the slice file groups distinct and hand off the proposed commit sequence.
+
+Keep behavior with its tests, a migration with its data dictionary and mapping tests, and generated output with its source contract. Every commit must build or validate independently and must not depend on a later commit to repair a known broken state. Separate different service owners, behavior changes, refactors, formatting, dependency upgrades, contracts, migrations, and operational configuration unless they are one indivisible compatibility change. Cross-service evolution normally uses separate compatible commits: additive provider contract, consumer adoption, then provider cleanup.
+
+Stage only reviewed files belonging to one slice. Inspect `git diff --cached --stat`, `git diff --cached`, and the remaining unstaged/untracked state before committing. Re-slice if the staged change has more than one independently reversible reason, mixes unrelated scopes, needs `and` to describe its subject, or cannot be reviewed without understanding a later commit. A commit must not accidentally include unrelated binary/source documents, generated artifacts, credentials, or teammate work. Before publishing requirement binaries, review them for personal contact information and confirm the target repository has the intended visibility.
 
 Commit subjects follow Conventional Commits and the types accepted by the PR template:
 

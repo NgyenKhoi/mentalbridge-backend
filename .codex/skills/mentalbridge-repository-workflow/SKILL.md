@@ -14,8 +14,9 @@ Treat repository sources as active requirements, not background reading.
 5. Follow decision precedence: approved product/safety policy; accepted ADR; versioned contract and executable migration; domain/architecture docs; module implementation.
 6. Stop and surface ambiguity involving risk, safety, consent, authorization, privacy, retention, or data ownership. Do not guess silently.
 7. Update every affected artifact together: contract, migration/data description, implementation, configuration example, tests, and documentation.
-8. Implement a vertical slice: boundary validation, application use case, domain behavior, persistence/provider adapters, observability, then tests.
-9. Preserve unrelated work and avoid speculative abstractions, empty layers, explanatory production comments, or cross-service model/storage sharing.
-10. Run applicable checks and inspect the complete diff. Do not report completion while a required check fails.
+8. Before editing a task that spans multiple concerns, define ordered commit slices. Each slice has one reviewable reason to change, its affected boundary/files, and the smallest checks that must pass; revise the slices when evidence changes.
+9. Implement a vertical slice: boundary validation, application use case, domain behavior, persistence/provider adapters, observability, then tests. Finish and verify each planned commit slice instead of accumulating the whole task for one final commit.
+10. Preserve unrelated work and avoid speculative abstractions, empty layers, explanatory production comments, or cross-service model/storage sharing.
+11. Run applicable checks and inspect the complete diff. Do not report completion while a required check fails.
 
 Use `mentalbridge-architecture` for architecture, ownership, integration, safety, provider, or deployment decisions. Use `mentalbridge-data-contracts` for API/event/WebSocket/database work. Use `mentalbridge-verification-delivery` for review, tests, Git, GitHub, push, or completion handoff.
