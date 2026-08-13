@@ -6,9 +6,9 @@ MentalBridge helps users complete PHQ-9/GAD-7 self-screenings, keep an emotion j
 
 ## Product scope
 
-- End-user mobile APIs: authentication, profile, consent, journal, assessments, insights, interventions, appointments, chat, notifications, and personal trends.
-- Specialist APIs: verification profile, availability, appointments, consented user data, consultation chat, and follow-up.
-- Administration APIs: account approval, content and hotline management, moderation, aggregated reporting, audit, retention, and AI evaluation datasets.
+- End-user mobile APIs: authentication, profile, consent, journal, assessments, insights, interventions, subscriptions, consultation credits, appointments, chat, notifications, and personal trends.
+- Specialist APIs: verification profile, availability, appointments, consented user data, consultation chat, follow-up, earnings, and payout history.
+- Administration APIs: account approval, subscription/payment and payout operations, content and hotline management, moderation, aggregated reporting, audit, retention, and AI evaluation datasets.
 - AI/NLP integration: Gemini or OpenAI through prompt engineering; PhoBERT inference is used only as an experimental baseline.
 - Anonymous PHQ-9/GAD-7 screening with minimal collection and no silent linkage to a later account.
 
@@ -25,6 +25,8 @@ The recommended starting point is a **small microservice landscape**, not one se
 | Realtime Service | NestJS | REST message APIs, WebSocket chat/notification delivery, presence, receipts | MongoDB + Redis |
 | Content & Notification Service | NestJS | Self-help resources, hotlines, preferences, notification/provider delivery | PostgreSQL |
 | PhoBERT Worker | Python | Experimental inference jobs only | No authoritative business store |
+
+The updated project-tracking workbook adds a financial bounded context for premium subscriptions, payments, consultation credits, specialist earnings, and payouts. The seven-deployable baseline does not yet assign that authority; implementation is blocked pending an ADR rather than being placed implicitly in Identity or Consultation.
 
 Use REST/JSON DTOs for synchronous business APIs and service-to-service queries. Spring services register with Eureka and Java consumers use OpenFeign only as a REST client adapter; discovery does not change ownership, authorization, or OpenAPI contracts. WebSocket terminates only at Realtime Service for live client chat, presence, receipts, and in-app notifications. Kafka carries durable asynchronous commands/events for analysis, notification, audit, reporting, and deletion workflows. Redis carries only ephemeral presence, connection routing, fan-out, rate-limit, delivery/idempotency, and expiring hashed OTP state; it is not a database-query cache or business source of truth.
 
@@ -47,7 +49,8 @@ Severe-risk handling must be deterministic, immediate, auditable, and usable eve
 ## Repository documentation
 
 - [Domain and use cases](docs/domain-and-use-cases.md)
-- [Requirements traceability to the capstone registration and 153-function WBS](docs/requirements-traceability.md)
+- [Requirements traceability to the capstone registration and 162-function WBS](docs/requirements-traceability.md)
+- [Per-module business, use-case, implementation and task specifications](docs/modules/README.md)
 - [Architecture](docs/architecture.md)
 - [Eureka discovery and OpenFeign ADR](docs/adr/0002-eureka-discovery-and-openfeign-clients.md)
 - [Kiến trúc module microservices và ngôn ngữ đã chốt](docs/microservice-module-suggestions.md)
@@ -64,8 +67,8 @@ Severe-risk handling must be deterministic, immediate, auditable, and usable eve
 | --- | --- |
 | 1 - Screening foundation | Identity, profile/consent, anonymous and authenticated PHQ-9/GAD-7, journal CRUD, admin login |
 | 2 - Insight and intervention | Asynchronous journal analysis, deterministic risk classification, resources, crisis guidance |
-| 3 - Human support | Specialist approval/profile, availability, booking, consented access, chat, reviews, follow-up, notifications |
-| 4 - Governance and research | Administration, moderation, deletion/retention, audit, reporting, dataset import, LLM vs PhoBERT benchmark |
+| 3 - Human support and premium access | Specialist approval/profile, subscription/payment, consultation credits, availability, booking, consented access, chat, reviews, follow-up, notifications |
+| 4 - Governance and research | Administration, payouts, moderation, deletion/retention, audit, reporting, dataset import, LLM vs PhoBERT benchmark |
 
 ## Technology baseline
 

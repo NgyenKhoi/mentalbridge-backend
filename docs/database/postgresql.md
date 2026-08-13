@@ -13,6 +13,8 @@ The executable baseline is [database/postgresql/001_initial_schema.sql](../../da
 | `platform` | each producer; Governance reads | outbox, audit, deletion workflow, retention policy |
 | `ai` | Journal/AI Service | analysis job metadata, dataset/benchmark metadata |
 
+The updated project-tracking workbook requires subscriptions, payments, consultation credits, specialist earnings, and payouts, but the executable baseline contains no authoritative financial schema. Do not add these facts to an existing schema until an ADR establishes their bounded-context owner, immutable ledger, provider/webhook, booking compensation, settlement, reconciliation, and retention rules.
+
 Cross-schema foreign keys in the baseline make invariants visible. In independently deployed databases, replace them with immutable external UUIDs and validate through APIs/events. Do not emulate distributed joins on request paths.
 
 ## Shared column policy

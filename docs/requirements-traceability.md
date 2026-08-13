@@ -3,7 +3,7 @@
 This document maps the approved project sources to the backend architecture. The source documents remain authoritative for product scope:
 
 - [Capstone registration](<../FA26_TraLTB_MentalBridge (1).docx>)
-- [Project tracking workbook](../Report3_Project%20Tracking.xlsx), especially the 153 WBS functions and actor flows
+- [Project tracking workbook](../Report3_Project%20Tracking.xlsx), especially the 162 WBS functions, seven delivery use cases, and actor flows
 
 The registration file contains student/supervisor contact details. Confirm repository visibility and team approval before publishing the binary; this traceability document intentionally does not reproduce those personal details.
 
@@ -23,6 +23,7 @@ Architecture may add safety, privacy, reliability, and implementation constraint
 | AWS EC2, Docker, Nginx, Docker Compose, GitHub Actions | Deployment baseline retained; Kafka and Redis included in local/hosted composition |
 | Grafana, Prometheus, Swagger/OpenAPI | Metrics/observability and contract rules are required by engineering guides |
 | Privacy, consent, audit, deletion and retention | Care consent owner, owner-enforced authorization, minimized audit projection, idempotent deletion workflow |
+| Premium subscription, payment, consultation credits, specialist earnings and payouts | Required by the updated workbook; authoritative ownership/provider/ledger boundaries are unresolved and require an ADR before implementation |
 
 Kafka and Redis are architecture additions supporting realtime and asynchronous workloads. Kafka is the durable event/task backbone. Redis is limited to ephemeral presence/routing/fan-out, rate-limit, delivery/idempotency, and expiring hashed OTP state; it is not a database-query cache and never replaces PostgreSQL, MongoDB, or Kafka.
 
@@ -30,35 +31,30 @@ Kafka and Redis are architecture additions supporting realtime and asynchronous 
 
 | WBS functions | Functional area | Authoritative owner | Main integration/storage |
 | --- | --- | --- | --- |
-| 1–6, 8, 109 | registration, login/logout, reset, RBAC, admin login | Identity Service (Spring) | PostgreSQL; REST/JWT; account Kafka events |
-| 7 | anonymous PHQ-9/GAD-7 | Care Service (Spring) | PostgreSQL with expiry policy; REST only, no silent account linking |
-| 9–15 | profile, consent, specialist grants, deletion request | Care for profile/consent; Identity coordinates account deletion | REST owner checks; Kafka deletion fan-out |
-| 16–20 | journal CRUD/history | Journal/AI Service (NestJS) | MongoDB; REST/JSON; encrypted content |
-| 21–27 | questionnaire start/submit/result/history/deletion | Care Service | PostgreSQL transaction, versioned definitions and deterministic scoring |
-| 28–30 | LLM analysis and re-run | Journal/AI Service | REST to Care for current AI consent; job/outbox; provider API; Kafka completion |
-| 31–32, 141–147 | dataset import/CRUD, PhoBERT inference, benchmark comparison | Journal/AI; PhoBERT Worker for inference only | Private object storage, MongoDB/PostgreSQL metadata, Kafka jobs/results |
-| 33–39 | risk, intervention, severe alert and crisis guidance | Care for classification/intervention; Content/Notification for reviewed hotline content | Synchronous deterministic Care path; Kafka only for non-critical follow-up/notification |
-| 40–43, 121–130 | self-help resources and hotline CRUD/use | Content/Notification Service (NestJS) | PostgreSQL; REST/JSON; reviewed admin workflow |
-| 44–49 | specialist discovery, filtering, matching/recommendation | Consultation Service (Spring) | PostgreSQL; REST; transparent versioned matching criteria |
-| 50–59 | specialist profile, documents, verification, availability | Consultation Service | PostgreSQL plus private object storage; REST; audited admin approval |
-| 60–71, 139–140 | booking, transitions, history and admin monitoring | Consultation Service | PostgreSQL constraints/locking/idempotency; Kafka status events |
-| 72–81 | conversation, chat, receipts, unread count, tombstone, report | Realtime Service (NestJS) | REST history + client WebSocket; MongoDB truth; Redis presence/fan-out; Kafka facts |
-| 82–88 | specialist reviews, aggregate rating and reports | Consultation Service | PostgreSQL; REST; moderation status and Kafka audit/report events |
-| 89–94 | follow-up, reassessment and progress comparison | Care Service | PostgreSQL; REST; Kafka reminders/projection updates |
-| 95–98 | notification list/detail/read/delete | Content/Notification owns durable notification; Realtime delivers live payload | PostgreSQL REST history; Kafka `NotificationCreated`; WebSocket delivery via Redis |
-| 99–102 | personal emotion, assessment and risk analytics | Care owns assessment/risk projection; Journal/AI supplies approved structured indicators | Kafka projections plus bounded owner REST endpoints |
-| 103–108 | specialist dashboard and consented user data | Consultation composes its own workload; Care and Journal/AI remain data owners | Current consent authorization through Care REST; scoped owner REST reads; no shared DB |
-| 110–120 | admin dashboard, account and specialist administration | Identity and Consultation owner-specific admin APIs | REST/JSON with audit; dashboard widgets use bounded projections |
-| 131–138 | review/chat moderation | Consultation owns review actions; Realtime owns message actions; reporter/admin case projection consumes Kafka | Authorized REST to the target owner; minimized evidence and audit |
-| 148–149 | system activity and platform trend reporting | Owner-specific Kafka read projections; Care owns de-identified wellbeing trend projection | Bounded REST dashboard queries; no distributed runtime join |
-| 150–153 | audit search and retention policy | Identity coordinates minimized audit/security projection; every service enforces its own retention/deletion | Kafka audit facts, PostgreSQL projections and owner REST administration |
+| 1–5, 7, 111, 113–116 | registration, login/logout, reset, RBAC, admin login and user administration | Identity Service (Spring) | PostgreSQL; REST/JWT; account Kafka events |
+| 6, 20–24 | anonymous/authenticated PHQ-9/GAD-7, results, history and deletion | Care Service (Spring) | PostgreSQL with expiry/retention policy; deterministic scoring |
+| 8–14 | profile, consent, specialist grants and deletion request | Care for profile/consent; Identity coordinates deletion | REST owner checks; Kafka deletion fan-out |
+| 15–19, 25–27 | journal CRUD, LLM analysis/result/re-run | Journal/AI Service (NestJS) | MongoDB plus PostgreSQL job/outbox; current Care consent |
+| 28–29, 150–156 | benchmark execution/results and dataset administration | Journal/AI; PhoBERT Worker for inference only | Private object storage, MongoDB/PostgreSQL metadata, Kafka jobs/results |
+| 30–31, 89–94, 98–101 | risk/intervention, follow-up and personal analytics | Care; Journal/AI supplies approved structured indicators | Local deterministic safety plus bounded projections |
+| 32–35, 95–97, 130–139 | crisis/self-help content, notification history and content administration | Content/Notification Service (NestJS) | PostgreSQL; reviewed content and durable notification state |
+| 36–41 | specialist discovery, filtering and matching | Consultation Service (Spring) | PostgreSQL; transparent versioned matching criteria |
+| 42–51 | subscription plans, payment, subscription state and consultation-credit ledger | Unresolved financial owner | Implementation blocked pending ADR; no existing service may invent a balance |
+| 52–61, 117–122 | specialist profile, verification, availability and administration | Consultation Service | PostgreSQL plus private object storage; audited approval |
+| 62–73, 148–149 | booking, transitions, history and admin monitoring | Consultation; authoritative financial owner for credit reservation/settlement | Race-safe booking plus idempotent financial contract; no distributed transaction |
+| 74–82, 145–147 | conversations/chat/receipts/tombstone/report and message moderation | Realtime Service (NestJS) | MongoDB truth; Redis ephemeral fan-out; Kafka facts |
+| 83–88, 140–144 | specialist reviews and moderation | Consultation Service | PostgreSQL; minimized evidence and audit events |
+| 102–107 | specialist dashboard and consented user data | Consultation composes workload; Care and Journal/AI own sensitive data | Current owner authorization; no shared DB |
+| 108–110, 123–129 | specialist earnings/payout views and administration | Unresolved financial owner; Consultation consumes a projection | Implementation blocked pending ADR and settlement/reconciliation policy |
+| 112, 157–158 | admin dashboard, activity and platform trends | Owner-specific projections; financial facts from future financial owner | Bounded queries; freshness/cohort protections; no runtime distributed join |
+| 159–162 | audit search and retention policy | Identity coordinates minimized projection; every owner enforces its policy | Kafka audit facts and owner administration |
 
 ## Actor-flow coverage
 
 - **Anonymous:** questionnaire → result → screening/risk guidance → optional register. Anonymous data is never silently linked to the new account.
-- **User:** assessment/journal → analysis → risk/intervention → specialist discovery/booking → scoped consent → chat → review → follow-up/analytics.
-- **Specialist:** register → submit verification → admin approval → availability/appointments → consented data → chat → complete session → receive reviews.
-- **Admin:** login → bounded dashboard → accounts/specialists → content/hotlines → moderation → appointments → datasets/evaluation → reporting/audit/retention.
+- **User:** assessment/journal → analysis → risk/intervention → specialist discovery → premium/payment/credit → booking → scoped consent → chat → review → follow-up/analytics.
+- **Specialist:** register → submit verification → admin approval → availability/appointments → consented data → chat → complete session → earnings/payout projection → reviews.
+- **Admin:** login → bounded dashboard → accounts/specialists → subscriptions/payments/payouts → content/hotlines → moderation → appointments → datasets/evaluation → reporting/audit/retention.
 
 ## Safety clarifications added by architecture
 
@@ -82,5 +78,7 @@ The requirements are represented in domain/architecture documentation, but the l
 5. Explicit anonymous-assessment expiry/cleanup configuration and deletion evidence.
 6. Moderation evidence snapshot/access policy and appeal/action history.
 7. Dataset metadata edit semantics: immutable version replacement versus narrowly editable administrative metadata.
+8. Subscription/payment owner, provider, immutable financial ledger, webhook verification, credit reservation/consume/return/expiry, refund/chargeback, earnings, payout, reconciliation, and retention rules.
+9. WBS 28-29 and 155-156 both describe running/viewing AI benchmark evaluation; confirm whether they are different actor views or duplicate catalogue entries before defining contracts.
 
 Agents must not invent these behaviors independently. Resolve the relevant rule through product/domain review, then update the contract, data dictionary, migration, tests, and this traceability document together.

@@ -14,6 +14,8 @@
 
 The edge gateway/reverse proxy and Eureka service registry are infrastructure, not business modules, and contain no orchestration or domain logic. Eureka publishes service location metadata only. Language does not change ownership. NestJS and Spring communicate through REST/JSON DTOs and Kafka contracts and never share framework models.
 
+The workbook now requires subscription/payment, consultation-credit, earning, and payout behavior. No row in this ownership map is authoritative for those financial facts yet. An accepted ADR must add or assign one cohesive financial bounded context before implementation; Consultation may consume credit/settlement decisions but must not own a shadow balance.
+
 ## Synchronous versus asynchronous
 
 Use REST only when the caller cannot produce a correct response without current data, for example an exact consent authorization or booking command. Keep call depth shallow: edge to owner, with at most one necessary owner-to-owner call on a normal request path.

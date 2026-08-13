@@ -101,119 +101,79 @@ CONFIRMED -> RESCHEDULE_REQUESTED -> CONFIRMED or CANCELLED
 
 ## 4. Use-case catalogue
 
-### UC-01 Register and authenticate
+The project-tracking workbook currently groups the 162 functions into seven delivery use cases. The detailed scenarios below refine those groups; they do not restore the previous thirteen-UC numbering.
+
+### UC-01 Authentication & User Management
+
+**Actors:** Guest, User, Specialist, Admin
+
+**Scope:** registration for users/specialists, login/logout, password recovery, role authorization, profile/privacy, consent, specialist grants, personal-data deletion request, and anonymous assessment entry.
+
+**Main flow:** Identity validates credentials and owns account/session state; Care owns health profile and consent. Specialist registration enters `PENDING_VERIFICATION`. A guest may start a short-lived anonymous assessment without creating an account.
+
+**Exceptions and acceptance:** duplicate identity, expired/reused challenge, disabled account, excessive attempts, unsupported/expired grant, and deletion restrictions produce stable errors. Consent choices are independent and versioned; revocation blocks new reads. Anonymous data is never silently attached to a later account. Security and sensitive-access actions emit minimized audit facts.
+
+### UC-02 Mental Health Assessment & AI Analysis
+
+**Actors:** Guest, User, Research Admin, System
+
+**Scope:** journal CRUD, PHQ-9/GAD-7 submission/result/history/deletion, LLM emotion analysis and re-run, benchmark execution/results, risk-result display, and personal emotional analytics.
+
+**Main flow:** Care serves an immutable questionnaire version, validates complete answers, scores deterministically and returns screening guidance synchronously. Journal/AI stores encrypted revisions and runs consent-gated asynchronous analysis. Governed benchmark runs compare the same licensed/de-identified split through versioned LLM and PhoBERT configurations.
+
+**Exceptions and acceptance:** incomplete/invalid answers do not persist a final score; duplicate submission/analysis is idempotent; stale questionnaire requires restart; AI/provider failure never makes the journal or assessment unavailable. Raw journal content and chain-of-thought do not enter events or logs. AI cannot calculate PHQ/GAD scores or downgrade a safety path. Analytics distinguish missing data from zero and expose source freshness.
+
+### UC-03 Intervention & Support
+
+**Actors:** User, Admin, System
+
+**Scope:** deterministic risk classification, personalized intervention, crisis hotline/emergency guidance, self-help resources, and risk-appropriate notification/follow-up triggers.
+
+**Main flow:** Care evaluates a versioned local policy from eligible assessment and approved structured journal indicators, persists reason/source provenance and selects a reviewed intervention template. Content/Notification serves reviewed localized resources and handles non-critical delivery.
+
+**Exceptions and acceptance:** missing/stale input yields `INSUFFICIENT_DATA`; severe/safety flags cannot be downgraded by positive AI sentiment. Immediate guidance is returned without waiting for Kafka, Redis, WebSocket, email or push. Provider failure affects delivery status only and never claims guaranteed emergency response.
+
+### UC-04 Specialist Discovery & Appointment
 
 **Actors:** User, Specialist, Admin
 
-**Main flow:** validate email/password, verify ownership, create account, issue short-lived access token and rotated refresh token. Specialist accounts enter `PENDING_VERIFICATION`.
+**Scope:** specialist discovery/recommendation, subscription plan/payment/consultation credits, specialist profile/verification, availability, booking/transitions, reviews, and related administration.
 
-**Exceptions:** duplicate identity, expired verification/reset token, disabled account, excessive attempts.
+**Main flow:** an approved specialist publishes non-overlapping availability. A user with an authoritative available consultation credit requests a slot; Consultation enforces one active appointment per slot and records every transition. Completion may make one review eligible and causes the approved financial settlement action.
 
-**Audit:** registration, verification, login failures, password/security changes, admin status changes.
+**Exceptions and acceptance:** concurrent booking yields one winner; mutations are idempotent; rejection/cancellation/reschedule/completion applies the approved credit rule exactly once. Search/matching is transparent and versioned. Verification files remain private and access-audited. A completed appointment does not itself grant health/journal access.
 
-### UC-02 Complete an anonymous screening
+Payment, subscription, credit-ledger, earnings, and payout ownership require an accepted architecture decision before implementation. Appointment booking may consume a confirmed credit only through the authoritative owner contract and must not maintain an independent balance.
 
-**Actor:** Guest
+### UC-05 Communication & Follow-up
 
-**Main flow:** choose instrument, receive current questionnaire version, submit complete answers, server scores, return band/explanation/disclaimer and support resources.
+**Actors:** User, Specialist, Admin, System
 
-**Privacy:** use opaque session ID, short TTL, no journal/AI analysis, no fingerprint-based account linkage.
+**Scope:** eligible consultation conversations, realtime messages/receipts/tombstones/reports, follow-up plans/check-ins/reassessment, notifications, and progress comparison.
 
-**Safety:** relevant answer/score returns crisis guidance in the same response without waiting for async processing.
+**Main flow:** Realtime authorizes an eligible relationship, persists a message before acknowledgement and uses Redis only for ephemeral fan-out. Care records milestones/check-ins and repeated assessments; Content/Notification persists reminders and delivery attempts.
 
-### UC-03 Manage profile and privacy
+**Exceptions and acceptance:** reconnect restores missed state through cursor-based REST history; duplicate `clientMessageId` returns the original message; Redis/Kafka/provider failure cannot lose durable chat/domain state. Reports expose only minimal moderation context. Follow-up charts avoid diagnostic or causal claims.
 
-**Actor:** User
+### UC-06 Specialist Portal
 
-**Main flow:** view/update profile, record consent decisions, grant/revoke specialist scopes, request export/deletion.
+**Actor:** Specialist
 
-**Exceptions:** specialist not approved, expired grant, scope not supported, deletion blocked by an active workflow that must first be resolved.
+**Scope:** workload/dashboard, appointments and unread chats, consenting-user list/details, scoped assessment/emotion/journal views, earnings, payout history, and pending payout.
 
-### UC-04 Create and analyze a journal
+**Main flow:** Consultation composes its own workload and requests the minimum authorized projection from Care or Journal/AI. Financial views read a bounded projection from the future authoritative ledger owner.
 
-**Actor:** User
+**Exceptions and acceptance:** each sensitive read checks the current exact grant and fails closed on timeout/revocation. Journal access is selected-entry/range scoped, not all past/future by default. Dashboard projections expose freshness and never become authorization truth. Earnings/payout figures cannot be calculated independently by Consultation.
 
-**Main flow:** save encrypted private entry, create analysis request for its revision, worker redacts unnecessary identifiers and calls configured model, validate structured output, store result, notify user.
-
-**Exceptions:** no AI consent means save without analysis; provider failure means `RETRYABLE` or `FAILED`, while journal remains usable; edit invalidates prior result and creates a new revision/request.
-
-**Output:** polarity, emotion scores, dominant emotions, confidence/quality flags, model and prompt versions. Do not display hidden chain-of-thought.
-
-### UC-05 Submit an authenticated assessment
-
-**Actor:** User
-
-**Main flow:** start attempt, submit all responses, server validates and scores, persist immutable result, run risk policy, synchronously return safety guidance, asynchronously build recommendations/notifications.
-
-**Exceptions:** duplicate submit is idempotent; expired questionnaire version requires restart; invalid answer prevents persistence.
-
-### UC-06 Classify risk and generate intervention
-
-**Actor:** System
-
-**Trigger:** assessment submission, successful journal analysis, follow-up check-in, or reviewed policy replay.
-
-**Main flow:** load eligible inputs, evaluate versioned policy, persist reasons and provenance, select intervention template.
-
-**Paths:** minimal/mild gets self-help and reassessment; moderate gets referral/booking prompt and follow-up; severe gets immediate crisis guidance and an optional user-approved human contact path.
-
-**Guardrail:** never present background notification delivery as guaranteed emergency response.
-
-### UC-07 Discover and approve a specialist
-
-**Actors:** Specialist, Admin, User
-
-**Main flow:** specialist submits profile/document metadata; admin reviews and approves/rejects with reason; approved profiles become searchable/filterable; recommendation uses transparent matching criteria.
-
-**Privacy:** verification documents live in private object storage, not PostgreSQL/MongoDB blobs; access is time-limited and audited.
-
-### UC-08 Book and conduct a consultation
-
-**Actors:** User, Specialist
-
-**Main flow:** specialist publishes slot, user requests booking with idempotency key, specialist accepts, system sends reminders, enables chat, specialist completes appointment, user may review.
-
-**Exceptions:** concurrent booking, cancellation deadline, reschedule negotiation, no-show, disabled specialist.
-
-### UC-09 Grant specialist access
-
-**Actors:** User, Specialist
-
-**Main flow:** user selects specialist, scopes, data range/entries, purpose, and expiry; system records grant; specialist queries go through authorization with current consent; user revokes at any time.
-
-**Exception:** an appointment does not itself imply access to journals.
-
-### UC-10 Follow up and monitor progress
-
-**Actors:** User, Specialist, System
-
-**Main flow:** create milestones, schedule reminders, user submits check-in/reassessment, compare scores and emotion aggregates, re-run risk policy where appropriate.
-
-**Constraint:** charts distinguish missing data from zero and avoid causal claims.
-
-### UC-11 Moderate content
-
-**Actors:** User/Specialist reporter, Admin
-
-**Main flow:** report a review or message, snapshot minimal moderation context, admin assigns/reviews, applies action, records reason, optionally accepts appeal.
-
-**Constraint:** reports do not grant broad access to the rest of a conversation.
-
-### UC-12 Evaluate AI models
-
-**Actor:** Research Admin
-
-**Main flow:** register licensed/de-identified dataset, validate label schema, create benchmark configuration, run the same split through LLM and PhoBERT, record per-class metrics, latency, failures, cost, versions, and reproducibility metadata.
-
-**Constraint:** benchmark data is isolated from production journals; production user data is not included by default.
-
-### UC-13 Administer and audit
+### UC-07 Administration
 
 **Actor:** Admin
 
-**Main flow:** manage account states, specialist verification, resources/hotlines, retention policies; inspect operational aggregates and append-only audit records.
+**Scope:** bounded dashboard; user/specialist administration; subscription/payment/payout monitoring; resource/hotline CRUD; review/chat moderation; appointment monitoring; dataset/evaluation; reporting; audit; and retention.
 
-**Constraint:** dashboard aggregates must enforce minimum cohort sizes to reduce re-identification risk.
+**Main flow:** each data owner exposes an authorized admin command/query or publishes a minimized projection. Moderation snapshots only necessary evidence; reporting uses versioned projections instead of runtime distributed joins.
+
+**Exceptions and acceptance:** admin role does not grant unrestricted raw journal/chat/assessment, verification-document, or payment-provider payload access. Changes record stable reasons and append-only audit facts. Aggregates enforce cohort/privacy thresholds and projection freshness. Retention changes remain owner-enforced and do not rewrite historical audit evidence.
 
 ## 5. Suggested MVP and deferrals
 
@@ -230,6 +190,7 @@ CONFIRMED -> RESCHEDULE_REQUESTED -> CONFIRMED or CANCELLED
 ### Human-support release (iteration 3)
 
 - specialist verification/profile/search;
+- premium subscription/payment and consultation-credit workflow after the financial ADR is accepted;
 - availability and race-safe appointment booking;
 - scoped consent grants and specialist view;
 - consultation chat, reminders, reviews, follow-up.
@@ -240,7 +201,7 @@ CONFIRMED -> RESCHEDULE_REQUESTED -> CONFIRMED or CANCELLED
 - aggregate reporting and retention configuration;
 - isolated benchmark dataset pipeline and PhoBERT comparison.
 
-Defer payments, video calls, social/community feeds, organization tenancy, automatic emergency dispatch, custom model training, and Kubernetes unless formally added to scope.
+Video calls, social/community feeds, organization tenancy, automatic emergency dispatch, custom model training, and Kubernetes remain deferred unless formally added to scope. Subscription/payment and specialist payout are now present in the project-tracking workbook, but implementation remains blocked until ownership, provider, ledger, refund/chargeback, settlement, security, and reconciliation decisions are accepted in an ADR.
 
 ## 6. Open product decisions
 
@@ -254,3 +215,5 @@ These require supervisor/domain-expert approval before implementation:
 6. Consent text/versioning, retention periods, deletion SLA, export scope, and applicable Vietnamese regulation review.
 7. Consultation channel and whether external meeting links/phone numbers may be shared.
 8. Dataset licenses, label mapping, train/test leakage controls, and research ethics approval.
+9. Subscription plan lifecycle, renewal/cancellation semantics, supported payment provider/methods, payment webhook verification, consultation-credit reservation/consume/return/expiry rules, refunds/chargebacks, specialist earning calculation, payout settlement, reconciliation, and financial retention.
+10. Whether WBS 28-29 are end-user/research benchmark views distinct from admin WBS 155-156, or duplicate functions that should share one admin-only workflow.

@@ -22,6 +22,8 @@
 
 The deployable business services are fixed as Spring Boot `identity-service`, `care-service`, and `consultation-service`; NestJS `journal-ai-service`, `realtime-service`, and `content-notification-service`; and Python `phobert-worker`. Governance/reporting is implemented as bounded admin APIs and Kafka projections inside the relevant owner until a future ADR justifies another deployable. The edge gateway/reverse proxy and Eureka registry are infrastructure and contain no business orchestration.
 
+The updated project-tracking workbook introduces premium subscriptions, payments, consultation credits, specialist earnings, and payouts. ADR 0001 does not assign these authoritative financial facts to a deployable, and the existing database baseline does not define their ledger. Implementation is blocked until an ADR selects the bounded-context owner, storage, provider/webhook, credit, settlement, reconciliation, security, and retention boundaries. Identity and Consultation must not invent independent balances in the interim.
+
 ## 3. Container view
 
 ```text
