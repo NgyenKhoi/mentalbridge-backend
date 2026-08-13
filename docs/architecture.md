@@ -33,7 +33,7 @@ Mobile App / Admin Web
        +--> Identity / Care / Consultation (Spring Boot) --> PostgreSQL
        +--> Journal-AI (NestJS) --> MongoDB + PostgreSQL job metadata
        +--> Realtime (NestJS) --> MongoDB + Redis --> WebSocket clients
-       +--> Content-Notification (NestJS) --> PostgreSQL + push/email providers
+       +--> Content-Notification (NestJS) --> PostgreSQL + Brevo/push providers
                               |
                          Kafka topics
                               |
@@ -50,7 +50,9 @@ Use REST/JSON for authentication, CRUD, service-to-service queries, assessment s
 
 ### Client WebSocket
 
-Only Realtime Service accepts WebSocket connections. It owns chat delivery, presence, receipts, and delivery of safe in-app notification payloads. Other services communicate with Realtime through REST or Kafka, never service-to-service WebSocket. Redis stores TTL presence and coordinates low-latency cross-instance socket fan-out; MongoDB remains authoritative for durable conversations/messages.
+Only Realtime Service accepts WebSocket connections. It owns chat delivery, presence, receipts, and delivery of safe in-app notification payloads. Other services communicate with Realtime through REST or Kafka, never service-to-service WebSocket. Redis stores bounded ephemeral coordination state and coordinates low-latency cross-instance socket fan-out; it does not cache database queries or durable messages. MongoDB remains authoritative for durable conversations/messages.
+
+Cloudinary is the file/object-storage provider. Sensitive verification and evaluation assets use private/authenticated delivery with signed, time-limited access; each business service remains the owner of its file metadata and authorization decisions. Brevo is the outbound transactional-email provider, while MentalBridge services retain authoritative notification and OTP state.
 
 ### Kafka commands and events
 

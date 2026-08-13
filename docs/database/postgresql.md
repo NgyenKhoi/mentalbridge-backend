@@ -1,6 +1,6 @@
 # PostgreSQL Data Model
 
-The executable baseline is [database/postgresql/001_initial_schema.sql](../../database/postgresql/001_initial_schema.sql). The purpose of every current table and field is explained in the human-readable [PostgreSQL field data dictionary](postgresql-field-data-dictionary.md). When services are scaffolded, split the DDL into service-owned Flyway migrations and database users, and keep the data dictionary synchronized.
+The executable baseline is [database/postgresql/001_initial_schema.sql](../../database/postgresql/001_initial_schema.sql). The purpose of every current table and field is explained in the human-readable [PostgreSQL field data dictionary](postgresql-field-data-dictionary.md). When services are scaffolded, split the DDL into service-owned Liquibase changelogs and database users, and keep the data dictionary synchronized.
 
 ## Ownership
 
@@ -72,11 +72,11 @@ At capstone scale, do not partition by default. Consider monthly range partition
 - conversation messages and receipts: MongoDB;
 - verification files and evaluation dataset files: private object storage;
 - provider secrets: secret manager/environment injection;
-- cache, rate-limit counters, WebSocket presence, and cross-instance socket fan-out: Redis; none is authoritative business data.
+- rate-limit counters, WebSocket presence/routing/fan-out, short-lived delivery/idempotency state, and expiring hashed OTP challenges: Redis; none is authoritative business data and Redis is not used to cache database-query results.
 
 ## Migration rules
 
-1. Split this baseline into one Flyway history per service before implementation.
+1. Split this baseline into one Liquibase changelog history per service before implementation.
 2. Apply expand/migrate/contract for changes used by multiple deployed versions.
 3. Never edit an applied migration; add a new migration.
 4. Seed questionnaire definitions, intervention templates, and resources through versioned reference-data migrations using reviewed content.

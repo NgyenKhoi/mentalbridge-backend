@@ -7,7 +7,7 @@ Kafka is the durable integration broker. REST remains the mechanism for synchron
 | Technology | Use it for | Do not use it for |
 | --- | --- | --- |
 | Kafka | durable domain events, asynchronous commands, task distribution, replayable projections, audit/reporting feeds | synchronous queries, request/reply, presence, direct browser connections |
-| Redis | online presence with TTL, socket/room routing, short-lived cache, rate limits, cross-instance WebSocket fan-out | authoritative consent, messages, notifications, appointments, durable job state |
+| Redis | online presence with TTL, socket/room routing, rate limits, cross-instance WebSocket fan-out, short-lived delivery/idempotency state, expiring hashed OTP challenges | database-query/result caching, authoritative consent, durable messages, notifications, appointments, risk, durable job state |
 | WebSocket | authenticated chat, presence changes, receipts, and live in-app notification delivery to clients | service-to-service queries, durable storage, business transactions |
 | REST/JSON | synchronous APIs, current authorization/consent queries, command status polling | background fan-out or replayable event distribution |
 
@@ -75,7 +75,8 @@ If aggregate order matters, compare `aggregateVersion`, ignore stale versions, a
 - WebSocket inbound/outbound JSON is defined in `contracts/websocket/` with event name, schema version, correlation/message IDs, acknowledgments, errors, size limit, and compatibility policy.
 - The server assigns authoritative sender and conversation context; never trust client-supplied owner, role, delivery state, or specialist approval.
 - A client supplies `clientMessageId`; retries/reconnects return the original message instead of creating duplicates.
-- Persist durable chat/message state in MongoDB before acknowledging accepted content. Redis contains only connection and presence state with TTL.
+- Persist durable chat/message state in MongoDB before acknowledging accepted content. Redis may contain only the bounded ephemeral categories listed above, never message content or message history.
+- Do not cache repository or REST query results in Redis. Improve database reads with query shape, indexes, bounded pagination, projections owned by a durable store, connection-pool tuning, and measured query plans.
 - Use Redis pub/sub or the approved Socket.IO Redis adapter for cross-instance fan-out. Kafka carries durable integration facts to other services; Redis carries low-latency ephemeral socket delivery.
 - On Redis failure, durable writes and REST reads remain correct. Presence may degrade to unknown and cross-instance live delivery may pause; reconnect/history retrieval repairs the client view.
 - `content-notification-service` persists the notification and publishes `NotificationCreated`; `realtime-service` consumes it and emits a minimal client notification over the user's existing socket. Email/push provider delivery remains owned by `content-notification-service`.

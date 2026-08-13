@@ -26,7 +26,7 @@ The recommended starting point is a **small microservice landscape**, not one se
 | Content & Notification Service | NestJS | Self-help resources, hotlines, preferences, notification/provider delivery | PostgreSQL |
 | PhoBERT Worker | Python | Experimental inference jobs only | No authoritative business store |
 
-Use REST/JSON DTOs for synchronous business APIs and service-to-service queries. WebSocket terminates only at Realtime Service for live client chat, presence, receipts, and in-app notifications. Kafka carries durable asynchronous commands/events for analysis, notification, audit, reporting, and deletion workflows. Redis carries ephemeral presence, connection routing, cache/rate-limit state, and cross-instance WebSocket fan-out; it is never a business source of truth.
+Use REST/JSON DTOs for synchronous business APIs and service-to-service queries. WebSocket terminates only at Realtime Service for live client chat, presence, receipts, and in-app notifications. Kafka carries durable asynchronous commands/events for analysis, notification, audit, reporting, and deletion workflows. Redis carries only ephemeral presence, connection routing, fan-out, rate-limit, delivery/idempotency, and expiring hashed OTP state; it is not a database-query cache or business source of truth.
 
 ## Core flow
 
@@ -68,12 +68,13 @@ Severe-risk handling must be deterministic, immediate, auditable, and usable eve
 
 ## Technology baseline
 
-- Java 21+, Spring Boot 4.x, Spring Security, Spring Data, Flyway, OpenAPI
+- Java 21+, Spring Boot 4.x, Spring Security, Spring Data, Liquibase, OpenAPI
 - Node.js LTS + NestJS for Journal/AI, Realtime, and Content/Notification services
 - Python for the isolated PhoBERT inference worker
 - PostgreSQL for transactional and relational data
 - MongoDB for journal text, chat messages, and variable AI/evaluation payloads
-- Kafka for durable asynchronous commands/events; Redis for ephemeral realtime coordination and cache
+- Kafka for durable asynchronous commands/events; Redis for bounded ephemeral realtime/OTP coordination, not database-query caching
+- `migrate-mongo` for MongoDB migrations; Cloudinary private/authenticated storage; Brevo transactional email API
 - Docker Compose for local development; GitHub Actions for CI
 - OpenTelemetry-compatible traces, Prometheus metrics, Grafana dashboards, structured JSON logs
 

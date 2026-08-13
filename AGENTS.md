@@ -6,7 +6,7 @@ These instructions apply to the entire repository. Before changing application c
 
 - REST/JSON is the only synchronous protocol for business APIs and service-to-service queries. WebSocket is allowed only between clients and `realtime-service` for chat, presence, delivery state, and live notification delivery. Do not introduce GraphQL, gRPC, or broker-based request/reply without an accepted ADR.
 - Kafka carries asynchronous commands and integration events. It is not used to query current data or as the request path for an immediate REST response.
-- Redis supports ephemeral realtime presence, connection/room routing, short-lived cache, rate limits, and cross-instance WebSocket fan-out. PostgreSQL, MongoDB, and Kafka remain the durable sources; Redis never owns business facts.
+- Redis supports ephemeral realtime presence, connection/room routing, cross-instance WebSocket fan-out, rate limits, short-lived delivery/idempotency state, and expiring hashed OTP challenges. Do not use Redis as a general database-query/result cache or to store durable messages and business facts. PostgreSQL, MongoDB, and Kafka remain the durable sources.
 - Every service owns its data. A service must not query another service's tables, schema, repository, ORM entity, or internal classes.
 - Cross-service REST and message payloads are contract-first and language-neutral. OpenAPI and JSON Schema/AsyncAPI are the sources of truth.
 - Use the transactional outbox for messages caused by a PostgreSQL state change. Consumers must be idempotent.

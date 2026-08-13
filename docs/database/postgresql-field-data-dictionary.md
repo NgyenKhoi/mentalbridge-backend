@@ -2,7 +2,7 @@
 
 This document explains the business purpose of every table and field in the logical baseline [`001_initial_schema.sql`](../../database/postgresql/001_initial_schema.sql). It is written for developers and reviewers; descriptions are intentionally kept out of executable migrations.
 
-When service-owned Flyway migrations are introduced, update this dictionary in the same change. A field description must explain why the value is persisted, whether it is authoritative, derived, external, or sensitive, and how nullability, time, versioning, or idempotency affects behavior.
+When service-owned Liquibase migrations are introduced, update this dictionary in the same change. A field description must explain why the value is persisted, whether it is authoritative, derived, external, or sensitive, and how nullability, time, versioning, or idempotency affects behavior.
 
 ## Schema `identity`
 
