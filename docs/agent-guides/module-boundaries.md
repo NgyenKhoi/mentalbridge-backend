@@ -12,7 +12,7 @@
 | `content-notification-service` | NestJS | resources, hotlines, preferences, notification creation/provider delivery | provider APIs only when executing delivery | consumes domain events and emits notification/delivery outcomes |
 | `phobert-worker` | Python | inference execution only | no business data query | consumes analysis commands and emits results |
 
-The edge gateway/reverse proxy is infrastructure, not another business module, and contains no orchestration or domain logic. Language does not change ownership. NestJS and Spring communicate through REST/JSON DTOs and Kafka contracts and never share framework models.
+The edge gateway/reverse proxy and Eureka service registry are infrastructure, not business modules, and contain no orchestration or domain logic. Eureka publishes service location metadata only. Language does not change ownership. NestJS and Spring communicate through REST/JSON DTOs and Kafka contracts and never share framework models.
 
 ## Synchronous versus asynchronous
 

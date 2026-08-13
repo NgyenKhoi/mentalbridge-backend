@@ -9,6 +9,7 @@ First apply `mentalbridge-repository-workflow`. Read `docs/architecture.md`, `do
 
 - Keep service ownership explicit. Never query another service's storage or share framework/internal models.
 - Use REST/JSON and OpenAPI for synchronous business APIs and current-data queries.
+- Use Eureka only for Spring service registration and address lookup. Use OpenFeign only as a consumer-owned Java REST adapter with OpenAPI contracts, explicit deadlines, Resilience4j, and provider-side authorization.
 - Use WebSocket only between clients and `realtime-service` for realtime delivery.
 - Use Kafka for durable asynchronous commands/events, never request/reply. Use transactional outbox for PostgreSQL-caused messages and idempotent consumers.
 - Use Redis only for bounded ephemeral presence/routing/fan-out, rate limits, delivery/idempotency state, and expiring hashed OTP challenges. Never use it as a query cache or durable store.

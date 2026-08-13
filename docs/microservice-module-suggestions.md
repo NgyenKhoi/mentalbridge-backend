@@ -25,7 +25,7 @@ Ngôn ngữ chính:
 
 ## 3. Cách nhóm service cho MVP
 
-Kiến trúc chốt sáu business microservice và một worker: ba Spring Boot, ba NestJS, một Python worker như bảng trên. Edge gateway/reverse proxy là hạ tầng, không phải business service và không chứa orchestration. Governance/reporting ban đầu là admin API và Kafka projection nằm trong owner phù hợp; chỉ tách thêm deployable bằng ADR khi có lý do scale, release, data ownership hoặc security đo được.
+Kiến trúc chốt sáu business microservice và một worker: ba Spring Boot, ba NestJS, một Python worker như bảng trên. Edge gateway/reverse proxy và Eureka registry là hạ tầng, không phải business service và không chứa orchestration. Các Spring service đăng ký địa chỉ qua Eureka; Java consumer dùng OpenFeign cho REST theo OpenAPI và Resilience4j, không chia sẻ DTO implementation. Governance/reporting ban đầu là admin API và Kafka projection nằm trong owner phù hợp; chỉ tách thêm deployable bằng ADR khi có lý do scale, release, data ownership hoặc security đo được.
 
 ## 4. Cấu trúc source code gợi ý
 
@@ -78,7 +78,7 @@ src/
 
 - Mỗi service có database schema/database user riêng; không dùng chung JPA entity, repository hoặc truy vấn chéo schema.
 - Không tạo một thư viện `common-domain` chứa model nghiệp vụ dùng chung. Chỉ chia sẻ các thành phần kỹ thuật ổn định như correlation ID, observability và event envelope.
-- REST/JSON DTO dùng cho yêu cầu cần phản hồi ngay và mọi query giữa service: đăng nhập, chấm điểm assessment, xem consent hiện tại và đặt lịch.
+- REST/JSON DTO dùng cho yêu cầu cần phản hồi ngay và mọi query giữa service: đăng nhập, chấm điểm assessment, xem consent hiện tại và đặt lịch. Eureka chỉ resolve địa chỉ Spring service; OpenFeign chỉ là Java REST client adapter và không thay đổi contract hay authorization của owner.
 - WebSocket chỉ nối client với `realtime-service`. Các service khác không query hoặc gọi nhau qua WebSocket.
 - Kafka dùng cho AI analysis, notification, reporting, audit và account deletion. Producer PostgreSQL dùng transactional outbox; consumer xử lý idempotent theo `messageId` và commit offset sau side effect.
 - Redis giữ presence TTL, connection/room routing, rate limit, delivery/idempotency state ngắn hạn, OTP hash có hạn dùng và fan-out WebSocket giữa replica; không cache kết quả truy vấn database và không giữ business truth.

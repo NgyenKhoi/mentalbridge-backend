@@ -19,7 +19,7 @@ Architecture may add safety, privacy, reliability, and implementation constraint
 | PostgreSQL and MongoDB | PostgreSQL owns relational transactions; MongoDB owns journals, analysis documents, conversations/messages |
 | Gemini/OpenAI through prompt engineering | NestJS Journal/AI provider adapters with strict versioned output schemas; no fine-tuning |
 | PhoBERT inference-only comparison | Isolated Python worker consuming Kafka jobs; no model training/fine-tuning |
-| Microservices and API integration | Owner databases, OpenAPI REST/JSON DTOs, Kafka async contracts, no cross-service table access |
+| Microservices and API integration | Owner databases, OpenAPI REST/JSON DTOs, Eureka discovery for Spring services, OpenFeign Java REST clients, Kafka async contracts, no cross-service table access |
 | AWS EC2, Docker, Nginx, Docker Compose, GitHub Actions | Deployment baseline retained; Kafka and Redis included in local/hosted composition |
 | Grafana, Prometheus, Swagger/OpenAPI | Metrics/observability and contract rules are required by engineering guides |
 | Privacy, consent, audit, deletion and retention | Care consent owner, owner-enforced authorization, minimized audit projection, idempotent deletion workflow |

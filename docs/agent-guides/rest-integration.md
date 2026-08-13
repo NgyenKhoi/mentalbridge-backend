@@ -20,6 +20,7 @@ REST/JSON is the only synchronous business and service-to-service integration pr
 3. Propagate `traceparent`, `X-Correlation-Id`, caller identity, and end-user context where policy permits.
 4. Enforce authorization again in the data owner. The caller's prior check is not sufficient.
 5. Set a deadline and define what the caller does when the owner is slow or unavailable. Fail closed for authorization and consent.
+6. Resolve Spring provider instances through Eureka by logical service ID. Discovery metadata selects an address only; it never proves identity, authorization, or contract compatibility.
 
 Avoid chatty loops. Add a batch owner endpoint or an asynchronously built read projection when one request would otherwise issue many remote calls. Do not perform remote calls while holding a database transaction or lock.
 
@@ -41,7 +42,9 @@ Fallbacks must be domain-safe:
 - booking: return an explicit unavailable response; never pretend success;
 - notifications/reporting: enqueue through the outbox and complete asynchronously.
 
-Spring implementations should use one approved resilience stack consistently, such as Resilience4j around `RestClient`/`WebClient`. Node implementations should use the standard project HTTP client plus one approved breaker library. Library choice must not change the contract or failure semantics.
+Spring-to-Spring consumers use OpenFeign behind a consumer-owned application port and wrap operations with Resilience4j. Feign interfaces and DTO implementations remain inside the consumer; derive them from the provider OpenAPI contract without sharing provider controller or persistence classes. Configure explicit connect/read deadlines, safe retries, circuit breakers, correlation/authentication propagation, and domain-safe fallbacks per operation. Node implementations use the standard project HTTP client plus one approved breaker library. Client library or discovery choice must not change the contract or failure semantics.
+
+Treat no Eureka instance, registry unavailability, DNS/connect failure, and provider timeout as explicit dependency failures. Do not fall back to another service's database, an unverified static URL, or a stale projection for current authorization and safety decisions.
 
 ## Cross-language compatibility checks
 

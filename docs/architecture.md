@@ -20,7 +20,7 @@
 | Content/Notification | resources, hotlines, notification preferences/delivery | risk decisions |
 | Governance/Reporting | audit events, moderation cases, de-identified projections | transactional sources of truth |
 
-The deployable business services are fixed as Spring Boot `identity-service`, `care-service`, and `consultation-service`; NestJS `journal-ai-service`, `realtime-service`, and `content-notification-service`; and Python `phobert-worker`. Governance/reporting is implemented as bounded admin APIs and Kafka projections inside the relevant owner until a future ADR justifies another deployable. The edge gateway/reverse proxy is infrastructure and contains no business orchestration.
+The deployable business services are fixed as Spring Boot `identity-service`, `care-service`, and `consultation-service`; NestJS `journal-ai-service`, `realtime-service`, and `content-notification-service`; and Python `phobert-worker`. Governance/reporting is implemented as bounded admin APIs and Kafka projections inside the relevant owner until a future ADR justifies another deployable. The edge gateway/reverse proxy and Eureka registry are infrastructure and contain no business orchestration.
 
 ## 3. Container view
 
@@ -38,6 +38,8 @@ Mobile App / Admin Web
                          Kafka topics
                               |
                     PhoBERT worker (Python)
+
+ Spring services <---- registration and lookup only ----> Eureka registry
 ```
 
 Do not share ORM entities, repositories, or direct cross-service table access. A single PostgreSQL cluster is acceptable locally and for the first deployment, but each service owns a schema and database user. DTOs are JSON contracts defined through OpenAPI rather than shared Java/TypeScript implementation classes.
@@ -46,7 +48,7 @@ Do not share ORM entities, repositories, or direct cross-service table access. A
 
 ### Synchronous REST
 
-Use REST/JSON for authentication, CRUD, service-to-service queries, assessment submission/scoring, current consent authorization, slot booking, history recovery, and immediate crisis-resource retrieval. Every mutating endpoint accepts or generates a correlation ID; commands vulnerable to retries accept an `Idempotency-Key`. REST clients use deadlines, bounded safe retries, circuit breakers, and domain-safe fallbacks.
+Use REST/JSON for authentication, CRUD, service-to-service queries, assessment submission/scoring, current consent authorization, slot booking, history recovery, and immediate crisis-resource retrieval. Spring services register with Eureka; Java consumers use OpenFeign to resolve provider service IDs and execute the REST call. Eureka and Feign do not replace OpenAPI contracts, provider authorization, or owner data access. Every mutating endpoint accepts or generates a correlation ID; commands vulnerable to retries accept an `Idempotency-Key`. REST clients use deadlines, bounded safe retries, circuit breakers, and domain-safe fallbacks.
 
 ### Client WebSocket
 
@@ -120,6 +122,7 @@ Threat-model at least broken object-level authorization, revoked-consent races, 
 ## 7. Reliability and observability
 
 - Timeouts, bounded retries, circuit breakers, and concurrency limits wrap all service-to-service REST and external AI/notification calls.
+- Eureka discovery failure is a dependency failure, never permission to bypass the owner or query its database; safety-critical local Care paths remain independent of discovery.
 - Health endpoints distinguish liveness from readiness. A failed optional AI provider must not make assessment APIs unready.
 - Structured logs include `timestamp`, `level`, `service`, `traceId`, `correlationId`, `event`, and safe entity IDs.
 - Metrics cover request latency/error rate, assessment submissions, safety-path success, Kafka consumer/outbox lag, AI failure/latency/cost, booking conflicts, Redis health, WebSocket connections/delivery delay, notification failures, and deletion completion.
@@ -130,7 +133,7 @@ Threat-model at least broken object-level authorization, revoked-consent races, 
 
 ### Local/demo
 
-Docker Compose with the six business services, Python worker, edge proxy, PostgreSQL, MongoDB, Kafka, and Redis. One command should start infrastructure; seed data must be synthetic.
+Docker Compose with the six business services, Python worker, edge proxy, Eureka registry, PostgreSQL, MongoDB, Kafka, and Redis. One command should start infrastructure; seed data must be synthetic.
 
 ### AWS capstone deployment
 
