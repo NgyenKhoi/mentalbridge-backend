@@ -20,10 +20,17 @@ Use these integration boundaries:
 - REST with JSON DTOs and OpenAPI for synchronous business APIs and every service-to-service query;
 - WebSocket only from client applications to `realtime-service` for chat, presence, receipts, and live in-app notification delivery;
 - Kafka for durable asynchronous commands, integration events, task distribution, replayable projections, audit/reporting, and deletion workflows;
-- Redis for TTL presence, socket/room mapping, short-lived cache, rate limiting, and cross-instance WebSocket fan-out;
+- Redis only for bounded ephemeral capabilities: TTL presence, socket/room mapping, cross-instance WebSocket fan-out, rate limiting, short-lived delivery/idempotency state, and hashed OTP challenges with expiry;
 - PostgreSQL/MongoDB owned by services as authoritative durable business stores.
 
-Kafka is not used as synchronous request/reply and Redis is not used as a durable source of truth. Realtime message acknowledgment does not wait for unrelated Kafka consumers: `realtime-service` persists the message, acknowledges and performs Redis socket fan-out, then publishes durable integration facts through a recoverable outbox/publisher design.
+Use these infrastructure and provider adapters:
+
+- Liquibase for append-only, service-owned PostgreSQL migrations in Spring Boot modules;
+- `migrate-mongo` for versioned MongoDB migrations in NestJS modules that own MongoDB collections;
+- Cloudinary for file/object storage, using private or authenticated assets and signed, time-limited access for sensitive files;
+- Brevo API for outbound transactional email, including OTP delivery; the provider does not own OTP validity or verification state.
+
+Kafka is not used as synchronous request/reply and Redis is not used as a durable source of truth. Redis must not cache general PostgreSQL/MongoDB query results, repository responses, durable messages, consent, risk, appointment, or notification facts. Database performance is addressed through query design, indexes, pagination, connection-pool sizing, and measured database tuning. Realtime message acknowledgment does not wait for unrelated Kafka consumers: `realtime-service` persists the message in MongoDB, acknowledges and performs Redis socket fan-out, then publishes durable integration facts through a recoverable outbox/publisher design.
 
 ## Rationale
 
@@ -38,6 +45,9 @@ Kafka is selected because MentalBridge has multiple independent asynchronous con
 - PostgreSQL state changes publish through a transactional outbox. MongoDB producers require an equivalent recoverable, idempotent publication design.
 - Kafka consumers assume at-least-once delivery, deduplicate by message ID, and commit offsets only after local side effects succeed.
 - Redis loss may temporarily degrade presence and cross-instance live delivery but cannot corrupt durable data; REST history/resynchronization repairs client state.
+- Redis loss invalidates outstanding OTP challenges and other ephemeral state safely; it never makes a durable message or business record unavailable.
+- Provider SDKs remain infrastructure adapters behind application ports. Cloudinary identifiers and Brevo delivery identifiers may be persisted where needed, but provider responses and credentials are not business contracts.
+- Development starts with local database infrastructure, but every service scaffold includes validated production configuration from the beginning: external secret injection, TLS-capable URLs, bounded pools/timeouts, production-safe migration settings, health/readiness, metrics, and no dependency on repository `.env` files. Production credentials and endpoints are supplied only by the deployment environment in later phases.
 - Current authorization and consent queries fail closed through owner REST APIs. Eventually consistent Kafka projections are used only where staleness is explicitly acceptable.
 - The edge proxy remains infrastructure without business orchestration; adding another business service or transport requires a new ADR.
 

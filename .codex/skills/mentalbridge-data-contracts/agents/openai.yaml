@@ -1,0 +1,4 @@
+interface:
+  display_name: "MentalBridge Data Contracts"
+  short_description: "Apply database and contract-first requirements"
+  default_prompt: "Use $mentalbridge-data-contracts to implement this data or contract change."

@@ -17,10 +17,10 @@ Ngôn ngữ chính:
 | --- | --- | --- | --- | --- |
 | `identity-service` | Java, Spring Boot | Đăng ký, đăng nhập, vai trò, xác minh email, reset mật khẩu, refresh token, trạng thái tài khoản, điều phối xóa tài khoản, audit/security projection tối thiểu | PostgreSQL schema `identity` và projection an toàn | REST; Kafka account/deletion/audit events |
 | `care-service` | Java, Spring Boot | Hồ sơ người dùng, consent, PHQ-9/GAD-7, chấm điểm, risk policy, intervention và follow-up | PostgreSQL schema `care` | REST; transactional outbox/events |
-| `consultation-service` | Java, Spring Boot | Hồ sơ/xét duyệt/tìm kiếm/matching chuyên gia, lịch rảnh, cuộc hẹn, quyền truy cập theo consent, đánh giá | PostgreSQL schema `consultation`; object storage cho giấy tờ | REST; Kafka appointment/review/moderation events |
+| `consultation-service` | Java, Spring Boot | Hồ sơ/xét duyệt/tìm kiếm/matching chuyên gia, lịch rảnh, cuộc hẹn, quyền truy cập theo consent, đánh giá | PostgreSQL schema `consultation`; Cloudinary private/authenticated cho giấy tờ | REST; Kafka appointment/review/moderation events |
 | `journal-ai-service` | TypeScript, NestJS | CRUD nhật ký, phiên bản nội dung, kiểm tra AI consent, điều phối job và chuẩn hóa kết quả LLM | MongoDB cho nhật ký/kết quả; PostgreSQL schema `ai` cho job/outbox | REST/JSON; Kafka; API nhà cung cấp AI |
 | `realtime-service` | TypeScript, NestJS | REST lịch sử chat, WebSocket authorization/chat/presence/receipt/notification delivery | MongoDB cho chat; Redis cho presence, room và cross-instance fan-out | REST/JSON; WebSocket client; Kafka |
-| `content-notification-service` | TypeScript, NestJS | Nội dung tự hỗ trợ, hotline, template, preference, lưu và điều phối notification | PostgreSQL schema `content` | REST/JSON; Kafka; provider push/email |
+| `content-notification-service` | TypeScript, NestJS | Nội dung tự hỗ trợ, hotline, template, preference, lưu và điều phối notification | PostgreSQL schema `content` | REST/JSON; Kafka; Brevo API và provider push |
 | `phobert-worker` | Python | Chạy inference PhoBERT theo job, validate và trả kết quả có cấu trúc | Không sở hữu dữ liệu nguồn | Kafka command/result |
 
 ## 3. Cách nhóm service cho MVP
@@ -81,7 +81,7 @@ src/
 - REST/JSON DTO dùng cho yêu cầu cần phản hồi ngay và mọi query giữa service: đăng nhập, chấm điểm assessment, xem consent hiện tại và đặt lịch.
 - WebSocket chỉ nối client với `realtime-service`. Các service khác không query hoặc gọi nhau qua WebSocket.
 - Kafka dùng cho AI analysis, notification, reporting, audit và account deletion. Producer PostgreSQL dùng transactional outbox; consumer xử lý idempotent theo `messageId` và commit offset sau side effect.
-- Redis giữ presence TTL, connection/room routing, cache/rate limit ngắn hạn và fan-out WebSocket giữa replica; không giữ business truth.
+- Redis giữ presence TTL, connection/room routing, rate limit, delivery/idempotency state ngắn hạn, OTP hash có hạn dùng và fan-out WebSocket giữa replica; không cache kết quả truy vấn database và không giữ business truth.
 - Event không chứa access token, nội dung nhật ký thô hoặc nội dung chat. Chỉ gửi định danh và dữ liệu tối thiểu cần thiết.
 - API Gateway không chứa business logic và không trở thành nơi gọi nối tiếp nhiều service để xử lý nghiệp vụ.
 
@@ -89,7 +89,7 @@ src/
 
 ### Spring Boot
 
-Phù hợp với Identity, Care và Consultation vì các module này có nhiều quy tắc nghiệp vụ, transaction PostgreSQL, validation, RBAC, audit và yêu cầu test nhất quán. Spring Security, Spring Data, Flyway và Resilience4j tạo nền tảng thống nhất cho ba service này.
+Phù hợp với Identity, Care và Consultation vì các module này có nhiều quy tắc nghiệp vụ, transaction PostgreSQL, validation, RBAC, audit và yêu cầu test nhất quán. Spring Security, Spring Data, Liquibase và Resilience4j tạo nền tảng thống nhất cho ba service này.
 
 ### Node.js + TypeScript
 

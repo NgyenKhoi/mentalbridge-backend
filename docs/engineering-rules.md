@@ -22,7 +22,7 @@ These rules apply to all backend services unless an accepted ADR documents an ex
 
 ## 3. Data rules
 
-- PostgreSQL migrations are append-only after merge. Use Flyway naming such as `V001__initial_schema.sql` per service.
+- PostgreSQL migrations are append-only after merge and owned per service through Liquibase changelogs. MongoDB-owning NestJS services use versioned `migrate-mongo` migrations for collection validation, indexes, and controlled data changes.
 - Every mutable relational record has `created_at`, `updated_at`, and optimistic `version` where concurrent edits matter.
 - Money is not in current scope; if introduced, use integer minor units plus ISO currency, never floating point.
 - Store instants as `timestamptz` UTC. Store the originating IANA timezone separately where scheduling requires it.

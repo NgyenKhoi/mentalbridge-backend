@@ -1,0 +1,4 @@
+interface:
+  display_name: "MentalBridge Architecture"
+  short_description: "Guard backend architecture and safety boundaries"
+  default_prompt: "Use $mentalbridge-architecture to review this MentalBridge architecture change."

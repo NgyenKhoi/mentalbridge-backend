@@ -63,6 +63,17 @@ This prevents “works only with my `.env`” builds while preserving automatic 
 
 Every configuration change updates `.env.example` and the affected module README in the same PR. Group keys by service and explain purpose, format, whether required, and safe example—not the secret value. Reviewers compare application configuration references with `.env.example` to detect missing or stale keys.
 
+## Development-first, production-ready configuration
+
+The current infrastructure phase may run databases and supporting dependencies locally, but service scaffolding must define production-safe configuration at the same time. Keep behavior in typed configuration and profiles rather than production-only code branches.
+
+- Development may use safe local hosts, ports, synthetic assets, provider sandboxes/fakes, and Docker Compose credentials that are clearly non-production.
+- CI and production disable dotenv loading and receive database, Kafka, Redis, Cloudinary, Brevo, signing, and encryption secrets from the deployment environment or secret manager.
+- Production configuration supports TLS, bounded connection pools, connection/request timeouts, graceful shutdown, health/readiness probes, metrics, and redacted structured logging.
+- Schema auto-creation is disabled. Liquibase owns PostgreSQL schema changes and `migrate-mongo` owns MongoDB schema/index/data migrations. Production migration execution is an explicit deployment step or a deliberately enabled single-runner job, never an uncontrolled race between application replicas.
+- Missing production secrets, insecure provider modes, public access for sensitive Cloudinary assets, or placeholder endpoints fail startup. No production profile falls back to a development credential or localhost.
+- External provider adapters have typed timeouts, bounded retry/circuit-breaker behavior, and sandbox/fake implementations for tests. Paid Cloudinary or Brevo APIs are not required for ordinary CI.
+
 ## Node.js status
 
 No repository-owner preference for a NestJS `.env` library has been selected yet. Do not standardize or add a Node-specific package merely by analogy with Spring. Choose it when the first NestJS module is scaffolded, document the decision, and retain the shared secret/testing rules above.

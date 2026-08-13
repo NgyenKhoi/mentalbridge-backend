@@ -2,11 +2,19 @@
 
 These instructions apply to the entire repository. Before changing application code, database migrations, API contracts, or deployment files, read every document in `docs/agent-guides/` in the order listed by its `README.md`.
 
+## Shared repository skills
+
+- For every task, load and follow `.codex/skills/mentalbridge-repository-workflow/SKILL.md` before analysis, review, editing, or completion reporting.
+- Also load `.codex/skills/mentalbridge-architecture/SKILL.md` for architecture, ownership, integration, safety/privacy, provider, configuration, deployment, or ADR work.
+- Also load `.codex/skills/mentalbridge-data-contracts/SKILL.md` for REST/OpenAPI, Kafka/WebSocket contracts, PostgreSQL, MongoDB, migrations, persistence, or cross-language DTO work.
+- Also load `.codex/skills/mentalbridge-verification-delivery/SKILL.md` before declaring work complete and before every branch, switch, stage, commit, push, issue, pull request, rebase, merge, force-push, or post-push verification action.
+- These skills are mandatory team workflow. A short instruction such as "push" does not bypass preflight, validation, authorization, templates, or remote verification.
+
 ## Non-negotiable decisions
 
 - REST/JSON is the only synchronous protocol for business APIs and service-to-service queries. WebSocket is allowed only between clients and `realtime-service` for chat, presence, delivery state, and live notification delivery. Do not introduce GraphQL, gRPC, or broker-based request/reply without an accepted ADR.
 - Kafka carries asynchronous commands and integration events. It is not used to query current data or as the request path for an immediate REST response.
-- Redis supports ephemeral realtime presence, connection/room routing, short-lived cache, rate limits, and cross-instance WebSocket fan-out. PostgreSQL, MongoDB, and Kafka remain the durable sources; Redis never owns business facts.
+- Redis supports ephemeral realtime presence, connection/room routing, cross-instance WebSocket fan-out, rate limits, short-lived delivery/idempotency state, and expiring hashed OTP challenges. Do not use Redis as a general database-query/result cache or to store durable messages and business facts. PostgreSQL, MongoDB, and Kafka remain the durable sources.
 - Every service owns its data. A service must not query another service's tables, schema, repository, ORM entity, or internal classes.
 - Cross-service REST and message payloads are contract-first and language-neutral. OpenAPI and JSON Schema/AsyncAPI are the sources of truth.
 - Use the transactional outbox for messages caused by a PostgreSQL state change. Consumers must be idempotent.

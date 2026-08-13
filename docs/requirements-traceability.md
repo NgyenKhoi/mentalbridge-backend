@@ -24,7 +24,7 @@ Architecture may add safety, privacy, reliability, and implementation constraint
 | Grafana, Prometheus, Swagger/OpenAPI | Metrics/observability and contract rules are required by engineering guides |
 | Privacy, consent, audit, deletion and retention | Care consent owner, owner-enforced authorization, minimized audit projection, idempotent deletion workflow |
 
-Kafka and Redis are architecture additions supporting the registered Node.js realtime and asynchronous workloads. Kafka is the durable event/task backbone. Redis is an ephemeral presence/cache/WebSocket fan-out dependency and never replaces PostgreSQL, MongoDB, or Kafka.
+Kafka and Redis are architecture additions supporting realtime and asynchronous workloads. Kafka is the durable event/task backbone. Redis is limited to ephemeral presence/routing/fan-out, rate-limit, delivery/idempotency, and expiring hashed OTP state; it is not a database-query cache and never replaces PostgreSQL, MongoDB, or Kafka.
 
 ## WBS ownership map
 

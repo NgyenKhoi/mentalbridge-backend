@@ -1,0 +1,4 @@
+interface:
+  display_name: "MentalBridge Repository Workflow"
+  short_description: "Apply repository requirements to every task"
+  default_prompt: "Use $mentalbridge-repository-workflow to process this MentalBridge backend task."
