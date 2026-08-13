@@ -2,6 +2,14 @@
 
 These instructions apply to the entire repository. Before changing application code, database migrations, API contracts, or deployment files, read every document in `docs/agent-guides/` in the order listed by its `README.md`.
 
+## Shared repository skills
+
+- For every task, load and follow `.codex/skills/mentalbridge-repository-workflow/SKILL.md` before analysis, review, editing, or completion reporting.
+- Also load `.codex/skills/mentalbridge-architecture/SKILL.md` for architecture, ownership, integration, safety/privacy, provider, configuration, deployment, or ADR work.
+- Also load `.codex/skills/mentalbridge-data-contracts/SKILL.md` for REST/OpenAPI, Kafka/WebSocket contracts, PostgreSQL, MongoDB, migrations, persistence, or cross-language DTO work.
+- Also load `.codex/skills/mentalbridge-verification-delivery/SKILL.md` before declaring work complete and before every branch, switch, stage, commit, push, issue, pull request, rebase, merge, force-push, or post-push verification action.
+- These skills are mandatory team workflow. A short instruction such as "push" does not bypass preflight, validation, authorization, templates, or remote verification.
+
 ## Non-negotiable decisions
 
 - REST/JSON is the only synchronous protocol for business APIs and service-to-service queries. WebSocket is allowed only between clients and `realtime-service` for chat, presence, delivery state, and live notification delivery. Do not introduce GraphQL, gRPC, or broker-based request/reply without an accepted ADR.

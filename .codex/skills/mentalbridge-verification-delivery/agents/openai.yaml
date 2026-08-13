@@ -1,0 +1,4 @@
+interface:
+  display_name: "MentalBridge Verification Delivery"
+  short_description: "Enforce testing review and Git delivery"
+  default_prompt: "Use $mentalbridge-verification-delivery to verify and deliver this change."
