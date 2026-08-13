@@ -1,0 +1,10 @@
+spring:
+  application:
+    name: care-service
+  cloud:
+    discovery:
+      enabled: false
+
+eureka:
+  client:
+    enabled: false

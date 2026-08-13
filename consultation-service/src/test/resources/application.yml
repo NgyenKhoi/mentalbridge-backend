@@ -1,0 +1,10 @@
+spring:
+  application:
+    name: consultation-service
+  cloud:
+    discovery:
+      enabled: false
+
+eureka:
+  client:
+    enabled: false
