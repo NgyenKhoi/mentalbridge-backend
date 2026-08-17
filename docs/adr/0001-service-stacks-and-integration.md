@@ -2,6 +2,7 @@
 
 - Status: Accepted
 - Date: 2026-08-11
+- Note: ADR 0003 supersedes the NestJS-specific implementation choice. Service boundaries and transport decisions in this ADR remain accepted.
 
 ## Context
 
@@ -12,7 +13,7 @@ MentalBridge needs transactionally correct identity/care/booking behavior, I/O-h
 Use these deployable business modules:
 
 - Spring Boot: `identity-service`, `care-service`, `consultation-service`;
-- NestJS/TypeScript: `journal-ai-service`, `realtime-service`, `content-notification-service`;
+- Node.js/TypeScript: `journal-ai-service`, `realtime-service`, `content-notification-service`; their library stack is fixed by ADR 0003;
 - Python: `phobert-worker`.
 
 Use these integration boundaries:
@@ -26,7 +27,7 @@ Use these integration boundaries:
 Use these infrastructure and provider adapters:
 
 - Liquibase for append-only, service-owned PostgreSQL migrations in Spring Boot modules;
-- `migrate-mongo` for versioned MongoDB migrations in NestJS modules that own MongoDB collections;
+- `migrate-mongo` for versioned MongoDB migrations in Node.js modules that own MongoDB collections;
 - Cloudinary for file/object storage, using private or authenticated assets and signed, time-limited access for sensitive files;
 - Brevo API for outbound transactional email, including OTP delivery; the provider does not own OTP validity or verification state.
 
@@ -34,7 +35,7 @@ Kafka is not used as synchronous request/reply and Redis is not used as a durabl
 
 ## Rationale
 
-Spring Boot provides a consistent security, transaction, migration, locking, and resilience model for the three rule-heavy relational services. NestJS aligns the three I/O-heavy services around strict TypeScript, MongoDB/provider clients, Kafka consumers, and WebSocket infrastructure. Python remains isolated to the PhoBERT ecosystem.
+Spring Boot provides a consistent security, transaction, migration, locking, and resilience model for the three rule-heavy relational services. Plain Node.js with strict TypeScript and explicit libraries supports the three I/O-heavy services without framework-specific domain coupling. Python remains isolated to the PhoBERT ecosystem.
 
 Kafka is selected because MentalBridge has multiple independent asynchronous consumers, needs durable retention/replay for projections and audit, and benefits from partition ordering by aggregate. The decision is not based on Kafka being the lowest-latency transport. Redis/WebSocket handles ephemeral low-latency client delivery, while Kafka handles durable cross-service facts and tasks.
 

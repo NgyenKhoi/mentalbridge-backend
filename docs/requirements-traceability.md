@@ -15,9 +15,9 @@ Architecture may add safety, privacy, reliability, and implementation constraint
 | --- | --- |
 | Consumer product for Vietnamese users aged 18–30 | User/guest APIs, `vi-VN` locale baseline, mobile-facing REST plus realtime WebSocket |
 | React web admin and end-user mobile application | Edge proxy exposes REST/JSON; only Realtime Service exposes WSS |
-| Spring Boot and Node.js backend | Three Spring Boot and three NestJS services as fixed by ADR 0001 |
+| Spring Boot and Node.js backend | Three Spring Boot and three plain Node.js/TypeScript services as fixed by ADR 0001 and ADR 0003 |
 | PostgreSQL and MongoDB | PostgreSQL owns relational transactions; MongoDB owns journals, analysis documents, conversations/messages |
-| Gemini/OpenAI through prompt engineering | NestJS Journal/AI provider adapters with strict versioned output schemas; no fine-tuning |
+| Gemini/OpenAI through prompt engineering | Node.js Journal/AI provider adapters with strict versioned output schemas; no fine-tuning |
 | PhoBERT inference-only comparison | Isolated Python worker consuming Kafka jobs; no model training/fine-tuning |
 | Microservices and API integration | Owner databases, OpenAPI REST/JSON DTOs, Eureka discovery for Spring services, OpenFeign Java REST clients, Kafka async contracts, no cross-service table access |
 | AWS EC2, Docker, Nginx, Docker Compose, GitHub Actions | Deployment baseline retained; Kafka and Redis included in local/hosted composition |
@@ -34,15 +34,15 @@ Kafka and Redis are architecture additions supporting realtime and asynchronous 
 | 1–5, 7, 111, 113–116 | registration, login/logout, reset, RBAC, admin login and user administration | Identity Service (Spring) | PostgreSQL; REST/JWT; account Kafka events |
 | 6, 20–24 | anonymous/authenticated PHQ-9/GAD-7, results, history and deletion | Care Service (Spring) | PostgreSQL with expiry/retention policy; deterministic scoring |
 | 8–14 | profile, consent, specialist grants and deletion request | Care for profile/consent; Identity coordinates deletion | REST owner checks; Kafka deletion fan-out |
-| 15–19, 25–27 | journal CRUD, LLM analysis/result/re-run | Journal/AI Service (NestJS) | MongoDB plus PostgreSQL job/outbox; current Care consent |
+| 15–19, 25–27 | journal CRUD, LLM analysis/result/re-run | Journal/AI Service (Node.js) | MongoDB plus PostgreSQL job/outbox; current Care consent |
 | 28–29, 150–156 | benchmark execution/results and dataset administration | Journal/AI; PhoBERT Worker for inference only | Private object storage, MongoDB/PostgreSQL metadata, Kafka jobs/results |
 | 30–31, 89–94, 98–101 | risk/intervention, follow-up and personal analytics | Care; Journal/AI supplies approved structured indicators | Local deterministic safety plus bounded projections |
-| 32–35, 95–97, 130–139 | crisis/self-help content, notification history and content administration | Content/Notification Service (NestJS) | PostgreSQL; reviewed content and durable notification state |
+| 32–35, 95–97, 130–139 | crisis/self-help content, notification history and content administration | Content/Notification Service (Node.js) | PostgreSQL; reviewed content and durable notification state |
 | 36–41 | specialist discovery, filtering and matching | Consultation Service (Spring) | PostgreSQL; transparent versioned matching criteria |
 | 42–51 | subscription plans, payment, subscription state and consultation-credit ledger | Unresolved financial owner | Implementation blocked pending ADR; no existing service may invent a balance |
 | 52–61, 117–122 | specialist profile, verification, availability and administration | Consultation Service | PostgreSQL plus private object storage; audited approval |
 | 62–73, 148–149 | booking, transitions, history and admin monitoring | Consultation; authoritative financial owner for credit reservation/settlement | Race-safe booking plus idempotent financial contract; no distributed transaction |
-| 74–82, 145–147 | conversations/chat/receipts/tombstone/report and message moderation | Realtime Service (NestJS) | MongoDB truth; Redis ephemeral fan-out; Kafka facts |
+| 74–82, 145–147 | conversations/chat/receipts/tombstone/report and message moderation | Realtime Service (Node.js) | MongoDB truth; Redis ephemeral fan-out; Kafka facts |
 | 83–88, 140–144 | specialist reviews and moderation | Consultation Service | PostgreSQL; minimized evidence and audit events |
 | 102–107 | specialist dashboard and consented user data | Consultation composes workload; Care and Journal/AI own sensitive data | Current owner authorization; no shared DB |
 | 108–110, 123–129 | specialist earnings/payout views and administration | Unresolved financial owner; Consultation consumes a projection | Implementation blocked pending ADR and settlement/reconciliation policy |

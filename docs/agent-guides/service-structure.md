@@ -26,7 +26,7 @@ src/main/java/com/mentalbridge/<service>/
 - Outbound REST clients live in the consuming feature's infrastructure package behind a narrow application port.
 - `shared` is limited to stable technical primitives such as error envelopes, tracing, clocks, and identifiers. It must not become a shared business model.
 
-## Node.js/NestJS
+## Node.js/TypeScript
 
 ```text
 src/
@@ -41,13 +41,16 @@ src/
 │   ├── domain/
 │   └── infrastructure/
 ├── configuration/
-└── shared/
+├── observability/
+├── shared/
+└── main.ts
 ```
 
-- Nest modules follow business features; do not create global `controllers/`, `services/`, `repositories/`, or `dto/` dumping grounds.
-- Controllers and message handlers delegate to application use cases.
-- Domain code does not import NestJS, ORM documents/entities, HTTP clients, or broker libraries.
-- Provider-specific HTTP, Kafka, Redis, and WebSocket code stays behind application ports in `infrastructure`.
+- Use the ADR 0003 stack and `docs/nodejs-service-stack.md`; do not add NestJS or recreate its module/decorator/DI model internally.
+- Express routers, Kafka handlers, and Socket.IO handlers stay in feature `api` adapters and delegate to application use cases.
+- Domain code does not import Express, database drivers, HTTP clients, Kafka, Redis, Socket.IO, or provider SDKs.
+- Provider-specific HTTP, MongoDB, PostgreSQL, Kafka, Redis, and WebSocket code stays behind application ports in `infrastructure`.
+- `main.ts` is the composition root: load validated configuration, create adapters/use cases, attach routes/handlers, start lifecycle hooks, and shut down gracefully.
 - TypeScript runs in strict mode. Do not use `any` for contracts or persistence boundaries; validate runtime input because compile-time types do not validate JSON.
 
 ## Size and readability controls

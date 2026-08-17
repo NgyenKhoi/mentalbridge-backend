@@ -1,6 +1,6 @@
 # MongoDB Collection Definitions
 
-MongoDB stores variable, write-heavy content where document access follows an aggregate. PostgreSQL remains authoritative for identity, consent, scoring, risk, appointments, job state, and audit. MongoDB-owning NestJS services apply collection validation, indexes, and controlled data changes through append-only `migrate-mongo` migrations; application startup must not mutate schemas implicitly.
+MongoDB stores variable, write-heavy content where document access follows an aggregate. PostgreSQL remains authoritative for identity, consent, scoring, risk, appointments, job state, and audit. MongoDB-owning Node.js services use the official MongoDB driver and apply collection validation, indexes, and controlled data changes through append-only `migrate-mongo` migrations; application startup must not mutate schemas implicitly.
 
 All collections require MongoDB JSON Schema validation in deployment migrations. Examples omit ciphertext details for readability.
 

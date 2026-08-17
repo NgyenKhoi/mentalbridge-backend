@@ -21,9 +21,9 @@ The recommended starting point is a **small microservice landscape**, not one se
 | Identity Service | Spring Boot 4.x | Accounts, roles, sessions, password reset | PostgreSQL |
 | Care Service | Spring Boot 4.x | Profiles, consent grants, assessments, risk, interventions, follow-up | PostgreSQL |
 | Consultation Service | Spring Boot 4.x | Specialists, verification, availability, appointments, reviews | PostgreSQL |
-| Journal & AI Service | NestJS | Journals, LLM orchestration, analysis jobs/results, benchmark coordination | MongoDB + PostgreSQL metadata |
-| Realtime Service | NestJS | REST message APIs, WebSocket chat/notification delivery, presence, receipts | MongoDB + Redis |
-| Content & Notification Service | NestJS | Self-help resources, hotlines, preferences, notification/provider delivery | PostgreSQL |
+| Journal & AI Service | Node.js 24 LTS, TypeScript, Express | Journals, LLM orchestration, analysis jobs/results, benchmark coordination | MongoDB + PostgreSQL metadata |
+| Realtime Service | Node.js 24 LTS, TypeScript, Express, Socket.IO | REST message APIs, WebSocket chat/notification delivery, presence, receipts | MongoDB + Redis |
+| Content & Notification Service | Node.js 24 LTS, TypeScript, Express | Self-help resources, hotlines, preferences, notification/provider delivery | PostgreSQL |
 | PhoBERT Worker | Python | Experimental inference jobs only | No authoritative business store |
 
 The updated project-tracking workbook adds a financial bounded context for premium subscriptions, payments, consultation credits, specialist earnings, and payouts. The seven-deployable baseline does not yet assign that authority; implementation is blocked pending an ADR rather than being placed implicitly in Identity or Consultation.
@@ -52,6 +52,9 @@ Severe-risk handling must be deterministic, immediate, auditable, and usable eve
 - [Requirements traceability to the capstone registration and 162-function WBS](docs/requirements-traceability.md)
 - [Per-module business, use-case, implementation and task specifications](docs/modules/README.md)
 - [Architecture](docs/architecture.md)
+- [Node.js service stack](docs/nodejs-service-stack.md)
+- [Sprint 1 backend backlog guide](docs/sprint-1-backlog-guide.md)
+- [Plain Node.js stack ADR](docs/adr/0003-nodejs-library-stack.md)
 - [Eureka discovery and OpenFeign ADR](docs/adr/0002-eureka-discovery-and-openfeign-clients.md)
 - [Kiến trúc module microservices và ngôn ngữ đã chốt](docs/microservice-module-suggestions.md)
 - [Engineering rules](docs/engineering-rules.md)
@@ -74,7 +77,7 @@ Severe-risk handling must be deterministic, immediate, auditable, and usable eve
 
 - Java 21+, Spring Boot 4.x, Spring Security Resource Server, Spring Data, Liquibase, OpenAPI
 - Eureka for Spring service discovery; OpenFeign plus Resilience4j for Java owner-to-owner REST clients
-- Node.js LTS + NestJS for Journal/AI, Realtime, and Content/Notification services
+- Node.js 24 LTS + strict TypeScript + explicit libraries for Journal/AI, Realtime, and Content/Notification; no NestJS
 - Python for the isolated PhoBERT inference worker
 - PostgreSQL for transactional and relational data
 - MongoDB for journal text, chat messages, and variable AI/evaluation payloads

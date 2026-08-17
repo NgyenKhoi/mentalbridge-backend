@@ -20,7 +20,7 @@
 | Content/Notification | resources, hotlines, notification preferences/delivery | risk decisions |
 | Governance/Reporting | audit events, moderation cases, de-identified projections | transactional sources of truth |
 
-The deployable business services are fixed as Spring Boot `identity-service`, `care-service`, and `consultation-service`; NestJS `journal-ai-service`, `realtime-service`, and `content-notification-service`; and Python `phobert-worker`. Governance/reporting is implemented as bounded admin APIs and Kafka projections inside the relevant owner until a future ADR justifies another deployable. The edge gateway/reverse proxy and Eureka registry are infrastructure and contain no business orchestration.
+The deployable business services are fixed as Spring Boot `identity-service`, `care-service`, and `consultation-service`; plain Node.js/TypeScript `journal-ai-service`, `realtime-service`, and `content-notification-service` using the ADR 0003 library stack; and Python `phobert-worker`. Governance/reporting is implemented as bounded admin APIs and Kafka projections inside the relevant owner until a future ADR justifies another deployable. The edge gateway/reverse proxy and Eureka registry are infrastructure and contain no business orchestration.
 
 The updated project-tracking workbook introduces premium subscriptions, payments, consultation credits, specialist earnings, and payouts. ADR 0001 does not assign these authoritative financial facts to a deployable, and the existing database baseline does not define their ledger. Implementation is blocked until an ADR selects the bounded-context owner, storage, provider/webhook, credit, settlement, reconciliation, security, and retention boundaries. Identity and Consultation must not invent independent balances in the interim.
 
@@ -33,9 +33,9 @@ Mobile App / Admin Web
  Edge reverse proxy
        |
        +--> Identity / Care / Consultation (Spring Boot) --> PostgreSQL
-       +--> Journal-AI (NestJS) --> MongoDB + PostgreSQL job metadata
-       +--> Realtime (NestJS) --> MongoDB + Redis --> WebSocket clients
-       +--> Content-Notification (NestJS) --> PostgreSQL + Brevo/push providers
+       +--> Journal-AI (Node.js) --> MongoDB + PostgreSQL job metadata
+       +--> Realtime (Node.js) --> MongoDB + Redis --> WebSocket clients
+       +--> Content-Notification (Node.js) --> PostgreSQL + Brevo/push providers
                               |
                          Kafka topics
                               |
@@ -93,7 +93,7 @@ Kafka is the durable asynchronous backbone. PostgreSQL producers use a transacti
 ### Journal analysis
 
 1. User saves a journal revision in MongoDB.
-2. NestJS Journal/AI verifies AI-processing consent through Care REST and creates a PostgreSQL job/outbox record.
+2. Node.js Journal/AI verifies AI-processing consent through Care REST and creates a PostgreSQL job/outbox record.
 3. Journal/AI calls configured LLM providers; the Python PhoBERT worker consumes only PhoBERT analysis commands from Kafka. Both use a versioned prompt/model contract and JSON schema.
 4. Worker rejects malformed/unsafe output, records provider metadata/latency, and stores structured result.
 5. Care consumes only approved structured indicators, never free-form model reasoning.

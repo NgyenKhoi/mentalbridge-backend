@@ -7,12 +7,12 @@
 | `identity-service` | Spring Boot | account, credentials, roles, sessions, deletion coordination, minimized audit/security projection | no profile health data | account lifecycle, deletion and safe audit events |
 | `care-service` | Spring Boot | profile, consent, assessment, risk, intervention, follow-up | Identity for exceptional current account facts | assessment, risk, consent and follow-up events |
 | `consultation-service` | Spring Boot | specialist approval/discovery/matching, slots, appointments, reviews | Care authorization/consent checks when current truth is required | appointment, review and moderation events |
-| `journal-ai-service` | NestJS | journal metadata/content access, analysis jobs/results | Care for current AI-processing consent | analysis commands/results |
-| `realtime-service` | NestJS | conversations, messages, WebSocket sessions, presence, receipts | Consultation/Care for current authorization when connecting or sending | chat facts and notification delivery events |
-| `content-notification-service` | NestJS | resources, hotlines, preferences, notification creation/provider delivery | provider APIs only when executing delivery | consumes domain events and emits notification/delivery outcomes |
+| `journal-ai-service` | Node.js/TypeScript | journal metadata/content access, analysis jobs/results | Care for current AI-processing consent | analysis commands/results |
+| `realtime-service` | Node.js/TypeScript | conversations, messages, WebSocket sessions, presence, receipts | Consultation/Care for current authorization when connecting or sending | chat facts and notification delivery events |
+| `content-notification-service` | Node.js/TypeScript | resources, hotlines, preferences, notification creation/provider delivery | provider APIs only when executing delivery | consumes domain events and emits notification/delivery outcomes |
 | `phobert-worker` | Python | inference execution only | no business data query | consumes analysis commands and emits results |
 
-The edge gateway/reverse proxy and Eureka service registry are infrastructure, not business modules, and contain no orchestration or domain logic. Eureka publishes service location metadata only. Language does not change ownership. NestJS and Spring communicate through REST/JSON DTOs and Kafka contracts and never share framework models.
+The edge gateway/reverse proxy and Eureka service registry are infrastructure, not business modules, and contain no orchestration or domain logic. Eureka publishes service location metadata only. Language does not change ownership. Node.js and Spring communicate through REST/JSON DTOs and Kafka contracts and never share framework models.
 
 The workbook now requires subscription/payment, consultation-credit, earning, and payout behavior. No row in this ownership map is authoritative for those financial facts yet. An accepted ADR must add or assign one cohesive financial bounded context before implementation; Consultation may consume credit/settlement decisions but must not own a shadow balance.
 
