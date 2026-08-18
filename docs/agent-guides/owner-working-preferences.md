@@ -39,4 +39,4 @@ Do not preserve the historical mistake as a workaround. Preserve the root-cause 
 
 Add a preference only when the owner states it explicitly or repeats it consistently across tasks. Keep one canonical instruction and link to detailed guides instead of copying the same rule into many files. Temporary task choices and guesses do not become permanent preferences. Product safety, security, source requirements, and accepted ADRs take precedence over convenience preferences.
 
-No Node.js-specific `.env` library preference has been selected yet. Do not add one to this guide until the owner chooses it or a module ADR establishes it.
+The owner selected plain Node.js without NestJS for Journal/AI, Realtime, and Content/Notification. ADR 0003 fixes Express, strict TypeScript, explicit library composition, local-only `dotenv`, and Zod configuration validation.

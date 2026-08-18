@@ -7,7 +7,7 @@ MentalBridge nên bắt đầu với một số ít microservice theo **bounded 
 Ngôn ngữ chính:
 
 - **Java + Spring Boot** cho `identity-service`, `care-service` và `consultation-service`, nơi cần tính nhất quán giao dịch, bảo mật, phân quyền và audit.
-- **TypeScript + NestJS** cho `journal-ai-service`, `realtime-service` và `content-notification-service`, nơi có nhiều I/O, Kafka consumer, provider integration và kết nối WebSocket.
+- **Node.js 24 LTS + TypeScript strict** cho `journal-ai-service`, `realtime-service` và `content-notification-service`; dùng Express và các thư viện tường minh theo ADR 0003, không dùng NestJS.
 - **Python** chỉ cho `phobert-worker`; worker không sở hữu nghiệp vụ hoặc dữ liệu nguồn.
 - **REST + JSON DTO** là giao tiếp đồng bộ giữa các microservice. **Kafka** dùng cho task/event bất đồng bộ. **Redis** chỉ dùng cho trạng thái realtime/caching ngắn hạn và WebSocket fan-out.
 
@@ -18,14 +18,14 @@ Ngôn ngữ chính:
 | `identity-service` | Java, Spring Boot | Đăng ký, đăng nhập, vai trò, xác minh email, reset mật khẩu, refresh token, trạng thái tài khoản, điều phối xóa tài khoản, audit/security projection tối thiểu | PostgreSQL schema `identity` và projection an toàn | REST; Kafka account/deletion/audit events |
 | `care-service` | Java, Spring Boot | Hồ sơ người dùng, consent, PHQ-9/GAD-7, chấm điểm, risk policy, intervention và follow-up | PostgreSQL schema `care` | REST; transactional outbox/events |
 | `consultation-service` | Java, Spring Boot | Hồ sơ/xét duyệt/tìm kiếm/matching chuyên gia, lịch rảnh, cuộc hẹn, quyền truy cập theo consent, đánh giá | PostgreSQL schema `consultation`; Cloudinary private/authenticated cho giấy tờ | REST; Kafka appointment/review/moderation events |
-| `journal-ai-service` | TypeScript, NestJS | CRUD nhật ký, phiên bản nội dung, kiểm tra AI consent, điều phối job và chuẩn hóa kết quả LLM | MongoDB cho nhật ký/kết quả; PostgreSQL schema `ai` cho job/outbox | REST/JSON; Kafka; API nhà cung cấp AI |
-| `realtime-service` | TypeScript, NestJS | REST lịch sử chat, WebSocket authorization/chat/presence/receipt/notification delivery | MongoDB cho chat; Redis cho presence, room và cross-instance fan-out | REST/JSON; WebSocket client; Kafka |
-| `content-notification-service` | TypeScript, NestJS | Nội dung tự hỗ trợ, hotline, template, preference, lưu và điều phối notification | PostgreSQL schema `content` | REST/JSON; Kafka; Brevo API và provider push |
+| `journal-ai-service` | Node.js 24 LTS, TypeScript, Express | CRUD nhật ký, phiên bản nội dung, kiểm tra AI consent, điều phối job và chuẩn hóa kết quả LLM | MongoDB cho nhật ký/kết quả; PostgreSQL schema `ai` cho job/outbox | REST/JSON; Kafka; API nhà cung cấp AI |
+| `realtime-service` | Node.js 24 LTS, TypeScript, Express, Socket.IO | REST lịch sử chat, WebSocket authorization/chat/presence/receipt/notification delivery | MongoDB cho chat; Redis cho presence, room và cross-instance fan-out | REST/JSON; WebSocket client; Kafka |
+| `content-notification-service` | Node.js 24 LTS, TypeScript, Express | Nội dung tự hỗ trợ, hotline, template, preference, lưu và điều phối notification | PostgreSQL schema `content` | REST/JSON; Kafka; Brevo API và provider push |
 | `phobert-worker` | Python | Chạy inference PhoBERT theo job, validate và trả kết quả có cấu trúc | Không sở hữu dữ liệu nguồn | Kafka command/result |
 
 ## 3. Cách nhóm service cho MVP
 
-Kiến trúc chốt sáu business microservice và một worker: ba Spring Boot, ba NestJS, một Python worker như bảng trên. Edge gateway/reverse proxy và Eureka registry là hạ tầng, không phải business service và không chứa orchestration. Các Spring service đăng ký địa chỉ qua Eureka; Java consumer dùng OpenFeign cho REST theo OpenAPI và Resilience4j, không chia sẻ DTO implementation. Governance/reporting ban đầu là admin API và Kafka projection nằm trong owner phù hợp; chỉ tách thêm deployable bằng ADR khi có lý do scale, release, data ownership hoặc security đo được.
+Kiến trúc chốt sáu business microservice và một worker: ba Spring Boot, ba Node.js/TypeScript, một Python worker như bảng trên. Edge gateway/reverse proxy và Eureka registry là hạ tầng, không phải business service và không chứa orchestration. Các Spring service đăng ký địa chỉ qua Eureka; Java consumer dùng OpenFeign cho REST theo OpenAPI và Resilience4j, không chia sẻ DTO implementation. Governance/reporting ban đầu là admin API và Kafka projection nằm trong owner phù hợp; chỉ tách thêm deployable bằng ADR khi có lý do scale, release, data ownership hoặc security đo được.
 
 ## 4. Cấu trúc source code gợi ý
 
@@ -35,9 +35,9 @@ mentalbridge-backend/
 │   ├── identity-service/            # Spring Boot
 │   ├── care-service/                # Spring Boot
 │   ├── consultation-service/        # Spring Boot
-│   ├── journal-ai-service/          # NestJS + TypeScript
-│   ├── realtime-service/            # NestJS + TypeScript
-│   └── content-notification-service/# NestJS + TypeScript
+│   ├── journal-ai-service/          # Node.js + TypeScript
+│   ├── realtime-service/            # Node.js + TypeScript
+│   └── content-notification-service/# Node.js + TypeScript
 ├── workers/
 │   └── phobert-worker/              # Python
 ├── contracts/
@@ -93,7 +93,7 @@ Phù hợp với Identity, Care và Consultation vì các module này có nhiề
 
 ### Node.js + TypeScript
 
-NestJS được chốt cho Journal/AI, Realtime và Content/Notification. Các module này chủ yếu điều phối I/O: MongoDB, Kafka, Redis, WebSocket, LLM, email và push provider. TypeScript strict và runtime validation giữ DTO/event contract nhất quán. NestJS không tự quyết định consent, risk hoặc trạng thái appointment; nó gọi REST tới owner khi cần dữ liệu hiện thời hoặc dùng projection chỉ khi nghiệp vụ chấp nhận eventual consistency.
+ADR 0003 chốt Node.js thuần với TypeScript strict, Express và các thư viện chuyên biệt cho Journal/AI, Realtime và Content/Notification. Các module này chủ yếu điều phối I/O: MongoDB, PostgreSQL, Kafka, Redis, WebSocket, LLM, email và push provider. Runtime validation giữ DTO/event contract nhất quán. Node service không tự quyết định consent, risk hoặc trạng thái appointment; nó gọi REST tới owner khi cần dữ liệu hiện thời hoặc dùng projection chỉ khi nghiệp vụ chấp nhận eventual consistency. Chi tiết thư viện và cấu trúc source nằm trong `docs/nodejs-service-stack.md`.
 
 ## 7. Thứ tự triển khai
 

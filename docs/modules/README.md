@@ -17,9 +17,9 @@ This directory turns the seven-UC product catalogue and 162-function WBS into wo
 | Identity Service | Spring Boot | [identity-service](identity-service.md) | initialized |
 | Care Service | Spring Boot | [care-service](care-service.md) | initialized |
 | Consultation Service | Spring Boot | [consultation-service](consultation-service.md) | initialized |
-| Journal/AI Service | NestJS | [journal-ai-service](journal-ai-service.md) | not initialized |
-| Realtime Service | NestJS | [realtime-service](realtime-service.md) | not initialized |
-| Content/Notification Service | NestJS | [content-notification-service](content-notification-service.md) | not initialized |
+| Journal/AI Service | Node.js/TypeScript | [journal-ai-service](journal-ai-service.md) | not initialized |
+| Realtime Service | Node.js/TypeScript | [realtime-service](realtime-service.md) | not initialized |
+| Content/Notification Service | Node.js/TypeScript | [content-notification-service](content-notification-service.md) | not initialized |
 | PhoBERT Worker | Python | [phobert-worker](phobert-worker.md) | not initialized |
 
 The updated workbook also introduces a financial bounded context that has no accepted owner in ADR 0001. Track it in [subscription and payment architecture gap](subscription-payment-gap.md); it is not an eighth deployable until an ADR is accepted.

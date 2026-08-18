@@ -18,13 +18,14 @@ Realtime owns conversations, encrypted messages, attachments metadata, tombstone
 ## Implementation design
 
 - Feature slices: `conversations`, `messages`, `history`, `receipts`, `presence`, `websocket`, `notification-delivery`, `message-moderation`.
+- Runtime: Node.js 24 LTS, strict TypeScript, Express 5, Socket.IO 4, official MongoDB and Redis clients, `migrate-mongo`, KafkaJS, Pino, OpenTelemetry, Vitest, and Testcontainers as defined in `docs/nodejs-service-stack.md`.
 - OpenAPI owns history/recovery; versioned WebSocket schemas own commands/acks/errors; Kafka schemas own minimized integration facts.
 - Mongo migrations enforce validators/indexes. Persist before ack, then Redis fan-out and recoverable Kafka publication. Attachments use private object storage, not Mongo blobs.
 - Define heartbeat, reconnect, ordering, payload/back-pressure/rate limits and cross-instance failure semantics before gateway implementation.
 
 ## Ordered tasks
 
-- [ ] RT-01 Scaffold strict NestJS and document configuration/library decisions.
+- [ ] RT-01 Scaffold the plain Node.js/TypeScript service with Express, Socket.IO, explicit composition, typed configuration, health/readiness, lint, test, and build commands.
 - [ ] RT-02 Resolve chat eligibility duration, attachment, tombstone/retention and moderation policies.
 - [ ] RT-03 Define conversation/history OpenAPI, WebSocket schemas and Kafka event contracts.
 - [ ] RT-04 Add migrate-mongo validators/indexes and encrypted-content/data documentation.
@@ -34,3 +35,7 @@ Realtime owns conversations, encrypted messages, attachments metadata, tombstone
 - [ ] RT-08 Implement tombstone, scoped reporting and message moderation.
 - [ ] RT-09 Verify unauthorized subscription, duplicate send, ordering, reconnect, Redis loss, Kafka retry, dependency timeout and rate/back-pressure limits.
 - [ ] RT-10 Add observability/configuration, README, and pass Node/contract/Mongo/Redis/Kafka gates.
+
+## Sprint 1 boundary
+
+Sprint 1 covers RT-01, the foundational contract and migration parts of RT-03/RT-04, authenticated socket connection, TTL presence, and durable MongoDB message/history primitives. Appointment eligibility integration, user-visible production chat, Redis cross-instance fan-out, Kafka publication, receipts, moderation, and live notification delivery remain deferred until their owner contracts exist.

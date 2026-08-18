@@ -22,7 +22,7 @@ These rules apply to all backend services unless an accepted ADR documents an ex
 
 ## 3. Data rules
 
-- PostgreSQL migrations are append-only after merge and owned per service through Liquibase changelogs. MongoDB-owning NestJS services use versioned `migrate-mongo` migrations for collection validation, indexes, and controlled data changes.
+- PostgreSQL migrations are append-only after merge and owned per service through Liquibase changelogs. MongoDB-owning Node.js services use the official driver plus versioned `migrate-mongo` migrations for collection validation, indexes, and controlled data changes.
 - Every mutable relational record has `created_at`, `updated_at`, and optimistic `version` where concurrent edits matter.
 - Money is not in current scope; if introduced, use integer minor units plus ISO currency, never floating point.
 - Store instants as `timestamptz` UTC. Store the originating IANA timezone separately where scheduling requires it.
@@ -72,7 +72,7 @@ These rules apply to all backend services unless an accepted ADR documents an ex
 - Integration tests use real PostgreSQL/MongoDB containers for repositories, migrations, uniqueness, and booking races.
 - Contract tests cover gateway/service and event schemas.
 - Security tests cover role matrix, ownership, consent revocation, Realtime Service WebSocket subscriptions, and admin field filtering.
-- Cross-language contract tests verify Spring-to-NestJS and NestJS-to-Spring REST/JSON DTO compatibility.
+- Cross-language contract tests verify Spring-to-Node.js and Node.js-to-Spring REST/JSON DTO compatibility.
 - Kafka integration tests cover outbox publication, keys/partitions, duplicate consumption, offset commit, retry topics, and dead-letter handling.
 - Redis/realtime tests cover TTL presence, reconnect/idempotency, cross-instance fan-out, and recovery after Redis loss.
 - AI adapters use recorded synthetic fixtures; CI must not call paid external APIs.

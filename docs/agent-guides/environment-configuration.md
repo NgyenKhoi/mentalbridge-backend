@@ -74,9 +74,11 @@ The current infrastructure phase may run databases and supporting dependencies l
 - Missing production secrets, insecure provider modes, public access for sensitive Cloudinary assets, or placeholder endpoints fail startup. No production profile falls back to a development credential or localhost.
 - External provider adapters have typed timeouts, bounded retry/circuit-breaker behavior, and sandbox/fake implementations for tests. Paid Cloudinary or Brevo APIs are not required for ordinary CI.
 
-## Node.js status
+## Node.js baseline
 
-No repository-owner preference for a NestJS `.env` library has been selected yet. Do not standardize or add a Node-specific package merely by analogy with Spring. Choose it when the first NestJS module is scaffolded, document the decision, and retain the shared secret/testing rules above.
+ADR 0003 fixes the Node.js configuration choice. Each Node.js service uses `dotenv` only for local-development file loading and Zod to validate a service-owned configuration object once during startup. Application code receives typed configuration through explicit constructor parameters and does not call `process.env` outside the configuration package.
+
+Real process environment variables take precedence. CI and production do not load repository `.env` files. Tests inject explicit configuration and disposable Testcontainers endpoints, so they cannot silently target a developer database. Every new key updates `.env.example` and the owning service README in the same change.
 
 ## Dependency references
 
