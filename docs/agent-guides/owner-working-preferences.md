@@ -6,13 +6,14 @@ This file records durable preferences explicitly confirmed by the repository own
 
 1. **Tests are mandatory.** This is a capstone project, so every behavioral change includes proportionate unit, integration, contract, consistency/concurrency, and failure-path tests. Lack of existing tests is a reason to add them, not to skip them.
 2. **Do not add explanatory production-code comments.** Follow the naming, structure, and documentation rules in `AGENTS.md` and `service-structure.md`. Capture business rationale in tests, Markdown, contracts, ADRs, and the data dictionary.
-3. **Follow the established pattern before creating a new one.** Inspect neighboring features, module README, error/DTO conventions, tests, migration style, and `.github` templates first. A new abstraction or pattern needs a concrete gap and consistent application.
-4. **Keep source trees feature-oriented and bounded.** Do not allow controllers, services, repositories, DTOs, or shared utilities to become dumping grounds. Split by domain feature and keep framework adapters outside domain logic.
+3. **Follow the established pattern before creating a new one.** Inspect neighboring features, module README, error/DTO conventions, tests, migration style, and `.github` templates first. A new abstraction or pattern needs a concrete gap and consistent application; do not create one-to-one interfaces and adapters that only forward framework calls.
+4. **Keep source trees feature-oriented, shallow, and bounded.** Start a straightforward feature with controller, focused service/use-case, repository, entity, and DTO types in one feature package. Add `api`, `application`, `domain`, or `infrastructure` subpackages only when their boundary carries real complexity. Do not allow any layer or `shared` package to become a dumping ground.
 5. **Make architecture decisions explicit.** Use the fixed service stack and transport responsibilities in ADR 0001. Do not silently substitute another broker, protocol, framework, module owner, or data store because it is familiar to the agent.
 6. **Explain data for people, not through SQL comments.** Every PostgreSQL field is described in the Markdown data dictionary with what it stores, why it exists, and its consistency/security role.
 7. **Respect project sources and team workflow.** Trace behavior to the capstone registration/WBS and follow `.github` issue/PR templates plus the Git collaboration guide.
 8. **Prefer evidence over repeated trial and error.** After a failure, inspect the exact error and state, form a falsifiable hypothesis, and change one relevant variable. Re-running the same failing action without new evidence is not progress.
 9. **Finish the whole affected workflow.** Code, DTO/event contract, migrations/data dictionary, configuration examples, tests, documentation, and review must agree before reporting completion.
+10. **Use Hibernate and Spring Data JPA in Spring Boot business modules.** Keep JPA entities and repositories inside the owning feature, never expose them as REST/event DTOs, and retain Liquibase as the only schema-change authority. A separate persistence adapter is warranted only for a meaningful mapping, locking, multi-repository operation, or replaceable boundary.
 
 ## Collaboration behavior
 

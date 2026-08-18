@@ -61,7 +61,7 @@ Severe-risk handling must be deterministic, immediate, auditable, and usable eve
 - [Mandatory agent workflow and review guide](docs/agent-guides/README.md)
 - [PostgreSQL data model](docs/database/postgresql.md)
 - [MongoDB collections](docs/database/mongodb.md)
-- [Initial PostgreSQL schema](database/postgresql/001_initial_schema.sql)
+- [Original logical PostgreSQL schema reference](database/postgresql/001_initial_schema.sql)
 - [PostgreSQL field data dictionary](docs/database/postgresql-field-data-dictionary.md)
 
 ## Delivery roadmap

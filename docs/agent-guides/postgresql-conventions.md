@@ -2,7 +2,7 @@
 
 ## Ownership and consistency
 
-Each service owns a schema/database user locally and should be deployable against its own database. Cross-schema foreign keys in the current baseline document relationships only; service migrations must replace them with external UUIDs when databases are separated. No runtime cross-schema query or ORM relationship may cross a service boundary.
+Each service owns a separate database and database user, even when services share one PostgreSQL server locally. Service tables use the owned database's default `public` schema. Cross-schema foreign keys in the original logical baseline document relationships only; service migrations replace them with external UUIDs. No runtime query or ORM relationship may cross a service boundary.
 
 Use database constraints as the final guard for local invariants: `NOT NULL`, `CHECK`, `UNIQUE`, foreign keys within one owner, exclusion constraints, and appropriate locking. Application validation improves errors but does not replace integrity constraints.
 

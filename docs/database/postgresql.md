@@ -1,21 +1,21 @@
 # PostgreSQL Data Model
 
-The executable baseline is [database/postgresql/001_initial_schema.sql](../../database/postgresql/001_initial_schema.sql). The purpose of every current table and field is explained in the human-readable [PostgreSQL field data dictionary](postgresql-field-data-dictionary.md). When services are scaffolded, split the DDL into service-owned Liquibase changelogs and database users, and keep the data dictionary synchronized.
+The original cross-schema [database/postgresql/001_initial_schema.sql](../../database/postgresql/001_initial_schema.sql) is a logical design reference and must not be used to provision a service after its owner Liquibase history exists. Each implemented service's Liquibase changelogs are the executable sources of truth inside its pre-provisioned database. The purpose of every current table and field is explained in the human-readable [PostgreSQL field data dictionary](postgresql-field-data-dictionary.md).
 
 ## Ownership
 
-| Schema | Owner | Main aggregates |
+| Service database | Owner | Main aggregates |
 | --- | --- | --- |
-| `identity` | Identity Service | account, role, refresh session, verification/reset token |
-| `care` | Care Service | user profile, consent, assessment, risk, intervention, follow-up |
-| `consultation` | Consultation Service | specialist, verification, availability, appointment, review |
-| `content` | Content Service | resource, hotline, notification preference/delivery |
-| `platform` | each producer; Governance reads | outbox, audit, deletion workflow, retention policy |
-| `ai` | Journal/AI Service | analysis job metadata, dataset/benchmark metadata |
+| `mentalbridge_identity` | Identity Service | account, role, refresh session, verification/reset token |
+| `mentalbridge_care` | Care Service | user profile, consent, assessment, risk, intervention, follow-up |
+| `mentalbridge_consultation` | Consultation Service | specialist, verification, availability, appointment, review |
+| `mentalbridge_content_notification` | Content/Notification Service | resource, hotline, notification preference/delivery |
+| owner-local tables | each producer; Governance reads safe events | outbox, audit, deletion workflow, retention policy |
+| `mentalbridge_journal_ai` | Journal/AI Service | analysis job metadata, dataset/benchmark metadata |
 
-The updated project-tracking workbook requires subscriptions, payments, consultation credits, specialist earnings, and payouts, but the executable baseline contains no authoritative financial schema. Do not add these facts to an existing schema until an ADR establishes their bounded-context owner, immutable ledger, provider/webhook, booking compensation, settlement, reconciliation, and retention rules.
+The updated project-tracking workbook requires subscriptions, payments, consultation credits, specialist earnings, and payouts, but the logical baseline contains no authoritative financial owner. Do not add these facts to an existing service database until an ADR establishes their bounded-context owner, immutable ledger, provider/webhook, booking compensation, settlement, reconciliation, and retention rules.
 
-Cross-schema foreign keys in the baseline make invariants visible. In independently deployed databases, replace them with immutable external UUIDs and validate through APIs/events. Do not emulate distributed joins on request paths.
+Cross-schema foreign keys in the logical baseline only make relationships visible. Executable service migrations replace them with immutable external UUIDs and validate through APIs/events. Do not emulate distributed joins on request paths.
 
 ## Shared column policy
 
@@ -58,7 +58,7 @@ Cross-schema foreign keys in the baseline make invariants visible. In independen
 
 ### Operations
 
-- Each service writes its own `platform.outbox_event` row in the same transaction as its aggregate change. In a separated deployment, each database owns an equivalent outbox table.
+- Each service writes its own local `outbox_event` row in the same transaction as its aggregate change.
 - `audit_event` is append-only to application roles and must not store journal/chat bodies.
 - Deletion tasks track completion per data owner and make retries idempotent.
 
@@ -78,7 +78,7 @@ At capstone scale, do not partition by default. Consider monthly range partition
 
 ## Migration rules
 
-1. Split this baseline into one Liquibase changelog history per service before implementation.
+1. Provision the owner database, then implement each logical baseline area as one owner-specific Liquibase changelog history before application implementation.
 2. Apply expand/migrate/contract for changes used by multiple deployed versions.
 3. Never edit an applied migration; add a new migration.
 4. Seed questionnaire definitions, intervention templates, and resources through versioned reference-data migrations using reviewed content.

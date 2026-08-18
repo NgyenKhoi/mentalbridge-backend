@@ -1,29 +1,32 @@
 # Service Code Structure
 
-Use package-by-feature. Layers exist inside a feature, not as repository-wide buckets containing hundreds of unrelated classes.
+Use package-by-feature. Keep a feature shallow until additional internal boundaries make it easier to understand.
 
 ## Spring Boot
 
 ```text
 src/main/java/com/mentalbridge/<service>/
+├── profile/
+│   ├── ProfileController.java
+│   ├── ProfileService.java
+│   ├── ProfileEntity.java
+│   ├── ProfileRepository.java
+│   └── ProfileResponse.java
 ├── assessment/
-│   ├── api/
-│   ├── application/
-│   ├── domain/
-│   └── infrastructure/
-├── consent/
-│   ├── api/
-│   ├── application/
-│   ├── domain/
-│   └── infrastructure/
+│   ├── api/                 # only when the transport boundary has several types
+│   ├── application/         # focused use cases and transaction orchestration
+│   ├── domain/              # aggregates, values, and policies independent of JPA
+│   └── infrastructure/      # provider or persistence adapters with real boundary logic
 ├── configuration/
 └── shared/
 ```
 
-- Controllers validate transport shape and invoke one application use case; they do not contain business rules or persistence queries.
-- Domain types do not import Spring, JPA entities, controllers, generated API DTOs, or provider SDKs.
-- Persistence entities and repository adapters remain in `infrastructure` and are mapped explicitly to domain types.
-- Outbound REST clients live in the consuming feature's infrastructure package behind a narrow application port.
+- Controllers validate transport shape and invoke one focused service or use case; they do not contain business rules or persistence queries.
+- A straightforward feature may use Controller → Service → Spring Data Repository directly. Do not add a one-to-one port and adapter around a repository, encoder, mapper, or framework interface without a concrete second implementation or meaningful boundary behavior.
+- Split services by use case when they coordinate unrelated transactions, authorization, mapping, providers, and events; do not replace clear small services with a feature-wide god service.
+- Create a separate domain model only when aggregates, values, or policies benefit from persistence independence. A JPA entity may hold cohesive local behavior for a simple aggregate, but it never becomes a REST/event DTO.
+- Spring Boot business modules use Hibernate and Spring Data JPA for PostgreSQL persistence. `ddl-auto` validates rather than creates or updates schemas because Liquibase remains authoritative.
+- Keep external REST/provider clients behind a narrow application port. A concrete persistence coordinator is acceptable when it centralizes deliberate locking, non-trivial mapping, or a multi-repository operation; it does not require a matching interface by default.
 - `shared` is limited to stable technical primitives such as error envelopes, tracing, clocks, and identifiers. It must not become a shared business model.
 
 ## Node.js/TypeScript

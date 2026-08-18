@@ -1,0 +1,27 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://mentalbridge.local/contracts/events/identity/account-email-verified-v1.schema.json",
+  "title": "Identity account email verified",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["messageId", "messageType", "occurredAt", "producer", "schemaVersion", "correlationId", "aggregateId", "aggregateVersion", "payload"],
+  "properties": {
+    "messageId": { "type": "string", "format": "uuid" },
+    "messageType": { "const": "identity.account.email-verified" },
+    "occurredAt": { "type": "string", "format": "date-time" },
+    "producer": { "const": "identity-service" },
+    "schemaVersion": { "const": "1.0" },
+    "correlationId": { "type": "string", "format": "uuid" },
+    "aggregateId": { "type": "string", "format": "uuid" },
+    "aggregateVersion": { "type": "integer", "minimum": 1 },
+    "payload": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["accountId", "status"],
+      "properties": {
+        "accountId": { "type": "string", "format": "uuid" },
+        "status": { "const": "ACTIVE" }
+      }
+    }
+  }
+}
