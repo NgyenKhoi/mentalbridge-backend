@@ -76,7 +76,7 @@ src/
 
 ## 5. Quy tắc ranh giới module
 
-- Mỗi service có database schema/database user riêng; không dùng chung JPA entity, repository hoặc truy vấn chéo schema.
+- Mỗi service có PostgreSQL database/database user riêng; không dùng chung JPA entity, repository hoặc truy vấn chéo database.
 - Không tạo một thư viện `common-domain` chứa model nghiệp vụ dùng chung. Chỉ chia sẻ các thành phần kỹ thuật ổn định như correlation ID, observability và event envelope.
 - REST/JSON DTO dùng cho yêu cầu cần phản hồi ngay và mọi query giữa service: đăng nhập, chấm điểm assessment, xem consent hiện tại và đặt lịch. Eureka chỉ resolve địa chỉ Spring service; OpenFeign chỉ là Java REST client adapter và không thay đổi contract hay authorization của owner.
 - WebSocket chỉ nối client với `realtime-service`. Các service khác không query hoặc gọi nhau qua WebSocket.
