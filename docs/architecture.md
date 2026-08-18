@@ -44,7 +44,7 @@ Mobile App / Admin Web
  Spring services <---- registration and lookup only ----> Eureka registry
 ```
 
-Do not share ORM entities, repositories, or direct cross-service table access. A single PostgreSQL cluster is acceptable locally and for the first deployment, but each service owns a schema and database user. DTOs are JSON contracts defined through OpenAPI rather than shared Java/TypeScript implementation classes.
+Do not share ORM entities, repositories, or direct cross-service table access. A single PostgreSQL server is acceptable locally and for the first deployment, but each service owns a separate database and database user as defined by ADR 0004. DTOs are JSON contracts defined through OpenAPI rather than shared Java/TypeScript implementation classes.
 
 ## 4. Communication patterns
 
@@ -109,7 +109,7 @@ Kafka is the durable asynchronous backbone. PostgreSQL producers use a transacti
 ## 6. Security and privacy
 
 - OAuth-style access tokens are short-lived; refresh tokens are hashed, rotated, and revocable.
-- Passwords use Argon2id or BCrypt with reviewed parameters. Never encrypt passwords.
+- Passwords use BCrypt with a reviewed cost factor. Never encrypt passwords.
 - TLS is required externally and between production components where the network is not trusted.
 - Encrypt sensitive data at rest using managed storage keys; field-level envelope encryption is recommended for raw journals and verification documents.
 - Secrets come from environment/secret storage, never source control or images.

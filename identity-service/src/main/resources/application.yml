@@ -1,8 +1,54 @@
 spring:
   application:
     name: identity-service
+  datasource:
+    url: ${IDENTITY_DB_URL}
+    username: ${IDENTITY_DB_USERNAME}
+    password: ${IDENTITY_DB_PASSWORD}
+  jpa:
+    hibernate:
+      ddl-auto: validate
+    open-in-view: false
+    properties:
+      hibernate:
+        default_schema: public
+        jdbc:
+          time_zone: UTC
+  liquibase:
+    enabled: false
+    change-log: classpath:db/changelog/db.changelog-master.yaml
+    default-schema: public
+
+mentalbridge:
+  identity:
+    jwt:
+      issuer: ${IDENTITY_JWT_ISSUER}
+      audience: ${IDENTITY_JWT_AUDIENCE}
+      key-id: ${IDENTITY_JWT_KEY_ID}
+      private-key: ${IDENTITY_JWT_PRIVATE_KEY}
+      public-key: ${IDENTITY_JWT_PUBLIC_KEY}
+    encryption:
+      key-version: ${IDENTITY_ENCRYPTION_KEY_VERSION}
+      key: ${IDENTITY_ENCRYPTION_KEY}
+    verification-delivery:
+      enabled: ${IDENTITY_VERIFICATION_DELIVERY_ENABLED:false}
+      base-url: ${IDENTITY_BREVO_BASE_URL:https://api.brevo.com}
+      api-key: ${IDENTITY_BREVO_API_KEY:}
+      sender-email: ${IDENTITY_BREVO_SENDER_EMAIL:}
+      sender-name: ${IDENTITY_BREVO_SENDER_NAME:MentalBridge}
+      verification-url: ${IDENTITY_VERIFICATION_URL:http://localhost:3000/verify-email}
 
 eureka:
   client:
     service-url:
       defaultZone: ${EUREKA_DEFAULT_ZONE:http://localhost:8761/eureka/}
+
+springdotenv:
+  ignoreIfMissing: true
+  exportToSystemProperties: false
+
+logging:
+  level:
+    org.springframework.web: INFO
+    org.springframework.jdbc.core: INFO
+    org.hibernate.SQL: INFO

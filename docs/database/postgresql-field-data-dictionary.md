@@ -1,12 +1,12 @@
 # PostgreSQL Field Data Dictionary
 
-This document explains the business purpose of every table and field in the logical baseline [`001_initial_schema.sql`](../../database/postgresql/001_initial_schema.sql). It is written for developers and reviewers; descriptions are intentionally kept out of executable migrations.
+This document explains the business purpose of persisted PostgreSQL fields. The original logical baseline is [`001_initial_schema.sql`](../../database/postgresql/001_initial_schema.sql); service-owned Liquibase changelogs become executable sources of truth as modules are implemented. It is written for developers and reviewers; descriptions are intentionally kept out of executable migrations.
 
 When service-owned Liquibase migrations are introduced, update this dictionary in the same change. A field description must explain why the value is persisted, whether it is authoritative, derived, external, or sensitive, and how nullability, time, versioning, or idempotency affects behavior.
 
-## Schema `identity`
+## Database `mentalbridge_identity` (schema `public`)
 
-### `identity.account`
+### `public.account`
 
 Authoritative login account and lifecycle state owned by Identity Service.
 
@@ -15,7 +15,7 @@ Authoritative login account and lifecycle state owned by Identity Service.
 | `id` | Immutable UUID exposed as the opaque account identifier in REST and Kafka contracts. |
 | `email` | Case-insensitive normalized login and recovery address; unique because one address identifies one account. |
 | `password_hash` | One-way password hash used for local authentication; plaintext is never persisted. |
-| `status` | Authoritative account access state controlling whether authentication and protected actions are allowed. |
+| `status` | Authoritative lifecycle state: `PENDING_EMAIL_VERIFICATION`, `ACTIVE`, `DISABLED`, `DELETION_PENDING`, or terminal `DELETED`; temporary credential locking is deliberately separate. |
 | `email_verified_at` | UTC instant at which email ownership was verified; null until verification succeeds. |
 | `failed_login_count` | Consecutive failed-login counter used by the lockout policy and reset after successful authentication. |
 | `locked_until` | UTC end of a temporary authentication lock; null when no timed lock applies. |
@@ -25,7 +25,7 @@ Authoritative login account and lifecycle state owned by Identity Service.
 | `deleted_at` | UTC soft-deletion/tombstone instant retained to coordinate controlled deletion; null for a live account. |
 | `version` | Optimistic-lock counter incremented on account mutations to reject lost updates. |
 
-### `identity.role`
+### `public.role`
 
 Reference catalogue of authorization roles assignable to accounts.
 
@@ -34,7 +34,7 @@ Reference catalogue of authorization roles assignable to accounts.
 | `code` | Stable machine-readable role identifier used in tokens and authorization policies. |
 | `description` | Human-readable explanation of the permissions and actor represented by the role. |
 
-### `identity.account_role`
+### `public.account_role`
 
 Auditable many-to-many assignment of roles to accounts.
 
@@ -45,25 +45,26 @@ Auditable many-to-many assignment of roles to accounts.
 | `granted_by` | Administrator account that granted the role; null only for approved automated/bootstrap assignment. |
 | `granted_at` | UTC instant at which the role became effective. |
 
-### `identity.refresh_session`
+### `public.refresh_session`
 
 Revocable refresh-token session for one account and client device.
 
 | Field | Purpose |
 | --- | --- |
 | `id` | Immutable UUID identifying the refresh session and token-rotation chain. |
+| `family_id` | Stable UUID grouping every credential produced by one login rotation chain so replay, logout, and compromise handling can revoke the complete family. |
 | `account_id` | Account authorized to refresh access tokens through this session. |
-| `token_hash` | One-way hash of the current refresh token so a database leak cannot replay plaintext credentials. |
+| `token_hash` | Unique lowercase SHA-256 hash of the high-entropy refresh credential; plaintext is returned once and never persisted. |
 | `device_label` | Optional user-facing label that helps identify and revoke a device session. |
 | `ip_hash` | Privacy-minimized hash of the originating IP used for anomaly and audit correlation. |
 | `user_agent_hash` | Privacy-minimized client fingerprint used to detect unexpected session reuse. |
 | `expires_at` | UTC instant after which refresh is rejected regardless of revocation state. |
-| `rotated_from_id` | Previous refresh session in the rotation chain, used to detect reuse and audit token replacement. |
+| `rotated_from_id` | Unique predecessor session in the rotation chain; uniqueness makes concurrent rotation produce exactly one successor. |
 | `revoked_at` | UTC instant at which the session was invalidated; null while active. |
 | `revoke_reason` | Stable reason explaining manual, automatic, rotation, or security revocation. |
 | `created_at` | Immutable UTC instant at which the refresh session was issued. |
 
-### `identity.one_time_token`
+### `public.one_time_token`
 
 Hashed, expiring token for one approved account recovery or verification purpose.
 
@@ -75,7 +76,63 @@ Hashed, expiring token for one approved account recovery or verification purpose
 | `token_hash` | One-way token hash; only the caller holds the plaintext token. |
 | `expires_at` | UTC deadline after which the token must be rejected. |
 | `consumed_at` | UTC instant of successful one-time use; null until consumed. |
+| `invalidated_at` | UTC instant at which replacement or policy invalidated an unused challenge; null while it remains eligible. |
 | `created_at` | Immutable UTC issuance instant used for audit and cleanup. |
+
+### `public.idempotency_record`
+
+Bounded replay record owned by Identity for registration and refresh commands. It prevents duplicate state and lets the same logical retry receive the original completed result without persisting token plaintext.
+
+| Field | Purpose |
+| --- | --- |
+| `id` | Immutable internal UUID identifying the replay record. |
+| `operation` | Stable Identity operation scope; the same client key may be used independently for a different operation. |
+| `idempotency_key` | Caller-generated retry key unique with `operation`. |
+| `request_hash` | Lowercase SHA-256 digest of the canonical request, used to reject reuse of a key with different input. |
+| `account_id` | Account affected by the completed command; nullable while registration has not committed and deleted with the account's replay records. |
+| `response_status` | Original HTTP status returned on completion; null while the command is in progress. |
+| `response_ciphertext` | Encrypted original response needed for exact replay; never plaintext and null while incomplete. |
+| `encryption_key_version` | Non-secret key identifier required to decrypt the response during its bounded retention; null while incomplete. |
+| `completed_at` | UTC instant when the authoritative outcome was stored; null while the command is in progress. |
+| `expires_at` | UTC retention deadline after which the record and encrypted response can be deleted. |
+| `created_at` | Immutable UTC instant when Identity first accepted the idempotency key. |
+
+### `public.outbox_event`
+
+Identity-owned transactional outbox. An account/session mutation and its integration fact commit together; a relay publishes only after commit.
+
+| Field | Purpose |
+| --- | --- |
+| `id` | Immutable message UUID used for Kafka deduplication. |
+| `message_type` | Stable language-neutral event name. |
+| `schema_version` | Contract version consumers use to validate compatibility. |
+| `aggregate_type` | Identity aggregate category used for routing and uniqueness. |
+| `aggregate_id` | UUID of the Identity aggregate whose committed change caused the event. |
+| `aggregate_version` | Authoritative nonnegative aggregate version used for ordering and stale-event rejection. |
+| `correlation_id` | Request/workflow UUID propagated for tracing; it is not a business key. |
+| `payload` | Minimal JSON object conforming to the published event schema; it excludes tokens, passwords, and email content. |
+| `occurred_at` | UTC instant the business fact occurred. |
+| `published_at` | UTC instant Kafka acknowledged publication; null while pending. |
+| `attempt_count` | Nonnegative count of bounded relay attempts. |
+| `next_attempt_at` | UTC instant after which a failed relay may retry; null when no delay is scheduled. |
+| `created_at` | Immutable UTC insertion instant committed with the aggregate change. |
+
+### `public.security_audit_event`
+
+Privacy-minimized local security record for authentication, recovery, replay, and account-administration decisions. It contains stable facts, never credentials, provider payloads, or free text.
+
+| Field | Purpose |
+| --- | --- |
+| `id` | Immutable UUID identifying the audit fact. |
+| `account_id` | Affected account when known; nullable for enumeration-safe failures and retained as null after account deletion. |
+| `actor_id` | Authenticated actor responsible for an administrative action; nullable for guests/system actions and after actor deletion. |
+| `action` | Stable security action code such as login or role replacement. |
+| `outcome` | Restricted result `SUCCEEDED`, `DENIED`, or `FAILED`. |
+| `reason_code` | Optional stable machine-readable explanation without sensitive free text. |
+| `correlation_id` | Request/workflow UUID used to join safe operational evidence. |
+| `subject_reference_hash` | Optional keyed privacy-minimized 64-character hash used to correlate bounded unknown-account abuse without storing the supplied identifier. |
+| `occurred_at` | UTC instant the security decision occurred. |
+| `created_at` | Immutable UTC insertion instant. |
 
 ## Schema `care`
 
