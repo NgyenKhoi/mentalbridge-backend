@@ -1,0 +1,618 @@
+openapi: 3.1.0
+info:
+  title: MentalBridge Identity API
+  version: 1.0.0
+  description: |
+    Contract for account registration, email verification, authentication,
+    refresh sessions, password recovery, and bounded account administration.
+    Fields not marked nullable reject null; omitted optional fields retain their
+    documented default or leave the stored value unchanged.
+servers:
+  - url: /
+tags:
+  - name: Registration
+  - name: Authentication
+  - name: Recovery
+  - name: Account
+  - name: Account administration
+paths:
+  /api/v1/auth/registrations:
+    post:
+      tags: [Registration]
+      operationId: registerAccount
+      summary: Register a user or specialist account
+      parameters:
+        - $ref: '#/components/parameters/IdempotencyKey'
+        - $ref: '#/components/parameters/CorrelationId'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/RegistrationRequest'
+            example:
+              email: lan.nguyen@example.com
+              password: correct-horse-battery-staple
+              actorType: USER
+      responses:
+        '201':
+          description: Account created pending email verification
+          headers:
+            Location:
+              schema: { type: string }
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/RegistrationResponse'
+        '400': { $ref: '#/components/responses/ValidationProblem' }
+        '409': { $ref: '#/components/responses/ConflictProblem' }
+        '429': { $ref: '#/components/responses/RateLimitProblem' }
+  /api/v1/auth/email-verifications:
+    post:
+      tags: [Registration]
+      operationId: verifyEmail
+      summary: Consume a one-time email verification challenge
+      parameters:
+        - $ref: '#/components/parameters/CorrelationId'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/ChallengeRequest'
+      responses:
+        '200':
+          description: Email is verified; repeating a consumed successful challenge is idempotent
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/AccountSummary'
+        '400': { $ref: '#/components/responses/InvalidChallengeProblem' }
+        '429': { $ref: '#/components/responses/RateLimitProblem' }
+  /api/v1/auth/email-verification-requests:
+    post:
+      tags: [Registration]
+      operationId: requestEmailVerification
+      summary: Request another verification delivery
+      parameters:
+        - $ref: '#/components/parameters/CorrelationId'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/EmailRequest'
+      responses:
+        '202': { $ref: '#/components/responses/GenericAccepted' }
+        '400': { $ref: '#/components/responses/ValidationProblem' }
+        '429': { $ref: '#/components/responses/RateLimitProblem' }
+  /api/v1/auth/login:
+    post:
+      tags: [Authentication]
+      operationId: login
+      summary: Authenticate an active verified account
+      parameters:
+        - $ref: '#/components/parameters/CorrelationId'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/LoginRequest'
+      responses:
+        '200':
+          description: Access and refresh credentials issued
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/TokenPair'
+        '400': { $ref: '#/components/responses/ValidationProblem' }
+        '401': { $ref: '#/components/responses/InvalidCredentialsProblem' }
+        '429': { $ref: '#/components/responses/RateLimitProblem' }
+  /api/v1/auth/refresh:
+    post:
+      tags: [Authentication]
+      operationId: refreshSession
+      summary: Rotate a refresh credential and issue a new token pair
+      parameters:
+        - $ref: '#/components/parameters/IdempotencyKey'
+        - $ref: '#/components/parameters/CorrelationId'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/RefreshRequest'
+      responses:
+        '200':
+          description: Refresh credential rotated exactly once
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/TokenPair'
+        '400': { $ref: '#/components/responses/ValidationProblem' }
+        '401': { $ref: '#/components/responses/InvalidSessionProblem' }
+        '409': { $ref: '#/components/responses/IdempotencyConflictProblem' }
+        '429': { $ref: '#/components/responses/RateLimitProblem' }
+  /api/v1/auth/logout:
+    post:
+      tags: [Authentication]
+      operationId: logout
+      summary: Idempotently revoke the current refresh-session family
+      security:
+        - bearerAuth: []
+      parameters:
+        - $ref: '#/components/parameters/CorrelationId'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/RefreshRequest'
+      responses:
+        '204': { description: Session family is revoked or was already revoked }
+        '400': { $ref: '#/components/responses/ValidationProblem' }
+        '401': { $ref: '#/components/responses/UnauthorizedProblem' }
+  /api/v1/auth/logout-all:
+    post:
+      tags: [Authentication]
+      operationId: logoutAll
+      summary: Idempotently revoke every refresh session for the account
+      security:
+        - bearerAuth: []
+      parameters:
+        - $ref: '#/components/parameters/CorrelationId'
+      responses:
+        '204': { description: All sessions are revoked or were already revoked }
+        '401': { $ref: '#/components/responses/UnauthorizedProblem' }
+  /api/v1/auth/password-recovery-requests:
+    post:
+      tags: [Recovery]
+      operationId: requestPasswordRecovery
+      summary: Request a password-recovery delivery without account enumeration
+      parameters:
+        - $ref: '#/components/parameters/CorrelationId'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/EmailRequest'
+      responses:
+        '202': { $ref: '#/components/responses/GenericAccepted' }
+        '400': { $ref: '#/components/responses/ValidationProblem' }
+        '429': { $ref: '#/components/responses/RateLimitProblem' }
+  /api/v1/auth/password-resets:
+    post:
+      tags: [Recovery]
+      operationId: resetPassword
+      summary: Consume a recovery challenge and revoke all refresh sessions
+      parameters:
+        - $ref: '#/components/parameters/CorrelationId'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/PasswordResetRequest'
+      responses:
+        '204': { description: Password changed and all refresh sessions revoked }
+        '400': { $ref: '#/components/responses/InvalidChallengeProblem' }
+        '429': { $ref: '#/components/responses/RateLimitProblem' }
+  /api/v1/account:
+    get:
+      tags: [Account]
+      operationId: getOwnAccount
+      summary: Read the authenticated account's Identity-owned facts
+      security:
+        - bearerAuth: []
+      parameters:
+        - $ref: '#/components/parameters/CorrelationId'
+      responses:
+        '200':
+          description: Account found
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/AccountDetail'
+        '401': { $ref: '#/components/responses/UnauthorizedProblem' }
+  /api/v1/account/password:
+    put:
+      tags: [Account]
+      operationId: changePassword
+      summary: Change the authenticated account password and revoke all sessions
+      security:
+        - bearerAuth: []
+      parameters:
+        - $ref: '#/components/parameters/CorrelationId'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/PasswordChangeRequest'
+      responses:
+        '204': { description: Password changed and all refresh sessions revoked }
+        '400': { $ref: '#/components/responses/ValidationProblem' }
+        '401': { $ref: '#/components/responses/InvalidCredentialsProblem' }
+  /api/v1/admin/accounts:
+    get:
+      tags: [Account administration]
+      operationId: searchAccounts
+      summary: Search bounded Identity account facts
+      security:
+        - bearerAuth: []
+      parameters:
+        - $ref: '#/components/parameters/CorrelationId'
+        - name: status
+          in: query
+          schema: { $ref: '#/components/schemas/AccountStatus' }
+        - name: role
+          in: query
+          schema: { $ref: '#/components/schemas/RoleCode' }
+        - name: email
+          in: query
+          description: Exact normalized email filter; omitted means no email filter
+          schema: { type: string, format: email, maxLength: 254 }
+        - name: cursor
+          in: query
+          schema: { type: string, maxLength: 512 }
+        - name: limit
+          in: query
+          schema: { type: integer, minimum: 1, maximum: 100, default: 20 }
+      responses:
+        '200':
+          description: Bounded account page ordered by creation instant and identifier
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/AccountPage'
+        '400': { $ref: '#/components/responses/ValidationProblem' }
+        '401': { $ref: '#/components/responses/UnauthorizedProblem' }
+        '403': { $ref: '#/components/responses/ForbiddenProblem' }
+  /api/v1/admin/accounts/{accountId}:
+    get:
+      tags: [Account administration]
+      operationId: getAccountById
+      summary: Read one account for authorized administration
+      security:
+        - bearerAuth: []
+      parameters:
+        - $ref: '#/components/parameters/AccountId'
+        - $ref: '#/components/parameters/CorrelationId'
+      responses:
+        '200':
+          description: Account found
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/AccountDetail'
+        '401': { $ref: '#/components/responses/UnauthorizedProblem' }
+        '403': { $ref: '#/components/responses/ForbiddenProblem' }
+        '404': { $ref: '#/components/responses/NotFoundProblem' }
+  /api/v1/admin/accounts/{accountId}/state:
+    put:
+      tags: [Account administration]
+      operationId: changeAccountState
+      summary: Change account state with optimistic concurrency
+      security:
+        - bearerAuth: []
+      parameters:
+        - $ref: '#/components/parameters/AccountId'
+        - $ref: '#/components/parameters/IfMatch'
+        - $ref: '#/components/parameters/CorrelationId'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/AccountStateChangeRequest'
+      responses:
+        '200':
+          description: State changed
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/AccountDetail'
+        '400': { $ref: '#/components/responses/ValidationProblem' }
+        '401': { $ref: '#/components/responses/UnauthorizedProblem' }
+        '403': { $ref: '#/components/responses/ForbiddenProblem' }
+        '404': { $ref: '#/components/responses/NotFoundProblem' }
+        '409': { $ref: '#/components/responses/ConflictProblem' }
+        '412': { $ref: '#/components/responses/VersionProblem' }
+  /api/v1/admin/accounts/{accountId}/roles:
+    put:
+      tags: [Account administration]
+      operationId: replaceAccountRoles
+      summary: Replace account roles with optimistic concurrency
+      security:
+        - bearerAuth: []
+      parameters:
+        - $ref: '#/components/parameters/AccountId'
+        - $ref: '#/components/parameters/IfMatch'
+        - $ref: '#/components/parameters/CorrelationId'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/RoleReplacementRequest'
+      responses:
+        '200':
+          description: Roles replaced
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/AccountDetail'
+        '400': { $ref: '#/components/responses/ValidationProblem' }
+        '401': { $ref: '#/components/responses/UnauthorizedProblem' }
+        '403': { $ref: '#/components/responses/ForbiddenProblem' }
+        '404': { $ref: '#/components/responses/NotFoundProblem' }
+        '409': { $ref: '#/components/responses/ConflictProblem' }
+        '412': { $ref: '#/components/responses/VersionProblem' }
+components:
+  securitySchemes:
+    bearerAuth:
+      type: http
+      scheme: bearer
+      bearerFormat: JWT
+  parameters:
+    AccountId:
+      name: accountId
+      in: path
+      required: true
+      schema: { type: string, format: uuid }
+    CorrelationId:
+      name: X-Correlation-Id
+      in: header
+      required: false
+      schema: { type: string, format: uuid }
+      description: Caller correlation identifier; the server generates one when omitted
+    IdempotencyKey:
+      name: Idempotency-Key
+      in: header
+      required: true
+      schema: { type: string, minLength: 16, maxLength: 128, pattern: '^[!-~]+$' }
+    IfMatch:
+      name: If-Match
+      in: header
+      required: true
+      schema: { type: string, pattern: '^"[0-9]+"$' }
+      example: '"3"'
+  schemas:
+    RegistrationRequest:
+      type: object
+      additionalProperties: false
+      required: [email, password, actorType]
+      properties:
+        email: { type: string, format: email, maxLength: 254 }
+        password: { $ref: '#/components/schemas/NewPassword' }
+        actorType:
+          type: string
+          enum: [USER, SPECIALIST]
+        deviceLabel: { type: string, minLength: 1, maxLength: 120 }
+    RegistrationResponse:
+      type: object
+      additionalProperties: false
+      required: [accountId, status, verificationRequired, createdAt]
+      properties:
+        accountId: { type: string, format: uuid }
+        status: { const: PENDING_EMAIL_VERIFICATION }
+        verificationRequired: { const: true }
+        createdAt: { type: string, format: date-time }
+    EmailRequest:
+      type: object
+      additionalProperties: false
+      required: [email]
+      properties:
+        email: { type: string, format: email, maxLength: 254 }
+    ChallengeRequest:
+      type: object
+      additionalProperties: false
+      required: [challenge]
+      properties:
+        challenge: { type: string, minLength: 32, maxLength: 512 }
+    LoginRequest:
+      type: object
+      additionalProperties: false
+      required: [email, password]
+      properties:
+        email: { type: string, format: email, maxLength: 254 }
+        password: { type: string, minLength: 1, maxLength: 128 }
+        deviceLabel: { type: string, minLength: 1, maxLength: 120 }
+    RefreshRequest:
+      type: object
+      additionalProperties: false
+      required: [refreshToken]
+      properties:
+        refreshToken: { type: string, minLength: 43, maxLength: 512 }
+    PasswordResetRequest:
+      type: object
+      additionalProperties: false
+      required: [challenge, newPassword]
+      properties:
+        challenge: { type: string, minLength: 32, maxLength: 512 }
+        newPassword: { $ref: '#/components/schemas/NewPassword' }
+    PasswordChangeRequest:
+      type: object
+      additionalProperties: false
+      required: [currentPassword, newPassword]
+      properties:
+        currentPassword: { type: string, minLength: 1, maxLength: 128 }
+        newPassword: { $ref: '#/components/schemas/NewPassword' }
+    NewPassword:
+      type: string
+      minLength: 12
+      maxLength: 128
+      x-utf8-maxBytes: 72
+      description: Unicode password of at most 72 UTF-8 bytes; the server neither normalizes nor silently truncates it
+    TokenPair:
+      type: object
+      additionalProperties: false
+      required: [accessToken, tokenType, expiresIn, refreshToken, refreshExpiresAt]
+      properties:
+        accessToken: { type: string, minLength: 1 }
+        tokenType: { const: Bearer }
+        expiresIn: { type: integer, const: 900 }
+        refreshToken: { type: string, minLength: 43 }
+        refreshExpiresAt: { type: string, format: date-time }
+    AccountStatus:
+      type: string
+      enum: [PENDING_EMAIL_VERIFICATION, ACTIVE, DISABLED, DELETION_PENDING, DELETED]
+    RoleCode:
+      type: string
+      enum: [USER, SPECIALIST, ADMIN]
+    AccountSummary:
+      type: object
+      additionalProperties: false
+      required: [accountId, status, roles, emailVerified]
+      properties:
+        accountId: { type: string, format: uuid }
+        status: { $ref: '#/components/schemas/AccountStatus' }
+        roles:
+          type: array
+          minItems: 1
+          uniqueItems: true
+          items: { $ref: '#/components/schemas/RoleCode' }
+        emailVerified: { type: boolean }
+    AccountDetail:
+      type: object
+      additionalProperties: false
+      required: [accountId, email, status, roles, emailVerified, createdAt, updatedAt, version]
+      properties:
+        accountId: { type: string, format: uuid }
+        email: { type: string, format: email, maxLength: 254 }
+        status: { $ref: '#/components/schemas/AccountStatus' }
+        roles:
+          type: array
+          minItems: 1
+          uniqueItems: true
+          items: { $ref: '#/components/schemas/RoleCode' }
+        emailVerified: { type: boolean }
+        createdAt: { type: string, format: date-time }
+        updatedAt: { type: string, format: date-time }
+        version: { type: integer, format: int64, minimum: 0 }
+    AccountPage:
+      type: object
+      additionalProperties: false
+      required: [items]
+      properties:
+        items:
+          type: array
+          items: { $ref: '#/components/schemas/AccountDetail' }
+        nextCursor:
+          type: [string, 'null']
+          maxLength: 512
+          description: Null means there is no next page
+    AccountStateChangeRequest:
+      type: object
+      additionalProperties: false
+      required: [status, reasonCode]
+      properties:
+        status: { $ref: '#/components/schemas/AccountStatus' }
+        reasonCode: { type: string, minLength: 1, maxLength: 64, pattern: '^[A-Z0-9_]+$' }
+    RoleReplacementRequest:
+      type: object
+      additionalProperties: false
+      required: [roles, reasonCode]
+      properties:
+        roles:
+          type: array
+          minItems: 1
+          maxItems: 3
+          uniqueItems: true
+          items: { $ref: '#/components/schemas/RoleCode' }
+        reasonCode: { type: string, minLength: 1, maxLength: 64, pattern: '^[A-Z0-9_]+$' }
+    Problem:
+      type: object
+      additionalProperties: true
+      required: [type, title, status, code, correlationId]
+      properties:
+        type: { type: string, format: uri-reference }
+        title: { type: string }
+        status: { type: integer, minimum: 400, maximum: 599 }
+        detail: { type: string }
+        instance: { type: string, format: uri-reference }
+        code: { type: string, pattern: '^[A-Z0-9_]+$' }
+        correlationId: { type: string, format: uuid }
+        violations:
+          type: array
+          items:
+            type: object
+            additionalProperties: false
+            required: [field, code]
+            properties:
+              field: { type: string }
+              code: { type: string }
+              message: { type: string }
+  responses:
+    GenericAccepted:
+      description: Request accepted whether or not an eligible account exists
+    ValidationProblem:
+      description: Request validation failed
+      content:
+        application/problem+json:
+          schema: { $ref: '#/components/schemas/Problem' }
+          example:
+            type: /problems/validation-failed
+            title: Request validation failed
+            status: 400
+            code: VALIDATION_FAILED
+            correlationId: 8fb5720a-53ab-40db-9cf4-f5cfabbdaf65
+            violations: [{ field: email, code: INVALID_FORMAT, message: must be a valid email address }]
+    InvalidChallengeProblem:
+      description: Challenge is invalid, expired, consumed, or ineligible
+      content:
+        application/problem+json:
+          schema: { $ref: '#/components/schemas/Problem' }
+          example: { type: /problems/invalid-challenge, title: Challenge is invalid, status: 400, code: INVALID_CHALLENGE, correlationId: 8fb5720a-53ab-40db-9cf4-f5cfabbdaf65 }
+    InvalidCredentialsProblem:
+      description: Credentials are invalid or the account cannot authenticate
+      content:
+        application/problem+json:
+          schema: { $ref: '#/components/schemas/Problem' }
+          example: { type: /problems/invalid-credentials, title: Credentials are invalid, status: 401, code: INVALID_CREDENTIALS, correlationId: 8fb5720a-53ab-40db-9cf4-f5cfabbdaf65 }
+    InvalidSessionProblem:
+      description: Refresh session is invalid, expired, revoked, or replayed
+      content:
+        application/problem+json:
+          schema: { $ref: '#/components/schemas/Problem' }
+          example: { type: /problems/invalid-session, title: Session is invalid, status: 401, code: INVALID_SESSION, correlationId: 8fb5720a-53ab-40db-9cf4-f5cfabbdaf65 }
+    UnauthorizedProblem:
+      description: Authentication is missing or invalid
+      content:
+        application/problem+json:
+          schema: { $ref: '#/components/schemas/Problem' }
+    ForbiddenProblem:
+      description: Caller lacks the required role or owner authorization
+      content:
+        application/problem+json:
+          schema: { $ref: '#/components/schemas/Problem' }
+    NotFoundProblem:
+      description: Requested account does not exist
+      content:
+        application/problem+json:
+          schema: { $ref: '#/components/schemas/Problem' }
+    ConflictProblem:
+      description: State or uniqueness conflict
+      content:
+        application/problem+json:
+          schema: { $ref: '#/components/schemas/Problem' }
+    IdempotencyConflictProblem:
+      description: Idempotency key was previously used with a different request
+      content:
+        application/problem+json:
+          schema: { $ref: '#/components/schemas/Problem' }
+    VersionProblem:
+      description: If-Match does not match the current account version
+      content:
+        application/problem+json:
+          schema: { $ref: '#/components/schemas/Problem' }
+    RateLimitProblem:
+      description: Request exceeded a bounded security rate limit
+      headers:
+        Retry-After:
+          schema: { type: integer, minimum: 1 }
+      content:
+        application/problem+json:
+          schema: { $ref: '#/components/schemas/Problem' }

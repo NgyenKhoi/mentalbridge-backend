@@ -109,7 +109,7 @@ The project-tracking workbook currently groups the 162 functions into seven deli
 
 **Scope:** registration for users/specialists, login/logout, password recovery, role authorization, profile/privacy, consent, specialist grants, personal-data deletion request, and anonymous assessment entry.
 
-**Main flow:** Identity validates credentials and owns account/session state; Care owns health profile and consent. Specialist registration enters `PENDING_VERIFICATION`. A guest may start a short-lived anonymous assessment without creating an account.
+**Main flow:** Identity validates credentials and owns account/session state; Care owns health profile and consent. After specialist registration, Consultation records professional verification as pending; this is not an Identity account state. A guest may start a short-lived anonymous assessment without creating an account.
 
 **Exceptions and acceptance:** duplicate identity, expired/reused challenge, disabled account, excessive attempts, unsupported/expired grant, and deletion restrictions produce stable errors. Consent choices are independent and versioned; revocation blocks new reads. Anonymous data is never silently attached to a later account. Security and sensitive-access actions emit minimized audit facts.
 
