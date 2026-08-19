@@ -1,0 +1,645 @@
+openapi: 3.1.0
+info:
+  title: Content-Notification Service API
+  version: 1.0.0
+  description: >
+    MentalBridge Content/Notification bounded context.
+    Manages self-help resources, crisis hotlines, in-app notifications,
+    and delivery preferences.
+
+servers:
+  - url: http://localhost:3003
+    description: Local development
+
+tags:
+  - name: Health
+    description: Liveness and readiness probes
+  - name: Resources
+    description: Self-help content management (admin reviewed)
+  - name: Hotlines
+    description: Crisis support hotline management
+
+paths:
+  /health/live:
+    get:
+      tags: [Health]
+      summary: Liveness probe
+      operationId: getLive
+      responses:
+        '200':
+          description: Service is alive
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/LiveResponse'
+
+  /health/ready:
+    get:
+      tags: [Health]
+      summary: Readiness probe — checks database connectivity
+      operationId: getReady
+      responses:
+        '200':
+          description: Service is ready
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ReadyResponse'
+        '503':
+          description: Service unavailable — database unreachable
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ReadyResponse'
+
+  /api/v1/resources:
+    get:
+      tags: [Resources]
+      summary: List published self-help resources
+      operationId: listResources
+      parameters:
+        - name: locale
+          in: query
+          schema:
+            type: string
+            example: vi-VN
+        - name: category
+          in: query
+          schema:
+            $ref: '#/components/schemas/ResourceCategory'
+        - name: limit
+          in: query
+          schema:
+            type: integer
+            minimum: 1
+            maximum: 100
+            default: 20
+        - name: cursor
+          in: query
+          schema:
+            type: string
+            format: uuid
+      responses:
+        '200':
+          description: List of resources
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ResourceListResponse'
+
+    post:
+      tags: [Resources]
+      summary: Create a new resource (Admin)
+      operationId: createResource
+      security:
+        - AdminHeader: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/CreateResourceRequest'
+      responses:
+        '201':
+          description: Resource created
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ResourceSummary'
+        '422':
+          $ref: '#/components/responses/ValidationError'
+
+  /api/v1/resources/{id}:
+    parameters:
+      - name: id
+        in: path
+        required: true
+        schema:
+          type: string
+          format: uuid
+
+    get:
+      tags: [Resources]
+      summary: Get resource detail
+      operationId: getResource
+      responses:
+        '200':
+          description: Resource detail
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ResourceDetail'
+        '404':
+          $ref: '#/components/responses/NotFound'
+
+    patch:
+      tags: [Resources]
+      summary: Update a DRAFT resource (Admin)
+      operationId: updateResource
+      security:
+        - AdminHeader: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/UpdateResourceRequest'
+      responses:
+        '200':
+          description: Updated resource
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ResourceSummary'
+        '404':
+          $ref: '#/components/responses/NotFound'
+        '409':
+          $ref: '#/components/responses/Conflict'
+
+    delete:
+      tags: [Resources]
+      summary: Delete a DRAFT resource (Admin)
+      operationId: deleteResource
+      security:
+        - AdminHeader: []
+      responses:
+        '204':
+          description: Deleted
+        '404':
+          $ref: '#/components/responses/NotFound'
+        '409':
+          $ref: '#/components/responses/Conflict'
+
+  /api/v1/resources/{id}/publish:
+    post:
+      tags: [Resources]
+      summary: Publish a DRAFT resource — reviewed content workflow (Admin)
+      operationId: publishResource
+      security:
+        - AdminHeader: []
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: string
+            format: uuid
+      responses:
+        '200':
+          description: Resource published
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ResourceSummary'
+        '404':
+          $ref: '#/components/responses/NotFound'
+        '409':
+          $ref: '#/components/responses/Conflict'
+
+  /api/v1/resources/{id}/archive:
+    post:
+      tags: [Resources]
+      summary: Archive a PUBLISHED resource (Admin)
+      operationId: archiveResource
+      security:
+        - AdminHeader: []
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: string
+            format: uuid
+      responses:
+        '200':
+          description: Resource archived
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ResourceSummary'
+        '404':
+          $ref: '#/components/responses/NotFound'
+        '409':
+          $ref: '#/components/responses/Conflict'
+
+  /api/v1/hotlines:
+    get:
+      tags: [Hotlines]
+      summary: List active crisis hotlines
+      operationId: listHotlines
+      parameters:
+        - name: countryCode
+          in: query
+          schema:
+            type: string
+            minLength: 2
+            maxLength: 2
+            example: VN
+        - name: locale
+          in: query
+          schema:
+            type: string
+            example: vi-VN
+        - name: activeOnly
+          in: query
+          schema:
+            type: boolean
+            default: true
+      responses:
+        '200':
+          description: List of hotlines
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/HotlineListResponse'
+
+    post:
+      tags: [Hotlines]
+      summary: Create a hotline (Admin)
+      operationId: createHotline
+      security:
+        - AdminHeader: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/CreateHotlineRequest'
+      responses:
+        '201':
+          description: Hotline created
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/HotlineSummary'
+        '422':
+          $ref: '#/components/responses/ValidationError'
+
+  /api/v1/hotlines/{id}:
+    parameters:
+      - name: id
+        in: path
+        required: true
+        schema:
+          type: string
+          format: uuid
+
+    get:
+      tags: [Hotlines]
+      summary: Get hotline detail
+      operationId: getHotline
+      responses:
+        '200':
+          description: Hotline detail
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/HotlineDetail'
+        '404':
+          $ref: '#/components/responses/NotFound'
+
+    patch:
+      tags: [Hotlines]
+      summary: Update hotline (Admin)
+      operationId: updateHotline
+      security:
+        - AdminHeader: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/UpdateHotlineRequest'
+      responses:
+        '200':
+          description: Updated hotline
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/HotlineSummary'
+        '404':
+          $ref: '#/components/responses/NotFound'
+
+    delete:
+      tags: [Hotlines]
+      summary: Delete hotline (Admin)
+      operationId: deleteHotline
+      security:
+        - AdminHeader: []
+      responses:
+        '204':
+          description: Deleted
+        '404':
+          $ref: '#/components/responses/NotFound'
+
+  /api/v1/hotlines/{id}/deactivate:
+    post:
+      tags: [Hotlines]
+      summary: Deactivate a hotline (Admin)
+      operationId: deactivateHotline
+      security:
+        - AdminHeader: []
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: string
+            format: uuid
+      responses:
+        '200':
+          description: Hotline deactivated
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/HotlineSummary'
+        '404':
+          $ref: '#/components/responses/NotFound'
+
+components:
+  securitySchemes:
+    AdminHeader:
+      type: apiKey
+      in: header
+      name: x-actor-id
+      description: >
+        Admin account UUID. Full JWT enforcement to be added in the identity-service
+        integration task.
+
+  responses:
+    NotFound:
+      description: Resource not found
+      content:
+        application/json:
+          schema:
+            $ref: '#/components/schemas/ProblemDetails'
+    Conflict:
+      description: State conflict or optimistic lock failure
+      content:
+        application/json:
+          schema:
+            $ref: '#/components/schemas/ProblemDetails'
+    ValidationError:
+      description: Validation failed
+      content:
+        application/json:
+          schema:
+            $ref: '#/components/schemas/ProblemDetails'
+
+  schemas:
+    LiveResponse:
+      type: object
+      required: [status]
+      properties:
+        status:
+          type: string
+          example: ok
+
+    ReadyResponse:
+      type: object
+      required: [status, db]
+      properties:
+        status:
+          type: string
+          enum: [ok, unavailable]
+        db:
+          type: string
+          enum: [connected, disconnected]
+
+    ProblemDetails:
+      type: object
+      required: [type, title, status, code]
+      properties:
+        type:
+          type: string
+        title:
+          type: string
+        status:
+          type: integer
+        code:
+          type: string
+        correlationId:
+          type: string
+          nullable: true
+        fieldViolations:
+          type: array
+          items: {}
+
+    ResourceCategory:
+      type: string
+      enum: [BREATHING, MEDITATION, ARTICLE, VIDEO, JOURNALING, COMMUNITY]
+
+    ResourceStatus:
+      type: string
+      enum: [DRAFT, PUBLISHED, ARCHIVED]
+
+    ResourceSummary:
+      type: object
+      required: [id, category, locale, title, summary, status, createdAt]
+      properties:
+        id:
+          type: string
+          format: uuid
+        category:
+          $ref: '#/components/schemas/ResourceCategory'
+        locale:
+          type: string
+        title:
+          type: string
+        summary:
+          type: string
+        externalUrl:
+          type: string
+          nullable: true
+        status:
+          $ref: '#/components/schemas/ResourceStatus'
+        reviewedAt:
+          type: string
+          format: date-time
+          nullable: true
+        createdAt:
+          type: string
+          format: date-time
+        updatedAt:
+          type: string
+          format: date-time
+
+    ResourceDetail:
+      allOf:
+        - $ref: '#/components/schemas/ResourceSummary'
+        - type: object
+          properties:
+            contentBody:
+              type: string
+              nullable: true
+            reviewedBy:
+              type: string
+              format: uuid
+              nullable: true
+            version:
+              type: integer
+
+    ResourceListResponse:
+      type: object
+      required: [data, count]
+      properties:
+        data:
+          type: array
+          items:
+            $ref: '#/components/schemas/ResourceSummary'
+        count:
+          type: integer
+
+    CreateResourceRequest:
+      type: object
+      required: [category, title, summary]
+      properties:
+        category:
+          $ref: '#/components/schemas/ResourceCategory'
+        locale:
+          type: string
+          default: vi-VN
+        title:
+          type: string
+          maxLength: 255
+        summary:
+          type: string
+        contentBody:
+          type: string
+          nullable: true
+        externalUrl:
+          type: string
+          format: uri
+          nullable: true
+
+    UpdateResourceRequest:
+      type: object
+      properties:
+        title:
+          type: string
+          maxLength: 255
+        summary:
+          type: string
+        contentBody:
+          type: string
+          nullable: true
+        externalUrl:
+          type: string
+          format: uri
+          nullable: true
+
+    HotlineSummary:
+      type: object
+      required: [id, countryCode, name, guidance, active, verifiedAt]
+      properties:
+        id:
+          type: string
+          format: uuid
+        countryCode:
+          type: string
+          minLength: 2
+          maxLength: 2
+        region:
+          type: string
+          nullable: true
+        name:
+          type: string
+        phoneNumber:
+          type: string
+          nullable: true
+        websiteUrl:
+          type: string
+          nullable: true
+        availabilityText:
+          type: string
+          nullable: true
+        guidance:
+          type: string
+        locale:
+          type: string
+        active:
+          type: boolean
+        verifiedAt:
+          type: string
+          format: date-time
+
+    HotlineDetail:
+      allOf:
+        - $ref: '#/components/schemas/HotlineSummary'
+        - type: object
+          properties:
+            nextReviewAt:
+              type: string
+              format: date-time
+            verifiedBy:
+              type: string
+              format: uuid
+            createdAt:
+              type: string
+              format: date-time
+            updatedAt:
+              type: string
+              format: date-time
+
+    HotlineListResponse:
+      type: object
+      required: [data, count]
+      properties:
+        data:
+          type: array
+          items:
+            $ref: '#/components/schemas/HotlineSummary'
+        count:
+          type: integer
+
+    CreateHotlineRequest:
+      type: object
+      required: [countryCode, name, guidance]
+      properties:
+        countryCode:
+          type: string
+          minLength: 2
+          maxLength: 2
+        region:
+          type: string
+          nullable: true
+        name:
+          type: string
+          maxLength: 255
+        phoneNumber:
+          type: string
+          nullable: true
+        websiteUrl:
+          type: string
+          format: uri
+          nullable: true
+        availabilityText:
+          type: string
+          nullable: true
+        guidance:
+          type: string
+        locale:
+          type: string
+          default: vi-VN
+
+    UpdateHotlineRequest:
+      type: object
+      properties:
+        name:
+          type: string
+          maxLength: 255
+        phoneNumber:
+          type: string
+          nullable: true
+        websiteUrl:
+          type: string
+          format: uri
+          nullable: true
+        availabilityText:
+          type: string
+          nullable: true
+        guidance:
+          type: string
+        region:
+          type: string
+          nullable: true
