@@ -1,5 +1,5 @@
 import { Pool, QueryResult, QueryResultRow } from 'pg';
-import { config } from '../../shared/config';
+import { config } from '../../shared/config.js';
 
 const pool = new Pool({
   host: config.DB_HOST,

@@ -60,29 +60,6 @@ paths:
                 status: unavailable
                 db: disconnected
 
-  /metrics:
-    get:
-      tags: [Health]
-      summary: Service metrics
-      operationId: getMetrics
-      responses:
-        '200':
-          description: Service metrics and health information
-          content:
-            application/json:
-              schema:
-                type: object
-                properties:
-                  service:
-                    type: string
-                  uptime:
-                    type: number
-                  timestamp:
-                    type: string
-                    format: date-time
-                  memory:
-                    type: object
-
   /api/v1/resources:
     get:
       tags: [Resources]
@@ -136,7 +113,7 @@ paths:
       summary: Create a new resource (Admin)
       operationId: createResource
       security:
-        - AdminHeader: []
+        - BearerAuth: []
       requestBody:
         required: true
         content:
@@ -192,7 +169,7 @@ paths:
       summary: Update a DRAFT resource (Admin)
       operationId: updateResource
       security:
-        - AdminHeader: []
+        - BearerAuth: []
       requestBody:
         required: true
         content:
@@ -216,7 +193,7 @@ paths:
       summary: Delete a DRAFT resource (Admin)
       operationId: deleteResource
       security:
-        - AdminHeader: []
+        - BearerAuth: []
       responses:
         '204':
           description: Deleted
@@ -231,7 +208,7 @@ paths:
       summary: Publish a DRAFT resource — reviewed content workflow (Admin)
       operationId: publishResource
       security:
-        - AdminHeader: []
+        - BearerAuth: []
       parameters:
         - name: id
           in: path
@@ -257,7 +234,7 @@ paths:
       summary: Archive a PUBLISHED resource (Admin)
       operationId: archiveResource
       security:
-        - AdminHeader: []
+        - BearerAuth: []
       parameters:
         - name: id
           in: path
@@ -313,7 +290,7 @@ paths:
       summary: Create a hotline (Admin)
       operationId: createHotline
       security:
-        - AdminHeader: []
+        - BearerAuth: []
       requestBody:
         required: true
         content:
@@ -370,7 +347,7 @@ paths:
       summary: Update hotline (Admin)
       operationId: updateHotline
       security:
-        - AdminHeader: []
+        - BearerAuth: []
       requestBody:
         required: true
         content:
@@ -392,7 +369,7 @@ paths:
       summary: Delete hotline (Admin)
       operationId: deleteHotline
       security:
-        - AdminHeader: []
+        - BearerAuth: []
       responses:
         '204':
           description: Deleted
@@ -405,7 +382,7 @@ paths:
       summary: Deactivate a hotline (Admin)
       operationId: deactivateHotline
       security:
-        - AdminHeader: []
+        - BearerAuth: []
       parameters:
         - name: id
           in: path
@@ -425,13 +402,14 @@ paths:
 
 components:
   securitySchemes:
-    AdminHeader:
-      type: apiKey
-      in: header
-      name: x-actor-id
+    BearerAuth:
+      type: http
+      scheme: bearer
+      bearerFormat: JWT
       description: >
-        Admin account UUID. Full JWT enforcement to be added in the identity-service
-        integration task.
+        JWT issued by identity-service. Admin role enforcement will be
+        implemented in Story 209 during identity-service integration.
+        Story 208 defines the contract only.
 
   responses:
     NotFound:

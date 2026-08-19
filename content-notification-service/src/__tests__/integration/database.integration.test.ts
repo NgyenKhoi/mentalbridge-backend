@@ -1,0 +1,216 @@
+import { describe, it, expect, beforeAll, afterAll } from 'vitest';
+import { Pool } from 'pg';
+import { GenericContainer, type StartedTestContainer } from 'testcontainers';
+import { readFileSync } from 'fs';
+import { join, dirname } from 'path';
+import { fileURLToPath } from 'url';
+
+const __dirname = dirname(fileURLToPath(import.meta.url));
+
+describe('Database Integration', () => {
+  let container: StartedTestContainer;
+  let pool: Pool;
+
+  beforeAll(async () => {
+    container = await new GenericContainer('postgres:16-alpine')
+      .withEnvironment({
+        POSTGRES_USER: 'test_user',
+        POSTGRES_PASSWORD: 'test_password',
+        POSTGRES_DB: 'test_db',
+      })
+      .withExposedPorts(5432)
+      .start();
+
+    pool = new Pool({
+      host: container.getHost(),
+      port: container.getMappedPort(5432),
+      user: 'test_user',
+      password: 'test_password',
+      database: 'test_db',
+    });
+
+    const sql = readFileSync(join(__dirname, '../../../migrations/1_initial_schema.sql'), 'utf8');
+    await pool.query(sql);
+  }, 120_000);
+
+  afterAll(async () => {
+    if (pool) await pool.end();
+    if (container) await container.stop();
+  });
+
+  describe('resource table', () => {
+    it('rejects null category', async () => {
+      await expect(
+        pool.query('INSERT INTO resource (category, title, summary) VALUES (NULL, $1, $2)', [
+          'Title',
+          'Summary',
+        ]),
+      ).rejects.toThrow();
+    });
+
+    it('rejects invalid category', async () => {
+      await expect(
+        pool.query(
+          'INSERT INTO resource (category, locale, title, summary, content_body) VALUES ($1,$2,$3,$4,$5)',
+          ['INVALID', 'vi-VN', 'T', 'S', 'C'],
+        ),
+      ).rejects.toThrow(/violates check constraint/);
+    });
+
+    it('rejects invalid status', async () => {
+      await expect(
+        pool.query(
+          'INSERT INTO resource (category, locale, title, summary, content_body, status) VALUES ($1,$2,$3,$4,$5,$6)',
+          ['BREATHING', 'vi-VN', 'T', 'S', 'C', 'INVALID'],
+        ),
+      ).rejects.toThrow(/violates check constraint/);
+    });
+
+    it('enforces content_or_url constraint', async () => {
+      await expect(
+        pool.query('INSERT INTO resource (category, locale, title, summary) VALUES ($1,$2,$3,$4)', [
+          'BREATHING',
+          'vi-VN',
+          'T',
+          'S',
+        ]),
+      ).rejects.toThrow(/ck_resource_content_or_url/);
+    });
+
+    it('enforces lifecycle_dates constraint', async () => {
+      await expect(
+        pool.query(
+          `INSERT INTO resource (category, locale, title, summary, content_body, effective_at, expires_at)
+           VALUES ($1,$2,$3,$4,$5,$6,$7)`,
+          ['BREATHING', 'vi-VN', 'T', 'S', 'C', '2025-12-31', '2025-01-01'],
+        ),
+      ).rejects.toThrow(/ck_resource_lifecycle_dates/);
+    });
+
+    it('inserts valid resource', async () => {
+      const { rows } = await pool.query(
+        `INSERT INTO resource (category, locale, title, summary, content_body)
+         VALUES ($1,$2,$3,$4,$5) RETURNING id`,
+        ['BREATHING', 'vi-VN', 'Test', 'Summary', 'Body'],
+      );
+      expect(rows[0].id).toBeDefined();
+    });
+
+    it('has ix_resource_browse index', async () => {
+      const { rows } = await pool.query(
+        `SELECT indexname FROM pg_indexes WHERE tablename='resource' AND indexname='ix_resource_browse'`,
+      );
+      expect(rows).toHaveLength(1);
+    });
+
+    it('has ix_resource_review_window index', async () => {
+      const { rows } = await pool.query(
+        `SELECT indexname FROM pg_indexes WHERE tablename='resource' AND indexname='ix_resource_review_window'`,
+      );
+      expect(rows).toHaveLength(1);
+    });
+  });
+
+  describe('hotline table', () => {
+    it('enforces contact constraint — no phone or url', async () => {
+      await expect(
+        pool.query(
+          `INSERT INTO hotline (country_code, name, guidance, verified_at, next_review_at, verified_by)
+           VALUES ($1,$2,$3,$4,$5,$6)`,
+          [
+            'VN',
+            'Test',
+            'Guidance',
+            new Date('2024-01-01'),
+            new Date('2025-01-01'),
+            'a0eebc99-9c0b-4ef8-bb6d-6bb9bd380a11',
+          ],
+        ),
+      ).rejects.toThrow(/ck_hotline_contact/);
+    });
+
+    it('enforces review_after_verify constraint', async () => {
+      await expect(
+        pool.query(
+          `INSERT INTO hotline (country_code, name, phone_number, guidance, verified_at, next_review_at, verified_by)
+           VALUES ($1,$2,$3,$4,$5,$6,$7)`,
+          [
+            'VN',
+            'Test',
+            '1800',
+            'Guidance',
+            new Date('2025-12-31'),
+            new Date('2025-01-01'),
+            'a0eebc99-9c0b-4ef8-bb6d-6bb9bd380a11',
+          ],
+        ),
+      ).rejects.toThrow(/ck_hotline_review_after_verify/);
+    });
+
+    it('inserts valid hotline', async () => {
+      const { rows } = await pool.query(
+        `INSERT INTO hotline (country_code, name, phone_number, guidance, verified_at, next_review_at, verified_by)
+         VALUES ($1,$2,$3,$4,$5,$6,$7) RETURNING id`,
+        [
+          'VN',
+          'Hotline',
+          '1800',
+          'Guidance',
+          new Date('2024-01-01'),
+          new Date('2025-01-01'),
+          'a0eebc99-9c0b-4ef8-bb6d-6bb9bd380a11',
+        ],
+      );
+      expect(rows[0].id).toBeDefined();
+    });
+
+    it('has ix_hotline_active_region index', async () => {
+      const { rows } = await pool.query(
+        `SELECT indexname FROM pg_indexes WHERE tablename='hotline' AND indexname='ix_hotline_active_region'`,
+      );
+      expect(rows).toHaveLength(1);
+    });
+  });
+
+  describe('notification_preference table', () => {
+    it('rejects invalid channel', async () => {
+      await expect(
+        pool.query(
+          'INSERT INTO notification_preference (user_id, channel, category) VALUES ($1,$2,$3)',
+          ['a0eebc99-9c0b-4ef8-bb6d-6bb9bd380a11', 'INVALID', 'ASSESSMENT'],
+        ),
+      ).rejects.toThrow(/violates check constraint/);
+    });
+
+    it('enforces composite primary key', async () => {
+      await pool.query(
+        'INSERT INTO notification_preference (user_id, channel, category) VALUES ($1,$2,$3)',
+        ['b0eebc99-9c0b-4ef8-bb6d-6bb9bd380a11', 'EMAIL', 'CHAT'],
+      );
+      await expect(
+        pool.query(
+          'INSERT INTO notification_preference (user_id, channel, category) VALUES ($1,$2,$3)',
+          ['b0eebc99-9c0b-4ef8-bb6d-6bb9bd380a11', 'EMAIL', 'CHAT'],
+        ),
+      ).rejects.toThrow(/duplicate key/);
+    });
+  });
+
+  describe('notification table', () => {
+    it('rejects invalid priority', async () => {
+      await expect(
+        pool.query(
+          'INSERT INTO notification (recipient_id, category, title, body, priority) VALUES ($1,$2,$3,$4,$5)',
+          ['a0eebc99-9c0b-4ef8-bb6d-6bb9bd380a11', 'ASSESSMENT', 'T', 'B', 'CRITICAL'],
+        ),
+      ).rejects.toThrow(/violates check constraint/);
+    });
+
+    it('has ix_notification_recipient_unread index', async () => {
+      const { rows } = await pool.query(
+        `SELECT indexname FROM pg_indexes WHERE tablename='notification' AND indexname='ix_notification_recipient_unread'`,
+      );
+      expect(rows).toHaveLength(1);
+    });
+  });
+});

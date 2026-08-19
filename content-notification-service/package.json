@@ -1,0 +1,53 @@
+{
+  "name": "content-notification-service",
+  "version": "1.0.0",
+  "description": "MentalBridge Content and Notification Service",
+  "type": "module",
+  "main": "dist/index.js",
+  "engines": {
+    "node": ">=24"
+  },
+  "scripts": {
+    "build": "tsc -p tsconfig.build.json",
+    "start": "node dist/index.js",
+    "dev": "tsx src/index.ts",
+    "typecheck": "tsc --noEmit",
+    "lint": "eslint src --ext .ts",
+    "format": "prettier --write \"src/**/*.ts\"",
+    "format:check": "prettier --check \"src/**/*.ts\"",
+    "test": "vitest run",
+    "test:watch": "vitest",
+    "migrate:up": "node-pg-migrate up",
+    "migrate:down": "node-pg-migrate down",
+    "migrate:create": "node-pg-migrate create",
+    "migration:check": "node --input-type=module -e \"import {readFileSync} from 'fs'; readFileSync('migrations/1_initial_schema.sql','utf8'); console.log('Migration file OK');\"",
+    "contract:check": "node --input-type=module -e \"import SwaggerParser from '@apidevtools/swagger-parser'; SwaggerParser.validate('../contracts/openapi/content-notification-service.yaml').then(()=>console.log('OpenAPI contract OK')).catch(e=>{console.error(e.message);process.exit(1);})\""
+  },
+  "dependencies": {
+    "cors": "^2.8.5",
+    "dotenv": "^17.4.2",
+    "express": "^5.0.1",
+    "node-pg-migrate": "^7.8.2",
+    "pg": "^8.12.0",
+    "pino": "^9.4.0",
+    "pino-http": "^10.3.0",
+    "zod": "^4.4.3"
+  },
+  "devDependencies": {
+    "@apidevtools/swagger-parser": "^10.1.0",
+    "@eslint/js": "^9.9.0",
+    "@types/cors": "^2.8.17",
+    "@types/express": "^5.0.0",
+    "@types/node": "^22.0.0",
+    "@types/pg": "^8.11.6",
+    "@types/supertest": "^6.0.2",
+    "eslint": "^9.9.0",
+    "prettier": "^3.3.3",
+    "supertest": "^7.0.0",
+    "testcontainers": "^10.15.0",
+    "tsx": "^4.19.2",
+    "typescript": "^5.7.2",
+    "typescript-eslint": "^8.3.0",
+    "vitest": "^2.1.8"
+  }
+}

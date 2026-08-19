@@ -1,8 +1,7 @@
-import 'dotenv/config';
-import app from './app';
-import logger from './shared/logger';
-import { config } from './shared/config';
-import { pool } from './infrastructure/database/db';
+import app from './app.js';
+import logger from './shared/logger.js';
+import { config } from './shared/config.js';
+import { pool } from './infrastructure/database/db.js';
 
 const server = app.listen(config.PORT, () => {
   logger.info({
@@ -13,8 +12,8 @@ const server = app.listen(config.PORT, () => {
   });
 });
 
-// Graceful shutdown
-const shutdown = (signal: string) => {
+// Graceful shutdown — do NOT auto-migrate on startup
+const shutdown = (signal: string): void => {
   logger.info({ event: 'shutdown_initiated', signal });
 
   server.close(() => {
@@ -32,11 +31,10 @@ const shutdown = (signal: string) => {
       });
   });
 
-  // Force shutdown after 10 seconds
   setTimeout(() => {
     logger.error({ event: 'shutdown_timeout' });
     process.exit(1);
-  }, 10000);
+  }, 10_000);
 };
 
 process.on('SIGTERM', () => {

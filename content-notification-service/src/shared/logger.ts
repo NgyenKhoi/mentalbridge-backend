@@ -1,8 +1,8 @@
 import pino from 'pino';
-import { config } from './config';
+import { config } from './config.js';
 
 const logger = pino({
-  level: process.env.LOG_LEVEL ?? 'info',
+  level: config.LOG_LEVEL,
   redact: {
     paths: [
       'DB_PASSWORD',
@@ -12,7 +12,6 @@ const logger = pino({
       'req.headers.authorization',
       'req.headers["x-api-key"]',
       'authorization',
-      'JWT_PUBLIC_KEY',
     ],
     censor: '[REDACTED]',
   },
@@ -21,9 +20,7 @@ const logger = pino({
     env: config.NODE_ENV,
   },
   formatters: {
-    level: (label: string) => {
-      return { level: label };
-    },
+    level: (label: string) => ({ level: label }),
   },
 });
 

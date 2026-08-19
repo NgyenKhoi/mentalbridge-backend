@@ -1,15 +1,15 @@
 // @ts-check
-const eslint = require('@eslint/js');
-const tseslint = require('typescript-eslint');
+import eslint from '@eslint/js';
+import tseslint from 'typescript-eslint';
 
-module.exports = tseslint.config(
+export default tseslint.config(
   eslint.configs.recommended,
   ...tseslint.configs.strictTypeChecked,
   {
     languageOptions: {
       parserOptions: {
         project: './tsconfig.json',
-        tsconfigRootDir: __dirname,
+        tsconfigRootDir: import.meta.dirname,
       },
     },
     rules: {
@@ -17,6 +17,6 @@ module.exports = tseslint.config(
     },
   },
   {
-    ignores: ['dist/**', 'node_modules/**', 'eslint.config.js', 'jest.config.js', 'src/__tests__/**'],
+    ignores: ['dist/**', 'node_modules/**', 'eslint.config.js', 'vitest.config.ts', 'src/__tests__/**'],
   },
 );
