@@ -1,14 +1,15 @@
 import { Pool, QueryResult, QueryResultRow } from 'pg';
+import { config } from '../../shared/config';
 
 const pool = new Pool({
-  host: process.env.CONTENT_DB_HOST ?? 'localhost',
-  port: parseInt(process.env.CONTENT_DB_PORT ?? '5432', 10),
-  database: process.env.CONTENT_DB_NAME ?? 'mentalbridge',
-  user: process.env.CONTENT_DB_USER ?? 'content_svc',
-  password: process.env.CONTENT_DB_PASSWORD,
-  max: 10,
-  idleTimeoutMillis: 30_000,
-  connectionTimeoutMillis: 2_000,
+  host: config.DB_HOST,
+  port: config.DB_PORT,
+  database: config.DB_NAME,
+  user: config.DB_USER,
+  password: config.DB_PASSWORD,
+  max: config.DB_POOL_MAX,
+  idleTimeoutMillis: config.DB_IDLE_TIMEOUT_MS,
+  connectionTimeoutMillis: config.DB_CONNECT_TIMEOUT_MS,
 });
 
 export function query<T extends QueryResultRow = QueryResultRow>(

@@ -1,15 +1,13 @@
 -- Migration: 001_content_schema_baseline
 -- Service:   content-notification-service
--- Applies:   content schema baseline matching 001_initial_schema.sql
+-- Database:  mentalbridge_content_notification
+-- Schema:    public
 -- Run order: append-only; never edit after merge
 
 BEGIN;
 
--- Idempotent schema creation (shared cluster, service-owned schema)
-CREATE SCHEMA IF NOT EXISTS content;
-
 -- Self-help resources: reviewed content owned by Content/Notification service
-CREATE TABLE IF NOT EXISTS content.resource (
+CREATE TABLE IF NOT EXISTS resource (
     id             uuid         PRIMARY KEY DEFAULT gen_random_uuid(),
     category       varchar(32)  NOT NULL
                    CHECK (category IN ('BREATHING','MEDITATION','ARTICLE','VIDEO','JOURNALING','COMMUNITY')),
@@ -22,19 +20,27 @@ CREATE TABLE IF NOT EXISTS content.resource (
                    CHECK (status IN ('DRAFT','PUBLISHED','ARCHIVED')),
     reviewed_by    uuid,
     reviewed_at    timestamptz,
+    effective_at   timestamptz,
+    expires_at     timestamptz,
     created_at     timestamptz  NOT NULL DEFAULT now(),
     updated_at     timestamptz  NOT NULL DEFAULT now(),
     version        bigint       NOT NULL DEFAULT 0,
     CONSTRAINT ck_resource_content_or_url
-        CHECK (content_body IS NOT NULL OR external_url IS NOT NULL)
+        CHECK (content_body IS NOT NULL OR external_url IS NOT NULL),
+    CONSTRAINT ck_resource_lifecycle_dates
+        CHECK (expires_at IS NULL OR effective_at IS NULL OR expires_at > effective_at)
 );
 
 CREATE INDEX IF NOT EXISTS ix_resource_browse
-    ON content.resource (locale, category, created_at DESC)
+    ON resource (locale, category, created_at DESC)
     WHERE status = 'PUBLISHED';
 
+CREATE INDEX IF NOT EXISTS ix_resource_review_window
+    ON resource (reviewed_at, effective_at)
+    WHERE status = 'PUBLISHED' AND effective_at IS NOT NULL;
+
 -- Crisis/support hotlines: verified contacts with mandatory review cadence
-CREATE TABLE IF NOT EXISTS content.hotline (
+CREATE TABLE IF NOT EXISTS hotline (
     id                uuid         PRIMARY KEY DEFAULT gen_random_uuid(),
     country_code      char(2)      NOT NULL,
     region            varchar(120),
@@ -57,11 +63,15 @@ CREATE TABLE IF NOT EXISTS content.hotline (
 );
 
 CREATE INDEX IF NOT EXISTS ix_hotline_active_region
-    ON content.hotline (country_code, region)
+    ON hotline (country_code, region, locale)
+    WHERE active;
+
+CREATE INDEX IF NOT EXISTS ix_hotline_review_window
+    ON hotline (next_review_at)
     WHERE active;
 
 -- Per-user notification delivery preferences per channel and category
-CREATE TABLE IF NOT EXISTS content.notification_preference (
+CREATE TABLE IF NOT EXISTS notification_preference (
     user_id     uuid        NOT NULL,
     channel     varchar(16) NOT NULL CHECK (channel IN ('PUSH','EMAIL','IN_APP')),
     category    varchar(32) NOT NULL
@@ -73,7 +83,7 @@ CREATE TABLE IF NOT EXISTS content.notification_preference (
 );
 
 -- Durable in-app notification records
-CREATE TABLE IF NOT EXISTS content.notification (
+CREATE TABLE IF NOT EXISTS notification (
     id               uuid         PRIMARY KEY DEFAULT gen_random_uuid(),
     recipient_id     uuid         NOT NULL,
     category         varchar(32)  NOT NULL,
@@ -90,7 +100,7 @@ CREATE TABLE IF NOT EXISTS content.notification (
 );
 
 CREATE INDEX IF NOT EXISTS ix_notification_recipient_unread
-    ON content.notification (recipient_id, created_at DESC)
+    ON notification (recipient_id, created_at DESC)
     WHERE read_at IS NULL AND deleted_at IS NULL;
 
 COMMIT;

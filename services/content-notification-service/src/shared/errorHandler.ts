@@ -3,7 +3,7 @@ import { DomainError } from './errors';
 import logger from './logger';
 
 export function errorHandler(err: Error, req: Request, res: Response, _next: NextFunction): void {
-  const correlationId = (req.headers['x-correlation-id'] as string) ?? null;
+  const correlationId = (req.headers['x-correlation-id'] as string | undefined) ?? null;
 
   if (err instanceof DomainError) {
     res.status(err.status).json({

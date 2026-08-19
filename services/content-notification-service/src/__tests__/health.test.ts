@@ -1,4 +1,13 @@
 import request from 'supertest';
+
+// Set test environment variables before importing app
+process.env.DB_HOST = 'localhost';
+process.env.DB_PORT = '5432';
+process.env.DB_NAME = 'test_db';
+process.env.DB_USER = 'test_user';
+process.env.DB_PASSWORD = 'test_password';
+process.env.NODE_ENV = 'test';
+
 import app from '../app';
 import * as db from '../infrastructure/database/db';
 
@@ -16,7 +25,13 @@ describe('GET /health/live', () => {
 
 describe('GET /health/ready', () => {
   it('returns 200 when db is reachable', async () => {
-    mockQuery.mockResolvedValueOnce({ rows: [], rowCount: 1, command: 'SELECT', oid: 0, fields: [] });
+    mockQuery.mockResolvedValueOnce({
+      rows: [],
+      rowCount: 1,
+      command: 'SELECT',
+      oid: 0,
+      fields: [],
+    });
     const res = await request(app).get('/health/ready');
     expect(res.status).toBe(200);
     expect(res.body.status).toBe('ok');
