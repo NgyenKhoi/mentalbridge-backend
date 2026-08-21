@@ -41,6 +41,43 @@ export class JournalService {
 }
 
 @Controller("v1/journals")
-export class JournalController { constructor(private readonly service: JournalService) {} @Post() create(@Req() request: Request) { return this.service.create(request); } @Get() list(@Req() request: Request, @Query() query: { limit?: string; cursor?: string; includeDeleted?: string }) { return this.service.list(request, query); } @Get(":journalId") detail(@Req() request: Request, @Param("journalId") id: string) { return this.service.detail(request, id); } @Patch(":journalId") revise(@Req() request: Request, @Param("journalId") id: string) { return this.service.revise(request, id); } @Delete(":journalId") remove(@Req() request: Request, @Param("journalId") id: string) { return this.service.remove(request, id); } }
-@Module({ controllers: [JournalController], providers: [JournalService, { provide: "JOURNAL_STORE", useFactory: () => new MongoJournalStore(loadConfiguration()) }] })
+export class JournalController {
+  constructor(@Inject(JournalService) private readonly service: JournalService) {}
+
+  @Post()
+  create(@Req() request: Request) {
+    return this.service.create(request);
+  }
+
+  @Get()
+  list(
+    @Req() request: Request,
+    @Query() query: { limit?: string; cursor?: string; includeDeleted?: string },
+  ) {
+    return this.service.list(request, query);
+  }
+
+  @Get(":journalId")
+  detail(@Req() request: Request, @Param("journalId") id: string) {
+    return this.service.detail(request, id);
+  }
+
+  @Patch(":journalId")
+  revise(@Req() request: Request, @Param("journalId") id: string) {
+    return this.service.revise(request, id);
+  }
+
+  @Delete(":journalId")
+  remove(@Req() request: Request, @Param("journalId") id: string) {
+    return this.service.remove(request, id);
+  }
+}
+
+@Module({
+  controllers: [JournalController],
+  providers: [
+    JournalService,
+    { provide: "JOURNAL_STORE", useFactory: () => new MongoJournalStore(loadConfiguration()) },
+  ],
+})
 export class JournalModule {}
