@@ -1,9 +1,9 @@
 import { Request, Response, NextFunction } from 'express';
-import { DomainError } from './errors';
-import logger from './logger';
+import { DomainError } from './errors.js';
+import logger from './logger.js';
 
 export function errorHandler(err: Error, req: Request, res: Response, _next: NextFunction): void {
-  const correlationId = (req.headers['x-correlation-id'] as string) ?? null;
+  const correlationId = (req.headers['x-correlation-id'] as string | undefined) ?? null;
 
   if (err instanceof DomainError) {
     res.status(err.status).json({

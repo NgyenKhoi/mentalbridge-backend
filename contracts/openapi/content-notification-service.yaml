@@ -32,6 +32,8 @@ paths:
             application/json:
               schema:
                 $ref: '#/components/schemas/LiveResponse'
+              example:
+                status: ok
 
   /health/ready:
     get:
@@ -45,12 +47,18 @@ paths:
             application/json:
               schema:
                 $ref: '#/components/schemas/ReadyResponse'
+              example:
+                status: ok
+                db: connected
         '503':
           description: Service unavailable — database unreachable
           content:
             application/json:
               schema:
                 $ref: '#/components/schemas/ReadyResponse'
+              example:
+                status: unavailable
+                db: disconnected
 
   /api/v1/resources:
     get:
@@ -86,13 +94,26 @@ paths:
             application/json:
               schema:
                 $ref: '#/components/schemas/ResourceListResponse'
+              example:
+                data:
+                  - id: 123e4567-e89b-12d3-a456-426614174000
+                    category: BREATHING
+                    locale: vi-VN
+                    title: Kỹ thuật thở 4-7-8
+                    summary: Kỹ thuật thở giúp giảm căng thẳng
+                    externalUrl: null
+                    status: PUBLISHED
+                    reviewedAt: '2024-01-15T10:00:00Z'
+                    createdAt: '2024-01-15T09:00:00Z'
+                    updatedAt: '2024-01-15T10:00:00Z'
+                count: 1
 
     post:
       tags: [Resources]
       summary: Create a new resource (Admin)
       operationId: createResource
       security:
-        - AdminHeader: []
+        - BearerAuth: []
       requestBody:
         required: true
         content:
@@ -106,6 +127,17 @@ paths:
             application/json:
               schema:
                 $ref: '#/components/schemas/ResourceSummary'
+              example:
+                id: 123e4567-e89b-12d3-a456-426614174000
+                category: BREATHING
+                locale: vi-VN
+                title: Kỹ thuật thở 4-7-8
+                summary: Kỹ thuật thở giúp giảm căng thẳng và lo âu
+                externalUrl: null
+                status: DRAFT
+                reviewedAt: null
+                createdAt: '2024-01-15T10:00:00Z'
+                updatedAt: '2024-01-15T10:00:00Z'
         '422':
           $ref: '#/components/responses/ValidationError'
 
@@ -137,7 +169,7 @@ paths:
       summary: Update a DRAFT resource (Admin)
       operationId: updateResource
       security:
-        - AdminHeader: []
+        - BearerAuth: []
       requestBody:
         required: true
         content:
@@ -161,7 +193,7 @@ paths:
       summary: Delete a DRAFT resource (Admin)
       operationId: deleteResource
       security:
-        - AdminHeader: []
+        - BearerAuth: []
       responses:
         '204':
           description: Deleted
@@ -176,7 +208,7 @@ paths:
       summary: Publish a DRAFT resource — reviewed content workflow (Admin)
       operationId: publishResource
       security:
-        - AdminHeader: []
+        - BearerAuth: []
       parameters:
         - name: id
           in: path
@@ -202,7 +234,7 @@ paths:
       summary: Archive a PUBLISHED resource (Admin)
       operationId: archiveResource
       security:
-        - AdminHeader: []
+        - BearerAuth: []
       parameters:
         - name: id
           in: path
@@ -258,7 +290,7 @@ paths:
       summary: Create a hotline (Admin)
       operationId: createHotline
       security:
-        - AdminHeader: []
+        - BearerAuth: []
       requestBody:
         required: true
         content:
@@ -272,6 +304,18 @@ paths:
             application/json:
               schema:
                 $ref: '#/components/schemas/HotlineSummary'
+              example:
+                id: 987e6543-e21b-34d5-b678-123456789abc
+                countryCode: VN
+                region: Ho Chi Minh City
+                name: Đường dây nóng sức khỏe tâm thần
+                phoneNumber: 1800-xxxx
+                websiteUrl: https://example.com
+                availabilityText: 24/7
+                guidance: Hỗ trợ tâm lý khẩn cấp
+                locale: vi-VN
+                active: true
+                verifiedAt: '2024-01-15T10:00:00Z'
         '422':
           $ref: '#/components/responses/ValidationError'
 
@@ -303,7 +347,7 @@ paths:
       summary: Update hotline (Admin)
       operationId: updateHotline
       security:
-        - AdminHeader: []
+        - BearerAuth: []
       requestBody:
         required: true
         content:
@@ -325,7 +369,7 @@ paths:
       summary: Delete hotline (Admin)
       operationId: deleteHotline
       security:
-        - AdminHeader: []
+        - BearerAuth: []
       responses:
         '204':
           description: Deleted
@@ -338,7 +382,7 @@ paths:
       summary: Deactivate a hotline (Admin)
       operationId: deactivateHotline
       security:
-        - AdminHeader: []
+        - BearerAuth: []
       parameters:
         - name: id
           in: path
@@ -358,13 +402,14 @@ paths:
 
 components:
   securitySchemes:
-    AdminHeader:
-      type: apiKey
-      in: header
-      name: x-actor-id
+    BearerAuth:
+      type: http
+      scheme: bearer
+      bearerFormat: JWT
       description: >
-        Admin account UUID. Full JWT enforcement to be added in the identity-service
-        integration task.
+        JWT issued by identity-service. Admin role enforcement will be
+        implemented in Story 209 during identity-service integration.
+        Story 208 defines the contract only.
 
   responses:
     NotFound:
@@ -373,18 +418,41 @@ components:
         application/json:
           schema:
             $ref: '#/components/schemas/ProblemDetails'
+          example:
+            type: https://mentalbridge.io/errors/RESOURCE_NOT_FOUND
+            title: Resource not found
+            status: 404
+            code: RESOURCE_NOT_FOUND
+            correlationId: 123e4567-e89b-12d3-a456-426614174000
     Conflict:
       description: State conflict or optimistic lock failure
       content:
         application/json:
           schema:
             $ref: '#/components/schemas/ProblemDetails'
+          example:
+            type: https://mentalbridge.io/errors/INVALID_STATE_TRANSITION
+            title: Cannot modify published resource
+            status: 409
+            code: INVALID_STATE_TRANSITION
+            correlationId: 123e4567-e89b-12d3-a456-426614174000
     ValidationError:
       description: Validation failed
       content:
         application/json:
           schema:
             $ref: '#/components/schemas/ProblemDetails'
+          example:
+            type: https://mentalbridge.io/errors/VALIDATION_ERROR
+            title: Validation failed
+            status: 422
+            code: VALIDATION_ERROR
+            correlationId: 123e4567-e89b-12d3-a456-426614174000
+            fieldViolations:
+              - field: title
+                message: Title is required
+              - field: category
+                message: Invalid category
 
   schemas:
     LiveResponse:
@@ -412,18 +480,34 @@ components:
       properties:
         type:
           type: string
+          format: uri
+          example: https://mentalbridge.io/errors/RESOURCE_NOT_FOUND
         title:
           type: string
+          example: Resource not found
         status:
           type: integer
+          example: 404
         code:
           type: string
+          example: RESOURCE_NOT_FOUND
         correlationId:
           type: string
+          format: uuid
           nullable: true
+          example: 123e4567-e89b-12d3-a456-426614174000
         fieldViolations:
           type: array
-          items: {}
+          items:
+            type: object
+            properties:
+              field:
+                type: string
+              message:
+                type: string
+          example:
+            - field: title
+              message: Title is required
 
     ResourceCategory:
       type: string
