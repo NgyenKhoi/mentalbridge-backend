@@ -8,7 +8,7 @@ Realtime owns conversations, encrypted messages, attachments metadata, tombstone
 
 | Capability | Main behavior | Acceptance |
 | --- | --- | --- |
-| Conversation eligibility | Create/open chat only for an eligible consultation relationship | Handshake token is insufficient; every subscribe/send reauthorizes; dependency uncertainty fails closed |
+| Conversation eligibility | Create/open exactly one conversation for an eligible confirmed `IN_APP_CHAT` appointment | No unrestricted specialist direct message; every open/subscribe/send reauthorizes appointment status and `[scheduledStartAt, scheduledEndAt)`; dependency uncertainty fails closed |
 | Messaging | Persist message then acknowledge/fan out with client idempotency | Same sender/clientMessageId returns original; server assigns sender/context; Redis/Kafka failure cannot lose durable message |
 | History/reconnect | Cursor list and resynchronize missed state | Stable ordering/tie-breaker; reconnect recovers through REST; back-pressure and size limits explicit |
 | Receipts/presence | Maintain high-water delivered/read marks and TTL presence | Stale receipt cannot move backward; presence may become unknown on Redis failure; no durable content in Redis |
@@ -20,13 +20,15 @@ Realtime owns conversations, encrypted messages, attachments metadata, tombstone
 - Feature slices: `conversations`, `messages`, `history`, `receipts`, `presence`, `websocket`, `notification-delivery`, `message-moderation`.
 - Runtime: Node.js 24 LTS, strict TypeScript, Express 5, Socket.IO 4, official MongoDB and Redis clients, `migrate-mongo`, KafkaJS, Pino, OpenTelemetry, Vitest, and Testcontainers as defined in `docs/nodejs-service-stack.md`.
 - OpenAPI owns history/recovery; versioned WebSocket schemas own commands/acks/errors; Kafka schemas own minimized integration facts.
+- Conversation history may remain read-only after a slot under retention policy, but join/send never becomes 24/7 specialist messaging. Subscription cancellation closes future conversations immediately; an already-started confirmed session remains writable only until its scheduled end.
+- `IN_APP_VIDEO` is future intent only. Realtime does not implement signalling, rooms, provider credentials, presence evidence, recording, or fallback until a separate contract/ADR assigns those responsibilities.
 - Mongo migrations enforce validators/indexes. Persist before ack, then Redis fan-out and recoverable Kafka publication. Attachments use private object storage, not Mongo blobs.
 - Define heartbeat, reconnect, ordering, payload/back-pressure/rate limits and cross-instance failure semantics before gateway implementation.
 
 ## Ordered tasks
 
 - [ ] RT-01 Scaffold the plain Node.js/TypeScript service with Express, Socket.IO, explicit composition, typed configuration, health/readiness, lint, test, and build commands.
-- [ ] RT-02 Resolve chat eligibility duration, attachment, tombstone/retention and moderation policies.
+- [ ] RT-02 Resolve appointment join grace, read-only history, attachment, tombstone/retention and moderation policies; define video separately before enabling that channel.
 - [ ] RT-03 Define conversation/history OpenAPI, WebSocket schemas and Kafka event contracts.
 - [ ] RT-04 Add migrate-mongo validators/indexes and encrypted-content/data documentation.
 - [ ] RT-05 Implement owner-authorized conversation lifecycle and REST history.

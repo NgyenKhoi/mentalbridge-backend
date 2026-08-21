@@ -1,6 +1,6 @@
 # PostgreSQL Field Data Dictionary
 
-This document explains the business purpose of persisted PostgreSQL fields. The original logical baseline is [`001_initial_schema.sql`](../../database/postgresql/001_initial_schema.sql); service-owned Liquibase changelogs become executable sources of truth as modules are implemented. It is written for developers and reviewers; descriptions are intentionally kept out of executable migrations.
+This document explains the business purpose of conceptual PostgreSQL fields. [`001_initial_schema.sql`](../../database/postgresql/001_initial_schema.sql) is a non-executable whole-system model and must not provision an environment. Names such as `consultation.appointment` below identify a logical owner inside that model; the physical table will be `public.appointment` in the separate `mentalbridge_consultation` database. Service-owned Liquibase changelogs become executable sources of truth only when modules are implemented. It is written for developers and reviewers; descriptions are intentionally kept out of executable migrations.
 
 When service-owned Liquibase migrations are introduced, update this dictionary in the same change. A field description must explain why the value is persisted, whether it is authoritative, derived, external, or sensitive, and how nullability, time, versioning, or idempotency affects behavior.
 
@@ -134,7 +134,7 @@ Privacy-minimized local security record for authentication, recovery, replay, an
 | `occurred_at` | UTC instant the security decision occurred. |
 | `created_at` | Immutable UTC insertion instant. |
 
-## Schema `care`
+## Conceptual owner `care` (`mentalbridge_care.public`)
 
 ### `care.user_profile`
 
@@ -265,11 +265,13 @@ Versioned set of platform support actions generated for one risk classification.
 | `updated_at` | UTC instant of the latest persisted plan status/action change. |
 | `version` | Optimistic-lock counter preventing lost concurrent plan updates. |
 
-## Schema `consultation`
+## Conceptual owner `consultation` (`mentalbridge_consultation.public`)
 
 ### `consultation.specialist_profile`
 
-Consultation-owned professional profile and authoritative verification state.
+Consultation-owned professional profile and authoritative administrator approval state. The product does not collect specialist verification documents.
+
+Database checks require a submitted timestamp once review starts, reviewer identity/time for terminal approval decisions, and a stable reason for rejection or suspension.
 
 | Field | Purpose |
 | --- | --- |
@@ -277,13 +279,14 @@ Consultation-owned professional profile and authoritative verification state.
 | `display_name` | Reviewed specialist name displayed to users. |
 | `biography` | Optional reviewed professional biography shown in discovery and booking. |
 | `years_experience` | Non-negative stated professional experience used for informational filtering/display. |
-| `consultation_methods` | Validated list of supported consultation modes used to create compatible slots. |
 | `timezone` | IANA timezone used to interpret and render the specialist schedule. |
-| `verification_status` | Authoritative approval workflow state controlling specialist capabilities. |
-| `approved_at` | UTC instant approval became effective; null until approved. |
-| `approved_by` | Identity account of the administrator who approved the specialist. |
+| `approval_status` | Authoritative profile-review state controlling discovery, slots, appointments, and specialist access. |
+| `submitted_at` | UTC instant the specialist submitted a complete profile for review; null before submission. |
+| `reviewed_at` | UTC instant the latest administrator decision became effective; null until reviewed. |
+| `reviewed_by` | External Identity administrator UUID responsible for the latest decision; null until reviewed. |
+| `decision_reason_code` | Optional stable, non-sensitive reason for rejection or suspension; unrestricted document/evidence text is not stored. |
 | `created_at` | Immutable UTC profile creation instant. |
-| `updated_at` | UTC instant of the latest persisted profile or verification change. |
+| `updated_at` | UTC instant of the latest persisted profile or approval change. |
 | `version` | Optimistic-lock counter preventing lost specialist-profile updates. |
 
 ### `consultation.specialty`
@@ -305,25 +308,208 @@ Many-to-many assignment of reviewed specialties to a specialist profile.
 | `specialist_id` | Specialist profile receiving the specialty. |
 | `specialty_code` | Reference specialty assigned to the specialist. |
 
-### `consultation.verification_document`
+### `consultation.subscription_plan`
 
-Private object metadata and review result for a specialist credential document.
+Stable plan identity used to group immutable commercial versions.
 
 | Field | Purpose |
 | --- | --- |
-| `id` | Immutable UUID for document review and audit references. |
-| `specialist_id` | Specialist profile that submitted the credential. |
-| `document_type` | Validated credential category used by the verification workflow. |
-| `object_key` | Unique private object-storage key; it is not a public URL. |
-| `content_type` | Server-validated media type used for safe retrieval and scanning. |
-| `checksum_sha256` | SHA-256 integrity digest used to detect replacement or corruption. |
-| `review_status` | Authoritative review result for this exact document. |
-| `reviewed_by` | Administrator account that made the review decision; null while pending. |
-| `reviewed_at` | UTC instant the review decision was recorded; null while pending. |
-| `rejection_reason` | Reviewed explanation visible to authorized parties when a document is rejected. |
-| `created_at` | Immutable UTC metadata insertion instant. |
+| `code` | Stable plan code: `FREE`, `PREMIUM_CARE`, or `PREMIUM_PLUS`. |
+| `display_name` | Reviewed user-facing plan name. |
+| `tier_rank` | Unique ordering used to reject same-tier changes and every downgrade; zero is Free. |
+| `active` | Controls whether a plan accepts new purchases without deleting historical versions. |
+| `created_at` | Immutable UTC plan creation instant. |
+| `updated_at` | UTC instant of the latest catalogue-level activation/name change. |
 
-## Schema `care`
+### `consultation.subscription_plan_version`
+
+Immutable price, allocation, credit, revenue-share, and cancellation policy purchased by a subscription period.
+
+| Field | Purpose |
+| --- | --- |
+| `id` | Immutable plan-version UUID referenced by subscriptions, upgrades, payments, and credits. |
+| `plan_code` | Stable parent plan identity. |
+| `version` | Monotonically increasing version within the plan; published versions are never rewritten. |
+| `currency` | ISO 4217 currency for every minor-unit amount in this version; current catalogue uses `USD`. |
+| `price_minor` | Exact monthly price in currency minor units: 0, 999, or 1999 for current versions. |
+| `billing_period_months` | Calendar-month period count; current plans use one month rather than a fixed 30-day duration. |
+| `consultation_credits_per_period` | Number of indivisible credits granted after a successful payment: 0, 1, or 3. |
+| `non_consultation_value_minor` | Price allocation for non-consultation premium features; current paid plans use 499. |
+| `credit_value_minor` | Explicit value allocated to each credit; current paid plans use 500 so earnings are not derived from the whole subscription. |
+| `specialist_share_bps` | Specialist share in basis points snapshotted into each credit; 7000 means 70%. |
+| `cancellation_cutoff_hours` | Optional whole-hour cutoff separating eligible credit release from late cancellation forfeiture. Current conceptual rows leave it null because product approval is still pending; booking cannot be production-enabled without a published policy. |
+| `effective_from` | UTC instant at which the version may be offered to new purchases. |
+| `retired_at` | Optional UTC instant after which new purchases cannot select the version; historical records remain valid. |
+| `created_at` | Immutable UTC insertion instant. |
+
+### `consultation.subscription_plan_entitlement`
+
+Allow-list of feature decisions attached to one immutable plan version.
+
+| Field | Purpose |
+| --- | --- |
+| `plan_version_id` | Plan version that authoritatively includes the capability. |
+| `entitlement_code` | Stable capability code returned through narrow current-entitlement decisions; safety guidance is never gated here. |
+
+### `consultation.user_subscription`
+
+Authoritative paid-subscription lifecycle for one user. Absence of an active paid row means Free entitlement.
+
+| Field | Purpose |
+| --- | --- |
+| `id` | Immutable subscription UUID exposed in payment/status/history APIs. |
+| `user_id` | External Care user UUID owning the subscription; not proof of current account authorization. |
+| `plan_version_id` | Current immutable paid-plan version; an applied upgrade changes this reference while upgrade history preserves the prior version. |
+| `status` | Current lifecycle state. `CANCEL_PENDING_SESSION_END` means paid features are already disabled but one consultation that had started may finish at its snapshotted end. |
+| `current_period_start` | UTC start of the active provider billing period; null while initial payment is pending. |
+| `current_period_end` | UTC exclusive end of the current billing period used for benefit/credit expiry and exact upgrade seconds. |
+| `cancellation_requested_at` | UTC instant immediate cancellation was requested; null otherwise. It does not imply a refund. |
+| `ended_at` | UTC instant the paid subscription ceased being current; null while active/pending. |
+| `idempotency_key` | User-scoped creation retry key returning the original subscription outcome. |
+| `created_at` | Immutable UTC insertion instant. |
+| `updated_at` | UTC instant of the latest lifecycle, period, or plan change. |
+| `version` | Optimistic-lock counter protecting renewal, cancellation, and upgrade races. |
+
+### `consultation.subscription_status_history`
+
+Append-only timeline of subscription status transitions.
+
+| Field | Purpose |
+| --- | --- |
+| `id` | Immutable transition UUID. |
+| `subscription_id` | Subscription whose authoritative status changed. |
+| `from_status` | Previous status; null only for initial creation. |
+| `to_status` | New validated status. |
+| `reason_code` | Optional stable machine-readable reason without provider payload text. |
+| `changed_at` | UTC instant the transition committed. |
+
+### `consultation.payment_transaction`
+
+MoMo-backed payment attempt and current externally confirmed outcome. `FAKE` may exercise the same MoMo-shaped contract in local/CI; it is not a second production payment method. The MVP creates no refund transaction.
+
+| Field | Purpose |
+| --- | --- |
+| `id` | Immutable payment UUID exposed in bounded payment history. |
+| `subscription_id` | Paid subscription receiving an initial period, renewal, or upgrade. |
+| `payment_provider` | `MOMO` in real environments or MoMo-shaped `FAKE` in local/CI; no other production provider is supported. |
+| `momo_order_id` | Merchant-generated MoMo `orderId`, unique per provider and used as the primary IPN correlation key. |
+| `momo_request_id` | Merchant-generated MoMo `requestId`, unique per provider and matched exactly on IPN. |
+| `momo_trans_id` | Positive MoMo transaction ID when issued. Zero/unusable values are not copied from a failed IPN; positive values are unique. |
+| `amount_minor` | Exact positive amount requested/confirmed in currency minor units. |
+| `currency` | ISO 4217 currency validated against the plan/upgrade quote. |
+| `status` | `PENDING`, `SUCCEEDED`, `FAILED`, or externally reported `CHARGEBACK`; refund states are unsupported. |
+| `purpose` | Distinguishes `INITIAL_PURCHASE`, `RENEWAL`, and `UPGRADE` reconciliation. |
+| `momo_result_code` | Latest verified MoMo `resultCode`; only final code `0` can produce `SUCCEEDED`. |
+| `momo_pay_type` | Verified MoMo `payType`, such as QR or app payment. |
+| `idempotency_key` | Subscription-scoped payment retry key preventing duplicate attempts. |
+| `momo_response_time_epoch_ms` | Exact verified MoMo millisecond timestamp retained for signature/reconciliation evidence. |
+| `provider_occurred_at` | UTC instant parsed from verified MoMo `responseTime`; null while checkout is pending. |
+| `paid_at` | Provider-confirmed UTC success instant; null until successful. |
+| `failed_at` | UTC terminal failure instant; null unless failed. |
+| `created_at` | Immutable UTC attempt creation instant. |
+| `updated_at` | UTC instant of the latest verified payment-state change. |
+| `version` | Optimistic-lock counter preventing conflicting webhook/status application. |
+
+### `consultation.momo_payment_ipn`
+
+Verified, deduplicated receipt of the selected MoMo One-Time Payment v2 IPN contract. Invalid signatures/malformed payloads produce bounded metrics and safe diagnostics but do not persist attacker-controlled fields. Raw payload, signature, `orderInfo`, and `extraData` are discarded after hashing.
+
+| Field | Purpose |
+| --- | --- |
+| `id` | Internal immutable receipt UUID. |
+| `payment_id` | Matched local payment after signature and partner/order/request/amount validation; null for a verified but unknown order. |
+| `contract_version` | MoMo DTO/signature-policy version defining required/optional fields and result handling. |
+| `deduplication_key` | SHA-256 key derived from contract version plus verified `partnerCode|orderId|requestId|transId|resultCode|responseTime`. |
+| `partner_code` | Verified merchant `partnerCode`, matched to environment configuration. |
+| `order_id` | Verified MoMo `orderId`, matched to local `momo_order_id`. |
+| `request_id` | Verified MoMo `requestId`, matched to local `momo_request_id`. |
+| `amount_minor` | Verified VND amount; MoMo VND has no fractional minor digits. |
+| `currency` | Contract-fixed `VND`; a compatible VND plan version is required before real payment. |
+| `order_info_sha256` | Hash of required signed `orderInfo`; raw provider text is not persisted. |
+| `order_type` | Verified MoMo order type included in the canonical signature. |
+| `trans_id` | Exact verified MoMo `transId`, including provider sentinel values needed for receipt evidence. |
+| `result_code` | Verified MoMo result code. Only final `0` may activate subscription. |
+| `result_message` | Bounded provider-owned description associated with the result code; never used to decide status. |
+| `pay_type` | Verified MoMo payment channel included in the signature. |
+| `response_time_epoch_ms` | Exact positive provider timestamp included in the signature and deduplication key. |
+| `extra_data_sha256` | Hash of required signed `extraData`; arbitrary decoded content is never stored or trusted. |
+| `provider_occurred_at` | UTC instant parsed from `responseTime`. |
+| `safe_optional_details` | Versioned allow-list for non-sensitive optional MoMo fields such as `paymentOption`/`userFee`; unknown fields are discarded, not copied wholesale. |
+| `payload_sha256` | Integrity hash for reconciliation; it cannot reconstruct the prohibited raw payload. |
+| `signature_key_version` | Identifier of the checksum/access-key configuration used for validation, never the secret itself. |
+| `signature_verified_at` | UTC instant complete MoMo HMAC-SHA256 validation succeeded; required because only verified IPNs are persisted. |
+| `processing_status` | Receipt outcome: received, processed, verified-but-unmatched, or internal processing failed. |
+| `failure_code` | Stable safe diagnostic; null when processing succeeds. |
+| `received_at` | UTC instant MentalBridge received the event. |
+| `processed_at` | UTC instant business effects committed; null while unprocessed. |
+| `acknowledged_at` | Best-effort UTC evidence that HTTP 204 was emitted; latency metrics remain authoritative for the 15-second SLA. |
+
+### `consultation.consultation_credit`
+
+One indivisible consultation right and authoritative current state; available balance is counted from these rows, never stored separately.
+
+A composite foreign key guarantees the credit owner matches its subscription owner. Booking uses another composite key so a user cannot attach another user's credit.
+
+| Field | Purpose |
+| --- | --- |
+| `id` | Immutable credit UUID used by booking, upgrade, ledger, and earning records. |
+| `user_id` | External Care user UUID owning the credit. |
+| `subscription_id` | Paid subscription whose successful period granted the credit. |
+| `source_payment_id` | Successful payment that granted this exact credit and prevents unbacked grants. |
+| `plan_version_id` | Immutable plan policy whose money/share values are snapshotted below. |
+| `period_start` | UTC source-period start used for history and upgrade validation. |
+| `period_end` | UTC source-period exclusive end; an appointment must start before it. |
+| `ordinal` | One-based position within a subscription period, unique with period start. |
+| `currency` | ISO 4217 currency of all monetary snapshots on the credit. |
+| `allocated_value_minor` | Exact consultation allocation in minor units; current paid versions use 500. |
+| `specialist_share_bps` | Snapshotted specialist share; current value is 7000. |
+| `specialist_earning_minor` | Precomputed exact earning on completion; current value is 350, avoiding later rounding drift. |
+| `status` | Authoritative state: available, appointment-reserved, upgrade-held, consumed, expired, forfeited, or revoked. |
+| `expires_at` | UTC expiry equal to the source period end for an unreserved credit. |
+| `created_at` | Immutable UTC grant instant. |
+| `updated_at` | UTC instant of the latest validated state transition. |
+| `version` | Optimistic-lock counter protecting booking, expiry, cancellation, and upgrade races. |
+
+### `consultation.subscription_upgrade`
+
+Immutable calculation snapshot and workflow for the only supported in-period change, Premium Care to Premium Plus.
+
+| Field | Purpose |
+| --- | --- |
+| `id` | Immutable upgrade UUID exposed in quote/status operations. |
+| `subscription_id` | Current paid subscription being upgraded. |
+| `from_plan_version_id` | Care version used for remaining-value calculation. |
+| `to_plan_version_id` | Higher Plus version that will start a full new period after payment. |
+| `payment_id` | Unique upgrade payment attempt; null only before checkout creation completes. |
+| `old_period_start` | Snapshotted UTC start of the period being ended. |
+| `old_period_end` | Snapshotted UTC end used to calculate actual total/remaining seconds. |
+| `total_period_seconds` | Exact positive number of seconds in the old provider period; never assumed to be 30 days. |
+| `remaining_period_seconds` | Exact positive seconds remaining at quote time, not greater than total seconds. |
+| `remaining_feature_value_minor` | `floor(old non-consultation value × remaining / total)` in minor units. |
+| `available_credit_value_minor` | Sum of allocations for old credits atomically moved from available to upgrade-held. |
+| `offset_minor` | Non-withdrawable sum of remaining feature and held-credit value, usable only by this upgrade. |
+| `amount_due_minor` | Exact target full-period price minus offset; positive and verified against payment. |
+| `currency` | ISO 4217 currency shared by both plan versions, held credits, and payment. |
+| `status` | Pending payment, applied, failed, or expired; only one pending upgrade per subscription. |
+| `idempotency_key` | Subscription-scoped retry key returning the original quote/checkout. |
+| `quoted_at` | UTC calculation instant used to determine remaining seconds. |
+| `quote_expires_at` | UTC instant after which held credits must be released or expired. |
+| `applied_at` | UTC instant verified payment atomically activated Plus; null until applied. |
+| `created_at` | Immutable UTC insertion instant. |
+| `updated_at` | UTC instant of the latest workflow-state change. |
+| `version` | Optimistic-lock counter protecting webhook/expiry races. |
+
+### `consultation.subscription_upgrade_credit`
+
+Exact old credits held and valued by one upgrade quote.
+
+| Field | Purpose |
+| --- | --- |
+| `upgrade_id` | Upgrade whose offset includes the credit. |
+| `credit_id` | Unique credit held by at most one upgrade; reserved/consumed credits cannot appear. |
+| `allocated_value_minor` | Allocation snapshot included in the quote, retained for deterministic reconciliation. |
+
+## Conceptual owner `care` (`mentalbridge_care.public`)
 
 ### `care.specialist_access_grant`
 
@@ -360,11 +546,11 @@ Explicit journal-entry allow-list for grants containing journal access.
 | `grant_id` | Grant providing the parent purpose, specialist, time window, and revocation state. |
 | `journal_entry_id` | External Journal/AI entry UUID explicitly selected by the user; it is not proof the entry still exists. |
 
-## Schema `consultation`
+## Conceptual owner `consultation` (`mentalbridge_consultation.public`)
 
 ### `consultation.availability_slot`
 
-Authoritative half-open specialist availability interval that may be booked once.
+Authoritative half-open discrete slot published from a specialist's working schedule and bookable once. Start/end capture the offered interval; application validation against the standard-duration policy is pending product approval.
 
 | Field | Purpose |
 | --- | --- |
@@ -373,7 +559,7 @@ Authoritative half-open specialist availability interval that may be booked once
 | `start_at` | Inclusive UTC start instant of the available interval. |
 | `end_at` | Exclusive UTC end instant, required to be later than start. |
 | `timezone` | IANA timezone captured for stable human schedule rendering. |
-| `method` | Consultation mode available during this interval. |
+| `channel` | Consultation channel offered for this interval. `IN_APP_CHAT` is initially enabled; `IN_APP_VIDEO` is reserved but cannot be enabled before its later contract. |
 | `status` | Authoritative slot state used with database constraints to prevent conflicting bookings. |
 | `created_at` | Immutable UTC slot creation instant. |
 | `updated_at` | UTC instant of the latest slot state or schedule change. |
@@ -381,16 +567,22 @@ Authoritative half-open specialist availability interval that may be booked once
 
 ### `consultation.appointment`
 
-Authoritative booking between one user and specialist for an owned availability slot.
+Authoritative scheduled consultation between one user and specialist for an owned availability slot and credit. It intentionally contains no physical location, phone number, or external meeting link.
+
+Composite foreign keys require the appointment specialist to own the slot and the appointment user to own the credit; the application cannot create a locally inconsistent pairing.
 
 | Field | Purpose |
 | --- | --- |
 | `id` | Immutable UUID exposed in appointment REST resources and Kafka events. |
 | `slot_id` | Owned availability slot reserved by the appointment and protected by a unique active-booking constraint. |
+| `credit_id` | Consultation credit reserved by this appointment; a partial unique index prevents concurrent active use while allowing reuse after eligible cancellation. |
 | `user_id` | External Care profile UUID of the person requesting consultation. |
 | `specialist_id` | Consultation-owned specialist UUID denormalized for authorization and query efficiency. |
 | `status` | Authoritative appointment workflow state; transitions are validated and recorded in history. |
-| `consultation_method` | Method agreed at booking, copied from the slot for historical stability. |
+| `scheduled_start_at` | Inclusive UTC start copied from the selected specialist slot at booking; join/send is not authorized before it. |
+| `scheduled_end_at` | Exclusive UTC end copied from the selected specialist slot; join/send ends here even if the source availability later changes. |
+| `scheduled_timezone` | Specialist slot's IANA timezone snapshot used to reproduce the originally booked schedule. |
+| `channel` | Booked channel snapshot. Initially only `IN_APP_CHAT` is operational; `IN_APP_VIDEO` is future intent. |
 | `user_timezone` | IANA timezone captured at booking so the schedule remains understandable after device timezone changes. |
 | `idempotency_key` | Caller retry key unique per user so uncertain REST retries return the original booking outcome. |
 | `cancellation_reason` | Reviewed explanation recorded when a permitted cancellation occurs. |
@@ -416,6 +608,149 @@ Append-only audit timeline of validated appointment state transitions.
 | `reason` | Optional reviewed reason explaining the transition without sensitive conversation content. |
 | `changed_at` | UTC instant the transition committed. |
 
+### `consultation.consultation_credit_ledger_entry`
+
+Append-only evidence for every credit grant, booking reservation/release, upgrade hold/release, consumption, expiry, forfeiture, and revocation.
+
+| Field | Purpose |
+| --- | --- |
+| `id` | Immutable ledger-entry UUID. |
+| `credit_id` | Credit whose authoritative state changed. |
+| `appointment_id` | Optional appointment that caused reservation, release, consumption, or forfeiture. |
+| `upgrade_id` | Optional upgrade that caused a hold, hold release, or revocation; mutually exclusive with appointment cause. |
+| `entry_type` | Stable transition fact, including upgrade hold/release; it never represents a payment refund. |
+| `from_status` | Previous credit state; null only for the grant entry. |
+| `to_status` | New authoritative credit state after the transaction. |
+| `reason_code` | Optional safe machine-readable policy/provider reason. |
+| `idempotency_key` | Credit-scoped transition identity preventing replay from appending or applying the effect twice. |
+| `occurred_at` | UTC instant the credit transition committed. |
+
+### `consultation.specialist_earning`
+
+One immutable monetary allocation created only by a completed appointment; current status supports settlement and provider payout reconciliation.
+
+| Field | Purpose |
+| --- | --- |
+| `id` | Immutable earning UUID shown in specialist/admin history. |
+| `appointment_id` | Unique completed appointment proving that one earning may exist. |
+| `credit_id` | Unique consumed credit whose snapshotted allocation funds the earning. |
+| `specialist_id` | Specialist who completed the appointment and owns the payable amount. |
+| `currency` | ISO 4217 currency of all amounts in the earning. |
+| `allocated_value_minor` | Credit allocation snapshot; current plan versions use 500. |
+| `specialist_share_bps` | Revenue-share snapshot; current plan versions use 7000. |
+| `specialist_amount_minor` | Exact specialist amount; current versions use 350 per completed credit. |
+| `platform_amount_minor` | Exact remainder of the credit allocation; current versions use 150. |
+| `status` | Settlement/payout state. `PAID` requires a linked payout with verified `SUCCEEDED` provider outcome. |
+| `earned_at` | UTC appointment-completion instant. |
+| `settlement_available_at` | UTC instant the earning becomes eligible for a provider payout request. |
+| `reversed_at` | UTC instant an approved chargeback/reconciliation reversal was recorded; null otherwise. |
+| `reversal_reason_code` | Stable non-sensitive reversal reason; null unless reversed. |
+| `created_at` | Immutable UTC insertion instant. |
+| `updated_at` | UTC instant of the latest settlement/payout/reversal state change. |
+| `version` | Optimistic-lock counter protecting settlement and payout races. |
+
+### `consultation.specialist_payout_destination`
+
+Encrypted specialist-owned destination used by a provider payout adapter. Raw wallet/account data never enters logs, events, or broad read models.
+
+| Field | Purpose |
+| --- | --- |
+| `id` | Immutable destination UUID referenced by payout requests. |
+| `specialist_id` | Specialist who owns and may manage this destination. |
+| `payout_provider` | `MOMO` in real environments or MoMo-shaped `FAKE` locally; only MoMo may be used in production after credential approval. |
+| `destination_type` | Allow-listed provider route: MoMo wallet or domestic bank account. |
+| `destination_ciphertext` | Encrypted provider-required wallet/account details; never returned as stored ciphertext to clients. |
+| `encryption_key_version` | Key identifier needed for controlled rotation and decryption. |
+| `destination_fingerprint` | One-way normalized fingerprint used for duplicate detection without revealing destination data. |
+| `display_hint` | Safe masked label, such as a last-four hint, for specialist confirmation. |
+| `status` | Verification/availability state; only `VERIFIED` destinations accept new payouts. |
+| `verified_at` | UTC provider/application verification instant; required for `VERIFIED`. |
+| `created_at` | Immutable UTC insertion instant. |
+| `updated_at` | UTC instant of the latest verification or disablement change. |
+| `version` | Optimistic-lock counter protecting concurrent destination changes. |
+
+### `consultation.specialist_payout`
+
+Idempotent provider payout request and its reconciled current outcome. Local/CI uses a fake adapter; real domestic payout stays disabled until compatible VND pricing or an approved versioned FX policy exists.
+
+| Field | Purpose |
+| --- | --- |
+| `id` | Immutable payout request UUID. |
+| `specialist_id` | Specialist receiving the attached available earnings. |
+| `destination_id` | Verified encrypted payout destination selected for this request. |
+| `currency` | ISO 4217 currency shared by every attached earning. |
+| `amount_minor` | Exact positive requested amount in minor units, equal to attached payout items. |
+| `payout_provider` | `MOMO`/`FAKE` namespace used for request, status, and IPN reconciliation. |
+| `status` | `PENDING`, `PROCESSING`, `SUCCEEDED`, `FAILED`, or uncertainty-preserving `UNKNOWN`. |
+| `idempotency_key` | Specialist-scoped command key preventing duplicate logical payout creation. Provider attempts derive separate keys. |
+| `requested_at` | UTC instant MentalBridge created the payout request. |
+| `completed_at` | UTC instant a verified provider attempt proved the logical payout succeeded; required for `SUCCEEDED`. |
+| `last_failure_code` | Safe diagnostic from the latest definite failure; never contains destination/raw payload data. |
+| `created_at` | Immutable UTC insertion instant. |
+| `updated_at` | UTC instant of the latest verified reconciliation change. |
+| `version` | Optimistic-lock counter protecting duplicate callbacks/status updates. |
+
+### `consultation.specialist_payout_attempt`
+
+Immutable provider-call lineage for one logical payout. A definite failed attempt may be followed by a new numbered attempt; an `UNKNOWN` attempt must be queried/reconciled and blocks a new transfer attempt.
+
+| Field | Purpose |
+| --- | --- |
+| `id` | Immutable provider-attempt UUID. |
+| `payout_id` | Logical payout whose fixed earnings/destination/amount are being sent. |
+| `payout_provider` | `MOMO`/`FAKE` namespace, constrained to match the parent payout. |
+| `attempt_number` | Monotonic sequence within the logical payout. |
+| `provider_idempotency_key` | Unique provider-scoped transfer key; retries of the same network call reuse it. |
+| `provider_payout_reference` | Provider transfer identity when known, unique within provider. |
+| `status` | Provider-call outcome including `UNKNOWN` for timeout/ambiguous delivery. |
+| `requested_at` | UTC instant the attempt was sent or queued for sending. |
+| `provider_confirmed_at` | UTC instant verified provider evidence proved success. |
+| `failed_at` | UTC instant a definite terminal failure was verified. |
+| `failure_code` | Safe stable failure code without sensitive payload data. |
+| `created_at` | Immutable UTC insertion instant. |
+| `updated_at` | UTC instant of the latest provider reconciliation update. |
+| `version` | Optimistic-lock counter protecting callback/status-query races. |
+
+### `consultation.specialist_payout_item`
+
+Immutable allocation of available earnings to one payout request.
+
+| Field | Purpose |
+| --- | --- |
+| `payout_id` | Provider payout request containing the earning. |
+| `earning_id` | Unique earning attached to at most one payout. |
+| `amount_minor` | Exact portion requested from this earning; it becomes paid only when the parent payout succeeds. Current flow uses the full available specialist amount. |
+
+### `consultation.specialist_payout_status_history`
+
+Append-only lifecycle evidence for a payout request, including uncertainty and reconciliation.
+
+| Field | Purpose |
+| --- | --- |
+| `id` | Immutable transition UUID. |
+| `payout_id` | Payout whose current status changed. |
+| `from_status` | Prior status; null for initial creation. |
+| `to_status` | New validated status based on local command or verified provider evidence. |
+| `reason_code` | Safe machine-readable reason without raw provider/destination data. |
+| `changed_at` | UTC instant the transition committed. |
+
+### `consultation.payout_provider_event`
+
+Deduplicated receipt of payout IPN/callback events. Only the integrity hash and safe processing metadata are retained.
+
+| Field | Purpose |
+| --- | --- |
+| `id` | Internal immutable event-receipt UUID. |
+| `payout_attempt_id` | Optional resolved local attempt; null until the provider identity can be correlated safely. |
+| `payout_provider` | `MOMO`/`FAKE` namespace for event identity and verification policy. |
+| `provider_event_id` | Provider event identity, unique within the provider for replay protection. |
+| `event_type` | Allow-listed event category used for reconciliation routing. |
+| `payload_sha256` | Integrity hash; raw callback payload and destination data are not stored here. |
+| `processing_status` | Receipt state: received, processed, safely rejected, or failed. |
+| `failure_code` | Stable safe processing diagnostic; null on success. |
+| `received_at` | UTC instant MentalBridge received the callback. |
+| `processed_at` | UTC instant its verified effect committed; null while unresolved. |
+
 ### `consultation.specialist_review`
 
 User rating and moderated feedback tied to one completed appointment.
@@ -434,7 +769,7 @@ User rating and moderated feedback tied to one completed appointment.
 | `deleted_at` | UTC user/moderator deletion instant; null while not deleted. |
 | `version` | Optimistic-lock counter preventing lost review/moderation updates. |
 
-## Schema `care`
+## Conceptual owner `care` (`mentalbridge_care.public`)
 
 ### `care.follow_up_plan`
 
@@ -467,7 +802,7 @@ User response captured for one occurrence of a follow-up plan.
 | `assessment_submission_id` | Optional assessment completed as part of this check-in. |
 | `submitted_at` | UTC instant the check-in was accepted. |
 
-## Schema `content`
+## Conceptual owner `content` (`mentalbridge_content_notification.public`)
 
 ### `content.resource`
 
@@ -543,7 +878,7 @@ Durable in-app notification and safe delivery payload owned by Content/Notificat
 | `created_at` | Immutable UTC creation instant used for cursor ordering. |
 | `deleted_at` | UTC user/policy tombstone instant; null while visible in history. |
 
-## Schema `ai`
+## Conceptual owner `ai` (owner-local `public` tables)
 
 ### `ai.analysis_job`
 
@@ -604,7 +939,7 @@ Reproducible execution and metrics for comparing configured models against one d
 | `completed_at` | UTC terminal completion instant; null while unfinished. |
 | `created_at` | Immutable UTC request/insertion instant. |
 
-## Schema `platform`
+## Conceptual owner `platform` (owner-local `public` tables)
 
 ### `platform.outbox_event`
 

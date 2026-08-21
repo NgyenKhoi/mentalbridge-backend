@@ -14,7 +14,7 @@
 | --- | --- | --- |
 | Identity | credentials, account state, roles, sessions | profile health data |
 | Care | user profile, consent, assessment, risk, intervention, follow-up | raw chat messages |
-| Consultation | specialist profile/status, slots, appointments, reviews | account passwords, journals |
+| Consultation/Billing | specialist profile/approval, plan versions, subscriptions, payments, consultation credits, slots, appointments, earnings, payout destinations/requests, reviews | account passwords, journals, chat messages |
 | Journal/AI | journal revisions, analysis jobs/results, AI evaluation | authoritative assessment scoring |
 | Realtime | conversations, messages, receipts, presence | consent source of truth |
 | Content/Notification | resources, hotlines, notification preferences/delivery | risk decisions |
@@ -22,7 +22,7 @@
 
 The deployable business services are fixed as Spring Boot `identity-service`, `care-service`, and `consultation-service`; plain Node.js/TypeScript `journal-ai-service`, `realtime-service`, and `content-notification-service` using the ADR 0003 library stack; and Python `phobert-worker`. Governance/reporting is implemented as bounded admin APIs and Kafka projections inside the relevant owner until a future ADR justifies another deployable. The edge gateway/reverse proxy and Eureka registry are infrastructure and contain no business orchestration.
 
-The updated project-tracking workbook introduces premium subscriptions, payments, consultation credits, specialist earnings, and payouts. ADR 0001 does not assign these authoritative financial facts to a deployable, and the existing database baseline does not define their ledger. Implementation is blocked until an ADR selects the bounded-context owner, storage, provider/webhook, credit, settlement, reconciliation, security, and retention boundaries. Identity and Consultation must not invent independent balances in the interim.
+ADR 0005 assigns the cohesive billing bounded context to `consultation-service` without adding another deployable. Its PostgreSQL database is authoritative for plan versions, paid subscriptions, MoMo payments/IPNs, upgrade offsets, consultation credits and ledger entries, specialist earnings, encrypted payout destinations, and MoMo payout reconciliation. Other services query narrow current entitlement or appointment-eligibility decisions and never maintain a shadow balance.
 
 ## 3. Container view
 
@@ -32,7 +32,7 @@ Mobile App / Admin Web
        v
  Edge reverse proxy
        |
-       +--> Identity / Care / Consultation (Spring Boot) --> PostgreSQL
+       +--> Identity / Care / Consultation+Billing (Spring Boot) --> PostgreSQL
        +--> Journal-AI (Node.js) --> MongoDB + PostgreSQL job metadata
        +--> Realtime (Node.js) --> MongoDB + Redis --> WebSocket clients
        +--> Content-Notification (Node.js) --> PostgreSQL + Brevo/push providers
@@ -56,7 +56,7 @@ Use REST/JSON for authentication, CRUD, service-to-service queries, assessment s
 
 Only Realtime Service accepts WebSocket connections. It owns chat delivery, presence, receipts, and delivery of safe in-app notification payloads. Other services communicate with Realtime through REST or Kafka, never service-to-service WebSocket. Redis stores bounded ephemeral coordination state and coordinates low-latency cross-instance socket fan-out; it does not cache database queries or durable messages. MongoDB remains authoritative for durable conversations/messages.
 
-Cloudinary is the file/object-storage provider. Sensitive verification and evaluation assets use private/authenticated delivery with signed, time-limited access; each business service remains the owner of its file metadata and authorization decisions. Brevo is the outbound transactional-email provider, while MentalBridge services retain authoritative notification and OTP state.
+Cloudinary is the file/object-storage provider. Sensitive evaluation assets and chat attachments use private/authenticated delivery with signed, time-limited access; each business service remains the owner of its file metadata and authorization decisions. Specialist-document upload is not in scope. Brevo is the outbound transactional-email provider, while MentalBridge services retain authoritative notification and OTP state.
 
 ### Kafka commands and events
 
@@ -69,7 +69,9 @@ Initial event catalogue:
 | `AssessmentSubmitted` | Care | Reporting, Notification |
 | `RiskClassified` | Care | Intervention, Notification, Reporting |
 | `ConsentGranted/Revoked` | Care | Consultation cache invalidation, Audit |
+| `SubscriptionStatusChanged` | Consultation/Billing | Care, Realtime, Notification, Reporting |
 | `AppointmentStatusChanged` | Consultation | Realtime, Notification, Follow-up |
+| `SpecialistEarningCreated` | Consultation/Billing | Specialist/Admin financial projections |
 | `ChatMessageCreated` | Realtime | Notification, Audit projection |
 | `NotificationCreated` | Content/Notification | Realtime WebSocket delivery |
 | `AccountDeletionRequested` | Identity/Care | all data owners |
@@ -106,15 +108,24 @@ Kafka is the durable asynchronous backbone. PostgreSQL producers use a transacti
 3. Data owner returns only allowed fields.
 4. Audit record is written with purpose, grant ID, and result count.
 
+### Subscription upgrade and consultation
+
+1. A paid-plan IPN is parsed by the versioned MoMo-only contract, verified over every required signature field, deduplicated from its verified transaction tuple, and matched on configured partner plus local order/request/amount. Only then does it activate the immutable plan version and grant one credit row per included consultation.
+2. A Care-to-Plus upgrade holds eligible unused credits, calculates a minor-unit offset from their allocation plus the second-accurate remaining non-consultation value, and starts a full Plus period only after a verified payment webhook. Downgrade is not supported.
+3. A specialist publishes a channel-specific `[start_at, end_at)` slot. Booking locks that slot and one available credit in the same Consultation database transaction, then snapshots its start, end, timezone, and channel into the appointment.
+4. Specialist confirmation authorizes one appointment-scoped Realtime conversation. `IN_APP_CHAT` join/send works only during the snapshotted window. `IN_APP_VIDEO` is planned but disabled until its call/signalling/provider/security contract is accepted; no physical location, phone number, or external meeting link is stored.
+5. Rejection or eligible appointment cancellation releases the credit. Completion consumes it and atomically creates the specialist earning snapshot. Subscription cancellation instead disables paid features immediately, cancels future appointments and revokes their credits; only a confirmed session already in progress may finish at its scheduled end.
+6. Available earnings may enter one idempotent MoMo Disbursement payout. Verified result/IPN/status evidence is required for success; local/CI uses a MoMo-shaped fake, and real payment/payout remains disabled until credentials and VND plan/settlement currency are approved.
+
 ## 6. Security and privacy
 
 - OAuth-style access tokens are short-lived; refresh tokens are hashed, rotated, and revocable.
 - Passwords use BCrypt with a reviewed cost factor. Never encrypt passwords.
 - TLS is required externally and between production components where the network is not trusted.
-- Encrypt sensitive data at rest using managed storage keys; field-level envelope encryption is recommended for raw journals and verification documents.
+- Encrypt sensitive data at rest using managed storage keys; field-level envelope encryption is recommended for raw journals and chat messages.
 - Secrets come from environment/secret storage, never source control or images.
 - Object storage uses private buckets and short-lived signed URLs.
-- Logs exclude tokens, passwords, answer text, journal text, chat bodies, document URLs, and AI prompts containing user content.
+- Logs exclude tokens, passwords, answer text, journal text, chat bodies, private object URLs, payment-provider payloads, and AI prompts containing user content.
 - Rate-limit authentication, anonymous screening, AI analysis, booking, chat, and export endpoints.
 - Authorization is deny-by-default and tested at controller/service/data-query boundaries.
 - Audit records are append-only to application roles and include before/after state only when it does not expose prohibited content.

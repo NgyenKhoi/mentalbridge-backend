@@ -1,6 +1,6 @@
 # PostgreSQL Data Model
 
-The original cross-schema [database/postgresql/001_initial_schema.sql](../../database/postgresql/001_initial_schema.sql) is a logical design reference and must not be used to provision a service after its owner Liquibase history exists. Each implemented service's Liquibase changelogs are the executable sources of truth inside its pre-provisioned database. The purpose of every current table and field is explained in the human-readable [PostgreSQL field data dictionary](postgresql-field-data-dictionary.md).
+The cross-schema [database/postgresql/001_initial_schema.sql](../../database/postgresql/001_initial_schema.sql) is a non-executable, whole-system modelling artifact. Its schemas only make ownership and relationships readable in one file; it must never be run to provision any environment. Each module instead owns a separate PostgreSQL database and uses that database's default `public` schema. When implementation begins, that service's owner-specific Liquibase changelogs become its only executable database source of truth. The purpose of every conceptual table and field is explained in the human-readable [PostgreSQL field data dictionary](postgresql-field-data-dictionary.md).
 
 ## Ownership
 
@@ -8,12 +8,12 @@ The original cross-schema [database/postgresql/001_initial_schema.sql](../../dat
 | --- | --- | --- |
 | `mentalbridge_identity` | Identity Service | account, role, refresh session, verification/reset token |
 | `mentalbridge_care` | Care Service | user profile, consent, assessment, risk, intervention, follow-up |
-| `mentalbridge_consultation` | Consultation Service | specialist, verification, availability, appointment, review |
+| `mentalbridge_consultation` | Consultation Service | specialist approval, plan/subscription/payment/upgrade, credit ledger, availability, appointment, earning/provider payout, review |
 | `mentalbridge_content_notification` | Content/Notification Service | resource, hotline, notification preference/delivery |
 | owner-local tables | each producer; Governance reads safe events | outbox, audit, deletion workflow, retention policy |
 | `mentalbridge_journal_ai` | Journal/AI Service | analysis job metadata, dataset/benchmark metadata |
 
-The updated project-tracking workbook requires subscriptions, payments, consultation credits, specialist earnings, and payouts, but the logical baseline contains no authoritative financial owner. Do not add these facts to an existing service database until an ADR establishes their bounded-context owner, immutable ledger, provider/webhook, booking compensation, settlement, reconciliation, and retention rules.
+ADR 0005 assigns the billing bounded context to Consultation Service so subscription/payment/upgrade, credit reservation, appointment completion, and earning creation can use one local transaction. The baseline stores exact minor-unit snapshots and append-only histories; no other service may store a shadow financial balance. Provider credentials/contracts, VND pricing or a versioned FX policy, settlement delay, chargeback reconciliation, and retention must be finalized before real-money payout is enabled.
 
 Cross-schema foreign keys in the logical baseline only make relationships visible. Executable service migrations replace them with immutable external UUIDs and validate through APIs/events. Do not emulate distributed joins on request paths.
 
@@ -52,9 +52,27 @@ Cross-schema foreign keys in the logical baseline only make relationships visibl
 ### Booking
 
 - Availability uses `[start_at, end_at)` semantics and validates start before end.
+- A specialist publishes discrete slots from their working schedule in local time plus IANA timezone; the server converts to UTC and must validate the approved standard duration once defined. Booking copies start, end, timezone, and channel into the appointment; those snapshots do not move if the source slot is later edited.
 - An exclusion constraint prevents overlapping active slots for the same specialist.
 - A partial unique index permits only one active appointment per slot.
+- A second partial unique index permits only one active appointment per credit; booking locks the slot and credit together.
 - `appointment_status_history` provides an auditable state-transition timeline.
+- `IN_APP_CHAT` is the only initially enabled channel. Join/send authorization is limited to `[scheduled_start_at, scheduled_end_at)`; conversation history may remain readable outside the window.
+- `IN_APP_VIDEO` is reserved as a planned channel but cannot be enabled until a later call/signalling/provider/security contract is accepted. Slot/appointment tables contain no physical location, phone, or external meeting link.
+
+### Subscription and settlement
+
+- Published plan versions are immutable and store price, non-consultation allocation, per-credit allocation, credit count, and specialist share in integer minor units/basis points.
+- A verified, deduplicated payment webhook activates a period and grants one credit row per entitlement exactly once.
+- MoMo is the only production payment provider. Payment rows retain `orderId`, `requestId`, positive `transId`, `resultCode`, `payType`, and exact/parsed `responseTime` separately; `FAKE` is local/CI only and exercises the same shape.
+- `momo_payment_ipn` snapshots the full required non-sensitive contract, contract/key versions and hashes of the payload plus sensitive/free-text signed fields. Its deterministic SHA-256 tuple key provides replay protection.
+- `safe_optional_details` stores only versioned allow-listed non-sensitive optional MoMo fields. Raw IPN/signature, decoded `orderInfo`/`extraData`, and wallet identifiers are never persisted.
+- Available credit count is derived from authoritative credit rows. The append-only ledger records reservations, releases, upgrade holds, consumption, expiry, forfeiture, and revocation.
+- Care-to-Plus upgrade records actual total/remaining period seconds, rounded-down feature residual, held-credit value, offset, and amount due. Held credits prevent booking/upgrade double use.
+- Downgrade and user-initiated refund are not represented. Provider chargeback remains an external reconciled payment outcome.
+- Cancellation disables paid features immediately, cancels future appointments, and revokes their credits. A confirmed appointment already inside its scheduled window is the sole exception and may finish at its snapshotted end instant.
+- Appointment completion creates one earning snapshot. The MoMo payout flow attaches available earnings to one idempotent logical payout and keeps each provider attempt separately. A definite failure may create a numbered retry; an `UNKNOWN` attempt is queried and blocks another transfer attempt.
+- MoMo Disbursement is the only planned production payout provider, subject to M4B credentials. Local/CI uses a deterministic MoMo-shaped fake. Real payment/payout remains disabled while plan/earning currency is USD and no approved VND plan version or FX policy exists.
 
 ### Operations
 
@@ -72,7 +90,7 @@ At capstone scale, do not partition by default. Consider monthly range partition
 
 - raw journal revisions and structured provider responses: MongoDB;
 - conversation messages and receipts: MongoDB;
-- verification files and evaluation dataset files: private object storage;
+- evaluation dataset files and private chat attachments: private object storage; specialist verification documents are not collected;
 - provider secrets: secret manager/environment injection;
 - rate-limit counters, WebSocket presence/routing/fan-out, short-lived delivery/idempotency state, and expiring hashed OTP challenges: Redis; none is authoritative business data and Redis is not used to cache database-query results.
 

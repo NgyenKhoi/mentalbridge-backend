@@ -18,7 +18,7 @@ A temporary credential lock is represented by `lockedUntil`, not by an account s
 
 Email verification moves a pending account to `ACTIVE`. Repeating verification with the same consumed challenge returns the same successful outcome when the account is already verified; it does not issue another account event.
 
-Specialist approval is not an Identity account state. A specialist registration receives the `SPECIALIST` actor role after email verification, while professional verification and eligibility remain authoritative in Consultation Service. Identity role membership alone never authorizes specialist-only business access that requires professional approval.
+Specialist approval is not an Identity account state. A specialist registration receives the `SPECIALIST` actor role after email verification, while profile review and eligibility remain authoritative in Consultation Service. Identity role membership alone never authorizes specialist-only business access that requires approval. The current scope does not collect specialist verification documents.
 
 ## Role matrix
 

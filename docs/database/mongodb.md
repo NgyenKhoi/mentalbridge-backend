@@ -129,7 +129,7 @@ db.conversations.createIndex({ appointmentId: 1 }, { unique: true })
 db.conversations.createIndex({ "participants.accountId": 1, lastMessageAt: -1 })
 ```
 
-Participants are a server-generated authorization snapshot. Realtime Service must still check current account/specialist/appointment authorization when opening a WebSocket, subscribing to a conversation, or sending.
+Participants are a server-generated identity snapshot, not durable authorization. Each consultation conversation is keyed by its confirmed `IN_APP_CHAT` appointment; unrestricted direct specialist conversations are not supported. Realtime Service must check current account/specialist/appointment authorization when opening, subscribing, or sending, and join/send succeeds only inside the appointment's authoritative `[scheduledStartAt, scheduledEndAt)` window. A retention policy may permit read-only history afterward. Future `IN_APP_VIDEO` data is not defined in MongoDB until its separate contract is accepted.
 
 ## `messages`
 

@@ -8,7 +8,7 @@ Identity owns accounts, credentials, roles, email ownership, refresh sessions, a
 
 | Capability | Main behavior | Acceptance |
 | --- | --- | --- |
-| Registration/verification | Register USER or SPECIALIST and verify email; Consultation separately records a specialist's professional verification as pending | Duplicate normalized email conflicts; passwords are hashed; OTP/token expires, is one-use and rate-limited; account/outbox commit together |
+| Registration/verification | Register USER or SPECIALIST and verify email; Consultation separately records a specialist profile approval as pending without document upload | Duplicate normalized email conflicts; passwords are hashed; OTP/token expires, is one-use and rate-limited; account/outbox commit together |
 | Login/session | Authenticate active account; issue short access token and rotated refresh session | Generic credential errors; disabled/unverified policy enforced; refresh replay revokes the affected chain; logout is idempotent |
 | Password recovery/change | Verify ownership and replace credentials | Expired/reused challenge fails; existing sessions follow reviewed revocation policy; secrets never enter logs/events |
 | Account/RBAC admin | Query and change account state/roles through bounded admin APIs | Admin authorization at owner; last privileged-role and transition rules explicit; stable audit fact emitted |
