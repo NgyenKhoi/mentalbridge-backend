@@ -22,7 +22,7 @@ This directory turns the seven-UC product catalogue and 162-function WBS into wo
 | Content/Notification Service | Node.js/TypeScript | [content-notification-service](content-notification-service.md) | not initialized |
 | PhoBERT Worker | Python | [phobert-worker](phobert-worker.md) | not initialized |
 
-The updated workbook also introduces a financial bounded context that has no accepted owner in ADR 0001. Track it in [subscription and payment architecture gap](subscription-payment-gap.md); it is not an eighth deployable until an ADR is accepted.
+ADR 0005 assigns the workbook's financial bounded context to the `billing` feature inside Consultation Service. Track its plan, upgrade, credit, earning, and provider payout behavior in the [subscription and billing specification](subscription-payment-gap.md); it is not an eighth deployable.
 
 Specifications stay here even after a module is scaffolded. Its README remains the operational entry point and links back to this specification.
 

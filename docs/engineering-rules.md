@@ -42,7 +42,7 @@ These rules apply to all backend services unless an accepted ADR documents an ex
 
 - Deny access by default. Every endpoint declares allowed roles and enforces resource ownership/consent below the controller.
 - Never trust role, score, risk, specialist status, price, owner ID, or consent claims supplied by a client.
-- Tokens, passwords, secrets, journal/chat text, assessment answers, and verification documents are prohibited in logs.
+- Tokens, passwords, secrets, journal/chat text, assessment answers, private object references, and payment-provider payloads are prohibited in logs.
 - All sensitive reads and administrative writes produce audit events.
 - Test broken-object-level authorization for every resource endpoint.
 - Dependency and container scanning run in CI; critical findings block release unless risk acceptance is documented.

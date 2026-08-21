@@ -15,12 +15,12 @@ Ngôn ngữ chính:
 
 | Service / module | Ngôn ngữ và framework chính | Trách nhiệm | Dữ liệu sở hữu | Giao tiếp chính |
 | --- | --- | --- | --- | --- |
-| `identity-service` | Java, Spring Boot | Đăng ký, đăng nhập, vai trò, xác minh email, reset mật khẩu, refresh token, trạng thái tài khoản, điều phối xóa tài khoản, audit/security projection tối thiểu | PostgreSQL schema `identity` và projection an toàn | REST; Kafka account/deletion/audit events |
-| `care-service` | Java, Spring Boot | Hồ sơ người dùng, consent, PHQ-9/GAD-7, chấm điểm, risk policy, intervention và follow-up | PostgreSQL schema `care` | REST; transactional outbox/events |
-| `consultation-service` | Java, Spring Boot | Hồ sơ/xét duyệt/tìm kiếm/matching chuyên gia, lịch rảnh, cuộc hẹn, quyền truy cập theo consent, đánh giá | PostgreSQL schema `consultation`; Cloudinary private/authenticated cho giấy tờ | REST; Kafka appointment/review/moderation events |
-| `journal-ai-service` | Node.js 24 LTS, TypeScript, Express | CRUD nhật ký, phiên bản nội dung, kiểm tra AI consent, điều phối job và chuẩn hóa kết quả LLM | MongoDB cho nhật ký/kết quả; PostgreSQL schema `ai` cho job/outbox | REST/JSON; Kafka; API nhà cung cấp AI |
+| `identity-service` | Java, Spring Boot | Đăng ký, đăng nhập, vai trò, xác minh email, reset mật khẩu, refresh token, trạng thái tài khoản, điều phối xóa tài khoản, audit/security projection tối thiểu | PostgreSQL database riêng `mentalbridge_identity`, schema mặc định `public` | REST; Kafka account/deletion/audit events |
+| `care-service` | Java, Spring Boot | Hồ sơ người dùng, consent, PHQ-9/GAD-7, chấm điểm, risk policy, intervention và follow-up | PostgreSQL database riêng `mentalbridge_care`, schema mặc định `public` | REST; transactional outbox/events |
+| `consultation-service` | Java, Spring Boot | Hồ sơ/xét duyệt/tìm kiếm/matching chuyên gia, subscription/payment/upgrade, credit, slot/appointment theo kênh, earnings/provider payout, quyền truy cập theo consent, đánh giá | PostgreSQL database riêng `mentalbridge_consultation`, schema mặc định `public`; không lưu giấy tờ xác minh specialist | REST; Kafka subscription/appointment/earning/review/moderation events |
+| `journal-ai-service` | Node.js 24 LTS, TypeScript, Express | CRUD nhật ký, phiên bản nội dung, kiểm tra AI consent, điều phối job và chuẩn hóa kết quả LLM | MongoDB cho nhật ký/kết quả; PostgreSQL database riêng cho job/outbox với schema `public` | REST/JSON; Kafka; API nhà cung cấp AI |
 | `realtime-service` | Node.js 24 LTS, TypeScript, Express, Socket.IO | REST lịch sử chat, WebSocket authorization/chat/presence/receipt/notification delivery | MongoDB cho chat; Redis cho presence, room và cross-instance fan-out | REST/JSON; WebSocket client; Kafka |
-| `content-notification-service` | Node.js 24 LTS, TypeScript, Express | Nội dung tự hỗ trợ, hotline, template, preference, lưu và điều phối notification | PostgreSQL schema `content` | REST/JSON; Kafka; Brevo API và provider push |
+| `content-notification-service` | Node.js 24 LTS, TypeScript, Express | Nội dung tự hỗ trợ, hotline, template, preference, lưu và điều phối notification | PostgreSQL database riêng `mentalbridge_content_notification`, schema mặc định `public` | REST/JSON; Kafka; Brevo API và provider push |
 | `phobert-worker` | Python | Chạy inference PhoBERT theo job, validate và trả kết quả có cấu trúc | Không sở hữu dữ liệu nguồn | Kafka command/result |
 
 ## 3. Cách nhóm service cho MVP

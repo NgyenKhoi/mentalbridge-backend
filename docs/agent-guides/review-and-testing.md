@@ -62,8 +62,9 @@ Before declaring completion, inspect the full diff and answer yes to each applic
 - Retry, timeout, circuit breaker, idempotency, and fallback behavior are explicit and tested.
 - Message publishing uses outbox when coupled to state; consumption is idempotent and ack occurs after commit.
 - Database constraints enforce important invariants; every table/field has a useful entry in the Markdown data dictionary.
+- Payment IPN tests use complete official MoMo fixtures and cover every required/optional field, missing/extra fields, invalid signatures, partner/order/request/amount mismatch, duplicate delivery, result finality, and the HTTP 204/15-second acknowledgement contract.
 - Authorization is enforced in the data owner and uncertainty fails closed.
-- Logs/events/errors contain no token, password, raw journal/chat text, assessment answers, document URL, or provider payload.
+- Logs/events/errors contain no token, password, raw journal/chat text, assessment answers, private object URL, or payment-provider payload.
 - Feature structure remains cohesive; no god service, dumping-ground `shared`, copied cross-service DTO, unused abstraction, or explanatory production-code comment was added.
 - Tests cover happy path, validation, authorization, conflict/concurrency, duplicate/retry, and dependency failure.
 - Formatting, static analysis, tests, migration validation, contract checks, and build pass for every affected module.

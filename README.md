@@ -7,8 +7,8 @@ MentalBridge helps users complete PHQ-9/GAD-7 self-screenings, keep an emotion j
 ## Product scope
 
 - End-user mobile APIs: authentication, profile, consent, journal, assessments, insights, interventions, subscriptions, consultation credits, appointments, chat, notifications, and personal trends.
-- Specialist APIs: verification profile, availability, appointments, consented user data, consultation chat, follow-up, earnings, and payout history.
-- Administration APIs: account approval, subscription/payment and payout operations, content and hotline management, moderation, aggregated reporting, audit, retention, and AI evaluation datasets.
+- Specialist APIs: approved profile, channel-specific availability, scheduled consultation appointments, consented user data, follow-up, earnings, and provider payout history.
+- Administration APIs: account/profile approval, subscription/payment/upgrade and payout reconciliation, content and hotline management, moderation, aggregated reporting, audit, retention, and AI evaluation datasets.
 - AI/NLP integration: Gemini or OpenAI through prompt engineering; PhoBERT inference is used only as an experimental baseline.
 - Anonymous PHQ-9/GAD-7 screening with minimal collection and no silent linkage to a later account.
 
@@ -20,13 +20,13 @@ The recommended starting point is a **small microservice landscape**, not one se
 | --- | --- | --- | --- |
 | Identity Service | Spring Boot 4.x | Accounts, roles, sessions, password reset | PostgreSQL |
 | Care Service | Spring Boot 4.x | Profiles, consent grants, assessments, risk, interventions, follow-up | PostgreSQL |
-| Consultation Service | Spring Boot 4.x | Specialists, verification, availability, appointments, reviews | PostgreSQL |
+| Consultation Service | Spring Boot 4.x | Specialist approval/discovery, subscription/payment/upgrade, credits, scheduled consultations, earnings/provider payouts, reviews | PostgreSQL |
 | Journal & AI Service | Node.js 24 LTS, TypeScript, Express | Journals, LLM orchestration, analysis jobs/results, benchmark coordination | MongoDB + PostgreSQL metadata |
 | Realtime Service | Node.js 24 LTS, TypeScript, Express, Socket.IO | REST message APIs, WebSocket chat/notification delivery, presence, receipts | MongoDB + Redis |
 | Content & Notification Service | Node.js 24 LTS, TypeScript, Express | Self-help resources, hotlines, preferences, notification/provider delivery | PostgreSQL |
 | PhoBERT Worker | Python | Experimental inference jobs only | No authoritative business store |
 
-The updated project-tracking workbook adds a financial bounded context for premium subscriptions, payments, consultation credits, specialist earnings, and payouts. The seven-deployable baseline does not yet assign that authority; implementation is blocked pending an ADR rather than being placed implicitly in Identity or Consultation.
+ADR 0005 assigns the workbook's financial bounded context to a cohesive `billing` feature inside Consultation Service, preserving the seven-deployable baseline. It owns paid subscriptions, Care-to-Plus upgrades, consultation credits, specialist earnings, and payout reconciliation. Downgrade and user-initiated refund are unsupported; MoMo is the sole production payment/payout provider, while local/CI uses MoMo-shaped fakes.
 
 Use REST/JSON DTOs for synchronous business APIs and service-to-service queries. Spring services register with Eureka and Java consumers use OpenFeign only as a REST client adapter; discovery does not change ownership, authorization, or OpenAPI contracts. WebSocket terminates only at Realtime Service for live client chat, presence, receipts, and in-app notifications. Kafka carries durable asynchronous commands/events for analysis, notification, audit, reporting, and deletion workflows. Redis carries only ephemeral presence, connection routing, fan-out, rate-limit, delivery/idempotency, and expiring hashed OTP state; it is not a database-query cache or business source of truth.
 
@@ -61,7 +61,7 @@ Severe-risk handling must be deterministic, immediate, auditable, and usable eve
 - [Mandatory agent workflow and review guide](docs/agent-guides/README.md)
 - [PostgreSQL data model](docs/database/postgresql.md)
 - [MongoDB collections](docs/database/mongodb.md)
-- [Original logical PostgreSQL schema reference](database/postgresql/001_initial_schema.sql)
+- [Non-executable whole-system PostgreSQL model](database/postgresql/001_initial_schema.sql) — owner namespaces are visual only; each module deploys to its own database/default `public` schema
 - [PostgreSQL field data dictionary](docs/database/postgresql-field-data-dictionary.md)
 
 ## Delivery roadmap
@@ -71,7 +71,7 @@ Severe-risk handling must be deterministic, immediate, auditable, and usable eve
 | 1 - Screening foundation | Identity, profile/consent, anonymous and authenticated PHQ-9/GAD-7, journal CRUD, admin login |
 | 2 - Insight and intervention | Asynchronous journal analysis, deterministic risk classification, resources, crisis guidance |
 | 3 - Human support and premium access | Specialist approval/profile, subscription/payment, consultation credits, availability, booking, consented access, chat, reviews, follow-up, notifications |
-| 4 - Governance and research | Administration, payouts, moderation, deletion/retention, audit, reporting, dataset import, LLM vs PhoBERT benchmark |
+| 4 - Governance and research | Administration, payout history/reconciliation, moderation, deletion/retention, audit, reporting, dataset import, LLM vs PhoBERT benchmark |
 
 ## Technology baseline
 

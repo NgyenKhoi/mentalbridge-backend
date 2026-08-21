@@ -193,18 +193,22 @@ CREATE TABLE consultation.specialist_profile (
     display_name varchar(120) NOT NULL,
     biography text,
     years_experience smallint CHECK (years_experience >= 0),
-    consultation_methods jsonb NOT NULL DEFAULT '[]'::jsonb,
     timezone varchar(64) NOT NULL DEFAULT 'Asia/Ho_Chi_Minh',
-    verification_status varchar(24) NOT NULL DEFAULT 'NOT_SUBMITTED'
-        CHECK (verification_status IN ('NOT_SUBMITTED', 'PENDING', 'APPROVED', 'REJECTED', 'SUSPENDED')),
-    approved_at timestamptz,
-    approved_by uuid REFERENCES identity.account(id),
+    approval_status varchar(24) NOT NULL DEFAULT 'NOT_SUBMITTED'
+        CHECK (approval_status IN ('NOT_SUBMITTED', 'PENDING', 'APPROVED', 'REJECTED', 'SUSPENDED')),
+    submitted_at timestamptz,
+    reviewed_at timestamptz,
+    reviewed_by uuid REFERENCES identity.account(id),
+    decision_reason_code varchar(64),
     created_at timestamptz NOT NULL DEFAULT now(),
     updated_at timestamptz NOT NULL DEFAULT now(),
-    version bigint NOT NULL DEFAULT 0
+    version bigint NOT NULL DEFAULT 0,
+    CHECK (approval_status = 'NOT_SUBMITTED' OR submitted_at IS NOT NULL),
+    CHECK (approval_status NOT IN ('APPROVED', 'REJECTED', 'SUSPENDED') OR (reviewed_at IS NOT NULL AND reviewed_by IS NOT NULL)),
+    CHECK (approval_status NOT IN ('REJECTED', 'SUSPENDED') OR decision_reason_code IS NOT NULL)
 );
 CREATE INDEX ix_specialist_approved ON consultation.specialist_profile (display_name)
-    WHERE verification_status = 'APPROVED';
+    WHERE approval_status = 'APPROVED';
 
 CREATE TABLE consultation.specialty (
     code varchar(64) PRIMARY KEY,
@@ -218,21 +222,215 @@ CREATE TABLE consultation.specialist_specialty (
     PRIMARY KEY (specialist_id, specialty_code)
 );
 
-CREATE TABLE consultation.verification_document (
-    id uuid PRIMARY KEY DEFAULT gen_random_uuid(),
-    specialist_id uuid NOT NULL REFERENCES consultation.specialist_profile(account_id),
-    document_type varchar(40) NOT NULL,
-    object_key varchar(512) NOT NULL UNIQUE,
-    content_type varchar(100) NOT NULL,
-    checksum_sha256 char(64) NOT NULL,
-    review_status varchar(16) NOT NULL DEFAULT 'PENDING' CHECK (review_status IN ('PENDING', 'ACCEPTED', 'REJECTED')),
-    reviewed_by uuid REFERENCES identity.account(id),
-    reviewed_at timestamptz,
-    rejection_reason varchar(500),
-    created_at timestamptz NOT NULL DEFAULT now()
+CREATE TABLE consultation.subscription_plan (
+    code varchar(32) PRIMARY KEY CHECK (code IN ('FREE', 'PREMIUM_CARE', 'PREMIUM_PLUS')),
+    display_name varchar(80) NOT NULL,
+    tier_rank smallint NOT NULL UNIQUE CHECK (tier_rank BETWEEN 0 AND 2),
+    active boolean NOT NULL DEFAULT true,
+    created_at timestamptz NOT NULL DEFAULT now(),
+    updated_at timestamptz NOT NULL DEFAULT now()
 );
-CREATE INDEX ix_verification_document_pending
-    ON consultation.verification_document (created_at) WHERE review_status = 'PENDING';
+
+CREATE TABLE consultation.subscription_plan_version (
+    id uuid PRIMARY KEY DEFAULT gen_random_uuid(),
+    plan_code varchar(32) NOT NULL REFERENCES consultation.subscription_plan(code),
+    version integer NOT NULL CHECK (version > 0),
+    currency char(3) NOT NULL,
+    price_minor bigint NOT NULL CHECK (price_minor >= 0),
+    billing_period_months smallint NOT NULL CHECK (billing_period_months = 1),
+    consultation_credits_per_period smallint NOT NULL CHECK (consultation_credits_per_period >= 0),
+    non_consultation_value_minor bigint NOT NULL CHECK (non_consultation_value_minor >= 0),
+    credit_value_minor bigint NOT NULL CHECK (credit_value_minor >= 0),
+    specialist_share_bps smallint NOT NULL CHECK (specialist_share_bps BETWEEN 0 AND 10000),
+    cancellation_cutoff_hours smallint CHECK (cancellation_cutoff_hours >= 0),
+    effective_from timestamptz NOT NULL,
+    retired_at timestamptz,
+    created_at timestamptz NOT NULL DEFAULT now(),
+    UNIQUE (plan_code, version),
+    CHECK (retired_at IS NULL OR retired_at > effective_from),
+    CHECK (price_minor = non_consultation_value_minor + consultation_credits_per_period * credit_value_minor),
+    CHECK ((plan_code = 'FREE' AND price_minor = 0 AND consultation_credits_per_period = 0 AND specialist_share_bps = 0)
+        OR (plan_code <> 'FREE' AND price_minor > 0 AND consultation_credits_per_period > 0))
+);
+
+CREATE TABLE consultation.subscription_plan_entitlement (
+    plan_version_id uuid NOT NULL REFERENCES consultation.subscription_plan_version(id) ON DELETE CASCADE,
+    entitlement_code varchar(64) NOT NULL,
+    PRIMARY KEY (plan_version_id, entitlement_code)
+);
+
+CREATE TABLE consultation.user_subscription (
+    id uuid PRIMARY KEY DEFAULT gen_random_uuid(),
+    user_id uuid NOT NULL REFERENCES care.user_profile(account_id),
+    plan_version_id uuid NOT NULL REFERENCES consultation.subscription_plan_version(id),
+    status varchar(24) NOT NULL DEFAULT 'PENDING_PAYMENT'
+        CHECK (status IN ('PENDING_PAYMENT', 'ACTIVE', 'CANCEL_PENDING_SESSION_END', 'PAST_DUE', 'CANCELLED', 'EXPIRED')),
+    current_period_start timestamptz,
+    current_period_end timestamptz,
+    cancellation_requested_at timestamptz,
+    ended_at timestamptz,
+    idempotency_key varchar(128) NOT NULL,
+    created_at timestamptz NOT NULL DEFAULT now(),
+    updated_at timestamptz NOT NULL DEFAULT now(),
+    version bigint NOT NULL DEFAULT 0,
+    UNIQUE (user_id, idempotency_key),
+    UNIQUE (id, user_id),
+    CHECK ((current_period_start IS NULL AND current_period_end IS NULL)
+        OR (current_period_start IS NOT NULL AND current_period_end > current_period_start))
+);
+CREATE UNIQUE INDEX ux_user_subscription_current
+    ON consultation.user_subscription (user_id)
+    WHERE status IN ('PENDING_PAYMENT', 'ACTIVE', 'CANCEL_PENDING_SESSION_END', 'PAST_DUE');
+
+CREATE TABLE consultation.subscription_status_history (
+    id uuid PRIMARY KEY DEFAULT gen_random_uuid(),
+    subscription_id uuid NOT NULL REFERENCES consultation.user_subscription(id),
+    from_status varchar(24),
+    to_status varchar(24) NOT NULL,
+    reason_code varchar(64),
+    changed_at timestamptz NOT NULL DEFAULT now()
+);
+CREATE INDEX ix_subscription_status_history
+    ON consultation.subscription_status_history (subscription_id, changed_at);
+
+CREATE TABLE consultation.payment_transaction (
+    id uuid PRIMARY KEY DEFAULT gen_random_uuid(),
+    subscription_id uuid NOT NULL REFERENCES consultation.user_subscription(id),
+    payment_provider varchar(32) NOT NULL CHECK (payment_provider IN ('MOMO', 'FAKE')),
+    momo_order_id varchar(200) NOT NULL,
+    momo_request_id varchar(200) NOT NULL,
+    momo_trans_id bigint,
+    amount_minor bigint NOT NULL CHECK (amount_minor > 0),
+    currency char(3) NOT NULL,
+    status varchar(24) NOT NULL DEFAULT 'PENDING'
+        CHECK (status IN ('PENDING', 'SUCCEEDED', 'FAILED', 'CHARGEBACK')),
+    purpose varchar(24) NOT NULL
+        CHECK (purpose IN ('INITIAL_PURCHASE', 'RENEWAL', 'UPGRADE')),
+    momo_result_code integer,
+    momo_pay_type varchar(32),
+    idempotency_key varchar(128) NOT NULL,
+    momo_response_time_epoch_ms bigint,
+    provider_occurred_at timestamptz,
+    paid_at timestamptz,
+    failed_at timestamptz,
+    created_at timestamptz NOT NULL DEFAULT now(),
+    updated_at timestamptz NOT NULL DEFAULT now(),
+    version bigint NOT NULL DEFAULT 0,
+    UNIQUE (payment_provider, momo_order_id),
+    UNIQUE (payment_provider, momo_request_id),
+    UNIQUE (subscription_id, idempotency_key)
+);
+CREATE INDEX ix_payment_subscription_history
+    ON consultation.payment_transaction (subscription_id, created_at DESC);
+CREATE UNIQUE INDEX ux_payment_momo_trans_id
+    ON consultation.payment_transaction (momo_trans_id)
+    WHERE payment_provider = 'MOMO' AND momo_trans_id > 0;
+
+CREATE TABLE consultation.momo_payment_ipn (
+    id uuid PRIMARY KEY DEFAULT gen_random_uuid(),
+    payment_id uuid REFERENCES consultation.payment_transaction(id),
+    contract_version varchar(32) NOT NULL,
+    deduplication_key char(64) NOT NULL UNIQUE,
+    partner_code varchar(64) NOT NULL,
+    order_id varchar(200) NOT NULL,
+    request_id varchar(200) NOT NULL,
+    amount_minor bigint NOT NULL CHECK (amount_minor > 0),
+    currency char(3) NOT NULL DEFAULT 'VND' CHECK (currency = 'VND'),
+    order_info_sha256 char(64) NOT NULL,
+    order_type varchar(32) NOT NULL,
+    trans_id bigint NOT NULL,
+    result_code integer NOT NULL,
+    result_message text NOT NULL,
+    pay_type varchar(32) NOT NULL,
+    response_time_epoch_ms bigint NOT NULL CHECK (response_time_epoch_ms > 0),
+    extra_data_sha256 char(64) NOT NULL,
+    provider_occurred_at timestamptz NOT NULL,
+    safe_optional_details jsonb NOT NULL DEFAULT '{}'::jsonb CHECK (jsonb_typeof(safe_optional_details) = 'object'),
+    payload_sha256 char(64) NOT NULL,
+    signature_key_version varchar(64) NOT NULL,
+    signature_verified_at timestamptz NOT NULL,
+    processing_status varchar(16) NOT NULL DEFAULT 'RECEIVED'
+        CHECK (processing_status IN ('RECEIVED', 'PROCESSED', 'UNMATCHED', 'FAILED')),
+    failure_code varchar(64),
+    received_at timestamptz NOT NULL DEFAULT now(),
+    processed_at timestamptz,
+    acknowledged_at timestamptz,
+    CHECK (processing_status <> 'PROCESSED' OR payment_id IS NOT NULL)
+);
+CREATE INDEX ix_momo_payment_ipn_payment
+    ON consultation.momo_payment_ipn (payment_id, received_at DESC);
+
+CREATE TABLE consultation.consultation_credit (
+    id uuid PRIMARY KEY DEFAULT gen_random_uuid(),
+    user_id uuid NOT NULL REFERENCES care.user_profile(account_id),
+    subscription_id uuid NOT NULL REFERENCES consultation.user_subscription(id),
+    source_payment_id uuid NOT NULL REFERENCES consultation.payment_transaction(id),
+    plan_version_id uuid NOT NULL REFERENCES consultation.subscription_plan_version(id),
+    period_start timestamptz NOT NULL,
+    period_end timestamptz NOT NULL,
+    ordinal smallint NOT NULL CHECK (ordinal > 0),
+    currency char(3) NOT NULL,
+    allocated_value_minor bigint NOT NULL CHECK (allocated_value_minor > 0),
+    specialist_share_bps smallint NOT NULL CHECK (specialist_share_bps BETWEEN 0 AND 10000),
+    specialist_earning_minor bigint NOT NULL CHECK (specialist_earning_minor >= 0),
+    status varchar(16) NOT NULL DEFAULT 'AVAILABLE'
+        CHECK (status IN ('AVAILABLE', 'RESERVED', 'UPGRADE_HELD', 'CONSUMED', 'EXPIRED', 'FORFEITED', 'REVOKED')),
+    expires_at timestamptz NOT NULL,
+    created_at timestamptz NOT NULL DEFAULT now(),
+    updated_at timestamptz NOT NULL DEFAULT now(),
+    version bigint NOT NULL DEFAULT 0,
+    UNIQUE (subscription_id, period_start, ordinal),
+    UNIQUE (id, user_id),
+    FOREIGN KEY (subscription_id, user_id) REFERENCES consultation.user_subscription(id, user_id),
+    CHECK (period_end > period_start),
+    CHECK (expires_at = period_end),
+    CHECK (specialist_earning_minor <= allocated_value_minor)
+);
+CREATE INDEX ix_credit_user_available
+    ON consultation.consultation_credit (user_id, expires_at, created_at)
+    WHERE status = 'AVAILABLE';
+
+CREATE TABLE consultation.subscription_upgrade (
+    id uuid PRIMARY KEY DEFAULT gen_random_uuid(),
+    subscription_id uuid NOT NULL REFERENCES consultation.user_subscription(id),
+    from_plan_version_id uuid NOT NULL REFERENCES consultation.subscription_plan_version(id),
+    to_plan_version_id uuid NOT NULL REFERENCES consultation.subscription_plan_version(id),
+    payment_id uuid UNIQUE REFERENCES consultation.payment_transaction(id),
+    old_period_start timestamptz NOT NULL,
+    old_period_end timestamptz NOT NULL,
+    total_period_seconds bigint NOT NULL CHECK (total_period_seconds > 0),
+    remaining_period_seconds bigint NOT NULL CHECK (remaining_period_seconds > 0),
+    remaining_feature_value_minor bigint NOT NULL CHECK (remaining_feature_value_minor >= 0),
+    available_credit_value_minor bigint NOT NULL CHECK (available_credit_value_minor >= 0),
+    offset_minor bigint NOT NULL CHECK (offset_minor >= 0),
+    amount_due_minor bigint NOT NULL CHECK (amount_due_minor > 0),
+    currency char(3) NOT NULL,
+    status varchar(24) NOT NULL DEFAULT 'PENDING_PAYMENT'
+        CHECK (status IN ('PENDING_PAYMENT', 'APPLIED', 'FAILED', 'EXPIRED')),
+    idempotency_key varchar(128) NOT NULL,
+    quoted_at timestamptz NOT NULL DEFAULT now(),
+    quote_expires_at timestamptz NOT NULL,
+    applied_at timestamptz,
+    created_at timestamptz NOT NULL DEFAULT now(),
+    updated_at timestamptz NOT NULL DEFAULT now(),
+    version bigint NOT NULL DEFAULT 0,
+    UNIQUE (subscription_id, idempotency_key),
+    CHECK (from_plan_version_id <> to_plan_version_id),
+    CHECK (old_period_end > old_period_start),
+    CHECK (remaining_period_seconds <= total_period_seconds),
+    CHECK (offset_minor = remaining_feature_value_minor + available_credit_value_minor),
+    CHECK (quote_expires_at > quoted_at)
+);
+CREATE UNIQUE INDEX ux_subscription_upgrade_pending
+    ON consultation.subscription_upgrade (subscription_id)
+    WHERE status = 'PENDING_PAYMENT';
+
+CREATE TABLE consultation.subscription_upgrade_credit (
+    upgrade_id uuid NOT NULL REFERENCES consultation.subscription_upgrade(id) ON DELETE CASCADE,
+    credit_id uuid NOT NULL UNIQUE REFERENCES consultation.consultation_credit(id),
+    allocated_value_minor bigint NOT NULL CHECK (allocated_value_minor > 0),
+    PRIMARY KEY (upgrade_id, credit_id)
+);
 
 CREATE TABLE care.specialist_access_grant (
     id uuid PRIMARY KEY DEFAULT gen_random_uuid(),
@@ -269,11 +467,13 @@ CREATE TABLE consultation.availability_slot (
     start_at timestamptz NOT NULL,
     end_at timestamptz NOT NULL,
     timezone varchar(64) NOT NULL,
-    method varchar(24) NOT NULL CHECK (method IN ('CHAT', 'VIDEO_EXTERNAL', 'PHONE', 'IN_PERSON')),
+    channel varchar(24) NOT NULL DEFAULT 'IN_APP_CHAT'
+        CHECK (channel IN ('IN_APP_CHAT', 'IN_APP_VIDEO')),
     status varchar(16) NOT NULL DEFAULT 'AVAILABLE' CHECK (status IN ('AVAILABLE', 'HELD', 'BOOKED', 'CANCELLED')),
     created_at timestamptz NOT NULL DEFAULT now(),
     updated_at timestamptz NOT NULL DEFAULT now(),
     version bigint NOT NULL DEFAULT 0,
+    UNIQUE (id, specialist_id),
     CHECK (end_at > start_at)
 );
 ALTER TABLE consultation.availability_slot ADD CONSTRAINT ex_specialist_active_slot_overlap
@@ -286,12 +486,16 @@ CREATE INDEX ix_slot_specialist_start ON consultation.availability_slot (special
 
 CREATE TABLE consultation.appointment (
     id uuid PRIMARY KEY DEFAULT gen_random_uuid(),
-    slot_id uuid NOT NULL REFERENCES consultation.availability_slot(id),
+    slot_id uuid NOT NULL,
+    credit_id uuid NOT NULL,
     user_id uuid NOT NULL REFERENCES care.user_profile(account_id),
     specialist_id uuid NOT NULL REFERENCES consultation.specialist_profile(account_id),
     status varchar(24) NOT NULL DEFAULT 'REQUESTED'
-        CHECK (status IN ('REQUESTED', 'CONFIRMED', 'REJECTED', 'CANCELLED', 'RESCHEDULE_REQUESTED', 'COMPLETED', 'NO_SHOW')),
-    consultation_method varchar(24) NOT NULL CHECK (consultation_method IN ('CHAT', 'VIDEO_EXTERNAL', 'PHONE', 'IN_PERSON')),
+        CHECK (status IN ('REQUESTED', 'CONFIRMED', 'REJECTED', 'CANCELLED', 'RESCHEDULE_REQUESTED', 'COMPLETED', 'USER_NO_SHOW', 'SPECIALIST_NO_SHOW')),
+    scheduled_start_at timestamptz NOT NULL,
+    scheduled_end_at timestamptz NOT NULL,
+    scheduled_timezone varchar(64) NOT NULL,
+    channel varchar(24) NOT NULL CHECK (channel IN ('IN_APP_CHAT', 'IN_APP_VIDEO')),
     user_timezone varchar(64) NOT NULL,
     idempotency_key varchar(128) NOT NULL,
     cancellation_reason varchar(500),
@@ -302,9 +506,14 @@ CREATE TABLE consultation.appointment (
     created_at timestamptz NOT NULL DEFAULT now(),
     updated_at timestamptz NOT NULL DEFAULT now(),
     version bigint NOT NULL DEFAULT 0,
-    UNIQUE (user_id, idempotency_key)
+    UNIQUE (user_id, idempotency_key),
+    FOREIGN KEY (slot_id, specialist_id) REFERENCES consultation.availability_slot(id, specialist_id),
+    FOREIGN KEY (credit_id, user_id) REFERENCES consultation.consultation_credit(id, user_id),
+    CHECK (scheduled_end_at > scheduled_start_at)
 );
 CREATE UNIQUE INDEX ux_appointment_active_slot ON consultation.appointment (slot_id)
+    WHERE status IN ('REQUESTED', 'CONFIRMED', 'RESCHEDULE_REQUESTED');
+CREATE UNIQUE INDEX ux_appointment_active_credit ON consultation.appointment (credit_id)
     WHERE status IN ('REQUESTED', 'CONFIRMED', 'RESCHEDULE_REQUESTED');
 CREATE INDEX ix_appointment_user_history ON consultation.appointment (user_id, requested_at DESC);
 CREATE INDEX ix_appointment_specialist_queue ON consultation.appointment (specialist_id, status, requested_at DESC);
@@ -319,6 +528,157 @@ CREATE TABLE consultation.appointment_status_history (
     changed_at timestamptz NOT NULL DEFAULT now()
 );
 CREATE INDEX ix_appointment_history ON consultation.appointment_status_history (appointment_id, changed_at);
+
+CREATE TABLE consultation.consultation_credit_ledger_entry (
+    id uuid PRIMARY KEY DEFAULT gen_random_uuid(),
+    credit_id uuid NOT NULL REFERENCES consultation.consultation_credit(id),
+    appointment_id uuid REFERENCES consultation.appointment(id),
+    upgrade_id uuid REFERENCES consultation.subscription_upgrade(id),
+    entry_type varchar(24) NOT NULL
+        CHECK (entry_type IN ('GRANTED', 'RESERVED', 'RELEASED', 'UPGRADE_HELD', 'UPGRADE_RELEASED', 'CONSUMED', 'EXPIRED', 'FORFEITED', 'REVOKED')),
+    from_status varchar(16),
+    to_status varchar(16) NOT NULL,
+    reason_code varchar(64),
+    idempotency_key varchar(128) NOT NULL,
+    occurred_at timestamptz NOT NULL DEFAULT now(),
+    UNIQUE (credit_id, idempotency_key),
+    CHECK (appointment_id IS NULL OR upgrade_id IS NULL)
+);
+CREATE INDEX ix_credit_ledger_history
+    ON consultation.consultation_credit_ledger_entry (credit_id, occurred_at);
+
+CREATE TABLE consultation.specialist_earning (
+    id uuid PRIMARY KEY DEFAULT gen_random_uuid(),
+    appointment_id uuid NOT NULL UNIQUE REFERENCES consultation.appointment(id),
+    credit_id uuid NOT NULL UNIQUE REFERENCES consultation.consultation_credit(id),
+    specialist_id uuid NOT NULL REFERENCES consultation.specialist_profile(account_id),
+    currency char(3) NOT NULL,
+    allocated_value_minor bigint NOT NULL CHECK (allocated_value_minor > 0),
+    specialist_share_bps smallint NOT NULL CHECK (specialist_share_bps BETWEEN 0 AND 10000),
+    specialist_amount_minor bigint NOT NULL CHECK (specialist_amount_minor >= 0),
+    platform_amount_minor bigint NOT NULL CHECK (platform_amount_minor >= 0),
+    status varchar(24) NOT NULL DEFAULT 'PENDING_SETTLEMENT'
+        CHECK (status IN ('PENDING_SETTLEMENT', 'AVAILABLE', 'IN_PAYOUT', 'PAID', 'REVERSED')),
+    earned_at timestamptz NOT NULL,
+    settlement_available_at timestamptz NOT NULL,
+    reversed_at timestamptz,
+    reversal_reason_code varchar(64),
+    created_at timestamptz NOT NULL DEFAULT now(),
+    updated_at timestamptz NOT NULL DEFAULT now(),
+    version bigint NOT NULL DEFAULT 0,
+    CHECK (specialist_amount_minor + platform_amount_minor = allocated_value_minor),
+    CHECK (settlement_available_at >= earned_at)
+);
+CREATE INDEX ix_earning_specialist_status
+    ON consultation.specialist_earning (specialist_id, status, settlement_available_at);
+
+CREATE TABLE consultation.specialist_payout_destination (
+    id uuid PRIMARY KEY DEFAULT gen_random_uuid(),
+    specialist_id uuid NOT NULL REFERENCES consultation.specialist_profile(account_id),
+    payout_provider varchar(32) NOT NULL CHECK (payout_provider IN ('MOMO', 'FAKE')),
+    destination_type varchar(24) NOT NULL CHECK (destination_type IN ('MOMO_WALLET', 'BANK_ACCOUNT')),
+    destination_ciphertext bytea NOT NULL,
+    encryption_key_version varchar(64) NOT NULL,
+    destination_fingerprint char(64) NOT NULL,
+    display_hint varchar(32) NOT NULL,
+    status varchar(24) NOT NULL DEFAULT 'PENDING_VERIFICATION'
+        CHECK (status IN ('PENDING_VERIFICATION', 'VERIFIED', 'DISABLED')),
+    verified_at timestamptz,
+    created_at timestamptz NOT NULL DEFAULT now(),
+    updated_at timestamptz NOT NULL DEFAULT now(),
+    version bigint NOT NULL DEFAULT 0,
+    UNIQUE (specialist_id, payout_provider, destination_fingerprint),
+    UNIQUE (id, specialist_id, payout_provider),
+    CHECK (status <> 'VERIFIED' OR verified_at IS NOT NULL)
+);
+CREATE INDEX ix_payout_destination_specialist
+    ON consultation.specialist_payout_destination (specialist_id, status);
+
+CREATE TABLE consultation.specialist_payout (
+    id uuid PRIMARY KEY DEFAULT gen_random_uuid(),
+    specialist_id uuid NOT NULL REFERENCES consultation.specialist_profile(account_id),
+    destination_id uuid NOT NULL,
+    currency char(3) NOT NULL,
+    amount_minor bigint NOT NULL CHECK (amount_minor > 0),
+    payout_provider varchar(32) NOT NULL CHECK (payout_provider IN ('MOMO', 'FAKE')),
+    status varchar(16) NOT NULL DEFAULT 'PENDING'
+        CHECK (status IN ('PENDING', 'PROCESSING', 'SUCCEEDED', 'FAILED', 'UNKNOWN')),
+    idempotency_key varchar(128) NOT NULL,
+    requested_at timestamptz NOT NULL DEFAULT now(),
+    completed_at timestamptz,
+    last_failure_code varchar(64),
+    created_at timestamptz NOT NULL DEFAULT now(),
+    updated_at timestamptz NOT NULL DEFAULT now(),
+    version bigint NOT NULL DEFAULT 0,
+    UNIQUE (specialist_id, idempotency_key),
+    UNIQUE (id, payout_provider),
+    FOREIGN KEY (destination_id, specialist_id, payout_provider)
+        REFERENCES consultation.specialist_payout_destination(id, specialist_id, payout_provider),
+    CHECK (status <> 'SUCCEEDED' OR completed_at IS NOT NULL)
+);
+CREATE INDEX ix_payout_specialist_history
+    ON consultation.specialist_payout (specialist_id, requested_at DESC);
+
+CREATE TABLE consultation.specialist_payout_attempt (
+    id uuid PRIMARY KEY DEFAULT gen_random_uuid(),
+    payout_id uuid NOT NULL,
+    payout_provider varchar(32) NOT NULL CHECK (payout_provider IN ('MOMO', 'FAKE')),
+    attempt_number smallint NOT NULL CHECK (attempt_number > 0),
+    provider_idempotency_key varchar(128) NOT NULL,
+    provider_payout_reference varchar(160),
+    status varchar(16) NOT NULL DEFAULT 'PENDING'
+        CHECK (status IN ('PENDING', 'PROCESSING', 'SUCCEEDED', 'FAILED', 'UNKNOWN')),
+    requested_at timestamptz NOT NULL DEFAULT now(),
+    provider_confirmed_at timestamptz,
+    failed_at timestamptz,
+    failure_code varchar(64),
+    created_at timestamptz NOT NULL DEFAULT now(),
+    updated_at timestamptz NOT NULL DEFAULT now(),
+    version bigint NOT NULL DEFAULT 0,
+    FOREIGN KEY (payout_id, payout_provider)
+        REFERENCES consultation.specialist_payout(id, payout_provider),
+    UNIQUE (payout_id, attempt_number),
+    UNIQUE (payout_provider, provider_idempotency_key),
+    UNIQUE (payout_provider, provider_payout_reference),
+    CHECK (status <> 'SUCCEEDED' OR provider_confirmed_at IS NOT NULL),
+    CHECK (status <> 'FAILED' OR failed_at IS NOT NULL)
+);
+CREATE INDEX ix_payout_attempt_reconciliation
+    ON consultation.specialist_payout_attempt (status, requested_at)
+    WHERE status IN ('PROCESSING', 'UNKNOWN');
+
+CREATE TABLE consultation.specialist_payout_item (
+    payout_id uuid NOT NULL REFERENCES consultation.specialist_payout(id),
+    earning_id uuid NOT NULL UNIQUE REFERENCES consultation.specialist_earning(id),
+    amount_minor bigint NOT NULL CHECK (amount_minor > 0),
+    PRIMARY KEY (payout_id, earning_id)
+);
+
+CREATE TABLE consultation.specialist_payout_status_history (
+    id uuid PRIMARY KEY DEFAULT gen_random_uuid(),
+    payout_id uuid NOT NULL REFERENCES consultation.specialist_payout(id) ON DELETE CASCADE,
+    from_status varchar(16),
+    to_status varchar(16) NOT NULL,
+    reason_code varchar(64),
+    changed_at timestamptz NOT NULL DEFAULT now()
+);
+CREATE INDEX ix_payout_status_history
+    ON consultation.specialist_payout_status_history (payout_id, changed_at);
+
+CREATE TABLE consultation.payout_provider_event (
+    id uuid PRIMARY KEY DEFAULT gen_random_uuid(),
+    payout_attempt_id uuid REFERENCES consultation.specialist_payout_attempt(id),
+    payout_provider varchar(32) NOT NULL CHECK (payout_provider IN ('MOMO', 'FAKE')),
+    provider_event_id varchar(160) NOT NULL,
+    event_type varchar(80) NOT NULL,
+    payload_sha256 char(64) NOT NULL,
+    processing_status varchar(16) NOT NULL DEFAULT 'RECEIVED'
+        CHECK (processing_status IN ('RECEIVED', 'PROCESSED', 'REJECTED', 'FAILED')),
+    failure_code varchar(64),
+    received_at timestamptz NOT NULL DEFAULT now(),
+    processed_at timestamptz,
+    UNIQUE (payout_provider, provider_event_id)
+);
 
 CREATE TABLE consultation.specialist_review (
     id uuid PRIMARY KEY DEFAULT gen_random_uuid(),
@@ -579,5 +939,69 @@ INSERT INTO identity.role (code, description) VALUES
     ('ADMIN', 'Platform administrator'),
     ('RESEARCH_ADMIN', 'AI dataset and benchmark administrator')
 ON CONFLICT (code) DO NOTHING;
+
+INSERT INTO consultation.subscription_plan (code, display_name, tier_rank) VALUES
+    ('FREE', 'Free', 0),
+    ('PREMIUM_CARE', 'Premium Care', 1),
+    ('PREMIUM_PLUS', 'Premium Plus', 2)
+ON CONFLICT (code) DO NOTHING;
+
+INSERT INTO consultation.subscription_plan_version (
+    id,
+    plan_code,
+    version,
+    currency,
+    price_minor,
+    billing_period_months,
+    consultation_credits_per_period,
+    non_consultation_value_minor,
+    credit_value_minor,
+    specialist_share_bps,
+    cancellation_cutoff_hours,
+    effective_from
+) VALUES
+    ('00000000-0000-0000-0000-000000000101', 'FREE', 1, 'USD', 0, 1, 0, 0, 0, 0, NULL, '2026-08-21T00:00:00Z'),
+    ('00000000-0000-0000-0000-000000000102', 'PREMIUM_CARE', 1, 'USD', 999, 1, 1, 499, 500, 7000, NULL, '2026-08-21T00:00:00Z'),
+    ('00000000-0000-0000-0000-000000000103', 'PREMIUM_PLUS', 1, 'USD', 1999, 1, 3, 499, 500, 7000, NULL, '2026-08-21T00:00:00Z')
+ON CONFLICT (plan_code, version) DO NOTHING;
+
+INSERT INTO consultation.subscription_plan_entitlement (plan_version_id, entitlement_code) VALUES
+    ('00000000-0000-0000-0000-000000000101', 'ASSESSMENT'),
+    ('00000000-0000-0000-0000-000000000101', 'EMOTION_JOURNAL'),
+    ('00000000-0000-0000-0000-000000000101', 'AI_EMOTION_ANALYSIS'),
+    ('00000000-0000-0000-0000-000000000101', 'BASIC_EMOTIONAL_DASHBOARD'),
+    ('00000000-0000-0000-0000-000000000101', 'SELF_HELP_RESOURCES'),
+    ('00000000-0000-0000-0000-000000000101', 'SPECIALIST_DISCOVERY'),
+    ('00000000-0000-0000-0000-000000000101', 'AI_SPECIALIST_RECOMMENDATION'),
+    ('00000000-0000-0000-0000-000000000102', 'ASSESSMENT'),
+    ('00000000-0000-0000-0000-000000000102', 'EMOTION_JOURNAL'),
+    ('00000000-0000-0000-0000-000000000102', 'AI_EMOTION_ANALYSIS'),
+    ('00000000-0000-0000-0000-000000000102', 'BASIC_EMOTIONAL_DASHBOARD'),
+    ('00000000-0000-0000-0000-000000000102', 'SELF_HELP_RESOURCES'),
+    ('00000000-0000-0000-0000-000000000102', 'SPECIALIST_DISCOVERY'),
+    ('00000000-0000-0000-0000-000000000102', 'AI_SPECIALIST_RECOMMENDATION'),
+    ('00000000-0000-0000-0000-000000000102', 'SPECIALIST_APPOINTMENT'),
+    ('00000000-0000-0000-0000-000000000102', 'SPECIALIST_CHAT'),
+    ('00000000-0000-0000-0000-000000000102', 'PERSONALIZED_INTERVENTION_PLAN'),
+    ('00000000-0000-0000-0000-000000000102', 'ADVANCED_EMOTIONAL_ANALYTICS'),
+    ('00000000-0000-0000-0000-000000000102', 'FOLLOW_UP_MONITORING'),
+    ('00000000-0000-0000-0000-000000000102', 'PRIORITY_SPECIALIST_RECOMMENDATION'),
+    ('00000000-0000-0000-0000-000000000103', 'ASSESSMENT'),
+    ('00000000-0000-0000-0000-000000000103', 'EMOTION_JOURNAL'),
+    ('00000000-0000-0000-0000-000000000103', 'AI_EMOTION_ANALYSIS'),
+    ('00000000-0000-0000-0000-000000000103', 'BASIC_EMOTIONAL_DASHBOARD'),
+    ('00000000-0000-0000-0000-000000000103', 'SELF_HELP_RESOURCES'),
+    ('00000000-0000-0000-0000-000000000103', 'SPECIALIST_DISCOVERY'),
+    ('00000000-0000-0000-0000-000000000103', 'AI_SPECIALIST_RECOMMENDATION'),
+    ('00000000-0000-0000-0000-000000000103', 'SPECIALIST_APPOINTMENT'),
+    ('00000000-0000-0000-0000-000000000103', 'SPECIALIST_CHAT'),
+    ('00000000-0000-0000-0000-000000000103', 'PERSONALIZED_INTERVENTION_PLAN'),
+    ('00000000-0000-0000-0000-000000000103', 'ADVANCED_EMOTIONAL_ANALYTICS'),
+    ('00000000-0000-0000-0000-000000000103', 'FOLLOW_UP_MONITORING'),
+    ('00000000-0000-0000-0000-000000000103', 'PRIORITY_SPECIALIST_RECOMMENDATION'),
+    ('00000000-0000-0000-0000-000000000103', 'PRIORITY_APPOINTMENT_BOOKING'),
+    ('00000000-0000-0000-0000-000000000103', 'PRIORITY_SPECIALIST_MATCHING'),
+    ('00000000-0000-0000-0000-000000000103', 'ENHANCED_FOLLOW_UP_MONITORING')
+ON CONFLICT (plan_version_id, entitlement_code) DO NOTHING;
 
 COMMIT;
