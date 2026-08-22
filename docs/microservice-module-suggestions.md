@@ -7,7 +7,7 @@ MentalBridge nên bắt đầu với một số ít microservice theo **bounded 
 Ngôn ngữ chính:
 
 - **Java + Spring Boot** cho `identity-service`, `care-service` và `consultation-service`, nơi cần tính nhất quán giao dịch, bảo mật, phân quyền và audit.
-- **Node.js 24 LTS + TypeScript strict** cho `journal-ai-service`, `realtime-service` và `content-notification-service`; dùng Express và các thư viện tường minh theo ADR 0003, không dùng NestJS.
+- **Node.js 22+ + TypeScript strict + NestJS 11** cho `journal-ai-service`, `realtime-service` và `content-notification-service` theo ADR 0006.
 - **Python** chỉ cho `phobert-worker`; worker không sở hữu nghiệp vụ hoặc dữ liệu nguồn.
 - **REST + JSON DTO** là giao tiếp đồng bộ giữa các microservice. **Kafka** dùng cho task/event bất đồng bộ. **Redis** chỉ dùng cho trạng thái realtime/caching ngắn hạn và WebSocket fan-out.
 
@@ -18,9 +18,9 @@ Ngôn ngữ chính:
 | `identity-service` | Java, Spring Boot | Đăng ký, đăng nhập, vai trò, xác minh email, reset mật khẩu, refresh token, trạng thái tài khoản, điều phối xóa tài khoản, audit/security projection tối thiểu | PostgreSQL database riêng `mentalbridge_identity`, schema mặc định `public` | REST; Kafka account/deletion/audit events |
 | `care-service` | Java, Spring Boot | Hồ sơ người dùng, consent, PHQ-9/GAD-7, chấm điểm, risk policy, intervention và follow-up | PostgreSQL database riêng `mentalbridge_care`, schema mặc định `public` | REST; transactional outbox/events |
 | `consultation-service` | Java, Spring Boot | Hồ sơ/xét duyệt/tìm kiếm/matching chuyên gia, subscription/payment/upgrade, credit, slot/appointment theo kênh, earnings/provider payout, quyền truy cập theo consent, đánh giá | PostgreSQL database riêng `mentalbridge_consultation`, schema mặc định `public`; không lưu giấy tờ xác minh specialist | REST; Kafka subscription/appointment/earning/review/moderation events |
-| `journal-ai-service` | Node.js 24 LTS, TypeScript, Express | CRUD nhật ký, phiên bản nội dung, kiểm tra AI consent, điều phối job và chuẩn hóa kết quả LLM | MongoDB cho nhật ký/kết quả; PostgreSQL database riêng cho job/outbox với schema `public` | REST/JSON; Kafka; API nhà cung cấp AI |
-| `realtime-service` | Node.js 24 LTS, TypeScript, Express, Socket.IO | REST lịch sử chat, WebSocket authorization/chat/presence/receipt/notification delivery | MongoDB cho chat; Redis cho presence, room và cross-instance fan-out | REST/JSON; WebSocket client; Kafka |
-| `content-notification-service` | Node.js 24 LTS, TypeScript, Express | Nội dung tự hỗ trợ, hotline, template, preference, lưu và điều phối notification | PostgreSQL database riêng `mentalbridge_content_notification`, schema mặc định `public` | REST/JSON; Kafka; Brevo API và provider push |
+| `journal-ai-service` | Node.js 22+, TypeScript, NestJS | CRUD nhật ký, phiên bản nội dung, kiểm tra AI consent, điều phối job và chuẩn hóa kết quả LLM | MongoDB cho nhật ký/kết quả; PostgreSQL database riêng cho job/outbox với schema `public` | REST/JSON; Kafka; API nhà cung cấp AI |
+| `realtime-service` | Node.js 22+, TypeScript, NestJS, Socket.IO | REST lịch sử chat, WebSocket authorization/chat/presence/receipt/notification delivery | MongoDB cho chat; Redis cho presence, room và cross-instance fan-out | REST/JSON; WebSocket client; Kafka |
+| `content-notification-service` | Node.js 22+, TypeScript, NestJS | Nội dung tự hỗ trợ, hotline, template, preference, lưu và điều phối notification | PostgreSQL database riêng `mentalbridge_content_notification`, schema mặc định `public` | REST/JSON; Kafka; Brevo API và provider push |
 | `phobert-worker` | Python | Chạy inference PhoBERT theo job, validate và trả kết quả có cấu trúc | Không sở hữu dữ liệu nguồn | Kafka command/result |
 
 ## 3. Cách nhóm service cho MVP
@@ -93,7 +93,7 @@ Phù hợp với Identity, Care và Consultation vì các module này có nhiề
 
 ### Node.js + TypeScript
 
-ADR 0003 chốt Node.js thuần với TypeScript strict, Express và các thư viện chuyên biệt cho Journal/AI, Realtime và Content/Notification. Các module này chủ yếu điều phối I/O: MongoDB, PostgreSQL, Kafka, Redis, WebSocket, LLM, email và push provider. Runtime validation giữ DTO/event contract nhất quán. Node service không tự quyết định consent, risk hoặc trạng thái appointment; nó gọi REST tới owner khi cần dữ liệu hiện thời hoặc dùng projection chỉ khi nghiệp vụ chấp nhận eventual consistency. Chi tiết thư viện và cấu trúc source nằm trong `docs/nodejs-service-stack.md`.
+ADR 0006 chốt NestJS 11 với TypeScript strict cho Journal/AI, Realtime và Content/Notification. Các module này chủ yếu điều phối I/O: MongoDB, PostgreSQL, Kafka, Redis, WebSocket, LLM, email và push provider. Runtime validation giữ DTO/event contract nhất quán. Node service không tự quyết định consent, risk hoặc trạng thái appointment; nó gọi REST tới owner khi cần dữ liệu hiện thời hoặc dùng projection chỉ khi nghiệp vụ chấp nhận eventual consistency. Chi tiết thư viện và cấu trúc source nằm trong `docs/nodejs-service-stack.md`.
 
 ## 7. Thứ tự triển khai
 

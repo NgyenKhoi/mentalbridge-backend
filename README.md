@@ -21,9 +21,9 @@ The recommended starting point is a **small microservice landscape**, not one se
 | Identity Service | Spring Boot 4.x | Accounts, roles, sessions, password reset | PostgreSQL |
 | Care Service | Spring Boot 4.x | Profiles, consent grants, assessments, risk, interventions, follow-up | PostgreSQL |
 | Consultation Service | Spring Boot 4.x | Specialist approval/discovery, subscription/payment/upgrade, credits, scheduled consultations, earnings/provider payouts, reviews | PostgreSQL |
-| Journal & AI Service | Node.js 24 LTS, TypeScript, Express | Journals, LLM orchestration, analysis jobs/results, benchmark coordination | MongoDB + PostgreSQL metadata |
-| Realtime Service | Node.js 24 LTS, TypeScript, Express, Socket.IO | REST message APIs, WebSocket chat/notification delivery, presence, receipts | MongoDB + Redis |
-| Content & Notification Service | Node.js 24 LTS, TypeScript, Express | Self-help resources, hotlines, preferences, notification/provider delivery | PostgreSQL |
+| Journal & AI Service | Node.js 22+, TypeScript, NestJS | Journals, LLM orchestration, analysis jobs/results, benchmark coordination | MongoDB + PostgreSQL metadata |
+| Realtime Service | Node.js 22+, TypeScript, NestJS, Socket.IO | REST message APIs, WebSocket chat/notification delivery, presence, receipts | MongoDB + Redis |
+| Content & Notification Service | Node.js 22+, TypeScript, NestJS | Self-help resources, hotlines, preferences, notification/provider delivery | PostgreSQL |
 | PhoBERT Worker | Python | Experimental inference jobs only | No authoritative business store |
 
 ADR 0005 assigns the workbook's financial bounded context to a cohesive `billing` feature inside Consultation Service, preserving the seven-deployable baseline. It owns paid subscriptions, Care-to-Plus upgrades, consultation credits, specialist earnings, and payout reconciliation. Downgrade and user-initiated refund are unsupported; MoMo is the sole production payment/payout provider, while local/CI uses MoMo-shaped fakes.
@@ -54,7 +54,7 @@ Severe-risk handling must be deterministic, immediate, auditable, and usable eve
 - [Architecture](docs/architecture.md)
 - [Node.js service stack](docs/nodejs-service-stack.md)
 - [Sprint 1 backend backlog guide](docs/sprint-1-backlog-guide.md)
-- [Plain Node.js stack ADR](docs/adr/0003-nodejs-library-stack.md)
+- [NestJS service framework ADR](docs/adr/0006-nestjs-nodejs-service-framework.md)
 - [Eureka discovery and OpenFeign ADR](docs/adr/0002-eureka-discovery-and-openfeign-clients.md)
 - [Kiến trúc module microservices và ngôn ngữ đã chốt](docs/microservice-module-suggestions.md)
 - [Engineering rules](docs/engineering-rules.md)
@@ -77,13 +77,15 @@ Severe-risk handling must be deterministic, immediate, auditable, and usable eve
 
 - Java 21+, Spring Boot 4.x, Spring Security Resource Server, Spring Data, Liquibase, OpenAPI
 - Eureka for Spring service discovery; OpenFeign plus Resilience4j for Java owner-to-owner REST clients
-- Node.js 24 LTS + strict TypeScript + explicit libraries for Journal/AI, Realtime, and Content/Notification; no NestJS
+- Node.js 22 or newer + strict TypeScript + NestJS 11 for Journal/AI, Realtime, and Content/Notification
 - Python for the isolated PhoBERT inference worker
 - PostgreSQL for transactional and relational data
 - MongoDB for journal text, chat messages, and variable AI/evaluation payloads
 - Kafka for durable asynchronous commands/events; Redis for bounded ephemeral realtime/OTP coordination, not database-query caching
 - `migrate-mongo` for MongoDB migrations; Cloudinary private/authenticated storage; Brevo transactional email API
-- Docker Compose for local development; GitHub Actions for CI
+- Docker Compose for local development; GitHub Actions basic CI is introduced after the current bootstrap integration is stable
+
+The repository does not yet require a GitHub Actions check on PRs targeting `dev`. Until the basic CI gate is enabled, reviewers require recorded local checks; a missing CI status is not a passing result.
 - OpenTelemetry-compatible traces, Prometheus metrics, Grafana dashboards, structured JSON logs
 
 The local stack includes Eureka, PostgreSQL, MongoDB, Kafka, Redis, and the application services through Docker Compose. Kubernetes, a service mesh, distributed secrets platforms, and multiple observability products are outside the initial scope unless the team can demonstrate a concrete requirement.

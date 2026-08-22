@@ -34,11 +34,13 @@ src/main/java/com/mentalbridge/<service>/
 ```text
 src/
 ├── conversations/
+│   ├── conversations.module.ts
 │   ├── api/
 │   ├── application/
 │   ├── domain/
 │   └── infrastructure/
 ├── messages/
+│   ├── messages.module.ts
 │   ├── api/
 │   ├── application/
 │   ├── domain/
@@ -46,14 +48,16 @@ src/
 ├── configuration/
 ├── observability/
 ├── shared/
+├── app.module.ts
 └── main.ts
 ```
 
-- Use the ADR 0003 stack and `docs/nodejs-service-stack.md`; do not add NestJS or recreate its module/decorator/DI model internally.
-- Express routers, Kafka handlers, and Socket.IO handlers stay in feature `api` adapters and delegate to application use cases.
-- Domain code does not import Express, database drivers, HTTP clients, Kafka, Redis, Socket.IO, or provider SDKs.
+- Use the ADR 0006 NestJS stack and `docs/nodejs-service-stack.md`.
+- NestJS controllers, Kafka handlers and Socket.IO gateways stay in feature `api` adapters and delegate to application providers/use cases.
+- Domain code does not import NestJS, database drivers, HTTP clients, Kafka, Redis, Socket.IO, or provider SDKs.
 - Provider-specific HTTP, MongoDB, PostgreSQL, Kafka, Redis, and WebSocket code stays behind application ports in `infrastructure`.
-- `main.ts` is the composition root: load validated configuration, create adapters/use cases, attach routes/handlers, start lifecycle hooks, and shut down gracefully.
+- Feature modules compose their controllers/providers and export only deliberate application capabilities. `app.module.ts` composes feature modules; `main.ts` loads validated configuration, creates the Nest application, applies global boundary policies and enables graceful shutdown.
+- Keep global modules small and technical. Do not use dependency injection as a service locator or share Nest DTO/entity classes between deployables.
 - TypeScript runs in strict mode. Do not use `any` for contracts or persistence boundaries; validate runtime input because compile-time types do not validate JSON.
 
 ## Size and readability controls

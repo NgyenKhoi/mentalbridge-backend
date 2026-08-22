@@ -42,6 +42,14 @@ Test a Spring consumer against a Node provider contract and a Node consumer agai
 
 Paid AI, email, push, or other provider APIs are not called by CI. Use synthetic fixtures and provider sandboxes only in explicit integration environments.
 
+## `dev` CI baseline
+
+The backend repository currently has no required GitHub Actions status check for pull requests targeting `dev`. Every feature branch must be synchronized with `origin/dev`, reviewed, and verified locally before merge; the absence of a CI status is not a passing result.
+
+After the current bootstrap integration is stable, the repository owner adds basic CI for pull requests targeting `dev`. The first gate covers dependency installation, formatting, lint/static analysis, typecheck, unit tests, contract and migration static checks, and build for affected modules. Branch protection is enabled after the workflow is stable. Integration tests required by a module remain part of local review evidence until they are represented reliably in CI.
+
+The CI introduction PR updates every status statement that describes CI as absent.
+
 ## Configuration scenarios
 
 - `mvn clean install` passes without a developer `.env` file.
@@ -68,5 +76,6 @@ Before declaring completion, inspect the full diff and answer yes to each applic
 - Feature structure remains cohesive; no god service, dumping-ground `shared`, copied cross-service DTO, unused abstraction, or explanatory production-code comment was added.
 - Tests cover happy path, validation, authorization, conflict/concurrency, duplicate/retry, and dependency failure.
 - Formatting, static analysis, tests, migration validation, contract checks, and build pass for every affected module.
+- Before the required `dev` CI gate exists, exact local commands/results are recorded; afterward the required GitHub status also passes.
 
 If a required check cannot run, document the exact command, failure, and impact. Do not call the implementation complete merely because the missing dependency belongs to another module.

@@ -1,8 +1,11 @@
 # ADR 0003: Node.js library stack without NestJS
 
-- Status: Accepted
+- Status: Superseded by ADR 0006
 - Date: 2026-08-17
 - Supersedes: the NestJS-specific parts of ADR 0001
+- Superseded on: 2026-08-22
+
+ADR 0006 replaces this framework decision. This record remains unchanged below to preserve the reason the explicit-library approach was previously selected.
 
 ## Context
 

@@ -10,6 +10,17 @@ The repository templates in `.github/` are mandatory. Agents may prepare suggest
 4. Create the work branch from the intended base commit. If the worktree is dirty and switching could mix/conflict changes, stop and ask rather than forcing checkout.
 5. Use `git switch`; do not use destructive checkout/reset/clean commands to make the worktree appear clean.
 
+## Before coding or resuming a feature
+
+Fetch the remote and measure the feature branch against the intended base before editing:
+
+```text
+git fetch origin
+git rev-list --left-right --count origin/dev...HEAD
+```
+
+The first count is commits present only on `origin/dev`; a value greater than zero means the feature is behind. Integrate the current base before coding: rebase a branch owned by one developer, or merge `origin/dev` into a branch shared by multiple developers. Resolve conflicts deliberately and run the smallest baseline gates before adding new changes. Do not knowingly build a feature on a stale architectural, contract, migration, or security baseline.
+
 Branch names use lowercase kebab-case:
 
 ```text
@@ -72,6 +83,17 @@ Build the PR body from `.github/pull_request_template.md`; do not replace it wit
 
 Before opening/updating the PR, synchronize safely with the target branch, resolve conflicts deliberately, rerun affected quality gates, and review the final base-to-head diff. Do not force-push a shared branch unless the user explicitly authorizes it and the team impact is understood.
 
+### Synchronizing a stale feature branch
+
+Do not copy files from `dev` manually or merge a stale PR first and repair it afterward. Fetch the remote and integrate the current target branch before continuing feature work:
+
+- For a branch owned by one developer, rebase onto `origin/dev`, resolve each conflict deliberately, rerun the affected gates, then update the remote only with `git push --force-with-lease` after explicit authorization.
+- For a branch used by multiple developers, merge `origin/dev` into the feature branch and push normally so collaborators' commit IDs are not rewritten.
+- If the branch is far behind but contains only a small number of feature commits, rebasing is usually the clearest review history. Being many commits behind is not itself a reason to discard or manually recreate the feature.
+- Synchronize at the start of work and again before requesting review. During active parallel development, fetch regularly so architectural and contract changes are discovered before implementation grows around stale assumptions.
+
 ## Push and post-push verification
+
+Immediately before commit/push or creating/updating a PR, fetch and run the divergence check again. If `origin/dev` advanced while implementation was in progress, integrate it with the same ownership-safe rebase/merge rule, resolve conflicts, rerun every affected gate, and inspect the refreshed `origin/dev...HEAD` diff. Do not rely on the check performed at the start of coding.
 
 Push only the intended branch and only when authorized. Confirm the remote and upstream; never assume `origin` or the target repository. After pushing, verify the remote commit/branch and report the commit SHA. When a PR exists, verify its checks and report failures accurately; pushing is not completion when required CI is red.

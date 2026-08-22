@@ -24,11 +24,13 @@ These instructions apply to the entire repository. Before changing application c
 
 ## Required delivery behavior
 
-1. Identify the owning module and its source of truth before coding.
-2. Read the module README, requirements traceability, affected OpenAPI/event contracts, migrations, and relevant domain rules.
-3. Change contracts and database descriptions together with implementation.
-4. Test success, authorization, validation, concurrency/consistency, timeout, retry, and dependency-failure paths as applicable.
-5. Review the final diff against `docs/agent-guides/review-and-testing.md`.
-6. Before any branch, checkout/switch, commit, push, issue, or PR action, follow `docs/agent-guides/git-collaboration.md` and the current `.github/` template.
+1. Before coding or resuming work, fetch the intended PR base and measure the feature branch against `origin/dev`. If it is behind, integrate `origin/dev` first: rebase a branch owned by one developer, or merge for a shared branch. Resolve conflicts and establish a clean baseline before editing.
+2. Identify the owning module and its source of truth before coding.
+3. Read the module README, requirements traceability, affected OpenAPI/event contracts, migrations, and relevant domain rules.
+4. Change contracts and database descriptions together with implementation.
+5. Test success, authorization, validation, concurrency/consistency, timeout, retry, and dependency-failure paths as applicable.
+6. Immediately before commit/push or creating/updating a PR, fetch and compare with `origin/dev` again. If `dev` advanced, integrate it, resolve conflicts deliberately, rerun every affected quality gate, and review the new base-to-head diff before publishing.
+7. Review the final diff against `docs/agent-guides/review-and-testing.md`.
+8. Before any branch, checkout/switch, commit, push, issue, or PR action, follow `docs/agent-guides/git-collaboration.md` and the current `.github/` template.
 
 An accepted ADR may override a repository recommendation, but it must explicitly identify the affected rule and migration/compatibility consequences.

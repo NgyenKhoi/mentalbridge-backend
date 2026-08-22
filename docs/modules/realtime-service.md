@@ -18,7 +18,7 @@ Realtime owns conversations, encrypted messages, attachments metadata, tombstone
 ## Implementation design
 
 - Feature slices: `conversations`, `messages`, `history`, `receipts`, `presence`, `websocket`, `notification-delivery`, `message-moderation`.
-- Runtime: Node.js 24 LTS, strict TypeScript, Express 5, Socket.IO 4, official MongoDB and Redis clients, `migrate-mongo`, KafkaJS, Pino, OpenTelemetry, Vitest, and Testcontainers as defined in `docs/nodejs-service-stack.md`.
+- Runtime: Node.js 22 or newer, strict TypeScript, NestJS 11, Socket.IO 4 through NestJS gateways, official MongoDB and Redis clients, `migrate-mongo`, KafkaJS, Pino, OpenTelemetry, Vitest, and Testcontainers as defined in `docs/nodejs-service-stack.md`.
 - OpenAPI owns history/recovery; versioned WebSocket schemas own commands/acks/errors; Kafka schemas own minimized integration facts.
 - Conversation history may remain read-only after a slot under retention policy, but join/send never becomes 24/7 specialist messaging. Subscription cancellation closes future conversations immediately; an already-started confirmed session remains writable only until its scheduled end.
 - `IN_APP_VIDEO` is future intent only. Realtime does not implement signalling, rooms, provider credentials, presence evidence, recording, or fallback until a separate contract/ADR assigns those responsibilities.
@@ -27,7 +27,7 @@ Realtime owns conversations, encrypted messages, attachments metadata, tombstone
 
 ## Ordered tasks
 
-- [ ] RT-01 Scaffold the plain Node.js/TypeScript service with Express, Socket.IO, explicit composition, typed configuration, health/readiness, lint, test, and build commands.
+- [ ] RT-01 Scaffold the NestJS/TypeScript service with feature modules, Socket.IO gateways, typed configuration, health/readiness, lint, test, and build commands.
 - [ ] RT-02 Resolve appointment join grace, read-only history, attachment, tombstone/retention and moderation policies; define video separately before enabling that channel.
 - [ ] RT-03 Define conversation/history OpenAPI, WebSocket schemas and Kafka event contracts.
 - [ ] RT-04 Add migrate-mongo validators/indexes and encrypted-content/data documentation.
