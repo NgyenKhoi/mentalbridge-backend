@@ -81,6 +81,6 @@ Use real disposable PostgreSQL, MongoDB, or Redis through Testcontainers where a
 
 ## Sprint acceptance
 
-Sprint 1 is accepted when each Story's contracts, migrations, implementation, documentation and tests agree. A scaffold that merely starts or code that merely compiles does not complete a functional Story. Before the initial `dev` CI gate is enabled, the same quality commands are recorded as local review evidence; afterward the corresponding required CI status must also pass.
+Sprint 1 is accepted when each Story's contracts, migrations, implementation, documentation and tests agree. A scaffold that merely starts or code that merely compiles does not complete a functional Story. The same quality commands are recorded as local review evidence and the repository `quality-gate` status must pass.
 
-The repository owner creates one shared GitHub Actions CI flow outside this imported backlog after the current bootstrap integration is stable. No team member receives a separate CI/CD Jira task and Sprint 1 contains no deployment work.
+The repository owner maintains one shared GitHub Actions CI flow outside this imported backlog. No team member receives a separate CI/CD Jira task and Sprint 1 contains no deployment work.

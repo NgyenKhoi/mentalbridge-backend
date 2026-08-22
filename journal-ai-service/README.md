@@ -42,28 +42,28 @@ npm start
 
 ## Configuration
 
-| Variable | Required | Default | Purpose |
-| --- | --- | --- | --- |
-| `JOURNAL_AI_PORT` | No | `3000` | HTTP port, from 1 through 65535 |
-| `NODE_ENV` | No | `development` | Runtime environment: `development`, `test`, or `production` |
-| `JOURNAL_AI_LOG_LEVEL` | No | `info` | Pino log level |
-| `JOURNAL_AI_MONGODB_URI` | Production | `mongodb://localhost:27017` outside production | MongoDB server used by the service and `migrate-mongo` |
-| `JOURNAL_AI_MONGODB_DATABASE` | Production | `mentalbridge_journal_ai` outside production | MongoDB database owned by this service |
-| `JOURNAL_AI_MONGODB_CONNECTION_TIMEOUT_MS` | No | `2000` | MongoDB connect/server-selection timeout from 100 through 30000 milliseconds |
-| `IDENTITY_JWT_ISSUER` | Yes | None | Exact Identity issuer accepted by this resource service |
-| `IDENTITY_JWT_AUDIENCE` | Yes | None | Exact MentalBridge API audience accepted by this resource service |
-| `IDENTITY_JWT_KEY_ID` | Yes | None | Exact active Identity signing-key identifier accepted by this resource service |
-| `IDENTITY_JWT_PUBLIC_KEY` | Yes | None | X.509 RSA public key matching the Identity signing key; the private key is never shared |
+| Variable                                   | Required   | Default                                        | Purpose                                                                                 |
+| ------------------------------------------ | ---------- | ---------------------------------------------- | --------------------------------------------------------------------------------------- |
+| `JOURNAL_AI_PORT`                          | No         | `3000`                                         | HTTP port, from 1 through 65535                                                         |
+| `NODE_ENV`                                 | No         | `development`                                  | Runtime environment: `development`, `test`, or `production`                             |
+| `JOURNAL_AI_LOG_LEVEL`                     | No         | `info`                                         | Pino log level                                                                          |
+| `JOURNAL_AI_MONGODB_URI`                   | Production | `mongodb://localhost:27017` outside production | MongoDB server used by the service and `migrate-mongo`                                  |
+| `JOURNAL_AI_MONGODB_DATABASE`              | Production | `mentalbridge_journal_ai` outside production   | MongoDB database owned by this service                                                  |
+| `JOURNAL_AI_MONGODB_CONNECTION_TIMEOUT_MS` | No         | `2000`                                         | MongoDB connect/server-selection timeout from 100 through 30000 milliseconds            |
+| `IDENTITY_JWT_ISSUER`                      | Yes        | None                                           | Exact Identity issuer accepted by this resource service                                 |
+| `IDENTITY_JWT_AUDIENCE`                    | Yes        | None                                           | Exact MentalBridge API audience accepted by this resource service                       |
+| `IDENTITY_JWT_KEY_ID`                      | Yes        | None                                           | Exact active Identity signing-key identifier accepted by this resource service          |
+| `IDENTITY_JWT_PUBLIC_KEY`                  | Yes        | None                                           | X.509 RSA public key matching the Identity signing key; the private key is never shared |
 
 Local `.env` files are loaded only outside production and never override real environment variables. The repository and service examples use the same service-scoped keys. Do not commit local `.env` files or secrets.
 
 ## Operations endpoints
 
-| Method | Path | Purpose |
-| --- | --- | --- |
-| `GET` | `/health/live` | Process liveness probe |
-| `GET` | `/health/ready` | Readiness probe that returns success only when owned MongoDB responds |
-| `GET` | `/metrics` | Prometheus metrics scrape endpoint |
+| Method | Path            | Purpose                                                               |
+| ------ | --------------- | --------------------------------------------------------------------- |
+| `GET`  | `/health/live`  | Process liveness probe                                                |
+| `GET`  | `/health/ready` | Readiness probe that returns success only when owned MongoDB responds |
+| `GET`  | `/metrics`      | Prometheus metrics scrape endpoint                                    |
 
 Incoming requests echo a valid bounded `x-correlation-id` or receive a generated one. Request logs include the same correlation ID and redact authorization and cookie headers. Non-public application routes require an Identity-issued RS256 bearer token; signature, issuer, audience, lifetime, subject, token ID, and roles are validated before a principal is attached to the request.
 

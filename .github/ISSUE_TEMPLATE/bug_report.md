@@ -1,42 +1,43 @@
 ---
-name: "🐛 Báo lỗi (Bug Report)"
-about: "Tạo báo cáo để giúp chúng tôi cải thiện và sửa lỗi."
-title: "[BUG] "
+name: "Bug report"
+about: "Báo lỗi có thể tái hiện và có phạm vi regression rõ"
+title: "[BUG] <scope>: <short description>"
 labels: ["bug"]
 assignees: ""
 ---
 
-## 💻 Mô tả lỗi
+## Hiện tượng
 
-Mô tả rõ ràng và súc tích về lỗi đang gặp phải.
+Mô tả hành vi thực tế, error code và correlation ID an toàn nếu có. Không dán token, journal/chat, assessment answer, payment payload hoặc dữ liệu nhạy cảm.
 
-## 🔄 Các bước tái hiện lỗi
+## Cách tái hiện
 
-1. Đi tới `...`
-2. Thực hiện `...`
-3. Quan sát `...`
+1.
+2.
+3.
 
-## 🎯 Kết quả thực tế
+## Kết quả mong đợi
 
-Mô tả chính xác điều đã xảy ra, kèm error code/correlation ID an toàn nếu có. Không dán token, journal/chat, assessment answer hoặc dữ liệu nhạy cảm.
+Mô tả hành vi theo contract/domain rule hiện hành.
 
-## ✅ Kết quả mong muốn
+## Phạm vi và source of truth
 
-Mô tả chính xác hành vi mong muốn.
+- Owner service:
+- Contract/ADR/domain rule:
+- Commit/deployment đầu tiên bị ảnh hưởng:
+- Caller/consumer liên quan:
 
-## 📸 Bằng chứng
+## Môi trường
 
-Ảnh chụp hoặc log đã loại bỏ dữ liệu nhạy cảm.
+- OS/runtime:
+- Module/commit:
+- Tần suất tái hiện:
+- Dependency state:
 
-## 🛠️ Môi trường hệ thống
+## Regression coverage
 
-- Hệ điều hành:
-- Trình duyệt/app và phiên bản:
-- Module/commit/deployment:
-- Khả năng tái hiện:
-
-## 🧪 Phạm vi kiểm thử hồi quy
-
-- [ ] Happy path
-- [ ] Authorization/validation liên quan
-- [ ] Consistency, retry hoặc dependency failure liên quan
+- [ ] Test tái hiện lỗi trước khi sửa.
+- [ ] Happy path và error path liên quan.
+- [ ] Authorization/validation.
+- [ ] Consistency, retry, timeout hoặc dependency failure.
+- [ ] Contract/migration compatibility nếu áp dụng.

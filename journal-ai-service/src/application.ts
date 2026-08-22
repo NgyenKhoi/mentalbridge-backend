@@ -3,10 +3,7 @@ import "reflect-metadata";
 import type { INestApplication } from "@nestjs/common";
 import { NestFactory } from "@nestjs/core";
 
-import {
-  AppModule,
-  type ApplicationDependencies,
-} from "./app.module.js";
+import { AppModule, type ApplicationDependencies } from "./app.module.js";
 import {
   loadConfiguration,
   type ServiceConfiguration,

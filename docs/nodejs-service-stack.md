@@ -126,8 +126,8 @@ Required keys are service-scoped, documented in `.env.example`, and bound once a
 
 GitHub Actions is maintained as one repository-level flow by the repository owner and is not split into service-member tasks in the Sprint 1 Jira import.
 
-`dev` currently has no required CI status check. A missing CI status is not evidence that a pull request passed; reviewers use the module quality gates, record local verification, and report unavailable checks explicitly.
+`.github/workflows/quality-gate.yml` runs install, formatting, lint, typecheck, unit/HTTP tests, contract/migration validation and build for current Node.js modules on pull requests targeting `dev`. Content/Notification's PostgreSQL Testcontainers suite also runs there. The stable branch-protection check is the final `quality-gate` job; enable it after the workflow is merged and has completed successfully on `dev`.
 
-After the current bootstrap integration is stable, the repository owner adds the first basic GitHub Actions workflow for pull requests targeting `dev`. The initial workflow runs install, formatting, lint/static analysis, typecheck, unit tests, contract/migration static validation and build for affected modules. Branch protection may require that workflow only after it is stable. Real database/broker integration coverage can be added incrementally, but local Testcontainers verification remains required wherever the module definition already requires it.
+A missing, skipped, cancelled, unavailable, or red CI status is not evidence that a pull request passed. Reviewers still record local verification and report environment-only blockers explicitly.
 
 There is no cloud account, hosted server, deployment credential, CD workflow, or release automation in Sprint 1. Deployment work is added only after an environment and credentials are explicitly approved.

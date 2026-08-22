@@ -44,11 +44,9 @@ Paid AI, email, push, or other provider APIs are not called by CI. Use synthetic
 
 ## `dev` CI baseline
 
-The backend repository currently has no required GitHub Actions status check for pull requests targeting `dev`. Every feature branch must be synchronized with `origin/dev`, reviewed, and verified locally before merge; the absence of a CI status is not a passing result.
+`.github/workflows/quality-gate.yml` is the repository-level pull-request gate for `dev`. It runs repository/paired-change policy, all current Spring module tests, Node dependency installation, formatting, lint, typecheck, unit/HTTP tests, contract and migration checks, Content PostgreSQL Testcontainers tests, and builds. The final stable check name is `quality-gate`; configure branch protection to require it after this workflow is merged and has completed successfully on `dev`.
 
-After the current bootstrap integration is stable, the repository owner adds basic CI for pull requests targeting `dev`. The first gate covers dependency installation, formatting, lint/static analysis, typecheck, unit tests, contract and migration static checks, and build for affected modules. Branch protection is enabled after the workflow is stable. Integration tests required by a module remain part of local review evidence until they are represented reliably in CI.
-
-The CI introduction PR updates every status statement that describes CI as absent.
+CI does not replace local verification or base synchronization. A skipped, cancelled, unavailable, or red status is not a passing result. Record exact local commands and any environment-only blocker in the PR.
 
 ## Configuration scenarios
 
@@ -76,6 +74,6 @@ Before declaring completion, inspect the full diff and answer yes to each applic
 - Feature structure remains cohesive; no god service, dumping-ground `shared`, copied cross-service DTO, unused abstraction, or explanatory production-code comment was added.
 - Tests cover happy path, validation, authorization, conflict/concurrency, duplicate/retry, and dependency failure.
 - Formatting, static analysis, tests, migration validation, contract checks, and build pass for every affected module.
-- Before the required `dev` CI gate exists, exact local commands/results are recorded; afterward the required GitHub status also passes.
+- Exact local commands/results are recorded and the required GitHub `quality-gate` status passes.
 
 If a required check cannot run, document the exact command, failure, and impact. Do not call the implementation complete merely because the missing dependency belongs to another module.

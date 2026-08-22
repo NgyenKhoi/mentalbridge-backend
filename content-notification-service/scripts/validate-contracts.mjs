@@ -6,6 +6,10 @@ const contractPath = fileURLToPath(
 );
 const contract = await SwaggerParser.validate(contractPath);
 const expectedImplemented = new Set(['GET /health/live', 'GET /health/ready']);
+const implementedResponses = new Map([
+  ['GET /health/live', new Set(['200'])],
+  ['GET /health/ready', new Set(['200', '503'])],
+]);
 const actualImplemented = new Set();
 const actualPlanned = new Set();
 const methods = ['get', 'post', 'put', 'patch', 'delete'];
@@ -20,6 +24,19 @@ for (const [path, pathItem] of Object.entries(contract.paths ?? {})) {
     if (pathItem[method]) {
       const operation = `${method.toUpperCase()} ${path}`;
       (status === 'implemented' ? actualImplemented : actualPlanned).add(operation);
+      if (status === 'implemented') {
+        if (
+          !setsEqual(
+            new Set(Object.keys(pathItem[method].responses ?? {})),
+            implementedResponses.get(operation),
+          )
+        ) {
+          throw new Error(`${operation} response statuses differ from the implemented boundary`);
+        }
+        if (pathItem[method].security) {
+          throw new Error(`${operation} must remain public`);
+        }
+      }
     }
   }
 }

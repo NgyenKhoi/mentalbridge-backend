@@ -2,10 +2,7 @@ import test from "node:test";
 import type { Server } from "node:http";
 import assert from "node:assert/strict";
 
-import {
-  type ExecutionContext,
-  UnauthorizedException,
-} from "@nestjs/common";
+import { type ExecutionContext, UnauthorizedException } from "@nestjs/common";
 import { Reflector } from "@nestjs/core";
 import { exportSPKI, generateKeyPair, SignJWT } from "jose";
 import request from "supertest";
@@ -50,14 +47,11 @@ void test("returns health liveness", async () => {
   try {
     const server = app.getHttpServer() as unknown as Server;
 
-    await request(server)
-      .get("/health/live")
-      .expect(200)
-      .expect({
-        status: "ok",
-        service: "journal-ai-service",
-        environment: "test",
-      });
+    await request(server).get("/health/live").expect(200).expect({
+      status: "ok",
+      service: "journal-ai-service",
+      environment: "test",
+    });
   } finally {
     await app.close();
   }
@@ -254,7 +248,10 @@ void test("fails closed when a protected request has no bearer token", async () 
       }),
     } as unknown as ExecutionContext;
 
-    await assert.rejects(() => guard.canActivate(context), UnauthorizedException);
+    await assert.rejects(
+      () => guard.canActivate(context),
+      UnauthorizedException,
+    );
   } finally {
     await app.close();
   }

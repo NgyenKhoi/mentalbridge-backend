@@ -1,0 +1,10 @@
+/AGENTS.md @NgyenKhoi
+/.codex/skills/ @NgyenKhoi
+/.github/ @NgyenKhoi
+/contracts/ @NgyenKhoi
+/docs/adr/ @NgyenKhoi
+/docs/database/ @NgyenKhoi
+/identity-service/src/main/resources/db/changelog/ @NgyenKhoi
+/care-service/src/main/resources/db/changelog/ @NgyenKhoi
+/consultation-service/src/main/resources/db/changelog/ @NgyenKhoi
+/content-notification-service/migrations/ @NgyenKhoi

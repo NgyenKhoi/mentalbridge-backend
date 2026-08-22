@@ -66,13 +66,13 @@ Use `feat`, `fix`, `refactor`, `chore`, `docs`, or `test`. Keep the subject conc
 
 ## Pull requests
 
-PR titles follow the exact repository convention:
+PR titles follow the repository convention:
 
 ```text
-type(scope): lowercase short description (#issue)
+type(scope): lowercase short description
 ```
 
-Build the PR body from `.github/pull_request_template.md`; do not replace it with an abbreviated summary. Complete:
+Append `(#issue)` only when a real tracked issue exists; never fabricate one. Build the PR body from `.github/pull_request_template.md`; do not replace it with an abbreviated summary. Complete:
 
 - change type and detailed behavior/reason;
 - `Closes #<issue>` or the precise relationship to the issue/TODO;

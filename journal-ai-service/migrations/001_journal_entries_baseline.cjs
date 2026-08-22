@@ -17,7 +17,8 @@ const encryptedPayloadSchema = {
   properties: {
     ciphertext: {
       bsonType: "binData",
-      description: "Encrypted journal plaintext. Never index or log decrypted content.",
+      description:
+        "Encrypted journal plaintext. Never index or log decrypted content.",
     },
     iv: {
       bsonType: "binData",
