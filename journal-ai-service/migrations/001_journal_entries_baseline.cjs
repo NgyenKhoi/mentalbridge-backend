@@ -54,11 +54,6 @@ const revisionSchema = {
     },
     createdAt: dateSchema,
     content: encryptedPayloadSchema,
-    contentPreview: {
-      bsonType: "string",
-      maxLength: 160,
-      description: "Safe preview only after product approval; omit when unavailable.",
-    },
     contentByteLength: {
       bsonType: "int",
       minimum: 1,

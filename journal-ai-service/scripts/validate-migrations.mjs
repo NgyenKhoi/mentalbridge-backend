@@ -14,5 +14,10 @@ const properties = migration.validator.$jsonSchema.properties;
 assert.ok(properties.deleted);
 assert.ok(properties.deletedAt);
 assert.ok(properties.tombstoneReason);
+assert.equal(
+  migration.validator.$jsonSchema.properties.revisions.items.properties
+    .contentPreview,
+  undefined,
+);
 
 console.log("Validated Mongo migration: migrations/001_journal_entries_baseline.cjs");

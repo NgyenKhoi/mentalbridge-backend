@@ -12,7 +12,19 @@ import { LOGGER_TOKEN } from "./tokens.js";
 
 @Injectable()
 export class RequestLoggingMiddleware implements NestMiddleware {
-  constructor(@Inject(LOGGER_TOKEN) private readonly logger: Logger) {}
+  private readonly httpLogger: ReturnType<typeof pinoHttp>;
+
+  constructor(@Inject(LOGGER_TOKEN) logger: Logger) {
+    this.httpLogger = pinoHttp({
+      logger,
+      genReqId: (request) =>
+        (request as { id?: string }).id ??
+        getCorrelationId(request as IncomingMessage),
+      customProps: (request) => ({
+        correlationId: (request as { id?: string }).id,
+      }),
+    });
+  }
 
   use(
     request: IncomingMessage,
@@ -21,13 +33,9 @@ export class RequestLoggingMiddleware implements NestMiddleware {
   ): void {
     const correlationId = getCorrelationId(request);
     setCorrelationIdHeader(response, correlationId);
+    const identifiedRequest = request as IncomingMessage & { id?: string };
+    identifiedRequest.id = correlationId;
 
-    pinoHttp({
-      logger: this.logger,
-      genReqId: () => correlationId,
-      customProps: () => ({
-        correlationId,
-      }),
-    })(request, response, next);
+    this.httpLogger(identifiedRequest, response, next);
   }
 }

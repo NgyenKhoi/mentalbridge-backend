@@ -6,12 +6,14 @@ import {
   Header,
   Inject,
   Module,
+  ServiceUnavailableException,
   type DynamicModule,
   type INestApplication,
   type MiddlewareConsumer,
   type NestModule,
+  type Provider,
 } from "@nestjs/common";
-import { NestFactory } from "@nestjs/core";
+import { APP_GUARD, NestFactory } from "@nestjs/core";
 
 import {
   loadConfiguration,
@@ -24,7 +26,16 @@ import {
   CONFIGURATION_TOKEN,
   LOGGER_TOKEN,
   METRICS_TOKEN,
+  READINESS_PROBE_TOKEN,
 } from "./observability/tokens.js";
+import {
+  MongoReadinessProbe,
+  type ReadinessProbe,
+} from "./health/readiness.js";
+import { IdentityJwtVerifier } from "./security/identity-jwt-verifier.js";
+import { JwtAuthenticationGuard } from "./security/jwt-authentication.guard.js";
+import { Public } from "./security/public.decorator.js";
+import { ProblemDetailsFilter } from "./http/problem-details.filter.js";
 
 interface HealthResponse {
   status: "ok";
@@ -32,17 +43,20 @@ interface HealthResponse {
   environment: ServiceConfiguration["NODE_ENV"];
 }
 
+@Public()
 @Controller("health")
 class HealthController {
   constructor(
     @Inject(CONFIGURATION_TOKEN)
     private readonly configuration: ServiceConfiguration,
     @Inject(METRICS_TOKEN) private readonly metrics: Metrics,
+    @Inject(READINESS_PROBE_TOKEN)
+    private readonly readinessProbe: ReadinessProbe,
   ) {}
 
   @Get("live")
   live(): HealthResponse {
-    this.metrics.healthChecksTotal.inc({ endpoint: "live" });
+    this.metrics.healthChecksTotal.inc({ endpoint: "live", result: "ok" });
 
     return {
       status: "ok",
@@ -52,8 +66,17 @@ class HealthController {
   }
 
   @Get("ready")
-  ready(): HealthResponse {
-    this.metrics.healthChecksTotal.inc({ endpoint: "ready" });
+  async ready(): Promise<HealthResponse> {
+    try {
+      await this.readinessProbe.check();
+      this.metrics.healthChecksTotal.inc({ endpoint: "ready", result: "ok" });
+    } catch {
+      this.metrics.healthChecksTotal.inc({
+        endpoint: "ready",
+        result: "unavailable",
+      });
+      throw new ServiceUnavailableException("MongoDB is unavailable");
+    }
 
     return {
       status: "ok",
@@ -63,6 +86,7 @@ class HealthController {
   }
 }
 
+@Public()
 @Controller()
 class MetricsController {
   constructor(@Inject(METRICS_TOKEN) private readonly metrics: Metrics) {}
@@ -76,9 +100,21 @@ class MetricsController {
 
 @Module({})
 export class AppModule implements NestModule {
-  static register(configuration: ServiceConfiguration): DynamicModule {
+  static register(
+    configuration: ServiceConfiguration,
+    dependencies: ApplicationDependencies = {},
+  ): DynamicModule {
     const logger = createLogger(configuration);
     const metrics = createMetrics(configuration);
+    const readinessProvider: Provider = dependencies.readinessProbe
+      ? {
+          provide: READINESS_PROBE_TOKEN,
+          useValue: dependencies.readinessProbe,
+        }
+      : {
+          provide: READINESS_PROBE_TOKEN,
+          useClass: MongoReadinessProbe,
+        };
 
     return {
       module: AppModule,
@@ -97,6 +133,12 @@ export class AppModule implements NestModule {
           provide: METRICS_TOKEN,
           useValue: metrics,
         },
+        readinessProvider,
+        IdentityJwtVerifier,
+        {
+          provide: APP_GUARD,
+          useClass: JwtAuthenticationGuard,
+        },
       ],
     };
   }
@@ -106,9 +148,20 @@ export class AppModule implements NestModule {
   }
 }
 
+export interface ApplicationDependencies {
+  readonly readinessProbe?: ReadinessProbe;
+}
+
 export const createApplication = async (
   configuration = loadConfiguration(),
-): Promise<INestApplication> =>
-  NestFactory.create(AppModule.register(configuration), {
-    logger: false,
-  });
+  dependencies: ApplicationDependencies = {},
+): Promise<INestApplication> => {
+  const app = await NestFactory.create(
+    AppModule.register(configuration, dependencies),
+    {
+      logger: false,
+    },
+  );
+  app.useGlobalFilters(new ProblemDetailsFilter());
+  return app;
+};

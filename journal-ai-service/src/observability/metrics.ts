@@ -24,8 +24,8 @@ export const createMetrics = (configuration: ServiceConfiguration): Metrics => {
 
   const healthChecksTotal = new PrometheusCounter({
     name: "journal_ai_health_checks_total",
-    help: "Total Journal-AI health checks by endpoint.",
-    labelNames: ["endpoint"],
+    help: "Total Journal-AI health checks by endpoint and result.",
+    labelNames: ["endpoint", "result"],
     registers: [registry],
   });
 

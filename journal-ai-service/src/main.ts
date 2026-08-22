@@ -17,7 +17,7 @@ const shutdown = (): void => {
   isShuttingDown = true;
 
   const forceShutdownTimer = setTimeout(() => {
-    process.exitCode = 1;
+    process.exit(1);
   }, shutdownTimeoutMilliseconds);
 
   forceShutdownTimer.unref();

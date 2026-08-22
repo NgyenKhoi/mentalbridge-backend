@@ -1,4 +1,4 @@
-openapi: 3.0.3
+openapi: 3.1.0
 info:
   title: MentalBridge Journal AI Service API
   version: 1.0.0
@@ -37,6 +37,12 @@ paths:
             application/json:
               schema:
                 $ref: "#/components/schemas/HealthResponse"
+        "503":
+          description: Owned MongoDB is unavailable.
+          content:
+            application/problem+json:
+              schema:
+                $ref: "#/components/schemas/Problem"
   /metrics:
     get:
       tags: [Operations]
@@ -49,7 +55,7 @@ paths:
             text/plain:
               schema:
                 type: string
-  /v1/journals:
+  /api/v1/journals:
     post:
       tags: [Journals]
       summary: Create a private journal entry.
@@ -106,7 +112,7 @@ paths:
           $ref: "#/components/responses/BadRequest"
         "401":
           $ref: "#/components/responses/Unauthorized"
-  /v1/journals/{journalId}:
+  /api/v1/journals/{journalId}:
     get:
       tags: [Journals]
       summary: Get one private journal entry.
@@ -344,9 +350,8 @@ components:
           minLength: 1
           maxLength: 12000
           description: Plaintext is accepted only at the API boundary and must not be logged or indexed.
-    JournalEntry:
+    JournalEntryMetadata:
       type: object
-      additionalProperties: false
       required:
         - id
         - ownerAccountId
@@ -355,7 +360,6 @@ components:
         - createdAt
         - updatedAt
         - deleted
-        - content
         - encryption
         - analysisState
       properties:
@@ -379,8 +383,6 @@ components:
           format: date-time
         deleted:
           type: boolean
-        content:
-          $ref: "#/components/schemas/JournalContentSummary"
         tags:
           type: array
           items:
@@ -390,6 +392,37 @@ components:
         analysisState:
           type: string
           enum: [not_requested, current, stale]
+    JournalEntry:
+      allOf:
+        - $ref: "#/components/schemas/JournalEntryMetadata"
+        - type: object
+          required: [content]
+          properties:
+            content:
+              $ref: "#/components/schemas/JournalContent"
+      unevaluatedProperties: false
+    JournalEntrySummary:
+      allOf:
+        - $ref: "#/components/schemas/JournalEntryMetadata"
+        - type: object
+          required: [content]
+          properties:
+            content:
+              $ref: "#/components/schemas/JournalContentSummary"
+      unevaluatedProperties: false
+    JournalContent:
+      type: object
+      additionalProperties: false
+      required: [text, byteLength]
+      properties:
+        text:
+          type: string
+          minLength: 1
+          maxLength: 12000
+          description: Decrypted only after owner authorization and never logged or persisted as plaintext.
+        byteLength:
+          type: integer
+          minimum: 1
     JournalContentSummary:
       type: object
       additionalProperties: false
@@ -398,6 +431,7 @@ components:
         preview:
           type: string
           maxLength: 160
+          description: Derived after an authorized decrypt for this response and never stored or indexed as plaintext.
         byteLength:
           type: integer
           minimum: 1
@@ -441,7 +475,7 @@ components:
           type: array
           maxItems: 50
           items:
-            $ref: "#/components/schemas/JournalEntry"
+            $ref: "#/components/schemas/JournalEntrySummary"
         page:
           type: object
           additionalProperties: false
@@ -458,7 +492,7 @@ components:
     Problem:
       type: object
       additionalProperties: true
-      required: [type, title, status]
+      required: [type, title, status, code, correlationId]
       properties:
         type:
           type: string
@@ -469,7 +503,11 @@ components:
           type: integer
           minimum: 400
           maximum: 599
+        code:
+          type: string
+          minLength: 1
         detail:
           type: string
         correlationId:
           type: string
+          minLength: 1
