@@ -15,7 +15,7 @@ Architecture may add safety, privacy, reliability, and implementation constraint
 | --- | --- |
 | Consumer product for Vietnamese users aged 18–30 | User/guest APIs, `vi-VN` locale baseline, mobile-facing REST plus realtime WebSocket |
 | React web admin and end-user mobile application | Edge proxy exposes REST/JSON; only Realtime Service exposes WSS |
-| Spring Boot and Node.js backend | Three Spring Boot and three plain Node.js/TypeScript services as fixed by ADR 0001 and ADR 0003 |
+| Spring Boot and Node.js backend | Three Spring Boot and three NestJS/TypeScript services as fixed by ADR 0001 and ADR 0006 |
 | PostgreSQL and MongoDB | PostgreSQL owns relational transactions; MongoDB owns journals, analysis documents, conversations/messages |
 | Gemini/OpenAI through prompt engineering | Node.js Journal/AI provider adapters with strict versioned output schemas; no fine-tuning |
 | PhoBERT inference-only comparison | Isolated Python worker consuming Kafka jobs; no model training/fine-tuning |
@@ -89,3 +89,4 @@ Agents must not invent these behaviors independently. Resolve the relevant rule 
 - 2026-08-21: support immediate Premium Care to Premium Plus upgrade using ADR 0005's remaining-time and unused-credit offset. Downgrade and user-initiated refund are unsupported.
 - 2026-08-21: select MoMo as the sole production provider for subscription payment and specialist payout. Local/CI uses MoMo-shaped fakes; real enablement requires credentials and compatible VND plan pricing or an approved FX policy.
 - 2026-08-21: consultation messaging is appointment-scoped and writable only during the specialist's snapshotted slot. `IN_APP_VIDEO` is planned but requires a later contract before enablement.
+- 2026-08-22: supersede the Express-only ADR 0003 choice with NestJS 11 for all three Node.js services through ADR 0006.

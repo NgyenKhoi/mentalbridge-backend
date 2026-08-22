@@ -14,9 +14,9 @@ This guide explains `MentalBridge_Sprint1_Import_Template.csv`. Sprint 1 assumes
 | --- | --- | --- | --- |
 | Member 1 | Java/Spring Boot/PostgreSQL | Identity | registration and secure session foundation |
 | Member 2 | Java/Spring Boot/PostgreSQL | Care | profile, consent, and PHQ-9 foundation |
-| Member 3 | Node.js/TypeScript/MongoDB | Journal/AI | plain Node service plus private journal CRUD |
-| Member 4 | Node.js/TypeScript/MongoDB/Redis | Realtime | plain Node service plus connection, presence, and message primitives |
-| Member 5 | Node.js/TypeScript/PostgreSQL | Content/Notification | plain Node service plus reviewed resource/hotline APIs |
+| Member 3 | NestJS/TypeScript/MongoDB | Journal/AI | NestJS service plus private journal CRUD |
+| Member 4 | NestJS/TypeScript/MongoDB/Redis | Realtime | NestJS service plus connection, presence, and message primitives |
+| Member 5 | NestJS/TypeScript/PostgreSQL | Content/Notification | NestJS service plus reviewed resource/hotline APIs |
 
 Consultation, AI provider calls, Kafka analysis, notification delivery, frontend, cloud deployment, and CD are not Sprint 1 work.
 
@@ -30,9 +30,9 @@ Write the REST source of truth before handlers: paths, authentication, request/r
 
 Create append-only owner migrations, constraints/validators, indexes, and human-readable data descriptions. Liquibase is for PostgreSQL; `migrate-mongo` is for MongoDB. Done means a clean database can apply the migration and integration tests verify important constraints.
 
-### Scaffold a plain Node.js package
+### Scaffold a NestJS package
 
-Create an independently runnable service with `package.json`, lockfile, Node 24 engine, strict TypeScript ESM, Express bootstrap, feature folders, lint/format/typecheck/test/build scripts, Dockerfile, and graceful shutdown. Do not add NestJS or a custom framework that recreates it.
+Create an independently runnable service with `package.json`, lockfile, Node 22+ engine, strict TypeScript, NestJS 11 bootstrap, bounded feature modules, lint/format/typecheck/test/build scripts, Dockerfile, and graceful shutdown. Keep business behavior out of controllers, guards and global modules; OpenAPI remains the language-neutral REST contract.
 
 ### Add typed configuration and operations endpoints
 
@@ -81,6 +81,6 @@ Use real disposable PostgreSQL, MongoDB, or Redis through Testcontainers where a
 
 ## Sprint acceptance
 
-Sprint 1 is accepted when each Story's contracts, migrations, implementation, documentation, tests, and CI checks agree. A scaffold that merely starts or code that merely compiles does not complete a functional Story.
+Sprint 1 is accepted when each Story's contracts, migrations, implementation, documentation and tests agree. A scaffold that merely starts or code that merely compiles does not complete a functional Story. Before the initial `dev` CI gate is enabled, the same quality commands are recorded as local review evidence; afterward the corresponding required CI status must also pass.
 
-The repository owner creates one shared GitHub Actions CI flow outside this imported backlog. No team member receives a separate CI/CD Jira task and Sprint 1 contains no deployment work.
+The repository owner creates one shared GitHub Actions CI flow outside this imported backlog after the current bootstrap integration is stable. No team member receives a separate CI/CD Jira task and Sprint 1 contains no deployment work.

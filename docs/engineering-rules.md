@@ -35,7 +35,7 @@ These rules apply to all backend services unless an accepted ADR documents an ex
 
 - Spring Boot 4 services follow `docs/agent-guides/environment-configuration.md` and use the approved `springboot4-dotenv` integration for local development.
 - `.env` is ignored and optional; `.env.example` is committed and updated with every configuration-key change.
-- CI and production disable dotenv loading and inject real environment/secrets externally.
+- Once the initial `dev` CI workflow is enabled, CI and production disable dotenv loading and inject real environment/secrets externally. Until then, local verification must also run without relying on a developer `.env`.
 - Tests are deterministic without a developer `.env`; integration dependencies come from controlled test infrastructure.
 
 ## 4. Security rules
@@ -45,7 +45,7 @@ These rules apply to all backend services unless an accepted ADR documents an ex
 - Tokens, passwords, secrets, journal/chat text, assessment answers, private object references, and payment-provider payloads are prohibited in logs.
 - All sensitive reads and administrative writes produce audit events.
 - Test broken-object-level authorization for every resource endpoint.
-- Dependency and container scanning run in CI; critical findings block release unless risk acceptance is documented.
+- Dependency and container scanning run in CI after the transition gate is enabled; critical findings block release unless risk acceptance is documented. Before that gate, release review still requires equivalent recorded scans where release scope applies.
 - Production/demo datasets never use real participant mental-health content without explicit approved consent and governance.
 
 ## 5. AI rules
@@ -77,7 +77,8 @@ These rules apply to all backend services unless an accepted ADR documents an ex
 - Redis/realtime tests cover TTL presence, reconnect/idempotency, cross-instance fan-out, and recovery after Redis loss.
 - AI adapters use recorded synthetic fixtures; CI must not call paid external APIs.
 - Each release tests backup/restore procedure and the severe-risk path with AI and broker unavailable.
-- CI runs formatter, static analysis, tests, migration validation, dependency scan, image build, and secret scan.
+- Until a required CI gate exists for `dev`, pull requests merge only after their applicable local quality gates and human review pass. No missing CI status may be treated as approval.
+- After the current bootstrap integration is stable, basic CI for pull requests targeting `dev` runs install, formatting, static analysis, typecheck, unit tests, contract/migration validation and build for affected modules. Dependency, container, image and secret scanning are added as the workflow matures and remain mandatory before release.
 
 ## 8. Pull request definition of done
 

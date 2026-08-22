@@ -76,7 +76,7 @@ The current infrastructure phase may run databases and supporting dependencies l
 
 ## Node.js baseline
 
-ADR 0003 fixes the Node.js configuration choice. Each Node.js service uses `dotenv` only for local-development file loading and Zod to validate a service-owned configuration object once during startup. Application code receives typed configuration through explicit constructor parameters and does not call `process.env` outside the configuration package.
+ADR 0006 fixes the Node.js framework and retains the configuration choice. Each NestJS service uses `dotenv` only for local-development file loading and Zod to validate a service-owned configuration object once during bootstrap. Application providers receive typed configuration through NestJS injection and do not call `process.env` outside the configuration package.
 
 Real process environment variables take precedence. CI and production do not load repository `.env` files. Tests inject explicit configuration and disposable Testcontainers endpoints, so they cannot silently target a developer database. Every new key updates `.env.example` and the owning service README in the same change.
 

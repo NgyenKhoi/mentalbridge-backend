@@ -2,7 +2,7 @@
 
 - Status: Accepted
 - Date: 2026-08-11
-- Note: ADR 0003 supersedes the NestJS-specific implementation choice. Service boundaries and transport decisions in this ADR remain accepted.
+- Note: ADR 0006 supersedes the Node.js framework choice in this ADR and ADR 0003. Service boundaries and transport decisions in this ADR remain accepted.
 
 ## Context
 
@@ -13,7 +13,7 @@ MentalBridge needs transactionally correct identity/care/booking behavior, I/O-h
 Use these deployable business modules:
 
 - Spring Boot: `identity-service`, `care-service`, `consultation-service`;
-- Node.js/TypeScript: `journal-ai-service`, `realtime-service`, `content-notification-service`; their library stack is fixed by ADR 0003;
+- Node.js/TypeScript with NestJS: `journal-ai-service`, `realtime-service`, `content-notification-service`; their framework and supporting stack are fixed by ADR 0006;
 - Python: `phobert-worker`.
 
 Use these integration boundaries:
@@ -35,7 +35,7 @@ Kafka is not used as synchronous request/reply and Redis is not used as a durabl
 
 ## Rationale
 
-Spring Boot provides a consistent security, transaction, migration, locking, and resilience model for the three rule-heavy relational services. Plain Node.js with strict TypeScript and explicit libraries supports the three I/O-heavy services without framework-specific domain coupling. Python remains isolated to the PhoBERT ecosystem.
+Spring Boot provides a consistent security, transaction, migration, locking, and resilience model for the three rule-heavy relational services. NestJS with strict TypeScript provides a consistent application framework for the three I/O-heavy Node.js services while OpenAPI and JSON Schema prevent framework-specific cross-service coupling. Python remains isolated to the PhoBERT ecosystem.
 
 Kafka is selected because MentalBridge has multiple independent asynchronous consumers, needs durable retention/replay for projections and audit, and benefits from partition ordering by aggregate. The decision is not based on Kafka being the lowest-latency transport. Redis/WebSocket handles ephemeral low-latency client delivery, while Kafka handles durable cross-service facts and tasks.
 

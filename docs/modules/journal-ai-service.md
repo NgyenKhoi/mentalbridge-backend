@@ -17,14 +17,14 @@ Journal/AI owns encrypted journal entries/revisions, structured analysis results
 ## Implementation design
 
 - Feature slices: `journals`, `analysis-jobs`, `llm-providers`, `analysis-results`, `datasets`, `benchmarks`, `consented-access`.
-- Runtime: Node.js 24 LTS, strict TypeScript, Express 5, Zod, official MongoDB driver, `migrate-mongo`, `pg`, KafkaJS, Pino, OpenTelemetry, Vitest, and Testcontainers as defined in `docs/nodejs-service-stack.md`.
+- Runtime: Node.js 22 or newer, strict TypeScript, NestJS 11, Zod, official MongoDB driver, `migrate-mongo`, `pg`, KafkaJS, Pino, OpenTelemetry, Vitest, and Testcontainers as defined in `docs/nodejs-service-stack.md`.
 - Define OpenAPI, Kafka JSON Schemas, provider output schema, and MongoDB validation/migrations before handlers. TypeScript strict plus runtime validation is mandatory.
 - Use recoverable Mongo publication and PostgreSQL transactional outbox as appropriate; never claim cross-store atomicity. Model job states and reconciliation explicitly.
 - AI adapters receive minimized decrypted content only for the approved operation; no chain-of-thought/raw provider response persistence by default.
 
 ## Ordered tasks
 
-- [ ] JAI-01 Scaffold the plain Node.js/TypeScript service with Express, explicit composition, typed configuration, health/readiness, lint, test, and build commands.
+- [ ] JAI-01 Scaffold the NestJS/TypeScript service with feature modules, typed configuration, health/readiness, lint, test, and build commands.
 - [ ] JAI-02 Resolve provider retention, journal retention/encryption, dataset license/edit and benchmark label policies.
 - [ ] JAI-03 Define journal/analysis/dataset/benchmark OpenAPI and provider result schema.
 - [ ] JAI-04 Define analysis command/result schemas and Care consent/structured-indicator contracts.

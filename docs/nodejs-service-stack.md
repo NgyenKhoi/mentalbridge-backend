@@ -1,10 +1,10 @@
 # Node.js service stack
 
-This document is the source of truth for the three Node.js services. ADR 0003 records the decision to use Node.js libraries directly instead of NestJS.
+This document is the source of truth for the three Node.js services. ADR 0006 records the decision to standardize them on NestJS 11 and supersedes the Express-only choice in ADR 0003.
 
 ## Runtime and language baseline
 
-- Node.js 24 LTS with npm and committed lockfiles.
+- Node.js 22 or newer with npm and committed lockfiles.
 - TypeScript in strict mode, compiled to ESM JavaScript.
 - `tsx` is used only for local development and scripts; production runs compiled output with `node`.
 - Each service is an independently deployable package with its own `package.json`, configuration, database credentials, migrations, tests, Dockerfile, health endpoints, and README.
@@ -14,10 +14,10 @@ This document is the source of truth for the three Node.js services. ADR 0003 re
 
 | Concern | Library/tool | Rule |
 | --- | --- | --- |
-| REST server | Express 5 | Routes are thin adapters that call one application use case. |
-| REST contract | OpenAPI 3.1, `express-openapi-validator`, `@apidevtools/swagger-parser` | OpenAPI is authored first; requests and responses are validated at the boundary. |
+| Application framework | NestJS 11 with `@nestjs/platform-express` | Feature modules own controllers, guards, providers, filters and interceptors; controllers remain thin. |
+| REST contract | OpenAPI 3.1, NestJS OpenAPI integration, `@apidevtools/swagger-parser` | OpenAPI is authored first; controllers, DTOs, validation and responses conform to the published contract. |
 | Runtime/domain validation | Zod 4 | Use for configuration, provider output, Kafka payloads, and WebSocket messages; do not create a second conflicting REST contract. |
-| Authentication | `jose` | Verify Identity-issued JWTs against configured public keys and enforce resource authorization in the data owner. |
+| Authentication | `jose` behind NestJS guards | Verify Identity-issued JWTs against configured public keys and enforce actor/resource authorization in the data owner. |
 | HTTP client | Node `fetch`/Undici plus Cockatiel | Every dependency has an explicit timeout, bounded safe retry, circuit breaker, and typed failure mapping. |
 | MongoDB | Official `mongodb` driver | No ODM. Repositories map documents to domain types explicitly. |
 | MongoDB migrations | `migrate-mongo` | Append-only validators, indexes, and controlled data migrations. |
@@ -25,14 +25,14 @@ This document is the source of truth for the three Node.js services. ADR 0003 re
 | PostgreSQL migrations | Liquibase CLI/container | Keep the repository's append-only changelog and data-dictionary convention for Node-owned PostgreSQL databases. |
 | Kafka | KafkaJS | Validate versioned JSON messages, use stable aggregate keys, bounded retry/dead-letter topics, and idempotent consumers. |
 | Redis | `redis` | Ephemeral presence, routing, fan-out, rate limits, and short-lived idempotency only. |
-| WebSocket | Socket.IO 4 and `@socket.io/redis-adapter` | Only Realtime exposes client sockets; durable state is persisted before acknowledgement. |
-| Security middleware | `helmet`, explicit CORS policy, rate-limit adapter | Defaults are deny-by-default and configuration is environment-specific. |
+| WebSocket | NestJS gateways, Socket.IO 4 and `@socket.io/redis-adapter` | Only Realtime exposes client sockets; durable state is persisted before acknowledgement. |
+| Security boundary | NestJS guards/pipes/filters plus `helmet`, explicit CORS and rate limiting | Defaults are deny-by-default and configuration is environment-specific. |
 | Logging | Pino | Structured logs with correlation/trace IDs; redact tokens and sensitive content. |
 | Metrics/tracing | `prom-client`, OpenTelemetry Node SDK | Expose liveness, readiness, metrics, and trace propagation without sensitive payloads. |
 | Testing | Vitest, Supertest, Testcontainers for Node.js | Unit, HTTP contract, repository, MongoDB/PostgreSQL, Kafka, Redis, and WebSocket tests as applicable. |
-| Code quality | ESLint flat config and Prettier | CI runs lint, typecheck, tests, contract/migration checks, and build. |
+| Code quality | ESLint flat config and Prettier | Run lint, typecheck, tests, contract/migration checks and build locally; the same basic gates move into CI after the documented `dev` transition. |
 
-Do not add an IoC framework or an internal framework that recreates NestJS. Composition happens in one bootstrap module with ordinary constructors and explicit dependencies.
+Use NestJS dependency injection deliberately. Feature modules expose only the providers required by another feature. Do not create a global module that becomes a service locator, share business DTOs between deployables, or place business rules in controllers, guards, interceptors, filters, or persistence models.
 
 ## Standard package scripts
 
@@ -41,7 +41,7 @@ Every Node.js service exposes the same command names:
 ```json
 {
   "scripts": {
-    "dev": "tsx watch src/main.ts",
+    "dev": "nest start --watch",
     "build": "tsc -p tsconfig.build.json",
     "start": "node dist/main.js",
     "lint": "eslint .",
@@ -61,6 +61,7 @@ Every Node.js service exposes the same command names:
 <service>/
 ├── package.json
 ├── package-lock.json
+├── nest-cli.json
 ├── tsconfig.json
 ├── tsconfig.build.json
 ├── Dockerfile
@@ -68,6 +69,7 @@ Every Node.js service exposes the same command names:
 ├── scripts/
 ├── src/
 │   ├── <feature>/
+│   │   ├── <feature>.module.ts
 │   │   ├── api/
 │   │   ├── application/
 │   │   ├── domain/
@@ -75,6 +77,7 @@ Every Node.js service exposes the same command names:
 │   ├── configuration/
 │   ├── observability/
 │   ├── shared/
+│   ├── app.module.ts
 │   └── main.ts
 └── test/
     ├── contract/
@@ -82,7 +85,7 @@ Every Node.js service exposes the same command names:
     └── fixtures/
 ```
 
-`shared` contains only stable technical primitives. Domain code imports neither Express nor database, broker, Redis, Socket.IO, or provider clients.
+`shared` contains only stable technical primitives. Domain code imports neither NestJS nor database, broker, Redis, Socket.IO, or provider clients. Nest modules wire dependencies; they do not own business behavior.
 
 ## Service-specific modules
 
@@ -119,6 +122,10 @@ Required keys are service-scoped, documented in `.env.example`, and bound once a
 
 ## Repository CI ownership
 
-GitHub Actions is maintained as one repository-level flow by the repository owner and is not split into service-member tasks in the Sprint 1 Jira import. The flow may run install, format, lint, typecheck, tests, contract/migration checks, and builds for affected modules.
+GitHub Actions is maintained as one repository-level flow by the repository owner and is not split into service-member tasks in the Sprint 1 Jira import.
+
+`dev` currently has no required CI status check. A missing CI status is not evidence that a pull request passed; reviewers use the module quality gates, record local verification, and report unavailable checks explicitly.
+
+After the current bootstrap integration is stable, the repository owner adds the first basic GitHub Actions workflow for pull requests targeting `dev`. The initial workflow runs install, formatting, lint/static analysis, typecheck, unit tests, contract/migration static validation and build for affected modules. Branch protection may require that workflow only after it is stable. Real database/broker integration coverage can be added incrementally, but local Testcontainers verification remains required wherever the module definition already requires it.
 
 There is no cloud account, hosted server, deployment credential, CD workflow, or release automation in Sprint 1. Deployment work is added only after an environment and credentials are explicitly approved.
