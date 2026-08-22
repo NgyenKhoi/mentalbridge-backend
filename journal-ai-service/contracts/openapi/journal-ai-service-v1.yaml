@@ -1,0 +1,513 @@
+openapi: 3.1.0
+info:
+  title: MentalBridge Journal AI Service API
+  version: 1.0.0
+  description: Private journal CRUD contract for Sprint 1. AI analysis endpoints are intentionally deferred.
+servers:
+  - url: http://localhost:3000
+security:
+  - bearerAuth: []
+tags:
+  - name: Journals
+    description: Private journal entries owned by the authenticated account.
+  - name: Operations
+    description: Service health and metrics endpoints.
+paths:
+  /health/live:
+    get:
+      tags: [Operations]
+      security: []
+      summary: Liveness probe.
+      responses:
+        "200":
+          description: Service process is alive.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/HealthResponse"
+  /health/ready:
+    get:
+      tags: [Operations]
+      security: []
+      summary: Readiness probe.
+      responses:
+        "200":
+          description: Service is ready for its current baseline dependencies.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/HealthResponse"
+        "503":
+          description: Owned MongoDB is unavailable.
+          content:
+            application/problem+json:
+              schema:
+                $ref: "#/components/schemas/Problem"
+  /metrics:
+    get:
+      tags: [Operations]
+      security: []
+      summary: Prometheus metrics endpoint.
+      responses:
+        "200":
+          description: Prometheus metrics.
+          content:
+            text/plain:
+              schema:
+                type: string
+  /api/v1/journals:
+    post:
+      tags: [Journals]
+      summary: Create a private journal entry.
+      operationId: createJournalEntry
+      parameters:
+        - $ref: "#/components/parameters/IdempotencyKey"
+        - $ref: "#/components/parameters/CorrelationId"
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/CreateJournalRequest"
+      responses:
+        "201":
+          description: Journal entry created.
+          headers:
+            Location:
+              schema:
+                type: string
+              description: URL of the created journal entry.
+            x-correlation-id:
+              $ref: "#/components/headers/CorrelationId"
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/JournalEntry"
+        "400":
+          $ref: "#/components/responses/BadRequest"
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "409":
+          $ref: "#/components/responses/Conflict"
+    get:
+      tags: [Journals]
+      summary: List private journal entries with bounded cursor pagination.
+      operationId: listJournalEntries
+      parameters:
+        - $ref: "#/components/parameters/Limit"
+        - $ref: "#/components/parameters/Cursor"
+        - $ref: "#/components/parameters/IncludeDeleted"
+        - $ref: "#/components/parameters/CorrelationId"
+      responses:
+        "200":
+          description: Bounded page of journal entries.
+          headers:
+            x-correlation-id:
+              $ref: "#/components/headers/CorrelationId"
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/JournalListResponse"
+        "400":
+          $ref: "#/components/responses/BadRequest"
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+  /api/v1/journals/{journalId}:
+    get:
+      tags: [Journals]
+      summary: Get one private journal entry.
+      operationId: getJournalEntry
+      parameters:
+        - $ref: "#/components/parameters/JournalId"
+        - $ref: "#/components/parameters/CorrelationId"
+      responses:
+        "200":
+          description: Journal entry found.
+          headers:
+            x-correlation-id:
+              $ref: "#/components/headers/CorrelationId"
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/JournalEntry"
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "404":
+          $ref: "#/components/responses/NotFound"
+    patch:
+      tags: [Journals]
+      summary: Revise an existing journal entry.
+      operationId: reviseJournalEntry
+      parameters:
+        - $ref: "#/components/parameters/JournalId"
+        - $ref: "#/components/parameters/IdempotencyKey"
+        - $ref: "#/components/parameters/IfMatchRevision"
+        - $ref: "#/components/parameters/CorrelationId"
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/ReviseJournalRequest"
+      responses:
+        "200":
+          description: Journal entry revised and current analysis invalidated.
+          headers:
+            x-correlation-id:
+              $ref: "#/components/headers/CorrelationId"
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/JournalEntry"
+        "400":
+          $ref: "#/components/responses/BadRequest"
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "404":
+          $ref: "#/components/responses/NotFound"
+        "409":
+          $ref: "#/components/responses/Conflict"
+        "412":
+          $ref: "#/components/responses/PreconditionFailed"
+    delete:
+      tags: [Journals]
+      summary: Tombstone a private journal entry.
+      operationId: deleteJournalEntry
+      parameters:
+        - $ref: "#/components/parameters/JournalId"
+        - $ref: "#/components/parameters/IdempotencyKey"
+        - $ref: "#/components/parameters/CorrelationId"
+      responses:
+        "200":
+          description: Journal entry tombstoned.
+          headers:
+            x-correlation-id:
+              $ref: "#/components/headers/CorrelationId"
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/JournalTombstone"
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "404":
+          $ref: "#/components/responses/NotFound"
+components:
+  securitySchemes:
+    bearerAuth:
+      type: http
+      scheme: bearer
+      bearerFormat: JWT
+  parameters:
+    JournalId:
+      name: journalId
+      in: path
+      required: true
+      schema:
+        type: string
+        format: uuid
+    IdempotencyKey:
+      name: Idempotency-Key
+      in: header
+      required: true
+      schema:
+        type: string
+        minLength: 16
+        maxLength: 128
+      description: Stable key for safe client retries of journal mutations.
+    IfMatchRevision:
+      name: If-Match-Revision
+      in: header
+      required: true
+      schema:
+        type: integer
+        minimum: 1
+      description: Current revision number expected by the client.
+    CorrelationId:
+      name: x-correlation-id
+      in: header
+      required: false
+      schema:
+        type: string
+        minLength: 1
+        maxLength: 128
+    Limit:
+      name: limit
+      in: query
+      required: false
+      schema:
+        type: integer
+        minimum: 1
+        maximum: 50
+        default: 20
+    Cursor:
+      name: cursor
+      in: query
+      required: false
+      schema:
+        type: string
+        minLength: 1
+        maxLength: 512
+      description: Opaque cursor returned by the previous list response.
+    IncludeDeleted:
+      name: includeDeleted
+      in: query
+      required: false
+      schema:
+        type: boolean
+        default: false
+  headers:
+    CorrelationId:
+      schema:
+        type: string
+      description: Correlation ID used in request logs.
+  responses:
+    BadRequest:
+      description: Request failed validation.
+      content:
+        application/problem+json:
+          schema:
+            $ref: "#/components/schemas/Problem"
+    Unauthorized:
+      description: Missing or invalid bearer token.
+      content:
+        application/problem+json:
+          schema:
+            $ref: "#/components/schemas/Problem"
+    NotFound:
+      description: Journal entry was not found for the authenticated owner.
+      content:
+        application/problem+json:
+          schema:
+            $ref: "#/components/schemas/Problem"
+    Conflict:
+      description: Idempotency conflict or duplicate mutation.
+      content:
+        application/problem+json:
+          schema:
+            $ref: "#/components/schemas/Problem"
+    PreconditionFailed:
+      description: Revision precondition failed.
+      content:
+        application/problem+json:
+          schema:
+            $ref: "#/components/schemas/Problem"
+  schemas:
+    HealthResponse:
+      type: object
+      additionalProperties: false
+      required: [status, service, environment]
+      properties:
+        status:
+          type: string
+          enum: [ok]
+        service:
+          type: string
+        environment:
+          type: string
+          enum: [development, test, production]
+    CreateJournalRequest:
+      type: object
+      additionalProperties: false
+      required: [clientEntryId, occurredAt, content]
+      properties:
+        clientEntryId:
+          type: string
+          format: uuid
+          description: Client-generated entry ID used for idempotency and offline drafts.
+        occurredAt:
+          type: string
+          format: date-time
+        content:
+          $ref: "#/components/schemas/JournalContentInput"
+        tags:
+          type: array
+          maxItems: 20
+          items:
+            type: string
+            minLength: 1
+            maxLength: 40
+    ReviseJournalRequest:
+      type: object
+      additionalProperties: false
+      required: [content]
+      properties:
+        content:
+          $ref: "#/components/schemas/JournalContentInput"
+        tags:
+          type: array
+          maxItems: 20
+          items:
+            type: string
+            minLength: 1
+            maxLength: 40
+    JournalContentInput:
+      type: object
+      additionalProperties: false
+      required: [text]
+      properties:
+        text:
+          type: string
+          minLength: 1
+          maxLength: 12000
+          description: Plaintext is accepted only at the API boundary and must not be logged or indexed.
+    JournalEntryMetadata:
+      type: object
+      required:
+        - id
+        - ownerAccountId
+        - currentRevision
+        - occurredAt
+        - createdAt
+        - updatedAt
+        - deleted
+        - encryption
+        - analysisState
+      properties:
+        id:
+          type: string
+          format: uuid
+        ownerAccountId:
+          type: string
+          format: uuid
+        currentRevision:
+          type: integer
+          minimum: 1
+        occurredAt:
+          type: string
+          format: date-time
+        createdAt:
+          type: string
+          format: date-time
+        updatedAt:
+          type: string
+          format: date-time
+        deleted:
+          type: boolean
+        tags:
+          type: array
+          items:
+            type: string
+        encryption:
+          $ref: "#/components/schemas/EncryptionMetadata"
+        analysisState:
+          type: string
+          enum: [not_requested, current, stale]
+    JournalEntry:
+      allOf:
+        - $ref: "#/components/schemas/JournalEntryMetadata"
+        - type: object
+          required: [content]
+          properties:
+            content:
+              $ref: "#/components/schemas/JournalContent"
+      unevaluatedProperties: false
+    JournalEntrySummary:
+      allOf:
+        - $ref: "#/components/schemas/JournalEntryMetadata"
+        - type: object
+          required: [content]
+          properties:
+            content:
+              $ref: "#/components/schemas/JournalContentSummary"
+      unevaluatedProperties: false
+    JournalContent:
+      type: object
+      additionalProperties: false
+      required: [text, byteLength]
+      properties:
+        text:
+          type: string
+          minLength: 1
+          maxLength: 12000
+          description: Decrypted only after owner authorization and never logged or persisted as plaintext.
+        byteLength:
+          type: integer
+          minimum: 1
+    JournalContentSummary:
+      type: object
+      additionalProperties: false
+      required: [preview, byteLength]
+      properties:
+        preview:
+          type: string
+          maxLength: 160
+          description: Derived after an authorized decrypt for this response and never stored or indexed as plaintext.
+        byteLength:
+          type: integer
+          minimum: 1
+    EncryptionMetadata:
+      type: object
+      additionalProperties: false
+      required: [algorithm, keyId, encryptedAt]
+      properties:
+        algorithm:
+          type: string
+          enum: [AES-256-GCM]
+        keyId:
+          type: string
+          minLength: 1
+        encryptedAt:
+          type: string
+          format: date-time
+    JournalTombstone:
+      type: object
+      additionalProperties: false
+      required: [id, ownerAccountId, deleted, deletedAt]
+      properties:
+        id:
+          type: string
+          format: uuid
+        ownerAccountId:
+          type: string
+          format: uuid
+        deleted:
+          type: boolean
+          enum: [true]
+        deletedAt:
+          type: string
+          format: date-time
+    JournalListResponse:
+      type: object
+      additionalProperties: false
+      required: [items, page]
+      properties:
+        items:
+          type: array
+          maxItems: 50
+          items:
+            $ref: "#/components/schemas/JournalEntrySummary"
+        page:
+          type: object
+          additionalProperties: false
+          required: [limit, hasMore]
+          properties:
+            limit:
+              type: integer
+              minimum: 1
+              maximum: 50
+            nextCursor:
+              type: string
+            hasMore:
+              type: boolean
+    Problem:
+      type: object
+      additionalProperties: true
+      required: [type, title, status, code, correlationId]
+      properties:
+        type:
+          type: string
+          format: uri-reference
+        title:
+          type: string
+        status:
+          type: integer
+          minimum: 400
+          maximum: 599
+        code:
+          type: string
+          minLength: 1
+        detail:
+          type: string
+        correlationId:
+          type: string
+          minLength: 1
