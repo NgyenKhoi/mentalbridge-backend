@@ -24,11 +24,11 @@ Journal/AI owns encrypted journal entries/revisions, structured analysis results
 
 ## Ordered tasks
 
-- [ ] JAI-01 Scaffold the NestJS/TypeScript service with feature modules, typed configuration, health/readiness, lint, test, and build commands.
+- [x] JAI-01 Scaffold the NestJS/TypeScript service with feature modules, typed configuration, health/readiness, lint, test, and build commands.
 - [ ] JAI-02 Resolve provider retention, journal retention/encryption, dataset license/edit and benchmark label policies.
 - [ ] JAI-03 Define journal/analysis/dataset/benchmark OpenAPI and provider result schema.
 - [ ] JAI-04 Define analysis command/result schemas and Care consent/structured-indicator contracts.
-- [ ] JAI-05 Add migrate-mongo validators/indexes plus PostgreSQL job/dataset Liquibase and data documentation.
+- [ ] JAI-05 Add `migrate-mongo` validators/indexes plus PostgreSQL job/dataset `node-pg-migrate` history and data documentation.
 - [ ] JAI-06 Implement encrypted journal revisions, authorization, pagination and deletion.
 - [ ] JAI-07 Implement consent-gated idempotent analysis orchestration, adapters, retry/dead-letter and reconciliation.
 - [ ] JAI-08 Implement dataset import/versioning and reproducible benchmark coordination.

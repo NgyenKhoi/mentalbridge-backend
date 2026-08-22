@@ -26,9 +26,9 @@ Consultation, AI provider calls, Kafka analysis, notification delivery, frontend
 
 Write the REST source of truth before handlers: paths, authentication, request/response fields, examples, validation, null/absent semantics, status codes, and RFC 9457 error codes. Done means the contract validates and tests can use it; it does not mean creating controller classes only.
 
-### Add a Liquibase or migrate-mongo baseline
+### Add an owner migration baseline
 
-Create append-only owner migrations, constraints/validators, indexes, and human-readable data descriptions. Liquibase is for PostgreSQL; `migrate-mongo` is for MongoDB. Done means a clean database can apply the migration and integration tests verify important constraints.
+Create append-only owner migrations, constraints/validators, indexes, and human-readable data descriptions. Liquibase is for Spring/PostgreSQL, `node-pg-migrate` is for Node.js/PostgreSQL, and `migrate-mongo` is for MongoDB. Done means a clean database can apply the migration and integration tests verify important constraints.
 
 ### Scaffold a NestJS package
 

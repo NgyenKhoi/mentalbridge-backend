@@ -17,6 +17,6 @@ export default tseslint.config(
     },
   },
   {
-    ignores: ['dist/**', 'node_modules/**', 'eslint.config.js', 'vitest.config.ts', 'src/__tests__/**'],
+    ignores: ['dist/**', 'node_modules/**', 'scripts/**', '*.config.*', 'src/__tests__/**'],
   },
 );

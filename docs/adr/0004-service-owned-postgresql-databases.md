@@ -2,6 +2,7 @@
 
 - Status: Accepted
 - Date: 2026-08-19
+- Note: ADR 0007 selects Liquibase for Spring owners and `node-pg-migrate` for Node.js owners; database ownership decisions here remain accepted.
 
 ## Context
 

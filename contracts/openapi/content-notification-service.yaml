@@ -55,12 +55,14 @@ paths:
         '503':
           description: Service unavailable — database unreachable
           content:
-            application/json:
+            application/problem+json:
               schema:
-                $ref: '#/components/schemas/ReadyResponse'
+                $ref: '#/components/schemas/ProblemDetails'
               example:
-                status: unavailable
-                db: disconnected
+                type: https://mentalbridge.io/errors/DEPENDENCY_UNAVAILABLE
+                title: Dependency unavailable
+                status: 503
+                code: DEPENDENCY_UNAVAILABLE
 
   /api/v1/resources:
     x-mentalbridge-status: planned

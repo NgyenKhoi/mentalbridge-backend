@@ -1,6 +1,6 @@
 # PostgreSQL Data Model
 
-The cross-schema [database/postgresql/001_initial_schema.sql](../../database/postgresql/001_initial_schema.sql) is a non-executable, whole-system modelling artifact. Its schemas only make ownership and relationships readable in one file; it must never be run to provision any environment. Each module instead owns a separate PostgreSQL database and uses that database's default `public` schema. When implementation begins, that service's owner-specific Liquibase changelogs become its only executable database source of truth. The purpose of every conceptual table and field is explained in the human-readable [PostgreSQL field data dictionary](postgresql-field-data-dictionary.md).
+The cross-schema [database/postgresql/001_initial_schema.sql](../../database/postgresql/001_initial_schema.sql) is a non-executable, whole-system modelling artifact. Its schemas only make ownership and relationships readable in one file; it must never be run to provision any environment. Each module instead owns a separate PostgreSQL database and uses that database's default `public` schema. When implementation begins, the service's owner-specific migration history becomes its only executable database source of truth: Liquibase for Spring or `node-pg-migrate` for Node.js. The purpose of every conceptual table and field is explained in the human-readable [PostgreSQL field data dictionary](postgresql-field-data-dictionary.md).
 
 ## Ownership
 
@@ -96,7 +96,7 @@ At capstone scale, do not partition by default. Consider monthly range partition
 
 ## Migration rules
 
-1. Provision the owner database, then implement each logical baseline area as one owner-specific Liquibase changelog history before application implementation.
+1. Provision the owner database, then implement each logical baseline area in the owner-specific Liquibase or `node-pg-migrate` history before application implementation.
 2. Apply expand/migrate/contract for changes used by multiple deployed versions.
 3. Never edit an applied migration; add a new migration.
 4. Seed questionnaire definitions, intervention templates, and resources through versioned reference-data migrations using reviewed content.

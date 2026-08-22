@@ -22,7 +22,7 @@ This document is the source of truth for the three Node.js services. ADR 0006 re
 | MongoDB | Official `mongodb` driver | No ODM. Repositories map documents to domain types explicitly. |
 | MongoDB migrations | `migrate-mongo` | Append-only validators, indexes, and controlled data migrations. |
 | PostgreSQL | `pg` | Use parameterized queries and explicit transaction helpers; no shared database access. |
-| PostgreSQL migrations | Liquibase CLI/container | Keep the repository's append-only changelog and data-dictionary convention for Node-owned PostgreSQL databases. |
+| PostgreSQL migrations | `node-pg-migrate` | Keep a service-owned append-only history, explicit npm commands, data-dictionary updates, and disposable-database integration tests. |
 | Kafka | KafkaJS | Validate versioned JSON messages, use stable aggregate keys, bounded retry/dead-letter topics, and idempotent consumers. |
 | Redis | `redis` | Ephemeral presence, routing, fan-out, rate limits, and short-lived idempotency only. |
 | WebSocket | NestJS gateways, Socket.IO 4 and `@socket.io/redis-adapter` | Only Realtime exposes client sockets; durable state is persisted before acknowledgement. |
