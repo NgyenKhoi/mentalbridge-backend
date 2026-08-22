@@ -4,6 +4,7 @@
 - Date: 2026-08-17
 - Supersedes: the NestJS-specific parts of ADR 0001
 - Superseded on: 2026-08-22
+- Note: ADR 0007 supersedes this record's Node.js PostgreSQL migration-tool wording.
 
 ADR 0006 replaces this framework decision. This record remains unchanged below to preserve the reason the explicit-library approach was previously selected.
 

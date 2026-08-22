@@ -1,50 +1,92 @@
-import { describe, it, expect, vi, beforeAll } from 'vitest';
+import type { INestApplication } from '@nestjs/common';
+import type { Server } from 'node:http';
 import request from 'supertest';
+import { afterEach, describe, expect, it } from 'vitest';
 
-// Set required env vars before importing app
-process.env.DB_HOST = 'localhost';
-process.env.DB_PORT = '5432';
-process.env.DB_NAME = 'test_db';
-process.env.DB_USER = 'test_user';
-process.env.DB_PASSWORD = 'test_password';
-process.env.NODE_ENV = 'test';
+import { createApplication } from '../application.js';
+import type { ServiceConfiguration } from '../configuration/configuration.js';
 
-vi.mock('../infrastructure/database/db.js', () => ({
-  query: vi.fn(),
-  pool: { end: vi.fn() },
-}));
+const configuration: ServiceConfiguration = {
+  NODE_ENV: 'test',
+  PORT: 3003,
+  DB_HOST: 'localhost',
+  DB_PORT: 5432,
+  DB_NAME: 'test_db',
+  DB_USER: 'test_user',
+  DB_PASSWORD: 'test_password',
+  DB_POOL_MAX: 2,
+  DB_IDLE_TIMEOUT_MS: 100,
+  DB_CONNECT_TIMEOUT_MS: 100,
+  LOG_LEVEL: 'silent',
+  CORS_ORIGINS: '',
+  SERVICE_NAME: 'content-notification-service',
+  ALLOWED_ORIGINS: [],
+};
 
-const { default: app } = await import('../app.js');
-const { query: mockQuery } = await import('../infrastructure/database/db.js');
+let app: INestApplication | undefined;
 
-describe('GET /health/live', () => {
-  it('returns 200 and does not depend on DB', async () => {
-    const res = await request(app).get('/health/live');
-    expect(res.status).toBe(200);
-    expect(res.body).toEqual({ status: 'ok' });
-  });
+afterEach(async () => {
+  await app?.close();
+  app = undefined;
 });
 
-describe('GET /health/ready', () => {
-  it('returns 200 when DB is reachable', async () => {
-    vi.mocked(mockQuery).mockResolvedValueOnce({
-      rows: [],
-      rowCount: 1,
-      command: 'SELECT',
-      oid: 0,
-      fields: [],
-    } as never);
+describe('health endpoints', () => {
+  it('returns liveness without checking PostgreSQL', async () => {
+    let checks = 0;
+    app = await createApplication(configuration, {
+      readinessProbe: { check: async () => void checks++ },
+    });
+    await app.init();
 
-    const res = await request(app).get('/health/ready');
-    expect(res.status).toBe(200);
-    expect(res.body).toEqual({ status: 'ok', db: 'connected' });
+    await request(app.getHttpServer() as Server)
+      .get('/health/live')
+      .expect(200)
+      .expect({ status: 'ok' });
+    expect(checks).toBe(0);
   });
 
-  it('returns 503 when DB is unreachable', async () => {
-    vi.mocked(mockQuery).mockRejectedValueOnce(new Error('connection refused'));
+  it('returns readiness when PostgreSQL responds', async () => {
+    app = await createApplication(configuration, {
+      readinessProbe: { check: async () => undefined },
+    });
+    await app.init();
 
-    const res = await request(app).get('/health/ready');
-    expect(res.status).toBe(503);
-    expect(res.body).toEqual({ status: 'unavailable', db: 'disconnected' });
+    await request(app.getHttpServer() as Server)
+      .get('/health/ready')
+      .set('x-correlation-id', 'test-correlation')
+      .expect('x-correlation-id', 'test-correlation')
+      .expect(200)
+      .expect({ status: 'ok', db: 'connected' });
+  });
+
+  it('returns safe problem details when PostgreSQL is unavailable', async () => {
+    app = await createApplication(configuration, {
+      readinessProbe: { check: async () => Promise.reject(new Error('offline')) },
+    });
+    await app.init();
+
+    await request(app.getHttpServer() as Server)
+      .get('/health/ready')
+      .expect('Content-Type', /application\/problem\+json/)
+      .expect(503)
+      .expect((response) => {
+        expect(response.body.code).toBe('DEPENDENCY_UNAVAILABLE');
+        expect(response.body.correlationId).toEqual(expect.any(String));
+      });
+  });
+
+  it('returns RFC 9457-style not found responses', async () => {
+    app = await createApplication(configuration, {
+      readinessProbe: { check: async () => undefined },
+    });
+    await app.init();
+
+    await request(app.getHttpServer() as Server)
+      .get('/not-found')
+      .expect('Content-Type', /application\/problem\+json/)
+      .expect(404)
+      .expect((response) => {
+        expect(response.body.code).toBe('RESOURCE_NOT_FOUND');
+      });
   });
 });

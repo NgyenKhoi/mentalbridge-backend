@@ -1,10 +1,13 @@
 # ADR 001 — Use node-pg-migrate instead of Liquibase
 
-**Status:** Accepted  
+**Status:** Superseded by repository ADR 0007
 **Date:** 2026-08-20  
+**Superseded:** 2026-08-22
 **Scope:** content-notification-service (Node.js)
 
 ## Context
+
+This record is retained for history. Repository ADR 0007 preserves `node-pg-migrate` for PostgreSQL-owning Node.js services while ADR 0006 separately requires NestJS 11 and Node.js 22 or newer.
 
 The project initially referenced Liquibase as the migration tool for all services. Java services (care-service, consultation-service, identity-service) use Liquibase natively via Spring Boot. The content-notification-service is a **plain Node.js service**, not a Java/Spring Boot application.
 

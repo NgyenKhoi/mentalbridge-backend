@@ -1,8 +1,4 @@
-import {
-  Inject,
-  Injectable,
-  type OnApplicationShutdown,
-} from "@nestjs/common";
+import { Inject, Injectable, type OnApplicationShutdown } from "@nestjs/common";
 import { MongoClient } from "mongodb";
 
 import type { ServiceConfiguration } from "../configuration/configuration.js";

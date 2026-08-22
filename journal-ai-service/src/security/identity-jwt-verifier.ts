@@ -1,10 +1,5 @@
 import { Inject, Injectable, type OnModuleInit } from "@nestjs/common";
-import {
-  importSPKI,
-  jwtVerify,
-  type CryptoKey,
-  type JWTPayload,
-} from "jose";
+import { importSPKI, jwtVerify, type CryptoKey, type JWTPayload } from "jose";
 
 import type { ServiceConfiguration } from "../configuration/configuration.js";
 import { CONFIGURATION_TOKEN } from "../observability/tokens.js";
@@ -36,12 +31,16 @@ export class IdentityJwtVerifier implements OnModuleInit {
       throw new Error("Identity JWT verifier is not initialized");
     }
 
-    const { payload, protectedHeader } = await jwtVerify(token, verificationKey, {
-      algorithms: ["RS256"],
-      issuer: this.configuration.IDENTITY_JWT_ISSUER,
-      audience: this.configuration.IDENTITY_JWT_AUDIENCE,
-      requiredClaims: ["sub", "iat", "nbf", "exp", "jti", "roles"],
-    });
+    const { payload, protectedHeader } = await jwtVerify(
+      token,
+      verificationKey,
+      {
+        algorithms: ["RS256"],
+        issuer: this.configuration.IDENTITY_JWT_ISSUER,
+        audience: this.configuration.IDENTITY_JWT_AUDIENCE,
+        requiredClaims: ["sub", "iat", "nbf", "exp", "jti", "roles"],
+      },
+    );
 
     if (protectedHeader.kid !== this.configuration.IDENTITY_JWT_KEY_ID) {
       throw new Error("Identity JWT key ID is invalid");

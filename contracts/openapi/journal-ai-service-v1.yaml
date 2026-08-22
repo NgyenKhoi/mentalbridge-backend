@@ -14,6 +14,7 @@ tags:
     description: Service health and metrics endpoints.
 paths:
   /health/live:
+    x-mentalbridge-status: implemented
     get:
       tags: [Operations]
       security: []
@@ -26,6 +27,7 @@ paths:
               schema:
                 $ref: "#/components/schemas/HealthResponse"
   /health/ready:
+    x-mentalbridge-status: implemented
     get:
       tags: [Operations]
       security: []
@@ -44,6 +46,7 @@ paths:
               schema:
                 $ref: "#/components/schemas/Problem"
   /metrics:
+    x-mentalbridge-status: implemented
     get:
       tags: [Operations]
       security: []
@@ -56,6 +59,7 @@ paths:
               schema:
                 type: string
   /api/v1/journals:
+    x-mentalbridge-status: planned
     post:
       tags: [Journals]
       summary: Create a private journal entry.
@@ -113,6 +117,7 @@ paths:
         "401":
           $ref: "#/components/responses/Unauthorized"
   /api/v1/journals/{journalId}:
+    x-mentalbridge-status: planned
     get:
       tags: [Journals]
       summary: Get one private journal entry.

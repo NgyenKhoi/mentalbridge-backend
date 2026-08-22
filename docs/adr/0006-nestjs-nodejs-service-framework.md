@@ -3,6 +3,7 @@
 - Status: Accepted
 - Date: 2026-08-22
 - Supersedes: ADR 0003 and the Node.js framework-specific wording in ADR 0001
+- Note: ADR 0007 supersedes this record's Node.js PostgreSQL migration-tool wording; the NestJS decision remains accepted.
 
 ## Context
 

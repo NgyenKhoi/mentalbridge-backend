@@ -22,7 +22,7 @@ This document is the source of truth for the three Node.js services. ADR 0006 re
 | MongoDB | Official `mongodb` driver | No ODM. Repositories map documents to domain types explicitly. |
 | MongoDB migrations | `migrate-mongo` | Append-only validators, indexes, and controlled data migrations. |
 | PostgreSQL | `pg` | Use parameterized queries and explicit transaction helpers; no shared database access. |
-| PostgreSQL migrations | Liquibase CLI/container | Keep the repository's append-only changelog and data-dictionary convention for Node-owned PostgreSQL databases. |
+| PostgreSQL migrations | `node-pg-migrate` | Keep a service-owned append-only history, explicit npm commands, data-dictionary updates, and disposable-database integration tests. |
 | Kafka | KafkaJS | Validate versioned JSON messages, use stable aggregate keys, bounded retry/dead-letter topics, and idempotent consumers. |
 | Redis | `redis` | Ephemeral presence, routing, fan-out, rate limits, and short-lived idempotency only. |
 | WebSocket | NestJS gateways, Socket.IO 4 and `@socket.io/redis-adapter` | Only Realtime exposes client sockets; durable state is persisted before acknowledgement. |
@@ -56,6 +56,8 @@ Every Node.js service exposes the same command names:
 ```
 
 ## Standard source structure
+
+The tree below is the maximum expected shape for a feature with real boundary complexity, not a scaffold checklist. Start with the shallow NestJS feature shown in `docs/reference-implementations.md`; create `api`, `application`, `domain`, or `infrastructure` only when that directory contains a meaningful boundary rather than one wrapper file.
 
 ```text
 <service>/
@@ -124,8 +126,8 @@ Required keys are service-scoped, documented in `.env.example`, and bound once a
 
 GitHub Actions is maintained as one repository-level flow by the repository owner and is not split into service-member tasks in the Sprint 1 Jira import.
 
-`dev` currently has no required CI status check. A missing CI status is not evidence that a pull request passed; reviewers use the module quality gates, record local verification, and report unavailable checks explicitly.
+`.github/workflows/quality-gate.yml` runs install, formatting, lint, typecheck, unit/HTTP tests, contract/migration validation and build for current Node.js modules on pull requests targeting `dev`. Content/Notification's PostgreSQL Testcontainers suite also runs there. The stable branch-protection check is the final `quality-gate` job; enable it after the workflow is merged and has completed successfully on `dev`.
 
-After the current bootstrap integration is stable, the repository owner adds the first basic GitHub Actions workflow for pull requests targeting `dev`. The initial workflow runs install, formatting, lint/static analysis, typecheck, unit tests, contract/migration static validation and build for affected modules. Branch protection may require that workflow only after it is stable. Real database/broker integration coverage can be added incrementally, but local Testcontainers verification remains required wherever the module definition already requires it.
+A missing, skipped, cancelled, unavailable, or red CI status is not evidence that a pull request passed. Reviewers still record local verification and report environment-only blockers explicitly.
 
 There is no cloud account, hosted server, deployment credential, CD workflow, or release automation in Sprint 1. Deployment work is added only after an environment and credentials are explicitly approved.

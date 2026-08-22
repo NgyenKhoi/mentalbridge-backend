@@ -70,7 +70,7 @@ The current infrastructure phase may run databases and supporting dependencies l
 - Development may use safe local hosts, ports, synthetic assets, provider sandboxes/fakes, and Docker Compose credentials that are clearly non-production.
 - CI and production disable dotenv loading and receive Eureka endpoints plus database, Kafka, Redis, Cloudinary, Brevo, signing, and encryption configuration from the deployment environment or secret manager.
 - Production configuration supports TLS, bounded connection pools, connection/request timeouts, graceful shutdown, health/readiness probes, metrics, and redacted structured logging.
-- Schema auto-creation is disabled. Liquibase owns PostgreSQL schema changes and `migrate-mongo` owns MongoDB schema/index/data migrations. Production migration execution is an explicit deployment step or a deliberately enabled single-runner job, never an uncontrolled race between application replicas.
+- Schema auto-creation is disabled. Liquibase owns Spring/PostgreSQL changes, `node-pg-migrate` owns Node.js/PostgreSQL changes, and `migrate-mongo` owns MongoDB schema/index/data migrations. Production migration execution is an explicit deployment step or a deliberately enabled single-runner job, never an uncontrolled race between application replicas.
 - Missing production secrets, insecure provider modes, public access for sensitive Cloudinary assets, or placeholder endpoints fail startup. No production profile falls back to a development credential or localhost.
 - External provider adapters have typed timeouts, bounded retry/circuit-breaker behavior, and sandbox/fake implementations for tests. Paid Cloudinary or Brevo APIs are not required for ordinary CI.
 

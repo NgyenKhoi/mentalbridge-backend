@@ -1,3 +1,4 @@
+-- Up Migration
 -- Migration: 1_initial_schema
 -- Service:   content-notification-service
 -- Database:  mentalbridge_content_notification

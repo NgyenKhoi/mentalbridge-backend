@@ -1,6 +1,6 @@
 ---
 name: mentalbridge-data-contracts
-description: Enforce MentalBridge contract-first and database requirements. Use for REST/OpenAPI, Kafka JSON Schema, WebSocket schemas, PostgreSQL/Liquibase, MongoDB/migrate-mongo, persistence mappings, indexes, constraints, migrations, DTOs, events, outbox, and cross-language compatibility changes.
+description: Enforce MentalBridge contract-first and database requirements. Use for REST/OpenAPI, Kafka JSON Schema, WebSocket schemas, PostgreSQL migrations, MongoDB/migrate-mongo, persistence mappings, indexes, constraints, migrations, DTOs, events, outbox, and cross-language compatibility changes.
 ---
 
 # MentalBridge Data Contracts
@@ -23,7 +23,7 @@ First apply `mentalbridge-repository-workflow`; also apply `mentalbridge-archite
 
 ## PostgreSQL
 
-1. Add an append-only owner Liquibase change; never edit an applied migration.
+1. Add an append-only owner migration: Liquibase for Spring Boot or `node-pg-migrate` for Node.js; never edit an applied migration.
 2. Update the field dictionary for every changed table/field, including authority, sensitivity, nullability, time/version, and idempotency semantics.
 3. Enforce invariants with constraints and deliberate locking; use expand/migrate/contract for overlapping versions.
 4. Test migrations, constraints, mappings, concurrency, indexes, and queries against real PostgreSQL.

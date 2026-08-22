@@ -21,6 +21,7 @@ tags:
 
 paths:
   /health/live:
+    x-mentalbridge-status: implemented
     get:
       tags: [Health]
       summary: Liveness probe
@@ -36,6 +37,7 @@ paths:
                 status: ok
 
   /health/ready:
+    x-mentalbridge-status: implemented
     get:
       tags: [Health]
       summary: Readiness probe — checks database connectivity
@@ -53,14 +55,17 @@ paths:
         '503':
           description: Service unavailable — database unreachable
           content:
-            application/json:
+            application/problem+json:
               schema:
-                $ref: '#/components/schemas/ReadyResponse'
+                $ref: '#/components/schemas/ProblemDetails'
               example:
-                status: unavailable
-                db: disconnected
+                type: https://mentalbridge.io/errors/DEPENDENCY_UNAVAILABLE
+                title: Dependency unavailable
+                status: 503
+                code: DEPENDENCY_UNAVAILABLE
 
   /api/v1/resources:
+    x-mentalbridge-status: planned
     get:
       tags: [Resources]
       summary: List published self-help resources
@@ -142,6 +147,7 @@ paths:
           $ref: '#/components/responses/ValidationError'
 
   /api/v1/resources/{id}:
+    x-mentalbridge-status: planned
     parameters:
       - name: id
         in: path
@@ -203,6 +209,7 @@ paths:
           $ref: '#/components/responses/Conflict'
 
   /api/v1/resources/{id}/publish:
+    x-mentalbridge-status: planned
     post:
       tags: [Resources]
       summary: Publish a DRAFT resource — reviewed content workflow (Admin)
@@ -229,6 +236,7 @@ paths:
           $ref: '#/components/responses/Conflict'
 
   /api/v1/resources/{id}/archive:
+    x-mentalbridge-status: planned
     post:
       tags: [Resources]
       summary: Archive a PUBLISHED resource (Admin)
@@ -255,6 +263,7 @@ paths:
           $ref: '#/components/responses/Conflict'
 
   /api/v1/hotlines:
+    x-mentalbridge-status: planned
     get:
       tags: [Hotlines]
       summary: List active crisis hotlines
@@ -320,6 +329,7 @@ paths:
           $ref: '#/components/responses/ValidationError'
 
   /api/v1/hotlines/{id}:
+    x-mentalbridge-status: planned
     parameters:
       - name: id
         in: path
@@ -377,6 +387,7 @@ paths:
           $ref: '#/components/responses/NotFound'
 
   /api/v1/hotlines/{id}/deactivate:
+    x-mentalbridge-status: planned
     post:
       tags: [Hotlines]
       summary: Deactivate a hotline (Admin)

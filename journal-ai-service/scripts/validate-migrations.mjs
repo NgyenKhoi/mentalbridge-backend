@@ -20,4 +20,6 @@ assert.equal(
   undefined,
 );
 
-console.log("Validated Mongo migration: migrations/001_journal_entries_baseline.cjs");
+console.log(
+  "Validated Mongo migration: migrations/001_journal_entries_baseline.cjs",
+);

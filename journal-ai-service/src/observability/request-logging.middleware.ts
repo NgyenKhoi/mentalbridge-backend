@@ -4,10 +4,7 @@ import { Inject, Injectable, type NestMiddleware } from "@nestjs/common";
 import { pinoHttp } from "pino-http";
 import type { Logger } from "pino";
 
-import {
-  getCorrelationId,
-  setCorrelationIdHeader,
-} from "./correlation-id.js";
+import { getCorrelationId, setCorrelationIdHeader } from "./correlation-id.js";
 import { LOGGER_TOKEN } from "./tokens.js";
 
 @Injectable()
