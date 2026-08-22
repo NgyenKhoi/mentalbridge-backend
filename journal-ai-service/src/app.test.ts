@@ -10,7 +10,7 @@ import { Reflector } from "@nestjs/core";
 import { exportSPKI, generateKeyPair, SignJWT } from "jose";
 import request from "supertest";
 
-import { createApplication } from "./app.js";
+import { createApplication } from "./application.js";
 import {
   loadConfiguration,
   type ServiceConfiguration,

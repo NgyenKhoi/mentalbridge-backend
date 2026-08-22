@@ -1,5 +1,5 @@
 import { loadConfiguration } from "./configuration/configuration.js";
-import { createApplication } from "./app.js";
+import { createApplication } from "./application.js";
 
 const shutdownTimeoutMilliseconds = 10_000;
 const configuration = loadConfiguration();
