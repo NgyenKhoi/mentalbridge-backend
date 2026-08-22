@@ -1,27 +1,35 @@
 # Agent Engineering Guide
 
-This directory is the mandatory working guide for humans and coding agents. Read all files before implementing or reviewing a module; they are intentionally split so each concern remains maintainable.
+This directory is the mandatory working guide for humans and coding agents. Use it as a router: read the core set for every task, then only the guides for the boundaries being changed. A reviewer may require another guide when the diff crosses that boundary.
 
-## Required reading order
+## Core reading order
 
 1. [Workflow](workflow.md)
 2. [Owner working preferences](owner-working-preferences.md)
 3. [Module boundaries](module-boundaries.md)
 4. [Service code structure](service-structure.md)
-5. [Environment configuration](environment-configuration.md)
-6. [REST integration and resilience](rest-integration.md)
-7. [Asynchronous messaging](async-messaging.md)
-8. [PostgreSQL conventions](postgresql-conventions.md)
-9. [Review and testing](review-and-testing.md)
-10. [Git and GitHub collaboration](git-collaboration.md)
+5. [Review and testing](review-and-testing.md)
+6. [Git and GitHub collaboration](git-collaboration.md)
+
+## Task-specific guides
+
+| Change touches | Also read |
+| --- | --- |
+| environment variables, secrets, profiles, deployment configuration | [Environment configuration](environment-configuration.md) |
+| OpenAPI, synchronous clients, timeouts, retries, circuit breakers | [REST integration and resilience](rest-integration.md) |
+| Kafka commands/events, outbox, inbox, retries, dead letters | [Asynchronous messaging](async-messaging.md) |
+| PostgreSQL tables, mappings, transactions, indexes, migrations | [PostgreSQL conventions](postgresql-conventions.md) |
+
+Do not read every guide mechanically when the change is isolated. Do not skip a task-specific guide merely because the implementation is small.
 
 Also read the affected source-of-truth documents:
 
 - business behavior: [Domain and use cases](../domain-and-use-cases.md);
 - source/WBS coverage and unresolved design gaps: [Requirements traceability](../requirements-traceability.md);
 - system boundaries: [Architecture](../architecture.md);
-- REST contract: `contracts/openapi/` once introduced;
-- message contract: `contracts/events/` once introduced;
+- contract lifecycle and canonical locations: [`contracts/README.md`](../../contracts/README.md);
+- REST contract: `contracts/openapi/`;
+- message contract: `contracts/events/`;
 - persisted shape and constraints: the owning service's migrations;
 - a deliberate architectural exception: `docs/adr/`.
 

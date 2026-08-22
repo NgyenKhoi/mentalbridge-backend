@@ -57,6 +57,8 @@ Every Node.js service exposes the same command names:
 
 ## Standard source structure
 
+The tree below is the maximum expected shape for a feature with real boundary complexity, not a scaffold checklist. Start with the shallow NestJS feature shown in `docs/reference-implementations.md`; create `api`, `application`, `domain`, or `infrastructure` only when that directory contains a meaningful boundary rather than one wrapper file.
+
 ```text
 <service>/
 ├── package.json

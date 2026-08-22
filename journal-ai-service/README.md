@@ -69,7 +69,7 @@ Incoming requests echo a valid bounded `x-correlation-id` or receive a generated
 
 ## Contracts and migrations
 
-- Journal CRUD OpenAPI: `contracts/openapi/journal-ai-service-v1.yaml`
+- Journal CRUD OpenAPI: `../contracts/openapi/journal-ai-service-v1.yaml`
 - MongoDB migration baseline: `migrations/001_journal_entries_baseline.cjs`
 
 Run `npm run contract:check` before implementing journal handlers. Run `npm run migration:check` for static migration validation, and `npm run migrate:up` against a local disposable MongoDB when database access is available.

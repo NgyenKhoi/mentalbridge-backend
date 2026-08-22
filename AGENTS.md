@@ -1,6 +1,6 @@
 # MentalBridge Agent Rules
 
-These instructions apply to the entire repository. Before changing application code, database migrations, API contracts, or deployment files, read every document in `docs/agent-guides/` in the order listed by its `README.md`.
+These instructions apply to the entire repository. Before changing application code, database migrations, API contracts, or deployment files, read the core and task-specific documents selected by `docs/agent-guides/README.md`.
 
 ## Shared repository skills
 

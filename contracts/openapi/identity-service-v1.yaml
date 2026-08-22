@@ -17,6 +17,7 @@ tags:
   - name: Account administration
 paths:
   /api/v1/auth/registrations:
+    x-mentalbridge-status: implemented
     post:
       tags: [Registration]
       operationId: registerAccount
@@ -48,6 +49,7 @@ paths:
         '409': { $ref: '#/components/responses/ConflictProblem' }
         '429': { $ref: '#/components/responses/RateLimitProblem' }
   /api/v1/auth/email-verifications:
+    x-mentalbridge-status: implemented
     post:
       tags: [Registration]
       operationId: verifyEmail
@@ -70,6 +72,7 @@ paths:
         '400': { $ref: '#/components/responses/InvalidChallengeProblem' }
         '429': { $ref: '#/components/responses/RateLimitProblem' }
   /api/v1/auth/email-verification-requests:
+    x-mentalbridge-status: planned
     post:
       tags: [Registration]
       operationId: requestEmailVerification
@@ -87,6 +90,7 @@ paths:
         '400': { $ref: '#/components/responses/ValidationProblem' }
         '429': { $ref: '#/components/responses/RateLimitProblem' }
   /api/v1/auth/login:
+    x-mentalbridge-status: implemented
     post:
       tags: [Authentication]
       operationId: login
@@ -110,6 +114,7 @@ paths:
         '401': { $ref: '#/components/responses/InvalidCredentialsProblem' }
         '429': { $ref: '#/components/responses/RateLimitProblem' }
   /api/v1/auth/refresh:
+    x-mentalbridge-status: implemented
     post:
       tags: [Authentication]
       operationId: refreshSession
@@ -135,6 +140,7 @@ paths:
         '409': { $ref: '#/components/responses/IdempotencyConflictProblem' }
         '429': { $ref: '#/components/responses/RateLimitProblem' }
   /api/v1/auth/logout:
+    x-mentalbridge-status: implemented
     post:
       tags: [Authentication]
       operationId: logout
@@ -154,6 +160,7 @@ paths:
         '400': { $ref: '#/components/responses/ValidationProblem' }
         '401': { $ref: '#/components/responses/UnauthorizedProblem' }
   /api/v1/auth/logout-all:
+    x-mentalbridge-status: implemented
     post:
       tags: [Authentication]
       operationId: logoutAll
@@ -166,6 +173,7 @@ paths:
         '204': { description: All sessions are revoked or were already revoked }
         '401': { $ref: '#/components/responses/UnauthorizedProblem' }
   /api/v1/auth/password-recovery-requests:
+    x-mentalbridge-status: planned
     post:
       tags: [Recovery]
       operationId: requestPasswordRecovery
@@ -183,6 +191,7 @@ paths:
         '400': { $ref: '#/components/responses/ValidationProblem' }
         '429': { $ref: '#/components/responses/RateLimitProblem' }
   /api/v1/auth/password-resets:
+    x-mentalbridge-status: planned
     post:
       tags: [Recovery]
       operationId: resetPassword
@@ -200,6 +209,7 @@ paths:
         '400': { $ref: '#/components/responses/InvalidChallengeProblem' }
         '429': { $ref: '#/components/responses/RateLimitProblem' }
   /api/v1/account:
+    x-mentalbridge-status: implemented
     get:
       tags: [Account]
       operationId: getOwnAccount
@@ -217,6 +227,7 @@ paths:
                 $ref: '#/components/schemas/AccountDetail'
         '401': { $ref: '#/components/responses/UnauthorizedProblem' }
   /api/v1/account/password:
+    x-mentalbridge-status: planned
     put:
       tags: [Account]
       operationId: changePassword
@@ -236,6 +247,7 @@ paths:
         '400': { $ref: '#/components/responses/ValidationProblem' }
         '401': { $ref: '#/components/responses/InvalidCredentialsProblem' }
   /api/v1/admin/accounts:
+    x-mentalbridge-status: planned
     get:
       tags: [Account administration]
       operationId: searchAccounts
@@ -271,6 +283,7 @@ paths:
         '401': { $ref: '#/components/responses/UnauthorizedProblem' }
         '403': { $ref: '#/components/responses/ForbiddenProblem' }
   /api/v1/admin/accounts/{accountId}:
+    x-mentalbridge-status: planned
     get:
       tags: [Account administration]
       operationId: getAccountById
@@ -291,6 +304,7 @@ paths:
         '403': { $ref: '#/components/responses/ForbiddenProblem' }
         '404': { $ref: '#/components/responses/NotFoundProblem' }
   /api/v1/admin/accounts/{accountId}/state:
+    x-mentalbridge-status: planned
     put:
       tags: [Account administration]
       operationId: changeAccountState
@@ -321,6 +335,7 @@ paths:
         '409': { $ref: '#/components/responses/ConflictProblem' }
         '412': { $ref: '#/components/responses/VersionProblem' }
   /api/v1/admin/accounts/{accountId}/roles:
+    x-mentalbridge-status: planned
     put:
       tags: [Account administration]
       operationId: replaceAccountRoles
