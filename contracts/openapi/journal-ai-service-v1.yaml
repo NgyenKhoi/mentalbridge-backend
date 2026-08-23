@@ -59,7 +59,7 @@ paths:
               schema:
                 type: string
   /api/v1/journals:
-    x-mentalbridge-status: planned
+    x-mentalbridge-status: implemented
     post:
       tags: [Journals]
       summary: Create a private journal entry.
@@ -117,7 +117,7 @@ paths:
         "401":
           $ref: "#/components/responses/Unauthorized"
   /api/v1/journals/{journalId}:
-    x-mentalbridge-status: planned
+    x-mentalbridge-status: implemented
     get:
       tags: [Journals]
       summary: Get one private journal entry.
