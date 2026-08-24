@@ -17,6 +17,12 @@ const environmentSchema = z
       .enum(['trace', 'debug', 'info', 'warn', 'error', 'fatal', 'silent'])
       .default('info'),
     CORS_ORIGINS: z.string().default(''),
+    // JWT — Identity Service contract
+    IDENTITY_JWT_ISSUER: z.string().min(1),
+    IDENTITY_JWT_AUDIENCE: z.string().min(1),
+    IDENTITY_JWT_PUBLIC_KEY: z.string().min(1),
+    IDENTITY_JWT_KEY_ID: z.string().min(1).optional(),
+    IDENTITY_JWT_CLOCK_TOLERANCE_SECONDS: z.coerce.number().int().min(0).default(60),
   })
   .transform((environment) => ({
     ...environment,

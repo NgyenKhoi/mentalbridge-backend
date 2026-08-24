@@ -7,6 +7,10 @@ const requiredEnvironment = {
   DB_HOST: 'localhost',
   DB_USER: 'test_user',
   DB_PASSWORD: 'test_password',
+  IDENTITY_JWT_ISSUER: 'https://identity.local.mentalbridge',
+  IDENTITY_JWT_AUDIENCE: 'mentalbridge-api',
+  IDENTITY_JWT_PUBLIC_KEY:
+    '-----BEGIN PUBLIC KEY-----\nMIIBIjANBgkqhkiG9w0BAQEFAAOCAQ8AMIIBCgKCAQEA0\n-----END PUBLIC KEY-----',
 } satisfies NodeJS.ProcessEnv;
 
 describe('configuration', () => {

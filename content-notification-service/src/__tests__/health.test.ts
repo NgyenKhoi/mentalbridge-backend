@@ -21,6 +21,11 @@ const configuration: ServiceConfiguration = {
   CORS_ORIGINS: '',
   SERVICE_NAME: 'content-notification-service',
   ALLOWED_ORIGINS: [],
+  IDENTITY_JWT_ISSUER: 'https://identity.local.mentalbridge',
+  IDENTITY_JWT_AUDIENCE: 'mentalbridge-api',
+  IDENTITY_JWT_PUBLIC_KEY:
+    '-----BEGIN PUBLIC KEY-----\nMIIBIjANBgkqhkiG9w0BAQEFAAOCAQ8AMIIBCgKCAQEA0\n-----END PUBLIC KEY-----',
+  IDENTITY_JWT_CLOCK_TOLERANCE_SECONDS: 60,
 };
 
 let app: INestApplication | undefined;
