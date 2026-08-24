@@ -31,6 +31,32 @@ npm run dev
 
 The application loads `.env` only in development. Test and production environments require real process variables and never depend on a repository `.env` file.
 
+### JWT authentication
+
+This service verifies RS256 JWTs issued by Identity Service. For local development, each developer generates their own RSA key pair:
+
+```powershell
+# Windows
+.\scripts\generate-local-jwt-keys.ps1
+```
+
+```bash
+# Linux/macOS
+./scripts/generate-local-jwt-keys.sh
+```
+
+Keys are written to `.local/secrets/` (git-ignored). Copy the generated public key value into `.env`:
+
+```env
+IDENTITY_JWT_ISSUER=https://identity.local.mentalbridge
+IDENTITY_JWT_AUDIENCE=mentalbridge-api
+IDENTITY_JWT_KEY_ID=local-development-key
+IDENTITY_JWT_PUBLIC_KEY=-----BEGIN PUBLIC KEY-----\n...\n-----END PUBLIC KEY-----
+IDENTITY_JWT_CLOCK_TOLERANCE_SECONDS=60
+```
+
+Identity Service must be configured with the corresponding private key (`IDENTITY_JWT_PRIVATE_KEY`).
+
 ## Migrations
 
 `node-pg-migrate` reads append-only SQL files from `migrations/`. Supply `DATABASE_URL` as a real process variable, then run:
