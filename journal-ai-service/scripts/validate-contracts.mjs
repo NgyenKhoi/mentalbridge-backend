@@ -26,19 +26,26 @@ const implementedOperations = new Set([
   "GET /health/live",
   "GET /health/ready",
   "GET /metrics",
-]);
-const implementedResponses = new Map([
-  ["GET /health/live", new Set(["200"])],
-  ["GET /health/ready", new Set(["200", "503"])],
-  ["GET /metrics", new Set(["200"])],
-]);
-const plannedOperations = new Set([
   "POST /api/v1/journals",
   "GET /api/v1/journals",
   "GET /api/v1/journals/{journalId}",
   "PATCH /api/v1/journals/{journalId}",
   "DELETE /api/v1/journals/{journalId}",
 ]);
+const implementedResponses = new Map([
+  ["GET /health/live", new Set(["200"])],
+  ["GET /health/ready", new Set(["200", "503"])],
+  ["GET /metrics", new Set(["200"])],
+  ["POST /api/v1/journals", new Set(["201", "400", "401", "409"])],
+  ["GET /api/v1/journals", new Set(["200", "400", "401"])],
+  ["GET /api/v1/journals/{journalId}", new Set(["200", "401", "404"])],
+  [
+    "PATCH /api/v1/journals/{journalId}",
+    new Set(["200", "400", "401", "404", "409", "412"]),
+  ],
+  ["DELETE /api/v1/journals/{journalId}", new Set(["200", "401", "404"])],
+]);
+const plannedOperations = new Set();
 const actualImplemented = new Set();
 const actualPlanned = new Set();
 const methods = ["get", "post", "put", "patch", "delete"];
@@ -66,8 +73,9 @@ for (const [path, pathItem] of Object.entries(contract.paths ?? {})) {
           );
         }
         if (
-          !Array.isArray(pathItem[method].security) ||
-          pathItem[method].security.length !== 0
+          operation.startsWith("GET /health/") &&
+          (!Array.isArray(pathItem[method].security) ||
+            pathItem[method].security.length !== 0)
         ) {
           throw new Error(`${operation} must remain explicitly public`);
         }

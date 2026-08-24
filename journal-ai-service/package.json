@@ -4,7 +4,7 @@
   "description": "MentalBridge Journal and AI Service",
   "main": "dist/main.js",
   "scripts": {
-    "test": "npm run build && node --test dist/app.test.js",
+    "test": "npm run build && node --test dist/**/*.test.js",
     "dev": "tsx watch src/main.ts",
     "build": "tsc -p tsconfig.json",
     "start": "node dist/main.js",
