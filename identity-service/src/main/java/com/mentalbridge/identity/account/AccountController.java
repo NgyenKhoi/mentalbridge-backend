@@ -1,7 +1,7 @@
 package com.mentalbridge.identity.account;
 
 import java.time.Instant;
-import java.util.Set;
+import java.util.List;
 import java.util.UUID;
 
 import org.springframework.http.HttpStatus;
@@ -26,11 +26,11 @@ public class AccountController {
 	AccountResponse getOwnAccount(@AuthenticationPrincipal Jwt jwt) {
 		var account = accounts.findById(UUID.fromString(jwt.getSubject()))
 				.orElseThrow(() -> new ResponseStatusException(HttpStatus.NOT_FOUND));
-		return new AccountResponse(account.accountId(), account.email(), account.status(), account.roles(),
+		return new AccountResponse(account.accountId(), account.email(), account.status(), List.of(account.role()),
 				account.emailVerifiedAt() != null, account.createdAt(), account.updatedAt(), account.version());
 	}
 
-	public record AccountResponse(UUID accountId, String email, AccountStatus status, Set<RoleCode> roles,
+	public record AccountResponse(UUID accountId, String email, AccountStatus status, List<RoleCode> roles,
 			boolean emailVerified, Instant createdAt, Instant updatedAt, long version) {
 	}
 

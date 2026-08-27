@@ -2,15 +2,12 @@ package com.mentalbridge.identity.authentication;
 
 import java.time.Instant;
 import java.util.Optional;
-import java.util.Set;
 import java.util.UUID;
-import java.util.stream.Collectors;
 
 import org.springframework.stereotype.Repository;
 
 import com.mentalbridge.identity.account.AccountEntity;
 import com.mentalbridge.identity.account.AccountRepository;
-import com.mentalbridge.identity.account.AccountRoleRepository;
 import com.mentalbridge.identity.account.AccountStatus;
 import com.mentalbridge.identity.account.RoleCode;
 
@@ -18,13 +15,10 @@ import com.mentalbridge.identity.account.RoleCode;
 public class AuthenticationPersistence {
 
 	private final AccountRepository accounts;
-	private final AccountRoleRepository roles;
 	private final RefreshSessionRepository sessions;
 
-	public AuthenticationPersistence(AccountRepository accounts, AccountRoleRepository roles,
-			RefreshSessionRepository sessions) {
+	public AuthenticationPersistence(AccountRepository accounts, RefreshSessionRepository sessions) {
 		this.accounts = accounts;
-		this.roles = roles;
 		this.sessions = sessions;
 	}
 
@@ -47,7 +41,7 @@ public class AuthenticationPersistence {
 		return sessions.findByTokenHashForUpdate(tokenHash).map(session -> {
 			var account = accounts.findByIdForUpdate(session.accountId()).orElseThrow(InvalidSessionException::new);
 			return new RefreshRecord(session.id(), session.familyId(), session.accountId(), account.status(),
-					session.tokenHash(), session.expiresAt(), session.revokedAt(), session.revokeReason(), roles(account.id()));
+					session.tokenHash(), session.expiresAt(), session.revokedAt(), session.revokeReason(), account.role());
 		});
 	}
 
@@ -70,15 +64,11 @@ public class AuthenticationPersistence {
 
 	private CredentialRecord credential(AccountEntity account) {
 		return new CredentialRecord(account.id(), account.passwordHash(), account.status(), account.failedLoginCount(),
-				account.lockedUntil(), roles(account.id()));
-	}
-
-	private Set<RoleCode> roles(UUID accountId) {
-		return roles.findRoleCodes(accountId).stream().map(RoleCode::valueOf).collect(Collectors.toUnmodifiableSet());
+				account.lockedUntil(), account.role());
 	}
 
 	public record CredentialRecord(UUID accountId, String passwordHash, AccountStatus status, int failedLoginCount,
-			Instant lockedUntil, Set<RoleCode> roles) {
+			Instant lockedUntil, RoleCode role) {
 	}
 
 	public record RefreshSession(UUID id, UUID familyId, UUID accountId, String tokenHash, String deviceLabel,
@@ -86,7 +76,7 @@ public class AuthenticationPersistence {
 	}
 
 	public record RefreshRecord(UUID id, UUID familyId, UUID accountId, AccountStatus accountStatus, String tokenHash,
-			Instant expiresAt, Instant revokedAt, String revokeReason, Set<RoleCode> roles) {
+			Instant expiresAt, Instant revokedAt, String revokeReason, RoleCode role) {
 	}
 
 }

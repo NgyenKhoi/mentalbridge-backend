@@ -11,7 +11,7 @@ Identity owns accounts, credentials, roles, email ownership, refresh sessions, a
 | Registration/verification | Register USER or SPECIALIST and verify email; Consultation separately records a specialist profile approval as pending without document upload | Duplicate normalized email conflicts; passwords are hashed; OTP/token expires, is one-use and rate-limited; account/outbox commit together |
 | Login/session | Authenticate active account; issue short access token and rotated refresh session | Generic credential errors; disabled/unverified policy enforced; refresh replay revokes the affected chain; logout is idempotent |
 | Password recovery/change | Verify ownership and replace credentials | Expired/reused challenge fails; existing sessions follow reviewed revocation policy; secrets never enter logs/events |
-| Account/RBAC admin | Query and change account state/roles through bounded admin APIs | Admin authorization at owner; last privileged-role and transition rules explicit; stable audit fact emitted |
+| Account administration | Query accounts and change non-admin account state through bounded admin APIs | Dedicated Admin authorization at owner; account roles are immutable; stable audit fact emitted |
 | Deletion coordination | Start and track an idempotent fan-out workflow | Repeated request returns same workflow; every owner task tracked; retained audit is minimized/pseudonymized |
 | Audit/search projection | Search permitted security/operational facts | No health/free-text content; bounded filters/pagination; retention enforced by each owner |
 
@@ -32,7 +32,7 @@ Identity owns accounts, credentials, roles, email ownership, refresh sessions, a
 - [x] ID-04 Add owner Liquibase migrations, data dictionary entries, constraints and query indexes.
 - [x] ID-05 Implement registration/verification and safe delivery request integration.
 - [x] ID-06 Implement login, refresh rotation/replay detection and logout.
-- [ ] ID-07 Implement password recovery/change and account-state/RBAC administration.
+- [ ] ID-07 Implement password recovery/change and non-admin account-state administration.
 - [ ] ID-08 Implement deletion coordinator, idempotent task projection and retained-audit minimization.
 - [ ] ID-09 Verify validation, authorization, rate limit, concurrency, replay, outbox rollback, consumer duplicates and dependency failures.
 - [ ] ID-10 Add metrics/readiness/configuration, update module README, and pass module/contract/migration build gates.

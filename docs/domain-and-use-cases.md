@@ -136,7 +136,7 @@ The project-tracking workbook currently groups the 162 functions into seven deli
 
 ### UC-02 Mental Health Assessment & AI Analysis
 
-**Actors:** Guest, User, Research Admin, System
+**Actors:** Guest, User, Admin, System
 
 **Scope:** journal CRUD, PHQ-9/GAD-7 submission/result/history/deletion, LLM emotion analysis and re-run, benchmark execution/results, risk-result display, and personal emotional analytics.
 

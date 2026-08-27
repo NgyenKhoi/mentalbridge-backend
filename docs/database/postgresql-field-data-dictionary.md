@@ -15,6 +15,7 @@ Authoritative login account and lifecycle state owned by Identity Service.
 | `id` | Immutable UUID exposed as the opaque account identifier in REST and Kafka contracts. |
 | `email` | Case-insensitive normalized login and recovery address; unique because one address identifies one account. |
 | `password_hash` | One-way password hash used for local authentication; plaintext is never persisted. |
+| `role_code` | Authoritative immutable actor category `USER`, `SPECIALIST`, or `ADMIN`. Public registration writes only `USER` or `SPECIALIST`; deployment provisioning creates the sole `ADMIN`, and a partial unique index permits at most one. |
 | `status` | Authoritative lifecycle state: `PENDING_EMAIL_VERIFICATION`, `ACTIVE`, `DISABLED`, `DELETION_PENDING`, or terminal `DELETED`; temporary credential locking is deliberately separate. |
 | `email_verified_at` | UTC instant at which email ownership was verified; null until verification succeeds. |
 | `failed_login_count` | Consecutive failed-login counter used by the lockout policy and reset after successful authentication. |
@@ -27,23 +28,12 @@ Authoritative login account and lifecycle state owned by Identity Service.
 
 ### `public.role`
 
-Reference catalogue of authorization roles assignable to accounts.
+Reference catalogue of the mutually exclusive actor roles assigned when an account is created.
 
 | Field | Purpose |
 | --- | --- |
-| `code` | Stable machine-readable role identifier used in tokens and authorization policies. |
+| `code` | Stable machine-readable actor role used by `account.role_code`, tokens, and authorization policies. |
 | `description` | Human-readable explanation of the permissions and actor represented by the role. |
-
-### `public.account_role`
-
-Auditable many-to-many assignment of roles to accounts.
-
-| Field | Purpose |
-| --- | --- |
-| `account_id` | Identity-owned account receiving the role. |
-| `role_code` | Stable role code granted to the account. |
-| `granted_by` | Administrator account that granted the role; null only for approved automated/bootstrap assignment. |
-| `granted_at` | UTC instant at which the role became effective. |
 
 ### `public.refresh_session`
 
@@ -126,7 +116,7 @@ Privacy-minimized local security record for authentication, recovery, replay, an
 | `id` | Immutable UUID identifying the audit fact. |
 | `account_id` | Affected account when known; nullable for enumeration-safe failures and retained as null after account deletion. |
 | `actor_id` | Authenticated actor responsible for an administrative action; nullable for guests/system actions and after actor deletion. |
-| `action` | Stable security action code such as login or role replacement. |
+| `action` | Stable security action code such as login, password recovery, or account-state change. |
 | `outcome` | Restricted result `SUCCEEDED`, `DENIED`, or `FAILED`. |
 | `reason_code` | Optional stable machine-readable explanation without sensitive free text. |
 | `correlation_id` | Request/workflow UUID used to join safe operational evidence. |

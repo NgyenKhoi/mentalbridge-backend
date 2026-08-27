@@ -2,7 +2,7 @@ package com.mentalbridge.identity.authentication;
 
 import java.time.Duration;
 import java.time.Instant;
-import java.util.Set;
+import java.util.List;
 import java.util.UUID;
 
 import org.springframework.security.oauth2.jose.jws.SignatureAlgorithm;
@@ -26,11 +26,11 @@ public class JwtTokenService {
 		this.properties = properties;
 	}
 
-	public IssuedAccessToken issue(UUID accountId, Set<RoleCode> roles, Instant issuedAt) {
+	public IssuedAccessToken issue(UUID accountId, RoleCode role, Instant issuedAt) {
 		var claims = JwtClaimsSet.builder().issuer(properties.issuer()).subject(accountId.toString())
 				.audience(java.util.List.of(properties.audience())).issuedAt(issuedAt).notBefore(issuedAt)
 				.expiresAt(issuedAt.plus(ACCESS_LIFETIME)).id(UUID.randomUUID().toString())
-				.claim("roles", roles.stream().map(Enum::name).sorted().toList()).build();
+				.claim("roles", List.of(role.name())).build();
 		var header = JwsHeader.with(SignatureAlgorithm.RS256).keyId(properties.keyId()).build();
 		var token = encoder.encode(JwtEncoderParameters.from(header, claims)).getTokenValue();
 		return new IssuedAccessToken(token, ACCESS_LIFETIME.toSeconds());

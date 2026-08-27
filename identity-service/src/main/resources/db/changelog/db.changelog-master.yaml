@@ -1,3 +1,5 @@
 databaseChangeLog:
   - include:
       file: db/changelog/changes/001-identity-baseline.sql
+  - include:
+      file: db/changelog/changes/002-single-account-role.sql

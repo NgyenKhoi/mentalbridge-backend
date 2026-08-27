@@ -38,8 +38,9 @@ class IdentityLiquibaseMigrationTests extends IdentityTestProperties {
 				""").query(Long.class).single();
 		var roles = jdbc.sql("select code from role order by code").query(String.class).list();
 
-		assertThat(tables).contains("account", "account_role", "refresh_session", "one_time_token",
-				"idempotency_record", "outbox_event", "security_audit_event");
+		assertThat(tables).contains("account", "role", "refresh_session", "one_time_token",
+				"idempotency_record", "outbox_event", "security_audit_event")
+				.doesNotContain("account_role");
 		assertThat(identitySchemaCount).isZero();
 		assertThat(roles).containsExactly("ADMIN", "SPECIALIST", "USER");
 	}
@@ -61,12 +62,25 @@ class IdentityLiquibaseMigrationTests extends IdentityTestProperties {
 				.isInstanceOf(DataIntegrityViolationException.class);
 	}
 
+	@Test
+	void onlyOneDedicatedAdministratorAccountCanExist() {
+		insertPendingAccount("admin@example.com", "ADMIN");
+
+		assertThatThrownBy(() -> insertPendingAccount("second-admin@example.com", "ADMIN"))
+				.isInstanceOf(DataIntegrityViolationException.class);
+	}
+
 	private UUID insertPendingAccount(String email) {
+		return insertPendingAccount(email, "USER");
+	}
+
+	private UUID insertPendingAccount(String email, String role) {
 		return jdbc.sql("""
-				insert into account (email, password_hash)
-				values (:email, :passwordHash)
+				insert into account (email, password_hash, role_code)
+				values (:email, :passwordHash, :role)
 				returning id
-				""").param("email", email).param("passwordHash", "bcrypt-test-hash").query(UUID.class).single();
+				""").param("email", email).param("passwordHash", "bcrypt-test-hash").param("role", role)
+				.query(UUID.class).single();
 	}
 
 	private void insertChallenge(UUID accountId, String tokenHash) {

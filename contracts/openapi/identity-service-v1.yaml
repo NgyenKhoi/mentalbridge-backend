@@ -308,7 +308,8 @@ paths:
     put:
       tags: [Account administration]
       operationId: changeAccountState
-      summary: Change account state with optimistic concurrency
+      summary: Change a non-admin account state with optimistic concurrency
+      description: The dedicated ADMIN account is provisioned and managed operationally and cannot be targeted.
       security:
         - bearerAuth: []
       parameters:
@@ -324,37 +325,6 @@ paths:
       responses:
         '200':
           description: State changed
-          content:
-            application/json:
-              schema:
-                $ref: '#/components/schemas/AccountDetail'
-        '400': { $ref: '#/components/responses/ValidationProblem' }
-        '401': { $ref: '#/components/responses/UnauthorizedProblem' }
-        '403': { $ref: '#/components/responses/ForbiddenProblem' }
-        '404': { $ref: '#/components/responses/NotFoundProblem' }
-        '409': { $ref: '#/components/responses/ConflictProblem' }
-        '412': { $ref: '#/components/responses/VersionProblem' }
-  /api/v1/admin/accounts/{accountId}/roles:
-    x-mentalbridge-status: planned
-    put:
-      tags: [Account administration]
-      operationId: replaceAccountRoles
-      summary: Replace account roles with optimistic concurrency
-      security:
-        - bearerAuth: []
-      parameters:
-        - $ref: '#/components/parameters/AccountId'
-        - $ref: '#/components/parameters/IfMatch'
-        - $ref: '#/components/parameters/CorrelationId'
-      requestBody:
-        required: true
-        content:
-          application/json:
-            schema:
-              $ref: '#/components/schemas/RoleReplacementRequest'
-      responses:
-        '200':
-          description: Roles replaced
           content:
             application/json:
               schema:
@@ -487,7 +457,9 @@ components:
         roles:
           type: array
           minItems: 1
+          maxItems: 1
           uniqueItems: true
+          description: Exactly one immutable actor role; the array shape is retained for v1 token and response compatibility
           items: { $ref: '#/components/schemas/RoleCode' }
         emailVerified: { type: boolean }
     AccountDetail:
@@ -501,7 +473,9 @@ components:
         roles:
           type: array
           minItems: 1
+          maxItems: 1
           uniqueItems: true
+          description: Exactly one immutable actor role; the array shape is retained for v1 token and response compatibility
           items: { $ref: '#/components/schemas/RoleCode' }
         emailVerified: { type: boolean }
         createdAt: { type: string, format: date-time }
@@ -525,18 +499,6 @@ components:
       required: [status, reasonCode]
       properties:
         status: { $ref: '#/components/schemas/AccountStatus' }
-        reasonCode: { type: string, minLength: 1, maxLength: 64, pattern: '^[A-Z0-9_]+$' }
-    RoleReplacementRequest:
-      type: object
-      additionalProperties: false
-      required: [roles, reasonCode]
-      properties:
-        roles:
-          type: array
-          minItems: 1
-          maxItems: 3
-          uniqueItems: true
-          items: { $ref: '#/components/schemas/RoleCode' }
         reasonCode: { type: string, minLength: 1, maxLength: 64, pattern: '^[A-Z0-9_]+$' }
     Problem:
       type: object

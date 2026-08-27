@@ -85,6 +85,7 @@ Agents must not invent these behaviors independently. Resolve the relevant rule 
 
 ## Approved scope changes
 
+- 2026-08-26: each account has exactly one immutable actor role. Public registration creates only `USER` or `SPECIALIST`; one dedicated `ADMIN` account is provisioned operationally, and no user/specialist promotion or runtime role replacement is in scope. ADR 0008 records the compatibility and schema consequences.
 - 2026-08-21: remove WBS 54, `Upload Specialist Verification Document`. Consultation retains specialist profile submission and audited admin approval, but no verification-file table, object metadata, upload endpoint, or review flow.
 - 2026-08-21: support immediate Premium Care to Premium Plus upgrade using ADR 0005's remaining-time and unused-credit offset. Downgrade and user-initiated refund are unsupported.
 - 2026-08-21: select MoMo as the sole production provider for subscription payment and specialist payout. Local/CI uses MoMo-shaped fakes; real enablement requires credentials and compatible VND plan pricing or an approved FX policy.

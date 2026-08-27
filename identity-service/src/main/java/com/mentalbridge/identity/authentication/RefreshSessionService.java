@@ -72,7 +72,7 @@ public class RefreshSessionService {
 		var successor = new AuthenticationPersistence.RefreshSession(UUID.randomUUID(), current.familyId(),
 				current.accountId(), tokens.hash(refreshToken), null, current.expiresAt(), current.id(), now);
 		persistence.rotateRefresh(current.id(), successor, now);
-		var accessToken = tokenService.issue(current.accountId(), current.roles(), now);
+		var accessToken = tokenService.issue(current.accountId(), current.role(), now);
 		var result = new AuthenticateAccountService.TokenPair(accessToken.value(), accessToken.expiresInSeconds(),
 				refreshToken, successor.expiresAt());
 		idempotency.complete(recordId, current.accountId(), 200, cipher.encrypt(toJson(result)), cipher.keyVersion(), now);

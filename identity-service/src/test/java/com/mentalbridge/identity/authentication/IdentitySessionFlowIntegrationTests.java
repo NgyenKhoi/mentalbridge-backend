@@ -16,6 +16,7 @@ import org.springframework.context.annotation.Bean;
 import org.springframework.context.annotation.Import;
 import org.springframework.context.event.EventListener;
 import org.springframework.http.MediaType;
+import org.springframework.jdbc.core.simple.JdbcClient;
 import org.springframework.test.web.servlet.MockMvc;
 
 import com.fasterxml.jackson.databind.JsonNode;
@@ -37,6 +38,9 @@ class IdentitySessionFlowIntegrationTests extends IdentityTestProperties {
 
 	@Autowired
 	private VerificationCapture verificationCapture;
+
+	@Autowired
+	private JdbcClient jdbc;
 
 	@Test
 	void registrationVerificationLoginRefreshReplayAndLogoutFormOneSecureFlow() throws Exception {
@@ -141,6 +145,19 @@ class IdentitySessionFlowIntegrationTests extends IdentityTestProperties {
 						{"email":"second@example.com","password":"correct-horse-battery-staple","actorType":"USER"}
 						""")).andExpect(status().isConflict())
 				.andExpect(jsonPath("$.code").value("IDEMPOTENCY_KEY_REUSED"));
+	}
+
+	@Test
+	void publicRegistrationRejectsTheDedicatedAdministratorRole() throws Exception {
+		mvc.perform(post("/api/v1/auth/registrations").header("Idempotency-Key", "registration-admin-denied")
+				.contentType(MediaType.APPLICATION_JSON).content("""
+						{"email":"admin-candidate@example.com","password":"correct-horse-battery-staple","actorType":"ADMIN"}
+						"""))
+				.andExpect(status().isBadRequest()).andExpect(jsonPath("$.code").value("VALIDATION_FAILED"));
+
+		var accountCount = jdbc.sql("select count(*) from account where email = 'admin-candidate@example.com'")
+				.query(Long.class).single();
+		assertThat(accountCount).isZero();
 	}
 
 	private JsonNode registerVerifyAndLogin(String email, String idempotencyKey) throws Exception {

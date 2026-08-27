@@ -34,7 +34,9 @@ PostgreSQL persistence uses Hibernate and Spring Data JPA types inside the ownin
 | `IDENTITY_VERIFICATION_URL` | When delivery is enabled | Frontend verification URL receiving the challenge query parameter | `http://localhost:3000/verify-email` |
 
 Production must override the local Eureka URL. Kafka and Redis variables will be documented when those runtime adapters are introduced.
-Registration persists the account, role, hashed challenge, idempotent outcome, and outbox event in one transaction. When delivery is enabled, the Brevo adapter runs only after that transaction commits and never logs the recipient or challenge. Delivery remains disabled in ordinary tests.
+Registration persists the account with exactly one immutable `USER` or `SPECIALIST` role, hashed challenge, idempotent outcome, and outbox event in one transaction. When delivery is enabled, the Brevo adapter runs only after that transaction commits and never logs the recipient or challenge. Delivery remains disabled in ordinary tests.
+
+The initial deployment provisions one dedicated `ADMIN` account through an operator-controlled bootstrap with externally supplied credentials. Public registration and account-administration APIs never create or promote an administrator. Liquibase enforces at most one `ADMIN` account but deliberately does not contain administrator credentials; deployment readiness must verify that secure provisioning has completed.
 
 Create the service-owned `mentalbridge_identity` database before running this module. Liquibase connects directly to that database and creates extensions, tables, indexes, constraints, reference data, and its tracking tables in the default `public` schema. Application startup deliberately does not run migrations.
 

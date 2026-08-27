@@ -51,7 +51,7 @@ public class AuthenticateAccountService {
 		var session = new AuthenticationPersistence.RefreshSession(UUID.randomUUID(), UUID.randomUUID(),
 				credential.accountId(), tokens.hash(refreshToken), deviceLabel, now.plus(REFRESH_LIFETIME), null, now);
 		persistence.recordSuccessfulLogin(credential.accountId(), session, now);
-		var accessToken = tokenService.issue(credential.accountId(), credential.roles(), now);
+		var accessToken = tokenService.issue(credential.accountId(), credential.role(), now);
 		return new TokenPair(accessToken.value(), accessToken.expiresInSeconds(), refreshToken, session.expiresAt());
 	}
 
