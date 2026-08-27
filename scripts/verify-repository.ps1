@@ -121,7 +121,7 @@ try {
             if ($controllerChanged -and $changedFiles -notcontains $entry.Value) {
                 Add-Failure "$service controller/gateway changed without its canonical OpenAPI contract"
             }
-            if ($controllerChanged -and -not (Has-Changed $changedFiles "^$([regex]::Escape($service))/.+(src/test/|\.test\.ts$|\.spec\.ts$|/__tests__/)") ) {
+            if ($controllerChanged -and -not (Has-Changed $changedFiles "^$([regex]::Escape($service))/.*(src/test/|\.test\.ts$|\.spec\.ts$|/__tests__/)") ) {
                 Add-Failure "$service controller/gateway changed without provider boundary tests"
             }
         }
@@ -136,7 +136,7 @@ try {
             if (-not $configurationChanged) {
                 continue
             }
-            if (-not (Has-Changed $changedFiles "^$([regex]::Escape($service))/.+(src/test/|\.test\.ts$|\.spec\.ts$|/__tests__/)") ) {
+            if (-not (Has-Changed $changedFiles "^$([regex]::Escape($service))/.*(src/test/|\.test\.ts$|\.spec\.ts$|/__tests__/)") ) {
                 Add-Failure "$service configuration changed without configuration tests"
             }
         }
