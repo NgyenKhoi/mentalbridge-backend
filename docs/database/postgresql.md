@@ -33,7 +33,7 @@ Cross-schema foreign keys in the logical baseline only make relationships visibl
 
 - `account.email` is unique and normalized by `citext`.
 - Refresh tokens and one-time tokens store hashes only.
-- Roles are many-to-many so an administrative role is not encoded as mutable profile text.
+- Each account stores exactly one immutable `role_code`. Public accounts are `USER` or `SPECIALIST`; a partial unique index permits at most one dedicated, operator-provisioned `ADMIN` account. Runtime role promotion and replacement are not supported.
 
 ### Consent
 

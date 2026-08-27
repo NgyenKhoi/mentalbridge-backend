@@ -11,10 +11,16 @@ CREATE SCHEMA IF NOT EXISTS content;
 CREATE SCHEMA IF NOT EXISTS ai;
 CREATE SCHEMA IF NOT EXISTS platform;
 
+CREATE TABLE identity.role (
+    code varchar(32) PRIMARY KEY CHECK (code IN ('USER', 'SPECIALIST', 'ADMIN')),
+    description varchar(255) NOT NULL
+);
+
 CREATE TABLE identity.account (
     id uuid PRIMARY KEY DEFAULT gen_random_uuid(),
     email citext NOT NULL UNIQUE,
     password_hash varchar(255) NOT NULL,
+    role_code varchar(32) NOT NULL REFERENCES identity.role(code),
     status varchar(24) NOT NULL DEFAULT 'PENDING_VERIFICATION'
         CHECK (status IN ('PENDING_VERIFICATION', 'ACTIVE', 'DISABLED', 'LOCKED', 'DELETION_PENDING', 'DELETED')),
     email_verified_at timestamptz,
@@ -27,18 +33,9 @@ CREATE TABLE identity.account (
     version bigint NOT NULL DEFAULT 0
 );
 
-CREATE TABLE identity.role (
-    code varchar(32) PRIMARY KEY CHECK (code IN ('USER', 'SPECIALIST', 'ADMIN', 'RESEARCH_ADMIN')),
-    description varchar(255) NOT NULL
-);
-
-CREATE TABLE identity.account_role (
-    account_id uuid NOT NULL REFERENCES identity.account(id) ON DELETE CASCADE,
-    role_code varchar(32) NOT NULL REFERENCES identity.role(code),
-    granted_by uuid REFERENCES identity.account(id),
-    granted_at timestamptz NOT NULL DEFAULT now(),
-    PRIMARY KEY (account_id, role_code)
-);
+CREATE UNIQUE INDEX ux_identity_single_admin
+    ON identity.account (role_code)
+    WHERE role_code = 'ADMIN';
 
 CREATE TABLE identity.refresh_session (
     id uuid PRIMARY KEY DEFAULT gen_random_uuid(),
@@ -936,8 +933,7 @@ CREATE TABLE platform.deletion_task (
 INSERT INTO identity.role (code, description) VALUES
     ('USER', 'End user'),
     ('SPECIALIST', 'Approved or pending specialist account'),
-    ('ADMIN', 'Platform administrator'),
-    ('RESEARCH_ADMIN', 'AI dataset and benchmark administrator')
+    ('ADMIN', 'Dedicated platform administrator')
 ON CONFLICT (code) DO NOTHING;
 
 INSERT INTO consultation.subscription_plan (code, display_name, tier_rank) VALUES

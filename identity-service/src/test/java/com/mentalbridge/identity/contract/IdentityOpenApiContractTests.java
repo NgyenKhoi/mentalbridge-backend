@@ -9,6 +9,7 @@ import java.util.Set;
 
 import org.junit.jupiter.api.Test;
 
+import io.swagger.v3.oas.models.media.Schema;
 import io.swagger.v3.parser.OpenAPIV3Parser;
 import io.swagger.v3.parser.core.models.ParseOptions;
 
@@ -30,8 +31,7 @@ class IdentityOpenApiContractTests {
 			"PUT /api/v1/account/password",
 			"GET /api/v1/admin/accounts",
 			"GET /api/v1/admin/accounts/{accountId}",
-			"PUT /api/v1/admin/accounts/{accountId}/state",
-			"PUT /api/v1/admin/accounts/{accountId}/roles");
+			"PUT /api/v1/admin/accounts/{accountId}/state");
 	private static final Set<String> PROTECTED_OPERATIONS = Set.of(
 			"POST /api/v1/auth/logout",
 			"POST /api/v1/auth/logout-all",
@@ -84,6 +84,12 @@ class IdentityOpenApiContractTests {
 
 		assertThat(implemented).isEqualTo(IMPLEMENTED_OPERATIONS);
 		assertThat(planned).isEqualTo(PLANNED_OPERATIONS);
+		var summaryRoles = (Schema<?>) result.getOpenAPI().getComponents().getSchemas().get("AccountSummary")
+				.getProperties().get("roles");
+		var detailRoles = (Schema<?>) result.getOpenAPI().getComponents().getSchemas().get("AccountDetail")
+				.getProperties().get("roles");
+		assertThat(summaryRoles.getMaxItems()).isEqualTo(1);
+		assertThat(detailRoles.getMaxItems()).isEqualTo(1);
 	}
 
 }

@@ -11,7 +11,7 @@ Identity uses these account states:
 | `PENDING_EMAIL_VERIFICATION` | Password login, refresh, and protected access are denied. Verification and resend requests are allowed subject to rate limits. | `ACTIVE`, `DISABLED`, `DELETION_PENDING` |
 | `ACTIVE` | Password login and refresh are allowed unless a temporary login lock is active. | `DISABLED`, `DELETION_PENDING` |
 | `DISABLED` | Login, refresh, and new protected actions are denied. Existing refresh sessions are revoked on entry. | `ACTIVE`, `DELETION_PENDING` |
-| `DELETION_PENDING` | Login, refresh, role changes, and new protected actions are denied. Existing refresh sessions are revoked on entry. | `ACTIVE` only when the deletion workflow is still cancellable; otherwise `DELETED` |
+| `DELETION_PENDING` | Login, refresh, and new protected actions are denied. Existing refresh sessions are revoked on entry. | `ACTIVE` only when the deletion workflow is still cancellable; otherwise `DELETED` |
 | `DELETED` | All authentication and recovery operations are denied. | Terminal |
 
 A temporary credential lock is represented by `lockedUntil`, not by an account state. It blocks password authentication until the instant passes but does not invalidate an otherwise active refresh session. A successful password login clears the consecutive failure count.
@@ -22,7 +22,7 @@ Specialist approval is not an Identity account state. A specialist registration 
 
 ## Role matrix
 
-Roles are additive actor categories included in access tokens. Resource owners still enforce resource-level and domain-specific authorization.
+Each account has exactly one immutable actor role included in access tokens. Resource owners still enforce resource-level and domain-specific authorization.
 
 | Capability | `USER` | `SPECIALIST` | `ADMIN` |
 | --- | ---: | ---: | ---: |
@@ -31,9 +31,9 @@ Roles are additive actor categories included in access tokens. Resource owners s
 | Access own account facts | Yes | Yes | Yes |
 | Use end-user care capabilities | Yes | No | No |
 | Request specialist workflows | No | Yes, subject to Consultation approval | No |
-| Read or change another account's state or roles | No | No | Yes |
+| Read or change another non-admin account's state | No | No | Yes |
 
-Public registration accepts exactly one actor type: `USER` or `SPECIALIST`. `ADMIN` can be granted only by an existing authorized administrator or by an audited deployment bootstrap. An administrator cannot remove or disable the last active administrator. Self-promotion and self-removal of `ADMIN` are denied. Role and state mutations use optimistic concurrency and emit minimized audit facts.
+Public registration accepts exactly one actor type: `USER` or `SPECIALIST`. It never creates an `ADMIN` account, and neither an administrator nor the account owner can promote, demote, or replace an account role. The initial deployment provisions exactly one dedicated `ADMIN` account through an operator-controlled bootstrap using externally supplied credentials. The database permits at most one `ADMIN`; deployment readiness requires that this account exists. Normal account-administration APIs do not mutate the dedicated administrator account. Account state mutations use optimistic concurrency and emit minimized audit facts.
 
 ## Password and credential policy
 
@@ -49,7 +49,7 @@ Security values are typed configuration with the policy values above as reviewed
 
 - Access tokens are signed JWTs using an asymmetric key pair. Identity holds the private key; resource services receive only trusted public-key material.
 - The access-token lifetime is 15 minutes with no sliding extension.
-- Required claims are `iss`, `sub`, `aud`, `iat`, `nbf`, `exp`, `jti`, and `roles`. `sub` is the opaque account UUID and `roles` contains stable role codes only.
+- Required claims are `iss`, `sub`, `aud`, `iat`, `nbf`, `exp`, `jti`, and `roles`. `sub` is the opaque account UUID and `roles` contains exactly one stable role code for v1 consumer compatibility.
 - Tokens contain no email, profile, health, specialist-verification, consent, or other mutable sensitive data.
 - Consumers validate the signature, issuer, audience, time claims, and required authorization on every request. Clock skew tolerance is at most 60 seconds.
 
@@ -76,4 +76,4 @@ Identity serializes refresh rotation at the persisted session boundary and store
 
 ## Required verification scenarios
 
-Contract and implementation work must cover invalid transitions, duplicate normalized email, password boundaries, generic unknown-account behavior, expired and reused challenges, resend limits, atomic failure counters, concurrent refresh, refresh replay, idempotent logout, all-session revocation, last-admin protection, and absence of secrets or sensitive identity data from errors, logs, metrics, and events.
+Contract and implementation work must cover invalid transitions, duplicate normalized email, password boundaries, generic unknown-account behavior, expired and reused challenges, resend limits, atomic failure counters, concurrent refresh, refresh replay, idempotent logout, all-session revocation, rejection of public `ADMIN` registration, the single-administrator database constraint, and absence of secrets or sensitive identity data from errors, logs, metrics, and events.

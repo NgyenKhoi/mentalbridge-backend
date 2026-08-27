@@ -38,7 +38,7 @@ public class RegistrationController {
 	ResponseEntity<RegistrationResponse> register(@Valid @RequestBody RegistrationRequest request,
 			@RequestHeader("Idempotency-Key") @Size(min = 16, max = 128) String idempotencyKey,
 			@RequestHeader(name = "X-Correlation-Id", required = false) UUID correlationId) {
-		var registered = registration.register(request.email(), request.password(), request.actorType(),
+		var registered = registration.register(request.email(), request.password(), request.actorType().role(),
 				idempotencyKey, correlationId(correlationId));
 		var response = new RegistrationResponse(registered.accountId(), registered.status(), true,
 				registered.createdAt());
@@ -58,11 +58,20 @@ public class RegistrationController {
 
 	public record RegistrationRequest(@NotBlank @Email @Size(max = 254) String email,
 			@NotBlank @Size(min = 12, max = 128) @Utf8ByteLength(max = 72) String password,
-			@NotNull RoleCode actorType) {
+			@NotNull PublicActorType actorType) {
 
 		@Override
 		public String toString() {
 			return "RegistrationRequest[email=" + email + ", password=[REDACTED], actorType=" + actorType + "]";
+		}
+	}
+
+	public enum PublicActorType {
+		USER,
+		SPECIALIST;
+
+		RoleCode role() {
+			return RoleCode.valueOf(name());
 		}
 	}
 

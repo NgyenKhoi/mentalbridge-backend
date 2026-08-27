@@ -9,8 +9,6 @@ import org.springframework.stereotype.Repository;
 
 import com.mentalbridge.identity.account.AccountEntity;
 import com.mentalbridge.identity.account.AccountRepository;
-import com.mentalbridge.identity.account.AccountRoleEntity;
-import com.mentalbridge.identity.account.AccountRoleRepository;
 import com.mentalbridge.identity.account.AccountStatus;
 import com.mentalbridge.identity.account.RoleCode;
 
@@ -18,22 +16,19 @@ import com.mentalbridge.identity.account.RoleCode;
 public class RegistrationPersistence {
 
 	private final AccountRepository accounts;
-	private final AccountRoleRepository roles;
 	private final OneTimeTokenRepository tokens;
 	private final OutboxEventRepository outbox;
 
-	public RegistrationPersistence(AccountRepository accounts, AccountRoleRepository roles,
-			OneTimeTokenRepository tokens, OutboxEventRepository outbox) {
+	public RegistrationPersistence(AccountRepository accounts, OneTimeTokenRepository tokens,
+			OutboxEventRepository outbox) {
 		this.accounts = accounts;
-		this.roles = roles;
 		this.tokens = tokens;
 		this.outbox = outbox;
 	}
 
 	public RegistrationRecord create(String normalizedEmail, String passwordHash, RoleCode role, String tokenHash,
 			Instant tokenExpiresAt, UUID correlationId, Instant now) {
-		var account = accounts.save(AccountEntity.pending(normalizedEmail, passwordHash, now));
-		roles.save(new AccountRoleEntity(account.id(), role, now));
+		var account = accounts.save(AccountEntity.pending(normalizedEmail, passwordHash, role, now));
 		tokens.save(new OneTimeTokenEntity(account.id(), "VERIFY_EMAIL", tokenHash, tokenExpiresAt, now));
 		outbox.save(new OutboxEventEntity("identity.account.registered", account.id(), account.version(), correlationId,
 				Map.of("accountId", account.id().toString(), "actorType", role.name(), "status", account.status().name()),
@@ -45,9 +40,7 @@ public class RegistrationPersistence {
 		return tokens.findVerificationForUpdate(tokenHash).map(token -> {
 			var account = accounts.findByIdForUpdate(token.accountId())
 					.orElseThrow(InvalidVerificationChallengeException::new);
-			var role = roles.findRoleCodes(account.id()).stream().findFirst().map(RoleCode::valueOf)
-					.orElseThrow(InvalidVerificationChallengeException::new);
-			return new VerificationRecord(token.id(), account.id(), account.status(), role, token.expiresAt(),
+			return new VerificationRecord(token.id(), account.id(), account.status(), account.role(), token.expiresAt(),
 					token.consumedAt(), token.invalidatedAt());
 		});
 	}

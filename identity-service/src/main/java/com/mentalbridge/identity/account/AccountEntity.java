@@ -26,6 +26,10 @@ public class AccountEntity {
 	private String passwordHash;
 
 	@Enumerated(EnumType.STRING)
+	@Column(name = "role_code", nullable = false, updatable = false, length = 32)
+	private RoleCode role;
+
+	@Enumerated(EnumType.STRING)
 	@Column(nullable = false, length = 32)
 	private AccountStatus status;
 
@@ -57,11 +61,12 @@ public class AccountEntity {
 	protected AccountEntity() {
 	}
 
-	public static AccountEntity pending(String normalizedEmail, String passwordHash, Instant now) {
+	public static AccountEntity pending(String normalizedEmail, String passwordHash, RoleCode role, Instant now) {
 		var account = new AccountEntity();
 		account.id = UUID.randomUUID();
 		account.email = normalizedEmail;
 		account.passwordHash = passwordHash;
+		account.role = role;
 		account.status = AccountStatus.PENDING_EMAIL_VERIFICATION;
 		account.createdAt = now;
 		account.updatedAt = now;
@@ -99,6 +104,10 @@ public class AccountEntity {
 
 	public String passwordHash() {
 		return passwordHash;
+	}
+
+	public RoleCode role() {
+		return role;
 	}
 
 	public AccountStatus status() {
