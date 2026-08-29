@@ -74,11 +74,13 @@ CREATE TABLE care.user_profile (
     gender varchar(32),
     locale varchar(16) NOT NULL DEFAULT 'vi-VN',
     timezone varchar(64) NOT NULL DEFAULT 'Asia/Ho_Chi_Minh',
-    avatar_object_key varchar(512),
     reminder_enabled boolean NOT NULL DEFAULT true,
     created_at timestamptz NOT NULL DEFAULT now(),
     updated_at timestamptz NOT NULL DEFAULT now(),
-    version bigint NOT NULL DEFAULT 0
+    version bigint NOT NULL DEFAULT 0,
+    CHECK (length(btrim(display_name)) > 0),
+    CHECK (version >= 0),
+    CHECK (updated_at >= created_at)
 );
 
 CREATE TABLE care.consent_decision (
@@ -86,14 +88,33 @@ CREATE TABLE care.consent_decision (
     user_id uuid NOT NULL REFERENCES care.user_profile(account_id),
     consent_type varchar(40) NOT NULL
         CHECK (consent_type IN ('PRIVACY_POLICY', 'AI_PROCESSING', 'RESEARCH_DATA', 'MARKETING_NOTIFICATION')),
-    policy_version varchar(40) NOT NULL,
+    policy_version varchar(64) NOT NULL,
     granted boolean NOT NULL,
-    decided_at timestamptz NOT NULL DEFAULT now(),
     evidence jsonb NOT NULL DEFAULT '{}'::jsonb,
-    created_at timestamptz NOT NULL DEFAULT now()
+    idempotency_key varchar(128) NOT NULL,
+    request_hash varchar(64) NOT NULL,
+    decided_at timestamptz NOT NULL,
+    created_at timestamptz NOT NULL DEFAULT now(),
+    UNIQUE (user_id, consent_type, idempotency_key),
+    CHECK (jsonb_typeof(evidence) = 'object'),
+    CHECK (length(idempotency_key) BETWEEN 16 AND 128),
+    CHECK (request_hash ~ '^[0-9a-f]{64}$')
 );
 CREATE INDEX ix_consent_decision_latest
-    ON care.consent_decision (user_id, consent_type, decided_at DESC);
+    ON care.consent_decision (user_id, consent_type, decided_at DESC, id DESC);
+
+CREATE TABLE care.anonymous_assessment_session (
+    id uuid PRIMARY KEY DEFAULT gen_random_uuid(),
+    token_hash varchar(64) NOT NULL UNIQUE,
+    expires_at timestamptz NOT NULL,
+    closed_at timestamptz,
+    created_at timestamptz NOT NULL DEFAULT now(),
+    CHECK (token_hash ~ '^[0-9a-f]{64}$'),
+    CHECK (expires_at > created_at),
+    CHECK (closed_at IS NULL OR closed_at >= created_at)
+);
+CREATE INDEX ix_anonymous_assessment_session_expiry
+    ON care.anonymous_assessment_session (expires_at, id) WHERE closed_at IS NULL;
 
 CREATE TABLE care.questionnaire_definition (
     id uuid PRIMARY KEY DEFAULT gen_random_uuid(),
@@ -101,57 +122,131 @@ CREATE TABLE care.questionnaire_definition (
     version varchar(32) NOT NULL,
     locale varchar(16) NOT NULL DEFAULT 'vi-VN',
     title varchar(255) NOT NULL,
+    reference_period_days smallint NOT NULL CHECK (reference_period_days > 0),
+    expected_question_count smallint NOT NULL,
     scoring_version varchar(32) NOT NULL,
+    response_options jsonb NOT NULL CHECK (
+        jsonb_typeof(response_options) = 'array' AND jsonb_array_length(response_options) = 4
+    ),
+    source_reference varchar(512) NOT NULL,
     status varchar(16) NOT NULL DEFAULT 'DRAFT' CHECK (status IN ('DRAFT', 'PUBLISHED', 'RETIRED')),
     published_at timestamptz,
     created_at timestamptz NOT NULL DEFAULT now(),
-    UNIQUE (instrument, version, locale)
+    UNIQUE (instrument, version, locale),
+    CHECK (
+        (instrument = 'PHQ9' AND expected_question_count = 9) OR
+        (instrument = 'GAD7' AND expected_question_count = 7)
+    ),
+    CHECK (
+        (status = 'DRAFT' AND published_at IS NULL) OR
+        (status IN ('PUBLISHED', 'RETIRED') AND published_at IS NOT NULL)
+    )
 );
+CREATE UNIQUE INDEX ux_questionnaire_definition_current
+    ON care.questionnaire_definition (instrument, locale) WHERE status = 'PUBLISHED';
 
 CREATE TABLE care.questionnaire_question (
     id uuid PRIMARY KEY DEFAULT gen_random_uuid(),
-    definition_id uuid NOT NULL REFERENCES care.questionnaire_definition(id) ON DELETE CASCADE,
-    item_number smallint NOT NULL CHECK (item_number > 0),
+    definition_id uuid NOT NULL REFERENCES care.questionnaire_definition(id),
+    item_number smallint NOT NULL CHECK (item_number BETWEEN 1 AND 32),
     prompt text NOT NULL,
-    safety_flag boolean NOT NULL DEFAULT false,
+    safety_item boolean NOT NULL DEFAULT false,
     created_at timestamptz NOT NULL DEFAULT now(),
-    UNIQUE (definition_id, item_number)
+    UNIQUE (definition_id, item_number),
+    UNIQUE (definition_id, id),
+    CHECK (length(btrim(prompt)) > 0)
+);
+
+CREATE TABLE care.questionnaire_score_band (
+    definition_id uuid NOT NULL REFERENCES care.questionnaire_definition(id),
+    code varchar(24) NOT NULL CHECK (code IN ('MINIMAL', 'MILD', 'MODERATE', 'MODERATELY_SEVERE', 'SEVERE')),
+    minimum_score smallint NOT NULL,
+    maximum_score smallint NOT NULL,
+    ordinal smallint NOT NULL CHECK (ordinal > 0),
+    PRIMARY KEY (definition_id, code),
+    UNIQUE (definition_id, ordinal),
+    UNIQUE (definition_id, minimum_score),
+    CHECK (minimum_score >= 0 AND maximum_score <= 27 AND minimum_score <= maximum_score)
 );
 
 CREATE TABLE care.assessment_submission (
     id uuid PRIMARY KEY DEFAULT gen_random_uuid(),
     user_id uuid REFERENCES care.user_profile(account_id),
-    anonymous_session_id uuid,
+    anonymous_session_id uuid REFERENCES care.anonymous_assessment_session(id),
     definition_id uuid NOT NULL REFERENCES care.questionnaire_definition(id),
+    idempotency_key varchar(128) NOT NULL,
+    request_hash varchar(64) NOT NULL,
+    submitted_at timestamptz NOT NULL,
+    retention_expires_at timestamptz,
+    voided_at timestamptz,
+    void_reason_code varchar(64),
+    created_at timestamptz NOT NULL DEFAULT now(),
+    UNIQUE (id, definition_id),
+    CHECK (
+        (user_id IS NOT NULL AND anonymous_session_id IS NULL AND retention_expires_at IS NULL) OR
+        (user_id IS NULL AND anonymous_session_id IS NOT NULL AND retention_expires_at > submitted_at)
+    ),
+    CHECK (length(idempotency_key) BETWEEN 16 AND 128),
+    CHECK (request_hash ~ '^[0-9a-f]{64}$'),
+    CHECK (
+        (voided_at IS NULL AND void_reason_code IS NULL) OR
+        (voided_at IS NOT NULL AND voided_at >= submitted_at AND void_reason_code IS NOT NULL)
+    )
+);
+CREATE UNIQUE INDEX ux_assessment_user_idempotency
+    ON care.assessment_submission (user_id, idempotency_key)
+    WHERE user_id IS NOT NULL;
+CREATE UNIQUE INDEX ux_assessment_anonymous_idempotency
+    ON care.assessment_submission (anonymous_session_id, idempotency_key)
+    WHERE anonymous_session_id IS NOT NULL;
+CREATE INDEX ix_assessment_user_history
+    ON care.assessment_submission (user_id, submitted_at DESC) WHERE voided_at IS NULL;
+CREATE INDEX ix_assessment_anonymous_expiry
+    ON care.assessment_submission (retention_expires_at, id) WHERE anonymous_session_id IS NOT NULL;
+
+CREATE TABLE care.assessment_answer (
+    submission_id uuid NOT NULL,
+    definition_id uuid NOT NULL,
+    question_id uuid NOT NULL,
+    answer_value smallint NOT NULL CHECK (answer_value BETWEEN 0 AND 3),
+    PRIMARY KEY (submission_id, question_id),
+    FOREIGN KEY (submission_id, definition_id)
+        REFERENCES care.assessment_submission(id, definition_id) ON DELETE CASCADE,
+    FOREIGN KEY (definition_id, question_id)
+        REFERENCES care.questionnaire_question(definition_id, id)
+);
+
+CREATE TABLE care.assessment_result (
+    submission_id uuid PRIMARY KEY REFERENCES care.assessment_submission(id) ON DELETE CASCADE,
     total_score smallint NOT NULL CHECK (total_score BETWEEN 0 AND 27),
     screening_level varchar(24) NOT NULL
         CHECK (screening_level IN ('MINIMAL', 'MILD', 'MODERATE', 'MODERATELY_SEVERE', 'SEVERE')),
     scoring_version varchar(32) NOT NULL,
-    safety_flag boolean NOT NULL DEFAULT false,
-    idempotency_key varchar(128),
-    submitted_at timestamptz NOT NULL DEFAULT now(),
-    voided_at timestamptz,
-    void_reason varchar(255),
-    created_at timestamptz NOT NULL DEFAULT now(),
-    CHECK ((user_id IS NOT NULL) <> (anonymous_session_id IS NOT NULL))
+    safety_item_positive boolean NOT NULL,
+    disclaimer_code varchar(64) NOT NULL DEFAULT 'SCREENING_NOT_DIAGNOSIS'
+        CHECK (disclaimer_code = 'SCREENING_NOT_DIAGNOSIS'),
+    calculated_at timestamptz NOT NULL,
+    created_at timestamptz NOT NULL DEFAULT now()
 );
-CREATE UNIQUE INDEX ux_assessment_user_idempotency
-    ON care.assessment_submission (user_id, idempotency_key)
-    WHERE user_id IS NOT NULL AND idempotency_key IS NOT NULL;
-CREATE UNIQUE INDEX ux_assessment_anonymous_idempotency
-    ON care.assessment_submission (anonymous_session_id, idempotency_key)
-    WHERE anonymous_session_id IS NOT NULL AND idempotency_key IS NOT NULL;
-CREATE INDEX ix_assessment_user_history
-    ON care.assessment_submission (user_id, submitted_at DESC) WHERE voided_at IS NULL;
-CREATE INDEX ix_assessment_anonymous_expiry
-    ON care.assessment_submission (submitted_at) WHERE anonymous_session_id IS NOT NULL;
 
-CREATE TABLE care.assessment_answer (
-    submission_id uuid NOT NULL REFERENCES care.assessment_submission(id) ON DELETE CASCADE,
-    question_id uuid NOT NULL REFERENCES care.questionnaire_question(id),
-    answer_value smallint NOT NULL CHECK (answer_value BETWEEN 0 AND 3),
-    PRIMARY KEY (submission_id, question_id)
+CREATE TABLE care.outbox_event (
+    id uuid PRIMARY KEY DEFAULT gen_random_uuid(),
+    message_type varchar(120) NOT NULL,
+    schema_version varchar(24) NOT NULL,
+    aggregate_type varchar(64) NOT NULL,
+    aggregate_id uuid NOT NULL,
+    aggregate_version bigint NOT NULL CHECK (aggregate_version >= 0),
+    correlation_id uuid NOT NULL,
+    payload jsonb NOT NULL CHECK (jsonb_typeof(payload) = 'object'),
+    occurred_at timestamptz NOT NULL,
+    published_at timestamptz,
+    attempt_count integer NOT NULL DEFAULT 0 CHECK (attempt_count >= 0),
+    next_attempt_at timestamptz,
+    created_at timestamptz NOT NULL DEFAULT now(),
+    UNIQUE (aggregate_type, aggregate_id, aggregate_version, message_type)
 );
+CREATE INDEX ix_care_outbox_pending
+    ON care.outbox_event (COALESCE(next_attempt_at, occurred_at), occurred_at, id) WHERE published_at IS NULL;
 
 CREATE TABLE care.risk_classification (
     id uuid PRIMARY KEY DEFAULT gen_random_uuid(),

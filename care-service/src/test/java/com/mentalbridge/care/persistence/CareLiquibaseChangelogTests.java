@@ -1,0 +1,28 @@
+package com.mentalbridge.care.persistence;
+
+import static org.assertj.core.api.Assertions.assertThat;
+
+import org.junit.jupiter.api.Test;
+
+import liquibase.changelog.ChangeLogParameters;
+import liquibase.parser.ChangeLogParserFactory;
+import liquibase.resource.ClassLoaderResourceAccessor;
+
+class CareLiquibaseChangelogTests {
+
+	@Test
+	void masterChangelogResolvesEveryFoundationChangeset() throws Exception {
+		var path = "db/changelog/db.changelog-master.yaml";
+		try (var resources = new ClassLoaderResourceAccessor()) {
+			var parser = ChangeLogParserFactory.getInstance().getParser(path, resources);
+			var changelog = parser.parse(path, new ChangeLogParameters(), resources);
+
+			assertThat(changelog.getChangeSets()).extracting(changeSet -> changeSet.getId()).containsExactly(
+					"care-001-pgcrypto",
+					"care-002-profile-consent",
+					"care-003-assessment-foundation",
+					"care-004-phq9-reference-data");
+		}
+	}
+
+}

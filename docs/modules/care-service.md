@@ -19,17 +19,25 @@ Care owns user profiles, consent decisions, specialist access grants, questionna
 ## Implementation design
 
 - Feature slices: `profile`, `consent`, `assessment`, `risk`, `intervention`, `followup`, `analytics`, `data-rights`.
-- OpenAPI defines public assessment/profile APIs and minimal internal consent-authorization decisions. Kafka schemas carry minimized assessment/risk/consent/follow-up facts.
+- OpenAPI defines public assessment/profile APIs and future minimal internal consent-authorization decisions. Kafka schemas carry minimized assessment/risk/consent/follow-up facts.
 - PostgreSQL and Liquibase own scoring inputs/results, policy provenance, grants and outbox. Constraints enforce immutable published questionnaires and unique submissions.
 - Risk calculation and crisis fallback are pure local domain behavior. Structured journal indicators arrive asynchronously and never include raw journal text.
 - Exceptional Identity lookups use a consumer-owned Feign port outside transactions with timeout/breaker and safe failure semantics.
 
+## MB-88 delivered foundation
+
+MB-88 defines only the profile, platform-consent, and PHQ-9 contract/persistence foundation. The canonical Care OpenAPI paths remain `planned` until handlers and provider boundary tests are delivered. The executable Liquibase history contains profile and append-only consent evidence, isolated anonymous sessions, versioned questionnaire reference data, score bands, immutable assessment submission/answer/result shapes, and a transactional outbox table.
+
+The seeded definition is the English PHQ-9 source version. A reviewed `vi-VN` translation, exact item-9 response, crisis content, anonymous expiry duration, consent wording/version ownership, and retention/deletion policy remain approval blockers. The schema records version, provenance, safety-item fact, and expiry instants so future behavior can follow an approved policy without rewriting historical results.
+
+MB-88 does not implement specialist grants, risk/intervention, follow-up, analytics, export/deletion, Kafka event schemas, or runtime controllers. Those remain in the ordered tasks below and must not be inferred from the foundation tables.
+
 ## Ordered tasks
 
 - [ ] CARE-01 Obtain approved scoring/risk/safety, consent, anonymous expiry, export and retention policies; blocked decisions stay unimplemented.
-- [ ] CARE-02 Define profile, consent authorization, questionnaire, assessment, risk, intervention, follow-up and analytics OpenAPI.
+- [ ] CARE-02 Extend the MB-88 profile, platform-consent and PHQ-9 OpenAPI foundation with consent authorization, risk, intervention, follow-up and analytics contracts.
 - [ ] CARE-03 Define assessment/risk/consent/follow-up event schemas and journal-indicator consumer contract.
-- [ ] CARE-04 Add Liquibase histories, reference-data versions, constraints, indexes and field dictionary entries.
+- [ ] CARE-04 Extend the MB-88 Liquibase/reference-data foundation with approved grants, risk, intervention and follow-up persistence.
 - [ ] CARE-05 Implement profile and independent consent/grant decisions with concurrent revoke/read protection.
 - [ ] CARE-06 Implement anonymous and authenticated assessment, validation, scoring and idempotency.
 - [ ] CARE-07 Implement deterministic risk/intervention with synchronous severe fallback and provenance.

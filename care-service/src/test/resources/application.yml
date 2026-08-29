@@ -4,7 +4,14 @@ spring:
   cloud:
     discovery:
       enabled: false
+  liquibase:
+    enabled: true
+  jpa:
+    open-in-view: false
 
 eureka:
   client:
     enabled: false
+
+springdotenv:
+  enabled: false
