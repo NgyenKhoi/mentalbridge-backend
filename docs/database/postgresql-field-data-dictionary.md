@@ -124,9 +124,11 @@ Privacy-minimized local security record for authentication, recovery, replay, an
 | `occurred_at` | UTC instant the security decision occurred. |
 | `created_at` | Immutable UTC insertion instant. |
 
-## Conceptual owner `care` (`mentalbridge_care.public`)
+## Owner `care` (`mentalbridge_care.public`)
 
-### `care.user_profile`
+The MB-88 tables below are executable Liquibase-owned structures in the Care database's default `public` schema. Later risk, intervention, grant, and follow-up entries in this section remain conceptual until their owner migrations are added.
+
+### `public.user_profile`
 
 Care-owned non-credential user profile and communication preferences.
 
@@ -138,13 +140,12 @@ Care-owned non-credential user profile and communication preferences.
 | `gender` | Optional self-described gender value used only where product policy permits. |
 | `locale` | BCP 47 locale used to select translated questionnaires, resources, and messages. |
 | `timezone` | IANA timezone used to calculate and render reminders and follow-up schedules. |
-| `avatar_object_key` | Private object-storage key for the avatar; never a public or permanent document URL. |
 | `reminder_enabled` | User preference controlling optional care reminders, excluding mandatory safety behavior. |
 | `created_at` | Immutable UTC profile creation instant. |
 | `updated_at` | UTC instant of the latest persisted profile change, maintained by Care Service. |
 | `version` | Optimistic-lock counter incremented on concurrent profile mutations. |
 
-### `care.consent_decision`
+### `public.consent_decision`
 
 Append-only evidence of a user grant or refusal for a versioned platform consent.
 
@@ -152,14 +153,28 @@ Append-only evidence of a user grant or refusal for a versioned platform consent
 | --- | --- |
 | `id` | Immutable UUID used to cite this exact consent decision in audit and REST results. |
 | `user_id` | Care-owned user profile that made the consent decision. |
-| `consent_type` | Stable scope category such as terms, privacy, or AI processing. |
-| `policy_version` | Exact policy text/version accepted or refused so the decision remains reproducible. |
+| `consent_type` | Stable independent platform-consent category; specialist access uses a separate scoped grant. |
+| `policy_version` | Exact approved policy text/version accepted or refused so the decision remains reproducible. |
 | `granted` | Authoritative decision value; false records an explicit refusal or withdrawal. |
+| `evidence` | Minimized JSON object such as approved channel or document hash; never raw health content. |
+| `idempotency_key` | Required retry key unique for one user and consent type so an uncertain retry returns the original decision. |
+| `request_hash` | Lowercase SHA-256 digest used to reject reuse of the key with different consent content; request plaintext is not recoverable from it. |
 | `decided_at` | UTC instant at which the user made the decision. |
-| `evidence` | Minimized structured evidence such as channel and document hash; never raw sensitive content. |
 | `created_at` | Immutable UTC insertion instant for storage and audit ordering. |
 
-### `care.questionnaire_definition`
+### `public.anonymous_assessment_session`
+
+Short-lived isolated authorization context for a guest assessment. The table intentionally has no user/account/claim field, so registration cannot silently attach its result.
+
+| Field | Purpose |
+| --- | --- |
+| `id` | Immutable opaque session UUID used only together with the bearer token. |
+| `token_hash` | Unique lowercase SHA-256 hash of the high-entropy session token; the plaintext token is returned once and never persisted. |
+| `expires_at` | Required UTC policy-owned deadline after which submission and result access fail; the exact duration remains pending approval. |
+| `closed_at` | Optional UTC instant the session was invalidated before expiry. |
+| `created_at` | Immutable UTC creation instant used to validate the expiry interval. |
+
+### `public.questionnaire_definition`
 
 Immutable versioned PHQ-9 or GAD-7 questionnaire definition and scoring identity.
 
@@ -170,12 +185,16 @@ Immutable versioned PHQ-9 or GAD-7 questionnaire definition and scoring identity
 | `version` | Published content version distinguishing wording or item-set changes. |
 | `locale` | BCP 47 locale of the question wording. |
 | `title` | Reviewed user-facing questionnaire title. |
+| `reference_period_days` | Number of preceding days the questionnaire asks the respondent to consider. |
+| `expected_question_count` | Exact item count required for completion; constrained to nine for PHQ-9 and seven for GAD-7. |
 | `scoring_version` | Deterministic scoring algorithm version needed to reproduce the stored result. |
+| `response_options` | Reviewed four-element JSON array mapping values 0 through 3 to localized labels. |
+| `source_reference` | Bibliographic or controlled-content provenance needed to audit wording and scoring. |
 | `status` | Publication lifecycle controlling whether new submissions may use this definition. |
 | `published_at` | UTC instant the immutable definition became available; null while draft. |
 | `created_at` | Immutable UTC creation instant for the definition record. |
 
-### `care.questionnaire_question`
+### `public.questionnaire_question`
 
 Version-owned questionnaire item with safety-path metadata.
 
@@ -185,38 +204,84 @@ Version-owned questionnaire item with safety-path metadata.
 | `definition_id` | Questionnaire definition that owns the wording, order, and scoring context. |
 | `item_number` | Reviewed one-based display/scoring order unique inside a definition. |
 | `prompt` | Reviewed localized question wording presented to the user. |
-| `safety_flag` | Marks an item whose positive response requires deterministic immediate safety evaluation. |
+| `safety_item` | Marks an item whose positive response is preserved independently of the total score; exact user guidance remains policy-owned. |
 | `created_at` | Immutable UTC insertion instant for provenance. |
 
-### `care.assessment_submission`
+### `public.questionnaire_score_band`
 
-Authoritative immutable scored screening submission for an account or anonymous session.
+Version-owned score range used by server scoring to derive a non-diagnostic screening level.
 
 | Field | Purpose |
 | --- | --- |
-| `id` | Immutable UUID returned by REST and referenced by risk and follow-up decisions. |
+| `definition_id` | Exact questionnaire definition whose scoring ranges own this row. |
+| `code` | Stable non-diagnostic screening-level code returned by the Care contract. |
+| `minimum_score` | Inclusive lower integer bound for the band. |
+| `maximum_score` | Inclusive upper integer bound for the band. |
+| `ordinal` | Positive display/severity order unique within one definition. |
+
+### `public.assessment_submission`
+
+Immutable accepted screening envelope for exactly one authenticated profile or anonymous session. Server-computed fields are stored in `assessment_result`.
+
+| Field | Purpose |
+| --- | --- |
+| `id` | Immutable UUID returned by REST and referenced by later risk and follow-up decisions. |
 | `user_id` | Authenticated Care profile owner; null for an anonymous screening. |
-| `anonymous_session_id` | Opaque short-lived screening session identifier; null for an authenticated submission. |
+| `anonymous_session_id` | Care-owned short-lived session identifier; null for an authenticated submission and never accompanied by a user ID. |
 | `definition_id` | Exact questionnaire definition used to validate and score all answers. |
-| `total_score` | Server-computed authoritative questionnaire total, never accepted from the client. |
-| `screening_level` | Validated severity band derived only from instrument score and scoring version. |
-| `scoring_version` | Algorithm version used to reproduce total and band independently of later code changes. |
-| `safety_flag` | Deterministic indication that a safety-sensitive answer path was triggered. |
-| `idempotency_key` | Caller retry key scoped by authenticated user or anonymous session to prevent duplicate submissions. |
+| `idempotency_key` | Required retry key unique per authenticated user or anonymous session so the logical submission is persisted once. |
+| `request_hash` | Lowercase SHA-256 digest of the canonical definition-and-answer request; it detects conflicting retries without logging answers. |
 | `submitted_at` | UTC instant the complete validated assessment was accepted. |
+| `retention_expires_at` | Required UTC deletion/access deadline for anonymous data and null for authenticated history; its duration remains policy-owned. |
 | `voided_at` | UTC instant an invalidated submission stopped being used; null while authoritative. |
-| `void_reason` | Reviewed reason for voiding without deleting the historical screening record. |
+| `void_reason_code` | Stable machine-readable reason required when voided; unrestricted sensitive explanation is not stored. |
 | `created_at` | Immutable UTC database insertion instant. |
 
-### `care.assessment_answer`
+### `public.assessment_answer`
 
 Immutable server-validated item answers belonging to one assessment submission.
 
 | Field | Purpose |
 | --- | --- |
 | `submission_id` | Assessment submission that owns and contextualizes the answer. |
+| `definition_id` | Redundant exact definition key used in composite foreign keys so a question from another version cannot be attached. |
 | `question_id` | Exact versioned questionnaire item answered. |
 | `answer_value` | Validated integer response in the instrument range 0 through 3 used for deterministic scoring. |
+
+### `public.assessment_result`
+
+One authoritative server-owned scoring result for an accepted submission. Clients never supply these fields.
+
+| Field | Purpose |
+| --- | --- |
+| `submission_id` | One-to-one assessment submission whose complete validated answers produced the result. |
+| `total_score` | Server-computed integer sum constrained to the supported range 0 through 27. |
+| `screening_level` | Non-diagnostic score band selected from the definition's versioned ranges. |
+| `scoring_version` | Exact deterministic algorithm version needed to reproduce the score and band. |
+| `safety_item_positive` | Authoritative fact that the versioned safety item met its positive rule; it does not invent crisis wording or escalation policy. |
+| `disclaimer_code` | Stable `SCREENING_NOT_DIAGNOSIS` presentation key required for every result. |
+| `calculated_at` | UTC instant Care completed deterministic scoring. |
+| `created_at` | Immutable UTC insertion instant for persistence provenance. |
+
+### `public.outbox_event`
+
+Care-owned transactional outbox row inserted in the same local transaction as an aggregate change. Payloads are minimal JSON objects and never include raw assessment answers.
+
+| Field | Purpose |
+| --- | --- |
+| `id` | Immutable message UUID used for at-least-once publication and consumer deduplication. |
+| `message_type` | Stable language-neutral integration fact name. |
+| `schema_version` | Version of the root JSON Schema contract that validates the published message. |
+| `aggregate_type` | Stable Care aggregate category that caused the event. |
+| `aggregate_id` | Immutable Care aggregate UUID used as the Kafka key and event subject. |
+| `aggregate_version` | Non-negative owner version used to distinguish aggregate changes and reject duplicate event creation. |
+| `correlation_id` | Required workflow trace UUID propagated without sensitive payload data. |
+| `payload` | Minimized JSON object conforming to the future event contract; assessment answer content is prohibited. |
+| `occurred_at` | UTC instant the domain fact occurred. |
+| `published_at` | UTC broker-acknowledged publication instant; null while pending. |
+| `attempt_count` | Non-negative relay attempt count used for bounded retry observability. |
+| `next_attempt_at` | Optional UTC instant before which the relay must not retry. |
+| `created_at` | Immutable UTC database insertion instant. |
 
 ### `care.risk_classification`
 

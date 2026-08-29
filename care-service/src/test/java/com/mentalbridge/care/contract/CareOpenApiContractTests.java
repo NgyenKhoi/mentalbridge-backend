@@ -1,0 +1,106 @@
+package com.mentalbridge.care.contract;
+
+import static org.assertj.core.api.Assertions.assertThat;
+
+import java.nio.file.Path;
+import java.util.HashSet;
+import java.util.Set;
+
+import org.junit.jupiter.api.Test;
+
+import io.swagger.v3.oas.models.Operation;
+import io.swagger.v3.parser.OpenAPIV3Parser;
+import io.swagger.v3.parser.core.models.ParseOptions;
+
+class CareOpenApiContractTests {
+
+	private static final Set<String> PLANNED_OPERATIONS = Set.of(
+			"GET /api/v1/profile",
+			"PUT /api/v1/profile",
+			"GET /api/v1/consents",
+			"POST /api/v1/consent-decisions",
+			"GET /api/v1/questionnaires/{instrument}/current",
+			"POST /api/v1/assessments",
+			"GET /api/v1/assessments/{assessmentId}",
+			"POST /api/v1/anonymous-assessment-sessions",
+			"POST /api/v1/anonymous-assessment-sessions/{sessionId}/assessments",
+			"GET /api/v1/anonymous-assessment-sessions/{sessionId}/assessments/{assessmentId}");
+
+	private static final Set<String> BEARER_OPERATIONS = Set.of(
+			"GET /api/v1/profile",
+			"PUT /api/v1/profile",
+			"GET /api/v1/consents",
+			"POST /api/v1/consent-decisions",
+			"POST /api/v1/assessments",
+			"GET /api/v1/assessments/{assessmentId}");
+
+	private static final Set<String> ANONYMOUS_TOKEN_OPERATIONS = Set.of(
+			"POST /api/v1/anonymous-assessment-sessions/{sessionId}/assessments",
+			"GET /api/v1/anonymous-assessment-sessions/{sessionId}/assessments/{assessmentId}");
+
+	private static final Set<String> IDEMPOTENT_OPERATIONS = Set.of(
+			"POST /api/v1/consent-decisions",
+			"POST /api/v1/assessments",
+			"POST /api/v1/anonymous-assessment-sessions/{sessionId}/assessments");
+
+	@Test
+	void careContractIsValidAndEveryOperationRemainsPlannedUntilImplemented() {
+		var contract = Path.of("..", "contracts", "openapi", "care-service-v1.yaml").toAbsolutePath();
+		var options = new ParseOptions();
+		options.setResolve(true);
+		options.setResolveFully(true);
+		var result = new OpenAPIV3Parser().readLocation(contract.toString(), null, options);
+
+		assertThat(result.getMessages()).isEmpty();
+		assertThat(result.getOpenAPI()).isNotNull();
+		var operations = new HashSet<String>();
+		result.getOpenAPI().getPaths().forEach((path, pathItem) -> {
+			assertThat(pathItem.getExtensions())
+					.as("contract status for %s", path)
+					.containsEntry("x-mentalbridge-status", "planned");
+			pathItem.readOperationsMap().forEach((method, operation) -> {
+				var key = method.name() + " " + path;
+				operations.add(key);
+				assertSecurity(key, operation);
+				if (IDEMPOTENT_OPERATIONS.contains(key)) {
+					assertThat(operation.getParameters())
+							.as("idempotency requirement for %s", key)
+							.anySatisfy(parameter -> assertThat(parameter.getName()).isEqualTo("Idempotency-Key"));
+				}
+			});
+		});
+
+		assertThat(operations).isEqualTo(PLANNED_OPERATIONS);
+	}
+
+	@Test
+	void assessmentRequestAcceptsAnswersButNoClientOwnedResult() {
+		var contract = Path.of("..", "contracts", "openapi", "care-service-v1.yaml").toAbsolutePath();
+		var openApi = new OpenAPIV3Parser().read(contract.toString());
+		var request = openApi.getComponents().getSchemas().get("AssessmentSubmissionRequest");
+		var result = openApi.getComponents().getSchemas().get("AssessmentResult");
+
+		assertThat(request.getProperties()).containsKeys("questionnaireDefinitionId", "answers");
+		assertThat(request.getProperties()).doesNotContainKeys(
+				"totalScore", "screeningLevel", "scoringVersion", "safetyItemPositive");
+		assertThat(result.getProperties()).containsKeys(
+				"totalScore", "screeningLevel", "scoringVersion", "safetyItemPositive", "disclaimerCode");
+	}
+
+	private void assertSecurity(String key, Operation operation) {
+		if (BEARER_OPERATIONS.contains(key)) {
+			assertThat(operation.getSecurity())
+					.as("bearer security for %s", key)
+					.anySatisfy(requirement -> assertThat(requirement).containsKey("bearerAuth"));
+		}
+		else if (ANONYMOUS_TOKEN_OPERATIONS.contains(key)) {
+			assertThat(operation.getSecurity())
+					.as("anonymous token security for %s", key)
+					.anySatisfy(requirement -> assertThat(requirement).containsKey("anonymousSessionToken"));
+		}
+		else {
+			assertThat(operation.getSecurity()).as("public operation %s", key).isNullOrEmpty();
+		}
+	}
+
+}

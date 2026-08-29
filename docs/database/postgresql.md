@@ -7,7 +7,7 @@ The cross-schema [database/postgresql/001_initial_schema.sql](../../database/pos
 | Service database | Owner | Main aggregates |
 | --- | --- | --- |
 | `mentalbridge_identity` | Identity Service | account, role, refresh session, verification/reset token |
-| `mentalbridge_care` | Care Service | user profile, consent, assessment, risk, intervention, follow-up |
+| `mentalbridge_care` | Care Service | user profile, consent, anonymous session, questionnaire, assessment result, risk, intervention, follow-up |
 | `mentalbridge_consultation` | Consultation Service | specialist approval, plan/subscription/payment/upgrade, credit ledger, availability, appointment, earning/provider payout, review |
 | `mentalbridge_content_notification` | Content/Notification Service | resource, hotline, notification preference/delivery |
 | owner-local tables | each producer; Governance reads safe events | outbox, audit, deletion workflow, retention policy |
@@ -44,9 +44,11 @@ Cross-schema foreign keys in the logical baseline only make relationships visibl
 
 ### Assessment and risk
 
-- Definitions/questions are versioned and published immutably.
-- Submission answers are constrained to 0..3 and unique per question.
-- Stored total score is authoritative only after server validation; `scoring_version` records the algorithm.
+- The MB-88 executable Care migration separates questionnaire definitions, questions, score bands, submissions, answers, and results so client answers cannot become authoritative scoring fields.
+- Definitions/questions are versioned; one published definition per instrument/locale is selected as current, and each version retains its source reference and scoring identity.
+- Submission ownership is exclusive: one authenticated Care profile or one isolated anonymous session, never both. Anonymous sessions store a token hash and expiry but no account/claim field; anonymous submissions carry a required retention deadline.
+- Submission answers are constrained to 0..3, unique per question, and use composite foreign keys so every answer belongs to the submission's exact questionnaire definition.
+- Stored total score and screening band live in the one-to-one result and are authoritative only after server validation; `scoring_version` records the algorithm and `safety_item_positive` preserves the safety-item fact independently of later response policy.
 - Risk results store policy version, reason codes and exact source IDs to make decisions reproducible.
 
 ### Booking
