@@ -6,7 +6,7 @@ public record RegistrationRequested(UUID accountId, String normalizedEmail, Stri
 
 	@Override
 	public String toString() {
-		return "RegistrationRequested[accountId=" + accountId + ", normalizedEmail=" + normalizedEmail
-				+ ", challenge=[REDACTED], correlationId=" + correlationId + "]";
+		return "RegistrationRequested[accountId=" + accountId + ", normalizedEmail=[REDACTED], challenge=[REDACTED], correlationId="
+				+ correlationId + "]";
 	}
 }

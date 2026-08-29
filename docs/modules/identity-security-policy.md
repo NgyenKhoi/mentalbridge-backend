@@ -73,6 +73,7 @@ Identity serializes refresh rotation at the persisted session boundary and store
 - Resend and recovery-request endpoints return a generic accepted response. They are rate-limited per account and privacy-minimized network key, with no more than three delivery requests per purpose per hour and a 60-second resend interval.
 - Password recovery does not activate, re-enable, or cancel deletion for an account. Disabled and deleted accounts receive no usable recovery challenge.
 - Brevo is a delivery adapter only. Identity creates, hashes, expires, consumes, and audits challenges; provider responses never become authentication authority.
+- Local frontend integration may write a verification URL for a synthetic account to an ignored private file. This adapter is disabled by default, never logs the recipient or challenge, and fails startup unless exactly a `local` or `dev` profile is active without `prod`.
 
 ## Required verification scenarios
 

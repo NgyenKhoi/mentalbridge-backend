@@ -31,12 +31,13 @@ mentalbridge:
       key-version: ${IDENTITY_ENCRYPTION_KEY_VERSION}
       key: ${IDENTITY_ENCRYPTION_KEY}
     verification-delivery:
-      enabled: ${IDENTITY_VERIFICATION_DELIVERY_ENABLED:false}
+      mode: ${IDENTITY_VERIFICATION_DELIVERY_MODE:disabled}
       base-url: ${IDENTITY_BREVO_BASE_URL:https://api.brevo.com}
       api-key: ${IDENTITY_BREVO_API_KEY:}
       sender-email: ${IDENTITY_BREVO_SENDER_EMAIL:}
       sender-name: ${IDENTITY_BREVO_SENDER_NAME:MentalBridge}
       verification-url: ${IDENTITY_VERIFICATION_URL:http://localhost:3000/verify-email}
+      local-directory: ${IDENTITY_LOCAL_VERIFICATION_DIRECTORY:.local/identity-verification}
 
 eureka:
   client:
