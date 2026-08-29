@@ -73,4 +73,8 @@ $env:IDENTITY_DB_PASSWORD='<identity-password>'
 
 The generated context test uses PostgreSQL, Kafka, and Redis Testcontainers and disables live Eureka registration.
 
-The MB-87 implementation covers registration and verification, generic credential failures and lockout, RS256 access JWTs, refresh rotation with exact idempotent replay, refresh-reuse family revocation, logout/logout-all, and bearer authorization for the current-account endpoint. Password recovery and account administration remain later Identity slices even though their forward contract is already published.
+## Runtime contract status
+
+Only OpenAPI paths marked `x-mentalbridge-status: implemented` have runtime handlers. They currently cover registration, email verification, login, refresh, logout, logout-all, and current-account retrieval. Contract and provider tests compare this exact set with the Spring request mappings so an unavailable operation cannot silently become a frontend-facing 404.
+
+Email-verification resend, password-recovery request/reset, authenticated password change, and account administration are explicitly marked `planned`. Their forward schemas remain published for design coordination, but clients must not call them until a later Identity slice changes their status and supplies the matching implementation and tests.
