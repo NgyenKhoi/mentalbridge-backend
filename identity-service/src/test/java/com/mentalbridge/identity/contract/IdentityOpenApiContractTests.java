@@ -88,8 +88,11 @@ class IdentityOpenApiContractTests {
 				.getProperties().get("roles");
 		var detailRoles = (Schema<?>) result.getOpenAPI().getComponents().getSchemas().get("AccountDetail")
 				.getProperties().get("roles");
+		var registrationActor = (Schema<?>) result.getOpenAPI().getComponents().getSchemas().get("RegistrationRequest")
+				.getProperties().get("actorType");
 		assertThat(summaryRoles.getMaxItems()).isEqualTo(1);
 		assertThat(detailRoles.getMaxItems()).isEqualTo(1);
+		assertThat(registrationActor.getEnum()).extracting(Object::toString).containsExactly("USER", "SPECIALIST");
 	}
 
 }

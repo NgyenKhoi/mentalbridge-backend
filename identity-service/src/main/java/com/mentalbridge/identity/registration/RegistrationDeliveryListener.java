@@ -2,13 +2,13 @@ package com.mentalbridge.identity.registration;
 
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
-import org.springframework.boot.autoconfigure.condition.ConditionalOnProperty;
+import org.springframework.boot.autoconfigure.condition.ConditionalOnBean;
 import org.springframework.stereotype.Component;
 import org.springframework.transaction.event.TransactionPhase;
 import org.springframework.transaction.event.TransactionalEventListener;
 
 @Component
-@ConditionalOnProperty(prefix = "mentalbridge.identity.verification-delivery", name = "enabled", havingValue = "true")
+@ConditionalOnBean(VerificationDelivery.class)
 public class RegistrationDeliveryListener {
 
 	private static final Logger LOGGER = LoggerFactory.getLogger(RegistrationDeliveryListener.class);

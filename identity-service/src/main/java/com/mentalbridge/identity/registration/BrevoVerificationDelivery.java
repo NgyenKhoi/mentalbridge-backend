@@ -11,7 +11,7 @@ import org.springframework.web.client.RestClient;
 
 import com.mentalbridge.identity.configuration.VerificationDeliveryProperties;
 @Component
-@ConditionalOnProperty(prefix = "mentalbridge.identity.verification-delivery", name = "enabled", havingValue = "true")
+@ConditionalOnProperty(prefix = "mentalbridge.identity.verification-delivery", name = "mode", havingValue = "brevo")
 public class BrevoVerificationDelivery implements VerificationDelivery {
 
 	private final RestClient client;

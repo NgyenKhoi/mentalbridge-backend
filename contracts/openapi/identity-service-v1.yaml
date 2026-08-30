@@ -5,6 +5,8 @@ info:
   description: |
     Contract for account registration, email verification, authentication,
     refresh sessions, password recovery, and bounded account administration.
+    Only paths marked `x-mentalbridge-status: implemented` are available from
+    the Sprint runtime; paths marked `planned` are forward design input only.
     Fields not marked nullable reject null; omitted optional fields retain their
     documented default or leave the stored value unchanged.
 servers:
