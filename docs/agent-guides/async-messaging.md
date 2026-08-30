@@ -7,7 +7,7 @@ Kafka is the durable integration broker. REST remains the mechanism for synchron
 | Technology | Use it for | Do not use it for |
 | --- | --- | --- |
 | Kafka | durable domain events, asynchronous commands, task distribution, replayable projections, audit/reporting feeds | synchronous queries, request/reply, presence, direct browser connections |
-| Redis | online presence with TTL, socket/room routing, rate limits, cross-instance WebSocket fan-out, short-lived delivery/idempotency state, expiring hashed OTP challenges | database-query/result caching, authoritative consent, durable messages, notifications, appointments, risk, durable job state |
+| Redis | online presence with TTL, socket/room routing, rate limits, cross-instance WebSocket fan-out, short-lived delivery/idempotency state, expiring hashed OTP challenges | database-query/result caching, authoritative consent, durable messages, notifications, appointments, safety/support decisions, durable job state |
 | WebSocket | authenticated chat, presence changes, receipts, and live in-app notification delivery to clients | service-to-service queries, durable storage, business transactions |
 | REST/JSON | synchronous APIs, current authorization/consent queries, command status polling | background fan-out or replayable event distribution |
 

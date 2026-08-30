@@ -29,8 +29,10 @@ describe('Database Integration', () => {
       database: 'test_db',
     });
 
-    const sql = readFileSync(join(__dirname, '../../../migrations/1_initial_schema.sql'), 'utf8');
-    await pool.query(sql);
+    for (const migration of ['1_initial_schema.sql', '2_remove_hotline_catalogue.sql']) {
+      const sql = readFileSync(join(__dirname, '../../../migrations', migration), 'utf8');
+      await pool.query(sql);
+    }
   }, 120_000);
 
   afterAll(async () => {
@@ -111,64 +113,10 @@ describe('Database Integration', () => {
     });
   });
 
-  describe('hotline table', () => {
-    it('enforces contact constraint — no phone or url', async () => {
-      await expect(
-        pool.query(
-          `INSERT INTO hotline (country_code, name, guidance, verified_at, next_review_at, verified_by)
-           VALUES ($1,$2,$3,$4,$5,$6)`,
-          [
-            'VN',
-            'Test',
-            'Guidance',
-            new Date('2024-01-01'),
-            new Date('2025-01-01'),
-            'a0eebc99-9c0b-4ef8-bb6d-6bb9bd380a11',
-          ],
-        ),
-      ).rejects.toThrow(/ck_hotline_contact/);
-    });
-
-    it('enforces review_after_verify constraint', async () => {
-      await expect(
-        pool.query(
-          `INSERT INTO hotline (country_code, name, phone_number, guidance, verified_at, next_review_at, verified_by)
-           VALUES ($1,$2,$3,$4,$5,$6,$7)`,
-          [
-            'VN',
-            'Test',
-            '1800',
-            'Guidance',
-            new Date('2025-12-31'),
-            new Date('2025-01-01'),
-            'a0eebc99-9c0b-4ef8-bb6d-6bb9bd380a11',
-          ],
-        ),
-      ).rejects.toThrow(/ck_hotline_review_after_verify/);
-    });
-
-    it('inserts valid hotline', async () => {
-      const { rows } = await pool.query(
-        `INSERT INTO hotline (country_code, name, phone_number, guidance, verified_at, next_review_at, verified_by)
-         VALUES ($1,$2,$3,$4,$5,$6,$7) RETURNING id`,
-        [
-          'VN',
-          'Hotline',
-          '1800',
-          'Guidance',
-          new Date('2024-01-01'),
-          new Date('2025-01-01'),
-          'a0eebc99-9c0b-4ef8-bb6d-6bb9bd380a11',
-        ],
-      );
-      expect(rows[0].id).toBeDefined();
-    });
-
-    it('has ix_hotline_active_region index', async () => {
-      const { rows } = await pool.query(
-        `SELECT indexname FROM pg_indexes WHERE tablename='hotline' AND indexname='ix_hotline_active_region'`,
-      );
-      expect(rows).toHaveLength(1);
+  describe('removed hotline catalogue', () => {
+    it('does not retain the hotline table after all migrations', async () => {
+      const { rows } = await pool.query(`SELECT to_regclass('public.hotline') AS relation`);
+      expect(rows[0].relation).toBeNull();
     });
   });
 

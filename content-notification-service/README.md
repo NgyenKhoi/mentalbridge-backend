@@ -1,6 +1,6 @@
 # Content and Notification Service
 
-NestJS service that owns reviewed self-help resources, crisis hotlines, notification preferences, and durable notification delivery state.
+NestJS service that owns reviewed self-help resources, notification preferences, and durable notification delivery state. ADR 0009 removes the hotline catalogue from product scope.
 
 ## Current capability
 
@@ -11,7 +11,7 @@ The current baseline implements only:
 - strict startup configuration, safe Problem Details, structured redacted request logs, CORS deny-by-default, and graceful NestJS shutdown;
 - the `node-pg-migrate` baseline for the service-owned `mentalbridge_content_notification` database.
 
-Resource and hotline operations in `../contracts/openapi/content-notification-service.yaml` are explicitly `planned`; they are not available until a vertical feature PR adds handlers and contract tests.
+Resource operations in `../contracts/openapi/content-notification-service.yaml` are explicitly `planned`; they are not available until a vertical feature PR adds handlers and contract tests. Safety screening and versioned safety guidance remain Care-owned behavior.
 
 ## Stack
 
@@ -66,7 +66,7 @@ npm run migration:check
 npm run migrate:up
 ```
 
-Migrations run explicitly before deployment and never on application startup. The database and login are operator prerequisites; migrations do not create databases or schemas. Once merged, an applied migration is never edited or rolled back in a shared environment; add a forward migration instead.
+Migrations run explicitly before deployment and never on application startup. The database and login are operator prerequisites; migrations do not create databases or schemas. Once merged, an applied migration is never edited or rolled back in a shared environment; add a forward migration instead. Migration `2_remove_hotline_catalogue.sql` removes the obsolete table after the historical baseline is applied.
 
 ## Verification
 

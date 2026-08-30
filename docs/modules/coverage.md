@@ -7,8 +7,8 @@ This is the planning coverage baseline for the workbook's seven use cases and 16
 | Catalogue UC | Primary owner | Collaborators | Module capability | Status |
 | --- | --- | --- | --- | --- |
 | UC-01 Authentication & User Management | Identity/Care | Content/Notification, all deletion owners | Auth, RBAC, profile/consent, grants, deletion, anonymous entry | Planned; retention/export/expiry policies blocked |
-| UC-02 Mental Health Assessment & AI Analysis | Care/Journal-AI | PhoBERT, Content/Notification | Journal, assessment, analysis, risk and personal analytics | Planned; risk and dataset policies blocked |
-| UC-03 Intervention & Support | Care/Content-Notification | Journal/AI | Intervention, crisis/self-help content and notifications | Planned; reviewed crisis policy blocked |
+| UC-02 Mental Health Assessment & AI Analysis | Care/Journal-AI | PhoBERT, Content/Notification | Journal, assessment, analysis, safety/support and personal analytics | PHQ-9 runtime implemented for published versions; Vietnamese content, support and dataset policies blocked |
+| UC-03 Intervention & Support | Care/Content-Notification | Journal/AI | Approved intervention, safety/self-help guidance and notifications | Planned; reviewed support/safety content blocked |
 | UC-04 Specialist Discovery & Appointment | Consultation/Billing | Care, Realtime, Content/Notification | Discovery, subscription/payment/upgrade/credits, specialist approval, booking, earnings, reviews | Planned by ADR 0005; provider/configuration details remain |
 | UC-05 Communication & Follow-up | Realtime/Care | Consultation, Content/Notification | Chat, reports, follow-up, notifications and progress | Planned; moderation/retention policy blocked |
 | UC-06 Specialist Portal | Consultation/Billing | Care, Journal/AI, Realtime | Workload, consented data, earnings and provider payout history | Planned; MoMo adapter conditional on credentials/currency decision |
@@ -19,9 +19,9 @@ This is the planning coverage baseline for the workbook's seven use cases and 16
 | WBS range | Owner specification | Coverage note |
 | --- | --- | --- |
 | 1-5, 7, 111, 113-116 | Identity | Authentication, RBAC, admin login and user administration |
-| 6, 8-14, 20-24, 30-31, 89-94, 98-101 | Care | Screening, profile/consent, assessment, risk, follow-up, analytics |
+| 6, 8-14, 20-24, 30-31, 89-94, 98-101 | Care | Screening, profile/consent, assessment, safety/support, follow-up, analytics |
 | 15-19, 25-29, 150-156 | Journal/AI and PhoBERT | Journals, analysis, datasets and benchmarks |
-| 32-35, 95-97, 130-139 | Content/Notification | Crisis/self-help resources and notifications |
+| 32-35, 95-97, 130-139 | Content/Notification | Reviewed self-help resources and notifications; hotline catalogue removed |
 | 36-41, 52-53, 55-73, 83-88, 102-107, 117-122, 140-144, 148-149 | Consultation | Discovery, specialist approval without WBS 54 document upload, booking, reviews and bounded portal/admin views |
 | 42-51, 108-110, 123-129 | Consultation/Billing | Subscription, payment, Care-to-Plus upgrade, credits, earnings and provider payout history under ADR 0005 |
 | 74-82, 145-147 | Realtime | Conversations, messages, receipts and chat moderation |
@@ -32,8 +32,8 @@ The workbook's 162 rows remain traceable; WBS 54 is explicitly removed by the 20
 
 ## Cross-module end-to-end acceptance
 
-- Guest screening returns deterministic result and relevant crisis guidance synchronously; registration never silently claims anonymous data.
-- Authenticated assessment commits score, risk result, and outbox atomically; duplicate submission returns the original outcome.
+- Guest screening returns deterministic result and reviewed safety guidance synchronously; registration never silently claims anonymous data.
+- Authenticated assessment commits score, independent safety status, and outbox atomically; duplicate submission returns the original outcome.
 - Journal remains usable when AI fails; analysis requires current AI consent and results cannot override Care safety rules.
 - Revoked specialist access blocks new sensitive reads under concurrent access and produces a minimized audit fact.
 - Concurrent booking/upgrade can use a credit only once; two bookings for one slot yield exactly one active appointment; only eligible confirmed appointment participants can join/send during the snapshotted slot and recover permitted read-only history after reconnect.
@@ -42,9 +42,9 @@ The workbook's 162 rows remain traceable; WBS 54 is explicitly removed by the 20
 
 ## Product decisions that block implementation
 
-1. Exact risk matrix, freshness windows, thresholds, and PHQ-9 item 9 response.
+1. Exact support-tier matrix, freshness windows, thresholds, and approved intervention catalogue; PHQ-9 item-9 core is documented but exact Vietnamese content remains pending approval.
 2. Specialist qualification evidence and approval rules.
-3. Reviewed crisis resources, locale ownership, cadence, and after-hours wording.
+3. Reviewed Vietnamese safety/disclaimer wording and decision on any specific emergency number; no hotline catalogue or after-hours safety service is planned.
 4. Specialist-note ownership and retention, if notes remain in scope.
 5. Minimum age/guardian behavior beyond the current 18-30 scope.
 6. Consent wording/versioning, retention, deletion SLA, export scope, and legal review.

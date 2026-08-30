@@ -39,4 +39,4 @@ A use case is complete only when behavior, OpenAPI/event/WebSocket contracts, mi
 - Only Realtime Service exposes WebSocket. Redis is ephemeral and never owns durable business facts.
 - No module reads another module's storage or shares framework/persistence models.
 - Raw journal/chat content, assessment answers, tokens, and provider payloads do not enter events, logs, or broad admin projections.
-- Assessment scoring and immediate severe-risk guidance remain local to Care and available without AI, Kafka, Redis, WebSocket, or notification providers.
+- Assessment scoring and immediate reviewed safety guidance remain local to Care and available without AI, Kafka, Redis, WebSocket, or notification providers.

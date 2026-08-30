@@ -3,7 +3,7 @@
 ## 1. Architectural drivers
 
 1. Mental-health and journal data require least privilege, consent enforcement, traceability, deletion, and minimized exposure.
-2. Assessment scoring and severe-risk guidance must remain available when AI or messaging dependencies fail.
+2. Assessment scoring and reviewed safety guidance must remain available when AI or messaging dependencies fail.
 3. AI calls and benchmark jobs are slow, costly, and failure-prone, so they are asynchronous and observable.
 4. Appointment booking requires strong transactional consistency; chat and analytics favor scalable document/event storage.
 5. A five-person capstone team must be able to run, test, and demonstrate the entire system locally.
@@ -13,11 +13,11 @@
 | Context | Owns | Does not own |
 | --- | --- | --- |
 | Identity | credentials, account state, roles, sessions | profile health data |
-| Care | user profile, consent, assessment, risk, intervention, follow-up | raw chat messages |
+| Care | user profile, consent, assessment, safety/support policy, intervention, follow-up | raw chat messages |
 | Consultation/Billing | specialist profile/approval, plan versions, subscriptions, payments, consultation credits, slots, appointments, earnings, payout destinations/requests, reviews | account passwords, journals, chat messages |
 | Journal/AI | journal revisions, analysis jobs/results, AI evaluation | authoritative assessment scoring |
 | Realtime | conversations, messages, receipts, presence | consent source of truth |
-| Content/Notification | resources, hotlines, notification preferences/delivery | risk decisions |
+| Content/Notification | reviewed self-help resources, notification preferences/delivery | screening, safety, or support-tier decisions |
 | Governance/Reporting | audit events, moderation cases, de-identified projections | transactional sources of truth |
 
 The deployable business services are fixed as Spring Boot `identity-service`, `care-service`, and `consultation-service`; NestJS/TypeScript `journal-ai-service`, `realtime-service`, and `content-notification-service` using the ADR 0006 stack; and Python `phobert-worker`. Governance/reporting is implemented as bounded admin APIs and Kafka projections inside the relevant owner until a future ADR justifies another deployable. The edge gateway/reverse proxy and Eureka registry are infrastructure and contain no business orchestration.
@@ -50,7 +50,7 @@ Do not share ORM entities, repositories, or direct cross-service table access. A
 
 ### Synchronous REST
 
-Use REST/JSON for authentication, CRUD, service-to-service queries, assessment submission/scoring, current consent authorization, slot booking, history recovery, and immediate crisis-resource retrieval. Spring services register with Eureka; Java consumers use OpenFeign to resolve provider service IDs and execute the REST call. Eureka and Feign do not replace OpenAPI contracts, provider authorization, or owner data access. Every mutating endpoint accepts or generates a correlation ID; commands vulnerable to retries accept an `Idempotency-Key`. REST clients use deadlines, bounded safe retries, circuit breakers, and domain-safe fallbacks.
+Use REST/JSON for authentication, CRUD, service-to-service queries, assessment submission/scoring, current consent authorization, slot booking, history recovery, and reviewed resource retrieval. Spring services register with Eureka; Java consumers use OpenFeign to resolve provider service IDs and execute the REST call. Eureka and Feign do not replace OpenAPI contracts, provider authorization, or owner data access. Every mutating endpoint accepts or generates a correlation ID; commands vulnerable to retries accept an `Idempotency-Key`. REST clients use deadlines, bounded safe retries, circuit breakers, and domain-safe fallbacks.
 
 ### Client WebSocket
 
@@ -67,7 +67,7 @@ Initial event catalogue:
 | `AnalyzeJournalRevision` | Journal/AI | PhoBERT worker or Journal/AI provider executor |
 | `JournalAnalysisCompleted` | Journal/AI or PhoBERT worker | Care, Notification |
 | `AssessmentSubmitted` | Care | Reporting, Notification |
-| `RiskClassified` | Care | Intervention, Notification, Reporting |
+| `SupportTierResolved` | Care | Notification, Reporting |
 | `ConsentGranted/Revoked` | Care | Consultation cache invalidation, Audit |
 | `SubscriptionStatusChanged` | Consultation/Billing | Care, Realtime, Notification, Reporting |
 | `AppointmentStatusChanged` | Consultation | Realtime, Notification, Follow-up |
@@ -83,13 +83,13 @@ Kafka is the durable asynchronous backbone. PostgreSQL producers use a transacti
 
 ## 5. Critical sequences
 
-### Assessment and risk
+### Assessment, safety, and support
 
 1. Client fetches versioned questionnaire.
 2. Care Service validates complete responses and idempotency key.
 3. In one transaction it stores submission, answers, computed score, safety flags, and outbox event.
 4. It evaluates the deterministic policy synchronously when safety-relevant input is present.
-5. Response includes score/band, risk result if available, disclaimer, and crisis guidance where required.
+5. Response includes score/band, the independent safety status, disclaimer, and reviewed local safety guidance where required.
 6. Async consumers build projections, reminders, and non-critical notifications.
 
 ### Journal analysis
@@ -154,4 +154,4 @@ Use one EC2 host initially with Docker Compose, Nginx, managed DNS/TLS, private 
 
 ## 9. Decision records
 
-Create an ADR in `docs/adr/` when changing service boundaries, storage ownership, risk-policy strategy, identity/token design, event broker, sensitive-data encryption, or AI provider/data-retention settings. ADRs contain context, decision, alternatives, consequences, and date/status.
+Create an ADR in `docs/adr/` when changing service boundaries, storage ownership, safety/support-policy strategy, identity/token design, event broker, sensitive-data encryption, or AI provider/data-retention settings. ADRs contain context, decision, alternatives, consequences, and date/status.

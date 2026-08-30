@@ -2,7 +2,7 @@
 
 ## Business boundary
 
-Journal/AI owns encrypted journal entries/revisions, structured analysis results, analysis-job orchestration, provider provenance, governed dataset metadata/samples, and benchmark coordination. MongoDB owns journals/results/samples; PostgreSQL owns durable job/dataset/run metadata and outbox. Care remains the current AI-consent and risk authority.
+Journal/AI owns encrypted journal entries/revisions, structured analysis results, analysis-job orchestration, provider provenance, governed dataset metadata/samples, and benchmark coordination. MongoDB owns journals/results/samples; PostgreSQL owns durable job/dataset/run metadata and outbox. Care remains the current AI-consent and safety/support authority.
 
 ## Use cases and acceptance
 

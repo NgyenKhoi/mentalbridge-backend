@@ -29,7 +29,7 @@ Plan versions are immutable after publication. Prices and allocations use intege
 
 The current paid prices deliberately decompose into USD 4.99 for non-consultation premium features plus USD 5.00 for each included credit. The specialist share is 70% of the explicit USD 5.00 credit allocation, not 70% of the whole subscription price. The remaining USD 1.50 allocation and the non-consultation portion belong to the platform. A later price, currency, allocation, or share change creates a new plan version and never rewrites an existing credit or earning snapshot.
 
-Free is the default entitlement when a user has no active paid subscription; it does not create a zero-value payment. Safety guidance, crisis resources, PHQ-9/GAD-7 scoring, and access to owned data must never be disabled by billing status.
+Free is the default entitlement when a user has no active paid subscription; it does not create a zero-value payment. Safety guidance, PHQ-9/GAD-7 scoring, and access to owned data must never be disabled by billing status.
 
 Premium Plus provides more consultation credits and higher booking/matching priority. The ambiguous promise of a longer consultation is not part of the current catalogue: one credit always funds one standard appointment slot. A different duration or specialist compensation requires a new plan version and an explicit scheduling policy.
 

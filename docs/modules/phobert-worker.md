@@ -2,7 +2,7 @@
 
 ## Business boundary
 
-PhoBERT Worker executes inference for an explicitly versioned command and emits a structured result. It owns no account, journal, consent, risk, dataset, benchmark, or notification truth; it exposes no business CRUD API. Journal/AI owns job/run state and dataset access authorization.
+PhoBERT Worker executes inference for an explicitly versioned command and emits a structured result. It owns no account, journal, consent, safety/support, dataset, benchmark, or notification truth; it exposes no business CRUD API. Journal/AI owns job/run state and dataset access authorization.
 
 ## Use cases and acceptance
 

@@ -36,8 +36,8 @@ Kafka and Redis are architecture additions supporting realtime and asynchronous 
 | 8–14 | profile, consent, specialist grants and deletion request | Care for profile/consent; Identity coordinates deletion | REST owner checks; Kafka deletion fan-out |
 | 15–19, 25–27 | journal CRUD, LLM analysis/result/re-run | Journal/AI Service (Node.js) | MongoDB plus PostgreSQL job/outbox; current Care consent |
 | 28–29, 150–156 | benchmark execution/results and dataset administration | Journal/AI; PhoBERT Worker for inference only | Private object storage, MongoDB/PostgreSQL metadata, Kafka jobs/results |
-| 30–31, 89–94, 98–101 | risk/intervention, follow-up and personal analytics | Care; Journal/AI supplies approved structured indicators | Local deterministic safety plus bounded projections |
-| 32–35, 95–97, 130–139 | crisis/self-help content, notification history and content administration | Content/Notification Service (Node.js) | PostgreSQL; reviewed content and durable notification state |
+| 30–31, 89–94, 98–101 | safety/support intervention, follow-up and personal analytics | Care; Journal/AI supplies approved structured indicators | Local deterministic safety, approved support policy and bounded projections |
+| 32–35, 95–97, 130–139 | self-help content, notification history and content administration | Content/Notification Service (Node.js) | PostgreSQL; reviewed content and durable notification state; no hotline catalogue |
 | 36–41 | specialist discovery, filtering and matching | Consultation Service (Spring) | PostgreSQL; transparent versioned matching criteria |
 | 42–51 | subscription plans, payment, subscription state, Care-to-Plus upgrade and consultation-credit ledger | Consultation/Billing | PostgreSQL authority; signed payment webhook; exact minor-unit upgrade offset; no downgrade/refund |
 | 52–61, 117–122 | specialist profile, approval, availability and administration | Consultation Service | PostgreSQL with audited profile approval; WBS 54 document upload removed by the 2026-08-21 product decision |
@@ -51,18 +51,18 @@ Kafka and Redis are architecture additions supporting realtime and asynchronous 
 
 ## Actor-flow coverage
 
-- **Anonymous:** questionnaire → result → screening/risk guidance → optional register. Anonymous data is never silently linked to the new account.
-- **User:** assessment/journal → analysis → risk/intervention → specialist discovery → premium/payment/credit or Care-to-Plus upgrade → choose a specialist-authored slot → scoped consent → appointment chat only during that slot → review → follow-up/analytics.
+- **Anonymous:** questionnaire → result → screening/safety guidance → optional register. Anonymous data is never silently linked to the new account.
+- **User:** assessment/journal → analysis → screening/safety/support → specialist discovery → premium/payment/credit or Care-to-Plus upgrade → choose a specialist-authored slot → scoped consent → appointment chat only during that slot → review → follow-up/analytics.
 - **Specialist:** register → complete profile → admin approval → publish channel-specific availability → appointments/consented data → consult during the scheduled window → complete session → earnings/provider-payout projection → reviews.
-- **Admin:** login → bounded dashboard → accounts/specialists → subscriptions/payments/payouts → content/hotlines → moderation → appointments → datasets/evaluation → reporting/audit/retention.
+- **Admin:** login → bounded dashboard → accounts/specialists → subscriptions/payments/payouts → reviewed content → moderation → appointments → datasets/evaluation → reporting/audit/retention.
 
 ## Safety clarifications added by architecture
 
 These constraints refine rather than contradict the source documents:
 
 - PHQ-9/GAD-7 scoring is authoritative and deterministic; AI is a supporting indicator.
-- A positive AI signal cannot downgrade a severe/safety-item path.
-- Severe guidance is returned synchronously and remains available when AI, Kafka, Redis, WebSocket, email, or push delivery fails.
+- AI output cannot downgrade or change a deterministic safety status.
+- Approved safety guidance is returned synchronously and remains available when AI, Kafka, Redis, WebSocket, email, or push delivery fails.
 - The platform provides screening/referral support, not diagnosis, treatment, continuous monitoring, or guaranteed emergency response.
 - Admin dashboards do not imply unrestricted raw journal/chat access.
 - Production journals are excluded from research benchmarks by default; explicit governed consent is required for any exception.

@@ -21,7 +21,8 @@ class CareLiquibaseChangelogTests {
 					"care-001-pgcrypto",
 					"care-002-profile-consent",
 					"care-003-assessment-foundation",
-					"care-004-phq9-reference-data");
+					"care-004-phq9-reference-data",
+					"care-005-assessment-safety-policy-provenance");
 		}
 	}
 

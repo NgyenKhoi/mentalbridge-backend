@@ -37,7 +37,7 @@ Use a circuit breaker per remote dependency and operation group, not one global 
 Fallbacks must be domain-safe:
 
 - authorization/consent uncertainty: deny or return dependency unavailable;
-- assessment scoring and severe-risk guidance: execute locally and remain available;
+- assessment scoring and reviewed safety guidance: execute locally and remain available;
 - optional display metadata: omit or use a clearly stale local projection if permitted;
 - booking: return an explicit unavailable response; never pretend success;
 - notifications/reporting: enqueue through the outbox and complete asynchronously.
