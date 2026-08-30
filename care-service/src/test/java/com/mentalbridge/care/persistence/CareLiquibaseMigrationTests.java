@@ -14,10 +14,11 @@ import org.springframework.dao.DataIntegrityViolationException;
 import org.springframework.jdbc.core.simple.JdbcClient;
 
 import com.mentalbridge.care.TestcontainersConfiguration;
+import com.mentalbridge.care.CareTestProperties;
 
 @Import(TestcontainersConfiguration.class)
 @SpringBootTest
-class CareLiquibaseMigrationTests {
+class CareLiquibaseMigrationTests extends CareTestProperties {
 
 	private static final UUID PHQ9_DEFINITION_ID = UUID.fromString("10000000-0000-0000-0000-000000000001");
 	private static final UUID PHQ9_ITEM_1_ID = UUID.fromString("11000000-0000-0000-0000-000000000001");
@@ -159,6 +160,47 @@ class CareLiquibaseMigrationTests {
 					:submissionId, 28, 'SEVERE', 'phq9-standard-bands-v1', false, :calculatedAt
 				)
 				""").param("submissionId", submissionId)
+				.param("calculatedAt", OffsetDateTime.now())
+				.update()).isInstanceOf(DataIntegrityViolationException.class);
+	}
+
+	@Test
+	void assessmentResultKeepsSafetyStatusIndependentAndVersioned() {
+		var userId = insertProfile();
+		var validSubmissionId = insertAuthenticatedSubmission(userId, "assessment-key-000010");
+
+		jdbc.sql("""
+				insert into assessment_result (
+					submission_id, total_score, screening_level, scoring_version,
+					safety_item_positive, safety_status, safety_policy_version, calculated_at
+				) values (
+					:submissionId, 8, 'MILD', 'phq9-standard-bands-v1',
+					true, 'POSITIVE_SAFETY_SCREEN', 'test-safety-policy-v1', :calculatedAt
+				)
+				""").param("submissionId", validSubmissionId)
+				.param("calculatedAt", OffsetDateTime.now())
+				.update();
+
+		assertThat(jdbc.sql("""
+				select screening_level, safety_status, safety_policy_version
+				from assessment_result where submission_id = :submissionId
+				""").param("submissionId", validSubmissionId)
+				.query((resultSet, rowNum) -> String.join("|",
+						resultSet.getString("screening_level"),
+						resultSet.getString("safety_status"),
+						resultSet.getString("safety_policy_version")))
+				.single()).isEqualTo("MILD|POSITIVE_SAFETY_SCREEN|test-safety-policy-v1");
+
+		var mismatchedSubmissionId = insertAuthenticatedSubmission(userId, "assessment-key-000011");
+		assertThatThrownBy(() -> jdbc.sql("""
+				insert into assessment_result (
+					submission_id, total_score, screening_level, scoring_version,
+					safety_item_positive, safety_status, safety_policy_version, calculated_at
+				) values (
+					:submissionId, 8, 'MILD', 'phq9-standard-bands-v1',
+					false, 'POSITIVE_SAFETY_SCREEN', 'test-safety-policy-v1', :calculatedAt
+				)
+				""").param("submissionId", mismatchedSubmissionId)
 				.param("calculatedAt", OffsetDateTime.now())
 				.update()).isInstanceOf(DataIntegrityViolationException.class);
 	}

@@ -19,7 +19,8 @@ System actors include the AI provider, PhoBERT worker, notification provider, ob
 
 - **Assessment**: one completed PHQ-9 or GAD-7 questionnaire and its immutable scored result.
 - **Screening level**: severity derived only from the published questionnaire scoring band.
-- **Risk classification**: platform support tier derived from current assessments plus recent, structured emotional indicators.
+- **Safety status**: deterministic PHQ-9 item-9 screen stored independently from the questionnaire band.
+- **Support tier**: approved platform support pathway derived from eligible inputs; it is not a suicide-risk label.
 - **Journal entry**: user-authored private text. It is not a clinical record.
 - **Analysis**: structured AI output tied to the exact journal revision, prompt version, provider, and model.
 - **Intervention plan**: a versioned list of recommended platform actions, not a treatment plan.
@@ -40,12 +41,13 @@ Do not use "diagnosis", "patient", "treatment", or "clinical conclusion" in API/
 2. Each answer is an integer from 0 through 3. PHQ-9 has nine answers and GAD-7 has seven.
 3. Compute scores on the server; never accept a client-computed score.
 4. A submitted assessment is immutable. Correction means voiding it and creating a new attempt.
-5. PHQ-9 item 9 must invoke an explicit safety rule regardless of total score. The exact reviewed policy belongs in configuration, not an LLM prompt.
+5. PHQ-9 item 9 uses the versioned deterministic rule in `MB-SAFETY-PHQ9-001`; a positive item remains independent of total-score severity and never relies on an LLM.
 6. Anonymous results expire and cannot be silently attached to a registered account. An explicit one-time claim flow may be designed later.
+7. Every result retains questionnaire, scoring, and safety-policy versions. Exact approved policy text lives in `docs/policies/`.
 
-### Risk classification
+### Safety status and support tier
 
-The first implementation should use a documented deterministic policy owned by the Care Service. AI output is a supporting signal only.
+Care calculates safety status synchronously from the approved questionnaire-specific rule. A separate versioned support policy may resolve a support tier from eligible inputs. AI output is supporting input only and cannot define or override either result.
 
 Inputs:
 
@@ -54,16 +56,17 @@ Inputs:
 - recent journal analysis confidence and negative/emotion indicators;
 - trend direction and data freshness.
 
-Outputs:
+Independent outputs:
 
-- `MINIMAL`, `MILD`, `MODERATE`, or `SEVERE`;
+- `NEGATIVE_SAFETY_SCREEN` or `POSITIVE_SAFETY_SCREEN` for the PHQ-9 item-9 rule;
+- an approved support tier such as `SELF_GUIDED_SUPPORT`, `PROFESSIONAL_SUPPORT_RECOMMENDED`, or `SAFETY_FOLLOW_UP_RECOMMENDED`;
 - reason codes, input references, policy version, and calculation time;
-- intervention template/version selected.
+- approved catalogue activity/content versions selected.
 
 Rules:
 
 - missing or stale inputs produce `INSUFFICIENT_DATA`, not fabricated certainty;
-- severe/safety flags cannot be downgraded by positive AI sentiment;
+- safety status cannot be downgraded by positive AI sentiment;
 - changing a policy does not rewrite prior results; reclassification creates a new record;
 - user-facing wording always includes the non-diagnostic disclaimer.
 
@@ -80,11 +83,11 @@ Rules:
 
 | Plan | Monthly price | Consultation credits | Main access |
 | --- | ---: | ---: | --- |
-| Free | USD 0.00 | 0 | Assessment, journal/AI analysis, basic dashboard/resources, specialist discovery and standard AI recommendations; no specialist consultation |
-| Premium Care | USD 9.99 | 1 | Free features plus appointment, appointment-scoped specialist chat, personalized non-safety intervention, advanced analytics/follow-up and priority recommendation |
+| Free | USD 0.00 | 0 | Assessment/history, journal/AI analysis with separate consent, basic dashboard/resources, specialist discovery and basic approved-catalogue support; no specialist consultation |
+| Premium Care | USD 9.99 | 1 | Free features plus appointment, appointment-scoped specialist chat, deeper longitudinal non-safety personalization, advanced analytics/follow-up and priority recommendation |
 | Premium Plus | USD 19.99 | 3 | Care features plus priority booking/matching and enhanced follow-up |
 
-- Free is the default when no paid subscription is active. Safety guidance and crisis resources are never paywalled.
+- Free is the default when no paid subscription is active. Scoring, disclaimer, safety status, reviewed safety guidance, and access to owned assessment data are never paywalled.
 - A successful payment or renewal grants credits exactly once. Available credits expire at the billing-period end and do not roll over.
 - Care to Plus is the only in-period upgrade. Free to paid is a purchase; Plus to Care is unsupported. A user may separately cancel Plus, lose paid access immediately without refund, and later buy Care as a new purchase; this is not a downgrade.
 - Upgrade starts a new full Plus period. The non-withdrawable offset is the sum of available-credit allocation plus the old plan's remaining non-consultation value, prorated by actual remaining seconds and rounded down to a minor unit. Consumed/expired/forfeited/revoked credits have no value; reserved credits remain attached to their appointment and are not offset.
@@ -138,7 +141,7 @@ The project-tracking workbook currently groups the 162 functions into seven deli
 
 **Actors:** Guest, User, Admin, System
 
-**Scope:** journal CRUD, PHQ-9/GAD-7 submission/result/history/deletion, LLM emotion analysis and re-run, benchmark execution/results, risk-result display, and personal emotional analytics.
+**Scope:** journal CRUD, PHQ-9/GAD-7 submission/result/history/deletion, LLM emotion analysis and re-run, benchmark execution/results, screening/safety/support display, and personal emotional analytics.
 
 **Main flow:** Care serves an immutable questionnaire version, validates complete answers, scores deterministically and returns screening guidance synchronously. Journal/AI stores encrypted revisions and runs consent-gated asynchronous analysis. Governed benchmark runs compare the same licensed/de-identified split through versioned LLM and PhoBERT configurations.
 
@@ -148,11 +151,11 @@ The project-tracking workbook currently groups the 162 functions into seven deli
 
 **Actors:** User, Admin, System
 
-**Scope:** deterministic risk classification, personalized intervention, crisis hotline/emergency guidance, self-help resources, and risk-appropriate notification/follow-up triggers.
+**Scope:** deterministic safety status, approved support-tier selection, entitlement-aware personalized support, reviewed safety guidance, self-help resources, and support-appropriate notification/follow-up triggers.
 
-**Main flow:** Care evaluates a versioned local policy from eligible assessment and approved structured journal indicators, persists reason/source provenance and selects a reviewed intervention template. Content/Notification serves reviewed localized resources and handles non-critical delivery.
+**Main flow:** Care evaluates versioned local safety/support policies, persists input and policy provenance, and selects only eligible versioned catalogue actions. Content/Notification serves reviewed localized self-help resources and handles non-critical delivery.
 
-**Exceptions and acceptance:** missing/stale input yields `INSUFFICIENT_DATA`; severe/safety flags cannot be downgraded by positive AI sentiment. Immediate guidance is returned without waiting for Kafka, Redis, WebSocket, email or push. Provider failure affects delivery status only and never claims guaranteed emergency response.
+**Exceptions and acceptance:** missing/stale support inputs yield `INSUFFICIENT_DATA`; safety status cannot be downgraded by positive AI sentiment. Immediate guidance is returned without waiting for Kafka, Redis, WebSocket, email or push. Provider failure affects delivery status only and never claims guaranteed emergency response or that a human was notified.
 
 ### UC-04 Specialist Discovery & Appointment
 
@@ -188,7 +191,7 @@ The project-tracking workbook currently groups the 162 functions into seven deli
 
 **Actor:** Admin
 
-**Scope:** bounded dashboard; user/specialist administration; subscription/payment/payout monitoring; resource/hotline CRUD; review/chat moderation; appointment monitoring; dataset/evaluation; reporting; audit; and retention.
+**Scope:** bounded dashboard; user/specialist administration; subscription/payment/payout monitoring; reviewed resource CRUD; review/chat moderation; appointment monitoring; dataset/evaluation; reporting; audit; and retention.
 
 **Main flow:** each data owner exposes an authorized admin command/query or publishes a minimized projection. Moderation snapshots only necessary evidence; reporting uses versioned projections instead of runtime distributed joins.
 
@@ -202,8 +205,8 @@ The project-tracking workbook currently groups the 162 functions into seven deli
 - versioned PHQ-9/GAD-7, authenticated and anonymous scoring;
 - user consent and journal CRUD;
 - one asynchronous LLM provider integration with schema validation;
-- deterministic risk policy, intervention resources, severe-risk fallback;
-- basic admin management of resources/hotlines;
+- deterministic screening/safety behavior and approved support catalogue;
+- basic admin management of reviewed self-help resources;
 - audit for security and sensitive-data access.
 
 ### Human-support release (iteration 3)
@@ -226,9 +229,9 @@ In-app video is intended but its call/signaling/provider/security contract is de
 
 These require supervisor/domain-expert approval before implementation:
 
-1. Exact risk-policy matrix, recency windows, confidence thresholds, and PHQ-9 item 9 response.
+1. Exact support-tier matrix, recency windows, missing/stale inputs, confidence thresholds, and approved intervention catalogue. PHQ-9 item-9 core behavior is documented in `MB-SAFETY-PHQ9-001`, pending domain approval of exact content.
 2. Who qualifies as a specialist/mentor and which profile facts administrators review without collecting credential documents.
-3. Crisis resources for each supported location, owner, review cadence, and after-hours wording.
+3. Exact Vietnamese safety/disclaimer wording and whether a specific emergency number may appear as versioned safety content. No hotline/facility catalogue is planned.
 4. Whether specialists can author notes; if yes, ownership, visibility, amendment, and retention rules.
 5. Minimum user age and guardian/consent behavior if expansion includes users under 18.
 6. Consent text/versioning, retention periods, deletion SLA, export scope, and applicable Vietnamese regulation review.

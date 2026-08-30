@@ -110,11 +110,11 @@ Initial feature packages: `conversations`, `messages`, `history`, `receipts`, `p
 
 ### `content-notification-service`
 
-Initial feature packages: `resources`, `hotlines`, `preferences`, `notifications`, `templates`, and `provider-delivery`.
+Initial feature packages: `resources`, `preferences`, `notifications`, `templates`, and `provider-delivery`.
 
-- PostgreSQL owns reviewed resources/hotlines, preferences, notifications, templates, delivery attempts, inbox, and outbox.
+- PostgreSQL owns reviewed resources, preferences, notifications, templates, delivery attempts, inbox, and outbox.
 - Brevo and push clients are replaceable adapters; no provider account is required in ordinary local development or CI.
-- Sprint 1 implements the service baseline and reviewed resource/hotline CRUD with synthetic local data. Email/push delivery and Kafka-triggered notifications are deferred.
+- Sprint 1 implements the service baseline and reviewed resource CRUD with synthetic local data. The hotline catalogue is removed by ADR 0009. Email/push delivery and Kafka-triggered notifications are deferred.
 
 ## Configuration baseline
 

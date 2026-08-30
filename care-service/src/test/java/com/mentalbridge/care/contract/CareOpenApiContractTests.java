@@ -14,7 +14,7 @@ import io.swagger.v3.parser.core.models.ParseOptions;
 
 class CareOpenApiContractTests {
 
-	private static final Set<String> PLANNED_OPERATIONS = Set.of(
+	private static final Set<String> ALL_OPERATIONS = Set.of(
 			"GET /api/v1/profile",
 			"PUT /api/v1/profile",
 			"GET /api/v1/consents",
@@ -25,6 +25,14 @@ class CareOpenApiContractTests {
 			"POST /api/v1/anonymous-assessment-sessions",
 			"POST /api/v1/anonymous-assessment-sessions/{sessionId}/assessments",
 			"GET /api/v1/anonymous-assessment-sessions/{sessionId}/assessments/{assessmentId}");
+
+	private static final Set<String> IMPLEMENTED_PATHS = Set.of(
+			"/api/v1/questionnaires/{instrument}/current",
+			"/api/v1/assessments",
+			"/api/v1/assessments/{assessmentId}",
+			"/api/v1/anonymous-assessment-sessions",
+			"/api/v1/anonymous-assessment-sessions/{sessionId}/assessments",
+			"/api/v1/anonymous-assessment-sessions/{sessionId}/assessments/{assessmentId}");
 
 	private static final Set<String> BEARER_OPERATIONS = Set.of(
 			"GET /api/v1/profile",
@@ -44,7 +52,7 @@ class CareOpenApiContractTests {
 			"POST /api/v1/anonymous-assessment-sessions/{sessionId}/assessments");
 
 	@Test
-	void careContractIsValidAndEveryOperationRemainsPlannedUntilImplemented() {
+	void careContractIsValidAndStatusesMatchRuntimeScope() {
 		var contract = Path.of("..", "contracts", "openapi", "care-service-v1.yaml").toAbsolutePath();
 		var options = new ParseOptions();
 		options.setResolve(true);
@@ -57,7 +65,7 @@ class CareOpenApiContractTests {
 		result.getOpenAPI().getPaths().forEach((path, pathItem) -> {
 			assertThat(pathItem.getExtensions())
 					.as("contract status for %s", path)
-					.containsEntry("x-mentalbridge-status", "planned");
+					.containsEntry("x-mentalbridge-status", IMPLEMENTED_PATHS.contains(path) ? "implemented" : "planned");
 			pathItem.readOperationsMap().forEach((method, operation) -> {
 				var key = method.name() + " " + path;
 				operations.add(key);
@@ -70,7 +78,7 @@ class CareOpenApiContractTests {
 			});
 		});
 
-		assertThat(operations).isEqualTo(PLANNED_OPERATIONS);
+		assertThat(operations).isEqualTo(ALL_OPERATIONS);
 	}
 
 	@Test
@@ -82,9 +90,11 @@ class CareOpenApiContractTests {
 
 		assertThat(request.getProperties()).containsKeys("questionnaireDefinitionId", "answers");
 		assertThat(request.getProperties()).doesNotContainKeys(
-				"totalScore", "screeningLevel", "scoringVersion", "safetyItemPositive");
+				"totalScore", "screeningLevel", "scoringVersion", "safetyStatus", "safetyPolicyVersion");
 		assertThat(result.getProperties()).containsKeys(
-				"totalScore", "screeningLevel", "scoringVersion", "safetyItemPositive", "disclaimerCode");
+				"totalScore", "screeningLevel", "scoringVersion", "safetyStatus", "safetyPolicyVersion",
+				"disclaimerCode");
+		assertThat(result.getRequired()).contains("safetyStatus", "safetyPolicyVersion");
 	}
 
 	private void assertSecurity(String key, Operation operation) {

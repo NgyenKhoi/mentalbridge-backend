@@ -3,12 +3,15 @@ info:
   title: MentalBridge Care API
   version: 1.0.0
   description: |
-    Planned v1 contracts for the Care-owned profile, platform consent, and PHQ-9
-    foundation. Assessment clients submit only versioned question identifiers and
-    answer values; Care computes the score, screening band, and safety-item fact.
-    A screening result is not a diagnosis. Exact crisis wording, the item-9
-    response policy, consent text, retention periods, and anonymous-session
-    lifetime remain product-policy decisions and are not invented by this contract.
+    V1 contracts for the Care-owned profile, platform consent, and PHQ-9 foundation.
+    Questionnaire and assessment paths are implemented; profile and consent paths
+    remain planned. Assessment clients submit only versioned question identifiers and
+    answer values; Care computes the score, screening band, independent safety
+    status, and policy provenance.
+    A screening result is not a diagnosis. ADR 0009 keeps screening severity and
+    item-9 safety status independent, prohibits automatic escalation, and removes
+    the hotline catalogue. Exact reviewed Vietnamese wording, consent text,
+    retention periods, and anonymous-session lifetime remain approval blockers.
 
     Fields not marked nullable reject null. Omitted optional profile fields leave
     no stored value. Anonymous session credentials are bearer secrets returned
@@ -144,7 +147,7 @@ paths:
         '403': { $ref: '#/components/responses/ForbiddenProblem' }
         '409': { $ref: '#/components/responses/IdempotencyConflictProblem' }
   /api/v1/questionnaires/{instrument}/current:
-    x-mentalbridge-status: planned
+    x-mentalbridge-status: implemented
     get:
       tags: [Questionnaire]
       operationId: getCurrentQuestionnaire
@@ -163,7 +166,7 @@ paths:
         '404': { $ref: '#/components/responses/NotFoundProblem' }
         '429': { $ref: '#/components/responses/RateLimitProblem' }
   /api/v1/assessments:
-    x-mentalbridge-status: planned
+    x-mentalbridge-status: implemented
     post:
       tags: [Assessment]
       operationId: submitAuthenticatedAssessment
@@ -198,7 +201,7 @@ paths:
         '403': { $ref: '#/components/responses/ForbiddenProblem' }
         '409': { $ref: '#/components/responses/ConflictProblem' }
   /api/v1/assessments/{assessmentId}:
-    x-mentalbridge-status: planned
+    x-mentalbridge-status: implemented
     get:
       tags: [Assessment]
       operationId: getOwnAssessment
@@ -218,7 +221,7 @@ paths:
         '403': { $ref: '#/components/responses/ForbiddenProblem' }
         '404': { $ref: '#/components/responses/NotFoundProblem' }
   /api/v1/anonymous-assessment-sessions:
-    x-mentalbridge-status: planned
+    x-mentalbridge-status: implemented
     post:
       tags: [Anonymous assessment]
       operationId: createAnonymousAssessmentSession
@@ -241,7 +244,7 @@ paths:
               schema: { $ref: '#/components/schemas/AnonymousSession' }
         '429': { $ref: '#/components/responses/RateLimitProblem' }
   /api/v1/anonymous-assessment-sessions/{sessionId}/assessments:
-    x-mentalbridge-status: planned
+    x-mentalbridge-status: implemented
     post:
       tags: [Anonymous assessment]
       operationId: submitAnonymousAssessment
@@ -277,7 +280,7 @@ paths:
         '410': { $ref: '#/components/responses/ExpiredAnonymousSessionProblem' }
         '429': { $ref: '#/components/responses/RateLimitProblem' }
   /api/v1/anonymous-assessment-sessions/{sessionId}/assessments/{assessmentId}:
-    x-mentalbridge-status: planned
+    x-mentalbridge-status: implemented
     get:
       tags: [Anonymous assessment]
       operationId: getAnonymousAssessment
@@ -500,7 +503,7 @@ components:
     AssessmentResult:
       type: object
       additionalProperties: false
-      required: [totalScore, screeningLevel, scoringVersion, safetyItemPositive, disclaimerCode]
+      required: [totalScore, screeningLevel, scoringVersion, safetyStatus, safetyPolicyVersion, disclaimerCode]
       properties:
         totalScore:
           type: integer
@@ -509,13 +512,21 @@ components:
           description: Server-computed sum of the validated answer values
         screeningLevel: { $ref: '#/components/schemas/ScreeningLevel' }
         scoringVersion: { type: string, minLength: 1, maxLength: 32 }
-        safetyItemPositive:
-          type: boolean
-          description: Factual result of the versioned safety-item rule; exact user guidance remains policy-controlled
+        safetyStatus:
+          $ref: '#/components/schemas/SafetyStatus'
+        safetyPolicyVersion:
+          type: string
+          minLength: 1
+          maxLength: 64
+          description: Exact approved safety policy used for the deterministic item-9 result
         disclaimerCode: { type: string, const: SCREENING_NOT_DIAGNOSIS }
     ScreeningLevel:
       type: string
       enum: [MINIMAL, MILD, MODERATE, MODERATELY_SEVERE, SEVERE]
+    SafetyStatus:
+      type: string
+      description: Independent safety screen; it never overwrites the questionnaire screening level or claims intent or urgency
+      enum: [NEGATIVE_SAFETY_SCREEN, POSITIVE_SAFETY_SCREEN]
     AnonymousSession:
       type: object
       additionalProperties: false

@@ -223,10 +223,17 @@ CREATE TABLE care.assessment_result (
         CHECK (screening_level IN ('MINIMAL', 'MILD', 'MODERATE', 'MODERATELY_SEVERE', 'SEVERE')),
     scoring_version varchar(32) NOT NULL,
     safety_item_positive boolean NOT NULL,
+    safety_status varchar(32) NOT NULL
+        CHECK (safety_status IN ('NEGATIVE_SAFETY_SCREEN', 'POSITIVE_SAFETY_SCREEN')),
+    safety_policy_version varchar(64) NOT NULL CHECK (length(btrim(safety_policy_version)) > 0),
     disclaimer_code varchar(64) NOT NULL DEFAULT 'SCREENING_NOT_DIAGNOSIS'
         CHECK (disclaimer_code = 'SCREENING_NOT_DIAGNOSIS'),
     calculated_at timestamptz NOT NULL,
-    created_at timestamptz NOT NULL DEFAULT now()
+    created_at timestamptz NOT NULL DEFAULT now(),
+    CHECK (
+        (safety_item_positive = false AND safety_status = 'NEGATIVE_SAFETY_SCREEN') OR
+        (safety_item_positive = true AND safety_status = 'POSITIVE_SAFETY_SCREEN')
+    )
 );
 
 CREATE TABLE care.outbox_event (
@@ -248,10 +255,15 @@ CREATE TABLE care.outbox_event (
 CREATE INDEX ix_care_outbox_pending
     ON care.outbox_event (COALESCE(next_attempt_at, occurred_at), occurred_at, id) WHERE published_at IS NULL;
 
-CREATE TABLE care.risk_classification (
+CREATE TABLE care.support_classification (
     id uuid PRIMARY KEY DEFAULT gen_random_uuid(),
     user_id uuid NOT NULL REFERENCES care.user_profile(account_id),
-    level varchar(24) NOT NULL CHECK (level IN ('MINIMAL', 'MILD', 'MODERATE', 'SEVERE', 'INSUFFICIENT_DATA')),
+    tier varchar(48) NOT NULL CHECK (tier IN (
+        'SELF_GUIDED_SUPPORT',
+        'PROFESSIONAL_SUPPORT_RECOMMENDED',
+        'SAFETY_FOLLOW_UP_RECOMMENDED',
+        'INSUFFICIENT_DATA'
+    )),
     policy_version varchar(32) NOT NULL,
     reason_codes jsonb NOT NULL DEFAULT '[]'::jsonb CHECK (jsonb_typeof(reason_codes) = 'array'),
     source_assessment_ids jsonb NOT NULL DEFAULT '[]'::jsonb CHECK (jsonb_typeof(source_assessment_ids) = 'array'),
@@ -261,13 +273,13 @@ CREATE TABLE care.risk_classification (
     superseded_at timestamptz,
     created_at timestamptz NOT NULL DEFAULT now()
 );
-CREATE INDEX ix_risk_user_current
-    ON care.risk_classification (user_id, calculated_at DESC) WHERE superseded_at IS NULL;
+CREATE INDEX ix_support_user_current
+    ON care.support_classification (user_id, calculated_at DESC) WHERE superseded_at IS NULL;
 
 CREATE TABLE care.intervention_plan (
     id uuid PRIMARY KEY DEFAULT gen_random_uuid(),
     user_id uuid NOT NULL REFERENCES care.user_profile(account_id),
-    risk_classification_id uuid NOT NULL REFERENCES care.risk_classification(id),
+    support_classification_id uuid NOT NULL REFERENCES care.support_classification(id),
     template_code varchar(64) NOT NULL,
     template_version varchar(32) NOT NULL,
     status varchar(24) NOT NULL DEFAULT 'ACTIVE' CHECK (status IN ('ACTIVE', 'COMPLETED', 'SUPERSEDED', 'CANCELLED')),
@@ -830,27 +842,6 @@ CREATE TABLE content.resource (
     CHECK (content_body IS NOT NULL OR external_url IS NOT NULL)
 );
 CREATE INDEX ix_resource_browse ON content.resource (locale, category, created_at DESC) WHERE status = 'PUBLISHED';
-
-CREATE TABLE content.hotline (
-    id uuid PRIMARY KEY DEFAULT gen_random_uuid(),
-    country_code char(2) NOT NULL,
-    region varchar(120),
-    name varchar(255) NOT NULL,
-    phone_number varchar(40),
-    website_url varchar(2048),
-    availability_text varchar(255),
-    guidance text NOT NULL,
-    locale varchar(16) NOT NULL DEFAULT 'vi-VN',
-    active boolean NOT NULL DEFAULT true,
-    verified_at timestamptz NOT NULL,
-    next_review_at timestamptz NOT NULL,
-    verified_by uuid NOT NULL REFERENCES identity.account(id),
-    created_at timestamptz NOT NULL DEFAULT now(),
-    updated_at timestamptz NOT NULL DEFAULT now(),
-    CHECK (phone_number IS NOT NULL OR website_url IS NOT NULL),
-    CHECK (next_review_at > verified_at)
-);
-CREATE INDEX ix_hotline_active_region ON content.hotline (country_code, region) WHERE active;
 
 CREATE TABLE content.notification_preference (
     user_id uuid NOT NULL REFERENCES care.user_profile(account_id),

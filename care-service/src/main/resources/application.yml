@@ -18,6 +18,17 @@ spring:
     enabled: false
     change-log: classpath:db/changelog/db.changelog-master.yaml
     default-schema: public
+
+mentalbridge:
+  care:
+    jwt:
+      issuer: ${IDENTITY_JWT_ISSUER}
+      audience: ${IDENTITY_JWT_AUDIENCE}
+      public-key: ${IDENTITY_JWT_PUBLIC_KEY}
+    assessment:
+      anonymous-session-ttl: ${CARE_ANONYMOUS_SESSION_TTL}
+      phq9-safety-policy-version: ${CARE_PHQ9_SAFETY_POLICY_VERSION}
+      idempotency-hmac-key: ${CARE_IDEMPOTENCY_HMAC_KEY}
 eureka:
   client:
     service-url:

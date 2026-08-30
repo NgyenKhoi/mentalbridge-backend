@@ -2,7 +2,7 @@
 
 This document explains the business purpose of conceptual PostgreSQL fields. [`001_initial_schema.sql`](../../database/postgresql/001_initial_schema.sql) is a non-executable whole-system model and must not provision an environment. Names such as `consultation.appointment` below identify a logical owner inside that model; the physical table will be `public.appointment` in the separate `mentalbridge_consultation` database. Service-owned migration histories become executable sources of truth only when modules are implemented: Liquibase for Spring services and `node-pg-migrate` for Node.js services. It is written for developers and reviewers; descriptions are intentionally kept out of executable migrations.
 
-When service-owned migrations are introduced, update this dictionary in the same change. A field description must explain why the value is persisted, whether it is authoritative, derived, external, or sensitive, and how nullability, time, versioning, or idempotency affects behavior. Content/Notification's executable baseline is `content-notification-service/migrations/1_initial_schema.sql`; the field descriptions under its conceptual owner below apply to those physical `public` tables.
+When service-owned migrations are introduced, update this dictionary in the same change. A field description must explain why the value is persisted, whether it is authoritative, derived, external, or sensitive, and how nullability, time, versioning, or idempotency affects behavior. Content/Notification's executable history starts at `content-notification-service/migrations/1_initial_schema.sql`; migration 2 removes the obsolete hotline table, and the field descriptions under its conceptual owner below describe the resulting physical `public` tables.
 
 ## Database `mentalbridge_identity` (schema `public`)
 
@@ -126,7 +126,7 @@ Privacy-minimized local security record for authentication, recovery, replay, an
 
 ## Owner `care` (`mentalbridge_care.public`)
 
-The MB-88 tables below are executable Liquibase-owned structures in the Care database's default `public` schema. Later risk, intervention, grant, and follow-up entries in this section remain conceptual until their owner migrations are added.
+The MB-88 tables below are executable Liquibase-owned structures in the Care database's default `public` schema. Later support, intervention, grant, and follow-up entries in this section remain conceptual until their owner migrations are added.
 
 ### `public.user_profile`
 
@@ -225,7 +225,7 @@ Immutable accepted screening envelope for exactly one authenticated profile or a
 
 | Field | Purpose |
 | --- | --- |
-| `id` | Immutable UUID returned by REST and referenced by later risk and follow-up decisions. |
+| `id` | Immutable UUID returned by REST and referenced by later support and follow-up decisions. |
 | `user_id` | Authenticated Care profile owner; null for an anonymous screening. |
 | `anonymous_session_id` | Care-owned short-lived session identifier; null for an authenticated submission and never accompanied by a user ID. |
 | `definition_id` | Exact questionnaire definition used to validate and score all answers. |
@@ -258,7 +258,9 @@ One authoritative server-owned scoring result for an accepted submission. Client
 | `total_score` | Server-computed integer sum constrained to the supported range 0 through 27. |
 | `screening_level` | Non-diagnostic score band selected from the definition's versioned ranges. |
 | `scoring_version` | Exact deterministic algorithm version needed to reproduce the score and band. |
-| `safety_item_positive` | Authoritative fact that the versioned safety item met its positive rule; it does not invent crisis wording or escalation policy. |
+| `safety_item_positive` | Authoritative derived fact that the versioned questionnaire safety item met its positive rule; it remains independent from the screening level. |
+| `safety_status` | Nullable transition field for the independent `NEGATIVE_SAFETY_SCREEN` or `POSITIVE_SAFETY_SCREEN` policy result; every MB-89 runtime result must populate it together with `safety_policy_version`, while null is reserved only for pre-policy foundation rows. |
+| `safety_policy_version` | Nullable transition field identifying the exact approved safety policy used; paired atomically with `safety_status` so historical results remain reproducible. |
 | `disclaimer_code` | Stable `SCREENING_NOT_DIAGNOSIS` presentation key required for every result. |
 | `calculated_at` | UTC instant Care completed deterministic scoring. |
 | `created_at` | Immutable UTC insertion instant for persistence provenance. |
@@ -283,15 +285,15 @@ Care-owned transactional outbox row inserted in the same local transaction as an
 | `next_attempt_at` | Optional UTC instant before which the relay must not retry. |
 | `created_at` | Immutable UTC database insertion instant. |
 
-### `care.risk_classification`
+### `care.support_classification`
 
 Versioned platform support-tier result derived from approved sources, distinct from diagnosis.
 
 | Field | Purpose |
 | --- | --- |
-| `id` | Immutable UUID identifying this reproducible risk-policy execution. |
+| `id` | Immutable UUID identifying this reproducible support-policy execution. |
 | `user_id` | Care profile for whom the platform support tier was calculated. |
-| `level` | Authoritative platform support tier produced by the named policy, not a clinical diagnosis. |
+| `tier` | Authoritative approved support pathway; values never claim low, medium, or high suicide risk. |
 | `policy_version` | Exact deterministic policy version needed to reproduce and audit the decision. |
 | `reason_codes` | Stable machine-readable reasons supporting the tier without storing free-form model reasoning. |
 | `source_assessment_ids` | Identifiers of authoritative assessment submissions used by this calculation. |
@@ -303,18 +305,18 @@ Versioned platform support-tier result derived from approved sources, distinct f
 
 ### `care.intervention_plan`
 
-Versioned set of platform support actions generated for one risk classification.
+Versioned set of platform support actions generated for one support classification.
 
 | Field | Purpose |
 | --- | --- |
 | `id` | Immutable UUID used by follow-up resources and REST endpoints. |
 | `user_id` | Care profile that owns and may view the plan. |
-| `risk_classification_id` | Exact risk result that justified generating the plan. |
+| `support_classification_id` | Exact support-policy result that justified generating the plan. |
 | `template_code` | Stable reviewed intervention template identifier. |
 | `template_version` | Exact template revision used so displayed actions remain auditable. |
 | `status` | Lifecycle state controlling whether the plan is active, complete, superseded, or cancelled. |
 | `actions` | Validated ordered structured actions copied from the reviewed template for historical stability. |
-| `generated_at` | UTC instant the plan was generated from the risk result. |
+| `generated_at` | UTC instant the plan was generated from the support result. |
 | `completed_at` | UTC instant the plan reached completion; null until completed. |
 | `created_at` | Immutable UTC insertion instant. |
 | `updated_at` | UTC instant of the latest persisted plan status/action change. |
@@ -878,28 +880,6 @@ Reviewed self-help content or external resource managed by Content/Notification 
 | `created_at` | Immutable UTC content creation instant. |
 | `updated_at` | UTC instant of the latest content or publication change. |
 | `version` | Optimistic-lock counter preventing lost content edits. |
-
-### `content.hotline`
-
-Reviewed regional crisis/support contact whose freshness is actively governed.
-
-| Field | Purpose |
-| --- | --- |
-| `id` | Immutable UUID referenced by safety responses and audit. |
-| `country_code` | ISO 3166-1 alpha-2 country used to select an applicable contact. |
-| `region` | Optional sub-country applicability label for regional routing. |
-| `name` | Verified organization or service name shown to users. |
-| `phone_number` | Verified contact number; one phone number or website is required. |
-| `website_url` | Verified support website; one website or phone number is required. |
-| `availability_text` | Reviewed human-readable operating hours/timezone guidance. |
-| `guidance` | Reviewed safe instructions accompanying the contact; never generated dynamically by AI. |
-| `locale` | BCP 47 locale of the displayed contact guidance. |
-| `active` | Controls selection without deleting historical reviewed contacts. |
-| `verified_at` | UTC instant an administrator last confirmed the contact details. |
-| `next_review_at` | UTC deadline for mandatory re-verification and freshness monitoring. |
-| `verified_by` | Administrator account responsible for the verification. |
-| `created_at` | Immutable UTC contact insertion instant. |
-| `updated_at` | UTC instant of the latest verified data change. |
 
 ### `content.notification_preference`
 

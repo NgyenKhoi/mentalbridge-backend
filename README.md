@@ -2,13 +2,13 @@
 
 Backend platform for **MentalBridge (MBMS)**, an intelligent mental-health screening and early-intervention system for Vietnamese students and young adults (18-30).
 
-MentalBridge helps users complete PHQ-9/GAD-7 self-screenings, keep an emotion journal, receive AI-assisted emotion insights, follow a risk-appropriate support workflow, and connect with an approved specialist. It is a screening and support product, **not a diagnosis, emergency service, or replacement for professional treatment**.
+MentalBridge helps users complete PHQ-9/GAD-7 self-screenings, keep an emotion journal, receive AI-assisted emotion insights, follow an approved support workflow, and connect with an approved specialist. It is a screening and support product, **not a diagnosis, emergency service, or replacement for professional treatment**.
 
 ## Product scope
 
 - End-user mobile APIs: authentication, profile, consent, journal, assessments, insights, interventions, subscriptions, consultation credits, appointments, chat, notifications, and personal trends.
 - Specialist APIs: approved profile, channel-specific availability, scheduled consultation appointments, consented user data, follow-up, earnings, and provider payout history.
-- Administration APIs: account/profile approval, subscription/payment/upgrade and payout reconciliation, content and hotline management, moderation, aggregated reporting, audit, retention, and AI evaluation datasets.
+- Administration APIs: account/profile approval, subscription/payment/upgrade and payout reconciliation, reviewed content management, moderation, aggregated reporting, audit, retention, and AI evaluation datasets.
 - AI/NLP integration: Gemini or OpenAI through prompt engineering; PhoBERT inference is used only as an experimental baseline.
 - Anonymous PHQ-9/GAD-7 screening with minimal collection and no silent linkage to a later account.
 
@@ -19,11 +19,11 @@ The recommended starting point is a **small microservice landscape**, not one se
 | Component | Technology | Responsibility | Primary store |
 | --- | --- | --- | --- |
 | Identity Service | Spring Boot 4.x | Accounts, roles, sessions, password reset | PostgreSQL |
-| Care Service | Spring Boot 4.x | Profiles, consent grants, assessments, risk, interventions, follow-up | PostgreSQL |
+| Care Service | Spring Boot 4.x | Profiles, consent grants, assessments, safety/support policy, interventions, follow-up | PostgreSQL |
 | Consultation Service | Spring Boot 4.x | Specialist approval/discovery, subscription/payment/upgrade, credits, scheduled consultations, earnings/provider payouts, reviews | PostgreSQL |
 | Journal & AI Service | Node.js 22+, TypeScript, NestJS | Journals, LLM orchestration, analysis jobs/results, benchmark coordination | MongoDB + PostgreSQL metadata |
 | Realtime Service | Node.js 22+, TypeScript, NestJS, Socket.IO | REST message APIs, WebSocket chat/notification delivery, presence, receipts | MongoDB + Redis |
-| Content & Notification Service | Node.js 22+, TypeScript, NestJS | Self-help resources, hotlines, preferences, notification/provider delivery | PostgreSQL |
+| Content & Notification Service | Node.js 22+, TypeScript, NestJS | Self-help resources, preferences, notification/provider delivery | PostgreSQL |
 | PhoBERT Worker | Python | Experimental inference jobs only | No authoritative business store |
 
 ADR 0005 assigns the workbook's financial bounded context to a cohesive `billing` feature inside Consultation Service, preserving the seven-deployable baseline. It owns paid subscriptions, Care-to-Plus upgrades, consultation credits, specialist earnings, and payout reconciliation. Downgrade and user-initiated refund are unsupported; MoMo is the sole production payment/payout provider, while local/CI uses MoMo-shaped fakes.
@@ -33,18 +33,16 @@ Use REST/JSON DTOs for synchronous business APIs and service-to-service queries.
 ## Core flow
 
 ```text
-Assessment + journal signals
-          |
-          v
-Deterministic risk policy  --->  Minimal/Mild: self-help + reassessment
-          |                 --->  Moderate: specialist referral + follow-up
-          +-------------------->  Severe: crisis information + prominent guidance
+Questionnaire result ----> screeningLevel
+PHQ-9 item 9 -----------> safetyStatus
+Approved local policy --> supportTier --> approved catalogue actions
+Active plan version ----> entitlementPlan
 
 AI supplies supporting indicators; it must not override validated questionnaire
-scoring, invent a diagnosis, or be the sole trigger for a safety decision.
+scoring, change safety status, invent a diagnosis, or create an intervention.
 ```
 
-Severe-risk handling must be deterministic, immediate, auditable, and usable even if the AI provider or message broker is unavailable. Hotline content must be maintained and reviewed by an administrator; never hard-code unverified emergency numbers in model prompts.
+Safety handling must be deterministic, immediate, auditable, non-paywalled, and usable even if optional AI or messaging dependencies are unavailable. MentalBridge has no hotline catalogue and must not hard-code unverified emergency numbers or facility claims in prompts or application code. See [ADR 0009](docs/adr/0009-care-screening-safety-and-support-boundaries.md) and the [policy register](docs/policies/README.md).
 
 ## Repository documentation
 
@@ -69,7 +67,7 @@ Severe-risk handling must be deterministic, immediate, auditable, and usable eve
 | Iteration | Outcome |
 | --- | --- |
 | 1 - Screening foundation | Identity, profile/consent, anonymous and authenticated PHQ-9/GAD-7, journal CRUD, admin login |
-| 2 - Insight and intervention | Asynchronous journal analysis, deterministic risk classification, resources, crisis guidance |
+| 2 - Insight and intervention | Asynchronous journal analysis, deterministic safety/support policy, approved resources and safety guidance |
 | 3 - Human support and premium access | Specialist approval/profile, subscription/payment, consultation credits, availability, booking, consented access, chat, reviews, follow-up, notifications |
 | 4 - Governance and research | Administration, payout history/reconciliation, moderation, deletion/retention, audit, reporting, dataset import, LLM vs PhoBERT benchmark |
 

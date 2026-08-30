@@ -16,7 +16,7 @@ This guide explains `MentalBridge_Sprint1_Import_Template.csv`. Sprint 1 assumes
 | Member 2 | Java/Spring Boot/PostgreSQL | Care | profile, consent, and PHQ-9 foundation |
 | Member 3 | NestJS/TypeScript/MongoDB | Journal/AI | NestJS service plus private journal CRUD |
 | Member 4 | NestJS/TypeScript/MongoDB/Redis | Realtime | NestJS service plus connection, presence, and message primitives |
-| Member 5 | NestJS/TypeScript/PostgreSQL | Content/Notification | NestJS service plus reviewed resource/hotline APIs |
+| Member 5 | NestJS/TypeScript/PostgreSQL | Content/Notification | NestJS service plus reviewed resource APIs |
 
 Consultation, AI provider calls, Kafka analysis, notification delivery, frontend, cloud deployment, and CD are not Sprint 1 work.
 
@@ -58,7 +58,7 @@ Use real disposable PostgreSQL, MongoDB, or Redis through Testcontainers where a
 
 - **Server-authoritative scoring** means the API accepts answers only; Care calculates and persists the PHQ-9 score.
 - **Anonymous isolation** means a guest result is not silently attached to a later account.
-- **Item-9 safety acceptance** is a product/supervisor decision required before final behavior; a developer must not invent crisis wording or policy.
+- **Item-9 safety acceptance** uses the draft `MB-SAFETY-PHQ9-001`: `answer >= 1` is positive and independent of severity; exact Vietnamese wording and guidance still require supervisor/domain approval.
 
 ### Journal/AI
 

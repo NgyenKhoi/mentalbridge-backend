@@ -5,3 +5,5 @@ databaseChangeLog:
       file: db/changelog/changes/002-care-assessment.sql
   - include:
       file: db/changelog/changes/003-phq9-reference-data.sql
+  - include:
+      file: db/changelog/changes/004-assessment-safety-policy-provenance.sql

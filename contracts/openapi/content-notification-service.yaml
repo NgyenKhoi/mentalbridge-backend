@@ -4,8 +4,8 @@ info:
   version: 1.0.0
   description: >
     MentalBridge Content/Notification bounded context.
-    Manages self-help resources, crisis hotlines, in-app notifications,
-    and delivery preferences.
+    Manages reviewed self-help resources, in-app notifications, and delivery
+    preferences. Hotline catalogue operations are not part of this service.
 
 servers:
   - url: http://localhost:3003
@@ -16,8 +16,6 @@ tags:
     description: Liveness and readiness probes
   - name: Resources
     description: Self-help content management (admin reviewed)
-  - name: Hotlines
-    description: Crisis support hotline management
 
 paths:
   /health/live:
@@ -262,155 +260,6 @@ paths:
         '409':
           $ref: '#/components/responses/Conflict'
 
-  /api/v1/hotlines:
-    x-mentalbridge-status: planned
-    get:
-      tags: [Hotlines]
-      summary: List active crisis hotlines
-      operationId: listHotlines
-      parameters:
-        - name: countryCode
-          in: query
-          schema:
-            type: string
-            minLength: 2
-            maxLength: 2
-            example: VN
-        - name: locale
-          in: query
-          schema:
-            type: string
-            example: vi-VN
-        - name: activeOnly
-          in: query
-          schema:
-            type: boolean
-            default: true
-      responses:
-        '200':
-          description: List of hotlines
-          content:
-            application/json:
-              schema:
-                $ref: '#/components/schemas/HotlineListResponse'
-
-    post:
-      tags: [Hotlines]
-      summary: Create a hotline (Admin)
-      operationId: createHotline
-      security:
-        - BearerAuth: []
-      requestBody:
-        required: true
-        content:
-          application/json:
-            schema:
-              $ref: '#/components/schemas/CreateHotlineRequest'
-      responses:
-        '201':
-          description: Hotline created
-          content:
-            application/json:
-              schema:
-                $ref: '#/components/schemas/HotlineSummary'
-              example:
-                id: 987e6543-e21b-34d5-b678-123456789abc
-                countryCode: VN
-                region: Ho Chi Minh City
-                name: Đường dây nóng sức khỏe tâm thần
-                phoneNumber: 1800-xxxx
-                websiteUrl: https://example.com
-                availabilityText: 24/7
-                guidance: Hỗ trợ tâm lý khẩn cấp
-                locale: vi-VN
-                active: true
-                verifiedAt: '2024-01-15T10:00:00Z'
-        '422':
-          $ref: '#/components/responses/ValidationError'
-
-  /api/v1/hotlines/{id}:
-    x-mentalbridge-status: planned
-    parameters:
-      - name: id
-        in: path
-        required: true
-        schema:
-          type: string
-          format: uuid
-
-    get:
-      tags: [Hotlines]
-      summary: Get hotline detail
-      operationId: getHotline
-      responses:
-        '200':
-          description: Hotline detail
-          content:
-            application/json:
-              schema:
-                $ref: '#/components/schemas/HotlineDetail'
-        '404':
-          $ref: '#/components/responses/NotFound'
-
-    patch:
-      tags: [Hotlines]
-      summary: Update hotline (Admin)
-      operationId: updateHotline
-      security:
-        - BearerAuth: []
-      requestBody:
-        required: true
-        content:
-          application/json:
-            schema:
-              $ref: '#/components/schemas/UpdateHotlineRequest'
-      responses:
-        '200':
-          description: Updated hotline
-          content:
-            application/json:
-              schema:
-                $ref: '#/components/schemas/HotlineSummary'
-        '404':
-          $ref: '#/components/responses/NotFound'
-
-    delete:
-      tags: [Hotlines]
-      summary: Delete hotline (Admin)
-      operationId: deleteHotline
-      security:
-        - BearerAuth: []
-      responses:
-        '204':
-          description: Deleted
-        '404':
-          $ref: '#/components/responses/NotFound'
-
-  /api/v1/hotlines/{id}/deactivate:
-    x-mentalbridge-status: planned
-    post:
-      tags: [Hotlines]
-      summary: Deactivate a hotline (Admin)
-      operationId: deactivateHotline
-      security:
-        - BearerAuth: []
-      parameters:
-        - name: id
-          in: path
-          required: true
-          schema:
-            type: string
-            format: uuid
-      responses:
-        '200':
-          description: Hotline deactivated
-          content:
-            application/json:
-              schema:
-                $ref: '#/components/schemas/HotlineSummary'
-        '404':
-          $ref: '#/components/responses/NotFound'
-
 components:
   securitySchemes:
     BearerAuth:
@@ -606,7 +455,6 @@ components:
           type: string
           format: uri
           nullable: true
-
     UpdateResourceRequest:
       type: object
       properties:
@@ -621,120 +469,4 @@ components:
         externalUrl:
           type: string
           format: uri
-          nullable: true
-
-    HotlineSummary:
-      type: object
-      required: [id, countryCode, name, guidance, active, verifiedAt]
-      properties:
-        id:
-          type: string
-          format: uuid
-        countryCode:
-          type: string
-          minLength: 2
-          maxLength: 2
-        region:
-          type: string
-          nullable: true
-        name:
-          type: string
-        phoneNumber:
-          type: string
-          nullable: true
-        websiteUrl:
-          type: string
-          nullable: true
-        availabilityText:
-          type: string
-          nullable: true
-        guidance:
-          type: string
-        locale:
-          type: string
-        active:
-          type: boolean
-        verifiedAt:
-          type: string
-          format: date-time
-
-    HotlineDetail:
-      allOf:
-        - $ref: '#/components/schemas/HotlineSummary'
-        - type: object
-          properties:
-            nextReviewAt:
-              type: string
-              format: date-time
-            verifiedBy:
-              type: string
-              format: uuid
-            createdAt:
-              type: string
-              format: date-time
-            updatedAt:
-              type: string
-              format: date-time
-
-    HotlineListResponse:
-      type: object
-      required: [data, count]
-      properties:
-        data:
-          type: array
-          items:
-            $ref: '#/components/schemas/HotlineSummary'
-        count:
-          type: integer
-
-    CreateHotlineRequest:
-      type: object
-      required: [countryCode, name, guidance]
-      properties:
-        countryCode:
-          type: string
-          minLength: 2
-          maxLength: 2
-        region:
-          type: string
-          nullable: true
-        name:
-          type: string
-          maxLength: 255
-        phoneNumber:
-          type: string
-          nullable: true
-        websiteUrl:
-          type: string
-          format: uri
-          nullable: true
-        availabilityText:
-          type: string
-          nullable: true
-        guidance:
-          type: string
-        locale:
-          type: string
-          default: vi-VN
-
-    UpdateHotlineRequest:
-      type: object
-      properties:
-        name:
-          type: string
-          maxLength: 255
-        phoneNumber:
-          type: string
-          nullable: true
-        websiteUrl:
-          type: string
-          format: uri
-          nullable: true
-        availabilityText:
-          type: string
-          nullable: true
-        guidance:
-          type: string
-        region:
-          type: string
           nullable: true
