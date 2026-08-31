@@ -16,6 +16,7 @@ PostgreSQL persistence uses Hibernate and Spring Data JPA types inside the ownin
 | Variable | Required | Purpose | Safe local example |
 | --- | --- | --- | --- |
 | `EUREKA_DEFAULT_ZONE` | Production | Eureka registry endpoint shared by Spring services | `http://localhost:8761/eureka/` |
+| `EUREKA_CLIENT_ENABLED` | No | Enables Eureka registration; disable it when running Identity by itself locally | `false` |
 | `IDENTITY_DB_URL` | Yes | PostgreSQL JDBC URL; use `sslmode=require` for an RDS connection | `jdbc:postgresql://localhost:5432/mentalbridge_identity` |
 | `IDENTITY_DB_USERNAME` | Yes | Identity-owned PostgreSQL login | `mentalbridge_identity` |
 | `IDENTITY_DB_PASSWORD` | Yes | Identity PostgreSQL password injected outside source control | `replace-with-a-local-secret` |
@@ -37,13 +38,29 @@ PostgreSQL persistence uses Hibernate and Spring Data JPA types inside the ownin
 Production must override the local Eureka URL. Kafka and Redis variables will be documented when those runtime adapters are introduced.
 Registration persists the account with exactly one immutable `USER` or `SPECIALIST` role, hashed challenge, idempotent outcome, and outbox event in one transaction. The configured delivery adapter runs only after that transaction commits and never logs the recipient or challenge. Delivery remains disabled by default and in ordinary tests.
 
+To prepare a new local checkout from the repository root, copy the committed template and generate development-only signing and encryption material:
+
+```powershell
+Copy-Item .env.example identity-service/.env
+.\scripts\generate-local-jwt-keys.ps1
+```
+
+Replace the three corresponding placeholders in `identity-service/.env` with the entries written to `.local/identity-secrets/identity-secrets.env`, then set the Identity database URL, username, and password. Both files containing real secrets are ignored by Git and must not be committed.
+
 For local frontend integration with synthetic accounts, enable the `local` profile and the local file adapter:
 
 ```powershell
 $env:SPRING_PROFILES_ACTIVE='local'
 $env:IDENTITY_VERIFICATION_DELIVERY_MODE='local-file'
 $env:IDENTITY_LOCAL_VERIFICATION_DIRECTORY='.local/identity-verification'
+$env:EUREKA_CLIENT_ENABLED='false'
 .\mvnw.cmd spring-boot:run
+```
+
+`SPRING_PROFILES_ACTIVE` must be supplied by the process or the Maven command line because dotenv is loaded after Spring chooses active profiles. The equivalent single-command launch is:
+
+```powershell
+.\mvnw.cmd spring-boot:run "-Dspring-boot.run.profiles=local"
 ```
 
 Each accepted registration writes only its frontend verification URL to `.local/identity-verification/<accountId>.verification-url`. The ignored directory may contain an active challenge, so use synthetic addresses, do not publish its files, and delete them after testing. The adapter requires an exclusive `local` or `dev` profile; startup rejects it with no profile, with `prod`, or with `prod` combined with a development profile. Use `brevo` mode with externally supplied credentials for an approved provider environment.
