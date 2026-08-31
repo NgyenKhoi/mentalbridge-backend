@@ -3,6 +3,9 @@ package com.mentalbridge.identity.authentication;
 import java.time.Instant;
 import java.util.UUID;
 
+import org.hibernate.annotations.JdbcTypeCode;
+import org.hibernate.type.SqlTypes;
+
 import jakarta.persistence.Column;
 import jakarta.persistence.Entity;
 import jakarta.persistence.Id;
@@ -21,16 +24,19 @@ public class RefreshSessionEntity {
 	@Column(name = "account_id", nullable = false)
 	private UUID accountId;
 
-	@Column(name = "token_hash", nullable = false, columnDefinition = "char(64)")
+	@JdbcTypeCode(SqlTypes.CHAR)
+	@Column(name = "token_hash", nullable = false, length = 64)
 	private String tokenHash;
 
 	@Column(name = "device_label", length = 120)
 	private String deviceLabel;
 
-	@Column(name = "ip_hash", columnDefinition = "char(64)")
+	@JdbcTypeCode(SqlTypes.CHAR)
+	@Column(name = "ip_hash", length = 64)
 	private String ipHash;
 
-	@Column(name = "user_agent_hash", columnDefinition = "char(64)")
+	@JdbcTypeCode(SqlTypes.CHAR)
+	@Column(name = "user_agent_hash", length = 64)
 	private String userAgentHash;
 
 	@Column(name = "expires_at", nullable = false)

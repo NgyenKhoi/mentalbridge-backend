@@ -46,6 +46,28 @@ class IdentityLiquibaseMigrationTests extends IdentityTestProperties {
 	}
 
 	@Test
+	void fixedLengthHashColumnsRemainPostgresqlChar64() {
+		var columns = jdbc.sql("""
+				select table_name || '.' || column_name
+				from information_schema.columns
+				where table_schema = 'public'
+				  and data_type = 'character'
+				  and character_maximum_length = 64
+				  and (table_name, column_name) in (
+				    ('refresh_session', 'token_hash'),
+				    ('refresh_session', 'ip_hash'),
+				    ('refresh_session', 'user_agent_hash'),
+				    ('one_time_token', 'token_hash'),
+				    ('idempotency_record', 'request_hash')
+				  )
+				order by table_name, column_name
+				""").query(String.class).list();
+
+		assertThat(columns).containsExactly("idempotency_record.request_hash", "one_time_token.token_hash",
+				"refresh_session.ip_hash", "refresh_session.token_hash", "refresh_session.user_agent_hash");
+	}
+
+	@Test
 	void normalizedEmailUniquenessIsCaseInsensitive() {
 		insertPendingAccount("person@example.com");
 
