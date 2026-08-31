@@ -13,9 +13,9 @@ public class VerificationDeliveryConfigurationValidator {
 	public VerificationDeliveryConfigurationValidator(VerificationDeliveryProperties properties,
 			Environment environment) {
 		var activeProfiles = Set.of(environment.getActiveProfiles());
-		var exclusivelyDevelopment = activeProfiles.equals(Set.of("local")) || activeProfiles.equals(Set.of("dev"));
+		var exclusivelyDevelopment = activeProfiles.equals(Set.of("dev"));
 		if (properties.mode() == Mode.LOCAL_FILE && !exclusivelyDevelopment) {
-			throw new IllegalStateException("Local verification delivery requires an exclusive local or dev profile");
+			throw new IllegalStateException("Local verification delivery requires the exclusive dev profile");
 		}
 	}
 
