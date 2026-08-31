@@ -27,7 +27,7 @@ PostgreSQL persistence uses Hibernate and Spring Data JPA types inside the ownin
 | `IDENTITY_JWT_PUBLIC_KEY` | Yes | X.509 RSA public verification key | `replace-with-x509-pem-public-key` |
 | `IDENTITY_ENCRYPTION_KEY_VERSION` | Yes | Non-secret identifier for the active idempotency-response key | `local-v1` |
 | `IDENTITY_ENCRYPTION_KEY` | Yes | Base64-encoded 32-byte AES key for bounded idempotent responses | `replace-with-base64-encoded-32-byte-key` |
-| `IDENTITY_VERIFICATION_DELIVERY_MODE` | No | Selects `disabled`, `brevo`, or the development-only `local-file` adapter | `disabled` |
+| `IDENTITY_VERIFICATION_DELIVERY_MODE` | No | Selects `disabled`, `brevo`, or the development-only `local-file` fallback; use `brevo` for the normal development E2E flow | `brevo` |
 | `IDENTITY_BREVO_BASE_URL` | When delivery is enabled | Brevo API base URL | `https://api.brevo.com` |
 | `IDENTITY_BREVO_API_KEY` | When delivery is enabled | Brevo API credential | `replace-only-when-delivery-is-enabled` |
 | `IDENTITY_BREVO_SENDER_EMAIL` | When delivery is enabled | Verified transactional sender | `no-reply@example.test` |
@@ -36,7 +36,7 @@ PostgreSQL persistence uses Hibernate and Spring Data JPA types inside the ownin
 | `IDENTITY_LOCAL_VERIFICATION_DIRECTORY` | In `local-file` mode | Ignored local directory receiving one verification URL file per synthetic account | `.local/identity-verification` |
 
 Production must override the local Eureka URL. Kafka and Redis variables will be documented when those runtime adapters are introduced.
-Registration persists the account with exactly one immutable `USER` or `SPECIALIST` role, hashed challenge, idempotent outcome, and outbox event in one transaction. The configured delivery adapter runs only after that transaction commits and never logs the recipient or challenge. Delivery remains disabled by default and in ordinary tests.
+Registration persists the account with exactly one immutable `USER` or `SPECIALIST` role, hashed challenge, idempotent outcome, and outbox event in one transaction. The configured delivery adapter runs only after that transaction commits and never logs the recipient or challenge. Automated tests keep delivery isolated and never use live Brevo credentials.
 
 To prepare a new local checkout from the repository root, copy the committed template and generate development-only signing and encryption material:
 
@@ -45,25 +45,25 @@ Copy-Item .env.example identity-service/.env
 .\scripts\generate-local-jwt-keys.ps1
 ```
 
-Replace the three corresponding placeholders in `identity-service/.env` with the entries written to `.local/identity-secrets/identity-secrets.env`, then set the Identity database URL, username, and password. Both files containing real secrets are ignored by Git and must not be committed.
+Replace the three corresponding placeholders in `identity-service/.env` with the entries written to `.local/identity-secrets/identity-secrets.env`, then set the Identity database URL, username, password, development Brevo key, and verified sender. Both files containing real secrets are ignored by Git and must not be committed.
 
-For local frontend integration with synthetic accounts, enable the `local` profile and the local file adapter:
+For the normal frontend-to-backend development flow, use Brevo credentials from the ignored `identity-service/.env` and run without a special Spring profile:
 
 ```powershell
-$env:SPRING_PROFILES_ACTIVE='local'
-$env:IDENTITY_VERIFICATION_DELIVERY_MODE='local-file'
-$env:IDENTITY_LOCAL_VERIFICATION_DIRECTORY='.local/identity-verification'
-$env:EUREKA_CLIENT_ENABLED='false'
+cd identity-service
 .\mvnw.cmd spring-boot:run
 ```
 
-`SPRING_PROFILES_ACTIVE` must be supplied by the process or the Maven command line because dotenv is loaded after Spring chooses active profiles. The equivalent single-command launch is:
+The Brevo adapter sends the verification URL to the submitted email address. Do not commit or share the `.env`, and use a development provider key rather than a production credential.
+
+If Brevo is temporarily unavailable, the retained `local-file` fallback can be enabled only with the exclusive `dev` profile:
 
 ```powershell
-.\mvnw.cmd spring-boot:run "-Dspring-boot.run.profiles=local"
+$env:IDENTITY_VERIFICATION_DELIVERY_MODE='local-file'
+.\mvnw.cmd spring-boot:run "-Dspring-boot.run.profiles=dev"
 ```
 
-Each accepted registration writes only its frontend verification URL to `.local/identity-verification/<accountId>.verification-url`. The ignored directory may contain an active challenge, so use synthetic addresses, do not publish its files, and delete them after testing. The adapter requires an exclusive `local` or `dev` profile; startup rejects it with no profile, with `prod`, or with `prod` combined with a development profile. Use `brevo` mode with externally supplied credentials for an approved provider environment.
+Each accepted registration then writes only its frontend verification URL to `.local/identity-verification/<accountId>.verification-url`. The ignored directory may contain an active challenge, so use synthetic addresses, do not publish its files, and delete them after testing. Startup rejects this fallback with no profile, with `prod`, or with `prod` combined with `dev`.
 
 The initial deployment provisions one dedicated `ADMIN` account through an operator-controlled bootstrap with externally supplied credentials. Public registration and account-administration APIs never create or promote an administrator. Liquibase enforces at most one `ADMIN` account but deliberately does not contain administrator credentials; deployment readiness must verify that secure provisioning has completed.
 

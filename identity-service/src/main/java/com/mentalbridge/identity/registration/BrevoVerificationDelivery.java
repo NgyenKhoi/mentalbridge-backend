@@ -28,9 +28,10 @@ public class BrevoVerificationDelivery implements VerificationDelivery {
 	public void requestDelivery(UUID accountId, String normalizedEmail, String challenge, UUID correlationId) {
 		var link = properties.verificationUrl().toString() + "?challenge="
 				+ java.net.URLEncoder.encode(challenge, java.nio.charset.StandardCharsets.UTF_8);
+		var content = VerificationEmailTemplate.create(link);
 		var body = Map.of("sender", Map.of("name", properties.senderName(), "email", properties.senderEmail()),
-				"to", List.of(Map.of("email", normalizedEmail)), "subject", "Verify your MentalBridge account",
-				"htmlContent", "<p>Verify your MentalBridge account:</p><p><a href=\"" + link + "\">Verify email</a></p>",
+				"to", List.of(Map.of("email", normalizedEmail)), "subject", content.subject(),
+				"htmlContent", content.html(), "textContent", content.text(),
 				"headers", Map.of("X-Correlation-Id", correlationId.toString()));
 		client.post().uri("/v3/smtp/email").contentType(MediaType.APPLICATION_JSON).body(body).retrieve().toBodilessEntity();
 	}
@@ -43,5 +44,4 @@ public class BrevoVerificationDelivery implements VerificationDelivery {
 			throw new IllegalStateException("Verification delivery configuration is incomplete");
 		}
 	}
-
 }
