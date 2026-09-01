@@ -227,14 +227,14 @@ In-app video is intended but its call/signaling/provider/security contract is de
 
 ## 6. Open product decisions
 
-These require supervisor/domain-expert approval before implementation:
+These remain open for the affected production or optional feature. Under ADR 0010 they do not block a base questionnaire that has passed the controlled Capstone publication gate:
 
-1. Exact support-tier matrix, recency windows, missing/stale inputs, confidence thresholds, and approved intervention catalogue. PHQ-9 item-9 core behavior is documented in `MB-SAFETY-PHQ9-001`, pending domain approval of exact content.
+1. Exact support-tier matrix, recency windows, missing/stale inputs, confidence thresholds, and reviewed intervention catalogue. PHQ-9 item-9 core behavior is documented in `MB-SAFETY-PHQ9-001`; support behavior remains unavailable until this separate gate passes.
 2. Who qualifies as a specialist/mentor and which profile facts administrators review without collecting credential documents.
-3. Exact Vietnamese safety/disclaimer wording and whether a specific emergency number may appear as versioned safety content. No hotline/facility catalogue is planned.
+3. Exact Vietnamese production safety/disclaimer wording and whether a specific emergency number may appear as versioned safety content. A Product Owner may select bounded non-diagnostic and capability wording for controlled Capstone use; no hotline/facility catalogue is planned.
 4. Whether specialists can author notes; if yes, ownership, visibility, amendment, and retention rules.
 5. Minimum user age and guardian/consent behavior if expansion includes users under 18.
-6. Consent text/versioning, retention periods, deletion SLA, export scope, and applicable Vietnamese regulation review.
+6. Consent text/versioning, retention periods, deletion SLA, export scope, and applicable Vietnamese regulation review before public real-user data collection. Synthetic controlled demos do not require these values to publish a questionnaire.
 7. Exact standard appointment duration, join grace, late-cancellation cutoff, and later in-app-video signaling/provider/recording/fallback policy.
 8. Dataset licenses, label mapping, train/test leakage controls, and research ethics approval.
 9. Exact MoMo request type/payment methods, credential/key rotation, settlement delay, payout onboarding, VND plan prices or versioned FX policy, chargeback reconciliation, and financial retention. Downgrade and refund remain unsupported; no second production payment provider is planned.

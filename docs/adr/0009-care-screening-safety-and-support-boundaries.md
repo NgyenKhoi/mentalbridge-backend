@@ -25,7 +25,7 @@ The hotline catalogue, hotline CRUD, and hotline database are removed from produ
 
 Self-screening may be available 24/7, but MentalBridge does not provide 24/7 human monitoring, emergency dispatch, or guaranteed response. `Asia/Ho_Chi_Minh` operating hours govern specialist slots only; durable instants remain UTC.
 
-This ADR accepts architecture and product boundaries. It does not approve exact Vietnamese questionnaire wording, disclaimer/safety text, a support-tier matrix, intervention content, consent text, or retention values. Those require versioned policies in `docs/policies/` and their named approvers.
+This ADR accepts architecture and product boundaries. It does not itself publish exact Vietnamese questionnaire wording, disclaimer/safety text, a support-tier matrix, intervention content, consent text, or retention values. [ADR 0010](0010-capstone-questionnaire-publication-gates.md) separates the bounded Capstone questionnaire evidence gate from production governance and from optional support-feature gates.
 
 ## Consequences
 
@@ -35,7 +35,7 @@ This ADR accepts architecture and product boundaries. It does not approve exact 
 - Optional dependency failures cannot suppress or delay safety output.
 - Content/Notification retains reviewed self-help resources and notification delivery, but no longer owns hotline records.
 - Existing planned hotline OpenAPI and executable schema are removed through compatible documentation/contract cleanup and an append-only owner migration.
-- MB-89 remains blocked from production behavior until the PHQ-9 policy approval record and exact reviewed Vietnamese content are complete.
+- Exact localized content and evidence remain required before a `vi-VN` questionnaire is published. Controlled Capstone publication follows `MB-CAPSTONE-SCREENING-PUBLICATION-001`; public real-user deployment remains blocked until its production privacy, retention, safety-content, legal, security, and operational gates are complete.
 
 ## Rejected alternatives
 
