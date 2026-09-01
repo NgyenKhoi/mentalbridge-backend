@@ -76,7 +76,7 @@ class CareLiquibaseMigrationTests extends CareTestProperties {
 				from questionnaire_definition where id = :definitionId
 				""").param("definitionId", PHQ9_VI_DEFINITION_ID).query(String.class).single();
 		var responseOptions = jdbc.sql("""
-				select option ->> 'value' || ':' || option ->> 'label'
+				select (option ->> 'value') || ':' || (option ->> 'label')
 				from questionnaire_definition,
 					 lateral jsonb_array_elements(response_options) with ordinality as entry(option, ordinal)
 				where id = :definitionId
