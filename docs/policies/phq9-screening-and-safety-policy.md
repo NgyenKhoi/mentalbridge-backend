@@ -5,12 +5,13 @@
 | Field | Value |
 | --- | --- |
 | Policy ID | `MB-SAFETY-PHQ9-001` |
-| Policy version | `1.0-draft.1` |
-| Status | `DRAFT — READY FOR DOMAIN APPROVAL` |
-| Effective date | Pending approval |
-| Product owner | Pending recorded approval |
-| Supervisor | Pending recorded approval |
-| Domain expert | Pending recorded approval |
+| Policy version | `1.0-capstone` |
+| Status | `CAPSTONE PUBLISHED` |
+| Capstone publication authority | Product Owner under [`MB-CAPSTONE-SCREENING-PUBLICATION-001`](capstone-questionnaire-publication-policy.md) |
+| Capstone effective date | 2026-09-02 |
+| Product Owner decision | Approved by the MentalBridge Project Lead through the MB-177 implementation authorization on 2026-09-02 |
+| Supervisor/domain review | Recommended academic evidence review; not a Capstone publication blocker |
+| Production review | Domain, privacy, legal, safety-content, and operational review required before public real-user deployment |
 | Applies to | PHQ-9 for the initial target population of adults aged 18–30 in Vietnam |
 | Locale | `vi-VN` |
 | Display timezone | `Asia/Ho_Chi_Minh` |
@@ -18,7 +19,7 @@
 | Supersedes | N/A |
 | Architecture decision | [ADR 0009](../adr/0009-care-screening-safety-and-support-boundaries.md) |
 
-This policy specifies screening behavior, not diagnosis, treatment, suicide-risk stratification, emergency dispatch, or continuous human monitoring. Its scoring core is ready for domain approval; the exact Vietnamese questionnaire and user-facing safety text remain unpublished until the approval record below is complete.
+This policy specifies screening behavior, not diagnosis, treatment, suicide-risk stratification, emergency dispatch, or continuous human monitoring. The instrument, scoring research basis, and exact Vietnamese Capstone artifact have passed the bounded evidence gate. Optional support and production deployment follow separate gates.
 
 ## Terminology
 
@@ -30,13 +31,31 @@ This policy specifies screening behavior, not diagnosis, treatment, suicide-risk
 
 ## Questionnaire version and provenance
 
-The reserved target identifier is `phq9-vi-vn-adult-v1`. It must remain unpublished until the exact Vietnamese wording, response labels, source, validated population, reviewer, and publication rights are recorded. Engineering must not translate or paraphrase questionnaire items.
+The published controlled-Capstone identifier is `phq9-vi-vn-capstone-v1`. Engineering imported the exact questions and response labels from the recorded artifact without translating or paraphrasing them.
+
+Artifact evidence:
+
+- Source: *PATIENT HEALTH QUESTIONNAIRE-9 (PHQ-9 Vietnamese)* distributed by SBIRT Oregon.
+- Stable archived retrieval: `https://web.archive.org/web/20240720104123id_/https://www.sbirtoregon.org/wp-content/uploads/PHQ-9-Vietnamese.pdf`.
+- Archive timestamp: `2024-07-20T10:41:23Z`; retrieved for MB-177 on `2026-09-02`.
+- SHA-256: `E2775444E5AB4A05C3FF097F1CAB356C2DA9ECC73BAC63E91827BAA77E965FF7`.
+- Use statement in the artifact: no permission is required to copy, translate, display, or distribute.
+- Executable source: [`005-phq9-vi-vn-reference-data.sql`](../../care-service/src/main/resources/db/changelog/changes/005-phq9-vi-vn-reference-data.sql).
+
+The artifact preserves the canonical item-9 concepts of being better off dead or self-harm. Its Vietnamese phrasing is accepted by the Product Owner for the bounded academic demo, while language/domain review remains a production follow-up because several phrases are mechanically worded.
 
 Candidate provenance for domain review:
 
 - Kroenke K, Spitzer RL, Williams JBW. *The PHQ-9: Validity of a Brief Depression Severity Measure*. 2001. DOI: [10.1046/j.1525-1497.2001.016009606.x](https://doi.org/10.1046/j.1525-1497.2001.016009606.x).
 - Phi HNY et al. Vietnamese PHQ-9 validation in primary healthcare settings. 2023. DOI: [10.12809/eaap2258](https://doi.org/10.12809/eaap2258).
 - Le Hoang Ngoc Tram et al. Vietnamese PHQ-9 validation in adults with epilepsy. 2021. DOI: [10.1016/j.yebeh.2021.108446](https://doi.org/10.1016/j.yebeh.2021.108446).
+
+Additional distribution and localization evidence:
+
+- Pfizer states that PHQ tools may be downloaded without a formal permission request when its Terms of Use are accepted and that approved translations are available through PHQ Screeners: [Pfizer FAQ](https://www.pfizer.com/contact/faqs).
+- The NIMH Data Archive PHQ-9 Common Data Element lists `Vietnamese for Vietnam`: [PHQ-9 data-structure history](https://nda.nih.gov/data_structure_history.html?short_name=cde_phq901).
+
+A language listing alone does not substitute for the exact artifact. MentalBridge therefore persists the archived artifact evidence above with the executable definition.
 
 Validation in a particular clinical population does not by itself establish diagnostic performance for every Vietnamese adult. MentalBridge therefore displays the result only as a screening result.
 
@@ -99,13 +118,19 @@ safetyStatus = POSITIVE_SAFETY_SCREEN
 
 ## User-facing safety response
 
-Safety output is available to anonymous, Free, Premium Care, and Premium Plus users. It includes the screening result, non-diagnostic disclaimer, safety status, reviewed safety guidance, and an explicit statement that MentalBridge does not provide emergency dispatch or 24/7 human monitoring.
+Safety output is available to anonymous, Free, Premium Care, and Premium Plus users. It includes the screening result, non-diagnostic disclaimer, safety status, any content approved for the active environment, and an explicit statement that MentalBridge does not provide emergency dispatch or 24/7 human monitoring.
+
+The Capstone non-diagnostic capability statement is:
+
+> Đây là kết quả sàng lọc triệu chứng, không phải chẩn đoán y khoa. MentalBridge không cung cấp dịch vụ ứng cứu khẩn cấp, không giám sát con người 24/7 và không tự động liên hệ bên thứ ba.
+
+Until a versioned safety-guidance contract and catalogue pass their separate gate, the UI explicitly reports that guidance is unavailable. It does not silently return an empty area or invent a recommendation.
 
 MentalBridge has no hotline catalogue, hotline CRUD, geolocation, or current-facility database. It must not claim that a facility is the “nearest”. A candidate fallback for legal/domain review is:
 
 > Nếu bạn cảm thấy mình không an toàn hoặc có nguy cơ gây hại cho bản thân, hãy chủ động liên hệ dịch vụ khẩn cấp hoặc cơ sở y tế phù hợp tại khu vực của bạn.
 
-This wording is not approved production content. A specific number such as `115` may appear only after legal/domain approval and then only inside versioned reviewed safety content.
+This wording is not approved production content. It may be adopted for a controlled Capstone demo only through an explicit Product Owner content decision. A specific number such as `115` remains excluded unless a separate production legal/domain decision approves it inside versioned safety content.
 
 Self-screening may be available 24/7. That availability never implies 24/7 human monitoring. Operating hours apply only to specialist availability and appointment slots.
 
@@ -138,7 +163,7 @@ No later policy publication rewrites a historical result. Re-evaluation creates 
 
 Anonymous users may view their current score, screening level, disclaimer, safety status, and safety guidance. They receive no longitudinal history, specialist access, or profile-dependent personalization.
 
-Registered Free users may receive basic support selected from approved catalogue content. Premium tiers may add deeper longitudinal personalization, advanced follow-up, booking, and consultation according to the active plan version. Safety output and access to an owned assessment are never paywalled.
+Registered Free users may receive basic support only after the separate support catalogue gate passes. Premium tiers may add deeper longitudinal personalization, advanced follow-up, booking, and consultation according to their own approved contracts. These optional capabilities do not block base questionnaire publication. Safety output and access to an owned assessment are never paywalled.
 
 If optional personalization is unavailable, the response uses an explicit availability status and reviewed generic guidance. It must not silently return empty output or imply that an unavailable AI, specialist, slot, notification, or emergency response succeeded.
 
@@ -158,17 +183,26 @@ If optional personalization is unavailable, the response uses an explicit availa
 | AI, broker, cache, realtime, or notification unavailable | Deterministic result and local safety guidance still returned |
 | Anonymous read after expiry | Deny access and never attach the result to an account |
 
-## Approval blockers
+## Capstone publication checklist
 
-- [ ] Exact validated Vietnamese PHQ-9 wording, response labels, source, and publication rights recorded.
-- [ ] Vietnamese non-diagnostic disclaimer approved.
-- [ ] Vietnamese item-9 safety and fallback wording approved.
-- [ ] Decision recorded on whether a specific emergency number may appear.
-- [ ] Companion support-tier mapping approved.
-- [ ] Intervention catalogue approved and versioned.
-- [ ] Consent and retention policy approved.
-- [ ] Product owner approval recorded.
-- [ ] Supervisor approval recorded.
-- [ ] Domain expert approval recorded.
+- [x] Original instrument and scoring evidence recorded.
+- [x] Vietnamese-language availability and validation evidence identified.
+- [x] Exact `vi-VN` PHQ-9 artifact, response labels, source version, retrieval evidence, and applicable use terms recorded.
+- [x] Imported wording compared exactly with the recorded source; no developer translation or paraphrase.
+- [x] Vietnamese non-diagnostic disclaimer and capability statement selected for the Capstone environment.
+- [x] Item-9 positive/negative behavior and explicit unavailable-guidance fallback verified in UI/API tests.
+- [x] Questionnaire, score-boundary, validation, idempotency, and safety-sensitive tests pass.
+- [x] Product Owner records the `CAPSTONE PUBLISHED` decision and effective version.
 
-Lifecycle: `DRAFT -> READY FOR DOMAIN APPROVAL -> APPROVED -> IMPLEMENTATION READY -> EFFECTIVE -> RETIRED`.
+The support-tier matrix, intervention catalogue, specialist workflow, consultation features, and paid-plan behavior are not questionnaire-publication blockers. They remain unavailable until their own gates pass. Consent/retention review is not required for synthetic controlled demos, but it remains mandatory before public real-user data collection.
+
+## Production follow-up
+
+- [ ] Domain review of exact localized questionnaire and user-facing safety wording.
+- [ ] Privacy, retention, security, and applicable legal review for real-user health data.
+- [ ] Operational decision on production safety content and whether any specific emergency number may appear.
+- [ ] Production deployment approval and effective date recorded independently from Capstone publication.
+
+Capstone lifecycle: `DRAFT -> RESEARCH BASIS VERIFIED -> LOCALIZED CONTENT VERIFIED -> CAPSTONE IMPLEMENTATION READY -> CAPSTONE PUBLISHED`.
+
+Production lifecycle: `PRODUCTION CANDIDATE -> DOMAIN / PRIVACY / LEGAL / OPERATIONAL REVIEW -> PRODUCTION APPROVED -> RETIRED`.

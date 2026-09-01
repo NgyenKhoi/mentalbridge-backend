@@ -22,6 +22,7 @@ class CareLiquibaseMigrationTests extends CareTestProperties {
 
 	private static final UUID PHQ9_DEFINITION_ID = UUID.fromString("10000000-0000-0000-0000-000000000001");
 	private static final UUID PHQ9_ITEM_1_ID = UUID.fromString("11000000-0000-0000-0000-000000000001");
+	private static final UUID PHQ9_VI_DEFINITION_ID = UUID.fromString("10000000-0000-0000-0000-000000000002");
 
 	@Autowired
 	private JdbcClient jdbc;
@@ -66,6 +67,54 @@ class CareLiquibaseMigrationTests extends CareTestProperties {
 		assertThat(bands).containsExactly(
 				"MINIMAL:0-4", "MILD:5-9", "MODERATE:10-14",
 				"MODERATELY_SEVERE:15-19", "SEVERE:20-27");
+	}
+
+	@Test
+	void migrationPublishesTraceableVietnamesePhq9ContentWithoutChangingScoring() {
+		var definition = jdbc.sql("""
+				select version || '|' || locale || '|' || status || '|' || scoring_version
+				from questionnaire_definition where id = :definitionId
+				""").param("definitionId", PHQ9_VI_DEFINITION_ID).query(String.class).single();
+		var responseOptions = jdbc.sql("""
+				select option ->> 'value' || ':' || option ->> 'label'
+				from questionnaire_definition,
+					 lateral jsonb_array_elements(response_options) with ordinality as entry(option, ordinal)
+				where id = :definitionId
+				order by entry.ordinal
+				""").param("definitionId", PHQ9_VI_DEFINITION_ID).query(String.class).list();
+		var questions = jdbc.sql("""
+				select item_number || ':' || prompt
+				from questionnaire_question
+				where definition_id = :definitionId
+				order by item_number
+				""").param("definitionId", PHQ9_VI_DEFINITION_ID).query(String.class).list();
+		var safetyItems = jdbc.sql("""
+				select item_number from questionnaire_question
+				where definition_id = :definitionId and safety_item
+				""").param("definitionId", PHQ9_VI_DEFINITION_ID).query(Integer.class).list();
+		var bands = jdbc.sql("""
+				select code || ':' || minimum_score || '-' || maximum_score
+				from questionnaire_score_band
+				where definition_id = :definitionId order by ordinal
+				""").param("definitionId", PHQ9_VI_DEFINITION_ID).query(String.class).list();
+		var source = jdbc.sql("select source_reference from questionnaire_definition where id = :definitionId")
+				.param("definitionId", PHQ9_VI_DEFINITION_ID).query(String.class).single();
+
+		assertThat(definition).isEqualTo("phq9-vi-vn-capstone-v1|vi-VN|PUBLISHED|phq9-standard-bands-v1");
+		assertThat(responseOptions).containsExactly(
+				"0:Không có gì", "1:Vài ngày", "2:Hơn nửa ngày", "3:Gần như mỗi ngày");
+		assertThat(questions).hasSize(9)
+				.first().isEqualTo("1:Ít quan tâm hoặc niềm vui khi làm việc");
+		assertThat(questions.get(8))
+				.isEqualTo("9:Suy nghĩ rằng tốt hơn hết là bạn nên chết hoặc làm tổn thương bản thân theo một cách nào đó");
+		assertThat(safetyItems).containsExactly(9);
+		assertThat(bands).containsExactly(
+				"MINIMAL:0-4", "MILD:5-9", "MODERATE:10-14",
+				"MODERATELY_SEVERE:15-19", "SEVERE:20-27");
+		assertThat(source).contains(
+				"20240720104123",
+				"E2775444E5AB4A05C3FF097F1CAB356C2DA9ECC73BAC63E91827BAA77E965FF7",
+				"no permission is required");
 	}
 
 	@Test

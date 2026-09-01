@@ -7,3 +7,5 @@ databaseChangeLog:
       file: db/changelog/changes/003-phq9-reference-data.sql
   - include:
       file: db/changelog/changes/004-assessment-safety-policy-provenance.sql
+  - include:
+      file: db/changelog/changes/005-phq9-vi-vn-reference-data.sql

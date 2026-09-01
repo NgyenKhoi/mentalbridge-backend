@@ -40,7 +40,7 @@ The MB-88 changelog owns:
 | `assessment_result` | Server-owned score, band, independent safety status, scoring/safety-policy versions, and disclaimer code |
 | `outbox_event` | Minimal integration fact persisted in the aggregate transaction |
 
-The reference-data migration publishes one English PHQ-9 definition with nine questions, item 9 marked as the safety item, the four response choices, standard score bands, and a bibliographic source reference. It deliberately does not publish a Vietnamese translation. `vi-VN` remains the product default, but the current-questionnaire API must return not found for that locale until reviewed Vietnamese wording and version provenance are approved.
+The reference-data migrations publish immutable English and controlled-Capstone Vietnamese PHQ-9 definitions. Each contains nine questions, item 9 marked as the safety item, four ordered response choices, standard score bands, and auditable source provenance. The default `vi-VN` API definition is `phq9-vi-vn-capstone-v1`; its archived source URI, retrieval timestamp, use statement, and SHA-256 checksum are stored with the database row and recorded in the PHQ-9 policy. This publication is approved only for controlled local/demo Capstone use and does not represent production clinical/domain approval.
 
 Assessment answer text must never be copied into outbox payloads, logs, errors, metrics, or unrestricted audit metadata.
 
@@ -55,8 +55,8 @@ Assessment answer text must never be copied into outbox payloads, logs, errors, 
 | `IDENTITY_JWT_ISSUER` | Yes | Expected issuer for Identity access tokens | `https://identity.local.mentalbridge` |
 | `IDENTITY_JWT_AUDIENCE` | Yes | Required Care API audience | `mentalbridge-api` |
 | `IDENTITY_JWT_PUBLIC_KEY` | Yes | X.509 RSA public key used to verify Identity tokens | `replace-with-x509-pem-public-key` |
-| `CARE_ANONYMOUS_SESSION_TTL` | Yes | Approved ISO-8601 lifetime applied to anonymous sessions and their results | `PT30M` only after policy approval |
-| `CARE_PHQ9_SAFETY_POLICY_VERSION` | Yes | Exact approved policy version persisted with every runtime PHQ-9 result | `MB-SAFETY-PHQ9-001/1.0` only after approval |
+| `CARE_ANONYMOUS_SESSION_TTL` | Yes | Versioned ISO-8601 lifetime applied to anonymous sessions and their results | `PT30M` for controlled local/demo use; production value requires retention review |
+| `CARE_PHQ9_SAFETY_POLICY_VERSION` | Yes | Exact environment-approved policy version persisted with every runtime PHQ-9 result | `MB-SAFETY-PHQ9-001/1.0-capstone` only after the Capstone evidence gate passes |
 | `CARE_IDEMPOTENCY_HMAC_KEY` | Yes | Random secret of at least 32 characters used to protect assessment request fingerprints from offline enumeration | Secret-manager value; never commit it |
 
 Application startup validates the Liquibase-owned schema through Hibernate and does not run migrations. Local `.env` loading is optional; real environment variables take precedence, and CI/production disable dotenv loading.
@@ -75,19 +75,19 @@ $env:CARE_DB_PASSWORD='<care-password>'
 
 ## Safety and policy status
 
-The foundation records facts needed by later approved behavior without silently deciding open policy:
+The foundation records facts needed by later governed behavior without silently deciding open policy:
 
 - PHQ-9 scoring is deterministic and server-owned; the stored result is a screening result, not a diagnosis.
 - A positive versioned safety item is persisted independently of the total score so later policy cannot ignore it.
 - ADR 0009 fixes item-9 positivity (`answer >= 1`), keeps it independent from the screening band, prohibits automatic human/emergency notification, and removes the hotline catalogue.
-- Exact reviewed Vietnamese questionnaire/disclaimer/safety wording, support-tier mapping, intervention catalogue, consent text/version ownership, anonymous-session duration, assessment retention/deletion, and minimum-age handling remain unresolved.
+- Exact Vietnamese questionnaire content is published as `phq9-vi-vn-capstone-v1` for controlled local/demo use. Production domain review, support-tier mapping, intervention content, production consent/retention, and minimum-age expansion remain separate unresolved feature or deployment decisions.
 - No endpoint may imply emergency dispatch, continuous human monitoring, or guaranteed notification delivery.
 
-The canonical draft policies and approval blockers are maintained in [`docs/policies/`](../docs/policies/). A draft is not executable production configuration.
+The canonical policy register is maintained in [`docs/policies/`](../docs/policies/). `MB-CAPSTONE-SCREENING-PUBLICATION-001` defines a bounded evidence gate for controlled local/demo publication; a Capstone decision is not executable production approval.
 
-These decisions must be approved before publishing `vi-VN` content, activating support/intervention behavior, or supplying production policy values. Such a change must update the OpenAPI contract, typed boundary, tests, configuration, migrations/data dictionary when needed, and this README together.
+Questionnaire publication no longer depends on the support/intervention catalogue or specialist workflow. Each capability follows its own gate. Publishing localized content must update the source artifact/provenance record, tests, configuration, append-only migrations/data dictionary when needed, and this README together. Public real-user deployment additionally requires production privacy, retention, security, legal, safety-content, and operational review.
 
-MB-89 implements only the deterministic contract that can be executed without invented content. `vi-VN` questionnaire retrieval continues to return `QUESTIONNAIRE_NOT_FOUND` until reviewed wording is published. Deployment must supply an approved anonymous-session TTL and safety-policy version; neither value has a production default. Exact safety guidance and support interventions remain unavailable rather than being generated by the service.
+MB-89 implements only the deterministic contract that can be executed without invented content. `vi-VN` questionnaire retrieval now resolves the Capstone-published definition. Deployment supplies an explicit anonymous-session TTL and safety-policy version; production values have no default. Exact safety guidance and support interventions remain unavailable rather than being generated by the service until their separate gates pass.
 
 ## Integration
 

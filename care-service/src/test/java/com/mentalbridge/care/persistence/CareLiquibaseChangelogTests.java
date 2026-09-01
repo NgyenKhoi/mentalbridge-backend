@@ -22,7 +22,8 @@ class CareLiquibaseChangelogTests {
 					"care-002-profile-consent",
 					"care-003-assessment-foundation",
 					"care-004-phq9-reference-data",
-					"care-005-assessment-safety-policy-provenance");
+					"care-005-assessment-safety-policy-provenance",
+					"care-006-phq9-vi-vn-reference-data");
 		}
 	}
 
