@@ -38,7 +38,9 @@ export class ResourceRepository {
     }
 
     if (query.cursor) {
-      conditions.push(`r.created_at < (SELECT created_at FROM resources WHERE id = $${String(index++)})`);
+      conditions.push(
+        `r.created_at < (SELECT created_at FROM resources WHERE id = $${String(index++)})`,
+      );
       params.push(query.cursor);
     }
 

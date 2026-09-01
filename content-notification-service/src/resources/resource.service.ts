@@ -18,8 +18,7 @@ import type {
 } from './resource.types.js';
 
 /** MB-199: Neutral copy — makes no emergency dispatch, monitoring, or response-time guarantee. */
-const UNAVAILABLE_MESSAGE =
-  'Tài nguyên hỗ trợ tạm thời không khả dụng. Vui lòng thử lại sau.';
+const UNAVAILABLE_MESSAGE = 'Tài nguyên hỗ trợ tạm thời không khả dụng. Vui lòng thử lại sau.';
 
 const VALID_CATEGORIES = new Set<ResourceCategory>([
   'BREATHING',
@@ -99,9 +98,7 @@ export class ResourceService {
     }
 
     // Drop malformed rows — never invent support content.
-    const data = rows
-      .map(toSummary)
-      .filter((r): r is ResourceSummary => r !== null);
+    const data = rows.map(toSummary).filter((r): r is ResourceSummary => r !== null);
 
     // MB-199: Empty state — return empty array, not invented content.
     return { data, count: data.length };

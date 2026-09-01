@@ -4,12 +4,7 @@
  */
 
 export type ResourceCategory =
-  | 'BREATHING'
-  | 'MEDITATION'
-  | 'ARTICLE'
-  | 'VIDEO'
-  | 'JOURNALING'
-  | 'COMMUNITY';
+  'BREATHING' | 'MEDITATION' | 'ARTICLE' | 'VIDEO' | 'JOURNALING' | 'COMMUNITY';
 
 export type ResourceStatus = 'DRAFT' | 'PUBLISHED' | 'ARCHIVED';
 

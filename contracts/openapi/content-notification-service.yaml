@@ -433,6 +433,16 @@ components:
             $ref: '#/components/schemas/ResourceSummary'
         count:
           type: integer
+        fallback:
+          type: string
+          enum: [unavailable]
+          description: >
+            MB-199: Present only when Content/Notification is unavailable.
+            Empty and unavailable responses display explicit neutral fallback text.
+            No hotline number or emergency dispatch claim is included.
+        message:
+          type: string
+          description: Neutral fallback message when fallback is unavailable.
 
     CreateResourceRequest:
       type: object

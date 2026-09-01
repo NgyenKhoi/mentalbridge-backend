@@ -50,9 +50,7 @@ const publishedResource: ResourceRow = {
   updated_at: new Date('2024-01-15T10:00:00Z'),
 };
 
-function makeRepository(
-  impl: Partial<ResourceRepository>,
-): ResourceRepository {
+function makeRepository(impl: Partial<ResourceRepository>): ResourceRepository {
   return {
     listPublished: async () => [],
     ...impl,
@@ -115,7 +113,9 @@ describe('GET /api/v1/resources', () => {
     app = await createApplication(configuration, {
       readinessProbe: { check: async () => undefined },
       resourceRepository: makeRepository({
-        listPublished: async () => { throw new Error('DB connection refused'); },
+        listPublished: async () => {
+          throw new Error('DB connection refused');
+        },
       }),
     });
     await app.init();
@@ -138,7 +138,7 @@ describe('GET /api/v1/resources', () => {
   // MB-200: malformed rows are dropped — frontend does not invent support content
   it('drops malformed rows and returns only valid published resources', async () => {
     const malformedRow = {
-      id: null,        // invalid: null id
+      id: null, // invalid: null id
       category: 'HOTLINE', // invalid: removed category
       locale: 'vi-VN',
       title: null,
@@ -240,7 +240,9 @@ describe('GET /api/v1/resources', () => {
     app = await createApplication(configuration, {
       readinessProbe: { check: async () => undefined },
       resourceRepository: makeRepository({
-        listPublished: async () => { throw Object.assign(new Error('timeout'), { code: 'ETIMEDOUT' }); },
+        listPublished: async () => {
+          throw Object.assign(new Error('timeout'), { code: 'ETIMEDOUT' });
+        },
       }),
     });
     await app.init();
