@@ -51,4 +51,10 @@ class AnonymousAssessmentSessionEntity {
 	boolean unavailableAt(Instant now) {
 		return closedAt != null || !expiresAt.isAfter(now);
 	}
+
+	void recordActivity(Instant now, java.time.Duration inactivityTtl, java.time.Duration maximumLifetime) {
+		var absoluteDeadline = createdAt.plus(maximumLifetime);
+		var nextDeadline = now.plus(inactivityTtl);
+		expiresAt = nextDeadline.isBefore(absoluteDeadline) ? nextDeadline : absoluteDeadline;
+	}
 }

@@ -21,9 +21,13 @@ import javax.crypto.spec.SecretKeySpec;
 import org.springframework.http.HttpStatus;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
+import org.springframework.data.domain.PageRequest;
 
 import com.fasterxml.jackson.databind.ObjectMapper;
 import com.mentalbridge.care.configuration.AssessmentProperties;
+import com.mentalbridge.care.consent.ConsentService;
+import com.mentalbridge.care.consent.PrivacyDisclosureService;
+import com.mentalbridge.care.profile.UserProfileRepository;
 import com.mentalbridge.care.shared.ApiException;
 import com.mentalbridge.care.shared.ApiException.FieldViolation;
 
@@ -44,12 +48,15 @@ public class AssessmentService {
 	private final ObjectMapper objectMapper;
 	private final Clock clock;
 	private final SecureRandom secureRandom = new SecureRandom();
+	private final ConsentService consents;
+	private final PrivacyDisclosureService disclosures;
 
 	public AssessmentService(UserProfileRepository profiles, AnonymousAssessmentSessionRepository sessions,
 			QuestionnaireDefinitionRepository definitions, QuestionnaireQuestionRepository questions,
 			QuestionnaireScoreBandRepository scoreBands, AssessmentSubmissionRepository submissions,
 			AssessmentAnswerRepository answers, AssessmentResultRepository results, OutboxEventRepository outbox,
-			Phq9ScoringPolicy scoring, AssessmentProperties properties, ObjectMapper objectMapper, Clock clock) {
+			Phq9ScoringPolicy scoring, AssessmentProperties properties, ObjectMapper objectMapper, Clock clock,
+			ConsentService consents, PrivacyDisclosureService disclosures) {
 		this.profiles = profiles;
 		this.sessions = sessions;
 		this.definitions = definitions;
@@ -63,6 +70,8 @@ public class AssessmentService {
 		this.properties = properties;
 		this.objectMapper = objectMapper;
 		this.clock = clock;
+		this.consents = consents;
+		this.disclosures = disclosures;
 	}
 
 	@Transactional
@@ -79,6 +88,8 @@ public class AssessmentService {
 			SubmissionCommand command) {
 		profiles.findByIdForUpdate(userId).orElseThrow(() -> new ApiException(HttpStatus.NOT_FOUND,
 				"PROFILE_NOT_FOUND", "Care profile was not found"));
+		consents.requireGranted(userId, command.privacyPolicyVersion());
+		disclosures.requireCurrent(command.privacyPolicyVersion(), command.privacyDisclosureAcknowledged());
 		var requestHash = requestHash(command);
 		var existing = submissions.findByUserIdAndIdempotencyKey(userId, idempotencyKey);
 		if (existing.isPresent()) {
@@ -91,6 +102,7 @@ public class AssessmentService {
 	public AssessmentView submitAnonymous(UUID sessionId, String sessionToken, String idempotencyKey,
 			UUID correlationId, SubmissionCommand command) {
 		var session = authenticatedSession(sessionId, sessionToken);
+		disclosures.requireCurrent(command.privacyPolicyVersion(), command.privacyDisclosureAcknowledged());
 		var requestHash = requestHash(command);
 		var existing = submissions.findByAnonymousSessionIdAndIdempotencyKey(sessionId, idempotencyKey);
 		if (existing.isPresent()) {
@@ -108,10 +120,25 @@ public class AssessmentService {
 
 	@Transactional
 	public AssessmentView getAnonymous(UUID sessionId, String sessionToken, UUID assessmentId) {
-		authenticatedSession(sessionId, sessionToken);
+		var session = authenticatedSession(sessionId, sessionToken);
 		var submission = submissions.findByIdAndAnonymousSessionId(assessmentId, sessionId).orElseThrow(
 				() -> new ApiException(HttpStatus.NOT_FOUND, "ASSESSMENT_NOT_FOUND", "Assessment was not found"));
+		submission.extendRetention(session.expiresAt());
 		return view(submission, true);
+	}
+
+	@Transactional(readOnly = true)
+	public HistoryPage history(UUID userId, String cursor, int limit) {
+		var decoded = decodeCursor(cursor);
+		var pageable = PageRequest.of(0, limit + 1);
+		var page = decoded == null
+				? submissions.findByUserIdAndVoidedAtIsNullOrderBySubmittedAtDescIdDesc(userId, pageable)
+				: submissions.findHistoryAfter(userId, decoded.submittedAt(), decoded.assessmentId(), pageable);
+		var hasMore = page.size() > limit;
+		var selected = hasMore ? page.subList(0, limit) : page;
+		var items = selected.stream().map(submission -> view(submission, false)).toList();
+		var nextCursor = hasMore ? encodeCursor(selected.getLast()) : null;
+		return new HistoryPage(items, nextCursor, hasMore);
 	}
 
 	private AssessmentView submit(SubmissionCommand command, String idempotencyKey, String requestHash,
@@ -132,9 +159,9 @@ public class AssessmentService {
 		var submittedAt = clock.instant();
 		var submission = userId == null
 				? AssessmentSubmissionEntity.anonymous(sessionId, definition.id(), idempotencyKey, requestHash,
-						submittedAt, retentionExpiresAt)
+						command.privacyPolicyVersion(), submittedAt, retentionExpiresAt)
 				: AssessmentSubmissionEntity.authenticated(userId, definition.id(), idempotencyKey, requestHash,
-						submittedAt);
+						command.privacyPolicyVersion(), submittedAt);
 		submission = submissions.saveAndFlush(submission);
 		var submissionId = submission.id();
 		answers.saveAll(validatedAnswers.entities().stream()
@@ -180,6 +207,7 @@ public class AssessmentService {
 	private AssessmentView view(AssessmentSubmissionEntity submission, QuestionnaireDefinitionEntity definition,
 			AssessmentResultEntity result, boolean anonymous) {
 		return new AssessmentView(submission.id(), definition.id(), definition.instrument(), definition.version(),
+				submission.privacyPolicyVersion(),
 				submission.submittedAt(), submission.voidedAt(), new ResultView(result.totalScore(),
 						result.screeningLevel(), result.scoringVersion(), result.safetyStatus(),
 						result.safetyPolicyVersion(), result.disclaimerCode()),
@@ -238,11 +266,14 @@ public class AssessmentService {
 			throw new ApiException(HttpStatus.GONE, "ANONYMOUS_SESSION_EXPIRED",
 					"Anonymous assessment session has expired");
 		}
+		session.recordActivity(clock.instant(), properties.anonymousSessionTtl(), properties.anonymousSessionMaximumLifetime());
 		return session;
 	}
 
 	private String requestHash(SubmissionCommand command) {
-		var canonical = new StringBuilder(command.questionnaireDefinitionId().toString());
+		var canonical = new StringBuilder(command.questionnaireDefinitionId().toString())
+				.append('|').append(command.privacyPolicyVersion()).append('|')
+				.append(command.privacyDisclosureAcknowledged());
 		command.answers().stream().sorted(java.util.Comparator.comparing(AnswerCommand::questionId)
 				.thenComparingInt(AnswerCommand::value))
 				.forEach(answer -> canonical.append('|').append(answer.questionId()).append(':').append(answer.value()));
@@ -276,7 +307,25 @@ public class AssessmentService {
 		}
 	}
 
-	public record SubmissionCommand(UUID questionnaireDefinitionId, List<AnswerCommand> answers) {
+	private Cursor decodeCursor(String cursor) {
+		if (cursor == null) return null;
+		try {
+			var decoded = new String(Base64.getUrlDecoder().decode(cursor), StandardCharsets.UTF_8).split("\\|", -1);
+			if (decoded.length != 2) throw new IllegalArgumentException();
+			return new Cursor(Instant.parse(decoded[0]), UUID.fromString(decoded[1]));
+		}
+		catch (RuntimeException exception) {
+			throw new ApiException(HttpStatus.BAD_REQUEST, "INVALID_CURSOR", "Assessment history cursor is invalid");
+		}
+	}
+
+	private String encodeCursor(AssessmentSubmissionEntity submission) {
+		var value = submission.submittedAt() + "|" + submission.id();
+		return Base64.getUrlEncoder().withoutPadding().encodeToString(value.getBytes(StandardCharsets.UTF_8));
+	}
+
+	public record SubmissionCommand(UUID questionnaireDefinitionId, String privacyPolicyVersion,
+			boolean privacyDisclosureAcknowledged, List<AnswerCommand> answers) {
 		public SubmissionCommand {
 			answers = List.copyOf(answers);
 		}
@@ -295,7 +344,11 @@ public class AssessmentService {
 	}
 
 	public record AssessmentView(UUID assessmentId, UUID questionnaireDefinitionId, String instrument,
-			String questionnaireVersion, Instant submittedAt, Instant voidedAt, ResultView result, Instant expiresAt) {
+			String questionnaireVersion, String privacyPolicyVersion, Instant submittedAt, Instant voidedAt,
+			ResultView result, Instant expiresAt) {
+	}
+
+	public record HistoryPage(List<AssessmentView> items, String nextCursor, boolean hasMore) {
 	}
 
 	public record ResultView(int totalScore, ScreeningLevel screeningLevel, String scoringVersion,
@@ -307,5 +360,8 @@ public class AssessmentService {
 
 	private record ValidatedAnswers(List<ValidatedAnswer> entities,
 			List<Phq9ScoringPolicy.QuestionAnswer> scoringAnswers) {
+	}
+
+	private record Cursor(Instant submittedAt, UUID assessmentId) {
 	}
 }

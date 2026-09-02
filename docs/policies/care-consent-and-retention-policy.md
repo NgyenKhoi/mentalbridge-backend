@@ -5,10 +5,10 @@
 | Field | Value |
 | --- | --- |
 | Policy ID | `MB-PRIVACY-CARE-001` |
-| Policy version | `1.0-draft.1` |
-| Status | `DRAFT — PRODUCT, SECURITY, AND LEGAL REVIEW REQUIRED` |
-| Effective date | Pending approval |
-| Capstone decision | Synthetic/test-data validation and the non-executable specialist-handoff blueprint approved by the Product Owner through MB-179 on 2026-09-02 |
+| Policy version | `1.0-capstone` |
+| Status | `PRODUCT OWNER APPROVED — CONTROLLED CAPSTONE ONLY` |
+| Effective date | 2026-09-02 for controlled local/test/demo use |
+| Capstone decision | MB-178 consent, disclosure, anonymous lifetime, and bounded retention decisions approved by the Product Owner on 2026-09-02 |
 | Owning service | Care Service |
 | Applies to | Anonymous and registered Care assessment flows in Vietnam |
 
@@ -18,13 +18,15 @@ MentalBridge must not combine these purposes into one broad toggle:
 
 | Purpose | Required treatment |
 | --- | --- |
-| Deterministic assessment processing | Dedicated disclosure and any consent required by the approved legal/product basis; no AI processing is implied |
-| AI processing | Separate versioned `AI_PROCESSING` decision before private journal content is sent to an external AI path |
+| Deterministic assessment processing | The user must view and acknowledge the backend-owned `privacy-capstone-v1` disclosure; this is a processing gate, not a clinical-eligibility rule, and no AI processing is implied |
+| AI processing | Deferred; `AI_PROCESSING` is not exposed by the Sprint 2 UI/runtime consent flow |
 | Specialist sharing | Separate revocable grant scoped to subject, specialist, data type, purpose, time range, and selected entries where applicable |
-| Research use | Separate `RESEARCH_DATA` decision; production data is excluded by default |
-| Marketing notification | Separate optional `MARKETING_NOTIFICATION` decision |
+| Research use | Deferred; `RESEARCH_DATA` is not exposed and production data is excluded by default |
+| Marketing notification | Deferred; `MARKETING_NOTIFICATION` is not exposed until a corresponding feature exists |
 
-The current Care consent table supports privacy, AI, research, and marketing decisions. Specialist sharing remains a separate future scoped-grant aggregate, not another broad platform consent. Whether deterministic anonymous/registered assessment requires an explicit consent event or a versioned disclosure acknowledgement remains a legal/product blocker.
+The current Care consent table reserves privacy, AI, research, and marketing decision types for compatible future evolution. Sprint 2 accepts and exposes only `PRIVACY_POLICY`. Care publishes the exact Vietnamese disclosure and version; clients must not maintain an independent copy. A registered grant or withdrawal is an append-only decision. A withdrawal takes effect for new processing immediately but neither deletes historical assessments nor rewrites audit evidence. Deletion is a separate future workflow.
+
+The controlled-Capstone disclosure version is `privacy-capstone-v1`. It explains that the demo stores the Care profile, PHQ-9 answers, and server-computed result; that the result is not a diagnosis; that the flow does not authorize AI, research, marketing, or specialist sharing; that anonymous data expires independently and is never attached to a later account; and that registered history is retained only for the bounded test/demo flow. Public real-user deployment requires a separately reviewed production version.
 
 ## MB-179 specialist-sharing boundary
 
@@ -46,17 +48,18 @@ Required behavior:
 - no silent attachment to a later registered account;
 - expiry and cleanup are enforced by Care and cannot depend on the client clock.
 
-Proposed product/security value for review:
+Approved controlled-Capstone values:
 
 ```text
 anonymous inactivity TTL = 30 minutes
+anonymous maximum absolute lifetime = 2 hours
 ```
 
-This is not a clinical requirement and is not approved configuration. Review must define whether activity extends the expiry, the maximum absolute lifetime, cleanup cadence, deletion evidence, and behavior for an in-flight idempotent retry at expiry.
+Valid authenticated activity extends the inactivity deadline up to, but never beyond, two hours after session creation. A new request at or after the effective deadline is rejected. An idempotent operation accepted before expiry may complete from its authoritative persisted state; expiry does not authorize a new operation or a later read. Cleanup/deletion evidence remains an operational production decision and does not permit access after expiry.
 
 ## Registered assessment retention and deletion
 
-The following remain unresolved and must be explicit before runtime implementation is called complete:
+Sprint 2 registered history is approved only for synthetic/test/demo data. It deliberately makes no production claim about:
 
 - maximum retention duration or user-controlled history duration;
 - immediate versus grace-period deletion behavior;
@@ -66,14 +69,14 @@ The following remain unresolved and must be explicit before runtime implementati
 - legal basis and version owner;
 - export format and deadline.
 
-No engineering default may convert indefinite retention into policy. An approved retention version governs each stored deadline and historical evidence is not rewritten when a later version changes.
+The existing null registered-retention deadline means only that the controlled demo keeps its synthetic history for reassessment. It is not an approved indefinite production-retention rule. A future production policy and migration must define retention, deletion, backup, audit-minimization, and export behavior before real-user collection is enabled.
 
 ## Approval blockers
 
 - [x] Product Owner approved synthetic/test-data-only Sprint 2 validation and the non-executable MB-179 sharing boundary.
-- [ ] Assessment-processing disclosure/consent basis approved.
-- [ ] Exact privacy and AI-processing text/version ownership approved.
-- [ ] Anonymous inactivity TTL, maximum lifetime, cleanup, and retry-at-expiry behavior approved.
-- [ ] Registered retention, deletion, audit minimization, and backup expiry approved.
+- [x] Product Owner approved the versioned assessment-processing disclosure and its separation from clinical eligibility.
+- [x] Product Owner approved backend ownership of `privacy-capstone-v1`; AI, research, and marketing consent remain deferred.
+- [x] Product Owner approved a 30-minute sliding inactivity deadline, two-hour absolute lifetime, and persisted idempotent completion semantics.
+- [x] Product Owner approved registered history only for controlled synthetic/test/demo use without a production retention claim.
 - [ ] Specialist grant policy approved before specialist reads are implemented.
-- [ ] Product owner, security reviewer, and legal/privacy reviewer approvals recorded.
+- [ ] Security and legal/privacy reviewers approve a future public real-user production policy.

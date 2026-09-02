@@ -12,6 +12,7 @@ import org.springframework.validation.annotation.Validated;
 @Validated
 @ConfigurationProperties("mentalbridge.care.assessment")
 public record AssessmentProperties(@NotNull Duration anonymousSessionTtl,
+		@NotNull Duration anonymousSessionMaximumLifetime,
 		@NotBlank String phq9SafetyPolicyVersion,
 		@NotBlank @Size(min = 32) String idempotencyHmacKey) {
 
@@ -19,11 +20,18 @@ public record AssessmentProperties(@NotNull Duration anonymousSessionTtl,
 		if (anonymousSessionTtl != null && (anonymousSessionTtl.isZero() || anonymousSessionTtl.isNegative())) {
 			throw new IllegalArgumentException("Anonymous assessment session TTL must be positive");
 		}
+		if (anonymousSessionMaximumLifetime != null && (anonymousSessionMaximumLifetime.isZero()
+				|| anonymousSessionMaximumLifetime.isNegative()
+				|| (anonymousSessionTtl != null
+						&& anonymousSessionMaximumLifetime.compareTo(anonymousSessionTtl) < 0))) {
+			throw new IllegalArgumentException("Anonymous assessment maximum lifetime must be at least the inactivity TTL");
+		}
 	}
 
 	@Override
 	public String toString() {
 		return "AssessmentProperties[anonymousSessionTtl=" + anonymousSessionTtl
+				+ ", anonymousSessionMaximumLifetime=" + anonymousSessionMaximumLifetime
 				+ ", phq9SafetyPolicyVersion=" + phq9SafetyPolicyVersion + ", idempotencyHmacKey=[REDACTED]]";
 	}
 }

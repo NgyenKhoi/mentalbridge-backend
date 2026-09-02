@@ -144,10 +144,10 @@ class CareLiquibaseMigrationTests extends CareTestProperties {
 		assertThatThrownBy(() -> jdbc.sql("""
 				insert into assessment_submission (
 					user_id, anonymous_session_id, definition_id, idempotency_key,
-					request_hash, submitted_at, retention_expires_at
+					request_hash, privacy_policy_version, submitted_at, retention_expires_at
 				) values (
 					:userId, :sessionId, :definitionId, :idempotencyKey,
-					:requestHash, :submittedAt, :expiresAt
+					:requestHash, 'privacy-capstone-v1', :submittedAt, :expiresAt
 				)
 				""").param("userId", userId)
 				.param("sessionId", sessionId)
@@ -160,10 +160,10 @@ class CareLiquibaseMigrationTests extends CareTestProperties {
 		assertThatThrownBy(() -> jdbc.sql("""
 				insert into assessment_submission (
 					anonymous_session_id, definition_id, idempotency_key,
-					request_hash, submitted_at, retention_expires_at
+					request_hash, privacy_policy_version, submitted_at, retention_expires_at
 				) values (
 					:sessionId, :definitionId, :idempotencyKey,
-					:requestHash, :submittedAt, :expiresAt
+					:requestHash, 'privacy-capstone-v1', :submittedAt, :expiresAt
 				)
 				""").param("sessionId", sessionId)
 				.param("definitionId", PHQ9_DEFINITION_ID)
@@ -349,9 +349,9 @@ class CareLiquibaseMigrationTests extends CareTestProperties {
 	private UUID insertAuthenticatedSubmission(UUID userId, String idempotencyKey) {
 		return jdbc.sql("""
 				insert into assessment_submission (
-					user_id, definition_id, idempotency_key, request_hash, submitted_at
+					user_id, definition_id, idempotency_key, request_hash, privacy_policy_version, submitted_at
 				) values (
-					:userId, :definitionId, :idempotencyKey, :requestHash, :submittedAt
+					:userId, :definitionId, :idempotencyKey, :requestHash, 'privacy-capstone-v1', :submittedAt
 				)
 				returning id
 				""").param("userId", userId)

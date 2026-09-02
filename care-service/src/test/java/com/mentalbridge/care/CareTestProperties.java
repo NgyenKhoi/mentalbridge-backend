@@ -18,6 +18,7 @@ public abstract class CareTestProperties {
 		properties.add("mentalbridge.care.jwt.public-key",
 				() -> Base64.getEncoder().encodeToString(JWT_KEY_PAIR.getPublic().getEncoded()));
 		properties.add("mentalbridge.care.assessment.anonymous-session-ttl", () -> "PT30M");
+		properties.add("mentalbridge.care.assessment.anonymous-session-maximum-lifetime", () -> "PT2H");
 		properties.add("mentalbridge.care.assessment.phq9-safety-policy-version",
 				() -> "MB-SAFETY-PHQ9-001-test-v1");
 		properties.add("mentalbridge.care.assessment.idempotency-hmac-key",
