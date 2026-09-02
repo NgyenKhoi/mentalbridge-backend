@@ -49,7 +49,7 @@ describe('ResourceRepository integration', () => {
   });
 
   async function insertResource(overrides: Record<string, unknown> = {}): Promise<string> {
-    const defaults = {
+    const defaults: Record<string, unknown> = {
       category: 'BREATHING',
       locale: 'vi-VN',
       title: 'Test resource',
@@ -60,9 +60,10 @@ describe('ResourceRepository integration', () => {
       reviewed_at: new Date().toISOString(),
       ...overrides,
     };
-    const keys = Object.keys(defaults);
-    const values = Object.values(defaults);
-    const placeholders = keys.map((_, i) => `$${i + 1}`).join(', ');
+    const entries = Object.entries(defaults).filter(([, v]) => v !== null && v !== undefined);
+    const keys = entries.map(([k]) => k);
+    const values = entries.map(([, v]) => v);
+    const placeholders = keys.map((_, i) => '$' + String(i + 1)).join(', ');
     const { rows } = await pool.query<{ id: string }>(
       `INSERT INTO resource (${keys.join(', ')}) VALUES (${placeholders}) RETURNING id`,
       values,
@@ -81,11 +82,10 @@ describe('ResourceRepository integration', () => {
   });
 
   it('does not return unreviewed resources', async () => {
-    await insertResource({ reviewed_by: null, reviewed_at: null, status: 'PUBLISHED' });
+    await insertResource({ reviewed_by: undefined, reviewed_at: undefined });
 
-    const before = await repository.listPublished({ limit: 100 });
-    const allReviewed = before.every((r) => r.reviewed_at !== null);
-    expect(allReviewed).toBe(true);
+    const rows = await repository.listPublished({ limit: 100 });
+    expect(rows.every((r) => r.reviewed_at !== null)).toBe(true);
   });
 
   it('does not return future-effective resources', async () => {
@@ -93,28 +93,17 @@ describe('ResourceRepository integration', () => {
     await insertResource({ effective_at: futureDate });
 
     const rows = await repository.listPublished({ limit: 100 });
-    const allActive = rows.every(
-      (r) =>
-        (r as unknown as { effective_at: Date | null }).effective_at == null ||
-        new Date((r as unknown as { effective_at: Date }).effective_at) <= new Date(),
-    );
-    expect(allActive).toBe(true);
+    expect(rows).toEqual([]);
   });
 
   it('does not return expired resources', async () => {
-    const pastDate = new Date(Date.now() - 60 * 60 * 1000).toISOString();
     await insertResource({
       effective_at: new Date(Date.now() - 2 * 60 * 60 * 1000).toISOString(),
-      expires_at: pastDate,
+      expires_at: new Date(Date.now() - 60 * 60 * 1000).toISOString(),
     });
 
     const rows = await repository.listPublished({ limit: 100 });
-    const noneExpired = rows.every(
-      (r) =>
-        (r as unknown as { expires_at: Date | null }).expires_at == null ||
-        new Date((r as unknown as { expires_at: Date }).expires_at) > new Date(),
-    );
-    expect(noneExpired).toBe(true);
+    expect(rows).toEqual([]);
   });
 
   it('filters by locale', async () => {
@@ -122,6 +111,7 @@ describe('ResourceRepository integration', () => {
 
     const rows = await repository.listPublished({ limit: 10, locale: 'en-US' });
 
+    expect(rows.length).toBeGreaterThanOrEqual(1);
     expect(rows.every((r) => r.locale === 'en-US')).toBe(true);
   });
 
@@ -130,6 +120,7 @@ describe('ResourceRepository integration', () => {
 
     const rows = await repository.listPublished({ limit: 10, category: 'MEDITATION' });
 
+    expect(rows.length).toBeGreaterThanOrEqual(1);
     expect(rows.every((r) => r.category === 'MEDITATION')).toBe(true);
   });
 
