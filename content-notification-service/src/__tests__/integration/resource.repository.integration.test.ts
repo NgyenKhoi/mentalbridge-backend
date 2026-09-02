@@ -161,4 +161,55 @@ describe('ResourceRepository integration', () => {
     });
     expect(rows).toEqual([]);
   });
+
+  it('cursor pagination with composite (created_at, id) excludes the cursor row', async () => {
+    const sharedTs = new Date(Date.now() - 5000).toISOString();
+    const id1 = await insertResource({ title: 'cursor-same-ts-1', created_at: sharedTs });
+    const id2 = await insertResource({ title: 'cursor-same-ts-2', created_at: sharedTs });
+    const id3 = await insertResource({ title: 'cursor-same-ts-3', created_at: sharedTs });
+
+    const firstPage = await repository.listPublished({ limit: 2 });
+    const sameTs = firstPage.filter((r) =>
+      [id1, id2, id3].includes((r as unknown as { id: string }).id),
+    );
+    expect(sameTs.length).toBeGreaterThanOrEqual(1);
+
+    const cursorId = firstPage[firstPage.length - 1].id as string;
+    const secondPage = await repository.listPublished({ limit: 50, cursor: cursorId });
+
+    const secondIds = secondPage.map((r) => (r as unknown as { id: string }).id);
+    expect(secondIds).not.toContain(cursorId);
+  });
+
+  it('cursor pagination does not skip rows sharing created_at with the cursor', async () => {
+    const sharedTs = new Date(Date.now() - 10_000).toISOString();
+    const insertedIds: string[] = [];
+    for (let i = 0; i < 4; i++) {
+      insertedIds.push(
+        await insertResource({ title: `same-ts-page-${String(i)}`, created_at: sharedTs }),
+      );
+    }
+
+    const firstPage = await repository.listPublished({
+      limit: 2,
+      category: 'BREATHING',
+      locale: 'vi-VN',
+    });
+    expect(firstPage.length).toBeGreaterThanOrEqual(2);
+    const cursorId = firstPage[firstPage.length - 1].id as string;
+
+    const secondPage = await repository.listPublished({
+      limit: 50,
+      category: 'BREATHING',
+      locale: 'vi-VN',
+      cursor: cursorId,
+    });
+
+    const allIds = [
+      ...firstPage.map((r) => (r as unknown as { id: string }).id),
+      ...secondPage.map((r) => (r as unknown as { id: string }).id),
+    ];
+    const uniqueIds = new Set(allIds);
+    expect(uniqueIds.size).toBe(allIds.length);
+  });
 });

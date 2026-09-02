@@ -40,7 +40,10 @@ export class ResourceRepository {
 
     if (query.cursor) {
       conditions.push(
-        'r.created_at < (SELECT created_at FROM resource WHERE id = $' + String(index++) + ')',
+        '(r.created_at, r.id) < (' +
+          'SELECT created_at, id FROM resource WHERE id = $' +
+          String(index++) +
+          ')',
       );
       params.push(query.cursor);
     }
@@ -52,7 +55,7 @@ export class ResourceRepository {
               reviewed_at, created_at, updated_at
        FROM resource r
        WHERE ${where}
-       ORDER BY r.created_at DESC
+       ORDER BY r.created_at DESC, r.id DESC
        LIMIT $1`,
       params,
     );
