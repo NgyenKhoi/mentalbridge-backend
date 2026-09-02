@@ -10,7 +10,7 @@ import type { DatabaseService } from '../../database/database.service.js';
 
 const __dirname = dirname(fileURLToPath(import.meta.url));
 
-async function waitForPool(pool: Pool, retries = 10, delayMs = 500): Promise<void> {
+async function waitForPool(pool: Pool, retries = 20, delayMs = 1000): Promise<void> {
   for (let i = 0; i < retries; i++) {
     try {
       await pool.query('SELECT 1');
