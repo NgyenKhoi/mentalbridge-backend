@@ -164,15 +164,39 @@ describe('ResourceRepository integration', () => {
 
   it('cursor pagination with composite (created_at, id) excludes the cursor row', async () => {
     const sharedTs = new Date(Date.now() - 5000).toISOString();
-    await insertResource({ title: 'cursor-excl-1', created_at: sharedTs, locale: 'zh-CN', category: 'JOURNALING' });
-    await insertResource({ title: 'cursor-excl-2', created_at: sharedTs, locale: 'zh-CN', category: 'JOURNALING' });
-    await insertResource({ title: 'cursor-excl-3', created_at: sharedTs, locale: 'zh-CN', category: 'JOURNALING' });
+    await insertResource({
+      title: 'cursor-excl-1',
+      created_at: sharedTs,
+      locale: 'zh-CN',
+      category: 'JOURNALING',
+    });
+    await insertResource({
+      title: 'cursor-excl-2',
+      created_at: sharedTs,
+      locale: 'zh-CN',
+      category: 'JOURNALING',
+    });
+    await insertResource({
+      title: 'cursor-excl-3',
+      created_at: sharedTs,
+      locale: 'zh-CN',
+      category: 'JOURNALING',
+    });
 
-    const firstPage = await repository.listPublished({ limit: 2, locale: 'zh-CN', category: 'JOURNALING' });
+    const firstPage = await repository.listPublished({
+      limit: 2,
+      locale: 'zh-CN',
+      category: 'JOURNALING',
+    });
     expect(firstPage.length).toBe(2);
 
     const cursorId = firstPage[firstPage.length - 1].id as string;
-    const secondPage = await repository.listPublished({ limit: 50, locale: 'zh-CN', category: 'JOURNALING', cursor: cursorId });
+    const secondPage = await repository.listPublished({
+      limit: 50,
+      locale: 'zh-CN',
+      category: 'JOURNALING',
+      cursor: cursorId,
+    });
 
     const secondIds = secondPage.map((r) => (r as unknown as { id: string }).id);
     expect(secondIds).not.toContain(cursorId);
@@ -182,10 +206,19 @@ describe('ResourceRepository integration', () => {
   it('cursor pagination does not skip rows sharing created_at with the cursor', async () => {
     const sharedTs = new Date(Date.now() - 10_000).toISOString();
     for (let i = 0; i < 4; i++) {
-      await insertResource({ title: `same-ts-page-${String(i)}`, created_at: sharedTs, locale: 'ko-KR', category: 'COMMUNITY' });
+      await insertResource({
+        title: `same-ts-page-${String(i)}`,
+        created_at: sharedTs,
+        locale: 'ko-KR',
+        category: 'COMMUNITY',
+      });
     }
 
-    const firstPage = await repository.listPublished({ limit: 2, locale: 'ko-KR', category: 'COMMUNITY' });
+    const firstPage = await repository.listPublished({
+      limit: 2,
+      locale: 'ko-KR',
+      category: 'COMMUNITY',
+    });
     expect(firstPage.length).toBe(2);
     const cursorId = firstPage[firstPage.length - 1].id as string;
 
