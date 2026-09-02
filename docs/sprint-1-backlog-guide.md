@@ -58,7 +58,7 @@ Use real disposable PostgreSQL, MongoDB, or Redis through Testcontainers where a
 
 - **Server-authoritative scoring** means the API accepts answers only; Care calculates and persists the PHQ-9 score.
 - **Anonymous isolation** means a guest result is not silently attached to a later account.
-- **Item-9 safety acceptance** uses the draft `MB-SAFETY-PHQ9-001`: `answer >= 1` is positive and independent of severity; exact Vietnamese wording and guidance still require supervisor/domain approval.
+- **Item-9 safety acceptance** uses `MB-SAFETY-PHQ9-001`: `answer >= 1` is positive and independent of severity. Controlled Capstone wording follows the Product Owner evidence gate; production wording retains separate domain/privacy/legal review.
 
 ### Journal/AI
 

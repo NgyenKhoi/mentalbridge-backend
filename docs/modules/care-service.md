@@ -28,18 +28,18 @@ Care owns user profiles, consent decisions, specialist access grants, questionna
 
 MB-88 defines the profile, platform-consent, and PHQ-9 contract/persistence foundation. MB-89 implements public questionnaire retrieval plus authenticated and anonymous PHQ-9 submission/read handlers with JWT or hashed session-token authorization, server-owned scoring, item-9 safety status, owner-scoped idempotency, and an atomic minimized outbox fact. Profile and consent handlers remain planned. The executable Liquibase history contains profile and append-only consent evidence, isolated anonymous sessions, versioned questionnaire reference data, score bands, immutable assessment submission/answer/result shapes, and a transactional outbox table.
 
-The seeded definition is the English PHQ-9 source version. ADR 0009 fixes the item-9 decision boundary, non-paywall rule, AI boundary, and removal of the hotline catalogue. Exact reviewed `vi-VN` questionnaire/disclaimer/safety wording, the intervention catalogue, anonymous expiry duration, consent wording/version ownership, and retention/deletion policy remain approval blockers. The versioned drafts and approval checklist live in `docs/policies/`.
+The seeded definition is the English PHQ-9 source version. ADR 0009 fixes the item-9 decision boundary, non-paywall rule, AI boundary, and removal of the hotline catalogue. ADR 0010 separates controlled Capstone questionnaire publication from production governance and optional support features. Exact `vi-VN` content still needs source-artifact verification, import, and tests; intervention, production consent/retention, and support behavior follow separate gates in `docs/policies/`.
 
 MB-88 does not implement specialist grants, support/intervention, follow-up, analytics, export/deletion, Kafka event schemas, or runtime controllers. Those remain in the ordered tasks below and must not be inferred from the foundation tables.
 
 ## Ordered tasks
 
-- [ ] CARE-01 Complete approval records for the policy drafts in `docs/policies/`; blocked content and values stay unimplemented.
+- [ ] CARE-01 Complete the applicable Capstone evidence or production/feature approval record in `docs/policies/`; content and behavior outside a passed gate stay unavailable.
 - [ ] CARE-02 Extend the MB-88 profile, platform-consent and PHQ-9 OpenAPI foundation with consent authorization, safety/support, intervention, follow-up and analytics contracts.
 - [ ] CARE-03 Define assessment/support/consent/follow-up event schemas and journal-indicator consumer contract.
 - [ ] CARE-04 Extend the MB-88 Liquibase/reference-data foundation with approved grants, safety/support, intervention and follow-up persistence.
 - [ ] CARE-05 Implement profile and independent consent/grant decisions with concurrent revoke/read protection.
-- [x] CARE-06 Implement anonymous and authenticated assessment, validation, scoring and idempotency; production `vi-VN` content and policy values remain approval-gated.
+- [x] CARE-06 Implement anonymous and authenticated assessment, validation, scoring and idempotency; `vi-VN` remains unpublished until exact content import and the applicable environment gate pass.
 - [ ] CARE-07 Implement deterministic safety/support behavior and approved-catalogue intervention with synchronous fallback and provenance.
 - [ ] CARE-08 Implement follow-up, comparison projections, export and deletion participation.
 - [ ] CARE-09 Verify scoring boundaries, item-9 safety, stale/missing input, concurrency, rollback/outbox, duplicate/reordered events and dependency failures.

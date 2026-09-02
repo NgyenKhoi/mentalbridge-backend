@@ -42,6 +42,7 @@ import com.mentalbridge.care.TestcontainersConfiguration;
 class AssessmentFlowIntegrationTests extends CareTestProperties {
 
 	private static final UUID DEFINITION_ID = UUID.fromString("10000000-0000-0000-0000-000000000001");
+	private static final UUID VI_DEFINITION_ID = UUID.fromString("10000000-0000-0000-0000-000000000002");
 	private static final Set<String> IMPLEMENTED_OPERATIONS = Set.of(
 			"GET /api/v1/questionnaires/{instrument}/current",
 			"POST /api/v1/anonymous-assessment-sessions",
@@ -64,10 +65,15 @@ class AssessmentFlowIntegrationTests extends CareTestProperties {
 	private RequestMappingHandlerMapping handlerMapping;
 
 	@Test
-	void publishedQuestionnaireIsReadableWhileUnapprovedVietnameseVersionFailsClosed() throws Exception {
+	void publishedQuestionnaireDefaultsToTheCapstoneVietnameseVersion() throws Exception {
 		mvc.perform(get("/api/v1/questionnaires/PHQ9/current"))
-				.andExpect(status().isNotFound())
-				.andExpect(jsonPath("$.code").value("QUESTIONNAIRE_NOT_FOUND"));
+				.andExpect(status().isOk())
+				.andExpect(jsonPath("$.definitionId").value(VI_DEFINITION_ID.toString()))
+				.andExpect(jsonPath("$.version").value("phq9-vi-vn-capstone-v1"))
+				.andExpect(jsonPath("$.locale").value("vi-VN"))
+				.andExpect(jsonPath("$.questions.length()").value(9))
+				.andExpect(jsonPath("$.questions[8].itemNumber").value(9))
+				.andExpect(jsonPath("$.responseOptions[0].label").value("Không có gì"));
 
 		mvc.perform(get("/api/v1/questionnaires/PHQ9/current").queryParam("locale", "en-US"))
 				.andExpect(status().isOk())

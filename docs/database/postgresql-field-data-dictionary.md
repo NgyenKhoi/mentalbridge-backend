@@ -194,6 +194,8 @@ Immutable versioned PHQ-9 or GAD-7 questionnaire definition and scoring identity
 | `published_at` | UTC instant the immutable definition became available; null while draft. |
 | `created_at` | Immutable UTC creation instant for the definition record. |
 
+Published seed versions are `phq9-en-us-v1` and `phq9-vi-vn-capstone-v1`. The Vietnamese row is limited to controlled local/demo Capstone use and stores its archived artifact URI, retrieval timestamp, SHA-256 checksum, use statement, and scoring citation in `source_reference`. Production review creates a new immutable publication decision/version; it never rewrites this evidence row.
+
 ### `public.questionnaire_question`
 
 Version-owned questionnaire item with safety-path metadata.
