@@ -61,7 +61,7 @@ Until a separate feature gate passes, the runtime returns an explicit unavailabl
 - The NIMH Data Archive GAD-7 Common Data Element lists `Vietnamese for Vietnam`: [GAD-7 data structure](https://nda.nih.gov/data-structure/cde_gad701).
 - NDA hosts *GAD-7 — Vietnamese for Vietnam — Translated by UNC Vietnam, 2024*: [source artifact](https://s3.amazonaws.com/nda.nih.gov/cms/prod/GAD7_VietnameseForVietnam_uncvn.pdf).
 
-The UNC artifact is interviewer-oriented and includes non-score response codes. Before using it in a self-administered MentalBridge flow, the team must document the exact `0..3` mapping, treatment of non-score codes, and retained wording. Source identification alone is not implementation readiness.
+The UNC artifact is interviewer-oriented and includes non-score response codes. Before publishing it in a self-administered MentalBridge flow, the team must document the exact `0..3` mapping, treatment of non-score codes, and retained wording. The Product Owner may authorize engineering to prepare that mapping and its tests, but source identification alone is not publication readiness.
 
 ## Scope statement for reports
 

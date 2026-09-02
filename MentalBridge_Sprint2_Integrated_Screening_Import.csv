@@ -1,0 +1,623 @@
+Issue Type,Issue ID,Summary,Parent,Assignee,Story Points,Original Estimate,Sprint,Priority,Labels,Description
+Epic,400,Deliver backend-authoritative PHQ-9 frontend integration,,Member 1,,,MB Sprint 2,Highest,sprint2-screening,"## Objective
+
+Deliver an anonymous and authenticated PHQ-9 experience that uses Care as the only scoring and safety-policy authority.
+
+## Scope
+
+- Add frontend server-side integration with the Care API.
+- Replace mock questionnaires and browser-owned scoring.
+- Preserve the current frontend design system and responsive behavior.
+- Cover loading, validation, expiry, authorization, and service-unavailable states.
+
+## Definition of Done
+
+- The integrated PHQ-9 journey works against the implemented Care contract.
+- No score, band, item-9 status, or support action is calculated in browser code.
+- Removed hotline behavior does not reappear.
+- Automated tests, build, lint, and type checks pass.
+- Evidence is attached to the child Story and pull request."
+Epic,401,Complete Care profile consent and assessment history,,Member 2,,,MB Sprint 2,Highest,sprint2-care,"## Objective
+
+Close the remaining Care profile and consent runtime gap and provide authenticated users with server-owned assessment history and reassessment entry points.
+
+## Scope
+
+- Complete the existing MB-89 profile and consent carry-over before new work.
+- Add assessment history contracts and runtime behavior.
+- Integrate profile, consent, history, and reassessment in the frontend.
+- Preserve ownership, versioning, idempotency, and privacy boundaries.
+
+## Definition of Done
+
+- The MB-89 profile/consent carry-over is complete.
+- Care contracts and runtime tests pass.
+- Authenticated frontend flows use server data and current UI conventions.
+- Anonymous results are not attached to accounts.
+- Evidence is attached to the child Story and pull request."
+Epic,402,Resolve Review 1 screening-to-support business flow,,Member 3,,,MB Sprint 2,Highest,sprint2-review1,"## Objective
+
+Close the Review 1 business gaps with a versioned and reviewable blueprint from target-cohort eligibility through screening, support, specialist handoff, follow-up, reassessment, and descriptive progress evaluation.
+
+## Scope
+
+- Define the MentalBridge MVP target cohort and unsupported cases.
+- Record PHQ-9 and GAD-7 provenance, locale, validation applicability, publication rights, and approval gates.
+- Define screening terminology and prohibited diagnosis or treatment claims.
+- Separate screening level, item-9 safety status, support tier, support actions, and entitlement.
+- Define specialist handoff, scoped consent, follow-up, reassessment, and descriptive progress rules without claiming unavailable runtime.
+- Produce a Review 1 closure matrix linking feedback to decisions, evidence, approvals, runtime status, and explicit deferrals.
+
+## Definition of Done
+
+- Every Review 1 question has a versioned decision artifact and accountable approval status.
+- Unapproved clinical or localized content remains unpublished.
+- The flow never converts a screening score directly into diagnosis or mandatory treatment.
+- Runtime implementation and business-definition status are reported separately.
+- Evidence is attached to the child Story and review package."
+Epic,403,Integrate reviewed resources and Sprint 2 release evidence,,Member 5,,,MB Sprint 2,High,sprint2-quality,"## Objective
+
+Connect reviewed support resources to the screening result experience and produce release evidence for the complete Sprint 2 vertical slice.
+
+## Scope
+
+- Integrate published Content/Notification health resources.
+- Show explicit safe fallback text when resources are unavailable.
+- Do not restore the removed hotline catalogue or imply monitoring or emergency dispatch.
+- Validate anonymous and authenticated journeys end to end.
+
+## Definition of Done
+
+- Only reviewed and published resources are rendered.
+- Failure states cannot be mistaken for clinical guidance.
+- Cross-service E2E and regression evidence passes.
+- Runbooks and affected documentation are current.
+- Evidence is attached to the child Stories and pull requests."
+Story,500,Integrate backend-authoritative PHQ-9 screening in frontend,400,Member 1,8,,MB Sprint 2,Highest,sprint2-screening,"## Objective
+
+Replace the current mock PHQ-9 pages with Care-backed anonymous and authenticated screening flows.
+
+## Scope
+
+- Add a server-side Care BFF and typed frontend client.
+- Retrieve the current published questionnaire from Care.
+- Create and use anonymous assessment sessions without exposing stored token hashes.
+- Submit authenticated and anonymous answers to Care.
+- Render the server-owned score, screening level, item-9 safety status, and approved response fields.
+- Remove browser scoring, mock results, and the obsolete hotline message.
+- Keep the existing frontend template, theme, spacing, typography, components, and responsive conventions.
+
+## Acceptance Criteria
+
+- [ ] Anonymous users can retrieve, complete, submit, and reopen a PHQ-9 result within the server-owned session rules.
+- [ ] Authenticated USER accounts can retrieve, complete, submit, and reopen their own PHQ-9 result.
+- [ ] The frontend never calculates the total score, score band, positive item-9 status, or safety status.
+- [ ] Care Problem Details responses map to clear validation, conflict, expiry, forbidden, and unavailable UI states.
+- [ ] Anonymous credentials remain in protected server-side storage and are not logged or rendered.
+- [ ] The hard-coded hotline and hard-coded PHQ-9 result recommendations are removed.
+- [ ] Missing approved result or resource content produces explicit unavailable text, not invented guidance.
+- [ ] New screens and states follow the current frontend design system and accessibility patterns.
+- [ ] Unit, route, component, and focused E2E tests cover both roles and failure paths.
+
+## Definition of Done
+
+- [ ] All Acceptance Criteria are satisfied.
+- [ ] Care remains the only scoring and safety-policy authority.
+- [ ] Frontend lint, format, typecheck, unit tests, and production build pass.
+- [ ] Focused browser tests pass against controlled Care responses.
+- [ ] Security review confirms no bearer token, anonymous credential, or sensitive answer is logged.
+- [ ] Removed hotline behavior is absent from production code and tests.
+- [ ] Code and contract changes have been reviewed.
+- [ ] Changes have been integrated into the target branch.
+- [ ] Related documentation and Jira sub-tasks are complete.
+- [ ] No known Critical or High issue remains unresolved.
+
+## Evidence
+
+- Jira: Assigned during import
+- Backend contract: Care OpenAPI v1
+- Frontend: assessment routes, Care BFF, and typed client
+- Tests: Vitest route/component tests and Playwright focused flow
+- Pull Request: To be added
+
+## Completion Notes
+
+To be completed after anonymous and authenticated PHQ-9 flows have been validated end to end."
+Story,501,Complete Care profile consent history and reassessment flow,401,Member 2,8,,MB Sprint 2,Highest,sprint2-care,"## Objective
+
+Close the profile/consent runtime carry-over and let authenticated users manage Care data and revisit their own screening history without weakening ownership controls.
+
+## Scope
+
+- Complete the existing MB-89 profile and consent implementation sub-task.
+- Define and implement a paginated own-assessment history endpoint.
+- Integrate profile, consent, assessment history, result reopening, and reassessment entry points in the frontend.
+- Keep anonymous sessions isolated and non-claimable.
+
+## Acceptance Criteria
+
+- [ ] Authenticated USER accounts can view and update only their own Care profile with optimistic concurrency.
+- [ ] Consent decisions are append-only, independently versioned, idempotent, and immediately reflect revocation.
+- [ ] Users can list only their own assessments with stable pagination and deterministic ordering.
+- [ ] History entries expose the approved result summary without leaking answers or another owner's data.
+- [ ] Reassessment creates a new submission and never overwrites historical evidence.
+- [ ] Anonymous assessments remain isolated and cannot be silently attached to an account.
+- [ ] Frontend profile, consent, history, and reassessment states follow the current theme and accessibility conventions.
+- [ ] Contract, PostgreSQL integration, frontend unit, and focused E2E tests cover success and failure paths.
+
+## Definition of Done
+
+- [ ] All Acceptance Criteria are satisfied.
+- [ ] The MB-89 profile/consent carry-over has been closed in Jira.
+- [ ] Care OpenAPI validation and focused backend tests pass.
+- [ ] Liquibase validation and PostgreSQL integration tests pass when schema changes are required.
+- [ ] Frontend lint, format, typecheck, unit tests, and build pass.
+- [ ] Privacy, consent, authorization, idempotency, and pagination boundaries have been reviewed.
+- [ ] Code and contract changes have been reviewed and integrated into the target branch.
+- [ ] Data dictionary and Care/frontend documentation are updated where affected.
+- [ ] Related Jira sub-tasks are complete.
+- [ ] No known Critical or High issue remains unresolved.
+
+## Evidence
+
+- Jira carry-over: MB-89 profile/consent implementation sub-task
+- API documentation: Care OpenAPI v1
+- Database: Care Liquibase migrations and data dictionary when changed
+- Tests: Care PostgreSQL integration tests and frontend Vitest/Playwright tests
+- Pull Request: To be added
+
+## Completion Notes
+
+To be completed after profile, consent, history, and reassessment flows have been validated against real service contracts."
+Story,502,Define and approve the Review 1 screening-to-support blueprint,402,Member 3,8,,MB Sprint 2,Highest,sprint2-review1,"## Objective
+
+Provide a defensible business flow showing how MentalBridge moves from eligibility and standardized screening to reviewed support, optional specialist involvement, follow-up, reassessment, and descriptive progress evaluation.
+
+## Scope
+
+- Define the initial Vietnam target cohort of adults aged 18–30 as a product scope rather than a medical cutoff.
+- Record exact PHQ-9 and GAD-7 source/version, vi-VN provenance, validation population, publication rights, reviewer, and publication state.
+- Define screening-result terminology, non-diagnostic wording, and prohibited claims.
+- Approve or explicitly block a deterministic severity-to-support matrix that keeps item-9 safety status independent.
+- Define the specialist recommendation and handoff journey, data minimization, scoped consent, entitlement, and unavailable-runtime behavior.
+- Define follow-up entry/exit, cadence ownership, reassessment, and descriptive progress comparison.
+- Create a Review 1 closure matrix and mentor-facing end-to-end flow.
+
+## Acceptance Criteria
+
+- [ ] The target-cohort decision explains inclusion, exclusion, why the MVP starts at 18, why it ends at 30, and that 30 is not a clinical threshold.
+- [ ] PHQ-9 and GAD-7 each have an instrument register entry with exact source, wording/version, locale, validated population, publication rights, accountable reviewers, and publication gate.
+- [ ] GAD-7 remains unpublished unless every required provenance and approval field is complete.
+- [ ] Terminology distinguishes screening result from diagnosis, disease severity, treatment recommendation, and clinical outcome.
+- [ ] The routing matrix keeps screeningLevel, safetyStatus, supportTier, supportActions, and entitlementPlan independent.
+- [ ] No score directly diagnoses a condition, mandates treatment, or claims specialist/emergency response.
+- [ ] The item-9 path remains independent from the PHQ-9 band and does not infer intent, plan, imminence, or urgency from values 1–3.
+- [ ] Specialist handoff defines user-visible behavior, optional recommendation, scoped consent, minimum shared data, entitlement/availability checks, and runtime-unavailable fallback.
+- [ ] Follow-up defines who owns cadence, entry/exit conditions, missing or stale assessments, reassessment behavior, and continue/adapt/escalate wording boundaries.
+- [ ] Progress comparison defines baseline, current result, absolute delta, screening-level transition, instrument-version compatibility, insufficient-data behavior, and non-causal wording.
+- [ ] Every unresolved clinical, legal, privacy, or product choice has an owner, approval state, deadline or explicit defer decision; engineering does not invent a default.
+- [ ] A Review 1 closure matrix links every mentor feedback item to a decision artifact, evidence source, reviewer, approval, runtime status, and follow-up Jira issue.
+
+## Definition of Done
+
+- [ ] All Acceptance Criteria are satisfied.
+- [ ] The business flow is versioned and reviewed by the product owner and supervisor/mentor.
+- [ ] Clinical content and routing are approved by the accountable domain expert or remain explicitly blocked and unpublished.
+- [ ] Consent, retention, and data-sharing boundaries receive the required security/legal review or remain explicitly blocked.
+- [ ] PHQ-9, GAD-7, support, consent, domain, coverage, and traceability documents do not contain conflicting status or terminology.
+- [ ] The end-to-end diagram and decision tables are understandable without reading implementation code.
+- [ ] Runtime-complete, definition-complete, approval-blocked, and deferred work are clearly distinguished.
+- [ ] Related Jira sub-tasks and review comments are complete.
+- [ ] No known Critical or High policy ambiguity is silently treated as resolved.
+
+## Evidence
+
+- Jira: Assigned during import
+- Policies: PHQ-9, GAD-7, Care support/intervention, and Care consent/retention
+- Architecture: ADR 0009, domain/use cases, module coverage, and requirements traceability
+- Research: instrument validation and localization sources recorded in the provenance register
+- Review artifact: Review 1 closure matrix and mentor-facing flow
+- Pull Request: To be added
+
+## Completion Notes
+
+To be completed after each Review 1 feedback item has a recorded disposition and required approval evidence. Definition does not claim that deferred specialist, follow-up, GAD-7, or progress runtime is implemented."
+Story,503,Integrate reviewed support resources with safe fallback,403,Member 5,5,,MB Sprint 2,High,sprint2-content,"## Objective
+
+Show reviewed published resources after screening while remaining safe and unambiguous when Content/Notification is unavailable.
+
+## Scope
+
+- Add a server-side Content/Notification BFF and typed resource client.
+- Render only published reviewed resources relevant to the result context.
+- Add explicit unavailable and empty states.
+- Preserve the decision to remove the hotline catalogue.
+
+## Acceptance Criteria
+
+- [ ] Anonymous and authenticated result pages can request published resources without exposing service credentials.
+- [ ] Only backend-returned published resources are displayed; the frontend does not invent support content.
+- [ ] Empty and unavailable responses display explicit neutral fallback text.
+- [ ] The UI does not claim emergency dispatch, continuous monitoring, guaranteed response, or guaranteed notification.
+- [ ] No hotline number or hotline catalogue is restored.
+- [ ] Tier-restricted future features are clearly unavailable and are not presented as an error or a completed service.
+- [ ] Resource UI follows the existing theme, components, and accessibility conventions.
+- [ ] Automated tests cover published, empty, unavailable, malformed, and unauthorized responses.
+
+## Definition of Done
+
+- [ ] All Acceptance Criteria are satisfied.
+- [ ] Content/Notification remains the resource catalogue authority.
+- [ ] Safety and fallback copy has been manually reviewed.
+- [ ] Frontend lint, format, typecheck, unit tests, and production build pass.
+- [ ] Contract and component tests pass.
+- [ ] Code changes have been reviewed and integrated into the target branch.
+- [ ] Related documentation and Jira sub-tasks are complete.
+- [ ] No known Critical or High issue remains unresolved.
+
+## Evidence
+
+- Backend contract: Content/Notification OpenAPI
+- Architecture decision: ADR 0009 hotline catalogue removal
+- Frontend: resource BFF and result-page resource component
+- Tests: Vitest route/component tests
+- Pull Request: To be added
+
+## Completion Notes
+
+To be completed after reviewed resources and every fallback state have been validated."
+Story,504,Validate Sprint 2 integrated journey and release evidence,403,Member 5,5,,MB Sprint 2,High,sprint2-quality,"## Objective
+
+Prove the committed Sprint 2 vertical slice across frontend and backend and produce reproducible release evidence.
+
+## Scope
+
+- Validate anonymous PHQ-9 to result and reviewed-resource flow.
+- Validate authenticated session, profile/consent, PHQ-9 history/reassessment, and reviewed-resource flow.
+- Validate service degradation and security boundaries.
+- Update runbooks and evidence links.
+
+## Acceptance Criteria
+
+- [ ] Anonymous PHQ-9 submission, result reopening, expiry, and resource fallback pass end to end.
+- [ ] Authenticated profile, consent, PHQ-9, history, reassessment, and reviewed-resource behavior pass end to end.
+- [ ] Cross-user Care access attempts fail closed.
+- [ ] Identity, Care, and Content/Notification unavailability states are explicit and non-misleading.
+- [ ] Frontend contains no browser-owned PHQ-9 scoring, obsolete hotline, or production mock assessment/result data.
+- [ ] Backend focused suites and frontend quality gates pass from clean documented commands.
+- [ ] Review 1 business definitions and approval states are traceable; deferred GAD-7, consultation, specialist, follow-up/progress, journal-frontend, and AI runtime are documented separately.
+
+## Definition of Done
+
+- [ ] All Acceptance Criteria are satisfied.
+- [ ] Required services start from documented environment examples without committed secrets.
+- [ ] Backend unit, contract, and relevant PostgreSQL/MongoDB/Redis integration tests pass.
+- [ ] Frontend lint, format, typecheck, unit tests, E2E smoke tests, and production build pass.
+- [ ] Evidence includes commands, results, screenshots where useful, and pull-request links.
+- [ ] Safety, privacy, consent, authorization, and fallback boundaries have been reviewed.
+- [ ] Changes have been reviewed and integrated into the target branch.
+- [ ] Related documentation and Jira sub-tasks are complete.
+- [ ] No known Critical or High issue remains unresolved.
+
+## Evidence
+
+- Jira: Sprint 2 Stories and carry-over MB-89/MB-92/MB-93
+- Tests: service-focused suites and frontend Vitest/Playwright suites
+- Documentation: service READMEs, agent guides, and runbooks
+- Pull Requests: To be added
+
+## Completion Notes
+
+To be completed after the integrated demo path and degradation scenarios have reproducible passing evidence."
+Sub-task,600,Add Care BFF configuration and typed assessment client,500,Member 1,,28800,MB Sprint 2,Highest,sprint2-screening,"## Objective
+
+Create the frontend server-side boundary for Care assessment APIs.
+
+## Acceptance Criteria
+
+- [ ] Environment values are validated server-side.
+- [ ] Authenticated JWT and anonymous session credentials never reach browser-readable storage.
+- [ ] Problem Details map to stable frontend errors with correlation IDs.
+
+## Definition of Done
+
+- [ ] Route and client tests cover success, timeout, malformed response, and unavailable service.
+- [ ] Lint, typecheck, unit tests, and build pass.
+- [ ] No credential or assessment answer is logged."
+Sub-task,601,Implement anonymous PHQ-9 session submission and result flow,500,Member 1,,36000,MB Sprint 2,Highest,sprint2-screening,"## Objective
+
+Connect the anonymous PHQ-9 UI to Care session, questionnaire, submission, and result APIs.
+
+## Acceptance Criteria
+
+- [ ] Session creation, nine-answer validation, submission, result reopening, and expiry behavior work.
+- [ ] UI renders only server-returned score and policy fields.
+- [ ] Anonymous credentials remain server-side and cannot be claimed by a later login.
+
+## Definition of Done
+
+- [ ] Component, route, and focused browser tests pass.
+- [ ] Loading, validation, conflict, expiry, and unavailable states match the current UI system."
+Sub-task,602,Implement authenticated PHQ-9 submission and result flow,500,Member 1,,32400,MB Sprint 2,Highest,sprint2-screening,"## Objective
+
+Connect authenticated USER accounts to Care questionnaire, submission, and own-result APIs.
+
+## Acceptance Criteria
+
+- [ ] Session cookies are translated to downstream authorization only on the server.
+- [ ] Submit, idempotent retry, result reopening, forbidden role, and expired login states work.
+- [ ] No owner identifier is accepted from browser input.
+
+## Definition of Done
+
+- [ ] Route, component, and focused browser tests pass.
+- [ ] Security review confirms subject ownership and server-only token handling."
+Sub-task,603,Remove mock scoring hotline and add accessible PHQ-9 states,500,Member 1,,18000,MB Sprint 2,Highest,sprint2-safety,"## Objective
+
+Remove unsafe frontend-owned behavior and align all new states with the current UI.
+
+## Acceptance Criteria
+
+- [ ] Browser scoring, hard-coded severity, mock recommendations, and obsolete hotline text are removed.
+- [ ] Missing approved content displays explicit unavailable text.
+- [ ] Keyboard, focus, labels, contrast, responsive layout, and reduced-motion behavior are preserved.
+
+## Definition of Done
+
+- [ ] Static search and component tests prove removed behavior is absent.
+- [ ] Manual responsive and accessibility review is recorded."
+Sub-task,604,Test anonymous and authenticated PHQ-9 frontend boundaries,500,Member 1,,10800,MB Sprint 2,High,sprint2-testing,"## Objective
+
+Add focused regression coverage for both PHQ-9 frontend roles.
+
+## Acceptance Criteria
+
+- [ ] Tests cover valid flows, invalid answers, idempotent retry, forbidden role, anonymous expiry, and Care outage.
+- [ ] Tests assert that score and safety fields come from Care responses.
+
+## Definition of Done
+
+- [ ] Focused Vitest and Playwright suites pass without skipped required cases.
+- [ ] Test evidence is linked in the Story."
+Sub-task,605,Define and implement own-assessment history API,501,Member 2,,36000,MB Sprint 2,Highest,sprint2-care,"## Objective
+
+Add a server-owned paginated history API for the authenticated assessment owner.
+
+## Acceptance Criteria
+
+- [ ] OpenAPI defines stable cursor pagination, ordering, summaries, authorization, and errors.
+- [ ] Runtime returns only the JWT subject's assessments and never accepts an owner ID.
+- [ ] PostgreSQL tests cover ordering, pagination, empty history, forged access, and result consistency.
+
+## Definition of Done
+
+- [ ] OpenAPI validation and Care focused tests pass.
+- [ ] Data dictionary and README are updated for any persistence change."
+Sub-task,606,Integrate Care profile and consent UI,501,Member 2,,28800,MB Sprint 2,Highest,sprint2-consent,"## Objective
+
+Connect authenticated profile and consent screens to the completed Care runtime.
+
+## Acceptance Criteria
+
+- [ ] Users can view and update their profile with conflict handling.
+- [ ] Independent consent grant and revocation use versioned text and idempotency.
+- [ ] Unsupported roles, invalid input, conflict, and service outage are explicit.
+
+## Definition of Done
+
+- [ ] Route and component tests pass.
+- [ ] UI follows the existing theme and does not imply consent grants broad specialist access."
+Sub-task,607,Integrate assessment history result reopening and reassessment UI,501,Member 2,,25200,MB Sprint 2,High,sprint2-care,"## Objective
+
+Replace mock assessment history with Care-owned records and a new-assessment entry point.
+
+## Acceptance Criteria
+
+- [ ] History uses stable pagination and shows only approved result summaries.
+- [ ] Result reopening enforces ownership.
+- [ ] Reassessment creates a new immutable submission.
+
+## Definition of Done
+
+- [ ] Route, component, and focused browser tests pass.
+- [ ] UI follows existing dashboard patterns and handles empty and unavailable states."
+Sub-task,608,Run Care profile consent history regression suite,501,Member 2,,10800,MB Sprint 2,High,sprint2-testing,"## Objective
+
+Prove the combined Care changes preserve existing PHQ-9 safety and ownership behavior.
+
+## Acceptance Criteria
+
+- [ ] Tests cover profile conflicts, consent history/idempotency, assessment pagination, cross-user denial, and anonymous isolation.
+- [ ] Existing scoring and item-9 tests remain unchanged and passing.
+
+## Definition of Done
+
+- [ ] Focused unit, contract, and PostgreSQL integration suites pass with no required case skipped.
+- [ ] Commands and results are linked in the Story."
+Sub-task,609,Define MVP target cohort and screening terminology,502,Member 3,,18000,MB Sprint 2,Highest,sprint2-review1,"## Objective
+
+Record the product eligibility boundary and the vocabulary used for screening results.
+
+## Acceptance Criteria
+
+- [ ] The 18–30 Vietnam cohort has documented product rationale, included users, unsupported cases, and expansion boundary.
+- [ ] Age 30 is explicitly not represented as a medical cutoff.
+- [ ] Approved and prohibited terms distinguish screening, diagnosis, symptom level, treatment, and outcome.
+
+## Definition of Done
+
+- [ ] Product owner and supervisor/mentor decisions are recorded with version and date.
+- [ ] Domain and result-page wording requirements are updated consistently."
+Sub-task,610,Approve PHQ-9 and GAD-7 provenance and publication gates,502,Member 3,,25200,MB Sprint 2,Highest,sprint2-provenance,"## Objective
+
+Create an auditable instrument register for the exact PHQ-9 and GAD-7 variants proposed for Vietnamese users.
+
+## Acceptance Criteria
+
+- [ ] Each instrument records source, exact version/wording, response labels, locale, validated population, known limitations, publication rights, and reviewer.
+- [ ] Scoring versions and non-diagnostic disclaimer requirements are explicit.
+- [ ] GAD-7 publication remains disabled when any required evidence or approval is missing.
+
+## Definition of Done
+
+- [ ] Product, supervisor/mentor, and domain-expert approval states are recorded.
+- [ ] Policy, questionnaire reference-data plan, and Jira evidence agree."
+Sub-task,611,Define severity safety support and entitlement routing matrix,502,Member 3,,28800,MB Sprint 2,Highest,sprint2-routing,"## Objective
+
+Define a deterministic and reviewable route from screening evidence to platform support without turning scores into diagnoses or mandatory treatment.
+
+## Acceptance Criteria
+
+- [ ] screeningLevel, safetyStatus, supportTier, supportActions, and entitlementPlan remain separate decision dimensions.
+- [ ] Missing, stale, conflicting, and unavailable instrument cases are covered.
+- [ ] PHQ-9 item-9 positivity remains independent from total-score bands and does not infer intent or urgency.
+- [ ] Every initial support action has source, locale, version, eligibility, reviewer, and fallback behavior.
+
+## Definition of Done
+
+- [ ] Decision-table examples cover every boundary and item-9 combination required for review.
+- [ ] Domain-expert approval is recorded or the matrix remains explicitly non-executable."
+Sub-task,612,Define specialist recommendation handoff and scoped consent,502,Member 3,,21600,MB Sprint 2,Highest,sprint2-specialist,"## Objective
+
+Define when professional support becomes relevant and how a user may enter a future specialist journey safely.
+
+## Acceptance Criteria
+
+- [ ] The flow defines user-visible recommendation, voluntary choice, entitlement/availability checks, and unavailable-runtime fallback.
+- [ ] Specialist access requires a separate revocable grant scoped by specialist, data type, purpose, time range, and selected records where applicable.
+- [ ] No score automatically books, notifies, or shares data with a specialist.
+- [ ] The flow makes no guaranteed response, 24/7 monitoring, or emergency-dispatch claim.
+
+## Definition of Done
+
+- [ ] Care, Consultation, Realtime, and Content/Notification ownership boundaries are reviewed.
+- [ ] Runtime deferral and future contract dependencies are linked in Jira."
+Sub-task,620,Define follow-up cadence entry exit and reassessment rules,502,Member 3,,18000,MB Sprint 2,Highest,sprint2-followup,"## Objective
+
+Define the product follow-up lifecycle without copying treatment-specific clinical schedules into a self-screening platform.
+
+## Acceptance Criteria
+
+- [ ] Entry, exit, reminder eligibility, user opt-out, reassessment trigger, stale/missing data, and continue/adapt/escalate wording are defined.
+- [ ] Cadence ownership and timezone behavior are explicit.
+- [ ] Specialist-led clinical follow-up is distinguished from platform reminders and self-screening availability.
+- [ ] No reminder or operating-hours field implies continuous monitoring or guaranteed response.
+
+## Definition of Done
+
+- [ ] Product and domain review states are recorded.
+- [ ] Future Care and Content/Notification contract/runtime dependencies are linked in Jira."
+Sub-task,621,Define descriptive progress rules and Review 1 closure evidence,502,Member 3,,14400,MB Sprint 2,Highest,sprint2-progress,"## Objective
+
+Define safe longitudinal comparison and prove how every Review 1 concern was dispositioned.
+
+## Acceptance Criteria
+
+- [ ] Progress fields cover baseline, current score, absolute delta, screening-level transition, interval, instrument/version compatibility, and insufficient data.
+- [ ] Wording remains descriptive and does not claim diagnosis, treatment response, causation, recovery, or deterioration without an approved basis.
+- [ ] Any clinically meaningful-change threshold records its source, applicable population, reviewer, and approval state before use.
+- [ ] The closure matrix maps feedback to decision, artifact, evidence, owner, approval, runtime status, and deferred Jira issue.
+
+## Definition of Done
+
+- [ ] Mentor-facing flow and closure matrix are reviewed.
+- [ ] Domain, coverage, policy, and traceability documents use consistent status and terminology."
+Sub-task,613,Add Content resource BFF and typed client,503,Member 5,,21600,MB Sprint 2,High,sprint2-content,"## Objective
+
+Create the frontend server-side boundary for published health resources.
+
+## Acceptance Criteria
+
+- [ ] Only supported public or authenticated resource operations are exposed.
+- [ ] Malformed, empty, timeout, and unavailable responses map to stable UI states.
+- [ ] No removed hotline endpoint or data model is recreated.
+
+## Definition of Done
+
+- [ ] Route and client tests pass.
+- [ ] Lint, typecheck, unit tests, and build pass."
+Sub-task,614,Render reviewed resources in screening result experience,503,Member 5,,25200,MB Sprint 2,High,sprint2-content,"## Objective
+
+Render backend-owned reviewed resources after a screening result without presenting them as diagnosis or guaranteed care.
+
+## Acceptance Criteria
+
+- [ ] Only published resource fields returned by Content/Notification are rendered.
+- [ ] Anonymous and authenticated users receive the allowed common result resources.
+- [ ] Future subscription or consultation actions are labelled unavailable when not implemented.
+- [ ] UI follows the current result-page theme and accessibility patterns.
+
+## Definition of Done
+
+- [ ] Component and route tests pass.
+- [ ] Safety copy and responsive layout receive manual review."
+Sub-task,615,Implement neutral resource empty and unavailable fallback,503,Member 5,,10800,MB Sprint 2,Highest,sprint2-safety,"## Objective
+
+Prevent resource failures from being mistaken for clinical guidance or successful service delivery.
+
+## Acceptance Criteria
+
+- [ ] Empty, unavailable, malformed, and timeout states use explicit neutral fallback text.
+- [ ] Copy makes no emergency dispatch, monitoring, notification, or response-time guarantee.
+- [ ] No hotline number appears.
+
+## Definition of Done
+
+- [ ] Safety-copy review and component tests pass.
+- [ ] Static search confirms obsolete hotline content is absent."
+Sub-task,616,Test resource publication and fallback boundaries,503,Member 5,,14400,MB Sprint 2,High,sprint2-testing,"## Objective
+
+Verify published-resource filtering and every result-page fallback.
+
+## Acceptance Criteria
+
+- [ ] Tests cover published, unpublished, empty, unavailable, malformed, and unauthorized responses.
+- [ ] Tests reject invented local guidance and removed hotline behavior.
+
+## Definition of Done
+
+- [ ] Focused contract, route, and component tests pass without skipped required cases.
+- [ ] Evidence is linked in the Story."
+Sub-task,617,Automate anonymous and authenticated Sprint 2 journeys,504,Member 5,,28800,MB Sprint 2,Highest,sprint2-e2e,"## Objective
+
+Automate the committed Sprint 2 user journeys across service boundaries.
+
+## Acceptance Criteria
+
+- [ ] Anonymous PHQ-9 through result and resource fallback is covered.
+- [ ] Authenticated profile, consent, PHQ-9, history, reassessment, and reviewed-resource behavior are covered.
+- [ ] Deterministic fixtures avoid production personal or clinical data.
+
+## Definition of Done
+
+- [ ] Required Playwright journeys pass from documented commands.
+- [ ] Failures retain useful correlation evidence without secrets."
+Sub-task,618,Run cross-service security and degradation regression,504,Member 5,,14400,MB Sprint 2,Highest,sprint2-security,"## Objective
+
+Validate fail-closed authorization and truthful degradation behavior.
+
+## Acceptance Criteria
+
+- [ ] Cross-user Care requests fail closed.
+- [ ] Expired sessions, Care outage, and Content/Notification outage show explicit states.
+- [ ] No flow claims monitoring, notification, emergency dispatch, or unavailable paid functionality.
+
+## Definition of Done
+
+- [ ] Regression suites pass and required failures are reproducible.
+- [ ] Security and safety findings are linked and resolved or accepted below High severity."
+Sub-task,619,Publish Sprint 2 runbook traceability and evidence,504,Member 5,,10800,MB Sprint 2,High,sprint2-docs,"## Objective
+
+Make the integrated slice and Review 1 closure package reproducible while distinguishing approved definitions from implemented runtime.
+
+## Acceptance Criteria
+
+- [ ] Startup, migration, test, and E2E commands are current.
+- [ ] Requirements traceability, sprint status, policies, and service READMEs match implemented behavior and approval status.
+- [ ] Review 1 target-cohort, instrument, terminology, routing, specialist, follow-up, and progress artifacts are linked.
+- [ ] Deferred GAD-7, consultation, specialist, follow-up/progress, journal-frontend, and AI runtime remain distinct from definition-complete work with approval gates.
+
+## Definition of Done
+
+- [ ] Documentation review passes.
+- [ ] Jira, test evidence, and pull-request links are complete."

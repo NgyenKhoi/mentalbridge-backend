@@ -7,8 +7,8 @@ This is the planning coverage baseline for the workbook's seven use cases and 16
 | Catalogue UC | Primary owner | Collaborators | Module capability | Status |
 | --- | --- | --- | --- | --- |
 | UC-01 Authentication & User Management | Identity/Care | Content/Notification, all deletion owners | Auth, RBAC, profile/consent, grants, deletion, anonymous entry | Planned; retention/export/expiry policies blocked |
-| UC-02 Mental Health Assessment & AI Analysis | Care/Journal-AI | PhoBERT, Content/Notification | Journal, assessment, analysis, safety/support and personal analytics | PHQ-9 runtime implemented for published versions; Vietnamese content, support and dataset policies blocked |
-| UC-03 Intervention & Support | Care/Content-Notification | Journal/AI | Approved intervention, safety/self-help guidance and notifications | Planned; reviewed support/safety content blocked |
+| UC-02 Mental Health Assessment & AI Analysis | Care/Journal-AI | PhoBERT, Content/Notification | Journal, assessment, analysis, safety/support and personal analytics | Vietnamese PHQ-9 Capstone runtime published; GAD-7 implementation authorized but unpublished; AI personalization deferred |
+| UC-03 Intervention & Support | Care/Content-Notification | Journal/AI | Approved intervention, safety/self-help guidance and notifications | Product routing blueprint approved; personalized routing/actions runtime unavailable pending separate gates |
 | UC-04 Specialist Discovery & Appointment | Consultation/Billing | Care, Realtime, Content/Notification | Discovery, subscription/payment/upgrade/credits, specialist approval, booking, earnings, reviews | Planned by ADR 0005; provider/configuration details remain |
 | UC-05 Communication & Follow-up | Realtime/Care | Consultation, Content/Notification | Chat, reports, follow-up, notifications and progress | Planned; moderation/retention policy blocked |
 | UC-06 Specialist Portal | Consultation/Billing | Care, Journal/AI, Realtime | Workload, consented data, earnings and provider payout history | Planned; MoMo adapter conditional on credentials/currency decision |
@@ -42,7 +42,7 @@ The workbook's 162 rows remain traceable; WBS 54 is explicitly removed by the 20
 
 ## Product decisions that block implementation
 
-1. Exact support-tier matrix, freshness windows, thresholds, and approved intervention catalogue; PHQ-9 item-9 core is documented but exact Vietnamese content remains pending approval.
+1. `mb-support-routing-capstone-v1` is approved as a non-executable current-result blueprint. Runtime contracts/persistence/tests, any automatic freshness window and the personalized intervention catalogue remain open; PHQ-9 Vietnamese Capstone content and item-9 behavior are published.
 2. Specialist qualification evidence and approval rules.
 3. Reviewed Vietnamese safety/disclaimer wording and decision on any specific emergency number; no hotline catalogue or after-hours safety service is planned.
 4. Specialist-note ownership and retention, if notes remain in scope.

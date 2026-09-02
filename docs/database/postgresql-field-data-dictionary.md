@@ -299,7 +299,7 @@ Versioned platform support-tier result derived from approved sources, distinct f
 | `policy_version` | Exact deterministic policy version needed to reproduce and audit the decision. |
 | `reason_codes` | Stable machine-readable reasons supporting the tier without storing free-form model reasoning. |
 | `source_assessment_ids` | Identifiers of authoritative assessment submissions used by this calculation. |
-| `source_analysis_ids` | Identifiers of approved structured AI indicators used as supporting input. |
+| `source_analysis_ids` | Nullable identifiers reserved for a future policy that explicitly approves structured AI indicators. `mb-support-routing-capstone-v1` prohibits AI input, so this conceptual field is empty for that version. |
 | `safety_flag` | Indicates immediate safety guidance was required independently of asynchronous systems. |
 | `calculated_at` | UTC instant the policy executed. |
 | `superseded_at` | UTC instant a newer authoritative classification replaced this result; null while current. |

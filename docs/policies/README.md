@@ -6,9 +6,9 @@ This directory contains versioned product, safety, privacy, and support policies
 | --- | --- | --- | --- |
 | [Capstone questionnaire evidence and publication](capstone-questionnaire-publication-policy.md) | `1.0` | Effective for controlled Capstone local/demo use | Defines the bounded research-verification gate; does not approve production deployment |
 | [PHQ-9 screening and item-9 safety](phq9-screening-and-safety-policy.md) | `1.0-capstone` | Capstone published | Executable in controlled local/demo use; production review remains separate |
-| [GAD-7 screening](gad7-screening-policy.md) | `1.0-draft.2` | Research basis and Vietnamese source identified; format mapping pending | Not implementation-ready until the exact self-administered content mapping and tests pass |
-| [Care support tier and intervention catalogue](care-support-and-intervention-policy.md) | `1.0-draft.1` | Product and domain approval required | No support-tier mapping or personalized action may be inferred |
-| [Care consent and assessment retention](care-consent-and-retention-policy.md) | `1.0-draft.1` | Product, security, and legal review required | Unapproved retention values must not be deployed |
+| [GAD-7 screening](gad7-screening-policy.md) | `1.0-draft.3` | Research verified; implementation authorized for Capstone; unpublished | Engineering may complete exact mapping/reference data/tests; endpoints remain unavailable until Product Owner publication |
+| [Care support tier and intervention catalogue](care-support-and-intervention-policy.md) | `1.0-capstone-blueprint` | Capstone blueprint approved; runtime unavailable | `mb-support-routing-capstone-v1` is definition-only; no tier/action runtime may be claimed |
+| [Care consent and assessment retention](care-consent-and-retention-policy.md) | `1.0-draft.1` | Synthetic Capstone boundary recorded; production product/security/legal review required | Specialist sharing and unapproved retention values must not be deployed |
 
 ## Approval rule
 
