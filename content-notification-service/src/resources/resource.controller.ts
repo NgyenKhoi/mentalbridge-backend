@@ -33,8 +33,11 @@ export class ResourceController {
 
     let limit: number | undefined;
     if (limitParam !== undefined) {
+      if (!/^\d+$/.test(limitParam)) {
+        throw new BadRequestException('limit must be an integer between 1 and 100');
+      }
       const parsed = parseInt(limitParam, 10);
-      if (!Number.isInteger(parsed) || parsed < 1 || parsed > 100) {
+      if (parsed < 1 || parsed > 100) {
         throw new BadRequestException('limit must be an integer between 1 and 100');
       }
       limit = parsed;

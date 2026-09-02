@@ -223,6 +223,30 @@ describe('GET /api/v1/resources', () => {
       .expect(400);
   });
 
+  it('rejects limit with trailing non-digit characters', async () => {
+    app = await createApplication(configuration, {
+      readinessProbe: { check: async () => undefined },
+      resourceRepository: makeRepository({ listPublished: async () => [] }),
+    });
+    await app.init();
+
+    await request(app.getHttpServer() as Server)
+      .get('/api/v1/resources?limit=10abc')
+      .expect(400);
+  });
+
+  it('rejects fractional limit', async () => {
+    app = await createApplication(configuration, {
+      readinessProbe: { check: async () => undefined },
+      resourceRepository: makeRepository({ listPublished: async () => [] }),
+    });
+    await app.init();
+
+    await request(app.getHttpServer() as Server)
+      .get('/api/v1/resources?limit=1.5')
+      .expect(400);
+  });
+
   it('rejects invalid cursor', async () => {
     app = await createApplication(configuration, {
       readinessProbe: { check: async () => undefined },

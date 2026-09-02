@@ -127,7 +127,7 @@ paths:
                     fallback: unavailable
                     message: Tài nguyên hỗ trợ tạm thời không khả dụng. Vui lòng thử lại sau.
         '400':
-          $ref: '#/components/responses/ValidationError'
+          $ref: '#/components/responses/RequestRejected'
 
     post:
       x-mentalbridge-operation-status: planned
@@ -332,6 +332,18 @@ components:
                 message: Title is required
               - field: category
                 message: Invalid category
+    RequestRejected:
+      description: Invalid query parameter
+      content:
+        application/problem+json:
+          schema:
+            $ref: '#/components/schemas/ProblemDetails'
+          example:
+            type: https://mentalbridge.io/errors/REQUEST_REJECTED
+            title: Request rejected
+            status: 400
+            code: REQUEST_REJECTED
+            correlationId: 123e4567-e89b-12d3-a456-426614174000
 
   schemas:
     LiveResponse:
