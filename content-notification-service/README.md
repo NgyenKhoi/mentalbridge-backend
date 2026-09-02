@@ -4,14 +4,13 @@ NestJS service that owns reviewed self-help resources, notification preferences,
 
 ## Current capability
 
-The current baseline implements only:
+- `GET /health/live` — liveness without a database dependency
+- `GET /health/ready` — PostgreSQL readiness check
+- `GET /api/v1/resources` — lists active reviewed published self-help resources; returns empty array when none match; returns neutral fallback when service is unreachable; no hotline number or emergency dispatch claim (ADR 0009)
+- Strict startup configuration, safe Problem Details, structured redacted request logs, CORS deny-by-default, and graceful NestJS shutdown
+- `node-pg-migrate` baseline for the service-owned `mentalbridge_content_notification` database
 
-- `GET /health/live` without a database dependency;
-- `GET /health/ready` with a PostgreSQL readiness check;
-- strict startup configuration, safe Problem Details, structured redacted request logs, CORS deny-by-default, and graceful NestJS shutdown;
-- the `node-pg-migrate` baseline for the service-owned `mentalbridge_content_notification` database.
-
-Resource operations in `../contracts/openapi/content-notification-service.yaml` are explicitly `planned`; they are not available until a vertical feature PR adds handlers and contract tests. Safety screening and versioned safety guidance remain Care-owned behavior.
+Admin write operations (`POST`, `PATCH`, `DELETE`, publish, archive) are explicitly `planned` in `../contracts/openapi/content-notification-service.yaml`. Safety screening and versioned safety guidance remain Care-owned behavior.
 
 ## Stack
 

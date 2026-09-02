@@ -1,8 +1,3 @@
-/**
- * MB-197: Typed resource domain types for the Content/Notification BFF.
- * No hotline catalogue — see ADR 0009.
- */
-
 export type ResourceCategory =
   'BREATHING' | 'MEDITATION' | 'ARTICLE' | 'VIDEO' | 'JOURNALING' | 'COMMUNITY';
 
@@ -37,9 +32,9 @@ export interface ResourceSummary {
 export interface ResourceListResponse {
   readonly data: ResourceSummary[];
   readonly count: number;
+  readonly nextCursor?: string;
 }
 
-/** MB-199: Explicit neutral fallback payload — no emergency dispatch claim, no hotline number. */
 export interface ResourceUnavailableResponse {
   readonly data: [];
   readonly count: 0;

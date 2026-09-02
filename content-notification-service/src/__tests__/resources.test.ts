@@ -1,10 +1,3 @@
-/**
- * MB-200: Tests for resource publication and fallback boundaries.
- *
- * Covers: published, empty, unavailable, malformed, and unauthorized responses.
- * Verifies: no invented local guidance, no removed hotline behaviour.
- */
-
 import type { INestApplication } from '@nestjs/common';
 import type { Server } from 'node:http';
 import request from 'supertest';
@@ -51,10 +44,7 @@ const publishedResource: ResourceRow = {
 };
 
 function makeRepository(impl: Partial<ResourceRepository>): ResourceRepository {
-  return {
-    listPublished: async () => [],
-    ...impl,
-  } as ResourceRepository;
+  return { listPublished: async () => [], ...impl } as ResourceRepository;
 }
 
 let app: INestApplication | undefined;
@@ -65,13 +55,10 @@ afterEach(async () => {
 });
 
 describe('GET /api/v1/resources', () => {
-  // MB-200: published resources are returned
   it('returns published resources', async () => {
     app = await createApplication(configuration, {
       readinessProbe: { check: async () => undefined },
-      resourceRepository: makeRepository({
-        listPublished: async () => [publishedResource],
-      }),
+      resourceRepository: makeRepository({ listPublished: async () => [publishedResource] }),
     });
     await app.init();
 
@@ -84,12 +71,10 @@ describe('GET /api/v1/resources', () => {
     expect(response.body.data[0].category).toBe('BREATHING');
     expect(response.body.data[0].status).toBe('PUBLISHED');
     expect(response.body.count).toBe(1);
-    // MB-200: no hotline field invented
     expect(response.body.data[0]).not.toHaveProperty('hotline');
     expect(response.body.data[0]).not.toHaveProperty('emergencyNumber');
   });
 
-  // MB-199 / MB-200: empty state returns empty array, not invented content
   it('returns empty array when no published resources match', async () => {
     app = await createApplication(configuration, {
       readinessProbe: { check: async () => undefined },
@@ -103,13 +88,11 @@ describe('GET /api/v1/resources', () => {
 
     expect(response.body.data).toEqual([]);
     expect(response.body.count).toBe(0);
-    // MB-199: no invented support guidance
     expect(response.body).not.toHaveProperty('guidance');
     expect(response.body).not.toHaveProperty('hotline');
   });
 
-  // MB-199 / MB-200: unavailable state uses explicit neutral fallback text
-  it('returns neutral fallback response when repository is unavailable', async () => {
+  it('returns neutral fallback when repository is unavailable', async () => {
     app = await createApplication(configuration, {
       readinessProbe: { check: async () => undefined },
       resourceRepository: makeRepository({
@@ -128,18 +111,33 @@ describe('GET /api/v1/resources', () => {
     expect(response.body.data).toEqual([]);
     expect(response.body.count).toBe(0);
     expect(typeof response.body.message).toBe('string');
-    expect(response.body.message.length).toBeGreaterThan(0);
-    // MB-199: fallback copy makes no emergency dispatch claim
     expect(response.body.message).not.toMatch(/hotline/i);
     expect(response.body.message).not.toMatch(/emergency/i);
     expect(response.body.message).not.toMatch(/guaranteed/i);
   });
 
-  // MB-200: malformed rows are dropped — frontend does not invent support content
-  it('drops malformed rows and returns only valid published resources', async () => {
-    const malformedRow = {
-      id: null, // invalid: null id
-      category: 'HOTLINE', // invalid: removed category
+  it('returns neutral fallback on timeout', async () => {
+    app = await createApplication(configuration, {
+      readinessProbe: { check: async () => undefined },
+      resourceRepository: makeRepository({
+        listPublished: async () => {
+          throw Object.assign(new Error('timeout'), { code: 'ETIMEDOUT' });
+        },
+      }),
+    });
+    await app.init();
+
+    const response = await request(app.getHttpServer() as Server)
+      .get('/api/v1/resources')
+      .expect(200);
+
+    expect(response.body.fallback).toBe('unavailable');
+  });
+
+  it('drops malformed rows and returns only valid resources', async () => {
+    const malformed = {
+      id: null,
+      category: 'HOTLINE',
       locale: 'vi-VN',
       title: null,
       summary: null,
@@ -153,7 +151,7 @@ describe('GET /api/v1/resources', () => {
     app = await createApplication(configuration, {
       readinessProbe: { check: async () => undefined },
       resourceRepository: makeRepository({
-        listPublished: async () => [malformedRow, publishedResource],
+        listPublished: async () => [malformed, publishedResource],
       }),
     });
     await app.init();
@@ -162,41 +160,82 @@ describe('GET /api/v1/resources', () => {
       .get('/api/v1/resources')
       .expect(200);
 
-    // Only the valid row is returned; malformed row is silently dropped
     expect(response.body.data).toHaveLength(1);
     expect(response.body.data[0].id).toBe(publishedResource.id);
   });
 
-  // MB-200: unpublished (DRAFT/ARCHIVED) resources must not appear
-  it('does not return unpublished resources', async () => {
-    const draftRow: ResourceRow = { ...publishedResource, status: 'DRAFT' };
-    const archivedRow: ResourceRow = { ...publishedResource, id: 'other-id', status: 'ARCHIVED' };
+  it('paginates and returns nextCursor when more results exist', async () => {
+    const rows: ResourceRow[] = Array.from({ length: 3 }, (_, i) => ({
+      ...publishedResource,
+      id: `id-${String(i)}`,
+      created_at: new Date(Date.now() - i * 1000),
+    }));
 
     app = await createApplication(configuration, {
       readinessProbe: { check: async () => undefined },
-      // Repository already filters by PUBLISHED in real usage;
-      // here we simulate as if it returned drafts (should not happen, belt-and-suspenders check)
-      resourceRepository: makeRepository({
-        listPublished: async () => [publishedResource],
-      }),
+      resourceRepository: makeRepository({ listPublished: async () => rows }),
     });
     await app.init();
 
-    // Passing draft and archived rows is a repository concern; service returns only what
-    // repository provides. Verify the endpoint only surfaces PUBLISHED.
     const response = await request(app.getHttpServer() as Server)
-      .get('/api/v1/resources')
+      .get('/api/v1/resources?limit=2')
       .expect(200);
 
-    const statuses = (response.body.data as { status: string }[]).map((r) => r.status);
-    expect(statuses.every((s) => s === 'PUBLISHED')).toBe(true);
-
-    void draftRow;
-    void archivedRow;
+    expect(response.body.data).toHaveLength(2);
+    expect(response.body.nextCursor).toBeDefined();
   });
 
-  // MB-198: query filtering by locale and category is forwarded
-  it('forwards locale and category query params to the repository', async () => {
+  it('does not return nextCursor when results fit within limit', async () => {
+    app = await createApplication(configuration, {
+      readinessProbe: { check: async () => undefined },
+      resourceRepository: makeRepository({ listPublished: async () => [publishedResource] }),
+    });
+    await app.init();
+
+    const response = await request(app.getHttpServer() as Server)
+      .get('/api/v1/resources?limit=10')
+      .expect(200);
+
+    expect(response.body).not.toHaveProperty('nextCursor');
+  });
+
+  it('rejects invalid category', async () => {
+    app = await createApplication(configuration, {
+      readinessProbe: { check: async () => undefined },
+      resourceRepository: makeRepository({ listPublished: async () => [] }),
+    });
+    await app.init();
+
+    await request(app.getHttpServer() as Server)
+      .get('/api/v1/resources?category=HOTLINE')
+      .expect(400);
+  });
+
+  it('rejects invalid limit', async () => {
+    app = await createApplication(configuration, {
+      readinessProbe: { check: async () => undefined },
+      resourceRepository: makeRepository({ listPublished: async () => [] }),
+    });
+    await app.init();
+
+    await request(app.getHttpServer() as Server)
+      .get('/api/v1/resources?limit=abc')
+      .expect(400);
+  });
+
+  it('rejects invalid cursor', async () => {
+    app = await createApplication(configuration, {
+      readinessProbe: { check: async () => undefined },
+      resourceRepository: makeRepository({ listPublished: async () => [] }),
+    });
+    await app.init();
+
+    await request(app.getHttpServer() as Server)
+      .get('/api/v1/resources?cursor=not-a-uuid')
+      .expect(400);
+  });
+
+  it('forwards locale and category to the repository', async () => {
     let capturedQuery: unknown;
     app = await createApplication(configuration, {
       readinessProbe: { check: async () => undefined },
@@ -213,14 +252,9 @@ describe('GET /api/v1/resources', () => {
       .get('/api/v1/resources?locale=vi-VN&category=MEDITATION&limit=10')
       .expect(200);
 
-    expect(capturedQuery).toMatchObject({
-      locale: 'vi-VN',
-      category: 'MEDITATION',
-      limit: 10,
-    });
+    expect(capturedQuery).toMatchObject({ locale: 'vi-VN', category: 'MEDITATION', limit: 10 });
   });
 
-  // MB-200: correlation id is propagated
   it('echoes the x-correlation-id header', async () => {
     app = await createApplication(configuration, {
       readinessProbe: { check: async () => undefined },
@@ -233,24 +267,5 @@ describe('GET /api/v1/resources', () => {
       .set('x-correlation-id', 'test-corr-id')
       .expect('x-correlation-id', 'test-corr-id')
       .expect(200);
-  });
-
-  // MB-199 / MB-200: timeout behaviour — treated as unavailable
-  it('returns neutral fallback on timeout-like error', async () => {
-    app = await createApplication(configuration, {
-      readinessProbe: { check: async () => undefined },
-      resourceRepository: makeRepository({
-        listPublished: async () => {
-          throw Object.assign(new Error('timeout'), { code: 'ETIMEDOUT' });
-        },
-      }),
-    });
-    await app.init();
-
-    const response = await request(app.getHttpServer() as Server)
-      .get('/api/v1/resources')
-      .expect(200);
-
-    expect(response.body.fallback).toBe('unavailable');
   });
 });

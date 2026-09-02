@@ -1,18 +1,17 @@
-/**
- * MB-197 / MB-198: Content resource BFF endpoint.
- *
- * - Anonymous and authenticated callers may list published resources without
- *   exposing service credentials (no upstream token forwarded in this BFF layer).
- * - Only published resources returned by the repository are rendered.
- * - Fallback (empty / unavailable) states are explicit — the UI must not invent content.
- * - No hotline endpoint or data model is recreated (ADR 0009).
- */
-
-import { Controller, Get, Query } from '@nestjs/common';
+import { BadRequestException, Controller, Get, Inject, Query } from '@nestjs/common';
 import type { ResourceListResult, ResourceCategory } from './resource.types.js';
-import type { ResourceService } from './resource.service.js';
-import { Inject } from '@nestjs/common';
 import { RESOURCE_SERVICE_TOKEN } from '../application.tokens.js';
+import type { ResourceService } from './resource.service.js';
+
+const UUID_RE = /^[\da-f]{8}-[\da-f]{4}-[\da-f]{4}-[\da-f]{4}-[\da-f]{12}$/i;
+const VALID_CATEGORIES = new Set<ResourceCategory>([
+  'BREATHING',
+  'MEDITATION',
+  'ARTICLE',
+  'VIDEO',
+  'JOURNALING',
+  'COMMUNITY',
+]);
 
 @Controller('api/v1/resources')
 export class ResourceController {
@@ -21,21 +20,34 @@ export class ResourceController {
     private readonly resourceService: ResourceService,
   ) {}
 
-  /**
-   * MB-198: List only published resources relevant to a result context.
-   * Anonymous and authenticated result pages can call this without service credentials.
-   */
   @Get()
   async listResources(
     @Query('locale') locale?: string,
     @Query('category') category?: string,
-    @Query('limit') limit?: string,
+    @Query('limit') limitParam?: string,
     @Query('cursor') cursor?: string,
   ): Promise<ResourceListResult> {
+    if (category !== undefined && !VALID_CATEGORIES.has(category as ResourceCategory)) {
+      throw new BadRequestException(`Invalid category: ${category}`);
+    }
+
+    let limit: number | undefined;
+    if (limitParam !== undefined) {
+      const parsed = parseInt(limitParam, 10);
+      if (!Number.isInteger(parsed) || parsed < 1 || parsed > 100) {
+        throw new BadRequestException('limit must be an integer between 1 and 100');
+      }
+      limit = parsed;
+    }
+
+    if (cursor !== undefined && !UUID_RE.test(cursor)) {
+      throw new BadRequestException('cursor must be a valid UUID');
+    }
+
     return this.resourceService.listPublished({
       locale: locale ?? undefined,
       category: category as ResourceCategory | undefined,
-      limit: limit ? parseInt(limit, 10) : undefined,
+      limit,
       cursor: cursor ?? undefined,
     });
   }

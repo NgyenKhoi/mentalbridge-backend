@@ -1,12 +1,3 @@
-/**
- * MB-197 / MB-199: Resource service with typed client boundary and safe fallback.
- *
- * - Maps only published resources returned from the database.
- * - Malformed rows are dropped rather than surfaced as invented guidance.
- * - Returns explicit neutral fallback when DB is unavailable or result is empty.
- * - No hotline number, no emergency dispatch claim, no guaranteed-response copy.
- */
-
 import { Inject, Injectable, Logger } from '@nestjs/common';
 import type { ResourceRepository, ListResourcesQuery } from './resource.repository.js';
 import { RESOURCE_REPOSITORY_TOKEN } from '../application.tokens.js';
@@ -17,7 +8,6 @@ import type {
   ResourceSummary,
 } from './resource.types.js';
 
-/** MB-199: Neutral copy — makes no emergency dispatch, monitoring, or response-time guarantee. */
 const UNAVAILABLE_MESSAGE = 'Tài nguyên hỗ trợ tạm thời không khả dụng. Vui lòng thử lại sau.';
 
 const VALID_CATEGORIES = new Set<ResourceCategory>([
@@ -33,7 +23,6 @@ function isValidCategory(value: unknown): value is ResourceCategory {
   return typeof value === 'string' && VALID_CATEGORIES.has(value as ResourceCategory);
 }
 
-/** MB-199: Drop malformed rows rather than inventing content. */
 function toSummary(row: ResourceRow): ResourceSummary | null {
   if (
     typeof row.id !== 'string' ||
@@ -87,8 +76,10 @@ export class ResourceService {
     try {
       rows = await this.repository.listPublished(query);
     } catch (error) {
-      // MB-199: Unavailable state — explicit neutral fallback, no invented guidance.
-      this.logger.warn({ event: 'resource_db_unavailable', error });
+      this.logger.warn({
+        event: 'resource_db_unavailable',
+        code: (error as NodeJS.ErrnoException).code,
+      });
       return {
         data: [],
         count: 0,
@@ -97,10 +88,14 @@ export class ResourceService {
       };
     }
 
-    // Drop malformed rows — never invent support content.
-    const data = rows.map(toSummary).filter((r): r is ResourceSummary => r !== null);
+    const hasMore = rows.length > limit;
+    const pageRows = hasMore ? rows.slice(0, limit) : rows;
+    const data = pageRows.map(toSummary).filter((r): r is ResourceSummary => r !== null);
 
-    // MB-199: Empty state — return empty array, not invented content.
-    return { data, count: data.length };
+    return {
+      data,
+      count: data.length,
+      ...(hasMore && data.length > 0 ? { nextCursor: data[data.length - 1].id } : {}),
+    };
   }
 }
