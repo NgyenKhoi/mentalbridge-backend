@@ -63,7 +63,7 @@ paths:
                 code: DEPENDENCY_UNAVAILABLE
 
   /api/v1/resources:
-    x-mentalbridge-status: partial
+    x-mentalbridge-status: planned
     get:
       x-mentalbridge-operation-status: implemented
       tags: [Resources]

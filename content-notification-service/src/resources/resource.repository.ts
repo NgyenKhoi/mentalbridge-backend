@@ -29,19 +29,20 @@ export class ResourceRepository {
     let index = 2;
 
     if (query.locale) {
-      conditions.push(`r.locale = $${String(index++)}`);
+      const placeholder = `$${String(index++)}`;
+      conditions.push(`r.locale = ${placeholder}`);
       params.push(query.locale);
     }
 
     if (query.category) {
-      conditions.push(`r.category = $${String(index++)}`);
+      const placeholder = `$${String(index++)}`;
+      conditions.push(`r.category = ${placeholder}`);
       params.push(query.category);
     }
 
     if (query.cursor) {
-      conditions.push(
-        `r.created_at < (SELECT created_at FROM resource WHERE id = $${String(index++)})`,
-      );
+      const placeholder = `$${String(index++)}`;
+      conditions.push(`r.created_at < (SELECT created_at FROM resource WHERE id = ${placeholder})`);
       params.push(query.cursor);
     }
 
