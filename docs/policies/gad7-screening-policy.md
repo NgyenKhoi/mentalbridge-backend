@@ -5,10 +5,11 @@
 | Field | Value |
 | --- | --- |
 | Policy ID | `MB-SCREEN-GAD7-001` |
-| Policy version | `1.0-draft.2` |
-| Status | `RESEARCH BASIS AND VIETNAMESE SOURCE IDENTIFIED — FORMAT MAPPING PENDING` |
+| Policy version | `1.0-draft.3` |
+| Status | `RESEARCH VERIFIED / IMPLEMENTATION AUTHORIZED FOR CAPSTONE — UNPUBLISHED` |
 | Capstone publication authority | Product Owner under [`MB-CAPSTONE-SCREENING-PUBLICATION-001`](capstone-questionnaire-publication-policy.md) |
 | Capstone effective date | Pending exact localized-content mapping, implementation, and tests |
+| Product Owner decision | Engineering implementation authorized through MB-179 on 2026-09-02; publication not yet approved |
 | Supervisor/domain review | Recommended academic evidence review; not a Capstone publication blocker |
 | Production review | Domain, privacy, legal, and operational review required before public real-user deployment |
 | Applies to | Proposed GAD-7 for the initial target population of adults aged 18–30 in Vietnam |
@@ -16,7 +17,7 @@
 | Owning service | Care Service |
 | Supersedes | N/A |
 
-GAD-7 is a separate screening instrument and must not inherit PHQ-9 questionnaire text, score range, item-9 safety behavior, or diagnostic claims.
+GAD-7 is a separate screening instrument and must not inherit PHQ-9 questionnaire text, score range, item-9 safety behavior, or diagnostic claims. Research verification and Product Owner authorization allow engineering to complete the exact mapping, reference data and tests without an external domain signature. This is readiness to implement the Capstone candidate, not a `CAPSTONE PUBLISHED` decision.
 
 ## Proposed deterministic scoring core
 
@@ -43,11 +44,13 @@ The original study reported strong reliability and screening performance around 
 
 The NIMH Data Archive GAD-7 Common Data Element lists `Vietnamese for Vietnam`: [GAD-7 data structure](https://nda.nih.gov/data-structure/cde_gad701). NDA also hosts *GAD-7 — Vietnamese for Vietnam — Translated by UNC Vietnam, 2024*: [source artifact](https://s3.amazonaws.com/nda.nih.gov/cms/prod/GAD7_VietnameseForVietnam_uncvn.pdf).
 
-This artifact is interviewer-oriented. It expresses frequency labels using day ranges and includes non-score `refused` and `do not know` codes. MentalBridge accepts only complete `0..3` scored answers, so the team must record which exact wording is retained, how the interviewer framing is adapted or excluded without changing item meaning, and how non-score codes are handled. Source identification alone does not make the self-administered runtime implementation ready.
+This artifact is interviewer-oriented. It expresses frequency labels using day ranges and includes non-score `refused` and `do not know` codes. MentalBridge accepts only complete `0..3` scored answers, so the team must record which exact wording is retained, how the interviewer framing is adapted or excluded without changing item meaning, and how non-score codes are handled. Product Owner authorization permits that implementation work to begin, but source identification alone does not make the self-administered runtime publishable.
 
 ## Publication and safety boundary
 
 The reserved target identifier is `gad7-vi-vn-adult-v1`. It remains unpublished until exact Vietnamese wording, response semantics, source artifact/version, applicable use terms, self-administered mapping, and automated tests satisfy the Capstone publication gate. An external clinical/domain signature is recommended but is not mandatory for controlled Capstone publication.
+
+The [MB-179 blueprint](../sprints/mb-179-screening-to-support-blueprint.md#instrument-register) records GAD-7 as an authorized implementation candidate. Until this checklist passes, questionnaire discovery and submission must return an explicit unavailable result and must not substitute PHQ-9 or an independently translated questionnaire.
 
 GAD-7 has no PHQ-9 item-9 equivalent in this policy. It may contribute to a `supportTier` only through a separately approved deterministic mapping. Engineering and AI must not derive suicide intent, imminent risk, or a new safety rule from the GAD-7 total.
 
@@ -55,6 +58,7 @@ GAD-7 has no PHQ-9 item-9 equivalent in this policy. It may contribute to a `sup
 
 - [x] Original instrument and scoring evidence recorded.
 - [x] Recognized `vi-VN` source artifact identified.
+- [x] Product Owner authorized Capstone implementation work without treating external domain approval as a prerequisite.
 - [ ] Exact item wording, response labels, source version, retrieval evidence, and applicable use terms recorded.
 - [ ] Interviewer framing, day-range labels, and non-score codes mapped deliberately to the self-administered `0..3` MentalBridge contract without changing item meaning.
 - [ ] Scoring version and the `0..21` boundary behavior recorded in versioned reference data.

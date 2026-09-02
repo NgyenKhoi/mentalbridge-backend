@@ -165,6 +165,8 @@ Anonymous users may view their current score, screening level, disclaimer, safet
 
 Registered Free users may receive basic support only after the separate support catalogue gate passes. Premium tiers may add deeper longitudinal personalization, advanced follow-up, booking, and consultation according to their own approved contracts. These optional capabilities do not block base questionnaire publication. Safety output and access to an owned assessment are never paywalled.
 
+MB-179 approves `mb-support-routing-capstone-v1` as a non-executable product blueprint. That definition does not make support tiers, personalized actions, specialist handoff, follow-up or progress runtime available. The [screening-to-support blueprint](../sprints/mb-179-screening-to-support-blueprint.md) is authoritative for their Capstone boundaries.
+
 If optional personalization is unavailable, the response uses an explicit availability status and reviewed generic guidance. It must not silently return empty output or imply that an unavailable AI, specialist, slot, notification, or emergency response succeeded.
 
 ## Acceptance examples

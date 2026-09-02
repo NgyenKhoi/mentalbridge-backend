@@ -8,6 +8,7 @@
 | Policy version | `1.0-draft.1` |
 | Status | `DRAFT — PRODUCT, SECURITY, AND LEGAL REVIEW REQUIRED` |
 | Effective date | Pending approval |
+| Capstone decision | Synthetic/test-data validation and the non-executable specialist-handoff blueprint approved by the Product Owner through MB-179 on 2026-09-02 |
 | Owning service | Care Service |
 | Applies to | Anonymous and registered Care assessment flows in Vietnam |
 
@@ -24,6 +25,14 @@ MentalBridge must not combine these purposes into one broad toggle:
 | Marketing notification | Separate optional `MARKETING_NOTIFICATION` decision |
 
 The current Care consent table supports privacy, AI, research, and marketing decisions. Specialist sharing remains a separate future scoped-grant aggregate, not another broad platform consent. Whether deterministic anonymous/registered assessment requires an explicit consent event or a versioned disclosure acknowledgement remains a legal/product blocker.
+
+## MB-179 specialist-sharing boundary
+
+The Capstone blueprint permits definition and contract planning but does not authorize runtime specialist access. A future specialist handoff is registered-user-only, voluntary and user-initiated. It requires a separate revocable grant naming the subject, specialist, purpose, `ASSESSMENTS` scope, selected assessment identifiers or bounded time range, expiry and grant version.
+
+The minimum proposed projection contains instrument/version, completion time, total score, screening level and PHQ-9 safety status where applicable. Raw answers, all past/future assessments, journal entries and emotion trends are excluded by default. An appointment or paid plan never creates consent. Every read must re-check the current grant in the data owner and record minimized audit evidence.
+
+This boundary is definition-complete for MB-179. Runtime sharing remains unavailable until the grant contract, concurrency-safe authorization, audit behavior and required security/privacy review pass. Public real-user collection and sharing remain production-blocked; Sprint 2 validation uses synthetic/test data.
 
 ## Anonymous assessment
 
@@ -61,6 +70,7 @@ No engineering default may convert indefinite retention into policy. An approved
 
 ## Approval blockers
 
+- [x] Product Owner approved synthetic/test-data-only Sprint 2 validation and the non-executable MB-179 sharing boundary.
 - [ ] Assessment-processing disclosure/consent basis approved.
 - [ ] Exact privacy and AI-processing text/version ownership approved.
 - [ ] Anonymous inactivity TTL, maximum lifetime, cleanup, and retry-at-expiry behavior approved.

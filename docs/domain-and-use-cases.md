@@ -47,25 +47,25 @@ Do not use "diagnosis", "patient", "treatment", or "clinical conclusion" in API/
 
 ### Safety status and support tier
 
-Care calculates safety status synchronously from the approved questionnaire-specific rule. A separate versioned support policy may resolve a support tier from eligible inputs. AI output is supporting input only and cannot define or override either result.
+Care calculates safety status synchronously from the approved questionnaire-specific rule. MB-179 approves `mb-support-routing-capstone-v1` as a non-executable product blueprint; Care must not return a support tier until its runtime gate passes. AI is not an input to this Capstone routing version and can never define or override standardized scoring or safety.
 
-Inputs:
+Definition-only Capstone routing inputs:
 
-- latest valid PHQ-9 and GAD-7 scores within a configured window;
-- safety-item flags;
-- recent journal analysis confidence and negative/emotion indicators;
-- trend direction and data freshness.
+- complete immutable PHQ-9 or GAD-7 results from published versions, explicitly selected in the same user-initiated evaluation;
+- the independent PHQ-9 item-9 safety status where applicable.
+
+Unpublished GAD-7 is not an eligible input. A future policy may add automatic latest-result windows, journal indicators or trends only after it versions freshness, consent, confidence, missing-data and conflict behavior.
 
 Independent outputs:
 
 - `NEGATIVE_SAFETY_SCREEN` or `POSITIVE_SAFETY_SCREEN` for the PHQ-9 item-9 rule;
-- an approved support tier such as `SELF_GUIDED_SUPPORT`, `PROFESSIONAL_SUPPORT_RECOMMENDED`, or `SAFETY_FOLLOW_UP_RECOMMENDED`;
+- after the separate runtime gate passes, a support tier such as `SELF_GUIDED_SUPPORT`, `PROFESSIONAL_SUPPORT_RECOMMENDED`, or `SAFETY_FOLLOW_UP_RECOMMENDED`;
 - reason codes, input references, policy version, and calculation time;
 - approved catalogue activity/content versions selected.
 
 Rules:
 
-- missing or stale inputs produce `INSUFFICIENT_DATA`, not fabricated certainty;
+- no explicitly selected eligible result produces `INSUFFICIENT_DATA`, not fabricated certainty; a future time-window policy must treat stale inputs the same way;
 - safety status cannot be downgraded by positive AI sentiment;
 - changing a policy does not rewrite prior results; reclassification creates a new record;
 - user-facing wording always includes the non-diagnostic disclaimer.
@@ -153,7 +153,7 @@ The project-tracking workbook currently groups the 162 functions into seven deli
 
 **Scope:** deterministic safety status, approved support-tier selection, entitlement-aware personalized support, reviewed safety guidance, self-help resources, and support-appropriate notification/follow-up triggers.
 
-**Main flow:** Care evaluates versioned local safety/support policies, persists input and policy provenance, and selects only eligible versioned catalogue actions. Content/Notification serves reviewed localized self-help resources and handles non-critical delivery.
+**Main flow:** Care evaluates versioned local safety rules. Once a separate executable support gate passes, it may persist support-policy provenance and select only eligible versioned catalogue actions. Content/Notification serves reviewed localized generic self-help resources independently and handles non-critical delivery.
 
 **Exceptions and acceptance:** missing/stale support inputs yield `INSUFFICIENT_DATA`; safety status cannot be downgraded by positive AI sentiment. Immediate guidance is returned without waiting for Kafka, Redis, WebSocket, email or push. Provider failure affects delivery status only and never claims guaranteed emergency response or that a human was notified.
 
@@ -229,7 +229,7 @@ In-app video is intended but its call/signaling/provider/security contract is de
 
 These remain open for the affected production or optional feature. Under ADR 0010 they do not block a base questionnaire that has passed the controlled Capstone publication gate:
 
-1. Exact support-tier matrix, recency windows, missing/stale inputs, confidence thresholds, and reviewed intervention catalogue. PHQ-9 item-9 core behavior is documented in `MB-SAFETY-PHQ9-001`; support behavior remains unavailable until this separate gate passes.
+1. MB-179 approves `mb-support-routing-capstone-v1` as a non-executable product blueprint using explicitly selected current assessment evidence. Runtime contracts/persistence/tests, any automatic latest-result freshness window, confidence-bearing inputs and the reviewed personalized intervention catalogue remain open. PHQ-9 item-9 core behavior is already executable through `MB-SAFETY-PHQ9-001`.
 2. Who qualifies as a specialist/mentor and which profile facts administrators review without collecting credential documents.
 3. Exact Vietnamese production safety/disclaimer wording and whether a specific emergency number may appear as versioned safety content. A Product Owner may select bounded non-diagnostic and capability wording for controlled Capstone use; no hotline/facility catalogue is planned.
 4. Whether specialists can author notes; if yes, ownership, visibility, amendment, and retention rules.
