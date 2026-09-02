@@ -183,14 +183,14 @@ describe('ResourceRepository integration', () => {
       category: 'JOURNALING',
     });
 
-    const firstPage = await repository.listPublished({
-      limit: 2,
+    const allRows = await repository.listPublished({
+      limit: 50,
       locale: 'zh-CN',
       category: 'JOURNALING',
     });
-    expect(firstPage.length).toBe(2);
+    expect(allRows.length).toBe(3);
 
-    const cursorId = firstPage[firstPage.length - 1].id as string;
+    const cursorId = allRows[1].id as string;
     const secondPage = await repository.listPublished({
       limit: 50,
       locale: 'zh-CN',
@@ -200,7 +200,8 @@ describe('ResourceRepository integration', () => {
 
     const secondIds = secondPage.map((r) => (r as unknown as { id: string }).id);
     expect(secondIds).not.toContain(cursorId);
-    expect(secondIds.length).toBeGreaterThanOrEqual(1);
+    expect(secondIds).not.toContain(allRows[0].id);
+    expect(secondIds).toContain(allRows[2].id);
   });
 
   it('cursor pagination does not skip rows sharing created_at with the cursor', async () => {
@@ -214,13 +215,14 @@ describe('ResourceRepository integration', () => {
       });
     }
 
-    const firstPage = await repository.listPublished({
-      limit: 2,
+    const allRows = await repository.listPublished({
+      limit: 50,
       locale: 'ko-KR',
       category: 'COMMUNITY',
     });
-    expect(firstPage.length).toBe(2);
-    const cursorId = firstPage[firstPage.length - 1].id as string;
+    expect(allRows.length).toBe(4);
+
+    const cursorId = allRows[1].id as string;
 
     const secondPage = await repository.listPublished({
       limit: 50,
@@ -229,12 +231,14 @@ describe('ResourceRepository integration', () => {
       cursor: cursorId,
     });
 
-    const allIds = [
-      ...firstPage.map((r) => (r as unknown as { id: string }).id),
-      ...secondPage.map((r) => (r as unknown as { id: string }).id),
-    ];
-    const uniqueIds = new Set(allIds);
-    expect(secondPage.length).toBeGreaterThanOrEqual(1);
-    expect(uniqueIds.size).toBe(allIds.length);
+    const firstPageIds = allRows.slice(0, 2).map((r) => (r as unknown as { id: string }).id);
+    const secondIds = secondPage.map((r) => (r as unknown as { id: string }).id);
+
+    expect(secondIds).not.toContain(cursorId);
+    expect(secondIds).not.toContain(firstPageIds[0]);
+    expect(secondPage.length).toBe(2);
+
+    const allIds = [...firstPageIds, ...secondIds];
+    expect(new Set(allIds).size).toBe(4);
   });
 });
