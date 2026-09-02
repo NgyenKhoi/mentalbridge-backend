@@ -23,6 +23,7 @@ import org.springframework.web.bind.annotation.PostMapping;
 import org.springframework.web.bind.annotation.RequestBody;
 import org.springframework.web.bind.annotation.RequestHeader;
 import org.springframework.web.bind.annotation.RequestMapping;
+import org.springframework.web.bind.annotation.RequestParam;
 import org.springframework.web.bind.annotation.RestController;
 
 import com.mentalbridge.care.shared.ApiException;
@@ -61,6 +62,15 @@ public class AssessmentController {
 		return AssessmentResponse.from(assessments.getAuthenticated(subject(jwt), assessmentId));
 	}
 
+	@GetMapping("/assessments")
+	AssessmentHistoryResponse history(@AuthenticationPrincipal Jwt jwt,
+			@RequestParam(required = false) @Size(max = 256) String cursor,
+			@RequestParam(defaultValue = "20") @Min(1) @Max(50) int limit) {
+		var page = assessments.history(subject(jwt), cursor, limit);
+		return new AssessmentHistoryResponse(page.items().stream().map(AssessmentSummaryResponse::from).toList(),
+				page.nextCursor(), page.hasMore());
+	}
+
 	@PostMapping("/anonymous-assessment-sessions/{sessionId}/assessments")
 	ResponseEntity<AnonymousAssessmentResponse> submitAnonymous(@PathVariable UUID sessionId,
 			@RequestHeader("X-Anonymous-Session-Token") String sessionToken,
@@ -94,10 +104,13 @@ public class AssessmentController {
 	}
 
 	public record AssessmentSubmissionRequest(@NotNull UUID questionnaireDefinitionId,
+			@NotNull @Size(max = 64) String privacyPolicyVersion,
+			@jakarta.validation.constraints.AssertTrue boolean privacyDisclosureAcknowledged,
 			@NotEmpty @Size(max = 32) List<@Valid AssessmentAnswerRequest> answers) {
 
 		AssessmentService.SubmissionCommand command() {
-			return new AssessmentService.SubmissionCommand(questionnaireDefinitionId,
+			return new AssessmentService.SubmissionCommand(questionnaireDefinitionId, privacyPolicyVersion,
+					privacyDisclosureAcknowledged,
 					answers.stream().map(answer -> new AssessmentService.AnswerCommand(answer.questionId(), answer.value()))
 							.toList());
 		}
@@ -105,6 +118,7 @@ public class AssessmentController {
 		@Override
 		public String toString() {
 			return "AssessmentSubmissionRequest[questionnaireDefinitionId=" + questionnaireDefinitionId
+					+ ", privacyPolicyVersion=" + privacyPolicyVersion
 					+ ", answers=[REDACTED], answerCount=" + (answers == null ? 0 : answers.size()) + "]";
 		}
 	}
@@ -122,23 +136,36 @@ public class AssessmentController {
 	}
 
 	public record AssessmentResponse(UUID assessmentId, UUID questionnaireDefinitionId, String instrument,
-			String questionnaireVersion, Instant submittedAt, Instant voidedAt, ResultResponse result) {
+			String questionnaireVersion, String privacyPolicyVersion, Instant submittedAt, Instant voidedAt,
+			ResultResponse result) {
 
 		static AssessmentResponse from(AssessmentService.AssessmentView view) {
 			return new AssessmentResponse(view.assessmentId(), view.questionnaireDefinitionId(), view.instrument(),
-					view.questionnaireVersion(), view.submittedAt(), view.voidedAt(), ResultResponse.from(view.result()));
+					view.questionnaireVersion(), view.privacyPolicyVersion(), view.submittedAt(), view.voidedAt(),
+					ResultResponse.from(view.result()));
 		}
 	}
 
 	public record AnonymousAssessmentResponse(UUID assessmentId, UUID questionnaireDefinitionId, String instrument,
-			String questionnaireVersion, Instant submittedAt, Instant voidedAt, ResultResponse result,
+			String questionnaireVersion, String privacyPolicyVersion, Instant submittedAt, Instant voidedAt, ResultResponse result,
 			Instant expiresAt) {
 
 		static AnonymousAssessmentResponse from(AssessmentService.AssessmentView view) {
 			return new AnonymousAssessmentResponse(view.assessmentId(), view.questionnaireDefinitionId(),
-					view.instrument(), view.questionnaireVersion(), view.submittedAt(), view.voidedAt(),
+					view.instrument(), view.questionnaireVersion(), view.privacyPolicyVersion(), view.submittedAt(), view.voidedAt(),
 					ResultResponse.from(view.result()), view.expiresAt());
 		}
+	}
+
+	public record AssessmentSummaryResponse(UUID assessmentId, UUID questionnaireDefinitionId, String instrument,
+			String questionnaireVersion, String privacyPolicyVersion, Instant submittedAt, ResultResponse result) {
+		static AssessmentSummaryResponse from(AssessmentService.AssessmentView view) {
+			return new AssessmentSummaryResponse(view.assessmentId(), view.questionnaireDefinitionId(), view.instrument(),
+					view.questionnaireVersion(), view.privacyPolicyVersion(), view.submittedAt(), ResultResponse.from(view.result()));
+		}
+	}
+
+	public record AssessmentHistoryResponse(List<AssessmentSummaryResponse> items, String nextCursor, boolean hasMore) {
 	}
 
 	public record ResultResponse(int totalScore, ScreeningLevel screeningLevel, String scoringVersion,

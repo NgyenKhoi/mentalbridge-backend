@@ -35,9 +35,11 @@ public class SecurityConfiguration {
 				.sessionManagement(session -> session.sessionCreationPolicy(SessionCreationPolicy.STATELESS))
 				.authorizeHttpRequests(authorize -> authorize
 						.requestMatchers("/actuator/health/**", "/v3/api-docs/**", "/swagger-ui/**").permitAll()
-						.requestMatchers("/api/v1/questionnaires/**", "/api/v1/anonymous-assessment-sessions/**")
+						.requestMatchers("/api/v1/questionnaires/**", "/api/v1/privacy-disclosures/**",
+								"/api/v1/anonymous-assessment-sessions/**")
 						.permitAll()
-						.requestMatchers("/api/v1/assessments/**").hasRole("USER")
+						.requestMatchers("/api/v1/profile/**", "/api/v1/consents/**",
+								"/api/v1/consent-decisions/**", "/api/v1/assessments/**").hasRole("USER")
 						.anyRequest().authenticated())
 				.exceptionHandling(errors -> errors.authenticationEntryPoint(securityProblems)
 						.accessDeniedHandler(securityProblems))

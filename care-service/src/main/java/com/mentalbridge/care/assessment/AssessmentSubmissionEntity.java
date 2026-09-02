@@ -28,6 +28,7 @@ class AssessmentSubmissionEntity {
 	private String idempotencyKey;
 
 	private String requestHash;
+	private String privacyPolicyVersion;
 
 	private Instant submittedAt;
 
@@ -39,23 +40,25 @@ class AssessmentSubmissionEntity {
 	}
 
 	static AssessmentSubmissionEntity authenticated(UUID userId, UUID definitionId, String idempotencyKey,
-			String requestHash, Instant submittedAt) {
+			String requestHash, String privacyPolicyVersion, Instant submittedAt) {
 		var submission = new AssessmentSubmissionEntity();
 		submission.userId = userId;
 		submission.definitionId = definitionId;
 		submission.idempotencyKey = idempotencyKey;
 		submission.requestHash = requestHash;
+		submission.privacyPolicyVersion = privacyPolicyVersion;
 		submission.submittedAt = submittedAt;
 		return submission;
 	}
 
 	static AssessmentSubmissionEntity anonymous(UUID sessionId, UUID definitionId, String idempotencyKey,
-			String requestHash, Instant submittedAt, Instant retentionExpiresAt) {
+			String requestHash, String privacyPolicyVersion, Instant submittedAt, Instant retentionExpiresAt) {
 		var submission = new AssessmentSubmissionEntity();
 		submission.anonymousSessionId = sessionId;
 		submission.definitionId = definitionId;
 		submission.idempotencyKey = idempotencyKey;
 		submission.requestHash = requestHash;
+		submission.privacyPolicyVersion = privacyPolicyVersion;
 		submission.submittedAt = submittedAt;
 		submission.retentionExpiresAt = retentionExpiresAt;
 		return submission;
@@ -73,6 +76,10 @@ class AssessmentSubmissionEntity {
 		return requestHash;
 	}
 
+	String privacyPolicyVersion() {
+		return privacyPolicyVersion;
+	}
+
 	Instant submittedAt() {
 		return submittedAt;
 	}
@@ -83,5 +90,11 @@ class AssessmentSubmissionEntity {
 
 	Instant voidedAt() {
 		return voidedAt;
+	}
+
+	void extendRetention(Instant expiresAt) {
+		if (retentionExpiresAt != null && expiresAt.isAfter(retentionExpiresAt)) {
+			retentionExpiresAt = expiresAt;
+		}
 	}
 }

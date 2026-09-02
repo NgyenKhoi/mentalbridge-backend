@@ -26,11 +26,11 @@ Care owns user profiles, consent decisions, specialist access grants, questionna
 
 ## MB-88 delivered foundation
 
-MB-88 defines the profile, platform-consent, and PHQ-9 contract/persistence foundation. MB-89 implements public questionnaire retrieval plus authenticated and anonymous PHQ-9 submission/read handlers with JWT or hashed session-token authorization, server-owned scoring, item-9 safety status, owner-scoped idempotency, and an atomic minimized outbox fact. Profile and consent handlers remain planned. The executable Liquibase history contains profile and append-only consent evidence, isolated anonymous sessions, versioned questionnaire reference data, score bands, immutable assessment submission/answer/result shapes, and a transactional outbox table.
+MB-88 defines the profile, platform-consent, and PHQ-9 contract/persistence foundation. MB-89 implements public questionnaire retrieval plus authenticated and anonymous PHQ-9 submission/read handlers with JWT or hashed session-token authorization, server-owned scoring, item-9 safety status, owner-scoped idempotency, and an atomic minimized outbox fact. MB-178 implements own-profile optimistic concurrency, the backend-owned `privacy-capstone-v1` disclosure, append-only `PRIVACY_POLICY` decisions, consent-gated authenticated submission, disclosure-gated anonymous submission, stable owned history pagination, immutable result reopening, and user-initiated reassessment. The executable Liquibase history contains profile and append-only consent evidence, isolated anonymous sessions, versioned questionnaire reference data, score bands, immutable assessment submission/answer/result shapes, disclosure provenance, and a transactional outbox table.
 
 The original English PHQ-9 definition and the exact `phq9-vi-vn-capstone-v1` definition are seeded. ADR 0009 fixes the item-9 decision boundary, non-paywall rule, AI boundary, and removal of the hotline catalogue. ADR 0010 separates controlled Capstone questionnaire publication from production governance and optional support features. MB-177 records the Vietnamese artifact, import and tests. The [MB-179 blueprint](../sprints/mb-179-screening-to-support-blueprint.md) defines future support, specialist handoff, reassessment and progress boundaries without claiming their runtime; intervention and production consent/retention remain separate gates in `docs/policies/`.
 
-MB-88 does not implement specialist grants, support/intervention, follow-up, analytics, export/deletion, Kafka event schemas, or runtime controllers. Those remain in the ordered tasks below and must not be inferred from the foundation tables.
+MB-178 does not implement specialist grants, automatic follow-up, clinical progress interpretation, export/deletion, or production retention. Support/intervention, analytics, Kafka event delivery, and these deferred workflows must not be inferred from the implemented profile/consent/history slice.
 
 ## Ordered tasks
 
@@ -38,7 +38,7 @@ MB-88 does not implement specialist grants, support/intervention, follow-up, ana
 - [ ] CARE-02 Extend the MB-88 profile, platform-consent and PHQ-9 OpenAPI foundation with consent authorization, safety/support, intervention, follow-up and analytics contracts.
 - [ ] CARE-03 Define assessment/support/consent/follow-up event schemas and journal-indicator consumer contract.
 - [ ] CARE-04 Extend the MB-88 Liquibase/reference-data foundation with approved grants, safety/support, intervention and follow-up persistence.
-- [ ] CARE-05 Implement profile and independent consent/grant decisions with concurrent revoke/read protection.
+- [ ] CARE-05 Profile and general privacy decisions are implemented by MB-178; specialist scoped grants and their concurrent revoke/read protection remain deferred.
 - [x] CARE-06 Implement anonymous and authenticated assessment, validation, scoring and idempotency, including published `phq9-vi-vn-capstone-v1` reference data.
 - [ ] CARE-07 Implement deterministic safety/support behavior and approved-catalogue intervention with synchronous fallback and provenance.
 - [ ] CARE-08 Implement follow-up, comparison projections, export and deletion participation.

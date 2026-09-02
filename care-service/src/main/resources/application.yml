@@ -27,6 +27,7 @@ mentalbridge:
       public-key: ${IDENTITY_JWT_PUBLIC_KEY}
     assessment:
       anonymous-session-ttl: ${CARE_ANONYMOUS_SESSION_TTL}
+      anonymous-session-maximum-lifetime: ${CARE_ANONYMOUS_SESSION_MAXIMUM_LIFETIME}
       phq9-safety-policy-version: ${CARE_PHQ9_SAFETY_POLICY_VERSION}
       idempotency-hmac-key: ${CARE_IDEMPOTENCY_HMAC_KEY}
 eureka:

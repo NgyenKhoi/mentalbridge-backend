@@ -4,14 +4,15 @@ info:
   version: 1.0.0
   description: |
     V1 contracts for the Care-owned profile, platform consent, and PHQ-9 foundation.
-    Questionnaire and assessment paths are implemented; profile and consent paths
-    remain planned. Assessment clients submit only versioned question identifiers and
-    answer values; Care computes the score, screening band, independent safety
-    status, and policy provenance.
+    Profile, consent, questionnaire, and assessment paths are implemented. Assessment
+    clients submit only the backend-published privacy disclosure version, versioned
+    question identifiers, and answer values; Care computes the score, screening band,
+    independent safety status, and policy provenance.
     A screening result is not a diagnosis. ADR 0009 keeps screening severity and
     item-9 safety status independent, prohibits automatic escalation, and removes
-    the hotline catalogue. Exact reviewed Vietnamese wording, consent text,
-    retention periods, and anonymous-session lifetime remain approval blockers.
+    the hotline catalogue. The privacy-capstone-v1 disclosure and bounded anonymous
+    lifetime are approved only for controlled local/test/demo use. Public real-user
+    collection remains blocked on production privacy, retention, security, and legal review.
 
     Fields not marked nullable reject null. Omitted optional profile fields leave
     no stored value. Anonymous session credentials are bearer secrets returned
@@ -21,12 +22,13 @@ servers:
 tags:
   - name: Profile
   - name: Consent
+  - name: Privacy disclosure
   - name: Questionnaire
   - name: Assessment
   - name: Anonymous assessment
 paths:
   /api/v1/profile:
-    x-mentalbridge-status: planned
+    x-mentalbridge-status: implemented
     get:
       tags: [Profile]
       operationId: getOwnCareProfile
@@ -93,7 +95,7 @@ paths:
         '409': { $ref: '#/components/responses/ConflictProblem' }
         '412': { $ref: '#/components/responses/VersionProblem' }
   /api/v1/consents:
-    x-mentalbridge-status: planned
+    x-mentalbridge-status: implemented
     get:
       tags: [Consent]
       operationId: getOwnCurrentConsents
@@ -112,7 +114,7 @@ paths:
         '401': { $ref: '#/components/responses/UnauthorizedProblem' }
         '403': { $ref: '#/components/responses/ForbiddenProblem' }
   /api/v1/consent-decisions:
-    x-mentalbridge-status: planned
+    x-mentalbridge-status: implemented
     post:
       tags: [Consent]
       operationId: recordOwnConsentDecision
@@ -146,6 +148,25 @@ paths:
         '401': { $ref: '#/components/responses/UnauthorizedProblem' }
         '403': { $ref: '#/components/responses/ForbiddenProblem' }
         '409': { $ref: '#/components/responses/IdempotencyConflictProblem' }
+  /api/v1/privacy-disclosures/current:
+    x-mentalbridge-status: implemented
+    get:
+      tags: [Privacy disclosure]
+      operationId: getCurrentPrivacyDisclosure
+      summary: Read the backend-owned disclosure required for Care assessment processing
+      description: |
+        Returns the exact controlled-Capstone Vietnamese text and version. Clients
+        render this response and must not keep an independent disclosure copy.
+      parameters:
+        - $ref: '#/components/parameters/Locale'
+        - $ref: '#/components/parameters/CorrelationId'
+      responses:
+        '200':
+          description: Current disclosure returned
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/PrivacyDisclosure' }
+        '404': { $ref: '#/components/responses/NotFoundProblem' }
   /api/v1/questionnaires/{instrument}/current:
     x-mentalbridge-status: implemented
     get:
@@ -167,6 +188,29 @@ paths:
         '429': { $ref: '#/components/responses/RateLimitProblem' }
   /api/v1/assessments:
     x-mentalbridge-status: implemented
+    get:
+      tags: [Assessment]
+      operationId: listOwnAssessments
+      summary: List non-voided assessment summaries owned by the authenticated caller
+      description: |
+        Results are ordered by submittedAt descending and assessmentId descending.
+        The opaque cursor identifies the last item of the previous page. Raw answers
+        and other users' data are never returned.
+      security:
+        - bearerAuth: []
+      parameters:
+        - $ref: '#/components/parameters/AssessmentCursor'
+        - $ref: '#/components/parameters/PageLimit'
+        - $ref: '#/components/parameters/CorrelationId'
+      responses:
+        '200':
+          description: Owned assessment summaries returned
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/AssessmentHistoryPage' }
+        '400': { $ref: '#/components/responses/ValidationProblem' }
+        '401': { $ref: '#/components/responses/UnauthorizedProblem' }
+        '403': { $ref: '#/components/responses/ForbiddenProblem' }
     post:
       tags: [Assessment]
       operationId: submitAuthenticatedAssessment
@@ -351,6 +395,17 @@ components:
       required: false
       schema: { type: string, pattern: '^"[0-9]+"$' }
       example: '"3"'
+    AssessmentCursor:
+      name: cursor
+      in: query
+      required: false
+      schema: { type: string, minLength: 1, maxLength: 256 }
+      description: Opaque cursor returned as nextCursor by the preceding page
+    PageLimit:
+      name: limit
+      in: query
+      required: false
+      schema: { type: integer, minimum: 1, maximum: 50, default: 20 }
   schemas:
     ProfilePutRequest:
       type: object
@@ -360,7 +415,7 @@ components:
         displayName: { type: string, minLength: 1, maxLength: 120 }
         dateOfBirth: { type: [string, 'null'], format: date }
         gender: { type: [string, 'null'], minLength: 1, maxLength: 32 }
-        locale: { type: string, minLength: 2, maxLength: 16 }
+        locale: { type: string, minLength: 2, maxLength: 16, pattern: '^[A-Za-z]{2,3}(-[A-Za-z0-9]{2,8})*$' }
         timezone:
           type: string
           minLength: 1
@@ -376,7 +431,7 @@ components:
         displayName: { type: string, minLength: 1, maxLength: 120 }
         dateOfBirth: { type: [string, 'null'], format: date }
         gender: { type: [string, 'null'], minLength: 1, maxLength: 32 }
-        locale: { type: string, minLength: 2, maxLength: 16 }
+        locale: { type: string, minLength: 2, maxLength: 16, pattern: '^[A-Za-z]{2,3}(-[A-Za-z0-9]{2,8})*$' }
         timezone: { type: string, minLength: 1, maxLength: 64 }
         reminderEnabled: { type: boolean }
         createdAt: { type: string, format: date-time }
@@ -384,7 +439,7 @@ components:
         version: { type: integer, format: int64, minimum: 0 }
     ConsentType:
       type: string
-      enum: [PRIVACY_POLICY, AI_PROCESSING, RESEARCH_DATA, MARKETING_NOTIFICATION]
+      enum: [PRIVACY_POLICY]
     ConsentDecisionRequest:
       type: object
       additionalProperties: false
@@ -393,8 +448,7 @@ components:
         consentType: { $ref: '#/components/schemas/ConsentType' }
         policyVersion:
           type: string
-          minLength: 1
-          maxLength: 64
+          const: privacy-capstone-v1
           description: Exact approved text or policy version shown to the user
         granted: { type: boolean }
     ConsentDecision:
@@ -414,8 +468,19 @@ components:
       properties:
         decisions:
           type: array
-          maxItems: 4
+          maxItems: 1
           items: { $ref: '#/components/schemas/ConsentDecision' }
+    PrivacyDisclosure:
+      type: object
+      additionalProperties: false
+      required: [consentType, version, locale, title, content, capstoneOnly]
+      properties:
+        consentType: { type: string, const: PRIVACY_POLICY }
+        version: { type: string, const: privacy-capstone-v1 }
+        locale: { type: string, const: vi-VN }
+        title: { type: string, minLength: 1, maxLength: 160 }
+        content: { type: string, minLength: 1, maxLength: 4000 }
+        capstoneOnly: { type: boolean, const: true }
     Instrument:
       type: string
       enum: [PHQ9, GAD7]
@@ -458,9 +523,11 @@ components:
     AssessmentSubmissionRequest:
       type: object
       additionalProperties: false
-      required: [questionnaireDefinitionId, answers]
+      required: [questionnaireDefinitionId, privacyPolicyVersion, privacyDisclosureAcknowledged, answers]
       properties:
         questionnaireDefinitionId: { type: string, format: uuid }
+        privacyPolicyVersion: { type: string, const: privacy-capstone-v1 }
+        privacyDisclosureAcknowledged: { type: boolean, const: true }
         answers:
           type: array
           minItems: 1
@@ -478,28 +545,53 @@ components:
     Assessment:
       type: object
       additionalProperties: false
-      required: [assessmentId, questionnaireDefinitionId, instrument, questionnaireVersion, submittedAt, result]
+      required: [assessmentId, questionnaireDefinitionId, instrument, questionnaireVersion, privacyPolicyVersion, submittedAt, result]
       properties:
         assessmentId: { type: string, format: uuid }
         questionnaireDefinitionId: { type: string, format: uuid }
         instrument: { $ref: '#/components/schemas/Instrument' }
         questionnaireVersion: { type: string, minLength: 1, maxLength: 32 }
+        privacyPolicyVersion: { type: string, minLength: 1, maxLength: 64 }
         submittedAt: { type: string, format: date-time }
         voidedAt: { type: [string, 'null'], format: date-time }
         result: { $ref: '#/components/schemas/AssessmentResult' }
     AnonymousAssessment:
       type: object
       additionalProperties: false
-      required: [assessmentId, questionnaireDefinitionId, instrument, questionnaireVersion, submittedAt, result, expiresAt]
+      required: [assessmentId, questionnaireDefinitionId, instrument, questionnaireVersion, privacyPolicyVersion, submittedAt, result, expiresAt]
       properties:
         assessmentId: { type: string, format: uuid }
         questionnaireDefinitionId: { type: string, format: uuid }
         instrument: { $ref: '#/components/schemas/Instrument' }
         questionnaireVersion: { type: string, minLength: 1, maxLength: 32 }
+        privacyPolicyVersion: { type: string, minLength: 1, maxLength: 64 }
         submittedAt: { type: string, format: date-time }
         voidedAt: { type: [string, 'null'], format: date-time }
         result: { $ref: '#/components/schemas/AssessmentResult' }
         expiresAt: { type: string, format: date-time }
+    AssessmentSummary:
+      type: object
+      additionalProperties: false
+      required: [assessmentId, questionnaireDefinitionId, instrument, questionnaireVersion, privacyPolicyVersion, submittedAt, result]
+      properties:
+        assessmentId: { type: string, format: uuid }
+        questionnaireDefinitionId: { type: string, format: uuid }
+        instrument: { $ref: '#/components/schemas/Instrument' }
+        questionnaireVersion: { type: string, minLength: 1, maxLength: 32 }
+        privacyPolicyVersion: { type: string, minLength: 1, maxLength: 64 }
+        submittedAt: { type: string, format: date-time }
+        result: { $ref: '#/components/schemas/AssessmentResult' }
+    AssessmentHistoryPage:
+      type: object
+      additionalProperties: false
+      required: [items, hasMore]
+      properties:
+        items:
+          type: array
+          maxItems: 50
+          items: { $ref: '#/components/schemas/AssessmentSummary' }
+        nextCursor: { type: [string, 'null'], minLength: 1, maxLength: 256 }
+        hasMore: { type: boolean }
     AssessmentResult:
       type: object
       additionalProperties: false

@@ -153,7 +153,7 @@ Append-only evidence of a user grant or refusal for a versioned platform consent
 | --- | --- |
 | `id` | Immutable UUID used to cite this exact consent decision in audit and REST results. |
 | `user_id` | Care-owned user profile that made the consent decision. |
-| `consent_type` | Stable independent platform-consent category; specialist access uses a separate scoped grant. |
+| `consent_type` | Stable independent platform-consent category. Sprint 2 runtime accepts only `PRIVACY_POLICY`; reserved AI/research/marketing values are not exposed, and specialist access uses a separate scoped grant. |
 | `policy_version` | Exact approved policy text/version accepted or refused so the decision remains reproducible. |
 | `granted` | Authoritative decision value; false records an explicit refusal or withdrawal. |
 | `evidence` | Minimized JSON object such as approved channel or document hash; never raw health content. |
@@ -170,7 +170,7 @@ Short-lived isolated authorization context for a guest assessment. The table int
 | --- | --- |
 | `id` | Immutable opaque session UUID used only together with the bearer token. |
 | `token_hash` | Unique lowercase SHA-256 hash of the high-entropy session token; the plaintext token is returned once and never persisted. |
-| `expires_at` | Required UTC policy-owned deadline after which submission and result access fail; the exact duration remains pending approval. |
+| `expires_at` | Effective UTC access deadline: 30 minutes after the latest valid activity, capped at two hours after `created_at` for controlled Capstone use. |
 | `closed_at` | Optional UTC instant the session was invalidated before expiry. |
 | `created_at` | Immutable UTC creation instant used to validate the expiry interval. |
 
@@ -231,6 +231,7 @@ Immutable accepted screening envelope for exactly one authenticated profile or a
 | `user_id` | Authenticated Care profile owner; null for an anonymous screening. |
 | `anonymous_session_id` | Care-owned short-lived session identifier; null for an authenticated submission and never accompanied by a user ID. |
 | `definition_id` | Exact questionnaire definition used to validate and score all answers. |
+| `privacy_policy_version` | Exact backend-published disclosure acknowledged for this submission; `legacy-pre-mb178` identifies foundation rows created before the MB-178 gate and must not be presented as Capstone consent. |
 | `idempotency_key` | Required retry key unique per authenticated user or anonymous session so the logical submission is persisted once. |
 | `request_hash` | Lowercase SHA-256 digest of the canonical definition-and-answer request; it detects conflicting retries without logging answers. |
 | `submitted_at` | UTC instant the complete validated assessment was accepted. |

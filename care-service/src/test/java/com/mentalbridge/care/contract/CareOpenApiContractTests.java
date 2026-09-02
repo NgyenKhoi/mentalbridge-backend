@@ -19,7 +19,9 @@ class CareOpenApiContractTests {
 			"PUT /api/v1/profile",
 			"GET /api/v1/consents",
 			"POST /api/v1/consent-decisions",
+			"GET /api/v1/privacy-disclosures/current",
 			"GET /api/v1/questionnaires/{instrument}/current",
+			"GET /api/v1/assessments",
 			"POST /api/v1/assessments",
 			"GET /api/v1/assessments/{assessmentId}",
 			"POST /api/v1/anonymous-assessment-sessions",
@@ -27,6 +29,10 @@ class CareOpenApiContractTests {
 			"GET /api/v1/anonymous-assessment-sessions/{sessionId}/assessments/{assessmentId}");
 
 	private static final Set<String> IMPLEMENTED_PATHS = Set.of(
+			"/api/v1/profile",
+			"/api/v1/consents",
+			"/api/v1/consent-decisions",
+			"/api/v1/privacy-disclosures/current",
 			"/api/v1/questionnaires/{instrument}/current",
 			"/api/v1/assessments",
 			"/api/v1/assessments/{assessmentId}",
@@ -39,6 +45,7 @@ class CareOpenApiContractTests {
 			"PUT /api/v1/profile",
 			"GET /api/v1/consents",
 			"POST /api/v1/consent-decisions",
+			"GET /api/v1/assessments",
 			"POST /api/v1/assessments",
 			"GET /api/v1/assessments/{assessmentId}");
 
@@ -88,7 +95,8 @@ class CareOpenApiContractTests {
 		var request = openApi.getComponents().getSchemas().get("AssessmentSubmissionRequest");
 		var result = openApi.getComponents().getSchemas().get("AssessmentResult");
 
-		assertThat(request.getProperties()).containsKeys("questionnaireDefinitionId", "answers");
+		assertThat(request.getProperties()).containsKeys("questionnaireDefinitionId", "privacyPolicyVersion",
+				"privacyDisclosureAcknowledged", "answers");
 		assertThat(request.getProperties()).doesNotContainKeys(
 				"totalScore", "screeningLevel", "scoringVersion", "safetyStatus", "safetyPolicyVersion");
 		assertThat(result.getProperties()).containsKeys(

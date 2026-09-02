@@ -42,8 +42,8 @@ The 70-hour difference from nominal capacity is reserved for meetings, review, a
 | Anonymous PHQ-9 | `PLANNED` | Frontend retrieves the published Care questionnaire, creates an isolated anonymous session, submits answers, and renders only server-owned result/safety fields. |
 | Authenticated PHQ-9 | `PLANNED` | JWT subject ownership, idempotent submission, owned result reopening, and failure states work through a server-side frontend boundary. |
 | Frontend scoring and hotline removal | `PLANNED` | Browser scoring, hard-coded severity/recommendations, and the obsolete hotline are absent from production paths. |
-| Care profile and consent | `CARRY-OVER` | Profile optimistic concurrency and independent append-only versioned consent decisions pass runtime and integration tests. |
-| Assessment history and reassessment | `PLANNED` | Stable owned pagination, immutable result reopening, and creation of a new reassessment submission are integrated. |
+| Care profile and consent | `IMPLEMENTED — VERIFIED` | Own-profile optimistic concurrency, backend-owned `privacy-capstone-v1`, and append-only grant/revoke decisions pass the Care PostgreSQL integration suite. |
+| Assessment history and reassessment | `IMPLEMENTED — VERIFIED` | Stable owned cursor pagination, exact immutable result reopening, and creation of a distinct reassessment submission pass the Care PostgreSQL integration suite and frontend delivery gates. |
 | Reviewed support resources | `PLANNED` | Result pages render only published reviewed backend content and show neutral, explicit empty/unavailable fallback. |
 | Realtime foundation | `CARRY-OVER` | NestJS, contracts, authentication, Redis TTL presence, MongoDB durable idempotent messages/history, and failure tests are complete; production chat eligibility remains disabled. |
 | Integrated evidence | `PLANNED` | Required backend suites, frontend quality gates, focused Playwright journeys, security/degradation checks, and runbooks have reproducible evidence. |

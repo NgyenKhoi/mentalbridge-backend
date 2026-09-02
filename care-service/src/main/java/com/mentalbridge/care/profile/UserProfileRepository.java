@@ -1,4 +1,4 @@
-package com.mentalbridge.care.assessment;
+package com.mentalbridge.care.profile;
 
 import java.util.Optional;
 import java.util.UUID;
@@ -10,7 +10,7 @@ import org.springframework.data.repository.query.Param;
 
 import jakarta.persistence.LockModeType;
 
-interface UserProfileRepository extends JpaRepository<UserProfileEntity, UUID> {
+public interface UserProfileRepository extends JpaRepository<UserProfileEntity, UUID> {
 
 	@Lock(LockModeType.PESSIMISTIC_WRITE)
 	@Query("select profile from UserProfileEntity profile where profile.accountId = :accountId")

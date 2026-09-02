@@ -44,8 +44,14 @@ class AssessmentFlowIntegrationTests extends CareTestProperties {
 	private static final UUID DEFINITION_ID = UUID.fromString("10000000-0000-0000-0000-000000000001");
 	private static final UUID VI_DEFINITION_ID = UUID.fromString("10000000-0000-0000-0000-000000000002");
 	private static final Set<String> IMPLEMENTED_OPERATIONS = Set.of(
+			"GET /api/v1/privacy-disclosures/current",
+			"GET /api/v1/profile",
+			"PUT /api/v1/profile",
+			"GET /api/v1/consents",
+			"POST /api/v1/consent-decisions",
 			"GET /api/v1/questionnaires/{instrument}/current",
 			"POST /api/v1/anonymous-assessment-sessions",
+			"GET /api/v1/assessments",
 			"POST /api/v1/assessments",
 			"GET /api/v1/assessments/{assessmentId}",
 			"POST /api/v1/anonymous-assessment-sessions/{sessionId}/assessments",
@@ -260,6 +266,13 @@ class AssessmentFlowIntegrationTests extends CareTestProperties {
 		var userId = UUID.randomUUID();
 		jdbc.sql("insert into user_profile (account_id, display_name) values (:id, 'Assessment test user')")
 				.param("id", userId).update();
+		jdbc.sql("""
+				insert into consent_decision
+				(id, user_id, consent_type, policy_version, granted, idempotency_key, request_hash, decided_at)
+				values (:id, :userId, 'PRIVACY_POLICY', 'privacy-capstone-v1', true,
+				        'assessment-test-consent-0001', :requestHash, now())
+				""").param("id", UUID.randomUUID()).param("userId", userId)
+				.param("requestHash", "0".repeat(64)).update();
 		return userId;
 	}
 
@@ -273,17 +286,20 @@ class AssessmentFlowIntegrationTests extends CareTestProperties {
 			answerJson.append("{\"questionId\":\"11000000-0000-0000-0000-")
 					.append(String.format("%012d", index + 1)).append("\",\"value\":").append(values[index]).append('}');
 		}
-		return "{\"questionnaireDefinitionId\":\"" + DEFINITION_ID + "\",\"answers\":[" + answerJson + "]}";
+		return "{\"questionnaireDefinitionId\":\"" + DEFINITION_ID
+				+ "\",\"privacyPolicyVersion\":\"privacy-capstone-v1\",\"privacyDisclosureAcknowledged\":true,\"answers\":["
+				+ answerJson + "]}";
 	}
 
 	private String incompleteBody() {
 		return "{\"questionnaireDefinitionId\":\"" + DEFINITION_ID
-				+ "\",\"answers\":[{\"questionId\":\"11000000-0000-0000-0000-000000000001\",\"value\":0}]}";
+				+ "\",\"privacyPolicyVersion\":\"privacy-capstone-v1\",\"privacyDisclosureAcknowledged\":true,"
+				+ "\"answers\":[{\"questionId\":\"11000000-0000-0000-0000-000000000001\",\"value\":0}]}";
 	}
 
 	private String unkeyedRequestHash(int itemNine) throws Exception {
 		var values = new int[] { 1, 1, 1, 1, 1, 1, 1, 0, itemNine };
-		var canonical = new StringBuilder(DEFINITION_ID.toString());
+		var canonical = new StringBuilder(DEFINITION_ID.toString()).append("|privacy-capstone-v1|true");
 		for (var index = 0; index < values.length; index++) {
 			canonical.append('|').append("11000000-0000-0000-0000-")
 					.append(String.format("%012d", index + 1)).append(':').append(values[index]);
