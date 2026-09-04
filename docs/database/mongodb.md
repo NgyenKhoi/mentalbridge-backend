@@ -171,7 +171,10 @@ Keep messages separate from conversations to avoid an unbounded document.
   "clientMessageId": "UUID",
   "type": "TEXT",
   "bodyCiphertext": "base64",
+  "bodyIv": "base64",
+  "bodyTag": "base64",
   "keyVersion": "kek-2026-01",
+  "commandFingerprint": "keyed-base64url-digest",
   "sentAt": "ISODate",
   "editedAt": null,
   "deletedAt": null,
@@ -189,6 +192,8 @@ db.messages.createIndex({ senderId: 1, clientMessageId: 1 }, { unique: true })
 ```
 
 Use cursor pagination. A deletion replaces display content with a tombstone while retention/moderation rules decide encrypted-body removal. Do not put large attachments in MongoDB; store private object keys and validated metadata in a separate `message_attachments` collection or relational metadata.
+
+`bodyCiphertext`, `bodyIv`, and `bodyTag` are the AES-256-GCM envelope persisted by Realtime; plaintext is returned only after current authorization. `commandFingerprint` is a keyed digest over the logical conversation, type, and content so a repeated sender-scoped `clientMessageId` can distinguish a safe retry from conflicting content without storing a raw plaintext hash. Migration `realtime-service/migrations/001_realtime_message_foundation.cjs` is the executable validator and index baseline.
 
 ## `message_receipts`
 
