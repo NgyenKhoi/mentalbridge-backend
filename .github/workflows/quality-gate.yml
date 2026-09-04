@@ -39,13 +39,13 @@ jobs:
       - uses: actions/setup-java@v4
         with:
           distribution: temurin
-          java-version: '21'
+          java-version: "21"
           cache: maven
           cache-dependency-path: ${{ matrix.service }}/pom.xml
       - name: Test and build
         working-directory: ${{ matrix.service }}
         env:
-          SPRINGDOTENV_ENABLED: 'false'
+          SPRINGDOTENV_ENABLED: "false"
         run: |
           chmod +x mvnw
           ./mvnw -B test
@@ -56,12 +56,21 @@ jobs:
     strategy:
       fail-fast: false
       matrix:
-        service: [journal-ai-service, content-notification-service]
+        include:
+          - service: journal-ai-service
+            node-version: "22"
+            integration: false
+          - service: content-notification-service
+            node-version: "22"
+            integration: true
+          - service: realtime-service
+            node-version: "24"
+            integration: true
     steps:
       - uses: actions/checkout@v4
       - uses: actions/setup-node@v4
         with:
-          node-version: '22'
+          node-version: ${{ matrix.node-version }}
           cache: npm
           cache-dependency-path: ${{ matrix.service }}/package-lock.json
       - name: Install locked dependencies
@@ -85,8 +94,8 @@ jobs:
       - name: Migration validation
         working-directory: ${{ matrix.service }}
         run: npm run migration:check
-      - name: PostgreSQL integration tests
-        if: matrix.service == 'content-notification-service'
+      - name: Infrastructure integration tests
+        if: matrix.integration
         working-directory: ${{ matrix.service }}
         run: npm run test:integration
       - name: Build
