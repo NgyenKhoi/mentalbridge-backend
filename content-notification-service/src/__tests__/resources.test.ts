@@ -339,8 +339,6 @@ describe('GET /api/v1/resources', () => {
 
     expect(response.body.data).toHaveLength(1);
     expect(response.body.data[0].status).toBe('PUBLISHED');
-    expect(response.body.data.every((r: { status: string }) => r.status !== 'ARCHIVED')).toBe(
-      true,
-    );
+    expect(response.body.data.every((r: { status: string }) => r.status !== 'ARCHIVED')).toBe(true);
   });
 });
