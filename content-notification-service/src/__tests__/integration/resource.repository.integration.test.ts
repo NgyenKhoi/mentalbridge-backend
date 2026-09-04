@@ -241,4 +241,27 @@ describe('ResourceRepository integration', () => {
     const allIds = [...firstPageIds, ...secondIds];
     expect(new Set(allIds).size).toBe(4);
   });
+
+  it('does not return DRAFT resources', async () => {
+    const tag = 'draft-' + Date.now();
+    await insertResource({
+      title: tag,
+      status: 'DRAFT',
+      reviewed_by: undefined,
+      reviewed_at: undefined,
+    });
+
+    const rows = await repository.listPublished({ limit: 100 });
+    const found = rows.find((r) => (r as unknown as { title: string }).title === tag);
+    expect(found).toBeUndefined();
+  });
+
+  it('does not return ARCHIVED resources', async () => {
+    const tag = 'archived-' + Date.now();
+    await insertResource({ title: tag, status: 'ARCHIVED' });
+
+    const rows = await repository.listPublished({ limit: 100 });
+    const found = rows.find((r) => (r as unknown as { title: string }).title === tag);
+    expect(found).toBeUndefined();
+  });
 });

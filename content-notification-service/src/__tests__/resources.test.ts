@@ -292,4 +292,55 @@ describe('GET /api/v1/resources', () => {
       .expect('x-correlation-id', 'test-corr-id')
       .expect(200);
   });
+
+  it('does not return DRAFT resources in public endpoint', async () => {
+    const draftResource: ResourceRow = {
+      ...publishedResource,
+      id: '223e4567-e89b-12d3-a456-426614174000',
+      status: 'DRAFT',
+      reviewed_at: null,
+    };
+
+    app = await createApplication(configuration, {
+      readinessProbe: { check: async () => undefined },
+      resourceRepository: makeRepository({
+        listPublished: async () => [publishedResource],
+      }),
+    });
+    await app.init();
+
+    const response = await request(app.getHttpServer() as Server)
+      .get('/api/v1/resources')
+      .expect(200);
+
+    expect(response.body.data).toHaveLength(1);
+    expect(response.body.data[0].status).toBe('PUBLISHED');
+    expect(response.body.data.every((r: { status: string }) => r.status !== 'DRAFT')).toBe(true);
+  });
+
+  it('does not return ARCHIVED resources in public endpoint', async () => {
+    const archivedResource: ResourceRow = {
+      ...publishedResource,
+      id: '323e4567-e89b-12d3-a456-426614174000',
+      status: 'ARCHIVED',
+    };
+
+    app = await createApplication(configuration, {
+      readinessProbe: { check: async () => undefined },
+      resourceRepository: makeRepository({
+        listPublished: async () => [publishedResource],
+      }),
+    });
+    await app.init();
+
+    const response = await request(app.getHttpServer() as Server)
+      .get('/api/v1/resources')
+      .expect(200);
+
+    expect(response.body.data).toHaveLength(1);
+    expect(response.body.data[0].status).toBe('PUBLISHED');
+    expect(response.body.data.every((r: { status: string }) => r.status !== 'ARCHIVED')).toBe(
+      true,
+    );
+  });
 });
