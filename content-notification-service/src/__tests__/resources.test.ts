@@ -299,12 +299,13 @@ describe('GET /api/v1/resources', () => {
       id: '223e4567-e89b-12d3-a456-426614174000',
       status: 'DRAFT',
       reviewed_at: null,
+      reviewed_by: null,
     };
 
     app = await createApplication(configuration, {
       readinessProbe: { check: async () => undefined },
       resourceRepository: makeRepository({
-        listPublished: async () => [publishedResource],
+        listPublished: async () => [publishedResource, draftResource],
       }),
     });
     await app.init();
@@ -314,8 +315,9 @@ describe('GET /api/v1/resources', () => {
       .expect(200);
 
     expect(response.body.data).toHaveLength(1);
+    expect(response.body.data[0].id).toBe(publishedResource.id);
     expect(response.body.data[0].status).toBe('PUBLISHED');
-    expect(response.body.data.every((r: { status: string }) => r.status !== 'DRAFT')).toBe(true);
+    expect(response.body.data.some((r: { status: string }) => r.status === 'DRAFT')).toBe(false);
   });
 
   it('does not return ARCHIVED resources in public endpoint', async () => {
@@ -328,7 +330,7 @@ describe('GET /api/v1/resources', () => {
     app = await createApplication(configuration, {
       readinessProbe: { check: async () => undefined },
       resourceRepository: makeRepository({
-        listPublished: async () => [publishedResource],
+        listPublished: async () => [publishedResource, archivedResource],
       }),
     });
     await app.init();
@@ -338,7 +340,8 @@ describe('GET /api/v1/resources', () => {
       .expect(200);
 
     expect(response.body.data).toHaveLength(1);
+    expect(response.body.data[0].id).toBe(publishedResource.id);
     expect(response.body.data[0].status).toBe('PUBLISHED');
-    expect(response.body.data.every((r: { status: string }) => r.status !== 'ARCHIVED')).toBe(true);
+    expect(response.body.data.some((r: { status: string }) => r.status === 'ARCHIVED')).toBe(false);
   });
 });
