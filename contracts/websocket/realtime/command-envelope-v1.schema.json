@@ -1,0 +1,120 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://mentalbridge.dev/contracts/websocket/realtime/command-envelope-v1.schema.json",
+  "title": "Realtime client command envelope v1",
+  "oneOf": [
+    { "$ref": "#/$defs/heartbeat" },
+    { "$ref": "#/$defs/subscribe" },
+    { "$ref": "#/$defs/sendMessage" }
+  ],
+  "$defs": {
+    "base": {
+      "type": "object",
+      "required": [
+        "schemaVersion",
+        "commandId",
+        "commandType",
+        "correlationId",
+        "sentAt",
+        "payload"
+      ],
+      "properties": {
+        "schemaVersion": { "const": 1 },
+        "commandId": { "type": "string", "format": "uuid" },
+        "commandType": {
+          "type": "string",
+          "enum": [
+            "presence.heartbeat",
+            "conversation.subscribe",
+            "message.send"
+          ]
+        },
+        "correlationId": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 128,
+          "pattern": "^[A-Za-z0-9._:-]+$"
+        },
+        "sentAt": { "type": "string", "format": "date-time" },
+        "payload": { "type": "object" }
+      }
+    },
+    "heartbeat": {
+      "allOf": [
+        { "$ref": "#/$defs/base" },
+        {
+          "type": "object",
+          "additionalProperties": false,
+          "properties": {
+            "schemaVersion": true,
+            "commandId": true,
+            "commandType": { "const": "presence.heartbeat" },
+            "correlationId": true,
+            "sentAt": true,
+            "payload": { "type": "object", "additionalProperties": false }
+          }
+        }
+      ]
+    },
+    "subscribe": {
+      "allOf": [
+        { "$ref": "#/$defs/base" },
+        {
+          "type": "object",
+          "additionalProperties": false,
+          "properties": {
+            "schemaVersion": true,
+            "commandId": true,
+            "commandType": { "const": "conversation.subscribe" },
+            "correlationId": true,
+            "sentAt": true,
+            "payload": {
+              "type": "object",
+              "additionalProperties": false,
+              "required": ["conversationId"],
+              "properties": {
+                "conversationId": { "type": "string", "format": "uuid" }
+              }
+            }
+          }
+        }
+      ]
+    },
+    "sendMessage": {
+      "allOf": [
+        { "$ref": "#/$defs/base" },
+        {
+          "type": "object",
+          "additionalProperties": false,
+          "properties": {
+            "schemaVersion": true,
+            "commandId": true,
+            "commandType": { "const": "message.send" },
+            "correlationId": true,
+            "sentAt": true,
+            "payload": {
+              "type": "object",
+              "additionalProperties": false,
+              "required": [
+                "conversationId",
+                "clientMessageId",
+                "type",
+                "content"
+              ],
+              "properties": {
+                "conversationId": { "type": "string", "format": "uuid" },
+                "clientMessageId": { "type": "string", "format": "uuid" },
+                "type": { "const": "TEXT" },
+                "content": {
+                  "type": "string",
+                  "minLength": 1,
+                  "maxLength": 4000
+                }
+              }
+            }
+          }
+        }
+      ]
+    }
+  }
+}
