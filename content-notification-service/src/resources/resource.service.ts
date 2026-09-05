@@ -90,15 +90,12 @@ export class ResourceService {
 
     const hasMore = rows.length > limit;
     const pageRows = hasMore ? rows.slice(0, limit) : rows;
-    
+
     // Defensive filter: only PUBLISHED resources with valid review status
     const publishedRows = pageRows.filter(
-      (row) =>
-        row.status === 'PUBLISHED' &&
-        row.reviewed_by !== null &&
-        row.reviewed_at !== null,
+      (row) => row.status === 'PUBLISHED' && row.reviewed_by !== null && row.reviewed_at !== null,
     );
-    
+
     const data = publishedRows.map(toSummary).filter((r): r is ResourceSummary => r !== null);
 
     return {
