@@ -24,8 +24,13 @@ CHECK (status IN ('DRAFT','PUBLISHED','ARCHIVED'))
 
 ---
 
-### 2. ✅ Unauthorized Response Boundary Evidence (HIGH Priority)
-**Requirement:** Complete or link the unauthorized-response boundary evidence for MB-180 sub-task 616.
+### 2. ✅ Publication Boundary Evidence (HIGH Priority)
+**Review Feedback:** "The DoD lists unpublished and unauthorized as separate mandatory cases, but MB-180-BACKEND-FIXES.md:27-47 redefines unauthorized as unpublished. That is not equivalent to a 401/403 access path. The real unauthorized case belongs in the frontend BFF."
+
+**Clarification:**
+- **Backend (Content-Notification-Service):** This service is **public** with no authentication. There are no 401/403 unauthorized cases at this layer.
+- **Tests Added:** Publication boundary tests verify that DRAFT/ARCHIVED resources are never exposed through the public endpoint.
+- **Unauthorized (401/403):** True authentication/authorization tests belong in the **frontend BFF** layer, where authentication is enforced.
 
 **Implementation:**
 - **File:** `content-notification-service/src/__tests__/resources.test.ts`
@@ -33,8 +38,8 @@ CHECK (status IN ('DRAFT','PUBLISHED','ARCHIVED'))
   - `does not return DRAFT resources in public endpoint` - Verifies public endpoint never returns DRAFT status
   - `does not return ARCHIVED resources in public endpoint` - Verifies public endpoint never returns ARCHIVED status
 
-**Rationale:** 
-The `/api/v1/resources` endpoint is public (no authentication required). "Unauthorized" in this context means **unpublished resources (DRAFT/ARCHIVED) that the public is not authorized to view**. These tests verify the publication boundary is enforced at the HTTP layer.
+**Test Evidence:**
+These tests prove the publication boundary at the HTTP layer. The backend enforces publication status filtering; the frontend BFF enforces authentication/authorization.
 
 **Test Results:**
 ```
@@ -74,7 +79,8 @@ npm run test:integration
 | ✅ No hotline catalogue | ✅ Met (existing) | Confirmed in review |
 | ✅ All 7 CI checks passing | ✅ Met (existing) | Confirmed in review |
 | ❌ DRAFT/ARCHIVED test coverage | ✅ **FIXED** | 2 new integration tests |
-| ❌ Unauthorized response tests | ✅ **FIXED** | 2 new HTTP endpoint tests |
+| ❌ Publication boundary HTTP tests | ✅ **FIXED** | 2 new HTTP endpoint tests |
+| ❌ Unauthorized (401/403) tests | ℹ️ **Frontend BFF** | Auth tests in frontend BFF layer |
 | ❌ Rebase dev (2 commits behind) | ℹ️ Separate PR task | Not in scope for test additions |
 
 ---
