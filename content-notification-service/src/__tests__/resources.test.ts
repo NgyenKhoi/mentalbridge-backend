@@ -302,10 +302,12 @@ describe('GET /api/v1/resources', () => {
       reviewed_by: null,
     };
 
+    // Mock repository to return mixed status - this is the key fix!
+    // Repository level might return mixed data, but Service layer must filter
     app = await createApplication(configuration, {
       readinessProbe: { check: async () => undefined },
       resourceRepository: makeRepository({
-        listPublished: async () => [publishedResource, draftResource],
+        listPublished: async () => [publishedResource, draftResource], // Mixed status from DB
       }),
     });
     await app.init();
@@ -314,6 +316,7 @@ describe('GET /api/v1/resources', () => {
       .get('/api/v1/resources')
       .expect(200);
 
+    // Verify HTTP layer (via Service defensive filtering) only returns PUBLISHED
     expect(response.body.data).toHaveLength(1);
     expect(response.body.data[0].id).toBe(publishedResource.id);
     expect(response.body.data[0].status).toBe('PUBLISHED');
@@ -327,10 +330,11 @@ describe('GET /api/v1/resources', () => {
       status: 'ARCHIVED',
     };
 
+    // Mock repository to return mixed status - this proves Service layer filtering
     app = await createApplication(configuration, {
       readinessProbe: { check: async () => undefined },
       resourceRepository: makeRepository({
-        listPublished: async () => [publishedResource, archivedResource],
+        listPublished: async () => [publishedResource, archivedResource], // Mixed status from DB
       }),
     });
     await app.init();
@@ -339,6 +343,7 @@ describe('GET /api/v1/resources', () => {
       .get('/api/v1/resources')
       .expect(200);
 
+    // Verify HTTP layer (via Service defensive filtering) only returns PUBLISHED
     expect(response.body.data).toHaveLength(1);
     expect(response.body.data[0].id).toBe(publishedResource.id);
     expect(response.body.data[0].status).toBe('PUBLISHED');
