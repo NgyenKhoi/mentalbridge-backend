@@ -7,6 +7,18 @@ import { fileURLToPath } from 'url';
 
 const __dirname = dirname(fileURLToPath(import.meta.url));
 
+async function waitForPool(pool: Pool, retries = 20, delayMs = 1000): Promise<void> {
+  for (let i = 0; i < retries; i++) {
+    try {
+      await pool.query('SELECT 1');
+      return;
+    } catch {
+      await new Promise((r) => setTimeout(r, delayMs));
+    }
+  }
+  throw new Error('PostgreSQL not ready after retries');
+}
+
 describe('Database Integration', () => {
   let container: StartedTestContainer;
   let pool: Pool;
@@ -27,7 +39,10 @@ describe('Database Integration', () => {
       user: 'test_user',
       password: 'test_password',
       database: 'test_db',
+      connectionTimeoutMillis: 10_000,
     });
+
+    await waitForPool(pool);
 
     for (const migration of ['1_initial_schema.sql', '2_remove_hotline_catalogue.sql']) {
       const sql = readFileSync(join(__dirname, '../../../migrations', migration), 'utf8');

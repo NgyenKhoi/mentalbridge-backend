@@ -5,45 +5,71 @@ const contractPath = fileURLToPath(
   new URL('../../contracts/openapi/content-notification-service.yaml', import.meta.url),
 );
 const contract = await SwaggerParser.validate(contractPath);
-const expectedImplemented = new Set(['GET /health/live', 'GET /health/ready']);
+
+const expectedImplemented = new Set([
+  'GET /health/live',
+  'GET /health/ready',
+  'GET /api/v1/resources',
+]);
+
 const implementedResponses = new Map([
   ['GET /health/live', new Set(['200'])],
   ['GET /health/ready', new Set(['200', '503'])],
+  ['GET /api/v1/resources', new Set(['200', '400'])],
 ]);
+
+const implementedMustBePublic = new Set(['GET /health/live', 'GET /health/ready']);
+
 const actualImplemented = new Set();
 const actualPlanned = new Set();
 const methods = ['get', 'post', 'put', 'patch', 'delete'];
 
 for (const [path, pathItem] of Object.entries(contract.paths ?? {})) {
-  const status = pathItem['x-mentalbridge-status'];
-  if (status !== 'implemented' && status !== 'planned') {
-    throw new Error(`${path} must declare x-mentalbridge-status`);
+  const pathStatus = pathItem['x-mentalbridge-status'];
+  if (!['implemented', 'planned', 'partial'].includes(pathStatus)) {
+    throw new Error(
+      `${path} must declare x-mentalbridge-status as implemented, planned, or partial`,
+    );
   }
 
   for (const method of methods) {
-    if (pathItem[method]) {
-      const operation = `${method.toUpperCase()} ${path}`;
-      (status === 'implemented' ? actualImplemented : actualPlanned).add(operation);
-      if (status === 'implemented') {
-        if (
-          !setsEqual(
-            new Set(Object.keys(pathItem[method].responses ?? {})),
-            implementedResponses.get(operation),
-          )
-        ) {
-          throw new Error(`${operation} response statuses differ from the implemented boundary`);
-        }
-        if (pathItem[method].security) {
-          throw new Error(`${operation} must remain public`);
-        }
+    if (!pathItem[method]) continue;
+
+    const operation = `${method.toUpperCase()} ${path}`;
+    const operationStatus = pathItem[method]['x-mentalbridge-operation-status'];
+    const effectiveStatus = operationStatus ?? pathStatus;
+
+    if (effectiveStatus === 'partial') {
+      throw new Error(
+        `${operation} resolved to partial status — set x-mentalbridge-operation-status`,
+      );
+    }
+
+    (effectiveStatus === 'implemented' ? actualImplemented : actualPlanned).add(operation);
+
+    if (effectiveStatus === 'implemented') {
+      const expectedCodes = implementedResponses.get(operation);
+      if (
+        expectedCodes &&
+        !setsEqual(new Set(Object.keys(pathItem[method].responses ?? {})), expectedCodes)
+      ) {
+        throw new Error(`${operation} response statuses differ from the implemented boundary`);
+      }
+      if (implementedMustBePublic.has(operation) && pathItem[method].security) {
+        throw new Error(`${operation} must remain public`);
       }
     }
   }
 }
 
 if (!setsEqual(actualImplemented, expectedImplemented)) {
-  throw new Error('Content contract availability differs from implemented controllers');
+  const missing = [...expectedImplemented].filter((op) => !actualImplemented.has(op));
+  const extra = [...actualImplemented].filter((op) => !expectedImplemented.has(op));
+  throw new Error(
+    `Content contract availability differs from implemented controllers. Missing: [${missing.join(', ')}]. Extra: [${extra.join(', ')}]`,
+  );
 }
+
 if (actualPlanned.size === 0) {
   throw new Error('Forward-looking Content operations must remain explicitly planned');
 }
@@ -51,5 +77,6 @@ if (actualPlanned.size === 0) {
 console.log('Validated OpenAPI contract: ../contracts/openapi/content-notification-service.yaml');
 
 function setsEqual(left, right) {
+  if (!right) return true;
   return left.size === right.size && [...left].every((value) => right.has(value));
 }

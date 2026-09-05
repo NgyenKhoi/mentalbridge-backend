@@ -65,8 +65,9 @@ paths:
   /api/v1/resources:
     x-mentalbridge-status: planned
     get:
+      x-mentalbridge-operation-status: implemented
       tags: [Resources]
-      summary: List published self-help resources
+      summary: List active reviewed published self-help resources
       operationId: listResources
       parameters:
         - name: locale
@@ -92,26 +93,44 @@ paths:
             format: uuid
       responses:
         '200':
-          description: List of resources
+          description: >
+            Published reviewed resources. Returns empty array when none match.
+            Returns fallback: unavailable with neutral message when service is unreachable.
+            No hotline number or emergency dispatch claim is included.
           content:
             application/json:
               schema:
                 $ref: '#/components/schemas/ResourceListResponse'
-              example:
-                data:
-                  - id: 123e4567-e89b-12d3-a456-426614174000
-                    category: BREATHING
-                    locale: vi-VN
-                    title: Kỹ thuật thở 4-7-8
-                    summary: Kỹ thuật thở giúp giảm căng thẳng
-                    externalUrl: null
-                    status: PUBLISHED
-                    reviewedAt: '2024-01-15T10:00:00Z'
-                    createdAt: '2024-01-15T09:00:00Z'
-                    updatedAt: '2024-01-15T10:00:00Z'
-                count: 1
+              examples:
+                published:
+                  value:
+                    data:
+                      - id: 123e4567-e89b-12d3-a456-426614174000
+                        category: BREATHING
+                        locale: vi-VN
+                        title: Kỹ thuật thở 4-7-8
+                        summary: Kỹ thuật thở giúp giảm căng thẳng
+                        externalUrl: null
+                        status: PUBLISHED
+                        reviewedAt: '2024-01-15T10:00:00Z'
+                        createdAt: '2024-01-15T09:00:00Z'
+                        updatedAt: '2024-01-15T10:00:00Z'
+                    count: 1
+                empty:
+                  value:
+                    data: []
+                    count: 0
+                unavailable:
+                  value:
+                    data: []
+                    count: 0
+                    fallback: unavailable
+                    message: Tài nguyên hỗ trợ tạm thời không khả dụng. Vui lòng thử lại sau.
+        '400':
+          $ref: '#/components/responses/RequestRejected'
 
     post:
+      x-mentalbridge-operation-status: planned
       tags: [Resources]
       summary: Create a new resource (Admin)
       operationId: createResource
@@ -313,6 +332,18 @@ components:
                 message: Title is required
               - field: category
                 message: Invalid category
+    RequestRejected:
+      description: Invalid query parameter
+      content:
+        application/problem+json:
+          schema:
+            $ref: '#/components/schemas/ProblemDetails'
+          example:
+            type: https://mentalbridge.io/errors/REQUEST_REJECTED
+            title: Request rejected
+            status: 400
+            code: REQUEST_REJECTED
+            correlationId: 123e4567-e89b-12d3-a456-426614174000
 
   schemas:
     LiveResponse:
@@ -433,6 +464,19 @@ components:
             $ref: '#/components/schemas/ResourceSummary'
         count:
           type: integer
+        nextCursor:
+          type: string
+          format: uuid
+          description: Cursor for the next page; absent when no more results.
+        fallback:
+          type: string
+          enum: [unavailable]
+          description: >
+            Present only when Content/Notification is unavailable.
+            No hotline number or emergency dispatch claim is included.
+        message:
+          type: string
+          description: Neutral fallback message when fallback is unavailable.
 
     CreateResourceRequest:
       type: object
@@ -455,6 +499,7 @@ components:
           type: string
           format: uri
           nullable: true
+
     UpdateResourceRequest:
       type: object
       properties:

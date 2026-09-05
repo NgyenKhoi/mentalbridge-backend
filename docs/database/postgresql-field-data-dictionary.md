@@ -877,12 +877,14 @@ Reviewed self-help content or external resource managed by Content/Notification 
 | `summary` | Reviewed short description used in listings. |
 | `content_body` | Optional reviewed first-party content body; one body or external URL is required. |
 | `external_url` | Optional reviewed external destination; one body or external URL is required. |
-| `status` | Publication lifecycle controlling user visibility. |
-| `reviewed_by` | Administrator account that approved the content; null before review. |
-| `reviewed_at` | UTC instant of latest approval/review; null before review. |
+| `status` | Publication lifecycle controlling user visibility: `DRAFT`, `PUBLISHED`, or `ARCHIVED`. |
+| `reviewed_by` | Administrator account UUID that approved the content for publication; null before review. |
+| `reviewed_at` | UTC instant of the latest administrator approval; null before review. Only rows with both fields set are served to users. |
+| `effective_at` | Optional UTC instant before which the resource is not yet active; null means immediately available after review. Used for scheduled content releases. |
+| `expires_at` | Optional UTC instant after which the resource is no longer served; null means no expiry. Must be later than `effective_at` when both are set. |
 | `created_at` | Immutable UTC content creation instant. |
 | `updated_at` | UTC instant of the latest content or publication change. |
-| `version` | Optimistic-lock counter preventing lost content edits. |
+| `version` | Optimistic-lock counter preventing lost concurrent content edits. |
 
 ### `content.notification_preference`
 
