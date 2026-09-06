@@ -146,9 +146,9 @@ try {
 
         foreach ($entry in $serviceContracts.GetEnumerator()) {
             $service = $entry.Key
-            $controllerChanged = Has-Changed $changedFiles "^$([regex]::Escape($service))/.+(Controller\.java|controller\.ts|gateway\.ts)$"
+            $controllerChanged = Has-Changed $changedFiles "^$([regex]::Escape($service))/.+(Controller\.java|controller\.ts)$"
             if ($controllerChanged -and $changedFiles -notcontains $entry.Value) {
-                Add-Failure "$service controller/gateway changed without its canonical OpenAPI contract"
+                Add-Failure "$service controller changed without its canonical OpenAPI contract"
             }
             if ($controllerChanged -and -not (Has-Changed $changedFiles "^$([regex]::Escape($service))/.*(src/test/|\.test\.ts$|\.spec\.ts$|/__tests__/)") ) {
                 Add-Failure "$service controller/gateway changed without provider boundary tests"

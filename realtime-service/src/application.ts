@@ -2,6 +2,7 @@ import 'reflect-metadata';
 
 import type { INestApplication } from '@nestjs/common';
 import { NestFactory } from '@nestjs/core';
+import helmet from 'helmet';
 
 import { AppModule, type ApplicationDependencies } from './app.module.js';
 import { loadConfiguration, type ServiceConfiguration } from './configuration/configuration.js';
@@ -15,6 +16,7 @@ export const createApplication = async (
   const app = await NestFactory.create(AppModule.register(configuration, dependencies), {
     logger: false,
   });
+  app.use(helmet());
   app.enableCors({
     origin: configuration.ALLOWED_ORIGINS.length ? configuration.ALLOWED_ORIGINS : false,
     credentials: true,

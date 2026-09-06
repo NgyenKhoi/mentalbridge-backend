@@ -47,6 +47,21 @@ describe('Realtime HTTP boundary', () => {
     }
   });
 
+  it('applies the HTTP security header baseline', async () => {
+    const app = await createApplication(configuration, { mongo, redis });
+    await app.init();
+    try {
+      await request(app.getHttpServer() as Server)
+        .get('/health/live')
+        .expect('x-content-type-options', 'nosniff')
+        .expect('x-frame-options', 'SAMEORIGIN')
+        .expect('content-security-policy', /default-src/)
+        .expect(200);
+    } finally {
+      await app.close();
+    }
+  });
+
   it('reports connected dependencies and correlation ID', async () => {
     const app = await createApplication(configuration, { mongo, redis });
     await app.init();

@@ -19,6 +19,7 @@
       "type": "string",
       "enum": [
         "AUTHENTICATION_REQUIRED",
+        "AUTHENTICATION_EXPIRED",
         "INVALID_ENVELOPE",
         "UNSUPPORTED_SCHEMA_VERSION",
         "PAYLOAD_TOO_LARGE",

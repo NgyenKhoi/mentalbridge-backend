@@ -12,11 +12,10 @@ describe('Identity JWT verification', () => {
     const verifier = new IdentityJwtVerifier(configuration);
     await verifier.onModuleInit();
     const principal = await verifier.verify(await issueToken(keys.privateKey, configuration));
-    expect(principal).toEqual({
-      accountId: '11111111-1111-4111-8111-111111111111',
-      role: 'USER',
-      tokenId: 'test-token-id',
-    });
+    expect(principal.accountId).toBe('11111111-1111-4111-8111-111111111111');
+    expect(principal.role).toBe('USER');
+    expect(principal.tokenId).toBe('test-token-id');
+    expect(principal.expiresAtEpochSeconds).toBeGreaterThan(Math.floor(Date.now() / 1000));
   });
 
   it('rejects a token for another audience and an expired token', async () => {

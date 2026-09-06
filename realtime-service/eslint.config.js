@@ -16,4 +16,8 @@ export default tseslint.config(
       },
     },
   },
+  {
+    files: ['src/**/*.module.ts'],
+    rules: { '@typescript-eslint/no-extraneous-class': 'off' },
+  },
 );

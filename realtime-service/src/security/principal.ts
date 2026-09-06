@@ -4,6 +4,7 @@ export interface AuthenticatedPrincipal {
   readonly accountId: string;
   readonly role: ActorRole;
   readonly tokenId: string;
+  readonly expiresAtEpochSeconds: number;
 }
 
 export interface AuthenticatedRequest {

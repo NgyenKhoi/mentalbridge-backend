@@ -29,14 +29,11 @@ export class MessageEncryptionService {
   }
 
   decrypt(body: EncryptedMessageBody): string {
-    if (body.keyVersion !== this.configuration.MESSAGE_ENCRYPTION_KEY_VERSION) {
+    const key = this.configuration.MESSAGE_DECRYPTION_KEYS[body.keyVersion];
+    if (!key) {
       throw new Error('Message encryption key version is unavailable');
     }
-    const decipher = createDecipheriv(
-      'aes-256-gcm',
-      this.configuration.MESSAGE_ENCRYPTION_KEY,
-      Buffer.from(body.bodyIv, 'base64'),
-    );
+    const decipher = createDecipheriv('aes-256-gcm', key, Buffer.from(body.bodyIv, 'base64'));
     decipher.setAuthTag(Buffer.from(body.bodyTag, 'base64'));
     return Buffer.concat([
       decipher.update(Buffer.from(body.bodyCiphertext, 'base64')),
@@ -44,8 +41,15 @@ export class MessageEncryptionService {
     ]).toString('utf8');
   }
 
-  fingerprint(conversationId: string, type: string, content: string): string {
-    return createHmac('sha256', this.configuration.MESSAGE_ENCRYPTION_KEY)
+  fingerprint(
+    conversationId: string,
+    type: string,
+    content: string,
+    keyVersion = this.configuration.MESSAGE_ENCRYPTION_KEY_VERSION,
+  ): string {
+    const key = this.configuration.MESSAGE_DECRYPTION_KEYS[keyVersion];
+    if (!key) throw new Error('Message encryption key version is unavailable');
+    return createHmac('sha256', key)
       .update(JSON.stringify({ conversationId, type, content }))
       .digest('base64url');
   }

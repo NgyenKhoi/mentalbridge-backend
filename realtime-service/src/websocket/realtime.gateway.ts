@@ -12,7 +12,6 @@ import type { OnGatewayConnection, OnGatewayDisconnect, OnGatewayInit } from '@n
 import type { Server, Socket } from 'socket.io';
 import { z } from 'zod';
 
-import type { ConversationEligibility } from '../conversations/conversation-eligibility.js';
 import type { ServiceConfiguration } from '../configuration/configuration.js';
 import { ApplicationException } from '../http/application.exception.js';
 import { MessageService } from '../messages/message.service.js';
@@ -21,13 +20,14 @@ import type { RealtimeMetrics } from '../observability/metrics.js';
 import { PresenceService } from '../presence/presence.service.js';
 import { IdentityJwtVerifier } from '../security/identity-jwt-verifier.js';
 import type { AuthenticatedPrincipal } from '../security/principal.js';
-import { CONFIGURATION_TOKEN, ELIGIBILITY_TOKEN, METRICS_TOKEN } from '../shared/tokens.js';
+import { CONFIGURATION_TOKEN, METRICS_TOKEN } from '../shared/tokens.js';
 import { commandSchema, type RealtimeCommand } from './command.schema.js';
 
 interface SocketData {
   principal?: AuthenticatedPrincipal;
   correlationId?: string;
   countedActive?: boolean;
+  expiryTimer?: NodeJS.Timeout;
 }
 
 interface ServerToClientEvents {
@@ -77,7 +77,6 @@ export class RealtimeGateway implements OnGatewayInit, OnGatewayConnection, OnGa
     private readonly verifier: IdentityJwtVerifier,
     private readonly presence: PresenceService,
     private readonly messages: MessageService,
-    @Inject(ELIGIBILITY_TOKEN) private readonly eligibility: ConversationEligibility,
     @Inject(CONFIGURATION_TOKEN) private readonly configuration: ServiceConfiguration,
     @Inject(METRICS_TOKEN) private readonly metrics: RealtimeMetrics,
   ) {}
@@ -104,11 +103,16 @@ export class RealtimeGateway implements OnGatewayInit, OnGatewayConnection, OnGa
 
   async handleConnection(socket: RealtimeSocket): Promise<void> {
     const principal = socket.data.principal;
-    if (!principal) {
+    if (!principal || this.isExpired(principal)) {
       socket.disconnect(true);
       return;
     }
     const result = await this.presence.register(principal.accountId, socket.id);
+    if (this.isExpired(principal)) {
+      await this.presence.remove(principal.accountId, socket.id);
+      this.expire(socket);
+      return;
+    }
     if (result === 'limit_exceeded') {
       socket.emit(
         'realtime.error',
@@ -117,6 +121,7 @@ export class RealtimeGateway implements OnGatewayInit, OnGatewayConnection, OnGa
       socket.disconnect(true);
       return;
     }
+    this.scheduleExpiry(socket, principal);
     this.metrics.activeSockets.inc();
     socket.data.countedActive = true;
     this.metrics.socketConnections.inc({
@@ -138,6 +143,7 @@ export class RealtimeGateway implements OnGatewayInit, OnGatewayConnection, OnGa
 
   async handleDisconnect(socket: RealtimeSocket): Promise<void> {
     this.rateWindows.delete(socket.id);
+    if (socket.data.expiryTimer) clearTimeout(socket.data.expiryTimer);
     const principal = socket.data.principal;
     if (!principal) return;
     if (socket.data.countedActive) this.metrics.activeSockets.dec();
@@ -150,6 +156,13 @@ export class RealtimeGateway implements OnGatewayInit, OnGatewayConnection, OnGa
     @MessageBody() input: unknown,
   ): Promise<SocketAcknowledgement> {
     const correlationId = normalizeCorrelationId(this.correlationIdFrom(input));
+    const principal = socket.data.principal;
+    if (!principal || this.isExpired(principal)) {
+      const error = this.error('AUTHENTICATION_EXPIRED', correlationId, false);
+      socket.emit('realtime.error', error);
+      socket.disconnect(true);
+      return error;
+    }
     if (this.payloadBytes(input) > this.configuration.MAX_PAYLOAD_BYTES) {
       return this.reject('PAYLOAD_TOO_LARGE', correlationId, false);
     }
@@ -163,9 +176,6 @@ export class RealtimeGateway implements OnGatewayInit, OnGatewayConnection, OnGa
     if (!parsed.success) {
       return this.reject('INVALID_ENVELOPE', correlationId, false);
     }
-    const principal = socket.data.principal;
-    if (!principal) return this.reject('AUTHENTICATION_REQUIRED', correlationId, false);
-
     try {
       const acknowledgement = await this.execute(socket, principal, parsed.data);
       this.metrics.commands.inc({
@@ -202,11 +212,7 @@ export class RealtimeGateway implements OnGatewayInit, OnGatewayConnection, OnGa
       );
     }
     if (command.commandType === 'conversation.subscribe') {
-      await this.eligibility.assertEligible(
-        principal.accountId,
-        command.payload.conversationId,
-        'subscribe',
-      );
+      await this.messages.subscribe(principal.accountId, command.payload.conversationId);
       await socket.join(this.room(command.payload.conversationId));
       return this.accept(command, false, undefined, 'not_applicable');
     }
@@ -214,16 +220,18 @@ export class RealtimeGateway implements OnGatewayInit, OnGatewayConnection, OnGa
       senderId: principal.accountId,
       ...command.payload,
     });
-    const event = {
-      schemaVersion: 1,
-      eventId: randomUUID(),
-      eventType: 'message.created',
-      correlationId: command.correlationId,
-      occurredAt: new Date().toISOString(),
-      payload: result.message,
-    };
-    this.server.to(this.room(command.payload.conversationId)).emit('realtime.event', event);
-    return this.accept(command, result.duplicate, result.message.messageId, 'delivered');
+    if (!result.duplicate) {
+      const event = {
+        schemaVersion: 1,
+        eventId: randomUUID(),
+        eventType: 'message.created',
+        correlationId: command.correlationId,
+        occurredAt: new Date().toISOString(),
+        payload: result.message,
+      };
+      this.server.to(this.room(command.payload.conversationId)).emit('realtime.event', event);
+    }
+    return this.accept(command, result.duplicate, result.message.messageId, 'not_applicable');
   }
 
   private accept(
@@ -267,6 +275,7 @@ export class RealtimeGateway implements OnGatewayInit, OnGatewayConnection, OnGa
   private safeMessage(code: string): string {
     const messages: Readonly<Record<string, string>> = {
       AUTHENTICATION_REQUIRED: 'Authentication is required',
+      AUTHENTICATION_EXPIRED: 'Authentication has expired',
       INVALID_ENVELOPE: 'Command envelope is invalid',
       UNSUPPORTED_SCHEMA_VERSION: 'Schema version is not supported',
       PAYLOAD_TOO_LARGE: 'Command payload is too large',
@@ -313,5 +322,39 @@ export class RealtimeGateway implements OnGatewayInit, OnGatewayConnection, OnGa
 
   private room(conversationId: string): string {
     return `conversation:${conversationId}`;
+  }
+
+  private isExpired(principal: AuthenticatedPrincipal): boolean {
+    return Date.now() >= principal.expiresAtEpochSeconds * 1000;
+  }
+
+  private scheduleExpiry(socket: RealtimeSocket, principal: AuthenticatedPrincipal): void {
+    if (socket.data.expiryTimer) clearTimeout(socket.data.expiryTimer);
+    const remainingMilliseconds = principal.expiresAtEpochSeconds * 1000 - Date.now();
+    if (remainingMilliseconds <= 0) {
+      this.expire(socket);
+      return;
+    }
+    const maximumDelay = 2_147_483_647;
+    socket.data.expiryTimer = setTimeout(
+      () => {
+        if (this.isExpired(principal)) this.expire(socket);
+        else this.scheduleExpiry(socket, principal);
+      },
+      Math.min(remainingMilliseconds, maximumDelay),
+    );
+    socket.data.expiryTimer.unref();
+  }
+
+  private expire(socket: RealtimeSocket): void {
+    socket.emit(
+      'realtime.error',
+      this.error(
+        'AUTHENTICATION_EXPIRED',
+        socket.data.correlationId ?? normalizeCorrelationId(undefined),
+        false,
+      ),
+    );
+    socket.disconnect(true);
   }
 }

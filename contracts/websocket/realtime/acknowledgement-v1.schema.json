@@ -20,7 +20,8 @@
     "messageId": { "type": "string", "format": "uuid" },
     "liveDelivery": {
       "type": "string",
-      "enum": ["delivered", "degraded", "not_applicable"]
+      "enum": ["delivered", "degraded", "not_applicable"],
+      "description": "not_applicable until cross-instance fan-out or receipt evidence can prove live delivery"
     }
   }
 }

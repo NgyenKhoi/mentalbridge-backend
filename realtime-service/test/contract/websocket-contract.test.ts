@@ -41,6 +41,49 @@ describe('WebSocket v1 contracts', () => {
     ).toBe(true);
   });
 
+  it('rejects missing, incompatible and extended handshake fields', async () => {
+    const validateHandshake = await validator('handshake-v1.schema.json');
+    expect(validateHandshake({ schemaVersion: 1 })).toBe(false);
+    expect(validateHandshake({ accessToken: 'synthetic-test-token' })).toBe(false);
+    expect(validateHandshake({ schemaVersion: 2, accessToken: 'synthetic-test-token' })).toBe(
+      false,
+    );
+    expect(
+      validateHandshake({
+        schemaVersion: 1,
+        accessToken: 'synthetic-test-token',
+        actorId: commandId,
+      }),
+    ).toBe(false);
+  });
+
+  it('rejects missing IDs, unknown commands and forged actors', async () => {
+    const validateCommand = await validator('command-envelope-v1.schema.json');
+    const validMessage = {
+      schemaVersion: 1,
+      commandId,
+      commandType: 'message.send',
+      correlationId,
+      sentAt: '2026-09-04T12:00:00Z',
+      payload: {
+        conversationId,
+        clientMessageId: commandId,
+        type: 'TEXT',
+        content: 'Synthetic contract message',
+      },
+    };
+    expect(validateCommand({ ...validMessage, schemaVersion: undefined })).toBe(false);
+    expect(validateCommand({ ...validMessage, commandId: undefined })).toBe(false);
+    expect(validateCommand({ ...validMessage, correlationId: undefined })).toBe(false);
+    expect(validateCommand({ ...validMessage, commandType: 'message.unknown' })).toBe(false);
+    expect(
+      validateCommand({
+        ...validMessage,
+        payload: { ...validMessage.payload, senderId: commandId },
+      }),
+    ).toBe(false);
+  });
+
   it('validates acknowledgement and safe error examples', async () => {
     const validateAcknowledgement = await validator('acknowledgement-v1.schema.json');
     const validateError = await validator('error-v1.schema.json');
@@ -52,7 +95,7 @@ describe('WebSocket v1 contracts', () => {
         status: 'accepted',
         acknowledgedAt: '2026-09-04T12:00:01Z',
         messageId: conversationId,
-        liveDelivery: 'delivered',
+        liveDelivery: 'not_applicable',
       }),
     ).toBe(true);
     expect(
@@ -65,6 +108,28 @@ describe('WebSocket v1 contracts', () => {
         retryable: false,
       }),
     ).toBe(true);
+  });
+
+  it('rejects incomplete acknowledgements and unknown error codes', async () => {
+    const validateAcknowledgement = await validator('acknowledgement-v1.schema.json');
+    const validateError = await validator('error-v1.schema.json');
+    expect(
+      validateAcknowledgement({
+        schemaVersion: 1,
+        commandId,
+        correlationId,
+        status: 'accepted',
+      }),
+    ).toBe(false);
+    expect(
+      validateError({
+        schemaVersion: 1,
+        correlationId,
+        code: 'UNKNOWN_ERROR',
+        message: 'Unknown',
+        retryable: false,
+      }),
+    ).toBe(false);
   });
 
   it('validates strict connection and message server events', async () => {
@@ -98,5 +163,29 @@ describe('WebSocket v1 contracts', () => {
         },
       }),
     ).toBe(true);
+  });
+
+  it('rejects unknown and malformed server events', async () => {
+    const validateEvent = await validator('server-event-v1.schema.json');
+    expect(
+      validateEvent({
+        schemaVersion: 1,
+        eventId: commandId,
+        eventType: 'message.unknown',
+        correlationId,
+        occurredAt: '2026-09-04T12:00:00Z',
+        payload: {},
+      }),
+    ).toBe(false);
+    expect(
+      validateEvent({
+        schemaVersion: 1,
+        eventId: commandId,
+        eventType: 'connection.ready',
+        correlationId,
+        occurredAt: '2026-09-04T12:00:00Z',
+        payload: { accountId: commandId, role: 'USER' },
+      }),
+    ).toBe(false);
   });
 });

@@ -101,6 +101,10 @@ jobs:
       - name: Build
         working-directory: ${{ matrix.service }}
         run: npm run build
+      - name: Build Realtime deployment image
+        if: matrix.service == 'realtime-service'
+        working-directory: ${{ matrix.service }}
+        run: docker build --tag mentalbridge/realtime-service:${{ github.sha }} .
 
   quality-gate:
     name: quality-gate

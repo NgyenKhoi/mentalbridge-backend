@@ -6,8 +6,11 @@ const migration = require('../migrations/001_realtime_message_foundation.cjs');
 
 for (const collection of ['conversations', 'messages']) {
   assert.ok(migration.validators[collection]);
-  assert.equal(migration.validators[collection].$jsonSchema.additionalProperties, false);
+  const validator = migration.validators[collection];
+  const jsonSchema = validator.$jsonSchema ?? validator.$and?.[0]?.$jsonSchema;
+  assert.equal(jsonSchema?.additionalProperties, false);
 }
+assert.ok(migration.validators.conversations.$and?.[1]?.$expr);
 const messageProperties = migration.validators.messages.$jsonSchema.properties;
 assert.ok(messageProperties.bodyCiphertext);
 assert.ok(messageProperties.commandFingerprint);

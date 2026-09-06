@@ -33,6 +33,10 @@ export class MessageService {
     @Inject(METRICS_TOKEN) private readonly metrics: RealtimeMetrics,
   ) {}
 
+  async subscribe(accountId: string, conversationId: string): Promise<void> {
+    await this.eligibility.assertEligible(accountId, conversationId, 'subscribe');
+  }
+
   async send(input: SendMessageInput): Promise<{ message: MessageView; duplicate: boolean }> {
     await this.eligibility.assertEligible(input.senderId, input.conversationId, 'send');
     const fingerprint = this.encryption.fingerprint(
@@ -59,7 +63,15 @@ export class MessageService {
     const stopTimer = this.metrics.messagePersistSeconds.startTimer();
     try {
       const result = await this.repository.insert(stored);
-      if (result.duplicate && result.message.commandFingerprint !== fingerprint) {
+      const expectedFingerprint = result.duplicate
+        ? this.encryption.fingerprint(
+            input.conversationId,
+            input.type,
+            input.content,
+            result.message.keyVersion,
+          )
+        : fingerprint;
+      if (result.duplicate && result.message.commandFingerprint !== expectedFingerprint) {
         throw new ApplicationException(
           HttpStatus.CONFLICT,
           'IDEMPOTENCY_CONFLICT',

@@ -5,48 +5,99 @@ const uuid = {
 };
 
 const conversationValidator = {
-  $jsonSchema: {
-    bsonType: 'object',
-    additionalProperties: false,
-    required: [
-      '_id',
-      'conversationId',
-      'appointmentId',
-      'participants',
-      'status',
-      'lastMessageAt',
-      'closedAt',
-      'schemaVersion',
-      'createdAt',
-      'updatedAt',
-    ],
-    properties: {
-      _id: { bsonType: 'objectId' },
-      conversationId: uuid,
-      appointmentId: uuid,
-      participants: {
-        bsonType: 'array',
-        minItems: 2,
-        maxItems: 2,
-        items: {
-          bsonType: 'object',
-          additionalProperties: false,
-          required: ['accountId', 'role', 'joinedAt'],
-          properties: {
-            accountId: uuid,
-            role: { enum: ['USER', 'SPECIALIST'] },
-            joinedAt: { bsonType: 'date' },
+  $and: [
+    {
+      $jsonSchema: {
+        bsonType: 'object',
+        additionalProperties: false,
+        required: [
+          '_id',
+          'conversationId',
+          'appointmentId',
+          'participants',
+          'status',
+          'lastMessageAt',
+          'closedAt',
+          'schemaVersion',
+          'createdAt',
+          'updatedAt',
+        ],
+        properties: {
+          _id: { bsonType: 'objectId' },
+          conversationId: uuid,
+          appointmentId: uuid,
+          participants: {
+            bsonType: 'array',
+            minItems: 2,
+            maxItems: 2,
+            items: {
+              bsonType: 'object',
+              additionalProperties: false,
+              required: ['accountId', 'role', 'joinedAt'],
+              properties: {
+                accountId: uuid,
+                role: { enum: ['USER', 'SPECIALIST'] },
+                joinedAt: { bsonType: 'date' },
+              },
+            },
           },
+          status: { enum: ['ACTIVE', 'CLOSED'] },
+          lastMessageAt: { bsonType: ['date', 'null'] },
+          closedAt: { bsonType: ['date', 'null'] },
+          schemaVersion: { enum: [1] },
+          createdAt: { bsonType: 'date' },
+          updatedAt: { bsonType: 'date' },
         },
       },
-      status: { enum: ['ACTIVE', 'CLOSED'] },
-      lastMessageAt: { bsonType: ['date', 'null'] },
-      closedAt: { bsonType: ['date', 'null'] },
-      schemaVersion: { enum: [1] },
-      createdAt: { bsonType: 'date' },
-      updatedAt: { bsonType: 'date' },
     },
-  },
+    {
+      $expr: {
+        $and: [
+          { $eq: [{ $size: { $setUnion: ['$participants.accountId', []] } }, 2] },
+          { $setEquals: ['$participants.role', ['USER', 'SPECIALIST']] },
+          { $lte: ['$createdAt', '$updatedAt'] },
+          {
+            $allElementsTrue: {
+              $map: {
+                input: '$participants',
+                as: 'participant',
+                in: {
+                  $and: [
+                    { $gte: ['$$participant.joinedAt', '$createdAt'] },
+                    { $lte: ['$$participant.joinedAt', '$updatedAt'] },
+                  ],
+                },
+              },
+            },
+          },
+          {
+            $or: [
+              { $eq: ['$lastMessageAt', null] },
+              {
+                $and: [
+                  { $gte: ['$lastMessageAt', '$createdAt'] },
+                  { $lte: ['$lastMessageAt', '$updatedAt'] },
+                ],
+              },
+            ],
+          },
+          {
+            $or: [
+              { $and: [{ $eq: ['$status', 'ACTIVE'] }, { $eq: ['$closedAt', null] }] },
+              {
+                $and: [
+                  { $eq: ['$status', 'CLOSED'] },
+                  { $ne: ['$closedAt', null] },
+                  { $gte: ['$closedAt', '$createdAt'] },
+                  { $lte: ['$closedAt', '$updatedAt'] },
+                ],
+              },
+            ],
+          },
+        ],
+      },
+    },
+  ],
 };
 
 const messageValidator = {

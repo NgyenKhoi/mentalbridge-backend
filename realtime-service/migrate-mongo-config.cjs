@@ -1,8 +1,10 @@
-if (process.env.NODE_ENV === 'development') {
+const environment = process.env.NODE_ENV ?? 'development';
+
+if (environment === 'development') {
   require('dotenv').config({ override: false, quiet: true });
 }
 
-const production = process.env.NODE_ENV === 'production';
+const production = environment === 'production';
 const url =
   process.env.REALTIME_MONGODB_URI ?? (production ? undefined : 'mongodb://localhost:27017');
 const databaseName =

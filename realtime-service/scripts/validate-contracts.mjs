@@ -10,26 +10,29 @@ const openApiPath = fileURLToPath(
 const openApi = await SwaggerParser.validate(openApiPath);
 if (openApi.openapi !== '3.1.0') throw new Error('Realtime OpenAPI must use version 3.1.0');
 
-const implemented = new Set([
-  'GET /health/live',
-  'GET /health/ready',
-  'GET /metrics',
-  'GET /api/v1/conversations/{conversationId}/messages',
+const expectedAvailability = new Map([
+  ['GET /health/live', 'implemented'],
+  ['GET /health/ready', 'implemented'],
+  ['GET /metrics', 'implemented'],
+  ['GET /api/v1/conversations/{conversationId}/messages', 'planned'],
 ]);
-const actual = new Set();
+const actualAvailability = new Map();
 for (const [path, pathItem] of Object.entries(openApi.paths ?? {})) {
-  if (pathItem['x-mentalbridge-status'] !== 'implemented') {
-    throw new Error(`${path} must declare its implemented availability`);
+  const availability = pathItem['x-mentalbridge-status'];
+  if (availability !== 'implemented' && availability !== 'planned') {
+    throw new Error(`${path} must declare implemented or planned availability`);
   }
   for (const method of ['get', 'post', 'put', 'patch', 'delete']) {
-    if (pathItem[method]) actual.add(`${method.toUpperCase()} ${path}`);
+    if (pathItem[method]) actualAvailability.set(`${method.toUpperCase()} ${path}`, availability);
   }
 }
 if (
-  implemented.size !== actual.size ||
-  [...implemented].some((operation) => !actual.has(operation))
+  expectedAvailability.size !== actualAvailability.size ||
+  [...expectedAvailability].some(
+    ([operation, availability]) => actualAvailability.get(operation) !== availability,
+  )
 ) {
-  throw new Error('Realtime OpenAPI operations differ from implemented controllers');
+  throw new Error('Realtime OpenAPI operation availability differs from the approved baseline');
 }
 
 const ajv = new Ajv2020({ strict: true, allErrors: true });

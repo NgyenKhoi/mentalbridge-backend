@@ -25,6 +25,7 @@ export const testConfiguration = (
   SHUTDOWN_TIMEOUT_MS: 10_000,
   MESSAGE_ENCRYPTION_KEY: encryptionKey,
   MESSAGE_ENCRYPTION_KEY_VERSION: 'test-v1',
+  MESSAGE_DECRYPTION_KEYS: { 'test-v1': encryptionKey },
   IDENTITY_JWT_ISSUER: 'https://identity.test.mentalbridge',
   IDENTITY_JWT_AUDIENCE: 'mentalbridge-api',
   IDENTITY_JWT_KEY_ID: 'test-key',

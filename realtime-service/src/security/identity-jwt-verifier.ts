@@ -8,6 +8,7 @@ import type { AuthenticatedPrincipal } from './principal.js';
 
 const subjectSchema = z.uuid();
 const rolesSchema = z.array(z.enum(['USER', 'SPECIALIST', 'ADMIN'])).length(1);
+const expirationSchema = z.number().int().positive();
 
 @Injectable()
 export class IdentityJwtVerifier implements OnModuleInit {
@@ -46,6 +47,7 @@ export class IdentityJwtVerifier implements OnModuleInit {
     if (!payload.jti) {
       throw new Error('Identity JWT token ID is invalid');
     }
-    return { accountId, role, tokenId: payload.jti };
+    const expiresAtEpochSeconds = expirationSchema.parse(payload.exp);
+    return { accountId, role, tokenId: payload.jti, expiresAtEpochSeconds };
   }
 }
