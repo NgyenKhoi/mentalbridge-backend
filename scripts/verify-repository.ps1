@@ -51,7 +51,13 @@ try {
         }
 
         $package = Get-Content -LiteralPath $packagePath -Raw | ConvertFrom-Json
-        if (-not (Has-Property $package.engines 'node') -or $package.engines.node -notmatch '>=\s*22') {
+        $minimumNodeMatch = if (Has-Property $package.engines 'node') {
+            [regex]::Match([string]$package.engines.node, '>=\s*(\d+)')
+        }
+        else {
+            $null
+        }
+        if ($null -eq $minimumNodeMatch -or -not $minimumNodeMatch.Success -or [int]$minimumNodeMatch.Groups[1].Value -lt 22) {
             Add-Failure "$service must support Node.js 22 or newer"
         }
 
@@ -102,6 +108,19 @@ try {
             if ($LASTEXITCODE -ne 0) {
                 throw "Unable to compare changes with $BaseSha"
             }
+            $untrackedFiles = @(& git ls-files --others --exclude-standard)
+            if ($LASTEXITCODE -ne 0) {
+                throw 'Unable to inspect untracked files'
+            }
+            $workingFiles = @(& git diff --name-only)
+            if ($LASTEXITCODE -ne 0) {
+                throw 'Unable to inspect unstaged files'
+            }
+            $stagedFiles = @(& git diff --cached --name-only)
+            if ($LASTEXITCODE -ne 0) {
+                throw 'Unable to inspect staged files'
+            }
+            $changedFiles = @($changedFiles + $untrackedFiles + $workingFiles + $stagedFiles | Sort-Object -Unique)
         }
         else {
             Add-Failure "Base commit $BaseSha is unavailable; fetch full history before verification"
@@ -113,14 +132,23 @@ try {
             'identity-service' = 'contracts/openapi/identity-service-v1.yaml'
             'care-service' = 'contracts/openapi/care-service-v1.yaml'
             'journal-ai-service' = 'contracts/openapi/journal-ai-service-v1.yaml'
+            'realtime-service' = 'contracts/openapi/realtime-service-v1.yaml'
             'content-notification-service' = 'contracts/openapi/content-notification-service.yaml'
+        }
+
+        $realtimeGatewayChanged = Has-Changed $changedFiles '^realtime-service/.+gateway\.ts$'
+        if ($realtimeGatewayChanged -and -not (Has-Changed $changedFiles '^contracts/websocket/realtime/.+\.schema\.json$')) {
+            Add-Failure 'realtime-service gateway changed without its canonical WebSocket schema'
+        }
+        if ($realtimeGatewayChanged -and -not (Has-Changed $changedFiles '^realtime-service/.*(test/|\.test\.ts$|\.spec\.ts$|/__tests__/)')) {
+            Add-Failure 'realtime-service gateway changed without WebSocket boundary tests'
         }
 
         foreach ($entry in $serviceContracts.GetEnumerator()) {
             $service = $entry.Key
-            $controllerChanged = Has-Changed $changedFiles "^$([regex]::Escape($service))/.+(Controller\.java|controller\.ts|gateway\.ts)$"
+            $controllerChanged = Has-Changed $changedFiles "^$([regex]::Escape($service))/.+(Controller\.java|controller\.ts)$"
             if ($controllerChanged -and $changedFiles -notcontains $entry.Value) {
-                Add-Failure "$service controller/gateway changed without its canonical OpenAPI contract"
+                Add-Failure "$service controller changed without its canonical OpenAPI contract"
             }
             if ($controllerChanged -and -not (Has-Changed $changedFiles "^$([regex]::Escape($service))/.*(src/test/|\.test\.ts$|\.spec\.ts$|/__tests__/)") ) {
                 Add-Failure "$service controller/gateway changed without provider boundary tests"
@@ -130,6 +158,14 @@ try {
         $migrationChanged = Has-Changed $changedFiles '^((identity|care|consultation)-service/src/main/resources/db/changelog/|content-notification-service/migrations/).+\.(sql|ya?ml|xml|js|cjs|mjs|ts)$'
         if ($migrationChanged -and $changedFiles -notcontains 'docs/database/postgresql-field-data-dictionary.md') {
             Add-Failure 'PostgreSQL migration changed without the field data dictionary'
+        }
+
+        $realtimeMongoMigrationChanged = Has-Changed $changedFiles '^realtime-service/migrations/.+\.(js|cjs|mjs|ts)$'
+        if ($realtimeMongoMigrationChanged -and $changedFiles -notcontains 'docs/database/mongodb.md') {
+            Add-Failure 'Realtime MongoDB migration changed without MongoDB documentation'
+        }
+        if ($realtimeMongoMigrationChanged -and -not (Has-Changed $changedFiles '^realtime-service/test/integration/')) {
+            Add-Failure 'Realtime MongoDB migration changed without a real integration test'
         }
 
         foreach ($service in @('identity-service', 'care-service', 'consultation-service', 'journal-ai-service', 'realtime-service', 'content-notification-service')) {

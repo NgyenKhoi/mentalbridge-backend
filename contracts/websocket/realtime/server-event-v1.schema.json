@@ -1,0 +1,109 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://mentalbridge.dev/contracts/websocket/realtime/server-event-v1.schema.json",
+  "title": "Realtime server event v1",
+  "oneOf": [
+    { "$ref": "#/$defs/connectionReady" },
+    { "$ref": "#/$defs/messageCreated" }
+  ],
+  "$defs": {
+    "base": {
+      "type": "object",
+      "required": [
+        "schemaVersion",
+        "eventId",
+        "eventType",
+        "correlationId",
+        "occurredAt",
+        "payload"
+      ],
+      "properties": {
+        "schemaVersion": { "const": 1 },
+        "eventId": { "type": "string", "format": "uuid" },
+        "eventType": {
+          "type": "string",
+          "enum": ["connection.ready", "message.created"]
+        },
+        "correlationId": { "type": "string", "minLength": 1, "maxLength": 128 },
+        "occurredAt": { "type": "string", "format": "date-time" },
+        "payload": { "type": "object" }
+      }
+    },
+    "connectionReady": {
+      "allOf": [
+        { "$ref": "#/$defs/base" },
+        {
+          "type": "object",
+          "additionalProperties": false,
+          "properties": {
+            "schemaVersion": true,
+            "eventId": true,
+            "eventType": { "const": "connection.ready" },
+            "correlationId": true,
+            "occurredAt": true,
+            "payload": {
+              "type": "object",
+              "additionalProperties": false,
+              "required": ["accountId", "role", "presence"],
+              "properties": {
+                "accountId": { "type": "string", "format": "uuid" },
+                "role": {
+                  "type": "string",
+                  "enum": ["USER", "SPECIALIST", "ADMIN"]
+                },
+                "presence": {
+                  "type": "string",
+                  "enum": ["connected", "degraded"]
+                }
+              }
+            }
+          }
+        }
+      ]
+    },
+    "messageCreated": {
+      "allOf": [
+        { "$ref": "#/$defs/base" },
+        {
+          "type": "object",
+          "additionalProperties": false,
+          "properties": {
+            "schemaVersion": true,
+            "eventId": true,
+            "eventType": { "const": "message.created" },
+            "correlationId": true,
+            "occurredAt": true,
+            "payload": {
+              "type": "object",
+              "additionalProperties": false,
+              "required": [
+                "messageId",
+                "conversationId",
+                "senderId",
+                "clientMessageId",
+                "type",
+                "content",
+                "sentAt",
+                "schemaVersion"
+              ],
+              "properties": {
+                "messageId": { "type": "string", "format": "uuid" },
+                "conversationId": { "type": "string", "format": "uuid" },
+                "senderId": { "type": "string", "format": "uuid" },
+                "clientMessageId": { "type": "string", "format": "uuid" },
+                "type": { "const": "TEXT" },
+                "content": {
+                  "type": "string",
+                  "minLength": 1,
+                  "maxLength": 4000
+                },
+                "sentAt": { "type": "string", "format": "date-time" },
+                "schemaVersion": { "const": 1 }
+              }
+            }
+          }
+        }
+      ]
+    }
+  }
+}

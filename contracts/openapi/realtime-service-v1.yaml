@@ -1,0 +1,218 @@
+openapi: 3.1.0
+info:
+  title: MentalBridge Realtime API
+  version: 1.0.0
+  description: |
+    REST recovery and operational contract for Realtime Service. Socket.IO
+    messages use the versioned JSON Schemas under contracts/websocket/realtime.
+    Conversation eligibility remains fail-closed until Consultation publishes
+    its authoritative appointment eligibility contract.
+servers:
+  - url: /
+tags:
+  - name: Operations
+  - name: Message history
+paths:
+  /health/live:
+    x-mentalbridge-status: implemented
+    get:
+      tags: [Operations]
+      operationId: getRealtimeLiveness
+      summary: Check whether the process is alive
+      security: []
+      responses:
+        "200":
+          description: Process is alive
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/Liveness" }
+  /health/ready:
+    x-mentalbridge-status: implemented
+    get:
+      tags: [Operations]
+      operationId: getRealtimeReadiness
+      summary: Check durable storage readiness and ephemeral Redis state
+      security: []
+      responses:
+        "200":
+          description: MongoDB is ready; Redis may be connected or degraded
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/Readiness" }
+        "503": { $ref: "#/components/responses/DependencyUnavailable" }
+  /metrics:
+    x-mentalbridge-status: implemented
+    get:
+      tags: [Operations]
+      operationId: getRealtimeMetrics
+      summary: Read Prometheus metrics
+      security: []
+      responses:
+        "200":
+          description: Prometheus text exposition
+          content:
+            text/plain:
+              schema: { type: string }
+  /api/v1/conversations/{conversationId}/messages:
+    x-mentalbridge-status: planned
+    get:
+      tags: [Message history]
+      operationId: listConversationMessages
+      summary: Recover an authorized bounded page of durable messages
+      description: |
+        The service reauthorizes the current actor for the conversation. Until
+        Consultation publishes its eligibility contract, the production adapter
+        fails closed and this operation returns dependency unavailable.
+      security:
+        - bearerAuth: []
+      parameters:
+        - $ref: "#/components/parameters/ConversationId"
+        - $ref: "#/components/parameters/CorrelationId"
+        - name: cursor
+          in: query
+          required: false
+          schema: { type: string, minLength: 1, maxLength: 512 }
+          description: Opaque continuation cursor from the previous response
+        - name: limit
+          in: query
+          required: false
+          schema: { type: integer, minimum: 1, maximum: 100, default: 50 }
+      responses:
+        "200":
+          description: Newest-first deterministic message page
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/MessageHistoryPage" }
+        "400": { $ref: "#/components/responses/ValidationProblem" }
+        "401": { $ref: "#/components/responses/AuthenticationProblem" }
+        "403": { $ref: "#/components/responses/AccessProblem" }
+        "404": { $ref: "#/components/responses/NotFoundProblem" }
+        "429": { $ref: "#/components/responses/RateLimitProblem" }
+        "503": { $ref: "#/components/responses/DependencyUnavailable" }
+components:
+  securitySchemes:
+    bearerAuth:
+      type: http
+      scheme: bearer
+      bearerFormat: JWT
+  parameters:
+    ConversationId:
+      name: conversationId
+      in: path
+      required: true
+      schema: { type: string, format: uuid }
+    CorrelationId:
+      name: X-Correlation-Id
+      in: header
+      required: false
+      schema:
+        type: string
+        minLength: 1
+        maxLength: 128
+        pattern: "^[A-Za-z0-9._:-]+$"
+  schemas:
+    Liveness:
+      type: object
+      additionalProperties: false
+      required: [status, service]
+      properties:
+        status: { const: ok }
+        service: { const: realtime-service }
+    Readiness:
+      type: object
+      additionalProperties: false
+      required: [status, service, mongodb, redis]
+      properties:
+        status: { type: string, enum: [ok, degraded] }
+        service: { const: realtime-service }
+        mongodb: { const: connected }
+        redis: { type: string, enum: [connected, degraded] }
+    Message:
+      type: object
+      additionalProperties: false
+      required:
+        [
+          messageId,
+          conversationId,
+          senderId,
+          clientMessageId,
+          type,
+          content,
+          sentAt,
+          schemaVersion,
+        ]
+      properties:
+        messageId: { type: string, format: uuid }
+        conversationId: { type: string, format: uuid }
+        senderId: { type: string, format: uuid }
+        clientMessageId: { type: string, format: uuid }
+        type: { const: TEXT }
+        content: { type: string, minLength: 1, maxLength: 4000 }
+        sentAt: { type: string, format: date-time }
+        schemaVersion: { const: 1 }
+    MessageHistoryPage:
+      type: object
+      additionalProperties: false
+      required: [items, nextCursor, hasMore]
+      properties:
+        items:
+          type: array
+          maxItems: 100
+          items: { $ref: "#/components/schemas/Message" }
+        nextCursor:
+          type: [string, "null"]
+          maxLength: 512
+        hasMore: { type: boolean }
+    Problem:
+      type: object
+      additionalProperties: true
+      required: [type, title, status, code, correlationId]
+      properties:
+        type: { type: string, format: uri-reference }
+        title: { type: string }
+        status: { type: integer, minimum: 400, maximum: 599 }
+        code: { type: string, pattern: "^[A-Z0-9_]+$" }
+        correlationId: { type: string }
+        violations:
+          type: array
+          items:
+            type: object
+            additionalProperties: false
+            required: [field, code]
+            properties:
+              field: { type: string }
+              code: { type: string }
+  responses:
+    ValidationProblem:
+      description: Request or cursor validation failed
+      content:
+        application/problem+json:
+          schema: { $ref: "#/components/schemas/Problem" }
+    AuthenticationProblem:
+      description: Bearer authentication is missing or invalid
+      content:
+        application/problem+json:
+          schema: { $ref: "#/components/schemas/Problem" }
+    AccessProblem:
+      description: The actor is not eligible for this conversation
+      content:
+        application/problem+json:
+          schema: { $ref: "#/components/schemas/Problem" }
+    NotFoundProblem:
+      description: Conversation was not found
+      content:
+        application/problem+json:
+          schema: { $ref: "#/components/schemas/Problem" }
+    RateLimitProblem:
+      description: Bounded request rate was exceeded
+      headers:
+        Retry-After:
+          schema: { type: integer, minimum: 1 }
+      content:
+        application/problem+json:
+          schema: { $ref: "#/components/schemas/Problem" }
+    DependencyUnavailable:
+      description: A required authoritative dependency is unavailable
+      content:
+        application/problem+json:
+          schema: { $ref: "#/components/schemas/Problem" }

@@ -27,10 +27,10 @@ Realtime owns conversations, encrypted messages, attachments metadata, tombstone
 
 ## Ordered tasks
 
-- [ ] RT-01 Scaffold the NestJS/TypeScript service with feature modules, Socket.IO gateways, typed configuration, health/readiness, lint, test, and build commands.
+- [x] RT-01 Scaffold the NestJS/TypeScript service with bounded feature packages, Socket.IO gateway, typed configuration, health/readiness, lint, test, and build commands.
 - [ ] RT-02 Resolve appointment join grace, read-only history, attachment, tombstone/retention and moderation policies; define video separately before enabling that channel.
 - [ ] RT-03 Define conversation/history OpenAPI, WebSocket schemas and Kafka event contracts.
-- [ ] RT-04 Add migrate-mongo validators/indexes and encrypted-content/data documentation.
+- [x] RT-04 Add migrate-mongo validators/indexes and encrypted-content/data documentation.
 - [ ] RT-05 Implement owner-authorized conversation lifecycle and REST history.
 - [ ] RT-06 Implement authenticated WebSocket subscribe/send, idempotent persist-before-ack and Redis fan-out.
 - [ ] RT-07 Implement receipts, presence, reconnect/resync and live notification delivery.
@@ -41,3 +41,7 @@ Realtime owns conversations, encrypted messages, attachments metadata, tombstone
 ## Sprint 1 boundary
 
 Sprint 1 covers RT-01, the foundational contract and migration parts of RT-03/RT-04, authenticated socket connection, TTL presence, and durable MongoDB message/history primitives. Appointment eligibility integration, user-visible production chat, Redis cross-instance fan-out, Kafka publication, receipts, moderation, and live notification delivery remain deferred until their owner contracts exist.
+
+The current foundation publishes Realtime REST and WebSocket v1 contracts, validates Identity-issued RS256 access tokens through the connected session's expiry boundary, maintains bounded TTL presence, and encrypts and idempotently persists messages before acknowledgement. Duplicate retries do not emit a second live event, and acknowledgements report live delivery as not applicable until fan-out or receipts can prove it.
+
+Cursor history primitives exist behind an eligibility port, but the OpenAPI operation is `planned`. The production eligibility adapter deliberately fails closed with `503` until Consultation publishes the current appointment authorization contract; integration tests supply only synthetic authorization and disposable MongoDB/Redis infrastructure. Encryption rotation retains prior key versions in a configured decryption keyring so stored messages remain readable during a controlled rotation.
