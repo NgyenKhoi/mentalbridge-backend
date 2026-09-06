@@ -264,6 +264,34 @@ paths:
         '401': { $ref: '#/components/responses/UnauthorizedProblem' }
         '403': { $ref: '#/components/responses/ForbiddenProblem' }
         '404': { $ref: '#/components/responses/NotFoundProblem' }
+  /api/v1/assessments/{assessmentId}/progress:
+    x-mentalbridge-status: implemented
+    get:
+      tags: [Assessment]
+      operationId: getOwnAssessmentProgress
+      summary: Compare one selected owned assessment with its preceding compatible result
+      description: |
+        The selected assessment is the current result. Care selects the immediately
+        preceding non-voided result owned by the caller with the same instrument and
+        identical scoring version, ordered deterministically by submittedAt and
+        assessmentId. The response is descriptive only and makes no diagnosis,
+        treatment, causation, recovery, clinical change, or resolved-safety claim.
+        Anonymous sessions have no progress operation.
+      security:
+        - bearerAuth: []
+      parameters:
+        - $ref: '#/components/parameters/AssessmentId'
+        - $ref: '#/components/parameters/CorrelationId'
+      responses:
+        '200':
+          description: Descriptive comparison returned
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/AssessmentProgress' }
+        '401': { $ref: '#/components/responses/UnauthorizedProblem' }
+        '403': { $ref: '#/components/responses/ForbiddenProblem' }
+        '404': { $ref: '#/components/responses/NotFoundProblem' }
+        '409': { $ref: '#/components/responses/InsufficientComparableDataProblem' }
   /api/v1/anonymous-assessment-sessions:
     x-mentalbridge-status: implemented
     post:
@@ -592,6 +620,48 @@ components:
           items: { $ref: '#/components/schemas/AssessmentSummary' }
         nextCursor: { type: [string, 'null'], minLength: 1, maxLength: 256 }
         hasMore: { type: boolean }
+    AssessmentProgress:
+      type: object
+      additionalProperties: true
+      description: Additive descriptive comparison; consumers ignore unknown fields and fail safely on unknown enum values
+      required: [instrument, scoringVersion, previous, current, rawDelta, scoreDirection, bandTransition, elapsedDuration]
+      properties:
+        instrument: { $ref: '#/components/schemas/Instrument' }
+        scoringVersion: { type: string, minLength: 1, maxLength: 32 }
+        previous: { $ref: '#/components/schemas/AssessmentProgressPoint' }
+        current: { $ref: '#/components/schemas/AssessmentProgressPoint' }
+        rawDelta:
+          type: integer
+          minimum: -27
+          maximum: 27
+          description: Current totalScore minus previous totalScore; no clinical interpretation is implied
+        scoreDirection: { $ref: '#/components/schemas/ScoreDirection' }
+        bandTransition: { $ref: '#/components/schemas/BandTransition' }
+        elapsedDuration:
+          type: string
+          format: duration
+          description: Non-negative ISO 8601 duration from previous submittedAt to current submittedAt
+    AssessmentProgressPoint:
+      type: object
+      additionalProperties: true
+      required: [assessmentId, questionnaireVersion, submittedAt, totalScore, screeningLevel]
+      properties:
+        assessmentId: { type: string, format: uuid }
+        questionnaireVersion: { type: string, minLength: 1, maxLength: 32 }
+        submittedAt: { type: string, format: date-time }
+        totalScore: { type: integer, minimum: 0, maximum: 27 }
+        screeningLevel: { $ref: '#/components/schemas/ScreeningLevel' }
+    BandTransition:
+      type: object
+      additionalProperties: true
+      required: [previous, current]
+      properties:
+        previous: { $ref: '#/components/schemas/ScreeningLevel' }
+        current: { $ref: '#/components/schemas/ScreeningLevel' }
+    ScoreDirection:
+      type: string
+      description: Descriptive arithmetic direction only; consumers must use an unavailable fallback for unknown values and must not infer clinical meaning
+      enum: [INCREASED, DECREASED, UNCHANGED]
     AssessmentResult:
       type: object
       additionalProperties: false
@@ -694,6 +764,12 @@ components:
       content:
         application/problem+json:
           schema: { $ref: '#/components/schemas/Problem' }
+    InsufficientComparableDataProblem:
+      description: The selected owned result has no immediately preceding valid result with the same instrument and scoring version
+      content:
+        application/problem+json:
+          schema: { $ref: '#/components/schemas/Problem' }
+          example: { type: /problems/insufficient-comparable-data, title: Comparable assessment data is unavailable, status: 409, code: INSUFFICIENT_COMPARABLE_DATA, correlationId: 8fb5720a-53ab-40db-9cf4-f5cfabbdaf65 }
     IdempotencyConflictProblem:
       description: Idempotency key was previously used with a different consent request (IDEMPOTENCY_KEY_REUSED)
       content:

@@ -33,4 +33,5 @@ interface AssessmentSubmissionRepository extends JpaRepository<AssessmentSubmiss
 			""")
 	List<AssessmentSubmissionEntity> findHistoryAfter(UUID userId, Instant cursorSubmittedAt, UUID cursorId,
 			Pageable pageable);
+
 }

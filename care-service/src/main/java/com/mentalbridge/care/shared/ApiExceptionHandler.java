@@ -12,6 +12,7 @@ import org.springframework.web.bind.MissingRequestHeaderException;
 import org.springframework.web.bind.annotation.ExceptionHandler;
 import org.springframework.web.bind.annotation.RestControllerAdvice;
 import org.springframework.web.method.annotation.HandlerMethodValidationException;
+import org.springframework.web.method.annotation.MethodArgumentTypeMismatchException;
 
 import jakarta.servlet.http.HttpServletRequest;
 
@@ -40,7 +41,8 @@ public class ApiExceptionHandler {
 		return problem(HttpStatus.BAD_REQUEST, "VALIDATION_FAILED", "Request validation failed", List.of(), request);
 	}
 
-	@ExceptionHandler({ HandlerMethodValidationException.class, HttpMessageNotReadableException.class })
+	@ExceptionHandler({ HandlerMethodValidationException.class, HttpMessageNotReadableException.class,
+			MethodArgumentTypeMismatchException.class })
 	ProblemDetail requestValidation(Exception exception, HttpServletRequest request) {
 		return problem(HttpStatus.BAD_REQUEST, "VALIDATION_FAILED", "Request validation failed", List.of(), request);
 	}
