@@ -37,5 +37,5 @@ The browser matrix covers first-assessment insufficient data, a compatible serve
 
 - Desktop: `mentalbridge-frontend/mentalbridge/docs/evidence/mb-205-progress-desktop.png`
 - Mobile: `mentalbridge-frontend/mentalbridge/docs/evidence/mb-205-progress-mobile.png`
-- Pull requests: recorded here after the repository branches are published.
+- Pull requests: [backend #33](https://github.com/NgyenKhoi/mentalbridge-backend/pull/33) and [frontend #14](https://github.com/NgyenKhoi/mentalbridge-frontend/pull/14), both targeting `dev`.
 - GAD-7 publication, personalized support actions, specialist handoff/sharing, automatic reminders/contact, AI personalization and real-user production deployment remain unavailable, unpublished, blocked or deferred under their existing gates.
