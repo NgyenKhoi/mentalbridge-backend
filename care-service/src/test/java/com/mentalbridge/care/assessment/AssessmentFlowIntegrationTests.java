@@ -72,6 +72,12 @@ class AssessmentFlowIntegrationTests extends CareTestProperties {
 	private RequestMappingHandlerMapping handlerMapping;
 
 	@Test
+	void healthProbeIsPublic() throws Exception {
+		mvc.perform(get("/actuator/health")).andExpect(status().isOk())
+				.andExpect(jsonPath("$.status").value("UP"));
+	}
+
+	@Test
 	void publishedQuestionnaireDefaultsToTheCapstoneVietnameseVersion() throws Exception {
 		mvc.perform(get("/api/v1/questionnaires/PHQ9/current"))
 				.andExpect(status().isOk())

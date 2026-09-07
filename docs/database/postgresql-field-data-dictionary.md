@@ -2,7 +2,7 @@
 
 This document explains the business purpose of conceptual PostgreSQL fields. [`001_initial_schema.sql`](../../database/postgresql/001_initial_schema.sql) is a non-executable whole-system model and must not provision an environment. Names such as `consultation.appointment` below identify a logical owner inside that model; the physical table will be `public.appointment` in the separate `mentalbridge_consultation` database. Service-owned migration histories become executable sources of truth only when modules are implemented: Liquibase for Spring services and `node-pg-migrate` for Node.js services. It is written for developers and reviewers; descriptions are intentionally kept out of executable migrations.
 
-When service-owned migrations are introduced, update this dictionary in the same change. A field description must explain why the value is persisted, whether it is authoritative, derived, external, or sensitive, and how nullability, time, versioning, or idempotency affects behavior. Content/Notification's executable history starts at `content-notification-service/migrations/1_initial_schema.sql`; migration 2 removes the obsolete hotline table, and the field descriptions under its conceptual owner below describe the resulting physical `public` tables.
+When service-owned migrations are introduced, update this dictionary in the same change. A field description must explain why the value is persisted, whether it is authoritative, derived, external, or sensitive, and how nullability, time, versioning, or idempotency affects behavior. Content/Notification's executable history starts at `content-notification-service/migrations/1_initial_schema.sql`; migration 2 removes the obsolete hotline table, and migration 3 conditionally inserts the controlled Review 1 resource in the shared dev/staging database. The field descriptions under its conceptual owner below describe the resulting physical `public` tables.
 
 ## Database `mentalbridge_identity` (schema `public`)
 
@@ -867,6 +867,8 @@ User response captured for one occurrence of a follow-up plan.
 ### `content.resource`
 
 Reviewed self-help content or external resource managed by Content/Notification Service.
+
+The fixed UUID `00000000-0000-4000-8000-000000000101` identifies a visibly labeled synthetic Review 1 resource. Migration 3 inserts it idempotently only when the pre-production migration session explicitly enables the Review 1 seed setting. It is not created in production by default and carries no production clinical approval.
 
 | Field | Purpose |
 | --- | --- |

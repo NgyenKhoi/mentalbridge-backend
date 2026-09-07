@@ -42,6 +42,7 @@ public class SecurityConfiguration {
 			SecurityProblemSupport securityProblems) throws Exception {
 		http.csrf(csrf -> csrf.disable()).sessionManagement(session -> session
 				.sessionCreationPolicy(SessionCreationPolicy.STATELESS)).authorizeHttpRequests(authorize -> authorize
+				.requestMatchers("/actuator/health", "/actuator/health/**").permitAll()
 				.requestMatchers("/api/v1/auth/registrations", "/api/v1/auth/email-verifications",
 						"/api/v1/auth/email-verification-requests", "/api/v1/auth/login", "/api/v1/auth/refresh",
 						"/api/v1/auth/password-recovery-requests", "/api/v1/auth/password-resets")

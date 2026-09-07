@@ -67,6 +67,14 @@ npm run migrate:up
 
 Migrations run explicitly before deployment and never on application startup. The database and login are operator prerequisites; migrations do not create databases or schemas. Once merged, an applied migration is never edited or rolled back in a shared environment; add a forward migration instead. Migration `2_remove_hotline_catalogue.sql` removes the obsolete table after the historical baseline is applied.
 
+The controlled Review 1 seed is an owner-module migration with a separate ledger (`pgmigrations_review1`), so running normal schema migrations cannot accidentally mark the seed as applied. For the shared dev/staging database only, run:
+
+```bash
+npm run migrate:review1:up
+```
+
+Review 1 Compose runs schema migrations and this seed migration sequentially through `npm run migrate:review1-demo`. Future production deployment must run `npm run migrate:up` only.
+
 ## Verification
 
 ```bash
