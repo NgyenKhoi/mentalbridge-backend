@@ -102,9 +102,9 @@ No score automatically diagnoses a condition, mandates treatment, books or notif
 - [x] Required Capstone evidence decisions and applicable production, feature, domain, security, privacy, and legal approval states are recorded truthfully.
 - [x] Content outside its applicable evidence or approval gate remains unpublished or explicitly unavailable.
 - [x] Runtime-complete, definition-complete, approval-blocked, deferred, and out-of-scope work are distinguishable in documentation; Jira administrative updates remain open.
-- [ ] Contracts, migrations, data descriptions, implementation, tests, policies, service READMEs, coverage, and traceability agree where affected.
-- [ ] Required backend and frontend quality gates and focused E2E journeys pass with reproducible evidence.
-- [ ] Related pull requests are integrated into `dev`.
+- [x] Contracts, migrations, data descriptions, implementation, tests, policies, service READMEs, coverage, and traceability agree where affected.
+- [x] Required backend and frontend quality gates and focused E2E journeys pass with reproducible evidence.
+- [ ] Related pull requests are integrated into `dev`; PR links and reviewer approvals remain release administration.
 - [ ] No known Critical or High implementation or policy issue is silently left unresolved.
 
 ## Evidence to complete during the sprint
@@ -121,4 +121,4 @@ No score automatically diagnoses a condition, mandates treatment, books or notif
 - MB-179 blueprint: [screening-to-support blueprint](mb-179-screening-to-support-blueprint.md)
 - Review 1 evidence: [closure and traceability matrix](mb-179-review-1-closure-matrix.md)
 - Product Owner approval: recorded in the blueprint and closure matrix from the 2026-09-02 MB-179 authorization
-- Mentor/supervisor closure validation, Jira administrative updates, pull request and exact verification results: pending
+- Mentor/supervisor closure validation, Jira administrative updates, pull request links, and reviewer approvals: pending. Exact verification results are recorded in [the Sprint 2 runbook](sprint-2-runbook-traceability.md) and [integrated evidence](../sprint-2-integrated-release-evidence.md).

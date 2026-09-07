@@ -57,6 +57,8 @@ Safety handling must be deterministic, immediate, auditable, non-paywalled, and 
 - [Kiến trúc module microservices và ngôn ngữ đã chốt](docs/microservice-module-suggestions.md)
 - [Engineering rules](docs/engineering-rules.md)
 - [Mandatory agent workflow and review guide](docs/agent-guides/README.md)
+- [Sprint 2 integrated journey and release evidence](docs/sprint-2-integrated-release-evidence.md)
+- [Sprint 2 runbook, traceability, and release evidence](docs/sprints/sprint-2-runbook-traceability.md)
 - [PostgreSQL data model](docs/database/postgresql.md)
 - [MongoDB collections](docs/database/mongodb.md)
 - [Non-executable whole-system PostgreSQL model](database/postgresql/001_initial_schema.sql) — owner namespaces are visual only; each module deploys to its own database/default `public` schema
@@ -87,6 +89,28 @@ The repository does not yet require a GitHub Actions check on PRs targeting `dev
 - OpenTelemetry-compatible traces, Prometheus metrics, Grafana dashboards, structured JSON logs
 
 The local stack includes Eureka, PostgreSQL, MongoDB, Kafka, Redis, and the application services through Docker Compose. Kubernetes, a service mesh, distributed secrets platforms, and multiple observability products are outside the initial scope unless the team can demonstrate a concrete requirement.
+
+### Local Docker infrastructure
+
+The repository includes a secrets-free infrastructure stack for local
+development and service integration tests:
+
+```powershell
+.\scripts\docker-local.ps1 up
+.\scripts\docker-local.ps1 status
+.\scripts\docker-local.ps1 logs
+.\scripts\docker-local.ps1 down
+```
+
+Start Docker Desktop first and wait until `docker info` succeeds. The compose
+file exposes separate PostgreSQL databases for Identity, Care, and
+Content/Notification, plus MongoDB, Redis, and single-node Kafka. The passwords
+are local-only development values and must never be reused outside this stack.
+
+Spring integration tests use Testcontainers and start isolated temporary
+containers automatically; the Docker daemon is the only required integration
+test prerequisite. The compose stack is useful for manually running services
+against stable local infrastructure and is not a production deployment.
 
 ## Status
 
