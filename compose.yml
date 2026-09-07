@@ -1,0 +1,273 @@
+name: mentalbridge-review1
+
+x-demo-profiles: &demo-profiles
+  - demo
+  - full-test
+
+x-java-service-environment: &java-service-environment
+  SPRINGDOTENV_ENABLED: "false"
+  EUREKA_CLIENT_ENABLED: "false"
+  IDENTITY_JWT_ISSUER: ${IDENTITY_JWT_ISSUER:?Set IDENTITY_JWT_ISSUER in .env}
+  IDENTITY_JWT_AUDIENCE: ${IDENTITY_JWT_AUDIENCE:?Set IDENTITY_JWT_AUDIENCE in .env}
+  IDENTITY_JWT_PUBLIC_KEY: ${IDENTITY_JWT_PUBLIC_KEY:?Generate local Identity keys and set IDENTITY_JWT_PUBLIC_KEY in .env}
+
+services:
+  identity-migrate:
+    build:
+      context: ./identity-service
+      target: migration
+    profiles: *demo-profiles
+    restart: "no"
+    environment:
+      IDENTITY_DB_URL: ${IDENTITY_DB_URL:?Set the shared dev/staging Identity database URL in .env}
+      IDENTITY_DB_USERNAME: ${IDENTITY_DB_USERNAME:?Set the shared dev/staging Identity database username in .env}
+      IDENTITY_DB_PASSWORD: ${IDENTITY_DB_PASSWORD:?Set IDENTITY_DB_PASSWORD in .env}
+    networks:
+      - review1
+
+  identity:
+    build:
+      context: ./identity-service
+      target: runtime
+    profiles: *demo-profiles
+    restart: unless-stopped
+    environment:
+      <<: *java-service-environment
+      SERVER_PORT: 8080
+      MANAGEMENT_HEALTH_REDIS_ENABLED: "false"
+      SPRING_PROFILES_ACTIVE: ${IDENTITY_SPRING_PROFILES_ACTIVE:-dev}
+      IDENTITY_DB_URL: ${IDENTITY_DB_URL:?Set the shared dev/staging Identity database URL in .env}
+      IDENTITY_DB_USERNAME: ${IDENTITY_DB_USERNAME:?Set the shared dev/staging Identity database username in .env}
+      IDENTITY_DB_PASSWORD: ${IDENTITY_DB_PASSWORD:?Set IDENTITY_DB_PASSWORD in .env}
+      IDENTITY_JWT_KEY_ID: ${IDENTITY_JWT_KEY_ID:-review1-demo-key}
+      IDENTITY_JWT_PRIVATE_KEY: ${IDENTITY_JWT_PRIVATE_KEY:?Generate local Identity keys and set IDENTITY_JWT_PRIVATE_KEY in .env}
+      IDENTITY_ENCRYPTION_KEY_VERSION: ${IDENTITY_ENCRYPTION_KEY_VERSION:-review1-demo-v1}
+      IDENTITY_ENCRYPTION_KEY: ${IDENTITY_ENCRYPTION_KEY:?Generate local Identity keys and set IDENTITY_ENCRYPTION_KEY in .env}
+      IDENTITY_VERIFICATION_DELIVERY_MODE: ${IDENTITY_VERIFICATION_DELIVERY_MODE:-local-file}
+      IDENTITY_BREVO_BASE_URL: ${IDENTITY_BREVO_BASE_URL:-https://api.brevo.com}
+      IDENTITY_BREVO_API_KEY: ${IDENTITY_BREVO_API_KEY:-}
+      IDENTITY_BREVO_SENDER_EMAIL: ${IDENTITY_BREVO_SENDER_EMAIL:-}
+      IDENTITY_BREVO_SENDER_NAME: ${IDENTITY_BREVO_SENDER_NAME:-MentalBridge}
+      IDENTITY_VERIFICATION_URL: ${IDENTITY_VERIFICATION_URL:-http://localhost:3000/verify-email}
+      IDENTITY_LOCAL_VERIFICATION_DIRECTORY: /var/lib/mentalbridge/identity-verification
+    volumes:
+      - identity-verification:/var/lib/mentalbridge/identity-verification
+    ports:
+      - "${SERVICE_BIND_ADDRESS:-127.0.0.1}:${IDENTITY_PORT:-8080}:8080"
+    depends_on:
+      identity-migrate:
+        condition: service_completed_successfully
+    healthcheck:
+      test: ["CMD", "wget", "-q", "-O", "/dev/null", "http://localhost:8080/actuator/health"]
+      interval: 10s
+      timeout: 5s
+      retries: 12
+      start_period: 30s
+    networks:
+      - review1
+
+  care-migrate:
+    build:
+      context: ./care-service
+      target: migration
+    profiles: *demo-profiles
+    restart: "no"
+    environment:
+      CARE_DB_URL: ${CARE_DB_URL:?Set the shared dev/staging Care database URL in .env}
+      CARE_DB_USERNAME: ${CARE_DB_USERNAME:?Set the shared dev/staging Care database username in .env}
+      CARE_DB_PASSWORD: ${CARE_DB_PASSWORD:?Set CARE_DB_PASSWORD in .env}
+    networks:
+      - review1
+
+  care:
+    build:
+      context: ./care-service
+      target: runtime
+    profiles: *demo-profiles
+    restart: unless-stopped
+    environment:
+      <<: *java-service-environment
+      SERVER_PORT: 8081
+      CARE_DB_URL: ${CARE_DB_URL:?Set the shared dev/staging Care database URL in .env}
+      CARE_DB_USERNAME: ${CARE_DB_USERNAME:?Set the shared dev/staging Care database username in .env}
+      CARE_DB_PASSWORD: ${CARE_DB_PASSWORD:?Set CARE_DB_PASSWORD in .env}
+      CARE_ANONYMOUS_SESSION_TTL: ${CARE_ANONYMOUS_SESSION_TTL:-PT30M}
+      CARE_ANONYMOUS_SESSION_MAXIMUM_LIFETIME: ${CARE_ANONYMOUS_SESSION_MAXIMUM_LIFETIME:-PT2H}
+      CARE_PHQ9_SAFETY_POLICY_VERSION: ${CARE_PHQ9_SAFETY_POLICY_VERSION:-MB-SAFETY-PHQ9-001/1.0-capstone}
+      CARE_IDEMPOTENCY_HMAC_KEY: ${CARE_IDEMPOTENCY_HMAC_KEY:?Set a random CARE_IDEMPOTENCY_HMAC_KEY of at least 32 characters in .env}
+    ports:
+      - "${SERVICE_BIND_ADDRESS:-127.0.0.1}:${CARE_PORT:-8081}:8081"
+    depends_on:
+      care-migrate:
+        condition: service_completed_successfully
+    healthcheck:
+      test: ["CMD", "wget", "-q", "-O", "/dev/null", "http://localhost:8081/actuator/health"]
+      interval: 10s
+      timeout: 5s
+      retries: 12
+      start_period: 30s
+    networks:
+      - review1
+
+  content-migrate:
+    build:
+      context: ./content-notification-service
+      target: runtime
+    profiles: *demo-profiles
+    restart: "no"
+    command: ["npm", "run", "migrate:review1-demo"]
+    environment:
+      NODE_ENV: production
+      DATABASE_URL: ${CONTENT_DATABASE_URL:?Set the shared dev/staging Content database URL in .env}
+    networks:
+      - review1
+
+  content-notification:
+    build:
+      context: ./content-notification-service
+      target: runtime
+    profiles: *demo-profiles
+    restart: unless-stopped
+    environment:
+      NODE_ENV: production
+      PORT: 3003
+      DB_HOST: ${CONTENT_DB_HOST:?Set the shared dev/staging Content database host in .env}
+      DB_PORT: ${CONTENT_DB_PORT:-5432}
+      DB_NAME: ${CONTENT_DB_NAME:-mentalbridge_content_notification}
+      DB_USER: ${CONTENT_DB_USER:?Set the shared dev/staging Content database username in .env}
+      DB_PASSWORD: ${CONTENT_DB_PASSWORD:?Set the shared dev/staging Content database password in .env}
+      DB_POOL_MAX: ${CONTENT_DB_POOL_MAX:-10}
+      DB_IDLE_TIMEOUT_MS: ${CONTENT_DB_IDLE_TIMEOUT_MS:-30000}
+      DB_CONNECT_TIMEOUT_MS: ${CONTENT_DB_CONNECT_TIMEOUT_MS:-2000}
+      LOG_LEVEL: ${CONTENT_LOG_LEVEL:-info}
+      CORS_ORIGINS: ${PUBLIC_APP_ORIGIN:-http://localhost:3000}
+      IDENTITY_JWT_ISSUER: ${IDENTITY_JWT_ISSUER:?Set IDENTITY_JWT_ISSUER in .env}
+      IDENTITY_JWT_AUDIENCE: ${IDENTITY_JWT_AUDIENCE:?Set IDENTITY_JWT_AUDIENCE in .env}
+      IDENTITY_JWT_KEY_ID: ${IDENTITY_JWT_KEY_ID:-review1-demo-key}
+      IDENTITY_JWT_PUBLIC_KEY: ${IDENTITY_JWT_PUBLIC_KEY:?Generate local Identity keys and set IDENTITY_JWT_PUBLIC_KEY in .env}
+      IDENTITY_JWT_CLOCK_TOLERANCE_SECONDS: ${IDENTITY_JWT_CLOCK_TOLERANCE_SECONDS:-60}
+    ports:
+      - "${SERVICE_BIND_ADDRESS:-127.0.0.1}:${CONTENT_PORT:-3003}:3003"
+    depends_on:
+      content-migrate:
+        condition: service_completed_successfully
+    networks:
+      - review1
+
+  frontend:
+    build:
+      context: ${FRONTEND_BUILD_CONTEXT:-../mentalbridge-frontend/mentalbridge}
+    profiles: *demo-profiles
+    restart: unless-stopped
+    environment:
+      NODE_ENV: production
+      PORT: 3000
+      HOSTNAME: 0.0.0.0
+      IDENTITY_API_BASE_URL: http://identity:8080
+      IDENTITY_API_TIMEOUT_MS: ${IDENTITY_API_TIMEOUT_MS:-2000}
+      CARE_API_BASE_URL: http://care:8081
+      CARE_API_TIMEOUT_MS: ${CARE_API_TIMEOUT_MS:-3000}
+      CARE_QUESTIONNAIRE_LOCALE: vi-VN
+      CONTENT_SERVICE_URL: http://content-notification:3003
+      CONTENT_SERVICE_TIMEOUT_MS: ${CONTENT_SERVICE_TIMEOUT_MS:-5000}
+    ports:
+      - "${FRONTEND_BIND_ADDRESS:-0.0.0.0}:${FRONTEND_PORT:-3000}:3000"
+    depends_on:
+      identity:
+        condition: service_healthy
+      care:
+        condition: service_healthy
+      content-notification:
+        condition: service_healthy
+    networks:
+      - review1
+
+  redis:
+    image: redis:7.4-alpine
+    profiles:
+      - full-test
+    restart: unless-stopped
+    environment:
+      REDIS_PASSWORD: ${REDIS_PASSWORD:?Set REDIS_PASSWORD in .env}
+    command: ["sh", "-c", "exec redis-server --appendonly yes --requirepass \"$${REDIS_PASSWORD}\""]
+    volumes:
+      - redis-data:/data
+    healthcheck:
+      test: ["CMD-SHELL", "redis-cli --no-auth-warning -a \"$${REDIS_PASSWORD}\" ping | grep PONG"]
+      interval: 5s
+      timeout: 5s
+      retries: 12
+      start_period: 5s
+    networks:
+      - review1
+
+  realtime-migrate:
+    build:
+      context: ./realtime-service
+      target: runtime
+    profiles:
+      - full-test
+    restart: "no"
+    command: ["npm", "run", "migrate:up"]
+    environment:
+      NODE_ENV: production
+      REALTIME_MONGODB_URI: ${REALTIME_MONGODB_URI:?Set the shared dev/staging MongoDB URI in .env}
+      REALTIME_MONGODB_DATABASE: ${REALTIME_MONGODB_DATABASE:-mentalbridge_realtime}
+    networks:
+      - review1
+
+  realtime:
+    build:
+      context: ./realtime-service
+      target: runtime
+    profiles:
+      - full-test
+    restart: unless-stopped
+    environment:
+      NODE_ENV: production
+      REALTIME_PORT: 3004
+      REALTIME_LOG_LEVEL: ${REALTIME_LOG_LEVEL:-info}
+      REALTIME_CORS_ORIGINS: ${PUBLIC_APP_ORIGIN:-http://localhost:3000}
+      REALTIME_MONGODB_URI: ${REALTIME_MONGODB_URI:?Set the shared dev/staging MongoDB URI in .env}
+      REALTIME_MONGODB_DATABASE: ${REALTIME_MONGODB_DATABASE:-mentalbridge_realtime}
+      REALTIME_MONGODB_CONNECTION_TIMEOUT_MS: ${REALTIME_MONGODB_CONNECTION_TIMEOUT_MS:-2000}
+      REALTIME_REDIS_URL: ${REALTIME_REDIS_URL:?Set the authenticated Compose Redis URL in .env}
+      REALTIME_REDIS_CONNECTION_TIMEOUT_MS: ${REALTIME_REDIS_CONNECTION_TIMEOUT_MS:-1000}
+      REALTIME_PRESENCE_TTL_SECONDS: ${REALTIME_PRESENCE_TTL_SECONDS:-45}
+      REALTIME_PRESENCE_HEARTBEAT_SECONDS: ${REALTIME_PRESENCE_HEARTBEAT_SECONDS:-15}
+      REALTIME_MAX_CONNECTIONS_PER_ACCOUNT: ${REALTIME_MAX_CONNECTIONS_PER_ACCOUNT:-5}
+      REALTIME_MAX_PAYLOAD_BYTES: ${REALTIME_MAX_PAYLOAD_BYTES:-16384}
+      REALTIME_COMMAND_RATE_LIMIT: ${REALTIME_COMMAND_RATE_LIMIT:-60}
+      REALTIME_COMMAND_RATE_WINDOW_SECONDS: ${REALTIME_COMMAND_RATE_WINDOW_SECONDS:-60}
+      REALTIME_SHUTDOWN_TIMEOUT_MS: ${REALTIME_SHUTDOWN_TIMEOUT_MS:-10000}
+      REALTIME_MESSAGE_ENCRYPTION_KEY: ${REALTIME_MESSAGE_ENCRYPTION_KEY:?Set a base64-encoded 32-byte key in .env}
+      REALTIME_MESSAGE_ENCRYPTION_KEY_VERSION: ${REALTIME_MESSAGE_ENCRYPTION_KEY_VERSION:-review1-demo-v1}
+      REALTIME_MESSAGE_DECRYPTION_KEYS: ${REALTIME_MESSAGE_DECRYPTION_KEYS:?Set a JSON object in .env, normally empty JSON}
+      IDENTITY_JWT_ISSUER: ${IDENTITY_JWT_ISSUER:?Set IDENTITY_JWT_ISSUER in .env}
+      IDENTITY_JWT_AUDIENCE: ${IDENTITY_JWT_AUDIENCE:?Set IDENTITY_JWT_AUDIENCE in .env}
+      IDENTITY_JWT_KEY_ID: ${IDENTITY_JWT_KEY_ID:-review1-demo-key}
+      IDENTITY_JWT_PUBLIC_KEY: ${IDENTITY_JWT_PUBLIC_KEY:?Generate local Identity keys and set IDENTITY_JWT_PUBLIC_KEY in .env}
+      IDENTITY_JWT_CLOCK_TOLERANCE_SECONDS: ${IDENTITY_JWT_CLOCK_TOLERANCE_SECONDS:-60}
+    ports:
+      - "${SERVICE_BIND_ADDRESS:-127.0.0.1}:${REALTIME_PORT:-3004}:3004"
+    depends_on:
+      realtime-migrate:
+        condition: service_completed_successfully
+      redis:
+        condition: service_healthy
+    healthcheck:
+      test: ["CMD", "node", "-e", "fetch('http://localhost:3004/health/ready').then(r=>process.exit(r.ok?0:1)).catch(()=>process.exit(1))"]
+      interval: 10s
+      timeout: 5s
+      retries: 12
+      start_period: 15s
+    networks:
+      - review1
+
+volumes:
+  identity-verification:
+  redis-data:
+
+networks:
+  review1:
+    driver: bridge

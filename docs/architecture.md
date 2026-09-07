@@ -146,11 +146,11 @@ Threat-model at least broken object-level authorization, revoked-consent races, 
 
 ### Local/demo
 
-Docker Compose with the six business services, Python worker, edge proxy, Eureka registry, PostgreSQL, MongoDB, Kafka, and Redis. One command should start infrastructure; seed data must be synthetic.
+The current Review 1 Docker Compose topology starts the executable application services and local ephemeral Redis while connecting to the service-owned cloud PostgreSQL databases and MongoDB deployment shared by dev and staging. Compose does not own or initialize durable databases. CI and integration tests use disposable isolated stores, and all demo seed data remains synthetic and visibly labeled.
 
 ### AWS capstone deployment
 
-Use one EC2 host initially with Docker Compose, Nginx, managed DNS/TLS, private database ports, encrypted volumes, and automated backups. Split databases or workers only after measurements show a need. Keep AI provider keys server-side.
+Use one EC2 host initially with Docker Compose, Nginx, managed DNS/TLS, private outbound access to the shared pre-production data plane, and automated backups. Production receives separate database endpoints and credentials when provisioned. Split databases or workers only after measurements show a need. Keep AI provider keys server-side.
 
 ## 9. Decision records
 

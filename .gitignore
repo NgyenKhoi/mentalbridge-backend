@@ -32,9 +32,11 @@ yarn-error.log*
 .env
 .env.*
 !.env.example
+!.env.compose.example
 **/.env
 **/.env.*
 !**/.env.example
+!**/.env.compose.example
 
 # Local development secrets
 .local/

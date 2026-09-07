@@ -14,6 +14,7 @@ This file records durable preferences explicitly confirmed by the repository own
 8. **Prefer evidence over repeated trial and error.** After a failure, inspect the exact error and state, form a falsifiable hypothesis, and change one relevant variable. Re-running the same failing action without new evidence is not progress.
 9. **Finish the whole affected workflow.** Code, DTO/event contract, migrations/data dictionary, configuration examples, tests, documentation, and review must agree before reporting completion.
 10. **Use Hibernate and Spring Data JPA in Spring Boot business modules.** Keep JPA entities and repositories inside the owning feature, never expose them as REST/event DTOs, and retain Liquibase as the only schema-change authority. A separate persistence adapter is warranted only for a meaningful mapping, locking, multi-repository operation, or replaceable boundary.
+11. **Treat dev and staging as one shared pre-production data plane.** Both environments use the existing service-owned cloud PostgreSQL databases and MongoDB deployment. Compose must not initialize or own those databases. Production will receive a separate data plane when it is provisioned; CI and integration tests remain isolated on disposable infrastructure.
 
 ## Collaboration behavior
 
