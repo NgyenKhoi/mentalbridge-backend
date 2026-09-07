@@ -43,7 +43,6 @@ describe('Database Integration', () => {
     });
 
     await waitForPool(pool);
-
     for (const migration of ['1_initial_schema.sql', '2_remove_hotline_catalogue.sql']) {
       const sql = readFileSync(join(__dirname, '../../../migrations', migration), 'utf8');
       await pool.query(sql);
@@ -56,6 +55,32 @@ describe('Database Integration', () => {
   });
 
   describe('resource table', () => {
+    it('seeds the controlled Review 1 resource idempotently', async () => {
+      const seedPath = join(
+        __dirname,
+        '../../../migrations/review1',
+        '1_seed_review1_controlled_resource.sql',
+      );
+      const seed = readFileSync(seedPath, 'utf8');
+
+      await pool.query(seed);
+      await pool.query(seed);
+
+      const { rows } = await pool.query(
+        `SELECT title, locale, status, reviewed_at
+         FROM resource
+         WHERE id = '00000000-0000-4000-8000-000000000101'`,
+      );
+
+      expect(rows).toHaveLength(1);
+      expect(rows[0]).toMatchObject({
+        title: 'Bài thực hành thở chậm (dữ liệu demo)',
+        locale: 'vi-VN',
+        status: 'PUBLISHED',
+      });
+      expect(rows[0].reviewed_at).not.toBeNull();
+    });
+
     it('rejects null category', async () => {
       await expect(
         pool.query('INSERT INTO resource (category, title, summary) VALUES (NULL, $1, $2)', [

@@ -20,6 +20,9 @@
     "test:integration": "vitest run --config vitest.integration.config.ts",
     "migrate:up": "node-pg-migrate up",
     "migrate:down": "node-pg-migrate down",
+    "migrate:review1:up": "node-pg-migrate up --migrations-dir migrations/review1 --migrations-table pgmigrations_review1",
+    "migrate:review1:down": "node-pg-migrate down --migrations-dir migrations/review1 --migrations-table pgmigrations_review1",
+    "migrate:review1-demo": "npm run migrate:up && npm run migrate:review1:up",
     "migrate:create": "node-pg-migrate create",
     "migration:check": "node scripts/validate-migrations.mjs",
     "contract:check": "node scripts/validate-contracts.mjs"
