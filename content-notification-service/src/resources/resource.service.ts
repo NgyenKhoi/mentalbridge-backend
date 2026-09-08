@@ -1,11 +1,12 @@
 import { Inject, Injectable, Logger } from '@nestjs/common';
-import type { ResourceRepository, ListResourcesQuery } from './resource.repository.js';
+import type { ResourceRepository, ListResourcesQuery, CreateResourceData, UpdateResourceData, PublishResourceData } from './resource.repository.js';
 import { RESOURCE_REPOSITORY_TOKEN } from '../application.tokens.js';
 import type {
   ResourceCategory,
   ResourceListResult,
   ResourceRow,
   ResourceSummary,
+  ResourceDetail,
 } from './resource.types.js';
 
 const UNAVAILABLE_MESSAGE = 'Tài nguyên hỗ trợ tạm thời không khả dụng. Vui lòng thử lại sau.';
@@ -44,6 +45,20 @@ function toSummary(row: ResourceRow): ResourceSummary | null {
     reviewedAt: row.reviewed_at ? new Date(row.reviewed_at).toISOString() : null,
     createdAt: new Date(row.created_at).toISOString(),
     updatedAt: new Date(row.updated_at).toISOString(),
+  };
+}
+
+function toDetail(row: ResourceRow): ResourceDetail | null {
+  const summary = toSummary(row);
+  if (!summary) return null;
+
+  return {
+    ...summary,
+    contentBody: row.content_body ?? null,
+    reviewedBy: row.reviewed_by ?? null,
+    effectiveAt: row.effective_at ? new Date(row.effective_at).toISOString() : null,
+    expiresAt: row.expires_at ? new Date(row.expires_at).toISOString() : null,
+    version: row.version,
   };
 }
 
@@ -103,5 +118,38 @@ export class ResourceService {
       count: data.length,
       ...(hasMore && data.length > 0 ? { nextCursor: data[data.length - 1].id } : {}),
     };
+  }
+
+  async getById(id: string): Promise<ResourceDetail | null> {
+    const row = await this.repository.findById(id);
+    return row ? toDetail(row) : null;
+  }
+
+  async create(data: CreateResourceData): Promise<ResourceDetail> {
+    const row = await this.repository.create(data);
+    const detail = toDetail(row);
+    if (!detail) {
+      throw new Error('Failed to create resource');
+    }
+    return detail;
+  }
+
+  async update(id: string, data: UpdateResourceData): Promise<ResourceDetail | null> {
+    const row = await this.repository.update(id, data);
+    return row ? toDetail(row) : null;
+  }
+
+  async delete(id: string): Promise<boolean> {
+    return this.repository.delete(id);
+  }
+
+  async publish(id: string, data: PublishResourceData): Promise<ResourceDetail | null> {
+    const row = await this.repository.publish(id, data);
+    return row ? toDetail(row) : null;
+  }
+
+  async archive(id: string, version: number): Promise<ResourceDetail | null> {
+    const row = await this.repository.archive(id, version);
+    return row ? toDetail(row) : null;
   }
 }
