@@ -37,6 +37,7 @@ mentalbridge:
       sender-email: ${IDENTITY_BREVO_SENDER_EMAIL:}
       sender-name: ${IDENTITY_BREVO_SENDER_NAME:MentalBridge}
       verification-url: ${IDENTITY_VERIFICATION_URL:http://localhost:3000/verify-email}
+      password-recovery-url: ${IDENTITY_PASSWORD_RECOVERY_URL:http://localhost:3000/reset-password}
       local-directory: ${IDENTITY_LOCAL_VERIFICATION_DIRECTORY:.local/identity-verification}
 
 eureka:

@@ -13,6 +13,9 @@ import jakarta.persistence.LockModeType;
 
 public interface RefreshSessionRepository extends JpaRepository<RefreshSessionEntity, UUID> {
 
+	@Query("select session.accountId from RefreshSessionEntity session where session.tokenHash = :tokenHash")
+	Optional<UUID> findAccountIdByTokenHash(@Param("tokenHash") String tokenHash);
+
 	@Lock(LockModeType.PESSIMISTIC_WRITE)
 	@Query("select session from RefreshSessionEntity session where session.tokenHash = :tokenHash")
 	Optional<RefreshSessionEntity> findByTokenHashForUpdate(@Param("tokenHash") String tokenHash);

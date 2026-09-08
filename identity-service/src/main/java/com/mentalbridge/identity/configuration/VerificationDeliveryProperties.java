@@ -7,7 +7,7 @@ import org.springframework.boot.context.properties.ConfigurationProperties;
 
 @ConfigurationProperties("mentalbridge.identity.verification-delivery")
 public record VerificationDeliveryProperties(Mode mode, URI baseUrl, String apiKey, String senderEmail,
-		String senderName, URI verificationUrl, Path localDirectory) {
+		String senderName, URI verificationUrl, URI passwordRecoveryUrl, Path localDirectory) {
 
 	public enum Mode {
 		DISABLED,

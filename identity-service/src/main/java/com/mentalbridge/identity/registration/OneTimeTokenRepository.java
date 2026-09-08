@@ -1,5 +1,6 @@
 package com.mentalbridge.identity.registration;
 
+import java.util.List;
 import java.util.Optional;
 import java.util.UUID;
 
@@ -12,8 +13,18 @@ import jakarta.persistence.LockModeType;
 
 public interface OneTimeTokenRepository extends JpaRepository<OneTimeTokenEntity, UUID> {
 
+	@Query("select token.accountId from OneTimeTokenEntity token where token.tokenHash = :tokenHash and token.purpose = :purpose")
+	Optional<UUID> findAccountIdByTokenHashAndPurpose(@Param("tokenHash") String tokenHash,
+			@Param("purpose") String purpose);
+
 	@Lock(LockModeType.PESSIMISTIC_WRITE)
-	@Query("select token from OneTimeTokenEntity token where token.tokenHash = :tokenHash and token.purpose = 'VERIFY_EMAIL'")
-	Optional<OneTimeTokenEntity> findVerificationForUpdate(@Param("tokenHash") String tokenHash);
+	@Query("select token from OneTimeTokenEntity token where token.tokenHash = :tokenHash and token.purpose = :purpose")
+	Optional<OneTimeTokenEntity> findByTokenHashAndPurposeForUpdate(@Param("tokenHash") String tokenHash,
+			@Param("purpose") String purpose);
+
+	@Lock(LockModeType.PESSIMISTIC_WRITE)
+	@Query("select token from OneTimeTokenEntity token where token.accountId = :accountId and token.purpose = :purpose and token.consumedAt is null and token.invalidatedAt is null")
+	List<OneTimeTokenEntity> findActiveForUpdate(@Param("accountId") UUID accountId,
+			@Param("purpose") String purpose);
 
 }

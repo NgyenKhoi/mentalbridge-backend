@@ -32,7 +32,8 @@ Identity owns accounts, credentials, roles, email ownership, refresh sessions, a
 - [x] ID-04 Add owner Liquibase migrations, data dictionary entries, constraints and query indexes.
 - [x] ID-05 Implement registration/verification and safe delivery request integration.
 - [x] ID-06 Implement login, refresh rotation/replay detection and logout.
-- [ ] ID-07 Implement password recovery/change and non-admin account-state administration.
+- [x] ID-07 Implement email-verification resend and password recovery/change.
+- [ ] ID-07B Implement non-admin account-state administration.
 - [ ] ID-08 Implement deletion coordinator, idempotent task projection and retained-audit minimization.
 - [ ] ID-09 Verify validation, authorization, rate limit, concurrency, replay, outbox rollback, consumer duplicates and dependency failures.
 - [ ] ID-10 Add metrics/readiness/configuration, update module README, and pass module/contract/migration build gates.

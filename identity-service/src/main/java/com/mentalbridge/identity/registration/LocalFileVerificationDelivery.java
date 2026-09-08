@@ -29,7 +29,8 @@ public class LocalFileVerificationDelivery implements VerificationDelivery {
 	private final VerificationDeliveryProperties properties;
 
 	public LocalFileVerificationDelivery(VerificationDeliveryProperties properties) {
-		if (properties.verificationUrl() == null || properties.localDirectory() == null) {
+		if (properties.verificationUrl() == null || properties.passwordRecoveryUrl() == null
+				|| properties.localDirectory() == null) {
 			throw new IllegalStateException("Local verification delivery configuration is incomplete");
 		}
 		this.properties = properties;
@@ -37,12 +38,21 @@ public class LocalFileVerificationDelivery implements VerificationDelivery {
 
 	@Override
 	public void requestDelivery(UUID accountId, String normalizedEmail, String challenge, UUID correlationId) {
+		write(accountId, challenge, properties.verificationUrl(), ".verification-url");
+	}
+
+	@Override
+	public void requestPasswordRecovery(UUID accountId, String normalizedEmail, String challenge, UUID correlationId) {
+		write(accountId, challenge, properties.passwordRecoveryUrl(), ".password-recovery-url");
+	}
+
+	private void write(UUID accountId, String challenge, java.net.URI baseUrl, String suffix) {
 		var directory = properties.localDirectory().toAbsolutePath().normalize();
-		var destination = directory.resolve(accountId + ".verification-url").normalize();
+		var destination = directory.resolve(accountId + suffix).normalize();
 		if (!destination.getParent().equals(directory)) {
 			throw new IllegalStateException("Local verification delivery path is invalid");
 		}
-		var link = UriComponentsBuilder.fromUri(properties.verificationUrl()).queryParam("challenge", challenge).build()
+		var link = UriComponentsBuilder.fromUri(baseUrl).queryParam("challenge", challenge).build()
 				.encode().toUriString();
 		try {
 			Files.createDirectories(directory);

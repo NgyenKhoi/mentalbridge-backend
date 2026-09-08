@@ -38,8 +38,9 @@ public class AuthenticationPersistence {
 	}
 
 	public Optional<RefreshRecord> findRefreshForUpdate(String tokenHash) {
-		return sessions.findByTokenHashForUpdate(tokenHash).map(session -> {
-			var account = accounts.findByIdForUpdate(session.accountId()).orElseThrow(InvalidSessionException::new);
+		return sessions.findAccountIdByTokenHash(tokenHash).map(accountId -> {
+			var account = accounts.findByIdForUpdate(accountId).orElseThrow(InvalidSessionException::new);
+			var session = sessions.findByTokenHashForUpdate(tokenHash).orElseThrow(InvalidSessionException::new);
 			return new RefreshRecord(session.id(), session.familyId(), session.accountId(), account.status(),
 					session.tokenHash(), session.expiresAt(), session.revokedAt(), session.revokeReason(), account.role());
 		});

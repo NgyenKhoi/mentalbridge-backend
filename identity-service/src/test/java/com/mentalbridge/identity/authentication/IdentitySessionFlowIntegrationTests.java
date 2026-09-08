@@ -3,6 +3,7 @@ package com.mentalbridge.identity.authentication;
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.get;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.post;
+import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.put;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.content;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.jsonPath;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.status;
@@ -33,6 +34,7 @@ import com.fasterxml.jackson.databind.ObjectMapper;
 import com.mentalbridge.identity.IdentityTestProperties;
 import com.mentalbridge.identity.TestcontainersConfiguration;
 import com.mentalbridge.identity.registration.RegistrationRequested;
+import com.mentalbridge.identity.credential.CredentialDeliveryRequested;
 
 @Import({ TestcontainersConfiguration.class, IdentitySessionFlowIntegrationTests.CaptureConfiguration.class })
 @SpringBootTest
@@ -42,10 +44,14 @@ class IdentitySessionFlowIntegrationTests extends IdentityTestProperties {
 	private static final Set<String> IMPLEMENTED_OPERATIONS = Set.of(
 			"POST /api/v1/auth/registrations",
 			"POST /api/v1/auth/email-verifications",
+			"POST /api/v1/auth/email-verification-requests",
 			"POST /api/v1/auth/login",
 			"POST /api/v1/auth/refresh",
 			"POST /api/v1/auth/logout",
 			"POST /api/v1/auth/logout-all",
+			"POST /api/v1/auth/password-recovery-requests",
+			"POST /api/v1/auth/password-resets",
+			"PUT /api/v1/account/password",
 			"GET /api/v1/account");
 
 	@Autowired
@@ -299,6 +305,161 @@ class IdentitySessionFlowIntegrationTests extends IdentityTestProperties {
 	}
 
 	@Test
+	void verificationResendRecoveryResetAndPasswordChangeCompleteTheCredentialLifecycle() throws Exception {
+		var email = "credential-lifecycle@example.com";
+		mvc.perform(post("/api/v1/auth/registrations").header("Idempotency-Key", "credential-lifecycle-register")
+				.contentType(MediaType.APPLICATION_JSON).content("{\"email\":\"" + email
+						+ "\",\"password\":\"correct-horse-battery-staple\",\"actorType\":\"USER\"}"))
+				.andExpect(status().isCreated());
+		var originalVerification = verificationCapture.challenge();
+
+		mvc.perform(post("/api/v1/auth/email-verification-requests").contentType(MediaType.APPLICATION_JSON)
+				.content("{\"email\":\"" + email + "\"}"))
+				.andExpect(status().isAccepted()).andExpect(content().string(""));
+		var replacementVerification = verificationCapture.challenge();
+		assertThat(replacementVerification).isNotEqualTo(originalVerification);
+
+		mvc.perform(post("/api/v1/auth/email-verifications").contentType(MediaType.APPLICATION_JSON)
+				.content("{\"challenge\":\"" + originalVerification + "\"}"))
+				.andExpect(status().isBadRequest()).andExpect(jsonPath("$.code").value("INVALID_CHALLENGE"));
+		mvc.perform(post("/api/v1/auth/email-verifications").contentType(MediaType.APPLICATION_JSON)
+				.content("{\"challenge\":\"" + replacementVerification + "\"}"))
+				.andExpect(status().isOk());
+		mvc.perform(post("/api/v1/auth/email-verifications").contentType(MediaType.APPLICATION_JSON)
+				.content("{\"challenge\":\"" + replacementVerification + "\"}"))
+				.andExpect(status().isOk());
+
+		var originalSession = login(email, "correct-horse-battery-staple");
+		mvc.perform(post("/api/v1/auth/password-recovery-requests").contentType(MediaType.APPLICATION_JSON)
+				.content("{\"email\":\"" + email + "\"}"))
+				.andExpect(status().isAccepted()).andExpect(content().string(""));
+		var recoveryChallenge = verificationCapture.recoveryChallenge();
+		assertThat(recoveryChallenge).isNotBlank();
+
+		mvc.perform(post("/api/v1/auth/email-verifications").contentType(MediaType.APPLICATION_JSON)
+				.content("{\"challenge\":\"" + recoveryChallenge + "\"}"))
+				.andExpect(status().isBadRequest()).andExpect(jsonPath("$.code").value("INVALID_CHALLENGE"));
+		mvc.perform(post("/api/v1/auth/password-resets").contentType(MediaType.APPLICATION_JSON)
+				.content("{\"challenge\":\"" + recoveryChallenge
+						+ "\",\"newPassword\":\"new-correct-horse-battery-staple\"}"))
+				.andExpect(status().isNoContent());
+		mvc.perform(post("/api/v1/auth/password-resets").contentType(MediaType.APPLICATION_JSON)
+				.content("{\"challenge\":\"" + recoveryChallenge
+						+ "\",\"newPassword\":\"another-correct-horse-password\"}"))
+				.andExpect(status().isBadRequest()).andExpect(jsonPath("$.code").value("INVALID_CHALLENGE"));
+		assertRefreshRejected(originalSession.get("refreshToken").asText(), "refresh-after-password-reset");
+		assertLoginRejected(email, "correct-horse-battery-staple");
+
+		var resetSession = login(email, "new-correct-horse-battery-staple");
+		mvc.perform(put("/api/v1/account/password")
+				.header("Authorization", "Bearer " + resetSession.get("accessToken").asText())
+				.contentType(MediaType.APPLICATION_JSON).content("""
+						{"currentPassword":"new-correct-horse-battery-staple","newPassword":"final-correct-horse-battery-staple"}
+						"""))
+				.andExpect(status().isNoContent());
+		assertRefreshRejected(resetSession.get("refreshToken").asText(), "refresh-after-password-change");
+		assertLoginRejected(email, "new-correct-horse-battery-staple");
+		login(email, "final-correct-horse-battery-staple");
+	}
+
+	@Test
+	void genericCredentialRequestsDoNotRevealEligibilityAndEnforceCooldown() throws Exception {
+		var pendingEmail = "generic-pending@example.com";
+		mvc.perform(post("/api/v1/auth/registrations").header("Idempotency-Key", "generic-pending-register")
+				.contentType(MediaType.APPLICATION_JSON).content("{\"email\":\"" + pendingEmail
+						+ "\",\"password\":\"correct-horse-battery-staple\",\"actorType\":\"USER\"}"))
+				.andExpect(status().isCreated());
+
+		for (var email : List.of(pendingEmail, "unknown-credential-account@example.com")) {
+			mvc.perform(post("/api/v1/auth/email-verification-requests").contentType(MediaType.APPLICATION_JSON)
+					.content("{\"email\":\"" + email + "\"}"))
+					.andExpect(status().isAccepted()).andExpect(content().string(""));
+		}
+
+		mvc.perform(post("/api/v1/auth/email-verification-requests").contentType(MediaType.APPLICATION_JSON)
+				.content("{\"email\":\"" + pendingEmail + "\"}"))
+				.andExpect(status().isTooManyRequests()).andExpect(jsonPath("$.code").value("RATE_LIMITED"))
+				.andExpect(result -> assertThat(result.getResponse().getHeader("Retry-After")).isNotBlank());
+
+		mvc.perform(post("/api/v1/auth/password-recovery-requests").contentType(MediaType.APPLICATION_JSON)
+				.content("{\"email\":\"" + pendingEmail + "\"}"))
+				.andExpect(status().isAccepted()).andExpect(content().string(""));
+		assertThat(jdbc.sql("""
+				select count(*) from one_time_token token
+				join account on account.id = token.account_id
+				where account.email = :email and token.purpose = 'RESET_PASSWORD'
+				""").param("email", pendingEmail).query(Long.class).single()).isZero();
+	}
+
+	@Test
+	void concurrentVerificationResendsLeaveExactlyOneActiveChallenge() throws Exception {
+		var email = "concurrent-verification@example.com";
+		mvc.perform(post("/api/v1/auth/registrations").header("Idempotency-Key", "concurrent-verification-register")
+				.contentType(MediaType.APPLICATION_JSON).content("{\"email\":\"" + email
+						+ "\",\"password\":\"correct-horse-battery-staple\",\"actorType\":\"USER\"}"))
+				.andExpect(status().isCreated());
+		var ready = new CountDownLatch(2);
+		var start = new CountDownLatch(1);
+		var executor = Executors.newFixedThreadPool(2);
+		try {
+			var first = executor.submit(() -> credentialRequestAfterSignal("/api/v1/auth/email-verification-requests",
+					email, ready, start));
+			var second = executor.submit(() -> credentialRequestAfterSignal("/api/v1/auth/email-verification-requests",
+					email, ready, start));
+			assertThat(ready.await(10, TimeUnit.SECONDS)).isTrue();
+			start.countDown();
+			var results = List.of(first.get(30, TimeUnit.SECONDS), second.get(30, TimeUnit.SECONDS));
+
+			assertThat(results).extracting(result -> result.getResponse().getStatus())
+					.containsExactlyInAnyOrder(202, 429);
+			assertThat(jdbc.sql("""
+					select count(*) from one_time_token token
+					join account on account.id = token.account_id
+					where account.email = :email and token.purpose = 'VERIFY_EMAIL'
+					  and token.consumed_at is null and token.invalidated_at is null
+					""").param("email", email).query(Long.class).single()).isEqualTo(1);
+		}
+		finally {
+			executor.shutdownNow();
+		}
+	}
+
+	@Test
+	void concurrentPasswordResetConsumptionAllowsOnlyOneMutation() throws Exception {
+		var email = "concurrent-reset@example.com";
+		var originalSession = registerVerifyAndLogin(email, "concurrent-reset-register");
+		mvc.perform(post("/api/v1/auth/password-recovery-requests").contentType(MediaType.APPLICATION_JSON)
+				.content("{\"email\":\"" + email + "\"}"))
+				.andExpect(status().isAccepted());
+		var challenge = verificationCapture.recoveryChallenge();
+		var body = "{\"challenge\":\"" + challenge
+				+ "\",\"newPassword\":\"concurrent-new-secure-password\"}";
+		var ready = new CountDownLatch(2);
+		var start = new CountDownLatch(1);
+		var executor = Executors.newFixedThreadPool(2);
+		try {
+			var first = executor.submit(() -> passwordResetAfterSignal(body, ready, start));
+			var second = executor.submit(() -> passwordResetAfterSignal(body, ready, start));
+			assertThat(ready.await(10, TimeUnit.SECONDS)).isTrue();
+			start.countDown();
+			var results = List.of(first.get(30, TimeUnit.SECONDS), second.get(30, TimeUnit.SECONDS));
+
+			assertThat(results).extracting(result -> result.getResponse().getStatus())
+					.containsExactlyInAnyOrder(204, 400);
+			assertThat(jdbc.sql("""
+					select count(*) from one_time_token token
+					join account on account.id = token.account_id
+					where account.email = :email and token.purpose = 'RESET_PASSWORD'
+					  and token.consumed_at is not null
+					""").param("email", email).query(Long.class).single()).isEqualTo(1);
+			assertRefreshRejected(originalSession.get("refreshToken").asText(), "refresh-after-concurrent-reset");
+		}
+		finally {
+			executor.shutdownNow();
+		}
+	}
+
+	@Test
 	void runtimeHandlersExactlyMatchTheImplementedOpenApiOperations() {
 		var operations = handlerMapping.getHandlerMethods().keySet().stream()
 				.flatMap(mapping -> mapping.getPatternValues().stream()
@@ -317,6 +478,25 @@ class IdentitySessionFlowIntegrationTests extends IdentityTestProperties {
 						+ "\",\"password\":\"correct-horse-battery-staple\"}"))
 				.andExpect(status().isOk()).andReturn();
 		return json(login.getResponse().getContentAsString());
+	}
+
+	private JsonNode login(String email, String password) throws Exception {
+		var result = mvc.perform(post("/api/v1/auth/login").contentType(MediaType.APPLICATION_JSON)
+				.content("{\"email\":\"" + email + "\",\"password\":\"" + password + "\"}"))
+				.andExpect(status().isOk()).andReturn();
+		return json(result.getResponse().getContentAsString());
+	}
+
+	private void assertLoginRejected(String email, String password) throws Exception {
+		mvc.perform(post("/api/v1/auth/login").contentType(MediaType.APPLICATION_JSON)
+				.content("{\"email\":\"" + email + "\",\"password\":\"" + password + "\"}"))
+				.andExpect(status().isUnauthorized()).andExpect(jsonPath("$.code").value("INVALID_CREDENTIALS"));
+	}
+
+	private void assertRefreshRejected(String refreshToken, String idempotencyKey) throws Exception {
+		mvc.perform(post("/api/v1/auth/refresh").header("Idempotency-Key", idempotencyKey)
+				.contentType(MediaType.APPLICATION_JSON).content("{\"refreshToken\":\"" + refreshToken + "\"}"))
+				.andExpect(status().isUnauthorized()).andExpect(jsonPath("$.code").value("INVALID_SESSION"));
 	}
 
 	private void registerAndVerify(String email, String idempotencyKey) throws Exception {
@@ -339,20 +519,55 @@ class IdentitySessionFlowIntegrationTests extends IdentityTestProperties {
 				.contentType(MediaType.APPLICATION_JSON).content(body)).andReturn();
 	}
 
+	private MvcResult credentialRequestAfterSignal(String path, String email, CountDownLatch ready,
+			CountDownLatch start) throws Exception {
+		ready.countDown();
+		if (!start.await(10, TimeUnit.SECONDS)) {
+			throw new IllegalStateException("Concurrent credential request start signal timed out");
+		}
+		return mvc.perform(post(path).contentType(MediaType.APPLICATION_JSON)
+				.content("{\"email\":\"" + email + "\"}")).andReturn();
+	}
+
+	private MvcResult passwordResetAfterSignal(String body, CountDownLatch ready, CountDownLatch start)
+			throws Exception {
+		ready.countDown();
+		if (!start.await(10, TimeUnit.SECONDS)) {
+			throw new IllegalStateException("Concurrent password reset start signal timed out");
+		}
+		return mvc.perform(post("/api/v1/auth/password-resets").contentType(MediaType.APPLICATION_JSON)
+				.content(body)).andReturn();
+	}
+
 	private JsonNode json(String value) throws Exception {
 		return objectMapper.readTree(value);
 	}
 
 	static class VerificationCapture {
 		private final AtomicReference<String> challenge = new AtomicReference<>();
+		private final AtomicReference<String> recoveryChallenge = new AtomicReference<>();
 
 		@EventListener
 		void capture(RegistrationRequested requested) {
 			challenge.set(requested.challenge());
 		}
 
+		@EventListener
+		void capture(CredentialDeliveryRequested requested) {
+			if (requested.purpose() == CredentialDeliveryRequested.Purpose.VERIFY_EMAIL) {
+				challenge.set(requested.challenge());
+			}
+			else {
+				recoveryChallenge.set(requested.challenge());
+			}
+		}
+
 		String challenge() {
 			return challenge.get();
+		}
+
+		String recoveryChallenge() {
+			return recoveryChallenge.get();
 		}
 	}
 

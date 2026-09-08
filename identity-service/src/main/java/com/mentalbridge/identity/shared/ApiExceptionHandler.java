@@ -6,6 +6,7 @@ import java.util.UUID;
 import org.springframework.dao.DataIntegrityViolationException;
 import org.springframework.http.HttpStatus;
 import org.springframework.http.ProblemDetail;
+import org.springframework.http.ResponseEntity;
 import org.springframework.web.bind.MethodArgumentNotValidException;
 import org.springframework.web.bind.MissingRequestHeaderException;
 import org.springframework.web.bind.annotation.ExceptionHandler;
@@ -15,6 +16,7 @@ import org.springframework.http.converter.HttpMessageNotReadableException;
 
 import com.mentalbridge.identity.authentication.InvalidCredentialsException;
 import com.mentalbridge.identity.authentication.InvalidSessionException;
+import com.mentalbridge.identity.credential.CredentialRateLimitException;
 import com.mentalbridge.identity.idempotency.IdempotencyConflictException;
 import com.mentalbridge.identity.registration.InvalidVerificationChallengeException;
 
@@ -60,6 +62,13 @@ public class ApiExceptionHandler {
 	@ExceptionHandler(IdempotencyConflictException.class)
 	ProblemDetail idempotencyConflict(IdempotencyConflictException exception, HttpServletRequest request) {
 		return problem(HttpStatus.CONFLICT, "IDEMPOTENCY_KEY_REUSED", "Idempotency key was reused", request);
+	}
+
+	@ExceptionHandler(CredentialRateLimitException.class)
+	ResponseEntity<ProblemDetail> rateLimit(CredentialRateLimitException exception, HttpServletRequest request) {
+		var problem = problem(HttpStatus.TOO_MANY_REQUESTS, "RATE_LIMITED", "Request rate limit exceeded", request);
+		return ResponseEntity.status(HttpStatus.TOO_MANY_REQUESTS)
+				.header("Retry-After", Long.toString(exception.retryAfterSeconds())).body(problem);
 	}
 
 	private ProblemDetail problem(HttpStatus status, String code, String title, HttpServletRequest request) {

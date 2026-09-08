@@ -40,7 +40,7 @@ Public registration accepts exactly one actor type: `USER` or `SPECIALIST`. It n
 - Passwords contain 12 to 128 Unicode characters and at most 72 UTF-8 bytes. They must not be silently truncated or normalized before hashing.
 - Passwords are hashed with BCrypt using cost factor 12. Plaintext passwords, recovery credentials, and hashes never enter logs, events, metrics, or API responses.
 - Login and recovery-request failures use a generic response that does not reveal whether an email is registered.
-- Five consecutive failed password attempts lock password login for 15 minutes. The counter and lock update are atomic. Rate limits also apply per privacy-minimized account and network key so rotating an email or address cannot bypass abuse controls.
+- Five consecutive failed password attempts lock password login for 15 minutes. The counter and lock update are atomic. Verification-resend and recovery limits use a keyed fingerprint of the normalized email and purpose for eligible, ineligible, and unknown subjects; a future trusted-edge network key may supplement this subject limit without changing the public response.
 - A successful password reset or authenticated password change revokes every refresh session for the account. Previously issued access tokens expire naturally within their short lifetime; resource owners must not treat an offline JWT as proof that the account remains enabled for high-risk current-state decisions.
 
 Security values are typed configuration with the policy values above as reviewed defaults. Lower production values are rejected at startup. A future change to token lifetimes, signing semantics, or revocation behavior requires an explicit compatibility and threat review.
@@ -70,10 +70,10 @@ Identity serializes refresh rotation at the persisted session boundary and store
 - Only a one-way hash is stored. A challenge is consumed atomically with the account or credential change and cannot be reused.
 - Email-verification challenges expire after 24 hours. Password-recovery challenges expire after 15 minutes.
 - Issuing a new challenge invalidates prior unconsumed challenges for the same account and purpose.
-- Resend and recovery-request endpoints return a generic accepted response. They are rate-limited per account and privacy-minimized network key, with no more than three delivery requests per purpose per hour and a 60-second resend interval.
+- Resend and recovery-request endpoints return an empty generic accepted response. Every valid request consumes the same privacy-minimized normalized-email subject budget regardless of account existence or eligibility: no more than three requests per purpose per hour and a 60-second interval. A rejected request returns `429` with `Retry-After` without creating a challenge or delivery.
 - Password recovery does not activate, re-enable, or cancel deletion for an account. Disabled and deleted accounts receive no usable recovery challenge.
-- Brevo is a delivery adapter only. Identity creates, hashes, expires, consumes, and audits challenges; provider responses never become authentication authority.
-- Local frontend integration may write a verification URL for a synthetic account to an ignored private file. This adapter is disabled by default, never logs the recipient or challenge, and fails startup unless exactly a `local` or `dev` profile is active without `prod`.
+- Brevo is a delivery adapter only. Identity creates, hashes, expires, consumes, and audits challenges; provider responses never become authentication authority. Delivery runs after the state transaction commits, and a provider failure is recorded without recipient, challenge, or provider detail while the public request remains generically accepted.
+- Local frontend integration may write a verification or recovery URL for a synthetic account to a purpose-specific ignored private file. This adapter is disabled by default, never logs the recipient or challenge, and fails startup unless exactly the `dev` profile is active.
 
 ## Required verification scenarios
 

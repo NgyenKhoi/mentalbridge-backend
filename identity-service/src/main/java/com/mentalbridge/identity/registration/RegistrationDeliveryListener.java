@@ -22,7 +22,7 @@ public class RegistrationDeliveryListener {
 	@TransactionalEventListener(phase = TransactionPhase.AFTER_COMMIT)
 	public void deliver(RegistrationRequested registration) {
 		try {
-			delivery.requestDelivery(registration.accountId(), registration.normalizedEmail(), registration.challenge(),
+			delivery.requestEmailVerification(registration.accountId(), registration.normalizedEmail(), registration.challenge(),
 					registration.correlationId());
 		}
 		catch (RuntimeException exception) {
