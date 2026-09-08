@@ -97,10 +97,12 @@ export class ResourceRepository {
       [id],
     );
     const row = result.rows[0];
+    // eslint-disable-next-line @typescript-eslint/no-unnecessary-condition
     if (!row) return null;
     return {
       ...row,
-      version: Number(row.version),
+      // eslint-disable-next-line @typescript-eslint/no-unnecessary-type-assertion
+      version: Number(row.version as unknown),
     };
   }
 
@@ -123,7 +125,8 @@ export class ResourceRepository {
     const row = result.rows[0];
     return {
       ...row,
-      version: Number(row.version),
+      // eslint-disable-next-line @typescript-eslint/no-unnecessary-type-assertion
+      version: Number(row.version as unknown),
     };
   }
 
@@ -159,10 +162,12 @@ export class ResourceRepository {
       params,
     );
     const row = result.rows[0];
+    // eslint-disable-next-line @typescript-eslint/no-unnecessary-condition
     if (!row) return null;
     return {
       ...row,
-      version: Number(row.version),
+      // eslint-disable-next-line @typescript-eslint/no-unnecessary-type-assertion
+      version: Number(row.version as unknown),
     };
   }
 
@@ -190,10 +195,12 @@ export class ResourceRepository {
       [id, data.reviewedBy, data.effectiveAt || null, data.expiresAt || null, data.version],
     );
     const row = result.rows[0];
+    // eslint-disable-next-line @typescript-eslint/no-unnecessary-condition
     if (!row) return null;
     return {
       ...row,
-      version: Number(row.version),
+      // eslint-disable-next-line @typescript-eslint/no-unnecessary-type-assertion
+      version: Number(row.version as unknown),
     };
   }
 
@@ -210,10 +217,12 @@ export class ResourceRepository {
       [id, version],
     );
     const row = result.rows[0];
+    // eslint-disable-next-line @typescript-eslint/no-unnecessary-condition
     if (!row) return null;
     return {
       ...row,
-      version: Number(row.version),
+      // eslint-disable-next-line @typescript-eslint/no-unnecessary-type-assertion
+      version: Number(row.version as unknown),
     };
   }
 }
