@@ -76,7 +76,7 @@ export class ResourceRepository {
 
     const result = await this.db.query<ResourceRow>(
       `SELECT id, category, locale, title, summary, external_url, status,
-              reviewed_at, created_at, updated_at
+              reviewed_by, reviewed_at, created_at, updated_at
        FROM resource r
        WHERE ${where}
        ORDER BY r.created_at DESC, r.id DESC
@@ -96,7 +96,12 @@ export class ResourceRepository {
        WHERE id = $1`,
       [id],
     );
-    return result.rows[0] || null;
+    const row = result.rows[0];
+    if (!row) return null;
+    return {
+      ...row,
+      version: Number(row.version),
+    };
   }
 
   async create(data: CreateResourceData): Promise<ResourceRow> {
@@ -115,7 +120,11 @@ export class ResourceRepository {
         data.externalUrl || null,
       ],
     );
-    return result.rows[0];
+    const row = result.rows[0];
+    return {
+      ...row,
+      version: Number(row.version),
+    };
   }
 
   async update(id: string, data: UpdateResourceData): Promise<ResourceRow | null> {
@@ -149,7 +158,12 @@ export class ResourceRepository {
                  created_at, updated_at, version`,
       params,
     );
-    return result.rows[0] || null;
+    const row = result.rows[0];
+    if (!row) return null;
+    return {
+      ...row,
+      version: Number(row.version),
+    };
   }
 
   async delete(id: string): Promise<boolean> {
@@ -175,7 +189,12 @@ export class ResourceRepository {
                  created_at, updated_at, version`,
       [id, data.reviewedBy, data.effectiveAt || null, data.expiresAt || null, data.version],
     );
-    return result.rows[0] || null;
+    const row = result.rows[0];
+    if (!row) return null;
+    return {
+      ...row,
+      version: Number(row.version),
+    };
   }
 
   async archive(id: string, version: number): Promise<ResourceRow | null> {
@@ -190,6 +209,11 @@ export class ResourceRepository {
                  created_at, updated_at, version`,
       [id, version],
     );
-    return result.rows[0] || null;
+    const row = result.rows[0];
+    if (!row) return null;
+    return {
+      ...row,
+      version: Number(row.version),
+    };
   }
 }
