@@ -1123,3 +1123,39 @@ Idempotent per-data-owner work item belonging to one deletion request.
 | `completed_at` | UTC instant this owner confirmed terminal completion; null while unfinished. |
 | `last_error_code` | Latest stable safe owner failure category without deleted content. |
 | `updated_at` | UTC instant of the latest task claim, retry, or status change. |
+
+
+## Owner `content-notification` (`mentalbridge_content_notification.public`)
+
+### `public.resource`
+
+Reviewed self-help content published through admin workflow, never user-contributed. Each resource requires explicit review approval before publication.
+
+| Field | Purpose |
+| --- | --- |
+| `id` | Immutable UUID exposed in REST contracts and used as the primary resource identifier. |
+| `category` | Stable resource category for filtering and display: `BREATHING`, `MEDITATION`, `ARTICLE`, `VIDEO`, `JOURNALING`, or `COMMUNITY`. |
+| `locale` | BCP 47 locale tag identifying the language/region of the content; defaults to `vi-VN`. |
+| `title` | Reviewed user-facing resource title displayed in lists and detail views; maximum 255 characters. |
+| `summary` | Reviewed brief description shown in previews and search results. |
+| `content_body` | Optional full reviewed content body; nullable when using external URL instead. |
+| `external_url` | Optional validated external link to content hosted elsewhere; mutually exclusive use with content body. |
+| `status` | Authoritative workflow state controlling visibility: `DRAFT` (editable), `PUBLISHED` (immutable, public), or `ARCHIVED` (immutable, hidden). |
+| `reviewed_by` | Identity UUID of administrator who approved publication; required and immutable once `PUBLISHED`; enforced by database constraint. |
+| `reviewed_at` | UTC timestamp when review approval occurred; required and immutable once `PUBLISHED`; enforced by database constraint. |
+| `effective_at` | Optional UTC timestamp controlling delayed publication; resource not visible until this instant passes. |
+| `expires_at` | Optional UTC timestamp after which published resource becomes hidden automatically. |
+| `created_at` | Immutable UTC creation instant for audit and chronological ordering. |
+| `updated_at` | UTC timestamp of latest persisted change; updated automatically on any modification. |
+| `version` | Non-negative optimistic lock counter incremented on each update; prevents lost concurrent modifications. |
+
+**State Transitions:**
+- `DRAFT` → `PUBLISHED`: Requires admin review, sets `reviewed_by` and `reviewed_at`, becomes immutable
+- `PUBLISHED` → `ARCHIVED`: Preserves review metadata, resource becomes hidden but retrievable
+- Updates and deletions allowed only in `DRAFT` status
+- `reviewed_by` and `reviewed_at` immutable once set, enforced by `CHECK (status != 'PUBLISHED' OR (reviewed_by IS NOT NULL AND reviewed_at IS NOT NULL))`
+
+**Public API Safety:**
+- Only `PUBLISHED` resources returned where `effective_at <= NOW()` and (`expires_at` IS NULL OR `expires_at > NOW()`)
+- All published resources guaranteed to have review provenance
+- `DRAFT` and `ARCHIVED` resources never exposed to public endpoints

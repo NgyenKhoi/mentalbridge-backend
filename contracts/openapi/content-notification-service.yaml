@@ -63,7 +63,7 @@ paths:
                 code: DEPENDENCY_UNAVAILABLE
 
   /api/v1/resources:
-    x-mentalbridge-status: planned
+    x-mentalbridge-status: implemented
     get:
       x-mentalbridge-operation-status: implemented
       tags: [Resources]
@@ -130,7 +130,7 @@ paths:
           $ref: '#/components/responses/RequestRejected'
 
     post:
-      x-mentalbridge-operation-status: planned
+      x-mentalbridge-operation-status: implemented
       tags: [Resources]
       summary: Create a new resource (Admin)
       operationId: createResource
@@ -164,7 +164,7 @@ paths:
           $ref: '#/components/responses/ValidationError'
 
   /api/v1/resources/{id}:
-    x-mentalbridge-status: planned
+    x-mentalbridge-status: implemented
     parameters:
       - name: id
         in: path
@@ -193,6 +193,13 @@ paths:
       operationId: updateResource
       security:
         - BearerAuth: []
+      parameters:
+        - name: version
+          in: query
+          required: true
+          schema:
+            type: integer
+            minimum: 0
       requestBody:
         required: true
         content:
@@ -226,7 +233,7 @@ paths:
           $ref: '#/components/responses/Conflict'
 
   /api/v1/resources/{id}/publish:
-    x-mentalbridge-status: planned
+    x-mentalbridge-status: implemented
     post:
       tags: [Resources]
       summary: Publish a DRAFT resource — reviewed content workflow (Admin)
@@ -240,6 +247,17 @@ paths:
           schema:
             type: string
             format: uuid
+        - name: version
+          in: query
+          required: true
+          schema:
+            type: integer
+            minimum: 0
+      requestBody:
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/PublishResourceRequest'
       responses:
         '200':
           description: Resource published
@@ -253,7 +271,7 @@ paths:
           $ref: '#/components/responses/Conflict'
 
   /api/v1/resources/{id}/archive:
-    x-mentalbridge-status: planned
+    x-mentalbridge-status: implemented
     post:
       tags: [Resources]
       summary: Archive a PUBLISHED resource (Admin)
@@ -267,6 +285,12 @@ paths:
           schema:
             type: string
             format: uuid
+        - name: version
+          in: query
+          required: true
+          schema:
+            type: integer
+            minimum: 0
       responses:
         '200':
           description: Resource archived
@@ -514,4 +538,16 @@ components:
         externalUrl:
           type: string
           format: uri
+          nullable: true
+
+    PublishResourceRequest:
+      type: object
+      properties:
+        effectiveAt:
+          type: string
+          format: date-time
+          nullable: true
+        expiresAt:
+          type: string
+          format: date-time
           nullable: true
