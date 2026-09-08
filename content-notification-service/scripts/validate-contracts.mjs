@@ -10,12 +10,24 @@ const expectedImplemented = new Set([
   'GET /health/live',
   'GET /health/ready',
   'GET /api/v1/resources',
+  'POST /api/v1/resources',
+  'GET /api/v1/resources/{id}',
+  'PATCH /api/v1/resources/{id}',
+  'DELETE /api/v1/resources/{id}',
+  'POST /api/v1/resources/{id}/publish',
+  'POST /api/v1/resources/{id}/archive',
 ]);
 
 const implementedResponses = new Map([
   ['GET /health/live', new Set(['200'])],
   ['GET /health/ready', new Set(['200', '503'])],
   ['GET /api/v1/resources', new Set(['200', '400'])],
+  ['POST /api/v1/resources', new Set(['201', '422'])],
+  ['GET /api/v1/resources/{id}', new Set(['200', '404'])],
+  ['PATCH /api/v1/resources/{id}', new Set(['200', '404', '409'])],
+  ['DELETE /api/v1/resources/{id}', new Set(['204', '404', '409'])],
+  ['POST /api/v1/resources/{id}/publish', new Set(['200', '404', '409'])],
+  ['POST /api/v1/resources/{id}/archive', new Set(['200', '404', '409'])],
 ]);
 
 const implementedMustBePublic = new Set(['GET /health/live', 'GET /health/ready']);
@@ -68,10 +80,6 @@ if (!setsEqual(actualImplemented, expectedImplemented)) {
   throw new Error(
     `Content contract availability differs from implemented controllers. Missing: [${missing.join(', ')}]. Extra: [${extra.join(', ')}]`,
   );
-}
-
-if (actualPlanned.size === 0) {
-  throw new Error('Forward-looking Content operations must remain explicitly planned');
 }
 
 console.log('Validated OpenAPI contract: ../contracts/openapi/content-notification-service.yaml');
