@@ -161,7 +161,7 @@ describe('ResourceRepository Admin Operations Integration', () => {
 
       // Publish it
       await repository.publish(created.id, {
-        reviewedBy: 'admin-123',
+        reviewedBy: 'b0eebc99-9c0b-4ef8-bb6d-6bb9bd380a11',
         version: 0,
         effectiveAt: null,
         expiresAt: null,
@@ -206,7 +206,7 @@ describe('ResourceRepository Admin Operations Integration', () => {
       });
 
       await repository.publish(created.id, {
-        reviewedBy: 'admin-456',
+        reviewedBy: 'c0eebc99-9c0b-4ef8-bb6d-6bb9bd380a11',
         version: 0,
         effectiveAt: null,
         expiresAt: null,
@@ -255,7 +255,7 @@ describe('ResourceRepository Admin Operations Integration', () => {
 
       const futureDate = new Date(Date.now() + 24 * 60 * 60 * 1000);
       const published = await repository.publish(created.id, {
-        reviewedBy: 'admin-789',
+        reviewedBy: 'd0eebc99-9c0b-4ef8-bb6d-6bb9bd380a11',
         version: 0,
         effectiveAt: futureDate,
         expiresAt: null,
@@ -276,7 +276,7 @@ describe('ResourceRepository Admin Operations Integration', () => {
       });
 
       const published = await repository.publish(created.id, {
-        reviewedBy: 'admin-000',
+        reviewedBy: '00000000-0000-0000-0000-000000000000',
         version: 99,
         effectiveAt: null,
         expiresAt: null,
@@ -297,7 +297,7 @@ describe('ResourceRepository Admin Operations Integration', () => {
 
       // First publish
       await repository.publish(created.id, {
-        reviewedBy: 'admin-111',
+        reviewedBy: 'e0eebc99-9c0b-4ef8-bb6d-6bb9bd380a11',
         version: 0,
         effectiveAt: null,
         expiresAt: null,
@@ -305,7 +305,7 @@ describe('ResourceRepository Admin Operations Integration', () => {
 
       // Try to publish again
       const secondPublish = await repository.publish(created.id, {
-        reviewedBy: 'admin-222',
+        reviewedBy: 'f0eebc99-9c0b-4ef8-bb6d-6bb9bd380a11',
         version: 1,
         effectiveAt: null,
         expiresAt: null,
@@ -326,8 +326,9 @@ describe('ResourceRepository Admin Operations Integration', () => {
         externalUrl: null,
       });
 
+      const adminId = '10eebc99-9c0b-4ef8-bb6d-6bb9bd380a11';
       const published = await repository.publish(created.id, {
-        reviewedBy: 'admin-333',
+        reviewedBy: adminId,
         version: 0,
         effectiveAt: null,
         expiresAt: null,
@@ -338,7 +339,7 @@ describe('ResourceRepository Admin Operations Integration', () => {
       expect(archived).not.toBeNull();
       expect(archived!.status).toBe('ARCHIVED');
       expect(archived!.version).toBe(2);
-      expect(archived!.reviewed_by).toBe('admin-333');
+      expect(archived!.reviewed_by).toBe(adminId);
       expect(archived!.reviewed_at).not.toBeNull();
     });
 
@@ -353,7 +354,7 @@ describe('ResourceRepository Admin Operations Integration', () => {
       });
 
       await repository.publish(created.id, {
-        reviewedBy: 'admin-444',
+        reviewedBy: '11eebc99-9c0b-4ef8-bb6d-6bb9bd380a11',
         version: 0,
         effectiveAt: null,
         expiresAt: null,
@@ -400,7 +401,7 @@ describe('ResourceRepository Admin Operations Integration', () => {
 
       // Publish
       const published = await repository.publish(draft.id, {
-        reviewedBy: 'admin-555',
+        reviewedBy: '12eebc99-9c0b-4ef8-bb6d-6bb9bd380a11',
         version: 1,
         effectiveAt: null,
         expiresAt: null,
@@ -463,7 +464,7 @@ describe('ResourceRepository Admin Operations Integration', () => {
 
       const futureDate = new Date(Date.now() + 7 * 24 * 60 * 60 * 1000);
       await repository.publish(created.id, {
-        reviewedBy: 'admin-666',
+        reviewedBy: '13eebc99-9c0b-4ef8-bb6d-6bb9bd380a11',
         version: 0,
         effectiveAt: futureDate,
         expiresAt: null,
@@ -487,7 +488,7 @@ describe('ResourceRepository Admin Operations Integration', () => {
 
       const pastDate = new Date(Date.now() - 24 * 60 * 60 * 1000);
       await repository.publish(created.id, {
-        reviewedBy: 'admin-777',
+        reviewedBy: '14eebc99-9c0b-4ef8-bb6d-6bb9bd380a11',
         version: 0,
         effectiveAt: null,
         expiresAt: pastDate,
@@ -510,7 +511,7 @@ describe('ResourceRepository Admin Operations Integration', () => {
       });
 
       const published = await repository.publish(created.id, {
-        reviewedBy: 'admin-888',
+        reviewedBy: '15eebc99-9c0b-4ef8-bb6d-6bb9bd380a11',
         version: 0,
         effectiveAt: null,
         expiresAt: null,
