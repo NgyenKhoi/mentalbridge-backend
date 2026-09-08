@@ -15,7 +15,12 @@ import {
   ConflictException,
   UnprocessableEntityException,
 } from '@nestjs/common';
-import type { ResourceListResult, ResourceCategory, ResourceDetail, ResourceSummary } from './resource.types.js';
+import type {
+  ResourceListResult,
+  ResourceCategory,
+  ResourceDetail,
+  ResourceSummary,
+} from './resource.types.js';
 import { RESOURCE_SERVICE_TOKEN } from '../application.tokens.js';
 import type { ResourceService } from './resource.service.js';
 import {

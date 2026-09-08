@@ -153,10 +153,9 @@ export class ResourceRepository {
   }
 
   async delete(id: string): Promise<boolean> {
-    const result = await this.db.query(
-      `DELETE FROM resource WHERE id = $1 AND status = 'DRAFT'`,
-      [id],
-    );
+    const result = await this.db.query(`DELETE FROM resource WHERE id = $1 AND status = 'DRAFT'`, [
+      id,
+    ]);
     return (result.rowCount ?? 0) > 0;
   }
 

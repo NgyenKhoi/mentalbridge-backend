@@ -51,7 +51,11 @@ describe('Resource Admin Operations', () => {
     });
 
     it('creates resource with external URL', async () => {
-      const withUrl = { ...mockResourceRow, external_url: 'https://example.com', content_body: null };
+      const withUrl = {
+        ...mockResourceRow,
+        external_url: 'https://example.com',
+        content_body: null,
+      };
       vi.mocked(mockRepository.create!).mockResolvedValue(withUrl);
 
       const result = await mockRepository.create!({

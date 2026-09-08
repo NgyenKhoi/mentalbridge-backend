@@ -1,5 +1,11 @@
 import { Inject, Injectable, Logger } from '@nestjs/common';
-import type { ResourceRepository, ListResourcesQuery, CreateResourceData, UpdateResourceData, PublishResourceData } from './resource.repository.js';
+import type {
+  ResourceRepository,
+  ListResourcesQuery,
+  CreateResourceData,
+  UpdateResourceData,
+  PublishResourceData,
+} from './resource.repository.js';
 import { RESOURCE_REPOSITORY_TOKEN } from '../application.tokens.js';
 import type {
   ResourceCategory,

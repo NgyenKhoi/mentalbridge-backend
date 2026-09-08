@@ -48,9 +48,13 @@ describe('ResourceRepository Admin Operations Integration', () => {
     });
 
     await waitForPool(pool);
-    
+
     // Run migrations
-    const migrations = ['1_initial_schema.sql', '2_remove_hotline_catalogue.sql', '3_add_review_provenance_fields.sql'];
+    const migrations = [
+      '1_initial_schema.sql',
+      '2_remove_hotline_catalogue.sql',
+      '3_add_review_provenance_fields.sql',
+    ];
     for (const migration of migrations) {
       const sql = readFileSync(join(__dirname, '../../../migrations', migration), 'utf8');
       await pool.query(sql);
@@ -435,15 +439,15 @@ describe('ResourceRepository Admin Operations Integration', () => {
       });
 
       const published = await repository.listPublished({ limit: 100 });
-      const hasDraft = published.some(r => r.status === 'DRAFT');
-      
+      const hasDraft = published.some((r) => r.status === 'DRAFT');
+
       expect(hasDraft).toBe(false);
     });
 
     it('PUBLIC endpoint never returns resources without review', async () => {
       const published = await repository.listPublished({ limit: 100 });
-      const hasUnreviewed = published.some(r => !r.reviewed_by || !r.reviewed_at);
-      
+      const hasUnreviewed = published.some((r) => !r.reviewed_by || !r.reviewed_at);
+
       expect(hasUnreviewed).toBe(false);
     });
 
@@ -466,8 +470,8 @@ describe('ResourceRepository Admin Operations Integration', () => {
       });
 
       const published = await repository.listPublished({ limit: 100 });
-      const hasFuture = published.some(r => r.id === created.id);
-      
+      const hasFuture = published.some((r) => r.id === created.id);
+
       expect(hasFuture).toBe(false);
     });
 
@@ -490,8 +494,8 @@ describe('ResourceRepository Admin Operations Integration', () => {
       });
 
       const published = await repository.listPublished({ limit: 100 });
-      const hasExpired = published.some(r => r.id === created.id);
-      
+      const hasExpired = published.some((r) => r.id === created.id);
+
       expect(hasExpired).toBe(false);
     });
 
@@ -515,8 +519,8 @@ describe('ResourceRepository Admin Operations Integration', () => {
       await repository.archive(created.id, published!.version);
 
       const result = await repository.listPublished({ limit: 100 });
-      const hasArchived = result.some(r => r.id === created.id);
-      
+      const hasArchived = result.some((r) => r.id === created.id);
+
       expect(hasArchived).toBe(false);
     });
   });
