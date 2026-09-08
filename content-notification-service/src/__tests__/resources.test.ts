@@ -11,11 +11,7 @@ import type { ResourceRow } from '../resources/resource.types.js';
 const configuration: ServiceConfiguration = {
   NODE_ENV: 'test',
   PORT: 3003,
-  DB_HOST: 'localhost',
-  DB_PORT: 5432,
-  DB_NAME: 'test_db',
-  DB_USER: 'test_user',
-  DB_PASSWORD: 'test_password',
+  DATABASE_URL: 'postgres://test_user:test_password@localhost:5432/test_db',
   DB_POOL_MAX: 2,
   DB_IDLE_TIMEOUT_MS: 100,
   DB_CONNECT_TIMEOUT_MS: 100,
