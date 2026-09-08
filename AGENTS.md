@@ -8,6 +8,7 @@ These instructions apply to the entire repository. Before changing application c
 - Also load `.codex/skills/mentalbridge-architecture/SKILL.md` for architecture, ownership, integration, safety/privacy, provider, configuration, deployment, or ADR work.
 - Also load `.codex/skills/mentalbridge-data-contracts/SKILL.md` for REST/OpenAPI, Kafka/WebSocket contracts, PostgreSQL, MongoDB, migrations, persistence, or cross-language DTO work.
 - Also load `.codex/skills/mentalbridge-verification-delivery/SKILL.md` before declaring work complete and before every branch, switch, stage, commit, push, issue, pull request, rebase, merge, force-push, or post-push verification action.
+- Also load `.codex/skills/mentalbridge-jira-task-csv/SKILL.md` whenever creating, reviewing, or fixing Jira tasks, Sprint backlogs, estimates, Acceptance Criteria, Definition of Done, or CSV import files.
 - These skills are mandatory team workflow. A short instruction such as "push" does not bypass preflight, validation, authorization, templates, or remote verification.
 
 ## Non-negotiable decisions
