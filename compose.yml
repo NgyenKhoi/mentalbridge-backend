@@ -131,11 +131,7 @@ services:
     environment:
       NODE_ENV: production
       PORT: 3003
-      DB_HOST: ${CONTENT_DB_HOST:?Set the shared dev/staging Content database host in .env}
-      DB_PORT: ${CONTENT_DB_PORT:-5432}
-      DB_NAME: ${CONTENT_DB_NAME:-mentalbridge_content_notification}
-      DB_USER: ${CONTENT_DB_USER:?Set the shared dev/staging Content database username in .env}
-      DB_PASSWORD: ${CONTENT_DB_PASSWORD:?Set the shared dev/staging Content database password in .env}
+      DATABASE_URL: ${CONTENT_DATABASE_URL:?Set the shared dev/staging Content database URL in .env}
       DB_POOL_MAX: ${CONTENT_DB_POOL_MAX:-10}
       DB_IDLE_TIMEOUT_MS: ${CONTENT_DB_IDLE_TIMEOUT_MS:-30000}
       DB_CONNECT_TIMEOUT_MS: ${CONTENT_DB_CONNECT_TIMEOUT_MS:-2000}

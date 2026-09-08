@@ -4,9 +4,7 @@ import { loadConfiguration } from '../configuration/configuration.js';
 
 const requiredEnvironment = {
   NODE_ENV: 'test',
-  DB_HOST: 'localhost',
-  DB_USER: 'test_user',
-  DB_PASSWORD: 'test_password',
+  DATABASE_URL: 'postgres://test_user:test_password@localhost:5432/test_db',
   IDENTITY_JWT_ISSUER: 'https://identity.local.mentalbridge',
   IDENTITY_JWT_AUDIENCE: 'mentalbridge-api',
   IDENTITY_JWT_PUBLIC_KEY:
@@ -17,8 +15,7 @@ describe('configuration', () => {
   it('loads required values and defaults', () => {
     const configuration = loadConfiguration(requiredEnvironment);
 
-    expect(configuration.DB_PORT).toBe(5432);
-    expect(configuration.DB_NAME).toBe('mentalbridge_content_notification');
+    expect(configuration.DATABASE_URL).toBe(requiredEnvironment.DATABASE_URL);
     expect(configuration.DB_POOL_MAX).toBe(10);
     expect(configuration.PORT).toBe(3003);
     expect(configuration.LOG_LEVEL).toBe('info');
@@ -33,9 +30,9 @@ describe('configuration', () => {
     expect(configuration.ALLOWED_ORIGINS).toEqual(['https://admin.example', 'https://app.example']);
   });
 
-  it.each(['DB_HOST', 'DB_USER', 'DB_PASSWORD'] as const)('rejects a missing %s', (key) => {
+  it('rejects a missing DATABASE_URL', () => {
     const environment: NodeJS.ProcessEnv = { ...requiredEnvironment };
-    delete environment[key];
+    delete environment.DATABASE_URL;
 
     expect(() => loadConfiguration(environment)).toThrow();
   });

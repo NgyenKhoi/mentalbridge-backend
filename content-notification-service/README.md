@@ -58,7 +58,7 @@ Identity Service must be configured with the corresponding private key (`IDENTIT
 
 ## Migrations
 
-`node-pg-migrate` reads append-only SQL files from `migrations/`. Supply `DATABASE_URL` as a real process variable, then run:
+The application pool and `node-pg-migrate` share `DATABASE_URL`. Set `sslmode=require` or a stricter verified mode for remote PostgreSQL, then run:
 
 ```bash
 npm run migration:check
