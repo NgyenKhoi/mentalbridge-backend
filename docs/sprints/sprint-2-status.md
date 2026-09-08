@@ -4,7 +4,7 @@
 
 | Field | Value |
 | --- | --- |
-| Status date | 2026-09-02 |
+| Status date | 2026-09-06 |
 | Lifecycle | `IN PROGRESS` |
 | Nominal capacity | 250 person-hours: 5 members × 5 hours × 10 working days |
 | Committed capacity | 180 hours |
@@ -57,7 +57,7 @@ The 70-hour difference from nominal capacity is reserved for meetings, review, a
 | Severity-to-support routing | `BLUEPRINT APPROVED — RUNTIME UNAVAILABLE` | `mb-support-routing-capstone-v1` keeps every decision dimension independent, excludes AI and defines no-input/fallback behavior without approving personalized interventions. |
 | Specialist handoff and consent | `DEFINITION COMPLETE — RUNTIME UNAVAILABLE` | Registered, voluntary, user-initiated handoff requires entitlement, availability and minimum scoped consent; no auto-contact, booking or journal sharing. |
 | Follow-up and reassessment | `DEFINITION COMPLETE — REASSESSMENT RUNTIME OWNED BY MB-178` | User initiates reassessment; Care owns future cadence; no automatic clinical reminder is hard-coded. |
-| Descriptive progress | `DEFINITION COMPLETE — RUNTIME UNAVAILABLE` | Same-instrument/version previous/current score, raw delta, band transition and interval only; no clinical, causal or combined-score claim. |
+| Descriptive progress | `RUNTIME COMPLETE — MB-205` | Authenticated owner-selected same-instrument/scoring-version previous/current score, raw delta, arithmetic direction, band transition and interval only; no clinical, causal, safety-resolution or combined-score claim. |
 | Review 1 closure matrix | `PRODUCT OWNER APPROVED — MENTOR REVIEW PENDING` | Every authoritative MB-179 feedback item links to its decision, evidence, approval, runtime status and defer disposition. |
 
 An evidence- or approval-gated deliverable is complete only when the requirements for its applicable environment or feature gate are recorded. If evidence is insufficient or approval is denied, the correct outcome is an explicit unavailable/unpublished decision—not an engineering default.
@@ -77,7 +77,7 @@ Eligibility and versioned disclosure
   -> optional professional-support recommendation when its feature gate passes
   -> future scoped consent and specialist workflow when runtime is available
   -> user-initiated reassessment
-  -> future descriptive progress comparison when compatible evidence exists
+  -> authenticated descriptive progress comparison when compatible evidence exists
 ```
 
 No score automatically diagnoses a condition, mandates treatment, books or notifies a specialist, shares sensitive data, or claims emergency response.
@@ -88,7 +88,7 @@ No score automatically diagnoses a condition, mandates treatment, books or notif
 | --- | --- |
 | GAD-7 publication and submission | Product Owner authorized implementation without an external domain-signature prerequisite. Publication remains blocked until the interviewer-to-self-administered mapping, exact versioned reference data, implementation, tests and final publication record are complete. |
 | Specialist discovery, booking, and consultation | Consultation runtime and exact eligibility/appointment policies are not implemented. Sprint 2 defines the handoff boundary only. |
-| Automatic follow-up and progress API/UI | User-initiated reassessment belongs to MB-178. Automatic cadence remains deliberately unapproved; descriptive progress implementation requires owner backlog creation. |
+| Automatic follow-up | User-initiated reassessment belongs to MB-178 and descriptive progress to MB-205. Automatic cadence remains deliberately unapproved. |
 | Journal frontend CRUD | Backend CRUD remains available, but the 35-hour frontend slice moves to Sprint 3 to fund Review 1 closure. |
 | AI journal analysis or clinical personalization | AI remains supporting-only and cannot score PHQ/GAD, diagnose, or override deterministic safety/support rules. |
 | Production deployment/CD | Not part of this sprint commitment unless separately approved and estimated. |

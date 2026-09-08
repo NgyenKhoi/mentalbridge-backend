@@ -1,0 +1,27 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://mentalbridge.dev/contracts/websocket/realtime/acknowledgement-v1.schema.json",
+  "title": "Realtime acknowledgement v1",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "schemaVersion",
+    "commandId",
+    "correlationId",
+    "status",
+    "acknowledgedAt"
+  ],
+  "properties": {
+    "schemaVersion": { "const": 1 },
+    "commandId": { "type": "string", "format": "uuid" },
+    "correlationId": { "type": "string", "minLength": 1, "maxLength": 128 },
+    "status": { "type": "string", "enum": ["accepted", "duplicate"] },
+    "acknowledgedAt": { "type": "string", "format": "date-time" },
+    "messageId": { "type": "string", "format": "uuid" },
+    "liveDelivery": {
+      "type": "string",
+      "enum": ["delivered", "degraded", "not_applicable"],
+      "description": "not_applicable until cross-instance fan-out or receipt evidence can prove live delivery"
+    }
+  }
+}

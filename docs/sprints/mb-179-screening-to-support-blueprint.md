@@ -99,7 +99,7 @@ Profile or session self-declaration
 | Reviewed resources | A result page requests published generic content | Only active reviewed content is shown | Explicit empty/unavailable content state | Owned by MB-180 runtime work; not evidence that personalized routing exists |
 | Specialist handoff | Registered user voluntarily selects professional support | Entitlement, availability and scoped consent all pass before sharing | Explicit feature, entitlement, availability or consent failure | `DEFINITION COMPLETE / RUNTIME UNAVAILABLE` |
 | Reassessment | Registered owner starts a new attempt | New immutable result is created; earlier result remains unchanged | Same submission failure behavior as an initial assessment | User-initiated behavior belongs to MB-178 runtime work |
-| Progress comparison | Registered owner has two compatible results for one instrument | Descriptive score, band and interval comparison returned | `INSUFFICIENT_COMPARABLE_DATA` | `DEFINITION COMPLETE / RUNTIME UNAVAILABLE` |
+| Progress comparison | Registered owner has two compatible results for one instrument | Descriptive score, band and interval comparison returned | `INSUFFICIENT_COMPARABLE_DATA` | `RUNTIME COMPLETE` through MB-205 |
 
 ## Versioned severity-to-support decision table
 
@@ -217,7 +217,7 @@ Every optional dependency failure leaves the authoritative assessment result acc
 | Specialist handoff | Product Owner | Definition approved; runtime unavailable | Future registered-user flow | Consultation runtime plus scoped consent and security/privacy review |
 | User-initiated reassessment | Product Owner | Definition approved | Sprint 2 | MB-178 runtime evidence |
 | Automatic follow-up/reminders | Product Owner | Deferred | None | New cadence, opt-out, delivery and ownership decision |
-| Descriptive progress | Product Owner | Definition approved; runtime unavailable | Future registered-user flow | Contract, implementation and compatibility tests |
+| Descriptive progress | Product Owner | Runtime complete through MB-205 | Authenticated registered-user flow | Contract, implementation and compatibility tests; production governance remains separate |
 | Real-user study/production data | Privacy/security/legal owners | Production blocked | Synthetic/test data only | Separate privacy, security, retention, legal and operational approval |
 | AI personalization/model selection | Product Owner/Journal-AI | Deferred beyond Sprint 2 | None | Separate AI consent, model, prompt, data-use and failure policy |
 
@@ -236,4 +236,4 @@ Every optional dependency failure leaves the authoritative assessment result acc
 
 ## Definition versus runtime completion
 
-MB-179 completes the business definition when this blueprint, its policies and the Review 1 closure matrix agree. It does not complete GAD-7 publication, intervention runtime, specialist runtime, reminders, progress APIs/UI, production consent/retention or AI personalization. Those capabilities remain unpublished, unavailable or production-blocked until their separate gates and Jira work are complete.
+MB-179 completes the business definition when this blueprint, its policies and the Review 1 closure matrix agree. MB-205 subsequently completes the bounded authenticated progress API/UI. MB-179 does not complete GAD-7 publication, intervention runtime, specialist runtime, reminders, production consent/retention or AI personalization. Those capabilities remain unpublished, unavailable or production-blocked until their separate gates and Jira work are complete.

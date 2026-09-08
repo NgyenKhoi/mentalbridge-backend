@@ -24,6 +24,7 @@ class CareOpenApiContractTests {
 			"GET /api/v1/assessments",
 			"POST /api/v1/assessments",
 			"GET /api/v1/assessments/{assessmentId}",
+			"GET /api/v1/assessments/{assessmentId}/progress",
 			"POST /api/v1/anonymous-assessment-sessions",
 			"POST /api/v1/anonymous-assessment-sessions/{sessionId}/assessments",
 			"GET /api/v1/anonymous-assessment-sessions/{sessionId}/assessments/{assessmentId}");
@@ -36,6 +37,7 @@ class CareOpenApiContractTests {
 			"/api/v1/questionnaires/{instrument}/current",
 			"/api/v1/assessments",
 			"/api/v1/assessments/{assessmentId}",
+			"/api/v1/assessments/{assessmentId}/progress",
 			"/api/v1/anonymous-assessment-sessions",
 			"/api/v1/anonymous-assessment-sessions/{sessionId}/assessments",
 			"/api/v1/anonymous-assessment-sessions/{sessionId}/assessments/{assessmentId}");
@@ -47,7 +49,8 @@ class CareOpenApiContractTests {
 			"POST /api/v1/consent-decisions",
 			"GET /api/v1/assessments",
 			"POST /api/v1/assessments",
-			"GET /api/v1/assessments/{assessmentId}");
+			"GET /api/v1/assessments/{assessmentId}",
+			"GET /api/v1/assessments/{assessmentId}/progress");
 
 	private static final Set<String> ANONYMOUS_TOKEN_OPERATIONS = Set.of(
 			"POST /api/v1/anonymous-assessment-sessions/{sessionId}/assessments",
@@ -103,6 +106,24 @@ class CareOpenApiContractTests {
 				"totalScore", "screeningLevel", "scoringVersion", "safetyStatus", "safetyPolicyVersion",
 				"disclaimerCode");
 		assertThat(result.getRequired()).contains("safetyStatus", "safetyPolicyVersion");
+	}
+
+	@Test
+	void progressResponseIsAdditiveMinimizedAndDocumentsEnumFallback() {
+		var contract = Path.of("..", "contracts", "openapi", "care-service-v1.yaml").toAbsolutePath();
+		var openApi = new OpenAPIV3Parser().read(contract.toString());
+		var progress = openApi.getComponents().getSchemas().get("AssessmentProgress");
+		var point = openApi.getComponents().getSchemas().get("AssessmentProgressPoint");
+		var transition = openApi.getComponents().getSchemas().get("BandTransition");
+		var direction = openApi.getComponents().getSchemas().get("ScoreDirection");
+
+		assertThat(progress.getAdditionalProperties()).isEqualTo(Boolean.TRUE);
+		assertThat(point.getAdditionalProperties()).isEqualTo(Boolean.TRUE);
+		assertThat(transition.getAdditionalProperties()).isEqualTo(Boolean.TRUE);
+		assertThat(progress.getProperties()).containsKeys("instrument", "scoringVersion", "previous", "current",
+				"rawDelta", "scoreDirection", "bandTransition", "elapsedDuration")
+				.doesNotContainKeys("answers", "safetyStatus", "consent", "profile");
+		assertThat(direction.getDescription()).contains("unavailable fallback", "must not infer clinical meaning");
 	}
 
 	private void assertSecurity(String key, Operation operation) {

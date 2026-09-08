@@ -156,7 +156,7 @@ db.conversations.createIndex({ appointmentId: 1 }, { unique: true })
 db.conversations.createIndex({ "participants.accountId": 1, lastMessageAt: -1 })
 ```
 
-Participants are a server-generated identity snapshot, not durable authorization. Each consultation conversation is keyed by its confirmed `IN_APP_CHAT` appointment; unrestricted direct specialist conversations are not supported. Realtime Service must check current account/specialist/appointment authorization when opening, subscribing, or sending, and join/send succeeds only inside the appointment's authoritative `[scheduledStartAt, scheduledEndAt)` window. A retention policy may permit read-only history afterward. Future `IN_APP_VIDEO` data is not defined in MongoDB until its separate contract is accepted.
+Participants are a server-generated identity snapshot, not durable authorization. The collection validator requires exactly two distinct accounts with exactly one `USER` and one `SPECIALIST`. Participant join times, `lastMessageAt`, `closedAt`, `createdAt`, and `updatedAt` must form a consistent lifecycle; an active conversation cannot have a close time, while a closed conversation must have one. Each consultation conversation is keyed by its confirmed `IN_APP_CHAT` appointment; unrestricted direct specialist conversations are not supported. Realtime Service must check current account/specialist/appointment authorization when opening, subscribing, or sending, and join/send succeeds only inside the appointment's authoritative `[scheduledStartAt, scheduledEndAt)` window. A retention policy may permit read-only history afterward. Future `IN_APP_VIDEO` data is not defined in MongoDB until its separate contract is accepted.
 
 ## `messages`
 
@@ -171,7 +171,10 @@ Keep messages separate from conversations to avoid an unbounded document.
   "clientMessageId": "UUID",
   "type": "TEXT",
   "bodyCiphertext": "base64",
+  "bodyIv": "base64",
+  "bodyTag": "base64",
   "keyVersion": "kek-2026-01",
+  "commandFingerprint": "keyed-base64url-digest",
   "sentAt": "ISODate",
   "editedAt": null,
   "deletedAt": null,
@@ -189,6 +192,8 @@ db.messages.createIndex({ senderId: 1, clientMessageId: 1 }, { unique: true })
 ```
 
 Use cursor pagination. A deletion replaces display content with a tombstone while retention/moderation rules decide encrypted-body removal. Do not put large attachments in MongoDB; store private object keys and validated metadata in a separate `message_attachments` collection or relational metadata.
+
+`bodyCiphertext`, `bodyIv`, and `bodyTag` are the AES-256-GCM envelope persisted by Realtime; plaintext is returned only after current authorization. `keyVersion` resolves against the configured decryption keyring so a controlled key rotation preserves history. Operators deploy old and new keys together before selecting a new active key and retain every version still referenced by stored messages. `commandFingerprint` is a keyed digest over the logical conversation, type, and content so a repeated sender-scoped `clientMessageId` can distinguish a safe retry from conflicting content without storing a raw plaintext hash. Migration `realtime-service/migrations/001_realtime_message_foundation.cjs` is the executable validator and index baseline.
 
 ## `message_receipts`
 

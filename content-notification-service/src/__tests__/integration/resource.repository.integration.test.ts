@@ -48,11 +48,15 @@ describe('ResourceRepository integration', () => {
     });
 
     await waitForPool(pool);
-
     for (const migration of ['1_initial_schema.sql', '2_remove_hotline_catalogue.sql']) {
       const sql = readFileSync(join(__dirname, '../../../migrations', migration), 'utf8');
       await pool.query(sql);
     }
+    const review1Seed = readFileSync(
+      join(__dirname, '../../../migrations/review1/1_seed_review1_controlled_resource.sql'),
+      'utf8',
+    );
+    await pool.query(review1Seed);
 
     const dbService: Pick<DatabaseService, 'query'> = {
       query: <T extends Record<string, unknown>>(text: string, params?: unknown[]) =>

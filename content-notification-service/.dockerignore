@@ -11,6 +11,4 @@ README.md
 .prettierrc
 eslint.config.js
 jest.config.js
-tsconfig.json
-tsconfig.build.json
 src/__tests__

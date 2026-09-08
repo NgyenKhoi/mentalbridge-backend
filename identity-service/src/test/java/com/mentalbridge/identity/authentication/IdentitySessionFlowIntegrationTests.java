@@ -65,6 +65,12 @@ class IdentitySessionFlowIntegrationTests extends IdentityTestProperties {
 	private RequestMappingHandlerMapping handlerMapping;
 
 	@Test
+	void healthProbeIsPublic() throws Exception {
+		mvc.perform(get("/actuator/health")).andExpect(status().isOk())
+				.andExpect(jsonPath("$.status").value("UP"));
+	}
+
+	@Test
 	void registrationVerificationLoginRefreshReplayAndLogoutFormOneSecureFlow() throws Exception {
 		var registrationBody = """
 				{"email":"flow@example.com","password":"correct-horse-battery-staple","actorType":"USER"}

@@ -3,6 +3,7 @@
 - Status: Accepted
 - Date: 2026-08-11
 - Note: ADR 0006 supersedes the Node.js framework choice in this ADR and ADR 0003. Service boundaries and transport decisions in this ADR remain accepted.
+- Deployment update (2026-09-07): dev and staging share the existing service-owned cloud PostgreSQL databases and MongoDB deployment. Compose treats them as external dependencies; disposable local databases are limited to CI/integration tests. Production will receive a separate data plane when provisioned.
 
 ## Context
 
@@ -48,7 +49,7 @@ Kafka is selected because MentalBridge has multiple independent asynchronous con
 - Redis loss may temporarily degrade presence and cross-instance live delivery but cannot corrupt durable data; REST history/resynchronization repairs client state.
 - Redis loss invalidates outstanding OTP challenges and other ephemeral state safely; it never makes a durable message or business record unavailable.
 - Provider SDKs remain infrastructure adapters behind application ports. Cloudinary identifiers and Brevo delivery identifiers may be persisted where needed, but provider responses and credentials are not business contracts.
-- Development starts with local database infrastructure, but every service scaffold includes validated production configuration from the beginning: external secret injection, TLS-capable URLs, bounded pools/timeouts, production-safe migration settings, health/readiness, metrics, and no dependency on repository `.env` files. Production credentials and endpoints are supplied only by the deployment environment in later phases.
+- Dev and staging use the shared external pre-production data plane, while CI/integration tests use disposable local database infrastructure. Every service scaffold includes validated production configuration from the beginning: external secret injection, TLS-capable URLs, bounded pools/timeouts, production-safe migration settings, health/readiness, metrics, and no dependency on repository `.env` files. Production credentials and separate endpoints are supplied only by the deployment environment in later phases.
 - Current authorization and consent queries fail closed through owner REST APIs. Eventually consistent Kafka projections are used only where staleness is explicitly acceptable.
 - The edge proxy remains infrastructure without business orchestration; adding another business service or transport requires a new ADR.
 

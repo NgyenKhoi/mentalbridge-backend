@@ -54,6 +54,7 @@ class AssessmentFlowIntegrationTests extends CareTestProperties {
 			"GET /api/v1/assessments",
 			"POST /api/v1/assessments",
 			"GET /api/v1/assessments/{assessmentId}",
+			"GET /api/v1/assessments/{assessmentId}/progress",
 			"POST /api/v1/anonymous-assessment-sessions/{sessionId}/assessments",
 			"GET /api/v1/anonymous-assessment-sessions/{sessionId}/assessments/{assessmentId}");
 
@@ -69,6 +70,12 @@ class AssessmentFlowIntegrationTests extends CareTestProperties {
 	@Autowired
 	@Qualifier("requestMappingHandlerMapping")
 	private RequestMappingHandlerMapping handlerMapping;
+
+	@Test
+	void healthProbeIsPublic() throws Exception {
+		mvc.perform(get("/actuator/health")).andExpect(status().isOk())
+				.andExpect(jsonPath("$.status").value("UP"));
+	}
 
 	@Test
 	void publishedQuestionnaireDefaultsToTheCapstoneVietnameseVersion() throws Exception {
@@ -224,6 +231,98 @@ class AssessmentFlowIntegrationTests extends CareTestProperties {
 	}
 
 	@Test
+	void progressSelectsTheImmediatelyPrecedingCompatibleOwnedResult() throws Exception {
+		var userId = insertProfile();
+		var previousId = submit(userId, "assessment-progress-previous", new int[9]);
+		var incompatibleId = submit(userId, "assessment-progress-incompatible", new int[] { 1, 1, 1, 1, 1, 1, 1, 1, 1 });
+		var voidedId = submit(userId, "assessment-progress-voided", new int[] { 1, 1, 1, 1, 1, 1, 1, 1, 1 });
+		var currentId = submit(userId, "assessment-progress-current", new int[] { 2, 1, 1, 1, 1, 1, 1, 1, 1 });
+
+		setSubmittedAt(previousId, "2026-09-04T09:00:00Z");
+		setSubmittedAt(incompatibleId, "2026-09-04T10:00:00Z");
+		setSubmittedAt(voidedId, "2026-09-04T11:00:00Z");
+		setSubmittedAt(currentId, "2026-09-04T12:00:00Z");
+		jdbc.sql("update assessment_result set scoring_version = 'phq9-other-bands-v1' where submission_id = :id")
+				.param("id", incompatibleId).update();
+		jdbc.sql("update assessment_submission set voided_at = :voidedAt, void_reason_code = 'TEST_VOID' where id = :id")
+				.param("voidedAt", OffsetDateTime.parse("2026-09-04T11:30:00Z")).param("id", voidedId).update();
+
+		mvc.perform(get("/api/v1/assessments/{assessmentId}/progress", currentId).with(user(userId)))
+				.andExpect(status().isOk())
+				.andExpect(jsonPath("$.instrument").value("PHQ9"))
+				.andExpect(jsonPath("$.scoringVersion").value("phq9-standard-bands-v1"))
+				.andExpect(jsonPath("$.previous.assessmentId").value(previousId.toString()))
+				.andExpect(jsonPath("$.previous.questionnaireVersion").value("phq9-en-us-v1"))
+				.andExpect(jsonPath("$.previous.totalScore").value(0))
+				.andExpect(jsonPath("$.previous.screeningLevel").value("MINIMAL"))
+				.andExpect(jsonPath("$.current.assessmentId").value(currentId.toString()))
+				.andExpect(jsonPath("$.current.totalScore").value(10))
+				.andExpect(jsonPath("$.current.screeningLevel").value("MODERATE"))
+				.andExpect(jsonPath("$.rawDelta").value(10))
+				.andExpect(jsonPath("$.scoreDirection").value("INCREASED"))
+				.andExpect(jsonPath("$.bandTransition.previous").value("MINIMAL"))
+				.andExpect(jsonPath("$.bandTransition.current").value("MODERATE"))
+				.andExpect(jsonPath("$.elapsedDuration").value("PT3H"))
+				.andExpect(jsonPath("$.previous.safetyStatus").doesNotExist())
+				.andExpect(jsonPath("$.current.safetyStatus").doesNotExist());
+
+		mvc.perform(get("/api/v1/assessments/{assessmentId}/progress", incompatibleId).with(user(userId)))
+				.andExpect(status().isConflict())
+				.andExpect(jsonPath("$.code").value("INSUFFICIENT_COMPARABLE_DATA"));
+		mvc.perform(get("/api/v1/assessments/{assessmentId}/progress", voidedId).with(user(userId)))
+				.andExpect(status().isConflict())
+				.andExpect(jsonPath("$.code").value("INSUFFICIENT_COMPARABLE_DATA"));
+
+		jdbc.sql("delete from assessment_result where submission_id = :id").param("id", previousId).update();
+		mvc.perform(get("/api/v1/assessments/{assessmentId}/progress", currentId).with(user(userId)))
+				.andExpect(status().isConflict())
+				.andExpect(jsonPath("$.code").value("INSUFFICIENT_COMPARABLE_DATA"));
+	}
+
+	@Test
+	void progressFailsClosedForMissingCrossOwnerUnauthorizedAndMalformedRequests() throws Exception {
+		var ownerId = insertProfile();
+		var assessmentId = submit(ownerId, "assessment-progress-owner", new int[9]);
+
+		mvc.perform(get("/api/v1/assessments/{assessmentId}/progress", assessmentId))
+				.andExpect(status().isUnauthorized()).andExpect(jsonPath("$.code").value("UNAUTHENTICATED"));
+		mvc.perform(get("/api/v1/assessments/{assessmentId}/progress", assessmentId)
+				.with(jwt().jwt(token -> token.subject(UUID.randomUUID().toString()))
+						.authorities(new SimpleGrantedAuthority("ROLE_SPECIALIST"))))
+				.andExpect(status().isForbidden()).andExpect(jsonPath("$.code").value("CARE_USER_REQUIRED"));
+		mvc.perform(get("/api/v1/assessments/{assessmentId}/progress", assessmentId).with(user(UUID.randomUUID())))
+				.andExpect(status().isNotFound()).andExpect(jsonPath("$.code").value("ASSESSMENT_NOT_FOUND"));
+		mvc.perform(get("/api/v1/assessments/{assessmentId}/progress", UUID.randomUUID()).with(user(ownerId)))
+				.andExpect(status().isNotFound()).andExpect(jsonPath("$.code").value("ASSESSMENT_NOT_FOUND"));
+		mvc.perform(get("/api/v1/assessments/not-a-uuid/progress").with(user(ownerId)))
+				.andExpect(status().isBadRequest()).andExpect(jsonPath("$.code").value("VALIDATION_FAILED"));
+		mvc.perform(get("/api/v1/assessments/{assessmentId}/progress", assessmentId).with(user(ownerId)))
+				.andExpect(status().isConflict())
+				.andExpect(jsonPath("$.code").value("INSUFFICIENT_COMPARABLE_DATA"));
+	}
+
+	@Test
+	void progressUsesAssessmentIdToBreakEqualSubmissionTimeTies() throws Exception {
+		var userId = insertProfile();
+		var firstId = submit(userId, "assessment-progress-tie-first", new int[9]);
+		var secondId = submit(userId, "assessment-progress-tie-second", new int[] { 1, 1, 1, 1, 1, 1, 1, 1, 1 });
+		setSubmittedAt(firstId, "2026-09-04T09:00:00Z");
+		setSubmittedAt(secondId, "2026-09-04T09:00:00Z");
+		var orderedIds = jdbc.sql("""
+				select id from assessment_submission
+				where user_id = :userId order by submitted_at desc, id desc
+				""").param("userId", userId).query(UUID.class).list();
+		var currentId = orderedIds.getFirst();
+		var previousId = orderedIds.get(1);
+
+		mvc.perform(get("/api/v1/assessments/{assessmentId}/progress", currentId).with(user(userId)))
+				.andExpect(status().isOk())
+				.andExpect(jsonPath("$.previous.assessmentId").value(previousId.toString()))
+				.andExpect(jsonPath("$.current.assessmentId").value(currentId.toString()))
+				.andExpect(jsonPath("$.elapsedDuration").value("PT0S"));
+	}
+
+	@Test
 	void runtimeHandlersExactlyMatchImplementedCareContractPaths() {
 		var operations = handlerMapping.getHandlerMethods().keySet().stream()
 				.flatMap(mapping -> mapping.getPatternValues().stream()
@@ -278,6 +377,10 @@ class AssessmentFlowIntegrationTests extends CareTestProperties {
 
 	private String completeBody(int itemNine) {
 		var values = new int[] { 1, 1, 1, 1, 1, 1, 1, 0, itemNine };
+		return completeBody(values);
+	}
+
+	private String completeBody(int[] values) {
 		var answerJson = new StringBuilder();
 		for (var index = 0; index < values.length; index++) {
 			if (index > 0) {
@@ -289,6 +392,23 @@ class AssessmentFlowIntegrationTests extends CareTestProperties {
 		return "{\"questionnaireDefinitionId\":\"" + DEFINITION_ID
 				+ "\",\"privacyPolicyVersion\":\"privacy-capstone-v1\",\"privacyDisclosureAcknowledged\":true,\"answers\":["
 				+ answerJson + "]}";
+	}
+
+	private UUID submit(UUID userId, String key, int[] values) throws Exception {
+		var submitted = mvc.perform(post("/api/v1/assessments").with(user(userId))
+				.header("Idempotency-Key", key).contentType(MediaType.APPLICATION_JSON).content(completeBody(values)))
+				.andExpect(status().isCreated()).andReturn();
+		return UUID.fromString(json(submitted).get("assessmentId").asText());
+	}
+
+	private void setSubmittedAt(UUID assessmentId, String submittedAt) {
+		jdbc.sql("update assessment_submission set submitted_at = :submittedAt where id = :id")
+				.param("submittedAt", OffsetDateTime.parse(submittedAt)).param("id", assessmentId).update();
+	}
+
+	private org.springframework.test.web.servlet.request.RequestPostProcessor user(UUID userId) {
+		return jwt().jwt(token -> token.subject(userId.toString()))
+				.authorities(new SimpleGrantedAuthority("ROLE_USER"));
 	}
 
 	private String incompleteBody() {

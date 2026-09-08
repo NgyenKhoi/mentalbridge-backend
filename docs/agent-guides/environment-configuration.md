@@ -74,6 +74,12 @@ The current infrastructure phase may run databases and supporting dependencies l
 - Missing production secrets, insecure provider modes, public access for sensitive Cloudinary assets, or placeholder endpoints fail startup. No production profile falls back to a development credential or localhost.
 - External provider adapters have typed timeouts, bounded retry/circuit-breaker behavior, and sandbox/fake implementations for tests. Paid Cloudinary or Brevo APIs are not required for ordinary CI.
 
+## Current pre-production data plane
+
+Dev and staging intentionally use the same service-owned AWS RDS databases and MongoDB Atlas deployment. Their application configuration may differ, but they share durable data and migration history. Deployment Compose files must treat those databases as operator-provisioned external dependencies: they do not create, reset, expose, or delete them. Migrations must be additive and compatible with overlapping dev/staging application versions. CI and automated integration tests must continue to use disposable Testcontainers databases and must never target this shared data plane.
+
+Production has no database deployment yet. When provisioned, it receives separate endpoints, credentials, backups, and network policy; production must not reuse the shared dev/staging data plane.
+
 ## Node.js baseline
 
 ADR 0006 fixes the Node.js framework and retains the configuration choice. Each NestJS service uses `dotenv` only for local-development file loading and Zod to validate a service-owned configuration object once during bootstrap. Application providers receive typed configuration through NestJS injection and do not call `process.env` outside the configuration package.

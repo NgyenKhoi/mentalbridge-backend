@@ -4,6 +4,64 @@ Backend platform for **MentalBridge (MBMS)**, an intelligent mental-health scree
 
 MentalBridge helps users complete PHQ-9/GAD-7 self-screenings, keep an emotion journal, receive AI-assisted emotion insights, follow an approved support workflow, and connect with an approved specialist. It is a screening and support product, **not a diagnosis, emergency service, or replacement for professional treatment**.
 
+## Review 1 Docker Compose stack
+
+The root [`compose.yml`](compose.yml) is intentionally scoped to executable Review 1 flows rather than every planned microservice. It provides two profiles:
+
+| Profile | Services |
+| --- | --- |
+| `demo` | Frontend, Identity, Care, Content/Notification, and explicit migrations against the shared dev/staging PostgreSQL databases |
+| `full-test` | Everything in `demo`, plus Realtime, its migration against the shared dev/staging MongoDB deployment, and local ephemeral Redis |
+
+Consultation, Journal/AI, PhoBERT, Eureka, and Kafka remain outside this stack until they participate in an executable Review 1 journey. Realtime is available for foundation testing but is not part of the critical mentor-demo path.
+
+Keep the backend and frontend repositories as sibling directories. From this backend repository, prepare the ignored Compose environment file and local Identity keys:
+
+```powershell
+.\scripts\prepare-review1-compose-env.ps1
+```
+
+The helper generates the ignored `.env`, Identity key material, and application-only secrets without printing secret values or replacing an existing file. It deliberately does not generate or copy database credentials. Populate every cloud connection placeholder from the deployment secret source before starting Compose. To configure it manually instead, copy `.env.compose.example` to `.env`, run `scripts/generate-local-jwt-keys.ps1`, and replace every `replace-*` value. `CONTENT_DATABASE_URL`, `REALTIME_MONGODB_URI`, and `REALTIME_REDIS_URL` must contain URL-encoded passwords when a password includes reserved URL characters.
+
+Dev and staging intentionally share the current service-owned AWS RDS databases and MongoDB Atlas deployment. Compose does not create, reset, expose, or remove those durable stores. Production will use separate database endpoints and credentials when it is provisioned. Because both pre-production environments share migration history, every migration must remain forward-compatible with both running application versions.
+
+Start the mentor-facing stack:
+
+```powershell
+docker compose --profile demo up --build -d
+docker compose ps --all
+```
+
+One-shot migration jobs are expected to show `Exited (0)` after completing. The demo profile runs Content schema migrations first, then the separately tracked `migrations/review1/1_seed_review1_controlled_resource.sql` migration. It inserts the idempotent, visibly labeled Review 1 resource into the shared pre-production Content database. Future production deployment must run `npm run migrate:up` only and must not run the Review 1 seed migration. Identity writes synthetic verification links to its private volume in the default controlled-demo configuration. Retrieve the latest link without exposing the challenge in logs:
+
+```powershell
+docker compose exec identity sh -c 'ls -1t /var/lib/mentalbridge/identity-verification/*.verification-url | head -n 1 | xargs cat'
+```
+
+Then open `http://localhost:3000` and demonstrate:
+
+```text
+Register/Login -> Profile -> Consent -> PHQ-9 vi-VN -> Result -> History -> Reassessment -> Progress
+```
+
+The deterministic evidence cases use the same total score with different safety-item answers:
+
+```text
+[1,1,1,1,1,1,1,1,0] -> total 8 -> MILD + NEGATIVE_SAFETY_SCREEN
+[1,1,1,1,1,1,1,0,1] -> total 8 -> MILD + POSITIVE_SAFETY_SCREEN
+```
+
+The Content seed is idempotent and visibly labeled as controlled demo data; it is not production clinical approval. To exercise the infrastructure foundation too, start the superset profile:
+
+```powershell
+docker compose --profile full-test up --build -d
+docker compose ps --all
+```
+
+Stop application containers while retaining the Identity verification and Redis volumes with `docker compose --profile demo down` or `docker compose --profile full-test down`. These commands do not alter the external PostgreSQL or MongoDB databases.
+
+For an EC2 demo host, set `PUBLIC_APP_ORIGIN` and `IDENTITY_VERIFICATION_URL` to the externally reachable HTTPS origin, inject the shared pre-production database secrets, and allow that host through the RDS/Atlas network policies. Keep `SERVICE_BIND_ADDRESS=127.0.0.1`, expose only the frontend through the host firewall/reverse proxy, and replace `local-file` plus the `dev` Spring profile with an approved delivery configuration before any real-user deployment.
+
 ## Product scope
 
 - End-user mobile APIs: authentication, profile, consent, journal, assessments, insights, interventions, subscriptions, consultation credits, appointments, chat, notifications, and personal trends.
@@ -85,10 +143,10 @@ Safety handling must be deterministic, immediate, auditable, non-paywalled, and 
 - `migrate-mongo` for MongoDB migrations; Cloudinary private/authenticated storage; Brevo transactional email API
 - Docker Compose for local development; GitHub Actions basic CI is introduced after the current bootstrap integration is stable
 
-The repository does not yet require a GitHub Actions check on PRs targeting `dev`. Until the basic CI gate is enabled, reviewers require recorded local checks; a missing CI status is not a passing result.
+Pull requests targeting `dev` and pushes to `dev` run the backend service matrix, repository policy, Compose topology validation, and the stable `quality-gate` aggregate check.
 - OpenTelemetry-compatible traces, Prometheus metrics, Grafana dashboards, structured JSON logs
 
-The local stack includes Eureka, PostgreSQL, MongoDB, Kafka, Redis, and the application services through Docker Compose. Kubernetes, a service mesh, distributed secrets platforms, and multiple observability products are outside the initial scope unless the team can demonstrate a concrete requirement.
+The current Review 1 Compose stack runs application services and local ephemeral Redis while using the shared dev/staging PostgreSQL and MongoDB cloud data plane. Disposable integration tests continue to provision isolated databases through Testcontainers. Kubernetes, a service mesh, distributed secrets platforms, and multiple observability products are outside the initial scope unless the team can demonstrate a concrete requirement.
 
 ### Local Docker infrastructure
 
