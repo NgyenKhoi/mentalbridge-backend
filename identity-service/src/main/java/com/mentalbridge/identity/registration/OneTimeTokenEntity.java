@@ -56,12 +56,22 @@ public class OneTimeTokenEntity {
 		this.consumedAt = consumedAt;
 	}
 
+	public void invalidate(Instant invalidatedAt) {
+		if (consumedAt == null && this.invalidatedAt == null) {
+			this.invalidatedAt = invalidatedAt;
+		}
+	}
+
 	public UUID id() {
 		return id;
 	}
 
 	public UUID accountId() {
 		return accountId;
+	}
+
+	public String purpose() {
+		return purpose;
 	}
 
 	public Instant expiresAt() {

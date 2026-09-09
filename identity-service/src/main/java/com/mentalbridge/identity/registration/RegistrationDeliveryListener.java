@@ -2,13 +2,11 @@ package com.mentalbridge.identity.registration;
 
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
-import org.springframework.boot.autoconfigure.condition.ConditionalOnBean;
 import org.springframework.stereotype.Component;
 import org.springframework.transaction.event.TransactionPhase;
 import org.springframework.transaction.event.TransactionalEventListener;
 
 @Component
-@ConditionalOnBean(VerificationDelivery.class)
 public class RegistrationDeliveryListener {
 
 	private static final Logger LOGGER = LoggerFactory.getLogger(RegistrationDeliveryListener.class);
@@ -22,7 +20,7 @@ public class RegistrationDeliveryListener {
 	@TransactionalEventListener(phase = TransactionPhase.AFTER_COMMIT)
 	public void deliver(RegistrationRequested registration) {
 		try {
-			delivery.requestDelivery(registration.accountId(), registration.normalizedEmail(), registration.challenge(),
+			delivery.requestEmailVerification(registration.accountId(), registration.normalizedEmail(), registration.challenge(),
 					registration.correlationId());
 		}
 		catch (RuntimeException exception) {
