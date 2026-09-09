@@ -101,7 +101,7 @@ public class CareE2eConfiguration {
 				insert into consent_decision (
 				    id, user_id, consent_type, policy_version, granted, evidence,
 				    idempotency_key, request_hash, decided_at, created_at
-				) values (:decisionId, :userId, 'PRIVACY_POLICY', 'privacy-capstone-v1', true,
+				) values (:decisionId, :userId, 'PRIVACY_POLICY', 'privacy-capstone-v2', true,
 				          '{}'::jsonb, 'e2e-seeded-consent', repeat('a', 64), :timestamp, :timestamp)
 				on conflict (id) do nothing
 				""")

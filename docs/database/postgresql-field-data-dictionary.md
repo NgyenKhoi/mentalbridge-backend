@@ -130,7 +130,7 @@ The MB-88 tables below are executable Liquibase-owned structures in the Care dat
 
 ### `public.user_profile`
 
-Care-owned non-credential user profile and communication preferences.
+Care-owned non-credential user profile. Locale, timezone, and reminders are fixed release defaults rather than editable preferences.
 
 | Field | Purpose |
 | --- | --- |
@@ -138,9 +138,9 @@ Care-owned non-credential user profile and communication preferences.
 | `display_name` | User-controlled name displayed in permitted product contexts. |
 | `date_of_birth` | Optional birth date used only for approved age-related eligibility or personalization rules. |
 | `gender` | Optional self-described gender value used only where product policy permits. |
-| `locale` | BCP 47 locale used to select translated questionnaires, resources, and messages. |
-| `timezone` | IANA timezone used to calculate and render reminders and follow-up schedules. |
-| `reminder_enabled` | User preference controlling optional care reminders, excluding mandatory safety behavior. |
+| `locale` | Fixed to `vi-VN` in the current release for translated questionnaires, resources, and messages. |
+| `timezone` | Fixed to `Asia/Ho_Chi_Minh` in the current release; no reminder scheduling is implied. |
+| `reminder_enabled` | Fixed to `false`; reminder delivery is not implemented in the current release. |
 | `created_at` | Immutable UTC profile creation instant. |
 | `updated_at` | UTC instant of the latest persisted profile change, maintained by Care Service. |
 | `version` | Optimistic-lock counter incremented on concurrent profile mutations. |

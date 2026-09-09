@@ -8,11 +8,11 @@ import com.mentalbridge.care.shared.ApiException;
 @Service
 public class PrivacyDisclosureService {
 
-	public static final String VERSION = "privacy-capstone-v1";
+	public static final String VERSION = "privacy-capstone-v2";
 	public static final String CONSENT_TYPE = "PRIVACY_POLICY";
 	private static final String LOCALE = "vi-VN";
-	private static final String TITLE = "Thông báo xử lý dữ liệu Care cho bản Capstone";
-	private static final String CONTENT = "Trong bản Capstone thử nghiệm, MentalBridge lưu hồ sơ Care, câu trả lời PHQ-9 và kết quả sàng lọc do máy chủ tính để hiển thị lịch sử và hỗ trợ bạn chủ động đánh giá lại. Kết quả này không phải chẩn đoán. Xác nhận này không cho phép xử lý AI, sử dụng cho nghiên cứu, gửi marketing hoặc chia sẻ với chuyên gia. Dữ liệu ẩn danh hết hạn độc lập và không được gắn vào tài khoản đăng ký sau đó. Lịch sử của tài khoản chỉ được dùng với dữ liệu tổng hợp/test trong phạm vi demo Sprint 2; việc thu thập dữ liệu người dùng thật cần quy trình privacy, security và legal riêng.";
+	private static final String TITLE = "Thông báo về việc xử lý dữ liệu sức khỏe";
+	private static final String CONTENT = "MentalBridge lưu thông tin hồ sơ, câu trả lời PHQ-9 và kết quả sàng lọc được tính từ câu trả lời của bạn để hiển thị lịch sử và hỗ trợ bạn thực hiện lại bài sàng lọc. Kết quả sàng lọc chỉ mang tính tham khảo, không phải chẩn đoán y khoa và không thay thế tư vấn của chuyên gia. Việc xác nhận thông báo này chỉ áp dụng cho quá trình xử lý bài sàng lọc; không bao gồm xử lý bằng AI, nghiên cứu, tiếp thị hoặc chia sẻ dữ liệu với chuyên gia. Bạn có thể rút lại xác nhận để ngăn các lần xử lý mới. Việc rút lại xác nhận không tự động xóa lịch sử đã lưu; yêu cầu xóa dữ liệu là một quy trình riêng.";
 
 	public DisclosureView current(String locale) {
 		if (locale != null && !LOCALE.equalsIgnoreCase(locale)) {

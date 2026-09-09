@@ -18,7 +18,7 @@ MentalBridge must not combine these purposes into one broad toggle:
 
 | Purpose | Required treatment |
 | --- | --- |
-| Deterministic assessment processing | The user must view and acknowledge the backend-owned `privacy-capstone-v1` disclosure; this is a processing gate, not a clinical-eligibility rule, and no AI processing is implied |
+| Deterministic assessment processing | The user must view and acknowledge the backend-owned `privacy-capstone-v2` disclosure; this is a processing gate, not a clinical-eligibility rule, and no AI processing is implied |
 | AI processing | Deferred; `AI_PROCESSING` is not exposed by the Sprint 2 UI/runtime consent flow |
 | Specialist sharing | Separate revocable grant scoped to subject, specialist, data type, purpose, time range, and selected entries where applicable |
 | Research use | Deferred; `RESEARCH_DATA` is not exposed and production data is excluded by default |
@@ -26,7 +26,7 @@ MentalBridge must not combine these purposes into one broad toggle:
 
 The current Care consent table reserves privacy, AI, research, and marketing decision types for compatible future evolution. Sprint 2 accepts and exposes only `PRIVACY_POLICY`. Care publishes the exact Vietnamese disclosure and version; clients must not maintain an independent copy. A registered grant or withdrawal is an append-only decision. A withdrawal takes effect for new processing immediately but neither deletes historical assessments nor rewrites audit evidence. Deletion is a separate future workflow.
 
-The controlled-Capstone disclosure version is `privacy-capstone-v1`. It explains that the demo stores the Care profile, PHQ-9 answers, and server-computed result; that the result is not a diagnosis; that the flow does not authorize AI, research, marketing, or specialist sharing; that anonymous data expires independently and is never attached to a later account; and that registered history is retained only for the bounded test/demo flow. Public real-user deployment requires a separately reviewed production version.
+The current controlled-Capstone disclosure version is `privacy-capstone-v2`; `privacy-capstone-v1` remains an immutable historical decision value. Version 2 replaces implementation-oriented wording with reviewed user-facing Vietnamese while preserving the same bounded processing purpose: profile data, PHQ-9 answers, and server-computed results support history and reassessment; results are not diagnoses; and the decision does not authorize AI, research, marketing, or specialist sharing. Public real-user deployment still requires a separately reviewed production privacy, retention, security, and legal policy.
 
 ## MB-179 specialist-sharing boundary
 
@@ -75,7 +75,7 @@ The existing null registered-retention deadline means only that the controlled d
 
 - [x] Product Owner approved synthetic/test-data-only Sprint 2 validation and the non-executable MB-179 sharing boundary.
 - [x] Product Owner approved the versioned assessment-processing disclosure and its separation from clinical eligibility.
-- [x] Product Owner approved backend ownership of `privacy-capstone-v1`; AI, research, and marketing consent remain deferred.
+- [x] Product Owner approved backend ownership of versioned privacy disclosure text; `privacy-capstone-v2` is current and AI, research, and marketing consent remain deferred.
 - [x] Product Owner approved a 30-minute sliding inactivity deadline, two-hour absolute lifetime, and persisted idempotent completion semantics.
 - [x] Product Owner approved registered history only for controlled synthetic/test/demo use without a production retention claim.
 - [ ] Specialist grant policy approved before specialist reads are implemented.

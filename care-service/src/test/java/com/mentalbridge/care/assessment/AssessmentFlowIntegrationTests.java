@@ -368,7 +368,7 @@ class AssessmentFlowIntegrationTests extends CareTestProperties {
 		jdbc.sql("""
 				insert into consent_decision
 				(id, user_id, consent_type, policy_version, granted, idempotency_key, request_hash, decided_at)
-				values (:id, :userId, 'PRIVACY_POLICY', 'privacy-capstone-v1', true,
+				values (:id, :userId, 'PRIVACY_POLICY', 'privacy-capstone-v2', true,
 				        'assessment-test-consent-0001', :requestHash, now())
 				""").param("id", UUID.randomUUID()).param("userId", userId)
 				.param("requestHash", "0".repeat(64)).update();
@@ -390,7 +390,7 @@ class AssessmentFlowIntegrationTests extends CareTestProperties {
 					.append(String.format("%012d", index + 1)).append("\",\"value\":").append(values[index]).append('}');
 		}
 		return "{\"questionnaireDefinitionId\":\"" + DEFINITION_ID
-				+ "\",\"privacyPolicyVersion\":\"privacy-capstone-v1\",\"privacyDisclosureAcknowledged\":true,\"answers\":["
+				+ "\",\"privacyPolicyVersion\":\"privacy-capstone-v2\",\"privacyDisclosureAcknowledged\":true,\"answers\":["
 				+ answerJson + "]}";
 	}
 
@@ -413,13 +413,13 @@ class AssessmentFlowIntegrationTests extends CareTestProperties {
 
 	private String incompleteBody() {
 		return "{\"questionnaireDefinitionId\":\"" + DEFINITION_ID
-				+ "\",\"privacyPolicyVersion\":\"privacy-capstone-v1\",\"privacyDisclosureAcknowledged\":true,"
+				+ "\",\"privacyPolicyVersion\":\"privacy-capstone-v2\",\"privacyDisclosureAcknowledged\":true,"
 				+ "\"answers\":[{\"questionId\":\"11000000-0000-0000-0000-000000000001\",\"value\":0}]}";
 	}
 
 	private String unkeyedRequestHash(int itemNine) throws Exception {
 		var values = new int[] { 1, 1, 1, 1, 1, 1, 1, 0, itemNine };
-		var canonical = new StringBuilder(DEFINITION_ID.toString()).append("|privacy-capstone-v1|true");
+		var canonical = new StringBuilder(DEFINITION_ID.toString()).append("|privacy-capstone-v2|true");
 		for (var index = 0; index < values.length; index++) {
 			canonical.append('|').append("11000000-0000-0000-0000-")
 					.append(String.format("%012d", index + 1)).append(':').append(values[index]);
