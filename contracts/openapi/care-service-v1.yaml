@@ -452,19 +452,16 @@ components:
         locale:
           type: string
           const: vi-VN
-          default: vi-VN
           deprecated: true
           description: Compatibility input only; this release always stores vi-VN.
         timezone:
           type: string
           const: Asia/Ho_Chi_Minh
-          default: Asia/Ho_Chi_Minh
           deprecated: true
           description: Compatibility input only; this release always stores Asia/Ho_Chi_Minh.
         reminderEnabled:
           type: boolean
           const: false
-          default: false
           deprecated: true
           description: Compatibility input only; reminders are not implemented and remain disabled.
     Profile:
