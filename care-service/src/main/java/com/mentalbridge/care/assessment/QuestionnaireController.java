@@ -26,6 +26,11 @@ public class QuestionnaireController {
 		return questionnaires.current(instrument.name(), locale);
 	}
 
+	@GetMapping("/definitions/{definitionId}")
+	QuestionnaireService.QuestionnaireView definition(@PathVariable java.util.UUID definitionId) {
+		return questionnaires.definition(definitionId);
+	}
+
 	public enum Instrument {
 		PHQ9,
 		GAD7

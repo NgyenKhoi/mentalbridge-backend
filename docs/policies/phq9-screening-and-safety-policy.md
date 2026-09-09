@@ -31,7 +31,7 @@ This policy specifies screening behavior, not diagnosis, treatment, suicide-risk
 
 ## Questionnaire version and provenance
 
-The published controlled-Capstone identifier is `phq9-vi-vn-capstone-v1`. Engineering imported the exact questions and response labels from the recorded artifact without translating or paraphrasing them.
+The current published controlled-Capstone identifier is `phq9-vi-vn-capstone-v2`. Story 1102 corrected question 2 to `Cảm thấy chán nản, buồn rầu hoặc vô vọng` in this new immutable definition. That correction was approved by the Product Owner and is not claimed verbatim from the archived SBIRT artifact. The original `phq9-vi-vn-capstone-v1` definition is `RETIRED`, remains readable for historical results, and retains its exact original content and provenance without mutation.
 
 Artifact evidence:
 
@@ -40,7 +40,8 @@ Artifact evidence:
 - Archive timestamp: `2024-07-20T10:41:23Z`; retrieved for MB-177 on `2026-09-02`.
 - SHA-256: `E2775444E5AB4A05C3FF097F1CAB356C2DA9ECC73BAC63E91827BAA77E965FF7`.
 - Use statement in the artifact: no permission is required to copy, translate, display, or distribute.
-- Executable source: [`005-phq9-vi-vn-reference-data.sql`](../../care-service/src/main/resources/db/changelog/changes/005-phq9-vi-vn-reference-data.sql).
+- Original executable source: [`005-phq9-vi-vn-reference-data.sql`](../../care-service/src/main/resources/db/changelog/changes/005-phq9-vi-vn-reference-data.sql).
+- Corrective v2 source and lifecycle transition: [`008-gad7-and-phq9-v2-reference-data.sql`](../../care-service/src/main/resources/db/changelog/changes/008-gad7-and-phq9-v2-reference-data.sql).
 
 The artifact preserves the canonical item-9 concepts of being better off dead or self-harm. Its Vietnamese phrasing is accepted by the Product Owner for the bounded academic demo, while language/domain review remains a production follow-up because several phrases are mechanically worded.
 

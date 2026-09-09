@@ -194,7 +194,7 @@ Immutable versioned PHQ-9 or GAD-7 questionnaire definition and scoring identity
 | `published_at` | UTC instant the immutable definition became available; null while draft. |
 | `created_at` | Immutable UTC creation instant for the definition record. |
 
-Published seed versions are `phq9-en-us-v1` and `phq9-vi-vn-capstone-v1`. The Vietnamese row is limited to controlled local/demo Capstone use and stores its archived artifact URI, retrieval timestamp, SHA-256 checksum, use statement, and scoring citation in `source_reference`. Production review creates a new immutable publication decision/version; it never rewrites this evidence row.
+Published seed versions are `phq9-en-us-v1`, `phq9-vi-vn-capstone-v2`, and `gad7-vi-vn-adult-v1`. `phq9-vi-vn-capstone-v1` is retained as an immutable retired definition for historical submissions. The GAD-7 row records the UNC Vietnam 2024 artifact URI, retrieval date, SHA-256 checksum, self-administered `0..3` mapping, excluded interviewer-only codes, and scoring citation. The PHQ-9 v2 row records the Product Owner-approved Q2 correction without claiming that wording is verbatim from the archived SBIRT artifact. Production review creates a new immutable publication decision/version; it never rewrites this evidence.
 
 ### `public.questionnaire_question`
 
@@ -231,7 +231,7 @@ Immutable accepted screening envelope for exactly one authenticated profile or a
 | `user_id` | Authenticated Care profile owner; null for an anonymous screening. |
 | `anonymous_session_id` | Care-owned short-lived session identifier; null for an authenticated submission and never accompanied by a user ID. |
 | `definition_id` | Exact questionnaire definition used to validate and score all answers. |
-| `privacy_policy_version` | Exact backend-published disclosure acknowledged for this submission; `legacy-pre-mb178` identifies foundation rows created before the MB-178 gate and must not be presented as Capstone consent. |
+| `privacy_policy_version` | Exact backend-published disclosure/consent version used for this immutable submission. New PHQ-9/GAD-7 rows use `privacy-capstone-v3`; historical v1/v2 values are retained without backfill, and `legacy-pre-mb178` identifies foundation rows created before the MB-178 gate and must not be presented as Capstone consent. |
 | `idempotency_key` | Required retry key unique per authenticated user or anonymous session so the logical submission is persisted once. |
 | `request_hash` | Lowercase SHA-256 digest of the canonical definition-and-answer request; it detects conflicting retries without logging answers. |
 | `submitted_at` | UTC instant the complete validated assessment was accepted. |
@@ -261,9 +261,9 @@ One authoritative server-owned scoring result for an accepted submission. Client
 | `total_score` | Server-computed integer sum constrained to the supported range 0 through 27. |
 | `screening_level` | Non-diagnostic score band selected from the definition's versioned ranges. |
 | `scoring_version` | Exact deterministic algorithm version needed to reproduce the score and band. |
-| `safety_item_positive` | Authoritative derived fact that the versioned questionnaire safety item met its positive rule; it remains independent from the screening level. |
-| `safety_status` | Nullable transition field for the independent `NEGATIVE_SAFETY_SCREEN` or `POSITIVE_SAFETY_SCREEN` policy result; every MB-89 runtime result must populate it together with `safety_policy_version`, while null is reserved only for pre-policy foundation rows. |
-| `safety_policy_version` | Nullable transition field identifying the exact approved safety policy used; paired atomically with `safety_status` so historical results remain reproducible. |
+| `safety_item_positive` | Nullable questionnaire-specific derived fact. PHQ-9 stores whether item 9 met its positive rule; GAD-7 stores null because it has no equivalent safety item. |
+| `safety_status` | Questionnaire-specific safety result. New PHQ-9 rows store `NEGATIVE_SAFETY_SCREEN` or `POSITIVE_SAFETY_SCREEN`; GAD-7 stores `NOT_APPLICABLE`. Null is reserved only for pre-policy foundation rows. |
+| `safety_policy_version` | Exact approved safety policy for PHQ-9. It is null for GAD-7 because no item-9-equivalent policy is evaluated, and null with `safety_status` is reserved for pre-policy foundation rows. |
 | `disclaimer_code` | Stable `SCREENING_NOT_DIAGNOSIS` presentation key required for every result. |
 | `calculated_at` | UTC instant Care completed deterministic scoring. |
 | `created_at` | Immutable UTC insertion instant for persistence provenance. |

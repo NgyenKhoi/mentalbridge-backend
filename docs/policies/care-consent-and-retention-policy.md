@@ -5,10 +5,10 @@
 | Field | Value |
 | --- | --- |
 | Policy ID | `MB-PRIVACY-CARE-001` |
-| Policy version | `1.0-capstone` |
+| Policy version | `1.1-capstone` |
 | Status | `PRODUCT OWNER APPROVED — CONTROLLED CAPSTONE ONLY` |
-| Effective date | 2026-09-02 for controlled local/test/demo use |
-| Capstone decision | MB-178 consent, disclosure, anonymous lifetime, and bounded retention decisions approved by the Product Owner on 2026-09-02 |
+| Effective date | 2026-09-10 for controlled local/test/demo use |
+| Capstone decision | MB-178 consent, disclosure, anonymous lifetime, and bounded retention decisions approved on 2026-09-02; Story 1102 instrument-neutral `privacy-capstone-v3` text approved by the Product Owner on 2026-09-10 |
 | Owning service | Care Service |
 | Applies to | Anonymous and registered Care assessment flows in Vietnam |
 
@@ -18,7 +18,7 @@ MentalBridge must not combine these purposes into one broad toggle:
 
 | Purpose | Required treatment |
 | --- | --- |
-| Deterministic assessment processing | The user must view and acknowledge the backend-owned `privacy-capstone-v2` disclosure; this is a processing gate, not a clinical-eligibility rule, and no AI processing is implied |
+| Deterministic assessment processing | The user must view and grant the backend-owned `privacy-capstone-v3` consent; this is a processing gate, not a clinical-eligibility rule, and no AI processing is implied |
 | AI processing | Deferred; `AI_PROCESSING` is not exposed by the Sprint 2 UI/runtime consent flow |
 | Specialist sharing | Separate revocable grant scoped to subject, specialist, data type, purpose, time range, and selected entries where applicable |
 | Research use | Deferred; `RESEARCH_DATA` is not exposed and production data is excluded by default |
@@ -26,7 +26,31 @@ MentalBridge must not combine these purposes into one broad toggle:
 
 The current Care consent table reserves privacy, AI, research, and marketing decision types for compatible future evolution. Sprint 2 accepts and exposes only `PRIVACY_POLICY`. Care publishes the exact Vietnamese disclosure and version; clients must not maintain an independent copy. A registered grant or withdrawal is an append-only decision. A withdrawal takes effect for new processing immediately but neither deletes historical assessments nor rewrites audit evidence. Deletion is a separate future workflow.
 
-The current controlled-Capstone disclosure version is `privacy-capstone-v2`; `privacy-capstone-v1` remains an immutable historical decision value. Version 2 replaces implementation-oriented wording with reviewed user-facing Vietnamese while preserving the same bounded processing purpose: profile data, PHQ-9 answers, and server-computed results support history and reassessment; results are not diagnoses; and the decision does not authorize AI, research, marketing, or specialist sharing. Public real-user deployment still requires a separately reviewed production privacy, retention, security, and legal policy.
+The current controlled-Capstone disclosure version is `privacy-capstone-v3`. Versions `privacy-capstone-v1` and `privacy-capstone-v2` remain immutable historical decision values and are never backfilled onto or away from historical assessments. Version 3 covers deterministic PHQ-9 and GAD-7 processing, distinguishes authenticated history from session-scoped anonymous processing, and uses explicit consent and withdrawal terminology. Public real-user deployment still requires a separately reviewed production privacy, retention, security, and legal policy.
+
+### Immutable disclosure text
+
+`privacy-capstone-v2` retains this exact historical title and content:
+
+> **Thông báo về việc xử lý dữ liệu sức khỏe**
+>
+> MentalBridge lưu thông tin hồ sơ, câu trả lời PHQ-9 và kết quả sàng lọc được tính từ câu trả lời của bạn để hiển thị lịch sử và hỗ trợ bạn thực hiện lại bài sàng lọc. Kết quả sàng lọc chỉ mang tính tham khảo, không phải chẩn đoán y khoa và không thay thế tư vấn của chuyên gia. Việc xác nhận thông báo này chỉ áp dụng cho quá trình xử lý bài sàng lọc; không bao gồm xử lý bằng AI, nghiên cứu, tiếp thị hoặc chia sẻ dữ liệu với chuyên gia. Bạn có thể rút lại xác nhận để ngăn các lần xử lý mới. Việc rút lại xác nhận không tự động xóa lịch sử đã lưu; yêu cầu xóa dữ liệu là một quy trình riêng.
+
+`privacy-capstone-v3` is current for new PHQ-9 and GAD-7 submissions and uses this approved title and content:
+
+> **Thông báo và đồng ý xử lý dữ liệu sàng lọc**
+>
+> MentalBridge xử lý các câu trả lời PHQ-9 hoặc GAD-7 và kết quả sàng lọc được tính từ các câu trả lời đó nhằm cung cấp chức năng sàng lọc sức khỏe tâm lý.
+>
+> Đối với người dùng đã đăng nhập, MentalBridge có thể lưu kết quả sàng lọc cùng thông tin cần thiết của tài khoản để hiển thị lịch sử và hỗ trợ bạn thực hiện lại bài sàng lọc.
+>
+> Đối với phiên ẩn danh, dữ liệu chỉ được xử lý trong phạm vi của phiên ẩn danh theo chính sách hiện hành và không tự động được gắn vào tài khoản được tạo sau đó.
+>
+> Kết quả PHQ-9 và GAD-7 chỉ mang tính sàng lọc, không phải chẩn đoán y khoa và không thay thế đánh giá hoặc tư vấn của chuyên gia.
+>
+> Sự đồng ý này chỉ áp dụng cho việc xử lý dữ liệu cần thiết để thực hiện và lưu kết quả bài sàng lọc. Sự đồng ý này không bao gồm xử lý dữ liệu bằng AI, sử dụng dữ liệu cho nghiên cứu, tiếp thị hoặc chia sẻ dữ liệu với chuyên gia. Các mục đích đó, nếu được triển khai, phải có quyết định đồng ý riêng.
+>
+> Bạn có thể rút lại sự đồng ý đối với các hoạt động xử lý mới trong tương lai. Việc rút lại sự đồng ý không tự động xóa dữ liệu đã được lưu trước đó; yêu cầu xóa dữ liệu là một quy trình riêng theo chính sách hiện hành.
 
 ## MB-179 specialist-sharing boundary
 
@@ -75,7 +99,7 @@ The existing null registered-retention deadline means only that the controlled d
 
 - [x] Product Owner approved synthetic/test-data-only Sprint 2 validation and the non-executable MB-179 sharing boundary.
 - [x] Product Owner approved the versioned assessment-processing disclosure and its separation from clinical eligibility.
-- [x] Product Owner approved backend ownership of versioned privacy disclosure text; `privacy-capstone-v2` is current and AI, research, and marketing consent remain deferred.
+- [x] Product Owner approved backend ownership of immutable versioned privacy disclosure text; `privacy-capstone-v3` is current for PHQ-9/GAD-7 while v1/v2 remain historical, and AI, research, marketing, and specialist-sharing consent remain deferred.
 - [x] Product Owner approved a 30-minute sliding inactivity deadline, two-hour absolute lifetime, and persisted idempotent completion semantics.
 - [x] Product Owner approved registered history only for controlled synthetic/test/demo use without a production retention claim.
 - [ ] Specialist grant policy approved before specialist reads are implemented.

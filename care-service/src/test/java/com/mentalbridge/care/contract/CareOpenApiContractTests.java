@@ -21,6 +21,7 @@ class CareOpenApiContractTests {
 			"POST /api/v1/consent-decisions",
 			"GET /api/v1/privacy-disclosures/current",
 			"GET /api/v1/questionnaires/{instrument}/current",
+			"GET /api/v1/questionnaires/definitions/{definitionId}",
 			"GET /api/v1/assessments",
 			"POST /api/v1/assessments",
 			"GET /api/v1/assessments/{assessmentId}",
@@ -35,6 +36,7 @@ class CareOpenApiContractTests {
 			"/api/v1/consent-decisions",
 			"/api/v1/privacy-disclosures/current",
 			"/api/v1/questionnaires/{instrument}/current",
+			"/api/v1/questionnaires/definitions/{definitionId}",
 			"/api/v1/assessments",
 			"/api/v1/assessments/{assessmentId}",
 			"/api/v1/assessments/{assessmentId}/progress",
@@ -106,6 +108,9 @@ class CareOpenApiContractTests {
 				"totalScore", "screeningLevel", "scoringVersion", "safetyStatus", "safetyPolicyVersion",
 				"disclaimerCode");
 		assertThat(result.getRequired()).contains("safetyStatus", "safetyPolicyVersion");
+		var questionnaire = openApi.getComponents().getSchemas().get("Questionnaire");
+		assertThat(questionnaire.getProperties()).containsKeys("scoringVersion", "scoreBands");
+		assertThat(questionnaire.getRequired()).contains("scoringVersion", "scoreBands");
 	}
 
 	@Test

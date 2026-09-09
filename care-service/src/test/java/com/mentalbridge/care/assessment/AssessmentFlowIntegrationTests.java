@@ -42,7 +42,8 @@ import com.mentalbridge.care.TestcontainersConfiguration;
 class AssessmentFlowIntegrationTests extends CareTestProperties {
 
 	private static final UUID DEFINITION_ID = UUID.fromString("10000000-0000-0000-0000-000000000001");
-	private static final UUID VI_DEFINITION_ID = UUID.fromString("10000000-0000-0000-0000-000000000002");
+	private static final UUID RETIRED_VI_DEFINITION_ID = UUID.fromString("10000000-0000-0000-0000-000000000002");
+	private static final UUID VI_DEFINITION_ID = UUID.fromString("10000000-0000-0000-0000-000000000004");
 	private static final Set<String> IMPLEMENTED_OPERATIONS = Set.of(
 			"GET /api/v1/privacy-disclosures/current",
 			"GET /api/v1/profile",
@@ -50,6 +51,7 @@ class AssessmentFlowIntegrationTests extends CareTestProperties {
 			"GET /api/v1/consents",
 			"POST /api/v1/consent-decisions",
 			"GET /api/v1/questionnaires/{instrument}/current",
+			"GET /api/v1/questionnaires/definitions/{definitionId}",
 			"POST /api/v1/anonymous-assessment-sessions",
 			"GET /api/v1/assessments",
 			"POST /api/v1/assessments",
@@ -82,17 +84,26 @@ class AssessmentFlowIntegrationTests extends CareTestProperties {
 		mvc.perform(get("/api/v1/questionnaires/PHQ9/current"))
 				.andExpect(status().isOk())
 				.andExpect(jsonPath("$.definitionId").value(VI_DEFINITION_ID.toString()))
-				.andExpect(jsonPath("$.version").value("phq9-vi-vn-capstone-v1"))
+				.andExpect(jsonPath("$.version").value("phq9-vi-vn-capstone-v2"))
 				.andExpect(jsonPath("$.locale").value("vi-VN"))
+				.andExpect(jsonPath("$.scoringVersion").value("phq9-standard-bands-v1"))
 				.andExpect(jsonPath("$.questions.length()").value(9))
+				.andExpect(jsonPath("$.questions[1].prompt").value("Cảm thấy chán nản, buồn rầu hoặc vô vọng"))
 				.andExpect(jsonPath("$.questions[8].itemNumber").value(9))
-				.andExpect(jsonPath("$.responseOptions[0].label").value("Không có gì"));
+				.andExpect(jsonPath("$.responseOptions[0].label").value("Không có gì"))
+				.andExpect(jsonPath("$.scoreBands[4].maximumScore").value(27));
 
 		mvc.perform(get("/api/v1/questionnaires/PHQ9/current").queryParam("locale", "en-US"))
 				.andExpect(status().isOk())
 				.andExpect(jsonPath("$.definitionId").value(DEFINITION_ID.toString()))
 				.andExpect(jsonPath("$.questions.length()").value(9))
 				.andExpect(jsonPath("$.responseOptions.length()").value(4));
+
+		mvc.perform(get("/api/v1/questionnaires/definitions/{definitionId}", RETIRED_VI_DEFINITION_ID))
+				.andExpect(status().isOk())
+				.andExpect(jsonPath("$.version").value("phq9-vi-vn-capstone-v1"))
+				.andExpect(jsonPath("$.questions[1].prompt")
+						.value("Cảm thấy chán nản, chán nản hoặc tuyệt vọng"));
 	}
 
 	@Test
@@ -368,7 +379,7 @@ class AssessmentFlowIntegrationTests extends CareTestProperties {
 		jdbc.sql("""
 				insert into consent_decision
 				(id, user_id, consent_type, policy_version, granted, idempotency_key, request_hash, decided_at)
-				values (:id, :userId, 'PRIVACY_POLICY', 'privacy-capstone-v2', true,
+				values (:id, :userId, 'PRIVACY_POLICY', 'privacy-capstone-v3', true,
 				        'assessment-test-consent-0001', :requestHash, now())
 				""").param("id", UUID.randomUUID()).param("userId", userId)
 				.param("requestHash", "0".repeat(64)).update();
@@ -390,7 +401,7 @@ class AssessmentFlowIntegrationTests extends CareTestProperties {
 					.append(String.format("%012d", index + 1)).append("\",\"value\":").append(values[index]).append('}');
 		}
 		return "{\"questionnaireDefinitionId\":\"" + DEFINITION_ID
-				+ "\",\"privacyPolicyVersion\":\"privacy-capstone-v2\",\"privacyDisclosureAcknowledged\":true,\"answers\":["
+				+ "\",\"privacyPolicyVersion\":\"privacy-capstone-v3\",\"privacyDisclosureAcknowledged\":true,\"answers\":["
 				+ answerJson + "]}";
 	}
 
@@ -413,13 +424,13 @@ class AssessmentFlowIntegrationTests extends CareTestProperties {
 
 	private String incompleteBody() {
 		return "{\"questionnaireDefinitionId\":\"" + DEFINITION_ID
-				+ "\",\"privacyPolicyVersion\":\"privacy-capstone-v2\",\"privacyDisclosureAcknowledged\":true,"
+				+ "\",\"privacyPolicyVersion\":\"privacy-capstone-v3\",\"privacyDisclosureAcknowledged\":true,"
 				+ "\"answers\":[{\"questionId\":\"11000000-0000-0000-0000-000000000001\",\"value\":0}]}";
 	}
 
 	private String unkeyedRequestHash(int itemNine) throws Exception {
 		var values = new int[] { 1, 1, 1, 1, 1, 1, 1, 0, itemNine };
-		var canonical = new StringBuilder(DEFINITION_ID.toString()).append("|privacy-capstone-v2|true");
+		var canonical = new StringBuilder(DEFINITION_ID.toString()).append("|privacy-capstone-v3|true");
 		for (var index = 0; index < values.length; index++) {
 			canonical.append('|').append("11000000-0000-0000-0000-")
 					.append(String.format("%012d", index + 1)).append(':').append(values[index]);

@@ -43,7 +43,7 @@ public class AssessmentService {
 	private final AssessmentAnswerRepository answers;
 	private final AssessmentResultRepository results;
 	private final OutboxEventRepository outbox;
-	private final Phq9ScoringPolicy scoring;
+	private final AssessmentScoringPolicy scoring;
 	private final AssessmentProperties properties;
 	private final ObjectMapper objectMapper;
 	private final Clock clock;
@@ -55,7 +55,7 @@ public class AssessmentService {
 			QuestionnaireDefinitionRepository definitions, QuestionnaireQuestionRepository questions,
 			QuestionnaireScoreBandRepository scoreBands, AssessmentSubmissionRepository submissions,
 			AssessmentAnswerRepository answers, AssessmentResultRepository results, OutboxEventRepository outbox,
-			Phq9ScoringPolicy scoring, AssessmentProperties properties, ObjectMapper objectMapper, Clock clock,
+			AssessmentScoringPolicy scoring, AssessmentProperties properties, ObjectMapper objectMapper, Clock clock,
 			ConsentService consents, PrivacyDisclosureService disclosures) {
 		this.profiles = profiles;
 		this.sessions = sessions;
@@ -147,15 +147,11 @@ public class AssessmentService {
 		var definitionQuestions = questions.findByDefinitionIdOrderByItemNumber(definition.id());
 		var validatedAnswers = validateAnswers(command.answers(), definition, definitionQuestions);
 		var bands = scoreBands.findByDefinitionIdOrderByOrdinal(definition.id()).stream()
-				.map(band -> new Phq9ScoringPolicy.ScoreBand(band.code(), band.minimumScore(), band.maximumScore()))
+				.map(band -> new AssessmentScoringPolicy.ScoreBand(band.code(), band.minimumScore(), band.maximumScore()))
 				.toList();
-		var safetyItemNumber = definitionQuestions.stream().filter(QuestionnaireQuestionEntity::safetyItem)
-				.mapToInt(QuestionnaireQuestionEntity::itemNumber).reduce((left, right) -> -1).orElse(-1);
-		if (safetyItemNumber < 1) {
-			throw new ApiException(HttpStatus.CONFLICT, "QUESTIONNAIRE_VERSION_UNAVAILABLE",
-					"Questionnaire safety policy cannot be evaluated");
-		}
-		var scored = scoring.score(validatedAnswers.scoringAnswers(), bands, safetyItemNumber);
+		var safetyItemNumbers = definitionQuestions.stream().filter(QuestionnaireQuestionEntity::safetyItem)
+				.map(question -> (int) question.itemNumber()).toList();
+		var scored = scoring.score(definition.instrument(), validatedAnswers.scoringAnswers(), bands, safetyItemNumbers);
 		var submittedAt = clock.instant();
 		var submission = userId == null
 				? AssessmentSubmissionEntity.anonymous(sessionId, definition.id(), idempotencyKey, requestHash,
@@ -168,21 +164,29 @@ public class AssessmentService {
 				.map(answer -> new AssessmentAnswerEntity(submissionId, definition.id(), answer.questionId(),
 						answer.value()))
 				.toList());
+		var safetyPolicyVersion = "PHQ9".equals(definition.instrument()) ? properties.phq9SafetyPolicyVersion() : null;
 		var result = results.save(new AssessmentResultEntity(submissionId, scored, definition.scoringVersion(),
-				properties.phq9SafetyPolicyVersion(), submittedAt));
+				safetyPolicyVersion, submittedAt));
 		var payload = objectMapper.createObjectNode();
 		payload.put("assessmentId", submissionId.toString());
 		payload.put("ownerType", userId == null ? "ANONYMOUS" : "AUTHENTICATED_USER");
 		if (userId != null) {
 			payload.put("userId", userId.toString());
 		}
-		payload.put("questionnaireDefinitionId", definition.id().toString());
+		payload.put("definitionId", definition.id().toString());
 		payload.put("instrument", definition.instrument());
 		payload.put("questionnaireVersion", definition.version());
 		payload.put("scoringVersion", definition.scoringVersion());
+		payload.put("totalScore", scored.totalScore());
 		payload.put("screeningLevel", scored.screeningLevel().name());
 		payload.put("safetyStatus", scored.safetyStatus().name());
-		payload.put("safetyPolicyVersion", properties.phq9SafetyPolicyVersion());
+		if (safetyPolicyVersion == null) {
+			payload.putNull("safetyPolicyVersion");
+		}
+		else {
+			payload.put("safetyPolicyVersion", safetyPolicyVersion);
+		}
+		payload.put("completedAt", submittedAt.toString());
 		outbox.save(new OutboxEventEntity(submissionId, correlationId, payload, submittedAt));
 		return view(submission, definition, result, userId == null);
 	}
@@ -217,7 +221,8 @@ public class AssessmentService {
 	private QuestionnaireDefinitionEntity definitionForSubmission(UUID definitionId) {
 		var definition = definitions.findById(definitionId).orElseThrow(() -> new ApiException(HttpStatus.NOT_FOUND,
 				"QUESTIONNAIRE_NOT_FOUND", "Questionnaire was not found"));
-		if (!definition.published() || !"PHQ9".equals(definition.instrument())) {
+		if (!definition.published()
+				|| !("PHQ9".equals(definition.instrument()) || "GAD7".equals(definition.instrument()))) {
 			throw new ApiException(HttpStatus.CONFLICT, "QUESTIONNAIRE_VERSION_UNAVAILABLE",
 					"Questionnaire version is not available for submission");
 		}
@@ -246,7 +251,7 @@ public class AssessmentService {
 				.map(question -> new ValidatedAnswer(question.id(), question.itemNumber(), suppliedById.get(question.id())))
 				.toList();
 		var scoringAnswers = persisted.stream()
-				.map(answer -> new Phq9ScoringPolicy.QuestionAnswer(answer.itemNumber(), answer.value())).toList();
+				.map(answer -> new AssessmentScoringPolicy.QuestionAnswer(answer.itemNumber(), answer.value())).toList();
 		return new ValidatedAnswers(persisted, scoringAnswers);
 	}
 
@@ -359,7 +364,7 @@ public class AssessmentService {
 	}
 
 	private record ValidatedAnswers(List<ValidatedAnswer> entities,
-			List<Phq9ScoringPolicy.QuestionAnswer> scoringAnswers) {
+			List<AssessmentScoringPolicy.QuestionAnswer> scoringAnswers) {
 	}
 
 	private record Cursor(Instant submittedAt, UUID assessmentId) {

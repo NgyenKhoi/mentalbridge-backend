@@ -1,0 +1,65 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://mentalbridge.local/contracts/events/care/assessment-submitted-v2.schema.json",
+  "title": "Care assessment submitted v2",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["messageId", "messageType", "occurredAt", "producer", "schemaVersion", "correlationId", "aggregateId", "aggregateVersion", "payload"],
+  "properties": {
+    "messageId": { "type": "string", "format": "uuid" },
+    "messageType": { "const": "care.assessment.submitted" },
+    "occurredAt": { "type": "string", "format": "date-time" },
+    "producer": { "const": "care-service" },
+    "schemaVersion": { "const": "2.0" },
+    "correlationId": { "type": "string", "format": "uuid" },
+    "aggregateId": { "type": "string", "format": "uuid" },
+    "aggregateVersion": { "const": 0 },
+    "payload": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["assessmentId", "ownerType", "definitionId", "instrument", "questionnaireVersion", "scoringVersion", "totalScore", "screeningLevel", "safetyStatus", "safetyPolicyVersion", "completedAt"],
+      "properties": {
+        "assessmentId": { "type": "string", "format": "uuid" },
+        "ownerType": { "enum": ["AUTHENTICATED_USER", "ANONYMOUS"] },
+        "userId": { "type": "string", "format": "uuid" },
+        "definitionId": { "type": "string", "format": "uuid" },
+        "instrument": { "enum": ["PHQ9", "GAD7"] },
+        "questionnaireVersion": { "type": "string", "minLength": 1, "maxLength": 32 },
+        "scoringVersion": { "type": "string", "minLength": 1, "maxLength": 32 },
+        "totalScore": { "type": "integer", "minimum": 0, "maximum": 27 },
+        "screeningLevel": { "enum": ["MINIMAL", "MILD", "MODERATE", "MODERATELY_SEVERE", "SEVERE"] },
+        "safetyStatus": { "enum": ["NEGATIVE_SAFETY_SCREEN", "POSITIVE_SAFETY_SCREEN", "NOT_APPLICABLE"] },
+        "safetyPolicyVersion": { "type": ["string", "null"], "minLength": 1, "maxLength": 64 },
+        "completedAt": { "type": "string", "format": "date-time" }
+      },
+      "allOf": [
+        {
+          "if": { "properties": { "ownerType": { "const": "AUTHENTICATED_USER" } } },
+          "then": { "required": ["userId"] }
+        },
+        {
+          "if": { "properties": { "ownerType": { "const": "ANONYMOUS" } } },
+          "then": { "not": { "required": ["userId"] } }
+        },
+        {
+          "if": { "properties": { "instrument": { "const": "GAD7" } } },
+          "then": {
+            "properties": {
+              "safetyStatus": { "const": "NOT_APPLICABLE" },
+              "safetyPolicyVersion": { "type": "null" }
+            }
+          }
+        },
+        {
+          "if": { "properties": { "instrument": { "const": "PHQ9" } } },
+          "then": {
+            "properties": {
+              "safetyStatus": { "enum": ["NEGATIVE_SAFETY_SCREEN", "POSITIVE_SAFETY_SCREEN"] },
+              "safetyPolicyVersion": { "type": "string", "minLength": 1, "maxLength": 64 }
+            }
+          }
+        }
+      ]
+    }
+  }
+}
