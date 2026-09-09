@@ -87,20 +87,6 @@ Bounded replay record owned by Identity for registration and refresh commands. I
 | `expires_at` | UTC retention deadline after which the record and encrypted response can be deleted. |
 | `created_at` | Immutable UTC instant when Identity first accepted the idempotency key. |
 
-### `public.credential_request_rate_limit`
-
-Privacy-minimized durable rate state for verification-resend and password-recovery requests. Identity records valid request attempts for eligible, ineligible, and unknown email subjects before evaluating account state so the public limit behavior does not reveal account existence.
-
-| Field | Purpose |
-| --- | --- |
-| `subject_key_hash` | Keyed, one-way 64-character fingerprint of the normalized email subject and operation purpose; the supplied address is not recoverable from this value. |
-| `purpose` | Independent `VERIFY_EMAIL` or `RESET_PASSWORD` request budget so one flow cannot consume the other flow's allowance. |
-| `window_started_at` | UTC start of the current fixed one-hour request window used to reset the bounded count. |
-| `request_count` | Authoritative count from one through three of accepted requests in the current purpose-specific window. |
-| `last_requested_at` | UTC instant of the most recent accepted request, used to enforce the 60-second cooldown. |
-| `created_at` | Immutable UTC instant when Identity first created rate state for this privacy-minimized subject. |
-| `updated_at` | UTC instant of the latest accepted request or window reset, used for bounded cleanup. |
-
 ### `public.outbox_event`
 
 Identity-owned transactional outbox. An account/session mutation and its integration fact commit together; a relay publishes only after commit.

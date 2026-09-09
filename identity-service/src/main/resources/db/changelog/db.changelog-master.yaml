@@ -3,5 +3,3 @@ databaseChangeLog:
       file: db/changelog/changes/001-identity-baseline.sql
   - include:
       file: db/changelog/changes/002-single-account-role.sql
-  - include:
-      file: db/changelog/changes/003-credential-request-rate-limit.sql

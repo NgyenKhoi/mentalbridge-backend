@@ -41,11 +41,9 @@ public class CredentialLifecyclePersistence {
 	}
 
 	public void resetPassword(String tokenHash, String passwordHash, Instant now) {
-		var accountId = tokens.findAccountIdByTokenHashAndPurpose(tokenHash, "RESET_PASSWORD")
-				.orElseThrow(InvalidVerificationChallengeException::new);
-		var account = accounts.findByIdForUpdate(accountId)
-				.orElseThrow(InvalidVerificationChallengeException::new);
 		var token = tokens.findByTokenHashAndPurposeForUpdate(tokenHash, "RESET_PASSWORD")
+				.orElseThrow(InvalidVerificationChallengeException::new);
+		var account = accounts.findByIdForUpdate(token.accountId())
 				.orElseThrow(InvalidVerificationChallengeException::new);
 		if (!eligible(account, "RESET_PASSWORD") || token.consumedAt() != null || token.invalidatedAt() != null
 				|| !token.expiresAt().isAfter(now)) {

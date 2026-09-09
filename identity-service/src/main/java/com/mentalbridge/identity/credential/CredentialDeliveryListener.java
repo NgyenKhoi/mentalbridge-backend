@@ -2,7 +2,6 @@ package com.mentalbridge.identity.credential;
 
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
-import org.springframework.boot.autoconfigure.condition.ConditionalOnBean;
 import org.springframework.stereotype.Component;
 import org.springframework.transaction.event.TransactionPhase;
 import org.springframework.transaction.event.TransactionalEventListener;
@@ -10,7 +9,6 @@ import org.springframework.transaction.event.TransactionalEventListener;
 import com.mentalbridge.identity.registration.VerificationDelivery;
 
 @Component
-@ConditionalOnBean(VerificationDelivery.class)
 public class CredentialDeliveryListener {
 
 	private static final Logger LOGGER = LoggerFactory.getLogger(CredentialDeliveryListener.class);

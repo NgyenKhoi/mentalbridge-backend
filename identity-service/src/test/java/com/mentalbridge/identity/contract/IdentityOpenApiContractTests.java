@@ -40,13 +40,13 @@ class IdentityOpenApiContractTests {
 	private static final Map<String, Set<String>> IMPLEMENTED_RESPONSES = Map.ofEntries(
 			Map.entry("POST /api/v1/auth/registrations", Set.of("201", "400", "409", "429")),
 			Map.entry("POST /api/v1/auth/email-verifications", Set.of("200", "400", "429")),
-			Map.entry("POST /api/v1/auth/email-verification-requests", Set.of("202", "400", "429")),
+			Map.entry("POST /api/v1/auth/email-verification-requests", Set.of("202", "400")),
 			Map.entry("POST /api/v1/auth/login", Set.of("200", "400", "401", "429")),
 			Map.entry("POST /api/v1/auth/refresh", Set.of("200", "400", "401", "409", "429")),
 			Map.entry("POST /api/v1/auth/logout", Set.of("204", "400", "401")),
 			Map.entry("POST /api/v1/auth/logout-all", Set.of("204", "401")),
-			Map.entry("POST /api/v1/auth/password-recovery-requests", Set.of("202", "400", "429")),
-			Map.entry("POST /api/v1/auth/password-resets", Set.of("204", "400", "429")),
+			Map.entry("POST /api/v1/auth/password-recovery-requests", Set.of("202", "400")),
+			Map.entry("POST /api/v1/auth/password-resets", Set.of("204", "400")),
 			Map.entry("PUT /api/v1/account/password", Set.of("204", "400", "401")),
 			Map.entry("GET /api/v1/account", Set.of("200", "401")));
 

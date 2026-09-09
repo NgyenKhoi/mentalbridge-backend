@@ -13,10 +13,6 @@ import jakarta.persistence.LockModeType;
 
 public interface OneTimeTokenRepository extends JpaRepository<OneTimeTokenEntity, UUID> {
 
-	@Query("select token.accountId from OneTimeTokenEntity token where token.tokenHash = :tokenHash and token.purpose = :purpose")
-	Optional<UUID> findAccountIdByTokenHashAndPurpose(@Param("tokenHash") String tokenHash,
-			@Param("purpose") String purpose);
-
 	@Lock(LockModeType.PESSIMISTIC_WRITE)
 	@Query("select token from OneTimeTokenEntity token where token.tokenHash = :tokenHash and token.purpose = :purpose")
 	Optional<OneTimeTokenEntity> findByTokenHashAndPurposeForUpdate(@Param("tokenHash") String tokenHash,

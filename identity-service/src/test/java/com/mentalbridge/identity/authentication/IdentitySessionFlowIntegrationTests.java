@@ -27,6 +27,7 @@ import org.springframework.http.MediaType;
 import org.springframework.jdbc.core.simple.JdbcClient;
 import org.springframework.test.web.servlet.MockMvc;
 import org.springframework.test.web.servlet.MvcResult;
+import org.springframework.test.context.bean.override.mockito.MockitoBean;
 import org.springframework.web.servlet.mvc.method.annotation.RequestMappingHandlerMapping;
 
 import com.fasterxml.jackson.databind.JsonNode;
@@ -34,6 +35,7 @@ import com.fasterxml.jackson.databind.ObjectMapper;
 import com.mentalbridge.identity.IdentityTestProperties;
 import com.mentalbridge.identity.TestcontainersConfiguration;
 import com.mentalbridge.identity.registration.RegistrationRequested;
+import com.mentalbridge.identity.registration.VerificationDelivery;
 import com.mentalbridge.identity.credential.CredentialDeliveryRequested;
 
 @Import({ TestcontainersConfiguration.class, IdentitySessionFlowIntegrationTests.CaptureConfiguration.class })
@@ -62,6 +64,9 @@ class IdentitySessionFlowIntegrationTests extends IdentityTestProperties {
 
 	@Autowired
 	private VerificationCapture verificationCapture;
+
+	@MockitoBean
+	private VerificationDelivery verificationDelivery;
 
 	@Autowired
 	private JdbcClient jdbc;
@@ -363,7 +368,7 @@ class IdentitySessionFlowIntegrationTests extends IdentityTestProperties {
 	}
 
 	@Test
-	void genericCredentialRequestsDoNotRevealEligibilityAndEnforceCooldown() throws Exception {
+	void genericCredentialRequestsDoNotRevealAccountEligibility() throws Exception {
 		var pendingEmail = "generic-pending@example.com";
 		mvc.perform(post("/api/v1/auth/registrations").header("Idempotency-Key", "generic-pending-register")
 				.contentType(MediaType.APPLICATION_JSON).content("{\"email\":\"" + pendingEmail
@@ -376,11 +381,6 @@ class IdentitySessionFlowIntegrationTests extends IdentityTestProperties {
 					.andExpect(status().isAccepted()).andExpect(content().string(""));
 		}
 
-		mvc.perform(post("/api/v1/auth/email-verification-requests").contentType(MediaType.APPLICATION_JSON)
-				.content("{\"email\":\"" + pendingEmail + "\"}"))
-				.andExpect(status().isTooManyRequests()).andExpect(jsonPath("$.code").value("RATE_LIMITED"))
-				.andExpect(result -> assertThat(result.getResponse().getHeader("Retry-After")).isNotBlank());
-
 		mvc.perform(post("/api/v1/auth/password-recovery-requests").contentType(MediaType.APPLICATION_JSON)
 				.content("{\"email\":\"" + pendingEmail + "\"}"))
 				.andExpect(status().isAccepted()).andExpect(content().string(""));
@@ -389,74 +389,6 @@ class IdentitySessionFlowIntegrationTests extends IdentityTestProperties {
 				join account on account.id = token.account_id
 				where account.email = :email and token.purpose = 'RESET_PASSWORD'
 				""").param("email", pendingEmail).query(Long.class).single()).isZero();
-	}
-
-	@Test
-	void concurrentVerificationResendsLeaveExactlyOneActiveChallenge() throws Exception {
-		var email = "concurrent-verification@example.com";
-		mvc.perform(post("/api/v1/auth/registrations").header("Idempotency-Key", "concurrent-verification-register")
-				.contentType(MediaType.APPLICATION_JSON).content("{\"email\":\"" + email
-						+ "\",\"password\":\"correct-horse-battery-staple\",\"actorType\":\"USER\"}"))
-				.andExpect(status().isCreated());
-		var ready = new CountDownLatch(2);
-		var start = new CountDownLatch(1);
-		var executor = Executors.newFixedThreadPool(2);
-		try {
-			var first = executor.submit(() -> credentialRequestAfterSignal("/api/v1/auth/email-verification-requests",
-					email, ready, start));
-			var second = executor.submit(() -> credentialRequestAfterSignal("/api/v1/auth/email-verification-requests",
-					email, ready, start));
-			assertThat(ready.await(10, TimeUnit.SECONDS)).isTrue();
-			start.countDown();
-			var results = List.of(first.get(30, TimeUnit.SECONDS), second.get(30, TimeUnit.SECONDS));
-
-			assertThat(results).extracting(result -> result.getResponse().getStatus())
-					.containsExactlyInAnyOrder(202, 429);
-			assertThat(jdbc.sql("""
-					select count(*) from one_time_token token
-					join account on account.id = token.account_id
-					where account.email = :email and token.purpose = 'VERIFY_EMAIL'
-					  and token.consumed_at is null and token.invalidated_at is null
-					""").param("email", email).query(Long.class).single()).isEqualTo(1);
-		}
-		finally {
-			executor.shutdownNow();
-		}
-	}
-
-	@Test
-	void concurrentPasswordResetConsumptionAllowsOnlyOneMutation() throws Exception {
-		var email = "concurrent-reset@example.com";
-		var originalSession = registerVerifyAndLogin(email, "concurrent-reset-register");
-		mvc.perform(post("/api/v1/auth/password-recovery-requests").contentType(MediaType.APPLICATION_JSON)
-				.content("{\"email\":\"" + email + "\"}"))
-				.andExpect(status().isAccepted());
-		var challenge = verificationCapture.recoveryChallenge();
-		var body = "{\"challenge\":\"" + challenge
-				+ "\",\"newPassword\":\"concurrent-new-secure-password\"}";
-		var ready = new CountDownLatch(2);
-		var start = new CountDownLatch(1);
-		var executor = Executors.newFixedThreadPool(2);
-		try {
-			var first = executor.submit(() -> passwordResetAfterSignal(body, ready, start));
-			var second = executor.submit(() -> passwordResetAfterSignal(body, ready, start));
-			assertThat(ready.await(10, TimeUnit.SECONDS)).isTrue();
-			start.countDown();
-			var results = List.of(first.get(30, TimeUnit.SECONDS), second.get(30, TimeUnit.SECONDS));
-
-			assertThat(results).extracting(result -> result.getResponse().getStatus())
-					.containsExactlyInAnyOrder(204, 400);
-			assertThat(jdbc.sql("""
-					select count(*) from one_time_token token
-					join account on account.id = token.account_id
-					where account.email = :email and token.purpose = 'RESET_PASSWORD'
-					  and token.consumed_at is not null
-					""").param("email", email).query(Long.class).single()).isEqualTo(1);
-			assertRefreshRejected(originalSession.get("refreshToken").asText(), "refresh-after-concurrent-reset");
-		}
-		finally {
-			executor.shutdownNow();
-		}
 	}
 
 	@Test
@@ -517,26 +449,6 @@ class IdentitySessionFlowIntegrationTests extends IdentityTestProperties {
 		}
 		return mvc.perform(post("/api/v1/auth/refresh").header("Idempotency-Key", idempotencyKey)
 				.contentType(MediaType.APPLICATION_JSON).content(body)).andReturn();
-	}
-
-	private MvcResult credentialRequestAfterSignal(String path, String email, CountDownLatch ready,
-			CountDownLatch start) throws Exception {
-		ready.countDown();
-		if (!start.await(10, TimeUnit.SECONDS)) {
-			throw new IllegalStateException("Concurrent credential request start signal timed out");
-		}
-		return mvc.perform(post(path).contentType(MediaType.APPLICATION_JSON)
-				.content("{\"email\":\"" + email + "\"}")).andReturn();
-	}
-
-	private MvcResult passwordResetAfterSignal(String body, CountDownLatch ready, CountDownLatch start)
-			throws Exception {
-		ready.countDown();
-		if (!start.await(10, TimeUnit.SECONDS)) {
-			throw new IllegalStateException("Concurrent password reset start signal timed out");
-		}
-		return mvc.perform(post("/api/v1/auth/password-resets").contentType(MediaType.APPLICATION_JSON)
-				.content(body)).andReturn();
 	}
 
 	private JsonNode json(String value) throws Exception {

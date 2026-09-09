@@ -27,14 +27,12 @@ PostgreSQL persistence uses Hibernate and Spring Data JPA types inside the ownin
 | `IDENTITY_JWT_PUBLIC_KEY` | Yes | X.509 RSA public verification key | `replace-with-x509-pem-public-key` |
 | `IDENTITY_ENCRYPTION_KEY_VERSION` | Yes | Non-secret identifier for the active idempotency-response key | `local-v1` |
 | `IDENTITY_ENCRYPTION_KEY` | Yes | Base64-encoded 32-byte AES key for bounded idempotent responses | `replace-with-base64-encoded-32-byte-key` |
-| `IDENTITY_VERIFICATION_DELIVERY_MODE` | No | Selects `disabled`, `brevo`, or the development-only `local-file` fallback; use `brevo` for the normal development E2E flow | `brevo` |
-| `IDENTITY_BREVO_BASE_URL` | When delivery is enabled | Brevo API base URL | `https://api.brevo.com` |
-| `IDENTITY_BREVO_API_KEY` | When delivery is enabled | Brevo API credential | `replace-only-when-delivery-is-enabled` |
-| `IDENTITY_BREVO_SENDER_EMAIL` | When delivery is enabled | Verified transactional sender | `no-reply@example.test` |
-| `IDENTITY_BREVO_SENDER_NAME` | When delivery is enabled | Transactional sender display name | `MentalBridge` |
-| `IDENTITY_VERIFICATION_URL` | When delivery is enabled | Frontend verification URL receiving the challenge query parameter | `http://localhost:3000/verify-email` |
-| `IDENTITY_PASSWORD_RECOVERY_URL` | When delivery is enabled | Frontend reset-password URL receiving the one-time recovery challenge | `http://localhost:3000/reset-password` |
-| `IDENTITY_LOCAL_VERIFICATION_DIRECTORY` | In `local-file` mode | Ignored local directory receiving purpose-specific verification/recovery URL files for synthetic accounts | `.local/identity-verification` |
+| `IDENTITY_BREVO_BASE_URL` | Yes | Brevo API base URL | `https://api.brevo.com` |
+| `IDENTITY_BREVO_API_KEY` | Yes | Brevo API credential | `replace-with-a-development-brevo-key` |
+| `IDENTITY_BREVO_SENDER_EMAIL` | Yes | Verified transactional sender | `no-reply@example.test` |
+| `IDENTITY_BREVO_SENDER_NAME` | Yes | Transactional sender display name | `MentalBridge` |
+| `IDENTITY_VERIFICATION_URL` | Yes | Frontend verification URL receiving the challenge query parameter | `http://localhost:3000/verify-email` |
+| `IDENTITY_PASSWORD_RECOVERY_URL` | Yes | Frontend reset-password URL receiving the one-time recovery challenge | `http://localhost:3000/reset-password` |
 
 Production must override the local Eureka URL. Kafka and Redis variables will be documented when those runtime adapters are introduced.
 Registration persists the account with exactly one immutable `USER` or `SPECIALIST` role, hashed challenge, idempotent outcome, and outbox event in one transaction. The configured delivery adapter runs only after that transaction commits and never logs the recipient or challenge. Automated tests keep delivery isolated and never use live Brevo credentials.
@@ -55,16 +53,7 @@ cd identity-service
 .\mvnw.cmd spring-boot:run
 ```
 
-The Brevo adapter sends verification and password-recovery URLs only for eligible accounts after the owning transaction commits. Provider failure is logged with safe identifiers only and does not change the endpoint's generic response. Do not commit or share the `.env`, and use a development provider key rather than a production credential.
-
-If Brevo is temporarily unavailable, the retained `local-file` fallback can be enabled only with the exclusive `dev` profile:
-
-```powershell
-$env:IDENTITY_VERIFICATION_DELIVERY_MODE='local-file'
-.\mvnw.cmd spring-boot:run "-Dspring-boot.run.profiles=dev"
-```
-
-Each eligible delivery then writes only its frontend URL to `.local/identity-verification/<accountId>.verification-url` or `<accountId>.password-recovery-url`. The ignored directory may contain an active challenge, so use synthetic addresses, do not publish its files, and delete them after testing. Startup rejects this fallback with no profile, with `prod`, or with `prod` combined with `dev`.
+The Brevo adapter is the only runtime email delivery path. It sends verification and password-recovery URLs only for eligible accounts after the owning transaction commits. Provider failure is logged with safe identifiers only and does not change the endpoint's generic response. Automated tests replace the delivery port with a mock and never call Brevo. Do not commit or share the `.env`, and use a development provider key rather than a production credential.
 
 The initial deployment provisions one dedicated `ADMIN` account through an operator-controlled bootstrap with externally supplied credentials. Public registration and account-administration APIs never create or promote an administrator. Liquibase enforces at most one `ADMIN` account but deliberately does not contain administrator credentials; deployment readiness must verify that secure provisioning has completed.
 

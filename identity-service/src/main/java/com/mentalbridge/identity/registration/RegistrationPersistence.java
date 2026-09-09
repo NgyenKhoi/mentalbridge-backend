@@ -37,10 +37,8 @@ public class RegistrationPersistence {
 	}
 
 	public Optional<VerificationRecord> findVerificationByTokenHash(String tokenHash) {
-		return tokens.findAccountIdByTokenHashAndPurpose(tokenHash, "VERIFY_EMAIL").map(accountId -> {
-			var account = accounts.findByIdForUpdate(accountId)
-					.orElseThrow(InvalidVerificationChallengeException::new);
-			var token = tokens.findByTokenHashAndPurposeForUpdate(tokenHash, "VERIFY_EMAIL")
+		return tokens.findByTokenHashAndPurposeForUpdate(tokenHash, "VERIFY_EMAIL").map(token -> {
+			var account = accounts.findByIdForUpdate(token.accountId())
 					.orElseThrow(InvalidVerificationChallengeException::new);
 			return new VerificationRecord(token.id(), account.id(), account.status(), account.role(), token.expiresAt(),
 					token.consumedAt(), token.invalidatedAt());

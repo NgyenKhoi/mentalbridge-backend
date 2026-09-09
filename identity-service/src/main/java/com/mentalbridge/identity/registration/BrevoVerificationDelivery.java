@@ -4,14 +4,13 @@ import java.util.List;
 import java.util.Map;
 import java.util.UUID;
 
-import org.springframework.boot.autoconfigure.condition.ConditionalOnProperty;
 import org.springframework.http.MediaType;
 import org.springframework.stereotype.Component;
 import org.springframework.web.client.RestClient;
 
 import com.mentalbridge.identity.configuration.VerificationDeliveryProperties;
+
 @Component
-@ConditionalOnProperty(prefix = "mentalbridge.identity.verification-delivery", name = "mode", havingValue = "brevo")
 public class BrevoVerificationDelivery implements VerificationDelivery {
 
 	private final RestClient client;
@@ -25,7 +24,7 @@ public class BrevoVerificationDelivery implements VerificationDelivery {
 	}
 
 	@Override
-	public void requestDelivery(UUID accountId, String normalizedEmail, String challenge, UUID correlationId) {
+	public void requestEmailVerification(UUID accountId, String normalizedEmail, String challenge, UUID correlationId) {
 		var link = link(properties.verificationUrl(), challenge);
 		send(normalizedEmail, correlationId, VerificationEmailTemplate.create(link));
 	}

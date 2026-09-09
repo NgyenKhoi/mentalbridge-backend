@@ -39,7 +39,7 @@ class IdentityLiquibaseMigrationTests extends IdentityTestProperties {
 		var roles = jdbc.sql("select code from role order by code").query(String.class).list();
 
 		assertThat(tables).contains("account", "role", "refresh_session", "one_time_token",
-				"idempotency_record", "outbox_event", "security_audit_event", "credential_request_rate_limit")
+				"idempotency_record", "outbox_event", "security_audit_event")
 				.doesNotContain("account_role");
 		assertThat(identitySchemaCount).isZero();
 		assertThat(roles).containsExactly("ADMIN", "SPECIALIST", "USER");
@@ -58,14 +58,12 @@ class IdentityLiquibaseMigrationTests extends IdentityTestProperties {
 				    ('refresh_session', 'ip_hash'),
 				    ('refresh_session', 'user_agent_hash'),
 				    ('one_time_token', 'token_hash'),
-				    ('idempotency_record', 'request_hash'),
-				    ('credential_request_rate_limit', 'subject_key_hash')
+				    ('idempotency_record', 'request_hash')
 				  )
 				order by table_name, column_name
 				""").query(String.class).list();
 
-		assertThat(columns).containsExactly("credential_request_rate_limit.subject_key_hash",
-				"idempotency_record.request_hash", "one_time_token.token_hash",
+		assertThat(columns).containsExactly("idempotency_record.request_hash", "one_time_token.token_hash",
 				"refresh_session.ip_hash", "refresh_session.token_hash", "refresh_session.user_agent_hash");
 	}
 

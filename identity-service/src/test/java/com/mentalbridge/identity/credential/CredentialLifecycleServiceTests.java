@@ -33,7 +33,6 @@ class CredentialLifecycleServiceTests {
 	private static final UUID CORRELATION_ID = UUID.fromString("20000000-0000-4000-8000-000000000002");
 
 	private final CredentialLifecyclePersistence persistence = mock(CredentialLifecyclePersistence.class);
-	private final CredentialRequestRateLimiter rateLimiter = mock(CredentialRequestRateLimiter.class);
 	private final BCryptPasswordHasher passwordHasher = mock(BCryptPasswordHasher.class);
 	private final SecureTokenService tokens = mock(SecureTokenService.class);
 	private final ApplicationEventPublisher events = mock(ApplicationEventPublisher.class);
@@ -41,7 +40,7 @@ class CredentialLifecycleServiceTests {
 
 	@BeforeEach
 	void setUp() {
-		service = new CredentialLifecycleService(persistence, rateLimiter, passwordHasher, tokens, events,
+		service = new CredentialLifecycleService(persistence, passwordHasher, tokens, events,
 				Clock.fixed(NOW, ZoneOffset.UTC));
 		when(tokens.generate()).thenReturn("opaque-challenge");
 		when(tokens.hash("opaque-challenge")).thenReturn("challenge-hash");
@@ -56,7 +55,6 @@ class CredentialLifecycleServiceTests {
 
 		service.requestEmailVerification(" Member@Example.COM ", CORRELATION_ID);
 
-		verify(rateLimiter).claim("member@example.com", "VERIFY_EMAIL", NOW);
 		var event = ArgumentCaptor.forClass(CredentialDeliveryRequested.class);
 		verify(events).publishEvent(event.capture());
 		assertThat(event.getValue()).satisfies(requested -> {
@@ -70,13 +68,12 @@ class CredentialLifecycleServiceTests {
 	}
 
 	@Test
-	void ineligibleRecoveryRequestStillClaimsThePrivacyLimitButPublishesNothing() {
+	void ineligibleRecoveryRequestPublishesNothing() {
 		when(persistence.replaceChallenge("unknown@example.com", "RESET_PASSWORD", "challenge-hash",
 				NOW.plusSeconds(15 * 60), NOW)).thenReturn(Optional.empty());
 
 		service.requestPasswordRecovery("unknown@example.com", CORRELATION_ID);
 
-		verify(rateLimiter).claim("unknown@example.com", "RESET_PASSWORD", NOW);
 		verify(events, never()).publishEvent(any());
 	}
 

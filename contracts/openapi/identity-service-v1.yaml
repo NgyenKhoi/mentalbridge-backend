@@ -80,9 +80,9 @@ paths:
       operationId: requestEmailVerification
       summary: Request another verification delivery
       description: |
-        Always returns the same empty 202 response for a valid request unless the privacy-preserving
-        subject limit is exceeded. Only a pending unverified account receives a new 24-hour challenge.
-        An allowed replacement atomically invalidates every prior active verification challenge.
+        Always returns the same empty 202 response for a valid request. Only a pending unverified
+        account receives a new 24-hour challenge. A replacement invalidates every prior active
+        verification challenge.
       parameters:
         - $ref: '#/components/parameters/CorrelationId'
       requestBody:
@@ -94,7 +94,6 @@ paths:
       responses:
         '202': { $ref: '#/components/responses/GenericAccepted' }
         '400': { $ref: '#/components/responses/ValidationProblem' }
-        '429': { $ref: '#/components/responses/RateLimitProblem' }
   /api/v1/auth/login:
     x-mentalbridge-status: implemented
     post:
@@ -185,9 +184,9 @@ paths:
       operationId: requestPasswordRecovery
       summary: Request a password-recovery delivery without account enumeration
       description: |
-        Always returns the same empty 202 response for a valid request unless the privacy-preserving
-        subject limit is exceeded. Only an active verified account receives a new 15-minute challenge.
-        An allowed replacement atomically invalidates every prior active recovery challenge.
+        Always returns the same empty 202 response for a valid request. Only an active verified
+        account receives a new 15-minute challenge. A replacement invalidates every prior active
+        recovery challenge.
       parameters:
         - $ref: '#/components/parameters/CorrelationId'
       requestBody:
@@ -199,7 +198,6 @@ paths:
       responses:
         '202': { $ref: '#/components/responses/GenericAccepted' }
         '400': { $ref: '#/components/responses/ValidationProblem' }
-        '429': { $ref: '#/components/responses/RateLimitProblem' }
   /api/v1/auth/password-resets:
     x-mentalbridge-status: implemented
     post:
@@ -221,7 +219,6 @@ paths:
       responses:
         '204': { description: Password changed and all refresh sessions revoked }
         '400': { $ref: '#/components/responses/InvalidChallengeProblem' }
-        '429': { $ref: '#/components/responses/RateLimitProblem' }
   /api/v1/account:
     x-mentalbridge-status: implemented
     get:

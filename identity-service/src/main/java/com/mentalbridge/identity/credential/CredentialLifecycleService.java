@@ -20,17 +20,14 @@ public class CredentialLifecycleService {
 	private static final Duration RECOVERY_LIFETIME = Duration.ofMinutes(15);
 
 	private final CredentialLifecyclePersistence persistence;
-	private final CredentialRequestRateLimiter rateLimiter;
 	private final BCryptPasswordHasher passwordHasher;
 	private final SecureTokenService tokens;
 	private final ApplicationEventPublisher events;
 	private final Clock clock;
 
-	public CredentialLifecycleService(CredentialLifecyclePersistence persistence,
-			CredentialRequestRateLimiter rateLimiter, BCryptPasswordHasher passwordHasher,
+	public CredentialLifecycleService(CredentialLifecyclePersistence persistence, BCryptPasswordHasher passwordHasher,
 			SecureTokenService tokens, ApplicationEventPublisher events, Clock clock) {
 		this.persistence = persistence;
-		this.rateLimiter = rateLimiter;
 		this.passwordHasher = passwordHasher;
 		this.tokens = tokens;
 		this.events = events;
@@ -67,7 +64,6 @@ public class CredentialLifecycleService {
 			UUID correlationId) {
 		var now = clock.instant();
 		var normalizedEmail = email.strip().toLowerCase(Locale.ROOT);
-		rateLimiter.claim(normalizedEmail, purpose.name(), now);
 		var challenge = tokens.generate();
 		persistence.replaceChallenge(normalizedEmail, purpose.name(), tokens.hash(challenge), now.plus(lifetime), now)
 				.ifPresent(target -> events.publishEvent(new CredentialDeliveryRequested(target.accountId(),
