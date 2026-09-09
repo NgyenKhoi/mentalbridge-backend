@@ -2,8 +2,6 @@ package com.mentalbridge.care.profile;
 
 import java.time.Clock;
 import java.time.LocalDate;
-import java.time.DateTimeException;
-import java.time.ZoneId;
 import java.util.UUID;
 
 import org.springframework.http.HttpStatus;
@@ -14,6 +12,10 @@ import com.mentalbridge.care.shared.ApiException;
 
 @Service
 public class ProfileService {
+	static final String DEFAULT_LOCALE = "vi-VN";
+	static final String DEFAULT_TIMEZONE = "Asia/Ho_Chi_Minh";
+	static final boolean DEFAULT_REMINDER_ENABLED = false;
+	private static final int MINIMUM_AGE = 18;
 
 	private final UserProfileRepository profiles;
 	private final Clock clock;
@@ -31,7 +33,7 @@ public class ProfileService {
 
 	@Transactional
 	public SavedProfile put(UUID accountId, Long expectedVersion, ProfileCommand command) {
-		validateTimezone(command.timezone());
+		validateDateOfBirth(command.dateOfBirth());
 		var existing = profiles.findByIdForUpdate(accountId);
 		if (existing.isEmpty()) {
 			if (expectedVersion != null) {
@@ -53,15 +55,20 @@ public class ProfileService {
 		return new SavedProfile(view(profiles.saveAndFlush(profile)), false);
 	}
 
-	private void validateTimezone(String timezone) {
-		try {
-			ZoneId.of(timezone.strip());
+	private void validateDateOfBirth(LocalDate dateOfBirth) {
+		if (dateOfBirth == null) return;
+		var today = LocalDate.now(clock);
+		if (dateOfBirth.isAfter(today)) {
+			throw validation("DATE_OF_BIRTH_IN_FUTURE", "Date of birth cannot be in the future");
 		}
-		catch (DateTimeException exception) {
-			throw new ApiException(HttpStatus.BAD_REQUEST, "VALIDATION_FAILED", "Profile timezone is invalid",
-					java.util.List.of(new ApiException.FieldViolation("timezone", "INVALID_TIMEZONE",
-							"Timezone must be an IANA identifier")));
+		if (dateOfBirth.plusYears(MINIMUM_AGE).isAfter(today)) {
+			throw validation("MINIMUM_AGE_NOT_MET", "The user must be at least 18 years old");
 		}
+	}
+
+	private ApiException validation(String code, String message) {
+		return new ApiException(HttpStatus.BAD_REQUEST, "VALIDATION_FAILED", "Profile date of birth is invalid",
+				java.util.List.of(new ApiException.FieldViolation("dateOfBirth", code, message)));
 	}
 
 	private ProfileView view(UserProfileEntity profile) {

@@ -11,3 +11,5 @@ databaseChangeLog:
       file: db/changelog/changes/005-phq9-vi-vn-reference-data.sql
   - include:
       file: db/changelog/changes/006-mb178-assessment-disclosure.sql
+  - include:
+      file: db/changelog/changes/007-profile-preference-defaults.sql

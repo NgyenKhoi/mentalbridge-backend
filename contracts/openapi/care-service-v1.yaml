@@ -10,7 +10,7 @@ info:
     independent safety status, and policy provenance.
     A screening result is not a diagnosis. ADR 0009 keeps screening severity and
     item-9 safety status independent, prohibits automatic escalation, and removes
-    the hotline catalogue. The privacy-capstone-v1 disclosure and bounded anonymous
+    the hotline catalogue. The privacy-capstone-v2 disclosure and bounded anonymous
     lifetime are approved only for controlled local/test/demo use. Public real-user
     collection remains blocked on production privacy, retention, security, and legal review.
 
@@ -48,7 +48,7 @@ paths:
               schema: { $ref: '#/components/schemas/Profile' }
         '401': { $ref: '#/components/responses/UnauthorizedProblem' }
         '403': { $ref: '#/components/responses/ForbiddenProblem' }
-        '404': { $ref: '#/components/responses/NotFoundProblem' }
+        '404': { $ref: '#/components/responses/ProfileNotFoundProblem' }
     put:
       tags: [Profile]
       operationId: putOwnCareProfile
@@ -57,6 +57,8 @@ paths:
         The account identifier comes only from the verified JWT subject. If-Match
         is omitted when creating the profile and is required for replacement of an
         existing profile. A stale version fails without overwriting newer data.
+        Locale, timezone, and reminders are not user-configurable in this release;
+        the server stores vi-VN, Asia/Ho_Chi_Minh, and reminders disabled.
       security:
         - bearerAuth: []
       parameters:
@@ -69,9 +71,7 @@ paths:
             schema: { $ref: '#/components/schemas/ProfilePutRequest' }
             example:
               displayName: Lan Nguyen
-              locale: vi-VN
-              timezone: Asia/Ho_Chi_Minh
-              reminderEnabled: true
+              dateOfBirth: '2000-01-02'
       responses:
         '200':
           description: Existing profile replaced
@@ -100,7 +100,10 @@ paths:
       tags: [Consent]
       operationId: getOwnCurrentConsents
       summary: Read the latest explicit platform consent decisions
-      description: A missing consent type means no decision has been recorded; it is not silently treated as a grant.
+      description: |
+        This lookup does not require a Care profile. A new account with no profile
+        and no decision receives 200 with decisions: []. A missing consent type
+        means no decision has been recorded; it is not silently treated as a grant.
       security:
         - bearerAuth: []
       parameters:
@@ -438,18 +441,29 @@ components:
     ProfilePutRequest:
       type: object
       additionalProperties: false
-      required: [displayName, locale, timezone, reminderEnabled]
+      required: [displayName]
       properties:
         displayName: { type: string, minLength: 1, maxLength: 120 }
-        dateOfBirth: { type: [string, 'null'], format: date }
+        dateOfBirth:
+          type: [string, 'null']
+          format: date
+          description: Optional date of birth. When present, the user must have reached their 18th anniversary on the request date; no maximum age is inferred.
         gender: { type: [string, 'null'], minLength: 1, maxLength: 32 }
-        locale: { type: string, minLength: 2, maxLength: 16, pattern: '^[A-Za-z]{2,3}(-[A-Za-z0-9]{2,8})*$' }
+        locale:
+          type: string
+          const: vi-VN
+          deprecated: true
+          description: Compatibility input only; this release always stores vi-VN.
         timezone:
           type: string
-          minLength: 1
-          maxLength: 64
-          description: IANA timezone identifier
-        reminderEnabled: { type: boolean }
+          const: Asia/Ho_Chi_Minh
+          deprecated: true
+          description: Compatibility input only; this release always stores Asia/Ho_Chi_Minh.
+        reminderEnabled:
+          type: boolean
+          const: false
+          deprecated: true
+          description: Compatibility input only; reminders are not implemented and remain disabled.
     Profile:
       type: object
       additionalProperties: false
@@ -476,7 +490,7 @@ components:
         consentType: { $ref: '#/components/schemas/ConsentType' }
         policyVersion:
           type: string
-          const: privacy-capstone-v1
+          const: privacy-capstone-v2
           description: Exact approved text or policy version shown to the user
         granted: { type: boolean }
     ConsentDecision:
@@ -504,7 +518,7 @@ components:
       required: [consentType, version, locale, title, content, capstoneOnly]
       properties:
         consentType: { type: string, const: PRIVACY_POLICY }
-        version: { type: string, const: privacy-capstone-v1 }
+        version: { type: string, const: privacy-capstone-v2 }
         locale: { type: string, const: vi-VN }
         title: { type: string, minLength: 1, maxLength: 160 }
         content: { type: string, minLength: 1, maxLength: 4000 }
@@ -554,7 +568,7 @@ components:
       required: [questionnaireDefinitionId, privacyPolicyVersion, privacyDisclosureAcknowledged, answers]
       properties:
         questionnaireDefinitionId: { type: string, format: uuid }
-        privacyPolicyVersion: { type: string, const: privacy-capstone-v1 }
+        privacyPolicyVersion: { type: string, const: privacy-capstone-v2 }
         privacyDisclosureAcknowledged: { type: boolean, const: true }
         answers:
           type: array
@@ -759,6 +773,17 @@ components:
       content:
         application/problem+json:
           schema: { $ref: '#/components/schemas/Problem' }
+    ProfileNotFoundProblem:
+      description: No Care profile has been created yet; clients should present the normal profile onboarding state (PROFILE_NOT_FOUND)
+      content:
+        application/problem+json:
+          schema: { $ref: '#/components/schemas/Problem' }
+          example:
+            type: /problems/profile-not-found
+            title: Care profile was not found
+            status: 404
+            code: PROFILE_NOT_FOUND
+            correlationId: 8fb5720a-53ab-40db-9cf4-f5cfabbdaf65
     ConflictProblem:
       description: Request conflicts with stored state (IDEMPOTENCY_KEY_REUSED or QUESTIONNAIRE_VERSION_UNAVAILABLE)
       content:

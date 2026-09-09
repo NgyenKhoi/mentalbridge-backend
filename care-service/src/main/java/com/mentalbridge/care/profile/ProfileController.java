@@ -2,11 +2,12 @@ package com.mentalbridge.care.profile;
 
 import java.net.URI;
 import java.time.LocalDate;
+import java.time.format.DateTimeParseException;
 import java.util.UUID;
 
+import jakarta.validation.constraints.AssertFalse;
 import jakarta.validation.Valid;
 import jakarta.validation.constraints.NotBlank;
-import jakarta.validation.constraints.Past;
 import jakarta.validation.constraints.Pattern;
 import jakarta.validation.constraints.Size;
 
@@ -67,12 +68,28 @@ public class ProfileController {
 		}
 	}
 
-	public record ProfilePutRequest(@NotBlank @Size(max = 120) String displayName, @Past LocalDate dateOfBirth,
+	public record ProfilePutRequest(@NotBlank @Size(max = 120) String displayName, String dateOfBirth,
 			@Size(max = 32) String gender,
-			@NotBlank @Size(max = 16) @Pattern(regexp = "^[A-Za-z]{2,3}(?:-[A-Za-z0-9]{2,8})*$") String locale,
-			@NotBlank @Size(max = 64) String timezone, boolean reminderEnabled) {
+			@Pattern(regexp = "^vi-VN$") String locale,
+			@Pattern(regexp = "^Asia/Ho_Chi_Minh$") String timezone,
+			@AssertFalse Boolean reminderEnabled) {
 		ProfileService.ProfileCommand command() {
-			return new ProfileService.ProfileCommand(displayName, dateOfBirth, gender, locale, timezone, reminderEnabled);
+			return new ProfileService.ProfileCommand(displayName, parsedDateOfBirth(), gender,
+					ProfileService.DEFAULT_LOCALE, ProfileService.DEFAULT_TIMEZONE,
+					ProfileService.DEFAULT_REMINDER_ENABLED);
+		}
+
+		private LocalDate parsedDateOfBirth() {
+			if (dateOfBirth == null) return null;
+			try {
+				return LocalDate.parse(dateOfBirth);
+			}
+			catch (DateTimeParseException exception) {
+				throw new ApiException(org.springframework.http.HttpStatus.BAD_REQUEST, "VALIDATION_FAILED",
+						"Profile date of birth is invalid", java.util.List.of(
+								new ApiException.FieldViolation("dateOfBirth", "INVALID_DATE",
+										"Date of birth must use YYYY-MM-DD")));
+			}
 		}
 	}
 
