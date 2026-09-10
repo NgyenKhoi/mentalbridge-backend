@@ -46,4 +46,18 @@ class CareEventContractTests {
 				.extracting(node -> node.asText())
 				.containsExactly("NEGATIVE_SAFETY_SCREEN", "POSITIVE_SAFETY_SCREEN");
 	}
+
+	@Test
+	void supportTierResolvedSchemaIsStrictAndExcludesScoresAndAnswers() throws Exception {
+		var path = Path.of("..", "contracts", "events", "care", "support-tier-resolved-v1.schema.json")
+				.toAbsolutePath();
+		var schema = objectMapper.readTree(Files.readString(path));
+		var payload = schema.at("/properties/payload");
+
+		assertThat(schema.at("/properties/messageType/const").asText()).isEqualTo("care.support-tier.resolved");
+		assertThat(schema.at("/properties/schemaVersion/const").asText()).isEqualTo("1.0");
+		assertThat(payload.get("additionalProperties").asBoolean()).isFalse();
+		assertThat(payload.get("properties").fieldNames()).toIterable()
+				.doesNotContain("answers", "totalScore", "safetyItemPositive");
+	}
 }

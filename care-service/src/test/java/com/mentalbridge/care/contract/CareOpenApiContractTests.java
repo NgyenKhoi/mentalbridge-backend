@@ -26,6 +26,8 @@ class CareOpenApiContractTests {
 			"POST /api/v1/assessments",
 			"GET /api/v1/assessments/{assessmentId}",
 			"GET /api/v1/assessments/{assessmentId}/progress",
+			"POST /api/v1/support-evaluations",
+			"GET /api/v1/support-evaluations/{supportEvaluationId}",
 			"POST /api/v1/anonymous-assessment-sessions",
 			"POST /api/v1/anonymous-assessment-sessions/{sessionId}/assessments",
 			"GET /api/v1/anonymous-assessment-sessions/{sessionId}/assessments/{assessmentId}");
@@ -40,6 +42,8 @@ class CareOpenApiContractTests {
 			"/api/v1/assessments",
 			"/api/v1/assessments/{assessmentId}",
 			"/api/v1/assessments/{assessmentId}/progress",
+			"/api/v1/support-evaluations",
+			"/api/v1/support-evaluations/{supportEvaluationId}",
 			"/api/v1/anonymous-assessment-sessions",
 			"/api/v1/anonymous-assessment-sessions/{sessionId}/assessments",
 			"/api/v1/anonymous-assessment-sessions/{sessionId}/assessments/{assessmentId}");
@@ -52,7 +56,9 @@ class CareOpenApiContractTests {
 			"GET /api/v1/assessments",
 			"POST /api/v1/assessments",
 			"GET /api/v1/assessments/{assessmentId}",
-			"GET /api/v1/assessments/{assessmentId}/progress");
+			"GET /api/v1/assessments/{assessmentId}/progress",
+			"POST /api/v1/support-evaluations",
+			"GET /api/v1/support-evaluations/{supportEvaluationId}");
 
 	private static final Set<String> ANONYMOUS_TOKEN_OPERATIONS = Set.of(
 			"POST /api/v1/anonymous-assessment-sessions/{sessionId}/assessments",
@@ -61,6 +67,7 @@ class CareOpenApiContractTests {
 	private static final Set<String> IDEMPOTENT_OPERATIONS = Set.of(
 			"POST /api/v1/consent-decisions",
 			"POST /api/v1/assessments",
+			"POST /api/v1/support-evaluations",
 			"POST /api/v1/anonymous-assessment-sessions/{sessionId}/assessments");
 
 	@Test

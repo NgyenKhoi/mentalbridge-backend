@@ -288,22 +288,45 @@ Care-owned transactional outbox row inserted in the same local transaction as an
 | `next_attempt_at` | Optional UTC instant before which the relay must not retry. |
 | `created_at` | Immutable UTC database insertion instant. |
 
-### `care.support_classification`
+### `public.support_policy_definition`
 
-Versioned platform support-tier result derived from approved sources, distinct from diagnosis.
+Immutable publication record for a locale-specific deterministic routing policy.
+
+| Field | Purpose |
+| --- | --- |
+| `version` | Stable policy identifier retained by every evaluation. |
+| `locale` | Reviewed BCP 47 content locale. |
+| `status` | `DRAFT`, `PUBLISHED`, or `RETIRED`; at most one published version per locale. |
+| `reviewed_by` / `approved_at` | Accountable review provenance and UTC decision instant. |
+| `source_reference` | Traceable Story/policy/ADR sources. |
+| `created_at` | Immutable database creation instant. |
+
+### `public.support_policy_eligible_definition`
+
+Exact allow-list linking a support policy to compatible immutable questionnaire and scoring versions. This prevents an implicit “latest” lookup or silent cross-version interpretation.
+
+### `public.screening_band_meaning`
+
+Policy-, instrument-, and band-specific Vietnamese meaning. It stores stable `meaning_code`, `content_version`, the 14-day reference period, reviewed meaning text, and the non-diagnostic limitation.
+
+### `public.support_tier_guidance`
+
+One bounded, versioned next step per support tier. `safety_guidance_text` is required only for `SAFETY_FOLLOW_UP_RECOMMENDED`; no row authorizes automatic contact, booking, sharing, or intervention.
+
+### `public.support_evaluation`
+
+Immutable versioned platform support-tier result derived from one explicit compatible PHQ-9/GAD-7 pair, distinct from diagnosis.
 
 | Field | Purpose |
 | --- | --- |
 | `id` | Immutable UUID identifying this reproducible support-policy execution. |
 | `user_id` | Care profile for whom the platform support tier was calculated. |
-| `tier` | Authoritative approved support pathway; values never claim low, medium, or high suicide risk. |
+| `phq9_assessment_id` / `gad7_assessment_id` | Exact owned evidence pair; database constraints require two distinct IDs. |
+| `support_tier` | Authoritative approved support pathway; values never claim low, medium, or high suicide risk. |
 | `policy_version` | Exact deterministic policy version needed to reproduce and audit the decision. |
-| `reason_codes` | Stable machine-readable reasons supporting the tier without storing free-form model reasoning. |
-| `source_assessment_ids` | Identifiers of authoritative assessment submissions used by this calculation. |
-| `source_analysis_ids` | Nullable identifiers reserved for a future policy that explicitly approves structured AI indicators. `mb-support-routing-capstone-v1` prohibits AI input, so this conceptual field is empty for that version. |
-| `safety_flag` | Indicates immediate safety guidance was required independently of asynchronous systems. |
-| `calculated_at` | UTC instant the policy executed. |
-| `superseded_at` | UTC instant a newer authoritative classification replaced this result; null while current. |
+| `primary_reason_code` / `secondary_reason_code` | Stable ordered explanation. The secondary reason is allowed only for the PHQ-then-GAD moderate-or-higher pair. |
+| `idempotency_key` / `request_hash` | Per-user retry identity and SHA-256 evidence-pair digest; conflicting reuse is rejected. |
+| `evaluated_at` | UTC instant the deterministic policy executed. |
 | `created_at` | Immutable UTC insertion instant for provenance. |
 
 ### `care.intervention_plan`

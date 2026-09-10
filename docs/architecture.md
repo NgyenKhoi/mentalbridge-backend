@@ -88,8 +88,8 @@ Kafka is the durable asynchronous backbone. PostgreSQL producers use a transacti
 1. Client fetches versioned questionnaire.
 2. Care Service validates complete responses and idempotency key.
 3. In one transaction it stores submission, answers, computed score, safety flags, and outbox event.
-4. It evaluates the deterministic policy synchronously when safety-relevant input is present.
-5. Response includes score/band, the independent safety status, disclaimer, and reviewed local safety guidance where required.
+4. A separate authenticated support-evaluation command explicitly names one compatible PHQ-9 and one compatible GAD-7 result; Care locks the profile, evaluates `mb-support-routing-capstone-v1`, and persists the immutable decision plus outbox event in one transaction.
+5. Response keeps both bands and the PHQ-9 safety status independent, adds stable reasons and reviewed 14-day meanings, and returns the locally owned minimum safety guidance when required. It never calculates a composite score or invokes a downstream dependency.
 6. Async consumers build projections, reminders, and non-critical notifications.
 
 ### Journal analysis

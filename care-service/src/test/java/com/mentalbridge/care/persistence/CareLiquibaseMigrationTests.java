@@ -15,6 +15,7 @@ import org.springframework.jdbc.core.simple.JdbcClient;
 
 import com.mentalbridge.care.TestcontainersConfiguration;
 import com.mentalbridge.care.CareTestProperties;
+import com.mentalbridge.care.support.SupportEvaluationService;
 
 @Import(TestcontainersConfiguration.class)
 @SpringBootTest
@@ -28,6 +29,31 @@ class CareLiquibaseMigrationTests extends CareTestProperties {
 
 	@Autowired
 	private JdbcClient jdbc;
+
+	@Test
+	void migrationPublishesVersionedCombinedSupportPolicyAndReviewedSafetyFallback() {
+		var policy = jdbc.sql("""
+				select version || '|' || locale || '|' || status
+				from support_policy_definition where status='PUBLISHED'
+				""").query(String.class).single();
+		var eligible = jdbc.sql("""
+				select instrument || '|' || questionnaire_version || '|' || scoring_version
+				from support_policy_eligible_definition order by instrument,questionnaire_version
+				""").query(String.class).list();
+		var safety = jdbc.sql("""
+				select safety_guidance_text from support_tier_guidance
+				where policy_version='mb-support-routing-capstone-v1'
+				and support_tier='SAFETY_FOLLOW_UP_RECOMMENDED'
+				""").query(String.class).single();
+
+		assertThat(policy).isEqualTo("mb-support-routing-capstone-v1|vi-VN|PUBLISHED");
+		assertThat(eligible).containsExactly(
+				"GAD7|gad7-vi-vn-adult-v1|gad7-standard-bands-v1",
+				"PHQ9|phq9-vi-vn-capstone-v1|phq9-standard-bands-v1",
+				"PHQ9|phq9-vi-vn-capstone-v2|phq9-standard-bands-v1");
+		assertThat(jdbc.sql("select count(*) from screening_band_meaning").query(Long.class).single()).isEqualTo(9);
+		assertThat(safety).isEqualTo(SupportEvaluationService.SAFETY_FALLBACK);
+	}
 
 	@Test
 	void migrationCreatesOwnerTablesInPublicAndSeedsACompletePhq9Definition() {

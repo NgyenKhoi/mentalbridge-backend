@@ -1,0 +1,8 @@
+package com.mentalbridge.care.support;
+
+public enum SupportReasonCode {
+	ALL_SCREENING_LEVELS_MINIMAL_OR_MILD,
+	PHQ9_MODERATE_OR_HIGHER,
+	GAD7_MODERATE_OR_HIGHER,
+	PHQ9_SAFETY_SCREEN_POSITIVE
+}

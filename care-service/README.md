@@ -1,6 +1,6 @@
 # Care Service
 
-Care owns user profiles, platform consent decisions, questionnaires, assessment submissions and results, deterministic safety/support policy, intervention, and follow-up. Safety-critical scoring and guidance remain local and do not depend on Eureka, OpenFeign, Kafka, Redis, AI, or notification availability.
+Care owns user profiles, platform consent decisions, questionnaires, assessment submissions and results, deterministic safety/support policy, intervention, and follow-up. Story 1103 exposes `POST /api/v1/support-evaluations` and owner-scoped historical retrieval for one explicit compatible PHQ-9/GAD-7 pair. Safety-critical scoring, routing and minimum guidance remain local and do not depend on Eureka, OpenFeign, Kafka, Redis, AI, Content, or notification availability.
 
 ## MB-88 foundation
 
@@ -86,7 +86,7 @@ The foundation records facts needed by later governed behavior without silently 
 - PHQ-9 scoring is deterministic and server-owned; the stored result is a screening result, not a diagnosis.
 - A positive versioned safety item is persisted independently of the total score so later policy cannot ignore it.
 - ADR 0009 fixes item-9 positivity (`answer >= 1`), keeps it independent from the screening band, prohibits automatic human/emergency notification, and removes the hotline catalogue.
-- Current Vietnamese questionnaire content is published as `phq9-vi-vn-capstone-v2` and `gad7-vi-vn-adult-v1` for controlled local/demo use. PHQ-9 v1 is retired without mutation. GAD-7 returns `NOT_APPLICABLE` with null safety fields instead of a false PHQ-style safety result. Production domain review, support-tier mapping, intervention content, production consent/retention, and minimum-age expansion remain separate unresolved feature or deployment decisions.
+- Current Vietnamese questionnaire content is published as `phq9-vi-vn-capstone-v2` and `gad7-vi-vn-adult-v1` for controlled local/demo use. PHQ-9 v1 is retired without mutation. GAD-7 returns `NOT_APPLICABLE` with null safety fields instead of a false PHQ-style safety result. The deterministic support-tier mapping and minimum local safety fallback are published for controlled Capstone use; intervention content, specialist actions, production consent/retention, production domain review, and minimum-age expansion remain separate unresolved gates.
 - No endpoint may imply emergency dispatch, continuous human monitoring, or guaranteed notification delivery.
 
 The canonical policy register is maintained in [`docs/policies/`](../docs/policies/). `MB-CAPSTONE-SCREENING-PUBLICATION-001` defines a bounded evidence gate for controlled local/demo publication; a Capstone decision is not executable production approval.
