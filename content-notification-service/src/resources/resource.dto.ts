@@ -9,12 +9,20 @@ export const ResourceCategorySchema = z.enum([
   'COMMUNITY',
 ]);
 
-const urlSchema = z.string().min(1).refine(
-  (val) => {
-    try { new URL(val); return true; } catch { return false; }
-  },
-  { message: 'externalUrl must be a valid URI' },
-);
+const urlSchema = z
+  .string()
+  .min(1)
+  .refine(
+    (val) => {
+      try {
+        new URL(val);
+        return true;
+      } catch {
+        return false;
+      }
+    },
+    { message: 'externalUrl must be a valid URI' },
+  );
 
 export const CreateResourceDtoSchema = z
   .object({
