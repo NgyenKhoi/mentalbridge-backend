@@ -126,11 +126,11 @@ Privacy-minimized local security record for authentication, recovery, replay, an
 
 ## Owner `care` (`mentalbridge_care.public`)
 
-The MB-88 tables below are executable Liquibase-owned structures in the Care database's default `public` schema. Later support, intervention, grant, and follow-up entries in this section remain conceptual until their owner migrations are added.
+The MB-88 assessment/profile tables and MB-271 support-routing tables below are executable Liquibase-owned structures in the Care database's default `public` schema. Later intervention, grant, and follow-up entries in this section remain conceptual until their owner migrations are added.
 
 ### `public.user_profile`
 
-Care-owned non-credential user profile and communication preferences.
+Care-owned non-credential user profile. Locale, timezone, and reminders are fixed release defaults rather than editable preferences.
 
 | Field | Purpose |
 | --- | --- |
@@ -138,9 +138,9 @@ Care-owned non-credential user profile and communication preferences.
 | `display_name` | User-controlled name displayed in permitted product contexts. |
 | `date_of_birth` | Optional birth date used only for approved age-related eligibility or personalization rules. |
 | `gender` | Optional self-described gender value used only where product policy permits. |
-| `locale` | BCP 47 locale used to select translated questionnaires, resources, and messages. |
-| `timezone` | IANA timezone used to calculate and render reminders and follow-up schedules. |
-| `reminder_enabled` | User preference controlling optional care reminders, excluding mandatory safety behavior. |
+| `locale` | Fixed to `vi-VN` in the current release for translated questionnaires, resources, and messages. |
+| `timezone` | Fixed to `Asia/Ho_Chi_Minh` in the current release; no reminder scheduling is implied. |
+| `reminder_enabled` | Fixed to `false`; reminder delivery is not implemented in the current release. |
 | `created_at` | Immutable UTC profile creation instant. |
 | `updated_at` | UTC instant of the latest persisted profile change, maintained by Care Service. |
 | `version` | Optimistic-lock counter incremented on concurrent profile mutations. |
@@ -194,7 +194,7 @@ Immutable versioned PHQ-9 or GAD-7 questionnaire definition and scoring identity
 | `published_at` | UTC instant the immutable definition became available; null while draft. |
 | `created_at` | Immutable UTC creation instant for the definition record. |
 
-Published seed versions are `phq9-en-us-v1` and `phq9-vi-vn-capstone-v1`. The Vietnamese row is limited to controlled local/demo Capstone use and stores its archived artifact URI, retrieval timestamp, SHA-256 checksum, use statement, and scoring citation in `source_reference`. Production review creates a new immutable publication decision/version; it never rewrites this evidence row.
+Published seed versions are `phq9-en-us-v1`, `phq9-vi-vn-capstone-v2`, and `gad7-vi-vn-adult-v1`. `phq9-vi-vn-capstone-v1` is retained as an immutable retired definition for historical submissions. The GAD-7 row records the UNC Vietnam 2024 artifact URI, retrieval date, SHA-256 checksum, self-administered `0..3` mapping, excluded interviewer-only codes, and scoring citation. The PHQ-9 v2 row records the Product Owner-approved Q2 correction without claiming that wording is verbatim from the archived SBIRT artifact. Production review creates a new immutable publication decision/version; it never rewrites this evidence.
 
 ### `public.questionnaire_question`
 
@@ -231,7 +231,7 @@ Immutable accepted screening envelope for exactly one authenticated profile or a
 | `user_id` | Authenticated Care profile owner; null for an anonymous screening. |
 | `anonymous_session_id` | Care-owned short-lived session identifier; null for an authenticated submission and never accompanied by a user ID. |
 | `definition_id` | Exact questionnaire definition used to validate and score all answers. |
-| `privacy_policy_version` | Exact backend-published disclosure acknowledged for this submission; `legacy-pre-mb178` identifies foundation rows created before the MB-178 gate and must not be presented as Capstone consent. |
+| `privacy_policy_version` | Exact backend-published disclosure/consent version used for this immutable submission. New PHQ-9/GAD-7 rows use `privacy-capstone-v3`; historical v1/v2 values are retained without backfill, and `legacy-pre-mb178` identifies foundation rows created before the MB-178 gate and must not be presented as Capstone consent. |
 | `idempotency_key` | Required retry key unique per authenticated user or anonymous session so the logical submission is persisted once. |
 | `request_hash` | Lowercase SHA-256 digest of the canonical definition-and-answer request; it detects conflicting retries without logging answers. |
 | `submitted_at` | UTC instant the complete validated assessment was accepted. |
@@ -261,9 +261,9 @@ One authoritative server-owned scoring result for an accepted submission. Client
 | `total_score` | Server-computed integer sum constrained to the supported range 0 through 27. |
 | `screening_level` | Non-diagnostic score band selected from the definition's versioned ranges. |
 | `scoring_version` | Exact deterministic algorithm version needed to reproduce the score and band. |
-| `safety_item_positive` | Authoritative derived fact that the versioned questionnaire safety item met its positive rule; it remains independent from the screening level. |
-| `safety_status` | Nullable transition field for the independent `NEGATIVE_SAFETY_SCREEN` or `POSITIVE_SAFETY_SCREEN` policy result; every MB-89 runtime result must populate it together with `safety_policy_version`, while null is reserved only for pre-policy foundation rows. |
-| `safety_policy_version` | Nullable transition field identifying the exact approved safety policy used; paired atomically with `safety_status` so historical results remain reproducible. |
+| `safety_item_positive` | Nullable questionnaire-specific derived fact. PHQ-9 stores whether item 9 met its positive rule; GAD-7 stores null because it has no equivalent safety item. |
+| `safety_status` | Questionnaire-specific safety result. New PHQ-9 rows store `NEGATIVE_SAFETY_SCREEN` or `POSITIVE_SAFETY_SCREEN`; GAD-7 stores `NOT_APPLICABLE`. Null is reserved only for pre-policy foundation rows. |
+| `safety_policy_version` | Exact approved safety policy for PHQ-9. It is null for GAD-7 because no item-9-equivalent policy is evaluated, and null with `safety_status` is reserved for pre-policy foundation rows. |
 | `disclaimer_code` | Stable `SCREENING_NOT_DIAGNOSIS` presentation key required for every result. |
 | `calculated_at` | UTC instant Care completed deterministic scoring. |
 | `created_at` | Immutable UTC insertion instant for persistence provenance. |
@@ -288,23 +288,57 @@ Care-owned transactional outbox row inserted in the same local transaction as an
 | `next_attempt_at` | Optional UTC instant before which the relay must not retry. |
 | `created_at` | Immutable UTC database insertion instant. |
 
-### `care.support_classification`
+### `public.support_policy_definition`
 
-Versioned platform support-tier result derived from approved sources, distinct from diagnosis.
+Immutable publication record for a locale-specific deterministic routing policy.
+
+| Field | Purpose |
+| --- | --- |
+| `version` | Stable policy identifier retained by every evaluation. |
+| `locale` | Reviewed BCP 47 content locale. |
+| `status` | `DRAFT`, `PUBLISHED`, or `RETIRED`; at most one published version per locale. |
+| `reviewed_by` / `approved_at` | Accountable review provenance and UTC decision instant. |
+| `source_reference` | Traceable Story/policy/ADR sources. |
+| `created_at` | Immutable database creation instant. |
+
+### `public.support_policy_eligible_definition`
+
+Exact allow-list linking a support policy to compatible immutable questionnaire and scoring versions. This prevents an implicit “latest” lookup or silent cross-version interpretation.
+
+### `public.screening_band_meaning`
+
+Policy-, instrument-, and band-specific Vietnamese meaning. It stores stable `meaning_code`, `content_version`, the 14-day reference period, reviewed meaning text, and the non-diagnostic limitation.
+
+### `public.support_tier_guidance`
+
+One bounded, versioned next step per support tier. `safety_guidance_text` is required only for `SAFETY_FOLLOW_UP_RECOMMENDED`; no row authorizes automatic contact, booking, sharing, or intervention.
+
+### `public.support_evaluation`
+
+Immutable versioned platform support-tier result derived from one explicit compatible PHQ-9/GAD-7 pair, distinct from diagnosis.
 
 | Field | Purpose |
 | --- | --- |
 | `id` | Immutable UUID identifying this reproducible support-policy execution. |
 | `user_id` | Care profile for whom the platform support tier was calculated. |
-| `tier` | Authoritative approved support pathway; values never claim low, medium, or high suicide risk. |
+| `phq9_assessment_id` / `gad7_assessment_id` | Exact owned evidence pair; database constraints require two distinct IDs. |
+| `support_tier` | Authoritative approved support pathway; values never claim low, medium, or high suicide risk. |
 | `policy_version` | Exact deterministic policy version needed to reproduce and audit the decision. |
-| `reason_codes` | Stable machine-readable reasons supporting the tier without storing free-form model reasoning. |
-| `source_assessment_ids` | Identifiers of authoritative assessment submissions used by this calculation. |
-| `source_analysis_ids` | Nullable identifiers reserved for a future policy that explicitly approves structured AI indicators. `mb-support-routing-capstone-v1` prohibits AI input, so this conceptual field is empty for that version. |
-| `safety_flag` | Indicates immediate safety guidance was required independently of asynchronous systems. |
-| `calculated_at` | UTC instant the policy executed. |
-| `superseded_at` | UTC instant a newer authoritative classification replaced this result; null while current. |
+| `primary_reason_code` / `secondary_reason_code` | Stable ordered explanation. The secondary reason is allowed only for the PHQ-then-GAD moderate-or-higher pair. |
+| `evaluated_at` | UTC instant the deterministic policy executed. |
 | `created_at` | Immutable UTC insertion instant for provenance. |
+
+### `public.support_evaluation_request`
+
+Per-user idempotency aliases for combined-support commands. Multiple keys may safely resolve to the same immutable evidence-pair evaluation, while reuse of any key with different evidence is rejected.
+
+| Field | Purpose |
+| --- | --- |
+| `user_id` | Care profile that owns both the command key and referenced evaluation. |
+| `idempotency_key` | Caller-generated retry key unique for one user. |
+| `request_hash` | Lowercase SHA-256 digest of the canonical PHQ-9/GAD-7 evidence pair; request plaintext is not recoverable from it. |
+| `support_evaluation_id` | Immutable evaluation returned for this key; the composite foreign key prevents cross-owner aliases. |
+| `created_at` | Immutable UTC instant when Care accepted the command key. |
 
 ### `care.intervention_plan`
 

@@ -5,29 +5,49 @@
 | Field | Value |
 | --- | --- |
 | Policy ID | `MB-SCREEN-GAD7-001` |
-| Policy version | `1.0-draft.3` |
-| Status | `RESEARCH VERIFIED / IMPLEMENTATION AUTHORIZED FOR CAPSTONE — UNPUBLISHED` |
+| Policy version | `1.0-capstone` |
+| Status | `CAPSTONE PUBLISHED` |
 | Capstone publication authority | Product Owner under [`MB-CAPSTONE-SCREENING-PUBLICATION-001`](capstone-questionnaire-publication-policy.md) |
-| Capstone effective date | Pending exact localized-content mapping, implementation, and tests |
-| Product Owner decision | Engineering implementation authorized through MB-179 on 2026-09-02; publication not yet approved |
-| Supervisor/domain review | Recommended academic evidence review; not a Capstone publication blocker |
+| Capstone effective date | 2026-09-09 |
+| Product Owner decision | Story 1102 approves the exact mapping below and publication after implementation and verification pass |
+| Supervisor/domain review | Recommended academic evidence review; not a controlled-Capstone blocker |
 | Production review | Domain, privacy, legal, and operational review required before public real-user deployment |
-| Applies to | Proposed GAD-7 for the initial target population of adults aged 18–30 in Vietnam |
+| Applies to | Self-administered GAD-7 for the initial product cohort of adults aged 18–30 in Vietnam |
 | Locale | `vi-VN` |
 | Owning service | Care Service |
-| Supersedes | N/A |
+| Supersedes | `MB-SCREEN-GAD7-001/1.0-draft.3` |
 
-GAD-7 is a separate screening instrument and must not inherit PHQ-9 questionnaire text, score range, item-9 safety behavior, or diagnostic claims. Research verification and Product Owner authorization allow engineering to complete the exact mapping, reference data and tests without an external domain signature. This is readiness to implement the Capstone candidate, not a `CAPSTONE PUBLISHED` decision.
+GAD-7 is a separate symptom-screening instrument. It does not inherit PHQ-9 text, its `0..27` range, item-9 behavior, or diagnostic meaning. This publication is for the controlled local/demo Capstone environment only.
 
-## Proposed deterministic scoring core
+## Immutable definition and provenance
 
-Each of seven answers is `0..3` for symptom frequency during the preceding 14 days:
+The published definition is `gad7-vi-vn-adult-v1`; its scoring version is `gad7-standard-bands-v1`, locale is `vi-VN`, and recall period is 14 days.
+
+Artifact evidence:
+
+- Source: *GAD-7 — Vietnamese for Vietnam — Translated by UNC Vietnam, 2024* hosted by the NIMH Data Archive.
+- Source URL: `https://s3.amazonaws.com/nda.nih.gov/cms/prod/GAD7_VietnameseForVietnam_uncvn.pdf`.
+- Retrieved: `2026-09-09`.
+- Archived copy: [`GAD7_VietnameseForVietnam_uncvn.pdf`](sources/GAD7_VietnameseForVietnam_uncvn.pdf).
+- SHA-256: `876A7245EF7BDDFC3EADFA15625E02F132560218C219E4E5251E6B7DC6A8A001`.
+- Executable mapping: [`008-gad7-and-phq9-v2-reference-data.sql`](../../care-service/src/main/resources/db/changelog/changes/008-gad7-and-phq9-v2-reference-data.sql).
+
+MentalBridge retains the seven symptom items exactly as recorded in that artifact. The interviewer instructions are excluded. The artifact's `88` (refused) and `99` (do not know) codes are not score values and are rejected; a submission must contain exactly one `0..3` answer for every item.
+
+The self-administered response mapping approved in Story 1102 is:
+
+| Value | Display label |
+| ---: | --- |
+| 0 | `Không bao giờ (0 ngày nào)` |
+| 1 | `Vài ngày (1-7 ngày)` |
+| 2 | `Hơn một nửa số ngày (8-10 ngày)` |
+| 3 | `Gần như hàng ngày (11-14 ngày)` |
+
+## Deterministic scoring
 
 ```text
 totalScore = answer1 + answer2 + ... + answer7
 ```
-
-The valid total is `0..21`. The proposed immutable reference bands are:
 
 | Total score | `screeningLevel` |
 | ---: | --- |
@@ -36,42 +56,41 @@ The valid total is `0..21`. The proposed immutable reference bands are:
 | 10–14 | `MODERATE` |
 | 15–21 | `SEVERE` |
 
-Primary reference: Spitzer RL, Kroenke K, Williams JBW, Löwe B. *A Brief Measure for Assessing Generalized Anxiety Disorder: The GAD-7*. 2006. DOI: [10.1001/archinte.166.10.1092](https://doi.org/10.1001/archinte.166.10.1092).
+The valid total is `0..21`. Care alone validates answers, calculates the total, and selects a band from immutable reference data. The browser cannot submit a total or band.
 
-The original study reported strong reliability and screening performance around a score of 10 in its adult primary-care population. Cutoffs can perform differently in other populations. A Vietnamese validation in an adult methadone-maintenance population reported materially different operating characteristics, so that population-specific result must not be generalized into a diagnostic threshold for all Vietnamese adults: [PMCID PMC8491403](https://pmc.ncbi.nlm.nih.gov/articles/PMC8491403/).
+Primary scoring reference: Spitzer RL, Kroenke K, Williams JBW, Löwe B. *A Brief Measure for Assessing Generalized Anxiety Disorder: The GAD-7*. 2006. DOI: [10.1001/archinte.166.10.1092](https://doi.org/10.1001/archinte.166.10.1092).
 
-## Vietnamese provenance
+Scores describe symptoms through screening; they are not diagnoses. Evidence from one clinical population must not be generalized into diagnostic performance for every Vietnamese adult.
 
-The NIMH Data Archive GAD-7 Common Data Element lists `Vietnamese for Vietnam`: [GAD-7 data structure](https://nda.nih.gov/data-structure/cde_gad701). NDA also hosts *GAD-7 — Vietnamese for Vietnam — Translated by UNC Vietnam, 2024*: [source artifact](https://s3.amazonaws.com/nda.nih.gov/cms/prod/GAD7_VietnameseForVietnam_uncvn.pdf).
+## Safety and runtime boundary
 
-This artifact is interviewer-oriented. It expresses frequency labels using day ranges and includes non-score `refused` and `do not know` codes. MentalBridge accepts only complete `0..3` scored answers, so the team must record which exact wording is retained, how the interviewer framing is adapted or excluded without changing item meaning, and how non-score codes are handled. Product Owner authorization permits that implementation work to begin, but source identification alone does not make the self-administered runtime publishable.
+GAD-7 has no PHQ-9 item-9 equivalent. Every GAD-7 result therefore stores and returns:
 
-## Publication and safety boundary
+- `safetyStatus = NOT_APPLICABLE`;
+- `safetyItemPositive = null` in persistence;
+- `safetyPolicyVersion = null`.
 
-The reserved target identifier is `gad7-vi-vn-adult-v1`. It remains unpublished until exact Vietnamese wording, response semantics, source artifact/version, applicable use terms, self-administered mapping, and automated tests satisfy the Capstone publication gate. An external clinical/domain signature is recommended but is not mandatory for controlled Capstone publication.
+`NOT_APPLICABLE` does not mean a negative safety screen was performed. Engineering and AI must not infer suicide intent, imminence, risk, or a new safety policy from a GAD-7 item or total.
 
-The [MB-179 blueprint](../sprints/mb-179-screening-to-support-blueprint.md#instrument-register) records GAD-7 as an authorized implementation candidate. Until this checklist passes, questionnaire discovery and submission must return an explicit unavailable result and must not substitute PHQ-9 or an independently translated questionnaire.
+The same Vietnamese non-diagnostic capability statement used by the screening flow remains visible:
 
-GAD-7 has no PHQ-9 item-9 equivalent in this policy. It may contribute to a `supportTier` only through a separately approved deterministic mapping. Engineering and AI must not derive suicide intent, imminent risk, or a new safety rule from the GAD-7 total.
+> Đây là kết quả sàng lọc triệu chứng, không phải chẩn đoán y khoa. MentalBridge không cung cấp dịch vụ ứng cứu khẩn cấp, không giám sát con người 24/7 và không tự động liên hệ bên thứ ba.
 
-## Capstone publication checklist
+Support routing, personalized actions, specialist sharing, automatic follow-up, notifications, and AI behavior are not part of this publication.
 
-- [x] Original instrument and scoring evidence recorded.
-- [x] Recognized `vi-VN` source artifact identified.
-- [x] Product Owner authorized Capstone implementation work without treating external domain approval as a prerequisite.
-- [ ] Exact item wording, response labels, source version, retrieval evidence, and applicable use terms recorded.
-- [ ] Interviewer framing, day-range labels, and non-score codes mapped deliberately to the self-administered `0..3` MentalBridge contract without changing item meaning.
-- [ ] Scoring version and the `0..21` boundary behavior recorded in versioned reference data.
-- [ ] Vietnamese non-diagnostic disclaimer selected for the Capstone environment.
-- [ ] Questionnaire, score-boundary, invalid/incomplete-answer, and idempotency tests pass.
-- [ ] Product Owner records the `CAPSTONE PUBLISHED` decision and effective version.
+## Acceptance evidence
 
-Combined PHQ-9/GAD-7 support-tier mapping is not a GAD-7 questionnaire-publication blocker. GAD-7 contributes no new safety status or support action until a separate deterministic policy passes its own gate.
+- [x] Source artifact, retrieval date, checksum, exact symptom items, response mapping, exclusions, and review decision are recorded.
+- [x] `gad7-vi-vn-adult-v1` and `gad7-standard-bands-v1` are immutable published reference data.
+- [x] Clean and pre-Story-1102 PostgreSQL migrations pass without rewriting historical PHQ-9 content or results.
+- [x] Boundary scores `0/4/5/9/10/14/15/21` produce the recorded bands.
+- [x] Missing, duplicate, unknown, `-1`, `4`, `88`, and `99` answers are rejected without a partial result.
+- [x] Idempotent retry creates one assessment result and one version-2 outbox event.
+- [x] API, frontend/BFF, authenticated browser journey, result, history, and immutable-definition reopening are implemented and verified.
+- [x] Product Owner approved publication through Story 1102 after the implementation evidence above passed.
 
 ## Production follow-up
 
 - [ ] Domain review of exact localized wording and applicability limits.
 - [ ] Privacy, retention, security, and applicable legal review for real-user health data.
 - [ ] Production deployment approval and effective date recorded independently from Capstone publication.
-
-No runtime endpoint may advertise GAD-7 as implemented before the Capstone checklist is complete and executable reference data and tests exist.

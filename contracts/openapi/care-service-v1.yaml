@@ -10,7 +10,7 @@ info:
     independent safety status, and policy provenance.
     A screening result is not a diagnosis. ADR 0009 keeps screening severity and
     item-9 safety status independent, prohibits automatic escalation, and removes
-    the hotline catalogue. The privacy-capstone-v1 disclosure and bounded anonymous
+    the hotline catalogue. The privacy-capstone-v3 disclosure and bounded anonymous
     lifetime are approved only for controlled local/test/demo use. Public real-user
     collection remains blocked on production privacy, retention, security, and legal review.
 
@@ -25,6 +25,7 @@ tags:
   - name: Privacy disclosure
   - name: Questionnaire
   - name: Assessment
+  - name: Support evaluation
   - name: Anonymous assessment
 paths:
   /api/v1/profile:
@@ -48,7 +49,7 @@ paths:
               schema: { $ref: '#/components/schemas/Profile' }
         '401': { $ref: '#/components/responses/UnauthorizedProblem' }
         '403': { $ref: '#/components/responses/ForbiddenProblem' }
-        '404': { $ref: '#/components/responses/NotFoundProblem' }
+        '404': { $ref: '#/components/responses/ProfileNotFoundProblem' }
     put:
       tags: [Profile]
       operationId: putOwnCareProfile
@@ -57,6 +58,8 @@ paths:
         The account identifier comes only from the verified JWT subject. If-Match
         is omitted when creating the profile and is required for replacement of an
         existing profile. A stale version fails without overwriting newer data.
+        Locale, timezone, and reminders are not user-configurable in this release;
+        the server stores vi-VN, Asia/Ho_Chi_Minh, and reminders disabled.
       security:
         - bearerAuth: []
       parameters:
@@ -69,9 +72,7 @@ paths:
             schema: { $ref: '#/components/schemas/ProfilePutRequest' }
             example:
               displayName: Lan Nguyen
-              locale: vi-VN
-              timezone: Asia/Ho_Chi_Minh
-              reminderEnabled: true
+              dateOfBirth: '2000-01-02'
       responses:
         '200':
           description: Existing profile replaced
@@ -100,7 +101,10 @@ paths:
       tags: [Consent]
       operationId: getOwnCurrentConsents
       summary: Read the latest explicit platform consent decisions
-      description: A missing consent type means no decision has been recorded; it is not silently treated as a grant.
+      description: |
+        This lookup does not require a Care profile. A new account with no profile
+        and no decision receives 200 with decisions: []. A missing consent type
+        means no decision has been recorded; it is not silently treated as a grant.
       security:
         - bearerAuth: []
       parameters:
@@ -135,8 +139,8 @@ paths:
           application/json:
             schema: { $ref: '#/components/schemas/ConsentDecisionRequest' }
             example:
-              consentType: AI_PROCESSING
-              policyVersion: ai-processing-v1
+              consentType: PRIVACY_POLICY
+              policyVersion: privacy-capstone-v3
               granted: true
       responses:
         '201':
@@ -173,7 +177,7 @@ paths:
       tags: [Questionnaire]
       operationId: getCurrentQuestionnaire
       summary: Read the current published questionnaire for an instrument and locale
-      description: Only a reviewed published definition is returned. PHQ-9 is the MB-88 seeded instrument; GAD-7 remains a future reference-data version.
+      description: Only the current reviewed published PHQ-9 or GAD-7 definition is returned.
       parameters:
         - $ref: '#/components/parameters/Instrument'
         - $ref: '#/components/parameters/Locale'
@@ -186,6 +190,26 @@ paths:
               schema: { $ref: '#/components/schemas/Questionnaire' }
         '404': { $ref: '#/components/responses/NotFoundProblem' }
         '429': { $ref: '#/components/responses/RateLimitProblem' }
+  /api/v1/questionnaires/definitions/{definitionId}:
+    x-mentalbridge-status: implemented
+    get:
+      tags: [Questionnaire]
+      operationId: getQuestionnaireDefinition
+      summary: Read one immutable published or retired questionnaire definition
+      description: |
+        Resolves the exact definition referenced by a historical assessment. Draft
+        definitions are never exposed, and callers must not replace the stored
+        definition identifier with the current questionnaire when reopening a result.
+      parameters:
+        - $ref: '#/components/parameters/DefinitionId'
+        - $ref: '#/components/parameters/CorrelationId'
+      responses:
+        '200':
+          description: Immutable questionnaire definition returned
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/Questionnaire' }
+        '404': { $ref: '#/components/responses/NotFoundProblem' }
   /api/v1/assessments:
     x-mentalbridge-status: implemented
     get:
@@ -214,7 +238,7 @@ paths:
     post:
       tags: [Assessment]
       operationId: submitAuthenticatedAssessment
-      summary: Submit and score a complete authenticated PHQ-9 assessment
+      summary: Submit and score a complete authenticated PHQ-9 or GAD-7 assessment
       description: |
         Care ignores no answers and accepts no client score, band, or safety result.
         It validates the exact published questionnaire version, requires one answer
@@ -292,6 +316,75 @@ paths:
         '403': { $ref: '#/components/responses/ForbiddenProblem' }
         '404': { $ref: '#/components/responses/NotFoundProblem' }
         '409': { $ref: '#/components/responses/InsufficientComparableDataProblem' }
+  /api/v1/support-evaluations:
+    x-mentalbridge-status: implemented
+    post:
+      tags: [Support evaluation]
+      operationId: evaluateOwnScreeningSupport
+      summary: Resolve deterministic support from explicitly selected PHQ-9 and GAD-7 results
+      description: |
+        The authenticated USER explicitly selects one owned PHQ-9 result and one
+        owned GAD-7 result. Care validates immutable questionnaire/scoring evidence,
+        applies the published safety-first policy, and persists one reproducible
+        evaluation plus a transactional outbox event. It never calculates a
+        composite score, diagnoses a condition, contacts another person, books an
+        appointment, or shares assessment data. Local reviewed safety guidance
+        remains available without Content, AI, Kafka, Redis, Realtime, or
+        notification dependencies.
+      security:
+        - bearerAuth: []
+      parameters:
+        - $ref: '#/components/parameters/IdempotencyKey'
+        - $ref: '#/components/parameters/CorrelationId'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: '#/components/schemas/SupportEvaluationRequest' }
+            example:
+              phq9AssessmentId: 10000000-0000-4000-8000-000000000101
+              gad7AssessmentId: 10000000-0000-4000-8000-000000000102
+      responses:
+        '201':
+          description: Deterministic support evaluation created or replayed
+          headers:
+            Location:
+              schema: { type: string }
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/SupportEvaluation' }
+              examples:
+                selfGuided:
+                  $ref: '#/components/examples/SelfGuidedSupportEvaluation'
+                professionalSupport:
+                  $ref: '#/components/examples/ProfessionalSupportEvaluation'
+                safetyFollowUp:
+                  $ref: '#/components/examples/SafetyFollowUpSupportEvaluation'
+        '400': { $ref: '#/components/responses/ValidationProblem' }
+        '401': { $ref: '#/components/responses/UnauthorizedProblem' }
+        '403': { $ref: '#/components/responses/ForbiddenProblem' }
+        '404': { $ref: '#/components/responses/NotFoundProblem' }
+        '409': { $ref: '#/components/responses/ConflictProblem' }
+  /api/v1/support-evaluations/{supportEvaluationId}:
+    x-mentalbridge-status: implemented
+    get:
+      tags: [Support evaluation]
+      operationId: getOwnScreeningSupportEvaluation
+      summary: Reopen one immutable owned support evaluation
+      security:
+        - bearerAuth: []
+      parameters:
+        - $ref: '#/components/parameters/SupportEvaluationId'
+        - $ref: '#/components/parameters/CorrelationId'
+      responses:
+        '200':
+          description: Immutable support evaluation returned with its original policy content
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/SupportEvaluation' }
+        '401': { $ref: '#/components/responses/UnauthorizedProblem' }
+        '403': { $ref: '#/components/responses/ForbiddenProblem' }
+        '404': { $ref: '#/components/responses/NotFoundProblem' }
   /api/v1/anonymous-assessment-sessions:
     x-mentalbridge-status: implemented
     post:
@@ -320,7 +413,7 @@ paths:
     post:
       tags: [Anonymous assessment]
       operationId: submitAnonymousAssessment
-      summary: Submit and score a complete PHQ-9 assessment inside one anonymous session
+      summary: Submit and score a complete published assessment inside one anonymous session
       description: |
         Session ownership is proven by the anonymous token, never by the path UUID
         alone. The result expires with the session and cannot be claimed by a later
@@ -374,6 +467,130 @@ paths:
         '410': { $ref: '#/components/responses/ExpiredAnonymousSessionProblem' }
         '429': { $ref: '#/components/responses/RateLimitProblem' }
 components:
+  examples:
+    SelfGuidedSupportEvaluation:
+      summary: Minimal and mild screening bands route to self-guided support
+      value:
+        supportEvaluationId: 20000000-0000-4000-8000-000000000101
+        policyVersion: mb-support-routing-capstone-v1
+        evaluatedAt: '2026-09-10T08:00:00Z'
+        supportTier: SELF_GUIDED_SUPPORT
+        reasonCodes: [ALL_SCREENING_LEVELS_MINIMAL_OR_MILD]
+        evidence:
+          - assessmentId: 10000000-0000-4000-8000-000000000101
+            instrument: PHQ9
+            questionnaireVersion: phq9-vi-vn-capstone-v2
+            scoringVersion: phq9-standard-bands-v1
+            screeningLevel: MILD
+            safetyStatus: NEGATIVE_SAFETY_SCREEN
+            meaning:
+              meaningCode: PHQ9_MILD_14D
+              contentVersion: mb-screening-meaning-vi-vn-v1
+              referencePeriodDays: 14
+              text: Câu trả lời PHQ-9 của bạn thuộc mức triệu chứng nhẹ trong 14 ngày qua.
+              limitation: Kết quả này chỉ phản ánh câu trả lời tự khai trong 14 ngày qua. Đây là sàng lọc triệu chứng, không phải chẩn đoán y khoa và không thể hiện mức độ bệnh lý tổng thể.
+          - assessmentId: 10000000-0000-4000-8000-000000000102
+            instrument: GAD7
+            questionnaireVersion: gad7-vi-vn-adult-v1
+            scoringVersion: gad7-standard-bands-v1
+            screeningLevel: MINIMAL
+            safetyStatus: NOT_APPLICABLE
+            meaning:
+              meaningCode: GAD7_MINIMAL_14D
+              contentVersion: mb-screening-meaning-vi-vn-v1
+              referencePeriodDays: 14
+              text: Câu trả lời GAD-7 của bạn thuộc mức triệu chứng tối thiểu trong 14 ngày qua.
+              limitation: Kết quả này chỉ phản ánh câu trả lời tự khai trong 14 ngày qua. Đây là sàng lọc triệu chứng, không phải chẩn đoán y khoa và không thể hiện mức độ bệnh lý tổng thể.
+        nextStep:
+          code: REVIEW_SELF_GUIDED_RESOURCE
+          contentVersion: mb-support-next-step-vi-vn-v1
+          text: Bạn có thể chọn một tài nguyên tự hỗ trợ đã được MentalBridge rà soát và tiếp tục theo dõi cảm nhận của mình.
+          boundary: Không có cuộc hẹn, liên hệ với chuyên gia, chia sẻ dữ liệu hoặc can thiệp tự động nào được thực hiện.
+        safetyGuidance: null
+        disclaimerCode: SCREENING_NOT_DIAGNOSIS
+        disclaimer: Đây là kết quả sàng lọc triệu chứng, không phải chẩn đoán y khoa. MentalBridge không cung cấp dịch vụ ứng cứu khẩn cấp, không giám sát con người 24/7 và không tự động liên hệ bên thứ ba.
+    ProfessionalSupportEvaluation:
+      summary: A moderate-or-higher band recommends professional support
+      value:
+        supportEvaluationId: 20000000-0000-4000-8000-000000000102
+        policyVersion: mb-support-routing-capstone-v1
+        evaluatedAt: '2026-09-10T08:01:00Z'
+        supportTier: PROFESSIONAL_SUPPORT_RECOMMENDED
+        reasonCodes: [PHQ9_MODERATE_OR_HIGHER, GAD7_MODERATE_OR_HIGHER]
+        evidence:
+          - assessmentId: 10000000-0000-4000-8000-000000000103
+            instrument: PHQ9
+            questionnaireVersion: phq9-vi-vn-capstone-v2
+            scoringVersion: phq9-standard-bands-v1
+            screeningLevel: MODERATE
+            safetyStatus: NEGATIVE_SAFETY_SCREEN
+            meaning:
+              meaningCode: PHQ9_MODERATE_14D
+              contentVersion: mb-screening-meaning-vi-vn-v1
+              referencePeriodDays: 14
+              text: Câu trả lời PHQ-9 của bạn thuộc mức triệu chứng trung bình trong 14 ngày qua.
+              limitation: Kết quả này chỉ phản ánh câu trả lời tự khai trong 14 ngày qua. Đây là sàng lọc triệu chứng, không phải chẩn đoán y khoa và không thể hiện mức độ bệnh lý tổng thể.
+          - assessmentId: 10000000-0000-4000-8000-000000000104
+            instrument: GAD7
+            questionnaireVersion: gad7-vi-vn-adult-v1
+            scoringVersion: gad7-standard-bands-v1
+            screeningLevel: SEVERE
+            safetyStatus: NOT_APPLICABLE
+            meaning:
+              meaningCode: GAD7_SEVERE_14D
+              contentVersion: mb-screening-meaning-vi-vn-v1
+              referencePeriodDays: 14
+              text: Câu trả lời GAD-7 của bạn thuộc mức triệu chứng nặng trong 14 ngày qua.
+              limitation: Kết quả này chỉ phản ánh câu trả lời tự khai trong 14 ngày qua. Đây là sàng lọc triệu chứng, không phải chẩn đoán y khoa và không thể hiện mức độ bệnh lý tổng thể.
+        nextStep:
+          code: CONSIDER_PROFESSIONAL_SUPPORT
+          contentVersion: mb-support-next-step-vi-vn-v1
+          text: Bạn có thể cân nhắc chủ động tìm sự hỗ trợ từ một chuyên gia phù hợp nếu mong muốn.
+          boundary: MentalBridge chưa liên hệ chuyên gia, đặt lịch hoặc chia sẻ dữ liệu của bạn; các hành động đó cần quy trình và sự đồng ý riêng.
+        safetyGuidance: null
+        disclaimerCode: SCREENING_NOT_DIAGNOSIS
+        disclaimer: Đây là kết quả sàng lọc triệu chứng, không phải chẩn đoán y khoa. MentalBridge không cung cấp dịch vụ ứng cứu khẩn cấp, không giám sát con người 24/7 và không tự động liên hệ bên thứ ba.
+    SafetyFollowUpSupportEvaluation:
+      summary: A positive PHQ-9 safety screen always receives local minimum guidance
+      value:
+        supportEvaluationId: 20000000-0000-4000-8000-000000000103
+        policyVersion: mb-support-routing-capstone-v1
+        evaluatedAt: '2026-09-10T08:02:00Z'
+        supportTier: SAFETY_FOLLOW_UP_RECOMMENDED
+        reasonCodes: [PHQ9_SAFETY_SCREEN_POSITIVE]
+        evidence:
+          - assessmentId: 10000000-0000-4000-8000-000000000105
+            instrument: PHQ9
+            questionnaireVersion: phq9-vi-vn-capstone-v2
+            scoringVersion: phq9-standard-bands-v1
+            screeningLevel: MILD
+            safetyStatus: POSITIVE_SAFETY_SCREEN
+            meaning:
+              meaningCode: PHQ9_MILD_14D
+              contentVersion: mb-screening-meaning-vi-vn-v1
+              referencePeriodDays: 14
+              text: Câu trả lời PHQ-9 của bạn thuộc mức triệu chứng nhẹ trong 14 ngày qua.
+              limitation: Kết quả này chỉ phản ánh câu trả lời tự khai trong 14 ngày qua. Đây là sàng lọc triệu chứng, không phải chẩn đoán y khoa và không thể hiện mức độ bệnh lý tổng thể.
+          - assessmentId: 10000000-0000-4000-8000-000000000106
+            instrument: GAD7
+            questionnaireVersion: gad7-vi-vn-adult-v1
+            scoringVersion: gad7-standard-bands-v1
+            screeningLevel: MINIMAL
+            safetyStatus: NOT_APPLICABLE
+            meaning:
+              meaningCode: GAD7_MINIMAL_14D
+              contentVersion: mb-screening-meaning-vi-vn-v1
+              referencePeriodDays: 14
+              text: Câu trả lời GAD-7 của bạn thuộc mức triệu chứng tối thiểu trong 14 ngày qua.
+              limitation: Kết quả này chỉ phản ánh câu trả lời tự khai trong 14 ngày qua. Đây là sàng lọc triệu chứng, không phải chẩn đoán y khoa và không thể hiện mức độ bệnh lý tổng thể.
+        nextStep:
+          code: REVIEW_SAFETY_GUIDANCE
+          contentVersion: mb-safety-guidance-vi-vn-v1
+          text: Ưu tiên xem hướng dẫn an toàn ngay bên dưới và chủ động tìm hỗ trợ trực tiếp nếu bạn cảm thấy không an toàn.
+          boundary: Kết quả này không xác định ý định, kế hoạch hay mức độ khẩn cấp. MentalBridge không tự động liên hệ người khác, đặt lịch hoặc chia sẻ dữ liệu.
+        safetyGuidance: Nếu bạn cảm thấy mình không an toàn hoặc có nguy cơ gây hại cho bản thân, hãy chủ động liên hệ dịch vụ khẩn cấp hoặc cơ sở y tế phù hợp tại khu vực của bạn.
+        disclaimerCode: SCREENING_NOT_DIAGNOSIS
+        disclaimer: Đây là kết quả sàng lọc triệu chứng, không phải chẩn đoán y khoa. MentalBridge không cung cấp dịch vụ ứng cứu khẩn cấp, không giám sát con người 24/7 và không tự động liên hệ bên thứ ba.
   securitySchemes:
     bearerAuth:
       type: http
@@ -387,6 +604,16 @@ components:
   parameters:
     AssessmentId:
       name: assessmentId
+      in: path
+      required: true
+      schema: { type: string, format: uuid }
+    DefinitionId:
+      name: definitionId
+      in: path
+      required: true
+      schema: { type: string, format: uuid }
+    SupportEvaluationId:
+      name: supportEvaluationId
       in: path
       required: true
       schema: { type: string, format: uuid }
@@ -438,18 +665,29 @@ components:
     ProfilePutRequest:
       type: object
       additionalProperties: false
-      required: [displayName, locale, timezone, reminderEnabled]
+      required: [displayName]
       properties:
         displayName: { type: string, minLength: 1, maxLength: 120 }
-        dateOfBirth: { type: [string, 'null'], format: date }
+        dateOfBirth:
+          type: [string, 'null']
+          format: date
+          description: Optional date of birth. When present, the user must have reached their 18th anniversary on the request date; no maximum age is inferred.
         gender: { type: [string, 'null'], minLength: 1, maxLength: 32 }
-        locale: { type: string, minLength: 2, maxLength: 16, pattern: '^[A-Za-z]{2,3}(-[A-Za-z0-9]{2,8})*$' }
+        locale:
+          type: string
+          const: vi-VN
+          deprecated: true
+          description: Compatibility input only; this release always stores vi-VN.
         timezone:
           type: string
-          minLength: 1
-          maxLength: 64
-          description: IANA timezone identifier
-        reminderEnabled: { type: boolean }
+          const: Asia/Ho_Chi_Minh
+          deprecated: true
+          description: Compatibility input only; this release always stores Asia/Ho_Chi_Minh.
+        reminderEnabled:
+          type: boolean
+          const: false
+          deprecated: true
+          description: Compatibility input only; reminders are not implemented and remain disabled.
     Profile:
       type: object
       additionalProperties: false
@@ -476,9 +714,11 @@ components:
         consentType: { $ref: '#/components/schemas/ConsentType' }
         policyVersion:
           type: string
-          const: privacy-capstone-v1
-          description: Exact approved text or policy version shown to the user
-        granted: { type: boolean }
+          const: privacy-capstone-v3
+          description: Exact approved consent text version shown to the user
+        granted:
+          type: boolean
+          description: Grants or withdraws consent for future screening-data processing under this version
     ConsentDecision:
       type: object
       additionalProperties: false
@@ -504,7 +744,7 @@ components:
       required: [consentType, version, locale, title, content, capstoneOnly]
       properties:
         consentType: { type: string, const: PRIVACY_POLICY }
-        version: { type: string, const: privacy-capstone-v1 }
+        version: { type: string, const: privacy-capstone-v3 }
         locale: { type: string, const: vi-VN }
         title: { type: string, minLength: 1, maxLength: 160 }
         content: { type: string, minLength: 1, maxLength: 4000 }
@@ -515,7 +755,7 @@ components:
     Questionnaire:
       type: object
       additionalProperties: false
-      required: [definitionId, instrument, version, locale, title, referencePeriodDays, responseOptions, questions]
+      required: [definitionId, instrument, version, locale, title, referencePeriodDays, scoringVersion, responseOptions, questions, scoreBands]
       properties:
         definitionId: { type: string, format: uuid }
         instrument: { $ref: '#/components/schemas/Instrument' }
@@ -523,6 +763,7 @@ components:
         locale: { type: string, minLength: 2, maxLength: 16 }
         title: { type: string, minLength: 1, maxLength: 255 }
         referencePeriodDays: { type: integer, minimum: 1, maximum: 365 }
+        scoringVersion: { type: string, minLength: 1, maxLength: 32 }
         responseOptions:
           type: array
           minItems: 4
@@ -533,6 +774,19 @@ components:
           minItems: 1
           maxItems: 32
           items: { $ref: '#/components/schemas/Question' }
+        scoreBands:
+          type: array
+          minItems: 1
+          maxItems: 8
+          items: { $ref: '#/components/schemas/QuestionnaireScoreBand' }
+    QuestionnaireScoreBand:
+      type: object
+      additionalProperties: false
+      required: [screeningLevel, minimumScore, maximumScore]
+      properties:
+        screeningLevel: { $ref: '#/components/schemas/ScreeningLevel' }
+        minimumScore: { type: integer, minimum: 0, maximum: 27 }
+        maximumScore: { type: integer, minimum: 0, maximum: 27 }
     ResponseOption:
       type: object
       additionalProperties: false
@@ -554,8 +808,11 @@ components:
       required: [questionnaireDefinitionId, privacyPolicyVersion, privacyDisclosureAcknowledged, answers]
       properties:
         questionnaireDefinitionId: { type: string, format: uuid }
-        privacyPolicyVersion: { type: string, const: privacy-capstone-v1 }
-        privacyDisclosureAcknowledged: { type: boolean, const: true }
+        privacyPolicyVersion: { type: string, const: privacy-capstone-v3 }
+        privacyDisclosureAcknowledged:
+          type: boolean
+          const: true
+          description: Compatibility field recording explicit consent to the current screening-data policy
         answers:
           type: array
           minItems: 1
@@ -677,18 +934,92 @@ components:
         safetyStatus:
           $ref: '#/components/schemas/SafetyStatus'
         safetyPolicyVersion:
-          type: string
-          minLength: 1
+          type: [string, 'null']
           maxLength: 64
-          description: Exact approved safety policy used for the deterministic item-9 result
+          description: Exact approved PHQ-9 item-9 policy, or null when safetyStatus is NOT_APPLICABLE
         disclaimerCode: { type: string, const: SCREENING_NOT_DIAGNOSIS }
+    SupportEvaluationRequest:
+      type: object
+      additionalProperties: false
+      required: [phq9AssessmentId, gad7AssessmentId]
+      properties:
+        phq9AssessmentId: { type: string, format: uuid }
+        gad7AssessmentId: { type: string, format: uuid }
+    SupportEvaluation:
+      type: object
+      additionalProperties: false
+      required: [supportEvaluationId, policyVersion, evaluatedAt, supportTier, reasonCodes, evidence, nextStep, safetyGuidance, disclaimerCode, disclaimer]
+      properties:
+        supportEvaluationId: { type: string, format: uuid }
+        policyVersion: { type: string, const: mb-support-routing-capstone-v1 }
+        evaluatedAt: { type: string, format: date-time }
+        supportTier: { $ref: '#/components/schemas/SupportTier' }
+        reasonCodes:
+          type: array
+          minItems: 1
+          maxItems: 2
+          uniqueItems: true
+          items: { $ref: '#/components/schemas/SupportReasonCode' }
+        evidence:
+          type: array
+          minItems: 2
+          maxItems: 2
+          items: { $ref: '#/components/schemas/SupportEvidence' }
+        nextStep: { $ref: '#/components/schemas/SupportNextStep' }
+        safetyGuidance:
+          type: [string, 'null']
+          minLength: 1
+          maxLength: 1000
+          description: Reviewed local minimum guidance for SAFETY_FOLLOW_UP_RECOMMENDED; null for other tiers
+        disclaimerCode: { type: string, const: SCREENING_NOT_DIAGNOSIS }
+        disclaimer:
+          type: string
+          const: Đây là kết quả sàng lọc triệu chứng, không phải chẩn đoán y khoa. MentalBridge không cung cấp dịch vụ ứng cứu khẩn cấp, không giám sát con người 24/7 và không tự động liên hệ bên thứ ba.
+    SupportEvidence:
+      type: object
+      additionalProperties: false
+      required: [assessmentId, instrument, questionnaireVersion, scoringVersion, screeningLevel, safetyStatus, meaning]
+      properties:
+        assessmentId: { type: string, format: uuid }
+        instrument: { $ref: '#/components/schemas/Instrument' }
+        questionnaireVersion: { type: string, minLength: 1, maxLength: 32 }
+        scoringVersion: { type: string, minLength: 1, maxLength: 32 }
+        screeningLevel: { $ref: '#/components/schemas/ScreeningLevel' }
+        safetyStatus: { $ref: '#/components/schemas/SafetyStatus' }
+        meaning: { $ref: '#/components/schemas/ScreeningMeaning' }
+    ScreeningMeaning:
+      type: object
+      additionalProperties: false
+      required: [meaningCode, contentVersion, referencePeriodDays, text, limitation]
+      properties:
+        meaningCode: { type: string, pattern: '^[A-Z0-9_]+$', maxLength: 64 }
+        contentVersion: { type: string, minLength: 1, maxLength: 64 }
+        referencePeriodDays: { type: integer, const: 14 }
+        text: { type: string, minLength: 1, maxLength: 1000 }
+        limitation: { type: string, minLength: 1, maxLength: 1000 }
+    SupportNextStep:
+      type: object
+      additionalProperties: false
+      required: [code, contentVersion, text, boundary]
+      properties:
+        code: { type: string, pattern: '^[A-Z0-9_]+$', maxLength: 64 }
+        contentVersion: { type: string, minLength: 1, maxLength: 64 }
+        text: { type: string, minLength: 1, maxLength: 1000 }
+        boundary: { type: string, minLength: 1, maxLength: 1000 }
+    SupportTier:
+      type: string
+      description: Product support pathway, never a diagnosis or suicide-risk label
+      enum: [SELF_GUIDED_SUPPORT, PROFESSIONAL_SUPPORT_RECOMMENDED, SAFETY_FOLLOW_UP_RECOMMENDED]
+    SupportReasonCode:
+      type: string
+      enum: [ALL_SCREENING_LEVELS_MINIMAL_OR_MILD, PHQ9_MODERATE_OR_HIGHER, GAD7_MODERATE_OR_HIGHER, PHQ9_SAFETY_SCREEN_POSITIVE]
     ScreeningLevel:
       type: string
       enum: [MINIMAL, MILD, MODERATE, MODERATELY_SEVERE, SEVERE]
     SafetyStatus:
       type: string
-      description: Independent safety screen; it never overwrites the questionnaire screening level or claims intent or urgency
-      enum: [NEGATIVE_SAFETY_SCREEN, POSITIVE_SAFETY_SCREEN]
+      description: Questionnaire-specific safety result; NOT_APPLICABLE means no safety screen was performed
+      enum: [NEGATIVE_SAFETY_SCREEN, POSITIVE_SAFETY_SCREEN, NOT_APPLICABLE]
     AnonymousSession:
       type: object
       additionalProperties: false
@@ -755,12 +1086,23 @@ components:
           schema: { $ref: '#/components/schemas/Problem' }
           example: { type: /problems/anonymous-session-expired, title: Anonymous session expired, status: 410, code: ANONYMOUS_SESSION_EXPIRED, correlationId: 8fb5720a-53ab-40db-9cf4-f5cfabbdaf65 }
     NotFoundProblem:
-      description: Requested resource does not exist (PROFILE_NOT_FOUND, QUESTIONNAIRE_NOT_FOUND, or ASSESSMENT_NOT_FOUND)
+      description: Requested resource does not exist (PROFILE_NOT_FOUND, QUESTIONNAIRE_NOT_FOUND, ASSESSMENT_NOT_FOUND, or SUPPORT_EVALUATION_NOT_FOUND)
       content:
         application/problem+json:
           schema: { $ref: '#/components/schemas/Problem' }
+    ProfileNotFoundProblem:
+      description: No Care profile has been created yet; clients should present the normal profile onboarding state (PROFILE_NOT_FOUND)
+      content:
+        application/problem+json:
+          schema: { $ref: '#/components/schemas/Problem' }
+          example:
+            type: /problems/profile-not-found
+            title: Care profile was not found
+            status: 404
+            code: PROFILE_NOT_FOUND
+            correlationId: 8fb5720a-53ab-40db-9cf4-f5cfabbdaf65
     ConflictProblem:
-      description: Request conflicts with stored state (IDEMPOTENCY_KEY_REUSED or QUESTIONNAIRE_VERSION_UNAVAILABLE)
+      description: Request conflicts with stored state (IDEMPOTENCY_KEY_REUSED, QUESTIONNAIRE_VERSION_UNAVAILABLE, or SUPPORT_EVIDENCE_INCOMPATIBLE)
       content:
         application/problem+json:
           schema: { $ref: '#/components/schemas/Problem' }

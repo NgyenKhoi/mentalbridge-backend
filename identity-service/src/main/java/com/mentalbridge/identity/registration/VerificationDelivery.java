@@ -4,6 +4,8 @@ import java.util.UUID;
 
 public interface VerificationDelivery {
 
-	void requestDelivery(UUID accountId, String normalizedEmail, String challenge, UUID correlationId);
+	void requestEmailVerification(UUID accountId, String normalizedEmail, String challenge, UUID correlationId);
+
+	void requestPasswordRecovery(UUID accountId, String normalizedEmail, String challenge, UUID correlationId);
 
 }

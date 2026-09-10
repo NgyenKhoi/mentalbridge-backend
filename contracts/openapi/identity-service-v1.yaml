@@ -74,11 +74,15 @@ paths:
         '400': { $ref: '#/components/responses/InvalidChallengeProblem' }
         '429': { $ref: '#/components/responses/RateLimitProblem' }
   /api/v1/auth/email-verification-requests:
-    x-mentalbridge-status: planned
+    x-mentalbridge-status: implemented
     post:
       tags: [Registration]
       operationId: requestEmailVerification
       summary: Request another verification delivery
+      description: |
+        Always returns the same empty 202 response for a valid request. Only a pending unverified
+        account receives a new 24-hour challenge. A replacement invalidates every prior active
+        verification challenge.
       parameters:
         - $ref: '#/components/parameters/CorrelationId'
       requestBody:
@@ -90,7 +94,6 @@ paths:
       responses:
         '202': { $ref: '#/components/responses/GenericAccepted' }
         '400': { $ref: '#/components/responses/ValidationProblem' }
-        '429': { $ref: '#/components/responses/RateLimitProblem' }
   /api/v1/auth/login:
     x-mentalbridge-status: implemented
     post:
@@ -175,11 +178,15 @@ paths:
         '204': { description: All sessions are revoked or were already revoked }
         '401': { $ref: '#/components/responses/UnauthorizedProblem' }
   /api/v1/auth/password-recovery-requests:
-    x-mentalbridge-status: planned
+    x-mentalbridge-status: implemented
     post:
       tags: [Recovery]
       operationId: requestPasswordRecovery
       summary: Request a password-recovery delivery without account enumeration
+      description: |
+        Always returns the same empty 202 response for a valid request. Only an active verified
+        account receives a new 15-minute challenge. A replacement invalidates every prior active
+        recovery challenge.
       parameters:
         - $ref: '#/components/parameters/CorrelationId'
       requestBody:
@@ -191,13 +198,16 @@ paths:
       responses:
         '202': { $ref: '#/components/responses/GenericAccepted' }
         '400': { $ref: '#/components/responses/ValidationProblem' }
-        '429': { $ref: '#/components/responses/RateLimitProblem' }
   /api/v1/auth/password-resets:
-    x-mentalbridge-status: planned
+    x-mentalbridge-status: implemented
     post:
       tags: [Recovery]
       operationId: resetPassword
       summary: Consume a recovery challenge and revoke all refresh sessions
+      description: |
+        Atomically consumes one active RESET_PASSWORD challenge, replaces the BCrypt credential,
+        clears credential lock state, and revokes every refresh session. Verification challenges
+        cannot be used for this operation, and a consumed recovery challenge cannot be replayed.
       parameters:
         - $ref: '#/components/parameters/CorrelationId'
       requestBody:
@@ -209,7 +219,6 @@ paths:
       responses:
         '204': { description: Password changed and all refresh sessions revoked }
         '400': { $ref: '#/components/responses/InvalidChallengeProblem' }
-        '429': { $ref: '#/components/responses/RateLimitProblem' }
   /api/v1/account:
     x-mentalbridge-status: implemented
     get:
@@ -229,11 +238,15 @@ paths:
                 $ref: '#/components/schemas/AccountDetail'
         '401': { $ref: '#/components/responses/UnauthorizedProblem' }
   /api/v1/account/password:
-    x-mentalbridge-status: planned
+    x-mentalbridge-status: implemented
     put:
       tags: [Account]
       operationId: changePassword
       summary: Change the authenticated account password and revoke all sessions
+      description: |
+        Requires an active account and the current password. Credential replacement, credential-lock
+        reset, and revocation of every refresh session commit atomically. Existing access tokens retain
+        their original expiry and remain unsuitable as current account-state proof.
       security:
         - bearerAuth: []
       parameters:

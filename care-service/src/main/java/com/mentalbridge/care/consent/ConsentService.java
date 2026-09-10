@@ -33,7 +33,6 @@ public class ConsentService {
 
 	@Transactional(readOnly = true)
 	public List<DecisionView> current(UUID userId) {
-		requireProfile(userId);
 		return decisions.findFirstByUserIdAndConsentTypeOrderByDecidedAtDescIdDesc(userId,
 				PrivacyDisclosureService.CONSENT_TYPE).map(this::view).stream().toList();
 	}
@@ -42,7 +41,7 @@ public class ConsentService {
 	public DecisionView record(UUID userId, String idempotencyKey, DecisionCommand command) {
 		if (!PrivacyDisclosureService.CONSENT_TYPE.equals(command.consentType())) {
 			throw new ApiException(HttpStatus.BAD_REQUEST, "CONSENT_TYPE_UNAVAILABLE",
-					"This consent type is not available in Sprint 2");
+					"This consent type is not available");
 		}
 		disclosures.requireCurrent(command.policyVersion(), true);
 		profiles.findByIdForUpdate(userId).orElseThrow(() -> new ApiException(HttpStatus.NOT_FOUND,
@@ -72,12 +71,6 @@ public class ConsentService {
 		if (!latest.granted() || !version.equals(latest.policyVersion())) {
 			throw new ApiException(HttpStatus.CONFLICT, "PRIVACY_DISCLOSURE_REQUIRED",
 					"The current privacy disclosure must be accepted");
-		}
-	}
-
-	private void requireProfile(UUID userId) {
-		if (!profiles.existsById(userId)) {
-			throw new ApiException(HttpStatus.NOT_FOUND, "PROFILE_NOT_FOUND", "Care profile was not found");
 		}
 	}
 

@@ -39,8 +39,10 @@ public class CareE2eConfiguration {
 
 	public static final String USER_TOKEN = "synthetic-care-e2e-access";
 	public static final String OTHER_USER_TOKEN = "synthetic-care-e2e-other-access";
+	public static final String FIRST_TIME_USER_TOKEN = "synthetic-resource-e2e-access";
 	public static final UUID USER_ID = UUID.fromString("10000000-0000-4000-8000-000000000004");
 	public static final UUID OTHER_USER_ID = UUID.fromString("10000000-0000-4000-8000-000000000005");
+	public static final UUID FIRST_TIME_USER_ID = UUID.fromString("10000000-0000-4000-8000-000000000006");
 
 	@Bean
 	@Primary
@@ -54,6 +56,7 @@ public class CareE2eConfiguration {
 		return token -> switch (token) {
 			case USER_TOKEN -> jwt(token, USER_ID);
 			case OTHER_USER_TOKEN -> jwt(token, OTHER_USER_ID);
+			case FIRST_TIME_USER_TOKEN -> jwt(token, FIRST_TIME_USER_ID);
 			default -> throw new BadJwtException("E2E access token is invalid");
 		};
 	}
@@ -101,7 +104,7 @@ public class CareE2eConfiguration {
 				insert into consent_decision (
 				    id, user_id, consent_type, policy_version, granted, evidence,
 				    idempotency_key, request_hash, decided_at, created_at
-				) values (:decisionId, :userId, 'PRIVACY_POLICY', 'privacy-capstone-v1', true,
+				) values (:decisionId, :userId, 'PRIVACY_POLICY', 'privacy-capstone-v3', true,
 				          '{}'::jsonb, 'e2e-seeded-consent', repeat('a', 64), :timestamp, :timestamp)
 				on conflict (id) do nothing
 				""")

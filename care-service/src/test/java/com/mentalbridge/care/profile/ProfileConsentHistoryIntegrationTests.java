@@ -36,12 +36,25 @@ class ProfileConsentHistoryIntegrationTests extends CareTestProperties {
 	@Autowired ObjectMapper objectMapper;
 
 	@Test
+	void firstTimeUserGetsProfileOnboardingStateAndEmptyConsents() throws Exception {
+		var userId = UUID.randomUUID();
+
+		mvc.perform(get("/api/v1/profile").with(user(userId)))
+				.andExpect(status().isNotFound()).andExpect(jsonPath("$.code").value("PROFILE_NOT_FOUND"));
+		mvc.perform(get("/api/v1/consents").with(user(userId)))
+				.andExpect(status().isOk()).andExpect(jsonPath("$.decisions.length()").value(0));
+	}
+
+	@Test
 	void profileUsesJwtOwnershipAndOptimisticConcurrency() throws Exception {
 		var userId = UUID.randomUUID();
 		mvc.perform(put("/api/v1/profile").with(user(userId)).contentType(MediaType.APPLICATION_JSON)
-				.content(profileBody("Lan")))
+				.content("{\"displayName\":\"Lan\",\"dateOfBirth\":\"2000-01-01\",\"gender\":\"OTHER\"}"))
 				.andExpect(status().isCreated()).andExpect(header().string("ETag", "\"0\""))
-				.andExpect(jsonPath("$.accountId").value(userId.toString()));
+				.andExpect(jsonPath("$.accountId").value(userId.toString()))
+				.andExpect(jsonPath("$.locale").value("vi-VN"))
+				.andExpect(jsonPath("$.timezone").value("Asia/Ho_Chi_Minh"))
+				.andExpect(jsonPath("$.reminderEnabled").value(false));
 
 		mvc.perform(put("/api/v1/profile").with(user(userId)).contentType(MediaType.APPLICATION_JSON)
 				.content(profileBody("Lan stale")))
@@ -60,13 +73,18 @@ class ProfileConsentHistoryIntegrationTests extends CareTestProperties {
 		mvc.perform(put("/api/v1/profile").with(user(UUID.randomUUID())).contentType(MediaType.APPLICATION_JSON)
 				.content(profileBody("Invalid timezone").replace("Asia/Ho_Chi_Minh", "not-a-timezone")))
 				.andExpect(status().isBadRequest()).andExpect(jsonPath("$.code").value("VALIDATION_FAILED"));
+		mvc.perform(put("/api/v1/profile").with(user(UUID.randomUUID())).contentType(MediaType.APPLICATION_JSON)
+				.content("{\"displayName\":\"Invalid date\",\"dateOfBirth\":\"not-a-date\"}"))
+				.andExpect(status().isBadRequest()).andExpect(jsonPath("$.code").value("VALIDATION_FAILED"))
+				.andExpect(jsonPath("$.violations[0].field").value("dateOfBirth"))
+				.andExpect(jsonPath("$.violations[0].code").value("INVALID_DATE"));
 	}
 
 	@Test
 	void consentIsBackendVersionedAppendOnlyIdempotentAndRevocable() throws Exception {
 		var userId = createProfile();
 		mvc.perform(get("/api/v1/privacy-disclosures/current"))
-				.andExpect(status().isOk()).andExpect(jsonPath("$.version").value("privacy-capstone-v1"))
+				.andExpect(status().isOk()).andExpect(jsonPath("$.version").value("privacy-capstone-v3"))
 				.andExpect(jsonPath("$.capstoneOnly").value(true));
 
 		var grant = consentBody(true);
@@ -84,6 +102,14 @@ class ProfileConsentHistoryIntegrationTests extends CareTestProperties {
 				.header("Idempotency-Key", "profile-consent-grant-0001")
 				.contentType(MediaType.APPLICATION_JSON).content(consentBody(false)))
 				.andExpect(status().isConflict()).andExpect(jsonPath("$.code").value("IDEMPOTENCY_KEY_REUSED"));
+		var assessment = mvc.perform(post("/api/v1/assessments").with(user(userId))
+				.header("Idempotency-Key", "pre-revoke-assessment-0001")
+				.contentType(MediaType.APPLICATION_JSON).content(assessmentBody(0)))
+				.andExpect(status().isCreated())
+				.andExpect(jsonPath("$.privacyPolicyVersion").value("privacy-capstone-v3"))
+				.andReturn();
+		var assessmentId = objectMapper.readTree(assessment.getResponse().getContentAsString()).get("assessmentId")
+				.asText();
 
 		mvc.perform(post("/api/v1/consent-decisions").with(user(userId))
 				.header("Idempotency-Key", "profile-consent-revoke-001")
@@ -96,6 +122,9 @@ class ProfileConsentHistoryIntegrationTests extends CareTestProperties {
 				.header("Idempotency-Key", "revoked-assessment-0001")
 				.contentType(MediaType.APPLICATION_JSON).content(assessmentBody(0)))
 				.andExpect(status().isConflict()).andExpect(jsonPath("$.code").value("PRIVACY_DISCLOSURE_REQUIRED"));
+		mvc.perform(get("/api/v1/assessments/{assessmentId}", assessmentId).with(user(userId)))
+				.andExpect(status().isOk()).andExpect(jsonPath("$.assessmentId").value(assessmentId))
+				.andExpect(jsonPath("$.privacyPolicyVersion").value("privacy-capstone-v3"));
 	}
 
 	@Test
@@ -151,7 +180,7 @@ class ProfileConsentHistoryIntegrationTests extends CareTestProperties {
 	}
 
 	private String consentBody(boolean granted) {
-		return "{\"consentType\":\"PRIVACY_POLICY\",\"policyVersion\":\"privacy-capstone-v1\",\"granted\":"
+		return "{\"consentType\":\"PRIVACY_POLICY\",\"policyVersion\":\"privacy-capstone-v3\",\"granted\":"
 				+ granted + "}";
 	}
 
@@ -164,7 +193,7 @@ class ProfileConsentHistoryIntegrationTests extends CareTestProperties {
 					.append(String.format("%012d", index + 1)).append("\",\"value\":").append(values[index]).append('}');
 		}
 		return "{\"questionnaireDefinitionId\":\"" + DEFINITION_ID
-				+ "\",\"privacyPolicyVersion\":\"privacy-capstone-v1\",\"privacyDisclosureAcknowledged\":true,\"answers\":["
+				+ "\",\"privacyPolicyVersion\":\"privacy-capstone-v3\",\"privacyDisclosureAcknowledged\":true,\"answers\":["
 				+ answers + "]}";
 	}
 }

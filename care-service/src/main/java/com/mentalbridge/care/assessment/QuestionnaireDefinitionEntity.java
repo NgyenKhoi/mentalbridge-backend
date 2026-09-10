@@ -84,4 +84,8 @@ class QuestionnaireDefinitionEntity {
 	boolean published() {
 		return "PUBLISHED".equals(status) && publishedAt != null;
 	}
+
+	boolean readable() {
+		return ("PUBLISHED".equals(status) || "RETIRED".equals(status)) && publishedAt != null;
+	}
 }

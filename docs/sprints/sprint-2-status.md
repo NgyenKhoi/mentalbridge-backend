@@ -42,7 +42,7 @@ The 70-hour difference from nominal capacity is reserved for meetings, review, a
 | Anonymous PHQ-9 | `PLANNED` | Frontend retrieves the published Care questionnaire, creates an isolated anonymous session, submits answers, and renders only server-owned result/safety fields. |
 | Authenticated PHQ-9 | `PLANNED` | JWT subject ownership, idempotent submission, owned result reopening, and failure states work through a server-side frontend boundary. |
 | Frontend scoring and hotline removal | `PLANNED` | Browser scoring, hard-coded severity/recommendations, and the obsolete hotline are absent from production paths. |
-| Care profile and consent | `IMPLEMENTED — VERIFIED` | Own-profile optimistic concurrency, backend-owned `privacy-capstone-v1`, and append-only grant/revoke decisions pass the Care PostgreSQL integration suite. |
+| Care profile and consent | `IMPLEMENTED — VERIFIED` | Own-profile optimistic concurrency, backend-owned current `privacy-capstone-v3`, immutable historical v1/v2 references, and append-only grant/revoke decisions pass the Care PostgreSQL integration suite. |
 | Assessment history and reassessment | `IMPLEMENTED — VERIFIED` | Stable owned cursor pagination, exact immutable result reopening, and creation of a distinct reassessment submission pass the Care PostgreSQL integration suite and frontend delivery gates. |
 | Reviewed support resources | `PLANNED` | Result pages render only published reviewed backend content and show neutral, explicit empty/unavailable fallback. |
 | Realtime foundation | `CARRY-OVER` | NestJS, contracts, authentication, Redis TTL presence, MongoDB durable idempotent messages/history, and failure tests are complete; production chat eligibility remains disabled. |
@@ -53,8 +53,8 @@ The 70-hour difference from nominal capacity is reserved for meetings, review, a
 | Deliverable | Current status | Required result |
 | --- | --- | --- |
 | Target cohort and terminology | `DEFINITION COMPLETE — MENTOR REVIEW PENDING` | Vietnam users aged 18–30 are the primary Capstone cohort; profile/self-declaration and unsupported cases are defined without a medical cutoff claim. |
-| PHQ-9/GAD-7 provenance | `PHQ-9 PUBLISHED / GAD-7 IMPLEMENTATION AUTHORIZED — UNPUBLISHED` | PHQ-9 has exact executable evidence. GAD-7 research/source evidence permits engineering to complete mapping and tests but not advertise runtime before publication. |
-| Severity-to-support routing | `BLUEPRINT APPROVED — RUNTIME UNAVAILABLE` | `mb-support-routing-capstone-v1` keeps every decision dimension independent, excludes AI and defines no-input/fallback behavior without approving personalized interventions. |
+| PHQ-9/GAD-7 provenance | `CAPSTONE PUBLISHED — STORY 1102` | Current PHQ-9 v2 and GAD-7 have immutable executable definitions, source/review evidence, migration tests, API/runtime support, and frontend journeys. PHQ-9 v1 remains retired and readable for history. |
+| Severity-to-support routing | `CONTROLLED CAPSTONE RUNTIME — STORY 1103` | `mb-support-routing-capstone-v1` evaluates an explicit compatible PHQ-9/GAD-7 pair, keeps every decision dimension independent, excludes AI, emits stable evidence/reasons and uses the PO-approved local safety fallback. Personalized interventions remain unavailable. |
 | Specialist handoff and consent | `DEFINITION COMPLETE — RUNTIME UNAVAILABLE` | Registered, voluntary, user-initiated handoff requires entitlement, availability and minimum scoped consent; no auto-contact, booking or journal sharing. |
 | Follow-up and reassessment | `DEFINITION COMPLETE — REASSESSMENT RUNTIME OWNED BY MB-178` | User initiates reassessment; Care owns future cadence; no automatic clinical reminder is hard-coded. |
 | Descriptive progress | `RUNTIME COMPLETE — MB-205` | Authenticated owner-selected same-instrument/scoring-version previous/current score, raw delta, arithmetic direction, band transition and interval only; no clinical, causal, safety-resolution or combined-score claim. |
@@ -86,7 +86,7 @@ No score automatically diagnoses a condition, mandates treatment, books or notif
 
 | Deferred runtime | Reason |
 | --- | --- |
-| GAD-7 publication and submission | Product Owner authorized implementation without an external domain-signature prerequisite. Publication remains blocked until the interviewer-to-self-administered mapping, exact versioned reference data, implementation, tests and final publication record are complete. |
+| GAD-7 production deployment | Controlled-Capstone publication is complete in Story 1102. Public real-user deployment remains gated by domain, privacy, legal, security, and operational review. |
 | Specialist discovery, booking, and consultation | Consultation runtime and exact eligibility/appointment policies are not implemented. Sprint 2 defines the handoff boundary only. |
 | Automatic follow-up | User-initiated reassessment belongs to MB-178 and descriptive progress to MB-205. Automatic cadence remains deliberately unapproved. |
 | Journal frontend CRUD | Backend CRUD remains available, but the 35-hour frontend slice moves to Sprint 3 to fund Review 1 closure. |

@@ -5,11 +5,7 @@ const environmentSchema = z
   .object({
     NODE_ENV: z.enum(['development', 'test', 'production']).default('development'),
     PORT: z.coerce.number().int().min(1).max(65_535).default(3003),
-    DB_HOST: z.string().min(1),
-    DB_PORT: z.coerce.number().int().min(1).max(65_535).default(5432),
-    DB_NAME: z.string().min(1).default('mentalbridge_content_notification'),
-    DB_USER: z.string().min(1),
-    DB_PASSWORD: z.string().min(1),
+    DATABASE_URL: z.url(),
     DB_POOL_MAX: z.coerce.number().int().min(1).default(10),
     DB_IDLE_TIMEOUT_MS: z.coerce.number().int().min(0).default(30_000),
     DB_CONNECT_TIMEOUT_MS: z.coerce.number().int().min(0).default(2_000),

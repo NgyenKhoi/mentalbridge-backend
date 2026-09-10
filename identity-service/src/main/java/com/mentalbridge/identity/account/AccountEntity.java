@@ -94,6 +94,13 @@ public class AccountEntity {
 		updatedAt = loginAt;
 	}
 
+	public void replacePassword(String passwordHash, Instant changedAt) {
+		this.passwordHash = passwordHash;
+		failedLoginCount = 0;
+		lockedUntil = null;
+		updatedAt = changedAt;
+	}
+
 	public UUID id() {
 		return id;
 	}

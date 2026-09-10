@@ -19,11 +19,7 @@ export class DatabaseService implements ReadinessProbe, OnModuleDestroy {
     configuration: ServiceConfiguration,
   ) {
     this.pool = new Pool({
-      host: configuration.DB_HOST,
-      port: configuration.DB_PORT,
-      database: configuration.DB_NAME,
-      user: configuration.DB_USER,
-      password: configuration.DB_PASSWORD,
+      connectionString: configuration.DATABASE_URL,
       max: configuration.DB_POOL_MAX,
       idleTimeoutMillis: configuration.DB_IDLE_TIMEOUT_MS,
       connectionTimeoutMillis: configuration.DB_CONNECT_TIMEOUT_MS,

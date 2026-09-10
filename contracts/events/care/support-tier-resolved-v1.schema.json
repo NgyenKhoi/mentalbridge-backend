@@ -1,0 +1,33 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://mentalbridge.local/contracts/events/care/support-tier-resolved-v1.schema.json",
+  "title": "Care support tier resolved v1",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["messageId", "messageType", "occurredAt", "producer", "schemaVersion", "correlationId", "aggregateId", "aggregateVersion", "payload"],
+  "properties": {
+    "messageId": { "type": "string", "format": "uuid" },
+    "messageType": { "const": "care.support-tier.resolved" },
+    "occurredAt": { "type": "string", "format": "date-time" },
+    "producer": { "const": "care-service" },
+    "schemaVersion": { "const": "1.0" },
+    "correlationId": { "type": "string", "format": "uuid" },
+    "aggregateId": { "type": "string", "format": "uuid" },
+    "aggregateVersion": { "const": 0 },
+    "payload": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["supportEvaluationId", "userId", "policyVersion", "supportTier", "reasonCodes", "phq9AssessmentId", "gad7AssessmentId", "evaluatedAt"],
+      "properties": {
+        "supportEvaluationId": { "type": "string", "format": "uuid" },
+        "userId": { "type": "string", "format": "uuid" },
+        "policyVersion": { "type": "string", "minLength": 1, "maxLength": 64 },
+        "supportTier": { "enum": ["SELF_GUIDED_SUPPORT", "PROFESSIONAL_SUPPORT_RECOMMENDED", "SAFETY_FOLLOW_UP_RECOMMENDED"] },
+        "reasonCodes": { "type": "array", "minItems": 1, "maxItems": 2, "uniqueItems": true, "items": { "enum": ["ALL_SCREENING_LEVELS_MINIMAL_OR_MILD", "PHQ9_MODERATE_OR_HIGHER", "GAD7_MODERATE_OR_HIGHER", "PHQ9_SAFETY_SCREEN_POSITIVE"] } },
+        "phq9AssessmentId": { "type": "string", "format": "uuid" },
+        "gad7AssessmentId": { "type": "string", "format": "uuid" },
+        "evaluatedAt": { "type": "string", "format": "date-time" }
+      }
+    }
+  }
+}

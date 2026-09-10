@@ -1,6 +1,6 @@
 # Care Service
 
-Care owns user profiles, platform consent decisions, questionnaires, assessment submissions and results, deterministic safety/support policy, intervention, and follow-up. Safety-critical scoring and guidance remain local and do not depend on Eureka, OpenFeign, Kafka, Redis, AI, or notification availability.
+Care owns user profiles, platform consent decisions, questionnaires, assessment submissions and results, deterministic safety/support policy, intervention, and follow-up. Story 1103 exposes `POST /api/v1/support-evaluations` and owner-scoped historical retrieval for one explicit compatible PHQ-9/GAD-7 pair. Safety-critical scoring, routing and minimum guidance remain local and do not depend on Eureka, OpenFeign, Kafka, Redis, AI, Content, or notification availability.
 
 ## MB-88 foundation
 
@@ -29,7 +29,7 @@ Errors use RFC 9457 Problem Details with stable `code` and `correlationId` field
 
 Create the service-owned `mentalbridge_care` database before running this module. Liquibase connects directly to that database and uses its default `public` schema. It never creates a database, schema named `care`, or cross-service foreign key.
 
-The MB-88 changelog owns:
+The Care Liquibase changelog owns:
 
 | Table | Purpose |
 | --- | --- |
@@ -42,9 +42,12 @@ The MB-88 changelog owns:
 | `assessment_submission` | Immutable owner, questionnaire version, request hash, idempotency key, and anonymous retention deadline |
 | `assessment_answer` | One validated `0..3` answer tied to the same definition as its submission |
 | `assessment_result` | Server-owned score, band, independent safety status, scoring/safety-policy versions, and disclaimer code |
+| `support_policy_definition` and policy reference tables | Immutable compatible questionnaire versions, localized band meanings, and bounded support-tier guidance |
+| `support_evaluation` | Immutable deterministic result for one explicit owned PHQ-9/GAD-7 evidence pair |
+| `support_evaluation_request` | Per-user idempotency aliases resolving retries to the immutable evaluation |
 | `outbox_event` | Minimal integration fact persisted in the aggregate transaction |
 
-The reference-data migrations publish immutable English and controlled-Capstone Vietnamese PHQ-9 definitions. Each contains nine questions, item 9 marked as the safety item, four ordered response choices, standard score bands, and auditable source provenance. The default `vi-VN` API definition is `phq9-vi-vn-capstone-v1`; its archived source URI, retrieval timestamp, use statement, and SHA-256 checksum are stored with the database row and recorded in the PHQ-9 policy. This publication is approved only for controlled local/demo Capstone use and does not represent production clinical/domain approval.
+The reference-data migrations publish immutable English PHQ-9, current controlled-Capstone Vietnamese PHQ-9 v2, and Vietnamese GAD-7 definitions. PHQ-9 v1 remains readable as a retired immutable definition so historical results reopen against their original wording and bands. GAD-7 contains seven questions, the approved four-choice self-administered mapping, standard `0..21` bands, explicit non-applicable safety semantics, and auditable source provenance. These publications are approved only for controlled local/demo Capstone use and do not represent production clinical/domain approval.
 
 Assessment answer text must never be copied into outbox payloads, logs, errors, metrics, or unrestricted audit metadata.
 
@@ -86,14 +89,14 @@ The foundation records facts needed by later governed behavior without silently 
 - PHQ-9 scoring is deterministic and server-owned; the stored result is a screening result, not a diagnosis.
 - A positive versioned safety item is persisted independently of the total score so later policy cannot ignore it.
 - ADR 0009 fixes item-9 positivity (`answer >= 1`), keeps it independent from the screening band, prohibits automatic human/emergency notification, and removes the hotline catalogue.
-- Exact Vietnamese questionnaire content is published as `phq9-vi-vn-capstone-v1` for controlled local/demo use. Production domain review, support-tier mapping, intervention content, production consent/retention, and minimum-age expansion remain separate unresolved feature or deployment decisions.
+- Current Vietnamese questionnaire content is published as `phq9-vi-vn-capstone-v2` and `gad7-vi-vn-adult-v1` for controlled local/demo use. PHQ-9 v1 is retired without mutation. GAD-7 returns `NOT_APPLICABLE` with null safety fields instead of a false PHQ-style safety result. The deterministic support-tier mapping and minimum local safety fallback are published for controlled Capstone use; intervention content, specialist actions, production consent/retention, production domain review, and minimum-age expansion remain separate unresolved gates.
 - No endpoint may imply emergency dispatch, continuous human monitoring, or guaranteed notification delivery.
 
 The canonical policy register is maintained in [`docs/policies/`](../docs/policies/). `MB-CAPSTONE-SCREENING-PUBLICATION-001` defines a bounded evidence gate for controlled local/demo publication; a Capstone decision is not executable production approval.
 
 Questionnaire publication no longer depends on the support/intervention catalogue or specialist workflow. Each capability follows its own gate. Publishing localized content must update the source artifact/provenance record, tests, configuration, append-only migrations/data dictionary when needed, and this README together. Public real-user deployment additionally requires production privacy, retention, security, legal, safety-content, and operational review.
 
-MB-89 implements the deterministic PHQ-9 runtime. MB-178 adds the backend-owned `privacy-capstone-v1` disclosure, append-only `PRIVACY_POLICY` decisions, optimistic Care profile replacement, cursor-based owned history, and explicit reassessment as a new immutable submission. Anonymous activity extends the 30-minute inactivity deadline only up to the two-hour absolute maximum. Registered history is authorized only for synthetic/test/demo use; production retention, deletion, export, specialist sharing, AI/research/marketing consent, and automatic clinical reminders remain unavailable rather than being invented.
+MB-89 implements the deterministic PHQ-9 runtime. MB-178 adds the backend-owned, versioned privacy disclosure, append-only `PRIVACY_POLICY` decisions, optimistic Care profile replacement, cursor-based owned history, and explicit reassessment as a new immutable submission. Story 1102 makes `privacy-capstone-v3` current for new PHQ-9/GAD-7 processing while preserving v1/v2 on historical decisions and assessments; authenticated results may support account history, whereas anonymous results remain session-scoped and are never silently attached to a later account. Anonymous activity extends the 30-minute inactivity deadline only up to the two-hour absolute maximum. Registered history is authorized only for synthetic/test/demo use; production retention, deletion, export, specialist sharing, AI/research/marketing consent, and automatic clinical reminders remain unavailable rather than being invented.
 
 ## Integration
 
@@ -108,4 +111,4 @@ MB-89 implements the deterministic PHQ-9 runtime. MB-178 adds the backend-owned 
 .\mvnw.cmd test
 ```
 
-The PostgreSQL integration suite applies Liquibase to a disposable real PostgreSQL database and validates owner isolation, profile optimistic concurrency, append-only consent history/idempotency/revocation, disclosure enforcement, stable history pagination, deterministic compatible progress selection, seed data, authenticated-versus-anonymous ownership, scoring boundaries, item-9 independence, token isolation/expiry, answer/result ranges, questionnaire version uniqueness, and minimized outbox payloads. Live Eureka registration is disabled in tests. The versioned `care.assessment.submitted` event contract exists, while a Kafka relay remains a separate delivery slice; scoring and progress never wait for a broker.
+The PostgreSQL integration suite applies Liquibase to a disposable real PostgreSQL database and validates owner isolation, profile optimistic concurrency, append-only consent history/idempotency/revocation, disclosure enforcement, stable history pagination, deterministic compatible progress selection, support-routing evidence validation and concurrency/idempotency, policy lookup serialization and fallback behavior, seed data, authenticated-versus-anonymous ownership, scoring boundaries, item-9 independence, token isolation/expiry, answer/result ranges, questionnaire version uniqueness, and minimized outbox payloads. Live Eureka registration is disabled in tests. The versioned assessment and support-tier event contracts exist, while a Kafka relay remains a separate delivery slice; scoring, progress, and support routing never wait for a broker.

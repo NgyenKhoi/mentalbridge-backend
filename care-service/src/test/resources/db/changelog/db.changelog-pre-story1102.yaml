@@ -1,0 +1,15 @@
+databaseChangeLog:
+  - include:
+      file: db/changelog/changes/001-care-profile-consent.sql
+  - include:
+      file: db/changelog/changes/002-care-assessment.sql
+  - include:
+      file: db/changelog/changes/003-phq9-reference-data.sql
+  - include:
+      file: db/changelog/changes/004-assessment-safety-policy-provenance.sql
+  - include:
+      file: db/changelog/changes/005-phq9-vi-vn-reference-data.sql
+  - include:
+      file: db/changelog/changes/006-mb178-assessment-disclosure.sql
+  - include:
+      file: db/changelog/changes/007-profile-preference-defaults.sql
