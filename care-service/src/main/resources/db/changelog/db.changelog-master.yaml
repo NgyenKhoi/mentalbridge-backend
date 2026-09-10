@@ -15,3 +15,5 @@ databaseChangeLog:
       file: db/changelog/changes/007-profile-preference-defaults.sql
   - include:
       file: db/changelog/changes/008-gad7-and-phq9-v2-reference-data.sql
+  - include:
+      file: db/changelog/changes/009-combined-support-routing.sql
