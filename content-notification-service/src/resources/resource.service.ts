@@ -75,6 +75,10 @@ export interface ListResourcesOptions {
   readonly cursor?: string;
 }
 
+export interface ListAdminResourcesOptions extends ListResourcesOptions {
+  readonly status?: 'DRAFT' | 'PUBLISHED' | 'ARCHIVED';
+}
+
 @Injectable()
 export class ResourceService {
   private readonly logger = new Logger(ResourceService.name);
@@ -126,13 +130,49 @@ export class ResourceService {
     };
   }
 
+  async listAdmin(options: ListAdminResourcesOptions): Promise<ResourceListResult> {
+    const limit = Math.min(Math.max(options.limit ?? 20, 1), 100);
+
+    let rows: ResourceRow[];
+    try {
+      rows = await this.repository.listAdmin({
+        locale: options.locale,
+        category: options.category,
+        status: options.status,
+        limit,
+        cursor: options.cursor,
+      });
+    } catch (error) {
+      this.logger.warn({
+        event: 'resource_db_unavailable',
+        code: (error as NodeJS.ErrnoException).code,
+      });
+      return {
+        data: [],
+        count: 0,
+        fallback: 'unavailable',
+        message: UNAVAILABLE_MESSAGE,
+      };
+    }
+
+    const hasMore = rows.length > limit;
+    const pageRows = hasMore ? rows.slice(0, limit) : rows;
+    const data = pageRows.map(toSummary).filter((r): r is ResourceSummary => r !== null);
+
+    return {
+      data,
+      count: data.length,
+      ...(hasMore && data.length > 0 ? { nextCursor: data[data.length - 1].id } : {}),
+    };
+  }
+
   async getById(id: string): Promise<ResourceDetail | null> {
     const row = await this.repository.findById(id);
     return row ? toDetail(row) : null;
   }
 
-  async create(data: CreateResourceData): Promise<ResourceDetail> {
-    const row = await this.repository.create(data);
+  async create(data: CreateResourceData, idempotencyKey?: string): Promise<ResourceDetail> {
+    const row = await this.repository.create(data, idempotencyKey);
     const detail = toDetail(row);
     if (!detail) {
       throw new Error('Failed to create resource');
@@ -145,8 +185,8 @@ export class ResourceService {
     return row ? toDetail(row) : null;
   }
 
-  async delete(id: string): Promise<boolean> {
-    return this.repository.delete(id);
+  async delete(id: string, version: number): Promise<boolean> {
+    return this.repository.delete(id, version);
   }
 
   async publish(id: string, data: PublishResourceData): Promise<ResourceDetail | null> {

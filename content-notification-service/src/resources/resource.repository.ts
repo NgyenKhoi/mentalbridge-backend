@@ -10,6 +10,14 @@ export interface ListResourcesQuery {
   readonly cursor?: string;
 }
 
+export interface ListAdminResourcesQuery {
+  readonly locale?: string;
+  readonly category?: ResourceCategory;
+  readonly status?: 'DRAFT' | 'PUBLISHED' | 'ARCHIVED';
+  readonly limit: number;
+  readonly cursor?: string;
+}
+
 export interface CreateResourceData {
   readonly category: ResourceCategory;
   readonly locale: string;
@@ -53,21 +61,18 @@ export class ResourceRepository {
     let index = 2;
 
     if (query.locale) {
-      conditions.push('r.locale = $' + String(index++));
+      conditions.push(`r.locale = $${index++}`);
       params.push(query.locale);
     }
 
     if (query.category) {
-      conditions.push('r.category = $' + String(index++));
+      conditions.push(`r.category = $${index++}`);
       params.push(query.category);
     }
 
     if (query.cursor) {
       conditions.push(
-        '(r.created_at, r.id) < (' +
-          'SELECT created_at, id FROM resource WHERE id = $' +
-          String(index++) +
-          ')',
+        `(r.created_at, r.id) < (SELECT created_at, id FROM resource WHERE id = $${index++})`,
       );
       params.push(query.cursor);
     }
@@ -87,9 +92,51 @@ export class ResourceRepository {
     return result.rows;
   }
 
+  async listAdmin(query: ListAdminResourcesQuery): Promise<ResourceRow[]> {
+    const params: (string | number)[] = [query.limit + 1];
+    const conditions: string[] = [];
+    let index = 2;
+
+    if (query.status) {
+      conditions.push(`r.status = $${index++}`);
+      params.push(query.status);
+    }
+
+    if (query.locale) {
+      conditions.push(`r.locale = $${index++}`);
+      params.push(query.locale);
+    }
+
+    if (query.category) {
+      conditions.push(`r.category = $${index++}`);
+      params.push(query.category);
+    }
+
+    if (query.cursor) {
+      conditions.push(
+        `(r.created_at, r.id) < (SELECT created_at, id FROM resource WHERE id = $${index++})`,
+      );
+      params.push(query.cursor);
+    }
+
+    const where = conditions.length > 0 ? `WHERE ${conditions.join(' AND ')}` : '';
+
+    const result = await this.db.query<ResourceRow>(
+      `SELECT id, category, locale, title, summary, external_url, status,
+              reviewed_by, reviewed_at, created_at, updated_at
+       FROM resource r
+       ${where}
+       ORDER BY r.created_at DESC, r.id DESC
+       LIMIT $1`,
+      params,
+    );
+
+    return result.rows;
+  }
+
   async findById(id: string): Promise<ResourceRow | null> {
     const result = await this.db.query<ResourceRow>(
-      `SELECT id, category, locale, title, summary, content_body, external_url, 
+      `SELECT id, category, locale, title, summary, content_body, external_url,
               status, reviewed_by, reviewed_at, effective_at, expires_at,
               created_at, updated_at, version
        FROM resource
@@ -106,10 +153,28 @@ export class ResourceRepository {
     };
   }
 
-  async create(data: CreateResourceData): Promise<ResourceRow> {
+  async create(data: CreateResourceData, idempotencyKey?: string): Promise<ResourceRow> {
+    if (idempotencyKey) {
+      // Check if resource with this idempotency key already exists
+      const existing = await this.db.query<ResourceRow>(
+        `SELECT id, category, locale, title, summary, content_body, external_url,
+                status, reviewed_by, reviewed_at, effective_at, expires_at,
+                created_at, updated_at, version
+         FROM resource
+         WHERE idempotency_key = $1`,
+        [idempotencyKey],
+      );
+      if (existing.rows[0]) {
+        return {
+          ...existing.rows[0],
+          version: Number(existing.rows[0].version as unknown),
+        };
+      }
+    }
+
     const result = await this.db.query<ResourceRow>(
-      `INSERT INTO resource (category, locale, title, summary, content_body, external_url, status)
-       VALUES ($1, $2, $3, $4, $5, $6, 'DRAFT')
+      `INSERT INTO resource (category, locale, title, summary, content_body, external_url, status, idempotency_key)
+       VALUES ($1, $2, $3, $4, $5, $6, 'DRAFT', $7)
        RETURNING id, category, locale, title, summary, content_body, external_url,
                  status, reviewed_by, reviewed_at, effective_at, expires_at,
                  created_at, updated_at, version`,
@@ -120,6 +185,7 @@ export class ResourceRepository {
         data.summary,
         data.contentBody || null,
         data.externalUrl || null,
+        idempotencyKey || null,
       ],
     );
     const row = result.rows[0];
@@ -136,19 +202,19 @@ export class ResourceRepository {
     let index = 3;
 
     if (data.title !== undefined) {
-      updates.push(`title = $${String(index++)}`);
+      updates.push(`title = $${index++}`);
       params.push(data.title);
     }
     if (data.summary !== undefined) {
-      updates.push(`summary = $${String(index++)}`);
+      updates.push(`summary = $${index++}`);
       params.push(data.summary);
     }
     if (data.contentBody !== undefined) {
-      updates.push(`content_body = $${String(index++)}`);
+      updates.push(`content_body = $${index++}`);
       params.push(data.contentBody);
     }
     if (data.externalUrl !== undefined) {
-      updates.push(`external_url = $${String(index++)}`);
+      updates.push(`external_url = $${index++}`);
       params.push(data.externalUrl);
     }
 
@@ -171,10 +237,11 @@ export class ResourceRepository {
     };
   }
 
-  async delete(id: string): Promise<boolean> {
-    const result = await this.db.query(`DELETE FROM resource WHERE id = $1 AND status = 'DRAFT'`, [
-      id,
-    ]);
+  async delete(id: string, version: number): Promise<boolean> {
+    const result = await this.db.query(
+      `DELETE FROM resource WHERE id = $1 AND version = $2 AND status = 'DRAFT'`,
+      [id, version],
+    );
     return (result.rowCount ?? 0) > 0;
   }
 

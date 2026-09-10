@@ -14,6 +14,7 @@ import {
   Query,
   ConflictException,
   UnprocessableEntityException,
+  UseGuards,
 } from '@nestjs/common';
 import type {
   ResourceListResult,
@@ -32,6 +33,10 @@ import {
   type PublishResourceDto,
 } from './resource.dto.js';
 import { ZodError } from 'zod';
+import { JwtAuthGuard } from '../auth/jwt-auth.guard.js';
+import { Roles } from '../auth/roles.decorator.js';
+import { CurrentUser } from '../auth/current-user.decorator.js';
+import type { AuthenticatedUser } from '../auth/jwt.strategy.js';
 
 const UUID_RE = /^[\da-f]{8}-[\da-f]{4}-[\da-f]{4}-[\da-f]{4}-[\da-f]{12}$/i;
 const VALID_CATEGORIES = new Set<ResourceCategory>([
@@ -85,6 +90,49 @@ export class ResourceController {
     });
   }
 
+  @Get('admin/list')
+  @UseGuards(JwtAuthGuard)
+  @Roles('ADMIN')
+  async listAdminResources(
+    @Query('locale') locale?: string,
+    @Query('category') category?: string,
+    @Query('status') status?: string,
+    @Query('limit') limitParam?: string,
+    @Query('cursor') cursor?: string,
+  ): Promise<ResourceListResult> {
+    if (category !== undefined && !VALID_CATEGORIES.has(category as ResourceCategory)) {
+      throw new BadRequestException(`Invalid category: ${category}`);
+    }
+
+    if (status !== undefined && !['DRAFT', 'PUBLISHED', 'ARCHIVED'].includes(status)) {
+      throw new BadRequestException(`Invalid status: ${status}`);
+    }
+
+    let limit: number | undefined;
+    if (limitParam !== undefined) {
+      if (!/^\d+$/.test(limitParam)) {
+        throw new BadRequestException('limit must be an integer between 1 and 100');
+      }
+      const parsed = parseInt(limitParam, 10);
+      if (parsed < 1 || parsed > 100) {
+        throw new BadRequestException('limit must be an integer between 1 and 100');
+      }
+      limit = parsed;
+    }
+
+    if (cursor !== undefined && !UUID_RE.test(cursor)) {
+      throw new BadRequestException('cursor must be a valid UUID');
+    }
+
+    return this.resourceService.listAdmin({
+      locale: locale ?? undefined,
+      category: category as ResourceCategory | undefined,
+      status: status as 'DRAFT' | 'PUBLISHED' | 'ARCHIVED' | undefined,
+      limit,
+      cursor: cursor ?? undefined,
+    });
+  }
+
   @Get(':id')
   async getResource(@Param('id') id: string): Promise<ResourceDetail> {
     if (!UUID_RE.test(id)) {
@@ -94,12 +142,25 @@ export class ResourceController {
     if (!resource) {
       throw new NotFoundException('Resource not found');
     }
+    // Public endpoint: only return PUBLISHED resources
+    if (resource.status !== 'PUBLISHED') {
+      throw new NotFoundException('Resource not found');
+    }
     return resource;
   }
 
   @Post()
+  @UseGuards(JwtAuthGuard)
+  @Roles('ADMIN')
   @HttpCode(HttpStatus.CREATED)
-  async createResource(@Body() body: unknown): Promise<ResourceSummary> {
+  async createResource(
+    @Body() body: unknown,
+    @Query('idempotencyKey') idempotencyKey?: string,
+  ): Promise<ResourceSummary> {
+    if (idempotencyKey && !/^[\w-]{1,128}$/.test(idempotencyKey)) {
+      throw new BadRequestException('idempotencyKey must be alphanumeric, max 128 characters');
+    }
+
     let dto: CreateResourceDto;
     try {
       dto = CreateResourceDtoSchema.parse(body);
@@ -119,14 +180,17 @@ export class ResourceController {
       throw error;
     }
 
-    const resource = await this.resourceService.create({
-      category: dto.category,
-      locale: dto.locale,
-      title: dto.title,
-      summary: dto.summary,
-      contentBody: dto.contentBody ?? null,
-      externalUrl: dto.externalUrl ?? null,
-    });
+    const resource = await this.resourceService.create(
+      {
+        category: dto.category,
+        locale: dto.locale,
+        title: dto.title,
+        summary: dto.summary,
+        contentBody: dto.contentBody ?? null,
+        externalUrl: dto.externalUrl ?? null,
+      },
+      idempotencyKey,
+    );
 
     return {
       id: resource.id,
@@ -143,6 +207,8 @@ export class ResourceController {
   }
 
   @Patch(':id')
+  @UseGuards(JwtAuthGuard)
+  @Roles('ADMIN')
   async updateResource(
     @Param('id') id: string,
     @Query('version') versionParam: string,
@@ -205,17 +271,27 @@ export class ResourceController {
   }
 
   @Delete(':id')
+  @UseGuards(JwtAuthGuard)
+  @Roles('ADMIN')
   @HttpCode(HttpStatus.NO_CONTENT)
-  async deleteResource(@Param('id') id: string): Promise<void> {
+  async deleteResource(
+    @Param('id') id: string,
+    @Query('version') versionParam: string,
+  ): Promise<void> {
     if (!UUID_RE.test(id)) {
       throw new BadRequestException('Invalid resource ID');
     }
 
-    const deleted = await this.resourceService.delete(id);
+    const version = parseInt(versionParam, 10);
+    if (isNaN(version) || version < 0) {
+      throw new BadRequestException('Valid version query parameter is required');
+    }
+
+    const deleted = await this.resourceService.delete(id, version);
     if (!deleted) {
       throw new ConflictException({
         type: 'https://mentalbridge.io/errors/INVALID_STATE_TRANSITION',
-        title: 'Cannot delete non-DRAFT resource',
+        title: 'Cannot delete non-DRAFT resource or version mismatch',
         status: 409,
         code: 'INVALID_STATE_TRANSITION',
       });
@@ -223,10 +299,13 @@ export class ResourceController {
   }
 
   @Post(':id/publish')
+  @UseGuards(JwtAuthGuard)
+  @Roles('ADMIN')
   async publishResource(
     @Param('id') id: string,
     @Query('version') versionParam: string,
     @Body() body: unknown,
+    @CurrentUser() user: AuthenticatedUser,
   ): Promise<ResourceSummary> {
     if (!UUID_RE.test(id)) {
       throw new BadRequestException('Invalid resource ID');
@@ -256,11 +335,8 @@ export class ResourceController {
       throw error;
     }
 
-    // TODO: Extract reviewedBy from JWT token when authentication is implemented
-    const reviewedBy = '00000000-0000-0000-0000-000000000000'; // Placeholder
-
     const resource = await this.resourceService.publish(id, {
-      reviewedBy,
+      reviewedBy: user.accountId,
       version,
       effectiveAt: dto.effectiveAt ?? null,
       expiresAt: dto.expiresAt ?? null,
@@ -290,6 +366,8 @@ export class ResourceController {
   }
 
   @Post(':id/archive')
+  @UseGuards(JwtAuthGuard)
+  @Roles('ADMIN')
   async archiveResource(
     @Param('id') id: string,
     @Query('version') versionParam: string,

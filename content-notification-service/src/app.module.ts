@@ -13,6 +13,10 @@ import { HealthController } from './health/health.controller.js';
 import { ResourceController } from './resources/resource.controller.js';
 import { ResourceRepository } from './resources/resource.repository.js';
 import { ResourceService } from './resources/resource.service.js';
+import { AuthModule } from './auth/auth.module.js';
+import { JwtStrategy } from './auth/jwt.strategy.js';
+import { RolesGuard } from './auth/roles.guard.js';
+import { APP_GUARD } from '@nestjs/core';
 
 export interface ApplicationDependencies {
   readonly readinessProbe?: ReadinessProbe;
@@ -47,6 +51,7 @@ export const createAppModule = (
 
   return {
     module: ContentNotificationModule,
+    imports: [AuthModule],
     controllers: [HealthController, ResourceController],
     providers: [
       { provide: CONFIGURATION_TOKEN, useValue: configuration },
@@ -55,6 +60,11 @@ export const createAppModule = (
       dbServiceProvider,
       repositoryProvider,
       serviceProvider,
+      JwtStrategy,
+      {
+        provide: APP_GUARD,
+        useClass: RolesGuard,
+      },
     ],
   };
 };
