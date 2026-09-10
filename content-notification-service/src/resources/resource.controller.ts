@@ -277,9 +277,7 @@ export class ResourceController {
   @UseGuards(JwtAuthGuard)
   @Roles('ADMIN')
   @HttpCode(HttpStatus.NO_CONTENT)
-  async deleteResource(
-    @Param('id') id: string,
-  ): Promise<void> {
+  async deleteResource(@Param('id') id: string): Promise<void> {
     if (!UUID_RE.test(id)) {
       throw new BadRequestException('Invalid resource ID');
     }
