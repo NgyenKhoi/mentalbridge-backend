@@ -3,6 +3,7 @@ import { createRequire } from "node:module";
 
 const require = createRequire(import.meta.url);
 const migration = require("../migrations/001_journal_entries_baseline.cjs");
+const commandsMigration = require("../migrations/002_journal_mutation_commands.cjs");
 
 assert.equal(migration.collectionName, "journal_entries");
 assert.equal(typeof migration.up, "function");
@@ -19,7 +20,16 @@ assert.equal(
     .contentPreview,
   undefined,
 );
+assert.equal(typeof commandsMigration.up, "function");
+assert.equal(typeof commandsMigration.down, "function");
+assert.ok(
+  commandsMigration.validator.$jsonSchema.required.includes("commands"),
+);
+assert.equal(
+  commandsMigration.validator.$jsonSchema.properties.commands.maxItems,
+  32,
+);
 
 console.log(
-  "Validated Mongo migration: migrations/001_journal_entries_baseline.cjs",
+  "Validated Mongo migrations: 001_journal_entries_baseline.cjs, 002_journal_mutation_commands.cjs",
 );
