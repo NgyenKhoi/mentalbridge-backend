@@ -51,7 +51,7 @@ class OutboxEventEntity {
 
 	OutboxEventEntity(UUID aggregateId, UUID correlationId, JsonNode payload, Instant occurredAt) {
 		this.messageType = "care.assessment.submitted";
-		this.schemaVersion = "1.0";
+		this.schemaVersion = "2.0";
 		this.aggregateType = "ASSESSMENT";
 		this.aggregateId = aggregateId;
 		this.aggregateVersion = 0;

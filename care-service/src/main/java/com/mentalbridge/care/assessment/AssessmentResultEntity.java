@@ -23,7 +23,7 @@ class AssessmentResultEntity {
 
 	private String scoringVersion;
 
-	private boolean safetyItemPositive;
+	private Boolean safetyItemPositive;
 
 	@Enumerated(EnumType.STRING)
 	private SafetyStatus safetyStatus;
@@ -39,13 +39,13 @@ class AssessmentResultEntity {
 	protected AssessmentResultEntity() {
 	}
 
-	AssessmentResultEntity(UUID submissionId, Phq9ScoringPolicy.ScoredResult scored, String scoringVersion,
+	AssessmentResultEntity(UUID submissionId, AssessmentScoringPolicy.ScoredResult scored, String scoringVersion,
 			String safetyPolicyVersion, Instant calculatedAt) {
 		this.submissionId = submissionId;
 		this.totalScore = (short) scored.totalScore();
 		this.screeningLevel = scored.screeningLevel();
 		this.scoringVersion = scoringVersion;
-		this.safetyItemPositive = scored.safetyStatus() == SafetyStatus.POSITIVE_SAFETY_SCREEN;
+		this.safetyItemPositive = scored.safetyItemPositive();
 		this.safetyStatus = scored.safetyStatus();
 		this.safetyPolicyVersion = safetyPolicyVersion;
 		this.disclaimerCode = "SCREENING_NOT_DIAGNOSIS";

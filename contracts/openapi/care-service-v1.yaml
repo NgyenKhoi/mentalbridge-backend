@@ -10,7 +10,7 @@ info:
     independent safety status, and policy provenance.
     A screening result is not a diagnosis. ADR 0009 keeps screening severity and
     item-9 safety status independent, prohibits automatic escalation, and removes
-    the hotline catalogue. The privacy-capstone-v2 disclosure and bounded anonymous
+    the hotline catalogue. The privacy-capstone-v3 disclosure and bounded anonymous
     lifetime are approved only for controlled local/test/demo use. Public real-user
     collection remains blocked on production privacy, retention, security, and legal review.
 
@@ -138,8 +138,8 @@ paths:
           application/json:
             schema: { $ref: '#/components/schemas/ConsentDecisionRequest' }
             example:
-              consentType: AI_PROCESSING
-              policyVersion: ai-processing-v1
+              consentType: PRIVACY_POLICY
+              policyVersion: privacy-capstone-v3
               granted: true
       responses:
         '201':
@@ -176,7 +176,7 @@ paths:
       tags: [Questionnaire]
       operationId: getCurrentQuestionnaire
       summary: Read the current published questionnaire for an instrument and locale
-      description: Only a reviewed published definition is returned. PHQ-9 is the MB-88 seeded instrument; GAD-7 remains a future reference-data version.
+      description: Only the current reviewed published PHQ-9 or GAD-7 definition is returned.
       parameters:
         - $ref: '#/components/parameters/Instrument'
         - $ref: '#/components/parameters/Locale'
@@ -189,6 +189,26 @@ paths:
               schema: { $ref: '#/components/schemas/Questionnaire' }
         '404': { $ref: '#/components/responses/NotFoundProblem' }
         '429': { $ref: '#/components/responses/RateLimitProblem' }
+  /api/v1/questionnaires/definitions/{definitionId}:
+    x-mentalbridge-status: implemented
+    get:
+      tags: [Questionnaire]
+      operationId: getQuestionnaireDefinition
+      summary: Read one immutable published or retired questionnaire definition
+      description: |
+        Resolves the exact definition referenced by a historical assessment. Draft
+        definitions are never exposed, and callers must not replace the stored
+        definition identifier with the current questionnaire when reopening a result.
+      parameters:
+        - $ref: '#/components/parameters/DefinitionId'
+        - $ref: '#/components/parameters/CorrelationId'
+      responses:
+        '200':
+          description: Immutable questionnaire definition returned
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/Questionnaire' }
+        '404': { $ref: '#/components/responses/NotFoundProblem' }
   /api/v1/assessments:
     x-mentalbridge-status: implemented
     get:
@@ -217,7 +237,7 @@ paths:
     post:
       tags: [Assessment]
       operationId: submitAuthenticatedAssessment
-      summary: Submit and score a complete authenticated PHQ-9 assessment
+      summary: Submit and score a complete authenticated PHQ-9 or GAD-7 assessment
       description: |
         Care ignores no answers and accepts no client score, band, or safety result.
         It validates the exact published questionnaire version, requires one answer
@@ -323,7 +343,7 @@ paths:
     post:
       tags: [Anonymous assessment]
       operationId: submitAnonymousAssessment
-      summary: Submit and score a complete PHQ-9 assessment inside one anonymous session
+      summary: Submit and score a complete published assessment inside one anonymous session
       description: |
         Session ownership is proven by the anonymous token, never by the path UUID
         alone. The result expires with the session and cannot be claimed by a later
@@ -390,6 +410,11 @@ components:
   parameters:
     AssessmentId:
       name: assessmentId
+      in: path
+      required: true
+      schema: { type: string, format: uuid }
+    DefinitionId:
+      name: definitionId
       in: path
       required: true
       schema: { type: string, format: uuid }
@@ -490,9 +515,11 @@ components:
         consentType: { $ref: '#/components/schemas/ConsentType' }
         policyVersion:
           type: string
-          const: privacy-capstone-v2
-          description: Exact approved text or policy version shown to the user
-        granted: { type: boolean }
+          const: privacy-capstone-v3
+          description: Exact approved consent text version shown to the user
+        granted:
+          type: boolean
+          description: Grants or withdraws consent for future screening-data processing under this version
     ConsentDecision:
       type: object
       additionalProperties: false
@@ -518,7 +545,7 @@ components:
       required: [consentType, version, locale, title, content, capstoneOnly]
       properties:
         consentType: { type: string, const: PRIVACY_POLICY }
-        version: { type: string, const: privacy-capstone-v2 }
+        version: { type: string, const: privacy-capstone-v3 }
         locale: { type: string, const: vi-VN }
         title: { type: string, minLength: 1, maxLength: 160 }
         content: { type: string, minLength: 1, maxLength: 4000 }
@@ -529,7 +556,7 @@ components:
     Questionnaire:
       type: object
       additionalProperties: false
-      required: [definitionId, instrument, version, locale, title, referencePeriodDays, responseOptions, questions]
+      required: [definitionId, instrument, version, locale, title, referencePeriodDays, scoringVersion, responseOptions, questions, scoreBands]
       properties:
         definitionId: { type: string, format: uuid }
         instrument: { $ref: '#/components/schemas/Instrument' }
@@ -537,6 +564,7 @@ components:
         locale: { type: string, minLength: 2, maxLength: 16 }
         title: { type: string, minLength: 1, maxLength: 255 }
         referencePeriodDays: { type: integer, minimum: 1, maximum: 365 }
+        scoringVersion: { type: string, minLength: 1, maxLength: 32 }
         responseOptions:
           type: array
           minItems: 4
@@ -547,6 +575,19 @@ components:
           minItems: 1
           maxItems: 32
           items: { $ref: '#/components/schemas/Question' }
+        scoreBands:
+          type: array
+          minItems: 1
+          maxItems: 8
+          items: { $ref: '#/components/schemas/QuestionnaireScoreBand' }
+    QuestionnaireScoreBand:
+      type: object
+      additionalProperties: false
+      required: [screeningLevel, minimumScore, maximumScore]
+      properties:
+        screeningLevel: { $ref: '#/components/schemas/ScreeningLevel' }
+        minimumScore: { type: integer, minimum: 0, maximum: 27 }
+        maximumScore: { type: integer, minimum: 0, maximum: 27 }
     ResponseOption:
       type: object
       additionalProperties: false
@@ -568,8 +609,11 @@ components:
       required: [questionnaireDefinitionId, privacyPolicyVersion, privacyDisclosureAcknowledged, answers]
       properties:
         questionnaireDefinitionId: { type: string, format: uuid }
-        privacyPolicyVersion: { type: string, const: privacy-capstone-v2 }
-        privacyDisclosureAcknowledged: { type: boolean, const: true }
+        privacyPolicyVersion: { type: string, const: privacy-capstone-v3 }
+        privacyDisclosureAcknowledged:
+          type: boolean
+          const: true
+          description: Compatibility field recording explicit consent to the current screening-data policy
         answers:
           type: array
           minItems: 1
@@ -691,18 +735,17 @@ components:
         safetyStatus:
           $ref: '#/components/schemas/SafetyStatus'
         safetyPolicyVersion:
-          type: string
-          minLength: 1
+          type: [string, 'null']
           maxLength: 64
-          description: Exact approved safety policy used for the deterministic item-9 result
+          description: Exact approved PHQ-9 item-9 policy, or null when safetyStatus is NOT_APPLICABLE
         disclaimerCode: { type: string, const: SCREENING_NOT_DIAGNOSIS }
     ScreeningLevel:
       type: string
       enum: [MINIMAL, MILD, MODERATE, MODERATELY_SEVERE, SEVERE]
     SafetyStatus:
       type: string
-      description: Independent safety screen; it never overwrites the questionnaire screening level or claims intent or urgency
-      enum: [NEGATIVE_SAFETY_SCREEN, POSITIVE_SAFETY_SCREEN]
+      description: Questionnaire-specific safety result; NOT_APPLICABLE means no safety screen was performed
+      enum: [NEGATIVE_SAFETY_SCREEN, POSITIVE_SAFETY_SCREEN, NOT_APPLICABLE]
     AnonymousSession:
       type: object
       additionalProperties: false

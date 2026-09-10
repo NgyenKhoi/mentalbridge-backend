@@ -7,7 +7,7 @@ This is the planning coverage baseline for the workbook's seven use cases and 16
 | Catalogue UC | Primary owner | Collaborators | Module capability | Status |
 | --- | --- | --- | --- | --- |
 | UC-01 Authentication & User Management | Identity/Care | Content/Notification, all deletion owners | Auth, RBAC, profile/consent, grants, deletion, anonymous entry | Planned; retention/export/expiry policies blocked |
-| UC-02 Mental Health Assessment & AI Analysis | Care/Journal-AI | PhoBERT, Content/Notification | Journal, assessment, analysis, safety/support and personal analytics | Vietnamese PHQ-9 Capstone runtime published; GAD-7 implementation authorized but unpublished; AI personalization deferred |
+| UC-02 Mental Health Assessment & AI Analysis | Care/Journal-AI | PhoBERT, Content/Notification | Journal, assessment, analysis, safety/support and personal analytics | Vietnamese PHQ-9 v2 and GAD-7 controlled-Capstone runtimes published; PHQ-9 v1 retained for history; AI personalization deferred |
 | UC-03 Intervention & Support | Care/Content-Notification | Journal/AI | Approved intervention, safety/self-help guidance and notifications | Product routing blueprint approved; personalized routing/actions runtime unavailable pending separate gates |
 | UC-04 Specialist Discovery & Appointment | Consultation/Billing | Care, Realtime, Content/Notification | Discovery, subscription/payment/upgrade/credits, specialist approval, booking, earnings, reviews | Planned by ADR 0005; provider/configuration details remain |
 | UC-05 Communication & Follow-up | Realtime/Care | Consultation, Content/Notification | Chat, reports, follow-up, notifications and progress | Planned; moderation/retention policy blocked |
