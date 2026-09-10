@@ -138,6 +138,23 @@ class CareOpenApiContractTests {
 		assertThat(direction.getDescription()).contains("unavailable fallback", "must not infer clinical meaning");
 	}
 
+	@Test
+	void supportContractProvidesReviewedExamplesForEveryTierWithoutACompositeScore() {
+		var contract = Path.of("..", "contracts", "openapi", "care-service-v1.yaml").toAbsolutePath();
+		var openApi = new OpenAPIV3Parser().read(contract.toString());
+		var response = openApi.getComponents().getSchemas().get("SupportEvaluation");
+		var examples = openApi.getComponents().getExamples();
+
+		assertThat(response.getProperties()).containsKeys("supportTier", "reasonCodes", "evidence", "nextStep",
+				"safetyGuidance", "disclaimer").doesNotContainKeys("totalScore", "compositeScore", "overallSeverity");
+		assertThat(examples).containsKeys("SelfGuidedSupportEvaluation", "ProfessionalSupportEvaluation",
+				"SafetyFollowUpSupportEvaluation");
+		assertThat(examples.values()).extracting(
+				example -> String.valueOf(((java.util.Map<?, ?>) example.getValue()).get("supportTier")))
+				.containsExactlyInAnyOrder("SELF_GUIDED_SUPPORT", "PROFESSIONAL_SUPPORT_RECOMMENDED",
+						"SAFETY_FOLLOW_UP_RECOMMENDED");
+	}
+
 	private void assertSecurity(String key, Operation operation) {
 		if (BEARER_OPERATIONS.contains(key)) {
 			assertThat(operation.getSecurity())

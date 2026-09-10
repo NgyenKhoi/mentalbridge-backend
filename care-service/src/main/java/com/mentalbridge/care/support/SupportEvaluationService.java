@@ -16,8 +16,8 @@ import org.springframework.transaction.annotation.Transactional;
 import com.fasterxml.jackson.core.JsonProcessingException;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import com.mentalbridge.care.assessment.SafetyStatus;
+import com.mentalbridge.care.profile.UserProfileRepository;
 import com.mentalbridge.care.shared.ApiException;
-import com.mentalbridge.care.support.SupportEvaluationRepository.Evaluation;
 import com.mentalbridge.care.support.SupportEvaluationRepository.Evidence;
 import com.mentalbridge.care.support.SupportEvaluationRepository.Guidance;
 
@@ -32,13 +32,15 @@ public class SupportEvaluationService {
 			+ "hãy chủ động liên hệ dịch vụ khẩn cấp hoặc cơ sở y tế phù hợp tại khu vực của bạn.";
 
 	private final SupportEvaluationRepository repository;
+	private final UserProfileRepository profiles;
 	private final SupportRoutingPolicy routingPolicy;
 	private final ObjectMapper objectMapper;
 	private final Clock clock;
 
-	public SupportEvaluationService(SupportEvaluationRepository repository, SupportRoutingPolicy routingPolicy,
-			ObjectMapper objectMapper, Clock clock) {
+	public SupportEvaluationService(SupportEvaluationRepository repository, UserProfileRepository profiles,
+			SupportRoutingPolicy routingPolicy, ObjectMapper objectMapper, Clock clock) {
 		this.repository = repository;
+		this.profiles = profiles;
 		this.routingPolicy = routingPolicy;
 		this.objectMapper = objectMapper;
 		this.clock = clock;
@@ -50,23 +52,28 @@ public class SupportEvaluationService {
 			throw validation("gad7AssessmentId", "DUPLICATE_EVIDENCE",
 					"PHQ-9 and GAD-7 evidence must be different assessments");
 		}
-		if (!repository.lockProfile(userId)) {
+		if (profiles.findByIdForUpdate(userId).isEmpty()) {
 			throw new ApiException(HttpStatus.NOT_FOUND, "PROFILE_NOT_FOUND", "Care profile was not found");
 		}
 		var requestHash = hash(command);
-		var replay = repository.findByIdempotencyKey(userId, idempotencyKey);
+		var replay = repository.findRequest(userId, idempotencyKey);
 		if (replay.isPresent()) {
-			if (!replay.orElseThrow().requestHash().equals(requestHash)) {
+			if (!replay.orElseThrow().getRequestHash().equals(requestHash)) {
 				throw new ApiException(HttpStatus.CONFLICT, "IDEMPOTENCY_KEY_REUSED",
 						"Idempotency-Key was already used with different screening evidence");
 			}
-			return view(replay.orElseThrow());
+			return view(repository.findByIdAndUserId(replay.orElseThrow().getEvaluationId(), userId)
+					.orElseThrow(() -> new IllegalStateException("Stored support evaluation is unavailable")));
 		}
 
 		var policyVersion = repository.currentPolicyVersion().orElseThrow(() -> new ApiException(
 				HttpStatus.SERVICE_UNAVAILABLE, "SUPPORT_POLICY_UNAVAILABLE", "No published support policy is available"));
-		var existing = repository.findByEvidence(userId, command.phq9AssessmentId(), command.gad7AssessmentId(), policyVersion);
-		if (existing.isPresent()) return view(existing.orElseThrow());
+		var existing = repository.findByUserIdAndPhq9AssessmentIdAndGad7AssessmentIdAndPolicyVersion(userId,
+				command.phq9AssessmentId(), command.gad7AssessmentId(), policyVersion);
+		if (existing.isPresent()) {
+			repository.insertRequest(userId, idempotencyKey, requestHash, existing.orElseThrow().id(), clock.instant());
+			return view(existing.orElseThrow());
+		}
 
 		var phq9 = requiredEvidence(userId, command.phq9AssessmentId(), "PHQ9", policyVersion);
 		var gad7 = requiredEvidence(userId, command.gad7AssessmentId(), "GAD7", policyVersion);
@@ -75,17 +82,18 @@ public class SupportEvaluationService {
 		var resolution = routingPolicy.resolve(phq9.screeningLevel(), phq9.safetyStatus(), gad7.screeningLevel());
 		var evaluatedAt = clock.instant();
 		var reasons = resolution.reasons();
-		var evaluation = new Evaluation(UUID.randomUUID(), userId, phq9.assessmentId(), gad7.assessmentId(),
+		var evaluation = new SupportEvaluationEntity(UUID.randomUUID(), userId, phq9.assessmentId(), gad7.assessmentId(),
 				policyVersion, resolution.tier(), reasons.getFirst(), reasons.size() == 2 ? reasons.get(1) : null,
-				idempotencyKey, requestHash, evaluatedAt);
-		repository.insert(evaluation);
+				evaluatedAt);
+		repository.saveAndFlush(evaluation);
+		repository.insertRequest(userId, idempotencyKey, requestHash, evaluation.id(), evaluatedAt);
 		repository.appendOutbox(evaluation, correlationId, eventPayload(evaluation, reasons));
 		return view(evaluation, phq9, gad7);
 	}
 
 	@Transactional(readOnly = true)
 	public EvaluationView get(UUID userId, UUID evaluationId) {
-		return view(repository.findById(userId, evaluationId).orElseThrow(() -> new ApiException(HttpStatus.NOT_FOUND,
+		return view(repository.findByIdAndUserId(evaluationId, userId).orElseThrow(() -> new ApiException(HttpStatus.NOT_FOUND,
 				"SUPPORT_EVALUATION_NOT_FOUND", "Support evaluation was not found")));
 	}
 
@@ -118,7 +126,7 @@ public class SupportEvaluationService {
 		}
 	}
 
-	private EvaluationView view(Evaluation evaluation) {
+	private EvaluationView view(SupportEvaluationEntity evaluation) {
 		var phq9 = repository.findEvidence(evaluation.userId(), evaluation.phq9AssessmentId())
 				.orElseThrow(() -> incompatible("Stored PHQ-9 evidence is unavailable"));
 		var gad7 = repository.findEvidence(evaluation.userId(), evaluation.gad7AssessmentId())
@@ -126,13 +134,14 @@ public class SupportEvaluationService {
 		return view(evaluation, phq9, gad7);
 	}
 
-	private EvaluationView view(Evaluation evaluation, Evidence phq9, Evidence gad7) {
+	private EvaluationView view(SupportEvaluationEntity evaluation, Evidence phq9, Evidence gad7) {
 		var reasons = new ArrayList<SupportReasonCode>(2);
-		reasons.add(evaluation.primaryReason());
-		if (evaluation.secondaryReason() != null) reasons.add(evaluation.secondaryReason());
-		var guidance = repository.guidance(evaluation.policyVersion(), evaluation.tier())
-				.orElseGet(() -> fallbackGuidance(evaluation.tier()));
-		return new EvaluationView(evaluation.id(), evaluation.policyVersion(), evaluation.evaluatedAt(), evaluation.tier(),
+		reasons.add(evaluation.primaryReasonCode());
+		if (evaluation.secondaryReasonCode() != null) reasons.add(evaluation.secondaryReasonCode());
+		var guidance = repository.guidance(evaluation.policyVersion(), evaluation.supportTier())
+				.orElseGet(() -> fallbackGuidance(evaluation.supportTier()));
+		return new EvaluationView(evaluation.id(), evaluation.policyVersion(), evaluation.evaluatedAt(),
+				evaluation.supportTier(),
 				List.copyOf(reasons), List.of(evidenceView(evaluation.policyVersion(), phq9),
 						evidenceView(evaluation.policyVersion(), gad7)),
 				new NextStep(guidance.code(), guidance.contentVersion(), guidance.text(), guidance.boundary()),
@@ -157,10 +166,10 @@ public class SupportEvaluationService {
 				"MentalBridge không tự động liên hệ người khác, đặt lịch hoặc chia sẻ dữ liệu.", SAFETY_FALLBACK);
 	}
 
-	private String eventPayload(Evaluation evaluation, List<SupportReasonCode> reasons) {
+	private String eventPayload(SupportEvaluationEntity evaluation, List<SupportReasonCode> reasons) {
 		try {
 			return objectMapper.writeValueAsString(new SupportTierResolvedEvent(evaluation.id(), evaluation.userId(),
-					evaluation.policyVersion(), evaluation.tier(), reasons, evaluation.phq9AssessmentId(),
+					evaluation.policyVersion(), evaluation.supportTier(), reasons, evaluation.phq9AssessmentId(),
 					evaluation.gad7AssessmentId(), evaluation.evaluatedAt()));
 		}
 		catch (JsonProcessingException exception) {

@@ -353,6 +353,13 @@ paths:
           content:
             application/json:
               schema: { $ref: '#/components/schemas/SupportEvaluation' }
+              examples:
+                selfGuided:
+                  $ref: '#/components/examples/SelfGuidedSupportEvaluation'
+                professionalSupport:
+                  $ref: '#/components/examples/ProfessionalSupportEvaluation'
+                safetyFollowUp:
+                  $ref: '#/components/examples/SafetyFollowUpSupportEvaluation'
         '400': { $ref: '#/components/responses/ValidationProblem' }
         '401': { $ref: '#/components/responses/UnauthorizedProblem' }
         '403': { $ref: '#/components/responses/ForbiddenProblem' }
@@ -460,6 +467,130 @@ paths:
         '410': { $ref: '#/components/responses/ExpiredAnonymousSessionProblem' }
         '429': { $ref: '#/components/responses/RateLimitProblem' }
 components:
+  examples:
+    SelfGuidedSupportEvaluation:
+      summary: Minimal and mild screening bands route to self-guided support
+      value:
+        supportEvaluationId: 20000000-0000-4000-8000-000000000101
+        policyVersion: mb-support-routing-capstone-v1
+        evaluatedAt: '2026-09-10T08:00:00Z'
+        supportTier: SELF_GUIDED_SUPPORT
+        reasonCodes: [ALL_SCREENING_LEVELS_MINIMAL_OR_MILD]
+        evidence:
+          - assessmentId: 10000000-0000-4000-8000-000000000101
+            instrument: PHQ9
+            questionnaireVersion: phq9-vi-vn-capstone-v2
+            scoringVersion: phq9-standard-bands-v1
+            screeningLevel: MILD
+            safetyStatus: NEGATIVE_SAFETY_SCREEN
+            meaning:
+              meaningCode: PHQ9_MILD_14D
+              contentVersion: mb-screening-meaning-vi-vn-v1
+              referencePeriodDays: 14
+              text: Câu trả lời PHQ-9 của bạn thuộc mức triệu chứng nhẹ trong 14 ngày qua.
+              limitation: Kết quả này chỉ phản ánh câu trả lời tự khai trong 14 ngày qua. Đây là sàng lọc triệu chứng, không phải chẩn đoán y khoa và không thể hiện mức độ bệnh lý tổng thể.
+          - assessmentId: 10000000-0000-4000-8000-000000000102
+            instrument: GAD7
+            questionnaireVersion: gad7-vi-vn-adult-v1
+            scoringVersion: gad7-standard-bands-v1
+            screeningLevel: MINIMAL
+            safetyStatus: NOT_APPLICABLE
+            meaning:
+              meaningCode: GAD7_MINIMAL_14D
+              contentVersion: mb-screening-meaning-vi-vn-v1
+              referencePeriodDays: 14
+              text: Câu trả lời GAD-7 của bạn thuộc mức triệu chứng tối thiểu trong 14 ngày qua.
+              limitation: Kết quả này chỉ phản ánh câu trả lời tự khai trong 14 ngày qua. Đây là sàng lọc triệu chứng, không phải chẩn đoán y khoa và không thể hiện mức độ bệnh lý tổng thể.
+        nextStep:
+          code: REVIEW_SELF_GUIDED_RESOURCE
+          contentVersion: mb-support-next-step-vi-vn-v1
+          text: Bạn có thể chọn một tài nguyên tự hỗ trợ đã được MentalBridge rà soát và tiếp tục theo dõi cảm nhận của mình.
+          boundary: Không có cuộc hẹn, liên hệ với chuyên gia, chia sẻ dữ liệu hoặc can thiệp tự động nào được thực hiện.
+        safetyGuidance: null
+        disclaimerCode: SCREENING_NOT_DIAGNOSIS
+        disclaimer: Đây là kết quả sàng lọc triệu chứng, không phải chẩn đoán y khoa. MentalBridge không cung cấp dịch vụ ứng cứu khẩn cấp, không giám sát con người 24/7 và không tự động liên hệ bên thứ ba.
+    ProfessionalSupportEvaluation:
+      summary: A moderate-or-higher band recommends professional support
+      value:
+        supportEvaluationId: 20000000-0000-4000-8000-000000000102
+        policyVersion: mb-support-routing-capstone-v1
+        evaluatedAt: '2026-09-10T08:01:00Z'
+        supportTier: PROFESSIONAL_SUPPORT_RECOMMENDED
+        reasonCodes: [PHQ9_MODERATE_OR_HIGHER, GAD7_MODERATE_OR_HIGHER]
+        evidence:
+          - assessmentId: 10000000-0000-4000-8000-000000000103
+            instrument: PHQ9
+            questionnaireVersion: phq9-vi-vn-capstone-v2
+            scoringVersion: phq9-standard-bands-v1
+            screeningLevel: MODERATE
+            safetyStatus: NEGATIVE_SAFETY_SCREEN
+            meaning:
+              meaningCode: PHQ9_MODERATE_14D
+              contentVersion: mb-screening-meaning-vi-vn-v1
+              referencePeriodDays: 14
+              text: Câu trả lời PHQ-9 của bạn thuộc mức triệu chứng trung bình trong 14 ngày qua.
+              limitation: Kết quả này chỉ phản ánh câu trả lời tự khai trong 14 ngày qua. Đây là sàng lọc triệu chứng, không phải chẩn đoán y khoa và không thể hiện mức độ bệnh lý tổng thể.
+          - assessmentId: 10000000-0000-4000-8000-000000000104
+            instrument: GAD7
+            questionnaireVersion: gad7-vi-vn-adult-v1
+            scoringVersion: gad7-standard-bands-v1
+            screeningLevel: SEVERE
+            safetyStatus: NOT_APPLICABLE
+            meaning:
+              meaningCode: GAD7_SEVERE_14D
+              contentVersion: mb-screening-meaning-vi-vn-v1
+              referencePeriodDays: 14
+              text: Câu trả lời GAD-7 của bạn thuộc mức triệu chứng nặng trong 14 ngày qua.
+              limitation: Kết quả này chỉ phản ánh câu trả lời tự khai trong 14 ngày qua. Đây là sàng lọc triệu chứng, không phải chẩn đoán y khoa và không thể hiện mức độ bệnh lý tổng thể.
+        nextStep:
+          code: CONSIDER_PROFESSIONAL_SUPPORT
+          contentVersion: mb-support-next-step-vi-vn-v1
+          text: Bạn có thể cân nhắc chủ động tìm sự hỗ trợ từ một chuyên gia phù hợp nếu mong muốn.
+          boundary: MentalBridge chưa liên hệ chuyên gia, đặt lịch hoặc chia sẻ dữ liệu của bạn; các hành động đó cần quy trình và sự đồng ý riêng.
+        safetyGuidance: null
+        disclaimerCode: SCREENING_NOT_DIAGNOSIS
+        disclaimer: Đây là kết quả sàng lọc triệu chứng, không phải chẩn đoán y khoa. MentalBridge không cung cấp dịch vụ ứng cứu khẩn cấp, không giám sát con người 24/7 và không tự động liên hệ bên thứ ba.
+    SafetyFollowUpSupportEvaluation:
+      summary: A positive PHQ-9 safety screen always receives local minimum guidance
+      value:
+        supportEvaluationId: 20000000-0000-4000-8000-000000000103
+        policyVersion: mb-support-routing-capstone-v1
+        evaluatedAt: '2026-09-10T08:02:00Z'
+        supportTier: SAFETY_FOLLOW_UP_RECOMMENDED
+        reasonCodes: [PHQ9_SAFETY_SCREEN_POSITIVE]
+        evidence:
+          - assessmentId: 10000000-0000-4000-8000-000000000105
+            instrument: PHQ9
+            questionnaireVersion: phq9-vi-vn-capstone-v2
+            scoringVersion: phq9-standard-bands-v1
+            screeningLevel: MILD
+            safetyStatus: POSITIVE_SAFETY_SCREEN
+            meaning:
+              meaningCode: PHQ9_MILD_14D
+              contentVersion: mb-screening-meaning-vi-vn-v1
+              referencePeriodDays: 14
+              text: Câu trả lời PHQ-9 của bạn thuộc mức triệu chứng nhẹ trong 14 ngày qua.
+              limitation: Kết quả này chỉ phản ánh câu trả lời tự khai trong 14 ngày qua. Đây là sàng lọc triệu chứng, không phải chẩn đoán y khoa và không thể hiện mức độ bệnh lý tổng thể.
+          - assessmentId: 10000000-0000-4000-8000-000000000106
+            instrument: GAD7
+            questionnaireVersion: gad7-vi-vn-adult-v1
+            scoringVersion: gad7-standard-bands-v1
+            screeningLevel: MINIMAL
+            safetyStatus: NOT_APPLICABLE
+            meaning:
+              meaningCode: GAD7_MINIMAL_14D
+              contentVersion: mb-screening-meaning-vi-vn-v1
+              referencePeriodDays: 14
+              text: Câu trả lời GAD-7 của bạn thuộc mức triệu chứng tối thiểu trong 14 ngày qua.
+              limitation: Kết quả này chỉ phản ánh câu trả lời tự khai trong 14 ngày qua. Đây là sàng lọc triệu chứng, không phải chẩn đoán y khoa và không thể hiện mức độ bệnh lý tổng thể.
+        nextStep:
+          code: REVIEW_SAFETY_GUIDANCE
+          contentVersion: mb-safety-guidance-vi-vn-v1
+          text: Ưu tiên xem hướng dẫn an toàn ngay bên dưới và chủ động tìm hỗ trợ trực tiếp nếu bạn cảm thấy không an toàn.
+          boundary: Kết quả này không xác định ý định, kế hoạch hay mức độ khẩn cấp. MentalBridge không tự động liên hệ người khác, đặt lịch hoặc chia sẻ dữ liệu.
+        safetyGuidance: Nếu bạn cảm thấy mình không an toàn hoặc có nguy cơ gây hại cho bản thân, hãy chủ động liên hệ dịch vụ khẩn cấp hoặc cơ sở y tế phù hợp tại khu vực của bạn.
+        disclaimerCode: SCREENING_NOT_DIAGNOSIS
+        disclaimer: Đây là kết quả sàng lọc triệu chứng, không phải chẩn đoán y khoa. MentalBridge không cung cấp dịch vụ ứng cứu khẩn cấp, không giám sát con người 24/7 và không tự động liên hệ bên thứ ba.
   securitySchemes:
     bearerAuth:
       type: http

@@ -29,7 +29,7 @@ Errors use RFC 9457 Problem Details with stable `code` and `correlationId` field
 
 Create the service-owned `mentalbridge_care` database before running this module. Liquibase connects directly to that database and uses its default `public` schema. It never creates a database, schema named `care`, or cross-service foreign key.
 
-The MB-88 changelog owns:
+The Care Liquibase changelog owns:
 
 | Table | Purpose |
 | --- | --- |
@@ -42,6 +42,9 @@ The MB-88 changelog owns:
 | `assessment_submission` | Immutable owner, questionnaire version, request hash, idempotency key, and anonymous retention deadline |
 | `assessment_answer` | One validated `0..3` answer tied to the same definition as its submission |
 | `assessment_result` | Server-owned score, band, independent safety status, scoring/safety-policy versions, and disclaimer code |
+| `support_policy_definition` and policy reference tables | Immutable compatible questionnaire versions, localized band meanings, and bounded support-tier guidance |
+| `support_evaluation` | Immutable deterministic result for one explicit owned PHQ-9/GAD-7 evidence pair |
+| `support_evaluation_request` | Per-user idempotency aliases resolving retries to the immutable evaluation |
 | `outbox_event` | Minimal integration fact persisted in the aggregate transaction |
 
 The reference-data migrations publish immutable English PHQ-9, current controlled-Capstone Vietnamese PHQ-9 v2, and Vietnamese GAD-7 definitions. PHQ-9 v1 remains readable as a retired immutable definition so historical results reopen against their original wording and bands. GAD-7 contains seven questions, the approved four-choice self-administered mapping, standard `0..21` bands, explicit non-applicable safety semantics, and auditable source provenance. These publications are approved only for controlled local/demo Capstone use and do not represent production clinical/domain approval.
@@ -108,4 +111,4 @@ MB-89 implements the deterministic PHQ-9 runtime. MB-178 adds the backend-owned,
 .\mvnw.cmd test
 ```
 
-The PostgreSQL integration suite applies Liquibase to a disposable real PostgreSQL database and validates owner isolation, profile optimistic concurrency, append-only consent history/idempotency/revocation, disclosure enforcement, stable history pagination, deterministic compatible progress selection, seed data, authenticated-versus-anonymous ownership, scoring boundaries, item-9 independence, token isolation/expiry, answer/result ranges, questionnaire version uniqueness, and minimized outbox payloads. Live Eureka registration is disabled in tests. The versioned `care.assessment.submitted` event contract exists, while a Kafka relay remains a separate delivery slice; scoring and progress never wait for a broker.
+The PostgreSQL integration suite applies Liquibase to a disposable real PostgreSQL database and validates owner isolation, profile optimistic concurrency, append-only consent history/idempotency/revocation, disclosure enforcement, stable history pagination, deterministic compatible progress selection, support-routing evidence validation and concurrency/idempotency, policy lookup serialization and fallback behavior, seed data, authenticated-versus-anonymous ownership, scoring boundaries, item-9 independence, token isolation/expiry, answer/result ranges, questionnaire version uniqueness, and minimized outbox payloads. Live Eureka registration is disabled in tests. The versioned assessment and support-tier event contracts exist, while a Kafka relay remains a separate delivery slice; scoring, progress, and support routing never wait for a broker.

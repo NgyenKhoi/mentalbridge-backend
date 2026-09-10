@@ -95,14 +95,12 @@ CREATE TABLE support_evaluation (
     support_tier varchar(48) NOT NULL,
     primary_reason_code varchar(64) NOT NULL,
     secondary_reason_code varchar(64),
-    idempotency_key varchar(128) NOT NULL,
-    request_hash varchar(64) NOT NULL,
     evaluated_at timestamptz NOT NULL,
     created_at timestamptz NOT NULL DEFAULT now(),
     CONSTRAINT fk_support_evaluation_guidance
         FOREIGN KEY (policy_version, support_tier)
         REFERENCES support_tier_guidance(policy_version, support_tier) ON DELETE RESTRICT,
-    CONSTRAINT ux_support_evaluation_idempotency UNIQUE (user_id, idempotency_key),
+    CONSTRAINT ux_support_evaluation_owner_reference UNIQUE (id, user_id),
     CONSTRAINT ux_support_evaluation_evidence UNIQUE (
         user_id, phq9_assessment_id, gad7_assessment_id, policy_version
     ),
@@ -138,13 +136,25 @@ CREATE TABLE support_evaluation (
         (support_tier = 'SAFETY_FOLLOW_UP_RECOMMENDED' AND
          primary_reason_code = 'PHQ9_SAFETY_SCREEN_POSITIVE' AND
          secondary_reason_code IS NULL)
-    ),
-    CONSTRAINT ck_support_evaluation_idempotency_key CHECK (length(idempotency_key) BETWEEN 16 AND 128),
-    CONSTRAINT ck_support_evaluation_request_hash CHECK (request_hash ~ '^[0-9a-f]{64}$')
+    )
 );
 
 CREATE INDEX ix_support_evaluation_user_history
     ON support_evaluation (user_id, evaluated_at DESC, id DESC);
+
+CREATE TABLE support_evaluation_request (
+    user_id uuid NOT NULL,
+    idempotency_key varchar(128) NOT NULL,
+    request_hash varchar(64) NOT NULL,
+    support_evaluation_id uuid NOT NULL,
+    created_at timestamptz NOT NULL DEFAULT now(),
+    PRIMARY KEY (user_id, idempotency_key),
+    CONSTRAINT fk_support_evaluation_request_owner
+        FOREIGN KEY (support_evaluation_id, user_id)
+        REFERENCES support_evaluation(id, user_id) ON DELETE RESTRICT,
+    CONSTRAINT ck_support_evaluation_request_key CHECK (length(idempotency_key) BETWEEN 16 AND 128),
+    CONSTRAINT ck_support_evaluation_request_hash CHECK (request_hash ~ '^[0-9a-f]{64}$')
+);
 
 INSERT INTO support_policy_definition (
     version, locale, status, reviewed_by, approved_at, source_reference

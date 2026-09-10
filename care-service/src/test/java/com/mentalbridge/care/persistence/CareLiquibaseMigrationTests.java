@@ -88,7 +88,9 @@ class CareLiquibaseMigrationTests extends CareTestProperties {
 		assertThat(tables).contains(
 				"user_profile", "consent_decision", "anonymous_assessment_session",
 				"questionnaire_definition", "questionnaire_question", "questionnaire_score_band",
-				"assessment_submission", "assessment_answer", "assessment_result", "outbox_event");
+				"assessment_submission", "assessment_answer", "assessment_result", "outbox_event",
+				"support_policy_definition", "support_policy_eligible_definition", "screening_band_meaning",
+				"support_tier_guidance", "support_evaluation", "support_evaluation_request");
 		assertThat(careSchemaCount).isZero();
 		assertThat(itemNumbers).containsExactly(1, 2, 3, 4, 5, 6, 7, 8, 9);
 		assertThat(safetyItems).containsExactly(9);

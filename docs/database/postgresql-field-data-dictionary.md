@@ -126,7 +126,7 @@ Privacy-minimized local security record for authentication, recovery, replay, an
 
 ## Owner `care` (`mentalbridge_care.public`)
 
-The MB-88 tables below are executable Liquibase-owned structures in the Care database's default `public` schema. Later support, intervention, grant, and follow-up entries in this section remain conceptual until their owner migrations are added.
+The MB-88 assessment/profile tables and MB-271 support-routing tables below are executable Liquibase-owned structures in the Care database's default `public` schema. Later intervention, grant, and follow-up entries in this section remain conceptual until their owner migrations are added.
 
 ### `public.user_profile`
 
@@ -325,9 +325,20 @@ Immutable versioned platform support-tier result derived from one explicit compa
 | `support_tier` | Authoritative approved support pathway; values never claim low, medium, or high suicide risk. |
 | `policy_version` | Exact deterministic policy version needed to reproduce and audit the decision. |
 | `primary_reason_code` / `secondary_reason_code` | Stable ordered explanation. The secondary reason is allowed only for the PHQ-then-GAD moderate-or-higher pair. |
-| `idempotency_key` / `request_hash` | Per-user retry identity and SHA-256 evidence-pair digest; conflicting reuse is rejected. |
 | `evaluated_at` | UTC instant the deterministic policy executed. |
 | `created_at` | Immutable UTC insertion instant for provenance. |
+
+### `public.support_evaluation_request`
+
+Per-user idempotency aliases for combined-support commands. Multiple keys may safely resolve to the same immutable evidence-pair evaluation, while reuse of any key with different evidence is rejected.
+
+| Field | Purpose |
+| --- | --- |
+| `user_id` | Care profile that owns both the command key and referenced evaluation. |
+| `idempotency_key` | Caller-generated retry key unique for one user. |
+| `request_hash` | Lowercase SHA-256 digest of the canonical PHQ-9/GAD-7 evidence pair; request plaintext is not recoverable from it. |
+| `support_evaluation_id` | Immutable evaluation returned for this key; the composite foreign key prevents cross-owner aliases. |
+| `created_at` | Immutable UTC instant when Care accepted the command key. |
 
 ### `care.intervention_plan`
 

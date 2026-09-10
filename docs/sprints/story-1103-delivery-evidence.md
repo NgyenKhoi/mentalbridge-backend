@@ -5,7 +5,7 @@
 - Authenticated `POST /api/v1/support-evaluations` accepts exactly one explicit owned PHQ-9 ID and one explicit owned GAD-7 ID; it never searches for a latest result.
 - Care rejects missing/foreign, duplicate, voided, incomplete, wrong-instrument, or policy-incompatible evidence.
 - `mb-support-routing-capstone-v1` applies safety-first deterministic routing and returns an immutable tier, stable ordered reasons, exact evidence references, policy version, evaluation time, separate per-instrument meanings, one bounded next step, and a non-diagnostic disclaimer. No composite score is created.
-- A profile row lock, per-user idempotency constraint, evidence-pair uniqueness, and transactional outbox prevent conflicting concurrent decisions and duplicate events.
+- A Spring Data JPA profile row lock, per-user idempotency request aliases, evidence-pair uniqueness, and transactional outbox prevent conflicting concurrent decisions and duplicate events. A second key for the same pair resolves to the original evaluation and is itself bound against later conflicting reuse.
 - Policy definitions, compatibility allow-list, nine Vietnamese 14-day band meanings, three bounded next steps, and the evaluation are stored by append-only Liquibase change `care-009-combined-support-routing`.
 - The `care.support-tier.resolved` v1 event is minimized and excludes raw answers, scores, item-9 values, and free-form clinical reasoning.
 
@@ -19,8 +19,8 @@ The reviewed string is local immutable Care policy data and is also retained as 
 
 ## Verification
 
-- Full Care suite: 82 tests passed, including real PostgreSQL/Testcontainers migration and integration coverage.
-- Story-specific coverage includes safety priority, stable reason ordering, non-composite response shape, authentication/role enforcement, owner isolation, duplicate/voided/wrong-instrument evidence rejection, idempotent replay, transactional outbox creation, and concurrent same-pair serialization.
+- Full Care suite: 88 tests passed, including real PostgreSQL/Testcontainers migration and integration coverage.
+- Story-specific coverage includes safety priority, stable reason ordering, all nine instrument/band meanings and all three tier next steps, non-composite response shape, authentication/role enforcement, owner isolation, missing/incomplete/duplicate/voided/wrong-instrument evidence rejection, conflicting and successful idempotent replay, transactional outbox shape/creation, degraded local safety fallback, and concurrent same-pair serialization.
 - OpenAPI, event schema, generated frontend Care types, frontend lint/typecheck/contracts/unit tests, and production build pass.
 
 ## Explicit non-goals
