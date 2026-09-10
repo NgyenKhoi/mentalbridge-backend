@@ -42,6 +42,10 @@ export interface PublishResourceData {
   readonly expiresAt?: Date | null;
 }
 
+function toNum(val: unknown): number {
+  return Number(val);
+}
+
 @Injectable()
 export class ResourceRepository {
   constructor(
@@ -61,18 +65,18 @@ export class ResourceRepository {
     let index = 2;
 
     if (query.locale) {
-      conditions.push(`r.locale = $${index++}`);
+      conditions.push(`r.locale = $${String(index++)}`);
       params.push(query.locale);
     }
 
     if (query.category) {
-      conditions.push(`r.category = $${index++}`);
+      conditions.push(`r.category = $${String(index++)}`);
       params.push(query.category);
     }
 
     if (query.cursor) {
       conditions.push(
-        `(r.created_at, r.id) < (SELECT created_at, id FROM resource WHERE id = $${index++})`,
+        `(r.created_at, r.id) < (SELECT created_at, id FROM resource WHERE id = $${String(index++)})`,
       );
       params.push(query.cursor);
     }
@@ -98,23 +102,23 @@ export class ResourceRepository {
     let index = 2;
 
     if (query.status) {
-      conditions.push(`r.status = $${index++}`);
+      conditions.push(`r.status = $${String(index++)}`);
       params.push(query.status);
     }
 
     if (query.locale) {
-      conditions.push(`r.locale = $${index++}`);
+      conditions.push(`r.locale = $${String(index++)}`);
       params.push(query.locale);
     }
 
     if (query.category) {
-      conditions.push(`r.category = $${index++}`);
+      conditions.push(`r.category = $${String(index++)}`);
       params.push(query.category);
     }
 
     if (query.cursor) {
       conditions.push(
-        `(r.created_at, r.id) < (SELECT created_at, id FROM resource WHERE id = $${index++})`,
+        `(r.created_at, r.id) < (SELECT created_at, id FROM resource WHERE id = $${String(index++)})`,
       );
       params.push(query.cursor);
     }
@@ -143,19 +147,11 @@ export class ResourceRepository {
        WHERE id = $1`,
       [id],
     );
-    const row = result.rows[0];
-    // eslint-disable-next-line @typescript-eslint/no-unnecessary-condition
-    if (!row) return null;
-    return {
-      ...row,
-      // eslint-disable-next-line @typescript-eslint/no-unnecessary-type-assertion
-      version: Number(row.version as unknown),
-    };
+    return result.rows[0] ? { ...result.rows[0], version: toNum(result.rows[0].version) } : null;
   }
 
   async create(data: CreateResourceData, idempotencyKey?: string): Promise<ResourceRow> {
     if (idempotencyKey) {
-      // Check if resource with this idempotency key already exists
       const existing = await this.db.query<ResourceRow>(
         `SELECT id, category, locale, title, summary, content_body, external_url,
                 status, reviewed_by, reviewed_at, effective_at, expires_at,
@@ -165,10 +161,7 @@ export class ResourceRepository {
         [idempotencyKey],
       );
       if (existing.rows[0]) {
-        return {
-          ...existing.rows[0],
-          version: Number(existing.rows[0].version as unknown),
-        };
+        return { ...existing.rows[0], version: toNum(existing.rows[0].version) };
       }
     }
 
@@ -183,17 +176,13 @@ export class ResourceRepository {
         data.locale,
         data.title,
         data.summary,
-        data.contentBody || null,
-        data.externalUrl || null,
-        idempotencyKey || null,
+        data.contentBody ?? null,
+        data.externalUrl ?? null,
+        idempotencyKey ?? null,
       ],
     );
     const row = result.rows[0];
-    return {
-      ...row,
-      // eslint-disable-next-line @typescript-eslint/no-unnecessary-type-assertion
-      version: Number(row.version as unknown),
-    };
+    return { ...row, version: toNum(row.version) };
   }
 
   async update(id: string, data: UpdateResourceData): Promise<ResourceRow | null> {
@@ -202,20 +191,20 @@ export class ResourceRepository {
     let index = 3;
 
     if (data.title !== undefined) {
-      updates.push(`title = $${index++}`);
+      updates.push(`title = $${String(index++)}`);
       params.push(data.title);
     }
     if (data.summary !== undefined) {
-      updates.push(`summary = $${index++}`);
+      updates.push(`summary = $${String(index++)}`);
       params.push(data.summary);
     }
     if (data.contentBody !== undefined) {
-      updates.push(`content_body = $${index++}`);
-      params.push(data.contentBody);
+      updates.push(`content_body = $${String(index++)}`);
+      params.push(data.contentBody ?? null);
     }
     if (data.externalUrl !== undefined) {
-      updates.push(`external_url = $${index++}`);
-      params.push(data.externalUrl);
+      updates.push(`external_url = $${String(index++)}`);
+      params.push(data.externalUrl ?? null);
     }
 
     const result = await this.db.query<ResourceRow>(
@@ -227,14 +216,7 @@ export class ResourceRepository {
                  created_at, updated_at, version`,
       params,
     );
-    const row = result.rows[0];
-    // eslint-disable-next-line @typescript-eslint/no-unnecessary-condition
-    if (!row) return null;
-    return {
-      ...row,
-      // eslint-disable-next-line @typescript-eslint/no-unnecessary-type-assertion
-      version: Number(row.version as unknown),
-    };
+    return result.rows[0] ? { ...result.rows[0], version: toNum(result.rows[0].version) } : null;
   }
 
   async delete(id: string, version: number): Promise<boolean> {
@@ -259,16 +241,9 @@ export class ResourceRepository {
        RETURNING id, category, locale, title, summary, content_body, external_url,
                  status, reviewed_by, reviewed_at, effective_at, expires_at,
                  created_at, updated_at, version`,
-      [id, data.reviewedBy, data.effectiveAt || null, data.expiresAt || null, data.version],
+      [id, data.reviewedBy, data.effectiveAt ?? null, data.expiresAt ?? null, data.version],
     );
-    const row = result.rows[0];
-    // eslint-disable-next-line @typescript-eslint/no-unnecessary-condition
-    if (!row) return null;
-    return {
-      ...row,
-      // eslint-disable-next-line @typescript-eslint/no-unnecessary-type-assertion
-      version: Number(row.version as unknown),
-    };
+    return result.rows[0] ? { ...result.rows[0], version: toNum(result.rows[0].version) } : null;
   }
 
   async archive(id: string, version: number): Promise<ResourceRow | null> {
@@ -283,13 +258,6 @@ export class ResourceRepository {
                  created_at, updated_at, version`,
       [id, version],
     );
-    const row = result.rows[0];
-    // eslint-disable-next-line @typescript-eslint/no-unnecessary-condition
-    if (!row) return null;
-    return {
-      ...row,
-      // eslint-disable-next-line @typescript-eslint/no-unnecessary-type-assertion
-      version: Number(row.version as unknown),
-    };
+    return result.rows[0] ? { ...result.rows[0], version: toNum(result.rows[0].version) } : null;
   }
 }
