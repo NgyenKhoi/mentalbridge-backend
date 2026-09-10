@@ -54,6 +54,7 @@ describe('ResourceRepository Admin Operations Integration', () => {
       '1_initial_schema.sql',
       '2_remove_hotline_catalogue.sql',
       '3_add_review_provenance_fields.sql',
+      '4_add_idempotency_key.sql',
     ];
     for (const migration of migrations) {
       const sql = readFileSync(join(__dirname, '../../../migrations', migration), 'utf8');
