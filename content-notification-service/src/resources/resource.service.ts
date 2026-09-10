@@ -185,8 +185,8 @@ export class ResourceService {
     return row ? toDetail(row) : null;
   }
 
-  async delete(id: string, version: number): Promise<boolean> {
-    return this.repository.delete(id, version);
+  async delete(id: string): Promise<boolean> {
+    return this.repository.delete(id);
   }
 
   async publish(id: string, data: PublishResourceData): Promise<ResourceDetail | null> {

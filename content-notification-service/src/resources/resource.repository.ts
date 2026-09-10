@@ -219,10 +219,10 @@ export class ResourceRepository {
     return result.rows[0] ? { ...result.rows[0], version: toNum(result.rows[0].version) } : null;
   }
 
-  async delete(id: string, version: number): Promise<boolean> {
+  async delete(id: string): Promise<boolean> {
     const result = await this.db.query(
-      `DELETE FROM resource WHERE id = $1 AND version = $2 AND status = 'DRAFT'`,
-      [id, version],
+      `DELETE FROM resource WHERE id = $1 AND status = 'DRAFT'`,
+      [id],
     );
     return (result.rowCount ?? 0) > 0;
   }

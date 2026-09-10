@@ -279,18 +279,12 @@ export class ResourceController {
   @HttpCode(HttpStatus.NO_CONTENT)
   async deleteResource(
     @Param('id') id: string,
-    @Query('version') versionParam: string,
   ): Promise<void> {
     if (!UUID_RE.test(id)) {
       throw new BadRequestException('Invalid resource ID');
     }
 
-    const version = parseInt(versionParam, 10);
-    if (isNaN(version) || version < 0) {
-      throw new BadRequestException('Valid version query parameter is required');
-    }
-
-    const deleted = await this.resourceService.delete(id, version);
+    const deleted = await this.resourceService.delete(id);
     if (!deleted) {
       throw new ConflictException({
         type: 'https://mentalbridge.io/errors/INVALID_STATE_TRANSITION',
