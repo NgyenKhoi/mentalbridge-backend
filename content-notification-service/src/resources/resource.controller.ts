@@ -24,6 +24,7 @@ import type {
 } from './resource.types.js';
 import { RESOURCE_SERVICE_TOKEN } from '../application.tokens.js';
 import type { ResourceService } from './resource.service.js';
+import { Public } from '../auth/public.decorator.js';
 import {
   CreateResourceDtoSchema,
   UpdateResourceDtoSchema,
@@ -56,6 +57,7 @@ export class ResourceController {
   ) {}
 
   @Get()
+  @Public()
   async listResources(
     @Query('locale') locale?: string,
     @Query('category') category?: string,
@@ -134,6 +136,7 @@ export class ResourceController {
   }
 
   @Get(':id')
+  @Public()
   async getResource(@Param('id') id: string): Promise<ResourceDetail> {
     if (!UUID_RE.test(id)) {
       throw new BadRequestException('Invalid resource ID');

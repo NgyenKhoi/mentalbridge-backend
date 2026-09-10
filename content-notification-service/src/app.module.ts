@@ -1,4 +1,5 @@
 import { Module, type DynamicModule, type Provider } from '@nestjs/common';
+import { Reflector } from '@nestjs/core';
 
 import {
   CONFIGURATION_TOKEN,
@@ -62,7 +63,8 @@ export const createAppModule = (
       JwtStrategy,
       {
         provide: APP_GUARD,
-        useClass: RolesGuard,
+        useFactory: (reflector: Reflector) => new RolesGuard(reflector),
+        inject: [Reflector],
       },
     ],
   };

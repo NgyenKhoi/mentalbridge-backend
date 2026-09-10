@@ -2,6 +2,7 @@ import { Injectable, CanActivate, ExecutionContext, ForbiddenException } from '@
 import { Reflector } from '@nestjs/core';
 import type { Request } from 'express';
 import type { AuthenticatedUser } from './jwt.strategy.js';
+import { IS_PUBLIC_KEY } from './public.decorator.js';
 
 export const ROLES_KEY = 'roles';
 
@@ -10,10 +11,20 @@ export class RolesGuard implements CanActivate {
   constructor(private readonly reflector: Reflector) {}
 
   canActivate(context: ExecutionContext): boolean {
-    const requiredRoles = this.reflector.getAllAndOverride<string[]>(ROLES_KEY, [
-      context.getHandler(),
-      context.getClass(),
-    ]);
+    const isPublic =
+      this.reflector.getAllAndOverride<boolean | undefined>(IS_PUBLIC_KEY, [
+        context.getHandler(),
+        context.getClass(),
+      ]) ?? false;
+    if (isPublic) {
+      return true;
+    }
+
+    const requiredRoles =
+      this.reflector.getAllAndOverride<string[] | undefined>(ROLES_KEY, [
+        context.getHandler(),
+        context.getClass(),
+      ]) ?? [];
 
     if (requiredRoles.length === 0) {
       return true;

@@ -2,6 +2,7 @@ import { Controller, Get, Inject, ServiceUnavailableException } from '@nestjs/co
 
 import { READINESS_PROBE_TOKEN } from '../application.tokens.js';
 import type { ReadinessProbe } from '../database/database.service.js';
+import { Public } from '../auth/public.decorator.js';
 
 interface LiveResponse {
   readonly status: 'ok';
@@ -12,6 +13,7 @@ interface ReadyResponse extends LiveResponse {
 }
 
 @Controller('health')
+@Public()
 export class HealthController {
   constructor(
     @Inject(READINESS_PROBE_TOKEN)
