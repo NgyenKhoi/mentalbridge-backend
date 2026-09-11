@@ -4,6 +4,8 @@ import {
   Controller,
   Delete,
   Get,
+  HttpException,
+  HttpStatus,
   Inject,
   Injectable,
   InternalServerErrorException,
@@ -14,11 +16,19 @@ import {
   Post,
   Query,
   Req,
+  Res,
+  ServiceUnavailableException,
   UnauthorizedException,
 } from "@nestjs/common";
-import type { DynamicModule } from "@nestjs/common";
-import { MongoClient, type Collection } from "mongodb";
-import { randomUUID } from "node:crypto";
+import type { DynamicModule, OnApplicationShutdown } from "@nestjs/common";
+import { Binary, MongoClient, type Collection, type Filter } from "mongodb";
+import {
+  createCipheriv,
+  createDecipheriv,
+  createHmac,
+  randomBytes,
+  randomUUID,
+} from "node:crypto";
 import { z } from "zod";
 import {
   loadConfiguration,
@@ -26,143 +36,380 @@ import {
 } from "../configuration/configuration.js";
 import type { AuthenticatedRequest } from "../security/authenticated-principal.js";
 
+const STORE = "JOURNAL_STORE";
+const ENCRYPTION = "JOURNAL_ENCRYPTION";
+const MAX_REVISIONS = 200;
+
 export interface Request extends AuthenticatedRequest {
   body: unknown;
+}
+export interface EncryptedContent {
+  ciphertext: Buffer | Binary;
+  iv: Buffer | Binary;
+  tag: Buffer | Binary;
+  algorithm: "AES-256-GCM";
+  keyId: string;
+  encryptedAt: Date;
 }
 export interface Revision {
   revision: number;
   createdAt: Date;
-  content: string;
-  tags: string[];
+  content: EncryptedContent;
+  contentByteLength: number;
+  contentHash: string;
+  analysisInvalidatedAt: Date | null;
+}
+export interface MutationCommand {
+  keyHash: string;
+  fingerprint: string;
+  operation: "create" | "revise" | "delete";
+  resultRevision?: number;
+  response?:
+    | {
+        kind: "entry";
+        revision: number;
+        tags: string[];
+        analysisState: "not_requested" | "current" | "stale";
+      }
+    | { kind: "tombstone" };
+  recordedAt: Date;
 }
 export interface Entry {
   _id: string;
   ownerAccountId: string;
   clientEntryId: string;
+  currentRevision: number;
   occurredAt: Date;
   createdAt: Date;
   updatedAt: Date;
   deleted: boolean;
-  deletedAt: Date | null;
-  currentRevision: number;
+  deletedAt?: Date | null;
+  deletedBy?: string;
+  tombstoneReason?: "owner_deleted" | "retention_expired" | null;
+  tags: string[];
+  analysisState: "not_requested" | "current" | "stale";
   revisions: Revision[];
-  lastCommandKeys: string[];
+  commands: MutationCommand[];
+  cursor: { sortOccurredAt: Date; sortCreatedAt: Date; entryId: string };
+}
+export interface JournalCursor {
+  sortOccurredAt: Date;
+  sortCreatedAt: Date;
+  entryId: string;
 }
 export interface JournalStore {
   create(entry: Entry): Promise<Entry>;
   find(owner: string, id: string): Promise<Entry | null>;
   findByClientId(owner: string, id: string): Promise<Entry | null>;
+  findByCommand(owner: string, keyHash: string): Promise<Entry | null>;
   list(
     owner: string,
     limit: number,
-    cursor?: string,
-    includeDeleted?: boolean,
+    cursor?: JournalCursor,
   ): Promise<{ rows: Entry[]; hasMore: boolean }>;
-  update(
+  revise(
     owner: string,
     id: string,
-    update: Partial<Entry>,
+    expectedRevision: number,
+    revision: Revision,
+    tags: string[],
+    command: MutationCommand,
+  ): Promise<Entry | null>;
+  tombstone(
+    owner: string,
+    id: string,
+    deletedAt: Date,
+    command: MutationCommand,
   ): Promise<Entry | null>;
 }
 
 const uuid = z.uuid();
+const tagsSchema = z
+  .array(z.string().trim().min(1).max(40))
+  .max(20)
+  .refine((tags) => new Set(tags).size === tags.length);
 const createSchema = z
   .object({
     clientEntryId: uuid,
-    occurredAt: z.iso.datetime(),
-    content: z.string().min(1).max(12000),
-    tags: z.array(z.string().min(1).max(40)).max(20).default([]),
+    occurredAt: z.iso.datetime({ offset: true }),
+    content: z.object({ text: z.string().min(1).max(12_000) }).strict(),
+    tags: tagsSchema.default([]),
   })
   .strict();
 const reviseSchema = z
   .object({
-    content: z.string().min(1).max(12000),
-    tags: z.array(z.string().min(1).max(40)).max(20).optional(),
+    content: z.object({ text: z.string().min(1).max(12_000) }).strict(),
+    tags: tagsSchema.optional(),
   })
   .strict();
-const header = (request: Request, name: string) => {
+const listSchema = z
+  .object({
+    limit: z.coerce.number().int().min(1).max(50).default(20),
+    cursor: z.string().min(1).max(512).optional(),
+  })
+  .strict();
+const idempotencyKeySchema = z.string().min(16).max(128);
+const revisionHeaderSchema = z.coerce.number().int().min(1);
+
+const header = (request: Request, name: string): string | undefined => {
   const value = request.headers[name.toLowerCase()];
-  return typeof value === "string" ? value : undefined;
+  return Array.isArray(value) ? value[0] : value;
 };
 const owner = (request: Request): string => {
   const value = request.principal?.accountId;
   if (!value || !uuid.safeParse(value).success)
-    throw new UnauthorizedException("Authenticated owner is required");
+    throw new UnauthorizedException();
   return value;
 };
-const commandKey = (request: Request) => header(request, "idempotency-key");
-const output = (entry: Entry) => {
-  const revision = entry.revisions.at(-1);
-  if (!revision)
-    throw new InternalServerErrorException("Journal revision is missing");
-  return {
-    id: entry._id,
-    ownerAccountId: entry.ownerAccountId,
-    clientEntryId: entry.clientEntryId,
-    currentRevision: entry.currentRevision,
-    occurredAt: entry.occurredAt.toISOString(),
-    createdAt: entry.createdAt.toISOString(),
-    updatedAt: entry.updatedAt.toISOString(),
-    deleted: entry.deleted,
-    content: revision.content,
-    tags: revision.tags,
-  };
+const requiredHeader = (
+  request: Request,
+  name: string,
+  schema: z.ZodType<string | number>,
+): string | number => {
+  const result = schema.safeParse(header(request, name));
+  if (!result.success) throw new BadRequestException();
+  return result.data;
 };
+const decodeCursor = (value: string | undefined): JournalCursor | undefined => {
+  if (!value) return undefined;
+  try {
+    const parsed = z
+      .object({
+        occurredAt: z.iso.datetime(),
+        createdAt: z.iso.datetime(),
+        id: uuid,
+      })
+      .strict()
+      .parse(JSON.parse(Buffer.from(value, "base64url").toString("utf8")));
+    return {
+      sortOccurredAt: new Date(parsed.occurredAt),
+      sortCreatedAt: new Date(parsed.createdAt),
+      entryId: parsed.id,
+    };
+  } catch {
+    throw new BadRequestException();
+  }
+};
+const encodeCursor = (entry: Entry): string =>
+  Buffer.from(
+    JSON.stringify({
+      occurredAt: entry.cursor.sortOccurredAt.toISOString(),
+      createdAt: entry.cursor.sortCreatedAt.toISOString(),
+      id: entry.cursor.entryId,
+    }),
+  ).toString("base64url");
+
+const binaryBuffer = (value: Buffer | Binary): Buffer =>
+  Buffer.isBuffer(value) ? value : Buffer.from(value.buffer);
 
 @Injectable()
-export class MongoJournalStore implements JournalStore {
+export class JournalEncryption {
+  constructor(private readonly configuration: Configuration) {}
+  encrypt(
+    ownerAccountId: string,
+    entryId: string,
+    revision: number,
+    text: string,
+  ): EncryptedContent {
+    const iv = randomBytes(12);
+    const encryptedAt = new Date();
+    const cipher = createCipheriv(
+      "aes-256-gcm",
+      this.configuration.JOURNAL_ENCRYPTION_KEY,
+      iv,
+    );
+    cipher.setAAD(
+      Buffer.from(`${ownerAccountId}:${entryId}:${String(revision)}`),
+    );
+    const ciphertext = Buffer.concat([
+      cipher.update(text, "utf8"),
+      cipher.final(),
+    ]);
+    return {
+      ciphertext,
+      iv,
+      tag: cipher.getAuthTag(),
+      algorithm: "AES-256-GCM",
+      keyId: this.configuration.JOURNAL_ENCRYPTION_KEY_ID,
+      encryptedAt,
+    };
+  }
+  decrypt(ownerAccountId: string, entryId: string, revision: Revision): string {
+    if (revision.content.keyId !== this.configuration.JOURNAL_ENCRYPTION_KEY_ID)
+      throw new InternalServerErrorException();
+    try {
+      const decipher = createDecipheriv(
+        "aes-256-gcm",
+        this.configuration.JOURNAL_ENCRYPTION_KEY,
+        binaryBuffer(revision.content.iv),
+      );
+      decipher.setAAD(
+        Buffer.from(
+          `${ownerAccountId}:${entryId}:${String(revision.revision)}`,
+        ),
+      );
+      decipher.setAuthTag(binaryBuffer(revision.content.tag));
+      return Buffer.concat([
+        decipher.update(binaryBuffer(revision.content.ciphertext)),
+        decipher.final(),
+      ]).toString("utf8");
+    } catch {
+      throw new InternalServerErrorException();
+    }
+  }
+  keyHash(key: string): string {
+    return createHmac("sha256", this.configuration.JOURNAL_IDEMPOTENCY_HMAC_KEY)
+      .update(key)
+      .digest("base64url");
+  }
+  fingerprint(value: unknown): string {
+    return createHmac("sha256", this.configuration.JOURNAL_IDEMPOTENCY_HMAC_KEY)
+      .update(JSON.stringify(value))
+      .digest("base64url");
+  }
+  contentHash(text: string): string {
+    return createHmac("sha256", this.configuration.JOURNAL_IDEMPOTENCY_HMAC_KEY)
+      .update(text)
+      .digest("base64");
+  }
+}
+
+@Injectable()
+export class MongoJournalStore implements JournalStore, OnApplicationShutdown {
   private readonly client: MongoClient;
   private readonly collection: Collection<Entry>;
   constructor(configuration: Configuration = loadConfiguration()) {
-    this.client = new MongoClient(configuration.MONGODB_URI);
+    this.client = new MongoClient(configuration.MONGODB_URI, {
+      connectTimeoutMS: configuration.MONGODB_CONNECTION_TIMEOUT_MS,
+      serverSelectionTimeoutMS: configuration.MONGODB_CONNECTION_TIMEOUT_MS,
+    });
     this.collection = this.client
       .db(configuration.MONGODB_DATABASE)
       .collection<Entry>("journal_entries");
   }
-  private async db() {
-    await this.client.connect();
-    return this.collection;
+  private async entries() {
+    try {
+      await this.client.connect();
+      return this.collection;
+    } catch (error) {
+      throw new ServiceUnavailableException({ cause: error });
+    }
+  }
+  async onApplicationShutdown() {
+    await this.client.close();
   }
   async create(entry: Entry) {
     try {
-      await (await this.db()).insertOne(entry);
+      await (await this.entries()).insertOne(entry);
       return entry;
     } catch (error) {
-      if ((error as { code?: number }).code === 11000)
-        throw new ConflictException("Journal entry already exists");
+      if ((error as { code?: number }).code === 11_000)
+        throw new ConflictException();
       throw error;
     }
   }
   async find(ownerAccountId: string, id: string) {
-    return (await this.db()).findOne({ _id: id, ownerAccountId });
+    return (await this.entries()).findOne({ _id: id, ownerAccountId });
   }
   async findByClientId(ownerAccountId: string, id: string) {
-    return (await this.db()).findOne({ clientEntryId: id, ownerAccountId });
-  }
-  async list(
-    ownerAccountId: string,
-    limit: number,
-    cursor?: string,
-    includeDeleted = false,
-  ) {
-    const filter = {
+    return (await this.entries()).findOne({
+      clientEntryId: id,
       ownerAccountId,
-      ...(includeDeleted ? {} : { deleted: false }),
-      ...(cursor ? { _id: { $lt: cursor } } : {}),
-    };
+    });
+  }
+  async findByCommand(ownerAccountId: string, keyHash: string) {
+    return (await this.entries()).findOne({
+      ownerAccountId,
+      "commands.keyHash": keyHash,
+    });
+  }
+  async list(ownerAccountId: string, limit: number, cursor?: JournalCursor) {
+    const cursorFilter: Filter<Entry> = cursor
+      ? {
+          $or: [
+            {
+              "cursor.sortOccurredAt": { $lt: cursor.sortOccurredAt },
+            },
+            {
+              "cursor.sortOccurredAt": cursor.sortOccurredAt,
+              "cursor.sortCreatedAt": { $lt: cursor.sortCreatedAt },
+            },
+            {
+              "cursor.sortOccurredAt": cursor.sortOccurredAt,
+              "cursor.sortCreatedAt": cursor.sortCreatedAt,
+              "cursor.entryId": { $gt: cursor.entryId },
+            },
+          ],
+        }
+      : {};
     const rows = await (
-      await this.db()
+      await this.entries()
     )
-      .find(filter)
-      .sort({ _id: -1 })
+      .find({
+        ownerAccountId,
+        deleted: false,
+        ...cursorFilter,
+      })
+      .sort({
+        "cursor.sortOccurredAt": -1,
+        "cursor.sortCreatedAt": -1,
+        "cursor.entryId": 1,
+      })
+      .hint("journal_entries_owner_cursor_idx")
       .limit(limit + 1)
       .toArray();
     return { rows: rows.slice(0, limit), hasMore: rows.length > limit };
   }
-  async update(ownerAccountId: string, id: string, update: Partial<Entry>) {
-    return (await this.db()).findOneAndUpdate(
-      { _id: id, ownerAccountId },
-      { $set: update },
+  async revise(
+    ownerAccountId: string,
+    id: string,
+    expectedRevision: number,
+    revision: Revision,
+    tags: string[],
+    command: MutationCommand,
+  ) {
+    return (await this.entries()).findOneAndUpdate(
+      {
+        _id: id,
+        ownerAccountId,
+        deleted: false,
+        currentRevision: expectedRevision,
+        "commands.keyHash": { $ne: command.keyHash },
+      },
+      {
+        $set: { tags, updatedAt: command.recordedAt, analysisState: "stale" },
+        $inc: { currentRevision: 1 },
+        $push: {
+          revisions: revision,
+          commands: command,
+        },
+      },
+      { returnDocument: "after" },
+    );
+  }
+  async tombstone(
+    ownerAccountId: string,
+    id: string,
+    deletedAt: Date,
+    command: MutationCommand,
+  ) {
+    return (await this.entries()).findOneAndUpdate(
+      {
+        _id: id,
+        ownerAccountId,
+        deleted: false,
+        "commands.keyHash": { $ne: command.keyHash },
+      },
+      {
+        $set: {
+          deleted: true,
+          deletedAt,
+          deletedBy: ownerAccountId,
+          tombstoneReason: "owner_deleted",
+          updatedAt: deletedAt,
+        },
+        $push: { commands: command },
+      },
       { returnDocument: "after" },
     );
   }
@@ -170,129 +417,286 @@ export class MongoJournalStore implements JournalStore {
 
 @Injectable()
 export class JournalService {
-  constructor(@Inject("JOURNAL_STORE") private readonly store: JournalStore) {}
+  constructor(
+    @Inject(STORE) private readonly store: JournalStore,
+    @Inject(ENCRYPTION) private readonly encryption: JournalEncryption,
+  ) {}
+  private command(
+    request: Request,
+    operation: MutationCommand["operation"],
+    value: unknown,
+  ): MutationCommand {
+    const key = requiredHeader(
+      request,
+      "idempotency-key",
+      idempotencyKeySchema,
+    );
+    return {
+      keyHash: this.encryption.keyHash(String(key)),
+      fingerprint: this.encryption.fingerprint({ operation, value }),
+      operation,
+      recordedAt: new Date(),
+    };
+  }
+  private replay(
+    entry: Entry,
+    command: MutationCommand,
+  ): MutationCommand | undefined {
+    const previous = entry.commands.find(
+      (item) => item.keyHash === command.keyHash,
+    );
+    if (!previous) return undefined;
+    if (
+      previous.fingerprint !== command.fingerprint ||
+      previous.operation !== command.operation
+    )
+      throw new ConflictException();
+    return previous;
+  }
+  private revision(entry: Entry, number = entry.currentRevision): Revision {
+    const revision = entry.revisions.find((item) => item.revision === number);
+    if (!revision) throw new InternalServerErrorException();
+    return revision;
+  }
+  private output(
+    entry: Entry,
+    revisionNumber = entry.currentRevision,
+    updatedAt?: Date,
+    tags = entry.tags,
+    analysisState = entry.analysisState,
+  ) {
+    const revision = this.revision(entry, revisionNumber);
+    const text = this.encryption.decrypt(
+      entry.ownerAccountId,
+      entry._id,
+      revision,
+    );
+    return {
+      id: entry._id,
+      ownerAccountId: entry.ownerAccountId,
+      currentRevision: revisionNumber,
+      occurredAt: entry.occurredAt.toISOString(),
+      createdAt: entry.createdAt.toISOString(),
+      updatedAt: (updatedAt ?? entry.updatedAt).toISOString(),
+      deleted: false,
+      tags,
+      encryption: {
+        algorithm: revision.content.algorithm,
+        keyId: revision.content.keyId,
+        encryptedAt: revision.content.encryptedAt.toISOString(),
+      },
+      analysisState,
+      content: { text, byteLength: revision.contentByteLength },
+    };
+  }
+  private replayEntry(entry: Entry, command: MutationCommand) {
+    if (command.response?.kind !== "entry") throw new ConflictException();
+    return this.output(
+      entry,
+      command.response.revision,
+      command.recordedAt,
+      command.response.tags,
+      command.response.analysisState,
+    );
+  }
+  private replayTombstone(entry: Entry, command: MutationCommand) {
+    if (command.response?.kind !== "tombstone") throw new ConflictException();
+    return {
+      id: entry._id,
+      ownerAccountId: entry.ownerAccountId,
+      deleted: true as const,
+      deletedAt: command.recordedAt.toISOString(),
+    };
+  }
   async create(request: Request) {
     const parsed = createSchema.safeParse(request.body);
-    if (!parsed.success)
-      throw new BadRequestException("Invalid journal payload");
+    if (!parsed.success) throw new BadRequestException();
     const ownerAccountId = owner(request);
-    const existing = await this.store.findByClientId(
+    const command = this.command(request, "create", parsed.data);
+    const previousByCommand = await this.store.findByCommand(
       ownerAccountId,
-      parsed.data.clientEntryId,
+      command.keyHash,
     );
-    if (existing) return output(existing);
-    const now = new Date();
-    const key = commandKey(request);
+    if (previousByCommand) {
+      const replay = this.replay(previousByCommand, command);
+      if (!replay) throw new ConflictException();
+      return this.replayEntry(previousByCommand, replay);
+    }
+    if (
+      await this.store.findByClientId(ownerAccountId, parsed.data.clientEntryId)
+    )
+      throw new ConflictException();
+    const now = command.recordedAt;
+    const id = randomUUID();
+    const text = parsed.data.content.text;
+    const revision: Revision = {
+      revision: 1,
+      createdAt: now,
+      content: this.encryption.encrypt(ownerAccountId, id, 1, text),
+      contentByteLength: Buffer.byteLength(text, "utf8"),
+      contentHash: this.encryption.contentHash(text),
+      analysisInvalidatedAt: null,
+    };
     const entry: Entry = {
-      _id: randomUUID(),
+      _id: id,
       ownerAccountId,
       clientEntryId: parsed.data.clientEntryId,
+      currentRevision: 1,
       occurredAt: new Date(parsed.data.occurredAt),
       createdAt: now,
       updatedAt: now,
       deleted: false,
       deletedAt: null,
-      currentRevision: 1,
-      revisions: [
+      tombstoneReason: null,
+      tags: parsed.data.tags,
+      analysisState: "not_requested",
+      revisions: [revision],
+      commands: [
         {
-          revision: 1,
-          createdAt: now,
-          content: parsed.data.content,
-          tags: parsed.data.tags,
+          ...command,
+          response: {
+            kind: "entry",
+            revision: 1,
+            tags: parsed.data.tags,
+            analysisState: "not_requested",
+          },
         },
       ],
-      lastCommandKeys: key ? [key] : [],
+      cursor: {
+        sortOccurredAt: new Date(parsed.data.occurredAt),
+        sortCreatedAt: now,
+        entryId: id,
+      },
     };
-    return output(await this.store.create(entry));
+    try {
+      return this.output(await this.store.create(entry));
+    } catch (error) {
+      if (!(error instanceof ConflictException)) throw error;
+      const raced = await this.store.findByCommand(
+        ownerAccountId,
+        command.keyHash,
+      );
+      if (!raced) throw error;
+      const replay = this.replay(raced, command);
+      if (!replay) throw error;
+      return this.replayEntry(raced, replay);
+    }
   }
   async detail(request: Request, id: string) {
+    if (!uuid.safeParse(id).success) throw new BadRequestException();
     const entry = await this.store.find(owner(request), id);
-    if (!entry || entry.deleted)
-      throw new NotFoundException("Journal entry not found");
-    return output(entry);
+    if (!entry || entry.deleted) throw new NotFoundException();
+    return this.output(entry);
   }
-  async list(
-    request: Request,
-    query: { limit?: string; cursor?: string; includeDeleted?: string },
-  ) {
-    const limit = Math.min(Math.max(Number(query.limit ?? 20) || 20, 1), 50);
+  async list(request: Request, query: Record<string, string | undefined>) {
+    const parsed = listSchema.safeParse(query);
+    if (!parsed.success) throw new BadRequestException();
     const result = await this.store.list(
       owner(request),
-      limit,
-      query.cursor,
-      query.includeDeleted === "true",
+      parsed.data.limit,
+      decodeCursor(parsed.data.cursor),
     );
     const lastRow = result.rows.at(-1);
     return {
-      items: result.rows.map(output),
+      items: result.rows.map((entry) => {
+        const value = this.output(entry);
+        return {
+          ...value,
+          content: {
+            preview: Array.from(value.content.text).slice(0, 160).join(""),
+            byteLength: value.content.byteLength,
+          },
+        };
+      }),
       page: {
-        limit,
+        limit: parsed.data.limit,
         hasMore: result.hasMore,
-        ...(result.hasMore && lastRow ? { nextCursor: lastRow._id } : {}),
+        ...(result.hasMore && lastRow
+          ? { nextCursor: encodeCursor(lastRow) }
+          : {}),
       },
     };
   }
   async revise(request: Request, id: string) {
+    if (!uuid.safeParse(id).success) throw new BadRequestException();
     const parsed = reviseSchema.safeParse(request.body);
-    if (!parsed.success)
-      throw new BadRequestException("Invalid journal payload");
+    if (!parsed.success) throw new BadRequestException();
     const ownerAccountId = owner(request);
-    const entry = await this.store.find(ownerAccountId, id);
-    if (!entry || entry.deleted)
-      throw new NotFoundException("Journal entry not found");
-    const key = commandKey(request);
-    if (key && entry.lastCommandKeys.includes(key)) return output(entry);
-    const now = new Date();
-    const previous = entry.revisions.at(-1);
-    if (!previous)
-      throw new InternalServerErrorException("Journal revision is missing");
-    const revision: Revision = {
-      revision: entry.currentRevision + 1,
-      createdAt: now,
-      content: parsed.data.content,
-      tags: parsed.data.tags ?? previous.tags,
-    };
-    const updated = await this.store.update(ownerAccountId, id, {
-      currentRevision: revision.revision,
-      revisions: [...entry.revisions, revision],
-      updatedAt: now,
-      ...(key ? { lastCommandKeys: [...entry.lastCommandKeys, key] } : {}),
+    const expectedRevision = Number(
+      requiredHeader(request, "if-match-revision", revisionHeaderSchema),
+    );
+    const command = this.command(request, "revise", {
+      id,
+      expectedRevision,
+      body: parsed.data,
     });
-    if (!updated)
-      throw new ConflictException(
-        "Journal changed before revision could be saved",
-      );
-    return output(updated);
+    const entry = await this.store.find(ownerAccountId, id);
+    if (!entry || entry.deleted) throw new NotFoundException();
+    const replay = this.replay(entry, command);
+    if (replay) return this.replayEntry(entry, replay);
+    if (entry.currentRevision !== expectedRevision)
+      throw new HttpException("", HttpStatus.PRECONDITION_FAILED);
+    if (entry.currentRevision >= MAX_REVISIONS) throw new ConflictException();
+    const now = command.recordedAt;
+    const nextRevision = expectedRevision + 1;
+    const text = parsed.data.content.text;
+    const tags = parsed.data.tags ?? entry.tags;
+    const revision: Revision = {
+      revision: nextRevision,
+      createdAt: now,
+      content: this.encryption.encrypt(ownerAccountId, id, nextRevision, text),
+      contentByteLength: Buffer.byteLength(text, "utf8"),
+      contentHash: this.encryption.contentHash(text),
+      analysisInvalidatedAt: now,
+    };
+    const updated = await this.store.revise(
+      ownerAccountId,
+      id,
+      expectedRevision,
+      revision,
+      tags,
+      {
+        ...command,
+        response: {
+          kind: "entry",
+          revision: nextRevision,
+          tags,
+          analysisState: "stale",
+        },
+      },
+    );
+    if (updated) return this.output(updated);
+    const raced = await this.store.find(ownerAccountId, id);
+    if (!raced || raced.deleted) throw new NotFoundException();
+    const racedReplay = this.replay(raced, command);
+    if (racedReplay) return this.replayEntry(raced, racedReplay);
+    throw new HttpException("", HttpStatus.PRECONDITION_FAILED);
   }
   async remove(request: Request, id: string) {
+    if (!uuid.safeParse(id).success) throw new BadRequestException();
     const ownerAccountId = owner(request);
+    const command = this.command(request, "delete", { id });
     const entry = await this.store.find(ownerAccountId, id);
-    if (!entry) throw new NotFoundException("Journal entry not found");
-    const key = commandKey(request);
-    if (key && entry.lastCommandKeys.includes(key))
-      return {
-        id: entry._id,
-        ownerAccountId,
-        deleted: true,
-        deletedAt: entry.deletedAt?.toISOString(),
-      };
-    const deletedAt = new Date();
-    const updated = await this.store.update(ownerAccountId, id, {
-      deleted: true,
-      deletedAt,
-      updatedAt: deletedAt,
-      ...(key ? { lastCommandKeys: [...entry.lastCommandKeys, key] } : {}),
-    });
-    if (!updated)
-      throw new ConflictException(
-        "Journal changed before deletion could be saved",
-      );
-    return {
-      id: updated._id,
+    if (!entry) throw new NotFoundException();
+    const replay = this.replay(entry, command);
+    if (replay) return this.replayTombstone(entry, replay);
+    if (entry.deleted) throw new NotFoundException();
+    const updated = await this.store.tombstone(
       ownerAccountId,
-      deleted: true,
-      deletedAt: deletedAt.toISOString(),
-    };
+      id,
+      command.recordedAt,
+      { ...command, response: { kind: "tombstone" } },
+    );
+    if (!updated) {
+      const raced = await this.store.find(ownerAccountId, id);
+      const racedReplay = raced ? this.replay(raced, command) : undefined;
+      if (raced && racedReplay) return this.replayTombstone(raced, racedReplay);
+      throw new NotFoundException();
+    }
+    return this.replayTombstone(updated, {
+      ...command,
+      response: { kind: "tombstone" },
+    });
   }
 }
 
@@ -301,37 +705,42 @@ export class JournalController {
   constructor(
     @Inject(JournalService) private readonly service: JournalService,
   ) {}
-
-  @Post()
-  create(@Req() request: Request) {
-    return this.service.create(request);
-  }
-
-  @Get()
-  list(
+  @Post() async create(
     @Req() request: Request,
-    @Query()
-    query: { limit?: string; cursor?: string; includeDeleted?: string },
+    @Res({ passthrough: true })
+    response: {
+      setHeader(name: string, value: string): void;
+    },
+  ) {
+    const entry = await this.service.create(request);
+    response.setHeader("Location", `/api/v1/journals/${entry.id}`);
+    return entry;
+  }
+  @Get() list(
+    @Req() request: Request,
+    @Query() query: Record<string, string | undefined>,
   ) {
     return this.service.list(request, query);
   }
-
-  @Get(":journalId")
-  detail(@Req() request: Request, @Param("journalId") id: string) {
+  @Get(":journalId") detail(
+    @Req() request: Request,
+    @Param("journalId") id: string,
+  ) {
     return this.service.detail(request, id);
   }
-
-  @Patch(":journalId")
-  revise(@Req() request: Request, @Param("journalId") id: string) {
+  @Patch(":journalId") revise(
+    @Req() request: Request,
+    @Param("journalId") id: string,
+  ) {
     return this.service.revise(request, id);
   }
-
-  @Delete(":journalId")
-  remove(@Req() request: Request, @Param("journalId") id: string) {
+  @Delete(":journalId") remove(
+    @Req() request: Request,
+    @Param("journalId") id: string,
+  ) {
     return this.service.remove(request, id);
   }
 }
-
 export const registerJournalModule = (
   configuration: Configuration,
 ): DynamicModule => ({
@@ -340,12 +749,12 @@ export const registerJournalModule = (
   providers: [
     JournalService,
     {
-      provide: "JOURNAL_STORE",
-      useFactory: () => new MongoJournalStore(configuration),
+      provide: ENCRYPTION,
+      useFactory: () => new JournalEncryption(configuration),
     },
+    { provide: STORE, useFactory: () => new MongoJournalStore(configuration) },
   ],
 });
-
 @Module({})
 export class JournalModule {
   readonly moduleName = "journal";

@@ -2,6 +2,22 @@ import { config as loadDotenv } from "dotenv";
 import { z } from "zod";
 
 const nodeEnvironments = ["development", "test", "production"] as const;
+const keyIdPattern = /^[A-Za-z0-9._-]{1,64}$/;
+const localEncryptionKey = Buffer.alloc(32, 7).toString("base64");
+const localIdempotencyKey = Buffer.alloc(32, 8).toString("base64");
+
+const encryptionKeySchema = z.string().transform((value, context) => {
+  const decoded = Buffer.from(value, "base64");
+  if (decoded.length !== 32 || decoded.toString("base64") !== value) {
+    context.addIssue({
+      code: "custom",
+      message:
+        "Journal encryption key must be a canonical base64-encoded 32-byte key",
+    });
+    return z.NEVER;
+  }
+  return decoded;
+});
 
 const environmentSchema = z
   .object({
@@ -18,6 +34,12 @@ const environmentSchema = z
       .min(100)
       .max(30_000)
       .default(2_000),
+    JOURNAL_AI_ENCRYPTION_KEY: encryptionKeySchema,
+    JOURNAL_AI_ENCRYPTION_KEY_ID: z
+      .string()
+      .regex(keyIdPattern)
+      .default("local-v1"),
+    JOURNAL_AI_IDEMPOTENCY_HMAC_KEY: encryptionKeySchema,
     IDENTITY_JWT_ISSUER: z.url(),
     IDENTITY_JWT_AUDIENCE: z.string().min(1),
     IDENTITY_JWT_KEY_ID: z.string().min(1),
@@ -25,6 +47,20 @@ const environmentSchema = z
       .string()
       .min(1)
       .transform((value) => value.replaceAll("\\n", "\n")),
+  })
+  .superRefine((environment, context) => {
+    if (
+      environment.NODE_ENV === "production" &&
+      environment.JOURNAL_AI_ENCRYPTION_KEY.equals(
+        environment.JOURNAL_AI_IDEMPOTENCY_HMAC_KEY,
+      )
+    )
+      context.addIssue({
+        code: "custom",
+        path: ["JOURNAL_AI_IDEMPOTENCY_HMAC_KEY"],
+        message:
+          "Production journal encryption and idempotency HMAC keys must be different",
+      });
   })
   .transform((environment) => ({
     NODE_ENV: environment.NODE_ENV,
@@ -35,6 +71,9 @@ const environmentSchema = z
     MONGODB_DATABASE: environment.JOURNAL_AI_MONGODB_DATABASE,
     MONGODB_CONNECTION_TIMEOUT_MS:
       environment.JOURNAL_AI_MONGODB_CONNECTION_TIMEOUT_MS,
+    JOURNAL_ENCRYPTION_KEY: environment.JOURNAL_AI_ENCRYPTION_KEY,
+    JOURNAL_ENCRYPTION_KEY_ID: environment.JOURNAL_AI_ENCRYPTION_KEY_ID,
+    JOURNAL_IDEMPOTENCY_HMAC_KEY: environment.JOURNAL_AI_IDEMPOTENCY_HMAC_KEY,
     IDENTITY_JWT_ISSUER: environment.IDENTITY_JWT_ISSUER,
     IDENTITY_JWT_AUDIENCE: environment.IDENTITY_JWT_AUDIENCE,
     IDENTITY_JWT_KEY_ID: environment.IDENTITY_JWT_KEY_ID,
@@ -62,6 +101,10 @@ export const loadConfiguration = (
           JOURNAL_AI_MONGODB_DATABASE:
             environment.JOURNAL_AI_MONGODB_DATABASE ??
             "mentalbridge_journal_ai",
+          JOURNAL_AI_ENCRYPTION_KEY:
+            environment.JOURNAL_AI_ENCRYPTION_KEY ?? localEncryptionKey,
+          JOURNAL_AI_IDEMPOTENCY_HMAC_KEY:
+            environment.JOURNAL_AI_IDEMPOTENCY_HMAC_KEY ?? localIdempotencyKey,
         }),
   };
 

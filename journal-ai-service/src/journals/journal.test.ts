@@ -1,7 +1,21 @@
 import assert from "node:assert/strict";
 import test from "node:test";
-import { NotFoundException, UnauthorizedException } from "@nestjs/common";
-import { JournalService, type Entry, type JournalStore } from "./journal.js";
+import {
+  BadRequestException,
+  ConflictException,
+  HttpException,
+  NotFoundException,
+} from "@nestjs/common";
+import {
+  JournalEncryption,
+  JournalService,
+  type Entry,
+  type JournalCursor,
+  type JournalStore,
+  type MutationCommand,
+  type Revision,
+} from "./journal.js";
+import type { ServiceConfiguration } from "../configuration/configuration.js";
 
 class MemoryStore implements JournalStore {
   entries: Entry[] = [];
@@ -23,102 +37,237 @@ class MemoryStore implements JournalStore {
       ) ?? null,
     );
   }
-  async list(
-    owner: string,
-    limit: number,
-    cursor?: string,
-    includeDeleted = false,
-  ) {
+  findByCommand(owner: string, keyHash: string) {
+    return Promise.resolve(
+      this.entries.find(
+        (entry) =>
+          entry.ownerAccountId === owner &&
+          entry.commands.some((command) => command.keyHash === keyHash),
+      ) ?? null,
+    );
+  }
+  list(owner: string, limit: number, cursor?: JournalCursor) {
     const rows = this.entries
       .filter(
         (entry) =>
           entry.ownerAccountId === owner &&
-          (includeDeleted || !entry.deleted) &&
-          (!cursor || entry._id < cursor),
+          !entry.deleted &&
+          (!cursor ||
+            entry.cursor.sortOccurredAt < cursor.sortOccurredAt ||
+            (entry.cursor.sortOccurredAt.getTime() ===
+              cursor.sortOccurredAt.getTime() &&
+              (entry.cursor.sortCreatedAt < cursor.sortCreatedAt ||
+                (entry.cursor.sortCreatedAt.getTime() ===
+                  cursor.sortCreatedAt.getTime() &&
+                  entry.cursor.entryId > cursor.entryId)))),
       )
-      .sort((left, right) => right._id.localeCompare(left._id));
+      .sort((left, right) => {
+        const occurred =
+          right.cursor.sortOccurredAt.getTime() -
+          left.cursor.sortOccurredAt.getTime();
+        if (occurred !== 0) return occurred;
+        const created =
+          right.cursor.sortCreatedAt.getTime() -
+          left.cursor.sortCreatedAt.getTime();
+        return created !== 0
+          ? created
+          : left.cursor.entryId.localeCompare(right.cursor.entryId);
+      });
     return Promise.resolve({
       rows: rows.slice(0, limit),
       hasMore: rows.length > limit,
     });
   }
-  update(owner: string, id: string, update: Partial<Entry>) {
-    const entry =
-      this.entries.find(
-        (candidate) =>
-          candidate.ownerAccountId === owner && candidate._id === id,
-      ) ?? null;
+  revise(
+    owner: string,
+    id: string,
+    expected: number,
+    revision: Revision,
+    tags: string[],
+    command: MutationCommand,
+  ) {
+    const entry = this.entries.find(
+      (item) =>
+        item.ownerAccountId === owner &&
+        item._id === id &&
+        !item.deleted &&
+        item.currentRevision === expected &&
+        !item.commands.some(
+          (itemCommand) => itemCommand.keyHash === command.keyHash,
+        ),
+    );
     if (!entry) return Promise.resolve(null);
-    Object.assign(entry, update);
+    entry.currentRevision += 1;
+    entry.revisions.push(revision);
+    entry.tags = tags;
+    entry.updatedAt = command.recordedAt;
+    entry.analysisState = "stale";
+    entry.commands.push(command);
+    return Promise.resolve(entry);
+  }
+  tombstone(
+    owner: string,
+    id: string,
+    deletedAt: Date,
+    command: MutationCommand,
+  ) {
+    const entry = this.entries.find(
+      (item) =>
+        item.ownerAccountId === owner && item._id === id && !item.deleted,
+    );
+    if (!entry) return Promise.resolve(null);
+    entry.deleted = true;
+    entry.deletedAt = deletedAt;
+    entry.updatedAt = deletedAt;
+    entry.commands.push(command);
     return Promise.resolve(entry);
   }
 }
+
+const configuration = {
+  JOURNAL_ENCRYPTION_KEY: Buffer.alloc(32, 1),
+  JOURNAL_ENCRYPTION_KEY_ID: "test-v1",
+  JOURNAL_IDEMPOTENCY_HMAC_KEY: Buffer.alloc(32, 2),
+} as ServiceConfiguration;
 const owner = "11111111-1111-4111-8111-111111111111";
 const otherOwner = "22222222-2222-4222-8222-222222222222";
-const request = (body: unknown, account = owner, key?: string) => ({
-  headers: { ...(key ? { "idempotency-key": key } : {}) },
+const request = (
+  body: unknown,
+  account = owner,
+  key = "command-key-00001",
+  revision?: number,
+) => ({
+  headers: {
+    "idempotency-key": key,
+    ...(revision ? { "if-match-revision": String(revision) } : {}),
+  },
   principal: { accountId: account, roles: ["USER"] },
   body,
 });
 const payload = {
   clientEntryId: "33333333-3333-4333-8333-333333333333",
   occurredAt: "2026-01-01T00:00:00.000Z",
-  content: "private entry",
+  content: { text: "private entry" },
   tags: ["daily"],
 };
+const service = (store = new MemoryStore()) => ({
+  store,
+  value: new JournalService(store, new JournalEncryption(configuration)),
+});
 
-void test("creates, revises, deletes and deduplicates commands", async () => {
-  const service = new JournalService(new MemoryStore());
-  const created = await service.create(request(payload, owner, "create-1"));
-  const duplicate = await service.create(request(payload, owner, "create-1"));
+void test("encrypts at rest and supports exact mutation retries", async () => {
+  const subject = service();
+  const created = await subject.value.create(request(payload));
+  assert.equal(created.content.text, "private entry");
+  const ciphertext = subject.store.entries[0]?.revisions[0]?.content.ciphertext;
+  assert.ok(Buffer.isBuffer(ciphertext));
+  assert.equal(ciphertext.includes(Buffer.from("private entry")), false);
+  const duplicate = await subject.value.create(request(payload));
   assert.equal(duplicate.id, created.id);
-  const revised = await service.revise(
-    request({ content: "revised" }, owner, "revise-1"),
+  const revised = await subject.value.revise(
+    request({ content: { text: "revised" } }, owner, "revision-key-001", 1),
     created.id,
   );
   assert.equal(revised.currentRevision, 2);
-  const retry = await service.revise(
-    request({ content: "different retry body" }, owner, "revise-1"),
+  await subject.value.revise(
+    request(
+      { content: { text: "later" }, tags: ["later"] },
+      owner,
+      "revision-key-004",
+      2,
+    ),
     created.id,
   );
-  assert.equal(retry.currentRevision, 2);
-  const tombstone = await service.remove(
-    request({}, owner, "delete-1"),
+  const retry = await subject.value.revise(
+    request({ content: { text: "revised" } }, owner, "revision-key-001", 1),
+    created.id,
+  );
+  assert.deepEqual(retry, revised);
+  assert.deepEqual(await subject.value.create(request(payload)), created);
+  await assert.rejects(
+    () =>
+      subject.value.revise(
+        request({ content: { text: "changed" } }, owner, "revision-key-001", 1),
+        created.id,
+      ),
+    ConflictException,
+  );
+});
+
+void test("allows only one concurrent writer for a revision", async () => {
+  const subject = service();
+  const created = await subject.value.create(request(payload));
+  const results = await Promise.allSettled([
+    subject.value.revise(
+      request({ content: { text: "first" } }, owner, "revision-key-002", 1),
+      created.id,
+    ),
+    subject.value.revise(
+      request({ content: { text: "second" } }, owner, "revision-key-003", 1),
+      created.id,
+    ),
+  ]);
+  assert.equal(
+    results.filter((result) => result.status === "fulfilled").length,
+    1,
+  );
+  const rejected = results.find((result) => result.status === "rejected");
+  assert.ok(
+    rejected?.status === "rejected" &&
+      rejected.reason instanceof HttpException &&
+      rejected.reason.getStatus() === 412,
+  );
+});
+
+void test("fails closed across owners and hides tombstones", async () => {
+  const subject = service();
+  const created = await subject.value.create(request(payload));
+  await assert.rejects(
+    () => subject.value.detail(request({}, otherOwner), created.id),
+    NotFoundException,
+  );
+  const tombstone = await subject.value.remove(
+    request({}, owner, "deletion-key-001"),
     created.id,
   );
   assert.equal(tombstone.deleted, true);
+  assert.deepEqual(
+    await subject.value.remove(
+      request({}, owner, "deletion-key-001"),
+      created.id,
+    ),
+    tombstone,
+  );
+  assert.equal((await subject.value.list(request({}), {})).items.length, 0);
   await assert.rejects(
-    () => service.detail(request({}, owner), created.id),
+    () => subject.value.list(request({}), { includeDeleted: "true" }),
+    BadRequestException,
+  );
+  await assert.rejects(
+    () => subject.value.detail(request({}), created.id),
     NotFoundException,
   );
 });
-void test("fails closed for missing or foreign owners", async () => {
-  const service = new JournalService(new MemoryStore());
+
+void test("rejects a revision beyond the bounded history before persistence", async () => {
+  const subject = service();
+  const created = await subject.value.create(request(payload));
+  const entry = subject.store.entries[0];
+  assert.ok(entry);
+  entry.currentRevision = 200;
+
   await assert.rejects(
-    () => service.create({ headers: {}, body: payload }),
-    UnauthorizedException,
-  );
-  const created = await service.create(request(payload));
-  await assert.rejects(
-    () => service.detail(request({}, otherOwner), created.id),
-    NotFoundException,
-  );
-});
-void test("does not expose deleted entries in the default list", async () => {
-  const service = new JournalService(new MemoryStore());
-  const created = await service.create(request(payload));
-  await service.remove(request({}, owner, "delete-2"), created.id);
-  const hidden = await service.list(request({}, owner), {});
-  assert.equal(hidden.items.length, 0);
-  const visible = await service.list(request({}), { includeDeleted: "true" });
-  assert.equal(visible.items.length, 1);
-});
-void test("preserves persistence failures instead of returning a false success", async () => {
-  const failingStore = new MemoryStore();
-  failingStore.create = () => Promise.reject(new Error("Mongo unavailable"));
-  const service = new JournalService(failingStore);
-  await assert.rejects(
-    () => service.create(request(payload)),
-    /Mongo unavailable/,
+    () =>
+      subject.value.revise(
+        request(
+          { content: { text: "one revision too many" } },
+          owner,
+          "revision-limit-001",
+          200,
+        ),
+        created.id,
+      ),
+    (error: unknown) =>
+      error instanceof ConflictException && error.getStatus() === 409,
   );
 });

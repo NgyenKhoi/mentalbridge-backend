@@ -30,12 +30,12 @@ Journal/AI owns encrypted journal entries/revisions, structured analysis results
 - [ ] JAI-03 Define journal/analysis/dataset/benchmark OpenAPI and provider result schema.
 - [ ] JAI-04 Define analysis command/result schemas and Care consent/structured-indicator contracts.
 - [ ] JAI-05 Add `migrate-mongo` validators/indexes plus PostgreSQL job/dataset `node-pg-migrate` history and data documentation.
-- [ ] JAI-06 Implement encrypted journal revisions, authorization, pagination and deletion.
+- [x] JAI-06 Implement encrypted journal revisions, authorization, pagination and deletion.
 - [ ] JAI-07 Implement consent-gated idempotent analysis orchestration, adapters, retry/dead-letter and reconciliation.
 - [ ] JAI-08 Implement dataset import/versioning and reproducible benchmark coordination.
 - [ ] JAI-09 Verify malformed AI output, prompt injection boundary, timeout/cost limit, duplicates/reordering, cross-store recovery and deletion.
 - [ ] JAI-10 Add observability/configuration, module README, and pass Node/contract/Mongo/PostgreSQL gates.
 
-## Sprint 1 boundary
+## MB-236 delivery boundary
 
-Sprint 1 covers JAI-01, the journal-only part of JAI-03/JAI-05, and JAI-06 for create/list/detail/revise/delete. It does not call an AI provider, create analysis jobs, publish Kafka analysis commands, import datasets, or run benchmarks.
+MB-236 delivers JAI-06 plus the journal-only portions of JAI-03 and JAI-05 for create/list/detail/revise/delete. The broader JAI-03 and JAI-05 items remain open because analysis, datasets, benchmarks, and PostgreSQL job history are not part of this delivery. It does not call an AI provider, create analysis jobs, publish Kafka analysis commands, import datasets, or run benchmarks.
