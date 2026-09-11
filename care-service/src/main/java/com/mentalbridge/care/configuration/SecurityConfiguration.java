@@ -39,7 +39,8 @@ public class SecurityConfiguration {
 								"/api/v1/anonymous-assessment-sessions/**")
 						.permitAll()
 						.requestMatchers("/api/v1/profile/**", "/api/v1/consents/**",
-								"/api/v1/consent-decisions/**", "/api/v1/assessments/**").hasRole("USER")
+								"/api/v1/consent-decisions/**", "/api/v1/assessments/**",
+								"/api/v1/support-evaluations/**").hasRole("USER")
 						.anyRequest().authenticated())
 				.exceptionHandling(errors -> errors.authenticationEntryPoint(securityProblems)
 						.accessDeniedHandler(securityProblems))

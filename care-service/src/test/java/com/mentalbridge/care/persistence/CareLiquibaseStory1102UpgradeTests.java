@@ -64,6 +64,12 @@ class CareLiquibaseStory1102UpgradeTests {
 				)
 				""")).isEqualTo(
 					"GAD7:gad7-vi-vn-adult-v1:PUBLISHED,PHQ9:phq9-vi-vn-capstone-v2:PUBLISHED");
+		assertThat(scalar("""
+				select string_agg(instrument || ':' || questionnaire_version, ',' order by instrument, questionnaire_version)
+				from support_policy_eligible_definition
+				where policy_version = 'mb-support-routing-capstone-v1'
+				""")).isEqualTo(
+					"GAD7:gad7-vi-vn-adult-v1,PHQ9:phq9-vi-vn-capstone-v1,PHQ9:phq9-vi-vn-capstone-v2");
 	}
 
 	private void migrate(String changelog) throws Exception {

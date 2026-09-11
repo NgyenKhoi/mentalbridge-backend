@@ -47,9 +47,9 @@ Do not use "diagnosis", "patient", "treatment", or "clinical conclusion" in API/
 
 ### Safety status and support tier
 
-Care calculates safety status synchronously from the approved questionnaire-specific rule. MB-179 approves `mb-support-routing-capstone-v1` as a non-executable product blueprint; Care must not return a support tier until its runtime gate passes. AI is not an input to this Capstone routing version and can never define or override standardized scoring or safety.
+Care calculates safety status synchronously from the approved questionnaire-specific rule. Story 1103 publishes `mb-support-routing-capstone-v1` for bounded authenticated controlled-Capstone routing from one explicit compatible PHQ-9/GAD-7 pair. AI is not an input to this routing version and can never define or override standardized scoring or safety.
 
-Definition-only Capstone routing inputs:
+Controlled-Capstone routing inputs:
 
 - complete immutable PHQ-9 or GAD-7 results from published versions, explicitly selected in the same user-initiated evaluation;
 - the independent PHQ-9 item-9 safety status where applicable.
@@ -59,7 +59,7 @@ Unpublished GAD-7 is not an eligible input. A future policy may add automatic la
 Independent outputs:
 
 - `NEGATIVE_SAFETY_SCREEN` or `POSITIVE_SAFETY_SCREEN` for the PHQ-9 item-9 rule;
-- after the separate runtime gate passes, a support tier such as `SELF_GUIDED_SUPPORT`, `PROFESSIONAL_SUPPORT_RECOMMENDED`, or `SAFETY_FOLLOW_UP_RECOMMENDED`;
+- a support tier of `SELF_GUIDED_SUPPORT`, `PROFESSIONAL_SUPPORT_RECOMMENDED`, or `SAFETY_FOLLOW_UP_RECOMMENDED`;
 - reason codes, input references, policy version, and calculation time;
 - approved catalogue activity/content versions selected.
 
