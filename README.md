@@ -110,6 +110,7 @@ Safety handling must be deterministic, immediate, auditable, non-paywalled, and 
 - [Architecture](docs/architecture.md)
 - [Node.js service stack](docs/nodejs-service-stack.md)
 - [Sprint 1 backend backlog guide](docs/sprint-1-backlog-guide.md)
+- [MB-273 initial-check release readiness](docs/sprints/mb-273-initial-check-release-readiness.md)
 - [NestJS service framework ADR](docs/adr/0006-nestjs-nodejs-service-framework.md)
 - [Eureka discovery and OpenFeign ADR](docs/adr/0002-eureka-discovery-and-openfeign-clients.md)
 - [Kiến trúc module microservices và ngôn ngữ đã chốt](docs/microservice-module-suggestions.md)
