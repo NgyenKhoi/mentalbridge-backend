@@ -966,7 +966,7 @@ Durable Journal/AI orchestration state for one provider analysis of one journal 
 | `user_id` | External Care profile UUID owning the journal and result; not an authorization substitute. |
 | `journal_entry_id` | Journal/AI-owned logical entry UUID being analyzed. |
 | `journal_revision` | Positive immutable revision number ensuring results cannot be attached to edited text. |
-| `provider` | Selected execution provider or PhoBERT worker for this reproducible run. |
+| `provider` | Selected versioned execution provider for this reproducible run. Initial provider scope is OpenAI/Gemini; an optional PhoBERT value is valid only after ADR 0011's activation gate passes. |
 | `prompt_version` | Exact prompt/input contract version used to interpret and validate the result. |
 | `status` | Authoritative asynchronous job lifecycle used by REST polling and workers. |
 | `attempt_count` | Number of claimed execution attempts used to enforce bounded retry. |

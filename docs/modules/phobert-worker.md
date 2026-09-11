@@ -1,8 +1,14 @@
 # PhoBERT Worker specification
 
+## Status
+
+`PROPOSED / DEFERRED` under ADR 0011. This optional Vietnamese NLP benchmark baseline is not required for the initial OpenAI/Gemini implementation, current Sprint scope, Compose topology, readiness, or release flow. No runtime implementation currently exists.
+
 ## Business boundary
 
-PhoBERT Worker executes inference for an explicitly versioned command and emits a structured result. It owns no account, journal, consent, safety/support, dataset, benchmark, or notification truth; it exposes no business CRUD API. Journal/AI owns job/run state and dataset access authorization.
+If activated, PhoBERT Worker executes inference for an explicitly versioned narrow classification command and emits a structured result. It owns no account, journal, consent, safety/support, dataset, benchmark, or notification truth; it exposes no business CRUD API. Journal/AI owns job/run state, dataset access authorization, provider comparison, and normalized analysis results.
+
+Pretrained PhoBERT is not treated as an emotion detector. Activation requires an approved label taxonomy, governed labeled dataset and evaluation split, deterministic preprocessing, and a compatible fine-tuned checkpoint with immutable version and checksum.
 
 ## Use cases and acceptance
 
@@ -19,7 +25,9 @@ PhoBERT Worker executes inference for an explicitly versioned command and emits 
 - Event JSON Schema is the cross-language source of truth. Model artifacts and configuration are immutable inputs; business state remains in Journal/AI.
 - Tests use synthetic Vietnamese text and a lightweight deterministic model double for CI; explicit integration environments may test the real pinned artifact.
 
-## Ordered tasks
+## Deferred activation tasks
+
+These tasks are not part of the current runtime or Sprint scope.
 
 - [ ] PB-01 Scaffold Python packaging, formatting, type checking, tests and container build.
 - [ ] PB-02 Agree command/result, label mapping, preprocessing, model artifact and input-access contracts with Journal/AI.

@@ -12,7 +12,7 @@ Journal/AI owns encrypted journal entries/revisions, structured analysis results
 | Analysis | Check current consent, create one job per requested revision, normalize provider output | No consent saves journal without analysis; duplicate request is idempotent; schema-invalid/provider failure is retryable/terminal while journal remains readable |
 | Specialist read | Return only entries/indicators allowed by a current Care decision | Exact subject/scope/range/entry authorization; fail closed; minimized audited response |
 | Dataset governance | Import licensed de-identified datasets and immutable versions | Production journals excluded by default; private assets; validation rejects label/schema/leakage violations |
-| Benchmark | Run same split/config through LLM and PhoBERT and compare | Reproducible versions/split; per-class metrics, latency, errors and cost; retry never duplicates predictions |
+| Benchmark | Run the same split/config through configured providers; start with OpenAI and Gemini, with PhoBERT optional later | Reproducible versions/split; per-class metrics, latency, errors and cost; retry never duplicates predictions; no dependency on the deferred worker |
 
 ## Implementation design
 
@@ -21,6 +21,7 @@ Journal/AI owns encrypted journal entries/revisions, structured analysis results
 - Define OpenAPI, Kafka JSON Schemas, provider output schema, and MongoDB validation/migrations before handlers. TypeScript strict plus runtime validation is mandatory.
 - Use recoverable Mongo publication and PostgreSQL transactional outbox as appropriate; never claim cross-store atomicity. Model job states and reconciliation explicitly.
 - AI adapters receive minimized decrypted content only for the approved operation; no chain-of-thought/raw provider response persistence by default.
+- Initial AI provider and benchmark work remains provider-neutral but does not require `phobert-worker`; ADR 0011 defines the separate activation gate for that optional baseline.
 
 ## Ordered tasks
 
