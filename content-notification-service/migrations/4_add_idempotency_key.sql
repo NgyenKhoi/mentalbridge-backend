@@ -1,4 +1,5 @@
--- Add idempotency key column for create operation idempotency
+-- Up Migration
+-- Legacy idempotency field retained for migration compatibility; command replay uses migration 5.
 ALTER TABLE resource
   ADD COLUMN idempotency_key VARCHAR(128);
 

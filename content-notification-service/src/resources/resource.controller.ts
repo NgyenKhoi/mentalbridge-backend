@@ -4,6 +4,7 @@ import {
   Controller,
   Delete,
   Get,
+  Headers,
   HttpCode,
   HttpStatus,
   Inject,
@@ -12,6 +13,7 @@ import {
   Patch,
   Post,
   Query,
+  Req,
   ConflictException,
   UnprocessableEntityException,
   UseGuards,
@@ -20,6 +22,7 @@ import type {
   ResourceListResult,
   ResourceCategory,
   ResourceDetail,
+  PublicResourceDetail,
   ResourceSummary,
 } from './resource.types.js';
 import { RESOURCE_SERVICE_TOKEN } from '../application.tokens.js';
@@ -28,16 +31,17 @@ import { Public } from '../auth/public.decorator.js';
 import {
   CreateResourceDtoSchema,
   UpdateResourceDtoSchema,
-  PublishResourceDtoSchema,
+  ResourceLocaleSchema,
   type CreateResourceDto,
   type UpdateResourceDto,
-  type PublishResourceDto,
 } from './resource.dto.js';
 import { ZodError } from 'zod';
 import { JwtAuthGuard } from '../auth/jwt-auth.guard.js';
 import { Roles } from '../auth/roles.decorator.js';
+import { RolesGuard } from '../auth/roles.guard.js';
 import { CurrentUser } from '../auth/current-user.decorator.js';
 import type { AuthenticatedUser } from '../auth/jwt.strategy.js';
+import type { Request } from 'express';
 
 const UUID_RE = /^[\da-f]{8}-[\da-f]{4}-[\da-f]{4}-[\da-f]{4}-[\da-f]{12}$/i;
 const VALID_CATEGORIES = new Set<ResourceCategory>([
@@ -48,6 +52,10 @@ const VALID_CATEGORIES = new Set<ResourceCategory>([
   'JOURNALING',
   'COMMUNITY',
 ]);
+
+function requestCorrelationId(request: Request): string {
+  return String(request.headers['x-correlation-id']);
+}
 
 @Controller('api/v1/resources')
 export class ResourceController {
@@ -64,6 +72,10 @@ export class ResourceController {
     @Query('limit') limitParam?: string,
     @Query('cursor') cursor?: string,
   ): Promise<ResourceListResult> {
+    const parsedLocale = locale === undefined ? undefined : ResourceLocaleSchema.safeParse(locale);
+    if (parsedLocale !== undefined && !parsedLocale.success) {
+      throw new BadRequestException('locale must be a valid BCP 47 tag');
+    }
     if (category !== undefined && !VALID_CATEGORIES.has(category as ResourceCategory)) {
       throw new BadRequestException(`Invalid category: ${category}`);
     }
@@ -85,7 +97,7 @@ export class ResourceController {
     }
 
     return this.resourceService.listPublished({
-      locale: locale ?? undefined,
+      locale: parsedLocale?.data,
       category: category as ResourceCategory | undefined,
       limit,
       cursor: cursor ?? undefined,
@@ -93,7 +105,7 @@ export class ResourceController {
   }
 
   @Get('admin/list')
-  @UseGuards(JwtAuthGuard)
+  @UseGuards(JwtAuthGuard, RolesGuard)
   @Roles('ADMIN')
   async listAdminResources(
     @Query('locale') locale?: string,
@@ -102,6 +114,10 @@ export class ResourceController {
     @Query('limit') limitParam?: string,
     @Query('cursor') cursor?: string,
   ): Promise<ResourceListResult> {
+    const parsedLocale = locale === undefined ? undefined : ResourceLocaleSchema.safeParse(locale);
+    if (parsedLocale !== undefined && !parsedLocale.success) {
+      throw new BadRequestException('locale must be a valid BCP 47 tag');
+    }
     if (category !== undefined && !VALID_CATEGORIES.has(category as ResourceCategory)) {
       throw new BadRequestException(`Invalid category: ${category}`);
     }
@@ -127,7 +143,7 @@ export class ResourceController {
     }
 
     return this.resourceService.listAdmin({
-      locale: locale ?? undefined,
+      locale: parsedLocale?.data,
       category: category as ResourceCategory | undefined,
       status: status as 'DRAFT' | 'PUBLISHED' | 'ARCHIVED' | undefined,
       limit,
@@ -135,33 +151,52 @@ export class ResourceController {
     });
   }
 
-  @Get(':id')
-  @Public()
-  async getResource(@Param('id') id: string): Promise<ResourceDetail> {
+  @Get('admin/:id')
+  @UseGuards(JwtAuthGuard, RolesGuard)
+  @Roles('ADMIN')
+  async getAdminResource(@Param('id') id: string): Promise<ResourceDetail> {
     if (!UUID_RE.test(id)) {
       throw new BadRequestException('Invalid resource ID');
     }
-    const resource = await this.resourceService.getById(id);
+    const resource = await this.resourceService.getAdminById(id);
     if (!resource) {
       throw new NotFoundException('Resource not found');
     }
-    // Public endpoint: only return PUBLISHED resources
-    if (resource.status !== 'PUBLISHED') {
+    return resource;
+  }
+
+  @Get(':id')
+  @Public()
+  async getResource(
+    @Param('id') id: string,
+    @Query('locale') locale = 'vi-VN',
+  ): Promise<PublicResourceDetail> {
+    if (!UUID_RE.test(id)) {
+      throw new BadRequestException('Invalid resource ID');
+    }
+    const parsedLocale = ResourceLocaleSchema.safeParse(locale);
+    if (!parsedLocale.success) {
+      throw new BadRequestException('locale must be a valid BCP 47 tag');
+    }
+    const resource = await this.resourceService.getPublishedById(id, parsedLocale.data);
+    if (!resource) {
       throw new NotFoundException('Resource not found');
     }
     return resource;
   }
 
   @Post()
-  @UseGuards(JwtAuthGuard)
+  @UseGuards(JwtAuthGuard, RolesGuard)
   @Roles('ADMIN')
   @HttpCode(HttpStatus.CREATED)
   async createResource(
     @Body() body: unknown,
-    @Query('idempotencyKey') idempotencyKey?: string,
+    @Headers('idempotency-key') idempotencyKey: string | undefined,
+    @CurrentUser() user: AuthenticatedUser,
+    @Req() request: Request,
   ): Promise<ResourceSummary> {
-    if (idempotencyKey && !/^[\w-]{1,128}$/.test(idempotencyKey)) {
-      throw new BadRequestException('idempotencyKey must be alphanumeric, max 128 characters');
+    if (!idempotencyKey || !/^[A-Za-z0-9_-]{1,128}$/.test(idempotencyKey)) {
+      throw new BadRequestException('Idempotency-Key header is required and must be opaque ASCII');
     }
 
     let dto: CreateResourceDto;
@@ -191,8 +226,11 @@ export class ResourceController {
         summary: dto.summary,
         contentBody: dto.contentBody ?? null,
         externalUrl: dto.externalUrl ?? null,
+        effectiveAt: dto.effectiveAt ?? null,
+        expiresAt: dto.expiresAt ?? null,
       },
       idempotencyKey,
+      { actorId: user.accountId, correlationId: requestCorrelationId(request) },
     );
 
     return {
@@ -210,12 +248,14 @@ export class ResourceController {
   }
 
   @Patch(':id')
-  @UseGuards(JwtAuthGuard)
+  @UseGuards(JwtAuthGuard, RolesGuard)
   @Roles('ADMIN')
   async updateResource(
     @Param('id') id: string,
     @Query('version') versionParam: string,
     @Body() body: unknown,
+    @CurrentUser() user: AuthenticatedUser,
+    @Req() request: Request,
   ): Promise<ResourceSummary> {
     if (!UUID_RE.test(id)) {
       throw new BadRequestException('Invalid resource ID');
@@ -245,10 +285,14 @@ export class ResourceController {
       throw error;
     }
 
-    const resource = await this.resourceService.update(id, {
-      ...dto,
-      version,
-    });
+    const resource = await this.resourceService.update(
+      id,
+      {
+        ...dto,
+        version,
+      },
+      { actorId: user.accountId, correlationId: requestCorrelationId(request) },
+    );
 
     if (!resource) {
       throw new ConflictException({
@@ -274,15 +318,28 @@ export class ResourceController {
   }
 
   @Delete(':id')
-  @UseGuards(JwtAuthGuard)
+  @UseGuards(JwtAuthGuard, RolesGuard)
   @Roles('ADMIN')
   @HttpCode(HttpStatus.NO_CONTENT)
-  async deleteResource(@Param('id') id: string): Promise<void> {
+  async deleteResource(
+    @Param('id') id: string,
+    @Query('version') versionParam: string,
+    @CurrentUser() user: AuthenticatedUser,
+    @Req() request: Request,
+  ): Promise<void> {
     if (!UUID_RE.test(id)) {
       throw new BadRequestException('Invalid resource ID');
     }
 
-    const deleted = await this.resourceService.delete(id);
+    const version = parseInt(versionParam, 10);
+    if (isNaN(version) || version < 0) {
+      throw new BadRequestException('Valid version query parameter is required');
+    }
+
+    const deleted = await this.resourceService.delete(id, version, {
+      actorId: user.accountId,
+      correlationId: requestCorrelationId(request),
+    });
     if (!deleted) {
       throw new ConflictException({
         type: 'https://mentalbridge.io/errors/INVALID_STATE_TRANSITION',
@@ -294,14 +351,14 @@ export class ResourceController {
   }
 
   @Post(':id/publish')
-  @UseGuards(JwtAuthGuard)
+  @UseGuards(JwtAuthGuard, RolesGuard)
   @Roles('ADMIN')
   async publishResource(
     @Param('id') id: string,
     @Query('version') versionParam: string,
-    @Body() body: unknown,
     @CurrentUser() user: AuthenticatedUser,
-  ): Promise<ResourceSummary> {
+    @Req() request: Request,
+  ): Promise<never> {
     if (!UUID_RE.test(id)) {
       throw new BadRequestException('Invalid resource ID');
     }
@@ -311,61 +368,27 @@ export class ResourceController {
       throw new BadRequestException('Valid version query parameter is required');
     }
 
-    let dto: PublishResourceDto;
-    try {
-      dto = PublishResourceDtoSchema.parse(body);
-    } catch (error) {
-      if (error instanceof ZodError) {
-        throw new UnprocessableEntityException({
-          type: 'https://mentalbridge.io/errors/VALIDATION_ERROR',
-          title: 'Validation failed',
-          status: 422,
-          code: 'VALIDATION_ERROR',
-          fieldViolations: error.issues.map((e) => ({
-            field: e.path.join('.'),
-            message: e.message,
-          })),
-        });
-      }
-      throw error;
-    }
-
-    const resource = await this.resourceService.publish(id, {
-      reviewedBy: user.accountId,
-      version,
-      effectiveAt: dto.effectiveAt ?? null,
-      expiresAt: dto.expiresAt ?? null,
+    await this.resourceService.auditPublishBlocked(id, version, {
+      actorId: user.accountId,
+      correlationId: requestCorrelationId(request),
     });
 
-    if (!resource) {
-      throw new ConflictException({
-        type: 'https://mentalbridge.io/errors/INVALID_STATE_TRANSITION',
-        title: 'Cannot publish non-DRAFT resource or version mismatch',
-        status: 409,
-        code: 'INVALID_STATE_TRANSITION',
-      });
-    }
-
-    return {
-      id: resource.id,
-      category: resource.category,
-      locale: resource.locale,
-      title: resource.title,
-      summary: resource.summary,
-      externalUrl: resource.externalUrl,
-      status: resource.status,
-      reviewedAt: resource.reviewedAt,
-      createdAt: resource.createdAt,
-      updatedAt: resource.updatedAt,
-    };
+    throw new ConflictException({
+      type: 'https://mentalbridge.io/errors/REVIEW_APPROVAL_REQUIRED',
+      title: 'An approved review decision is required before publication',
+      status: 409,
+      code: 'REVIEW_APPROVAL_REQUIRED',
+    });
   }
 
   @Post(':id/archive')
-  @UseGuards(JwtAuthGuard)
+  @UseGuards(JwtAuthGuard, RolesGuard)
   @Roles('ADMIN')
   async archiveResource(
     @Param('id') id: string,
     @Query('version') versionParam: string,
+    @CurrentUser() user: AuthenticatedUser,
+    @Req() request: Request,
   ): Promise<ResourceSummary> {
     if (!UUID_RE.test(id)) {
       throw new BadRequestException('Invalid resource ID');
@@ -376,7 +399,10 @@ export class ResourceController {
       throw new BadRequestException('Valid version query parameter is required');
     }
 
-    const resource = await this.resourceService.archive(id, version);
+    const resource = await this.resourceService.archive(id, version, {
+      actorId: user.accountId,
+      correlationId: requestCorrelationId(request),
+    });
 
     if (!resource) {
       throw new ConflictException({

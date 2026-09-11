@@ -17,7 +17,6 @@ import { ResourceService } from './resources/resource.service.js';
 import { AuthModule } from './auth/auth.module.js';
 import { JwtStrategy } from './auth/jwt.strategy.js';
 import { RolesGuard } from './auth/roles.guard.js';
-import { APP_GUARD } from '@nestjs/core';
 
 export interface ApplicationDependencies {
   readonly readinessProbe?: ReadinessProbe;
@@ -62,7 +61,7 @@ export const createAppModule = (
       serviceProvider,
       JwtStrategy,
       {
-        provide: APP_GUARD,
+        provide: RolesGuard,
         useFactory: (reflector: Reflector) => new RolesGuard(reflector),
         inject: [Reflector],
       },

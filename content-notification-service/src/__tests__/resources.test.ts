@@ -207,6 +207,18 @@ describe('GET /api/v1/resources', () => {
       .expect(400);
   });
 
+  it('rejects an invalid BCP 47 locale', async () => {
+    app = await createApplication(configuration, {
+      readinessProbe: { check: async () => undefined },
+      resourceRepository: makeRepository({ listPublished: async () => [] }),
+    });
+    await app.init();
+
+    await request(app.getHttpServer() as Server)
+      .get('/api/v1/resources?locale=not_a_locale')
+      .expect(400);
+  });
+
   it('rejects invalid limit', async () => {
     app = await createApplication(configuration, {
       readinessProbe: { check: async () => undefined },
@@ -276,6 +288,7 @@ describe('GET /api/v1/resources', () => {
   });
 
   it('echoes the x-correlation-id header', async () => {
+    const correlationId = 'a13e4567-e89b-42d3-a456-426614174000';
     app = await createApplication(configuration, {
       readinessProbe: { check: async () => undefined },
       resourceRepository: makeRepository({ listPublished: async () => [] }),
@@ -284,8 +297,8 @@ describe('GET /api/v1/resources', () => {
 
     await request(app.getHttpServer() as Server)
       .get('/api/v1/resources')
-      .set('x-correlation-id', 'test-corr-id')
-      .expect('x-correlation-id', 'test-corr-id')
+      .set('x-correlation-id', correlationId)
+      .expect('x-correlation-id', correlationId)
       .expect(200);
   });
 

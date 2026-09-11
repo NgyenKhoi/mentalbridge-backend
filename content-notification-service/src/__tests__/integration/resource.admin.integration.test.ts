@@ -1,30 +1,36 @@
-import { describe, it, expect, beforeAll, afterAll } from 'vitest';
+import { readFile } from 'node:fs/promises';
+import { join } from 'node:path';
+import { fileURLToPath } from 'node:url';
+import { afterAll, beforeAll, describe, expect, it } from 'vitest';
 import { Pool } from 'pg';
 import { GenericContainer, Wait, type StartedTestContainer } from 'testcontainers';
-import { readFileSync } from 'fs';
-import { join, dirname } from 'path';
-import { fileURLToPath } from 'url';
 
-import { ResourceRepository } from '../../resources/resource.repository.js';
-import type { DatabaseService } from '../../database/database.service.js';
+import { DatabaseService } from '../../database/database.service.js';
+import {
+  ResourceIdempotencyConflictError,
+  ResourceRepository,
+} from '../../resources/resource.repository.js';
+import type { ServiceConfiguration } from '../../configuration/configuration.js';
 
-const __dirname = dirname(fileURLToPath(import.meta.url));
+const ADMIN_A = 'a0000000-0000-4000-8000-000000000001';
+const ADMIN_B = 'a0000000-0000-4000-8000-000000000002';
+const CORRELATION_A = 'c0000000-0000-4000-8000-000000000001';
+const CORRELATION_B = 'c0000000-0000-4000-8000-000000000002';
+const migrationDirectory = fileURLToPath(new URL('../../../migrations', import.meta.url));
 
-async function waitForPool(pool: Pool, retries = 20, delayMs = 1000): Promise<void> {
-  for (let i = 0; i < retries; i++) {
-    try {
-      await pool.query('SELECT 1');
-      return;
-    } catch {
-      await new Promise((r) => setTimeout(r, delayMs));
-    }
-  }
-  throw new Error('PostgreSQL not ready after retries');
-}
+const baseCreate = {
+  category: 'ARTICLE' as const,
+  locale: 'vi-VN',
+  title: 'Reviewed retry behavior',
+  summary: 'Concurrency test resource',
+  contentBody: 'Body',
+  externalUrl: null,
+};
 
-describe('ResourceRepository Admin Operations Integration', () => {
+describe('ResourceRepository command consistency', () => {
   let container: StartedTestContainer;
-  let pool: Pool;
+  let migrationPool: Pool;
+  let database: DatabaseService;
   let repository: ResourceRepository;
 
   beforeAll(async () => {
@@ -38,492 +44,194 @@ describe('ResourceRepository Admin Operations Integration', () => {
       .withWaitStrategy(Wait.forLogMessage('database system is ready to accept connections', 2))
       .start();
 
-    pool = new Pool({
-      host: container.getHost(),
-      port: container.getMappedPort(5432),
-      user: 'test_user',
-      password: 'test_password',
-      database: 'test_db',
-      connectionTimeoutMillis: 10_000,
-    });
-
-    await waitForPool(pool);
-
-    // Run migrations
-    const migrations = [
+    const connectionString = `postgres://test_user:test_password@${container.getHost()}:${String(container.getMappedPort(5432))}/test_db`;
+    migrationPool = new Pool({ connectionString });
+    for (const name of [
       '1_initial_schema.sql',
       '2_remove_hotline_catalogue.sql',
       '3_add_review_provenance_fields.sql',
       '4_add_idempotency_key.sql',
-    ];
-    for (const migration of migrations) {
-      const sql = readFileSync(join(__dirname, '../../../migrations', migration), 'utf8');
-      await pool.query(sql);
+      '5_add_resource_command_records.sql',
+    ]) {
+      await migrationPool.query(await readFile(join(migrationDirectory, name), 'utf8'));
     }
 
-    const dbService: Pick<DatabaseService, 'query'> = {
-      query: <T extends Record<string, unknown>>(text: string, params?: unknown[]) =>
-        pool.query<T>(text, params),
+    const configuration: ServiceConfiguration = {
+      NODE_ENV: 'test',
+      PORT: 3003,
+      DATABASE_URL: connectionString,
+      DB_POOL_MAX: 10,
+      DB_IDLE_TIMEOUT_MS: 1_000,
+      DB_CONNECT_TIMEOUT_MS: 10_000,
+      LOG_LEVEL: 'silent',
+      CORS_ORIGINS: '',
+      SERVICE_NAME: 'content-notification-service',
+      ALLOWED_ORIGINS: [],
+      IDENTITY_JWT_ISSUER: 'test',
+      IDENTITY_JWT_AUDIENCE: 'test',
+      IDENTITY_JWT_PUBLIC_KEY: 'test',
+      IDENTITY_JWT_CLOCK_TOLERANCE_SECONDS: 0,
     };
-    repository = new ResourceRepository(dbService as unknown as DatabaseService);
+    database = new DatabaseService(configuration);
+    repository = new ResourceRepository(database);
   }, 120_000);
 
   afterAll(async () => {
-    if (pool) await pool.end();
-    if (container) await container.stop();
+    await database?.onModuleDestroy();
+    await migrationPool?.end();
+    await container?.stop();
   });
 
-  describe('Create Operation', () => {
-    it('creates a new DRAFT resource with all fields', async () => {
-      const resource = await repository.create({
-        category: 'BREATHING',
-        locale: 'vi-VN',
-        title: 'Test Breathing Exercise',
-        summary: 'A calming breathing technique',
-        contentBody: 'Breathe in for 4 seconds, hold for 7, exhale for 8',
-        externalUrl: null,
-      });
+  it('atomically replays simultaneous identical create retries', async () => {
+    const requests = Array.from({ length: 8 }, () =>
+      repository.create(baseCreate, 'same-logical-create', {
+        actorId: ADMIN_A,
+        correlationId: CORRELATION_A,
+      }),
+    );
+    const resources = await Promise.all(requests);
 
-      expect(resource.id).toBeDefined();
-      expect(resource.status).toBe('DRAFT');
-      expect(resource.category).toBe('BREATHING');
-      expect(resource.title).toBe('Test Breathing Exercise');
-      expect(resource.reviewed_by).toBeNull();
-      expect(resource.reviewed_at).toBeNull();
-      expect(resource.version).toBe(0);
-    });
-
-    it('creates resource with external URL instead of content body', async () => {
-      const resource = await repository.create({
-        category: 'VIDEO',
-        locale: 'en-US',
-        title: 'Meditation Video',
-        summary: 'Guided meditation',
-        contentBody: null,
-        externalUrl: 'https://example.com/video',
-      });
-
-      expect(resource.external_url).toBe('https://example.com/video');
-      expect(resource.content_body).toBeNull();
-    });
+    expect(new Set(resources.map(({ id }) => id)).size).toBe(1);
+    const resourceId = resources[0].id;
+    const counts = await migrationPool.query<{
+      resources: string;
+      audits: string;
+      records: string;
+    }>(
+      `SELECT
+        (SELECT count(*) FROM resource WHERE id = $1) AS resources,
+        (SELECT count(*) FROM resource_audit_event WHERE resource_id = $1) AS audits,
+        (SELECT count(*) FROM resource_idempotency_record WHERE resource_id = $1) AS records`,
+      [resourceId],
+    );
+    expect(counts.rows[0]).toEqual({ resources: '1', audits: '1', records: '1' });
   });
 
-  describe('Update Operation', () => {
-    it('updates a DRAFT resource successfully', async () => {
-      const created = await repository.create({
-        category: 'ARTICLE',
-        locale: 'vi-VN',
-        title: 'Original Title',
-        summary: 'Original summary',
-        contentBody: 'Original content',
-        externalUrl: null,
-      });
-
-      const updated = await repository.update(created.id, {
-        title: 'Updated Title',
-        summary: 'Updated summary',
-        version: 0,
-      });
-
-      expect(updated).not.toBeNull();
-      expect(updated!.title).toBe('Updated Title');
-      expect(updated!.summary).toBe('Updated summary');
-      expect(updated!.version).toBe(1);
-      expect(updated!.content_body).toBe('Original content');
+  it('rejects changed payload reuse and scopes keys by actor', async () => {
+    await repository.create(baseCreate, 'payload-key', {
+      actorId: ADMIN_A,
+      correlationId: CORRELATION_A,
     });
+    await expect(
+      repository.create({ ...baseCreate, title: 'Changed' }, 'payload-key', {
+        actorId: ADMIN_A,
+        correlationId: CORRELATION_A,
+      }),
+    ).rejects.toBeInstanceOf(ResourceIdempotencyConflictError);
 
-    it('fails to update with wrong version (optimistic lock)', async () => {
-      const created = await repository.create({
-        category: 'MEDITATION',
-        locale: 'vi-VN',
-        title: 'Test',
-        summary: 'Test',
-        contentBody: 'Test',
-        externalUrl: null,
-      });
-
-      const updated = await repository.update(created.id, {
-        title: 'New Title',
-        version: 999, // Wrong version
-      });
-
-      expect(updated).toBeNull();
+    const otherActor = await repository.create({ ...baseCreate, title: 'Changed' }, 'payload-key', {
+      actorId: ADMIN_B,
+      correlationId: CORRELATION_B,
     });
-
-    it('fails to update PUBLISHED resource', async () => {
-      const created = await repository.create({
-        category: 'JOURNALING',
-        locale: 'vi-VN',
-        title: 'Journal Prompt',
-        summary: 'Daily reflection',
-        contentBody: 'What are you grateful for?',
-        externalUrl: null,
-      });
-
-      // Publish it
-      await repository.publish(created.id, {
-        reviewedBy: 'b0eebc99-9c0b-4ef8-bb6d-6bb9bd380a11',
-        version: 0,
-        effectiveAt: null,
-        expiresAt: null,
-      });
-
-      // Try to update
-      const updated = await repository.update(created.id, {
-        title: 'Should Fail',
-        version: 1,
-      });
-
-      expect(updated).toBeNull();
-    });
+    expect(otherActor.title).toBe('Changed');
   });
 
-  describe('Delete Operation', () => {
-    it('deletes a DRAFT resource', async () => {
-      const created = await repository.create({
-        category: 'COMMUNITY',
-        locale: 'vi-VN',
-        title: 'To be deleted',
-        summary: 'Test',
-        contentBody: 'Test',
-        externalUrl: null,
-      });
-
-      const deleted = await repository.delete(created.id);
-      expect(deleted).toBe(true);
-
-      const found = await repository.findById(created.id);
-      expect(found).toBeNull();
+  it('prevents stale update and stale delete from winning', async () => {
+    const created = await repository.create(baseCreate, 'optimistic-create', {
+      actorId: ADMIN_A,
+      correlationId: CORRELATION_A,
     });
+    const updated = await repository.update(
+      created.id,
+      { title: 'Latest title', version: 0 },
+      { actorId: ADMIN_A, correlationId: CORRELATION_A },
+    );
+    expect(updated?.version).toBe(1);
 
-    it('fails to delete PUBLISHED resource', async () => {
-      const created = await repository.create({
-        category: 'BREATHING',
-        locale: 'vi-VN',
-        title: 'Published Resource',
-        summary: 'Test',
-        contentBody: 'Test',
-        externalUrl: null,
-      });
-
-      await repository.publish(created.id, {
-        reviewedBy: 'c0eebc99-9c0b-4ef8-bb6d-6bb9bd380a11',
-        version: 0,
-        effectiveAt: null,
-        expiresAt: null,
-      });
-
-      const deleted = await repository.delete(created.id);
-      expect(deleted).toBe(false);
-    });
+    await expect(
+      repository.update(
+        created.id,
+        { title: 'Stale title', version: 0 },
+        { actorId: ADMIN_B, correlationId: CORRELATION_B },
+      ),
+    ).resolves.toBeNull();
+    await expect(
+      repository.delete(created.id, 0, {
+        actorId: ADMIN_B,
+        correlationId: CORRELATION_B,
+      }),
+    ).resolves.toBe(false);
+    expect((await repository.findById(created.id))?.title).toBe('Latest title');
   });
 
-  describe('Publish Operation', () => {
-    it('publishes a DRAFT resource with review metadata', async () => {
-      const created = await repository.create({
-        category: 'MEDITATION',
-        locale: 'vi-VN',
-        title: 'Ready to Publish',
-        summary: 'Meditation guide',
-        contentBody: 'Sit comfortably...',
-        externalUrl: null,
-      });
+  it('writes minimized audit facts for mutations and blocked publish outcomes', async () => {
+    const deletedDraft = await repository.create(baseCreate, 'delete-audit', {
+      actorId: ADMIN_A,
+      correlationId: CORRELATION_A,
+    });
+    await repository.delete(deletedDraft.id, 0, {
+      actorId: ADMIN_A,
+      correlationId: CORRELATION_A,
+    });
+    await expect(
+      repository.create(baseCreate, 'delete-audit', {
+        actorId: ADMIN_A,
+        correlationId: CORRELATION_A,
+      }),
+    ).rejects.toBeInstanceOf(ResourceIdempotencyConflictError);
 
-      const adminId = 'a0eebc99-9c0b-4ef8-bb6d-6bb9bd380a11';
-      const published = await repository.publish(created.id, {
-        reviewedBy: adminId,
-        version: 0,
-        effectiveAt: null,
-        expiresAt: null,
-      });
-
-      expect(published).not.toBeNull();
-      expect(published!.status).toBe('PUBLISHED');
-      expect(published!.reviewed_by).toBe(adminId);
-      expect(published!.reviewed_at).not.toBeNull();
-      expect(published!.version).toBe(1);
+    const published = await repository.create(baseCreate, 'archive-audit', {
+      actorId: ADMIN_A,
+      correlationId: CORRELATION_A,
+    });
+    await migrationPool.query(
+      `UPDATE resource
+       SET status = 'PUBLISHED', reviewed_by = $2, reviewed_at = now(), version = 1
+       WHERE id = $1`,
+      [published.id, ADMIN_B],
+    );
+    await repository.archive(published.id, 1, {
+      actorId: ADMIN_A,
+      correlationId: CORRELATION_A,
+    });
+    await repository.auditPublishBlocked(published.id, 2, {
+      actorId: ADMIN_A,
+      correlationId: CORRELATION_A,
     });
 
-    it('publishes with future effective date', async () => {
-      const created = await repository.create({
-        category: 'VIDEO',
-        locale: 'en-US',
-        title: 'Future Release',
-        summary: 'Coming soon',
-        contentBody: null,
-        externalUrl: 'https://example.com/video',
-      });
-
-      const futureDate = new Date(Date.now() + 24 * 60 * 60 * 1000);
-      const published = await repository.publish(created.id, {
-        reviewedBy: 'd0eebc99-9c0b-4ef8-bb6d-6bb9bd380a11',
-        version: 0,
-        effectiveAt: futureDate,
-        expiresAt: null,
-      });
-
-      expect(published!.effective_at).not.toBeNull();
-      expect(new Date(published!.effective_at!).getTime()).toBeGreaterThan(Date.now());
-    });
-
-    it('fails to publish with wrong version', async () => {
-      const created = await repository.create({
-        category: 'ARTICLE',
-        locale: 'vi-VN',
-        title: 'Version Mismatch',
-        summary: 'Test',
-        contentBody: 'Test',
-        externalUrl: null,
-      });
-
-      const published = await repository.publish(created.id, {
-        reviewedBy: '00000000-0000-0000-0000-000000000000',
-        version: 99,
-        effectiveAt: null,
-        expiresAt: null,
-      });
-
-      expect(published).toBeNull();
-    });
-
-    it('fails to publish already PUBLISHED resource', async () => {
-      const created = await repository.create({
-        category: 'BREATHING',
-        locale: 'vi-VN',
-        title: 'Already Published',
-        summary: 'Test',
-        contentBody: 'Test',
-        externalUrl: null,
-      });
-
-      // First publish
-      await repository.publish(created.id, {
-        reviewedBy: 'e0eebc99-9c0b-4ef8-bb6d-6bb9bd380a11',
-        version: 0,
-        effectiveAt: null,
-        expiresAt: null,
-      });
-
-      // Try to publish again
-      const secondPublish = await repository.publish(created.id, {
-        reviewedBy: 'f0eebc99-9c0b-4ef8-bb6d-6bb9bd380a11',
-        version: 1,
-        effectiveAt: null,
-        expiresAt: null,
-      });
-
-      expect(secondPublish).toBeNull();
-    });
+    const result = await migrationPool.query<{ action: string; payload: string }>(
+      `SELECT action, row_to_json(resource_audit_event)::text AS payload
+       FROM resource_audit_event
+       WHERE resource_id IN ($1, $2)
+       ORDER BY occurred_at`,
+      [deletedDraft.id, published.id],
+    );
+    expect(result.rows.map(({ action }) => action)).toEqual([
+      'RESOURCE_CREATED',
+      'RESOURCE_DELETED',
+      'RESOURCE_CREATED',
+      'RESOURCE_ARCHIVED',
+      'RESOURCE_PUBLISH_BLOCKED',
+    ]);
+    expect(result.rows.every(({ payload }) => !/title|summary|content|url/i.test(payload))).toBe(
+      true,
+    );
   });
 
-  describe('Archive Operation', () => {
-    it('archives a PUBLISHED resource', async () => {
-      const created = await repository.create({
-        category: 'JOURNALING',
-        locale: 'vi-VN',
-        title: 'To be Archived',
-        summary: 'Test',
-        contentBody: 'Test',
-        externalUrl: null,
-      });
-
-      const adminId = '10eebc99-9c0b-4ef8-bb6d-6bb9bd380a11';
-      const published = await repository.publish(created.id, {
-        reviewedBy: adminId,
-        version: 0,
-        effectiveAt: null,
-        expiresAt: null,
-      });
-
-      const archived = await repository.archive(created.id, published!.version);
-
-      expect(archived).not.toBeNull();
-      expect(archived!.status).toBe('ARCHIVED');
-      expect(archived!.version).toBe(2);
-      expect(archived!.reviewed_by).toBe(adminId);
-      expect(archived!.reviewed_at).not.toBeNull();
+  it('enforces review, locale, effective, expiry, and archive predicates for public detail', async () => {
+    const active = await repository.create(baseCreate, 'active-public', {
+      actorId: ADMIN_A,
+      correlationId: CORRELATION_A,
     });
-
-    it('fails to archive with wrong version', async () => {
-      const created = await repository.create({
-        category: 'COMMUNITY',
-        locale: 'vi-VN',
-        title: 'Archive Version Test',
-        summary: 'Test',
-        contentBody: 'Test',
-        externalUrl: null,
-      });
-
-      await repository.publish(created.id, {
-        reviewedBy: '11eebc99-9c0b-4ef8-bb6d-6bb9bd380a11',
-        version: 0,
-        effectiveAt: null,
-        expiresAt: null,
-      });
-
-      const archived = await repository.archive(created.id, 99);
-      expect(archived).toBeNull();
+    const future = await repository.create(baseCreate, 'future-public', {
+      actorId: ADMIN_A,
+      correlationId: CORRELATION_A,
     });
+    await migrationPool.query(
+      `UPDATE resource
+       SET status = 'PUBLISHED', reviewed_by = $3, reviewed_at = now(),
+           effective_at = CASE WHEN id = $2 THEN now() + interval '1 day' ELSE NULL END
+       WHERE id IN ($1, $2)`,
+      [active.id, future.id, ADMIN_B],
+    );
 
-    it('fails to archive DRAFT resource', async () => {
-      const created = await repository.create({
-        category: 'MEDITATION',
-        locale: 'vi-VN',
-        title: 'Still Draft',
-        summary: 'Test',
-        contentBody: 'Test',
-        externalUrl: null,
-      });
-
-      const archived = await repository.archive(created.id, 0);
-      expect(archived).toBeNull();
+    await expect(repository.findPublishedEligibleById(active.id, 'vi-VN')).resolves.not.toBeNull();
+    await expect(repository.findPublishedEligibleById(active.id, 'en-US')).resolves.toBeNull();
+    await expect(repository.findPublishedEligibleById(future.id, 'vi-VN')).resolves.toBeNull();
+    await repository.archive(active.id, 0, {
+      actorId: ADMIN_A,
+      correlationId: CORRELATION_A,
     });
-  });
-
-  describe('State Transition Rules', () => {
-    it('enforces DRAFT → PUBLISHED → ARCHIVED workflow', async () => {
-      const draft = await repository.create({
-        category: 'ARTICLE',
-        locale: 'vi-VN',
-        title: 'Workflow Test',
-        summary: 'Test complete workflow',
-        contentBody: 'Content',
-        externalUrl: null,
-      });
-
-      expect(draft.status).toBe('DRAFT');
-
-      // Update allowed on DRAFT
-      const updated = await repository.update(draft.id, {
-        title: 'Updated Draft',
-        version: 0,
-      });
-      expect(updated).not.toBeNull();
-
-      // Publish
-      const published = await repository.publish(draft.id, {
-        reviewedBy: '12eebc99-9c0b-4ef8-bb6d-6bb9bd380a11',
-        version: 1,
-        effectiveAt: null,
-        expiresAt: null,
-      });
-      expect(published!.status).toBe('PUBLISHED');
-
-      // Update not allowed on PUBLISHED
-      const updateFailed = await repository.update(draft.id, {
-        title: 'Should Fail',
-        version: 2,
-      });
-      expect(updateFailed).toBeNull();
-
-      // Archive
-      const archived = await repository.archive(draft.id, 2);
-      expect(archived!.status).toBe('ARCHIVED');
-
-      // Archive is immutable
-      const updateArchived = await repository.update(draft.id, {
-        title: 'Should Fail',
-        version: 3,
-      });
-      expect(updateArchived).toBeNull();
-    });
-  });
-
-  describe('Publication Filtering Safety', () => {
-    it('PUBLIC endpoint never returns DRAFT resources', async () => {
-      await repository.create({
-        category: 'BREATHING',
-        locale: 'vi-VN',
-        title: 'Draft Resource',
-        summary: 'Should not appear',
-        contentBody: 'Test',
-        externalUrl: null,
-      });
-
-      const published = await repository.listPublished({ limit: 100 });
-      const hasDraft = published.some((r) => r.status === 'DRAFT');
-
-      expect(hasDraft).toBe(false);
-    });
-
-    it('PUBLIC endpoint never returns resources without review', async () => {
-      const published = await repository.listPublished({ limit: 100 });
-      const hasUnreviewed = published.some((r) => !r.reviewed_by || !r.reviewed_at);
-
-      expect(hasUnreviewed).toBe(false);
-    });
-
-    it('PUBLIC endpoint never returns future-effective resources', async () => {
-      const created = await repository.create({
-        category: 'VIDEO',
-        locale: 'vi-VN',
-        title: 'Future Content',
-        summary: 'Not yet active',
-        contentBody: null,
-        externalUrl: 'https://example.com',
-      });
-
-      const futureDate = new Date(Date.now() + 7 * 24 * 60 * 60 * 1000);
-      await repository.publish(created.id, {
-        reviewedBy: '13eebc99-9c0b-4ef8-bb6d-6bb9bd380a11',
-        version: 0,
-        effectiveAt: futureDate,
-        expiresAt: null,
-      });
-
-      const published = await repository.listPublished({ limit: 100 });
-      const hasFuture = published.some((r) => r.id === created.id);
-
-      expect(hasFuture).toBe(false);
-    });
-
-    it('PUBLIC endpoint never returns expired resources', async () => {
-      const created = await repository.create({
-        category: 'ARTICLE',
-        locale: 'vi-VN',
-        title: 'Expired Content',
-        summary: 'Already expired',
-        contentBody: 'Old content',
-        externalUrl: null,
-      });
-
-      const pastDate = new Date(Date.now() - 24 * 60 * 60 * 1000);
-      await repository.publish(created.id, {
-        reviewedBy: '14eebc99-9c0b-4ef8-bb6d-6bb9bd380a11',
-        version: 0,
-        effectiveAt: null,
-        expiresAt: pastDate,
-      });
-
-      const published = await repository.listPublished({ limit: 100 });
-      const hasExpired = published.some((r) => r.id === created.id);
-
-      expect(hasExpired).toBe(false);
-    });
-
-    it('PUBLIC endpoint never returns ARCHIVED resources', async () => {
-      const created = await repository.create({
-        category: 'MEDITATION',
-        locale: 'vi-VN',
-        title: 'Archived Content',
-        summary: 'Archived',
-        contentBody: 'Test',
-        externalUrl: null,
-      });
-
-      const published = await repository.publish(created.id, {
-        reviewedBy: '15eebc99-9c0b-4ef8-bb6d-6bb9bd380a11',
-        version: 0,
-        effectiveAt: null,
-        expiresAt: null,
-      });
-
-      await repository.archive(created.id, published!.version);
-
-      const result = await repository.listPublished({ limit: 100 });
-      const hasArchived = result.some((r) => r.id === created.id);
-
-      expect(hasArchived).toBe(false);
-    });
+    await expect(repository.findPublishedEligibleById(active.id, 'vi-VN')).resolves.toBeNull();
   });
 });

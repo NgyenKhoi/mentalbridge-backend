@@ -1,4 +1,10 @@
-import { Injectable, CanActivate, ExecutionContext, ForbiddenException } from '@nestjs/common';
+import {
+  Inject,
+  Injectable,
+  CanActivate,
+  ExecutionContext,
+  ForbiddenException,
+} from '@nestjs/common';
 import { Reflector } from '@nestjs/core';
 import type { Request } from 'express';
 import type { AuthenticatedUser } from './jwt.strategy.js';
@@ -8,7 +14,7 @@ export const ROLES_KEY = 'roles';
 
 @Injectable()
 export class RolesGuard implements CanActivate {
-  constructor(private readonly reflector: Reflector) {}
+  constructor(@Inject(Reflector) private readonly reflector: Reflector) {}
 
   canActivate(context: ExecutionContext): boolean {
     const isPublic =

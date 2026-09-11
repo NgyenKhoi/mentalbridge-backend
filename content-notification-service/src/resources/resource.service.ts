@@ -1,10 +1,10 @@
-import { Inject, Injectable, Logger } from '@nestjs/common';
+import { Inject, Injectable, Logger, ServiceUnavailableException } from '@nestjs/common';
 import type {
   ResourceRepository,
   ListResourcesQuery,
   CreateResourceData,
   UpdateResourceData,
-  PublishResourceData,
+  ResourceCommandContext,
 } from './resource.repository.js';
 import { RESOURCE_REPOSITORY_TOKEN } from '../application.tokens.js';
 import type {
@@ -13,6 +13,7 @@ import type {
   ResourceRow,
   ResourceSummary,
   ResourceDetail,
+  PublicResourceDetail,
 } from './resource.types.js';
 
 const UNAVAILABLE_MESSAGE = 'Tài nguyên hỗ trợ tạm thời không khả dụng. Vui lòng thử lại sau.';
@@ -65,6 +66,26 @@ function toDetail(row: ResourceRow): ResourceDetail | null {
     effectiveAt: row.effective_at ? new Date(row.effective_at).toISOString() : null,
     expiresAt: row.expires_at ? new Date(row.expires_at).toISOString() : null,
     version: row.version,
+  };
+}
+
+function toPublicDetail(row: ResourceRow): PublicResourceDetail | null {
+  const detail = toDetail(row);
+  if (!detail) return null;
+  return {
+    id: detail.id,
+    category: detail.category,
+    locale: detail.locale,
+    title: detail.title,
+    summary: detail.summary,
+    externalUrl: detail.externalUrl,
+    status: detail.status,
+    reviewedAt: detail.reviewedAt,
+    createdAt: detail.createdAt,
+    updatedAt: detail.updatedAt,
+    contentBody: detail.contentBody,
+    effectiveAt: detail.effectiveAt,
+    expiresAt: detail.expiresAt,
   };
 }
 
@@ -144,15 +165,15 @@ export class ResourceService {
       });
     } catch (error) {
       this.logger.warn({
-        event: 'resource_db_unavailable',
+        event: 'admin_resource_db_unavailable',
         code: (error as NodeJS.ErrnoException).code,
       });
-      return {
-        data: [],
-        count: 0,
-        fallback: 'unavailable',
-        message: UNAVAILABLE_MESSAGE,
-      };
+      throw new ServiceUnavailableException({
+        type: 'https://mentalbridge.io/errors/DEPENDENCY_UNAVAILABLE',
+        title: 'Resource administration is temporarily unavailable',
+        status: 503,
+        code: 'DEPENDENCY_UNAVAILABLE',
+      });
     }
 
     const hasMore = rows.length > limit;
@@ -166,13 +187,22 @@ export class ResourceService {
     };
   }
 
-  async getById(id: string): Promise<ResourceDetail | null> {
+  async getAdminById(id: string): Promise<ResourceDetail | null> {
     const row = await this.repository.findById(id);
     return row ? toDetail(row) : null;
   }
 
-  async create(data: CreateResourceData, idempotencyKey?: string): Promise<ResourceDetail> {
-    const row = await this.repository.create(data, idempotencyKey);
+  async getPublishedById(id: string, locale: string): Promise<PublicResourceDetail | null> {
+    const row = await this.repository.findPublishedEligibleById(id, locale);
+    return row ? toPublicDetail(row) : null;
+  }
+
+  async create(
+    data: CreateResourceData,
+    idempotencyKey: string,
+    context: ResourceCommandContext,
+  ): Promise<ResourceDetail> {
+    const row = await this.repository.create(data, idempotencyKey, context);
     const detail = toDetail(row);
     if (!detail) {
       throw new Error('Failed to create resource');
@@ -180,22 +210,33 @@ export class ResourceService {
     return detail;
   }
 
-  async update(id: string, data: UpdateResourceData): Promise<ResourceDetail | null> {
-    const row = await this.repository.update(id, data);
+  async update(
+    id: string,
+    data: UpdateResourceData,
+    context: ResourceCommandContext,
+  ): Promise<ResourceDetail | null> {
+    const row = await this.repository.update(id, data, context);
     return row ? toDetail(row) : null;
   }
 
-  async delete(id: string): Promise<boolean> {
-    return this.repository.delete(id);
+  async delete(id: string, version: number, context: ResourceCommandContext): Promise<boolean> {
+    return this.repository.delete(id, version, context);
   }
 
-  async publish(id: string, data: PublishResourceData): Promise<ResourceDetail | null> {
-    const row = await this.repository.publish(id, data);
+  async archive(
+    id: string,
+    version: number,
+    context: ResourceCommandContext,
+  ): Promise<ResourceDetail | null> {
+    const row = await this.repository.archive(id, version, context);
     return row ? toDetail(row) : null;
   }
 
-  async archive(id: string, version: number): Promise<ResourceDetail | null> {
-    const row = await this.repository.archive(id, version);
-    return row ? toDetail(row) : null;
+  async auditPublishBlocked(
+    id: string,
+    version: number,
+    context: ResourceCommandContext,
+  ): Promise<void> {
+    await this.repository.auditPublishBlocked(id, version, context);
   }
 }

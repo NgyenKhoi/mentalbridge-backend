@@ -34,11 +34,14 @@ export interface ResourceSummary {
   readonly updatedAt: string;
 }
 
-export interface ResourceDetail extends ResourceSummary {
+export interface PublicResourceDetail extends ResourceSummary {
   readonly contentBody: string | null;
-  readonly reviewedBy: string | null;
   readonly effectiveAt: string | null;
   readonly expiresAt: string | null;
+}
+
+export interface ResourceDetail extends PublicResourceDetail {
+  readonly reviewedBy: string | null;
   readonly version: number;
 }
 

@@ -1,288 +1,248 @@
-import { describe, it, expect, vi } from 'vitest';
-import type { ResourceService } from '../resources/resource.service.js';
+import type { INestApplication } from '@nestjs/common';
+import { exportSPKI, generateKeyPair, SignJWT, type KeyLike } from 'jose';
+import type { Server } from 'node:http';
+import request from 'supertest';
+import { afterEach, beforeAll, beforeEach, describe, expect, it, vi } from 'vitest';
+
+import { createApplication } from '../application.js';
+import type { ServiceConfiguration } from '../configuration/configuration.js';
 import type { ResourceRepository } from '../resources/resource.repository.js';
-import type { ResourceDetail, ResourceRow } from '../resources/resource.types.js';
+import type { ResourceRow } from '../resources/resource.types.js';
 
-describe('Resource Admin Operations', () => {
-  const mockRepository: Partial<ResourceRepository> = {
-    create: vi.fn(),
-    findById: vi.fn(),
-    update: vi.fn(),
-    delete: vi.fn(),
-    publish: vi.fn(),
-    archive: vi.fn(),
+const ADMIN_ID = 'a13e4567-e89b-42d3-a456-426614174000';
+const USER_ID = 'b13e4567-e89b-42d3-a456-426614174000';
+const RESOURCE_ID = 'c13e4567-e89b-42d3-a456-426614174000';
+const CORRELATION_ID = 'd13e4567-e89b-42d3-a456-426614174000';
+const ISSUER = 'https://identity.local.mentalbridge';
+const AUDIENCE = 'mentalbridge-api';
+
+let privateKey: KeyLike;
+let publicKey: string;
+let app: INestApplication | undefined;
+
+const resource: ResourceRow = {
+  id: RESOURCE_ID,
+  category: 'ARTICLE',
+  locale: 'vi-VN',
+  title: 'Draft resource',
+  summary: 'Draft summary',
+  content_body: 'Draft body',
+  external_url: null,
+  status: 'DRAFT',
+  reviewed_by: null,
+  reviewed_at: null,
+  effective_at: null,
+  expires_at: null,
+  created_at: new Date('2026-09-01T00:00:00Z'),
+  updated_at: new Date('2026-09-01T00:00:00Z'),
+  version: 0,
+};
+
+const repository = {
+  listPublished: vi.fn(async () => []),
+  listAdmin: vi.fn(async () => [resource]),
+  findById: vi.fn(async () => resource),
+  findPublishedEligibleById: vi.fn(async () => null),
+  create: vi.fn(async () => resource),
+  update: vi.fn(async () => resource),
+  delete: vi.fn(async () => true),
+  archive: vi.fn(async () => null),
+  auditPublishBlocked: vi.fn(async () => undefined),
+} as unknown as ResourceRepository;
+
+beforeAll(async () => {
+  const keys = await generateKeyPair('RS256');
+  privateKey = keys.privateKey;
+  publicKey = await exportSPKI(keys.publicKey);
+});
+
+beforeEach(async () => {
+  vi.clearAllMocks();
+  const configuration: ServiceConfiguration = {
+    NODE_ENV: 'test',
+    PORT: 3003,
+    DATABASE_URL: 'postgres://test:test@localhost:5432/test',
+    DB_POOL_MAX: 2,
+    DB_IDLE_TIMEOUT_MS: 100,
+    DB_CONNECT_TIMEOUT_MS: 100,
+    LOG_LEVEL: 'silent',
+    CORS_ORIGINS: '',
+    SERVICE_NAME: 'content-notification-service',
+    ALLOWED_ORIGINS: [],
+    IDENTITY_JWT_ISSUER: ISSUER,
+    IDENTITY_JWT_AUDIENCE: AUDIENCE,
+    IDENTITY_JWT_PUBLIC_KEY: publicKey,
+    IDENTITY_JWT_CLOCK_TOLERANCE_SECONDS: 0,
   };
+  app = await createApplication(configuration, {
+    readinessProbe: { check: async () => undefined },
+    resourceRepository: repository,
+  });
+  await app.init();
+});
 
-  const mockResourceRow: ResourceRow = {
-    id: '123e4567-e89b-12d3-a456-426614174000',
-    category: 'BREATHING',
-    locale: 'vi-VN',
-    title: 'Test Resource',
-    summary: 'Test summary',
-    content_body: 'Test body',
-    external_url: null,
-    status: 'DRAFT',
-    reviewed_by: null,
-    reviewed_at: null,
-    effective_at: null,
-    expires_at: null,
-    created_at: new Date('2024-01-01T00:00:00Z'),
-    updated_at: new Date('2024-01-01T00:00:00Z'),
-    version: 0,
-  };
+afterEach(async () => {
+  await app?.close();
+  app = undefined;
+});
 
-  describe('create', () => {
-    it('creates a new DRAFT resource', async () => {
-      vi.mocked(mockRepository.create!).mockResolvedValue(mockResourceRow);
+async function token(subject: string, roles: string[]) {
+  const now = Math.floor(Date.now() / 1000);
+  return new SignJWT({ roles })
+    .setProtectedHeader({ alg: 'RS256' })
+    .setSubject(subject)
+    .setIssuer(ISSUER)
+    .setAudience(AUDIENCE)
+    .setIssuedAt(now)
+    .setNotBefore(now)
+    .setExpirationTime(now + 300)
+    .setJti(crypto.randomUUID())
+    .sign(privateKey);
+}
 
-      const result = await mockRepository.create!({
-        category: 'BREATHING',
-        locale: 'vi-VN',
-        title: 'Test Resource',
-        summary: 'Test summary',
-        contentBody: 'Test body',
-        externalUrl: null,
-      });
+function server(): Server {
+  return app!.getHttpServer() as Server;
+}
 
-      expect(result.status).toBe('DRAFT');
-      expect(result.title).toBe('Test Resource');
-      expect(result.reviewed_by).toBeNull();
-      expect(result.version).toBe(0);
+describe('resource HTTP and authorization boundary', () => {
+  it('allows ADMIN to list every status and rejects USER', async () => {
+    const adminToken = await token(ADMIN_ID, ['ADMIN']);
+    const userToken = await token(USER_ID, ['USER']);
+
+    const adminResponse = await request(server())
+      .get('/api/v1/resources/admin/list?status=DRAFT')
+      .set('authorization', `Bearer ${adminToken}`);
+    expect(adminResponse.body).toMatchObject({
+      data: [expect.objectContaining({ status: 'DRAFT' })],
     });
+    expect(adminResponse.status).toBe(200);
 
-    it('creates resource with external URL', async () => {
-      const withUrl = {
-        ...mockResourceRow,
-        external_url: 'https://example.com',
-        content_body: null,
-      };
-      vi.mocked(mockRepository.create!).mockResolvedValue(withUrl);
+    const forbidden = await request(server())
+      .get('/api/v1/resources/admin/list')
+      .set('authorization', `Bearer ${userToken}`)
+      .expect(403);
+    expect(forbidden.headers['content-type']).toMatch(/^application\/problem\+json/);
+    expect(forbidden.body.code).toBe('FORBIDDEN');
+  });
 
-      const result = await mockRepository.create!({
-        category: 'VIDEO',
-        locale: 'en-US',
-        title: 'Video Resource',
-        summary: 'Test',
-        contentBody: null,
-        externalUrl: 'https://example.com',
-      });
+  it('returns stable Problem Details when the admin catalogue is unavailable', async () => {
+    vi.mocked(repository.listAdmin).mockRejectedValueOnce(new Error('database unavailable'));
+    const adminToken = await token(ADMIN_ID, ['ADMIN']);
 
-      expect(result.external_url).toBe('https://example.com');
-      expect(result.content_body).toBeNull();
+    const response = await request(server())
+      .get('/api/v1/resources/admin/list')
+      .set('authorization', `Bearer ${adminToken}`)
+      .set('x-correlation-id', CORRELATION_ID)
+      .expect(503);
+
+    expect(response.headers['content-type']).toMatch(/^application\/problem\+json/);
+    expect(response.body).toMatchObject({
+      code: 'DEPENDENCY_UNAVAILABLE',
+      correlationId: CORRELATION_ID,
     });
   });
 
-  describe('findById', () => {
-    it('returns resource by id', async () => {
-      vi.mocked(mockRepository.findById!).mockResolvedValue(mockResourceRow);
+  it('returns draft detail only through the protected admin route', async () => {
+    const adminToken = await token(ADMIN_ID, ['ADMIN']);
+    const detail = await request(server())
+      .get(`/api/v1/resources/admin/${RESOURCE_ID}`)
+      .set('authorization', `Bearer ${adminToken}`)
+      .expect(200);
 
-      const result = await mockRepository.findById!('123e4567-e89b-12d3-a456-426614174000');
-
-      expect(result).not.toBeNull();
-      expect(result!.id).toBe(mockResourceRow.id);
-      expect(result!.title).toBe('Test Resource');
-    });
-
-    it('returns null when not found', async () => {
-      vi.mocked(mockRepository.findById!).mockResolvedValue(null);
-
-      const result = await mockRepository.findById!('non-existent-id');
-
-      expect(result).toBeNull();
-    });
+    expect(detail.body).toMatchObject({ id: RESOURCE_ID, status: 'DRAFT', version: 0 });
+    await request(server()).get(`/api/v1/resources/${RESOURCE_ID}?locale=vi-VN`).expect(404);
+    expect(repository.findPublishedEligibleById).toHaveBeenCalledWith(RESOURCE_ID, 'vi-VN');
   });
 
-  describe('update', () => {
-    it('updates a DRAFT resource with correct version', async () => {
-      const updated = { ...mockResourceRow, title: 'Updated Title', version: 1 };
-      vi.mocked(mockRepository.update!).mockResolvedValue(updated);
-
-      const result = await mockRepository.update!('123e4567-e89b-12d3-a456-426614174000', {
-        title: 'Updated Title',
-        version: 0,
-      });
-
-      expect(result).not.toBeNull();
-      expect(result!.title).toBe('Updated Title');
-      expect(result!.version).toBe(1);
+  it('omits reviewer and version from eligible public detail', async () => {
+    vi.mocked(repository.findPublishedEligibleById).mockResolvedValueOnce({
+      ...resource,
+      status: 'PUBLISHED',
+      reviewed_by: ADMIN_ID,
+      reviewed_at: new Date('2026-09-01T01:00:00Z'),
     });
 
-    it('returns null on version mismatch (optimistic lock)', async () => {
-      vi.mocked(mockRepository.update!).mockResolvedValue(null);
-
-      const result = await mockRepository.update!('123e4567-e89b-12d3-a456-426614174000', {
-        title: 'Should Fail',
-        version: 99,
-      });
-
-      expect(result).toBeNull();
-    });
-
-    it('returns null when updating PUBLISHED resource', async () => {
-      vi.mocked(mockRepository.update!).mockResolvedValue(null);
-
-      const result = await mockRepository.update!('published-id', {
-        title: 'Cannot Update',
-        version: 1,
-      });
-
-      expect(result).toBeNull();
-    });
+    const response = await request(server())
+      .get(`/api/v1/resources/${RESOURCE_ID}?locale=vi-VN`)
+      .expect(200);
+    expect(response.body.contentBody).toBe('Draft body');
+    expect(response.body).not.toHaveProperty('reviewedBy');
+    expect(response.body).not.toHaveProperty('version');
   });
 
-  describe('delete', () => {
-    it('deletes a DRAFT resource', async () => {
-      vi.mocked(mockRepository.delete!).mockResolvedValue(true);
+  it('preserves validation Problem Details and field violations', async () => {
+    const adminToken = await token(ADMIN_ID, ['ADMIN']);
+    const response = await request(server())
+      .post('/api/v1/resources')
+      .set('authorization', `Bearer ${adminToken}`)
+      .set('idempotency-key', 'create-1')
+      .set('x-correlation-id', CORRELATION_ID)
+      .send({ category: 'ARTICLE', title: '', summary: '' })
+      .expect(422);
 
-      const result = await mockRepository.delete!('123e4567-e89b-12d3-a456-426614174000');
-
-      expect(result).toBe(true);
+    expect(response.headers['content-type']).toMatch(/^application\/problem\+json/);
+    expect(response.headers['x-correlation-id']).toBe(CORRELATION_ID);
+    expect(response.body).toMatchObject({
+      code: 'VALIDATION_ERROR',
+      correlationId: CORRELATION_ID,
     });
-
-    it('returns false when trying to delete non-DRAFT', async () => {
-      vi.mocked(mockRepository.delete!).mockResolvedValue(false);
-
-      const result = await mockRepository.delete!('published-id');
-
-      expect(result).toBe(false);
-    });
+    expect(response.body.fieldViolations).toEqual(
+      expect.arrayContaining([expect.objectContaining({ field: 'title' })]),
+    );
   });
 
-  describe('publish', () => {
-    it('publishes a DRAFT resource with review metadata', async () => {
-      const published = {
-        ...mockResourceRow,
-        status: 'PUBLISHED' as const,
-        reviewed_by: 'admin-123',
-        reviewed_at: new Date('2024-01-01T10:00:00Z'),
-        version: 1,
-      };
-      vi.mocked(mockRepository.publish!).mockResolvedValue(published);
+  it('requires an idempotency key and forwards actor-scoped command context', async () => {
+    const adminToken = await token(ADMIN_ID, ['ADMIN']);
+    await request(server())
+      .post('/api/v1/resources')
+      .set('authorization', `Bearer ${adminToken}`)
+      .send({ category: 'ARTICLE', title: 'Title', summary: 'Summary', contentBody: 'Body' })
+      .expect(400);
 
-      const result = await mockRepository.publish!('123e4567-e89b-12d3-a456-426614174000', {
-        reviewedBy: 'admin-123',
-        version: 0,
-        effectiveAt: null,
-        expiresAt: null,
-      });
+    await request(server())
+      .post('/api/v1/resources')
+      .set('authorization', `Bearer ${adminToken}`)
+      .set('idempotency-key', 'create-2')
+      .set('x-correlation-id', CORRELATION_ID)
+      .send({ category: 'ARTICLE', title: 'Title', summary: 'Summary', contentBody: 'Body' })
+      .expect(201);
 
-      expect(result).not.toBeNull();
-      expect(result!.status).toBe('PUBLISHED');
-      expect(result!.reviewed_by).toBe('admin-123');
-      expect(result!.reviewed_at).not.toBeNull();
-      expect(result!.version).toBe(1);
-    });
-
-    it('publishes with effective and expires dates', async () => {
-      const effectiveAt = new Date('2024-02-01T00:00:00Z');
-      const expiresAt = new Date('2024-03-01T00:00:00Z');
-      const published = {
-        ...mockResourceRow,
-        status: 'PUBLISHED' as const,
-        reviewed_by: 'admin-456',
-        reviewed_at: new Date(),
-        effective_at: effectiveAt,
-        expires_at: expiresAt,
-        version: 1,
-      };
-      vi.mocked(mockRepository.publish!).mockResolvedValue(published);
-
-      const result = await mockRepository.publish!('123e4567-e89b-12d3-a456-426614174000', {
-        reviewedBy: 'admin-456',
-        version: 0,
-        effectiveAt,
-        expiresAt,
-      });
-
-      expect(result!.effective_at).toEqual(effectiveAt);
-      expect(result!.expires_at).toEqual(expiresAt);
-    });
-
-    it('returns null when version mismatch', async () => {
-      vi.mocked(mockRepository.publish!).mockResolvedValue(null);
-
-      const result = await mockRepository.publish!('123e4567-e89b-12d3-a456-426614174000', {
-        reviewedBy: 'admin-789',
-        version: 99,
-        effectiveAt: null,
-        expiresAt: null,
-      });
-
-      expect(result).toBeNull();
-    });
-
-    it('returns null when resource is not DRAFT', async () => {
-      vi.mocked(mockRepository.publish!).mockResolvedValue(null);
-
-      const result = await mockRepository.publish!('already-published-id', {
-        reviewedBy: 'admin-000',
-        version: 1,
-        effectiveAt: null,
-        expiresAt: null,
-      });
-
-      expect(result).toBeNull();
-    });
+    expect(repository.create).toHaveBeenCalledWith(
+      expect.objectContaining({ title: 'Title' }),
+      'create-2',
+      { actorId: ADMIN_ID, correlationId: CORRELATION_ID },
+    );
   });
 
-  describe('archive', () => {
-    it('archives a PUBLISHED resource', async () => {
-      const archived = {
-        ...mockResourceRow,
-        status: 'ARCHIVED' as const,
-        reviewed_by: 'admin-111',
-        reviewed_at: new Date('2024-01-01T10:00:00Z'),
-        version: 2,
-      };
-      vi.mocked(mockRepository.archive!).mockResolvedValue(archived);
+  it('requires optimistic versioning for delete', async () => {
+    const adminToken = await token(ADMIN_ID, ['ADMIN']);
+    await request(server())
+      .delete(`/api/v1/resources/${RESOURCE_ID}`)
+      .set('authorization', `Bearer ${adminToken}`)
+      .expect(400);
 
-      const result = await mockRepository.archive!('123e4567-e89b-12d3-a456-426614174000', 1);
-
-      expect(result).not.toBeNull();
-      expect(result!.status).toBe('ARCHIVED');
-      expect(result!.version).toBe(2);
-    });
-
-    it('returns null when version mismatch', async () => {
-      vi.mocked(mockRepository.archive!).mockResolvedValue(null);
-
-      const result = await mockRepository.archive!('123e4567-e89b-12d3-a456-426614174000', 99);
-
-      expect(result).toBeNull();
-    });
-
-    it('returns null when resource is not PUBLISHED', async () => {
-      vi.mocked(mockRepository.archive!).mockResolvedValue(null);
-
-      const result = await mockRepository.archive!('draft-id', 0);
-
-      expect(result).toBeNull();
-    });
+    vi.mocked(repository.delete).mockResolvedValueOnce(false);
+    const stale = await request(server())
+      .delete(`/api/v1/resources/${RESOURCE_ID}?version=9`)
+      .set('authorization', `Bearer ${adminToken}`)
+      .expect(409);
+    expect(stale.body.code).toBe('INVALID_STATE_TRANSITION');
   });
 
-  describe('State Transition Workflow', () => {
-    it('validates DRAFT → PUBLISHED → ARCHIVED lifecycle', () => {
-      // DRAFT: can create, update, delete
-      expect(mockResourceRow.status).toBe('DRAFT');
-      expect(mockResourceRow.reviewed_by).toBeNull();
-      expect(mockResourceRow.reviewed_at).toBeNull();
+  it('keeps publish blocked without fabricating review provenance', async () => {
+    const adminToken = await token(ADMIN_ID, ['ADMIN']);
+    const response = await request(server())
+      .post(`/api/v1/resources/${RESOURCE_ID}/publish?version=0`)
+      .set('authorization', `Bearer ${adminToken}`)
+      .send({})
+      .expect(409);
 
-      // PUBLISHED: immutable, cannot update or delete
-      const published = {
-        ...mockResourceRow,
-        status: 'PUBLISHED' as const,
-        reviewed_by: 'admin',
-        reviewed_at: new Date(),
-        version: 1,
-      };
-      expect(published.status).toBe('PUBLISHED');
-      expect(published.reviewed_by).not.toBeNull();
-      expect(published.reviewed_at).not.toBeNull();
-
-      // ARCHIVED: final state, immutable
-      const archived = { ...published, status: 'ARCHIVED' as const, version: 2 };
-      expect(archived.status).toBe('ARCHIVED');
-      expect(archived.reviewed_by).not.toBeNull();
+    expect(response.body.code).toBe('REVIEW_APPROVAL_REQUIRED');
+    expect(repository.auditPublishBlocked).toHaveBeenCalledWith(RESOURCE_ID, 0, {
+      actorId: ADMIN_ID,
+      correlationId: expect.any(String),
     });
+    expect(repository.update).not.toHaveBeenCalled();
+    expect(repository.archive).not.toHaveBeenCalled();
   });
 });
