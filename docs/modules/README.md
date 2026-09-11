@@ -17,10 +17,10 @@ This directory turns the seven-UC product catalogue and 162-function WBS into wo
 | Identity Service | Spring Boot | [identity-service](identity-service.md) | initialized |
 | Care Service | Spring Boot | [care-service](care-service.md) | initialized |
 | Consultation Service | Spring Boot | [consultation-service](consultation-service.md) | initialized |
-| Journal/AI Service | Node.js/TypeScript | [journal-ai-service](journal-ai-service.md) | not initialized |
+| Journal/AI Service | Node.js/TypeScript | [journal-ai-service](journal-ai-service.md) | initialized journal foundation; AI providers and benchmark deferred |
 | Realtime Service | Node.js/TypeScript | [realtime-service](realtime-service.md) | initialized foundation; production eligibility deferred |
 | Content/Notification Service | Node.js/TypeScript | [content-notification-service](content-notification-service.md) | not initialized |
-| PhoBERT Worker | Python | [phobert-worker](phobert-worker.md) | not initialized |
+| PhoBERT Worker | Python | [phobert-worker](phobert-worker.md) | proposed/deferred optional benchmark baseline |
 
 ADR 0005 assigns the workbook's financial bounded context to the `billing` feature inside Consultation Service. Track its plan, upgrade, credit, earning, and provider payout behavior in the [subscription and billing specification](subscription-payment-gap.md); it is not an eighth deployable.
 

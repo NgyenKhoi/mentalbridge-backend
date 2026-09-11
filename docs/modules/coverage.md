@@ -7,7 +7,7 @@ This is the planning coverage baseline for the workbook's seven use cases and 16
 | Catalogue UC | Primary owner | Collaborators | Module capability | Status |
 | --- | --- | --- | --- | --- |
 | UC-01 Authentication & User Management | Identity/Care | Content/Notification, all deletion owners | Auth, RBAC, profile/consent, grants, deletion, anonymous entry | Planned; retention/export/expiry policies blocked |
-| UC-02 Mental Health Assessment & AI Analysis | Care/Journal-AI | PhoBERT, Content/Notification | Journal, assessment, analysis, safety/support and personal analytics | Vietnamese PHQ-9 v2 and GAD-7 controlled-Capstone runtimes published; PHQ-9 v1 retained for history; AI personalization deferred |
+| UC-02 Mental Health Assessment & AI Analysis | Care/Journal-AI | Content/Notification; optional future PhoBERT baseline | Journal, assessment, analysis, safety/support and personal analytics | Vietnamese PHQ-9 v2 and GAD-7 controlled-Capstone runtimes published; PHQ-9 v1 retained for history; AI personalization and PhoBERT baseline deferred |
 | UC-03 Intervention & Support | Care/Content-Notification | Journal/AI | Approved intervention, safety/self-help guidance and notifications | Product routing blueprint approved; personalized routing/actions runtime unavailable pending separate gates |
 | UC-04 Specialist Discovery & Appointment | Consultation/Billing | Care, Realtime, Content/Notification | Discovery, subscription/payment/upgrade/credits, specialist approval, booking, earnings, reviews | Planned by ADR 0005; provider/configuration details remain |
 | UC-05 Communication & Follow-up | Realtime/Care | Consultation, Content/Notification | Chat, reports, follow-up, notifications and progress | Planned; moderation/retention policy blocked |
@@ -20,7 +20,7 @@ This is the planning coverage baseline for the workbook's seven use cases and 16
 | --- | --- | --- |
 | 1-5, 7, 111, 113-116 | Identity | Authentication, RBAC, admin login and user administration |
 | 6, 8-14, 20-24, 30-31, 89-94, 98-101 | Care | Screening, profile/consent, assessment, safety/support, follow-up, analytics |
-| 15-19, 25-29, 150-156 | Journal/AI and PhoBERT | Journals, analysis, datasets and benchmarks |
+| 15-19, 25-29, 150-156 | Journal/AI; optional future PhoBERT inference | Journals, analysis, datasets and provider-neutral benchmarks |
 | 32-35, 95-97, 130-139 | Content/Notification | Reviewed self-help resources and notifications; hotline catalogue removed |
 | 36-41, 52-53, 55-73, 83-88, 102-107, 117-122, 140-144, 148-149 | Consultation | Discovery, specialist approval without WBS 54 document upload, booking, reviews and bounded portal/admin views |
 | 42-51, 108-110, 123-129 | Consultation/Billing | Subscription, payment, Care-to-Plus upgrade, credits, earnings and provider payout history under ADR 0005 |
