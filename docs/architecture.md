@@ -20,7 +20,7 @@
 | Content/Notification | reviewed self-help resources, notification preferences/delivery | screening, safety, or support-tier decisions |
 | Governance/Reporting | audit events, moderation cases, de-identified projections | transactional sources of truth |
 
-The deployable business services are fixed as Spring Boot `identity-service`, `care-service`, and `consultation-service`; NestJS/TypeScript `journal-ai-service`, `realtime-service`, and `content-notification-service` using the ADR 0006 stack; and Python `phobert-worker`. Governance/reporting is implemented as bounded admin APIs and Kafka projections inside the relevant owner until a future ADR justifies another deployable. The edge gateway/reverse proxy and Eureka registry are infrastructure and contain no business orchestration.
+The core deployable business services are fixed as Spring Boot `identity-service`, `care-service`, and `consultation-service`, plus NestJS/TypeScript `journal-ai-service`, `realtime-service`, and `content-notification-service` using the ADR 0006 stack. ADR 0011 defers Python `phobert-worker` as an optional future benchmark baseline; it is not a current runtime or release dependency. Governance/reporting is implemented as bounded admin APIs and Kafka projections inside the relevant owner until a future ADR justifies another deployable. The edge gateway/reverse proxy and Eureka registry are infrastructure and contain no business orchestration.
 
 ADR 0005 assigns the cohesive billing bounded context to `consultation-service` without adding another deployable. Its PostgreSQL database is authoritative for plan versions, paid subscriptions, MoMo payments/IPNs, upgrade offsets, consultation credits and ledger entries, specialist earnings, encrypted payout destinations, and MoMo payout reconciliation. Other services query narrow current entitlement or appointment-eligibility decisions and never maintain a shadow balance.
 
@@ -39,7 +39,7 @@ Mobile App / Admin Web
                               |
                          Kafka topics
                               |
-                    PhoBERT worker (Python)
+              Optional future PhoBERT worker (Python)
 
  Spring services <---- registration and lookup only ----> Eureka registry
 ```
@@ -64,8 +64,8 @@ Initial event catalogue:
 
 | Event | Producer | Consumers |
 | --- | --- | --- |
-| `AnalyzeJournalRevision` | Journal/AI | PhoBERT worker or Journal/AI provider executor |
-| `JournalAnalysisCompleted` | Journal/AI or PhoBERT worker | Care, Notification |
+| `AnalyzeJournalRevision` | Journal/AI | Journal/AI provider executor |
+| `JournalAnalysisCompleted` | Journal/AI | Care, Notification |
 | `AssessmentSubmitted` | Care | Reporting, Notification |
 | `SupportTierResolved` | Care | Notification, Reporting |
 | `ConsentGranted/Revoked` | Care | Consultation cache invalidation, Audit |
@@ -96,7 +96,7 @@ Kafka is the durable asynchronous backbone. PostgreSQL producers use a transacti
 
 1. User saves a journal revision in MongoDB.
 2. Node.js Journal/AI verifies AI-processing consent through Care REST and creates a PostgreSQL job/outbox record.
-3. Journal/AI calls configured LLM providers; the Python PhoBERT worker consumes only PhoBERT analysis commands from Kafka. Both use a versioned prompt/model contract and JSON schema.
+3. Journal/AI calls configured provider adapters, initially OpenAI and Gemini, through versioned input/output contracts. An optional future PhoBERT worker may execute a separately approved narrow classification contract after ADR 0011's activation gates pass.
 4. Worker rejects malformed/unsafe output, records provider metadata/latency, and stores structured result.
 5. Care consumes only approved structured indicators, never free-form model reasoning.
 6. Retries use exponential backoff and a dead-letter state; the user can still read the journal.

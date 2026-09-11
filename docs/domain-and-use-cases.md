@@ -13,7 +13,7 @@ The product has four actors:
 | Specialist | Manage availability and support consenting users | Sees only scopes granted by the user and required for care |
 | Admin | Operate and govern the platform | Does not receive unrestricted journal access by default |
 
-System actors include the AI provider, PhoBERT worker, notification provider, object storage, scheduler, and audit pipeline.
+System actors include configured AI providers, the notification provider, object storage, scheduler, and audit pipeline. A PhoBERT worker is an optional future benchmark actor under ADR 0011, not a current runtime dependency.
 
 ## 2. Ubiquitous language
 
@@ -143,7 +143,7 @@ The project-tracking workbook currently groups the 162 functions into seven deli
 
 **Scope:** journal CRUD, PHQ-9/GAD-7 submission/result/history/deletion, LLM emotion analysis and re-run, benchmark execution/results, screening/safety/support display, and personal emotional analytics.
 
-**Main flow:** Care serves an immutable questionnaire version, validates complete answers, scores deterministically and returns screening guidance synchronously. Journal/AI stores encrypted revisions and runs consent-gated asynchronous analysis. Governed benchmark runs compare the same licensed/de-identified split through versioned LLM and PhoBERT configurations.
+**Main flow:** Care serves an immutable questionnaire version, validates complete answers, scores deterministically and returns screening guidance synchronously. Journal/AI stores encrypted revisions and runs consent-gated asynchronous analysis. Governed benchmark runs compare the same licensed/de-identified split through versioned provider configurations, initially OpenAI and Gemini; PhoBERT is an optional future third baseline.
 
 **Exceptions and acceptance:** incomplete/invalid answers do not persist a final score; duplicate submission/analysis is idempotent; stale questionnaire requires restart; AI/provider failure never makes the journal or assessment unavailable. Raw journal content and chain-of-thought do not enter events or logs. AI cannot calculate PHQ/GAD scores or downgrade a safety path. Analytics distinguish missing data from zero and expose source freshness.
 
@@ -221,7 +221,7 @@ The project-tracking workbook currently groups the 162 functions into seven deli
 
 - moderation and account deletion orchestration;
 - aggregate reporting and retention configuration;
-- isolated benchmark dataset pipeline and PhoBERT comparison.
+- isolated provider-neutral benchmark dataset pipeline, with PhoBERT comparison optional after its activation gate passes.
 
 In-app video is intended but its call/signaling/provider/security contract is deferred; phone/in-person consultation, social/community feeds, organization tenancy, automatic emergency dispatch, custom model training, automated refunds, and Kubernetes remain out of scope unless formally added. Subscription/payment ownership, credit accounting, upgrade, earnings, and payout workflow are fixed by ADR 0005; real provider credentials/signatures, VND plan pricing or explicit FX policy, settlement delay, retention, and chargeback reconciliation still require approval.
 
@@ -236,6 +236,6 @@ These remain open for the affected production or optional feature. Under ADR 001
 5. Minimum user age and guardian/consent behavior if expansion includes users under 18.
 6. Consent text/versioning, retention periods, deletion SLA, export scope, and applicable Vietnamese regulation review before public real-user data collection. Synthetic controlled demos do not require these values to publish a questionnaire.
 7. Exact standard appointment duration, join grace, late-cancellation cutoff, and later in-app-video signaling/provider/recording/fallback policy.
-8. Dataset licenses, label mapping, train/test leakage controls, and research ethics approval.
+8. Dataset licenses, label mapping, train/test leakage controls, and research ethics approval. PhoBERT additionally requires an approved narrow classification task, deterministic preprocessing, and a compatible versioned fine-tuned checkpoint before implementation.
 9. Exact MoMo request type/payment methods, credential/key rotation, settlement delay, payout onboarding, VND plan prices or versioned FX policy, chargeback reconciliation, and financial retention. Downgrade and refund remain unsupported; no second production payment provider is planned.
 10. Whether WBS 28-29 are end-user/research benchmark views distinct from admin WBS 155-156, or duplicate functions that should share one admin-only workflow.

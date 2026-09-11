@@ -10,7 +10,7 @@
 | `journal-ai-service` | Node.js/TypeScript | journal metadata/content access, analysis jobs/results | Care for current AI-processing consent | analysis commands/results |
 | `realtime-service` | Node.js/TypeScript | conversations, messages, WebSocket sessions, presence, receipts | Consultation/Care for current authorization when connecting or sending | chat facts and notification delivery events |
 | `content-notification-service` | Node.js/TypeScript | reviewed self-help resources, preferences, notification creation/provider delivery | provider APIs only when executing delivery | consumes domain events and emits notification/delivery outcomes |
-| `phobert-worker` | Python | inference execution only | no business data query | consumes analysis commands and emits results |
+| `phobert-worker` (optional/deferred) | Python | inference execution only after its activation gate passes | no business data query | future versioned inference command/result only |
 
 The edge gateway/reverse proxy and Eureka service registry are infrastructure, not business modules, and contain no orchestration or domain logic. Eureka publishes service location metadata only. Language does not change ownership. Node.js and Spring communicate through REST/JSON DTOs and Kafka contracts and never share framework models.
 

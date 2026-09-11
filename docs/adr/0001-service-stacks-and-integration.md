@@ -3,6 +3,7 @@
 - Status: Accepted
 - Date: 2026-08-11
 - Note: ADR 0006 supersedes the Node.js framework choice in this ADR and ADR 0003. Service boundaries and transport decisions in this ADR remain accepted.
+- AI worker update: ADR 0011 supersedes the requirement to operate `phobert-worker` as a baseline deployable. PhoBERT is now an optional deferred benchmark baseline.
 - Deployment update (2026-09-07): dev and staging share the existing service-owned cloud PostgreSQL databases and MongoDB deployment. Compose treats them as external dependencies; disposable local databases are limited to CI/integration tests. Production will receive a separate data plane when provisioned.
 
 ## Context
