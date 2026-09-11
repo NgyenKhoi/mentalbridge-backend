@@ -17,6 +17,7 @@ import {
   Query,
   Req,
   Res,
+  ServiceUnavailableException,
   UnauthorizedException,
 } from "@nestjs/common";
 import type { DynamicModule, OnApplicationShutdown } from "@nestjs/common";
@@ -37,7 +38,7 @@ import type { AuthenticatedRequest } from "../security/authenticated-principal.j
 
 const STORE = "JOURNAL_STORE";
 const ENCRYPTION = "JOURNAL_ENCRYPTION";
-const MAX_COMMANDS = 32;
+const MAX_REVISIONS = 200;
 
 export interface Request extends AuthenticatedRequest {
   body: unknown;
@@ -63,6 +64,14 @@ export interface MutationCommand {
   fingerprint: string;
   operation: "create" | "revise" | "delete";
   resultRevision?: number;
+  response?:
+    | {
+        kind: "entry";
+        revision: number;
+        tags: string[];
+        analysisState: "not_requested" | "current" | "stale";
+      }
+    | { kind: "tombstone" };
   recordedAt: Date;
 }
 export interface Entry {
@@ -84,9 +93,9 @@ export interface Entry {
   cursor: { sortOccurredAt: Date; sortCreatedAt: Date; entryId: string };
 }
 export interface JournalCursor {
-  occurredAt: Date;
-  createdAt: Date;
-  id: string;
+  sortOccurredAt: Date;
+  sortCreatedAt: Date;
+  entryId: string;
 }
 export interface JournalStore {
   create(entry: Entry): Promise<Entry>;
@@ -97,7 +106,6 @@ export interface JournalStore {
     owner: string,
     limit: number,
     cursor?: JournalCursor,
-    includeDeleted?: boolean,
   ): Promise<{ rows: Entry[]; hasMore: boolean }>;
   revise(
     owner: string,
@@ -138,7 +146,6 @@ const listSchema = z
   .object({
     limit: z.coerce.number().int().min(1).max(50).default(20),
     cursor: z.string().min(1).max(512).optional(),
-    includeDeleted: z.enum(["true", "false"]).default("false"),
   })
   .strict();
 const idempotencyKeySchema = z.string().min(16).max(128);
@@ -175,9 +182,9 @@ const decodeCursor = (value: string | undefined): JournalCursor | undefined => {
       .strict()
       .parse(JSON.parse(Buffer.from(value, "base64url").toString("utf8")));
     return {
-      occurredAt: new Date(parsed.occurredAt),
-      createdAt: new Date(parsed.createdAt),
-      id: parsed.id,
+      sortOccurredAt: new Date(parsed.occurredAt),
+      sortCreatedAt: new Date(parsed.createdAt),
+      entryId: parsed.id,
     };
   } catch {
     throw new BadRequestException();
@@ -186,9 +193,9 @@ const decodeCursor = (value: string | undefined): JournalCursor | undefined => {
 const encodeCursor = (entry: Entry): string =>
   Buffer.from(
     JSON.stringify({
-      occurredAt: entry.occurredAt.toISOString(),
-      createdAt: entry.createdAt.toISOString(),
-      id: entry._id,
+      occurredAt: entry.cursor.sortOccurredAt.toISOString(),
+      createdAt: entry.cursor.sortCreatedAt.toISOString(),
+      id: entry.cursor.entryId,
     }),
   ).toString("base64url");
 
@@ -274,14 +281,19 @@ export class MongoJournalStore implements JournalStore, OnApplicationShutdown {
   constructor(configuration: Configuration = loadConfiguration()) {
     this.client = new MongoClient(configuration.MONGODB_URI, {
       connectTimeoutMS: configuration.MONGODB_CONNECTION_TIMEOUT_MS,
+      serverSelectionTimeoutMS: configuration.MONGODB_CONNECTION_TIMEOUT_MS,
     });
     this.collection = this.client
       .db(configuration.MONGODB_DATABASE)
       .collection<Entry>("journal_entries");
   }
   private async entries() {
-    await this.client.connect();
-    return this.collection;
+    try {
+      await this.client.connect();
+      return this.collection;
+    } catch (error) {
+      throw new ServiceUnavailableException({ cause: error });
+    }
   }
   async onApplicationShutdown() {
     await this.client.close();
@@ -311,24 +323,21 @@ export class MongoJournalStore implements JournalStore, OnApplicationShutdown {
       "commands.keyHash": keyHash,
     });
   }
-  async list(
-    ownerAccountId: string,
-    limit: number,
-    cursor?: JournalCursor,
-    includeDeleted = false,
-  ) {
+  async list(ownerAccountId: string, limit: number, cursor?: JournalCursor) {
     const cursorFilter: Filter<Entry> = cursor
       ? {
           $or: [
-            { occurredAt: { $lt: cursor.occurredAt } },
             {
-              occurredAt: cursor.occurredAt,
-              createdAt: { $lt: cursor.createdAt },
+              "cursor.sortOccurredAt": { $lt: cursor.sortOccurredAt },
             },
             {
-              occurredAt: cursor.occurredAt,
-              createdAt: cursor.createdAt,
-              _id: { $gt: cursor.id },
+              "cursor.sortOccurredAt": cursor.sortOccurredAt,
+              "cursor.sortCreatedAt": { $lt: cursor.sortCreatedAt },
+            },
+            {
+              "cursor.sortOccurredAt": cursor.sortOccurredAt,
+              "cursor.sortCreatedAt": cursor.sortCreatedAt,
+              "cursor.entryId": { $gt: cursor.entryId },
             },
           ],
         }
@@ -338,10 +347,15 @@ export class MongoJournalStore implements JournalStore, OnApplicationShutdown {
     )
       .find({
         ownerAccountId,
-        ...(includeDeleted ? {} : { deleted: false }),
+        deleted: false,
         ...cursorFilter,
       })
-      .sort({ occurredAt: -1, createdAt: -1, _id: 1 })
+      .sort({
+        "cursor.sortOccurredAt": -1,
+        "cursor.sortCreatedAt": -1,
+        "cursor.entryId": 1,
+      })
+      .hint("journal_entries_owner_cursor_idx")
       .limit(limit + 1)
       .toArray();
     return { rows: rows.slice(0, limit), hasMore: rows.length > limit };
@@ -367,7 +381,7 @@ export class MongoJournalStore implements JournalStore, OnApplicationShutdown {
         $inc: { currentRevision: 1 },
         $push: {
           revisions: revision,
-          commands: { $each: [command], $slice: -MAX_COMMANDS },
+          commands: command,
         },
       },
       { returnDocument: "after" },
@@ -394,7 +408,7 @@ export class MongoJournalStore implements JournalStore, OnApplicationShutdown {
           tombstoneReason: "owner_deleted",
           updatedAt: deletedAt,
         },
-        $push: { commands: { $each: [command], $slice: -MAX_COMMANDS } },
+        $push: { commands: command },
       },
       { returnDocument: "after" },
     );
@@ -411,7 +425,6 @@ export class JournalService {
     request: Request,
     operation: MutationCommand["operation"],
     value: unknown,
-    resultRevision?: number,
   ): MutationCommand {
     const key = requiredHeader(
       request,
@@ -422,7 +435,6 @@ export class JournalService {
       keyHash: this.encryption.keyHash(String(key)),
       fingerprint: this.encryption.fingerprint({ operation, value }),
       operation,
-      ...(resultRevision === undefined ? {} : { resultRevision }),
       recordedAt: new Date(),
     };
   }
@@ -450,6 +462,8 @@ export class JournalService {
     entry: Entry,
     revisionNumber = entry.currentRevision,
     updatedAt?: Date,
+    tags = entry.tags,
+    analysisState = entry.analysisState,
   ) {
     const revision = this.revision(entry, revisionNumber);
     const text = this.encryption.decrypt(
@@ -465,32 +479,48 @@ export class JournalService {
       createdAt: entry.createdAt.toISOString(),
       updatedAt: (updatedAt ?? entry.updatedAt).toISOString(),
       deleted: false,
-      tags: entry.tags,
+      tags,
       encryption: {
         algorithm: revision.content.algorithm,
         keyId: revision.content.keyId,
         encryptedAt: revision.content.encryptedAt.toISOString(),
       },
-      analysisState: entry.analysisState,
+      analysisState,
       content: { text, byteLength: revision.contentByteLength },
+    };
+  }
+  private replayEntry(entry: Entry, command: MutationCommand) {
+    if (command.response?.kind !== "entry") throw new ConflictException();
+    return this.output(
+      entry,
+      command.response.revision,
+      command.recordedAt,
+      command.response.tags,
+      command.response.analysisState,
+    );
+  }
+  private replayTombstone(entry: Entry, command: MutationCommand) {
+    if (command.response?.kind !== "tombstone") throw new ConflictException();
+    return {
+      id: entry._id,
+      ownerAccountId: entry.ownerAccountId,
+      deleted: true as const,
+      deletedAt: command.recordedAt.toISOString(),
     };
   }
   async create(request: Request) {
     const parsed = createSchema.safeParse(request.body);
     if (!parsed.success) throw new BadRequestException();
     const ownerAccountId = owner(request);
-    const command = this.command(request, "create", parsed.data, 1);
+    const command = this.command(request, "create", parsed.data);
     const previousByCommand = await this.store.findByCommand(
       ownerAccountId,
       command.keyHash,
     );
     if (previousByCommand) {
       const replay = this.replay(previousByCommand, command);
-      return this.output(
-        previousByCommand,
-        replay?.resultRevision,
-        replay?.recordedAt,
-      );
+      if (!replay) throw new ConflictException();
+      return this.replayEntry(previousByCommand, replay);
     }
     if (
       await this.store.findByClientId(ownerAccountId, parsed.data.clientEntryId)
@@ -521,7 +551,17 @@ export class JournalService {
       tags: parsed.data.tags,
       analysisState: "not_requested",
       revisions: [revision],
-      commands: [command],
+      commands: [
+        {
+          ...command,
+          response: {
+            kind: "entry",
+            revision: 1,
+            tags: parsed.data.tags,
+            analysisState: "not_requested",
+          },
+        },
+      ],
       cursor: {
         sortOccurredAt: new Date(parsed.data.occurredAt),
         sortCreatedAt: now,
@@ -538,7 +578,8 @@ export class JournalService {
       );
       if (!raced) throw error;
       const replay = this.replay(raced, command);
-      return this.output(raced, replay?.resultRevision, replay?.recordedAt);
+      if (!replay) throw error;
+      return this.replayEntry(raced, replay);
     }
   }
   async detail(request: Request, id: string) {
@@ -554,12 +595,10 @@ export class JournalService {
       owner(request),
       parsed.data.limit,
       decodeCursor(parsed.data.cursor),
-      parsed.data.includeDeleted === "true",
     );
-    const visibleRows = result.rows.filter((entry) => !entry.deleted);
     const lastRow = result.rows.at(-1);
     return {
-      items: visibleRows.map((entry) => {
+      items: result.rows.map((entry) => {
         const value = this.output(entry);
         return {
           ...value,
@@ -594,13 +633,14 @@ export class JournalService {
     const entry = await this.store.find(ownerAccountId, id);
     if (!entry || entry.deleted) throw new NotFoundException();
     const replay = this.replay(entry, command);
-    if (replay)
-      return this.output(entry, replay.resultRevision, replay.recordedAt);
+    if (replay) return this.replayEntry(entry, replay);
     if (entry.currentRevision !== expectedRevision)
       throw new HttpException("", HttpStatus.PRECONDITION_FAILED);
+    if (entry.currentRevision >= MAX_REVISIONS) throw new ConflictException();
     const now = command.recordedAt;
     const nextRevision = expectedRevision + 1;
     const text = parsed.data.content.text;
+    const tags = parsed.data.tags ?? entry.tags;
     const revision: Revision = {
       revision: nextRevision,
       createdAt: now,
@@ -614,19 +654,22 @@ export class JournalService {
       id,
       expectedRevision,
       revision,
-      parsed.data.tags ?? entry.tags,
-      { ...command, resultRevision: nextRevision },
+      tags,
+      {
+        ...command,
+        response: {
+          kind: "entry",
+          revision: nextRevision,
+          tags,
+          analysisState: "stale",
+        },
+      },
     );
     if (updated) return this.output(updated);
     const raced = await this.store.find(ownerAccountId, id);
     if (!raced || raced.deleted) throw new NotFoundException();
     const racedReplay = this.replay(raced, command);
-    if (racedReplay)
-      return this.output(
-        raced,
-        racedReplay.resultRevision,
-        racedReplay.recordedAt,
-      );
+    if (racedReplay) return this.replayEntry(raced, racedReplay);
     throw new HttpException("", HttpStatus.PRECONDITION_FAILED);
   }
   async remove(request: Request, id: string) {
@@ -636,38 +679,24 @@ export class JournalService {
     const entry = await this.store.find(ownerAccountId, id);
     if (!entry) throw new NotFoundException();
     const replay = this.replay(entry, command);
-    if (replay)
-      return {
-        id,
-        ownerAccountId,
-        deleted: true,
-        deletedAt: replay.recordedAt.toISOString(),
-      };
+    if (replay) return this.replayTombstone(entry, replay);
     if (entry.deleted) throw new NotFoundException();
     const updated = await this.store.tombstone(
       ownerAccountId,
       id,
       command.recordedAt,
-      command,
+      { ...command, response: { kind: "tombstone" } },
     );
     if (!updated) {
       const raced = await this.store.find(ownerAccountId, id);
       const racedReplay = raced ? this.replay(raced, command) : undefined;
-      if (racedReplay)
-        return {
-          id,
-          ownerAccountId,
-          deleted: true,
-          deletedAt: racedReplay.recordedAt.toISOString(),
-        };
+      if (raced && racedReplay) return this.replayTombstone(raced, racedReplay);
       throw new NotFoundException();
     }
-    return {
-      id,
-      ownerAccountId,
-      deleted: true,
-      deletedAt: command.recordedAt.toISOString(),
-    };
+    return this.replayTombstone(updated, {
+      ...command,
+      response: { kind: "tombstone" },
+    });
   }
 }
 

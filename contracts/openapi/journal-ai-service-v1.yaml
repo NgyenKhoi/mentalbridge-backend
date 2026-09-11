@@ -100,7 +100,6 @@ paths:
       parameters:
         - $ref: "#/components/parameters/Limit"
         - $ref: "#/components/parameters/Cursor"
-        - $ref: "#/components/parameters/IncludeDeleted"
         - $ref: "#/components/parameters/CorrelationId"
       responses:
         "200":
@@ -253,13 +252,6 @@ components:
         minLength: 1
         maxLength: 512
       description: Opaque cursor returned by the previous list response.
-    IncludeDeleted:
-      name: includeDeleted
-      in: query
-      required: false
-      schema:
-        type: boolean
-        default: false
   headers:
     CorrelationId:
       schema:
@@ -285,7 +277,7 @@ components:
           schema:
             $ref: "#/components/schemas/Problem"
     Conflict:
-      description: Idempotency conflict or duplicate mutation.
+      description: Idempotency conflict, duplicate mutation, or journal revision limit reached.
       content:
         application/problem+json:
           schema:
@@ -365,6 +357,7 @@ components:
         - createdAt
         - updatedAt
         - deleted
+        - tags
         - encryption
         - analysisState
       properties:

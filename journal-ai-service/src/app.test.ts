@@ -163,6 +163,23 @@ void test("requires explicit MongoDB configuration in production", () => {
   );
 });
 
+void test("requires separate production encryption and idempotency keys", () => {
+  const sharedKey = Buffer.alloc(32, 9).toString("base64");
+  assert.throws(() =>
+    loadConfiguration({
+      NODE_ENV: "production",
+      JOURNAL_AI_MONGODB_URI: "mongodb://localhost:27017",
+      JOURNAL_AI_MONGODB_DATABASE: "mentalbridge_journal_ai",
+      JOURNAL_AI_ENCRYPTION_KEY: sharedKey,
+      JOURNAL_AI_IDEMPOTENCY_HMAC_KEY: sharedKey,
+      IDENTITY_JWT_ISSUER: "https://identity.test.mentalbridge",
+      IDENTITY_JWT_AUDIENCE: "mentalbridge-api",
+      IDENTITY_JWT_KEY_ID: "test-key",
+      IDENTITY_JWT_PUBLIC_KEY: testPublicKeyPem,
+    }),
+  );
+});
+
 void test("returns unavailable when MongoDB readiness fails", async () => {
   const app = await createApplication(testConfiguration, {
     readinessProbe: {

@@ -4,6 +4,7 @@ import { createRequire } from "node:module";
 const require = createRequire(import.meta.url);
 const migration = require("../migrations/001_journal_entries_baseline.cjs");
 const commandsMigration = require("../migrations/002_journal_mutation_commands.cjs");
+const replayMigration = require("../migrations/003_journal_replay_snapshots_and_cursor_index.cjs");
 
 assert.equal(migration.collectionName, "journal_entries");
 assert.equal(typeof migration.up, "function");
@@ -29,7 +30,18 @@ assert.equal(
   commandsMigration.validator.$jsonSchema.properties.commands.maxItems,
   32,
 );
+assert.equal(typeof replayMigration.up, "function");
+assert.equal(typeof replayMigration.down, "function");
+assert.equal(
+  replayMigration.validator.$jsonSchema.properties.commands.maxItems,
+  201,
+);
+assert.ok(
+  replayMigration.validator.$jsonSchema.properties.commands.items.properties
+    .response,
+);
+assert.equal(replayMigration.cursorIndex.deleted, 1);
 
 console.log(
-  "Validated Mongo migrations: 001_journal_entries_baseline.cjs, 002_journal_mutation_commands.cjs",
+  "Validated Mongo migrations: 001_journal_entries_baseline.cjs, 002_journal_mutation_commands.cjs, 003_journal_replay_snapshots_and_cursor_index.cjs",
 );

@@ -4,6 +4,7 @@ import { z } from "zod";
 const nodeEnvironments = ["development", "test", "production"] as const;
 const keyIdPattern = /^[A-Za-z0-9._-]{1,64}$/;
 const localEncryptionKey = Buffer.alloc(32, 7).toString("base64");
+const localIdempotencyKey = Buffer.alloc(32, 8).toString("base64");
 
 const encryptionKeySchema = z.string().transform((value, context) => {
   const decoded = Buffer.from(value, "base64");
@@ -47,6 +48,20 @@ const environmentSchema = z
       .min(1)
       .transform((value) => value.replaceAll("\\n", "\n")),
   })
+  .superRefine((environment, context) => {
+    if (
+      environment.NODE_ENV === "production" &&
+      environment.JOURNAL_AI_ENCRYPTION_KEY.equals(
+        environment.JOURNAL_AI_IDEMPOTENCY_HMAC_KEY,
+      )
+    )
+      context.addIssue({
+        code: "custom",
+        path: ["JOURNAL_AI_IDEMPOTENCY_HMAC_KEY"],
+        message:
+          "Production journal encryption and idempotency HMAC keys must be different",
+      });
+  })
   .transform((environment) => ({
     NODE_ENV: environment.NODE_ENV,
     PORT: environment.JOURNAL_AI_PORT,
@@ -89,7 +104,7 @@ export const loadConfiguration = (
           JOURNAL_AI_ENCRYPTION_KEY:
             environment.JOURNAL_AI_ENCRYPTION_KEY ?? localEncryptionKey,
           JOURNAL_AI_IDEMPOTENCY_HMAC_KEY:
-            environment.JOURNAL_AI_IDEMPOTENCY_HMAC_KEY ?? localEncryptionKey,
+            environment.JOURNAL_AI_IDEMPOTENCY_HMAC_KEY ?? localIdempotencyKey,
         }),
   };
 

@@ -1,6 +1,7 @@
 import assert from "node:assert/strict";
 import test from "node:test";
 import {
+  BadRequestException,
   ConflictException,
   HttpException,
   NotFoundException,
@@ -45,22 +46,33 @@ class MemoryStore implements JournalStore {
       ) ?? null,
     );
   }
-  list(
-    owner: string,
-    limit: number,
-    cursor?: JournalCursor,
-    includeDeleted = false,
-  ) {
+  list(owner: string, limit: number, cursor?: JournalCursor) {
     const rows = this.entries
       .filter(
         (entry) =>
           entry.ownerAccountId === owner &&
-          (includeDeleted || !entry.deleted) &&
-          (!cursor || entry.occurredAt < cursor.occurredAt),
+          !entry.deleted &&
+          (!cursor ||
+            entry.cursor.sortOccurredAt < cursor.sortOccurredAt ||
+            (entry.cursor.sortOccurredAt.getTime() ===
+              cursor.sortOccurredAt.getTime() &&
+              (entry.cursor.sortCreatedAt < cursor.sortCreatedAt ||
+                (entry.cursor.sortCreatedAt.getTime() ===
+                  cursor.sortCreatedAt.getTime() &&
+                  entry.cursor.entryId > cursor.entryId)))),
       )
-      .sort(
-        (left, right) => right.occurredAt.getTime() - left.occurredAt.getTime(),
-      );
+      .sort((left, right) => {
+        const occurred =
+          right.cursor.sortOccurredAt.getTime() -
+          left.cursor.sortOccurredAt.getTime();
+        if (occurred !== 0) return occurred;
+        const created =
+          right.cursor.sortCreatedAt.getTime() -
+          left.cursor.sortCreatedAt.getTime();
+        return created !== 0
+          ? created
+          : left.cursor.entryId.localeCompare(right.cursor.entryId);
+      });
     return Promise.resolve({
       rows: rows.slice(0, limit),
       hasMore: rows.length > limit,
@@ -157,11 +169,21 @@ void test("encrypts at rest and supports exact mutation retries", async () => {
     created.id,
   );
   assert.equal(revised.currentRevision, 2);
+  await subject.value.revise(
+    request(
+      { content: { text: "later" }, tags: ["later"] },
+      owner,
+      "revision-key-004",
+      2,
+    ),
+    created.id,
+  );
   const retry = await subject.value.revise(
     request({ content: { text: "revised" } }, owner, "revision-key-001", 1),
     created.id,
   );
-  assert.equal(retry.currentRevision, 2);
+  assert.deepEqual(retry, revised);
+  assert.deepEqual(await subject.value.create(request(payload)), created);
   await assert.rejects(
     () =>
       subject.value.revise(
@@ -209,9 +231,43 @@ void test("fails closed across owners and hides tombstones", async () => {
     created.id,
   );
   assert.equal(tombstone.deleted, true);
+  assert.deepEqual(
+    await subject.value.remove(
+      request({}, owner, "deletion-key-001"),
+      created.id,
+    ),
+    tombstone,
+  );
   assert.equal((await subject.value.list(request({}), {})).items.length, 0);
+  await assert.rejects(
+    () => subject.value.list(request({}), { includeDeleted: "true" }),
+    BadRequestException,
+  );
   await assert.rejects(
     () => subject.value.detail(request({}), created.id),
     NotFoundException,
+  );
+});
+
+void test("rejects a revision beyond the bounded history before persistence", async () => {
+  const subject = service();
+  const created = await subject.value.create(request(payload));
+  const entry = subject.store.entries[0];
+  assert.ok(entry);
+  entry.currentRevision = 200;
+
+  await assert.rejects(
+    () =>
+      subject.value.revise(
+        request(
+          { content: { text: "one revision too many" } },
+          owner,
+          "revision-limit-001",
+          200,
+        ),
+        created.id,
+      ),
+    (error: unknown) =>
+      error instanceof ConflictException && error.getStatus() === 409,
   );
 });
