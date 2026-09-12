@@ -4,6 +4,8 @@
 
 MentalBridge provides self-screening, emotional self-tracking, educational support, referral assistance, and follow-up. It does not diagnose, prescribe, provide psychotherapy, dispatch emergency responders, or guarantee continuous human monitoring.
 
+V1 supports exactly two screening and post-screening support domains for the primary Capstone cohort of adults aged 18 through 30 residing in Vietnam: `DEPRESSIVE_SYMPTOMS` through PHQ-9 and `ANXIETY_SYMPTOMS` through GAD-7, focused on generalized anxiety symptoms. It does not claim specialized screening for OCD, trauma/PTSD, panic disorder, social anxiety, bipolar/mania, psychosis, eating disorders, substance use, ADHD, insomnia as an independent domain, personality disorders, or another unapproved concern. An additional domain requires a separately governed product vertical.
+
 The product has four actors:
 
 | Actor | Goal | Important constraint |
@@ -13,17 +15,19 @@ The product has four actors:
 | Specialist | Manage availability and support consenting users | Sees only scopes granted by the user and required for care |
 | Admin | Operate and govern the platform | Does not receive unrestricted journal access by default |
 
-System actors include the AI provider, PhoBERT worker, notification provider, object storage, scheduler, and audit pipeline.
+System actors include configured AI providers, the notification provider, object storage, scheduler, and audit pipeline. A PhoBERT worker is an optional future benchmark actor under ADR 0011, not a current runtime dependency.
 
 ## 2. Ubiquitous language
 
 - **Assessment**: one completed PHQ-9 or GAD-7 questionnaire and its immutable scored result.
-- **Screening level**: severity derived only from the published questionnaire scoring band.
+- **Screening domain**: the bounded symptom concern measured by an approved instrument; V1 has `DEPRESSIVE_SYMPTOMS` and `ANXIETY_SYMPTOMS` only.
+- **Screening level**: the band derived only from one published questionnaire's scoring policy; it is not a global mental-health severity.
 - **Safety status**: deterministic PHQ-9 item-9 screen stored independently from the questionnaire band.
 - **Support tier**: approved platform support pathway derived from eligible inputs; it is not a suicide-risk label.
+- **Support evaluation**: an immutable, versioned Care decision that retains instrument-specific evidence, contributing domains, independent safety evidence, pathway and reason codes.
+- **SupportPlan**: a versioned, system-proposed set of approved platform actions which the user may activate after reviewing allowed choices; it is not a treatment plan.
 - **Journal entry**: user-authored private text. It is not a clinical record.
 - **Analysis**: structured AI output tied to the exact journal revision, prompt version, provider, and model.
-- **Intervention plan**: a versioned list of recommended platform actions, not a treatment plan.
 - **Consent grant**: explicit, scoped, revocable permission from one user to one specialist.
 - **Referral**: recommendation to seek human support and its operational status.
 - **Subscription period**: one paid, time-bounded activation of an immutable plan version.
@@ -47,27 +51,32 @@ Do not use "diagnosis", "patient", "treatment", or "clinical conclusion" in API/
 
 ### Safety status and support tier
 
-Care calculates safety status synchronously from the approved questionnaire-specific rule. MB-179 approves `mb-support-routing-capstone-v1` as a non-executable product blueprint; Care must not return a support tier until its runtime gate passes. AI is not an input to this Capstone routing version and can never define or override standardized scoring or safety.
+Care calculates safety status synchronously from the approved questionnaire-specific rule. Story 1103 publishes `mb-support-routing-capstone-v1` for bounded authenticated controlled-Capstone routing from one explicit compatible PHQ-9/GAD-7 pair. AI is not an input to this routing version and can never define or override standardized scoring or safety.
 
-Definition-only Capstone routing inputs:
+Controlled-Capstone routing inputs:
 
 - complete immutable PHQ-9 or GAD-7 results from published versions, explicitly selected in the same user-initiated evaluation;
 - the independent PHQ-9 item-9 safety status where applicable.
+
+Each input keeps its own instrument, domain and screening level. Equal PHQ-9 and GAD-7 bands do not mean the same support need, and the product never creates a combined score or global mental-health severity. Safety is a cross-cutting layer: it can prioritize reviewed guidance and professional/immediate-help paths, but it never changes either instrument's score or band.
 
 Unpublished GAD-7 is not an eligible input. A future policy may add automatic latest-result windows, journal indicators or trends only after it versions freshness, consent, confidence, missing-data and conflict behavior.
 
 Independent outputs:
 
 - `NEGATIVE_SAFETY_SCREEN` or `POSITIVE_SAFETY_SCREEN` for the PHQ-9 item-9 rule;
-- after the separate runtime gate passes, a support tier such as `SELF_GUIDED_SUPPORT`, `PROFESSIONAL_SUPPORT_RECOMMENDED`, or `SAFETY_FOLLOW_UP_RECOMMENDED`;
+- a support tier of `SELF_GUIDED_SUPPORT`, `PROFESSIONAL_SUPPORT_RECOMMENDED`, or `SAFETY_FOLLOW_UP_RECOMMENDED`;
 - reason codes, input references, policy version, and calculation time;
-- approved catalogue activity/content versions selected.
+- contributing screening domains and exact instrument-specific evidence.
 
 Rules:
 
 - no explicitly selected eligible result produces `INSUFFICIENT_DATA`, not fabricated certainty; a future time-window policy must treat stale inputs the same way;
 - safety status cannot be downgraded by positive AI sentiment;
 - changing a policy does not rewrite prior results; reclassification creates a new record;
+- the current `mb-support-routing-capstone-v1` tier is historical coarse routing and is not sufficient by itself to select resources or a SupportPlan;
+- future plan creation starts from a domain-aware SupportEvaluation and a system proposal; the user cannot submit an arbitrary initial resource list;
+- Care revalidates exact versioned eligibility before explicit activation, and a new evaluation never silently changes an existing plan;
 - user-facing wording always includes the non-diagnostic disclaimer.
 
 ### Consent and access
@@ -143,7 +152,7 @@ The project-tracking workbook currently groups the 162 functions into seven deli
 
 **Scope:** journal CRUD, PHQ-9/GAD-7 submission/result/history/deletion, LLM emotion analysis and re-run, benchmark execution/results, screening/safety/support display, and personal emotional analytics.
 
-**Main flow:** Care serves an immutable questionnaire version, validates complete answers, scores deterministically and returns screening guidance synchronously. Journal/AI stores encrypted revisions and runs consent-gated asynchronous analysis. Governed benchmark runs compare the same licensed/de-identified split through versioned LLM and PhoBERT configurations.
+**Main flow:** Care serves an immutable questionnaire version, validates complete answers, scores deterministically and returns screening guidance synchronously. Journal/AI stores encrypted revisions and runs consent-gated asynchronous analysis. Governed benchmark runs compare the same licensed/de-identified split through versioned provider configurations, initially OpenAI and Gemini; PhoBERT is an optional future third baseline.
 
 **Exceptions and acceptance:** incomplete/invalid answers do not persist a final score; duplicate submission/analysis is idempotent; stale questionnaire requires restart; AI/provider failure never makes the journal or assessment unavailable. Raw journal content and chain-of-thought do not enter events or logs. AI cannot calculate PHQ/GAD scores or downgrade a safety path. Analytics distinguish missing data from zero and expose source freshness.
 
@@ -151,11 +160,11 @@ The project-tracking workbook currently groups the 162 functions into seven deli
 
 **Actors:** User, Admin, System
 
-**Scope:** deterministic safety status, approved support-tier selection, entitlement-aware personalized support, reviewed safety guidance, self-help resources, and support-appropriate notification/follow-up triggers.
+**Scope:** deterministic safety status, domain-aware SupportEvaluation, system-proposed SupportPlans, entitlement-aware personalized support, reviewed safety guidance, self-help resources, and support-appropriate notification/follow-up triggers.
 
-**Main flow:** Care evaluates versioned local safety rules. Once a separate executable support gate passes, it may persist support-policy provenance and select only eligible versioned catalogue actions. Content/Notification serves reviewed localized generic self-help resources independently and handles non-critical delivery.
+**Main flow:** Care evaluates versioned local scoring, domain and safety rules. Once the domain-aware policy and contracts are approved, Care resolves a support pathway, selects a bounded proposal from exact eligible content versions, and creates a system-proposed `DRAFT` SupportPlan. The user reviews only the choices allowed by that proposal; Care revalidates eligibility before explicit activation. Content/Notification owns reviewed localized resources and their versioned eligibility metadata, while Care owns final plan eligibility and lifecycle.
 
-**Exceptions and acceptance:** missing/stale support inputs yield `INSUFFICIENT_DATA`; safety status cannot be downgraded by positive AI sentiment. Immediate guidance is returned without waiting for Kafka, Redis, WebSocket, email or push. Provider failure affects delivery status only and never claims guaranteed emergency response or that a human was notified.
+**Exceptions and acceptance:** missing/stale support inputs yield `INSUFFICIENT_DATA`; safety status cannot be downgraded by positive AI sentiment. Review/publication alone never makes a resource universally plan-eligible. Immediate guidance is returned before ordinary plan controls and without waiting for Kafka, Redis, WebSocket, email or push. Provider failure affects delivery status only and never claims guaranteed emergency response or that a human was notified.
 
 ### UC-04 Specialist Discovery & Appointment
 
@@ -205,7 +214,7 @@ The project-tracking workbook currently groups the 162 functions into seven deli
 - versioned PHQ-9/GAD-7, authenticated and anonymous scoring;
 - user consent and journal CRUD;
 - one asynchronous LLM provider integration with schema validation;
-- deterministic screening/safety behavior and approved support catalogue;
+- deterministic instrument-specific screening, cross-cutting safety behavior, and domain-aware system-proposed support;
 - basic admin management of reviewed self-help resources;
 - audit for security and sensitive-data access.
 
@@ -221,7 +230,7 @@ The project-tracking workbook currently groups the 162 functions into seven deli
 
 - moderation and account deletion orchestration;
 - aggregate reporting and retention configuration;
-- isolated benchmark dataset pipeline and PhoBERT comparison.
+- isolated provider-neutral benchmark dataset pipeline, with PhoBERT comparison optional after its activation gate passes.
 
 In-app video is intended but its call/signaling/provider/security contract is deferred; phone/in-person consultation, social/community feeds, organization tenancy, automatic emergency dispatch, custom model training, automated refunds, and Kubernetes remain out of scope unless formally added. Subscription/payment ownership, credit accounting, upgrade, earnings, and payout workflow are fixed by ADR 0005; real provider credentials/signatures, VND plan pricing or explicit FX policy, settlement delay, retention, and chargeback reconciliation still require approval.
 
@@ -229,13 +238,17 @@ In-app video is intended but its call/signaling/provider/security contract is de
 
 These remain open for the affected production or optional feature. Under ADR 0010 they do not block a base questionnaire that has passed the controlled Capstone publication gate:
 
-1. MB-179 approves `mb-support-routing-capstone-v1` as a non-executable product blueprint using explicitly selected current assessment evidence. Runtime contracts/persistence/tests, any automatic latest-result freshness window, confidence-bearing inputs and the reviewed personalized intervention catalogue remain open. PHQ-9 item-9 core behavior is already executable through `MB-SAFETY-PHQ9-001`.
+1. The current `mb-support-routing-capstone-v1` runtime remains immutable historical coarse routing. Compatible domain-bearing SupportEvaluation evolution, any automatic latest-result freshness window, and downstream plan use are tracked by issue #48. PHQ-9 item-9 core behavior is already executable through `MB-SAFETY-PHQ9-001`.
 2. Who qualifies as a specialist/mentor and which profile facts administrators review without collecting credential documents.
 3. Exact Vietnamese production safety/disclaimer wording and whether a specific emergency number may appear as versioned safety content. A Product Owner may select bounded non-diagnostic and capability wording for controlled Capstone use; no hotline/facility catalogue is planned.
 4. Whether specialists can author notes; if yes, ownership, visibility, amendment, and retention rules.
 5. Minimum user age and guardian/consent behavior if expansion includes users under 18.
 6. Consent text/versioning, retention periods, deletion SLA, export scope, and applicable Vietnamese regulation review before public real-user data collection. Synthetic controlled demos do not require these values to publish a questionnaire.
 7. Exact standard appointment duration, join grace, late-cancellation cutoff, and later in-app-video signaling/provider/recording/fallback policy.
-8. Dataset licenses, label mapping, train/test leakage controls, and research ethics approval.
+8. Dataset licenses, label mapping, train/test leakage controls, and research ethics approval. PhoBERT additionally requires an approved narrow classification task, deterministic preprocessing, and a compatible versioned fine-tuned checkpoint before implementation.
 9. Exact MoMo request type/payment methods, credential/key rotation, settlement delay, payout onboarding, VND plan prices or versioned FX policy, chargeback reconciliation, and financial retention. Downgrade and refund remain unsupported; no second production payment provider is planned.
 10. Whether WBS 28-29 are end-user/research benchmark views distinct from admin WBS 155-156, or duplicate functions that should share one admin-only workflow.
+11. Before SupportPlan contract work resumes, issue #49 must decide whether templates are persisted, required versus optional proposed resources, minimum/maximum choices, rule-versus-mapping ownership, and whether safety-positive activation needs an additional reviewed acknowledgement.
+12. Issue #50 must approve versioned resource-eligibility semantics, including primary-domain versus cross-domain adjunct content; review/publication alone is not eligibility.
+
+The governing correction and repository impact are recorded in [ADR 0012](adr/0012-two-domain-screening-and-system-proposed-support-plans.md).

@@ -15,6 +15,7 @@ import org.springframework.jdbc.core.simple.JdbcClient;
 
 import com.mentalbridge.care.TestcontainersConfiguration;
 import com.mentalbridge.care.CareTestProperties;
+import com.mentalbridge.care.support.SupportEvaluationService;
 
 @Import(TestcontainersConfiguration.class)
 @SpringBootTest
@@ -23,9 +24,36 @@ class CareLiquibaseMigrationTests extends CareTestProperties {
 	private static final UUID PHQ9_DEFINITION_ID = UUID.fromString("10000000-0000-0000-0000-000000000001");
 	private static final UUID PHQ9_ITEM_1_ID = UUID.fromString("11000000-0000-0000-0000-000000000001");
 	private static final UUID PHQ9_VI_DEFINITION_ID = UUID.fromString("10000000-0000-0000-0000-000000000002");
+	private static final UUID GAD7_VI_DEFINITION_ID = UUID.fromString("10000000-0000-0000-0000-000000000003");
+	private static final UUID PHQ9_VI_V2_DEFINITION_ID = UUID.fromString("10000000-0000-0000-0000-000000000004");
 
 	@Autowired
 	private JdbcClient jdbc;
+
+	@Test
+	void migrationPublishesVersionedCombinedSupportPolicyAndReviewedSafetyFallback() {
+		var policy = jdbc.sql("""
+				select version || '|' || locale || '|' || status
+				from support_policy_definition where status='PUBLISHED'
+				""").query(String.class).single();
+		var eligible = jdbc.sql("""
+				select instrument || '|' || questionnaire_version || '|' || scoring_version
+				from support_policy_eligible_definition order by instrument,questionnaire_version
+				""").query(String.class).list();
+		var safety = jdbc.sql("""
+				select safety_guidance_text from support_tier_guidance
+				where policy_version='mb-support-routing-capstone-v1'
+				and support_tier='SAFETY_FOLLOW_UP_RECOMMENDED'
+				""").query(String.class).single();
+
+		assertThat(policy).isEqualTo("mb-support-routing-capstone-v1|vi-VN|PUBLISHED");
+		assertThat(eligible).containsExactly(
+				"GAD7|gad7-vi-vn-adult-v1|gad7-standard-bands-v1",
+				"PHQ9|phq9-vi-vn-capstone-v1|phq9-standard-bands-v1",
+				"PHQ9|phq9-vi-vn-capstone-v2|phq9-standard-bands-v1");
+		assertThat(jdbc.sql("select count(*) from screening_band_meaning").query(Long.class).single()).isEqualTo(9);
+		assertThat(safety).isEqualTo(SupportEvaluationService.SAFETY_FALLBACK);
+	}
 
 	@Test
 	void migrationCreatesOwnerTablesInPublicAndSeedsACompletePhq9Definition() {
@@ -60,7 +88,9 @@ class CareLiquibaseMigrationTests extends CareTestProperties {
 		assertThat(tables).contains(
 				"user_profile", "consent_decision", "anonymous_assessment_session",
 				"questionnaire_definition", "questionnaire_question", "questionnaire_score_band",
-				"assessment_submission", "assessment_answer", "assessment_result", "outbox_event");
+				"assessment_submission", "assessment_answer", "assessment_result", "outbox_event",
+				"support_policy_definition", "support_policy_eligible_definition", "screening_band_meaning",
+				"support_tier_guidance", "support_evaluation", "support_evaluation_request");
 		assertThat(careSchemaCount).isZero();
 		assertThat(itemNumbers).containsExactly(1, 2, 3, 4, 5, 6, 7, 8, 9);
 		assertThat(safetyItems).containsExactly(9);
@@ -70,7 +100,7 @@ class CareLiquibaseMigrationTests extends CareTestProperties {
 	}
 
 	@Test
-	void migrationPublishesTraceableVietnamesePhq9ContentWithoutChangingScoring() {
+	void migrationRetiresPhq9V1AndPublishesTraceableCorrectedV2() {
 		var definition = jdbc.sql("""
 				select version || '|' || locale || '|' || status || '|' || scoring_version
 				from questionnaire_definition where id = :definitionId
@@ -100,7 +130,7 @@ class CareLiquibaseMigrationTests extends CareTestProperties {
 		var source = jdbc.sql("select source_reference from questionnaire_definition where id = :definitionId")
 				.param("definitionId", PHQ9_VI_DEFINITION_ID).query(String.class).single();
 
-		assertThat(definition).isEqualTo("phq9-vi-vn-capstone-v1|vi-VN|PUBLISHED|phq9-standard-bands-v1");
+		assertThat(definition).isEqualTo("phq9-vi-vn-capstone-v1|vi-VN|RETIRED|phq9-standard-bands-v1");
 		assertThat(responseOptions).containsExactly(
 				"0:Không có gì", "1:Vài ngày", "2:Hơn nửa ngày", "3:Gần như mỗi ngày");
 		assertThat(questions).hasSize(9)
@@ -115,6 +145,56 @@ class CareLiquibaseMigrationTests extends CareTestProperties {
 				"20240720104123",
 				"E2775444E5AB4A05C3FF097F1CAB356C2DA9ECC73BAC63E91827BAA77E965FF7",
 				"no permission is required");
+
+		var corrected = jdbc.sql("""
+				select version || '|' || status || '|' || scoring_version
+				from questionnaire_definition where id = :definitionId
+				""").param("definitionId", PHQ9_VI_V2_DEFINITION_ID).query(String.class).single();
+		var correctedQuestion = jdbc.sql("""
+				select prompt from questionnaire_question
+				where definition_id = :definitionId and item_number = 2
+				""").param("definitionId", PHQ9_VI_V2_DEFINITION_ID).query(String.class).single();
+		var correctedSource = jdbc.sql("select source_reference from questionnaire_definition where id = :definitionId")
+				.param("definitionId", PHQ9_VI_V2_DEFINITION_ID).query(String.class).single();
+		assertThat(corrected).isEqualTo("phq9-vi-vn-capstone-v2|PUBLISHED|phq9-standard-bands-v1");
+		assertThat(correctedQuestion).isEqualTo("Cảm thấy chán nản, buồn rầu hoặc vô vọng");
+		assertThat(correctedSource).contains("Product Owner", "not claimed verbatim");
+	}
+
+	@Test
+	void migrationPublishesExactGad7MappingAndBands() {
+		var definition = jdbc.sql("""
+				select version || '|' || locale || '|' || status || '|' || scoring_version
+				from questionnaire_definition where id = :definitionId
+				""").param("definitionId", GAD7_VI_DEFINITION_ID).query(String.class).single();
+		var options = jdbc.sql("""
+				select (option ->> 'value') || ':' || (option ->> 'label')
+				from questionnaire_definition,
+				     lateral jsonb_array_elements(response_options) with ordinality as entry(option, ordinal)
+				where id = :definitionId order by entry.ordinal
+				""").param("definitionId", GAD7_VI_DEFINITION_ID).query(String.class).list();
+		var questions = jdbc.sql("""
+				select prompt from questionnaire_question
+				where definition_id = :definitionId order by item_number
+				""").param("definitionId", GAD7_VI_DEFINITION_ID).query(String.class).list();
+		var bands = jdbc.sql("""
+				select code || ':' || minimum_score || '-' || maximum_score
+				from questionnaire_score_band where definition_id = :definitionId order by ordinal
+				""").param("definitionId", GAD7_VI_DEFINITION_ID).query(String.class).list();
+		var source = jdbc.sql("select source_reference from questionnaire_definition where id = :definitionId")
+				.param("definitionId", GAD7_VI_DEFINITION_ID).query(String.class).single();
+
+		assertThat(definition).isEqualTo("gad7-vi-vn-adult-v1|vi-VN|PUBLISHED|gad7-standard-bands-v1");
+		assertThat(options).containsExactly(
+				"0:Không bao giờ (0 ngày nào)", "1:Vài ngày (1-7 ngày)",
+				"2:Hơn một nửa số ngày (8-10 ngày)", "3:Gần như hàng ngày (11-14 ngày)");
+		assertThat(questions).hasSize(7)
+				.first().isEqualTo("Cảm giác hồi hộp, lo lắng hoặc cáu kỉnh");
+		assertThat(bands).containsExactly("MINIMAL:0-4", "MILD:5-9", "MODERATE:10-14", "SEVERE:15-21");
+		assertThat(source).contains(
+				"UNC Vietnam 2024", "retrieved 2026-09-09",
+				"876A7245EF7BDDFC3EADFA15625E02F132560218C219E4E5251E6B7DC6A8A001",
+				"codes 88/99 excluded");
 	}
 
 	@Test
@@ -255,6 +335,37 @@ class CareLiquibaseMigrationTests extends CareTestProperties {
 	}
 
 	@Test
+	void assessmentResultRepresentsGad7SafetyAsNotApplicableWithoutAFalseFlagOrPolicy() {
+		var userId = insertProfile();
+		var submissionId = insertAuthenticatedSubmission(userId, "gad7-safety-na-000001", GAD7_VI_DEFINITION_ID);
+
+		jdbc.sql("""
+				insert into assessment_result (
+				    submission_id, total_score, screening_level, scoring_version,
+				    safety_item_positive, safety_status, safety_policy_version, calculated_at
+				) values (
+				    :submissionId, 10, 'MODERATE', 'gad7-standard-bands-v1',
+				    null, 'NOT_APPLICABLE', null, :calculatedAt
+				)
+				""").param("submissionId", submissionId)
+				.param("calculatedAt", OffsetDateTime.now()).update();
+
+		assertThatThrownBy(() -> {
+			var invalidSubmissionId = insertAuthenticatedSubmission(userId, "gad7-safety-false-001", GAD7_VI_DEFINITION_ID);
+			jdbc.sql("""
+					insert into assessment_result (
+					    submission_id, total_score, screening_level, scoring_version,
+					    safety_item_positive, safety_status, safety_policy_version, calculated_at
+					) values (
+					    :submissionId, 10, 'MODERATE', 'gad7-standard-bands-v1',
+					    false, 'NOT_APPLICABLE', null, :calculatedAt
+					)
+					""").param("submissionId", invalidSubmissionId)
+					.param("calculatedAt", OffsetDateTime.now()).update();
+		}).isInstanceOf(DataIntegrityViolationException.class);
+	}
+
+	@Test
 	void answersCannotCrossQuestionnaireVersions() {
 		var otherDefinitionId = jdbc.sql("""
 				insert into questionnaire_definition (
@@ -347,6 +458,10 @@ class CareLiquibaseMigrationTests extends CareTestProperties {
 	}
 
 	private UUID insertAuthenticatedSubmission(UUID userId, String idempotencyKey) {
+		return insertAuthenticatedSubmission(userId, idempotencyKey, PHQ9_DEFINITION_ID);
+	}
+
+	private UUID insertAuthenticatedSubmission(UUID userId, String idempotencyKey, UUID definitionId) {
 		return jdbc.sql("""
 				insert into assessment_submission (
 					user_id, definition_id, idempotency_key, request_hash, privacy_policy_version, submitted_at
@@ -355,7 +470,7 @@ class CareLiquibaseMigrationTests extends CareTestProperties {
 				)
 				returning id
 				""").param("userId", userId)
-				.param("definitionId", PHQ9_DEFINITION_ID)
+				.param("definitionId", definitionId)
 				.param("idempotencyKey", idempotencyKey)
 				.param("requestHash", "e".repeat(64))
 				.param("submittedAt", OffsetDateTime.now())

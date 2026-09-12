@@ -15,7 +15,7 @@ class CareEventContractTests {
 
 	@Test
 	void assessmentSubmittedSchemaIsStrictAndExcludesRawAnswers() throws Exception {
-		var path = Path.of("..", "contracts", "events", "care", "assessment-submitted-v1.schema.json")
+		var path = Path.of("..", "contracts", "events", "care", "assessment-submitted-v2.schema.json")
 				.toAbsolutePath();
 		var schema = objectMapper.readTree(Files.readString(path));
 		var payload = schema.at("/properties/payload");
@@ -25,6 +25,39 @@ class CareEventContractTests {
 		assertThat(payload.get("additionalProperties").asBoolean()).isFalse();
 		assertThat(payload.get("properties").fieldNames()).toIterable()
 				.doesNotContain("answers", "answerValues", "questionAnswers", "sessionToken");
-		assertThat(payload.get("required")).anySatisfy(node -> assertThat(node.asText()).isEqualTo("safetyPolicyVersion"));
+		assertThat(schema.at("/properties/schemaVersion/const").asText()).isEqualTo("2.0");
+		assertThat(payload.get("required")).extracting(node -> node.asText()).contains(
+				"definitionId", "instrument", "totalScore", "safetyStatus", "safetyPolicyVersion", "completedAt");
+		assertThat(payload.at("/properties/instrument/enum")).extracting(node -> node.asText())
+				.containsExactly("PHQ9", "GAD7");
+		assertThat(payload.at("/properties/safetyStatus/enum")).extracting(node -> node.asText())
+				.contains("NOT_APPLICABLE");
+	}
+
+	@Test
+	void assessmentSubmittedV1RemainsPhq9Only() throws Exception {
+		var path = Path.of("..", "contracts", "events", "care", "assessment-submitted-v1.schema.json")
+				.toAbsolutePath();
+		var schema = objectMapper.readTree(Files.readString(path));
+
+		assertThat(schema.at("/properties/schemaVersion/const").asText()).isEqualTo("1.0");
+		assertThat(schema.at("/properties/payload/properties/instrument/const").asText()).isEqualTo("PHQ9");
+		assertThat(schema.at("/properties/payload/properties/safetyStatus/enum"))
+				.extracting(node -> node.asText())
+				.containsExactly("NEGATIVE_SAFETY_SCREEN", "POSITIVE_SAFETY_SCREEN");
+	}
+
+	@Test
+	void supportTierResolvedSchemaIsStrictAndExcludesScoresAndAnswers() throws Exception {
+		var path = Path.of("..", "contracts", "events", "care", "support-tier-resolved-v1.schema.json")
+				.toAbsolutePath();
+		var schema = objectMapper.readTree(Files.readString(path));
+		var payload = schema.at("/properties/payload");
+
+		assertThat(schema.at("/properties/messageType/const").asText()).isEqualTo("care.support-tier.resolved");
+		assertThat(schema.at("/properties/schemaVersion/const").asText()).isEqualTo("1.0");
+		assertThat(payload.get("additionalProperties").asBoolean()).isFalse();
+		assertThat(payload.get("properties").fieldNames()).toIterable()
+				.doesNotContain("answers", "totalScore", "safetyItemPositive");
 	}
 }

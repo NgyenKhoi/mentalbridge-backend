@@ -23,6 +23,14 @@ public abstract class IdentityTestProperties {
 		properties.add("mentalbridge.identity.encryption.key-version", () -> "test-v1");
 		properties.add("mentalbridge.identity.encryption.key",
 				() -> Base64.getEncoder().encodeToString("0123456789abcdef0123456789abcdef".getBytes()));
+		properties.add("mentalbridge.identity.verification-delivery.base-url", () -> "https://api.brevo.com");
+		properties.add("mentalbridge.identity.verification-delivery.api-key", () -> "test-brevo-key");
+		properties.add("mentalbridge.identity.verification-delivery.sender-email", () -> "no-reply@example.test");
+		properties.add("mentalbridge.identity.verification-delivery.sender-name", () -> "MentalBridge");
+		properties.add("mentalbridge.identity.verification-delivery.verification-url",
+				() -> "http://localhost:3000/verify-email");
+		properties.add("mentalbridge.identity.verification-delivery.password-recovery-url",
+				() -> "http://localhost:3000/reset-password");
 	}
 
 	private static KeyPair keyPair() {

@@ -47,6 +47,7 @@ describe('health endpoints', () => {
   });
 
   it('returns readiness when PostgreSQL responds', async () => {
+    const correlationId = 'a13e4567-e89b-42d3-a456-426614174000';
     app = await createApplication(configuration, {
       readinessProbe: { check: async () => undefined },
     });
@@ -54,8 +55,8 @@ describe('health endpoints', () => {
 
     await request(app.getHttpServer() as Server)
       .get('/health/ready')
-      .set('x-correlation-id', 'test-correlation')
-      .expect('x-correlation-id', 'test-correlation')
+      .set('x-correlation-id', correlationId)
+      .expect('x-correlation-id', correlationId)
       .expect(200)
       .expect({ status: 'ok', db: 'connected' });
   });

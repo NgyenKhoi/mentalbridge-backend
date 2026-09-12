@@ -18,31 +18,36 @@ class IdentityOpenApiContractTests {
 	private static final Set<String> IMPLEMENTED_OPERATIONS = Set.of(
 			"POST /api/v1/auth/registrations",
 			"POST /api/v1/auth/email-verifications",
+			"POST /api/v1/auth/email-verification-requests",
 			"POST /api/v1/auth/login",
 			"POST /api/v1/auth/refresh",
 			"POST /api/v1/auth/logout",
 			"POST /api/v1/auth/logout-all",
-			"GET /api/v1/account");
-
-	private static final Set<String> PLANNED_OPERATIONS = Set.of(
-			"POST /api/v1/auth/email-verification-requests",
 			"POST /api/v1/auth/password-recovery-requests",
 			"POST /api/v1/auth/password-resets",
 			"PUT /api/v1/account/password",
+			"GET /api/v1/account");
+
+	private static final Set<String> PLANNED_OPERATIONS = Set.of(
 			"GET /api/v1/admin/accounts",
 			"GET /api/v1/admin/accounts/{accountId}",
 			"PUT /api/v1/admin/accounts/{accountId}/state");
 	private static final Set<String> PROTECTED_OPERATIONS = Set.of(
 			"POST /api/v1/auth/logout",
 			"POST /api/v1/auth/logout-all",
+			"PUT /api/v1/account/password",
 			"GET /api/v1/account");
 	private static final Map<String, Set<String>> IMPLEMENTED_RESPONSES = Map.ofEntries(
 			Map.entry("POST /api/v1/auth/registrations", Set.of("201", "400", "409", "429")),
 			Map.entry("POST /api/v1/auth/email-verifications", Set.of("200", "400", "429")),
+			Map.entry("POST /api/v1/auth/email-verification-requests", Set.of("202", "400")),
 			Map.entry("POST /api/v1/auth/login", Set.of("200", "400", "401", "429")),
 			Map.entry("POST /api/v1/auth/refresh", Set.of("200", "400", "401", "409", "429")),
 			Map.entry("POST /api/v1/auth/logout", Set.of("204", "400", "401")),
 			Map.entry("POST /api/v1/auth/logout-all", Set.of("204", "401")),
+			Map.entry("POST /api/v1/auth/password-recovery-requests", Set.of("202", "400")),
+			Map.entry("POST /api/v1/auth/password-resets", Set.of("204", "400")),
+			Map.entry("PUT /api/v1/account/password", Set.of("204", "400", "401")),
 			Map.entry("GET /api/v1/account", Set.of("200", "401")));
 
 	@Test
@@ -51,7 +56,7 @@ class IdentityOpenApiContractTests {
 		var options = new ParseOptions();
 		options.setResolve(true);
 		options.setResolveFully(true);
-		var result = new OpenAPIV3Parser().readLocation(contract.toString(), null, options);
+		var result = new OpenAPIV3Parser().readLocation(contract.toUri().toString(), null, options);
 
 		assertThat(result.getMessages()).isEmpty();
 		assertThat(result.getOpenAPI()).isNotNull();

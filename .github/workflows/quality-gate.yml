@@ -61,7 +61,7 @@ jobs:
         include:
           - service: journal-ai-service
             node-version: "22"
-            integration: false
+            integration: true
           - service: content-notification-service
             node-version: "22"
             integration: true

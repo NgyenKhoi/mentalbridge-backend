@@ -1,14 +1,17 @@
 # Content and Notification Service
 
-NestJS service that owns reviewed self-help resources, notification preferences, and durable notification delivery state. ADR 0009 removes the hotline catalogue from product scope.
+NestJS service that owns reviewed self-help resource definitions, future versioned plan-eligibility metadata, notification preferences, and durable notification delivery state. ADR 0009 removes the hotline catalogue from product scope. ADR 0012 keeps final SupportPlan eligibility in Care and clarifies that current review/publication does not make a resource universally plan-eligible.
 
 ## Current capability
 
 - `GET /health/live` — liveness without a database dependency
 - `GET /health/ready` — PostgreSQL readiness check
 - `GET /api/v1/resources` — lists active reviewed published self-help resources; returns empty array when none match; returns neutral fallback when service is unreachable; no hotline number or emergency dispatch claim (ADR 0009)
+- `POST|DELETE /__test/content/outage` — test-only local outage switch; unavailable unless `E2E_TEST_MODE=true` and the exact `x-e2e-secret` is supplied
 - Strict startup configuration, safe Problem Details, structured redacted request logs, CORS deny-by-default, and graceful NestJS shutdown
 - `node-pg-migrate` baseline for the service-owned `mentalbridge_content_notification` database
+
+The current resource API supports public reviewed-content reads only. Domain/instrument-band/pathway eligibility requires a compatible contract and append-only migration under #50 before Care may use a resource version in a system-proposed SupportPlan.
 
 Admin write operations (`POST`, `PATCH`, `DELETE`, publish, archive) are explicitly `planned` in `../contracts/openapi/content-notification-service.yaml`. Safety screening and versioned safety guidance remain Care-owned behavior.
 
@@ -29,6 +32,18 @@ npm run dev
 ```
 
 The application loads `.env` only in development. Test and production environments require real process variables and never depend on a repository `.env` file.
+
+For live local E2E, set `E2E_TEST_MODE=true` and a random `E2E_TEST_SECRET`.
+The Playwright harness can then toggle the service itself:
+
+```powershell
+$headers = @{ 'x-e2e-secret' = $env:E2E_TEST_SECRET }
+Invoke-RestMethod -Method Post -Uri http://127.0.0.1:3003/__test/content/outage -Headers $headers
+Invoke-RestMethod -Method Delete -Uri http://127.0.0.1:3003/__test/content/outage -Headers $headers
+```
+
+This changes the Content provider state and lets the real BFF receive a genuine
+dependency-unavailable response; it does not intercept or rewrite browser traffic.
 
 ### JWT authentication
 

@@ -1,20 +1,38 @@
 import assert from 'node:assert/strict';
-import { readFile } from 'node:fs/promises';
+import { readdir, readFile } from 'node:fs/promises';
 
-const baseline = await readFile(
-  new URL('../migrations/1_initial_schema.sql', import.meta.url),
-  'utf8',
+const migrationDirectory = new URL('../migrations/', import.meta.url);
+const migrationNames = (await readdir(migrationDirectory))
+  .filter((name) => /^\d+_.+\.sql$/.test(name))
+  .sort((left, right) => left.localeCompare(right, 'en', { numeric: true }));
+const migrations = new Map(
+  await Promise.all(
+    migrationNames.map(async (name) => [
+      name,
+      await readFile(new URL(name, migrationDirectory), 'utf8'),
+    ]),
+  ),
 );
-const hotlineRemoval = await readFile(
-  new URL('../migrations/2_remove_hotline_catalogue.sql', import.meta.url),
-  'utf8',
-);
+const requiredMigration = (name) => {
+  const sql = migrations.get(name);
+  assert.ok(sql, `Missing owner migration ${name}`);
+  return sql;
+};
+
+const baseline = requiredMigration('1_initial_schema.sql');
+const hotlineRemoval = requiredMigration('2_remove_hotline_catalogue.sql');
+const reviewProvenance = requiredMigration('3_add_review_provenance_fields.sql');
+const legacyIdempotency = requiredMigration('4_add_idempotency_key.sql');
+const commandRecords = requiredMigration('5_add_resource_command_records.sql');
 const review1Seed = await readFile(
   new URL('../migrations/review1/1_seed_review1_controlled_resource.sql', import.meta.url),
   'utf8',
 );
 
-assert.match(baseline, /^-- Up Migration/m);
+for (const [name, sql] of migrations) {
+  assert.match(sql, /^-- Up Migration/m, `${name} must declare its direction`);
+  assert.doesNotMatch(sql, /CREATE DATABASE|CREATE SCHEMA/i, `${name} must stay owner-scoped`);
+}
 
 for (const table of ['resource', 'notification_preference', 'notification']) {
   assert.match(baseline, new RegExp(`CREATE TABLE IF NOT EXISTS ${table}\\b`));
@@ -23,13 +41,16 @@ for (const table of ['resource', 'notification_preference', 'notification']) {
 assert.match(baseline, /CREATE TABLE IF NOT EXISTS hotline\b/);
 assert.match(hotlineRemoval, /^-- Up Migration/m);
 assert.match(hotlineRemoval, /DROP TABLE IF EXISTS hotline\b/);
+assert.match(reviewProvenance, /ck_resource_published_requires_review\b/);
+assert.match(legacyIdempotency, /ADD COLUMN idempotency_key\b/);
+assert.match(commandRecords, /CREATE TABLE resource_idempotency_record\b/);
+assert.match(commandRecords, /PRIMARY KEY \(actor_id, operation, idempotency_key\)/);
+assert.match(commandRecords, /CREATE TABLE resource_audit_event\b/);
 assert.match(review1Seed, /^-- Up Migration/m);
 assert.match(review1Seed, /INSERT INTO resource\b/);
 assert.match(review1Seed, /Bài thực hành thở chậm \(dữ liệu demo\)/);
 assert.match(review1Seed, /ON CONFLICT \(id\) DO NOTHING/);
-assert.doesNotMatch(baseline, /CREATE DATABASE|CREATE SCHEMA/i);
-assert.doesNotMatch(hotlineRemoval, /CREATE DATABASE|CREATE SCHEMA/i);
 assert.doesNotMatch(review1Seed, /CREATE DATABASE|CREATE SCHEMA/i);
 console.log(
-  'Validated node-pg-migrate migrations: baseline, hotline removal, and controlled Review 1 resource',
+  'Validated every Content/Notification owner migration and controlled Review 1 resource',
 );

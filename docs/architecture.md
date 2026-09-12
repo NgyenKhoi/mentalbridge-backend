@@ -13,16 +13,18 @@
 | Context | Owns | Does not own |
 | --- | --- | --- |
 | Identity | credentials, account state, roles, sessions | profile health data |
-| Care | user profile, consent, assessment, safety/support policy, intervention, follow-up | raw chat messages |
+| Care | user profile, consent, assessment, safety/support policy, SupportEvaluation, SupportPlan proposal/lifecycle, follow-up | raw chat messages or resource definitions |
 | Consultation/Billing | specialist profile/approval, plan versions, subscriptions, payments, consultation credits, slots, appointments, earnings, payout destinations/requests, reviews | account passwords, journals, chat messages |
 | Journal/AI | journal revisions, analysis jobs/results, AI evaluation | authoritative assessment scoring |
 | Realtime | conversations, messages, receipts, presence | consent source of truth |
-| Content/Notification | reviewed self-help resources, notification preferences/delivery | screening, safety, or support-tier decisions |
+| Content/Notification | reviewed self-help resource definitions and versioned eligibility metadata, notification preferences/delivery | screening, safety, SupportEvaluation, or final SupportPlan decisions |
 | Governance/Reporting | audit events, moderation cases, de-identified projections | transactional sources of truth |
 
-The deployable business services are fixed as Spring Boot `identity-service`, `care-service`, and `consultation-service`; NestJS/TypeScript `journal-ai-service`, `realtime-service`, and `content-notification-service` using the ADR 0006 stack; and Python `phobert-worker`. Governance/reporting is implemented as bounded admin APIs and Kafka projections inside the relevant owner until a future ADR justifies another deployable. The edge gateway/reverse proxy and Eureka registry are infrastructure and contain no business orchestration.
+The core deployable business services are fixed as Spring Boot `identity-service`, `care-service`, and `consultation-service`, plus NestJS/TypeScript `journal-ai-service`, `realtime-service`, and `content-notification-service` using the ADR 0006 stack. ADR 0011 defers Python `phobert-worker` as an optional future benchmark baseline; it is not a current runtime or release dependency. Governance/reporting is implemented as bounded admin APIs and Kafka projections inside the relevant owner until a future ADR justifies another deployable. The edge gateway/reverse proxy and Eureka registry are infrastructure and contain no business orchestration.
 
 ADR 0005 assigns the cohesive billing bounded context to `consultation-service` without adding another deployable. Its PostgreSQL database is authoritative for plan versions, paid subscriptions, MoMo payments/IPNs, upgrade offsets, consultation credits and ledger entries, specialist earnings, encrypted payout destinations, and MoMo payout reconciliation. Other services query narrow current entitlement or appointment-eligibility decisions and never maintain a shadow balance.
+
+ADR 0012 bounds V1 screening and post-screening support to PHQ-9/`DEPRESSIVE_SYMPTOMS` and GAD-7/`ANXIETY_SYMPTOMS`. Safety remains cross-cutting. Care owns domain-aware evaluation and final plan eligibility; Content/Notification owns exact reviewed resource definitions and eligibility provenance. Neither service reads the other's database, and AI owns neither decision.
 
 ## 3. Container view
 
@@ -39,7 +41,7 @@ Mobile App / Admin Web
                               |
                          Kafka topics
                               |
-                    PhoBERT worker (Python)
+              Optional future PhoBERT worker (Python)
 
  Spring services <---- registration and lookup only ----> Eureka registry
 ```
@@ -64,8 +66,8 @@ Initial event catalogue:
 
 | Event | Producer | Consumers |
 | --- | --- | --- |
-| `AnalyzeJournalRevision` | Journal/AI | PhoBERT worker or Journal/AI provider executor |
-| `JournalAnalysisCompleted` | Journal/AI or PhoBERT worker | Care, Notification |
+| `AnalyzeJournalRevision` | Journal/AI | Journal/AI provider executor |
+| `JournalAnalysisCompleted` | Journal/AI | Care, Notification |
 | `AssessmentSubmitted` | Care | Reporting, Notification |
 | `SupportTierResolved` | Care | Notification, Reporting |
 | `ConsentGranted/Revoked` | Care | Consultation cache invalidation, Audit |
@@ -88,15 +90,17 @@ Kafka is the durable asynchronous backbone. PostgreSQL producers use a transacti
 1. Client fetches versioned questionnaire.
 2. Care Service validates complete responses and idempotency key.
 3. In one transaction it stores submission, answers, computed score, safety flags, and outbox event.
-4. It evaluates the deterministic policy synchronously when safety-relevant input is present.
-5. Response includes score/band, the independent safety status, disclaimer, and reviewed local safety guidance where required.
-6. Async consumers build projections, reminders, and non-critical notifications.
+4. A separate authenticated support-evaluation command explicitly names one compatible PHQ-9 and one compatible GAD-7 result; Care locks the profile, evaluates `mb-support-routing-capstone-v1`, and persists the immutable decision plus outbox event in one transaction.
+5. Response keeps both instrument/domain-specific bands and the PHQ-9 safety status independent, adds stable reasons and reviewed 14-day meanings, and returns the locally owned minimum safety guidance when required. It never calculates a composite or global mental-health score or invokes a downstream dependency.
+6. The active v1 tier is coarse historical routing and does not select a resource or SupportPlan. A compatible future evaluation version must expose contributing domains before plan use (#48).
+7. After #49 and #50 approve policy/contracts, Care obtains exact versioned eligibility from Content/Notification, deterministically creates a bounded system-proposed `DRAFT`, accepts only allowed user choices, revalidates, and activates only on an explicit user command. Safety guidance is presented first; a new evaluation never silently changes an existing plan.
+8. Async consumers build projections, opt-in reminders, and non-critical notifications only after their own gates pass.
 
 ### Journal analysis
 
 1. User saves a journal revision in MongoDB.
 2. Node.js Journal/AI verifies AI-processing consent through Care REST and creates a PostgreSQL job/outbox record.
-3. Journal/AI calls configured LLM providers; the Python PhoBERT worker consumes only PhoBERT analysis commands from Kafka. Both use a versioned prompt/model contract and JSON schema.
+3. Journal/AI calls configured provider adapters, initially OpenAI and Gemini, through versioned input/output contracts. An optional future PhoBERT worker may execute a separately approved narrow classification contract after ADR 0011's activation gates pass.
 4. Worker rejects malformed/unsafe output, records provider metadata/latency, and stores structured result.
 5. Care consumes only approved structured indicators, never free-form model reasoning.
 6. Retries use exponential backoff and a dead-letter state; the user can still read the journal.

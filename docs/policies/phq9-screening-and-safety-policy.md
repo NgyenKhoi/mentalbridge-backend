@@ -17,21 +17,23 @@
 | Display timezone | `Asia/Ho_Chi_Minh` |
 | Owning service | Care Service |
 | Supersedes | N/A |
-| Architecture decision | [ADR 0009](../adr/0009-care-screening-safety-and-support-boundaries.md) |
+| Architecture decisions | [ADR 0009](../adr/0009-care-screening-safety-and-support-boundaries.md); [ADR 0012](../adr/0012-two-domain-screening-and-system-proposed-support-plans.md) |
 
 This policy specifies screening behavior, not diagnosis, treatment, suicide-risk stratification, emergency dispatch, or continuous human monitoring. The instrument, scoring research basis, and exact Vietnamese Capstone artifact have passed the bounded evidence gate. Optional support and production deployment follow separate gates.
 
+For V1 post-screening support, PHQ-9 produces evidence for the `DEPRESSIVE_SYMPTOMS` domain only. It is not a general mental-health assessment, and its band cannot be combined with another instrument into global severity.
+
 ## Terminology
 
-- `screeningLevel` means **screening symptom severity** (`mức độ triệu chứng qua sàng lọc`). It is not disease severity or a diagnosis.
-- `safetyStatus` reports the deterministic item-9 safety screen independently of `screeningLevel`.
+- `screeningLevel` means **instrument-specific screening symptom severity** (`mức độ triệu chứng qua sàng lọc`) for `DEPRESSIVE_SYMPTOMS`. It is not disease severity, global severity, or a diagnosis.
+- `safetyStatus` reports the deterministic item-9 cross-cutting safety screen independently of `screeningLevel`; it is not a third domain.
 - `supportTier` determines a reviewed support pathway. It is not a suicide-risk label and is governed by a separate approved policy.
 - `supportActions` are selected only from versioned, reviewed catalogue entries.
 - `entitlementPlan` controls commercial feature access and never suppresses scoring, disclaimers, safety status, or safety guidance.
 
 ## Questionnaire version and provenance
 
-The published controlled-Capstone identifier is `phq9-vi-vn-capstone-v1`. Engineering imported the exact questions and response labels from the recorded artifact without translating or paraphrasing them.
+The current published controlled-Capstone identifier is `phq9-vi-vn-capstone-v2`. Story 1102 corrected question 2 to `Cảm thấy chán nản, buồn rầu hoặc vô vọng` in this new immutable definition. That correction was approved by the Product Owner and is not claimed verbatim from the archived SBIRT artifact. The original `phq9-vi-vn-capstone-v1` definition is `RETIRED`, remains readable for historical results, and retains its exact original content and provenance without mutation.
 
 Artifact evidence:
 
@@ -40,7 +42,8 @@ Artifact evidence:
 - Archive timestamp: `2024-07-20T10:41:23Z`; retrieved for MB-177 on `2026-09-02`.
 - SHA-256: `E2775444E5AB4A05C3FF097F1CAB356C2DA9ECC73BAC63E91827BAA77E965FF7`.
 - Use statement in the artifact: no permission is required to copy, translate, display, or distribute.
-- Executable source: [`005-phq9-vi-vn-reference-data.sql`](../../care-service/src/main/resources/db/changelog/changes/005-phq9-vi-vn-reference-data.sql).
+- Original executable source: [`005-phq9-vi-vn-reference-data.sql`](../../care-service/src/main/resources/db/changelog/changes/005-phq9-vi-vn-reference-data.sql).
+- Corrective v2 source and lifecycle transition: [`008-gad7-and-phq9-v2-reference-data.sql`](../../care-service/src/main/resources/db/changelog/changes/008-gad7-and-phq9-v2-reference-data.sql).
 
 The artifact preserves the canonical item-9 concepts of being better off dead or self-harm. Its Vietnamese phrasing is accepted by the Product Owner for the bounded academic demo, while language/domain review remains a production follow-up because several phrases are mechanically worded.
 
@@ -165,7 +168,7 @@ Anonymous users may view their current score, screening level, disclaimer, safet
 
 Registered Free users may receive basic support only after the separate support catalogue gate passes. Premium tiers may add deeper longitudinal personalization, advanced follow-up, booking, and consultation according to their own approved contracts. These optional capabilities do not block base questionnaire publication. Safety output and access to an owned assessment are never paywalled.
 
-MB-179 approves `mb-support-routing-capstone-v1` as a non-executable product blueprint. That definition does not make support tiers, personalized actions, specialist handoff or automatic follow-up runtime available. MB-205 separately implements bounded authenticated descriptive progress without changing the PHQ-9 score, safety status or support capability. The [screening-to-support blueprint](../sprints/mb-179-screening-to-support-blueprint.md) is authoritative for their Capstone boundaries.
+Story 1103 makes `mb-support-routing-capstone-v1` executable as immutable coarse routing. That tier does not select resources or create a SupportPlan. ADR 0012 requires a compatible domain-aware evaluation and system-proposed plan flow before personalized plan runtime becomes available. MB-205 separately implements bounded authenticated descriptive progress without changing the PHQ-9 score, safety status or support capability. [ADR 0009](../adr/0009-care-screening-safety-and-support-boundaries.md), [ADR 0012](../adr/0012-two-domain-screening-and-system-proposed-support-plans.md), and the Care support policy are authoritative for these Capstone boundaries.
 
 If optional personalization is unavailable, the response uses an explicit availability status and reviewed generic guidance. It must not silently return empty output or imply that an unavailable AI, specialist, slot, notification, or emergency response succeeded.
 
@@ -196,7 +199,7 @@ If optional personalization is unavailable, the response uses an explicit availa
 - [x] Questionnaire, score-boundary, validation, idempotency, and safety-sensitive tests pass.
 - [x] Product Owner records the `CAPSTONE PUBLISHED` decision and effective version.
 
-The support-tier matrix, intervention catalogue, specialist workflow, consultation features, and paid-plan behavior are not questionnaire-publication blockers. They remain unavailable until their own gates pass. Consent/retention review is not required for synthetic controlled demos, but it remains mandatory before public real-user data collection.
+The support-tier matrix, SupportPlan catalogue, specialist workflow, consultation features, and paid-plan behavior are not questionnaire-publication blockers. Coarse v1 support routing later passed its Story 1103 gate; domain-aware SupportPlan selection and the other capabilities remain unavailable until their own gates pass. Consent/retention review is not required for synthetic controlled demos, but it remains mandatory before public real-user data collection.
 
 ## Production follow-up
 

@@ -1,8 +1,8 @@
 # MentalBridge Backend
 
-Backend platform for **MentalBridge (MBMS)**, an intelligent mental-health screening and early-intervention system for Vietnamese students and young adults (18-30).
+Backend platform for **MentalBridge (MBMS)**, a bounded mental-health screening and early-support system for Vietnamese students and young adults (18-30).
 
-MentalBridge helps users complete PHQ-9/GAD-7 self-screenings, keep an emotion journal, receive AI-assisted emotion insights, follow an approved support workflow, and connect with an approved specialist. It is a screening and support product, **not a diagnosis, emergency service, or replacement for professional treatment**.
+MentalBridge V1 supports two screening domains: PHQ-9 for depressive symptoms and GAD-7 for anxiety symptoms focused on generalized anxiety. It helps users complete those self-screenings, keep an emotion journal, receive AI-assisted emotion insights, follow an approved support workflow, and connect with an approved specialist. It is a screening and support product, **not a diagnosis, general mental-health assessment, emergency service, or replacement for professional treatment**.
 
 ## Review 1 Docker Compose stack
 
@@ -13,7 +13,7 @@ The root [`compose.yml`](compose.yml) is intentionally scoped to executable Revi
 | `demo` | Frontend, Identity, Care, Content/Notification, and explicit migrations against the shared dev/staging PostgreSQL databases |
 | `full-test` | Everything in `demo`, plus Realtime, its migration against the shared dev/staging MongoDB deployment, and local ephemeral Redis |
 
-Consultation, Journal/AI, PhoBERT, Eureka, and Kafka remain outside this stack until they participate in an executable Review 1 journey. Realtime is available for foundation testing but is not part of the critical mentor-demo path.
+Consultation, Journal/AI, Eureka, and Kafka remain outside this stack until they participate in an executable Review 1 journey. PhoBERT is an optional deferred benchmark baseline under ADR 0011 and is not a Review 1 or initial AI runtime dependency. Realtime is available for foundation testing but is not part of the critical mentor-demo path.
 
 Keep the backend and frontend repositories as sibling directories. From this backend repository, prepare the ignored Compose environment file and local Identity keys:
 
@@ -64,10 +64,11 @@ For an EC2 demo host, set `PUBLIC_APP_ORIGIN` and `IDENTITY_VERIFICATION_URL` to
 
 ## Product scope
 
+- V1 screening and post-screening support cover exactly `DEPRESSIVE_SYMPTOMS` through PHQ-9 and `ANXIETY_SYMPTOMS` through GAD-7. Another concern or instrument requires a separately approved product vertical; it is not added by extending an enum.
 - End-user mobile APIs: authentication, profile, consent, journal, assessments, insights, interventions, subscriptions, consultation credits, appointments, chat, notifications, and personal trends.
 - Specialist APIs: approved profile, channel-specific availability, scheduled consultation appointments, consented user data, follow-up, earnings, and provider payout history.
 - Administration APIs: account/profile approval, subscription/payment/upgrade and payout reconciliation, reviewed content management, moderation, aggregated reporting, audit, retention, and AI evaluation datasets.
-- AI/NLP integration: Gemini or OpenAI through prompt engineering; PhoBERT inference is used only as an experimental baseline.
+- AI/NLP integration: initial provider scope is Gemini and OpenAI through prompt engineering; PhoBERT is an optional deferred Vietnamese NLP benchmark baseline.
 - Anonymous PHQ-9/GAD-7 screening with minimal collection and no silent linkage to a later account.
 
 ## Proposed architecture
@@ -82,39 +83,47 @@ The recommended starting point is a **small microservice landscape**, not one se
 | Journal & AI Service | Node.js 22+, TypeScript, NestJS | Journals, LLM orchestration, analysis jobs/results, benchmark coordination | MongoDB + PostgreSQL metadata |
 | Realtime Service | Node.js 22+, TypeScript, NestJS, Socket.IO | REST message APIs, WebSocket chat/notification delivery, presence, receipts | MongoDB + Redis |
 | Content & Notification Service | Node.js 22+, TypeScript, NestJS | Self-help resources, preferences, notification/provider delivery | PostgreSQL |
-| PhoBERT Worker | Python | Experimental inference jobs only | No authoritative business store |
+| PhoBERT Worker (optional/deferred) | Python | Future experimental Vietnamese NLP benchmark inference only | No authoritative business store |
 
-ADR 0005 assigns the workbook's financial bounded context to a cohesive `billing` feature inside Consultation Service, preserving the seven-deployable baseline. It owns paid subscriptions, Care-to-Plus upgrades, consultation credits, specialist earnings, and payout reconciliation. Downgrade and user-initiated refund are unsupported; MoMo is the sole production payment/payout provider, while local/CI uses MoMo-shaped fakes.
+ADR 0005 assigns the workbook's financial bounded context to a cohesive `billing` feature inside Consultation Service without adding another core deployable. It owns paid subscriptions, Care-to-Plus upgrades, consultation credits, specialist earnings, and payout reconciliation. Downgrade and user-initiated refund are unsupported; MoMo is the sole production payment/payout provider, while local/CI uses MoMo-shaped fakes.
 
 Use REST/JSON DTOs for synchronous business APIs and service-to-service queries. Spring services register with Eureka and Java consumers use OpenFeign only as a REST client adapter; discovery does not change ownership, authorization, or OpenAPI contracts. WebSocket terminates only at Realtime Service for live client chat, presence, receipts, and in-app notifications. Kafka carries durable asynchronous commands/events for analysis, notification, audit, reporting, and deletion workflows. Redis carries only ephemeral presence, connection routing, fan-out, rate-limit, delivery/idempotency, and expiring hashed OTP state; it is not a database-query cache or business source of truth.
 
 ## Core flow
 
 ```text
-Questionnaire result ----> screeningLevel
-PHQ-9 item 9 -----------> safetyStatus
-Approved local policy --> supportTier --> approved catalogue actions
-Active plan version ----> entitlementPlan
+Questionnaire result ----> instrument + domain + instrument-specific screeningLevel
+PHQ-9 item 9 -----------> independent cross-cutting safetyStatus
+Approved local policy --> domain-aware SupportEvaluation and pathway
+Eligible exact content -> system-proposed DRAFT SupportPlan
+User-controlled choice -> revalidation -> explicit ACTIVE SupportPlan
+Active paid plan -------> entitlementPlan
 
 AI supplies supporting indicators; it must not override validated questionnaire
-scoring, change safety status, invent a diagnosis, or create an intervention.
+scoring, change safety status, invent a diagnosis, choose plan eligibility, or
+create a SupportPlan.
 ```
 
-Safety handling must be deterministic, immediate, auditable, non-paywalled, and usable even if optional AI or messaging dependencies are unavailable. MentalBridge has no hotline catalogue and must not hard-code unverified emergency numbers or facility claims in prompts or application code. See [ADR 0009](docs/adr/0009-care-screening-safety-and-support-boundaries.md) and the [policy register](docs/policies/README.md).
+The SupportPlan lines describe the approved forward business flow. The current executable v1 remains coarse SupportEvaluation history and does not yet create a plan.
+
+Safety handling must be deterministic, immediate, auditable, non-paywalled, and usable even if optional AI or messaging dependencies are unavailable. MentalBridge has no hotline catalogue and must not hard-code unverified emergency numbers or facility claims in prompts or application code. See [ADR 0009](docs/adr/0009-care-screening-safety-and-support-boundaries.md), its [two-domain SupportPlan amendment](docs/adr/0012-two-domain-screening-and-system-proposed-support-plans.md), and the [policy register](docs/policies/README.md).
 
 ## Repository documentation
 
 - [Domain and use cases](docs/domain-and-use-cases.md)
+- [Two-domain screening and system-proposed SupportPlan decision](docs/adr/0012-two-domain-screening-and-system-proposed-support-plans.md)
 - [Requirements traceability to the capstone registration and 162-function WBS](docs/requirements-traceability.md)
 - [Per-module business, use-case, implementation and task specifications](docs/modules/README.md)
 - [Architecture](docs/architecture.md)
 - [Node.js service stack](docs/nodejs-service-stack.md)
 - [Sprint 1 backend backlog guide](docs/sprint-1-backlog-guide.md)
+- [PhoBERT optional benchmark baseline ADR](docs/adr/0011-defer-phobert-optional-benchmark-baseline.md)
 - [NestJS service framework ADR](docs/adr/0006-nestjs-nodejs-service-framework.md)
 - [Eureka discovery and OpenFeign ADR](docs/adr/0002-eureka-discovery-and-openfeign-clients.md)
 - [Kiến trúc module microservices và ngôn ngữ đã chốt](docs/microservice-module-suggestions.md)
 - [Engineering rules](docs/engineering-rules.md)
 - [Mandatory agent workflow and review guide](docs/agent-guides/README.md)
+- [Sprint 2 integrated journey and release evidence](docs/sprint-2-integrated-release-evidence.md)
 - [PostgreSQL data model](docs/database/postgresql.md)
 - [MongoDB collections](docs/database/mongodb.md)
 - [Non-executable whole-system PostgreSQL model](database/postgresql/001_initial_schema.sql) — owner namespaces are visual only; each module deploys to its own database/default `public` schema
@@ -127,14 +136,14 @@ Safety handling must be deterministic, immediate, auditable, non-paywalled, and 
 | 1 - Screening foundation | Identity, profile/consent, anonymous and authenticated PHQ-9/GAD-7, journal CRUD, admin login |
 | 2 - Insight and intervention | Asynchronous journal analysis, deterministic safety/support policy, approved resources and safety guidance |
 | 3 - Human support and premium access | Specialist approval/profile, subscription/payment, consultation credits, availability, booking, consented access, chat, reviews, follow-up, notifications |
-| 4 - Governance and research | Administration, payout history/reconciliation, moderation, deletion/retention, audit, reporting, dataset import, LLM vs PhoBERT benchmark |
+| 4 - Governance and research | Administration, payout history/reconciliation, moderation, deletion/retention, audit, reporting, dataset import, configured-provider benchmark, and optional PhoBERT baseline |
 
 ## Technology baseline
 
 - Java 21+, Spring Boot 4.x, Spring Security Resource Server, Spring Data, Liquibase, OpenAPI
 - Eureka for Spring service discovery; OpenFeign plus Resilience4j for Java owner-to-owner REST clients
 - Node.js 22 or newer + strict TypeScript + NestJS 11 for Journal/AI, Realtime, and Content/Notification
-- Python for the isolated PhoBERT inference worker
+- Python only if the optional PhoBERT inference worker later passes ADR 0011's activation gate
 - PostgreSQL for transactional and relational data
 - MongoDB for journal text, chat messages, and variable AI/evaluation payloads
 - Kafka for durable asynchronous commands/events; Redis for bounded ephemeral realtime/OTP coordination, not database-query caching
@@ -145,6 +154,28 @@ Pull requests targeting `dev` and pushes to `dev` run the backend service matrix
 - OpenTelemetry-compatible traces, Prometheus metrics, Grafana dashboards, structured JSON logs
 
 The current Review 1 Compose stack runs application services and local ephemeral Redis while using the shared dev/staging PostgreSQL and MongoDB cloud data plane. Disposable integration tests continue to provision isolated databases through Testcontainers. Kubernetes, a service mesh, distributed secrets platforms, and multiple observability products are outside the initial scope unless the team can demonstrate a concrete requirement.
+
+### Local Docker infrastructure
+
+The repository includes a secrets-free infrastructure stack for local
+development and service integration tests:
+
+```powershell
+.\scripts\docker-local.ps1 up
+.\scripts\docker-local.ps1 status
+.\scripts\docker-local.ps1 logs
+.\scripts\docker-local.ps1 down
+```
+
+Start Docker Desktop first and wait until `docker info` succeeds. The compose
+file exposes separate PostgreSQL databases for Identity, Care, and
+Content/Notification, plus MongoDB, Redis, and single-node Kafka. The passwords
+are local-only development values and must never be reused outside this stack.
+
+Spring integration tests use Testcontainers and start isolated temporary
+containers automatically; the Docker daemon is the only required integration
+test prerequisite. The compose stack is useful for manually running services
+against stable local infrastructure and is not a production deployment.
 
 ## Status
 

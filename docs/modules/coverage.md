@@ -7,8 +7,8 @@ This is the planning coverage baseline for the workbook's seven use cases and 16
 | Catalogue UC | Primary owner | Collaborators | Module capability | Status |
 | --- | --- | --- | --- | --- |
 | UC-01 Authentication & User Management | Identity/Care | Content/Notification, all deletion owners | Auth, RBAC, profile/consent, grants, deletion, anonymous entry | Planned; retention/export/expiry policies blocked |
-| UC-02 Mental Health Assessment & AI Analysis | Care/Journal-AI | PhoBERT, Content/Notification | Journal, assessment, analysis, safety/support and personal analytics | Vietnamese PHQ-9 Capstone runtime published; GAD-7 implementation authorized but unpublished; AI personalization deferred |
-| UC-03 Intervention & Support | Care/Content-Notification | Journal/AI | Approved intervention, safety/self-help guidance and notifications | Product routing blueprint approved; personalized routing/actions runtime unavailable pending separate gates |
+| UC-02 Mental Health Assessment & AI Analysis | Care/Journal-AI | Content/Notification; optional future PhoBERT baseline | Journal, two-domain assessment, analysis, cross-cutting safety/support and personal analytics | Vietnamese PHQ-9 v2/`DEPRESSIVE_SYMPTOMS` and GAD-7/`ANXIETY_SYMPTOMS` controlled-Capstone runtimes published; no global severity; PHQ-9 v1 retained for history; AI personalization and PhoBERT baseline deferred |
+| UC-03 Intervention & Support | Care/Content-Notification | Journal/AI | Domain-aware SupportEvaluation, system-proposed SupportPlan, reviewed eligibility, safety/self-help guidance and notifications | Coarse v1 routing runtime exists; forward plan evaluation/eligibility/proposal unavailable pending #48–#50 |
 | UC-04 Specialist Discovery & Appointment | Consultation/Billing | Care, Realtime, Content/Notification | Discovery, subscription/payment/upgrade/credits, specialist approval, booking, earnings, reviews | Planned by ADR 0005; provider/configuration details remain |
 | UC-05 Communication & Follow-up | Realtime/Care | Consultation, Content/Notification | Chat, reports, follow-up, notifications and progress | Planned; moderation/retention policy blocked |
 | UC-06 Specialist Portal | Consultation/Billing | Care, Journal/AI, Realtime | Workload, consented data, earnings and provider payout history | Planned; MoMo adapter conditional on credentials/currency decision |
@@ -19,9 +19,9 @@ This is the planning coverage baseline for the workbook's seven use cases and 16
 | WBS range | Owner specification | Coverage note |
 | --- | --- | --- |
 | 1-5, 7, 111, 113-116 | Identity | Authentication, RBAC, admin login and user administration |
-| 6, 8-14, 20-24, 30-31, 89-94, 98-101 | Care | Screening, profile/consent, assessment, safety/support, follow-up, analytics |
-| 15-19, 25-29, 150-156 | Journal/AI and PhoBERT | Journals, analysis, datasets and benchmarks |
-| 32-35, 95-97, 130-139 | Content/Notification | Reviewed self-help resources and notifications; hotline catalogue removed |
+| 6, 8-14, 20-24, 30-31, 89-94, 98-101 | Care | Two-domain screening, profile/consent, assessment, cross-cutting safety, SupportEvaluation/SupportPlan, follow-up, analytics |
+| 15-19, 25-29, 150-156 | Journal/AI; optional future PhoBERT inference | Journals, analysis, datasets and provider-neutral benchmarks |
+| 32-35, 95-97, 130-139 | Content/Notification | Reviewed self-help resource definitions/eligibility and notifications; hotline catalogue removed; Care retains final plan decisions |
 | 36-41, 52-53, 55-73, 83-88, 102-107, 117-122, 140-144, 148-149 | Consultation | Discovery, specialist approval without WBS 54 document upload, booking, reviews and bounded portal/admin views |
 | 42-51, 108-110, 123-129 | Consultation/Billing | Subscription, payment, Care-to-Plus upgrade, credits, earnings and provider payout history under ADR 0005 |
 | 74-82, 145-147 | Realtime | Conversations, messages, receipts and chat moderation |
@@ -42,7 +42,7 @@ The workbook's 162 rows remain traceable; WBS 54 is explicitly removed by the 20
 
 ## Product decisions that block implementation
 
-1. `mb-support-routing-capstone-v1` is approved as a non-executable current-result blueprint. Runtime contracts/persistence/tests, any automatic freshness window and the personalized intervention catalogue remain open; PHQ-9 Vietnamese Capstone content and item-9 behavior are published.
+1. `mb-support-routing-capstone-v1` is executable immutable coarse routing, but it cannot drive a SupportPlan alone. Compatible domain-aware evaluation (#48), system-proposed-plan rules (#49), resource eligibility (#50), and any automatic freshness window remain open. PHQ-9 item-9 safety stays independent and cross-cutting.
 2. Specialist qualification evidence and approval rules.
 3. Reviewed Vietnamese safety/disclaimer wording and decision on any specific emergency number; no hotline catalogue or after-hours safety service is planned.
 4. Specialist-note ownership and retention, if notes remain in scope.
@@ -54,3 +54,4 @@ The workbook's 162 rows remain traceable; WBS 54 is explicitly removed by the 20
 10. Reporting cohort minimums and projection freshness expectations.
 11. Exact MoMo request type/payment methods, credential/key rotation, settlement delay, chargeback reconciliation, payout onboarding, VND plan prices or versioned FX policy, and financial retention. ADR 0005 fixes the MoMo-only IPN contract, ownership, plan values, upgrade, credit, earning, and payout states; downgrade/refund remain unsupported.
 12. Whether benchmark WBS 28-29 and admin WBS 155-156 are separate actor-specific use cases or duplicate entries.
+13. Whether SupportPlan templates are persisted, required/optional resource semantics, selection bounds, rule-versus-mapping storage, and any additional safety-positive activation confirmation (#49).

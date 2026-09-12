@@ -126,11 +126,11 @@ Privacy-minimized local security record for authentication, recovery, replay, an
 
 ## Owner `care` (`mentalbridge_care.public`)
 
-The MB-88 tables below are executable Liquibase-owned structures in the Care database's default `public` schema. Later support, intervention, grant, and follow-up entries in this section remain conceptual until their owner migrations are added.
+The MB-88 assessment/profile tables and MB-271 support-routing tables below are executable Liquibase-owned structures in the Care database's default `public` schema. Later intervention, grant, and follow-up entries in this section remain conceptual until their owner migrations are added.
 
 ### `public.user_profile`
 
-Care-owned non-credential user profile and communication preferences.
+Care-owned non-credential user profile. Locale, timezone, and reminders are fixed release defaults rather than editable preferences.
 
 | Field | Purpose |
 | --- | --- |
@@ -138,9 +138,9 @@ Care-owned non-credential user profile and communication preferences.
 | `display_name` | User-controlled name displayed in permitted product contexts. |
 | `date_of_birth` | Optional birth date used only for approved age-related eligibility or personalization rules. |
 | `gender` | Optional self-described gender value used only where product policy permits. |
-| `locale` | BCP 47 locale used to select translated questionnaires, resources, and messages. |
-| `timezone` | IANA timezone used to calculate and render reminders and follow-up schedules. |
-| `reminder_enabled` | User preference controlling optional care reminders, excluding mandatory safety behavior. |
+| `locale` | Fixed to `vi-VN` in the current release for translated questionnaires, resources, and messages. |
+| `timezone` | Fixed to `Asia/Ho_Chi_Minh` in the current release; no reminder scheduling is implied. |
+| `reminder_enabled` | Fixed to `false`; reminder delivery is not implemented in the current release. |
 | `created_at` | Immutable UTC profile creation instant. |
 | `updated_at` | UTC instant of the latest persisted profile change, maintained by Care Service. |
 | `version` | Optimistic-lock counter incremented on concurrent profile mutations. |
@@ -194,7 +194,7 @@ Immutable versioned PHQ-9 or GAD-7 questionnaire definition and scoring identity
 | `published_at` | UTC instant the immutable definition became available; null while draft. |
 | `created_at` | Immutable UTC creation instant for the definition record. |
 
-Published seed versions are `phq9-en-us-v1` and `phq9-vi-vn-capstone-v1`. The Vietnamese row is limited to controlled local/demo Capstone use and stores its archived artifact URI, retrieval timestamp, SHA-256 checksum, use statement, and scoring citation in `source_reference`. Production review creates a new immutable publication decision/version; it never rewrites this evidence row.
+Published seed versions are `phq9-en-us-v1`, `phq9-vi-vn-capstone-v2`, and `gad7-vi-vn-adult-v1`. `phq9-vi-vn-capstone-v1` is retained as an immutable retired definition for historical submissions. The GAD-7 row records the UNC Vietnam 2024 artifact URI, retrieval date, SHA-256 checksum, self-administered `0..3` mapping, excluded interviewer-only codes, and scoring citation. The PHQ-9 v2 row records the Product Owner-approved Q2 correction without claiming that wording is verbatim from the archived SBIRT artifact. Production review creates a new immutable publication decision/version; it never rewrites this evidence.
 
 ### `public.questionnaire_question`
 
@@ -231,7 +231,7 @@ Immutable accepted screening envelope for exactly one authenticated profile or a
 | `user_id` | Authenticated Care profile owner; null for an anonymous screening. |
 | `anonymous_session_id` | Care-owned short-lived session identifier; null for an authenticated submission and never accompanied by a user ID. |
 | `definition_id` | Exact questionnaire definition used to validate and score all answers. |
-| `privacy_policy_version` | Exact backend-published disclosure acknowledged for this submission; `legacy-pre-mb178` identifies foundation rows created before the MB-178 gate and must not be presented as Capstone consent. |
+| `privacy_policy_version` | Exact backend-published disclosure/consent version used for this immutable submission. New PHQ-9/GAD-7 rows use `privacy-capstone-v3`; historical v1/v2 values are retained without backfill, and `legacy-pre-mb178` identifies foundation rows created before the MB-178 gate and must not be presented as Capstone consent. |
 | `idempotency_key` | Required retry key unique per authenticated user or anonymous session so the logical submission is persisted once. |
 | `request_hash` | Lowercase SHA-256 digest of the canonical definition-and-answer request; it detects conflicting retries without logging answers. |
 | `submitted_at` | UTC instant the complete validated assessment was accepted. |
@@ -261,9 +261,9 @@ One authoritative server-owned scoring result for an accepted submission. Client
 | `total_score` | Server-computed integer sum constrained to the supported range 0 through 27. |
 | `screening_level` | Non-diagnostic score band selected from the definition's versioned ranges. |
 | `scoring_version` | Exact deterministic algorithm version needed to reproduce the score and band. |
-| `safety_item_positive` | Authoritative derived fact that the versioned questionnaire safety item met its positive rule; it remains independent from the screening level. |
-| `safety_status` | Nullable transition field for the independent `NEGATIVE_SAFETY_SCREEN` or `POSITIVE_SAFETY_SCREEN` policy result; every MB-89 runtime result must populate it together with `safety_policy_version`, while null is reserved only for pre-policy foundation rows. |
-| `safety_policy_version` | Nullable transition field identifying the exact approved safety policy used; paired atomically with `safety_status` so historical results remain reproducible. |
+| `safety_item_positive` | Nullable questionnaire-specific derived fact. PHQ-9 stores whether item 9 met its positive rule; GAD-7 stores null because it has no equivalent safety item. |
+| `safety_status` | Questionnaire-specific safety result. New PHQ-9 rows store `NEGATIVE_SAFETY_SCREEN` or `POSITIVE_SAFETY_SCREEN`; GAD-7 stores `NOT_APPLICABLE`. Null is reserved only for pre-policy foundation rows. |
+| `safety_policy_version` | Exact approved safety policy for PHQ-9. It is null for GAD-7 because no item-9-equivalent policy is evaluated, and null with `safety_status` is reserved for pre-policy foundation rows. |
 | `disclaimer_code` | Stable `SCREENING_NOT_DIAGNOSIS` presentation key required for every result. |
 | `calculated_at` | UTC instant Care completed deterministic scoring. |
 | `created_at` | Immutable UTC insertion instant for persistence provenance. |
@@ -288,27 +288,65 @@ Care-owned transactional outbox row inserted in the same local transaction as an
 | `next_attempt_at` | Optional UTC instant before which the relay must not retry. |
 | `created_at` | Immutable UTC database insertion instant. |
 
-### `care.support_classification`
+### `public.support_policy_definition`
 
-Versioned platform support-tier result derived from approved sources, distinct from diagnosis.
+Immutable publication record for a locale-specific deterministic routing policy.
+
+| Field | Purpose |
+| --- | --- |
+| `version` | Stable policy identifier retained by every evaluation. |
+| `locale` | Reviewed BCP 47 content locale. |
+| `status` | `DRAFT`, `PUBLISHED`, or `RETIRED`; at most one published version per locale. |
+| `reviewed_by` / `approved_at` | Accountable review provenance and UTC decision instant. |
+| `source_reference` | Traceable Story/policy/ADR sources. |
+| `created_at` | Immutable database creation instant. |
+
+### `public.support_policy_eligible_definition`
+
+Exact allow-list linking a support policy to compatible immutable questionnaire and scoring versions. This prevents an implicit “latest” lookup or silent cross-version interpretation.
+
+### `public.screening_band_meaning`
+
+Policy-, instrument-, and band-specific Vietnamese meaning. It stores stable `meaning_code`, `content_version`, the 14-day reference period, reviewed meaning text, and the non-diagnostic limitation.
+
+### `public.support_tier_guidance`
+
+One bounded, versioned next step per support tier. `safety_guidance_text` is required only for `SAFETY_FOLLOW_UP_RECOMMENDED`; no row authorizes automatic contact, booking, sharing, or intervention.
+
+### `public.support_evaluation`
+
+Immutable versioned platform support-tier result derived from one explicit compatible PHQ-9/GAD-7 pair, distinct from diagnosis.
+
+This section describes the executable `mb-support-routing-capstone-v1` history. Its separate assessment references preserve instrument-specific evidence; it has no global severity field. The coarse tier and existing reason columns are not sufficient to select a resource or SupportPlan. Issue #48 must introduce any explicit domain-bearing shape compatibly and without backfilling or reinterpreting these rows.
 
 | Field | Purpose |
 | --- | --- |
 | `id` | Immutable UUID identifying this reproducible support-policy execution. |
 | `user_id` | Care profile for whom the platform support tier was calculated. |
-| `tier` | Authoritative approved support pathway; values never claim low, medium, or high suicide risk. |
+| `phq9_assessment_id` / `gad7_assessment_id` | Exact owned evidence pair; database constraints require two distinct IDs. |
+| `support_tier` | Authoritative approved support pathway; values never claim low, medium, or high suicide risk. |
 | `policy_version` | Exact deterministic policy version needed to reproduce and audit the decision. |
-| `reason_codes` | Stable machine-readable reasons supporting the tier without storing free-form model reasoning. |
-| `source_assessment_ids` | Identifiers of authoritative assessment submissions used by this calculation. |
-| `source_analysis_ids` | Nullable identifiers reserved for a future policy that explicitly approves structured AI indicators. `mb-support-routing-capstone-v1` prohibits AI input, so this conceptual field is empty for that version. |
-| `safety_flag` | Indicates immediate safety guidance was required independently of asynchronous systems. |
-| `calculated_at` | UTC instant the policy executed. |
-| `superseded_at` | UTC instant a newer authoritative classification replaced this result; null while current. |
+| `primary_reason_code` / `secondary_reason_code` | Stable ordered explanation. The secondary reason is allowed only for the PHQ-then-GAD moderate-or-higher pair. |
+| `evaluated_at` | UTC instant the deterministic policy executed. |
 | `created_at` | Immutable UTC insertion instant for provenance. |
+
+### `public.support_evaluation_request`
+
+Per-user idempotency aliases for combined-support commands. Multiple keys may safely resolve to the same immutable evidence-pair evaluation, while reuse of any key with different evidence is rejected.
+
+| Field | Purpose |
+| --- | --- |
+| `user_id` | Care profile that owns both the command key and referenced evaluation. |
+| `idempotency_key` | Caller-generated retry key unique for one user. |
+| `request_hash` | Lowercase SHA-256 digest of the canonical PHQ-9/GAD-7 evidence pair; request plaintext is not recoverable from it. |
+| `support_evaluation_id` | Immutable evaluation returned for this key; the composite foreign key prevents cross-owner aliases. |
+| `created_at` | Immutable UTC instant when Care accepted the command key. |
 
 ### `care.intervention_plan`
 
 Versioned set of platform support actions generated for one support classification.
+
+This is a non-executable conceptual baseline, not an approved Story 4101 schema. ADR 0012 supersedes any interpretation that the user creates this plan from arbitrary reviewed resources. Before implementation, #49 must replace or revise it as a system-proposed SupportPlan with bounded user choice, revalidation and explicit activation; unresolved template/resource rules must not be inferred from these fields.
 
 | Field | Purpose |
 | --- | --- |
@@ -932,7 +970,7 @@ Durable Journal/AI orchestration state for one provider analysis of one journal 
 | `user_id` | External Care profile UUID owning the journal and result; not an authorization substitute. |
 | `journal_entry_id` | Journal/AI-owned logical entry UUID being analyzed. |
 | `journal_revision` | Positive immutable revision number ensuring results cannot be attached to edited text. |
-| `provider` | Selected execution provider or PhoBERT worker for this reproducible run. |
+| `provider` | Selected versioned execution provider for this reproducible run. Initial provider scope is OpenAI/Gemini; an optional PhoBERT value is valid only after ADR 0011's activation gate passes. |
 | `prompt_version` | Exact prompt/input contract version used to interpret and validate the result. |
 | `status` | Authoritative asynchronous job lifecycle used by REST polling and workers. |
 | `attempt_count` | Number of claimed execution attempts used to enforce bounded retry. |
@@ -1089,3 +1127,69 @@ Idempotent per-data-owner work item belonging to one deletion request.
 | `completed_at` | UTC instant this owner confirmed terminal completion; null while unfinished. |
 | `last_error_code` | Latest stable safe owner failure category without deleted content. |
 | `updated_at` | UTC instant of the latest task claim, retry, or status change. |
+
+
+## Owner `content-notification` (`mentalbridge_content_notification.public`)
+
+### `public.resource`
+
+Reviewed self-help content published through admin workflow, never user-contributed. Each resource requires explicit review approval before publication.
+
+The current executable fields establish review, publication, locale and effective-window visibility only. They do not establish SupportPlan eligibility. Issue #50 owns a compatible contract and append-only migration for reviewed domain/instrument-band/pathway applicability; no caller may treat every published resource as universally eligible meanwhile.
+
+| Field | Purpose |
+| --- | --- |
+| `id` | Immutable UUID exposed in REST contracts and used as the primary resource identifier. |
+| `category` | Stable resource category for filtering and display: `BREATHING`, `MEDITATION`, `ARTICLE`, `VIDEO`, `JOURNALING`, or `COMMUNITY`. |
+| `locale` | BCP 47 locale tag identifying the language/region of the content; defaults to `vi-VN`. |
+| `title` | Reviewed user-facing resource title displayed in lists and detail views; maximum 255 characters. |
+| `summary` | Reviewed brief description shown in previews and search results. |
+| `content_body` | Optional full reviewed content body; nullable when using external URL instead. |
+| `external_url` | Optional validated external link to content hosted elsewhere; mutually exclusive use with content body. |
+| `status` | Authoritative workflow state controlling visibility: `DRAFT` (editable), `PUBLISHED` (immutable, public), or `ARCHIVED` (immutable, hidden). |
+| `reviewed_by` | Identity UUID carried by a separately approved review decision; required while `PUBLISHED`. ADMIN authentication alone is not review approval. |
+| `reviewed_at` | UTC timestamp carried by a separately approved review decision; required while `PUBLISHED`. New publication remains blocked until MB-251 approves that decision model and authority. |
+| `effective_at` | Optional UTC timestamp controlling delayed publication; resource not visible until this instant passes. |
+| `expires_at` | Optional UTC timestamp after which published resource becomes hidden automatically. |
+| `created_at` | Immutable UTC creation instant for audit and chronological ordering. |
+| `updated_at` | UTC timestamp of latest persisted change; updated automatically on any modification. |
+| `version` | Non-negative optimistic lock counter incremented on each update; prevents lost concurrent modifications. |
+| `idempotency_key` | Legacy branch-local create retry field from migration 4. New writes use the actor/operation-scoped `resource_idempotency_record`; retained only for rolling compatibility. |
+
+**State Transitions:**
+- `DRAFT` → `PUBLISHED`: Blocked until MB-251 approves review authority, decision provenance, and review-version invalidation semantics
+- `PUBLISHED` → `ARCHIVED`: Preserves review metadata, resource becomes hidden but retrievable
+- Updates and deletions allowed only in `DRAFT` status
+- The database check requires non-null review provenance while `PUBLISHED`; application transitions preserve provenance after publication. The check does not claim column immutability.
+
+**Public API Safety:**
+- Only `PUBLISHED` resources returned where `effective_at <= NOW()` and (`expires_at` IS NULL OR `expires_at > NOW()`)
+- All published resources guaranteed to have review provenance
+- `DRAFT` and `ARCHIVED` resources never exposed to public endpoints
+
+### `public.resource_idempotency_record`
+
+Durable retry ownership for resource creation. The transaction serializes the same actor, operation, and key; identical requests replay the original resource and a changed payload returns `IDEMPOTENCY_CONFLICT`.
+
+| Field | Purpose |
+| --- | --- |
+| `actor_id` | Identity administrator UUID that owns the retry key; prevents cross-actor key collisions. |
+| `operation` | Stable command scope; currently `CREATE_RESOURCE`. |
+| `idempotency_key` | Opaque caller key reused for one unchanged logical request. |
+| `request_fingerprint` | SHA-256 digest of the canonical create payload used only to distinguish replay from conflicting reuse. |
+| `resource_id` | Created resource UUID returned for deterministic replay; set to null after deliberate draft deletion so the key remains consumed and replays return a stable conflict. |
+| `created_at` | UTC instant the command key was first accepted. |
+
+### `public.resource_audit_event`
+
+Append-only minimized facts written in the same database transaction as resource mutations. Content bodies, titles, URLs, and summaries are deliberately excluded.
+
+| Field | Purpose |
+| --- | --- |
+| `id` | Immutable audit fact UUID. |
+| `occurred_at` | Database UTC instant of the committed action. |
+| `actor_id` | Identity administrator UUID responsible for the command. |
+| `action` | Stable outcome: `RESOURCE_CREATED`, `RESOURCE_UPDATED`, `RESOURCE_DELETED`, `RESOURCE_ARCHIVED`, or `RESOURCE_PUBLISH_BLOCKED`. A successful review/publish fact cannot exist until the MB-251 model is approved. |
+| `resource_id` | Resource aggregate UUID, retained even when a draft is deleted. |
+| `resource_version` | Version produced by the action, or the deleted draft version. |
+| `correlation_id` | Request UUID linking the audit fact to sanitized diagnostics. |

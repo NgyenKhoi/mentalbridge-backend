@@ -5,16 +5,18 @@
 | Module | Recommended runtime | Owns | May query synchronously | Publishes/consumes asynchronously |
 | --- | --- | --- | --- | --- |
 | `identity-service` | Spring Boot | account, credentials, roles, sessions, deletion coordination, minimized audit/security projection | no profile health data | account lifecycle, deletion and safe audit events |
-| `care-service` | Spring Boot | profile, consent, assessment, safety/support, intervention, follow-up | Identity for exceptional current account facts | assessment, support, consent and follow-up events |
+| `care-service` | Spring Boot | profile, consent, two-domain assessment, cross-cutting safety, SupportEvaluation, SupportPlan proposal/lifecycle, follow-up | Identity for exceptional current account facts; Content for exact eligible resource versions | assessment, support, consent and follow-up events |
 | `consultation-service` | Spring Boot | specialist approval/discovery/matching, subscription/payment/upgrade, consultation credits, slots, appointments, earnings, provider payouts, reviews | Care authorization/consent checks when current truth is required | subscription, appointment, earning, payout, review and moderation events |
 | `journal-ai-service` | Node.js/TypeScript | journal metadata/content access, analysis jobs/results | Care for current AI-processing consent | analysis commands/results |
 | `realtime-service` | Node.js/TypeScript | conversations, messages, WebSocket sessions, presence, receipts | Consultation/Care for current authorization when connecting or sending | chat facts and notification delivery events |
-| `content-notification-service` | Node.js/TypeScript | reviewed self-help resources, preferences, notification creation/provider delivery | provider APIs only when executing delivery | consumes domain events and emits notification/delivery outcomes |
-| `phobert-worker` | Python | inference execution only | no business data query | consumes analysis commands and emits results |
+| `content-notification-service` | Node.js/TypeScript | reviewed self-help resource definitions and versioned eligibility metadata, preferences, notification creation/provider delivery | provider APIs only when executing delivery | consumes domain events and emits notification/delivery outcomes |
+| `phobert-worker` (optional/deferred) | Python | inference execution only after its activation gate passes | no business data query | future versioned inference command/result only |
 
 The edge gateway/reverse proxy and Eureka service registry are infrastructure, not business modules, and contain no orchestration or domain logic. Eureka publishes service location metadata only. Language does not change ownership. Node.js and Spring communicate through REST/JSON DTOs and Kafka contracts and never share framework models.
 
 ADR 0005 assigns subscription/payment, upgrade, consultation-credit, earning, and provider-payout behavior to one billing feature inside `consultation-service`. Booking and credit transitions share its local PostgreSQL transaction. No consumer may derive or store a mutable entitlement, credit, earning, or payout balance independently.
+
+ADR 0012 assigns final domain-aware SupportEvaluation and SupportPlan decisions to Care while Content/Notification owns resource definitions and eligibility provenance. A published resource is not automatically plan-eligible, a coarse support tier cannot select a plan alone, and neither AI nor a client may author the initial proposal.
 
 ## Synchronous versus asynchronous
 

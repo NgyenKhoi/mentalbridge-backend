@@ -3,6 +3,7 @@ package com.mentalbridge.identity.authentication;
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.get;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.post;
+import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.put;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.content;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.jsonPath;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.status;
@@ -26,6 +27,7 @@ import org.springframework.http.MediaType;
 import org.springframework.jdbc.core.simple.JdbcClient;
 import org.springframework.test.web.servlet.MockMvc;
 import org.springframework.test.web.servlet.MvcResult;
+import org.springframework.test.context.bean.override.mockito.MockitoBean;
 import org.springframework.web.servlet.mvc.method.annotation.RequestMappingHandlerMapping;
 
 import com.fasterxml.jackson.databind.JsonNode;
@@ -33,6 +35,8 @@ import com.fasterxml.jackson.databind.ObjectMapper;
 import com.mentalbridge.identity.IdentityTestProperties;
 import com.mentalbridge.identity.TestcontainersConfiguration;
 import com.mentalbridge.identity.registration.RegistrationRequested;
+import com.mentalbridge.identity.registration.VerificationDelivery;
+import com.mentalbridge.identity.credential.CredentialDeliveryRequested;
 
 @Import({ TestcontainersConfiguration.class, IdentitySessionFlowIntegrationTests.CaptureConfiguration.class })
 @SpringBootTest
@@ -42,10 +46,14 @@ class IdentitySessionFlowIntegrationTests extends IdentityTestProperties {
 	private static final Set<String> IMPLEMENTED_OPERATIONS = Set.of(
 			"POST /api/v1/auth/registrations",
 			"POST /api/v1/auth/email-verifications",
+			"POST /api/v1/auth/email-verification-requests",
 			"POST /api/v1/auth/login",
 			"POST /api/v1/auth/refresh",
 			"POST /api/v1/auth/logout",
 			"POST /api/v1/auth/logout-all",
+			"POST /api/v1/auth/password-recovery-requests",
+			"POST /api/v1/auth/password-resets",
+			"PUT /api/v1/account/password",
 			"GET /api/v1/account");
 
 	@Autowired
@@ -56,6 +64,9 @@ class IdentitySessionFlowIntegrationTests extends IdentityTestProperties {
 
 	@Autowired
 	private VerificationCapture verificationCapture;
+
+	@MockitoBean
+	private VerificationDelivery verificationDelivery;
 
 	@Autowired
 	private JdbcClient jdbc;
@@ -299,6 +310,88 @@ class IdentitySessionFlowIntegrationTests extends IdentityTestProperties {
 	}
 
 	@Test
+	void verificationResendRecoveryResetAndPasswordChangeCompleteTheCredentialLifecycle() throws Exception {
+		var email = "credential-lifecycle@example.com";
+		mvc.perform(post("/api/v1/auth/registrations").header("Idempotency-Key", "credential-lifecycle-register")
+				.contentType(MediaType.APPLICATION_JSON).content("{\"email\":\"" + email
+						+ "\",\"password\":\"correct-horse-battery-staple\",\"actorType\":\"USER\"}"))
+				.andExpect(status().isCreated());
+		var originalVerification = verificationCapture.challenge();
+
+		mvc.perform(post("/api/v1/auth/email-verification-requests").contentType(MediaType.APPLICATION_JSON)
+				.content("{\"email\":\"" + email + "\"}"))
+				.andExpect(status().isAccepted()).andExpect(content().string(""));
+		var replacementVerification = verificationCapture.challenge();
+		assertThat(replacementVerification).isNotEqualTo(originalVerification);
+
+		mvc.perform(post("/api/v1/auth/email-verifications").contentType(MediaType.APPLICATION_JSON)
+				.content("{\"challenge\":\"" + originalVerification + "\"}"))
+				.andExpect(status().isBadRequest()).andExpect(jsonPath("$.code").value("INVALID_CHALLENGE"));
+		mvc.perform(post("/api/v1/auth/email-verifications").contentType(MediaType.APPLICATION_JSON)
+				.content("{\"challenge\":\"" + replacementVerification + "\"}"))
+				.andExpect(status().isOk());
+		mvc.perform(post("/api/v1/auth/email-verifications").contentType(MediaType.APPLICATION_JSON)
+				.content("{\"challenge\":\"" + replacementVerification + "\"}"))
+				.andExpect(status().isOk());
+
+		var originalSession = login(email, "correct-horse-battery-staple");
+		mvc.perform(post("/api/v1/auth/password-recovery-requests").contentType(MediaType.APPLICATION_JSON)
+				.content("{\"email\":\"" + email + "\"}"))
+				.andExpect(status().isAccepted()).andExpect(content().string(""));
+		var recoveryChallenge = verificationCapture.recoveryChallenge();
+		assertThat(recoveryChallenge).isNotBlank();
+
+		mvc.perform(post("/api/v1/auth/email-verifications").contentType(MediaType.APPLICATION_JSON)
+				.content("{\"challenge\":\"" + recoveryChallenge + "\"}"))
+				.andExpect(status().isBadRequest()).andExpect(jsonPath("$.code").value("INVALID_CHALLENGE"));
+		mvc.perform(post("/api/v1/auth/password-resets").contentType(MediaType.APPLICATION_JSON)
+				.content("{\"challenge\":\"" + recoveryChallenge
+						+ "\",\"newPassword\":\"new-correct-horse-battery-staple\"}"))
+				.andExpect(status().isNoContent());
+		mvc.perform(post("/api/v1/auth/password-resets").contentType(MediaType.APPLICATION_JSON)
+				.content("{\"challenge\":\"" + recoveryChallenge
+						+ "\",\"newPassword\":\"another-correct-horse-password\"}"))
+				.andExpect(status().isBadRequest()).andExpect(jsonPath("$.code").value("INVALID_CHALLENGE"));
+		assertRefreshRejected(originalSession.get("refreshToken").asText(), "refresh-after-password-reset");
+		assertLoginRejected(email, "correct-horse-battery-staple");
+
+		var resetSession = login(email, "new-correct-horse-battery-staple");
+		mvc.perform(put("/api/v1/account/password")
+				.header("Authorization", "Bearer " + resetSession.get("accessToken").asText())
+				.contentType(MediaType.APPLICATION_JSON).content("""
+						{"currentPassword":"new-correct-horse-battery-staple","newPassword":"final-correct-horse-battery-staple"}
+						"""))
+				.andExpect(status().isNoContent());
+		assertRefreshRejected(resetSession.get("refreshToken").asText(), "refresh-after-password-change");
+		assertLoginRejected(email, "new-correct-horse-battery-staple");
+		login(email, "final-correct-horse-battery-staple");
+	}
+
+	@Test
+	void genericCredentialRequestsDoNotRevealAccountEligibility() throws Exception {
+		var pendingEmail = "generic-pending@example.com";
+		mvc.perform(post("/api/v1/auth/registrations").header("Idempotency-Key", "generic-pending-register")
+				.contentType(MediaType.APPLICATION_JSON).content("{\"email\":\"" + pendingEmail
+						+ "\",\"password\":\"correct-horse-battery-staple\",\"actorType\":\"USER\"}"))
+				.andExpect(status().isCreated());
+
+		for (var email : List.of(pendingEmail, "unknown-credential-account@example.com")) {
+			mvc.perform(post("/api/v1/auth/email-verification-requests").contentType(MediaType.APPLICATION_JSON)
+					.content("{\"email\":\"" + email + "\"}"))
+					.andExpect(status().isAccepted()).andExpect(content().string(""));
+		}
+
+		mvc.perform(post("/api/v1/auth/password-recovery-requests").contentType(MediaType.APPLICATION_JSON)
+				.content("{\"email\":\"" + pendingEmail + "\"}"))
+				.andExpect(status().isAccepted()).andExpect(content().string(""));
+		assertThat(jdbc.sql("""
+				select count(*) from one_time_token token
+				join account on account.id = token.account_id
+				where account.email = :email and token.purpose = 'RESET_PASSWORD'
+				""").param("email", pendingEmail).query(Long.class).single()).isZero();
+	}
+
+	@Test
 	void runtimeHandlersExactlyMatchTheImplementedOpenApiOperations() {
 		var operations = handlerMapping.getHandlerMethods().keySet().stream()
 				.flatMap(mapping -> mapping.getPatternValues().stream()
@@ -317,6 +410,25 @@ class IdentitySessionFlowIntegrationTests extends IdentityTestProperties {
 						+ "\",\"password\":\"correct-horse-battery-staple\"}"))
 				.andExpect(status().isOk()).andReturn();
 		return json(login.getResponse().getContentAsString());
+	}
+
+	private JsonNode login(String email, String password) throws Exception {
+		var result = mvc.perform(post("/api/v1/auth/login").contentType(MediaType.APPLICATION_JSON)
+				.content("{\"email\":\"" + email + "\",\"password\":\"" + password + "\"}"))
+				.andExpect(status().isOk()).andReturn();
+		return json(result.getResponse().getContentAsString());
+	}
+
+	private void assertLoginRejected(String email, String password) throws Exception {
+		mvc.perform(post("/api/v1/auth/login").contentType(MediaType.APPLICATION_JSON)
+				.content("{\"email\":\"" + email + "\",\"password\":\"" + password + "\"}"))
+				.andExpect(status().isUnauthorized()).andExpect(jsonPath("$.code").value("INVALID_CREDENTIALS"));
+	}
+
+	private void assertRefreshRejected(String refreshToken, String idempotencyKey) throws Exception {
+		mvc.perform(post("/api/v1/auth/refresh").header("Idempotency-Key", idempotencyKey)
+				.contentType(MediaType.APPLICATION_JSON).content("{\"refreshToken\":\"" + refreshToken + "\"}"))
+				.andExpect(status().isUnauthorized()).andExpect(jsonPath("$.code").value("INVALID_SESSION"));
 	}
 
 	private void registerAndVerify(String email, String idempotencyKey) throws Exception {
@@ -345,14 +457,29 @@ class IdentitySessionFlowIntegrationTests extends IdentityTestProperties {
 
 	static class VerificationCapture {
 		private final AtomicReference<String> challenge = new AtomicReference<>();
+		private final AtomicReference<String> recoveryChallenge = new AtomicReference<>();
 
 		@EventListener
 		void capture(RegistrationRequested requested) {
 			challenge.set(requested.challenge());
 		}
 
+		@EventListener
+		void capture(CredentialDeliveryRequested requested) {
+			if (requested.purpose() == CredentialDeliveryRequested.Purpose.VERIFY_EMAIL) {
+				challenge.set(requested.challenge());
+			}
+			else {
+				recoveryChallenge.set(requested.challenge());
+			}
+		}
+
 		String challenge() {
 			return challenge.get();
+		}
+
+		String recoveryChallenge() {
+			return recoveryChallenge.get();
 		}
 	}
 

@@ -39,8 +39,12 @@ public class CareE2eConfiguration {
 
 	public static final String USER_TOKEN = "synthetic-care-e2e-access";
 	public static final String OTHER_USER_TOKEN = "synthetic-care-e2e-other-access";
+	public static final String FIRST_TIME_USER_TOKEN = "synthetic-resource-e2e-access";
+	public static final String RELEASE_USER_TOKEN = "synthetic-mb273-e2e-access";
 	public static final UUID USER_ID = UUID.fromString("10000000-0000-4000-8000-000000000004");
 	public static final UUID OTHER_USER_ID = UUID.fromString("10000000-0000-4000-8000-000000000005");
+	public static final UUID FIRST_TIME_USER_ID = UUID.fromString("10000000-0000-4000-8000-000000000006");
+	public static final UUID RELEASE_USER_ID = UUID.fromString("10000000-0000-4000-8000-000000000007");
 
 	@Bean
 	@Primary
@@ -54,8 +58,23 @@ public class CareE2eConfiguration {
 		return token -> switch (token) {
 			case USER_TOKEN -> jwt(token, USER_ID);
 			case OTHER_USER_TOKEN -> jwt(token, OTHER_USER_ID);
+			case FIRST_TIME_USER_TOKEN -> jwt(token, FIRST_TIME_USER_ID);
+			case RELEASE_USER_TOKEN -> jwt(token, RELEASE_USER_ID);
 			default -> throw new BadJwtException("E2E access token is invalid");
 		};
+	}
+
+	@Bean
+	InitialCheckFaults initialCheckFaults() {
+		return new InitialCheckFaults();
+	}
+
+	@Bean
+	FilterRegistrationBean<OncePerRequestFilter> initialCheckFaultFilter(InitialCheckFaults faults) {
+		var registration = new FilterRegistrationBean<OncePerRequestFilter>();
+		registration.setFilter(new InitialCheckFaultFilter(faults));
+		registration.setOrder(Ordered.HIGHEST_PRECEDENCE);
+		return registration;
 	}
 
 	@Bean
@@ -101,7 +120,7 @@ public class CareE2eConfiguration {
 				insert into consent_decision (
 				    id, user_id, consent_type, policy_version, granted, evidence,
 				    idempotency_key, request_hash, decided_at, created_at
-				) values (:decisionId, :userId, 'PRIVACY_POLICY', 'privacy-capstone-v1', true,
+				) values (:decisionId, :userId, 'PRIVACY_POLICY', 'privacy-capstone-v3', true,
 				          '{}'::jsonb, 'e2e-seeded-consent', repeat('a', 64), :timestamp, :timestamp)
 				on conflict (id) do nothing
 				""")
@@ -163,6 +182,24 @@ public class CareE2eConfiguration {
 		MALFORMED
 	}
 
+	enum InitialCheckFault {
+		NONE,
+		GAD_UNAVAILABLE
+	}
+
+	static final class InitialCheckFaults {
+
+		private final AtomicReference<InitialCheckFault> next = new AtomicReference<>(InitialCheckFault.NONE);
+
+		void set(InitialCheckFault fault) {
+			next.set(fault);
+		}
+
+		InitialCheckFault consume() {
+			return next.getAndSet(InitialCheckFault.NONE);
+		}
+	}
+
 	static final class ProgressFaults {
 
 		private final AtomicReference<ProgressFault> next = new AtomicReference<>(ProgressFault.NONE);
@@ -182,11 +219,14 @@ public class CareE2eConfiguration {
 
 		private final MutableE2eClock clock;
 		private final ProgressFaults faults;
+		private final InitialCheckFaults initialCheckFaults;
 		private final JdbcClient jdbc;
 
-		CareE2eController(MutableE2eClock clock, ProgressFaults faults, JdbcClient jdbc) {
+		CareE2eController(MutableE2eClock clock, ProgressFaults faults, InitialCheckFaults initialCheckFaults,
+				JdbcClient jdbc) {
 			this.clock = clock;
 			this.faults = faults;
+			this.initialCheckFaults = initialCheckFaults;
 			this.jdbc = jdbc;
 		}
 
@@ -198,6 +238,11 @@ public class CareE2eConfiguration {
 		@PostMapping("/progress-fault")
 		void progressFault(@RequestParam ProgressFault mode) {
 			faults.set(mode);
+		}
+
+		@PostMapping("/initial-check-fault")
+		void initialCheckFault(@RequestParam InitialCheckFault mode) {
+			initialCheckFaults.set(mode);
 		}
 
 		@PostMapping("/assessments/{assessmentId}/void")
@@ -228,6 +273,36 @@ public class CareE2eConfiguration {
 					.param("value", value)
 					.param("assessmentId", assessmentId)
 					.update();
+		}
+	}
+
+	static final class InitialCheckFaultFilter extends OncePerRequestFilter {
+
+		private final InitialCheckFaults faults;
+
+		InitialCheckFaultFilter(InitialCheckFaults faults) {
+			this.faults = faults;
+		}
+
+		@Override
+		protected boolean shouldNotFilter(HttpServletRequest request) {
+			return !"GET".equals(request.getMethod())
+					|| !request.getRequestURI().equals("/api/v1/questionnaires/GAD7/current");
+		}
+
+		@Override
+		protected void doFilterInternal(HttpServletRequest request, HttpServletResponse response,
+				FilterChain filterChain) throws ServletException, IOException {
+			if (faults.consume() == InitialCheckFault.NONE) {
+				filterChain.doFilter(request, response);
+				return;
+			}
+			response.setStatus(HttpServletResponse.SC_SERVICE_UNAVAILABLE);
+			response.setCharacterEncoding("UTF-8");
+			response.setContentType(MediaType.APPLICATION_PROBLEM_JSON_VALUE);
+			response.getWriter().write("""
+					{"type":"/problems/questionnaire-unavailable","title":"GAD-7 is unavailable","status":503,"code":"QUESTIONNAIRE_UNAVAILABLE","correlationId":"62cda42f-b286-43c6-aa48-88ef64ff3361"}
+					""");
 		}
 	}
 

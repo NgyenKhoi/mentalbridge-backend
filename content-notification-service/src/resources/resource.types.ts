@@ -9,11 +9,16 @@ export interface ResourceRow {
   readonly locale: string;
   readonly title: string;
   readonly summary: string;
+  readonly content_body: string | null;
   readonly external_url: string | null;
   readonly status: ResourceStatus;
+  readonly reviewed_by: string | null;
   readonly reviewed_at: Date | null;
+  readonly effective_at: Date | null;
+  readonly expires_at: Date | null;
   readonly created_at: Date;
   readonly updated_at: Date;
+  readonly version: number;
 }
 
 export interface ResourceSummary {
@@ -27,6 +32,17 @@ export interface ResourceSummary {
   readonly reviewedAt: string | null;
   readonly createdAt: string;
   readonly updatedAt: string;
+}
+
+export interface PublicResourceDetail extends ResourceSummary {
+  readonly contentBody: string | null;
+  readonly effectiveAt: string | null;
+  readonly expiresAt: string | null;
+}
+
+export interface ResourceDetail extends PublicResourceDetail {
+  readonly reviewedBy: string | null;
+  readonly version: number;
 }
 
 export interface ResourceListResponse {

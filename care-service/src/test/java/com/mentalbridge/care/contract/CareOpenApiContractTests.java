@@ -21,10 +21,13 @@ class CareOpenApiContractTests {
 			"POST /api/v1/consent-decisions",
 			"GET /api/v1/privacy-disclosures/current",
 			"GET /api/v1/questionnaires/{instrument}/current",
+			"GET /api/v1/questionnaires/definitions/{definitionId}",
 			"GET /api/v1/assessments",
 			"POST /api/v1/assessments",
 			"GET /api/v1/assessments/{assessmentId}",
 			"GET /api/v1/assessments/{assessmentId}/progress",
+			"POST /api/v1/support-evaluations",
+			"GET /api/v1/support-evaluations/{supportEvaluationId}",
 			"POST /api/v1/anonymous-assessment-sessions",
 			"POST /api/v1/anonymous-assessment-sessions/{sessionId}/assessments",
 			"GET /api/v1/anonymous-assessment-sessions/{sessionId}/assessments/{assessmentId}");
@@ -35,9 +38,12 @@ class CareOpenApiContractTests {
 			"/api/v1/consent-decisions",
 			"/api/v1/privacy-disclosures/current",
 			"/api/v1/questionnaires/{instrument}/current",
+			"/api/v1/questionnaires/definitions/{definitionId}",
 			"/api/v1/assessments",
 			"/api/v1/assessments/{assessmentId}",
 			"/api/v1/assessments/{assessmentId}/progress",
+			"/api/v1/support-evaluations",
+			"/api/v1/support-evaluations/{supportEvaluationId}",
 			"/api/v1/anonymous-assessment-sessions",
 			"/api/v1/anonymous-assessment-sessions/{sessionId}/assessments",
 			"/api/v1/anonymous-assessment-sessions/{sessionId}/assessments/{assessmentId}");
@@ -50,7 +56,9 @@ class CareOpenApiContractTests {
 			"GET /api/v1/assessments",
 			"POST /api/v1/assessments",
 			"GET /api/v1/assessments/{assessmentId}",
-			"GET /api/v1/assessments/{assessmentId}/progress");
+			"GET /api/v1/assessments/{assessmentId}/progress",
+			"POST /api/v1/support-evaluations",
+			"GET /api/v1/support-evaluations/{supportEvaluationId}");
 
 	private static final Set<String> ANONYMOUS_TOKEN_OPERATIONS = Set.of(
 			"POST /api/v1/anonymous-assessment-sessions/{sessionId}/assessments",
@@ -59,6 +67,7 @@ class CareOpenApiContractTests {
 	private static final Set<String> IDEMPOTENT_OPERATIONS = Set.of(
 			"POST /api/v1/consent-decisions",
 			"POST /api/v1/assessments",
+			"POST /api/v1/support-evaluations",
 			"POST /api/v1/anonymous-assessment-sessions/{sessionId}/assessments");
 
 	@Test
@@ -67,7 +76,7 @@ class CareOpenApiContractTests {
 		var options = new ParseOptions();
 		options.setResolve(true);
 		options.setResolveFully(true);
-		var result = new OpenAPIV3Parser().readLocation(contract.toString(), null, options);
+		var result = new OpenAPIV3Parser().readLocation(contract.toUri().toString(), null, options);
 
 		assertThat(result.getMessages()).isEmpty();
 		assertThat(result.getOpenAPI()).isNotNull();
@@ -106,6 +115,9 @@ class CareOpenApiContractTests {
 				"totalScore", "screeningLevel", "scoringVersion", "safetyStatus", "safetyPolicyVersion",
 				"disclaimerCode");
 		assertThat(result.getRequired()).contains("safetyStatus", "safetyPolicyVersion");
+		var questionnaire = openApi.getComponents().getSchemas().get("Questionnaire");
+		assertThat(questionnaire.getProperties()).containsKeys("scoringVersion", "scoreBands");
+		assertThat(questionnaire.getRequired()).contains("scoringVersion", "scoreBands");
 	}
 
 	@Test
@@ -124,6 +136,23 @@ class CareOpenApiContractTests {
 				"rawDelta", "scoreDirection", "bandTransition", "elapsedDuration")
 				.doesNotContainKeys("answers", "safetyStatus", "consent", "profile");
 		assertThat(direction.getDescription()).contains("unavailable fallback", "must not infer clinical meaning");
+	}
+
+	@Test
+	void supportContractProvidesReviewedExamplesForEveryTierWithoutACompositeScore() {
+		var contract = Path.of("..", "contracts", "openapi", "care-service-v1.yaml").toAbsolutePath();
+		var openApi = new OpenAPIV3Parser().read(contract.toString());
+		var response = openApi.getComponents().getSchemas().get("SupportEvaluation");
+		var examples = openApi.getComponents().getExamples();
+
+		assertThat(response.getProperties()).containsKeys("supportTier", "reasonCodes", "evidence", "nextStep",
+				"safetyGuidance", "disclaimer").doesNotContainKeys("totalScore", "compositeScore", "overallSeverity");
+		assertThat(examples).containsKeys("SelfGuidedSupportEvaluation", "ProfessionalSupportEvaluation",
+				"SafetyFollowUpSupportEvaluation");
+		assertThat(examples.values()).extracting(
+				example -> String.valueOf(((java.util.Map<?, ?>) example.getValue()).get("supportTier")))
+				.containsExactlyInAnyOrder("SELF_GUIDED_SUPPORT", "PROFESSIONAL_SUPPORT_RECOMMENDED",
+						"SAFETY_FOLLOW_UP_RECOMMENDED");
 	}
 
 	private void assertSecurity(String key, Operation operation) {

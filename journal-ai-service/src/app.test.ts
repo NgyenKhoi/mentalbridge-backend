@@ -28,6 +28,9 @@ const testConfiguration: ServiceConfiguration = {
   MONGODB_URI: "mongodb://localhost:27017",
   MONGODB_DATABASE: "mentalbridge_journal_ai_test",
   MONGODB_CONNECTION_TIMEOUT_MS: 100,
+  JOURNAL_ENCRYPTION_KEY: Buffer.alloc(32, 1),
+  JOURNAL_ENCRYPTION_KEY_ID: "test-v1",
+  JOURNAL_IDEMPOTENCY_HMAC_KEY: Buffer.alloc(32, 2),
   IDENTITY_JWT_ISSUER: "https://identity.test.mentalbridge",
   IDENTITY_JWT_AUDIENCE: "mentalbridge-api",
   IDENTITY_JWT_KEY_ID: "test-key",
@@ -152,6 +155,23 @@ void test("requires explicit MongoDB configuration in production", () => {
   assert.throws(() =>
     loadConfiguration({
       NODE_ENV: "production",
+      IDENTITY_JWT_ISSUER: "https://identity.test.mentalbridge",
+      IDENTITY_JWT_AUDIENCE: "mentalbridge-api",
+      IDENTITY_JWT_KEY_ID: "test-key",
+      IDENTITY_JWT_PUBLIC_KEY: testPublicKeyPem,
+    }),
+  );
+});
+
+void test("requires separate production encryption and idempotency keys", () => {
+  const sharedKey = Buffer.alloc(32, 9).toString("base64");
+  assert.throws(() =>
+    loadConfiguration({
+      NODE_ENV: "production",
+      JOURNAL_AI_MONGODB_URI: "mongodb://localhost:27017",
+      JOURNAL_AI_MONGODB_DATABASE: "mentalbridge_journal_ai",
+      JOURNAL_AI_ENCRYPTION_KEY: sharedKey,
+      JOURNAL_AI_IDEMPOTENCY_HMAC_KEY: sharedKey,
       IDENTITY_JWT_ISSUER: "https://identity.test.mentalbridge",
       IDENTITY_JWT_AUDIENCE: "mentalbridge-api",
       IDENTITY_JWT_KEY_ID: "test-key",
