@@ -1,4 +1,5 @@
 import { Module, type DynamicModule, type Provider } from '@nestjs/common';
+import { Reflector } from '@nestjs/core';
 
 import {
   CONFIGURATION_TOKEN,
@@ -15,6 +16,9 @@ import { ResourceController } from './resources/resource.controller.js';
 import { ResourceRepository } from './resources/resource.repository.js';
 import { ResourceService } from './resources/resource.service.js';
 import { E2eOutageController } from './e2e/e2e-outage.controller.js';
+import { AuthModule } from './auth/auth.module.js';
+import { JwtStrategy } from './auth/jwt.strategy.js';
+import { RolesGuard } from './auth/roles.guard.js';
 
 export interface ApplicationDependencies {
   readonly readinessProbe?: ReadinessProbe;
@@ -23,7 +27,6 @@ export interface ApplicationDependencies {
 }
 
 @Module({})
-// eslint-disable-next-line @typescript-eslint/no-extraneous-class
 class ContentNotificationModule {}
 
 export const createAppModule = (
@@ -50,6 +53,7 @@ export const createAppModule = (
 
   return {
     module: ContentNotificationModule,
+    imports: [AuthModule],
     controllers: [HealthController, ResourceController, E2eOutageController],
     providers: [
       { provide: CONFIGURATION_TOKEN, useValue: configuration },
@@ -62,6 +66,12 @@ export const createAppModule = (
       dbServiceProvider,
       repositoryProvider,
       serviceProvider,
+      JwtStrategy,
+      {
+        provide: RolesGuard,
+        useFactory: (reflector: Reflector) => new RolesGuard(reflector),
+        inject: [Reflector],
+      },
     ],
   };
 };
