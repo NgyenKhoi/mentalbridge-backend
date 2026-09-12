@@ -1,0 +1,288 @@
+"Issue Type","Issue ID","Summary","Parent","Assignee","Story Points","Original Estimate","Sprint","Priority","Labels","Description"
+"Epic","5000","[SPRINT 3] Deliver the domain-aware SupportPlan provider foundation","","","","","MB Sprint 3","Highest","sprint3-support-plan-foundation","## Objective
+Establish the implementation-ready provider foundation for domain-aware system-proposed SupportPlans: synchronize the approved policy; implement compatible SupportEvaluation v2; implement exact-version Resource Eligibility v1; and publish the initial reviewed eligibility matrix.
+
+## Scope and pull policy
+This import commits only Stories 5101-5104: 26 Story Points and 112 estimated hours. Care policy work starts first; SupportEvaluation and Resource Eligibility may then proceed in parallel; initial eligibility data follows the Content contract and migration. The remaining Sprint 3 capacity is reserved for already-imported Availability and Need Help Now work plus integration review and delivery risk.
+
+The proposal engine lifecycle API frontend workspace and end-to-end activation scenarios remain an ordered future pull pool after these provider gates pass; they are intentionally absent from this current-sprint import. This file replaces prior local V2/V3 drafts. Previously imported 4101-4103 are superseded and must not remain active duplicates. Existing 4104 Availability and 4105 Need Help Now remain valid independent work and are not duplicated here.
+
+## Current baseline
+Sprint 2 is closed on verified backend and frontend dev baselines. Domain-aware policy direction is recorded but approved detailed decisions still need canonical synchronization. SupportEvaluation v1 and reviewed-resource delivery exist; SupportEvaluation v2 Resource Eligibility and SupportPlan runtime do not yet exist.
+
+## Explicit deferrals
+Scheduling; activity completion; reminders; tracking dashboards; reassessment-driven plan review; AI selection or reranking; community; gamification; booking and payment are outside this Epic.
+
+## Definition of Done
+- [ ] Approved policy and lifecycle decisions are consistent across canonical sources.
+- [ ] SupportEvaluation v2 is additive immutable and backward-compatible with v1.
+- [ ] Resource Eligibility v1 resolves exact versions deterministically and fail-closed.
+- [ ] Initial item-level eligibility is reviewed published repeatably and usable by Care fixtures.
+- [ ] Provider and consumer quality gates pass without claiming proposal lifecycle frontend or E2E completion."
+"Story","5101","Freeze approved SupportPlan Policy v1","5000","","5","","MB Sprint 3","Highest","sprint3-foundation-care-policy","## Objective
+Synchronize the Product Owner-approved SupportPlan Policy v1 into authoritative repository artifacts so downstream contracts can be implemented without inference.
+
+## Scope and dependencies
+Backend dev already contains the two-domain ADR and impact correction delivered through PR #52. Complete the remaining approved-decision synchronization tracked by GitHub #49: immutable versioned templates; CORE and OPTIONAL slots; 1-5 total resource bounds; deterministic composition under mb-support-plan-selection-v1; normal safety-positive activation; PRIMARY and ADJUNCT roles; initial type-level review baseline; and lifecycle invariants. Freeze DEPRESSIVE_MAINTENANCE for PHQ Minimal; DEPRESSIVE_SELF_GUIDED for PHQ Mild; DEPRESSIVE_PROFESSIONAL_ADJUNCT for PHQ Moderate+; and equivalent ANXIETY families for GAD-7. SAFETY_OVERLAY and professional CTA stay outside template slots. Replace the stale client-authored proposal. No runtime endpoint or migration is implemented by this story.
+
+## Acceptance Criteria
+- [ ] ADR domain traceability repository policy specification and issue records #47 and #49 reflect current completion and all approved decisions consistently.
+- [ ] Published templates are immutable Care policy data with no V1 admin CRUD.
+- [ ] Template family and slot tables cover both approved domains and professional and safety behavior outside plan slots.
+- [ ] Lifecycle permits at most one DRAFT and one ACTIVE-or-PAUSED plan per user with explicit atomic replacement.
+- [ ] The old proposal accepting client-supplied initial resourceVersions is marked superseded and replaced by a server-proposal design input.
+
+## Definition of Done
+- [ ] Care Content frontend and safety reviewers accept one policy and lifecycle matrix.
+- [ ] Repository-wide stale-language search finds no active conflicting SupportPlan rule.
+- [ ] Contract proposal validation passes without claiming runtime implementation.
+- [ ] Future proposal lifecycle and frontend work can link to the accepted policy version and compatibility notes without inference.
+
+## Evidence
+- Accepted decision/ADR: TBD
+- Policy and lifecycle matrix: TBD
+- Proposal validation: TBD
+
+## Completion Notes
+Pending documentation and review synchronization. Product decisions are approved; completion here means repository sources agree."
+"Story","5102","Implement domain-aware SupportEvaluation v2","5000","","8","","MB Sprint 3","Highest","sprint3-foundation-care-evaluation","## Objective
+Implement a compatible Care SupportEvaluation v2 that exposes contributing domains instrument-specific levels stable reason codes and independent safety for downstream policy composition.
+
+## Scope and dependencies
+Tracked by GitHub #48. Preserve mb-support-routing-capstone-v1 contracts events migrations and history. Add a new immutable version rather than mutating v1. Care remains local owner; evaluation never requires Content AI Kafka Redis or another service to produce its synchronous result.
+
+## Acceptance Criteria
+- [ ] V2 retains exact PHQ-9 and GAD-7 assessment evidence instrument domain level policy version and evaluation time.
+- [ ] Contributing domains and stable reasons support independent domain-family composition with no global severity.
+- [ ] PHQ-9 item-9 safety evidence is independent from domain and level.
+- [ ] Create and owner-scoped read behavior defines auth idempotency validation errors and compatibility.
+- [ ] V1 rows APIs and events remain readable and unchanged.
+
+## Definition of Done
+- [ ] Additive OpenAPI and versioned event schemas are approved before implementation.
+- [ ] Append-only Liquibase migration and data dictionary cover every v2 field and invariant.
+- [ ] Domain application repository and contract tests cover success invalid evidence ownership replay races and v1 compatibility.
+- [ ] Aggregate plus outbox persist atomically and sensitive assessment answers never enter logs or events.
+
+## Evidence
+- Contract checks: TBD
+- Care service tests: TBD
+- PostgreSQL integration: TBD
+- Compatibility matrix: TBD
+
+## Completion Notes
+Pending implementation and review."
+"Story","5103","Implement Resource Eligibility v1","5000","","8","","MB Sprint 3","Highest","sprint3-foundation-content-eligibility","## Objective
+Implement Content-owned exact-version resource eligibility that Care can query synchronously before proposing or activating a SupportPlan.
+
+## Scope and dependencies
+Tracked by GitHub #50. Each reviewed content version may carry explicit target-domain eligibility with PRIMARY or ADJUNCT role; applicable instrument bands; support tiers; locale; publication status; and effective window. Content owns provenance and publication. Care owns final plan admission. Use contract-first REST and never cross-read databases.
+
+## Acceptance Criteria
+- [ ] Contract supports both approved domains and role per domain without GENERAL_WELLBEING or BOTH_SCREENED_DOMAINS as screening domains.
+- [ ] ADJUNCT can never satisfy a CORE slot; no resource becomes eligible from review publication category or type alone.
+- [ ] Exact resource/content version batch resolution returns deterministic eligible ineligible stale withdrawn not-found and unavailable outcomes.
+- [ ] Existing resource reads remain compatible and old versions are not silently mutated.
+- [ ] Publication validates domain role bands tier locale and effective-window combinations.
+
+## Definition of Done
+- [ ] Additive OpenAPI precedes generated provider and consumer types.
+- [ ] Append-only node-pg-migrate migration and PostgreSQL data dictionary are synchronized.
+- [ ] Admin/public/provider integration covers auth validation immutability filtering no-match timeout malformed response and enum evolution.
+- [ ] Care consumer contract defines deadlines bounded safe retry circuit breaker and fail-closed proposal behavior.
+
+## Evidence
+- Contract checks: TBD
+- Content tests: TBD
+- PostgreSQL integration: TBD
+- Care consumer compatibility: TBD
+
+## Completion Notes
+Pending implementation and review."
+"Story","5104","Publish the initial reviewed resource eligibility matrix","5000","","5","","MB Sprint 3","Highest","sprint3-foundation-eligibility-data","## Objective
+Publish explicit item-level eligibility for the real controlled-demo resource versions using the approved resource-type baseline.
+
+## Scope and dependencies
+Depends on Story 5103 contract and migration. Review each actual immutable content version separately for domain role bands tier locale and effective state. Approved type baseline: domain psychoeducation is PRIMARY for its domain; behavioural activation is depression PRIMARY and anxiety ADJUNCT; problem solving is depression PRIMARY-or-ADJUNCT and anxiety ADJUNCT; breathing is depression ADJUNCT and anxiety PRIMARY; grounding and mindfulness are depression ADJUNCT and anxiety PRIMARY-or-ADJUNCT; physical activity is depression PRIMARY-or-ADJUNCT and anxiety ADJUNCT; sleep journaling social connection and professional-support prep are ADJUNCT for both. Ambiguous cells require one explicit reviewed role per domain and content version; the type baseline never auto-approves an item.
+
+## Acceptance Criteria
+- [ ] Every demo resource version is explicitly eligible with reviewed metadata or explicitly ineligible.
+- [ ] The initial catalogue covers required CORE alternatives for approved template families used by demo scenarios.
+- [ ] Depression-specific core support cannot be satisfied only by Sleep Journaling or another ADJUNCT.
+- [ ] Professional-support prep stays ADJUNCT and no resource slot represents booking or safety guidance.
+- [ ] Published mapping records reviewer provenance policy version and effective window.
+
+## Definition of Done
+- [ ] Controlled data migration or governed publication artifact is append-only and repeatable.
+- [ ] Review evidence maps each item to the approved baseline and explains exceptions.
+- [ ] Integration verifies exact versions no universal defaults and deterministic no-match behavior.
+- [ ] Care-compatible fixtures are published for the future proposal-engine and end-to-end stories.
+
+## Evidence
+- Item review ledger: TBD
+- Seed/publication check: TBD
+- Eligibility integration: TBD
+- Consumer fixtures: TBD
+
+## Completion Notes
+Pending Story 5103 and item-level review."
+"Subtask","5201","Synchronize approved SupportPlan decisions across source documents","5101","","","14400","MB Sprint 3","Highest","sprint3-foundation-care-policy","## Objective
+Update the accepted ADR domain traceability and repository policy specification with the approved policy.
+
+## Acceptance Criteria
+- [ ] All six decisions and lifecycle invariants use one vocabulary.
+- [ ] Issue #49 is ready for accountable closure review.
+
+## Definition of Done
+- [ ] Document links and decision status are consistent.
+- [ ] No runtime completion is claimed."
+"Subtask","5202","Freeze template families slots and policy versioning","5101","","","14400","MB Sprint 3","Highest","sprint3-foundation-care-policy","## Objective
+Define immutable template data family composition CORE and OPTIONAL slots and mb-support-plan-selection-v1.
+
+## Acceptance Criteria
+- [ ] Both domains and Moderate-plus professional behavior are covered.
+- [ ] Published versions cannot be updated and V1 has no admin CRUD.
+
+## Definition of Done
+- [ ] Policy matrix receives Care Content and safety review.
+- [ ] Audit identifiers are explicit."
+"Subtask","5203","Freeze SupportPlan lifecycle and safety presentation invariants","5101","","","10800","MB Sprint 3","Highest","sprint3-foundation-care-policy","## Objective
+Define uniqueness transitions replacement and safety-positive activation rules.
+
+## Acceptance Criteria
+- [ ] One-draft and one-active-or-paused constraints are explicit.
+- [ ] Safety priority needs no extra checkbox and stays outside plan state.
+
+## Definition of Done
+- [ ] Lifecycle truth table covers invalid transitions and races.
+- [ ] User wording stays non-clinical."
+"Subtask","5204","Replace the stale client-authored SupportPlan proposal","5101","","","18000","MB Sprint 3","Highest","sprint3-foundation-care-policy","## Objective
+Replace the design input that accepts initial resourceVersions with a server-proposal contract outline.
+
+## Acceptance Criteria
+- [ ] Proposal accepts only owned evaluation input and server controls slots and alternatives.
+- [ ] Compatibility and supersession notes are explicit.
+
+## Definition of Done
+- [ ] Proposal lint/validation passes.
+- [ ] Consumer reviewers confirm no handwritten assumptions."
+"Subtask","5211","Freeze SupportEvaluation v2 REST and event contracts","5102","","","21600","MB Sprint 3","Highest","sprint3-foundation-care-evaluation","## Objective
+Define additive domain-aware API and event schemas.
+
+## Acceptance Criteria
+- [ ] Evidence domain level reasons safety and version semantics are explicit.
+- [ ] v1 compatibility and Problem Details are specified.
+
+## Definition of Done
+- [ ] OpenAPI and event validation pass.
+- [ ] Known consumer review is resolved."
+"Subtask","5212","Add append-only SupportEvaluation v2 persistence","5102","","","28800","MB Sprint 3","Highest","sprint3-foundation-care-evaluation","## Objective
+Persist immutable v2 evidence without rewriting v1.
+
+## Acceptance Criteria
+- [ ] Liquibase preserves old rows and enforces version constraints.
+- [ ] JPA mapping round-trips both versions.
+
+## Definition of Done
+- [ ] Migration and real-PostgreSQL integration pass.
+- [ ] Data dictionary and forward-correction notes are complete."
+"Subtask","5213","Implement SupportEvaluation v2 behavior and outbox","5102","","","43200","MB Sprint 3","Highest","sprint3-foundation-care-evaluation","## Objective
+Implement deterministic creation owner read idempotency and event publication.
+
+## Acceptance Criteria
+- [ ] Domain reasons derive from owned compatible evidence.
+- [ ] Evaluation and outbox commit atomically.
+
+## Definition of Done
+- [ ] Unit and service integration cover success validation auth and replay.
+- [ ] Sensitive answer content is absent from diagnostics and events."
+"Subtask","5214","Verify v1 compatibility and SupportEvaluation concurrency","5102","","","36000","MB Sprint 3","High","sprint3-foundation-care-evaluation","## Objective
+Prove unchanged v1 history and v2 race behavior.
+
+## Acceptance Criteria
+- [ ] Tests cover duplicate keys concurrent creates old rows and independent safety.
+- [ ] Consumers distinguish versions safely.
+
+## Definition of Done
+- [ ] Care quality gate passes.
+- [ ] Evidence names exact boundaries exercised."
+"Subtask","5221","Freeze Resource Eligibility v1 provider contract","5103","","","21600","MB Sprint 3","Highest","sprint3-foundation-content-eligibility","## Objective
+Define additive Content API for exact-version eligibility and batch resolution.
+
+## Acceptance Criteria
+- [ ] Domain role bands tier locale state and effective-window semantics are explicit.
+- [ ] Errors nulls unknown enums and compatibility are defined.
+
+## Definition of Done
+- [ ] OpenAPI and generated-model validation pass.
+- [ ] Content and Care review the contract."
+"Subtask","5222","Add eligibility persistence constraints and migration","5103","","","32400","MB Sprint 3","Highest","sprint3-foundation-content-eligibility","## Objective
+Persist immutable exact-version eligibility in Content PostgreSQL.
+
+## Acceptance Criteria
+- [ ] Constraints reject invalid domain role and publication combinations.
+- [ ] Applied migrations remain append-only.
+
+## Definition of Done
+- [ ] node-pg-migrate and real-PostgreSQL integration pass.
+- [ ] Data dictionary and indexes match access paths."
+"Subtask","5223","Implement eligibility publication and resolution","5103","","","39600","MB Sprint 3","Highest","sprint3-foundation-content-eligibility","## Objective
+Implement authorized publication and deterministic exact-version eligibility reads.
+
+## Acceptance Criteria
+- [ ] Review alone never implies plan eligibility.
+- [ ] Eligible ineligible stale withdrawn and no-match outcomes are stable.
+
+## Definition of Done
+- [ ] Provider unit HTTP and integration tests pass.
+- [ ] Existing public resource reads stay compatible."
+"Subtask","5224","Implement and verify the Care eligibility client","5103","","","36000","MB Sprint 3","High","sprint3-foundation-content-eligibility","## Objective
+Add a consumer-owned Care REST adapter with fail-closed proposal behavior.
+
+## Acceptance Criteria
+- [ ] Deadlines safe retries breaker auth and correlation propagation are explicit.
+- [ ] Timeout malformed JSON and enum evolution do not admit resources.
+
+## Definition of Done
+- [ ] Cross-language consumer contract tests pass.
+- [ ] No Care transaction spans the remote call."
+"Subtask","5231","Inventory exact demo resource versions for eligibility review","5104","","","14400","MB Sprint 3","Highest","sprint3-foundation-eligibility-data","## Objective
+Create the bounded inventory of actual immutable content versions used in the demo.
+
+## Acceptance Criteria
+- [ ] Each item includes current publication locale and source provenance.
+- [ ] Missing or ambiguous versions are excluded pending review.
+
+## Definition of Done
+- [ ] Inventory reconciles with Content-owned data.
+- [ ] No production personal data is copied."
+"Subtask","5232","Review item-level domain roles bands and tiers","5104","","","21600","MB Sprint 3","Highest","sprint3-foundation-eligibility-data","## Objective
+Assign explicit domain role bands and tier eligibility to every demo item.
+
+## Acceptance Criteria
+- [ ] Type baseline guides but never substitutes for item review.
+- [ ] CORE alternatives include eligible PRIMARY choices.
+
+## Definition of Done
+- [ ] Review ledger records approver rationale and policy version.
+- [ ] Exceptions are explicit."
+"Subtask","5233","Publish the initial eligibility data append-only","5104","","","28800","MB Sprint 3","Highest","sprint3-foundation-eligibility-data","## Objective
+Publish reviewed mappings through repeatable governed data changes.
+
+## Acceptance Criteria
+- [ ] Each exact version is mapped or explicitly ineligible.
+- [ ] Rerun cannot duplicate or silently mutate published facts.
+
+## Definition of Done
+- [ ] Migration/publication verification passes.
+- [ ] Forward correction is documented."
+"Subtask","5234","Verify initial matrix coverage and consumer fixtures","5104","","","21600","MB Sprint 3","High","sprint3-foundation-eligibility-data","## Objective
+Prove template-family coverage no-default behavior and Care fixtures.
+
+## Acceptance Criteria
+- [ ] Demo core slots have reviewed alternatives or explicit no-match.
+- [ ] Adjunct-only combinations cannot satisfy core.
+
+## Definition of Done
+- [ ] Content integration and fixtures pass review.
+- [ ] Evidence lists every exact version used."
