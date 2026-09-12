@@ -20,11 +20,11 @@ production personal or clinical data.
 
 ## Reproducible commands
 
-Run from the indicated directory in PowerShell. Docker Desktop must be running
-for the Spring Testcontainers suites:
+Run from the repository root in PowerShell. Docker Desktop must be running for
+the Spring Testcontainers suites:
 
 ```powershell
-Set-Location 'D:\DO AN\MentalBridge\mentalbridge-backend'
+Set-Location ./mentalbridge-backend
 .\scripts\docker-local.ps1 status
 ```
 
@@ -36,21 +36,21 @@ local infrastructure.
 
 ```powershell
 # Frontend quality and integrated browser journeys
-Set-Location 'D:\DO AN\MentalBridge\mentalbridge-frontend\mentalbridge'
+Set-Location ../mentalbridge-frontend/mentalbridge
 npm ci
 npm run quality
 npm run test:e2e
 
 # Identity service
-Set-Location 'D:\DO AN\MentalBridge\mentalbridge-backend\identity-service'
+Set-Location ../../mentalbridge-backend/identity-service
 .\mvnw.cmd test
 
 # Care service
-Set-Location 'D:\DO AN\MentalBridge\mentalbridge-backend\care-service'
+Set-Location ../care-service
 .\mvnw.cmd test
 
 # Content/Notification service
-Set-Location 'D:\DO AN\MentalBridge\mentalbridge-backend\content-notification-service'
+Set-Location ../content-notification-service
 npm ci
 npm run format:check
 npm run lint
@@ -62,33 +62,41 @@ npm run migration:check
 npm run build
 ```
 
-The frontend E2E command starts the local fixture and production-mode Next.js
-server automatically. Failed browser tests retain only bounded correlation IDs
-in `correlation-evidence.json`; tokens, cookies, request bodies, and response
-content are not attached.
+`npm run test:e2e` is fixture-browser verification only. It starts synthetic
+Identity/Care/Content fixtures and a production-mode Next.js server; it does
+not prove a live cross-stack journey. Failed browser tests retain only bounded
+correlation IDs in `correlation-evidence.json`; tokens, cookies, request
+bodies, and response content are not attached.
+
+Live cross-stack evidence was rerun locally on 2026-09-12 against controlled
+real Identity, Care, and Content services: 6 passed in 1.4 minutes, with no
+skips. It covers anonymous/authenticated journeys, owner-boundary denial,
+Content/Identity/Care outage states, and a revoked-refresh expired-session
+path. The final PR/CI link remains an administrative follow-up.
 
 ## Verification record
 
 | Boundary | Command/result | Evidence |
 | --- | --- | --- |
-| Frontend quality | `npm run quality` — passed; 26 files and 109 unit tests, production build passed | `mentalbridge-frontend/mentalbridge/README.md` |
-| Frontend journeys | `npm run test:e2e` — passed; 37 Chromium tests | `mentalbridge-frontend/mentalbridge/tests/e2e/` |
-| Content unit tests | `npm test` — passed; 3 files and 26 tests | `content-notification-service/src/__tests__/` |
-| Content static/contract gates | lint, typecheck, contract and migration checks, build — passed; `format:check` remains red on 30 pre-existing files | `content-notification-service/README.md` |
-| Identity service | `.\mvnw.cmd test` — passed; 28 tests, 0 failures/errors | `identity-service/target/surefire-reports/` |
-| Care service | `.\mvnw.cmd test` — passed; 35 tests, 0 failures/errors | `care-service/target/surefire-reports/` |
-| Docker local infrastructure | six containers running; five report healthy and Kafka running | `docker-compose.local.yml` |
+| Frontend quality | Previously observed pass: 29 files, 159 tests, production build. Rerun required on the synchronized branch. | `mentalbridge-frontend/mentalbridge/README.md` |
+| Frontend fixture journeys | Previously observed: 6 passed, 30 skipped. This is not live cross-stack evidence or a release pass. | `mentalbridge-frontend/mentalbridge/tests/e2e/` |
+| Frontend live cross-stack journeys | 2026-09-12 local controlled Docker rerun: 6 passed in 1.4m, 0 skipped. | `E2E_CONTROL_DOCKER=true npm.cmd run test:e2e:live -- tests/e2e/live-cross-stack.spec.ts --workers=1` |
+| Content unit tests | 2026-09-12 local rerun: 3 files, 24 tests passed. | `npm.cmd test` in `content-notification-service` |
+| Content static/contract gates | 2026-09-12 local rerun: format check, lint, typecheck, contract check, migration check, build, and integration passed. The integration suite passed 2 files and 25 tests in 13.72 seconds on a Docker-enabled host. | `npm.cmd run format:check`, `lint`, `typecheck`, `test`, `test:integration`, `contract:check`, `migration:check`, and `build` |
+| Identity service | Previously observed pass: 28 tests. Clean synchronized rerun and evidence link required. | `identity-service/target/surefire-reports/` |
+| Care service | Previously observed pass: 35 tests. Clean synchronized rerun and evidence link required. | `care-service/target/surefire-reports/` |
+| Docker local infrastructure | Compose syntax has been validated; service startup/readiness evidence is pending. | `docker-compose.local.yml` |
 
 ## Acceptance traceability
 
-| Acceptance criterion | Trace |
+| Acceptance criterion | Current evidence state |
 | --- | --- |
-| Anonymous PHQ-9, reopen, expiry, resource fallback | `care-assessment.spec.ts` — Anonymous PHQ-9 journey |
-| Authenticated profile, consent, PHQ-9, history, reassessment, resources | `care-assessment.spec.ts` — Authenticated Care journey |
-| Cross-user access fails closed | `security-degradation.spec.ts` — AC1 |
-| Explicit dependency degradation | `care-assessment.spec.ts` and `security-degradation.spec.ts` — AC2 |
-| No browser-owned scoring or obsolete hotline/mock result data | Care component tests, contract tests, and AC3 security/degradation journeys |
-| Review 1 definitions and approval states traceable | `care-service/README.md`, `docs/policies/`, and the Care OpenAPI contract |
+| Anonymous PHQ-9, reopen, expiry, resource fallback | Controlled live suite passed. |
+| Authenticated profile, consent, PHQ-9, history, reassessment, resources | Controlled live suite passed. |
+| Cross-user access fails closed | Controlled live suite passed with Care `403/404` owner-boundary denial. |
+| Explicit dependency degradation | Controlled live suite passed with Content, Identity, and Care outages plus revoked refresh. |
+| No browser-owned scoring or obsolete hotline/mock result data | Static/component evidence exists; re-verify against synchronized frontend revision. |
+| Review 1 definitions and approval states traceable | Source links exist; final Jira/PR/reviewer closure remains pending. |
 
 ## Deferred scope
 

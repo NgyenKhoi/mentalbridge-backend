@@ -33,6 +33,10 @@ PostgreSQL persistence uses Hibernate and Spring Data JPA types inside the ownin
 | `IDENTITY_BREVO_SENDER_NAME` | Yes | Transactional sender display name | `MentalBridge` |
 | `IDENTITY_VERIFICATION_URL` | Yes | Frontend verification URL receiving the challenge query parameter | `http://localhost:3000/verify-email` |
 | `IDENTITY_PASSWORD_RECOVERY_URL` | Yes | Frontend reset-password URL receiving the one-time recovery challenge | `http://localhost:3000/reset-password` |
+| `IDENTITY_E2E_SEED` | No | Enables synthetic-account seeding only with the `e2e` Spring profile | `false` |
+| `IDENTITY_E2E_USER_A_EMAIL` | When seeded | User A address; must end in `@synthetic.invalid` | `e2e-user-a@synthetic.invalid` |
+| `IDENTITY_E2E_USER_B_EMAIL` | When seeded | User B address; must end in `@synthetic.invalid` | `e2e-user-b@synthetic.invalid` |
+| `IDENTITY_E2E_PASSWORD` | When seeded | Shared local-only password for the two synthetic accounts | injected secret |
 
 Production must override the local Eureka URL. Kafka and Redis variables will be documented when those runtime adapters are introduced.
 Registration persists the account with exactly one immutable `USER` or `SPECIALIST` role, hashed challenge, idempotent outcome, and outbox event in one transaction. The configured delivery adapter runs only after that transaction commits and never logs the recipient or challenge. Automated tests keep delivery isolated and never use live Brevo credentials.
@@ -45,6 +49,20 @@ Copy-Item .env.example identity-service/.env
 ```
 
 Replace the three corresponding placeholders in `identity-service/.env` with the entries written to `.local/identity-secrets/identity-secrets.env`, then set the Identity database URL, username, password, development Brevo key, and verified sender. Both files containing real secrets are ignored by Git and must not be committed.
+
+For a controlled local cross-stack run, use the `e2e` Spring profile and explicitly
+enable the seed. The runner creates only `USER` accounts under the reserved
+`@synthetic.invalid` domain and hashes the supplied password with the production
+BCrypt component; it is not active in the default profile:
+
+```powershell
+$env:IDENTITY_SPRING_PROFILES_ACTIVE='e2e'
+$env:IDENTITY_E2E_SEED='true'
+$env:IDENTITY_E2E_USER_A_EMAIL='e2e-user-a@synthetic.invalid'
+$env:IDENTITY_E2E_USER_B_EMAIL='e2e-user-b@synthetic.invalid'
+$env:IDENTITY_E2E_PASSWORD='<random-local-password>'
+.\mvnw.cmd spring-boot:run
+```
 
 For the normal frontend-to-backend development flow, use Brevo credentials from the ignored `identity-service/.env` and run without a special Spring profile:
 

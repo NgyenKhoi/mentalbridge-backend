@@ -1,0 +1,119 @@
+name: mentalbridge-controlled-e2e
+
+services:
+  identity-migrate:
+    build:
+      context: ./identity-service
+      target: migration
+    environment: &identity-environment
+      IDENTITY_DB_URL: jdbc:postgresql://identity-postgres:5432/mentalbridge_identity
+      IDENTITY_DB_USERNAME: mentalbridge_identity
+      IDENTITY_DB_PASSWORD: local-only-identity-password
+      IDENTITY_JWT_ISSUER: https://identity.e2e.mentalbridge
+      IDENTITY_JWT_AUDIENCE: mentalbridge-e2e-api
+      IDENTITY_JWT_KEY_ID: controlled-e2e-key
+      IDENTITY_JWT_PRIVATE_KEY: ${E2E_IDENTITY_JWT_PRIVATE_KEY}
+      IDENTITY_JWT_PUBLIC_KEY: ${E2E_IDENTITY_JWT_PUBLIC_KEY}
+      IDENTITY_ENCRYPTION_KEY_VERSION: controlled-e2e-v1
+      IDENTITY_ENCRYPTION_KEY: ${E2E_IDENTITY_ENCRYPTION_KEY}
+      IDENTITY_BREVO_BASE_URL: http://brevo-disabled.invalid
+      IDENTITY_BREVO_API_KEY: controlled-e2e-no-delivery-key
+      IDENTITY_BREVO_SENDER_EMAIL: no-reply@synthetic.invalid
+      IDENTITY_BREVO_SENDER_NAME: MentalBridge Controlled E2E
+      SPRING_DATA_REDIS_HOST: redis
+      SPRING_DATA_REDIS_PORT: "6379"
+      SPRING_KAFKA_BOOTSTRAP_SERVERS: kafka:9092
+      EUREKA_CLIENT_ENABLED: "false"
+    depends_on:
+      identity-postgres:
+        condition: service_healthy
+
+  care-migrate:
+    build:
+      context: ./care-service
+      target: migration
+    environment: &care-environment
+      CARE_DB_URL: jdbc:postgresql://care-postgres:5432/mentalbridge_care
+      CARE_DB_USERNAME: mentalbridge_care
+      CARE_DB_PASSWORD: local-only-care-password
+      IDENTITY_JWT_ISSUER: https://identity.e2e.mentalbridge
+      IDENTITY_JWT_AUDIENCE: mentalbridge-e2e-api
+      IDENTITY_JWT_PUBLIC_KEY: ${E2E_IDENTITY_JWT_PUBLIC_KEY}
+      CARE_ANONYMOUS_SESSION_TTL: PT30M
+      CARE_ANONYMOUS_SESSION_MAXIMUM_LIFETIME: PT2H
+      CARE_PHQ9_SAFETY_POLICY_VERSION: MB-SAFETY-PHQ9-001-e2e-v1
+      CARE_IDEMPOTENCY_HMAC_KEY: ${E2E_CARE_IDEMPOTENCY_HMAC_KEY}
+      EUREKA_CLIENT_ENABLED: "false"
+    depends_on:
+      care-postgres:
+        condition: service_healthy
+
+  content-migrate:
+    build:
+      context: ./content-notification-service
+      target: builder
+    command: npm run migrate:review1-demo
+    environment: &content-environment
+      DATABASE_URL: postgres://postgres:local-only-content-password@content-postgres:5432/mentalbridge_content_notification?sslmode=disable
+      IDENTITY_JWT_ISSUER: https://identity.e2e.mentalbridge
+      IDENTITY_JWT_AUDIENCE: mentalbridge-e2e-api
+      IDENTITY_JWT_KEY_ID: controlled-e2e-key
+      IDENTITY_JWT_PUBLIC_KEY: ${E2E_IDENTITY_JWT_PUBLIC_KEY}
+      E2E_TEST_MODE: "true"
+      E2E_TEST_SECRET: ${E2E_CONTENT_TEST_SECRET}
+    depends_on:
+      content-postgres:
+        condition: service_healthy
+
+  identity:
+    build: ./identity-service
+    environment:
+      <<: *identity-environment
+      SPRING_LIQUIBASE_ENABLED: "false"
+      SPRING_PROFILES_ACTIVE: e2e
+      IDENTITY_E2E_SEED: "true"
+      IDENTITY_E2E_USER_A_EMAIL: ${E2E_USER_A_EMAIL}
+      IDENTITY_E2E_USER_B_EMAIL: ${E2E_USER_B_EMAIL}
+      IDENTITY_E2E_PASSWORD: ${E2E_USER_PASSWORD}
+    ports: ["8080:8080"]
+    depends_on:
+      identity-migrate:
+        condition: service_completed_successfully
+
+  care:
+    build: ./care-service
+    environment:
+      <<: *care-environment
+      SPRING_LIQUIBASE_ENABLED: "false"
+    ports: ["8081:8080"]
+    depends_on:
+      care-migrate:
+        condition: service_completed_successfully
+
+  content-notification:
+    build: ./content-notification-service
+    environment: *content-environment
+    ports: ["3003:3003"]
+    depends_on:
+      content-migrate:
+        condition: service_completed_successfully
+
+  frontend:
+    build: ../mentalbridge-frontend/mentalbridge
+    environment:
+      IDENTITY_API_BASE_URL: http://identity:8080
+      IDENTITY_API_TIMEOUT_MS: "10000"
+      CARE_API_BASE_URL: http://care:8080
+      CARE_API_TIMEOUT_MS: "10000"
+      CONTENT_SERVICE_URL: http://content-notification:3003
+      CONTENT_SERVICE_TIMEOUT_MS: "10000"
+      CARE_QUESTIONNAIRE_LOCALE: vi-VN
+      NODE_ENV: production
+    ports: ["3000:3000"]
+    depends_on:
+      identity:
+        condition: service_started
+      care:
+        condition: service_started
+      content-notification:
+        condition: service_started

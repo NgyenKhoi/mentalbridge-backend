@@ -1,6 +1,11 @@
-# MentalBridge Master BR/MSG Registry
+# MentalBridge historical BR/MSG proposal
 
-This file is the single source of truth for Business Rules and Application Messages used by MentalBridge function specifications. Existing codes must be reused when their meanings match. New codes use the next available number and are added here before being referenced elsewhere.
+> **Historical proposal — not an active source of truth.** This draft predates
+> the active Identity Story 902 challenge-link password-recovery contract. Its
+> six-digit OTP and 60-second resend proposals are not current runtime
+> requirements. Current behavior is governed by approved policies, versioned
+> OpenAPI contracts, executable migrations, and owning-service implementation.
+> This file remains only to preserve earlier analysis.
 
 ## Business Rules
 

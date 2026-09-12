@@ -19,6 +19,8 @@ const environmentSchema = z
     IDENTITY_JWT_PUBLIC_KEY: z.string().min(1),
     IDENTITY_JWT_KEY_ID: z.string().min(1).optional(),
     IDENTITY_JWT_CLOCK_TOLERANCE_SECONDS: z.coerce.number().int().min(0).default(60),
+    E2E_TEST_MODE: z.coerce.boolean().default(false),
+    E2E_TEST_SECRET: z.string().min(16).optional(),
   })
   .transform((environment) => ({
     ...environment,
