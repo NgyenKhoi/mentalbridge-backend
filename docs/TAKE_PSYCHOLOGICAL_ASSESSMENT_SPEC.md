@@ -17,12 +17,7 @@ The function is triggered when an authenticated User selects **“Bắt đầu�
   - Validate and score the assessment deterministically in Care Service, store the immutable submission, and evaluate safety-sensitive answers synchronously.
   - Return only the identifiers and safe result-routing data needed by the browser; detailed result display belongs to a separate function.
 
-> **Historical snapshot — superseded by Sprint 2 runtime evidence.** The
-> implementation note and flow below record the pre-Sprint-2 frontend baseline.
-> They are not a current-runtime claim. Current authoritative behavior is the
-> Care OpenAPI contract, the Care/frontend implementation, and the Sprint 2
-> runbook. The browser submits answers to Care; Care owns scoring, ownership,
-> idempotency, persistence, and safety evaluation.
+**Current implementation note:** The current frontend uses mock/static data and client-side simulation. The required backend API, authenticated ownership enforcement, versioned questionnaire retrieval, persistent submission, authoritative scoring, idempotency, and approved safety workflow are not yet implemented.
 
 ## Screen Layout
 
@@ -109,7 +104,7 @@ The function is triggered when an authenticated User selects **“Bắt đầu�
 13. If safety guidance is required, the response includes the approved immediate guidance and only verified resources under BR-21 without waiting for optional dependencies.
 14. The system confirms the accepted submission and transfers control to the separate View Assessment Result function using the server-issued submission ID.
 
-### Historical Frontend Flow (pre-Sprint-2; superseded)
+### Current Frontend Flow
 
 1. `/assessments` renders three static cards for PHQ-9, GAD-7, and PSQI plus three static history rows.
 2. Each **“Bắt đầu”** link opens `/assessment/phq9`, `/assessment/gad7`, or `/assessment/psqi`; unsupported route values render Not Found.

@@ -18,12 +18,7 @@ The function is triggered when an authenticated User selects the result action f
   - Select reviewed explanation, recommendation, disclaimer, and safety-guidance content associated with the stored result and policy versions.
   - Return no raw answers unless a separate, explicitly authorized function requires them.
 
-> **Historical snapshot — superseded by Sprint 2 runtime evidence.** The note
-> and flow below describe the pre-Sprint-2 frontend baseline and are not a
-> current-runtime claim. Current behavior is defined by the Care OpenAPI
-> contract, Care/frontend implementation, and Sprint 2 runbook: results are
-> server-owned, access is ownership-checked, and the browser does not score
-> PHQ-9 or publish an obsolete hotline.
+**Current implementation note:** The result modal shown in the supplied screenshot is a target interface and is not implemented in the current `/assessments` source. The history rows use static demonstration data, and their result-action buttons have no click handler or navigation. A separate anonymous PHQ-9 page displays a client-computed result, but it does not retrieve a persisted authenticated result or enforce ownership.
 
 ## Screen Layout
 
@@ -114,7 +109,7 @@ The supplied reference screenshot defines the target modal layout:
 12. When the stored safety outcome requires action, the interface prioritizes the approved synchronous safety guidance under BR-08 and shows only verified resources under BR-21.
 13. The User selects the close action, and the system returns to the assessment history without changing any assessment data.
 
-### Historical Frontend Flow (pre-Sprint-2; superseded)
+### Current Frontend Flow
 
 1. `/assessments` renders three hard-coded history rows containing fixed dates, instrument names, scores, and screening labels.
 2. Every history-row arrow is a client button with an accessibility label, but it has no `onClick` handler, link, modal state, or navigation behavior.

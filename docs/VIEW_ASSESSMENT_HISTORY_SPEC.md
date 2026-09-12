@@ -18,12 +18,7 @@ The function is triggered when an authenticated User opens `/assessments` and re
   - Exclude raw answers, safety details, internal scoring logic, consent data, and other sensitive system fields from the history list.
   - Transfer the selected result ID to the separate View Assessment Results function, where ownership must be checked again.
 
-> **Historical snapshot — superseded by Sprint 2 runtime evidence.** The note
-> and flow below describe the pre-Sprint-2 frontend baseline and are not a
-> current-runtime claim. Current behavior is defined by the Care OpenAPI
-> contract, Care/frontend implementation, and Sprint 2 runbook: owned history
-> is retrieved through the frontend boundary, has explicit states, and reopens
-> a server-owned result.
+**Current implementation note:** The current frontend uses three hard-coded history rows and no backend request or persistent history retrieval. The **“Xem tất cả lịch sử”** button and row result actions have no handler or navigation. Authentication, ownership, loading, empty, error, pagination, and full-history behavior are not implemented.
 
 ## Screen Layout
 
@@ -108,7 +103,7 @@ The supplied reference screenshot defines the assessment-history area:
 12. When the User selects a row action, the system transfers the selected result ID to the separate View Assessment Results function, which revalidates ownership under BR-42.
 13. The User may leave the history view; no assessment data is changed.
 
-### Historical Frontend Flow (pre-Sprint-2; superseded)
+### Current Frontend Flow
 
 1. `/assessments` defines a local `history` array containing exactly three demonstration records.
 2. The page maps the array directly into three rows with fixed dates, instruments, scores, levels, and presentation tones.

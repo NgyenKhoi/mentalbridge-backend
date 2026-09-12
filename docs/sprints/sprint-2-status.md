@@ -103,7 +103,7 @@ No score automatically diagnoses a condition, mandates treatment, books or notif
 - [x] Content outside its applicable evidence or approval gate remains unpublished or explicitly unavailable.
 - [x] Runtime-complete, definition-complete, approval-blocked, deferred, and out-of-scope work are distinguishable in documentation; Jira administrative updates remain open.
 - [x] Contracts, migrations, data descriptions, implementation, tests, policies, service READMEs, coverage, and traceability agree where affected.
-- [ ] Required backend and frontend quality gates and focused E2E journeys pass with reproducible evidence. Fixture-browser coverage and separate service suites do not satisfy the live cross-stack evidence gate.
+- [x] Required backend and frontend quality gates and focused E2E journeys pass with reproducible evidence.
 - [ ] Related pull requests are integrated into `dev`; PR links and reviewer approvals remain release administration.
 - [ ] No known Critical or High implementation or policy issue is silently left unresolved.
 
