@@ -37,8 +37,8 @@ The following work does not block base questionnaire publication and must not be
 
 | Feature | Separate gate |
 | --- | --- |
-| Support-tier selection | Approved deterministic support policy and missing/stale-input behavior |
-| Personalized intervention | Versioned reviewed content catalogue and eligibility rules |
+| SupportEvaluation | Approved deterministic instrument/domain-aware policy, independent safety, provenance and missing/stale-input behavior |
+| SupportPlan | System-proposed draft policy, bounded user choices, exact versioned resource eligibility, revalidation and explicit activation under ADR 0012 |
 | Specialist handoff | Entitlement, availability, consent, and data-sharing rules |
 | Follow-up and reminders | Cadence, opt-out, ownership, and unavailable-delivery fallback |
 | Public real-user deployment | Privacy, security, retention, legal, and production-safety review |

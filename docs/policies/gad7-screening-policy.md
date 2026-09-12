@@ -16,8 +16,9 @@
 | Locale | `vi-VN` |
 | Owning service | Care Service |
 | Supersedes | `MB-SCREEN-GAD7-001/1.0-draft.3` |
+| Architecture decision | [ADR 0012](../adr/0012-two-domain-screening-and-system-proposed-support-plans.md) |
 
-GAD-7 is a separate symptom-screening instrument. It does not inherit PHQ-9 text, its `0..27` range, item-9 behavior, or diagnostic meaning. This publication is for the controlled local/demo Capstone environment only.
+GAD-7 is a separate symptom-screening instrument and produces V1 evidence for the `ANXIETY_SYMPTOMS` domain, focused on generalized anxiety symptoms. It does not inherit PHQ-9 text, its `0..27` range, item-9 behavior, or diagnostic meaning. Its screening band is not global mental-health severity and cannot be combined with PHQ-9 into one level. This publication is for the controlled local/demo Capstone environment only.
 
 ## Immutable definition and provenance
 
@@ -76,7 +77,7 @@ The same Vietnamese non-diagnostic capability statement used by the screening fl
 
 > Đây là kết quả sàng lọc triệu chứng, không phải chẩn đoán y khoa. MentalBridge không cung cấp dịch vụ ứng cứu khẩn cấp, không giám sát con người 24/7 và không tự động liên hệ bên thứ ba.
 
-Support routing, personalized actions, specialist sharing, automatic follow-up, notifications, and AI behavior are not part of this publication.
+Support routing, personalized actions, specialist sharing, automatic follow-up, notifications, and AI behavior are not part of this publication. Existing coarse routing remains separately versioned; forward SupportPlans require the domain-aware system proposal governed by ADR 0012.
 
 ## Acceptance evidence
 

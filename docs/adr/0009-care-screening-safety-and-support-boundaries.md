@@ -2,6 +2,7 @@
 
 - Status: Accepted
 - Date: 2026-08-30
+- Amended by: [ADR 0012](0012-two-domain-screening-and-system-proposed-support-plans.md) for the explicit two-domain scope, no-global-severity rule, domain-aware evaluation, resource eligibility, and system-proposed SupportPlan direction. The scoring and safety decisions below remain in force.
 
 ## Context
 
@@ -11,13 +12,13 @@ The initial product serves adults aged 18–30 in Vietnam using `vi-VN` and `Asi
 
 ## Decision
 
-Care keeps five independent outputs: questionnaire `screeningLevel`, item-specific `safetyStatus`, policy-derived `supportTier`, approved `supportActions`, and commercial `entitlementPlan`.
+Care keeps independent outputs: instrument-specific `screeningLevel`, item-specific `safetyStatus`, policy-derived `supportTier`, approved `supportActions`, and commercial `entitlementPlan`. ADR 0012 further requires explicit screening domain provenance and forbids a combined or global mental-health severity.
 
 PHQ-9 and GAD-7 scores are calculated deterministically in Care from complete `0..3` answers. Bands come from immutable versioned reference data. These values are screening symptom severity, not diagnoses.
 
 For PHQ-9 v1, item 9 is positive when its value is at least `1`. A positive item never changes the PHQ-9 band and values `1`, `2`, and `3` do not establish intent, plan, imminence, or urgency. MentalBridge does not automatically notify a specialist, administrator, family member, emergency service, or external notification provider.
 
-Scoring, disclaimer, safety status, and reviewed safety guidance are synchronous local Care behavior and are available to anonymous and every subscription tier. They cannot depend on AI, Kafka, Redis, realtime delivery, notifications, or billing. AI may only rank/select/explain approved support catalogue entries; it never scores, changes bands/safety status, or invents interventions.
+Scoring, disclaimer, safety status, and reviewed safety guidance are synchronous local Care behavior and are available to anonymous and every subscription tier. They cannot depend on AI, Kafka, Redis, realtime delivery, notifications, or billing. AI may explain an already approved bounded proposal; it never scores, changes bands/safety status, determines resource eligibility, selects a SupportPlan, or invents interventions.
 
 Anonymous users may view their current result and safety guidance but receive no longitudinal history, specialist access, or profile-dependent personalization. Registered Free users may receive basic support from the approved catalogue; paid plans may add deeper longitudinal personalization, advanced follow-up, and consultation benefits defined by immutable plan versions.
 

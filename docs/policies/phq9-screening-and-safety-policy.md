@@ -17,14 +17,16 @@
 | Display timezone | `Asia/Ho_Chi_Minh` |
 | Owning service | Care Service |
 | Supersedes | N/A |
-| Architecture decision | [ADR 0009](../adr/0009-care-screening-safety-and-support-boundaries.md) |
+| Architecture decisions | [ADR 0009](../adr/0009-care-screening-safety-and-support-boundaries.md); [ADR 0012](../adr/0012-two-domain-screening-and-system-proposed-support-plans.md) |
 
 This policy specifies screening behavior, not diagnosis, treatment, suicide-risk stratification, emergency dispatch, or continuous human monitoring. The instrument, scoring research basis, and exact Vietnamese Capstone artifact have passed the bounded evidence gate. Optional support and production deployment follow separate gates.
 
+For V1 post-screening support, PHQ-9 produces evidence for the `DEPRESSIVE_SYMPTOMS` domain only. It is not a general mental-health assessment, and its band cannot be combined with another instrument into global severity.
+
 ## Terminology
 
-- `screeningLevel` means **screening symptom severity** (`mức độ triệu chứng qua sàng lọc`). It is not disease severity or a diagnosis.
-- `safetyStatus` reports the deterministic item-9 safety screen independently of `screeningLevel`.
+- `screeningLevel` means **instrument-specific screening symptom severity** (`mức độ triệu chứng qua sàng lọc`) for `DEPRESSIVE_SYMPTOMS`. It is not disease severity, global severity, or a diagnosis.
+- `safetyStatus` reports the deterministic item-9 cross-cutting safety screen independently of `screeningLevel`; it is not a third domain.
 - `supportTier` determines a reviewed support pathway. It is not a suicide-risk label and is governed by a separate approved policy.
 - `supportActions` are selected only from versioned, reviewed catalogue entries.
 - `entitlementPlan` controls commercial feature access and never suppresses scoring, disclaimers, safety status, or safety guidance.
@@ -166,7 +168,7 @@ Anonymous users may view their current score, screening level, disclaimer, safet
 
 Registered Free users may receive basic support only after the separate support catalogue gate passes. Premium tiers may add deeper longitudinal personalization, advanced follow-up, booking, and consultation according to their own approved contracts. These optional capabilities do not block base questionnaire publication. Safety output and access to an owned assessment are never paywalled.
 
-MB-179 approves `mb-support-routing-capstone-v1` as a non-executable product blueprint. That definition does not make support tiers, personalized actions, specialist handoff or automatic follow-up runtime available. MB-205 separately implements bounded authenticated descriptive progress without changing the PHQ-9 score, safety status or support capability. The [screening-to-support blueprint](../sprints/mb-179-screening-to-support-blueprint.md) is authoritative for their Capstone boundaries.
+Story 1103 makes `mb-support-routing-capstone-v1` executable as immutable coarse routing. That tier does not select resources or create a SupportPlan. ADR 0012 requires a compatible domain-aware evaluation and system-proposed plan flow before personalized plan runtime becomes available. MB-205 separately implements bounded authenticated descriptive progress without changing the PHQ-9 score, safety status or support capability. The [screening-to-support blueprint](../sprints/mb-179-screening-to-support-blueprint.md) is authoritative for their Capstone boundaries.
 
 If optional personalization is unavailable, the response uses an explicit availability status and reviewed generic guidance. It must not silently return empty output or imply that an unavailable AI, specialist, slot, notification, or emergency response succeeded.
 
@@ -197,7 +199,7 @@ If optional personalization is unavailable, the response uses an explicit availa
 - [x] Questionnaire, score-boundary, validation, idempotency, and safety-sensitive tests pass.
 - [x] Product Owner records the `CAPSTONE PUBLISHED` decision and effective version.
 
-The support-tier matrix, intervention catalogue, specialist workflow, consultation features, and paid-plan behavior are not questionnaire-publication blockers. They remain unavailable until their own gates pass. Consent/retention review is not required for synthetic controlled demos, but it remains mandatory before public real-user data collection.
+The support-tier matrix, SupportPlan catalogue, specialist workflow, consultation features, and paid-plan behavior are not questionnaire-publication blockers. Coarse v1 support routing later passed its Story 1103 gate; domain-aware SupportPlan selection and the other capabilities remain unavailable until their own gates pass. Consent/retention review is not required for synthetic controlled demos, but it remains mandatory before public real-user data collection.
 
 ## Production follow-up
 

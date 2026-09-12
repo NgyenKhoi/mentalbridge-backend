@@ -1,6 +1,6 @@
 # Content and Notification Service
 
-NestJS service that owns reviewed self-help resources, notification preferences, and durable notification delivery state. ADR 0009 removes the hotline catalogue from product scope.
+NestJS service that owns reviewed self-help resource definitions, future versioned plan-eligibility metadata, notification preferences, and durable notification delivery state. ADR 0009 removes the hotline catalogue from product scope. ADR 0012 keeps final SupportPlan eligibility in Care and clarifies that current review/publication does not make a resource universally plan-eligible.
 
 ## Current capability
 
@@ -9,6 +9,8 @@ NestJS service that owns reviewed self-help resources, notification preferences,
 - `GET /api/v1/resources` — lists active reviewed published self-help resources; returns empty array when none match; returns neutral fallback when service is unreachable; no hotline number or emergency dispatch claim (ADR 0009)
 - Strict startup configuration, safe Problem Details, structured redacted request logs, CORS deny-by-default, and graceful NestJS shutdown
 - `node-pg-migrate` baseline for the service-owned `mentalbridge_content_notification` database
+
+The current resource API supports public reviewed-content reads only. Domain/instrument-band/pathway eligibility requires a compatible contract and append-only migration under #50 before Care may use a resource version in a system-proposed SupportPlan.
 
 Admin write operations (`POST`, `PATCH`, `DELETE`, publish, archive) are explicitly `planned` in `../contracts/openapi/content-notification-service.yaml`. Safety screening and versioned safety guidance remain Care-owned behavior.
 

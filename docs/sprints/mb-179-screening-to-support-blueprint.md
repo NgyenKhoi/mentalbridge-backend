@@ -5,16 +5,16 @@
 | Field | Value |
 | --- | --- |
 | Blueprint ID | `MB-BLUEPRINT-SCREENING-SUPPORT-001` |
-| Version | `1.0-capstone` |
-| Status | `PRODUCT OWNER APPROVED — MENTOR CLOSURE REVIEW PENDING` |
-| Product Owner decision date | 2026-09-02 |
+| Version | `1.1-domain-scope-correction` |
+| Status | `PRODUCT OWNER APPROVED — AMENDED BY MB-SCOPE-DOMAIN-001` |
+| Product Owner decision date | 2026-09-02; scope correction 2026-09-12 |
 | Authoritative feedback source | MB-179 and its imported CSV description, confirmed by the MentalBridge Project Lead on 2026-09-02 |
 | Applies to | Controlled local/demo Capstone use with synthetic or test data |
 | Production use | Not approved |
 | Primary owner | Care Service |
-| Related decisions | [ADR 0009](../adr/0009-care-screening-safety-and-support-boundaries.md), [ADR 0010](../adr/0010-capstone-questionnaire-publication-gates.md) |
+| Related decisions | [ADR 0009](../adr/0009-care-screening-safety-and-support-boundaries.md), [ADR 0010](../adr/0010-capstone-questionnaire-publication-gates.md), [ADR 0012](../adr/0012-two-domain-screening-and-system-proposed-support-plans.md) |
 
-This blueprint closes the product-definition questions raised in Review 1. It does not claim that every stage has runtime code. Product Owner approval permits engineering to implement the bounded Capstone design. Mentor or supervisor review validates Review 1 closure after implementation and does not block preparation of the blueprint.
+This blueprint closes the product-definition questions raised in Review 1. It does not claim that every stage has runtime code. Product Owner approval permits engineering to implement the bounded Capstone design. Mentor or supervisor review validates Review 1 closure after implementation and does not block preparation of the blueprint. The 2026-09-12 correction makes the two supported screening domains explicit and replaces any implied user-authored generic plan with a domain-aware, system-proposed SupportPlan flow. The [impact analysis](mb-scope-domain-001-impact-analysis.md) identifies follow-up work without rewriting active v1 history.
 
 ## Status vocabulary
 
@@ -30,17 +30,28 @@ This blueprint closes the product-definition questions raised in Review 1. It do
 
 MentalBridge provides standardized symptom screening, educational support and an optional path to human support. It does not diagnose a condition, prescribe treatment, infer suicide intent or urgency, dispatch emergency responders, guarantee human contact, or provide continuous monitoring.
 
+V1 supports exactly two screening and post-screening support domains:
+
+| Screening domain | Instrument | Bounded meaning |
+| --- | --- | --- |
+| `DEPRESSIVE_SYMPTOMS` | PHQ-9 | Depressive symptom frequency within the approved instrument period |
+| `ANXIETY_SYMPTOMS` | GAD-7 | Anxiety symptom frequency, focused on generalized anxiety symptoms, within the approved instrument period |
+
+OCD, trauma/PTSD, panic disorder, social anxiety, bipolar/mania, psychosis, eating disorders, substance use, ADHD, independent insomnia, personality disorders, and any other unapproved concern are outside V1. Another concern requires its own governed product vertical; it is not an enum extension. Product wording must never imply that PHQ-9/GAD-7 provide a general mental-health assessment.
+
 Care is authoritative for questionnaire versions, score calculation, `screeningLevel`, PHQ-9 `safetyStatus`, future `supportTier` decisions and assessment ownership. The browser and AI receive authoritative results and cannot calculate, modify or override them. AI personalization and model selection are outside Sprint 2.
 
 The following dimensions remain independent:
 
 | Dimension | Authority | Meaning | Prohibited interpretation |
 | --- | --- | --- | --- |
-| `screeningLevel` | Care questionnaire scoring version | Symptom-frequency band for one instrument | Diagnosis, disease severity or treatment mandate |
+| `screeningLevel` | Care questionnaire scoring version | Symptom-frequency band for one instrument and domain | Diagnosis, global mental-health severity or treatment mandate |
 | `safetyStatus` | Care PHQ-9 item-9 rule | Positive or negative deterministic safety screen | Intent, plan, imminence, urgency or suicide-risk tier |
 | `supportTier` | Future versioned Care support policy | Product support pathway | Clinical treatment protocol or diagnosis |
 | `supportActions` | Future reviewed catalogue | Eligible versioned platform actions | AI-generated treatment or proof an action occurred |
 | `entitlementPlan` | Consultation/Billing | Commercial feature access | Permission to hide score, disclaimer or safety output |
+
+Safety is cross-cutting and is not a third screening domain. Equal bands from different instruments remain different evidence; no component may publish a combined score or global mental-health severity.
 
 Approved UI/API vocabulary includes “screening result”, “screening level”, “symptom score”, “safety screen”, “support option” and “professional support recommendation”. Prohibited claims include “diagnosed”, “has depression/anxiety”, “disease severity”, “recovered”, “clinically improved/worsened”, “treatment required”, “high suicide risk”, “a specialist was contacted” or “emergency help is on the way” unless a future governed capability can prove that exact fact.
 
@@ -79,8 +90,10 @@ Profile or session self-declaration
   -> PHQ-9 only: Care computes item-9 safetyStatus independently
   -> persist immutable result and governing versions
   -> render score, screeningLevel, disclaimer and safety output
-  -> evaluate the definition-only support blueprint
-  -> show reviewed generic resources or an explicit unavailable state
+  -> evaluate immutable instrument/domain evidence and independent safety evidence
+  -> resolve a domain-aware support pathway or an explicit unavailable state
+  -> system proposes a DRAFT SupportPlan from approved eligible content versions
+  -> user reviews bounded choices; Care revalidates; user explicitly activates
   -> registered user may voluntarily request the future specialist path
   -> explicit scoped consent before any sensitive data is shared
   -> user-initiated reassessment
@@ -92,20 +105,21 @@ Profile or session self-declaration
 | Stage | Entry criteria | Successful exit | Non-success exit | Sprint 2 runtime state |
 | --- | --- | --- | --- | --- |
 | Eligibility | Profile facts or explicit self-declaration are available | Cohort eligibility and disclosure are acknowledged | `OUTSIDE_CAPSTONE_SCOPE` or `ELIGIBILITY_UNCONFIRMED` without medical interpretation | `DEFINITION COMPLETE`; enforcement integration is separate runtime work |
-| Questionnaire selection | Eligible actor requests an instrument | Exact published locale/version returned | `QUESTIONNAIRE_UNAVAILABLE`; GAD-7 remains unpublished | PHQ-9 `RUNTIME COMPLETE`; GAD-7 `UNPUBLISHED` |
-| Submission and scoring | Complete raw answers, owner/session proof and idempotency key | Immutable Care-owned result stored and returned | Stable validation, authorization, expiry or version error; no partial final result | PHQ-9 `RUNTIME COMPLETE` |
+| Questionnaire selection | Eligible actor requests an instrument | Exact published locale/version returned | `QUESTIONNAIRE_UNAVAILABLE`; never substitute another instrument | PHQ-9 and GAD-7 `RUNTIME COMPLETE` through Story 1102 |
+| Submission and scoring | Complete raw answers, owner/session proof and idempotency key | Immutable Care-owned result stored and returned | Stable validation, authorization, expiry or version error; no partial final result | PHQ-9 and GAD-7 `RUNTIME COMPLETE` |
 | Safety evaluation | A PHQ-9 result includes item 9 | Independent positive/negative safety status returned synchronously | No AI, broker, cache, notification or billing dependency may suppress the result | PHQ-9 `RUNTIME COMPLETE`; not applicable to GAD-7 |
-| Support routing | At least one eligible published assessment result is explicitly selected | Versioned product support tier can be explained | `SUPPORT_ROUTING_UNAVAILABLE` or `INSUFFICIENT_DATA`; no invented action | `DEFINITION COMPLETE / RUNTIME UNAVAILABLE` |
-| Reviewed resources | A result page requests published generic content | Only active reviewed content is shown | Explicit empty/unavailable content state | Owned by MB-180 runtime work; not evidence that personalized routing exists |
+| Support evaluation | One explicit compatible PHQ-9/GAD-7 pair is selected | Existing v1 coarse tier and instrument-specific evidence can be explained | `SUPPORT_ROUTING_UNAVAILABLE` or `INSUFFICIENT_DATA`; no invented action | v1 `RUNTIME COMPLETE`; compatible domain-aware evolution tracked by #48 |
+| Reviewed resources | A result page requests published generic content | Only active reviewed content is shown | Explicit empty/unavailable content state | MB-180 runtime; review/publication is not SupportPlan eligibility |
+| SupportPlan proposal | Domain-aware evaluation and approved exact resource eligibility are available | System proposes a bounded `DRAFT`; user may explicitly activate after revalidation | Explicit unavailable/ineligible response; no client-authored arbitrary resource set | `DEFINITION COMPLETE / RUNTIME UNAVAILABLE`; #49 and #50 gate implementation |
 | Specialist handoff | Registered user voluntarily selects professional support | Entitlement, availability and scoped consent all pass before sharing | Explicit feature, entitlement, availability or consent failure | `DEFINITION COMPLETE / RUNTIME UNAVAILABLE` |
 | Reassessment | Registered owner starts a new attempt | New immutable result is created; earlier result remains unchanged | Same submission failure behavior as an initial assessment | User-initiated behavior belongs to MB-178 runtime work |
 | Progress comparison | Registered owner has two compatible results for one instrument | Descriptive score, band and interval comparison returned | `INSUFFICIENT_COMPARABLE_DATA` | `RUNTIME COMPLETE` through MB-205 |
 
-## Versioned severity-to-support decision table
+## Versioned domain-aware support decision table
 
-The approved blueprint identifier is `mb-support-routing-capstone-v1`. It is product-support routing, not a treatment protocol. It is definition-complete but not executable in Sprint 2.
+The approved executable identifier is `mb-support-routing-capstone-v1`. It is product-support routing, not a treatment protocol. Story 1103 made this coarse v1 evaluation executable after Sprint 2; its records and contracts remain immutable historical behavior.
 
-An eligible input is a complete, immutable result from a published questionnaire explicitly included in the same user-initiated support evaluation. Sprint 2 does not search an implicit clinical recency window and does not treat unpublished GAD-7 as a missing result. A later automatic “latest assessment” feature requires a new policy version with a freshness window.
+An eligible input is a complete, immutable result from a published questionnaire explicitly included in the same user-initiated support evaluation. The original Sprint 2 definition did not search an implicit clinical recency window and did not treat an unpublished instrument as missing evidence. Story 1102 later published GAD-7. A later automatic “latest assessment” feature still requires a new policy version with a freshness window.
 
 | Available evidence | PHQ-9 safety | Blueprint `supportTier` | Required boundary |
 | --- | --- | --- | --- |
@@ -116,7 +130,9 @@ An eligible input is a complete, immutable result from a published questionnaire
 
 PHQ-9 item 9 has priority only for `supportTier` selection; it never changes `screeningLevel`. Values `1`, `2` and `3` use the same Capstone safety pathway while the raw response remains protected. GAD-7 has no item-9-equivalent rule. AI is not an input to `mb-support-routing-capstone-v1`.
 
-No personalized `supportActions` are approved by this blueprint. The intervention catalogue, eligibility and exact localized wording remain unavailable until their separate gate passes.
+This table does not collapse PHQ-9 and GAD-7 into one severity: every persisted decision retains both instrument-specific levels. Its `supportTier` is a coarse pathway and is insufficient by itself to choose a resource or SupportPlan. For example, PHQ-9 `MILD` and GAD-7 `MILD` may share the same v1 tier while requiring different primary-domain resources. A compatible future evaluation version must make contributing domains and stable domain-specific reasons explicit before downstream plan use (#48).
+
+No personalized `supportActions` are approved by this v1 table. Review/publication alone does not establish plan eligibility. The forward flow is domain-aware evaluation, approved template/resource policy, system-proposed `DRAFT`, user-controlled choices, Care revalidation, and explicit activation. The policy must compose dimensions rather than create one template for every PHQ-9/GAD-7/safety combination. Issues #49 and #50 own the still-open plan and eligibility decisions.
 
 ## Specialist recommendation and handoff
 
@@ -212,8 +228,11 @@ Every optional dependency failure leaves the authoritative assessment result acc
 | MB-179 feedback summary is authoritative | Product Owner | Approved 2026-09-02 | Sprint 2 closure | Mentor validates the completed closure matrix |
 | Cohort, terminology and non-diagnostic boundary | Product Owner | Approved 2026-09-02 | Controlled Capstone | Revisit before expanding age/country scope |
 | PHQ-9 publication and item-9 rule | Product Owner/Care | Capstone published | Controlled Capstone | Production domain/privacy/legal/operational review |
-| GAD-7 implementation start | Product Owner | Approved 2026-09-02 | Engineering may complete mapping/tests | Publication remains blocked until its exact checklist passes |
-| Support routing blueprint | Product Owner | Definition approved 2026-09-02 | Documentation and future contract design | Runtime requires contracts, persistence/tests and the applicable reviewed content/domain gate |
+| GAD-7 publication | Product Owner | Capstone published through Story 1102 | Controlled Capstone | Production domain/privacy/legal/operational review remains separate |
+| Support routing v1 | Product Owner/Care | Controlled-Capstone runtime through Story 1103 | Immutable coarse evaluation and local safety fallback | Domain-aware plan use requires #48–#50 |
+| Two-domain screening boundary | Product Owner | Approved 2026-09-12 | V1 PHQ-9/depressive and GAD-7/anxiety only | Any additional domain requires a separate product vertical |
+| Domain-aware SupportEvaluation | Product Owner/Care | Definition corrected; runtime unavailable | Forward SupportPlan eligibility only | Compatible policy/contract version under #48 |
+| System-proposed SupportPlan | Product Owner/Care/Content | Direction approved; detailed policy unresolved | Future registered-user flow | Resolve #49 decisions and #50 eligibility before contract freeze |
 | Specialist handoff | Product Owner | Definition approved; runtime unavailable | Future registered-user flow | Consultation runtime plus scoped consent and security/privacy review |
 | User-initiated reassessment | Product Owner | Definition approved | Sprint 2 | MB-178 runtime evidence |
 | Automatic follow-up/reminders | Product Owner | Deferred | None | New cadence, opt-out, delivery and ownership decision |
@@ -227,8 +246,11 @@ Every optional dependency failure leaves the authoritative assessment result acc
 | --- | --- |
 | Anonymous eligible user completes published PHQ-9 | Current score, screening level, disclaimer and independent safety status; no history or specialist flow |
 | PHQ-9 score is mild and item 9 is 1 | `MILD` remains unchanged; positive safety screen; definition-only safety follow-up tier; no automatic contact |
-| Eligible user requests GAD-7 before publication | Explicit questionnaire unavailable response; no substitute score |
+| Eligible user requests an unpublished or unavailable instrument version | Explicit questionnaire unavailable response; no substitute score |
 | PHQ-9 moderate with negative item 9 | Definition-only professional-support recommendation; no treatment or booking mandate |
+| PHQ-9 mild and GAD-7 mild share a v1 tier | Preserve two domain-specific levels; do not infer one mental-health level or assume the same eligible resources |
+| Domain-aware evaluation is available for a registered user | The system proposes a bounded draft from approved exact versions; the user does not author an arbitrary initial resource list |
+| A new evaluation exists while a plan is active | Preserve the active plan; offer any new proposal separately and require explicit user action |
 | Specialist runtime is absent | Result stays accessible; UI states that specialist connection is unavailable and that no one was contacted |
 | Registered user completes a compatible reassessment | New immutable result plus previous/current score, raw delta, band transition and interval |
 | Anonymous user requests progress | Denied as unavailable because anonymous results have no longitudinal ownership |
@@ -236,4 +258,4 @@ Every optional dependency failure leaves the authoritative assessment result acc
 
 ## Definition versus runtime completion
 
-MB-179 completes the business definition when this blueprint, its policies and the Review 1 closure matrix agree. MB-205 subsequently completes the bounded authenticated progress API/UI. MB-179 does not complete GAD-7 publication, intervention runtime, specialist runtime, reminders, production consent/retention or AI personalization. Those capabilities remain unpublished, unavailable or production-blocked until their separate gates and Jira work are complete.
+MB-179 completed the original business definition when this blueprint, its policies and the Review 1 closure matrix agreed. Stories 1102 and 1103 subsequently published the bounded questionnaire and coarse support-evaluation runtimes, and MB-205 completed authenticated progress. ADR 0012 now governs forward SupportPlan use: domain-aware evaluation, resource eligibility and system-proposed plans remain unavailable until #48, #49 and #50 pass their separate policy, contract, migration and evidence gates. Specialist runtime, reminders, production consent/retention and AI personalization also remain separately governed.
