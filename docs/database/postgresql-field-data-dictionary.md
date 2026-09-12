@@ -1123,3 +1123,67 @@ Idempotent per-data-owner work item belonging to one deletion request.
 | `completed_at` | UTC instant this owner confirmed terminal completion; null while unfinished. |
 | `last_error_code` | Latest stable safe owner failure category without deleted content. |
 | `updated_at` | UTC instant of the latest task claim, retry, or status change. |
+
+
+## Owner `content-notification` (`mentalbridge_content_notification.public`)
+
+### `public.resource`
+
+Reviewed self-help content published through admin workflow, never user-contributed. Each resource requires explicit review approval before publication.
+
+| Field | Purpose |
+| --- | --- |
+| `id` | Immutable UUID exposed in REST contracts and used as the primary resource identifier. |
+| `category` | Stable resource category for filtering and display: `BREATHING`, `MEDITATION`, `ARTICLE`, `VIDEO`, `JOURNALING`, or `COMMUNITY`. |
+| `locale` | BCP 47 locale tag identifying the language/region of the content; defaults to `vi-VN`. |
+| `title` | Reviewed user-facing resource title displayed in lists and detail views; maximum 255 characters. |
+| `summary` | Reviewed brief description shown in previews and search results. |
+| `content_body` | Optional full reviewed content body; nullable when using external URL instead. |
+| `external_url` | Optional validated external link to content hosted elsewhere; mutually exclusive use with content body. |
+| `status` | Authoritative workflow state controlling visibility: `DRAFT` (editable), `PUBLISHED` (immutable, public), or `ARCHIVED` (immutable, hidden). |
+| `reviewed_by` | Identity UUID carried by a separately approved review decision; required while `PUBLISHED`. ADMIN authentication alone is not review approval. |
+| `reviewed_at` | UTC timestamp carried by a separately approved review decision; required while `PUBLISHED`. New publication remains blocked until MB-251 approves that decision model and authority. |
+| `effective_at` | Optional UTC timestamp controlling delayed publication; resource not visible until this instant passes. |
+| `expires_at` | Optional UTC timestamp after which published resource becomes hidden automatically. |
+| `created_at` | Immutable UTC creation instant for audit and chronological ordering. |
+| `updated_at` | UTC timestamp of latest persisted change; updated automatically on any modification. |
+| `version` | Non-negative optimistic lock counter incremented on each update; prevents lost concurrent modifications. |
+| `idempotency_key` | Legacy branch-local create retry field from migration 4. New writes use the actor/operation-scoped `resource_idempotency_record`; retained only for rolling compatibility. |
+
+**State Transitions:**
+- `DRAFT` → `PUBLISHED`: Blocked until MB-251 approves review authority, decision provenance, and review-version invalidation semantics
+- `PUBLISHED` → `ARCHIVED`: Preserves review metadata, resource becomes hidden but retrievable
+- Updates and deletions allowed only in `DRAFT` status
+- The database check requires non-null review provenance while `PUBLISHED`; application transitions preserve provenance after publication. The check does not claim column immutability.
+
+**Public API Safety:**
+- Only `PUBLISHED` resources returned where `effective_at <= NOW()` and (`expires_at` IS NULL OR `expires_at > NOW()`)
+- All published resources guaranteed to have review provenance
+- `DRAFT` and `ARCHIVED` resources never exposed to public endpoints
+
+### `public.resource_idempotency_record`
+
+Durable retry ownership for resource creation. The transaction serializes the same actor, operation, and key; identical requests replay the original resource and a changed payload returns `IDEMPOTENCY_CONFLICT`.
+
+| Field | Purpose |
+| --- | --- |
+| `actor_id` | Identity administrator UUID that owns the retry key; prevents cross-actor key collisions. |
+| `operation` | Stable command scope; currently `CREATE_RESOURCE`. |
+| `idempotency_key` | Opaque caller key reused for one unchanged logical request. |
+| `request_fingerprint` | SHA-256 digest of the canonical create payload used only to distinguish replay from conflicting reuse. |
+| `resource_id` | Created resource UUID returned for deterministic replay; set to null after deliberate draft deletion so the key remains consumed and replays return a stable conflict. |
+| `created_at` | UTC instant the command key was first accepted. |
+
+### `public.resource_audit_event`
+
+Append-only minimized facts written in the same database transaction as resource mutations. Content bodies, titles, URLs, and summaries are deliberately excluded.
+
+| Field | Purpose |
+| --- | --- |
+| `id` | Immutable audit fact UUID. |
+| `occurred_at` | Database UTC instant of the committed action. |
+| `actor_id` | Identity administrator UUID responsible for the command. |
+| `action` | Stable outcome: `RESOURCE_CREATED`, `RESOURCE_UPDATED`, `RESOURCE_DELETED`, `RESOURCE_ARCHIVED`, or `RESOURCE_PUBLISH_BLOCKED`. A successful review/publish fact cannot exist until the MB-251 model is approved. |
+| `resource_id` | Resource aggregate UUID, retained even when a draft is deleted. |
+| `resource_version` | Version produced by the action, or the deleted draft version. |
+| `correlation_id` | Request UUID linking the audit fact to sanitized diagnostics. |

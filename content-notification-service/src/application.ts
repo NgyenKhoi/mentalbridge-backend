@@ -22,7 +22,11 @@ export const createApplication = async (
 
   app.use((request: Request, response: Response, next: NextFunction) => {
     const supplied = request.header('x-correlation-id');
-    const correlationId = supplied && supplied.length <= 128 ? supplied : randomUUID();
+    const correlationId =
+      supplied &&
+      /^[\da-f]{8}-[\da-f]{4}-[1-5][\da-f]{3}-[89ab][\da-f]{3}-[\da-f]{12}$/i.test(supplied)
+        ? supplied
+        : randomUUID();
     request.headers['x-correlation-id'] = correlationId;
     response.setHeader('x-correlation-id', correlationId);
     next();

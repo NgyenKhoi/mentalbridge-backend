@@ -10,15 +10,39 @@ const expectedImplemented = new Set([
   'GET /health/live',
   'GET /health/ready',
   'GET /api/v1/resources',
+  'POST /api/v1/resources',
+  'GET /api/v1/resources/admin/list',
+  'GET /api/v1/resources/admin/{id}',
+  'GET /api/v1/resources/{id}',
+  'PATCH /api/v1/resources/{id}',
+  'DELETE /api/v1/resources/{id}',
+  'POST /api/v1/resources/{id}/publish',
+  'POST /api/v1/resources/{id}/archive',
 ]);
 
 const implementedResponses = new Map([
   ['GET /health/live', new Set(['200'])],
   ['GET /health/ready', new Set(['200', '503'])],
   ['GET /api/v1/resources', new Set(['200', '400'])],
+  ['POST /api/v1/resources', new Set(['201', '400', '401', '403', '409', '422'])],
+  ['GET /api/v1/resources/admin/list', new Set(['200', '400', '401', '403', '503'])],
+  ['GET /api/v1/resources/admin/{id}', new Set(['200', '400', '401', '403', '404'])],
+  ['GET /api/v1/resources/{id}', new Set(['200', '400', '404'])],
+  ['PATCH /api/v1/resources/{id}', new Set(['200', '400', '401', '403', '409'])],
+  ['DELETE /api/v1/resources/{id}', new Set(['204', '400', '401', '403', '409'])],
+  ['POST /api/v1/resources/{id}/publish', new Set(['400', '401', '403', '409'])],
+  ['POST /api/v1/resources/{id}/archive', new Set(['200', '400', '401', '403', '409'])],
 ]);
 
-const implementedMustBePublic = new Set(['GET /health/live', 'GET /health/ready']);
+const implementedMustBePublic = new Set([
+  'GET /health/live',
+  'GET /health/ready',
+  'GET /api/v1/resources',
+  'GET /api/v1/resources/{id}',
+]);
+const implementedMustBeProtected = new Set(
+  [...expectedImplemented].filter((operation) => !implementedMustBePublic.has(operation)),
+);
 
 const actualImplemented = new Set();
 const actualPlanned = new Set();
@@ -58,6 +82,9 @@ for (const [path, pathItem] of Object.entries(contract.paths ?? {})) {
       if (implementedMustBePublic.has(operation) && pathItem[method].security) {
         throw new Error(`${operation} must remain public`);
       }
+      if (implementedMustBeProtected.has(operation) && !pathItem[method].security) {
+        throw new Error(`${operation} must declare bearer authentication`);
+      }
     }
   }
 }
@@ -68,10 +95,6 @@ if (!setsEqual(actualImplemented, expectedImplemented)) {
   throw new Error(
     `Content contract availability differs from implemented controllers. Missing: [${missing.join(', ')}]. Extra: [${extra.join(', ')}]`,
   );
-}
-
-if (actualPlanned.size === 0) {
-  throw new Error('Forward-looking Content operations must remain explicitly planned');
 }
 
 console.log('Validated OpenAPI contract: ../contracts/openapi/content-notification-service.yaml');
