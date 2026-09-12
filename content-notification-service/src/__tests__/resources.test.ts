@@ -24,6 +24,7 @@ const configuration: ServiceConfiguration = {
   IDENTITY_JWT_PUBLIC_KEY:
     '-----BEGIN PUBLIC KEY-----\nMIIBIjANBgkqhkiG9w0BAQEFAAOCAQ8AMIIBCgKCAQEA0\n-----END PUBLIC KEY-----',
   IDENTITY_JWT_CLOCK_TOLERANCE_SECONDS: 60,
+  E2E_TEST_MODE: false,
 };
 
 const publishedResource: ResourceRow = {
@@ -56,6 +57,7 @@ describe('GET /api/v1/resources', () => {
       readinessProbe: { check: async () => undefined },
       resourceRepository: makeRepository({ listPublished: async () => [publishedResource] }),
     });
+
     await app.init();
 
     const response = await request(app.getHttpServer() as Server)
@@ -69,6 +71,25 @@ describe('GET /api/v1/resources', () => {
     expect(response.body.count).toBe(1);
     expect(response.body.data[0]).not.toHaveProperty('hotline');
     expect(response.body.data[0]).not.toHaveProperty('emergencyNumber');
+  });
+
+  it('returns the normal unavailable fallback when the controlled outage is enabled', async () => {
+    app = await createApplication(configuration, {
+      readinessProbe: { check: async () => undefined },
+      resourceRepository: makeRepository({ listPublished: async () => [publishedResource] }),
+      outageState: { enabled: true },
+    });
+    await app.init();
+
+    const response = await request(app.getHttpServer() as Server)
+      .get('/api/v1/resources')
+      .expect(200);
+
+    expect(response.body).toMatchObject({
+      data: [],
+      count: 0,
+      fallback: 'unavailable',
+    });
   });
 
   it('returns empty array when no published resources match', async () => {

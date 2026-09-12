@@ -6,7 +6,7 @@ import type {
   UpdateResourceData,
   ResourceCommandContext,
 } from './resource.repository.js';
-import { RESOURCE_REPOSITORY_TOKEN } from '../application.tokens.js';
+import { E2E_OUTAGE_STATE_TOKEN, RESOURCE_REPOSITORY_TOKEN } from '../application.tokens.js';
 import type {
   ResourceCategory,
   ResourceListResult,
@@ -96,6 +96,10 @@ export interface ListResourcesOptions {
   readonly cursor?: string;
 }
 
+export interface E2eOutageState {
+  enabled: boolean;
+}
+
 export interface ListAdminResourcesOptions extends ListResourcesOptions {
   readonly status?: 'DRAFT' | 'PUBLISHED' | 'ARCHIVED';
 }
@@ -107,6 +111,8 @@ export class ResourceService {
   constructor(
     @Inject(RESOURCE_REPOSITORY_TOKEN)
     private readonly repository: ResourceRepository,
+    @Inject(E2E_OUTAGE_STATE_TOKEN)
+    private readonly outageState: E2eOutageState,
   ) {}
 
   async listPublished(options: ListResourcesOptions): Promise<ResourceListResult> {
@@ -117,6 +123,15 @@ export class ResourceService {
       limit,
       cursor: options.cursor,
     };
+
+    if (this.outageState.enabled) {
+      return {
+        data: [],
+        count: 0,
+        fallback: 'unavailable',
+        message: UNAVAILABLE_MESSAGE,
+      };
+    }
 
     let rows: ResourceRow[];
     try {

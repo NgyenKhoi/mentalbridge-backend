@@ -76,7 +76,7 @@ class CareOpenApiContractTests {
 		var options = new ParseOptions();
 		options.setResolve(true);
 		options.setResolveFully(true);
-		var result = new OpenAPIV3Parser().readLocation(contract.toString(), null, options);
+		var result = new OpenAPIV3Parser().readLocation(contract.toUri().toString(), null, options);
 
 		assertThat(result.getMessages()).isEmpty();
 		assertThat(result.getOpenAPI()).isNotNull();

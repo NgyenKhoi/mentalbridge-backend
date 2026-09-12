@@ -62,7 +62,12 @@ npm start
 | `IDENTITY_JWT_KEY_ID`                      | Yes        | None                                           | Exact active Identity signing-key identifier accepted by this resource service          |
 | `IDENTITY_JWT_PUBLIC_KEY`                  | Yes        | None                                           | X.509 RSA public key matching the Identity signing key; the private key is never shared |
 
-Local `.env` files are loaded only outside production and never override real environment variables. The repository and service examples use the same service-scoped keys. Generate independent random encryption and HMAC keys for every deployed environment (for example, with `crypto.randomBytes(32).toString("base64")`). Do not commit local `.env` files or secrets.
+Local `.env` files are loaded only outside production and never override real
+environment variables. Copy `.env.example` to `.env` for local development,
+then replace placeholder JWT values with local credentials. Generate
+independent random encryption and HMAC keys for every deployed environment
+(for example, with `crypto.randomBytes(32).toString("base64")`). Do not commit
+local `.env` files or secrets.
 
 ## Operations endpoints
 

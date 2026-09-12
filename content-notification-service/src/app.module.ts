@@ -7,6 +7,7 @@ import {
   DATABASE_SERVICE_TOKEN,
   RESOURCE_REPOSITORY_TOKEN,
   RESOURCE_SERVICE_TOKEN,
+  E2E_OUTAGE_STATE_TOKEN,
 } from './application.tokens.js';
 import type { ServiceConfiguration } from './configuration/configuration.js';
 import { DatabaseService, type ReadinessProbe } from './database/database.service.js';
@@ -14,6 +15,7 @@ import { HealthController } from './health/health.controller.js';
 import { ResourceController } from './resources/resource.controller.js';
 import { ResourceRepository } from './resources/resource.repository.js';
 import { ResourceService } from './resources/resource.service.js';
+import { E2eOutageController } from './e2e/e2e-outage.controller.js';
 import { AuthModule } from './auth/auth.module.js';
 import { JwtStrategy } from './auth/jwt.strategy.js';
 import { RolesGuard } from './auth/roles.guard.js';
@@ -21,6 +23,7 @@ import { RolesGuard } from './auth/roles.guard.js';
 export interface ApplicationDependencies {
   readonly readinessProbe?: ReadinessProbe;
   readonly resourceRepository?: ResourceRepository;
+  readonly outageState?: { enabled: boolean };
 }
 
 @Module({})
@@ -51,9 +54,13 @@ export const createAppModule = (
   return {
     module: ContentNotificationModule,
     imports: [AuthModule],
-    controllers: [HealthController, ResourceController],
+    controllers: [HealthController, ResourceController, E2eOutageController],
     providers: [
       { provide: CONFIGURATION_TOKEN, useValue: configuration },
+      {
+        provide: E2E_OUTAGE_STATE_TOKEN,
+        useValue: dependencies.outageState ?? { enabled: false },
+      },
       DatabaseService,
       readinessProvider,
       dbServiceProvider,
