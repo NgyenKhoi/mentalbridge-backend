@@ -72,7 +72,7 @@ Live cross-stack evidence was rerun locally on 2026-09-12 against controlled
 real Identity, Care, and Content services: 6 passed in 1.4 minutes, with no
 skips. It covers anonymous/authenticated journeys, owner-boundary denial,
 Content/Identity/Care outage states, and a revoked-refresh expired-session
-path. The evidence PR is [#16](https://github.com/NgyenKhoi/mentalbridge-backend/pull/16); CI/reviewer approval remain administrative follow-ups.
+path. The evidence PR is [#35](https://github.com/NgyenKhoi/mentalbridge-backend/pull/35); CI/reviewer approval remain administrative follow-ups.
 
 ## Verification record
 

@@ -135,7 +135,7 @@ mapping remains [requirements traceability](../requirements-traceability.md).
 | --- | --- |
 | Frontend quality | Previously observed pass: 29 files, 159 tests, build. Rerun required after base synchronization. |
 | Frontend fixture Playwright | Previously observed: 6 passed, 30 skipped. Not release evidence. |
-| Frontend live cross-stack E2E | 2026-09-12 controlled Docker rerun: 6 passed in 1.4m, 0 skipped. Command: `E2E_CONTROL_DOCKER=true npm.cmd run test:e2e:live -- tests/e2e/live-cross-stack.spec.ts --workers=1`. Evidence PR: [#16](https://github.com/NgyenKhoi/mentalbridge-backend/pull/16). |
+| Frontend live cross-stack E2E | 2026-09-12 controlled Docker rerun: 6 passed in 1.4m, 0 skipped. Command: `E2E_CONTROL_DOCKER=true npm.cmd run test:e2e:live -- tests/e2e/live-cross-stack.spec.ts --workers=1`. Evidence PR: [#35](https://github.com/NgyenKhoi/mentalbridge-backend/pull/35). |
 | Identity Maven suite | Rerun and attach exact result after base synchronization. |
 | Care Maven suite | Rerun and attach exact result after base synchronization. |
 | Content unit/integration/static gates | 2026-09-12: format, lint, typecheck, 24 unit tests, contract, migration, build, and Docker-backed integration tests (25/25) passed. |
