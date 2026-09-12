@@ -13,7 +13,7 @@ The root [`compose.yml`](compose.yml) is intentionally scoped to executable Revi
 | `demo` | Frontend, Identity, Care, Content/Notification, and explicit migrations against the shared dev/staging PostgreSQL databases |
 | `full-test` | Everything in `demo`, plus Realtime, its migration against the shared dev/staging MongoDB deployment, and local ephemeral Redis |
 
-Consultation, Journal/AI, PhoBERT, Eureka, and Kafka remain outside this stack until they participate in an executable Review 1 journey. Realtime is available for foundation testing but is not part of the critical mentor-demo path.
+Consultation, Journal/AI, Eureka, and Kafka remain outside this stack until they participate in an executable Review 1 journey. PhoBERT is an optional deferred benchmark baseline under ADR 0011 and is not a Review 1 or initial AI runtime dependency. Realtime is available for foundation testing but is not part of the critical mentor-demo path.
 
 Keep the backend and frontend repositories as sibling directories. From this backend repository, prepare the ignored Compose environment file and local Identity keys:
 
@@ -67,7 +67,7 @@ For an EC2 demo host, set `PUBLIC_APP_ORIGIN` and `IDENTITY_VERIFICATION_URL` to
 - End-user mobile APIs: authentication, profile, consent, journal, assessments, insights, interventions, subscriptions, consultation credits, appointments, chat, notifications, and personal trends.
 - Specialist APIs: approved profile, channel-specific availability, scheduled consultation appointments, consented user data, follow-up, earnings, and provider payout history.
 - Administration APIs: account/profile approval, subscription/payment/upgrade and payout reconciliation, reviewed content management, moderation, aggregated reporting, audit, retention, and AI evaluation datasets.
-- AI/NLP integration: Gemini or OpenAI through prompt engineering; PhoBERT inference is used only as an experimental baseline.
+- AI/NLP integration: initial provider scope is Gemini and OpenAI through prompt engineering; PhoBERT is an optional deferred Vietnamese NLP benchmark baseline.
 - Anonymous PHQ-9/GAD-7 screening with minimal collection and no silent linkage to a later account.
 
 ## Proposed architecture
@@ -82,9 +82,9 @@ The recommended starting point is a **small microservice landscape**, not one se
 | Journal & AI Service | Node.js 22+, TypeScript, NestJS | Journals, LLM orchestration, analysis jobs/results, benchmark coordination | MongoDB + PostgreSQL metadata |
 | Realtime Service | Node.js 22+, TypeScript, NestJS, Socket.IO | REST message APIs, WebSocket chat/notification delivery, presence, receipts | MongoDB + Redis |
 | Content & Notification Service | Node.js 22+, TypeScript, NestJS | Self-help resources, preferences, notification/provider delivery | PostgreSQL |
-| PhoBERT Worker | Python | Experimental inference jobs only | No authoritative business store |
+| PhoBERT Worker (optional/deferred) | Python | Future experimental Vietnamese NLP benchmark inference only | No authoritative business store |
 
-ADR 0005 assigns the workbook's financial bounded context to a cohesive `billing` feature inside Consultation Service, preserving the seven-deployable baseline. It owns paid subscriptions, Care-to-Plus upgrades, consultation credits, specialist earnings, and payout reconciliation. Downgrade and user-initiated refund are unsupported; MoMo is the sole production payment/payout provider, while local/CI uses MoMo-shaped fakes.
+ADR 0005 assigns the workbook's financial bounded context to a cohesive `billing` feature inside Consultation Service without adding another core deployable. It owns paid subscriptions, Care-to-Plus upgrades, consultation credits, specialist earnings, and payout reconciliation. Downgrade and user-initiated refund are unsupported; MoMo is the sole production payment/payout provider, while local/CI uses MoMo-shaped fakes.
 
 Use REST/JSON DTOs for synchronous business APIs and service-to-service queries. Spring services register with Eureka and Java consumers use OpenFeign only as a REST client adapter; discovery does not change ownership, authorization, or OpenAPI contracts. WebSocket terminates only at Realtime Service for live client chat, presence, receipts, and in-app notifications. Kafka carries durable asynchronous commands/events for analysis, notification, audit, reporting, and deletion workflows. Redis carries only ephemeral presence, connection routing, fan-out, rate-limit, delivery/idempotency, and expiring hashed OTP state; it is not a database-query cache or business source of truth.
 
@@ -110,6 +110,8 @@ Safety handling must be deterministic, immediate, auditable, non-paywalled, and 
 - [Architecture](docs/architecture.md)
 - [Node.js service stack](docs/nodejs-service-stack.md)
 - [Sprint 1 backend backlog guide](docs/sprint-1-backlog-guide.md)
+- [MB-273 initial-check release readiness](docs/sprints/mb-273-initial-check-release-readiness.md)
+- [PhoBERT optional benchmark baseline ADR](docs/adr/0011-defer-phobert-optional-benchmark-baseline.md)
 - [NestJS service framework ADR](docs/adr/0006-nestjs-nodejs-service-framework.md)
 - [Eureka discovery and OpenFeign ADR](docs/adr/0002-eureka-discovery-and-openfeign-clients.md)
 - [Kiến trúc module microservices và ngôn ngữ đã chốt](docs/microservice-module-suggestions.md)
@@ -129,14 +131,14 @@ Safety handling must be deterministic, immediate, auditable, non-paywalled, and 
 | 1 - Screening foundation | Identity, profile/consent, anonymous and authenticated PHQ-9/GAD-7, journal CRUD, admin login |
 | 2 - Insight and intervention | Asynchronous journal analysis, deterministic safety/support policy, approved resources and safety guidance |
 | 3 - Human support and premium access | Specialist approval/profile, subscription/payment, consultation credits, availability, booking, consented access, chat, reviews, follow-up, notifications |
-| 4 - Governance and research | Administration, payout history/reconciliation, moderation, deletion/retention, audit, reporting, dataset import, LLM vs PhoBERT benchmark |
+| 4 - Governance and research | Administration, payout history/reconciliation, moderation, deletion/retention, audit, reporting, dataset import, configured-provider benchmark, and optional PhoBERT baseline |
 
 ## Technology baseline
 
 - Java 21+, Spring Boot 4.x, Spring Security Resource Server, Spring Data, Liquibase, OpenAPI
 - Eureka for Spring service discovery; OpenFeign plus Resilience4j for Java owner-to-owner REST clients
 - Node.js 22 or newer + strict TypeScript + NestJS 11 for Journal/AI, Realtime, and Content/Notification
-- Python for the isolated PhoBERT inference worker
+- Python only if the optional PhoBERT inference worker later passes ADR 0011's activation gate
 - PostgreSQL for transactional and relational data
 - MongoDB for journal text, chat messages, and variable AI/evaluation payloads
 - Kafka for durable asynchronous commands/events; Redis for bounded ephemeral realtime/OTP coordination, not database-query caching

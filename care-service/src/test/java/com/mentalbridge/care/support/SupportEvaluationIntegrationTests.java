@@ -138,7 +138,8 @@ class SupportEvaluationIntegrationTests extends CareTestProperties {
 				.content(body(phq9, phq9))).andExpect(status().isBadRequest());
 		mvc.perform(post("/api/v1/support-evaluations").with(user(userId))
 				.header("Idempotency-Key", "support-foreign-0000001").contentType(MediaType.APPLICATION_JSON)
-				.content(body(phq9, foreignGad7))).andExpect(status().isNotFound());
+				.content(body(phq9, foreignGad7))).andExpect(status().isNotFound())
+				.andExpect(jsonPath("$.code").value("ASSESSMENT_NOT_FOUND"));
 		mvc.perform(post("/api/v1/support-evaluations").with(user(userId))
 				.header("Idempotency-Key", "support-wrong-00000001").contentType(MediaType.APPLICATION_JSON)
 				.content(body(gad7, phq9))).andExpect(status().isConflict());
