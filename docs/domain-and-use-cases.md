@@ -251,4 +251,4 @@ These remain open for the affected production or optional feature. Under ADR 001
 11. Before SupportPlan contract work resumes, issue #49 must decide whether templates are persisted, required versus optional proposed resources, minimum/maximum choices, rule-versus-mapping ownership, and whether safety-positive activation needs an additional reviewed acknowledgement.
 12. Issue #50 must approve versioned resource-eligibility semantics, including primary-domain versus cross-domain adjunct content; review/publication alone is not eligibility.
 
-The governing correction and repository impact are recorded in [ADR 0012](adr/0012-two-domain-screening-and-system-proposed-support-plans.md) and the [MB-SCOPE-DOMAIN-001 impact analysis](sprints/mb-scope-domain-001-impact-analysis.md).
+The governing correction and repository impact are recorded in [ADR 0012](adr/0012-two-domain-screening-and-system-proposed-support-plans.md).

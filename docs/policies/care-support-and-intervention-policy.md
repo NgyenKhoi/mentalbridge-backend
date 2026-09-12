@@ -49,7 +49,7 @@ The definition version is `mb-support-routing-capstone-v1`. An eligible input is
 
 The item-9 rule affects only support routing and never overwrites the PHQ-9 band. Values `1`, `2` and `3` do not classify intent, plan, imminence or urgency. GAD-7 has no equivalent safety rule. Safety is a cross-cutting layer, not a screening domain. AI is not an input to this blueprint.
 
-A future automatic latest-assessment calculation must define freshness, version compatibility and missing-input behavior in a new policy version. The complete journey and examples are in the [MB-179 blueprint](../sprints/mb-179-screening-to-support-blueprint.md#versioned-domain-aware-support-decision-table).
+A future automatic latest-assessment calculation must define freshness, version compatibility and missing-input behavior in a new policy version. The governing forward flow is recorded in [ADR 0012](../adr/0012-two-domain-screening-and-system-proposed-support-plans.md) and [domain and use cases](../domain-and-use-cases.md).
 
 Every result returns the exact `policyVersion`, stable ordered reason codes, both evidence references, independent per-instrument levels and Vietnamese 14-day meanings, one bounded next step, and the non-diagnostic limitation. It never creates a composite score. Repeating the same pair under the same policy reproduces the same persisted decision.
 

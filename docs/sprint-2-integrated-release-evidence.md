@@ -9,8 +9,7 @@ This evidence covers the controlled Sprint 2 vertical slice:
 - cross-user authorization and explicit Identity, Care, and Content/Notification degradation states;
 - server-owned scoring, consent, privacy, and resource publication boundaries.
 
-The executable startup, migration, verification, and closure checklist is
-[Sprint 2 runbook, traceability, and release evidence](sprints/sprint-2-runbook-traceability.md).
+The final closure result is recorded in [Sprint 2 status](sprints/sprint-2-status.md).
 
 The browser journey uses the deterministic fixture at
 `mentalbridge-frontend/mentalbridge/scripts/identity-e2e-server.mjs`. It uses
