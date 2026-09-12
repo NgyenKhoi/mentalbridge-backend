@@ -14,6 +14,7 @@ Architecture may add safety, privacy, reliability, and implementation constraint
 | Source commitment | Architecture coverage |
 | --- | --- |
 | Consumer product for Vietnamese users aged 18–30 | User/guest APIs, `vi-VN` locale baseline, mobile-facing REST plus realtime WebSocket |
+| V1 screening and post-screening scope | Exactly PHQ-9/`DEPRESSIVE_SYMPTOMS` and GAD-7/`ANXIETY_SYMPTOMS`; another domain is a separately approved product vertical |
 | React web admin and end-user mobile application | Edge proxy exposes REST/JSON; only Realtime Service exposes WSS |
 | Spring Boot and Node.js backend | Three Spring Boot and three NestJS/TypeScript services as fixed by ADR 0001 and ADR 0006 |
 | PostgreSQL and MongoDB | PostgreSQL owns relational transactions; MongoDB owns journals, analysis documents, conversations/messages |
@@ -51,8 +52,8 @@ Kafka and Redis are architecture additions supporting realtime and asynchronous 
 
 ## Actor-flow coverage
 
-- **Anonymous:** questionnaire → result → screening/safety guidance → optional register. Anonymous data is never silently linked to the new account.
-- **User:** assessment/journal → analysis → screening/safety/support → specialist discovery → premium/payment/credit or Care-to-Plus upgrade → choose a specialist-authored slot → scoped consent → appointment chat only during that slot → review → follow-up/analytics.
+- **Anonymous:** one supported-domain questionnaire → instrument-specific result → screening/safety guidance → optional register. Anonymous data is never silently linked to the new account.
+- **User:** assessment/journal → analysis → instrument/domain-specific screening plus independent safety → domain-aware SupportEvaluation → system-proposed draft → bounded choice/revalidation/explicit activation → optional specialist discovery → premium/payment/credit or Care-to-Plus upgrade → choose a specialist-authored slot → scoped consent → appointment chat only during that slot → review → follow-up/analytics.
 - **Specialist:** register → complete profile → admin approval → publish channel-specific availability → appointments/consented data → consult during the scheduled window → complete session → earnings/provider-payout projection → reviews.
 - **Admin:** login → bounded dashboard → accounts/specialists → subscriptions/payments/payouts → reviewed content → moderation → appointments → datasets/evaluation → reporting/audit/retention.
 
@@ -61,6 +62,10 @@ Kafka and Redis are architecture additions supporting realtime and asynchronous 
 These constraints refine rather than contradict the source documents:
 
 - PHQ-9/GAD-7 scoring is authoritative and deterministic; AI is a supporting indicator.
+- PHQ-9 and GAD-7 bands remain instrument/domain-specific; no combined score or global mental-health severity exists.
+- Safety is a cross-cutting PHQ-9 item-9 layer, not another screening domain, and never changes a questionnaire band.
+- Reviewed/published content is not automatically eligible for a SupportPlan; future eligibility must be domain-, band-, pathway-, locale-, version-, and effective-window-aware.
+- The system proposes a bounded SupportPlan draft; the user controls allowed choices and explicit activation but does not author an arbitrary initial resource set.
 - AI output cannot downgrade or change a deterministic safety status.
 - Approved safety guidance is returned synchronously and remains available when AI, Kafka, Redis, WebSocket, email, or push delivery fails.
 - The platform provides screening/referral support, not diagnosis, treatment, continuous monitoring, or guaranteed emergency response.
@@ -80,11 +85,14 @@ The requirements are represented in domain/architecture documentation, but the l
 7. Dataset metadata edit semantics: immutable version replacement versus narrowly editable administrative metadata.
 8. Exact MoMo payment method/request type, credentials/key rotation, status-query schedule, settlement delay, chargeback reconciliation, payout onboarding, VND plan prices or versioned FX policy, and financial retention. ADR 0005 and the billing specification already fix the MoMo-only IPN field/signature contract, ownership, plan values, Care-to-Plus upgrade math, no downgrade/refund, credit transitions, earnings, and payout states.
 9. WBS 28-29 and 155-156 both describe running/viewing AI benchmark evaluation; confirm whether they are different actor views or duplicate catalogue entries before defining contracts.
+10. Whether SupportPlan templates are persisted, how required/optional resources and choice bounds work, whether selection is code or persisted mapping, and whether safety-positive activation needs additional confirmation. Issue #49 owns these decisions.
+11. Primary-domain versus cross-domain adjunct resource eligibility and its versioned contract shape. Issue #50 owns this decision.
 
 Agents must not invent these behaviors independently. Resolve the relevant rule through product/domain review, then update the contract, data dictionary, migration, tests, and this traceability document together.
 
 ## Approved scope changes
 
+- 2026-09-12: `MB-SCOPE-DOMAIN-001` limits V1 screening and post-screening support to PHQ-9/`DEPRESSIVE_SYMPTOMS` and GAD-7/`ANXIETY_SYMPTOMS`, keeps safety cross-cutting, prohibits global severity, and changes the forward SupportPlan flow to a domain-aware system proposal followed by bounded user choice, revalidation and explicit activation. Active v1 contracts/history remain immutable; #48–#51 track compatible evaluation, plan, resource and frontend work. See [ADR 0012](adr/0012-two-domain-screening-and-system-proposed-support-plans.md) and its [impact analysis](sprints/mb-scope-domain-001-impact-analysis.md).
 - 2026-09-11: ADR 0011 keeps benchmark execution provider-neutral and defers `phobert-worker` as an optional Vietnamese NLP baseline. Initial AI implementation and benchmark work may use OpenAI and Gemini without a Python worker. PhoBERT activation requires an approved narrow task, label taxonomy, governed dataset/evaluation split, deterministic preprocessing, and a pinned compatible fine-tuned checkpoint; it is not a current Compose, readiness, Sprint, or release dependency.
 - 2026-09-06: MB-205 implements authenticated descriptive assessment progress in Care and the web client. The selected owned result is compared only with the immediately preceding non-voided same-instrument result using an identical scoring version and deterministic `(submittedAt, assessmentId)` ordering. The output is limited to versioned score/band/duration facts and arithmetic direction; anonymous access, clinical/causal interpretation, safety-resolution claims and optional-service side effects remain unavailable. Contract, index impact, verification matrix and evidence are recorded in [MB-205 delivery evidence](sprints/mb-205-delivery-evidence.md).
 - 2026-09-02: MB-179 adopts the imported Story description as the authoritative Review 1 summary. The controlled Capstone targets people aged 18–30 in Vietnam as a product cohort, not a medical cutoff. PHQ-9 is Care-authoritative and Capstone-published; GAD-7 engineering may proceed without external domain approval but remains unpublished until exact `vi-VN` mapping, reference data and tests pass. Support routing, specialist handoff, follow-up and descriptive progress are definition-complete boundaries and must remain explicitly unavailable until their separate runtime gates pass. Sprint 2 validation uses synthetic/test data; public real-user and specialist-sharing deployment remains blocked on its production reviews. See the [MB-179 blueprint](sprints/mb-179-screening-to-support-blueprint.md) and [Review 1 closure matrix](sprints/mb-179-review-1-closure-matrix.md).

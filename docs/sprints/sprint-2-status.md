@@ -13,7 +13,7 @@
 
 ## Goal
 
-Deliver a safe, backend-authoritative PHQ-9 vertical slice for anonymous and authenticated users, and close Review 1 with a versioned and reviewed business blueprint covering the target cohort, PHQ-9/GAD-7 provenance, screening terminology, severity-to-support routing, specialist handoff, follow-up, reassessment, and descriptive progress evaluation.
+Deliver a safe, backend-authoritative PHQ-9 vertical slice for anonymous and authenticated users, and close Review 1 with a versioned and reviewed business blueprint covering the target cohort, PHQ-9/GAD-7 provenance, screening terminology, instrument/domain-aware support routing, specialist handoff, follow-up, reassessment, and descriptive progress evaluation.
 
 Sprint 2 deliberately separates two outcomes:
 
@@ -54,7 +54,7 @@ The 70-hour difference from nominal capacity is reserved for meetings, review, a
 | --- | --- | --- |
 | Target cohort and terminology | `DEFINITION COMPLETE — MENTOR REVIEW PENDING` | Vietnam users aged 18–30 are the primary Capstone cohort; profile/self-declaration and unsupported cases are defined without a medical cutoff claim. |
 | PHQ-9/GAD-7 provenance | `CAPSTONE PUBLISHED — STORY 1102` | Current PHQ-9 v2 and GAD-7 have immutable executable definitions, source/review evidence, migration tests, API/runtime support, and frontend journeys. PHQ-9 v1 remains retired and readable for history. |
-| Severity-to-support routing | `CONTROLLED CAPSTONE RUNTIME — STORY 1103` | `mb-support-routing-capstone-v1` evaluates an explicit compatible PHQ-9/GAD-7 pair, keeps every decision dimension independent, excludes AI, emits stable evidence/reasons and uses the PO-approved local safety fallback. Personalized interventions remain unavailable. |
+| Instrument/domain-aware support boundary | `V1 COARSE RUNTIME — STORY 1103; FORWARD PLAN USE REQUIRES #48` | `mb-support-routing-capstone-v1` evaluates an explicit compatible PHQ-9/GAD-7 pair, keeps instrument levels and safety independent, excludes AI, emits stable evidence/reasons and uses the PO-approved local safety fallback. It does not create global severity or authorize resource/SupportPlan selection. |
 | Specialist handoff and consent | `DEFINITION COMPLETE — RUNTIME UNAVAILABLE` | Registered, voluntary, user-initiated handoff requires entitlement, availability and minimum scoped consent; no auto-contact, booking or journal sharing. |
 | Follow-up and reassessment | `DEFINITION COMPLETE — REASSESSMENT RUNTIME OWNED BY MB-178` | User initiates reassessment; Care owns future cadence; no automatic clinical reminder is hard-coded. |
 | Descriptive progress | `RUNTIME COMPLETE — MB-205` | Authenticated owner-selected same-instrument/scoring-version previous/current score, raw delta, arithmetic direction, band transition and interval only; no clinical, causal, safety-resolution or combined-score claim. |
@@ -69,9 +69,12 @@ Eligibility and versioned disclosure
   -> published PHQ-9 questionnaire
   -> anonymous session or authenticated owner
   -> raw answers submitted to Care
-  -> Care-owned deterministic score and screening level
-  -> independent PHQ-9 item-9 safety status
-  -> definition-only support routing and reviewed-resource lookup
+  -> Care-owned deterministic instrument-specific score and screening level
+  -> PHQ-9/depressive or GAD-7/anxiety domain evidence
+  -> independent cross-cutting PHQ-9 item-9 safety status
+  -> domain-aware SupportEvaluation or explicit unavailable state
+  -> future system-proposed DRAFT from exact eligible resource versions
+  -> user-controlled choices, revalidation and explicit activation
   -> result and truthful fallback rendered by the frontend
   -> explicit unavailable state for non-existent personalized support/specialist runtime
   -> optional professional-support recommendation when its feature gate passes
@@ -81,6 +84,8 @@ Eligibility and versioned disclosure
 ```
 
 No score automatically diagnoses a condition, mandates treatment, books or notifies a specialist, shares sensitive data, or claims emergency response.
+
+The final four SupportPlan steps are the corrected forward blueprint, not Sprint 2 runtime. Review/publication alone does not establish resource eligibility, and a new evaluation never silently changes an existing plan.
 
 ## Explicit runtime deferrals
 
@@ -113,9 +118,11 @@ No score automatically diagnoses a condition, mandates treatment, books or notif
 - Sprint 1 carry-over: MB-92, MB-93, and MB-105
 - PHQ-9 policy: [PHQ-9 screening and safety](../policies/phq9-screening-and-safety-policy.md)
 - GAD-7 policy: [GAD-7 screening](../policies/gad7-screening-policy.md)
-- Routing policy: [Care support and intervention](../policies/care-support-and-intervention-policy.md)
+- Routing policy: [Care support routing and SupportPlan](../policies/care-support-and-intervention-policy.md)
 - Consent policy: [Care consent and retention](../policies/care-consent-and-retention-policy.md)
 - Architecture decision: [ADR 0009](../adr/0009-care-screening-safety-and-support-boundaries.md)
+- Scope correction: [ADR 0012](../adr/0012-two-domain-screening-and-system-proposed-support-plans.md)
+- Scope impact analysis: [MB-SCOPE-DOMAIN-001](mb-scope-domain-001-impact-analysis.md)
 - Domain flow: [domain and use cases](../domain-and-use-cases.md)
 - Coverage: [use-case and WBS coverage](../modules/coverage.md)
 - MB-179 blueprint: [screening-to-support blueprint](mb-179-screening-to-support-blueprint.md)

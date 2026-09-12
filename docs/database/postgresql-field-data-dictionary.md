@@ -317,6 +317,8 @@ One bounded, versioned next step per support tier. `safety_guidance_text` is req
 
 Immutable versioned platform support-tier result derived from one explicit compatible PHQ-9/GAD-7 pair, distinct from diagnosis.
 
+This section describes the executable `mb-support-routing-capstone-v1` history. Its separate assessment references preserve instrument-specific evidence; it has no global severity field. The coarse tier and existing reason columns are not sufficient to select a resource or SupportPlan. Issue #48 must introduce any explicit domain-bearing shape compatibly and without backfilling or reinterpreting these rows.
+
 | Field | Purpose |
 | --- | --- |
 | `id` | Immutable UUID identifying this reproducible support-policy execution. |
@@ -343,6 +345,8 @@ Per-user idempotency aliases for combined-support commands. Multiple keys may sa
 ### `care.intervention_plan`
 
 Versioned set of platform support actions generated for one support classification.
+
+This is a non-executable conceptual baseline, not an approved Story 4101 schema. ADR 0012 supersedes any interpretation that the user creates this plan from arbitrary reviewed resources. Before implementation, #49 must replace or revise it as a system-proposed SupportPlan with bounded user choice, revalidation and explicit activation; unresolved template/resource rules must not be inferred from these fields.
 
 | Field | Purpose |
 | --- | --- |
@@ -1130,6 +1134,8 @@ Idempotent per-data-owner work item belonging to one deletion request.
 ### `public.resource`
 
 Reviewed self-help content published through admin workflow, never user-contributed. Each resource requires explicit review approval before publication.
+
+The current executable fields establish review, publication, locale and effective-window visibility only. They do not establish SupportPlan eligibility. Issue #50 owns a compatible contract and append-only migration for reviewed domain/instrument-band/pathway applicability; no caller may treat every published resource as universally eligible meanwhile.
 
 | Field | Purpose |
 | --- | --- |

@@ -7,9 +7,9 @@ The cross-schema [database/postgresql/001_initial_schema.sql](../../database/pos
 | Service database | Owner | Main aggregates |
 | --- | --- | --- |
 | `mentalbridge_identity` | Identity Service | account, role, refresh session, verification/reset token |
-| `mentalbridge_care` | Care Service | user profile, consent, anonymous session, questionnaire, assessment result, safety/support, intervention, follow-up |
+| `mentalbridge_care` | Care Service | user profile, consent, anonymous session, questionnaire, assessment result, safety, SupportEvaluation, SupportPlan lifecycle, follow-up |
 | `mentalbridge_consultation` | Consultation Service | specialist approval, plan/subscription/payment/upgrade, credit ledger, availability, appointment, earning/provider payout, review |
-| `mentalbridge_content_notification` | Content/Notification Service | reviewed resource and notification preference/delivery |
+| `mentalbridge_content_notification` | Content/Notification Service | reviewed resource definitions, future versioned plan-eligibility metadata, and notification preference/delivery |
 | owner-local tables | each producer; Governance reads safe events | outbox, audit, deletion workflow, retention policy |
 | `mentalbridge_journal_ai` | Journal/AI Service | analysis job metadata, dataset/benchmark metadata |
 
@@ -50,6 +50,8 @@ Cross-schema foreign keys in the logical baseline only make relationships visibl
 - Submission answers are constrained to 0..3, unique per question, and use composite foreign keys so every answer belongs to the submission's exact questionnaire definition.
 - Stored total score and screening band live in the one-to-one result and are authoritative only after server validation; `scoring_version` records the algorithm, `safety_item_positive` preserves the questionnaire fact, and the paired safety status/policy version records the independent response decision.
 - Support-tier results store policy version, reason codes and exact source IDs to make decisions reproducible; safety status remains a separate assessment result.
+- Existing `mb-support-routing-capstone-v1` rows remain immutable coarse evaluations. They preserve PHQ-9 and GAD-7 evidence separately and are not a global severity or sufficient plan-eligibility decision.
+- ADR 0012's domain-bearing SupportEvaluation, resource eligibility and system-proposed SupportPlan require separately approved compatible contracts and append-only owner migrations under #48–#50. This documentation change does not add columns, backfill v1 rows, or promote the conceptual `care.intervention_plan` model into an executable schema.
 
 ### Booking
 

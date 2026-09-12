@@ -2,13 +2,13 @@
 
 ## Business boundary
 
-Content/Notification owns reviewed self-help resources, notification preferences, durable in-app notifications, templates, provider delivery attempts, and delivery outcomes. It never scores assessments, evaluates safety/support policy, or guarantees emergency response. PostgreSQL is authoritative; Brevo/push are replaceable adapters. ADR 0009 removes hotline catalogue ownership.
+Content/Notification owns reviewed self-help resource definitions, their versioned domain/band/pathway eligibility metadata, notification preferences, durable in-app notifications, templates, provider delivery attempts, and delivery outcomes. Review/publication permits public display but does not by itself make a resource SupportPlan-eligible. Care owns SupportEvaluation, proposal policy and the final plan-eligibility decision. Content/Notification never scores assessments, evaluates safety/support policy, or guarantees emergency response. PostgreSQL is authoritative; Brevo/push are replaceable adapters. ADR 0009 removes hotline catalogue ownership; ADR 0012 defines the forward eligibility boundary.
 
 ## Use cases and acceptance
 
 | Capability | Main behavior | Acceptance |
 | --- | --- | --- |
-| Resources | Admin versions, publishes, retires and reviews localized self-help content | Only reviewed active versions served; locale/effective/review dates explicit; unavailable content has an explicit fallback status |
+| Resources | Admin versions, publishes, retires and reviews localized self-help content and separately governed eligibility | Only reviewed active versions served; locale/effective/review dates explicit; future plan use also requires explicit domain/instrument-band/pathway eligibility; unavailable content has an explicit fallback status |
 | Preferences | User manages channel/category choices | Mandatory safety/security categories follow approved policy; owner authorization and optimistic locking enforced |
 | Notification history | Persist list/detail/read/delete state | Bounded cursor pagination; user sees own records only; read/delete idempotent; retention semantics explicit |
 | Domain notification | Consume minimized facts, select versioned template and create notification | Duplicate message creates one logical notification; replay policy prevents repeated external sends |
@@ -21,11 +21,12 @@ Content/Notification owns reviewed self-help resources, notification preferences
 - Runtime: Node.js 22 or newer, strict TypeScript, NestJS 11, Zod, `pg`, `node-pg-migrate`, KafkaJS, Pino, OpenTelemetry, Vitest, and Testcontainers as defined in `docs/nodejs-service-stack.md`.
 - Define public/admin OpenAPI and versioned consumed/published events first. PostgreSQL migrations include template/delivery-attempt aggregates and outbox/inbox deduplication.
 - Template rendering and provider APIs sit behind application ports. Optional delivery never becomes safety truth and cannot claim a human or emergency service was notified.
+- Existing resource contracts and rows remain valid for reviewed public reads. Issue #50 owns additive eligibility contract/migration work; no service infers universal plan eligibility from current data.
 
 ## Ordered tasks
 
 - [x] CN-01 Scaffold the NestJS/TypeScript service with feature modules, typed configuration, health/readiness, lint, test, and build commands.
-- [ ] CN-02 Resolve resource locale/review, template, mandatory-category, delivery retry and retention policies.
+- [ ] CN-02 Resolve resource locale/review and domain-aware plan-eligibility policy (#50), plus notification template, mandatory-category, delivery retry and retention policies.
 - [ ] CN-03 Define resource/preference/notification OpenAPI and notification event schemas.
 - [x] CN-04 Add owner `node-pg-migrate` migrations, constraints/indexes and field dictionary entries.
 - [ ] CN-05 Implement reviewed content administration and safe current-resource reads.

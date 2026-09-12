@@ -1,8 +1,8 @@
 # MentalBridge Backend
 
-Backend platform for **MentalBridge (MBMS)**, an intelligent mental-health screening and early-intervention system for Vietnamese students and young adults (18-30).
+Backend platform for **MentalBridge (MBMS)**, a bounded mental-health screening and early-support system for Vietnamese students and young adults (18-30).
 
-MentalBridge helps users complete PHQ-9/GAD-7 self-screenings, keep an emotion journal, receive AI-assisted emotion insights, follow an approved support workflow, and connect with an approved specialist. It is a screening and support product, **not a diagnosis, emergency service, or replacement for professional treatment**.
+MentalBridge V1 supports two screening domains: PHQ-9 for depressive symptoms and GAD-7 for anxiety symptoms focused on generalized anxiety. It helps users complete those self-screenings, keep an emotion journal, receive AI-assisted emotion insights, follow an approved support workflow, and connect with an approved specialist. It is a screening and support product, **not a diagnosis, general mental-health assessment, emergency service, or replacement for professional treatment**.
 
 ## Review 1 Docker Compose stack
 
@@ -64,6 +64,7 @@ For an EC2 demo host, set `PUBLIC_APP_ORIGIN` and `IDENTITY_VERIFICATION_URL` to
 
 ## Product scope
 
+- V1 screening and post-screening support cover exactly `DEPRESSIVE_SYMPTOMS` through PHQ-9 and `ANXIETY_SYMPTOMS` through GAD-7. Another concern or instrument requires a separately approved product vertical; it is not added by extending an enum.
 - End-user mobile APIs: authentication, profile, consent, journal, assessments, insights, interventions, subscriptions, consultation credits, appointments, chat, notifications, and personal trends.
 - Specialist APIs: approved profile, channel-specific availability, scheduled consultation appointments, consented user data, follow-up, earnings, and provider payout history.
 - Administration APIs: account/profile approval, subscription/payment/upgrade and payout reconciliation, reviewed content management, moderation, aggregated reporting, audit, retention, and AI evaluation datasets.
@@ -91,20 +92,27 @@ Use REST/JSON DTOs for synchronous business APIs and service-to-service queries.
 ## Core flow
 
 ```text
-Questionnaire result ----> screeningLevel
-PHQ-9 item 9 -----------> safetyStatus
-Approved local policy --> supportTier --> approved catalogue actions
-Active plan version ----> entitlementPlan
+Questionnaire result ----> instrument + domain + instrument-specific screeningLevel
+PHQ-9 item 9 -----------> independent cross-cutting safetyStatus
+Approved local policy --> domain-aware SupportEvaluation and pathway
+Eligible exact content -> system-proposed DRAFT SupportPlan
+User-controlled choice -> revalidation -> explicit ACTIVE SupportPlan
+Active paid plan -------> entitlementPlan
 
 AI supplies supporting indicators; it must not override validated questionnaire
-scoring, change safety status, invent a diagnosis, or create an intervention.
+scoring, change safety status, invent a diagnosis, choose plan eligibility, or
+create a SupportPlan.
 ```
 
-Safety handling must be deterministic, immediate, auditable, non-paywalled, and usable even if optional AI or messaging dependencies are unavailable. MentalBridge has no hotline catalogue and must not hard-code unverified emergency numbers or facility claims in prompts or application code. See [ADR 0009](docs/adr/0009-care-screening-safety-and-support-boundaries.md) and the [policy register](docs/policies/README.md).
+The SupportPlan lines describe the approved forward business flow. The current executable v1 remains coarse SupportEvaluation history and does not yet create a plan.
+
+Safety handling must be deterministic, immediate, auditable, non-paywalled, and usable even if optional AI or messaging dependencies are unavailable. MentalBridge has no hotline catalogue and must not hard-code unverified emergency numbers or facility claims in prompts or application code. See [ADR 0009](docs/adr/0009-care-screening-safety-and-support-boundaries.md), its [two-domain SupportPlan amendment](docs/adr/0012-two-domain-screening-and-system-proposed-support-plans.md), the [impact analysis](docs/sprints/mb-scope-domain-001-impact-analysis.md), and the [policy register](docs/policies/README.md).
 
 ## Repository documentation
 
 - [Domain and use cases](docs/domain-and-use-cases.md)
+- [Two-domain screening and system-proposed SupportPlan decision](docs/adr/0012-two-domain-screening-and-system-proposed-support-plans.md)
+- [Two-domain decision impact analysis](docs/sprints/mb-scope-domain-001-impact-analysis.md)
 - [Requirements traceability to the capstone registration and 162-function WBS](docs/requirements-traceability.md)
 - [Per-module business, use-case, implementation and task specifications](docs/modules/README.md)
 - [Architecture](docs/architecture.md)
