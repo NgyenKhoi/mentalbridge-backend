@@ -1,11 +1,4 @@
-import {
-  Controller,
-  Delete,
-  ForbiddenException,
-  Headers,
-  Inject,
-  Post,
-} from '@nestjs/common';
+import { Controller, Delete, ForbiddenException, Headers, Inject, Post } from '@nestjs/common';
 import { CONFIGURATION_TOKEN, E2E_OUTAGE_STATE_TOKEN } from '../application.tokens.js';
 import type { ServiceConfiguration } from '../configuration/configuration.js';
 import type { E2eOutageState } from '../resources/resource.service.js';

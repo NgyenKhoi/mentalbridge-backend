@@ -15,7 +15,7 @@ tags:
   - name: Health
     description: Liveness and readiness probes
   - name: Resources
-    description: Self-help content management (admin reviewed)
+    description: Self-help content management with reviewed admin lifecycle and public eligibility boundaries
 
 paths:
   /health/live:
