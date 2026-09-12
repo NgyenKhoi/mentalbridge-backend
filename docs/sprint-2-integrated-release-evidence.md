@@ -20,11 +20,11 @@ production personal or clinical data.
 
 ## Reproducible commands
 
-Run from the indicated directory in PowerShell. Docker Desktop must be running
-for the Spring Testcontainers suites:
+Run from the repository root in PowerShell. Docker Desktop must be running for
+the Spring Testcontainers suites:
 
 ```powershell
-Set-Location 'D:\DO AN\MentalBridge\mentalbridge-backend'
+Set-Location ./mentalbridge-backend
 .\scripts\docker-local.ps1 status
 ```
 
@@ -36,21 +36,21 @@ local infrastructure.
 
 ```powershell
 # Frontend quality and integrated browser journeys
-Set-Location 'D:\DO AN\MentalBridge\mentalbridge-frontend\mentalbridge'
+Set-Location ../mentalbridge-frontend/mentalbridge
 npm ci
 npm run quality
 npm run test:e2e
 
 # Identity service
-Set-Location 'D:\DO AN\MentalBridge\mentalbridge-backend\identity-service'
+Set-Location ../../mentalbridge-backend/identity-service
 .\mvnw.cmd test
 
 # Care service
-Set-Location 'D:\DO AN\MentalBridge\mentalbridge-backend\care-service'
+Set-Location ../care-service
 .\mvnw.cmd test
 
 # Content/Notification service
-Set-Location 'D:\DO AN\MentalBridge\mentalbridge-backend\content-notification-service'
+Set-Location ../content-notification-service
 npm ci
 npm run format:check
 npm run lint
@@ -62,33 +62,40 @@ npm run migration:check
 npm run build
 ```
 
-The frontend E2E command starts the local fixture and production-mode Next.js
-server automatically. Failed browser tests retain only bounded correlation IDs
-in `correlation-evidence.json`; tokens, cookies, request bodies, and response
-content are not attached.
+`npm run test:e2e` is fixture-browser verification only. It starts synthetic
+Identity/Care/Content fixtures and a production-mode Next.js server; it does
+not prove a live cross-stack journey. Failed browser tests retain only bounded
+correlation IDs in `correlation-evidence.json`; tokens, cookies, request
+bodies, and response content are not attached.
+
+Live cross-stack evidence remains required. It must run the real frontend BFF
+against controlled real Identity, Care, and Content services, record the exact
+clean command, passed/skipped counts, service revision identifiers, and a PR or
+CI link. Until then, the corresponding acceptance criteria remain unchecked.
 
 ## Verification record
 
 | Boundary | Command/result | Evidence |
 | --- | --- | --- |
-| Frontend quality | `npm run quality` — passed; 26 files and 109 unit tests, production build passed | `mentalbridge-frontend/mentalbridge/README.md` |
-| Frontend journeys | `npm run test:e2e` — passed; 37 Chromium tests | `mentalbridge-frontend/mentalbridge/tests/e2e/` |
-| Content unit tests | `npm test` — passed; 3 files and 26 tests | `content-notification-service/src/__tests__/` |
-| Content static/contract gates | lint, typecheck, contract and migration checks, build — passed; `format:check` remains red on 30 pre-existing files | `content-notification-service/README.md` |
-| Identity service | `.\mvnw.cmd test` — passed; 28 tests, 0 failures/errors | `identity-service/target/surefire-reports/` |
-| Care service | `.\mvnw.cmd test` — passed; 35 tests, 0 failures/errors | `care-service/target/surefire-reports/` |
-| Docker local infrastructure | six containers running; five report healthy and Kafka running | `docker-compose.local.yml` |
+| Frontend quality | Previously observed pass: 29 files, 159 tests, production build. Must be rerun after the branch is synchronized with `origin/dev`. | `mentalbridge-frontend/mentalbridge/README.md` |
+| Frontend fixture journeys | Previously observed: 6 passed, 30 skipped. This is not live cross-stack evidence and is not a release pass. | `mentalbridge-frontend/mentalbridge/tests/e2e/` |
+| Frontend live cross-stack journeys | Not yet recorded. Required anonymous/authenticated/security/degradation journeys remain open. | Controlled-stack CI or local evidence link: pending |
+| Content unit tests | Previously observed pass: 3 files and 26 tests. Clean rerun required with the complete Content gate. | `content-notification-service/src/__tests__/` |
+| Content static/contract gates | `format:check` is failing; therefore the Content quality gate is not complete. Other claimed results require a clean rerun and evidence link. | `content-notification-service/README.md` |
+| Identity service | Previously observed pass: 28 tests. Clean synchronized rerun and evidence link required. | `identity-service/target/surefire-reports/` |
+| Care service | Previously observed pass: 35 tests. Clean synchronized rerun and evidence link required. | `care-service/target/surefire-reports/` |
+| Docker local infrastructure | Compose syntax has been validated; service startup/readiness evidence is pending. | `docker-compose.local.yml` |
 
 ## Acceptance traceability
 
-| Acceptance criterion | Trace |
+| Acceptance criterion | Current evidence state |
 | --- | --- |
-| Anonymous PHQ-9, reopen, expiry, resource fallback | `care-assessment.spec.ts` — Anonymous PHQ-9 journey |
-| Authenticated profile, consent, PHQ-9, history, reassessment, resources | `care-assessment.spec.ts` — Authenticated Care journey |
-| Cross-user access fails closed | `security-degradation.spec.ts` — AC1 |
-| Explicit dependency degradation | `care-assessment.spec.ts` and `security-degradation.spec.ts` — AC2 |
-| No browser-owned scoring or obsolete hotline/mock result data | Care component tests, contract tests, and AC3 security/degradation journeys |
-| Review 1 definitions and approval states traceable | `care-service/README.md`, `docs/policies/`, and the Care OpenAPI contract |
+| Anonymous PHQ-9, reopen, expiry, resource fallback | Fixture coverage: `care-assessment.spec.ts`. Live cross-stack evidence pending. |
+| Authenticated profile, consent, PHQ-9, history, reassessment, resources | Fixture coverage: `care-assessment.spec.ts`. Live cross-stack evidence pending. |
+| Cross-user access fails closed | Fixture coverage: `security-degradation.spec.ts` AC1. Live owner-boundary evidence pending. |
+| Explicit dependency degradation | Fixture coverage: `care-assessment.spec.ts` and `security-degradation.spec.ts` AC2. Live provider-outage evidence pending. |
+| No browser-owned scoring or obsolete hotline/mock result data | Static/component evidence exists; re-verify against synchronized frontend revision. |
+| Review 1 definitions and approval states traceable | Source links exist; final Jira/PR/reviewer closure remains pending. |
 
 ## Deferred scope
 
@@ -99,7 +106,8 @@ represented as completed by this evidence.
 
 ## Release review
 
-Required before release:
+Required before release; none of these items may be inferred from fixture or
+separate service results:
 
 1. retain the successful Identity and Care Maven results from a Docker-enabled host;
 2. attach the successful CI/local run links to the pull request;
