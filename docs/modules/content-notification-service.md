@@ -21,12 +21,13 @@ Content/Notification owns reviewed self-help resource definitions, their version
 - Runtime: Node.js 22 or newer, strict TypeScript, NestJS 11, Zod, `pg`, `node-pg-migrate`, KafkaJS, Pino, OpenTelemetry, Vitest, and Testcontainers as defined in `docs/nodejs-service-stack.md`.
 - Define public/admin OpenAPI and versioned consumed/published events first. PostgreSQL migrations include template/delivery-attempt aggregates and outbox/inbox deduplication.
 - Template rendering and provider APIs sit behind application ports. Optional delivery never becomes safety truth and cannot claim a human or emergency service was notified.
-- Existing resource contracts and rows remain valid for reviewed public reads. Issue #50 owns additive eligibility contract/migration work; no service infers universal plan eligibility from current data.
+- Existing resource contracts and rows remain valid for reviewed public reads. Resource Eligibility v1 adds immutable exact-version publications, explicit declarations, withdrawal and a bounded Care batch resolver under #50; no service infers universal plan eligibility from current data.
 
 ## Ordered tasks
 
 - [x] CN-01 Scaffold the NestJS/TypeScript service with feature modules, typed configuration, health/readiness, lint, test, and build commands.
 - [ ] CN-02 Implement exact-version domain/band/pathway eligibility with approved `PRIMARY`/`ADJUNCT` roles (#50), plus notification template, mandatory-category, delivery retry and retention policies.
+  - [x] Exact-version eligibility provider and Care consumer are implemented; the notification-policy remainder stays open.
 - [ ] CN-03 Define resource/preference/notification OpenAPI and notification event schemas.
 - [x] CN-04 Add owner `node-pg-migrate` migrations, constraints/indexes and field dictionary entries.
 - [ ] CN-05 Implement reviewed content administration and safe current-resource reads.

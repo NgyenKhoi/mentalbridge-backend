@@ -1,8 +1,12 @@
 # Content and Notification Service
 
-NestJS service that owns reviewed self-help resource definitions, future versioned plan-eligibility metadata, notification preferences, and durable notification delivery state. ADR 0009 removes the hotline catalogue from product scope. ADR 0012 keeps final SupportPlan eligibility in Care and clarifies that current review/publication does not make a resource universally plan-eligible.
+NestJS service that owns reviewed self-help resource definitions, immutable exact-version Resource Eligibility v1 provenance, notification preferences, and durable notification delivery state. ADR 0009 removes the hotline catalogue from product scope. ADR 0012 keeps final SupportPlan admission in Care and clarifies that review/publication does not make a resource universally plan-eligible.
 
 ## Current capability
+
+- `POST /api/v1/resources/{id}/versions/{contentVersion}/eligibility-publications` — ADMIN-only immutable eligibility publication with persisted idempotent replay
+- `POST /api/v1/resources/{id}/versions/{contentVersion}/eligibility-publications/withdrawal` — ADMIN-only append-only eligibility withdrawal
+- `POST /internal/v1/resource-eligibility:resolve` — authenticated USER-context batch resolution for Care with exact-version outcomes and no content or moderation payload
 
 - `GET /health/live` — liveness without a database dependency
 - `GET /health/ready` — PostgreSQL readiness check
@@ -11,7 +15,7 @@ NestJS service that owns reviewed self-help resource definitions, future version
 - Strict startup configuration, safe Problem Details, structured redacted request logs, CORS deny-by-default, and graceful NestJS shutdown
 - `node-pg-migrate` baseline for the service-owned `mentalbridge_content_notification` database
 
-The current resource API supports public reviewed-content reads only. Domain/instrument-band/pathway eligibility requires a compatible contract and append-only migration under #50 before Care may use a resource version in a system-proposed SupportPlan.
+Resource Eligibility v1 independently validates target domain, `PRIMARY`/`ADJUNCT` role, compatible instrument bands, support tier, locale and effective window. Existing public resource reads remain unchanged. The current resource publish endpoint remains blocked by the separate MB-251 review-authority gate; eligibility publication can only target an already reviewed `PUBLISHED` exact version and does not bypass that gate.
 
 Admin write operations (`POST`, `PATCH`, `DELETE`, publish, archive) are explicitly `planned` in `../contracts/openapi/content-notification-service.yaml`. Safety screening and versioned safety guidance remain Care-owned behavior.
 
@@ -80,7 +84,7 @@ npm run migration:check
 npm run migrate:up
 ```
 
-Migrations run explicitly before deployment and never on application startup. The database and login are operator prerequisites; migrations do not create databases or schemas. Once merged, an applied migration is never edited or rolled back in a shared environment; add a forward migration instead. Migration `2_remove_hotline_catalogue.sql` removes the obsolete table after the historical baseline is applied.
+Migrations run explicitly before deployment and never on application startup. The database and login are operator prerequisites; migrations do not create databases or schemas. Once merged, an applied migration is never edited or rolled back in a shared environment; add a forward migration instead. Migration `2_remove_hotline_catalogue.sql` removes the obsolete table after the historical baseline is applied; migration `6_add_resource_eligibility_v1.sql` adds immutable publications, declarations, withdrawals and command replay snapshots without changing existing resource rows.
 
 The controlled Review 1 seed is an owner-module migration with a separate ledger (`pgmigrations_review1`), so running normal schema migrations cannot accidentally mark the seed as applied. For the shared dev/staging database only, run:
 

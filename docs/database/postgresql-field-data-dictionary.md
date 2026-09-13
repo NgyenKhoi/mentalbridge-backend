@@ -2,7 +2,7 @@
 
 This document explains the business purpose of conceptual PostgreSQL fields. [`001_initial_schema.sql`](../../database/postgresql/001_initial_schema.sql) is a non-executable whole-system model and must not provision an environment. Names such as `consultation.appointment` below identify a logical owner inside that model; the physical table will be `public.appointment` in the separate `mentalbridge_consultation` database. Service-owned migration histories become executable sources of truth only when modules are implemented: Liquibase for Spring services and `node-pg-migrate` for Node.js services. It is written for developers and reviewers; descriptions are intentionally kept out of executable migrations.
 
-When service-owned migrations are introduced, update this dictionary in the same change. A field description must explain why the value is persisted, whether it is authoritative, derived, external, or sensitive, and how nullability, time, versioning, or idempotency affects behavior. Content/Notification's executable history starts at `content-notification-service/migrations/1_initial_schema.sql`; migration 2 removes the obsolete hotline table, and migration 3 conditionally inserts the controlled Review 1 resource in the shared dev/staging database. The field descriptions under its conceptual owner below describe the resulting physical `public` tables.
+When service-owned migrations are introduced, update this dictionary in the same change. A field description must explain why the value is persisted, whether it is authoritative, derived, external, or sensitive, and how nullability, time, versioning, or idempotency affects behavior. Content/Notification's executable history starts at `content-notification-service/migrations/1_initial_schema.sql`; migration 2 removes the obsolete hotline table, the separate Review 1 ledger inserts controlled demo content, and migration 6 adds immutable Resource Eligibility v1 provenance. The field descriptions under its conceptual owner below describe the resulting physical `public` tables.
 
 ## Database `mentalbridge_identity` (schema `public`)
 
@@ -1154,7 +1154,7 @@ Idempotent per-data-owner work item belonging to one deletion request.
 
 Reviewed self-help content published through admin workflow, never user-contributed. Each resource requires explicit review approval before publication.
 
-The current executable fields establish review, publication, locale and effective-window visibility only. They do not establish SupportPlan eligibility. Issue #50 owns a compatible contract and append-only migration for reviewed domain/instrument-band/pathway applicability; no caller may treat every published resource as universally eligible meanwhile.
+These fields establish reviewed public visibility only. SupportPlan eligibility is a separate immutable exact-version publication; no caller may infer it from this row's review, status, category, or type.
 
 | Field | Purpose |
 | --- | --- |
@@ -1208,7 +1208,63 @@ Append-only minimized facts written in the same database transaction as resource
 | `id` | Immutable audit fact UUID. |
 | `occurred_at` | Database UTC instant of the committed action. |
 | `actor_id` | Identity administrator UUID responsible for the command. |
-| `action` | Stable outcome: `RESOURCE_CREATED`, `RESOURCE_UPDATED`, `RESOURCE_DELETED`, `RESOURCE_ARCHIVED`, or `RESOURCE_PUBLISH_BLOCKED`. A successful review/publish fact cannot exist until the MB-251 model is approved. |
+| `action` | Stable minimized outcome for resource commands plus `ELIGIBILITY_PUBLISHED` and `ELIGIBILITY_WITHDRAWN`; it never stores content or eligibility request bodies. |
 | `resource_id` | Resource aggregate UUID, retained even when a draft is deleted. |
 | `resource_version` | Version produced by the action, or the deleted draft version. |
 | `correlation_id` | Request UUID linking the audit fact to sanitized diagnostics. |
+
+### `public.resource_eligibility_publication`
+
+Immutable Content-owned proof that one exact reviewed content version was explicitly admitted to Resource Eligibility v1. The unique `(resource_id, content_version, policy_version)` key prevents silent replacement. Publication is separate from general resource review and public visibility.
+
+| Field | Purpose |
+| --- | --- |
+| `id` | Immutable publication UUID returned as eligibility provenance to Care. |
+| `resource_id` | Content-owned resource UUID; the foreign key proves the aggregate existed locally but is not by itself eligibility. |
+| `content_version` | Exact non-negative resource version reviewed for this publication; retained as a 64-bit value and serialized as a JSON string. |
+| `policy_version` | Immutable decision contract identifier, fixed to `content-eligibility-v1` for reproducibility and enum evolution. |
+| `locale` | BCP 47 locale of the exact content version; a Care query must match it exactly. |
+| `effective_at` | UTC instant when this eligibility may begin; it cannot precede the resource's own publication window. |
+| `expires_at` | Optional UTC end of eligibility; null means no eligibility-specific end and never extends the resource's own expiry. |
+| `published_by` | Identity administrator UUID that executed the governed eligibility publication. |
+| `published_at` | Immutable database UTC commit instant for audit and replay. |
+
+The resolution access path starts with exact `(resource_id, content_version, policy_version)` lookup through `ix_resource_eligibility_resolution`, then joins bounded declarations. Existing public resource-list queries and indexes are unchanged.
+
+### `public.resource_eligibility_declaration`
+
+Immutable explicit domain-role applicability owned by Content. One row defines allowed bands and support tiers for one exact publication, domain and instrument, with exactly one role. Empty arrays, pseudo-domains, unsupported roles and cross-domain instrument pairs are rejected by database constraints.
+
+| Field | Purpose |
+| --- | --- |
+| `publication_id` | Exact immutable eligibility publication to which the declaration belongs. |
+| `target_domain` | Approved screening domain: `DEPRESSIVE_SYMPTOMS` or `ANXIETY_SYMPTOMS`; general-wellbeing and combined-domain aliases are prohibited. |
+| `eligibility_role` | Explicit `PRIMARY` or `ADJUNCT` role. Only Care may decide slot admission, and `ADJUNCT` never satisfies a core slot. |
+| `instrument` | Exact compatible instrument (`PHQ_9` or `GAD_7`) constrained to its approved target domain. |
+| `screening_levels` | Non-empty set of instrument-specific bands to which this exact content version applies; GAD-7 cannot use `MODERATELY_SEVERE`. |
+| `support_tiers` | Non-empty set of approved Care pathway tiers for which the declaration may be considered. |
+
+### `public.resource_eligibility_withdrawal`
+
+Append-only terminal withdrawal of one eligibility publication. It does not edit or erase the original provenance and makes the exact version resolve as `WITHDRAWN` for new plan decisions.
+
+| Field | Purpose |
+| --- | --- |
+| `publication_id` | One-to-one immutable publication being withdrawn. |
+| `reason_code` | Stable governed reason: content withdrawal, policy withdrawal, or supersession; no free-text moderation note is stored. |
+| `withdrawn_by` | Identity administrator UUID responsible for the withdrawal command. |
+| `withdrawn_at` | Immutable database UTC instant when new eligibility use stopped. |
+
+### `public.resource_eligibility_command_record`
+
+Durable actor-and-operation-scoped idempotency evidence for publish and withdraw commands. Exact retries return the original serialized response even after later withdrawal; changed request reuse conflicts.
+
+| Field | Purpose |
+| --- | --- |
+| `actor_id` | Identity administrator UUID owning the retry key. |
+| `operation` | Stable scope: `PUBLISH_ELIGIBILITY` or `WITHDRAW_ELIGIBILITY`. |
+| `idempotency_key` | Opaque caller key unique with actor and operation. |
+| `request_fingerprint` | SHA-256 digest of canonical non-sensitive command fields used only to detect conflicting reuse. |
+| `publication_id` | Immutable publication that received the original command outcome. |
+| `response_snapshot` | Original non-sensitive contract response retained for exact replay; excludes content, review notes and provider/storage details. |
+| `created_at` | Immutable database UTC instant when the command result was recorded. |

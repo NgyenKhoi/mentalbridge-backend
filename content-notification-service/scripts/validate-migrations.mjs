@@ -24,6 +24,7 @@ const hotlineRemoval = requiredMigration('2_remove_hotline_catalogue.sql');
 const reviewProvenance = requiredMigration('3_add_review_provenance_fields.sql');
 const legacyIdempotency = requiredMigration('4_add_idempotency_key.sql');
 const commandRecords = requiredMigration('5_add_resource_command_records.sql');
+const resourceEligibility = requiredMigration('6_add_resource_eligibility_v1.sql');
 const review1Seed = await readFile(
   new URL('../migrations/review1/1_seed_review1_controlled_resource.sql', import.meta.url),
   'utf8',
@@ -46,6 +47,17 @@ assert.match(legacyIdempotency, /ADD COLUMN idempotency_key\b/);
 assert.match(commandRecords, /CREATE TABLE resource_idempotency_record\b/);
 assert.match(commandRecords, /PRIMARY KEY \(actor_id, operation, idempotency_key\)/);
 assert.match(commandRecords, /CREATE TABLE resource_audit_event\b/);
+for (const table of [
+  'resource_eligibility_publication',
+  'resource_eligibility_declaration',
+  'resource_eligibility_withdrawal',
+  'resource_eligibility_command_record',
+]) {
+  assert.match(resourceEligibility, new RegExp(`CREATE TABLE ${table}\\b`));
+}
+assert.match(resourceEligibility, /ck_resource_eligibility_domain_instrument\b/);
+assert.match(resourceEligibility, /resource_eligibility_publication_immutable\b/);
+assert.match(resourceEligibility, /ix_resource_eligibility_resolution\b/);
 assert.match(review1Seed, /^-- Up Migration/m);
 assert.match(review1Seed, /INSERT INTO resource\b/);
 assert.match(review1Seed, /Bài thực hành thở chậm \(dữ liệu demo\)/);
