@@ -18,6 +18,9 @@ const expectedImplemented = new Set([
   'DELETE /api/v1/resources/{id}',
   'POST /api/v1/resources/{id}/publish',
   'POST /api/v1/resources/{id}/archive',
+  'POST /api/v1/resources/{id}/versions/{contentVersion}/eligibility-publications',
+  'POST /api/v1/resources/{id}/versions/{contentVersion}/eligibility-publications/withdrawal',
+  'POST /internal/v1/resource-eligibility:resolve',
 ]);
 
 const implementedResponses = new Map([
@@ -32,6 +35,18 @@ const implementedResponses = new Map([
   ['DELETE /api/v1/resources/{id}', new Set(['204', '400', '401', '403', '409'])],
   ['POST /api/v1/resources/{id}/publish', new Set(['400', '401', '403', '409'])],
   ['POST /api/v1/resources/{id}/archive', new Set(['200', '400', '401', '403', '409'])],
+  [
+    'POST /api/v1/resources/{id}/versions/{contentVersion}/eligibility-publications',
+    new Set(['201', '400', '401', '403', '404', '409', '422', '503']),
+  ],
+  [
+    'POST /api/v1/resources/{id}/versions/{contentVersion}/eligibility-publications/withdrawal',
+    new Set(['200', '400', '401', '403', '404', '409', '422', '503']),
+  ],
+  [
+    'POST /internal/v1/resource-eligibility:resolve',
+    new Set(['200', '400', '401', '403', '422', '503']),
+  ],
 ]);
 
 const implementedMustBePublic = new Set([
@@ -95,6 +110,21 @@ if (!setsEqual(actualImplemented, expectedImplemented)) {
   throw new Error(
     `Content contract availability differs from implemented controllers. Missing: [${missing.join(', ')}]. Extra: [${extra.join(', ')}]`,
   );
+}
+
+const domains = new Set(contract.components.schemas.ScreeningDomain.enum);
+if (domains.has('GENERAL_WELLBEING') || domains.has('BOTH_SCREENED_DOMAINS')) {
+  throw new Error('Pseudo-domains cannot enter Resource Eligibility v1');
+}
+
+const outcomes = new Set(contract.components.schemas.ResourceEligibilityOutcome.enum);
+if (
+  !setsEqual(
+    outcomes,
+    new Set(['ELIGIBLE', 'INELIGIBLE', 'STALE', 'WITHDRAWN', 'NOT_FOUND', 'UNAVAILABLE']),
+  )
+) {
+  throw new Error('Resource eligibility outcomes differ from the frozen v1 boundary');
 }
 
 console.log('Validated OpenAPI contract: ../contracts/openapi/content-notification-service.yaml');

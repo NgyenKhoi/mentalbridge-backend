@@ -1,7 +1,7 @@
 openapi: 3.1.0
 info:
   title: Content-Notification Service API
-  version: 1.0.0
+  version: 1.1.0
   description: >
     MentalBridge Content/Notification bounded context.
     Manages reviewed self-help resources, in-app notifications, and delivery
@@ -358,6 +358,105 @@ paths:
         "409":
           $ref: "#/components/responses/Conflict"
 
+  /api/v1/resources/{id}/versions/{contentVersion}/eligibility-publications:
+    x-mentalbridge-status: implemented
+    post:
+      tags: [Resources]
+      summary: Publish immutable exact-version SupportPlan eligibility (Admin)
+      operationId: publishResourceEligibility
+      security:
+        - BearerAuth: []
+      parameters:
+        - $ref: "#/components/parameters/ResourceId"
+        - $ref: "#/components/parameters/ContentVersion"
+        - $ref: "#/components/parameters/IdempotencyKey"
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/PublishResourceEligibilityRequest"
+      responses:
+        "201":
+          description: Immutable eligibility publication created
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ResourceEligibilityPublication"
+        "400": { $ref: "#/components/responses/RequestRejected" }
+        "401": { $ref: "#/components/responses/Unauthorized" }
+        "403": { $ref: "#/components/responses/Forbidden" }
+        "404": { $ref: "#/components/responses/NotFound" }
+        "409": { $ref: "#/components/responses/Conflict" }
+        "422": { $ref: "#/components/responses/ValidationError" }
+        "503": { $ref: "#/components/responses/ServiceUnavailable" }
+
+  /api/v1/resources/{id}/versions/{contentVersion}/eligibility-publications/withdrawal:
+    x-mentalbridge-status: implemented
+    post:
+      tags: [Resources]
+      summary: Withdraw an exact-version eligibility publication (Admin)
+      operationId: withdrawResourceEligibility
+      security:
+        - BearerAuth: []
+      parameters:
+        - $ref: "#/components/parameters/ResourceId"
+        - $ref: "#/components/parameters/ContentVersion"
+        - $ref: "#/components/parameters/IdempotencyKey"
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/WithdrawResourceEligibilityRequest"
+      responses:
+        "200":
+          description: Eligibility publication withdrawn or an identical command replayed
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ResourceEligibilityPublication"
+        "400": { $ref: "#/components/responses/RequestRejected" }
+        "401": { $ref: "#/components/responses/Unauthorized" }
+        "403": { $ref: "#/components/responses/Forbidden" }
+        "404": { $ref: "#/components/responses/NotFound" }
+        "409": { $ref: "#/components/responses/Conflict" }
+        "422": { $ref: "#/components/responses/ValidationError" }
+        "503": { $ref: "#/components/responses/ServiceUnavailable" }
+
+  /internal/v1/resource-eligibility:resolve:
+    x-mentalbridge-status: implemented
+    post:
+      tags: [Resources]
+      summary: Resolve exact-version resource eligibility for Care in one bounded batch
+      description: >
+        Care forwards the authenticated USER bearer credential and correlation ID.
+        Results preserve request order. A successful provider response never infers
+        eligibility from resource type, review, or publication alone. Dependency
+        uncertainty is represented by HTTP 503; Care maps it to UNAVAILABLE and
+        commits no proposal mutation.
+      operationId: resolveResourceEligibility
+      security:
+        - BearerAuth: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/ResourceEligibilityBatchRequest"
+      responses:
+        "200":
+          description: Deterministic exact-version eligibility outcomes
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ResourceEligibilityBatchResponse"
+        "400": { $ref: "#/components/responses/RequestRejected" }
+        "401": { $ref: "#/components/responses/Unauthorized" }
+        "403": { $ref: "#/components/responses/Forbidden" }
+        "422": { $ref: "#/components/responses/ValidationError" }
+        "503": { $ref: "#/components/responses/ServiceUnavailable" }
+
 components:
   parameters:
     ResourceId:
@@ -394,6 +493,15 @@ components:
       name: cursor
       in: query
       schema: { type: string, format: uuid }
+    ContentVersion:
+      name: contentVersion
+      in: path
+      required: true
+      description: Exact non-negative 64-bit content version encoded as a JSON-safe decimal string.
+      schema:
+        type: string
+        pattern: "^(0|[1-9][0-9]*)$"
+        maxLength: 19
   securitySchemes:
     BearerAuth:
       type: http
@@ -690,3 +798,270 @@ components:
           type: string
           format: date-time
           nullable: true
+
+    EligibilityPolicyVersion:
+      type: string
+      enum: [content-eligibility-v1]
+
+    ScreeningDomain:
+      type: string
+      description: V1 screening domains only; GENERAL_WELLBEING and BOTH_SCREENED_DOMAINS are invalid.
+      enum: [DEPRESSIVE_SYMPTOMS, ANXIETY_SYMPTOMS]
+
+    EligibilityRole:
+      type: string
+      enum: [PRIMARY, ADJUNCT]
+
+    RequiredEligibilityRole:
+      type: string
+      description: PRIMARY_OR_ADJUNCT is valid only for an optional SupportPlan slot.
+      enum: [PRIMARY, PRIMARY_OR_ADJUNCT]
+
+    ScreeningInstrument:
+      type: string
+      enum: [PHQ_9, GAD_7]
+
+    ScreeningLevel:
+      type: string
+      enum: [MINIMAL, MILD, MODERATE, MODERATELY_SEVERE, SEVERE]
+
+    SupportTier:
+      type: string
+      enum:
+        [
+          SELF_GUIDED_SUPPORT,
+          PROFESSIONAL_SUPPORT_RECOMMENDED,
+          SAFETY_FOLLOW_UP_RECOMMENDED,
+        ]
+
+    EligibilityPublicationState:
+      type: string
+      enum: [PUBLISHED, WITHDRAWN]
+
+    EligibilityDeclaration:
+      type: object
+      additionalProperties: false
+      required: [targetDomain, role, instrument, screeningLevels, supportTiers]
+      properties:
+        targetDomain:
+          $ref: "#/components/schemas/ScreeningDomain"
+        role:
+          $ref: "#/components/schemas/EligibilityRole"
+        instrument:
+          $ref: "#/components/schemas/ScreeningInstrument"
+        screeningLevels:
+          type: array
+          minItems: 1
+          uniqueItems: true
+          items:
+            $ref: "#/components/schemas/ScreeningLevel"
+        supportTiers:
+          type: array
+          minItems: 1
+          uniqueItems: true
+          items:
+            $ref: "#/components/schemas/SupportTier"
+
+    PublishResourceEligibilityRequest:
+      type: object
+      additionalProperties: false
+      required: [policyVersion, locale, effectiveAt, declarations]
+      properties:
+        policyVersion:
+          $ref: "#/components/schemas/EligibilityPolicyVersion"
+        locale:
+          type: string
+          pattern: "^[A-Za-z]{2,3}(?:-[A-Za-z0-9]{2,8})*$"
+        effectiveAt:
+          type: string
+          format: date-time
+        expiresAt:
+          type: string
+          format: date-time
+          nullable: true
+        declarations:
+          type: array
+          minItems: 1
+          maxItems: 8
+          items:
+            $ref: "#/components/schemas/EligibilityDeclaration"
+
+    WithdrawResourceEligibilityRequest:
+      type: object
+      additionalProperties: false
+      required: [policyVersion, reasonCode]
+      properties:
+        policyVersion:
+          $ref: "#/components/schemas/EligibilityPolicyVersion"
+        reasonCode:
+          type: string
+          enum: [CONTENT_WITHDRAWN, POLICY_WITHDRAWN, SUPERSEDED]
+
+    ResourceEligibilityPublication:
+      type: object
+      additionalProperties: true
+      required:
+        [
+          publicationId,
+          resourceId,
+          contentVersion,
+          policyVersion,
+          locale,
+          state,
+          effectiveAt,
+          declarations,
+          publishedAt,
+        ]
+      properties:
+        publicationId:
+          type: string
+          format: uuid
+        resourceId:
+          type: string
+          format: uuid
+        contentVersion:
+          type: string
+          pattern: "^(0|[1-9][0-9]*)$"
+        policyVersion:
+          $ref: "#/components/schemas/EligibilityPolicyVersion"
+        locale:
+          type: string
+        state:
+          $ref: "#/components/schemas/EligibilityPublicationState"
+        effectiveAt:
+          type: string
+          format: date-time
+        expiresAt:
+          type: string
+          format: date-time
+          nullable: true
+        declarations:
+          type: array
+          items:
+            $ref: "#/components/schemas/EligibilityDeclaration"
+        publishedAt:
+          type: string
+          format: date-time
+        withdrawnAt:
+          type: string
+          format: date-time
+          nullable: true
+        withdrawalReasonCode:
+          type: string
+          nullable: true
+          enum: [CONTENT_WITHDRAWN, POLICY_WITHDRAWN, SUPERSEDED]
+
+    ResourceEligibilityQuery:
+      type: object
+      additionalProperties: false
+      required:
+        [
+          requestId,
+          resourceId,
+          contentVersion,
+          targetDomain,
+          requiredRole,
+          instrument,
+          screeningLevel,
+          supportTier,
+          locale,
+        ]
+      properties:
+        requestId:
+          type: string
+          format: uuid
+        resourceId:
+          type: string
+          format: uuid
+        contentVersion:
+          type: string
+          pattern: "^(0|[1-9][0-9]*)$"
+          maxLength: 19
+        targetDomain:
+          $ref: "#/components/schemas/ScreeningDomain"
+        requiredRole:
+          $ref: "#/components/schemas/RequiredEligibilityRole"
+        instrument:
+          $ref: "#/components/schemas/ScreeningInstrument"
+        screeningLevel:
+          $ref: "#/components/schemas/ScreeningLevel"
+        supportTier:
+          $ref: "#/components/schemas/SupportTier"
+        locale:
+          type: string
+          pattern: "^[A-Za-z]{2,3}(?:-[A-Za-z0-9]{2,8})*$"
+
+    ResourceEligibilityBatchRequest:
+      type: object
+      additionalProperties: false
+      required: [requests]
+      properties:
+        requests:
+          type: array
+          minItems: 1
+          maxItems: 50
+          items:
+            $ref: "#/components/schemas/ResourceEligibilityQuery"
+
+    ResourceEligibilityOutcome:
+      type: string
+      description: UNAVAILABLE is a Care fail-closed fallback and is never emitted in a provider HTTP 200 response.
+      enum: [ELIGIBLE, INELIGIBLE, STALE, WITHDRAWN, NOT_FOUND, UNAVAILABLE]
+
+    ResourceEligibilityReasonCode:
+      type: string
+      enum:
+        - ELIGIBLE_MATCH
+        - RESOURCE_NOT_FOUND
+        - CONTENT_VERSION_STALE
+        - NO_ELIGIBILITY_PUBLICATION
+        - DOMAIN_OR_PATHWAY_NOT_ELIGIBLE
+        - PRIMARY_REQUIRED
+        - NOT_YET_EFFECTIVE
+        - EFFECTIVE_WINDOW_ENDED
+        - RESOURCE_ARCHIVED
+        - RESOURCE_NOT_PUBLISHED
+        - LOCALE_MISMATCH
+        - ELIGIBILITY_WITHDRAWN
+        - DEPENDENCY_UNAVAILABLE
+
+    ResourceEligibilityResult:
+      type: object
+      additionalProperties: true
+      required: [requestId, resourceId, contentVersion, outcome, reasonCode]
+      properties:
+        requestId:
+          type: string
+          format: uuid
+        resourceId:
+          type: string
+          format: uuid
+        contentVersion:
+          type: string
+        outcome:
+          $ref: "#/components/schemas/ResourceEligibilityOutcome"
+        reasonCode:
+          $ref: "#/components/schemas/ResourceEligibilityReasonCode"
+        role:
+          allOf:
+            - $ref: "#/components/schemas/EligibilityRole"
+          nullable: true
+        publicationId:
+          type: string
+          format: uuid
+          nullable: true
+
+    ResourceEligibilityBatchResponse:
+      type: object
+      additionalProperties: true
+      required: [policyVersion, resolvedAt, results]
+      properties:
+        policyVersion:
+          $ref: "#/components/schemas/EligibilityPolicyVersion"
+        resolvedAt:
+          type: string
+          format: date-time
+        results:
+          type: array
+          items:
+            $ref: "#/components/schemas/ResourceEligibilityResult"
