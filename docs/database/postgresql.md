@@ -51,7 +51,7 @@ Cross-schema foreign keys in the logical baseline only make relationships visibl
 - Stored total score and screening band live in the one-to-one result and are authoritative only after server validation; `scoring_version` records the algorithm, `safety_item_positive` preserves the questionnaire fact, and the paired safety status/policy version records the independent response decision.
 - Support-tier results store policy version, reason codes and exact source IDs to make decisions reproducible; safety status remains a separate assessment result.
 - Existing `mb-support-routing-capstone-v1` rows remain immutable coarse evaluations. They preserve PHQ-9 and GAD-7 evidence separately and are not a global severity or sufficient plan-eligibility decision.
-- ADR 0012's domain-bearing SupportEvaluation, resource eligibility and system-proposed SupportPlan require separately approved compatible contracts and append-only owner migrations under #48–#50. This documentation change does not add columns, backfill v1 rows, or promote the conceptual `care.intervention_plan` model into an executable schema.
+- ADR 0012's domain-bearing SupportEvaluation, resource eligibility and system-proposed SupportPlan require compatible contracts and append-only owner migrations. ADR 0013 closes the product-policy design gap tracked by #49 but deliberately adds no column and does not backfill v1 rows or promote the incompatible conceptual `care.intervention_plan` model into an executable schema. Provider implementation remains under #48 and #50; SupportPlan persistence belongs to a separate later story.
 
 ### Booking
 

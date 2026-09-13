@@ -24,7 +24,7 @@ The core deployable business services are fixed as Spring Boot `identity-service
 
 ADR 0005 assigns the cohesive billing bounded context to `consultation-service` without adding another deployable. Its PostgreSQL database is authoritative for plan versions, paid subscriptions, MoMo payments/IPNs, upgrade offsets, consultation credits and ledger entries, specialist earnings, encrypted payout destinations, and MoMo payout reconciliation. Other services query narrow current entitlement or appointment-eligibility decisions and never maintain a shadow balance.
 
-ADR 0012 bounds V1 screening and post-screening support to PHQ-9/`DEPRESSIVE_SYMPTOMS` and GAD-7/`ANXIETY_SYMPTOMS`. Safety remains cross-cutting. Care owns domain-aware evaluation and final plan eligibility; Content/Notification owns exact reviewed resource definitions and eligibility provenance. Neither service reads the other's database, and AI owns neither decision.
+ADR 0012 bounds V1 screening and post-screening support to PHQ-9/`DEPRESSIVE_SYMPTOMS` and GAD-7/`ANXIETY_SYMPTOMS`. ADR 0013 freezes immutable SupportPlan template policy, compositional selection, slot bounds, eligibility roles, safety presentation, and lifecycle. Safety remains cross-cutting. Care owns domain-aware evaluation and final plan eligibility; Content/Notification owns exact reviewed resource definitions and eligibility provenance. Neither service reads the other's database, and AI owns neither decision.
 
 ## 3. Container view
 
@@ -93,7 +93,7 @@ Kafka is the durable asynchronous backbone. PostgreSQL producers use a transacti
 4. A separate authenticated support-evaluation command explicitly names one compatible PHQ-9 and one compatible GAD-7 result; Care locks the profile, evaluates `mb-support-routing-capstone-v1`, and persists the immutable decision plus outbox event in one transaction.
 5. Response keeps both instrument/domain-specific bands and the PHQ-9 safety status independent, adds stable reasons and reviewed 14-day meanings, and returns the locally owned minimum safety guidance when required. It never calculates a composite or global mental-health score or invokes a downstream dependency.
 6. The active v1 tier is coarse historical routing and does not select a resource or SupportPlan. A compatible future evaluation version must expose contributing domains before plan use (#48).
-7. After #49 and #50 approve policy/contracts, Care obtains exact versioned eligibility from Content/Notification, deterministically creates a bounded system-proposed `DRAFT`, accepts only allowed user choices, revalidates, and activates only on an explicit user command. Safety guidance is presented first; a new evaluation never silently changes an existing plan.
+7. ADR 0013 fixes immutable template policy, compositional selection, slot bounds, eligibility roles, safety presentation, and lifecycle. After compatible SupportEvaluation v2 and Resource Eligibility v1 provider gates pass, Care obtains exact versioned eligibility from Content/Notification, deterministically creates at most one bounded system-proposed `DRAFT`, accepts only allowed user choices, revalidates, and activates only on an explicit user command. Safety guidance is presented first; a new evaluation never silently changes an existing plan.
 8. Async consumers build projections, opt-in reminders, and non-critical notifications only after their own gates pass.
 
 ### Journal analysis

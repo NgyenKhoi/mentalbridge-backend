@@ -162,7 +162,7 @@ The project-tracking workbook currently groups the 162 functions into seven deli
 
 **Scope:** deterministic safety status, domain-aware SupportEvaluation, system-proposed SupportPlans, entitlement-aware personalized support, reviewed safety guidance, self-help resources, and support-appropriate notification/follow-up triggers.
 
-**Main flow:** Care evaluates versioned local scoring, domain and safety rules. Once the domain-aware policy and contracts are approved, Care resolves a support pathway, selects a bounded proposal from exact eligible content versions, and creates a system-proposed `DRAFT` SupportPlan. The user reviews only the choices allowed by that proposal; Care revalidates eligibility before explicit activation. Content/Notification owns reviewed localized resources and their versioned eligibility metadata, while Care owns final plan eligibility and lifecycle.
+**Main flow:** Care evaluates versioned local scoring, domain and safety rules. Under `mb-support-plan-selection-v1`, Care composes immutable domain template families, fills `CORE` slots only with exact `PRIMARY`-eligible content versions, proposes removable `OPTIONAL` selections, deduplicates and caps the proposal at five resources, and creates at most one system-proposed `DRAFT` SupportPlan. The user reviews only the choices allowed by that proposal; Care revalidates evaluation, template and resource eligibility before explicit activation. Content/Notification owns reviewed localized resources and their versioned eligibility metadata, while Care owns final plan eligibility and lifecycle. Safety guidance and professional-support calls to action remain outside the plan and precede its controls.
 
 **Exceptions and acceptance:** missing/stale support inputs yield `INSUFFICIENT_DATA`; safety status cannot be downgraded by positive AI sentiment. Review/publication alone never makes a resource universally plan-eligible. Immediate guidance is returned before ordinary plan controls and without waiting for Kafka, Redis, WebSocket, email or push. Provider failure affects delivery status only and never claims guaranteed emergency response or that a human was notified.
 
@@ -238,6 +238,13 @@ In-app video is intended but its call/signaling/provider/security contract is de
 
 These remain open for the affected production or optional feature. Under ADR 0010 they do not block a base questionnaire that has passed the controlled Capstone publication gate:
 
+SupportPlan template ownership, core/optional slots, 1-5 resource bounds,
+deterministic composition, safety-positive activation, `PRIMARY`/`ADJUNCT`
+eligibility roles, and per-user lifecycle invariants are no longer open. They
+were approved on 2026-09-13 in [ADR 0013](adr/0013-freeze-support-plan-policy-v1.md)
+and [SupportPlan policy v1](policies/support-plan-policy-v1.md). Their provider,
+runtime, and production-review gates remain open.
+
 1. The current `mb-support-routing-capstone-v1` runtime remains immutable historical coarse routing. Compatible domain-bearing SupportEvaluation evolution, any automatic latest-result freshness window, and downstream plan use are tracked by issue #48. PHQ-9 item-9 core behavior is already executable through `MB-SAFETY-PHQ9-001`.
 2. Who qualifies as a specialist/mentor and which profile facts administrators review without collecting credential documents.
 3. Exact Vietnamese production safety/disclaimer wording and whether a specific emergency number may appear as versioned safety content. A Product Owner may select bounded non-diagnostic and capability wording for controlled Capstone use; no hotline/facility catalogue is planned.
@@ -248,7 +255,4 @@ These remain open for the affected production or optional feature. Under ADR 001
 8. Dataset licenses, label mapping, train/test leakage controls, and research ethics approval. PhoBERT additionally requires an approved narrow classification task, deterministic preprocessing, and a compatible versioned fine-tuned checkpoint before implementation.
 9. Exact MoMo request type/payment methods, credential/key rotation, settlement delay, payout onboarding, VND plan prices or versioned FX policy, chargeback reconciliation, and financial retention. Downgrade and refund remain unsupported; no second production payment provider is planned.
 10. Whether WBS 28-29 are end-user/research benchmark views distinct from admin WBS 155-156, or duplicate functions that should share one admin-only workflow.
-11. Before SupportPlan contract work resumes, issue #49 must decide whether templates are persisted, required versus optional proposed resources, minimum/maximum choices, rule-versus-mapping ownership, and whether safety-positive activation needs an additional reviewed acknowledgement.
-12. Issue #50 must approve versioned resource-eligibility semantics, including primary-domain versus cross-domain adjunct content; review/publication alone is not eligibility.
-
 The governing correction and repository impact are recorded in [ADR 0012](adr/0012-two-domain-screening-and-system-proposed-support-plans.md).

@@ -346,17 +346,17 @@ Per-user idempotency aliases for combined-support commands. Multiple keys may sa
 
 Versioned set of platform support actions generated for one support classification.
 
-This is a non-executable conceptual baseline, not an approved Story 4101 schema. ADR 0012 supersedes any interpretation that the user creates this plan from arbitrary reviewed resources. Before implementation, #49 must replace or revise it as a system-proposed SupportPlan with bounded user choice, revalidation and explicit activation; unresolved template/resource rules must not be inferred from these fields.
+This is a non-executable legacy conceptual baseline, not an approved SupportPlan schema. ADR 0012 supersedes any interpretation that the user creates this plan from arbitrary reviewed resources. ADR 0013 now freezes immutable versioned Care templates, composed template-family references, `CORE`/`OPTIONAL` slots, 1-5 selected-resource bounds, exact `PRIMARY`/`ADJUNCT` eligibility evidence, one draft plus one active-or-paused plan per user, and atomic explicit replacement. The legacy shape below cannot represent those requirements and must not be promoted into a migration. A later implementation must introduce an append-only Care schema and complete field descriptions from [SupportPlan policy v1](../policies/support-plan-policy-v1.md).
 
 | Field | Purpose |
 | --- | --- |
 | `id` | Immutable UUID used by follow-up resources and REST endpoints. |
 | `user_id` | Care profile that owns and may view the plan. |
-| `support_classification_id` | Exact support-policy result that justified generating the plan. |
-| `template_code` | Stable reviewed intervention template identifier. |
-| `template_version` | Exact template revision used so displayed actions remain auditable. |
+| `support_classification_id` | Legacy reference to the support-policy result; a future schema requires the exact compatible SupportEvaluation reference. |
+| `template_code` | Legacy single-template identifier; insufficient for the approved composition of independent domain template families. |
+| `template_version` | Legacy single-template revision; a future schema must preserve every composed immutable family/version reference. |
 | `status` | Lifecycle state controlling whether the plan is active, complete, superseded, or cancelled. |
-| `actions` | Validated ordered structured actions copied from the reviewed template for historical stability. |
+| `actions` | Legacy structured action snapshot; insufficient to represent approved slots, selected exact resource versions, allowed alternatives, and eligibility evidence. |
 | `generated_at` | UTC instant the plan was generated from the support result. |
 | `completed_at` | UTC instant the plan reached completion; null until completed. |
 | `created_at` | Immutable UTC insertion instant. |
