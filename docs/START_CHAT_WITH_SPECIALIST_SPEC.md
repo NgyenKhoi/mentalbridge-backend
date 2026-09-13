@@ -39,7 +39,7 @@ session; client-supplied appointment and conversation IDs are selectors only.
 | --- | --- |
 | Missing/expired session | Redirect to sign-in; disclose no conversation data. |
 | Invalid selector or unauthorized participant | Fail closed with a non-disclosing response. |
-| Ineligible, cancelled, rescheduled, or out-of-window appointment | Do not join or send; render an explicit unavailable/read-only state only where policy permits. |
+| Ineligible, cancelled, replaced by a reschedule request, or out-of-window appointment | Waiting entry is allowed only from ten minutes before start; sending is allowed only in `[startsAt, endsAt)`; afterward render retained history read-only where policy permits. |
 | History dependency unavailable | Render an explicit error and allow a safe retry without stale data presented as current. |
 | Live connection unavailable | Preserve already authorized history, state that sending is unavailable, and do not show a false sent/online state. |
 | Presence unavailable | Display unknown presence without changing authorization. |

@@ -5,14 +5,14 @@
 | Field | Value |
 | --- | --- |
 | Policy ID | `MB-SUPPORT-CARE-001` |
-| Policy version | `1.1-domain-scope-correction` |
-| Status | `CONTROLLED CAPSTONE V1 ROUTING PUBLISHED; DOMAIN-AWARE PLAN SELECTION NOT APPROVED` |
+| Policy version | `1.3-reassessment-context` |
+| Status | `CONTROLLED CAPSTONE V1 ROUTING PUBLISHED; SUPPORTPLAN PRODUCT POLICY APPROVED; RUNTIME UNAVAILABLE` |
 | Blueprint effective date | 2026-09-02 |
-| Product Owner decision | Definition approved through MB-179 on 2026-09-02; minimum Vietnamese safety fallback approved for Story 1103 on 2026-09-10; two-domain/system-proposed-plan correction approved as `MB-SCOPE-DOMAIN-001` on 2026-09-12 |
+| Product Owner decision | Definition approved through MB-179 on 2026-09-02; minimum Vietnamese safety fallback approved for Story 1103 on 2026-09-10; two-domain/system-proposed-plan correction approved as `MB-SCOPE-DOMAIN-001` on 2026-09-12; SupportPlan policy v1 and four-dimensional reassessment context frozen on 2026-09-13 |
 | Mentor/domain review | Mentor closure review pending; domain review required before executable production routing |
 | Owners | Care for selection; Content/Notification for reviewed resource content |
 | Applies to | Registered MentalBridge users in Vietnam |
-| Related decision | [ADR 0012](../adr/0012-two-domain-screening-and-system-proposed-support-plans.md) |
+| Related decisions | [ADR 0012](../adr/0012-two-domain-screening-and-system-proposed-support-plans.md), [ADR 0013](../adr/0013-freeze-support-plan-policy-v1.md), and the [ADR 0015 reassessment evidence extension](../adr/0015-ai-companion-analysis-contract.md) |
 
 V1 supports exactly `DEPRESSIVE_SYMPTOMS` through PHQ-9 and `ANXIETY_SYMPTOMS` through GAD-7, focused on generalized anxiety symptoms. Equal bands from the two instruments remain different domain evidence. The system never creates a global mental-health severity, and a new domain requires a separately approved product vertical.
 
@@ -70,7 +70,7 @@ Every selectable item requires at least:
 | `activityId` | Stable non-clinical catalogue identifier |
 | `title` | Reviewed localized title |
 | `type` | Approved action category |
-| `targetDomains` | Explicit approved primary or adjunct screening-domain applicability |
+| `domainEligibilityRoles` | Explicit target-domain mapping to `PRIMARY` or `ADJUNCT`; only primary may satisfy a core slot |
 | `eligibleInstrumentBands` | Exact instrument and screening-band applicability |
 | `eligibleSupportTiers` | Exact tiers allowed to select the item |
 | `source` | Evidence or content provenance |
@@ -86,7 +86,13 @@ AI may explain only active approved entries already selected inside a determinis
 
 No personalized intervention item is approved by the MB-179 routing decision. Published generic self-help resources may be displayed independently of personalized routing, but review/publication does not make them universally eligible for a plan.
 
-The approved forward direction is: domain-aware SupportEvaluation, approved template/resource policy, system-proposed `DRAFT` SupportPlan, user choices inside the proposal, Care revalidation, then explicit activation. The client never supplies an arbitrary initial resource set. Template persistence, required/optional resources, choice bounds, selection-rule storage, and any extra safety-positive acknowledgement remain unresolved in #49; resource eligibility semantics remain unresolved in #50.
+The approved forward direction is: domain-aware SupportEvaluation, approved template/resource policy, system-proposed `DRAFT` SupportPlan, user choices inside the proposal, Care revalidation, then explicit activation. The client never supplies an arbitrary initial resource set. [SupportPlan policy v1](support-plan-policy-v1.md) fixes immutable Care template versions, `CORE`/`OPTIONAL` slots, 1-5 selected-resource bounds, compositional `mb-support-plan-selection-v1` rules, normal safety-positive activation, one draft plus one active-or-paused plan per user, and atomic explicit replacement. Exact-version eligibility uses `PRIMARY` and `ADJUNCT`; adjunct content never fills a core slot. Issue #49 is the policy gate; SupportEvaluation v2 (#48), Resource Eligibility v1 (#50), and later proposal/lifecycle runtime retain separate implementation gates.
+
+At reassessment, Care presents standardized screening trend, AI-derived
+available-journal context trend, SupportPlan engagement, and user
+helpfulness/reflection as four separate dimensions. It never creates a combined
+improvement score. AI context may explain candidates for review, but Care finds
+only allowed alternatives and the user confirms any SupportPlan change.
 
 ## Entitlement policy
 
@@ -105,8 +111,9 @@ Exact paid benefits remain governed by the immutable Consultation plan version. 
 - [x] Versioned REST/event contracts, append-only persistence, deterministic runtime and automated tests implemented for Story 1103.
 - [x] Two-domain V1 boundary, no-global-severity rule, cross-cutting safety and system-proposed-plan direction approved in ADR 0012.
 - [ ] Compatible domain-aware SupportEvaluation policy/contracts are approved and delivered under #48.
-- [ ] SupportPlan proposal decisions and contracts are approved under #49.
-- [ ] Domain/band/pathway resource eligibility is approved and delivered under #50.
+- [x] Product Owner approved the SupportPlan template, slot, bounds, composition, safety-presentation, role, and lifecycle policy under ADR 0013.
+- [ ] Care, Content, and Frontend accept the server-proposed contract design before it becomes an active OpenAPI contract.
+- [ ] Domain/band/pathway exact-version Resource Eligibility v1 is delivered under #50.
 - [ ] Every initial personalized intervention item, source, wording, eligibility and content version approved.
 - [x] Exact minimum Vietnamese safety fallback reviewed by the Product Owner for the controlled Capstone web/API channel on 2026-09-10.
 - [ ] Mentor/supervisor records Review 1 closure validation.

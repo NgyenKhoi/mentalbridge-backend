@@ -117,19 +117,15 @@ One immutable result per journal revision and analysis run.
   "schemaVersion": 1,
   "status": "SUCCEEDED",
   "result": {
+    "summary": "Optional bounded reflection summary",
+    "contextSignals": ["STUDY_PRESSURE"],
+    "emotionIndicators": ["SADNESS", "ANXIETY"],
+    "themes": ["ACADEMIC_WORKLOAD"],
+    "preferenceSignals": ["SHORT_GUIDED_ACTIVITY"],
+    "barrierSignals": ["LOW_ENERGY"],
     "sentiment": "NEGATIVE",
-    "sentimentScore": -0.72,
-    "emotions": {
-      "joy": 0.02,
-      "sadness": 0.81,
-      "anxiety": 0.64,
-      "stress": 0.58,
-      "fear": 0.22,
-      "anger": 0.08
-    },
-    "dominantEmotions": ["SADNESS", "ANXIETY"],
-    "confidence": 0.79,
-    "qualityFlags": []
+    "modelConfidence": 0.79,
+    "suggestedAction": "GUIDE_APPROVED_ACTIVITY"
   },
   "usage": { "inputTokens": 220, "outputTokens": 95 },
   "latencyMs": 834,
@@ -151,7 +147,77 @@ db.journal_analysis_results.createIndex({ userId: 1, createdAt: -1 });
 db.journal_analysis_results.createIndex({ jobId: 1 }, { unique: true });
 ```
 
-Store only the validated structured response needed for product/research provenance. Do not store chain-of-thought. Raw provider responses should be disabled or encrypted with a short TTL if temporarily required for debugging under approved policy.
+Store only the validated ADR 0015 normalized response plus provider, model,
+prompt, schema, timing, and job provenance. `sentiment` and `modelConfidence` are
+optional; confidence is model-reported and not clinical. `suggestedAction` must
+be one of the allow-listed navigation actions and cannot directly change Care
+state. Never persist raw provider responses or hidden reasoning/chain-of-thought,
+including temporary debugging copies. Each result is bound to one exact journal
+revision and is deleted with that revision.
+
+## `journal_longitudinal_analysis_results`
+
+One immutable normalized result per explicit consented comparison job. It keeps
+exact source revisions so available-entry claims and deletion coupling remain
+reproducible.
+
+```json
+{
+  "analysisId": "UUID",
+  "jobId": "UUID",
+  "userId": "UUID",
+  "periodStart": "ISODate",
+  "periodEnd": "ISODate",
+  "sourceJournalRevisions": [
+    { "entryId": "UUID", "journalRevision": 2, "period": "CURRENT" },
+    { "entryId": "UUID", "journalRevision": 1, "period": "PREVIOUS" }
+  ],
+  "contextSignals": ["WORK_STRESS"],
+  "emotionIndicators": ["ANXIETY"],
+  "recurringThemes": ["ACADEMIC_WORKLOAD"],
+  "changesComparedWithPreviousPeriod": [
+    { "signal": "SLEEP_DIFFICULTY", "direction": "LESS_FREQUENT" }
+  ],
+  "preferences": ["SHORT_GUIDED_ACTIVITY"],
+  "barriers": ["BREATHING_DISCOMFORT"],
+  "helpfulPatterns": ["GROUNDING"],
+  "dataCoverage": {
+    "previousPeriodJournalEntryCount": 12,
+    "currentPeriodJournalEntryCount": 8,
+    "sufficientForComparison": true
+  },
+  "provider": "OPENAI",
+  "model": "model-name",
+  "promptVersion": "longitudinal-v1",
+  "schemaVersion": 1,
+  "createdAt": "ISODate"
+}
+```
+
+Required indexes:
+
+```javascript
+db.journal_longitudinal_analysis_results.createIndex(
+  { analysisId: 1 },
+  { unique: true },
+);
+db.journal_longitudinal_analysis_results.createIndex(
+  { jobId: 1 },
+  { unique: true },
+);
+db.journal_longitudinal_analysis_results.createIndex({
+  userId: 1,
+  periodEnd: -1,
+});
+```
+
+Direction is exactly `MORE_FREQUENT`, `LESS_FREQUENT`, `SIMILAR`, or
+`INSUFFICIENT_DATA`. A missing mention is not resolution evidence. Sparse or
+imbalanced coverage must set `sufficientForComparison` false and return
+`INSUFFICIENT_DATA` instead of a directional claim. Deleting any source revision
+deletes or invalidates every dependent longitudinal result. These results are
+non-standardized evidence for a Care-owned Reassessment Summary; they never
+store a clinical-improvement verdict or mutate a SupportPlan.
 
 ## `conversations`
 
@@ -184,7 +250,7 @@ db.conversations.createIndex({
 });
 ```
 
-Participants are a server-generated identity snapshot, not durable authorization. The collection validator requires exactly two distinct accounts with exactly one `USER` and one `SPECIALIST`. Participant join times, `lastMessageAt`, `closedAt`, `createdAt`, and `updatedAt` must form a consistent lifecycle; an active conversation cannot have a close time, while a closed conversation must have one. Each consultation conversation is keyed by its confirmed `IN_APP_CHAT` appointment; unrestricted direct specialist conversations are not supported. Realtime Service must check current account/specialist/appointment authorization when opening, subscribing, or sending, and join/send succeeds only inside the appointment's authoritative `[scheduledStartAt, scheduledEndAt)` window. A retention policy may permit read-only history afterward. Future `IN_APP_VIDEO` data is not defined in MongoDB until its separate contract is accepted.
+Participants are a server-generated identity snapshot, not durable authorization. The collection validator requires exactly two distinct accounts with exactly one `USER` and one `SPECIALIST`. Participant join times, `lastMessageAt`, `closedAt`, `createdAt`, and `updatedAt` must form a consistent lifecycle; an active conversation cannot have a close time, while a closed conversation must have one. Each consultation conversation is keyed by its confirmed `IN_APP_CHAT` appointment; unrestricted direct specialist conversations are not supported. Realtime Service checks current account/specialist/appointment authorization when opening, subscribing, or sending. Waiting-room entry begins at `scheduledStartAt - 10m`, sending succeeds only inside `[scheduledStartAt, scheduledEndAt)`, and retained history is read-only afterward. Future `IN_APP_VIDEO` data is not defined in MongoDB until its separate contract is accepted.
 
 ## `messages`
 

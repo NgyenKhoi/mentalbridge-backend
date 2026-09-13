@@ -16,7 +16,7 @@ The edge gateway/reverse proxy and Eureka service registry are infrastructure, n
 
 ADR 0005 assigns subscription/payment, upgrade, consultation-credit, earning, and provider-payout behavior to one billing feature inside `consultation-service`. Booking and credit transitions share its local PostgreSQL transaction. No consumer may derive or store a mutable entitlement, credit, earning, or payout balance independently.
 
-ADR 0012 assigns final domain-aware SupportEvaluation and SupportPlan decisions to Care while Content/Notification owns resource definitions and eligibility provenance. A published resource is not automatically plan-eligible, a coarse support tier cannot select a plan alone, and neither AI nor a client may author the initial proposal.
+ADR 0012 assigns final domain-aware SupportEvaluation and SupportPlan decisions to Care while Content/Notification owns resource definitions and eligibility provenance. ADR 0013 freezes immutable Care templates, deterministic composition, bounded core/optional slots, exact `PRIMARY`/`ADJUNCT` roles, and one-draft/one-current-plan lifecycle invariants. A published resource is not automatically plan-eligible, a coarse support tier cannot select a plan alone, and neither AI nor a client may author the initial proposal.
 
 ## Synchronous versus asynchronous
 

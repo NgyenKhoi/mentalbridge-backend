@@ -14,7 +14,7 @@ The `billing` feature inside `consultation-service` owns immutable plan versions
 | Premium Care | USD 9.99 | 1 | USD 5.00 | USD 3.50 |
 | Premium Plus | USD 19.99 | 3 | USD 5.00 each | USD 3.50 each |
 
-All plan facts are versioned. Paid plan prices comprise USD 4.99 of non-consultation features plus USD 5.00 per credit. Specialist earning is 70% of the explicit credit allocation; it is never calculated from the whole subscription. One credit funds one standard appointment; `IN_APP_CHAT` is the only initially enabled channel. Plus currently means more credits and priority/enhanced features, not a longer session.
+All plan facts are versioned. Paid plan prices comprise USD 4.99 of non-consultation features plus USD 5.00 per credit. Specialist earning is 70% of the explicit credit allocation; it is never calculated from the whole subscription. One credit funds one 60-minute `IN_APP_CHAT` or `IN_PERSON` appointment. Plus currently means more credits and priority/enhanced features, not a longer session.
 
 ## Subscription and payment
 
@@ -70,10 +70,10 @@ Reserved credits are not offset or revoked by an upgrade; their appointments con
 
 - Booking atomically reserves one slot and one earliest-expiring available credit.
 - Specialist rejection/cancellation/no-show, platform failure, and eligible user cancellation release the credit.
-- Rescheduling keeps the same credit reserved while swapping slots atomically.
-- The specialist publishes discrete slots from their working schedule with start/end, IANA timezone, and channel; the exact standard duration remains a product decision. The user chooses one slot. Appointment creation snapshots those values, and chat join/send is authorized only in `[scheduledStartAt, scheduledEndAt)`.
-- `IN_APP_CHAT` is enabled first. `IN_APP_VIDEO` is only a future intent until a separate call/signalling/provider/security contract is defined; there is no physical-location or external-meeting-link flow.
-- Completion consumes the credit and creates one immutable earning snapshot.
+- Rescheduling cancels the old appointment under its applicable credit rule and creates a new request; it never swaps or rewrites the old slot snapshot.
+- The specialist publishes discrete 60-minute `IN_APP_CHAT` or `IN_PERSON` slots. The user requests one at least four hours before start. Appointment creation snapshots interval, IANA timezone, mode, and applicable practice location; chat waiting begins ten minutes before start and send is authorized only in `[scheduledStartAt, scheduledEndAt)`.
+- `IN_PERSON` uses an active Consultation-owned practice location without room inventory. `IN_APP_VIDEO`, phone, and external meeting links remain deferred.
+- Only evidence-based or user-confirmed `COMPLETED` consumes the credit and creates one immutable earning snapshot; the specialist cannot complete unilaterally.
 - User late cancellation/no-show forfeits the credit but creates no earning under the current completed-only rule.
 - Earnings move from `PENDING_SETTLEMENT` to `AVAILABLE`, then attach to at most one idempotent provider payout.
 - MoMo Disbursement is the only planned production payout adapter. Local/CI uses the deterministic fake implementing the same state contract.
@@ -95,4 +95,4 @@ Reserved credits are not offset or revoked by an upgrade; their appointments con
 - MoMo payout product access/credentials and encrypted destination onboarding;
 - VND plan prices or an explicit versioned FX policy;
 - financial retention and chargeback reconciliation;
-- standard appointment duration, chat eligibility window, and late-cancellation cutoff.
+- later `IN_APP_VIDEO` signalling/provider/security contract; chat/in-person duration, windows, and cancellation outcomes are fixed by ADR 0014.

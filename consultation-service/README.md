@@ -1,6 +1,17 @@
 # Consultation Service
 
-Owns specialist approval and discovery, matching, subscription/payment/upgrade, consultation credits, channel-specific availability and scheduled appointments, specialist earnings/provider payout reconciliation, and reviews. Billing and booking invariants stay transactionally local in its PostgreSQL data. It does not collect specialist verification documents.
+Owns specialist approval and deterministic non-clinical discovery, practice
+locations, 60-minute chat/in-person availability and appointments, session
+evidence and user-visible summaries, subscription/payment/upgrade,
+consultation credits, specialist earnings/provider payout reconciliation, and
+reviews. Billing and booking invariants stay transactionally local in its
+PostgreSQL data. It does not collect specialist verification documents.
+
+ADR 0014 freezes the product flow but the compatible OpenAPI, migrations,
+handlers, frontend, and cross-service brief/chat integrations are not yet
+implemented. Appointment existence alone does not grant sensitive data access;
+Care owns the user-approved appointment-scoped `ConsultationBrief` and sharing
+decision.
 
 ## Integration
 

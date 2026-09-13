@@ -2,7 +2,7 @@
 
 ## Business boundary
 
-Content/Notification owns reviewed self-help resource definitions, their versioned domain/band/pathway eligibility metadata, notification preferences, durable in-app notifications, templates, provider delivery attempts, and delivery outcomes. Review/publication permits public display but does not by itself make a resource SupportPlan-eligible. Care owns SupportEvaluation, proposal policy and the final plan-eligibility decision. Content/Notification never scores assessments, evaluates safety/support policy, or guarantees emergency response. PostgreSQL is authoritative; Brevo/push are replaceable adapters. ADR 0009 removes hotline catalogue ownership; ADR 0012 defines the forward eligibility boundary.
+Content/Notification owns reviewed self-help resource definitions, their versioned domain/band/pathway eligibility metadata, notification preferences, durable in-app notifications, templates, provider delivery attempts, and delivery outcomes. Review/publication permits public display but does not by itself make a resource SupportPlan-eligible. Care owns SupportEvaluation, proposal policy and the final plan-eligibility decision. Content/Notification never scores assessments, evaluates safety/support policy, or guarantees emergency response. PostgreSQL is authoritative; Brevo/push are replaceable adapters. ADR 0009 removes hotline catalogue ownership; ADR 0012 defines the forward eligibility boundary; ADR 0013 fixes exact eligibility roles as `PRIMARY` or `ADJUNCT` and prohibits adjunct content from satisfying a core slot.
 
 ## Use cases and acceptance
 
@@ -26,7 +26,7 @@ Content/Notification owns reviewed self-help resource definitions, their version
 ## Ordered tasks
 
 - [x] CN-01 Scaffold the NestJS/TypeScript service with feature modules, typed configuration, health/readiness, lint, test, and build commands.
-- [ ] CN-02 Resolve resource locale/review and domain-aware plan-eligibility policy (#50), plus notification template, mandatory-category, delivery retry and retention policies.
+- [ ] CN-02 Implement exact-version domain/band/pathway eligibility with approved `PRIMARY`/`ADJUNCT` roles (#50), plus notification template, mandatory-category, delivery retry and retention policies.
 - [ ] CN-03 Define resource/preference/notification OpenAPI and notification event schemas.
 - [x] CN-04 Add owner `node-pg-migrate` migrations, constraints/indexes and field dictionary entries.
 - [ ] CN-05 Implement reviewed content administration and safe current-resource reads.

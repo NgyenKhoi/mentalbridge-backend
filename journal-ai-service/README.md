@@ -21,7 +21,12 @@ The service provides:
 - lint, type-check, test, and build scripts
 - production multi-stage Docker image
 
-MB-236 implements the authenticated private journal CRUD contract. AI analysis, provider calls, specialist sharing, dataset import, and benchmarking remain deferred.
+MB-236 implements the authenticated private journal CRUD contract. ADR 0015 now
+freezes the AI Companion product contract: an explicit exact-revision request,
+current `AI_PROCESSING` consent, asynchronous job, one provider per run,
+normalized result, bounded retry, and no raw-response persistence. Its APIs,
+jobs, provider calls, result persistence, frontend, specialist-brief draft,
+dataset import, and benchmarking are still not implemented.
 
 ## Requirements
 

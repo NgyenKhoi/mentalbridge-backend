@@ -19,8 +19,8 @@ MentalBridge must not combine these purposes into one broad toggle:
 | Purpose | Required treatment |
 | --- | --- |
 | Deterministic assessment processing | The user must view and grant the backend-owned `privacy-capstone-v3` consent; this is a processing gate, not a clinical-eligibility rule, and no AI processing is implied |
-| AI processing | Deferred; `AI_PROCESSING` is not exposed by the Sprint 2 UI/runtime consent flow |
-| Specialist sharing | Separate revocable grant scoped to subject, specialist, data type, purpose, time range, and selected entries where applicable |
+| AI processing | Product semantics approved by `MB-AI-COMPANION-001`; covers explicit exact-source single-entry and bounded longitudinal analysis, while `AI_PROCESSING` remains unavailable until its separate runtime/UI task |
+| Specialist sharing | Product semantics approved by `MB-CONSULTATION-FLOW-001`; separate revocable grant scopes subject, specialist, appointment, approved snapshot, purpose, and time window |
 | Research use | Deferred; `RESEARCH_DATA` is not exposed and production data is excluded by default |
 | Marketing notification | Deferred; `MARKETING_NOTIFICATION` is not exposed until a corresponding feature exists |
 
@@ -54,9 +54,9 @@ The current controlled-Capstone disclosure version is `privacy-capstone-v3`. Ver
 
 ## MB-179 specialist-sharing boundary
 
-The Capstone blueprint permits definition and contract planning but does not authorize runtime specialist access. A future specialist handoff is registered-user-only, voluntary and user-initiated. It requires a separate revocable grant naming the subject, specialist, purpose, `ASSESSMENTS` scope, selected assessment identifiers or bounded time range, expiry and grant version.
+The Capstone permits definition and contract planning but does not yet authorize runtime specialist access. Specialist handoff is registered-user-only, voluntary and user-initiated. Under ADR 0014 it requires a separate revocable `SPECIALIST_SHARING` grant naming the subject, specialist, appointment, purpose, approved `ConsultationBrief` snapshot, expiry and grant version. The default appointment-scoped window is `startsAt - 24h` through `startsAt + 24h`; another appointment requires a new brief and grant.
 
-The minimum proposed projection contains instrument/version, completion time, total score, screening level and PHQ-9 safety status where applicable. Raw answers, all past/future assessments, journal entries and emotion trends are excluded by default. An appointment or paid plan never creates consent. Every read must re-check the current grant in the data owner and record minimized audit evidence.
+The approved snapshot may contain bounded screening, SupportEvaluation, active SupportPlan, trends, user goals/preferences/barriers, consented journal-derived context, and a previous user-approved `SessionSummary`, with exact source-version references. Raw answers, raw journals, full AI-analysis history and unrelated data are excluded. An appointment or paid plan never creates consent. Every read re-checks the current grant in the data owner and records minimized audit evidence.
 
 This boundary is definition-complete for MB-179. Runtime sharing remains unavailable until the grant contract, concurrency-safe authorization, audit behavior and required security/privacy review pass. Public real-user collection and sharing remain production-blocked; Sprint 2 validation uses synthetic/test data.
 
@@ -99,8 +99,9 @@ The existing null registered-retention deadline means only that the controlled d
 
 - [x] Product Owner approved synthetic/test-data-only Sprint 2 validation and the non-executable MB-179 sharing boundary.
 - [x] Product Owner approved the versioned assessment-processing disclosure and its separation from clinical eligibility.
-- [x] Product Owner approved backend ownership of immutable versioned privacy disclosure text; `privacy-capstone-v3` is current for PHQ-9/GAD-7 while v1/v2 remain historical, and AI, research, marketing, and specialist-sharing consent remain deferred.
+- [x] Product Owner approved backend ownership of immutable versioned privacy disclosure text; `privacy-capstone-v3` is current for PHQ-9/GAD-7 while v1/v2 remain historical. AI and specialist-sharing product semantics are now approved separately but their runtime/UI consent flows remain unavailable; research and marketing remain deferred.
 - [x] Product Owner approved a 30-minute sliding inactivity deadline, two-hour absolute lifetime, and persisted idempotent completion semantics.
 - [x] Product Owner approved registered history only for controlled synthetic/test/demo use without a production retention claim.
-- [ ] Specialist grant policy approved before specialist reads are implemented.
+- [x] Product Owner approved the appointment-scoped `SPECIALIST_SHARING` grant and user-approved `ConsultationBrief` boundary under ADR 0014.
+- [ ] Specialist grant contract, concurrency-safe authorization, audit behavior, runtime UI and security/privacy review pass before specialist reads are enabled.
 - [ ] Security and legal/privacy reviewers approve a future public real-user production policy.

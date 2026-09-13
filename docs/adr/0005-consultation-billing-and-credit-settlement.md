@@ -2,6 +2,7 @@
 
 - Status: Accepted
 - Date: 2026-08-21
+- Amended by: [ADR 0014](0014-appointment-specialist-and-consultation-continuity.md), which adds `IN_PERSON`, fixes the 60-minute request/session lifecycle, replaces in-place rescheduling, and requires evidence-based completion
 
 ## Context
 
@@ -77,11 +78,11 @@ Consumed, expired, forfeited, and revoked credits have no upgrade value. A credi
 
 ### Appointment, chat, and credit lifecycle
 
-An appointment remains necessary even though the consultation channel is chat. It is the authoritative scheduled unit that prevents slot conflicts, attaches one credit, opens one appointment-scoped conversation, proves completion, permits one review, and creates at most one earning. Unrestricted direct specialist messaging would bypass Free/Premium entitlements and make completion and payout unverifiable, so it is not supported.
+An appointment is the authoritative bounded consultation unit across chat and in-person modes. It prevents slot conflicts, attaches one credit, scopes sensitive-data access, identifies the consultation mode, proves completion, permits one review, and creates at most one earning. Unrestricted direct specialist messaging or access would bypass Free/Premium entitlements and make completion and payout unverifiable, so it is not supported.
 
-The first implemented consultation channel is `IN_APP_CHAT`. A specialist publishes discrete bookable slots from their own working schedule, choosing local start/end and IANA timezone; the server converts them to UTC and must validate them against the approved standard-duration policy once that duration is decided. The user chooses one exact slot. Booking copies its `scheduledStartAt`, `scheduledEndAt`, timezone, and channel into the appointment so history remains stable if availability changes. Send/join authorization is limited to that scheduled window; the conversation may remain readable outside it but cannot become 24/7 friend-style messaging.
+V1 consultation modes are `IN_APP_CHAT` and `IN_PERSON`, and every slot lasts 60 minutes. A specialist publishes discrete bookable slots from their own working schedule, choosing local start and IANA timezone; the server converts to UTC and derives the fixed end. The user chooses one exact slot. Booking copies its `scheduledStartAt`, `scheduledEndAt`, timezone, mode, and applicable practice-location snapshot into the appointment so history remains stable if availability changes. Chat waiting entry begins ten minutes before start, send is limited to `[scheduledStartAt, scheduledEndAt)`, and the conversation is read-only afterward.
 
-`IN_APP_VIDEO` is a planned second channel because a bounded call is easier to start, end, and prove against an appointment. This decision reserves only the channel value; signaling, WebRTC/provider choice, call-room credentials, participant presence, recording prohibition, failure fallback, and completion evidence require a later contract/ADR before the channel can be enabled. Slots and appointments store no physical address, phone number, generic location, or external meeting link. In-person consultation is not planned by this decision.
+`IN_PERSON` requires a real or controlled-demo `PracticeLocation` with display name, address, IANA timezone, and active state; it does not add room management. `IN_APP_VIDEO` remains deferred until signaling, provider, credentials, participant presence, recording prohibition, and failure behavior receive a later contract/ADR. Phone and external meeting-link modes remain unsupported.
 
 Credit transitions are:
 
@@ -99,11 +100,11 @@ AVAILABLE -> RESERVED -> CONSUMED
 
 Booking locks one eligible slot and one earliest-expiring available credit in the same local database transaction, creates the appointment, changes the credit to `RESERVED`, and appends a ledger entry. The appointment must start within the credit's billing period. Repeating the command with the same user-scoped idempotency key returns the original result.
 
-Specialist rejection, specialist cancellation, platform failure, and a user cancellation before the configured cutoff release the credit. Rescheduling keeps the same reserved credit and swaps slots atomically. A completed appointment consumes the credit and creates one immutable specialist earning snapshot in the same transaction. User late cancellation or no-show forfeits the credit under the initial policy but creates no specialist earning because the current product rule pays only completed consultations. Specialist no-show returns the credit.
+Specialist rejection, request expiry, specialist/system cancellation, specialist suspension before an unstarted session, and user cancellation at least 24 hours before a confirmed session release the credit. User cancellation inside 24 hours or user no-show forfeits it. Specialist no-show returns it. Rescheduling cancels the old appointment under its applicable credit policy and creates a new request instead of mutating the old slot snapshot. Only evidence-based or user-confirmed `COMPLETED` consumes the credit and creates one immutable specialist earning snapshot in the same transaction.
 
 Subscription cancellation is a different command from appointment cancellation. It fails any pending upgrade, revokes its held credits, cancels every future requested/confirmed appointment, and revokes those reserved credits instead of returning reusable value. The sole live-session exception keeps its credit `RESERVED` until completion or the normal in-window terminal outcome; no new booking or paid feature is authorized while the subscription is `CANCEL_PENDING_SESSION_END`.
 
-Confirmation creates or enables exactly one Realtime conversation keyed by appointment ID. Realtime checks the current appointment eligibility for every open, subscribe, and send operation and fails closed when Consultation is unavailable. Chat access is never granted merely by account role or subscription status: join/send uses the appointment's snapshotted `[scheduledStartAt, scheduledEndAt)` window, while a separately approved retention policy may allow read-only history afterward.
+Confirmation creates or enables exactly one Realtime conversation for an `IN_APP_CHAT` appointment. Realtime checks current appointment eligibility for every waiting-room entry, subscribe, and send operation and fails closed when Consultation is unavailable. Chat access is never granted merely by account role or subscription status: waiting entry begins at `scheduledStartAt - 10m`, send uses `[scheduledStartAt, scheduledEndAt)`, and history is read-only afterward. Completion follows ADR 0014 session evidence; a specialist cannot finalize and consume the credit unilaterally.
 
 ### Earnings and payout
 

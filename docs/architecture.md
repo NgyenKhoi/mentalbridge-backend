@@ -24,7 +24,7 @@ The core deployable business services are fixed as Spring Boot `identity-service
 
 ADR 0005 assigns the cohesive billing bounded context to `consultation-service` without adding another deployable. Its PostgreSQL database is authoritative for plan versions, paid subscriptions, MoMo payments/IPNs, upgrade offsets, consultation credits and ledger entries, specialist earnings, encrypted payout destinations, and MoMo payout reconciliation. Other services query narrow current entitlement or appointment-eligibility decisions and never maintain a shadow balance.
 
-ADR 0012 bounds V1 screening and post-screening support to PHQ-9/`DEPRESSIVE_SYMPTOMS` and GAD-7/`ANXIETY_SYMPTOMS`. Safety remains cross-cutting. Care owns domain-aware evaluation and final plan eligibility; Content/Notification owns exact reviewed resource definitions and eligibility provenance. Neither service reads the other's database, and AI owns neither decision.
+ADR 0012 bounds V1 screening and post-screening support to PHQ-9/`DEPRESSIVE_SYMPTOMS` and GAD-7/`ANXIETY_SYMPTOMS`. ADR 0013 freezes immutable SupportPlan template policy, compositional selection, slot bounds, eligibility roles, safety presentation, and lifecycle. Safety remains cross-cutting. Care owns domain-aware evaluation and final plan eligibility; Content/Notification owns exact reviewed resource definitions and eligibility provenance. Neither service reads the other's database, and AI owns neither decision.
 
 ## 3. Container view
 
@@ -93,17 +93,17 @@ Kafka is the durable asynchronous backbone. PostgreSQL producers use a transacti
 4. A separate authenticated support-evaluation command explicitly names one compatible PHQ-9 and one compatible GAD-7 result; Care locks the profile, evaluates `mb-support-routing-capstone-v1`, and persists the immutable decision plus outbox event in one transaction.
 5. Response keeps both instrument/domain-specific bands and the PHQ-9 safety status independent, adds stable reasons and reviewed 14-day meanings, and returns the locally owned minimum safety guidance when required. It never calculates a composite or global mental-health score or invokes a downstream dependency.
 6. The active v1 tier is coarse historical routing and does not select a resource or SupportPlan. A compatible future evaluation version must expose contributing domains before plan use (#48).
-7. After #49 and #50 approve policy/contracts, Care obtains exact versioned eligibility from Content/Notification, deterministically creates a bounded system-proposed `DRAFT`, accepts only allowed user choices, revalidates, and activates only on an explicit user command. Safety guidance is presented first; a new evaluation never silently changes an existing plan.
+7. ADR 0013 fixes immutable template policy, compositional selection, slot bounds, eligibility roles, safety presentation, and lifecycle. After compatible SupportEvaluation v2 and Resource Eligibility v1 provider gates pass, Care obtains exact versioned eligibility from Content/Notification, deterministically creates at most one bounded system-proposed `DRAFT`, accepts only allowed user choices, revalidates, and activates only on an explicit user command. Safety guidance is presented first; a new evaluation never silently changes an existing plan.
 8. Async consumers build projections, opt-in reminders, and non-critical notifications only after their own gates pass.
 
 ### Journal analysis
 
 1. User saves a journal revision in MongoDB.
-2. Node.js Journal/AI verifies AI-processing consent through Care REST and creates a PostgreSQL job/outbox record.
-3. Journal/AI calls configured provider adapters, initially OpenAI and Gemini, through versioned input/output contracts. An optional future PhoBERT worker may execute a separately approved narrow classification contract after ADR 0011's activation gates pass.
-4. Worker rejects malformed/unsafe output, records provider metadata/latency, and stores structured result.
-5. Care consumes only approved structured indicators, never free-form model reasoning.
-6. Retries use exponential backoff and a dead-letter state; the user can still read the journal.
+2. On an explicit request for one exact revision, Node.js Journal/AI verifies current `AI_PROCESSING` consent through Care REST and creates an idempotent asynchronous job/outbox record.
+3. Journal/AI calls exactly one configured provider adapter for the run, initially OpenAI or Gemini, through versioned input/output contracts. Each attempt times out after 30 seconds and has at most one retry for HTTP 429, provider 5xx, or transport failure; the same journal content is not automatically sent to another provider. An optional future PhoBERT worker may execute a separately approved narrow classification contract after ADR 0011's activation gates pass.
+4. The worker rejects malformed/unsafe output and stores only the normalized structured result plus provider/model/prompt/schema provenance, timing, and job state. Raw provider responses and hidden reasoning are not persisted.
+5. Care consumes only approved structured indicators, never free-form model reasoning. For reassessment it composes standardized screening trend, non-standardized available-journal context trend with coverage, SupportPlan engagement, and user reflection as separate dimensions; it never creates a combined improvement score.
+6. Failure produces a terminal job state after the bounded retry; the user can still read the journal. The OpenAI/Gemini benchmark gates final production-provider selection and official controlled-demo enablement, not contract, adapter, or job-runtime implementation.
 
 ### Consent-enforced specialist read
 
@@ -116,10 +116,11 @@ Kafka is the durable asynchronous backbone. PostgreSQL producers use a transacti
 
 1. A paid-plan IPN is parsed by the versioned MoMo-only contract, verified over every required signature field, deduplicated from its verified transaction tuple, and matched on configured partner plus local order/request/amount. Only then does it activate the immutable plan version and grant one credit row per included consultation.
 2. A Care-to-Plus upgrade holds eligible unused credits, calculates a minor-unit offset from their allocation plus the second-accurate remaining non-consultation value, and starts a full Plus period only after a verified payment webhook. Downgrade is not supported.
-3. A specialist publishes a channel-specific `[start_at, end_at)` slot. Booking locks that slot and one available credit in the same Consultation database transaction, then snapshots its start, end, timezone, and channel into the appointment.
-4. Specialist confirmation authorizes one appointment-scoped Realtime conversation. `IN_APP_CHAT` join/send works only during the snapshotted window. `IN_APP_VIDEO` is planned but disabled until its call/signalling/provider/security contract is accepted; no physical location, phone number, or external meeting link is stored.
-5. Rejection or eligible appointment cancellation releases the credit. Completion consumes it and atomically creates the specialist earning snapshot. Subscription cancellation instead disables paid features immediately, cancels future appointments and revokes their credits; only a confirmed session already in progress may finish at its scheduled end.
-6. Available earnings may enter one idempotent MoMo Disbursement payout. Verified result/IPN/status evidence is required for success; local/CI uses a MoMo-shaped fake, and real payment/payout remains disabled until credentials and VND plan/settlement currency are approved.
+3. An approved specialist publishes a 60-minute `IN_APP_CHAT` or `IN_PERSON` slot. In-person slots reference an active Consultation-owned `PracticeLocation`. A request made at least four hours before start locks that slot and one available credit in the same Consultation transaction, then snapshots start, end, timezone, mode, and applicable location into the appointment.
+4. The specialist responds by `min(requestedAt + 24h, startsAt - 2h)`; expiry or rejection releases both holds. Confirmation authorizes the appointment flow. Chat waiting begins ten minutes before start, send is limited to `[startsAt, endsAt)`, and history is read-only afterward. `IN_APP_VIDEO`, phone, external meeting links, and room management remain deferred.
+5. Rejection, expiry, eligible cancellation, specialist/system cancellation, suspension before an unstarted session, or specialist no-show releases the appointment credit. Late user cancellation and user no-show forfeit it. Reschedule cancels the old appointment and creates a new request. Only evidence-based or user-confirmed `COMPLETED` consumes the credit and atomically creates the specialist earning snapshot; a specialist cannot finalize it unilaterally.
+6. A user-reviewed `ConsultationBrief` plus appointment-scoped `SPECIALIST_SHARING` grant provides only approved context. A later appointment requires a new brief/grant. The specialist may create a short user-visible `SessionSummary`; ongoing between-session support remains with SupportPlan and AI Companion.
+7. Available earnings may enter one idempotent MoMo Disbursement payout. Verified result/IPN/status evidence is required for success; local/CI uses a MoMo-shaped fake, and real payment/payout remains disabled until credentials and VND plan/settlement currency are approved.
 
 ## 6. Security and privacy
 
