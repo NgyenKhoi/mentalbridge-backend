@@ -56,13 +56,14 @@ Cross-schema foreign keys in the logical baseline only make relationships visibl
 ### Booking
 
 - Availability uses `[start_at, end_at)` semantics and validates start before end.
-- A specialist publishes discrete slots from their working schedule in local time plus IANA timezone; the server converts to UTC and must validate the approved standard duration once defined. Booking copies start, end, timezone, and channel into the appointment; those snapshots do not move if the source slot is later edited.
+- A specialist publishes discrete 60-minute slots from their working schedule in local time plus IANA timezone; the server converts to UTC. Booking copies start, end, timezone, mode, and the applicable practice-location snapshot into the appointment; those snapshots do not move if the source slot or location is later edited.
 - An exclusion constraint prevents overlapping active slots for the same specialist.
 - A partial unique index permits only one active appointment per slot.
 - A second partial unique index permits only one active appointment per credit; booking locks the slot and credit together.
 - `appointment_status_history` provides an auditable state-transition timeline.
-- `IN_APP_CHAT` is the only initially enabled channel. Join/send authorization is limited to `[scheduled_start_at, scheduled_end_at)`; conversation history may remain readable outside the window.
-- `IN_APP_VIDEO` is reserved as a planned channel but cannot be enabled until a later call/signalling/provider/security contract is accepted. Slot/appointment tables contain no physical location, phone, or external meeting link.
+- `IN_APP_CHAT` and `IN_PERSON` are V1 modes. Chat waiting begins ten minutes before start, send authorization is limited to `[scheduled_start_at, scheduled_end_at)`, and conversation history is read-only afterward.
+- `IN_PERSON` references an active Consultation-owned `PracticeLocation` with display name, address, timezone, and active state; V1 has no room inventory. `IN_APP_VIDEO`, phone, and external meeting-link modes remain unavailable.
+- Appointment persistence must retain request/response deadlines, cancellation/credit outcome, check-ins, session evidence, dispute state, and user-visible summary required by ADR 0014. Reschedule cancels the old row and creates a new request rather than rewriting its snapshots.
 
 ### Subscription and settlement
 

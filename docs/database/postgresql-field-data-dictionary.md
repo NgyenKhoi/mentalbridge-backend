@@ -612,6 +612,9 @@ Exact old credits held and valued by one upgrade quote.
 ### `care.specialist_access_grant`
 
 Explicit, scoped, time-bounded and revocable user permission for one specialist.
+ADR 0014 requires each runtime grant to identify the appointment and immutable
+user-approved `ConsultationBrief`; the current logical baseline predates those
+fields and is not implementation-ready for specialist sharing.
 
 | Field | Purpose |
 | --- | --- |
@@ -648,7 +651,7 @@ Explicit journal-entry allow-list for grants containing journal access.
 
 ### `consultation.availability_slot`
 
-Authoritative half-open discrete slot published from a specialist's working schedule and bookable once. Start/end capture the offered interval; application validation against the standard-duration policy is pending product approval.
+Authoritative half-open 60-minute slot published from a specialist's working schedule and bookable once. The current logical baseline predates ADR 0014's practice-location relation and must be extended before `IN_PERSON` is implemented.
 
 | Field | Purpose |
 | --- | --- |
@@ -657,7 +660,7 @@ Authoritative half-open discrete slot published from a specialist's working sche
 | `start_at` | Inclusive UTC start instant of the available interval. |
 | `end_at` | Exclusive UTC end instant, required to be later than start. |
 | `timezone` | IANA timezone captured for stable human schedule rendering. |
-| `channel` | Consultation channel offered for this interval. `IN_APP_CHAT` is initially enabled; `IN_APP_VIDEO` is reserved but cannot be enabled before its later contract. |
+| `channel` | Consultation mode offered for this interval. ADR 0014 enables `IN_APP_CHAT` and `IN_PERSON`; `IN_APP_VIDEO` is reserved pending its later contract. |
 | `status` | Authoritative slot state used with database constraints to prevent conflicting bookings. |
 | `created_at` | Immutable UTC slot creation instant. |
 | `updated_at` | UTC instant of the latest slot state or schedule change. |
@@ -665,7 +668,7 @@ Authoritative half-open discrete slot published from a specialist's working sche
 
 ### `consultation.appointment`
 
-Authoritative scheduled consultation between one user and specialist for an owned availability slot and credit. It intentionally contains no physical location, phone number, or external meeting link.
+Authoritative scheduled consultation between one user and specialist for an owned availability slot and credit. ADR 0014 enables `IN_PERSON`, so a compatible owner migration must add an immutable practice-location snapshot plus the request deadline, credit outcome, check-in/session evidence, dispute, and summary fields before runtime is claimed. Phone numbers, external meeting links, and room inventory remain excluded.
 
 Composite foreign keys require the appointment specialist to own the slot and the appointment user to own the credit; the application cannot create a locally inconsistent pairing.
 
@@ -677,16 +680,16 @@ Composite foreign keys require the appointment specialist to own the slot and th
 | `user_id` | External Care profile UUID of the person requesting consultation. |
 | `specialist_id` | Consultation-owned specialist UUID denormalized for authorization and query efficiency. |
 | `status` | Authoritative appointment workflow state; transitions are validated and recorded in history. |
-| `scheduled_start_at` | Inclusive UTC start copied from the selected specialist slot at booking; join/send is not authorized before it. |
+| `scheduled_start_at` | Inclusive UTC start copied from the selected specialist slot at booking; chat waiting may begin ten minutes before it, but sending cannot. |
 | `scheduled_end_at` | Exclusive UTC end copied from the selected specialist slot; join/send ends here even if the source availability later changes. |
 | `scheduled_timezone` | Specialist slot's IANA timezone snapshot used to reproduce the originally booked schedule. |
-| `channel` | Booked channel snapshot. Initially only `IN_APP_CHAT` is operational; `IN_APP_VIDEO` is future intent. |
+| `channel` | Booked mode snapshot. ADR 0014 enables `IN_APP_CHAT` and `IN_PERSON`; `IN_APP_VIDEO` is future intent. |
 | `user_timezone` | IANA timezone captured at booking so the schedule remains understandable after device timezone changes. |
 | `idempotency_key` | Caller retry key unique per user so uncertain REST retries return the original booking outcome. |
 | `cancellation_reason` | Reviewed explanation recorded when a permitted cancellation occurs. |
 | `requested_at` | UTC instant the booking request was accepted. |
 | `confirmed_at` | UTC instant the appointment became confirmed; null otherwise. |
-| `completed_at` | UTC instant the consultation was marked complete; null otherwise. |
+| `completed_at` | UTC instant the consultation reached evidence-based or user-confirmed completion; null otherwise. A specialist action alone is insufficient. |
 | `cancelled_at` | UTC instant cancellation became effective; null otherwise. |
 | `created_at` | Immutable UTC database insertion instant. |
 | `updated_at` | UTC instant of the latest persisted appointment transition/change. |

@@ -12,6 +12,7 @@
 | Resource eligibility owner | Content/Notification |
 | Applies to | Registered users with a compatible domain-aware SupportEvaluation |
 | Decision | [ADR 0013](../adr/0013-freeze-support-plan-policy-v1.md) |
+| Reassessment extension | [ADR 0015](../adr/0015-ai-companion-analysis-contract.md) |
 
 This policy defines a non-clinical platform support proposal. It does not define
 a diagnosis, prescription, treatment plan, recovery outcome, emergency
@@ -165,6 +166,21 @@ Per user:
 Creating a new assessment or SupportEvaluation never changes a SupportPlan. A
 second proposal cannot create another draft; the user must keep, change, or
 discard the existing draft first.
+
+## Reassessment and plan review
+
+A Care-owned `ReassessmentSummary` may support an explicit SupportPlan review.
+It presents four dimensions separately: deterministic standardized PHQ-9/GAD-7
+trend, AI-derived journal/context trend limited to available consented entries,
+SupportPlan engagement, and user-rated helpfulness/reflection. These dimensions
+are never combined into an improvement score or recovery claim.
+
+AI-derived helpful patterns, preferences, barriers, and recurring context may
+explain why an item should be considered for keeping or replacement. They never
+make the eligibility or replacement decision. Care finds alternatives already
+allowed by the current template/resource policy, then the user reviews and
+explicitly confirms any change. Sparse journal coverage produces
+`INSUFFICIENT_DATA` rather than evidence of improvement.
 
 ## Activation and replacement revalidation
 

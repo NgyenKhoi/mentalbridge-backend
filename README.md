@@ -99,9 +99,18 @@ Eligible exact content -> system-proposed DRAFT SupportPlan
 User-controlled choice -> revalidation -> explicit ACTIVE SupportPlan
 Active paid plan -------> entitlementPlan
 
+Reassessment:
+screening comparison ----------> standardized symptom trend
+consented journal revisions ---> AI contextual/emotional trend + data coverage
+SupportPlan facts -------------> engagement/barriers
+user input --------------------> helpfulness/reflection
+four separate dimensions ------> Care-owned ReassessmentSummary
+allowed alternatives ----------> user-reviewed SupportPlanReview
+
 AI supplies supporting indicators; it must not override validated questionnaire
-scoring, change safety status, invent a diagnosis, choose plan eligibility, or
-create a SupportPlan.
+scoring, change safety status, invent a diagnosis, decide clinical improvement,
+choose plan eligibility, or create/change a SupportPlan. The four reassessment
+dimensions are never collapsed into a combined mental-health improvement score.
 ```
 
 The SupportPlan lines describe the approved forward business flow. The current executable v1 remains coarse SupportEvaluation history and does not yet create a plan.
