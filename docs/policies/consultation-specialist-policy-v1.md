@@ -176,4 +176,3 @@ This policy is approved design input. Runtime remains unavailable until
 compatible contracts, append-only owner migrations, frontend flows, Realtime
 eligibility enforcement, Care sharing grants, Journal/AI brief generation, and
 session/credit concurrency tests pass their own delivery tasks.
-

@@ -142,4 +142,3 @@ from runtime-generated ratings.
   sufficient session or user evidence.
 - Persistent specialist access between sessions: rejected because appointments
   are bounded paid consultations, not continuous monitoring.
-
