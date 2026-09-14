@@ -18,6 +18,12 @@ const RESOURCE = '10000000-0000-4000-8000-000000000001';
 const ACTIVE_RESOURCE = '10000000-0000-4000-8000-000000000002';
 const CONCURRENT_RESOURCE = '10000000-0000-4000-8000-000000000003';
 const DRAFT_RESOURCE = '10000000-0000-4000-8000-000000000004';
+const NO_PUBLICATION_RESOURCE = '10000000-0000-4000-8000-000000000005';
+const ARCHIVED_RESOURCE = '10000000-0000-4000-8000-000000000006';
+const UNPUBLISHED_RESOURCE = '10000000-0000-4000-8000-000000000007';
+const FUTURE_RESOURCE = '10000000-0000-4000-8000-000000000008';
+const ENDED_RESOURCE = '10000000-0000-4000-8000-000000000009';
+const BOUNDED_RESOURCE = '10000000-0000-4000-8000-000000000010';
 const migrationDirectory = fileURLToPath(new URL('../../../migrations', import.meta.url));
 
 describe('ResourceEligibilityRepository integration', () => {
@@ -69,17 +75,41 @@ describe('ResourceEligibilityRepository integration', () => {
     await migrationPool.query(
       `INSERT INTO resource
         (id, category, locale, title, summary, content_body, status, reviewed_by, reviewed_at,
-         effective_at, version)
+         effective_at, expires_at, version)
        VALUES
          ($1, 'BREATHING', 'vi-VN', 'Anxiety breathing', 'Reviewed fixture', 'Body',
-          'PUBLISHED', $5, now(), '2026-01-01T00:00:00Z', 3),
+          'PUBLISHED', $5, now(), '2026-01-01T00:00:00Z', NULL, 3),
          ($2, 'BREATHING', 'vi-VN', 'Active anxiety breathing', 'Reviewed fixture', 'Body',
-          'PUBLISHED', $5, now(), '2026-01-01T00:00:00Z', 3),
+          'PUBLISHED', $5, now(), '2026-01-01T00:00:00Z', NULL, 3),
          ($3, 'BREATHING', 'vi-VN', 'Concurrent anxiety breathing', 'Reviewed fixture', 'Body',
-          'PUBLISHED', $5, now(), '2026-01-01T00:00:00Z', 3),
+          'PUBLISHED', $5, now(), '2026-01-01T00:00:00Z', NULL, 3),
          ($4, 'BREATHING', 'vi-VN', 'Draft anxiety breathing', 'Reviewed fixture', 'Body',
-          'DRAFT', NULL, NULL, '2026-01-01T00:00:00Z', 3)`,
-      [RESOURCE, ACTIVE_RESOURCE, CONCURRENT_RESOURCE, DRAFT_RESOURCE, ADMIN],
+          'DRAFT', NULL, NULL, '2026-01-01T00:00:00Z', NULL, 3),
+         ($6, 'BREATHING', 'vi-VN', 'No eligibility publication', 'Reviewed fixture', 'Body',
+          'PUBLISHED', $5, now(), '2026-01-01T00:00:00Z', NULL, 3),
+         ($7, 'BREATHING', 'vi-VN', 'Archived eligibility resource', 'Reviewed fixture', 'Body',
+          'PUBLISHED', $5, now(), '2026-01-01T00:00:00Z', NULL, 3),
+         ($8, 'BREATHING', 'vi-VN', 'Unpublished eligibility resource', 'Reviewed fixture', 'Body',
+          'PUBLISHED', $5, now(), '2026-01-01T00:00:00Z', NULL, 3),
+         ($9, 'BREATHING', 'vi-VN', 'Future eligibility resource', 'Reviewed fixture', 'Body',
+          'PUBLISHED', $5, now(), '2026-01-01T00:00:00Z', NULL, 3),
+         ($10, 'BREATHING', 'vi-VN', 'Ended eligibility resource', 'Reviewed fixture', 'Body',
+          'PUBLISHED', $5, now(), '2026-01-01T00:00:00Z', NULL, 3),
+         ($11, 'BREATHING', 'vi-VN', 'Bounded eligibility resource', 'Reviewed fixture', 'Body',
+          'PUBLISHED', $5, now(), '2026-02-01T00:00:00Z', '2026-12-01T00:00:00Z', 3)`,
+      [
+        RESOURCE,
+        ACTIVE_RESOURCE,
+        CONCURRENT_RESOURCE,
+        DRAFT_RESOURCE,
+        ADMIN,
+        NO_PUBLICATION_RESOURCE,
+        ARCHIVED_RESOURCE,
+        UNPUBLISHED_RESOURCE,
+        FUTURE_RESOURCE,
+        ENDED_RESOURCE,
+        BOUNDED_RESOURCE,
+      ],
     );
     await repository.publish(
       ACTIVE_RESOURCE,
@@ -217,6 +247,105 @@ describe('ResourceEligibilityRepository integration', () => {
     ]);
   });
 
+  it('resolves every resource lifecycle and effective-window branch fail closed', async () => {
+    await repository.publish(
+      ARCHIVED_RESOURCE,
+      '3',
+      publicationRequest(),
+      'publish-archived',
+      context(),
+    );
+    await repository.publish(
+      UNPUBLISHED_RESOURCE,
+      '3',
+      publicationRequest(),
+      'publish-unpublished',
+      context(),
+    );
+    await repository.publish(
+      FUTURE_RESOURCE,
+      '3',
+      { ...publicationRequest(), effectiveAt: '2099-01-01T00:00:00Z' },
+      'publish-future',
+      context(),
+    );
+    await repository.publish(
+      ENDED_RESOURCE,
+      '3',
+      {
+        ...publicationRequest(),
+        effectiveAt: '2026-01-02T00:00:00Z',
+        expiresAt: '2026-02-01T00:00:00Z',
+      },
+      'publish-ended',
+      context(),
+    );
+    await migrationPool.query(`UPDATE resource SET status = 'ARCHIVED' WHERE id = $1`, [
+      ARCHIVED_RESOURCE,
+    ]);
+    await migrationPool.query(`UPDATE resource SET status = 'DRAFT' WHERE id = $1`, [
+      UNPUBLISHED_RESOURCE,
+    ]);
+
+    const responses = await repository.resolve([
+      query('21000000-0000-4000-8000-000000000001', NO_PUBLICATION_RESOURCE, '3', 'PRIMARY'),
+      query('21000000-0000-4000-8000-000000000002', ARCHIVED_RESOURCE, '3', 'PRIMARY'),
+      query('21000000-0000-4000-8000-000000000003', UNPUBLISHED_RESOURCE, '3', 'PRIMARY'),
+      query('21000000-0000-4000-8000-000000000004', FUTURE_RESOURCE, '3', 'PRIMARY'),
+      query('21000000-0000-4000-8000-000000000005', ENDED_RESOURCE, '3', 'PRIMARY'),
+    ]);
+
+    expect(responses.results.map((result) => [result.outcome, result.reasonCode])).toEqual([
+      ['INELIGIBLE', 'NO_ELIGIBILITY_PUBLICATION'],
+      ['WITHDRAWN', 'RESOURCE_ARCHIVED'],
+      ['INELIGIBLE', 'RESOURCE_NOT_PUBLISHED'],
+      ['INELIGIBLE', 'NOT_YET_EFFECTIVE'],
+      ['WITHDRAWN', 'EFFECTIVE_WINDOW_ENDED'],
+    ]);
+  });
+
+  it('rejects eligibility windows outside the exact resource publication window', async () => {
+    await expect(
+      repository.publish(
+        BOUNDED_RESOURCE,
+        '3',
+        {
+          ...publicationRequest(),
+          effectiveAt: '2026-01-01T00:00:00Z',
+          expiresAt: '2026-11-01T00:00:00Z',
+        },
+        'publish-before-resource',
+        context(),
+      ),
+    ).rejects.toBeInstanceOf(EligibilityCommandConflictError);
+    await expect(
+      repository.publish(
+        BOUNDED_RESOURCE,
+        '3',
+        {
+          ...publicationRequest(),
+          effectiveAt: '2026-02-01T00:00:00Z',
+          expiresAt: null,
+        },
+        'publish-without-bounded-expiry',
+        context(),
+      ),
+    ).rejects.toBeInstanceOf(EligibilityCommandConflictError);
+    await expect(
+      repository.publish(
+        BOUNDED_RESOURCE,
+        '3',
+        {
+          ...publicationRequest(),
+          effectiveAt: '2026-02-01T00:00:00Z',
+          expiresAt: '2027-01-01T00:00:00Z',
+        },
+        'publish-after-resource',
+        context(),
+      ),
+    ).rejects.toBeInstanceOf(EligibilityCommandConflictError);
+  });
+
   it('enforces approved domain, instrument, role, and indexed exact-version access', async () => {
     const publicationId = (
       await migrationPool.query<{ id: string }>(
@@ -259,7 +388,7 @@ describe('ResourceEligibilityRepository integration', () => {
     const indexes = await migrationPool.query<{ indexname: string }>(
       `SELECT indexname FROM pg_indexes
        WHERE tablename = 'resource_eligibility_publication'
-         AND indexname = 'ix_resource_eligibility_resolution'`,
+         AND indexname = 'uq_resource_eligibility_exact_version'`,
     );
     expect(indexes.rows).toHaveLength(1);
   });

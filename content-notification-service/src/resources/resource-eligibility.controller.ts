@@ -33,9 +33,9 @@ import {
   ResourceEligibilityBatchSchema,
   WithdrawResourceEligibilitySchema,
 } from './resource-eligibility.dto.js';
+import { ResourceIdSchema } from './resource.dto.js';
 import type { ResourceEligibilityService } from './resource-eligibility.service.js';
 
-const UUID_RE = /^[\da-f]{8}-[\da-f]{4}-[1-5][\da-f]{3}-[89ab][\da-f]{3}-[\da-f]{12}$/i;
 const CONTENT_VERSION_RE = /^(0|[1-9][0-9]{0,18})$/;
 const IDEMPOTENCY_KEY_RE = /^[A-Za-z0-9_-]{1,128}$/;
 
@@ -108,7 +108,9 @@ export class ResourceEligibilityController {
 }
 
 function validatePath(resourceId: string, contentVersion: string): void {
-  if (!UUID_RE.test(resourceId)) throw new BadRequestException('Invalid resource ID');
+  if (!ResourceIdSchema.safeParse(resourceId).success) {
+    throw new BadRequestException('Invalid resource ID');
+  }
   if (
     !CONTENT_VERSION_RE.test(contentVersion) ||
     BigInt(contentVersion) > 9_223_372_036_854_775_807n

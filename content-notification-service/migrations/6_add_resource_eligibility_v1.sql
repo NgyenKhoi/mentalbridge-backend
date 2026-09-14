@@ -67,9 +67,6 @@ CREATE TABLE resource_eligibility_command_record (
   PRIMARY KEY (actor_id, operation, idempotency_key)
 );
 
-CREATE INDEX ix_resource_eligibility_resolution
-  ON resource_eligibility_publication (resource_id, content_version, policy_version);
-
 CREATE INDEX ix_resource_eligibility_declaration_match
   ON resource_eligibility_declaration (target_domain, instrument, eligibility_role, publication_id);
 

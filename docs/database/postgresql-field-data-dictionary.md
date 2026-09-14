@@ -1229,7 +1229,7 @@ Immutable Content-owned proof that one exact reviewed content version was explic
 | `published_by` | Identity administrator UUID that executed the governed eligibility publication. |
 | `published_at` | Immutable database UTC commit instant for audit and replay. |
 
-The resolution access path starts with exact `(resource_id, content_version, policy_version)` lookup through `ix_resource_eligibility_resolution`, then joins bounded declarations. Existing public resource-list queries and indexes are unchanged.
+The resolution access path starts with the unique B-tree created by `uq_resource_eligibility_exact_version` for exact `(resource_id, content_version, policy_version)` lookup, then joins bounded declarations. No duplicate exact-version index is maintained; existing public resource-list queries and indexes are unchanged.
 
 ### `public.resource_eligibility_declaration`
 

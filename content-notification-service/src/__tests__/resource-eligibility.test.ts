@@ -11,6 +11,7 @@ import type { ResourceEligibilityRepository } from '../resources/resource-eligib
 const ADMIN_ID = 'a13e4567-e89b-42d3-a456-426614174000';
 const USER_ID = 'b13e4567-e89b-42d3-a456-426614174000';
 const RESOURCE_ID = 'c13e4567-e89b-42d3-a456-426614174000';
+const UUID_V7_RESOURCE_ID = '0198f3c2-7b5a-7000-8000-000000000001';
 const REQUEST_ID = 'd13e4567-e89b-42d3-a456-426614174000';
 const ISSUER = 'https://identity.local.mentalbridge';
 const AUDIENCE = 'mentalbridge-api';
@@ -121,6 +122,29 @@ describe('Resource Eligibility HTTP boundary', () => {
     expect(repository.publish).toHaveBeenCalledOnce();
   });
 
+  it('accepts newer RFC 9562 UUID versions allowed by the OpenAPI uuid format', async () => {
+    await request(server())
+      .post(`/api/v1/resources/${UUID_V7_RESOURCE_ID}/versions/3/eligibility-publications`)
+      .set('authorization', `Bearer ${await token(ADMIN_ID, ['ADMIN'])}`)
+      .set('idempotency-key', 'eligibility-publication-v7')
+      .send({
+        policyVersion: 'content-eligibility-v1',
+        locale: 'vi-VN',
+        effectiveAt: '2026-09-13T00:00:00Z',
+        expiresAt: null,
+        declarations: publication.declarations,
+      })
+      .expect(201);
+
+    expect(repository.publish).toHaveBeenCalledWith(
+      UUID_V7_RESOURCE_ID,
+      '3',
+      expect.any(Object),
+      'eligibility-publication-v7',
+      expect.any(Object),
+    );
+  });
+
   it('rejects user publication and unapproved pseudo-domains', async () => {
     await request(server())
       .post(`/api/v1/resources/${RESOURCE_ID}/versions/3/eligibility-publications`)
@@ -150,6 +174,24 @@ describe('Resource Eligibility HTTP boundary', () => {
       .expect(422);
 
     expect(response.body.code).toBe('VALIDATION_ERROR');
+  });
+
+  it('rejects an eligibility window whose end is not after its start', async () => {
+    const response = await request(server())
+      .post(`/api/v1/resources/${RESOURCE_ID}/versions/3/eligibility-publications`)
+      .set('authorization', `Bearer ${await token(ADMIN_ID, ['ADMIN'])}`)
+      .set('idempotency-key', 'eligibility-invalid-window')
+      .send({
+        policyVersion: 'content-eligibility-v1',
+        locale: 'vi-VN',
+        effectiveAt: '2026-09-14T00:00:00Z',
+        expiresAt: '2026-09-14T00:00:00Z',
+        declarations: publication.declarations,
+      })
+      .expect(422);
+
+    expect(response.body.code).toBe('VALIDATION_ERROR');
+    expect(repository.publish).not.toHaveBeenCalled();
   });
 
   it('requires a USER credential and preserves deterministic batch order', async () => {

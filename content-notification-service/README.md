@@ -97,6 +97,18 @@ Review 1 Compose runs schema migrations and this seed migration sequentially thr
 ## Verification
 
 ```bash
+npm run quality
+```
+
+From the repository root, the same required gate is
+`npm --prefix content-notification-service run quality`.
+
+The required module quality command runs formatting, lint, type checking, unit/HTTP tests,
+contract and migration checks, the PostgreSQL integration suite, and the production build.
+The integration suite requires Docker for its disposable PostgreSQL container. Individual
+commands remain available for focused development:
+
+```bash
 npm run format:check
 npm run lint
 npm run typecheck
@@ -106,8 +118,6 @@ npm run contract:check
 npm run migration:check
 npm run build
 ```
-
-The integration suite requires Docker for its disposable PostgreSQL container.
 
 ## Production image
 

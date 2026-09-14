@@ -57,7 +57,8 @@ for (const table of [
 }
 assert.match(resourceEligibility, /ck_resource_eligibility_domain_instrument\b/);
 assert.match(resourceEligibility, /resource_eligibility_publication_immutable\b/);
-assert.match(resourceEligibility, /ix_resource_eligibility_resolution\b/);
+assert.match(resourceEligibility, /uq_resource_eligibility_exact_version\b/);
+assert.doesNotMatch(resourceEligibility, /ix_resource_eligibility_resolution\b/);
 assert.match(review1Seed, /^-- Up Migration/m);
 assert.match(review1Seed, /INSERT INTO resource\b/);
 assert.match(review1Seed, /Bài thực hành thở chậm \(dữ liệu demo\)/);
