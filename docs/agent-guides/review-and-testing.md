@@ -14,7 +14,12 @@
 | Realtime integration | WebSocket authentication, reconnect, duplicate client message, ordering, Redis fan-out, notification delivery |
 | End-to-end | critical workflows across gateway/services with synthetic data and controlled dependencies |
 
-Use containerized PostgreSQL, Kafka, and Redis for integration tests. In-memory database or mocked infrastructure tests may supplement but do not replace compatibility and concurrency tests.
+Use a real disposable container for each infrastructure dependency the feature
+actually uses. PostgreSQL features test against PostgreSQL; Kafka and Redis
+containers are required only when the implemented slice has a Kafka or Redis
+adapter. Do not start unused infrastructure to make a synchronous feature look
+production-complete. In-memory or mocked infrastructure may supplement but do
+not replace integration tests for dependencies that are genuinely in scope.
 
 ## Required data-consistency scenarios
 

@@ -1,0 +1,302 @@
+openapi: 3.1.0
+info:
+  title: MentalBridge Consultation Service API
+  version: 1.0.0
+  description: Consultation-owned specialist profile submission and administrator approval.
+servers:
+  - url: http://localhost:8082
+paths:
+  /api/v1/specialist-profile:
+    x-mentalbridge-status: implemented
+    get:
+      operationId: getOwnSpecialistProfile
+      security: [{ bearerAuth: [] }]
+      responses:
+        '200':
+          description: Current specialist-owned profile
+          headers:
+            ETag: { $ref: '#/components/headers/ProfileETag' }
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/SpecialistProfile' }
+        '401': { $ref: '#/components/responses/UnauthorizedProblem' }
+        '403': { $ref: '#/components/responses/ForbiddenProblem' }
+        '404': { $ref: '#/components/responses/NotFoundProblem' }
+    put:
+      operationId: saveOwnSpecialistProfileDraft
+      description: Creates a PENDING unsubmitted profile or replaces an existing PENDING profile draft. Editing a submitted profile clears submittedAt and removes it from the review queue until submitted again.
+      security: [{ bearerAuth: [] }]
+      parameters:
+        - $ref: '#/components/parameters/OptionalIfMatch'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: '#/components/schemas/SpecialistProfileRequest' }
+      responses:
+        '200':
+          description: Existing draft replaced
+          headers:
+            ETag: { $ref: '#/components/headers/ProfileETag' }
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/SpecialistProfile' }
+        '201':
+          description: Draft created
+          headers:
+            ETag: { $ref: '#/components/headers/ProfileETag' }
+            Location:
+              schema: { type: string, format: uri-reference }
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/SpecialistProfile' }
+        '400': { $ref: '#/components/responses/ValidationProblem' }
+        '401': { $ref: '#/components/responses/UnauthorizedProblem' }
+        '403': { $ref: '#/components/responses/ForbiddenProblem' }
+        '409': { $ref: '#/components/responses/ConflictProblem' }
+        '412': { $ref: '#/components/responses/VersionProblem' }
+        '428': { $ref: '#/components/responses/VersionRequiredProblem' }
+  /api/v1/specialist-profile/submit:
+    x-mentalbridge-status: implemented
+    post:
+      operationId: submitOwnSpecialistProfile
+      description: Places the complete PENDING profile in the administrator review queue.
+      security: [{ bearerAuth: [] }]
+      parameters:
+        - $ref: '#/components/parameters/RequiredIfMatch'
+      responses:
+        '200':
+          description: Profile submitted or unchanged replay
+          headers:
+            ETag: { $ref: '#/components/headers/ProfileETag' }
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/SpecialistProfile' }
+        '401': { $ref: '#/components/responses/UnauthorizedProblem' }
+        '403': { $ref: '#/components/responses/ForbiddenProblem' }
+        '404': { $ref: '#/components/responses/NotFoundProblem' }
+        '409': { $ref: '#/components/responses/ConflictProblem' }
+        '412': { $ref: '#/components/responses/VersionProblem' }
+        '428': { $ref: '#/components/responses/VersionRequiredProblem' }
+  /api/v1/admin/specialist-profiles:
+    x-mentalbridge-status: implemented
+    get:
+      operationId: listPendingSpecialistProfiles
+      description: Returns submitted PENDING profiles ordered by oldest submission first.
+      security: [{ bearerAuth: [] }]
+      parameters:
+        - name: limit
+          in: query
+          required: false
+          schema: { type: integer, minimum: 1, maximum: 100, default: 50 }
+      responses:
+        '200':
+          description: Pending review queue
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/PendingSpecialistProfiles' }
+        '400': { $ref: '#/components/responses/ValidationProblem' }
+        '401': { $ref: '#/components/responses/UnauthorizedProblem' }
+        '403': { $ref: '#/components/responses/ForbiddenProblem' }
+  /api/v1/admin/specialist-profiles/{specialistAccountId}:
+    x-mentalbridge-status: implemented
+    parameters:
+      - $ref: '#/components/parameters/SpecialistAccountId'
+    get:
+      operationId: getSpecialistProfileForAdmin
+      security: [{ bearerAuth: [] }]
+      responses:
+        '200':
+          description: Operational specialist profile detail
+          headers:
+            ETag: { $ref: '#/components/headers/ProfileETag' }
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/SpecialistProfile' }
+        '401': { $ref: '#/components/responses/UnauthorizedProblem' }
+        '403': { $ref: '#/components/responses/ForbiddenProblem' }
+        '404': { $ref: '#/components/responses/NotFoundProblem' }
+  /api/v1/admin/specialist-profiles/{specialistAccountId}/approve:
+    x-mentalbridge-status: implemented
+    parameters:
+      - $ref: '#/components/parameters/SpecialistAccountId'
+    post:
+      operationId: approveSpecialistProfile
+      description: Approves one submitted PENDING profile. Repeating against the current APPROVED version returns the same profile without another history row.
+      security: [{ bearerAuth: [] }]
+      parameters:
+        - $ref: '#/components/parameters/RequiredIfMatch'
+      responses:
+        '200':
+          description: Approved profile
+          headers:
+            ETag: { $ref: '#/components/headers/ProfileETag' }
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/SpecialistProfile' }
+        '401': { $ref: '#/components/responses/UnauthorizedProblem' }
+        '403': { $ref: '#/components/responses/ForbiddenProblem' }
+        '404': { $ref: '#/components/responses/NotFoundProblem' }
+        '409': { $ref: '#/components/responses/ConflictProblem' }
+        '412': { $ref: '#/components/responses/VersionProblem' }
+        '428': { $ref: '#/components/responses/VersionRequiredProblem' }
+components:
+  securitySchemes:
+    bearerAuth:
+      type: http
+      scheme: bearer
+      bearerFormat: JWT
+  parameters:
+    SpecialistAccountId:
+      name: specialistAccountId
+      in: path
+      required: true
+      schema: { type: string, format: uuid }
+    OptionalIfMatch:
+      name: If-Match
+      in: header
+      required: false
+      description: Omit only when creating the first profile; otherwise quote the current non-negative version.
+      schema: { type: string, pattern: '^"[0-9]+"$' }
+    RequiredIfMatch:
+      name: If-Match
+      in: header
+      required: true
+      description: Quoted current non-negative profile version.
+      schema: { type: string, pattern: '^"[0-9]+"$' }
+  headers:
+    ProfileETag:
+      description: Quoted current profile version for If-Match.
+      schema: { type: string, pattern: '^"[0-9]+"$' }
+  schemas:
+    SupportArea:
+      type: string
+      enum: [DEPRESSIVE_SYMPTOMS, ANXIETY_SYMPTOMS]
+    SpecialistApprovalStatus:
+      type: string
+      enum: [PENDING, APPROVED, REJECTED, SUSPENDED]
+    LanguageTag:
+      type: string
+      enum: [vi, en]
+    SpecialistProfileRequest:
+      type: object
+      additionalProperties: false
+      required: [displayName, bio, supportAreas, languages, yearsOfExperience, timezone]
+      properties:
+        displayName: { type: string, minLength: 1, maxLength: 120 }
+        bio: { type: string, minLength: 1, maxLength: 2000 }
+        supportAreas:
+          type: array
+          minItems: 1
+          maxItems: 2
+          uniqueItems: true
+          items: { $ref: '#/components/schemas/SupportArea' }
+        languages:
+          type: array
+          minItems: 1
+          maxItems: 2
+          uniqueItems: true
+          items: { $ref: '#/components/schemas/LanguageTag' }
+        yearsOfExperience: { type: integer, minimum: 0, maximum: 80 }
+        timezone:
+          type: string
+          minLength: 1
+          maxLength: 64
+          description: IANA timezone validated by the provider.
+    SpecialistProfile:
+      type: object
+      additionalProperties: false
+      required: [accountId, displayName, bio, supportAreas, languages, yearsOfExperience, timezone, approvalStatus, submittedAt, reviewedAt, reviewedBy, decisionReasonCode, createdAt, updatedAt, version]
+      properties:
+        accountId: { type: string, format: uuid }
+        displayName: { type: string, minLength: 1, maxLength: 120 }
+        bio: { type: string, minLength: 1, maxLength: 2000 }
+        supportAreas:
+          type: array
+          minItems: 1
+          maxItems: 2
+          uniqueItems: true
+          items: { $ref: '#/components/schemas/SupportArea' }
+        languages:
+          type: array
+          minItems: 1
+          maxItems: 2
+          uniqueItems: true
+          items: { $ref: '#/components/schemas/LanguageTag' }
+        yearsOfExperience: { type: integer, minimum: 0, maximum: 80 }
+        timezone: { type: string, minLength: 1, maxLength: 64 }
+        approvalStatus: { $ref: '#/components/schemas/SpecialistApprovalStatus' }
+        submittedAt: { type: [string, 'null'], format: date-time }
+        reviewedAt: { type: [string, 'null'], format: date-time }
+        reviewedBy: { type: [string, 'null'], format: uuid }
+        decisionReasonCode: { type: [string, 'null'], maxLength: 64 }
+        createdAt: { type: string, format: date-time }
+        updatedAt: { type: string, format: date-time }
+        version: { type: integer, format: int64, minimum: 0 }
+    PendingSpecialistProfiles:
+      type: object
+      additionalProperties: false
+      required: [items, count]
+      properties:
+        items:
+          type: array
+          maxItems: 100
+          items: { $ref: '#/components/schemas/SpecialistProfile' }
+        count: { type: integer, minimum: 0, maximum: 100 }
+    Problem:
+      type: object
+      additionalProperties: true
+      required: [type, title, status, code, correlationId]
+      properties:
+        type: { type: string, format: uri-reference }
+        title: { type: string }
+        status: { type: integer, minimum: 400, maximum: 599 }
+        detail: { type: string }
+        code: { type: string, pattern: '^[A-Z0-9_]+$' }
+        correlationId: { type: string, format: uuid }
+        violations:
+          type: array
+          items:
+            type: object
+            additionalProperties: false
+            required: [field, code]
+            properties:
+              field: { type: string }
+              code: { type: string }
+              message: { type: string }
+  responses:
+    ValidationProblem:
+      description: Invalid body, path, or query parameter (VALIDATION_FAILED).
+      content:
+        application/problem+json:
+          schema: { $ref: '#/components/schemas/Problem' }
+    UnauthorizedProblem:
+      description: Authentication is missing or invalid (UNAUTHENTICATED).
+      content:
+        application/problem+json:
+          schema: { $ref: '#/components/schemas/Problem' }
+    ForbiddenProblem:
+      description: Required SPECIALIST or ADMIN role is absent (CONSULTATION_ROLE_REQUIRED).
+      content:
+        application/problem+json:
+          schema: { $ref: '#/components/schemas/Problem' }
+    NotFoundProblem:
+      description: Specialist profile does not exist (SPECIALIST_PROFILE_NOT_FOUND).
+      content:
+        application/problem+json:
+          schema: { $ref: '#/components/schemas/Problem' }
+    ConflictProblem:
+      description: Profile state does not allow the requested operation.
+      content:
+        application/problem+json:
+          schema: { $ref: '#/components/schemas/Problem' }
+    VersionProblem:
+      description: If-Match does not equal the current profile version (SPECIALIST_PROFILE_VERSION_MISMATCH).
+      content:
+        application/problem+json:
+          schema: { $ref: '#/components/schemas/Problem' }
+    VersionRequiredProblem:
+      description: If-Match is required for the existing profile or command (PROFILE_VERSION_REQUIRED).
+      content:
+        application/problem+json:
+          schema: { $ref: '#/components/schemas/Problem' }

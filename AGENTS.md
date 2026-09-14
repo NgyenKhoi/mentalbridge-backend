@@ -14,11 +14,12 @@ These instructions apply to the entire repository. Before changing application c
 ## Non-negotiable decisions
 
 - REST/JSON is the only synchronous protocol for business APIs and service-to-service queries. WebSocket is allowed only between clients and `realtime-service` for chat, presence, delivery state, and live notification delivery. Do not introduce GraphQL, gRPC, or broker-based request/reply without an accepted ADR.
-- Kafka carries asynchronous commands and integration events. It is not used to query current data or as the request path for an immediate REST response.
+- Kafka is optional and is introduced only for an accepted feature that genuinely needs durable asynchronous work, independent consumers, fan-out, or replay. Local CRUD, a single-service transaction, and synchronous REST flows must not add Kafka, an outbox, broker configuration, or Kafka Testcontainers pre-emptively. When justified, Kafka carries asynchronous commands/events and is never used for synchronous queries or request/reply. See ADR 0016.
 - Redis supports ephemeral realtime presence, connection/room routing, cross-instance WebSocket fan-out, rate limits, short-lived delivery/idempotency state, and expiring hashed OTP challenges. Do not use Redis as a general database-query/result cache or to store durable messages and business facts. PostgreSQL, MongoDB, and Kafka remain the durable sources.
 - Every service owns its data. A service must not query another service's tables, schema, repository, ORM entity, or internal classes.
 - Cross-service REST and message payloads are contract-first and language-neutral. OpenAPI and JSON Schema/AsyncAPI are the sources of truth.
-- Use the transactional outbox for messages caused by a PostgreSQL state change. Consumers must be idempotent.
+- When a justified Kafka message is caused by a PostgreSQL state change, use a transactional outbox and idempotent consumers. Do not create an outbox merely because a table changes.
+- OpenTelemetry is optional. Start with structured logs, correlation IDs, health/readiness, and focused Prometheus metrics. Add distributed tracing only when a feature has a demonstrated cross-service/provider or asynchronous diagnostic need; do not install an SDK/collector in every service by default. See ADR 0016.
 - Keep safety-critical assessment, consent, booking, and risk decisions local and transactionally consistent in their owning service.
 - Do not add explanatory comments to production code. Express intent with names, types, small functions, tests, and documentation. Legal headers, generated-code markers, and narrowly justified tool directives are the only exceptions.
 - Do not report a task as complete while required tests, contract checks, migrations, or builds fail. Report an external blocker explicitly instead.

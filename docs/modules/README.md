@@ -16,7 +16,7 @@ This directory turns the seven-UC product catalogue and 162-function WBS into wo
 | --- | --- | --- | --- |
 | Identity Service | Spring Boot | [identity-service](identity-service.md) | initialized |
 | Care Service | Spring Boot | [care-service](care-service.md) | initialized |
-| Consultation Service | Spring Boot | [consultation-service](consultation-service.md) | initialized |
+| Consultation Service | Spring Boot | [consultation-service](consultation-service.md) | specialist submit/approve slice implemented |
 | Journal/AI Service | Node.js/TypeScript | [journal-ai-service](journal-ai-service.md) | initialized journal foundation; AI providers and benchmark deferred |
 | Realtime Service | Node.js/TypeScript | [realtime-service](realtime-service.md) | initialized foundation; production eligibility deferred |
 | Content/Notification Service | Node.js/TypeScript | [content-notification-service](content-notification-service.md) | not initialized |
@@ -35,7 +35,7 @@ A use case is complete only when behavior, OpenAPI/event/WebSocket contracts, mi
 ## Cross-module rules
 
 - REST/JSON is the only synchronous business integration; current authorization and consent fail closed.
-- Kafka carries durable asynchronous commands and facts, never synchronous queries. PostgreSQL changes publish through a transactional outbox; consumers are idempotent.
+- Kafka is feature-scoped, not a blanket service dependency. Add it only for accepted durable asynchronous work, independent consumers, fan-out, or replay; synchronous CRUD stays on REST and the owner database. When Kafka is justified, PostgreSQL changes publish through a transactional outbox and consumers are idempotent.
 - Only Realtime Service exposes WebSocket. Redis is ephemeral and never owns durable business facts.
 - No module reads another module's storage or shares framework/persistence models.
 - Raw journal/chat content, assessment answers, tokens, and provider payloads do not enter events, logs, or broad admin projections.
