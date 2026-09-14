@@ -30,6 +30,17 @@ mentalbridge:
       anonymous-session-maximum-lifetime: ${CARE_ANONYMOUS_SESSION_MAXIMUM_LIFETIME}
       phq9-safety-policy-version: ${CARE_PHQ9_SAFETY_POLICY_VERSION}
       idempotency-hmac-key: ${CARE_IDEMPOTENCY_HMAC_KEY}
+    resource-eligibility:
+      base-url: ${CONTENT_RESOURCE_ELIGIBILITY_BASE_URL:}
+      connect-timeout: ${CONTENT_RESOURCE_ELIGIBILITY_CONNECT_TIMEOUT:PT0.5S}
+      read-timeout: ${CONTENT_RESOURCE_ELIGIBILITY_READ_TIMEOUT:PT2S}
+      max-attempts: ${CONTENT_RESOURCE_ELIGIBILITY_MAX_ATTEMPTS:2}
+      retry-wait: ${CONTENT_RESOURCE_ELIGIBILITY_RETRY_WAIT:PT0.1S}
+      circuit-window-size: ${CONTENT_RESOURCE_ELIGIBILITY_CIRCUIT_WINDOW_SIZE:10}
+      circuit-minimum-calls: ${CONTENT_RESOURCE_ELIGIBILITY_CIRCUIT_MINIMUM_CALLS:5}
+      circuit-failure-rate: ${CONTENT_RESOURCE_ELIGIBILITY_CIRCUIT_FAILURE_RATE:50}
+      circuit-open-duration: ${CONTENT_RESOURCE_ELIGIBILITY_CIRCUIT_OPEN_DURATION:PT10S}
+      circuit-half-open-calls: ${CONTENT_RESOURCE_ELIGIBILITY_CIRCUIT_HALF_OPEN_CALLS:2}
 eureka:
   client:
     enabled: ${EUREKA_CLIENT_ENABLED:true}

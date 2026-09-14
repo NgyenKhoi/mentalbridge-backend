@@ -1,5 +1,7 @@
 import { z } from 'zod';
 
+export const ResourceIdSchema = z.uuid();
+
 export const ResourceCategorySchema = z.enum([
   'BREATHING',
   'MEDITATION',

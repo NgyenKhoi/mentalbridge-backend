@@ -9,7 +9,7 @@ The cross-schema [database/postgresql/001_initial_schema.sql](../../database/pos
 | `mentalbridge_identity` | Identity Service | account, role, refresh session, verification/reset token |
 | `mentalbridge_care` | Care Service | user profile, consent, anonymous session, questionnaire, assessment result, safety, SupportEvaluation, SupportPlan lifecycle, follow-up |
 | `mentalbridge_consultation` | Consultation Service | specialist approval, plan/subscription/payment/upgrade, credit ledger, availability, appointment, earning/provider payout, review |
-| `mentalbridge_content_notification` | Content/Notification Service | reviewed resource definitions, future versioned plan-eligibility metadata, and notification preference/delivery |
+| `mentalbridge_content_notification` | Content/Notification Service | reviewed resource definitions, immutable exact-version eligibility provenance, and notification preference/delivery |
 | owner-local tables | each producer; Governance reads safe events | outbox, audit, deletion workflow, retention policy |
 | `mentalbridge_journal_ai` | Journal/AI Service | analysis job metadata, dataset/benchmark metadata |
 
@@ -51,7 +51,7 @@ Cross-schema foreign keys in the logical baseline only make relationships visibl
 - Stored total score and screening band live in the one-to-one result and are authoritative only after server validation; `scoring_version` records the algorithm, `safety_item_positive` preserves the questionnaire fact, and the paired safety status/policy version records the independent response decision.
 - Support-tier results store policy version, reason codes and exact source IDs to make decisions reproducible; safety status remains a separate assessment result.
 - Existing `mb-support-routing-capstone-v1` rows remain immutable coarse evaluations. They preserve PHQ-9 and GAD-7 evidence separately and are not a global severity or sufficient plan-eligibility decision.
-- ADR 0012's domain-bearing SupportEvaluation, resource eligibility and system-proposed SupportPlan require compatible contracts and append-only owner migrations. ADR 0013 closes the product-policy design gap tracked by #49 but deliberately adds no column and does not backfill v1 rows or promote the incompatible conceptual `care.intervention_plan` model into an executable schema. Provider implementation remains under #48 and #50; SupportPlan persistence belongs to a separate later story.
+- Resource Eligibility v1 is Content-owned, append-only and exact-versioned under #50. Domain-aware SupportEvaluation v2 remains under #48, and SupportPlan persistence belongs to a separate later story; no eligibility migration backfills or mutates existing reviewed-resource rows.
 
 ### Booking
 

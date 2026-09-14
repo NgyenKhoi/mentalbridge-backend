@@ -24,7 +24,7 @@ Care owns user profiles, consent decisions, specialist access grants, questionna
 - PostgreSQL and Liquibase own scoring inputs/results, policy provenance, grants and outbox. Constraints enforce immutable published questionnaires and unique submissions.
 - Safety calculation and reviewed fallback are pure local domain behavior. Structured journal indicators arrive asynchronously and never include raw journal text.
 - Active `mb-support-routing-capstone-v1` remains immutable coarse history. Compatible domain-bearing SupportEvaluation work belongs to #48. ADR 0013 and SupportPlan policy v1 freeze the system-proposed template, slot, composition, safety and lifecycle rules for #49 closure; proposal/lifecycle runtime remains a separate later delivery slice using exact eligibility from #50.
-- Care consumes exact Content-owned resource definitions/eligibility through a versioned contract and makes the final plan decision without cross-database access. Review/publication alone is insufficient.
+- Care consumes exact Content-owned eligibility through the generated Resource Eligibility v1 OpenFeign boundary with explicit deadlines, bounded retry, circuit breaker and fail-closed `UNAVAILABLE` outcomes. It makes the final future plan decision without cross-database access or a transaction spanning the remote call. Review/publication alone is insufficient.
 - Care combines reassessment dimensions without normalizing them into one score. Journal/AI context remains model-derived evidence limited to available consented entries; Care maps it only to policy-allowed review candidates and requires user confirmation.
 - Exceptional Identity lookups use a consumer-owned Feign port outside transactions with timeout/breaker and safe failure semantics.
 

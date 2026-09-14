@@ -8,6 +8,8 @@ import {
   RESOURCE_REPOSITORY_TOKEN,
   RESOURCE_SERVICE_TOKEN,
   E2E_OUTAGE_STATE_TOKEN,
+  RESOURCE_ELIGIBILITY_REPOSITORY_TOKEN,
+  RESOURCE_ELIGIBILITY_SERVICE_TOKEN,
 } from './application.tokens.js';
 import type { ServiceConfiguration } from './configuration/configuration.js';
 import { DatabaseService, type ReadinessProbe } from './database/database.service.js';
@@ -19,11 +21,15 @@ import { E2eOutageController } from './e2e/e2e-outage.controller.js';
 import { AuthModule } from './auth/auth.module.js';
 import { JwtStrategy } from './auth/jwt.strategy.js';
 import { RolesGuard } from './auth/roles.guard.js';
+import { ResourceEligibilityController } from './resources/resource-eligibility.controller.js';
+import { ResourceEligibilityRepository } from './resources/resource-eligibility.repository.js';
+import { ResourceEligibilityService } from './resources/resource-eligibility.service.js';
 
 export interface ApplicationDependencies {
   readonly readinessProbe?: ReadinessProbe;
   readonly resourceRepository?: ResourceRepository;
   readonly outageState?: { enabled: boolean };
+  readonly resourceEligibilityRepository?: ResourceEligibilityRepository;
 }
 
 @Module({})
@@ -50,11 +56,22 @@ export const createAppModule = (
     provide: RESOURCE_SERVICE_TOKEN,
     useClass: ResourceService,
   };
+  const eligibilityRepositoryProvider: Provider = dependencies.resourceEligibilityRepository
+    ? {
+        provide: RESOURCE_ELIGIBILITY_REPOSITORY_TOKEN,
+        useValue: dependencies.resourceEligibilityRepository,
+      }
+    : { provide: RESOURCE_ELIGIBILITY_REPOSITORY_TOKEN, useClass: ResourceEligibilityRepository };
 
   return {
     module: ContentNotificationModule,
     imports: [AuthModule],
-    controllers: [HealthController, ResourceController, E2eOutageController],
+    controllers: [
+      HealthController,
+      ResourceController,
+      ResourceEligibilityController,
+      E2eOutageController,
+    ],
     providers: [
       { provide: CONFIGURATION_TOKEN, useValue: configuration },
       {
@@ -66,6 +83,8 @@ export const createAppModule = (
       dbServiceProvider,
       repositoryProvider,
       serviceProvider,
+      eligibilityRepositoryProvider,
+      { provide: RESOURCE_ELIGIBILITY_SERVICE_TOKEN, useClass: ResourceEligibilityService },
       JwtStrategy,
       {
         provide: RolesGuard,

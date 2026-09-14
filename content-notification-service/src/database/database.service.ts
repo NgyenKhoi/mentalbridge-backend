@@ -4,7 +4,7 @@ import { Pool, type PoolClient, type QueryResult, type QueryResultRow } from 'pg
 import { CONFIGURATION_TOKEN } from '../application.tokens.js';
 import type { ServiceConfiguration } from '../configuration/configuration.js';
 
-type QueryParameter = string | number | boolean | Date | Buffer | null;
+type QueryParameter = string | number | boolean | Date | Buffer | readonly string[] | null;
 
 export interface DatabaseClient {
   query<T extends QueryResultRow = QueryResultRow>(

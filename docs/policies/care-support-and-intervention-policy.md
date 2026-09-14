@@ -113,7 +113,7 @@ Exact paid benefits remain governed by the immutable Consultation plan version. 
 - [ ] Compatible domain-aware SupportEvaluation policy/contracts are approved and delivered under #48.
 - [x] Product Owner approved the SupportPlan template, slot, bounds, composition, safety-presentation, role, and lifecycle policy under ADR 0013.
 - [ ] Care, Content, and Frontend accept the server-proposed contract design before it becomes an active OpenAPI contract.
-- [ ] Domain/band/pathway exact-version Resource Eligibility v1 is delivered under #50.
+- [x] Domain/band/pathway exact-version Resource Eligibility v1 is delivered under #50; initial reviewed item mappings remain a separate gate.
 - [ ] Every initial personalized intervention item, source, wording, eligibility and content version approved.
 - [x] Exact minimum Vietnamese safety fallback reviewed by the Product Owner for the controlled Capstone web/API channel on 2026-09-10.
 - [ ] Mentor/supervisor records Review 1 closure validation.
