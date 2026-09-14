@@ -28,8 +28,8 @@ This document is the source of truth for the three Node.js services. ADR 0006 re
 | WebSocket | NestJS gateways, Socket.IO 4 and `@socket.io/redis-adapter` | Only Realtime exposes client sockets; durable state is persisted before acknowledgement. |
 | Security boundary | NestJS guards/pipes/filters plus `helmet`, explicit CORS and rate limiting | Defaults are deny-by-default and configuration is environment-specific. |
 | Logging | Pino | Structured logs with correlation/trace IDs; redact tokens and sensitive content. |
-| Metrics/tracing | `prom-client`, OpenTelemetry Node SDK | Expose liveness, readiness, metrics, and trace propagation without sensitive payloads. |
-| Testing | Vitest, Supertest, Testcontainers for Node.js | Unit, HTTP contract, repository, MongoDB/PostgreSQL, Kafka, Redis, and WebSocket tests as applicable. |
+| Metrics/tracing | `prom-client`; OpenTelemetry Node SDK only when ADR 0016 criteria are met | Expose liveness, readiness, and focused metrics by default. Add trace propagation only for a demonstrated distributed diagnostic need and never include sensitive payloads. |
+| Testing | Vitest, Supertest, Testcontainers for Node.js | Unit, HTTP contract, and only the MongoDB/PostgreSQL/Kafka/Redis/WebSocket integration tests applicable to dependencies the feature actually uses. |
 | Code quality | ESLint flat config and Prettier | Run lint, typecheck, tests, contract/migration checks and build locally; the same basic gates move into CI after the documented `dev` transition. |
 
 Use NestJS dependency injection deliberately. Feature modules expose only the providers required by another feature. Do not create a global module that becomes a service locator, share business DTOs between deployables, or place business rules in controllers, guards, interceptors, filters, or persistence models.

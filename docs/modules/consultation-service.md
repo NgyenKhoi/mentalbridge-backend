@@ -30,8 +30,8 @@ Consultation owns specialist profile approval, searchable discovery/matching, su
 - [x] CON-01 Freeze specialist, discovery, chat/in-person appointment, credit outcome, completion, brief, and summary rules in ADR 0014; settlement, review/moderation retention, and later video remain separate decisions.
 - [ ] CON-02 Define specialist, discovery, billing/upgrade/credit, availability, appointment, earnings/payout, dashboard and review OpenAPI.
 - [ ] CON-03 Define subscription/appointment/earning/review/moderation event schemas and required Care/Journal/Realtime consumer contracts.
-- [ ] CON-04 Add Liquibase histories, constraints, indexes and field dictionary entries.
-- [ ] CON-05 Implement specialist profile approval without document upload and with admin audit.
+- [~] CON-04 Story 6101 adds the profile/approval migration, constraints, indexes, and field dictionary entries; other Consultation aggregates remain pending.
+- [~] CON-05 Story 6101 implements save, submit, pending-admin queue/detail, and approve without document upload and with admin audit. Rejection/suspension/restoration remains Story 6102.
 - [ ] CON-06 Implement discovery/matching with versioned explainable provenance.
 - [ ] CON-07 Implement payment/renewal/upgrade, credit ledger, availability and race-safe idempotent appointment transitions.
 - [ ] CON-08 Implement consented view/dashboard, reviews and review moderation.

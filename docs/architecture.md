@@ -81,7 +81,17 @@ Initial event catalogue:
 
 Commands/events include `messageId`, `messageType`, `occurredAt`, `producer`, `schemaVersion`, `correlationId`, aggregate identity/version, and the minimum data required. They must not contain raw journal/chat text or access tokens. WebSocket JSON messages have separate versioned client contracts and never reuse unrestricted Kafka payloads directly.
 
-Kafka is the durable asynchronous backbone. PostgreSQL producers use a transactional outbox; MongoDB producers use an equivalent owned outbox/recoverable publisher design. Producers use stable aggregate keys and idempotent publishing. Consumers deduplicate by message ID, apply side effects before committing offsets, and use bounded retry/dead-letter topics. At-least-once business delivery is assumed. Kafka is not used for synchronous queries or request/reply.
+Kafka is the durable asynchronous backbone for features that actually require
+durable later completion, independent consumers, fan-out, or replay. It is not
+a mandatory dependency of every service or feature, and is never used for
+synchronous queries or request/reply. A synchronous local CRUD or approval
+slice stays on REST plus its owner database and does not pre-create topics,
+outboxes, consumers, or broker tests. When Kafka is justified, PostgreSQL
+producers use a transactional outbox; MongoDB producers use an equivalent
+owned outbox/recoverable publisher design. Producers use stable aggregate keys
+and idempotent publishing. Consumers deduplicate by message ID, apply side
+effects before committing offsets, and use bounded retry/dead-letter topics.
+At-least-once business delivery is assumed. See ADR 0016.
 
 ## 5. Critical sequences
 

@@ -387,24 +387,40 @@ Database checks require a submitted timestamp once review starts, reviewer ident
 | `updated_at` | UTC instant of the latest persisted profile or approval change. |
 | `version` | Optimistic-lock counter preventing lost specialist-profile updates. |
 
-### `consultation.specialty`
+### `consultation.specialist_profile_support_area`
 
-Reviewed reference catalogue of specialist areas presented by the product.
-
-| Field | Purpose |
-| --- | --- |
-| `code` | Stable machine-readable specialty identifier used by filters and contracts. |
-| `display_name` | Reviewed user-facing specialty label. |
-| `active` | Controls assignment/discovery without deleting historical specialist links. |
-
-### `consultation.specialist_specialty`
-
-Many-to-many assignment of reviewed specialties to a specialist profile.
+V1 reviewed non-clinical support domains declared by a specialist. The database
+accepts only `DEPRESSIVE_SYMPTOMS` and `ANXIETY_SYMPTOMS`.
 
 | Field | Purpose |
 | --- | --- |
-| `specialist_id` | Specialist profile receiving the specialty. |
-| `specialty_code` | Reference specialty assigned to the specialist. |
+| `specialist_account_id` | Owning specialist profile and first half of the composite primary key. |
+| `support_area` | Approved support-domain enum and second half of the composite primary key. |
+
+### `consultation.specialist_profile_language`
+
+V1 languages declared for user-facing support. Story 6101 limits values to
+lowercase `vi` and `en`.
+
+| Field | Purpose |
+| --- | --- |
+| `specialist_account_id` | Owning specialist profile and first half of the composite primary key. |
+| `language_tag` | Supported language tag and second half of the composite primary key. |
+
+### `consultation.specialist_profile_status_history`
+
+Append-only operational audit of explicit submission and administrator status
+decisions. It stores no uploaded evidence or unrestricted notes.
+
+| Field | Purpose |
+| --- | --- |
+| `id` | Immutable UUID audit-entry identifier. |
+| `specialist_account_id` | Specialist profile whose state was submitted or changed. |
+| `approval_status` | State established by this explicit action. |
+| `reason_code` | Stable reason for rejection/suspension when those later transitions are implemented. |
+| `actor_account_id` | Identity UUID of the specialist or administrator performing the action. |
+| `actor_role` | `SPECIALIST` or `ADMIN` operational actor class. |
+| `occurred_at` | UTC instant when the action became effective. |
 
 ### `consultation.subscription_plan`
 

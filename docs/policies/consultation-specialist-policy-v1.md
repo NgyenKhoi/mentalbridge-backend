@@ -5,7 +5,7 @@
 | Field | Value |
 | --- | --- |
 | Policy ID | `MB-CONSULTATION-FLOW-001` |
-| Status | `PRODUCT POLICY APPROVED; RUNTIME NOT IMPLEMENTED` |
+| Status | `PRODUCT POLICY APPROVED; SPECIALIST SUBMIT/APPROVE SLICE IMPLEMENTED` |
 | Effective decision date | 2026-09-13 |
 | Appointment and specialist owner | Consultation |
 | Sharing consent and approved brief owner | Care |
@@ -39,6 +39,12 @@ affected user credits.
 Admin receives only operational profile, decision, appointment, and aggregate
 facts. Admin never receives raw journal text, raw assessment answers, or private
 consultation chat through this workflow.
+
+Story 6101 implements save, explicit submit, pending-admin list/detail, and
+approve. A pending edit clears `submittedAt`, so the administrator cannot
+approve fields that changed after submission. Rejection, resubmission,
+suspension, restoration, seeded ratings, discovery, and booking remain outside
+this slice and must not be presented as available.
 
 ## Discovery and recommendation
 
