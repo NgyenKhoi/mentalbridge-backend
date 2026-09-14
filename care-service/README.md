@@ -1,6 +1,6 @@
 # Care Service
 
-Care owns user profiles, platform consent decisions, questionnaires, assessment submissions and results, deterministic safety/support policy, SupportEvaluation, future system-proposed SupportPlan lifecycle, and follow-up. Story 1103 exposes `POST /api/v1/support-evaluations` and owner-scoped historical retrieval for one explicit compatible PHQ-9/GAD-7 pair. This v1 evaluation is immutable coarse routing, not global severity or a plan-eligibility decision. ADR 0013 freezes the future SupportPlan template, slot, composition, eligibility-role, safety-presentation, and lifecycle policy without adding runtime. Safety-critical scoring, routing and minimum guidance remain local and do not depend on Eureka, OpenFeign, Kafka, Redis, AI, Content, or notification availability.
+Care owns user profiles, platform consent decisions, questionnaires, assessment submissions and results, deterministic safety/support policy, SupportEvaluation, future system-proposed SupportPlan lifecycle, and follow-up. Story 1103 exposes `POST /api/v1/support-evaluations` and owner-scoped historical retrieval for one explicit compatible PHQ-9/GAD-7 pair. This v1 evaluation is immutable coarse routing, not global severity or a plan-eligibility decision. Resource Eligibility v1 adds a consumer-owned Content REST client for later proposal/activation use; it does not implement SupportPlan lifecycle. Safety-critical scoring, routing and minimum guidance remain local and do not depend on Eureka, OpenFeign, Kafka, Redis, AI, Content, or notification availability.
 
 ## MB-88 foundation
 
@@ -57,6 +57,16 @@ Assessment answer text must never be copied into outbox payloads, logs, errors, 
 | --- | --- | --- | --- |
 | `EUREKA_DEFAULT_ZONE` | Production | Eureka registry endpoint shared by Spring services | `http://localhost:8761/eureka/` |
 | `EUREKA_CLIENT_ENABLED` | No | Enables Eureka registration; disable it when running Care by itself locally | `false` |
+| `CONTENT_RESOURCE_ELIGIBILITY_BASE_URL` | Local/test only | Optional direct Content URL; leave empty outside tests so OpenFeign resolves `content-notification-service` through Eureka | `http://localhost:3003` |
+| `CONTENT_RESOURCE_ELIGIBILITY_CONNECT_TIMEOUT` | No | Bounded TCP connection deadline for exact eligibility queries | `PT0.5S` |
+| `CONTENT_RESOURCE_ELIGIBILITY_READ_TIMEOUT` | No | Total response-read deadline for a bounded batch | `PT2S` |
+| `CONTENT_RESOURCE_ELIGIBILITY_MAX_ATTEMPTS` | No | Total safe attempts for the read-only batch POST, from 1 through 3 | `2` |
+| `CONTENT_RESOURCE_ELIGIBILITY_RETRY_WAIT` | No | Delay between transient retry attempts | `PT0.1S` |
+| `CONTENT_RESOURCE_ELIGIBILITY_CIRCUIT_WINDOW_SIZE` | No | Resilience4j count-based breaker window | `10` |
+| `CONTENT_RESOURCE_ELIGIBILITY_CIRCUIT_MINIMUM_CALLS` | No | Calls required before the breaker may open | `5` |
+| `CONTENT_RESOURCE_ELIGIBILITY_CIRCUIT_FAILURE_RATE` | No | Percentage of dependency failures that opens the breaker | `50` |
+| `CONTENT_RESOURCE_ELIGIBILITY_CIRCUIT_OPEN_DURATION` | No | Bounded open interval before half-open probes | `PT10S` |
+| `CONTENT_RESOURCE_ELIGIBILITY_CIRCUIT_HALF_OPEN_CALLS` | No | Permitted half-open probes | `2` |
 | `CARE_DB_URL` | Yes | Care-owned PostgreSQL JDBC URL; production uses a TLS-capable connection | `jdbc:postgresql://localhost:5432/mentalbridge_care` |
 | `CARE_DB_USERNAME` | Yes | Care-owned PostgreSQL login | `mentalbridge_care` |
 | `CARE_DB_PASSWORD` | Yes | Care PostgreSQL password injected outside source control | `replace-with-a-local-secret` |
@@ -89,7 +99,7 @@ The foundation records facts needed by later governed behavior without silently 
 - PHQ-9 scoring is deterministic and server-owned; the stored result is a screening result, not a diagnosis.
 - A positive versioned safety item is persisted independently of the total score so later policy cannot ignore it.
 - ADR 0009 fixes item-9 positivity (`answer >= 1`), keeps it independent from the screening band, prohibits automatic human/emergency notification, and removes the hotline catalogue.
-- Current Vietnamese questionnaire content is published as `phq9-vi-vn-capstone-v2` for `DEPRESSIVE_SYMPTOMS` and `gad7-vi-vn-adult-v1` for `ANXIETY_SYMPTOMS` in controlled local/demo use. PHQ-9 v1 is retired without mutation. GAD-7 returns `NOT_APPLICABLE` with null safety fields instead of a false PHQ-style safety result. Safety remains cross-cutting; no combined score or global severity exists. The deterministic v1 support-tier mapping and minimum local safety fallback are published for controlled Capstone use. SupportPlan product policy is approved under ADR 0013 and tracked to policy-gate closure by #49; compatible domain-aware evaluation (#48), resource eligibility implementation (#50), later proposal/lifecycle runtime, specialist actions, production consent/retention, production domain review, and minimum-age expansion remain separate gates.
+- Current Vietnamese questionnaire content is published as `phq9-vi-vn-capstone-v2` for `DEPRESSIVE_SYMPTOMS` and `gad7-vi-vn-adult-v1` for `ANXIETY_SYMPTOMS` in controlled local/demo use. PHQ-9 v1 is retired without mutation. GAD-7 returns `NOT_APPLICABLE` with null safety fields instead of a false PHQ-style safety result. Safety remains cross-cutting; no combined score or global severity exists. The deterministic v1 support-tier mapping and minimum local safety fallback are published for controlled Capstone use. SupportPlan product policy is approved under ADR 0013. Resource Eligibility v1 provider/consumer is implemented under #50, while domain-aware evaluation (#48), initial reviewed item eligibility, later proposal/lifecycle runtime, specialist actions, production consent/retention, production domain review, and minimum-age expansion remain separate gates.
 - No endpoint may imply emergency dispatch, continuous human monitoring, or guaranteed notification delivery.
 
 The canonical policy register is maintained in [`docs/policies/`](../docs/policies/). `MB-CAPSTONE-SCREENING-PUBLICATION-001` defines a bounded evidence gate for controlled local/demo publication; a Capstone decision is not executable production approval.
@@ -101,7 +111,7 @@ MB-89 implements the deterministic PHQ-9 runtime. MB-178 adds the backend-owned,
 ## Integration
 
 - Inbound REST: the canonical Care OpenAPI file is the source of truth.
-- Outbound REST: exceptional current Identity facts may later use a consumer-owned OpenFeign adapter with explicit deadlines and fail-closed behavior; no such runtime dependency is implemented by MB-88.
+- Outbound REST: the consumer-owned OpenFeign Resource Eligibility v1 adapter queries Content with the end-user bearer context, explicit correlation, 500 ms connect and 2 s read deadlines, one bounded transient retry and a Resilience4j circuit breaker. Timeout, dependency errors, malformed payloads and enum evolution map every candidate to `UNAVAILABLE`; callers must commit no proposal mutation. No Care transaction spans the call.
 - Async: future assessment, support, consent, intervention, and follow-up events use Kafka with a transactional outbox and language-neutral schemas.
 - Discovery: Care registers as `care-service`; registry metadata never grants authorization.
 
@@ -111,4 +121,4 @@ MB-89 implements the deterministic PHQ-9 runtime. MB-178 adds the backend-owned,
 .\mvnw.cmd test
 ```
 
-The PostgreSQL integration suite applies Liquibase to a disposable real PostgreSQL database and validates owner isolation, profile optimistic concurrency, append-only consent history/idempotency/revocation, disclosure enforcement, stable history pagination, deterministic compatible progress selection, support-routing evidence validation and concurrency/idempotency, policy lookup serialization and fallback behavior, seed data, authenticated-versus-anonymous ownership, scoring boundaries, item-9 independence, token isolation/expiry, answer/result ranges, questionnaire version uniqueness, and minimized outbox payloads. Live Eureka registration is disabled in tests. The versioned assessment and support-tier event contracts exist, while a Kafka relay remains a separate delivery slice; scoring, progress, and support routing never wait for a broker.
+The PostgreSQL integration suite applies Liquibase to a disposable real PostgreSQL database and validates owner isolation, profile optimistic concurrency, append-only consent history/idempotency/revocation, disclosure enforcement, stable history pagination, deterministic compatible progress selection, support-routing evidence validation and concurrency/idempotency, policy lookup serialization and fallback behavior, seed data, authenticated-versus-anonymous ownership, scoring boundaries, item-9 independence, token isolation/expiry, answer/result ranges, questionnaire version uniqueness, and minimized outbox payloads. Resource eligibility consumer tests additionally cover auth/correlation propagation, deadlines, bounded retry, breaker opening, malformed response attribution and unknown enum failure. Live Eureka registration is disabled in tests. The versioned assessment and support-tier event contracts exist, while a Kafka relay remains a separate delivery slice; scoring, progress, and support routing never wait for a broker.
