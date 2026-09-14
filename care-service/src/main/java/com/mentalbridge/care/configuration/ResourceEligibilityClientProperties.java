@@ -31,8 +31,8 @@ public record ResourceEligibilityClientProperties(
 		if (readTimeout != null && (readTimeout.isZero() || readTimeout.isNegative())) {
 			throw new IllegalArgumentException("readTimeout must be positive");
 		}
-		if (retryWait != null && retryWait.isNegative()) {
-			throw new IllegalArgumentException("retryWait must not be negative");
+		if (retryWait != null && (retryWait.isZero() || retryWait.isNegative())) {
+			throw new IllegalArgumentException("retryWait must be positive");
 		}
 		if (circuitOpenDuration != null && (circuitOpenDuration.isZero() || circuitOpenDuration.isNegative())) {
 			throw new IllegalArgumentException("circuitOpenDuration must be positive");

@@ -28,6 +28,7 @@ import feign.FeignException;
 import feign.RetryableException;
 import io.github.resilience4j.circuitbreaker.CircuitBreaker;
 import io.github.resilience4j.circuitbreaker.CircuitBreakerConfig;
+import io.github.resilience4j.core.IntervalFunction;
 import io.github.resilience4j.retry.Retry;
 import io.github.resilience4j.retry.RetryConfig;
 
@@ -40,15 +41,17 @@ public class ResourceEligibilityClient {
 	private final Clock clock;
 	private final CircuitBreaker circuitBreaker;
 	private final Retry retry;
+	private final IntervalFunction retryInterval;
 
 	public ResourceEligibilityClient(ContentResourceEligibilityHttpClient httpClient,
 			ResourceEligibilityClientProperties properties, Clock clock) {
 		this.httpClient = httpClient;
 		this.clock = clock;
 		Predicate<Throwable> transientFailure = ResourceEligibilityClient::isTransientFailure;
+		this.retryInterval = IntervalFunction.ofExponentialRandomBackoff(properties.retryWait(), 2.0, 0.2);
 		this.retry = Retry.of("contentResourceEligibility", RetryConfig.custom()
 				.maxAttempts(properties.maxAttempts())
-				.waitDuration(properties.retryWait())
+				.intervalFunction(retryInterval)
 				.retryOnException(transientFailure)
 				.failAfterMaxAttempts(true)
 				.build());
@@ -78,6 +81,10 @@ public class ResourceEligibilityClient {
 
 	CircuitBreaker.State circuitState() {
 		return circuitBreaker.getState();
+	}
+
+	long retryDelayMillis(int attempt) {
+		return retryInterval.apply(attempt);
 	}
 
 	private ResourceEligibilityBatchResponse validateResponse(ResourceEligibilityBatchRequest request,
@@ -153,7 +160,7 @@ public class ResourceEligibilityClient {
 			return true;
 		}
 		if (error instanceof FeignException exception) {
-			return exception.status() == 408 || exception.status() == 429 || exception.status() >= 500;
+			return exception.status() == 408 || exception.status() >= 500;
 		}
 		return false;
 	}

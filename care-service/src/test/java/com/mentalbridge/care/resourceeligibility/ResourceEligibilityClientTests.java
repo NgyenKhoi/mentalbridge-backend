@@ -94,6 +94,33 @@ class ResourceEligibilityClientTests {
 	}
 
 	@Test
+	void doesNotRetryRateLimitingWithoutAContractedRetryAfterPolicy() {
+		AtomicInteger attempts = new AtomicInteger();
+		var client = client((auth, correlationId, request) -> {
+			attempts.incrementAndGet();
+			throw httpFailure(429);
+		}, properties(3, 5));
+
+		var response = client.resolve(request(), "user-jwt", CORRELATION_ID);
+
+		assertThat(attempts).hasValue(1);
+		assertThat(response.results().getFirst().outcome()).isEqualTo(ResourceEligibilityOutcome.UNAVAILABLE);
+	}
+
+	@Test
+	void configuresBoundedExponentialBackoffWithJitterForMultipleRetries() {
+		var client = client((auth, correlationId, request) -> eligible(request),
+				properties(3, 5, Duration.ofMillis(100)));
+
+		for (int sample = 0; sample < 20; sample++) {
+			long firstRetry = client.retryDelayMillis(1);
+			long secondRetry = client.retryDelayMillis(2);
+			assertThat(firstRetry).isBetween(80L, 120L);
+			assertThat(secondRetry).isBetween(160L, 240L).isGreaterThan(firstRetry);
+		}
+	}
+
+	@Test
 	void rejectsMismatchedHealthAttributionAndMalformedEligibility() {
 		AtomicInteger attempts = new AtomicInteger();
 		var client = client((auth, correlationId, request) -> {
@@ -165,14 +192,25 @@ class ResourceEligibilityClientTests {
 		assertThat(configuration.resourceEligibilityFeignRetryer()).isSameAs(feign.Retryer.NEVER_RETRY);
 	}
 
+	@Test
+	void rejectsANonPositiveRetryBaseDelay() {
+		assertThatThrownBy(() -> properties(2, 5, Duration.ZERO))
+				.isInstanceOf(IllegalArgumentException.class)
+				.hasMessage("retryWait must be positive");
+	}
+
 	private ResourceEligibilityClient client(ContentResourceEligibilityHttpClient httpClient,
 			ResourceEligibilityClientProperties properties) {
 		return new ResourceEligibilityClient(httpClient, properties, CLOCK);
 	}
 
 	private ResourceEligibilityClientProperties properties(int maxAttempts, int minimumCalls) {
+		return properties(maxAttempts, minimumCalls, Duration.ofMillis(1));
+	}
+
+	private ResourceEligibilityClientProperties properties(int maxAttempts, int minimumCalls, Duration retryWait) {
 		return new ResourceEligibilityClientProperties("", Duration.ofMillis(500), Duration.ofSeconds(2),
-				maxAttempts, Duration.ZERO, minimumCalls, minimumCalls, 50, Duration.ofSeconds(10), 1);
+				maxAttempts, retryWait, minimumCalls, minimumCalls, 50, Duration.ofSeconds(10), 1);
 	}
 
 	private ResourceEligibilityBatchRequest request() {
