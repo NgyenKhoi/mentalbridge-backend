@@ -17,7 +17,7 @@
 | Display timezone | `Asia/Ho_Chi_Minh` |
 | Owning service | Care Service |
 | Supersedes | N/A |
-| Architecture decisions | [ADR 0009](../adr/0009-care-screening-safety-and-support-boundaries.md); [ADR 0012](../adr/0012-two-domain-screening-and-system-proposed-support-plans.md) |
+| Architecture decisions | [ADR 0009](../adr/0009-care-screening-safety-and-support-boundaries.md); [ADR 0012](../adr/0012-two-domain-screening-and-system-proposed-support-plans.md); [ADR 0017](../adr/0017-product-scope-v2.md) |
 
 This policy specifies screening behavior, not diagnosis, treatment, suicide-risk stratification, emergency dispatch, or continuous human monitoring. The instrument, scoring research basis, and exact Vietnamese Capstone artifact have passed the bounded evidence gate. Optional support and production deployment follow separate gates.
 
@@ -121,7 +121,10 @@ safetyStatus = POSITIVE_SAFETY_SCREEN
 
 ## User-facing safety response
 
-Safety output is available to anonymous, Free, Premium Care, and Premium Plus users. It includes the screening result, non-diagnostic disclaimer, safety status, any content approved for the active environment, and an explicit statement that MentalBridge does not provide emergency dispatch or 24/7 human monitoring.
+Safety output is available to anonymous, `FREE`, `PLUS`, and `PREMIUM` users.
+It includes the screening result, non-diagnostic disclaimer, safety status, any
+content approved for the active environment, and an explicit statement that
+MentalBridge does not provide emergency dispatch or 24/7 human monitoring.
 
 The Capstone non-diagnostic capability statement is:
 
@@ -129,13 +132,23 @@ The Capstone non-diagnostic capability statement is:
 
 Until a versioned safety-guidance contract and catalogue pass their separate gate, the UI explicitly reports that guidance is unavailable. It does not silently return an empty area or invent a recommendation.
 
-MentalBridge has no hotline catalogue, hotline CRUD, geolocation, or current-facility database. It must not claim that a facility is the “nearest”. A candidate fallback for legal/domain review is:
+The current controlled-Capstone runtime has no facility directory or
+geolocation. Scope v2 permits a reviewed area directory after its own content
+and runtime gate. The user manually enters or selects province, district, or
+another supported area. Each entry requires source/provenance, `reviewedAt`,
+`verifiedAt`, address, phone, coverage, and active status. Without coordinates
+and a distance calculation, copy says “cơ sở trong khu vực đã chọn”, never
+“gần nhất”. A candidate fallback for legal/domain review is:
 
 > Nếu bạn cảm thấy mình không an toàn hoặc có nguy cơ gây hại cho bản thân, hãy chủ động liên hệ dịch vụ khẩn cấp hoặc cơ sở y tế phù hợp tại khu vực của bạn.
 
 This wording is not approved production content. It may be adopted for a controlled Capstone demo only through an explicit Product Owner content decision. A specific number such as `115` remains excluded unless a separate production legal/domain decision approves it inside versioned safety content.
 
-Self-screening may be available 24/7. That availability never implies 24/7 human monitoring. Operating hours apply only to specialist availability and appointment slots.
+Self-screening may be available 24/7. That availability never implies 24/7
+human monitoring. Positive item 9 or explicit “Tôi cần hỗ trợ ngay” opens the
+safety flow; a `High`/`Severe` band alone does not. The platform never
+automatically calls, shares location, sends a safety email, or notifies a third
+party. Operating hours apply only to specialist availability and appointments.
 
 ## Runtime decision flow
 
@@ -166,7 +179,11 @@ No later policy publication rewrites a historical result. Re-evaluation creates 
 
 Anonymous users may view their current score, screening level, disclaimer, safety status, and safety guidance. They receive no longitudinal history, specialist access, or profile-dependent personalization.
 
-Registered Free users may receive basic support only after the separate support catalogue gate passes. Premium tiers may add deeper longitudinal personalization, advanced follow-up, booking, and consultation according to their own approved contracts. These optional capabilities do not block base questionnaire publication. Safety output and access to an owned assessment are never paywalled.
+Registered `FREE`, `PLUS`, and `PREMIUM` users may receive the standard one-time
+Support Guide after its separate gate passes. Only `PLUS`/`PREMIUM` receive a
+durable SupportPlan and consultation credits. These optional capabilities do
+not block base questionnaire publication. Safety output and access to an owned
+assessment are never paywalled.
 
 Story 1103 makes `mb-support-routing-capstone-v1` executable as immutable coarse routing. That tier does not select resources or create a SupportPlan. ADR 0012 requires a compatible domain-aware evaluation and system-proposed plan flow before personalized plan runtime becomes available. MB-205 separately implements bounded authenticated descriptive progress without changing the PHQ-9 score, safety status or support capability. [ADR 0009](../adr/0009-care-screening-safety-and-support-boundaries.md), [ADR 0012](../adr/0012-two-domain-screening-and-system-proposed-support-plans.md), and the Care support policy are authoritative for these Capstone boundaries.
 

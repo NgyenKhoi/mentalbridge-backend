@@ -26,6 +26,12 @@ ADR 0005 assigns the cohesive billing bounded context to `consultation-service` 
 
 ADR 0012 bounds V1 screening and post-screening support to PHQ-9/`DEPRESSIVE_SYMPTOMS` and GAD-7/`ANXIETY_SYMPTOMS`. ADR 0013 freezes immutable SupportPlan template policy, compositional selection, slot bounds, eligibility roles, safety presentation, and lifecycle. Safety remains cross-cutting. Care owns domain-aware evaluation and final plan eligibility; Content/Notification owns exact reviewed resource definitions and eligibility provenance. Neither service reads the other's database, and AI owns neither decision.
 
+ADR 0017 defines scope v2 across these owners: canonical packages are `FREE`,
+`PLUS`, and `PREMIUM`; every package receives a one-time Support Guide while
+only paid packages receive the durable Care-owned SupportPlan; new
+consultations use in-app chat/video only; and real payment/payout is VND through
+MoMo after its price, allocation, and credential gates pass.
+
 ## 3. Container view
 
 ```text
@@ -101,10 +107,27 @@ At-least-once business delivery is assumed. See ADR 0016.
 2. Care Service validates complete responses and idempotency key.
 3. In one transaction it stores submission, answers, computed score, safety flags, and outbox event.
 4. A separate authenticated support-evaluation command explicitly names one compatible PHQ-9 and one compatible GAD-7 result; Care locks the profile, evaluates `mb-support-routing-capstone-v1`, and persists the immutable decision plus outbox event in one transaction.
-5. Response keeps both instrument/domain-specific bands and the PHQ-9 safety status independent, adds stable reasons and reviewed 14-day meanings, and returns the locally owned minimum safety guidance when required. It never calculates a composite or global mental-health score or invokes a downstream dependency.
+5. Response keeps both instrument/domain-specific bands and safety evidence
+   independent. Positive PHQ-9 item 9 or the explicit “Tôi cần hỗ trợ ngay”
+   action activates the safety flow; a `High`/`Severe` band alone does not. Any
+   area directory uses user-entered/selected geography and verified,
+   provenance-bearing entries; without coordinates and distance it never
+   claims “nearest”. The flow never automatically calls, shares location,
+   sends safety email, or notifies a third party.
 6. The active v1 tier is coarse historical routing and does not select a resource or SupportPlan. A compatible future evaluation version must expose contributing domains before plan use (#48).
-7. ADR 0013 fixes immutable template policy, compositional selection, slot bounds, eligibility roles, safety presentation, and lifecycle. After compatible SupportEvaluation v2 and Resource Eligibility v1 provider gates pass, Care obtains exact versioned eligibility from Content/Notification, deterministically creates at most one bounded system-proposed `DRAFT`, accepts only allowed user choices, revalidates, and activates only on an explicit user command. Safety guidance is presented first; a new evaluation never silently changes an existing plan.
-8. Async consumers build projections, opt-in reminders, and non-critical notifications only after their own gates pass.
+7. Care produces a one-time approved Support Guide after screening for every
+   package. It is not a lifecycle aggregate.
+8. For an entitled `PLUS`/`PREMIUM` user, Care obtains exact versioned
+   eligibility from Content/Notification, creates a bounded system-proposed
+   draft, and remains the sole owner of the official SupportPlan. Specialist
+   resource input enters through `PlanChangeRequest`; Care revalidates and the
+   user confirms. Safety guidance is presented first, and a new evaluation
+   never silently changes the plan.
+9. Content/Notification schedules at most one default wellbeing digest per
+   user/day. Per-resource reminders require explicit opt-in; the separate
+   appointment reminder is sent once approximately one hour before start. AI
+   may phrase approved facts but cannot decide scheduling, and no safety email
+   is generated automatically.
 
 ### Journal analysis
 
@@ -115,6 +138,12 @@ At-least-once business delivery is assumed. See ADR 0016.
 5. Care consumes only approved structured indicators, never free-form model reasoning. For reassessment it composes standardized screening trend, non-standardized available-journal context trend with coverage, SupportPlan engagement, and user reflection as separate dimensions; it never creates a combined improvement score.
 6. Failure produces a terminal job state after the bounded retry; the user can still read the journal. The OpenAI/Gemini benchmark gates final production-provider selection and official controlled-demo enablement, not contract, adapter, or job-runtime implementation.
 
+Package routing applies outside the model's authority: `FREE` defaults to five
+successfully delivered responses per day, `PLUS` has a higher versioned quota
+and may share the same model, and `PREMIUM` may use a stronger model without a
+displayed daily-response cap. All remain subject to server token, rate, abuse,
+cost, and fair-use enforcement.
+
 ### Consent-enforced specialist read
 
 1. Specialist requests a user resource through the gateway.
@@ -124,13 +153,32 @@ At-least-once business delivery is assumed. See ADR 0016.
 
 ### Subscription upgrade and consultation
 
-1. A paid-plan IPN is parsed by the versioned MoMo-only contract, verified over every required signature field, deduplicated from its verified transaction tuple, and matched on configured partner plus local order/request/amount. Only then does it activate the immutable plan version and grant one credit row per included consultation.
-2. A Care-to-Plus upgrade holds eligible unused credits, calculates a minor-unit offset from their allocation plus the second-accurate remaining non-consultation value, and starts a full Plus period only after a verified payment webhook. Downgrade is not supported.
-3. An approved specialist publishes a 60-minute `IN_APP_CHAT` or `IN_PERSON` slot. In-person slots reference an active Consultation-owned `PracticeLocation`. A request made at least four hours before start locks that slot and one available credit in the same Consultation transaction, then snapshots start, end, timezone, mode, and applicable location into the appointment.
-4. The specialist responds by `min(requestedAt + 24h, startsAt - 2h)`; expiry or rejection releases both holds. Confirmation authorizes the appointment flow. Chat waiting begins ten minutes before start, send is limited to `[startsAt, endsAt)`, and history is read-only afterward. `IN_APP_VIDEO`, phone, external meeting links, and room management remain deferred.
-5. Rejection, expiry, eligible cancellation, specialist/system cancellation, suspension before an unstarted session, or specialist no-show releases the appointment credit. Late user cancellation and user no-show forfeit it. Reschedule cancels the old appointment and creates a new request. Only evidence-based or user-confirmed `COMPLETED` consumes the credit and atomically creates the specialist earning snapshot; a specialist cannot finalize it unilaterally.
-6. A user-reviewed `ConsultationBrief` plus appointment-scoped `SPECIALIST_SHARING` grant provides only approved context. A later appointment requires a new brief/grant. The specialist may create a short user-visible `SessionSummary`; ongoing between-session support remains with SupportPlan and AI Companion.
-7. Available earnings may enter one idempotent MoMo Disbursement payout. Verified result/IPN/status evidence is required for success; local/CI uses a MoMo-shaped fake, and real payment/payout remains disabled until credentials and VND plan/settlement currency are approved.
+1. A new `PLUS`/`PREMIUM` purchase or `PLUS`-to-`PREMIUM` upgrade creates a
+   VND MoMo payment attempt. The versioned IPN is signature-verified,
+   deduplicated, and matched before activating an immutable plan version and
+   granting one or three credits exactly once. No downgrade or user refund API
+   exists.
+2. An upgrade holds eligible unused credits and calculates its VND minor-unit
+   offset from versioned facts before a verified webhook starts the new full
+   `PREMIUM` period.
+3. An approved specialist publishes a 60-minute `IN_APP_CHAT` or
+   `IN_APP_VIDEO` slot. A booking transaction locks that slot and one available
+   credit, then snapshots start, end, timezone, and mode. New in-person, phone,
+   and external-link appointments are rejected.
+4. At scheduled end, Consultation records `SESSION_ENDED` and closes chat/video
+   access. Time alone cannot complete the appointment. The versioned evidence
+   policy evaluates server-observed chat or server/provider-observed video
+   evidence.
+5. Only accepted `COMPLETED` evidence consumes the credit and atomically creates
+   an earning equal to 70% of the credit's fixed `creditAllocation`.
+   `SESSION_ENDED`, cancellation, no-show, and dispute create no earning.
+6. The user approves a `ConsultationBrief` before the session. The specialist
+   creates `SessionSummary` and `AgreedNextSteps` only afterward; reuse requires
+   explicit user approval. A resource suggestion becomes a Care-owned
+   `PlanChangeRequest`, never another SupportPlan.
+7. Available earnings may enter one idempotent MoMo Disbursement payout.
+   Real-money payment and payout remain disabled until exact VND prices,
+   `creditAllocation`, and credentials are approved and configured.
 
 ## 6. Security and privacy
 

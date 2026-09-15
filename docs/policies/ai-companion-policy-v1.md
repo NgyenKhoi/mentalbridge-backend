@@ -10,6 +10,7 @@
 | Owner | Journal/AI |
 | Consent and Care-decision owner | Care |
 | Decision | [ADR 0015](../adr/0015-ai-companion-analysis-contract.md) |
+| Amended by | [ADR 0017](../adr/0017-product-scope-v2.md); current rules are in [AI Companion policy v2](ai-companion-policy-v2.md) |
 
 AI Companion supports reflection and navigation. It is not a diagnostician,
 clinician, safety authority, or autonomous SupportPlan agent.

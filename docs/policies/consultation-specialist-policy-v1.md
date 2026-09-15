@@ -12,6 +12,7 @@
 | AI draft generator | Journal/AI |
 | Chat owner | Realtime |
 | Decision | [ADR 0014](../adr/0014-appointment-specialist-and-consultation-continuity.md) |
+| Amended by | [ADR 0017](../adr/0017-product-scope-v2.md); current rules are in [Consultation and specialist policy v2](consultation-specialist-policy-v2.md) |
 
 This policy defines a bounded platform consultation. It does not define a
 medical record, treatment relationship, clinical matching engine, 24/7 chat, or

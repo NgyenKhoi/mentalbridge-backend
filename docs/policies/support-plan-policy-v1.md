@@ -13,6 +13,7 @@
 | Applies to | Registered users with a compatible domain-aware SupportEvaluation |
 | Decision | [ADR 0013](../adr/0013-freeze-support-plan-policy-v1.md) |
 | Reassessment extension | [ADR 0015](../adr/0015-ai-companion-analysis-contract.md) |
+| Amended by | [ADR 0017](../adr/0017-product-scope-v2.md); current rules are in [SupportPlan policy v2](support-plan-policy-v2.md) |
 
 This policy defines a non-clinical platform support proposal. It does not define
 a diagnosis, prescription, treatment plan, recovery outcome, emergency

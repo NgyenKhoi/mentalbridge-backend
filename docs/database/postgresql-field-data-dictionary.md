@@ -346,7 +346,13 @@ Per-user idempotency aliases for combined-support commands. Multiple keys may sa
 
 Versioned set of platform support actions generated for one support classification.
 
-This is a non-executable legacy conceptual baseline, not an approved SupportPlan schema. ADR 0012 supersedes any interpretation that the user creates this plan from arbitrary reviewed resources. ADR 0013 now freezes immutable versioned Care templates, composed template-family references, `CORE`/`OPTIONAL` slots, 1-5 selected-resource bounds, exact `PRIMARY`/`ADJUNCT` eligibility evidence, one draft plus one active-or-paused plan per user, and atomic explicit replacement. The legacy shape below cannot represent those requirements and must not be promoted into a migration. A later implementation must introduce an append-only Care schema and complete field descriptions from [SupportPlan policy v1](../policies/support-plan-policy-v1.md).
+This is a non-executable legacy conceptual baseline, not an approved
+SupportPlan schema. ADR 0013 freezes immutable templates, composition,
+eligibility, and lifecycle; ADR 0017 limits the durable plan to
+`PLUS`/`PREMIUM`, confirms one official Care-owned current plan, and routes
+specialist proposals through `PlanChangeRequest`. The legacy shape cannot
+represent those requirements and must not be promoted into a migration. A
+later append-only Care schema follows [SupportPlan policy v2](../policies/support-plan-policy-v2.md).
 
 | Field | Purpose |
 | --- | --- |
@@ -428,9 +434,9 @@ Stable plan identity used to group immutable commercial versions.
 
 | Field | Purpose |
 | --- | --- |
-| `code` | Stable plan code: `FREE`, `PREMIUM_CARE`, or `PREMIUM_PLUS`. |
+| `code` | Stable plan code. Historical v1 values `PREMIUM_CARE`/`PREMIUM_PLUS` remain readable; new v2 catalogue values are `FREE`, `PLUS`, and `PREMIUM`. |
 | `display_name` | Reviewed user-facing plan name. |
-| `tier_rank` | Unique ordering used to reject same-tier changes and every downgrade; zero is Free. |
+| `tier_rank` | Unique ordering used to allow only `PLUS`-to-`PREMIUM` upgrade and reject every downgrade; zero is `FREE`. |
 | `active` | Controls whether a plan accepts new purchases without deleting historical versions. |
 | `created_at` | Immutable UTC plan creation instant. |
 | `updated_at` | UTC instant of the latest catalogue-level activation/name change. |
@@ -444,12 +450,12 @@ Immutable price, allocation, credit, revenue-share, and cancellation policy purc
 | `id` | Immutable plan-version UUID referenced by subscriptions, upgrades, payments, and credits. |
 | `plan_code` | Stable parent plan identity. |
 | `version` | Monotonically increasing version within the plan; published versions are never rewritten. |
-| `currency` | ISO 4217 currency for every minor-unit amount in this version; current catalogue uses `USD`. |
-| `price_minor` | Exact monthly price in currency minor units: 0, 999, or 1999 for current versions. |
+| `currency` | ISO 4217 currency for every amount. Historical demo versions may use `USD`; every new real-payment v2 version uses `VND`. |
+| `price_minor` | Exact period price in currency minor units. Historical values remain immutable; v2 VND values require approval before publication. |
 | `billing_period_months` | Calendar-month period count; current plans use one month rather than a fixed 30-day duration. |
 | `consultation_credits_per_period` | Number of indivisible credits granted after a successful payment: 0, 1, or 3. |
-| `non_consultation_value_minor` | Price allocation for non-consultation premium features; current paid plans use 499. |
-| `credit_value_minor` | Explicit value allocated to each credit; current paid plans use 500 so earnings are not derived from the whole subscription. |
+| `non_consultation_value_minor` | Versioned price allocation for non-consultation features, used for upgrade calculation without runtime FX. |
+| `credit_value_minor` | Fixed per-credit `creditAllocation`; v2 stores its approved VND amount so earnings are not derived from the whole package. |
 | `specialist_share_bps` | Specialist share in basis points snapshotted into each credit; 7000 means 70%. |
 | `cancellation_cutoff_hours` | Optional whole-hour cutoff separating eligible credit release from late cancellation forfeiture. Current conceptual rows leave it null because product approval is still pending; booking cannot be production-enabled without a published policy. |
 | `effective_from` | UTC instant at which the version may be offered to new purchases. |
@@ -467,7 +473,13 @@ Allow-list of feature decisions attached to one immutable plan version.
 
 ### `consultation.user_subscription`
 
-Authoritative paid-subscription lifecycle for one user. Absence of an active paid row means Free entitlement.
+Authoritative paid-subscription lifecycle for one user. Absence of an active
+paid row means `FREE` entitlement. Historical plan codes remain unchanged;
+new v2 plan versions use `PLUS` or `PREMIUM`.
+
+Legacy cancellation/renewal fields below preserve the conceptual v1 history;
+they do not authorize a v2 user-facing operation. Scope v2 exposes only new
+purchase and `PLUS`-to-`PREMIUM` upgrade, with no downgrade/refund API.
 
 | Field | Purpose |
 | --- | --- |
@@ -512,7 +524,7 @@ MoMo-backed payment attempt and current externally confirmed outcome. `FAKE` may
 | `amount_minor` | Exact positive amount requested/confirmed in currency minor units. |
 | `currency` | ISO 4217 currency validated against the plan/upgrade quote. |
 | `status` | `PENDING`, `SUCCEEDED`, `FAILED`, or externally reported `CHARGEBACK`; refund states are unsupported. |
-| `purpose` | Distinguishes `INITIAL_PURCHASE`, `RENEWAL`, and `UPGRADE` reconciliation. |
+| `purpose` | Distinguishes historical purposes. New v2 user-facing operations create only purchase or upgrade attempts; no downgrade/refund purpose exists. |
 | `momo_result_code` | Latest verified MoMo `resultCode`; only final code `0` can produce `SUCCEEDED`. |
 | `momo_pay_type` | Verified MoMo `payType`, such as QR or app payment. |
 | `idempotency_key` | Subscription-scoped payment retry key preventing duplicate attempts. |
@@ -575,9 +587,9 @@ A composite foreign key guarantees the credit owner matches its subscription own
 | `period_end` | UTC source-period exclusive end; an appointment must start before it. |
 | `ordinal` | One-based position within a subscription period, unique with period start. |
 | `currency` | ISO 4217 currency of all monetary snapshots on the credit. |
-| `allocated_value_minor` | Exact consultation allocation in minor units; current paid versions use 500. |
+| `allocated_value_minor` | Exact fixed `creditAllocation` in plan currency minor units; historical values remain immutable and v2 uses approved VND values. |
 | `specialist_share_bps` | Snapshotted specialist share; current value is 7000. |
-| `specialist_earning_minor` | Precomputed exact earning on completion; current value is 350, avoiding later rounding drift. |
+| `specialist_earning_minor` | Precomputed 70% share of `allocated_value_minor`, payable only after evidence-backed `COMPLETED`. |
 | `status` | Authoritative state: available, appointment-reserved, upgrade-held, consumed, expired, forfeited, or revoked. |
 | `expires_at` | UTC expiry equal to the source period end for an unreserved credit. |
 | `created_at` | Immutable UTC grant instant. |
@@ -586,14 +598,16 @@ A composite foreign key guarantees the credit owner matches its subscription own
 
 ### `consultation.subscription_upgrade`
 
-Immutable calculation snapshot and workflow for the only supported in-period change, Premium Care to Premium Plus.
+Immutable calculation snapshot and workflow for the only supported v2
+in-period change, `PLUS` to `PREMIUM`. Historical Premium Care/Premium Plus
+rows retain their original plan-version provenance.
 
 | Field | Purpose |
 | --- | --- |
 | `id` | Immutable upgrade UUID exposed in quote/status operations. |
 | `subscription_id` | Current paid subscription being upgraded. |
-| `from_plan_version_id` | Care version used for remaining-value calculation. |
-| `to_plan_version_id` | Higher Plus version that will start a full new period after payment. |
+| `from_plan_version_id` | `PLUS` version used for remaining-value calculation; historical v1 upgrade references remain valid. |
+| `to_plan_version_id` | Higher `PREMIUM` version that starts a full new period after verified payment. |
 | `payment_id` | Unique upgrade payment attempt; null only before checkout creation completes. |
 | `old_period_start` | Snapshotted UTC start of the period being ended. |
 | `old_period_end` | Snapshotted UTC end used to calculate actual total/remaining seconds. |
@@ -608,7 +622,7 @@ Immutable calculation snapshot and workflow for the only supported in-period cha
 | `idempotency_key` | Subscription-scoped retry key returning the original quote/checkout. |
 | `quoted_at` | UTC calculation instant used to determine remaining seconds. |
 | `quote_expires_at` | UTC instant after which held credits must be released or expired. |
-| `applied_at` | UTC instant verified payment atomically activated Plus; null until applied. |
+| `applied_at` | UTC instant verified payment atomically activated `PREMIUM`; null until applied. |
 | `created_at` | Immutable UTC insertion instant. |
 | `updated_at` | UTC instant of the latest workflow-state change. |
 | `version` | Optimistic-lock counter protecting webhook/expiry races. |
@@ -667,7 +681,10 @@ Explicit journal-entry allow-list for grants containing journal access.
 
 ### `consultation.availability_slot`
 
-Authoritative half-open 60-minute slot published from a specialist's working schedule and bookable once. The current logical baseline predates ADR 0014's practice-location relation and must be extended before `IN_PERSON` is implemented.
+Authoritative half-open 60-minute slot published from a specialist's working
+schedule and bookable once. The current logical baseline predates scope v2;
+enabling video requires an additive contract/migration while historical
+in-person snapshots remain readable.
 
 | Field | Purpose |
 | --- | --- |
@@ -676,7 +693,7 @@ Authoritative half-open 60-minute slot published from a specialist's working sch
 | `start_at` | Inclusive UTC start instant of the available interval. |
 | `end_at` | Exclusive UTC end instant, required to be later than start. |
 | `timezone` | IANA timezone captured for stable human schedule rendering. |
-| `channel` | Consultation mode offered for this interval. ADR 0014 enables `IN_APP_CHAT` and `IN_PERSON`; `IN_APP_VIDEO` is reserved pending its later contract. |
+| `channel` | Consultation mode snapshot. Historical v1 includes `IN_PERSON`; new v2 slots allow `IN_APP_CHAT` or contract-enabled `IN_APP_VIDEO` only. |
 | `status` | Authoritative slot state used with database constraints to prevent conflicting bookings. |
 | `created_at` | Immutable UTC slot creation instant. |
 | `updated_at` | UTC instant of the latest slot state or schedule change. |
@@ -684,7 +701,11 @@ Authoritative half-open 60-minute slot published from a specialist's working sch
 
 ### `consultation.appointment`
 
-Authoritative scheduled consultation between one user and specialist for an owned availability slot and credit. ADR 0014 enables `IN_PERSON`, so a compatible owner migration must add an immutable practice-location snapshot plus the request deadline, credit outcome, check-in/session evidence, dispute, and summary fields before runtime is claimed. Phone numbers, external meeting links, and room inventory remain excluded.
+Authoritative scheduled consultation between one user and specialist for an
+owned availability slot and credit. Historical v1 in-person appointments keep
+their immutable location snapshot. New v2 appointments are chat/video only and
+require channel-end, provider/server evidence, summary/next-step reuse approval,
+and dispute fields before runtime is claimed.
 
 Composite foreign keys require the appointment specialist to own the slot and the appointment user to own the credit; the application cannot create a locally inconsistent pairing.
 
@@ -699,7 +720,7 @@ Composite foreign keys require the appointment specialist to own the slot and th
 | `scheduled_start_at` | Inclusive UTC start copied from the selected specialist slot at booking; chat waiting may begin ten minutes before it, but sending cannot. |
 | `scheduled_end_at` | Exclusive UTC end copied from the selected specialist slot; join/send ends here even if the source availability later changes. |
 | `scheduled_timezone` | Specialist slot's IANA timezone snapshot used to reproduce the originally booked schedule. |
-| `channel` | Booked mode snapshot. ADR 0014 enables `IN_APP_CHAT` and `IN_PERSON`; `IN_APP_VIDEO` is future intent. |
+| `channel` | Booked mode snapshot. Historical v1 includes `IN_PERSON`; new v2 records allow `IN_APP_CHAT` or contract-enabled `IN_APP_VIDEO` only. |
 | `user_timezone` | IANA timezone captured at booking so the schedule remains understandable after device timezone changes. |
 | `idempotency_key` | Caller retry key unique per user so uncertain REST retries return the original booking outcome. |
 | `cancellation_reason` | Reviewed explanation recorded when a permitted cancellation occurs. |
@@ -788,7 +809,10 @@ Encrypted specialist-owned destination used by a provider payout adapter. Raw wa
 
 ### `consultation.specialist_payout`
 
-Idempotent provider payout request and its reconciled current outcome. Local/CI uses a fake adapter; real domestic payout stays disabled until compatible VND pricing or an approved versioned FX policy exists.
+Idempotent provider payout request and its reconciled current outcome. Local/CI
+uses a fake adapter; real domestic payout stays disabled until exact VND plan
+prices, fixed `creditAllocation`, and MoMo credentials exist. Runtime FX is not
+allowed.
 
 | Field | Purpose |
 | --- | --- |

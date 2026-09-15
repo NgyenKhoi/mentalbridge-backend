@@ -2,7 +2,14 @@
 
 ## Business boundary
 
-Care owns user profiles, consent decisions, specialist access grants, questionnaire definitions, assessment attempts/results, deterministic safety status, versioned SupportEvaluations, system-proposed SupportPlan selection/lifecycle, follow-up, and wellbeing projections. V1 screening and post-screening support are limited to PHQ-9/`DEPRESSIVE_SYMPTOMS` and GAD-7/`ANXIETY_SYMPTOMS`. Care is the authority for current consent, safety and final plan-eligibility decisions. These paths remain correct without AI, Kafka, Redis, WebSocket, or notification delivery.
+Care owns user profiles, consent decisions, specialist access grants,
+questionnaire definitions, assessment attempts/results, deterministic item-9
+and explicit-user safety triggers, the all-tier one-time Support Guide,
+versioned SupportEvaluations, the single official `PLUS`/`PREMIUM` SupportPlan,
+`PlanChangeRequest` decisions, follow-up, and wellbeing projections. V1
+screening domains remain PHQ-9/`DEPRESSIVE_SYMPTOMS` and
+GAD-7/`ANXIETY_SYMPTOMS`. These paths remain correct without optional AI,
+Kafka, Redis, WebSocket, notification, or directory delivery.
 
 ## Use cases and acceptance
 
@@ -11,7 +18,7 @@ Care owns user profiles, consent decisions, specialist access grants, questionna
 | Profile/privacy | Update profile and independent consent decisions | Versioned consent evidence; unsupported/null fields rejected; revoked consent blocks new reads immediately |
 | Anonymous screening | Fetch current PHQ-9/GAD-7 and submit opaque attempt | Complete 0..3 answers only; deterministic score; short-lived result; no silent account link; guidance in response |
 | Authenticated assessment | Start and idempotently submit immutable versioned attempt | Exact question version; no partial final score; duplicate key returns original; score/result/outbox atomically commit |
-| Safety/support/SupportPlan | Evaluate instrument/domain-specific evidence and independent safety, then propose and manage a bounded plan | Item-9 status never changes a band; no global severity; missing/stale input gives insufficient data; v1 tier alone cannot select a plan; user cannot submit an arbitrary initial resource set; AI cannot determine eligibility; approved safety guidance is synchronous |
+| Safety/Support Guide/SupportPlan | Activate safety from positive item 9 or explicit user action, return a one-time guide for every package, and manage one official paid plan | High/Severe band alone is not a safety trigger; no global severity; `FREE` has no durable plan; specialist input is a request; Care revalidates and user confirms; approved safety guidance is synchronous |
 | Reassessment Summary | Present standardized screening trend, AI-derived available-journal context, SupportPlan engagement, and user reflection as separate dimensions | No combined improvement score/recovery claim; journal coverage visible; Care selects only policy-allowed plan alternatives and the user confirms changes |
 | Specialist grant | Grant exact scopes, range/entries, purpose and expiry; authorize reads | Appointment never implies journal access; current grant checked by owner; revoke/read race fails closed and is audited |
 | Follow-up/analytics | Manage milestones/check-ins and compare valid results | Missing differs from zero; source/freshness exposed; no causal/diagnostic claims |
@@ -23,7 +30,10 @@ Care owns user profiles, consent decisions, specialist access grants, questionna
 - OpenAPI defines public assessment/profile APIs and future minimal internal consent-authorization decisions. Kafka schemas carry minimized assessment/support/consent/follow-up facts.
 - PostgreSQL and Liquibase own scoring inputs/results, policy provenance, grants and outbox. Constraints enforce immutable published questionnaires and unique submissions.
 - Safety calculation and reviewed fallback are pure local domain behavior. Structured journal indicators arrive asynchronously and never include raw journal text.
-- Active `mb-support-routing-capstone-v1` remains immutable coarse history. Compatible domain-bearing SupportEvaluation work belongs to #48. ADR 0013 and SupportPlan policy v1 freeze the system-proposed template, slot, composition, safety and lifecycle rules for #49 closure; proposal/lifecycle runtime remains a separate later delivery slice using exact eligibility from #50.
+- Active `mb-support-routing-capstone-v1` remains immutable coarse history.
+  ADR 0017 and SupportPlan policy v2 add Support Guide, paid-plan entitlement,
+  one official plan, and `PlanChangeRequest` governance without rewriting v1
+  evidence. Runtime remains a later delivery slice using exact eligibility.
 - Care consumes exact Content-owned eligibility through the generated Resource Eligibility v1 OpenFeign boundary with explicit deadlines, bounded retry, circuit breaker and fail-closed `UNAVAILABLE` outcomes. It makes the final future plan decision without cross-database access or a transaction spanning the remote call. Review/publication alone is insufficient.
 - Care combines reassessment dimensions without normalizing them into one score. Journal/AI context remains model-derived evidence limited to available consented entries; Care maps it only to policy-allowed review candidates and requires user confirmation.
 - Exceptional Identity lookups use a consumer-owned Feign port outside transactions with timeout/breaker and safe failure semantics.
@@ -34,7 +44,13 @@ MB-88 defines the profile, platform-consent, and PHQ-9 contract/persistence foun
 
 MB-205 is contained in `com.mentalbridge.care.progress` (controller, read-only service, owner-scoped JDBC repository and arithmetic direction). It reuses `ix_assessment_submission_user_history`; measured integration behavior needs no new migration or data-dictionary field.
 
-The original English PHQ-9 definition, retired immutable `phq9-vi-vn-capstone-v1`, current corrected `phq9-vi-vn-capstone-v2`, and published `gad7-vi-vn-adult-v1` are seeded. Story 1102 adds instrument-aware scoring, GAD-7 non-applicable safety semantics, immutable definition lookup, and version-2 assessment events while preserving event v1. ADR 0009 fixes the PHQ-9 item-9 boundary, non-paywall rule, AI boundary, and removal of the hotline catalogue. ADR 0010 separates controlled Capstone questionnaire publication from production governance and optional support features. ADR 0012 fixes the two-domain and system-proposed SupportPlan direction; ADR 0013 freezes its product policy without changing current contracts or runtime. SupportPlan runtime and production consent/retention remain separate gates in `docs/policies/`.
+The original English PHQ-9 definition, retired immutable
+`phq9-vi-vn-capstone-v1`, current corrected `phq9-vi-vn-capstone-v2`, and
+published `gad7-vi-vn-adult-v1` are seeded. Existing item-9 runtime remains
+unchanged. ADR 0017 approves the additional explicit-help trigger and reviewed
+area directory as target behavior without claiming they are implemented.
+Support Guide, SupportPlan, directory, and production consent/retention remain
+separate runtime gates in `docs/policies/`.
 
 MB-178 does not implement specialist grants, automatic follow-up, clinical progress interpretation, export/deletion, or production retention. Support/intervention, analytics, Kafka event delivery, and these deferred workflows must not be inferred from the implemented profile/consent/history slice.
 

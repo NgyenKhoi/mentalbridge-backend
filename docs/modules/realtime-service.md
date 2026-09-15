@@ -21,7 +21,10 @@ Realtime owns conversations, encrypted messages, attachments metadata, tombstone
 - Runtime: Node.js 22 or newer, strict TypeScript, NestJS 11, Socket.IO 4 through NestJS gateways, official MongoDB and Redis clients, `migrate-mongo`, KafkaJS, Pino, OpenTelemetry, Vitest, and Testcontainers as defined in `docs/nodejs-service-stack.md`.
 - OpenAPI owns history/recovery; versioned WebSocket schemas own commands/acks/errors; Kafka schemas own minimized integration facts.
 - Conversation history may remain read-only after a slot under retention policy, but join/send never becomes 24/7 specialist messaging. Subscription cancellation closes future conversations immediately; an already-started confirmed session remains writable only until its scheduled end.
-- `IN_APP_VIDEO` is future intent only. Realtime does not implement signalling, rooms, provider credentials, presence evidence, recording, or fallback until a separate contract/ADR assigns those responsibilities.
+- ADR 0017 approves `IN_APP_VIDEO` as the second v2 mode, but Realtime does not
+  implement signaling, rooms, credentials, presence evidence, recording
+  prohibition, channel shutdown, or failure behavior until the detailed
+  versioned contract assigns them. External meeting links are not a fallback.
 - Mongo migrations enforce validators/indexes. Persist before ack, then Redis fan-out and recoverable Kafka publication. Attachments use private object storage, not Mongo blobs.
 - Define heartbeat, reconnect, ordering, payload/back-pressure/rate limits and cross-instance failure semantics before gateway implementation.
 

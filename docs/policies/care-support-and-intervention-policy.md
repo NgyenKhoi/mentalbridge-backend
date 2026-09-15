@@ -5,14 +5,14 @@
 | Field | Value |
 | --- | --- |
 | Policy ID | `MB-SUPPORT-CARE-001` |
-| Policy version | `1.3-reassessment-context` |
-| Status | `CONTROLLED CAPSTONE V1 ROUTING PUBLISHED; SUPPORTPLAN PRODUCT POLICY APPROVED; RUNTIME UNAVAILABLE` |
+| Policy version | `1.4-scope-v2` |
+| Status | `CONTROLLED CAPSTONE V1 ROUTING PUBLISHED; SCOPE V2 PRODUCT POLICY APPROVED; V2 RUNTIME UNAVAILABLE` |
 | Blueprint effective date | 2026-09-02 |
-| Product Owner decision | Definition approved through MB-179 on 2026-09-02; minimum Vietnamese safety fallback approved for Story 1103 on 2026-09-10; two-domain/system-proposed-plan correction approved as `MB-SCOPE-DOMAIN-001` on 2026-09-12; SupportPlan policy v1 and four-dimensional reassessment context frozen on 2026-09-13 |
+| Product Owner decision | Prior decisions retained; scope v2 amendments approved as `MB-SCOPE-V2-001` on 2026-09-15 |
 | Mentor/domain review | Mentor closure review pending; domain review required before executable production routing |
 | Owners | Care for selection; Content/Notification for reviewed resource content |
 | Applies to | Registered MentalBridge users in Vietnam |
-| Related decisions | [ADR 0012](../adr/0012-two-domain-screening-and-system-proposed-support-plans.md), [ADR 0013](../adr/0013-freeze-support-plan-policy-v1.md), and the [ADR 0015 reassessment evidence extension](../adr/0015-ai-companion-analysis-contract.md) |
+| Related decisions | [ADR 0012](../adr/0012-two-domain-screening-and-system-proposed-support-plans.md), [ADR 0013](../adr/0013-freeze-support-plan-policy-v1.md), [ADR 0015](../adr/0015-ai-companion-analysis-contract.md), and the [ADR 0017 scope v2 amendment](../adr/0017-product-scope-v2.md) |
 
 V1 supports exactly `DEPRESSIVE_SYMPTOMS` through PHQ-9 and `ANXIETY_SYMPTOMS` through GAD-7, focused on generalized anxiety symptoms. Equal bands from the two instruments remain different domain evidence. The system never creates a global mental-health severity, and a new domain requires a separately approved product vertical.
 
@@ -23,7 +23,7 @@ The system keeps these values independent:
 | Dimension | Meaning | Must not be used as |
 | --- | --- | --- |
 | `screeningLevel` | Instrument-specific band from one questionnaire version and domain | Diagnosis, global mental-health severity or cross-instrument risk |
-| `safetyStatus` | PHQ-9 item-9 deterministic screen | Suicide intent/urgency classification |
+| `safetySignal` | PHQ-9 item-9 deterministic screen or explicit “Tôi cần hỗ trợ ngay” action | Suicide intent/urgency classification or a questionnaire band |
 | `supportTier` | Approved platform support pathway | `LOW_RISK`, `MEDIUM_RISK`, or `HIGH_RISK` |
 | `supportActions` | Versioned approved catalogue selections | AI-generated treatment instructions |
 | `entitlementPlan` | Current commercial access | A reason to suppress safety output |
@@ -47,7 +47,12 @@ The definition version is `mb-support-routing-capstone-v1`. An eligible input is
 | Either explicit compatible result is Moderate or higher | PHQ-9 negative | `PROFESSIONAL_SUPPORT_RECOMMENDED` |
 | Explicit compatible PHQ-9 has item 9 `>=1` | Positive | `SAFETY_FOLLOW_UP_RECOMMENDED` |
 
-The item-9 rule affects only support routing and never overwrites the PHQ-9 band. Values `1`, `2` and `3` do not classify intent, plan, imminence or urgency. GAD-7 has no equivalent safety rule. Safety is a cross-cutting layer, not a screening domain. AI is not an input to this blueprint.
+The item-9 rule affects only support routing and never overwrites the PHQ-9
+band. Scope v2 also opens the safety flow when the user explicitly chooses
+“Tôi cần hỗ trợ ngay”. A `High` or `Severe` band alone does not. Values `1`,
+`2` and `3` do not classify intent, plan, imminence or urgency. GAD-7 has no
+equivalent questionnaire rule. Safety is cross-cutting, not a screening domain,
+and AI is not an input.
 
 A future automatic latest-assessment calculation must define freshness, version compatibility and missing-input behavior in a new policy version. The governing forward flow is recorded in [ADR 0012](../adr/0012-two-domain-screening-and-system-proposed-support-plans.md) and [domain and use cases](../domain-and-use-cases.md).
 
@@ -86,7 +91,14 @@ AI may explain only active approved entries already selected inside a determinis
 
 No personalized intervention item is approved by the MB-179 routing decision. Published generic self-help resources may be displayed independently of personalized routing, but review/publication does not make them universally eligible for a plan.
 
-The approved forward direction is: domain-aware SupportEvaluation, approved template/resource policy, system-proposed `DRAFT` SupportPlan, user choices inside the proposal, Care revalidation, then explicit activation. The client never supplies an arbitrary initial resource set. [SupportPlan policy v1](support-plan-policy-v1.md) fixes immutable Care template versions, `CORE`/`OPTIONAL` slots, 1-5 selected-resource bounds, compositional `mb-support-plan-selection-v1` rules, normal safety-positive activation, one draft plus one active-or-paused plan per user, and atomic explicit replacement. Exact-version eligibility uses `PRIMARY` and `ADJUNCT`; adjunct content never fills a core slot. Issue #49 is the policy gate; SupportEvaluation v2 (#48), Resource Eligibility v1 (#50), and later proposal/lifecycle runtime retain separate implementation gates.
+The approved forward direction is: a one-time Support Guide for every package,
+then an optional paid domain-aware SupportPlan. [SupportPlan policy v2](support-plan-policy-v2.md)
+retains immutable Care templates, `CORE`/`OPTIONAL` slots, 1-5 selected-resource
+bounds, compositional rules, and exact-version eligibility while limiting the
+durable plan to `PLUS`/`PREMIUM`. Care owns one official current plan. A
+specialist proposal enters through `PlanChangeRequest`; Care revalidates and the
+user confirms. The client, AI, and specialist never author or mutate a plan
+directly.
 
 At reassessment, Care presents standardized screening trend, AI-derived
 available-journal context trend, SupportPlan engagement, and user
@@ -96,12 +108,20 @@ only allowed alternatives and the user confirms any SupportPlan change.
 
 ## Entitlement policy
 
-- Anonymous: screening result, disclaimer, safety status, and safety guidance only; no history, specialist access, or profile-dependent personalization.
-- Free registered user: owned assessment history plus basic support selected from the approved catalogue.
-- Premium Care: deeper longitudinal personalization, advanced follow-up, and the plan's consultation entitlement.
-- Premium Plus: Premium Care behavior plus the plan's additional consultation credits and priority rules.
+- Anonymous: screening result, disclaimer, safety status, and safety guidance;
+  no history, specialist access, or profile-dependent personalization.
+- `FREE`: standard one-time Support Guide, Journal, emotion check-in, reviewed
+  resources, and the default AI quota; no durable SupportPlan or consultation
+  credit.
+- `PLUS`: higher AI quota, durable SupportPlan/lifecycle tracking, and one
+  consultation credit per paid period.
+- `PREMIUM`: no displayed daily AI-response limit subject to server fair-use
+  controls, optional stronger model, advanced recommendations, and three
+  credits per paid period.
 
-Exact paid benefits remain governed by the immutable Consultation plan version. Safety output and owned assessment access are never paid features.
+Resource count is not limited by package. Exact paid benefits remain governed
+by the immutable Consultation plan version. Safety output, the one-time Support
+Guide, and owned assessment access are never paid features.
 
 ## Approval and runtime gates
 
@@ -119,4 +139,8 @@ Exact paid benefits remain governed by the immutable Consultation plan version. 
 - [ ] Mentor/supervisor records Review 1 closure validation.
 - [ ] Domain review is recorded before this becomes an executable production support policy.
 
-Care may return this bounded v1 support-tier result in the controlled Capstone runtime. It returns no personalized intervention item or SupportPlan and performs no contact, booking, sharing, reminder, or clinical action. Production clinical deployment and domain-aware plan selection remain blocked until their separate gates pass.
+Care may return the bounded v1 support-tier result in the controlled Capstone
+runtime. Scope v2 behavior remains unavailable until its contracts, migrations,
+frontend, directory content, notification scheduling, and production gates
+pass. No safety flow automatically calls, shares location, sends email, or
+notifies a third party.

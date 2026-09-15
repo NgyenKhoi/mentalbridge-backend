@@ -13,7 +13,12 @@ The cross-schema [database/postgresql/001_initial_schema.sql](../../database/pos
 | owner-local tables | each producer; Governance reads safe events | outbox, audit, deletion workflow, retention policy |
 | `mentalbridge_journal_ai` | Journal/AI Service | analysis job metadata, dataset/benchmark metadata |
 
-ADR 0005 assigns the billing bounded context to Consultation Service so subscription/payment/upgrade, credit reservation, appointment completion, and earning creation can use one local transaction. The baseline stores exact minor-unit snapshots and append-only histories; no other service may store a shadow financial balance. Provider credentials/contracts, VND pricing or a versioned FX policy, settlement delay, chargeback reconciliation, and retention must be finalized before real-money payout is enabled.
+ADR 0005 assigns billing to Consultation; ADR 0017 amends the v2 catalogue to
+`FREE`/`PLUS`/`PREMIUM` and real money to VND/MoMo only. The baseline stores
+exact minor-unit snapshots and append-only history. Exact VND prices, fixed
+per-credit `creditAllocation`, provider credentials/contracts, settlement,
+chargeback reconciliation, and retention must be finalized before real money
+is enabled; runtime FX is prohibited.
 
 Cross-schema foreign keys in the logical baseline only make relationships visible. Executable service migrations replace them with immutable external UUIDs and validate through APIs/events. Do not emulate distributed joins on request paths.
 
@@ -61,9 +66,14 @@ Cross-schema foreign keys in the logical baseline only make relationships visibl
 - A partial unique index permits only one active appointment per slot.
 - A second partial unique index permits only one active appointment per credit; booking locks the slot and credit together.
 - `appointment_status_history` provides an auditable state-transition timeline.
-- `IN_APP_CHAT` and `IN_PERSON` are V1 modes. Chat waiting begins ten minutes before start, send authorization is limited to `[scheduled_start_at, scheduled_end_at)`, and conversation history is read-only afterward.
-- `IN_PERSON` references an active Consultation-owned `PracticeLocation` with display name, address, timezone, and active state; V1 has no room inventory. `IN_APP_VIDEO`, phone, and external meeting-link modes remain unavailable.
-- Appointment persistence must retain request/response deadlines, cancellation/credit outcome, check-ins, session evidence, dispute state, and user-visible summary required by ADR 0014. Reschedule cancels the old row and creates a new request rather than rewriting its snapshots.
+- Historical v1 supports `IN_APP_CHAT`/`IN_PERSON`. Scope v2 rejects new
+  in-person records and requires `IN_APP_CHAT`/`IN_APP_VIDEO`; video remains
+  unavailable until its detailed contract and additive migration pass.
+- At `scheduled_end_at`, v2 records `SESSION_ENDED` and closes the channel.
+  Separate accepted server/provider evidence is required for `COMPLETED`.
+- Appointment persistence must retain evidence, dispute,
+  `SessionSummary`/`AgreedNextSteps`, reuse approval, and PlanChangeRequest
+  provenance without rewriting historical snapshots.
 
 ### Subscription and settlement
 
@@ -73,10 +83,14 @@ Cross-schema foreign keys in the logical baseline only make relationships visibl
 - `momo_payment_ipn` snapshots the full required non-sensitive contract, contract/key versions and hashes of the payload plus sensitive/free-text signed fields. Its deterministic SHA-256 tuple key provides replay protection.
 - `safe_optional_details` stores only versioned allow-listed non-sensitive optional MoMo fields. Raw IPN/signature, decoded `orderInfo`/`extraData`, and wallet identifiers are never persisted.
 - Available credit count is derived from authoritative credit rows. The append-only ledger records reservations, releases, upgrade holds, consumption, expiry, forfeiture, and revocation.
-- Care-to-Plus upgrade records actual total/remaining period seconds, rounded-down feature residual, held-credit value, offset, and amount due. Held credits prevent booking/upgrade double use.
+- `PLUS`-to-`PREMIUM` upgrade records actual total/remaining period seconds,
+  rounded-down feature residual, held-credit value, offset, and amount due in
+  VND. Held credits prevent booking/upgrade double use.
 - Downgrade and user-initiated refund are not represented. Provider chargeback remains an external reconciled payment outcome.
 - Cancellation disables paid features immediately, cancels future appointments, and revokes their credits. A confirmed appointment already inside its scheduled window is the sole exception and may finish at its snapshotted end instant.
-- Appointment completion creates one earning snapshot. The MoMo payout flow attaches available earnings to one idempotent logical payout and keeps each provider attempt separately. A definite failure may create a numbered retry; an `UNKNOWN` attempt is queried and blocks another transfer attempt.
+- Evidence-backed appointment completion consumes one credit and creates one
+  earning snapshot equal to 70% of its fixed `creditAllocation`.
+  `SESSION_ENDED`, cancellation, no-show, and dispute create no earning.
 - MoMo Disbursement is the only planned production payout provider, subject to M4B credentials. Local/CI uses a deterministic MoMo-shaped fake. Real payment/payout remains disabled while plan/earning currency is USD and no approved VND plan version or FX policy exists.
 
 ### Operations

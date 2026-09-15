@@ -1,31 +1,51 @@
 # Subscription and billing specification
 
-The historical ownership gap is resolved by ADR 0005. This file keeps its existing path so module links remain stable.
+The historical ownership gap is resolved by ADR 0005. ADR 0017 amends the
+catalogue, currency, supported appointment modes, and earning gate for scope
+v2. This file keeps its existing path so module links remain stable.
 
 ## Boundary
 
-The `billing` feature inside `consultation-service` owns immutable plan versions, paid subscription periods, payment attempts and deduplicated provider events, Care-to-Plus upgrades, consultation credits and their append-only ledger, specialist earnings, payout destinations/requests, and payout provider events. It shares the Consultation PostgreSQL transaction boundary with slot booking and appointment completion. No other service stores an authoritative entitlement, credit, earning, or payout balance.
+The `billing` feature inside `consultation-service` owns immutable plan versions,
+paid periods, payment attempts and deduplicated provider events,
+`PLUS`-to-`PREMIUM` upgrades, consultation credits and their append-only ledger,
+specialist earnings, payout destinations/requests, and payout provider events.
+It shares the Consultation PostgreSQL transaction boundary with booking and
+evidence-backed completion. No other service stores an authoritative
+entitlement, credit, earning, or payout balance.
 
 ## Current catalogue
 
-| Plan | Price/month | Credits | Credit allocation | Specialist earning/completed credit |
+| Plan | V2 price/paid period | Credits | Credit allocation | Specialist earning/completed credit |
 | --- | ---: | ---: | ---: | ---: |
-| Free | USD 0.00 | 0 | USD 0.00 | USD 0.00 |
-| Premium Care | USD 9.99 | 1 | USD 5.00 | USD 3.50 |
-| Premium Plus | USD 19.99 | 3 | USD 5.00 each | USD 3.50 each |
+| `FREE` | VND 0 | 0 | Not applicable | Not applicable |
+| `PLUS` | VND amount pending approval | 1 | Fixed VND amount pending approval | 70% of the credit's allocation |
+| `PREMIUM` | VND amount pending approval | 3 | Fixed VND amount pending approval for each credit | 70% of each credit's allocation |
 
-All plan facts are versioned. Paid plan prices comprise USD 4.99 of non-consultation features plus USD 5.00 per credit. Specialist earning is 70% of the explicit credit allocation; it is never calculated from the whole subscription. One credit funds one 60-minute `IN_APP_CHAT` or `IN_PERSON` appointment. Plus currently means more credits and priority/enhanced features, not a longer session.
+All plan facts are immutable and versioned. Specialist earning is 70% of the
+fixed `creditAllocation` snapshotted on the consumed credit; it is never
+calculated from the whole package price. One credit funds one 60-minute
+`IN_APP_CHAT` or `IN_APP_VIDEO` appointment. Reviewed resources are not
+count-limited by package; packages differentiate capabilities, credits, and AI
+quota/model routing.
+
+`FREE` includes the standard Support Guide, Journal, emotion check-in, and a
+default five successfully delivered AI responses per day. `PLUS` adds a higher
+AI quota, the persistent SupportPlan capability, and one credit per paid
+period. `PREMIUM` adds three credits, advanced recommendation capability, and
+may use a stronger model; no daily response limit is displayed, but server-side
+token, rate, abuse, cost, and fair-use limits still apply.
 
 ## Subscription and payment
 
 1. The server, never the client, resolves plan price/currency from a published plan version.
-2. Checkout creates idempotent pending subscription/payment state.
+2. A new `PLUS`/`PREMIUM` purchase or `PLUS`-to-`PREMIUM` upgrade creates
+   idempotent pending subscription/payment state.
 3. Only a verified, deduplicated provider webhook may activate a period and grant credits.
-4. The selected MoMo One-Time Payment contract does not create a provider-owned recurring subscription. MentalBridge owns the monthly lifecycle; each purchase, renewal, or upgrade creates a separate MoMo checkout/payment row. A successful renewal grants credits exactly once for the new period. Available credits expire at period end and do not roll over.
-5. Cancellation stops paid access immediately and produces no refund. It cancels future appointments, closes their conversation eligibility, and revokes their unused/reserved credits. Only a confirmed appointment already inside its scheduled window may keep its reserved credit and finish at `scheduledEndAt`; the subscription remains `CANCEL_PENDING_SESSION_END` until then.
-6. The MVP does not call a refund API. Provider chargebacks are ingested as immutable external facts for reconciliation.
-
-Cancellation also fails a pending upgrade and revokes its held credits. No new booking or paid feature is authorized in `CANCEL_PENDING_SESSION_END`; this temporary state exists only so the already-started consultation can reach its scheduled end and settle normally.
+4. The selected MoMo One-Time Payment contract does not create a provider-owned recurring subscription. MentalBridge owns paid periods; each purchase or upgrade creates a separate MoMo checkout/payment row and grants credits exactly once after verified success. Available credits expire at period end and do not roll over.
+5. The v2 user-facing commercial API supports only new purchase and upgrade.
+   It exposes no downgrade or user-initiated refund operation. Provider
+   chargebacks remain immutable external reconciliation facts.
 
 ## Payment webhook/IPN contracts
 
@@ -48,9 +68,12 @@ Official references: [MoMo One-Time Payment/IPN](https://developers.momo.vn/v3/d
 
 ## Upgrade
 
-Only Premium Care to Premium Plus is allowed. Free to paid is a purchase. Plus to Care returns `SUBSCRIPTION_DOWNGRADE_NOT_SUPPORTED`. A user can separately cancel Plus, losing paid access immediately without refund, and later buy Care as a new purchase; that is not a downgrade.
+Only `PLUS` to `PREMIUM` is an upgrade. `FREE` to either paid package is a new
+purchase. A `PREMIUM` to `PLUS` request returns
+`SUBSCRIPTION_DOWNGRADE_NOT_SUPPORTED`; no user refund endpoint exists.
 
-An immediate upgrade starts a full Plus period. A non-withdrawable offset is calculated in integer minor units:
+An immediate upgrade starts a full `PREMIUM` period. A non-withdrawable offset
+is calculated in integer VND minor units from the published plan-version facts:
 
 ```text
 remainingFeatureValueMinor = floor(
@@ -62,7 +85,11 @@ amountDueMinor = newPlanPriceMinor
     - availableCreditValueMinor
 ```
 
-The period fraction uses actual UTC seconds. Upgrade checkout changes included available credits to `UPGRADE_HELD` so booking cannot consume them concurrently. Verified payment revokes them, ends the old period, starts the full Plus period, and grants three new credits atomically. Failed/expired checkout releases them to `AVAILABLE` or `EXPIRED`.
+The period fraction uses actual UTC seconds. Upgrade checkout changes included
+available credits to `UPGRADE_HELD` so booking cannot consume them concurrently.
+Verified payment revokes them, ends the old period, starts the full `PREMIUM`
+period, and grants three new credits atomically. Failed/expired checkout
+releases them to `AVAILABLE` or `EXPIRED`.
 
 Reserved credits are not offset or revoked by an upgrade; their appointments continue under the old snapshot. Consumed, expired, forfeited, and revoked credits have no upgrade value.
 
@@ -71,21 +98,35 @@ Reserved credits are not offset or revoked by an upgrade; their appointments con
 - Booking atomically reserves one slot and one earliest-expiring available credit.
 - Specialist rejection/cancellation/no-show, platform failure, and eligible user cancellation release the credit.
 - Rescheduling cancels the old appointment under its applicable credit rule and creates a new request; it never swaps or rewrites the old slot snapshot.
-- The specialist publishes discrete 60-minute `IN_APP_CHAT` or `IN_PERSON` slots. The user requests one at least four hours before start. Appointment creation snapshots interval, IANA timezone, mode, and applicable practice location; chat waiting begins ten minutes before start and send is authorized only in `[scheduledStartAt, scheduledEndAt)`.
-- `IN_PERSON` uses an active Consultation-owned practice location without room inventory. `IN_APP_VIDEO`, phone, and external meeting links remain deferred.
-- Only evidence-based or user-confirmed `COMPLETED` consumes the credit and creates one immutable earning snapshot; the specialist cannot complete unilaterally.
-- User late cancellation/no-show forfeits the credit but creates no earning under the current completed-only rule.
+- The specialist publishes discrete 60-minute `IN_APP_CHAT` or `IN_APP_VIDEO`
+  slots. Appointment creation snapshots interval, IANA timezone, and mode.
+- At scheduled end the channel closes and the appointment becomes
+  `SESSION_ENDED`; time expiry never auto-completes the appointment.
+- Only `COMPLETED` backed by accepted server/provider evidence consumes the
+  credit and creates one immutable earning snapshot. The specialist cannot
+  complete unilaterally.
+- `SESSION_ENDED`, cancellation, either no-show, and dispute create no earning.
 - Earnings move from `PENDING_SETTLEMENT` to `AVAILABLE`, then attach to at most one idempotent provider payout.
 - MoMo Disbursement is the only planned production payout adapter. Local/CI uses the deterministic fake implementing the same state contract.
 - A logical payout fixes its destination, currency, amount, and earning items. Each provider call is a numbered attempt: a definite `FAILED` attempt may be retried with a new provider idempotency key, while `UNKNOWN` is queried and blocks another transfer attempt. The payout becomes `SUCCEEDED` only after verified provider confirmation/status reconciliation.
-- Real MoMo payment and payout remain disabled until VND plan versions or an explicit versioned FX policy are approved; current USD marketing prices cannot be silently converted at checkout or payout time.
+- Real MoMo payment and payout remain disabled until the VND price table, fixed
+  VND `creditAllocation` values, and MoMo credentials are approved and
+  configured. Runtime FX conversion is prohibited.
 
 ## Required contracts and verification
 
-- OpenAPI: catalogue, checkout/status/history/cancel, upgrade quote/checkout/status, credit balance/history, booking and earnings/payout views.
+- OpenAPI: catalogue, purchase checkout/status/history, upgrade
+  quote/checkout/status, credit balance/history, booking, and earnings/payout
+  views; no downgrade or user-refund endpoint.
 - Provider webhook schema: the complete MoMo required-field contract above, full signature verification, partner/order/request/amount checks, replay, status lookup, chargeback, and safe failure handling.
-- Kafka facts: minimized subscription, appointment, and earning status changes through the transactional outbox.
-- Tests: concurrent last-credit booking versus upgrade, duplicate checkout/webhook/completion/payout, exact month/second rounding, payment/payout timeout and unknown outcome, renewal failure, expiry/held/reserved races, immediate cancellation with future/live appointment, chargeback, and authorization.
+- Kafka facts, only where ADR 0016 criteria require them: minimized
+  subscription, appointment, and earning status changes through the
+  transactional outbox.
+- Tests: concurrent last-credit booking versus upgrade, duplicate
+  purchase/webhook/completion/payout, exact period-second rounding,
+  payment/payout timeout and unknown outcome, period expiry and
+  held/reserved-credit races, appointment cancellation/no-show/dispute,
+  chargeback, and authorization.
 
 ## Remaining provider/configuration decisions
 
@@ -93,6 +134,7 @@ Reserved credits are not offset or revoked by an upgrade; their appointments con
 - MoMo credential provisioning, signature-key versioning/rotation, IP allow-list decision, and status-query reconciliation schedule;
 - settlement delay and dispute handling;
 - MoMo payout product access/credentials and encrypted destination onboarding;
-- VND plan prices or an explicit versioned FX policy;
+- exact VND `PLUS`/`PREMIUM` prices and fixed per-credit `creditAllocation`;
 - financial retention and chargeback reconciliation;
-- later `IN_APP_VIDEO` signalling/provider/security contract; chat/in-person duration, windows, and cancellation outcomes are fixed by ADR 0014.
+- `IN_APP_VIDEO` signaling/provider/security/evidence/failure contract; v2
+  rejects new in-person, phone, and external-link appointments.

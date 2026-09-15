@@ -2,14 +2,22 @@
 
 ## Business boundary
 
-Content/Notification owns reviewed self-help resource definitions, their versioned domain/band/pathway eligibility metadata, notification preferences, durable in-app notifications, templates, provider delivery attempts, and delivery outcomes. Review/publication permits public display but does not by itself make a resource SupportPlan-eligible. Care owns SupportEvaluation, proposal policy and the final plan-eligibility decision. Content/Notification never scores assessments, evaluates safety/support policy, or guarantees emergency response. PostgreSQL is authoritative; Brevo/push are replaceable adapters. ADR 0009 removes hotline catalogue ownership; ADR 0012 defines the forward eligibility boundary; ADR 0013 fixes exact eligibility roles as `PRIMARY` or `ADJUNCT` and prohibits adjunct content from satisfying a core slot.
+Content/Notification owns reviewed self-help resources and eligibility,
+reviewed area-directory entries, notification preferences, deterministic
+scheduler execution, durable notifications, templates, delivery attempts, and
+outcomes. Care owns safety, Support Guide, SupportEvaluation, the official
+SupportPlan, and final `PlanChangeRequest` decisions. Content/Notification never
+infers safety, proximity, or emergency response; ADR 0017 requires provenance
+and area wording for the directory and forbids automatic safety email.
 
 ## Use cases and acceptance
 
 | Capability | Main behavior | Acceptance |
 | --- | --- | --- |
 | Resources | Admin versions, publishes, retires and reviews localized self-help content and separately governed eligibility | Only reviewed active versions served; locale/effective/review dates explicit; future plan use also requires explicit domain/instrument-band/pathway eligibility; unavailable content has an explicit fallback status |
+| Area directory | Publish sourced, reviewed and verified entries for user-selected province/district/area | Source/provenance, `reviewedAt`, `verifiedAt`, address, phone, coverage and active state required; never claim nearest without coordinates/distance |
 | Preferences | User manages channel/category choices | Mandatory safety/security categories follow approved policy; owner authorization and optimistic locking enforced |
+| Reminder scheduling | Create at most one default wellbeing digest/day, explicit opt-in resource reminders, and one appointment reminder near one hour before start | Deterministic selection/deduplication; AI only phrases approved facts; no automatic safety email |
 | Notification history | Persist list/detail/read/delete state | Bounded cursor pagination; user sees own records only; read/delete idempotent; retention semantics explicit |
 | Domain notification | Consume minimized facts, select versioned template and create notification | Duplicate message creates one logical notification; replay policy prevents repeated external sends |
 | Provider delivery | Send through bounded adapter and track every attempt | Domain outcome independent; transient retry honors provider signals; terminal failure visible; no secrets/sensitive body in logs |
@@ -17,7 +25,8 @@ Content/Notification owns reviewed self-help resource definitions, their version
 
 ## Implementation design
 
-- Feature slices: `resources`, `preferences`, `notifications`, `templates`, `provider-delivery`.
+- Feature slices: `resources`, `area-directory`, `preferences`, `scheduling`,
+  `notifications`, `templates`, `provider-delivery`.
 - Runtime: Node.js 22 or newer, strict TypeScript, NestJS 11, Zod, `pg`, `node-pg-migrate`, KafkaJS, Pino, OpenTelemetry, Vitest, and Testcontainers as defined in `docs/nodejs-service-stack.md`.
 - Define public/admin OpenAPI and versioned consumed/published events first. PostgreSQL migrations include template/delivery-attempt aggregates and outbox/inbox deduplication.
 - Template rendering and provider APIs sit behind application ports. Optional delivery never becomes safety truth and cannot claim a human or emergency service was notified.
