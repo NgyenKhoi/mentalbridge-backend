@@ -181,11 +181,17 @@ await emit(javaPath, java);
 async function emit(path, content) {
   if (process.argv.includes('--check')) {
     const current = await readFile(path, 'utf8').catch(() => '');
-    if (current !== content) fail(`${path} is not synchronized with the OpenAPI contract`);
+    if (normalizeLineEndings(current) !== normalizeLineEndings(content)) {
+      fail(`${path} is not synchronized with the OpenAPI contract`);
+    }
     return;
   }
   await mkdir(dirname(path), { recursive: true });
   await writeFile(path, content, 'utf8');
+}
+
+function normalizeLineEndings(value) {
+  return value.replace(/\r\n/g, '\n');
 }
 
 function fail(message) {

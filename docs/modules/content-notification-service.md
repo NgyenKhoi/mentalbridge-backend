@@ -27,7 +27,7 @@ Content/Notification owns reviewed self-help resource definitions, their version
 
 - [x] CN-01 Scaffold the NestJS/TypeScript service with feature modules, typed configuration, health/readiness, lint, test, and build commands.
 - [ ] CN-02 Implement exact-version domain/band/pathway eligibility with approved `PRIMARY`/`ADJUNCT` roles (#50), plus notification template, mandatory-category, delivery retry and retention policies.
-  - [x] Exact-version eligibility provider and Care consumer are implemented; the notification-policy remainder stays open.
+  - [x] Exact-version eligibility provider, Care consumer, and initial controlled-demo item matrix are implemented; the notification-policy remainder stays open.
 - [ ] CN-03 Define resource/preference/notification OpenAPI and notification event schemas.
 - [x] CN-04 Add owner `node-pg-migrate` migrations, constraints/indexes and field dictionary entries.
 - [ ] CN-05 Implement reviewed content administration and safe current-resource reads.

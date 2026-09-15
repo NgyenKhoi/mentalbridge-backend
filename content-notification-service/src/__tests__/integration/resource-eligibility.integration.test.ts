@@ -7,6 +7,7 @@ import { GenericContainer, Wait, type StartedTestContainer } from 'testcontainer
 
 import type { ServiceConfiguration } from '../../configuration/configuration.js';
 import { DatabaseService } from '../../database/database.service.js';
+import { ResourceEligibilityBatchSchema } from '../../resources/resource-eligibility.dto.js';
 import {
   EligibilityCommandConflictError,
   ResourceEligibilityRepository,
@@ -25,6 +26,15 @@ const FUTURE_RESOURCE = '10000000-0000-4000-8000-000000000008';
 const ENDED_RESOURCE = '10000000-0000-4000-8000-000000000009';
 const BOUNDED_RESOURCE = '10000000-0000-4000-8000-000000000010';
 const migrationDirectory = fileURLToPath(new URL('../../../migrations', import.meta.url));
+const review1MigrationDirectory = fileURLToPath(
+  new URL('../../../migrations/review1', import.meta.url),
+);
+const controlledDemoFixturePath = fileURLToPath(
+  new URL(
+    '../../../../contracts/fixtures/content/resource-eligibility-v1-controlled-demo.json',
+    import.meta.url,
+  ),
+);
 
 describe('ResourceEligibilityRepository integration', () => {
   let container: StartedTestContainer;
@@ -53,6 +63,14 @@ describe('ResourceEligibilityRepository integration', () => {
       '6_add_resource_eligibility_v1.sql',
     ]) {
       await migrationPool.query(await readFile(join(migrationDirectory, name), 'utf8'));
+    }
+    for (const name of [
+      '1_seed_review1_controlled_resource.sql',
+      '2_publish_initial_resource_eligibility.sql',
+    ]) {
+      const sql = await readFile(join(review1MigrationDirectory, name), 'utf8');
+      await migrationPool.query(sql);
+      await migrationPool.query(sql);
     }
     const configuration: ServiceConfiguration = {
       NODE_ENV: 'test',
@@ -391,6 +409,166 @@ describe('ResourceEligibilityRepository integration', () => {
          AND indexname = 'uq_resource_eligibility_exact_version'`,
     );
     expect(indexes.rows).toHaveLength(1);
+  });
+
+  it('publishes the repeatable controlled-demo matrix and resolves the Care fixture', async () => {
+    const fixture = JSON.parse(await readFile(controlledDemoFixturePath, 'utf8')) as {
+      reviewEvidence: {
+        reviewerId: string;
+        reviewedAt: string;
+        effectiveAt: string;
+        expiresAt: string | null;
+        items: Array<{
+          resourceId: string;
+          contentVersion: string;
+          category: string;
+          locale: string;
+          publicationState: string;
+          decisions: Array<{
+            targetDomain: string;
+            decision: 'ELIGIBLE' | 'INELIGIBLE';
+            role: string | null;
+            instrument: string;
+            screeningLevels: string[];
+            supportTiers: string[];
+          }>;
+        }>;
+      };
+      request: unknown;
+      expectedResults: Array<{
+        requestId: string;
+        outcome: string;
+        reasonCode: string;
+        role: string | null;
+      }>;
+    };
+    const inventory = await migrationPool.query<{
+      resource_count: string;
+      publication_count: string;
+      declaration_count: string;
+    }>(
+      `SELECT
+         count(DISTINCT r.id)::text AS resource_count,
+         count(DISTINCT p.id)::text AS publication_count,
+         count(d.publication_id)::text AS declaration_count
+       FROM resource r
+       LEFT JOIN resource_eligibility_publication p
+         ON p.resource_id = r.id AND p.content_version = r.version
+       LEFT JOIN resource_eligibility_declaration d ON d.publication_id = p.id
+       WHERE r.id = ANY($1::uuid[])`,
+      [fixture.reviewEvidence.items.map(({ resourceId }) => resourceId)],
+    );
+    expect(inventory.rows[0]).toEqual({
+      resource_count: '6',
+      publication_count: '6',
+      declaration_count: '10',
+    });
+
+    for (const item of fixture.reviewEvidence.items) {
+      const resource = await migrationPool.query<{
+        resource_id: string;
+        content_version: string;
+        category: string;
+        locale: string;
+        status: string;
+        reviewed_by: string;
+        reviewed_at: Date;
+        policy_version: string;
+        effective_at: Date;
+        expires_at: Date | null;
+        published_by: string;
+        published_at: Date;
+      }>(
+        `SELECT r.id::text AS resource_id, r.version::text AS content_version,
+           r.category, r.locale, r.status, r.reviewed_by::text, r.reviewed_at,
+           p.policy_version, p.effective_at, p.expires_at,
+           p.published_by::text, p.published_at
+         FROM resource r
+         JOIN resource_eligibility_publication p
+           ON p.resource_id = r.id AND p.content_version = r.version
+         WHERE r.id = $1 AND r.version = $2::bigint`,
+        [item.resourceId, item.contentVersion],
+      );
+      expect(resource.rows).toHaveLength(1);
+      expect(resource.rows[0]).toMatchObject({
+        resource_id: item.resourceId,
+        content_version: item.contentVersion,
+        category: item.category,
+        locale: item.locale,
+        status: item.publicationState,
+        reviewed_by: fixture.reviewEvidence.reviewerId,
+        policy_version: 'content-eligibility-v1',
+        expires_at: fixture.reviewEvidence.expiresAt,
+        published_by: fixture.reviewEvidence.reviewerId,
+      });
+      expect(resource.rows[0].reviewed_at).toBeInstanceOf(Date);
+      expect(resource.rows[0].effective_at.getTime()).toBe(
+        Date.parse(fixture.reviewEvidence.effectiveAt),
+      );
+      expect(resource.rows[0].published_at.getTime()).toBe(
+        Date.parse(fixture.reviewEvidence.reviewedAt),
+      );
+
+      const declarations = await migrationPool.query<{
+        targetDomain: string;
+        role: string;
+        instrument: string;
+        screeningLevels: string[];
+        supportTiers: string[];
+      }>(
+        `SELECT d.target_domain AS "targetDomain", d.eligibility_role AS role,
+           d.instrument, d.screening_levels AS "screeningLevels",
+           d.support_tiers AS "supportTiers"
+         FROM resource_eligibility_declaration d
+         JOIN resource_eligibility_publication p ON p.id = d.publication_id
+         WHERE p.resource_id = $1 AND p.content_version = $2::bigint
+         ORDER BY d.target_domain`,
+        [item.resourceId, item.contentVersion],
+      );
+      const expectedDeclarations = item.decisions
+        .filter(({ decision }) => decision === 'ELIGIBLE')
+        .map(({ targetDomain, role, instrument, screeningLevels, supportTiers }) => ({
+          targetDomain,
+          role,
+          instrument,
+          screeningLevels,
+          supportTiers,
+        }))
+        .sort((left, right) => left.targetDomain.localeCompare(right.targetDomain));
+      expect(declarations.rows).toEqual(expectedDeclarations);
+    }
+
+    const request = ResourceEligibilityBatchSchema.parse(fixture.request);
+    const response = await repository.resolve(request.requests);
+
+    expect(
+      response.results.map(({ requestId, outcome, reasonCode, role }) => ({
+        requestId,
+        outcome,
+        reasonCode,
+        role,
+      })),
+    ).toEqual(fixture.expectedResults);
+  });
+
+  it('rejects a controlled-demo migration rerun after exact content drift', async () => {
+    const sql = await readFile(
+      join(review1MigrationDirectory, '2_publish_initial_resource_eligibility.sql'),
+      'utf8',
+    );
+    await migrationPool.query('BEGIN');
+    try {
+      await migrationPool.query(
+        `UPDATE resource
+         SET content_body = content_body || ' drift'
+         WHERE id = '00000000-0000-4000-8000-000000000102'`,
+      );
+      await expect(migrationPool.query(sql)).rejects.toThrow(
+        /controlled demo resource inventory differs from the reviewed eligibility ledger/,
+      );
+    } finally {
+      await migrationPool.query('ROLLBACK');
+    }
   });
 });
 
