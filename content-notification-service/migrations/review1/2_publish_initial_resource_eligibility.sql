@@ -54,22 +54,81 @@ ON CONFLICT (id) DO NOTHING;
 DO $$
 BEGIN
   IF EXISTS (
-    WITH expected(id, category, title) AS (
+    WITH expected(
+      id, category, title, summary, content_body, reviewed_at, effective_at
+    ) AS (
       VALUES
-        ('00000000-0000-4000-8000-000000000101'::uuid, 'BREATHING', 'Bài thực hành thở chậm (dữ liệu demo)'),
-        ('00000000-0000-4000-8000-000000000102'::uuid, 'ARTICLE', 'Hiểu về dấu hiệu trầm cảm (dữ liệu demo)'),
-        ('00000000-0000-4000-8000-000000000103'::uuid, 'ARTICLE', 'Hiểu về lo âu (dữ liệu demo)'),
-        ('00000000-0000-4000-8000-000000000104'::uuid, 'VIDEO', 'Bắt đầu một hoạt động nhỏ (dữ liệu demo)'),
-        ('00000000-0000-4000-8000-000000000105'::uuid, 'ARTICLE', 'Chuẩn bị cho giấc ngủ (dữ liệu demo)'),
-        ('00000000-0000-4000-8000-000000000106'::uuid, 'JOURNALING', 'Chuẩn bị trao đổi với chuyên gia (dữ liệu demo)')
+        (
+          '00000000-0000-4000-8000-000000000101'::uuid,
+          'BREATHING',
+          'Bài thực hành thở chậm (dữ liệu demo)',
+          'Nội dung tổng hợp dành riêng cho Review 1, không thay thế tư vấn chuyên môn.',
+          'Ngồi ở tư thế thoải mái, hít vào chậm và thở ra chậm. Dừng lại nếu bạn thấy khó chịu.',
+          TIMESTAMPTZ '2026-01-01 00:00:00+00',
+          TIMESTAMPTZ '2026-01-01 00:00:00+00'
+        ),
+        (
+          '00000000-0000-4000-8000-000000000102'::uuid,
+          'ARTICLE',
+          'Hiểu về dấu hiệu trầm cảm (dữ liệu demo)',
+          'Tài liệu giáo dục tâm lý giúp nhận biết dấu hiệu và giới hạn của tự hỗ trợ.',
+          'Các dấu hiệu có thể ảnh hưởng khác nhau đến mỗi người. Nội dung này giúp bạn quan sát trải nghiệm của mình và không thay thế đánh giá chuyên môn.',
+          TIMESTAMPTZ '2026-09-15 00:00:00+00',
+          TIMESTAMPTZ '2026-09-15 00:00:00+00'
+        ),
+        (
+          '00000000-0000-4000-8000-000000000103'::uuid,
+          'ARTICLE',
+          'Hiểu về lo âu (dữ liệu demo)',
+          'Tài liệu giáo dục tâm lý giúp nhận biết phản ứng lo âu và giới hạn của tự hỗ trợ.',
+          'Lo âu có thể xuất hiện qua suy nghĩ, cảm xúc và phản ứng cơ thể. Nội dung này không thay thế đánh giá hoặc hỗ trợ chuyên môn.',
+          TIMESTAMPTZ '2026-09-15 00:00:00+00',
+          TIMESTAMPTZ '2026-09-15 00:00:00+00'
+        ),
+        (
+          '00000000-0000-4000-8000-000000000104'::uuid,
+          'VIDEO',
+          'Bắt đầu một hoạt động nhỏ (dữ liệu demo)',
+          'Bài thực hành kích hoạt hành vi với một bước nhỏ, cụ thể và vừa sức.',
+          'Chọn một hoạt động đơn giản có ý nghĩa với bạn, xác định bước đầu tiên và dừng lại nếu hoạt động làm bạn khó chịu hơn.',
+          TIMESTAMPTZ '2026-09-15 00:00:00+00',
+          TIMESTAMPTZ '2026-09-15 00:00:00+00'
+        ),
+        (
+          '00000000-0000-4000-8000-000000000105'::uuid,
+          'ARTICLE',
+          'Chuẩn bị cho giấc ngủ (dữ liệu demo)',
+          'Gợi ý thói quen thư giãn trước giờ ngủ, chỉ dùng như nội dung bổ trợ.',
+          'Thử giữ một khung giờ thư giãn ổn định và giảm kích thích trước khi ngủ. Nội dung này không phải điều trị rối loạn giấc ngủ.',
+          TIMESTAMPTZ '2026-09-15 00:00:00+00',
+          TIMESTAMPTZ '2026-09-15 00:00:00+00'
+        ),
+        (
+          '00000000-0000-4000-8000-000000000106'::uuid,
+          'JOURNALING',
+          'Chuẩn bị trao đổi với chuyên gia (dữ liệu demo)',
+          'Các câu hỏi gợi ý để người dùng chuẩn bị cho một cuộc trao đổi chuyên môn.',
+          'Bạn có thể ghi lại điều đang gây khó khăn, điều đã thử và câu hỏi muốn trao đổi. Tài nguyên này không đặt lịch và không cung cấp hướng dẫn an toàn khẩn cấp.',
+          TIMESTAMPTZ '2026-09-15 00:00:00+00',
+          TIMESTAMPTZ '2026-09-15 00:00:00+00'
+        )
     )
     SELECT 1
     FROM expected e
     LEFT JOIN resource r ON r.id = e.id
-    WHERE r.id IS NULL OR r.category <> e.category OR r.title <> e.title OR r.locale <> 'vi-VN'
-       OR r.status <> 'PUBLISHED'
-       OR r.reviewed_by <> '00000000-0000-4000-8000-000000000001'::uuid
-       OR r.reviewed_at IS NULL OR r.version <> 0
+    WHERE r.id IS NULL
+       OR r.category IS DISTINCT FROM e.category
+       OR r.title IS DISTINCT FROM e.title
+       OR r.summary IS DISTINCT FROM e.summary
+       OR r.content_body IS DISTINCT FROM e.content_body
+       OR r.external_url IS NOT NULL
+       OR r.locale IS DISTINCT FROM 'vi-VN'
+       OR r.status IS DISTINCT FROM 'PUBLISHED'
+       OR r.reviewed_by IS DISTINCT FROM '00000000-0000-4000-8000-000000000001'::uuid
+       OR r.reviewed_at IS DISTINCT FROM e.reviewed_at
+       OR r.effective_at IS DISTINCT FROM e.effective_at
+       OR r.expires_at IS NOT NULL
+       OR r.version IS DISTINCT FROM 0
   ) THEN
     RAISE EXCEPTION 'controlled demo resource inventory differs from the reviewed eligibility ledger';
   END IF;

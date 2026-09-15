@@ -550,6 +550,26 @@ describe('ResourceEligibilityRepository integration', () => {
       })),
     ).toEqual(fixture.expectedResults);
   });
+
+  it('rejects a controlled-demo migration rerun after exact content drift', async () => {
+    const sql = await readFile(
+      join(review1MigrationDirectory, '2_publish_initial_resource_eligibility.sql'),
+      'utf8',
+    );
+    await migrationPool.query('BEGIN');
+    try {
+      await migrationPool.query(
+        `UPDATE resource
+         SET content_body = content_body || ' drift'
+         WHERE id = '00000000-0000-4000-8000-000000000102'`,
+      );
+      await expect(migrationPool.query(sql)).rejects.toThrow(
+        /controlled demo resource inventory differs from the reviewed eligibility ledger/,
+      );
+    } finally {
+      await migrationPool.query('ROLLBACK');
+    }
+  });
 });
 
 function publicationRequest() {

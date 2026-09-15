@@ -340,6 +340,28 @@
         "screeningLevel": "MILD",
         "supportTier": "SELF_GUIDED_SUPPORT",
         "locale": "vi-VN"
+      },
+      {
+        "requestId": "10000000-0000-4000-a000-000000000009",
+        "resourceId": "00000000-0000-4000-8000-000000000102",
+        "contentVersion": "0",
+        "targetDomain": "ANXIETY_SYMPTOMS",
+        "requiredRole": "PRIMARY_OR_ADJUNCT",
+        "instrument": "GAD_7",
+        "screeningLevel": "MILD",
+        "supportTier": "SELF_GUIDED_SUPPORT",
+        "locale": "vi-VN"
+      },
+      {
+        "requestId": "10000000-0000-4000-a000-000000000010",
+        "resourceId": "00000000-0000-4000-8000-000000000103",
+        "contentVersion": "0",
+        "targetDomain": "DEPRESSIVE_SYMPTOMS",
+        "requiredRole": "PRIMARY_OR_ADJUNCT",
+        "instrument": "PHQ_9",
+        "screeningLevel": "MILD",
+        "supportTier": "SELF_GUIDED_SUPPORT",
+        "locale": "vi-VN"
       }
     ]
   },
@@ -390,6 +412,18 @@
       "requestId": "10000000-0000-4000-a000-000000000008",
       "outcome": "INELIGIBLE",
       "reasonCode": "PRIMARY_REQUIRED",
+      "role": null
+    },
+    {
+      "requestId": "10000000-0000-4000-a000-000000000009",
+      "outcome": "INELIGIBLE",
+      "reasonCode": "DOMAIN_OR_PATHWAY_NOT_ELIGIBLE",
+      "role": null
+    },
+    {
+      "requestId": "10000000-0000-4000-a000-000000000010",
+      "outcome": "INELIGIBLE",
+      "reasonCode": "DOMAIN_OR_PATHWAY_NOT_ELIGIBLE",
       "role": null
     }
   ]

@@ -132,8 +132,8 @@ for (const item of controlledDemoFixture.reviewEvidence.items) {
     }
   }
 }
-assert.equal(controlledDemoFixture.request.requests.length, 8);
-assert.equal(controlledDemoFixture.expectedResults.length, 8);
+assert.equal(controlledDemoFixture.request.requests.length, 10);
+assert.equal(controlledDemoFixture.expectedResults.length, 10);
 assert.deepEqual(
   controlledDemoFixture.expectedResults.map(({ outcome }) => outcome),
   [
@@ -145,7 +145,13 @@ assert.deepEqual(
     'INELIGIBLE',
     'STALE',
     'INELIGIBLE',
+    'INELIGIBLE',
+    'INELIGIBLE',
   ],
+);
+assert.deepEqual(
+  controlledDemoFixture.expectedResults.slice(-2).map(({ reasonCode }) => reasonCode),
+  ['DOMAIN_OR_PATHWAY_NOT_ELIGIBLE', 'DOMAIN_OR_PATHWAY_NOT_ELIGIBLE'],
 );
 console.log(
   'Validated every Content/Notification owner migration and the controlled eligibility matrix',
