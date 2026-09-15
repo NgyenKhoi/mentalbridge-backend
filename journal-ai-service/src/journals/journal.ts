@@ -55,10 +55,12 @@ export interface Revision {
   revision: number;
   createdAt: Date;
   content: EncryptedContent;
+  mood?: EncryptedContent;
   contentByteLength: number;
   contentHash: string;
   analysisInvalidatedAt: Date | null;
 }
+export type JournalMood = "GREAT" | "GOOD" | "OKAY" | "LOW" | "VERY_LOW";
 export interface MutationCommand {
   keyHash: string;
   fingerprint: string;
@@ -124,6 +126,12 @@ export interface JournalStore {
 }
 
 const uuid = z.uuid();
+const moodSchema = z.enum(["GREAT", "GOOD", "OKAY", "LOW", "VERY_LOW"]);
+const journalTextSchema = z
+  .string()
+  .min(1)
+  .max(12_000)
+  .refine((text) => text.trim().length > 0, "Journal text cannot be blank");
 const tagsSchema = z
   .array(z.string().trim().min(1).max(40))
   .max(20)
@@ -132,13 +140,15 @@ const createSchema = z
   .object({
     clientEntryId: uuid,
     occurredAt: z.iso.datetime({ offset: true }),
-    content: z.object({ text: z.string().min(1).max(12_000) }).strict(),
+    content: z.object({ text: journalTextSchema }).strict(),
+    mood: moodSchema.optional(),
     tags: tagsSchema.default([]),
   })
   .strict();
 const reviseSchema = z
   .object({
-    content: z.object({ text: z.string().min(1).max(12_000) }).strict(),
+    content: z.object({ text: journalTextSchema }).strict(),
+    mood: moodSchema.optional(),
     tags: tagsSchema.optional(),
   })
   .strict();
@@ -253,6 +263,65 @@ export class JournalEncryption {
         decipher.update(binaryBuffer(revision.content.ciphertext)),
         decipher.final(),
       ]).toString("utf8");
+    } catch {
+      throw new InternalServerErrorException();
+    }
+  }
+  encryptMood(
+    ownerAccountId: string,
+    entryId: string,
+    revision: number,
+    mood: JournalMood,
+  ): EncryptedContent {
+    const iv = randomBytes(12);
+    const encryptedAt = new Date();
+    const cipher = createCipheriv(
+      "aes-256-gcm",
+      this.configuration.JOURNAL_ENCRYPTION_KEY,
+      iv,
+    );
+    cipher.setAAD(
+      Buffer.from(`${ownerAccountId}:${entryId}:${String(revision)}:mood`),
+    );
+    const ciphertext = Buffer.concat([
+      cipher.update(mood, "utf8"),
+      cipher.final(),
+    ]);
+    return {
+      ciphertext,
+      iv,
+      tag: cipher.getAuthTag(),
+      algorithm: "AES-256-GCM",
+      keyId: this.configuration.JOURNAL_ENCRYPTION_KEY_ID,
+      encryptedAt,
+    };
+  }
+  decryptMood(
+    ownerAccountId: string,
+    entryId: string,
+    revision: Revision,
+  ): JournalMood | null {
+    if (!revision.mood) return null;
+    if (revision.mood.keyId !== this.configuration.JOURNAL_ENCRYPTION_KEY_ID)
+      throw new InternalServerErrorException();
+    try {
+      const decipher = createDecipheriv(
+        "aes-256-gcm",
+        this.configuration.JOURNAL_ENCRYPTION_KEY,
+        binaryBuffer(revision.mood.iv),
+      );
+      decipher.setAAD(
+        Buffer.from(
+          `${ownerAccountId}:${entryId}:${String(revision.revision)}:mood`,
+        ),
+      );
+      decipher.setAuthTag(binaryBuffer(revision.mood.tag));
+      return moodSchema.parse(
+        Buffer.concat([
+          decipher.update(binaryBuffer(revision.mood.ciphertext)),
+          decipher.final(),
+        ]).toString("utf8"),
+      );
     } catch {
       throw new InternalServerErrorException();
     }
@@ -471,6 +540,11 @@ export class JournalService {
       entry._id,
       revision,
     );
+    const mood = this.encryption.decryptMood(
+      entry.ownerAccountId,
+      entry._id,
+      revision,
+    );
     return {
       id: entry._id,
       ownerAccountId: entry.ownerAccountId,
@@ -480,6 +554,7 @@ export class JournalService {
       updatedAt: (updatedAt ?? entry.updatedAt).toISOString(),
       deleted: false,
       tags,
+      mood,
       encryption: {
         algorithm: revision.content.algorithm,
         keyId: revision.content.keyId,
@@ -533,6 +608,16 @@ export class JournalService {
       revision: 1,
       createdAt: now,
       content: this.encryption.encrypt(ownerAccountId, id, 1, text),
+      ...(parsed.data.mood
+        ? {
+            mood: this.encryption.encryptMood(
+              ownerAccountId,
+              id,
+              1,
+              parsed.data.mood,
+            ),
+          }
+        : {}),
       contentByteLength: Buffer.byteLength(text, "utf8"),
       contentHash: this.encryption.contentHash(text),
       analysisInvalidatedAt: null,
@@ -641,10 +726,27 @@ export class JournalService {
     const nextRevision = expectedRevision + 1;
     const text = parsed.data.content.text;
     const tags = parsed.data.tags ?? entry.tags;
+    const mood =
+      parsed.data.mood ??
+      this.encryption.decryptMood(
+        entry.ownerAccountId,
+        entry._id,
+        this.revision(entry),
+      );
     const revision: Revision = {
       revision: nextRevision,
       createdAt: now,
       content: this.encryption.encrypt(ownerAccountId, id, nextRevision, text),
+      ...(mood
+        ? {
+            mood: this.encryption.encryptMood(
+              ownerAccountId,
+              id,
+              nextRevision,
+              mood,
+            ),
+          }
+        : {}),
       contentByteLength: Buffer.byteLength(text, "utf8"),
       contentHash: this.encryption.contentHash(text),
       analysisInvalidatedAt: now,

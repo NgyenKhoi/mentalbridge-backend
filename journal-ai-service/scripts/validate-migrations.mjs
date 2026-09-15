@@ -5,6 +5,7 @@ const require = createRequire(import.meta.url);
 const migration = require("../migrations/001_journal_entries_baseline.cjs");
 const commandsMigration = require("../migrations/002_journal_mutation_commands.cjs");
 const replayMigration = require("../migrations/003_journal_replay_snapshots_and_cursor_index.cjs");
+const moodMigration = require("../migrations/004_journal_revision_mood.cjs");
 
 assert.equal(migration.collectionName, "journal_entries");
 assert.equal(typeof migration.up, "function");
@@ -41,7 +42,19 @@ assert.ok(
     .response,
 );
 assert.equal(replayMigration.cursorIndex.deleted, 1);
+assert.equal(typeof moodMigration.up, "function");
+assert.equal(typeof moodMigration.down, "function");
+assert.ok(
+  moodMigration.validator.$jsonSchema.properties.revisions.items.properties
+    .mood,
+);
+assert.equal(
+  moodMigration.validator.$jsonSchema.properties.revisions.items.required.includes(
+    "mood",
+  ),
+  false,
+);
 
 console.log(
-  "Validated Mongo migrations: 001_journal_entries_baseline.cjs, 002_journal_mutation_commands.cjs, 003_journal_replay_snapshots_and_cursor_index.cjs",
+  "Validated Mongo migrations: 001_journal_entries_baseline.cjs through 004_journal_revision_mood.cjs",
 );
