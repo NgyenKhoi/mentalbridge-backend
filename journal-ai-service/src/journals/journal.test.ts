@@ -148,6 +148,7 @@ const payload = {
   clientEntryId: "33333333-3333-4333-8333-333333333333",
   occurredAt: "2026-01-01T00:00:00.000Z",
   content: { text: "private entry" },
+  mood: "GOOD" as const,
   tags: ["daily"],
 };
 const service = (store = new MemoryStore()) => ({
@@ -159,16 +160,27 @@ void test("encrypts at rest and supports exact mutation retries", async () => {
   const subject = service();
   const created = await subject.value.create(request(payload));
   assert.equal(created.content.text, "private entry");
+  assert.equal(created.mood, "GOOD");
   const ciphertext = subject.store.entries[0]?.revisions[0]?.content.ciphertext;
   assert.ok(Buffer.isBuffer(ciphertext));
   assert.equal(ciphertext.includes(Buffer.from("private entry")), false);
+  const encryptedMood =
+    subject.store.entries[0]?.revisions[0]?.mood?.ciphertext;
+  assert.ok(Buffer.isBuffer(encryptedMood));
+  assert.equal(encryptedMood.includes(Buffer.from("GOOD")), false);
   const duplicate = await subject.value.create(request(payload));
   assert.equal(duplicate.id, created.id);
   const revised = await subject.value.revise(
-    request({ content: { text: "revised" } }, owner, "revision-key-001", 1),
+    request(
+      { content: { text: "revised" }, mood: "LOW" },
+      owner,
+      "revision-key-001",
+      1,
+    ),
     created.id,
   );
   assert.equal(revised.currentRevision, 2);
+  assert.equal(revised.mood, "LOW");
   await subject.value.revise(
     request(
       { content: { text: "later" }, tags: ["later"] },
@@ -179,7 +191,12 @@ void test("encrypts at rest and supports exact mutation retries", async () => {
     created.id,
   );
   const retry = await subject.value.revise(
-    request({ content: { text: "revised" } }, owner, "revision-key-001", 1),
+    request(
+      { content: { text: "revised" }, mood: "LOW" },
+      owner,
+      "revision-key-001",
+      1,
+    ),
     created.id,
   );
   assert.deepEqual(retry, revised);
@@ -191,6 +208,44 @@ void test("encrypts at rest and supports exact mutation retries", async () => {
         created.id,
       ),
     ConflictException,
+  );
+});
+
+void test("keeps legacy clients compatible and preserves mood when revise omits it", async () => {
+  const subject = service();
+  const legacyPayload = { ...payload, mood: undefined };
+  const legacy = await subject.value.create(request(legacyPayload));
+  assert.equal(legacy.mood, null);
+
+  const created = await subject.value.create(
+    request(
+      { ...payload, clientEntryId: "44444444-4444-4444-8444-444444444444" },
+      owner,
+      "command-key-00002",
+    ),
+  );
+  const revised = await subject.value.revise(
+    request(
+      { content: { text: "mood stays encrypted" } },
+      owner,
+      "revision-key-005",
+      1,
+    ),
+    created.id,
+  );
+  assert.equal(revised.mood, "GOOD");
+});
+
+void test("rejects blank journal text and unsupported moods", async () => {
+  const subject = service();
+  await assert.rejects(
+    () =>
+      subject.value.create(request({ ...payload, content: { text: "   " } })),
+    BadRequestException,
+  );
+  await assert.rejects(
+    () => subject.value.create(request({ ...payload, mood: "EXCITED" })),
+    BadRequestException,
   );
 });
 

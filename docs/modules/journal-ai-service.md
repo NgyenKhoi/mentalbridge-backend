@@ -6,15 +6,15 @@ Journal/AI owns encrypted journal entries/revisions, structured analysis results
 
 ## Use cases and acceptance
 
-| Capability | Main behavior | Acceptance |
-| --- | --- | --- |
-| Journal | Create, read, edit/revise, list and delete private entries | Owner authorization; bounded cursor history; encryption metadata; edits create revisions and invalidate current analysis; no plaintext logs/indexes |
-| AI Companion analysis | On explicit user request, check current consent, create one job for an exact journal revision, invoke one provider, and normalize the result | `202` asynchronous job; idempotent duplicate; one bounded retry only for 429/5xx/transport; no cross-provider fallback; journal remains readable on failure |
-| Longitudinal context | Compare exact consented journal revisions across bounded periods and return contextual/emotional changes plus data coverage | Only available-entry claims; sparse/imbalanced evidence returns `INSUFFICIENT_DATA`; no clinical improvement conclusion or combined score |
-| Governed suggestion | Return reflection signals and one allow-listed navigation action | AI cannot score, diagnose, select eligibility/templates, mutate a SupportPlan, or prescribe; Care decides and the user confirms |
-| Specialist read | Return only entries/indicators allowed by a current Care decision | Exact subject/scope/range/entry authorization; fail closed; minimized audited response |
-| Dataset governance | Import licensed de-identified datasets and immutable versions | Production journals excluded by default; private assets; validation rejects label/schema/leakage violations |
-| Benchmark | Run the same split/config through configured providers; start with OpenAI and Gemini, with PhoBERT optional later | Reproducible versions/split; per-class metrics, latency, errors and cost; retry never duplicates predictions; no dependency on the deferred worker |
+| Capability            | Main behavior                                                                                                                                | Acceptance                                                                                                                                                              |
+| --------------------- | -------------------------------------------------------------------------------------------------------------------------------------------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| Journal               | Create, read, edit/revise, list and delete private entries with an intentional mood check-in                                                 | Owner authorization; bounded cursor history; encrypted per-revision mood and content; edits create revisions and invalidate current analysis; no plaintext logs/indexes |
+| AI Companion analysis | On explicit user request, check current consent, create one job for an exact journal revision, invoke one provider, and normalize the result | `202` asynchronous job; idempotent duplicate; one bounded retry only for 429/5xx/transport; no cross-provider fallback; journal remains readable on failure             |
+| Longitudinal context  | Compare exact consented journal revisions across bounded periods and return contextual/emotional changes plus data coverage                  | Only available-entry claims; sparse/imbalanced evidence returns `INSUFFICIENT_DATA`; no clinical improvement conclusion or combined score                               |
+| Governed suggestion   | Return reflection signals and one allow-listed navigation action                                                                             | AI cannot score, diagnose, select eligibility/templates, mutate a SupportPlan, or prescribe; Care decides and the user confirms                                         |
+| Specialist read       | Return only entries/indicators allowed by a current Care decision                                                                            | Exact subject/scope/range/entry authorization; fail closed; minimized audited response                                                                                  |
+| Dataset governance    | Import licensed de-identified datasets and immutable versions                                                                                | Production journals excluded by default; private assets; validation rejects label/schema/leakage violations                                                             |
+| Benchmark             | Run the same split/config through configured providers; start with OpenAI and Gemini, with PhoBERT optional later                            | Reproducible versions/split; per-class metrics, latency, errors and cost; retry never duplicates predictions; no dependency on the deferred worker                      |
 
 ## Implementation design
 
@@ -43,3 +43,19 @@ Journal/AI owns encrypted journal entries/revisions, structured analysis results
 ## MB-236 delivery boundary
 
 MB-236 delivers JAI-06 plus the journal-only portions of JAI-03 and JAI-05 for create/list/detail/revise/delete. The broader JAI-03 and JAI-05 items remain open because analysis, datasets, benchmarks, and PostgreSQL job history are not part of this delivery. It does not call an AI provider, create analysis jobs, publish Kafka analysis commands, import datasets, or run benchmarks.
+
+## Story 6201 authoring decision
+
+Journal authoring remains bounded plain text. The approved mood vocabulary is
+`GREAT`, `GOOD`, `OKAY`, `LOW`, and `VERY_LOW`; it records the user's selected
+reflection and is not a score, diagnosis, or inferred sentiment. The frontend
+owns localized labels and emoji. Journal/AI encrypts mood independently inside
+each revision, returns `null` for legacy revisions, and preserves the current
+mood when a compatible older client omits it during revise.
+
+Saving is explicit and successful create/revise calls produce one durable
+revision. There is no server autosave and no browser-persisted raw journal
+draft. The frontend retains a draft in memory after validation, dependency, or
+revision-conflict failures and warns before closing the editor or navigating
+away with unsaved changes. Prompt selection is presentation-only and is not
+persisted.

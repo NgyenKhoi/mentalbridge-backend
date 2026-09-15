@@ -17,6 +17,7 @@ The service provides:
 - graceful shutdown for `SIGINT` and `SIGTERM`
 - owner-scoped journal create, list, detail, revise, and tombstone deletion
 - AES-256-GCM encrypted journal revisions with lifetime idempotency records
+- optional backwards-compatible, user-selected mood encrypted with each revision
 - optimistic concurrency through `If-Match` and deterministic cursor pagination
 - lint, type-check, test, and build scripts
 - production multi-stage Docker image
@@ -95,6 +96,15 @@ Incoming requests echo a valid bounded `x-correlation-id` or receive a generated
 - MongoDB migration baseline: `migrations/001_journal_entries_baseline.cjs`
 - Journal mutation-command validator and unique index: `migrations/002_journal_mutation_commands.cjs`
 - Immutable replay metadata and cursor-index alignment: `migrations/003_journal_replay_snapshots_and_cursor_index.cjs`
+- Encrypted per-revision mood validation: `migrations/004_journal_revision_mood.cjs`
+
+Story 6201 keeps journal content plain text and adds the stable `GREAT`, `GOOD`,
+`OKAY`, `LOW`, and `VERY_LOW` mood labels. The API accepts an omitted mood for
+older clients and legacy entries return `null`; the current editor requires an
+explicit selection. Mood values are encrypted in the owning revision and are
+never indexed or logged. Omitting mood during a revision preserves the current
+value. Draft protection is client-owned, explicit-save only, and does not put
+raw journal text in browser persistence.
 
 Run `npm run contract:check` and `npm run migration:check` for static validation. `npm run test:integration` builds the service and runs the HTTP CRUD/concurrency suite against the explicitly configured disposable MongoDB database; it covers cursor tie-breakers/index use, exact mutation replay after more than 32 later commands, conflicting key reuse, owner isolation, tombstones, revision concurrency, and bounded dependency failure. The test refuses a non-disposable database name and drops its database in cleanup.
 

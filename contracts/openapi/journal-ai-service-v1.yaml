@@ -316,6 +316,9 @@ components:
           format: date-time
         content:
           $ref: "#/components/schemas/JournalContentInput"
+        mood:
+          $ref: "#/components/schemas/JournalMood"
+          description: Optional during the compatibility window; new MentalBridge editors require an explicit user selection.
         tags:
           type: array
           maxItems: 20
@@ -330,6 +333,9 @@ components:
       properties:
         content:
           $ref: "#/components/schemas/JournalContentInput"
+        mood:
+          $ref: "#/components/schemas/JournalMood"
+          description: When omitted by an older client, the current revision mood is preserved.
         tags:
           type: array
           maxItems: 20
@@ -346,7 +352,12 @@ components:
           type: string
           minLength: 1
           maxLength: 12000
-          description: Plaintext is accepted only at the API boundary and must not be logged or indexed.
+          pattern: '.*\S.*'
+          description: Non-blank plaintext is accepted only at the API boundary and must not be logged or indexed.
+    JournalMood:
+      type: string
+      description: User-selected reflection label; it is not a clinical score and the emoji presentation is client-owned.
+      enum: [GREAT, GOOD, OKAY, LOW, VERY_LOW]
     JournalEntryMetadata:
       type: object
       required:
@@ -358,6 +369,7 @@ components:
         - updatedAt
         - deleted
         - tags
+        - mood
         - encryption
         - analysisState
       properties:
@@ -385,6 +397,11 @@ components:
           type: array
           items:
             type: string
+        mood:
+          description: Mood stored with the current encrypted revision; null only for entries written by compatible legacy clients.
+          anyOf:
+            - $ref: "#/components/schemas/JournalMood"
+            - type: "null"
         encryption:
           $ref: "#/components/schemas/EncryptionMetadata"
         analysisState:

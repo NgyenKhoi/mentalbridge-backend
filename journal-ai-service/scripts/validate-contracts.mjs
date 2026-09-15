@@ -99,6 +99,8 @@ const journalList = schemas?.JournalListResponse;
 const detailContent = journalEntry?.allOf?.[1]?.properties?.content;
 const listContent =
   journalList?.properties?.items?.items?.allOf?.[1]?.properties?.content;
+const moods = schemas?.JournalMood?.enum;
+const journalText = schemas?.JournalContentInput?.properties?.text;
 
 if (!detailContent?.required?.includes("text")) {
   throw new Error(
@@ -111,6 +113,18 @@ if (
   listContent.required.includes("text")
 ) {
   throw new Error("Journal list responses must use minimized summaries");
+}
+
+if (
+  !Array.isArray(moods) ||
+  moods.join(",") !== "GREAT,GOOD,OKAY,LOW,VERY_LOW" ||
+  !schemas?.JournalEntryMetadata?.required?.includes("mood")
+) {
+  throw new Error("Journal mood contract differs from Story 6201");
+}
+
+if (journalText?.pattern !== ".*\\S.*") {
+  throw new Error("Journal text must reject whitespace-only writes");
 }
 
 console.log(

@@ -160,12 +160,15 @@ try {
             Add-Failure 'PostgreSQL migration changed without the field data dictionary'
         }
 
-        $realtimeMongoMigrationChanged = Has-Changed $changedFiles '^realtime-service/migrations/.+\.(js|cjs|mjs|ts)$'
-        if ($realtimeMongoMigrationChanged -and $changedFiles -notcontains 'docs/database/mongodb.md') {
-            Add-Failure 'Realtime MongoDB migration changed without MongoDB documentation'
+        $mongoMigrationChanged = Has-Changed $changedFiles '^(journal-ai-service|realtime-service)/migrations/.+\.(js|cjs|mjs|ts)$'
+        if ($mongoMigrationChanged -and $changedFiles -notcontains 'docs/database/mongodb.md') {
+            Add-Failure 'MongoDB migration changed without MongoDB documentation'
         }
-        if ($realtimeMongoMigrationChanged -and -not (Has-Changed $changedFiles '^realtime-service/test/integration/')) {
-            Add-Failure 'Realtime MongoDB migration changed without a real integration test'
+        foreach ($mongoService in @('journal-ai-service', 'realtime-service')) {
+            $serviceMongoMigrationChanged = Has-Changed $changedFiles "^$([regex]::Escape($mongoService))/migrations/.+\.(js|cjs|mjs|ts)$"
+            if ($serviceMongoMigrationChanged -and -not (Has-Changed $changedFiles "^$([regex]::Escape($mongoService))/.*(integration\.test\.ts$|test/integration/)")) {
+                Add-Failure "$mongoService MongoDB migration changed without a real integration test"
+            }
         }
 
         foreach ($service in @('identity-service', 'care-service', 'consultation-service', 'journal-ai-service', 'realtime-service', 'content-notification-service')) {

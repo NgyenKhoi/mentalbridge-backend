@@ -23,6 +23,11 @@ const replaySnapshots =
   require("../../migrations/003_journal_replay_snapshots_and_cursor_index.cjs") as {
     up(db: unknown): Promise<void>;
   };
+const journalMood =
+  require("../../migrations/004_journal_revision_mood.cjs") as {
+    up(db: unknown): Promise<void>;
+    down(db: unknown): Promise<void>;
+  };
 
 void test("persists encrypted owner-isolated CRUD with real MongoDB", async () => {
   const externalUri = process.env.JOURNAL_INTEGRATION_MONGODB_URI;
@@ -42,6 +47,7 @@ void test("persists encrypted owner-isolated CRUD with real MongoDB", async () =
   await baseline.up(database);
   await commands.up(database);
   await replaySnapshots.up(database);
+  await journalMood.up(database);
 
   const { privateKey, publicKey } = await generateKeyPair("RS256", {
     extractable: true,
@@ -163,6 +169,7 @@ void test("persists encrypted owner-isolated CRUD with real MongoDB", async () =
       clientEntryId: "33333333-3333-4333-8333-333333333333",
       occurredAt: "2026-09-10T09:00:00.000Z",
       content: { text: "plaintext must never be stored" },
+      mood: "GOOD",
       tags: ["private"],
     };
     const createdResponse = await request(server)
@@ -186,7 +193,9 @@ void test("persists encrypted owner-isolated CRUD with real MongoDB", async () =
     const created = createdResponse.body as {
       id: string;
       currentRevision: number;
+      mood: string;
     };
+    assert.equal(created.mood, "GOOD");
 
     const replay = await request(server)
       .post("/api/v1/journals")
@@ -200,6 +209,25 @@ void test("persists encrypted owner-isolated CRUD with real MongoDB", async () =
       await database.collection("journal_entries").countDocuments(),
       4,
     );
+    const legacyResponse = await request(server)
+      .post("/api/v1/journals")
+      .set("Authorization", `Bearer ${ownerToken}`)
+      .set("Idempotency-Key", "integration-create-legacy")
+      .send({
+        ...createBody,
+        clientEntryId: "44444444-4444-4444-8444-444444444444",
+        mood: undefined,
+      })
+      .expect(201);
+    const legacy = legacyResponse.body as { id: string; mood?: unknown };
+    assert.equal(legacy.mood, null);
+    const legacyDocument = await database
+      .collection<{ _id: string; revisions: { mood?: unknown }[] }>(
+        "journal_entries",
+      )
+      .findOne({ _id: legacy.id });
+    assert.ok(legacyDocument);
+    assert.equal(legacyDocument.revisions[0]?.mood, undefined);
     await request(server)
       .post("/api/v1/journals")
       .set("Authorization", `Bearer ${ownerToken}`)
@@ -211,12 +239,15 @@ void test("persists encrypted owner-isolated CRUD with real MongoDB", async () =
         _id: string;
         revisions: {
           content: { ciphertext: { _bsontype?: string } };
+          mood?: { ciphertext: { _bsontype?: string } };
         }[];
       }>("journal_entries")
       .findOne({ _id: created.id });
     assert.ok(raw);
     assert.equal(JSON.stringify(raw).includes(createBody.content.text), false);
+    assert.equal(JSON.stringify(raw).includes(createBody.mood), false);
     assert.equal(raw.revisions[0]?.content.ciphertext._bsontype, "Binary");
+    assert.equal(raw.revisions[0].mood?.ciphertext._bsontype, "Binary");
 
     await request(server)
       .get(`/api/v1/journals/${created.id}`)
@@ -225,6 +256,7 @@ void test("persists encrypted owner-isolated CRUD with real MongoDB", async () =
 
     const originalRevisionBody = {
       content: { text: "first revision wins" },
+      mood: "LOW",
       tags: ["first"],
     };
     const originalRevision = await request(server)
@@ -241,6 +273,11 @@ void test("persists encrypted owner-isolated CRUD with real MongoDB", async () =
       .set("If-Match-Revision", "2")
       .send({ content: { text: "later revision" }, tags: ["later"] })
       .expect(200);
+    const preservedMood = await request(server)
+      .get(`/api/v1/journals/${created.id}`)
+      .set("Authorization", `Bearer ${ownerToken}`)
+      .expect(200);
+    assert.equal((preservedMood.body as { mood?: unknown }).mood, "LOW");
 
     const revisions = await Promise.all([
       request(server)
@@ -328,6 +365,10 @@ void test("persists encrypted owner-isolated CRUD with real MongoDB", async () =
       .get("/api/v1/journals?includeDeleted=true")
       .set("Authorization", `Bearer ${ownerToken}`)
       .expect(400);
+    await assert.rejects(
+      () => journalMood.down(database),
+      /Cannot remove encrypted journal mood/,
+    );
 
     const unavailableApp = await createApplication(
       {
