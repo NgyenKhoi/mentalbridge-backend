@@ -1,0 +1,396 @@
+{
+  "fixtureVersion": "mb-resource-eligibility-controlled-demo-v1",
+  "policyVersion": "content-eligibility-v1",
+  "locale": "vi-VN",
+  "reviewEvidence": {
+    "storyKey": "MB-337",
+    "subtaskKeys": ["MB-350", "MB-351", "MB-352", "MB-353"],
+    "reviewerId": "00000000-0000-4000-8000-000000000001",
+    "reviewedAt": "2026-09-15T00:00:00Z",
+    "effectiveAt": "2026-09-15T00:00:00Z",
+    "expiresAt": null,
+    "dataBoundary": "SYNTHETIC_CONTROLLED_DEMO_NO_PRODUCTION_PERSONAL_DATA",
+    "items": [
+      {
+        "resourceId": "00000000-0000-4000-8000-000000000101",
+        "contentVersion": "0",
+        "category": "BREATHING",
+        "locale": "vi-VN",
+        "publicationState": "PUBLISHED",
+        "sourceProvenance": "review1/1_seed_review1_controlled_resource.sql",
+        "decisions": [
+          {
+            "targetDomain": "DEPRESSIVE_SYMPTOMS",
+            "decision": "ELIGIBLE",
+            "role": "ADJUNCT",
+            "instrument": "PHQ_9",
+            "screeningLevels": [
+              "MINIMAL",
+              "MILD",
+              "MODERATE",
+              "MODERATELY_SEVERE",
+              "SEVERE"
+            ],
+            "supportTiers": [
+              "SELF_GUIDED_SUPPORT",
+              "PROFESSIONAL_SUPPORT_RECOMMENDED",
+              "SAFETY_FOLLOW_UP_RECOMMENDED"
+            ],
+            "rationale": "Breathing is supplementary for depressive symptoms and cannot satisfy a depression CORE slot."
+          },
+          {
+            "targetDomain": "ANXIETY_SYMPTOMS",
+            "decision": "ELIGIBLE",
+            "role": "PRIMARY",
+            "instrument": "GAD_7",
+            "screeningLevels": ["MINIMAL", "MILD", "MODERATE", "SEVERE"],
+            "supportTiers": [
+              "SELF_GUIDED_SUPPORT",
+              "PROFESSIONAL_SUPPORT_RECOMMENDED",
+              "SAFETY_FOLLOW_UP_RECOMMENDED"
+            ],
+            "rationale": "The reviewed slow-breathing exercise directly supports the anxiety activity CORE alternative."
+          }
+        ]
+      },
+      {
+        "resourceId": "00000000-0000-4000-8000-000000000102",
+        "contentVersion": "0",
+        "category": "ARTICLE",
+        "locale": "vi-VN",
+        "publicationState": "PUBLISHED",
+        "sourceProvenance": "review1/2_publish_initial_resource_eligibility.sql",
+        "decisions": [
+          {
+            "targetDomain": "DEPRESSIVE_SYMPTOMS",
+            "decision": "ELIGIBLE",
+            "role": "PRIMARY",
+            "instrument": "PHQ_9",
+            "screeningLevels": [
+              "MINIMAL",
+              "MILD",
+              "MODERATE",
+              "MODERATELY_SEVERE",
+              "SEVERE"
+            ],
+            "supportTiers": [
+              "SELF_GUIDED_SUPPORT",
+              "PROFESSIONAL_SUPPORT_RECOMMENDED",
+              "SAFETY_FOLLOW_UP_RECOMMENDED"
+            ],
+            "rationale": "Domain-specific depression psychoeducation supplies the depression education CORE alternative."
+          },
+          {
+            "targetDomain": "ANXIETY_SYMPTOMS",
+            "decision": "INELIGIBLE",
+            "role": null,
+            "instrument": "GAD_7",
+            "screeningLevels": [],
+            "supportTiers": [],
+            "rationale": "The item is depression-specific and receives no cross-domain default eligibility."
+          }
+        ]
+      },
+      {
+        "resourceId": "00000000-0000-4000-8000-000000000103",
+        "contentVersion": "0",
+        "category": "ARTICLE",
+        "locale": "vi-VN",
+        "publicationState": "PUBLISHED",
+        "sourceProvenance": "review1/2_publish_initial_resource_eligibility.sql",
+        "decisions": [
+          {
+            "targetDomain": "DEPRESSIVE_SYMPTOMS",
+            "decision": "INELIGIBLE",
+            "role": null,
+            "instrument": "PHQ_9",
+            "screeningLevels": [],
+            "supportTiers": [],
+            "rationale": "The item is anxiety-specific and receives no cross-domain default eligibility."
+          },
+          {
+            "targetDomain": "ANXIETY_SYMPTOMS",
+            "decision": "ELIGIBLE",
+            "role": "PRIMARY",
+            "instrument": "GAD_7",
+            "screeningLevels": ["MINIMAL", "MILD", "MODERATE", "SEVERE"],
+            "supportTiers": [
+              "SELF_GUIDED_SUPPORT",
+              "PROFESSIONAL_SUPPORT_RECOMMENDED",
+              "SAFETY_FOLLOW_UP_RECOMMENDED"
+            ],
+            "rationale": "Domain-specific anxiety psychoeducation supplies the anxiety education CORE alternative."
+          }
+        ]
+      },
+      {
+        "resourceId": "00000000-0000-4000-8000-000000000104",
+        "contentVersion": "0",
+        "category": "VIDEO",
+        "locale": "vi-VN",
+        "publicationState": "PUBLISHED",
+        "sourceProvenance": "review1/2_publish_initial_resource_eligibility.sql",
+        "decisions": [
+          {
+            "targetDomain": "DEPRESSIVE_SYMPTOMS",
+            "decision": "ELIGIBLE",
+            "role": "PRIMARY",
+            "instrument": "PHQ_9",
+            "screeningLevels": [
+              "MINIMAL",
+              "MILD",
+              "MODERATE",
+              "MODERATELY_SEVERE",
+              "SEVERE"
+            ],
+            "supportTiers": [
+              "SELF_GUIDED_SUPPORT",
+              "PROFESSIONAL_SUPPORT_RECOMMENDED",
+              "SAFETY_FOLLOW_UP_RECOMMENDED"
+            ],
+            "rationale": "Behavioural activation supplies the depression activity CORE alternative."
+          },
+          {
+            "targetDomain": "ANXIETY_SYMPTOMS",
+            "decision": "ELIGIBLE",
+            "role": "ADJUNCT",
+            "instrument": "GAD_7",
+            "screeningLevels": ["MINIMAL", "MILD", "MODERATE", "SEVERE"],
+            "supportTiers": [
+              "SELF_GUIDED_SUPPORT",
+              "PROFESSIONAL_SUPPORT_RECOMMENDED",
+              "SAFETY_FOLLOW_UP_RECOMMENDED"
+            ],
+            "rationale": "Behavioural activation is supplementary for anxiety and cannot satisfy an anxiety CORE slot."
+          }
+        ]
+      },
+      {
+        "resourceId": "00000000-0000-4000-8000-000000000105",
+        "contentVersion": "0",
+        "category": "ARTICLE",
+        "locale": "vi-VN",
+        "publicationState": "PUBLISHED",
+        "sourceProvenance": "review1/2_publish_initial_resource_eligibility.sql",
+        "decisions": [
+          {
+            "targetDomain": "DEPRESSIVE_SYMPTOMS",
+            "decision": "ELIGIBLE",
+            "role": "ADJUNCT",
+            "instrument": "PHQ_9",
+            "screeningLevels": [
+              "MINIMAL",
+              "MILD",
+              "MODERATE",
+              "MODERATELY_SEVERE",
+              "SEVERE"
+            ],
+            "supportTiers": [
+              "SELF_GUIDED_SUPPORT",
+              "PROFESSIONAL_SUPPORT_RECOMMENDED",
+              "SAFETY_FOLLOW_UP_RECOMMENDED"
+            ],
+            "rationale": "Sleep wellbeing is supplementary and cannot satisfy a depression CORE slot."
+          },
+          {
+            "targetDomain": "ANXIETY_SYMPTOMS",
+            "decision": "ELIGIBLE",
+            "role": "ADJUNCT",
+            "instrument": "GAD_7",
+            "screeningLevels": ["MINIMAL", "MILD", "MODERATE", "SEVERE"],
+            "supportTiers": [
+              "SELF_GUIDED_SUPPORT",
+              "PROFESSIONAL_SUPPORT_RECOMMENDED",
+              "SAFETY_FOLLOW_UP_RECOMMENDED"
+            ],
+            "rationale": "Sleep wellbeing is supplementary and cannot satisfy an anxiety CORE slot."
+          }
+        ]
+      },
+      {
+        "resourceId": "00000000-0000-4000-8000-000000000106",
+        "contentVersion": "0",
+        "category": "JOURNALING",
+        "locale": "vi-VN",
+        "publicationState": "PUBLISHED",
+        "sourceProvenance": "review1/2_publish_initial_resource_eligibility.sql",
+        "decisions": [
+          {
+            "targetDomain": "DEPRESSIVE_SYMPTOMS",
+            "decision": "ELIGIBLE",
+            "role": "ADJUNCT",
+            "instrument": "PHQ_9",
+            "screeningLevels": [
+              "MINIMAL",
+              "MILD",
+              "MODERATE",
+              "MODERATELY_SEVERE",
+              "SEVERE"
+            ],
+            "supportTiers": [
+              "SELF_GUIDED_SUPPORT",
+              "PROFESSIONAL_SUPPORT_RECOMMENDED",
+              "SAFETY_FOLLOW_UP_RECOMMENDED"
+            ],
+            "rationale": "Professional-support preparation stays outside booking and safety guidance and is depression ADJUNCT only."
+          },
+          {
+            "targetDomain": "ANXIETY_SYMPTOMS",
+            "decision": "ELIGIBLE",
+            "role": "ADJUNCT",
+            "instrument": "GAD_7",
+            "screeningLevels": ["MINIMAL", "MILD", "MODERATE", "SEVERE"],
+            "supportTiers": [
+              "SELF_GUIDED_SUPPORT",
+              "PROFESSIONAL_SUPPORT_RECOMMENDED",
+              "SAFETY_FOLLOW_UP_RECOMMENDED"
+            ],
+            "rationale": "Professional-support preparation stays outside booking and safety guidance and is anxiety ADJUNCT only."
+          }
+        ]
+      }
+    ]
+  },
+  "request": {
+    "requests": [
+      {
+        "requestId": "10000000-0000-4000-a000-000000000001",
+        "resourceId": "00000000-0000-4000-8000-000000000102",
+        "contentVersion": "0",
+        "targetDomain": "DEPRESSIVE_SYMPTOMS",
+        "requiredRole": "PRIMARY",
+        "instrument": "PHQ_9",
+        "screeningLevel": "MILD",
+        "supportTier": "SELF_GUIDED_SUPPORT",
+        "locale": "vi-VN"
+      },
+      {
+        "requestId": "10000000-0000-4000-a000-000000000002",
+        "resourceId": "00000000-0000-4000-8000-000000000104",
+        "contentVersion": "0",
+        "targetDomain": "DEPRESSIVE_SYMPTOMS",
+        "requiredRole": "PRIMARY",
+        "instrument": "PHQ_9",
+        "screeningLevel": "MILD",
+        "supportTier": "SELF_GUIDED_SUPPORT",
+        "locale": "vi-VN"
+      },
+      {
+        "requestId": "10000000-0000-4000-a000-000000000003",
+        "resourceId": "00000000-0000-4000-8000-000000000103",
+        "contentVersion": "0",
+        "targetDomain": "ANXIETY_SYMPTOMS",
+        "requiredRole": "PRIMARY",
+        "instrument": "GAD_7",
+        "screeningLevel": "MILD",
+        "supportTier": "SELF_GUIDED_SUPPORT",
+        "locale": "vi-VN"
+      },
+      {
+        "requestId": "10000000-0000-4000-a000-000000000004",
+        "resourceId": "00000000-0000-4000-8000-000000000101",
+        "contentVersion": "0",
+        "targetDomain": "ANXIETY_SYMPTOMS",
+        "requiredRole": "PRIMARY",
+        "instrument": "GAD_7",
+        "screeningLevel": "MILD",
+        "supportTier": "SELF_GUIDED_SUPPORT",
+        "locale": "vi-VN"
+      },
+      {
+        "requestId": "10000000-0000-4000-a000-000000000005",
+        "resourceId": "00000000-0000-4000-8000-000000000105",
+        "contentVersion": "0",
+        "targetDomain": "DEPRESSIVE_SYMPTOMS",
+        "requiredRole": "PRIMARY",
+        "instrument": "PHQ_9",
+        "screeningLevel": "MILD",
+        "supportTier": "SELF_GUIDED_SUPPORT",
+        "locale": "vi-VN"
+      },
+      {
+        "requestId": "10000000-0000-4000-a000-000000000006",
+        "resourceId": "00000000-0000-4000-8000-000000000106",
+        "contentVersion": "0",
+        "targetDomain": "ANXIETY_SYMPTOMS",
+        "requiredRole": "PRIMARY",
+        "instrument": "GAD_7",
+        "screeningLevel": "MODERATE",
+        "supportTier": "PROFESSIONAL_SUPPORT_RECOMMENDED",
+        "locale": "vi-VN"
+      },
+      {
+        "requestId": "10000000-0000-4000-a000-000000000007",
+        "resourceId": "00000000-0000-4000-8000-000000000101",
+        "contentVersion": "1",
+        "targetDomain": "ANXIETY_SYMPTOMS",
+        "requiredRole": "PRIMARY",
+        "instrument": "GAD_7",
+        "screeningLevel": "MILD",
+        "supportTier": "SELF_GUIDED_SUPPORT",
+        "locale": "vi-VN"
+      },
+      {
+        "requestId": "10000000-0000-4000-a000-000000000008",
+        "resourceId": "00000000-0000-4000-8000-000000000101",
+        "contentVersion": "0",
+        "targetDomain": "DEPRESSIVE_SYMPTOMS",
+        "requiredRole": "PRIMARY",
+        "instrument": "PHQ_9",
+        "screeningLevel": "MILD",
+        "supportTier": "SELF_GUIDED_SUPPORT",
+        "locale": "vi-VN"
+      }
+    ]
+  },
+  "expectedResults": [
+    {
+      "requestId": "10000000-0000-4000-a000-000000000001",
+      "outcome": "ELIGIBLE",
+      "reasonCode": "ELIGIBLE_MATCH",
+      "role": "PRIMARY"
+    },
+    {
+      "requestId": "10000000-0000-4000-a000-000000000002",
+      "outcome": "ELIGIBLE",
+      "reasonCode": "ELIGIBLE_MATCH",
+      "role": "PRIMARY"
+    },
+    {
+      "requestId": "10000000-0000-4000-a000-000000000003",
+      "outcome": "ELIGIBLE",
+      "reasonCode": "ELIGIBLE_MATCH",
+      "role": "PRIMARY"
+    },
+    {
+      "requestId": "10000000-0000-4000-a000-000000000004",
+      "outcome": "ELIGIBLE",
+      "reasonCode": "ELIGIBLE_MATCH",
+      "role": "PRIMARY"
+    },
+    {
+      "requestId": "10000000-0000-4000-a000-000000000005",
+      "outcome": "INELIGIBLE",
+      "reasonCode": "PRIMARY_REQUIRED",
+      "role": null
+    },
+    {
+      "requestId": "10000000-0000-4000-a000-000000000006",
+      "outcome": "INELIGIBLE",
+      "reasonCode": "PRIMARY_REQUIRED",
+      "role": null
+    },
+    {
+      "requestId": "10000000-0000-4000-a000-000000000007",
+      "outcome": "STALE",
+      "reasonCode": "CONTENT_VERSION_STALE",
+      "role": null
+    },
+    {
+      "requestId": "10000000-0000-4000-a000-000000000008",
+      "outcome": "INELIGIBLE",
+      "reasonCode": "PRIMARY_REQUIRED",
+      "role": null
+    }
+  ]
+}
