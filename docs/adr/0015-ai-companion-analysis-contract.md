@@ -4,6 +4,7 @@
 - Date: 2026-09-13
 - Decision ID: `MB-AI-COMPANION-001`
 - Complements: [ADR 0011](0011-defer-phobert-optional-benchmark-baseline.md)
+- Amended by: [ADR 0017](0017-product-scope-v2.md), which adds package quota/model behavior and permits AI accompaniment across SupportPlan, reassessment, and approved reminder wording without transferring business-state authority
 - Policy: [AI Companion policy v1](../policies/ai-companion-policy-v1.md)
 
 ## Context

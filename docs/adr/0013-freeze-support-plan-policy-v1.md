@@ -4,6 +4,7 @@
 - Date: 2026-09-13
 - Decision ID: `MB-SUPPORT-PLAN-POLICY-001`
 - Reassessment extension: [ADR 0015](0015-ai-companion-analysis-contract.md)
+- Amended by: [ADR 0017](0017-product-scope-v2.md), which distinguishes the all-tier one-time Support Guide from the `PLUS`/`PREMIUM` durable SupportPlan and governs specialist proposals through `PlanChangeRequest`
 - Tracks: [#49](https://github.com/NgyenKhoi/mentalbridge-backend/issues/49)
 - Resolves: the SupportPlan policy questions left open by [ADR 0012](0012-two-domain-screening-and-system-proposed-support-plans.md)
 - Policy: [SupportPlan policy v1](../policies/support-plan-policy-v1.md)

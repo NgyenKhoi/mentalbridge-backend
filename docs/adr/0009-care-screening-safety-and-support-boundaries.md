@@ -2,7 +2,7 @@
 
 - Status: Accepted
 - Date: 2026-08-30
-- Amended by: [ADR 0012](0012-two-domain-screening-and-system-proposed-support-plans.md) for the explicit two-domain scope, no-global-severity rule, domain-aware evaluation, resource eligibility, and system-proposed SupportPlan direction; [ADR 0013](0013-freeze-support-plan-policy-v1.md) freezes the plan policy while preserving the scoring and safety decisions below.
+- Amended by: [ADR 0012](0012-two-domain-screening-and-system-proposed-support-plans.md) for the explicit two-domain scope, no-global-severity rule, domain-aware evaluation, resource eligibility, and system-proposed SupportPlan direction; [ADR 0013](0013-freeze-support-plan-policy-v1.md) freezes the plan policy while preserving the scoring and safety decisions below; [ADR 0017](0017-product-scope-v2.md) adds the explicit user safety trigger and a provenance-controlled area directory without automatic contact or location sharing.
 
 ## Context
 

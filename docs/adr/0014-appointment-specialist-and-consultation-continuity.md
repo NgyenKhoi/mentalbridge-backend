@@ -4,6 +4,7 @@
 - Date: 2026-09-13
 - Decision ID: `MB-CONSULTATION-FLOW-001`
 - Amends: [ADR 0005](0005-consultation-billing-and-credit-settlement.md)
+- Amended by: [ADR 0017](0017-product-scope-v2.md), which makes `IN_APP_CHAT` and `IN_APP_VIDEO` the only new v2 modes, ends channel access at 60 minutes without automatic completion, and requires user approval before summary reuse
 - Policy: [Consultation and specialist policy v1](../policies/consultation-specialist-policy-v1.md)
 
 ## Context

@@ -2,7 +2,7 @@
 
 - Status: Accepted
 - Date: 2026-08-21
-- Amended by: [ADR 0014](0014-appointment-specialist-and-consultation-continuity.md), which adds `IN_PERSON`, fixes the 60-minute request/session lifecycle, replaces in-place rescheduling, and requires evidence-based completion
+- Amended by: [ADR 0014](0014-appointment-specialist-and-consultation-continuity.md), which adds the v1 `IN_PERSON` mode, fixes the 60-minute request/session lifecycle, replaces in-place rescheduling, and requires evidence-based completion; [ADR 0017](0017-product-scope-v2.md), which renames packages to `FREE`/`PLUS`/`PREMIUM`, requires new VND plan versions and MoMo for real money, replaces new in-person appointments with `IN_APP_VIDEO`, and clarifies evidence-backed earnings
 
 ## Context
 
