@@ -46,9 +46,11 @@ class AssessmentFlowIntegrationTests extends CareTestProperties {
 	private static final UUID VI_DEFINITION_ID = UUID.fromString("10000000-0000-0000-0000-000000000004");
 	private static final Set<String> IMPLEMENTED_OPERATIONS = Set.of(
 			"GET /api/v1/privacy-disclosures/current",
+			"GET /api/v1/ai-processing-disclosures/current",
 			"GET /api/v1/profile",
 			"PUT /api/v1/profile",
 			"GET /api/v1/consents",
+			"GET /api/v1/consents/ai-processing/authorization",
 			"POST /api/v1/consent-decisions",
 			"GET /api/v1/questionnaires/{instrument}/current",
 			"GET /api/v1/questionnaires/definitions/{definitionId}",
