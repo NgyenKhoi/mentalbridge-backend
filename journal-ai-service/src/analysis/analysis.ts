@@ -177,6 +177,8 @@ export interface AnalysisRepository {
 export interface ConsentDecision {
   authorized: boolean;
   reason: "GRANTED" | "MISSING" | "REVOKED" | "POLICY_OUTDATED";
+  policyVersion?: string | null;
+  decidedAt?: string | null;
 }
 
 export interface ConsentClient {
