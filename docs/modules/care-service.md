@@ -31,6 +31,9 @@ Kafka, Redis, WebSocket, notification, or directory delivery.
 - PostgreSQL and Liquibase own scoring inputs/results, policy provenance, grants and outbox. Constraints enforce immutable published questionnaires and unique submissions.
 - Safety calculation and reviewed fallback are pure local domain behavior. Structured journal indicators arrive asynchronously and never include raw journal text.
 - Active `mb-support-routing-capstone-v1` remains immutable coarse history.
+  Additive `mb-support-routing-capstone-v2` snapshots both approved domains and
+  independent item-9 safety through owner-scoped `/api/v2` resources without a
+  global tier or severity.
   ADR 0017 and SupportPlan policy v2 add Support Guide, paid-plan entitlement,
   one official plan, and `PlanChangeRequest` governance without rewriting v1
   evidence. Runtime remains a later delivery slice using exact eligibility.
@@ -63,7 +66,7 @@ MB-178 does not implement specialist grants, automatic follow-up, clinical progr
 - [ ] CARE-05 Profile and general privacy decisions are implemented by MB-178; specialist scoped grants and their concurrent revoke/read protection remain deferred.
 - [x] CARE-06 Implement anonymous and authenticated assessment, validation, scoring and idempotency for published PHQ-9 and GAD-7 reference data while retaining retired definitions for history.
 - [x] CARE-07a Publish deterministic cross-cutting safety, coarse `mb-support-routing-capstone-v1`, synchronous fallback and provenance through Story 1103.
-- [ ] CARE-07b Preserve v1 history; close the #49 policy gate under ADR 0013, implement compatible domain-aware SupportEvaluation (#48) and exact eligible resources (#50), then deliver system-proposed SupportPlan runtime as a separate story.
+- [x] CARE-07b Preserve v1 history and implement compatible domain-aware SupportEvaluation (#48) plus exact eligible resources (#50); system-proposed SupportPlan runtime remains a separate story.
 - [ ] CARE-08 Descriptive assessment comparison is implemented by MB-205; follow-up, other analytics projections, export and deletion participation remain open.
 - [ ] CARE-09 Verify scoring boundaries, item-9 safety, stale/missing input, concurrency, rollback/outbox, duplicate/reordered events and dependency failures.
 - [ ] CARE-10 Add safe observability/configuration, update README, and pass module/contract/migration gates.

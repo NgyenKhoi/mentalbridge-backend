@@ -369,7 +369,7 @@ were approved on 2026-09-13 in [ADR 0013](adr/0013-freeze-support-plan-policy-v1
 and [SupportPlan policy v2](policies/support-plan-policy-v2.md). Their provider,
 runtime, and production-review gates remain open.
 
-1. The current `mb-support-routing-capstone-v1` runtime remains immutable historical coarse routing. Compatible domain-bearing SupportEvaluation evolution, any automatic latest-result freshness window, and downstream plan use are tracked by issue #48. PHQ-9 item-9 core behavior is already executable through `MB-SAFETY-PHQ9-001`.
+1. The current `mb-support-routing-capstone-v1` runtime remains immutable historical coarse routing. Additive `mb-support-routing-capstone-v2` implements explicit domain-bearing evidence and independent item-9 safety under issue #48. Any automatic latest-result freshness window and downstream plan runtime remain separately gated. PHQ-9 item-9 core behavior is executable through `MB-SAFETY-PHQ9-001`.
 2. Specialist profile/approval/discovery policy is fixed by ADR 0014 and
    amended by ADR 0017. Compatible v2 APIs, persistence, seeded-demo data, and
    frontend implementation remain delivery work.
