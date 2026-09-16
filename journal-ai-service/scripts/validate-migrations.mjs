@@ -6,6 +6,7 @@ const migration = require("../migrations/001_journal_entries_baseline.cjs");
 const commandsMigration = require("../migrations/002_journal_mutation_commands.cjs");
 const replayMigration = require("../migrations/003_journal_replay_snapshots_and_cursor_index.cjs");
 const moodMigration = require("../migrations/004_journal_revision_mood.cjs");
+const analysisMigration = require("../migrations/005_exact_revision_analysis.cjs");
 
 assert.equal(migration.collectionName, "journal_entries");
 assert.equal(typeof migration.up, "function");
@@ -21,6 +22,20 @@ assert.equal(
   migration.validator.$jsonSchema.properties.revisions.items.properties
     .contentPreview,
   undefined,
+);
+assert.equal(analysisMigration.jobCollection, "analysis_jobs");
+assert.equal(analysisMigration.resultCollection, "journal_analysis_results");
+assert.equal(typeof analysisMigration.up, "function");
+assert.equal(typeof analysisMigration.down, "function");
+assert.ok(
+  analysisMigration.jobValidator.$jsonSchema.required.includes("keyHash"),
+);
+assert.ok(
+  analysisMigration.jobValidator.$jsonSchema.required.includes("nextAttemptAt"),
+);
+assert.equal(
+  analysisMigration.resultValidator.$jsonSchema.properties.provider.enum[0],
+  "DETERMINISTIC_FAKE",
 );
 assert.equal(typeof commandsMigration.up, "function");
 assert.equal(typeof commandsMigration.down, "function");
@@ -56,5 +71,5 @@ assert.equal(
 );
 
 console.log(
-  "Validated Mongo migrations: 001_journal_entries_baseline.cjs through 004_journal_revision_mood.cjs",
+  "Validated Mongo migrations: 001_journal_entries_baseline.cjs through 005_exact_revision_analysis.cjs",
 );

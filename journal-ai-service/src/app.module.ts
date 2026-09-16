@@ -26,9 +26,14 @@ import {
 import { IdentityJwtVerifier } from "./security/identity-jwt-verifier.js";
 import { JwtAuthenticationGuard } from "./security/jwt-authentication.guard.js";
 import { registerJournalModule } from "./journals/journal.js";
+import {
+  registerAnalysisModule,
+  type AnalysisDependencies,
+} from "./analysis/analysis.js";
 
 export interface ApplicationDependencies {
   readonly readinessProbe?: ReadinessProbe;
+  readonly analysis?: AnalysisDependencies;
 }
 
 @Module({})
@@ -49,7 +54,10 @@ export class AppModule implements NestModule {
 
     return {
       module: AppModule,
-      imports: [registerJournalModule(configuration)],
+      imports: [
+        registerJournalModule(configuration),
+        registerAnalysisModule(configuration, dependencies.analysis),
+      ],
       controllers: [HealthController, MetricsController],
       providers: [
         RequestLoggingMiddleware,

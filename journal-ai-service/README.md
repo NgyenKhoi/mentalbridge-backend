@@ -22,12 +22,13 @@ The service provides:
 - lint, type-check, test, and build scripts
 - production multi-stage Docker image
 
-MB-236 implements the authenticated private journal CRUD contract. ADR 0015 now
-freezes the AI Companion product contract: an explicit exact-revision request,
-current `AI_PROCESSING` consent, asynchronous job, one provider per run,
-normalized result, bounded retry, and no raw-response persistence. Its APIs,
-jobs, provider calls, result persistence, frontend, specialist-brief draft,
-dataset import, and benchmarking are still not implemented.
+MB-236 implements the authenticated private journal CRUD contract. ADR 0015
+freezes a Mongo-only AI Companion runtime: an explicit exact-revision request,
+current `AI_PROCESSING` consent checked through Care, a durable leased job, one
+provider per run, normalized result, bounded retry, and no raw-response or
+bearer-token persistence. MB-367 adds the backend runtime with a deterministic
+fake provider; frontend consent/reflection, real providers, dataset import, and
+benchmarking remain follow-up work.
 
 ## Requirements
 
@@ -52,21 +53,26 @@ npm start
 
 ## Configuration
 
-| Variable                                   | Required   | Default                                        | Purpose                                                                                 |
-| ------------------------------------------ | ---------- | ---------------------------------------------- | --------------------------------------------------------------------------------------- |
-| `JOURNAL_AI_PORT`                          | No         | `3000`                                         | HTTP port, from 1 through 65535                                                         |
-| `NODE_ENV`                                 | No         | `development`                                  | Runtime environment: `development`, `test`, or `production`                             |
-| `JOURNAL_AI_LOG_LEVEL`                     | No         | `info`                                         | Pino log level                                                                          |
-| `JOURNAL_AI_MONGODB_URI`                   | Production | `mongodb://localhost:27017` outside production | MongoDB server used by the service and `migrate-mongo`                                  |
-| `JOURNAL_AI_MONGODB_DATABASE`              | Production | `mentalbridge_journal_ai` outside production   | MongoDB database owned by this service                                                  |
-| `JOURNAL_AI_MONGODB_CONNECTION_TIMEOUT_MS` | No         | `2000`                                         | MongoDB connect/server-selection timeout from 100 through 30000 milliseconds            |
-| `JOURNAL_AI_ENCRYPTION_KEY`                | Production | Local-only deterministic development key       | Canonical base64 encoding of the 32-byte AES-256-GCM journal encryption key             |
-| `JOURNAL_AI_ENCRYPTION_KEY_ID`             | No         | `local-v1`                                     | Identifier of the single active key; ciphertext under another identifier fails closed   |
-| `JOURNAL_AI_IDEMPOTENCY_HMAC_KEY`          | Production | Local-only deterministic development key       | Canonical base64 encoding of a separate 32-byte key for command hashes and fingerprints |
-| `IDENTITY_JWT_ISSUER`                      | Yes        | None                                           | Exact Identity issuer accepted by this resource service                                 |
-| `IDENTITY_JWT_AUDIENCE`                    | Yes        | None                                           | Exact MentalBridge API audience accepted by this resource service                       |
-| `IDENTITY_JWT_KEY_ID`                      | Yes        | None                                           | Exact active Identity signing-key identifier accepted by this resource service          |
-| `IDENTITY_JWT_PUBLIC_KEY`                  | Yes        | None                                           | X.509 RSA public key matching the Identity signing key; the private key is never shared |
+| Variable                                   | Required   | Default                                          | Purpose                                                                                 |
+| ------------------------------------------ | ---------- | ------------------------------------------------ | --------------------------------------------------------------------------------------- |
+| `JOURNAL_AI_PORT`                          | No         | `3000`                                           | HTTP port, from 1 through 65535                                                         |
+| `NODE_ENV`                                 | No         | `development`                                    | Runtime environment: `development`, `test`, or `production`                             |
+| `JOURNAL_AI_LOG_LEVEL`                     | No         | `info`                                           | Pino log level                                                                          |
+| `JOURNAL_AI_MONGODB_URI`                   | Production | `mongodb://localhost:27017` outside production   | MongoDB server used by the service and `migrate-mongo`                                  |
+| `JOURNAL_AI_MONGODB_DATABASE`              | Production | `mentalbridge_journal_ai` outside production     | MongoDB database owned by this service                                                  |
+| `JOURNAL_AI_MONGODB_CONNECTION_TIMEOUT_MS` | No         | `2000`                                           | MongoDB connect/server-selection timeout from 100 through 30000 milliseconds            |
+| `JOURNAL_AI_ENCRYPTION_KEY`                | Production | Local-only deterministic development key         | Canonical base64 encoding of the 32-byte AES-256-GCM journal encryption key             |
+| `JOURNAL_AI_ENCRYPTION_KEY_ID`             | No         | `local-v1`                                       | Identifier of the single active key; ciphertext under another identifier fails closed   |
+| `JOURNAL_AI_IDEMPOTENCY_HMAC_KEY`          | Production | Local-only deterministic development key         | Canonical base64 encoding of a separate 32-byte key for command hashes and fingerprints |
+| `IDENTITY_JWT_ISSUER`                      | Yes        | None                                             | Exact Identity issuer accepted by this resource service                                 |
+| `IDENTITY_JWT_AUDIENCE`                    | Yes        | None                                             | Exact MentalBridge API audience accepted by this resource service                       |
+| `IDENTITY_JWT_KEY_ID`                      | Yes        | None                                             | Exact active Identity signing-key identifier accepted by this resource service          |
+| `IDENTITY_JWT_PUBLIC_KEY`                  | Yes        | None                                             | X.509 RSA public key matching the Identity signing key; the private key is never shared |
+| `JOURNAL_AI_CARE_BASE_URL`                 | Production | `http://localhost:8081` outside production       | Care base URL for current AI-processing consent checks                                  |
+| `JOURNAL_AI_CARE_TIMEOUT_MS`               | No         | `2000`                                           | Bounded Care consent REST timeout from 100 through 5000 milliseconds                    |
+| `JOURNAL_AI_ANALYSIS_ENABLED`              | No         | `true` outside production; `false` in production | Enables the deterministic exact-revision backend runtime; production remains gated      |
+| `JOURNAL_AI_ANALYSIS_POLL_INTERVAL_MS`     | No         | `250`                                            | Interval for due/expired-lease job claims                                               |
+| `JOURNAL_AI_ANALYSIS_LEASE_MS`             | No         | `35000`                                          | Claim lease, always longer than the fixed 30-second provider-attempt timeout            |
 
 Local `.env` files are loaded only outside production and never override real
 environment variables. Copy `.env.example` to `.env` for local development,
@@ -77,16 +83,18 @@ local `.env` files or secrets.
 
 ## Operations endpoints
 
-| Method   | Path                           | Purpose                                                               |
-| -------- | ------------------------------ | --------------------------------------------------------------------- |
-| `GET`    | `/health/live`                 | Process liveness probe                                                |
-| `GET`    | `/health/ready`                | Readiness probe that returns success only when owned MongoDB responds |
-| `GET`    | `/metrics`                     | Prometheus metrics scrape endpoint                                    |
-| `POST`   | `/api/v1/journals`             | Create an encrypted journal entry with an idempotency key             |
-| `GET`    | `/api/v1/journals`             | List the authenticated owner's entries by opaque cursor               |
-| `GET`    | `/api/v1/journals/{journalId}` | Read one owner-scoped entry                                           |
-| `PATCH`  | `/api/v1/journals/{journalId}` | Append a revision guarded by `If-Match`                               |
-| `DELETE` | `/api/v1/journals/{journalId}` | Create an idempotent owner-scoped tombstone                           |
+| Method   | Path                                                              | Purpose                                                               |
+| -------- | ----------------------------------------------------------------- | --------------------------------------------------------------------- |
+| `GET`    | `/health/live`                                                    | Process liveness probe                                                |
+| `GET`    | `/health/ready`                                                   | Readiness probe that returns success only when owned MongoDB responds |
+| `GET`    | `/metrics`                                                        | Prometheus metrics scrape endpoint                                    |
+| `POST`   | `/api/v1/journals`                                                | Create an encrypted journal entry with an idempotency key             |
+| `GET`    | `/api/v1/journals`                                                | List the authenticated owner's entries by opaque cursor               |
+| `GET`    | `/api/v1/journals/{journalId}`                                    | Read one owner-scoped entry                                           |
+| `PATCH`  | `/api/v1/journals/{journalId}`                                    | Append a revision guarded by `If-Match`                               |
+| `DELETE` | `/api/v1/journals/{journalId}`                                    | Create an idempotent owner-scoped tombstone                           |
+| `POST`   | `/api/v1/journals/{journalId}/revisions/{revision}/analysis-jobs` | Request one consented exact-revision analysis job                     |
+| `GET`    | `/api/v1/analysis-jobs/{jobId}`                                   | Read the owner-scoped job state and normalized result                 |
 
 Incoming requests echo a valid bounded `x-correlation-id` or receive a generated one. Request logs include the same correlation ID and redact authorization and cookie headers. Non-public application routes require an Identity-issued RS256 bearer token; signature, issuer, audience, lifetime, subject, token ID, and roles are validated before a principal is attached to the request.
 
@@ -97,6 +105,7 @@ Incoming requests echo a valid bounded `x-correlation-id` or receive a generated
 - Journal mutation-command validator and unique index: `migrations/002_journal_mutation_commands.cjs`
 - Immutable replay metadata and cursor-index alignment: `migrations/003_journal_replay_snapshots_and_cursor_index.cjs`
 - Encrypted per-revision mood validation: `migrations/004_journal_revision_mood.cjs`
+- Exact-revision analysis job/result validators and indexes: `migrations/005_exact_revision_analysis.cjs`
 
 Story 6201 keeps journal content plain text and adds the stable `GREAT`, `GOOD`,
 `OKAY`, `LOW`, and `VERY_LOW` mood labels. The API accepts an omitted mood for

@@ -31,6 +31,8 @@ const implementedOperations = new Set([
   "GET /api/v1/journals/{journalId}",
   "PATCH /api/v1/journals/{journalId}",
   "DELETE /api/v1/journals/{journalId}",
+  "POST /api/v1/journals/{journalId}/revisions/{revision}/analysis-jobs",
+  "GET /api/v1/analysis-jobs/{jobId}",
 ]);
 const implementedResponses = new Map([
   ["GET /health/live", new Set(["200"])],
@@ -44,6 +46,11 @@ const implementedResponses = new Map([
     new Set(["200", "400", "401", "404", "409", "412"]),
   ],
   ["DELETE /api/v1/journals/{journalId}", new Set(["200", "401", "404"])],
+  [
+    "POST /api/v1/journals/{journalId}/revisions/{revision}/analysis-jobs",
+    new Set(["202", "400", "401", "404", "409", "503"]),
+  ],
+  ["GET /api/v1/analysis-jobs/{jobId}", new Set(["200", "400", "401", "404"])],
 ]);
 const plannedOperations = new Set();
 const actualImplemented = new Set();

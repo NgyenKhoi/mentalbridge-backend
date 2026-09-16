@@ -4,8 +4,8 @@
   "description": "MentalBridge Journal and AI Service",
   "main": "dist/main.js",
   "scripts": {
-    "test": "npm run build && node --test dist/app.test.js dist/journals/journal.test.js",
-    "test:integration": "npm run build && node --env-file-if-exists=.env.integration --test dist/journals/journal.mongo.integration.test.js",
+    "test": "npm run build && node --test dist/app.test.js dist/journals/journal.test.js dist/analysis/analysis.test.js",
+    "test:integration": "npm run build && node --env-file-if-exists=.env.integration --test dist/journals/journal.mongo.integration.test.js dist/analysis/analysis.mongo.integration.test.js",
     "dev": "tsx watch src/main.ts",
     "build": "tsc -p tsconfig.json",
     "start": "node dist/main.js",

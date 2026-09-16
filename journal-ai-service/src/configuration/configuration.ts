@@ -47,6 +47,26 @@ const environmentSchema = z
       .string()
       .min(1)
       .transform((value) => value.replaceAll("\\n", "\n")),
+    JOURNAL_AI_CARE_BASE_URL: z.url(),
+    JOURNAL_AI_CARE_TIMEOUT_MS: z.coerce
+      .number()
+      .int()
+      .min(100)
+      .max(5_000)
+      .default(2_000),
+    JOURNAL_AI_ANALYSIS_ENABLED: z.enum(["true", "false"]).optional(),
+    JOURNAL_AI_ANALYSIS_POLL_INTERVAL_MS: z.coerce
+      .number()
+      .int()
+      .min(25)
+      .max(10_000)
+      .default(250),
+    JOURNAL_AI_ANALYSIS_LEASE_MS: z.coerce
+      .number()
+      .int()
+      .min(31_000)
+      .max(120_000)
+      .default(35_000),
   })
   .superRefine((environment, context) => {
     if (
@@ -78,6 +98,14 @@ const environmentSchema = z
     IDENTITY_JWT_AUDIENCE: environment.IDENTITY_JWT_AUDIENCE,
     IDENTITY_JWT_KEY_ID: environment.IDENTITY_JWT_KEY_ID,
     IDENTITY_JWT_PUBLIC_KEY: environment.IDENTITY_JWT_PUBLIC_KEY,
+    CARE_BASE_URL: environment.JOURNAL_AI_CARE_BASE_URL,
+    CARE_TIMEOUT_MS: environment.JOURNAL_AI_CARE_TIMEOUT_MS,
+    ANALYSIS_ENABLED:
+      environment.JOURNAL_AI_ANALYSIS_ENABLED !== undefined
+        ? environment.JOURNAL_AI_ANALYSIS_ENABLED === "true"
+        : environment.NODE_ENV !== "production",
+    ANALYSIS_POLL_INTERVAL_MS: environment.JOURNAL_AI_ANALYSIS_POLL_INTERVAL_MS,
+    ANALYSIS_LEASE_MS: environment.JOURNAL_AI_ANALYSIS_LEASE_MS,
   }));
 
 export type ServiceConfiguration = z.infer<typeof environmentSchema>;
@@ -105,6 +133,8 @@ export const loadConfiguration = (
             environment.JOURNAL_AI_ENCRYPTION_KEY ?? localEncryptionKey,
           JOURNAL_AI_IDEMPOTENCY_HMAC_KEY:
             environment.JOURNAL_AI_IDEMPOTENCY_HMAC_KEY ?? localIdempotencyKey,
+          JOURNAL_AI_CARE_BASE_URL:
+            environment.JOURNAL_AI_CARE_BASE_URL ?? "http://localhost:8081",
         }),
   };
 

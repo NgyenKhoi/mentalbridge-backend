@@ -2,7 +2,7 @@ openapi: 3.1.0
 info:
   title: MentalBridge Journal AI Service API
   version: 1.0.0
-  description: Private journal CRUD contract for Sprint 1. AI analysis endpoints are intentionally deferred.
+  description: Private journal CRUD and consent-gated exact-revision analysis contract.
 servers:
   - url: http://localhost:3000
 security:
@@ -10,6 +10,8 @@ security:
 tags:
   - name: Journals
     description: Private journal entries owned by the authenticated account.
+  - name: Analysis jobs
+    description: Owner-scoped asynchronous analysis of one exact current revision.
   - name: Operations
     description: Service health and metrics endpoints.
 paths:
@@ -195,6 +197,61 @@ paths:
           $ref: "#/components/responses/Unauthorized"
         "404":
           $ref: "#/components/responses/NotFound"
+  /api/v1/journals/{journalId}/revisions/{revision}/analysis-jobs:
+    x-mentalbridge-status: implemented
+    post:
+      tags: [Analysis jobs]
+      summary: Request analysis of one exact owned journal revision.
+      operationId: createExactRevisionAnalysisJob
+      parameters:
+        - $ref: "#/components/parameters/JournalId"
+        - $ref: "#/components/parameters/JournalRevision"
+        - $ref: "#/components/parameters/IdempotencyKey"
+        - $ref: "#/components/parameters/CorrelationId"
+      responses:
+        "202":
+          description: The idempotent asynchronous job was accepted.
+          headers:
+            Location:
+              schema: { type: string }
+            x-correlation-id:
+              $ref: "#/components/headers/CorrelationId"
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/AnalysisJob"
+        "400":
+          $ref: "#/components/responses/BadRequest"
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "404":
+          $ref: "#/components/responses/NotFound"
+        "409":
+          $ref: "#/components/responses/Conflict"
+        "503":
+          $ref: "#/components/responses/DependencyUnavailable"
+  /api/v1/analysis-jobs/{jobId}:
+    x-mentalbridge-status: implemented
+    get:
+      tags: [Analysis jobs]
+      summary: Read an owned analysis job and its normalized result.
+      operationId: getOwnAnalysisJob
+      parameters:
+        - $ref: "#/components/parameters/AnalysisJobId"
+        - $ref: "#/components/parameters/CorrelationId"
+      responses:
+        "200":
+          description: Job state returned.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/AnalysisJob"
+        "400":
+          $ref: "#/components/responses/BadRequest"
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "404":
+          $ref: "#/components/responses/NotFound"
 components:
   securitySchemes:
     bearerAuth:
@@ -204,6 +261,21 @@ components:
   parameters:
     JournalId:
       name: journalId
+      in: path
+      required: true
+      schema:
+        type: string
+        format: uuid
+    JournalRevision:
+      name: revision
+      in: path
+      required: true
+      schema:
+        type: integer
+        minimum: 1
+        maximum: 200
+    AnalysisJobId:
+      name: jobId
       in: path
       required: true
       schema:
@@ -284,6 +356,12 @@ components:
             $ref: "#/components/schemas/Problem"
     PreconditionFailed:
       description: Revision precondition failed.
+      content:
+        application/problem+json:
+          schema:
+            $ref: "#/components/schemas/Problem"
+    DependencyUnavailable:
+      description: Care consent could not be verified; no provider call was made.
       content:
         application/problem+json:
           schema:
@@ -504,6 +582,103 @@ components:
               type: string
             hasMore:
               type: boolean
+    AnalysisJob:
+      type: object
+      additionalProperties: false
+      required:
+        - jobId
+        - journalId
+        - journalRevision
+        - status
+        - attemptCount
+        - createdAt
+        - updatedAt
+      properties:
+        jobId: { type: string, format: uuid }
+        journalId: { type: string, format: uuid }
+        journalRevision: { type: integer, minimum: 1, maximum: 200 }
+        status:
+          type: string
+          enum: [RUNNING, SUCCEEDED, FAILED]
+        attemptCount: { type: integer, minimum: 0, maximum: 2 }
+        terminalReason:
+          oneOf:
+            - $ref: "#/components/schemas/AnalysisTerminalReason"
+            - type: "null"
+        result:
+          oneOf:
+            - $ref: "#/components/schemas/NormalizedAnalysisResult"
+            - type: "null"
+        createdAt: { type: string, format: date-time }
+        updatedAt: { type: string, format: date-time }
+        completedAt: { type: [string, "null"], format: date-time }
+    AnalysisTerminalReason:
+      type: string
+      enum:
+        - CONSENT_REQUIRED
+        - CONSENT_REVOKED
+        - CONSENT_UNAVAILABLE
+        - AUTHORIZATION_CONTEXT_LOST
+        - REVISION_STALE
+        - JOURNAL_DELETED
+        - PROVIDER_TIMEOUT
+        - PROVIDER_UNAVAILABLE
+        - INVALID_PROVIDER_RESULT
+        - INTERNAL_ERROR
+    NormalizedAnalysisResult:
+      type: object
+      additionalProperties: false
+      required:
+        - contextSignals
+        - emotionIndicators
+        - themes
+        - preferenceSignals
+        - barrierSignals
+        - suggestedAction
+        - provider
+        - model
+        - promptVersion
+        - schemaVersion
+        - createdAt
+      properties:
+        summary: { type: string, minLength: 1, maxLength: 800 }
+        contextSignals:
+          type: array
+          maxItems: 12
+          items: { type: string, minLength: 1, maxLength: 64 }
+        emotionIndicators:
+          type: array
+          maxItems: 12
+          items: { type: string, minLength: 1, maxLength: 64 }
+        themes:
+          type: array
+          maxItems: 12
+          items: { type: string, minLength: 1, maxLength: 64 }
+        preferenceSignals:
+          type: array
+          maxItems: 12
+          items: { type: string, minLength: 1, maxLength: 64 }
+        barrierSignals:
+          type: array
+          maxItems: 12
+          items: { type: string, minLength: 1, maxLength: 64 }
+        sentiment: { type: string, minLength: 1, maxLength: 32 }
+        modelConfidence: { type: number, minimum: 0, maximum: 1 }
+        suggestedAction:
+          type: string
+          enum:
+            - NONE
+            - OFFER_RESOURCE_EXPLANATION
+            - GUIDE_APPROVED_ACTIVITY
+            - REQUEST_ALLOWED_ALTERNATIVE
+            - REQUEST_PLAN_REVIEW
+            - OPEN_PROFESSIONAL_SUPPORT
+            - OPEN_SAFETY_GUIDANCE
+        provider: { type: string, const: DETERMINISTIC_FAKE }
+        model: { type: string, const: deterministic-reflection-v1 }
+        promptVersion: { type: string, const: exact-revision-v1 }
+        schemaVersion: { type: integer, const: 1 }
+        createdAt: { type: string, format: date-time }
     Problem:
       type: object
       additionalProperties: true
