@@ -35,6 +35,11 @@ const testConfiguration: ServiceConfiguration = {
   IDENTITY_JWT_AUDIENCE: "mentalbridge-api",
   IDENTITY_JWT_KEY_ID: "test-key",
   IDENTITY_JWT_PUBLIC_KEY: testPublicKeyPem,
+  CARE_BASE_URL: "http://localhost:8081",
+  CARE_TIMEOUT_MS: 100,
+  ANALYSIS_ENABLED: true,
+  ANALYSIS_POLL_INTERVAL_MS: 250,
+  ANALYSIS_LEASE_MS: 35_000,
 };
 
 const readyDependencies = {

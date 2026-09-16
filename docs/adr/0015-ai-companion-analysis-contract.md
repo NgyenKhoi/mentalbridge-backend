@@ -2,6 +2,7 @@
 
 - Status: Accepted
 - Date: 2026-09-13
+- Last amended: 2026-09-16 (MB-421 Mongo-only runtime and Care consent)
 - Decision ID: `MB-AI-COMPANION-001`
 - Complements: [ADR 0011](0011-defer-phobert-optional-benchmark-baseline.md)
 - Amended by: [ADR 0017](0017-product-scope-v2.md), which adds package quota/model behavior and permits AI accompaniment across SupportPlan, reassessment, and approved reminder wording without transferring business-state authority
@@ -27,6 +28,29 @@ POST analysis -> 202 ACCEPTED -> RUNNING -> SUCCEEDED | FAILED
 Each run uses exactly one configured provider. Journal content is not sent to a
 second provider as automatic fallback. Each attempt has a 30-second timeout and
 at most one retry, only for HTTP 429, provider 5xx, or transport failure.
+
+Journal/AI uses MongoDB as its only operational database. Journals, durable
+analysis jobs, normalized results, longitudinal analyses, and future dataset
+and benchmark metadata remain in owner collections governed by append-only
+`migrate-mongo` migrations. MB-367 does not add PostgreSQL, `pg`,
+`node-pg-migrate`, a PostgreSQL outbox, or Kafka. Workers claim due jobs with an
+atomic update and a bounded lease; an expired lease is recoverable without
+creating another logical job. A future event publisher must use a Mongo-owned
+outbox or another explicitly accepted recoverable-publication design.
+
+Care exposes `AI_PROCESSING` under policy version
+`ai-processing-capstone-v1`, separately from `PRIVACY_POLICY`. It covers only
+exact-revision and bounded longitudinal journal analysis. Journal/AI forwards
+the verified end-user bearer context to Care through REST; it checks consent
+when accepting a request and immediately before every provider attempt. The
+bearer credential is never persisted in MongoDB or logged. If a process restart
+loses that ephemeral authorization context, a reclaimed job fails closed
+rather than calling a provider. Revocation blocks new jobs and retries but does
+not delete historical results; deletion is a separate owner workflow.
+
+MB-367 uses only a deterministic fake provider in local development, tests,
+and CI. OpenAI/Gemini activation, provider selection, and benchmarking remain
+gated by MB-369/Story 6204.
 
 The versioned normalized result may contain optional summary and sentiment,
 plus context signals, emotion indicators, themes, preference signals, barrier

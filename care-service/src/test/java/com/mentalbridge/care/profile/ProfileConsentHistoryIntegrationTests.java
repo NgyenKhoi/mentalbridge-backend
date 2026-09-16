@@ -128,6 +128,50 @@ class ProfileConsentHistoryIntegrationTests extends CareTestProperties {
 	}
 
 	@Test
+	void aiProcessingConsentIsIndependentNarrowAndRevocable() throws Exception {
+		var userId = createProfile();
+		mvc.perform(get("/api/v1/ai-processing-disclosures/current"))
+				.andExpect(status().isOk())
+				.andExpect(jsonPath("$.consentType").value("AI_PROCESSING"))
+				.andExpect(jsonPath("$.version").value("ai-processing-capstone-v1"));
+		mvc.perform(get("/api/v1/consents/ai-processing/authorization").with(user(userId)))
+				.andExpect(status().isOk()).andExpect(jsonPath("$.authorized").value(false))
+				.andExpect(jsonPath("$.reason").value("MISSING"));
+		mvc.perform(get("/api/v1/consents/ai-processing/authorization")
+				.with(jwt().jwt(token -> token.subject(userId.toString()))
+						.authorities(new SimpleGrantedAuthority("ROLE_SPECIALIST"))))
+				.andExpect(status().isForbidden());
+
+		mvc.perform(post("/api/v1/consent-decisions").with(user(userId))
+				.header("Idempotency-Key", "ai-consent-grant-000001")
+				.contentType(MediaType.APPLICATION_JSON).content(aiConsentBody(true)))
+				.andExpect(status().isCreated()).andExpect(jsonPath("$.consentType").value("AI_PROCESSING"));
+		mvc.perform(get("/api/v1/consents").with(user(userId)))
+				.andExpect(status().isOk()).andExpect(jsonPath("$.decisions.length()").value(1));
+		mvc.perform(get("/api/v1/consents/ai-processing/authorization").with(user(userId)))
+				.andExpect(status().isOk()).andExpect(jsonPath("$.authorized").value(true))
+				.andExpect(jsonPath("$.reason").value("GRANTED"));
+
+		mvc.perform(post("/api/v1/consent-decisions").with(user(userId))
+				.header("Idempotency-Key", "ai-consent-revoke-0001")
+				.contentType(MediaType.APPLICATION_JSON).content(aiConsentBody(false)))
+				.andExpect(status().isCreated());
+		mvc.perform(get("/api/v1/consents/ai-processing/authorization").with(user(userId)))
+				.andExpect(status().isOk()).andExpect(jsonPath("$.authorized").value(false))
+				.andExpect(jsonPath("$.reason").value("REVOKED"));
+	}
+
+	@Test
+	void consentTypesCannotReuseEachOthersPolicyVersion() throws Exception {
+		var userId = createProfile();
+		mvc.perform(post("/api/v1/consent-decisions").with(user(userId))
+				.header("Idempotency-Key", "wrong-ai-policy-00001")
+				.contentType(MediaType.APPLICATION_JSON)
+				.content("{\"consentType\":\"AI_PROCESSING\",\"policyVersion\":\"privacy-capstone-v3\",\"granted\":true}"))
+				.andExpect(status().isConflict()).andExpect(jsonPath("$.code").value("AI_PROCESSING_DISCLOSURE_REQUIRED"));
+	}
+
+	@Test
 	void historyUsesStableCursorAndReturnsSummaryOnly() throws Exception {
 		var userId = createProfile();
 		grant(userId, "history-consent-grant-01");
@@ -181,6 +225,11 @@ class ProfileConsentHistoryIntegrationTests extends CareTestProperties {
 
 	private String consentBody(boolean granted) {
 		return "{\"consentType\":\"PRIVACY_POLICY\",\"policyVersion\":\"privacy-capstone-v3\",\"granted\":"
+				+ granted + "}";
+	}
+
+	private String aiConsentBody(boolean granted) {
+		return "{\"consentType\":\"AI_PROCESSING\",\"policyVersion\":\"ai-processing-capstone-v1\",\"granted\":"
 				+ granted + "}";
 	}
 

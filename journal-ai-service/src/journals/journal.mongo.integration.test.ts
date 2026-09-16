@@ -67,6 +67,11 @@ void test("persists encrypted owner-isolated CRUD with real MongoDB", async () =
     IDENTITY_JWT_AUDIENCE: "mentalbridge-api",
     IDENTITY_JWT_KEY_ID: "integration-key",
     IDENTITY_JWT_PUBLIC_KEY: await exportSPKI(publicKey),
+    CARE_BASE_URL: "http://localhost:8081",
+    CARE_TIMEOUT_MS: 100,
+    ANALYSIS_ENABLED: false,
+    ANALYSIS_POLL_INTERVAL_MS: 250,
+    ANALYSIS_LEASE_MS: 35_000,
   };
   const tokenFor = (accountId: string) =>
     new SignJWT({ roles: ["USER"] })

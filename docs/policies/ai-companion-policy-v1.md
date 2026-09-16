@@ -5,7 +5,7 @@
 | Field | Value |
 | --- | --- |
 | Policy ID | `MB-AI-COMPANION-001` |
-| Status | `PRODUCT POLICY APPROVED; RUNTIME NOT IMPLEMENTED` |
+| Status | `HISTORICAL POLICY; EXACT-REVISION BACKEND IMPLEMENTED UNDER ADR 0015/0017` |
 | Effective decision date | 2026-09-13 |
 | Owner | Journal/AI |
 | Consent and Care-decision owner | Care |

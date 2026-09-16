@@ -122,6 +122,9 @@ class MemoryStore implements JournalStore {
     entry.commands.push(command);
     return Promise.resolve(entry);
   }
+  deleteAnalyses() {
+    return Promise.resolve();
+  }
 }
 
 const configuration = {

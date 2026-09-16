@@ -5,7 +5,7 @@
 | Field | Value |
 | --- | --- |
 | Scope decision | `MB-SCOPE-V2-001` |
-| Status | `PRODUCT POLICY APPROVED; RUNTIME NOT IMPLEMENTED` |
+| Status | `PRODUCT POLICY APPROVED; EXACT-REVISION BACKEND IMPLEMENTED; UI/REAL PROVIDER NOT ENABLED` |
 | Effective decision date | 2026-09-15 |
 | AI owner | Journal/AI |
 | Care-decision, safety, and consent owner | Care |
@@ -75,3 +75,8 @@ server-side quota enforcement, approved model routing, SupportPlan and reminder
 context minimization, deterministic provider fakes, and tests for quota races,
 retry/idempotency, consent revocation, prompt injection, provider failure, and
 attempted business-state mutation.
+
+MB-367 implements only the consented exact-revision backend with MongoDB jobs,
+normalized results, and a deterministic fake provider. Chat/quota,
+longitudinal UI, SupportPlan/reminder accompaniment, and real-provider routing
+remain behind their separate gates.

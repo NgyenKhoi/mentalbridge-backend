@@ -123,6 +123,7 @@ export interface JournalStore {
     deletedAt: Date,
     command: MutationCommand,
   ): Promise<Entry | null>;
+  deleteAnalyses(owner: string, id: string): Promise<void>;
 }
 
 const uuid = z.uuid();
@@ -347,14 +348,27 @@ export class JournalEncryption {
 export class MongoJournalStore implements JournalStore, OnApplicationShutdown {
   private readonly client: MongoClient;
   private readonly collection: Collection<Entry>;
+  private readonly analysisJobs: Collection<{
+    _id: string;
+    ownerAccountId: string;
+    journalId: string;
+  }>;
+  private readonly analysisResults: Collection<{ jobId: string }>;
   constructor(configuration: Configuration = loadConfiguration()) {
     this.client = new MongoClient(configuration.MONGODB_URI, {
       connectTimeoutMS: configuration.MONGODB_CONNECTION_TIMEOUT_MS,
       serverSelectionTimeoutMS: configuration.MONGODB_CONNECTION_TIMEOUT_MS,
     });
-    this.collection = this.client
-      .db(configuration.MONGODB_DATABASE)
-      .collection<Entry>("journal_entries");
+    const database = this.client.db(configuration.MONGODB_DATABASE);
+    this.collection = database.collection<Entry>("journal_entries");
+    this.analysisJobs = database.collection<{
+      _id: string;
+      ownerAccountId: string;
+      journalId: string;
+    }>("analysis_jobs");
+    this.analysisResults = database.collection<{ jobId: string }>(
+      "journal_analysis_results",
+    );
   }
   private async entries() {
     try {
@@ -481,6 +495,18 @@ export class MongoJournalStore implements JournalStore, OnApplicationShutdown {
       },
       { returnDocument: "after" },
     );
+  }
+  async deleteAnalyses(ownerAccountId: string, id: string) {
+    await this.entries();
+    const jobs = await this.analysisJobs
+      .find({ ownerAccountId, journalId: id })
+      .project<{ _id: string }>({ _id: 1 })
+      .toArray();
+    if (jobs.length > 0)
+      await this.analysisResults.deleteMany({
+        jobId: { $in: jobs.map((job) => job._id) },
+      });
+    await this.analysisJobs.deleteMany({ ownerAccountId, journalId: id });
   }
 }
 
@@ -781,7 +807,10 @@ export class JournalService {
     const entry = await this.store.find(ownerAccountId, id);
     if (!entry) throw new NotFoundException();
     const replay = this.replay(entry, command);
-    if (replay) return this.replayTombstone(entry, replay);
+    if (replay) {
+      await this.store.deleteAnalyses(ownerAccountId, id);
+      return this.replayTombstone(entry, replay);
+    }
     if (entry.deleted) throw new NotFoundException();
     const updated = await this.store.tombstone(
       ownerAccountId,
@@ -792,9 +821,13 @@ export class JournalService {
     if (!updated) {
       const raced = await this.store.find(ownerAccountId, id);
       const racedReplay = raced ? this.replay(raced, command) : undefined;
-      if (raced && racedReplay) return this.replayTombstone(raced, racedReplay);
+      if (raced && racedReplay) {
+        await this.store.deleteAnalyses(ownerAccountId, id);
+        return this.replayTombstone(raced, racedReplay);
+      }
       throw new NotFoundException();
     }
+    await this.store.deleteAnalyses(ownerAccountId, id);
     return this.replayTombstone(updated, {
       ...command,
       response: { kind: "tombstone" },

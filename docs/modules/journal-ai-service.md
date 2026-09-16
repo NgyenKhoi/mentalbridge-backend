@@ -26,9 +26,9 @@ Support Guide, SupportPlan, eligibility, and confirmation authority.
 - Feature slices: `journals`, `ai-chat`, `quota`, `analysis-jobs`,
   `llm-providers`, `analysis-results`, `longitudinal-analysis`, `datasets`,
   `benchmarks`, `consented-access`.
-- Runtime: Node.js 22 or newer, strict TypeScript, NestJS 11, Zod, official MongoDB driver, `migrate-mongo`, `pg`, KafkaJS, Pino, OpenTelemetry, Vitest, and Testcontainers as defined in `docs/nodejs-service-stack.md`.
-- Define OpenAPI, Kafka JSON Schemas, provider output schema, and MongoDB validation/migrations before handlers. TypeScript strict plus runtime validation is mandatory.
-- Use recoverable Mongo publication and PostgreSQL transactional outbox as appropriate; never claim cross-store atomicity. Model job states and reconciliation explicitly.
+- Runtime: Node.js 22 or newer, strict TypeScript, NestJS 11, Zod, official MongoDB driver, `migrate-mongo`, Pino, OpenTelemetry, Vitest, and Testcontainers as defined in `docs/nodejs-service-stack.md`.
+- Define OpenAPI, provider output schema, and MongoDB validation/migrations before handlers. TypeScript strict plus runtime validation is mandatory. Add Kafka schemas only for a separately accepted publication feature; MB-367 has none.
+- Use MongoDB for every Journal/AI operational aggregate. Analysis workers use atomic claim and bounded leases; future publication requires a Mongo-owned outbox or another accepted recoverable design.
 - AI adapters receive minimized decrypted content only for the approved operation; raw provider responses and hidden reasoning are never persisted.
 - The normalized result follows `MB-AI-COMPANION-001`: optional summary/sentiment, context and emotion indicators, themes, preferences, barriers, `modelConfidence`, one allow-listed `suggestedAction`, and complete provider/model/prompt/schema provenance.
 - Longitudinal results retain exact source revisions, bounded periods, comparison direction, coverage sufficiency, and provenance. Journal/AI supplies this non-standardized evidence to Care; Care composes the four-dimensional Reassessment Summary and owns every SupportPlan decision.
@@ -41,18 +41,29 @@ Support Guide, SupportPlan, eligibility, and confirmation authority.
 
 - [x] JAI-01 Scaffold the NestJS/TypeScript service with feature modules, typed configuration, health/readiness, lint, test, and build commands.
 - [ ] JAI-02 Resolve journal retention/encryption plus dataset license/edit and benchmark label policies; AI provider/result retention is fixed by ADR 0015.
-- [ ] JAI-03 Define journal/AI Companion analysis/dataset/benchmark OpenAPI and the ADR 0015 normalized provider-result schema.
-- [ ] JAI-04 Define analysis command/result schemas and Care consent/structured-indicator contracts.
-- [ ] JAI-05 Add `migrate-mongo` validators/indexes plus PostgreSQL job/dataset `node-pg-migrate` history and data documentation.
+- [ ] JAI-03 Define journal/AI Companion analysis/dataset/benchmark OpenAPI and the ADR 0015 normalized provider-result schema. The exact-revision request/status/result slice is complete; dataset and benchmark contracts remain deferred.
+- [ ] JAI-04 Define analysis command/result schemas and Care consent/structured-indicator contracts. The exact-revision and `AI_PROCESSING` contracts are complete; longitudinal and specialist-sharing contracts remain deferred.
+- [ ] JAI-05 Add `migrate-mongo` validators/indexes for journal, job, result, dataset, and benchmark collections plus data documentation. Journal, analysis-job, and normalized-result collections are complete; dataset/benchmark metadata remains deferred.
 - [x] JAI-06 Implement encrypted journal revisions, authorization, pagination and deletion.
-- [ ] JAI-07 Implement consent-gated idempotent analysis orchestration, adapters, retry/dead-letter and reconciliation.
+- [ ] JAI-07 Implement consent-gated idempotent analysis orchestration, adapters, bounded retry and reconciliation. MB-367 completes the exact-revision slice with a deterministic fake adapter and local MongoDB lease recovery; real providers and broader reconciliation remain deferred.
 - [ ] JAI-08 Implement dataset import/versioning and reproducible benchmark coordination.
 - [ ] JAI-09 Verify malformed AI output, prompt injection boundary, timeout/cost limit, duplicates/reordering, cross-store recovery and deletion.
-- [ ] JAI-10 Add observability/configuration, module README, and pass Node/contract/Mongo/PostgreSQL gates.
+- [ ] JAI-10 Add observability/configuration, module README, and pass Node/contract/Mongo gates. Journal/AI is Mongo-only and has no PostgreSQL gate.
 
 ## MB-236 delivery boundary
 
-MB-236 delivers JAI-06 plus the journal-only portions of JAI-03 and JAI-05 for create/list/detail/revise/delete. The broader JAI-03 and JAI-05 items remain open because analysis, datasets, benchmarks, and PostgreSQL job history are not part of this delivery. It does not call an AI provider, create analysis jobs, publish Kafka analysis commands, import datasets, or run benchmarks.
+MB-236 delivers JAI-06 plus the journal-only portions of JAI-03 and JAI-05 for create/list/detail/revise/delete. The broader JAI-03 and JAI-05 items remain open because analysis, datasets, and benchmarks are not part of that delivery. It does not call an AI provider, create analysis jobs, publish analysis events, import datasets, or run benchmarks.
+
+## MB-367 delivery boundary
+
+MB-367 adds the backend-only exact-revision slice: Care-owned
+`AI_PROCESSING` consent, the Journal/AI request/status contract, MongoDB job
+and normalized-result collections, atomic leased claims, one bounded retry,
+deletion/stale coupling, and a deterministic fake provider. The verified
+end-user bearer is forwarded to Care at request time and immediately before
+each provider attempt, retained only in worker memory, and never persisted or
+logged. Frontend disclosure/reflection UI remains in Story 6203; real provider
+selection and benchmark enablement remain in Story 6204/MB-369.
 
 ## Story 6201 authoring decision
 

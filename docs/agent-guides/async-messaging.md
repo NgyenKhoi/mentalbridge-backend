@@ -16,7 +16,7 @@ Kafka is not placed in the critical response path merely to claim that an API is
 ## Message categories and contract
 
 - **Integration event**: immutable past-tense fact, for example `AppointmentStatusChanged`.
-- **Asynchronous command**: imperative request with exactly one logical owner, for example `AnalyzeJournalRevision`.
+- **Asynchronous command**: imperative request with exactly one logical owner, for example a future provider-delivery command. MB-367 journal analysis remains a local MongoDB durable job and is not a Kafka command.
 
 Do not publish vague CRUD messages such as `EntityUpdated`. Messages carry the minimum data needed and stable identifiers, never access tokens, passwords, raw journal/chat bodies, assessment answer text, or provider secrets.
 

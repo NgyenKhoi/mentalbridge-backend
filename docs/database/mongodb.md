@@ -1,6 +1,6 @@
 # MongoDB Collection Definitions
 
-MongoDB stores variable, write-heavy content where document access follows an aggregate. PostgreSQL remains authoritative for identity, consent, scoring, safety/support policy, appointments, job state, and audit. MongoDB-owning Node.js services use the official MongoDB driver and apply collection validation, indexes, and controlled data changes through append-only `migrate-mongo` migrations; application startup must not mutate schemas implicitly.
+MongoDB stores variable, write-heavy content where document access follows an aggregate. PostgreSQL remains authoritative for identity, Care consent, scoring, safety/support policy, appointments, and relational audit. Journal/AI uses MongoDB as its only operational database, including durable analysis job state and future dataset/benchmark metadata. MongoDB-owning Node.js services use the official MongoDB driver and apply collection validation, indexes, and controlled data changes through append-only `migrate-mongo` migrations; application startup must not mutate schemas implicitly.
 
 All collections require MongoDB JSON Schema validation in deployment migrations. Examples omit ciphertext details for readability.
 
@@ -108,13 +108,49 @@ Rules:
 - A new edit creates a revision and invalidates prior "current analysis"; it does not overwrite provenance. Revise uses one atomic filter over owner, journal ID, active state, expected revision, and unseen command hash; a stale `If-Match` is rejected with `412`. Delete is guarded by owner, active state, and its idempotency command hash; it does not accept `If-Match`.
 - Migration `004_journal_revision_mood.cjs` expands the revision validator with the optional encrypted mood envelope. Its down migration refuses to contract the validator after any mood has been written.
 
+## `analysis_jobs`
+
+One durable owner-scoped command per idempotency key. The public API maps both
+`QUEUED` and actively leased `RUNNING` documents to `RUNNING` so clients do not
+depend on worker internals.
+
+```json
+{
+  "_id": "UUID",
+  "ownerAccountId": "UUID",
+  "journalId": "UUID",
+  "journalRevision": 2,
+  "keyHash": "keyed-base64url-digest",
+  "fingerprint": "keyed-base64url-digest",
+  "status": "QUEUED | RUNNING | SUCCEEDED | FAILED",
+  "attemptCount": 0,
+  "nextAttemptAt": "ISODate",
+  "leaseOwner": null,
+  "leaseExpiresAt": null,
+  "terminalReason": null,
+  "resultId": null,
+  "createdAt": "ISODate",
+  "updatedAt": "ISODate",
+  "completedAt": null
+}
+```
+
+The owner plus `keyHash` index is unique. Workers atomically claim a due queued
+job or an expired lease, increment `attemptCount`, and set a lease longer than
+the fixed 30-second provider timeout. At most two attempts are allowed. The
+forwarded end-user bearer JWT is held only in process memory and is never a job
+field; a reclaimed job without that context fails closed with
+`AUTHORIZATION_CONTEXT_LOST`. Request-time and pre-attempt Care checks use the
+current `AI_PROCESSING` decision. Revocation blocks an attempt or retry without
+deleting earlier results.
+
 ## `journal_analysis_results`
 
 One immutable result per journal revision and analysis run.
 
 ```json
 {
-  "_id": "ObjectId",
+  "_id": "UUID",
   "analysisId": "UUID",
   "jobId": "UUID",
   "entryId": "UUID",
@@ -122,10 +158,8 @@ One immutable result per journal revision and analysis run.
   "journalRevision": 2,
   "provider": "OPENAI",
   "model": "model-name",
-  "modelVersion": "provider-version",
-  "promptVersion": "emotion-v3",
+  "promptVersion": "exact-revision-v1",
   "schemaVersion": 1,
-  "status": "SUCCEEDED",
   "result": {
     "summary": "Optional bounded reflection summary",
     "contextSignals": ["STUDY_PRESSURE"],
@@ -137,9 +171,6 @@ One immutable result per journal revision and analysis run.
     "modelConfidence": 0.79,
     "suggestedAction": "GUIDE_APPROVED_ACTIVITY"
   },
-  "usage": { "inputTokens": 220, "outputTokens": 95 },
-  "latencyMs": 834,
-  "providerRequestId": "redacted-or-hashed",
   "createdAt": "ISODate"
 }
 ```
@@ -158,12 +189,18 @@ db.journal_analysis_results.createIndex({ jobId: 1 }, { unique: true });
 ```
 
 Store only the validated ADR 0015 normalized response plus provider, model,
-prompt, schema, timing, and job provenance. `sentiment` and `modelConfidence` are
+prompt, schema, time, and job provenance. `sentiment` and `modelConfidence` are
 optional; confidence is model-reported and not clinical. `suggestedAction` must
 be one of the allow-listed navigation actions and cannot directly change Care
 state. Never persist raw provider responses or hidden reasoning/chain-of-thought,
 including temporary debugging copies. Each result is bound to one exact journal
 revision and is deleted with that revision.
+
+Migration `005_exact_revision_analysis.cjs` is authoritative for both
+collections and their unique/claim/source indexes. MB-367 permits only
+`DETERMINISTIC_FAKE`, `deterministic-reflection-v1`, prompt
+`exact-revision-v1`, and schema version 1. Real provider usage/cost identifiers
+are deliberately absent until the separate provider-selection gate passes.
 
 ## `journal_longitudinal_analysis_results`
 

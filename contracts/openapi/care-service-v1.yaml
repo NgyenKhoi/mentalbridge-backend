@@ -23,6 +23,7 @@ tags:
   - name: Profile
   - name: Consent
   - name: Privacy disclosure
+  - name: AI processing disclosure
   - name: Questionnaire
   - name: Assessment
   - name: Support evaluation
@@ -117,6 +118,29 @@ paths:
               schema: { $ref: '#/components/schemas/ConsentCollection' }
         '401': { $ref: '#/components/responses/UnauthorizedProblem' }
         '403': { $ref: '#/components/responses/ForbiddenProblem' }
+  /api/v1/consents/ai-processing/authorization:
+    x-mentalbridge-status: implemented
+    get:
+      tags: [Consent]
+      operationId: authorizeOwnAiProcessing
+      summary: Resolve the authenticated user's current AI-processing consent
+      description: |
+        Returns a minimal current decision for exact-revision or bounded
+        longitudinal journal analysis. Journal/AI forwards the verified end-user
+        bearer credential for both request-time and pre-attempt checks. Missing,
+        revoked, or outdated consent fails closed.
+      security:
+        - bearerAuth: []
+      parameters:
+        - $ref: '#/components/parameters/CorrelationId'
+      responses:
+        '200':
+          description: Current authorization decision returned
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/AiProcessingAuthorization' }
+        '401': { $ref: '#/components/responses/UnauthorizedProblem' }
+        '403': { $ref: '#/components/responses/ForbiddenProblem' }
   /api/v1/consent-decisions:
     x-mentalbridge-status: implemented
     post:
@@ -170,6 +194,26 @@ paths:
           content:
             application/json:
               schema: { $ref: '#/components/schemas/PrivacyDisclosure' }
+        '404': { $ref: '#/components/responses/NotFoundProblem' }
+  /api/v1/ai-processing-disclosures/current:
+    x-mentalbridge-status: implemented
+    get:
+      tags: [AI processing disclosure]
+      operationId: getCurrentAiProcessingDisclosure
+      summary: Read the backend-owned disclosure for journal AI processing
+      description: |
+        Covers only explicit exact-revision and bounded longitudinal journal
+        analysis. It excludes research, marketing, specialist sharing, and safety
+        decisions. Story 6203 or a dedicated frontend follow-up renders this text.
+      parameters:
+        - $ref: '#/components/parameters/Locale'
+        - $ref: '#/components/parameters/CorrelationId'
+      responses:
+        '200':
+          description: Current AI-processing disclosure returned
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/AiProcessingDisclosure' }
         '404': { $ref: '#/components/responses/NotFoundProblem' }
   /api/v1/questionnaires/{instrument}/current:
     x-mentalbridge-status: implemented
@@ -705,20 +749,32 @@ components:
         version: { type: integer, format: int64, minimum: 0 }
     ConsentType:
       type: string
-      enum: [PRIVACY_POLICY]
+      enum: [PRIVACY_POLICY, AI_PROCESSING]
     ConsentDecisionRequest:
+      oneOf:
+        - $ref: '#/components/schemas/PrivacyConsentDecisionRequest'
+        - $ref: '#/components/schemas/AiProcessingConsentDecisionRequest'
+      discriminator:
+        propertyName: consentType
+        mapping:
+          PRIVACY_POLICY: '#/components/schemas/PrivacyConsentDecisionRequest'
+          AI_PROCESSING: '#/components/schemas/AiProcessingConsentDecisionRequest'
+    PrivacyConsentDecisionRequest:
       type: object
       additionalProperties: false
       required: [consentType, policyVersion, granted]
       properties:
-        consentType: { $ref: '#/components/schemas/ConsentType' }
-        policyVersion:
-          type: string
-          const: privacy-capstone-v3
-          description: Exact approved consent text version shown to the user
-        granted:
-          type: boolean
-          description: Grants or withdraws consent for future screening-data processing under this version
+        consentType: { type: string, const: PRIVACY_POLICY }
+        policyVersion: { type: string, const: privacy-capstone-v3 }
+        granted: { type: boolean }
+    AiProcessingConsentDecisionRequest:
+      type: object
+      additionalProperties: false
+      required: [consentType, policyVersion, granted]
+      properties:
+        consentType: { type: string, const: AI_PROCESSING }
+        policyVersion: { type: string, const: ai-processing-capstone-v1 }
+        granted: { type: boolean }
     ConsentDecision:
       type: object
       additionalProperties: false
@@ -736,8 +792,24 @@ components:
       properties:
         decisions:
           type: array
-          maxItems: 1
+          maxItems: 2
           items: { $ref: '#/components/schemas/ConsentDecision' }
+    AiProcessingAuthorization:
+      type: object
+      additionalProperties: false
+      required: [authorized, reason, consentType, policyVersion, decidedAt]
+      properties:
+        authorized: { type: boolean }
+        reason:
+          type: string
+          enum: [GRANTED, MISSING, REVOKED, POLICY_OUTDATED]
+        consentType: { type: string, const: AI_PROCESSING }
+        policyVersion:
+          type: [string, 'null']
+          maxLength: 64
+        decidedAt:
+          type: [string, 'null']
+          format: date-time
     PrivacyDisclosure:
       type: object
       additionalProperties: false
@@ -745,6 +817,17 @@ components:
       properties:
         consentType: { type: string, const: PRIVACY_POLICY }
         version: { type: string, const: privacy-capstone-v3 }
+        locale: { type: string, const: vi-VN }
+        title: { type: string, minLength: 1, maxLength: 160 }
+        content: { type: string, minLength: 1, maxLength: 4000 }
+        capstoneOnly: { type: boolean, const: true }
+    AiProcessingDisclosure:
+      type: object
+      additionalProperties: false
+      required: [consentType, version, locale, title, content, capstoneOnly]
+      properties:
+        consentType: { type: string, const: AI_PROCESSING }
+        version: { type: string, const: ai-processing-capstone-v1 }
         locale: { type: string, const: vi-VN }
         title: { type: string, minLength: 1, maxLength: 160 }
         content: { type: string, minLength: 1, maxLength: 4000 }
