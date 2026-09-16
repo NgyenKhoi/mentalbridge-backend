@@ -42,7 +42,7 @@ The workbook's 162 rows remain traceable; WBS 54 is explicitly removed by the 20
 
 ## Decision and implementation gates
 
-1. `mb-support-routing-capstone-v1` is executable immutable coarse routing, but it cannot drive a SupportPlan alone. ADR 0013 freezes the system-proposed-plan rules, and Resource Eligibility v1 now supplies exact Content-owned decisions under #50. Compatible domain-aware evaluation (#48), initial governed eligibility data, later proposal/lifecycle runtime, and any automatic freshness window remain open. PHQ-9 item-9 safety stays independent and cross-cutting.
+1. `mb-support-routing-capstone-v1` remains executable immutable coarse routing. Additive `mb-support-routing-capstone-v2` supplies exact domain-local evidence under #48, and Resource Eligibility v1 supplies exact Content-owned decisions under #50. Initial governed eligibility data, later proposal/lifecycle runtime, and any automatic freshness window remain open. PHQ-9 item-9 safety stays independent and cross-cutting.
 2. Specialist policy is fixed by ADR 0014: public profile fields, no document/license verification, stable approval/suspension reasons, deterministic non-clinical discovery, and seeded-demo disclosure. Runtime contracts and data remain open delivery work.
 3. Reviewed Vietnamese safety/disclaimer wording, exact directory sources and
    verification operations, and decision on any emergency number; no
@@ -62,4 +62,4 @@ The workbook's 162 rows remain traceable; WBS 54 is explicitly removed by the 20
     fixed `creditAllocation`, and financial retention. Runtime FX, downgrade,
     and user refund are unsupported.
 12. Whether benchmark WBS 28-29 and admin WBS 155-156 are separate actor-specific use cases or duplicate entries. This does not block the provider-neutral ADR 0015 contract, adapters, or async job runtime, but it blocks the final production-provider decision and official controlled-demo enablement.
-13. SupportPlan policy questions are resolved by ADR 0013; implementation evidence for compatible provider contracts, persistence, concurrency and frontend consumption remains open under #48–#51.
+13. SupportPlan policy questions are resolved by ADR 0013; SupportEvaluation v2 provider contracts, persistence and concurrency are implemented under #48. Initial eligibility data, proposal/lifecycle runtime and frontend consumption remain open under their separate stories.

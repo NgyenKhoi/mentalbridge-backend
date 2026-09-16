@@ -219,8 +219,8 @@ support.
 ## Runtime gates
 
 This policy is approved design input, not executable runtime. Resource
-Eligibility v1 now provides the exact-version Content provider and fail-closed
-Care client boundary. Runtime remains unavailable until compatible
-SupportEvaluation v2, initial item-level eligibility, SupportPlan
-proposal/lifecycle contracts, append-only Care persistence, and controlled
-frontend evidence pass their separate gates.
+Eligibility v1 provides the exact-version Content provider and fail-closed Care
+client boundary, and SupportEvaluation v2 provides immutable domain-local Care
+evidence. Runtime remains unavailable until initial item-level eligibility,
+SupportPlan proposal/lifecycle contracts, append-only Care plan persistence,
+and controlled frontend evidence pass their separate gates.

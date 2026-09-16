@@ -58,7 +58,7 @@ A future automatic latest-assessment calculation must define freshness, version 
 
 Every result returns the exact `policyVersion`, stable ordered reason codes, both evidence references, independent per-instrument levels and Vietnamese 14-day meanings, one bounded next step, and the non-diagnostic limitation. It never creates a composite score. Repeating the same pair under the same policy reproduces the same persisted decision.
 
-The published v1 `supportTier` is a coarse pathway and cannot by itself select a resource or SupportPlan. Existing v1 contracts and records remain immutable. A forward plan-driving evaluation requires a compatible version with explicit contributing domains and domain-specific reasons under #48.
+The published v1 `supportTier` is a coarse pathway and cannot by itself select a resource or SupportPlan. Existing v1 contracts and records remain immutable. Additive `mb-support-routing-capstone-v2` supplies explicit contributing domains, domain-specific reasons, and independent safety under #48; plan creation remains a later explicit workflow.
 
 The Product Owner-approved minimum local safety fallback for this controlled Capstone version is:
 
@@ -130,7 +130,7 @@ Guide, and owned assessment access are never paid features.
 - [x] Score, disclaimer and safety output are non-paywalled; specialist/paid capabilities fail explicitly when unavailable.
 - [x] Versioned REST/event contracts, append-only persistence, deterministic runtime and automated tests implemented for Story 1103.
 - [x] Two-domain V1 boundary, no-global-severity rule, cross-cutting safety and system-proposed-plan direction approved in ADR 0012.
-- [ ] Compatible domain-aware SupportEvaluation policy/contracts are approved and delivered under #48.
+- [ ] Compatible additive domain-aware SupportEvaluation v2 policy/contracts are implemented under #48 without changing v1 history; known-consumer and production domain approval remain release gates.
 - [x] Product Owner approved the SupportPlan template, slot, bounds, composition, safety-presentation, role, and lifecycle policy under ADR 0013.
 - [ ] Care, Content, and Frontend accept the server-proposed contract design before it becomes an active OpenAPI contract.
 - [x] Domain/band/pathway exact-version Resource Eligibility v1 is delivered under #50; initial reviewed item mappings remain a separate gate.

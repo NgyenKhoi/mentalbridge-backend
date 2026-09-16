@@ -112,7 +112,7 @@ At-least-once business delivery is assumed. See ADR 0016.
    provenance-bearing entries; without coordinates and distance it never
    claims “nearest”. The flow never automatically calls, shares location,
    sends safety email, or notifies a third party.
-6. The active v1 tier is coarse historical routing and does not select a resource or SupportPlan. A compatible future evaluation version must expose contributing domains before plan use (#48).
+6. The active v1 tier remains coarse historical routing and does not select a resource or SupportPlan. Additive v2 exposes exact domain-local contributions and independent item-9 safety for future plan composition (#48); it does not create or mutate a plan.
 7. Care produces a one-time approved Support Guide after screening for every
    package. It is not a lifecycle aggregate.
 8. For an entitled `PLUS`/`PREMIUM` user, Care obtains exact versioned

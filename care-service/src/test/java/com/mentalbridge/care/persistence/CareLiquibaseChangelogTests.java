@@ -27,7 +27,8 @@ class CareLiquibaseChangelogTests {
 					"care-010-assessment-disclosure-provenance",
 					"care-007-profile-preference-defaults",
 					"care-008-gad7-and-phq9-v2-reference-data",
-					"care-009-combined-support-routing");
+					"care-009-combined-support-routing",
+					"care-011-domain-aware-support-evaluation-v2");
 		}
 	}
 

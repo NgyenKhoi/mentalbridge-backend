@@ -317,7 +317,7 @@ One bounded, versioned next step per support tier. `safety_guidance_text` is req
 
 Immutable versioned platform support-tier result derived from one explicit compatible PHQ-9/GAD-7 pair, distinct from diagnosis.
 
-This section describes the executable `mb-support-routing-capstone-v1` history. Its separate assessment references preserve instrument-specific evidence; it has no global severity field. The coarse tier and existing reason columns are not sufficient to select a resource or SupportPlan. Issue #48 must introduce any explicit domain-bearing shape compatibly and without backfilling or reinterpreting these rows.
+This section describes the executable `mb-support-routing-capstone-v1` history. Its separate assessment references preserve instrument-specific evidence; it has no global severity field. The coarse tier and existing reason columns are not sufficient to select a resource or SupportPlan. Issue #48 therefore adds separate v2 tables below without backfilling or reinterpreting these rows.
 
 | Field | Purpose |
 | --- | --- |
@@ -341,6 +341,114 @@ Per-user idempotency aliases for combined-support commands. Multiple keys may sa
 | `request_hash` | Lowercase SHA-256 digest of the canonical PHQ-9/GAD-7 evidence pair; request plaintext is not recoverable from it. |
 | `support_evaluation_id` | Immutable evaluation returned for this key; the composite foreign key prevents cross-owner aliases. |
 | `created_at` | Immutable UTC instant when Care accepted the command key. |
+
+### `public.support_evaluation_v2_policy_definition`
+
+Immutable Care-owned publication record for the additive domain-aware policy.
+The partial unique index permits only one `PUBLISHED` v2 policy per locale and
+does not retire or modify the separate v1 policy table.
+
+| Field | Purpose |
+| --- | --- |
+| `version` | Immutable machine-readable policy identity; the controlled publication is `mb-support-routing-capstone-v2`. |
+| `locale` | BCP 47 locale whose questionnaire/domain mapping was reviewed. |
+| `status` | Publication state `DRAFT`, `PUBLISHED`, or `RETIRED`; only the published row accepts new evaluations. |
+| `reviewed_by` | Accountable review description retained for policy provenance, not an authorization decision at request time. |
+| `approved_at` | UTC decision instant for this immutable policy publication. |
+| `source_reference` | Traceable issue and accepted ADR identifiers used to reproduce the decision. |
+| `created_at` | Immutable UTC database insertion instant. |
+
+### `public.support_evaluation_v2_eligible_definition`
+
+Exact questionnaire/scoring/domain allow-list for v2. The instrument/domain
+constraint permits only PHQ-9/`DEPRESSIVE_SYMPTOMS` and
+GAD-7/`ANXIETY_SYMPTOMS`; no implicit latest definition or enum-only domain
+extension is allowed.
+
+| Field | Purpose |
+| --- | --- |
+| `policy_version` | Owning immutable v2 policy version. |
+| `definition_id` | Exact Care-owned questionnaire definition accepted as evidence. |
+| `instrument` | `PHQ9` or `GAD7`, constrained together with its approved domain. |
+| `questionnaire_version` | Exact external questionnaire version copied for compatibility validation. |
+| `scoring_version` | Exact deterministic score-band policy required from the result. |
+| `domain` | Approved screening domain contributed by this instrument; never a global mental-health classification. |
+
+### `public.support_evaluation_v2`
+
+Immutable aggregate root for one explicit compatible PHQ-9/GAD-7 pair. This
+table is additive and has no foreign key, update path, or backfill involving
+`public.support_evaluation`. Owner/evidence composite foreign keys prevent an
+evaluation from referencing another user's assessment.
+
+| Field | Purpose |
+| --- | --- |
+| `id` | Immutable UUID exposed by the v2 REST resource and integration event. |
+| `user_id` | Care profile that owns the command, both evidence rows, and every read. |
+| `phq9_assessment_id` | Exact owned PHQ-9 result supplying depression-domain and item-9 safety evidence. |
+| `gad7_assessment_id` | Exact owned GAD-7 result supplying anxiety-domain evidence; must differ from the PHQ-9 ID. |
+| `policy_version` | Exact domain-aware policy version used; included in evidence-pair uniqueness for reproducible re-evaluation under a future version. |
+| `evaluated_at` | UTC instant at which Care executed the local deterministic policy. |
+| `created_at` | Immutable UTC insertion instant; not a substitute for `evaluated_at`. |
+
+The owner/evidence/policy unique constraint makes different idempotency keys for
+the same decision resolve to one aggregate. The owner-history index supports
+deterministic descending history by evaluation instant and UUID tie-breaker.
+
+### `public.support_evaluation_v2_domain`
+
+Exactly two immutable contribution snapshots are inserted with the aggregate.
+Unique ordinal, instrument, and domain constraints prevent duplicate or
+collapsed contributions. Database checks bind PHQ-9 to ordinal 1 and
+`DEPRESSIVE_SYMPTOMS`, GAD-7 to ordinal 2 and `ANXIETY_SYMPTOMS`, every level to
+its stable reason, and each minimal/mild versus moderate-or-higher level to its
+domain-local pathway.
+
+| Field | Purpose |
+| --- | --- |
+| `id` | Immutable internal UUID for one domain snapshot. |
+| `support_evaluation_id` | Owning v2 aggregate; deletion is restricted to preserve history. |
+| `ordinal` | Stable presentation/event order: PHQ-9 first and GAD-7 second. |
+| `assessment_id` | Exact assessment evidence captured by this contribution. |
+| `definition_id` | Exact questionnaire definition paired with the assessment by a composite foreign key. |
+| `instrument` | Instrument whose band has meaning; constrained to the matching domain and ordinal. |
+| `domain` | Independent approved screening domain used by downstream family composition. |
+| `questionnaire_version` | Immutable questionnaire-version snapshot so later reference-data changes cannot alter history. |
+| `scoring_version` | Immutable score-band policy snapshot from the assessment result. |
+| `screening_level` | Instrument-specific band; never a global severity. GAD-7 cannot contain `MODERATELY_SEVERE`. |
+| `support_pathway` | Domain-local `SELF_GUIDED_SUPPORT` or `PROFESSIONAL_SUPPORT_RECOMMENDED`; safety never overwrites it. |
+| `reason_code` | Stable instrument-and-level explanation such as `PHQ9_LEVEL_MILD`; unrestricted sensitive text is not stored. |
+
+### `public.support_evaluation_v2_safety`
+
+One independent PHQ-9 item-9 safety snapshot per v2 aggregate. The composite
+foreign key requires the source to equal the aggregate's PHQ-9 assessment.
+No raw answer value, total score, intent, plan, imminence, or urgency label is
+stored.
+
+| Field | Purpose |
+| --- | --- |
+| `support_evaluation_id` | Aggregate identity and one-to-one primary key. |
+| `source_assessment_id` | Exact PHQ-9 evidence reference; constrained to the aggregate's PHQ-9 ID. |
+| `instrument` | Constant `PHQ9`, making the safety source explicit. |
+| `trigger_code` | Constant `PHQ9_ITEM_9`; not a separate screening domain. |
+| `safety_status` | Exact `NEGATIVE_SAFETY_SCREEN` or `POSITIVE_SAFETY_SCREEN` result retained independently of both bands. |
+| `safety_policy_version` | Exact deterministic item-9 policy version used by the source result. |
+| `reason_code` | Stable `PHQ9_ITEM9_NEGATIVE` or `PHQ9_ITEM9_POSITIVE`, constrained to match the status. |
+
+### `public.support_evaluation_v2_request`
+
+Per-user v2 idempotency namespace. It is intentionally separate from the v1
+request table so the same caller key cannot alias resources with different
+contract semantics.
+
+| Field | Purpose |
+| --- | --- |
+| `user_id` | Owner scope for the retry key and returned aggregate. |
+| `idempotency_key` | Caller-generated printable key, 16-128 characters, unique per v2 owner. |
+| `request_hash` | Lowercase SHA-256 of the canonical v2 version and ordered PHQ-9/GAD-7 identifiers; original request data is not recoverable. |
+| `support_evaluation_id` | Immutable v2 outcome; composite foreign key prevents a cross-owner alias. |
+| `created_at` | Immutable UTC instant when Care accepted this v2 key. |
 
 ### `care.intervention_plan`
 

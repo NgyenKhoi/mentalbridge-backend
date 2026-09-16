@@ -4,11 +4,15 @@ import static org.assertj.core.api.Assertions.assertThat;
 
 import java.nio.file.Path;
 import java.util.HashSet;
+import java.util.Map;
 import java.util.Set;
 
 import org.junit.jupiter.api.Test;
 
+import com.fasterxml.jackson.databind.JsonNode;
+
 import io.swagger.v3.oas.models.Operation;
+import io.swagger.v3.oas.models.media.Schema;
 import io.swagger.v3.parser.OpenAPIV3Parser;
 import io.swagger.v3.parser.core.models.ParseOptions;
 
@@ -108,7 +112,7 @@ class CareOpenApiContractTests {
 	@Test
 	void assessmentRequestAcceptsAnswersButNoClientOwnedResult() {
 		var contract = Path.of("..", "contracts", "openapi", "care-service-v1.yaml").toAbsolutePath();
-		var openApi = new OpenAPIV3Parser().read(contract.toString());
+		var openApi = new OpenAPIV3Parser().readLocation(contract.toUri().toString(), null, null).getOpenAPI();
 		var request = openApi.getComponents().getSchemas().get("AssessmentSubmissionRequest");
 		var result = openApi.getComponents().getSchemas().get("AssessmentResult");
 
@@ -128,15 +132,15 @@ class CareOpenApiContractTests {
 	@Test
 	void progressResponseIsAdditiveMinimizedAndDocumentsEnumFallback() {
 		var contract = Path.of("..", "contracts", "openapi", "care-service-v1.yaml").toAbsolutePath();
-		var openApi = new OpenAPIV3Parser().read(contract.toString());
+		var openApi = new OpenAPIV3Parser().readLocation(contract.toUri().toString(), null, null).getOpenAPI();
 		var progress = openApi.getComponents().getSchemas().get("AssessmentProgress");
 		var point = openApi.getComponents().getSchemas().get("AssessmentProgressPoint");
 		var transition = openApi.getComponents().getSchemas().get("BandTransition");
 		var direction = openApi.getComponents().getSchemas().get("ScoreDirection");
 
-		assertThat(progress.getAdditionalProperties()).isEqualTo(Boolean.TRUE);
-		assertThat(point.getAdditionalProperties()).isEqualTo(Boolean.TRUE);
-		assertThat(transition.getAdditionalProperties()).isEqualTo(Boolean.TRUE);
+		assertThat(allowsAdditionalProperties(progress)).isTrue();
+		assertThat(allowsAdditionalProperties(point)).isTrue();
+		assertThat(allowsAdditionalProperties(transition)).isTrue();
 		assertThat(progress.getProperties()).containsKeys("instrument", "scoringVersion", "previous", "current",
 				"rawDelta", "scoreDirection", "bandTransition", "elapsedDuration")
 				.doesNotContainKeys("answers", "safetyStatus", "consent", "profile");
@@ -146,7 +150,7 @@ class CareOpenApiContractTests {
 	@Test
 	void supportContractProvidesReviewedExamplesForEveryTierWithoutACompositeScore() {
 		var contract = Path.of("..", "contracts", "openapi", "care-service-v1.yaml").toAbsolutePath();
-		var openApi = new OpenAPIV3Parser().read(contract.toString());
+		var openApi = new OpenAPIV3Parser().readLocation(contract.toUri().toString(), null, null).getOpenAPI();
 		var response = openApi.getComponents().getSchemas().get("SupportEvaluation");
 		var examples = openApi.getComponents().getExamples();
 
@@ -154,10 +158,26 @@ class CareOpenApiContractTests {
 				"safetyGuidance", "disclaimer").doesNotContainKeys("totalScore", "compositeScore", "overallSeverity");
 		assertThat(examples).containsKeys("SelfGuidedSupportEvaluation", "ProfessionalSupportEvaluation",
 				"SafetyFollowUpSupportEvaluation");
-		assertThat(examples.values()).extracting(
-				example -> String.valueOf(((java.util.Map<?, ?>) example.getValue()).get("supportTier")))
+		assertThat(examples.values()).extracting(example -> supportTier(example.getValue()))
 				.containsExactlyInAnyOrder("SELF_GUIDED_SUPPORT", "PROFESSIONAL_SUPPORT_RECOMMENDED",
 						"SAFETY_FOLLOW_UP_RECOMMENDED");
+	}
+
+	private boolean allowsAdditionalProperties(Schema<?> schema) {
+		var additionalProperties = schema.getAdditionalProperties();
+		return Boolean.TRUE.equals(additionalProperties)
+				|| additionalProperties instanceof Schema<?> additionalSchema
+						&& Boolean.TRUE.equals(additionalSchema.getBooleanSchemaValue());
+	}
+
+	private String supportTier(Object example) {
+		if (example instanceof Map<?, ?> map) {
+			return String.valueOf(map.get("supportTier"));
+		}
+		if (example instanceof JsonNode node) {
+			return node.path("supportTier").asText();
+		}
+		throw new IllegalArgumentException("Unsupported OpenAPI example representation");
 	}
 
 	private void assertSecurity(String key, Operation operation) {

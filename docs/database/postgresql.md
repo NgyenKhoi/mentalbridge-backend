@@ -56,7 +56,7 @@ Cross-schema foreign keys in the logical baseline only make relationships visibl
 - Stored total score and screening band live in the one-to-one result and are authoritative only after server validation; `scoring_version` records the algorithm, `safety_item_positive` preserves the questionnaire fact, and the paired safety status/policy version records the independent response decision.
 - Support-tier results store policy version, reason codes and exact source IDs to make decisions reproducible; safety status remains a separate assessment result.
 - Existing `mb-support-routing-capstone-v1` rows remain immutable coarse evaluations. They preserve PHQ-9 and GAD-7 evidence separately and are not a global severity or sufficient plan-eligibility decision.
-- Resource Eligibility v1 is Content-owned, append-only and exact-versioned under #50. Domain-aware SupportEvaluation v2 remains under #48, and SupportPlan persistence belongs to a separate later story; no eligibility migration backfills or mutates existing reviewed-resource rows.
+- Resource Eligibility v1 is Content-owned, append-only and exact-versioned under #50. Domain-aware SupportEvaluation v2 is additive Care-owned persistence under #48, while SupportPlan persistence belongs to a separate later story; neither migration backfills or mutates historical v1 evaluation or reviewed-resource rows.
 
 ### Booking
 
