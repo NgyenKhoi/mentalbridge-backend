@@ -2,7 +2,7 @@
 
 - Status: Accepted
 - Date: 2026-09-13
-- Last amended: 2026-09-16 (MB-421 Mongo-only runtime and Care consent)
+- Last amended: 2026-09-16 (MB-421 Mongo-only runtime and Care consent; MB-369 entitlement-aware provider routing and benchmark gate)
 - Decision ID: `MB-AI-COMPANION-001`
 - Complements: [ADR 0011](0011-defer-phobert-optional-benchmark-baseline.md)
 - Amended by: [ADR 0017](0017-product-scope-v2.md), which adds package quota/model behavior and permits AI accompaniment across SupportPlan, reassessment, and approved reminder wording without transferring business-state authority
@@ -51,6 +51,31 @@ not delete historical results; deletion is a separate owner workflow.
 MB-367 uses only a deterministic fake provider in local development, tests,
 and CI. OpenAI/Gemini activation, provider selection, and benchmarking remain
 gated by MB-369/Story 6204.
+
+MB-369 adds a versioned `EXACT_REVISION` model-routing policy. Consultation is
+the package authority and exposes the authenticated user's current effective
+`FREE`/`PLUS`/`PREMIUM` entitlement. Journal/AI forwards the verified end-user
+bearer for that lookup, never accepts a client-supplied tier, and never reads
+Consultation storage. Absence of an effective paid or explicit demo projection
+is `FREE`; explicit demo projections retain `DEMO` provenance and must not be
+presented as payment.
+
+The first provider attempt snapshots workload, package, entitlement source and
+policy version, routing-policy version, provider, model, prompt version, and
+approval version on the durable job. A retry may use only that same route. If
+the current entitlement would resolve to a different route, the job terminates
+without another provider call. The router never silently falls back to another
+provider. `FREE` and `PLUS` share one baseline route in v1; `PREMIUM` may use a
+separately approved stronger route.
+
+Gemini and OpenAI adapters use structured JSON output and remain disabled by
+default. Real execution requires explicit configuration, credentials, and an
+approval identifier backed by a reproducible synthetic benchmark. Local/test/
+CI continues to select the deterministic fake. The benchmark records dataset,
+rubric, provider, exact model, prompt and schema versions plus normalized
+quality/safety, latency, token, cost, malformed-output, and failure evidence.
+It never uses production journals. Implementing adapters and the harness does
+not itself declare a model approved.
 
 The versioned normalized result may contain optional summary and sentiment,
 plus context signals, emotion indicators, themes, preference signals, barrier
@@ -131,6 +156,9 @@ controlled demo. PhoBERT remains separately deferred by ADR 0011.
   provider adapters, single-entry and longitudinal normalized-result
   validation, exact-source coverage, and deletion coupling.
 - Paid provider calls are replaced by deterministic fakes in CI.
+- Consultation gains only a current-entitlement read-model foundation; MB-369
+  does not implement purchase, upgrade, MoMo, billing periods, chat quota,
+  consultation credits, or ledgers.
 - Dataset/benchmark administration remains a separate later batch.
 
 ## Rejected alternatives
