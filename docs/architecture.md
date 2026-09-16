@@ -41,7 +41,7 @@ Mobile App / Admin Web
  Edge reverse proxy
        |
        +--> Identity / Care / Consultation+Billing (Spring Boot) --> PostgreSQL
-       +--> Journal-AI (Node.js) --> MongoDB + PostgreSQL job metadata
+       +--> Journal-AI (Node.js) --> MongoDB
        +--> Realtime (Node.js) --> MongoDB + Redis --> WebSocket clients
        +--> Content-Notification (Node.js) --> PostgreSQL + Brevo/push providers
                               |
@@ -72,8 +72,6 @@ Initial event catalogue:
 
 | Event | Producer | Consumers |
 | --- | --- | --- |
-| `AnalyzeJournalRevision` | Journal/AI | Journal/AI provider executor |
-| `JournalAnalysisCompleted` | Journal/AI | Care, Notification |
 | `AssessmentSubmitted` | Care | Reporting, Notification |
 | `SupportTierResolved` | Care | Notification, Reporting |
 | `ConsentGranted/Revoked` | Care | Consultation cache invalidation, Audit |
@@ -132,8 +130,8 @@ At-least-once business delivery is assumed. See ADR 0016.
 ### Journal analysis
 
 1. User saves a journal revision in MongoDB.
-2. On an explicit request for one exact revision, Node.js Journal/AI verifies current `AI_PROCESSING` consent through Care REST and creates an idempotent asynchronous job/outbox record.
-3. Journal/AI calls exactly one configured provider adapter for the run, initially OpenAI or Gemini, through versioned input/output contracts. Each attempt times out after 30 seconds and has at most one retry for HTTP 429, provider 5xx, or transport failure; the same journal content is not automatically sent to another provider. An optional future PhoBERT worker may execute a separately approved narrow classification contract after ADR 0011's activation gates pass.
+2. On an explicit request for one exact revision, Node.js Journal/AI forwards the verified end-user bearer context to Care REST, verifies current `AI_PROCESSING` consent, and creates one idempotent durable MongoDB job. The bearer credential is held only in memory and is never persisted or logged.
+3. A local worker atomically claims the job with a bounded lease and re-checks Care consent with the same ephemeral bearer immediately before each provider attempt. MB-367 uses one deterministic fake provider only. Each attempt times out after 30 seconds and has at most one retry for HTTP 429, provider 5xx, or transport failure; the same journal content is not automatically sent to another provider. A revoked consent stops retry. A reclaimed job without bearer context fails closed. OpenAI/Gemini, Kafka publication, and the optional PhoBERT worker remain outside this Story.
 4. The worker rejects malformed/unsafe output and stores only the normalized structured result plus provider/model/prompt/schema provenance, timing, and job state. Raw provider responses and hidden reasoning are not persisted.
 5. Care consumes only approved structured indicators, never free-form model reasoning. For reassessment it composes standardized screening trend, non-standardized available-journal context trend with coverage, SupportPlan engagement, and user reflection as separate dimensions; it never creates a combined improvement score.
 6. Failure produces a terminal job state after the bounded retry; the user can still read the journal. The OpenAI/Gemini benchmark gates final production-provider selection and official controlled-demo enablement, not contract, adapter, or job-runtime implementation.

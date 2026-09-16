@@ -96,9 +96,9 @@ The tree below is the maximum expected shape for a feature with real boundary co
 Initial feature packages: `journals`, `analysis-jobs`, `analysis-results`, `llm-providers`, `datasets`, `benchmarks`, and `consented-access`.
 
 - MongoDB owns journal revisions and structured analysis documents.
-- PostgreSQL owns durable analysis job, dataset/run metadata, inbox/outbox, and reconciliation state.
-- Provider adapters use official OpenAI and Google GenAI SDKs behind application ports.
-- Sprint 1 implements service scaffolding and private journal CRUD only. AI calls, Kafka analysis jobs, benchmarks, and provider billing are deferred.
+- MongoDB owns durable analysis jobs, normalized results, longitudinal analyses, dataset/run metadata, and future recoverable-publication state.
+- MB-367 uses a deterministic fake provider behind the application port. Official OpenAI and Google GenAI adapters remain gated by provider-selection work.
+- Sprint 1 implements service scaffolding and private journal CRUD only. MB-367 later adds a local Mongo-leased job runtime without Kafka; real AI calls, benchmarks, and provider billing remain deferred.
 
 ### `realtime-service`
 

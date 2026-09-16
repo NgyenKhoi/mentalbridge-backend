@@ -1,0 +1,2336 @@
+"Issue Type","Issue ID","Summary","Parent","Assignee","Story Points","Original Estimate","Sprint","Priority","Labels","Description"
+"Epic","6001","[SPRINT 3] Complete specialist administration and discovery","","","","","MB Sprint 3","Highest","sprint3-specialist-admin-discovery","## Objective
+Deliver the approved specialist journey from profile submission through approval, location, availability, discovery, rating, and account-state administration.
+
+## Scope and pull policy
+Pull 6101 first; then 6102-6104. Pull 6105 after approved profiles and slots exist. Pull 6106 after completed appointments and 6107 after core specialist/session flows.
+
+All child Stories are an ordered candidate pool in MB Sprint 3; importing them does not commit the full point total. Sprint planning pulls only dependency-ready work that fits capacity.
+
+## Explicit deferrals
+Credential documents, license verification, clinical matching, rooms, video, cash-price display, and access to raw journal, assessment, or chat data remain excluded.
+
+## Definition of Done
+- [ ] Every pulled child Story reaches its stated usable actor outcome.
+- [ ] Contracts, persistence, owner implementation, consumers, frontend, and evidence agree where applicable.
+- [ ] Dependency-gated Stories are not started before named prerequisites pass.
+- [ ] Deferred or prohibited behavior is not presented as implemented."
+"Epic","6002","[SPRINT 3] Complete Journal and AI Companion","","","","","MB Sprint 3","Highest","sprint3-journal-ai-companion","## Objective
+Complete Journal authoring and deliver consented exact-revision, brief-draft, and longitudinal AI capabilities through a controlled provider rollout.
+
+## Scope and pull policy
+Pull 6201 and 6202 independently; 6203 follows 6202. Pull 6204 before official controlled-demo enablement, 6205 after the manual brief contract, and 6206 before reassessment composition.
+
+All child Stories are an ordered candidate pool in MB Sprint 3; importing them does not commit the full point total. Sprint planning pulls only dependency-ready work that fits capacity.
+
+## Explicit deferrals
+Diagnosis, PHQ/GAD scoring, autonomous Care decisions, raw provider-response or chain-of-thought storage, and silent cross-provider fallback remain prohibited.
+
+## Definition of Done
+- [ ] Every pulled child Story reaches its stated usable actor outcome.
+- [ ] Contracts, persistence, owner implementation, consumers, frontend, and evidence agree where applicable.
+- [ ] Dependency-gated Stories are not started before named prerequisites pass.
+- [ ] Deferred or prohibited behavior is not presented as implemented."
+"Epic","6003","[SPRINT 3] Complete the SupportPlan user journey","","","","","MB Sprint 3","Highest","sprint3-supportplan-complete","## Objective
+Continue from the imported SupportPlan provider foundation through proposal, activation, lifecycle, replacement, and real engagement.
+
+## Scope and pull policy
+6301 is gated by imported Stories 5102, 5103, and 5104. Pull 6302-6305 in order as the preceding runtime capability becomes stable; keep one focused owner on this lane.
+
+All child Stories are an ordered candidate pool in MB Sprint 3; importing them does not commit the full point total. Sprint planning pulls only dependency-ready work that fits capacity.
+
+## Explicit deferrals
+Client-authored proposals, mutable templates, AI-selected plans, automatic plan mutation, community, gamification, and generic scheduling remain excluded.
+
+## Definition of Done
+- [ ] Every pulled child Story reaches its stated usable actor outcome.
+- [ ] Contracts, persistence, owner implementation, consumers, frontend, and evidence agree where applicable.
+- [ ] Dependency-gated Stories are not started before named prerequisites pass.
+- [ ] Deferred or prohibited behavior is not presented as implemented."
+"Epic","6004","[SPRINT 3] Complete appointment and consultation continuity","","","","","MB Sprint 3","Highest","sprint3-appointment-consultation","## Objective
+Deliver the approved appointment journey from demo credit and request through decision, change, bounded sharing, session evidence, settlement, and summary.
+
+## Scope and pull policy
+Pull 6401 early; pull 6402 after specialist slots; then 6403-6404. Pull 6405 after confirmed appointments and 6406-6409 after the required session states exist.
+
+All child Stories are an ordered candidate pool in MB Sprint 3; importing them does not commit the full point total. Sprint planning pulls only dependency-ready work that fits capacity.
+
+## Explicit deferrals
+Video, rooms, private psychotherapy notes, specialist-only completion, continuous monitoring, real MoMo rollout, and financial administration remain excluded.
+
+## Definition of Done
+- [ ] Every pulled child Story reaches its stated usable actor outcome.
+- [ ] Contracts, persistence, owner implementation, consumers, frontend, and evidence agree where applicable.
+- [ ] Dependency-gated Stories are not started before named prerequisites pass.
+- [ ] Deferred or prohibited behavior is not presented as implemented."
+"Epic","6005","[SPRINT 3] Complete reassessment and governed plan review","","","","","MB Sprint 3","Highest","sprint3-reassessment-review","## Objective
+Close the post-screening loop with four separate evidence dimensions and user-confirmed SupportPlan review.
+
+## Scope and pull policy
+6501 consumes deterministic assessment history, 6206 longitudinal context, and 6305 engagement. 6502 exposes the result; 6503 follows 6304 replacement readiness.
+
+All child Stories are an ordered candidate pool in MB Sprint 3; importing them does not commit the full point total. Sprint planning pulls only dependency-ready work that fits capacity.
+
+## Explicit deferrals
+Combined improvement/recovery scores, AI clinical verdicts, autonomous plan changes, and predictive analytics remain excluded.
+
+## Definition of Done
+- [ ] Every pulled child Story reaches its stated usable actor outcome.
+- [ ] Contracts, persistence, owner implementation, consumers, frontend, and evidence agree where applicable.
+- [ ] Dependency-gated Stories are not started before named prerequisites pass.
+- [ ] Deferred or prohibited behavior is not presented as implemented."
+"Story","6101","Submit a specialist profile and approve it","6001","","5","","MB Sprint 3","Highest","sprint3-now-specialist-approval","## Objective
+Let a specialist submit the approved public profile and let an admin move it from PENDING to APPROVED.
+
+## Scope and dependencies
+Starts immediately in consultation-service and replaces hardcoded credential-verification prototypes.
+
+## Acceptance Criteria
+- [ ] Contract and persist approved public fields, PENDING status, actor, and timestamps.
+- [ ] Implement specialist create/read/update/submit and admin queue/detail/approve APIs.
+- [ ] Replace specialist/admin fixtures with real BFF flows.
+- [ ] Show persisted status after reload and remove verification claims.
+- [ ] Exercise submit, reload, approve, repeat, wrong actor, and invalid data.
+
+## Definition of Done
+- [ ] The first confirmation subtask closes only material remaining decisions.
+- [ ] The stated actor journey works with persisted owner state and real consumers.
+- [ ] Contract, migration, implementation, frontend, and canonical documentation agree where applicable.
+- [ ] Proportional tests cover success, authorization, validation, consistency, and dependency failure.
+- [ ] Evidence is classified truthfully as fixture browser, service integration, or live cross-stack.
+
+## Evidence
+- Contract and migration diff, or an explicit no-change conclusion.
+- Exact owner and consumer test commands with results.
+- Screenshots, recording, or redacted payloads proving the actor outcome.
+- Compatibility evidence for each cross-service boundary.
+
+## Completion Notes
+Record final endpoints, states, decisions, versions, test commands, dependencies, and intentional deferrals for Submit a specialist profile and approve it."
+"Story","6102","Handle specialist rejection, suspension, resubmission, and restoration","6001","","5","","MB Sprint 3","High","sprint3-next-specialist-lifecycle","## Objective
+Complete the specialist exception lifecycle with understandable stable reasons and correct downstream effects.
+
+## Scope and dependencies
+Depends on 6101; suspension must remove discovery and safely affect future appointments.
+
+## Acceptance Criteria
+- [ ] Implement reject, resubmit, suspend, and restore commands with audit facts.
+- [ ] Trigger owner-safe future-appointment cancellation and exact credit release on suspension.
+- [ ] Add real admin actions and specialist remediation states.
+- [ ] Show reasons and downstream appointment outcomes without private content.
+- [ ] Exercise all valid/invalid transitions and races.
+
+## Definition of Done
+- [ ] The first confirmation subtask closes only material remaining decisions.
+- [ ] The stated actor journey works with persisted owner state and real consumers.
+- [ ] Contract, migration, implementation, frontend, and canonical documentation agree where applicable.
+- [ ] Proportional tests cover success, authorization, validation, consistency, and dependency failure.
+- [ ] Evidence is classified truthfully as fixture browser, service integration, or live cross-stack.
+
+## Evidence
+- Contract and migration diff, or an explicit no-change conclusion.
+- Exact owner and consumer test commands with results.
+- Screenshots, recording, or redacted payloads proving the actor outcome.
+- Compatibility evidence for each cross-service boundary.
+
+## Completion Notes
+Record final endpoints, states, decisions, versions, test commands, dependencies, and intentional deferrals for Handle specialist rejection, suspension, resubmission, and restoration."
+"Story","6103","Manage specialist PracticeLocations","6001","","5","","MB Sprint 3","High","sprint3-next-practice-location","## Objective
+Let an approved specialist create, edit, list, and deactivate real in-person locations.
+
+## Scope and dependencies
+Depends on 6101; V1 stores displayName, address, IANA timezone, active, and no rooms.
+
+## Acceptance Criteria
+- [ ] Add OpenAPI/Liquibase for owned locations and seed provenance.
+- [ ] Implement create/list/update/deactivate with timezone and approval rules.
+- [ ] Build real location list/create/edit/deactivate screens.
+- [ ] Show timezone, inactive, seed, validation, and failure states.
+- [ ] Exercise ownership, invalid timezone, deactivate, seed, and snapshot preservation.
+
+## Definition of Done
+- [ ] The first confirmation subtask closes only material remaining decisions.
+- [ ] The stated actor journey works with persisted owner state and real consumers.
+- [ ] Contract, migration, implementation, frontend, and canonical documentation agree where applicable.
+- [ ] Proportional tests cover success, authorization, validation, consistency, and dependency failure.
+- [ ] Evidence is classified truthfully as fixture browser, service integration, or live cross-stack.
+
+## Evidence
+- Contract and migration diff, or an explicit no-change conclusion.
+- Exact owner and consumer test commands with results.
+- Screenshots, recording, or redacted payloads proving the actor outcome.
+- Compatibility evidence for each cross-service boundary.
+
+## Completion Notes
+Record final endpoints, states, decisions, versions, test commands, dependencies, and intentional deferrals for Manage specialist PracticeLocations."
+"Story","6104","Publish 60-minute specialist availability","6001","","5","","MB Sprint 3","High","sprint3-next-specialist-availability","## Objective
+Let an approved specialist publish and withdraw real IN_APP_CHAT and IN_PERSON slots.
+
+## Scope and dependencies
+Depends on 6101 and on 6103 for in-person availability.
+
+## Acceptance Criteria
+- [ ] Persist exact 60-minute slots, modality, UTC interval, timezone, location, and state.
+- [ ] Implement owned create/list/withdraw with overlap and approval rules.
+- [ ] Replace prototype schedules with real availability management.
+- [ ] Require active location for in-person and show conflicts/holds.
+- [ ] Exercise both modalities, overlap, duration, owner, location, withdrawal, and timezone.
+
+## Definition of Done
+- [ ] The first confirmation subtask closes only material remaining decisions.
+- [ ] The stated actor journey works with persisted owner state and real consumers.
+- [ ] Contract, migration, implementation, frontend, and canonical documentation agree where applicable.
+- [ ] Proportional tests cover success, authorization, validation, consistency, and dependency failure.
+- [ ] Evidence is classified truthfully as fixture browser, service integration, or live cross-stack.
+
+## Evidence
+- Contract and migration diff, or an explicit no-change conclusion.
+- Exact owner and consumer test commands with results.
+- Screenshots, recording, or redacted payloads proving the actor outcome.
+- Compatibility evidence for each cross-service boundary.
+
+## Completion Notes
+Record final endpoints, states, decisions, versions, test commands, dependencies, and intentional deferrals for Publish 60-minute specialist availability."
+"Story","6105","Discover approved specialists and selectable slots","6001","","8","","MB Sprint 3","High","sprint3-next-specialist-discovery","## Objective
+Replace static specialist cards with transparent discovery, filters, profile detail, and current availability.
+
+## Scope and dependencies
+Depends on 6101, 6103, and 6104; ranking order is domain, availability, language, timezone, rating, experience.
+
+## Acceptance Criteria
+- [ ] Implement approved-only list/detail/filter APIs with ranking policy version and explanation.
+- [ ] Apply deterministic ranking and stable pagination.
+- [ ] Connect real list, filters, detail, explanation, and slot selection.
+- [ ] Remove Video, Phone, free intro, prices, credentials, and unsupported domains.
+- [ ] Exercise approval visibility, filters, rank ties, inactive locations, and stale slots.
+
+## Definition of Done
+- [ ] The first confirmation subtask closes only material remaining decisions.
+- [ ] The stated actor journey works with persisted owner state and real consumers.
+- [ ] Contract, migration, implementation, frontend, and canonical documentation agree where applicable.
+- [ ] Proportional tests cover success, authorization, validation, consistency, and dependency failure.
+- [ ] Evidence is classified truthfully as fixture browser, service integration, or live cross-stack.
+
+## Evidence
+- Contract and migration diff, or an explicit no-change conclusion.
+- Exact owner and consumer test commands with results.
+- Screenshots, recording, or redacted payloads proving the actor outcome.
+- Compatibility evidence for each cross-service boundary.
+
+## Completion Notes
+Record final endpoints, states, decisions, versions, test commands, dependencies, and intentional deferrals for Discover approved specialists and selectable slots."
+"Story","6106","Rate a completed specialist appointment once","6001","","5","","MB Sprint 3","Medium","sprint3-later-specialist-rating","## Objective
+Let an appointment owner submit one bounded rating and update runtime rating aggregates truthfully.
+
+## Scope and dependencies
+Depends on COMPLETED appointment outcomes from 6407 or 6408.
+
+## Acceptance Criteria
+- [ ] Persist one current rating per owned completed appointment.
+- [ ] Implement create/update/read and transactional aggregate maintenance.
+- [ ] Show rating only for eligible completed appointments.
+- [ ] Support create/edit/validation/failure and disclosed aggregate display.
+- [ ] Exercise eligibility, wrong actor, duplicate/update, concurrency, and aggregate accuracy.
+
+## Definition of Done
+- [ ] The first confirmation subtask closes only material remaining decisions.
+- [ ] The stated actor journey works with persisted owner state and real consumers.
+- [ ] Contract, migration, implementation, frontend, and canonical documentation agree where applicable.
+- [ ] Proportional tests cover success, authorization, validation, consistency, and dependency failure.
+- [ ] Evidence is classified truthfully as fixture browser, service integration, or live cross-stack.
+
+## Evidence
+- Contract and migration diff, or an explicit no-change conclusion.
+- Exact owner and consumer test commands with results.
+- Screenshots, recording, or redacted payloads proving the actor outcome.
+- Compatibility evidence for each cross-service boundary.
+
+## Completion Notes
+Record final endpoints, states, decisions, versions, test commands, dependencies, and intentional deferrals for Rate a completed specialist appointment once."
+"Story","6107","Administer account state through Identity","6001","","5","","MB Sprint 3","Medium","sprint3-later-identity-admin","## Objective
+Let an authorized admin suspend or restore an account through Identity-owned commands and bounded downstream effects.
+
+## Scope and dependencies
+Pulled after core specialist/session flows; no cross-service database access.
+
+## Acceptance Criteria
+- [ ] Implement Identity admin query/suspend/restore with audit and idempotency.
+- [ ] Publish minimal lifecycle facts or bounded current-state checks.
+- [ ] Build real admin lookup, status, reason, suspend, and restore UI.
+- [ ] Show downstream-impact confirmation and pending delivery.
+- [ ] Exercise user/specialist suspension and restoration, auth effect, repeats, and downstream eligibility.
+
+## Definition of Done
+- [ ] The first confirmation subtask closes only material remaining decisions.
+- [ ] The stated actor journey works with persisted owner state and real consumers.
+- [ ] Contract, migration, implementation, frontend, and canonical documentation agree where applicable.
+- [ ] Proportional tests cover success, authorization, validation, consistency, and dependency failure.
+- [ ] Evidence is classified truthfully as fixture browser, service integration, or live cross-stack.
+
+## Evidence
+- Contract and migration diff, or an explicit no-change conclusion.
+- Exact owner and consumer test commands with results.
+- Screenshots, recording, or redacted payloads proving the actor outcome.
+- Compatibility evidence for each cross-service boundary.
+
+## Completion Notes
+Record final endpoints, states, decisions, versions, test commands, dependencies, and intentional deferrals for Administer account state through Identity."
+"Story","6201","Improve Journal authoring with mood and draft protection","6002","","5","","MB Sprint 3","High","sprint3-now-journal-authoring","## Objective
+Complete existing Journal CRUD with an approved editor, intentional mood interaction, and unsaved-work protection.
+
+## Scope and dependencies
+Can start from the working Journal baseline; do not build a general rich-text platform.
+
+## Acceptance Criteria
+- [ ] Implement only approved contract, validation, Mongo migration, and revision changes.
+- [ ] Preserve compatibility, conflict, and deletion semantics.
+- [ ] Build prompts, mood interaction, validation, save states, and draft protection.
+- [ ] Preserve real list/detail/edit/delete BFF flows.
+- [ ] Exercise create, reload, edit, conflict, failed save, unsaved navigation, and delete.
+
+## Definition of Done
+- [ ] The first confirmation subtask closes only material remaining decisions.
+- [ ] The stated actor journey works with persisted owner state and real consumers.
+- [ ] Contract, migration, implementation, frontend, and canonical documentation agree where applicable.
+- [ ] Proportional tests cover success, authorization, validation, consistency, and dependency failure.
+- [ ] Evidence is classified truthfully as fixture browser, service integration, or live cross-stack.
+
+## Evidence
+- Contract and migration diff, or an explicit no-change conclusion.
+- Exact owner and consumer test commands with results.
+- Screenshots, recording, or redacted payloads proving the actor outcome.
+- Compatibility evidence for each cross-service boundary.
+
+## Completion Notes
+Record final endpoints, states, decisions, versions, test commands, dependencies, and intentional deferrals for Improve Journal authoring with mood and draft protection."
+"Story","6202","Run exact-revision AI analysis jobs","6002","","13","","MB Sprint 3","Highest","sprint3-now-ai-runtime","## Objective
+Provide consent-gated MongoDB asynchronous analysis of one exact owned journal revision through a deterministic backend runtime.
+
+## Scope and dependencies
+Backend enabling slice expanded minimally to add the Care-owned `AI_PROCESSING` decision and authorization endpoint. Journal/AI remains Mongo-only and forwards the verified end-user bearer to Care without persisting it. Story 6203 or a dedicated frontend follow-up owns disclosure/consent UI and the visible reflection flow. Story 6204/MB-369 gates real provider selection and official enablement.
+
+## Acceptance Criteria
+- [ ] Add Care disclosure/decision/authorization contract and backend for `AI_PROCESSING` at `ai-processing-capstone-v1`, independent from `PRIVACY_POLICY`.
+- [ ] Add Journal/AI OpenAPI/schema, Mongo migration, unique idempotency, atomic claim, bounded lease recovery, job repository, worker, and provider port without PostgreSQL or Kafka.
+- [ ] Enforce consent at request time and before every provider attempt, ownership, idempotency, 30-second timeout, and one allowed retry; fail closed without persisting bearer credentials.
+- [ ] Expose owned RUNNING/SUCCEEDED/FAILED status/result APIs.
+- [ ] Return only approved fields and stable terminal reasons.
+- [ ] Exercise success, missing/revoked/unavailable consent, wrong owner, duplicate, lease recovery, timeout, retry, failure, stale revision, and deletion.
+- [ ] Use only the deterministic fake provider; retain real OpenAI/Gemini and benchmark work in 6204/MB-369.
+
+## Definition of Done
+- [ ] The first confirmation subtask closes only material remaining decisions.
+- [ ] The stated actor journey works with persisted owner state and real consumers.
+- [ ] Contract, migration, implementation, frontend, and canonical documentation agree where applicable.
+- [ ] Proportional tests cover success, authorization, validation, consistency, and dependency failure.
+- [ ] Evidence is classified truthfully as fixture browser, service integration, or live cross-stack.
+
+## Evidence
+- Care and Journal/AI OpenAPI plus Mongo migration 005 implement the explicit no-PostgreSQL/no-Kafka decision.
+- Journal/AI `npm test`: 29/29 pass; `npm run test:integration`: 2/2 pass against migrated MongoDB; format, lint, typecheck, contract, migration, and build gates pass.
+- Focused Care disclosure/consent/service/OpenAPI tests pass. The PostgreSQL-backed MockMvc integration scenario is authored but was not executed in this workspace because the Docker engine is unavailable; do not classify this as live cross-stack evidence.
+- Storage inspection in the Mongo integration test proves the forwarded bearer, raw provider response, and hidden reasoning are not persisted.
+
+## Completion Notes
+Backend implementation completed 2026-09-16. Care exposes the current `AI_PROCESSING` disclosure and `GET /api/v1/consents/ai-processing/authorization`. Journal/AI exposes `POST /api/v1/journals/{journalId}/revisions/{revision}/analysis-jobs` and `GET /api/v1/analysis-jobs/{jobId}` with RUNNING/SUCCEEDED/FAILED states, stable consent/auth-context/stale/deleted/provider terminal reasons, `exact-revision-v1` prompt provenance, schema version 1, and the deterministic fake provider. Story 6203 remains responsible for consent/reflection UI; Story 6204/MB-369 remains responsible for real-provider selection and benchmarking."
+"Story","6203","Use AI reflection from the Journal page","6002","","5","","MB Sprint 3","Highest","sprint3-next-ai-reflection-ui","## Objective
+Let a user explicitly request and revisit safe analysis for the displayed exact revision.
+
+## Scope and dependencies
+Depends on 6202; Journal remains usable without consent or AI availability.
+
+## Acceptance Criteria
+- [ ] Add authenticated BFF calls for request/status/result.
+- [ ] Map exact contract fields and errors without inference.
+- [ ] Build queued, running, success, failed, stale, and consent states.
+- [ ] Route allow-listed actions only to governed flows.
+- [ ] Exercise live BFF states, reload, denial, failure, stale revision, and action routing.
+
+## Definition of Done
+- [ ] The first confirmation subtask closes only material remaining decisions.
+- [ ] The stated actor journey works with persisted owner state and real consumers.
+- [ ] Contract, migration, implementation, frontend, and canonical documentation agree where applicable.
+- [ ] Proportional tests cover success, authorization, validation, consistency, and dependency failure.
+- [ ] Evidence is classified truthfully as fixture browser, service integration, or live cross-stack.
+
+## Evidence
+- Contract and migration diff, or an explicit no-change conclusion.
+- Exact owner and consumer test commands with results.
+- Screenshots, recording, or redacted payloads proving the actor outcome.
+- Compatibility evidence for each cross-service boundary.
+
+## Completion Notes
+Record final endpoints, states, decisions, versions, test commands, dependencies, and intentional deferrals for Use AI reflection from the Journal page."
+"Story","6204","Benchmark and enable one controlled-demo AI provider","6002","","8","","MB Sprint 3","Medium","sprint3-later-ai-benchmark","## Objective
+Select and enable one provider through approved synthetic benchmark and operational evidence.
+
+## Scope and dependencies
+Depends on 6202; paid calls do not run in CI and no real journal enters the benchmark.
+
+## Acceptance Criteria
+- [ ] Complete OpenAI/Gemini adapters behind the existing port.
+- [ ] Build reproducible normalized benchmark harness.
+- [ ] Record the provider/model decision and configure one approved demo provider.
+- [ ] Add typed secrets/config, readiness, feature flag, and rollback.
+- [ ] Archive benchmark evidence and adapter compatibility results.
+
+## Definition of Done
+- [ ] The first confirmation subtask closes only material remaining decisions.
+- [ ] The stated actor journey works with persisted owner state and real consumers.
+- [ ] Contract, migration, implementation, frontend, and canonical documentation agree where applicable.
+- [ ] Proportional tests cover success, authorization, validation, consistency, and dependency failure.
+- [ ] Evidence is classified truthfully as fixture browser, service integration, or live cross-stack.
+
+## Evidence
+- Contract and migration diff, or an explicit no-change conclusion.
+- Exact owner and consumer test commands with results.
+- Screenshots, recording, or redacted payloads proving the actor outcome.
+- Compatibility evidence for each cross-service boundary.
+
+## Completion Notes
+Record final endpoints, states, decisions, versions, test commands, dependencies, and intentional deferrals for Benchmark and enable one controlled-demo AI provider."
+"Story","6205","Generate an optional AI ConsultationBrief draft","6002","","5","","MB Sprint 3","Medium","sprint3-later-ai-brief","## Objective
+Return a minimized structured draft to Care without sharing directly to a specialist or blocking manual creation.
+
+## Scope and dependencies
+Depends on 6202 and manual brief contract 6405.
+
+## Acceptance Criteria
+- [ ] Add versioned asynchronous brief-draft request/result.
+- [ ] Validate consent, sources, approved fields, provenance, timeout, and retry.
+- [ ] Integrate Care request/retrieval and editable prefill.
+- [ ] Mark AI origin and source versions.
+- [ ] Exercise consent, minimization, success, partial inputs, failure, deletion, and wrong actor.
+
+## Definition of Done
+- [ ] The first confirmation subtask closes only material remaining decisions.
+- [ ] The stated actor journey works with persisted owner state and real consumers.
+- [ ] Contract, migration, implementation, frontend, and canonical documentation agree where applicable.
+- [ ] Proportional tests cover success, authorization, validation, consistency, and dependency failure.
+- [ ] Evidence is classified truthfully as fixture browser, service integration, or live cross-stack.
+
+## Evidence
+- Contract and migration diff, or an explicit no-change conclusion.
+- Exact owner and consumer test commands with results.
+- Screenshots, recording, or redacted payloads proving the actor outcome.
+- Compatibility evidence for each cross-service boundary.
+
+## Completion Notes
+Record final endpoints, states, decisions, versions, test commands, dependencies, and intentional deferrals for Generate an optional AI ConsultationBrief draft."
+"Story","6206","Compare journal context across bounded periods","6002","","8","","MB Sprint 3","Medium","sprint3-later-ai-longitudinal","## Objective
+Provide longitudinal AI analysis over exact revisions with explicit coverage and safe direction vocabulary.
+
+## Scope and dependencies
+Depends on 6202 and feeds 6501; it does not calculate screening trend.
+
+## Acceptance Criteria
+- [ ] Add contract, Mongo persistence, worker, exact sources, and provenance.
+- [ ] Validate periods, consent, ownership, coverage, directions, and deletion coupling.
+- [ ] Expose minimized Care result access with deadlines and safe unavailability.
+- [ ] Return coverage/source versions without raw text.
+- [ ] Exercise sufficient, sparse, imbalanced, deleted-source, revoked consent, failure, and duplicate.
+
+## Definition of Done
+- [ ] The first confirmation subtask closes only material remaining decisions.
+- [ ] The stated actor journey works with persisted owner state and real consumers.
+- [ ] Contract, migration, implementation, frontend, and canonical documentation agree where applicable.
+- [ ] Proportional tests cover success, authorization, validation, consistency, and dependency failure.
+- [ ] Evidence is classified truthfully as fixture browser, service integration, or live cross-stack.
+
+## Evidence
+- Contract and migration diff, or an explicit no-change conclusion.
+- Exact owner and consumer test commands with results.
+- Screenshots, recording, or redacted payloads proving the actor outcome.
+- Compatibility evidence for each cross-service boundary.
+
+## Completion Notes
+Record final endpoints, states, decisions, versions, test commands, dependencies, and intentional deferrals for Compare journal context across bounded periods."
+"Story","6301","Generate and reload the current SupportPlan draft","6003","","8","","MB Sprint 3","Highest","sprint3-gated-plan-proposal","## Objective
+Create one deterministic server proposal and return the same current draft after reload.
+
+## Scope and dependencies
+Gated by imported 5102 SupportEvaluation v2, 5103 Resource Eligibility v1, and 5104 matrix.
+
+## Acceptance Criteria
+- [ ] Promote OpenAPI and persist plan, slots, choices, and exact provenance.
+- [ ] Implement deterministic composition, revalidation, bounds, and one-draft concurrency.
+- [ ] Build real proposal/draft BFF page with rationale, safety, slots, alternatives, and reload.
+- [ ] Never calculate eligibility or truncate on the client.
+- [ ] Exercise one/two domain, safety, roles, dedupe, bounds, concurrency, reload, and failure.
+
+## Definition of Done
+- [ ] The first confirmation subtask closes only material remaining decisions.
+- [ ] The stated actor journey works with persisted owner state and real consumers.
+- [ ] Contract, migration, implementation, frontend, and canonical documentation agree where applicable.
+- [ ] Proportional tests cover success, authorization, validation, consistency, and dependency failure.
+- [ ] Evidence is classified truthfully as fixture browser, service integration, or live cross-stack.
+
+## Evidence
+- Contract and migration diff, or an explicit no-change conclusion.
+- Exact owner and consumer test commands with results.
+- Screenshots, recording, or redacted payloads proving the actor outcome.
+- Compatibility evidence for each cross-service boundary.
+
+## Completion Notes
+Record final endpoints, states, decisions, versions, test commands, dependencies, and intentional deferrals for Generate and reload the current SupportPlan draft."
+"Story","6302","Choose alternatives and activate a SupportPlan","6003","","5","","MB Sprint 3","Highest","sprint3-gated-plan-activation","## Objective
+Let a user change only admitted choices and explicitly activate a valid draft.
+
+## Scope and dependencies
+Depends on 6301 and fresh provider facts.
+
+## Acceptance Criteria
+- [ ] Implement idempotent choice and activation commands.
+- [ ] Revalidate evaluation, templates, content versions, roles, publication, and windows.
+- [ ] Build keep/swap/remove and explicit activation UI.
+- [ ] Show stale, missing-core, conflict, safety, and success states.
+- [ ] Exercise valid/invalid choices, injection, stale facts, duplicate activation, and concurrency.
+
+## Definition of Done
+- [ ] The first confirmation subtask closes only material remaining decisions.
+- [ ] The stated actor journey works with persisted owner state and real consumers.
+- [ ] Contract, migration, implementation, frontend, and canonical documentation agree where applicable.
+- [ ] Proportional tests cover success, authorization, validation, consistency, and dependency failure.
+- [ ] Evidence is classified truthfully as fixture browser, service integration, or live cross-stack.
+
+## Evidence
+- Contract and migration diff, or an explicit no-change conclusion.
+- Exact owner and consumer test commands with results.
+- Screenshots, recording, or redacted payloads proving the actor outcome.
+- Compatibility evidence for each cross-service boundary.
+
+## Completion Notes
+Record final endpoints, states, decisions, versions, test commands, dependencies, and intentional deferrals for Choose alternatives and activate a SupportPlan."
+"Story","6303","Pause, resume, complete, and discard SupportPlans","6003","","5","","MB Sprint 3","High","sprint3-gated-plan-lifecycle","## Objective
+Complete normal user-controlled plan lifecycle while preserving immutable history.
+
+## Scope and dependencies
+Depends on 6302; does not cover replacement.
+
+## Acceptance Criteria
+- [ ] Implement discard/pause/resume/complete with guards, ownership, idempotency, and history.
+- [ ] Preserve one-draft/one-current constraints.
+- [ ] Expose only valid actions for reloaded state.
+- [ ] Build confirmations, conflicts, failures, and history detail.
+- [ ] Exercise all valid/invalid transitions, repeats, concurrency, reload, and history.
+
+## Definition of Done
+- [ ] The first confirmation subtask closes only material remaining decisions.
+- [ ] The stated actor journey works with persisted owner state and real consumers.
+- [ ] Contract, migration, implementation, frontend, and canonical documentation agree where applicable.
+- [ ] Proportional tests cover success, authorization, validation, consistency, and dependency failure.
+- [ ] Evidence is classified truthfully as fixture browser, service integration, or live cross-stack.
+
+## Evidence
+- Contract and migration diff, or an explicit no-change conclusion.
+- Exact owner and consumer test commands with results.
+- Screenshots, recording, or redacted payloads proving the actor outcome.
+- Compatibility evidence for each cross-service boundary.
+
+## Completion Notes
+Record final endpoints, states, decisions, versions, test commands, dependencies, and intentional deferrals for Pause, resume, complete, and discard SupportPlans."
+"Story","6304","Replace a current SupportPlan after revalidation","6003","","8","","MB Sprint 3","High","sprint3-gated-plan-replacement","## Objective
+Let a user review and atomically replace a current plan without losing history.
+
+## Scope and dependencies
+Depends on 6302 and provider versions; new evaluation never auto-supersedes.
+
+## Acceptance Criteria
+- [ ] Persist replacement relation and freshly revalidate providers.
+- [ ] Atomically SUPERSEDE current and ACTIVATE replacement.
+- [ ] Build current-versus-proposed comparison and confirmation.
+- [ ] Keep current usable until confirmed.
+- [ ] Exercise success, stale provider, concurrent change, duplicate, rollback, and unchanged current.
+
+## Definition of Done
+- [ ] The first confirmation subtask closes only material remaining decisions.
+- [ ] The stated actor journey works with persisted owner state and real consumers.
+- [ ] Contract, migration, implementation, frontend, and canonical documentation agree where applicable.
+- [ ] Proportional tests cover success, authorization, validation, consistency, and dependency failure.
+- [ ] Evidence is classified truthfully as fixture browser, service integration, or live cross-stack.
+
+## Evidence
+- Contract and migration diff, or an explicit no-change conclusion.
+- Exact owner and consumer test commands with results.
+- Screenshots, recording, or redacted payloads proving the actor outcome.
+- Compatibility evidence for each cross-service boundary.
+
+## Completion Notes
+Record final endpoints, states, decisions, versions, test commands, dependencies, and intentional deferrals for Replace a current SupportPlan after revalidation."
+"Story","6305","Track SupportPlan activity engagement and helpfulness","6003","","8","","MB Sprint 3","Medium","sprint3-later-plan-engagement","## Objective
+Give users a real plan workspace and produce honest engagement/helpfulness inputs for reassessment.
+
+## Scope and dependencies
+Depends on 6302; no adherence, recovery, or clinical score.
+
+## Acceptance Criteria
+- [ ] Persist item engagement, barriers, helpfulness, reflection, time, and versions.
+- [ ] Implement owned create/update/history and minimized reassessment projection.
+- [ ] Build current activities, check-in, helpfulness, barrier, reflection, and history UI.
+- [ ] Handle paused/completed/superseded/conflict states.
+- [ ] Exercise lifecycle rules, repeat/update, item versions, reload, and projection.
+
+## Definition of Done
+- [ ] The first confirmation subtask closes only material remaining decisions.
+- [ ] The stated actor journey works with persisted owner state and real consumers.
+- [ ] Contract, migration, implementation, frontend, and canonical documentation agree where applicable.
+- [ ] Proportional tests cover success, authorization, validation, consistency, and dependency failure.
+- [ ] Evidence is classified truthfully as fixture browser, service integration, or live cross-stack.
+
+## Evidence
+- Contract and migration diff, or an explicit no-change conclusion.
+- Exact owner and consumer test commands with results.
+- Screenshots, recording, or redacted payloads proving the actor outcome.
+- Compatibility evidence for each cross-service boundary.
+
+## Completion Notes
+Record final endpoints, states, decisions, versions, test commands, dependencies, and intentional deferrals for Track SupportPlan activity engagement and helpfulness."
+"Story","6401","Provision and display controlled-demo consultation credits","6004","","3","","MB Sprint 3","High","sprint3-next-demo-credit","## Objective
+Provide a truthful demo path for credits before real MoMo integration.
+
+## Scope and dependencies
+Consultation owns available, held, consumed, released, and forfeited facts.
+
+## Acceptance Criteria
+- [ ] Implement idempotent demo provisioning and balance/history contract.
+- [ ] Persist demo provenance and ledger transitions.
+- [ ] Build balance/history and approved demo setup state.
+- [ ] Show actual held/released/forfeited outcomes.
+- [ ] Exercise repeat provisioning, reload, wrong actor/environment, and ledger.
+
+## Definition of Done
+- [ ] The first confirmation subtask closes only material remaining decisions.
+- [ ] The stated actor journey works with persisted owner state and real consumers.
+- [ ] Contract, migration, implementation, frontend, and canonical documentation agree where applicable.
+- [ ] Proportional tests cover success, authorization, validation, consistency, and dependency failure.
+- [ ] Evidence is classified truthfully as fixture browser, service integration, or live cross-stack.
+
+## Evidence
+- Contract and migration diff, or an explicit no-change conclusion.
+- Exact owner and consumer test commands with results.
+- Screenshots, recording, or redacted payloads proving the actor outcome.
+- Compatibility evidence for each cross-service boundary.
+
+## Completion Notes
+Record final endpoints, states, decisions, versions, test commands, dependencies, and intentional deferrals for Provision and display controlled-demo consultation credits."
+"Story","6402","Request an appointment and hold its slot and credit","6004","","8","","MB Sprint 3","High","sprint3-gated-appointment-request","## Objective
+Let a user request one exact slot while Consultation atomically holds slot and credit.
+
+## Scope and dependencies
+Depends on 6104/6105 and 6401; V1 is 60-minute chat or in-person and four-hour lead.
+
+## Acceptance Criteria
+- [ ] Persist appointment, snapshot, credit, REQUESTED, deadline, history, and idempotency.
+- [ ] Lock and hold slot plus credit in one transaction.
+- [ ] Submit selected slot through real BFF and show REQUESTED/deadline/held credit.
+- [ ] Handle stale slot, insufficient credit, conflict, and failure.
+- [ ] Exercise both modalities, lead time, stale slot, double booking, duplicate, concurrency, and no credit.
+
+## Definition of Done
+- [ ] The first confirmation subtask closes only material remaining decisions.
+- [ ] The stated actor journey works with persisted owner state and real consumers.
+- [ ] Contract, migration, implementation, frontend, and canonical documentation agree where applicable.
+- [ ] Proportional tests cover success, authorization, validation, consistency, and dependency failure.
+- [ ] Evidence is classified truthfully as fixture browser, service integration, or live cross-stack.
+
+## Evidence
+- Contract and migration diff, or an explicit no-change conclusion.
+- Exact owner and consumer test commands with results.
+- Screenshots, recording, or redacted payloads proving the actor outcome.
+- Compatibility evidence for each cross-service boundary.
+
+## Completion Notes
+Record final endpoints, states, decisions, versions, test commands, dependencies, and intentional deferrals for Request an appointment and hold its slot and credit."
+"Story","6403","Accept, reject, or expire appointment requests","6004","","5","","MB Sprint 3","High","sprint3-gated-appointment-decision","## Objective
+Let the assigned specialist decide in time and expire unanswered requests with exact release.
+
+## Scope and dependencies
+Depends on 6402; deadline is min(requestedAt+24h, startsAt-2h).
+
+## Acceptance Criteria
+- [ ] Implement accept/reject and scheduled expiry with locking/idempotency.
+- [ ] Persist history and settle holds exactly once.
+- [ ] Replace specialist fixtures with real request decisions.
+- [ ] Show user CONFIRMED/REJECTED/EXPIRED and credit outcome.
+- [ ] Exercise accept, reject, expiry, races, repeats, wrong specialist, and reload.
+
+## Definition of Done
+- [ ] The first confirmation subtask closes only material remaining decisions.
+- [ ] The stated actor journey works with persisted owner state and real consumers.
+- [ ] Contract, migration, implementation, frontend, and canonical documentation agree where applicable.
+- [ ] Proportional tests cover success, authorization, validation, consistency, and dependency failure.
+- [ ] Evidence is classified truthfully as fixture browser, service integration, or live cross-stack.
+
+## Evidence
+- Contract and migration diff, or an explicit no-change conclusion.
+- Exact owner and consumer test commands with results.
+- Screenshots, recording, or redacted payloads proving the actor outcome.
+- Compatibility evidence for each cross-service boundary.
+
+## Completion Notes
+Record final endpoints, states, decisions, versions, test commands, dependencies, and intentional deferrals for Accept, reject, or expire appointment requests."
+"Story","6404","Cancel or reschedule appointments with auditable history","6004","","8","","MB Sprint 3","High","sprint3-gated-appointment-change","## Objective
+Complete cancellation and reschedule-as-new behavior with approved credit outcomes.
+
+## Scope and dependencies
+Depends on 6403; old appointment snapshots never mutate.
+
+## Acceptance Criteria
+- [ ] Implement actor/time-aware cancellation settlement and immutable history.
+- [ ] Create linked new request without in-place mutation.
+- [ ] Use real cancel and new-slot reschedule BFF commands.
+- [ ] Show old/new links, actor, reason, and credit outcome.
+- [ ] Exercise every cancellation row, 24-hour boundary, repeats, races, and reschedule failure.
+
+## Definition of Done
+- [ ] The first confirmation subtask closes only material remaining decisions.
+- [ ] The stated actor journey works with persisted owner state and real consumers.
+- [ ] Contract, migration, implementation, frontend, and canonical documentation agree where applicable.
+- [ ] Proportional tests cover success, authorization, validation, consistency, and dependency failure.
+- [ ] Evidence is classified truthfully as fixture browser, service integration, or live cross-stack.
+
+## Evidence
+- Contract and migration diff, or an explicit no-change conclusion.
+- Exact owner and consumer test commands with results.
+- Screenshots, recording, or redacted payloads proving the actor outcome.
+- Compatibility evidence for each cross-service boundary.
+
+## Completion Notes
+Record final endpoints, states, decisions, versions, test commands, dependencies, and intentional deferrals for Cancel or reschedule appointments with auditable history."
+"Story","6405","Create and share a manual appointment-scoped ConsultationBrief","6004","","8","","MB Sprint 3","Medium","sprint3-gated-consultation-brief","## Objective
+Let a user author, approve, and revoke a minimal brief for one confirmed appointment.
+
+## Scope and dependencies
+Depends on 6403; Care owns brief/grant and specialist access is time/field scoped.
+
+## Acceptance Criteria
+- [ ] Persist Care draft, immutable shared snapshot, sources, and scoped grant.
+- [ ] Expose authorized projection to Consultation with deadlines and fail-closed behavior.
+- [ ] Build user create/edit/review/approve/revoke and specialist read-only states.
+- [ ] Show exact fields/window before sharing.
+- [ ] Exercise manual flow, wrong actor/appointment, early/expired, revocation race, and minimization.
+
+## Definition of Done
+- [ ] The first confirmation subtask closes only material remaining decisions.
+- [ ] The stated actor journey works with persisted owner state and real consumers.
+- [ ] Contract, migration, implementation, frontend, and canonical documentation agree where applicable.
+- [ ] Proportional tests cover success, authorization, validation, consistency, and dependency failure.
+- [ ] Evidence is classified truthfully as fixture browser, service integration, or live cross-stack.
+
+## Evidence
+- Contract and migration diff, or an explicit no-change conclusion.
+- Exact owner and consumer test commands with results.
+- Screenshots, recording, or redacted payloads proving the actor outcome.
+- Compatibility evidence for each cross-service boundary.
+
+## Completion Notes
+Record final endpoints, states, decisions, versions, test commands, dependencies, and intentional deferrals for Create and share a manual appointment-scoped ConsultationBrief."
+"Story","6406","Enter appointment chat and enforce its time window","6004","","8","","MB Sprint 3","Medium","sprint3-gated-chat-access","## Objective
+Provide waiting, active chat, reconnect, and read-only history for assigned participants.
+
+## Scope and dependencies
+Depends on CONFIRMED IN_APP_CHAT; entry starts 10 minutes early and send is only [start,end).
+
+## Acceptance Criteria
+- [ ] Add Consultation eligibility query and Realtime appointment binding.
+- [ ] Enforce actor, state, waiting, send interval, cancellation, and read-only server-side.
+- [ ] Build waiting, active, reconnecting, ended, cancelled, and failure UI.
+- [ ] Connect real appointment eligibility and conversation.
+- [ ] Exercise wrong actor, early entry/send, active/end, cancel, reconnect, duplicate, and history.
+
+## Definition of Done
+- [ ] The first confirmation subtask closes only material remaining decisions.
+- [ ] The stated actor journey works with persisted owner state and real consumers.
+- [ ] Contract, migration, implementation, frontend, and canonical documentation agree where applicable.
+- [ ] Proportional tests cover success, authorization, validation, consistency, and dependency failure.
+- [ ] Evidence is classified truthfully as fixture browser, service integration, or live cross-stack.
+
+## Evidence
+- Contract and migration diff, or an explicit no-change conclusion.
+- Exact owner and consumer test commands with results.
+- Screenshots, recording, or redacted payloads proving the actor outcome.
+- Compatibility evidence for each cross-service boundary.
+
+## Completion Notes
+Record final endpoints, states, decisions, versions, test commands, dependencies, and intentional deferrals for Enter appointment chat and enforce its time window."
+"Story","6407","Complete chat sessions from delivery evidence","6004","","8","","MB Sprint 3","Medium","sprint3-gated-chat-completion","## Objective
+Settle chat appointments only from approved server-observed participation and activity evidence.
+
+## Scope and dependencies
+Depends on 6406; specialist cannot complete alone.
+
+## Acceptance Criteria
+- [ ] Persist minimal check-in/activity facts and session states.
+- [ ] Implement scheduler, no-show, completion, credit, and earning exactly once.
+- [ ] Show session progress, ended processing, completed, and no-show outcomes.
+- [ ] Display actual credit result without message judgments.
+- [ ] Exercise sufficient/insufficient evidence, both no-shows, duplicates, reorder, scheduler retry, and settlement race.
+
+## Definition of Done
+- [ ] The first confirmation subtask closes only material remaining decisions.
+- [ ] The stated actor journey works with persisted owner state and real consumers.
+- [ ] Contract, migration, implementation, frontend, and canonical documentation agree where applicable.
+- [ ] Proportional tests cover success, authorization, validation, consistency, and dependency failure.
+- [ ] Evidence is classified truthfully as fixture browser, service integration, or live cross-stack.
+
+## Evidence
+- Contract and migration diff, or an explicit no-change conclusion.
+- Exact owner and consumer test commands with results.
+- Screenshots, recording, or redacted payloads proving the actor outcome.
+- Compatibility evidence for each cross-service boundary.
+
+## Completion Notes
+Record final endpoints, states, decisions, versions, test commands, dependencies, and intentional deferrals for Complete chat sessions from delivery evidence."
+"Story","6408","Complete in-person sessions with check-in and user confirmation","6004","","8","","MB Sprint 3","Medium","sprint3-gated-inperson-completion","## Objective
+Complete in-person sessions through both check-ins, delivered evidence, user confirm/dispute, or safe auto-complete.
+
+## Scope and dependencies
+Depends on CONFIRMED IN_PERSON; specialist cannot directly complete.
+
+## Acceptance Criteria
+- [ ] Persist check-ins, SESSION_DELIVERED, confirm, dispute, and deadline.
+- [ ] Enforce actor/modality/time/location and single settlement.
+- [ ] Build participant check-in, specialist delivered, user confirm/report, pending, completed, and disputed UI.
+- [ ] Show snapshot and credit outcome.
+- [ ] Exercise check-ins, missing actor, early delivery, confirm, dispute, timeout, races, cancel, and no-show.
+
+## Definition of Done
+- [ ] The first confirmation subtask closes only material remaining decisions.
+- [ ] The stated actor journey works with persisted owner state and real consumers.
+- [ ] Contract, migration, implementation, frontend, and canonical documentation agree where applicable.
+- [ ] Proportional tests cover success, authorization, validation, consistency, and dependency failure.
+- [ ] Evidence is classified truthfully as fixture browser, service integration, or live cross-stack.
+
+## Evidence
+- Contract and migration diff, or an explicit no-change conclusion.
+- Exact owner and consumer test commands with results.
+- Screenshots, recording, or redacted payloads proving the actor outcome.
+- Compatibility evidence for each cross-service boundary.
+
+## Completion Notes
+Record final endpoints, states, decisions, versions, test commands, dependencies, and intentional deferrals for Complete in-person sessions with check-in and user confirmation."
+"Story","6409","Publish a short user-visible SessionSummary","6004","","5","","MB Sprint 3","Medium","sprint3-gated-session-summary","## Objective
+Let an assigned specialist create a bounded summary the user can read and approve for later brief reuse.
+
+## Scope and dependencies
+Depends on delivered/completed 6407 or 6408; it is not a medical/private note.
+
+## Acceptance Criteria
+- [ ] Persist approved fields, author, appointment, timestamps, and version.
+- [ ] Enforce assignment/state/limits and expose user/Care projections.
+- [ ] Replace simulated notes with real specialist form and user read view.
+- [ ] Remove risk, diagnosis, confidential notes, and treatment.
+- [ ] Exercise state, actors, field rejection, edit policy, reload, and reuse consent.
+
+## Definition of Done
+- [ ] The first confirmation subtask closes only material remaining decisions.
+- [ ] The stated actor journey works with persisted owner state and real consumers.
+- [ ] Contract, migration, implementation, frontend, and canonical documentation agree where applicable.
+- [ ] Proportional tests cover success, authorization, validation, consistency, and dependency failure.
+- [ ] Evidence is classified truthfully as fixture browser, service integration, or live cross-stack.
+
+## Evidence
+- Contract and migration diff, or an explicit no-change conclusion.
+- Exact owner and consumer test commands with results.
+- Screenshots, recording, or redacted payloads proving the actor outcome.
+- Compatibility evidence for each cross-service boundary.
+
+## Completion Notes
+Record final endpoints, states, decisions, versions, test commands, dependencies, and intentional deferrals for Publish a short user-visible SessionSummary."
+"Story","6501","Compose the four-dimension ReassessmentSummary","6005","","8","","MB Sprint 3","Medium","sprint3-gated-reassessment-api","## Objective
+Let Care assemble screening, journal/context, engagement, and user reflection as separate sourced dimensions.
+
+## Scope and dependencies
+Depends on assessment history, 6206, and 6305.
+
+## Acceptance Criteria
+- [ ] Add Care contract and reproducible summary snapshot/query.
+- [ ] Calculate PHQ/GAD locally and consume minimized projections with safe fallback.
+- [ ] Expose current/history APIs with explicit unavailable and INSUFFICIENT_DATA states.
+- [ ] Provide contradictory examples for 6502.
+- [ ] Exercise sufficient, sparse, unavailable, contradictory, deleted source, repeat, and deterministic scoring.
+
+## Definition of Done
+- [ ] The first confirmation subtask closes only material remaining decisions.
+- [ ] The stated actor journey works with persisted owner state and real consumers.
+- [ ] Contract, migration, implementation, frontend, and canonical documentation agree where applicable.
+- [ ] Proportional tests cover success, authorization, validation, consistency, and dependency failure.
+- [ ] Evidence is classified truthfully as fixture browser, service integration, or live cross-stack.
+
+## Evidence
+- Contract and migration diff, or an explicit no-change conclusion.
+- Exact owner and consumer test commands with results.
+- Screenshots, recording, or redacted payloads proving the actor outcome.
+- Compatibility evidence for each cross-service boundary.
+
+## Completion Notes
+Record final endpoints, states, decisions, versions, test commands, dependencies, and intentional deferrals for Compose the four-dimension ReassessmentSummary."
+"Story","6502","Show truthful four-dimension reassessment progress","6005","","5","","MB Sprint 3","Medium","sprint3-gated-reassessment-ui","## Objective
+Replace static positive analytics with a real source-aware reassessment view.
+
+## Scope and dependencies
+Depends on 6501; frontend never derives recovery or improvement.
+
+## Acceptance Criteria
+- [ ] Add typed BFF integration for current/history and all states.
+- [ ] Map dimensions without recalculation or relabeling authority.
+- [ ] Build separate dimension cards, coverage, periods, sources, loading, empty, and failure.
+- [ ] Show contradictions without one verdict.
+- [ ] Exercise real variants, reload/history, unavailable source, and contradiction.
+
+## Definition of Done
+- [ ] The first confirmation subtask closes only material remaining decisions.
+- [ ] The stated actor journey works with persisted owner state and real consumers.
+- [ ] Contract, migration, implementation, frontend, and canonical documentation agree where applicable.
+- [ ] Proportional tests cover success, authorization, validation, consistency, and dependency failure.
+- [ ] Evidence is classified truthfully as fixture browser, service integration, or live cross-stack.
+
+## Evidence
+- Contract and migration diff, or an explicit no-change conclusion.
+- Exact owner and consumer test commands with results.
+- Screenshots, recording, or redacted payloads proving the actor outcome.
+- Compatibility evidence for each cross-service boundary.
+
+## Completion Notes
+Record final endpoints, states, decisions, versions, test commands, dependencies, and intentional deferrals for Show truthful four-dimension reassessment progress."
+"Story","6503","Review SupportPlan alternatives and confirm a change","6005","","8","","MB Sprint 3","Medium","sprint3-gated-plan-review","## Objective
+Use reassessment evidence for Care-governed alternatives and explicit user keep/replace choice.
+
+## Scope and dependencies
+Depends on 6304 and 6501; AI explains, Care decides, user confirms.
+
+## Acceptance Criteria
+- [ ] Implement Care candidate query/command using current policy and eligibility.
+- [ ] Map AI only to explanation; Care resolves admitted alternatives.
+- [ ] Show dimensions, current items, alternatives, rationale, and explicit actions.
+- [ ] Handle no alternative, stale eligibility, concurrent change, and failure.
+- [ ] Exercise keep, replace, none, stale, concurrent, duplicate, and AI unavailable.
+
+## Definition of Done
+- [ ] The first confirmation subtask closes only material remaining decisions.
+- [ ] The stated actor journey works with persisted owner state and real consumers.
+- [ ] Contract, migration, implementation, frontend, and canonical documentation agree where applicable.
+- [ ] Proportional tests cover success, authorization, validation, consistency, and dependency failure.
+- [ ] Evidence is classified truthfully as fixture browser, service integration, or live cross-stack.
+
+## Evidence
+- Contract and migration diff, or an explicit no-change conclusion.
+- Exact owner and consumer test commands with results.
+- Screenshots, recording, or redacted payloads proving the actor outcome.
+- Compatibility evidence for each cross-service boundary.
+
+## Completion Notes
+Record final endpoints, states, decisions, versions, test commands, dependencies, and intentional deferrals for Review SupportPlan alternatives and confirm a change."
+"Subtask","610101","Confirm submit a specialist profile and approve it ADR and user flow","6101","","","7200","MB Sprint 3","Highest","sprint3-now-specialist-approval","## Objective
+Confirm the narrow remaining decisions for submit a specialist profile and approve it before irreversible implementation.
+
+## Acceptance Criteria
+- [ ] Confirm required submission fields and editability.
+- [ ] Confirm approval confirmation and notification copy.
+- [ ] Confirm no credential-document or license workflow.
+
+## Definition of Done
+- [ ] Approved details are recorded in the canonical ADR, policy, contract, or module docs only where needed.
+- [ ] Story 6101 has no materially blocking API, persistence, ownership, or actor-flow ambiguity.
+- [ ] Already approved behavior is not reopened as ceremonial documentation."
+"Subtask","610102","Implement owner capability for submit a specialist profile and approve it","6101","","","36000","MB Sprint 3","Highest","sprint3-now-specialist-approval","## Objective
+Deliver the owner-side contract, persistence, and behavior required by Story 6101.
+
+## Acceptance Criteria
+- [ ] Contract and persist approved public fields, PENDING status, actor, and timestamps.
+- [ ] Implement specialist create/read/update/submit and admin queue/detail/approve APIs.
+- [ ] Enforce roles, transitions, validation, and stable conflicts.
+
+## Definition of Done
+- [ ] The slice is independently reviewable and focused checks pass.
+- [ ] Contracts, persistence, authorization, failures, and docs agree where applicable.
+- [ ] No unrelated abstraction or deferred feature is introduced."
+"Subtask","610103","Deliver consumer flow for submit a specialist profile and approve it","6101","","","28800","MB Sprint 3","Highest","sprint3-now-specialist-approval","## Objective
+Deliver the real consumer or actor-facing flow required by Story 6101.
+
+## Acceptance Criteria
+- [ ] Replace specialist/admin fixtures with real BFF flows.
+- [ ] Show persisted status after reload and remove verification claims.
+- [ ] Handle loading, empty, validation, conflict, and failure.
+
+## Definition of Done
+- [ ] The slice is independently reviewable and focused checks pass.
+- [ ] Contracts, persistence, authorization, failures, and docs agree where applicable.
+- [ ] No unrelated abstraction or deferred feature is introduced."
+"Subtask","610104","Verify submit a specialist profile and approve it","6101","","","14400","MB Sprint 3","Highest","sprint3-now-specialist-approval","## Objective
+Prove Story 6101 across its real owners and consumers.
+
+## Acceptance Criteria
+- [ ] Exercise submit, reload, approve, repeat, wrong actor, and invalid data.
+- [ ] Verify only APPROVED can proceed to discovery or slot publication.
+
+## Definition of Done
+- [ ] Relevant checks pass and exact commands/results are recorded.
+- [ ] Evidence is classified truthfully and uses non-sensitive data.
+- [ ] Story 6101 Evidence and Completion Notes are updated without fabricated claims."
+"Subtask","610201","Confirm handle specialist rejection, suspension, resubmission, and restoration ADR and user flow","6102","","","7200","MB Sprint 3","High","sprint3-next-specialist-lifecycle","## Objective
+Confirm the narrow remaining decisions for handle specialist rejection, suspension, resubmission, and restoration before irreversible implementation.
+
+## Acceptance Criteria
+- [ ] Approve reject/suspend reason codes and copy.
+- [ ] Confirm same-profile resubmission semantics.
+- [ ] Confirm restoration and suspension notification behavior.
+
+## Definition of Done
+- [ ] Approved details are recorded in the canonical ADR, policy, contract, or module docs only where needed.
+- [ ] Story 6102 has no materially blocking API, persistence, ownership, or actor-flow ambiguity.
+- [ ] Already approved behavior is not reopened as ceremonial documentation."
+"Subtask","610202","Implement owner capability for handle specialist rejection, suspension, resubmission, and restoration","6102","","","36000","MB Sprint 3","High","sprint3-next-specialist-lifecycle","## Objective
+Deliver the owner-side contract, persistence, and behavior required by Story 6102.
+
+## Acceptance Criteria
+- [ ] Implement reject, resubmit, suspend, and restore commands with audit facts.
+- [ ] Trigger owner-safe future-appointment cancellation and exact credit release on suspension.
+- [ ] Make repeated and invalid transitions idempotent or stable conflicts.
+
+## Definition of Done
+- [ ] The slice is independently reviewable and focused checks pass.
+- [ ] Contracts, persistence, authorization, failures, and docs agree where applicable.
+- [ ] No unrelated abstraction or deferred feature is introduced."
+"Subtask","610203","Deliver consumer flow for handle specialist rejection, suspension, resubmission, and restoration","6102","","","28800","MB Sprint 3","High","sprint3-next-specialist-lifecycle","## Objective
+Deliver the real consumer or actor-facing flow required by Story 6102.
+
+## Acceptance Criteria
+- [ ] Add real admin actions and specialist remediation states.
+- [ ] Show reasons and downstream appointment outcomes without private content.
+- [ ] Support edit/resubmit and restoration reload.
+
+## Definition of Done
+- [ ] The slice is independently reviewable and focused checks pass.
+- [ ] Contracts, persistence, authorization, failures, and docs agree where applicable.
+- [ ] No unrelated abstraction or deferred feature is introduced."
+"Subtask","610204","Verify handle specialist rejection, suspension, resubmission, and restoration","6102","","","14400","MB Sprint 3","High","sprint3-next-specialist-lifecycle","## Objective
+Prove Story 6102 across its real owners and consumers.
+
+## Acceptance Criteria
+- [ ] Exercise all valid/invalid transitions and races.
+- [ ] Verify suspension hides discovery, blocks booking, and releases credits once.
+
+## Definition of Done
+- [ ] Relevant checks pass and exact commands/results are recorded.
+- [ ] Evidence is classified truthfully and uses non-sensitive data.
+- [ ] Story 6102 Evidence and Completion Notes are updated without fabricated claims."
+"Subtask","610301","Confirm manage specialist PracticeLocations ADR and user flow","6103","","","7200","MB Sprint 3","High","sprint3-next-practice-location","## Objective
+Confirm the narrow remaining decisions for manage specialist practicelocations before irreversible implementation.
+
+## Acceptance Criteria
+- [ ] Confirm address validation and future-snapshot behavior.
+- [ ] Confirm deactivate versus delete and seeded disclosure.
+- [ ] Confirm rooms and map-provider integration stay deferred.
+
+## Definition of Done
+- [ ] Approved details are recorded in the canonical ADR, policy, contract, or module docs only where needed.
+- [ ] Story 6103 has no materially blocking API, persistence, ownership, or actor-flow ambiguity.
+- [ ] Already approved behavior is not reopened as ceremonial documentation."
+"Subtask","610302","Implement owner capability for manage specialist practicelocations","6103","","","36000","MB Sprint 3","High","sprint3-next-practice-location","## Objective
+Deliver the owner-side contract, persistence, and behavior required by Story 6103.
+
+## Acceptance Criteria
+- [ ] Add OpenAPI/Liquibase for owned locations and seed provenance.
+- [ ] Implement create/list/update/deactivate with timezone and approval rules.
+- [ ] Preserve appointment snapshots when a location changes.
+
+## Definition of Done
+- [ ] The slice is independently reviewable and focused checks pass.
+- [ ] Contracts, persistence, authorization, failures, and docs agree where applicable.
+- [ ] No unrelated abstraction or deferred feature is introduced."
+"Subtask","610303","Deliver consumer flow for manage specialist practicelocations","6103","","","28800","MB Sprint 3","High","sprint3-next-practice-location","## Objective
+Deliver the real consumer or actor-facing flow required by Story 6103.
+
+## Acceptance Criteria
+- [ ] Build real location list/create/edit/deactivate screens.
+- [ ] Show timezone, inactive, seed, validation, and failure states.
+- [ ] Remove room-management claims.
+
+## Definition of Done
+- [ ] The slice is independently reviewable and focused checks pass.
+- [ ] Contracts, persistence, authorization, failures, and docs agree where applicable.
+- [ ] No unrelated abstraction or deferred feature is introduced."
+"Subtask","610304","Verify manage specialist practicelocations","6103","","","14400","MB Sprint 3","High","sprint3-next-practice-location","## Objective
+Prove Story 6103 across its real owners and consumers.
+
+## Acceptance Criteria
+- [ ] Exercise ownership, invalid timezone, deactivate, seed, and snapshot preservation.
+- [ ] Verify non-approved specialists cannot manage locations.
+
+## Definition of Done
+- [ ] Relevant checks pass and exact commands/results are recorded.
+- [ ] Evidence is classified truthfully and uses non-sensitive data.
+- [ ] Story 6103 Evidence and Completion Notes are updated without fabricated claims."
+"Subtask","610401","Confirm publish 60-minute specialist availability ADR and user flow","6104","","","7200","MB Sprint 3","High","sprint3-next-specialist-availability","## Objective
+Confirm the narrow remaining decisions for publish 60-minute specialist availability before irreversible implementation.
+
+## Acceptance Criteria
+- [ ] Confirm publishing horizon and recurrence exclusion.
+- [ ] Confirm withdrawal behavior for free, held, and confirmed slots.
+- [ ] Confirm timezone display and daylight-saving behavior.
+
+## Definition of Done
+- [ ] Approved details are recorded in the canonical ADR, policy, contract, or module docs only where needed.
+- [ ] Story 6104 has no materially blocking API, persistence, ownership, or actor-flow ambiguity.
+- [ ] Already approved behavior is not reopened as ceremonial documentation."
+"Subtask","610402","Implement owner capability for publish 60-minute specialist availability","6104","","","36000","MB Sprint 3","High","sprint3-next-specialist-availability","## Objective
+Deliver the owner-side contract, persistence, and behavior required by Story 6104.
+
+## Acceptance Criteria
+- [ ] Persist exact 60-minute slots, modality, UTC interval, timezone, location, and state.
+- [ ] Implement owned create/list/withdraw with overlap and approval rules.
+- [ ] Return stable appointment-ready slot identifiers.
+
+## Definition of Done
+- [ ] The slice is independently reviewable and focused checks pass.
+- [ ] Contracts, persistence, authorization, failures, and docs agree where applicable.
+- [ ] No unrelated abstraction or deferred feature is introduced."
+"Subtask","610403","Deliver consumer flow for publish 60-minute specialist availability","6104","","","28800","MB Sprint 3","High","sprint3-next-specialist-availability","## Objective
+Deliver the real consumer or actor-facing flow required by Story 6104.
+
+## Acceptance Criteria
+- [ ] Replace prototype schedules with real availability management.
+- [ ] Require active location for in-person and show conflicts/holds.
+- [ ] Support reload and failure states.
+
+## Definition of Done
+- [ ] The slice is independently reviewable and focused checks pass.
+- [ ] Contracts, persistence, authorization, failures, and docs agree where applicable.
+- [ ] No unrelated abstraction or deferred feature is introduced."
+"Subtask","610404","Verify publish 60-minute specialist availability","6104","","","14400","MB Sprint 3","High","sprint3-next-specialist-availability","## Objective
+Prove Story 6104 across its real owners and consumers.
+
+## Acceptance Criteria
+- [ ] Exercise both modalities, overlap, duration, owner, location, withdrawal, and timezone.
+- [ ] Verify slot identifiers are compatible with appointment requests.
+
+## Definition of Done
+- [ ] Relevant checks pass and exact commands/results are recorded.
+- [ ] Evidence is classified truthfully and uses non-sensitive data.
+- [ ] Story 6104 Evidence and Completion Notes are updated without fabricated claims."
+"Subtask","610501","Confirm discover approved specialists and selectable slots ADR and user flow","6105","","","10800","MB Sprint 3","High","sprint3-next-specialist-discovery","## Objective
+Confirm the narrow remaining decisions for discover approved specialists and selectable slots before irreversible implementation.
+
+## Acceptance Criteria
+- [ ] Approve support-area vocabulary and domain mapping.
+- [ ] Confirm language/timezone matching and tie-breakers.
+- [ ] Approve seeded profile/rating disclosure and empty copy.
+
+## Definition of Done
+- [ ] Approved details are recorded in the canonical ADR, policy, contract, or module docs only where needed.
+- [ ] Story 6105 has no materially blocking API, persistence, ownership, or actor-flow ambiguity.
+- [ ] Already approved behavior is not reopened as ceremonial documentation."
+"Subtask","610502","Implement owner capability for discover approved specialists and selectable slots","6105","","","64800","MB Sprint 3","High","sprint3-next-specialist-discovery","## Objective
+Deliver the owner-side contract, persistence, and behavior required by Story 6105.
+
+## Acceptance Criteria
+- [ ] Implement approved-only list/detail/filter APIs with ranking policy version and explanation.
+- [ ] Apply deterministic ranking and stable pagination.
+- [ ] Exclude disease labels and clinical-suitability claims.
+
+## Definition of Done
+- [ ] The slice is independently reviewable and focused checks pass.
+- [ ] Contracts, persistence, authorization, failures, and docs agree where applicable.
+- [ ] No unrelated abstraction or deferred feature is introduced."
+"Subtask","610503","Deliver consumer flow for discover approved specialists and selectable slots","6105","","","43200","MB Sprint 3","High","sprint3-next-specialist-discovery","## Objective
+Deliver the real consumer or actor-facing flow required by Story 6105.
+
+## Acceptance Criteria
+- [ ] Connect real list, filters, detail, explanation, and slot selection.
+- [ ] Remove Video, Phone, free intro, prices, credentials, and unsupported domains.
+- [ ] Handle empty, stale slot, and dependency failure.
+
+## Definition of Done
+- [ ] The slice is independently reviewable and focused checks pass.
+- [ ] Contracts, persistence, authorization, failures, and docs agree where applicable.
+- [ ] No unrelated abstraction or deferred feature is introduced."
+"Subtask","610504","Verify discover approved specialists and selectable slots","6105","","","28800","MB Sprint 3","High","sprint3-next-specialist-discovery","## Objective
+Prove Story 6105 across its real owners and consumers.
+
+## Acceptance Criteria
+- [ ] Exercise approval visibility, filters, rank ties, inactive locations, and stale slots.
+- [ ] Verify domain match always outranks rating.
+
+## Definition of Done
+- [ ] Relevant checks pass and exact commands/results are recorded.
+- [ ] Evidence is classified truthfully and uses non-sensitive data.
+- [ ] Story 6105 Evidence and Completion Notes are updated without fabricated claims."
+"Subtask","610601","Confirm rate a completed specialist appointment once ADR and user flow","6106","","","7200","MB Sprint 3","Medium","sprint3-later-specialist-rating","## Objective
+Confirm the narrow remaining decisions for rate a completed specialist appointment once before irreversible implementation.
+
+## Acceptance Criteria
+- [ ] Approve rating scale, edit window, and optional text.
+- [ ] Confirm aggregate rounding and seed/runtime display.
+- [ ] Confirm V1 reporting or moderation boundary.
+
+## Definition of Done
+- [ ] Approved details are recorded in the canonical ADR, policy, contract, or module docs only where needed.
+- [ ] Story 6106 has no materially blocking API, persistence, ownership, or actor-flow ambiguity.
+- [ ] Already approved behavior is not reopened as ceremonial documentation."
+"Subtask","610602","Implement owner capability for rate a completed specialist appointment once","6106","","","36000","MB Sprint 3","Medium","sprint3-later-specialist-rating","## Objective
+Deliver the owner-side contract, persistence, and behavior required by Story 6106.
+
+## Acceptance Criteria
+- [ ] Persist one current rating per owned completed appointment.
+- [ ] Implement create/update/read and transactional aggregate maintenance.
+- [ ] Separate seeded from runtime rating facts.
+
+## Definition of Done
+- [ ] The slice is independently reviewable and focused checks pass.
+- [ ] Contracts, persistence, authorization, failures, and docs agree where applicable.
+- [ ] No unrelated abstraction or deferred feature is introduced."
+"Subtask","610603","Deliver consumer flow for rate a completed specialist appointment once","6106","","","28800","MB Sprint 3","Medium","sprint3-later-specialist-rating","## Objective
+Deliver the real consumer or actor-facing flow required by Story 6106.
+
+## Acceptance Criteria
+- [ ] Show rating only for eligible completed appointments.
+- [ ] Support create/edit/validation/failure and disclosed aggregate display.
+- [ ] Avoid clinical-quality claims.
+
+## Definition of Done
+- [ ] The slice is independently reviewable and focused checks pass.
+- [ ] Contracts, persistence, authorization, failures, and docs agree where applicable.
+- [ ] No unrelated abstraction or deferred feature is introduced."
+"Subtask","610604","Verify rate a completed specialist appointment once","6106","","","14400","MB Sprint 3","Medium","sprint3-later-specialist-rating","## Objective
+Prove Story 6106 across its real owners and consumers.
+
+## Acceptance Criteria
+- [ ] Exercise eligibility, wrong actor, duplicate/update, concurrency, and aggregate accuracy.
+- [ ] Verify discovery uses the aggregate only after higher ranking criteria.
+
+## Definition of Done
+- [ ] Relevant checks pass and exact commands/results are recorded.
+- [ ] Evidence is classified truthfully and uses non-sensitive data.
+- [ ] Story 6106 Evidence and Completion Notes are updated without fabricated claims."
+"Subtask","610701","Confirm administer account state through Identity ADR and user flow","6107","","","7200","MB Sprint 3","Medium","sprint3-later-identity-admin","## Objective
+Confirm the narrow remaining decisions for administer account state through identity before irreversible implementation.
+
+## Acceptance Criteria
+- [ ] Approve lookup identifiers and reason codes.
+- [ ] Confirm user versus specialist downstream effects.
+- [ ] Confirm deletion administration remains deferred.
+
+## Definition of Done
+- [ ] Approved details are recorded in the canonical ADR, policy, contract, or module docs only where needed.
+- [ ] Story 6107 has no materially blocking API, persistence, ownership, or actor-flow ambiguity.
+- [ ] Already approved behavior is not reopened as ceremonial documentation."
+"Subtask","610702","Implement owner capability for administer account state through identity","6107","","","36000","MB Sprint 3","Medium","sprint3-later-identity-admin","## Objective
+Deliver the owner-side contract, persistence, and behavior required by Story 6107.
+
+## Acceptance Criteria
+- [ ] Implement Identity admin query/suspend/restore with audit and idempotency.
+- [ ] Publish minimal lifecycle facts or bounded current-state checks.
+- [ ] Exclude credentials, tokens, health, journal, and chat data.
+
+## Definition of Done
+- [ ] The slice is independently reviewable and focused checks pass.
+- [ ] Contracts, persistence, authorization, failures, and docs agree where applicable.
+- [ ] No unrelated abstraction or deferred feature is introduced."
+"Subtask","610703","Deliver consumer flow for administer account state through identity","6107","","","28800","MB Sprint 3","Medium","sprint3-later-identity-admin","## Objective
+Deliver the real consumer or actor-facing flow required by Story 6107.
+
+## Acceptance Criteria
+- [ ] Build real admin lookup, status, reason, suspend, and restore UI.
+- [ ] Show downstream-impact confirmation and pending delivery.
+- [ ] Handle wrong role and repeated action.
+
+## Definition of Done
+- [ ] The slice is independently reviewable and focused checks pass.
+- [ ] Contracts, persistence, authorization, failures, and docs agree where applicable.
+- [ ] No unrelated abstraction or deferred feature is introduced."
+"Subtask","610704","Verify administer account state through identity","6107","","","14400","MB Sprint 3","Medium","sprint3-later-identity-admin","## Objective
+Prove Story 6107 across its real owners and consumers.
+
+## Acceptance Criteria
+- [ ] Exercise user/specialist suspension and restoration, auth effect, repeats, and downstream eligibility.
+- [ ] Inspect contracts/events/logs/UI for minimization.
+
+## Definition of Done
+- [ ] Relevant checks pass and exact commands/results are recorded.
+- [ ] Evidence is classified truthfully and uses non-sensitive data.
+- [ ] Story 6107 Evidence and Completion Notes are updated without fabricated claims."
+"Subtask","620101","Confirm improve Journal authoring with mood and draft protection ADR and user flow","6201","","","7200","MB Sprint 3","High","sprint3-now-journal-authoring","## Objective
+Confirm the narrow remaining decisions for improve journal authoring with mood and draft protection before irreversible implementation.
+
+## Acceptance Criteria
+- [ ] Choose plain text or bounded formatting.
+- [ ] Approve mood/emoji set and persistence semantics.
+- [ ] Confirm autosave/draft-loss and revision behavior.
+
+## Definition of Done
+- [ ] Approved details are recorded in the canonical ADR, policy, contract, or module docs only where needed.
+- [ ] Story 6201 has no materially blocking API, persistence, ownership, or actor-flow ambiguity.
+- [ ] Already approved behavior is not reopened as ceremonial documentation."
+"Subtask","620102","Implement owner capability for improve journal authoring with mood and draft protection","6201","","","36000","MB Sprint 3","High","sprint3-now-journal-authoring","## Objective
+Deliver the owner-side contract, persistence, and behavior required by Story 6201.
+
+## Acceptance Criteria
+- [ ] Implement only approved contract, validation, Mongo migration, and revision changes.
+- [ ] Preserve compatibility, conflict, and deletion semantics.
+- [ ] Record explicit no-backend-change if mood is presentation-only.
+
+## Definition of Done
+- [ ] The slice is independently reviewable and focused checks pass.
+- [ ] Contracts, persistence, authorization, failures, and docs agree where applicable.
+- [ ] No unrelated abstraction or deferred feature is introduced."
+"Subtask","620103","Deliver consumer flow for improve journal authoring with mood and draft protection","6201","","","28800","MB Sprint 3","High","sprint3-now-journal-authoring","## Objective
+Deliver the real consumer or actor-facing flow required by Story 6201.
+
+## Acceptance Criteria
+- [ ] Build prompts, mood interaction, validation, save states, and draft protection.
+- [ ] Preserve real list/detail/edit/delete BFF flows.
+- [ ] Support keyboard, focus, and mobile layout.
+
+## Definition of Done
+- [ ] The slice is independently reviewable and focused checks pass.
+- [ ] Contracts, persistence, authorization, failures, and docs agree where applicable.
+- [ ] No unrelated abstraction or deferred feature is introduced."
+"Subtask","620104","Verify improve journal authoring with mood and draft protection","6201","","","14400","MB Sprint 3","High","sprint3-now-journal-authoring","## Objective
+Prove Story 6201 across its real owners and consumers.
+
+## Acceptance Criteria
+- [ ] Exercise create, reload, edit, conflict, failed save, unsaved navigation, and delete.
+- [ ] Inspect persisted mood/format semantics.
+
+## Definition of Done
+- [ ] Relevant checks pass and exact commands/results are recorded.
+- [ ] Evidence is classified truthfully and uses non-sensitive data.
+- [ ] Story 6201 Evidence and Completion Notes are updated without fabricated claims."
+"Subtask","620201","Confirm run exact-revision AI analysis jobs ADR and user flow","6202","","","18000","MB Sprint 3","Highest","sprint3-now-ai-runtime","## Objective
+Confirm the narrow remaining decisions for run exact-revision ai analysis jobs before irreversible implementation.
+
+## Acceptance Criteria
+- [ ] Amend ADR 0015 and canonical architecture/module/database docs to make Journal/AI Mongo-only for jobs, results, longitudinal, dataset, and benchmark metadata.
+- [ ] Approve exact request/result fields, stable terminal reasons, idempotency, atomic claim, lease recovery, stale/deleted revision behavior, and minimized context.
+- [ ] Approve separate Care `AI_PROCESSING` consent at `ai-processing-capstone-v1`, forwarded user-JWT checks at request and pre-attempt time, and fail-closed revocation/dependency behavior.
+- [ ] Freeze deterministic fake provider scope and the 6203 UI plus 6204/MB-369 real-provider deferrals.
+
+## Definition of Done
+- [ ] Approved details are recorded in the canonical ADR, policy, contract, or module docs only where needed.
+- [ ] Story 6202 has no materially blocking API, persistence, ownership, or actor-flow ambiguity.
+- [ ] Already approved behavior is not reopened as ceremonial documentation."
+"Subtask","620202","Implement Care AI processing consent backend","6202","","","57600","MB Sprint 3","Highest","sprint3-now-ai-runtime","## Objective
+Deliver the minimum Care-owned consent capability required by Story 6202 without adding frontend scope.
+
+## Acceptance Criteria
+- [ ] Publish the immutable Vietnamese `AI_PROCESSING` disclosure at `ai-processing-capstone-v1` and accept append-only grant/revoke decisions independently from `PRIVACY_POLICY`.
+- [ ] Expose a minimal authenticated authorization response for Journal/AI using forwarded end-user bearer context.
+- [ ] Cover missing, granted, revoked, outdated-policy, idempotency, wrong-role, and OpenAPI compatibility behavior.
+
+## Definition of Done
+- [ ] The slice is independently reviewable and focused checks pass.
+- [ ] Contracts, persistence, authorization, failures, and docs agree where applicable.
+- [ ] No unrelated abstraction or deferred feature is introduced."
+"Subtask","620203","Implement Mongo exact-revision analysis runtime","6202","","","100800","MB Sprint 3","Highest","sprint3-now-ai-runtime","## Objective
+Deliver the Journal/AI owner contract, persistence, worker, fake provider, and owner-facing status flow required by Story 6202.
+
+## Acceptance Criteria
+- [ ] Add OpenAPI/schema, append-only Mongo migration, unique idempotency, atomic claim, lease recovery, and deletion/stale coupling without PostgreSQL or Kafka.
+- [ ] Check Care consent at request time and before each attempt, keep bearer context memory-only, and stop retry after revocation.
+- [ ] Enforce the 30-second attempt timeout and at most one retry only for 429, 5xx, or transport failure through the deterministic fake provider port.
+- [ ] Expose owned RUNNING/SUCCEEDED/FAILED status/result APIs with approved normalized fields, provenance, and stable terminal reasons.
+- [ ] Document 6203 as the required consent/reflection UI follow-up and 6204/MB-369 as the real-provider gate.
+
+## Definition of Done
+- [ ] The slice is independently reviewable and focused checks pass.
+- [ ] Contracts, persistence, authorization, failures, and docs agree where applicable.
+- [ ] No unrelated abstraction or deferred feature is introduced."
+"Subtask","620204","Verify run exact-revision ai analysis jobs","6202","","","57600","MB Sprint 3","Highest","sprint3-now-ai-runtime","## Objective
+Prove Story 6202 across its real owners and consumers.
+
+## Acceptance Criteria
+- [ ] Exercise success, missing/revoked/unavailable consent, wrong owner, duplicate, atomic claim, expired lease recovery, timeout, allowed/disallowed retry, terminal failure, stale revision, and deletion.
+- [ ] Inspect storage/logs for raw responses, reasoning, or cross-provider fallback.
+
+## Definition of Done
+- [ ] Relevant checks pass and exact commands/results are recorded.
+- [ ] Evidence is classified truthfully and uses non-sensitive data.
+- [ ] Story 6202 Evidence and Completion Notes are updated without fabricated claims."
+"Subtask","620301","Confirm use AI reflection from the Journal page ADR and user flow","6203","","","7200","MB Sprint 3","Highest","sprint3-next-ai-reflection-ui","## Objective
+Confirm the narrow remaining decisions for use ai reflection from the journal page before irreversible implementation.
+
+## Acceptance Criteria
+- [ ] Approve displayed fields and suggested-action routing.
+- [ ] Confirm polling, manual retry, and history behavior.
+- [ ] Approve safe non-clinical failure and limitation copy.
+
+## Definition of Done
+- [ ] Approved details are recorded in the canonical ADR, policy, contract, or module docs only where needed.
+- [ ] Story 6203 has no materially blocking API, persistence, ownership, or actor-flow ambiguity.
+- [ ] Already approved behavior is not reopened as ceremonial documentation."
+"Subtask","620302","Implement owner capability for use ai reflection from the journal page","6203","","","36000","MB Sprint 3","Highest","sprint3-next-ai-reflection-ui","## Objective
+Deliver the owner-side contract, persistence, and behavior required by Story 6203.
+
+## Acceptance Criteria
+- [ ] Add authenticated BFF calls for request/status/result.
+- [ ] Map exact contract fields and errors without inference.
+- [ ] Preserve revision correlation across reload.
+
+## Definition of Done
+- [ ] The slice is independently reviewable and focused checks pass.
+- [ ] Contracts, persistence, authorization, failures, and docs agree where applicable.
+- [ ] No unrelated abstraction or deferred feature is introduced."
+"Subtask","620303","Deliver consumer flow for use ai reflection from the journal page","6203","","","28800","MB Sprint 3","Highest","sprint3-next-ai-reflection-ui","## Objective
+Deliver the real consumer or actor-facing flow required by Story 6203.
+
+## Acceptance Criteria
+- [ ] Build queued, running, success, failed, stale, and consent states.
+- [ ] Route allow-listed actions only to governed flows.
+- [ ] Remove fake success and clinical claims.
+
+## Definition of Done
+- [ ] The slice is independently reviewable and focused checks pass.
+- [ ] Contracts, persistence, authorization, failures, and docs agree where applicable.
+- [ ] No unrelated abstraction or deferred feature is introduced."
+"Subtask","620304","Verify use ai reflection from the journal page","6203","","","14400","MB Sprint 3","Highest","sprint3-next-ai-reflection-ui","## Objective
+Prove Story 6203 across its real owners and consumers.
+
+## Acceptance Criteria
+- [ ] Exercise live BFF states, reload, denial, failure, stale revision, and action routing.
+- [ ] Verify UI result matches exact stored revision.
+
+## Definition of Done
+- [ ] Relevant checks pass and exact commands/results are recorded.
+- [ ] Evidence is classified truthfully and uses non-sensitive data.
+- [ ] Story 6203 Evidence and Completion Notes are updated without fabricated claims."
+"Subtask","620401","Confirm benchmark and enable one controlled-demo AI provider ADR and user flow","6204","","","10800","MB Sprint 3","Medium","sprint3-later-ai-benchmark","## Objective
+Confirm the narrow remaining decisions for benchmark and enable one controlled-demo ai provider before irreversible implementation.
+
+## Acceptance Criteria
+- [ ] Approve synthetic dataset, rubric, thresholds, budget, and reviewer.
+- [ ] Confirm paid-call environments and secret ownership.
+- [ ] Confirm disclosure and disabled behavior if not approved.
+
+## Definition of Done
+- [ ] Approved details are recorded in the canonical ADR, policy, contract, or module docs only where needed.
+- [ ] Story 6204 has no materially blocking API, persistence, ownership, or actor-flow ambiguity.
+- [ ] Already approved behavior is not reopened as ceremonial documentation."
+"Subtask","620402","Implement owner capability for benchmark and enable one controlled-demo ai provider","6204","","","64800","MB Sprint 3","Medium","sprint3-later-ai-benchmark","## Objective
+Deliver the owner-side contract, persistence, and behavior required by Story 6204.
+
+## Acceptance Criteria
+- [ ] Complete OpenAI/Gemini adapters behind the existing port.
+- [ ] Build reproducible normalized benchmark harness.
+- [ ] Capture quality, safety, latency, cost, malformed output, and failure metrics.
+
+## Definition of Done
+- [ ] The slice is independently reviewable and focused checks pass.
+- [ ] Contracts, persistence, authorization, failures, and docs agree where applicable.
+- [ ] No unrelated abstraction or deferred feature is introduced."
+"Subtask","620403","Deliver consumer flow for benchmark and enable one controlled-demo ai provider","6204","","","43200","MB Sprint 3","Medium","sprint3-later-ai-benchmark","## Objective
+Deliver the real consumer or actor-facing flow required by Story 6204.
+
+## Acceptance Criteria
+- [ ] Record the provider/model decision and configure one approved demo provider.
+- [ ] Add typed secrets/config, readiness, feature flag, and rollback.
+- [ ] Expose no provider-selection UI.
+
+## Definition of Done
+- [ ] The slice is independently reviewable and focused checks pass.
+- [ ] Contracts, persistence, authorization, failures, and docs agree where applicable.
+- [ ] No unrelated abstraction or deferred feature is introduced."
+"Subtask","620404","Verify benchmark and enable one controlled-demo ai provider","6204","","","28800","MB Sprint 3","Medium","sprint3-later-ai-benchmark","## Objective
+Prove Story 6204 across its real owners and consumers.
+
+## Acceptance Criteria
+- [ ] Archive benchmark evidence and adapter compatibility results.
+- [ ] Verify only accepted provider is enabled and CI still uses fakes.
+
+## Definition of Done
+- [ ] Relevant checks pass and exact commands/results are recorded.
+- [ ] Evidence is classified truthfully and uses non-sensitive data.
+- [ ] Story 6204 Evidence and Completion Notes are updated without fabricated claims."
+"Subtask","620501","Confirm generate an optional AI ConsultationBrief draft ADR and user flow","6205","","","7200","MB Sprint 3","Medium","sprint3-later-ai-brief","## Objective
+Confirm the narrow remaining decisions for generate an optional ai consultationbrief draft before irreversible implementation.
+
+## Acceptance Criteria
+- [ ] Approve AI-draftable fields and user-only fields.
+- [ ] Confirm exact minimized sources and deletion coupling.
+- [ ] Approve partial-source and provider-failure behavior.
+
+## Definition of Done
+- [ ] Approved details are recorded in the canonical ADR, policy, contract, or module docs only where needed.
+- [ ] Story 6205 has no materially blocking API, persistence, ownership, or actor-flow ambiguity.
+- [ ] Already approved behavior is not reopened as ceremonial documentation."
+"Subtask","620502","Implement owner capability for generate an optional ai consultationbrief draft","6205","","","36000","MB Sprint 3","Medium","sprint3-later-ai-brief","## Objective
+Deliver the owner-side contract, persistence, and behavior required by Story 6205.
+
+## Acceptance Criteria
+- [ ] Add versioned asynchronous brief-draft request/result.
+- [ ] Validate consent, sources, approved fields, provenance, timeout, and retry.
+- [ ] Keep output private to user/Care and exclude raw inputs.
+
+## Definition of Done
+- [ ] The slice is independently reviewable and focused checks pass.
+- [ ] Contracts, persistence, authorization, failures, and docs agree where applicable.
+- [ ] No unrelated abstraction or deferred feature is introduced."
+"Subtask","620503","Deliver consumer flow for generate an optional ai consultationbrief draft","6205","","","28800","MB Sprint 3","Medium","sprint3-later-ai-brief","## Objective
+Deliver the real consumer or actor-facing flow required by Story 6205.
+
+## Acceptance Criteria
+- [ ] Integrate Care request/retrieval and editable prefill.
+- [ ] Mark AI origin and source versions.
+- [ ] Preserve manual creation when absent, running, or failed.
+
+## Definition of Done
+- [ ] The slice is independently reviewable and focused checks pass.
+- [ ] Contracts, persistence, authorization, failures, and docs agree where applicable.
+- [ ] No unrelated abstraction or deferred feature is introduced."
+"Subtask","620504","Verify generate an optional ai consultationbrief draft","6205","","","14400","MB Sprint 3","Medium","sprint3-later-ai-brief","## Objective
+Prove Story 6205 across its real owners and consumers.
+
+## Acceptance Criteria
+- [ ] Exercise consent, minimization, success, partial inputs, failure, deletion, and wrong actor.
+- [ ] Inspect payloads/logs for direct specialist delivery or raw journal.
+
+## Definition of Done
+- [ ] Relevant checks pass and exact commands/results are recorded.
+- [ ] Evidence is classified truthfully and uses non-sensitive data.
+- [ ] Story 6205 Evidence and Completion Notes are updated without fabricated claims."
+"Subtask","620601","Confirm compare journal context across bounded periods ADR and user flow","6206","","","10800","MB Sprint 3","Medium","sprint3-later-ai-longitudinal","## Objective
+Confirm the narrow remaining decisions for compare journal context across bounded periods before irreversible implementation.
+
+## Acceptance Criteria
+- [ ] Approve period limits and coverage thresholds.
+- [ ] Confirm source selection and optional entry exclusion.
+- [ ] Approve direction and INSUFFICIENT_DATA wording.
+
+## Definition of Done
+- [ ] Approved details are recorded in the canonical ADR, policy, contract, or module docs only where needed.
+- [ ] Story 6206 has no materially blocking API, persistence, ownership, or actor-flow ambiguity.
+- [ ] Already approved behavior is not reopened as ceremonial documentation."
+"Subtask","620602","Implement owner capability for compare journal context across bounded periods","6206","","","64800","MB Sprint 3","Medium","sprint3-later-ai-longitudinal","## Objective
+Deliver the owner-side contract, persistence, and behavior required by Story 6206.
+
+## Acceptance Criteria
+- [ ] Add contract, Mongo persistence, worker, exact sources, and provenance.
+- [ ] Validate periods, consent, ownership, coverage, directions, and deletion coupling.
+- [ ] Never treat missing mention as resolution.
+
+## Definition of Done
+- [ ] The slice is independently reviewable and focused checks pass.
+- [ ] Contracts, persistence, authorization, failures, and docs agree where applicable.
+- [ ] No unrelated abstraction or deferred feature is introduced."
+"Subtask","620603","Deliver consumer flow for compare journal context across bounded periods","6206","","","43200","MB Sprint 3","Medium","sprint3-later-ai-longitudinal","## Objective
+Deliver the real consumer or actor-facing flow required by Story 6206.
+
+## Acceptance Criteria
+- [ ] Expose minimized Care result access with deadlines and safe unavailability.
+- [ ] Return coverage/source versions without raw text.
+- [ ] Document 6501 as the composition consumer.
+
+## Definition of Done
+- [ ] The slice is independently reviewable and focused checks pass.
+- [ ] Contracts, persistence, authorization, failures, and docs agree where applicable.
+- [ ] No unrelated abstraction or deferred feature is introduced."
+"Subtask","620604","Verify compare journal context across bounded periods","6206","","","28800","MB Sprint 3","Medium","sprint3-later-ai-longitudinal","## Objective
+Prove Story 6206 across its real owners and consumers.
+
+## Acceptance Criteria
+- [ ] Exercise sufficient, sparse, imbalanced, deleted-source, revoked consent, failure, and duplicate.
+- [ ] Verify no improvement conclusion or combined score.
+
+## Definition of Done
+- [ ] Relevant checks pass and exact commands/results are recorded.
+- [ ] Evidence is classified truthfully and uses non-sensitive data.
+- [ ] Story 6206 Evidence and Completion Notes are updated without fabricated claims."
+"Subtask","630101","Confirm generate and reload the current SupportPlan draft ADR and user flow","6301","","","10800","MB Sprint 3","Highest","sprint3-gated-plan-proposal","## Objective
+Confirm the narrow remaining decisions for generate and reload the current supportplan draft before irreversible implementation.
+
+## Acceptance Criteria
+- [ ] Confirm current-draft query and idempotency.
+- [ ] Approve rationale, safety-first, ineligible, and stale copy.
+- [ ] Verify exact provider readiness gates.
+
+## Definition of Done
+- [ ] Approved details are recorded in the canonical ADR, policy, contract, or module docs only where needed.
+- [ ] Story 6301 has no materially blocking API, persistence, ownership, or actor-flow ambiguity.
+- [ ] Already approved behavior is not reopened as ceremonial documentation."
+"Subtask","630102","Implement owner capability for generate and reload the current supportplan draft","6301","","","64800","MB Sprint 3","Highest","sprint3-gated-plan-proposal","## Objective
+Deliver the owner-side contract, persistence, and behavior required by Story 6301.
+
+## Acceptance Criteria
+- [ ] Promote OpenAPI and persist plan, slots, choices, and exact provenance.
+- [ ] Implement deterministic composition, revalidation, bounds, and one-draft concurrency.
+- [ ] Keep remote calls outside Care transactions.
+
+## Definition of Done
+- [ ] The slice is independently reviewable and focused checks pass.
+- [ ] Contracts, persistence, authorization, failures, and docs agree where applicable.
+- [ ] No unrelated abstraction or deferred feature is introduced."
+"Subtask","630103","Deliver consumer flow for generate and reload the current supportplan draft","6301","","","43200","MB Sprint 3","Highest","sprint3-gated-plan-proposal","## Objective
+Deliver the real consumer or actor-facing flow required by Story 6301.
+
+## Acceptance Criteria
+- [ ] Build real proposal/draft BFF page with rationale, safety, slots, alternatives, and reload.
+- [ ] Never calculate eligibility or truncate on the client.
+- [ ] Handle missing evaluation, ineligible, unavailable, and stale.
+
+## Definition of Done
+- [ ] The slice is independently reviewable and focused checks pass.
+- [ ] Contracts, persistence, authorization, failures, and docs agree where applicable.
+- [ ] No unrelated abstraction or deferred feature is introduced."
+"Subtask","630104","Verify generate and reload the current supportplan draft","6301","","","28800","MB Sprint 3","Highest","sprint3-gated-plan-proposal","## Objective
+Prove Story 6301 across its real owners and consumers.
+
+## Acceptance Criteria
+- [ ] Exercise one/two domain, safety, roles, dedupe, bounds, concurrency, reload, and failure.
+- [ ] Capture evaluation/policy/matrix/template/resource versions.
+
+## Definition of Done
+- [ ] Relevant checks pass and exact commands/results are recorded.
+- [ ] Evidence is classified truthfully and uses non-sensitive data.
+- [ ] Story 6301 Evidence and Completion Notes are updated without fabricated claims."
+"Subtask","630201","Confirm choose alternatives and activate a SupportPlan ADR and user flow","6302","","","7200","MB Sprint 3","Highest","sprint3-gated-plan-activation","## Objective
+Confirm the narrow remaining decisions for choose alternatives and activate a supportplan before irreversible implementation.
+
+## Acceptance Criteria
+- [ ] Approve choice controls and optional-slot removal.
+- [ ] Confirm stale-alternative behavior.
+- [ ] Confirm safety-positive normal activation after guidance.
+
+## Definition of Done
+- [ ] Approved details are recorded in the canonical ADR, policy, contract, or module docs only where needed.
+- [ ] Story 6302 has no materially blocking API, persistence, ownership, or actor-flow ambiguity.
+- [ ] Already approved behavior is not reopened as ceremonial documentation."
+"Subtask","630202","Implement owner capability for choose alternatives and activate a supportplan","6302","","","36000","MB Sprint 3","Highest","sprint3-gated-plan-activation","## Objective
+Deliver the owner-side contract, persistence, and behavior required by Story 6302.
+
+## Acceptance Criteria
+- [ ] Implement idempotent choice and activation commands.
+- [ ] Revalidate evaluation, templates, content versions, roles, publication, and windows.
+- [ ] Enforce all core slots and one current plan.
+
+## Definition of Done
+- [ ] The slice is independently reviewable and focused checks pass.
+- [ ] Contracts, persistence, authorization, failures, and docs agree where applicable.
+- [ ] No unrelated abstraction or deferred feature is introduced."
+"Subtask","630203","Deliver consumer flow for choose alternatives and activate a supportplan","6302","","","28800","MB Sprint 3","Highest","sprint3-gated-plan-activation","## Objective
+Deliver the real consumer or actor-facing flow required by Story 6302.
+
+## Acceptance Criteria
+- [ ] Build keep/swap/remove and explicit activation UI.
+- [ ] Show stale, missing-core, conflict, safety, and success states.
+- [ ] Reload ACTIVE truth from API.
+
+## Definition of Done
+- [ ] The slice is independently reviewable and focused checks pass.
+- [ ] Contracts, persistence, authorization, failures, and docs agree where applicable.
+- [ ] No unrelated abstraction or deferred feature is introduced."
+"Subtask","630204","Verify choose alternatives and activate a supportplan","6302","","","14400","MB Sprint 3","Highest","sprint3-gated-plan-activation","## Objective
+Prove Story 6302 across its real owners and consumers.
+
+## Acceptance Criteria
+- [ ] Exercise valid/invalid choices, injection, stale facts, duplicate activation, and concurrency.
+- [ ] Verify active selections and provenance.
+
+## Definition of Done
+- [ ] Relevant checks pass and exact commands/results are recorded.
+- [ ] Evidence is classified truthfully and uses non-sensitive data.
+- [ ] Story 6302 Evidence and Completion Notes are updated without fabricated claims."
+"Subtask","630301","Confirm pause, resume, complete, and discard SupportPlans ADR and user flow","6303","","","7200","MB Sprint 3","High","sprint3-gated-plan-lifecycle","## Objective
+Confirm the narrow remaining decisions for pause, resume, complete, and discard supportplans before irreversible implementation.
+
+## Acceptance Criteria
+- [ ] Approve confirmations and optional completion reason.
+- [ ] Confirm completed history presentation.
+- [ ] Confirm no automatic lifecycle command from assessment or AI.
+
+## Definition of Done
+- [ ] Approved details are recorded in the canonical ADR, policy, contract, or module docs only where needed.
+- [ ] Story 6303 has no materially blocking API, persistence, ownership, or actor-flow ambiguity.
+- [ ] Already approved behavior is not reopened as ceremonial documentation."
+"Subtask","630302","Implement owner capability for pause, resume, complete, and discard supportplans","6303","","","36000","MB Sprint 3","High","sprint3-gated-plan-lifecycle","## Objective
+Deliver the owner-side contract, persistence, and behavior required by Story 6303.
+
+## Acceptance Criteria
+- [ ] Implement discard/pause/resume/complete with guards, ownership, idempotency, and history.
+- [ ] Preserve one-draft/one-current constraints.
+- [ ] Return immutable completed snapshots.
+
+## Definition of Done
+- [ ] The slice is independently reviewable and focused checks pass.
+- [ ] Contracts, persistence, authorization, failures, and docs agree where applicable.
+- [ ] No unrelated abstraction or deferred feature is introduced."
+"Subtask","630303","Deliver consumer flow for pause, resume, complete, and discard supportplans","6303","","","28800","MB Sprint 3","High","sprint3-gated-plan-lifecycle","## Objective
+Deliver the real consumer or actor-facing flow required by Story 6303.
+
+## Acceptance Criteria
+- [ ] Expose only valid actions for reloaded state.
+- [ ] Build confirmations, conflicts, failures, and history detail.
+- [ ] Never imply automatic plan changes.
+
+## Definition of Done
+- [ ] The slice is independently reviewable and focused checks pass.
+- [ ] Contracts, persistence, authorization, failures, and docs agree where applicable.
+- [ ] No unrelated abstraction or deferred feature is introduced."
+"Subtask","630304","Verify pause, resume, complete, and discard supportplans","6303","","","14400","MB Sprint 3","High","sprint3-gated-plan-lifecycle","## Objective
+Prove Story 6303 across its real owners and consumers.
+
+## Acceptance Criteria
+- [ ] Exercise all valid/invalid transitions, repeats, concurrency, reload, and history.
+- [ ] Verify no hidden automatic transition.
+
+## Definition of Done
+- [ ] Relevant checks pass and exact commands/results are recorded.
+- [ ] Evidence is classified truthfully and uses non-sensitive data.
+- [ ] Story 6303 Evidence and Completion Notes are updated without fabricated claims."
+"Subtask","630401","Confirm replace a current SupportPlan after revalidation ADR and user flow","6304","","","10800","MB Sprint 3","High","sprint3-gated-plan-replacement","## Objective
+Confirm the narrow remaining decisions for replace a current supportplan after revalidation before irreversible implementation.
+
+## Acceptance Criteria
+- [ ] Approve replacement comparison and unchanged/removed item display.
+- [ ] Confirm current-change behavior while draft is open.
+- [ ] Approve confirmation and safe failure copy.
+
+## Definition of Done
+- [ ] Approved details are recorded in the canonical ADR, policy, contract, or module docs only where needed.
+- [ ] Story 6304 has no materially blocking API, persistence, ownership, or actor-flow ambiguity.
+- [ ] Already approved behavior is not reopened as ceremonial documentation."
+"Subtask","630402","Implement owner capability for replace a current supportplan after revalidation","6304","","","64800","MB Sprint 3","High","sprint3-gated-plan-replacement","## Objective
+Deliver the owner-side contract, persistence, and behavior required by Story 6304.
+
+## Acceptance Criteria
+- [ ] Persist replacement relation and freshly revalidate providers.
+- [ ] Atomically SUPERSEDE current and ACTIVATE replacement.
+- [ ] Handle stale draft, concurrent current change, and retry.
+
+## Definition of Done
+- [ ] The slice is independently reviewable and focused checks pass.
+- [ ] Contracts, persistence, authorization, failures, and docs agree where applicable.
+- [ ] No unrelated abstraction or deferred feature is introduced."
+"Subtask","630403","Deliver consumer flow for replace a current supportplan after revalidation","6304","","","43200","MB Sprint 3","High","sprint3-gated-plan-replacement","## Objective
+Deliver the real consumer or actor-facing flow required by Story 6304.
+
+## Acceptance Criteria
+- [ ] Build current-versus-proposed comparison and confirmation.
+- [ ] Keep current usable until confirmed.
+- [ ] Reload ACTIVE replacement and SUPERSEDED history.
+
+## Definition of Done
+- [ ] The slice is independently reviewable and focused checks pass.
+- [ ] Contracts, persistence, authorization, failures, and docs agree where applicable.
+- [ ] No unrelated abstraction or deferred feature is introduced."
+"Subtask","630404","Verify replace a current supportplan after revalidation","6304","","","28800","MB Sprint 3","High","sprint3-gated-plan-replacement","## Objective
+Prove Story 6304 across its real owners and consumers.
+
+## Acceptance Criteria
+- [ ] Exercise success, stale provider, concurrent change, duplicate, rollback, and unchanged current.
+- [ ] Verify exact transaction/history.
+
+## Definition of Done
+- [ ] Relevant checks pass and exact commands/results are recorded.
+- [ ] Evidence is classified truthfully and uses non-sensitive data.
+- [ ] Story 6304 Evidence and Completion Notes are updated without fabricated claims."
+"Subtask","630501","Confirm track SupportPlan activity engagement and helpfulness ADR and user flow","6305","","","10800","MB Sprint 3","Medium","sprint3-later-plan-engagement","## Objective
+Confirm the narrow remaining decisions for track supportplan activity engagement and helpfulness before irreversible implementation.
+
+## Acceptance Criteria
+- [ ] Approve activity/check-in model and trackable resources.
+- [ ] Confirm helpfulness, barriers, reflection, edit window, and pause behavior.
+- [ ] Approve neutral non-gamified wording.
+
+## Definition of Done
+- [ ] Approved details are recorded in the canonical ADR, policy, contract, or module docs only where needed.
+- [ ] Story 6305 has no materially blocking API, persistence, ownership, or actor-flow ambiguity.
+- [ ] Already approved behavior is not reopened as ceremonial documentation."
+"Subtask","630502","Implement owner capability for track supportplan activity engagement and helpfulness","6305","","","64800","MB Sprint 3","Medium","sprint3-later-plan-engagement","## Objective
+Deliver the owner-side contract, persistence, and behavior required by Story 6305.
+
+## Acceptance Criteria
+- [ ] Persist item engagement, barriers, helpfulness, reflection, time, and versions.
+- [ ] Implement owned create/update/history and minimized reassessment projection.
+- [ ] Enforce lifecycle/item rules without scoring.
+
+## Definition of Done
+- [ ] The slice is independently reviewable and focused checks pass.
+- [ ] Contracts, persistence, authorization, failures, and docs agree where applicable.
+- [ ] No unrelated abstraction or deferred feature is introduced."
+"Subtask","630503","Deliver consumer flow for track supportplan activity engagement and helpfulness","6305","","","43200","MB Sprint 3","Medium","sprint3-later-plan-engagement","## Objective
+Deliver the real consumer or actor-facing flow required by Story 6305.
+
+## Acceptance Criteria
+- [ ] Build current activities, check-in, helpfulness, barrier, reflection, and history UI.
+- [ ] Handle paused/completed/superseded/conflict states.
+- [ ] Avoid streak pressure and improvement claims.
+
+## Definition of Done
+- [ ] The slice is independently reviewable and focused checks pass.
+- [ ] Contracts, persistence, authorization, failures, and docs agree where applicable.
+- [ ] No unrelated abstraction or deferred feature is introduced."
+"Subtask","630504","Verify track supportplan activity engagement and helpfulness","6305","","","28800","MB Sprint 3","Medium","sprint3-later-plan-engagement","## Objective
+Prove Story 6305 across its real owners and consumers.
+
+## Acceptance Criteria
+- [ ] Exercise lifecycle rules, repeat/update, item versions, reload, and projection.
+- [ ] Inspect API/UI for inferred adherence or improvement.
+
+## Definition of Done
+- [ ] Relevant checks pass and exact commands/results are recorded.
+- [ ] Evidence is classified truthfully and uses non-sensitive data.
+- [ ] Story 6305 Evidence and Completion Notes are updated without fabricated claims."
+"Subtask","640101","Confirm provision and display controlled-demo consultation credits ADR and user flow","6401","","","7200","MB Sprint 3","High","sprint3-next-demo-credit","## Objective
+Confirm the narrow remaining decisions for provision and display controlled-demo consultation credits before irreversible implementation.
+
+## Acceptance Criteria
+- [ ] Approve provisioning actor, amount, repeat rule, and environments.
+- [ ] Confirm balance/history fields and demo disclosure.
+- [ ] Confirm migration path to paid credits.
+
+## Definition of Done
+- [ ] Approved details are recorded in the canonical ADR, policy, contract, or module docs only where needed.
+- [ ] Story 6401 has no materially blocking API, persistence, ownership, or actor-flow ambiguity.
+- [ ] Already approved behavior is not reopened as ceremonial documentation."
+"Subtask","640102","Implement owner capability for provision and display controlled-demo consultation credits","6401","","","21600","MB Sprint 3","High","sprint3-next-demo-credit","## Objective
+Deliver the owner-side contract, persistence, and behavior required by Story 6401.
+
+## Acceptance Criteria
+- [ ] Implement idempotent demo provisioning and balance/history contract.
+- [ ] Persist demo provenance and ledger transitions.
+- [ ] Provide atomic booking use without duplicated balance.
+
+## Definition of Done
+- [ ] The slice is independently reviewable and focused checks pass.
+- [ ] Contracts, persistence, authorization, failures, and docs agree where applicable.
+- [ ] No unrelated abstraction or deferred feature is introduced."
+"Subtask","640103","Deliver consumer flow for provision and display controlled-demo consultation credits","6401","","","14400","MB Sprint 3","High","sprint3-next-demo-credit","## Objective
+Deliver the real consumer or actor-facing flow required by Story 6401.
+
+## Acceptance Criteria
+- [ ] Build balance/history and approved demo setup state.
+- [ ] Show actual held/released/forfeited outcomes.
+- [ ] Avoid cash refund or completed MoMo claims.
+
+## Definition of Done
+- [ ] The slice is independently reviewable and focused checks pass.
+- [ ] Contracts, persistence, authorization, failures, and docs agree where applicable.
+- [ ] No unrelated abstraction or deferred feature is introduced."
+"Subtask","640104","Verify provision and display controlled-demo consultation credits","6401","","","7200","MB Sprint 3","High","sprint3-next-demo-credit","## Objective
+Prove Story 6401 across its real owners and consumers.
+
+## Acceptance Criteria
+- [ ] Exercise repeat provisioning, reload, wrong actor/environment, and ledger.
+- [ ] Verify booking can hold exactly one credit.
+
+## Definition of Done
+- [ ] Relevant checks pass and exact commands/results are recorded.
+- [ ] Evidence is classified truthfully and uses non-sensitive data.
+- [ ] Story 6401 Evidence and Completion Notes are updated without fabricated claims."
+"Subtask","640201","Confirm request an appointment and hold its slot and credit ADR and user flow","6402","","","10800","MB Sprint 3","High","sprint3-gated-appointment-request","## Objective
+Confirm the narrow remaining decisions for request an appointment and hold its slot and credit before irreversible implementation.
+
+## Acceptance Criteria
+- [ ] Approve request confirmation/deadline copy.
+- [ ] Confirm client credit id versus atomic selection.
+- [ ] Confirm slot snapshot fields.
+
+## Definition of Done
+- [ ] Approved details are recorded in the canonical ADR, policy, contract, or module docs only where needed.
+- [ ] Story 6402 has no materially blocking API, persistence, ownership, or actor-flow ambiguity.
+- [ ] Already approved behavior is not reopened as ceremonial documentation."
+"Subtask","640202","Implement owner capability for request an appointment and hold its slot and credit","6402","","","64800","MB Sprint 3","High","sprint3-gated-appointment-request","## Objective
+Deliver the owner-side contract, persistence, and behavior required by Story 6402.
+
+## Acceptance Criteria
+- [ ] Persist appointment, snapshot, credit, REQUESTED, deadline, history, and idempotency.
+- [ ] Lock and hold slot plus credit in one transaction.
+- [ ] Return stable stale-slot, credit, modality, and deadline conflicts.
+
+## Definition of Done
+- [ ] The slice is independently reviewable and focused checks pass.
+- [ ] Contracts, persistence, authorization, failures, and docs agree where applicable.
+- [ ] No unrelated abstraction or deferred feature is introduced."
+"Subtask","640203","Deliver consumer flow for request an appointment and hold its slot and credit","6402","","","43200","MB Sprint 3","High","sprint3-gated-appointment-request","## Objective
+Deliver the real consumer or actor-facing flow required by Story 6402.
+
+## Acceptance Criteria
+- [ ] Submit selected slot through real BFF and show REQUESTED/deadline/held credit.
+- [ ] Handle stale slot, insufficient credit, conflict, and failure.
+- [ ] Reload backend state instead of local arrays.
+
+## Definition of Done
+- [ ] The slice is independently reviewable and focused checks pass.
+- [ ] Contracts, persistence, authorization, failures, and docs agree where applicable.
+- [ ] No unrelated abstraction or deferred feature is introduced."
+"Subtask","640204","Verify request an appointment and hold its slot and credit","6402","","","28800","MB Sprint 3","High","sprint3-gated-appointment-request","## Objective
+Prove Story 6402 across its real owners and consumers.
+
+## Acceptance Criteria
+- [ ] Exercise both modalities, lead time, stale slot, double booking, duplicate, concurrency, and no credit.
+- [ ] Verify one appointment and one hold each.
+
+## Definition of Done
+- [ ] Relevant checks pass and exact commands/results are recorded.
+- [ ] Evidence is classified truthfully and uses non-sensitive data.
+- [ ] Story 6402 Evidence and Completion Notes are updated without fabricated claims."
+"Subtask","640301","Confirm accept, reject, or expire appointment requests ADR and user flow","6403","","","7200","MB Sprint 3","High","sprint3-gated-appointment-decision","## Objective
+Confirm the narrow remaining decisions for accept, reject, or expire appointment requests before irreversible implementation.
+
+## Acceptance Criteria
+- [ ] Approve rejection reasons and copy.
+- [ ] Confirm expiry cadence/notification.
+- [ ] Confirm decision-versus-expiry race.
+
+## Definition of Done
+- [ ] Approved details are recorded in the canonical ADR, policy, contract, or module docs only where needed.
+- [ ] Story 6403 has no materially blocking API, persistence, ownership, or actor-flow ambiguity.
+- [ ] Already approved behavior is not reopened as ceremonial documentation."
+"Subtask","640302","Implement owner capability for accept, reject, or expire appointment requests","6403","","","36000","MB Sprint 3","High","sprint3-gated-appointment-decision","## Objective
+Deliver the owner-side contract, persistence, and behavior required by Story 6403.
+
+## Acceptance Criteria
+- [ ] Implement accept/reject and scheduled expiry with locking/idempotency.
+- [ ] Persist history and settle holds exactly once.
+- [ ] Publish minimal outcome facts through outbox if used.
+
+## Definition of Done
+- [ ] The slice is independently reviewable and focused checks pass.
+- [ ] Contracts, persistence, authorization, failures, and docs agree where applicable.
+- [ ] No unrelated abstraction or deferred feature is introduced."
+"Subtask","640303","Deliver consumer flow for accept, reject, or expire appointment requests","6403","","","28800","MB Sprint 3","High","sprint3-gated-appointment-decision","## Objective
+Deliver the real consumer or actor-facing flow required by Story 6403.
+
+## Acceptance Criteria
+- [ ] Replace specialist fixtures with real request decisions.
+- [ ] Show user CONFIRMED/REJECTED/EXPIRED and credit outcome.
+- [ ] Handle deadline, race, empty, and failure.
+
+## Definition of Done
+- [ ] The slice is independently reviewable and focused checks pass.
+- [ ] Contracts, persistence, authorization, failures, and docs agree where applicable.
+- [ ] No unrelated abstraction or deferred feature is introduced."
+"Subtask","640304","Verify accept, reject, or expire appointment requests","6403","","","14400","MB Sprint 3","High","sprint3-gated-appointment-decision","## Objective
+Prove Story 6403 across its real owners and consumers.
+
+## Acceptance Criteria
+- [ ] Exercise accept, reject, expiry, races, repeats, wrong specialist, and reload.
+- [ ] Verify screens, slot, and ledger agree.
+
+## Definition of Done
+- [ ] Relevant checks pass and exact commands/results are recorded.
+- [ ] Evidence is classified truthfully and uses non-sensitive data.
+- [ ] Story 6403 Evidence and Completion Notes are updated without fabricated claims."
+"Subtask","640401","Confirm cancel or reschedule appointments with auditable history ADR and user flow","6404","","","10800","MB Sprint 3","High","sprint3-gated-appointment-change","## Objective
+Confirm the narrow remaining decisions for cancel or reschedule appointments with auditable history before irreversible implementation.
+
+## Acceptance Criteria
+- [ ] Approve cancel reasons and credit copy.
+- [ ] Confirm reschedule actors and transaction boundary.
+- [ ] Approve old/new history presentation.
+
+## Definition of Done
+- [ ] Approved details are recorded in the canonical ADR, policy, contract, or module docs only where needed.
+- [ ] Story 6404 has no materially blocking API, persistence, ownership, or actor-flow ambiguity.
+- [ ] Already approved behavior is not reopened as ceremonial documentation."
+"Subtask","640402","Implement owner capability for cancel or reschedule appointments with auditable history","6404","","","64800","MB Sprint 3","High","sprint3-gated-appointment-change","## Objective
+Deliver the owner-side contract, persistence, and behavior required by Story 6404.
+
+## Acceptance Criteria
+- [ ] Implement actor/time-aware cancellation settlement and immutable history.
+- [ ] Create linked new request without in-place mutation.
+- [ ] Prevent double settlement and invalid terminal changes.
+
+## Definition of Done
+- [ ] The slice is independently reviewable and focused checks pass.
+- [ ] Contracts, persistence, authorization, failures, and docs agree where applicable.
+- [ ] No unrelated abstraction or deferred feature is introduced."
+"Subtask","640403","Deliver consumer flow for cancel or reschedule appointments with auditable history","6404","","","43200","MB Sprint 3","High","sprint3-gated-appointment-change","## Objective
+Deliver the real consumer or actor-facing flow required by Story 6404.
+
+## Acceptance Criteria
+- [ ] Use real cancel and new-slot reschedule BFF commands.
+- [ ] Show old/new links, actor, reason, and credit outcome.
+- [ ] Handle new-slot failure honestly.
+
+## Definition of Done
+- [ ] The slice is independently reviewable and focused checks pass.
+- [ ] Contracts, persistence, authorization, failures, and docs agree where applicable.
+- [ ] No unrelated abstraction or deferred feature is introduced."
+"Subtask","640404","Verify cancel or reschedule appointments with auditable history","6404","","","28800","MB Sprint 3","High","sprint3-gated-appointment-change","## Objective
+Prove Story 6404 across its real owners and consumers.
+
+## Acceptance Criteria
+- [ ] Exercise every cancellation row, 24-hour boundary, repeats, races, and reschedule failure.
+- [ ] Verify immutable snapshots and one ledger result.
+
+## Definition of Done
+- [ ] Relevant checks pass and exact commands/results are recorded.
+- [ ] Evidence is classified truthfully and uses non-sensitive data.
+- [ ] Story 6404 Evidence and Completion Notes are updated without fabricated claims."
+"Subtask","640501","Confirm create and share a manual appointment-scoped ConsultationBrief ADR and user flow","6405","","","10800","MB Sprint 3","Medium","sprint3-gated-consultation-brief","## Objective
+Confirm the narrow remaining decisions for create and share a manual appointment-scoped consultationbrief before irreversible implementation.
+
+## Acceptance Criteria
+- [ ] Approve final fields, edit/freeze, and note limits.
+- [ ] Confirm grant window, revocation, retention, and amendment.
+- [ ] Confirm prohibited data and read-state copy.
+
+## Definition of Done
+- [ ] Approved details are recorded in the canonical ADR, policy, contract, or module docs only where needed.
+- [ ] Story 6405 has no materially blocking API, persistence, ownership, or actor-flow ambiguity.
+- [ ] Already approved behavior is not reopened as ceremonial documentation."
+"Subtask","640502","Implement owner capability for create and share a manual appointment-scoped consultationbrief","6405","","","64800","MB Sprint 3","Medium","sprint3-gated-consultation-brief","## Objective
+Deliver the owner-side contract, persistence, and behavior required by Story 6405.
+
+## Acceptance Criteria
+- [ ] Persist Care draft, immutable shared snapshot, sources, and scoped grant.
+- [ ] Expose authorized projection to Consultation with deadlines and fail-closed behavior.
+- [ ] Preserve manual flow without AI.
+
+## Definition of Done
+- [ ] The slice is independently reviewable and focused checks pass.
+- [ ] Contracts, persistence, authorization, failures, and docs agree where applicable.
+- [ ] No unrelated abstraction or deferred feature is introduced."
+"Subtask","640503","Deliver consumer flow for create and share a manual appointment-scoped consultationbrief","6405","","","43200","MB Sprint 3","Medium","sprint3-gated-consultation-brief","## Objective
+Deliver the real consumer or actor-facing flow required by Story 6405.
+
+## Acceptance Criteria
+- [ ] Build user create/edit/review/approve/revoke and specialist read-only states.
+- [ ] Show exact fields/window before sharing.
+- [ ] Never show raw journal, answers, AI history, or unrelated plan.
+
+## Definition of Done
+- [ ] The slice is independently reviewable and focused checks pass.
+- [ ] Contracts, persistence, authorization, failures, and docs agree where applicable.
+- [ ] No unrelated abstraction or deferred feature is introduced."
+"Subtask","640504","Verify create and share a manual appointment-scoped consultationbrief","6405","","","28800","MB Sprint 3","Medium","sprint3-gated-consultation-brief","## Objective
+Prove Story 6405 across its real owners and consumers.
+
+## Acceptance Criteria
+- [ ] Exercise manual flow, wrong actor/appointment, early/expired, revocation race, and minimization.
+- [ ] Inspect payloads/logs for prohibited content.
+
+## Definition of Done
+- [ ] Relevant checks pass and exact commands/results are recorded.
+- [ ] Evidence is classified truthfully and uses non-sensitive data.
+- [ ] Story 6405 Evidence and Completion Notes are updated without fabricated claims."
+"Subtask","640601","Confirm enter appointment chat and enforce its time window ADR and user flow","6406","","","10800","MB Sprint 3","Medium","sprint3-gated-chat-access","## Objective
+Confirm the narrow remaining decisions for enter appointment chat and enforce its time window before irreversible implementation.
+
+## Acceptance Criteria
+- [ ] Confirm conversation creation and waiting messages.
+- [ ] Confirm reconnect/history and early/late copy.
+- [ ] Confirm no continuous access.
+
+## Definition of Done
+- [ ] Approved details are recorded in the canonical ADR, policy, contract, or module docs only where needed.
+- [ ] Story 6406 has no materially blocking API, persistence, ownership, or actor-flow ambiguity.
+- [ ] Already approved behavior is not reopened as ceremonial documentation."
+"Subtask","640602","Implement owner capability for enter appointment chat and enforce its time window","6406","","","64800","MB Sprint 3","Medium","sprint3-gated-chat-access","## Objective
+Deliver the owner-side contract, persistence, and behavior required by Story 6406.
+
+## Acceptance Criteria
+- [ ] Add Consultation eligibility query and Realtime appointment binding.
+- [ ] Enforce actor, state, waiting, send interval, cancellation, and read-only server-side.
+- [ ] Preserve idempotent send and resync.
+
+## Definition of Done
+- [ ] The slice is independently reviewable and focused checks pass.
+- [ ] Contracts, persistence, authorization, failures, and docs agree where applicable.
+- [ ] No unrelated abstraction or deferred feature is introduced."
+"Subtask","640603","Deliver consumer flow for enter appointment chat and enforce its time window","6406","","","43200","MB Sprint 3","Medium","sprint3-gated-chat-access","## Objective
+Deliver the real consumer or actor-facing flow required by Story 6406.
+
+## Acceptance Criteria
+- [ ] Build waiting, active, reconnecting, ended, cancelled, and failure UI.
+- [ ] Connect real appointment eligibility and conversation.
+- [ ] Do not trust client clock for authorization.
+
+## Definition of Done
+- [ ] The slice is independently reviewable and focused checks pass.
+- [ ] Contracts, persistence, authorization, failures, and docs agree where applicable.
+- [ ] No unrelated abstraction or deferred feature is introduced."
+"Subtask","640604","Verify enter appointment chat and enforce its time window","6406","","","28800","MB Sprint 3","Medium","sprint3-gated-chat-access","## Objective
+Prove Story 6406 across its real owners and consumers.
+
+## Acceptance Criteria
+- [ ] Exercise wrong actor, early entry/send, active/end, cancel, reconnect, duplicate, and history.
+- [ ] Verify server enforcement independently.
+
+## Definition of Done
+- [ ] Relevant checks pass and exact commands/results are recorded.
+- [ ] Evidence is classified truthfully and uses non-sensitive data.
+- [ ] Story 6406 Evidence and Completion Notes are updated without fabricated claims."
+"Subtask","640701","Confirm complete chat sessions from delivery evidence ADR and user flow","6407","","","10800","MB Sprint 3","Medium","sprint3-gated-chat-completion","## Objective
+Confirm the narrow remaining decisions for complete chat sessions from delivery evidence before irreversible implementation.
+
+## Acceptance Criteria
+- [ ] Approve non-content activity threshold and check-ins.
+- [ ] Confirm no-show timing/explanation.
+- [ ] Confirm no private message text is required.
+
+## Definition of Done
+- [ ] Approved details are recorded in the canonical ADR, policy, contract, or module docs only where needed.
+- [ ] Story 6407 has no materially blocking API, persistence, ownership, or actor-flow ambiguity.
+- [ ] Already approved behavior is not reopened as ceremonial documentation."
+"Subtask","640702","Implement owner capability for complete chat sessions from delivery evidence","6407","","","64800","MB Sprint 3","Medium","sprint3-gated-chat-completion","## Objective
+Deliver the owner-side contract, persistence, and behavior required by Story 6407.
+
+## Acceptance Criteria
+- [ ] Persist minimal check-in/activity facts and session states.
+- [ ] Implement scheduler, no-show, completion, credit, and earning exactly once.
+- [ ] Make evidence ingestion duplicate/reorder safe.
+
+## Definition of Done
+- [ ] The slice is independently reviewable and focused checks pass.
+- [ ] Contracts, persistence, authorization, failures, and docs agree where applicable.
+- [ ] No unrelated abstraction or deferred feature is introduced."
+"Subtask","640703","Deliver consumer flow for complete chat sessions from delivery evidence","6407","","","43200","MB Sprint 3","Medium","sprint3-gated-chat-completion","## Objective
+Deliver the real consumer or actor-facing flow required by Story 6407.
+
+## Acceptance Criteria
+- [ ] Show session progress, ended processing, completed, and no-show outcomes.
+- [ ] Display actual credit result without message judgments.
+- [ ] Reload Consultation truth.
+
+## Definition of Done
+- [ ] The slice is independently reviewable and focused checks pass.
+- [ ] Contracts, persistence, authorization, failures, and docs agree where applicable.
+- [ ] No unrelated abstraction or deferred feature is introduced."
+"Subtask","640704","Verify complete chat sessions from delivery evidence","6407","","","28800","MB Sprint 3","Medium","sprint3-gated-chat-completion","## Objective
+Prove Story 6407 across its real owners and consumers.
+
+## Acceptance Criteria
+- [ ] Exercise sufficient/insufficient evidence, both no-shows, duplicates, reorder, scheduler retry, and settlement race.
+- [ ] Verify one terminal result, credit transition, and earning.
+
+## Definition of Done
+- [ ] Relevant checks pass and exact commands/results are recorded.
+- [ ] Evidence is classified truthfully and uses non-sensitive data.
+- [ ] Story 6407 Evidence and Completion Notes are updated without fabricated claims."
+"Subtask","640801","Confirm complete in-person sessions with check-in and user confirmation ADR and user flow","6408","","","10800","MB Sprint 3","Medium","sprint3-gated-inperson-completion","## Objective
+Confirm the narrow remaining decisions for complete in-person sessions with check-in and user confirmation before irreversible implementation.
+
+## Acceptance Criteria
+- [ ] Approve check-in method/time/location window.
+- [ ] Approve issue reasons and dispute follow-up.
+- [ ] Confirm 24-hour auto-complete notification/race.
+
+## Definition of Done
+- [ ] Approved details are recorded in the canonical ADR, policy, contract, or module docs only where needed.
+- [ ] Story 6408 has no materially blocking API, persistence, ownership, or actor-flow ambiguity.
+- [ ] Already approved behavior is not reopened as ceremonial documentation."
+"Subtask","640802","Implement owner capability for complete in-person sessions with check-in and user confirmation","6408","","","64800","MB Sprint 3","Medium","sprint3-gated-inperson-completion","## Objective
+Deliver the owner-side contract, persistence, and behavior required by Story 6408.
+
+## Acceptance Criteria
+- [ ] Persist check-ins, SESSION_DELIVERED, confirm, dispute, and deadline.
+- [ ] Enforce actor/modality/time/location and single settlement.
+- [ ] Handle suspension, cancellation, no-show, and races.
+
+## Definition of Done
+- [ ] The slice is independently reviewable and focused checks pass.
+- [ ] Contracts, persistence, authorization, failures, and docs agree where applicable.
+- [ ] No unrelated abstraction or deferred feature is introduced."
+"Subtask","640803","Deliver consumer flow for complete in-person sessions with check-in and user confirmation","6408","","","43200","MB Sprint 3","Medium","sprint3-gated-inperson-completion","## Objective
+Deliver the real consumer or actor-facing flow required by Story 6408.
+
+## Acceptance Criteria
+- [ ] Build participant check-in, specialist delivered, user confirm/report, pending, completed, and disputed UI.
+- [ ] Show snapshot and credit outcome.
+- [ ] Never offer specialist-only completion.
+
+## Definition of Done
+- [ ] The slice is independently reviewable and focused checks pass.
+- [ ] Contracts, persistence, authorization, failures, and docs agree where applicable.
+- [ ] No unrelated abstraction or deferred feature is introduced."
+"Subtask","640804","Verify complete in-person sessions with check-in and user confirmation","6408","","","28800","MB Sprint 3","Medium","sprint3-gated-inperson-completion","## Objective
+Prove Story 6408 across its real owners and consumers.
+
+## Acceptance Criteria
+- [ ] Exercise check-ins, missing actor, early delivery, confirm, dispute, timeout, races, cancel, and no-show.
+- [ ] Verify one terminal transition/settlement.
+
+## Definition of Done
+- [ ] Relevant checks pass and exact commands/results are recorded.
+- [ ] Evidence is classified truthfully and uses non-sensitive data.
+- [ ] Story 6408 Evidence and Completion Notes are updated without fabricated claims."
+"Subtask","640901","Confirm publish a short user-visible SessionSummary ADR and user flow","6409","","","7200","MB Sprint 3","Medium","sprint3-gated-session-summary","## Objective
+Confirm the narrow remaining decisions for publish a short user-visible sessionsummary before irreversible implementation.
+
+## Acceptance Criteria
+- [ ] Approve field limits and eligible state/window.
+- [ ] Confirm amendment and issue-report behavior.
+- [ ] Confirm later-brief reuse consent.
+
+## Definition of Done
+- [ ] Approved details are recorded in the canonical ADR, policy, contract, or module docs only where needed.
+- [ ] Story 6409 has no materially blocking API, persistence, ownership, or actor-flow ambiguity.
+- [ ] Already approved behavior is not reopened as ceremonial documentation."
+"Subtask","640902","Implement owner capability for publish a short user-visible sessionsummary","6409","","","36000","MB Sprint 3","Medium","sprint3-gated-session-summary","## Objective
+Deliver the owner-side contract, persistence, and behavior required by Story 6409.
+
+## Acceptance Criteria
+- [ ] Persist approved fields, author, appointment, timestamps, and version.
+- [ ] Enforce assignment/state/limits and expose user/Care projections.
+- [ ] Reject private or clinical fields.
+
+## Definition of Done
+- [ ] The slice is independently reviewable and focused checks pass.
+- [ ] Contracts, persistence, authorization, failures, and docs agree where applicable.
+- [ ] No unrelated abstraction or deferred feature is introduced."
+"Subtask","640903","Deliver consumer flow for publish a short user-visible sessionsummary","6409","","","28800","MB Sprint 3","Medium","sprint3-gated-session-summary","## Objective
+Deliver the real consumer or actor-facing flow required by Story 6409.
+
+## Acceptance Criteria
+- [ ] Replace simulated notes with real specialist form and user read view.
+- [ ] Remove risk, diagnosis, confidential notes, and treatment.
+- [ ] Show amendment and reuse approval as confirmed.
+
+## Definition of Done
+- [ ] The slice is independently reviewable and focused checks pass.
+- [ ] Contracts, persistence, authorization, failures, and docs agree where applicable.
+- [ ] No unrelated abstraction or deferred feature is introduced."
+"Subtask","640904","Verify publish a short user-visible sessionsummary","6409","","","14400","MB Sprint 3","Medium","sprint3-gated-session-summary","## Objective
+Prove Story 6409 across its real owners and consumers.
+
+## Acceptance Criteria
+- [ ] Exercise state, actors, field rejection, edit policy, reload, and reuse consent.
+- [ ] Inspect payloads/UI for prohibited fields.
+
+## Definition of Done
+- [ ] Relevant checks pass and exact commands/results are recorded.
+- [ ] Evidence is classified truthfully and uses non-sensitive data.
+- [ ] Story 6409 Evidence and Completion Notes are updated without fabricated claims."
+"Subtask","650101","Confirm compose the four-dimension ReassessmentSummary ADR and user flow","6501","","","10800","MB Sprint 3","Medium","sprint3-gated-reassessment-api","## Objective
+Confirm the narrow remaining decisions for compose the four-dimension reassessmentsummary before irreversible implementation.
+
+## Acceptance Criteria
+- [ ] Approve periods and journal sufficiency.
+- [ ] Confirm engagement/helpfulness/reflection inputs.
+- [ ] Approve contradictory and unavailable wording.
+
+## Definition of Done
+- [ ] Approved details are recorded in the canonical ADR, policy, contract, or module docs only where needed.
+- [ ] Story 6501 has no materially blocking API, persistence, ownership, or actor-flow ambiguity.
+- [ ] Already approved behavior is not reopened as ceremonial documentation."
+"Subtask","650102","Implement owner capability for compose the four-dimension reassessmentsummary","6501","","","64800","MB Sprint 3","Medium","sprint3-gated-reassessment-api","## Objective
+Deliver the owner-side contract, persistence, and behavior required by Story 6501.
+
+## Acceptance Criteria
+- [ ] Add Care contract and reproducible summary snapshot/query.
+- [ ] Calculate PHQ/GAD locally and consume minimized projections with safe fallback.
+- [ ] Preserve source/version/coverage and never combine scores.
+
+## Definition of Done
+- [ ] The slice is independently reviewable and focused checks pass.
+- [ ] Contracts, persistence, authorization, failures, and docs agree where applicable.
+- [ ] No unrelated abstraction or deferred feature is introduced."
+"Subtask","650103","Deliver consumer flow for compose the four-dimension reassessmentsummary","6501","","","43200","MB Sprint 3","Medium","sprint3-gated-reassessment-api","## Objective
+Deliver the real consumer or actor-facing flow required by Story 6501.
+
+## Acceptance Criteria
+- [ ] Expose current/history APIs with explicit unavailable and INSUFFICIENT_DATA states.
+- [ ] Provide contradictory examples for 6502.
+- [ ] Do not invent neutral or positive trends.
+
+## Definition of Done
+- [ ] The slice is independently reviewable and focused checks pass.
+- [ ] Contracts, persistence, authorization, failures, and docs agree where applicable.
+- [ ] No unrelated abstraction or deferred feature is introduced."
+"Subtask","650104","Verify compose the four-dimension reassessmentsummary","6501","","","28800","MB Sprint 3","Medium","sprint3-gated-reassessment-api","## Objective
+Prove Story 6501 across its real owners and consumers.
+
+## Acceptance Criteria
+- [ ] Exercise sufficient, sparse, unavailable, contradictory, deleted source, repeat, and deterministic scoring.
+- [ ] Inspect provenance and absence of combined score.
+
+## Definition of Done
+- [ ] Relevant checks pass and exact commands/results are recorded.
+- [ ] Evidence is classified truthfully and uses non-sensitive data.
+- [ ] Story 6501 Evidence and Completion Notes are updated without fabricated claims."
+"Subtask","650201","Confirm show truthful four-dimension reassessment progress ADR and user flow","6502","","","7200","MB Sprint 3","Medium","sprint3-gated-reassessment-ui","## Objective
+Confirm the narrow remaining decisions for show truthful four-dimension reassessment progress before irreversible implementation.
+
+## Acceptance Criteria
+- [ ] Approve labels, copy, and default period display.
+- [ ] Confirm visible versus expandable source detail.
+- [ ] Approve contradictory/unavailable/insufficient presentation.
+
+## Definition of Done
+- [ ] Approved details are recorded in the canonical ADR, policy, contract, or module docs only where needed.
+- [ ] Story 6502 has no materially blocking API, persistence, ownership, or actor-flow ambiguity.
+- [ ] Already approved behavior is not reopened as ceremonial documentation."
+"Subtask","650202","Implement owner capability for show truthful four-dimension reassessment progress","6502","","","36000","MB Sprint 3","Medium","sprint3-gated-reassessment-ui","## Objective
+Deliver the owner-side contract, persistence, and behavior required by Story 6502.
+
+## Acceptance Criteria
+- [ ] Add typed BFF integration for current/history and all states.
+- [ ] Map dimensions without recalculation or relabeling authority.
+- [ ] Preserve safe dependency errors.
+
+## Definition of Done
+- [ ] The slice is independently reviewable and focused checks pass.
+- [ ] Contracts, persistence, authorization, failures, and docs agree where applicable.
+- [ ] No unrelated abstraction or deferred feature is introduced."
+"Subtask","650203","Deliver consumer flow for show truthful four-dimension reassessment progress","6502","","","28800","MB Sprint 3","Medium","sprint3-gated-reassessment-ui","## Objective
+Deliver the real consumer or actor-facing flow required by Story 6502.
+
+## Acceptance Criteria
+- [ ] Build separate dimension cards, coverage, periods, sources, loading, empty, and failure.
+- [ ] Show contradictions without one verdict.
+- [ ] Remove hardcoded improvement claims.
+
+## Definition of Done
+- [ ] The slice is independently reviewable and focused checks pass.
+- [ ] Contracts, persistence, authorization, failures, and docs agree where applicable.
+- [ ] No unrelated abstraction or deferred feature is introduced."
+"Subtask","650204","Verify show truthful four-dimension reassessment progress","6502","","","14400","MB Sprint 3","Medium","sprint3-gated-reassessment-ui","## Objective
+Prove Story 6502 across its real owners and consumers.
+
+## Acceptance Criteria
+- [ ] Exercise real variants, reload/history, unavailable source, and contradiction.
+- [ ] Search delivered routes for stale combined-score claims.
+
+## Definition of Done
+- [ ] Relevant checks pass and exact commands/results are recorded.
+- [ ] Evidence is classified truthfully and uses non-sensitive data.
+- [ ] Story 6502 Evidence and Completion Notes are updated without fabricated claims."
+"Subtask","650301","Confirm review SupportPlan alternatives and confirm a change ADR and user flow","6503","","","10800","MB Sprint 3","Medium","sprint3-gated-plan-review","## Objective
+Confirm the narrow remaining decisions for review supportplan alternatives and confirm a change before irreversible implementation.
+
+## Acceptance Criteria
+- [ ] Approve review invitation evidence without mutation.
+- [ ] Confirm keep/swap/replace presentation.
+- [ ] Confirm no-alternative and changing-eligibility behavior.
+
+## Definition of Done
+- [ ] Approved details are recorded in the canonical ADR, policy, contract, or module docs only where needed.
+- [ ] Story 6503 has no materially blocking API, persistence, ownership, or actor-flow ambiguity.
+- [ ] Already approved behavior is not reopened as ceremonial documentation."
+"Subtask","650302","Implement owner capability for review supportplan alternatives and confirm a change","6503","","","64800","MB Sprint 3","Medium","sprint3-gated-plan-review","## Objective
+Deliver the owner-side contract, persistence, and behavior required by Story 6503.
+
+## Acceptance Criteria
+- [ ] Implement Care candidate query/command using current policy and eligibility.
+- [ ] Map AI only to explanation; Care resolves admitted alternatives.
+- [ ] Reuse atomic replacement with provenance and idempotency.
+
+## Definition of Done
+- [ ] The slice is independently reviewable and focused checks pass.
+- [ ] Contracts, persistence, authorization, failures, and docs agree where applicable.
+- [ ] No unrelated abstraction or deferred feature is introduced."
+"Subtask","650303","Deliver consumer flow for review supportplan alternatives and confirm a change","6503","","","43200","MB Sprint 3","Medium","sprint3-gated-plan-review","## Objective
+Deliver the real consumer or actor-facing flow required by Story 6503.
+
+## Acceptance Criteria
+- [ ] Show dimensions, current items, alternatives, rationale, and explicit actions.
+- [ ] Handle no alternative, stale eligibility, concurrent change, and failure.
+- [ ] Never present AI as decision maker.
+
+## Definition of Done
+- [ ] The slice is independently reviewable and focused checks pass.
+- [ ] Contracts, persistence, authorization, failures, and docs agree where applicable.
+- [ ] No unrelated abstraction or deferred feature is introduced."
+"Subtask","650304","Verify review supportplan alternatives and confirm a change","6503","","","28800","MB Sprint 3","Medium","sprint3-gated-plan-review","## Objective
+Prove Story 6503 across its real owners and consumers.
+
+## Acceptance Criteria
+- [ ] Exercise keep, replace, none, stale, concurrent, duplicate, and AI unavailable.
+- [ ] Prove AI understands, Care decides, User confirms.
+
+## Definition of Done
+- [ ] Relevant checks pass and exact commands/results are recorded.
+- [ ] Evidence is classified truthfully and uses non-sensitive data.
+- [ ] Story 6503 Evidence and Completion Notes are updated without fabricated claims."
