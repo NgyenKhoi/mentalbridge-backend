@@ -21,29 +21,29 @@ public class ConsentService {
 	private final ConsentDecisionRepository decisions;
 	private final UserProfileRepository profiles;
 	private final PrivacyDisclosureService disclosures;
+	private final AiProcessingDisclosureService aiDisclosures;
 	private final Clock clock;
 
 	public ConsentService(ConsentDecisionRepository decisions, UserProfileRepository profiles,
-			PrivacyDisclosureService disclosures, Clock clock) {
+			PrivacyDisclosureService disclosures, AiProcessingDisclosureService aiDisclosures, Clock clock) {
 		this.decisions = decisions;
 		this.profiles = profiles;
 		this.disclosures = disclosures;
+		this.aiDisclosures = aiDisclosures;
 		this.clock = clock;
 	}
 
 	@Transactional(readOnly = true)
 	public List<DecisionView> current(UUID userId) {
-		return decisions.findFirstByUserIdAndConsentTypeOrderByDecidedAtDescIdDesc(userId,
-				PrivacyDisclosureService.CONSENT_TYPE).map(this::view).stream().toList();
+		return java.util.stream.Stream.of(PrivacyDisclosureService.CONSENT_TYPE,
+				AiProcessingDisclosureService.CONSENT_TYPE)
+				.map(type -> decisions.findFirstByUserIdAndConsentTypeOrderByDecidedAtDescIdDesc(userId, type))
+				.flatMap(java.util.Optional::stream).map(this::view).toList();
 	}
 
 	@Transactional
 	public DecisionView record(UUID userId, String idempotencyKey, DecisionCommand command) {
-		if (!PrivacyDisclosureService.CONSENT_TYPE.equals(command.consentType())) {
-			throw new ApiException(HttpStatus.BAD_REQUEST, "CONSENT_TYPE_UNAVAILABLE",
-					"This consent type is not available");
-		}
-		disclosures.requireCurrent(command.policyVersion(), true);
+		requireCurrentPolicy(command);
 		profiles.findByIdForUpdate(userId).orElseThrow(() -> new ApiException(HttpStatus.NOT_FOUND,
 				"PROFILE_NOT_FOUND", "Care profile was not found"));
 		var hash = requestHash(command);
@@ -58,8 +58,24 @@ public class ConsentService {
 			}
 			return view(decision);
 		}
-		return view(decisions.saveAndFlush(new ConsentDecisionEntity(userId, command.policyVersion(), command.granted(),
-				idempotencyKey, hash, clock.instant())));
+		return view(decisions.saveAndFlush(new ConsentDecisionEntity(userId, command.consentType(), command.policyVersion(),
+				command.granted(), idempotencyKey, hash, clock.instant())));
+	}
+
+	@Transactional(readOnly = true)
+	public AiAuthorizationView authorizeAiProcessing(UUID userId) {
+		var latest = decisions.findFirstByUserIdAndConsentTypeOrderByDecidedAtDescIdDesc(userId,
+				AiProcessingDisclosureService.CONSENT_TYPE);
+		if (latest.isEmpty()) {
+			return new AiAuthorizationView(false, "MISSING", AiProcessingDisclosureService.CONSENT_TYPE, null, null);
+		}
+		var decision = latest.orElseThrow();
+		if (!AiProcessingDisclosureService.VERSION.equals(decision.policyVersion())) {
+			return new AiAuthorizationView(false, "POLICY_OUTDATED", decision.consentType(), decision.policyVersion(),
+					decision.decidedAt());
+		}
+		return new AiAuthorizationView(decision.granted(), decision.granted() ? "GRANTED" : "REVOKED",
+				decision.consentType(), decision.policyVersion(), decision.decidedAt());
 	}
 
 	@Transactional(readOnly = true)
@@ -85,6 +101,15 @@ public class ConsentService {
 		}
 	}
 
+	private void requireCurrentPolicy(DecisionCommand command) {
+		switch (command.consentType()) {
+		case PrivacyDisclosureService.CONSENT_TYPE -> disclosures.requireCurrent(command.policyVersion(), true);
+		case AiProcessingDisclosureService.CONSENT_TYPE -> aiDisclosures.requireCurrent(command.policyVersion());
+		default -> throw new ApiException(HttpStatus.BAD_REQUEST, "CONSENT_TYPE_UNAVAILABLE",
+				"This consent type is not available");
+		}
+	}
+
 	private DecisionView view(ConsentDecisionEntity value) {
 		return new DecisionView(value.id(), value.consentType(), value.policyVersion(), value.granted(), value.decidedAt());
 	}
@@ -92,6 +117,9 @@ public class ConsentService {
 	public record DecisionCommand(String consentType, String policyVersion, boolean granted) {
 	}
 	public record DecisionView(UUID decisionId, String consentType, String policyVersion, boolean granted,
+			java.time.Instant decidedAt) {
+	}
+	public record AiAuthorizationView(boolean authorized, String reason, String consentType, String policyVersion,
 			java.time.Instant decidedAt) {
 	}
 }

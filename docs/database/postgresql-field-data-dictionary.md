@@ -153,7 +153,7 @@ Append-only evidence of a user grant or refusal for a versioned platform consent
 | --- | --- |
 | `id` | Immutable UUID used to cite this exact consent decision in audit and REST results. |
 | `user_id` | Care-owned user profile that made the consent decision. |
-| `consent_type` | Stable independent platform-consent category. Sprint 2 runtime accepts only `PRIVACY_POLICY`; reserved AI/research/marketing values are not exposed, and specialist access uses a separate scoped grant. |
+| `consent_type` | Stable independent platform-consent category. Runtime accepts `PRIVACY_POLICY` and `AI_PROCESSING` as separate decision streams; research/marketing remain unavailable, and specialist access uses a separate scoped grant. |
 | `policy_version` | Exact approved policy text/version accepted or refused so the decision remains reproducible. |
 | `granted` | Authoritative decision value; false records an explicit refusal or withdrawal. |
 | `evidence` | Minimized JSON object such as approved channel or document hash; never raw health content. |
