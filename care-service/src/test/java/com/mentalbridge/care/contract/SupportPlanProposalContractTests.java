@@ -119,7 +119,7 @@ class SupportPlanProposalContractTests {
 		ParseOptions options = new ParseOptions();
 		options.setResolve(true);
 		options.setResolveFully(true);
-		return new OpenAPIV3Parser().readLocation(contract.toString(), null, options);
+		return new OpenAPIV3Parser().readLocation(contract.toUri().toString(), null, options);
 	}
 
 	private void assertBearerSecurity(String key, Operation operation) {

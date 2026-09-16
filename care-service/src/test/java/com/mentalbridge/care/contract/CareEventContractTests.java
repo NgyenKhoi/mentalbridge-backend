@@ -60,4 +60,26 @@ class CareEventContractTests {
 		assertThat(payload.get("properties").fieldNames()).toIterable()
 				.doesNotContain("answers", "totalScore", "safetyItemPositive");
 	}
+
+	@Test
+	void supportEvaluationV2EventIsDomainAwareMinimizedAndVersionedIndependently() throws Exception {
+		var path = Path.of("..", "contracts", "events", "care", "support-evaluation-created-v2.schema.json")
+				.toAbsolutePath();
+		var schema = objectMapper.readTree(Files.readString(path));
+		var payload = schema.at("/properties/payload");
+		var domain = schema.at("/$defs/domainContribution/properties");
+		var safety = schema.at("/$defs/safetyEvidence/properties");
+
+		assertThat(schema.at("/properties/messageType/const").asText())
+				.isEqualTo("care.support-evaluation.created");
+		assertThat(schema.at("/properties/schemaVersion/const").asText()).isEqualTo("2.0");
+		assertThat(payload.at("/properties/evaluationVersion/const").asInt()).isEqualTo(2);
+		assertThat(payload.get("properties").fieldNames()).toIterable()
+				.contains("contributingDomains", "safetyEvidence")
+				.doesNotContain("supportTier", "overallSeverity", "answers", "totalScore");
+		assertThat(domain.fieldNames()).toIterable().contains("assessmentId", "questionnaireDefinitionId", "domain",
+				"screeningLevel", "supportPathway", "reasonCodes")
+				.doesNotContain("answers", "totalScore", "safetyStatus");
+		assertThat(safety.fieldNames()).toIterable().doesNotContain("answerValue", "item9Answer");
+	}
 }

@@ -20,6 +20,11 @@ New future APIs should start in `contracts/proposals/`. Existing forward-looking
 
 Framework DTOs, controllers, generated types, database entities, and provider payloads are never the cross-service source of truth.
 
+`care-service-v1.yaml` remains the unchanged v1 source for coarse historical
+SupportEvaluation behavior. `care-support-evaluation-v2.yaml` is the additive
+source for `/api/v2/support-evaluations`; consumers select the API version by
+path and must not interpret a v1 support tier as a v2 domain contribution.
+
 ## Required paired changes
 
 - REST route behavior changes together with its OpenAPI contract and provider contract tests.
