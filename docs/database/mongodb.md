@@ -108,6 +108,29 @@ Rules:
 - A new edit creates a revision and invalidates prior "current analysis"; it does not overwrite provenance. Revise uses one atomic filter over owner, journal ID, active state, expected revision, and unseen command hash; a stale `If-Match` is rejected with `412`. Delete is guarded by owner, active state, and its idempotency command hash; it does not accept `If-Match`.
 - Migration `004_journal_revision_mood.cjs` expands the revision validator with the optional encrypted mood envelope. Its down migration refuses to contract the validator after any mood has been written.
 
+## `emotion_check_ins`
+
+One Journal/AI-owned document per `(ownerAccountId, localDate)`. The IANA
+`timezone` is frozen at creation and the current server instant must render the
+submitted local date in that zone. `currentRevision` is optimistic concurrency
+state; revisions are capped at 32.
+
+Each revision stores `recordedAt` plus one AES-256-GCM `payload` containing only
+`emotion`, `intensity`, and optional `note`. None of those values is plaintext or
+indexed. Commands retain keyed idempotency hashes/fingerprints and non-content
+response metadata; raw keys and notes are prohibited.
+
+Required indexes are the unique owner/day identity, owner/deleted/local-date
+history, unique owner/command hash, and `purgeAfter` TTL. Direct owner deletion
+sets `revisions` to an empty array immediately, leaves a content-free tombstone,
+and sets `purgeAfter` to 30 days. Active records have a null purge time and are
+retained until explicit owner/account deletion. Migration
+`006_daily_emotion_check_ins.cjs` is the executable validator and index source.
+
+Owner responses may decrypt the current or historical revision after current
+authorization. The consent-gated AI projection excludes document ID and note.
+No reminder projection or Kafka event exists in v1.
+
 ## `analysis_jobs`
 
 One durable owner-scoped command per idempotency key. The public API maps both

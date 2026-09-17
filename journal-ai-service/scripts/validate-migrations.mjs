@@ -7,6 +7,7 @@ const commandsMigration = require("../migrations/002_journal_mutation_commands.c
 const replayMigration = require("../migrations/003_journal_replay_snapshots_and_cursor_index.cjs");
 const moodMigration = require("../migrations/004_journal_revision_mood.cjs");
 const analysisMigration = require("../migrations/005_exact_revision_analysis.cjs");
+const emotionCheckInMigration = require("../migrations/006_daily_emotion_check_ins.cjs");
 
 assert.equal(migration.collectionName, "journal_entries");
 assert.equal(typeof migration.up, "function");
@@ -27,6 +28,17 @@ assert.equal(analysisMigration.jobCollection, "analysis_jobs");
 assert.equal(analysisMigration.resultCollection, "journal_analysis_results");
 assert.equal(typeof analysisMigration.up, "function");
 assert.equal(typeof analysisMigration.down, "function");
+assert.equal(emotionCheckInMigration.collectionName, "emotion_check_ins");
+assert.equal(typeof emotionCheckInMigration.up, "function");
+assert.equal(typeof emotionCheckInMigration.down, "function");
+assert.equal(
+  emotionCheckInMigration.validator.$jsonSchema.properties.revisions.maxItems,
+  32,
+);
+assert.equal(
+  emotionCheckInMigration.validator.$jsonSchema.properties.commands.maxItems,
+  33,
+);
 assert.ok(
   analysisMigration.jobValidator.$jsonSchema.required.includes("keyHash"),
 );
@@ -71,5 +83,5 @@ assert.equal(
 );
 
 console.log(
-  "Validated Mongo migrations: 001_journal_entries_baseline.cjs through 005_exact_revision_analysis.cjs",
+  "Validated Mongo migrations: 001_journal_entries_baseline.cjs through 006_daily_emotion_check_ins.cjs",
 );

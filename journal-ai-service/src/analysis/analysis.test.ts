@@ -6,6 +6,7 @@ import type { ServiceConfiguration } from "../configuration/configuration.js";
 import {
   AnalysisService,
   AnalysisWorker,
+  CareConsentClient,
   ProviderFailure,
   type AnalysisJob,
   type AnalysisRepository,
@@ -219,6 +220,47 @@ const waitForTerminal = async (repository: MemoryRepository) => {
   }
   throw new Error("Analysis did not reach a terminal state");
 };
+
+void test("Care consent adapter preserves policy provenance", async () => {
+  const originalFetch = globalThis.fetch;
+  globalThis.fetch = (input, init) => {
+    assert.equal(
+      typeof input === "string"
+        ? input
+        : input instanceof URL
+          ? input.href
+          : input.url,
+      "http://care.test/api/v1/consents/ai-processing/authorization",
+    );
+    const headers = new Headers(init?.headers);
+    assert.equal(headers.get("authorization"), "Bearer synthetic-token");
+    assert.equal(headers.get("x-correlation-id"), "correlation-id");
+    return Promise.resolve(
+      Response.json({
+        authorized: true,
+        reason: "GRANTED",
+        consentType: "AI_PROCESSING",
+        policyVersion: "ai-processing-capstone-v1",
+        decidedAt: "2026-09-17T02:00:00.000Z",
+      }),
+    );
+  };
+  try {
+    const client = new CareConsentClient({
+      ...configuration,
+      CARE_BASE_URL: "http://care.test",
+      CARE_TIMEOUT_MS: 500,
+    });
+    assert.deepEqual(await client.check("synthetic-token", "correlation-id"), {
+      authorized: true,
+      reason: "GRANTED",
+      policyVersion: "ai-processing-capstone-v1",
+      decidedAt: "2026-09-17T02:00:00.000Z",
+    });
+  } finally {
+    globalThis.fetch = originalFetch;
+  }
+});
 
 void test("runs a consented exact revision and persists only normalized output", async () => {
   const value = subject();

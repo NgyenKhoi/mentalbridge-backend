@@ -33,6 +33,12 @@ const implementedOperations = new Set([
   "DELETE /api/v1/journals/{journalId}",
   "POST /api/v1/journals/{journalId}/revisions/{revision}/analysis-jobs",
   "GET /api/v1/analysis-jobs/{jobId}",
+  "POST /api/v1/emotion-check-ins",
+  "GET /api/v1/emotion-check-ins",
+  "GET /api/v1/emotion-check-ins/{localDate}",
+  "PATCH /api/v1/emotion-check-ins/{localDate}",
+  "DELETE /api/v1/emotion-check-ins/{localDate}",
+  "GET /api/v1/emotion-check-in-context",
 ]);
 const implementedResponses = new Map([
   ["GET /health/live", new Set(["200"])],
@@ -51,6 +57,27 @@ const implementedResponses = new Map([
     new Set(["202", "400", "401", "404", "409", "503"]),
   ],
   ["GET /api/v1/analysis-jobs/{jobId}", new Set(["200", "400", "401", "404"])],
+  [
+    "POST /api/v1/emotion-check-ins",
+    new Set(["201", "400", "401", "409", "503"]),
+  ],
+  ["GET /api/v1/emotion-check-ins", new Set(["200", "400", "401", "503"])],
+  [
+    "GET /api/v1/emotion-check-ins/{localDate}",
+    new Set(["200", "400", "401", "404", "503"]),
+  ],
+  [
+    "PATCH /api/v1/emotion-check-ins/{localDate}",
+    new Set(["200", "400", "401", "404", "409", "412", "503"]),
+  ],
+  [
+    "DELETE /api/v1/emotion-check-ins/{localDate}",
+    new Set(["200", "400", "401", "404", "503"]),
+  ],
+  [
+    "GET /api/v1/emotion-check-in-context",
+    new Set(["200", "400", "401", "403", "503"]),
+  ],
 ]);
 const plannedOperations = new Set();
 const actualImplemented = new Set();
@@ -132,6 +159,22 @@ if (
 
 if (journalText?.pattern !== ".*\\S.*") {
   throw new Error("Journal text must reject whitespace-only writes");
+}
+
+const checkIn = schemas?.EmotionCheckIn;
+const consumerItem = schemas?.EmotionCheckInConsumerItem;
+if (
+  schemas?.Emotion?.enum?.join(",") !== "GREAT,GOOD,OKAY,LOW,VERY_LOW" ||
+  checkIn?.properties?.sourceLabel?.const !== "SELF_REPORTED_EMOTION" ||
+  checkIn?.properties?.clinicalUse?.const !==
+    "NOT_A_DIAGNOSIS_OR_SAFETY_CLASSIFIER"
+) {
+  throw new Error("Daily emotion check-in labels differ from the accepted ADR");
+}
+if (consumerItem?.properties?.note || consumerItem?.properties?.id) {
+  throw new Error(
+    "Consumer context must exclude raw notes and owner identifiers",
+  );
 }
 
 console.log(
