@@ -512,13 +512,13 @@ components:
           schema:
             $ref: "#/components/schemas/Problem"
     NotFound:
-      description: Journal entry was not found for the authenticated owner.
+      description: Requested resource was not found for the authenticated owner.
       content:
         application/problem+json:
           schema:
             $ref: "#/components/schemas/Problem"
     Conflict:
-      description: Idempotency conflict, duplicate mutation, or journal revision limit reached.
+      description: Idempotency conflict, duplicate mutation, or revision/history limit reached.
       content:
         application/problem+json:
           schema:
@@ -530,7 +530,7 @@ components:
           schema:
             $ref: "#/components/schemas/Problem"
     DependencyUnavailable:
-      description: Care consent could not be verified; no provider call was made.
+      description: A required dependency was unavailable and the request failed closed.
       content:
         application/problem+json:
           schema:
@@ -636,10 +636,11 @@ components:
         consent:
           type: object
           additionalProperties: false
-          required: [type, policyVersion]
+          required: [type, policyVersion, decidedAt]
           properties:
             type: { type: string, const: AI_PROCESSING }
             policyVersion: { type: [string, "null"], maxLength: 64 }
+            decidedAt: { type: [string, "null"], format: date-time }
         items:
           type: array
           maxItems: 30

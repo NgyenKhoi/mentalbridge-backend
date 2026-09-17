@@ -518,7 +518,6 @@ export class EmotionCheckInService {
   async create(request: CheckInRequest) {
     const parsed = createSchema.safeParse(request.body);
     if (!parsed.success) throw new BadRequestException();
-    this.assertCurrentLocalDay(parsed.data.localDate, parsed.data.timezone);
     const ownerAccountId = owner(request);
     const value: CheckInValue = {
       emotion: parsed.data.emotion,
@@ -535,6 +534,7 @@ export class EmotionCheckInService {
       if (replay?.response.kind !== "check-in") throw new ConflictException();
       return this.output(previousByCommand, replay.response.revision);
     }
+    this.assertCurrentLocalDay(parsed.data.localDate, parsed.data.timezone);
     const now = command.recordedAt;
     const revision: CheckInRevision = {
       revision: 1,
@@ -734,6 +734,7 @@ export class EmotionCheckInService {
       consent: {
         type: "AI_PROCESSING" as const,
         policyVersion: decision.policyVersion ?? null,
+        decidedAt: decision.decidedAt ?? null,
       },
       items: result.rows.map((document) => {
         const output = this.output(document);

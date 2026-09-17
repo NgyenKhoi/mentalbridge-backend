@@ -136,6 +136,7 @@ const grantedConsent: ConsentClient = {
       authorized: true,
       reason: "GRANTED",
       policyVersion: "ai-processing-capstone-v1",
+      decidedAt: "2026-09-16T09:00:00.000Z",
     }),
 };
 
@@ -202,6 +203,26 @@ void test("creates one encrypted owner-scoped check-in and replays exact retries
         createBody.localDate,
       ),
     NotFoundException,
+  );
+});
+
+void test("replays an exact create after the owner's local day rolls over", async () => {
+  const repository = new MemoryRepository();
+  let clock = new Date(now);
+  const service = new EmotionCheckInService(
+    repository,
+    new EmotionCheckInCrypto(configuration),
+    grantedConsent,
+    { now: () => new Date(clock) },
+  );
+  const created = await service.create(request(createBody));
+
+  clock = new Date("2026-09-17T17:30:00.000Z");
+  assert.deepEqual(await service.create(request(createBody)), created);
+  assert.equal(repository.documents.length, 1);
+  await assert.rejects(
+    () => service.create(request(createBody, "emotion-command-next-day")),
+    BadRequestException,
   );
 });
 
@@ -293,6 +314,7 @@ void test("returns note-free context only under current consent", async () => {
   assert.equal("note" in projection, false);
   assert.equal("id" in projection, false);
   assert.equal(context.consent.policyVersion, "ai-processing-capstone-v1");
+  assert.equal(context.consent.decidedAt, "2026-09-16T09:00:00.000Z");
 
   const withdrawn = subject({
     check: () => Promise.resolve({ authorized: false, reason: "REVOKED" }),

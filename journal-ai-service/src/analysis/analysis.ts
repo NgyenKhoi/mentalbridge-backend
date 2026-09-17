@@ -489,7 +489,12 @@ export class CareConsentClient implements ConsentClient {
     const parsed = consentSchema.safeParse(await response.json());
     if (!parsed.success)
       throw new ConsentUnavailableError("Care consent response is invalid");
-    return { authorized: parsed.data.authorized, reason: parsed.data.reason };
+    return {
+      authorized: parsed.data.authorized,
+      reason: parsed.data.reason,
+      policyVersion: parsed.data.policyVersion,
+      decidedAt: parsed.data.decidedAt,
+    };
   }
 }
 

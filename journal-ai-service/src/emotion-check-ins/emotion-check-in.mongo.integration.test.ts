@@ -79,6 +79,7 @@ void test("persists owner-isolated daily emotion check-ins with real MongoDB", a
     authorized: true,
     reason: "GRANTED",
     policyVersion: "ai-processing-capstone-v1",
+    decidedAt: "2026-09-16T09:00:00.000Z",
   };
   let consentFails = false;
   const app = await createApplication(configuration, {
@@ -174,8 +175,14 @@ void test("persists owner-isolated daily emotion check-ins with real MongoDB", a
       .set("Authorization", `Bearer ${ownerToken}`)
       .expect(200);
     const contextBody = context.body as {
+      consent: { policyVersion: string | null; decidedAt: string | null };
       items: Record<string, unknown>[];
     };
+    assert.equal(
+      contextBody.consent.policyVersion,
+      "ai-processing-capstone-v1",
+    );
+    assert.equal(contextBody.consent.decidedAt, "2026-09-16T09:00:00.000Z");
     assert.equal(contextBody.items.length, 1);
     const contextItem = contextBody.items[0];
     assert.ok(contextItem);
