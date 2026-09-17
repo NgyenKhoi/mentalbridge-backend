@@ -70,6 +70,16 @@ A `SupportGuide` is a one-time, Care-approved guidance result produced after a
 screening. It is available to `FREE`, `PLUS`, and `PREMIUM` and is not a
 persistent plan with lifecycle or activity tracking.
 
+For MB-511, Care is the authoritative guide owner. It persists the immutable
+guide, exact SupportEvaluation/assessment references, Content publication
+provenance, display snapshot, and stable resource-resolution outcome. Content
+continues to decide exact-version eligibility and returns the reviewed display
+snapshot used at generation time. The web BFF supplies only server-held guided
+assessment references. Reload reads the stored snapshot; it does not silently
+re-resolve or convert a guide into a SupportPlan. Optional AI may rephrase only
+approved copy. The approved Care copy is the required fallback and safety never
+waits for Content or AI.
+
 A `SupportPlan` is durable Care-owned data with an explicit lifecycle and
 activity tracking. It is available only to `PLUS` and `PREMIUM`. At most one
 official current SupportPlan exists for a user. A replacement draft or change

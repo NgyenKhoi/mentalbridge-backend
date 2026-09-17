@@ -1,0 +1,241 @@
+openapi: 3.1.0
+info:
+  title: MentalBridge Care Support Guide API
+  version: 1.0.0
+  description: Immutable, non-diagnostic post-screening guidance for every registered user.
+servers:
+  - url: http://localhost:8082
+paths:
+  /api/v1/support-guides:
+    x-mentalbridge-status: implemented
+    post:
+      operationId: generateSupportGuide
+      security: [{ BearerAuth: [] }]
+      parameters:
+        - $ref: "#/components/parameters/IdempotencyKey"
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: "#/components/schemas/GenerateSupportGuideRequest" }
+      responses:
+        "201":
+          description: New guide or deterministic replay for the same exact evidence.
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/SupportGuide" }
+        "400": { $ref: "#/components/responses/Problem" }
+        "401": { $ref: "#/components/responses/Problem" }
+        "403": { $ref: "#/components/responses/Problem" }
+        "404": { $ref: "#/components/responses/Problem" }
+        "409": { $ref: "#/components/responses/Problem" }
+    get:
+      operationId: listSupportGuides
+      security: [{ BearerAuth: [] }]
+      parameters:
+        - name: limit
+          in: query
+          schema: { type: integer, minimum: 1, maximum: 50, default: 10 }
+        - name: cursor
+          in: query
+          schema: { type: string, maxLength: 256 }
+      responses:
+        "200":
+          description: Newest-first owner-scoped guide history.
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/SupportGuideHistory" }
+        "400": { $ref: "#/components/responses/Problem" }
+        "401": { $ref: "#/components/responses/Problem" }
+        "403": { $ref: "#/components/responses/Problem" }
+  /api/v1/support-guides/{supportGuideId}:
+    x-mentalbridge-status: implemented
+    get:
+      operationId: getSupportGuide
+      security: [{ BearerAuth: [] }]
+      parameters:
+        - name: supportGuideId
+          in: path
+          required: true
+          schema: { type: string, format: uuid }
+      responses:
+        "200":
+          description: Exact immutable guide snapshot.
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/SupportGuide" }
+        "401": { $ref: "#/components/responses/Problem" }
+        "403": { $ref: "#/components/responses/Problem" }
+        "404": { $ref: "#/components/responses/Problem" }
+components:
+  securitySchemes:
+    BearerAuth: { type: http, scheme: bearer, bearerFormat: JWT }
+  parameters:
+    IdempotencyKey:
+      name: Idempotency-Key
+      in: header
+      required: true
+      schema:
+        { type: string, minLength: 16, maxLength: 128, pattern: "^[!-~]+$" }
+  responses:
+    Problem:
+      description: RFC 9457 problem response.
+      content:
+        application/problem+json:
+          schema: { $ref: "#/components/schemas/Problem" }
+  schemas:
+    GenerateSupportGuideRequest:
+      type: object
+      additionalProperties: false
+      required: [phq9AssessmentId, gad7AssessmentId]
+      properties:
+        phq9AssessmentId: { type: string, format: uuid }
+        gad7AssessmentId: { type: string, format: uuid }
+    SupportGuide:
+      type: object
+      additionalProperties: false
+      required:
+        [
+          supportGuideId,
+          guideVersion,
+          guidePolicyVersion,
+          supportEvaluationId,
+          generatedAt,
+          guideType,
+          explanation,
+          safety,
+          resourceResolution,
+          resources,
+          provenance,
+          phrasing,
+        ]
+      properties:
+        supportGuideId: { type: string, format: uuid }
+        guideVersion: { type: integer, const: 1 }
+        guidePolicyVersion:
+          { type: string, const: mb-support-guide-capstone-v1 }
+        supportEvaluationId: { type: string, format: uuid }
+        generatedAt: { type: string, format: date-time }
+        guideType: { type: string, const: ONE_TIME_SUPPORT_GUIDE }
+        explanation:
+          type: object
+          additionalProperties: false
+          required: [code, text]
+          properties:
+            code: { type: string }
+            text: { type: string }
+        safety:
+          type: object
+          additionalProperties: false
+          required: [status, reasonCode, policyVersion, guidanceCode, guidance]
+          properties:
+            status:
+              {
+                type: string,
+                enum: [NEGATIVE_SAFETY_SCREEN, POSITIVE_SAFETY_SCREEN],
+              }
+            reasonCode:
+              { type: string, enum: [PHQ9_ITEM9_NEGATIVE, PHQ9_ITEM9_POSITIVE] }
+            policyVersion: { type: string }
+            guidanceCode: { type: string }
+            guidance: { type: string }
+        resourceResolution:
+          type: object
+          additionalProperties: false
+          required: [status, policyVersion, resolvedAt]
+          properties:
+            status:
+              {
+                type: string,
+                enum: [AVAILABLE, PARTIAL, EMPTY, STALE, UNAVAILABLE],
+              }
+            policyVersion: { type: string }
+            resolvedAt: { type: string, format: date-time }
+        resources:
+          type: array
+          maxItems: 4
+          items:
+            type: object
+            additionalProperties: false
+            required:
+              [
+                resourceId,
+                contentVersion,
+                publicationId,
+                domain,
+                role,
+                category,
+                title,
+                summary,
+              ]
+            properties:
+              resourceId: { type: string, format: uuid }
+              contentVersion: { type: string }
+              publicationId: { type: string, format: uuid }
+              domain:
+                { type: string, enum: [DEPRESSIVE_SYMPTOMS, ANXIETY_SYMPTOMS] }
+              role: { type: string, enum: [PRIMARY, ADJUNCT] }
+              category: { type: string }
+              title: { type: string, minLength: 1, maxLength: 255 }
+              summary: { type: string, minLength: 1 }
+              externalUrl:
+                {
+                  type: string,
+                  format: uri,
+                  maxLength: 2048,
+                  pattern: "^https?://",
+                  nullable: true,
+                }
+        provenance:
+          type: object
+          additionalProperties: false
+          required: [supportEvaluationPolicyVersion, assessmentResults]
+          properties:
+            supportEvaluationPolicyVersion: { type: string }
+            assessmentResults:
+              type: array
+              minItems: 2
+              maxItems: 2
+              items:
+                type: object
+                additionalProperties: false
+                required:
+                  [
+                    assessmentId,
+                    instrument,
+                    questionnaireVersion,
+                    scoringVersion,
+                    screeningLevel,
+                  ]
+                properties:
+                  assessmentId: { type: string, format: uuid }
+                  instrument: { type: string, enum: [PHQ9, GAD7] }
+                  questionnaireVersion: { type: string }
+                  scoringVersion: { type: string }
+                  screeningLevel: { type: string }
+        phrasing:
+          type: object
+          additionalProperties: false
+          required: [source, status]
+          properties:
+            source: { type: string, const: CARE_APPROVED_STANDARD }
+            status: { type: string, enum: [STANDARD, AI_UNAVAILABLE_FALLBACK] }
+    SupportGuideHistory:
+      type: object
+      additionalProperties: false
+      required: [items, hasMore]
+      properties:
+        items:
+          { type: array, items: { $ref: "#/components/schemas/SupportGuide" } }
+        nextCursor: { type: string, nullable: true }
+        hasMore: { type: boolean }
+    Problem:
+      type: object
+      additionalProperties: false
+      required: [type, title, status, code, correlationId]
+      properties:
+        type: { type: string, format: uri }
+        title: { type: string }
+        status: { type: integer }
+        code: { type: string }
+        correlationId: { type: string, format: uuid }

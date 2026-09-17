@@ -24,6 +24,11 @@ Framework DTOs, controllers, generated types, database entities, and provider pa
 SupportEvaluation behavior. `care-support-evaluation-v2.yaml` is the additive
 source for `/api/v2/support-evaluations`; consumers select the API version by
 path and must not interpret a v1 support tier as a v2 domain contribution.
+`care-support-guide-v1.yaml` is the additive implemented owner contract for the
+all-tier one-time guide at `/api/v1/support-guides`; it is not a SupportPlan
+lifecycle contract. `content-notification-service.yaml` supplies the exact
+eligible resource's immutable reviewed display snapshot alongside publication
+provenance so Care can persist stable history.
 
 ## Required paired changes
 

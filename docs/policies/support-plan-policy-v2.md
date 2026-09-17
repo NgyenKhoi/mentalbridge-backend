@@ -82,8 +82,15 @@ after explicit user opt-in. Reminders do not own activity or lifecycle state.
 
 ## Runtime gates
 
-Runtime requires compatible entitlement, Support Guide, SupportPlan,
-`PlanChangeRequest`, activity-tracking, reminder, and summary-reuse contracts;
-append-only Care/Consultation migrations; exact eligibility revalidation;
-frontend confirmation flows; and authorization, idempotency, concurrency, and
-dependency-failure tests.
+The MB-511 Support Guide runtime is implemented independently of paid
+entitlement. Its immutable `mb-support-guide-capstone-v1` result uses exact v2
+SupportEvaluation evidence, exact Content eligibility/publication provenance,
+stable `AVAILABLE`/`PARTIAL`/`EMPTY`/`STALE`/`UNAVAILABLE` outcomes, local
+synchronous safety, owner-only history, and approved-copy fallback when AI is
+unavailable.
+
+SupportPlan, `PlanChangeRequest`, activity tracking, reminders, and summary
+reuse remain separate runtime gates requiring compatible entitlement and
+lifecycle contracts, append-only migrations, exact eligibility revalidation,
+frontend confirmation flows, and focused authorization/concurrency/failure
+tests.

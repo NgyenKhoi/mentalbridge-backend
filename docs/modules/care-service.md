@@ -34,9 +34,10 @@ Kafka, Redis, WebSocket, notification, or directory delivery.
   Additive `mb-support-routing-capstone-v2` snapshots both approved domains and
   independent item-9 safety through owner-scoped `/api/v2` resources without a
   global tier or severity.
-  ADR 0017 and SupportPlan policy v2 add Support Guide, paid-plan entitlement,
-  one official plan, and `PlanChangeRequest` governance without rewriting v1
-  evidence. Runtime remains a later delivery slice using exact eligibility.
+  MB-511 implements the one-time all-tier Support Guide on the v2 evaluation
+  boundary using exact eligibility. Paid-plan entitlement, one official plan,
+  lifecycle activity, and `PlanChangeRequest` governance remain later slices
+  without rewriting v1 evidence.
 - Care consumes exact Content-owned eligibility through the generated Resource Eligibility v1 OpenFeign boundary with explicit deadlines, bounded retry, circuit breaker and fail-closed `UNAVAILABLE` outcomes. It makes the final future plan decision without cross-database access or a transaction spanning the remote call. Review/publication alone is insufficient.
 - Care combines reassessment dimensions without normalizing them into one score. Journal/AI context remains model-derived evidence limited to available consented entries; Care maps it only to policy-allowed review candidates and requires user confirmation.
 - Exceptional Identity lookups use a consumer-owned Feign port outside transactions with timeout/breaker and safe failure semantics.
@@ -52,8 +53,10 @@ The original English PHQ-9 definition, retired immutable
 published `gad7-vi-vn-adult-v1` are seeded. Existing item-9 runtime remains
 unchanged. ADR 0017 approves the additional explicit-help trigger and reviewed
 area directory as target behavior without claiming they are implemented.
-Support Guide, SupportPlan, directory, and production consent/retention remain
-separate runtime gates in `docs/policies/`.
+SupportPlan, directory, and production consent/retention remain separate
+runtime gates in `docs/policies/`. MB-511 adds owner-scoped Support Guide
+generation/history under `/api/v1/support-guides` with immutable provenance,
+local safety, stable dependency outcomes, and no plan lifecycle fields.
 
 MB-178 does not implement specialist grants, automatic follow-up, clinical progress interpretation, export/deletion, or production retention. Support/intervention, analytics, Kafka event delivery, and these deferred workflows must not be inferred from the implemented profile/consent/history slice.
 

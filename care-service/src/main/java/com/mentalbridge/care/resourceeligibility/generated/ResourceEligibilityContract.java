@@ -11,6 +11,7 @@ public final class ResourceEligibilityContract {
 
 	public enum ScreeningDomain { DEPRESSIVE_SYMPTOMS, ANXIETY_SYMPTOMS }
 	public enum EligibilityRole { PRIMARY, ADJUNCT }
+	public enum ResourceCategory { BREATHING, MEDITATION, ARTICLE, VIDEO, JOURNALING, COMMUNITY }
 	public enum RequiredEligibilityRole { PRIMARY, PRIMARY_OR_ADJUNCT }
 	public enum ScreeningInstrument { PHQ_9, GAD_7 }
 	public enum ScreeningLevel { MINIMAL, MILD, MODERATE, MODERATELY_SEVERE, SEVERE }
@@ -43,7 +44,11 @@ public final class ResourceEligibilityContract {
 			ResourceEligibilityOutcome outcome,
 			ResourceEligibilityReasonCode reasonCode,
 			EligibilityRole role,
-			String publicationId) {
+			String publicationId,
+			ResourceCategory category,
+			String title,
+			String summary,
+			String externalUrl) {
 	}
 
 	@JsonIgnoreProperties(ignoreUnknown = true)
