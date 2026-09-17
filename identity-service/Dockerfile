@@ -1,4 +1,4 @@
-FROM eclipse-temurin:21-jdk-alpine AS build
+FROM eclipse-temurin:25-jdk-alpine AS build
 
 WORKDIR /workspace
 
@@ -13,7 +13,7 @@ FROM build AS migration
 
 CMD ["./mvnw", "-B", "liquibase:update"]
 
-FROM eclipse-temurin:21-jre-alpine AS runtime
+FROM eclipse-temurin:25-jre-alpine AS runtime
 
 ENV SPRINGDOTENV_ENABLED=false
 
