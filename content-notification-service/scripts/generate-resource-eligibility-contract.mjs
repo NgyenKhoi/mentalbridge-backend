@@ -28,6 +28,7 @@ const typescript = await format(
   `export const ELIGIBILITY_POLICY_VERSIONS = [${tsValues('EligibilityPolicyVersion')}] as const;
 export const SCREENING_DOMAINS = [${tsValues('ScreeningDomain')}] as const;
 export const ELIGIBILITY_ROLES = [${tsValues('EligibilityRole')}] as const;
+export const RESOURCE_CATEGORIES = [${tsValues('ResourceCategory')}] as const;
 export const REQUIRED_ELIGIBILITY_ROLES = [${tsValues('RequiredEligibilityRole')}] as const;
 export const SCREENING_INSTRUMENTS = [${tsValues('ScreeningInstrument')}] as const;
 export const SCREENING_LEVELS = [${tsValues('ScreeningLevel')}] as const;
@@ -39,6 +40,7 @@ export const RESOURCE_ELIGIBILITY_REASON_CODES = [${tsValues('ResourceEligibilit
 export type EligibilityPolicyVersion = (typeof ELIGIBILITY_POLICY_VERSIONS)[number];
 export type ScreeningDomain = (typeof SCREENING_DOMAINS)[number];
 export type EligibilityRole = (typeof ELIGIBILITY_ROLES)[number];
+export type ResourceCategory = (typeof RESOURCE_CATEGORIES)[number];
 export type RequiredEligibilityRole = (typeof REQUIRED_ELIGIBILITY_ROLES)[number];
 export type ScreeningInstrument = (typeof SCREENING_INSTRUMENTS)[number];
 export type ScreeningLevel = (typeof SCREENING_LEVELS)[number];
@@ -107,6 +109,10 @@ export interface ResourceEligibilityResult {
   readonly reasonCode: ResourceEligibilityReasonCode;
   readonly role: EligibilityRole | null;
   readonly publicationId: string | null;
+  readonly category: ResourceCategory | null;
+  readonly title: string | null;
+  readonly summary: string | null;
+  readonly externalUrl: string | null;
 }
 
 export interface ResourceEligibilityBatchResponse {
@@ -131,6 +137,7 @@ public final class ResourceEligibilityContract {
 
 \tpublic enum ScreeningDomain { ${javaValues('ScreeningDomain')} }
 \tpublic enum EligibilityRole { ${javaValues('EligibilityRole')} }
+\tpublic enum ResourceCategory { ${javaValues('ResourceCategory')} }
 \tpublic enum RequiredEligibilityRole { ${javaValues('RequiredEligibilityRole')} }
 \tpublic enum ScreeningInstrument { ${javaValues('ScreeningInstrument')} }
 \tpublic enum ScreeningLevel { ${javaValues('ScreeningLevel')} }
@@ -163,7 +170,11 @@ public final class ResourceEligibilityContract {
 \t\t\tResourceEligibilityOutcome outcome,
 \t\t\tResourceEligibilityReasonCode reasonCode,
 \t\t\tEligibilityRole role,
-\t\t\tString publicationId) {
+\t\t\tString publicationId,
+\t\t\tResourceCategory category,
+\t\t\tString title,
+\t\t\tString summary,
+\t\t\tString externalUrl) {
 \t}
 
 \t@JsonIgnoreProperties(ignoreUnknown = true)

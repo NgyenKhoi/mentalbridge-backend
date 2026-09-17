@@ -54,6 +54,10 @@ const repository = {
         reasonCode: 'ELIGIBLE_MATCH' as const,
         role: 'PRIMARY' as const,
         publicationId: publication.publicationId,
+        category: 'ARTICLE' as const,
+        title: 'Reviewed support article',
+        summary: 'Approved summary.',
+        externalUrl: null,
       },
     ],
   })),
@@ -207,7 +211,13 @@ describe('Resource Eligibility HTTP boundary', () => {
       .expect(200);
 
     expect(response.body.results).toEqual([
-      expect.objectContaining({ requestId: REQUEST_ID, outcome: 'ELIGIBLE', role: 'PRIMARY' }),
+      expect.objectContaining({
+        requestId: REQUEST_ID,
+        outcome: 'ELIGIBLE',
+        role: 'PRIMARY',
+        category: 'ARTICLE',
+        title: 'Reviewed support article',
+      }),
     ]);
   });
 
