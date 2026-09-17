@@ -3,6 +3,7 @@ package com.mentalbridge.care.supportguide;
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.ArgumentMatchers.anyString;
+import static org.mockito.Mockito.doAnswer;
 import static org.mockito.Mockito.when;
 import static org.springframework.security.test.web.servlet.request.SecurityMockMvcRequestPostProcessors.jwt;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.get;
@@ -189,13 +190,13 @@ class SupportGuideIntegrationTests extends CareTestProperties {
 
 	private void stubIneligible(ResourceEligibilityOutcome outcome,
 			ResourceEligibilityReasonCode reasonCode) {
-		when(eligibility.resolve(any(), anyString(), any())).thenAnswer(invocation -> {
+		doAnswer(invocation -> {
 			var request = (com.mentalbridge.care.resourceeligibility.generated.ResourceEligibilityContract.ResourceEligibilityBatchRequest) invocation.getArgument(0);
 			var results = request.requests().stream().map(query -> new ResourceEligibilityResult(query.requestId(),
 					query.resourceId(), query.contentVersion(), outcome, reasonCode,
 					null, null, null, null, null, null)).toList();
 			return new ResourceEligibilityBatchResponse("content-eligibility-v1", "2026-09-17T06:00:00Z", results);
-		});
+		}).when(eligibility).resolve(any(), anyString(), any());
 	}
 
 	private UUID insertProfile() {
