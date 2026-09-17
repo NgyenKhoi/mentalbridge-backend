@@ -37,6 +37,23 @@ const testConfiguration: ServiceConfiguration = {
   IDENTITY_JWT_PUBLIC_KEY: testPublicKeyPem,
   CARE_BASE_URL: "http://localhost:8081",
   CARE_TIMEOUT_MS: 100,
+  CONSULTATION_BASE_URL: "http://localhost:8082",
+  CONSULTATION_TIMEOUT_MS: 100,
+  PROVIDER_MODE: "DETERMINISTIC_FAKE",
+  ROUTING_POLICY_VERSION: "exact-revision-routing-v1",
+  PROVIDER_APPROVAL_VERSION: null,
+  FREE_PLUS_ROUTE: null,
+  PREMIUM_ROUTE: null,
+  GEMINI_BASE_URL: "https://generativelanguage.googleapis.com",
+  GEMINI_API_KEY: null,
+  OPENAI_BASE_URL: "https://api.openai.com",
+  OPENAI_API_KEY: null,
+  PROVIDER_TIMEOUT_MS: 30_000,
+  BENCHMARK_ENABLED: false,
+  BENCHMARK_DATASET_PATH:
+    "benchmarks/datasets/exact-revision-synthetic-v1.json",
+  BENCHMARK_GEMINI_ROUTE: null,
+  BENCHMARK_OPENAI_ROUTE: null,
   ANALYSIS_ENABLED: true,
   ANALYSIS_POLL_INTERVAL_MS: 250,
   ANALYSIS_LEASE_MS: 35_000,
@@ -152,6 +169,65 @@ void test("rejects an invalid port", () => {
       IDENTITY_JWT_AUDIENCE: "mentalbridge-api",
       IDENTITY_JWT_KEY_ID: "test-key",
       IDENTITY_JWT_PUBLIC_KEY: testPublicKeyPem,
+    }),
+  );
+});
+
+void test("forces deterministic providers and disables paid benchmarks in test", () => {
+  const identity = {
+    NODE_ENV: "test",
+    IDENTITY_JWT_ISSUER: "https://identity.test.mentalbridge",
+    IDENTITY_JWT_AUDIENCE: "mentalbridge-api",
+    IDENTITY_JWT_KEY_ID: "test-key",
+    IDENTITY_JWT_PUBLIC_KEY: testPublicKeyPem,
+  };
+  assert.throws(() =>
+    loadConfiguration({
+      ...identity,
+      JOURNAL_AI_PROVIDER_MODE: "APPROVED_REAL",
+    }),
+  );
+  assert.throws(() =>
+    loadConfiguration({
+      ...identity,
+      JOURNAL_AI_BENCHMARK_ENABLED: "true",
+    }),
+  );
+});
+
+void test("forces deterministic providers and disables paid benchmarks in CI", () => {
+  const identity = {
+    NODE_ENV: "development",
+    CI: "true",
+    IDENTITY_JWT_ISSUER: "https://identity.test.mentalbridge",
+    IDENTITY_JWT_AUDIENCE: "mentalbridge-api",
+    IDENTITY_JWT_KEY_ID: "test-key",
+    IDENTITY_JWT_PUBLIC_KEY: testPublicKeyPem,
+  };
+  assert.throws(() =>
+    loadConfiguration({
+      ...identity,
+      JOURNAL_AI_PROVIDER_MODE: "APPROVED_REAL",
+    }),
+  );
+  assert.throws(() =>
+    loadConfiguration({
+      ...identity,
+      JOURNAL_AI_BENCHMARK_ENABLED: "true",
+    }),
+  );
+});
+
+void test("fails closed when approved real routing is incomplete", () => {
+  assert.throws(() =>
+    loadConfiguration({
+      NODE_ENV: "development",
+      IDENTITY_JWT_ISSUER: "https://identity.test.mentalbridge",
+      IDENTITY_JWT_AUDIENCE: "mentalbridge-api",
+      IDENTITY_JWT_KEY_ID: "test-key",
+      IDENTITY_JWT_PUBLIC_KEY: testPublicKeyPem,
+      JOURNAL_AI_PROVIDER_MODE: "APPROVED_REAL",
+      JOURNAL_AI_PROVIDER_APPROVAL_VERSION: "approval-v1",
     }),
   );
 });

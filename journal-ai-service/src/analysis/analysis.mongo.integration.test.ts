@@ -18,6 +18,8 @@ const migrations = [
   require("../../migrations/003_journal_replay_snapshots_and_cursor_index.cjs"),
   require("../../migrations/004_journal_revision_mood.cjs"),
   require("../../migrations/005_exact_revision_analysis.cjs"),
+  require("../../migrations/006_entitlement_aware_model_routing.cjs"),
+  require("../../migrations/007_ai_benchmark_metadata.cjs"),
 ] as { up(database: unknown): Promise<void> }[];
 
 void test("runs the owner HTTP flow against migrated MongoDB", async () => {
@@ -47,6 +49,23 @@ void test("runs the owner HTTP flow against migrated MongoDB", async () => {
     IDENTITY_JWT_PUBLIC_KEY: await exportSPKI(publicKey),
     CARE_BASE_URL: "http://localhost:8081",
     CARE_TIMEOUT_MS: 100,
+    CONSULTATION_BASE_URL: "http://localhost:8082",
+    CONSULTATION_TIMEOUT_MS: 100,
+    PROVIDER_MODE: "DETERMINISTIC_FAKE",
+    ROUTING_POLICY_VERSION: "exact-revision-routing-v1",
+    PROVIDER_APPROVAL_VERSION: null,
+    FREE_PLUS_ROUTE: null,
+    PREMIUM_ROUTE: null,
+    GEMINI_BASE_URL: "https://generativelanguage.googleapis.com",
+    GEMINI_API_KEY: null,
+    OPENAI_BASE_URL: "https://api.openai.com",
+    OPENAI_API_KEY: null,
+    PROVIDER_TIMEOUT_MS: 30_000,
+    BENCHMARK_ENABLED: false,
+    BENCHMARK_DATASET_PATH:
+      "benchmarks/datasets/exact-revision-synthetic-v1.json",
+    BENCHMARK_GEMINI_ROUTE: null,
+    BENCHMARK_OPENAI_ROUTE: null,
     ANALYSIS_ENABLED: true,
     ANALYSIS_POLL_INTERVAL_MS: 25,
     ANALYSIS_LEASE_MS: 35_000,
@@ -80,7 +99,18 @@ void test("runs the owner HTTP flow against migrated MongoDB", async () => {
   };
   const app = await createApplication(configuration, {
     readinessProbe: { check: () => Promise.resolve() },
-    analysis: { consentClient: consent },
+    analysis: {
+      consentClient: consent,
+      entitlementClient: {
+        current: () =>
+          Promise.resolve({
+            packageCode: "FREE" as const,
+            source: "DEFAULT_FREE" as const,
+            policyVersion: "service-entitlement-v1",
+            version: 0,
+          }),
+      },
+    },
   });
   await app.init();
   const server = app.getHttpServer() as unknown as Server;

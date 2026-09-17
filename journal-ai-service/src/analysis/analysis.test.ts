@@ -3,6 +3,8 @@ import test from "node:test";
 import { ConflictException, NotFoundException } from "@nestjs/common";
 
 import type { ServiceConfiguration } from "../configuration/configuration.js";
+import type { ProviderAnalysis } from "../llm-providers/llm-providers.js";
+import type { AnalysisRoute } from "../model-routing/model-routing.js";
 import {
   AnalysisService,
   AnalysisWorker,
@@ -14,8 +16,11 @@ import {
   type AnalysisTerminalReason,
   type ConsentClient,
   type ConsentDecision,
+  type EntitlementClient,
+  type EntitlementDecision,
   type ExactRevisionProvider,
   type JournalSource,
+  type ModelRouter,
 } from "./analysis.js";
 
 class MemoryRepository implements AnalysisRepository {
@@ -69,6 +74,18 @@ class MemoryRepository implements AnalysisRepository {
     const job = this.ownedLease(jobId, workerId);
     if (job.attemptCount >= 2) return Promise.resolve(null);
     job.attemptCount += 1;
+    job.updatedAt = now;
+    return Promise.resolve(job);
+  }
+  assignRoute(
+    jobId: string,
+    workerId: string,
+    route: AnalysisRoute,
+    now: Date,
+  ) {
+    const job = this.ownedLease(jobId, workerId);
+    if (job.route) return Promise.resolve(null);
+    job.route = route;
     job.updatedAt = now;
     return Promise.resolve(job);
   }
@@ -153,11 +170,49 @@ class SequenceConsent implements ConsentClient {
 class SequenceProvider implements ExactRevisionProvider {
   calls = 0;
   constructor(private readonly results: unknown[]) {}
-  analyze() {
+  analyze(): Promise<ProviderAnalysis> {
     this.calls += 1;
     const result = this.results.shift();
     if (result instanceof Error) return Promise.reject(result);
-    return Promise.resolve(result);
+    return Promise.resolve({
+      output: result,
+      latencyMs: 1,
+      usage: {
+        inputTokens: 10,
+        outputTokens: 5,
+        estimatedCostMicroUsd: 2,
+      },
+    });
+  }
+}
+
+class SequenceEntitlement implements EntitlementClient {
+  readonly calls: string[] = [];
+  constructor(private readonly decisions: EntitlementDecision[]) {}
+  current(bearer: string) {
+    this.calls.push(bearer);
+    const decision = this.decisions.shift() ?? this.decisions.at(-1);
+    if (!decision) throw new Error("Entitlement unavailable");
+    return Promise.resolve(decision);
+  }
+}
+
+class TestRouter implements ModelRouter {
+  route(entitlement: EntitlementDecision): AnalysisRoute {
+    return {
+      workload: "EXACT_REVISION",
+      servicePlan: entitlement.packageCode,
+      entitlementSource: entitlement.source,
+      entitlementPolicyVersion: entitlement.policyVersion,
+      entitlementVersion: entitlement.version,
+      routingPolicyVersion: "exact-revision-routing-v1",
+      providerApprovalVersion: "local-deterministic-v1",
+      provider: "DETERMINISTIC_FAKE",
+      model: "deterministic-reflection-v1",
+      promptVersion: "exact-revision-v2",
+      inputCostMicroUsdPerMillionTokens: 0,
+      outputCostMicroUsdPerMillionTokens: 0,
+    };
   }
 }
 
@@ -174,6 +229,12 @@ const owner = "11111111-1111-4111-8111-111111111111";
 const otherOwner = "22222222-2222-4222-8222-222222222222";
 const journalId = "33333333-3333-4333-8333-333333333333";
 const granted: ConsentDecision = { authorized: true, reason: "GRANTED" };
+const freeEntitlement: EntitlementDecision = {
+  packageCode: "FREE",
+  source: "DEFAULT_FREE",
+  policyVersion: "service-entitlement-v1",
+  version: 0,
+};
 const normalized = {
   summary: "Bounded reflection",
   contextSignals: [],
@@ -195,11 +256,15 @@ const request = (account = owner, key = "analysis-command-0001") => ({
 const subject = (
   consent = new SequenceConsent([granted, granted]),
   provider = new SequenceProvider([normalized]),
+  entitlement = new SequenceEntitlement([freeEntitlement, freeEntitlement]),
+  router: ModelRouter = new TestRouter(),
 ) => {
   const repository = new MemoryRepository();
   const worker = new AnalysisWorker(
     repository,
     consent,
+    entitlement,
+    router,
     provider,
     configuration,
   );
@@ -209,7 +274,7 @@ const subject = (
     worker,
     configuration,
   );
-  return { repository, consent, provider, worker, service };
+  return { repository, consent, entitlement, provider, worker, service };
 };
 
 const waitForTerminal = async (repository: MemoryRepository) => {
@@ -338,6 +403,7 @@ void test("fails a reclaimed lease closed when bearer context was lost", async (
     createdAt: now,
     updatedAt: now,
     completedAt: null,
+    route: null,
   });
   await value.worker.run();
   assert.equal(
@@ -392,6 +458,60 @@ void test("fails closed when Care becomes unavailable before the provider attemp
   assert.equal(provider.calls, 0);
 });
 
+void test("fails closed when Consultation entitlement is unavailable", async () => {
+  const provider = new SequenceProvider([normalized]);
+  const value = subject(
+    new SequenceConsent([granted, granted]),
+    provider,
+    new SequenceEntitlement([]),
+  );
+  await value.service.create(request(), journalId, "1");
+  await waitForTerminal(value.repository);
+  assert.equal(
+    value.repository.jobs[0]?.terminalReason,
+    "ENTITLEMENT_UNAVAILABLE",
+  );
+  assert.equal(provider.calls, 0);
+});
+
+void test("does not change provider route when entitlement changes before retry", async () => {
+  const premiumEntitlement: EntitlementDecision = {
+    packageCode: "PREMIUM",
+    source: "DEMO",
+    policyVersion: "service-entitlement-v1",
+    version: 1,
+  };
+  const provider = new SequenceProvider([
+    new ProviderFailure("RETRYABLE", "UNAVAILABLE"),
+    normalized,
+  ]);
+  const router: ModelRouter = {
+    route: (entitlement) => ({
+      ...new TestRouter().route(entitlement),
+      provider: entitlement.packageCode === "PREMIUM" ? "OPENAI" : "GEMINI",
+      model:
+        entitlement.packageCode === "PREMIUM"
+          ? "premium-model"
+          : "baseline-model",
+      providerApprovalVersion: "benchmark-approval-v1",
+    }),
+  };
+  const value = subject(
+    new SequenceConsent([granted, granted, granted]),
+    provider,
+    new SequenceEntitlement([freeEntitlement, premiumEntitlement]),
+    router,
+  );
+  await value.service.create(
+    request(owner, "analysis-command-route-change"),
+    journalId,
+    "1",
+  );
+  await waitForTerminal(value.repository);
+  assert.equal(value.repository.jobs[0]?.terminalReason, "ENTITLEMENT_CHANGED");
+  assert.equal(provider.calls, 1);
+});
+
 void test("returns stable stale and deleted terminal reasons without provider calls", async () => {
   for (const sourceState of ["STALE", "DELETED"] as const) {
     const value = subject();
@@ -413,6 +533,7 @@ void test("returns stable stale and deleted terminal reasons without provider ca
       createdAt: now,
       updatedAt: now,
       completedAt: null,
+      route: null,
     };
     value.repository.jobs.push(job);
     value.repository.sourceValue = { state: sourceState };
@@ -460,11 +581,13 @@ void test("times out each attempt and performs only one allowed retry", async ()
   const repository = new MemoryRepository();
   const consent = new SequenceConsent([granted, granted, granted]);
   const provider: ExactRevisionProvider = {
-    analyze: () => new Promise(() => undefined),
+    analyze: () => new Promise<ProviderAnalysis>(() => undefined),
   };
   const worker = new AnalysisWorker(
     repository,
     consent,
+    new SequenceEntitlement([freeEntitlement, freeEntitlement]),
+    new TestRouter(),
     provider,
     configuration,
     5,
