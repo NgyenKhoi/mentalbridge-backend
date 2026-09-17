@@ -252,6 +252,18 @@ describe('ResourceEligibilityRepository integration', () => {
       'INELIGIBLE',
     ]);
     expect(responses.results[1].reasonCode).toBe('PRIMARY_REQUIRED');
+    expect(responses.results[0]).toMatchObject({
+      category: 'BREATHING',
+      title: 'Active anxiety breathing',
+      summary: 'Reviewed fixture',
+      externalUrl: null,
+    });
+    expect(responses.results[1]).toMatchObject({
+      category: null,
+      title: null,
+      summary: null,
+      externalUrl: null,
+    });
     expect(responses.results[5].reasonCode).toBe('LOCALE_MISMATCH');
     expect(responses.results[6].reasonCode).toBe('DOMAIN_OR_PATHWAY_NOT_ELIGIBLE');
     expect(responses.results.map((result) => result.requestId)).toEqual([

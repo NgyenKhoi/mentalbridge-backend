@@ -1050,6 +1050,24 @@ components:
           type: string
           format: uuid
           nullable: true
+        category:
+          allOf:
+            - $ref: "#/components/schemas/ResourceCategory"
+          nullable: true
+          description: Present only for an eligible exact version so Care can persist the approved display snapshot.
+        title:
+          type: string
+          nullable: true
+          maxLength: 255
+        summary:
+          type: string
+          nullable: true
+        externalUrl:
+          type: string
+          format: uri
+          nullable: true
+          maxLength: 2048
+          pattern: "^https?://"
 
     ResourceEligibilityBatchResponse:
       type: object

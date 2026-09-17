@@ -21,6 +21,7 @@ import com.fasterxml.jackson.databind.ObjectMapper;
 import com.mentalbridge.care.configuration.ResourceEligibilityClientProperties;
 import com.mentalbridge.care.resourceeligibility.generated.ResourceEligibilityContract.EligibilityRole;
 import com.mentalbridge.care.resourceeligibility.generated.ResourceEligibilityContract.RequiredEligibilityRole;
+import com.mentalbridge.care.resourceeligibility.generated.ResourceEligibilityContract.ResourceCategory;
 import com.mentalbridge.care.resourceeligibility.generated.ResourceEligibilityContract.ResourceEligibilityBatchRequest;
 import com.mentalbridge.care.resourceeligibility.generated.ResourceEligibilityContract.ResourceEligibilityBatchResponse;
 import com.mentalbridge.care.resourceeligibility.generated.ResourceEligibilityContract.ResourceEligibilityOutcome;
@@ -129,7 +130,7 @@ class ResourceEligibilityClientTests {
 			return new ResourceEligibilityBatchResponse("content-eligibility-v1", "2026-09-13T02:00:00Z",
 					List.of(new ResourceEligibilityResult(valid.requestId(), UUID.randomUUID().toString(),
 							valid.contentVersion(), valid.outcome(), valid.reasonCode(), valid.role(),
-							valid.publicationId())));
+							valid.publicationId(), valid.category(), valid.title(), valid.summary(), valid.externalUrl())));
 		}, properties(2, 5));
 
 		var response = client.resolve(request(), "user-jwt", CORRELATION_ID);
@@ -144,12 +145,44 @@ class ResourceEligibilityClientTests {
 			var valid = eligible(request).results().getFirst();
 			return new ResourceEligibilityBatchResponse("content-eligibility-v1", "2026-09-13T02:00:00Z",
 					List.of(new ResourceEligibilityResult(valid.requestId(), valid.resourceId(), valid.contentVersion(),
-							valid.outcome(), valid.reasonCode(), EligibilityRole.ADJUNCT, valid.publicationId())));
+							valid.outcome(), valid.reasonCode(), EligibilityRole.ADJUNCT, valid.publicationId(),
+							valid.category(), valid.title(), valid.summary(), valid.externalUrl())));
 		}, properties(2, 5));
 
 		var response = client.resolve(request(), "user-jwt", CORRELATION_ID);
 
 		assertThat(response.results().getFirst().outcome()).isEqualTo(ResourceEligibilityOutcome.UNAVAILABLE);
+	}
+
+	@Test
+	void rejectsUnsafeDisplaySnapshotUrls() {
+		var client = client((auth, correlationId, request) -> {
+			var valid = eligible(request).results().getFirst();
+			return new ResourceEligibilityBatchResponse("content-eligibility-v1", "2026-09-13T02:00:00Z",
+					List.of(new ResourceEligibilityResult(valid.requestId(), valid.resourceId(), valid.contentVersion(),
+							valid.outcome(), valid.reasonCode(), valid.role(), valid.publicationId(), valid.category(),
+							valid.title(), valid.summary(), "javascript:alert(1)")));
+		}, properties(2, 5));
+
+		var response = client.resolve(request(), "user-jwt", CORRELATION_ID);
+
+		assertThat(response.results().getFirst().outcome()).isEqualTo(ResourceEligibilityOutcome.UNAVAILABLE);
+	}
+
+	@Test
+	void preservesAStaleDecisionAndItsPublicationProvenanceWithoutDisplayCopy() {
+		var client = client((auth, correlationId, request) -> {
+			var query = request.requests().getFirst();
+			return new ResourceEligibilityBatchResponse("content-eligibility-v1", "2026-09-13T02:00:00Z",
+					List.of(new ResourceEligibilityResult(query.requestId(), query.resourceId(), query.contentVersion(),
+							ResourceEligibilityOutcome.STALE, ResourceEligibilityReasonCode.CONTENT_VERSION_STALE,
+							null, "30000000-0000-4000-8000-000000000001", null, null, null, null)));
+		}, properties(2, 5));
+
+		var response = client.resolve(request(), "user-jwt", CORRELATION_ID);
+
+		assertThat(response.results().getFirst().outcome()).isEqualTo(ResourceEligibilityOutcome.STALE);
+		assertThat(response.results().getFirst().publicationId()).isNotNull();
 	}
 
 	@Test
@@ -231,7 +264,8 @@ class ResourceEligibilityClientTests {
 		return new ResourceEligibilityBatchResponse("content-eligibility-v1", "2026-09-13T02:00:00Z",
 				List.of(new ResourceEligibilityResult(query.requestId(), query.resourceId(), query.contentVersion(),
 						ResourceEligibilityOutcome.ELIGIBLE, ResourceEligibilityReasonCode.ELIGIBLE_MATCH,
-						EligibilityRole.PRIMARY, "30000000-0000-4000-8000-000000000001")));
+						EligibilityRole.PRIMARY, "30000000-0000-4000-8000-000000000001",
+						ResourceCategory.ARTICLE, "Synthetic title", "Synthetic summary", null)));
 	}
 
 	private FeignException httpFailure(int status) {
@@ -254,7 +288,11 @@ class ResourceEligibilityClientTests {
 				    "outcome":"%s",
 				    "reasonCode":"ELIGIBLE_MATCH",
 				    "role":"PRIMARY",
-				    "publicationId":"30000000-0000-4000-8000-000000000001"
+				    "publicationId":"30000000-0000-4000-8000-000000000001",
+				    "category":"ARTICLE",
+				    "title":"Synthetic title",
+				    "summary":"Synthetic summary",
+				    "externalUrl":null
 				  }]
 				}
 				""".formatted(outcome);

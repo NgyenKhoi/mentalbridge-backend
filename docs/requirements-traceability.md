@@ -97,6 +97,16 @@ Agents must not invent these behaviors independently. Resolve the relevant rule 
 
 ## Approved scope changes
 
+- 2026-09-17: MB-511 implements the registered-user Support Guide across Care,
+  Content, and the web BFF/UI. Care deterministically derives an immutable
+  `mb-support-guide-capstone-v1` result from exact v2 PHQ-9/GAD-7 evidence,
+  persists local synchronous safety plus exact resource/display provenance, and
+  exposes owner-only generation/history/detail. Content returns reviewed
+  exact-version snapshots. The UI distinguishes the one-time guide from
+  SupportPlan, displays stable empty/stale/unavailable states, and uses approved
+  Care copy when optional AI phrasing is unavailable. No entitlement gate,
+  diagnosis/treatment field, raw answer, plan lifecycle, or AI decision is
+  introduced.
 - 2026-09-15: `MB-SCOPE-V2-001` standardizes packages as `FREE`, `PLUS`, and
   `PREMIUM`; separates the all-tier one-time Support Guide from the paid durable
   SupportPlan; fixes AI quotas/model routing and the “AI supports, Care decides,

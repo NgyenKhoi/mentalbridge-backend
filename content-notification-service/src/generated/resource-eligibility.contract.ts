@@ -1,6 +1,14 @@
 export const ELIGIBILITY_POLICY_VERSIONS = ['content-eligibility-v1'] as const;
 export const SCREENING_DOMAINS = ['DEPRESSIVE_SYMPTOMS', 'ANXIETY_SYMPTOMS'] as const;
 export const ELIGIBILITY_ROLES = ['PRIMARY', 'ADJUNCT'] as const;
+export const RESOURCE_CATEGORIES = [
+  'BREATHING',
+  'MEDITATION',
+  'ARTICLE',
+  'VIDEO',
+  'JOURNALING',
+  'COMMUNITY',
+] as const;
 export const REQUIRED_ELIGIBILITY_ROLES = ['PRIMARY', 'PRIMARY_OR_ADJUNCT'] as const;
 export const SCREENING_INSTRUMENTS = ['PHQ_9', 'GAD_7'] as const;
 export const SCREENING_LEVELS = [
@@ -43,6 +51,7 @@ export const RESOURCE_ELIGIBILITY_REASON_CODES = [
 export type EligibilityPolicyVersion = (typeof ELIGIBILITY_POLICY_VERSIONS)[number];
 export type ScreeningDomain = (typeof SCREENING_DOMAINS)[number];
 export type EligibilityRole = (typeof ELIGIBILITY_ROLES)[number];
+export type ResourceCategory = (typeof RESOURCE_CATEGORIES)[number];
 export type RequiredEligibilityRole = (typeof REQUIRED_ELIGIBILITY_ROLES)[number];
 export type ScreeningInstrument = (typeof SCREENING_INSTRUMENTS)[number];
 export type ScreeningLevel = (typeof SCREENING_LEVELS)[number];
@@ -111,6 +120,10 @@ export interface ResourceEligibilityResult {
   readonly reasonCode: ResourceEligibilityReasonCode;
   readonly role: EligibilityRole | null;
   readonly publicationId: string | null;
+  readonly category: ResourceCategory | null;
+  readonly title: string | null;
+  readonly summary: string | null;
+  readonly externalUrl: string | null;
 }
 
 export interface ResourceEligibilityBatchResponse {

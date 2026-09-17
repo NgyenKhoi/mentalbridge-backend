@@ -236,7 +236,11 @@ class ResourceEligibilityHttpConsumerContractTests {
 				    "outcome":"ELIGIBLE",
 				    "reasonCode":"ELIGIBLE_MATCH",
 				    "role":"PRIMARY",
-				    "publicationId":"30000000-0000-4000-8000-000000000001"
+				    "publicationId":"30000000-0000-4000-8000-000000000001",
+				    "category":"ARTICLE",
+				    "title":"Reviewed support article",
+				    "summary":"Approved support guidance.",
+				    "externalUrl":null
 				  }]
 				}
 				""";

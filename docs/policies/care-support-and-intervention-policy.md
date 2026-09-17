@@ -125,6 +125,13 @@ Guide, and owned assessment access are never paid features.
 
 ## Approval and runtime gates
 
+MB-511 activates only the all-tier one-time Support Guide. It persists approved
+copy, synchronous safety, exact assessment/evaluation provenance, and up to four
+exact reviewed resource snapshots under `mb-support-guide-capstone-v1`.
+Unavailable optional phrasing uses the Care-approved standard copy. No guide
+field is a diagnosis, treatment, SupportPlan status, activity, adherence fact,
+or entitlement decision.
+
 - [x] Product Owner approved `mb-support-routing-capstone-v1` as a definition-only product-support blueprint.
 - [x] Current-result input, no-input behavior, item-9 independence and AI exclusion are defined.
 - [x] Score, disclaimer and safety output are non-paywalled; specialist/paid capabilities fail explicitly when unavailable.
@@ -132,7 +139,7 @@ Guide, and owned assessment access are never paid features.
 - [x] Two-domain V1 boundary, no-global-severity rule, cross-cutting safety and system-proposed-plan direction approved in ADR 0012.
 - [ ] Compatible additive domain-aware SupportEvaluation v2 policy/contracts are implemented under #48 without changing v1 history; known-consumer and production domain approval remain release gates.
 - [x] Product Owner approved the SupportPlan template, slot, bounds, composition, safety-presentation, role, and lifecycle policy under ADR 0013.
-- [ ] Care, Content, and Frontend accept the server-proposed contract design before it becomes an active OpenAPI contract.
+- [x] Care, Content, and Frontend implement the MB-511 Support Guide contract and owner/consumer journey without activating SupportPlan lifecycle.
 - [x] Domain/band/pathway exact-version Resource Eligibility v1 is delivered under #50; initial reviewed item mappings remain a separate gate.
 - [ ] Every initial personalized intervention item, source, wording, eligibility and content version approved.
 - [x] Exact minimum Vietnamese safety fallback reviewed by the Product Owner for the controlled Capstone web/API channel on 2026-09-10.

@@ -130,7 +130,11 @@ try {
     if ($changedFiles.Count -gt 0) {
         $serviceContracts = @{
             'identity-service' = 'contracts/openapi/identity-service-v1.yaml'
-            'care-service' = @('contracts/openapi/care-service-v1.yaml', 'contracts/openapi/care-support-evaluation-v2.yaml')
+            'care-service' = @(
+                'contracts/openapi/care-service-v1.yaml'
+                'contracts/openapi/care-support-evaluation-v2.yaml'
+                'contracts/openapi/care-support-guide-v1.yaml'
+            )
             'journal-ai-service' = 'contracts/openapi/journal-ai-service-v1.yaml'
             'realtime-service' = 'contracts/openapi/realtime-service-v1.yaml'
             'content-notification-service' = 'contracts/openapi/content-notification-service.yaml'

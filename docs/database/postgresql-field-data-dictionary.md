@@ -450,6 +450,54 @@ contract semantics.
 | `support_evaluation_id` | Immutable v2 outcome; composite foreign key prevents a cross-owner alias. |
 | `created_at` | Immutable UTC instant when Care accepted this v2 key. |
 
+### `public.support_guide`
+
+Immutable one-time MB-511 guidance owned by Care. It is deliberately not a
+SupportPlan aggregate and has no draft/active lifecycle, activities, adherence,
+reminders, or treatment fields.
+
+| Field | Purpose |
+| --- | --- |
+| `id` | Immutable guide UUID exposed by owner-only APIs. |
+| `user_id` | Care profile owner; participates in composite owner foreign keys. |
+| `support_evaluation_id` | Exact owner-matched v2 SupportEvaluation provenance. |
+| `guide_policy_version` | Immutable generation policy, fixed to `mb-support-guide-capstone-v1`. |
+| `generated_at` | UTC generation instant used for stable history ordering. |
+| `explanation_code` / `explanation_text` | Approved non-diagnostic standard explanation snapshot. |
+| `safety_status` / `safety_reason_code` / `safety_policy_version` | Synchronous Care-authoritative PHQ-9 item-9 safety provenance. |
+| `safety_guidance_code` / `safety_guidance` | Locally available approved safety copy; never dependent on Content or AI. |
+| `resource_status` | Stable `AVAILABLE`, `PARTIAL`, `EMPTY`, `STALE`, or `UNAVAILABLE` generation outcome. |
+| `resource_policy_version` / `resources_resolved_at` | Exact Content eligibility decision provenance. |
+| `phrasing_status` | `STANDARD` or `AI_UNAVAILABLE_FALLBACK`; neither has decision authority. |
+| `created_at` | Database insertion instant. |
+
+### `public.support_guide_resource`
+
+Ordered immutable snapshot of at most four exact reviewed resources selected at
+guide generation. History reads this snapshot and does not silently re-resolve
+current Content state.
+
+| Field | Purpose |
+| --- | --- |
+| `id` | Internal immutable row UUID. |
+| `support_guide_id` / `ordinal` | Parent guide and unique 1-based display order, constrained to 1..4. |
+| `resource_id` / `content_version` / `publication_id` | Exact Content resource and eligibility-publication provenance. |
+| `domain` / `eligibility_role` | Exact approved domain and `PRIMARY`/`ADJUNCT` role used at generation. |
+| `category` / `title` / `summary` / `external_url` | Reviewed display snapshot returned by Content; URL remains optional. |
+
+### `public.support_guide_request`
+
+Owner-scoped idempotency record for guide generation. It stores only a
+SHA-256 request fingerprint and the resulting guide reference, never raw
+assessment answers or scores.
+
+| Field | Purpose |
+| --- | --- |
+| `user_id` / `idempotency_key` | Owner and printable 16-128 character retry namespace. |
+| `request_hash` | SHA-256 of the ordered exact PHQ-9/GAD-7 assessment references. |
+| `support_guide_id` | Owner-matched immutable replay result. |
+| `created_at` | UTC instant the key was accepted. |
+
 ### `care.intervention_plan`
 
 Versioned set of platform support actions generated for one support classification.
