@@ -1,13 +1,15 @@
 openapi: 3.1.0
 info:
   title: MentalBridge Journal AI Service API
-  version: 1.0.0
-  description: Private journal CRUD and consent-gated exact-revision analysis contract.
+  version: 1.1.0
+  description: Private journal CRUD, daily self-reported emotion check-ins, and consent-gated exact-revision analysis contract.
 servers:
   - url: http://localhost:3000
 security:
   - bearerAuth: []
 tags:
+  - name: Emotion check-ins
+    description: Owner-scoped, non-clinical daily self-reported emotion records.
   - name: Journals
     description: Private journal entries owned by the authenticated account.
   - name: Analysis jobs
@@ -60,6 +62,150 @@ paths:
             text/plain:
               schema:
                 type: string
+  /api/v1/emotion-check-ins:
+    x-mentalbridge-status: implemented
+    post:
+      tags: [Emotion check-ins]
+      summary: Record the authenticated user's check-in for the current local day.
+      operationId: createEmotionCheckIn
+      parameters:
+        - $ref: "#/components/parameters/IdempotencyKey"
+        - $ref: "#/components/parameters/CorrelationId"
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/CreateEmotionCheckInRequest"
+      responses:
+        "201":
+          description: Check-in created, or an exact create retry replayed.
+          headers:
+            Location:
+              schema: { type: string }
+            x-correlation-id:
+              $ref: "#/components/headers/CorrelationId"
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/EmotionCheckIn"
+        "400": { $ref: "#/components/responses/BadRequest" }
+        "401": { $ref: "#/components/responses/Unauthorized" }
+        "409": { $ref: "#/components/responses/Conflict" }
+        "503": { $ref: "#/components/responses/DependencyUnavailable" }
+    get:
+      tags: [Emotion check-ins]
+      summary: List the authenticated user's self-reported emotion history.
+      operationId: listEmotionCheckIns
+      parameters:
+        - $ref: "#/components/parameters/EmotionLimit"
+        - $ref: "#/components/parameters/BeforeLocalDate"
+        - $ref: "#/components/parameters/CorrelationId"
+      responses:
+        "200":
+          description: A bounded, newest-first history page.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/EmotionCheckInList"
+        "400": { $ref: "#/components/responses/BadRequest" }
+        "401": { $ref: "#/components/responses/Unauthorized" }
+        "503": { $ref: "#/components/responses/DependencyUnavailable" }
+  /api/v1/emotion-check-ins/{localDate}:
+    x-mentalbridge-status: implemented
+    get:
+      tags: [Emotion check-ins]
+      summary: Reload one owned check-in by its recorded local day.
+      operationId: getEmotionCheckIn
+      parameters:
+        - $ref: "#/components/parameters/LocalDate"
+        - $ref: "#/components/parameters/CorrelationId"
+      responses:
+        "200":
+          description: The owned active check-in.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/EmotionCheckIn"
+        "400": { $ref: "#/components/responses/BadRequest" }
+        "401": { $ref: "#/components/responses/Unauthorized" }
+        "404": { $ref: "#/components/responses/NotFound" }
+        "503": { $ref: "#/components/responses/DependencyUnavailable" }
+    patch:
+      tags: [Emotion check-ins]
+      summary: Update the owned check-in while its stored local day is current.
+      operationId: updateEmotionCheckIn
+      parameters:
+        - $ref: "#/components/parameters/LocalDate"
+        - $ref: "#/components/parameters/IdempotencyKey"
+        - $ref: "#/components/parameters/IfMatchRevision"
+        - $ref: "#/components/parameters/CorrelationId"
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/EmotionCheckInValue"
+      responses:
+        "200":
+          description: Check-in updated, or an exact update retry replayed.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/EmotionCheckIn"
+        "400": { $ref: "#/components/responses/BadRequest" }
+        "401": { $ref: "#/components/responses/Unauthorized" }
+        "404": { $ref: "#/components/responses/NotFound" }
+        "409": { $ref: "#/components/responses/Conflict" }
+        "412": { $ref: "#/components/responses/PreconditionFailed" }
+        "503": { $ref: "#/components/responses/DependencyUnavailable" }
+    delete:
+      tags: [Emotion check-ins]
+      summary: Delete the encrypted emotion payload and tombstone the local day.
+      operationId: deleteEmotionCheckIn
+      parameters:
+        - $ref: "#/components/parameters/LocalDate"
+        - $ref: "#/components/parameters/IdempotencyKey"
+        - $ref: "#/components/parameters/CorrelationId"
+      responses:
+        "200":
+          description: The encrypted payload was removed.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/EmotionCheckInTombstone"
+        "400": { $ref: "#/components/responses/BadRequest" }
+        "401": { $ref: "#/components/responses/Unauthorized" }
+        "404": { $ref: "#/components/responses/NotFound" }
+        "503": { $ref: "#/components/responses/DependencyUnavailable" }
+  /api/v1/emotion-check-in-context:
+    x-mentalbridge-status: implemented
+    get:
+      tags: [Emotion check-ins]
+      summary: Return a note-free minimized projection for consented AI reflection.
+      description: Reminder composition is deliberately unavailable until a separate reminder consent contract is accepted.
+      operationId: getEmotionCheckInConsumerContext
+      parameters:
+        - name: purpose
+          in: query
+          required: true
+          schema: { type: string, const: AI_REFLECTION }
+        - name: limit
+          in: query
+          required: false
+          schema: { type: integer, minimum: 1, maximum: 30, default: 14 }
+        - $ref: "#/components/parameters/CorrelationId"
+      responses:
+        "200":
+          description: Current Care consent was verified and only minimized fields are returned.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/EmotionCheckInConsumerContext"
+        "400": { $ref: "#/components/responses/BadRequest" }
+        "401": { $ref: "#/components/responses/Unauthorized" }
+        "403": { $ref: "#/components/responses/Forbidden" }
+        "503": { $ref: "#/components/responses/DependencyUnavailable" }
   /api/v1/journals:
     x-mentalbridge-status: implemented
     post:
@@ -259,6 +405,23 @@ components:
       scheme: bearer
       bearerFormat: JWT
   parameters:
+    LocalDate:
+      name: localDate
+      in: path
+      required: true
+      schema: { type: string, format: date }
+      description: Calendar day computed in the IANA timezone stored at creation.
+    EmotionLimit:
+      name: limit
+      in: query
+      required: false
+      schema: { type: integer, minimum: 1, maximum: 90, default: 30 }
+    BeforeLocalDate:
+      name: before
+      in: query
+      required: false
+      schema: { type: string, format: date }
+      description: Exclusive newest-first history cursor.
     JournalId:
       name: journalId
       in: path
@@ -342,14 +505,20 @@ components:
         application/problem+json:
           schema:
             $ref: "#/components/schemas/Problem"
+    Forbidden:
+      description: Current consent does not authorize this minimized consumer projection.
+      content:
+        application/problem+json:
+          schema:
+            $ref: "#/components/schemas/Problem"
     NotFound:
-      description: Journal entry was not found for the authenticated owner.
+      description: Requested resource was not found for the authenticated owner.
       content:
         application/problem+json:
           schema:
             $ref: "#/components/schemas/Problem"
     Conflict:
-      description: Idempotency conflict, duplicate mutation, or journal revision limit reached.
+      description: Idempotency conflict, duplicate mutation, or revision/history limit reached.
       content:
         application/problem+json:
           schema:
@@ -361,12 +530,121 @@ components:
           schema:
             $ref: "#/components/schemas/Problem"
     DependencyUnavailable:
-      description: Care consent could not be verified; no provider call was made.
+      description: A required dependency was unavailable and the request failed closed.
       content:
         application/problem+json:
           schema:
             $ref: "#/components/schemas/Problem"
   schemas:
+    Emotion:
+      type: string
+      description: Self-selected, non-clinical label shared with Journal authoring.
+      enum: [GREAT, GOOD, OKAY, LOW, VERY_LOW]
+    EmotionCheckInValue:
+      type: object
+      additionalProperties: false
+      required: [emotion, intensity]
+      properties:
+        emotion:
+          $ref: "#/components/schemas/Emotion"
+        intensity:
+          type: integer
+          minimum: 1
+          maximum: 5
+          description: Strength of the selected feeling, not wellness, severity, diagnosis, or recovery.
+        note:
+          type: [string, "null"]
+          minLength: 1
+          maxLength: 500
+          pattern: '.*\S.*'
+          description: Optional private free text; encrypted at rest and excluded from consumer projections, logs, and events.
+    CreateEmotionCheckInRequest:
+      allOf:
+        - $ref: "#/components/schemas/EmotionCheckInValue"
+        - type: object
+          required: [localDate, timezone]
+          properties:
+            localDate: { type: string, format: date }
+            timezone:
+              type: string
+              minLength: 1
+              maxLength: 64
+              description: IANA timezone; localDate must equal the server acceptance time in this zone.
+      unevaluatedProperties: false
+    EmotionCheckIn:
+      type: object
+      additionalProperties: false
+      required: [id, localDate, timezone, emotion, intensity, note, sourceLabel, clinicalUse, revision, recordedAt, createdAt, updatedAt]
+      properties:
+        id: { type: string, format: uuid }
+        localDate: { type: string, format: date }
+        timezone: { type: string, minLength: 1, maxLength: 64 }
+        emotion: { $ref: "#/components/schemas/Emotion" }
+        intensity: { type: integer, minimum: 1, maximum: 5 }
+        note: { type: [string, "null"], maxLength: 500 }
+        sourceLabel: { type: string, const: SELF_REPORTED_EMOTION }
+        clinicalUse: { type: string, const: NOT_A_DIAGNOSIS_OR_SAFETY_CLASSIFIER }
+        revision: { type: integer, minimum: 1, maximum: 32 }
+        recordedAt: { type: string, format: date-time }
+        createdAt: { type: string, format: date-time }
+        updatedAt: { type: string, format: date-time }
+    EmotionCheckInList:
+      type: object
+      additionalProperties: false
+      required: [items, page, label, interpretation]
+      properties:
+        items:
+          type: array
+          maxItems: 90
+          items: { $ref: "#/components/schemas/EmotionCheckIn" }
+        page:
+          type: object
+          additionalProperties: false
+          required: [limit, hasMore]
+          properties:
+            limit: { type: integer, minimum: 1, maximum: 90 }
+            hasMore: { type: boolean }
+            nextBefore: { type: string, format: date }
+        label: { type: string, const: SELF_REPORTED_EMOTION }
+        interpretation: { type: string, const: NOT_DIAGNOSIS_OR_RECOVERY }
+    EmotionCheckInTombstone:
+      type: object
+      additionalProperties: false
+      required: [localDate, deleted, deletedAt]
+      properties:
+        localDate: { type: string, format: date }
+        deleted: { type: boolean, const: true }
+        deletedAt: { type: string, format: date-time }
+    EmotionCheckInConsumerItem:
+      type: object
+      additionalProperties: false
+      required: [localDate, timezone, emotion, intensity, sourceLabel, revision, recordedAt]
+      properties:
+        localDate: { type: string, format: date }
+        timezone: { type: string }
+        emotion: { $ref: "#/components/schemas/Emotion" }
+        intensity: { type: integer, minimum: 1, maximum: 5 }
+        sourceLabel: { type: string, const: SELF_REPORTED_EMOTION }
+        revision: { type: integer, minimum: 1, maximum: 32 }
+        recordedAt: { type: string, format: date-time }
+    EmotionCheckInConsumerContext:
+      type: object
+      additionalProperties: false
+      required: [purpose, consent, items]
+      properties:
+        purpose: { type: string, const: AI_REFLECTION }
+        consent:
+          type: object
+          additionalProperties: false
+          required: [type, policyVersion, decidedAt]
+          properties:
+            type: { type: string, const: AI_PROCESSING }
+            policyVersion: { type: [string, "null"], maxLength: 64 }
+            decidedAt: { type: [string, "null"], format: date-time }
+        items:
+          type: array
+          maxItems: 30
+          items: { $ref: "#/components/schemas/EmotionCheckInConsumerItem" }
     HealthResponse:
       type: object
       additionalProperties: false

@@ -19,3 +19,5 @@ databaseChangeLog:
       file: db/changelog/changes/009-combined-support-routing.sql
   - include:
       file: db/changelog/changes/010-domain-aware-support-evaluation-v2.sql
+  - include:
+      file: db/changelog/changes/011-support-guide.sql

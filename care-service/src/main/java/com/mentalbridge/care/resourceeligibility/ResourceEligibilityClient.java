@@ -1,6 +1,7 @@
 package com.mentalbridge.care.resourceeligibility;
 
 import java.net.ConnectException;
+import java.net.URI;
 import java.net.SocketTimeoutException;
 import java.time.Clock;
 import java.time.OffsetDateTime;
@@ -118,7 +119,9 @@ public class ResourceEligibilityClient {
 	private void validateDecision(ResourceEligibilityQuery expected, ResourceEligibilityResult result) {
 		if (result.outcome() == ResourceEligibilityOutcome.ELIGIBLE) {
 			if (result.reasonCode() != ResourceEligibilityReasonCode.ELIGIBLE_MATCH || result.role() == null
-					|| result.publicationId() == null) {
+					|| result.publicationId() == null || result.category() == null || result.title() == null
+					|| result.title().isBlank() || result.title().length() > 255 || result.summary() == null
+					|| result.summary().isBlank() || !validExternalUrl(result.externalUrl())) {
 				throw new MalformedEligibilityResponseException();
 			}
 			if (expected.requiredRole() == RequiredEligibilityRole.PRIMARY && result.role() != EligibilityRole.PRIMARY) {
@@ -131,8 +134,21 @@ public class ResourceEligibilityClient {
 				throw new MalformedEligibilityResponseException();
 			}
 		}
-		else if (result.role() != null) {
+		else if (result.role() != null || result.category() != null || result.title() != null
+				|| result.summary() != null || result.externalUrl() != null) {
 			throw new MalformedEligibilityResponseException();
+		}
+	}
+
+	private boolean validExternalUrl(String value) {
+		if (value == null) return true;
+		try {
+			URI uri = URI.create(value);
+			return value.length() <= 2048 && uri.isAbsolute() && uri.getUserInfo() == null
+					&& ("http".equalsIgnoreCase(uri.getScheme()) || "https".equalsIgnoreCase(uri.getScheme()));
+		}
+		catch (IllegalArgumentException exception) {
+			return false;
 		}
 	}
 
@@ -148,7 +164,7 @@ public class ResourceEligibilityClient {
 		List<ResourceEligibilityResult> results = requests.stream()
 				.map(request -> new ResourceEligibilityResult(request.requestId(), request.resourceId(),
 						request.contentVersion(), ResourceEligibilityOutcome.UNAVAILABLE,
-						ResourceEligibilityReasonCode.DEPENDENCY_UNAVAILABLE, null, null))
+						ResourceEligibilityReasonCode.DEPENDENCY_UNAVAILABLE, null, null, null, null, null, null))
 				.toList();
 		return new ResourceEligibilityBatchResponse(POLICY_VERSION,
 				OffsetDateTime.ofInstant(clock.instant(), ZoneOffset.UTC).toString(), results);

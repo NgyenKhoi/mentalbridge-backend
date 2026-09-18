@@ -62,6 +62,10 @@ type ResolutionRow = {
   readonly resource_exists: boolean;
   readonly current_version: string | null;
   readonly resource_status: 'DRAFT' | 'PUBLISHED' | 'ARCHIVED' | null;
+  readonly category: ResourceEligibilityResult['category'];
+  readonly title: string | null;
+  readonly summary: string | null;
+  readonly external_url: string | null;
   readonly reviewed: boolean;
   readonly resource_locale: string | null;
   readonly requested_locale: string;
@@ -238,6 +242,10 @@ export class ResourceEligibilityRepository {
          (r.id IS NOT NULL) AS resource_exists,
          r.version::text AS current_version,
          r.status AS resource_status,
+         r.category,
+         r.title,
+         r.summary,
+         r.external_url,
          (r.reviewed_by IS NOT NULL AND r.reviewed_at IS NOT NULL) AS reviewed,
          r.locale AS resource_locale,
          q.locale AS requested_locale,
@@ -505,6 +513,10 @@ function resolveRow(row: ResolutionRow): ResourceEligibilityResult {
     contentVersion: row.content_version,
     role: null,
     publicationId: row.publication_id,
+    category: null,
+    title: null,
+    summary: null,
+    externalUrl: null,
   } as const;
   const now = row.resolved_at.getTime();
 
@@ -548,13 +560,25 @@ function resolveRow(row: ResolutionRow): ResourceEligibilityResult {
     outcome: 'ELIGIBLE',
     reasonCode: 'ELIGIBLE_MATCH',
     role: row.matched_role,
+    category: row.category,
+    title: row.title,
+    summary: row.summary,
+    externalUrl: row.external_url,
   };
 }
 
 function decision(
   base: Pick<
     ResourceEligibilityResult,
-    'requestId' | 'resourceId' | 'contentVersion' | 'role' | 'publicationId'
+    | 'requestId'
+    | 'resourceId'
+    | 'contentVersion'
+    | 'role'
+    | 'publicationId'
+    | 'category'
+    | 'title'
+    | 'summary'
+    | 'externalUrl'
   >,
   outcome: ResourceEligibilityResult['outcome'],
   reasonCode: ResourceEligibilityResult['reasonCode'],

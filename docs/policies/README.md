@@ -16,6 +16,7 @@ This directory contains versioned product, safety, privacy, and support policies
 | [AI Companion policy v1](ai-companion-policy-v1.md) | `MB-AI-COMPANION-001` | Historical policy; amended by ADR 0017 | Retains exact-source analysis, longitudinal evidence, provider execution, and AI/Care authority rationale |
 | [AI Companion policy v2](ai-companion-policy-v2.md) | `MB-SCOPE-V2-001` | Exact-revision backend implemented; UI/real provider not enabled | Adds package quotas/model routing and bounded SupportPlan/reassessment/reminder accompaniment beyond the implemented fake-provider slice |
 | [Care consent and assessment retention](care-consent-and-retention-policy.md) | `1.1-capstone` | Product Owner approved for controlled Capstone use; production security/legal review required | `privacy-capstone-v3` gates PHQ-9/GAD-7; `ai-processing-capstone-v1` gates exact-revision/bounded-longitudinal analysis; specialist sharing remains unavailable |
+| [Daily emotion check-in policy v1](daily-emotion-check-in-policy-v1.md) | `MB-DAILY-EMOTION-CHECK-IN-001` | Implemented for MB-510 controlled development/demo use | Governs non-clinical daily values, local-day edits, encrypted note, deletion, and consented note-free AI projection |
 
 ## Approval rule
 

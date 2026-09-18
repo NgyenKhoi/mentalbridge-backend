@@ -177,6 +177,8 @@ export interface AnalysisRepository {
 export interface ConsentDecision {
   authorized: boolean;
   reason: "GRANTED" | "MISSING" | "REVOKED" | "POLICY_OUTDATED";
+  policyVersion?: string | null;
+  decidedAt?: string | null;
 }
 
 export interface ConsentClient {
@@ -487,7 +489,12 @@ export class CareConsentClient implements ConsentClient {
     const parsed = consentSchema.safeParse(await response.json());
     if (!parsed.success)
       throw new ConsentUnavailableError("Care consent response is invalid");
-    return { authorized: parsed.data.authorized, reason: parsed.data.reason };
+    return {
+      authorized: parsed.data.authorized,
+      reason: parsed.data.reason,
+      policyVersion: parsed.data.policyVersion,
+      decidedAt: parsed.data.decidedAt,
+    };
   }
 }
 
