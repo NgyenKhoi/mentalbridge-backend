@@ -1,0 +1,11 @@
+services:
+  care:
+    environment:
+      CONTENT_SAFETY_DIRECTORY_BASE_URL: http://content-notification:3003
+      MENTALBRIDGE_CARE_SAFETY_DIRECTORY_BASE_URL: http://content-notification:3003
+  content-migrate:
+    environment:
+      DATABASE_URL: postgresql://postgres:local-only-content-password@content-postgres:5432/mentalbridge_content_notification?sslmode=disable
+  content-notification:
+    environment:
+      DATABASE_URL: postgresql://postgres:local-only-content-password@content-postgres:5432/mentalbridge_content_notification?sslmode=disable

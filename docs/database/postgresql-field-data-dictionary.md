@@ -2,7 +2,7 @@
 
 This document explains the business purpose of conceptual PostgreSQL fields. [`001_initial_schema.sql`](../../database/postgresql/001_initial_schema.sql) is a non-executable whole-system model and must not provision an environment. Names such as `consultation.appointment` below identify a logical owner inside that model; the physical table will be `public.appointment` in the separate `mentalbridge_consultation` database. Service-owned migration histories become executable sources of truth only when modules are implemented: Liquibase for Spring services and `node-pg-migrate` for Node.js services. It is written for developers and reviewers; descriptions are intentionally kept out of executable migrations.
 
-When service-owned migrations are introduced, update this dictionary in the same change. A field description must explain why the value is persisted, whether it is authoritative, derived, external, or sensitive, and how nullability, time, versioning, or idempotency affects behavior. Content/Notification's executable history starts at `content-notification-service/migrations/1_initial_schema.sql`; migration 2 removes the obsolete hotline table, the separate Review 1 migrations insert controlled demo content and its initial item-level eligibility matrix, and migration 6 adds immutable Resource Eligibility v1 provenance. The field descriptions under its conceptual owner below describe the resulting physical `public` tables.
+When service-owned migrations are introduced, update this dictionary in the same change. A field description must explain why the value is persisted, whether it is authoritative, derived, external, or sensitive, and how nullability, time, versioning, or idempotency affects behavior. Content/Notification's executable history starts at `content-notification-service/migrations/1_initial_schema.sql`; migration 2 removes the obsolete hotline table, the separate Review 1 migrations insert controlled demo content and its initial item-level eligibility matrix, migration 6 adds immutable Resource Eligibility v1 provenance, and migration 7 adds the separately governed reviewed safety directory. The field descriptions under its conceptual owner below describe the resulting physical `public` tables.
 
 ## Database `mentalbridge_identity` (schema `public`)
 
@@ -1365,6 +1365,74 @@ These fields establish reviewed public visibility only. SupportPlan eligibility 
 - Only `PUBLISHED` resources returned where `effective_at <= NOW()` and (`expires_at` IS NULL OR `expires_at > NOW()`)
 - All published resources guaranteed to have review provenance
 - `DRAFT` and `ARCHIVED` resources never exposed to public endpoints
+
+### `public.safety_directory_entry`
+
+Versioned, administrator-reviewed facility or hotline contact owned by Content/Notification. It is eligible for area lookup only while active, reviewed, verified, source-backed, and strictly inside the 90-day verification window.
+
+| Field | Purpose |
+| --- | --- |
+| `id` | Stable immutable UUID exposed as `directoryEntryId`; it is never reused for a different organization or service. |
+| `name` | Reviewed user-visible organization or service name. |
+| `entry_type` | Restricted `FACILITY` or `HOTLINE` presentation category; it does not assert a clinical capability. |
+| `phone` | Reviewed contact string displayed unchanged; it is never synthesized into another number. |
+| `address` | Reviewed user-visible address, required for facilities and nullable for non-location hotlines. |
+| `active` | Authoritative publication switch; review and freshness checks are still required for public lookup. |
+| `source_name` | Accountable issuing organization or evidence source for the current record version. |
+| `source_reference` | Stable URI or controlled evidence reference used to reproduce the review decision. |
+| `source_retrieved_at` | UTC instant when source evidence was obtained; future evidence cannot be reviewed. |
+| `source_checksum` | Optional lowercase SHA-256 of lawfully retained evidence; null when no artifact is retained. |
+| `reviewed_by` | External Identity administrator UUID approving the exact version; paired with `reviewed_at` and not itself proof of current authorization. |
+| `reviewed_at` | UTC server instant the exact version was reviewed; null after creation or any reviewed-field update. |
+| `verified_by` | External Identity administrator UUID that verified contact and coverage; paired with `verified_at`. |
+| `verified_at` | UTC server instant beginning the half-open 90-day freshness interval; null after creation or update. |
+| `seed_key` | Optional unique controlled-release identifier used only by owner migrations; never accepted from an admin request. |
+| `created_at` | Immutable UTC insertion instant. |
+| `updated_at` | UTC instant of the latest persisted content, review, activation, or deactivation change. |
+| `record_version` | Non-negative optimistic-lock counter incremented by updates and lifecycle decisions to prevent lost review changes. |
+
+The partial lookup index begins with `active` and recent `verified_at`; coverage is joined through the area index. Ordering is by name and stable UUID, never distance.
+
+### `public.safety_directory_coverage`
+
+Reviewed coarse Vietnam coverage attached to the exact directory record version. No coordinates, precise user location, or inferred geocoding are stored.
+
+| Field | Purpose |
+| --- | --- |
+| `entry_id` | Content-owned directory entry whose reviewed service area this row describes. |
+| `ordinal` | Stable non-negative display/provenance order inside one entry and part of its primary key. |
+| `coverage_level` | Restricted `NATIONWIDE`, `PROVINCE`, or `DISTRICT` scope controlling which canonical fields must be present. |
+| `province_code` | Canonical coarse province code; null only for nationwide coverage. |
+| `province_name` | Reviewed province display label paired with `province_code`; it may be matched by deliberate manual input. |
+| `district_code` | Canonical district code required only for district coverage. |
+| `district_name` | Reviewed district display label paired with `district_code`; no free-text address is treated as coverage. |
+
+### `public.safety_directory_review_history`
+
+Append-only accountability evidence for review/verification activation and deactivation. It excludes user location input and health data.
+
+| Field | Purpose |
+| --- | --- |
+| `id` | Immutable audit UUID. |
+| `entry_id` | Directory entry whose lifecycle decision was recorded. |
+| `record_version` | Exact optimistic-lock version produced by the decision so later edits cannot inherit its evidence. |
+| `action` | Restricted `REVIEWED` or `DEACTIVATED` outcome. A review action includes verification and activation in policy v1. |
+| `actor_id` | External Identity administrator UUID accountable for the decision. |
+| `source_reference` | Source evidence reference captured with the decision for reproducibility. |
+| `occurred_at` | Immutable database UTC commit instant of the decision. |
+
+### `public.safety_directory_command_record`
+
+Durable administrator-scoped replay evidence for create commands. It prevents duplicate directory records without storing request plaintext.
+
+| Field | Purpose |
+| --- | --- |
+| `actor_id` | External Identity administrator UUID owning the retry key. |
+| `operation` | Stable command scope, currently only `CREATE_DIRECTORY_ENTRY`. |
+| `idempotency_key` | Opaque caller key unique with actor and operation. |
+| `request_fingerprint` | Lowercase SHA-256 of the canonical non-sensitive create payload, used to reject conflicting reuse. |
+| `entry_id` | Directory entry created by the original command and returned on an identical replay. |
+| `created_at` | Immutable database UTC instant when the command outcome was recorded. |
 
 ### `public.resource_idempotency_record`
 

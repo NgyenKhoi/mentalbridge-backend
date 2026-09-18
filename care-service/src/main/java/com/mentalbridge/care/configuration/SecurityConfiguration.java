@@ -37,7 +37,7 @@ public class SecurityConfiguration {
 						.requestMatchers("/actuator/health", "/actuator/health/**", "/v3/api-docs/**", "/swagger-ui/**").permitAll()
 						.requestMatchers("/api/v1/questionnaires/**", "/api/v1/privacy-disclosures/**",
 								"/api/v1/ai-processing-disclosures/**",
-								"/api/v1/anonymous-assessment-sessions/**")
+								"/api/v1/anonymous-assessment-sessions/**", "/api/v1/safety-directory-lookups")
 						.permitAll()
 						.requestMatchers("/api/v1/profile/**", "/api/v1/consents/**",
 								"/api/v1/consent-decisions/**", "/api/v1/assessments/**",

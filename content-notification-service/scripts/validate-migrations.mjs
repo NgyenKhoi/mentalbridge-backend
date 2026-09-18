@@ -25,12 +25,17 @@ const reviewProvenance = requiredMigration('3_add_review_provenance_fields.sql')
 const legacyIdempotency = requiredMigration('4_add_idempotency_key.sql');
 const commandRecords = requiredMigration('5_add_resource_command_records.sql');
 const resourceEligibility = requiredMigration('6_add_resource_eligibility_v1.sql');
+const safetyDirectory = requiredMigration('7_add_safety_directory.sql');
 const review1Seed = await readFile(
   new URL('../migrations/review1/1_seed_review1_controlled_resource.sql', import.meta.url),
   'utf8',
 );
 const initialEligibility = await readFile(
   new URL('../migrations/review1/2_publish_initial_resource_eligibility.sql', import.meta.url),
+  'utf8',
+);
+const safetyDirectoryDemo = await readFile(
+  new URL('../migrations/review1/3_seed_safety_directory_controlled_demo.sql', import.meta.url),
   'utf8',
 );
 const controlledDemoFixture = JSON.parse(
@@ -72,6 +77,16 @@ assert.match(resourceEligibility, /ck_resource_eligibility_domain_instrument\b/)
 assert.match(resourceEligibility, /resource_eligibility_publication_immutable\b/);
 assert.match(resourceEligibility, /uq_resource_eligibility_exact_version\b/);
 assert.doesNotMatch(resourceEligibility, /ix_resource_eligibility_resolution\b/);
+for (const table of [
+  'safety_directory_entry',
+  'safety_directory_coverage',
+  'safety_directory_review_history',
+  'safety_directory_command_record',
+]) {
+  assert.match(safetyDirectory, new RegExp(`CREATE TABLE ${table}\\b`));
+}
+assert.match(safetyDirectory, /ix_safety_directory_lookup/);
+assert.doesNotMatch(safetyDirectory, /CREATE TABLE (?:IF NOT EXISTS )?hotline\b/i);
 assert.match(review1Seed, /^-- Up Migration/m);
 assert.match(review1Seed, /INSERT INTO resource\b/);
 assert.match(review1Seed, /Bài thực hành thở chậm \(dữ liệu demo\)/);
@@ -90,6 +105,11 @@ assert.match(
 );
 assert.match(initialEligibility, /published demo eligibility differs from the reviewed matrix/);
 assert.doesNotMatch(initialEligibility, /CREATE DATABASE|CREATE SCHEMA/i);
+assert.match(safetyDirectoryDemo, /DEMO-NOT-DIALABLE/);
+assert.match(safetyDirectoryDemo, /controlled-demo-safety-directory-v1/);
+assert.match(safetyDirectoryDemo, /ON CONFLICT \(seed_key\) DO NOTHING/);
+assert.match(safetyDirectoryDemo, /differs from the reviewed release/);
+assert.doesNotMatch(safetyDirectoryDemo, /CREATE DATABASE|CREATE SCHEMA/i);
 assert.equal(controlledDemoFixture.policyVersion, 'content-eligibility-v1');
 assert.equal(controlledDemoFixture.locale, 'vi-VN');
 assert.equal(controlledDemoFixture.reviewEvidence.storyKey, 'MB-337');
