@@ -19,10 +19,7 @@ import { describe, expect, it } from 'vitest';
  */
 describe('content safety directory contract', () => {
   const contractPath = fileURLToPath(
-    new URL(
-      '../../../contracts/openapi/content-notification-service.yaml',
-      import.meta.url,
-    ),
+    new URL('../../../contracts/openapi/content-notification-service.yaml', import.meta.url),
   );
 
   it('contract parses and resolves without errors', async () => {
@@ -35,21 +32,20 @@ describe('content safety directory contract', () => {
     const api = await SwaggerParser.dereference(contractPath);
     const lookupPath = api.paths?.['POST /api/v1/safety-directory:lookup'];
 
-    const postOp = (api.paths as Record<string, unknown>)[
-      '/api/v1/safety-directory:lookup'
-    ] as { post?: Record<string, unknown> };
+    const postOp = (api.paths as Record<string, unknown>)['/api/v1/safety-directory:lookup'] as {
+      post?: Record<string, unknown>;
+    };
     expect(postOp?.post).toBeDefined();
 
     const post = postOp.post!;
     expect(post['security']).toBeFalsy();
 
-    const okResponse = (
-      post['responses'] as Record<string, { headers?: Record<string, unknown> }>
-    )['200'];
+    const okResponse = (post['responses'] as Record<string, { headers?: Record<string, unknown> }>)[
+      '200'
+    ];
     expect(okResponse).toBeDefined();
     const cacheHeader = okResponse.headers?.['Cache-Control'] as
-      | { schema?: { const?: string } }
-      | undefined;
+      { schema?: { const?: string } } | undefined;
     expect(cacheHeader?.schema?.const).toBe('no-store');
 
     void lookupPath;
@@ -57,8 +53,7 @@ describe('content safety directory contract', () => {
 
   it('lookup response wording is the constant approved text with no nearest claim', async () => {
     const api = await SwaggerParser.dereference(contractPath);
-    const schemas = (api.components as { schemas: Record<string, unknown> })
-      .schemas;
+    const schemas = (api.components as { schemas: Record<string, unknown> }).schemas;
     const response = schemas['SafetyDirectoryLookupResponse'] as {
       required: string[];
       properties: Record<string, { const?: string; type?: unknown }>;
@@ -82,8 +77,7 @@ describe('content safety directory contract', () => {
 
   it('lookup state enum contains only owner-level states and excludes UNAVAILABLE', async () => {
     const api = await SwaggerParser.dereference(contractPath);
-    const schemas = (api.components as { schemas: Record<string, unknown> })
-      .schemas;
+    const schemas = (api.components as { schemas: Record<string, unknown> }).schemas;
     const stateSchema = schemas['SafetyDirectoryLookupState'] as {
       enum: string[];
     };
@@ -98,8 +92,7 @@ describe('content safety directory contract', () => {
 
   it('public entry schema requires provenance fields and forbids coordinates or nearest-distance', async () => {
     const api = await SwaggerParser.dereference(contractPath);
-    const schemas = (api.components as { schemas: Record<string, unknown> })
-      .schemas;
+    const schemas = (api.components as { schemas: Record<string, unknown> }).schemas;
     const entry = schemas['SafetyDirectoryPublicEntry'] as {
       required: string[];
       properties: Record<string, unknown>;
@@ -138,8 +131,7 @@ describe('content safety directory contract', () => {
 
   it('lookup request input schema is closed and permits only province/district/manual inputs', async () => {
     const api = await SwaggerParser.dereference(contractPath);
-    const schemas = (api.components as { schemas: Record<string, unknown> })
-      .schemas;
+    const schemas = (api.components as { schemas: Record<string, unknown> }).schemas;
     const request = schemas['SafetyDirectoryLookupRequest'] as {
       additionalProperties: boolean | object;
       properties: Record<string, unknown>;
@@ -149,9 +141,7 @@ describe('content safety directory contract', () => {
     expect(request.additionalProperties).toBe(false);
 
     const allowed = new Set(Object.keys(request.properties ?? {}));
-    expect(allowed).toEqual(
-      new Set(['provinceCode', 'districtCode', 'manualLocation']),
-    );
+    expect(allowed).toEqual(new Set(['provinceCode', 'districtCode', 'manualLocation']));
 
     const forbidden = [
       'latitude',
@@ -168,8 +158,7 @@ describe('content safety directory contract', () => {
 
   it('review state enum covers the full review lifecycle', async () => {
     const api = await SwaggerParser.dereference(contractPath);
-    const schemas = (api.components as { schemas: Record<string, unknown> })
-      .schemas;
+    const schemas = (api.components as { schemas: Record<string, unknown> }).schemas;
     const reviewState = schemas['SafetyDirectoryReviewState'] as {
       enum: string[];
     };
@@ -198,9 +187,7 @@ describe('content safety directory contract', () => {
     for (const [method, path] of adminPaths) {
       const op = paths[path]?.[method.toLowerCase()];
       expect(op?.security ?? []).toEqual(
-        expect.arrayContaining([
-          expect.objectContaining({ BearerAuth: expect.anything() }),
-        ]),
+        expect.arrayContaining([expect.objectContaining({ BearerAuth: expect.anything() })]),
       );
     }
 
