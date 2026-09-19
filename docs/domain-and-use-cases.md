@@ -248,7 +248,9 @@ professional-support calls to action remain outside the plan and precede its
 controls.
 
 **Exceptions and acceptance:** missing/stale support inputs yield
-`INSUFFICIENT_DATA`; AI cannot decide safety. Review/publication alone never
+stable fail-closed results and create no plan; AI cannot decide safety.
+MB-372 reloads the same persisted current draft without recomputing remote
+facts, while activation and choices remain unavailable. Review/publication alone never
 makes a resource plan-eligible, while package entitlement never imposes a
 resource-count limit. Immediate guidance is returned before ordinary plan
 controls and without waiting for optional dependencies. Area-filtered facility

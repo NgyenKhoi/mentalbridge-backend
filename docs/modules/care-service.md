@@ -35,9 +35,10 @@ Kafka, Redis, WebSocket, notification, or directory delivery.
   independent item-9 safety through owner-scoped `/api/v2` resources without a
   global tier or severity.
   MB-511 implements the one-time all-tier Support Guide on the v2 evaluation
-  boundary using exact eligibility. Paid-plan entitlement, one official plan,
-  lifecycle activity, and `PlanChangeRequest` governance remain later slices
-  without rewriting v1 evidence.
+  boundary using exact eligibility. MB-372 adds the bounded initial
+  `PLUS`/`PREMIUM` draft and exact persisted reload. Activation, choice
+  mutation, replacement, lifecycle activity, and `PlanChangeRequest`
+  governance remain later slices without rewriting v1 evidence.
 - Care consumes exact Content-owned eligibility through the generated Resource Eligibility v1 OpenFeign boundary with explicit deadlines, bounded retry, circuit breaker and fail-closed `UNAVAILABLE` outcomes. It makes the final future plan decision without cross-database access or a transaction spanning the remote call. Review/publication alone is insufficient.
 - Care combines reassessment dimensions without normalizing them into one score. Journal/AI context remains model-derived evidence limited to available consented entries; Care maps it only to policy-allowed review candidates and requires user confirmation.
 - Exceptional Identity lookups use a consumer-owned Feign port outside transactions with timeout/breaker and safe failure semantics.
@@ -53,10 +54,16 @@ The original English PHQ-9 definition, retired immutable
 published `gad7-vi-vn-adult-v1` are seeded. Existing item-9 runtime remains
 unchanged. ADR 0017 approves the additional explicit-help trigger and reviewed
 area directory as target behavior without claiming they are implemented.
-SupportPlan, directory, and production consent/retention remain separate
-runtime gates in `docs/policies/`. MB-511 adds owner-scoped Support Guide
+SupportPlan lifecycle beyond the initial draft, directory, and production
+consent/retention remain separate runtime gates in `docs/policies/`. MB-511 adds owner-scoped Support Guide
 generation/history under `/api/v1/support-guides` with immutable provenance,
 local safety, stable dependency outcomes, and no plan lifecycle fields.
+MB-372 adds owner-scoped create/current-draft routes under
+`/api/v1/support-plans`. Care obtains current entitlement from Consultation
+with the forwarded bearer, revalidates an owned current-policy
+SupportEvaluation v2, resolves exact Content eligibility before the local
+transaction, and stores one reproducible draft snapshot. `FREE`, stale facts,
+or dependency uncertainty create no plan; AI is not called.
 
 MB-178 does not implement specialist grants, automatic follow-up, clinical progress interpretation, export/deletion, or production retention. Support/intervention, analytics, Kafka event delivery, and these deferred workflows must not be inferred from the implemented profile/consent/history slice.
 
@@ -69,7 +76,8 @@ MB-178 does not implement specialist grants, automatic follow-up, clinical progr
 - [ ] CARE-05 Profile and general privacy decisions are implemented by MB-178; specialist scoped grants and their concurrent revoke/read protection remain deferred.
 - [x] CARE-06 Implement anonymous and authenticated assessment, validation, scoring and idempotency for published PHQ-9 and GAD-7 reference data while retaining retired definitions for history.
 - [x] CARE-07a Publish deterministic cross-cutting safety, coarse `mb-support-routing-capstone-v1`, synchronous fallback and provenance through Story 1103.
-- [x] CARE-07b Preserve v1 history and implement compatible domain-aware SupportEvaluation (#48) plus exact eligible resources (#50); system-proposed SupportPlan runtime remains a separate story.
+- [x] CARE-07b Preserve v1 history and implement compatible domain-aware SupportEvaluation (#48) plus exact eligible resources (#50).
+- [x] CARE-07c Implement the MB-372 deterministic initial paid SupportPlan draft and persisted owner-only reload; keep activation and later lifecycle unavailable.
 - [ ] CARE-08 Descriptive assessment comparison is implemented by MB-205; follow-up, other analytics projections, export and deletion participation remain open.
 - [ ] CARE-09 Verify scoring boundaries, item-9 safety, stale/missing input, concurrency, rollback/outbox, duplicate/reordered events and dependency failures.
 - [ ] CARE-10 Add safe observability/configuration, update README, and pass module/contract/migration gates.

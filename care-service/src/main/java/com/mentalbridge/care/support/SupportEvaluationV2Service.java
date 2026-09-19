@@ -105,6 +105,30 @@ public class SupportEvaluationV2Service {
 		return view(requiredOwnedEvaluation(userId, evaluationId));
 	}
 
+	@Transactional(readOnly = true)
+	public EvaluationView getCurrentCompatible(UUID userId, UUID evaluationId) {
+		var evaluation = requiredOwnedEvaluation(userId, evaluationId);
+		var currentPolicy = evaluations.currentPolicyVersion().orElseThrow(() -> new ApiException(
+				HttpStatus.SERVICE_UNAVAILABLE, "SUPPORT_POLICY_UNAVAILABLE",
+				"No published domain-aware support policy is available"));
+		if (!currentPolicy.equals(evaluation.policyVersion())) {
+			throw stale("Support evaluation policy is no longer current");
+		}
+		try {
+			requiredEvidence(userId, evaluation.phq9AssessmentId(), "PHQ9",
+					ScreeningDomain.DEPRESSIVE_SYMPTOMS, currentPolicy);
+			requiredEvidence(userId, evaluation.gad7AssessmentId(), "GAD7",
+					ScreeningDomain.ANXIETY_SYMPTOMS, currentPolicy);
+		}
+		catch (ApiException exception) {
+			if ("ASSESSMENT_NOT_FOUND".equals(exception.code()) || "SUPPORT_EVIDENCE_INCOMPATIBLE".equals(exception.code())) {
+				throw stale("Support evaluation source evidence is no longer current");
+			}
+			throw exception;
+		}
+		return view(evaluation);
+	}
+
 	private SupportEvaluationV2Entity requiredOwnedEvaluation(UUID userId, UUID evaluationId) {
 		return evaluations.findByIdAndUserId(evaluationId, userId).orElseThrow(() -> new ApiException(
 				HttpStatus.NOT_FOUND, "SUPPORT_EVALUATION_NOT_FOUND", "Support evaluation was not found"));
@@ -204,6 +228,10 @@ public class SupportEvaluationV2Service {
 
 	private ApiException incompatible(String message) {
 		return new ApiException(HttpStatus.CONFLICT, "SUPPORT_EVIDENCE_INCOMPATIBLE", message);
+	}
+
+	private ApiException stale(String message) {
+		return new ApiException(HttpStatus.CONFLICT, "SUPPORT_EVALUATION_STALE", message);
 	}
 
 	private ApiException validation(String field, String code, String message) {
