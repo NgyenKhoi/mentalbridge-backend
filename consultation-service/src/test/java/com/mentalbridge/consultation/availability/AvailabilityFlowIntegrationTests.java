@@ -9,6 +9,7 @@ import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.jsonPath;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.status;
 
+import java.sql.Timestamp;
 import java.time.Instant;
 import java.util.List;
 import java.util.UUID;
@@ -128,8 +129,9 @@ class AvailabilityFlowIntegrationTests extends ConsultationTestProperties {
 				idempotency_key, created_at, updated_at
 				) values (:id, :specialist, :start, :end, 'Asia/Ho_Chi_Minh', 'IN_APP_CHAT',
 				'stale-withdraw-key-0001', :created, :created)
-				""").param("id", staleId).param("specialist", specialistId).param("start", staleStart)
-				.param("end", staleStart.plusSeconds(3_600)).param("created", staleStart.minusSeconds(3_600)).update();
+				""").param("id", staleId).param("specialist", specialistId).param("start", Timestamp.from(staleStart))
+				.param("end", Timestamp.from(staleStart.plusSeconds(3_600)))
+				.param("created", Timestamp.from(staleStart.minusSeconds(3_600))).update();
 		mvc.perform(delete("/api/v1/availability-slots/{id}", staleId).with(specialist(specialistId))
 				.header("If-Match", "\"0\""))
 				.andExpect(status().isConflict()).andExpect(jsonPath("$.code").value("AVAILABILITY_SLOT_STALE"));
