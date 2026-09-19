@@ -1,6 +1,7 @@
 package com.mentalbridge.care.supportplan;
 
 import java.time.Instant;
+import java.time.temporal.ChronoUnit;
 import java.util.ArrayList;
 import java.util.List;
 import java.util.UUID;
@@ -38,6 +39,7 @@ class SupportPlanWriter {
 	StoredPlan persist(UUID userId, String idempotencyKey, String requestHash, EvaluationView evaluation,
 			CurrentEntitlementResponse entitlement, Proposal proposal, String rationaleText,
 			String safetyGuidanceCode, String safetyGuidance, Instant now) {
+		now = now.truncatedTo(ChronoUnit.MICROS);
 		if (profiles.findByIdForUpdate(userId).isEmpty()) {
 			throw new ApiException(HttpStatus.NOT_FOUND, "PROFILE_NOT_FOUND", "Care profile was not found");
 		}
