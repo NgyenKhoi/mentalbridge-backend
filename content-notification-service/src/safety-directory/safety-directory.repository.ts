@@ -280,16 +280,18 @@ export class SafetyDirectoryRepository {
   }
 
   private async resolveManualLocation(value: string): Promise<ResolvedArea | null> {
+    // Resolution is performed exclusively against the reviewed, versioned area
+    // vocabulary (safety_directory_area_alias). This table is independent of
+    // directory-entry coverage rows, so the result is deterministic regardless
+    // of how many entries cover a province or district.
     const result = await this.db.query<{
       province_code: string;
       district_code: string | null;
     }>(
-      `SELECT DISTINCT province_code, district_code
-       FROM safety_directory_coverage
-       WHERE (province_name IS NOT NULL AND lower(province_name) = lower($1))
-          OR (district_name IS NOT NULL AND lower(district_name) = lower($1))
-       ORDER BY province_code, district_code NULLS FIRST
-       LIMIT 2`,
+      `SELECT province_code, district_code
+       FROM safety_directory_area_alias
+       WHERE lower(btrim(alias_text)) = lower(btrim($1))
+       LIMIT 1`,
       [value.trim()],
     );
     if (result.rows.length !== 1) return null;

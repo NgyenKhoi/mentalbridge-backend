@@ -77,4 +77,31 @@ describe('SafetyDirectoryService', () => {
       ).lookup({ provinceCode: '01' }),
     ).rejects.toBeInstanceOf(ServiceUnavailableException);
   });
+
+  it('passes manualLocation through to repository lookup so alias resolution is delegated', async () => {
+    // The service must forward manualLocation to the repository unchanged.
+    // The repository resolves it via safety_directory_area_alias — not coverage.
+    // A province with many coverage rows must still resolve to RESULTS here
+    // because the mock returns area deterministically (simulating alias lookup).
+    const lookup = vi.fn(async () => ({
+      area: { provinceCode: '79', districtCode: null },
+      entries: [currentRow],
+    }));
+    const service = serviceWithLookup(lookup);
+    const result = await service.lookup({ manualLocation: 'Hồ Chí Minh' });
+    expect(lookup).toHaveBeenCalledWith({ manualLocation: 'Hồ Chí Minh' });
+    expect(result.state).toBe('RESULTS');
+    expect(result.resolvedProvinceCode).toBe('79');
+    expect(result.resolvedDistrictCode).toBeNull();
+  });
+
+  it('returns INVALID_AREA when alias vocabulary has no match for the manual text', async () => {
+    // Repository returns area: null when alias_text is not found in the vocabulary.
+    const service = serviceWithLookup(vi.fn(async () => ({ area: null, entries: [] })));
+    const result = await service.lookup({ manualLocation: 'Khu vực không tồn tại' });
+    expect(result.state).toBe('INVALID_AREA');
+    expect(result.entries).toHaveLength(0);
+    // resolvedProvinceCode must be null — no false area claim
+    expect(result.resolvedProvinceCode).toBeNull();
+  });
 });

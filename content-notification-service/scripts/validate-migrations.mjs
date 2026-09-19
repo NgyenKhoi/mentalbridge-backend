@@ -26,6 +26,7 @@ const legacyIdempotency = requiredMigration('4_add_idempotency_key.sql');
 const commandRecords = requiredMigration('5_add_resource_command_records.sql');
 const resourceEligibility = requiredMigration('6_add_resource_eligibility_v1.sql');
 const safetyDirectory = requiredMigration('7_add_safety_directory.sql');
+const safetyDirectoryAreaAlias = requiredMigration('8_add_safety_directory_area_alias.sql');
 const review1Seed = await readFile(
   new URL('../migrations/review1/1_seed_review1_controlled_resource.sql', import.meta.url),
   'utf8',
@@ -36,6 +37,10 @@ const initialEligibility = await readFile(
 );
 const safetyDirectoryDemo = await readFile(
   new URL('../migrations/review1/3_seed_safety_directory_controlled_demo.sql', import.meta.url),
+  'utf8',
+);
+const safetyDirectoryAreaAliases = await readFile(
+  new URL('../migrations/review1/5_seed_safety_directory_area_aliases.sql', import.meta.url),
   'utf8',
 );
 const controlledDemoFixture = JSON.parse(
@@ -110,6 +115,17 @@ assert.match(safetyDirectoryDemo, /controlled-demo-safety-directory-v1/);
 assert.match(safetyDirectoryDemo, /ON CONFLICT \(seed_key\) DO NOTHING/);
 assert.match(safetyDirectoryDemo, /differs from the reviewed release/);
 assert.doesNotMatch(safetyDirectoryDemo, /CREATE DATABASE|CREATE SCHEMA/i);
+assert.match(safetyDirectoryAreaAlias, /CREATE TABLE safety_directory_area_alias\b/);
+assert.match(safetyDirectoryAreaAlias, /uq_area_alias_text_normalised\b/);
+assert.match(safetyDirectoryAreaAlias, /lower\(btrim\(alias_text\)\)/);
+assert.match(safetyDirectoryAreaAlias, /ix_area_alias_lookup\b/);
+assert.doesNotMatch(safetyDirectoryAreaAlias, /safety_directory_coverage/);
+assert.match(safetyDirectoryAreaAliases, /area-alias-ha-noi-canonical/);
+assert.match(safetyDirectoryAreaAliases, /area-alias-da-nang-canonical/);
+assert.match(safetyDirectoryAreaAliases, /area-alias-hcm-canonical/);
+assert.match(safetyDirectoryAreaAliases, /ON CONFLICT \(seed_key\) DO NOTHING/);
+assert.match(safetyDirectoryAreaAliases, /differs from reviewed release/);
+assert.doesNotMatch(safetyDirectoryAreaAliases, /CREATE DATABASE|CREATE SCHEMA/i);
 assert.equal(controlledDemoFixture.policyVersion, 'content-eligibility-v1');
 assert.equal(controlledDemoFixture.locale, 'vi-VN');
 assert.equal(controlledDemoFixture.reviewEvidence.storyKey, 'MB-337');
