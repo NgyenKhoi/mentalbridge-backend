@@ -13,7 +13,7 @@ runtime source of truth. Exact field purposes are documented in the
 | Service database | Owner | Main aggregates |
 | --- | --- | --- |
 | `mentalbridge_identity` | Identity Service | account, role, refresh session, verification/reset token |
-| `mentalbridge_care` | Care Service | user profile, consent, anonymous session, questionnaire, assessment result, safety, SupportEvaluation, Support Guide, SupportPlan draft |
+| `mentalbridge_care` | Care Service | user profile, consent, anonymous session, questionnaire, assessment result, safety, SupportEvaluation, Support Guide, SupportPlan draft/activation |
 | `mentalbridge_consultation` | Consultation Service | specialist approval, current service entitlement, online availability; billing/booking/settlement remain proposed |
 | `mentalbridge_content_notification` | Content/Notification Service | reviewed resource definitions, immutable exact-version eligibility provenance, and notification preference/delivery |
 | owner-local tables | each producer; Governance reads safe events | implemented owner outbox/audit tables only; deletion/retention projections remain proposed |
@@ -62,7 +62,7 @@ Cross-owner identifiers in the canonical logical model make relationships visibl
 - Stored total score and screening band live in the one-to-one result and are authoritative only after server validation; `scoring_version` records the algorithm, `safety_item_positive` preserves the questionnaire fact, and the paired safety status/policy version records the independent response decision.
 - Support-tier results store policy version, reason codes and exact source IDs to make decisions reproducible; safety status remains a separate assessment result.
 - Existing `mb-support-routing-capstone-v1` rows remain immutable coarse evaluations. They preserve PHQ-9 and GAD-7 evidence separately and are not a global severity or sufficient plan-eligibility decision.
-- Resource Eligibility v1 is Content-owned, append-only and exact-versioned under #50. Domain-aware SupportEvaluation v2 is additive Care-owned persistence under #48. MB-372 adds only deterministic SupportPlan draft persistence and reload; activation and later lifecycle remain proposed. None of these migrations rewrites historical v1 evaluation or reviewed-resource rows.
+- Resource Eligibility v1 is Content-owned, append-only and exact-versioned under #50. Domain-aware SupportEvaluation v2 is additive Care-owned persistence under #48. MB-372 adds deterministic SupportPlan draft persistence/reload; MB-373 adds admitted-choice replacement with optimistic concurrency, audited idempotent activation, exact revalidation, and one-current-plan enforcement. Later lifecycle remains proposed. None of these migrations rewrites historical v1 evaluation or reviewed-resource rows.
 
 ### Booking model status
 

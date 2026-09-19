@@ -1,0 +1,32 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://mentalbridge.local/contracts/events/care/support-plan-activated-v1.schema.json",
+  "title": "Care SupportPlan activated v1",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["messageId", "messageType", "occurredAt", "producer", "schemaVersion", "correlationId", "aggregateId", "aggregateVersion", "payload"],
+  "properties": {
+    "messageId": { "type": "string", "format": "uuid" },
+    "messageType": { "const": "care.support-plan.activated" },
+    "occurredAt": { "type": "string", "format": "date-time" },
+    "producer": { "const": "care-service" },
+    "schemaVersion": { "const": "1.0" },
+    "correlationId": { "type": "string", "format": "uuid" },
+    "aggregateId": { "type": "string", "format": "uuid" },
+    "aggregateVersion": { "type": "integer", "minimum": 1 },
+    "payload": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["supportPlanId", "userId", "planVersion", "activatedAt", "evaluationPolicyVersion", "resourceEligibilityPolicyVersion", "packageCode"],
+      "properties": {
+        "supportPlanId": { "type": "string", "format": "uuid" },
+        "userId": { "type": "string", "format": "uuid" },
+        "planVersion": { "type": "integer", "minimum": 1 },
+        "activatedAt": { "type": "string", "format": "date-time" },
+        "evaluationPolicyVersion": { "const": "mb-support-routing-capstone-v2" },
+        "resourceEligibilityPolicyVersion": { "const": "content-eligibility-v1" },
+        "packageCode": { "enum": ["PLUS", "PREMIUM"] }
+      }
+    }
+  }
+}

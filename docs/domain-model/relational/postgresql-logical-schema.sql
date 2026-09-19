@@ -23,8 +23,7 @@
  * references and are deliberately not physical foreign keys.
  *
  * Reconciled from owner migrations on 2026-09-20. It includes the Care
- * SupportPlan draft migration delivered by the pull request that introduced
- * this canonical model. Technical indexes and migration bookkeeping are
+ * SupportPlan draft and activation migrations. Technical indexes and migration bookkeeping are
  * intentionally omitted; owner migrations remain authoritative for exact DDL.
  */
 
@@ -477,6 +476,7 @@ CREATE TABLE care.support_plan (
     safety_guidance_code varchar(64) NOT NULL,
     safety_guidance varchar(2048) NOT NULL,
     selected_resource_count smallint NOT NULL,
+    activated_at timestamptz,
     created_at timestamptz NOT NULL,
     updated_at timestamptz NOT NULL,
     UNIQUE (id, user_id),
@@ -501,13 +501,13 @@ CREATE TABLE care.support_plan_slot (
     slot_kind varchar(16) NOT NULL,
     target_domain varchar(48) NOT NULL,
     purpose_code varchar(64) NOT NULL,
-    selected_resource_id uuid NOT NULL,    -- external -> content.resource.id
-    selected_content_version bigint NOT NULL,
-    selected_publication_id uuid NOT NULL, -- external -> content.resource_eligibility_publication.id
-    selected_role varchar(16) NOT NULL,
-    selected_category varchar(32) NOT NULL,
-    selected_title varchar(255) NOT NULL,
-    selected_summary text NOT NULL,
+    selected_resource_id uuid,    -- external -> content.resource.id; nullable only for removed OPTIONAL slot
+    selected_content_version bigint,
+    selected_publication_id uuid, -- external -> content.resource_eligibility_publication.id
+    selected_role varchar(16),
+    selected_category varchar(32),
+    selected_title varchar(255),
+    selected_summary text,
     selected_external_url varchar(2048)
 );
 
@@ -534,6 +534,42 @@ CREATE TABLE care.support_plan_request (
     PRIMARY KEY (user_id, idempotency_key),
     FOREIGN KEY (support_plan_id, user_id)
         REFERENCES care.support_plan(id, user_id)
+);
+
+CREATE TABLE care.support_plan_command (
+    user_id uuid NOT NULL,
+    idempotency_key varchar(128) NOT NULL,
+    command_type varchar(16) NOT NULL CHECK (command_type = 'ACTIVATE'),
+    request_hash varchar(64) NOT NULL,
+    support_plan_id uuid NOT NULL,
+    expected_version bigint NOT NULL,
+    resulting_version bigint NOT NULL,
+    resulting_status varchar(16) NOT NULL,
+    resulting_updated_at timestamptz NOT NULL,
+    evaluation_policy_version varchar(64) NOT NULL,
+    entitlement_package varchar(16) NOT NULL,
+    entitlement_source varchar(16) NOT NULL,
+    entitlement_policy_version varchar(64) NOT NULL,
+    entitlement_version bigint NOT NULL,
+    entitlement_decided_at timestamptz NOT NULL,
+    resource_policy_version varchar(64) NOT NULL,
+    resources_resolved_at timestamptz NOT NULL,
+    created_at timestamptz NOT NULL,
+    PRIMARY KEY (user_id, idempotency_key),
+    FOREIGN KEY (support_plan_id, user_id)
+        REFERENCES care.support_plan(id, user_id)
+);
+
+CREATE TABLE care.support_plan_command_selection (
+    user_id uuid NOT NULL,
+    idempotency_key varchar(128) NOT NULL,
+    ordinal smallint NOT NULL,
+    slot_key varchar(64) NOT NULL,
+    resource_id uuid NOT NULL, -- external -> content.resource.id
+    content_version bigint NOT NULL,
+    PRIMARY KEY (user_id, idempotency_key, ordinal),
+    FOREIGN KEY (user_id, idempotency_key)
+        REFERENCES care.support_plan_command(user_id, idempotency_key)
 );
 
 /* ========================================================================== */

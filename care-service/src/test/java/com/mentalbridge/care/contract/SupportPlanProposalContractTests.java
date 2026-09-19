@@ -20,8 +20,6 @@ class SupportPlanProposalContractTests {
 	private static final Set<String> REQUIRED_OPERATIONS = Set.of(
 			"GET /api/v1/support-plans/{supportPlanId}",
 			"DELETE /api/v1/support-plans/{supportPlanId}",
-			"PUT /api/v1/support-plans/{supportPlanId}/choices",
-			"POST /api/v1/support-plans/{supportPlanId}/activate",
 			"POST /api/v1/support-plans/{supportPlanId}/pause",
 			"POST /api/v1/support-plans/{supportPlanId}/resume",
 			"POST /api/v1/support-plans/{supportPlanId}/complete",
@@ -51,6 +49,23 @@ class SupportPlanProposalContractTests {
 		});
 
 		assertThat(operations).isEqualTo(REQUIRED_OPERATIONS);
+	}
+
+	@Test
+	void implementedChoiceActivationAndCurrentPlanContractsAreCanonical() {
+		OpenAPI openApi = parseImplementedContract().getOpenAPI();
+		Operation choices = openApi.getPaths().get("/api/v1/support-plans/{supportPlanId}/choices").getPut();
+		Operation activation = openApi.getPaths().get("/api/v1/support-plans/{supportPlanId}/activate").getPost();
+		Operation current = openApi.getPaths().get("/api/v1/support-plans/current").getGet();
+
+		assertParameter("implemented choices", choices, "If-Match");
+		assertThat(choices.getParameters()).extracting(parameter -> parameter.getName())
+				.doesNotContain("Idempotency-Key");
+		assertParameter("implemented activation", activation, "If-Match");
+		assertParameter("implemented activation", activation, "Idempotency-Key");
+		assertThat(activation.getRequestBody()).isNull();
+		assertThat(activation.getDescription()).contains("no safety acknowledgement");
+		assertThat(current.getResponses()).containsKeys("200", "404");
 	}
 
 	@Test
@@ -99,10 +114,11 @@ class SupportPlanProposalContractTests {
 
 	@Test
 	void lifecycleUsesOneNormalActivationAndAtomicExplicitReplacement() {
-		OpenAPI openApi = parseProposal().getOpenAPI();
-		Schema<?> statuses = openApi.getComponents().getSchemas().get("SupportPlanStatus");
-		Operation activation = openApi.getPaths().get("/api/v1/support-plans/{supportPlanId}/activate").getPost();
-		Operation replacement = openApi.getPaths().get("/api/v1/support-plans/{supportPlanId}/replace").getPost();
+		OpenAPI proposal = parseProposal().getOpenAPI();
+		OpenAPI implemented = parseImplementedContract().getOpenAPI();
+		Schema<?> statuses = proposal.getComponents().getSchemas().get("SupportPlanStatus");
+		Operation activation = implemented.getPaths().get("/api/v1/support-plans/{supportPlanId}/activate").getPost();
+		Operation replacement = proposal.getPaths().get("/api/v1/support-plans/{supportPlanId}/replace").getPost();
 
 		assertThat(statuses.getEnum().stream().map(String::valueOf).toList())
 				.containsExactly("DRAFT", "ACTIVE", "PAUSED", "COMPLETED", "SUPERSEDED");

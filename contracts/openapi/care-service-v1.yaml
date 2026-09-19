@@ -496,6 +496,93 @@ paths:
         '401': { $ref: '#/components/responses/UnauthorizedProblem' }
         '403': { $ref: '#/components/responses/ForbiddenProblem' }
         '404': { $ref: '#/components/responses/SupportPlanDraftNotFoundProblem' }
+  /api/v1/support-plans/current:
+    x-mentalbridge-status: implemented
+    get:
+      tags: [SupportPlan draft]
+      operationId: getOwnCurrentSupportPlan
+      summary: Reload the authenticated user's authoritative active or paused SupportPlan
+      description: |
+        Returns the single Care-owned current plan from persisted state without
+        deriving lifecycle state in the client. A draft is not a current plan.
+      security:
+        - bearerAuth: []
+      parameters:
+        - $ref: '#/components/parameters/CorrelationId'
+      responses:
+        '200':
+          description: Current authoritative plan
+          headers:
+            ETag:
+              $ref: '#/components/headers/SupportPlanETag'
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/SupportPlan' }
+        '401': { $ref: '#/components/responses/UnauthorizedProblem' }
+        '403': { $ref: '#/components/responses/ForbiddenProblem' }
+        '404': { $ref: '#/components/responses/SupportPlanCurrentNotFoundProblem' }
+  /api/v1/support-plans/{supportPlanId}/choices:
+    x-mentalbridge-status: implemented
+    put:
+      tags: [SupportPlan draft]
+      operationId: replaceOwnSupportPlanDraftChoices
+      summary: Keep, swap, or remove only server-admitted draft choices
+      description: |
+        The complete desired selection is accepted only for an owned DRAFT.
+        Every CORE slot is required; an OPTIONAL slot may be omitted. Care
+        rejects unknown slots, injected exact versions, duplicate versions,
+        and stale plan versions. A changed desired selection is revalidated
+        against current entitlement, evaluation/template policy, and exact
+        resource eligibility. Replacing the current selection with the same
+        complete desired state is a no-op and keeps the existing version.
+      security:
+        - bearerAuth: []
+      parameters:
+        - $ref: '#/components/parameters/SupportPlanId'
+        - $ref: '#/components/parameters/RequiredIfMatch'
+        - $ref: '#/components/parameters/CorrelationId'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: '#/components/schemas/ReplaceSupportPlanChoicesRequest' }
+      responses:
+        '200': { $ref: '#/components/responses/SupportPlanCommandResult' }
+        '400': { $ref: '#/components/responses/ValidationProblem' }
+        '401': { $ref: '#/components/responses/UnauthorizedProblem' }
+        '403': { $ref: '#/components/responses/SupportPlanEntitlementProblem' }
+        '404': { $ref: '#/components/responses/SupportPlanNotFoundProblem' }
+        '409': { $ref: '#/components/responses/SupportPlanChoiceConflictProblem' }
+        '412': { $ref: '#/components/responses/SupportPlanVersionProblem' }
+        '503': { $ref: '#/components/responses/SupportPlanDependencyProblem' }
+  /api/v1/support-plans/{supportPlanId}/activate:
+    x-mentalbridge-status: implemented
+    post:
+      tags: [SupportPlan draft]
+      operationId: activateOwnSupportPlan
+      summary: Explicitly activate a fully revalidated paid SupportPlan draft
+      description: |
+        The authenticated user explicitly activates the owned draft. Care
+        immediately revalidates current paid entitlement, SupportEvaluation,
+        template policy, every selected exact resource version and eligibility
+        role before opening the local transaction. The normal command also
+        applies to safety-positive users and accepts no safety acknowledgement field.
+      security:
+        - bearerAuth: []
+      parameters:
+        - $ref: '#/components/parameters/SupportPlanId'
+        - $ref: '#/components/parameters/RequiredIfMatch'
+        - $ref: '#/components/parameters/IdempotencyKey'
+        - $ref: '#/components/parameters/CorrelationId'
+      responses:
+        '200': { $ref: '#/components/responses/SupportPlanCommandResult' }
+        '400': { $ref: '#/components/responses/ValidationProblem' }
+        '401': { $ref: '#/components/responses/UnauthorizedProblem' }
+        '403': { $ref: '#/components/responses/SupportPlanEntitlementProblem' }
+        '404': { $ref: '#/components/responses/SupportPlanNotFoundProblem' }
+        '409': { $ref: '#/components/responses/SupportPlanActivationConflictProblem' }
+        '412': { $ref: '#/components/responses/SupportPlanVersionProblem' }
+        '503': { $ref: '#/components/responses/SupportPlanDependencyProblem' }
   /api/v1/anonymous-assessment-sessions:
     x-mentalbridge-status: implemented
     post:
@@ -732,6 +819,11 @@ components:
       in: path
       required: true
       schema: { type: string, format: uuid }
+    SupportPlanId:
+      name: supportPlanId
+      in: path
+      required: true
+      schema: { type: string, format: uuid }
     SessionId:
       name: sessionId
       in: path
@@ -763,6 +855,12 @@ components:
       name: If-Match
       in: header
       required: false
+      schema: { type: string, pattern: '^"[0-9]+"$' }
+      example: '"3"'
+    RequiredIfMatch:
+      name: If-Match
+      in: header
+      required: true
       schema: { type: string, pattern: '^"[0-9]+"$' }
       example: '"3"'
     AssessmentCursor:
@@ -1191,13 +1289,33 @@ components:
           type: string
           format: uuid
           description: One immutable SupportEvaluation v2 owned by the authenticated user
-    SupportPlanDraft:
+    ReplaceSupportPlanChoicesRequest:
       type: object
       additionalProperties: false
-      required: [supportPlanId, status, version, source, entitlement, rationale, safety, templateFamilies, slots, selectedResourceCount, createdAt, updatedAt, disclaimerCode, disclaimer]
+      required: [slotSelections]
+      properties:
+        slotSelections:
+          type: array
+          minItems: 1
+          maxItems: 5
+          items: { $ref: '#/components/schemas/SupportPlanSlotSelection' }
+    SupportPlanSlotSelection:
+      type: object
+      additionalProperties: false
+      required: [slotId, resourceId, contentVersion]
+      properties:
+        slotId: { type: string, minLength: 1, maxLength: 64 }
+        resourceId: { type: string, format: uuid }
+        contentVersion: { type: string, pattern: '^[0-9]+$' }
+    SupportPlanDraft:
+      $ref: '#/components/schemas/SupportPlan'
+    SupportPlan:
+      type: object
+      additionalProperties: false
+      required: [supportPlanId, status, version, source, entitlement, rationale, safety, templateFamilies, slots, selectedResourceCount, createdAt, updatedAt, activatedAt, disclaimerCode, disclaimer]
       properties:
         supportPlanId: { type: string, format: uuid }
-        status: { type: string, const: DRAFT }
+        status: { type: string, enum: [DRAFT, ACTIVE, PAUSED] }
         version: { type: integer, minimum: 0 }
         source: { $ref: '#/components/schemas/SupportPlanSource' }
         entitlement: { $ref: '#/components/schemas/SupportPlanEntitlementEvidence' }
@@ -1216,6 +1334,7 @@ components:
         selectedResourceCount: { type: integer, minimum: 1, maximum: 5 }
         createdAt: { type: string, format: date-time }
         updatedAt: { type: string, format: date-time }
+        activatedAt: { type: [string, 'null'], format: date-time }
         disclaimerCode: { type: string, const: WELLBEING_SUPPORT_NOT_TREATMENT }
         disclaimer:
           type: string
@@ -1279,7 +1398,10 @@ components:
         kind: { type: string, enum: [CORE, OPTIONAL] }
         targetDomain: { type: string, enum: [DEPRESSIVE_SYMPTOMS, ANXIETY_SYMPTOMS] }
         purposeCode: { type: string, minLength: 1, maxLength: 64 }
-        selectedResource: { $ref: '#/components/schemas/SupportPlanResource' }
+        selectedResource:
+          oneOf:
+            - { $ref: '#/components/schemas/SupportPlanResource' }
+            - { type: 'null' }
         allowedAlternatives:
           type: array
           maxItems: 10
@@ -1395,6 +1517,39 @@ components:
       content:
         application/problem+json:
           schema: { $ref: '#/components/schemas/Problem' }
+    SupportPlanCurrentNotFoundProblem:
+      description: The authenticated user has no ACTIVE or PAUSED SupportPlan (SUPPORT_PLAN_CURRENT_NOT_FOUND)
+      content:
+        application/problem+json:
+          schema: { $ref: '#/components/schemas/Problem' }
+    SupportPlanNotFoundProblem:
+      description: The SupportPlan is absent or not owned by the authenticated user (SUPPORT_PLAN_NOT_FOUND)
+      content:
+        application/problem+json:
+          schema: { $ref: '#/components/schemas/Problem' }
+    SupportPlanChoiceConflictProblem:
+      description: The choice update targets a non-draft, omits a core slot, injects a version, or duplicates a version
+      content:
+        application/problem+json:
+          schema: { $ref: '#/components/schemas/Problem' }
+    SupportPlanActivationConflictProblem:
+      description: The activation command reuses a key differently, targets a non-draft, conflicts with another current plan, or fails current policy or eligibility
+      content:
+        application/problem+json:
+          schema: { $ref: '#/components/schemas/Problem' }
+    SupportPlanVersionProblem:
+      description: If-Match does not equal the current Care-owned SupportPlan version (SUPPORT_PLAN_VERSION_MISMATCH)
+      content:
+        application/problem+json:
+          schema: { $ref: '#/components/schemas/Problem' }
+    SupportPlanCommandResult:
+      description: Updated authoritative plan or the identical persisted command outcome
+      headers:
+        ETag:
+          $ref: '#/components/headers/SupportPlanETag'
+      content:
+        application/json:
+          schema: { $ref: '#/components/schemas/SupportPlan' }
     InsufficientComparableDataProblem:
       description: The selected owned result has no immediately preceding valid result with the same instrument and scoring version
       content:

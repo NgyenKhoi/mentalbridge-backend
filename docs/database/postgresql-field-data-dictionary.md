@@ -500,18 +500,18 @@ assessment answers or scores.
 
 ### `public.support_plan`
 
-Care-owned runtime aggregate for MB-372. Only `DRAFT` is created by this Story;
-the wider status constraint reserves the already approved lifecycle without
-enabling those commands. The partial unique index on `user_id` where status is
-`DRAFT` is the final concurrent single-draft guard.
+Care-owned runtime aggregate for MB-372/MB-373. MB-372 creates `DRAFT`; MB-373
+permits an explicit revalidated transition to `ACTIVE`. Separate partial unique
+indexes on `DRAFT` and on `ACTIVE`/`PAUSED` are the final concurrent guards for
+one draft and one official current plan per owner.
 
 | Field | Purpose |
 | --- | --- |
 | `id` | Immutable UUID exposed by the owner API and used by child snapshots. |
 | `user_id` | Care profile owner; locked during creation and never accepted from a client payload. |
 | `support_evaluation_id` | Exact owner-matched immutable SupportEvaluation v2 that seeded composition. |
-| `status` | Care-owned lifecycle state; MB-372 creates only `DRAFT`. |
-| `version` | Optimistic-lock counter returned in the ETag; incremented only by future explicit Care commands. |
+| `status` | Care-owned lifecycle state; the implemented transition is `DRAFT` to `ACTIVE`. |
+| `version` | Optimistic-lock counter returned in the ETag; incremented by each accepted choice or activation command. |
 | `evaluation_policy_version` / `evaluated_at` | Exact current-compatible Care evaluation policy and original UTC evaluation instant. |
 | `selection_policy_version` | Deterministic Care composition version, fixed to `mb-support-plan-selection-v1`. |
 | `resource_policy_version` / `resources_resolved_at` | Exact Content eligibility policy and UTC resolution instant used before the Care transaction. |
@@ -521,7 +521,8 @@ enabling those commands. The partial unique index on `user_id` where status is
 | `safety_status` / `safety_reason_code` / `safety_policy_version` | Independent Care-owned PHQ-9 item-9 safety evidence without answers or scores. |
 | `safety_guidance_code` / `safety_guidance` | Approved safety copy stored with the draft so reload never depends on AI or another service. |
 | `selected_resource_count` | Number of persisted selected exact versions, constrained to 1..5. |
-| `created_at` / `updated_at` | UTC creation and latest persisted business-change instants; equal for the immutable MB-372 draft. |
+| `activated_at` | UTC instant of explicit activation; null while the plan is a draft. |
+| `created_at` / `updated_at` | UTC creation and latest accepted business-command instants. |
 
 ### `public.support_plan_template_family`
 
@@ -540,19 +541,21 @@ enabling those commands. The partial unique index on `user_id` where status is
 | `id` | Internal immutable slot UUID referenced by alternatives. |
 | `support_plan_id` / `ordinal` | Parent draft and deterministic bounded 1-based display order. |
 | `slot_key` / `slot_kind` / `target_domain` / `purpose_code` | Care policy identity, `CORE`/`OPTIONAL` rule, domain, and non-clinical purpose. |
-| `selected_resource_id` / `selected_content_version` / `selected_publication_id` | Exact Content resource, immutable version, and review publication selected by Care. |
+| `selected_resource_id` / `selected_content_version` / `selected_publication_id` | Exact Content resource, immutable version, and review publication selected by Care; all are null together only when the user removes an `OPTIONAL` slot. |
 | `selected_role` / `selected_category` | Exact eligibility role and reviewed display category; only `PRIMARY` can satisfy a core query. |
 | `selected_title` / `selected_summary` / `selected_external_url` | Reviewed display snapshot; no raw assessment or journal content is stored. |
 
-The unique selected-resource key prevents the same exact version from filling
-multiple composed slots. The 1..5 ordinal check matches the aggregate bound.
+The complete-tuple constraint prevents partial snapshots. Core slots remain
+selected by application policy. The unique selected-resource key prevents the
+same exact version from filling multiple composed slots. The 1..5 ordinal check
+matches the aggregate bound.
 
 ### `public.support_plan_slot_alternative`
 
 | Field | Purpose |
 | --- | --- |
 | `id` | Internal immutable alternative UUID. |
-| `support_plan_slot_id` / `ordinal` | Parent slot and deterministic server-admitted order, bounded to ten. |
+| `support_plan_slot_id` / `ordinal` | Parent slot and deterministic server-admitted order, bounded to eleven so the previous selected candidate can remain admitted after a swap. |
 | `resource_id` / `content_version` / `publication_id` | Exact eligible Content version and review publication retained for later user choice. |
 | `eligibility_role` / `category` | Exact allowed role and reviewed display category. |
 | `title` / `summary` / `external_url` | Reviewed display snapshot returned on reload; not AI-generated content. |
@@ -565,6 +568,37 @@ multiple composed slots. The 1..5 ordinal check matches the aggregate bound.
 | `request_hash` | One-way SHA-256 of the exact SupportEvaluation reference; no answers, score, or bearer token is recoverable. |
 | `support_plan_id` | Owner-matched stored draft returned for identical retries and concurrent aliases. |
 | `created_at` | UTC instant at which Care accepted the alias. |
+
+### `public.support_plan_command`
+
+Owner-scoped append-only audit and replay record for MB-373 activation. Choice
+replacement uses PUT semantics plus optimistic concurrency and does not create
+a request-deduplication record. This table stores no bearer token, assessment
+answer, journal content, or client-authored display text.
+
+| Field | Purpose |
+| --- | --- |
+| `user_id` / `idempotency_key` | Owner-scoped printable retry namespace and primary key. |
+| `command_type` / `request_hash` | `ACTIVATE` and the SHA-256 fingerprint of plan/version for exact retry matching. |
+| `support_plan_id` / `expected_version` | Owner-matched target and optimistic version explicitly acted on by the user. |
+| `resulting_version` / `resulting_status` / `resulting_updated_at` | Exact replay outcome; resulting version is the expected version plus one. |
+| `evaluation_policy_version` | Current compatible Care evaluation policy revalidated immediately before the local command transaction. |
+| `entitlement_package` / `entitlement_source` / `entitlement_policy_version` / `entitlement_version` / `entitlement_decided_at` | Fresh authoritative paid-entitlement evidence used by the command. |
+| `resource_policy_version` / `resources_resolved_at` | Exact Content eligibility policy and resolution instant used for final exact-version validation. |
+| `created_at` | UTC instant the command and its outcome committed. |
+
+### `public.support_plan_command_selection`
+
+Ordered exact final selection set committed by activation. A missing optional
+slot represents a choice removed before activation; the plan snapshot preserves
+the authoritative state.
+
+| Field | Purpose |
+| --- | --- |
+| `user_id` / `idempotency_key` | Physical parent key to `support_plan_command`. |
+| `ordinal` | Stable 1-based intent order, bounded to the plan's 1..5 selected-resource limit. |
+| `slot_key` | Exact existing Care-owned slot selected by the user; unique within the command. |
+| `resource_id` / `content_version` | Exact admitted Content version selected for that slot; unique within the command. |
 
 ### `care.intervention_plan`
 

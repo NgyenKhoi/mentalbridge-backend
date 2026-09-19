@@ -5,7 +5,7 @@
 | Field | Value |
 | --- | --- |
 | Scope decision | `MB-SCOPE-V2-001` |
-| Status | `PRODUCT POLICY APPROVED; INITIAL DRAFT RUNTIME IMPLEMENTED BY MB-372` |
+| Status | `PRODUCT POLICY APPROVED; DRAFT AND EXPLICIT ACTIVATION IMPLEMENTED BY MB-372/MB-373` |
 | Effective decision date | 2026-09-15 |
 | Owner | Care |
 | Resource eligibility owner | Content/Notification |
@@ -89,10 +89,10 @@ stable `AVAILABLE`/`PARTIAL`/`EMPTY`/`STALE`/`UNAVAILABLE` outcomes, local
 synchronous safety, owner-only history, and approved-copy fallback when AI is
 unavailable.
 
-SupportPlan lifecycle beyond the MB-372 initial draft, `PlanChangeRequest`,
-activity tracking, reminders, and summary reuse remain separate runtime gates
-requiring compatible lifecycle contracts, append-only migrations, exact
-eligibility revalidation, frontend confirmation flows, and focused
+SupportPlan lifecycle beyond MB-373 activation, `PlanChangeRequest`, activity
+tracking, reminders, and summary reuse remain separate runtime gates requiring
+compatible lifecycle contracts, append-only migrations, exact eligibility
+revalidation, frontend confirmation flows, and focused
 authorization/concurrency/failure tests.
 
 ## MB-372 initial draft runtime
@@ -119,3 +119,36 @@ replacement, activity tracking, reminders, or `PlanChangeRequest` handling.
   the same single current draft.
 - AI is absent from proposal composition and persistence. It cannot select,
   rerank, mutate, or override any draft fact.
+
+## MB-373 choice and activation runtime
+
+MB-373 implements only bounded user choice inside the current draft and the
+normal explicit activation transition. It does not implement pause/resume,
+completion, replacement, activities, reminders, or `PlanChangeRequest`.
+
+- Choice requests name existing slot IDs and exact resource versions already
+  admitted into those slots. A core slot must remain selected; an optional slot
+  may be removed. Injected, duplicate, cross-slot, or stale choices fail without
+  mutation.
+- Choice replacement is a complete desired-state PUT guarded by `If-Match`.
+  Repeating the current complete selection is a no-op; no separate request
+  idempotency record is needed. A changed selection revalidates current paid
+  entitlement, evaluation/template compatibility, and the requested exact
+  versions before the local write.
+- Immediately before activation, Care rechecks current authoritative
+  `PLUS`/`PREMIUM` entitlement, the owned current-compatible SupportEvaluation
+  and template composition, and every selected exact Content version.
+  Dependency uncertainty fails closed.
+- Activation supplies `If-Match` and an owner-scoped `Idempotency-Key`. Care
+  records the exact final selection, expected/resulting versions, outcome, and
+  revalidation provenance so uncertain activation retries replay the same result.
+- Activation accepts no safety acknowledgement field. Approved safety guidance
+  remains before ordinary plan controls, and a safety-positive user uses the
+  same explicit activation command.
+- The `DRAFT` to `ACTIVE` transition, idempotency outcome, and minimized
+  `care.support-plan.activated` outbox fact commit atomically. Owner locking and
+  a partial unique current-plan index enforce exactly one `ACTIVE`/`PAUSED`
+  official plan under concurrent requests.
+- `GET /api/v1/support-plans/current` returns only the authoritative official
+  current plan. The frontend reloads it after activation instead of deriving an
+  active object from local state.
