@@ -1,6 +1,6 @@
 # Care Service
 
-Care owns user profiles, independent `PRIVACY_POLICY` and `AI_PROCESSING` consent decisions, questionnaires, assessment submissions and results, deterministic safety/support policy, SupportEvaluation, future system-proposed SupportPlan lifecycle, and follow-up. Story 1103 exposes immutable coarse v1 evaluation. MB-335 adds `/api/v2/support-evaluations` with exact PHQ-9/GAD-7 provenance, two independent domain contributions, and separate PHQ-9 item-9 safety evidence. It never creates a global severity and does not modify v1 rows, APIs, or events. Resource Eligibility v1 adds a consumer-owned Content REST client for later proposal/activation use; it does not implement SupportPlan lifecycle. Safety-critical scoring and evaluation remain local and do not depend on Eureka, OpenFeign, Kafka, Redis, AI, Content, or notification availability.
+Care owns user profiles, independent `PRIVACY_POLICY` and `AI_PROCESSING` consent decisions, questionnaires, assessment submissions and results, deterministic safety/support policy, SupportEvaluation, the single official SupportPlan, and follow-up. Story 1103 exposes immutable coarse v1 evaluation. MB-335 adds `/api/v2/support-evaluations` with exact PHQ-9/GAD-7 provenance, two independent domain contributions, and separate PHQ-9 item-9 safety evidence. MB-372 adds only paid deterministic draft creation and current-draft reload; later lifecycle commands remain disabled. It never creates a global severity and does not modify v1 rows, APIs, or events. Safety-critical scoring and evaluation remain local and do not depend on Eureka, OpenFeign, Kafka, Redis, AI, Content, or notification availability.
 
 ## MB-88 foundation
 
@@ -50,6 +50,11 @@ The Care Liquibase changelog owns:
 | `support_evaluation_v2_domain` | Two immutable instrument/domain/level/pathway/reason snapshots used for independent composition |
 | `support_evaluation_v2_safety` | Independent PHQ-9 item-9 status and safety-policy snapshot without a raw answer |
 | `support_evaluation_v2_request` | Per-user v2 idempotency aliases; separate namespace from v1 keys |
+| `support_plan` | One Care-owned paid proposal snapshot with exact source, entitlement, rationale, safety, and optimistic version provenance |
+| `support_plan_template_family` | Ordered immutable domain template families composed into the draft |
+| `support_plan_slot` | Ordered bounded slots with each deterministic selected exact resource snapshot |
+| `support_plan_slot_alternative` | Server-admitted exact alternatives for a stored slot; not client-authored choices |
+| `support_plan_request` | Per-user idempotency aliases that replay the same current draft |
 | `outbox_event` | Minimal integration fact persisted in the aggregate transaction |
 
 The reference-data migrations publish immutable English PHQ-9, current controlled-Capstone Vietnamese PHQ-9 v2, and Vietnamese GAD-7 definitions. PHQ-9 v1 remains readable as a retired immutable definition so historical results reopen against their original wording and bands. GAD-7 contains seven questions, the approved four-choice self-administered mapping, standard `0..21` bands, explicit non-applicable safety semantics, and auditable source provenance. These publications are approved only for controlled local/demo Capstone use and do not represent production clinical/domain approval.
@@ -72,6 +77,9 @@ Assessment answer text must never be copied into outbox payloads, logs, errors, 
 | `CONTENT_RESOURCE_ELIGIBILITY_CIRCUIT_FAILURE_RATE` | No | Percentage of dependency failures that opens the breaker | `50` |
 | `CONTENT_RESOURCE_ELIGIBILITY_CIRCUIT_OPEN_DURATION` | No | Bounded open interval before half-open probes | `PT10S` |
 | `CONTENT_RESOURCE_ELIGIBILITY_CIRCUIT_HALF_OPEN_CALLS` | No | Permitted half-open probes | `2` |
+| `CONSULTATION_ENTITLEMENT_BASE_URL` | Local/test only | Optional direct Consultation URL; leave empty outside tests so OpenFeign resolves `consultation-service` through Eureka | `http://localhost:8082` |
+| `CONSULTATION_ENTITLEMENT_CONNECT_TIMEOUT` | No | Bounded TCP connection deadline for the authoritative current entitlement read | `PT0.5S` |
+| `CONSULTATION_ENTITLEMENT_READ_TIMEOUT` | No | Total response-read deadline for current entitlement | `PT2S` |
 | `CARE_DB_URL` | Yes | Care-owned PostgreSQL JDBC URL; production uses a TLS-capable connection | `jdbc:postgresql://localhost:5432/mentalbridge_care` |
 | `CARE_DB_USERNAME` | Yes | Care-owned PostgreSQL login | `mentalbridge_care` |
 | `CARE_DB_PASSWORD` | Yes | Care PostgreSQL password injected outside source control | `replace-with-a-local-secret` |

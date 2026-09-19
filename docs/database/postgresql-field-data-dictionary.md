@@ -1,8 +1,8 @@
 # PostgreSQL Field Data Dictionary
 
-This document explains the business purpose of conceptual PostgreSQL fields. [`001_initial_schema.sql`](../../database/postgresql/001_initial_schema.sql) is a non-executable whole-system model and must not provision an environment. Names such as `consultation.appointment` below identify a logical owner inside that model; the physical table will be `public.appointment` in the separate `mentalbridge_consultation` database. Service-owned migration histories become executable sources of truth only when modules are implemented: Liquibase for Spring services and `node-pg-migrate` for Node.js services. It is written for developers and reviewers; descriptions are intentionally kept out of executable migrations.
+This document explains the business purpose of PostgreSQL fields. The [canonical PostgreSQL logical schema](../domain-model/relational/postgresql-logical-schema.sql) is a non-executable documentation model and must never provision or migrate an environment. Names such as `consultation.availability_slot` identify a visual owner namespace; the physical table is `public.availability_slot` in the separate `mentalbridge_consultation` database. Service-owned migration histories are the executable runtime sources of truth: Liquibase for Spring services and the current SQL migration mechanism for Node.js services. This dictionary is written for developers and reviewers; descriptions are intentionally kept out of executable migrations.
 
-When service-owned migrations are introduced, update this dictionary in the same change. A field description must explain why the value is persisted, whether it is authoritative, derived, external, or sensitive, and how nullability, time, versioning, or idempotency affects behavior. Content/Notification's executable history starts at `content-notification-service/migrations/1_initial_schema.sql`; migration 2 removes the obsolete hotline table, the separate Review 1 migrations insert controlled demo content and its initial item-level eligibility matrix, and migration 6 adds immutable Resource Eligibility v1 provenance. The field descriptions under its conceptual owner below describe the resulting physical `public` tables.
+When service-owned migrations are introduced, update this dictionary and the canonical logical model in the same change whenever persisted domain structure materially changes. A field description must explain why the value is persisted, whether it is authoritative, derived, external, or sensitive, and how nullability, time, versioning, or idempotency affects behavior. Content/Notification's executable history starts at `content-notification-service/migrations/1_initial_schema.sql`; migration 2 removes the obsolete hotline table, the separate Review 1 migrations insert controlled demo content and its initial item-level eligibility matrix, and migration 6 adds immutable Resource Eligibility v1 provenance. The field descriptions under its conceptual owner below describe the resulting physical `public` tables.
 
 ## Database `mentalbridge_identity` (schema `public`)
 
@@ -498,6 +498,74 @@ assessment answers or scores.
 | `support_guide_id` | Owner-matched immutable replay result. |
 | `created_at` | UTC instant the key was accepted. |
 
+### `public.support_plan`
+
+Care-owned runtime aggregate for MB-372. Only `DRAFT` is created by this Story;
+the wider status constraint reserves the already approved lifecycle without
+enabling those commands. The partial unique index on `user_id` where status is
+`DRAFT` is the final concurrent single-draft guard.
+
+| Field | Purpose |
+| --- | --- |
+| `id` | Immutable UUID exposed by the owner API and used by child snapshots. |
+| `user_id` | Care profile owner; locked during creation and never accepted from a client payload. |
+| `support_evaluation_id` | Exact owner-matched immutable SupportEvaluation v2 that seeded composition. |
+| `status` | Care-owned lifecycle state; MB-372 creates only `DRAFT`. |
+| `version` | Optimistic-lock counter returned in the ETag; incremented only by future explicit Care commands. |
+| `evaluation_policy_version` / `evaluated_at` | Exact current-compatible Care evaluation policy and original UTC evaluation instant. |
+| `selection_policy_version` | Deterministic Care composition version, fixed to `mb-support-plan-selection-v1`. |
+| `resource_policy_version` / `resources_resolved_at` | Exact Content eligibility policy and UTC resolution instant used before the Care transaction. |
+| `entitlement_package` / `entitlement_source` | Authoritative `PLUS`/`PREMIUM` and `DEMO`/`PAID` provenance returned by Consultation; never inferred from JWT/client state. |
+| `entitlement_policy_version` / `entitlement_version` / `entitlement_decided_at` | Exact Consultation read-model version and UTC decision evidence that admitted creation. |
+| `rationale_code` / `rationale_text` | Stable general-wellbeing explanation snapshot; not diagnosis, treatment, or AI reasoning. |
+| `safety_status` / `safety_reason_code` / `safety_policy_version` | Independent Care-owned PHQ-9 item-9 safety evidence without answers or scores. |
+| `safety_guidance_code` / `safety_guidance` | Approved safety copy stored with the draft so reload never depends on AI or another service. |
+| `selected_resource_count` | Number of persisted selected exact versions, constrained to 1..5. |
+| `created_at` / `updated_at` | UTC creation and latest persisted business-change instants; equal for the immutable MB-372 draft. |
+
+### `public.support_plan_template_family`
+
+| Field | Purpose |
+| --- | --- |
+| `id` | Internal immutable row UUID. |
+| `support_plan_id` / `ordinal` | Parent draft and stable 1-based composition order, bounded to two domains. |
+| `family` | Approved immutable family selected deterministically from one domain-local instrument band. |
+| `template_version` | Exact immutable Care template version; MB-372 publishes version 1 only. |
+| `target_domain` | `DEPRESSIVE_SYMPTOMS` or `ANXIETY_SYMPTOMS`; never a combined severity. |
+
+### `public.support_plan_slot`
+
+| Field | Purpose |
+| --- | --- |
+| `id` | Internal immutable slot UUID referenced by alternatives. |
+| `support_plan_id` / `ordinal` | Parent draft and deterministic bounded 1-based display order. |
+| `slot_key` / `slot_kind` / `target_domain` / `purpose_code` | Care policy identity, `CORE`/`OPTIONAL` rule, domain, and non-clinical purpose. |
+| `selected_resource_id` / `selected_content_version` / `selected_publication_id` | Exact Content resource, immutable version, and review publication selected by Care. |
+| `selected_role` / `selected_category` | Exact eligibility role and reviewed display category; only `PRIMARY` can satisfy a core query. |
+| `selected_title` / `selected_summary` / `selected_external_url` | Reviewed display snapshot; no raw assessment or journal content is stored. |
+
+The unique selected-resource key prevents the same exact version from filling
+multiple composed slots. The 1..5 ordinal check matches the aggregate bound.
+
+### `public.support_plan_slot_alternative`
+
+| Field | Purpose |
+| --- | --- |
+| `id` | Internal immutable alternative UUID. |
+| `support_plan_slot_id` / `ordinal` | Parent slot and deterministic server-admitted order, bounded to ten. |
+| `resource_id` / `content_version` / `publication_id` | Exact eligible Content version and review publication retained for later user choice. |
+| `eligibility_role` / `category` | Exact allowed role and reviewed display category. |
+| `title` / `summary` / `external_url` | Reviewed display snapshot returned on reload; not AI-generated content. |
+
+### `public.support_plan_request`
+
+| Field | Purpose |
+| --- | --- |
+| `user_id` / `idempotency_key` | Owner-scoped printable retry namespace. |
+| `request_hash` | One-way SHA-256 of the exact SupportEvaluation reference; no answers, score, or bearer token is recoverable. |
+| `support_plan_id` | Owner-matched stored draft returned for identical retries and concurrent aliases. |
+| `created_at` | UTC instant at which Care accepted the alias. |
+
 ### `care.intervention_plan`
 
 Versioned set of platform support actions generated for one support classification.
@@ -507,8 +575,9 @@ SupportPlan schema. ADR 0013 freezes immutable templates, composition,
 eligibility, and lifecycle; ADR 0017 limits the durable plan to
 `PLUS`/`PREMIUM`, confirms one official Care-owned current plan, and routes
 specialist proposals through `PlanChangeRequest`. The legacy shape cannot
-represent those requirements and must not be promoted into a migration. A
-later append-only Care schema follows [SupportPlan policy v2](../policies/support-plan-policy-v2.md).
+represent those requirements and was not promoted into a migration. MB-372
+instead adds the normalized `public.support_plan*` schema above for initial
+draft creation and reload under [SupportPlan policy v2](../policies/support-plan-policy-v2.md).
 
 | Field | Purpose |
 | --- | --- |

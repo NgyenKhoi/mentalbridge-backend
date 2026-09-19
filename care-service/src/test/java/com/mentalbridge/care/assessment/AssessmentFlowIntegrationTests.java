@@ -64,6 +64,8 @@ class AssessmentFlowIntegrationTests extends CareTestProperties {
 			"POST /api/v1/support-guides",
 			"GET /api/v1/support-guides",
 			"GET /api/v1/support-guides/{supportGuideId}",
+			"POST /api/v1/support-plans",
+			"GET /api/v1/support-plans/current-draft",
 			"POST /api/v1/anonymous-assessment-sessions/{sessionId}/assessments",
 			"GET /api/v1/anonymous-assessment-sessions/{sessionId}/assessments/{assessmentId}");
 

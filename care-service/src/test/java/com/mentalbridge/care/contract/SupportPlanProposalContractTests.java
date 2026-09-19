@@ -18,7 +18,6 @@ import io.swagger.v3.parser.core.models.SwaggerParseResult;
 class SupportPlanProposalContractTests {
 
 	private static final Set<String> REQUIRED_OPERATIONS = Set.of(
-			"POST /api/v1/support-plans",
 			"GET /api/v1/support-plans/{supportPlanId}",
 			"DELETE /api/v1/support-plans/{supportPlanId}",
 			"PUT /api/v1/support-plans/{supportPlanId}/choices",
@@ -29,7 +28,7 @@ class SupportPlanProposalContractTests {
 			"POST /api/v1/support-plans/{supportPlanId}/replace");
 
 	@Test
-	void proposalIsValidPlannedAuthenticatedAndExplicitAboutRetryBoundaries() {
+	void remainingLifecycleProposalIsValidPlannedAuthenticatedAndExplicitAboutRetryBoundaries() {
 		SwaggerParseResult result = parseProposal();
 		assertThat(result.getMessages()).isEmpty();
 		assertThat(result.getOpenAPI()).isNotNull();
@@ -55,9 +54,9 @@ class SupportPlanProposalContractTests {
 	}
 
 	@Test
-	void initialProposalRequestContainsOnlyTheOwnedEvaluationReference() {
-		OpenAPI openApi = parseProposal().getOpenAPI();
-		Schema<?> request = openApi.getComponents().getSchemas().get("ProposeSupportPlanRequest");
+	void implementedInitialDraftRequestContainsOnlyTheOwnedEvaluationReference() {
+		OpenAPI openApi = parseImplementedContract().getOpenAPI();
+		Schema<?> request = openApi.getComponents().getSchemas().get("ProposeSupportPlanDraftRequest");
 
 		assertThat(request.getRequired()).containsExactly("sourceSupportEvaluationId");
 		assertThat(request.getProperties()).containsOnlyKeys("sourceSupportEvaluationId")
@@ -116,6 +115,14 @@ class SupportPlanProposalContractTests {
 
 	private SwaggerParseResult parseProposal() {
 		Path contract = Path.of("..", "contracts", "proposals", "care-support-plan-v1.yaml").toAbsolutePath();
+		ParseOptions options = new ParseOptions();
+		options.setResolve(true);
+		options.setResolveFully(true);
+		return new OpenAPIV3Parser().readLocation(contract.toUri().toString(), null, options);
+	}
+
+	private SwaggerParseResult parseImplementedContract() {
+		Path contract = Path.of("..", "contracts", "openapi", "care-service-v1.yaml").toAbsolutePath();
 		ParseOptions options = new ParseOptions();
 		options.setResolve(true);
 		options.setResolveFully(true);

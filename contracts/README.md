@@ -29,6 +29,12 @@ all-tier one-time guide at `/api/v1/support-guides`; it is not a SupportPlan
 lifecycle contract. `content-notification-service.yaml` supplies the exact
 eligible resource's immutable reviewed display snapshot alongside publication
 provenance so Care can persist stable history.
+`care-service-v1.yaml` also exposes the implemented MB-372 initial-draft
+surface at `/api/v1/support-plans` and
+`/api/v1/support-plans/current-draft`. It accepts only an owned
+SupportEvaluation v2 reference and returns the persisted Care-owned snapshot;
+it does not expose activation, arbitrary resources, a client package, or any
+later lifecycle operation.
 
 ## Required paired changes
 

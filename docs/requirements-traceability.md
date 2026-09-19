@@ -97,6 +97,18 @@ Agents must not invent these behaviors independently. Resolve the relevant rule 
 
 ## Approved scope changes
 
+- 2026-09-19: MB-372 implements the first Care-owned SupportPlan runtime slice:
+  an authenticated `PLUS`/`PREMIUM` user may request one bounded deterministic
+  `DRAFT` from an owned current-policy SupportEvaluation v2 and exact Content
+  eligibility. Consultation remains entitlement authority; Care forwards the
+  bearer, fails closed for `FREE`, stale or uncertain facts, and opens its
+  local transaction only after dependency resolution. The stored snapshot
+  includes rationale, safety, entitlement, policy/template, exact resource and
+  immutable display provenance; owner-only reload performs no recomputation.
+  Idempotency and the Care profile lock converge duplicate/concurrent requests
+  on one current draft. AI is absent. Choice mutation, activation,
+  replacement, activity, reminders, and `PlanChangeRequest` remain deferred.
+  See [MB-372 evidence](story-mb-372-support-plan-draft-evidence.md).
 - 2026-09-17: MB-511 implements the registered-user Support Guide across Care,
   Content, and the web BFF/UI. Care deterministically derives an immutable
   `mb-support-guide-capstone-v1` result from exact v2 PHQ-9/GAD-7 evidence,

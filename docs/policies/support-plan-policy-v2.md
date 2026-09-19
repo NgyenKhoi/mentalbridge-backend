@@ -5,7 +5,7 @@
 | Field | Value |
 | --- | --- |
 | Scope decision | `MB-SCOPE-V2-001` |
-| Status | `PRODUCT POLICY APPROVED; RUNTIME NOT IMPLEMENTED` |
+| Status | `PRODUCT POLICY APPROVED; INITIAL DRAFT RUNTIME IMPLEMENTED BY MB-372` |
 | Effective decision date | 2026-09-15 |
 | Owner | Care |
 | Resource eligibility owner | Content/Notification |
@@ -89,8 +89,33 @@ stable `AVAILABLE`/`PARTIAL`/`EMPTY`/`STALE`/`UNAVAILABLE` outcomes, local
 synchronous safety, owner-only history, and approved-copy fallback when AI is
 unavailable.
 
-SupportPlan, `PlanChangeRequest`, activity tracking, reminders, and summary
-reuse remain separate runtime gates requiring compatible entitlement and
-lifecycle contracts, append-only migrations, exact eligibility revalidation,
-frontend confirmation flows, and focused authorization/concurrency/failure
-tests.
+SupportPlan lifecycle beyond the MB-372 initial draft, `PlanChangeRequest`,
+activity tracking, reminders, and summary reuse remain separate runtime gates
+requiring compatible lifecycle contracts, append-only migrations, exact
+eligibility revalidation, frontend confirmation flows, and focused
+authorization/concurrency/failure tests.
+
+## MB-372 initial draft runtime
+
+MB-372 enables only deterministic creation and reload of the current `DRAFT`.
+It does not enable choice mutation, activation, pause/resume, completion,
+replacement, activity tracking, reminders, or `PlanChangeRequest` handling.
+
+- A new draft requires a current authoritative `PLUS` or `PREMIUM` decision
+  from Consultation. `FREE`, entitlement uncertainty, or a client-supplied
+  package never creates a draft.
+- “Fresh SupportEvaluation” means an owned evaluation version 2 whose exact
+  policy remains the currently published compatible Care policy and whose
+  immutable assessment evidence remains valid. MB-372 does not invent a
+  time-based expiry window.
+- Care resolves all exact resource versions before its local write transaction.
+  Any stale/withdrawn version, missing required core eligibility, malformed
+  response, or provider uncertainty fails closed without creating a draft.
+- The first successful proposal stores the exact entitlement, evaluation,
+  template, eligibility, resource-copy, rationale, and safety snapshot. Reload
+  returns that same snapshot without silently recomputing it.
+- Requests with the same idempotency key replay the stored outcome. Concurrent
+  requests for one user serialize on the Care-owned profile boundary and return
+  the same single current draft.
+- AI is absent from proposal composition and persistence. It cannot select,
+  rerank, mutate, or override any draft fact.

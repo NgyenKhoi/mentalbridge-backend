@@ -27,6 +27,7 @@ tags:
   - name: Questionnaire
   - name: Assessment
   - name: Support evaluation
+  - name: SupportPlan draft
   - name: Anonymous assessment
 paths:
   /api/v1/profile:
@@ -429,6 +430,72 @@ paths:
         '401': { $ref: '#/components/responses/UnauthorizedProblem' }
         '403': { $ref: '#/components/responses/ForbiddenProblem' }
         '404': { $ref: '#/components/responses/NotFoundProblem' }
+  /api/v1/support-plans:
+    x-mentalbridge-status: implemented
+    post:
+      tags: [SupportPlan draft]
+      operationId: proposeOwnSupportPlanDraft
+      summary: Create or replay one deterministic paid SupportPlan draft
+      description: |
+        The authenticated USER supplies only one owned SupportEvaluation v2 reference.
+        Care resolves the current Consultation-owned entitlement, revalidates current
+        SupportEvaluation policy compatibility, resolves exact Content-owned resource
+        versions, and persists at most one DRAFT. FREE entitlement, stale or ineligible
+        source facts, and dependency uncertainty create no plan. AI and clients do not
+        select resources, template families, eligibility, or safety behavior.
+      security:
+        - bearerAuth: []
+      parameters:
+        - $ref: '#/components/parameters/IdempotencyKey'
+        - $ref: '#/components/parameters/CorrelationId'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: '#/components/schemas/ProposeSupportPlanDraftRequest' }
+      responses:
+        '201':
+          description: The newly created draft, the existing current draft, or an identical idempotent replay
+          headers:
+            Location:
+              schema: { type: string, format: uri-reference }
+            ETag:
+              $ref: '#/components/headers/SupportPlanETag'
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/SupportPlanDraft' }
+        '400': { $ref: '#/components/responses/ValidationProblem' }
+        '401': { $ref: '#/components/responses/UnauthorizedProblem' }
+        '403': { $ref: '#/components/responses/SupportPlanEntitlementProblem' }
+        '404': { $ref: '#/components/responses/NotFoundProblem' }
+        '409': { $ref: '#/components/responses/SupportPlanEligibilityProblem' }
+        '503': { $ref: '#/components/responses/SupportPlanDependencyProblem' }
+  /api/v1/support-plans/current-draft:
+    x-mentalbridge-status: implemented
+    get:
+      tags: [SupportPlan draft]
+      operationId: getOwnCurrentSupportPlanDraft
+      summary: Reload the authenticated user's same current SupportPlan draft
+      description: |
+        Returns the persisted draft snapshot without re-running entitlement or
+        resource-provider decisions. The response retains the exact rationale,
+        choices, source versions, and safety copy used when Care created it.
+      security:
+        - bearerAuth: []
+      parameters:
+        - $ref: '#/components/parameters/CorrelationId'
+      responses:
+        '200':
+          description: Current persisted draft
+          headers:
+            ETag:
+              $ref: '#/components/headers/SupportPlanETag'
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/SupportPlanDraft' }
+        '401': { $ref: '#/components/responses/UnauthorizedProblem' }
+        '403': { $ref: '#/components/responses/ForbiddenProblem' }
+        '404': { $ref: '#/components/responses/SupportPlanDraftNotFoundProblem' }
   /api/v1/anonymous-assessment-sessions:
     x-mentalbridge-status: implemented
     post:
@@ -511,6 +578,10 @@ paths:
         '410': { $ref: '#/components/responses/ExpiredAnonymousSessionProblem' }
         '429': { $ref: '#/components/responses/RateLimitProblem' }
 components:
+  headers:
+    SupportPlanETag:
+      description: Strong ETag containing the Care-owned draft version
+      schema: { type: string, pattern: '^"[0-9]+"$' }
   examples:
     SelfGuidedSupportEvaluation:
       summary: Minimal and mild screening bands route to self-guided support
@@ -1111,6 +1182,121 @@ components:
         sessionId: { type: string, format: uuid }
         sessionToken: { type: string, minLength: 43, maxLength: 512, readOnly: true }
         expiresAt: { type: string, format: date-time }
+    ProposeSupportPlanDraftRequest:
+      type: object
+      additionalProperties: false
+      required: [sourceSupportEvaluationId]
+      properties:
+        sourceSupportEvaluationId:
+          type: string
+          format: uuid
+          description: One immutable SupportEvaluation v2 owned by the authenticated user
+    SupportPlanDraft:
+      type: object
+      additionalProperties: false
+      required: [supportPlanId, status, version, source, entitlement, rationale, safety, templateFamilies, slots, selectedResourceCount, createdAt, updatedAt, disclaimerCode, disclaimer]
+      properties:
+        supportPlanId: { type: string, format: uuid }
+        status: { type: string, const: DRAFT }
+        version: { type: integer, minimum: 0 }
+        source: { $ref: '#/components/schemas/SupportPlanSource' }
+        entitlement: { $ref: '#/components/schemas/SupportPlanEntitlementEvidence' }
+        rationale: { $ref: '#/components/schemas/SupportPlanRationale' }
+        safety: { $ref: '#/components/schemas/SupportPlanSafety' }
+        templateFamilies:
+          type: array
+          minItems: 1
+          maxItems: 2
+          items: { $ref: '#/components/schemas/SupportPlanTemplateFamily' }
+        slots:
+          type: array
+          minItems: 1
+          maxItems: 5
+          items: { $ref: '#/components/schemas/SupportPlanSlot' }
+        selectedResourceCount: { type: integer, minimum: 1, maximum: 5 }
+        createdAt: { type: string, format: date-time }
+        updatedAt: { type: string, format: date-time }
+        disclaimerCode: { type: string, const: WELLBEING_SUPPORT_NOT_TREATMENT }
+        disclaimer:
+          type: string
+          minLength: 1
+          maxLength: 1000
+    SupportPlanSource:
+      type: object
+      additionalProperties: false
+      required: [supportEvaluationId, evaluationVersion, evaluationPolicyVersion, evaluatedAt, selectionPolicyVersion, resourceEligibilityPolicyVersion, resourcesResolvedAt]
+      properties:
+        supportEvaluationId: { type: string, format: uuid }
+        evaluationVersion: { type: integer, const: 2 }
+        evaluationPolicyVersion: { type: string, const: mb-support-routing-capstone-v2 }
+        evaluatedAt: { type: string, format: date-time }
+        selectionPolicyVersion: { type: string, const: mb-support-plan-selection-v1 }
+        resourceEligibilityPolicyVersion: { type: string, const: content-eligibility-v1 }
+        resourcesResolvedAt: { type: string, format: date-time }
+    SupportPlanEntitlementEvidence:
+      type: object
+      additionalProperties: false
+      required: [packageCode, source, policyVersion, version, decidedAt]
+      properties:
+        packageCode: { type: string, enum: [PLUS, PREMIUM] }
+        source: { type: string, enum: [DEMO, PAID] }
+        policyVersion: { type: string, const: service-entitlement-v1 }
+        version: { type: integer, minimum: 0 }
+        decidedAt: { type: string, format: date-time }
+    SupportPlanRationale:
+      type: object
+      additionalProperties: false
+      required: [code, text]
+      properties:
+        code: { type: string, const: DOMAIN_AWARE_WELLBEING_SUPPORT }
+        text: { type: string, minLength: 1, maxLength: 2048 }
+    SupportPlanSafety:
+      type: object
+      additionalProperties: false
+      required: [status, reasonCode, policyVersion, guidanceCode, guidance]
+      properties:
+        status: { $ref: '#/components/schemas/SafetyStatus' }
+        reasonCode: { type: string, minLength: 1, maxLength: 64 }
+        policyVersion: { type: string, minLength: 1, maxLength: 64 }
+        guidanceCode: { type: string, enum: [REVIEW_SAFETY_GUIDANCE, STANDARD_SAFETY_REMINDER] }
+        guidance: { type: string, minLength: 1, maxLength: 2048 }
+    SupportPlanTemplateFamily:
+      type: object
+      additionalProperties: false
+      required: [family, templateVersion, targetDomain]
+      properties:
+        family:
+          type: string
+          enum: [DEPRESSIVE_MAINTENANCE, DEPRESSIVE_SELF_GUIDED, DEPRESSIVE_PROFESSIONAL_ADJUNCT, ANXIETY_MAINTENANCE, ANXIETY_SELF_GUIDED, ANXIETY_PROFESSIONAL_ADJUNCT]
+        templateVersion: { type: integer, const: 1 }
+        targetDomain: { type: string, enum: [DEPRESSIVE_SYMPTOMS, ANXIETY_SYMPTOMS] }
+    SupportPlanSlot:
+      type: object
+      additionalProperties: false
+      required: [slotId, kind, targetDomain, purposeCode, selectedResource, allowedAlternatives]
+      properties:
+        slotId: { type: string, minLength: 1, maxLength: 64 }
+        kind: { type: string, enum: [CORE, OPTIONAL] }
+        targetDomain: { type: string, enum: [DEPRESSIVE_SYMPTOMS, ANXIETY_SYMPTOMS] }
+        purposeCode: { type: string, minLength: 1, maxLength: 64 }
+        selectedResource: { $ref: '#/components/schemas/SupportPlanResource' }
+        allowedAlternatives:
+          type: array
+          maxItems: 10
+          items: { $ref: '#/components/schemas/SupportPlanResource' }
+    SupportPlanResource:
+      type: object
+      additionalProperties: false
+      required: [resourceId, contentVersion, publicationId, role, category, title, summary]
+      properties:
+        resourceId: { type: string, format: uuid }
+        contentVersion: { type: string, pattern: '^[0-9]+$' }
+        publicationId: { type: string, format: uuid }
+        role: { type: string, enum: [PRIMARY, ADJUNCT] }
+        category: { type: string, enum: [BREATHING, MEDITATION, ARTICLE, VIDEO, JOURNALING, COMMUNITY] }
+        title: { type: string, minLength: 1, maxLength: 255 }
+        summary: { type: string, minLength: 1, maxLength: 4096 }
+        externalUrl: { type: [string, 'null'], format: uri, maxLength: 2048 }
     Problem:
       type: object
       additionalProperties: true
@@ -1186,6 +1372,26 @@ components:
             correlationId: 8fb5720a-53ab-40db-9cf4-f5cfabbdaf65
     ConflictProblem:
       description: Request conflicts with stored state (IDEMPOTENCY_KEY_REUSED, QUESTIONNAIRE_VERSION_UNAVAILABLE, or SUPPORT_EVIDENCE_INCOMPATIBLE)
+      content:
+        application/problem+json:
+          schema: { $ref: '#/components/schemas/Problem' }
+    SupportPlanEntitlementProblem:
+      description: Current authoritative package is FREE (SUPPORT_PLAN_ENTITLEMENT_REQUIRED); no draft was created
+      content:
+        application/problem+json:
+          schema: { $ref: '#/components/schemas/Problem' }
+    SupportPlanEligibilityProblem:
+      description: Current source facts cannot produce a bounded draft (SUPPORT_EVALUATION_STALE, SUPPORT_PLAN_CORE_UNAVAILABLE, or RESOURCE_VERSION_STALE); no draft was created
+      content:
+        application/problem+json:
+          schema: { $ref: '#/components/schemas/Problem' }
+    SupportPlanDependencyProblem:
+      description: Entitlement or exact resource eligibility could not be trusted (ENTITLEMENT_UNAVAILABLE or RESOURCE_ELIGIBILITY_UNAVAILABLE); no draft was created
+      content:
+        application/problem+json:
+          schema: { $ref: '#/components/schemas/Problem' }
+    SupportPlanDraftNotFoundProblem:
+      description: The authenticated user has no current draft (SUPPORT_PLAN_DRAFT_NOT_FOUND)
       content:
         application/problem+json:
           schema: { $ref: '#/components/schemas/Problem' }

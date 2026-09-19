@@ -136,7 +136,9 @@ Safety handling must be deterministic, immediate, auditable, non-paywalled, and 
 - [Sprint 2 integrated journey and release evidence](docs/sprint-2-integrated-release-evidence.md)
 - [PostgreSQL data model](docs/database/postgresql.md)
 - [MongoDB collections](docs/database/mongodb.md)
-- [Non-executable whole-system PostgreSQL model](database/postgresql/001_initial_schema.sql) — owner namespaces are visual only; each module deploys to its own database/default `public` schema
+- [Canonical domain model — start here for entities and diagrams](docs/domain-model/README.md)
+- [Canonical non-executable PostgreSQL logical schema](docs/domain-model/relational/postgresql-logical-schema.sql) — owner namespaces are visual only; each module deploys to its own database/default `public` schema
+- [Canonical MongoDB logical model](docs/domain-model/document/mongodb-logical-model.md)
 - [PostgreSQL field data dictionary](docs/database/postgresql-field-data-dictionary.md)
 
 ## Delivery roadmap

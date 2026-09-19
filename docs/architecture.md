@@ -54,6 +54,13 @@ Mobile App / Admin Web
 
 Do not share ORM entities, repositories, or direct cross-service table access. A single PostgreSQL server is acceptable locally and for the first deployment, but each service owns a separate database and database user as defined by ADR 0004. DTOs are JSON contracts defined through OpenAPI rather than shared Java/TypeScript implementation classes.
 
+The [canonical domain model](domain-model/README.md) is the centralized
+documentation view used for ERDs, class/domain diagrams, ownership, and
+cross-service relationship understanding. It is read-only and never
+provisions a database. Owner-specific PostgreSQL and MongoDB migration histories
+remain the executable runtime sources of truth; cross-service identifiers in
+the canonical model are logical references rather than physical foreign keys.
+
 ## 4. Communication patterns
 
 ### Synchronous REST

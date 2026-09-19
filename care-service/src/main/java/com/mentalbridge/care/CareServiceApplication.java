@@ -6,10 +6,11 @@ import org.springframework.boot.context.properties.ConfigurationPropertiesScan;
 import org.springframework.cloud.openfeign.EnableFeignClients;
 
 import com.mentalbridge.care.resourceeligibility.ContentResourceEligibilityHttpClient;
+import com.mentalbridge.care.entitlement.ConsultationEntitlementHttpClient;
 
 @SpringBootApplication
 @ConfigurationPropertiesScan
-@EnableFeignClients(clients = ContentResourceEligibilityHttpClient.class)
+@EnableFeignClients(clients = { ContentResourceEligibilityHttpClient.class, ConsultationEntitlementHttpClient.class })
 public class CareServiceApplication {
 
 	public static void main(String[] args) {
