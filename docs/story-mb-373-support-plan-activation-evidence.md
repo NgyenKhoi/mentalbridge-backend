@@ -95,7 +95,7 @@ Repository root:
 
 ```text
 powershell -ExecutionPolicy Bypass -File .\scripts\verify-repository.ps1 -BaseSha origin/dev
-PASS: 635 tracked files checked; paired-change policy passed for 33 changed files.
+PASS: 639 tracked files checked; paired-change policy passed for 33 changed files.
 ```
 
 Frontend from `mentalbridge`, with Care contract sources pointing to the MB-373
