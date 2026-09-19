@@ -4,6 +4,7 @@ These instructions apply to the entire repository. Before changing application c
 
 ## Shared repository skills
 
+- For every implementation task, load and follow `.codex/skills/lean-task-delivery/SKILL.md` before choosing the design or verification scope.
 - For every task, load and follow `.codex/skills/mentalbridge-repository-workflow/SKILL.md` before analysis, review, editing, or completion reporting.
 - Also load `.codex/skills/mentalbridge-architecture/SKILL.md` for architecture, ownership, integration, safety/privacy, provider, configuration, deployment, or ADR work.
 - Also load `.codex/skills/mentalbridge-data-contracts/SKILL.md` for REST/OpenAPI, Kafka/WebSocket contracts, PostgreSQL, MongoDB, migrations, persistence, or cross-language DTO work.
