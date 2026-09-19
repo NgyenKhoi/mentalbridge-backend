@@ -44,9 +44,9 @@ delivery, or SupportPlan state.
 
 - [x] CON-01 Retain the historical ADR 0014 rationale and adopt ADR 0017's
   chat/video, evidence, summary reuse, and PlanChangeRequest target rules.
-- [ ] CON-02 Define specialist, discovery, billing/upgrade/credit, availability, appointment, earnings/payout, dashboard and review OpenAPI.
+- [~] CON-02 Specialist approval and MB-362 availability OpenAPI are implemented; discovery, billing/upgrade/credit, appointment, earnings/payout, dashboard and review remain.
 - [ ] CON-03 Define subscription/appointment/earning/review/moderation event schemas and required Care/Journal/Realtime consumer contracts.
-- [~] CON-04 Story 6101 adds the profile/approval migration, constraints, indexes, and field dictionary entries; other Consultation aggregates remain pending.
+- [~] CON-04 Story 6101 adds profile/approval persistence and MB-362 adds availability constraints, overlap exclusion, indexes, tombstones, and dictionary entries; other Consultation aggregates remain pending.
 - [~] CON-05 Story 6101 implements save, submit, pending-admin queue/detail, and approve without document upload and with admin audit. Rejection/suspension/restoration remains Story 6102.
 - [ ] CON-06 Implement discovery/matching with versioned explainable provenance.
 - [ ] CON-07 Implement VND/MoMo purchase/upgrade, credit ledger, chat/video

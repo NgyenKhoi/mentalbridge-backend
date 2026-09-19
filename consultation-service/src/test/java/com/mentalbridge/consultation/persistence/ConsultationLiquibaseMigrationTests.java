@@ -23,12 +23,12 @@ class ConsultationLiquibaseMigrationTests extends ConsultationTestProperties {
 	@Autowired JdbcClient jdbc;
 
 	@Test
-	void migrationCreatesTheSpecialistProfileApprovalTablesInPublic() {
+	void migrationCreatesConsultationTablesInPublic() {
 		var tables = jdbc.sql("select table_name from information_schema.tables where table_schema='public'")
 				.query(String.class).list();
 		assertThat(tables).contains("specialist_profile", "specialist_profile_support_area",
 				"specialist_profile_language", "specialist_profile_status_history",
-				"current_service_entitlement");
+				"current_service_entitlement", "availability_slot");
 	}
 
 	@Test
@@ -54,6 +54,37 @@ class ConsultationLiquibaseMigrationTests extends ConsultationTestProperties {
 				""").param("accountId", accountId).param("packageCode", packageCode).param("source", source)
 				.param("establishedBy", establishedBy).param("effectiveFrom", start)
 				.param("effectiveUntil", start.plusHours(durationHours)).update();
+	}
+
+	@Test
+	void databaseRejectsInvalidOrOverlappingActiveAvailability() {
+		var specialistId = insertPendingProfile();
+		var start = OffsetDateTime.now().plusDays(30).withNano(0);
+		insertSlot(specialistId, start, "IN_APP_CHAT", "migration-valid-key-0001");
+
+		assertThatThrownBy(() -> insertSlot(specialistId, start.plusMinutes(30), "IN_APP_CHAT",
+				"migration-overlap-key-01")).isInstanceOf(DataIntegrityViolationException.class);
+		assertThatThrownBy(() -> jdbc.sql("""
+				insert into availability_slot (
+				    id, specialist_account_id, start_at, end_at, timezone, modality,
+				    idempotency_key, created_at, updated_at
+				) values (:id, :specialist, :start, :end, 'Asia/Ho_Chi_Minh', 'PHONE',
+				    'migration-invalid-key-01', :now, :now)
+				""").param("id", UUID.randomUUID()).param("specialist", specialistId)
+				.param("start", start.plusDays(2)).param("end", start.plusDays(2).plusMinutes(45))
+				.param("now", OffsetDateTime.now()).update()).isInstanceOf(DataIntegrityViolationException.class);
+	}
+
+	private void insertSlot(UUID specialistId, OffsetDateTime start, String modality, String idempotencyKey) {
+		jdbc.sql("""
+				insert into availability_slot (
+				    id, specialist_account_id, start_at, end_at, timezone, modality,
+				    idempotency_key, created_at, updated_at
+				) values (:id, :specialist, :start, :end, 'Asia/Ho_Chi_Minh', :modality,
+				    :key, :now, :now)
+				""").param("id", UUID.randomUUID()).param("specialist", specialistId)
+				.param("start", start).param("end", start.plusMinutes(60)).param("modality", modality)
+				.param("key", idempotencyKey).param("now", OffsetDateTime.now()).update();
 	}
 
 	@Test

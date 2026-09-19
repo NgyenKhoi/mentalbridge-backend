@@ -61,14 +61,14 @@ Cross-schema foreign keys in the logical baseline only make relationships visibl
 ### Booking
 
 - Availability uses `[start_at, end_at)` semantics and validates start before end.
-- A specialist publishes discrete 60-minute slots from their working schedule in local time plus IANA timezone; the server converts to UTC. Booking copies start, end, timezone, mode, and the applicable practice-location snapshot into the appointment; those snapshots do not move if the source slot or location is later edited.
+- An approved specialist publishes discrete 60-minute online slots as UTC instants plus an IANA display timezone. MB-362 stores no PracticeLocation, phone, or external meeting link. A later booking flow snapshots start, end, timezone, and modality without mutating the source slot.
 - An exclusion constraint prevents overlapping active slots for the same specialist.
 - A partial unique index permits only one active appointment per slot.
 - A second partial unique index permits only one active appointment per credit; booking locks the slot and credit together.
 - `appointment_status_history` provides an auditable state-transition timeline.
-- Historical v1 supports `IN_APP_CHAT`/`IN_PERSON`. Scope v2 rejects new
-  in-person records and requires `IN_APP_CHAT`/`IN_APP_VIDEO`; video remains
-  unavailable until its detailed contract and additive migration pass.
+- Historical v1 may retain `IN_PERSON` appointment provenance. New MB-362 slots
+  accept only `IN_APP_CHAT` and capability-gated `IN_APP_VIDEO`; video session
+  runtime remains unavailable until its detailed provider contract passes.
 - At `scheduled_end_at`, v2 records `SESSION_ENDED` and closes the channel.
   Separate accepted server/provider evidence is required for `COMPLETED`.
 - Appointment persistence must retain evidence, dispute,

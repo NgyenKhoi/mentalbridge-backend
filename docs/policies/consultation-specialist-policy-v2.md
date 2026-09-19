@@ -5,7 +5,7 @@
 | Field | Value |
 | --- | --- |
 | Scope decision | `MB-SCOPE-V2-001` |
-| Status | `PRODUCT POLICY APPROVED; RUNTIME NOT IMPLEMENTED` |
+| Status | `PRODUCT POLICY APPROVED; MB-362 AVAILABILITY RUNTIME IMPLEMENTED; VIDEO SESSION RUNTIME DISABLED` |
 | Effective decision date | 2026-09-15 |
 | Appointment, specialist, evidence, and billing owner | Consultation |
 | Brief and SupportPlan-change decision owner | Care |
@@ -73,6 +73,12 @@ or provider selection, participant authorization, presence and duration
 evidence, reconnection and provider-failure behavior, recording prohibition,
 privacy/log exclusions, and session shutdown. An external meeting link is not
 a fallback.
+
+MB-362 may publish a video availability slot only when the typed capability
+gate is enabled after that provider contract is accepted. With the gate off,
+publication is rejected and existing video slots are reported as disabled.
+Publishing a slot never issues room credentials or proves that video-session
+runtime is enabled.
 
 ## Financial boundary
 

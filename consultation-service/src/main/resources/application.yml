@@ -29,6 +29,8 @@ mentalbridge:
       issuer: ${IDENTITY_JWT_ISSUER}
       audience: ${IDENTITY_JWT_AUDIENCE}
       public-key: ${IDENTITY_JWT_PUBLIC_KEY}
+    availability:
+      video-enabled: ${CONSULTATION_VIDEO_AVAILABILITY_ENABLED:false}
 
 eureka:
   client:
