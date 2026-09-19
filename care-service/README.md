@@ -72,6 +72,9 @@ Assessment answer text must never be copied into outbox payloads, logs, errors, 
 | `CONTENT_RESOURCE_ELIGIBILITY_CIRCUIT_FAILURE_RATE` | No | Percentage of dependency failures that opens the breaker | `50` |
 | `CONTENT_RESOURCE_ELIGIBILITY_CIRCUIT_OPEN_DURATION` | No | Bounded open interval before half-open probes | `PT10S` |
 | `CONTENT_RESOURCE_ELIGIBILITY_CIRCUIT_HALF_OPEN_CALLS` | No | Permitted half-open probes | `2` |
+| `CONTENT_SAFETY_DIRECTORY_BASE_URL` | Local/test only | Optional direct Content URL for the reviewed directory; leave empty outside tests so OpenFeign uses Eureka | `http://localhost:3003` |
+| `CONTENT_SAFETY_DIRECTORY_CONNECT_TIMEOUT` | No | Bounded TCP connection deadline for directory lookup | `PT0.5S` |
+| `CONTENT_SAFETY_DIRECTORY_READ_TIMEOUT` | No | Bounded response-read deadline before Care returns its local fallback | `PT1S` |
 | `CARE_DB_URL` | Yes | Care-owned PostgreSQL JDBC URL; production uses a TLS-capable connection | `jdbc:postgresql://localhost:5432/mentalbridge_care` |
 | `CARE_DB_USERNAME` | Yes | Care-owned PostgreSQL login | `mentalbridge_care` |
 | `CARE_DB_PASSWORD` | Yes | Care PostgreSQL password injected outside source control | `replace-with-a-local-secret` |
