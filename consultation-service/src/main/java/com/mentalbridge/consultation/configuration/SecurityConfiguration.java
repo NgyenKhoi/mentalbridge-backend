@@ -38,6 +38,7 @@ public class SecurityConfiguration {
 						.permitAll()
 						.requestMatchers("/internal/v1/entitlements/current").hasRole("USER")
 						.requestMatchers("/api/v1/specialist-profile/**").hasRole("SPECIALIST")
+						.requestMatchers("/api/v1/availability-slots/**").hasRole("SPECIALIST")
 						.requestMatchers("/api/v1/admin/specialist-profiles/**").hasRole("ADMIN")
 						.anyRequest().authenticated())
 				.exceptionHandling(errors -> errors.authenticationEntryPoint(securityProblems)

@@ -860,20 +860,22 @@ Explicit journal-entry allow-list for grants containing journal access.
 
 ### `consultation.availability_slot`
 
-Authoritative half-open 60-minute slot published from a specialist's working
-schedule and bookable once. The current logical baseline predates scope v2;
-enabling video requires an additive contract/migration while historical
-in-person snapshots remain readable.
+Authoritative half-open 60-minute online slot published by an approved
+specialist. MB-362 implements the v2 shape without PracticeLocation, phone, or
+external meeting-link fields. Historical in-person appointment snapshots, if
+introduced by a historical migration, remain separate and readable.
 
 | Field | Purpose |
 | --- | --- |
 | `id` | Immutable slot UUID used in booking REST commands. |
-| `specialist_id` | Specialist profile that owns the interval. |
+| `specialist_account_id` | Consultation-owned specialist profile that owns the interval and serializes publication. |
 | `start_at` | Inclusive UTC start instant of the available interval. |
 | `end_at` | Exclusive UTC end instant, required to be later than start. |
 | `timezone` | IANA timezone captured for stable human schedule rendering. |
-| `channel` | Consultation mode snapshot. Historical v1 includes `IN_PERSON`; new v2 slots allow `IN_APP_CHAT` or contract-enabled `IN_APP_VIDEO` only. |
-| `status` | Authoritative slot state used with database constraints to prevent conflicting bookings. |
+| `modality` | Online mode; only `IN_APP_CHAT` or capability-gated `IN_APP_VIDEO` is accepted. |
+| `status` | Authoritative `ACTIVE` or `WITHDRAWN` state used by the overlap exclusion constraint. |
+| `idempotency_key` | Printable caller retry key unique per specialist; exact replay returns the same slot identity and current state, while conflicting reuse is rejected. |
+| `withdrawn_at` | UTC instant at which the owner withdrew the future slot; null while active and retained for tombstone audit. |
 | `created_at` | Immutable UTC slot creation instant. |
 | `updated_at` | UTC instant of the latest slot state or schedule change. |
 | `version` | Optimistic-lock counter preventing lost concurrent slot updates. |

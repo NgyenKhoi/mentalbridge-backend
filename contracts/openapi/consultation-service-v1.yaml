@@ -1,8 +1,8 @@
 openapi: 3.1.0
 info:
   title: MentalBridge Consultation Service API
-  version: 1.0.0
-  description: Consultation-owned specialist profile approval and authoritative current service-plan entitlement lookup.
+  version: 1.1.0
+  description: Consultation-owned specialist profile approval, service-plan entitlement lookup, and online availability management.
 servers:
   - url: http://localhost:8082
 paths:
@@ -92,6 +92,85 @@ paths:
         '409': { $ref: '#/components/responses/ConflictProblem' }
         '412': { $ref: '#/components/responses/VersionProblem' }
         '428': { $ref: '#/components/responses/VersionRequiredProblem' }
+  /api/v1/availability-slots:
+    x-mentalbridge-status: implemented
+    get:
+      operationId: listOwnAvailabilitySlots
+      description: Lists the authenticated specialist's slots in a bounded UTC interval, including tombstones when requested.
+      security: [{ bearerAuth: [] }]
+      parameters:
+        - name: from
+          in: query
+          required: false
+          description: Inclusive UTC lower bound. Defaults to seven days before the request instant.
+          schema: { type: string, format: date-time, pattern: 'Z$' }
+        - name: to
+          in: query
+          required: false
+          description: Exclusive UTC upper bound. Defaults to ninety days after the request instant and may span at most 366 days from from.
+          schema: { type: string, format: date-time, pattern: 'Z$' }
+        - name: includeWithdrawn
+          in: query
+          required: false
+          schema: { type: boolean, default: true }
+      responses:
+        '200':
+          description: Owner-scoped availability and current modality capability
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/AvailabilitySlotList' }
+        '400': { $ref: '#/components/responses/ValidationProblem' }
+        '401': { $ref: '#/components/responses/UnauthorizedProblem' }
+        '403': { $ref: '#/components/responses/ForbiddenProblem' }
+    post:
+      operationId: publishOwnAvailabilitySlot
+      description: Publishes one exact future 60-minute online slot. Replaying the same Idempotency-Key with the same command returns the same slot identity and current state.
+      security: [{ bearerAuth: [] }]
+      parameters:
+        - $ref: '#/components/parameters/IdempotencyKey'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: '#/components/schemas/PublishAvailabilitySlotRequest' }
+      responses:
+        '201':
+          description: Slot published or the same slot aggregate returned for an exact replay
+          headers:
+            ETag: { $ref: '#/components/headers/AvailabilitySlotETag' }
+            Location:
+              schema: { type: string, format: uri-reference }
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/AvailabilitySlot' }
+        '400': { $ref: '#/components/responses/ValidationProblem' }
+        '401': { $ref: '#/components/responses/UnauthorizedProblem' }
+        '403': { $ref: '#/components/responses/ForbiddenProblem' }
+        '409': { $ref: '#/components/responses/AvailabilityConflictProblem' }
+  /api/v1/availability-slots/{slotId}:
+    x-mentalbridge-status: implemented
+    parameters:
+      - $ref: '#/components/parameters/AvailabilitySlotId'
+    delete:
+      operationId: withdrawOwnAvailabilitySlot
+      description: Withdraws one owned future slot while retaining an auditable tombstone.
+      security: [{ bearerAuth: [] }]
+      parameters:
+        - $ref: '#/components/parameters/AvailabilitySlotIfMatch'
+      responses:
+        '200':
+          description: Withdrawn slot tombstone
+          headers:
+            ETag: { $ref: '#/components/headers/AvailabilitySlotETag' }
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/AvailabilitySlot' }
+        '401': { $ref: '#/components/responses/UnauthorizedProblem' }
+        '403': { $ref: '#/components/responses/ForbiddenProblem' }
+        '404': { $ref: '#/components/responses/AvailabilityNotFoundProblem' }
+        '409': { $ref: '#/components/responses/AvailabilityConflictProblem' }
+        '412': { $ref: '#/components/responses/AvailabilityVersionProblem' }
+        '428': { $ref: '#/components/responses/AvailabilityVersionRequiredProblem' }
   /api/v1/admin/specialist-profiles:
     x-mentalbridge-status: implemented
     get:
@@ -178,9 +257,29 @@ components:
       required: true
       description: Quoted current non-negative profile version.
       schema: { type: string, pattern: '^"[0-9]+"$' }
+    AvailabilitySlotId:
+      name: slotId
+      in: path
+      required: true
+      schema: { type: string, format: uuid }
+    IdempotencyKey:
+      name: Idempotency-Key
+      in: header
+      required: true
+      description: Printable caller key scoped to the authenticated specialist and retained with the slot outcome.
+      schema: { type: string, minLength: 16, maxLength: 128, pattern: '^[!-~]+$' }
+    AvailabilitySlotIfMatch:
+      name: If-Match
+      in: header
+      required: true
+      description: Quoted current non-negative availability slot version.
+      schema: { type: string, pattern: '^"[0-9]+"$' }
   headers:
     ProfileETag:
       description: Quoted current profile version for If-Match.
+      schema: { type: string, pattern: '^"[0-9]+"$' }
+    AvailabilitySlotETag:
+      description: Quoted current availability slot version for If-Match.
       schema: { type: string, pattern: '^"[0-9]+"$' }
   schemas:
     ServicePackage:
@@ -284,6 +383,66 @@ components:
           maxItems: 100
           items: { $ref: '#/components/schemas/SpecialistProfile' }
         count: { type: integer, minimum: 0, maximum: 100 }
+    AvailabilityModality:
+      type: string
+      enum: [IN_APP_CHAT, IN_APP_VIDEO]
+    AvailabilitySlotStatus:
+      type: string
+      enum: [ACTIVE, WITHDRAWN]
+    AvailabilityReadiness:
+      type: string
+      enum: [AVAILABLE, STARTED, WITHDRAWN, VIDEO_DISABLED]
+    PublishAvailabilitySlotRequest:
+      type: object
+      additionalProperties: false
+      required: [startAt, endAt, timezone, modality]
+      properties:
+        startAt:
+          type: string
+          format: date-time
+          pattern: 'Z$'
+          description: Inclusive UTC start instant.
+        endAt:
+          type: string
+          format: date-time
+          pattern: 'Z$'
+          description: Exclusive UTC end instant exactly 60 minutes after startAt.
+        timezone:
+          type: string
+          minLength: 1
+          maxLength: 64
+          description: IANA timezone retained only for stable display.
+        modality: { $ref: '#/components/schemas/AvailabilityModality' }
+    AvailabilitySlot:
+      type: object
+      additionalProperties: false
+      required: [id, startAt, endAt, timezone, modality, status, readiness, withdrawnAt, createdAt, updatedAt, version]
+      properties:
+        id: { type: string, format: uuid }
+        startAt: { type: string, format: date-time }
+        endAt: { type: string, format: date-time }
+        timezone: { type: string, minLength: 1, maxLength: 64 }
+        modality: { $ref: '#/components/schemas/AvailabilityModality' }
+        status: { $ref: '#/components/schemas/AvailabilitySlotStatus' }
+        readiness: { $ref: '#/components/schemas/AvailabilityReadiness' }
+        withdrawnAt: { type: [string, 'null'], format: date-time }
+        createdAt: { type: string, format: date-time }
+        updatedAt: { type: string, format: date-time }
+        version: { type: integer, format: int64, minimum: 0 }
+    AvailabilitySlotList:
+      type: object
+      additionalProperties: false
+      required: [items, count, generatedAt, videoPublishingEnabled]
+      properties:
+        items:
+          type: array
+          maxItems: 500
+          items: { $ref: '#/components/schemas/AvailabilitySlot' }
+        count: { type: integer, minimum: 0, maximum: 500 }
+        generatedAt: { type: string, format: date-time }
+        videoPublishingEnabled:
+          type: boolean
+          description: True only while the reviewed video capability/provider contract gate is enabled.
     Problem:
       type: object
       additionalProperties: true
@@ -343,6 +502,26 @@ components:
           schema: { $ref: '#/components/schemas/Problem' }
     VersionRequiredProblem:
       description: If-Match is required for the existing profile or command (PROFILE_VERSION_REQUIRED).
+      content:
+        application/problem+json:
+          schema: { $ref: '#/components/schemas/Problem' }
+    AvailabilityNotFoundProblem:
+      description: Owned availability slot does not exist (AVAILABILITY_SLOT_NOT_FOUND).
+      content:
+        application/problem+json:
+          schema: { $ref: '#/components/schemas/Problem' }
+    AvailabilityConflictProblem:
+      description: Slot overlaps active availability, is stale/withdrawn, reuses a key for another command, belongs to an unapproved specialist, or requests disabled video.
+      content:
+        application/problem+json:
+          schema: { $ref: '#/components/schemas/Problem' }
+    AvailabilityVersionProblem:
+      description: If-Match does not equal the current slot version (AVAILABILITY_SLOT_VERSION_MISMATCH).
+      content:
+        application/problem+json:
+          schema: { $ref: '#/components/schemas/Problem' }
+    AvailabilityVersionRequiredProblem:
+      description: If-Match is required for withdrawal (AVAILABILITY_SLOT_VERSION_REQUIRED).
       content:
         application/problem+json:
           schema: { $ref: '#/components/schemas/Problem' }

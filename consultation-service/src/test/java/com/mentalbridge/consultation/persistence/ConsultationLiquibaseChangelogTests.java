@@ -18,7 +18,8 @@ class ConsultationLiquibaseChangelogTests {
 			var changelog = parser.parse(path, new ChangeLogParameters(), resources);
 			assertThat(changelog.getChangeSets()).extracting(changeSet -> changeSet.getId())
 					.containsExactly("consultation-001-specialist-profile-approval",
-							"consultation-002-current-service-entitlement");
+							"consultation-002-current-service-entitlement",
+							"consultation-003-online-specialist-availability");
 		}
 	}
 }

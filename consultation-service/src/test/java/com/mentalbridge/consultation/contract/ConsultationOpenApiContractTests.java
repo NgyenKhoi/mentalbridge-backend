@@ -18,6 +18,9 @@ class ConsultationOpenApiContractTests {
 			"GET /api/v1/specialist-profile",
 			"PUT /api/v1/specialist-profile",
 			"POST /api/v1/specialist-profile/submit",
+			"GET /api/v1/availability-slots",
+			"POST /api/v1/availability-slots",
+			"DELETE /api/v1/availability-slots/{slotId}",
 			"GET /api/v1/admin/specialist-profiles",
 			"GET /api/v1/admin/specialist-profiles/{specialistAccountId}",
 			"POST /api/v1/admin/specialist-profiles/{specialistAccountId}/approve");
@@ -41,6 +44,18 @@ class ConsultationOpenApiContractTests {
 			});
 		});
 		assertThat(operations).isEqualTo(OPERATIONS);
+	}
+
+	@Test
+	void availabilityContractAllowsOnlyExactOnlineSlotsWithoutLocationOrLinks() {
+		var contract = Path.of("..", "contracts", "openapi", "consultation-service-v1.yaml").toString();
+		var api = new OpenAPIV3Parser().read(contract);
+		var request = api.getComponents().getSchemas().get("PublishAvailabilitySlotRequest");
+		var modality = api.getComponents().getSchemas().get("AvailabilityModality");
+
+		assertThat(request.getProperties()).containsOnlyKeys("startAt", "endAt", "timezone", "modality");
+		assertThat(request.getProperties()).doesNotContainKeys("practiceLocationId", "phone", "meetingLink", "url");
+		assertThat(modality.getEnum()).containsExactly("IN_APP_CHAT", "IN_APP_VIDEO");
 	}
 
 	@Test
