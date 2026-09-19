@@ -1,6 +1,6 @@
 # MongoDB Collection Definitions
 
-MongoDB stores variable, write-heavy content where document access follows an aggregate. PostgreSQL remains authoritative for identity, Care consent, scoring, safety/support policy, appointments, and relational audit. Journal/AI uses MongoDB as its only operational database, including durable analysis job state and future dataset/benchmark metadata. MongoDB-owning Node.js services use the official MongoDB driver and apply collection validation, indexes, and controlled data changes through append-only `migrate-mongo` migrations; application startup must not mutate schemas implicitly.
+Start with the [canonical MongoDB logical model](../domain-model/document/mongodb-logical-model.md) for active/proposed status, ownership, and relationships. This document supplies detailed field and index rationale. MongoDB stores variable, write-heavy content where document access follows an aggregate. PostgreSQL remains authoritative for identity, Care consent, scoring, safety/support policy, appointments, and relational audit. Journal/AI uses MongoDB as its only operational database, including durable analysis jobs and benchmark metadata. MongoDB-owning Node.js services use the official MongoDB driver and apply collection validation, indexes, and controlled data changes through append-only `migrate-mongo` migrations; application startup must not mutate schemas implicitly.
 
 All collections require MongoDB JSON Schema validation in deployment migrations. Examples omit ciphertext details for readability.
 
@@ -258,7 +258,11 @@ metrics while retaining legacy fake-provider documents. A configured adapter
 does not imply approval: real routes require a separately recorded benchmark
 approval identifier.
 
-## `journal_longitudinal_analysis_results`
+## `journal_longitudinal_analysis_results` — PROPOSED
+
+No current owner migration creates this collection. The shape below is an
+approved ADR 0015 design reference and must not be presented as active runtime
+persistence.
 
 One immutable normalized result per explicit consented comparison job. It keeps
 exact source revisions so available-entry claims and deletion coupling remain
@@ -392,7 +396,10 @@ Use cursor pagination. A deletion replaces display content with a tombstone whil
 
 `bodyCiphertext`, `bodyIv`, and `bodyTag` are the AES-256-GCM envelope persisted by Realtime; plaintext is returned only after current authorization. `keyVersion` resolves against the configured decryption keyring so a controlled key rotation preserves history. Operators deploy old and new keys together before selecting a new active key and retain every version still referenced by stored messages. `commandFingerprint` is a keyed digest over the logical conversation, type, and content so a repeated sender-scoped `clientMessageId` can distinguish a safe retry from conflicting content without storing a raw plaintext hash. Migration `realtime-service/migrations/001_realtime_message_foundation.cjs` is the executable validator and index baseline.
 
-## `message_receipts`
+## `message_receipts` — PROPOSED
+
+No Realtime migration currently creates this collection. Receipt persistence
+remains deferred with reconnect/resynchronization work.
 
 ```json
 {

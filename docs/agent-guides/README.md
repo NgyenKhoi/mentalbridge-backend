@@ -31,6 +31,7 @@ Also read the affected source-of-truth documents:
 - REST contract: `contracts/openapi/`;
 - message contract: `contracts/events/`;
 - persisted shape and constraints: the owning service's migrations;
+- canonical documentation view of relational/document entities and relationships: [`docs/domain-model/`](../domain-model/README.md);
 - a deliberate architectural exception: `docs/adr/`.
 
 ## Decision precedence

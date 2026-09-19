@@ -17,6 +17,7 @@ These instructions apply to the entire repository. Before changing application c
 - Kafka is optional and is introduced only for an accepted feature that genuinely needs durable asynchronous work, independent consumers, fan-out, or replay. Local CRUD, a single-service transaction, and synchronous REST flows must not add Kafka, an outbox, broker configuration, or Kafka Testcontainers pre-emptively. When justified, Kafka carries asynchronous commands/events and is never used for synchronous queries or request/reply. See ADR 0016.
 - Redis supports ephemeral realtime presence, connection/room routing, cross-instance WebSocket fan-out, rate limits, short-lived delivery/idempotency state, and expiring hashed OTP challenges. Do not use Redis as a general database-query/result cache or to store durable messages and business facts. PostgreSQL, MongoDB, and Kafka remain the durable sources.
 - Every service owns its data. A service must not query another service's tables, schema, repository, ORM entity, or internal classes.
+- Runtime database truth is the owner service's migration history. The read-only canonical documentation model starts at `docs/domain-model/README.md` and must never provision or migrate a database.
 - Cross-service REST and message payloads are contract-first and language-neutral. OpenAPI and JSON Schema/AsyncAPI are the sources of truth.
 - When a justified Kafka message is caused by a PostgreSQL state change, use a transactional outbox and idempotent consumers. Do not create an outbox merely because a table changes.
 - OpenTelemetry is optional. Start with structured logs, correlation IDs, health/readiness, and focused Prometheus metrics. Add distributed tracing only when a feature has a demonstrated cross-service/provider or asynchronous diagnostic need; do not install an SDK/collector in every service by default. See ADR 0016.
@@ -28,11 +29,17 @@ These instructions apply to the entire repository. Before changing application c
 
 1. Before coding or resuming work, fetch the intended PR base and measure the feature branch against `origin/dev`. If it is behind, integrate `origin/dev` first: rebase a branch owned by one developer, or merge for a shared branch. Resolve conflicts and establish a clean baseline before editing.
 2. Identify the owning module and its source of truth before coding.
-3. Read the module README, requirements traceability, affected OpenAPI/event contracts, migrations, and relevant domain rules.
-4. Change contracts and database descriptions together with implementation.
+3. Read the module README, requirements traceability, affected OpenAPI/event contracts, owner migrations, the current canonical domain model, and relevant domain rules.
+4. Change contracts, migrations, canonical logical models, and detailed database descriptions together with implementation.
 5. Test success, authorization, validation, concurrency/consistency, timeout, retry, and dependency-failure paths as applicable.
 6. Immediately before commit/push or creating/updating a PR, fetch and compare with `origin/dev` again. If `dev` advanced, integrate it, resolve conflicts deliberately, rerun every affected quality gate, and review the new base-to-head diff before publishing.
 7. Review the final diff against `docs/agent-guides/review-and-testing.md`.
 8. Before any branch, checkout/switch, commit, push, issue, or PR action, follow `docs/agent-guides/git-collaboration.md` and the current `.github/` template.
+
+Any pull request that adds, removes, renames, or materially changes persisted
+domain data is incomplete until the relevant model under `docs/domain-model/`
+and the detailed PostgreSQL/MongoDB documentation are updated in the same pull
+request. Pure performance-index tuning, migration metadata, or a constraint
+name-only change does not require a logical-model change.
 
 An accepted ADR may override a repository recommendation, but it must explicitly identify the affected rule and migration/compatibility consequences.
