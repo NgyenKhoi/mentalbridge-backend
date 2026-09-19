@@ -361,18 +361,19 @@ Depends on 6202; Journal remains usable without consent or AI availability.
 
 ## Completion Notes
 Record final endpoints, states, decisions, versions, test commands, dependencies, and intentional deferrals for Use AI reflection from the Journal page."
-"Story","6204","Benchmark and enable one controlled-demo AI provider","6002","","8","","MB Sprint 3","Medium","sprint3-later-ai-benchmark","## Objective
-Select and enable one provider through approved synthetic benchmark and operational evidence.
+"Story","6204","Benchmark and route approved AI models by service plan","6002","","13","","MB Sprint 3","Medium","sprint3-later-ai-benchmark","## Objective
+Benchmark pinned OpenAI/Gemini candidates and route an accepted exact-revision model configuration from Consultation-authoritative `FREE`/`PLUS`/`PREMIUM` entitlement.
 
 ## Scope and dependencies
-Depends on 6202; paid calls do not run in CI and no real journal enters the benchmark.
+Depends on 6202/MB-367. Add only the minimal Consultation current-entitlement foundation; do not implement purchase, upgrade, MoMo, billing periods, credit ledger, AI Chat quota, vector/RAG, or PhoBERT. Paid calls require explicit operator enablement and never run in CI. No production journal enters the benchmark.
 
 ## Acceptance Criteria
-- [ ] Complete OpenAI/Gemini adapters behind the existing port.
-- [ ] Build reproducible normalized benchmark harness.
-- [ ] Record the provider/model decision and configure one approved demo provider.
-- [ ] Add typed secrets/config, readiness, feature flag, and rollback.
-- [ ] Archive benchmark evidence and adapter compatibility results.
+- [x] Consultation returns authenticated current entitlement with `DEFAULT_FREE`, explicit `DEMO`, and reserved future `PAID` provenance; absent effective projection resolves to `FREE`.
+- [x] Journal/AI forwards the end-user bearer for entitlement lookup, never trusts client tier, and snapshots a versioned workload route.
+- [x] Complete Gemini/OpenAI structured-output adapters behind the provider-neutral port with no cross-provider fallback.
+- [x] Build a reproducible synthetic exact-revision benchmark harness with normalized quality/safety, latency, token, cost, malformed-output, and failure evidence in MongoDB.
+- [x] Add typed secrets/config and gates so local/test/CI use deterministic fake and real routes require credentials plus an approval version.
+- [ ] Execute the paid benchmark with pinned model and price snapshots, approve thresholds/reviewer evidence, and record the accepted provider/model route before controlled-demo activation.
 
 ## Definition of Done
 - [ ] The first confirmation subtask closes only material remaining decisions.
@@ -388,7 +389,7 @@ Depends on 6202; paid calls do not run in CI and no real journal enters the benc
 - Compatibility evidence for each cross-service boundary.
 
 ## Completion Notes
-Record final endpoints, states, decisions, versions, test commands, dependencies, and intentional deferrals for Benchmark and enable one controlled-demo AI provider."
+Implementation foundation added on 2026-09-16: Consultation current-entitlement lookup, entitlement-aware exact-revision router, Gemini/OpenAI adapters, `exact-revision-v2`, Mongo benchmark metadata, and a CC0 synthetic dataset. Real-provider activation remains intentionally disabled because credentials, pinned candidate models/prices, acceptance thresholds, reviewer, and a benchmark approval identifier are not present in the repository. CI remains deterministic fake."
 "Story","6205","Generate an optional AI ConsultationBrief draft","6002","","5","","MB Sprint 3","Medium","sprint3-later-ai-brief","## Objective
 Return a minimized structured draft to Care without sharing directly to a specialist or blocking manual creation.
 
@@ -1394,48 +1395,52 @@ Prove Story 6203 across its real owners and consumers.
 - [ ] Relevant checks pass and exact commands/results are recorded.
 - [ ] Evidence is classified truthfully and uses non-sensitive data.
 - [ ] Story 6203 Evidence and Completion Notes are updated without fabricated claims."
-"Subtask","620401","Confirm benchmark and enable one controlled-demo AI provider ADR and user flow","6204","","","10800","MB Sprint 3","Medium","sprint3-later-ai-benchmark","## Objective
-Confirm the narrow remaining decisions for benchmark and enable one controlled-demo ai provider before irreversible implementation.
+"Subtask","620401","Confirm entitlement routing and benchmark governance","6204","","","14400","MB Sprint 3","Medium","sprint3-later-ai-benchmark","## Objective
+Confirm the ownership, persistence, routing, and benchmark gates for service-plan-aware exact-revision AI.
 
 ## Acceptance Criteria
-- [ ] Approve synthetic dataset, rubric, thresholds, budget, and reviewer.
-- [ ] Confirm paid-call environments and secret ownership.
-- [ ] Confirm disclosure and disabled behavior if not approved.
+- [x] Freeze Consultation as entitlement authority and bound MB-369 to a current-entitlement foundation rather than billing lifecycle.
+- [x] Confirm synthetic-only dataset, same prompt/schema, no fallback, paid-call gates, and deterministic CI.
+- [ ] Approve final thresholds, budget, reviewer, pinned candidate models/prices, paid-call environment, and secret ownership.
 
 ## Definition of Done
 - [ ] Approved details are recorded in the canonical ADR, policy, contract, or module docs only where needed.
 - [ ] Story 6204 has no materially blocking API, persistence, ownership, or actor-flow ambiguity.
 - [ ] Already approved behavior is not reopened as ceremonial documentation."
-"Subtask","620402","Implement owner capability for benchmark and enable one controlled-demo ai provider","6204","","","64800","MB Sprint 3","Medium","sprint3-later-ai-benchmark","## Objective
-Deliver the owner-side contract, persistence, and behavior required by Story 6204.
+"Subtask","620402","Implement authoritative entitlement and benchmark owner foundation","6204","","","86400","MB Sprint 3","Medium","sprint3-later-ai-benchmark","## Objective
+Deliver Consultation entitlement ownership plus Journal/AI routing, provider, prompt, and benchmark persistence.
 
 ## Acceptance Criteria
-- [ ] Complete OpenAI/Gemini adapters behind the existing port.
-- [ ] Build reproducible normalized benchmark harness.
-- [ ] Capture quality, safety, latency, cost, malformed output, and failure metrics.
+- [x] Add authenticated current-entitlement REST contract and additive Consultation persistence with default `FREE` behavior.
+- [x] Complete OpenAI/Gemini adapters behind the existing port and version the exact-revision prompt/output contract.
+- [x] Build the reproducible normalized synthetic benchmark harness and Mongo validators/indexes.
+- [x] Capture quality, safety, latency, token, estimated cost, malformed output, and failure metrics without raw responses.
 
 ## Definition of Done
 - [ ] The slice is independently reviewable and focused checks pass.
 - [ ] Contracts, persistence, authorization, failures, and docs agree where applicable.
 - [ ] No unrelated abstraction or deferred feature is introduced."
-"Subtask","620403","Deliver consumer flow for benchmark and enable one controlled-demo ai provider","6204","","","43200","MB Sprint 3","Medium","sprint3-later-ai-benchmark","## Objective
-Deliver the real consumer or actor-facing flow required by Story 6204.
+"Subtask","620403","Route exact-revision AI by authoritative service plan","6204","","","57600","MB Sprint 3","Medium","sprint3-later-ai-benchmark","## Objective
+Resolve the server-owned service plan and route the exact-revision workload without exposing provider selection to clients.
 
 ## Acceptance Criteria
-- [ ] Record the provider/model decision and configure one approved demo provider.
-- [ ] Add typed secrets/config, readiness, feature flag, and rollback.
-- [ ] Expose no provider-selection UI.
+- [x] Forward the verified end-user bearer to Consultation without persisting or logging it.
+- [x] Route `FREE`/`PLUS` to the baseline config and allow a distinct `PREMIUM` config using versioned server-side policy.
+- [x] Add typed credential, model, cost, feature, approval, and timeout configuration; refuse real routing when incomplete.
+- [x] Expose no tier/provider/model selection input and perform no cross-provider fallback.
+- [ ] Record one accepted provider/model decision only after paid benchmark review.
 
 ## Definition of Done
 - [ ] The slice is independently reviewable and focused checks pass.
 - [ ] Contracts, persistence, authorization, failures, and docs agree where applicable.
 - [ ] No unrelated abstraction or deferred feature is introduced."
-"Subtask","620404","Verify benchmark and enable one controlled-demo ai provider","6204","","","28800","MB Sprint 3","Medium","sprint3-later-ai-benchmark","## Objective
+"Subtask","620404","Verify entitlement-aware routing and approved-model gate","6204","","","28800","MB Sprint 3","Medium","sprint3-later-ai-benchmark","## Objective
 Prove Story 6204 across its real owners and consumers.
 
 ## Acceptance Criteria
-- [ ] Archive benchmark evidence and adapter compatibility results.
-- [ ] Verify only accepted provider is enabled and CI still uses fakes.
+- [x] Verify entitlement lookup, default `FREE`, route provenance, malformed output, provider failure, timeout/retry, and no fallback with non-sensitive tests.
+- [x] Verify test/CI reject paid benchmark execution and continue using deterministic fake.
+- [ ] Run and archive paid benchmark compatibility evidence, approve a route, and verify only accepted configuration is enabled.
 
 ## Definition of Done
 - [ ] Relevant checks pass and exact commands/results are recorded.

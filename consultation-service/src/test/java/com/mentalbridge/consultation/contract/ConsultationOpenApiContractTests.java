@@ -14,6 +14,7 @@ import io.swagger.v3.parser.core.models.ParseOptions;
 class ConsultationOpenApiContractTests {
 
 	private static final Set<String> OPERATIONS = Set.of(
+			"GET /internal/v1/entitlements/current",
 			"GET /api/v1/specialist-profile",
 			"PUT /api/v1/specialist-profile",
 			"POST /api/v1/specialist-profile/submit",
@@ -22,7 +23,7 @@ class ConsultationOpenApiContractTests {
 			"POST /api/v1/admin/specialist-profiles/{specialistAccountId}/approve");
 
 	@Test
-	void contractIsValidAndMatchesTheImplementedSpecialistApprovalSurface() {
+	void contractIsValidAndMatchesTheImplementedSurface() {
 		var contract = Path.of("..", "contracts", "openapi", "consultation-service-v1.yaml").toAbsolutePath();
 		var options = new ParseOptions();
 		options.setResolve(true);

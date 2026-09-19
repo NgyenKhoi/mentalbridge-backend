@@ -2,10 +2,24 @@ openapi: 3.1.0
 info:
   title: MentalBridge Consultation Service API
   version: 1.0.0
-  description: Consultation-owned specialist profile submission and administrator approval.
+  description: Consultation-owned specialist profile approval and authoritative current service-plan entitlement lookup.
 servers:
   - url: http://localhost:8082
 paths:
+  /internal/v1/entitlements/current:
+    x-mentalbridge-status: implemented
+    get:
+      operationId: getCurrentServiceEntitlement
+      description: Returns the authenticated user's current server-authoritative service package. Absence of an effective paid or explicit demo projection returns FREE with DEFAULT_FREE provenance.
+      security: [{ bearerAuth: [] }]
+      responses:
+        '200':
+          description: Current effective service-plan entitlement
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/CurrentServiceEntitlement' }
+        '401': { $ref: '#/components/responses/UnauthorizedProblem' }
+        '403': { $ref: '#/components/responses/EntitlementForbiddenProblem' }
   /api/v1/specialist-profile:
     x-mentalbridge-status: implemented
     get:
@@ -169,6 +183,33 @@ components:
       description: Quoted current profile version for If-Match.
       schema: { type: string, pattern: '^"[0-9]+"$' }
   schemas:
+    ServicePackage:
+      type: string
+      enum: [FREE, PLUS, PREMIUM]
+    EntitlementSource:
+      type: string
+      enum: [DEFAULT_FREE, DEMO, PAID]
+    CurrentServiceEntitlement:
+      type: object
+      additionalProperties: false
+      required: [accountId, packageCode, source, sourceReference, effectiveFrom, effectiveUntil, policyVersion, version, decidedAt]
+      properties:
+        accountId: { type: string, format: uuid }
+        packageCode: { $ref: '#/components/schemas/ServicePackage' }
+        source: { $ref: '#/components/schemas/EntitlementSource' }
+        sourceReference:
+          type: [string, 'null']
+          minLength: 1
+          maxLength: 128
+          description: Explicit demo identifier or future paid lifecycle reference; null only for DEFAULT_FREE.
+        effectiveFrom: { type: [string, 'null'], format: date-time }
+        effectiveUntil:
+          type: [string, 'null']
+          format: date-time
+          description: Exclusive entitlement end; null only for DEFAULT_FREE.
+        policyVersion: { type: string, const: service-entitlement-v1 }
+        version: { type: integer, format: int64, minimum: 0 }
+        decidedAt: { type: string, format: date-time }
     SupportArea:
       type: string
       enum: [DEPRESSIVE_SYMPTOMS, ANXIETY_SYMPTOMS]
@@ -277,6 +318,11 @@ components:
           schema: { $ref: '#/components/schemas/Problem' }
     ForbiddenProblem:
       description: Required SPECIALIST or ADMIN role is absent (CONSULTATION_ROLE_REQUIRED).
+      content:
+        application/problem+json:
+          schema: { $ref: '#/components/schemas/Problem' }
+    EntitlementForbiddenProblem:
+      description: The entitlement lookup requires an authenticated USER role (ENTITLEMENT_USER_REQUIRED).
       content:
         application/problem+json:
           schema: { $ref: '#/components/schemas/Problem' }

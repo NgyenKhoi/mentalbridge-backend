@@ -35,6 +35,16 @@ Support Guide, SupportPlan, eligibility, and confirmation authority.
 - ADR 0017 package routing is server-side and versioned. AI may accompany a
   plan, reassessment, or approved reminder wording but never owns those states
   or bypasses user confirmation.
+- MB-369 resolves the current package through Consultation using the forwarded
+  end-user bearer, snapshots a versioned workload route on the first provider
+  attempt, and rejects dependency uncertainty or route-changing entitlement
+  changes. `FREE` and `PLUS` share the v1 baseline route; `PREMIUM` may use a
+  stronger approved route. No client tier, direct Consultation database read,
+  or automatic cross-provider fallback is permitted.
+- Gemini and OpenAI adapters, exact-revision prompt registry, synthetic
+  benchmark harness, and benchmark metadata remain provider-neutral. Real
+  execution needs explicit credentials/configuration and an approval version;
+  deterministic fake execution remains mandatory for local/test/CI.
 - Initial AI provider and benchmark work remains provider-neutral but does not require `phobert-worker`; ADR 0011 defines the separate activation gate for that optional baseline.
 
 ## Ordered tasks
@@ -43,10 +53,10 @@ Support Guide, SupportPlan, eligibility, and confirmation authority.
 - [ ] JAI-02 Resolve journal retention/encryption plus dataset license/edit and benchmark label policies; AI provider/result retention is fixed by ADR 0015.
 - [ ] JAI-03 Define journal/AI Companion analysis/dataset/benchmark OpenAPI and the ADR 0015 normalized provider-result schema. The exact-revision request/status/result slice is complete; dataset and benchmark contracts remain deferred.
 - [ ] JAI-04 Define analysis command/result schemas and Care consent/structured-indicator contracts. The exact-revision and `AI_PROCESSING` contracts are complete; longitudinal and specialist-sharing contracts remain deferred.
-- [ ] JAI-05 Add `migrate-mongo` validators/indexes for journal, job, result, dataset, and benchmark collections plus data documentation. Journal, analysis-job, and normalized-result collections are complete; dataset/benchmark metadata remains deferred.
+- [ ] JAI-05 Add `migrate-mongo` validators/indexes for journal, job, result, dataset, and benchmark collections plus data documentation. Journal, analysis-job, normalized-result, and MB-369 synthetic benchmark metadata collections are complete; general dataset import remains deferred.
 - [x] JAI-06 Implement encrypted journal revisions, authorization, pagination and deletion.
-- [ ] JAI-07 Implement consent-gated idempotent analysis orchestration, adapters, bounded retry and reconciliation. MB-367 completes the exact-revision slice with a deterministic fake adapter and local MongoDB lease recovery; real providers and broader reconciliation remain deferred.
-- [ ] JAI-08 Implement dataset import/versioning and reproducible benchmark coordination.
+- [ ] JAI-07 Implement consent-gated idempotent analysis orchestration, adapters, bounded retry and reconciliation. MB-367 completes the exact-revision job runtime; MB-369 adds gated Gemini/OpenAI adapters and entitlement routing. An accepted real route and broader reconciliation remain deferred until benchmark approval.
+- [ ] JAI-08 Implement dataset import/versioning and reproducible benchmark coordination. MB-369 completes the exact-revision synthetic harness for one or both configured Gemini/OpenAI candidates; general governed dataset import remains deferred.
 - [ ] JAI-09 Verify malformed AI output, prompt injection boundary, timeout/cost limit, duplicates/reordering, cross-store recovery and deletion.
 - [ ] JAI-10 Add observability/configuration, module README, and pass Node/contract/Mongo gates. Journal/AI is Mongo-only and has no PostgreSQL gate.
 
@@ -64,6 +74,24 @@ end-user bearer is forwarded to Care at request time and immediately before
 each provider attempt, retained only in worker memory, and never persisted or
 logged. Frontend disclosure/reflection UI remains in Story 6203; real provider
 selection and benchmark enablement remain in Story 6204/MB-369.
+
+## MB-369 delivery boundary
+
+MB-369 adds Consultation's minimal authoritative current-entitlement lookup,
+Journal/AI's workload/package router, Gemini/OpenAI structured-output adapters,
+versioned exact-revision prompts, additive provenance, and a synthetic
+benchmark harness that records normalized quality/safety, latency, token,
+cost, malformed-output, and failure evidence. Adapter availability does not
+approve a model: real execution remains disabled until the exact route carries
+an accepted benchmark approval identifier and credentials. This Story does
+not add billing/payment/credit lifecycle, AI Chat or its quota ledger, vector
+retrieval/RAG, or PhoBERT.
+
+The implementation and deferred live-provider approval evidence are recorded
+in [MB-369 model routing and benchmark foundation evidence](../story-mb-369-model-routing-evidence.md).
+The live harness has been exercised, but the full candidate gate remains
+deferred after Gemini daily free-tier exhaustion; runtime remains
+`DETERMINISTIC_FAKE`.
 
 ## Story 6201 authoring decision
 

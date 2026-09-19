@@ -2,9 +2,30 @@ import { config as loadDotenv } from "dotenv";
 import { z } from "zod";
 
 const nodeEnvironments = ["development", "test", "production"] as const;
-const keyIdPattern = /^[A-Za-z0-9._-]{1,64}$/;
+const providerModes = ["DETERMINISTIC_FAKE", "APPROVED_REAL"] as const;
+const realProviders = ["GEMINI", "OPENAI"] as const;
+const versionPattern = /^[A-Za-z0-9._-]{1,96}$/;
+const modelPattern = /^[A-Za-z0-9._:/-]{1,128}$/;
 const localEncryptionKey = Buffer.alloc(32, 7).toString("base64");
 const localIdempotencyKey = Buffer.alloc(32, 8).toString("base64");
+
+const configuredRoute = <TProvider extends string>(
+  provider: TProvider | undefined,
+  model: string | undefined,
+  inputCost: number | undefined,
+  outputCost: number | undefined,
+) =>
+  provider !== undefined &&
+  model !== undefined &&
+  inputCost !== undefined &&
+  outputCost !== undefined
+    ? {
+        provider,
+        model,
+        inputCostMicroUsdPerMillionTokens: inputCost,
+        outputCostMicroUsdPerMillionTokens: outputCost,
+      }
+    : null;
 
 const encryptionKeySchema = z.string().transform((value, context) => {
   const decoded = Buffer.from(value, "base64");
@@ -22,6 +43,7 @@ const encryptionKeySchema = z.string().transform((value, context) => {
 const environmentSchema = z
   .object({
     NODE_ENV: z.enum(nodeEnvironments).default("development"),
+    CI: z.enum(["true", "false"]).default("false"),
     JOURNAL_AI_PORT: z.coerce.number().int().min(1).max(65_535).default(3000),
     JOURNAL_AI_LOG_LEVEL: z
       .enum(["fatal", "error", "warn", "info", "debug", "trace", "silent"])
@@ -35,10 +57,6 @@ const environmentSchema = z
       .max(30_000)
       .default(2_000),
     JOURNAL_AI_ENCRYPTION_KEY: encryptionKeySchema,
-    JOURNAL_AI_ENCRYPTION_KEY_ID: z
-      .string()
-      .regex(keyIdPattern)
-      .default("local-v1"),
     JOURNAL_AI_IDEMPOTENCY_HMAC_KEY: encryptionKeySchema,
     IDENTITY_JWT_ISSUER: z.url(),
     IDENTITY_JWT_AUDIENCE: z.string().min(1),
@@ -54,6 +72,85 @@ const environmentSchema = z
       .min(100)
       .max(5_000)
       .default(2_000),
+    JOURNAL_AI_CONSULTATION_BASE_URL: z.url(),
+    JOURNAL_AI_CONSULTATION_TIMEOUT_MS: z.coerce
+      .number()
+      .int()
+      .min(100)
+      .max(5_000)
+      .default(2_000),
+    JOURNAL_AI_PROVIDER_MODE: z
+      .enum(providerModes)
+      .default("DETERMINISTIC_FAKE"),
+    JOURNAL_AI_ROUTING_POLICY_VERSION: z
+      .string()
+      .regex(versionPattern)
+      .default("exact-revision-routing-v1"),
+    JOURNAL_AI_PROVIDER_APPROVAL_VERSION: z
+      .string()
+      .regex(versionPattern)
+      .optional(),
+    JOURNAL_AI_FREE_PLUS_PROVIDER: z.enum(realProviders).optional(),
+    JOURNAL_AI_FREE_PLUS_MODEL: z.string().regex(modelPattern).optional(),
+    JOURNAL_AI_FREE_PLUS_INPUT_COST_MICRO_USD_PER_MILLION_TOKENS: z.coerce
+      .number()
+      .int()
+      .min(0)
+      .max(1_000_000_000)
+      .optional(),
+    JOURNAL_AI_FREE_PLUS_OUTPUT_COST_MICRO_USD_PER_MILLION_TOKENS: z.coerce
+      .number()
+      .int()
+      .min(0)
+      .max(1_000_000_000)
+      .optional(),
+    JOURNAL_AI_PREMIUM_PROVIDER: z.enum(realProviders).optional(),
+    JOURNAL_AI_PREMIUM_MODEL: z.string().regex(modelPattern).optional(),
+    JOURNAL_AI_PREMIUM_INPUT_COST_MICRO_USD_PER_MILLION_TOKENS: z.coerce
+      .number()
+      .int()
+      .min(0)
+      .max(1_000_000_000)
+      .optional(),
+    JOURNAL_AI_PREMIUM_OUTPUT_COST_MICRO_USD_PER_MILLION_TOKENS: z.coerce
+      .number()
+      .int()
+      .min(0)
+      .max(1_000_000_000)
+      .optional(),
+    JOURNAL_AI_GEMINI_BASE_URL: z
+      .url()
+      .default("https://generativelanguage.googleapis.com"),
+    JOURNAL_AI_GEMINI_API_KEY: z.string().min(1).optional(),
+    JOURNAL_AI_OPENAI_BASE_URL: z.url().default("https://api.openai.com"),
+    JOURNAL_AI_OPENAI_API_KEY: z.string().min(1).optional(),
+    JOURNAL_AI_PROVIDER_TIMEOUT_MS: z.coerce
+      .number()
+      .int()
+      .min(1_000)
+      .max(30_000)
+      .default(30_000),
+    JOURNAL_AI_BENCHMARK_ENABLED: z.enum(["true", "false"]).default("false"),
+    JOURNAL_AI_BENCHMARK_DATASET_PATH: z
+      .string()
+      .min(1)
+      .default("benchmarks/datasets/exact-revision-synthetic-v1.json"),
+    JOURNAL_AI_BENCHMARK_GEMINI_MODEL: z
+      .string()
+      .regex(modelPattern)
+      .optional(),
+    JOURNAL_AI_BENCHMARK_GEMINI_INPUT_COST_MICRO_USD_PER_MILLION_TOKENS:
+      z.coerce.number().int().min(0).max(1_000_000_000).optional(),
+    JOURNAL_AI_BENCHMARK_GEMINI_OUTPUT_COST_MICRO_USD_PER_MILLION_TOKENS:
+      z.coerce.number().int().min(0).max(1_000_000_000).optional(),
+    JOURNAL_AI_BENCHMARK_OPENAI_MODEL: z
+      .string()
+      .regex(modelPattern)
+      .optional(),
+    JOURNAL_AI_BENCHMARK_OPENAI_INPUT_COST_MICRO_USD_PER_MILLION_TOKENS:
+      z.coerce.number().int().min(0).max(1_000_000_000).optional(),
+    JOURNAL_AI_BENCHMARK_OPENAI_OUTPUT_COST_MICRO_USD_PER_MILLION_TOKENS:
+      z.coerce.number().int().min(0).max(1_000_000_000).optional(),
     JOURNAL_AI_ANALYSIS_ENABLED: z.enum(["true", "false"]).optional(),
     JOURNAL_AI_ANALYSIS_POLL_INTERVAL_MS: z.coerce
       .number()
@@ -81,6 +178,126 @@ const environmentSchema = z
         message:
           "Production journal encryption and idempotency HMAC keys must be different",
       });
+    if (
+      (environment.NODE_ENV === "test" || environment.CI === "true") &&
+      environment.JOURNAL_AI_PROVIDER_MODE !== "DETERMINISTIC_FAKE"
+    )
+      context.addIssue({
+        code: "custom",
+        path: ["JOURNAL_AI_PROVIDER_MODE"],
+        message: "Test and CI must use the deterministic fake provider",
+      });
+    if (environment.JOURNAL_AI_PROVIDER_MODE === "APPROVED_REAL") {
+      const required = [
+        "JOURNAL_AI_PROVIDER_APPROVAL_VERSION",
+        "JOURNAL_AI_FREE_PLUS_PROVIDER",
+        "JOURNAL_AI_FREE_PLUS_MODEL",
+        "JOURNAL_AI_FREE_PLUS_INPUT_COST_MICRO_USD_PER_MILLION_TOKENS",
+        "JOURNAL_AI_FREE_PLUS_OUTPUT_COST_MICRO_USD_PER_MILLION_TOKENS",
+        "JOURNAL_AI_PREMIUM_PROVIDER",
+        "JOURNAL_AI_PREMIUM_MODEL",
+        "JOURNAL_AI_PREMIUM_INPUT_COST_MICRO_USD_PER_MILLION_TOKENS",
+        "JOURNAL_AI_PREMIUM_OUTPUT_COST_MICRO_USD_PER_MILLION_TOKENS",
+      ] as const;
+      for (const key of required) {
+        if (environment[key] === undefined)
+          context.addIssue({
+            code: "custom",
+            path: [key],
+            message: `${key} is required for approved real-provider routing`,
+          });
+      }
+      const selected = new Set([
+        environment.JOURNAL_AI_FREE_PLUS_PROVIDER,
+        environment.JOURNAL_AI_PREMIUM_PROVIDER,
+      ]);
+      if (selected.has("GEMINI") && !environment.JOURNAL_AI_GEMINI_API_KEY)
+        context.addIssue({
+          code: "custom",
+          path: ["JOURNAL_AI_GEMINI_API_KEY"],
+          message: "Gemini credentials are required by the approved route",
+        });
+      if (selected.has("OPENAI") && !environment.JOURNAL_AI_OPENAI_API_KEY)
+        context.addIssue({
+          code: "custom",
+          path: ["JOURNAL_AI_OPENAI_API_KEY"],
+          message: "OpenAI credentials are required by the approved route",
+        });
+    }
+    if (environment.JOURNAL_AI_BENCHMARK_ENABLED === "true") {
+      if (environment.NODE_ENV === "test" || environment.CI === "true")
+        context.addIssue({
+          code: "custom",
+          path: ["JOURNAL_AI_BENCHMARK_ENABLED"],
+          message: "Paid benchmark calls are disabled in test and CI",
+        });
+
+      const benchmarkCandidates = [
+        {
+          name: "Gemini",
+          credential: "JOURNAL_AI_GEMINI_API_KEY",
+          routeKeys: [
+            "JOURNAL_AI_BENCHMARK_GEMINI_MODEL",
+            "JOURNAL_AI_BENCHMARK_GEMINI_INPUT_COST_MICRO_USD_PER_MILLION_TOKENS",
+            "JOURNAL_AI_BENCHMARK_GEMINI_OUTPUT_COST_MICRO_USD_PER_MILLION_TOKENS",
+          ],
+        },
+        {
+          name: "OpenAI",
+          credential: "JOURNAL_AI_OPENAI_API_KEY",
+          routeKeys: [
+            "JOURNAL_AI_BENCHMARK_OPENAI_MODEL",
+            "JOURNAL_AI_BENCHMARK_OPENAI_INPUT_COST_MICRO_USD_PER_MILLION_TOKENS",
+            "JOURNAL_AI_BENCHMARK_OPENAI_OUTPUT_COST_MICRO_USD_PER_MILLION_TOKENS",
+          ],
+        },
+      ] as const;
+
+      let completeCandidateCount = 0;
+
+      for (const candidate of benchmarkCandidates) {
+        const routeConfigured = candidate.routeKeys.every(
+          (key) => environment[key] !== undefined,
+        );
+
+        const routePartiallyConfigured = candidate.routeKeys.some(
+          (key) => environment[key] !== undefined,
+        );
+
+        if (routePartiallyConfigured && !routeConfigured) {
+          for (const key of candidate.routeKeys) {
+            if (environment[key] === undefined) {
+              context.addIssue({
+                code: "custom",
+                path: [key],
+                message: `${key} is required when the ${candidate.name} benchmark candidate is configured`,
+              });
+            }
+          }
+        }
+
+        if (routeConfigured) {
+          if (!environment[candidate.credential]) {
+            context.addIssue({
+              code: "custom",
+              path: [candidate.credential],
+              message: `${candidate.name} credentials are required for the configured benchmark candidate`,
+            });
+          } else {
+            completeCandidateCount += 1;
+          }
+        }
+      }
+
+      if (completeCandidateCount === 0) {
+        context.addIssue({
+          code: "custom",
+          path: ["JOURNAL_AI_BENCHMARK_ENABLED"],
+          message:
+            "At least one complete Gemini or OpenAI benchmark candidate is required",
+        });
+      }
+    }
   })
   .transform((environment) => ({
     NODE_ENV: environment.NODE_ENV,
@@ -92,7 +309,7 @@ const environmentSchema = z
     MONGODB_CONNECTION_TIMEOUT_MS:
       environment.JOURNAL_AI_MONGODB_CONNECTION_TIMEOUT_MS,
     JOURNAL_ENCRYPTION_KEY: environment.JOURNAL_AI_ENCRYPTION_KEY,
-    JOURNAL_ENCRYPTION_KEY_ID: environment.JOURNAL_AI_ENCRYPTION_KEY_ID,
+    JOURNAL_ENCRYPTION_KEY_ID: "single-key" as const,
     JOURNAL_IDEMPOTENCY_HMAC_KEY: environment.JOURNAL_AI_IDEMPOTENCY_HMAC_KEY,
     IDENTITY_JWT_ISSUER: environment.IDENTITY_JWT_ISSUER,
     IDENTITY_JWT_AUDIENCE: environment.IDENTITY_JWT_AUDIENCE,
@@ -100,6 +317,43 @@ const environmentSchema = z
     IDENTITY_JWT_PUBLIC_KEY: environment.IDENTITY_JWT_PUBLIC_KEY,
     CARE_BASE_URL: environment.JOURNAL_AI_CARE_BASE_URL,
     CARE_TIMEOUT_MS: environment.JOURNAL_AI_CARE_TIMEOUT_MS,
+    CONSULTATION_BASE_URL: environment.JOURNAL_AI_CONSULTATION_BASE_URL,
+    CONSULTATION_TIMEOUT_MS: environment.JOURNAL_AI_CONSULTATION_TIMEOUT_MS,
+    PROVIDER_MODE: environment.JOURNAL_AI_PROVIDER_MODE,
+    ROUTING_POLICY_VERSION: environment.JOURNAL_AI_ROUTING_POLICY_VERSION,
+    PROVIDER_APPROVAL_VERSION:
+      environment.JOURNAL_AI_PROVIDER_APPROVAL_VERSION ?? null,
+    FREE_PLUS_ROUTE: configuredRoute(
+      environment.JOURNAL_AI_FREE_PLUS_PROVIDER,
+      environment.JOURNAL_AI_FREE_PLUS_MODEL,
+      environment.JOURNAL_AI_FREE_PLUS_INPUT_COST_MICRO_USD_PER_MILLION_TOKENS,
+      environment.JOURNAL_AI_FREE_PLUS_OUTPUT_COST_MICRO_USD_PER_MILLION_TOKENS,
+    ),
+    PREMIUM_ROUTE: configuredRoute(
+      environment.JOURNAL_AI_PREMIUM_PROVIDER,
+      environment.JOURNAL_AI_PREMIUM_MODEL,
+      environment.JOURNAL_AI_PREMIUM_INPUT_COST_MICRO_USD_PER_MILLION_TOKENS,
+      environment.JOURNAL_AI_PREMIUM_OUTPUT_COST_MICRO_USD_PER_MILLION_TOKENS,
+    ),
+    GEMINI_BASE_URL: environment.JOURNAL_AI_GEMINI_BASE_URL,
+    GEMINI_API_KEY: environment.JOURNAL_AI_GEMINI_API_KEY ?? null,
+    OPENAI_BASE_URL: environment.JOURNAL_AI_OPENAI_BASE_URL,
+    OPENAI_API_KEY: environment.JOURNAL_AI_OPENAI_API_KEY ?? null,
+    PROVIDER_TIMEOUT_MS: environment.JOURNAL_AI_PROVIDER_TIMEOUT_MS,
+    BENCHMARK_ENABLED: environment.JOURNAL_AI_BENCHMARK_ENABLED === "true",
+    BENCHMARK_DATASET_PATH: environment.JOURNAL_AI_BENCHMARK_DATASET_PATH,
+    BENCHMARK_GEMINI_ROUTE: configuredRoute(
+      "GEMINI",
+      environment.JOURNAL_AI_BENCHMARK_GEMINI_MODEL,
+      environment.JOURNAL_AI_BENCHMARK_GEMINI_INPUT_COST_MICRO_USD_PER_MILLION_TOKENS,
+      environment.JOURNAL_AI_BENCHMARK_GEMINI_OUTPUT_COST_MICRO_USD_PER_MILLION_TOKENS,
+    ),
+    BENCHMARK_OPENAI_ROUTE: configuredRoute(
+      "OPENAI",
+      environment.JOURNAL_AI_BENCHMARK_OPENAI_MODEL,
+      environment.JOURNAL_AI_BENCHMARK_OPENAI_INPUT_COST_MICRO_USD_PER_MILLION_TOKENS,
+      environment.JOURNAL_AI_BENCHMARK_OPENAI_OUTPUT_COST_MICRO_USD_PER_MILLION_TOKENS,
+    ),
     ANALYSIS_ENABLED:
       environment.JOURNAL_AI_ANALYSIS_ENABLED !== undefined
         ? environment.JOURNAL_AI_ANALYSIS_ENABLED === "true"
@@ -135,6 +389,9 @@ export const loadConfiguration = (
             environment.JOURNAL_AI_IDEMPOTENCY_HMAC_KEY ?? localIdempotencyKey,
           JOURNAL_AI_CARE_BASE_URL:
             environment.JOURNAL_AI_CARE_BASE_URL ?? "http://localhost:8081",
+          JOURNAL_AI_CONSULTATION_BASE_URL:
+            environment.JOURNAL_AI_CONSULTATION_BASE_URL ??
+            "http://localhost:8082",
         }),
   };
 

@@ -597,6 +597,29 @@ Stable plan identity used to group immutable commercial versions.
 | `created_at` | Immutable UTC plan creation instant. |
 | `updated_at` | UTC instant of the latest catalogue-level activation/name change. |
 
+### `consultation.current_service_entitlement`
+
+Authoritative current-package read model used by cross-service capability and
+model-routing decisions. It is deliberately not a payment, subscription,
+billing-period, consultation-credit, or ledger aggregate. Absence of an
+effective row means `FREE` with synthetic `DEFAULT_FREE` provenance. Stored
+rows are only explicit bounded `DEMO` or future billing-produced `PAID`
+projections; an expired row is ignored rather than silently extending access.
+
+| Field | Purpose |
+| --- | --- |
+| `account_id` | External Identity user UUID and primary key for the single current projection; it is never accepted from an AI client as a routing claim. |
+| `package_code` | Current paid/demo package, restricted to `PLUS` or `PREMIUM`; `FREE` is represented by no effective row. |
+| `source` | Provenance class `DEMO` or future `PAID`; it prevents controlled-demo access from masquerading as payment. |
+| `source_reference` | Stable non-blank demo identifier or future billing lifecycle reference supporting operational traceability. |
+| `established_by` | External Identity administrator UUID required for `DEMO`; future automated `PAID` projections may leave it null while retaining their billing reference. |
+| `effective_from` | Inclusive UTC instant from which the projection may authorize package-specific behavior. |
+| `effective_until` | Exclusive UTC instant after which lookup returns `FREE` unless a new effective projection exists. |
+| `policy_version` | Exact entitlement-read policy; MB-369 fixes `service-entitlement-v1`. |
+| `created_at` | Immutable UTC insertion instant for this current projection row. |
+| `updated_at` | UTC instant of the latest authoritative projection replacement. |
+| `version` | Optimistic-lock counter reserved for safe future demo/billing projection updates. |
+
 ### `consultation.subscription_plan_version`
 
 Immutable price, allocation, credit, revenue-share, and cancellation policy purchased by a subscription period.

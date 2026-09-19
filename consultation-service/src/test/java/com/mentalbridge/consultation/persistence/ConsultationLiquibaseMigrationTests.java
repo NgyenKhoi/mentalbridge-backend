@@ -27,7 +27,33 @@ class ConsultationLiquibaseMigrationTests extends ConsultationTestProperties {
 		var tables = jdbc.sql("select table_name from information_schema.tables where table_schema='public'")
 				.query(String.class).list();
 		assertThat(tables).contains("specialist_profile", "specialist_profile_support_area",
-				"specialist_profile_language", "specialist_profile_status_history");
+				"specialist_profile_language", "specialist_profile_status_history",
+				"current_service_entitlement");
+	}
+
+	@Test
+	void databaseRejectsFreeStoredRowsAmbiguousDemoProvenanceAndInvalidWindows() {
+		var accountId = UUID.randomUUID();
+		assertThatThrownBy(() -> insertEntitlement(accountId, "FREE", "DEMO", UUID.randomUUID(), 1))
+				.isInstanceOf(DataIntegrityViolationException.class);
+		assertThatThrownBy(() -> insertEntitlement(accountId, "PLUS", "DEMO", null, 1))
+				.isInstanceOf(DataIntegrityViolationException.class);
+		assertThatThrownBy(() -> insertEntitlement(accountId, "PREMIUM", "DEMO", UUID.randomUUID(), -1))
+				.isInstanceOf(DataIntegrityViolationException.class);
+	}
+
+	private void insertEntitlement(UUID accountId, String packageCode, String source, UUID establishedBy,
+			int durationHours) {
+		var start = OffsetDateTime.now();
+		jdbc.sql("""
+				insert into current_service_entitlement (
+				    account_id, package_code, source, source_reference, established_by,
+				    effective_from, effective_until, policy_version
+				) values (:accountId, :packageCode, :source, 'migration-test', :establishedBy,
+				    :effectiveFrom, :effectiveUntil, 'service-entitlement-v1')
+				""").param("accountId", accountId).param("packageCode", packageCode).param("source", source)
+				.param("establishedBy", establishedBy).param("effectiveFrom", start)
+				.param("effectiveUntil", start.plusHours(durationHours)).update();
 	}
 
 	@Test

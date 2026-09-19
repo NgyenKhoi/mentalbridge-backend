@@ -47,6 +47,13 @@ provider-capacity guarantee. Exact counting, reset window, token budget, rate,
 and fair-use values belong to a versioned quota policy and server-side
 configuration, not client claims.
 
+For `EXACT_REVISION`, Consultation supplies the current server-authoritative
+package through an authenticated REST decision. Journal/AI does not infer the
+package from JWT claims or accept it from a client. The first attempt snapshots
+one versioned route and retries must use that same provider/model; entitlement
+uncertainty or a route-changing entitlement update stops the provider call.
+There is no automatic cross-provider fallback.
+
 ## SupportPlan and reassessment
 
 AI may use only current authorized, minimized plan context. It can explain an
@@ -78,5 +85,10 @@ attempted business-state mutation.
 
 MB-367 implements only the consented exact-revision backend with MongoDB jobs,
 normalized results, and a deterministic fake provider. Chat/quota,
-longitudinal UI, SupportPlan/reminder accompaniment, and real-provider routing
-remain behind their separate gates.
+longitudinal UI, and SupportPlan/reminder accompaniment remain behind their
+separate gates. MB-369 implements the entitlement-aware router, structured
+Gemini/OpenAI adapters, and synthetic benchmark harness, but does not activate
+a real route until that pinned candidate passes its separately reviewed
+benchmark gate and an approval version plus its credential are configured.
+Benchmarking one provider does not require credentials for an unconfigured
+provider.

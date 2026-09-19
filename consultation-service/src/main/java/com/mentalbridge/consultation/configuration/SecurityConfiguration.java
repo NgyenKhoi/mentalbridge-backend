@@ -36,6 +36,7 @@ public class SecurityConfiguration {
 				.authorizeHttpRequests(authorize -> authorize
 						.requestMatchers("/actuator/health", "/actuator/health/**", "/v3/api-docs/**", "/swagger-ui/**")
 						.permitAll()
+						.requestMatchers("/internal/v1/entitlements/current").hasRole("USER")
 						.requestMatchers("/api/v1/specialist-profile/**").hasRole("SPECIALIST")
 						.requestMatchers("/api/v1/admin/specialist-profiles/**").hasRole("ADMIN")
 						.anyRequest().authenticated())

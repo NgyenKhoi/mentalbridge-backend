@@ -13,6 +13,7 @@ delivery, or SupportPlan state.
 
 | Capability | Main behavior | Acceptance |
 | --- | --- | --- |
+| Current entitlement | Resolve the authenticated user's effective `FREE`/`PLUS`/`PREMIUM` package for owner-to-owner capability checks | No effective row returns `FREE`/`DEFAULT_FREE`; explicit `DEMO` and future `PAID` rows retain provenance and bounded windows; no client tier is trusted |
 | Specialist approval | Submit public profile fields; admin approves, rejects, suspends, or restores with a stable reason | Only approved specialists are discoverable/bookable; suspension cancels future unstarted appointments with credit release; no credential document is collected |
 | Subscription/billing | Publish immutable VND plan versions; accept MoMo webhooks; purchase paid packages; upgrade `PLUS` to `PREMIUM`; expose credit/earning history | Exact minor units; replay safe; no downgrade/user-refund API; real money disabled until price/allocation/credentials gates pass |
 | Discovery/matching | Filter approved specialists and rank domain/support-area match, availability, language, timezone, rating, then experience | Deterministic pagination; criteria/policy version and explanation recorded; no disease/global-severity/clinical matcher or hidden health-data join |
@@ -32,6 +33,12 @@ delivery, or SupportPlan state.
 - Contract-first OpenAPI covers client/admin APIs and internal appointment eligibility projections. Appointment/review/moderation event schemas are versioned.
 - Liquibase constraints/exclusion/locking are the final defense against overlap and double booking; use optimistic locking for editable aggregates.
 - Care and Journal/AI calls use narrow consumer-owned ports, explicit deadlines/breakers and owner-side authorization. Billing is authoritative locally under ADR 0005; payment provider details stay behind an adapter and raw provider payloads are not persisted.
+- MB-369 adds only `current_service_entitlement` as the authoritative current
+  read model and `GET /internal/v1/entitlements/current`. It does not implement
+  plan catalogue publication, subscription/payment lifecycle, MoMo, purchase,
+  upgrade, consultation credits, or ledgers. Future billing may project a
+  bounded `PAID` row into this model in its own transaction; explicit demo/test
+  rows use `DEMO`, and no effective row is returned as `FREE`/`DEFAULT_FREE`.
 
 ## Ordered tasks
 

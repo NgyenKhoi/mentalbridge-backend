@@ -817,6 +817,7 @@ components:
         keyId:
           type: string
           minLength: 1
+          description: Fixed compatibility marker for the single application encryption key; it is not a rotation selector.
         encryptedAt:
           type: string
           format: date-time
@@ -896,6 +897,8 @@ components:
         - CONSENT_REQUIRED
         - CONSENT_REVOKED
         - CONSENT_UNAVAILABLE
+        - ENTITLEMENT_UNAVAILABLE
+        - ENTITLEMENT_CHANGED
         - AUTHORIZATION_CONTEXT_LOST
         - REVISION_STALE
         - JOURNAL_DELETED
@@ -952,10 +955,30 @@ components:
             - REQUEST_PLAN_REVIEW
             - OPEN_PROFESSIONAL_SUPPORT
             - OPEN_SAFETY_GUIDANCE
-        provider: { type: string, const: DETERMINISTIC_FAKE }
-        model: { type: string, const: deterministic-reflection-v1 }
-        promptVersion: { type: string, const: exact-revision-v1 }
+        workload: { type: string, const: EXACT_REVISION }
+        servicePlan:
+          type: string
+          enum: [FREE, PLUS, PREMIUM]
+        entitlementSource:
+          type: string
+          enum: [DEFAULT_FREE, DEMO, PAID]
+        entitlementPolicyVersion: { type: string, minLength: 1, maxLength: 96 }
+        entitlementVersion: { type: integer, format: int64, minimum: 0 }
+        routingPolicyVersion: { type: string, minLength: 1, maxLength: 96 }
+        providerApprovalVersion: { type: string, minLength: 1, maxLength: 96 }
+        provider:
+          type: string
+          enum: [DETERMINISTIC_FAKE, GEMINI, OPENAI]
+        model: { type: string, minLength: 1, maxLength: 128 }
+        promptVersion: { type: string, minLength: 1, maxLength: 96 }
         schemaVersion: { type: integer, const: 1 }
+        latencyMs: { type: integer, minimum: 0 }
+        inputTokens: { type: [integer, "null"], minimum: 0 }
+        outputTokens: { type: [integer, "null"], minimum: 0 }
+        estimatedCostMicroUsd:
+          type: [integer, "null"]
+          minimum: 0
+          description: Estimated provider cost in millionths of one USD using the versioned configured benchmark rate.
         createdAt: { type: string, format: date-time }
     Problem:
       type: object
