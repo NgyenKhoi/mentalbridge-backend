@@ -71,11 +71,12 @@ separately approved stronger route.
 Gemini and OpenAI adapters use structured JSON output and remain disabled by
 default. Real execution requires explicit configuration, credentials, and an
 approval identifier backed by a reproducible synthetic benchmark. Local/test/
-CI continues to select the deterministic fake. The benchmark records dataset,
-rubric, provider, exact model, prompt and schema versions plus normalized
-quality/safety, latency, token, cost, malformed-output, and failure evidence.
-It never uses production journals. Implementing adapters and the harness does
-not itself declare a model approved.
+CI continues to select the deterministic fake. A benchmark run accepts one or
+both complete provider/model candidates, so evaluating Gemini does not require
+an unused OpenAI credential. It records dataset, rubric, provider, exact model,
+prompt and schema versions plus normalized quality/safety, latency, token, cost,
+malformed-output, and failure evidence. It never uses production journals.
+Implementing adapters and the harness does not itself declare a model approved.
 
 The versioned normalized result may contain optional summary and sentiment,
 plus context signals, emotion indicators, themes, preference signals, barrier

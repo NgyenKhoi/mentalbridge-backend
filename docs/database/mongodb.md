@@ -30,7 +30,7 @@ One document per logical entry with an embedded, bounded revision history. If re
         "iv": "BinData",
         "tag": "BinData",
         "algorithm": "AES-256-GCM",
-        "keyId": "journal-kek-2026-01",
+        "keyId": "single-key",
         "encryptedAt": "ISODate"
       },
       "mood": {
@@ -38,7 +38,7 @@ One document per logical entry with an embedded, bounded revision history. If re
         "iv": "BinData",
         "tag": "BinData",
         "algorithm": "AES-256-GCM",
-        "keyId": "journal-kek-2026-01",
+        "keyId": "single-key",
         "encryptedAt": "ISODate"
       },
       "contentByteLength": 420,
@@ -101,6 +101,7 @@ Rules:
 - Never persist/index a plaintext content preview or send decrypted content to logs/search. List previews are derived only after owner authorization and decryption for that response.
 - Story 6201 mood is one of `GREAT`, `GOOD`, `OKAY`, `LOW`, or `VERY_LOW`. It is user-selected, non-clinical, versioned with the journal content, and stored in its own AES-256-GCM envelope so neither the stable label nor its UI emoji is plaintext or indexed. The field remains absent on legacy revisions; authorized responses expose `null` for those revisions. Omitting mood in a compatible revision request preserves the current encrypted value.
 - `contentHash` is a keyed digest for duplicate detection and never a raw plaintext hash.
+- Journal/AI uses one externally supplied AES-256-GCM key for the lifetime of this controlled product demo. The persisted `keyId` is the fixed `single-key` compatibility marker required by the existing envelope schema; it is not configurable and does not select a rotation keyring.
 - Raw idempotency keys are never persisted. The service stores a keyed `keyHash`, request `fingerprint`, and immutable non-plaintext response metadata; an exact retry returns the original versioned result while reuse with different input is rejected with `409`.
 - Command records are retained for the journal document's lifetime, including its tombstone. A journal entry has at most one create, 199 revisions, and one delete command because revision history is capped at 200, so the validator bounds `commands` to 201 without evicting replay keys. The owner plus command-key index makes replay unique within the authenticated owner boundary.
 - User authorization uses the verified JWT subject matched to `ownerAccountId`; specialist access additionally checks the current Care grant and selected journal ID.
@@ -251,7 +252,7 @@ revision and is deleted with that revision.
 
 Migration `005_exact_revision_analysis.cjs` creates both collections and their
 unique/claim/source indexes. Migration
-`006_entitlement_aware_model_routing.cjs` additively accepts the route snapshot,
+`007_entitlement_aware_model_routing.cjs` additively accepts the route snapshot,
 Gemini/OpenAI provenance, prompt `exact-revision-v2`, and bounded execution
 metrics while retaining legacy fake-provider documents. A configured adapter
 does not imply approval: real routes require a separately recorded benchmark
@@ -425,8 +426,8 @@ SHA-256 content digest, case count, and registration time. The raw synthetic
 cases remain version-controlled input rather than copied into operational
 MongoDB.
 
-`benchmark_runs` binds the exact dataset digest, prompt/schema version, two
-pinned provider/model candidates, lifecycle, and aggregate quality, safety,
+`benchmark_runs` binds the exact dataset digest, prompt/schema version, one or
+two pinned provider/model candidates, lifecycle, and aggregate quality, safety,
 latency, token, cost, and error evidence. `benchmark_case_results` stores one
 validated normalized output or stable error classification per run/case/
 provider/model. It never stores raw provider responses or hidden reasoning.
@@ -447,11 +448,11 @@ db.benchmark_case_results.createIndex(
 );
 ```
 
-Migration `007_ai_benchmark_metadata.cjs` owns these validators and indexes.
+Migration `008_ai_benchmark_metadata.cjs` owns these validators and indexes.
 Changing dataset content without a new version is rejected by its stored
-digest. Running the paid benchmark requires an explicit enable flag, both
-credentials, pinned candidate models, and explicit cost configuration; test
-and CI environments reject the enable flag.
+digest. Running the paid benchmark requires an explicit enable flag and at
+least one complete candidate with its credential, pinned model, and explicit
+cost configuration; test and CI environments reject the enable flag.
 
 ## Retention and encryption
 

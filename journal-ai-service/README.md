@@ -66,7 +66,6 @@ npm start
 | `JOURNAL_AI_MONGODB_DATABASE`                    | Production               | `mentalbridge_journal_ai` outside production     | MongoDB database owned by this service                                                  |
 | `JOURNAL_AI_MONGODB_CONNECTION_TIMEOUT_MS`       | No                       | `2000`                                           | MongoDB connect/server-selection timeout from 100 through 30000 milliseconds            |
 | `JOURNAL_AI_ENCRYPTION_KEY`                      | Production               | Local-only deterministic development key         | Canonical base64 encoding of the 32-byte AES-256-GCM journal encryption key             |
-| `JOURNAL_AI_ENCRYPTION_KEY_ID`                   | No                       | `local-v1`                                       | Identifier of the single active key; ciphertext under another identifier fails closed   |
 | `JOURNAL_AI_IDEMPOTENCY_HMAC_KEY`                | Production               | Local-only deterministic development key         | Canonical base64 encoding of a separate 32-byte key for command hashes and fingerprints |
 | `IDENTITY_JWT_ISSUER`                            | Yes                      | None                                             | Exact Identity issuer accepted by this resource service                                 |
 | `IDENTITY_JWT_AUDIENCE`                          | Yes                      | None                                             | Exact MentalBridge API audience accepted by this resource service                       |
@@ -86,7 +85,7 @@ npm start
 | `JOURNAL_AI_PROVIDER_TIMEOUT_MS`                 | No                       | `30000`                                          | Per-provider HTTP timeout                                                               |
 | `JOURNAL_AI_BENCHMARK_ENABLED`                   | No                       | `false`                                          | Explicit paid-run gate; rejected in test/CI                                             |
 | `JOURNAL_AI_BENCHMARK_DATASET_PATH`              | No                       | synthetic v1 dataset path                        | Version-controlled exact-revision benchmark input                                       |
-| `JOURNAL_AI_BENCHMARK_*_MODEL`                   | Benchmark only           | None                                             | Pinned Gemini/OpenAI candidates; no implicit latest alias                               |
+| `JOURNAL_AI_BENCHMARK_*_MODEL`                   | Benchmark only           | None                                             | At least one complete pinned Gemini or OpenAI candidate; no implicit latest alias       |
 | `JOURNAL_AI_*_COST_MICRO_USD_PER_MILLION_TOKENS` | Real route/benchmark     | None                                             | Explicit pricing snapshot used only for cost estimation                                 |
 | `JOURNAL_AI_ANALYSIS_ENABLED`                    | No                       | `true` outside production; `false` in production | Enables the deterministic exact-revision backend runtime; production remains gated      |
 | `JOURNAL_AI_ANALYSIS_POLL_INTERVAL_MS`           | No                       | `250`                                            | Interval for due/expired-lease job claims                                               |
@@ -94,10 +93,10 @@ npm start
 
 Local `.env` files are loaded only outside production and never override real
 environment variables. Copy `.env.example` to `.env` for local development,
-then replace placeholder JWT values with local credentials. Generate
-independent random encryption and HMAC keys for every deployed environment
-(for example, with `crypto.randomBytes(32).toString("base64")`). Do not commit
-local `.env` files or secrets.
+then replace placeholder JWT values with local credentials. Generate one
+stable encryption key and one different HMAC key (for example, with
+`crypto.randomBytes(32).toString("base64")`) and keep them unchanged while
+encrypted demo data exists. Do not commit local `.env` files or secrets.
 
 ## Operations endpoints
 
@@ -143,11 +142,18 @@ revisions. Only a note-free AI projection is exposed under current Care
 `AI_PROCESSING` consent. Reminder composition remains unavailable because it has
 no approved consent authorization contract.
 
-The committed benchmark dataset is synthetic and CC0-labelled. Running the
-harness does not approve either candidate. An accepted result must be reviewed
-and recorded separately as `JOURNAL_AI_PROVIDER_APPROVAL_VERSION` before
-`APPROVED_REAL` runtime mode can start. The router never falls back to a second
-provider after a failure.
+The committed benchmark dataset is synthetic and CC0-labelled. A run evaluates
+one or both explicitly configured Gemini/OpenAI candidates; credentials for an
+unconfigured provider are not required. Running the harness does not approve a
+candidate. An accepted result must be reviewed and recorded separately as
+`JOURNAL_AI_PROVIDER_APPROVAL_VERSION` before `APPROVED_REAL` runtime mode can
+start. The router never falls back to a second provider after a failure.
+The benchmark retries a transient 429, provider 5xx, or transport failure at
+most once on the same route and emits only safe failure metadata such as HTTP
+status, provider code, retry delay, quota identifier, finish reason, and schema
+issue paths. It never emits the API key, request headers, raw provider response,
+or hidden reasoning. Daily-quota fail-fast is deferred to MB-432 follow-up
+verification.
 
 Story 6201 keeps journal content plain text and adds the stable `GREAT`, `GOOD`,
 `OKAY`, `LOW`, and `VERY_LOW` mood labels. The API accepts an omitted mood for

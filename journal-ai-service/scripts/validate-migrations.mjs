@@ -72,6 +72,14 @@ assert.ok(
     "inputCostMicroUsdPerMillionTokens",
   ),
 );
+assert.equal(
+  benchmarkMigration.runValidator.$jsonSchema.properties.candidates.minItems,
+  1,
+);
+assert.equal(
+  benchmarkMigration.runValidator.$jsonSchema.properties.candidates.maxItems,
+  2,
+);
 assert.equal(typeof commandsMigration.up, "function");
 assert.equal(typeof commandsMigration.down, "function");
 assert.ok(

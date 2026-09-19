@@ -246,8 +246,6 @@ export class JournalEncryption {
     };
   }
   decrypt(ownerAccountId: string, entryId: string, revision: Revision): string {
-    if (revision.content.keyId !== this.configuration.JOURNAL_ENCRYPTION_KEY_ID)
-      throw new InternalServerErrorException();
     try {
       const decipher = createDecipheriv(
         "aes-256-gcm",
@@ -303,8 +301,6 @@ export class JournalEncryption {
     revision: Revision,
   ): JournalMood | null {
     if (!revision.mood) return null;
-    if (revision.mood.keyId !== this.configuration.JOURNAL_ENCRYPTION_KEY_ID)
-      throw new InternalServerErrorException();
     try {
       const decipher = createDecipheriv(
         "aes-256-gcm",

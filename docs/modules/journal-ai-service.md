@@ -56,7 +56,7 @@ Support Guide, SupportPlan, eligibility, and confirmation authority.
 - [ ] JAI-05 Add `migrate-mongo` validators/indexes for journal, job, result, dataset, and benchmark collections plus data documentation. Journal, analysis-job, normalized-result, and MB-369 synthetic benchmark metadata collections are complete; general dataset import remains deferred.
 - [x] JAI-06 Implement encrypted journal revisions, authorization, pagination and deletion.
 - [ ] JAI-07 Implement consent-gated idempotent analysis orchestration, adapters, bounded retry and reconciliation. MB-367 completes the exact-revision job runtime; MB-369 adds gated Gemini/OpenAI adapters and entitlement routing. An accepted real route and broader reconciliation remain deferred until benchmark approval.
-- [ ] JAI-08 Implement dataset import/versioning and reproducible benchmark coordination. MB-369 completes the exact-revision synthetic two-provider harness; general governed dataset import remains deferred.
+- [ ] JAI-08 Implement dataset import/versioning and reproducible benchmark coordination. MB-369 completes the exact-revision synthetic harness for one or both configured Gemini/OpenAI candidates; general governed dataset import remains deferred.
 - [ ] JAI-09 Verify malformed AI output, prompt injection boundary, timeout/cost limit, duplicates/reordering, cross-store recovery and deletion.
 - [ ] JAI-10 Add observability/configuration, module README, and pass Node/contract/Mongo gates. Journal/AI is Mongo-only and has no PostgreSQL gate.
 
@@ -86,6 +86,12 @@ approve a model: real execution remains disabled until the exact route carries
 an accepted benchmark approval identifier and credentials. This Story does
 not add billing/payment/credit lifecycle, AI Chat or its quota ledger, vector
 retrieval/RAG, or PhoBERT.
+
+The implementation and deferred live-provider approval evidence are recorded
+in [MB-369 model routing and benchmark foundation evidence](../story-mb-369-model-routing-evidence.md).
+The live harness has been exercised, but the full candidate gate remains
+deferred after Gemini daily free-tier exhaustion; runtime remains
+`DETERMINISTIC_FAKE`.
 
 ## Story 6201 authoring decision
 

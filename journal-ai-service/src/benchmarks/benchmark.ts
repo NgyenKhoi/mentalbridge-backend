@@ -11,6 +11,7 @@ import {
   RoutedExactRevisionProvider,
   type ExactRevisionProvider,
   type ProviderAnalysis,
+  type ProviderFailureDiagnostics,
 } from "../llm-providers/llm-providers.js";
 import type {
   AnalysisRoute,
@@ -186,18 +187,118 @@ export interface BenchmarkAggregate {
   readonly totalEstimatedCostMicroUsd: number;
 }
 
+export interface BenchmarkFailureDiagnostic {
+  readonly caseId: string;
+  readonly provider: Exclude<AiProviderId, "DETERMINISTIC_FAKE">;
+  readonly model: string;
+  readonly errorClassification: string;
+  readonly attemptCount: number;
+  readonly httpStatus: number | null;
+  readonly providerErrorCode: string | null;
+  readonly retryAfterMs: number | null;
+  readonly quotaIds: readonly string[];
+  readonly quotaMetrics: readonly string[];
+  readonly finishReason: string | null;
+  readonly schemaIssues: readonly string[];
+}
+
+export interface BenchmarkRunResult {
+  readonly runId: string;
+  readonly aggregates: BenchmarkAggregate[];
+  readonly failures: BenchmarkFailureDiagnostic[];
+}
+
 interface Candidate {
   readonly route: AnalysisRoute;
 }
 
+export const buildBenchmarkCandidates = (
+  configuration: ServiceConfiguration,
+): Candidate[] => {
+  const route = (
+    provider: Exclude<AiProviderId, "DETERMINISTIC_FAKE">,
+    candidate: {
+      readonly model: string;
+      readonly inputCostMicroUsdPerMillionTokens: number;
+      readonly outputCostMicroUsdPerMillionTokens: number;
+    },
+  ): AnalysisRoute => ({
+    workload: "EXACT_REVISION",
+    servicePlan: "FREE",
+    entitlementSource: "DEFAULT_FREE",
+    entitlementPolicyVersion: "benchmark-only",
+    entitlementVersion: 0,
+    routingPolicyVersion: "benchmark-exact-revision-v1",
+    providerApprovalVersion: "BENCHMARK_UNAPPROVED",
+    provider,
+    model: candidate.model,
+    promptVersion: EXACT_REVISION_PROMPT_VERSION,
+    inputCostMicroUsdPerMillionTokens:
+      candidate.inputCostMicroUsdPerMillionTokens,
+    outputCostMicroUsdPerMillionTokens:
+      candidate.outputCostMicroUsdPerMillionTokens,
+  });
+  const candidates: Candidate[] = [];
+  if (configuration.BENCHMARK_GEMINI_ROUTE)
+    candidates.push({
+      route: route("GEMINI", configuration.BENCHMARK_GEMINI_ROUTE),
+    });
+  if (configuration.BENCHMARK_OPENAI_ROUTE)
+    candidates.push({
+      route: route("OPENAI", configuration.BENCHMARK_OPENAI_ROUTE),
+    });
+  if (candidates.length === 0)
+    throw new Error(
+      "At least one Gemini or OpenAI benchmark route is required",
+    );
+  return candidates;
+};
+
 interface CaseOutcome {
   readonly document: BenchmarkCaseResultDocument;
+  readonly failure?: BenchmarkFailureDiagnostic;
 }
 
 const errorClassification = (error: unknown): string => {
   if (error instanceof ProviderFailure) return error.reason;
   if (error instanceof z.ZodError) return "INVALID_NORMALIZED_OUTPUT";
   return "INTERNAL_ERROR";
+};
+
+export const analyzeBenchmarkCaseWithRetry = async (
+  provider: ExactRevisionProvider,
+  text: string,
+  route: AnalysisRoute,
+  waitForRetry: (milliseconds: number) => Promise<void>,
+  random: () => number = Math.random,
+): Promise<ProviderAnalysis> => {
+  for (let attemptCount = 1; attemptCount <= 2; attemptCount += 1) {
+    try {
+      return await provider.analyze(text, route);
+    } catch (error) {
+      if (
+        !(error instanceof ProviderFailure) ||
+        error.kind !== "RETRYABLE" ||
+        attemptCount === 2
+      ) {
+        if (error instanceof ProviderFailure)
+          throw new ProviderFailure(
+            error.kind,
+            error.reason,
+            { ...error.diagnostics, attemptCount },
+            { cause: error },
+          );
+        throw error;
+      }
+      const delay =
+        error.diagnostics.retryAfterMs ??
+        (error.diagnostics.httpStatus === 429
+          ? 30_000 + Math.floor(random() * 5_000)
+          : 2_000 + Math.floor(random() * 1_000));
+      await waitForRetry(delay);
+    }
+  }
+  throw new Error("Unreachable benchmark attempt state");
 };
 
 const aggregate = (
@@ -274,6 +375,12 @@ export class BenchmarkRunner {
     private readonly provider: ExactRevisionProvider = new RoutedExactRevisionProvider(
       configuration,
     ),
+    private readonly waitForRetry: (milliseconds: number) => Promise<void> = (
+      milliseconds,
+    ) =>
+      new Promise((resolveWait) => {
+        setTimeout(resolveWait, milliseconds);
+      }),
   ) {
     this.client = new MongoClient(configuration.MONGODB_URI, {
       serverSelectionTimeoutMS: configuration.MONGODB_CONNECTION_TIMEOUT_MS,
@@ -284,12 +391,12 @@ export class BenchmarkRunner {
     this.caseResults = database.collection("benchmark_case_results");
   }
 
-  async run(): Promise<{ runId: string; aggregates: BenchmarkAggregate[] }> {
+  async run(): Promise<BenchmarkRunResult> {
     if (!this.configuration.BENCHMARK_ENABLED)
       throw new Error(
         "Benchmark is disabled; set JOURNAL_AI_BENCHMARK_ENABLED=true explicitly",
       );
-    const candidates = this.candidates();
+    const candidates = buildBenchmarkCandidates(this.configuration);
     const { dataset, sha256 } = await this.loadDataset();
     await this.client.connect();
     const runId = randomUUID();
@@ -341,12 +448,14 @@ export class BenchmarkRunner {
         completedAt: null,
       });
       const aggregates: BenchmarkAggregate[] = [];
+      const failures: BenchmarkFailureDiagnostic[] = [];
       for (const candidate of candidates) {
         const outcomes: CaseOutcome[] = [];
         for (const benchmarkCase of dataset.cases) {
           const outcome = await this.runCase(runId, benchmarkCase, candidate);
           await this.caseResults.insertOne(outcome.document);
           outcomes.push(outcome);
+          if (outcome.failure) failures.push(outcome.failure);
         }
         aggregates.push(aggregate(candidate, outcomes));
       }
@@ -360,7 +469,7 @@ export class BenchmarkRunner {
           },
         },
       );
-      return { runId, aggregates };
+      return { runId, aggregates, failures };
     } catch (error) {
       try {
         await this.runs.updateOne(
@@ -392,40 +501,6 @@ export class BenchmarkRunner {
     };
   }
 
-  private candidates(): Candidate[] {
-    const gemini = this.configuration.BENCHMARK_GEMINI_ROUTE;
-    const openAi = this.configuration.BENCHMARK_OPENAI_ROUTE;
-    if (!gemini || !openAi)
-      throw new Error("Both Gemini and OpenAI benchmark routes are required");
-    const route = (
-      provider: Exclude<AiProviderId, "DETERMINISTIC_FAKE">,
-      candidate: {
-        readonly model: string;
-        readonly inputCostMicroUsdPerMillionTokens: number;
-        readonly outputCostMicroUsdPerMillionTokens: number;
-      },
-    ): AnalysisRoute => ({
-      workload: "EXACT_REVISION",
-      servicePlan: "FREE",
-      entitlementSource: "DEFAULT_FREE",
-      entitlementPolicyVersion: "benchmark-only",
-      entitlementVersion: 0,
-      routingPolicyVersion: "benchmark-exact-revision-v1",
-      providerApprovalVersion: "BENCHMARK_UNAPPROVED",
-      provider,
-      model: candidate.model,
-      promptVersion: EXACT_REVISION_PROMPT_VERSION,
-      inputCostMicroUsdPerMillionTokens:
-        candidate.inputCostMicroUsdPerMillionTokens,
-      outputCostMicroUsdPerMillionTokens:
-        candidate.outputCostMicroUsdPerMillionTokens,
-    });
-    return [
-      { route: route("GEMINI", gemini) },
-      { route: route("OPENAI", openAi) },
-    ];
-  }
-
   private async runCase(
     runId: string,
     benchmarkCase: BenchmarkCase,
@@ -446,9 +521,11 @@ export class BenchmarkRunner {
       createdAt: new Date(),
     };
     try {
-      const analysis: ProviderAnalysis = await this.provider.analyze(
+      const analysis: ProviderAnalysis = await analyzeBenchmarkCaseWithRetry(
+        this.provider,
         benchmarkCase.text,
         candidate.route,
+        this.waitForRetry,
       );
       const evaluation = evaluateBenchmarkOutput(
         benchmarkCase,
@@ -471,11 +548,14 @@ export class BenchmarkRunner {
         },
       };
     } catch (error) {
+      const classification = errorClassification(error);
+      const diagnostics: ProviderFailureDiagnostics =
+        error instanceof ProviderFailure ? error.diagnostics : {};
       return {
         document: {
           ...base,
           status: "FAILED",
-          errorClassification: errorClassification(error),
+          errorClassification: classification,
           qualityScore: null,
           qualityPassed: null,
           safetyPassed: null,
@@ -485,6 +565,26 @@ export class BenchmarkRunner {
           outputTokens: null,
           estimatedCostMicroUsd: null,
           normalizedOutput: null,
+        },
+        failure: {
+          caseId: benchmarkCase.id,
+          provider: base.provider,
+          model: base.model,
+          errorClassification: classification,
+          attemptCount: diagnostics.attemptCount ?? 1,
+          httpStatus: diagnostics.httpStatus ?? null,
+          providerErrorCode: diagnostics.providerErrorCode ?? null,
+          retryAfterMs: diagnostics.retryAfterMs ?? null,
+          quotaIds: diagnostics.quotaIds ?? [],
+          quotaMetrics: diagnostics.quotaMetrics ?? [],
+          finishReason: diagnostics.finishReason ?? null,
+          schemaIssues:
+            error instanceof z.ZodError
+              ? error.issues.map(
+                  (issue) =>
+                    `${issue.path.length === 0 ? "<root>" : issue.path.join(".")}:${issue.code}`,
+                )
+              : (diagnostics.schemaIssues ?? []),
         },
       };
     }

@@ -10,7 +10,7 @@ import type { ExactRevisionProvider } from "../llm-providers/llm-providers.js";
 import { BenchmarkRunner } from "./benchmark.js";
 
 const require = createRequire(import.meta.url);
-const migration = require("../../migrations/007_ai_benchmark_metadata.cjs") as {
+const migration = require("../../migrations/008_ai_benchmark_metadata.cjs") as {
   up(database: unknown): Promise<void>;
 };
 
@@ -33,12 +33,7 @@ void test("persists reproducible benchmark evidence without raw provider respons
       inputCostMicroUsdPerMillionTokens: 100,
       outputCostMicroUsdPerMillionTokens: 200,
     },
-    BENCHMARK_OPENAI_ROUTE: {
-      provider: "OPENAI",
-      model: "openai-candidate-pinned",
-      inputCostMicroUsdPerMillionTokens: 300,
-      outputCostMicroUsdPerMillionTokens: 400,
-    },
+    BENCHMARK_OPENAI_ROUTE: null,
   } as ServiceConfiguration;
   const provider: ExactRevisionProvider = {
     analyze: (_text, route) =>
@@ -63,12 +58,12 @@ void test("persists reproducible benchmark evidence without raw provider respons
 
   try {
     const result = await new BenchmarkRunner(configuration, provider).run();
-    assert.equal(result.aggregates.length, 2);
+    assert.equal(result.aggregates.length, 1);
     assert.equal(
       await database.collection("benchmark_case_results").countDocuments({
         runId: result.runId,
       }),
-      12,
+      6,
     );
     const run = await database
       .collection<{

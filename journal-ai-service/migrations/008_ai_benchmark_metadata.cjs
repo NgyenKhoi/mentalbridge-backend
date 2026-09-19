@@ -1,4 +1,4 @@
-const routing = require("./006_entitlement_aware_model_routing.cjs");
+const routing = require("./007_entitlement_aware_model_routing.cjs");
 
 const datasetCollection = "benchmark_datasets";
 const runCollection = "benchmark_runs";
@@ -130,13 +130,13 @@ const runValidator = {
       status: { enum: ["RUNNING", "COMPLETED", "FAILED"] },
       candidates: {
         bsonType: "array",
-        minItems: 2,
+        minItems: 1,
         maxItems: 2,
         items: candidate,
       },
       aggregates: {
         bsonType: "array",
-        minItems: 2,
+        minItems: 1,
         maxItems: 2,
         items: aggregate,
       },

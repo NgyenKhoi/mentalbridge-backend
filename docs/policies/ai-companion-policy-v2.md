@@ -88,5 +88,7 @@ normalized results, and a deterministic fake provider. Chat/quota,
 longitudinal UI, and SupportPlan/reminder accompaniment remain behind their
 separate gates. MB-369 implements the entitlement-aware router, structured
 Gemini/OpenAI adapters, and synthetic benchmark harness, but does not activate
-a real route until pinned candidates pass the separately reviewed benchmark
-gate and an approval version plus credentials are configured.
+a real route until that pinned candidate passes its separately reviewed
+benchmark gate and an approval version plus its credential are configured.
+Benchmarking one provider does not require credentials for an unconfigured
+provider.

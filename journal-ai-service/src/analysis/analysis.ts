@@ -329,8 +329,6 @@ export class MongoAnalysisRepository
     journalId: string,
     revision: Revision,
   ) {
-    if (revision.content.keyId !== this.configuration.JOURNAL_ENCRYPTION_KEY_ID)
-      throw new ServiceUnavailableException();
     try {
       const decipher = createDecipheriv(
         "aes-256-gcm",

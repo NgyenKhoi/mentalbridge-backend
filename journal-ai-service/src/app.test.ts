@@ -29,7 +29,7 @@ const testConfiguration: ServiceConfiguration = {
   MONGODB_DATABASE: "mentalbridge_journal_ai_test",
   MONGODB_CONNECTION_TIMEOUT_MS: 100,
   JOURNAL_ENCRYPTION_KEY: Buffer.alloc(32, 1),
-  JOURNAL_ENCRYPTION_KEY_ID: "test-v1",
+  JOURNAL_ENCRYPTION_KEY_ID: "single-key",
   JOURNAL_IDEMPOTENCY_HMAC_KEY: Buffer.alloc(32, 2),
   IDENTITY_JWT_ISSUER: "https://identity.test.mentalbridge",
   IDENTITY_JWT_AUDIENCE: "mentalbridge-api",
@@ -157,6 +157,7 @@ void test("validates configuration", () => {
 
   assert.equal(configuration.PORT, 3100);
   assert.equal(configuration.LOG_LEVEL, "debug");
+  assert.equal(configuration.JOURNAL_ENCRYPTION_KEY_ID, "single-key");
 });
 
 void test("rejects an invalid port", () => {
@@ -214,6 +215,43 @@ void test("forces deterministic providers and disables paid benchmarks in CI", (
     loadConfiguration({
       ...identity,
       JOURNAL_AI_BENCHMARK_ENABLED: "true",
+    }),
+  );
+});
+
+void test("accepts a complete Gemini-only benchmark candidate", () => {
+  const configuration = loadConfiguration({
+    NODE_ENV: "development",
+    IDENTITY_JWT_ISSUER: "https://identity.test.mentalbridge",
+    IDENTITY_JWT_AUDIENCE: "mentalbridge-api",
+    IDENTITY_JWT_KEY_ID: "test-key",
+    IDENTITY_JWT_PUBLIC_KEY: testPublicKeyPem,
+    JOURNAL_AI_BENCHMARK_ENABLED: "true",
+    JOURNAL_AI_GEMINI_API_KEY: "gemini-test-secret",
+    JOURNAL_AI_BENCHMARK_GEMINI_MODEL: "gemini-test-model",
+    JOURNAL_AI_BENCHMARK_GEMINI_INPUT_COST_MICRO_USD_PER_MILLION_TOKENS: "1",
+    JOURNAL_AI_BENCHMARK_GEMINI_OUTPUT_COST_MICRO_USD_PER_MILLION_TOKENS: "2",
+  });
+
+  assert.equal(configuration.BENCHMARK_GEMINI_ROUTE?.provider, "GEMINI");
+  assert.equal(configuration.BENCHMARK_OPENAI_ROUTE, null);
+});
+
+void test("rejects an incomplete or missing benchmark candidate", () => {
+  const identity = {
+    NODE_ENV: "development",
+    IDENTITY_JWT_ISSUER: "https://identity.test.mentalbridge",
+    IDENTITY_JWT_AUDIENCE: "mentalbridge-api",
+    IDENTITY_JWT_KEY_ID: "test-key",
+    IDENTITY_JWT_PUBLIC_KEY: testPublicKeyPem,
+    JOURNAL_AI_BENCHMARK_ENABLED: "true",
+  };
+  assert.throws(() => loadConfiguration(identity));
+  assert.throws(() =>
+    loadConfiguration({
+      ...identity,
+      JOURNAL_AI_GEMINI_API_KEY: "gemini-test-secret",
+      JOURNAL_AI_BENCHMARK_GEMINI_MODEL: "gemini-test-model",
     }),
   );
 });

@@ -268,8 +268,6 @@ export class EmotionCheckInCrypto {
     localDate: string,
     revision: CheckInRevision,
   ): CheckInValue {
-    if (revision.payload.keyId !== this.configuration.JOURNAL_ENCRYPTION_KEY_ID)
-      throw new ServiceUnavailableException();
     try {
       const decipher = createDecipheriv(
         "aes-256-gcm",

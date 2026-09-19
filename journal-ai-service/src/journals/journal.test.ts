@@ -129,7 +129,7 @@ class MemoryStore implements JournalStore {
 
 const configuration = {
   JOURNAL_ENCRYPTION_KEY: Buffer.alloc(32, 1),
-  JOURNAL_ENCRYPTION_KEY_ID: "test-v1",
+  JOURNAL_ENCRYPTION_KEY_ID: "single-key",
   JOURNAL_IDEMPOTENCY_HMAC_KEY: Buffer.alloc(32, 2),
 } as ServiceConfiguration;
 const owner = "11111111-1111-4111-8111-111111111111";

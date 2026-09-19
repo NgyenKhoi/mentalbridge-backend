@@ -61,7 +61,7 @@ void test("persists encrypted owner-isolated CRUD with real MongoDB", async () =
     MONGODB_DATABASE: databaseName,
     MONGODB_CONNECTION_TIMEOUT_MS: 2_000,
     JOURNAL_ENCRYPTION_KEY: Buffer.alloc(32, 11),
-    JOURNAL_ENCRYPTION_KEY_ID: "integration-v1",
+    JOURNAL_ENCRYPTION_KEY_ID: "single-key",
     JOURNAL_IDEMPOTENCY_HMAC_KEY: Buffer.alloc(32, 12),
     IDENTITY_JWT_ISSUER: "https://identity.test.mentalbridge",
     IDENTITY_JWT_AUDIENCE: "mentalbridge-api",

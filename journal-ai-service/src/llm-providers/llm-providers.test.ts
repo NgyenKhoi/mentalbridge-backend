@@ -130,7 +130,28 @@ void test("does not fall back to another provider after retryable or malformed G
   let calls = 0;
   globalThis.fetch = () => {
     calls += 1;
-    return Promise.resolve(new Response("unavailable", { status: 503 }));
+    return Promise.resolve(
+      new Response(
+        JSON.stringify({
+          error: {
+            code: 503,
+            status: "UNAVAILABLE",
+            details: [
+              { retryDelay: "2s" },
+              {
+                violations: [
+                  {
+                    quotaId: "SyntheticQuota",
+                    quotaMetric: "example.test/provider_requests",
+                  },
+                ],
+              },
+            ],
+          },
+        }),
+        { status: 503 },
+      ),
+    );
   };
   try {
     await assert.rejects(
@@ -140,7 +161,14 @@ void test("does not fall back to another provider after retryable or malformed G
           route("GEMINI"),
         ),
       (error: unknown) =>
-        error instanceof ProviderFailure && error.kind === "RETRYABLE",
+        error instanceof ProviderFailure &&
+        error.kind === "RETRYABLE" &&
+        error.diagnostics.httpStatus === 503 &&
+        error.diagnostics.providerErrorCode === "UNAVAILABLE" &&
+        error.diagnostics.retryAfterMs === 2_000 &&
+        error.diagnostics.quotaIds?.[0] === "SyntheticQuota" &&
+        error.diagnostics.quotaMetrics?.[0] ===
+          "example.test/provider_requests",
     );
     assert.equal(calls, 1);
 

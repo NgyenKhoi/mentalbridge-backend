@@ -4,7 +4,6 @@ import { z } from "zod";
 const nodeEnvironments = ["development", "test", "production"] as const;
 const providerModes = ["DETERMINISTIC_FAKE", "APPROVED_REAL"] as const;
 const realProviders = ["GEMINI", "OPENAI"] as const;
-const keyIdPattern = /^[A-Za-z0-9._-]{1,64}$/;
 const versionPattern = /^[A-Za-z0-9._-]{1,96}$/;
 const modelPattern = /^[A-Za-z0-9._:/-]{1,128}$/;
 const localEncryptionKey = Buffer.alloc(32, 7).toString("base64");
@@ -58,10 +57,6 @@ const environmentSchema = z
       .max(30_000)
       .default(2_000),
     JOURNAL_AI_ENCRYPTION_KEY: encryptionKeySchema,
-    JOURNAL_AI_ENCRYPTION_KEY_ID: z
-      .string()
-      .regex(keyIdPattern)
-      .default("local-v1"),
     JOURNAL_AI_IDEMPOTENCY_HMAC_KEY: encryptionKeySchema,
     IDENTITY_JWT_ISSUER: z.url(),
     IDENTITY_JWT_AUDIENCE: z.string().min(1),
@@ -236,23 +231,71 @@ const environmentSchema = z
           path: ["JOURNAL_AI_BENCHMARK_ENABLED"],
           message: "Paid benchmark calls are disabled in test and CI",
         });
-      const required = [
-        "JOURNAL_AI_GEMINI_API_KEY",
-        "JOURNAL_AI_OPENAI_API_KEY",
-        "JOURNAL_AI_BENCHMARK_GEMINI_MODEL",
-        "JOURNAL_AI_BENCHMARK_GEMINI_INPUT_COST_MICRO_USD_PER_MILLION_TOKENS",
-        "JOURNAL_AI_BENCHMARK_GEMINI_OUTPUT_COST_MICRO_USD_PER_MILLION_TOKENS",
-        "JOURNAL_AI_BENCHMARK_OPENAI_MODEL",
-        "JOURNAL_AI_BENCHMARK_OPENAI_INPUT_COST_MICRO_USD_PER_MILLION_TOKENS",
-        "JOURNAL_AI_BENCHMARK_OPENAI_OUTPUT_COST_MICRO_USD_PER_MILLION_TOKENS",
+
+      const benchmarkCandidates = [
+        {
+          name: "Gemini",
+          credential: "JOURNAL_AI_GEMINI_API_KEY",
+          routeKeys: [
+            "JOURNAL_AI_BENCHMARK_GEMINI_MODEL",
+            "JOURNAL_AI_BENCHMARK_GEMINI_INPUT_COST_MICRO_USD_PER_MILLION_TOKENS",
+            "JOURNAL_AI_BENCHMARK_GEMINI_OUTPUT_COST_MICRO_USD_PER_MILLION_TOKENS",
+          ],
+        },
+        {
+          name: "OpenAI",
+          credential: "JOURNAL_AI_OPENAI_API_KEY",
+          routeKeys: [
+            "JOURNAL_AI_BENCHMARK_OPENAI_MODEL",
+            "JOURNAL_AI_BENCHMARK_OPENAI_INPUT_COST_MICRO_USD_PER_MILLION_TOKENS",
+            "JOURNAL_AI_BENCHMARK_OPENAI_OUTPUT_COST_MICRO_USD_PER_MILLION_TOKENS",
+          ],
+        },
       ] as const;
-      for (const key of required) {
-        if (environment[key] === undefined)
-          context.addIssue({
-            code: "custom",
-            path: [key],
-            message: `${key} is required for an explicit benchmark run`,
-          });
+
+      let completeCandidateCount = 0;
+
+      for (const candidate of benchmarkCandidates) {
+        const routeConfigured = candidate.routeKeys.every(
+          (key) => environment[key] !== undefined,
+        );
+
+        const routePartiallyConfigured = candidate.routeKeys.some(
+          (key) => environment[key] !== undefined,
+        );
+
+        if (routePartiallyConfigured && !routeConfigured) {
+          for (const key of candidate.routeKeys) {
+            if (environment[key] === undefined) {
+              context.addIssue({
+                code: "custom",
+                path: [key],
+                message: `${key} is required when the ${candidate.name} benchmark candidate is configured`,
+              });
+            }
+          }
+        }
+
+        if (routeConfigured) {
+          if (!environment[candidate.credential]) {
+            context.addIssue({
+              code: "custom",
+              path: [candidate.credential],
+              message: `${candidate.name} credentials are required for the configured benchmark candidate`,
+            });
+          } else {
+            completeCandidateCount += 1;
+          }
+        }
+      }
+
+      if (completeCandidateCount === 0) {
+        context.addIssue({
+          code: "custom",
+          path: ["JOURNAL_AI_BENCHMARK_ENABLED"],
+          message:
+            "At least one complete Gemini or OpenAI benchmark candidate is required",
+        });
       }
     }
   })
@@ -266,7 +309,7 @@ const environmentSchema = z
     MONGODB_CONNECTION_TIMEOUT_MS:
       environment.JOURNAL_AI_MONGODB_CONNECTION_TIMEOUT_MS,
     JOURNAL_ENCRYPTION_KEY: environment.JOURNAL_AI_ENCRYPTION_KEY,
-    JOURNAL_ENCRYPTION_KEY_ID: environment.JOURNAL_AI_ENCRYPTION_KEY_ID,
+    JOURNAL_ENCRYPTION_KEY_ID: "single-key" as const,
     JOURNAL_IDEMPOTENCY_HMAC_KEY: environment.JOURNAL_AI_IDEMPOTENCY_HMAC_KEY,
     IDENTITY_JWT_ISSUER: environment.IDENTITY_JWT_ISSUER,
     IDENTITY_JWT_AUDIENCE: environment.IDENTITY_JWT_AUDIENCE,

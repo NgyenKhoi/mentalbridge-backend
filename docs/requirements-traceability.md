@@ -139,8 +139,10 @@ Agents must not invent these behaviors independently. Resolve the relevant rule 
   Journal/AI forwards the end-user bearer, snapshots one versioned
   workload/package route, never trusts a client tier, and never falls back
   across providers. Gemini/OpenAI real execution remains config-, credential-,
-  and benchmark-approval-gated; CI uses the deterministic fake. AI Chat quota,
-  RAG/vector storage, and PhoBERT are outside the Story.
+  and benchmark-approval-gated; the harness accepts one or both configured
+  candidates without requiring an unused provider credential, and CI uses the
+  deterministic fake. AI Chat quota, RAG/vector storage, and PhoBERT are outside
+  the Story.
 - 2026-09-13: `MB-CONSULTATION-FLOW-001` approved the historical v1
   `IN_APP_CHAT`/`IN_PERSON` flow, completion evidence, brief, summary,
   discovery, and specialist states. ADR 0017 amends new v2 modes to

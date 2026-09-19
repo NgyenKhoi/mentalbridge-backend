@@ -817,6 +817,7 @@ components:
         keyId:
           type: string
           minLength: 1
+          description: Fixed compatibility marker for the single application encryption key; it is not a rotation selector.
         encryptedAt:
           type: string
           format: date-time
