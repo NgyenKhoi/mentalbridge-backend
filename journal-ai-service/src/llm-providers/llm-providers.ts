@@ -4,12 +4,19 @@ import type { ServiceConfiguration } from "../configuration/configuration.js";
 import type {
   AiProviderId,
   AnalysisRoute,
+  LongitudinalAnalysisRoute,
 } from "../model-routing/model-routing.js";
 import {
   exactRevisionPrompt,
   normalizeExactRevisionOutput,
   type ExactRevisionPrompt,
 } from "../prompts/exact-revision.js";
+import {
+  longitudinalPrompt,
+  type LongitudinalPrompt,
+  type LongitudinalPromptCoverage,
+  type LongitudinalPromptSource,
+} from "../prompts/longitudinal.js";
 
 export interface ProviderUsage {
   readonly inputTokens: number | null;
@@ -25,6 +32,14 @@ export interface ProviderAnalysis {
 
 export interface ExactRevisionProvider {
   analyze(text: string, route: AnalysisRoute): Promise<ProviderAnalysis>;
+}
+
+export interface LongitudinalProvider {
+  analyze(
+    sources: readonly LongitudinalPromptSource[],
+    coverage: LongitudinalPromptCoverage,
+    route: LongitudinalAnalysisRoute,
+  ): Promise<ProviderAnalysis>;
 }
 
 export interface ProviderFailureDiagnostics {
@@ -52,8 +67,8 @@ export class ProviderFailure extends Error {
 interface LlmProvider {
   readonly id: Exclude<AiProviderId, "DETERMINISTIC_FAKE">;
   generate(
-    prompt: ExactRevisionPrompt,
-    route: AnalysisRoute,
+    prompt: ExactRevisionPrompt | LongitudinalPrompt,
+    route: AnalysisRoute | LongitudinalAnalysisRoute,
   ): Promise<ProviderAnalysis>;
 }
 
@@ -102,7 +117,10 @@ const openAiResponseSchema = z.object({
 });
 
 const estimatedCost = (
-  route: AnalysisRoute,
+  route: Pick<
+    AnalysisRoute,
+    "inputCostMicroUsdPerMillionTokens" | "outputCostMicroUsdPerMillionTokens"
+  >,
   inputTokens: number | null,
   outputTokens: number | null,
 ): number | null => {
@@ -122,7 +140,7 @@ const schemaIssues = (error: z.ZodError): string[] =>
 
 const parseOutput = (text: string): unknown => {
   try {
-    return normalizeExactRevisionOutput(JSON.parse(text));
+    return JSON.parse(text);
   } catch (error) {
     throw new ProviderFailure(
       "PERMANENT",
@@ -287,7 +305,10 @@ abstract class HttpLlmProvider {
 export class GeminiProvider extends HttpLlmProvider implements LlmProvider {
   readonly id = "GEMINI" as const;
 
-  async generate(prompt: ExactRevisionPrompt, route: AnalysisRoute) {
+  async generate(
+    prompt: ExactRevisionPrompt | LongitudinalPrompt,
+    route: AnalysisRoute | LongitudinalAnalysisRoute,
+  ) {
     if (!this.configuration.GEMINI_API_KEY)
       throw new ProviderFailure("PERMANENT", "UNAVAILABLE");
     const model = route.model.replace(/^models\//, "");
@@ -358,7 +379,10 @@ export class GeminiProvider extends HttpLlmProvider implements LlmProvider {
 export class OpenAiProvider extends HttpLlmProvider implements LlmProvider {
   readonly id = "OPENAI" as const;
 
-  async generate(prompt: ExactRevisionPrompt, route: AnalysisRoute) {
+  async generate(
+    prompt: ExactRevisionPrompt | LongitudinalPrompt,
+    route: AnalysisRoute | LongitudinalAnalysisRoute,
+  ) {
     if (!this.configuration.OPENAI_API_KEY)
       throw new ProviderFailure("PERMANENT", "UNAVAILABLE");
     const startedAt = performance.now();
@@ -374,7 +398,10 @@ export class OpenAiProvider extends HttpLlmProvider implements LlmProvider {
         text: {
           format: {
             type: "json_schema",
-            name: "mentalbridge_exact_revision",
+            name:
+              route.workload === "LONGITUDINAL"
+                ? "mentalbridge_longitudinal"
+                : "mentalbridge_exact_revision",
             strict: true,
             schema: prompt.schema,
           },
@@ -457,6 +484,62 @@ export class RoutedExactRevisionProvider implements ExactRevisionProvider {
     }
     const provider = this.providers.get(route.provider);
     if (!provider) throw new ProviderFailure("PERMANENT", "UNAVAILABLE");
-    return provider.generate(exactRevisionPrompt(text), route);
+    return provider
+      .generate(exactRevisionPrompt(text), route)
+      .then((analysis) => ({
+        ...analysis,
+        output: normalizeExactRevisionOutput(analysis.output),
+      }));
+  }
+}
+
+export class RoutedLongitudinalProvider implements LongitudinalProvider {
+  private readonly providers: ReadonlyMap<AiProviderId, LlmProvider>;
+
+  constructor(configuration: ServiceConfiguration) {
+    const providers: LlmProvider[] = [
+      new GeminiProvider(configuration),
+      new OpenAiProvider(configuration),
+    ];
+    this.providers = new Map(
+      providers.map((provider) => [provider.id, provider]),
+    );
+  }
+
+  analyze(
+    sources: readonly LongitudinalPromptSource[],
+    coverage: LongitudinalPromptCoverage,
+    route: LongitudinalAnalysisRoute,
+  ): Promise<ProviderAnalysis> {
+    if (route.provider === "DETERMINISTIC_FAKE") {
+      const startedAt = performance.now();
+      return Promise.resolve({
+        output: {
+          contextSignals: [],
+          emotionIndicators: [],
+          recurringThemes: [],
+          changesComparedWithPreviousPeriod: coverage.sufficientForComparison
+            ? []
+            : [
+                {
+                  signal: "AVAILABLE_JOURNAL_COVERAGE",
+                  direction: "INSUFFICIENT_DATA",
+                },
+              ],
+          preferences: [],
+          barriers: [],
+          helpfulPatterns: [],
+        },
+        latencyMs: Math.max(0, Math.round(performance.now() - startedAt)),
+        usage: {
+          inputTokens: null,
+          outputTokens: null,
+          estimatedCostMicroUsd: null,
+        },
+      });
+    }
+    const provider = this.providers.get(route.provider);
+    if (!provider) throw new ProviderFailure("PERMANENT", "UNAVAILABLE");
+    return provider.generate(longitudinalPrompt(sources, coverage), route);
   }
 }

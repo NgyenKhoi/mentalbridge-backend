@@ -47,12 +47,12 @@ provider-capacity guarantee. Exact counting, reset window, token budget, rate,
 and fair-use values belong to a versioned quota policy and server-side
 configuration, not client claims.
 
-For `EXACT_REVISION`, Consultation supplies the current server-authoritative
-package through an authenticated REST decision. Journal/AI does not infer the
-package from JWT claims or accept it from a client. The first attempt snapshots
-one versioned route and retries must use that same provider/model; entitlement
-uncertainty or a route-changing entitlement update stops the provider call.
-There is no automatic cross-provider fallback.
+For `EXACT_REVISION` and `LONGITUDINAL`, Consultation supplies the current
+server-authoritative package through an authenticated REST decision. Journal/AI
+does not infer the package from JWT claims or accept it from a client. The first
+attempt snapshots one versioned route and retries must use that same
+provider/model; entitlement uncertainty or a route-changing entitlement update
+stops the provider call. There is no automatic cross-provider fallback.
 
 ## SupportPlan and reassessment
 
@@ -83,10 +83,13 @@ context minimization, deterministic provider fakes, and tests for quota races,
 retry/idempotency, consent revocation, prompt injection, provider failure, and
 attempted business-state mutation.
 
-MB-367 implements only the consented exact-revision backend with MongoDB jobs,
-normalized results, and a deterministic fake provider. Chat/quota,
-longitudinal UI, and SupportPlan/reminder accompaniment remain behind their
-separate gates. MB-369 implements the entitlement-aware router, structured
+MB-367 implements the consented exact-revision backend with MongoDB jobs,
+normalized results, and a deterministic fake provider. MB-371 implements the
+bounded exact-source longitudinal backend, conservative coverage policy,
+deletion coupling, and minimized current-consent Care projection; Care
+Reassessment Summary composition and its frontend remain Story 6501. Chat/quota
+and SupportPlan/reminder accompaniment remain behind their separate gates.
+MB-369 implements the entitlement-aware router, structured
 Gemini/OpenAI adapters, and synthetic benchmark harness, but does not activate
 a real route until that pinned candidate passes its separately reviewed
 benchmark gate and an approval version plus its credential are configured.

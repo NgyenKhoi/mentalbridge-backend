@@ -2,6 +2,7 @@ import { z } from "zod";
 
 import type { ServiceConfiguration } from "../configuration/configuration.js";
 import { EXACT_REVISION_PROMPT_VERSION } from "../prompts/exact-revision.js";
+import { LONGITUDINAL_PROMPT_VERSION } from "../prompts/longitudinal.js";
 
 export type ServicePlan = "FREE" | "PLUS" | "PREMIUM";
 export type EntitlementSource = "DEFAULT_FREE" | "DEMO" | "PAID";
@@ -29,6 +30,14 @@ export interface AnalysisRoute {
   readonly outputCostMicroUsdPerMillionTokens: number;
 }
 
+export interface LongitudinalAnalysisRoute extends Omit<
+  AnalysisRoute,
+  "workload" | "promptVersion"
+> {
+  readonly workload: "LONGITUDINAL";
+  readonly promptVersion: typeof LONGITUDINAL_PROMPT_VERSION;
+}
+
 export interface EntitlementClient {
   current(
     bearerToken: string,
@@ -38,6 +47,10 @@ export interface EntitlementClient {
 
 export interface ModelRouter {
   route(entitlement: EntitlementDecision): AnalysisRoute;
+}
+
+export interface LongitudinalModelRouter {
+  route(entitlement: EntitlementDecision): LongitudinalAnalysisRoute;
 }
 
 const entitlementSchema = z
@@ -162,6 +175,23 @@ export class VersionedModelRouter implements ModelRouter {
       promptVersion: EXACT_REVISION_PROMPT_VERSION,
       inputCostMicroUsdPerMillionTokens,
       outputCostMicroUsdPerMillionTokens,
+    };
+  }
+}
+
+export class VersionedLongitudinalModelRouter implements LongitudinalModelRouter {
+  private readonly exactRevisionRouter: VersionedModelRouter;
+
+  constructor(configuration: ServiceConfiguration) {
+    this.exactRevisionRouter = new VersionedModelRouter(configuration);
+  }
+
+  route(entitlement: EntitlementDecision): LongitudinalAnalysisRoute {
+    const route = this.exactRevisionRouter.route(entitlement);
+    return {
+      ...route,
+      workload: "LONGITUDINAL",
+      promptVersion: LONGITUDINAL_PROMPT_VERSION,
     };
   }
 }
