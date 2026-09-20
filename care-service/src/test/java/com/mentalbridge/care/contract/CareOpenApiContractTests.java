@@ -36,6 +36,9 @@ class CareOpenApiContractTests {
 			"GET /api/v1/support-evaluations/{supportEvaluationId}",
 			"POST /api/v1/support-plans",
 			"GET /api/v1/support-plans/current-draft",
+			"GET /api/v1/support-plans/current",
+			"PUT /api/v1/support-plans/{supportPlanId}/choices",
+			"POST /api/v1/support-plans/{supportPlanId}/activate",
 			"POST /api/v1/anonymous-assessment-sessions",
 			"POST /api/v1/anonymous-assessment-sessions/{sessionId}/assessments",
 			"GET /api/v1/anonymous-assessment-sessions/{sessionId}/assessments/{assessmentId}");
@@ -56,6 +59,9 @@ class CareOpenApiContractTests {
 			"/api/v1/support-evaluations/{supportEvaluationId}",
 			"/api/v1/support-plans",
 			"/api/v1/support-plans/current-draft",
+			"/api/v1/support-plans/current",
+			"/api/v1/support-plans/{supportPlanId}/choices",
+			"/api/v1/support-plans/{supportPlanId}/activate",
 			"/api/v1/anonymous-assessment-sessions",
 			"/api/v1/anonymous-assessment-sessions/{sessionId}/assessments",
 			"/api/v1/anonymous-assessment-sessions/{sessionId}/assessments/{assessmentId}");
@@ -73,7 +79,10 @@ class CareOpenApiContractTests {
 			"POST /api/v1/support-evaluations",
 			"GET /api/v1/support-evaluations/{supportEvaluationId}",
 			"POST /api/v1/support-plans",
-			"GET /api/v1/support-plans/current-draft");
+			"GET /api/v1/support-plans/current-draft",
+			"GET /api/v1/support-plans/current",
+			"PUT /api/v1/support-plans/{supportPlanId}/choices",
+			"POST /api/v1/support-plans/{supportPlanId}/activate");
 
 	private static final Set<String> ANONYMOUS_TOKEN_OPERATIONS = Set.of(
 			"POST /api/v1/anonymous-assessment-sessions/{sessionId}/assessments",
@@ -84,6 +93,7 @@ class CareOpenApiContractTests {
 			"POST /api/v1/assessments",
 			"POST /api/v1/support-evaluations",
 			"POST /api/v1/support-plans",
+			"POST /api/v1/support-plans/{supportPlanId}/activate",
 			"POST /api/v1/anonymous-assessment-sessions/{sessionId}/assessments");
 
 	@Test
@@ -175,7 +185,7 @@ class CareOpenApiContractTests {
 		var contract = Path.of("..", "contracts", "openapi", "care-service-v1.yaml").toAbsolutePath();
 		var openApi = new OpenAPIV3Parser().readLocation(contract.toUri().toString(), null, null).getOpenAPI();
 		var request = openApi.getComponents().getSchemas().get("ProposeSupportPlanDraftRequest");
-		var draft = openApi.getComponents().getSchemas().get("SupportPlanDraft");
+		var draft = openApi.getComponents().getSchemas().get("SupportPlan");
 
 		assertThat(request.getProperties()).containsOnlyKeys("sourceSupportEvaluationId")
 				.doesNotContainKeys("packageCode", "resourceIds", "templateFamily", "safetyStatus", "aiOutput");

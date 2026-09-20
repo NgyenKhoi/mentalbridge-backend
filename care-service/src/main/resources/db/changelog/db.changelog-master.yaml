@@ -23,3 +23,5 @@ databaseChangeLog:
       file: db/changelog/changes/011-support-guide.sql
   - include:
       file: db/changelog/changes/012-support-plan-draft.sql
+  - include:
+      file: db/changelog/changes/013-support-plan-choice-activation.sql

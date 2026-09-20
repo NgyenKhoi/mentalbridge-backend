@@ -37,6 +37,7 @@ class SupportPlanEntity {
 	private short selectedResourceCount;
 	private Instant createdAt;
 	private Instant updatedAt;
+	private Instant activatedAt;
 
 	protected SupportPlanEntity() { }
 
@@ -98,4 +99,16 @@ class SupportPlanEntity {
 	short selectedResourceCount() { return selectedResourceCount; }
 	Instant createdAt() { return createdAt; }
 	Instant updatedAt() { return updatedAt; }
+	Instant activatedAt() { return activatedAt; }
+
+	void changeChoices(int selectedResourceCount, Instant changedAt) {
+		this.selectedResourceCount = (short) selectedResourceCount;
+		this.updatedAt = changedAt;
+	}
+
+	void activate(Instant activatedAt) {
+		this.status = "ACTIVE";
+		this.activatedAt = activatedAt;
+		this.updatedAt = activatedAt;
+	}
 }

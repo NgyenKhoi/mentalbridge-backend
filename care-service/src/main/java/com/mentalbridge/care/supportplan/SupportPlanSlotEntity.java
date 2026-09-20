@@ -17,7 +17,7 @@ class SupportPlanSlotEntity {
 	private String targetDomain;
 	private String purposeCode;
 	private UUID selectedResourceId;
-	private long selectedContentVersion;
+	private Long selectedContentVersion;
 	private UUID selectedPublicationId;
 	private String selectedRole;
 	private String selectedCategory;
@@ -52,7 +52,32 @@ class SupportPlanSlotEntity {
 	String targetDomain() { return targetDomain; }
 	String purposeCode() { return purposeCode; }
 	SupportPlanPolicy.ResourceDraft selectedResource() {
+		if (selectedResourceId == null) {
+			return null;
+		}
 		return new SupportPlanPolicy.ResourceDraft(selectedResourceId, selectedContentVersion, selectedPublicationId,
 				selectedRole, selectedCategory, selectedTitle, selectedSummary, selectedExternalUrl);
+	}
+
+	void select(SupportPlanPolicy.ResourceDraft resource) {
+		this.selectedResourceId = resource.resourceId();
+		this.selectedContentVersion = resource.contentVersion();
+		this.selectedPublicationId = resource.publicationId();
+		this.selectedRole = resource.role();
+		this.selectedCategory = resource.category();
+		this.selectedTitle = resource.title();
+		this.selectedSummary = resource.summary();
+		this.selectedExternalUrl = resource.externalUrl();
+	}
+
+	void removeSelection() {
+		this.selectedResourceId = null;
+		this.selectedContentVersion = null;
+		this.selectedPublicationId = null;
+		this.selectedRole = null;
+		this.selectedCategory = null;
+		this.selectedTitle = null;
+		this.selectedSummary = null;
+		this.selectedExternalUrl = null;
 	}
 }

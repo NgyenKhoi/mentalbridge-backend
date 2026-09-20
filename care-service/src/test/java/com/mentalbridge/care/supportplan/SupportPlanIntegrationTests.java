@@ -8,11 +8,13 @@ import static org.mockito.Mockito.when;
 import static org.springframework.security.test.web.servlet.request.SecurityMockMvcRequestPostProcessors.jwt;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.get;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.post;
+import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.put;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.header;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.jsonPath;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.status;
 
 import java.time.Instant;
+import java.util.List;
 import java.util.UUID;
 import java.util.concurrent.CountDownLatch;
 import java.util.concurrent.Executors;
@@ -144,7 +146,9 @@ class SupportPlanIntegrationTests extends CareTestProperties {
 				.andExpect(status().isServiceUnavailable())
 				.andExpect(jsonPath("$.code").value("RESOURCE_ELIGIBILITY_UNAVAILABLE"));
 
-		assertThat(jdbc.sql("select count(*) from support_plan").query(Long.class).single()).isZero();
+		assertThat(jdbc.sql("select count(*) from support_plan where user_id in (:stale, :unavailable)")
+				.param("stale", staleUser).param("unavailable", unavailableUser)
+				.query(Long.class).single()).isZero();
 	}
 
 	@Test
@@ -203,6 +207,176 @@ class SupportPlanIntegrationTests extends CareTestProperties {
 				.param("id", userId).query(Long.class).single()).isEqualTo(1);
 		assertThat(jdbc.sql("select count(*) from support_plan_request where user_id = :id")
 				.param("id", userId).query(Long.class).single()).isEqualTo(2);
+	}
+
+	@Test
+	void swapsOnlyAnAdmittedChoiceAndActivatesThenReloadsTheAuthoritativeCurrentPlan() throws Exception {
+		var userId = insertProfile();
+		var evaluationId = evaluation(userId, "MINIMAL", "MINIMAL", false);
+		var draft = createPlan(userId, evaluationId, "support-plan-choice-create");
+		var planId = UUID.fromString(draft.path("supportPlanId").asText());
+		var firstSlot = draft.path("slots").get(0);
+		var secondSlot = draft.path("slots").get(1);
+		var alternative = firstSlot.path("allowedAlternatives").get(0);
+		var choices = objectMapper.createObjectNode();
+		var selections = choices.putArray("slotSelections");
+		selections.addObject().put("slotId", firstSlot.path("slotId").asText())
+				.put("resourceId", alternative.path("resourceId").asText())
+				.put("contentVersion", alternative.path("contentVersion").asText());
+		selections.addObject().put("slotId", secondSlot.path("slotId").asText())
+				.put("resourceId", secondSlot.path("selectedResource").path("resourceId").asText())
+				.put("contentVersion", secondSlot.path("selectedResource").path("contentVersion").asText());
+
+		var changed = mvc.perform(put("/api/v1/support-plans/{id}/choices", planId).with(user(userId))
+				.header("If-Match", "\"0\"")
+				.contentType(MediaType.APPLICATION_JSON).content(objectMapper.writeValueAsBytes(choices)))
+				.andExpect(status().isOk()).andExpect(header().string("ETag", "\"1\""))
+				.andExpect(jsonPath("$.status").value("DRAFT"))
+				.andExpect(jsonPath("$.slots[0].selectedResource.resourceId")
+						.value(alternative.path("resourceId").asText()))
+				.andReturn().getResponse().getContentAsString();
+		var unchanged = mvc.perform(put("/api/v1/support-plans/{id}/choices", planId).with(user(userId))
+				.header("If-Match", "\"1\"")
+				.contentType(MediaType.APPLICATION_JSON).content(objectMapper.writeValueAsBytes(choices)))
+				.andExpect(status().isOk()).andExpect(header().string("ETag", "\"1\""))
+				.andReturn().getResponse().getContentAsString();
+		assertThat(objectMapper.readTree(unchanged)).isEqualTo(objectMapper.readTree(changed));
+
+		var activated = mvc.perform(post("/api/v1/support-plans/{id}/activate", planId).with(user(userId))
+				.header("If-Match", "\"1\"").header("Idempotency-Key", "support-plan-activate-01"))
+				.andExpect(status().isOk()).andExpect(header().string("ETag", "\"2\""))
+				.andExpect(jsonPath("$.status").value("ACTIVE"))
+				.andExpect(jsonPath("$.activatedAt").isNotEmpty())
+				.andReturn().getResponse().getContentAsString();
+		var activationReplay = mvc.perform(post("/api/v1/support-plans/{id}/activate", planId).with(user(userId))
+				.header("If-Match", "\"1\"").header("Idempotency-Key", "support-plan-activate-01"))
+				.andExpect(status().isOk()).andExpect(header().string("ETag", "\"2\""))
+				.andReturn().getResponse().getContentAsString();
+		var current = mvc.perform(get("/api/v1/support-plans/current").with(user(userId)))
+				.andExpect(status().isOk()).andExpect(header().string("ETag", "\"2\""))
+				.andReturn().getResponse().getContentAsString();
+
+		assertThat(objectMapper.readTree(activationReplay)).isEqualTo(objectMapper.readTree(activated));
+		assertThat(objectMapper.readTree(current)).isEqualTo(objectMapper.readTree(activated));
+		mvc.perform(get("/api/v1/support-plans/current-draft").with(user(userId)))
+				.andExpect(status().isNotFound())
+				.andExpect(jsonPath("$.code").value("SUPPORT_PLAN_DRAFT_NOT_FOUND"));
+		assertThat(jdbc.sql("select count(*) from support_plan where user_id = :id and status = 'ACTIVE'")
+				.param("id", userId).query(Long.class).single()).isEqualTo(1);
+		assertThat(jdbc.sql("select count(*) from support_plan_command where user_id = :id")
+				.param("id", userId).query(Long.class).single()).isEqualTo(1);
+		assertThat(jdbc.sql("select count(*) from outbox_event where aggregate_id = :id and message_type = 'care.support-plan.activated'")
+				.param("id", planId).query(Long.class).single()).isEqualTo(1);
+	}
+
+	@Test
+	void removesAnOptionalChoiceButRejectsInjectedAndMissingCoreChoices() throws Exception {
+		var optionalUser = insertProfile();
+		var optionalEvaluation = evaluation(optionalUser, "MODERATE", "MODERATE", false);
+		var optionalDraft = createPlan(optionalUser, optionalEvaluation, "support-plan-optional-create");
+		var optionalPlanId = UUID.fromString(optionalDraft.path("supportPlanId").asText());
+		var kept = optionalDraft.path("slots").get(0);
+		var optionalChoices = objectMapper.createObjectNode();
+		optionalChoices.putArray("slotSelections").addObject()
+				.put("slotId", kept.path("slotId").asText())
+				.put("resourceId", kept.path("selectedResource").path("resourceId").asText())
+				.put("contentVersion", kept.path("selectedResource").path("contentVersion").asText());
+
+		mvc.perform(put("/api/v1/support-plans/{id}/choices", optionalPlanId).with(user(optionalUser))
+				.header("If-Match", "\"0\"")
+				.contentType(MediaType.APPLICATION_JSON).content(objectMapper.writeValueAsBytes(optionalChoices)))
+				.andExpect(status().isOk()).andExpect(jsonPath("$.selectedResourceCount").value(1))
+				.andExpect(jsonPath("$.slots[1].selectedResource").doesNotExist());
+
+		var coreUser = insertProfile();
+		var coreEvaluation = evaluation(coreUser, "MILD", "MILD", false);
+		var coreDraft = createPlan(coreUser, coreEvaluation, "support-plan-core-create");
+		var corePlanId = UUID.fromString(coreDraft.path("supportPlanId").asText());
+		var injected = objectMapper.createObjectNode();
+		injected.putArray("slotSelections").addObject()
+				.put("slotId", coreDraft.path("slots").get(0).path("slotId").asText())
+				.put("resourceId", UUID.randomUUID().toString()).put("contentVersion", "0");
+
+		mvc.perform(put("/api/v1/support-plans/{id}/choices", corePlanId).with(user(coreUser))
+				.header("If-Match", "\"0\"")
+				.contentType(MediaType.APPLICATION_JSON).content(objectMapper.writeValueAsBytes(injected)))
+				.andExpect(status().isConflict()).andExpect(jsonPath("$.code").value("SUPPORT_PLAN_INVALID_CHOICE"));
+		assertThat(jdbc.sql("select version from support_plan where id = :id").param("id", corePlanId)
+				.query(Long.class).single()).isZero();
+		assertThat(jdbc.sql("select count(*) from support_plan_command where support_plan_id = :id")
+				.param("id", corePlanId).query(Long.class).single()).isZero();
+	}
+
+	@Test
+	void activationFailsClosedForFreeStaleAndVersionConflict() throws Exception {
+		var freeUser = insertProfile();
+		var freeDraft = createPlan(freeUser, evaluation(freeUser, "MINIMAL", "MINIMAL", false),
+				"support-plan-free-activation-create");
+		var freePlanId = UUID.fromString(freeDraft.path("supportPlanId").asText());
+		when(entitlements.current(any(), anyString(), any())).thenReturn(new CurrentEntitlementResponse(freeUser,
+				ServicePackage.FREE, EntitlementSource.DEFAULT_FREE, null, null, null,
+				"service-entitlement-v1", 0, Instant.parse("2026-09-19T00:00:00Z")));
+		mvc.perform(post("/api/v1/support-plans/{id}/activate", freePlanId).with(user(freeUser))
+				.header("If-Match", "\"0\"").header("Idempotency-Key", "support-plan-free-activate"))
+				.andExpect(status().isForbidden())
+				.andExpect(jsonPath("$.code").value("SUPPORT_PLAN_ENTITLEMENT_REQUIRED"));
+
+		var staleUser = insertProfile();
+		when(entitlements.current(any(), anyString(), any())).thenAnswer(invocation -> paid(invocation.getArgument(0)));
+		var staleDraft = createPlan(staleUser, evaluation(staleUser, "MINIMAL", "MINIMAL", false),
+				"support-plan-stale-activation-create");
+		var stalePlanId = UUID.fromString(staleDraft.path("supportPlanId").asText());
+		eligible(ResourceEligibilityOutcome.STALE, ResourceEligibilityReasonCode.CONTENT_VERSION_STALE);
+		mvc.perform(post("/api/v1/support-plans/{id}/activate", stalePlanId).with(user(staleUser))
+				.header("If-Match", "\"0\"").header("Idempotency-Key", "support-plan-stale-activate"))
+				.andExpect(status().isConflict()).andExpect(jsonPath("$.code").value("RESOURCE_VERSION_STALE"));
+		mvc.perform(post("/api/v1/support-plans/{id}/activate", stalePlanId).with(user(staleUser))
+				.header("If-Match", "\"9\"").header("Idempotency-Key", "support-plan-version-fail"))
+				.andExpect(status().isPreconditionFailed())
+				.andExpect(jsonPath("$.code").value("SUPPORT_PLAN_VERSION_MISMATCH"));
+
+		assertThat(jdbc.sql("select count(*) from support_plan where status = 'ACTIVE' and user_id in (:free,:stale)")
+				.param("free", freeUser).param("stale", staleUser).query(Long.class).single()).isZero();
+	}
+
+	@Test
+	void concurrentActivationProducesExactlyOneCurrentPlan() throws Exception {
+		var userId = insertProfile();
+		var draft = createPlan(userId, evaluation(userId, "MINIMAL", "MINIMAL", false),
+				"support-plan-concurrent-activation-create");
+		var planId = UUID.fromString(draft.path("supportPlanId").asText());
+		var start = new CountDownLatch(1);
+		var executor = Executors.newFixedThreadPool(2);
+		try {
+			var first = executor.submit(() -> activateAfter(start, userId, planId, "support-plan-activate-concurrent-1"));
+			var second = executor.submit(() -> activateAfter(start, userId, planId, "support-plan-activate-concurrent-2"));
+			start.countDown();
+			assertThat(List.of(first.get(20, TimeUnit.SECONDS), second.get(20, TimeUnit.SECONDS)))
+					.containsExactlyInAnyOrder(200, 409);
+		}
+		finally {
+			executor.shutdownNow();
+		}
+
+		assertThat(jdbc.sql("select count(*) from support_plan where user_id = :id and status = 'ACTIVE'")
+				.param("id", userId).query(Long.class).single()).isEqualTo(1);
+		assertThat(jdbc.sql("select count(*) from support_plan_command where user_id = :id and command_type = 'ACTIVATE'")
+				.param("id", userId).query(Long.class).single()).isEqualTo(1);
+	}
+
+	private int activateAfter(CountDownLatch start, UUID userId, UUID planId, String key) throws Exception {
+		start.await(5, TimeUnit.SECONDS);
+		return mvc.perform(post("/api/v1/support-plans/{id}/activate", planId).with(user(userId))
+				.header("If-Match", "\"0\"").header("Idempotency-Key", key))
+				.andReturn().getResponse().getStatus();
+	}
+
+	private com.fasterxml.jackson.databind.JsonNode createPlan(UUID userId, UUID evaluationId, String key)
+			throws Exception {
+		var response = mvc.perform(post("/api/v1/support-plans").with(user(userId))
+				.header("Idempotency-Key", key).contentType(MediaType.APPLICATION_JSON).content(body(evaluationId)))
+				.andExpect(status().isCreated()).andReturn().getResponse().getContentAsString();
+		return objectMapper.readTree(response);
 	}
 
 	private int createAfter(CountDownLatch start, UUID userId, UUID evaluationId, String key) throws Exception {

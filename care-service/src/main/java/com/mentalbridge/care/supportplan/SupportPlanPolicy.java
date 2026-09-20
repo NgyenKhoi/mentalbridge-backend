@@ -99,6 +99,51 @@ class SupportPlanPolicy {
 				OffsetDateTime.parse(response.resolvedAt()).toInstant());
 	}
 
+	RevalidationRequest revalidationRequest(EvaluationView evaluation, List<SelectedResource> selections) {
+		var proposal = request(evaluation);
+		var slotsById = new HashMap<String, SlotSpec>();
+		for (SlotSpec slot : proposal.slots()) {
+			slotsById.put(slot.slotId(), slot);
+		}
+		var queries = new ArrayList<ResourceEligibilityQuery>();
+		for (SelectedResource selection : selections) {
+			var slot = slotsById.get(selection.slotId());
+			if (slot == null || !slot.resourceIds().contains(selection.resourceId().toString())) {
+				throw new ApiException(HttpStatus.CONFLICT, "SUPPORT_PLAN_POLICY_STALE",
+						"The stored SupportPlan slot is no longer admitted by current template policy");
+			}
+			queries.add(query(slot, selection.resourceId().toString(), Long.toString(selection.contentVersion())));
+		}
+		return new RevalidationRequest(proposal.families(), proposal.slots(), selections,
+				new ResourceEligibilityBatchRequest(List.copyOf(queries)));
+	}
+
+	RevalidationResult validate(RevalidationRequest request, ResourceEligibilityBatchResponse response) {
+		Map<String, ResourceEligibilityResult> byRequest = new HashMap<>();
+		for (ResourceEligibilityResult result : response.results()) {
+			byRequest.put(result.requestId(), result);
+		}
+		for (SelectedResource selection : request.selections()) {
+			var slot = request.slots().stream().filter(value -> value.slotId().equals(selection.slotId()))
+					.findFirst().orElseThrow();
+			var result = byRequest.get(requestId(slot.slotId(), selection.resourceId().toString()));
+			if (result == null || result.outcome() == ResourceEligibilityOutcome.UNAVAILABLE) {
+				throw new ApiException(HttpStatus.SERVICE_UNAVAILABLE, "RESOURCE_ELIGIBILITY_UNAVAILABLE",
+						"Exact resource eligibility could not be verified");
+			}
+			if (result.outcome() != ResourceEligibilityOutcome.ELIGIBLE
+					|| !Long.toString(selection.contentVersion()).equals(result.contentVersion())) {
+				throw new ApiException(HttpStatus.CONFLICT, "RESOURCE_VERSION_STALE",
+						"A selected exact resource version is no longer eligible");
+			}
+			if ("CORE".equals(slot.kind()) && result.role() != com.mentalbridge.care.resourceeligibility.generated.ResourceEligibilityContract.EligibilityRole.PRIMARY) {
+				throw new ApiException(HttpStatus.CONFLICT, "SUPPORT_PLAN_INVALID_CHOICE",
+						"A core SupportPlan slot requires PRIMARY eligibility");
+			}
+		}
+		return new RevalidationResult(response.policyVersion(), OffsetDateTime.parse(response.resolvedAt()).toInstant());
+	}
+
 	private String family(DomainContributionView domain) {
 		boolean minimal = domain.screeningLevel() == ScreeningLevel.MINIMAL;
 		boolean mild = domain.screeningLevel() == ScreeningLevel.MILD;
@@ -145,7 +190,11 @@ class SupportPlanPolicy {
 	}
 
 	private ResourceEligibilityQuery query(SlotSpec slot, String resourceId) {
-		return new ResourceEligibilityQuery(requestId(slot.slotId(), resourceId), resourceId, "0",
+		return query(slot, resourceId, "0");
+	}
+
+	private ResourceEligibilityQuery query(SlotSpec slot, String resourceId, String contentVersion) {
+		return new ResourceEligibilityQuery(requestId(slot.slotId(), resourceId), resourceId, contentVersion,
 				com.mentalbridge.care.resourceeligibility.generated.ResourceEligibilityContract.ScreeningDomain.valueOf(slot.targetDomain()),
 				slot.requiredRole(), "PHQ9".equals(slot.instrument()) ? ScreeningInstrument.PHQ_9 : ScreeningInstrument.GAD_7,
 				com.mentalbridge.care.resourceeligibility.generated.ResourceEligibilityContract.ScreeningLevel.valueOf(slot.screeningLevel()),
@@ -175,4 +224,8 @@ class SupportPlanPolicy {
 			String title, String summary, String externalUrl) {
 		String key() { return resourceId + ":" + contentVersion; }
 	}
+	record SelectedResource(String slotId, UUID resourceId, long contentVersion) { }
+	record RevalidationRequest(List<FamilyDraft> families, List<SlotSpec> slots,
+			List<SelectedResource> selections, ResourceEligibilityBatchRequest batch) { }
+	record RevalidationResult(String resourcePolicyVersion, java.time.Instant resourcesResolvedAt) { }
 }

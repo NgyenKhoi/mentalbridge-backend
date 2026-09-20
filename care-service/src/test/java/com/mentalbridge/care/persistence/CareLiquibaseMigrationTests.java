@@ -127,7 +127,8 @@ class CareLiquibaseMigrationTests extends CareTestProperties {
 				"support_evaluation_v2", "support_evaluation_v2_domain",
 				"support_evaluation_v2_safety", "support_evaluation_v2_request",
 				"support_plan", "support_plan_template_family", "support_plan_slot",
-				"support_plan_slot_alternative", "support_plan_request");
+				"support_plan_slot_alternative", "support_plan_request",
+				"support_plan_command", "support_plan_command_selection");
 		assertThat(careSchemaCount).isZero();
 		assertThat(itemNumbers).containsExactly(1, 2, 3, 4, 5, 6, 7, 8, 9);
 		assertThat(safetyItems).containsExactly(9);

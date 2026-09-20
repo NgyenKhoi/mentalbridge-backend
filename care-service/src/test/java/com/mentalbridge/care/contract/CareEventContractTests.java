@@ -82,4 +82,23 @@ class CareEventContractTests {
 				.doesNotContain("answers", "totalScore", "safetyStatus");
 		assertThat(safety.fieldNames()).toIterable().doesNotContain("answerValue", "item9Answer");
 	}
+
+	@Test
+	void supportPlanActivatedSchemaIsStrictPaidAndCarriesPolicyVersions() throws Exception {
+		var path = Path.of("..", "contracts", "events", "care", "support-plan-activated-v1.schema.json")
+				.toAbsolutePath();
+		var schema = objectMapper.readTree(Files.readString(path));
+		var payload = schema.at("/properties/payload");
+
+		assertThat(schema.at("/properties/messageType/const").asText())
+				.isEqualTo("care.support-plan.activated");
+		assertThat(schema.at("/properties/schemaVersion/const").asText()).isEqualTo("1.0");
+		assertThat(schema.get("additionalProperties").asBoolean()).isFalse();
+		assertThat(payload.get("additionalProperties").asBoolean()).isFalse();
+		assertThat(payload.at("/properties/packageCode/enum")).extracting(node -> node.asText())
+				.containsExactly("PLUS", "PREMIUM");
+		assertThat(payload.get("required")).extracting(node -> node.asText()).contains(
+				"supportPlanId", "userId", "planVersion", "activatedAt",
+				"evaluationPolicyVersion", "resourceEligibilityPolicyVersion", "packageCode");
+	}
 }

@@ -42,4 +42,6 @@ class SupportPlanSlotAlternativeEntity {
 		return new SupportPlanPolicy.ResourceDraft(resourceId, contentVersion, publicationId, eligibilityRole,
 				category, title, summary, externalUrl);
 	}
+
+	short ordinal() { return ordinal; }
 }

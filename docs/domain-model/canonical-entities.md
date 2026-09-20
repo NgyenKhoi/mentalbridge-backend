@@ -2,7 +2,7 @@
 
 This index is the centralized entry point for MentalBridge persisted entities
 and document aggregates. It was reconciled against the current owner
-migrations on 2026-09-20, including the Care SupportPlan draft migration in the
+migrations on 2026-09-20, including the Care SupportPlan activation migration in the
 same pull request. Exact columns, validators, constraints, and indexes remain
 authoritative in owner migrations.
 
@@ -50,11 +50,13 @@ See [README](README.md) for status and relationship semantics.
 | `support_guide` | care-service | PostgreSQL | ACTIVE | Physical owner/evaluation reference; immutable all-tier guide snapshot. |
 | `support_guide_resource` | care-service | PostgreSQL | ACTIVE | Physical child of guide; resource/publication IDs are logical/external Content references with persisted display snapshots. |
 | `support_guide_request` | care-service | PostgreSQL | ACTIVE | Physical owner-scoped idempotency alias to guide. |
-| `support_plan` | care-service | PostgreSQL | ACTIVE | Physical owner/evaluation reference; current runtime writes `DRAFT`; entitlement fields snapshot a logical/external Consultation decision. |
+| `support_plan` | care-service | PostgreSQL | ACTIVE | Physical owner/evaluation reference; runtime writes `DRAFT` and explicitly transitions it to `ACTIVE`; entitlement fields snapshot a logical/external Consultation decision. |
 | `support_plan_template_family` | care-service | PostgreSQL | ACTIVE | Physical ordered child of `support_plan`. |
 | `support_plan_slot` | care-service | PostgreSQL | ACTIVE | Physical child of plan; exact resource/publication IDs are logical/external Content references. |
 | `support_plan_slot_alternative` | care-service | PostgreSQL | ACTIVE | Physical child of slot with admitted exact Content alternatives. |
 | `support_plan_request` | care-service | PostgreSQL | ACTIVE | Physical owner-scoped idempotency alias to plan. |
+| `support_plan_command` | care-service | PostgreSQL | ACTIVE | Physical owner/plan reference; idempotent activation outcome with exact revalidation evidence. |
+| `support_plan_command_selection` | care-service | PostgreSQL | ACTIVE | Physical child preserving the ordered exact resource-version intent committed by activation. |
 | Specialist access grants/scopes | care-service | PostgreSQL | PROPOSED | Approved consent concept; no Care owner migration exists yet. Selected Journal IDs would be logical/external Journal/AI references. |
 | Follow-up plan/check-in | care-service | PostgreSQL | PROPOSED | Approved product area, but no owner migration or active aggregate contract exists. |
 | `support_classification` / `intervention_plan` | care-service | PostgreSQL | HISTORICAL | Superseded logical names; active persistence uses versioned SupportEvaluation, Support Guide, and SupportPlan aggregates. |
