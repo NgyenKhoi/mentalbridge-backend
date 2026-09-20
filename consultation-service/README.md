@@ -14,6 +14,9 @@ verification-document claim is accepted. Discovery, rejection/suspension,
 appointments, billing, and cross-service brief/chat integrations remain later
 stories. MB-362 adds approved-specialist publication, owner listing, and
 tombstone withdrawal of exact online slots; it does not create appointments.
+MB-377 adds Consultation-owned plan-period credit rows, an append-only
+transition ledger, and an authenticated owner balance. Provisioning is
+idempotent and keeps `DEMO` distinct from `PAID`; it does not infer payment.
 Appointment existence alone does not grant sensitive data access;
 Care owns the user-approved appointment-scoped `ConsultationBrief` and sharing
 decision.
@@ -58,6 +61,10 @@ their typed configuration is introduced. No refund adapter is planned.
 
 - `GET|POST /api/v1/availability-slots`
 - `DELETE /api/v1/availability-slots/{slotId}`
+
+## Implemented MB-377 endpoint
+
+- `GET /api/v1/service-credits`
 
 Availability accepts only exact future 60-minute `IN_APP_CHAT` and gated
 `IN_APP_VIDEO` slots. It stores UTC instants and an IANA display timezone,

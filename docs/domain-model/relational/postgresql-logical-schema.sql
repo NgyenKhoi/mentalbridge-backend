@@ -629,6 +629,45 @@ CREATE TABLE consultation.current_service_entitlement (
     version bigint NOT NULL
 );
 
+CREATE TABLE consultation.service_credit_period (
+    id uuid PRIMARY KEY,
+    account_id uuid NOT NULL, -- external -> identity.account.id
+    plan_version varchar(64) NOT NULL,
+    package_code varchar(16) NOT NULL,
+    source varchar(16) NOT NULL,
+    source_reference varchar(128) NOT NULL,
+    period_start timestamptz NOT NULL,
+    period_end timestamptz NOT NULL,
+    allocated_count integer NOT NULL,
+    created_at timestamptz NOT NULL,
+    updated_at timestamptz NOT NULL,
+    version bigint NOT NULL,
+    UNIQUE (account_id, plan_version, period_start, period_end)
+);
+
+CREATE TABLE consultation.service_credit (
+    id uuid PRIMARY KEY,
+    period_id uuid NOT NULL REFERENCES consultation.service_credit_period(id),
+    ordinal integer NOT NULL,
+    state varchar(16) NOT NULL,
+    appointment_id uuid,
+    created_at timestamptz NOT NULL,
+    updated_at timestamptz NOT NULL,
+    version bigint NOT NULL,
+    UNIQUE (period_id, ordinal)
+);
+
+CREATE TABLE consultation.service_credit_ledger (
+    id uuid PRIMARY KEY,
+    credit_id uuid NOT NULL REFERENCES consultation.service_credit(id),
+    account_id uuid NOT NULL, -- external -> identity.account.id
+    event_type varchar(16) NOT NULL,
+    appointment_id uuid,
+    idempotency_key varchar(128) NOT NULL,
+    occurred_at timestamptz NOT NULL,
+    UNIQUE (account_id, idempotency_key)
+);
+
 CREATE TABLE consultation.availability_slot (
     id uuid PRIMARY KEY,
     specialist_account_id uuid NOT NULL REFERENCES consultation.specialist_profile(account_id),

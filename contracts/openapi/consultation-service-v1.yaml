@@ -1,11 +1,26 @@
 openapi: 3.1.0
 info:
   title: MentalBridge Consultation Service API
-  version: 1.1.0
-  description: Consultation-owned specialist profile approval, service-plan entitlement lookup, and online availability management.
+  version: 1.2.0
+  description: Consultation-owned specialist profile approval, service-plan entitlement and credit lookup, and online availability management.
 servers:
   - url: http://localhost:8082
 paths:
+  /api/v1/service-credits:
+    x-mentalbridge-status: implemented
+    get:
+      operationId: getOwnServiceCredits
+      description: Returns the authenticated user's server-authoritative consultation-credit balance and bounded ledger history. Reading provisions any missing credits for the current effective entitlement idempotently; clients must never derive a mutable balance.
+      security: [{ bearerAuth: [] }]
+      responses:
+        '200':
+          description: Current plan, billing period, authoritative balance, and recent history
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/ServiceCreditAccount' }
+        '401': { $ref: '#/components/responses/UnauthorizedProblem' }
+        '403': { $ref: '#/components/responses/EntitlementForbiddenProblem' }
+        '409': { $ref: '#/components/responses/CreditConflictProblem' }
   /internal/v1/entitlements/current:
     x-mentalbridge-status: implemented
     get:
@@ -309,6 +324,53 @@ components:
         policyVersion: { type: string, const: service-entitlement-v1 }
         version: { type: integer, format: int64, minimum: 0 }
         decidedAt: { type: string, format: date-time }
+    CreditSource:
+      type: string
+      enum: [DEFAULT_FREE, DEMO, PAID]
+    CreditLedgerEventType:
+      type: string
+      enum: [PROVISIONED, HELD, CONSUMED, RELEASED, FORFEITED]
+    ServiceCreditBalance:
+      type: object
+      additionalProperties: false
+      required: [available, held, consumed, forfeited, total, releasedTransitions]
+      properties:
+        available: { type: integer, minimum: 0 }
+        held: { type: integer, minimum: 0 }
+        consumed: { type: integer, minimum: 0 }
+        forfeited: { type: integer, minimum: 0 }
+        total: { type: integer, minimum: 0, maximum: 3 }
+        releasedTransitions: { type: integer, minimum: 0 }
+    ServiceCreditLedgerEvent:
+      type: object
+      additionalProperties: false
+      required: [eventId, creditId, eventType, source, packageCode, appointmentId, occurredAt]
+      properties:
+        eventId: { type: string, format: uuid }
+        creditId: { type: string, format: uuid }
+        eventType: { $ref: '#/components/schemas/CreditLedgerEventType' }
+        source: { $ref: '#/components/schemas/CreditSource' }
+        packageCode: { $ref: '#/components/schemas/ServicePackage' }
+        appointmentId: { type: [string, 'null'], format: uuid }
+        occurredAt: { type: string, format: date-time }
+    ServiceCreditAccount:
+      type: object
+      additionalProperties: false
+      required: [accountId, packageCode, source, sourceReference, periodStart, periodEnd, policyVersion, balance, history, generatedAt]
+      properties:
+        accountId: { type: string, format: uuid }
+        packageCode: { $ref: '#/components/schemas/ServicePackage' }
+        source: { $ref: '#/components/schemas/CreditSource' }
+        sourceReference: { type: [string, 'null'], minLength: 1, maxLength: 128 }
+        periodStart: { type: [string, 'null'], format: date-time }
+        periodEnd: { type: [string, 'null'], format: date-time }
+        policyVersion: { type: string, const: consultation-credit-v1 }
+        balance: { $ref: '#/components/schemas/ServiceCreditBalance' }
+        history:
+          type: array
+          maxItems: 100
+          items: { $ref: '#/components/schemas/ServiceCreditLedgerEvent' }
+        generatedAt: { type: string, format: date-time }
     SupportArea:
       type: string
       enum: [DEPRESSIVE_SYMPTOMS, ANXIETY_SYMPTOMS]
@@ -465,6 +527,11 @@ components:
               code: { type: string }
               message: { type: string }
   responses:
+    CreditConflictProblem:
+      description: Entitlement period conflicts with an already provisioned immutable credit period
+      content:
+        application/problem+json:
+          schema: { $ref: '#/components/schemas/Problem' }
     ValidationProblem:
       description: Invalid body, path, or query parameter (VALIDATION_FAILED).
       content:

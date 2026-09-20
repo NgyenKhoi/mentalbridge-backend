@@ -14,14 +14,15 @@ runtime source of truth. Exact field purposes are documented in the
 | --- | --- | --- |
 | `mentalbridge_identity` | Identity Service | account, role, refresh session, verification/reset token |
 | `mentalbridge_care` | Care Service | user profile, consent, anonymous session, questionnaire, assessment result, safety, SupportEvaluation, Support Guide, SupportPlan draft/activation |
-| `mentalbridge_consultation` | Consultation Service | specialist approval, current service entitlement, online availability; billing/booking/settlement remain proposed |
+| `mentalbridge_consultation` | Consultation Service | specialist approval, current service entitlement, online availability, service-credit periods and ledger; payment/booking/settlement remain proposed |
 | `mentalbridge_content_notification` | Content/Notification Service | reviewed resource definitions, immutable exact-version eligibility provenance, and notification preference/delivery |
 | owner-local tables | each producer; Governance reads safe events | implemented owner outbox/audit tables only; deletion/retention projections remain proposed |
 
 ADR 0005 assigns billing to Consultation; ADR 0017 amends the v2 catalogue to
-`FREE`/`PLUS`/`PREMIUM` and real money to VND/MoMo only. Those billing tables
-remain `PROPOSED`; the current entitlement read model is not a subscription or
-ledger. Exact VND prices, fixed
+`FREE`/`PLUS`/`PREMIUM` and real money to VND/MoMo only. MB-377 implements the
+credit period, indivisible credit, and append-only transition ledger derived
+from the current entitlement read model. Payment and subscription tables remain
+`PROPOSED`. Exact VND prices, fixed
 per-credit `creditAllocation`, provider credentials/contracts, settlement,
 chargeback reconciliation, and retention must be finalized before real money
 is enabled; runtime FX is prohibited.

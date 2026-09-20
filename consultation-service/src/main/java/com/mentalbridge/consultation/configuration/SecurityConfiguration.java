@@ -37,6 +37,7 @@ public class SecurityConfiguration {
 						.requestMatchers("/actuator/health", "/actuator/health/**", "/v3/api-docs/**", "/swagger-ui/**")
 						.permitAll()
 						.requestMatchers("/internal/v1/entitlements/current").hasRole("USER")
+						.requestMatchers("/api/v1/service-credits").hasRole("USER")
 						.requestMatchers("/api/v1/specialist-profile/**").hasRole("SPECIALIST")
 						.requestMatchers("/api/v1/availability-slots/**").hasRole("SPECIALIST")
 						.requestMatchers("/api/v1/admin/specialist-profiles/**").hasRole("ADMIN")
