@@ -12,12 +12,12 @@ two-domain screening boundary remains unchanged.
 
 The product has four actors:
 
-| Actor | Goal | Important constraint |
-| --- | --- | --- |
-| Guest | Complete a PHQ-9/GAD-7 screening privately | No account history; collect only what is required |
-| User | Track wellbeing and obtain appropriate support | Owns and controls access to sensitive data |
+| Actor      | Goal                                             | Important constraint                                       |
+| ---------- | ------------------------------------------------ | ---------------------------------------------------------- |
+| Guest      | Complete a PHQ-9/GAD-7 screening privately       | No account history; collect only what is required          |
+| User       | Track wellbeing and obtain appropriate support   | Owns and controls access to sensitive data                 |
 | Specialist | Manage availability and support consenting users | Sees only scopes granted by the user and required for care |
-| Admin | Operate and govern the platform | Does not receive unrestricted journal access by default |
+| Admin      | Operate and govern the platform                  | Does not receive unrestricted journal access by default    |
 
 System actors include configured AI providers, the notification provider, object storage, scheduler, and audit pipeline. A PhoBERT worker is an optional future benchmark actor under ADR 0011, not a current runtime dependency.
 
@@ -121,6 +121,15 @@ data coverage. Sparse or imbalanced journal periods produce
 resolved. The dimensions cannot be collapsed into a recovery percentage,
 clinical improvement verdict, or global score.
 
+For MB-371, each comparison period is a half-open 7-31 day range and the two
+ranges are equal in duration and non-overlapping. Journal/AI selects exact
+current owned revisions by `occurredAt`, supports explicit exclusions, and
+caps selection at 50 entries per period. Directional comparison requires at
+least three entries in each period and no greater than a 2:1 count imbalance.
+Care consumes only the minimized exact-source evidence under current
+`AI_PROCESSING` consent; Story 6501 owns its later Reassessment Summary
+composition.
+
 AI may surface contextual signals, recurring themes, preferences, barriers, and
 helpful patterns for a SupportPlan review. Care remains responsible for finding
 allowed alternatives, and the user reviews and confirms any change.
@@ -136,11 +145,11 @@ allowed alternatives, and the user reviews and confirms any change.
 
 ### Subscription, upgrade, and credits
 
-| Package | V2 price/paid period | Consultation credits | Main access |
-| --- | ---: | ---: | --- |
-| `FREE` | VND 0 | 0 | Standard Support Guide, Journal, emotion check-in, reviewed resources, and default five delivered AI responses/day |
-| `PLUS` | VND amount pending approval | 1 | Higher AI quota, persistent SupportPlan/lifecycle tracking, and one credit per paid period |
-| `PREMIUM` | VND amount pending approval | 3 | No displayed daily AI-response limit, server fair-use/token/rate limits, optional stronger model, advanced recommendations, and three credits per paid period |
+| Package   |        V2 price/paid period | Consultation credits | Main access                                                                                                                                                   |
+| --------- | --------------------------: | -------------------: | ------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `FREE`    |                       VND 0 |                    0 | Standard Support Guide, Journal, emotion check-in, reviewed resources, and default five delivered AI responses/day                                            |
+| `PLUS`    | VND amount pending approval |                    1 | Higher AI quota, persistent SupportPlan/lifecycle tracking, and one credit per paid period                                                                    |
+| `PREMIUM` | VND amount pending approval |                    3 | No displayed daily AI-response limit, server fair-use/token/rate limits, optional stronger model, advanced recommendations, and three credits per paid period |
 
 - `FREE` is the default. Scoring, disclaimer, safety flow, Support Guide,
   reviewed safety guidance, reviewed-resource count, and access to owned data are
@@ -393,4 +402,4 @@ runtime, and production-review gates remain open.
    `creditAllocation`, chargeback reconciliation, and financial retention.
    Runtime FX, downgrade, and user refund remain unsupported.
 10. Whether WBS 28-29 are end-user/research benchmark views distinct from admin WBS 155-156, or duplicate functions that should share one admin-only workflow.
-The domain correction is recorded in [ADR 0012](adr/0012-two-domain-screening-and-system-proposed-support-plans.md); current cross-feature scope is governed by [ADR 0017](adr/0017-product-scope-v2.md).
+    The domain correction is recorded in [ADR 0012](adr/0012-two-domain-screening-and-system-proposed-support-plans.md); current cross-feature scope is governed by [ADR 0017](adr/0017-product-scope-v2.md).

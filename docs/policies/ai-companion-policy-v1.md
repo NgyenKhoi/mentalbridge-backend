@@ -2,15 +2,15 @@
 
 ## Policy metadata
 
-| Field | Value |
-| --- | --- |
-| Policy ID | `MB-AI-COMPANION-001` |
-| Status | `HISTORICAL POLICY; EXACT-REVISION BACKEND IMPLEMENTED UNDER ADR 0015/0017` |
-| Effective decision date | 2026-09-13 |
-| Owner | Journal/AI |
-| Consent and Care-decision owner | Care |
-| Decision | [ADR 0015](../adr/0015-ai-companion-analysis-contract.md) |
-| Amended by | [ADR 0017](../adr/0017-product-scope-v2.md); current rules are in [AI Companion policy v2](ai-companion-policy-v2.md) |
+| Field                           | Value                                                                                                                 |
+| ------------------------------- | --------------------------------------------------------------------------------------------------------------------- |
+| Policy ID                       | `MB-AI-COMPANION-001`                                                                                                 |
+| Status                          | `HISTORICAL POLICY; EXACT-REVISION AND LONGITUDINAL BACKENDS IMPLEMENTED UNDER ADR 0015/0017`                          |
+| Effective decision date         | 2026-09-13                                                                                                            |
+| Owner                           | Journal/AI                                                                                                            |
+| Consent and Care-decision owner | Care                                                                                                                  |
+| Decision                        | [ADR 0015](../adr/0015-ai-companion-analysis-contract.md)                                                             |
+| Amended by                      | [ADR 0017](../adr/0017-product-scope-v2.md); current rules are in [AI Companion policy v2](ai-companion-policy-v2.md) |
 
 AI Companion supports reflection and navigation. It is not a diagnostician,
 clinician, safety authority, or autonomous SupportPlan agent.
@@ -75,13 +75,17 @@ only model-reported confidence and is not required in user-facing UI.
 
 ## Longitudinal analysis
 
-An explicit longitudinal request supplies exact owned journal revisions and two
-bounded comparison periods. The normalized contract is:
+An explicit longitudinal request supplies two equal-duration, half-open,
+non-overlapping comparison periods. Each period spans 7 through 31 days and the
+current period cannot end in the future. Journal/AI selects the caller's active
+current revisions by `occurredAt`, after applying an optional exclusion list of
+at most 100 journal IDs, and persists the selected exact versions. Selection is
+limited to 50 entries per period. The normalized contract is:
 
 ```text
 AiLongitudinalAnalysis {
-  periodStart
-  periodEnd
+  previousPeriod { startAt, endAt }
+  currentPeriod { startAt, endAt }
   sourceJournalRevisions[]
   contextSignals[]
   emotionIndicators[]
@@ -111,16 +115,27 @@ entries.” A missing mention is not evidence that a difficulty resolved. Sparse
 imbalanced, or otherwise insufficient source coverage returns
 `INSUFFICIENT_DATA` instead of a directional claim.
 
+Coverage is sufficient only when each period contains at least three selected
+entries and neither period contains more than twice the entries of the other.
+When this rule fails, `sufficientForComparison` is false and every exposed
+change direction is `INSUFFICIENT_DATA`.
+
+Care's future Story 6501 composition calls the minimized
+`REASSESSMENT_SUMMARY` read with an explicit deadline and the verified end-user
+bearer context. Journal/AI rechecks current `AI_PROCESSING` consent and fails
+closed on denial or Care unavailability. The response includes exact source
+versions, coverage, normalized evidence, and provenance, never raw text.
+
 ## Reassessment Summary
 
 Care presents four dimensions separately:
 
-| Dimension | Authority and wording |
-| --- | --- |
-| Screening trend | Deterministic, versioned PHQ-9/GAD-7 score and band comparison; the standardized symptom-measure trend |
+| Dimension             | Authority and wording                                                                                         |
+| --------------------- | ------------------------------------------------------------------------------------------------------------- |
+| Screening trend       | Deterministic, versioned PHQ-9/GAD-7 score and band comparison; the standardized symptom-measure trend        |
 | Journal/context trend | Non-standardized model-derived observations limited to consented available entries and explicit data coverage |
-| Support engagement | Plan activities, completion, barriers, and other Care-owned engagement facts |
-| User reflection | User-rated helpfulness, self-reported change, and notes |
+| Support engagement    | Plan activities, completion, barriers, and other Care-owned engagement facts                                  |
+| User reflection       | User-rated helpfulness, self-reported change, and notes                                                       |
 
 There is no combined “mental health improvement score,” recovery percentage,
 or AI verdict that a condition improved. The summary may say current screening
@@ -163,7 +178,8 @@ PhoBERT remains optional and deferred under ADR 0011.
 
 ## Runtime gates
 
-This policy is approved design input. Runtime requires compatible single-entry
-and longitudinal OpenAPI/message schemas, consent checks, provider adapter
-configuration, exact-source persistence/deletion behavior, Care reassessment
-composition, frontend job/result states, and tests using provider fakes.
+The single-entry and longitudinal owner runtimes, current-consent checks,
+provider adapters, exact-source persistence/deletion behavior, and minimized
+Care read are implemented. Care Reassessment Summary composition remains in
+Story 6501; frontend presentation is owned by that consumer flow rather than
+MB-371.

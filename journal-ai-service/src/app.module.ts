@@ -34,11 +34,16 @@ import {
   registerEmotionCheckInModule,
   type EmotionCheckInDependencies,
 } from "./emotion-check-ins/emotion-check-in.js";
+import {
+  registerLongitudinalAnalysisModule,
+  type LongitudinalAnalysisDependencies,
+} from "./longitudinal-analysis/longitudinal-analysis.js";
 
 export interface ApplicationDependencies {
   readonly readinessProbe?: ReadinessProbe;
   readonly analysis?: AnalysisDependencies;
   readonly emotionCheckIns?: EmotionCheckInDependencies;
+  readonly longitudinalAnalysis?: LongitudinalAnalysisDependencies;
 }
 
 @Module({})
@@ -65,6 +70,10 @@ export class AppModule implements NestModule {
         registerEmotionCheckInModule(
           configuration,
           dependencies.emotionCheckIns,
+        ),
+        registerLongitudinalAnalysisModule(
+          configuration,
+          dependencies.longitudinalAnalysis,
         ),
       ],
       controllers: [HealthController, MetricsController],

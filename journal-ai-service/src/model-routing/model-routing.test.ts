@@ -4,6 +4,7 @@ import test from "node:test";
 import type { ServiceConfiguration } from "../configuration/configuration.js";
 import {
   ConsultationEntitlementClient,
+  VersionedLongitudinalModelRouter,
   VersionedModelRouter,
   type EntitlementDecision,
 } from "./model-routing.js";
@@ -50,6 +51,16 @@ void test("routes FREE and PLUS to one baseline and PREMIUM to the stronger appr
   assert.equal(premium.provider, "OPENAI");
   assert.equal(premium.model, "stronger-model");
   assert.equal(premium.providerApprovalVersion, "benchmark-approval-v1");
+});
+
+void test("keeps the approved provider route while versioning the longitudinal workload", () => {
+  const route = new VersionedLongitudinalModelRouter(configuration).route(
+    entitlement("PLUS"),
+  );
+  assert.equal(route.workload, "LONGITUDINAL");
+  assert.equal(route.promptVersion, "longitudinal-v1");
+  assert.equal(route.provider, "GEMINI");
+  assert.equal(route.model, "baseline-model");
 });
 
 void test("forwards only the bearer context and ignores client tier query claims", async () => {

@@ -258,11 +258,56 @@ metrics while retaining legacy fake-provider documents. A configured adapter
 does not imply approval: real routes require a separately recorded benchmark
 approval identifier.
 
-## `journal_longitudinal_analysis_results` — PROPOSED
+## `longitudinal_analysis_jobs`
 
-No current owner migration creates this collection. The shape below is an
-approved ADR 0015 design reference and must not be presented as active runtime
-persistence.
+One durable owner-scoped command per longitudinal idempotency key. It stores
+the two validated periods, optional exclusions, exact selected source versions,
+coverage decision, route snapshot, lease lifecycle, and terminal outcome. It
+never stores source text or a bearer credential.
+
+```json
+{
+  "_id": "UUID",
+  "ownerAccountId": "UUID",
+  "keyHash": "keyed-base64url-digest",
+  "fingerprint": "keyed-base64url-digest",
+  "previousPeriod": { "startAt": "ISODate", "endAt": "ISODate" },
+  "currentPeriod": { "startAt": "ISODate", "endAt": "ISODate" },
+  "excludedJournalIds": ["UUID"],
+  "sourceJournalRevisions": [
+    {
+      "journalId": "UUID",
+      "journalRevision": 2,
+      "period": "CURRENT",
+      "occurredAt": "ISODate"
+    }
+  ],
+  "dataCoverage": {
+    "previousPeriodJournalEntryCount": 3,
+    "currentPeriodJournalEntryCount": 4,
+    "sufficientForComparison": true
+  },
+  "status": "QUEUED | RUNNING | SUCCEEDED | FAILED",
+  "attemptCount": 1,
+  "nextAttemptAt": "ISODate",
+  "leaseOwner": null,
+  "leaseExpiresAt": null,
+  "terminalReason": null,
+  "resultId": null,
+  "route": null,
+  "createdAt": "ISODate",
+  "updatedAt": "ISODate",
+  "completedAt": null
+}
+```
+
+The owner plus keyed idempotency digest is unique. Claims use the same atomic
+lease and two-attempt limit as exact-revision analysis. A recovered job without
+its in-memory end-user authorization context fails closed. Migration
+`009_longitudinal_context_analysis.cjs` is authoritative for the validator and
+owner/idempotency, claim, owner/history, and source indexes.
+
+## `journal_longitudinal_analysis_results`
 
 One immutable normalized result per explicit consented comparison job. It keeps
 exact source revisions so available-entry claims and deletion coupling remain
@@ -273,30 +318,38 @@ reproducible.
   "analysisId": "UUID",
   "jobId": "UUID",
   "userId": "UUID",
-  "periodStart": "ISODate",
-  "periodEnd": "ISODate",
+  "previousPeriod": { "startAt": "ISODate", "endAt": "ISODate" },
+  "currentPeriod": { "startAt": "ISODate", "endAt": "ISODate" },
   "sourceJournalRevisions": [
-    { "entryId": "UUID", "journalRevision": 2, "period": "CURRENT" },
-    { "entryId": "UUID", "journalRevision": 1, "period": "PREVIOUS" }
+    {
+      "journalId": "UUID",
+      "journalRevision": 2,
+      "period": "CURRENT",
+      "occurredAt": "ISODate"
+    }
   ],
-  "contextSignals": ["WORK_STRESS"],
-  "emotionIndicators": ["ANXIETY"],
-  "recurringThemes": ["ACADEMIC_WORKLOAD"],
-  "changesComparedWithPreviousPeriod": [
-    { "signal": "SLEEP_DIFFICULTY", "direction": "LESS_FREQUENT" }
-  ],
-  "preferences": ["SHORT_GUIDED_ACTIVITY"],
-  "barriers": ["BREATHING_DISCOMFORT"],
-  "helpfulPatterns": ["GROUNDING"],
   "dataCoverage": {
     "previousPeriodJournalEntryCount": 12,
     "currentPeriodJournalEntryCount": 8,
     "sufficientForComparison": true
   },
+  "workload": "LONGITUDINAL",
+  "servicePlan": "PLUS",
   "provider": "OPENAI",
   "model": "model-name",
   "promptVersion": "longitudinal-v1",
   "schemaVersion": 1,
+  "result": {
+    "contextSignals": ["WORK_STRESS"],
+    "emotionIndicators": ["ANXIETY"],
+    "recurringThemes": ["ACADEMIC_WORKLOAD"],
+    "changesComparedWithPreviousPeriod": [
+      { "signal": "SLEEP_DIFFICULTY", "direction": "LESS_FREQUENT" }
+    ],
+    "preferences": ["SHORT_GUIDED_ACTIVITY"],
+    "barriers": ["BREATHING_DISCOMFORT"],
+    "helpfulPatterns": ["GROUNDING"]
+  },
   "createdAt": "ISODate"
 }
 ```
@@ -314,17 +367,24 @@ db.journal_longitudinal_analysis_results.createIndex(
 );
 db.journal_longitudinal_analysis_results.createIndex({
   userId: 1,
-  periodEnd: -1,
+  "currentPeriod.endAt": -1,
 });
 ```
 
 Direction is exactly `MORE_FREQUENT`, `LESS_FREQUENT`, `SIMILAR`, or
 `INSUFFICIENT_DATA`. A missing mention is not resolution evidence. Sparse or
-imbalanced coverage must set `sufficientForComparison` false and return
-`INSUFFICIENT_DATA` instead of a directional claim. Deleting any source revision
-deletes or invalidates every dependent longitudinal result. These results are
+imbalanced coverage sets `sufficientForComparison` false and forces
+`INSUFFICIENT_DATA` instead of a directional claim. Deleting any source journal
+deletes every dependent longitudinal job/result, while a source revision change
+before execution fails without substitution. These results are
 non-standardized evidence for a Care-owned Reassessment Summary; they never
 store a clinical-improvement verdict or mutate a SupportPlan.
+
+Periods are half-open, non-overlapping, equal in duration, and each spans 7-31
+days. At least three entries in each period and no greater than a 2:1 count
+ratio are required for sufficient coverage. Migration
+`009_longitudinal_context_analysis.cjs` creates this collection and its unique
+analysis/job plus user/period and exact-source indexes.
 
 ## `conversations`
 

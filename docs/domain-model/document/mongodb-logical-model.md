@@ -59,6 +59,33 @@ prompt/schema and entitlement-routing provenance, normalized bounded result,
 usage/cost metrics, latency, and creation time. Raw provider output and hidden
 reasoning are not fields.
 
+### Longitudinal Analysis Job — ACTIVE
+
+Collection: `longitudinal_analysis_jobs`
+
+Key fields: owner, keyed idempotency data, explicit previous/current period
+bounds, optional excluded journal IDs, exact selected source revisions,
+coverage decision, lifecycle, attempt/lease state, terminal reason, result ID,
+immutable route snapshot, and timestamps. Raw journal text and end-user bearer
+credentials are not fields.
+
+Relationships:
+
+- logical same-owner references to every selected Journal Entry exact revision;
+- logical result reference to Longitudinal Analysis Result;
+- deleting any selected source journal removes the dependent job and result.
+
+### Longitudinal Analysis Result — ACTIVE
+
+Collection: `journal_longitudinal_analysis_results`
+
+Key fields: analysis/job/owner IDs, explicit periods, exact source revisions,
+coverage counts/sufficiency, normalized contextual and emotional evidence,
+direction vocabulary, provider/model/prompt/schema and entitlement-routing
+provenance, execution metrics, and creation time. Raw source/provider text,
+hidden reasoning, combined scores, and clinical-improvement conclusions are not
+fields.
+
 ### Emotion Check-In — ACTIVE
 
 Collection: `emotion_check_ins`
@@ -115,12 +142,11 @@ schema version.
 
 ## Proposed model
 
-| Entity | Status | Evidence and boundary |
-| --- | --- | --- |
-| Longitudinal Analysis Job/Result | PROPOSED | ADR 0015 defines a bounded comparison model, but no migration creates a collection. |
-| Message Receipt | PROPOSED | Realtime module documentation defers high-water delivered/read persistence; no collection exists. |
-| Message Attachment | PROPOSED | Deferred until object-storage, authorization, and retention contracts are accepted. |
-| Moderation evidence | PROPOSED | No owner migration exists; `moderationHold` on Message is not a moderation-case aggregate. |
+| Entity              | Status   | Evidence and boundary                                                                             |
+| ------------------- | -------- | ------------------------------------------------------------------------------------------------- |
+| Message Receipt     | PROPOSED | Realtime module documentation defers high-water delivered/read persistence; no collection exists. |
+| Message Attachment  | PROPOSED | Deferred until object-storage, authorization, and retention contracts are accepted.               |
+| Moderation evidence | PROPOSED | No owner migration exists; `moderationHold` on Message is not a moderation-case aggregate.        |
 
 Do not create SQL tables for these document models. Do not mark a proposed
 collection active until an owner migration, validator, implementation, and

@@ -33,6 +33,9 @@ const implementedOperations = new Set([
   "DELETE /api/v1/journals/{journalId}",
   "POST /api/v1/journals/{journalId}/revisions/{revision}/analysis-jobs",
   "GET /api/v1/analysis-jobs/{jobId}",
+  "POST /api/v1/longitudinal-analysis-jobs",
+  "GET /api/v1/longitudinal-analysis-jobs/{jobId}",
+  "GET /internal/v1/users/{userId}/longitudinal-analyses/{analysisId}",
   "POST /api/v1/emotion-check-ins",
   "GET /api/v1/emotion-check-ins",
   "GET /api/v1/emotion-check-ins/{localDate}",
@@ -57,6 +60,18 @@ const implementedResponses = new Map([
     new Set(["202", "400", "401", "404", "409", "503"]),
   ],
   ["GET /api/v1/analysis-jobs/{jobId}", new Set(["200", "400", "401", "404"])],
+  [
+    "POST /api/v1/longitudinal-analysis-jobs",
+    new Set(["202", "400", "401", "409", "503"]),
+  ],
+  [
+    "GET /api/v1/longitudinal-analysis-jobs/{jobId}",
+    new Set(["200", "400", "401", "404"]),
+  ],
+  [
+    "GET /internal/v1/users/{userId}/longitudinal-analyses/{analysisId}",
+    new Set(["200", "400", "401", "403", "404", "503"]),
+  ],
   [
     "POST /api/v1/emotion-check-ins",
     new Set(["201", "400", "401", "409", "503"]),

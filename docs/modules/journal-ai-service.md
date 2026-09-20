@@ -10,16 +10,16 @@ Support Guide, SupportPlan, eligibility, and confirmation authority.
 
 ## Use cases and acceptance
 
-| Capability            | Main behavior                                                                                                                                | Acceptance                                                                                                                                                              |
-| --------------------- | -------------------------------------------------------------------------------------------------------------------------------------------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| Journal               | Create, read, edit/revise, list and delete private entries with an intentional mood check-in                                                 | Owner authorization; bounded cursor history; encrypted per-revision mood and content; edits create revisions and invalidate current analysis; no plaintext logs/indexes |
-| AI Companion analysis | On explicit user request, check current consent, create one job for an exact journal revision, invoke one provider, and normalize the result | `202` asynchronous job; idempotent duplicate; one bounded retry only for 429/5xx/transport; no cross-provider fallback; journal remains readable on failure             |
-| AI chat and quota | Route server-authorized package/model/quota policy and return assistant responses | `FREE` defaults to five delivered responses/day; `PLUS` has higher quota and may share its model; `PREMIUM` may use a stronger model with no displayed daily cap but retains token/rate/fair-use limits |
-| Longitudinal context  | Compare exact consented journal revisions across bounded periods and return contextual/emotional changes plus data coverage                  | Only available-entry claims; sparse/imbalanced evidence returns `INSUFFICIENT_DATA`; no clinical improvement conclusion or combined score                               |
-| Governed accompaniment | Explain approved content, guide an approved activity, surface reassessment context, and phrase an approved reminder | AI cannot score, diagnose, decide safety/eligibility, schedule reminders, own state, mutate a SupportPlan, or prescribe; Care decides and the user confirms |
-| Specialist read       | Return only entries/indicators allowed by a current Care decision                                                                            | Exact subject/scope/range/entry authorization; fail closed; minimized audited response                                                                                  |
-| Dataset governance    | Import licensed de-identified datasets and immutable versions                                                                                | Production journals excluded by default; private assets; validation rejects label/schema/leakage violations                                                             |
-| Benchmark             | Run the same split/config through configured providers; start with OpenAI and Gemini, with PhoBERT optional later                            | Reproducible versions/split; per-class metrics, latency, errors and cost; retry never duplicates predictions; no dependency on the deferred worker                      |
+| Capability             | Main behavior                                                                                                                                | Acceptance                                                                                                                                                                                              |
+| ---------------------- | -------------------------------------------------------------------------------------------------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| Journal                | Create, read, edit/revise, list and delete private entries with an intentional mood check-in                                                 | Owner authorization; bounded cursor history; encrypted per-revision mood and content; edits create revisions and invalidate current analysis; no plaintext logs/indexes                                 |
+| AI Companion analysis  | On explicit user request, check current consent, create one job for an exact journal revision, invoke one provider, and normalize the result | `202` asynchronous job; idempotent duplicate; one bounded retry only for 429/5xx/transport; no cross-provider fallback; journal remains readable on failure                                             |
+| AI chat and quota      | Route server-authorized package/model/quota policy and return assistant responses                                                            | `FREE` defaults to five delivered responses/day; `PLUS` has higher quota and may share its model; `PREMIUM` may use a stronger model with no displayed daily cap but retains token/rate/fair-use limits |
+| Longitudinal context   | Compare exact consented journal revisions across bounded periods and return contextual/emotional changes plus data coverage                  | Only available-entry claims; sparse/imbalanced evidence returns `INSUFFICIENT_DATA`; no clinical improvement conclusion or combined score                                                               |
+| Governed accompaniment | Explain approved content, guide an approved activity, surface reassessment context, and phrase an approved reminder                          | AI cannot score, diagnose, decide safety/eligibility, schedule reminders, own state, mutate a SupportPlan, or prescribe; Care decides and the user confirms                                             |
+| Specialist read        | Return only entries/indicators allowed by a current Care decision                                                                            | Exact subject/scope/range/entry authorization; fail closed; minimized audited response                                                                                                                  |
+| Dataset governance     | Import licensed de-identified datasets and immutable versions                                                                                | Production journals excluded by default; private assets; validation rejects label/schema/leakage violations                                                                                             |
+| Benchmark              | Run the same split/config through configured providers; start with OpenAI and Gemini, with PhoBERT optional later                            | Reproducible versions/split; per-class metrics, latency, errors and cost; retry never duplicates predictions; no dependency on the deferred worker                                                      |
 
 ## Implementation design
 
@@ -52,13 +52,36 @@ Support Guide, SupportPlan, eligibility, and confirmation authority.
 - [x] JAI-01 Scaffold the NestJS/TypeScript service with feature modules, typed configuration, health/readiness, lint, test, and build commands.
 - [ ] JAI-02 Resolve journal retention/encryption plus dataset license/edit and benchmark label policies; AI provider/result retention is fixed by ADR 0015.
 - [ ] JAI-03 Define journal/AI Companion analysis/dataset/benchmark OpenAPI and the ADR 0015 normalized provider-result schema. The exact-revision request/status/result slice is complete; dataset and benchmark contracts remain deferred.
-- [ ] JAI-04 Define analysis command/result schemas and Care consent/structured-indicator contracts. The exact-revision and `AI_PROCESSING` contracts are complete; longitudinal and specialist-sharing contracts remain deferred.
-- [ ] JAI-05 Add `migrate-mongo` validators/indexes for journal, job, result, dataset, and benchmark collections plus data documentation. Journal, analysis-job, normalized-result, and MB-369 synthetic benchmark metadata collections are complete; general dataset import remains deferred.
+- [ ] JAI-04 Define analysis command/result schemas and Care consent/structured-indicator contracts. Exact-revision, longitudinal, and `AI_PROCESSING` contracts are complete; specialist-sharing remains deferred.
+- [ ] JAI-05 Add `migrate-mongo` validators/indexes for journal, job, result, dataset, and benchmark collections plus data documentation. Journal, exact-revision and longitudinal job/result, and MB-369 synthetic benchmark metadata collections are complete; general dataset import remains deferred.
 - [x] JAI-06 Implement encrypted journal revisions, authorization, pagination and deletion.
 - [ ] JAI-07 Implement consent-gated idempotent analysis orchestration, adapters, bounded retry and reconciliation. MB-367 completes the exact-revision job runtime; MB-369 adds gated Gemini/OpenAI adapters and entitlement routing. An accepted real route and broader reconciliation remain deferred until benchmark approval.
 - [ ] JAI-08 Implement dataset import/versioning and reproducible benchmark coordination. MB-369 completes the exact-revision synthetic harness for one or both configured Gemini/OpenAI candidates; general governed dataset import remains deferred.
 - [ ] JAI-09 Verify malformed AI output, prompt injection boundary, timeout/cost limit, duplicates/reordering, cross-store recovery and deletion.
 - [ ] JAI-10 Add observability/configuration, module README, and pass Node/contract/Mongo gates. Journal/AI is Mongo-only and has no PostgreSQL gate.
+
+## MB-371 delivery boundary
+
+MB-371 adds owner-scoped idempotent longitudinal jobs over two equal 7-31 day
+periods. Journal/AI selects at most 50 active current revisions per period,
+persists the exact selected versions, rechecks `AI_PROCESSING` consent before
+provider execution, and uses the existing entitlement-aware single-provider
+route with one bounded retry. At least three entries per period and a maximum
+2:1 count ratio are required for a directional comparison; otherwise every
+exposed change direction is `INSUFFICIENT_DATA`.
+
+Migration `009_longitudinal_context_analysis.cjs` owns the job/result validators
+and indexes. Deleting any source journal deletes dependent longitudinal jobs
+and results; a source revised before execution fails without substituting the
+new revision. The owner job endpoint and minimized
+`REASSESSMENT_SUMMARY` Care read return exact source versions, coverage, safe
+normalized evidence, and provenance without raw text. Care composition and its
+2-second consumer deadline remain Story 6501; MB-371 does not create a frontend
+screen or a combined improvement score.
+
+Implementation decisions, exact verification commands, and evidence
+classification are recorded in
+[MB-371 bounded longitudinal journal context evidence](../story-mb-371-longitudinal-context-evidence.md).
 
 ## MB-236 delivery boundary
 

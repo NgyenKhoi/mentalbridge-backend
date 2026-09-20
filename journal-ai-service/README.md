@@ -20,6 +20,8 @@ The service provides:
 - AES-256-GCM encrypted journal revisions with lifetime idempotency records
 - optional backwards-compatible, user-selected mood encrypted with each revision
 - optimistic concurrency through `If-Match` and deterministic cursor pagination
+- consented idempotent longitudinal comparison across two bounded journal periods
+- minimized exact-source longitudinal evidence for future Care reassessment composition
 - lint, type-check, test, and build scripts
 - production multi-stage Docker image
 
@@ -30,8 +32,10 @@ provider per run, normalized result, bounded retry, and no raw-response or
 bearer-token persistence. MB-367 adds the backend runtime with a deterministic
 fake provider. MB-369 adds Consultation-authoritative package lookup,
 workload/package routing, gated Gemini/OpenAI adapters, prompt/provenance
-versioning, and a synthetic benchmark harness. Frontend consent/reflection,
-AI Chat quota, general dataset import, and billing lifecycle remain separate.
+versioning, and a synthetic benchmark harness. MB-371 adds exact-source
+longitudinal jobs, conservative coverage handling, deletion coupling, and a
+minimized Care read. Frontend reassessment presentation, AI Chat quota, general
+dataset import, and billing lifecycle remain separate.
 
 ## Requirements
 
@@ -112,6 +116,9 @@ encrypted demo data exists. Do not commit local `.env` files or secrets.
 | `DELETE` | `/api/v1/journals/{journalId}`                                    | Create an idempotent owner-scoped tombstone                           |
 | `POST`   | `/api/v1/journals/{journalId}/revisions/{revision}/analysis-jobs` | Request one consented exact-revision analysis job                     |
 | `GET`    | `/api/v1/analysis-jobs/{jobId}`                                   | Read the owner-scoped job state and normalized result                 |
+| `POST`   | `/api/v1/longitudinal-analysis-jobs`                              | Compare exact owned revisions across two bounded periods              |
+| `GET`    | `/api/v1/longitudinal-analysis-jobs/{jobId}`                      | Read the owner-scoped longitudinal job and safe evidence              |
+| `GET`    | `/internal/v1/users/{userId}/longitudinal-analyses/{analysisId}`  | Return minimized consented evidence for Care reassessment             |
 | `POST`   | `/api/v1/emotion-check-ins`                                       | Create the current local-day self-reported emotion check-in           |
 | `GET`    | `/api/v1/emotion-check-ins`                                       | List owner-scoped self-reported emotion history                       |
 | `GET`    | `/api/v1/emotion-check-ins/{localDate}`                           | Reload one owned local-day check-in                                   |
@@ -132,6 +139,22 @@ Incoming requests echo a valid bounded `x-correlation-id` or receive a generated
 - Daily emotion check-in validator, owner/day, replay, history, and TTL indexes: `migrations/006_daily_emotion_check_ins.cjs`
 - Entitlement-aware route/provenance validator expansion: `migrations/007_entitlement_aware_model_routing.cjs`
 - Synthetic benchmark metadata/run/case-result collections: `migrations/008_ai_benchmark_metadata.cjs`
+- Longitudinal analysis job/result validators and indexes: `migrations/009_longitudinal_context_analysis.cjs`
+
+Longitudinal requests use equal, half-open, non-overlapping periods of 7-31
+days. The current period cannot end in the future. The service selects no more
+than 50 active current revisions per period after optional exclusions. At least
+three entries per period and no greater than a 2:1 count imbalance are required
+for directional comparison; otherwise the response exposes
+`INSUFFICIENT_DATA`. Source text is decrypted only for the provider attempt and
+is never stored in jobs, results, logs, or the Care projection. Deleting any
+source journal removes every dependent longitudinal job and result.
+
+The Care projection requires purpose `REASSESSMENT_SUMMARY`, a matching
+forwarded end-user bearer, and current `AI_PROCESSING` consent. Care Story 6501
+is the composition consumer and must call this endpoint with its standard
+2-second internal REST deadline and fail safely when Journal/AI or consent is
+unavailable.
 
 ADR 0018 freezes the daily check-in as self-reported reflection rather than a
 clinical score or safety classifier. The five emotion labels reuse Journal's

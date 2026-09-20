@@ -113,9 +113,20 @@ AI Companion also supports an explicit, consented longitudinal analysis over
 exact journal revisions in two bounded periods. It may describe contextual and
 emotional patterns only within the available entries and returns
 `INSUFFICIENT_DATA` when coverage cannot support a comparison. Its normalized
-`AiLongitudinalAnalysis` contains:
+The request supplies two half-open, non-overlapping periods of equal duration.
+Each period is at least 7 days and at most 31 days, and the current period may
+not end in the future. Journal/AI selects every active current revision owned
+by the caller whose `occurredAt` falls in the requested period, after applying
+an optional list of at most 100 explicitly excluded journal IDs. At most 50
+sources may be selected in either period.
 
-- `periodStart`, `periodEnd`, and the exact source revision references;
+Coverage is sufficient only when each period contains at least three selected
+entries and neither count is more than twice the other. Sparse or imbalanced
+coverage sets `sufficientForComparison` to false and forces the normalized
+change direction to `INSUFFICIENT_DATA`. `AiLongitudinalAnalysis` contains:
+
+- explicit `previousPeriod` and `currentPeriod` bounds plus exact source
+  revision references;
 - `contextSignals`, `emotionIndicators`, and `recurringThemes`;
 - signal changes of `MORE_FREQUENT`, `LESS_FREQUENT`, `SIMILAR`, or
   `INSUFFICIENT_DATA` compared with the prior period;
@@ -137,10 +148,19 @@ has improved, recovered, or been cured. AI evidence may help Care explain
 candidate items to keep, review, or replace, but Care finds allowed alternatives
 and the user confirms every SupportPlan change.
 
-Journal/AI persists only the validated normalized result and provider/model/
-prompt/schema provenance with timestamps. It does not persist raw provider
-responses or hidden reasoning. An analysis belongs to its exact journal
-revision and is deleted with that revision.
+Journal/AI persists only the validated normalized result, exact source
+references, coverage, and provider/model/prompt/schema provenance with
+timestamps. It does not persist raw provider responses or hidden reasoning. A
+longitudinal analysis is deleted when any source journal is deleted. A source
+revision change before provider execution fails the job rather than silently
+substituting new text.
+
+Care may read a completed result only through the minimized
+`REASSESSMENT_SUMMARY` projection while forwarding the verified end-user bearer
+context. Journal/AI rechecks current `AI_PROCESSING` consent and owner identity;
+dependency uncertainty fails closed. The projection contains coverage, exact
+source versions, normalized signals, and provenance, but no journal text,
+provider raw response, combined score, or clinical-improvement conclusion.
 
 The provider-neutral contract, adapters, and asynchronous job runtime do not
 wait for the OpenAI-versus-Gemini benchmark. The benchmark does gate final
