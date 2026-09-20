@@ -65,21 +65,26 @@ public class ServiceCreditService {
 					&& command.appointmentId().equals(appointmentId)) return;
 			throw conflict("IDEMPOTENCY_KEY_REUSED", "Idempotency key was reused for another credit transition");
 		}
+		var commandTime = clock.instant();
 		var credit = jdbc.sql("""
-				select c.state, c.appointment_id from service_credit c
+				select c.state, c.appointment_id, p.period_end from service_credit c
 				join service_credit_period p on p.id=c.period_id
 				where c.id=:creditId and p.account_id=:accountId for update
 				""").param("creditId", creditId).param("accountId", accountId)
 				.query((row, ignored) -> new CreditState(row.getString("state"),
-						row.getObject("appointment_id", UUID.class))).optional()
+						row.getObject("appointment_id", UUID.class), row.getTimestamp("period_end").toInstant())).optional()
 				.orElseThrow(() -> new ApiException(HttpStatus.NOT_FOUND, "SERVICE_CREDIT_NOT_FOUND",
 						"Service credit was not found"));
+		if (!credit.periodEnd().isAfter(commandTime)) {
+			throw conflict("SERVICE_CREDIT_PERIOD_EXPIRED", "Service credit period has ended");
+		}
 		var nextState = nextState(credit, appointmentId, eventType);
 		var nextAppointment = nextState.equals("AVAILABLE") ? null : appointmentId;
 		jdbc.sql("""
 				update service_credit set state=:state, appointment_id=:appointmentId,
 				updated_at=:now, version=version+1 where id=:creditId
-				""").param("state", nextState).param("appointmentId", nextAppointment).param("now", databaseNow())
+				""").param("state", nextState).param("appointmentId", nextAppointment)
+				.param("now", databaseInstant(commandTime))
 				.param("creditId", creditId).update();
 		jdbc.sql("""
 				insert into service_credit_ledger (
@@ -87,7 +92,7 @@ public class ServiceCreditService {
 				) values (:id, :creditId, :accountId, :eventType, :appointmentId, :key, :now)
 				""").param("id", UUID.randomUUID()).param("creditId", creditId).param("accountId", accountId)
 				.param("eventType", eventType.name()).param("appointmentId", appointmentId).param("key", idempotencyKey)
-				.param("now", databaseNow()).update();
+				.param("now", databaseInstant(commandTime)).update();
 	}
 
 	private String nextState(CreditState credit, UUID appointmentId, CreditEventType eventType) {
@@ -251,7 +256,7 @@ public class ServiceCreditService {
 			String sourceReference, int allocatedCount) {
 	}
 
-	private record CreditState(String state, UUID appointmentId) {
+	private record CreditState(String state, UUID appointmentId, Instant periodEnd) {
 	}
 
 	private record ExistingCommand(UUID creditId, CreditEventType eventType, UUID appointmentId) {

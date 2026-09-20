@@ -1,12 +1,14 @@
 package com.mentalbridge.consultation.credits;
 
 import static org.assertj.core.api.Assertions.assertThat;
+import static org.assertj.core.api.Assertions.assertThatThrownBy;
 import static org.springframework.security.test.web.servlet.request.SecurityMockMvcRequestPostProcessors.jwt;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.get;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.jsonPath;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.status;
 
 import java.time.OffsetDateTime;
+import java.time.ZoneOffset;
 import java.util.UUID;
 
 import org.junit.jupiter.api.Test;
@@ -20,6 +22,7 @@ import org.springframework.test.web.servlet.MockMvc;
 
 import com.mentalbridge.consultation.ConsultationTestProperties;
 import com.mentalbridge.consultation.TestcontainersConfiguration;
+import com.mentalbridge.consultation.shared.ApiException;
 
 @Import(TestcontainersConfiguration.class)
 @SpringBootTest
@@ -100,6 +103,54 @@ class ServiceCreditFlowIntegrationTests extends ConsultationTestProperties {
 		assertThat(result.history()).extracting(ServiceCreditResponse.LedgerEvent::eventType)
 				.contains(CreditEventType.HELD, CreditEventType.RELEASED, CreditEventType.CONSUMED,
 						CreditEventType.FORFEITED);
+	}
+
+	@Test
+	void rollsBalanceIntoTheCurrentPeriodAndRejectsTransitionsFromTheEndedPeriod() {
+		var userId = UUID.randomUUID();
+		var now = OffsetDateTime.now(ZoneOffset.UTC).withNano(0);
+		var periodAStart = now.minusHours(2);
+		insertEntitlement(userId, "PLUS", "PAID", "paid-period-a", null, periodAStart, now.plusHours(1));
+
+		var periodA = credits.current(userId);
+		assertThat(periodA.balance().available()).isEqualTo(1);
+		var periodACreditId = jdbc.sql("""
+				select c.id from service_credit c
+				join service_credit_period p on p.id=c.period_id
+				where p.account_id=:accountId and p.source_reference='paid-period-a'
+				""").param("accountId", userId).query(UUID.class).single();
+
+		var periodAEnd = now.minusMinutes(30);
+		jdbc.sql("""
+				update service_credit_period set period_end=:periodEnd, updated_at=:now
+				where account_id=:accountId and source_reference='paid-period-a'
+				""").param("periodEnd", periodAEnd).param("now", now).param("accountId", userId).update();
+		var periodBStart = now.minusMinutes(15);
+		jdbc.sql("""
+				update current_service_entitlement
+				set package_code='PREMIUM', source_reference='paid-period-b',
+				    effective_from=:periodStart, effective_until=:periodEnd, version=version+1
+				where account_id=:accountId
+				""").param("periodStart", periodBStart).param("periodEnd", now.plusDays(30))
+				.param("accountId", userId).update();
+
+		var periodB = credits.current(userId);
+		assertThat(periodB.packageCode().name()).isEqualTo("PREMIUM");
+		assertThat(periodB.periodStart()).isEqualTo(periodBStart.toInstant());
+		assertThat(periodB.balance().available()).isEqualTo(3);
+		assertThat(periodB.balance().total()).isEqualTo(3);
+		assertThat(jdbc.sql("""
+				select count(*) from service_credit c
+				join service_credit_period p on p.id=c.period_id
+				where p.account_id=:accountId
+				""").param("accountId", userId).query(Long.class).single()).isEqualTo(4L);
+
+		assertThatThrownBy(() -> credits.transition(userId, periodACreditId, UUID.randomUUID(),
+				CreditEventType.HELD, "expired-period-hold-0001"))
+				.isInstanceOfSatisfying(ApiException.class,
+						exception -> assertThat(exception.code()).isEqualTo("SERVICE_CREDIT_PERIOD_EXPIRED"));
+		assertThat(jdbc.sql("select state from service_credit where id=:id").param("id", periodACreditId)
+				.query(String.class).single()).isEqualTo("AVAILABLE");
 	}
 
 	private void insertEntitlement(UUID accountId, String packageCode, String source, String sourceReference,
