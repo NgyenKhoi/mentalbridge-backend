@@ -47,9 +47,24 @@ Test a Spring consumer against a Node provider contract and a Node consumer agai
 
 Paid AI, email, push, or other provider APIs are not called by CI. Use synthetic fixtures and provider sandboxes only in explicit integration environments.
 
-## `dev` CI baseline
+## Pre-production CI lanes
 
-`.github/workflows/quality-gate.yml` is the repository-level pull-request gate for `dev`. It runs repository/paired-change policy, all current Spring module tests, Node dependency installation, formatting, lint, typecheck, unit/HTTP tests, contract and migration checks, Content PostgreSQL Testcontainers tests, and builds. The final stable check name is `quality-gate`; configure branch protection to require it after this workflow is merged and has completed successfully on `dev`.
+`.github/workflows/quality-gate.yml` is the single repository-level backend
+gate for both pre-production branches. Keeping one workflow prevents the
+service matrix and verification commands from drifting between environments.
+
+- Pull requests and pushes to `dev` run repository/paired-change policy, every
+  current Spring module test suite, Node dependency installation, formatting,
+  lint, typecheck, unit/HTTP tests, contract and migration checks,
+  infrastructure integration tests, and builds.
+- Pull requests and pushes to `staging` run the same complete gate. A staging
+  pull request passes promotion policy only when its source branch is `dev`;
+  feature branches must merge through `dev` first.
+- The final stable check is `quality-gate`. Branch protection for both `dev`
+  and `staging` must require it. The workflow cannot enforce branch protection
+  by itself; repository rules are the enforcement source.
+- CI and integration tests use disposable infrastructure and must never target
+  the shared dev/staging durable data plane.
 
 CI does not replace local verification or base synchronization. A skipped, cancelled, unavailable, or red status is not a passing result. Record exact local commands and any environment-only blocker in the PR.
 
@@ -79,6 +94,7 @@ Before declaring completion, inspect the full diff and answer yes to each applic
 - Feature structure remains cohesive; no god service, dumping-ground `shared`, copied cross-service DTO, unused abstraction, or explanatory production-code comment was added.
 - Tests cover happy path, validation, authorization, conflict/concurrency, duplicate/retry, and dependency failure.
 - Formatting, static analysis, tests, migration validation, contract checks, and build pass for every affected module.
-- Exact local commands/results are recorded and the required GitHub `quality-gate` status passes.
+- Exact local commands/results are recorded and the required GitHub
+  `quality-gate` status passes for the target branch.
 
 If a required check cannot run, document the exact command, failure, and impact. Do not call the implementation complete merely because the missing dependency belongs to another module.
