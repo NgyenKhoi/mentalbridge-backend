@@ -723,6 +723,51 @@ projections; an expired row is ignored rather than silently extending access.
 | `updated_at` | UTC instant of the latest authoritative projection replacement. |
 | `version` | Optimistic-lock counter reserved for safe future demo/billing projection updates. |
 
+### `consultation.service_credit_period`
+
+Implemented MB-377 allocation boundary. One row freezes the highest package allocation seen for an exact user, entitlement policy version, and effective period. `DEMO` and `PAID` provenance is immutable within that period.
+
+| Field | Purpose |
+| --- | --- |
+| `id` | Server-generated period UUID. |
+| `account_id` | External Identity user UUID that owns every credit in the period. |
+| `plan_version` | Exact source entitlement policy version used by the idempotency key. |
+| `package_code` | Highest allocated package in the period: `PLUS` or `PREMIUM`. |
+| `source` | Explicit `DEMO` or `PAID` provenance; never inferred by the client. |
+| `source_reference` | Stable entitlement lifecycle or controlled-demo reference. |
+| `period_start` / `period_end` | Inclusive/exclusive UTC billing or demo window. |
+| `allocated_count` | Frozen allocation after allowed upgrade: 1 for Plus or 3 for Premium. |
+| `created_at` / `updated_at` | UTC creation and latest in-period upgrade instants. |
+| `version` | Optimistic version incremented by allocation upgrade. |
+
+### `consultation.service_credit`
+
+One indivisible consultation right. Current state is owner-controlled; balances are counted from these rows and never reconstructed in the browser.
+
+| Field | Purpose |
+| --- | --- |
+| `id` | Stable credit UUID. |
+| `period_id` | Owning immutable-provenance service-credit period. |
+| `ordinal` | One-based position within the allocation; unique per period and capped at three. |
+| `state` | `AVAILABLE`, `HELD`, `CONSUMED`, or `FORFEITED`. A release returns the state to `AVAILABLE` while the ledger preserves the fact. |
+| `appointment_id` | Future local appointment UUID required for held and terminal appointment outcomes. |
+| `created_at` / `updated_at` | UTC creation and latest transition instants. |
+| `version` | Optimistic transition counter. |
+
+### `consultation.service_credit_ledger`
+
+Append-only evidence for provisioning and appointment-driven transitions.
+
+| Field | Purpose |
+| --- | --- |
+| `id` | Immutable event UUID. |
+| `credit_id` | Credit whose state changed. |
+| `account_id` | Denormalized owner UUID for bounded history and account-scoped idempotency. |
+| `event_type` | `PROVISIONED`, `HELD`, `RELEASED`, `CONSUMED`, or `FORFEITED`. |
+| `appointment_id` | Required correlation for every non-provisioning transition. |
+| `idempotency_key` | Owner command key unique per account; exact replay does not append another event. |
+| `occurred_at` | Immutable server UTC transition instant. |
+
 ### `consultation.subscription_plan_version`
 
 Immutable price, allocation, credit, revenue-share, and cancellation policy purchased by a subscription period.

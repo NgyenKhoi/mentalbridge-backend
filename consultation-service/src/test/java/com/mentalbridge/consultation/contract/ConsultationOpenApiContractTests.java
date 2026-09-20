@@ -14,6 +14,7 @@ import io.swagger.v3.parser.core.models.ParseOptions;
 class ConsultationOpenApiContractTests {
 
 	private static final Set<String> OPERATIONS = Set.of(
+			"GET /api/v1/service-credits",
 			"GET /internal/v1/entitlements/current",
 			"GET /api/v1/specialist-profile",
 			"PUT /api/v1/specialist-profile",
@@ -44,6 +45,19 @@ class ConsultationOpenApiContractTests {
 			});
 		});
 		assertThat(operations).isEqualTo(OPERATIONS);
+	}
+
+	@Test
+	void creditContractPublishesOnlyServerAuthoritativeBalanceAndBoundedHistory() {
+		var contract = Path.of("..", "contracts", "openapi", "consultation-service-v1.yaml").toString();
+		var api = new OpenAPIV3Parser().read(contract);
+		var account = api.getComponents().getSchemas().get("ServiceCreditAccount");
+		var balance = api.getComponents().getSchemas().get("ServiceCreditBalance");
+
+		assertThat(account.getProperties()).containsKeys("packageCode", "source", "periodStart", "periodEnd",
+				"balance", "history");
+		assertThat(balance.getProperties()).containsOnlyKeys("available", "held", "consumed", "forfeited", "total",
+				"releasedTransitions");
 	}
 
 	@Test

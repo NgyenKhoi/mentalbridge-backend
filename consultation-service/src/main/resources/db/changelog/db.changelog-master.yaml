@@ -5,3 +5,5 @@ databaseChangeLog:
       file: db/changelog/changes/002-current-service-entitlement.sql
   - include:
       file: db/changelog/changes/003-online-specialist-availability.sql
+  - include:
+      file: db/changelog/changes/004-service-plan-consultation-credits.sql

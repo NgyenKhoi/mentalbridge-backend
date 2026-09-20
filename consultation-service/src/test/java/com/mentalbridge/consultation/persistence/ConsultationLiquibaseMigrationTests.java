@@ -28,7 +28,8 @@ class ConsultationLiquibaseMigrationTests extends ConsultationTestProperties {
 				.query(String.class).list();
 		assertThat(tables).contains("specialist_profile", "specialist_profile_support_area",
 				"specialist_profile_language", "specialist_profile_status_history",
-				"current_service_entitlement", "availability_slot");
+				"current_service_entitlement", "availability_slot", "service_credit_period", "service_credit",
+				"service_credit_ledger");
 	}
 
 	@Test
