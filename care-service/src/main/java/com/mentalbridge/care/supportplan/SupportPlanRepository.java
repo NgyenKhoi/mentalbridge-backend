@@ -1,6 +1,7 @@
 package com.mentalbridge.care.supportplan;
 
 import java.time.Instant;
+import java.util.List;
 import java.util.Optional;
 import java.util.UUID;
 
@@ -17,6 +18,22 @@ interface SupportPlanRepository extends JpaRepository<SupportPlanEntity, UUID> {
 	Optional<SupportPlanEntity> findByUserIdAndStatus(UUID userId, String status);
 
 	Optional<SupportPlanEntity> findByIdAndUserId(UUID id, UUID userId);
+
+	@Query(value = """
+			select * from support_plan
+			where user_id = :userId
+			  and status in ('COMPLETED','SUPERSEDED','DISCARDED')
+			  and (
+			    cast(:beforeTime as timestamptz) is null
+			    or updated_at < :beforeTime
+			    or (updated_at = :beforeTime and id < :beforeId)
+			  )
+			order by updated_at desc, id desc
+			limit :limit
+			""", nativeQuery = true)
+	List<SupportPlanEntity> findTerminalHistory(@Param("userId") UUID userId,
+			@Param("beforeTime") Instant beforeTime, @Param("beforeId") UUID beforeId,
+			@Param("limit") int limit);
 
 	Optional<SupportPlanEntity> findByUserIdAndStatusIn(UUID userId, java.util.Collection<String> statuses);
 

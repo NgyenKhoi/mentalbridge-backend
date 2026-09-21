@@ -133,7 +133,8 @@ class SupportPlanWriter {
 	}
 
 	@Transactional
-	StoredPlan transition(UUID userId, UUID planId, long expectedVersion, String desiredStatus, Instant now) {
+	StoredPlan transition(UUID userId, UUID planId, long expectedVersion, String desiredStatus,
+			String completionReason, Instant now) {
 		now = now.truncatedTo(ChronoUnit.MICROS);
 		lockOwner(userId);
 		var plan = plans.findByIdAndUserIdForUpdate(planId, userId).orElseThrow(() -> new ApiException(
@@ -158,7 +159,7 @@ class SupportPlanWriter {
 			}
 			case "COMPLETED" -> {
 				if (!List.of("ACTIVE", "PAUSED").contains(plan.status())) throw invalidTransition();
-				plan.complete(now);
+				plan.complete(completionReason, now);
 				activities.end(plan.id(), "PLAN_COMPLETED", now);
 			}
 			case "DISCARDED" -> {
@@ -213,6 +214,12 @@ class SupportPlanWriter {
 				new ApiException(HttpStatus.NOT_FOUND, "SUPPORT_PLAN_CURRENT_NOT_FOUND",
 						"Current SupportPlan was not found"));
 		return stored(plan);
+	}
+
+	@Transactional(readOnly = true)
+	List<StoredPlan> history(UUID userId, Instant beforeTime, UUID beforeId, int limit) {
+		return plans.findTerminalHistory(userId, beforeTime, beforeId, limit)
+				.stream().map(this::stored).toList();
 	}
 
 	@Transactional(readOnly = true)

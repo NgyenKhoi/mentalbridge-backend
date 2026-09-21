@@ -500,9 +500,10 @@ assessment answers or scores.
 
 ### `public.support_plan`
 
-Care-owned runtime aggregate for MB-372/MB-373/MB-513. MB-372 creates `DRAFT`;
+Care-owned runtime aggregate for MB-372/MB-373/MB-513/MB-374. MB-372 creates `DRAFT`;
 MB-373 permits an explicit revalidated transition to `ACTIVE`; MB-513 adds
-pause/resume, completion, replacement, and discard. Separate partial unique
+pause/resume, completion, replacement, and discard; MB-374 exposes those
+user-confirmed transitions with immutable terminal history. Separate partial unique
 indexes on `DRAFT` and on `ACTIVE`/`PAUSED` are the final concurrent guards for
 one draft and one official current plan per owner.
 
@@ -523,6 +524,7 @@ one draft and one official current plan per owner.
 | `safety_guidance_code` / `safety_guidance` | Approved safety copy stored with the draft so reload never depends on AI or another service. |
 | `selected_resource_count` | Number of persisted selected exact versions, constrained to 1..5. |
 | `activated_at` | UTC instant of explicit activation; null while the plan is a draft. |
+| `completion_reason` | Optional bounded user-selected reason code (`USER_DECISION`, `PLAN_NO_LONGER_FITS`, or `OTHER`) stored only for a completed plan; it is not a clinical interpretation. |
 | `completed_at` / `superseded_at` / `discarded_at` | UTC instant for the matching terminal state; lifecycle checks require exactly the applicable timestamp and activation history. |
 | `created_at` / `updated_at` | UTC creation and latest accepted business-command instants. |
 

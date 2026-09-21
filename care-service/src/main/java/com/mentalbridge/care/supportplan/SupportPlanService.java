@@ -4,6 +4,7 @@ import java.nio.charset.StandardCharsets;
 import java.security.MessageDigest;
 import java.time.Clock;
 import java.time.Instant;
+import java.util.Base64;
 import java.util.ArrayList;
 import java.util.HashMap;
 import java.util.HexFormat;
@@ -116,12 +117,39 @@ public class SupportPlanService {
 		return view(writer.currentPlan(userId));
 	}
 
-	public SupportPlanView changeStatus(UUID userId, UUID planId, long expectedVersion, String targetStatus) {
+	public SupportPlanView get(UUID userId, UUID planId) {
+		return view(writer.required(userId, planId));
+	}
+
+	public SupportPlanHistoryView history(UUID userId, int limit, String cursor) {
+		Cursor decoded = decode(cursor);
+		var rows = writer.history(userId, decoded == null ? null : decoded.time(),
+				decoded == null ? null : decoded.id(), limit + 1);
+		boolean hasMore = rows.size() > limit;
+		var items = rows.stream().limit(limit).map(this::view).toList();
+		String nextCursor = hasMore
+				? encode(rows.get(limit - 1).plan().updatedAt(), rows.get(limit - 1).plan().id())
+				: null;
+		return new SupportPlanHistoryView(items, nextCursor, hasMore);
+	}
+
+	public SupportPlanView changeStatus(UUID userId, UUID planId, long expectedVersion, String targetStatus,
+			String completionReason) {
 		if (!List.of("ACTIVE", "PAUSED", "COMPLETED", "DISCARDED").contains(targetStatus)) {
 			throw new ApiException(HttpStatus.BAD_REQUEST, "SUPPORT_PLAN_STATUS_INVALID",
 					"Target status must be ACTIVE, PAUSED, COMPLETED, or DISCARDED");
 		}
-		return view(writer.transition(userId, planId, expectedVersion, targetStatus, clock.instant()));
+		if (completionReason != null && !"COMPLETED".equals(targetStatus)) {
+			throw new ApiException(HttpStatus.BAD_REQUEST, "SUPPORT_PLAN_COMPLETION_REASON_INVALID",
+					"Completion reason is accepted only when completing a SupportPlan");
+		}
+		if (completionReason != null
+				&& !List.of("USER_DECISION", "PLAN_NO_LONGER_FITS", "OTHER").contains(completionReason)) {
+			throw new ApiException(HttpStatus.BAD_REQUEST, "SUPPORT_PLAN_COMPLETION_REASON_INVALID",
+					"Completion reason is not supported");
+		}
+		return view(writer.transition(userId, planId, expectedVersion, targetStatus,
+				completionReason, clock.instant()));
 	}
 
 	public SupportPlanView replace(UUID userId, String bearerToken, UUID draftId, long draftVersion,
@@ -309,7 +337,25 @@ public class SupportPlanService {
 				new SafetyView(plan.safetyStatus(), plan.safetyReasonCode(), plan.safetyPolicyVersion(),
 						plan.safetyGuidanceCode(), plan.safetyGuidance()),
 				families, slots, selections.size(), plan.createdAt(), updatedAt, activatedAt,
+				plan.completedAt(), plan.completionReason(), plan.supersededAt(), plan.discardedAt(),
 				"WELLBEING_SUPPORT_NOT_TREATMENT", DISCLAIMER);
+	}
+
+	private Cursor decode(String cursor) {
+		if (cursor == null || cursor.isBlank()) return null;
+		try {
+			String[] parts = new String(Base64.getUrlDecoder().decode(cursor), StandardCharsets.UTF_8)
+					.split("\\|", 2);
+			return new Cursor(Instant.parse(parts[0]), UUID.fromString(parts[1]));
+		}
+		catch (RuntimeException exception) {
+			throw new ApiException(HttpStatus.BAD_REQUEST, "INVALID_CURSOR", "SupportPlan history cursor is invalid");
+		}
+	}
+
+	private String encode(Instant time, UUID id) {
+		return Base64.getUrlEncoder().withoutPadding()
+				.encodeToString((time + "|" + id).getBytes(StandardCharsets.UTF_8));
 	}
 
 	private ResourceView resource(ResourceDraft resource) {
@@ -358,8 +404,12 @@ public class SupportPlanService {
 			String category, String title, String summary, String externalUrl) { }
 	public record SlotView(String slotId, String kind, String targetDomain, String purposeCode,
 			ResourceView selectedResource, List<ResourceView> allowedAlternatives) { }
+	private record Cursor(Instant time, UUID id) { }
+	public record SupportPlanHistoryView(List<SupportPlanView> items, String nextCursor, boolean hasMore) { }
 	public record SupportPlanView(UUID supportPlanId, String status, long version, SourceView source,
 			EntitlementView entitlement, RationaleView rationale, SafetyView safety,
 			List<TemplateFamilyView> templateFamilies, List<SlotView> slots, int selectedResourceCount,
-			Instant createdAt, Instant updatedAt, Instant activatedAt, String disclaimerCode, String disclaimer) { }
+			Instant createdAt, Instant updatedAt, Instant activatedAt, Instant completedAt,
+			String completionReason, Instant supersededAt, Instant discardedAt,
+			String disclaimerCode, String disclaimer) { }
 }

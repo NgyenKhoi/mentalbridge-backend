@@ -522,6 +522,61 @@ paths:
         '401': { $ref: '#/components/responses/UnauthorizedProblem' }
         '403': { $ref: '#/components/responses/ForbiddenProblem' }
         '404': { $ref: '#/components/responses/SupportPlanCurrentNotFoundProblem' }
+  /api/v1/support-plans/history:
+    x-mentalbridge-status: implemented
+    get:
+      tags: [SupportPlan activity]
+      operationId: listOwnTerminalSupportPlans
+      summary: List immutable terminal SupportPlan snapshots
+      description: |
+        Returns only the authenticated user's COMPLETED, SUPERSEDED, and
+        DISCARDED plans in stable newest-first order. This persisted history is
+        never rebuilt from assessments, AI output, or current eligibility.
+      security:
+        - bearerAuth: []
+      parameters:
+        - $ref: '#/components/parameters/CorrelationId'
+        - name: limit
+          in: query
+          schema: { type: integer, minimum: 1, maximum: 50, default: 10 }
+        - name: cursor
+          in: query
+          schema: { type: string, minLength: 1, maxLength: 256 }
+      responses:
+        '200':
+          description: Stable terminal SupportPlan history page
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/SupportPlanHistoryPage' }
+        '400': { $ref: '#/components/responses/ValidationProblem' }
+        '401': { $ref: '#/components/responses/UnauthorizedProblem' }
+        '403': { $ref: '#/components/responses/ForbiddenProblem' }
+  /api/v1/support-plans/{supportPlanId}:
+    x-mentalbridge-status: implemented
+    get:
+      tags: [SupportPlan activity]
+      operationId: getOwnSupportPlan
+      summary: Reload one owned SupportPlan snapshot
+      description: |
+        Returns the persisted owner snapshot in any lifecycle state. Terminal
+        snapshots are immutable and are not recomputed from newer evidence.
+      security:
+        - bearerAuth: []
+      parameters:
+        - $ref: '#/components/parameters/SupportPlanId'
+        - $ref: '#/components/parameters/CorrelationId'
+      responses:
+        '200':
+          description: Owned SupportPlan snapshot
+          headers:
+            ETag:
+              $ref: '#/components/headers/SupportPlanETag'
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/SupportPlan' }
+        '401': { $ref: '#/components/responses/UnauthorizedProblem' }
+        '403': { $ref: '#/components/responses/ForbiddenProblem' }
+        '404': { $ref: '#/components/responses/SupportPlanNotFoundProblem' }
   /api/v1/support-plans/{supportPlanId}/choices:
     x-mentalbridge-status: implemented
     put:
@@ -594,7 +649,9 @@ paths:
         ACTIVE may resume PAUSED, PAUSED may pause ACTIVE, COMPLETED ends an
         ACTIVE or PAUSED plan without implying recovery, and DISCARDED removes
         a DRAFT from current consideration. Repeating the already-applied desired
-        state is a no-op. Pausing cancels future scheduled occurrences; resuming
+        state is a no-op. An optional stable completion reason is accepted only
+        for COMPLETED and becomes part of the immutable terminal snapshot.
+        Pausing cancels future scheduled occurrences; resuming
         restores only still-future pause-cancelled occurrences and extends the
         bounded horizon; completing cancels future open occurrences.
       security:
@@ -1458,6 +1515,10 @@ components:
       required: [status]
       properties:
         status: { type: string, enum: [ACTIVE, PAUSED, COMPLETED, DISCARDED] }
+        completionReason:
+          type: string
+          enum: [USER_DECISION, PLAN_NO_LONGER_FITS, OTHER]
+          description: Optional user-selected reason accepted only when status is COMPLETED; it never implies recovery
     ReplaceCurrentSupportPlanRequest:
       type: object
       additionalProperties: false
@@ -1470,7 +1531,7 @@ components:
     SupportPlan:
       type: object
       additionalProperties: false
-      required: [supportPlanId, status, version, source, entitlement, rationale, safety, templateFamilies, slots, selectedResourceCount, createdAt, updatedAt, activatedAt, disclaimerCode, disclaimer]
+      required: [supportPlanId, status, version, source, entitlement, rationale, safety, templateFamilies, slots, selectedResourceCount, createdAt, updatedAt, activatedAt, completedAt, completionReason, supersededAt, discardedAt, disclaimerCode, disclaimer]
       properties:
         supportPlanId: { type: string, format: uuid }
         status: { type: string, enum: [DRAFT, ACTIVE, PAUSED, COMPLETED, SUPERSEDED, DISCARDED] }
@@ -1493,11 +1554,29 @@ components:
         createdAt: { type: string, format: date-time }
         updatedAt: { type: string, format: date-time }
         activatedAt: { type: [string, 'null'], format: date-time }
+        completedAt: { type: [string, 'null'], format: date-time }
+        completionReason:
+          type: [string, 'null']
+          enum: [USER_DECISION, PLAN_NO_LONGER_FITS, OTHER, null]
+          description: Optional user-selected completion reason; never evidence of recovery
+        supersededAt: { type: [string, 'null'], format: date-time }
+        discardedAt: { type: [string, 'null'], format: date-time }
         disclaimerCode: { type: string, const: WELLBEING_SUPPORT_NOT_TREATMENT }
         disclaimer:
           type: string
           minLength: 1
           maxLength: 1000
+    SupportPlanHistoryPage:
+      type: object
+      additionalProperties: false
+      required: [items, nextCursor, hasMore]
+      properties:
+        items:
+          type: array
+          maxItems: 50
+          items: { $ref: '#/components/schemas/SupportPlan' }
+        nextCursor: { type: [string, 'null'], minLength: 1, maxLength: 256 }
+        hasMore: { type: boolean }
     SupportPlanSource:
       type: object
       additionalProperties: false

@@ -443,6 +443,110 @@ class SupportPlanIntegrationTests extends CareTestProperties {
 	}
 
 	@Test
+	void lifecycleGuardsRepeatsOwnershipAndTerminalHistoryRemainAuthoritative() throws Exception {
+		var userId = insertProfile();
+		var otherUser = insertProfile();
+		var evaluationId = evaluation(userId, "MINIMAL", "MINIMAL", false);
+		var draft = createPlan(userId, evaluationId, "support-plan-lifecycle-history-create");
+		var planId = UUID.fromString(draft.path("supportPlanId").asText());
+
+		mvc.perform(put("/api/v1/support-plans/{id}/status", planId).with(user(userId))
+				.header("If-Match", "\"0\"").contentType(MediaType.APPLICATION_JSON)
+				.content("{\"status\":\"PAUSED\"}"))
+				.andExpect(status().isConflict())
+				.andExpect(jsonPath("$.code").value("SUPPORT_PLAN_TRANSITION_INVALID"));
+		mvc.perform(put("/api/v1/support-plans/{id}/status", planId).with(user(userId))
+				.header("If-Match", "\"0\"").contentType(MediaType.APPLICATION_JSON)
+				.content("{\"status\":\"DISCARDED\",\"completionReason\":\"OTHER\"}"))
+				.andExpect(status().isBadRequest())
+				.andExpect(jsonPath("$.code").value("SUPPORT_PLAN_COMPLETION_REASON_INVALID"));
+
+		mvc.perform(post("/api/v1/support-plans/{id}/activate", planId).with(user(userId))
+				.header("If-Match", "\"0\"").header("Idempotency-Key", "support-plan-lifecycle-history-activate"))
+				.andExpect(status().isOk()).andExpect(header().string("ETag", "\"1\""));
+		mvc.perform(put("/api/v1/support-plans/{id}/status", planId).with(user(userId))
+				.header("If-Match", "\"1\"").contentType(MediaType.APPLICATION_JSON)
+				.content("{\"status\":\"PAUSED\"}"))
+				.andExpect(status().isOk()).andExpect(header().string("ETag", "\"2\""));
+		mvc.perform(put("/api/v1/support-plans/{id}/status", planId).with(user(userId))
+				.header("If-Match", "\"1\"").contentType(MediaType.APPLICATION_JSON)
+				.content("{\"status\":\"PAUSED\"}"))
+				.andExpect(status().isOk()).andExpect(header().string("ETag", "\"2\""));
+		mvc.perform(put("/api/v1/support-plans/{id}/status", planId).with(user(userId))
+				.header("If-Match", "\"2\"").contentType(MediaType.APPLICATION_JSON)
+				.content("{\"status\":\"ACTIVE\"}"))
+				.andExpect(status().isOk()).andExpect(header().string("ETag", "\"3\""));
+		evaluation(userId, "MODERATE", "MILD", false);
+		mvc.perform(get("/api/v1/support-plans/current").with(user(userId)))
+				.andExpect(status().isOk()).andExpect(header().string("ETag", "\"3\""))
+				.andExpect(jsonPath("$.status").value("ACTIVE"));
+
+		var completed = mvc.perform(put("/api/v1/support-plans/{id}/status", planId).with(user(userId))
+				.header("If-Match", "\"3\"").contentType(MediaType.APPLICATION_JSON)
+				.content("{\"status\":\"COMPLETED\",\"completionReason\":\"PLAN_NO_LONGER_FITS\"}"))
+				.andExpect(status().isOk()).andExpect(header().string("ETag", "\"4\""))
+				.andExpect(jsonPath("$.completedAt").isString())
+				.andExpect(jsonPath("$.completionReason").value("PLAN_NO_LONGER_FITS"))
+				.andReturn().getResponse().getContentAsString();
+		var repeated = mvc.perform(put("/api/v1/support-plans/{id}/status", planId).with(user(userId))
+				.header("If-Match", "\"3\"").contentType(MediaType.APPLICATION_JSON)
+				.content("{\"status\":\"COMPLETED\",\"completionReason\":\"OTHER\"}"))
+				.andExpect(status().isOk()).andExpect(header().string("ETag", "\"4\""))
+				.andReturn().getResponse().getContentAsString();
+		assertThat(objectMapper.readTree(repeated)).isEqualTo(objectMapper.readTree(completed));
+
+		mvc.perform(put("/api/v1/support-plans/{id}/status", planId).with(user(userId))
+				.header("If-Match", "\"4\"").contentType(MediaType.APPLICATION_JSON)
+				.content("{\"status\":\"ACTIVE\"}"))
+				.andExpect(status().isConflict())
+				.andExpect(jsonPath("$.code").value("SUPPORT_PLAN_TRANSITION_INVALID"));
+		mvc.perform(get("/api/v1/support-plans/{id}", planId).with(user(otherUser)))
+				.andExpect(status().isNotFound());
+		mvc.perform(get("/api/v1/support-plans/history").with(user(otherUser)))
+				.andExpect(status().isOk()).andExpect(jsonPath("$.items").isEmpty());
+
+		var detail = mvc.perform(get("/api/v1/support-plans/{id}", planId).with(user(userId)))
+				.andExpect(status().isOk()).andExpect(header().string("ETag", "\"4\""))
+				.andReturn().getResponse().getContentAsString();
+		assertThat(objectMapper.readTree(detail)).isEqualTo(objectMapper.readTree(completed));
+		mvc.perform(get("/api/v1/support-plans/history?limit=1").with(user(userId)))
+				.andExpect(status().isOk())
+				.andExpect(jsonPath("$.items[0].supportPlanId").value(planId.toString()))
+				.andExpect(jsonPath("$.items[0].completionReason").value("PLAN_NO_LONGER_FITS"))
+				.andExpect(jsonPath("$.nextCursor").doesNotExist())
+				.andExpect(jsonPath("$.hasMore").value(false));
+	}
+
+	@Test
+	void concurrentLifecycleCommandsCommitOnlyOneValidTransition() throws Exception {
+		var userId = insertProfile();
+		var draft = createPlan(userId, evaluation(userId, "MINIMAL", "MINIMAL", false),
+				"support-plan-lifecycle-concurrency-create");
+		var planId = UUID.fromString(draft.path("supportPlanId").asText());
+		mvc.perform(post("/api/v1/support-plans/{id}/activate", planId).with(user(userId))
+				.header("If-Match", "\"0\"").header("Idempotency-Key", "support-plan-lifecycle-concurrency-activate"))
+				.andExpect(status().isOk());
+
+		var start = new CountDownLatch(1);
+		var executor = Executors.newFixedThreadPool(2);
+		try {
+			var pause = executor.submit(() -> transitionAfter(start, userId, planId, "PAUSED"));
+			var complete = executor.submit(() -> transitionAfter(start, userId, planId, "COMPLETED"));
+			start.countDown();
+			assertThat(List.of(pause.get(20, TimeUnit.SECONDS), complete.get(20, TimeUnit.SECONDS)))
+					.containsExactlyInAnyOrder(200, 412);
+		}
+		finally {
+			executor.shutdownNow();
+		}
+
+		assertThat(jdbc.sql("select version from support_plan where id = :id").param("id", planId)
+				.query(Long.class).single()).isEqualTo(2);
+		assertThat(jdbc.sql("select status from support_plan where id = :id").param("id", planId)
+				.query(String.class).single()).isIn("PAUSED", "COMPLETED");
+	}
+
+	@Test
 	void replacementAndDiscardHaveExplicitIdempotentLifecycleEffects() throws Exception {
 		var userId = insertProfile();
 		var evaluationId = evaluation(userId, "MINIMAL", "MINIMAL", false);
@@ -485,10 +589,30 @@ class SupportPlanIntegrationTests extends CareTestProperties {
 				.andExpect(status().isOk());
 		var disposable = createPlan(userId, evaluationId, "support-plan-discard-create");
 		var disposableId = UUID.fromString(disposable.path("supportPlanId").asText());
-		mvc.perform(put("/api/v1/support-plans/{id}/status", disposableId).with(user(userId))
+		var discarded = mvc.perform(put("/api/v1/support-plans/{id}/status", disposableId).with(user(userId))
 				.header("If-Match", "\"0\"").contentType(MediaType.APPLICATION_JSON)
 				.content("{\"status\":\"DISCARDED\"}"))
-				.andExpect(status().isOk()).andExpect(jsonPath("$.status").value("DISCARDED"));
+				.andExpect(status().isOk()).andExpect(header().string("ETag", "\"1\""))
+				.andExpect(jsonPath("$.status").value("DISCARDED"))
+				.andExpect(jsonPath("$.discardedAt").isString())
+				.andReturn().getResponse().getContentAsString();
+		var discardedReplay = mvc.perform(put("/api/v1/support-plans/{id}/status", disposableId).with(user(userId))
+				.header("If-Match", "\"0\"").contentType(MediaType.APPLICATION_JSON)
+				.content("{\"status\":\"DISCARDED\"}"))
+				.andExpect(status().isOk()).andExpect(header().string("ETag", "\"1\""))
+				.andReturn().getResponse().getContentAsString();
+		assertThat(objectMapper.readTree(discardedReplay)).isEqualTo(objectMapper.readTree(discarded));
+
+		var firstHistoryPage = mvc.perform(get("/api/v1/support-plans/history?limit=1").with(user(userId)))
+				.andExpect(status().isOk()).andExpect(jsonPath("$.items[0].supportPlanId")
+						.value(disposableId.toString()))
+				.andExpect(jsonPath("$.hasMore").value(true))
+				.andExpect(jsonPath("$.nextCursor").isString())
+				.andReturn().getResponse().getContentAsString();
+		var cursor = objectMapper.readTree(firstHistoryPage).path("nextCursor").asText();
+		mvc.perform(get("/api/v1/support-plans/history?limit=1&cursor=" + cursor).with(user(userId)))
+				.andExpect(status().isOk())
+				.andExpect(jsonPath("$.items[0].supportPlanId").value(replacementId.toString()));
 		assertThat(jdbc.sql("select count(*) from support_plan_activity_schedule where support_plan_id = :id")
 				.param("id", disposableId).query(Long.class).single()).isZero();
 	}
@@ -497,6 +621,14 @@ class SupportPlanIntegrationTests extends CareTestProperties {
 		start.await(5, TimeUnit.SECONDS);
 		return mvc.perform(post("/api/v1/support-plans/{id}/activate", planId).with(user(userId))
 				.header("If-Match", "\"0\"").header("Idempotency-Key", key))
+				.andReturn().getResponse().getStatus();
+	}
+
+	private int transitionAfter(CountDownLatch start, UUID userId, UUID planId, String status) throws Exception {
+		start.await(5, TimeUnit.SECONDS);
+		return mvc.perform(put("/api/v1/support-plans/{id}/status", planId).with(user(userId))
+				.header("If-Match", "\"1\"").contentType(MediaType.APPLICATION_JSON)
+				.content("{\"status\":\"" + status + "\"}"))
 				.andReturn().getResponse().getStatus();
 	}
 
