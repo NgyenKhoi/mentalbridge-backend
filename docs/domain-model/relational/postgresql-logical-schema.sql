@@ -745,7 +745,7 @@ CREATE TABLE consultation.availability_slot (
 
 /* ========================================================================== */
 /* ACTIVE — content-notification-service / mentalbridge_content_notification  */
-/* Evidence: node-pg-migrate-compatible SQL migrations 1-6.                   */
+/* Evidence: node-pg-migrate-compatible SQL migrations 1-8.                   */
 /* ========================================================================== */
 
 CREATE TABLE content.resource (
@@ -851,6 +851,68 @@ CREATE TABLE content.resource_eligibility_command_record (
     response_snapshot jsonb NOT NULL,
     created_at timestamptz NOT NULL,
     PRIMARY KEY (actor_id, operation, idempotency_key)
+);
+
+CREATE TABLE content.safety_directory_entry (
+    id uuid PRIMARY KEY,
+    name varchar(200) NOT NULL,
+    entry_type varchar(16) NOT NULL,
+    phone varchar(64) NOT NULL,
+    address varchar(500),
+    active boolean NOT NULL,
+    source_name varchar(200) NOT NULL,
+    source_reference varchar(2000) NOT NULL,
+    source_retrieved_at timestamptz NOT NULL,
+    source_checksum char(64),
+    reviewed_by uuid, -- external -> identity.account.id
+    reviewed_at timestamptz,
+    verified_by uuid, -- external -> identity.account.id
+    verified_at timestamptz,
+    seed_key varchar(128) UNIQUE,
+    created_at timestamptz NOT NULL,
+    updated_at timestamptz NOT NULL,
+    record_version bigint NOT NULL
+);
+
+CREATE TABLE content.safety_directory_coverage (
+    entry_id uuid NOT NULL REFERENCES content.safety_directory_entry(id),
+    ordinal smallint NOT NULL,
+    coverage_level varchar(16) NOT NULL,
+    province_code varchar(32),
+    province_name varchar(120),
+    district_code varchar(32),
+    district_name varchar(120),
+    PRIMARY KEY (entry_id, ordinal)
+);
+
+CREATE TABLE content.safety_directory_review_history (
+    id uuid PRIMARY KEY,
+    entry_id uuid NOT NULL REFERENCES content.safety_directory_entry(id),
+    record_version bigint NOT NULL,
+    action varchar(16) NOT NULL,
+    actor_id uuid NOT NULL, -- external -> identity.account.id
+    source_reference varchar(2000) NOT NULL,
+    occurred_at timestamptz NOT NULL
+);
+
+CREATE TABLE content.safety_directory_command_record (
+    actor_id uuid NOT NULL, -- external -> identity.account.id
+    operation varchar(32) NOT NULL,
+    idempotency_key varchar(128) NOT NULL,
+    request_fingerprint char(64) NOT NULL,
+    entry_id uuid NOT NULL REFERENCES content.safety_directory_entry(id),
+    created_at timestamptz NOT NULL,
+    PRIMARY KEY (actor_id, operation, idempotency_key)
+);
+
+CREATE TABLE content.safety_directory_area_alias (
+    id uuid PRIMARY KEY,
+    alias_text varchar(120) NOT NULL,
+    province_code varchar(32) NOT NULL,
+    district_code varchar(32),
+    canonical boolean NOT NULL,
+    seed_key varchar(128) UNIQUE,
+    created_at timestamptz NOT NULL
 );
 
 /*

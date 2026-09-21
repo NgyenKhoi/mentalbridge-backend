@@ -2,7 +2,7 @@
 
 This document explains the business purpose of PostgreSQL fields. The [canonical PostgreSQL logical schema](../domain-model/relational/postgresql-logical-schema.sql) is a non-executable documentation model and must never provision or migrate an environment. Names such as `consultation.availability_slot` identify a visual owner namespace; the physical table is `public.availability_slot` in the separate `mentalbridge_consultation` database. Service-owned migration histories are the executable runtime sources of truth: Liquibase for Spring services and the current SQL migration mechanism for Node.js services. This dictionary is written for developers and reviewers; descriptions are intentionally kept out of executable migrations.
 
-When service-owned migrations are introduced, update this dictionary and the canonical logical model in the same change whenever persisted domain structure materially changes. A field description must explain why the value is persisted, whether it is authoritative, derived, external, or sensitive, and how nullability, time, versioning, or idempotency affects behavior. Content/Notification's executable history starts at `content-notification-service/migrations/1_initial_schema.sql`; migration 2 removes the obsolete hotline table, the separate Review 1 migrations insert controlled demo content and its initial item-level eligibility matrix, migration 6 adds immutable Resource Eligibility v1 provenance, and migration 7 adds the separately governed reviewed safety directory. The field descriptions under its conceptual owner below describe the resulting physical `public` tables.
+When service-owned migrations are introduced, update this dictionary and the canonical logical model in the same change whenever persisted domain structure materially changes. A field description must explain why the value is persisted, whether it is authoritative, derived, external, or sensitive, and how nullability, time, versioning, or idempotency affects behavior. Content/Notification's executable history starts at `content-notification-service/migrations/1_initial_schema.sql`; migration 2 removes the obsolete hotline table, the separate Review 1 migrations insert controlled demo content and its initial item-level eligibility matrix, migration 6 adds immutable Resource Eligibility v1 provenance, migration 7 adds the separately governed reviewed safety directory, and migration 8 adds its deterministic reviewed area vocabulary. The field descriptions under its conceptual owner below describe the resulting physical `public` tables.
 
 ## Database `mentalbridge_identity` (schema `public`)
 
@@ -1649,6 +1649,20 @@ Durable administrator-scoped replay evidence for create commands. It prevents du
 | `request_fingerprint` | Lowercase SHA-256 of the canonical non-sensitive create payload, used to reject conflicting reuse. |
 | `entry_id` | Directory entry created by the original command and returned on an identical replay. |
 | `created_at` | Immutable database UTC instant when the command outcome was recorded. |
+
+### `public.safety_directory_area_alias`
+
+Reviewed, deterministic vocabulary for resolving deliberately entered manual area text. It is independent of directory-entry coverage and stores no user query, coordinates, or inferred location.
+
+| Field | Purpose |
+| --- | --- |
+| `id` | Immutable UUID for the vocabulary row. |
+| `alias_text` | Reviewed province or district spelling; a normalized case-insensitive uniqueness rule ensures one area result per alias. |
+| `province_code` | Canonical province code returned by manual-area resolution. |
+| `district_code` | Canonical district code when the alias names a district; null for province-only aliases. |
+| `canonical` | Marks the preferred reviewed label for the area pair without changing lookup eligibility. |
+| `seed_key` | Optional unique controlled-release identifier used only by owner migrations. |
+| `created_at` | Immutable database UTC insertion instant. |
 
 ### `public.resource_idempotency_record`
 
