@@ -21,6 +21,11 @@ interface SupportPlanRepository extends JpaRepository<SupportPlanEntity, UUID> {
 	Optional<SupportPlanEntity> findByUserIdAndStatusIn(UUID userId, java.util.Collection<String> statuses);
 
 	@Lock(LockModeType.PESSIMISTIC_WRITE)
+	@Query("select plan from SupportPlanEntity plan where plan.userId = :userId and plan.status in :statuses")
+	Optional<SupportPlanEntity> findByUserIdAndStatusInForUpdate(@Param("userId") UUID userId,
+			@Param("statuses") java.util.Collection<String> statuses);
+
+	@Lock(LockModeType.PESSIMISTIC_WRITE)
 	@Query("select plan from SupportPlanEntity plan where plan.id = :id and plan.userId = :userId")
 	Optional<SupportPlanEntity> findByIdAndUserIdForUpdate(@Param("id") UUID id, @Param("userId") UUID userId);
 

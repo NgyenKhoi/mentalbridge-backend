@@ -254,14 +254,20 @@ resource eligibility before activation or change. Specialist suggestions enter
 as `PlanChangeRequest`, never a second plan. Content/Notification owns reviewed
 localized resources and eligibility metadata. Safety guidance and
 professional-support calls to action remain outside the plan and precede its
-controls.
+controls. Once active, Care persists a deterministic bounded schedule and dated
+occurrences with local time and exact source versions. The user may mark an
+occurrence complete or skipped and explicitly pause, resume, complete, replace,
+or discard the applicable plan state.
 
 **Exceptions and acceptance:** missing/stale support inputs yield
 stable fail-closed results and create no plan; AI cannot decide safety.
 MB-372 reloads the same persisted current draft without recomputing remote
-facts, while activation and choices remain unavailable. Review/publication alone never
-makes a resource plan-eligible, while package entitlement never imposes a
-resource-count limit. Immediate guidance is returned before ordinary plan
+facts; MB-373 implements bounded choices and activation; MB-513 implements
+Care-owned lifecycle and activity occurrences. Retry/reload cannot duplicate a
+logical occurrence, and passing its scheduled time produces a display-only
+`MISSED` state rather than an adherence judgment. Review/publication alone
+never makes a resource plan-eligible, while package entitlement never imposes
+a resource-count limit. Immediate guidance is returned before ordinary plan
 controls and without waiting for optional dependencies. Area-filtered facility
 results do not claim “nearest”; no safety email, automatic call, location
 sharing, third-party notification, or guaranteed response occurs.

@@ -31,7 +31,8 @@ class CareLiquibaseChangelogTests {
 					"care-011-domain-aware-support-evaluation-v2",
 					"care-012-support-guide",
 					"care-013-support-plan-draft",
-					"care-014-support-plan-choice-activation");
+					"care-014-support-plan-choice-activation",
+					"care-015-support-plan-activity-occurrences");
 		}
 	}
 

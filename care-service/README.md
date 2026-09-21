@@ -1,6 +1,6 @@
 # Care Service
 
-Care owns user profiles, independent `PRIVACY_POLICY` and `AI_PROCESSING` consent decisions, questionnaires, assessment submissions and results, deterministic safety/support policy, SupportEvaluation, the single official SupportPlan, and follow-up. Story 1103 exposes immutable coarse v1 evaluation. MB-335 adds `/api/v2/support-evaluations` with exact PHQ-9/GAD-7 provenance, two independent domain contributions, and separate PHQ-9 item-9 safety evidence. MB-372 adds paid deterministic draft creation and current-draft reload. MB-373 adds bounded admitted-choice replacement with natural PUT no-op behavior, business-required evidence revalidation for changed choices and activation, explicit activation idempotency, and authoritative current-plan reload; later lifecycle commands remain disabled. It never creates a global severity and does not modify v1 rows, APIs, or events. Safety-critical scoring and evaluation remain local and do not depend on Eureka, Kafka, Redis, AI, or notification availability.
+Care owns user profiles, independent `PRIVACY_POLICY` and `AI_PROCESSING` consent decisions, questionnaires, assessment submissions and results, deterministic safety/support policy, SupportEvaluation, the single official SupportPlan, and follow-up. Story 1103 exposes immutable coarse v1 evaluation. MB-335 adds `/api/v2/support-evaluations` with exact PHQ-9/GAD-7 provenance, two independent domain contributions, and separate PHQ-9 item-9 safety evidence. MB-372 adds paid deterministic draft creation and current-draft reload. MB-373 adds bounded admitted-choice replacement, exact revalidation, explicit activation idempotency, and authoritative current-plan reload. MB-513 adds Care-owned lifecycle commands plus deterministic local-time schedules and persisted activity occurrences. It never creates a global severity, treatment-adherence score, or AI-controlled state and does not modify v1 rows, APIs, or events. Safety-critical scoring and evaluation remain local and do not depend on Eureka, Kafka, Redis, AI, or notification availability.
 
 ## MB-88 foundation
 
@@ -57,6 +57,8 @@ The Care Liquibase changelog owns:
 | `support_plan_request` | Per-user idempotency aliases that replay the same current draft |
 | `support_plan_command` | Owner-scoped idempotent activation outcome plus exact revalidation provenance |
 | `support_plan_command_selection` | Ordered exact resource-version intent committed by activation |
+| `support_plan_activity_schedule` | Versioned recurrence and local-time/source snapshot owned by one plan |
+| `support_plan_activity_occurrence` | Deterministic dated activity state with optimistic concurrency and source provenance |
 | `outbox_event` | Minimal integration fact persisted in the aggregate transaction |
 
 The reference-data migrations publish immutable English PHQ-9, current controlled-Capstone Vietnamese PHQ-9 v2, and Vietnamese GAD-7 definitions. PHQ-9 v1 remains readable as a retired immutable definition so historical results reopen against their original wording and bands. GAD-7 contains seven questions, the approved four-choice self-administered mapping, standard `0..21` bands, explicit non-applicable safety semantics, and auditable source provenance. These publications are approved only for controlled local/demo Capstone use and do not represent production clinical/domain approval.

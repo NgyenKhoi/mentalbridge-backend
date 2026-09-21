@@ -500,8 +500,9 @@ assessment answers or scores.
 
 ### `public.support_plan`
 
-Care-owned runtime aggregate for MB-372/MB-373. MB-372 creates `DRAFT`; MB-373
-permits an explicit revalidated transition to `ACTIVE`. Separate partial unique
+Care-owned runtime aggregate for MB-372/MB-373/MB-513. MB-372 creates `DRAFT`;
+MB-373 permits an explicit revalidated transition to `ACTIVE`; MB-513 adds
+pause/resume, completion, replacement, and discard. Separate partial unique
 indexes on `DRAFT` and on `ACTIVE`/`PAUSED` are the final concurrent guards for
 one draft and one official current plan per owner.
 
@@ -510,7 +511,7 @@ one draft and one official current plan per owner.
 | `id` | Immutable UUID exposed by the owner API and used by child snapshots. |
 | `user_id` | Care profile owner; locked during creation and never accepted from a client payload. |
 | `support_evaluation_id` | Exact owner-matched immutable SupportEvaluation v2 that seeded composition. |
-| `status` | Care-owned lifecycle state; the implemented transition is `DRAFT` to `ACTIVE`. |
+| `status` | Care-owned `DRAFT`, `ACTIVE`, `PAUSED`, `COMPLETED`, `SUPERSEDED`, or `DISCARDED` lifecycle state. |
 | `version` | Optimistic-lock counter returned in the ETag; incremented by each accepted choice or activation command. |
 | `evaluation_policy_version` / `evaluated_at` | Exact current-compatible Care evaluation policy and original UTC evaluation instant. |
 | `selection_policy_version` | Deterministic Care composition version, fixed to `mb-support-plan-selection-v1`. |
@@ -522,6 +523,7 @@ one draft and one official current plan per owner.
 | `safety_guidance_code` / `safety_guidance` | Approved safety copy stored with the draft so reload never depends on AI or another service. |
 | `selected_resource_count` | Number of persisted selected exact versions, constrained to 1..5. |
 | `activated_at` | UTC instant of explicit activation; null while the plan is a draft. |
+| `completed_at` / `superseded_at` / `discarded_at` | UTC instant for the matching terminal state; lifecycle checks require exactly the applicable timestamp and activation history. |
 | `created_at` / `updated_at` | UTC creation and latest accepted business-command instants. |
 
 ### `public.support_plan_template_family`
@@ -599,6 +601,45 @@ the authoritative state.
 | `ordinal` | Stable 1-based intent order, bounded to the plan's 1..5 selected-resource limit. |
 | `slot_key` | Exact existing Care-owned slot selected by the user; unique within the command. |
 | `resource_id` / `content_version` | Exact admitted Content version selected for that slot; unique within the command. |
+
+### `public.support_plan_activity_schedule`
+
+Care-owned recurrence snapshot created from one selected SupportPlan resource.
+It keeps time interpretation and source attribution stable even when the profile
+timezone or external content later changes.
+
+| Field | Purpose |
+| --- | --- |
+| `id` | Immutable schedule UUID and parent of its occurrence history. |
+| `support_plan_id` / `user_id` | Owner-matched plan and account; the composite foreign key blocks cross-owner rows. |
+| `ordinal` / `schedule_version` | Stable source-slot order and recurrence revision; unique together within a plan. |
+| `source_plan_version` / `source_slot_key` | Exact plan version and selected slot that authorized the schedule. |
+| `source_resource_id` / `source_content_version` / `source_title` | Exact Content identity/version and reviewed title snapshot. |
+| `recurrence_type` / `recurrence_day_of_week` | `DAILY`, or `WEEKLY` with ISO weekday 1..7. |
+| `local_time` / `timezone` | Intended wall-clock time and snapshotted IANA timezone used for deterministic DST resolution. |
+| `effective_from` / `effective_until` | Inclusive local-date validity; the end remains null while active. |
+| `status` | `ACTIVE`, `PAUSED`, or `ENDED`; Content/Notification never controls it. |
+| `created_at` / `updated_at` | UTC creation and latest lifecycle transition instants. |
+
+### `public.support_plan_activity_occurrence`
+
+Persisted logical instance for one schedule/local date. The database unique key
+on schedule, schedule version, and local date makes retries and concurrent
+generation idempotent.
+
+| Field | Purpose |
+| --- | --- |
+| `id` | Deterministic UUID derived from the logical intent key. |
+| `activity_schedule_id` / `support_plan_id` / `user_id` | Owning schedule, plan, and account for owner-scoped history. |
+| `schedule_version` / `local_date` | Logical uniqueness key with the parent schedule. |
+| `local_time` / `timezone` / `scheduled_at` | Wall-clock intent, IANA zone snapshot, and resolved UTC instant. |
+| `state` | Persisted `SCHEDULED`, `COMPLETED`, `SKIPPED`, or `CANCELLED`; `MISSED` is computed only in reads. |
+| `state_reason` | Null except `PLAN_PAUSED`, `PLAN_COMPLETED`, or `PLAN_REPLACED` on cancelled rows. |
+| `source_plan_version` / `source_slot_key` | Exact Care plan/slot provenance. |
+| `source_resource_id` / `source_content_version` / `source_title` | Exact Content identity/version and reviewed title snapshot. |
+| `version` | Optimistic counter required by explicit user state updates. |
+| `created_at` / `updated_at` | UTC insertion and latest accepted transition instants. |
+| `completed_at` / `skipped_at` / `cancelled_at` | Exactly the timestamp matching the persisted terminal state; all null while scheduled. |
 
 ### `care.intervention_plan`
 

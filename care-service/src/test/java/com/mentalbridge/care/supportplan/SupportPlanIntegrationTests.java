@@ -14,6 +14,7 @@ import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.status;
 
 import java.time.Instant;
+import java.time.LocalDate;
 import java.util.List;
 import java.util.UUID;
 import java.util.concurrent.CountDownLatch;
@@ -362,6 +363,134 @@ class SupportPlanIntegrationTests extends CareTestProperties {
 				.param("id", userId).query(Long.class).single()).isEqualTo(1);
 		assertThat(jdbc.sql("select count(*) from support_plan_command where user_id = :id and command_type = 'ACTIVATE'")
 				.param("id", userId).query(Long.class).single()).isEqualTo(1);
+		assertThat(jdbc.sql("select count(*) from support_plan_activity_schedule where user_id = :id")
+				.param("id", userId).query(Long.class).single()).isEqualTo(2);
+		assertThat(jdbc.sql("select count(*) from support_plan_activity_occurrence where user_id = :id")
+				.param("id", userId).query(Long.class).single()).isEqualTo(4);
+	}
+
+	@Test
+	void generatesExactlyOnceTracksUserInputAndAppliesPauseResumeComplete() throws Exception {
+		var userId = insertProfile();
+		var draft = createPlan(userId, evaluation(userId, "MINIMAL", "MINIMAL", false),
+				"support-plan-occurrence-create");
+		var planId = UUID.fromString(draft.path("supportPlanId").asText());
+		mvc.perform(post("/api/v1/support-plans/{id}/activate", planId).with(user(userId))
+				.header("If-Match", "\"0\"").header("Idempotency-Key", "support-plan-occurrence-activate"))
+				.andExpect(status().isOk()).andExpect(header().string("ETag", "\"1\""));
+
+		var bounds = jdbc.sql("""
+				select min(local_date) as from_date, max(local_date) as through_date
+				from support_plan_activity_occurrence where user_id = :id
+				""").param("id", userId).query((row, index) -> List.of(
+				row.getObject("from_date", LocalDate.class), row.getObject("through_date", LocalDate.class))).single();
+		String listPath = "/api/v1/support-plan-occurrences?from=" + bounds.get(0) + "&through=" + bounds.get(1);
+		var first = mvc.perform(get(listPath).with(user(userId))).andExpect(status().isOk())
+				.andExpect(jsonPath("$.schedulePolicyVersion").value("support-plan-activity-schedule-v1"))
+				.andExpect(jsonPath("$.interpretationCode")
+						.value("SELF_REPORTED_WELLBEING_ACTIVITY_NOT_TREATMENT_ADHERENCE"))
+				.andReturn().getResponse().getContentAsString();
+		var repeated = mvc.perform(get(listPath).with(user(userId))).andExpect(status().isOk())
+				.andReturn().getResponse().getContentAsString();
+		assertThat(objectMapper.readTree(repeated)).isEqualTo(objectMapper.readTree(first));
+		assertThat(jdbc.sql("select count(*) from support_plan_activity_occurrence where user_id = :id")
+				.param("id", userId).query(Long.class).single()).isEqualTo(4);
+
+		var occurrence = objectMapper.readTree(first).path("occurrences").get(0);
+		var occurrenceId = UUID.fromString(occurrence.path("occurrenceId").asText());
+		mvc.perform(put("/api/v1/support-plan-occurrences/{id}/state", occurrenceId).with(user(userId))
+				.header("If-Match", "\"0\"").contentType(MediaType.APPLICATION_JSON)
+				.content("{\"state\":\"COMPLETED\"}"))
+				.andExpect(status().isOk()).andExpect(header().string("ETag", "\"1\""))
+				.andExpect(jsonPath("$.state").value("COMPLETED"));
+		mvc.perform(put("/api/v1/support-plan-occurrences/{id}/state", occurrenceId).with(user(userId))
+				.header("If-Match", "\"0\"").contentType(MediaType.APPLICATION_JSON)
+				.content("{\"state\":\"COMPLETED\"}"))
+				.andExpect(status().isOk()).andExpect(header().string("ETag", "\"1\""));
+		mvc.perform(put("/api/v1/support-plan-occurrences/{id}/state", occurrenceId).with(user(userId))
+				.header("If-Match", "\"0\"").contentType(MediaType.APPLICATION_JSON)
+				.content("{\"state\":\"SKIPPED\"}"))
+				.andExpect(status().isPreconditionFailed())
+				.andExpect(jsonPath("$.code").value("OCCURRENCE_VERSION_MISMATCH"));
+
+		mvc.perform(put("/api/v1/support-plans/{id}/status", planId).with(user(userId))
+				.header("If-Match", "\"1\"").contentType(MediaType.APPLICATION_JSON)
+				.content("{\"status\":\"PAUSED\"}"))
+				.andExpect(status().isOk()).andExpect(header().string("ETag", "\"2\""))
+				.andExpect(jsonPath("$.status").value("PAUSED"));
+		assertThat(jdbc.sql("""
+				select count(*) from support_plan_activity_occurrence
+				where support_plan_id = :id and state = 'CANCELLED' and state_reason = 'PLAN_PAUSED'
+				""").param("id", planId).query(Long.class).single()).isPositive();
+
+		mvc.perform(put("/api/v1/support-plans/{id}/status", planId).with(user(userId))
+				.header("If-Match", "\"2\"").contentType(MediaType.APPLICATION_JSON)
+				.content("{\"status\":\"ACTIVE\"}"))
+				.andExpect(status().isOk()).andExpect(header().string("ETag", "\"3\""))
+				.andExpect(jsonPath("$.status").value("ACTIVE"));
+		assertThat(jdbc.sql("""
+				select count(*) from support_plan_activity_occurrence
+				where support_plan_id = :id and state = 'CANCELLED' and state_reason = 'PLAN_PAUSED'
+				""").param("id", planId).query(Long.class).single()).isZero();
+
+		mvc.perform(put("/api/v1/support-plans/{id}/status", planId).with(user(userId))
+				.header("If-Match", "\"3\"").contentType(MediaType.APPLICATION_JSON)
+				.content("{\"status\":\"COMPLETED\"}"))
+				.andExpect(status().isOk()).andExpect(header().string("ETag", "\"4\""))
+				.andExpect(jsonPath("$.status").value("COMPLETED"));
+		mvc.perform(get("/api/v1/support-plans/current").with(user(userId)))
+				.andExpect(status().isNotFound());
+	}
+
+	@Test
+	void replacementAndDiscardHaveExplicitIdempotentLifecycleEffects() throws Exception {
+		var userId = insertProfile();
+		var evaluationId = evaluation(userId, "MINIMAL", "MINIMAL", false);
+		var currentDraft = createPlan(userId, evaluationId, "support-plan-replace-current-create");
+		var currentId = UUID.fromString(currentDraft.path("supportPlanId").asText());
+		mvc.perform(post("/api/v1/support-plans/{id}/activate", currentId).with(user(userId))
+				.header("If-Match", "\"0\"").header("Idempotency-Key", "support-plan-replace-current-activate"))
+				.andExpect(status().isOk());
+		mvc.perform(put("/api/v1/support-plans/{id}/status", currentId).with(user(userId))
+				.header("If-Match", "\"1\"").contentType(MediaType.APPLICATION_JSON)
+				.content("{\"status\":\"PAUSED\"}"))
+				.andExpect(status().isOk());
+
+		var replacementDraft = createPlan(userId, evaluationId, "support-plan-replacement-create");
+		var replacementId = UUID.fromString(replacementDraft.path("supportPlanId").asText());
+		String replacementBody = "{\"currentSupportPlanId\":\"" + currentId + "\",\"currentVersion\":2}";
+		for (int retry = 0; retry < 2; retry++) {
+			mvc.perform(post("/api/v1/support-plans/{id}/replace", replacementId).with(user(userId))
+					.header("If-Match", "\"0\"").contentType(MediaType.APPLICATION_JSON)
+					.content(replacementBody))
+					.andExpect(status().isOk()).andExpect(jsonPath("$.status").value("ACTIVE"));
+		}
+
+		assertThat(jdbc.sql("select status from support_plan where id = :id").param("id", currentId)
+				.query(String.class).single()).isEqualTo("SUPERSEDED");
+		assertThat(jdbc.sql("""
+				select count(*) from support_plan_activity_occurrence
+				where support_plan_id = :id and state = 'CANCELLED' and state_reason = 'PLAN_REPLACED'
+				""").param("id", currentId).query(Long.class).single()).isPositive();
+		assertThat(jdbc.sql("""
+				select count(*) from support_plan_activity_occurrence
+				where support_plan_id = :id and state_reason = 'PLAN_PAUSED'
+				""").param("id", currentId).query(Long.class).single()).isZero();
+		assertThat(jdbc.sql("select count(*) from support_plan_activity_schedule where support_plan_id = :id")
+				.param("id", replacementId).query(Long.class).single()).isEqualTo(2);
+
+		mvc.perform(put("/api/v1/support-plans/{id}/status", replacementId).with(user(userId))
+				.header("If-Match", "\"1\"").contentType(MediaType.APPLICATION_JSON)
+				.content("{\"status\":\"COMPLETED\"}"))
+				.andExpect(status().isOk());
+		var disposable = createPlan(userId, evaluationId, "support-plan-discard-create");
+		var disposableId = UUID.fromString(disposable.path("supportPlanId").asText());
+		mvc.perform(put("/api/v1/support-plans/{id}/status", disposableId).with(user(userId))
+				.header("If-Match", "\"0\"").contentType(MediaType.APPLICATION_JSON)
+				.content("{\"status\":\"DISCARDED\"}"))
+				.andExpect(status().isOk()).andExpect(jsonPath("$.status").value("DISCARDED"));
+		assertThat(jdbc.sql("select count(*) from support_plan_activity_schedule where support_plan_id = :id")
+				.param("id", disposableId).query(Long.class).single()).isZero();
 	}
 
 	private int activateAfter(CountDownLatch start, UUID userId, UUID planId, String key) throws Exception {

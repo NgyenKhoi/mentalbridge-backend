@@ -22,8 +22,8 @@
  * its default public schema. Cross-owner identifiers are logical/external
  * references and are deliberately not physical foreign keys.
  *
- * Reconciled from owner migrations on 2026-09-20. It includes the Care
- * SupportPlan draft and activation migrations. Technical indexes and migration bookkeeping are
+ * Reconciled from owner migrations on 2026-09-21. It includes the Care
+ * SupportPlan draft, activation, lifecycle, and activity occurrence migrations. Technical indexes and migration bookkeeping are
  * intentionally omitted; owner migrations remain authoritative for exact DDL.
  */
 
@@ -477,6 +477,9 @@ CREATE TABLE care.support_plan (
     safety_guidance varchar(2048) NOT NULL,
     selected_resource_count smallint NOT NULL,
     activated_at timestamptz,
+    completed_at timestamptz,
+    superseded_at timestamptz,
+    discarded_at timestamptz,
     created_at timestamptz NOT NULL,
     updated_at timestamptz NOT NULL,
     UNIQUE (id, user_id),
@@ -570,6 +573,61 @@ CREATE TABLE care.support_plan_command_selection (
     PRIMARY KEY (user_id, idempotency_key, ordinal),
     FOREIGN KEY (user_id, idempotency_key)
         REFERENCES care.support_plan_command(user_id, idempotency_key)
+);
+
+CREATE TABLE care.support_plan_activity_schedule (
+    id uuid PRIMARY KEY,
+    support_plan_id uuid NOT NULL REFERENCES care.support_plan(id),
+    user_id uuid NOT NULL,
+    ordinal smallint NOT NULL,
+    schedule_version integer NOT NULL,
+    source_plan_version bigint NOT NULL,
+    source_slot_key varchar(64) NOT NULL,
+    source_resource_id uuid NOT NULL, -- external -> content.resource.id
+    source_content_version bigint NOT NULL,
+    source_title varchar(255) NOT NULL,
+    recurrence_type varchar(16) NOT NULL,
+    recurrence_day_of_week smallint,
+    local_time time NOT NULL,
+    timezone varchar(64) NOT NULL,
+    effective_from date NOT NULL,
+    effective_until date,
+    status varchar(16) NOT NULL,
+    created_at timestamptz NOT NULL,
+    updated_at timestamptz NOT NULL,
+    UNIQUE (id, support_plan_id, user_id),
+    FOREIGN KEY (support_plan_id, user_id)
+        REFERENCES care.support_plan(id, user_id)
+);
+
+CREATE TABLE care.support_plan_activity_occurrence (
+    id uuid PRIMARY KEY,
+    activity_schedule_id uuid NOT NULL,
+    support_plan_id uuid NOT NULL,
+    user_id uuid NOT NULL,
+    schedule_version integer NOT NULL,
+    local_date date NOT NULL,
+    local_time time NOT NULL,
+    timezone varchar(64) NOT NULL,
+    scheduled_at timestamptz NOT NULL,
+    state varchar(16) NOT NULL,
+    state_reason varchar(32),
+    source_plan_version bigint NOT NULL,
+    source_slot_key varchar(64) NOT NULL,
+    source_resource_id uuid NOT NULL, -- external -> content.resource.id
+    source_content_version bigint NOT NULL,
+    source_title varchar(255) NOT NULL,
+    version bigint NOT NULL,
+    created_at timestamptz NOT NULL,
+    updated_at timestamptz NOT NULL,
+    completed_at timestamptz,
+    skipped_at timestamptz,
+    cancelled_at timestamptz,
+    UNIQUE (activity_schedule_id, schedule_version, local_date),
+    FOREIGN KEY (activity_schedule_id, support_plan_id, user_id)
+        REFERENCES care.support_plan_activity_schedule(id, support_plan_id, user_id),
+    FOREIGN KEY (support_plan_id, user_id)
+        REFERENCES care.support_plan(id, user_id)
 );
 
 /* ========================================================================== */

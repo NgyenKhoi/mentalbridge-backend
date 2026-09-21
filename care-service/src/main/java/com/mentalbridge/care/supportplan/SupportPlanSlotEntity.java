@@ -47,6 +47,7 @@ class SupportPlanSlotEntity {
 	}
 
 	UUID id() { return id; }
+	short ordinal() { return ordinal; }
 	String slotKey() { return slotKey; }
 	String slotKind() { return slotKind; }
 	String targetDomain() { return targetDomain; }

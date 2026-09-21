@@ -116,6 +116,32 @@ public class SupportPlanService {
 		return view(writer.currentPlan(userId));
 	}
 
+	public SupportPlanView changeStatus(UUID userId, UUID planId, long expectedVersion, String targetStatus) {
+		if (!List.of("ACTIVE", "PAUSED", "COMPLETED", "DISCARDED").contains(targetStatus)) {
+			throw new ApiException(HttpStatus.BAD_REQUEST, "SUPPORT_PLAN_STATUS_INVALID",
+					"Target status must be ACTIVE, PAUSED, COMPLETED, or DISCARDED");
+		}
+		return view(writer.transition(userId, planId, expectedVersion, targetStatus, clock.instant()));
+	}
+
+	public SupportPlanView replace(UUID userId, String bearerToken, UUID draftId, long draftVersion,
+			UUID correlationId, ReplacePlanCommand command) {
+		var draft = writer.required(userId, draftId);
+		var current = writer.required(userId, command.currentSupportPlanId());
+		if ("ACTIVE".equals(draft.plan().status()) && "SUPERSEDED".equals(current.plan().status())) {
+			return view(draft);
+		}
+		validateDraftVersion(draft, draftVersion);
+		var selections = draft.slots().stream().filter(slot -> slot.slot().selectedResource() != null)
+				.map(slot -> new SlotSelection(slot.slot().slotKey(), slot.slot().selectedResource().resourceId(),
+						Long.toString(slot.slot().selectedResource().contentVersion())))
+				.toList();
+		var choices = admittedChoices(draft, selections);
+		revalidate(userId, bearerToken, correlationId, draft, choices);
+		return view(writer.replace(userId, draftId, draftVersion, command.currentSupportPlanId(),
+				command.currentVersion(), clock.instant()));
+	}
+
 	private Revalidation revalidate(UUID userId, String bearerToken, UUID correlationId,
 			StoredPlan stored, List<Choice> choices) {
 		var entitlement = paidEntitlement(userId, bearerToken, correlationId);
@@ -318,6 +344,7 @@ public class SupportPlanService {
 	public record ProposeCommand(UUID sourceSupportEvaluationId) { }
 	public record SlotSelection(String slotId, UUID resourceId, String contentVersion) { }
 	public record ReplaceChoicesCommand(List<SlotSelection> slotSelections) { }
+	public record ReplacePlanCommand(UUID currentSupportPlanId, long currentVersion) { }
 	public record SourceView(UUID supportEvaluationId, int evaluationVersion, String evaluationPolicyVersion,
 			Instant evaluatedAt, String selectionPolicyVersion, String resourceEligibilityPolicyVersion,
 			Instant resourcesResolvedAt) { }

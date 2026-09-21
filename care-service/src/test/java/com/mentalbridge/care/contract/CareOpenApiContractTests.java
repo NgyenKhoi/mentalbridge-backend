@@ -39,6 +39,11 @@ class CareOpenApiContractTests {
 			"GET /api/v1/support-plans/current",
 			"PUT /api/v1/support-plans/{supportPlanId}/choices",
 			"POST /api/v1/support-plans/{supportPlanId}/activate",
+			"PUT /api/v1/support-plans/{supportPlanId}/status",
+			"POST /api/v1/support-plans/{supportPlanId}/replace",
+			"GET /api/v1/support-plan-occurrences",
+			"GET /api/v1/support-plan-occurrences/{occurrenceId}",
+			"PUT /api/v1/support-plan-occurrences/{occurrenceId}/state",
 			"POST /api/v1/anonymous-assessment-sessions",
 			"POST /api/v1/anonymous-assessment-sessions/{sessionId}/assessments",
 			"GET /api/v1/anonymous-assessment-sessions/{sessionId}/assessments/{assessmentId}");
@@ -62,6 +67,11 @@ class CareOpenApiContractTests {
 			"/api/v1/support-plans/current",
 			"/api/v1/support-plans/{supportPlanId}/choices",
 			"/api/v1/support-plans/{supportPlanId}/activate",
+			"/api/v1/support-plans/{supportPlanId}/status",
+			"/api/v1/support-plans/{supportPlanId}/replace",
+			"/api/v1/support-plan-occurrences",
+			"/api/v1/support-plan-occurrences/{occurrenceId}",
+			"/api/v1/support-plan-occurrences/{occurrenceId}/state",
 			"/api/v1/anonymous-assessment-sessions",
 			"/api/v1/anonymous-assessment-sessions/{sessionId}/assessments",
 			"/api/v1/anonymous-assessment-sessions/{sessionId}/assessments/{assessmentId}");
@@ -82,7 +92,12 @@ class CareOpenApiContractTests {
 			"GET /api/v1/support-plans/current-draft",
 			"GET /api/v1/support-plans/current",
 			"PUT /api/v1/support-plans/{supportPlanId}/choices",
-			"POST /api/v1/support-plans/{supportPlanId}/activate");
+			"POST /api/v1/support-plans/{supportPlanId}/activate",
+			"PUT /api/v1/support-plans/{supportPlanId}/status",
+			"POST /api/v1/support-plans/{supportPlanId}/replace",
+			"GET /api/v1/support-plan-occurrences",
+			"GET /api/v1/support-plan-occurrences/{occurrenceId}",
+			"PUT /api/v1/support-plan-occurrences/{occurrenceId}/state");
 
 	private static final Set<String> ANONYMOUS_TOKEN_OPERATIONS = Set.of(
 			"POST /api/v1/anonymous-assessment-sessions/{sessionId}/assessments",
