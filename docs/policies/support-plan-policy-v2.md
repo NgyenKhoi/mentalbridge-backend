@@ -5,7 +5,7 @@
 | Field | Value |
 | --- | --- |
 | Scope decision | `MB-SCOPE-V2-001` |
-| Status | `PRODUCT POLICY APPROVED; DRAFT AND EXPLICIT ACTIVATION IMPLEMENTED BY MB-372/MB-373` |
+| Status | `PRODUCT POLICY APPROVED; DRAFT, ACTIVATION, AND ACTIVITY OCCURRENCES IMPLEMENTED BY MB-372/MB-373/MB-513` |
 | Effective decision date | 2026-09-15 |
 | Owner | Care |
 | Resource eligibility owner | Content/Notification |
@@ -89,11 +89,10 @@ stable `AVAILABLE`/`PARTIAL`/`EMPTY`/`STALE`/`UNAVAILABLE` outcomes, local
 synchronous safety, owner-only history, and approved-copy fallback when AI is
 unavailable.
 
-SupportPlan lifecycle beyond MB-373 activation, `PlanChangeRequest`, activity
-tracking, reminders, and summary reuse remain separate runtime gates requiring
-compatible lifecycle contracts, append-only migrations, exact eligibility
-revalidation, frontend confirmation flows, and focused
-authorization/concurrency/failure tests.
+`PlanChangeRequest`, notification delivery, and summary reuse remain separate
+runtime gates. MB-513 implements the user-owned lifecycle commands and
+Care-owned activity schedules/occurrences described below; it does not make
+Content/Notification the lifecycle owner and does not add treatment adherence.
 
 ## MB-372 initial draft runtime
 
@@ -122,9 +121,9 @@ replacement, activity tracking, reminders, or `PlanChangeRequest` handling.
 
 ## MB-373 choice and activation runtime
 
-MB-373 implements only bounded user choice inside the current draft and the
-normal explicit activation transition. It does not implement pause/resume,
-completion, replacement, activities, reminders, or `PlanChangeRequest`.
+MB-373 implements bounded user choice inside the current draft and the normal
+explicit activation transition. MB-513 subsequently adds the lifecycle and
+activity occurrence behavior without changing MB-373 activation semantics.
 
 - Choice requests name existing slot IDs and exact resource versions already
   admitted into those slots. A core slot must remain selected; an optional slot
@@ -152,3 +151,35 @@ completion, replacement, activities, reminders, or `PlanChangeRequest`.
 - `GET /api/v1/support-plans/current` returns only the authoritative official
   current plan. The frontend reloads it after activation instead of deriving an
   active object from local state.
+
+## MB-513 activity occurrence runtime
+
+MB-513 turns each selected exact resource in an `ACTIVE` SupportPlan into a
+Care-owned schedule and persisted, user-visible occurrence. The fixed policy
+version is `support-plan-activity-schedule-v1`.
+
+- `BREATHING`, `MEDITATION`, and `JOURNALING` resources recur daily. Other
+  selected resource categories recur weekly on the activation weekday.
+- Slot order fixes local times at 08:00, 10:00, 14:00, 18:00, and 20:00. The
+  schedule snapshots the profile IANA timezone. A DST gap moves to the first
+  valid local instant; a DST overlap uses the earlier offset.
+- Activation fills an inclusive 14-local-day horizon. Authorized bounded reads
+  extend missing occurrences; the unique schedule/version/local-date intent
+  and deterministic occurrence ID make reloads, retries, and concurrency safe.
+- Persisted occurrence states are `SCHEDULED`, `COMPLETED`, `SKIPPED`, and
+  `CANCELLED`. `MISSED` is a read-time display state for an overdue scheduled
+  occurrence, so merely passing time does not rewrite history.
+- Pause cancels future open occurrences with `PLAN_PAUSED`; resume restores only
+  still-future occurrences cancelled for that pause and extends the horizon.
+  Complete terminally relabels future open or pause-cancelled occurrences and
+  prevents restoration. Replacement atomically
+  supersedes the old plan, cancels its future occurrences with `PLAN_REPLACED`,
+  and activates schedules for the revalidated draft. Discarding a draft creates
+  no schedule or occurrence.
+- Journal and emotion-check-in prompts may use distinct source types in the
+  occurrence contract. They are separate self-reported wellbeing inputs and
+  are never inferred as resource completion, treatment adherence, clinical
+  outcome, or recovery. The current generator creates only `RESOURCE` sources.
+- Only the authenticated user makes pause, resume, complete, discard, replace,
+  complete-occurrence, or skip-occurrence decisions. AI may assist wording but
+  cannot select a state, issue a lifecycle command, or mark work complete.

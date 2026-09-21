@@ -31,16 +31,19 @@ class SupportPlanWriter {
 	private final SupportPlanSlotRepository slots;
 	private final SupportPlanSlotAlternativeRepository alternatives;
 	private final UserProfileRepository profiles;
+	private final SupportPlanActivityOccurrenceService activities;
 	private final ObjectMapper objectMapper;
 
 	SupportPlanWriter(SupportPlanRepository plans, SupportPlanTemplateFamilyRepository families,
 			SupportPlanSlotRepository slots, SupportPlanSlotAlternativeRepository alternatives,
-			UserProfileRepository profiles, ObjectMapper objectMapper) {
+			UserProfileRepository profiles, SupportPlanActivityOccurrenceService activities,
+			ObjectMapper objectMapper) {
 		this.plans = plans;
 		this.families = families;
 		this.slots = slots;
 		this.alternatives = alternatives;
 		this.profiles = profiles;
+		this.activities = activities;
 		this.objectMapper = objectMapper;
 	}
 
@@ -121,11 +124,80 @@ class SupportPlanWriter {
 		validateStoredChoices(plan, choices);
 		plan.activate(now);
 		plans.saveAndFlush(plan);
+		activities.activate(plan, now);
 		persistCommand(userId, idempotencyKey, "ACTIVATE", requestHash, plan, expectedVersion,
 				choices, evidence, now);
 		plans.insertActivationOutbox(UUID.randomUUID(), plan.id(), plan.version(), correlationId,
 				activationPayload(plan, evidence), now);
 		return stored(plan);
+	}
+
+	@Transactional
+	StoredPlan transition(UUID userId, UUID planId, long expectedVersion, String desiredStatus, Instant now) {
+		now = now.truncatedTo(ChronoUnit.MICROS);
+		lockOwner(userId);
+		var plan = plans.findByIdAndUserIdForUpdate(planId, userId).orElseThrow(() -> new ApiException(
+				HttpStatus.NOT_FOUND, "SUPPORT_PLAN_NOT_FOUND", "SupportPlan was not found"));
+		if (desiredStatus.equals(plan.status())) {
+			return stored(plan);
+		}
+		if (plan.version() != expectedVersion) {
+			throw new ApiException(HttpStatus.PRECONDITION_FAILED, "SUPPORT_PLAN_VERSION_MISMATCH",
+					"SupportPlan version does not match If-Match");
+		}
+		switch (desiredStatus) {
+			case "PAUSED" -> {
+				if (!"ACTIVE".equals(plan.status())) throw invalidTransition();
+				plan.pause(now);
+				activities.pause(plan.id(), now);
+			}
+			case "ACTIVE" -> {
+				if (!"PAUSED".equals(plan.status())) throw invalidTransition();
+				plan.resume(now);
+				activities.resume(plan, now);
+			}
+			case "COMPLETED" -> {
+				if (!List.of("ACTIVE", "PAUSED").contains(plan.status())) throw invalidTransition();
+				plan.complete(now);
+				activities.end(plan.id(), "PLAN_COMPLETED", now);
+			}
+			case "DISCARDED" -> {
+				if (!"DRAFT".equals(plan.status())) throw invalidTransition();
+				plan.discard(now);
+			}
+			default -> throw invalidTransition();
+		}
+		plans.saveAndFlush(plan);
+		return stored(plan);
+	}
+
+	@Transactional
+	StoredPlan replace(UUID userId, UUID draftId, long draftVersion, UUID currentPlanId,
+			long currentVersion, Instant now) {
+		now = now.truncatedTo(ChronoUnit.MICROS);
+		lockOwner(userId);
+		var draft = plans.findByIdAndUserIdForUpdate(draftId, userId).orElseThrow(() -> new ApiException(
+				HttpStatus.NOT_FOUND, "SUPPORT_PLAN_NOT_FOUND", "SupportPlan was not found"));
+		var current = plans.findByIdAndUserIdForUpdate(currentPlanId, userId).orElseThrow(() -> new ApiException(
+				HttpStatus.NOT_FOUND, "SUPPORT_PLAN_NOT_FOUND", "SupportPlan was not found"));
+		if ("ACTIVE".equals(draft.status()) && "SUPERSEDED".equals(current.status())) {
+			return stored(draft);
+		}
+		if (draft.version() != draftVersion || current.version() != currentVersion) {
+			throw new ApiException(HttpStatus.PRECONDITION_FAILED, "SUPPORT_PLAN_VERSION_MISMATCH",
+					"SupportPlan version does not match the replacement request");
+		}
+		if (!"DRAFT".equals(draft.status()) || !List.of("ACTIVE", "PAUSED").contains(current.status())
+				|| draft.id().equals(current.id())) {
+			throw invalidTransition();
+		}
+		current.supersede(now);
+		activities.end(current.id(), "PLAN_REPLACED", now);
+		plans.saveAndFlush(current);
+		draft.activate(now);
+		plans.saveAndFlush(draft);
+		activities.activate(draft, now);
+		return stored(draft);
 	}
 
 	@Transactional(readOnly = true)
@@ -327,6 +399,11 @@ class SupportPlanWriter {
 
 	private ApiException invalidChoice(String message) {
 		return new ApiException(HttpStatus.CONFLICT, "SUPPORT_PLAN_INVALID_CHOICE", message);
+	}
+
+	private ApiException invalidTransition() {
+		return new ApiException(HttpStatus.CONFLICT, "SUPPORT_PLAN_TRANSITION_INVALID",
+				"The requested SupportPlan lifecycle transition is not allowed");
 	}
 
 	private ApiException idempotencyConflict() {

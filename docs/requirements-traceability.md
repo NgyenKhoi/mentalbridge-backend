@@ -97,6 +97,17 @@ The requirements are represented in domain/architecture documentation, but the l
 
 ## Approved scope changes
 
+- 2026-09-21: MB-513 implements Care-owned
+  `support-plan-activity-schedule-v1` schedules and persisted occurrences for
+  the single active/paused SupportPlan. The owner APIs expose bounded local-date
+  windows, exact source/version provenance, explicit user complete/skip input,
+  and optimistic lifecycle commands. Deterministic identity plus database
+  uniqueness prevents retry/reload duplicates; timezone/DST, pause/resume,
+  completion, replacement, discard, stale versions, and concurrency have
+  focused coverage. Journal/emotion prompts remain distinct self-reported
+  wellbeing sources, never treatment adherence. AI cannot select lifecycle or
+  occurrence state. See [ADR 0020](adr/0020-support-plan-activity-occurrence-scheduling.md)
+  and [MB-513 evidence](story-mb-513-support-plan-activity-occurrences-evidence.md).
 - 2026-09-19: MB-372 implements the first Care-owned SupportPlan runtime slice:
   an authenticated `PLUS`/`PREMIUM` user may request one bounded deterministic
   `DRAFT` from an owned current-policy SupportEvaluation v2 and exact Content

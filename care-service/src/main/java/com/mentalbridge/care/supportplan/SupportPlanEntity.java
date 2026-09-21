@@ -38,6 +38,9 @@ class SupportPlanEntity {
 	private Instant createdAt;
 	private Instant updatedAt;
 	private Instant activatedAt;
+	private Instant completedAt;
+	private Instant supersededAt;
+	private Instant discardedAt;
 
 	protected SupportPlanEntity() { }
 
@@ -100,6 +103,9 @@ class SupportPlanEntity {
 	Instant createdAt() { return createdAt; }
 	Instant updatedAt() { return updatedAt; }
 	Instant activatedAt() { return activatedAt; }
+	Instant completedAt() { return completedAt; }
+	Instant supersededAt() { return supersededAt; }
+	Instant discardedAt() { return discardedAt; }
 
 	void changeChoices(int selectedResourceCount, Instant changedAt) {
 		this.selectedResourceCount = (short) selectedResourceCount;
@@ -110,5 +116,33 @@ class SupportPlanEntity {
 		this.status = "ACTIVE";
 		this.activatedAt = activatedAt;
 		this.updatedAt = activatedAt;
+	}
+
+	void pause(Instant changedAt) {
+		this.status = "PAUSED";
+		this.updatedAt = changedAt;
+	}
+
+	void resume(Instant changedAt) {
+		this.status = "ACTIVE";
+		this.updatedAt = changedAt;
+	}
+
+	void complete(Instant changedAt) {
+		this.status = "COMPLETED";
+		this.completedAt = changedAt;
+		this.updatedAt = changedAt;
+	}
+
+	void supersede(Instant changedAt) {
+		this.status = "SUPERSEDED";
+		this.supersededAt = changedAt;
+		this.updatedAt = changedAt;
+	}
+
+	void discard(Instant changedAt) {
+		this.status = "DISCARDED";
+		this.discardedAt = changedAt;
+		this.updatedAt = changedAt;
 	}
 }

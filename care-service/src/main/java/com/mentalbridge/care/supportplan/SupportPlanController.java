@@ -22,11 +22,13 @@ import org.springframework.web.bind.annotation.RestController;
 import com.mentalbridge.care.shared.ApiException;
 import com.mentalbridge.care.supportplan.SupportPlanService.ProposeCommand;
 import com.mentalbridge.care.supportplan.SupportPlanService.ReplaceChoicesCommand;
+import com.mentalbridge.care.supportplan.SupportPlanService.ReplacePlanCommand;
 import com.mentalbridge.care.supportplan.SupportPlanService.SlotSelection;
 import com.mentalbridge.care.supportplan.SupportPlanService.SupportPlanView;
 
 import jakarta.validation.Valid;
 import jakarta.validation.constraints.NotNull;
+import jakarta.validation.constraints.PositiveOrZero;
 import jakarta.validation.constraints.Pattern;
 import jakarta.validation.constraints.Size;
 
@@ -89,6 +91,27 @@ public class SupportPlanController {
 		return ResponseEntity.ok().header(HttpHeaders.ETAG, '"' + Long.toString(plan.version()) + '"').body(plan);
 	}
 
+	@PutMapping("/{supportPlanId}/status")
+	ResponseEntity<SupportPlanView> status(@AuthenticationPrincipal Jwt jwt,
+			@PathVariable UUID supportPlanId,
+			@RequestHeader("If-Match") @Pattern(regexp = "^\"[0-9]+\"$") String ifMatch,
+			@Valid @RequestBody ChangeStatusRequest request) {
+		var plan = plans.changeStatus(subject(jwt), supportPlanId, version(ifMatch), request.status());
+		return ResponseEntity.ok().header(HttpHeaders.ETAG, '"' + Long.toString(plan.version()) + '"').body(plan);
+	}
+
+	@PostMapping("/{supportPlanId}/replace")
+	ResponseEntity<SupportPlanView> replace(@AuthenticationPrincipal Jwt jwt,
+			@PathVariable UUID supportPlanId,
+			@RequestHeader("If-Match") @Pattern(regexp = "^\"[0-9]+\"$") String ifMatch,
+			@RequestHeader(name = "X-Correlation-Id", required = false) UUID correlationId,
+			@Valid @RequestBody ReplacePlanRequest request) {
+		var plan = plans.replace(subject(jwt), jwt.getTokenValue(), supportPlanId, version(ifMatch),
+				correlationId == null ? UUID.randomUUID() : correlationId,
+				new ReplacePlanCommand(request.currentSupportPlanId(), request.currentVersion()));
+		return ResponseEntity.ok().header(HttpHeaders.ETAG, '"' + Long.toString(plan.version()) + '"').body(plan);
+	}
+
 	private UUID subject(Jwt jwt) {
 		try {
 			return UUID.fromString(jwt.getSubject());
@@ -107,4 +130,7 @@ public class SupportPlanController {
 	public record ReplaceChoicesRequest(@NotNull @Size(min = 1, max = 5) List<@Valid SlotSelectionRequest> slotSelections) { }
 	public record SlotSelectionRequest(@NotNull @Size(min = 1, max = 64) String slotId,
 			@NotNull UUID resourceId, @NotNull @Pattern(regexp = "^[0-9]+$") String contentVersion) { }
+	public record ChangeStatusRequest(@NotNull @Pattern(regexp = "^(ACTIVE|PAUSED|COMPLETED|DISCARDED)$") String status) { }
+	public record ReplacePlanRequest(@NotNull UUID currentSupportPlanId,
+			@NotNull @PositiveOrZero Long currentVersion) { }
 }

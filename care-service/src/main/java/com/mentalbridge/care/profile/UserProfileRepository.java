@@ -15,4 +15,7 @@ public interface UserProfileRepository extends JpaRepository<UserProfileEntity, 
 	@Lock(LockModeType.PESSIMISTIC_WRITE)
 	@Query("select profile from UserProfileEntity profile where profile.accountId = :accountId")
 	Optional<UserProfileEntity> findByIdForUpdate(@Param("accountId") UUID accountId);
+
+	@Query("select profile.timezone from UserProfileEntity profile where profile.accountId = :accountId")
+	Optional<String> findTimezoneByAccountId(@Param("accountId") UUID accountId);
 }

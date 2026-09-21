@@ -28,6 +28,7 @@ tags:
   - name: Assessment
   - name: Support evaluation
   - name: SupportPlan draft
+  - name: SupportPlan activity
   - name: Anonymous assessment
 paths:
   /api/v1/profile:
@@ -583,6 +584,145 @@ paths:
         '409': { $ref: '#/components/responses/SupportPlanActivationConflictProblem' }
         '412': { $ref: '#/components/responses/SupportPlanVersionProblem' }
         '503': { $ref: '#/components/responses/SupportPlanDependencyProblem' }
+  /api/v1/support-plans/{supportPlanId}/status:
+    x-mentalbridge-status: implemented
+    put:
+      tags: [SupportPlan activity]
+      operationId: replaceOwnSupportPlanStatus
+      summary: Apply an explicit idempotent SupportPlan lifecycle state
+      description: |
+        ACTIVE may resume PAUSED, PAUSED may pause ACTIVE, COMPLETED ends an
+        ACTIVE or PAUSED plan without implying recovery, and DISCARDED removes
+        a DRAFT from current consideration. Repeating the already-applied desired
+        state is a no-op. Pausing cancels future scheduled occurrences; resuming
+        restores only still-future pause-cancelled occurrences and extends the
+        bounded horizon; completing cancels future open occurrences.
+      security:
+        - bearerAuth: []
+      parameters:
+        - $ref: '#/components/parameters/SupportPlanId'
+        - $ref: '#/components/parameters/RequiredIfMatch'
+        - $ref: '#/components/parameters/CorrelationId'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: '#/components/schemas/ChangeSupportPlanStatusRequest' }
+      responses:
+        '200': { $ref: '#/components/responses/SupportPlanCommandResult' }
+        '400': { $ref: '#/components/responses/ValidationProblem' }
+        '401': { $ref: '#/components/responses/UnauthorizedProblem' }
+        '404': { $ref: '#/components/responses/SupportPlanNotFoundProblem' }
+        '409': { $ref: '#/components/responses/SupportPlanLifecycleConflictProblem' }
+        '412': { $ref: '#/components/responses/SupportPlanVersionProblem' }
+  /api/v1/support-plans/{supportPlanId}/replace:
+    x-mentalbridge-status: implemented
+    post:
+      tags: [SupportPlan activity]
+      operationId: replaceOwnCurrentSupportPlan
+      summary: Explicitly replace the current plan with a revalidated draft
+      description: |
+        Care revalidates the owned draft before one local transaction marks the
+        former current plan SUPERSEDED, cancels its future occurrences, activates
+        the draft, and creates the replacement plan's deterministic schedules.
+      security:
+        - bearerAuth: []
+      parameters:
+        - $ref: '#/components/parameters/SupportPlanId'
+        - $ref: '#/components/parameters/RequiredIfMatch'
+        - $ref: '#/components/parameters/CorrelationId'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: '#/components/schemas/ReplaceCurrentSupportPlanRequest' }
+      responses:
+        '200': { $ref: '#/components/responses/SupportPlanCommandResult' }
+        '400': { $ref: '#/components/responses/ValidationProblem' }
+        '401': { $ref: '#/components/responses/UnauthorizedProblem' }
+        '403': { $ref: '#/components/responses/SupportPlanEntitlementProblem' }
+        '404': { $ref: '#/components/responses/SupportPlanNotFoundProblem' }
+        '409': { $ref: '#/components/responses/SupportPlanLifecycleConflictProblem' }
+        '412': { $ref: '#/components/responses/SupportPlanVersionProblem' }
+        '503': { $ref: '#/components/responses/SupportPlanDependencyProblem' }
+  /api/v1/support-plan-occurrences:
+    x-mentalbridge-status: implemented
+    get:
+      tags: [SupportPlan activity]
+      operationId: listOwnSupportPlanOccurrences
+      summary: List current-plan occurrences for a bounded local-date window
+      description: |
+        The inclusive window is at most 31 local days and is limited to the
+        supported recent/today/upcoming range. For an ACTIVE plan, Care safely
+        fills any missing logical occurrences before returning the persisted
+        list. Generation is deterministic and protected by a unique local-intent
+        key, so retries and plan reloads do not duplicate occurrences. DAILY and
+        WEEKLY schedules preserve the profile's IANA timezone. A daylight gap
+        moves to the first valid local instant; an overlap uses the earlier offset.
+      security:
+        - bearerAuth: []
+      parameters:
+        - name: from
+          in: query
+          required: true
+          schema: { type: string, format: date }
+        - name: through
+          in: query
+          required: true
+          schema: { type: string, format: date }
+        - $ref: '#/components/parameters/CorrelationId'
+      responses:
+        '200':
+          description: Persisted occurrence window for the current plan
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/SupportPlanOccurrenceList' }
+        '400': { $ref: '#/components/responses/ValidationProblem' }
+        '401': { $ref: '#/components/responses/UnauthorizedProblem' }
+        '404': { $ref: '#/components/responses/SupportPlanCurrentNotFoundProblem' }
+  /api/v1/support-plan-occurrences/{occurrenceId}:
+    x-mentalbridge-status: implemented
+    get:
+      tags: [SupportPlan activity]
+      operationId: getOwnSupportPlanOccurrence
+      summary: Read one owned occurrence with source and local-time provenance
+      security:
+        - bearerAuth: []
+      parameters:
+        - $ref: '#/components/parameters/OccurrenceId'
+        - $ref: '#/components/parameters/CorrelationId'
+      responses:
+        '200': { $ref: '#/components/responses/SupportPlanOccurrenceResult' }
+        '401': { $ref: '#/components/responses/UnauthorizedProblem' }
+        '404': { $ref: '#/components/responses/SupportPlanOccurrenceNotFoundProblem' }
+  /api/v1/support-plan-occurrences/{occurrenceId}/state:
+    x-mentalbridge-status: implemented
+    put:
+      tags: [SupportPlan activity]
+      operationId: replaceOwnSupportPlanOccurrenceState
+      summary: Mark an occurrence completed or skipped as a self-reported input
+      description: |
+        This user action is not treatment adherence, clinical success, or
+        recovery evidence. Repeating the same desired state is a no-op. AI may
+        phrase a label but cannot call this command or select the state.
+      security:
+        - bearerAuth: []
+      parameters:
+        - $ref: '#/components/parameters/OccurrenceId'
+        - $ref: '#/components/parameters/RequiredIfMatch'
+        - $ref: '#/components/parameters/CorrelationId'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: '#/components/schemas/ChangeSupportPlanOccurrenceStateRequest' }
+      responses:
+        '200': { $ref: '#/components/responses/SupportPlanOccurrenceResult' }
+        '400': { $ref: '#/components/responses/ValidationProblem' }
+        '401': { $ref: '#/components/responses/UnauthorizedProblem' }
+        '404': { $ref: '#/components/responses/SupportPlanOccurrenceNotFoundProblem' }
+        '409': { $ref: '#/components/responses/SupportPlanOccurrenceConflictProblem' }
+        '412': { $ref: '#/components/responses/SupportPlanOccurrenceVersionProblem' }
   /api/v1/anonymous-assessment-sessions:
     x-mentalbridge-status: implemented
     post:
@@ -821,6 +961,11 @@ components:
       schema: { type: string, format: uuid }
     SupportPlanId:
       name: supportPlanId
+      in: path
+      required: true
+      schema: { type: string, format: uuid }
+    OccurrenceId:
+      name: occurrenceId
       in: path
       required: true
       schema: { type: string, format: uuid }
@@ -1307,6 +1452,19 @@ components:
         slotId: { type: string, minLength: 1, maxLength: 64 }
         resourceId: { type: string, format: uuid }
         contentVersion: { type: string, pattern: '^[0-9]+$' }
+    ChangeSupportPlanStatusRequest:
+      type: object
+      additionalProperties: false
+      required: [status]
+      properties:
+        status: { type: string, enum: [ACTIVE, PAUSED, COMPLETED, DISCARDED] }
+    ReplaceCurrentSupportPlanRequest:
+      type: object
+      additionalProperties: false
+      required: [currentSupportPlanId, currentVersion]
+      properties:
+        currentSupportPlanId: { type: string, format: uuid }
+        currentVersion: { type: integer, minimum: 0 }
     SupportPlanDraft:
       $ref: '#/components/schemas/SupportPlan'
     SupportPlan:
@@ -1315,7 +1473,7 @@ components:
       required: [supportPlanId, status, version, source, entitlement, rationale, safety, templateFamilies, slots, selectedResourceCount, createdAt, updatedAt, activatedAt, disclaimerCode, disclaimer]
       properties:
         supportPlanId: { type: string, format: uuid }
-        status: { type: string, enum: [DRAFT, ACTIVE, PAUSED] }
+        status: { type: string, enum: [DRAFT, ACTIVE, PAUSED, COMPLETED, SUPERSEDED, DISCARDED] }
         version: { type: integer, minimum: 0 }
         source: { $ref: '#/components/schemas/SupportPlanSource' }
         entitlement: { $ref: '#/components/schemas/SupportPlanEntitlementEvidence' }
@@ -1419,6 +1577,63 @@ components:
         title: { type: string, minLength: 1, maxLength: 255 }
         summary: { type: string, minLength: 1, maxLength: 4096 }
         externalUrl: { type: [string, 'null'], format: uri, maxLength: 2048 }
+    ChangeSupportPlanOccurrenceStateRequest:
+      type: object
+      additionalProperties: false
+      required: [state]
+      properties:
+        state: { type: string, enum: [COMPLETED, SKIPPED] }
+    SupportPlanOccurrenceList:
+      type: object
+      additionalProperties: false
+      required: [supportPlanId, supportPlanStatus, schedulePolicyVersion, from, through, occurrences, interpretationCode]
+      properties:
+        supportPlanId: { type: string, format: uuid }
+        supportPlanStatus: { type: string, enum: [ACTIVE, PAUSED] }
+        schedulePolicyVersion: { type: string, const: support-plan-activity-schedule-v1 }
+        from: { type: string, format: date }
+        through: { type: string, format: date }
+        occurrences:
+          type: array
+          maxItems: 217
+          items: { $ref: '#/components/schemas/SupportPlanOccurrence' }
+        interpretationCode: { type: string, const: SELF_REPORTED_WELLBEING_ACTIVITY_NOT_TREATMENT_ADHERENCE }
+    SupportPlanOccurrence:
+      type: object
+      additionalProperties: false
+      required: [occurrenceId, supportPlanId, scheduleId, scheduleVersion, localDate, localTime, timezone, scheduledAt, state, displayState, stateReason, version, source, updatedAt, completedAt, skippedAt, cancelledAt, interpretationCode]
+      properties:
+        occurrenceId: { type: string, format: uuid }
+        supportPlanId: { type: string, format: uuid }
+        scheduleId: { type: string, format: uuid }
+        scheduleVersion: { type: integer, minimum: 1 }
+        localDate: { type: string, format: date }
+        localTime: { type: string, format: time }
+        timezone: { type: string, minLength: 1, maxLength: 64 }
+        scheduledAt: { type: string, format: date-time }
+        state: { type: string, enum: [SCHEDULED, COMPLETED, SKIPPED, CANCELLED] }
+        displayState: { type: string, enum: [SCHEDULED, MISSED, COMPLETED, SKIPPED, CANCELLED] }
+        stateReason:
+          type: [string, 'null']
+          enum: [PLAN_PAUSED, PLAN_COMPLETED, PLAN_REPLACED, null]
+        version: { type: integer, minimum: 0 }
+        source: { $ref: '#/components/schemas/SupportPlanOccurrenceSource' }
+        updatedAt: { type: string, format: date-time }
+        completedAt: { type: [string, 'null'], format: date-time }
+        skippedAt: { type: [string, 'null'], format: date-time }
+        cancelledAt: { type: [string, 'null'], format: date-time }
+        interpretationCode: { type: string, const: SELF_REPORTED_WELLBEING_ACTIVITY_NOT_TREATMENT_ADHERENCE }
+    SupportPlanOccurrenceSource:
+      type: object
+      additionalProperties: false
+      required: [type, supportPlanVersion, slotId, resourceId, contentVersion, title]
+      properties:
+        type: { type: string, enum: [RESOURCE, JOURNAL_PROMPT, EMOTION_CHECK_IN_PROMPT] }
+        supportPlanVersion: { type: integer, minimum: 1 }
+        slotId: { type: [string, 'null'], minLength: 1, maxLength: 64 }
+        resourceId: { type: [string, 'null'], format: uuid }
+        contentVersion: { type: [string, 'null'], pattern: '^[0-9]+$' }
+        title: { type: string, minLength: 1, maxLength: 255 }
     Problem:
       type: object
       additionalProperties: true
@@ -1542,6 +1757,34 @@ components:
       content:
         application/problem+json:
           schema: { $ref: '#/components/schemas/Problem' }
+    SupportPlanLifecycleConflictProblem:
+      description: The requested lifecycle transition is invalid or a replacement source is stale (SUPPORT_PLAN_TRANSITION_INVALID)
+      content:
+        application/problem+json:
+          schema: { $ref: '#/components/schemas/Problem' }
+    SupportPlanOccurrenceNotFoundProblem:
+      description: The occurrence is absent or not owned by the authenticated user (OCCURRENCE_NOT_FOUND)
+      content:
+        application/problem+json:
+          schema: { $ref: '#/components/schemas/Problem' }
+    SupportPlanOccurrenceConflictProblem:
+      description: The occurrence is cancelled, already has another terminal input, or its source plan is no longer current (OCCURRENCE_NOT_OPEN or SUPPORT_PLAN_NOT_CURRENT)
+      content:
+        application/problem+json:
+          schema: { $ref: '#/components/schemas/Problem' }
+    SupportPlanOccurrenceVersionProblem:
+      description: If-Match does not equal the Care-owned occurrence version (OCCURRENCE_VERSION_MISMATCH)
+      content:
+        application/problem+json:
+          schema: { $ref: '#/components/schemas/Problem' }
+    SupportPlanOccurrenceResult:
+      description: Authoritative occurrence with local-time and source provenance
+      headers:
+        ETag:
+          $ref: '#/components/headers/SupportPlanETag'
+      content:
+        application/json:
+          schema: { $ref: '#/components/schemas/SupportPlanOccurrence' }
     SupportPlanCommandResult:
       description: Updated authoritative plan or the identical persisted command outcome
       headers:
