@@ -183,3 +183,27 @@ version is `support-plan-activity-schedule-v1`.
 - Only the authenticated user makes pause, resume, complete, discard, replace,
   complete-occurrence, or skip-occurrence decisions. AI may assist wording but
   cannot select a state, issue a lifecycle command, or mark work complete.
+
+## MB-374 owner lifecycle and history
+
+MB-374 completes the ordinary owner-facing pause, resume, complete, and draft
+discard journey without changing replacement behavior.
+
+- The consumer asks for explicit confirmation before every lifecycle command.
+  Discard and complete confirmations explain their terminal effect; pause and
+  resume explain their occurrence effect. Confirmation is interaction evidence,
+  not a client-authored authorization field in the Care contract.
+- Completion may include one optional stable reason code:
+  `USER_DECISION`, `PLAN_NO_LONGER_FITS`, or `OTHER`. Care stores no free-text
+  completion note, and no code means recovery, clinical improvement, or goal
+  attainment. A reason supplied to another transition is rejected.
+- Lifecycle writes remain optimistic desired-state PUTs. `If-Match` protects a
+  changed transition, while a repeat of an already-applied target is a no-op and
+  returns the persisted snapshot.
+- `COMPLETED`, `SUPERSEDED`, and `DISCARDED` plans are returned in a stable,
+  owner-only terminal history. Detail reload returns the exact persisted plan,
+  including source versions, selected resource copies, lifecycle instants, and
+  optional completion reason; terminal plans accept no further lifecycle write.
+- Assessment submission, SupportEvaluation creation, AI output, reminders, and
+  activity-occurrence updates have no path that invokes a SupportPlan lifecycle
+  command. Only the authenticated owner can submit the explicit command.

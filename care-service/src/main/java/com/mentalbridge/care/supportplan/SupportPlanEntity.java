@@ -39,6 +39,7 @@ class SupportPlanEntity {
 	private Instant updatedAt;
 	private Instant activatedAt;
 	private Instant completedAt;
+	private String completionReason;
 	private Instant supersededAt;
 	private Instant discardedAt;
 
@@ -104,6 +105,7 @@ class SupportPlanEntity {
 	Instant updatedAt() { return updatedAt; }
 	Instant activatedAt() { return activatedAt; }
 	Instant completedAt() { return completedAt; }
+	String completionReason() { return completionReason; }
 	Instant supersededAt() { return supersededAt; }
 	Instant discardedAt() { return discardedAt; }
 
@@ -128,9 +130,10 @@ class SupportPlanEntity {
 		this.updatedAt = changedAt;
 	}
 
-	void complete(Instant changedAt) {
+	void complete(String completionReason, Instant changedAt) {
 		this.status = "COMPLETED";
 		this.completedAt = changedAt;
+		this.completionReason = completionReason;
 		this.updatedAt = changedAt;
 	}
 

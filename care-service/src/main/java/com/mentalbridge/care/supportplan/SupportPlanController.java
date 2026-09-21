@@ -17,6 +17,7 @@ import org.springframework.web.bind.annotation.PathVariable;
 import org.springframework.web.bind.annotation.RequestBody;
 import org.springframework.web.bind.annotation.RequestHeader;
 import org.springframework.web.bind.annotation.RequestMapping;
+import org.springframework.web.bind.annotation.RequestParam;
 import org.springframework.web.bind.annotation.RestController;
 
 import com.mentalbridge.care.shared.ApiException;
@@ -25,9 +26,12 @@ import com.mentalbridge.care.supportplan.SupportPlanService.ReplaceChoicesComman
 import com.mentalbridge.care.supportplan.SupportPlanService.ReplacePlanCommand;
 import com.mentalbridge.care.supportplan.SupportPlanService.SlotSelection;
 import com.mentalbridge.care.supportplan.SupportPlanService.SupportPlanView;
+import com.mentalbridge.care.supportplan.SupportPlanService.SupportPlanHistoryView;
 
 import jakarta.validation.Valid;
 import jakarta.validation.constraints.NotNull;
+import jakarta.validation.constraints.Max;
+import jakarta.validation.constraints.Min;
 import jakarta.validation.constraints.PositiveOrZero;
 import jakarta.validation.constraints.Pattern;
 import jakarta.validation.constraints.Size;
@@ -67,6 +71,20 @@ public class SupportPlanController {
 		return ResponseEntity.ok().header(HttpHeaders.ETAG, '"' + Long.toString(plan.version()) + '"').body(plan);
 	}
 
+	@GetMapping("/history")
+	SupportPlanHistoryView history(@AuthenticationPrincipal Jwt jwt,
+			@RequestParam(defaultValue = "10") @Min(1) @Max(50) int limit,
+			@RequestParam(required = false) @Size(max = 256) String cursor) {
+		return plans.history(subject(jwt), limit, cursor);
+	}
+
+	@GetMapping("/{supportPlanId}")
+	ResponseEntity<SupportPlanView> get(@AuthenticationPrincipal Jwt jwt,
+			@PathVariable UUID supportPlanId) {
+		var plan = plans.get(subject(jwt), supportPlanId);
+		return ResponseEntity.ok().header(HttpHeaders.ETAG, '"' + Long.toString(plan.version()) + '"').body(plan);
+	}
+
 	@PutMapping("/{supportPlanId}/choices")
 	ResponseEntity<SupportPlanView> choices(@AuthenticationPrincipal Jwt jwt,
 			@PathVariable UUID supportPlanId,
@@ -96,7 +114,8 @@ public class SupportPlanController {
 			@PathVariable UUID supportPlanId,
 			@RequestHeader("If-Match") @Pattern(regexp = "^\"[0-9]+\"$") String ifMatch,
 			@Valid @RequestBody ChangeStatusRequest request) {
-		var plan = plans.changeStatus(subject(jwt), supportPlanId, version(ifMatch), request.status());
+		var plan = plans.changeStatus(subject(jwt), supportPlanId, version(ifMatch), request.status(),
+				request.completionReason());
 		return ResponseEntity.ok().header(HttpHeaders.ETAG, '"' + Long.toString(plan.version()) + '"').body(plan);
 	}
 
@@ -130,7 +149,9 @@ public class SupportPlanController {
 	public record ReplaceChoicesRequest(@NotNull @Size(min = 1, max = 5) List<@Valid SlotSelectionRequest> slotSelections) { }
 	public record SlotSelectionRequest(@NotNull @Size(min = 1, max = 64) String slotId,
 			@NotNull UUID resourceId, @NotNull @Pattern(regexp = "^[0-9]+$") String contentVersion) { }
-	public record ChangeStatusRequest(@NotNull @Pattern(regexp = "^(ACTIVE|PAUSED|COMPLETED|DISCARDED)$") String status) { }
+	public record ChangeStatusRequest(
+			@NotNull @Pattern(regexp = "^(ACTIVE|PAUSED|COMPLETED|DISCARDED)$") String status,
+			@Pattern(regexp = "^(USER_DECISION|PLAN_NO_LONGER_FITS|OTHER)$") String completionReason) { }
 	public record ReplacePlanRequest(@NotNull UUID currentSupportPlanId,
 			@NotNull @PositiveOrZero Long currentVersion) { }
 }

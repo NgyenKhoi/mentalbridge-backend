@@ -478,6 +478,7 @@ CREATE TABLE care.support_plan (
     selected_resource_count smallint NOT NULL,
     activated_at timestamptz,
     completed_at timestamptz,
+    completion_reason varchar(32),
     superseded_at timestamptz,
     discarded_at timestamptz,
     created_at timestamptz NOT NULL,

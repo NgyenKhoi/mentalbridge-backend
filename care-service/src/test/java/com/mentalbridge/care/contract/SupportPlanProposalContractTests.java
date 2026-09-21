@@ -69,6 +69,26 @@ class SupportPlanProposalContractTests {
 	}
 
 	@Test
+	void implementedLifecyclePublishesOwnerHistoryAndBoundedCompletionContext() {
+		OpenAPI openApi = parseImplementedContract().getOpenAPI();
+		Operation lifecycle = openApi.getPaths().get("/api/v1/support-plans/{supportPlanId}/status").getPut();
+		Operation history = openApi.getPaths().get("/api/v1/support-plans/history").getGet();
+		Operation detail = openApi.getPaths().get("/api/v1/support-plans/{supportPlanId}").getGet();
+		Schema<?> request = openApi.getComponents().getSchemas().get("ChangeSupportPlanStatusRequest");
+		Schema<?> plan = openApi.getComponents().getSchemas().get("SupportPlan");
+
+		assertParameter("implemented lifecycle", lifecycle, "If-Match");
+		assertThat(lifecycle.getDescription()).contains("no-op", "immutable terminal snapshot");
+		assertThat(request.getProperties()).containsOnlyKeys("status", "completionReason");
+		assertThat(((Schema<?>) request.getProperties().get("completionReason")).getEnum()
+				.stream().map(String::valueOf).toList())
+				.contains("USER_DECISION", "PLAN_NO_LONGER_FITS", "OTHER");
+		assertThat(plan.getRequired()).contains("completedAt", "completionReason", "supersededAt", "discardedAt");
+		assertThat(history.getResponses()).containsKeys("200", "400", "401", "403");
+		assertThat(detail.getResponses()).containsKeys("200", "401", "403", "404");
+	}
+
+	@Test
 	void implementedInitialDraftRequestContainsOnlyTheOwnedEvaluationReference() {
 		OpenAPI openApi = parseImplementedContract().getOpenAPI();
 		Schema<?> request = openApi.getComponents().getSchemas().get("ProposeSupportPlanDraftRequest");
