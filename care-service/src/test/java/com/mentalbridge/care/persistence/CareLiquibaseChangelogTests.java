@@ -29,7 +29,11 @@ class CareLiquibaseChangelogTests {
 					"care-008-gad7-and-phq9-v2-reference-data",
 					"care-009-combined-support-routing",
 					"care-011-domain-aware-support-evaluation-v2",
-					"care-012-support-guide");
+					"care-012-support-guide",
+					"care-013-support-plan-draft",
+					"care-014-support-plan-choice-activation",
+					"care-015-support-plan-activity-occurrences",
+					"care-016-support-plan-lifecycle-history");
 		}
 	}
 

@@ -1,6 +1,6 @@
 # MongoDB Collection Definitions
 
-MongoDB stores variable, write-heavy content where document access follows an aggregate. PostgreSQL remains authoritative for identity, Care consent, scoring, safety/support policy, appointments, and relational audit. Journal/AI uses MongoDB as its only operational database, including durable analysis job state and future dataset/benchmark metadata. MongoDB-owning Node.js services use the official MongoDB driver and apply collection validation, indexes, and controlled data changes through append-only `migrate-mongo` migrations; application startup must not mutate schemas implicitly.
+Start with the [canonical MongoDB logical model](../domain-model/document/mongodb-logical-model.md) for active/proposed status, ownership, and relationships. This document supplies detailed field and index rationale. MongoDB stores variable, write-heavy content where document access follows an aggregate. PostgreSQL remains authoritative for identity, Care consent, scoring, safety/support policy, appointments, and relational audit. Journal/AI uses MongoDB as its only operational database, including durable analysis jobs and benchmark metadata. MongoDB-owning Node.js services use the official MongoDB driver and apply collection validation, indexes, and controlled data changes through append-only `migrate-mongo` migrations; application startup must not mutate schemas implicitly.
 
 All collections require MongoDB JSON Schema validation in deployment migrations. Examples omit ciphertext details for readability.
 
@@ -30,7 +30,7 @@ One document per logical entry with an embedded, bounded revision history. If re
         "iv": "BinData",
         "tag": "BinData",
         "algorithm": "AES-256-GCM",
-        "keyId": "journal-kek-2026-01",
+        "keyId": "single-key",
         "encryptedAt": "ISODate"
       },
       "mood": {
@@ -38,7 +38,7 @@ One document per logical entry with an embedded, bounded revision history. If re
         "iv": "BinData",
         "tag": "BinData",
         "algorithm": "AES-256-GCM",
-        "keyId": "journal-kek-2026-01",
+        "keyId": "single-key",
         "encryptedAt": "ISODate"
       },
       "contentByteLength": 420,
@@ -101,6 +101,7 @@ Rules:
 - Never persist/index a plaintext content preview or send decrypted content to logs/search. List previews are derived only after owner authorization and decryption for that response.
 - Story 6201 mood is one of `GREAT`, `GOOD`, `OKAY`, `LOW`, or `VERY_LOW`. It is user-selected, non-clinical, versioned with the journal content, and stored in its own AES-256-GCM envelope so neither the stable label nor its UI emoji is plaintext or indexed. The field remains absent on legacy revisions; authorized responses expose `null` for those revisions. Omitting mood in a compatible revision request preserves the current encrypted value.
 - `contentHash` is a keyed digest for duplicate detection and never a raw plaintext hash.
+- Journal/AI uses one externally supplied AES-256-GCM key for the lifetime of this controlled product demo. The persisted `keyId` is the fixed `single-key` compatibility marker required by the existing envelope schema; it is not configurable and does not select a rotation keyring.
 - Raw idempotency keys are never persisted. The service stores a keyed `keyHash`, request `fingerprint`, and immutable non-plaintext response metadata; an exact retry returns the original versioned result while reuse with different input is rejected with `409`.
 - Command records are retained for the journal document's lifetime, including its tombstone. A journal entry has at most one create, 199 revisions, and one delete command because revision history is capped at 200, so the validator bounds `commands` to 201 without evicting replay keys. The owner plus command-key index makes replay unique within the authenticated owner boundary.
 - User authorization uses the verified JWT subject matched to `ownerAccountId`; specialist access additionally checks the current Care grant and selected journal ID.
@@ -152,6 +153,18 @@ depend on worker internals.
   "leaseExpiresAt": null,
   "terminalReason": null,
   "resultId": null,
+  "route": {
+    "workload": "EXACT_REVISION",
+    "servicePlan": "PREMIUM",
+    "entitlementSource": "DEMO",
+    "entitlementPolicyVersion": "service-entitlement-v1",
+    "entitlementVersion": 3,
+    "routingPolicyVersion": "exact-revision-routing-v1",
+    "providerApprovalVersion": "approval-reference",
+    "provider": "GEMINI",
+    "model": "pinned-model-name",
+    "promptVersion": "exact-revision-v2"
+  },
   "createdAt": "ISODate",
   "updatedAt": "ISODate",
   "completedAt": null
@@ -167,6 +180,13 @@ field; a reclaimed job without that context fails closed with
 current `AI_PROCESSING` decision. Revocation blocks an attempt or retry without
 deleting earlier results.
 
+The first attempt also resolves the current entitlement through Consultation
+and atomically snapshots the route. A retry must resolve to the same workload,
+routing/approval version, provider, model, and prompt. Journal/AI never trusts
+a client tier, reads Consultation storage, or silently falls back across
+providers. The forwarded bearer remains memory-only for both Care and
+Consultation calls.
+
 ## `journal_analysis_results`
 
 One immutable result per journal revision and analysis run.
@@ -179,10 +199,21 @@ One immutable result per journal revision and analysis run.
   "entryId": "UUID",
   "userId": "UUID",
   "journalRevision": 2,
+  "workload": "EXACT_REVISION",
+  "servicePlan": "PREMIUM",
+  "entitlementSource": "DEMO",
+  "entitlementPolicyVersion": "service-entitlement-v1",
+  "entitlementVersion": 3,
+  "routingPolicyVersion": "exact-revision-routing-v1",
+  "providerApprovalVersion": "approval-reference",
   "provider": "OPENAI",
   "model": "model-name",
-  "promptVersion": "exact-revision-v1",
+  "promptVersion": "exact-revision-v2",
   "schemaVersion": 1,
+  "latencyMs": 850,
+  "inputTokens": 210,
+  "outputTokens": 95,
+  "estimatedCostMicroUsd": 14,
   "result": {
     "summary": "Optional bounded reflection summary",
     "contextSignals": ["STUDY_PRESSURE"],
@@ -219,11 +250,62 @@ state. Never persist raw provider responses or hidden reasoning/chain-of-thought
 including temporary debugging copies. Each result is bound to one exact journal
 revision and is deleted with that revision.
 
-Migration `005_exact_revision_analysis.cjs` is authoritative for both
-collections and their unique/claim/source indexes. MB-367 permits only
-`DETERMINISTIC_FAKE`, `deterministic-reflection-v1`, prompt
-`exact-revision-v1`, and schema version 1. Real provider usage/cost identifiers
-are deliberately absent until the separate provider-selection gate passes.
+Migration `005_exact_revision_analysis.cjs` creates both collections and their
+unique/claim/source indexes. Migration
+`007_entitlement_aware_model_routing.cjs` additively accepts the route snapshot,
+Gemini/OpenAI provenance, prompt `exact-revision-v2`, and bounded execution
+metrics while retaining legacy fake-provider documents. A configured adapter
+does not imply approval: real routes require a separately recorded benchmark
+approval identifier.
+
+## `longitudinal_analysis_jobs`
+
+One durable owner-scoped command per longitudinal idempotency key. It stores
+the two validated periods, optional exclusions, exact selected source versions,
+coverage decision, route snapshot, lease lifecycle, and terminal outcome. It
+never stores source text or a bearer credential.
+
+```json
+{
+  "_id": "UUID",
+  "ownerAccountId": "UUID",
+  "keyHash": "keyed-base64url-digest",
+  "fingerprint": "keyed-base64url-digest",
+  "previousPeriod": { "startAt": "ISODate", "endAt": "ISODate" },
+  "currentPeriod": { "startAt": "ISODate", "endAt": "ISODate" },
+  "excludedJournalIds": ["UUID"],
+  "sourceJournalRevisions": [
+    {
+      "journalId": "UUID",
+      "journalRevision": 2,
+      "period": "CURRENT",
+      "occurredAt": "ISODate"
+    }
+  ],
+  "dataCoverage": {
+    "previousPeriodJournalEntryCount": 3,
+    "currentPeriodJournalEntryCount": 4,
+    "sufficientForComparison": true
+  },
+  "status": "QUEUED | RUNNING | SUCCEEDED | FAILED",
+  "attemptCount": 1,
+  "nextAttemptAt": "ISODate",
+  "leaseOwner": null,
+  "leaseExpiresAt": null,
+  "terminalReason": null,
+  "resultId": null,
+  "route": null,
+  "createdAt": "ISODate",
+  "updatedAt": "ISODate",
+  "completedAt": null
+}
+```
+
+The owner plus keyed idempotency digest is unique. Claims use the same atomic
+lease and two-attempt limit as exact-revision analysis. A recovered job without
+its in-memory end-user authorization context fails closed. Migration
+`009_longitudinal_context_analysis.cjs` is authoritative for the validator and
+owner/idempotency, claim, owner/history, and source indexes.
 
 ## `journal_longitudinal_analysis_results`
 
@@ -236,30 +318,38 @@ reproducible.
   "analysisId": "UUID",
   "jobId": "UUID",
   "userId": "UUID",
-  "periodStart": "ISODate",
-  "periodEnd": "ISODate",
+  "previousPeriod": { "startAt": "ISODate", "endAt": "ISODate" },
+  "currentPeriod": { "startAt": "ISODate", "endAt": "ISODate" },
   "sourceJournalRevisions": [
-    { "entryId": "UUID", "journalRevision": 2, "period": "CURRENT" },
-    { "entryId": "UUID", "journalRevision": 1, "period": "PREVIOUS" }
+    {
+      "journalId": "UUID",
+      "journalRevision": 2,
+      "period": "CURRENT",
+      "occurredAt": "ISODate"
+    }
   ],
-  "contextSignals": ["WORK_STRESS"],
-  "emotionIndicators": ["ANXIETY"],
-  "recurringThemes": ["ACADEMIC_WORKLOAD"],
-  "changesComparedWithPreviousPeriod": [
-    { "signal": "SLEEP_DIFFICULTY", "direction": "LESS_FREQUENT" }
-  ],
-  "preferences": ["SHORT_GUIDED_ACTIVITY"],
-  "barriers": ["BREATHING_DISCOMFORT"],
-  "helpfulPatterns": ["GROUNDING"],
   "dataCoverage": {
     "previousPeriodJournalEntryCount": 12,
     "currentPeriodJournalEntryCount": 8,
     "sufficientForComparison": true
   },
+  "workload": "LONGITUDINAL",
+  "servicePlan": "PLUS",
   "provider": "OPENAI",
   "model": "model-name",
   "promptVersion": "longitudinal-v1",
   "schemaVersion": 1,
+  "result": {
+    "contextSignals": ["WORK_STRESS"],
+    "emotionIndicators": ["ANXIETY"],
+    "recurringThemes": ["ACADEMIC_WORKLOAD"],
+    "changesComparedWithPreviousPeriod": [
+      { "signal": "SLEEP_DIFFICULTY", "direction": "LESS_FREQUENT" }
+    ],
+    "preferences": ["SHORT_GUIDED_ACTIVITY"],
+    "barriers": ["BREATHING_DISCOMFORT"],
+    "helpfulPatterns": ["GROUNDING"]
+  },
   "createdAt": "ISODate"
 }
 ```
@@ -277,17 +367,24 @@ db.journal_longitudinal_analysis_results.createIndex(
 );
 db.journal_longitudinal_analysis_results.createIndex({
   userId: 1,
-  periodEnd: -1,
+  "currentPeriod.endAt": -1,
 });
 ```
 
 Direction is exactly `MORE_FREQUENT`, `LESS_FREQUENT`, `SIMILAR`, or
 `INSUFFICIENT_DATA`. A missing mention is not resolution evidence. Sparse or
-imbalanced coverage must set `sufficientForComparison` false and return
-`INSUFFICIENT_DATA` instead of a directional claim. Deleting any source revision
-deletes or invalidates every dependent longitudinal result. These results are
+imbalanced coverage sets `sufficientForComparison` false and forces
+`INSUFFICIENT_DATA` instead of a directional claim. Deleting any source journal
+deletes every dependent longitudinal job/result, while a source revision change
+before execution fails without substitution. These results are
 non-standardized evidence for a Care-owned Reassessment Summary; they never
 store a clinical-improvement verdict or mutate a SupportPlan.
+
+Periods are half-open, non-overlapping, equal in duration, and each spans 7-31
+days. At least three entries in each period and no greater than a 2:1 count
+ratio are required for sufficient coverage. Migration
+`009_longitudinal_context_analysis.cjs` creates this collection and its unique
+analysis/job plus user/period and exact-source indexes.
 
 ## `conversations`
 
@@ -359,7 +456,10 @@ Use cursor pagination. A deletion replaces display content with a tombstone whil
 
 `bodyCiphertext`, `bodyIv`, and `bodyTag` are the AES-256-GCM envelope persisted by Realtime; plaintext is returned only after current authorization. `keyVersion` resolves against the configured decryption keyring so a controlled key rotation preserves history. Operators deploy old and new keys together before selecting a new active key and retain every version still referenced by stored messages. `commandFingerprint` is a keyed digest over the logical conversation, type, and content so a repeated sender-scoped `clientMessageId` can distinguish a safe retry from conflicting content without storing a raw plaintext hash. Migration `realtime-service/migrations/001_realtime_message_foundation.cjs` is the executable validator and index baseline.
 
-## `message_receipts`
+## `message_receipts` — PROPOSED
+
+No Realtime migration currently creates this collection. Receipt persistence
+remains deferred with reconnect/resynchronization work.
 
 ```json
 {
@@ -384,25 +484,42 @@ db.message_receipts.createIndex(
 
 One high-water mark per participant is preferable to one receipt per message for this two-party chat use case.
 
-## `benchmark_samples` and `benchmark_predictions`
+## `benchmark_datasets`, `benchmark_runs`, and `benchmark_case_results`
 
-Operational journals must not be reused as benchmark data by default. Imported datasets use de-identified external sample IDs and license/source metadata held in PostgreSQL.
+MB-369 uses one committed, project-authored synthetic Vietnamese dataset and
+does not reuse production journals. `benchmark_datasets` stores immutable
+metadata only: dataset/version identity, workload, language, source, license,
+SHA-256 content digest, case count, and registration time. The raw synthetic
+cases remain version-controlled input rather than copied into operational
+MongoDB.
 
-`benchmark_samples` contains `datasetId`, `sampleId`, encrypted/minimized text, expected labels, split, language, preprocessing version, schema version, and timestamps. `benchmark_predictions` contains `runId`, `sampleId`, model/prompt versions, predicted labels/scores, latency, token/cost metadata, error code, and timestamp.
-
-Indexes:
+`benchmark_runs` binds the exact dataset digest, prompt/schema version, one or
+two pinned provider/model candidates, lifecycle, and aggregate quality, safety,
+latency, token, cost, and error evidence. `benchmark_case_results` stores one
+validated normalized output or stable error classification per run/case/
+provider/model. It never stores raw provider responses or hidden reasoning.
 
 ```javascript
-db.benchmark_samples.createIndex(
-  { datasetId: 1, sampleId: 1 },
+db.benchmark_datasets.createIndex(
+  { datasetId: 1, version: 1 },
   { unique: true },
 );
-db.benchmark_samples.createIndex({ datasetId: 1, split: 1 });
-db.benchmark_predictions.createIndex(
-  { runId: 1, sampleId: 1, modelKey: 1 },
+db.benchmark_runs.createIndex({
+  datasetId: 1,
+  datasetVersion: 1,
+  startedAt: -1,
+});
+db.benchmark_case_results.createIndex(
+  { runId: 1, caseId: 1, provider: 1, model: 1 },
   { unique: true },
 );
 ```
+
+Migration `008_ai_benchmark_metadata.cjs` owns these validators and indexes.
+Changing dataset content without a new version is rejected by its stored
+digest. Running the paid benchmark requires an explicit enable flag and at
+least one complete candidate with its credential, pinned model, and explicit
+cost configuration; test and CI environments reject the enable flag.
 
 ## Retention and encryption
 

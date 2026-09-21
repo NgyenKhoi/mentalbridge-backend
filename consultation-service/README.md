@@ -1,18 +1,23 @@
 # Consultation Service
 
-Owns specialist approval and deterministic non-clinical discovery, practice
-locations, 60-minute chat/in-person availability and appointments, session
+Owns specialist approval and deterministic non-clinical discovery, 60-minute
+in-app chat/video availability and appointments, session
 evidence and user-visible summaries, subscription/payment/upgrade,
 consultation credits, specialist earnings/provider payout reconciliation, and
 reviews. Billing and booking invariants stay transactionally local in its
 PostgreSQL data. It does not collect specialist verification documents.
 
-Story 6101 implements the first vertical slice: a specialist can save the six
+Story 6101 implements the first profile vertical slice: a specialist can save the six
 approved public fields, submit the profile, and an administrator can inspect
 and approve it. The approval history is audited and no credential, license, or
 verification-document claim is accepted. Discovery, rejection/suspension,
 appointments, billing, and cross-service brief/chat integrations remain later
-stories. Appointment existence alone does not grant sensitive data access;
+stories. MB-362 adds approved-specialist publication, owner listing, and
+tombstone withdrawal of exact online slots; it does not create appointments.
+MB-377 adds Consultation-owned plan-period credit rows, an append-only
+transition ledger, and an authenticated owner balance. Provisioning is
+idempotent and keeps `DEMO` distinct from `PAID`; it does not infer payment.
+Appointment existence alone does not grant sensitive data access;
 Care owns the user-approved appointment-scoped `ConsultationBrief` and sharing
 decision.
 
@@ -38,6 +43,7 @@ decision.
 | `IDENTITY_JWT_ISSUER` | Yes | Accepted Identity token issuer | `https://identity.local.mentalbridge` |
 | `IDENTITY_JWT_AUDIENCE` | Yes | Required API audience | `mentalbridge-api` |
 | `IDENTITY_JWT_PUBLIC_KEY` | Yes | X.509 PEM public key used to verify tokens | local public key |
+| `CONSULTATION_VIDEO_AVAILABILITY_ENABLED` | No | Enables `IN_APP_VIDEO` slot publication only after the provider contract gate passes | `false` |
 
 Production must override local URLs and secrets. MoMo IPN signing,
 payout, encryption, and downstream timeout variables will be documented when
@@ -50,6 +56,22 @@ their typed configuration is introduced. No refund adapter is planned.
 - `GET /api/v1/admin/specialist-profiles`
 - `GET /api/v1/admin/specialist-profiles/{specialistAccountId}`
 - `POST /api/v1/admin/specialist-profiles/{specialistAccountId}/approve`
+
+## Implemented MB-362 endpoints
+
+- `GET|POST /api/v1/availability-slots`
+- `DELETE /api/v1/availability-slots/{slotId}`
+
+## Implemented MB-377 endpoint
+
+- `GET /api/v1/service-credits`
+
+Availability accepts only exact future 60-minute `IN_APP_CHAT` and gated
+`IN_APP_VIDEO` slots. It stores UTC instants and an IANA display timezone,
+rejects active overlap transactionally, and retains withdrawn slots as
+tombstones. Practice locations, phone calls, external meeting links,
+recurrence, time off, booking, and video-room authorization are not part of
+this flow.
 
 Updates and decisions use the returned `ETag` in `If-Match`. Editing a
 submitted pending profile withdraws it from the review queue until the

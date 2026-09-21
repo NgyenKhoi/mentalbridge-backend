@@ -1,8 +1,8 @@
 openapi: 3.1.0
 info:
   title: MentalBridge Journal AI Service API
-  version: 1.1.0
-  description: Private journal CRUD, daily self-reported emotion check-ins, and consent-gated exact-revision analysis contract.
+  version: 1.2.0
+  description: Private journal CRUD, daily self-reported emotion check-ins, and consent-gated exact-revision and bounded longitudinal analysis contracts.
 servers:
   - url: http://localhost:3000
 security:
@@ -14,6 +14,8 @@ tags:
     description: Private journal entries owned by the authenticated account.
   - name: Analysis jobs
     description: Owner-scoped asynchronous analysis of one exact current revision.
+  - name: Longitudinal analysis
+    description: Owner-scoped comparison of exact journal revisions across two bounded periods.
   - name: Operations
     description: Service health and metrics endpoints.
 paths:
@@ -398,6 +400,83 @@ paths:
           $ref: "#/components/responses/Unauthorized"
         "404":
           $ref: "#/components/responses/NotFound"
+  /api/v1/longitudinal-analysis-jobs:
+    x-mentalbridge-status: implemented
+    post:
+      tags: [Longitudinal analysis]
+      summary: Request a consented comparison of owned journals across two bounded periods.
+      operationId: createLongitudinalAnalysisJob
+      parameters:
+        - $ref: "#/components/parameters/IdempotencyKey"
+        - $ref: "#/components/parameters/CorrelationId"
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/CreateLongitudinalAnalysisRequest"
+      responses:
+        "202":
+          description: The idempotent asynchronous comparison job was accepted.
+          headers:
+            Location:
+              schema: { type: string }
+            x-correlation-id:
+              $ref: "#/components/headers/CorrelationId"
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/LongitudinalAnalysisJob"
+        "400": { $ref: "#/components/responses/BadRequest" }
+        "401": { $ref: "#/components/responses/Unauthorized" }
+        "409": { $ref: "#/components/responses/Conflict" }
+        "503": { $ref: "#/components/responses/DependencyUnavailable" }
+  /api/v1/longitudinal-analysis-jobs/{jobId}:
+    x-mentalbridge-status: implemented
+    get:
+      tags: [Longitudinal analysis]
+      summary: Read an owned longitudinal analysis job and normalized evidence.
+      operationId: getOwnLongitudinalAnalysisJob
+      parameters:
+        - $ref: "#/components/parameters/AnalysisJobId"
+        - $ref: "#/components/parameters/CorrelationId"
+      responses:
+        "200":
+          description: Job state returned without raw journal text.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/LongitudinalAnalysisJob"
+        "400": { $ref: "#/components/responses/BadRequest" }
+        "401": { $ref: "#/components/responses/Unauthorized" }
+        "404": { $ref: "#/components/responses/NotFound" }
+  /internal/v1/users/{userId}/longitudinal-analyses/{analysisId}:
+    x-mentalbridge-status: implemented
+    get:
+      tags: [Longitudinal analysis]
+      summary: Return minimized longitudinal evidence for Care reassessment composition.
+      description: Requires the verified end-user bearer context forwarded by Care, a matching user ID, current AI_PROCESSING consent, and purpose REASSESSMENT_SUMMARY. The response never contains raw journal text or a clinical improvement conclusion.
+      operationId: getLongitudinalEvidenceForCare
+      parameters:
+        - $ref: "#/components/parameters/UserId"
+        - $ref: "#/components/parameters/LongitudinalAnalysisId"
+        - name: purpose
+          in: query
+          required: true
+          schema: { type: string, const: REASSESSMENT_SUMMARY }
+        - $ref: "#/components/parameters/CorrelationId"
+      responses:
+        "200":
+          description: Current consent was verified and minimized non-standardized evidence was returned.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/LongitudinalEvidence"
+        "400": { $ref: "#/components/responses/BadRequest" }
+        "401": { $ref: "#/components/responses/Unauthorized" }
+        "403": { $ref: "#/components/responses/Forbidden" }
+        "404": { $ref: "#/components/responses/NotFound" }
+        "503": { $ref: "#/components/responses/DependencyUnavailable" }
 components:
   securitySchemes:
     bearerAuth:
@@ -439,6 +518,20 @@ components:
         maximum: 200
     AnalysisJobId:
       name: jobId
+      in: path
+      required: true
+      schema:
+        type: string
+        format: uuid
+    UserId:
+      name: userId
+      in: path
+      required: true
+      schema:
+        type: string
+        format: uuid
+    LongitudinalAnalysisId:
+      name: analysisId
       in: path
       required: true
       schema:
@@ -574,7 +667,21 @@ components:
     EmotionCheckIn:
       type: object
       additionalProperties: false
-      required: [id, localDate, timezone, emotion, intensity, note, sourceLabel, clinicalUse, revision, recordedAt, createdAt, updatedAt]
+      required:
+        [
+          id,
+          localDate,
+          timezone,
+          emotion,
+          intensity,
+          note,
+          sourceLabel,
+          clinicalUse,
+          revision,
+          recordedAt,
+          createdAt,
+          updatedAt,
+        ]
       properties:
         id: { type: string, format: uuid }
         localDate: { type: string, format: date }
@@ -583,7 +690,8 @@ components:
         intensity: { type: integer, minimum: 1, maximum: 5 }
         note: { type: [string, "null"], maxLength: 500 }
         sourceLabel: { type: string, const: SELF_REPORTED_EMOTION }
-        clinicalUse: { type: string, const: NOT_A_DIAGNOSIS_OR_SAFETY_CLASSIFIER }
+        clinicalUse:
+          { type: string, const: NOT_A_DIAGNOSIS_OR_SAFETY_CLASSIFIER }
         revision: { type: integer, minimum: 1, maximum: 32 }
         recordedAt: { type: string, format: date-time }
         createdAt: { type: string, format: date-time }
@@ -618,7 +726,16 @@ components:
     EmotionCheckInConsumerItem:
       type: object
       additionalProperties: false
-      required: [localDate, timezone, emotion, intensity, sourceLabel, revision, recordedAt]
+      required:
+        [
+          localDate,
+          timezone,
+          emotion,
+          intensity,
+          sourceLabel,
+          revision,
+          recordedAt,
+        ]
       properties:
         localDate: { type: string, format: date }
         timezone: { type: string }
@@ -817,6 +934,7 @@ components:
         keyId:
           type: string
           minLength: 1
+          description: Fixed compatibility marker for the single application encryption key; it is not a rotation selector.
         encryptedAt:
           type: string
           format: date-time
@@ -896,6 +1014,8 @@ components:
         - CONSENT_REQUIRED
         - CONSENT_REVOKED
         - CONSENT_UNAVAILABLE
+        - ENTITLEMENT_UNAVAILABLE
+        - ENTITLEMENT_CHANGED
         - AUTHORIZATION_CONTEXT_LOST
         - REVISION_STALE
         - JOURNAL_DELETED
@@ -952,11 +1072,219 @@ components:
             - REQUEST_PLAN_REVIEW
             - OPEN_PROFESSIONAL_SUPPORT
             - OPEN_SAFETY_GUIDANCE
-        provider: { type: string, const: DETERMINISTIC_FAKE }
-        model: { type: string, const: deterministic-reflection-v1 }
-        promptVersion: { type: string, const: exact-revision-v1 }
+        workload: { type: string, const: EXACT_REVISION }
+        servicePlan:
+          type: string
+          enum: [FREE, PLUS, PREMIUM]
+        entitlementSource:
+          type: string
+          enum: [DEFAULT_FREE, DEMO, PAID]
+        entitlementPolicyVersion: { type: string, minLength: 1, maxLength: 96 }
+        entitlementVersion: { type: integer, format: int64, minimum: 0 }
+        routingPolicyVersion: { type: string, minLength: 1, maxLength: 96 }
+        providerApprovalVersion: { type: string, minLength: 1, maxLength: 96 }
+        provider:
+          type: string
+          enum: [DETERMINISTIC_FAKE, GEMINI, OPENAI]
+        model: { type: string, minLength: 1, maxLength: 128 }
+        promptVersion: { type: string, minLength: 1, maxLength: 96 }
+        schemaVersion: { type: integer, const: 1 }
+        latencyMs: { type: integer, minimum: 0 }
+        inputTokens: { type: [integer, "null"], minimum: 0 }
+        outputTokens: { type: [integer, "null"], minimum: 0 }
+        estimatedCostMicroUsd:
+          type: [integer, "null"]
+          minimum: 0
+          description: Estimated provider cost in millionths of one USD using the versioned configured benchmark rate.
+        createdAt: { type: string, format: date-time }
+    LongitudinalPeriod:
+      type: object
+      additionalProperties: false
+      required: [startAt, endAt]
+      properties:
+        startAt:
+          type: string
+          format: date-time
+          description: Inclusive UTC instant.
+        endAt:
+          type: string
+          format: date-time
+          description: Exclusive UTC instant.
+    CreateLongitudinalAnalysisRequest:
+      type: object
+      additionalProperties: false
+      required: [previousPeriod, currentPeriod]
+      properties:
+        previousPeriod:
+          $ref: "#/components/schemas/LongitudinalPeriod"
+        currentPeriod:
+          $ref: "#/components/schemas/LongitudinalPeriod"
+        excludedJournalIds:
+          type: array
+          uniqueItems: true
+          maxItems: 100
+          default: []
+          description: Owned journals intentionally excluded before exact current revisions are selected.
+          items: { type: string, format: uuid }
+      description: Periods are half-open, non-overlapping, equal in duration, and each must span 7 through 31 days. The current period cannot end in the future.
+    LongitudinalSourceRevision:
+      type: object
+      additionalProperties: false
+      required: [journalId, journalRevision, period]
+      properties:
+        journalId: { type: string, format: uuid }
+        journalRevision: { type: integer, minimum: 1, maximum: 200 }
+        period:
+          type: string
+          enum: [PREVIOUS, CURRENT]
+    LongitudinalDirection:
+      type: string
+      enum: [MORE_FREQUENT, LESS_FREQUENT, SIMILAR, INSUFFICIENT_DATA]
+    LongitudinalChange:
+      type: object
+      additionalProperties: false
+      required: [signal, direction]
+      properties:
+        signal: { type: string, minLength: 1, maxLength: 64 }
+        direction:
+          $ref: "#/components/schemas/LongitudinalDirection"
+    LongitudinalDataCoverage:
+      type: object
+      additionalProperties: false
+      required:
+        [
+          previousPeriodJournalEntryCount,
+          currentPeriodJournalEntryCount,
+          sufficientForComparison,
+        ]
+      properties:
+        previousPeriodJournalEntryCount:
+          { type: integer, minimum: 0, maximum: 100 }
+        currentPeriodJournalEntryCount:
+          { type: integer, minimum: 0, maximum: 100 }
+        sufficientForComparison: { type: boolean }
+      description: Sufficient requires at least three entries in each period and no greater than a 2:1 count imbalance.
+    LongitudinalEvidence:
+      type: object
+      additionalProperties: false
+      required:
+        - analysisId
+        - previousPeriod
+        - currentPeriod
+        - sourceJournalRevisions
+        - contextSignals
+        - emotionIndicators
+        - recurringThemes
+        - changesComparedWithPreviousPeriod
+        - preferences
+        - barriers
+        - helpfulPatterns
+        - dataCoverage
+        - provider
+        - model
+        - promptVersion
+        - schemaVersion
+        - createdAt
+      properties:
+        analysisId: { type: string, format: uuid }
+        previousPeriod: { $ref: "#/components/schemas/LongitudinalPeriod" }
+        currentPeriod: { $ref: "#/components/schemas/LongitudinalPeriod" }
+        sourceJournalRevisions:
+          type: array
+          maxItems: 100
+          items: { $ref: "#/components/schemas/LongitudinalSourceRevision" }
+        contextSignals:
+          type: array
+          maxItems: 12
+          items: { type: string, minLength: 1, maxLength: 64 }
+        emotionIndicators:
+          type: array
+          maxItems: 12
+          items: { type: string, minLength: 1, maxLength: 64 }
+        recurringThemes:
+          type: array
+          maxItems: 12
+          items: { type: string, minLength: 1, maxLength: 64 }
+        changesComparedWithPreviousPeriod:
+          type: array
+          maxItems: 24
+          items: { $ref: "#/components/schemas/LongitudinalChange" }
+        preferences:
+          type: array
+          maxItems: 12
+          items: { type: string, minLength: 1, maxLength: 64 }
+        barriers:
+          type: array
+          maxItems: 12
+          items: { type: string, minLength: 1, maxLength: 64 }
+        helpfulPatterns:
+          type: array
+          maxItems: 12
+          items: { type: string, minLength: 1, maxLength: 64 }
+        dataCoverage: { $ref: "#/components/schemas/LongitudinalDataCoverage" }
+        provider:
+          type: string
+          enum: [DETERMINISTIC_FAKE, GEMINI, OPENAI]
+        model: { type: string, minLength: 1, maxLength: 128 }
+        promptVersion: { type: string, const: longitudinal-v1 }
         schemaVersion: { type: integer, const: 1 }
         createdAt: { type: string, format: date-time }
+      description: Non-standardized observations limited to the available entries; never a diagnosis, combined score, recovery verdict, or clinical improvement conclusion.
+    LongitudinalAnalysisJob:
+      type: object
+      additionalProperties: false
+      required:
+        - jobId
+        - previousPeriod
+        - currentPeriod
+        - sourceJournalRevisions
+        - dataCoverage
+        - status
+        - attemptCount
+        - result
+        - createdAt
+        - updatedAt
+        - completedAt
+      properties:
+        jobId: { type: string, format: uuid }
+        previousPeriod: { $ref: "#/components/schemas/LongitudinalPeriod" }
+        currentPeriod: { $ref: "#/components/schemas/LongitudinalPeriod" }
+        sourceJournalRevisions:
+          type: array
+          maxItems: 100
+          items: { $ref: "#/components/schemas/LongitudinalSourceRevision" }
+        dataCoverage:
+          $ref: "#/components/schemas/LongitudinalDataCoverage"
+        status:
+          type: string
+          enum: [RUNNING, SUCCEEDED, FAILED]
+        attemptCount: { type: integer, minimum: 0, maximum: 2 }
+        terminalReason:
+          oneOf:
+            - $ref: "#/components/schemas/LongitudinalTerminalReason"
+            - type: "null"
+        result:
+          oneOf:
+            - $ref: "#/components/schemas/LongitudinalEvidence"
+            - type: "null"
+        createdAt: { type: string, format: date-time }
+        updatedAt: { type: string, format: date-time }
+        completedAt: { type: [string, "null"], format: date-time }
+    LongitudinalTerminalReason:
+      type: string
+      enum:
+        - CONSENT_REQUIRED
+        - CONSENT_REVOKED
+        - CONSENT_UNAVAILABLE
+        - ENTITLEMENT_UNAVAILABLE
+        - ENTITLEMENT_CHANGED
+        - AUTHORIZATION_CONTEXT_LOST
+        - SOURCE_REVISION_CHANGED
+        - SOURCE_DELETED
+        - PROVIDER_TIMEOUT
+        - PROVIDER_UNAVAILABLE
+        - INVALID_PROVIDER_RESULT
+        - INTERNAL_ERROR
     Problem:
       type: object
       additionalProperties: true

@@ -45,6 +45,10 @@ mentalbridge:
       base-url: ${CONTENT_SAFETY_DIRECTORY_BASE_URL:}
       connect-timeout: ${CONTENT_SAFETY_DIRECTORY_CONNECT_TIMEOUT:PT0.5S}
       read-timeout: ${CONTENT_SAFETY_DIRECTORY_READ_TIMEOUT:PT1S}
+    entitlement:
+      base-url: ${CONSULTATION_ENTITLEMENT_BASE_URL:}
+      connect-timeout: ${CONSULTATION_ENTITLEMENT_CONNECT_TIMEOUT:PT0.5S}
+      read-timeout: ${CONSULTATION_ENTITLEMENT_READ_TIMEOUT:PT2S}
 eureka:
   client:
     enabled: ${EUREKA_CLIENT_ENABLED:true}

@@ -113,7 +113,10 @@ choose plan eligibility, or create/change a SupportPlan. The four reassessment
 dimensions are never collapsed into a combined mental-health improvement score.
 ```
 
-The SupportPlan lines describe the approved forward business flow. The current executable v1 remains coarse SupportEvaluation history and does not yet create a plan.
+The SupportPlan lines are executable through deterministic paid draft creation,
+bounded admitted-choice replacement, explicit activation, and authoritative
+current-plan reload. Pause/resume, completion, replacement, activity tracking,
+and specialist-proposed changes remain separately gated.
 
 Safety handling must be deterministic, immediate, auditable, non-paywalled, and usable even if optional AI or messaging dependencies are unavailable. MentalBridge has no hotline catalogue and must not hard-code unverified emergency numbers or facility claims in prompts or application code. See [ADR 0009](docs/adr/0009-care-screening-safety-and-support-boundaries.md), its [two-domain SupportPlan amendment](docs/adr/0012-two-domain-screening-and-system-proposed-support-plans.md), the [SupportPlan policy freeze](docs/adr/0013-freeze-support-plan-policy-v1.md), and the [policy register](docs/policies/README.md).
 
@@ -136,7 +139,9 @@ Safety handling must be deterministic, immediate, auditable, non-paywalled, and 
 - [Sprint 2 integrated journey and release evidence](docs/sprint-2-integrated-release-evidence.md)
 - [PostgreSQL data model](docs/database/postgresql.md)
 - [MongoDB collections](docs/database/mongodb.md)
-- [Non-executable whole-system PostgreSQL model](database/postgresql/001_initial_schema.sql) — owner namespaces are visual only; each module deploys to its own database/default `public` schema
+- [Canonical domain model — start here for entities and diagrams](docs/domain-model/README.md)
+- [Canonical non-executable PostgreSQL logical schema](docs/domain-model/relational/postgresql-logical-schema.sql) — owner namespaces are visual only; each module deploys to its own database/default `public` schema
+- [Canonical MongoDB logical model](docs/domain-model/document/mongodb-logical-model.md)
 - [PostgreSQL field data dictionary](docs/database/postgresql-field-data-dictionary.md)
 
 ## Delivery roadmap

@@ -8,6 +8,8 @@
 - Tracks: [#49](https://github.com/NgyenKhoi/mentalbridge-backend/issues/49)
 - Resolves: the SupportPlan policy questions left open by [ADR 0012](0012-two-domain-screening-and-system-proposed-support-plans.md)
 - Policy: [SupportPlan policy v1](../policies/support-plan-policy-v1.md)
+- Initial draft implementation: MB-372 (`POST /api/v1/support-plans` and
+  `GET /api/v1/support-plans/current-draft`)
 
 ## Context
 
@@ -110,9 +112,10 @@ automatically.
   exact content version, eligibility role, publication state, and effective
   window before opening the Care transaction.
 - Existing `mb-support-routing-capstone-v1` contracts and rows remain unchanged.
-- The first proposal/lifecycle implementation requires new compatible contracts
-  and append-only owner migrations; this ADR does not make an endpoint or table
-  executable.
+- MB-372 implements only deterministic proposal and persisted current-draft
+  reload through compatible contracts and an append-only Care migration. It
+  does not make activation, choice mutation, replacement, or later lifecycle
+  commands executable.
 - After accountable Care, Content, Frontend, and safety acceptance, issue #49
   may close as the policy gate. Provider and runtime delivery remain separate
   stories and must not be claimed by that closure.

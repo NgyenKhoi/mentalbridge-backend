@@ -3,9 +3,11 @@ info:
   title: MentalBridge Care system-proposed SupportPlan API design
   version: 1.0.0-policy-frozen
   description: |
-    Non-executable design input for Sprint 3 Story 5101. Every path remains
-    planned. This proposal supersedes the earlier Story 4101 draft that accepted
-    client-supplied resourceVersions when creating a plan.
+    Non-executable design input for the SupportPlan lifecycle after MB-373.
+    Every remaining path in this file is planned. Initial draft creation,
+    current draft/current plan reload, bounded choice replacement, and explicit
+    activation are implemented canonically in care-service-v1.yaml and are
+    intentionally absent here.
 
     Care owns SupportPlan proposal and lifecycle. The create request names only
     one owned SupportEvaluation. Care selects immutable template policy versions,
@@ -18,52 +20,6 @@ servers:
 tags:
   - name: SupportPlan proposal
 paths:
-  /api/v1/support-plans:
-    x-mentalbridge-status: planned
-    post:
-      tags: [SupportPlan proposal]
-      operationId: proposeOwnSupportPlanDraft
-      summary: Create one system-proposed draft from an owned SupportEvaluation
-      description: |
-        The authenticated USER supplies only the source evaluation reference.
-        Care resolves compatible evaluation evidence, applies
-        mb-support-plan-selection-v1, queries exact eligibility before opening a
-        Care transaction, and persists at most one DRAFT. Provider uncertainty
-        fails closed and commits no draft.
-      security:
-        - bearerAuth: []
-      parameters:
-        - $ref: '#/components/parameters/IdempotencyKey'
-        - $ref: '#/components/parameters/CorrelationId'
-      requestBody:
-        required: true
-        content:
-          application/json:
-            schema:
-              $ref: '#/components/schemas/ProposeSupportPlanRequest'
-            example:
-              sourceSupportEvaluationId: 20000000-0000-4000-8000-000000000101
-      responses:
-        '201':
-          description: System-proposed draft created or identical outcome replayed
-          headers:
-            Location:
-              schema: { type: string, format: uri-reference }
-            ETag:
-              $ref: '#/components/headers/SupportPlanETag'
-          content:
-            application/json:
-              schema:
-                $ref: '#/components/schemas/SupportPlan'
-              examples:
-                combinedDomainDraft:
-                  $ref: '#/components/examples/CombinedDomainDraft'
-        '400': { $ref: '#/components/responses/ValidationProblem' }
-        '401': { $ref: '#/components/responses/UnauthorizedProblem' }
-        '403': { $ref: '#/components/responses/ForbiddenProblem' }
-        '404': { $ref: '#/components/responses/EvaluationNotFoundProblem' }
-        '409': { $ref: '#/components/responses/ConflictProblem' }
-        '503': { $ref: '#/components/responses/EligibilityUnavailableProblem' }
   /api/v1/support-plans/{supportPlanId}:
     x-mentalbridge-status: planned
     get:
@@ -108,70 +64,6 @@ paths:
         '404': { $ref: '#/components/responses/PlanNotFoundProblem' }
         '409': { $ref: '#/components/responses/ConflictProblem' }
         '412': { $ref: '#/components/responses/VersionProblem' }
-  /api/v1/support-plans/{supportPlanId}/choices:
-    x-mentalbridge-status: planned
-    put:
-      tags: [SupportPlan proposal]
-      operationId: replaceOwnSupportPlanDraftChoices
-      summary: Replace draft choices within server-admitted slot alternatives
-      description: |
-        The complete desired selection is submitted only for an existing DRAFT.
-        Care rejects unknown slots, removal of a core slot, a version absent from
-        the slot alternatives, adjunct use in a core slot, duplicate versions,
-        or more than five selected resources. It revalidates current exact
-        eligibility before committing the draft update.
-      security:
-        - bearerAuth: []
-      parameters:
-        - $ref: '#/components/parameters/SupportPlanId'
-        - $ref: '#/components/parameters/RequiredIfMatch'
-        - $ref: '#/components/parameters/IdempotencyKey'
-        - $ref: '#/components/parameters/CorrelationId'
-      requestBody:
-        required: true
-        content:
-          application/json:
-            schema:
-              $ref: '#/components/schemas/ReplaceDraftChoicesRequest'
-      responses:
-        '200':
-          $ref: '#/components/responses/SupportPlanCommandResult'
-        '400': { $ref: '#/components/responses/ValidationProblem' }
-        '401': { $ref: '#/components/responses/UnauthorizedProblem' }
-        '403': { $ref: '#/components/responses/ForbiddenProblem' }
-        '404': { $ref: '#/components/responses/PlanNotFoundProblem' }
-        '409': { $ref: '#/components/responses/ConflictProblem' }
-        '412': { $ref: '#/components/responses/VersionProblem' }
-        '503': { $ref: '#/components/responses/EligibilityUnavailableProblem' }
-  /api/v1/support-plans/{supportPlanId}/activate:
-    x-mentalbridge-status: planned
-    post:
-      tags: [SupportPlan proposal]
-      operationId: activateOwnSupportPlan
-      summary: Explicitly activate a fully revalidated draft
-      description: |
-        Normal explicit activation applies even when safety evidence is positive;
-        no safety acknowledgement field is accepted. Safety guidance and
-        available immediate or professional support must already precede this
-        secondary plan control. Care revalidates evaluation, templates, selected
-        exact versions, eligibility roles, publication/effective state, core
-        coverage, and total bounds before its local transaction.
-      security:
-        - bearerAuth: []
-      parameters:
-        - $ref: '#/components/parameters/SupportPlanId'
-        - $ref: '#/components/parameters/RequiredIfMatch'
-        - $ref: '#/components/parameters/IdempotencyKey'
-        - $ref: '#/components/parameters/CorrelationId'
-      responses:
-        '200': { $ref: '#/components/responses/SupportPlanCommandResult' }
-        '400': { $ref: '#/components/responses/ValidationProblem' }
-        '401': { $ref: '#/components/responses/UnauthorizedProblem' }
-        '403': { $ref: '#/components/responses/ForbiddenProblem' }
-        '404': { $ref: '#/components/responses/PlanNotFoundProblem' }
-        '409': { $ref: '#/components/responses/ConflictProblem' }
-        '412': { $ref: '#/components/responses/VersionProblem' }
-        '503': { $ref: '#/components/responses/EligibilityUnavailableProblem' }
   /api/v1/support-plans/{supportPlanId}/pause:
     x-mentalbridge-status: planned
     post:
@@ -307,15 +199,6 @@ components:
       description: Strong ETag containing the returned Care-owned plan version
       schema: { type: string, pattern: '^"[0-9]+"$' }
   schemas:
-    ProposeSupportPlanRequest:
-      type: object
-      additionalProperties: false
-      required: [sourceSupportEvaluationId]
-      properties:
-        sourceSupportEvaluationId:
-          type: string
-          format: uuid
-          description: One immutable compatible SupportEvaluation owned by the authenticated user
     ReplaceDraftChoicesRequest:
       type: object
       additionalProperties: false

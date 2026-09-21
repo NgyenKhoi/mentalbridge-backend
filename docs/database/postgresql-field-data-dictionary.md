@@ -1,8 +1,8 @@
 # PostgreSQL Field Data Dictionary
 
-This document explains the business purpose of conceptual PostgreSQL fields. [`001_initial_schema.sql`](../../database/postgresql/001_initial_schema.sql) is a non-executable whole-system model and must not provision an environment. Names such as `consultation.appointment` below identify a logical owner inside that model; the physical table will be `public.appointment` in the separate `mentalbridge_consultation` database. Service-owned migration histories become executable sources of truth only when modules are implemented: Liquibase for Spring services and `node-pg-migrate` for Node.js services. It is written for developers and reviewers; descriptions are intentionally kept out of executable migrations.
+This document explains the business purpose of PostgreSQL fields. The [canonical PostgreSQL logical schema](../domain-model/relational/postgresql-logical-schema.sql) is a non-executable documentation model and must never provision or migrate an environment. Names such as `consultation.availability_slot` identify a visual owner namespace; the physical table is `public.availability_slot` in the separate `mentalbridge_consultation` database. Service-owned migration histories are the executable runtime sources of truth: Liquibase for Spring services and the current SQL migration mechanism for Node.js services. This dictionary is written for developers and reviewers; descriptions are intentionally kept out of executable migrations.
 
-When service-owned migrations are introduced, update this dictionary in the same change. A field description must explain why the value is persisted, whether it is authoritative, derived, external, or sensitive, and how nullability, time, versioning, or idempotency affects behavior. Content/Notification's executable history starts at `content-notification-service/migrations/1_initial_schema.sql`; migration 2 removes the obsolete hotline table, the separate Review 1 migrations insert controlled demo content and its initial item-level eligibility matrix, migration 6 adds immutable Resource Eligibility v1 provenance, and migration 7 adds the separately governed reviewed safety directory. The field descriptions under its conceptual owner below describe the resulting physical `public` tables.
+When service-owned migrations are introduced, update this dictionary and the canonical logical model in the same change whenever persisted domain structure materially changes. A field description must explain why the value is persisted, whether it is authoritative, derived, external, or sensitive, and how nullability, time, versioning, or idempotency affects behavior. Content/Notification's executable history starts at `content-notification-service/migrations/1_initial_schema.sql`; migration 2 removes the obsolete hotline table, the separate Review 1 migrations insert controlled demo content and its initial item-level eligibility matrix, migration 6 adds immutable Resource Eligibility v1 provenance, and migration 7 adds the separately governed reviewed safety directory. The field descriptions under its conceptual owner below describe the resulting physical `public` tables.
 
 ## Database `mentalbridge_identity` (schema `public`)
 
@@ -498,6 +498,151 @@ assessment answers or scores.
 | `support_guide_id` | Owner-matched immutable replay result. |
 | `created_at` | UTC instant the key was accepted. |
 
+### `public.support_plan`
+
+Care-owned runtime aggregate for MB-372/MB-373/MB-513/MB-374. MB-372 creates `DRAFT`;
+MB-373 permits an explicit revalidated transition to `ACTIVE`; MB-513 adds
+pause/resume, completion, replacement, and discard; MB-374 exposes those
+user-confirmed transitions with immutable terminal history. Separate partial unique
+indexes on `DRAFT` and on `ACTIVE`/`PAUSED` are the final concurrent guards for
+one draft and one official current plan per owner.
+
+| Field | Purpose |
+| --- | --- |
+| `id` | Immutable UUID exposed by the owner API and used by child snapshots. |
+| `user_id` | Care profile owner; locked during creation and never accepted from a client payload. |
+| `support_evaluation_id` | Exact owner-matched immutable SupportEvaluation v2 that seeded composition. |
+| `status` | Care-owned `DRAFT`, `ACTIVE`, `PAUSED`, `COMPLETED`, `SUPERSEDED`, or `DISCARDED` lifecycle state. |
+| `version` | Optimistic-lock counter returned in the ETag; incremented by each accepted choice or activation command. |
+| `evaluation_policy_version` / `evaluated_at` | Exact current-compatible Care evaluation policy and original UTC evaluation instant. |
+| `selection_policy_version` | Deterministic Care composition version, fixed to `mb-support-plan-selection-v1`. |
+| `resource_policy_version` / `resources_resolved_at` | Exact Content eligibility policy and UTC resolution instant used before the Care transaction. |
+| `entitlement_package` / `entitlement_source` | Authoritative `PLUS`/`PREMIUM` and `DEMO`/`PAID` provenance returned by Consultation; never inferred from JWT/client state. |
+| `entitlement_policy_version` / `entitlement_version` / `entitlement_decided_at` | Exact Consultation read-model version and UTC decision evidence that admitted creation. |
+| `rationale_code` / `rationale_text` | Stable general-wellbeing explanation snapshot; not diagnosis, treatment, or AI reasoning. |
+| `safety_status` / `safety_reason_code` / `safety_policy_version` | Independent Care-owned PHQ-9 item-9 safety evidence without answers or scores. |
+| `safety_guidance_code` / `safety_guidance` | Approved safety copy stored with the draft so reload never depends on AI or another service. |
+| `selected_resource_count` | Number of persisted selected exact versions, constrained to 1..5. |
+| `activated_at` | UTC instant of explicit activation; null while the plan is a draft. |
+| `completion_reason` | Optional bounded user-selected reason code (`USER_DECISION`, `PLAN_NO_LONGER_FITS`, or `OTHER`) stored only for a completed plan; it is not a clinical interpretation. |
+| `completed_at` / `superseded_at` / `discarded_at` | UTC instant for the matching terminal state; lifecycle checks require exactly the applicable timestamp and activation history. |
+| `created_at` / `updated_at` | UTC creation and latest accepted business-command instants. |
+
+### `public.support_plan_template_family`
+
+| Field | Purpose |
+| --- | --- |
+| `id` | Internal immutable row UUID. |
+| `support_plan_id` / `ordinal` | Parent draft and stable 1-based composition order, bounded to two domains. |
+| `family` | Approved immutable family selected deterministically from one domain-local instrument band. |
+| `template_version` | Exact immutable Care template version; MB-372 publishes version 1 only. |
+| `target_domain` | `DEPRESSIVE_SYMPTOMS` or `ANXIETY_SYMPTOMS`; never a combined severity. |
+
+### `public.support_plan_slot`
+
+| Field | Purpose |
+| --- | --- |
+| `id` | Internal immutable slot UUID referenced by alternatives. |
+| `support_plan_id` / `ordinal` | Parent draft and deterministic bounded 1-based display order. |
+| `slot_key` / `slot_kind` / `target_domain` / `purpose_code` | Care policy identity, `CORE`/`OPTIONAL` rule, domain, and non-clinical purpose. |
+| `selected_resource_id` / `selected_content_version` / `selected_publication_id` | Exact Content resource, immutable version, and review publication selected by Care; all are null together only when the user removes an `OPTIONAL` slot. |
+| `selected_role` / `selected_category` | Exact eligibility role and reviewed display category; only `PRIMARY` can satisfy a core query. |
+| `selected_title` / `selected_summary` / `selected_external_url` | Reviewed display snapshot; no raw assessment or journal content is stored. |
+
+The complete-tuple constraint prevents partial snapshots. Core slots remain
+selected by application policy. The unique selected-resource key prevents the
+same exact version from filling multiple composed slots. The 1..5 ordinal check
+matches the aggregate bound.
+
+### `public.support_plan_slot_alternative`
+
+| Field | Purpose |
+| --- | --- |
+| `id` | Internal immutable alternative UUID. |
+| `support_plan_slot_id` / `ordinal` | Parent slot and deterministic server-admitted order, bounded to eleven so the previous selected candidate can remain admitted after a swap. |
+| `resource_id` / `content_version` / `publication_id` | Exact eligible Content version and review publication retained for later user choice. |
+| `eligibility_role` / `category` | Exact allowed role and reviewed display category. |
+| `title` / `summary` / `external_url` | Reviewed display snapshot returned on reload; not AI-generated content. |
+
+### `public.support_plan_request`
+
+| Field | Purpose |
+| --- | --- |
+| `user_id` / `idempotency_key` | Owner-scoped printable retry namespace. |
+| `request_hash` | One-way SHA-256 of the exact SupportEvaluation reference; no answers, score, or bearer token is recoverable. |
+| `support_plan_id` | Owner-matched stored draft returned for identical retries and concurrent aliases. |
+| `created_at` | UTC instant at which Care accepted the alias. |
+
+### `public.support_plan_command`
+
+Owner-scoped append-only audit and replay record for MB-373 activation. Choice
+replacement uses PUT semantics plus optimistic concurrency and does not create
+a request-deduplication record. This table stores no bearer token, assessment
+answer, journal content, or client-authored display text.
+
+| Field | Purpose |
+| --- | --- |
+| `user_id` / `idempotency_key` | Owner-scoped printable retry namespace and primary key. |
+| `command_type` / `request_hash` | `ACTIVATE` and the SHA-256 fingerprint of plan/version for exact retry matching. |
+| `support_plan_id` / `expected_version` | Owner-matched target and optimistic version explicitly acted on by the user. |
+| `resulting_version` / `resulting_status` / `resulting_updated_at` | Exact replay outcome; resulting version is the expected version plus one. |
+| `evaluation_policy_version` | Current compatible Care evaluation policy revalidated immediately before the local command transaction. |
+| `entitlement_package` / `entitlement_source` / `entitlement_policy_version` / `entitlement_version` / `entitlement_decided_at` | Fresh authoritative paid-entitlement evidence used by the command. |
+| `resource_policy_version` / `resources_resolved_at` | Exact Content eligibility policy and resolution instant used for final exact-version validation. |
+| `created_at` | UTC instant the command and its outcome committed. |
+
+### `public.support_plan_command_selection`
+
+Ordered exact final selection set committed by activation. A missing optional
+slot represents a choice removed before activation; the plan snapshot preserves
+the authoritative state.
+
+| Field | Purpose |
+| --- | --- |
+| `user_id` / `idempotency_key` | Physical parent key to `support_plan_command`. |
+| `ordinal` | Stable 1-based intent order, bounded to the plan's 1..5 selected-resource limit. |
+| `slot_key` | Exact existing Care-owned slot selected by the user; unique within the command. |
+| `resource_id` / `content_version` | Exact admitted Content version selected for that slot; unique within the command. |
+
+### `public.support_plan_activity_schedule`
+
+Care-owned recurrence snapshot created from one selected SupportPlan resource.
+It keeps time interpretation and source attribution stable even when the profile
+timezone or external content later changes.
+
+| Field | Purpose |
+| --- | --- |
+| `id` | Immutable schedule UUID and parent of its occurrence history. |
+| `support_plan_id` / `user_id` | Owner-matched plan and account; the composite foreign key blocks cross-owner rows. |
+| `ordinal` / `schedule_version` | Stable source-slot order and recurrence revision; unique together within a plan. |
+| `source_plan_version` / `source_slot_key` | Exact plan version and selected slot that authorized the schedule. |
+| `source_resource_id` / `source_content_version` / `source_title` | Exact Content identity/version and reviewed title snapshot. |
+| `recurrence_type` / `recurrence_day_of_week` | `DAILY`, or `WEEKLY` with ISO weekday 1..7. |
+| `local_time` / `timezone` | Intended wall-clock time and snapshotted IANA timezone used for deterministic DST resolution. |
+| `effective_from` / `effective_until` | Inclusive local-date validity; the end remains null while active. |
+| `status` | `ACTIVE`, `PAUSED`, or `ENDED`; Content/Notification never controls it. |
+| `created_at` / `updated_at` | UTC creation and latest lifecycle transition instants. |
+
+### `public.support_plan_activity_occurrence`
+
+Persisted logical instance for one schedule/local date. The database unique key
+on schedule, schedule version, and local date makes retries and concurrent
+generation idempotent.
+
+| Field | Purpose |
+| --- | --- |
+| `id` | Deterministic UUID derived from the logical intent key. |
+| `activity_schedule_id` / `support_plan_id` / `user_id` | Owning schedule, plan, and account for owner-scoped history. |
+| `schedule_version` / `local_date` | Logical uniqueness key with the parent schedule. |
+| `local_time` / `timezone` / `scheduled_at` | Wall-clock intent, IANA zone snapshot, and resolved UTC instant. |
+| `state` | Persisted `SCHEDULED`, `COMPLETED`, `SKIPPED`, or `CANCELLED`; `MISSED` is computed only in reads. |
+| `state_reason` | Null except `PLAN_PAUSED`, `PLAN_COMPLETED`, or `PLAN_REPLACED` on cancelled rows. |
+| `source_plan_version` / `source_slot_key` | Exact Care plan/slot provenance. |
+| `source_resource_id` / `source_content_version` / `source_title` | Exact Content identity/version and reviewed title snapshot. |
+| `version` | Optimistic counter required by explicit user state updates. |
+| `created_at` / `updated_at` | UTC insertion and latest accepted transition instants. |
+| `completed_at` / `skipped_at` / `cancelled_at` | Exactly the timestamp matching the persisted terminal state; all null while scheduled. |
+
 ### `care.intervention_plan`
 
 Versioned set of platform support actions generated for one support classification.
@@ -507,8 +652,9 @@ SupportPlan schema. ADR 0013 freezes immutable templates, composition,
 eligibility, and lifecycle; ADR 0017 limits the durable plan to
 `PLUS`/`PREMIUM`, confirms one official Care-owned current plan, and routes
 specialist proposals through `PlanChangeRequest`. The legacy shape cannot
-represent those requirements and must not be promoted into a migration. A
-later append-only Care schema follows [SupportPlan policy v2](../policies/support-plan-policy-v2.md).
+represent those requirements and was not promoted into a migration. MB-372
+instead adds the normalized `public.support_plan*` schema above for initial
+draft creation and reload under [SupportPlan policy v2](../policies/support-plan-policy-v2.md).
 
 | Field | Purpose |
 | --- | --- |
@@ -596,6 +742,74 @@ Stable plan identity used to group immutable commercial versions.
 | `active` | Controls whether a plan accepts new purchases without deleting historical versions. |
 | `created_at` | Immutable UTC plan creation instant. |
 | `updated_at` | UTC instant of the latest catalogue-level activation/name change. |
+
+### `consultation.current_service_entitlement`
+
+Authoritative current-package read model used by cross-service capability and
+model-routing decisions. It is deliberately not a payment, subscription,
+billing-period, consultation-credit, or ledger aggregate. Absence of an
+effective row means `FREE` with synthetic `DEFAULT_FREE` provenance. Stored
+rows are only explicit bounded `DEMO` or future billing-produced `PAID`
+projections; an expired row is ignored rather than silently extending access.
+
+| Field | Purpose |
+| --- | --- |
+| `account_id` | External Identity user UUID and primary key for the single current projection; it is never accepted from an AI client as a routing claim. |
+| `package_code` | Current paid/demo package, restricted to `PLUS` or `PREMIUM`; `FREE` is represented by no effective row. |
+| `source` | Provenance class `DEMO` or future `PAID`; it prevents controlled-demo access from masquerading as payment. |
+| `source_reference` | Stable non-blank demo identifier or future billing lifecycle reference supporting operational traceability. |
+| `established_by` | External Identity administrator UUID required for `DEMO`; future automated `PAID` projections may leave it null while retaining their billing reference. |
+| `effective_from` | Inclusive UTC instant from which the projection may authorize package-specific behavior. |
+| `effective_until` | Exclusive UTC instant after which lookup returns `FREE` unless a new effective projection exists. |
+| `policy_version` | Exact entitlement-read policy; MB-369 fixes `service-entitlement-v1`. |
+| `created_at` | Immutable UTC insertion instant for this current projection row. |
+| `updated_at` | UTC instant of the latest authoritative projection replacement. |
+| `version` | Optimistic-lock counter reserved for safe future demo/billing projection updates. |
+
+### `consultation.service_credit_period`
+
+Implemented MB-377 allocation boundary. One row freezes the highest package allocation seen for an exact user, entitlement policy version, and effective period. `DEMO` and `PAID` provenance is immutable within that period.
+
+| Field | Purpose |
+| --- | --- |
+| `id` | Server-generated period UUID. |
+| `account_id` | External Identity user UUID that owns every credit in the period. |
+| `plan_version` | Exact source entitlement policy version used by the idempotency key. |
+| `package_code` | Highest allocated package in the period: `PLUS` or `PREMIUM`. |
+| `source` | Explicit `DEMO` or `PAID` provenance; never inferred by the client. |
+| `source_reference` | Stable entitlement lifecycle or controlled-demo reference. |
+| `period_start` / `period_end` | Inclusive/exclusive UTC billing or demo window. |
+| `allocated_count` | Frozen allocation after allowed upgrade: 1 for Plus or 3 for Premium. |
+| `created_at` / `updated_at` | UTC creation and latest in-period upgrade instants. |
+| `version` | Optimistic version incremented by allocation upgrade. |
+
+### `consultation.service_credit`
+
+One indivisible consultation right. Current state is owner-controlled; balances are counted from these rows and never reconstructed in the browser.
+
+| Field | Purpose |
+| --- | --- |
+| `id` | Stable credit UUID. |
+| `period_id` | Owning immutable-provenance service-credit period. |
+| `ordinal` | One-based position within the allocation; unique per period and capped at three. |
+| `state` | `AVAILABLE`, `HELD`, `CONSUMED`, or `FORFEITED`. A release returns the state to `AVAILABLE` while the ledger preserves the fact. |
+| `appointment_id` | Future local appointment UUID required for held and terminal appointment outcomes. |
+| `created_at` / `updated_at` | UTC creation and latest transition instants. |
+| `version` | Optimistic transition counter. |
+
+### `consultation.service_credit_ledger`
+
+Append-only evidence for provisioning and appointment-driven transitions.
+
+| Field | Purpose |
+| --- | --- |
+| `id` | Immutable event UUID. |
+| `credit_id` | Credit whose state changed. |
+| `account_id` | Denormalized owner UUID for bounded history and account-scoped idempotency. |
+| `event_type` | `PROVISIONED`, `HELD`, `RELEASED`, `CONSUMED`, or `FORFEITED`. |
+| `appointment_id` | Required correlation for every non-provisioning transition. |
+| `idempotency_key` | Owner command key unique per account; exact replay does not append another event. |
+| `occurred_at` | Immutable server UTC transition instant. |
 
 ### `consultation.subscription_plan_version`
 
@@ -837,20 +1051,22 @@ Explicit journal-entry allow-list for grants containing journal access.
 
 ### `consultation.availability_slot`
 
-Authoritative half-open 60-minute slot published from a specialist's working
-schedule and bookable once. The current logical baseline predates scope v2;
-enabling video requires an additive contract/migration while historical
-in-person snapshots remain readable.
+Authoritative half-open 60-minute online slot published by an approved
+specialist. MB-362 implements the v2 shape without PracticeLocation, phone, or
+external meeting-link fields. Historical in-person appointment snapshots, if
+introduced by a historical migration, remain separate and readable.
 
 | Field | Purpose |
 | --- | --- |
 | `id` | Immutable slot UUID used in booking REST commands. |
-| `specialist_id` | Specialist profile that owns the interval. |
+| `specialist_account_id` | Consultation-owned specialist profile that owns the interval and serializes publication. |
 | `start_at` | Inclusive UTC start instant of the available interval. |
 | `end_at` | Exclusive UTC end instant, required to be later than start. |
 | `timezone` | IANA timezone captured for stable human schedule rendering. |
-| `channel` | Consultation mode snapshot. Historical v1 includes `IN_PERSON`; new v2 slots allow `IN_APP_CHAT` or contract-enabled `IN_APP_VIDEO` only. |
-| `status` | Authoritative slot state used with database constraints to prevent conflicting bookings. |
+| `modality` | Online mode; only `IN_APP_CHAT` or capability-gated `IN_APP_VIDEO` is accepted. |
+| `status` | Authoritative `ACTIVE` or `WITHDRAWN` state used by the overlap exclusion constraint. |
+| `idempotency_key` | Printable caller retry key unique per specialist; exact replay returns the same slot identity and current state, while conflicting reuse is rejected. |
+| `withdrawn_at` | UTC instant at which the owner withdrew the future slot; null while active and retained for tombstone audit. |
 | `created_at` | Immutable UTC slot creation instant. |
 | `updated_at` | UTC instant of the latest slot state or schedule change. |
 | `version` | Optimistic-lock counter preventing lost concurrent slot updates. |

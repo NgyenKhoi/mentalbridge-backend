@@ -1,6 +1,6 @@
 # Care Service
 
-Care owns user profiles, independent `PRIVACY_POLICY` and `AI_PROCESSING` consent decisions, questionnaires, assessment submissions and results, deterministic safety/support policy, SupportEvaluation, future system-proposed SupportPlan lifecycle, and follow-up. Story 1103 exposes immutable coarse v1 evaluation. MB-335 adds `/api/v2/support-evaluations` with exact PHQ-9/GAD-7 provenance, two independent domain contributions, and separate PHQ-9 item-9 safety evidence. It never creates a global severity and does not modify v1 rows, APIs, or events. Resource Eligibility v1 adds a consumer-owned Content REST client for later proposal/activation use; it does not implement SupportPlan lifecycle. Safety-critical scoring and evaluation remain local and do not depend on Eureka, OpenFeign, Kafka, Redis, AI, Content, or notification availability.
+Care owns user profiles, independent `PRIVACY_POLICY` and `AI_PROCESSING` consent decisions, questionnaires, assessment submissions and results, deterministic safety/support policy, SupportEvaluation, the single official SupportPlan, and follow-up. Story 1103 exposes immutable coarse v1 evaluation. MB-335 adds `/api/v2/support-evaluations` with exact PHQ-9/GAD-7 provenance, two independent domain contributions, and separate PHQ-9 item-9 safety evidence. MB-372 adds paid deterministic draft creation and current-draft reload. MB-373 adds bounded admitted-choice replacement, exact revalidation, explicit activation idempotency, and authoritative current-plan reload. MB-513 adds Care-owned lifecycle commands plus deterministic local-time schedules and persisted activity occurrences. MB-374 completes the owner lifecycle with optional coded completion context and immutable terminal history/detail reads. It never creates a global severity, treatment-adherence score, or AI-controlled state and does not modify v1 rows, APIs, or events. Safety-critical scoring and evaluation remain local and do not depend on Eureka, Kafka, Redis, AI, or notification availability.
 
 ## MB-88 foundation
 
@@ -50,6 +50,15 @@ The Care Liquibase changelog owns:
 | `support_evaluation_v2_domain` | Two immutable instrument/domain/level/pathway/reason snapshots used for independent composition |
 | `support_evaluation_v2_safety` | Independent PHQ-9 item-9 status and safety-policy snapshot without a raw answer |
 | `support_evaluation_v2_request` | Per-user v2 idempotency aliases; separate namespace from v1 keys |
+| `support_plan` | One Care-owned paid proposal/current-plan snapshot with exact source, entitlement, rationale, safety, lifecycle instants, optional coded completion reason, and optimistic version provenance; terminal rows are immutable owner history |
+| `support_plan_template_family` | Ordered immutable domain template families composed into the draft |
+| `support_plan_slot` | Ordered bounded slots; core selection is required while an optional selection may be explicitly removed |
+| `support_plan_slot_alternative` | Server-admitted exact alternatives for a stored slot; not client-authored choices |
+| `support_plan_request` | Per-user idempotency aliases that replay the same current draft |
+| `support_plan_command` | Owner-scoped idempotent activation outcome plus exact revalidation provenance |
+| `support_plan_command_selection` | Ordered exact resource-version intent committed by activation |
+| `support_plan_activity_schedule` | Versioned recurrence and local-time/source snapshot owned by one plan |
+| `support_plan_activity_occurrence` | Deterministic dated activity state with optimistic concurrency and source provenance |
 | `outbox_event` | Minimal integration fact persisted in the aggregate transaction |
 
 The reference-data migrations publish immutable English PHQ-9, current controlled-Capstone Vietnamese PHQ-9 v2, and Vietnamese GAD-7 definitions. PHQ-9 v1 remains readable as a retired immutable definition so historical results reopen against their original wording and bands. GAD-7 contains seven questions, the approved four-choice self-administered mapping, standard `0..21` bands, explicit non-applicable safety semantics, and auditable source provenance. These publications are approved only for controlled local/demo Capstone use and do not represent production clinical/domain approval.
@@ -75,6 +84,9 @@ Assessment answer text must never be copied into outbox payloads, logs, errors, 
 | `CONTENT_SAFETY_DIRECTORY_BASE_URL` | Local/test only | Optional direct Content URL for the reviewed directory; leave empty outside tests so OpenFeign uses Eureka | `http://localhost:3003` |
 | `CONTENT_SAFETY_DIRECTORY_CONNECT_TIMEOUT` | No | Bounded TCP connection deadline for directory lookup | `PT0.5S` |
 | `CONTENT_SAFETY_DIRECTORY_READ_TIMEOUT` | No | Bounded response-read deadline before Care returns its local fallback | `PT1S` |
+| `CONSULTATION_ENTITLEMENT_BASE_URL` | Local/test only | Optional direct Consultation URL; leave empty outside tests so OpenFeign resolves `consultation-service` through Eureka | `http://localhost:8082` |
+| `CONSULTATION_ENTITLEMENT_CONNECT_TIMEOUT` | No | Bounded TCP connection deadline for the authoritative current entitlement read | `PT0.5S` |
+| `CONSULTATION_ENTITLEMENT_READ_TIMEOUT` | No | Total response-read deadline for current entitlement | `PT2S` |
 | `CARE_DB_URL` | Yes | Care-owned PostgreSQL JDBC URL; production uses a TLS-capable connection | `jdbc:postgresql://localhost:5432/mentalbridge_care` |
 | `CARE_DB_USERNAME` | Yes | Care-owned PostgreSQL login | `mentalbridge_care` |
 | `CARE_DB_PASSWORD` | Yes | Care PostgreSQL password injected outside source control | `replace-with-a-local-secret` |
@@ -107,7 +119,7 @@ The foundation records facts needed by later governed behavior without silently 
 - PHQ-9 scoring is deterministic and server-owned; the stored result is a screening result, not a diagnosis.
 - A positive versioned safety item is persisted independently of the total score so later policy cannot ignore it.
 - ADR 0009 fixes item-9 positivity (`answer >= 1`), keeps it independent from the screening band, prohibits automatic human/emergency notification, and removes the hotline catalogue.
-- Current Vietnamese questionnaire content is published as `phq9-vi-vn-capstone-v2` for `DEPRESSIVE_SYMPTOMS` and `gad7-vi-vn-adult-v1` for `ANXIETY_SYMPTOMS` in controlled local/demo use. PHQ-9 v1 is retired without mutation. GAD-7 returns `NOT_APPLICABLE` with null safety fields instead of a false PHQ-style safety result. Safety remains cross-cutting; no combined score or global severity exists. The deterministic v1 support-tier mapping and additive `mb-support-routing-capstone-v2` domain-aware evaluation are published for controlled Capstone use. MB-511 adds the all-tier one-time `mb-support-guide-capstone-v1` runtime with immutable exact provenance and approved-copy fallback. SupportPlan product policy is approved under ADR 0013, while proposal/lifecycle runtime, specialist actions, production consent/retention, production domain review, and minimum-age expansion remain separate gates.
+- Current Vietnamese questionnaire content is published as `phq9-vi-vn-capstone-v2` for `DEPRESSIVE_SYMPTOMS` and `gad7-vi-vn-adult-v1` for `ANXIETY_SYMPTOMS` in controlled local/demo use. PHQ-9 v1 is retired without mutation. GAD-7 returns `NOT_APPLICABLE` with null safety fields instead of a false PHQ-style safety result. Safety remains cross-cutting; no combined score or global severity exists. The deterministic v1 support-tier mapping and additive `mb-support-routing-capstone-v2` domain-aware evaluation are published for controlled Capstone use. MB-511 adds the all-tier one-time `mb-support-guide-capstone-v1` runtime with immutable exact provenance and approved-copy fallback. MB-372/MB-373 implement paid draft proposal, bounded choice replacement, explicit activation, and current-plan reload under ADR 0013. Pause/resume, completion, replacement, specialist actions, production consent/retention, production domain review, and minimum-age expansion remain separate gates.
 - No endpoint may imply emergency dispatch, continuous human monitoring, or guaranteed notification delivery.
 
 The canonical policy register is maintained in [`docs/policies/`](../docs/policies/). `MB-CAPSTONE-SCREENING-PUBLICATION-001` defines a bounded evidence gate for controlled local/demo publication; a Capstone decision is not executable production approval.

@@ -1,26 +1,33 @@
 # PostgreSQL Data Model
 
-The cross-schema [database/postgresql/001_initial_schema.sql](../../database/postgresql/001_initial_schema.sql) is a non-executable, whole-system modelling artifact. Its schemas only make ownership and relationships readable in one file; it must never be run to provision any environment. Each module instead owns a separate PostgreSQL database and uses that database's default `public` schema. When implementation begins, the service's owner-specific migration history becomes its only executable database source of truth: Liquibase for Spring or `node-pg-migrate` for Node.js. The purpose of every conceptual table and field is explained in the human-readable [PostgreSQL field data dictionary](postgresql-field-data-dictionary.md).
+Start with the [canonical domain model](../domain-model/README.md) and its
+[PostgreSQL logical schema](../domain-model/relational/postgresql-logical-schema.sql)
+for entities, ownership, and diagrams. That SQL is read-only documentation and
+must never be executed. Each module owns a separate PostgreSQL database and its
+default `public` schema; the service's migration history is the only executable
+runtime source of truth. Exact field purposes are documented in the
+[PostgreSQL field data dictionary](postgresql-field-data-dictionary.md).
 
 ## Ownership
 
 | Service database | Owner | Main aggregates |
 | --- | --- | --- |
 | `mentalbridge_identity` | Identity Service | account, role, refresh session, verification/reset token |
-| `mentalbridge_care` | Care Service | user profile, consent, anonymous session, questionnaire, assessment result, safety, SupportEvaluation, SupportPlan lifecycle, follow-up |
-| `mentalbridge_consultation` | Consultation Service | specialist approval, plan/subscription/payment/upgrade, credit ledger, availability, appointment, earning/provider payout, review |
+| `mentalbridge_care` | Care Service | user profile, consent, anonymous session, questionnaire, assessment result, safety, SupportEvaluation, Support Guide, SupportPlan lifecycle/activity occurrences |
+| `mentalbridge_consultation` | Consultation Service | specialist approval, current service entitlement, online availability, service-credit periods and ledger; payment/booking/settlement remain proposed |
 | `mentalbridge_content_notification` | Content/Notification Service | reviewed resource definitions, immutable exact-version eligibility provenance, and notification preference/delivery |
-| owner-local tables | each producer; Governance reads safe events | outbox, audit, deletion workflow, retention policy |
-| `mentalbridge_journal_ai` | Journal/AI Service | analysis job metadata, dataset/benchmark metadata |
+| owner-local tables | each producer; Governance reads safe events | implemented owner outbox/audit tables only; deletion/retention projections remain proposed |
 
 ADR 0005 assigns billing to Consultation; ADR 0017 amends the v2 catalogue to
-`FREE`/`PLUS`/`PREMIUM` and real money to VND/MoMo only. The baseline stores
-exact minor-unit snapshots and append-only history. Exact VND prices, fixed
+`FREE`/`PLUS`/`PREMIUM` and real money to VND/MoMo only. MB-377 implements the
+credit period, indivisible credit, and append-only transition ledger derived
+from the current entitlement read model. Payment and subscription tables remain
+`PROPOSED`. Exact VND prices, fixed
 per-credit `creditAllocation`, provider credentials/contracts, settlement,
 chargeback reconciliation, and retention must be finalized before real money
 is enabled; runtime FX is prohibited.
 
-Cross-schema foreign keys in the logical baseline only make relationships visible. Executable service migrations replace them with immutable external UUIDs and validate through APIs/events. Do not emulate distributed joins on request paths.
+Cross-owner identifiers in the canonical logical model make relationships visible but are not physical foreign keys. Executable service migrations store immutable external UUIDs and validate through APIs/events. Do not emulate distributed joins on request paths.
 
 ## Shared column policy
 
@@ -56,26 +63,27 @@ Cross-schema foreign keys in the logical baseline only make relationships visibl
 - Stored total score and screening band live in the one-to-one result and are authoritative only after server validation; `scoring_version` records the algorithm, `safety_item_positive` preserves the questionnaire fact, and the paired safety status/policy version records the independent response decision.
 - Support-tier results store policy version, reason codes and exact source IDs to make decisions reproducible; safety status remains a separate assessment result.
 - Existing `mb-support-routing-capstone-v1` rows remain immutable coarse evaluations. They preserve PHQ-9 and GAD-7 evidence separately and are not a global severity or sufficient plan-eligibility decision.
-- Resource Eligibility v1 is Content-owned, append-only and exact-versioned under #50. Domain-aware SupportEvaluation v2 is additive Care-owned persistence under #48, while SupportPlan persistence belongs to a separate later story; neither migration backfills or mutates historical v1 evaluation or reviewed-resource rows.
+- Resource Eligibility v1 is Content-owned, append-only and exact-versioned under #50. Domain-aware SupportEvaluation v2 is additive Care-owned persistence under #48. MB-372 adds deterministic SupportPlan draft persistence/reload; MB-373 adds admitted-choice replacement with optimistic concurrency, audited idempotent activation, exact revalidation, and one-current-plan enforcement. MB-513 adds explicit lifecycle commands plus deterministic local-time schedules and persisted occurrences. MB-374 adds an optional constrained completion-reason code and a partial owner/time index for immutable terminal-plan history; it does not store free-text completion notes. None of these migrations rewrites historical v1 evaluation or reviewed-resource rows.
 
-### Booking
+### Booking model status
 
+- Availability is `ACTIVE`; later booking/appointment entities in this section are approved `PROPOSED` models until an owner migration exists.
 - Availability uses `[start_at, end_at)` semantics and validates start before end.
-- A specialist publishes discrete 60-minute slots from their working schedule in local time plus IANA timezone; the server converts to UTC. Booking copies start, end, timezone, mode, and the applicable practice-location snapshot into the appointment; those snapshots do not move if the source slot or location is later edited.
+- An approved specialist publishes discrete 60-minute online slots as UTC instants plus an IANA display timezone. MB-362 stores no PracticeLocation, phone, or external meeting link. A later booking flow snapshots start, end, timezone, and modality without mutating the source slot.
 - An exclusion constraint prevents overlapping active slots for the same specialist.
 - A partial unique index permits only one active appointment per slot.
 - A second partial unique index permits only one active appointment per credit; booking locks the slot and credit together.
 - `appointment_status_history` provides an auditable state-transition timeline.
-- Historical v1 supports `IN_APP_CHAT`/`IN_PERSON`. Scope v2 rejects new
-  in-person records and requires `IN_APP_CHAT`/`IN_APP_VIDEO`; video remains
-  unavailable until its detailed contract and additive migration pass.
+- Historical v1 may retain `IN_PERSON` appointment provenance. New MB-362 slots
+  accept only `IN_APP_CHAT` and capability-gated `IN_APP_VIDEO`; video session
+  runtime remains unavailable until its detailed provider contract passes.
 - At `scheduled_end_at`, v2 records `SESSION_ENDED` and closes the channel.
   Separate accepted server/provider evidence is required for `COMPLETED`.
 - Appointment persistence must retain evidence, dispute,
   `SessionSummary`/`AgreedNextSteps`, reuse approval, and PlanChangeRequest
   provenance without rewriting historical snapshots.
 
-### Subscription and settlement
+### Subscription and settlement — PROPOSED
 
 - Published plan versions are immutable and store price, non-consultation allocation, per-credit allocation, credit count, and specialist share in integer minor units/basis points.
 - A verified, deduplicated payment webhook activates a period and grants one credit row per entitlement exactly once.
@@ -93,17 +101,16 @@ Cross-schema foreign keys in the logical baseline only make relationships visibl
   `SESSION_ENDED`, cancellation, no-show, and dispute create no earning.
 - MoMo Disbursement is the only planned production payout provider, subject to M4B credentials. Local/CI uses a deterministic MoMo-shaped fake. Real payment/payout remains disabled while plan/earning currency is USD and no approved VND plan version or FX policy exists.
 
-### Operations
+### Operations model status
 
-- Each service writes its own local `outbox_event` row in the same transaction as its aggregate change.
-- `audit_event` is append-only to application roles and must not store journal/chat bodies.
-- Deletion tasks track completion per data owner and make retries idempotent.
+- Implemented owner-local outbox/audit tables remain service-specific.
+- Generic platform audit, deletion, retention, and moderation tables are `PROPOSED`; no shared platform database exists.
 
 ## Recommended indexes and partitioning
 
-The initial script contains query-driven indexes for account lookup, histories, active grants, slots, appointments, notifications, jobs, audit, and outbox polling. Add indexes only from observed query plans.
+Owner migrations contain query-driven indexes for implemented lookups, histories, slots, notifications, jobs, audit, and outbox polling. Add indexes only from observed query plans.
 
-At capstone scale, do not partition by default. Consider monthly range partitioning only for `platform.audit_event`, `platform.outbox_event`, and high-volume notification delivery after measuring volume. Partitioning does not replace retention/deletion.
+At capstone scale, do not partition by default. Consider owner-local partitioning only for measured high-volume audit, outbox, or notification histories. Partitioning does not replace retention/deletion.
 
 ## Data not stored in PostgreSQL
 
@@ -115,9 +122,9 @@ At capstone scale, do not partition by default. Consider monthly range partition
 
 ## Migration rules
 
-1. Provision the owner database, then implement each logical baseline area in the owner-specific Liquibase or `node-pg-migrate` history before application implementation.
+1. Provision the owner database, then implement each approved area in the owner-specific Liquibase or current Node.js migration history before application implementation.
 2. Apply expand/migrate/contract for changes used by multiple deployed versions.
 3. Never edit an applied migration; add a new migration.
-4. Seed questionnaire definitions, intervention templates, and resources through versioned reference-data migrations using reviewed content.
+4. Seed questionnaire definitions and reviewed resources through versioned reference-data migrations; introduce any future template entity only with an approved owner migration and canonical-model update.
 5. Use synthetic development data only.
-6. Every table and column has a useful entry in `postgresql-field-data-dictionary.md`. The same change that adds or changes a field must explain its business purpose, ownership, sensitivity, nullability, and consistency role where applicable.
+6. Every table and column has a useful entry in `postgresql-field-data-dictionary.md`. The same change that materially changes persisted domain structure must also update `docs/domain-model/relational/postgresql-logical-schema.sql` while preserving migrations as runtime truth.

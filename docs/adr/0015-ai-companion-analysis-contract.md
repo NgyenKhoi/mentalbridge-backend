@@ -2,7 +2,7 @@
 
 - Status: Accepted
 - Date: 2026-09-13
-- Last amended: 2026-09-16 (MB-421 Mongo-only runtime and Care consent)
+- Last amended: 2026-09-16 (MB-421 Mongo-only runtime and Care consent; MB-369 entitlement-aware provider routing and benchmark gate)
 - Decision ID: `MB-AI-COMPANION-001`
 - Complements: [ADR 0011](0011-defer-phobert-optional-benchmark-baseline.md)
 - Amended by: [ADR 0017](0017-product-scope-v2.md), which adds package quota/model behavior and permits AI accompaniment across SupportPlan, reassessment, and approved reminder wording without transferring business-state authority
@@ -52,6 +52,32 @@ MB-367 uses only a deterministic fake provider in local development, tests,
 and CI. OpenAI/Gemini activation, provider selection, and benchmarking remain
 gated by MB-369/Story 6204.
 
+MB-369 adds a versioned `EXACT_REVISION` model-routing policy. Consultation is
+the package authority and exposes the authenticated user's current effective
+`FREE`/`PLUS`/`PREMIUM` entitlement. Journal/AI forwards the verified end-user
+bearer for that lookup, never accepts a client-supplied tier, and never reads
+Consultation storage. Absence of an effective paid or explicit demo projection
+is `FREE`; explicit demo projections retain `DEMO` provenance and must not be
+presented as payment.
+
+The first provider attempt snapshots workload, package, entitlement source and
+policy version, routing-policy version, provider, model, prompt version, and
+approval version on the durable job. A retry may use only that same route. If
+the current entitlement would resolve to a different route, the job terminates
+without another provider call. The router never silently falls back to another
+provider. `FREE` and `PLUS` share one baseline route in v1; `PREMIUM` may use a
+separately approved stronger route.
+
+Gemini and OpenAI adapters use structured JSON output and remain disabled by
+default. Real execution requires explicit configuration, credentials, and an
+approval identifier backed by a reproducible synthetic benchmark. Local/test/
+CI continues to select the deterministic fake. A benchmark run accepts one or
+both complete provider/model candidates, so evaluating Gemini does not require
+an unused OpenAI credential. It records dataset, rubric, provider, exact model,
+prompt and schema versions plus normalized quality/safety, latency, token, cost,
+malformed-output, and failure evidence. It never uses production journals.
+Implementing adapters and the harness does not itself declare a model approved.
+
 The versioned normalized result may contain optional summary and sentiment,
 plus context signals, emotion indicators, themes, preference signals, barrier
 signals, and one allow-listed suggested action. It records provider, model,
@@ -87,9 +113,20 @@ AI Companion also supports an explicit, consented longitudinal analysis over
 exact journal revisions in two bounded periods. It may describe contextual and
 emotional patterns only within the available entries and returns
 `INSUFFICIENT_DATA` when coverage cannot support a comparison. Its normalized
-`AiLongitudinalAnalysis` contains:
+The request supplies two half-open, non-overlapping periods of equal duration.
+Each period is at least 7 days and at most 31 days, and the current period may
+not end in the future. Journal/AI selects every active current revision owned
+by the caller whose `occurredAt` falls in the requested period, after applying
+an optional list of at most 100 explicitly excluded journal IDs. At most 50
+sources may be selected in either period.
 
-- `periodStart`, `periodEnd`, and the exact source revision references;
+Coverage is sufficient only when each period contains at least three selected
+entries and neither count is more than twice the other. Sparse or imbalanced
+coverage sets `sufficientForComparison` to false and forces the normalized
+change direction to `INSUFFICIENT_DATA`. `AiLongitudinalAnalysis` contains:
+
+- explicit `previousPeriod` and `currentPeriod` bounds plus exact source
+  revision references;
 - `contextSignals`, `emotionIndicators`, and `recurringThemes`;
 - signal changes of `MORE_FREQUENT`, `LESS_FREQUENT`, `SIMILAR`, or
   `INSUFFICIENT_DATA` compared with the prior period;
@@ -111,10 +148,19 @@ has improved, recovered, or been cured. AI evidence may help Care explain
 candidate items to keep, review, or replace, but Care finds allowed alternatives
 and the user confirms every SupportPlan change.
 
-Journal/AI persists only the validated normalized result and provider/model/
-prompt/schema provenance with timestamps. It does not persist raw provider
-responses or hidden reasoning. An analysis belongs to its exact journal
-revision and is deleted with that revision.
+Journal/AI persists only the validated normalized result, exact source
+references, coverage, and provider/model/prompt/schema provenance with
+timestamps. It does not persist raw provider responses or hidden reasoning. A
+longitudinal analysis is deleted when any source journal is deleted. A source
+revision change before provider execution fails the job rather than silently
+substituting new text.
+
+Care may read a completed result only through the minimized
+`REASSESSMENT_SUMMARY` projection while forwarding the verified end-user bearer
+context. Journal/AI rechecks current `AI_PROCESSING` consent and owner identity;
+dependency uncertainty fails closed. The projection contains coverage, exact
+source versions, normalized signals, and provenance, but no journal text,
+provider raw response, combined score, or clinical-improvement conclusion.
 
 The provider-neutral contract, adapters, and asynchronous job runtime do not
 wait for the OpenAI-versus-Gemini benchmark. The benchmark does gate final
@@ -131,6 +177,9 @@ controlled demo. PhoBERT remains separately deferred by ADR 0011.
   provider adapters, single-entry and longitudinal normalized-result
   validation, exact-source coverage, and deletion coupling.
 - Paid provider calls are replaced by deterministic fakes in CI.
+- Consultation gains only a current-entitlement read-model foundation; MB-369
+  does not implement purchase, upgrade, MoMo, billing periods, chat quota,
+  consultation credits, or ledgers.
 - Dataset/benchmark administration remains a separate later batch.
 
 ## Rejected alternatives

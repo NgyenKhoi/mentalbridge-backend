@@ -18,18 +18,15 @@ import io.swagger.v3.parser.core.models.SwaggerParseResult;
 class SupportPlanProposalContractTests {
 
 	private static final Set<String> REQUIRED_OPERATIONS = Set.of(
-			"POST /api/v1/support-plans",
 			"GET /api/v1/support-plans/{supportPlanId}",
 			"DELETE /api/v1/support-plans/{supportPlanId}",
-			"PUT /api/v1/support-plans/{supportPlanId}/choices",
-			"POST /api/v1/support-plans/{supportPlanId}/activate",
 			"POST /api/v1/support-plans/{supportPlanId}/pause",
 			"POST /api/v1/support-plans/{supportPlanId}/resume",
 			"POST /api/v1/support-plans/{supportPlanId}/complete",
 			"POST /api/v1/support-plans/{supportPlanId}/replace");
 
 	@Test
-	void proposalIsValidPlannedAuthenticatedAndExplicitAboutRetryBoundaries() {
+	void remainingLifecycleProposalIsValidPlannedAuthenticatedAndExplicitAboutRetryBoundaries() {
 		SwaggerParseResult result = parseProposal();
 		assertThat(result.getMessages()).isEmpty();
 		assertThat(result.getOpenAPI()).isNotNull();
@@ -55,9 +52,46 @@ class SupportPlanProposalContractTests {
 	}
 
 	@Test
-	void initialProposalRequestContainsOnlyTheOwnedEvaluationReference() {
-		OpenAPI openApi = parseProposal().getOpenAPI();
-		Schema<?> request = openApi.getComponents().getSchemas().get("ProposeSupportPlanRequest");
+	void implementedChoiceActivationAndCurrentPlanContractsAreCanonical() {
+		OpenAPI openApi = parseImplementedContract().getOpenAPI();
+		Operation choices = openApi.getPaths().get("/api/v1/support-plans/{supportPlanId}/choices").getPut();
+		Operation activation = openApi.getPaths().get("/api/v1/support-plans/{supportPlanId}/activate").getPost();
+		Operation current = openApi.getPaths().get("/api/v1/support-plans/current").getGet();
+
+		assertParameter("implemented choices", choices, "If-Match");
+		assertThat(choices.getParameters()).extracting(parameter -> parameter.getName())
+				.doesNotContain("Idempotency-Key");
+		assertParameter("implemented activation", activation, "If-Match");
+		assertParameter("implemented activation", activation, "Idempotency-Key");
+		assertThat(activation.getRequestBody()).isNull();
+		assertThat(activation.getDescription()).contains("no safety acknowledgement");
+		assertThat(current.getResponses()).containsKeys("200", "404");
+	}
+
+	@Test
+	void implementedLifecyclePublishesOwnerHistoryAndBoundedCompletionContext() {
+		OpenAPI openApi = parseImplementedContract().getOpenAPI();
+		Operation lifecycle = openApi.getPaths().get("/api/v1/support-plans/{supportPlanId}/status").getPut();
+		Operation history = openApi.getPaths().get("/api/v1/support-plans/history").getGet();
+		Operation detail = openApi.getPaths().get("/api/v1/support-plans/{supportPlanId}").getGet();
+		Schema<?> request = openApi.getComponents().getSchemas().get("ChangeSupportPlanStatusRequest");
+		Schema<?> plan = openApi.getComponents().getSchemas().get("SupportPlan");
+
+		assertParameter("implemented lifecycle", lifecycle, "If-Match");
+		assertThat(lifecycle.getDescription()).contains("no-op", "immutable terminal snapshot");
+		assertThat(request.getProperties()).containsOnlyKeys("status", "completionReason");
+		assertThat(((Schema<?>) request.getProperties().get("completionReason")).getEnum()
+				.stream().map(String::valueOf).toList())
+				.contains("USER_DECISION", "PLAN_NO_LONGER_FITS", "OTHER");
+		assertThat(plan.getRequired()).contains("completedAt", "completionReason", "supersededAt", "discardedAt");
+		assertThat(history.getResponses()).containsKeys("200", "400", "401", "403");
+		assertThat(detail.getResponses()).containsKeys("200", "401", "403", "404");
+	}
+
+	@Test
+	void implementedInitialDraftRequestContainsOnlyTheOwnedEvaluationReference() {
+		OpenAPI openApi = parseImplementedContract().getOpenAPI();
+		Schema<?> request = openApi.getComponents().getSchemas().get("ProposeSupportPlanDraftRequest");
 
 		assertThat(request.getRequired()).containsExactly("sourceSupportEvaluationId");
 		assertThat(request.getProperties()).containsOnlyKeys("sourceSupportEvaluationId")
@@ -100,10 +134,11 @@ class SupportPlanProposalContractTests {
 
 	@Test
 	void lifecycleUsesOneNormalActivationAndAtomicExplicitReplacement() {
-		OpenAPI openApi = parseProposal().getOpenAPI();
-		Schema<?> statuses = openApi.getComponents().getSchemas().get("SupportPlanStatus");
-		Operation activation = openApi.getPaths().get("/api/v1/support-plans/{supportPlanId}/activate").getPost();
-		Operation replacement = openApi.getPaths().get("/api/v1/support-plans/{supportPlanId}/replace").getPost();
+		OpenAPI proposal = parseProposal().getOpenAPI();
+		OpenAPI implemented = parseImplementedContract().getOpenAPI();
+		Schema<?> statuses = proposal.getComponents().getSchemas().get("SupportPlanStatus");
+		Operation activation = implemented.getPaths().get("/api/v1/support-plans/{supportPlanId}/activate").getPost();
+		Operation replacement = proposal.getPaths().get("/api/v1/support-plans/{supportPlanId}/replace").getPost();
 
 		assertThat(statuses.getEnum().stream().map(String::valueOf).toList())
 				.containsExactly("DRAFT", "ACTIVE", "PAUSED", "COMPLETED", "SUPERSEDED");
@@ -116,6 +151,14 @@ class SupportPlanProposalContractTests {
 
 	private SwaggerParseResult parseProposal() {
 		Path contract = Path.of("..", "contracts", "proposals", "care-support-plan-v1.yaml").toAbsolutePath();
+		ParseOptions options = new ParseOptions();
+		options.setResolve(true);
+		options.setResolveFully(true);
+		return new OpenAPIV3Parser().readLocation(contract.toUri().toString(), null, options);
+	}
+
+	private SwaggerParseResult parseImplementedContract() {
+		Path contract = Path.of("..", "contracts", "openapi", "care-service-v1.yaml").toAbsolutePath();
 		ParseOptions options = new ParseOptions();
 		options.setResolve(true);
 		options.setResolveFully(true);

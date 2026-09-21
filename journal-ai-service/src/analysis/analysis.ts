@@ -31,11 +31,30 @@ import { z } from "zod";
 
 import type { ServiceConfiguration as Configuration } from "../configuration/configuration.js";
 import type { Entry, Revision } from "../journals/journal.js";
+import {
+  ProviderFailure,
+  RoutedExactRevisionProvider,
+  type ExactRevisionProvider,
+} from "../llm-providers/llm-providers.js";
+import {
+  ConsultationEntitlementClient,
+  VersionedModelRouter,
+  sameProviderRoute,
+  type AnalysisRoute,
+  type EntitlementClient,
+  type ModelRouter,
+} from "../model-routing/model-routing.js";
 import { createLogger } from "../observability/logger.js";
+import {
+  normalizedExactRevisionSchema,
+  type NormalizedExactRevision,
+} from "../prompts/exact-revision.js";
 import type { AuthenticatedRequest } from "../security/authenticated-principal.js";
 
 const ANALYSIS_REPOSITORY = "ANALYSIS_REPOSITORY";
 const CONSENT_CLIENT = "ANALYSIS_CONSENT_CLIENT";
+const ENTITLEMENT_CLIENT = "ANALYSIS_ENTITLEMENT_CLIENT";
+const MODEL_ROUTER = "ANALYSIS_MODEL_ROUTER";
 const ANALYSIS_PROVIDER = "ANALYSIS_PROVIDER";
 const ANALYSIS_WORKER = "ANALYSIS_WORKER";
 
@@ -51,30 +70,6 @@ const consentSchema = z
     decidedAt: z.iso.datetime({ offset: true }).nullable(),
   })
   .strict();
-const suggestedActions = [
-  "NONE",
-  "OFFER_RESOURCE_EXPLANATION",
-  "GUIDE_APPROVED_ACTIVITY",
-  "REQUEST_ALLOWED_ALTERNATIVE",
-  "REQUEST_PLAN_REVIEW",
-  "OPEN_PROFESSIONAL_SUPPORT",
-  "OPEN_SAFETY_GUIDANCE",
-] as const;
-const signal = z.string().trim().min(1).max(64);
-const providerResultSchema = z
-  .object({
-    summary: z.string().trim().min(1).max(800).optional(),
-    contextSignals: z.array(signal).max(12),
-    emotionIndicators: z.array(signal).max(12),
-    themes: z.array(signal).max(12),
-    preferenceSignals: z.array(signal).max(12),
-    barrierSignals: z.array(signal).max(12),
-    sentiment: z.string().trim().min(1).max(32).optional(),
-    modelConfidence: z.number().min(0).max(1).optional(),
-    suggestedAction: z.enum(suggestedActions),
-  })
-  .strict();
-
 const binaryBuffer = (value: Buffer | Binary): Buffer =>
   Buffer.isBuffer(value) ? value : Buffer.from(value.buffer);
 
@@ -85,6 +80,8 @@ export type AnalysisTerminalReason =
   | "CONSENT_REQUIRED"
   | "CONSENT_REVOKED"
   | "CONSENT_UNAVAILABLE"
+  | "ENTITLEMENT_UNAVAILABLE"
+  | "ENTITLEMENT_CHANGED"
   | "AUTHORIZATION_CONTEXT_LOST"
   | "REVISION_STALE"
   | "JOURNAL_DELETED"
@@ -93,7 +90,7 @@ export type AnalysisTerminalReason =
   | "INVALID_PROVIDER_RESULT"
   | "INTERNAL_ERROR";
 type InternalJobStatus = "QUEUED" | "RUNNING" | "SUCCEEDED" | "FAILED";
-type ProviderResult = z.infer<typeof providerResultSchema>;
+type ProviderResult = NormalizedExactRevision;
 
 export interface AnalysisJob {
   _id: string;
@@ -112,6 +109,7 @@ export interface AnalysisJob {
   createdAt: Date;
   updatedAt: Date;
   completedAt: Date | null;
+  route: AnalysisRoute | null;
 }
 
 export interface AnalysisResult {
@@ -121,10 +119,21 @@ export interface AnalysisResult {
   entryId: string;
   userId: string;
   journalRevision: number;
-  provider: "DETERMINISTIC_FAKE";
-  model: "deterministic-reflection-v1";
-  promptVersion: "exact-revision-v1";
+  workload: "EXACT_REVISION";
+  servicePlan: "FREE" | "PLUS" | "PREMIUM";
+  entitlementSource: "DEFAULT_FREE" | "DEMO" | "PAID";
+  entitlementPolicyVersion: string;
+  entitlementVersion: number;
+  routingPolicyVersion: string;
+  providerApprovalVersion: string;
+  provider: "DETERMINISTIC_FAKE" | "GEMINI" | "OPENAI";
+  model: string;
+  promptVersion: string;
   schemaVersion: 1;
+  latencyMs: number;
+  inputTokens: number | null;
+  outputTokens: number | null;
+  estimatedCostMicroUsd: number | null;
   result: ProviderResult;
   createdAt: Date;
 }
@@ -158,6 +167,12 @@ export interface AnalysisRepository {
     workerId: string,
     now: Date,
   ): Promise<AnalysisJob | null>;
+  assignRoute(
+    jobId: string,
+    workerId: string,
+    route: AnalysisRoute,
+    now: Date,
+  ): Promise<AnalysisJob | null>;
   requeue(jobId: string, workerId: string, now: Date): Promise<void>;
   fail(
     jobId: string,
@@ -185,13 +200,11 @@ export interface ConsentClient {
   check(bearerToken: string, correlationId: string): Promise<ConsentDecision>;
 }
 
-export interface ExactRevisionProvider {
-  analyze(text: string): Promise<unknown>;
-}
-
 export interface AnalysisDependencies {
   repository?: AnalysisRepository;
   consentClient?: ConsentClient;
+  entitlementClient?: EntitlementClient;
+  router?: ModelRouter;
   provider?: ExactRevisionProvider;
 }
 
@@ -200,14 +213,14 @@ interface AnalysisRequest extends AuthenticatedRequest {
 }
 
 class ConsentUnavailableError extends Error {}
-export class ProviderFailure extends Error {
-  constructor(
-    readonly kind: "RETRYABLE" | "PERMANENT",
-    readonly reason: "TIMEOUT" | "UNAVAILABLE",
-  ) {
-    super(reason);
-  }
-}
+export { ProviderFailure } from "../llm-providers/llm-providers.js";
+export type { ExactRevisionProvider } from "../llm-providers/llm-providers.js";
+export type {
+  AnalysisRoute,
+  EntitlementClient,
+  EntitlementDecision,
+  ModelRouter,
+} from "../model-routing/model-routing.js";
 
 const requestOwner = (request: AnalysisRequest): string => {
   const value = request.principal?.accountId;
@@ -316,8 +329,6 @@ export class MongoAnalysisRepository
     journalId: string,
     revision: Revision,
   ) {
-    if (revision.content.keyId !== this.configuration.JOURNAL_ENCRYPTION_KEY_ID)
-      throw new ServiceUnavailableException();
     try {
       const decipher = createDecipheriv(
         "aes-256-gcm",
@@ -377,6 +388,25 @@ export class MongoAnalysisRepository
         attemptCount: { $lt: 2 },
       },
       { $inc: { attemptCount: 1 }, $set: { updatedAt: now } },
+      { returnDocument: "after" },
+    );
+  }
+
+  async assignRoute(
+    jobId: string,
+    workerId: string,
+    route: AnalysisRoute,
+    now: Date,
+  ) {
+    await this.connect();
+    return this.jobs.findOneAndUpdate(
+      {
+        _id: jobId,
+        status: "RUNNING",
+        leaseOwner: workerId,
+        $or: [{ route: null }, { route: { $exists: false } }],
+      },
+      { $set: { route, updatedAt: now } },
       { returnDocument: "after" },
     );
   }
@@ -499,21 +529,6 @@ export class CareConsentClient implements ConsentClient {
 }
 
 @Injectable()
-export class DeterministicAnalysisProvider implements ExactRevisionProvider {
-  analyze(text: string): Promise<ProviderResult> {
-    return Promise.resolve({
-      summary: `Bạn đã ghi lại một phản ánh gồm ${String(Array.from(text).length)} ký tự.`,
-      contextSignals: [],
-      emotionIndicators: [],
-      themes: [],
-      preferenceSignals: [],
-      barrierSignals: [],
-      suggestedAction: "NONE",
-    });
-  }
-}
-
-@Injectable()
 export class AnalysisWorker implements OnModuleInit, OnApplicationShutdown {
   private readonly workerId = randomUUID();
   private readonly authorization = new Map<
@@ -527,6 +542,9 @@ export class AnalysisWorker implements OnModuleInit, OnApplicationShutdown {
     @Inject(ANALYSIS_REPOSITORY)
     private readonly repository: AnalysisRepository,
     @Inject(CONSENT_CLIENT) private readonly consent: ConsentClient,
+    @Inject(ENTITLEMENT_CLIENT)
+    private readonly entitlement: EntitlementClient,
+    @Inject(MODEL_ROUTER) private readonly router: ModelRouter,
     @Inject(ANALYSIS_PROVIDER) private readonly provider: ExactRevisionProvider,
     private readonly configuration: Configuration,
     private readonly attemptTimeoutMs = 30_000,
@@ -610,8 +628,43 @@ export class AnalysisWorker implements OnModuleInit, OnApplicationShutdown {
       );
       return;
     }
+    let candidateRoute: AnalysisRoute;
+    try {
+      const entitlement = await this.entitlement.current(
+        context.bearer,
+        context.correlationId,
+      );
+      candidateRoute = this.router.route(entitlement);
+    } catch {
+      await this.finishFailure(job, "ENTITLEMENT_UNAVAILABLE");
+      return;
+    }
+    let routedJob = job;
+    if (job.route) {
+      if (!sameProviderRoute(job.route, candidateRoute)) {
+        await this.finishFailure(job, "ENTITLEMENT_CHANGED");
+        return;
+      }
+    } else {
+      const assigned = await this.repository.assignRoute(
+        job._id,
+        this.workerId,
+        candidateRoute,
+        new Date(),
+      );
+      if (!assigned) {
+        await this.finishFailure(job, "INTERNAL_ERROR");
+        return;
+      }
+      routedJob = assigned;
+    }
+    const route = routedJob.route;
+    if (!route) {
+      await this.finishFailure(routedJob, "INTERNAL_ERROR");
+      return;
+    }
     const activeJob = await this.repository.beginAttempt(
-      job._id,
+      routedJob._id,
       this.workerId,
       new Date(),
     );
@@ -620,10 +673,12 @@ export class AnalysisWorker implements OnModuleInit, OnApplicationShutdown {
       return;
     }
     try {
-      const raw = await this.withTimeout(this.provider.analyze(source.text));
-      const parsed = providerResultSchema.safeParse(raw);
+      const analysis = await this.withTimeout(
+        this.provider.analyze(source.text, route),
+      );
+      const parsed = normalizedExactRevisionSchema.safeParse(analysis.output);
       if (!parsed.success) {
-        await this.finishFailure(job, "INVALID_PROVIDER_RESULT");
+        await this.finishFailure(activeJob, "INVALID_PROVIDER_RESULT");
         return;
       }
       const completedAt = new Date();
@@ -634,14 +689,25 @@ export class AnalysisWorker implements OnModuleInit, OnApplicationShutdown {
         {
           _id: analysisId,
           analysisId,
-          jobId: job._id,
-          entryId: job.journalId,
-          userId: job.ownerAccountId,
-          journalRevision: job.journalRevision,
-          provider: "DETERMINISTIC_FAKE",
-          model: "deterministic-reflection-v1",
-          promptVersion: "exact-revision-v1",
+          jobId: activeJob._id,
+          entryId: activeJob.journalId,
+          userId: activeJob.ownerAccountId,
+          journalRevision: activeJob.journalRevision,
+          workload: route.workload,
+          servicePlan: route.servicePlan,
+          entitlementSource: route.entitlementSource,
+          entitlementPolicyVersion: route.entitlementPolicyVersion,
+          entitlementVersion: route.entitlementVersion,
+          routingPolicyVersion: route.routingPolicyVersion,
+          providerApprovalVersion: route.providerApprovalVersion,
+          provider: route.provider,
+          model: route.model,
+          promptVersion: route.promptVersion,
           schemaVersion: 1,
+          latencyMs: analysis.latencyMs,
+          inputTokens: analysis.usage.inputTokens,
+          outputTokens: analysis.usage.outputTokens,
+          estimatedCostMicroUsd: analysis.usage.estimatedCostMicroUsd,
           result: parsed.data,
           createdAt: completedAt,
         },
@@ -664,12 +730,14 @@ export class AnalysisWorker implements OnModuleInit, OnApplicationShutdown {
         activeJob,
         failure.reason === "TIMEOUT"
           ? "PROVIDER_TIMEOUT"
-          : "PROVIDER_UNAVAILABLE",
+          : failure.reason === "INVALID_RESULT"
+            ? "INVALID_PROVIDER_RESULT"
+            : "PROVIDER_UNAVAILABLE",
       );
     }
   }
 
-  private async withTimeout(result: Promise<unknown>): Promise<unknown> {
+  private async withTimeout<T>(result: Promise<T>): Promise<T> {
     let timer: NodeJS.Timeout | undefined;
     try {
       return await Promise.race([
@@ -800,6 +868,7 @@ export class AnalysisService {
       createdAt: now,
       updatedAt: now,
       completedAt: null,
+      route: null,
     };
     try {
       await this.repository.create(job);
@@ -852,10 +921,21 @@ export class AnalysisService {
       result: result
         ? {
             ...result.result,
+            workload: result.workload,
+            servicePlan: result.servicePlan,
+            entitlementSource: result.entitlementSource,
+            entitlementPolicyVersion: result.entitlementPolicyVersion,
+            entitlementVersion: result.entitlementVersion,
+            routingPolicyVersion: result.routingPolicyVersion,
+            providerApprovalVersion: result.providerApprovalVersion,
             provider: result.provider,
             model: result.model,
             promptVersion: result.promptVersion,
             schemaVersion: result.schemaVersion,
+            latencyMs: result.latencyMs,
+            inputTokens: result.inputTokens,
+            outputTokens: result.outputTokens,
+            estimatedCostMicroUsd: result.estimatedCostMicroUsd,
             createdAt: result.createdAt.toISOString(),
           }
         : null,
@@ -911,20 +991,51 @@ export const registerAnalysisModule = (
             provide: CONSENT_CLIENT,
             useFactory: () => new CareConsentClient(configuration),
           },
+      dependencies.entitlementClient
+        ? {
+            provide: ENTITLEMENT_CLIENT,
+            useValue: dependencies.entitlementClient,
+          }
+        : {
+            provide: ENTITLEMENT_CLIENT,
+            useFactory: () => new ConsultationEntitlementClient(configuration),
+          },
+      dependencies.router
+        ? { provide: MODEL_ROUTER, useValue: dependencies.router }
+        : {
+            provide: MODEL_ROUTER,
+            useFactory: () => new VersionedModelRouter(configuration),
+          },
       dependencies.provider
         ? { provide: ANALYSIS_PROVIDER, useValue: dependencies.provider }
         : {
             provide: ANALYSIS_PROVIDER,
-            useClass: DeterministicAnalysisProvider,
+            useFactory: () => new RoutedExactRevisionProvider(configuration),
           },
       {
         provide: ANALYSIS_WORKER,
         useFactory: (
           repository: AnalysisRepository,
           consent: ConsentClient,
+          entitlement: EntitlementClient,
+          router: ModelRouter,
           provider: ExactRevisionProvider,
-        ) => new AnalysisWorker(repository, consent, provider, configuration),
-        inject: [ANALYSIS_REPOSITORY, CONSENT_CLIENT, ANALYSIS_PROVIDER],
+        ) =>
+          new AnalysisWorker(
+            repository,
+            consent,
+            entitlement,
+            router,
+            provider,
+            configuration,
+          ),
+        inject: [
+          ANALYSIS_REPOSITORY,
+          CONSENT_CLIENT,
+          ENTITLEMENT_CLIENT,
+          MODEL_ROUTER,
+          ANALYSIS_PROVIDER,
+        ],
       },
       {
         provide: AnalysisService,

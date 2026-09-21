@@ -34,6 +34,18 @@ class CareOpenApiContractTests {
 			"GET /api/v1/assessments/{assessmentId}/progress",
 			"POST /api/v1/support-evaluations",
 			"GET /api/v1/support-evaluations/{supportEvaluationId}",
+			"POST /api/v1/support-plans",
+			"GET /api/v1/support-plans/current-draft",
+			"GET /api/v1/support-plans/current",
+			"GET /api/v1/support-plans/history",
+			"GET /api/v1/support-plans/{supportPlanId}",
+			"PUT /api/v1/support-plans/{supportPlanId}/choices",
+			"POST /api/v1/support-plans/{supportPlanId}/activate",
+			"PUT /api/v1/support-plans/{supportPlanId}/status",
+			"POST /api/v1/support-plans/{supportPlanId}/replace",
+			"GET /api/v1/support-plan-occurrences",
+			"GET /api/v1/support-plan-occurrences/{occurrenceId}",
+			"PUT /api/v1/support-plan-occurrences/{occurrenceId}/state",
 			"POST /api/v1/anonymous-assessment-sessions",
 			"POST /api/v1/anonymous-assessment-sessions/{sessionId}/assessments",
 			"GET /api/v1/anonymous-assessment-sessions/{sessionId}/assessments/{assessmentId}",
@@ -53,6 +65,18 @@ class CareOpenApiContractTests {
 			"/api/v1/assessments/{assessmentId}/progress",
 			"/api/v1/support-evaluations",
 			"/api/v1/support-evaluations/{supportEvaluationId}",
+			"/api/v1/support-plans",
+			"/api/v1/support-plans/current-draft",
+			"/api/v1/support-plans/current",
+			"/api/v1/support-plans/history",
+			"/api/v1/support-plans/{supportPlanId}",
+			"/api/v1/support-plans/{supportPlanId}/choices",
+			"/api/v1/support-plans/{supportPlanId}/activate",
+			"/api/v1/support-plans/{supportPlanId}/status",
+			"/api/v1/support-plans/{supportPlanId}/replace",
+			"/api/v1/support-plan-occurrences",
+			"/api/v1/support-plan-occurrences/{occurrenceId}",
+			"/api/v1/support-plan-occurrences/{occurrenceId}/state",
 			"/api/v1/anonymous-assessment-sessions",
 			"/api/v1/anonymous-assessment-sessions/{sessionId}/assessments",
 			"/api/v1/anonymous-assessment-sessions/{sessionId}/assessments/{assessmentId}",
@@ -69,7 +93,19 @@ class CareOpenApiContractTests {
 			"GET /api/v1/assessments/{assessmentId}",
 			"GET /api/v1/assessments/{assessmentId}/progress",
 			"POST /api/v1/support-evaluations",
-			"GET /api/v1/support-evaluations/{supportEvaluationId}");
+			"GET /api/v1/support-evaluations/{supportEvaluationId}",
+			"POST /api/v1/support-plans",
+			"GET /api/v1/support-plans/current-draft",
+			"GET /api/v1/support-plans/current",
+			"GET /api/v1/support-plans/history",
+			"GET /api/v1/support-plans/{supportPlanId}",
+			"PUT /api/v1/support-plans/{supportPlanId}/choices",
+			"POST /api/v1/support-plans/{supportPlanId}/activate",
+			"PUT /api/v1/support-plans/{supportPlanId}/status",
+			"POST /api/v1/support-plans/{supportPlanId}/replace",
+			"GET /api/v1/support-plan-occurrences",
+			"GET /api/v1/support-plan-occurrences/{occurrenceId}",
+			"PUT /api/v1/support-plan-occurrences/{occurrenceId}/state");
 
 	private static final Set<String> ANONYMOUS_TOKEN_OPERATIONS = Set.of(
 			"POST /api/v1/anonymous-assessment-sessions/{sessionId}/assessments",
@@ -79,6 +115,8 @@ class CareOpenApiContractTests {
 			"POST /api/v1/consent-decisions",
 			"POST /api/v1/assessments",
 			"POST /api/v1/support-evaluations",
+			"POST /api/v1/support-plans",
+			"POST /api/v1/support-plans/{supportPlanId}/activate",
 			"POST /api/v1/anonymous-assessment-sessions/{sessionId}/assessments");
 
 	@Test
@@ -163,6 +201,20 @@ class CareOpenApiContractTests {
 		assertThat(examples.values()).extracting(example -> supportTier(example.getValue()))
 				.containsExactlyInAnyOrder("SELF_GUIDED_SUPPORT", "PROFESSIONAL_SUPPORT_RECOMMENDED",
 						"SAFETY_FOLLOW_UP_RECOMMENDED");
+	}
+
+	@Test
+	void supportPlanDraftAcceptsOnlyEvaluationReferenceAndReturnsPersistedGovernedEvidence() {
+		var contract = Path.of("..", "contracts", "openapi", "care-service-v1.yaml").toAbsolutePath();
+		var openApi = new OpenAPIV3Parser().readLocation(contract.toUri().toString(), null, null).getOpenAPI();
+		var request = openApi.getComponents().getSchemas().get("ProposeSupportPlanDraftRequest");
+		var draft = openApi.getComponents().getSchemas().get("SupportPlan");
+
+		assertThat(request.getProperties()).containsOnlyKeys("sourceSupportEvaluationId")
+				.doesNotContainKeys("packageCode", "resourceIds", "templateFamily", "safetyStatus", "aiOutput");
+		assertThat(draft.getProperties()).containsKeys("source", "entitlement", "rationale", "safety",
+				"templateFamilies", "slots", "selectedResourceCount", "disclaimer")
+				.doesNotContainKeys("assessmentAnswers", "journalContent", "diagnosis", "treatment");
 	}
 
 	private boolean allowsAdditionalProperties(Schema<?> schema) {

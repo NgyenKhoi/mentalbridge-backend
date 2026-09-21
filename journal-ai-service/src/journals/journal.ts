@@ -246,8 +246,6 @@ export class JournalEncryption {
     };
   }
   decrypt(ownerAccountId: string, entryId: string, revision: Revision): string {
-    if (revision.content.keyId !== this.configuration.JOURNAL_ENCRYPTION_KEY_ID)
-      throw new InternalServerErrorException();
     try {
       const decipher = createDecipheriv(
         "aes-256-gcm",
@@ -303,8 +301,6 @@ export class JournalEncryption {
     revision: Revision,
   ): JournalMood | null {
     if (!revision.mood) return null;
-    if (revision.mood.keyId !== this.configuration.JOURNAL_ENCRYPTION_KEY_ID)
-      throw new InternalServerErrorException();
     try {
       const decipher = createDecipheriv(
         "aes-256-gcm",
@@ -354,6 +350,16 @@ export class MongoJournalStore implements JournalStore, OnApplicationShutdown {
     journalId: string;
   }>;
   private readonly analysisResults: Collection<{ jobId: string }>;
+  private readonly longitudinalAnalysisJobs: Collection<{
+    _id: string;
+    ownerAccountId: string;
+    sourceJournalRevisions: { journalId: string }[];
+  }>;
+  private readonly longitudinalAnalysisResults: Collection<{
+    jobId: string;
+    userId: string;
+    sourceJournalRevisions: { journalId: string }[];
+  }>;
   constructor(configuration: Configuration = loadConfiguration()) {
     this.client = new MongoClient(configuration.MONGODB_URI, {
       connectTimeoutMS: configuration.MONGODB_CONNECTION_TIMEOUT_MS,
@@ -368,6 +374,12 @@ export class MongoJournalStore implements JournalStore, OnApplicationShutdown {
     }>("analysis_jobs");
     this.analysisResults = database.collection<{ jobId: string }>(
       "journal_analysis_results",
+    );
+    this.longitudinalAnalysisJobs = database.collection(
+      "longitudinal_analysis_jobs",
+    );
+    this.longitudinalAnalysisResults = database.collection(
+      "journal_longitudinal_analysis_results",
     );
   }
   private async entries() {
@@ -507,6 +519,27 @@ export class MongoJournalStore implements JournalStore, OnApplicationShutdown {
         jobId: { $in: jobs.map((job) => job._id) },
       });
     await this.analysisJobs.deleteMany({ ownerAccountId, journalId: id });
+    const longitudinalJobs = await this.longitudinalAnalysisJobs
+      .find({
+        ownerAccountId,
+        "sourceJournalRevisions.journalId": id,
+      })
+      .project<{ _id: string }>({ _id: 1 })
+      .toArray();
+    const longitudinalJobIds = longitudinalJobs.map((job) => job._id);
+    await this.longitudinalAnalysisResults.deleteMany({
+      userId: ownerAccountId,
+      $or: [
+        { "sourceJournalRevisions.journalId": id },
+        ...(longitudinalJobIds.length === 0
+          ? []
+          : [{ jobId: { $in: longitudinalJobIds } }]),
+      ],
+    });
+    await this.longitudinalAnalysisJobs.deleteMany({
+      ownerAccountId,
+      "sourceJournalRevisions.journalId": id,
+    });
   }
 }
 

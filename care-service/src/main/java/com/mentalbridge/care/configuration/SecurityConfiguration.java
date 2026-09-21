@@ -42,7 +42,7 @@ public class SecurityConfiguration {
 						.requestMatchers("/api/v1/profile/**", "/api/v1/consents/**",
 								"/api/v1/consent-decisions/**", "/api/v1/assessments/**",
 								"/api/v1/support-evaluations/**", "/api/v2/support-evaluations/**",
-								"/api/v1/support-guides/**").hasRole("USER")
+								"/api/v1/support-guides/**", "/api/v1/support-plans/**").hasRole("USER")
 						.anyRequest().authenticated())
 				.exceptionHandling(errors -> errors.authenticationEntryPoint(securityProblems)
 						.accessDeniedHandler(securityProblems))

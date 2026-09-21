@@ -13,6 +13,8 @@ delivery, or SupportPlan state.
 
 | Capability | Main behavior | Acceptance |
 | --- | --- | --- |
+| Current entitlement | Resolve the authenticated user's effective `FREE`/`PLUS`/`PREMIUM` package for owner-to-owner capability checks | No effective row returns `FREE`/`DEFAULT_FREE`; explicit `DEMO` and future `PAID` rows retain provenance and bounded windows; no client tier is trusted |
+| Service credits | Idempotently provision and display the current plan-period credit ledger | `FREE=0`, `PLUS=1`, `PREMIUM=3`; server returns available/held/consumed/forfeited and release history; demo and paid provenance never mix |
 | Specialist approval | Submit public profile fields; admin approves, rejects, suspends, or restores with a stable reason | Only approved specialists are discoverable/bookable; suspension cancels future unstarted appointments with credit release; no credential document is collected |
 | Subscription/billing | Publish immutable VND plan versions; accept MoMo webhooks; purchase paid packages; upgrade `PLUS` to `PREMIUM`; expose credit/earning history | Exact minor units; replay safe; no downgrade/user-refund API; real money disabled until price/allocation/credentials gates pass |
 | Discovery/matching | Filter approved specialists and rank domain/support-area match, availability, language, timezone, rating, then experience | Deterministic pagination; criteria/policy version and explanation recorded; no disease/global-severity/clinical matcher or hidden health-data join |
@@ -32,14 +34,23 @@ delivery, or SupportPlan state.
 - Contract-first OpenAPI covers client/admin APIs and internal appointment eligibility projections. Appointment/review/moderation event schemas are versioned.
 - Liquibase constraints/exclusion/locking are the final defense against overlap and double booking; use optimistic locking for editable aggregates.
 - Care and Journal/AI calls use narrow consumer-owned ports, explicit deadlines/breakers and owner-side authorization. Billing is authoritative locally under ADR 0005; payment provider details stay behind an adapter and raw provider payloads are not persisted.
+- MB-369 adds only `current_service_entitlement` as the authoritative current
+  read model and `GET /internal/v1/entitlements/current`. It does not implement
+  plan catalogue publication, subscription/payment lifecycle, MoMo, purchase,
+  upgrade, consultation credits, or ledgers. Future billing may project a
+  bounded `PAID` row into this model in its own transaction; explicit demo/test
+  rows use `DEMO`, and no effective row is returned as `FREE`/`DEFAULT_FREE`.
+- MB-377 adds plan-period credit provisioning, owner transitions, ledger
+  history, and balance reads. Purchase, renewal, cancellation, and appointment
+  commands remain later stories.
 
 ## Ordered tasks
 
 - [x] CON-01 Retain the historical ADR 0014 rationale and adopt ADR 0017's
   chat/video, evidence, summary reuse, and PlanChangeRequest target rules.
-- [ ] CON-02 Define specialist, discovery, billing/upgrade/credit, availability, appointment, earnings/payout, dashboard and review OpenAPI.
+- [~] CON-02 Specialist approval, MB-362 availability, and MB-377 credit balance are implemented; discovery, payment, appointment, earnings/payout, dashboard and review remain.
 - [ ] CON-03 Define subscription/appointment/earning/review/moderation event schemas and required Care/Journal/Realtime consumer contracts.
-- [~] CON-04 Story 6101 adds the profile/approval migration, constraints, indexes, and field dictionary entries; other Consultation aggregates remain pending.
+- [~] CON-04 Story 6101 adds profile/approval persistence, MB-362 adds availability constraints, and MB-377 adds credit periods/rows/ledger; other Consultation aggregates remain pending.
 - [~] CON-05 Story 6101 implements save, submit, pending-admin queue/detail, and approve without document upload and with admin audit. Rejection/suspension/restoration remains Story 6102.
 - [ ] CON-06 Implement discovery/matching with versioned explainable provenance.
 - [ ] CON-07 Implement VND/MoMo purchase/upgrade, credit ledger, chat/video

@@ -12,12 +12,12 @@ two-domain screening boundary remains unchanged.
 
 The product has four actors:
 
-| Actor | Goal | Important constraint |
-| --- | --- | --- |
-| Guest | Complete a PHQ-9/GAD-7 screening privately | No account history; collect only what is required |
-| User | Track wellbeing and obtain appropriate support | Owns and controls access to sensitive data |
+| Actor      | Goal                                             | Important constraint                                       |
+| ---------- | ------------------------------------------------ | ---------------------------------------------------------- |
+| Guest      | Complete a PHQ-9/GAD-7 screening privately       | No account history; collect only what is required          |
+| User       | Track wellbeing and obtain appropriate support   | Owns and controls access to sensitive data                 |
 | Specialist | Manage availability and support consenting users | Sees only scopes granted by the user and required for care |
-| Admin | Operate and govern the platform | Does not receive unrestricted journal access by default |
+| Admin      | Operate and govern the platform                  | Does not receive unrestricted journal access by default    |
 
 System actors include configured AI providers, the notification provider, object storage, scheduler, and audit pipeline. A PhoBERT worker is an optional future benchmark actor under ADR 0011, not a current runtime dependency.
 
@@ -121,6 +121,15 @@ data coverage. Sparse or imbalanced journal periods produce
 resolved. The dimensions cannot be collapsed into a recovery percentage,
 clinical improvement verdict, or global score.
 
+For MB-371, each comparison period is a half-open 7-31 day range and the two
+ranges are equal in duration and non-overlapping. Journal/AI selects exact
+current owned revisions by `occurredAt`, supports explicit exclusions, and
+caps selection at 50 entries per period. Directional comparison requires at
+least three entries in each period and no greater than a 2:1 count imbalance.
+Care consumes only the minimized exact-source evidence under current
+`AI_PROCESSING` consent; Story 6501 owns its later Reassessment Summary
+composition.
+
 AI may surface contextual signals, recurring themes, preferences, barriers, and
 helpful patterns for a SupportPlan review. Care remains responsible for finding
 allowed alternatives, and the user reviews and confirms any change.
@@ -136,11 +145,11 @@ allowed alternatives, and the user reviews and confirms any change.
 
 ### Subscription, upgrade, and credits
 
-| Package | V2 price/paid period | Consultation credits | Main access |
-| --- | ---: | ---: | --- |
-| `FREE` | VND 0 | 0 | Standard Support Guide, Journal, emotion check-in, reviewed resources, and default five delivered AI responses/day |
-| `PLUS` | VND amount pending approval | 1 | Higher AI quota, persistent SupportPlan/lifecycle tracking, and one credit per paid period |
-| `PREMIUM` | VND amount pending approval | 3 | No displayed daily AI-response limit, server fair-use/token/rate limits, optional stronger model, advanced recommendations, and three credits per paid period |
+| Package   |        V2 price/paid period | Consultation credits | Main access                                                                                                                                                   |
+| --------- | --------------------------: | -------------------: | ------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `FREE`    |                       VND 0 |                    0 | Standard Support Guide, Journal, emotion check-in, reviewed resources, and default five delivered AI responses/day                                            |
+| `PLUS`    | VND amount pending approval |                    1 | Higher AI quota, persistent SupportPlan/lifecycle tracking, and one credit per paid period                                                                    |
+| `PREMIUM` | VND amount pending approval |                    3 | No displayed daily AI-response limit, server fair-use/token/rate limits, optional stronger model, advanced recommendations, and three credits per paid period |
 
 - `FREE` is the default. Scoring, disclaimer, safety flow, Support Guide,
   reviewed safety guidance, reviewed-resource count, and access to owned data are
@@ -223,9 +232,9 @@ The project-tracking workbook currently groups the 162 functions into seven deli
 
 **Scope:** journal CRUD, PHQ-9/GAD-7 submission/result/history/deletion, LLM emotion analysis and re-run, benchmark execution/results, screening/safety/support display, and personal emotional analytics.
 
-**Main flow:** Care serves an immutable questionnaire version, validates complete answers, scores deterministically and returns screening guidance synchronously. On an explicit user request for one exact current journal revision, Journal/AI forwards the verified user bearer to check current `AI_PROCESSING` consent, creates an idempotent MongoDB job, atomically claims it with a lease, re-checks consent immediately before each attempt, invokes the deterministic fake provider, and stores only the validated normalized result with provenance. MB-367 uses neither PostgreSQL nor Kafka and never persists the bearer token. Governed benchmark work later compares licensed/de-identified data through approved real-provider configurations; OpenAI/Gemini selection and PhoBERT remain outside this runtime slice.
+**Main flow:** Care serves an immutable questionnaire version, validates complete answers, scores deterministically and returns screening guidance synchronously. On an explicit user request for one exact current journal revision, Journal/AI forwards the verified user bearer to check current `AI_PROCESSING` consent, creates an idempotent MongoDB job, atomically claims it with a lease, and re-checks consent immediately before each attempt. It also obtains the current server-authoritative package from Consultation and snapshots one versioned `EXACT_REVISION` route before invoking the selected adapter. `FREE`/`PLUS` share the baseline route and `PREMIUM` may use a stronger approved route; retries never change provider/model. The bearer is never persisted. Real Gemini/OpenAI execution remains disabled until its exact provider/model configuration has approved synthetic benchmark evidence; CI uses the deterministic fake and PhoBERT remains deferred.
 
-**Exceptions and acceptance:** incomplete/invalid answers do not persist a final score; duplicate submission/analysis is idempotent; stale questionnaire requires restart; AI/provider failure never makes the journal or assessment unavailable. A run has a 30-second timeout per attempt and at most one retry for HTTP 429, provider 5xx, or transport failure, with no automatic cross-provider fallback. Raw journal content, raw provider output, and chain-of-thought do not enter persistence, events, or logs. AI cannot calculate PHQ/GAD scores, downgrade a safety path, determine resource eligibility, or mutate a SupportPlan. Analytics distinguish missing data from zero and expose source freshness.
+**Exceptions and acceptance:** incomplete/invalid answers do not persist a final score; duplicate submission/analysis is idempotent; stale questionnaire requires restart; AI/provider failure never makes the journal or assessment unavailable. Consent or entitlement uncertainty fails closed before a provider call. A run has a 30-second timeout per attempt and at most one retry for HTTP 429, provider 5xx, or transport failure, with no automatic cross-provider fallback. Raw journal content, bearer tokens, raw provider output, and chain-of-thought do not enter persistence, events, or logs. AI cannot calculate PHQ/GAD scores, downgrade a safety path, determine entitlement/resource eligibility, or mutate a SupportPlan. Analytics distinguish missing data from zero and expose source freshness.
 
 ### UC-03 Intervention & Support
 
@@ -245,12 +254,20 @@ resource eligibility before activation or change. Specialist suggestions enter
 as `PlanChangeRequest`, never a second plan. Content/Notification owns reviewed
 localized resources and eligibility metadata. Safety guidance and
 professional-support calls to action remain outside the plan and precede its
-controls.
+controls. Once active, Care persists a deterministic bounded schedule and dated
+occurrences with local time and exact source versions. The user may mark an
+occurrence complete or skipped and explicitly pause, resume, complete, replace,
+or discard the applicable plan state.
 
 **Exceptions and acceptance:** missing/stale support inputs yield
-`INSUFFICIENT_DATA`; AI cannot decide safety. Review/publication alone never
-makes a resource plan-eligible, while package entitlement never imposes a
-resource-count limit. Immediate guidance is returned before ordinary plan
+stable fail-closed results and create no plan; AI cannot decide safety.
+MB-372 reloads the same persisted current draft without recomputing remote
+facts; MB-373 implements bounded choices and activation; MB-513 implements
+Care-owned lifecycle and activity occurrences. Retry/reload cannot duplicate a
+logical occurrence, and passing its scheduled time produces a display-only
+`MISSED` state rather than an adherence judgment. Review/publication alone
+never makes a resource plan-eligible, while package entitlement never imposes
+a resource-count limit. Immediate guidance is returned before ordinary plan
 controls and without waiting for optional dependencies. Area-filtered facility
 results do not claim “nearest”; no safety email, automatic call, location
 sharing, third-party notification, or guaranteed response occurs.
@@ -391,4 +408,4 @@ runtime, and production-review gates remain open.
    `creditAllocation`, chargeback reconciliation, and financial retention.
    Runtime FX, downgrade, and user refund remain unsupported.
 10. Whether WBS 28-29 are end-user/research benchmark views distinct from admin WBS 155-156, or duplicate functions that should share one admin-only workflow.
-The domain correction is recorded in [ADR 0012](adr/0012-two-domain-screening-and-system-proposed-support-plans.md); current cross-feature scope is governed by [ADR 0017](adr/0017-product-scope-v2.md).
+    The domain correction is recorded in [ADR 0012](adr/0012-two-domain-screening-and-system-proposed-support-plans.md); current cross-feature scope is governed by [ADR 0017](adr/0017-product-scope-v2.md).

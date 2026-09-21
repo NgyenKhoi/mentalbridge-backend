@@ -37,6 +37,15 @@ public class SpecialistProfileService {
 	}
 
 	@Transactional
+	public void requireApprovedForAvailability(UUID accountId) {
+		var profile = locked(accountId);
+		if (profile.approvalStatus() != SpecialistApprovalStatus.APPROVED) {
+			throw new ApiException(HttpStatus.CONFLICT, "SPECIALIST_NOT_APPROVED",
+					"Only an approved specialist can publish availability");
+		}
+	}
+
+	@Transactional
 	public SavedProfile saveDraft(UUID accountId, Long expectedVersion, ProfileCommand command) {
 		validate(command);
 		var existing = profiles.findByIdForUpdate(accountId);
