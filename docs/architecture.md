@@ -150,6 +150,15 @@ and may share the same model, and `PREMIUM` may use a stronger model without a
 displayed daily-response cap. All remain subject to server token, rate, abuse,
 cost, and fair-use enforcement.
 
+AI Companion conversations are Journal/AI-owned encrypted MongoDB aggregates,
+not Realtime specialist-chat records. Each answer rechecks Care consent and
+Consultation entitlement, reserves quota atomically, assembles only selected
+owner-verified minimized context, and persists the answer/quota/idempotency
+outcome in one Mongo transaction. The default 90-day conversation retention is
+TTL-backed and owner deletion removes message and replay content immediately.
+Reminder context remains fail-closed until Content/Notification publishes its
+authorization contract. See ADR 0021.
+
 ### Consent-enforced specialist read
 
 1. Specialist requests a user resource through the gateway.

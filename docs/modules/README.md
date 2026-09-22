@@ -17,7 +17,7 @@ This directory turns the seven-UC product catalogue and 162-function WBS into wo
 | Identity Service | Spring Boot | [identity-service](identity-service.md) | initialized |
 | Care Service | Spring Boot | [care-service](care-service.md) | initialized |
 | Consultation Service | Spring Boot | [consultation-service](consultation-service.md) | specialist submit/approve slice implemented |
-| Journal/AI Service | Node.js/TypeScript | [journal-ai-service](journal-ai-service.md) | initialized journal foundation; AI providers and benchmark deferred |
+| Journal/AI Service | Node.js/TypeScript | [journal-ai-service](journal-ai-service.md) | encrypted Journal, governed analysis/benchmark, emotion check-in, and quota-governed AI Companion chat active; real provider routes remain approval-gated |
 | Realtime Service | Node.js/TypeScript | [realtime-service](realtime-service.md) | initialized foundation; production eligibility deferred |
 | Content/Notification Service | Node.js/TypeScript | [content-notification-service](content-notification-service.md) | not initialized |
 | PhoBERT Worker | Python | [phobert-worker](phobert-worker.md) | proposed/deferred optional benchmark baseline |

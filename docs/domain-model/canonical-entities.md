@@ -108,7 +108,11 @@ See [README](README.md) for status and relationship semantics.
 | Benchmark Dataset | journal-ai-service | MongoDB `benchmark_datasets` | ACTIVE | Metadata root for synthetic, versioned benchmark input. |
 | Benchmark Run | journal-ai-service | MongoDB `benchmark_runs` | ACTIVE | Logical reference to exact benchmark dataset version/digest. |
 | Benchmark Case Result | journal-ai-service | MongoDB `benchmark_case_results` | ACTIVE | Logical child of run, unique per case/provider/model. |
-| Longitudinal Analysis Job/Result | journal-ai-service | MongoDB | PROPOSED | ADR 0015 defines the bounded model, but no migration creates these collections. |
+| Longitudinal Analysis Job/Result | journal-ai-service | MongoDB | ACTIVE | Owner-scoped exact-source comparison with immutable result provenance. |
+| AI Companion Conversation | journal-ai-service | MongoDB `ai_companion_conversations` | ACTIVE | Owner-scoped aggregate embedding bounded encrypted user/assistant messages; context kinds only. |
+| AI Companion Command | journal-ai-service | MongoDB `ai_companion_commands` | ACTIVE | Owner/key-scoped immutable replay snapshot with a logical conversation reference. |
+| AI Companion Daily Quota | journal-ai-service | MongoDB `ai_companion_quota_ledgers` | ACTIVE | Owner/local-day ledger derived from server timezone and current Consultation entitlement. |
+| AI Companion Rate Limit | journal-ai-service | MongoDB `ai_companion_rate_ledgers` | ACTIVE | Short-lived owner/window counter with TTL; contains no content. |
 
 ## Realtime — MongoDB
 

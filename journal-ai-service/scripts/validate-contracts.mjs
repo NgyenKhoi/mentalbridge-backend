@@ -42,6 +42,11 @@ const implementedOperations = new Set([
   "PATCH /api/v1/emotion-check-ins/{localDate}",
   "DELETE /api/v1/emotion-check-ins/{localDate}",
   "GET /api/v1/emotion-check-in-context",
+  "POST /api/v1/ai-companion/conversations",
+  "GET /api/v1/ai-companion/conversations",
+  "GET /api/v1/ai-companion/conversations/{conversationId}",
+  "DELETE /api/v1/ai-companion/conversations/{conversationId}",
+  "POST /api/v1/ai-companion/conversations/{conversationId}/messages",
 ]);
 const implementedResponses = new Map([
   ["GET /health/live", new Set(["200"])],
@@ -92,6 +97,20 @@ const implementedResponses = new Map([
   [
     "GET /api/v1/emotion-check-in-context",
     new Set(["200", "400", "401", "403", "503"]),
+  ],
+  ["POST /api/v1/ai-companion/conversations", new Set(["201", "400", "401"])],
+  ["GET /api/v1/ai-companion/conversations", new Set(["200", "401"])],
+  [
+    "GET /api/v1/ai-companion/conversations/{conversationId}",
+    new Set(["200", "400", "401", "404"]),
+  ],
+  [
+    "DELETE /api/v1/ai-companion/conversations/{conversationId}",
+    new Set(["204", "400", "401", "404"]),
+  ],
+  [
+    "POST /api/v1/ai-companion/conversations/{conversationId}/messages",
+    new Set(["201", "400", "401", "403", "404", "409", "429", "503"]),
   ],
 ]);
 const plannedOperations = new Set();

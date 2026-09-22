@@ -89,6 +89,14 @@ void test("persists encrypted owner-isolated CRUD with real MongoDB", async () =
     ANALYSIS_ENABLED: false,
     ANALYSIS_POLL_INTERVAL_MS: 250,
     ANALYSIS_LEASE_MS: 35_000,
+    CHAT_RETENTION_DAYS: 90,
+    CHAT_FREE_DAILY_ANSWERS: 5,
+    CHAT_PLUS_DAILY_ANSWERS: 30,
+    CHAT_PREMIUM_FAIR_USE_DAILY_ANSWERS: 200,
+    CHAT_RATE_LIMIT_PER_MINUTE: 10,
+    CHAT_DAILY_TOKEN_BUDGET: 100_000,
+    CHAT_DEFAULT_TIMEZONE: "Asia/Ho_Chi_Minh",
+    CHAT_ROUTING_POLICY_VERSION: "companion-chat-routing-v1",
   };
   const tokenFor = (accountId: string) =>
     new SignJWT({ roles: ["USER"] })
