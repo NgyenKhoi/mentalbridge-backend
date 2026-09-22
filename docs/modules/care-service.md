@@ -38,9 +38,11 @@ Kafka, Redis, WebSocket, notification, or directory delivery.
   boundary using exact eligibility. MB-372 adds the bounded initial
   `PLUS`/`PREMIUM` draft and exact persisted reload. MB-373 adds admitted-choice
   mutation, exact revalidation, explicit activation, one-current-plan
-  enforcement, and authoritative current reload. Replacement, later lifecycle
-  activity, and `PlanChangeRequest` governance remain later slices without
-  rewriting v1 evidence.
+  enforcement, and authoritative current reload. MB-374/MB-513 add explicit
+  lifecycle/history and deterministic activity schedules. MB-376 adds owner-only
+  occurrence engagement with minimized event provenance. `PlanChangeRequest`
+  governance and final Reassessment Summary composition remain later slices
+  without rewriting v1 evidence.
 - Care consumes exact Content-owned eligibility through the generated Resource Eligibility v1 OpenFeign boundary with explicit deadlines, bounded retry, circuit breaker and fail-closed `UNAVAILABLE` outcomes. It makes the final future plan decision without cross-database access or a transaction spanning the remote call. Review/publication alone is insufficient.
 - Care combines reassessment dimensions without normalizing them into one score. Journal/AI context remains model-derived evidence limited to available consented entries; Care maps it only to policy-allowed review candidates and requires user confirmation.
 - Exceptional Identity lookups use a consumer-owned Feign port outside transactions with timeout/breaker and safe failure semantics.
@@ -56,8 +58,8 @@ The original English PHQ-9 definition, retired immutable
 published `gad7-vi-vn-adult-v1` are seeded. Existing item-9 runtime remains
 unchanged. ADR 0017 approves the additional explicit-help trigger and reviewed
 area directory as target behavior without claiming they are implemented.
-SupportPlan lifecycle beyond activation, directory, and production
-consent/retention remain separate runtime gates in `docs/policies/`. MB-511 adds owner-scoped Support Guide
+Specialist plan changes, directory expansion, and production consent/retention
+remain separate runtime gates in `docs/policies/`. MB-511 adds owner-scoped Support Guide
 generation/history under `/api/v1/support-guides` with immutable provenance,
 local safety, stable dependency outcomes, and no plan lifecycle fields.
 MB-372 adds owner-scoped create/current-draft routes under
@@ -92,6 +94,7 @@ MB-178 does not implement specialist grants, automatic follow-up, clinical progr
 - [x] CARE-07b Preserve v1 history and implement compatible domain-aware SupportEvaluation (#48) plus exact eligible resources (#50).
 - [x] CARE-07c Implement the MB-372 deterministic initial paid SupportPlan draft and persisted owner-only reload.
 - [x] CARE-07d Implement MB-373 bounded admitted choices with natural PUT behavior, exact revalidation, idempotent explicit activation, one-current-plan enforcement, activation audit, and owner-only current reload; keep later lifecycle unavailable.
+- [x] CARE-07e Implement MB-374/MB-513 lifecycle, immutable terminal history, deterministic schedules/occurrences, and MB-376 owner engagement without adherence or specialist-monitoring semantics.
 - [ ] CARE-08 Descriptive assessment comparison is implemented by MB-205; follow-up, other analytics projections, export and deletion participation remain open.
 - [ ] CARE-09 Verify scoring boundaries, item-9 safety, stale/missing input, concurrency, rollback/outbox, duplicate/reordered events and dependency failures.
 - [ ] CARE-10 Add safe observability/configuration, update README, and pass module/contract/migration gates.

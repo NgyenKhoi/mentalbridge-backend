@@ -8,9 +8,12 @@ import java.util.Optional;
 import java.util.UUID;
 
 import org.springframework.data.jpa.repository.JpaRepository;
+import org.springframework.data.jpa.repository.Lock;
 import org.springframework.data.jpa.repository.Modifying;
 import org.springframework.data.jpa.repository.Query;
 import org.springframework.data.repository.query.Param;
+
+import jakarta.persistence.LockModeType;
 
 interface SupportPlanActivityOccurrenceRepository
 		extends JpaRepository<SupportPlanActivityOccurrenceEntity, UUID> {
@@ -19,6 +22,14 @@ interface SupportPlanActivityOccurrenceRepository
 			UUID supportPlanId, UUID userId, LocalDate from, LocalDate through);
 
 	Optional<SupportPlanActivityOccurrenceEntity> findByIdAndUserId(UUID id, UUID userId);
+
+	@Query("select occurrence.supportPlanId from SupportPlanActivityOccurrenceEntity occurrence where occurrence.id = :id and occurrence.userId = :userId")
+	Optional<UUID> findSupportPlanIdByIdAndUserId(@Param("id") UUID id, @Param("userId") UUID userId);
+
+	@Lock(LockModeType.PESSIMISTIC_WRITE)
+	@Query("select occurrence from SupportPlanActivityOccurrenceEntity occurrence where occurrence.id = :id and occurrence.userId = :userId")
+	Optional<SupportPlanActivityOccurrenceEntity> findByIdAndUserIdForUpdate(@Param("id") UUID id,
+			@Param("userId") UUID userId);
 
 	@Modifying
 	@Query(value = """
@@ -71,4 +82,15 @@ interface SupportPlanActivityOccurrenceRepository
 			  and state_reason = 'PLAN_PAUSED' and scheduled_at >= :now
 			""", nativeQuery = true)
 	int restoreFuturePaused(@Param("planId") UUID planId, @Param("now") Instant now);
+
+	@Modifying
+	@Query(value = """
+			insert into outbox_event (id,message_type,schema_version,aggregate_type,aggregate_id,
+				aggregate_version,correlation_id,payload,occurred_at,created_at)
+			values (:eventId,'care.support-plan.engagement-changed','1.0','SUPPORT_PLAN_OCCURRENCE',
+				:aggregateId,:aggregateVersion,:correlationId,cast(:payload as jsonb),:occurredAt,:occurredAt)
+			""", nativeQuery = true)
+	int insertEngagementOutbox(@Param("eventId") UUID eventId, @Param("aggregateId") UUID aggregateId,
+			@Param("aggregateVersion") long aggregateVersion, @Param("correlationId") UUID correlationId,
+			@Param("payload") String payload, @Param("occurredAt") Instant occurredAt);
 }

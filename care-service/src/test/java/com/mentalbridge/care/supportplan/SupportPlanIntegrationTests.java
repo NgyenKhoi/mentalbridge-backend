@@ -7,6 +7,7 @@ import static org.mockito.Mockito.doAnswer;
 import static org.mockito.Mockito.when;
 import static org.springframework.security.test.web.servlet.request.SecurityMockMvcRequestPostProcessors.jwt;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.get;
+import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.delete;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.post;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.put;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.header;
@@ -443,6 +444,160 @@ class SupportPlanIntegrationTests extends CareTestProperties {
 	}
 
 	@Test
+	void replacesReopensDeletesAndReloadsOwnedEngagementWithoutPublishingReflection() throws Exception {
+		var userId = insertProfile();
+		var otherUser = insertProfile();
+		var draft = createPlan(userId, evaluation(userId, "MINIMAL", "MINIMAL", false),
+				"support-plan-engagement-create");
+		var planId = UUID.fromString(draft.path("supportPlanId").asText());
+		mvc.perform(post("/api/v1/support-plans/{id}/activate", planId).with(user(userId))
+				.header("If-Match", "\"0\"").header("Idempotency-Key", "support-plan-engagement-activate"))
+				.andExpect(status().isOk());
+
+		var localDate = jdbc.sql("""
+				select min(local_date) from support_plan_activity_occurrence where user_id = :id
+				""").param("id", userId).query(LocalDate.class).single();
+		var listPath = "/api/v1/support-plan-occurrences?from=" + localDate + "&through=" + localDate;
+		var listed = mvc.perform(get(listPath).with(user(userId))).andExpect(status().isOk())
+				.andReturn().getResponse().getContentAsString();
+		var occurrence = objectMapper.readTree(listed).path("occurrences").get(0);
+		var occurrenceId = UUID.fromString(occurrence.path("occurrenceId").asText());
+		var sourceContentVersion = occurrence.path("source").path("contentVersion").asText();
+		assertThat(sourceContentVersion).isNotBlank();
+		var correlationId = UUID.randomUUID();
+		var completed = """
+				{"state":"COMPLETED","hidden":false,"helpfulness":"HELPFUL","barrierCode":null,
+				 "reflection":"  Hoạt động này giúp tôi chậm lại.  ","summaryReuseApproved":true}
+				""";
+
+		var first = mvc.perform(put("/api/v1/support-plan-occurrences/{id}/engagement", occurrenceId)
+				.with(user(userId)).header("If-Match", "\"0\"").header("X-Correlation-ID", correlationId)
+				.contentType(MediaType.APPLICATION_JSON).content(completed))
+				.andExpect(status().isOk()).andExpect(header().string("ETag", "\"1\""))
+				.andExpect(jsonPath("$.state").value("COMPLETED"))
+				.andExpect(jsonPath("$.helpfulness").value("HELPFUL"))
+				.andExpect(jsonPath("$.reflection").value("Hoạt động này giúp tôi chậm lại."))
+				.andExpect(jsonPath("$.summaryReuseApproved").value(true))
+				.andExpect(jsonPath("$.source.supportPlanVersion").value(1))
+				.andExpect(jsonPath("$.source.contentVersion").value(sourceContentVersion))
+				.andReturn().getResponse().getContentAsString();
+		var replay = mvc.perform(put("/api/v1/support-plan-occurrences/{id}/engagement", occurrenceId)
+				.with(user(userId)).header("If-Match", "\"0\"").contentType(MediaType.APPLICATION_JSON)
+				.content(completed)).andExpect(status().isOk()).andExpect(header().string("ETag", "\"1\""))
+				.andReturn().getResponse().getContentAsString();
+		assertThat(objectMapper.readTree(replay)).isEqualTo(objectMapper.readTree(first));
+		assertThat(jdbc.sql("""
+				select count(*) from outbox_event
+				where aggregate_id = :id and message_type = 'care.support-plan.engagement-changed'
+				""").param("id", occurrenceId).query(Long.class).single()).isEqualTo(1);
+		var payload = jdbc.sql("""
+				select payload::text from outbox_event
+				where aggregate_id = :id and message_type = 'care.support-plan.engagement-changed'
+				""").param("id", occurrenceId).query(String.class).single();
+		var eventPayload = objectMapper.readTree(payload);
+		assertThat(eventPayload.path("helpfulness").asText()).isEqualTo("HELPFUL");
+		assertThat(eventPayload.has("reflection")).isFalse();
+		mvc.perform(get(listPath).with(jwt().jwt(token -> token.subject(UUID.randomUUID().toString()))
+				.authorities(new SimpleGrantedAuthority("ROLE_SPECIALIST"))))
+				.andExpect(status().isForbidden());
+
+		mvc.perform(put("/api/v1/support-plan-occurrences/{id}/engagement", occurrenceId)
+				.with(user(otherUser)).header("If-Match", "\"1\"").contentType(MediaType.APPLICATION_JSON)
+				.content(completed)).andExpect(status().isNotFound())
+				.andExpect(jsonPath("$.code").value("OCCURRENCE_NOT_FOUND"));
+		mvc.perform(put("/api/v1/support-plan-occurrences/{id}/engagement", occurrenceId)
+				.with(user(userId)).header("If-Match", "\"1\"").contentType(MediaType.APPLICATION_JSON)
+				.content("""
+						{"state":"COMPLETED","hidden":false,"helpfulness":null,
+						 "barrierCode":"LOW_ENERGY","reflection":null,"summaryReuseApproved":false}
+						""")).andExpect(status().isBadRequest())
+				.andExpect(jsonPath("$.code").value("OCCURRENCE_ENGAGEMENT_INVALID"));
+
+		var skipped = """
+				{"state":"SKIPPED","hidden":true,"helpfulness":null,"barrierCode":"LOW_ENERGY",
+				 "reflection":"Hôm nay tôi cần nghỉ.","summaryReuseApproved":false}
+				""";
+		mvc.perform(put("/api/v1/support-plan-occurrences/{id}/engagement", occurrenceId)
+				.with(user(userId)).header("If-Match", "\"1\"").contentType(MediaType.APPLICATION_JSON)
+				.content(skipped)).andExpect(status().isOk()).andExpect(header().string("ETag", "\"2\""))
+				.andExpect(jsonPath("$.state").value("SKIPPED"))
+				.andExpect(jsonPath("$.hidden").value(true))
+				.andExpect(jsonPath("$.barrierCode").value("LOW_ENERGY"));
+		mvc.perform(put("/api/v1/support-plan-occurrences/{id}/engagement", occurrenceId)
+				.with(user(userId)).header("If-Match", "\"1\"").contentType(MediaType.APPLICATION_JSON)
+				.content(completed)).andExpect(status().isPreconditionFailed())
+				.andExpect(jsonPath("$.code").value("OCCURRENCE_VERSION_MISMATCH"));
+
+		mvc.perform(put("/api/v1/support-plans/{id}/status", planId).with(user(userId))
+				.header("If-Match", "\"1\"").contentType(MediaType.APPLICATION_JSON)
+				.content("{\"status\":\"PAUSED\"}")).andExpect(status().isOk());
+		mvc.perform(delete("/api/v1/support-plan-occurrences/{id}/engagement", occurrenceId)
+				.with(user(userId)).header("If-Match", "\"2\""))
+				.andExpect(status().isConflict())
+				.andExpect(jsonPath("$.code").value("SUPPORT_PLAN_NOT_ACTIVE"));
+		mvc.perform(put("/api/v1/support-plans/{id}/status", planId).with(user(userId))
+				.header("If-Match", "\"2\"").contentType(MediaType.APPLICATION_JSON)
+				.content("{\"status\":\"ACTIVE\"}")).andExpect(status().isOk());
+
+		var deleted = mvc.perform(delete("/api/v1/support-plan-occurrences/{id}/engagement", occurrenceId)
+				.with(user(userId)).header("If-Match", "\"2\""))
+				.andExpect(status().isOk()).andExpect(header().string("ETag", "\"3\""))
+				.andExpect(jsonPath("$.state").value("SCHEDULED"))
+				.andExpect(jsonPath("$.hidden").value(false))
+				.andExpect(jsonPath("$.helpfulness").doesNotExist())
+				.andExpect(jsonPath("$.barrierCode").doesNotExist())
+				.andExpect(jsonPath("$.reflection").doesNotExist())
+				.andExpect(jsonPath("$.summaryReuseApproved").value(false))
+				.andReturn().getResponse().getContentAsString();
+		var deleteReplay = mvc.perform(delete("/api/v1/support-plan-occurrences/{id}/engagement", occurrenceId)
+				.with(user(userId)).header("If-Match", "\"2\""))
+				.andExpect(status().isOk()).andExpect(header().string("ETag", "\"3\""))
+				.andReturn().getResponse().getContentAsString();
+		assertThat(objectMapper.readTree(deleteReplay)).isEqualTo(objectMapper.readTree(deleted));
+
+		mvc.perform(get(listPath).with(user(userId))).andExpect(status().isOk())
+				.andExpect(jsonPath("$.occurrences[0].version").value(3))
+				.andExpect(jsonPath("$.occurrences[0].state").value("SCHEDULED"))
+				.andExpect(jsonPath("$.occurrences[0].engagementUpdatedAt").isString());
+	}
+
+	@Test
+	void concurrentEngagementReplacementsCommitOneVersionedResult() throws Exception {
+		var userId = insertProfile();
+		var draft = createPlan(userId, evaluation(userId, "MINIMAL", "MINIMAL", false),
+				"support-plan-engagement-concurrency-create");
+		var planId = UUID.fromString(draft.path("supportPlanId").asText());
+		mvc.perform(post("/api/v1/support-plans/{id}/activate", planId).with(user(userId))
+				.header("If-Match", "\"0\"")
+				.header("Idempotency-Key", "support-plan-engagement-concurrency-activate"))
+				.andExpect(status().isOk());
+		var occurrenceId = jdbc.sql("""
+				select id from support_plan_activity_occurrence
+				where user_id = :id order by scheduled_at, id limit 1
+				""").param("id", userId).query(UUID.class).single();
+		var start = new CountDownLatch(1);
+		var executor = Executors.newFixedThreadPool(2);
+		try {
+			var complete = executor.submit(() -> engagementAfter(start, userId, occurrenceId,
+					"{\"state\":\"COMPLETED\",\"hidden\":false,\"helpfulness\":null,\"barrierCode\":null,\"reflection\":null,\"summaryReuseApproved\":false}"));
+			var skip = executor.submit(() -> engagementAfter(start, userId, occurrenceId,
+					"{\"state\":\"SKIPPED\",\"hidden\":false,\"helpfulness\":null,\"barrierCode\":\"OTHER\",\"reflection\":null,\"summaryReuseApproved\":false}"));
+			start.countDown();
+			assertThat(List.of(complete.get(20, TimeUnit.SECONDS), skip.get(20, TimeUnit.SECONDS)))
+					.containsExactlyInAnyOrder(200, 412);
+		}
+		finally {
+			executor.shutdownNow();
+		}
+		assertThat(jdbc.sql("select version from support_plan_activity_occurrence where id = :id")
+				.param("id", occurrenceId).query(Long.class).single()).isEqualTo(1);
+		assertThat(jdbc.sql("""
+				select count(*) from outbox_event
+				where aggregate_id = :id and message_type = 'care.support-plan.engagement-changed'
+				""").param("id", occurrenceId).query(Long.class).single()).isEqualTo(1);
+	}
+
+	@Test
 	void lifecycleGuardsRepeatsOwnershipAndTerminalHistoryRemainAuthoritative() throws Exception {
 		var userId = insertProfile();
 		var otherUser = insertProfile();
@@ -630,6 +785,13 @@ class SupportPlanIntegrationTests extends CareTestProperties {
 				.header("If-Match", "\"1\"").contentType(MediaType.APPLICATION_JSON)
 				.content("{\"status\":\"" + status + "\"}"))
 				.andReturn().getResponse().getStatus();
+	}
+
+	private int engagementAfter(CountDownLatch start, UUID userId, UUID occurrenceId, String body) throws Exception {
+		start.await(5, TimeUnit.SECONDS);
+		return mvc.perform(put("/api/v1/support-plan-occurrences/{id}/engagement", occurrenceId)
+				.with(user(userId)).header("If-Match", "\"0\"").contentType(MediaType.APPLICATION_JSON)
+				.content(body)).andReturn().getResponse().getStatus();
 	}
 
 	private com.fasterxml.jackson.databind.JsonNode createPlan(UUID userId, UUID evaluationId, String key)
