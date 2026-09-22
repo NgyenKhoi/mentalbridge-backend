@@ -480,6 +480,88 @@ class SupportPlanIntegrationTests extends CareTestProperties {
 	}
 
 	@Test
+	void stateChangePreservesHiddenVisibility() throws Exception {
+		var userId = insertProfile();
+		var draft = createPlan(userId, evaluation(userId, "MINIMAL", "MINIMAL", false),
+				"support-plan-hidden-state-create");
+		var planId = UUID.fromString(draft.path("supportPlanId").asText());
+		mvc.perform(post("/api/v1/support-plans/{id}/activate", planId).with(user(userId))
+				.header("If-Match", "\"0\"").header("Idempotency-Key", "support-plan-hidden-state-activate"))
+				.andExpect(status().isOk());
+		var occurrenceId = jdbc.sql("""
+				select id from support_plan_activity_occurrence
+				where user_id = :id order by scheduled_at, id limit 1
+				""").param("id", userId).query(UUID.class).single();
+
+		mvc.perform(put("/api/v1/support-plan-occurrences/{id}/engagement", occurrenceId)
+				.with(user(userId)).header("If-Match", "\"0\"").contentType(MediaType.APPLICATION_JSON)
+				.content("""
+						{"state":"SCHEDULED","hidden":true,"helpfulness":null,"barrierCode":null,
+						 "reflection":null,"summaryReuseApproved":false}
+						"""))
+				.andExpect(status().isOk()).andExpect(header().string("ETag", "\"1\""))
+				.andExpect(jsonPath("$.hidden").value(true));
+
+		mvc.perform(put("/api/v1/support-plan-occurrences/{id}/state", occurrenceId)
+				.with(user(userId)).header("If-Match", "\"1\"").contentType(MediaType.APPLICATION_JSON)
+				.content("{\"state\":\"COMPLETED\"}"))
+				.andExpect(status().isOk()).andExpect(header().string("ETag", "\"2\""))
+				.andExpect(jsonPath("$.state").value("COMPLETED"))
+				.andExpect(jsonPath("$.hidden").value(true))
+				.andExpect(jsonPath("$.engagementUpdatedAt").isString());
+		assertThat(jdbc.sql("""
+				select count(*) from outbox_event
+				where aggregate_id = :id and aggregate_version = 2
+				  and message_type = 'care.support-plan.engagement-changed'
+				""").param("id", occurrenceId).query(Long.class).single()).isEqualTo(1);
+		assertThat(jdbc.sql("""
+				select (payload ->> 'hidden')::boolean from outbox_event
+				where aggregate_id = :id and aggregate_version = 2
+				  and message_type = 'care.support-plan.engagement-changed'
+				""").param("id", occurrenceId).query(Boolean.class).single()).isTrue();
+	}
+
+	@Test
+	void stateReplayPreservesExistingEngagementMetadata() throws Exception {
+		var userId = insertProfile();
+		var draft = createPlan(userId, evaluation(userId, "MINIMAL", "MINIMAL", false),
+				"support-plan-state-replay-create");
+		var planId = UUID.fromString(draft.path("supportPlanId").asText());
+		mvc.perform(post("/api/v1/support-plans/{id}/activate", planId).with(user(userId))
+				.header("If-Match", "\"0\"").header("Idempotency-Key", "support-plan-state-replay-activate"))
+				.andExpect(status().isOk());
+		var occurrenceId = jdbc.sql("""
+				select id from support_plan_activity_occurrence
+				where user_id = :id order by scheduled_at, id limit 1
+				""").param("id", userId).query(UUID.class).single();
+		var completed = """
+				{"state":"COMPLETED","hidden":true,"helpfulness":"HELPFUL","barrierCode":null,
+				 "reflection":"Hoạt động này hữu ích.","summaryReuseApproved":true}
+				""";
+
+		var engagement = mvc.perform(put("/api/v1/support-plan-occurrences/{id}/engagement", occurrenceId)
+				.with(user(userId)).header("If-Match", "\"0\"").contentType(MediaType.APPLICATION_JSON)
+				.content(completed))
+				.andExpect(status().isOk()).andExpect(header().string("ETag", "\"1\""))
+				.andReturn().getResponse().getContentAsString();
+		var stateReplay = mvc.perform(put("/api/v1/support-plan-occurrences/{id}/state", occurrenceId)
+				.with(user(userId)).header("If-Match", "\"1\"").contentType(MediaType.APPLICATION_JSON)
+				.content("{\"state\":\"COMPLETED\"}"))
+				.andExpect(status().isOk()).andExpect(header().string("ETag", "\"1\""))
+				.andExpect(jsonPath("$.hidden").value(true))
+				.andExpect(jsonPath("$.helpfulness").value("HELPFUL"))
+				.andExpect(jsonPath("$.reflection").value("Hoạt động này hữu ích."))
+				.andExpect(jsonPath("$.summaryReuseApproved").value(true))
+				.andReturn().getResponse().getContentAsString();
+
+		assertThat(objectMapper.readTree(stateReplay)).isEqualTo(objectMapper.readTree(engagement));
+		assertThat(jdbc.sql("""
+				select count(*) from outbox_event
+				where aggregate_id = :id and message_type = 'care.support-plan.engagement-changed'
+				""").param("id", occurrenceId).query(Long.class).single()).isEqualTo(1);
+	}
+
+	@Test
 	void replacesReopensDeletesAndReloadsOwnedEngagementWithoutPublishingReflection() throws Exception {
 		var userId = insertProfile();
 		var otherUser = insertProfile();
