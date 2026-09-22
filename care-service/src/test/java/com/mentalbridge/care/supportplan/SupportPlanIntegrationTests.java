@@ -397,22 +397,58 @@ class SupportPlanIntegrationTests extends CareTestProperties {
 		assertThat(jdbc.sql("select count(*) from support_plan_activity_occurrence where user_id = :id")
 				.param("id", userId).query(Long.class).single()).isEqualTo(4);
 
-		var occurrence = objectMapper.readTree(first).path("occurrences").get(0);
+		var listedOccurrences = objectMapper.readTree(first).path("occurrences");
+		var occurrence = listedOccurrences.get(0);
 		var occurrenceId = UUID.fromString(occurrence.path("occurrenceId").asText());
-		mvc.perform(put("/api/v1/support-plan-occurrences/{id}/state", occurrenceId).with(user(userId))
+		var skippedOccurrenceId = UUID.fromString(listedOccurrences.get(1).path("occurrenceId").asText());
+		var completed = mvc.perform(put("/api/v1/support-plan-occurrences/{id}/state", occurrenceId)
+				.with(user(userId)).header("If-Match", "\"0\"")
+				.header("X-Correlation-ID", UUID.randomUUID()).contentType(MediaType.APPLICATION_JSON)
+				.content("{\"state\":\"COMPLETED\"}"))
+				.andExpect(status().isOk()).andExpect(header().string("ETag", "\"1\""))
+				.andExpect(jsonPath("$.state").value("COMPLETED"))
+				.andExpect(jsonPath("$.version").value(1))
+				.andExpect(jsonPath("$.hidden").value(false))
+				.andExpect(jsonPath("$.summaryReuseApproved").value(false))
+				.andExpect(jsonPath("$.engagementUpdatedAt").isString())
+				.andReturn().getResponse().getContentAsString();
+		var completedReplay = mvc.perform(put("/api/v1/support-plan-occurrences/{id}/state", occurrenceId)
+				.with(user(userId))
 				.header("If-Match", "\"0\"").contentType(MediaType.APPLICATION_JSON)
 				.content("{\"state\":\"COMPLETED\"}"))
 				.andExpect(status().isOk()).andExpect(header().string("ETag", "\"1\""))
-				.andExpect(jsonPath("$.state").value("COMPLETED"));
-		mvc.perform(put("/api/v1/support-plan-occurrences/{id}/state", occurrenceId).with(user(userId))
-				.header("If-Match", "\"0\"").contentType(MediaType.APPLICATION_JSON)
-				.content("{\"state\":\"COMPLETED\"}"))
-				.andExpect(status().isOk()).andExpect(header().string("ETag", "\"1\""));
+				.andReturn().getResponse().getContentAsString();
+		assertThat(objectMapper.readTree(completedReplay)).isEqualTo(objectMapper.readTree(completed));
 		mvc.perform(put("/api/v1/support-plan-occurrences/{id}/state", occurrenceId).with(user(userId))
 				.header("If-Match", "\"0\"").contentType(MediaType.APPLICATION_JSON)
 				.content("{\"state\":\"SKIPPED\"}"))
 				.andExpect(status().isPreconditionFailed())
 				.andExpect(jsonPath("$.code").value("OCCURRENCE_VERSION_MISMATCH"));
+		mvc.perform(put("/api/v1/support-plan-occurrences/{id}/state", skippedOccurrenceId).with(user(userId))
+				.header("If-Match", "\"0\"").contentType(MediaType.APPLICATION_JSON)
+				.content("{\"state\":\"SKIPPED\"}"))
+				.andExpect(status().isOk()).andExpect(header().string("ETag", "\"1\""))
+				.andExpect(jsonPath("$.state").value("SKIPPED"))
+				.andExpect(jsonPath("$.version").value(1))
+				.andExpect(jsonPath("$.hidden").value(false))
+				.andExpect(jsonPath("$.summaryReuseApproved").value(false))
+				.andExpect(jsonPath("$.engagementUpdatedAt").isString());
+		assertThat(jdbc.sql("""
+				select count(*) from outbox_event
+				where aggregate_id = :id and message_type = 'care.support-plan.engagement-changed'
+				""").param("id", occurrenceId).query(Long.class).single()).isEqualTo(1);
+		assertThat(jdbc.sql("""
+				select payload ->> 'state' from outbox_event
+				where aggregate_id = :id and message_type = 'care.support-plan.engagement-changed'
+				""").param("id", occurrenceId).query(String.class).single()).isEqualTo("COMPLETED");
+		assertThat(jdbc.sql("""
+				select count(*) from outbox_event
+				where aggregate_id = :id and message_type = 'care.support-plan.engagement-changed'
+				""").param("id", skippedOccurrenceId).query(Long.class).single()).isEqualTo(1);
+		assertThat(jdbc.sql("""
+				select payload ->> 'state' from outbox_event
+				where aggregate_id = :id and message_type = 'care.support-plan.engagement-changed'
+				""").param("id", skippedOccurrenceId).query(String.class).single()).isEqualTo("SKIPPED");
 
 		mvc.perform(put("/api/v1/support-plans/{id}/status", planId).with(user(userId))
 				.header("If-Match", "\"1\"").contentType(MediaType.APPLICATION_JSON)

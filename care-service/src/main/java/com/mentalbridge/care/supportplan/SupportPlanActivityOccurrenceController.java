@@ -54,8 +54,9 @@ public class SupportPlanActivityOccurrenceController {
 	ResponseEntity<SupportPlanActivityOccurrenceService.OccurrenceView> state(@AuthenticationPrincipal Jwt jwt,
 			@PathVariable UUID occurrenceId,
 			@RequestHeader("If-Match") @Pattern(regexp = "^\"[0-9]+\"$") String ifMatch,
+			@RequestHeader(value = "X-Correlation-ID", required = false) UUID correlationId,
 			@Valid @RequestBody ChangeStateRequest request) {
-		var value = occurrences.changeState(subject(jwt), occurrenceId, version(ifMatch), request.state());
+		var value = occurrences.changeState(subject(jwt), occurrenceId, version(ifMatch), request.state(), correlationId);
 		return ResponseEntity.ok().header(HttpHeaders.ETAG, '"' + Long.toString(value.version()) + '"').body(value);
 	}
 

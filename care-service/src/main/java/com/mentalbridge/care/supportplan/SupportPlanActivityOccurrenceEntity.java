@@ -73,18 +73,6 @@ class SupportPlanActivityOccurrenceEntity {
 	boolean summaryReuseApproved() { return summaryReuseApproved; }
 	Instant engagementUpdatedAt() { return engagementUpdatedAt; }
 
-	void complete(Instant now) {
-		this.state = "COMPLETED";
-		this.completedAt = now;
-		this.updatedAt = now;
-	}
-
-	void skip(Instant now) {
-		this.state = "SKIPPED";
-		this.skippedAt = now;
-		this.updatedAt = now;
-	}
-
 	boolean engagementEquals(String desiredState, boolean desiredHidden, String desiredHelpfulness,
 			String desiredBarrierCode, String desiredReflection, boolean desiredSummaryReuseApproved) {
 		return state.equals(desiredState) && hidden == desiredHidden

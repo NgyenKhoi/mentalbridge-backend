@@ -104,28 +104,14 @@ public class SupportPlanActivityOccurrenceService {
 	}
 
 	@Transactional
-	public OccurrenceView changeState(UUID userId, UUID occurrenceId, long expectedVersion, String desiredState) {
+	public OccurrenceView changeState(UUID userId, UUID occurrenceId, long expectedVersion, String desiredState,
+			UUID correlationId) {
 		if (!List.of("COMPLETED", "SKIPPED").contains(desiredState)) {
 			throw new ApiException(HttpStatus.BAD_REQUEST, "OCCURRENCE_STATE_INVALID",
 					"Occurrence state must be COMPLETED or SKIPPED");
 		}
-		var occurrence = requiredForEngagement(userId, occurrenceId);
-		if (desiredState.equals(occurrence.state())) {
-			return view(occurrence, clock.instant());
-		}
-		version(occurrence, expectedVersion);
-		if (!"SCHEDULED".equals(occurrence.state())) {
-			throw new ApiException(HttpStatus.CONFLICT, "OCCURRENCE_NOT_OPEN",
-					"Only a scheduled or missed occurrence can be completed or skipped");
-		}
-		Instant now = clock.instant().truncatedTo(ChronoUnit.MICROS);
-		if ("COMPLETED".equals(desiredState)) {
-			occurrence.complete(now);
-		}
-		else {
-			occurrence.skip(now);
-		}
-		return view(occurrences.saveAndFlush(occurrence), now);
+		return replaceEngagement(userId, occurrenceId, expectedVersion, desiredState, false, null, null, null,
+				false, correlationId);
 	}
 
 	@Transactional
