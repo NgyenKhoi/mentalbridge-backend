@@ -126,6 +126,19 @@ assert.match(safetyDirectoryAreaAliases, /area-alias-hcm-canonical/);
 assert.match(safetyDirectoryAreaAliases, /ON CONFLICT \(seed_key\) DO NOTHING/);
 assert.match(safetyDirectoryAreaAliases, /differs from reviewed release/);
 assert.doesNotMatch(safetyDirectoryAreaAliases, /CREATE DATABASE|CREATE SCHEMA/i);
+const areaAliasValues = safetyDirectoryAreaAliases.match(
+  /INSERT INTO safety_directory_area_alias[\s\S]*?\bVALUES\s*([\s\S]*?)\s*ON CONFLICT \(seed_key\)/,
+)?.[1];
+assert.ok(areaAliasValues, 'Controlled area alias seed must contain an INSERT value list');
+const areaAliases = [...areaAliasValues.matchAll(/\('[0-9a-f-]{36}',\s*'((?:''|[^'])*)',/gi)].map(
+  ([, alias]) => alias.replaceAll("''", "'"),
+);
+const normalisedAreaAliases = areaAliases.map((alias) => alias.trim().toLowerCase());
+assert.equal(
+  new Set(normalisedAreaAliases).size,
+  normalisedAreaAliases.length,
+  'Controlled area aliases must be unique after lower(btrim(alias_text))',
+);
 assert.equal(controlledDemoFixture.policyVersion, 'content-eligibility-v1');
 assert.equal(controlledDemoFixture.locale, 'vi-VN');
 assert.equal(controlledDemoFixture.reviewEvidence.storyKey, 'MB-337');

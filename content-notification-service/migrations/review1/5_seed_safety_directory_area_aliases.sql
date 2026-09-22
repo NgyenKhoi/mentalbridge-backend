@@ -31,8 +31,7 @@ VALUES
   ('00000000-0000-4000-8000-000000000823', 'HCM',             '79', NULL, false, 'area-alias-hcm-abbrev'),
   ('00000000-0000-4000-8000-000000000824', 'TPHCM',           '79', NULL, false, 'area-alias-hcm-tphcm'),
   ('00000000-0000-4000-8000-000000000825', 'Sài Gòn',         '79', NULL, false, 'area-alias-hcm-saigon'),
-  ('00000000-0000-4000-8000-000000000826', 'Sai Gon',         '79', NULL, false, 'area-alias-hcm-saigon-ascii'),
-  ('00000000-0000-4000-8000-000000000827', 'hcm',             '79', NULL, false, 'area-alias-hcm-lower')
+  ('00000000-0000-4000-8000-000000000826', 'Sai Gon',         '79', NULL, false, 'area-alias-hcm-saigon-ascii')
 ON CONFLICT (seed_key) DO NOTHING;
 
 -- ── Integrity assertions ────────────────────────────────────────────────────
