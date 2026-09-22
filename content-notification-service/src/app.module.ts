@@ -10,6 +10,8 @@ import {
   E2E_OUTAGE_STATE_TOKEN,
   RESOURCE_ELIGIBILITY_REPOSITORY_TOKEN,
   RESOURCE_ELIGIBILITY_SERVICE_TOKEN,
+  SAFETY_DIRECTORY_REPOSITORY_TOKEN,
+  SAFETY_DIRECTORY_SERVICE_TOKEN,
 } from './application.tokens.js';
 import type { ServiceConfiguration } from './configuration/configuration.js';
 import { DatabaseService, type ReadinessProbe } from './database/database.service.js';
@@ -24,12 +26,19 @@ import { RolesGuard } from './auth/roles.guard.js';
 import { ResourceEligibilityController } from './resources/resource-eligibility.controller.js';
 import { ResourceEligibilityRepository } from './resources/resource-eligibility.repository.js';
 import { ResourceEligibilityService } from './resources/resource-eligibility.service.js';
+import {
+  SafetyDirectoryController,
+  SafetyDirectoryLookupController,
+} from './safety-directory/safety-directory.controller.js';
+import { SafetyDirectoryRepository } from './safety-directory/safety-directory.repository.js';
+import { SafetyDirectoryService } from './safety-directory/safety-directory.service.js';
 
 export interface ApplicationDependencies {
   readonly readinessProbe?: ReadinessProbe;
   readonly resourceRepository?: ResourceRepository;
   readonly outageState?: { enabled: boolean };
   readonly resourceEligibilityRepository?: ResourceEligibilityRepository;
+  readonly safetyDirectoryRepository?: SafetyDirectoryRepository;
 }
 
 @Module({})
@@ -62,6 +71,12 @@ export const createAppModule = (
         useValue: dependencies.resourceEligibilityRepository,
       }
     : { provide: RESOURCE_ELIGIBILITY_REPOSITORY_TOKEN, useClass: ResourceEligibilityRepository };
+  const safetyDirectoryRepositoryProvider: Provider = dependencies.safetyDirectoryRepository
+    ? {
+        provide: SAFETY_DIRECTORY_REPOSITORY_TOKEN,
+        useValue: dependencies.safetyDirectoryRepository,
+      }
+    : { provide: SAFETY_DIRECTORY_REPOSITORY_TOKEN, useClass: SafetyDirectoryRepository };
 
   return {
     module: ContentNotificationModule,
@@ -71,6 +86,8 @@ export const createAppModule = (
       ResourceController,
       ResourceEligibilityController,
       E2eOutageController,
+      SafetyDirectoryController,
+      SafetyDirectoryLookupController,
     ],
     providers: [
       { provide: CONFIGURATION_TOKEN, useValue: configuration },
@@ -85,6 +102,8 @@ export const createAppModule = (
       serviceProvider,
       eligibilityRepositoryProvider,
       { provide: RESOURCE_ELIGIBILITY_SERVICE_TOKEN, useClass: ResourceEligibilityService },
+      safetyDirectoryRepositoryProvider,
+      { provide: SAFETY_DIRECTORY_SERVICE_TOKEN, useClass: SafetyDirectoryService },
       JwtStrategy,
       {
         provide: RolesGuard,

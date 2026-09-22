@@ -50,7 +50,8 @@ class CareOpenApiContractTests {
 			"DELETE /api/v1/support-plan-occurrences/{occurrenceId}/engagement",
 			"POST /api/v1/anonymous-assessment-sessions",
 			"POST /api/v1/anonymous-assessment-sessions/{sessionId}/assessments",
-			"GET /api/v1/anonymous-assessment-sessions/{sessionId}/assessments/{assessmentId}");
+			"GET /api/v1/anonymous-assessment-sessions/{sessionId}/assessments/{assessmentId}",
+			"POST /api/v1/safety-directory-lookups");
 
 	private static final Set<String> IMPLEMENTED_PATHS = Set.of(
 			"/api/v1/profile",
@@ -81,7 +82,8 @@ class CareOpenApiContractTests {
 			"/api/v1/support-plan-occurrences/{occurrenceId}/engagement",
 			"/api/v1/anonymous-assessment-sessions",
 			"/api/v1/anonymous-assessment-sessions/{sessionId}/assessments",
-			"/api/v1/anonymous-assessment-sessions/{sessionId}/assessments/{assessmentId}");
+			"/api/v1/anonymous-assessment-sessions/{sessionId}/assessments/{assessmentId}",
+			"/api/v1/safety-directory-lookups");
 
 	private static final Set<String> BEARER_OPERATIONS = Set.of(
 			"GET /api/v1/profile",

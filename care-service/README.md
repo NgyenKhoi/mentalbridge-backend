@@ -81,6 +81,9 @@ Assessment answer text must never be copied into outbox payloads, logs, errors, 
 | `CONTENT_RESOURCE_ELIGIBILITY_CIRCUIT_FAILURE_RATE` | No | Percentage of dependency failures that opens the breaker | `50` |
 | `CONTENT_RESOURCE_ELIGIBILITY_CIRCUIT_OPEN_DURATION` | No | Bounded open interval before half-open probes | `PT10S` |
 | `CONTENT_RESOURCE_ELIGIBILITY_CIRCUIT_HALF_OPEN_CALLS` | No | Permitted half-open probes | `2` |
+| `CONTENT_SAFETY_DIRECTORY_BASE_URL` | Local/test only | Optional direct Content URL for the reviewed directory; leave empty outside tests so OpenFeign uses Eureka | `http://localhost:3003` |
+| `CONTENT_SAFETY_DIRECTORY_CONNECT_TIMEOUT` | No | Bounded TCP connection deadline for directory lookup | `PT0.5S` |
+| `CONTENT_SAFETY_DIRECTORY_READ_TIMEOUT` | No | Bounded response-read deadline before Care returns its local fallback | `PT1S` |
 | `CONSULTATION_ENTITLEMENT_BASE_URL` | Local/test only | Optional direct Consultation URL; leave empty outside tests so OpenFeign resolves `consultation-service` through Eureka | `http://localhost:8082` |
 | `CONSULTATION_ENTITLEMENT_CONNECT_TIMEOUT` | No | Bounded TCP connection deadline for the authoritative current entitlement read | `PT0.5S` |
 | `CONSULTATION_ENTITLEMENT_READ_TIMEOUT` | No | Total response-read deadline for current entitlement | `PT2S` |
