@@ -1,0 +1,40 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://mentalbridge.local/contracts/events/care/support-plan-engagement-changed-v1.schema.json",
+  "title": "Care SupportPlan engagement changed v1",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["messageId", "messageType", "occurredAt", "producer", "schemaVersion", "correlationId", "aggregateId", "aggregateVersion", "payload"],
+  "properties": {
+    "messageId": { "type": "string", "format": "uuid" },
+    "messageType": { "const": "care.support-plan.engagement-changed" },
+    "occurredAt": { "type": "string", "format": "date-time" },
+    "producer": { "const": "care-service" },
+    "schemaVersion": { "const": "1.0" },
+    "correlationId": { "type": "string", "format": "uuid" },
+    "aggregateId": { "type": "string", "format": "uuid" },
+    "aggregateVersion": { "type": "integer", "minimum": 1 },
+    "payload": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["occurrenceId", "supportPlanId", "userId", "changeType", "state", "hidden", "helpfulness", "barrierCode", "summaryReuseApproved", "sourcePlanVersion", "sourceSlotId", "sourceResourceId", "sourceContentVersion", "engagementUpdatedAt", "interpretationCode"],
+      "properties": {
+        "occurrenceId": { "type": "string", "format": "uuid" },
+        "supportPlanId": { "type": "string", "format": "uuid" },
+        "userId": { "type": "string", "format": "uuid" },
+        "changeType": { "enum": ["REPLACED", "DELETED"] },
+        "state": { "enum": ["SCHEDULED", "COMPLETED", "SKIPPED"] },
+        "hidden": { "type": "boolean" },
+        "helpfulness": { "type": ["string", "null"], "enum": ["NOT_HELPFUL", "A_LITTLE_HELPFUL", "HELPFUL", "VERY_HELPFUL", null] },
+        "barrierCode": { "type": ["string", "null"], "enum": ["LOW_ENERGY", "NOT_ENOUGH_TIME", "DIFFICULT_TO_START", "NOT_A_GOOD_FIT", "OTHER", null] },
+        "summaryReuseApproved": { "type": "boolean" },
+        "sourcePlanVersion": { "type": "integer", "minimum": 1 },
+        "sourceSlotId": { "type": "string", "minLength": 1, "maxLength": 64 },
+        "sourceResourceId": { "type": "string", "format": "uuid" },
+        "sourceContentVersion": { "type": "string", "pattern": "^[0-9]+$" },
+        "engagementUpdatedAt": { "type": "string", "format": "date-time" },
+        "interpretationCode": { "const": "SELF_REPORTED_WELLBEING_ACTIVITY_NOT_TREATMENT_ADHERENCE" }
+      }
+    }
+  }
+}

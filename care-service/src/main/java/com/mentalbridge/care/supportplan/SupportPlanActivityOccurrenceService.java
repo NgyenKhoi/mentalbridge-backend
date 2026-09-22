@@ -18,6 +18,8 @@ import org.springframework.http.HttpStatus;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
+import com.fasterxml.jackson.core.JsonProcessingException;
+import com.fasterxml.jackson.databind.ObjectMapper;
 import com.mentalbridge.care.profile.UserProfileRepository;
 import com.mentalbridge.care.shared.ApiException;
 
@@ -36,16 +38,19 @@ public class SupportPlanActivityOccurrenceService {
 	private final SupportPlanActivityOccurrenceRepository occurrences;
 	private final UserProfileRepository profiles;
 	private final Clock clock;
+	private final ObjectMapper objectMapper;
 
 	public SupportPlanActivityOccurrenceService(SupportPlanRepository plans, SupportPlanSlotRepository slots,
 			SupportPlanActivityScheduleRepository schedules,
-			SupportPlanActivityOccurrenceRepository occurrences, UserProfileRepository profiles, Clock clock) {
+			SupportPlanActivityOccurrenceRepository occurrences, UserProfileRepository profiles, Clock clock,
+			ObjectMapper objectMapper) {
 		this.plans = plans;
 		this.slots = slots;
 		this.schedules = schedules;
 		this.occurrences = occurrences;
 		this.profiles = profiles;
 		this.clock = clock;
+		this.objectMapper = objectMapper;
 	}
 
 	@Transactional
@@ -99,37 +104,61 @@ public class SupportPlanActivityOccurrenceService {
 	}
 
 	@Transactional
-	public OccurrenceView changeState(UUID userId, UUID occurrenceId, long expectedVersion, String desiredState) {
+	public OccurrenceView changeState(UUID userId, UUID occurrenceId, long expectedVersion, String desiredState,
+			UUID correlationId) {
 		if (!List.of("COMPLETED", "SKIPPED").contains(desiredState)) {
 			throw new ApiException(HttpStatus.BAD_REQUEST, "OCCURRENCE_STATE_INVALID",
 					"Occurrence state must be COMPLETED or SKIPPED");
 		}
-		var occurrence = required(userId, occurrenceId);
+		var occurrence = requiredForEngagement(userId, occurrenceId);
 		if (desiredState.equals(occurrence.state())) {
 			return view(occurrence, clock.instant());
 		}
-		if (occurrence.version() != expectedVersion) {
-			throw new ApiException(HttpStatus.PRECONDITION_FAILED, "OCCURRENCE_VERSION_MISMATCH",
-					"Occurrence version does not match If-Match");
-		}
+		version(occurrence, expectedVersion);
 		if (!"SCHEDULED".equals(occurrence.state())) {
 			throw new ApiException(HttpStatus.CONFLICT, "OCCURRENCE_NOT_OPEN",
 					"Only a scheduled or missed occurrence can be completed or skipped");
 		}
-		var plan = plans.findByIdAndUserIdForUpdate(occurrence.supportPlanId(), userId).orElseThrow(() ->
-				new ApiException(HttpStatus.NOT_FOUND, "SUPPORT_PLAN_NOT_FOUND", "SupportPlan was not found"));
-		if (!List.of("ACTIVE", "PAUSED").contains(plan.status())) {
-			throw new ApiException(HttpStatus.CONFLICT, "SUPPORT_PLAN_NOT_CURRENT",
-					"The source SupportPlan is no longer current");
-		}
 		Instant now = clock.instant().truncatedTo(ChronoUnit.MICROS);
-		if ("COMPLETED".equals(desiredState)) {
-			occurrence.complete(now);
+		occurrence.replaceEngagement(desiredState, occurrence.hidden(), null, null, null, false, now);
+		occurrence = occurrences.saveAndFlush(occurrence);
+		appendEngagementEvent(occurrence, "REPLACED", correlationId, now);
+		return view(occurrence, now);
+	}
+
+	@Transactional
+	public OccurrenceView replaceEngagement(UUID userId, UUID occurrenceId, long expectedVersion,
+			String desiredState, boolean hidden, String helpfulness, String barrierCode, String reflection,
+			boolean summaryReuseApproved, UUID correlationId) {
+		String normalizedReflection = reflection == null ? null : reflection.strip();
+		validateEngagement(desiredState, helpfulness, barrierCode, normalizedReflection, summaryReuseApproved);
+		var occurrence = requiredForEngagement(userId, occurrenceId);
+		if (occurrence.engagementEquals(desiredState, hidden, helpfulness, barrierCode,
+				normalizedReflection, summaryReuseApproved)) {
+			return view(occurrence, clock.instant());
 		}
-		else {
-			occurrence.skip(now);
+		version(occurrence, expectedVersion);
+		Instant now = clock.instant().truncatedTo(ChronoUnit.MICROS);
+		occurrence.replaceEngagement(desiredState, hidden, helpfulness, barrierCode,
+				normalizedReflection, summaryReuseApproved, now);
+		occurrence = occurrences.saveAndFlush(occurrence);
+		appendEngagementEvent(occurrence, "REPLACED", correlationId, now);
+		return view(occurrence, now);
+	}
+
+	@Transactional
+	public OccurrenceView deleteEngagement(UUID userId, UUID occurrenceId, long expectedVersion,
+			UUID correlationId) {
+		var occurrence = requiredForEngagement(userId, occurrenceId);
+		if (occurrence.engagementEquals("SCHEDULED", false, null, null, null, false)) {
+			return view(occurrence, clock.instant());
 		}
-		return view(occurrences.saveAndFlush(occurrence), now);
+		version(occurrence, expectedVersion);
+		Instant now = clock.instant().truncatedTo(ChronoUnit.MICROS);
+		occurrence.deleteEngagement(now);
+		occurrence = occurrences.saveAndFlush(occurrence);
+		appendEngagementEvent(occurrence, "DELETED", correlationId, now);
+		return view(occurrence, now);
 	}
 
 	@Transactional
@@ -236,6 +265,78 @@ public class SupportPlanActivityOccurrenceService {
 				HttpStatus.NOT_FOUND, "OCCURRENCE_NOT_FOUND", "SupportPlan occurrence was not found"));
 	}
 
+	private SupportPlanActivityOccurrenceEntity requiredForEngagement(UUID userId, UUID occurrenceId) {
+		var planId = occurrences.findSupportPlanIdByIdAndUserId(occurrenceId, userId).orElseThrow(() ->
+				new ApiException(HttpStatus.NOT_FOUND, "OCCURRENCE_NOT_FOUND",
+						"SupportPlan occurrence was not found"));
+		var plan = plans.findByIdAndUserIdForUpdate(planId, userId).orElseThrow(() ->
+				new ApiException(HttpStatus.NOT_FOUND, "SUPPORT_PLAN_NOT_FOUND", "SupportPlan was not found"));
+		if (!"ACTIVE".equals(plan.status())) {
+			throw new ApiException(HttpStatus.CONFLICT, "SUPPORT_PLAN_NOT_ACTIVE",
+					"Only an active current SupportPlan accepts engagement updates");
+		}
+		var occurrence = occurrences.findByIdAndUserIdForUpdate(occurrenceId, userId).orElseThrow(() ->
+				new ApiException(HttpStatus.NOT_FOUND, "OCCURRENCE_NOT_FOUND",
+						"SupportPlan occurrence was not found"));
+		if ("CANCELLED".equals(occurrence.state())) {
+			throw new ApiException(HttpStatus.CONFLICT, "OCCURRENCE_NOT_OPEN",
+					"A cancelled occurrence does not accept engagement updates");
+		}
+		return occurrence;
+	}
+
+	private void validateEngagement(String state, String helpfulness, String barrierCode, String reflection,
+			boolean summaryReuseApproved) {
+		if (!List.of("SCHEDULED", "COMPLETED", "SKIPPED").contains(state)) {
+			throw invalidEngagement("Engagement state must be SCHEDULED, COMPLETED, or SKIPPED");
+		}
+		if (helpfulness != null && !List.of("NOT_HELPFUL", "A_LITTLE_HELPFUL", "HELPFUL", "VERY_HELPFUL")
+				.contains(helpfulness)) {
+			throw invalidEngagement("Helpfulness value is not supported");
+		}
+		if (barrierCode != null && !List.of("LOW_ENERGY", "NOT_ENOUGH_TIME", "DIFFICULT_TO_START",
+				"NOT_A_GOOD_FIT", "OTHER").contains(barrierCode)) {
+			throw invalidEngagement("Barrier code is not supported");
+		}
+		if (reflection != null && (reflection.isBlank() || reflection.length() > 500)) {
+			throw invalidEngagement("Reflection must contain one through 500 characters");
+		}
+		if (("SCHEDULED".equals(state) && (helpfulness != null || barrierCode != null || reflection != null
+				|| summaryReuseApproved)) || ("COMPLETED".equals(state) && barrierCode != null)
+				|| ("SKIPPED".equals(state) && helpfulness != null)) {
+			throw invalidEngagement("Engagement details do not match the selected state");
+		}
+	}
+
+	private void version(SupportPlanActivityOccurrenceEntity occurrence, long expectedVersion) {
+		if (occurrence.version() != expectedVersion) {
+			throw new ApiException(HttpStatus.PRECONDITION_FAILED, "OCCURRENCE_VERSION_MISMATCH",
+					"Occurrence version does not match If-Match");
+		}
+	}
+
+	private ApiException invalidEngagement(String message) {
+		return new ApiException(HttpStatus.BAD_REQUEST, "OCCURRENCE_ENGAGEMENT_INVALID", message);
+	}
+
+	private void appendEngagementEvent(SupportPlanActivityOccurrenceEntity occurrence, String changeType,
+			UUID correlationId, Instant now) {
+		try {
+			var payload = new EngagementEventPayload(occurrence.id(), occurrence.supportPlanId(),
+					occurrence.userId(), changeType, occurrence.state(), occurrence.hidden(), occurrence.helpfulness(),
+					occurrence.barrierCode(), occurrence.summaryReuseApproved(), occurrence.sourcePlanVersion(),
+					occurrence.sourceSlotKey(), occurrence.sourceResourceId(),
+					Long.toString(occurrence.sourceContentVersion()), occurrence.engagementUpdatedAt(),
+					"SELF_REPORTED_WELLBEING_ACTIVITY_NOT_TREATMENT_ADHERENCE");
+			occurrences.insertEngagementOutbox(UUID.randomUUID(), occurrence.id(), occurrence.version(),
+					correlationId == null ? UUID.randomUUID() : correlationId,
+					objectMapper.writeValueAsString(payload), now);
+		}
+		catch (JsonProcessingException exception) {
+			throw new IllegalStateException("SupportPlan engagement event could not be serialized", exception);
+		}
+	}
+
 	private OccurrenceView view(SupportPlanActivityOccurrenceEntity occurrence, Instant now) {
 		String displayState = "SCHEDULED".equals(occurrence.state()) && occurrence.scheduledAt().isBefore(now)
 				? "MISSED" : occurrence.state();
@@ -246,6 +347,8 @@ public class SupportPlanActivityOccurrenceService {
 						occurrence.sourceSlotKey(), occurrence.sourceResourceId(),
 						Long.toString(occurrence.sourceContentVersion()), occurrence.sourceTitle()),
 				occurrence.updatedAt(), occurrence.completedAt(), occurrence.skippedAt(), occurrence.cancelledAt(),
+				occurrence.hidden(), occurrence.helpfulness(), occurrence.barrierCode(), occurrence.reflection(),
+				occurrence.summaryReuseApproved(), occurrence.engagementUpdatedAt(),
 				"SELF_REPORTED_WELLBEING_ACTIVITY_NOT_TREATMENT_ADHERENCE");
 	}
 
@@ -256,5 +359,11 @@ public class SupportPlanActivityOccurrenceService {
 	public record OccurrenceView(UUID occurrenceId, UUID supportPlanId, UUID scheduleId, int scheduleVersion,
 			LocalDate localDate, LocalTime localTime, String timezone, Instant scheduledAt, String state,
 			String displayState, String stateReason, long version, OccurrenceSourceView source, Instant updatedAt,
-			Instant completedAt, Instant skippedAt, Instant cancelledAt, String interpretationCode) { }
+			Instant completedAt, Instant skippedAt, Instant cancelledAt, boolean hidden, String helpfulness,
+			String barrierCode, String reflection, boolean summaryReuseApproved, Instant engagementUpdatedAt,
+			String interpretationCode) { }
+	private record EngagementEventPayload(UUID occurrenceId, UUID supportPlanId, UUID userId, String changeType,
+			String state, boolean hidden, String helpfulness, String barrierCode, boolean summaryReuseApproved,
+			long sourcePlanVersion, String sourceSlotId, UUID sourceResourceId, String sourceContentVersion,
+			Instant engagementUpdatedAt, String interpretationCode) { }
 }

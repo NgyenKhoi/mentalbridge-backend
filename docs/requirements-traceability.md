@@ -97,6 +97,17 @@ The requirements are represented in domain/architecture documentation, but the l
 
 ## Approved scope changes
 
+- 2026-09-22: MB-376 adds an owner-only SupportPlan engagement workspace on
+  exact scheduled occurrences. Care accepts idempotent optimistic replacement,
+  reopen, hide/show, helpfulness, coded barriers, bounded private reflection,
+  and deletion that resets mutable engagement while retaining schedule/source
+  provenance. A minimized atomic event excludes reflection and requires
+  explicit per-occurrence summary-reuse approval; specialists receive no
+  continuous checklist endpoint. Reassessment may consume the coded evidence
+  only as the separate SupportPlan-engagement dimension, never as adherence,
+  treatment success, clinical improvement, or a recovery score. See
+  [ADR 0021](adr/0021-support-plan-engagement.md) and
+  [MB-376 evidence](story-mb-376-support-plan-engagement-evidence.md).
 - 2026-09-21: MB-513 implements Care-owned
   `support-plan-activity-schedule-v1` schedules and persisted occurrences for
   the single active/paused SupportPlan. The owner APIs expose bounded local-date

@@ -642,6 +642,12 @@ generation idempotent.
 | `version` | Optimistic counter required by explicit user state updates. |
 | `created_at` / `updated_at` | UTC insertion and latest accepted transition instants. |
 | `completed_at` / `skipped_at` / `cancelled_at` | Exactly the timestamp matching the persisted terminal state; all null while scheduled. |
+| `hidden` | Owner-only display preference; independent of completion/skip state. |
+| `helpfulness` | Optional owner rating for `COMPLETED`: `NOT_HELPFUL`, `A_LITTLE_HELPFUL`, `HELPFUL`, or `VERY_HELPFUL`. |
+| `barrier_code` | Optional owner-selected reason for `SKIPPED`: `LOW_ENERGY`, `NOT_ENOUGH_TIME`, `DIFFICULT_TO_START`, `NOT_A_GOOD_FIT`, or `OTHER`. |
+| `reflection` | Optional private trimmed owner reflection, 1-500 characters; excluded from the integration event. |
+| `summary_reuse_approved` | Explicit approval to reuse minimized coded facts in a later bounded summary; never broad checklist monitoring consent. |
+| `engagement_updated_at` | Latest accepted replacement or deletion instant. Deletion clears mutable values but retains provenance. |
 
 ### `care.intervention_plan`
 
