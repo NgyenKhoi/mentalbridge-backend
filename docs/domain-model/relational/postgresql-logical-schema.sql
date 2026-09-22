@@ -624,6 +624,24 @@ CREATE TABLE care.support_plan_activity_occurrence (
     completed_at timestamptz,
     skipped_at timestamptz,
     cancelled_at timestamptz,
+    hidden boolean NOT NULL DEFAULT false,
+    helpfulness varchar(24),
+    barrier_code varchar(32),
+    reflection varchar(500),
+    summary_reuse_approved boolean NOT NULL DEFAULT false,
+    engagement_updated_at timestamptz,
+    CHECK (helpfulness IS NULL OR helpfulness IN
+        ('NOT_HELPFUL', 'A_LITTLE_HELPFUL', 'HELPFUL', 'VERY_HELPFUL')),
+    CHECK (barrier_code IS NULL OR barrier_code IN
+        ('LOW_ENERGY', 'NOT_ENOUGH_TIME', 'DIFFICULT_TO_START', 'NOT_A_GOOD_FIT', 'OTHER')),
+    CHECK (reflection IS NULL OR (char_length(btrim(reflection)) BETWEEN 1 AND 500)),
+    CHECK (
+        (state IN ('SCHEDULED', 'CANCELLED')
+            AND helpfulness IS NULL AND barrier_code IS NULL AND reflection IS NULL
+            AND summary_reuse_approved = false)
+        OR (state = 'COMPLETED' AND barrier_code IS NULL)
+        OR (state = 'SKIPPED' AND helpfulness IS NULL)
+    ),
     UNIQUE (activity_schedule_id, schedule_version, local_date),
     FOREIGN KEY (activity_schedule_id, support_plan_id, user_id)
         REFERENCES care.support_plan_activity_schedule(id, support_plan_id, user_id),

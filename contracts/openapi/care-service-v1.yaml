@@ -783,6 +783,64 @@ paths:
         '404': { $ref: '#/components/responses/SupportPlanOccurrenceNotFoundProblem' }
         '409': { $ref: '#/components/responses/SupportPlanOccurrenceConflictProblem' }
         '412': { $ref: '#/components/responses/SupportPlanOccurrenceVersionProblem' }
+  /api/v1/support-plan-occurrences/{occurrenceId}/engagement:
+    x-mentalbridge-status: implemented
+    put:
+      tags: [SupportPlan activity]
+      operationId: replaceOwnSupportPlanOccurrenceEngagement
+      summary: Replace one current occurrence's user-owned engagement
+      description: |
+        The complete desired state is naturally idempotent. SCHEDULED reopens
+        a completed or skipped occurrence and clears its signals. Helpfulness
+        belongs only to completion, while a barrier belongs only to skip.
+        Reflection is bounded and never published in the minimized integration
+        fact. Hiding is a reversible display preference. Only an occurrence in
+        the authenticated user's ACTIVE current plan accepts this command.
+        These values are self-reported wellbeing engagement, not adherence,
+        clinical outcome, symptom improvement, or recovery.
+      security:
+        - bearerAuth: []
+      parameters:
+        - $ref: '#/components/parameters/OccurrenceId'
+        - $ref: '#/components/parameters/RequiredIfMatch'
+        - $ref: '#/components/parameters/CorrelationId'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: '#/components/schemas/ReplaceSupportPlanOccurrenceEngagementRequest' }
+      responses:
+        '200': { $ref: '#/components/responses/SupportPlanOccurrenceResult' }
+        '400': { $ref: '#/components/responses/ValidationProblem' }
+        '401': { $ref: '#/components/responses/UnauthorizedProblem' }
+        '403': { $ref: '#/components/responses/ForbiddenProblem' }
+        '404': { $ref: '#/components/responses/SupportPlanOccurrenceNotFoundProblem' }
+        '409': { $ref: '#/components/responses/SupportPlanOccurrenceConflictProblem' }
+        '412': { $ref: '#/components/responses/SupportPlanOccurrenceVersionProblem' }
+    delete:
+      tags: [SupportPlan activity]
+      operationId: deleteOwnSupportPlanOccurrenceEngagement
+      summary: Delete one current occurrence's mutable engagement
+      description: |
+        Clears completion/skip, visibility, helpfulness, barrier, reflection,
+        and reuse approval while retaining immutable schedule and exact source
+        provenance. Repeating the already-cleared desired result is a no-op.
+        The controlled demo retains engagement with its occurrence until this
+        owner command or account-deletion coordination removes it; no public
+        production retention duration is claimed.
+      security:
+        - bearerAuth: []
+      parameters:
+        - $ref: '#/components/parameters/OccurrenceId'
+        - $ref: '#/components/parameters/RequiredIfMatch'
+        - $ref: '#/components/parameters/CorrelationId'
+      responses:
+        '200': { $ref: '#/components/responses/SupportPlanOccurrenceResult' }
+        '401': { $ref: '#/components/responses/UnauthorizedProblem' }
+        '403': { $ref: '#/components/responses/ForbiddenProblem' }
+        '404': { $ref: '#/components/responses/SupportPlanOccurrenceNotFoundProblem' }
+        '409': { $ref: '#/components/responses/SupportPlanOccurrenceConflictProblem' }
+        '412': { $ref: '#/components/responses/SupportPlanOccurrenceVersionProblem' }
   /api/v1/anonymous-assessment-sessions:
     x-mentalbridge-status: implemented
     post:
@@ -1890,6 +1948,31 @@ components:
       required: [state]
       properties:
         state: { type: string, enum: [COMPLETED, SKIPPED] }
+    ReplaceSupportPlanOccurrenceEngagementRequest:
+      type: object
+      additionalProperties: false
+      required: [state, hidden, helpfulness, barrierCode, reflection, summaryReuseApproved]
+      properties:
+        state: { type: string, enum: [SCHEDULED, COMPLETED, SKIPPED] }
+        hidden:
+          type: boolean
+          description: Reversible owner display preference; it does not change engagement state.
+        helpfulness:
+          type: [string, 'null']
+          enum: [NOT_HELPFUL, A_LITTLE_HELPFUL, HELPFUL, VERY_HELPFUL, null]
+          description: Optional self-reported helpfulness, valid only with COMPLETED.
+        barrierCode:
+          type: [string, 'null']
+          enum: [LOW_ENERGY, NOT_ENOUGH_TIME, DIFFICULT_TO_START, NOT_A_GOOD_FIT, OTHER, null]
+          description: Optional structured barrier, valid only with SKIPPED.
+        reflection:
+          type: [string, 'null']
+          minLength: 1
+          maxLength: 500
+          description: Optional bounded owner reflection; excluded from minimized integration facts.
+        summaryReuseApproved:
+          type: boolean
+          description: Explicit approval for later bounded-summary reuse; never grants live checklist access.
     SupportPlanOccurrenceList:
       type: object
       additionalProperties: false
@@ -1908,7 +1991,7 @@ components:
     SupportPlanOccurrence:
       type: object
       additionalProperties: false
-      required: [occurrenceId, supportPlanId, scheduleId, scheduleVersion, localDate, localTime, timezone, scheduledAt, state, displayState, stateReason, version, source, updatedAt, completedAt, skippedAt, cancelledAt, interpretationCode]
+      required: [occurrenceId, supportPlanId, scheduleId, scheduleVersion, localDate, localTime, timezone, scheduledAt, state, displayState, stateReason, version, source, updatedAt, completedAt, skippedAt, cancelledAt, hidden, helpfulness, barrierCode, reflection, summaryReuseApproved, engagementUpdatedAt, interpretationCode]
       properties:
         occurrenceId: { type: string, format: uuid }
         supportPlanId: { type: string, format: uuid }
@@ -1929,6 +2012,20 @@ components:
         completedAt: { type: [string, 'null'], format: date-time }
         skippedAt: { type: [string, 'null'], format: date-time }
         cancelledAt: { type: [string, 'null'], format: date-time }
+        hidden:
+          type: boolean
+          description: Owner-controlled display preference independent of completion state.
+        helpfulness:
+          type: [string, 'null']
+          enum: [NOT_HELPFUL, A_LITTLE_HELPFUL, HELPFUL, VERY_HELPFUL, null]
+        barrierCode:
+          type: [string, 'null']
+          enum: [LOW_ENERGY, NOT_ENOUGH_TIME, DIFFICULT_TO_START, NOT_A_GOOD_FIT, OTHER, null]
+        reflection: { type: [string, 'null'], minLength: 1, maxLength: 500 }
+        summaryReuseApproved:
+          type: boolean
+          description: Owner approval for a later bounded summary, not specialist checklist access.
+        engagementUpdatedAt: { type: [string, 'null'], format: date-time }
         interpretationCode: { type: string, const: SELF_REPORTED_WELLBEING_ACTIVITY_NOT_TREATMENT_ADHERENCE }
     SupportPlanOccurrenceSource:
       type: object

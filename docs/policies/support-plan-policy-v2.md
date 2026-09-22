@@ -207,3 +207,32 @@ discard journey without changing replacement behavior.
 - Assessment submission, SupportEvaluation creation, AI output, reminders, and
   activity-occurrence updates have no path that invokes a SupportPlan lifecycle
   command. Only the authenticated owner can submit the explicit command.
+
+## MB-376 owner engagement and helpfulness
+
+MB-376 keeps mutable engagement on the exact scheduled occurrence. It is
+self-reported wellbeing context, never treatment adherence, clinical outcome,
+specialist monitoring, or a recovery score.
+
+- The owner may replace a current occurrence with `SCHEDULED`, `COMPLETED`, or
+  `SKIPPED`, independently hide it, and optionally record helpfulness for a
+  completed item, a stable barrier code for a skipped item, and a private
+  reflection of at most 500 characters. Reopening means replacing the state
+  with `SCHEDULED` and clearing those signals.
+- Replacement is desired-state idempotent and versioned by `If-Match`. A
+  natural replay returns the current representation; a stale different write
+  fails. Only occurrences belonging to the current `ACTIVE` plan accept a
+  mutation. Paused, terminal, cancelled, stale, and cross-owner input fail
+  closed.
+- Deleting engagement resets mutable state and visibility but retains the
+  occurrence, schedule, exact plan/slot/resource/content versions, and normal
+  occurrence retention. The controlled demo does not invent a production
+  retention duration; production retention remains a separate approval gate.
+- A minimized atomic event carries coded engagement and exact source versions.
+  It never carries the private reflection. `summaryReuseApproved` is explicit
+  per occurrence; no specialist checklist or continuous-observation endpoint
+  is exposed.
+- Future reassessment composition consumes this as a distinct
+  `SupportPlan engagement` evidence dimension beside screening trend,
+  journal/context trend, and user reflection. It must not combine the
+  dimensions into an improvement or recovery score.
