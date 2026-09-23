@@ -164,6 +164,51 @@ const environmentSchema = z
       .min(31_000)
       .max(120_000)
       .default(35_000),
+    JOURNAL_AI_CHAT_RETENTION_DAYS: z.coerce
+      .number()
+      .int()
+      .min(1)
+      .max(365)
+      .default(90),
+    JOURNAL_AI_CHAT_FREE_DAILY_ANSWERS: z.coerce
+      .number()
+      .int()
+      .min(1)
+      .max(100)
+      .default(5),
+    JOURNAL_AI_CHAT_PLUS_DAILY_ANSWERS: z.coerce
+      .number()
+      .int()
+      .min(1)
+      .max(500)
+      .default(30),
+    JOURNAL_AI_CHAT_PREMIUM_FAIR_USE_DAILY_ANSWERS: z.coerce
+      .number()
+      .int()
+      .min(1)
+      .max(2_000)
+      .default(200),
+    JOURNAL_AI_CHAT_RATE_LIMIT_PER_MINUTE: z.coerce
+      .number()
+      .int()
+      .min(1)
+      .max(60)
+      .default(10),
+    JOURNAL_AI_CHAT_DAILY_TOKEN_BUDGET: z.coerce
+      .number()
+      .int()
+      .min(1_000)
+      .max(10_000_000)
+      .default(100_000),
+    JOURNAL_AI_CHAT_DEFAULT_TIMEZONE: z
+      .string()
+      .min(1)
+      .max(64)
+      .default("Asia/Ho_Chi_Minh"),
+    JOURNAL_AI_CHAT_ROUTING_POLICY_VERSION: z
+      .string()
+      .regex(versionPattern)
+      .default("companion-chat-routing-v1"),
   })
   .superRefine((environment, context) => {
     if (
@@ -360,6 +405,17 @@ const environmentSchema = z
         : environment.NODE_ENV !== "production",
     ANALYSIS_POLL_INTERVAL_MS: environment.JOURNAL_AI_ANALYSIS_POLL_INTERVAL_MS,
     ANALYSIS_LEASE_MS: environment.JOURNAL_AI_ANALYSIS_LEASE_MS,
+    CHAT_RETENTION_DAYS: environment.JOURNAL_AI_CHAT_RETENTION_DAYS,
+    CHAT_FREE_DAILY_ANSWERS: environment.JOURNAL_AI_CHAT_FREE_DAILY_ANSWERS,
+    CHAT_PLUS_DAILY_ANSWERS: environment.JOURNAL_AI_CHAT_PLUS_DAILY_ANSWERS,
+    CHAT_PREMIUM_FAIR_USE_DAILY_ANSWERS:
+      environment.JOURNAL_AI_CHAT_PREMIUM_FAIR_USE_DAILY_ANSWERS,
+    CHAT_RATE_LIMIT_PER_MINUTE:
+      environment.JOURNAL_AI_CHAT_RATE_LIMIT_PER_MINUTE,
+    CHAT_DAILY_TOKEN_BUDGET: environment.JOURNAL_AI_CHAT_DAILY_TOKEN_BUDGET,
+    CHAT_DEFAULT_TIMEZONE: environment.JOURNAL_AI_CHAT_DEFAULT_TIMEZONE,
+    CHAT_ROUTING_POLICY_VERSION:
+      environment.JOURNAL_AI_CHAT_ROUTING_POLICY_VERSION,
   }));
 
 export type ServiceConfiguration = z.infer<typeof environmentSchema>;

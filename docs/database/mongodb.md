@@ -132,6 +132,36 @@ Owner responses may decrypt the current or historical revision after current
 authorization. The consent-gated AI projection excludes document ID and note.
 No reminder projection or Kafka event exists in v1.
 
+## AI Companion conversation and quota collections
+
+Migration `010_ai_companion_chat_quotas.cjs` owns the executable validators and
+indexes for four Journal/AI collections:
+
+- `ai_companion_conversations` stores one owner-scoped conversation with a
+  bounded array of AES-256-GCM encrypted user and assistant messages. The
+  envelope AAD binds owner, conversation, and message IDs. Persisted context is
+  limited to bounded kind labels; assembled prompts, bearer credentials, raw
+  provider responses, and hidden reasoning are never fields. Owner/update
+  cursor indexes support deterministic history and `expiresAt` has a TTL index
+  for the configured retention period.
+- `ai_companion_commands` stores the keyed idempotency hash and fingerprint plus
+  an immutable success or failure snapshot. The unique owner/key index makes an
+  exact retry stable and rejects a key reused with different input. Deleting a
+  conversation removes its commands in the same transaction.
+- `ai_companion_quota_ledgers` stores one `(owner, localDate, timezone)` ledger
+  with successful-answer and in-flight reservation counts. The server derives
+  the local day and reset instant from its configured IANA timezone. It never
+  stores content or browser-supplied plan claims.
+- `ai_companion_rate_ledgers` stores short-lived owner/window request counts and
+  expires through a TTL index. It contains no message or context data.
+
+Conversation append, quota consumption, and command completion use a MongoDB
+transaction, so the deployed MongoDB must support replica-set transactions.
+Provider/context failures release their reservation and do not consume a
+success allowance. Consultation remains authoritative for the current service
+plan, and Care remains authoritative for current `AI_PROCESSING` consent and
+SupportPlan context.
+
 ## `analysis_jobs`
 
 One durable owner-scoped command per idempotency key. The public API maps both

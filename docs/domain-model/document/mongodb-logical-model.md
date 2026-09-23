@@ -116,6 +116,38 @@ Key fields: run/case/provider/model identity, status/error classification,
 quality/safety result, matched evidence counts, execution metrics, normalized
 output, and creation time.
 
+### AI Companion Conversation — ACTIVE
+
+Collection: `ai_companion_conversations`
+
+Key fields: conversation/owner IDs, title, bounded encrypted messages,
+assistant route provenance, context-kind labels, activity timestamps, and
+retention expiry. Plaintext content, assembled prompts, bearer credentials, raw
+provider output, and hidden reasoning are not fields.
+
+### AI Companion Command — ACTIVE
+
+Collection: `ai_companion_commands`
+
+Key fields: owner and keyed idempotency identity, request fingerprint,
+conversation reference, lifecycle, quota reservation reference, and immutable
+success/failure response snapshot. Raw idempotency keys are not fields.
+
+### AI Companion Daily Quota — ACTIVE
+
+Collection: `ai_companion_quota_ledgers`
+
+Key fields: owner, server-derived local day and timezone, plan/policy snapshot,
+successful response count, in-flight reservations, token use, reset time, and
+expiry. It contains no conversation content.
+
+### AI Companion Rate Limit — ACTIVE
+
+Collection: `ai_companion_rate_ledgers`
+
+Key fields: owner, bounded request window, count, and TTL expiry. It contains no
+message or context data.
+
 ## Realtime active model
 
 ### Conversation — ACTIVE

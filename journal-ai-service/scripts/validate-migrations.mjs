@@ -11,6 +11,7 @@ const emotionCheckInMigration = require("../migrations/006_daily_emotion_check_i
 const routingMigration = require("../migrations/007_entitlement_aware_model_routing.cjs");
 const benchmarkMigration = require("../migrations/008_ai_benchmark_metadata.cjs");
 const longitudinalMigration = require("../migrations/009_longitudinal_context_analysis.cjs");
+const companionChatMigration = require("../migrations/010_ai_companion_chat_quotas.cjs");
 
 assert.equal(migration.collectionName, "journal_entries");
 assert.equal(typeof migration.up, "function");
@@ -98,6 +99,21 @@ assert.equal(
   benchmarkMigration.runValidator.$jsonSchema.properties.candidates.maxItems,
   2,
 );
+assert.equal(
+  companionChatMigration.conversationCollection,
+  "ai_companion_conversations",
+);
+assert.equal(
+  companionChatMigration.quotaCollection,
+  "ai_companion_quota_ledgers",
+);
+assert.equal(typeof companionChatMigration.up, "function");
+assert.equal(typeof companionChatMigration.down, "function");
+assert.equal(
+  companionChatMigration.conversationValidator.$jsonSchema.properties.messages
+    .items.properties.content.properties.algorithm.enum[0],
+  "AES-256-GCM",
+);
 assert.equal(typeof commandsMigration.up, "function");
 assert.equal(typeof commandsMigration.down, "function");
 assert.ok(
@@ -132,5 +148,5 @@ assert.equal(
 );
 
 console.log(
-  "Validated Mongo migrations: 001_journal_entries_baseline.cjs through 009_longitudinal_context_analysis.cjs",
+  "Validated Mongo migrations: 001_journal_entries_baseline.cjs through 010_ai_companion_chat_quotas.cjs",
 );

@@ -5,7 +5,7 @@
 | Field | Value |
 | --- | --- |
 | Scope decision | `MB-SCOPE-V2-001` |
-| Status | `PRODUCT POLICY APPROVED; EXACT-REVISION BACKEND IMPLEMENTED; UI/REAL PROVIDER NOT ENABLED` |
+| Status | `PRODUCT POLICY APPROVED; CHAT/QUOTA AND EXACT-REVISION RUNTIMES IMPLEMENTED; REAL PROVIDER ROUTE REQUIRES APPROVAL` |
 | Effective decision date | 2026-09-15 |
 | AI owner | Journal/AI |
 | Care-decision, safety, and consent owner | Care |
@@ -83,12 +83,16 @@ context minimization, deterministic provider fakes, and tests for quota races,
 retry/idempotency, consent revocation, prompt injection, provider failure, and
 attempted business-state mutation.
 
-MB-367 implements the consented exact-revision backend with MongoDB jobs,
+MB-512 implements the consent-gated conversation runtime, encrypted history,
+server-authoritative plan quotas, minimized selected Journal/longitudinal/current
+SupportPlan context, hard deletion, and same-origin frontend flow under ADR
+0021. Reminder accompaniment remains unavailable until Content/Notification
+publishes an approved owner contract. MB-367 implements the consented
+exact-revision backend with MongoDB jobs,
 normalized results, and a deterministic fake provider. MB-371 implements the
 bounded exact-source longitudinal backend, conservative coverage policy,
 deletion coupling, and minimized current-consent Care projection; Care
-Reassessment Summary composition and its frontend remain Story 6501. Chat/quota
-and SupportPlan/reminder accompaniment remain behind their separate gates.
+Reassessment Summary composition and its frontend remain Story 6501.
 MB-369 implements the entitlement-aware router, structured
 Gemini/OpenAI adapters, and synthetic benchmark harness, but does not activate
 a real route until that pinned candidate passes its separately reviewed

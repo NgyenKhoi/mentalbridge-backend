@@ -38,12 +38,17 @@ import {
   registerLongitudinalAnalysisModule,
   type LongitudinalAnalysisDependencies,
 } from "./longitudinal-analysis/longitudinal-analysis.js";
+import {
+  registerCompanionChatModule,
+  type CompanionChatDependencies,
+} from "./companion-chat/companion-chat.js";
 
 export interface ApplicationDependencies {
   readonly readinessProbe?: ReadinessProbe;
   readonly analysis?: AnalysisDependencies;
   readonly emotionCheckIns?: EmotionCheckInDependencies;
   readonly longitudinalAnalysis?: LongitudinalAnalysisDependencies;
+  readonly companionChat?: CompanionChatDependencies;
 }
 
 @Module({})
@@ -75,6 +80,7 @@ export class AppModule implements NestModule {
           configuration,
           dependencies.longitudinalAnalysis,
         ),
+        registerCompanionChatModule(configuration, dependencies.companionChat),
       ],
       controllers: [HealthController, MetricsController],
       providers: [

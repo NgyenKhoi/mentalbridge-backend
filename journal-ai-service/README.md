@@ -22,6 +22,7 @@ The service provides:
 - optimistic concurrency through `If-Match` and deterministic cursor pagination
 - consented idempotent longitudinal comparison across two bounded journal periods
 - minimized exact-source longitudinal evidence for future Care reassessment composition
+- encrypted AI Companion conversations with server-side plan quotas and deletion
 - lint, type-check, test, and build scripts
 - production multi-stage Docker image
 
@@ -94,6 +95,14 @@ npm start
 | `JOURNAL_AI_ANALYSIS_ENABLED`                    | No                       | `true` outside production; `false` in production | Enables the deterministic exact-revision backend runtime; production remains gated      |
 | `JOURNAL_AI_ANALYSIS_POLL_INTERVAL_MS`           | No                       | `250`                                            | Interval for due/expired-lease job claims                                               |
 | `JOURNAL_AI_ANALYSIS_LEASE_MS`                   | No                       | `35000`                                          | Claim lease, always longer than the fixed 30-second provider-attempt timeout            |
+| `JOURNAL_AI_CHAT_RETENTION_DAYS`                 | No                       | `90`                                             | Conversation expiry and encrypted-message retention                                     |
+| `JOURNAL_AI_CHAT_FREE_DAILY_ANSWERS`             | No                       | `5`                                              | Successfully delivered answers per local day for `FREE`                                 |
+| `JOURNAL_AI_CHAT_PLUS_DAILY_ANSWERS`             | No                       | `30`                                             | Configurable successfully delivered answers per local day for `PLUS`                    |
+| `JOURNAL_AI_CHAT_PREMIUM_FAIR_USE_DAILY_ANSWERS` | No                       | `200`                                            | Hidden backend fair-use ceiling for `PREMIUM`; never displayed as a daily quota         |
+| `JOURNAL_AI_CHAT_RATE_LIMIT_PER_MINUTE`          | No                       | `10`                                             | Per-owner bounded request-rate control                                                  |
+| `JOURNAL_AI_CHAT_DAILY_TOKEN_BUDGET`             | No                       | `100000`                                         | Per-owner provider token/cost guard across all plans                                    |
+| `JOURNAL_AI_CHAT_DEFAULT_TIMEZONE`               | No                       | `Asia/Ho_Chi_Minh`                               | Server-authoritative IANA timezone used for stable quota reset                          |
+| `JOURNAL_AI_CHAT_ROUTING_POLICY_VERSION`         | No                       | `companion-chat-routing-v1`                      | Version persisted with every assistant response                                         |
 
 Local `.env` files are loaded only outside production and never override real
 environment variables. Copy `.env.example` to `.env` for local development,
@@ -125,6 +134,11 @@ encrypted demo data exists. Do not commit local `.env` files or secrets.
 | `PATCH`  | `/api/v1/emotion-check-ins/{localDate}`                           | Optimistically update the current local-day check-in                  |
 | `DELETE` | `/api/v1/emotion-check-ins/{localDate}`                           | Erase encrypted revisions and retain a bounded tombstone              |
 | `GET`    | `/api/v1/emotion-check-in-context`                                | Return note-free AI context after current Care consent                |
+| `POST`   | `/api/v1/ai-companion/conversations`                              | Start an encrypted owner-scoped conversation                          |
+| `GET`    | `/api/v1/ai-companion/conversations`                              | List bounded retained conversation summaries without message bodies   |
+| `GET`    | `/api/v1/ai-companion/conversations/{conversationId}`             | Resume one owned conversation                                         |
+| `POST`   | `/api/v1/ai-companion/conversations/{conversationId}/messages`    | Deliver one quota-governed normalized assistant response              |
+| `DELETE` | `/api/v1/ai-companion/conversations/{conversationId}`             | Hard-delete the conversation and replay snapshots                     |
 
 Incoming requests echo a valid bounded `x-correlation-id` or receive a generated one. Request logs include the same correlation ID and redact authorization and cookie headers. Non-public application routes require an Identity-issued RS256 bearer token; signature, issuer, audience, lifetime, subject, token ID, and roles are validated before a principal is attached to the request.
 
@@ -140,6 +154,17 @@ Incoming requests echo a valid bounded `x-correlation-id` or receive a generated
 - Entitlement-aware route/provenance validator expansion: `migrations/007_entitlement_aware_model_routing.cjs`
 - Synthetic benchmark metadata/run/case-result collections: `migrations/008_ai_benchmark_metadata.cjs`
 - Longitudinal analysis job/result validators and indexes: `migrations/009_longitudinal_context_analysis.cjs`
+- AI Companion conversation, command, quota, rate, and TTL indexes: `migrations/010_ai_companion_chat_quotas.cjs`
+
+AI Companion chat follows ADR 0021. List responses contain metadata-only
+summaries; full bounded message history is returned only by the owner-scoped
+detail endpoint. Real-provider replies use strict structured output and a
+fail-closed authority validator before persistence. It counts only successfully
+persisted assistant responses, derives the reset from a server-configured IANA timezone,
+and keeps Premium UI copy free of an infrastructure-unlimited claim. MongoDB
+must provide replica-set transaction semantics. Local/test/CI use the
+deterministic fake; a real route additionally requires the existing approved
+provider/model configuration and the corresponding external API key.
 
 Longitudinal requests use equal, half-open, non-overlapping periods of 7-31
 days. The current period cannot end in the future. The service selects no more
