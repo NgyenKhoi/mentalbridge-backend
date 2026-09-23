@@ -76,8 +76,11 @@ class AssessmentFlowIntegrationTests extends CareTestProperties {
 			"GET /api/v1/support-plan-occurrences",
 			"GET /api/v1/support-plan-occurrences/{occurrenceId}",
 			"PUT /api/v1/support-plan-occurrences/{occurrenceId}/state",
+			"PUT /api/v1/support-plan-occurrences/{occurrenceId}/engagement",
+			"DELETE /api/v1/support-plan-occurrences/{occurrenceId}/engagement",
 			"POST /api/v1/anonymous-assessment-sessions/{sessionId}/assessments",
-			"GET /api/v1/anonymous-assessment-sessions/{sessionId}/assessments/{assessmentId}");
+			"GET /api/v1/anonymous-assessment-sessions/{sessionId}/assessments/{assessmentId}",
+			"POST /api/v1/safety-directory-lookups");
 
 	@Autowired
 	private MockMvc mvc;

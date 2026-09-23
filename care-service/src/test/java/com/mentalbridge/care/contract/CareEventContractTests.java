@@ -101,4 +101,21 @@ class CareEventContractTests {
 				"supportPlanId", "userId", "planVersion", "activatedAt",
 				"evaluationPolicyVersion", "resourceEligibilityPolicyVersion", "packageCode");
 	}
+
+	@Test
+	void supportPlanEngagementEventIsMinimizedAndExcludesReflection() throws Exception {
+		var path = Path.of("..", "contracts", "events", "care",
+				"support-plan-engagement-changed-v1.schema.json").toAbsolutePath();
+		var schema = objectMapper.readTree(Files.readString(path));
+		var payload = schema.at("/properties/payload");
+
+		assertThat(schema.at("/properties/messageType/const").asText())
+				.isEqualTo("care.support-plan.engagement-changed");
+		assertThat(schema.at("/properties/schemaVersion/const").asText()).isEqualTo("1.0");
+		assertThat(payload.get("additionalProperties").asBoolean()).isFalse();
+		assertThat(payload.get("properties").fieldNames()).toIterable()
+				.contains("state", "helpfulness", "barrierCode", "summaryReuseApproved",
+						"sourcePlanVersion", "sourceContentVersion")
+				.doesNotContain("reflection", "reflectionText", "adherence", "recoveryScore");
+	}
 }

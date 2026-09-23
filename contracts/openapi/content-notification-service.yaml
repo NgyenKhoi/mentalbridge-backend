@@ -1,11 +1,13 @@
 openapi: 3.1.0
 info:
   title: Content-Notification Service API
-  version: 1.1.0
+  version: 1.2.0
   description: >
     MentalBridge Content/Notification bounded context.
-    Manages reviewed self-help resources, in-app notifications, and delivery
-    preferences. Hotline catalogue operations are not part of this service.
+    Manages reviewed self-help resources, reviewed Vietnam safety-directory
+    records, in-app notifications, and delivery preferences. The removed legacy
+    hotline table is not restored; directory records use the ADR 0018 review,
+    provenance, coverage, and 90-day verification model.
 
 servers:
   - url: http://localhost:3003
@@ -16,6 +18,8 @@ tags:
     description: Liveness and readiness probes
   - name: Resources
     description: Self-help content management with reviewed admin lifecycle and public eligibility boundaries
+  - name: Safety directory
+    description: Reviewed Vietnam area-directory administration and current area lookup
 
 paths:
   /health/live:
@@ -457,6 +461,155 @@ paths:
         "422": { $ref: "#/components/responses/ValidationError" }
         "503": { $ref: "#/components/responses/ServiceUnavailable" }
 
+  /api/v1/safety-directory/admin/entries:
+    x-mentalbridge-status: implemented
+    get:
+      tags: [Safety directory]
+      summary: List directory records for administration
+      operationId: listSafetyDirectoryEntriesForAdmin
+      security:
+        - BearerAuth: []
+      responses:
+        "200":
+          description: All current administrative records, including inactive and stale entries
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  { $ref: "#/components/schemas/SafetyDirectoryAdminEntry" }
+        "401": { $ref: "#/components/responses/Unauthorized" }
+        "403": { $ref: "#/components/responses/Forbidden" }
+        "503": { $ref: "#/components/responses/ServiceUnavailable" }
+    post:
+      tags: [Safety directory]
+      summary: Create an inactive unreviewed directory record
+      operationId: createSafetyDirectoryEntry
+      security:
+        - BearerAuth: []
+      parameters:
+        - $ref: "#/components/parameters/IdempotencyKey"
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: "#/components/schemas/SafetyDirectoryEntryWrite" }
+      responses:
+        "201":
+          description: Inactive unreviewed record created or identical command replayed
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/SafetyDirectoryAdminEntry" }
+        "400": { $ref: "#/components/responses/RequestRejected" }
+        "401": { $ref: "#/components/responses/Unauthorized" }
+        "403": { $ref: "#/components/responses/Forbidden" }
+        "409": { $ref: "#/components/responses/IdempotencyConflict" }
+        "422": { $ref: "#/components/responses/ValidationError" }
+        "503": { $ref: "#/components/responses/ServiceUnavailable" }
+
+  /api/v1/safety-directory/admin/entries/{entryId}:
+    x-mentalbridge-status: implemented
+    patch:
+      tags: [Safety directory]
+      summary: Replace reviewed fields and invalidate prior review
+      operationId: updateSafetyDirectoryEntry
+      security:
+        - BearerAuth: []
+      parameters:
+        - $ref: "#/components/parameters/DirectoryEntryId"
+        - $ref: "#/components/parameters/DirectoryVersion"
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: "#/components/schemas/SafetyDirectoryEntryWrite" }
+      responses:
+        "200":
+          description: Record updated, deactivated, and returned to unreviewed state
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/SafetyDirectoryAdminEntry" }
+        "400": { $ref: "#/components/responses/RequestRejected" }
+        "401": { $ref: "#/components/responses/Unauthorized" }
+        "403": { $ref: "#/components/responses/Forbidden" }
+        "409": { $ref: "#/components/responses/Conflict" }
+        "422": { $ref: "#/components/responses/ValidationError" }
+        "503": { $ref: "#/components/responses/ServiceUnavailable" }
+
+  /api/v1/safety-directory/admin/entries/{entryId}/review:
+    x-mentalbridge-status: implemented
+    post:
+      tags: [Safety directory]
+      summary: Review, verify, and activate the exact directory version
+      operationId: reviewSafetyDirectoryEntry
+      security:
+        - BearerAuth: []
+      parameters:
+        - $ref: "#/components/parameters/DirectoryEntryId"
+        - $ref: "#/components/parameters/DirectoryVersion"
+      responses:
+        "200":
+          description: Exact record version reviewed, verified with server time, and activated
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/SafetyDirectoryAdminEntry" }
+        "400": { $ref: "#/components/responses/RequestRejected" }
+        "401": { $ref: "#/components/responses/Unauthorized" }
+        "403": { $ref: "#/components/responses/Forbidden" }
+        "409": { $ref: "#/components/responses/Conflict" }
+        "503": { $ref: "#/components/responses/ServiceUnavailable" }
+
+  /api/v1/safety-directory/admin/entries/{entryId}/deactivate:
+    x-mentalbridge-status: implemented
+    post:
+      tags: [Safety directory]
+      summary: Deactivate a directory record without deleting review history
+      operationId: deactivateSafetyDirectoryEntry
+      security:
+        - BearerAuth: []
+      parameters:
+        - $ref: "#/components/parameters/DirectoryEntryId"
+        - $ref: "#/components/parameters/DirectoryVersion"
+      responses:
+        "200":
+          description: Record is inactive; repeating against the current inactive version is safe
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/SafetyDirectoryAdminEntry" }
+        "400": { $ref: "#/components/responses/RequestRejected" }
+        "401": { $ref: "#/components/responses/Unauthorized" }
+        "403": { $ref: "#/components/responses/Forbidden" }
+        "409": { $ref: "#/components/responses/Conflict" }
+        "503": { $ref: "#/components/responses/ServiceUnavailable" }
+
+  /api/v1/safety-directory:lookup:
+    x-mentalbridge-status: implemented
+    post:
+      tags: [Safety directory]
+      summary: Resolve active reviewed current records for one deliberate coarse area
+      operationId: lookupSafetyDirectory
+      description: >
+        Public read-only owner lookup used by Care. Manual text is matched only
+        against reviewed area labels; no geocoding, proximity, or location sharing occurs.
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              { $ref: "#/components/schemas/SafetyDirectoryLookupRequest" }
+      responses:
+        "200":
+          description: Current records or an explicit empty/invalid-area outcome
+          headers:
+            Cache-Control:
+              schema: { type: string, const: no-store }
+          content:
+            application/json:
+              schema:
+                { $ref: "#/components/schemas/SafetyDirectoryLookupResponse" }
+        "422": { $ref: "#/components/responses/ValidationError" }
+        "503": { $ref: "#/components/responses/ServiceUnavailable" }
+
 components:
   parameters:
     ResourceId:
@@ -502,6 +655,16 @@ components:
         type: string
         pattern: "^(0|[1-9][0-9]*)$"
         maxLength: 19
+    DirectoryEntryId:
+      name: entryId
+      in: path
+      required: true
+      schema: { type: string, format: uuid }
+    DirectoryVersion:
+      name: version
+      in: query
+      required: true
+      schema: { type: integer, format: int64, minimum: 0 }
   securitySchemes:
     BearerAuth:
       type: http
@@ -592,6 +755,140 @@ components:
             correlationId: 123e4567-e89b-12d3-a456-426614174000
 
   schemas:
+    SafetyDirectoryEntryType:
+      type: string
+      enum: [FACILITY, HOTLINE]
+    SafetyDirectoryCoverageLevel:
+      type: string
+      enum: [NATIONWIDE, PROVINCE, DISTRICT]
+    SafetyDirectoryCoverage:
+      type: object
+      additionalProperties: false
+      required: [level, provinceCode, provinceName, districtCode, districtName]
+      properties:
+        level: { $ref: "#/components/schemas/SafetyDirectoryCoverageLevel" }
+        provinceCode: { type: [string, "null"], minLength: 1, maxLength: 32 }
+        provinceName: { type: [string, "null"], minLength: 1, maxLength: 120 }
+        districtCode: { type: [string, "null"], minLength: 1, maxLength: 32 }
+        districtName: { type: [string, "null"], minLength: 1, maxLength: 120 }
+    SafetyDirectoryEntryWrite:
+      type: object
+      additionalProperties: false
+      required:
+        [
+          name,
+          type,
+          phone,
+          address,
+          coverage,
+          sourceName,
+          sourceReference,
+          sourceRetrievedAt,
+        ]
+      properties:
+        name: { type: string, minLength: 1, maxLength: 200 }
+        type: { $ref: "#/components/schemas/SafetyDirectoryEntryType" }
+        phone: { type: string, minLength: 1, maxLength: 64 }
+        address: { type: [string, "null"], maxLength: 500 }
+        coverage:
+          type: array
+          minItems: 1
+          maxItems: 100
+          items: { $ref: "#/components/schemas/SafetyDirectoryCoverage" }
+        sourceName: { type: string, minLength: 1, maxLength: 200 }
+        sourceReference: { type: string, minLength: 1, maxLength: 2000 }
+        sourceRetrievedAt: { type: string, format: date-time }
+        sourceChecksum: { type: [string, "null"], pattern: "^[0-9a-f]{64}$" }
+    SafetyDirectoryReviewState:
+      type: string
+      enum: [UNREVIEWED, CURRENT, STALE, INACTIVE]
+    SafetyDirectoryPublicEntry:
+      type: object
+      additionalProperties: false
+      required:
+        [
+          directoryEntryId,
+          name,
+          type,
+          phone,
+          address,
+          coverage,
+          sourceName,
+          sourceReference,
+          reviewedAt,
+          verifiedAt,
+        ]
+      properties:
+        directoryEntryId: { type: string, format: uuid }
+        name: { type: string }
+        type: { $ref: "#/components/schemas/SafetyDirectoryEntryType" }
+        phone: { type: string }
+        address: { type: [string, "null"] }
+        coverage:
+          type: array
+          items: { $ref: "#/components/schemas/SafetyDirectoryCoverage" }
+        sourceName: { type: string }
+        sourceReference: { type: string }
+        reviewedAt: { type: string, format: date-time }
+        verifiedAt: { type: string, format: date-time }
+    SafetyDirectoryAdminEntry:
+      allOf:
+        - $ref: "#/components/schemas/SafetyDirectoryPublicEntry"
+        - type: object
+          additionalProperties: true
+          required:
+            [
+              recordVersion,
+              active,
+              reviewState,
+              reviewedBy,
+              verifiedBy,
+              sourceRetrievedAt,
+              sourceChecksum,
+              seedKey,
+              createdAt,
+              updatedAt,
+            ]
+          properties:
+            recordVersion: { type: integer, format: int64, minimum: 0 }
+            active: { type: boolean }
+            reviewState:
+              { $ref: "#/components/schemas/SafetyDirectoryReviewState" }
+            reviewedBy: { type: [string, "null"], format: uuid }
+            verifiedBy: { type: [string, "null"], format: uuid }
+            sourceRetrievedAt: { type: string, format: date-time }
+            sourceChecksum:
+              { type: [string, "null"], pattern: "^[0-9a-f]{64}$" }
+            seedKey: { type: [string, "null"], maxLength: 128, readOnly: true }
+            createdAt: { type: string, format: date-time }
+            updatedAt: { type: string, format: date-time }
+    SafetyDirectoryLookupRequest:
+      type: object
+      additionalProperties: false
+      properties:
+        provinceCode: { type: string, minLength: 1, maxLength: 32 }
+        districtCode: { type: string, minLength: 1, maxLength: 32 }
+        manualLocation: { type: string, minLength: 1, maxLength: 120 }
+      oneOf:
+        - required: [provinceCode]
+        - required: [manualLocation]
+    SafetyDirectoryLookupState:
+      type: string
+      enum: [RESULTS, EMPTY, INVALID_AREA]
+    SafetyDirectoryLookupResponse:
+      type: object
+      additionalProperties: true
+      required:
+        [state, wording, resolvedProvinceCode, resolvedDistrictCode, entries]
+      properties:
+        state: { $ref: "#/components/schemas/SafetyDirectoryLookupState" }
+        wording: { type: string, const: Cơ sở trong khu vực đã chọn }
+        resolvedProvinceCode: { type: [string, "null"] }
+        resolvedDistrictCode: { type: [string, "null"] }
+        entries:
+          type: array
+          maxItems: 100
+          items: { $ref: "#/components/schemas/SafetyDirectoryPublicEntry" }
     LiveResponse:
       type: object
       required: [status]

@@ -21,6 +21,12 @@ const expectedImplemented = new Set([
   'POST /api/v1/resources/{id}/versions/{contentVersion}/eligibility-publications',
   'POST /api/v1/resources/{id}/versions/{contentVersion}/eligibility-publications/withdrawal',
   'POST /internal/v1/resource-eligibility:resolve',
+  'GET /api/v1/safety-directory/admin/entries',
+  'POST /api/v1/safety-directory/admin/entries',
+  'PATCH /api/v1/safety-directory/admin/entries/{entryId}',
+  'POST /api/v1/safety-directory/admin/entries/{entryId}/review',
+  'POST /api/v1/safety-directory/admin/entries/{entryId}/deactivate',
+  'POST /api/v1/safety-directory:lookup',
 ]);
 
 const implementedResponses = new Map([
@@ -47,6 +53,24 @@ const implementedResponses = new Map([
     'POST /internal/v1/resource-eligibility:resolve',
     new Set(['200', '400', '401', '403', '422', '503']),
   ],
+  ['GET /api/v1/safety-directory/admin/entries', new Set(['200', '401', '403', '503'])],
+  [
+    'POST /api/v1/safety-directory/admin/entries',
+    new Set(['201', '400', '401', '403', '409', '422', '503']),
+  ],
+  [
+    'PATCH /api/v1/safety-directory/admin/entries/{entryId}',
+    new Set(['200', '400', '401', '403', '409', '422', '503']),
+  ],
+  [
+    'POST /api/v1/safety-directory/admin/entries/{entryId}/review',
+    new Set(['200', '400', '401', '403', '409', '503']),
+  ],
+  [
+    'POST /api/v1/safety-directory/admin/entries/{entryId}/deactivate',
+    new Set(['200', '400', '401', '403', '409', '503']),
+  ],
+  ['POST /api/v1/safety-directory:lookup', new Set(['200', '422', '503'])],
 ]);
 
 const implementedMustBePublic = new Set([
@@ -54,6 +78,7 @@ const implementedMustBePublic = new Set([
   'GET /health/ready',
   'GET /api/v1/resources',
   'GET /api/v1/resources/{id}',
+  'POST /api/v1/safety-directory:lookup',
 ]);
 const implementedMustBeProtected = new Set(
   [...expectedImplemented].filter((operation) => !implementedMustBePublic.has(operation)),

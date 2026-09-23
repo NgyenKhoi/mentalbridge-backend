@@ -46,9 +46,12 @@ class CareOpenApiContractTests {
 			"GET /api/v1/support-plan-occurrences",
 			"GET /api/v1/support-plan-occurrences/{occurrenceId}",
 			"PUT /api/v1/support-plan-occurrences/{occurrenceId}/state",
+			"PUT /api/v1/support-plan-occurrences/{occurrenceId}/engagement",
+			"DELETE /api/v1/support-plan-occurrences/{occurrenceId}/engagement",
 			"POST /api/v1/anonymous-assessment-sessions",
 			"POST /api/v1/anonymous-assessment-sessions/{sessionId}/assessments",
-			"GET /api/v1/anonymous-assessment-sessions/{sessionId}/assessments/{assessmentId}");
+			"GET /api/v1/anonymous-assessment-sessions/{sessionId}/assessments/{assessmentId}",
+			"POST /api/v1/safety-directory-lookups");
 
 	private static final Set<String> IMPLEMENTED_PATHS = Set.of(
 			"/api/v1/profile",
@@ -76,9 +79,11 @@ class CareOpenApiContractTests {
 			"/api/v1/support-plan-occurrences",
 			"/api/v1/support-plan-occurrences/{occurrenceId}",
 			"/api/v1/support-plan-occurrences/{occurrenceId}/state",
+			"/api/v1/support-plan-occurrences/{occurrenceId}/engagement",
 			"/api/v1/anonymous-assessment-sessions",
 			"/api/v1/anonymous-assessment-sessions/{sessionId}/assessments",
-			"/api/v1/anonymous-assessment-sessions/{sessionId}/assessments/{assessmentId}");
+			"/api/v1/anonymous-assessment-sessions/{sessionId}/assessments/{assessmentId}",
+			"/api/v1/safety-directory-lookups");
 
 	private static final Set<String> BEARER_OPERATIONS = Set.of(
 			"GET /api/v1/profile",
@@ -103,7 +108,9 @@ class CareOpenApiContractTests {
 			"POST /api/v1/support-plans/{supportPlanId}/replace",
 			"GET /api/v1/support-plan-occurrences",
 			"GET /api/v1/support-plan-occurrences/{occurrenceId}",
-			"PUT /api/v1/support-plan-occurrences/{occurrenceId}/state");
+			"PUT /api/v1/support-plan-occurrences/{occurrenceId}/state",
+			"PUT /api/v1/support-plan-occurrences/{occurrenceId}/engagement",
+			"DELETE /api/v1/support-plan-occurrences/{occurrenceId}/engagement");
 
 	private static final Set<String> ANONYMOUS_TOKEN_OPERATIONS = Set.of(
 			"POST /api/v1/anonymous-assessment-sessions/{sessionId}/assessments",
@@ -213,6 +220,22 @@ class CareOpenApiContractTests {
 		assertThat(draft.getProperties()).containsKeys("source", "entitlement", "rationale", "safety",
 				"templateFamilies", "slots", "selectedResourceCount", "disclaimer")
 				.doesNotContainKeys("assessmentAnswers", "journalContent", "diagnosis", "treatment");
+	}
+
+	@Test
+	void supportPlanEngagementIsAnExactReplacementWithoutClinicalClaims() {
+		var contract = Path.of("..", "contracts", "openapi", "care-service-v1.yaml").toAbsolutePath();
+		var openApi = new OpenAPIV3Parser().readLocation(contract.toUri().toString(), null, null).getOpenAPI();
+		var request = openApi.getComponents().getSchemas().get("ReplaceSupportPlanOccurrenceEngagementRequest");
+		var occurrence = openApi.getComponents().getSchemas().get("SupportPlanOccurrence");
+
+		assertThat(request.getRequired()).containsExactlyInAnyOrder(
+				"state", "hidden", "helpfulness", "barrierCode", "reflection", "summaryReuseApproved");
+		assertThat(request.getProperties()).containsOnlyKeys(
+				"state", "hidden", "helpfulness", "barrierCode", "reflection", "summaryReuseApproved")
+				.doesNotContainKeys("adherence", "clinicalOutcome", "recoveryScore", "specialistObserved");
+		assertThat(occurrence.getProperties()).containsKeys("source", "version", "engagementUpdatedAt")
+				.doesNotContainKeys("adherence", "clinicalOutcome", "recoveryScore");
 	}
 
 	private boolean allowsAdditionalProperties(Schema<?> schema) {

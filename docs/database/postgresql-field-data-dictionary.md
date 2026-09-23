@@ -2,7 +2,7 @@
 
 This document explains the business purpose of PostgreSQL fields. The [canonical PostgreSQL logical schema](../domain-model/relational/postgresql-logical-schema.sql) is a non-executable documentation model and must never provision or migrate an environment. Names such as `consultation.availability_slot` identify a visual owner namespace; the physical table is `public.availability_slot` in the separate `mentalbridge_consultation` database. Service-owned migration histories are the executable runtime sources of truth: Liquibase for Spring services and the current SQL migration mechanism for Node.js services. This dictionary is written for developers and reviewers; descriptions are intentionally kept out of executable migrations.
 
-When service-owned migrations are introduced, update this dictionary and the canonical logical model in the same change whenever persisted domain structure materially changes. A field description must explain why the value is persisted, whether it is authoritative, derived, external, or sensitive, and how nullability, time, versioning, or idempotency affects behavior. Content/Notification's executable history starts at `content-notification-service/migrations/1_initial_schema.sql`; migration 2 removes the obsolete hotline table, the separate Review 1 migrations insert controlled demo content and its initial item-level eligibility matrix, and migration 6 adds immutable Resource Eligibility v1 provenance. The field descriptions under its conceptual owner below describe the resulting physical `public` tables.
+When service-owned migrations are introduced, update this dictionary and the canonical logical model in the same change whenever persisted domain structure materially changes. A field description must explain why the value is persisted, whether it is authoritative, derived, external, or sensitive, and how nullability, time, versioning, or idempotency affects behavior. Content/Notification's executable history starts at `content-notification-service/migrations/1_initial_schema.sql`; migration 2 removes the obsolete hotline table, the separate Review 1 migrations insert controlled demo content and its initial item-level eligibility matrix, migration 6 adds immutable Resource Eligibility v1 provenance, migration 7 adds the separately governed reviewed safety directory, and migration 8 adds its deterministic reviewed area vocabulary. The field descriptions under its conceptual owner below describe the resulting physical `public` tables.
 
 ## Database `mentalbridge_identity` (schema `public`)
 
@@ -642,6 +642,12 @@ generation idempotent.
 | `version` | Optimistic counter required by explicit user state updates. |
 | `created_at` / `updated_at` | UTC insertion and latest accepted transition instants. |
 | `completed_at` / `skipped_at` / `cancelled_at` | Exactly the timestamp matching the persisted terminal state; all null while scheduled. |
+| `hidden` | Owner-only display preference; independent of completion/skip state. |
+| `helpfulness` | Optional owner rating for `COMPLETED`: `NOT_HELPFUL`, `A_LITTLE_HELPFUL`, `HELPFUL`, or `VERY_HELPFUL`. |
+| `barrier_code` | Optional owner-selected reason for `SKIPPED`: `LOW_ENERGY`, `NOT_ENOUGH_TIME`, `DIFFICULT_TO_START`, `NOT_A_GOOD_FIT`, or `OTHER`. |
+| `reflection` | Optional private trimmed owner reflection, 1-500 characters; excluded from the integration event. |
+| `summary_reuse_approved` | Explicit approval to reuse minimized coded facts in a later bounded summary; never broad checklist monitoring consent. |
+| `engagement_updated_at` | Latest accepted replacement or deletion instant. Deletion clears mutable values but retains provenance. |
 
 ### `care.intervention_plan`
 
@@ -1581,6 +1587,88 @@ These fields establish reviewed public visibility only. SupportPlan eligibility 
 - Only `PUBLISHED` resources returned where `effective_at <= NOW()` and (`expires_at` IS NULL OR `expires_at > NOW()`)
 - All published resources guaranteed to have review provenance
 - `DRAFT` and `ARCHIVED` resources never exposed to public endpoints
+
+### `public.safety_directory_entry`
+
+Versioned, administrator-reviewed facility or hotline contact owned by Content/Notification. It is eligible for area lookup only while active, reviewed, verified, source-backed, and strictly inside the 90-day verification window.
+
+| Field | Purpose |
+| --- | --- |
+| `id` | Stable immutable UUID exposed as `directoryEntryId`; it is never reused for a different organization or service. |
+| `name` | Reviewed user-visible organization or service name. |
+| `entry_type` | Restricted `FACILITY` or `HOTLINE` presentation category; it does not assert a clinical capability. |
+| `phone` | Reviewed contact string displayed unchanged; it is never synthesized into another number. |
+| `address` | Reviewed user-visible address, required for facilities and nullable for non-location hotlines. |
+| `active` | Authoritative publication switch; review and freshness checks are still required for public lookup. |
+| `source_name` | Accountable issuing organization or evidence source for the current record version. |
+| `source_reference` | Stable URI or controlled evidence reference used to reproduce the review decision. |
+| `source_retrieved_at` | UTC instant when source evidence was obtained; future evidence cannot be reviewed. |
+| `source_checksum` | Optional lowercase SHA-256 of lawfully retained evidence; null when no artifact is retained. |
+| `reviewed_by` | External Identity administrator UUID approving the exact version; paired with `reviewed_at` and not itself proof of current authorization. |
+| `reviewed_at` | UTC server instant the exact version was reviewed; null after creation or any reviewed-field update. |
+| `verified_by` | External Identity administrator UUID that verified contact and coverage; paired with `verified_at`. |
+| `verified_at` | UTC server instant beginning the half-open 90-day freshness interval; null after creation or update. |
+| `seed_key` | Optional unique controlled-release identifier used only by owner migrations; never accepted from an admin request. |
+| `created_at` | Immutable UTC insertion instant. |
+| `updated_at` | UTC instant of the latest persisted content, review, activation, or deactivation change. |
+| `record_version` | Non-negative optimistic-lock counter incremented by updates and lifecycle decisions to prevent lost review changes. |
+
+The partial lookup index begins with `active` and recent `verified_at`; coverage is joined through the area index. Ordering is by name and stable UUID, never distance.
+
+### `public.safety_directory_coverage`
+
+Reviewed coarse Vietnam coverage attached to the exact directory record version. No coordinates, precise user location, or inferred geocoding are stored.
+
+| Field | Purpose |
+| --- | --- |
+| `entry_id` | Content-owned directory entry whose reviewed service area this row describes. |
+| `ordinal` | Stable non-negative display/provenance order inside one entry and part of its primary key. |
+| `coverage_level` | Restricted `NATIONWIDE`, `PROVINCE`, or `DISTRICT` scope controlling which canonical fields must be present. |
+| `province_code` | Canonical coarse province code; null only for nationwide coverage. |
+| `province_name` | Reviewed province display label paired with `province_code`; it may be matched by deliberate manual input. |
+| `district_code` | Canonical district code required only for district coverage. |
+| `district_name` | Reviewed district display label paired with `district_code`; no free-text address is treated as coverage. |
+
+### `public.safety_directory_review_history`
+
+Append-only accountability evidence for review/verification activation and deactivation. It excludes user location input and health data.
+
+| Field | Purpose |
+| --- | --- |
+| `id` | Immutable audit UUID. |
+| `entry_id` | Directory entry whose lifecycle decision was recorded. |
+| `record_version` | Exact optimistic-lock version produced by the decision so later edits cannot inherit its evidence. |
+| `action` | Restricted `REVIEWED` or `DEACTIVATED` outcome. A review action includes verification and activation in policy v1. |
+| `actor_id` | External Identity administrator UUID accountable for the decision. |
+| `source_reference` | Source evidence reference captured with the decision for reproducibility. |
+| `occurred_at` | Immutable database UTC commit instant of the decision. |
+
+### `public.safety_directory_command_record`
+
+Durable administrator-scoped replay evidence for create commands. It prevents duplicate directory records without storing request plaintext.
+
+| Field | Purpose |
+| --- | --- |
+| `actor_id` | External Identity administrator UUID owning the retry key. |
+| `operation` | Stable command scope, currently only `CREATE_DIRECTORY_ENTRY`. |
+| `idempotency_key` | Opaque caller key unique with actor and operation. |
+| `request_fingerprint` | Lowercase SHA-256 of the canonical non-sensitive create payload, used to reject conflicting reuse. |
+| `entry_id` | Directory entry created by the original command and returned on an identical replay. |
+| `created_at` | Immutable database UTC instant when the command outcome was recorded. |
+
+### `public.safety_directory_area_alias`
+
+Reviewed, deterministic vocabulary for resolving deliberately entered manual area text. It is independent of directory-entry coverage and stores no user query, coordinates, or inferred location.
+
+| Field | Purpose |
+| --- | --- |
+| `id` | Immutable UUID for the vocabulary row. |
+| `alias_text` | Reviewed province or district spelling; a normalized case-insensitive uniqueness rule ensures one area result per alias. |
+| `province_code` | Canonical province code returned by manual-area resolution. |
+| `district_code` | Canonical district code when the alias names a district; null for province-only aliases. |
+| `canonical` | Marks the preferred reviewed label for the area pair without changing lookup eligibility. |
+| `seed_key` | Optional unique controlled-release identifier used only by owner migrations. |
+| `created_at` | Immutable database UTC insertion instant. |
 
 ### `public.resource_idempotency_record`
 

@@ -8,6 +8,8 @@ NestJS service that owns reviewed self-help resource definitions, immutable exac
 - `POST /api/v1/resources/{id}/versions/{contentVersion}/eligibility-publications/withdrawal` — ADMIN-only append-only eligibility withdrawal
 - `POST /internal/v1/resource-eligibility:resolve` — authenticated USER-context batch resolution for Care with exact-version outcomes and no content or moderation payload
 - MB-337 controlled-demo eligibility matrix — six explicit immutable `vi-VN` resource-version decisions with reviewed provenance and Care-compatible fixture evidence
+- `POST /api/v1/safety-directory:lookup` — public coarse-area lookup returning only active reviewed records verified within 90 days; no coordinates or proximity claim
+- `/api/v1/safety-directory/admin/entries` — ADMIN-only create, review/verify/activate, update/invalidate, deactivate, and audit-preserving lifecycle
 
 - `GET /health/live` — liveness without a database dependency
 - `GET /health/ready` — PostgreSQL readiness check
@@ -87,7 +89,7 @@ npm run migrate:up
 
 Migrations run explicitly before deployment and never on application startup. The database and login are operator prerequisites; migrations do not create databases or schemas. Once merged, an applied migration is never edited or rolled back in a shared environment; add a forward migration instead. Migration `2_remove_hotline_catalogue.sql` removes the obsolete table after the historical baseline is applied; migration `6_add_resource_eligibility_v1.sql` adds immutable publications, declarations, withdrawals and command replay snapshots without changing existing resource rows.
 
-The controlled Review 1 seed and MB-337 eligibility matrix are owner-module migrations with a separate ledger (`pgmigrations_review1`), so running normal schema migrations cannot accidentally mark controlled data as applied. The matrix is repeatable and rejects drift from its reviewed item/version decisions. Machine-readable inventory, reviewer rationale, explicit ineligible decisions, and Care requests are kept in `../contracts/fixtures/content/resource-eligibility-v1-controlled-demo.json`. For the shared dev/staging database only, run:
+The controlled Review 1 seed, MB-337 eligibility matrix, and visibly synthetic non-dialable safety-directory fixture are owner-module migrations with a separate ledger (`pgmigrations_review1`), so running normal schema migrations cannot accidentally mark controlled data as applied. The seeds reject drift from their reviewed decisions. Machine-readable resource inventory, reviewer rationale, explicit ineligible decisions, and Care requests are kept in `../contracts/fixtures/content/resource-eligibility-v1-controlled-demo.json`. No real safety contact is published by the controlled fixture. For the shared dev/staging database only, run:
 
 ```bash
 npm run migrate:review1:up
