@@ -95,13 +95,56 @@ services:
       CARE_ANONYMOUS_SESSION_MAXIMUM_LIFETIME: ${CARE_ANONYMOUS_SESSION_MAXIMUM_LIFETIME:-PT2H}
       CARE_PHQ9_SAFETY_POLICY_VERSION: ${CARE_PHQ9_SAFETY_POLICY_VERSION:-MB-SAFETY-PHQ9-001/1.0-capstone}
       CARE_IDEMPOTENCY_HMAC_KEY: ${CARE_IDEMPOTENCY_HMAC_KEY:?Set a random CARE_IDEMPOTENCY_HMAC_KEY of at least 32 characters in .env}
+      CONTENT_RESOURCE_ELIGIBILITY_BASE_URL: http://content-notification:3003
+      CONTENT_SAFETY_DIRECTORY_BASE_URL: http://content-notification:3003
+      CONSULTATION_ENTITLEMENT_BASE_URL: http://consultation:8082
     ports:
       - "${SERVICE_BIND_ADDRESS:-127.0.0.1}:${CARE_PORT:-8081}:8081"
     depends_on:
       care-migrate:
         condition: service_completed_successfully
+      consultation:
+        condition: service_healthy
     healthcheck:
       test: ["CMD", "wget", "-q", "-O", "/dev/null", "http://localhost:8081/actuator/health"]
+      interval: 10s
+      timeout: 5s
+      retries: 12
+      start_period: 30s
+    networks:
+      - review1
+
+  consultation-migrate:
+    build:
+      context: ./consultation-service
+      target: migration
+    profiles: *demo-profiles
+    restart: "no"
+    env_file:
+      - ./consultation-service/.env
+    networks:
+      - review1
+
+  consultation:
+    build:
+      context: ./consultation-service
+      target: runtime
+    profiles: *demo-profiles
+    restart: unless-stopped
+    env_file:
+      - ./consultation-service/.env
+    environment:
+      <<: *java-service-environment
+      SERVER_PORT: 8082
+      CONSULTATION_LIQUIBASE_ENABLED: "false"
+      CONSULTATION_VIDEO_AVAILABILITY_ENABLED: ${CONSULTATION_VIDEO_AVAILABILITY_ENABLED:-false}
+    ports:
+      - "${SERVICE_BIND_ADDRESS:-127.0.0.1}:${CONSULTATION_PORT:-8082}:8082"
+    depends_on:
+      consultation-migrate:
+        condition: service_completed_successfully
+    healthcheck:
+      test: ["CMD", "wget", "-q", "-O", "/dev/null", "http://localhost:8082/actuator/health"]
       interval: 10s
       timeout: 5s
       retries: 12
@@ -150,6 +193,52 @@ services:
     networks:
       - review1
 
+  journal-ai-migrate:
+    build:
+      context: ./journal-ai-service
+      target: runtime
+    profiles: *demo-profiles
+    restart: "no"
+    command: ["npm", "run", "migrate:up"]
+    env_file:
+      - ./journal-ai-service/.env
+    networks:
+      - review1
+
+  journal-ai:
+    build:
+      context: ./journal-ai-service
+      target: runtime
+    profiles: *demo-profiles
+    restart: unless-stopped
+    env_file:
+      - ./journal-ai-service/.env
+    environment:
+      JOURNAL_AI_PORT: 3000
+      IDENTITY_JWT_ISSUER: ${IDENTITY_JWT_ISSUER:?Set IDENTITY_JWT_ISSUER in .env}
+      IDENTITY_JWT_AUDIENCE: ${IDENTITY_JWT_AUDIENCE:?Set IDENTITY_JWT_AUDIENCE in .env}
+      IDENTITY_JWT_KEY_ID: ${IDENTITY_JWT_KEY_ID:-review1-demo-key}
+      IDENTITY_JWT_PUBLIC_KEY: ${IDENTITY_JWT_PUBLIC_KEY:?Generate local Identity keys and set IDENTITY_JWT_PUBLIC_KEY in .env}
+      JOURNAL_AI_CARE_BASE_URL: http://care:8081
+      JOURNAL_AI_CONSULTATION_BASE_URL: http://consultation:8082
+    ports:
+      - "${SERVICE_BIND_ADDRESS:-127.0.0.1}:${JOURNAL_AI_PORT:-3005}:3000"
+    depends_on:
+      journal-ai-migrate:
+        condition: service_completed_successfully
+      care:
+        condition: service_healthy
+      consultation:
+        condition: service_healthy
+    healthcheck:
+      test: ["CMD", "node", "-e", "fetch('http://localhost:3000/health/ready').then(r=>process.exit(r.ok?0:1)).catch(()=>process.exit(1))"]
+      interval: 10s
+      timeout: 5s
+      retries: 12
+      start_period: 15s
+    networks:
+      - review1
+
   frontend:
     build:
       context: ${FRONTEND_BUILD_CONTEXT:-../mentalbridge-frontend/mentalbridge}
@@ -166,6 +255,10 @@ services:
       CARE_QUESTIONNAIRE_LOCALE: vi-VN
       CONTENT_SERVICE_URL: http://content-notification:3003
       CONTENT_SERVICE_TIMEOUT_MS: ${CONTENT_SERVICE_TIMEOUT_MS:-5000}
+      JOURNAL_AI_SERVICE_URL: http://journal-ai:3000
+      JOURNAL_AI_SERVICE_TIMEOUT_MS: ${JOURNAL_AI_SERVICE_TIMEOUT_MS:-5000}
+      CONSULTATION_SERVICE_URL: http://consultation:8082
+      CONSULTATION_SERVICE_TIMEOUT_MS: ${CONSULTATION_SERVICE_TIMEOUT_MS:-5000}
     ports:
       - "${FRONTEND_BIND_ADDRESS:-0.0.0.0}:${FRONTEND_PORT:-3000}:3000"
     depends_on:
@@ -174,6 +267,10 @@ services:
       care:
         condition: service_healthy
       content-notification:
+        condition: service_healthy
+      journal-ai:
+        condition: service_healthy
+      consultation:
         condition: service_healthy
     networks:
       - review1
