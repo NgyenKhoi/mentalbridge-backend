@@ -5,11 +5,13 @@ import java.security.MessageDigest;
 import java.time.Clock;
 import java.time.Instant;
 import java.util.ArrayList;
+import java.util.Base64;
 import java.util.HexFormat;
 import java.util.List;
 import java.util.UUID;
 
 import org.springframework.http.HttpStatus;
+import org.springframework.data.domain.PageRequest;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
@@ -95,6 +97,20 @@ public class SupportEvaluationService {
 	public EvaluationView get(UUID userId, UUID evaluationId) {
 		return view(repository.findByIdAndUserId(evaluationId, userId).orElseThrow(() -> new ApiException(HttpStatus.NOT_FOUND,
 				"SUPPORT_EVALUATION_NOT_FOUND", "Support evaluation was not found")));
+	}
+
+	@Transactional(readOnly = true)
+	public HistoryPage history(UUID userId, String cursor, int limit) {
+		var decoded = decodeCursor(cursor);
+		var pageable = PageRequest.of(0, limit + 1);
+		var page = decoded == null
+				? repository.findByUserIdOrderByEvaluatedAtDescIdDesc(userId, pageable)
+				: repository.findHistoryAfter(userId, decoded.evaluatedAt(), decoded.evaluationId(), pageable);
+		var hasMore = page.size() > limit;
+		var selected = hasMore ? page.subList(0, limit) : page;
+		var items = selected.stream().map(this::view).toList();
+		var nextCursor = hasMore ? encodeCursor(selected.getLast()) : null;
+		return new HistoryPage(items, nextCursor, hasMore);
 	}
 
 	private Evidence requiredEvidence(UUID userId, UUID assessmentId, String expectedInstrument, String policyVersion) {
@@ -188,6 +204,23 @@ public class SupportEvaluationService {
 		}
 	}
 
+	private Cursor decodeCursor(String cursor) {
+		if (cursor == null) return null;
+		try {
+			var decoded = new String(Base64.getUrlDecoder().decode(cursor), StandardCharsets.UTF_8).split("\\|", -1);
+			if (decoded.length != 2) throw new IllegalArgumentException();
+			return new Cursor(Instant.parse(decoded[0]), UUID.fromString(decoded[1]));
+		}
+		catch (RuntimeException exception) {
+			throw new ApiException(HttpStatus.BAD_REQUEST, "INVALID_CURSOR", "Support evaluation history cursor is invalid");
+		}
+	}
+
+	private String encodeCursor(SupportEvaluationEntity evaluation) {
+		var value = evaluation.evaluatedAt() + "|" + evaluation.id();
+		return Base64.getUrlEncoder().withoutPadding().encodeToString(value.getBytes(StandardCharsets.UTF_8));
+	}
+
 	private ApiException incompatible(String message) {
 		return new ApiException(HttpStatus.CONFLICT, "SUPPORT_EVIDENCE_INCOMPATIBLE", message);
 	}
@@ -206,6 +239,8 @@ public class SupportEvaluationService {
 	public record Meaning(String meaningCode, String contentVersion, int referencePeriodDays, String text,
 			String limitation) { }
 	public record NextStep(String code, String contentVersion, String text, String boundary) { }
+	public record HistoryPage(List<EvaluationView> items, String nextCursor, boolean hasMore) { }
+	private record Cursor(Instant evaluatedAt, UUID evaluationId) { }
 	private record SupportTierResolvedEvent(UUID supportEvaluationId, UUID userId, String policyVersion,
 			SupportTier supportTier, List<SupportReasonCode> reasonCodes, UUID phq9AssessmentId,
 			UUID gad7AssessmentId, Instant evaluatedAt) { }
