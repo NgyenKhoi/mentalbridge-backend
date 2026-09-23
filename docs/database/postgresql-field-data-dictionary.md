@@ -844,6 +844,27 @@ Append-only evidence for provisioning and appointment-driven transitions.
 | `idempotency_key` | Owner command key unique per account; exact replay does not append another event. |
 | `occurred_at` | Immutable server UTC transition instant. |
 
+### `consultation.appointment`
+
+Implemented MB-378 request aggregate. One row is the immutable scheduling snapshot created while the same local transaction locks the exact availability slot and holds one eligible credit. New requests support only in-app chat or gated in-app video.
+
+| Field | Purpose |
+| --- | --- |
+| `id` | Server-generated appointment UUID and local credit-ledger correlation. |
+| `user_account_id` | External Identity USER UUID that owns and may reload the request. |
+| `specialist_account_id` | Approved specialist snapshotted from the selected slot. |
+| `availability_slot_id` | Exact published 60-minute slot; a partial unique index permits at most one active request/confirmation. |
+| `service_credit_id` | Earliest-expiring available credit that covers the appointment start; unique while the appointment is active. |
+| `status` | Initial `REQUESTED`; later decision stories may move it to `CONFIRMED`, `REJECTED`, `EXPIRED`, or `CANCELLED`. |
+| `modality` | `IN_APP_CHAT` or `IN_APP_VIDEO`; physical, phone, and external-link modes are not accepted. |
+| `scheduled_start_at` / `scheduled_end_at` | Immutable exact UTC interval copied from availability and constrained to 60 minutes. |
+| `display_timezone` | IANA timezone copied from the slot for stable user display. |
+| `requested_at` | Server UTC command instant used for lead-time and deadline calculation. |
+| `decision_deadline_at` | Earlier of 24 hours after request or two hours before start; the decision/expiry owner consumes this handoff. |
+| `idempotency_key` | Printable user-scoped request key; exact retry returns this row and conflicting reuse fails. |
+| `created_at` / `updated_at` | UTC insertion and latest authoritative state-change instants. |
+| `version` | Optimistic state-transition counter for later decision commands. |
+
 ### `consultation.subscription_plan_version`
 
 Immutable price, allocation, credit, revenue-share, and cancellation policy purchased by a subscription period.

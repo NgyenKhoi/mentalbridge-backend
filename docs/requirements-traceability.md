@@ -191,6 +191,14 @@ The requirements are represented in domain/architecture documentation, but the l
   `IN_APP_VIDEO`, store UTC plus an IANA display timezone, persist idempotency,
   and contain no PracticeLocation, phone, or external meeting-link field. See
   [ADR 0019](adr/0019-online-specialist-availability.md).
+- 2026-09-23: MB-378 implements the first authoritative appointment slice.
+  A `PLUS` or `PREMIUM` user selects one exact 60-minute online slot;
+  Consultation locks the slot and earliest-expiring eligible credit in one
+  local PostgreSQL transaction, persists a `REQUESTED` snapshot and decision
+  deadline, and returns exact idempotent replays. Active slot/credit uniqueness,
+  lead time, stale selection, modality mismatch, video disablement, and
+  concurrent double-hold behavior fail closed. Specialist decision and expiry
+  execution remain MB-379 and consume the persisted deadline handoff.
 
 - 2026-09-13: Story 5103 delivers Content-owned Resource Eligibility v1 for exact immutable resource versions. The additive contract and PostgreSQL model record explicit approved domain, role, instrument band, support tier, locale, policy version, publication state, and effective window; reviewed or published content receives no implicit plan eligibility. Content resolves bounded request-order-stable batches, while the Care adapter applies explicit deadlines, bounded transient-only retry, circuit breaking, strict response attribution, and fail-closed `UNAVAILABLE` outcomes without opening a Care transaction. The delivery does not publish the separate initial demo eligibility matrix or enable SupportPlan proposal/lifecycle runtime.
 - 2026-09-13: `MB-AI-COMPANION-001` freezes exact-revision, explicit-request, consent-gated asynchronous journal analysis plus bounded longitudinal journal/context comparison. Each run uses one provider, a 30-second timeout per attempt, and at most one retry for 429/5xx/transport; no automatic cross-provider fallback or raw-response/hidden-reasoning persistence is allowed. Care presents standardized screening trend, model-derived available-journal context trend with coverage, SupportPlan engagement, and user reflection as four separate reassessment dimensions—never one improvement score. AI cannot score, diagnose, decide clinical improvement/eligibility, or mutate a SupportPlan. Benchmark results gate final production-provider selection and official controlled-demo enablement, not contract/adapters/job-runtime implementation. See [ADR 0015](adr/0015-ai-companion-analysis-contract.md) and [AI Companion policy v1](policies/ai-companion-policy-v1.md).

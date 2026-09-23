@@ -17,6 +17,10 @@ tombstone withdrawal of exact online slots; it does not create appointments.
 MB-377 adds Consultation-owned plan-period credit rows, an append-only
 transition ledger, and an authenticated owner balance. Provisioning is
 idempotent and keeps `DEMO` distinct from `PAID`; it does not infer payment.
+MB-378 adds the first appointment request slice. A paid user selects one exact
+online slot and Consultation atomically creates a `REQUESTED` snapshot while
+holding one eligible credit. Slot/credit concurrency and command replay are
+enforced locally; specialist decisions and scheduled expiry remain MB-379.
 Appointment existence alone does not grant sensitive data access;
 Care owns the user-approved appointment-scoped `ConsultationBrief` and sharing
 decision.
@@ -78,6 +82,11 @@ or owns the shared dev/staging Consultation database.
 ## Implemented MB-377 endpoint
 
 - `GET /api/v1/service-credits`
+
+## Implemented MB-378 endpoints
+
+- `GET /api/v1/bookable-slots`
+- `GET|POST /api/v1/appointments`
 
 Availability accepts only exact future 60-minute `IN_APP_CHAT` and gated
 `IN_APP_VIDEO` slots. It stores UTC instants and an IANA display timezone,
