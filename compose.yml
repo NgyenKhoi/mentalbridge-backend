@@ -121,7 +121,8 @@ services:
     profiles: *demo-profiles
     restart: "no"
     env_file:
-      - ./consultation-service/.env
+      - path: ./consultation-service/.env
+        required: false
     networks:
       - review1
 
@@ -132,7 +133,8 @@ services:
     profiles: *demo-profiles
     restart: unless-stopped
     env_file:
-      - ./consultation-service/.env
+      - path: ./consultation-service/.env
+        required: false
     environment:
       <<: *java-service-environment
       SERVER_PORT: 8082
@@ -201,7 +203,8 @@ services:
     restart: "no"
     command: ["npm", "run", "migrate:up"]
     env_file:
-      - ./journal-ai-service/.env
+      - path: ./journal-ai-service/.env
+        required: false
     networks:
       - review1
 
@@ -212,7 +215,8 @@ services:
     profiles: *demo-profiles
     restart: unless-stopped
     env_file:
-      - ./journal-ai-service/.env
+      - path: ./journal-ai-service/.env
+        required: false
     environment:
       JOURNAL_AI_PORT: 3000
       IDENTITY_JWT_ISSUER: ${IDENTITY_JWT_ISSUER:?Set IDENTITY_JWT_ISSUER in .env}
