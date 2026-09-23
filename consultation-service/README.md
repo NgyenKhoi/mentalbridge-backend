@@ -49,6 +49,19 @@ Production must override local URLs and secrets. MoMo IPN signing,
 payout, encryption, and downstream timeout variables will be documented when
 their typed configuration is introduced. No refund adapter is planned.
 
+For container-based local/demo startup, copy `.env.example` to an untracked
+`.env` and replace the database placeholder values. The root Compose profile
+runs `consultation-migrate` first with Liquibase enabled, then starts the
+`consultation` application container with runtime migrations disabled:
+
+```powershell
+docker compose --profile demo up consultation-migrate consultation
+```
+
+The committed Docker image contains the Maven-built service only. Database
+provisioning remains an operator prerequisite; Compose never creates, resets,
+or owns the shared dev/staging Consultation database.
+
 ## Implemented Story 6101 endpoints
 
 - `GET|PUT /api/v1/specialist-profile`
