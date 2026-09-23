@@ -19,6 +19,10 @@ conversation boundary defined by ADR 0021:
   SupportPlan state, reminders, or third-party contact;
 - frontend history, context selection, quota/reset copy, consent/quota/provider
   failures, hard deletion, and deterministic help-now entry.
+- bounded metadata-only conversation listing with full messages loaded from the
+  owner-scoped detail endpoint;
+- strict real-provider structured output plus fail-closed Vietnamese and
+  authority validation before any assistant text is persisted.
 
 ## Verification matrix
 
@@ -28,6 +32,8 @@ conversation boundary defined by ADR 0021:
 | Local-day reset and stable reset metadata | unit and real-Mongo HTTP integration |
 | Duplicate/reused keys and concurrent quota race | unit and real-Mongo HTTP integration |
 | Provider failure does not consume answer quota | unit and real-Mongo HTTP integration |
+| Prompt injection and attempted business-state mutation fail closed | provider and owner unit tests |
+| History list remains bounded independently of retained messages | owner unit/HTTP and frontend boundary tests |
 | Rate and token controls | owner unit tests |
 | Consent withdrawal and owner isolation | owner unit and real-Mongo HTTP integration |
 | Encrypted persistence, no raw context/CoT | unit and real-Mongo persistence assertions |
@@ -40,7 +46,7 @@ conversation boundary defined by ADR 0021:
 The final PR description records exact commands and CI links. Local evidence is
 classified as follows:
 
-- `npm test`: 75/75 unit and HTTP tests passed;
+- `npm test`: 79/79 unit and HTTP tests passed;
 - `npm run test:integration`: 6/6 real MongoDB replica-set integration suites
   passed, including AI Companion concurrency, reset, replay, encryption,
   isolation, failure, consent, Premium metadata, and deletion scenarios;

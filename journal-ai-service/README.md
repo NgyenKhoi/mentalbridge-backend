@@ -135,7 +135,7 @@ encrypted demo data exists. Do not commit local `.env` files or secrets.
 | `DELETE` | `/api/v1/emotion-check-ins/{localDate}`                           | Erase encrypted revisions and retain a bounded tombstone              |
 | `GET`    | `/api/v1/emotion-check-in-context`                                | Return note-free AI context after current Care consent                |
 | `POST`   | `/api/v1/ai-companion/conversations`                              | Start an encrypted owner-scoped conversation                          |
-| `GET`    | `/api/v1/ai-companion/conversations`                              | List retained owner-scoped conversations                              |
+| `GET`    | `/api/v1/ai-companion/conversations`                              | List bounded retained conversation summaries without message bodies   |
 | `GET`    | `/api/v1/ai-companion/conversations/{conversationId}`             | Resume one owned conversation                                         |
 | `POST`   | `/api/v1/ai-companion/conversations/{conversationId}/messages`    | Deliver one quota-governed normalized assistant response              |
 | `DELETE` | `/api/v1/ai-companion/conversations/{conversationId}`             | Hard-delete the conversation and replay snapshots                     |
@@ -156,8 +156,11 @@ Incoming requests echo a valid bounded `x-correlation-id` or receive a generated
 - Longitudinal analysis job/result validators and indexes: `migrations/009_longitudinal_context_analysis.cjs`
 - AI Companion conversation, command, quota, rate, and TTL indexes: `migrations/010_ai_companion_chat_quotas.cjs`
 
-AI Companion chat follows ADR 0021. It counts only successfully persisted
-assistant responses, derives the reset from a server-configured IANA timezone,
+AI Companion chat follows ADR 0021. List responses contain metadata-only
+summaries; full bounded message history is returned only by the owner-scoped
+detail endpoint. Real-provider replies use strict structured output and a
+fail-closed authority validator before persistence. It counts only successfully
+persisted assistant responses, derives the reset from a server-configured IANA timezone,
 and keeps Premium UI copy free of an infrastructure-unlimited claim. MongoDB
 must provide replica-set transaction semantics. Local/test/CI use the
 deterministic fake; a real route additionally requires the existing approved

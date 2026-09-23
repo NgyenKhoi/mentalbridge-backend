@@ -141,7 +141,7 @@ void test("persists encrypted quota-governed AI Companion conversations with rea
           providerFails
             ? Promise.reject(new Error("synthetic provider timeout"))
             : Promise.resolve({
-                message: "Synthetic bounded response",
+                message: "Phản hồi tổng hợp được giới hạn.",
                 inputTokens: 20,
                 outputTokens: 10,
               }),
@@ -228,6 +228,18 @@ void test("persists encrypted quota-governed AI Companion conversations with rea
       JSON.stringify(stored).includes("Synthetic minimized plan context"),
       false,
     );
+    const history = await request(server)
+      .get("/api/v1/ai-companion/conversations")
+      .set(authorization)
+      .expect(200);
+    const historyBody = history.body as unknown as {
+      items: Record<string, unknown>[];
+    };
+    assert.equal(historyBody.items.length, 1);
+    const historyItem = historyBody.items[0];
+    assert.ok(historyItem);
+    assert.equal("messages" in historyItem, false);
+    assert.equal(historyItem.conversationId, conversationId);
     await request(server)
       .get(`/api/v1/ai-companion/conversations/${conversationId}`)
       .set("Authorization", `Bearer ${otherToken}`)

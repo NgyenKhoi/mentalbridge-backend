@@ -1,7 +1,7 @@
 openapi: 3.1.0
 info:
   title: MentalBridge Journal AI Service API
-  version: 1.3.0
+  version: 1.3.1
   description: Private journal CRUD, daily self-reported emotion check-ins, consent-gated analysis, and quota-governed AI Companion conversations.
 servers:
   - url: http://localhost:3000
@@ -442,7 +442,7 @@ paths:
                   items:
                     type: array
                     maxItems: 50
-                    items: { $ref: "#/components/schemas/AiConversation" }
+                    items: { $ref: "#/components/schemas/AiConversationSummary" }
         "401": { $ref: "#/components/responses/Unauthorized" }
   /api/v1/ai-companion/conversations/{conversationId}:
     x-mentalbridge-status: implemented
@@ -799,6 +799,16 @@ components:
           type: array
           maxItems: 400
           items: { $ref: "#/components/schemas/AiMessage" }
+        createdAt: { type: string, format: date-time }
+        updatedAt: { type: string, format: date-time }
+        expiresAt: { type: string, format: date-time }
+    AiConversationSummary:
+      type: object
+      additionalProperties: false
+      required: [conversationId, title, createdAt, updatedAt, expiresAt]
+      properties:
+        conversationId: { type: string, format: uuid }
+        title: { type: string, minLength: 1, maxLength: 80 }
         createdAt: { type: string, format: date-time }
         updatedAt: { type: string, format: date-time }
         expiresAt: { type: string, format: date-time }
