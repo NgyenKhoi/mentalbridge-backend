@@ -28,6 +28,11 @@ const resource: ResourceRow = {
   summary: 'Draft summary',
   content_body: 'Draft body',
   external_url: null,
+  source_organization: null,
+  source_title: null,
+  source_url: null,
+  source_review_note: null,
+  catalogue_visibility: 'LISTED',
   status: 'DRAFT',
   reviewed_by: null,
   reviewed_at: null,
@@ -158,6 +163,10 @@ describe('resource HTTP and authorization boundary', () => {
     vi.mocked(repository.findPublishedEligibleById).mockResolvedValueOnce({
       ...resource,
       status: 'PUBLISHED',
+      source_organization: 'NHS',
+      source_title: 'Reviewed source',
+      source_url: 'https://www.nhs.uk/mental-health/',
+      source_review_note: 'Reviewed for catalogue use',
       reviewed_by: ADMIN_ID,
       reviewed_at: new Date('2026-09-01T01:00:00Z'),
     });
@@ -166,6 +175,12 @@ describe('resource HTTP and authorization boundary', () => {
       .get(`/api/v1/resources/${RESOURCE_ID}?locale=vi-VN`)
       .expect(200);
     expect(response.body.contentBody).toBe('Draft body');
+    expect(response.body).toMatchObject({
+      sourceOrganization: 'NHS',
+      sourceTitle: 'Reviewed source',
+      sourceUrl: 'https://www.nhs.uk/mental-health/',
+      sourceReviewNote: 'Reviewed for catalogue use',
+    });
     expect(response.body).not.toHaveProperty('reviewedBy');
     expect(response.body).not.toHaveProperty('version');
   });
@@ -211,6 +226,36 @@ describe('resource HTTP and authorization boundary', () => {
       expect.objectContaining({ title: 'Title' }),
       'create-2',
       { actorId: ADMIN_ID, correlationId: CORRELATION_ID },
+    );
+  });
+
+  it('rejects VIDEO drafts without a verified YouTube URL', async () => {
+    const adminToken = await token(ADMIN_ID, ['ADMIN']);
+
+    const missingUrl = await request(server())
+      .post('/api/v1/resources')
+      .set('authorization', `Bearer ${adminToken}`)
+      .set('idempotency-key', 'create-video-missing-url')
+      .send({ category: 'VIDEO', title: 'Video', summary: 'Summary', contentBody: 'Body' })
+      .expect(422);
+    expect(missingUrl.body.fieldViolations).toEqual(
+      expect.arrayContaining([expect.objectContaining({ field: 'externalUrl' })]),
+    );
+
+    const untrustedUrl = await request(server())
+      .post('/api/v1/resources')
+      .set('authorization', `Bearer ${adminToken}`)
+      .set('idempotency-key', 'create-video-untrusted-url')
+      .send({
+        category: 'VIDEO',
+        title: 'Video',
+        summary: 'Summary',
+        contentBody: 'Body',
+        externalUrl: 'https://example.com/video',
+      })
+      .expect(422);
+    expect(untrustedUrl.body.fieldViolations).toEqual(
+      expect.arrayContaining([expect.objectContaining({ field: 'externalUrl' })]),
     );
   });
 

@@ -40,10 +40,10 @@ public class SupportGuideService {
 	private static final String EXPLANATION = "Hướng dẫn này tóm tắt kết quả sàng lọc đã lưu và gợi ý tài nguyên tự hỗ trợ đã được rà soát. Đây không phải chẩn đoán hoặc kế hoạch điều trị.";
 	private static final String STANDARD_SAFETY = "Nếu tình trạng của bạn thay đổi hoặc bạn cảm thấy không an toàn, hãy chủ động tìm hỗ trợ trực tiếp phù hợp tại khu vực của bạn.";
 	private static final List<Candidate> CANDIDATES = List.of(
-			new Candidate("00000000-0000-4000-8000-000000000102", "0", "DEPRESSIVE_SYMPTOMS"),
-			new Candidate("00000000-0000-4000-8000-000000000104", "0", "DEPRESSIVE_SYMPTOMS"),
-			new Candidate("00000000-0000-4000-8000-000000000103", "0", "ANXIETY_SYMPTOMS"),
-			new Candidate("00000000-0000-4000-8000-000000000101", "0", "ANXIETY_SYMPTOMS"));
+			new Candidate("00000000-0000-4000-8000-000000000205", "0", "DEPRESSIVE_SYMPTOMS"),
+			new Candidate("00000000-0000-4000-8000-000000000208", "0", "DEPRESSIVE_SYMPTOMS"),
+			new Candidate("00000000-0000-4000-8000-000000000206", "0", "ANXIETY_SYMPTOMS"),
+			new Candidate("00000000-0000-4000-8000-000000000201", "0", "ANXIETY_SYMPTOMS"));
 
 	private final SupportEvaluationV2Service evaluations;
 	private final ResourceEligibilityClient eligibility;

@@ -11,6 +11,11 @@ export interface ResourceRow {
   readonly summary: string;
   readonly content_body: string | null;
   readonly external_url: string | null;
+  readonly source_organization: string | null;
+  readonly source_title: string | null;
+  readonly source_url: string | null;
+  readonly source_review_note: string | null;
+  readonly catalogue_visibility: 'LISTED' | 'DIRECT_ONLY';
   readonly status: ResourceStatus;
   readonly reviewed_by: string | null;
   readonly reviewed_at: Date | null;
@@ -28,6 +33,7 @@ export interface ResourceSummary {
   readonly title: string;
   readonly summary: string;
   readonly externalUrl: string | null;
+  readonly sourceOrganization: string | null;
   readonly status: ResourceStatus;
   readonly reviewedAt: string | null;
   readonly createdAt: string;
@@ -36,6 +42,9 @@ export interface ResourceSummary {
 
 export interface PublicResourceDetail extends ResourceSummary {
   readonly contentBody: string | null;
+  readonly sourceTitle: string | null;
+  readonly sourceUrl: string | null;
+  readonly sourceReviewNote: string | null;
   readonly effectiveAt: string | null;
   readonly expiresAt: string | null;
 }

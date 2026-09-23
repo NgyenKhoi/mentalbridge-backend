@@ -43,7 +43,17 @@ describe('Database Integration', () => {
     });
 
     await waitForPool(pool);
-    for (const migration of ['1_initial_schema.sql', '2_remove_hotline_catalogue.sql']) {
+    for (const migration of [
+      '1_initial_schema.sql',
+      '2_remove_hotline_catalogue.sql',
+      '3_add_review_provenance_fields.sql',
+      '4_add_idempotency_key.sql',
+      '5_add_resource_command_records.sql',
+      '6_add_resource_eligibility_v1.sql',
+      '7_add_safety_directory.sql',
+      '8_add_safety_directory_area_alias.sql',
+      '9_add_resource_source_provenance.sql',
+    ]) {
       const sql = readFileSync(join(__dirname, '../../../migrations', migration), 'utf8');
       await pool.query(sql);
     }
@@ -138,6 +148,21 @@ describe('Database Integration', () => {
       expect(rows[0].id).toBeDefined();
     });
 
+    it('rejects VIDEO rows without a verified YouTube action', async () => {
+      await expect(
+        pool.query(
+          `INSERT INTO resource (category, locale, title, summary, content_body)
+           VALUES ('VIDEO', 'vi-VN', 'Missing action', 'Summary', 'Body')`,
+        ),
+      ).rejects.toThrow(/ck_resource_video_external_url/);
+      await expect(
+        pool.query(
+          `INSERT INTO resource (category, locale, title, summary, content_body, external_url)
+           VALUES ('VIDEO', 'vi-VN', 'Untrusted action', 'Summary', 'Body', 'https://example.com/video')`,
+        ),
+      ).rejects.toThrow(/ck_resource_video_external_url/);
+    });
+
     it('has ix_resource_browse index', async () => {
       const { rows } = await pool.query(
         `SELECT indexname FROM pg_indexes WHERE tablename='resource' AND indexname='ix_resource_browse'`,
@@ -150,6 +175,61 @@ describe('Database Integration', () => {
         `SELECT indexname FROM pg_indexes WHERE tablename='resource' AND indexname='ix_resource_review_window'`,
       );
       expect(rows).toHaveLength(1);
+    });
+
+    it('seeds the reviewed MB-556 catalogue idempotently with provenance and real video actions', async () => {
+      for (const migration of [
+        '2_publish_initial_resource_eligibility.sql',
+        '3_seed_safety_directory_controlled_demo.sql',
+        '4_align_controlled_demo_area.sql',
+        '5_seed_safety_directory_area_aliases.sql',
+        '6_seed_mb556_reviewed_resource_catalogue.sql',
+      ]) {
+        const sql = readFileSync(join(__dirname, '../../../migrations/review1', migration), 'utf8');
+        await pool.query(sql);
+        if (migration === '6_seed_mb556_reviewed_resource_catalogue.sql') {
+          await pool.query(sql);
+        }
+      }
+
+      const catalogue = await pool.query<{
+        count: string;
+        sourced: string;
+        videos: string;
+        actionable_videos: string;
+      }>(
+        `SELECT
+           count(*)::text AS count,
+           count(*) FILTER (WHERE source_organization IS NOT NULL
+                              AND source_title IS NOT NULL
+                              AND source_url IS NOT NULL
+                              AND source_review_note IS NOT NULL)::text AS sourced,
+           count(*) FILTER (WHERE category = 'VIDEO')::text AS videos,
+           count(*) FILTER (WHERE category = 'VIDEO'
+                              AND external_url ~ '^https://(www\\.)?(youtube\\.com|youtu\\.be)/')::text
+             AS actionable_videos
+         FROM resource
+         WHERE id BETWEEN '00000000-0000-4000-8000-000000000201'::uuid
+                      AND '00000000-0000-4000-8000-000000000215'::uuid
+           AND catalogue_visibility = 'LISTED'`,
+      );
+      expect(catalogue.rows[0]).toEqual({
+        count: '15',
+        sourced: '15',
+        videos: '3',
+        actionable_videos: '3',
+      });
+
+      const legacy = await pool.query<{ listed: string; corrected_category: string }>(
+        `SELECT
+           count(*) FILTER (WHERE catalogue_visibility = 'LISTED')::text AS listed,
+           max(category) FILTER (WHERE id = '00000000-0000-4000-8000-000000000104')
+             AS corrected_category
+         FROM resource
+         WHERE id BETWEEN '00000000-0000-4000-8000-000000000101'::uuid
+                      AND '00000000-0000-4000-8000-000000000106'::uuid`,
+      );
+      expect(legacy.rows[0]).toEqual({ listed: '0', corrected_category: 'ARTICLE' });
     });
   });
 

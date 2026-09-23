@@ -27,6 +27,7 @@ const commandRecords = requiredMigration('5_add_resource_command_records.sql');
 const resourceEligibility = requiredMigration('6_add_resource_eligibility_v1.sql');
 const safetyDirectory = requiredMigration('7_add_safety_directory.sql');
 const safetyDirectoryAreaAlias = requiredMigration('8_add_safety_directory_area_alias.sql');
+const resourceSourceProvenance = requiredMigration('9_add_resource_source_provenance.sql');
 const review1Seed = await readFile(
   new URL('../migrations/review1/1_seed_review1_controlled_resource.sql', import.meta.url),
   'utf8',
@@ -41,6 +42,10 @@ const safetyDirectoryDemo = await readFile(
 );
 const safetyDirectoryAreaAliases = await readFile(
   new URL('../migrations/review1/5_seed_safety_directory_area_aliases.sql', import.meta.url),
+  'utf8',
+);
+const reviewedResourceCatalogue = await readFile(
+  new URL('../migrations/review1/6_seed_mb556_reviewed_resource_catalogue.sql', import.meta.url),
   'utf8',
 );
 const controlledDemoFixture = JSON.parse(
@@ -120,12 +125,36 @@ assert.match(safetyDirectoryAreaAlias, /uq_area_alias_text_normalised\b/);
 assert.match(safetyDirectoryAreaAlias, /lower\(btrim\(alias_text\)\)/);
 assert.match(safetyDirectoryAreaAlias, /ix_area_alias_lookup\b/);
 assert.doesNotMatch(safetyDirectoryAreaAlias, /safety_directory_coverage/);
+for (const column of [
+  'source_organization',
+  'source_title',
+  'source_url',
+  'source_review_note',
+  'catalogue_visibility',
+]) {
+  assert.match(resourceSourceProvenance, new RegExp(`ADD COLUMN ${column}\\b`));
+}
+assert.match(resourceSourceProvenance, /ck_resource_published_source\b/);
+assert.match(resourceSourceProvenance, /ck_resource_video_external_url\b/);
+assert.match(resourceSourceProvenance, /youtube\\\.com\|youtu\\\.be/);
 assert.match(safetyDirectoryAreaAliases, /area-alias-ha-noi-canonical/);
 assert.match(safetyDirectoryAreaAliases, /area-alias-da-nang-canonical/);
 assert.match(safetyDirectoryAreaAliases, /area-alias-hcm-canonical/);
 assert.match(safetyDirectoryAreaAliases, /ON CONFLICT \(seed_key\) DO NOTHING/);
 assert.match(safetyDirectoryAreaAliases, /differs from reviewed release/);
 assert.doesNotMatch(safetyDirectoryAreaAliases, /CREATE DATABASE|CREATE SCHEMA/i);
+assert.match(reviewedResourceCatalogue, /^-- Up Migration/m);
+assert.match(reviewedResourceCatalogue, /Story: MB-556/);
+assert.match(reviewedResourceCatalogue, /catalogue_visibility = 'DIRECT_ONLY'/);
+assert.match(reviewedResourceCatalogue, /INSERT INTO resource\b/);
+assert.match(reviewedResourceCatalogue, /INSERT INTO resource_eligibility_publication\b/);
+assert.match(reviewedResourceCatalogue, /INSERT INTO resource_eligibility_declaration\b/);
+assert.match(reviewedResourceCatalogue, /https:\/\/www\.youtube\.com\/watch\?v=wfDTp2GogaQ/);
+assert.match(reviewedResourceCatalogue, /https:\/\/www\.youtube\.com\/watch\?v=tfkhkFwCtxs/);
+assert.match(reviewedResourceCatalogue, /https:\/\/www\.youtube\.com\/watch\?v=9GURt2pvdAg/);
+assert.match(reviewedResourceCatalogue, /<> 15/);
+assert.match(reviewedResourceCatalogue, /<> 27/);
+assert.doesNotMatch(reviewedResourceCatalogue, /CREATE DATABASE|CREATE SCHEMA/i);
 const areaAliasValues = safetyDirectoryAreaAliases.match(
   /INSERT INTO safety_directory_area_alias[\s\S]*?\bVALUES\s*([\s\S]*?)\s*ON CONFLICT \(seed_key\)/,
 )?.[1];

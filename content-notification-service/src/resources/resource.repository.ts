@@ -27,6 +27,10 @@ export interface CreateResourceData {
   readonly summary: string;
   readonly contentBody?: string | null;
   readonly externalUrl?: string | null;
+  readonly sourceOrganization?: string | null;
+  readonly sourceTitle?: string | null;
+  readonly sourceUrl?: string | null;
+  readonly sourceReviewNote?: string | null;
   readonly effectiveAt?: Date | null;
   readonly expiresAt?: Date | null;
 }
@@ -37,6 +41,10 @@ export interface UpdateResourceData {
   readonly summary?: string;
   readonly contentBody?: string | null;
   readonly externalUrl?: string | null;
+  readonly sourceOrganization?: string | null;
+  readonly sourceTitle?: string | null;
+  readonly sourceUrl?: string | null;
+  readonly sourceReviewNote?: string | null;
   readonly effectiveAt?: Date | null;
   readonly expiresAt?: Date | null;
   readonly version: number;
@@ -50,6 +58,7 @@ type IdempotencyRow = {
 type ResourceDatabaseRow = Omit<ResourceRow, 'version'> & { readonly version: string | number };
 
 const RESOURCE_COLUMNS = `id, category, locale, title, summary, content_body, external_url,
+  source_organization, source_title, source_url, source_review_note, catalogue_visibility,
   status, reviewed_by, reviewed_at, effective_at, expires_at,
   created_at, updated_at, version`;
 
@@ -74,6 +83,10 @@ function fingerprint(data: CreateResourceData): string {
         summary: data.summary,
         contentBody: data.contentBody ?? null,
         externalUrl: data.externalUrl ?? null,
+        sourceOrganization: data.sourceOrganization ?? null,
+        sourceTitle: data.sourceTitle ?? null,
+        sourceUrl: data.sourceUrl ?? null,
+        sourceReviewNote: data.sourceReviewNote ?? null,
         effectiveAt: data.effectiveAt?.toISOString() ?? null,
         expiresAt: data.expiresAt?.toISOString() ?? null,
       }),
@@ -94,6 +107,7 @@ export class ResourceRepository {
       "r.status = 'PUBLISHED'",
       'r.reviewed_at IS NOT NULL',
       'r.reviewed_by IS NOT NULL',
+      "r.catalogue_visibility = 'LISTED'",
       '(r.effective_at IS NULL OR r.effective_at <= now())',
       '(r.expires_at IS NULL OR r.expires_at > now())',
     ];
@@ -215,9 +229,10 @@ export class ResourceRepository {
       const resourceId = randomUUID();
       const inserted = await client.query<ResourceDatabaseRow>(
         `INSERT INTO resource
-          (id, category, locale, title, summary, content_body, external_url, status,
+          (id, category, locale, title, summary, content_body, external_url,
+           source_organization, source_title, source_url, source_review_note, status,
            effective_at, expires_at)
-         VALUES ($1, $2, $3, $4, $5, $6, $7, 'DRAFT', $8, $9)
+         VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, 'DRAFT', $12, $13)
          RETURNING ${RESOURCE_COLUMNS}`,
         [
           resourceId,
@@ -227,6 +242,10 @@ export class ResourceRepository {
           data.summary,
           data.contentBody ?? null,
           data.externalUrl ?? null,
+          data.sourceOrganization ?? null,
+          data.sourceTitle ?? null,
+          data.sourceUrl ?? null,
+          data.sourceReviewNote ?? null,
           data.effectiveAt ?? null,
           data.expiresAt ?? null,
         ],
@@ -266,6 +285,10 @@ export class ResourceRepository {
       ['summary', data.summary],
       ['content_body', data.contentBody],
       ['external_url', data.externalUrl],
+      ['source_organization', data.sourceOrganization],
+      ['source_title', data.sourceTitle],
+      ['source_url', data.sourceUrl],
+      ['source_review_note', data.sourceReviewNote],
       ['effective_at', data.effectiveAt],
       ['expires_at', data.expiresAt],
     ] as const) {

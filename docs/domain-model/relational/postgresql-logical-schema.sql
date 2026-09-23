@@ -763,7 +763,7 @@ CREATE TABLE consultation.availability_slot (
 
 /* ========================================================================== */
 /* ACTIVE — content-notification-service / mentalbridge_content_notification  */
-/* Evidence: node-pg-migrate-compatible SQL migrations 1-8.                   */
+/* Evidence: node-pg-migrate-compatible SQL migrations 1-9.                   */
 /* ========================================================================== */
 
 CREATE TABLE content.resource (
@@ -774,6 +774,11 @@ CREATE TABLE content.resource (
     summary text NOT NULL,
     content_body text,
     external_url varchar(2048),
+    source_organization varchar(200),
+    source_title varchar(500),
+    source_url varchar(2048),
+    source_review_note text,
+    catalogue_visibility varchar(16) NOT NULL DEFAULT 'LISTED',
     status varchar(16) NOT NULL,
     reviewed_by uuid, -- external -> identity.account.id
     reviewed_at timestamptz,
