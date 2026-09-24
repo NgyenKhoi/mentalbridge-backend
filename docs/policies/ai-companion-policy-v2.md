@@ -4,13 +4,14 @@
 
 | Field | Value |
 | --- | --- |
-| Scope decision | `MB-SCOPE-V2-001` |
+| Scope decisions | `MB-SCOPE-V2-001`, amended by `MB-SCOPE-V2-002` |
 | Status | `PRODUCT POLICY APPROVED; CHAT/QUOTA AND EXACT-REVISION RUNTIMES IMPLEMENTED; REAL PROVIDER ROUTE REQUIRES APPROVAL` |
-| Effective decision date | 2026-09-15 |
+| Effective decision date | 2026-09-24 for ADR 0022 amendments |
 | AI owner | Journal/AI |
 | Care-decision, safety, and consent owner | Care |
 | Reminder scheduling owner | Content/Notification |
-| Decision | [ADR 0017](../adr/0017-product-scope-v2.md) |
+| Base decision | [ADR 0017](../adr/0017-product-scope-v2.md) |
+| Current amendment | [ADR 0022](../adr/0022-current-product-blueprint-amendments.md) |
 | Amends | [AI Companion policy v1](ai-companion-policy-v1.md) |
 
 The v1 exact-source consent, one-provider-per-run, bounded retry, normalized
@@ -30,8 +31,8 @@ business action.
 
 AI does not score PHQ-9/GAD-7, diagnose, decide safety, determine clinical
 improvement, decide entitlement or resource eligibility, create or mutate a
-SupportPlan, schedule reminders, complete an appointment, consume credits, or
-create earnings.
+SupportPlan, provide the user's explicit reassessment self-report, schedule
+reminders, complete an appointment, consume credits, or create earnings.
 
 ## Package behavior
 
@@ -58,9 +59,31 @@ stops the provider call. There is no automatic cross-provider fallback.
 
 AI may use only current authorized, minimized plan context. It can explain an
 unfinished resource, guide its approved exercise, or surface preferences,
-barriers, recurring context, and helpful patterns. Care selects eligible
-alternatives and owns the four separate reassessment dimensions. The user
-confirms every `PlanChangeRequest` or other applied plan change.
+barriers, recurring context, and helpful patterns.
+
+Care owns the four separate ReassessmentSummary dimensions:
+
+1. deterministic Screening change;
+2. bounded Journal context;
+3. factual Plan engagement; and
+4. explicit Self-reported experience authored by the user during reassessment.
+
+AI-derived Journal context is evidence for dimension 2 only. Activity
+helpfulness/reflection may be surfaced as approved supporting evidence for
+dimension 4, but AI must not infer, fabricate, summarize into existence, or
+replace the user's explicit reassessment self-report.
+
+The dimensions may contradict each other and must not be collapsed into one
+improvement/recovery verdict. Care selects eligible plan alternatives and owns
+fresh plan revalidation. The user confirms every `PlanChangeRequest` or other
+applied plan change.
+
+AI may explain the three Care-owned plan-review outcomes but does not decide
+which outcome applies:
+
+- current plan valid with no better alternative;
+- current plan valid with alternatives available; or
+- current plan not admissible under current policy.
 
 ## Reminders
 
@@ -85,18 +108,22 @@ attempted business-state mutation.
 
 MB-512 implements the consent-gated conversation runtime, encrypted history,
 server-authoritative plan quotas, minimized selected Journal/longitudinal/current
-SupportPlan context, hard deletion, and same-origin frontend flow under ADR
-0021. Reminder accompaniment remains unavailable until Content/Notification
-publishes an approved owner contract. MB-367 implements the consented
-exact-revision backend with MongoDB jobs,
+SupportPlan context, hard deletion, and same-origin frontend flow under the AI
+conversation ADR. Reminder accompaniment remains unavailable until
+Content/Notification publishes an approved owner contract.
+
+MB-367 implements the consented exact-revision backend with MongoDB jobs,
 normalized results, and a deterministic fake provider. MB-371 implements the
 bounded exact-source longitudinal backend, conservative coverage policy,
-deletion coupling, and minimized current-consent Care projection. MB-386
-implements Care Reassessment Summary composition; the frontend remains Story
-6502.
-MB-369 implements the entitlement-aware router, structured
-Gemini/OpenAI adapters, and synthetic benchmark harness, but does not activate
-a real route until that pinned candidate passes its separately reviewed
-benchmark gate and an approval version plus its credential are configured.
-Benchmarking one provider does not require credentials for an unconfigured
-provider.
+deletion coupling, and minimized current-consent Care projection.
+
+MB-386 implements the pre-ADR-0022 ReassessmentSummary composition baseline.
+Its activity helpfulness/reflection-derived fourth dimension remains readable
+as historical runtime provenance, but the canonical target requires the
+explicit user reassessment self-report from MB-559 or equivalent delivery.
+
+MB-369 implements the entitlement-aware router, structured Gemini/OpenAI
+adapters, and synthetic benchmark harness, but does not activate a real route
+until that pinned candidate passes its separately reviewed benchmark gate and
+an approval version plus its credential are configured. Benchmarking one
+provider does not require credentials for an unconfigured provider.
