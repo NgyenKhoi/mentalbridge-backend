@@ -10,10 +10,10 @@ The root [`compose.yml`](compose.yml) is intentionally scoped to executable Revi
 
 | Profile | Services |
 | --- | --- |
-| `demo` | Frontend, Identity, Care, Content/Notification, and explicit migrations against the shared dev/staging PostgreSQL databases |
+| `demo` | Frontend, Identity, Care, Consultation, Journal/AI, Content/Notification, and explicit migrations against the shared dev/staging databases |
 | `full-test` | Everything in `demo`, plus Realtime, its migration against the shared dev/staging MongoDB deployment, and local ephemeral Redis |
 
-Consultation, Journal/AI, Eureka, and Kafka remain outside this stack until they participate in an executable Review 1 journey. PhoBERT is an optional deferred benchmark baseline under ADR 0011 and is not a Review 1 or initial AI runtime dependency. Realtime is available for foundation testing but is not part of the critical mentor-demo path.
+Consultation and Journal/AI are included because entitlement-aware SupportPlan and journal-reflection journeys now call them directly. Eureka and Kafka remain outside this stack because the current demo uses explicit container URLs and has no accepted broker-dependent journey. PhoBERT is an optional deferred benchmark baseline under ADR 0011 and is not a Review 1 or initial AI runtime dependency. Realtime is available for foundation testing but is not part of the critical mentor-demo path.
 
 Keep the backend and frontend repositories as sibling directories. From this backend repository, prepare the ignored Compose environment file and local Identity keys:
 
@@ -22,6 +22,15 @@ Keep the backend and frontend repositories as sibling directories. From this bac
 ```
 
 The helper generates the ignored `.env`, Identity key material, and application-only secrets without printing secret values or replacing an existing file. It deliberately does not generate or copy database credentials. Populate every cloud connection placeholder from the deployment secret source before starting Compose. To configure it manually instead, copy `.env.compose.example` to `.env`, run `scripts/generate-local-jwt-keys.ps1`, and replace every `replace-*` value. `CONTENT_DATABASE_URL`, `REALTIME_MONGODB_URI`, and `REALTIME_REDIS_URL` must contain URL-encoded passwords when a password includes reserved URL characters.
+
+Consultation and Journal/AI keep their service-owned demo settings in ignored `consultation-service/.env` and `journal-ai-service/.env` files. The Journal/AI file must include its MongoDB connection, encryption/HMAC keys for production mode, and any explicitly approved provider route. Compose overrides only container-internal service URLs and the container port.
+
+For a first-time local setup, copy each service example and replace its placeholders without committing the resulting files:
+
+```powershell
+Copy-Item consultation-service/.env.example consultation-service/.env
+Copy-Item journal-ai-service/.env.example journal-ai-service/.env
+```
 
 Dev and staging intentionally share the current service-owned AWS RDS databases and MongoDB Atlas deployment. Compose does not create, reset, expose, or remove those durable stores. Production will use separate database endpoints and credentials when it is provisioned. Because both pre-production environments share migration history, every migration must remain forward-compatible with both running application versions.
 
@@ -42,6 +51,7 @@ Then open `http://localhost:3000` and demonstrate:
 
 ```text
 Register/Login -> Profile -> Consent -> PHQ-9 vi-VN -> Result -> History -> Reassessment -> Progress
+Register/Login -> Journal -> Open an entry -> Request AI reflection -> View summary and signals
 ```
 
 The deterministic evidence cases use the same total score with different safety-item answers:

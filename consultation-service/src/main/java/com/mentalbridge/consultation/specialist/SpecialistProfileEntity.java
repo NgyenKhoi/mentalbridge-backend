@@ -27,7 +27,7 @@ class SpecialistProfileEntity {
 	@Column(name = "biography")
 	private String bio;
 	@Column(name = "years_experience")
-	private int yearsOfExperience;
+	private short yearsOfExperience;
 	private String timezone;
 	@Enumerated(EnumType.STRING)
 	private SpecialistApprovalStatus approvalStatus;
@@ -86,7 +86,7 @@ class SpecialistProfileEntity {
 	private void applyDraft(SpecialistProfileService.ProfileCommand command, Instant now) {
 		this.displayName = command.displayName().strip();
 		this.bio = command.bio().strip();
-		this.yearsOfExperience = command.yearsOfExperience();
+		this.yearsOfExperience = (short) command.yearsOfExperience();
 		this.timezone = command.timezone().strip();
 		this.supportAreas.clear();
 		this.supportAreas.addAll(command.supportAreas());

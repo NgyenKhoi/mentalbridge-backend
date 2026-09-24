@@ -719,6 +719,16 @@ export class AnalysisWorker implements OnModuleInit, OnApplicationShutdown {
         error instanceof ProviderFailure
           ? error
           : new ProviderFailure("RETRYABLE", "UNAVAILABLE");
+      this.logger.warn({
+        event: "analysis_provider_attempt_failed",
+        jobId: activeJob._id,
+        attemptCount: activeJob.attemptCount,
+        provider: route.provider,
+        model: route.model,
+        failureKind: failure.kind,
+        failureReason: failure.reason,
+        ...failure.diagnostics,
+      });
       if (failure.kind === "RETRYABLE" && activeJob.attemptCount < 2) {
         await this.repository.requeue(activeJob._id, this.workerId, new Date());
         queueMicrotask(() => {
