@@ -581,7 +581,8 @@ matches the aggregate bound.
 
 ### `public.support_plan_command`
 
-Owner-scoped append-only audit and replay record for MB-373 activation. Choice
+Owner-scoped append-only audit and replay record for activation and MB-375
+replacement confirmation. Choice
 replacement uses PUT semantics plus optimistic concurrency and does not create
 a request-deduplication record. This table stores no bearer token, assessment
 answer, journal content, or client-authored display text.
@@ -589,17 +590,20 @@ answer, journal content, or client-authored display text.
 | Field | Purpose |
 | --- | --- |
 | `user_id` / `idempotency_key` | Owner-scoped printable retry namespace and primary key. |
-| `command_type` / `request_hash` | `ACTIVATE` and the SHA-256 fingerprint of plan/version for exact retry matching. |
+| `command_type` / `request_hash` | `ACTIVATE` or `REPLACE` and the SHA-256 fingerprint of every referenced plan/version and reassessment summary for exact retry matching. |
 | `support_plan_id` / `expected_version` | Owner-matched target and optimistic version explicitly acted on by the user. |
 | `resulting_version` / `resulting_status` / `resulting_updated_at` | Exact replay outcome; resulting version is the expected version plus one. |
 | `evaluation_policy_version` | Current compatible Care evaluation policy revalidated immediately before the local command transaction. |
 | `entitlement_package` / `entitlement_source` / `entitlement_policy_version` / `entitlement_version` / `entitlement_decided_at` | Fresh authoritative paid-entitlement evidence used by the command. |
 | `resource_policy_version` / `resources_resolved_at` | Exact Content eligibility policy and resolution instant used for final exact-version validation. |
+| `source_support_plan_id` / `source_support_plan_version` | For `REPLACE`, the exact former current plan and pre-supersede optimistic version; null for initial activation. This is the immutable replacement relation. |
+| `reassessment_summary_id` | For `REPLACE`, the owner-matched canonical v2 summary presented during review; null for initial activation. The JSON snapshot remains in `reassessment_summary` rather than being duplicated here. |
+| `replacement_review_outcome` | Governed review outcome that admitted confirmation. Unchanged reviews are not persisted because they cannot mutate a plan. |
 | `created_at` | UTC instant the command and its outcome committed. |
 
 ### `public.support_plan_command_selection`
 
-Ordered exact final selection set committed by activation. A missing optional
+Ordered exact final selection set committed by activation or replacement. A missing optional
 slot represents a choice removed before activation; the plan snapshot preserves
 the authoritative state.
 

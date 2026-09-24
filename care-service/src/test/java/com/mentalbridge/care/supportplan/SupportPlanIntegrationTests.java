@@ -16,6 +16,7 @@ import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.
 
 import java.time.Instant;
 import java.time.LocalDate;
+import java.sql.Timestamp;
 import java.util.List;
 import java.util.UUID;
 import java.util.concurrent.CountDownLatch;
@@ -833,12 +834,24 @@ class SupportPlanIntegrationTests extends CareTestProperties {
 				.content("{\"status\":\"PAUSED\"}"))
 				.andExpect(status().isOk());
 
-		var replacementDraft = createPlan(userId, evaluationId, "support-plan-replacement-create");
+		var replacementEvaluation = evaluation(userId, "MILD", "MINIMAL", false);
+		var replacementDraft = createPlan(userId, replacementEvaluation, "support-plan-replacement-create");
 		var replacementId = UUID.fromString(replacementDraft.path("supportPlanId").asText());
-		String replacementBody = "{\"currentSupportPlanId\":\"" + currentId + "\",\"currentVersion\":2}";
+		var summaryId = insertReassessmentSummary(userId);
+		String replacementBody = "{\"currentSupportPlanId\":\"" + currentId
+				+ "\",\"currentVersion\":2,\"reassessmentSummaryId\":\"" + summaryId + "\"}";
+		mvc.perform(post("/api/v1/support-plans/{id}/replacement-review", replacementId).with(user(userId))
+				.header("If-Match", "\"0\"").contentType(MediaType.APPLICATION_JSON)
+				.content(replacementBody))
+				.andExpect(status().isOk())
+				.andExpect(jsonPath("$.outcome").value("CURRENT_PLAN_VALID_ALTERNATIVES_AVAILABLE"))
+				.andExpect(jsonPath("$.reassessmentSummary.summaryId").value(summaryId.toString()))
+				.andExpect(jsonPath("$.comparison").isArray());
 		for (int retry = 0; retry < 2; retry++) {
 			mvc.perform(post("/api/v1/support-plans/{id}/replace", replacementId).with(user(userId))
-					.header("If-Match", "\"0\"").contentType(MediaType.APPLICATION_JSON)
+					.header("If-Match", "\"0\"")
+					.header("Idempotency-Key", "support-plan-replacement-confirm")
+					.contentType(MediaType.APPLICATION_JSON)
 					.content(replacementBody))
 					.andExpect(status().isOk()).andExpect(jsonPath("$.status").value("ACTIVE"));
 		}
@@ -854,7 +867,13 @@ class SupportPlanIntegrationTests extends CareTestProperties {
 				where support_plan_id = :id and state_reason = 'PLAN_PAUSED'
 				""").param("id", currentId).query(Long.class).single()).isZero();
 		assertThat(jdbc.sql("select count(*) from support_plan_activity_schedule where support_plan_id = :id")
-				.param("id", replacementId).query(Long.class).single()).isEqualTo(2);
+				.param("id", replacementId).query(Long.class).single()).isEqualTo(3);
+		assertThat(jdbc.sql("""
+				select count(*) from support_plan_command
+				where command_type = 'REPLACE' and support_plan_id = :replacementId
+				  and source_support_plan_id = :currentId and reassessment_summary_id = :summaryId
+				""").param("replacementId", replacementId).param("currentId", currentId)
+				.param("summaryId", summaryId).query(Long.class).single()).isEqualTo(1);
 
 		mvc.perform(put("/api/v1/support-plans/{id}/status", replacementId).with(user(userId))
 				.header("If-Match", "\"1\"").contentType(MediaType.APPLICATION_JSON)
@@ -888,6 +907,126 @@ class SupportPlanIntegrationTests extends CareTestProperties {
 				.andExpect(jsonPath("$.items[0].supportPlanId").value(replacementId.toString()));
 		assertThat(jdbc.sql("select count(*) from support_plan_activity_schedule where support_plan_id = :id")
 				.param("id", disposableId).query(Long.class).single()).isZero();
+	}
+
+	@Test
+	void unchangedReplacementReviewKeepsTheCurrentPlanUsable() throws Exception {
+		var userId = insertProfile();
+		var evaluationId = evaluation(userId, "MINIMAL", "MINIMAL", false);
+		var currentDraft = createPlan(userId, evaluationId, "support-plan-unchanged-current");
+		var currentId = UUID.fromString(currentDraft.path("supportPlanId").asText());
+		mvc.perform(post("/api/v1/support-plans/{id}/activate", currentId).with(user(userId))
+				.header("If-Match", "\"0\"").header("Idempotency-Key", "support-plan-unchanged-activate"))
+				.andExpect(status().isOk());
+		var replacement = createPlan(userId, evaluationId, "support-plan-unchanged-draft");
+		var replacementId = UUID.fromString(replacement.path("supportPlanId").asText());
+		var summaryId = insertReassessmentSummary(userId);
+		String request = "{\"currentSupportPlanId\":\"" + currentId
+				+ "\",\"currentVersion\":1,\"reassessmentSummaryId\":\"" + summaryId + "\"}";
+
+		mvc.perform(post("/api/v1/support-plans/{id}/replacement-review", replacementId).with(user(userId))
+				.header("If-Match", "\"0\"").contentType(MediaType.APPLICATION_JSON).content(request))
+				.andExpect(status().isOk())
+				.andExpect(jsonPath("$.outcome").value("CURRENT_PLAN_VALID_NO_BETTER_ALTERNATIVE"))
+				.andExpect(jsonPath("$.comparison[0].change").value("UNCHANGED"));
+		mvc.perform(post("/api/v1/support-plans/{id}/replace", replacementId).with(user(userId))
+				.header("If-Match", "\"0\"").header("Idempotency-Key", "support-plan-unchanged-confirm")
+				.contentType(MediaType.APPLICATION_JSON).content(request))
+				.andExpect(status().isConflict())
+				.andExpect(jsonPath("$.code").value("SUPPORT_PLAN_REPLACEMENT_UNCHANGED"));
+
+		assertThat(jdbc.sql("select status from support_plan where id = :id").param("id", currentId)
+				.query(String.class).single()).isEqualTo("ACTIVE");
+		assertThat(jdbc.sql("select status from support_plan where id = :id").param("id", replacementId)
+				.query(String.class).single()).isEqualTo("DRAFT");
+	}
+
+	@Test
+	void staleEntitlementWithdrawnAndUnavailableReviewsLeaveBothPlansUnchanged() throws Exception {
+		var userId = insertProfile();
+		var currentEvaluation = evaluation(userId, "MINIMAL", "MINIMAL", false);
+		var current = createPlan(userId, currentEvaluation, "support-plan-failure-current");
+		var currentId = UUID.fromString(current.path("supportPlanId").asText());
+		mvc.perform(post("/api/v1/support-plans/{id}/activate", currentId).with(user(userId))
+				.header("If-Match", "\"0\"").header("Idempotency-Key", "support-plan-failure-activate"))
+				.andExpect(status().isOk());
+		var draftEvaluation = evaluation(userId, "MILD", "MINIMAL", false);
+		var draft = createPlan(userId, draftEvaluation, "support-plan-failure-draft");
+		var draftId = UUID.fromString(draft.path("supportPlanId").asText());
+
+		var staleSummaryId = insertReassessmentSummary(userId, Instant.now().minusSeconds(48L * 60 * 60));
+		String staleRequest = replacementBody(currentId, 1, staleSummaryId);
+		mvc.perform(post("/api/v1/support-plans/{id}/replacement-review", draftId).with(user(userId))
+				.header("If-Match", "\"0\"").contentType(MediaType.APPLICATION_JSON).content(staleRequest))
+				.andExpect(status().isConflict())
+				.andExpect(jsonPath("$.code").value("REASSESSMENT_SUMMARY_STALE"));
+
+		var summaryId = insertReassessmentSummary(userId);
+		String request = replacementBody(currentId, 1, summaryId);
+		when(entitlements.current(any(), anyString(), any())).thenReturn(new CurrentEntitlementResponse(userId,
+				ServicePackage.FREE, EntitlementSource.DEFAULT_FREE, null, null, null,
+				"service-entitlement-v1", 0, Instant.now()));
+		mvc.perform(post("/api/v1/support-plans/{id}/replacement-review", draftId).with(user(userId))
+				.header("If-Match", "\"0\"").contentType(MediaType.APPLICATION_JSON).content(request))
+				.andExpect(status().isForbidden())
+				.andExpect(jsonPath("$.code").value("SUPPORT_PLAN_ENTITLEMENT_REQUIRED"));
+
+		when(entitlements.current(any(), anyString(), any())).thenAnswer(invocation -> paid(invocation.getArgument(0)));
+		eligible(ResourceEligibilityOutcome.WITHDRAWN, ResourceEligibilityReasonCode.ELIGIBILITY_WITHDRAWN);
+		mvc.perform(post("/api/v1/support-plans/{id}/replacement-review", draftId).with(user(userId))
+				.header("If-Match", "\"0\"").contentType(MediaType.APPLICATION_JSON).content(request))
+				.andExpect(status().isConflict());
+
+		eligible(ResourceEligibilityOutcome.UNAVAILABLE, ResourceEligibilityReasonCode.DEPENDENCY_UNAVAILABLE);
+		mvc.perform(post("/api/v1/support-plans/{id}/replacement-review", draftId).with(user(userId))
+				.header("If-Match", "\"0\"").contentType(MediaType.APPLICATION_JSON).content(request))
+				.andExpect(status().isServiceUnavailable())
+				.andExpect(jsonPath("$.code").value("RESOURCE_ELIGIBILITY_UNAVAILABLE"));
+
+		assertThat(jdbc.sql("select status from support_plan where id = :id").param("id", currentId)
+				.query(String.class).single()).isEqualTo("ACTIVE");
+		assertThat(jdbc.sql("select status from support_plan where id = :id").param("id", draftId)
+				.query(String.class).single()).isEqualTo("DRAFT");
+		assertThat(jdbc.sql("select count(*) from support_plan_command where command_type = 'REPLACE' and user_id = :id")
+				.param("id", userId).query(Long.class).single()).isZero();
+	}
+
+	@Test
+	void concurrentReplacementConfirmationsCommitExactlyOneTransition() throws Exception {
+		var userId = insertProfile();
+		var currentEvaluation = evaluation(userId, "MINIMAL", "MINIMAL", false);
+		var current = createPlan(userId, currentEvaluation, "support-plan-concurrent-replace-current");
+		var currentId = UUID.fromString(current.path("supportPlanId").asText());
+		mvc.perform(post("/api/v1/support-plans/{id}/activate", currentId).with(user(userId))
+				.header("If-Match", "\"0\"")
+				.header("Idempotency-Key", "support-plan-concurrent-replace-activate"))
+				.andExpect(status().isOk());
+		var draftEvaluation = evaluation(userId, "MILD", "MINIMAL", false);
+		var draft = createPlan(userId, draftEvaluation, "support-plan-concurrent-replace-draft");
+		var draftId = UUID.fromString(draft.path("supportPlanId").asText());
+		var summaryId = insertReassessmentSummary(userId);
+		String request = replacementBody(currentId, 1, summaryId);
+		var start = new CountDownLatch(1);
+		var executor = Executors.newFixedThreadPool(2);
+		try {
+			var first = executor.submit(() -> replaceAfter(start, userId, draftId, request,
+					"support-plan-concurrent-replace-first"));
+			var second = executor.submit(() -> replaceAfter(start, userId, draftId, request,
+					"support-plan-concurrent-replace-second"));
+			start.countDown();
+			assertThat(List.of(first.get(20, TimeUnit.SECONDS), second.get(20, TimeUnit.SECONDS)))
+					.containsExactlyInAnyOrder(200, 412);
+		}
+		finally {
+			executor.shutdownNow();
+		}
+
+		assertThat(jdbc.sql("select status from support_plan where id = :id").param("id", currentId)
+				.query(String.class).single()).isEqualTo("SUPERSEDED");
+		assertThat(jdbc.sql("select status from support_plan where id = :id").param("id", draftId)
+				.query(String.class).single()).isEqualTo("ACTIVE");
+		assertThat(jdbc.sql("select count(*) from support_plan_command where command_type = 'REPLACE' and user_id = :id")
+				.param("id", userId).query(Long.class).single()).isEqualTo(1);
 	}
 
 	private int activateAfter(CountDownLatch start, UUID userId, UUID planId, String key) throws Exception {
@@ -965,6 +1104,67 @@ class SupportPlanIntegrationTests extends CareTestProperties {
 		jdbc.sql("insert into user_profile (account_id,display_name) values (:id,'SupportPlan test user')")
 				.param("id", userId).update();
 		return userId;
+	}
+
+	private int replaceAfter(CountDownLatch start, UUID userId, UUID draftId, String body, String key)
+			throws Exception {
+		start.await(5, TimeUnit.SECONDS);
+		return mvc.perform(post("/api/v1/support-plans/{id}/replace", draftId).with(user(userId))
+				.header("If-Match", "\"0\"").header("Idempotency-Key", key)
+				.contentType(MediaType.APPLICATION_JSON).content(body))
+				.andReturn().getResponse().getStatus();
+	}
+
+	private UUID insertReassessmentSummary(UUID userId) throws Exception {
+		return insertReassessmentSummary(userId, Instant.now().minusSeconds(60));
+	}
+
+	private UUID insertReassessmentSummary(UUID userId, Instant end) throws Exception {
+		var id = UUID.randomUUID();
+		var jobId = UUID.randomUUID();
+		var currentStart = end.minusSeconds(14L * 24 * 60 * 60);
+		var previousStart = currentStart.minusSeconds(14L * 24 * 60 * 60);
+		var snapshot = objectMapper.createObjectNode();
+		snapshot.put("summaryId", id.toString()).put("summaryVersion", "reassessment-summary-v2")
+				.put("composedAt", end.toString()).put("disclaimerCode", "FOUR_DIMENSIONS_NOT_COMBINED");
+		snapshot.putObject("previousPeriod").put("startAt", previousStart.toString())
+				.put("endAt", currentStart.toString());
+		snapshot.putObject("currentPeriod").put("startAt", currentStart.toString()).put("endAt", end.toString());
+		snapshot.putObject("screening").put("state", "INSUFFICIENT_DATA").putArray("trends");
+		var journal = snapshot.putObject("journalContext");
+		journal.put("state", "UNAVAILABLE").put("unavailableReason", "DEPENDENCY_UNAVAILABLE")
+				.put("jobId", jobId.toString());
+		journal.putNull("analysisId");
+		for (String field : List.of("sourceJournalRevisions", "contextSignals", "emotionIndicators",
+				"recurringThemes", "changesComparedWithPreviousPeriod", "preferences", "barriers",
+				"helpfulPatterns")) journal.putArray(field);
+		journal.putNull("dataCoverage").putNull("provenance");
+		var engagement = snapshot.putObject("supportPlanEngagement").put("state", "INSUFFICIENT_DATA");
+		engagement.putObject("previousPeriod").put("completedCount", 0).put("skippedCount", 0);
+		engagement.putObject("currentPeriod").put("completedCount", 0).put("skippedCount", 0);
+		engagement.putArray("sources");
+		snapshot.putObject("selfReportedExperience").put("state", "INSUFFICIENT_DATA")
+				.put("unavailableReason", "NOT_PROVIDED").putNull("source");
+		snapshot.putObject("activityReflection").put("state", "INSUFFICIENT_DATA").putArray("sources");
+		snapshot.putNull("userReflection");
+		jdbc.sql("""
+				insert into reassessment_summary
+				(id,user_id,idempotency_key,request_hash,summary_version,journal_job_id,
+				 previous_period_start,previous_period_end,current_period_start,current_period_end,
+				 snapshot,composed_at)
+				values (:id,:userId,:key,:hash,'reassessment-summary-v2',:jobId,
+				 :previousStart,:currentStart,:currentStart,:end,cast(:snapshot as jsonb),:end)
+				""").param("id", id).param("userId", userId).param("key", "reassessment-" + UUID.randomUUID())
+				.param("hash", "1".repeat(64)).param("jobId", jobId)
+				.param("previousStart", Timestamp.from(previousStart))
+				.param("currentStart", Timestamp.from(currentStart)).param("end", Timestamp.from(end))
+				.param("snapshot", objectMapper.writeValueAsString(snapshot)).update();
+		return id;
+	}
+
+	private String replacementBody(UUID currentId, long currentVersion, UUID summaryId) {
+		return "{\"currentSupportPlanId\":\"" + currentId + "\",\"currentVersion\":" + currentVersion
+				+ ",\"reassessmentSummaryId\":\"" + summaryId + "\"}";
 	}
 
 	private UUID insertAssessment(UUID userId, UUID definitionId, String instrument, String level, boolean positive) {

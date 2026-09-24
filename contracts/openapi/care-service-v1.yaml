@@ -954,6 +954,7 @@ paths:
       parameters:
         - $ref: '#/components/parameters/SupportPlanId'
         - $ref: '#/components/parameters/RequiredIfMatch'
+        - $ref: '#/components/parameters/IdempotencyKey'
         - $ref: '#/components/parameters/CorrelationId'
       requestBody:
         required: true
@@ -962,6 +963,42 @@ paths:
             schema: { $ref: '#/components/schemas/ReplaceCurrentSupportPlanRequest' }
       responses:
         '200': { $ref: '#/components/responses/SupportPlanCommandResult' }
+        '400': { $ref: '#/components/responses/ValidationProblem' }
+        '401': { $ref: '#/components/responses/UnauthorizedProblem' }
+        '403': { $ref: '#/components/responses/SupportPlanEntitlementProblem' }
+        '404': { $ref: '#/components/responses/SupportPlanNotFoundProblem' }
+        '409': { $ref: '#/components/responses/SupportPlanLifecycleConflictProblem' }
+        '412': { $ref: '#/components/responses/SupportPlanVersionProblem' }
+        '503': { $ref: '#/components/responses/SupportPlanDependencyProblem' }
+  /api/v1/support-plans/{supportPlanId}/replacement-review:
+    x-mentalbridge-status: implemented
+    post:
+      tags: [SupportPlan activity]
+      operationId: reviewOwnSupportPlanReplacement
+      summary: Review the current plan against one admissible replacement draft
+      description: |
+        Care reloads persisted owner state, requires the current canonical
+        ReassessmentSummary v2, and freshly revalidates entitlement, both plan
+        versions, evaluation/template compatibility, and exact resource
+        eligibility before returning one of the three governed review outcomes.
+        This operation never mutates either plan.
+      security:
+        - bearerAuth: []
+      parameters:
+        - $ref: '#/components/parameters/SupportPlanId'
+        - $ref: '#/components/parameters/RequiredIfMatch'
+        - $ref: '#/components/parameters/CorrelationId'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: '#/components/schemas/ReplaceCurrentSupportPlanRequest' }
+      responses:
+        '200':
+          description: Truthful persisted comparison and separate reassessment context
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/SupportPlanReplacementReview' }
         '400': { $ref: '#/components/responses/ValidationProblem' }
         '401': { $ref: '#/components/responses/UnauthorizedProblem' }
         '403': { $ref: '#/components/responses/SupportPlanEntitlementProblem' }
@@ -2467,10 +2504,51 @@ components:
     ReplaceCurrentSupportPlanRequest:
       type: object
       additionalProperties: false
-      required: [currentSupportPlanId, currentVersion]
+      required: [currentSupportPlanId, currentVersion, reassessmentSummaryId]
       properties:
         currentSupportPlanId: { type: string, format: uuid }
         currentVersion: { type: integer, minimum: 0 }
+        reassessmentSummaryId: { type: string, format: uuid }
+    SupportPlanReplacementReview:
+      type: object
+      additionalProperties: false
+      required: [outcome, rationaleCodes, comparison, currentPlan, proposedPlan, reassessmentSummary, reviewedAt]
+      properties:
+        outcome:
+          type: string
+          enum: [CURRENT_PLAN_VALID_NO_BETTER_ALTERNATIVE, CURRENT_PLAN_VALID_ALTERNATIVES_AVAILABLE, CURRENT_PLAN_NOT_ADMISSIBLE]
+        rationaleCodes:
+          type: array
+          minItems: 2
+          maxItems: 2
+          items:
+            type: string
+            enum: [CURRENT_PLAN_ADMISSIBLE, EXACT_SELECTION_UNCHANGED, PROPOSED_SELECTION_DIFFERS, PROPOSED_PLAN_ADMISSIBLE, SUPPORT_EVALUATION_STALE, SUPPORT_PLAN_POLICY_STALE, RESOURCE_VERSION_STALE, SUPPORT_PLAN_INVALID_CHOICE, SUPPORT_PLAN_CORE_UNAVAILABLE]
+        comparison:
+          type: array
+          minItems: 1
+          maxItems: 10
+          items: { $ref: '#/components/schemas/SupportPlanReplacementComparisonItem' }
+        currentPlan: { $ref: '#/components/schemas/SupportPlan' }
+        proposedPlan: { $ref: '#/components/schemas/SupportPlan' }
+        reassessmentSummary: { $ref: '#/components/schemas/ReassessmentSummary' }
+        reviewedAt: { type: string, format: date-time }
+    SupportPlanReplacementComparisonItem:
+      type: object
+      additionalProperties: false
+      required: [change, currentSlotId, currentResource, proposedSlotId, proposedResource]
+      properties:
+        change: { type: string, enum: [UNCHANGED, CHANGED, ADDED, REMOVED] }
+        currentSlotId: { type: [string, 'null'], minLength: 1, maxLength: 64 }
+        currentResource:
+          oneOf:
+            - { $ref: '#/components/schemas/SupportPlanResource' }
+            - { type: 'null' }
+        proposedSlotId: { type: [string, 'null'], minLength: 1, maxLength: 64 }
+        proposedResource:
+          oneOf:
+            - { $ref: '#/components/schemas/SupportPlanResource' }
+            - { type: 'null' }
     SupportPlanDraft:
       $ref: '#/components/schemas/SupportPlan'
     SupportPlan:
@@ -2842,7 +2920,7 @@ components:
         application/problem+json:
           schema: { $ref: '#/components/schemas/Problem' }
     SupportPlanLifecycleConflictProblem:
-      description: The requested lifecycle transition is invalid or a replacement source is stale (SUPPORT_PLAN_TRANSITION_INVALID)
+      description: The requested lifecycle transition is invalid, reassessment is stale, or replacement is unchanged (SUPPORT_PLAN_TRANSITION_INVALID, REASSESSMENT_SUMMARY_STALE, or SUPPORT_PLAN_REPLACEMENT_UNCHANGED)
       content:
         application/problem+json:
           schema: { $ref: '#/components/schemas/Problem' }
