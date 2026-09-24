@@ -66,7 +66,11 @@ interface SupportPlanRepository extends JpaRepository<SupportPlanEntity, UUID> {
 			select command_type as "commandType", request_hash as "requestHash",
 			       support_plan_id as "planId", expected_version as "expectedVersion",
 			       resulting_version as "resultingVersion", resulting_status as "resultingStatus",
-			       resulting_updated_at as "resultingUpdatedAt"
+			       resulting_updated_at as "resultingUpdatedAt",
+			       source_support_plan_id as "sourcePlanId",
+			       source_support_plan_version as "sourcePlanVersion",
+			       reassessment_summary_id as "reassessmentSummaryId",
+			       replacement_review_outcome as "replacementReviewOutcome"
 			from support_plan_command
 			where user_id = :userId and idempotency_key = :idempotencyKey
 			""", nativeQuery = true)
@@ -79,11 +83,14 @@ interface SupportPlanRepository extends JpaRepository<SupportPlanEntity, UUID> {
 				(user_id,idempotency_key,command_type,request_hash,support_plan_id,expected_version,
 				 resulting_version,resulting_status,resulting_updated_at,evaluation_policy_version,
 				 entitlement_package,entitlement_source,entitlement_policy_version,entitlement_version,
-				 entitlement_decided_at,resource_policy_version,resources_resolved_at,created_at)
+				 entitlement_decided_at,resource_policy_version,resources_resolved_at,created_at,
+				 source_support_plan_id,source_support_plan_version,reassessment_summary_id,
+				 replacement_review_outcome)
 			values (:userId,:idempotencyKey,:commandType,:requestHash,:planId,:expectedVersion,
 				:resultingVersion,:resultingStatus,:resultingUpdatedAt,:evaluationPolicyVersion,
 				:entitlementPackage,:entitlementSource,:entitlementPolicyVersion,:entitlementVersion,
-				:entitlementDecidedAt,:resourcePolicyVersion,:resourcesResolvedAt,:createdAt)
+				:entitlementDecidedAt,:resourcePolicyVersion,:resourcesResolvedAt,:createdAt,
+				:sourcePlanId,:sourcePlanVersion,:summaryId,:reviewOutcome)
 			""", nativeQuery = true)
 	int insertCommand(@Param("userId") UUID userId, @Param("idempotencyKey") String idempotencyKey,
 			@Param("commandType") String commandType, @Param("requestHash") String requestHash,
@@ -98,7 +105,9 @@ interface SupportPlanRepository extends JpaRepository<SupportPlanEntity, UUID> {
 			@Param("entitlementDecidedAt") Instant entitlementDecidedAt,
 			@Param("resourcePolicyVersion") String resourcePolicyVersion,
 			@Param("resourcesResolvedAt") Instant resourcesResolvedAt,
-			@Param("createdAt") Instant createdAt);
+			@Param("createdAt") Instant createdAt, @Param("sourcePlanId") UUID sourcePlanId,
+			@Param("sourcePlanVersion") Long sourcePlanVersion, @Param("summaryId") UUID summaryId,
+			@Param("reviewOutcome") String reviewOutcome);
 
 	@Modifying
 	@Query(value = """
@@ -143,6 +152,10 @@ interface SupportPlanRepository extends JpaRepository<SupportPlanEntity, UUID> {
 		long getResultingVersion();
 		String getResultingStatus();
 		Instant getResultingUpdatedAt();
+		UUID getSourcePlanId();
+		Long getSourcePlanVersion();
+		UUID getReassessmentSummaryId();
+		String getReplacementReviewOutcome();
 	}
 
 	interface CommandSelectionRow {

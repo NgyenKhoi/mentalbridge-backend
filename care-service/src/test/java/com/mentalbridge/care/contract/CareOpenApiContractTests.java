@@ -53,6 +53,7 @@ class CareOpenApiContractTests {
 			"POST /api/v1/support-plans/{supportPlanId}/activate",
 			"PUT /api/v1/support-plans/{supportPlanId}/status",
 			"POST /api/v1/support-plans/{supportPlanId}/replace",
+			"POST /api/v1/support-plans/{supportPlanId}/replacement-review",
 			"GET /api/v1/support-plan-occurrences",
 			"GET /api/v1/support-plan-occurrences/{occurrenceId}",
 			"PUT /api/v1/support-plan-occurrences/{occurrenceId}/state",
@@ -93,6 +94,7 @@ class CareOpenApiContractTests {
 			"/api/v1/support-plans/{supportPlanId}/activate",
 			"/api/v1/support-plans/{supportPlanId}/status",
 			"/api/v1/support-plans/{supportPlanId}/replace",
+			"/api/v1/support-plans/{supportPlanId}/replacement-review",
 			"/api/v1/support-plan-occurrences",
 			"/api/v1/support-plan-occurrences/{occurrenceId}",
 			"/api/v1/support-plan-occurrences/{occurrenceId}/state",
@@ -133,6 +135,7 @@ class CareOpenApiContractTests {
 			"POST /api/v1/support-plans/{supportPlanId}/activate",
 			"PUT /api/v1/support-plans/{supportPlanId}/status",
 			"POST /api/v1/support-plans/{supportPlanId}/replace",
+			"POST /api/v1/support-plans/{supportPlanId}/replacement-review",
 			"GET /api/v1/support-plan-occurrences",
 			"GET /api/v1/support-plan-occurrences/{occurrenceId}",
 			"PUT /api/v1/support-plan-occurrences/{occurrenceId}/state",
@@ -151,6 +154,7 @@ class CareOpenApiContractTests {
 			"POST /api/v1/support-evaluations",
 			"POST /api/v1/support-plans",
 			"POST /api/v1/support-plans/{supportPlanId}/activate",
+			"POST /api/v1/support-plans/{supportPlanId}/replace",
 			"POST /api/v1/anonymous-assessment-sessions/{sessionId}/assessments");
 
 	@Test

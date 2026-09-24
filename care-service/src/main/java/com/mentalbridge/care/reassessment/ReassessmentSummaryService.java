@@ -145,6 +145,16 @@ public class ReassessmentSummaryService {
 		return summaries.current(userId).map(this::deserialize).orElseThrow(this::notFound);
 	}
 
+	public ReassessmentSummaryView currentForPlanReview(UUID userId, UUID summaryId) {
+		var summary = current(userId);
+		if (!summary.summaryId().equals(summaryId) || !SUMMARY_VERSION.equals(summary.summaryVersion())
+				|| summary.currentPeriod().endAt().isBefore(clock.instant().minus(MAXIMUM_CONTEXT_AGE))) {
+			throw new ApiException(HttpStatus.CONFLICT, "REASSESSMENT_SUMMARY_STALE",
+					"A current canonical reassessment summary is required for SupportPlan review");
+		}
+		return summary;
+	}
+
 	public HistoryView history(UUID userId, int limit, String cursor) {
 		Cursor decoded = decode(cursor);
 		var rows = summaries.history(userId, decoded == null ? null : decoded.time(),

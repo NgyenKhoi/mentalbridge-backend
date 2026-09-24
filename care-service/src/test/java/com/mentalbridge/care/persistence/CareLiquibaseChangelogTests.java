@@ -37,7 +37,8 @@ class CareLiquibaseChangelogTests {
 					"care-017-support-plan-engagement",
 					"care-018-screening-meaning-copy",
 					"care-019-reassessment-summary",
-					"care-020-reassessment-self-report");
+					"care-020-reassessment-self-report",
+					"care-021-support-plan-replacement-review");
 		}
 	}
 
