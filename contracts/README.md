@@ -38,6 +38,12 @@ versioned replacement/deletion; its minimized event excludes private reflection
 and does not create a specialist observation feed. The contract never accepts
 arbitrary resources, a client package, an adherence score, a recovery score, or
 AI-selected state.
+The same contract exposes MB-386 Reassessment Summary composition plus
+owner-only current/detail/history reads. Each immutable snapshot keeps local
+PHQ-9/GAD-7 trends, minimized Journal/AI evidence, explicitly reusable
+SupportPlan engagement, and user reflection as separate dimensions with exact
+source/version/period/coverage provenance and explicit unavailable or
+insufficient states. It has no combined score or overall direction.
 
 ## Required paired changes
 

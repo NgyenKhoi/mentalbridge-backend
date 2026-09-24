@@ -49,6 +49,17 @@ mentalbridge:
       base-url: ${CONSULTATION_ENTITLEMENT_BASE_URL:}
       connect-timeout: ${CONSULTATION_ENTITLEMENT_CONNECT_TIMEOUT:PT0.5S}
       read-timeout: ${CONSULTATION_ENTITLEMENT_READ_TIMEOUT:PT2S}
+    journal-longitudinal:
+      base-url: ${JOURNAL_AI_LONGITUDINAL_BASE_URL:}
+      connect-timeout: ${JOURNAL_AI_LONGITUDINAL_CONNECT_TIMEOUT:PT0.5S}
+      read-timeout: ${JOURNAL_AI_LONGITUDINAL_READ_TIMEOUT:PT2S}
+      max-attempts: ${JOURNAL_AI_LONGITUDINAL_MAX_ATTEMPTS:2}
+      retry-wait: ${JOURNAL_AI_LONGITUDINAL_RETRY_WAIT:PT0.1S}
+      circuit-window-size: ${JOURNAL_AI_LONGITUDINAL_CIRCUIT_WINDOW_SIZE:10}
+      circuit-minimum-calls: ${JOURNAL_AI_LONGITUDINAL_CIRCUIT_MINIMUM_CALLS:5}
+      circuit-failure-rate: ${JOURNAL_AI_LONGITUDINAL_CIRCUIT_FAILURE_RATE:50}
+      circuit-open-duration: ${JOURNAL_AI_LONGITUDINAL_CIRCUIT_OPEN_DURATION:PT10S}
+      circuit-half-open-calls: ${JOURNAL_AI_LONGITUDINAL_CIRCUIT_HALF_OPEN_CALLS:2}
 eureka:
   client:
     enabled: ${EUREKA_CLIENT_ENABLED:true}

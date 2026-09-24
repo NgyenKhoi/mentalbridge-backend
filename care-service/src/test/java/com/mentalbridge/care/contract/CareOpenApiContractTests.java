@@ -32,6 +32,10 @@ class CareOpenApiContractTests {
 			"POST /api/v1/assessments",
 			"GET /api/v1/assessments/{assessmentId}",
 			"GET /api/v1/assessments/{assessmentId}/progress",
+			"GET /api/v1/reassessment-summaries",
+			"POST /api/v1/reassessment-summaries",
+			"GET /api/v1/reassessment-summaries/current",
+			"GET /api/v1/reassessment-summaries/{summaryId}",
 			"GET /api/v1/support-evaluations",
 			"POST /api/v1/support-evaluations",
 			"GET /api/v1/support-evaluations/{supportEvaluationId}",
@@ -66,6 +70,9 @@ class CareOpenApiContractTests {
 			"/api/v1/assessments",
 			"/api/v1/assessments/{assessmentId}",
 			"/api/v1/assessments/{assessmentId}/progress",
+			"/api/v1/reassessment-summaries",
+			"/api/v1/reassessment-summaries/current",
+			"/api/v1/reassessment-summaries/{summaryId}",
 			"/api/v1/support-evaluations",
 			"/api/v1/support-evaluations/{supportEvaluationId}",
 			"/api/v1/support-plans",
@@ -96,6 +103,10 @@ class CareOpenApiContractTests {
 			"POST /api/v1/assessments",
 			"GET /api/v1/assessments/{assessmentId}",
 			"GET /api/v1/assessments/{assessmentId}/progress",
+			"GET /api/v1/reassessment-summaries",
+			"POST /api/v1/reassessment-summaries",
+			"GET /api/v1/reassessment-summaries/current",
+			"GET /api/v1/reassessment-summaries/{summaryId}",
 			"GET /api/v1/support-evaluations",
 			"POST /api/v1/support-evaluations",
 			"GET /api/v1/support-evaluations/{supportEvaluationId}",
@@ -121,6 +132,7 @@ class CareOpenApiContractTests {
 	private static final Set<String> IDEMPOTENT_OPERATIONS = Set.of(
 			"POST /api/v1/consent-decisions",
 			"POST /api/v1/assessments",
+			"POST /api/v1/reassessment-summaries",
 			"POST /api/v1/support-evaluations",
 			"POST /api/v1/support-plans",
 			"POST /api/v1/support-plans/{supportPlanId}/activate",
@@ -205,9 +217,31 @@ class CareOpenApiContractTests {
 				"safetyGuidance", "disclaimer").doesNotContainKeys("totalScore", "compositeScore", "overallSeverity");
 		assertThat(examples).containsKeys("SelfGuidedSupportEvaluation", "ProfessionalSupportEvaluation",
 				"SafetyFollowUpSupportEvaluation");
-		assertThat(examples.values()).extracting(example -> supportTier(example.getValue()))
+		assertThat(Set.of("SelfGuidedSupportEvaluation", "ProfessionalSupportEvaluation",
+				"SafetyFollowUpSupportEvaluation").stream().map(examples::get))
+				.extracting(example -> supportTier(example.getValue()))
 				.containsExactlyInAnyOrder("SELF_GUIDED_SUPPORT", "PROFESSIONAL_SUPPORT_RECOMMENDED",
 						"SAFETY_FOLLOW_UP_RECOMMENDED");
+	}
+
+	@Test
+	void reassessmentContractKeepsFourSourcedDimensionsAndAContradictoryExample() {
+		var contract = Path.of("..", "contracts", "openapi", "care-service-v1.yaml").toAbsolutePath();
+		var openApi = new OpenAPIV3Parser().readLocation(contract.toUri().toString(), null, null).getOpenAPI();
+		var request = openApi.getComponents().getSchemas().get("ReassessmentSummaryCreateRequest");
+		var response = openApi.getComponents().getSchemas().get("ReassessmentSummary");
+		var journal = openApi.getComponents().getSchemas().get("ReassessmentJournalDimension");
+		var example = openApi.getComponents().getExamples().get("ContradictoryReassessmentSummary");
+
+		assertThat(request.getRequired()).containsExactlyInAnyOrder("phq9AssessmentId", "gad7AssessmentId",
+				"journalAnalysisId", "previousPeriod", "currentPeriod");
+		assertThat(response.getProperties()).containsKeys("screening", "journalContext", "supportPlanEngagement",
+				"userReflection", "disclaimerCode").doesNotContainKeys("combinedScore", "improvementScore",
+						"recoveryPercentage", "overallDirection");
+		assertThat(journal.getProperties()).containsKeys("state", "unavailableReason", "dataCoverage",
+				"sourceJournalRevisions", "provenance").doesNotContainKeys("journalText", "rawResponse");
+		assertThat(String.valueOf(example.getValue())).contains("DECREASED", "MORE_FREQUENT",
+				"FOUR_DIMENSIONS_NOT_COMBINED");
 	}
 
 	@Test

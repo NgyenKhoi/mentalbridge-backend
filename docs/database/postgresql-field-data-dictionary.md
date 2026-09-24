@@ -655,6 +655,27 @@ generation idempotent.
 | `summary_reuse_approved` | Explicit approval to reuse minimized coded facts in a later bounded summary; never broad checklist monitoring consent. |
 | `engagement_updated_at` | Latest accepted replacement or deletion instant. Deletion clears mutable values but retains provenance. |
 
+### `public.reassessment_summary`
+
+Immutable Care-owned snapshot composed for an authenticated owner. The JSON
+snapshot preserves the exact response after source assessments, Journal/AI
+evidence, or mutable engagement later changes or is deleted. It contains no raw
+journal text, provider response, assessment answers, combined score, or clinical
+improvement verdict.
+
+| Field | Purpose |
+| --- | --- |
+| `id` | Immutable UUID exposed as the reassessment-summary identifier. |
+| `user_id` | Care profile that owns the snapshot; the physical foreign key and every query enforce owner isolation. |
+| `idempotency_key` | Caller retry key unique per owner, 16-128 visible ASCII characters at the API boundary. |
+| `request_hash` | SHA-256 of the exact PHQ-9/GAD-7 assessment IDs, Journal/AI analysis ID, and comparison-period bounds; conflicting key reuse fails. |
+| `summary_version` | Composition/schema policy version; v1 rows are exactly `reassessment-summary-v1`. |
+| `journal_analysis_id` | External Journal/AI analysis UUID requested for the minimized projection; it remains as provenance when that source is unavailable or later deleted. |
+| `previous_period_start` / `previous_period_end` | Half-open UTC bounds for the prior evidence period. Database checks require 7-31 days. |
+| `current_period_start` / `current_period_end` | Half-open UTC bounds for the current evidence period. It must have the same duration and cannot overlap the prior period. |
+| `snapshot` | Authoritative derived JSON object returned by current/detail/history reads. It keeps four separately labelled dimensions, exact source/version/coverage data, explicit `UNAVAILABLE` or `INSUFFICIENT_DATA` states, and the no-combined-score disclaimer. Reassessment composition is the only writer. |
+| `composed_at` | Immutable UTC instant when Care completed local calculation, safe Journal/AI fallback, and snapshot persistence. |
+
 ### `care.intervention_plan`
 
 Versioned set of platform support actions generated for one support classification.

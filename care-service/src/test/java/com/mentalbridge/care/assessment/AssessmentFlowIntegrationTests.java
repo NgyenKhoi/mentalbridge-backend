@@ -79,6 +79,10 @@ class AssessmentFlowIntegrationTests extends CareTestProperties {
 			"PUT /api/v1/support-plan-occurrences/{occurrenceId}/state",
 			"PUT /api/v1/support-plan-occurrences/{occurrenceId}/engagement",
 			"DELETE /api/v1/support-plan-occurrences/{occurrenceId}/engagement",
+			"POST /api/v1/reassessment-summaries",
+			"GET /api/v1/reassessment-summaries",
+			"GET /api/v1/reassessment-summaries/current",
+			"GET /api/v1/reassessment-summaries/{summaryId}",
 			"POST /api/v1/anonymous-assessment-sessions/{sessionId}/assessments",
 			"GET /api/v1/anonymous-assessment-sessions/{sessionId}/assessments/{assessmentId}",
 			"POST /api/v1/safety-directory-lookups");

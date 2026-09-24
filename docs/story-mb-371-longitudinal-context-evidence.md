@@ -10,8 +10,8 @@ evidence. Care may read the completed evidence through a minimized
 context.
 
 The runtime does not calculate screening trend, a combined wellness score, or
-a clinical-improvement verdict. Care remains the future Story 6501 composition
-owner.
+a clinical-improvement verdict. Care's Story 6501 composition ownership is
+implemented separately by MB-386.
 
 ## Confirmed decisions
 
@@ -80,9 +80,9 @@ versions, and absence of raw text/token/provider-response persistence.
 
 ## Intentional deferrals
 
-- Story 6501 owns the Care `ReassessmentSummary` composition, its standard
-  2-second Journal/AI client deadline, resilience policy, and actor-facing
-  presentation.
+- MB-386 delivers Story 6501's Care `ReassessmentSummary` composition, standard
+  2-second Journal/AI client deadline, and resilience policy. Actor-facing
+  presentation remains Story 6502.
 - The frontend has no direct MB-371 surface because this Story exposes the
   Journal/AI owner capability and Care consumer boundary; it does not own the
   future composed reassessment screen.

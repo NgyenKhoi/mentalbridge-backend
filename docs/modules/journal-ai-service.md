@@ -75,9 +75,9 @@ and indexes. Deleting any source journal deletes dependent longitudinal jobs
 and results; a source revised before execution fails without substituting the
 new revision. The owner job endpoint and minimized
 `REASSESSMENT_SUMMARY` Care read return exact source versions, coverage, safe
-normalized evidence, and provenance without raw text. Care composition and its
-2-second consumer deadline remain Story 6501; MB-371 does not create a frontend
-screen or a combined improvement score.
+normalized evidence, and provenance without raw text. MB-386 implements Care
+composition with the standard 2-second consumer deadline; MB-371 does not
+create a frontend screen or a combined improvement score.
 
 Implementation decisions, exact verification commands, and evidence
 classification are recorded in

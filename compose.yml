@@ -98,6 +98,7 @@ services:
       CONTENT_RESOURCE_ELIGIBILITY_BASE_URL: http://content-notification:3003
       CONTENT_SAFETY_DIRECTORY_BASE_URL: http://content-notification:3003
       CONSULTATION_ENTITLEMENT_BASE_URL: http://consultation:8082
+      JOURNAL_AI_LONGITUDINAL_BASE_URL: http://journal-ai:3000
     ports:
       - "${SERVICE_BIND_ADDRESS:-127.0.0.1}:${CARE_PORT:-8081}:8081"
     depends_on:

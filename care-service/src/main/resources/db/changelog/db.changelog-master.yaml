@@ -33,3 +33,5 @@ databaseChangeLog:
       file: db/changelog/changes/016-support-plan-engagement.sql
   - include:
       file: db/changelog/changes/017-screening-meaning-copy.sql
+  - include:
+      file: db/changelog/changes/018-reassessment-summary.sql
