@@ -1,13 +1,15 @@
 # Requirements Traceability
 
-This document maps the approved project sources to the backend architecture. The source documents remain authoritative for product scope:
+This document maps the approved project sources to the backend architecture. For current product behavior, start with the [Current Product Blueprint](CURRENT_PRODUCT_BLUEPRINT.md) and follow its authority chain: latest accepted scope ADR/amendment, current approved domain policy, versioned contract and owner migration, integrated domain/architecture documentation, runtime evidence, then Jira delivery state.
+
+The original project sources remain traceability inputs:
 
 - [Capstone registration](<../FA26_TraLTB_MentalBridge (1).docx>)
 - [Project tracking workbook](../Report3_Project%20Tracking.xlsx), especially the 162 WBS functions, seven delivery use cases, and actor flows
 
 The registration file contains student/supervisor contact details. Confirm repository visibility and team approval before publishing the binary; this traceability document intentionally does not reproduce those personal details.
 
-Architecture may add safety, privacy, reliability, and implementation constraints, but must not silently remove a required feature. Any scope change requires supervisor/product approval and an ADR or updated tracking source.
+Architecture may add safety, privacy, reliability, and implementation constraints, but must not silently remove a required feature. Any scope change requires supervisor/product approval and an accepted ADR or amendment. Jira records delivery; it does not redefine the business rule.
 
 ## Product and technology alignment
 
@@ -24,7 +26,7 @@ Architecture may add safety, privacy, reliability, and implementation constraint
 | AWS EC2, Docker, Nginx, Docker Compose, GitHub Actions                                                      | Deployment baseline retained; Kafka and Redis included in local/hosted composition                                                                                                  |
 | Grafana, Prometheus, Swagger/OpenAPI                                                                        | Metrics/observability and contract rules are required by engineering guides                                                                                                         |
 | Privacy, consent, audit, deletion and retention                                                             | Care consent owner, owner-enforced authorization, minimized audit projection, idempotent deletion workflow                                                                          |
-| `FREE`/`PLUS`/`PREMIUM`, VND payment, upgrade, consultation credits, specialist earnings and payout history | ADR 0017 fixes v2 names/capabilities, one/three paid credits, purchase and `PLUS`-to-`PREMIUM` upgrade only, 70% of fixed `creditAllocation`, and MoMo-only real payment/payout     |
+| `FREE`/`PLUS`/`PREMIUM`, VND payment, upgrade, consultation credits, specialist earnings and payout history | ADR 0017 as amended by ADR 0022 fixes the target at `PLUS=4` / `PREMIUM=10`, no rollover, active-reservation caps `2/4`, purchase and `PLUS`-to-`PREMIUM` upgrade only, 70% of fixed `creditAllocation`, and MoMo-only real payment/payout; historical `consultation-credit-v1` `0/1/3` periods remain immutable |
 
 Kafka and Redis are architecture additions supporting realtime and asynchronous workloads. Kafka is the durable event/task backbone only for features that meet ADR 0016's asynchronous/fan-out/replay criteria; synchronous owner-local features do not depend on it. Redis is limited to ephemeral presence/routing/fan-out, rate-limit, delivery/idempotency, and expiring hashed OTP state; it is not a database-query cache and never replaces PostgreSQL, MongoDB, or Kafka where those dependencies are actually selected.
 
@@ -97,6 +99,24 @@ The requirements are represented in domain/architecture documentation, but the l
 
 ## Approved scope changes
 
+- 2026-09-24: `MB-SCOPE-V2-002` prospectively amends the current product
+  blueprint. A Support Guide is persisted immutable history for one screening
+  context, not ephemeral data and not a lifecycle-tracked SupportPlan.
+  Reassessment keeps Screening change, Journal context, Plan engagement, and
+  explicit user-authored Self-reported experience as four separate dimensions;
+  occurrence helpfulness/reflection is supporting evidence only. Care freshly
+  revalidates the current plan and alternatives into three canonical outcomes,
+  and reassessment never mutates a plan automatically. Consultation records a
+  specialist's exact-version resource proposal, while Care owns the governed
+  `PlanChangeRequest` and applies a change only after user confirmation. New
+  `consultation-credit-v2` periods target `FREE=0`, `PLUS=4`, `PREMIUM=10`, no
+  rollover, and concurrent active-reservation caps `0/2/4`; historical v1
+  `0/1/3` periods remain immutable. The MB-386 composition and v1 credit ledger
+  remain implemented compatibility baselines; explicit reassessment self-report
+  and credit-v2/reservation-cap runtime are delivery-gated. See
+  [ADR 0022](adr/0022-current-product-blueprint-amendments.md), the
+  [SupportPlan policy v2](policies/support-plan-policy-v2.md), and the
+  [Consultation policy v2](policies/consultation-specialist-policy-v2.md).
 - 2026-09-22: MB-376 adds an owner-only SupportPlan engagement workspace on
   exact scheduled occurrences. Care accepts idempotent optimistic replacement,
   reopen, hide/show, helpfulness, coded barriers, bounded private reflection,
@@ -111,11 +131,12 @@ The requirements are represented in domain/architecture documentation, but the l
 - 2026-09-21: MB-513 implements Care-owned
   `support-plan-activity-schedule-v1` schedules and persisted occurrences for
   the single active/paused SupportPlan. The owner APIs expose bounded local-date
-  windows, exact source/version provenance, explicit user complete/skip input,
-  and optimistic lifecycle commands. Deterministic identity plus database
-  uniqueness prevents retry/reload duplicates; timezone/DST, pause/resume,
-  completion, replacement, discard, stale versions, and concurrency have
-  focused coverage. Journal/emotion prompts remain distinct self-reported
+  windows, exact source/version provenance, and explicit user occurrence
+  complete/skip input. Deterministic identity plus database uniqueness prevents
+  retry/reload duplicates; schedules respond consistently to lifecycle changes.
+  MB-374 owns the pause/resume/complete/discard journey and immutable terminal
+  history. Timezone/DST, replacement effects, stale versions, and concurrency
+  have focused coverage. Journal/emotion prompts remain distinct self-reported
   wellbeing sources, never treatment adherence. AI cannot select lifecycle or
   occurrence state. See [ADR 0020](adr/0020-support-plan-activity-occurrence-scheduling.md)
   and [MB-513 evidence](story-mb-513-support-plan-activity-occurrences-evidence.md).
@@ -151,9 +172,11 @@ The requirements are represented in domain/architecture documentation, but the l
   wellbeing reminders are at most daily, resource-specific reminders are
   opt-in, appointment reminders are separate and once near one hour before,
   and no automatic safety email exists. V2 real money is VND/MoMo only, with
-  one/three paid credits and specialist earnings equal to 70% of fixed
-  per-credit `creditAllocation`; real enablement waits for prices, allocations,
-  and credentials. Safety activates from positive PHQ-9 item 9 or explicit
+  the original historical one/three paid-credit target and specialist earnings
+  equal to 70% of fixed per-credit `creditAllocation`; ADR 0022 prospectively
+  supersedes those target quantities without rewriting v1 periods. Real
+  enablement waits for prices, allocations, and credentials. Safety activates
+  from positive PHQ-9 item 9 or explicit
   “Tôi cần hỗ trợ ngay”; area results require provenance and cannot claim
   “nearest” without coordinates/distance. See [ADR 0017](adr/0017-product-scope-v2.md)
   and the [SupportPlan](policies/support-plan-policy-v2.md),

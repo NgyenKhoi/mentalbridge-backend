@@ -18,8 +18,8 @@ Kafka, Redis, WebSocket, notification, or directory delivery.
 | Profile/privacy | Update profile and independent privacy/AI-processing consent decisions | Versioned consent evidence; unsupported/null fields rejected; revoked `AI_PROCESSING` blocks new provider attempts immediately |
 | Anonymous screening | Fetch current PHQ-9/GAD-7 and submit opaque attempt | Complete 0..3 answers only; deterministic score; short-lived result; no silent account link; guidance in response |
 | Authenticated assessment | Start and idempotently submit immutable versioned attempt | Exact question version; no partial final score; duplicate key returns original; score/result/outbox atomically commit |
-| Safety/Support Guide/SupportPlan | Activate safety from positive item 9 or explicit user action, return a one-time guide for every package, and manage one official paid plan | High/Severe band alone is not a safety trigger; no global severity; `FREE` has no durable plan; specialist input is a request; Care revalidates and user confirms; approved safety guidance is synchronous |
-| Reassessment Summary | Idempotently persist and query standardized screening trend, minimized available-journal context, explicitly reusable SupportPlan engagement, and user reflection as four separate dimensions | Current/detail/history reads return the immutable source/version/coverage snapshot; journal failure is explicit `UNAVAILABLE`, sparse evidence is `INSUFFICIENT_DATA`, and no combined improvement score or recovery claim exists |
+| Safety/Support Guide/SupportPlan | Activate safety from positive item 9 or explicit user action, persist one immutable Guide per screening context for every package, and manage one official paid plan | High/Severe band alone is not a safety trigger; no global severity; the Guide has no automatic time-based expiry or plan lifecycle; `FREE` has no durable plan; specialist input is a request; Care revalidates and user confirms; approved safety guidance is synchronous |
+| Reassessment Summary | Idempotently persist and query the MB-386 compatibility dimensions: standardized screening trend, minimized available-journal context, explicitly reusable SupportPlan engagement, and occurrence helpfulness/reflection | Current/detail/history reads return the immutable source/version/coverage snapshot; journal failure is explicit `UNAVAILABLE`, sparse evidence is `INSUFFICIENT_DATA`, and no combined improvement score or recovery claim exists. The ADR 0022 target adds a distinct explicit user-authored self-report and keeps occurrence reflection as supporting evidence only |
 | Specialist grant | Grant exact scopes, range/entries, purpose and expiry; authorize reads | Appointment never implies journal access; current grant checked by owner; revoke/read race fails closed and is audited |
 | Follow-up/analytics | Manage milestones/check-ins and compare valid results | Missing differs from zero; source/freshness exposed; no causal/diagnostic claims |
 | Export/deletion | Export owned data and participate in deletion workflow | Scope and retention policy explicit; retries idempotent; evidence contains no deleted content |
@@ -38,12 +38,14 @@ Kafka, Redis, WebSocket, notification, or directory delivery.
   boundary using exact eligibility. MB-372 adds the bounded initial
   `PLUS`/`PREMIUM` draft and exact persisted reload. MB-373 adds admitted-choice
   mutation, exact revalidation, explicit activation, one-current-plan
-  enforcement, and authoritative current reload. MB-374/MB-513 add explicit
-  lifecycle/history and deterministic activity schedules. MB-376 adds owner-only
+  enforcement, and authoritative current reload. MB-374 adds the explicit
+  owner lifecycle/history while MB-513 adds deterministic activity schedules
+  and occurrences. MB-376 adds owner-only
   occurrence engagement with minimized event provenance. MB-386 adds immutable
-  four-dimension Reassessment Summary composition and owner-only current/detail/
-  history queries without rewriting v1 evidence. `PlanChangeRequest` governance
-  and the actor-facing reassessment UI remain later slices.
+  compatibility Reassessment Summary composition and owner-only current/detail/
+  history queries without rewriting source evidence. The canonical explicit
+  reassessment self-report, governed `PlanChangeRequest`, and actor-facing
+  reassessment UI remain later slices.
 - Care consumes exact Content-owned eligibility through the generated Resource Eligibility v1 OpenFeign boundary with explicit deadlines, bounded retry, circuit breaker and fail-closed `UNAVAILABLE` outcomes. It makes the final future plan decision without cross-database access or a transaction spanning the remote call. Review/publication alone is insufficient.
 - Care combines reassessment dimensions without normalizing them into one score. Journal/AI context remains model-derived evidence limited to available consented entries; Care maps it only to policy-allowed review candidates and requires user confirmation.
 - MB-386 takes explicit equal 7-31 day periods, requires the minimized Journal/AI projection to match those bounds, and snapshots safe `UNAVAILABLE` or `INSUFFICIENT_DATA` states. Local engagement/reflection selects only owner-approved reusable occurrences by `scheduled_at`; a source change or deletion after composition cannot rewrite history.
@@ -98,8 +100,8 @@ MB-178 does not implement specialist grants, automatic follow-up, clinical progr
 - [x] CARE-07b Preserve v1 history and implement compatible domain-aware SupportEvaluation (#48) plus exact eligible resources (#50).
 - [x] CARE-07c Implement the MB-372 deterministic initial paid SupportPlan draft and persisted owner-only reload.
 - [x] CARE-07d Implement MB-373 bounded admitted choices with natural PUT behavior, exact revalidation, idempotent explicit activation, one-current-plan enforcement, activation audit, and owner-only current reload; keep later lifecycle unavailable.
-- [x] CARE-07e Implement MB-374/MB-513 lifecycle, immutable terminal history, deterministic schedules/occurrences, and MB-376 owner engagement without adherence or specialist-monitoring semantics.
-- [x] CARE-07f Implement MB-386 four-dimension immutable Reassessment Summary composition with safe Journal/AI fallback and owner current/history queries.
-- [ ] CARE-08 Descriptive assessment comparison and Reassessment Summary are implemented by MB-205/MB-386; follow-up, other analytics projections, export and deletion participation remain open.
+- [x] CARE-07e Implement MB-374 owner lifecycle and immutable terminal history, MB-513 deterministic schedules/occurrences, and MB-376 owner engagement without adherence or specialist-monitoring semantics.
+- [x] CARE-07f Implement the MB-386 compatibility Reassessment Summary composition with safe Journal/AI fallback and owner current/history queries.
+- [ ] CARE-08 Add the ADR 0022 explicit reassessment self-report and governed plan-review outcome contract; follow-up, other analytics projections, export and deletion participation remain open.
 - [ ] CARE-09 Verify scoring boundaries, item-9 safety, stale/missing input, concurrency, rollback/outbox, duplicate/reordered events and dependency failures.
 - [ ] CARE-10 Add safe observability/configuration, update README, and pass module/contract/migration gates.

@@ -1,10 +1,17 @@
 # ADR 0020: Service-plan consultation credits
 
-- Status: Accepted
+- Status: Accepted historical runtime decision
 - Date: 2026-09-20
 - Decision ID: `MB-CONSULTATION-CREDIT-001`
 - Implements: MB-377, MB-461, MB-462
 - Refines: [ADR 0005](0005-consultation-billing-and-credit-settlement.md) and [ADR 0017](0017-product-scope-v2.md)
+- Amended prospectively by: [ADR 0022](0022-current-product-blueprint-amendments.md) (`MB-SCOPE-V2-002`)
+
+> **Historical-policy note:** this ADR defines `consultation-credit-v1` and
+> remains authoritative for periods already created under that policy. New
+> target periods are governed prospectively by ADR 0022 with `FREE=0`,
+> `PLUS=4`, `PREMIUM=10`, no rollover, and concurrent reservation caps
+> `0/2/4`. Existing v1 ledger facts are not rewritten.
 
 ## Context
 
@@ -24,3 +31,5 @@ Consultation already resolves a server-authoritative current entitlement, but cl
 ## Consequences
 
 The owner can later attach appointment commands to the credit transition API without changing browser balance semantics. Historical ledger facts and expired periods remain queryable. Real paid provisioning is not claimed until a verified payment flow writes a `PAID` entitlement period.
+
+For current target policy, see ADR 0022 rather than changing historical v1 periods in place.
