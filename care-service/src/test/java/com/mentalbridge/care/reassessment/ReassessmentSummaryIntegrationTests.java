@@ -6,7 +6,9 @@ import static org.mockito.ArgumentMatchers.anyString;
 import static org.mockito.Mockito.when;
 import static org.springframework.security.test.web.servlet.request.SecurityMockMvcRequestPostProcessors.jwt;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.get;
+import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.delete;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.post;
+import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.put;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.jsonPath;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.status;
 
@@ -65,6 +67,12 @@ class ReassessmentSummaryIntegrationTests extends CareTestProperties {
 			UUID analysisId = invocation.getArgument(1);
 			return new Projection("AVAILABLE", null, journalEvidence(analysisId, true, 3, 3));
 		});
+		when(journal.resolveJob(any(), any(), any(), any(), anyString(), any())).thenAnswer(invocation -> {
+			UUID jobId = invocation.getArgument(1);
+			UUID analysisId = UUID.randomUUID();
+			return new Projection(jobId, analysisId, "AVAILABLE", null,
+					journalEvidence(analysisId, true, 3, 3));
+		});
 	}
 
 	@Test
@@ -72,30 +80,38 @@ class ReassessmentSummaryIntegrationTests extends CareTestProperties {
 		var owner = insertProfile();
 		var evidence = assessments(owner);
 		insertReusableEngagement(owner, evidence.currentPhq9(), evidence.currentGad7());
-		var analysisId = UUID.randomUUID();
-		String body = body(evidence.currentPhq9(), evidence.currentGad7(), analysisId,
-				PREVIOUS_START, PREVIOUS_END, CURRENT_START, CURRENT_END);
+		var jobId = UUID.randomUUID();
+		var selfReportId = createSelfReport(owner, "reassessment-self-0001", "MORE_DIFFICULT",
+				"Short pauses helped.", "Work pressure felt harder.");
+		String body = jobBody(evidence.currentPhq9(), evidence.currentGad7(), jobId,
+				PREVIOUS_START, PREVIOUS_END, CURRENT_START, CURRENT_END, selfReportId);
 
 		var created = mvc.perform(post("/api/v1/reassessment-summaries").with(user(owner))
 				.header("Idempotency-Key", "reassessment-summary-0001")
 				.contentType(MediaType.APPLICATION_JSON).content(body))
 				.andExpect(status().isCreated())
-				.andExpect(jsonPath("$.summaryVersion").value("reassessment-summary-v1"))
+				.andExpect(jsonPath("$.summaryVersion").value("reassessment-summary-v2"))
 				.andExpect(jsonPath("$.screening.state").value("AVAILABLE"))
 				.andExpect(jsonPath("$.screening.trends[0].instrument").value("PHQ9"))
 				.andExpect(jsonPath("$.screening.trends[0].rawDelta").value(-5))
 				.andExpect(jsonPath("$.screening.trends[0].direction").value("DECREASED"))
 				.andExpect(jsonPath("$.screening.trends[1].direction").value("INCREASED"))
 				.andExpect(jsonPath("$.journalContext.state").value("AVAILABLE"))
+				.andExpect(jsonPath("$.journalContext.jobId").value(jobId.toString()))
+				.andExpect(jsonPath("$.journalContext.analysisId").isNotEmpty())
 				.andExpect(jsonPath("$.journalContext.changesComparedWithPreviousPeriod[0].direction")
 						.value("MORE_FREQUENT"))
 				.andExpect(jsonPath("$.supportPlanEngagement.state").value("AVAILABLE"))
 				.andExpect(jsonPath("$.supportPlanEngagement.previousPeriod.completedCount").value(1))
 				.andExpect(jsonPath("$.supportPlanEngagement.currentPeriod.skippedCount").value(1))
 				.andExpect(jsonPath("$.supportPlanEngagement.sources[0].helpfulness").doesNotExist())
-				.andExpect(jsonPath("$.userReflection.state").value("AVAILABLE"))
-				.andExpect(jsonPath("$.userReflection.sources[0].helpfulness").value("HELPFUL"))
-				.andExpect(jsonPath("$.userReflection.sources[0].reflection").value("Breathing helped me settle."))
+				.andExpect(jsonPath("$.selfReportedExperience.state").value("AVAILABLE"))
+				.andExpect(jsonPath("$.selfReportedExperience.source.currentExperience").value("MORE_DIFFICULT"))
+				.andExpect(jsonPath("$.selfReportedExperience.source.difficultContext").value("Work pressure felt harder."))
+				.andExpect(jsonPath("$.activityReflection.state").value("AVAILABLE"))
+				.andExpect(jsonPath("$.activityReflection.sources[0].helpfulness").value("HELPFUL"))
+				.andExpect(jsonPath("$.activityReflection.sources[0].reflection").value("Breathing helped me settle."))
+				.andExpect(jsonPath("$.userReflection").doesNotExist())
 				.andExpect(jsonPath("$.disclaimerCode").value("FOUR_DIMENSIONS_NOT_COMBINED"))
 				.andExpect(jsonPath("$.combinedScore").doesNotExist())
 				.andExpect(jsonPath("$.overallDirection").doesNotExist())
@@ -103,7 +119,7 @@ class ReassessmentSummaryIntegrationTests extends CareTestProperties {
 		JsonNode first = objectMapper.readTree(created.getResponse().getContentAsString());
 		UUID summaryId = UUID.fromString(first.path("summaryId").asText());
 
-		when(journal.read(any(), any(), any(), any(), anyString(), any()))
+		when(journal.resolveJob(any(), any(), any(), any(), anyString(), any()))
 				.thenReturn(new Projection("UNAVAILABLE", "SOURCE_NOT_FOUND", null));
 		mvc.perform(get("/api/v1/reassessment-summaries/current").with(user(owner)))
 				.andExpect(status().isOk()).andExpect(jsonPath("$.summaryId").value(summaryId.toString()))
@@ -128,45 +144,54 @@ class ReassessmentSummaryIntegrationTests extends CareTestProperties {
 	void persistsSparseAndUnavailableStatesWithoutBlockingLocalScreening() throws Exception {
 		var sparseOwner = insertProfile();
 		var sparse = assessments(sparseOwner);
+		var sparseJob = UUID.randomUUID();
 		var sparseAnalysis = UUID.randomUUID();
-		when(journal.read(any(), any(), any(), any(), anyString(), any()))
-				.thenReturn(new Projection("INSUFFICIENT_DATA", null, journalEvidence(sparseAnalysis, false, 2, 2)));
+		when(journal.resolveJob(any(), any(), any(), any(), anyString(), any()))
+				.thenReturn(new Projection(sparseJob, sparseAnalysis, "INSUFFICIENT_DATA", null,
+						journalEvidence(sparseAnalysis, false, 2, 2)));
 
 		mvc.perform(post("/api/v1/reassessment-summaries").with(user(sparseOwner))
 				.header("Idempotency-Key", "reassessment-summary-sparse")
-				.contentType(MediaType.APPLICATION_JSON).content(body(sparse.currentPhq9(), sparse.currentGad7(),
-						sparseAnalysis, PREVIOUS_START, PREVIOUS_END, CURRENT_START, CURRENT_END)))
+				.contentType(MediaType.APPLICATION_JSON).content(jobBody(sparse.currentPhq9(), sparse.currentGad7(),
+						sparseJob, PREVIOUS_START, PREVIOUS_END, CURRENT_START, CURRENT_END)))
 				.andExpect(status().isCreated())
 				.andExpect(jsonPath("$.screening.state").value("AVAILABLE"))
 				.andExpect(jsonPath("$.journalContext.state").value("INSUFFICIENT_DATA"))
 				.andExpect(jsonPath("$.journalContext.changesComparedWithPreviousPeriod[0].direction")
 						.value("INSUFFICIENT_DATA"))
 				.andExpect(jsonPath("$.supportPlanEngagement.state").value("INSUFFICIENT_DATA"))
-				.andExpect(jsonPath("$.userReflection.state").value("INSUFFICIENT_DATA"));
+				.andExpect(jsonPath("$.selfReportedExperience.state").value("INSUFFICIENT_DATA"))
+				.andExpect(jsonPath("$.selfReportedExperience.unavailableReason").value("NOT_PROVIDED"))
+				.andExpect(jsonPath("$.activityReflection.state").value("INSUFFICIENT_DATA"));
 
 		var unavailableOwner = insertProfile();
 		var unavailable = assessments(unavailableOwner);
-		when(journal.read(any(), any(), any(), any(), anyString(), any()))
-				.thenReturn(new Projection("UNAVAILABLE", "DEPENDENCY_UNAVAILABLE", null));
+		var unavailableJob = UUID.randomUUID();
+		when(journal.resolveJob(any(), any(), any(), any(), anyString(), any()))
+				.thenReturn(new Projection(unavailableJob, null, "UNAVAILABLE", "PROVIDER_TIMEOUT", null));
 		mvc.perform(post("/api/v1/reassessment-summaries").with(user(unavailableOwner))
 				.header("Idempotency-Key", "reassessment-unavailable")
-				.contentType(MediaType.APPLICATION_JSON).content(body(unavailable.currentPhq9(), unavailable.currentGad7(),
-						UUID.randomUUID(), PREVIOUS_START, PREVIOUS_END, CURRENT_START, CURRENT_END)))
+				.contentType(MediaType.APPLICATION_JSON).content(jobBody(unavailable.currentPhq9(), unavailable.currentGad7(),
+						unavailableJob, PREVIOUS_START, PREVIOUS_END, CURRENT_START, CURRENT_END)))
 				.andExpect(status().isCreated())
 				.andExpect(jsonPath("$.screening.state").value("AVAILABLE"))
 				.andExpect(jsonPath("$.journalContext.state").value("UNAVAILABLE"))
-				.andExpect(jsonPath("$.journalContext.unavailableReason").value("DEPENDENCY_UNAVAILABLE"))
+				.andExpect(jsonPath("$.journalContext.unavailableReason").value("PROVIDER_TIMEOUT"))
+				.andExpect(jsonPath("$.journalContext.jobId").value(unavailableJob.toString()))
+				.andExpect(jsonPath("$.journalContext.analysisId").doesNotExist())
 				.andExpect(jsonPath("$.journalContext.dataCoverage").doesNotExist());
 
 		var firstScreeningOwner = insertProfile();
 		var firstScreening = currentAssessments(firstScreeningOwner);
 		var sufficientAnalysis = UUID.randomUUID();
-		when(journal.read(any(), any(), any(), any(), anyString(), any()))
-				.thenReturn(new Projection("AVAILABLE", null, journalEvidence(sufficientAnalysis, true, 3, 3)));
+		var sufficientJob = UUID.randomUUID();
+		when(journal.resolveJob(any(), any(), any(), any(), anyString(), any()))
+				.thenReturn(new Projection(sufficientJob, sufficientAnalysis, "AVAILABLE", null,
+						journalEvidence(sufficientAnalysis, true, 3, 3)));
 		mvc.perform(post("/api/v1/reassessment-summaries").with(user(firstScreeningOwner))
 				.header("Idempotency-Key", "reassessment-first-screening")
-				.contentType(MediaType.APPLICATION_JSON).content(body(firstScreening.currentPhq9(),
-						firstScreening.currentGad7(), sufficientAnalysis,
+				.contentType(MediaType.APPLICATION_JSON).content(jobBody(firstScreening.currentPhq9(),
+						firstScreening.currentGad7(), sufficientJob,
 						PREVIOUS_START, PREVIOUS_END, CURRENT_START, CURRENT_END)))
 				.andExpect(status().isCreated())
 				.andExpect(jsonPath("$.screening.state").value("INSUFFICIENT_DATA"))
@@ -213,6 +238,95 @@ class ReassessmentSummaryIntegrationTests extends CareTestProperties {
 	}
 
 	@Test
+	void issuesCareOwnedContextAndRejectsStaleAssessmentSelection() throws Exception {
+		var owner = insertProfile();
+		var selected = assessments(owner);
+
+		mvc.perform(get("/api/v1/reassessment-summaries/context").with(user(owner)))
+				.andExpect(status().isOk())
+				.andExpect(jsonPath("$.policyVersion").value("reassessment-comparison-v1"))
+				.andExpect(jsonPath("$.state").value("READY"))
+				.andExpect(jsonPath("$.missingInstruments").isEmpty())
+				.andExpect(jsonPath("$.phq9AssessmentId").value(selected.currentPhq9().toString()))
+				.andExpect(jsonPath("$.gad7AssessmentId").value(selected.currentGad7().toString()));
+
+		var newerPhq9 = insertAssessment(owner, PHQ9_DEFINITION, 7, "MILD", "phq9-standard-bands-v1",
+				Instant.parse("2026-09-23T08:00:00Z"));
+		assertThat(newerPhq9).isNotEqualTo(selected.currentPhq9());
+		mvc.perform(post("/api/v1/reassessment-summaries").with(user(owner))
+				.header("Idempotency-Key", "reassessment-stale-assessment")
+				.contentType(MediaType.APPLICATION_JSON).content(jobBody(selected.currentPhq9(),
+						selected.currentGad7(), UUID.randomUUID(), PREVIOUS_START, PREVIOUS_END,
+						CURRENT_START, CURRENT_END)))
+				.andExpect(status().isConflict())
+				.andExpect(jsonPath("$.code").value("ASSESSMENT_NOT_CURRENT"));
+	}
+
+	@Test
+	void replacesDeletesAndKeepsEarlierSummarySnapshotsDeterministic() throws Exception {
+		var owner = insertProfile();
+		var other = insertProfile();
+		var evidence = assessments(owner);
+		var jobId = UUID.randomUUID();
+		var selfReportId = createSelfReport(owner, "reassessment-self-history-01", "MORE_DIFFICULT", null,
+				"Deadlines felt harder.");
+		String summaryBody = jobBody(evidence.currentPhq9(), evidence.currentGad7(), jobId,
+				PREVIOUS_START, PREVIOUS_END, CURRENT_START, CURRENT_END, selfReportId);
+
+		var first = mvc.perform(post("/api/v1/reassessment-summaries").with(user(owner))
+				.header("Idempotency-Key", "reassessment-history-0001")
+				.contentType(MediaType.APPLICATION_JSON).content(summaryBody))
+				.andExpect(status().isCreated())
+				.andExpect(jsonPath("$.selfReportedExperience.source.currentExperience").value("MORE_DIFFICULT"))
+				.andReturn();
+		String firstId = objectMapper.readTree(first.getResponse().getContentAsString()).path("summaryId").asText();
+
+		String replacement = """
+				{"currentExperience":"BETTER","helpfulContext":"A steadier routine helped.","difficultContext":null}
+				""";
+		mvc.perform(put("/api/v1/reassessment-self-reports/{id}", selfReportId).with(user(other))
+				.header("If-Match", "\"0\"").contentType(MediaType.APPLICATION_JSON).content(replacement))
+				.andExpect(status().isNotFound());
+		mvc.perform(put("/api/v1/reassessment-self-reports/{id}", selfReportId).with(user(owner))
+				.header("If-Match", "\"0\"").contentType(MediaType.APPLICATION_JSON).content(replacement))
+				.andExpect(status().isOk()).andExpect(jsonPath("$.version").value(1))
+				.andExpect(jsonPath("$.currentExperience").value("BETTER"));
+
+		var second = mvc.perform(post("/api/v1/reassessment-summaries").with(user(owner))
+				.header("Idempotency-Key", "reassessment-history-0002")
+				.contentType(MediaType.APPLICATION_JSON).content(summaryBody))
+				.andExpect(status().isCreated())
+				.andExpect(jsonPath("$.selfReportedExperience.source.currentExperience").value("BETTER"))
+				.andExpect(jsonPath("$.selfReportedExperience.source.sourceRevision").value(1)).andReturn();
+		String secondId = objectMapper.readTree(second.getResponse().getContentAsString()).path("summaryId").asText();
+
+		mvc.perform(delete("/api/v1/reassessment-self-reports/{id}", selfReportId).with(user(other))
+				.header("If-Match", "\"1\""))
+				.andExpect(status().isNotFound());
+		mvc.perform(delete("/api/v1/reassessment-self-reports/{id}", selfReportId).with(user(owner))
+				.header("If-Match", "\"1\""))
+				.andExpect(status().isNoContent());
+		assertThat(jdbc.sql("""
+				select current_experience is null and helpful_context is null and difficult_context is null
+				from reassessment_self_report where id=:id
+				""").param("id", selfReportId).query(Boolean.class).single()).isTrue();
+
+		mvc.perform(get("/api/v1/reassessment-summaries/{id}", firstId).with(user(owner)))
+				.andExpect(status().isOk())
+				.andExpect(jsonPath("$.selfReportedExperience.source.currentExperience").value("MORE_DIFFICULT"));
+		mvc.perform(get("/api/v1/reassessment-summaries/{id}", secondId).with(user(owner)))
+				.andExpect(status().isOk())
+				.andExpect(jsonPath("$.selfReportedExperience.source.currentExperience").value("BETTER"));
+		mvc.perform(post("/api/v1/reassessment-summaries").with(user(owner))
+				.header("Idempotency-Key", "reassessment-history-0003")
+				.contentType(MediaType.APPLICATION_JSON).content(summaryBody))
+				.andExpect(status().isCreated())
+				.andExpect(jsonPath("$.selfReportedExperience.state").value("UNAVAILABLE"))
+				.andExpect(jsonPath("$.selfReportedExperience.unavailableReason").value("SOURCE_DELETED"))
+				.andExpect(jsonPath("$.selfReportedExperience.source").doesNotExist());
+	}
+
+	@Test
 	void returnsCreatedUnavailableSummaryWithinTheThreeSecondCallerBudget() throws Exception {
 		var owner = insertProfile();
 		var evidence = assessments(owner);
@@ -246,6 +360,25 @@ class ReassessmentSummaryIntegrationTests extends CareTestProperties {
 		var currentGad7 = insertAssessment(owner, GAD7_DEFINITION, 10, "MODERATE", "gad7-standard-bands-v1",
 				Instant.parse("2026-09-22T09:00:00Z"));
 		return new AssessmentSet(previousPhq9, previousGad7, currentPhq9, currentGad7);
+	}
+
+	private UUID createSelfReport(UUID owner, String key, String experience, String helpful, String difficult)
+			throws Exception {
+		String body = """
+				{"currentPeriod":{"startAt":"%s","endAt":"%s"},"currentExperience":"%s",
+				 "helpfulContext":%s,"difficultContext":%s}
+				""".formatted(CURRENT_START, CURRENT_END, experience, json(helpful), json(difficult));
+		var result = mvc.perform(post("/api/v1/reassessment-self-reports").with(user(owner))
+				.header("Idempotency-Key", key).contentType(MediaType.APPLICATION_JSON).content(body))
+				.andExpect(status().isCreated()).andExpect(jsonPath("$.sourceVersion")
+						.value("reassessment-self-report-v1"))
+				.andExpect(jsonPath("$.version").value(0)).andReturn();
+		return UUID.fromString(objectMapper.readTree(result.getResponse().getContentAsString())
+				.path("selfReportId").asText());
+	}
+
+	private String json(String value) throws Exception {
+		return value == null ? "null" : objectMapper.writeValueAsString(value);
 	}
 
 	private AssessmentSet currentAssessments(UUID owner) {
@@ -366,11 +499,32 @@ class ReassessmentSummaryIntegrationTests extends CareTestProperties {
 
 	private String body(UUID phq9, UUID gad7, UUID analysisId, Instant previousStart, Instant previousEnd,
 			Instant currentStart, Instant currentEnd) {
+		return body(phq9, gad7, analysisId, previousStart, previousEnd, currentStart, currentEnd, null);
+	}
+
+	private String jobBody(UUID phq9, UUID gad7, UUID jobId, Instant previousStart, Instant previousEnd,
+			Instant currentStart, Instant currentEnd) {
+		return jobBody(phq9, gad7, jobId, previousStart, previousEnd, currentStart, currentEnd, null);
+	}
+
+	private String jobBody(UUID phq9, UUID gad7, UUID jobId, Instant previousStart, Instant previousEnd,
+			Instant currentStart, Instant currentEnd, UUID selfReportId) {
+		return """
+				{"phq9AssessmentId":"%s","gad7AssessmentId":"%s","journalJobId":"%s",
+				 "previousPeriod":{"startAt":"%s","endAt":"%s"},
+				 "currentPeriod":{"startAt":"%s","endAt":"%s"}%s}
+				""".formatted(phq9, gad7, jobId, previousStart, previousEnd, currentStart, currentEnd,
+				selfReportId == null ? "" : ",\"selfReportId\":\"" + selfReportId + "\"");
+	}
+
+	private String body(UUID phq9, UUID gad7, UUID analysisId, Instant previousStart, Instant previousEnd,
+			Instant currentStart, Instant currentEnd, UUID selfReportId) {
 		return """
 				{"phq9AssessmentId":"%s","gad7AssessmentId":"%s","journalAnalysisId":"%s",
 				 "previousPeriod":{"startAt":"%s","endAt":"%s"},
-				 "currentPeriod":{"startAt":"%s","endAt":"%s"}}
-				""".formatted(phq9, gad7, analysisId, previousStart, previousEnd, currentStart, currentEnd);
+				 "currentPeriod":{"startAt":"%s","endAt":"%s"}%s}
+				""".formatted(phq9, gad7, analysisId, previousStart, previousEnd, currentStart, currentEnd,
+				selfReportId == null ? "" : ",\"selfReportId\":\"" + selfReportId + "\"");
 	}
 
 	private org.springframework.test.web.servlet.request.RequestPostProcessor user(UUID userId) {

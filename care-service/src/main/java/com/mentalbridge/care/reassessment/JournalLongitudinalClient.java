@@ -13,6 +13,7 @@ import org.springframework.stereotype.Component;
 import com.mentalbridge.care.configuration.JournalLongitudinalClientProperties;
 import com.mentalbridge.care.reassessment.JournalLongitudinalContract.Change;
 import com.mentalbridge.care.reassessment.JournalLongitudinalContract.Evidence;
+import com.mentalbridge.care.reassessment.JournalLongitudinalContract.Job;
 
 import feign.FeignException;
 import feign.RetryableException;
@@ -29,6 +30,10 @@ public class JournalLongitudinalClient {
 	private static final Set<String> DIRECTIONS = Set.of("MORE_FREQUENT", "LESS_FREQUENT", "SIMILAR",
 			"INSUFFICIENT_DATA");
 	private static final Set<String> PERIODS = Set.of("PREVIOUS", "CURRENT");
+	private static final Set<String> TERMINAL_REASONS = Set.of("CONSENT_REQUIRED", "CONSENT_REVOKED",
+			"CONSENT_UNAVAILABLE", "ENTITLEMENT_UNAVAILABLE", "ENTITLEMENT_CHANGED",
+			"AUTHORIZATION_CONTEXT_LOST", "SOURCE_REVISION_CHANGED", "SOURCE_DELETED", "PROVIDER_TIMEOUT",
+			"PROVIDER_UNAVAILABLE", "INVALID_PROVIDER_RESULT", "INTERNAL_ERROR");
 
 	private final JournalLongitudinalHttpClient httpClient;
 	private final CircuitBreaker circuitBreaker;
@@ -83,6 +88,46 @@ public class JournalLongitudinalClient {
 		}
 	}
 
+	public Projection resolveJob(UUID userId, UUID jobId, ReassessmentSummaryView.Period previousPeriod,
+			ReassessmentSummaryView.Period currentPeriod, String bearerToken, UUID correlationId) {
+		if (userId == null || jobId == null || previousPeriod == null || currentPeriod == null
+				|| bearerToken == null || bearerToken.isBlank() || correlationId == null) {
+			throw new IllegalArgumentException("Longitudinal job context is required");
+		}
+		Supplier<Job> remote = CircuitBreaker.decorateSupplier(circuitBreaker,
+				() -> validateJob(httpClient.getJob("Bearer " + bearerToken, correlationId.toString(), jobId),
+						jobId, previousPeriod, currentPeriod));
+		try {
+			var job = Retry.decorateSupplier(retry, remote).get();
+			if ("RUNNING".equals(job.status())) {
+				throw new AnalysisInProgressException();
+			}
+			if ("FAILED".equals(job.status())) {
+				return new Projection(jobId, null, "UNAVAILABLE", job.terminalReason(), null);
+			}
+			UUID analysisId = job.result().analysisId();
+			var projection = read(userId, analysisId, previousPeriod, currentPeriod, bearerToken, correlationId);
+			return new Projection(jobId, analysisId, projection.state(), projection.unavailableReason(),
+					projection.evidence());
+		}
+		catch (AnalysisInProgressException exception) {
+			throw exception;
+		}
+		catch (FeignException exception) {
+			if (exception.status() == 404) return new Projection(jobId, null, "UNAVAILABLE", "SOURCE_NOT_FOUND", null);
+			if (exception.status() == 401 || exception.status() == 403) {
+				return new Projection(jobId, null, "UNAVAILABLE", "CONSENT_UNAVAILABLE", null);
+			}
+			return new Projection(jobId, null, "UNAVAILABLE", "DEPENDENCY_UNAVAILABLE", null);
+		}
+		catch (InvalidProjectionException exception) {
+			return new Projection(jobId, null, "UNAVAILABLE", "INVALID_PROJECTION", null);
+		}
+		catch (RuntimeException exception) {
+			return new Projection(jobId, null, "UNAVAILABLE", "DEPENDENCY_UNAVAILABLE", null);
+		}
+	}
+
 	CircuitBreaker.State circuitState() {
 		return circuitBreaker.getState();
 	}
@@ -134,6 +179,23 @@ public class JournalLongitudinalClient {
 		return evidence;
 	}
 
+	private Job validateJob(Job job, UUID jobId, ReassessmentSummaryView.Period previousPeriod,
+			ReassessmentSummaryView.Period currentPeriod) {
+		if (job == null || !jobId.equals(job.jobId()) || job.previousPeriod() == null || job.currentPeriod() == null
+				|| !previousPeriod.startAt().equals(job.previousPeriod().startAt())
+				|| !previousPeriod.endAt().equals(job.previousPeriod().endAt())
+				|| !currentPeriod.startAt().equals(job.currentPeriod().startAt())
+				|| !currentPeriod.endAt().equals(job.currentPeriod().endAt())) {
+			throw new InvalidProjectionException();
+		}
+		if ("RUNNING".equals(job.status()) && job.result() == null && job.terminalReason() == null) return job;
+		if ("SUCCEEDED".equals(job.status()) && job.result() != null && job.result().analysisId() != null
+				&& job.terminalReason() == null) return job;
+		if ("FAILED".equals(job.status()) && job.result() == null
+				&& TERMINAL_REASONS.contains(job.terminalReason())) return job;
+		throw new InvalidProjectionException();
+	}
+
 	private boolean invalidChange(Change change) {
 		return change == null || blankOrLong(change.signal(), 64) || !DIRECTIONS.contains(change.direction());
 	}
@@ -167,7 +229,15 @@ public class JournalLongitudinalClient {
 		return false;
 	}
 
-	public record Projection(String state, String unavailableReason, Evidence evidence) { }
+	public record Projection(UUID jobId, UUID analysisId, String state, String unavailableReason, Evidence evidence) {
+		public Projection(String state, String unavailableReason, Evidence evidence) {
+			this(null, evidence == null ? null : evidence.analysisId(), state, unavailableReason, evidence);
+		}
+	}
+
+	public static final class AnalysisInProgressException extends RuntimeException {
+		private static final long serialVersionUID = 1L;
+	}
 
 	private static final class InvalidProjectionException extends RuntimeException {
 		private static final long serialVersionUID = 1L;

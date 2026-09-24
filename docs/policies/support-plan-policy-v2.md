@@ -5,7 +5,7 @@
 | Field | Value |
 | --- | --- |
 | Scope decisions | `MB-SCOPE-V2-001`, amended by `MB-SCOPE-V2-002` |
-| Status | `PRODUCT POLICY APPROVED; SUPPORT GUIDE, DRAFT, ACTIVATION, LIFECYCLE/HISTORY, ACTIVITY OCCURRENCES, ENGAGEMENT, AND MB-386 BASELINE IMPLEMENTED; EXPLICIT SELF-REPORT / GOVERNED REVIEW AMENDMENT DELIVERY-GATED` |
+| Status | `PRODUCT POLICY APPROVED; SUPPORT GUIDE, DRAFT, ACTIVATION, LIFECYCLE/HISTORY, ACTIVITY OCCURRENCES, ENGAGEMENT, AND EXPLICIT REASSESSMENT SELF-REPORT IMPLEMENTED; GOVERNED PLAN REVIEW DELIVERY-GATED` |
 | Effective decision date | 2026-09-24 for ADR 0022 amendments |
 | Owner | Care |
 | Resource eligibility owner | Content/Notification |
@@ -107,9 +107,8 @@ improvement verdict, treatment-adherence score, or global mental-health score.
 
 The MB-386 runtime merged before ADR 0022 is a compatibility baseline. Its
 existing activity helpfulness/reflection-based fourth dimension remains
-historically readable under its source/version provenance, but new canonical
-four-dimension behavior requires MB-559 or equivalent explicit self-report
-implementation.
+historically readable under its source/version provenance. MB-559 implements
+the canonical explicit self-report source and v2 composition prospectively.
 
 ## Governed plan review after reassessment
 
@@ -156,9 +155,9 @@ stable `AVAILABLE`/`PARTIAL`/`EMPTY`/`STALE`/`UNAVAILABLE` outcomes, local
 synchronous safety, owner-only history, and approved-copy fallback when AI is
 unavailable.
 
-`PlanChangeRequest`, notification delivery, explicit reassessment self-report,
-and summary reuse remain separately delivery-gated where their owner contracts
-are not yet complete.
+`PlanChangeRequest` and notification delivery remain separately delivery-gated
+where their owner contracts are not yet complete. Explicit reassessment
+self-report and approved occurrence summary reuse are implemented in Care.
 
 MB-513 implements Care-owned schedules/occurrences. MB-374 implements owner
 lifecycle/history. MB-376 implements owner engagement/helpfulness. Do not cite
@@ -317,7 +316,10 @@ and helpfulness/reflection into a fourth user-reflection dimension. That output
 remains valid historical runtime evidence under its exact source/version, but it
 is **not** the final canonical fourth-dimension target after ADR 0022.
 
-The amended target adds an explicit reassessment self-report authored by the
-user and records its source/version. Activity helpfulness/reflection becomes
-supporting evidence for `Self-reported experience`, not a replacement for the
-explicit self-report. Existing snapshots are not rewritten.
+MB-559 delivers the amended target through a versioned explicit reassessment
+self-report authored by the user and exact source revision in
+`reassessment-summary-v2`. Activity helpfulness/reflection is separately
+labelled supporting evidence, not a replacement for the explicit self-report.
+Existing v1 snapshots are not rewritten. Deleting a mutable source clears its
+content and prevents future composition while prior immutable snapshots retain
+the exact historical evidence they originally returned.

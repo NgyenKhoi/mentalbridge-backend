@@ -19,6 +19,8 @@ import com.mentalbridge.care.configuration.JournalLongitudinalClientProperties;
 import com.mentalbridge.care.reassessment.JournalLongitudinalContract.Change;
 import com.mentalbridge.care.reassessment.JournalLongitudinalContract.Coverage;
 import com.mentalbridge.care.reassessment.JournalLongitudinalContract.Evidence;
+import com.mentalbridge.care.reassessment.JournalLongitudinalContract.Job;
+import com.mentalbridge.care.reassessment.JournalLongitudinalContract.JobResult;
 import com.mentalbridge.care.reassessment.JournalLongitudinalContract.Period;
 import com.mentalbridge.care.reassessment.JournalLongitudinalContract.SourceRevision;
 
@@ -31,6 +33,7 @@ class JournalLongitudinalClientTests {
 
 	private static final UUID USER_ID = UUID.fromString("65010000-0000-4000-8000-000000000001");
 	private static final UUID ANALYSIS_ID = UUID.fromString("65010000-0000-4000-8000-000000000002");
+	private static final UUID JOB_ID = UUID.fromString("65010000-0000-4000-8000-000000000004");
 	private static final UUID CORRELATION_ID = UUID.fromString("65010000-0000-4000-8000-000000000003");
 	private static final ReassessmentSummaryView.Period PREVIOUS = new ReassessmentSummaryView.Period(
 			Instant.parse("2026-08-27T00:00:00Z"), Instant.parse("2026-09-10T00:00:00Z"));
@@ -124,6 +127,28 @@ class JournalLongitudinalClientTests {
 	}
 
 	@Test
+	void resolvesSucceededFailedAndRunningJobsWithoutGuessingTheirState() {
+		var succeeded = jobClient(new Job(JOB_ID, period(PREVIOUS), period(CURRENT), "SUCCEEDED", null,
+				new JobResult(ANALYSIS_ID)), evidence(true, 3, 3));
+		var available = succeeded.resolveJob(USER_ID, JOB_ID, PREVIOUS, CURRENT, "user-token", CORRELATION_ID);
+		assertThat(available.jobId()).isEqualTo(JOB_ID);
+		assertThat(available.analysisId()).isEqualTo(ANALYSIS_ID);
+		assertThat(available.state()).isEqualTo("AVAILABLE");
+
+		var failed = jobClient(new Job(JOB_ID, period(PREVIOUS), period(CURRENT), "FAILED",
+				"PROVIDER_TIMEOUT", null), null);
+		assertThat(failed.resolveJob(USER_ID, JOB_ID, PREVIOUS, CURRENT, "user-token", CORRELATION_ID))
+				.extracting(JournalLongitudinalClient.Projection::state,
+						JournalLongitudinalClient.Projection::unavailableReason)
+				.containsExactly("UNAVAILABLE", "PROVIDER_TIMEOUT");
+
+		var running = jobClient(new Job(JOB_ID, period(PREVIOUS), period(CURRENT), "RUNNING", null, null), null);
+		assertThatThrownBy(() -> running.resolveJob(USER_ID, JOB_ID, PREVIOUS, CURRENT,
+				"user-token", CORRELATION_ID))
+				.isInstanceOf(JournalLongitudinalClient.AnalysisInProgressException.class);
+	}
+
+	@Test
 	void rejectsConfigurationThatCanOutliveTheCallerBudget() {
 		assertThatThrownBy(() -> new JournalLongitudinalClientProperties("", Duration.ofMillis(500),
 				Duration.ofSeconds(2), 2, Duration.ofMillis(100), 10, 5, 50,
@@ -138,10 +163,53 @@ class JournalLongitudinalClientTests {
 		assertThat(bounded.readTimeout()).isEqualTo(Duration.ofMillis(800));
 	}
 
-	private JournalLongitudinalClient client(JournalLongitudinalHttpClient http, int attempts, int minimumCalls) {
+	private JournalLongitudinalClient client(AnalysisHttp analysis, int attempts, int minimumCalls) {
+		JournalLongitudinalHttpClient http = new JournalLongitudinalHttpClient() {
+			@Override
+			public JournalLongitudinalContract.Job getJob(String authorization, String correlationId, UUID jobId) {
+				throw new UnsupportedOperationException();
+			}
+
+			@Override
+			public Evidence get(String authorization, String correlationId, UUID userId, UUID analysisId,
+					String purpose) {
+				return analysis.get(authorization, correlationId, userId, analysisId, purpose);
+			}
+		};
+		return configuredClient(http, attempts, minimumCalls);
+	}
+
+	private JournalLongitudinalClient jobClient(Job job, Evidence projection) {
+		JournalLongitudinalHttpClient http = new JournalLongitudinalHttpClient() {
+			@Override
+			public Job getJob(String authorization, String correlationId, UUID jobId) {
+				return job;
+			}
+
+			@Override
+			public Evidence get(String authorization, String correlationId, UUID userId, UUID analysisId,
+					String purpose) {
+				if (projection == null) throw new AssertionError("Analysis must not be read for this job state");
+				return projection;
+			}
+		};
+		return configuredClient(http, 1, 5);
+	}
+
+	private JournalLongitudinalClient configuredClient(JournalLongitudinalHttpClient http, int attempts,
+			int minimumCalls) {
 		return new JournalLongitudinalClient(http, new JournalLongitudinalClientProperties("", Duration.ofMillis(200),
 				Duration.ofMillis(800), attempts, Duration.ofMillis(1), minimumCalls, minimumCalls, 50,
 				Duration.ofSeconds(10), 1));
+	}
+
+	private Period period(ReassessmentSummaryView.Period value) {
+		return new Period(value.startAt(), value.endAt());
+	}
+
+	@FunctionalInterface
+	private interface AnalysisHttp {
+		Evidence get(String authorization, String correlationId, UUID userId, UUID analysisId, String purpose);
 	}
 
 	private Evidence evidence(boolean sufficient, int previousCount, int currentCount) {

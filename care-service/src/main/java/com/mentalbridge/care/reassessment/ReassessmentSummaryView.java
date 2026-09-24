@@ -4,6 +4,7 @@ import java.time.Instant;
 import java.util.List;
 import java.util.UUID;
 
+import com.fasterxml.jackson.annotation.JsonInclude;
 import com.mentalbridge.care.assessment.ScreeningLevel;
 
 public record ReassessmentSummaryView(
@@ -15,6 +16,9 @@ public record ReassessmentSummaryView(
 		ScreeningDimension screening,
 		JournalDimension journalContext,
 		EngagementDimension supportPlanEngagement,
+		@JsonInclude(JsonInclude.Include.NON_NULL) SelfReportedExperienceDimension selfReportedExperience,
+		@JsonInclude(JsonInclude.Include.NON_NULL) ReflectionDimension activityReflection,
+		@JsonInclude(JsonInclude.Include.NON_NULL)
 		ReflectionDimension userReflection,
 		String disclaimerCode) {
 
@@ -28,7 +32,9 @@ public record ReassessmentSummaryView(
 	public record ScreeningPoint(UUID assessmentId, String questionnaireVersion, Instant submittedAt,
 			int totalScore, ScreeningLevel screeningLevel) { }
 
-	public record JournalDimension(String state, String unavailableReason, UUID analysisId,
+	public record JournalDimension(String state, String unavailableReason,
+			@JsonInclude(JsonInclude.Include.NON_NULL) UUID jobId,
+			@JsonInclude(JsonInclude.Include.NON_NULL) UUID analysisId,
 			List<JournalSourceRevision> sourceJournalRevisions, List<String> contextSignals,
 			List<String> emotionIndicators, List<String> recurringThemes,
 			List<JournalChange> changesComparedWithPreviousPeriod, List<String> preferences,
@@ -58,4 +64,11 @@ public record ReassessmentSummaryView(
 
 	public record ReflectionSource(UUID occurrenceId, String period, String helpfulness, String reflection,
 			Instant engagementUpdatedAt) { }
+
+	public record SelfReportedExperienceDimension(String state, String unavailableReason,
+			ExplicitSelfReport source) { }
+
+	public record ExplicitSelfReport(UUID selfReportId, String sourceVersion, long sourceRevision,
+			Period currentPeriod, String currentExperience, String helpfulContext, String difficultContext,
+			Instant authoredAt, Instant updatedAt) { }
 }

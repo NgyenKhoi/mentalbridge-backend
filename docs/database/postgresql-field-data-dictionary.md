@@ -655,6 +655,28 @@ generation idempotent.
 | `summary_reuse_approved` | Explicit approval to reuse minimized coded facts in a later bounded summary; never broad checklist monitoring consent. |
 | `engagement_updated_at` | Latest accepted replacement or deletion instant. Deletion clears mutable values but retains provenance. |
 
+### `public.reassessment_self_report`
+
+Versioned Care-owned source for the user's explicit, non-diagnostic account of
+the current comparison period. Only the authenticated owner may create, read,
+replace, or delete it. Deletion clears the categorical response and both
+optional contexts; the remaining tombstone prevents accidental resurrection
+and preserves period/version provenance. Earlier immutable summary snapshots
+remain unchanged.
+
+| Field | Purpose |
+| --- | --- |
+| `id` | Stable UUID referenced by canonical reassessment composition. |
+| `user_id` | Owning Care profile; every command and query is owner-scoped. |
+| `idempotency_key` / `request_hash` | Owner-scoped create replay identity and SHA-256 request fingerprint. |
+| `source_version` | Exact input contract version, currently `reassessment-self-report-v1`. |
+| `current_period_start` / `current_period_end` | Half-open period the response describes. The canonical MB-559 flow uses the exact Care-issued 14-day policy window. |
+| `current_experience` | Required active categorical response: `BETTER`, `ABOUT_THE_SAME`, `MORE_DIFFICULT`, or `UNSURE`; cleared on deletion. |
+| `helpful_context` / `difficult_context` | Optional trimmed owner-authored context, each at most 500 characters; cleared on deletion. |
+| `version` | Optimistic concurrency revision included in ETags and summary provenance. |
+| `authored_at` / `updated_at` | Original creation and latest accepted replacement/deletion instants. |
+| `deleted_at` | Null while active; deletion instant on a content-cleared tombstone. |
+
 ### `public.reassessment_summary`
 
 Immutable Care-owned snapshot composed for an authenticated owner. The JSON
@@ -668,12 +690,13 @@ improvement verdict.
 | `id` | Immutable UUID exposed as the reassessment-summary identifier. |
 | `user_id` | Care profile that owns the snapshot; the physical foreign key and every query enforce owner isolation. |
 | `idempotency_key` | Caller retry key unique per owner, 16-128 visible ASCII characters at the API boundary. |
-| `request_hash` | SHA-256 of the exact PHQ-9/GAD-7 assessment IDs, Journal/AI analysis ID, and comparison-period bounds; conflicting key reuse fails. |
-| `summary_version` | Composition/schema policy version; v1 rows are exactly `reassessment-summary-v1`. |
-| `journal_analysis_id` | External Journal/AI analysis UUID requested for the minimized projection; it remains as provenance when that source is unavailable or later deleted. |
+| `request_hash` | SHA-256 of the exact PHQ-9/GAD-7 assessment IDs, Journal job/legacy analysis reference, comparison-period bounds, and optional self-report ID; conflicting key reuse fails. |
+| `summary_version` | Composition/schema policy version. Historical compatibility rows remain `reassessment-summary-v1`; canonical explicit-self-report rows use `reassessment-summary-v2`. |
+| `journal_job_id` | Required external Journal longitudinal job UUID for canonical v2 snapshots, including failed-job snapshots. Care resolves its authoritative status. Null only on historical v1 rows. |
+| `journal_analysis_id` | Resolved analysis UUID when a v2 job succeeded, or the requested legacy v1 analysis UUID. It is nullable for failed/unavailable v2 jobs. |
 | `previous_period_start` / `previous_period_end` | Half-open UTC bounds for the prior evidence period. Database checks require 7-31 days. |
 | `current_period_start` / `current_period_end` | Half-open UTC bounds for the current evidence period. It must have the same duration and cannot overlap the prior period. |
-| `snapshot` | Authoritative derived JSON object returned by current/detail/history reads. It keeps four separately labelled dimensions, exact source/version/coverage data, explicit `UNAVAILABLE` or `INSUFFICIENT_DATA` states, and the no-combined-score disclaimer. Reassessment composition is the only writer. |
+| `snapshot` | Authoritative derived JSON object returned by current/detail/history reads. V2 keeps explicit self-reported experience separate from supporting activity reflection, plus the other three dimensions, exact source/version/coverage data, explicit `UNAVAILABLE` or `INSUFFICIENT_DATA` states, and the no-combined-score disclaimer. Reassessment composition is the only writer. |
 | `composed_at` | Immutable UTC instant when Care completed local calculation, safe Journal/AI fallback, and snapshot persistence. |
 
 ### `care.intervention_plan`

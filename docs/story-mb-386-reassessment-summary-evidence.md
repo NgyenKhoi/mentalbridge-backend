@@ -1,5 +1,10 @@
 # MB-386 four-dimension Reassessment Summary evidence
 
+> Historical compatibility note: MB-559 supersedes activity reflection as the
+> canonical fourth dimension. New `reassessment-summary-v2` snapshots use an
+> explicit owner-authored self-report and expose activity reflection separately;
+> the v1 evidence below remains accurate for existing snapshots.
+
 ## Delivered behavior
 
 MB-386 implements Care-owned composition and immutable owner reads for a

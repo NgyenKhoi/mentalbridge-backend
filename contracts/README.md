@@ -38,18 +38,15 @@ versioned replacement/deletion; its minimized event excludes private reflection
 and does not create a specialist observation feed. The contract never accepts
 arbitrary resources, a client package, an adherence score, a recovery score, or
 AI-selected state.
-The same contract exposes MB-386 Reassessment Summary composition plus
-owner-only current/detail/history reads. Each immutable snapshot keeps local
-PHQ-9/GAD-7 trends, minimized Journal/AI evidence, explicitly reusable
-SupportPlan engagement, and user reflection as separate dimensions with exact
-source/version/period/coverage provenance and explicit unavailable or
-insufficient states. It has no combined score or overall direction.
-
-That MB-386 shape is the implemented pre-ADR-0022 compatibility baseline. The
-canonical target requires a distinct explicit user-authored reassessment
-self-report as dimension four; occurrence helpfulness/reflection becomes
-supporting evidence only. The target is not `implemented` until an additive
-versioned contract, owner persistence, tests, and consumer adoption land.
+The same contract exposes MB-559 explicit reassessment self-report
+create/current/replace/delete operations plus Reassessment Summary composition
+and owner-only current/detail/history reads. `reassessment-summary-v2` keeps
+local PHQ-9/GAD-7 trends, minimized Journal/AI evidence, SupportPlan engagement,
+and explicit self-reported experience separate. Occurrence
+helpfulness/reflection is separately labelled supporting activity evidence and
+never substitutes for the self-report. Historical `reassessment-summary-v1`
+snapshots remain readable without rewrite. Neither version has a combined score
+or overall direction.
 
 ## Required paired changes
 

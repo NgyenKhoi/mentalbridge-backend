@@ -30,4 +30,11 @@ public final class JournalLongitudinalContract {
 	@JsonIgnoreProperties(ignoreUnknown = true)
 	public record Coverage(Integer previousPeriodJournalEntryCount, Integer currentPeriodJournalEntryCount,
 			Boolean sufficientForComparison) { }
+
+	@JsonIgnoreProperties(ignoreUnknown = true)
+	public record Job(UUID jobId, Period previousPeriod, Period currentPeriod, String status,
+			String terminalReason, JobResult result) { }
+
+	@JsonIgnoreProperties(ignoreUnknown = true)
+	public record JobResult(UUID analysisId) { }
 }

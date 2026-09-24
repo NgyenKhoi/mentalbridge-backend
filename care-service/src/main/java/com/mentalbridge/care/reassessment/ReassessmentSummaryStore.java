@@ -89,16 +89,16 @@ class ReassessmentSummaryStore {
 	}
 
 	@Transactional
-	StoredSummary persist(UUID summaryId, UUID userId, String idempotencyKey, String requestHash,
-			UUID journalAnalysisId, ReassessmentSummaryView.Period previousPeriod,
+	StoredSummary persist(UUID summaryId, UUID userId, String idempotencyKey, String requestHash, String summaryVersion,
+			UUID journalJobId, UUID journalAnalysisId, ReassessmentSummaryView.Period previousPeriod,
 			ReassessmentSummaryView.Period currentPeriod, String snapshot, Instant composedAt) {
 		int inserted = jdbc.sql("""
 				insert into reassessment_summary
-					(id,user_id,idempotency_key,request_hash,summary_version,journal_analysis_id,
+					(id,user_id,idempotency_key,request_hash,summary_version,journal_job_id,journal_analysis_id,
 					 previous_period_start,previous_period_end,current_period_start,current_period_end,
 					 snapshot,composed_at)
 				values
-					(:id,:userId,:idempotencyKey,:requestHash,'reassessment-summary-v1',:journalAnalysisId,
+					(:id,:userId,:idempotencyKey,:requestHash,:summaryVersion,:journalJobId,:journalAnalysisId,
 					 :previousStart,:previousEnd,:currentStart,:currentEnd,cast(:snapshot as jsonb),:composedAt)
 				on conflict (user_id,idempotency_key) do nothing
 				""")
@@ -106,6 +106,8 @@ class ReassessmentSummaryStore {
 				.param("userId", userId)
 				.param("idempotencyKey", idempotencyKey)
 				.param("requestHash", requestHash)
+				.param("summaryVersion", summaryVersion)
+				.param("journalJobId", journalJobId)
 				.param("journalAnalysisId", journalAnalysisId)
 				.param("previousStart", OffsetDateTime.ofInstant(previousPeriod.startAt(), ZoneOffset.UTC))
 				.param("previousEnd", OffsetDateTime.ofInstant(previousPeriod.endAt(), ZoneOffset.UTC))

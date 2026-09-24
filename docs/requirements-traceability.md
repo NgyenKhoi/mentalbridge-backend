@@ -112,8 +112,9 @@ The requirements are represented in domain/architecture documentation, but the l
   `consultation-credit-v2` periods target `FREE=0`, `PLUS=4`, `PREMIUM=10`, no
   rollover, and concurrent active-reservation caps `0/2/4`; historical v1
   `0/1/3` periods remain immutable. The MB-386 composition and v1 credit ledger
-  remain implemented compatibility baselines; explicit reassessment self-report
-  and credit-v2/reservation-cap runtime are delivery-gated. See
+  remain implemented compatibility baselines; MB-559 adds canonical explicit
+  reassessment self-report without rewriting v1 snapshots, while
+  credit-v2/reservation-cap runtime remains delivery-gated. See
   [ADR 0022](adr/0022-current-product-blueprint-amendments.md), the
   [SupportPlan policy v2](policies/support-plan-policy-v2.md), and the
   [Consultation policy v2](policies/consultation-specialist-policy-v2.md).
@@ -210,6 +211,18 @@ The requirements are represented in domain/architecture documentation, but the l
   provenance, and explicit `UNAVAILABLE`/`INSUFFICIENT_DATA` states. Care never
   creates a combined direction, improvement score, recovery claim, or fallback
   trend. Story 6502 remains the separate actor-facing frontend consumer.
+- 2026-09-24: MB-559 adds `reassessment-self-report-v1` owner
+  create/current/replace/delete behavior and `reassessment-summary-v2`.
+  Categorical current experience is explicit and non-diagnostic; optional
+  helpful/difficult context is bounded to 500 characters. Summary composition
+  snapshots the exact source revision separately from occurrence
+  helpfulness/reflection, preserves contradictions, and represents absent or
+  deleted sources without inference. Care issues versioned adjacent 14-day
+  periods and current compatible assessment IDs, then resolves the supplied
+  Journal job status itself. The frontend creates and polls that job, composes
+  the snapshot, and renders four separate dimensions with no overall verdict.
+  Historical v1 summaries remain immutable; later MB-387 work is limited to
+  history and presentation refinement where it is not already satisfied.
 - 2026-09-16: MB-369 is bounded to provider/model routing and benchmark
   enablement. Consultation adds an authoritative current-entitlement read model
   with `DEFAULT_FREE`, explicit `DEMO`, and future `PAID` provenance but no
