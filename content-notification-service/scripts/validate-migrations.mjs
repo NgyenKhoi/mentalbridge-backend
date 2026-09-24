@@ -146,6 +146,8 @@ assert.doesNotMatch(safetyDirectoryAreaAliases, /CREATE DATABASE|CREATE SCHEMA/i
 assert.match(reviewedResourceCatalogue, /^-- Up Migration/m);
 assert.match(reviewedResourceCatalogue, /Story: MB-556/);
 assert.match(reviewedResourceCatalogue, /catalogue_visibility = 'DIRECT_ONLY'/);
+assert.doesNotMatch(reviewedResourceCatalogue, /SET category\s*=/);
+assert.doesNotMatch(reviewedResourceCatalogue, /source_organization\s*=\s*'MentalBridge'/);
 assert.match(reviewedResourceCatalogue, /INSERT INTO resource\b/);
 assert.match(reviewedResourceCatalogue, /INSERT INTO resource_eligibility_publication\b/);
 assert.match(reviewedResourceCatalogue, /INSERT INTO resource_eligibility_declaration\b/);

@@ -37,7 +37,7 @@ const implementedResponses = new Map([
   ['GET /api/v1/resources/admin/list', new Set(['200', '400', '401', '403', '503'])],
   ['GET /api/v1/resources/admin/{id}', new Set(['200', '400', '401', '403', '404'])],
   ['GET /api/v1/resources/{id}', new Set(['200', '400', '404'])],
-  ['PATCH /api/v1/resources/{id}', new Set(['200', '400', '401', '403', '409'])],
+  ['PATCH /api/v1/resources/{id}', new Set(['200', '400', '401', '403', '409', '422'])],
   ['DELETE /api/v1/resources/{id}', new Set(['204', '400', '401', '403', '409'])],
   ['POST /api/v1/resources/{id}/publish', new Set(['400', '401', '403', '409'])],
   ['POST /api/v1/resources/{id}/archive', new Set(['200', '400', '401', '403', '409'])],

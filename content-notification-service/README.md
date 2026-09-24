@@ -14,7 +14,7 @@ NestJS service that owns reviewed self-help resource definitions, immutable exac
 - `GET /health/live` — liveness without a database dependency
 - `GET /health/ready` — PostgreSQL readiness check
 - `GET /api/v1/resources` — lists active reviewed published self-help resources; returns empty array when none match; returns neutral fallback when service is unreachable; no hotline number or emergency dispatch claim (ADR 0009)
-- `GET /api/v1/resources/{id}` — returns the full reviewed body plus structured source provenance for a consumable Resource Detail view
+- `GET /api/v1/resources/{id}` — returns the full reviewed body, exact `contentVersion`, and structured source provenance; an optional `contentVersion` query fails closed when a persisted reference no longer matches
 - MB-556 Review 1 catalogue — 15 Vietnamese resources with structured source metadata and verified YouTube actions for every `VIDEO`; legacy synthetic resources remain exact-ID compatible but are hidden from catalogue browsing
 - `POST|DELETE /__test/content/outage` — test-only local outage switch; unavailable unless `E2E_TEST_MODE=true` and the exact `x-e2e-secret` is supplied
 - Strict startup configuration, safe Problem Details, structured redacted request logs, CORS deny-by-default, and graceful NestJS shutdown

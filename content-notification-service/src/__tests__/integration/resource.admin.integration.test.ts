@@ -230,7 +230,10 @@ describe('ResourceRepository command consistency', () => {
       [active.id, future.id, ADMIN_B],
     );
 
-    await expect(repository.findPublishedEligibleById(active.id, 'vi-VN')).resolves.not.toBeNull();
+    await expect(
+      repository.findPublishedEligibleById(active.id, 'vi-VN', '0'),
+    ).resolves.not.toBeNull();
+    await expect(repository.findPublishedEligibleById(active.id, 'vi-VN', '1')).resolves.toBeNull();
     await expect(repository.findPublishedEligibleById(active.id, 'en-US')).resolves.toBeNull();
     await expect(repository.findPublishedEligibleById(future.id, 'vi-VN')).resolves.toBeNull();
     await repository.archive(active.id, 0, {

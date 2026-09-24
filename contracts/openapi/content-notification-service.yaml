@@ -237,6 +237,16 @@ paths:
       operationId: getResource
       parameters:
         - $ref: "#/components/parameters/Locale"
+        - name: contentVersion
+          in: query
+          required: false
+          description: >
+            Exact non-negative content version requested by a persisted consumer reference.
+            When present, a different current version returns 404 rather than substituting content.
+          schema:
+            type: string
+            pattern: "^(0|[1-9][0-9]*)$"
+            maxLength: 19
       responses:
         "200":
           description: Resource detail
@@ -278,6 +288,8 @@ paths:
         "403": { $ref: "#/components/responses/Forbidden" }
         "409":
           $ref: "#/components/responses/Conflict"
+        "422":
+          $ref: "#/components/responses/ValidationError"
 
     delete:
       tags: [Resources]
@@ -990,8 +1002,13 @@ components:
       allOf:
         - $ref: "#/components/schemas/ResourceSummary"
         - type: object
-          required: [contentBody, effectiveAt, expiresAt]
+          required: [contentVersion, contentBody, effectiveAt, expiresAt]
           properties:
+            contentVersion:
+              type: string
+              pattern: "^(0|[1-9][0-9]*)$"
+              maxLength: 19
+              description: Exact immutable resource version represented by this detail response.
             contentBody:
               type: string
               nullable: true

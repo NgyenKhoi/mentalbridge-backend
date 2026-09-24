@@ -183,18 +183,24 @@ export class ResourceRepository {
     return result.rows[0] ? toResourceRow(result.rows[0]) : null;
   }
 
-  async findPublishedEligibleById(id: string, locale: string): Promise<ResourceRow | null> {
+  async findPublishedEligibleById(
+    id: string,
+    locale: string,
+    contentVersion?: string,
+  ): Promise<ResourceRow | null> {
+    const versionPredicate = contentVersion === undefined ? '' : 'AND version::text = $3';
     const result = await this.db.query<ResourceDatabaseRow>(
       `SELECT ${RESOURCE_COLUMNS}
        FROM resource
        WHERE id = $1
          AND locale = $2
+         ${versionPredicate}
          AND status = 'PUBLISHED'
          AND reviewed_by IS NOT NULL
          AND reviewed_at IS NOT NULL
          AND (effective_at IS NULL OR effective_at <= now())
          AND (expires_at IS NULL OR expires_at > now())`,
-      [id, locale],
+      contentVersion === undefined ? [id, locale] : [id, locale, contentVersion],
     );
     return result.rows[0] ? toResourceRow(result.rows[0]) : null;
   }

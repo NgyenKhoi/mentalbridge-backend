@@ -220,16 +220,31 @@ describe('Database Integration', () => {
         actionable_videos: '3',
       });
 
-      const legacy = await pool.query<{ listed: string; corrected_category: string }>(
+      const legacy = await pool.query<{
+        listed: string;
+        resource_104_category: string;
+        resource_104_version: string;
+        resource_104_source_organization: string | null;
+      }>(
         `SELECT
            count(*) FILTER (WHERE catalogue_visibility = 'LISTED')::text AS listed,
            max(category) FILTER (WHERE id = '00000000-0000-4000-8000-000000000104')
-             AS corrected_category
+             AS resource_104_category,
+           max(version) FILTER (WHERE id = '00000000-0000-4000-8000-000000000104')
+             AS resource_104_version,
+           max(source_organization)
+             FILTER (WHERE id = '00000000-0000-4000-8000-000000000104')
+             AS resource_104_source_organization
          FROM resource
          WHERE id BETWEEN '00000000-0000-4000-8000-000000000101'::uuid
                       AND '00000000-0000-4000-8000-000000000106'::uuid`,
       );
-      expect(legacy.rows[0]).toEqual({ listed: '0', corrected_category: 'ARTICLE' });
+      expect(legacy.rows[0]).toEqual({
+        listed: '0',
+        resource_104_category: 'VIDEO',
+        resource_104_version: '0',
+        resource_104_source_organization: null,
+      });
     });
   });
 

@@ -5,14 +5,7 @@
 -- Story: MB-556 - Reviewed resource catalogue and consumable resource detail
 
 UPDATE resource
-SET category = CASE
-      WHEN id = '00000000-0000-4000-8000-000000000104'::uuid THEN 'ARTICLE'
-      ELSE category
-    END,
-    catalogue_visibility = 'DIRECT_ONLY',
-    source_organization = 'MentalBridge',
-    source_title = 'Review 1 controlled demo fixture',
-    source_review_note = 'Synthetic controlled-demo content retained for exact-version compatibility; it is not part of the reviewed MB-556 catalogue.'
+SET catalogue_visibility = 'DIRECT_ONLY'
 WHERE id IN (
   '00000000-0000-4000-8000-000000000101'::uuid,
   '00000000-0000-4000-8000-000000000102'::uuid,

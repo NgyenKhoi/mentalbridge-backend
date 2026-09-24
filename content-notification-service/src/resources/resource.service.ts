@@ -1,4 +1,10 @@
-import { Inject, Injectable, Logger, ServiceUnavailableException } from '@nestjs/common';
+import {
+  Inject,
+  Injectable,
+  Logger,
+  ServiceUnavailableException,
+  UnprocessableEntityException,
+} from '@nestjs/common';
 import type {
   ResourceRepository,
   ListResourcesQuery,
@@ -15,6 +21,7 @@ import type {
   ResourceDetail,
   PublicResourceDetail,
 } from './resource.types.js';
+import { VerifiedVideoUrlSchema } from './resource.dto.js';
 
 const UNAVAILABLE_MESSAGE = 'Tài nguyên hỗ trợ tạm thời không khả dụng. Vui lòng thử lại sau.';
 
@@ -62,6 +69,7 @@ function toDetail(row: ResourceRow): ResourceDetail | null {
 
   return {
     ...summary,
+    contentVersion: String(row.version),
     contentBody: row.content_body ?? null,
     sourceTitle: row.source_title ?? null,
     sourceUrl: row.source_url ?? null,
@@ -88,6 +96,7 @@ function toPublicDetail(row: ResourceRow): PublicResourceDetail | null {
     reviewedAt: detail.reviewedAt,
     createdAt: detail.createdAt,
     updatedAt: detail.updatedAt,
+    contentVersion: detail.contentVersion,
     contentBody: detail.contentBody,
     sourceTitle: detail.sourceTitle,
     sourceUrl: detail.sourceUrl,
@@ -215,8 +224,12 @@ export class ResourceService {
     return row ? toDetail(row) : null;
   }
 
-  async getPublishedById(id: string, locale: string): Promise<PublicResourceDetail | null> {
-    const row = await this.repository.findPublishedEligibleById(id, locale);
+  async getPublishedById(
+    id: string,
+    locale: string,
+    contentVersion?: string,
+  ): Promise<PublicResourceDetail | null> {
+    const row = await this.repository.findPublishedEligibleById(id, locale, contentVersion);
     return row ? toPublicDetail(row) : null;
   }
 
@@ -238,6 +251,23 @@ export class ResourceService {
     data: UpdateResourceData,
     context: ResourceCommandContext,
   ): Promise<ResourceDetail | null> {
+    const current = await this.repository.findById(id);
+    if (!current || current.status !== 'DRAFT' || current.version !== data.version) return null;
+    const externalUrl = data.externalUrl === undefined ? current.external_url : data.externalUrl;
+    if (current.category === 'VIDEO' && !VerifiedVideoUrlSchema.safeParse(externalUrl).success) {
+      throw new UnprocessableEntityException({
+        type: 'https://mentalbridge.io/errors/VALIDATION_ERROR',
+        title: 'Validation failed',
+        status: 422,
+        code: 'VALIDATION_ERROR',
+        fieldViolations: [
+          {
+            field: 'externalUrl',
+            message: 'VIDEO resources require a verified HTTPS YouTube URL',
+          },
+        ],
+      });
+    }
     const row = await this.repository.update(id, data, context);
     return row ? toDetail(row) : null;
   }

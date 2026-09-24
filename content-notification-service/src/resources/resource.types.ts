@@ -41,6 +41,7 @@ export interface ResourceSummary {
 }
 
 export interface PublicResourceDetail extends ResourceSummary {
+  readonly contentVersion: string;
   readonly contentBody: string | null;
   readonly sourceTitle: string | null;
   readonly sourceUrl: string | null;

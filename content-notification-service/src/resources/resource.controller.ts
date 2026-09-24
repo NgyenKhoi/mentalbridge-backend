@@ -44,6 +44,7 @@ import type { AuthenticatedUser } from '../auth/jwt.strategy.js';
 import type { Request } from 'express';
 
 const UUID_RE = /^[\da-f]{8}-[\da-f]{4}-[\da-f]{4}-[\da-f]{4}-[\da-f]{12}$/i;
+const CONTENT_VERSION_RE = /^(0|[1-9]\d{0,18})$/;
 const VALID_CATEGORIES = new Set<ResourceCategory>([
   'BREATHING',
   'MEDITATION',
@@ -170,6 +171,7 @@ export class ResourceController {
   async getResource(
     @Param('id') id: string,
     @Query('locale') locale = 'vi-VN',
+    @Query('contentVersion') contentVersion?: string,
   ): Promise<PublicResourceDetail> {
     if (!UUID_RE.test(id)) {
       throw new BadRequestException('Invalid resource ID');
@@ -178,7 +180,14 @@ export class ResourceController {
     if (!parsedLocale.success) {
       throw new BadRequestException('locale must be a valid BCP 47 tag');
     }
-    const resource = await this.resourceService.getPublishedById(id, parsedLocale.data);
+    if (contentVersion !== undefined && !CONTENT_VERSION_RE.test(contentVersion)) {
+      throw new BadRequestException('contentVersion must be a non-negative decimal string');
+    }
+    const resource = await this.resourceService.getPublishedById(
+      id,
+      parsedLocale.data,
+      contentVersion,
+    );
     if (!resource) {
       throw new NotFoundException('Resource not found');
     }

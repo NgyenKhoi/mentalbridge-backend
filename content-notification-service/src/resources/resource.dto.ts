@@ -23,10 +23,14 @@ const urlSchema = z.url().refine(
   { message: 'externalUrl must be an HTTP(S) URL without credentials' },
 );
 
-const videoUrlSchema = urlSchema.refine(
+export const VerifiedVideoUrlSchema = urlSchema.refine(
   (value) => {
-    const hostname = new URL(value).hostname.toLowerCase();
-    return hostname === 'youtube.com' || hostname === 'www.youtube.com' || hostname === 'youtu.be';
+    const url = new URL(value);
+    const hostname = url.hostname.toLowerCase();
+    return (
+      url.protocol === 'https:' &&
+      (hostname === 'youtube.com' || hostname === 'www.youtube.com' || hostname === 'youtu.be')
+    );
   },
   { message: 'VIDEO resources require a verified YouTube URL' },
 );
@@ -63,7 +67,8 @@ export const CreateResourceDtoSchema = z
     path: ['contentBody'],
   })
   .refine(
-    (data) => data.category !== 'VIDEO' || videoUrlSchema.safeParse(data.externalUrl).success,
+    (data) =>
+      data.category !== 'VIDEO' || VerifiedVideoUrlSchema.safeParse(data.externalUrl).success,
     {
       message: 'VIDEO resources require a verified YouTube URL',
       path: ['externalUrl'],
