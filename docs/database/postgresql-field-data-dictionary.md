@@ -824,18 +824,19 @@ projections; an expired row is ignored rather than silently extending access.
 
 ### `consultation.service_credit_period`
 
-Implemented MB-377 allocation boundary. One row freezes the highest package allocation seen for an exact user, entitlement policy version, and effective period. `DEMO` and `PAID` provenance is immutable within that period.
+Implemented MB-377/MB-558 allocation boundary. One row freezes the highest package allocation seen for an exact user, entitlement policy version, credit policy version, and effective period. `DEMO` and `PAID` provenance is immutable within that period; an existing v1 period is never expanded to v2 quantities.
 
 | Field | Purpose |
 | --- | --- |
 | `id` | Server-generated period UUID. |
 | `account_id` | External Identity user UUID that owns every credit in the period. |
 | `plan_version` | Exact source entitlement policy version used by the idempotency key. |
+| `credit_policy_version` | Exact allocation policy frozen at period creation: historical `consultation-credit-v1` or current `consultation-credit-v2`. |
 | `package_code` | Highest allocated package in the period: `PLUS` or `PREMIUM`. |
 | `source` | Explicit `DEMO` or `PAID` provenance; never inferred by the client. |
 | `source_reference` | Stable entitlement lifecycle or controlled-demo reference. |
 | `period_start` / `period_end` | Inclusive/exclusive UTC billing or demo window. |
-| `allocated_count` | Frozen allocation after allowed upgrade: 1 for Plus or 3 for Premium. |
+| `allocated_count` | Frozen allocation after an allowed in-period upgrade: v1 stores Plus 1 or Premium 3; v2 stores Plus 4 or Premium 10. A renewal creates a separate period and never adds unused prior credits. |
 | `created_at` / `updated_at` | UTC creation and latest in-period upgrade instants. |
 | `version` | Optimistic version incremented by allocation upgrade. |
 
@@ -847,7 +848,7 @@ One indivisible consultation right. Current state is owner-controlled; balances 
 | --- | --- |
 | `id` | Stable credit UUID. |
 | `period_id` | Owning immutable-provenance service-credit period. |
-| `ordinal` | One-based position within the allocation; unique per period and capped at three. |
+| `ordinal` | One-based position within the policy-versioned allocation; unique per period and capped at ten. |
 | `state` | `AVAILABLE`, `HELD`, `CONSUMED`, or `FORFEITED`. A release returns the state to `AVAILABLE` while the ledger preserves the fact. |
 | `appointment_id` | Future local appointment UUID required for held and terminal appointment outcomes. |
 | `created_at` / `updated_at` | UTC creation and latest transition instants. |
@@ -869,7 +870,7 @@ Append-only evidence for provisioning and appointment-driven transitions.
 
 ### `consultation.appointment`
 
-Implemented MB-378 request aggregate. One row is the immutable scheduling snapshot created while the same local transaction locks the exact availability slot and holds one eligible credit. New requests support only in-app chat or gated in-app video.
+Implemented MB-378/MB-558 request aggregate. One row is the immutable scheduling snapshot created while the same local transaction locks the exact availability slot, holds one eligible credit, and enforces the package reservation cap. New requests support only in-app chat or gated in-app video.
 
 | Field | Purpose |
 | --- | --- |
@@ -885,6 +886,7 @@ Implemented MB-378 request aggregate. One row is the immutable scheduling snapsh
 | `requested_at` | Server UTC command instant used for lead-time and deadline calculation. |
 | `decision_deadline_at` | Earlier of 24 hours after request or two hours before start; the decision/expiry owner consumes this handoff. |
 | `idempotency_key` | Printable user-scoped request key; exact retry returns this row and conflicting reuse fails. |
+| `replaces_appointment_id` | Optional self-reference to the active appointment replaced by this request. The old immutable schedule is retained as `CANCELLED`; its held credit and reservation capacity move to the replacement atomically. One old appointment may be replaced only once. |
 | `created_at` / `updated_at` | UTC insertion and latest authoritative state-change instants. |
 | `version` | Optimistic state-transition counter for later decision commands. |
 

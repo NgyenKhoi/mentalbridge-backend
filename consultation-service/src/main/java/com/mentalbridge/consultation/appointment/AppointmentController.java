@@ -48,7 +48,8 @@ public class AppointmentController {
 	ResponseEntity<AppointmentResponse> request(@AuthenticationPrincipal Jwt jwt,
 			@RequestHeader("Idempotency-Key") @NotBlank @Size(min = 16, max = 128)
 			@Pattern(regexp = "^[!-~]+$") String idempotencyKey, @Valid @RequestBody RequestAppointment body) {
-		var result = appointments.request(RequestIdentity.subject(jwt), idempotencyKey, body.slotId(), body.modality());
+		var result = appointments.request(RequestIdentity.subject(jwt), idempotencyKey, body.slotId(), body.modality(),
+				body.replacesAppointmentId());
 		return ResponseEntity.created(URI.create("/api/v1/appointments/" + result.id())).body(result);
 	}
 
@@ -60,5 +61,6 @@ public class AppointmentController {
 		}
 	}
 
-	public record RequestAppointment(@NotNull UUID slotId, @NotNull AppointmentModality modality) { }
+	public record RequestAppointment(@NotNull UUID slotId, @NotNull AppointmentModality modality,
+			UUID replacesAppointmentId) { }
 }

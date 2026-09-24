@@ -9,3 +9,5 @@ databaseChangeLog:
       file: db/changelog/changes/004-service-plan-consultation-credits.sql
   - include:
       file: db/changelog/changes/005-online-appointment-request.sql
+  - include:
+      file: db/changelog/changes/006-consultation-credit-policy-v2.sql

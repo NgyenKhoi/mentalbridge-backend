@@ -14,7 +14,7 @@ delivery, or SupportPlan state.
 | Capability | Main behavior | Acceptance |
 | --- | --- | --- |
 | Current entitlement | Resolve the authenticated user's effective `FREE`/`PLUS`/`PREMIUM` package for owner-to-owner capability checks | No effective row returns `FREE`/`DEFAULT_FREE`; explicit `DEMO` and future `PAID` rows retain provenance and bounded windows; no client tier is trusted |
-| Service credits | Idempotently provision and display the current plan-period credit ledger | Implemented `consultation-credit-v1` remains `FREE=0`, `PLUS=1`, `PREMIUM=3`; approved `consultation-credit-v2` targets `0/4/10`, no rollover, and reservation caps `0/2/4` without rewriting v1 periods |
+| Service credits | Idempotently provision and display the current plan-period credit ledger | New `consultation-credit-v2` periods use `FREE=0`, `PLUS=4`, `PREMIUM=10`, no rollover, and separate reservation caps `0/2/4`; historical v1 periods remain immutable `0/1/3` |
 | Specialist approval | Submit public profile fields; admin approves, rejects, suspends, or restores with a stable reason | Only approved specialists are discoverable/bookable; suspension cancels future unstarted appointments with credit release; no credential document is collected |
 | Subscription/billing | Publish immutable VND plan versions; accept MoMo webhooks; purchase paid packages; upgrade `PLUS` to `PREMIUM`; expose credit/earning history | Exact minor units; replay safe; no downgrade/user-refund API; real money disabled until price/allocation/credentials gates pass |
 | Discovery/matching | Filter approved specialists and rank domain/support-area match, availability, language, timezone, rating, then experience | Deterministic pagination; criteria/policy version and explanation recorded; no disease/global-severity/clinical matcher or hidden health-data join |
@@ -42,9 +42,10 @@ delivery, or SupportPlan state.
   rows use `DEMO`, and no effective row is returned as `FREE`/`DEFAULT_FREE`.
 - MB-377 adds plan-period credit provisioning, owner transitions, ledger
   history, and balance reads under historical `consultation-credit-v1`
-  (`0/1/3`). Credit-v2 quantities, no-rollover period provisioning,
-  reservation-cap enforcement, purchase, renewal, cancellation, and appointment
-  commands remain later stories.
+  (`0/1/3`). MB-558 adds versioned `0/4/10` no-rollover provisioning,
+  `0/2/4` reservation-cap enforcement, and atomic replacement requests without
+  rewriting v1 periods. Purchase and general renewal/cancellation lifecycles
+  remain later stories.
 
 ## Ordered tasks
 

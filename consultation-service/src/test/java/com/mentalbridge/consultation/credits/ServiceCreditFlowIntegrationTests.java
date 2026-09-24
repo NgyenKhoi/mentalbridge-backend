@@ -43,7 +43,9 @@ class ServiceCreditFlowIntegrationTests extends ConsultationTestProperties {
 				.andExpect(jsonPath("$.source").value("DEFAULT_FREE"))
 				.andExpect(jsonPath("$.periodStart").isEmpty())
 				.andExpect(jsonPath("$.balance.available").value(0))
-				.andExpect(jsonPath("$.balance.total").value(0));
+				.andExpect(jsonPath("$.balance.total").value(0))
+				.andExpect(jsonPath("$.policyVersion").value("consultation-credit-v2"))
+				.andExpect(jsonPath("$.reservationCapacity.maximum").value(0));
 		mvc.perform(get("/api/v1/service-credits").with(role(userId, "ROLE_SPECIALIST")))
 				.andExpect(status().isForbidden());
 		mvc.perform(get("/api/v1/service-credits")).andExpect(status().isUnauthorized());
@@ -59,18 +61,19 @@ class ServiceCreditFlowIntegrationTests extends ConsultationTestProperties {
 		mvc.perform(get("/api/v1/service-credits").with(user(userId))).andExpect(status().isOk())
 				.andExpect(jsonPath("$.packageCode").value("PLUS"))
 				.andExpect(jsonPath("$.source").value("PAID"))
-				.andExpect(jsonPath("$.balance.available").value(1))
-				.andExpect(jsonPath("$.history.length()").value(1));
+				.andExpect(jsonPath("$.policyVersion").value("consultation-credit-v2"))
+				.andExpect(jsonPath("$.balance.available").value(4))
+				.andExpect(jsonPath("$.history.length()").value(4));
 		mvc.perform(get("/api/v1/service-credits").with(user(userId))).andExpect(status().isOk())
-				.andExpect(jsonPath("$.balance.total").value(1))
-				.andExpect(jsonPath("$.history.length()").value(1));
+				.andExpect(jsonPath("$.balance.total").value(4))
+				.andExpect(jsonPath("$.history.length()").value(4));
 
 		jdbc.sql("update current_service_entitlement set package_code='PREMIUM', version=version+1 where account_id=:id")
 				.param("id", userId).update();
 		mvc.perform(get("/api/v1/service-credits").with(user(userId))).andExpect(status().isOk())
 				.andExpect(jsonPath("$.packageCode").value("PREMIUM"))
-				.andExpect(jsonPath("$.balance.available").value(3))
-				.andExpect(jsonPath("$.history.length()").value(3));
+				.andExpect(jsonPath("$.balance.available").value(10))
+				.andExpect(jsonPath("$.history.length()").value(10));
 	}
 
 	@Test
@@ -80,7 +83,7 @@ class ServiceCreditFlowIntegrationTests extends ConsultationTestProperties {
 				OffsetDateTime.now().minusMinutes(1), OffsetDateTime.now().plusDays(7));
 		var initial = credits.current(userId);
 		assertThat(initial.source().name()).isEqualTo("DEMO");
-		assertThat(initial.balance().available()).isEqualTo(3);
+		assertThat(initial.balance().available()).isEqualTo(10);
 		var creditIds = jdbc.sql("""
 				select c.id from service_credit c join service_credit_period p on p.id=c.period_id
 				where p.account_id=:accountId order by c.ordinal
@@ -96,7 +99,7 @@ class ServiceCreditFlowIntegrationTests extends ConsultationTestProperties {
 		credits.transition(userId, creditIds.get(1), secondAppointment, CreditEventType.FORFEITED, "forfeit-command-0001");
 
 		var result = credits.current(userId);
-		assertThat(result.balance().available()).isEqualTo(1);
+		assertThat(result.balance().available()).isEqualTo(8);
 		assertThat(result.balance().consumed()).isEqualTo(1);
 		assertThat(result.balance().forfeited()).isEqualTo(1);
 		assertThat(result.balance().releasedTransitions()).isEqualTo(1);
@@ -113,11 +116,11 @@ class ServiceCreditFlowIntegrationTests extends ConsultationTestProperties {
 		insertEntitlement(userId, "PLUS", "PAID", "paid-period-a", null, periodAStart, now.plusHours(1));
 
 		var periodA = credits.current(userId);
-		assertThat(periodA.balance().available()).isEqualTo(1);
+		assertThat(periodA.balance().available()).isEqualTo(4);
 		var periodACreditId = jdbc.sql("""
 				select c.id from service_credit c
 				join service_credit_period p on p.id=c.period_id
-				where p.account_id=:accountId and p.source_reference='paid-period-a'
+				where p.account_id=:accountId and p.source_reference='paid-period-a' and c.ordinal=1
 				""").param("accountId", userId).query(UUID.class).single();
 
 		var periodAEnd = now.minusMinutes(30);
@@ -137,13 +140,13 @@ class ServiceCreditFlowIntegrationTests extends ConsultationTestProperties {
 		var periodB = credits.current(userId);
 		assertThat(periodB.packageCode().name()).isEqualTo("PREMIUM");
 		assertThat(periodB.periodStart()).isEqualTo(periodBStart.toInstant());
-		assertThat(periodB.balance().available()).isEqualTo(3);
-		assertThat(periodB.balance().total()).isEqualTo(3);
+		assertThat(periodB.balance().available()).isEqualTo(10);
+		assertThat(periodB.balance().total()).isEqualTo(10);
 		assertThat(jdbc.sql("""
 				select count(*) from service_credit c
 				join service_credit_period p on p.id=c.period_id
 				where p.account_id=:accountId
-				""").param("accountId", userId).query(Long.class).single()).isEqualTo(4L);
+				""").param("accountId", userId).query(Long.class).single()).isEqualTo(14L);
 
 		assertThatThrownBy(() -> credits.transition(userId, periodACreditId, UUID.randomUUID(),
 				CreditEventType.HELD, "expired-period-hold-0001"))
@@ -151,6 +154,41 @@ class ServiceCreditFlowIntegrationTests extends ConsultationTestProperties {
 						exception -> assertThat(exception.code()).isEqualTo("SERVICE_CREDIT_PERIOD_EXPIRED"));
 		assertThat(jdbc.sql("select state from service_credit where id=:id").param("id", periodACreditId)
 				.query(String.class).single()).isEqualTo("AVAILABLE");
+	}
+
+	@Test
+	void preservesHistoricalV1PeriodAllocationAndLedgerProvenance() {
+		var userId = UUID.randomUUID();
+		var from = OffsetDateTime.now().minusHours(1).withNano(0);
+		var until = from.plusDays(30);
+		insertEntitlement(userId, "PLUS", "PAID", "historical-period", null, from, until);
+		var periodId = UUID.randomUUID();
+		var creditId = UUID.randomUUID();
+		jdbc.sql("""
+				insert into service_credit_period (
+				 id, account_id, plan_version, credit_policy_version, package_code, source, source_reference,
+				 period_start, period_end, allocated_count, created_at, updated_at
+				) values (:periodId, :accountId, 'service-entitlement-v1', 'consultation-credit-v1',
+				 'PLUS', 'PAID', 'historical-period', :from, :until, 1, now(), now())
+				""").param("periodId", periodId).param("accountId", userId).param("from", from).param("until", until).update();
+		jdbc.sql("""
+				insert into service_credit (id, period_id, ordinal, state, created_at, updated_at)
+				values (:creditId, :periodId, 1, 'AVAILABLE', now(), now())
+				""").param("creditId", creditId).param("periodId", periodId).update();
+		jdbc.sql("""
+				insert into service_credit_ledger (
+				 id, credit_id, account_id, event_type, idempotency_key, occurred_at
+				) values (:id, :creditId, :accountId, 'PROVISIONED', :key, now())
+				""").param("id", UUID.randomUUID()).param("creditId", creditId).param("accountId", userId)
+				.param("key", "historical-provision:" + creditId).update();
+
+		var result = credits.current(userId);
+
+		assertThat(result.policyVersion()).isEqualTo("consultation-credit-v1");
+		assertThat(result.balance().total()).isEqualTo(1);
+		assertThat(result.history()).singleElement()
+				.extracting(ServiceCreditResponse.LedgerEvent::policyVersion)
+				.isEqualTo("consultation-credit-v1");
 	}
 
 	private void insertEntitlement(UUID accountId, String packageCode, String source, String sourceReference,

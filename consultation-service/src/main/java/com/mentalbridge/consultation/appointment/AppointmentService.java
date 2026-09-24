@@ -17,7 +17,6 @@ import org.springframework.transaction.annotation.Transactional;
 import com.mentalbridge.consultation.availability.AvailabilityProperties;
 import com.mentalbridge.consultation.credits.CreditEventType;
 import com.mentalbridge.consultation.credits.ServiceCreditService;
-import com.mentalbridge.consultation.entitlement.CurrentServiceEntitlementService;
 import com.mentalbridge.consultation.entitlement.ServicePackage;
 import com.mentalbridge.consultation.shared.ApiException;
 
@@ -30,15 +29,13 @@ public class AppointmentService {
 	private static final int LIST_LIMIT = 100;
 
 	private final JdbcClient jdbc;
-	private final CurrentServiceEntitlementService entitlements;
 	private final ServiceCreditService credits;
 	private final AvailabilityProperties availability;
 	private final Clock clock;
 
-	public AppointmentService(JdbcClient jdbc, CurrentServiceEntitlementService entitlements,
-			ServiceCreditService credits, AvailabilityProperties availability, Clock clock) {
+	public AppointmentService(JdbcClient jdbc, ServiceCreditService credits,
+			AvailabilityProperties availability, Clock clock) {
 		this.jdbc = jdbc;
-		this.entitlements = entitlements;
 		this.credits = credits;
 		this.availability = availability;
 		this.clock = clock;
@@ -46,21 +43,26 @@ public class AppointmentService {
 
 	@Transactional
 	public AppointmentResponse request(UUID userId, String idempotencyKey, UUID slotId,
-			AppointmentModality requestedModality) {
+			AppointmentModality requestedModality, UUID replacesAppointmentId) {
 		var replay = findByCommand(userId, idempotencyKey);
 		if (replay != null) {
-			if (!replay.slotId().equals(slotId) || replay.modality() != requestedModality) {
+			if (!replay.slotId().equals(slotId) || replay.modality() != requestedModality
+					|| !java.util.Objects.equals(replay.replacesAppointmentId(), replacesAppointmentId)) {
 				throw conflict("IDEMPOTENCY_KEY_REUSED", "Idempotency-Key was already used for another appointment request");
 			}
 			return replay;
 		}
 		var now = clock.instant();
-		var entitlement = entitlements.current(userId);
-		if (entitlement.packageCode() == ServicePackage.FREE) {
+		var creditAccount = credits.current(userId);
+		if (creditAccount.packageCode() == ServicePackage.FREE) {
 			throw new ApiException(HttpStatus.FORBIDDEN, "PAID_PLAN_REQUIRED",
 					"A PLUS or PREMIUM package is required to request an appointment");
 		}
-		credits.current(userId);
+		var replacement = replacesAppointmentId == null ? null : lockReplacement(userId, replacesAppointmentId);
+		if (replacement == null && creditAccount.reservationCapacity().remaining() == 0) {
+			throw conflict("APPOINTMENT_RESERVATION_LIMIT_REACHED",
+					"The package active appointment reservation limit has been reached");
+		}
 		var slot = lockSlot(slotId);
 		if (!slot.status().equals("ACTIVE")) throw conflict("APPOINTMENT_SLOT_STALE", "The slot is no longer selectable");
 		if (slot.modality() != requestedModality) throw conflict("APPOINTMENT_MODALITY_MISMATCH", "The requested modality does not match the slot");
@@ -71,25 +73,38 @@ public class AppointmentService {
 			throw conflict("APPOINTMENT_LEAD_TIME_INVALID", "Appointments require at least four hours lead time");
 		}
 		if (activeAppointmentExists(slotId)) throw conflict("APPOINTMENT_SLOT_UNAVAILABLE", "The slot is already held");
-		var credit = lockCredit(userId, slot.startAt(), now);
+		var credit = replacement == null ? lockCredit(userId, slot.startAt(), now) : replacement.creditId();
+		if (replacement != null && (replacement.periodStart().isAfter(now)
+				|| !replacement.periodEnd().isAfter(slot.startAt()))) {
+			throw conflict("APPOINTMENT_CREDIT_UNAVAILABLE", "The replacement credit does not cover this appointment");
+		}
 		var appointmentId = UUID.randomUUID();
 		var deadline = earlier(now.plus(DECISION_WINDOW), slot.startAt().minus(DECISION_BUFFER));
 		try {
+			if (replacement != null) {
+				jdbc.sql("""
+						update appointment set status='CANCELLED', updated_at=:now, version=version+1
+						where id=:id and status in ('REQUESTED', 'CONFIRMED', 'IN_PROGRESS')
+						""").param("now", database(now)).param("id", replacement.appointmentId()).update();
+				credits.transition(userId, credit, replacement.appointmentId(), CreditEventType.RELEASED,
+						"reschedule-release:" + appointmentId);
+			}
 			jdbc.sql("""
 					insert into appointment (
 					 id, user_account_id, specialist_account_id, availability_slot_id, service_credit_id,
 					 status, modality, scheduled_start_at, scheduled_end_at, display_timezone,
-					 requested_at, decision_deadline_at, idempotency_key, created_at, updated_at
+					 requested_at, decision_deadline_at, idempotency_key, replaces_appointment_id, created_at, updated_at
 					) values (
 					 :id, :userId, :specialistId, :slotId, :creditId,
 					 'REQUESTED', :modality, :startAt, :endAt, :timezone,
-					 :now, :deadline, :key, :now, :now
+					 :now, :deadline, :key, :replacesAppointmentId, :now, :now
 					)
 					""").param("id", appointmentId).param("userId", userId)
 					.param("specialistId", slot.specialistId()).param("slotId", slotId).param("creditId", credit)
 					.param("modality", requestedModality.name()).param("startAt", database(slot.startAt()))
 					.param("endAt", database(slot.endAt())).param("timezone", slot.timezone())
-					.param("now", database(now)).param("deadline", database(deadline)).param("key", idempotencyKey).update();
+					.param("now", database(now)).param("deadline", database(deadline)).param("key", idempotencyKey)
+					.param("replacesAppointmentId", replacesAppointmentId).update();
 			credits.transition(userId, credit, appointmentId, CreditEventType.HELD, "appointment-hold:" + appointmentId);
 		}
 		catch (DataIntegrityViolationException exception) {
@@ -146,6 +161,26 @@ public class AppointmentService {
 				.orElseThrow(() -> new ApiException(HttpStatus.NOT_FOUND, "APPOINTMENT_SLOT_NOT_FOUND", "The slot was not found"));
 	}
 
+	private Replacement lockReplacement(UUID userId, UUID appointmentId) {
+		var replacement = jdbc.sql("""
+				select a.id, a.service_credit_id, a.status, p.period_start, p.period_end
+				from appointment a
+				join service_credit c on c.id=a.service_credit_id
+				join service_credit_period p on p.id=c.period_id
+				where a.id=:appointmentId and a.user_account_id=:userId
+				for update of a
+				""").param("appointmentId", appointmentId).param("userId", userId)
+				.query((row, ignored) -> new Replacement(row.getObject("id", UUID.class),
+						row.getObject("service_credit_id", UUID.class), row.getString("status"),
+						row.getTimestamp("period_start").toInstant(), row.getTimestamp("period_end").toInstant()))
+				.optional().orElseThrow(() -> new ApiException(HttpStatus.NOT_FOUND,
+						"APPOINTMENT_REPLACEMENT_NOT_FOUND", "The appointment to replace was not found"));
+		if (!List.of("REQUESTED", "CONFIRMED", "IN_PROGRESS").contains(replacement.status())) {
+			throw conflict("APPOINTMENT_REPLACEMENT_NOT_ACTIVE", "Only an active reservation can be replaced");
+		}
+		return replacement;
+	}
+
 	private UUID lockCredit(UUID userId, Instant appointmentStart, Instant now) {
 		return jdbc.sql("""
 				select c.id from service_credit c join service_credit_period p on p.id=c.period_id
@@ -182,7 +217,7 @@ public class AppointmentService {
 				AppointmentModality.valueOf(row.getString("modality")), row.getTimestamp("scheduled_start_at").toInstant(),
 				row.getTimestamp("scheduled_end_at").toInstant(), row.getString("display_timezone"),
 				row.getTimestamp("requested_at").toInstant(), row.getTimestamp("decision_deadline_at").toInstant(),
-				row.getObject("service_credit_id", UUID.class));
+				row.getObject("service_credit_id", UUID.class), row.getObject("replaces_appointment_id", UUID.class));
 	}
 
 	private Instant earlier(Instant first, Instant second) { return first.isBefore(second) ? first : second; }
@@ -190,4 +225,6 @@ public class AppointmentService {
 	private ApiException conflict(String code, String message) { return new ApiException(HttpStatus.CONFLICT, code, message); }
 	private record Slot(UUID specialistId, Instant startAt, Instant endAt, String timezone,
 			AppointmentModality modality, String status) { }
+	private record Replacement(UUID appointmentId, UUID creditId, String status, Instant periodStart,
+			Instant periodEnd) { }
 }

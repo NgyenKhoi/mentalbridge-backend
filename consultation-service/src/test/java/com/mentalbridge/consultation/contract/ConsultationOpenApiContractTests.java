@@ -10,6 +10,7 @@ import org.junit.jupiter.api.Test;
 
 import io.swagger.v3.parser.OpenAPIV3Parser;
 import io.swagger.v3.parser.core.models.ParseOptions;
+import io.swagger.v3.oas.models.media.Schema;
 
 class ConsultationOpenApiContractTests {
 
@@ -56,11 +57,18 @@ class ConsultationOpenApiContractTests {
 		var api = new OpenAPIV3Parser().read(contract);
 		var account = api.getComponents().getSchemas().get("ServiceCreditAccount");
 		var balance = api.getComponents().getSchemas().get("ServiceCreditBalance");
+		var capacity = api.getComponents().getSchemas().get("AppointmentReservationCapacity");
+		var policyVersion = api.getComponents().getSchemas().get("ConsultationCreditPolicyVersion");
+		var ledgerEvent = api.getComponents().getSchemas().get("ServiceCreditLedgerEvent");
 
 		assertThat(account.getProperties()).containsKeys("packageCode", "source", "periodStart", "periodEnd",
-				"balance", "history");
+				"policyVersion", "balance", "reservationCapacity", "history");
 		assertThat(balance.getProperties()).containsOnlyKeys("available", "held", "consumed", "forfeited", "total",
 				"releasedTransitions");
+		assertThat(((Schema<?>) balance.getProperties().get("total")).getMaximum()).isEqualByComparingTo("10");
+		assertThat(capacity.getProperties()).containsOnlyKeys("active", "maximum", "remaining");
+		assertThat(policyVersion.getEnum()).containsExactly("consultation-credit-v1", "consultation-credit-v2");
+		assertThat(ledgerEvent.getProperties()).containsKey("policyVersion");
 	}
 
 	@Test
@@ -82,8 +90,11 @@ class ConsultationOpenApiContractTests {
 		var request = api.getComponents().getSchemas().get("RequestAppointment");
 		var appointment = api.getComponents().getSchemas().get("Appointment");
 
-		assertThat(request.getProperties()).containsOnlyKeys("slotId", "modality");
-		assertThat(appointment.getProperties()).containsKeys("status", "decisionDeadlineAt", "heldCreditId");
+		assertThat(request.getProperties()).containsOnlyKeys("slotId", "modality", "replacesAppointmentId");
+		assertThat(request.getRequired()).containsExactlyInAnyOrder("slotId", "modality");
+		assertThat(appointment.getProperties()).containsKeys("status", "decisionDeadlineAt", "heldCreditId",
+				"replacesAppointmentId");
+		assertThat(appointment.getRequired()).contains("replacesAppointmentId");
 		assertThat(appointment.getProperties()).doesNotContainKeys("practiceLocationId", "phone", "meetingLink", "url");
 	}
 

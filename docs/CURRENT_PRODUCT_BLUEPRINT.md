@@ -207,7 +207,7 @@ As of the ADR 0022 amendment:
 
 - Support Guide persistence/history and SupportPlan draft/activation/lifecycle/scheduling/engagement foundations exist on `dev`;
 - MB-559 completes canonical reassessment composition with a versioned explicit self-report while preserving MB-386 v1 history;
-- `consultation-credit-v1` ledger foundation exists with historical `0/1/3`; `consultation-credit-v2` `0/4/10`, no-rollover, and `0/2/4` reservation caps require MB-558 delivery;
+- `consultation-credit-v1` periods remain historical `0/1/3`; MB-558 implements new `consultation-credit-v2` `0/4/10` periods, no rollover, separate `0/2/4` reservation caps, and atomic replacement requests;
 - specialist discovery and the full appointment/session/payment/payout journeys remain gated by their Jira delivery chain.
 
 ## 11. Historical documents
