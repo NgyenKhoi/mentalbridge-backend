@@ -29,7 +29,7 @@ class ConsultationLiquibaseMigrationTests extends ConsultationTestProperties {
 		assertThat(tables).contains("specialist_profile", "specialist_profile_support_area",
 				"specialist_profile_language", "specialist_profile_status_history",
 				"current_service_entitlement", "availability_slot", "service_credit_period", "service_credit",
-				"service_credit_ledger");
+				"service_credit_ledger", "appointment", "appointment_status_history");
 	}
 
 	@Test
@@ -100,6 +100,65 @@ class ConsultationLiquibaseMigrationTests extends ConsultationTestProperties {
 				where account_id=:id
 				""").param("id", specialistId).param("now", OffsetDateTime.now()).update())
 				.isInstanceOf(DataIntegrityViolationException.class);
+	}
+
+	@Test
+	void databaseRejectsUnreviewedSpecialistReasonsAndInconsistentAppointmentCancellation() {
+		var specialistId = insertPendingProfile();
+		assertThatThrownBy(() -> jdbc.sql("""
+				update specialist_profile set decision_reason_code='FREE_TEXT_REASON'
+				where account_id=:id
+				""").param("id", specialistId).update()).isInstanceOf(DataIntegrityViolationException.class);
+		assertThatThrownBy(() -> jdbc.sql("""
+				update specialist_profile set approval_status='REJECTED', submitted_at=:now,
+				reviewed_at=:now, reviewed_by=:reviewer, decision_reason_code='POLICY_VIOLATION'
+				where account_id=:id
+				""").param("id", specialistId).param("reviewer", UUID.randomUUID())
+				.param("now", OffsetDateTime.now()).update()).isInstanceOf(DataIntegrityViolationException.class);
+
+		var slotId = UUID.randomUUID();
+		var start = OffsetDateTime.now().plusDays(30).withNano(0);
+		jdbc.sql("""
+				insert into availability_slot (
+				    id, specialist_account_id, start_at, end_at, timezone, modality,
+				    idempotency_key, created_at, updated_at
+				) values (:id, :specialist, :start, :end, 'Asia/Ho_Chi_Minh', 'IN_APP_CHAT',
+				    'migration-appointment-slot', :now, :now)
+				""").param("id", slotId).param("specialist", specialistId).param("start", start)
+				.param("end", start.plusHours(1)).param("now", OffsetDateTime.now()).update();
+		var creditId = insertCredit();
+		assertThatThrownBy(() -> jdbc.sql("""
+				insert into appointment (
+				    id, slot_id, credit_id, user_id, specialist_id, status,
+				    scheduled_start_at, scheduled_end_at, scheduled_timezone, channel,
+				    user_timezone, response_deadline, idempotency_key, cancellation_reason,
+				    requested_at, created_at, updated_at
+				) values (:id, :slotId, :creditId, :userId, :specialistId, 'CANCELLED',
+				    :start, :end, 'Asia/Ho_Chi_Minh', 'IN_APP_CHAT', 'Asia/Ho_Chi_Minh',
+				    :deadline, 'migration-appointment-request', null, :requestedAt, :now, :now)
+				""").param("id", UUID.randomUUID()).param("slotId", slotId).param("creditId", creditId)
+				.param("userId", UUID.randomUUID()).param("specialistId", specialistId).param("start", start)
+				.param("end", start.plusHours(1)).param("deadline", start.minusHours(2))
+				.param("requestedAt", OffsetDateTime.now()).param("now", OffsetDateTime.now()).update())
+				.isInstanceOf(DataIntegrityViolationException.class);
+	}
+
+	private UUID insertCredit() {
+		var periodId = UUID.randomUUID();
+		jdbc.sql("""
+				insert into service_credit_period (
+				    id, account_id, plan_version, package_code, source, source_reference,
+				    period_start, period_end, allocated_count, created_at, updated_at
+				) values (:id, :accountId, 'migration-policy', 'PLUS', 'DEMO',
+				    'migration-specialist-lifecycle', :start, :end, 1, :now, :now)
+				""").param("id", periodId).param("accountId", UUID.randomUUID())
+				.param("start", OffsetDateTime.now().minusDays(1)).param("end", OffsetDateTime.now().plusDays(60))
+				.param("now", OffsetDateTime.now()).update();
+		return jdbc.sql("""
+				insert into service_credit (id, period_id, ordinal, state, created_at, updated_at)
+				values (:id, :periodId, 1, 'AVAILABLE', :now, :now) returning id
+				""").param("id", UUID.randomUUID()).param("periodId", periodId)
+				.param("now", OffsetDateTime.now()).query(UUID.class).single();
 	}
 
 	private UUID insertPendingProfile() {

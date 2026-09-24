@@ -10,9 +10,12 @@ PostgreSQL data. It does not collect specialist verification documents.
 Story 6101 implements the first profile vertical slice: a specialist can save the six
 approved public fields, submit the profile, and an administrator can inspect
 and approve it. The approval history is audited and no credential, license, or
-verification-document claim is accepted. Discovery, rejection/suspension,
-appointments, billing, and cross-service brief/chat integrations remain later
-stories. MB-362 adds approved-specialist publication, owner listing, and
+verification-document claim is accepted. MB-360 completes rejection,
+same-profile resubmission, suspension, and restoration with closed reasons and
+audited transitions. Suspension atomically withdraws future availability,
+cancels future not-started appointments, and releases their exact held credits;
+restoration never revives those records. Discovery, public booking, billing,
+and cross-service brief/chat integrations remain later stories. MB-362 adds approved-specialist publication, owner listing, and
 tombstone withdrawal of exact online slots; it does not create appointments.
 MB-377 adds Consultation-owned plan-period credit rows, an append-only
 transition ledger, and an authenticated owner balance. Provisioning is
@@ -25,7 +28,7 @@ decision.
 
 - Inbound REST: implemented specialist/admin APIs are defined in `../contracts/openapi/consultation-service-v1.yaml`.
 - Outbound REST: calls Care for current consent and authorization decisions through a consumer-owned OpenFeign adapter and Resilience4j; uncertainty fails closed.
-- Async: Story 6101 has no asynchronous workflow, so it has no Kafka runtime,
+- Async: the implemented profile lifecycle has no independent asynchronous consumer, so it has no Kafka runtime,
   topic, producer, consumer, outbox, or Kafka test container. A later feature
   may add these only when its accepted flow requires durable asynchronous work
   or an independent consumer, under ADR 0016.
@@ -62,13 +65,17 @@ The committed Docker image contains the Maven-built service only. Database
 provisioning remains an operator prerequisite; Compose never creates, resets,
 or owns the shared dev/staging Consultation database.
 
-## Implemented Story 6101 endpoints
+## Implemented specialist lifecycle endpoints
 
 - `GET|PUT /api/v1/specialist-profile`
 - `POST /api/v1/specialist-profile/submit`
-- `GET /api/v1/admin/specialist-profiles`
+- `POST /api/v1/specialist-profile/resubmit`
+- `GET /api/v1/admin/specialist-profiles?status=PENDING|APPROVED|REJECTED|SUSPENDED`
 - `GET /api/v1/admin/specialist-profiles/{specialistAccountId}`
 - `POST /api/v1/admin/specialist-profiles/{specialistAccountId}/approve`
+- `POST /api/v1/admin/specialist-profiles/{specialistAccountId}/reject`
+- `POST /api/v1/admin/specialist-profiles/{specialistAccountId}/suspend`
+- `POST /api/v1/admin/specialist-profiles/{specialistAccountId}/restore`
 
 ## Implemented MB-362 endpoints
 
@@ -88,9 +95,11 @@ this flow.
 
 Updates and decisions use the returned `ETag` in `If-Match`. Editing a
 submitted pending profile withdraws it from the review queue until the
-specialist explicitly submits it again. Approved profiles are immutable in
-this slice; rejection, resubmission, suspension, and restoration belong to
-Story 6102.
+specialist explicitly submits it again. Rejected profiles retain their reason
+while being edited and require explicit resubmission. Approved and suspended
+profiles are immutable. Rejection and suspension accept only their documented
+stable reason sets. A suspension response reports the exact number of future
+slots withdrawn, appointments cancelled, and credits released.
 
 ## Run and test
 

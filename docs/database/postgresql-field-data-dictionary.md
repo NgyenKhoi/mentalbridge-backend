@@ -702,7 +702,7 @@ Database checks require a submitted timestamp once review starts, reviewer ident
 | `submitted_at` | UTC instant the specialist submitted a complete profile for review; null before submission. |
 | `reviewed_at` | UTC instant the latest administrator decision became effective; null until reviewed. |
 | `reviewed_by` | External Identity administrator UUID responsible for the latest decision; null until reviewed. |
-| `decision_reason_code` | Optional stable, non-sensitive reason for rejection or suspension; unrestricted document/evidence text is not stored. |
+| `decision_reason_code` | Optional stable, non-sensitive rejection or suspension enum. MB-360 allows only the reviewed incomplete/content/scope rejection reasons and policy/quality/account-review suspension reasons; unrestricted evidence text is not stored. |
 | `created_at` | Immutable UTC profile creation instant. |
 | `updated_at` | UTC instant of the latest persisted profile or approval change. |
 | `version` | Optimistic-lock counter preventing lost specialist-profile updates. |
@@ -737,7 +737,7 @@ decisions. It stores no uploaded evidence or unrestricted notes.
 | `id` | Immutable UUID audit-entry identifier. |
 | `specialist_account_id` | Specialist profile whose state was submitted or changed. |
 | `approval_status` | State established by this explicit action. |
-| `reason_code` | Stable reason for rejection/suspension when those later transitions are implemented. |
+| `reason_code` | Stable reviewed reason for an applied rejection or suspension; null for submit, resubmit, approval, and restoration. |
 | `actor_account_id` | Identity UUID of the specialist or administrator performing the action. |
 | `actor_role` | `SPECIALIST` or `ADMIN` operational actor class. |
 | `occurred_at` | UTC instant when the action became effective. |
@@ -1091,6 +1091,11 @@ their immutable location snapshot. New v2 appointments are chat/video only and
 require channel-end, provider/server evidence, summary/next-step reuse approval,
 and dispute fields before runtime is claimed.
 
+MB-360 introduces the owner table and status history narrowly so suspension can
+atomically cancel already persisted future `REQUESTED`/`CONFIRMED` appointments
+and release their exact held credits. MB-6402 still owns the public booking
+command, slot/credit hold creation, and request actor flow.
+
 Composite foreign keys require the appointment specialist to own the slot and the appointment user to own the credit; the application cannot create a locally inconsistent pairing.
 
 | Field | Purpose |
@@ -1106,6 +1111,7 @@ Composite foreign keys require the appointment specialist to own the slot and th
 | `scheduled_timezone` | Specialist slot's IANA timezone snapshot used to reproduce the originally booked schedule. |
 | `channel` | Booked mode snapshot. Historical v1 includes `IN_PERSON`; new v2 records allow `IN_APP_CHAT` or contract-enabled `IN_APP_VIDEO` only. |
 | `user_timezone` | IANA timezone captured at booking so the schedule remains understandable after device timezone changes. |
+| `response_deadline` | Exclusive UTC deadline for the specialist response; it is after request time and before the scheduled start. |
 | `idempotency_key` | Caller retry key unique per user so uncertain REST retries return the original booking outcome. |
 | `cancellation_reason` | Reviewed explanation recorded when a permitted cancellation occurs. |
 | `requested_at` | UTC instant the booking request was accepted. |

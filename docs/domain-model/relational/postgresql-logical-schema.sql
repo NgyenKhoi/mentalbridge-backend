@@ -651,7 +651,7 @@ CREATE TABLE care.support_plan_activity_occurrence (
 
 /* ========================================================================== */
 /* ACTIVE — consultation-service / mentalbridge_consultation                  */
-/* Evidence: Consultation Liquibase changesets 001-003.                       */
+/* Evidence: Consultation Liquibase changesets 001-005.                       */
 /* ========================================================================== */
 
 CREATE TABLE consultation.specialist_profile (
@@ -758,7 +758,45 @@ CREATE TABLE consultation.availability_slot (
     created_at timestamptz NOT NULL,
     updated_at timestamptz NOT NULL,
     version bigint NOT NULL,
-    UNIQUE (specialist_account_id, idempotency_key)
+    UNIQUE (specialist_account_id, idempotency_key),
+    UNIQUE (id, specialist_account_id)
+);
+
+CREATE TABLE consultation.appointment (
+    id uuid PRIMARY KEY,
+    slot_id uuid NOT NULL,
+    credit_id uuid NOT NULL REFERENCES consultation.service_credit(id),
+    user_id uuid NOT NULL, -- external -> identity.account.id
+    specialist_id uuid NOT NULL REFERENCES consultation.specialist_profile(account_id),
+    status varchar(24) NOT NULL,
+    scheduled_start_at timestamptz NOT NULL,
+    scheduled_end_at timestamptz NOT NULL,
+    scheduled_timezone varchar(64) NOT NULL,
+    channel varchar(24) NOT NULL,
+    user_timezone varchar(64) NOT NULL,
+    response_deadline timestamptz NOT NULL,
+    idempotency_key varchar(128) NOT NULL,
+    cancellation_reason varchar(64),
+    requested_at timestamptz NOT NULL,
+    confirmed_at timestamptz,
+    completed_at timestamptz,
+    cancelled_at timestamptz,
+    created_at timestamptz NOT NULL,
+    updated_at timestamptz NOT NULL,
+    version bigint NOT NULL,
+    FOREIGN KEY (slot_id, specialist_id)
+        REFERENCES consultation.availability_slot(id, specialist_account_id),
+    UNIQUE (user_id, idempotency_key)
+);
+
+CREATE TABLE consultation.appointment_status_history (
+    id uuid PRIMARY KEY,
+    appointment_id uuid NOT NULL REFERENCES consultation.appointment(id),
+    from_status varchar(24),
+    to_status varchar(24) NOT NULL,
+    changed_by uuid, -- external -> identity.account.id
+    reason varchar(64),
+    changed_at timestamptz NOT NULL
 );
 
 /* ========================================================================== */

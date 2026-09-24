@@ -19,12 +19,16 @@ class ConsultationOpenApiContractTests {
 			"GET /api/v1/specialist-profile",
 			"PUT /api/v1/specialist-profile",
 			"POST /api/v1/specialist-profile/submit",
+			"POST /api/v1/specialist-profile/resubmit",
 			"GET /api/v1/availability-slots",
 			"POST /api/v1/availability-slots",
 			"DELETE /api/v1/availability-slots/{slotId}",
 			"GET /api/v1/admin/specialist-profiles",
 			"GET /api/v1/admin/specialist-profiles/{specialistAccountId}",
-			"POST /api/v1/admin/specialist-profiles/{specialistAccountId}/approve");
+			"POST /api/v1/admin/specialist-profiles/{specialistAccountId}/approve",
+			"POST /api/v1/admin/specialist-profiles/{specialistAccountId}/reject",
+			"POST /api/v1/admin/specialist-profiles/{specialistAccountId}/suspend",
+			"POST /api/v1/admin/specialist-profiles/{specialistAccountId}/restore");
 
 	@Test
 	void contractIsValidAndMatchesTheImplementedSurface() {
@@ -83,5 +87,21 @@ class ConsultationOpenApiContractTests {
 				"yearsOfExperience", "timezone");
 		assertThat(response.getProperties()).doesNotContainKeys("credentials", "license", "certificates", "documents",
 				"diagnosis", "price", "video");
+	}
+
+	@Test
+	void lifecycleContractUsesClosedReasonsAndBoundedSuspensionEffects() {
+		var contract = Path.of("..", "contracts", "openapi", "consultation-service-v1.yaml").toString();
+		var api = new OpenAPIV3Parser().read(contract);
+		var rejection = api.getComponents().getSchemas().get("SpecialistRejectionReasonCode");
+		var suspension = api.getComponents().getSchemas().get("SpecialistSuspensionReasonCode");
+		var effects = api.getComponents().getSchemas().get("SpecialistSuspensionEffects");
+
+		assertThat(rejection.getEnum()).containsExactly("PROFILE_INFORMATION_INCOMPLETE",
+				"PROFILE_CONTENT_NOT_APPROVED", "OUTSIDE_SUPPORTED_SCOPE");
+		assertThat(suspension.getEnum()).containsExactly("POLICY_VIOLATION", "QUALITY_REVIEW_REQUIRED",
+				"ACCOUNT_REVIEW_REQUIRED");
+		assertThat(effects.getProperties()).containsOnlyKeys("withdrawnAvailabilitySlots",
+				"cancelledAppointments", "releasedCredits");
 	}
 }

@@ -5,7 +5,7 @@
 | Field | Value |
 | --- | --- |
 | Scope decision | `MB-SCOPE-V2-001` |
-| Status | `PRODUCT POLICY APPROVED; MB-362 AVAILABILITY RUNTIME IMPLEMENTED; VIDEO SESSION RUNTIME DISABLED` |
+| Status | `PRODUCT POLICY APPROVED; MB-360 LIFECYCLE AND MB-362 AVAILABILITY RUNTIME IMPLEMENTED; VIDEO SESSION RUNTIME DISABLED` |
 | Effective decision date | 2026-09-15 |
 | Appointment, specialist, evidence, and billing owner | Consultation |
 | Brief and SupportPlan-change decision owner | Care |
@@ -16,6 +16,37 @@
 The v1 specialist approval, deterministic non-clinical discovery, atomic
 booking/credit hold, cancellation/no-show outcomes, consent boundaries, and
 idempotency rules remain in force unless amended here.
+
+## Specialist exception lifecycle
+
+MB-360 implements the same-profile lifecycle below. Every decision appends an
+audit record with the actor, resulting state, stable reason where required, and
+time. A rejected specialist may edit the six public fields and explicitly
+resubmit the same profile; resubmission clears the current rejection reason and
+returns the profile to `PENDING`. It never creates a replacement identity or
+profile.
+
+```text
+PENDING -> APPROVED | REJECTED
+REJECTED -> PENDING
+APPROVED -> SUSPENDED
+SUSPENDED -> APPROVED
+```
+
+Rejection reasons are `PROFILE_INFORMATION_INCOMPLETE`,
+`PROFILE_CONTENT_NOT_APPROVED`, and `OUTSIDE_SUPPORTED_SCOPE`. Suspension
+reasons are `POLICY_VIOLATION`, `QUALITY_REVIEW_REQUIRED`, and
+`ACCOUNT_REVIEW_REQUIRED`. Other values fail closed.
+
+Suspension is one owner-local transaction: lock the profile, record the stable
+reason, withdraw every future active slot, cancel every future not-started
+`REQUESTED` or `CONFIRMED` appointment, and release exactly its held credit
+with append-only credit and appointment histories. Any credit inconsistency
+rolls the transaction back. Restoration returns the profile to `APPROVED`; it
+does not revive withdrawn slots, cancelled appointments, or released holds.
+The reason is available through authenticated owner/admin reads. This
+synchronous owner-local flow has no independent notification consumer, so it
+does not add Kafka or an outbox.
 
 ## Modes and session boundary
 
