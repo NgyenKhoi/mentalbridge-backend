@@ -367,6 +367,31 @@ paths:
           { $ref: "#/components/responses/InsufficientComparableDataProblem" }
   /api/v1/support-evaluations:
     x-mentalbridge-status: implemented
+    get:
+      tags: [Support evaluation]
+      operationId: listOwnScreeningSupportEvaluations
+      summary: List immutable support evaluations owned by the authenticated caller
+      description: |
+        Results are ordered by evaluatedAt descending and supportEvaluationId
+        descending. Each item contains the original evidence meanings, support
+        direction, current reviewed meaning copy for the stored policy, safety
+        guidance, and next step needed to reopen the result.
+        Raw assessment answers and other users' data are never returned.
+      security:
+        - bearerAuth: []
+      parameters:
+        - $ref: "#/components/parameters/SupportEvaluationCursor"
+        - $ref: "#/components/parameters/PageLimit"
+        - $ref: "#/components/parameters/CorrelationId"
+      responses:
+        "200":
+          description: Owned support evaluations returned
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/SupportEvaluationHistoryPage" }
+        "400": { $ref: "#/components/responses/ValidationProblem" }
+        "401": { $ref: "#/components/responses/UnauthorizedProblem" }
+        "403": { $ref: "#/components/responses/ForbiddenProblem" }
     post:
       tags: [Support evaluation]
       operationId: evaluateOwnScreeningSupport
@@ -427,7 +452,7 @@ paths:
         - $ref: "#/components/parameters/CorrelationId"
       responses:
         "200":
-          description: Immutable support evaluation returned with its original policy content
+          description: Immutable support evaluation returned with reviewed content for its stored policy
           content:
             application/json:
               schema: { $ref: '#/components/schemas/SupportEvaluation' }
@@ -978,10 +1003,10 @@ components:
             safetyStatus: NEGATIVE_SAFETY_SCREEN
             meaning:
               meaningCode: PHQ9_MILD_14D
-              contentVersion: mb-screening-meaning-vi-vn-v1
+              contentVersion: mb-screening-meaning-vi-vn-v2
               referencePeriodDays: 14
-              text: Câu trả lời PHQ-9 của bạn thuộc mức triệu chứng nhẹ trong 14 ngày qua.
-              limitation: Kết quả này chỉ phản ánh câu trả lời tự khai trong 14 ngày qua. Đây là sàng lọc triệu chứng, không phải chẩn đoán y khoa và không thể hiện mức độ bệnh lý tổng thể.
+              text: Trong 14 ngày qua, các câu trả lời PHQ-9 của bạn cho thấy một số dấu hiệu liên quan đến tâm trạng, hứng thú, giấc ngủ, năng lượng hoặc sinh hoạt ở mức nhẹ. Bạn có thể dùng kết quả này để nhận ra điều gì đang làm mình khó chịu và theo dõi xem những dấu hiệu đó có kéo dài hoặc ảnh hưởng đến cuộc sống hằng ngày hay không.
+              limitation: Kết quả này chỉ dựa trên câu trả lời tự khai của bạn trong 14 ngày qua. Bài sàng lọc không xác định nguyên nhân, không bao quát toàn bộ hoàn cảnh của bạn và không phải là chẩn đoán y khoa. Nếu những điều bạn đang trải qua khiến bạn lo lắng hoặc ảnh hưởng đến cuộc sống hằng ngày, bạn có thể cân nhắc trao đổi với một chuyên gia phù hợp.
           - assessmentId: 10000000-0000-4000-8000-000000000102
             instrument: GAD7
             questionnaireVersion: gad7-vi-vn-adult-v1
@@ -990,10 +1015,10 @@ components:
             safetyStatus: NOT_APPLICABLE
             meaning:
               meaningCode: GAD7_MINIMAL_14D
-              contentVersion: mb-screening-meaning-vi-vn-v1
+              contentVersion: mb-screening-meaning-vi-vn-v2
               referencePeriodDays: 14
-              text: Câu trả lời GAD-7 của bạn thuộc mức triệu chứng tối thiểu trong 14 ngày qua.
-              limitation: Kết quả này chỉ phản ánh câu trả lời tự khai trong 14 ngày qua. Đây là sàng lọc triệu chứng, không phải chẩn đoán y khoa và không thể hiện mức độ bệnh lý tổng thể.
+              text: Trong 14 ngày qua, các câu trả lời GAD-7 của bạn cho thấy những dấu hiệu như lo lắng, căng thẳng hoặc khó thư giãn xuất hiện rất ít hoặc hầu như không xuất hiện. Kết quả này chỉ giúp nhìn lại các dấu hiệu được hỏi trong giai đoạn gần đây, không khẳng định rằng bạn không có bất kỳ khó khăn cảm xúc nào khác.
+              limitation: Kết quả này chỉ dựa trên câu trả lời tự khai của bạn trong 14 ngày qua. Bài sàng lọc không xác định nguyên nhân, không bao quát toàn bộ hoàn cảnh của bạn và không phải là chẩn đoán y khoa. Nếu những điều bạn đang trải qua khiến bạn lo lắng hoặc ảnh hưởng đến cuộc sống hằng ngày, bạn có thể cân nhắc trao đổi với một chuyên gia phù hợp.
         nextStep:
           code: REVIEW_SELF_GUIDED_RESOURCE
           contentVersion: mb-support-next-step-vi-vn-v1
@@ -1019,10 +1044,10 @@ components:
             safetyStatus: NEGATIVE_SAFETY_SCREEN
             meaning:
               meaningCode: PHQ9_MODERATE_14D
-              contentVersion: mb-screening-meaning-vi-vn-v1
+              contentVersion: mb-screening-meaning-vi-vn-v2
               referencePeriodDays: 14
-              text: Câu trả lời PHQ-9 của bạn thuộc mức triệu chứng trung bình trong 14 ngày qua.
-              limitation: Kết quả này chỉ phản ánh câu trả lời tự khai trong 14 ngày qua. Đây là sàng lọc triệu chứng, không phải chẩn đoán y khoa và không thể hiện mức độ bệnh lý tổng thể.
+              text: Trong 14 ngày qua, các câu trả lời PHQ-9 của bạn cho thấy nhiều dấu hiệu liên quan đến tâm trạng, hứng thú, giấc ngủ, năng lượng hoặc sinh hoạt ở mức trung bình. Những trải nghiệm này có thể đáng để bạn quan tâm hơn, nhất là khi chúng kéo dài hoặc gây khó khăn trong học tập, công việc, các mối quan hệ hay việc chăm sóc bản thân.
+              limitation: Kết quả này chỉ dựa trên câu trả lời tự khai của bạn trong 14 ngày qua. Bài sàng lọc không xác định nguyên nhân, không bao quát toàn bộ hoàn cảnh của bạn và không phải là chẩn đoán y khoa. Nếu những điều bạn đang trải qua khiến bạn lo lắng hoặc ảnh hưởng đến cuộc sống hằng ngày, bạn có thể cân nhắc trao đổi với một chuyên gia phù hợp.
           - assessmentId: 10000000-0000-4000-8000-000000000104
             instrument: GAD7
             questionnaireVersion: gad7-vi-vn-adult-v1
@@ -1031,10 +1056,10 @@ components:
             safetyStatus: NOT_APPLICABLE
             meaning:
               meaningCode: GAD7_SEVERE_14D
-              contentVersion: mb-screening-meaning-vi-vn-v1
+              contentVersion: mb-screening-meaning-vi-vn-v2
               referencePeriodDays: 14
-              text: Câu trả lời GAD-7 của bạn thuộc mức triệu chứng nặng trong 14 ngày qua.
-              limitation: Kết quả này chỉ phản ánh câu trả lời tự khai trong 14 ngày qua. Đây là sàng lọc triệu chứng, không phải chẩn đoán y khoa và không thể hiện mức độ bệnh lý tổng thể.
+              text: Trong 14 ngày qua, các câu trả lời GAD-7 của bạn cho thấy nhiều dấu hiệu như lo lắng, căng thẳng hoặc khó thư giãn ở mức nặng. Kết quả cho thấy các khó khăn được hỏi đến xuất hiện với tần suất cao; bạn nên cân nhắc sớm trao đổi trực tiếp với một chuyên gia phù hợp để được đánh giá đầy đủ hơn.
+              limitation: Kết quả này chỉ dựa trên câu trả lời tự khai của bạn trong 14 ngày qua. Bài sàng lọc không xác định nguyên nhân, không bao quát toàn bộ hoàn cảnh của bạn và không phải là chẩn đoán y khoa. Nếu những điều bạn đang trải qua khiến bạn lo lắng hoặc ảnh hưởng đến cuộc sống hằng ngày, bạn có thể cân nhắc trao đổi với một chuyên gia phù hợp.
         nextStep:
           code: CONSIDER_PROFESSIONAL_SUPPORT
           contentVersion: mb-support-next-step-vi-vn-v1
@@ -1060,10 +1085,10 @@ components:
             safetyStatus: POSITIVE_SAFETY_SCREEN
             meaning:
               meaningCode: PHQ9_MILD_14D
-              contentVersion: mb-screening-meaning-vi-vn-v1
+              contentVersion: mb-screening-meaning-vi-vn-v2
               referencePeriodDays: 14
-              text: Câu trả lời PHQ-9 của bạn thuộc mức triệu chứng nhẹ trong 14 ngày qua.
-              limitation: Kết quả này chỉ phản ánh câu trả lời tự khai trong 14 ngày qua. Đây là sàng lọc triệu chứng, không phải chẩn đoán y khoa và không thể hiện mức độ bệnh lý tổng thể.
+              text: Trong 14 ngày qua, các câu trả lời PHQ-9 của bạn cho thấy một số dấu hiệu liên quan đến tâm trạng, hứng thú, giấc ngủ, năng lượng hoặc sinh hoạt ở mức nhẹ. Bạn có thể dùng kết quả này để nhận ra điều gì đang làm mình khó chịu và theo dõi xem những dấu hiệu đó có kéo dài hoặc ảnh hưởng đến cuộc sống hằng ngày hay không.
+              limitation: Kết quả này chỉ dựa trên câu trả lời tự khai của bạn trong 14 ngày qua. Bài sàng lọc không xác định nguyên nhân, không bao quát toàn bộ hoàn cảnh của bạn và không phải là chẩn đoán y khoa. Nếu những điều bạn đang trải qua khiến bạn lo lắng hoặc ảnh hưởng đến cuộc sống hằng ngày, bạn có thể cân nhắc trao đổi với một chuyên gia phù hợp.
           - assessmentId: 10000000-0000-4000-8000-000000000106
             instrument: GAD7
             questionnaireVersion: gad7-vi-vn-adult-v1
@@ -1072,10 +1097,10 @@ components:
             safetyStatus: NOT_APPLICABLE
             meaning:
               meaningCode: GAD7_MINIMAL_14D
-              contentVersion: mb-screening-meaning-vi-vn-v1
+              contentVersion: mb-screening-meaning-vi-vn-v2
               referencePeriodDays: 14
-              text: Câu trả lời GAD-7 của bạn thuộc mức triệu chứng tối thiểu trong 14 ngày qua.
-              limitation: Kết quả này chỉ phản ánh câu trả lời tự khai trong 14 ngày qua. Đây là sàng lọc triệu chứng, không phải chẩn đoán y khoa và không thể hiện mức độ bệnh lý tổng thể.
+              text: Trong 14 ngày qua, các câu trả lời GAD-7 của bạn cho thấy những dấu hiệu như lo lắng, căng thẳng hoặc khó thư giãn xuất hiện rất ít hoặc hầu như không xuất hiện. Kết quả này chỉ giúp nhìn lại các dấu hiệu được hỏi trong giai đoạn gần đây, không khẳng định rằng bạn không có bất kỳ khó khăn cảm xúc nào khác.
+              limitation: Kết quả này chỉ dựa trên câu trả lời tự khai của bạn trong 14 ngày qua. Bài sàng lọc không xác định nguyên nhân, không bao quát toàn bộ hoàn cảnh của bạn và không phải là chẩn đoán y khoa. Nếu những điều bạn đang trải qua khiến bạn lo lắng hoặc ảnh hưởng đến cuộc sống hằng ngày, bạn có thể cân nhắc trao đổi với một chuyên gia phù hợp.
         nextStep:
           code: REVIEW_SAFETY_GUIDANCE
           contentVersion: mb-safety-guidance-vi-vn-v1
@@ -1166,6 +1191,12 @@ components:
       required: false
       schema: { type: string, minLength: 1, maxLength: 256 }
       description: Opaque cursor returned as nextCursor by the preceding page
+    SupportEvaluationCursor:
+      name: cursor
+      in: query
+      required: false
+      schema: { type: string, minLength: 1, maxLength: 256 }
+      description: Opaque cursor returned as nextCursor by the preceding support-evaluation page
     PageLimit:
       name: limit
       in: query
@@ -1693,6 +1724,17 @@ components:
         disclaimer:
           type: string
           const: Đây là kết quả sàng lọc triệu chứng, không phải chẩn đoán y khoa. MentalBridge không cung cấp dịch vụ ứng cứu khẩn cấp, không giám sát con người 24/7 và không tự động liên hệ bên thứ ba.
+    SupportEvaluationHistoryPage:
+      type: object
+      additionalProperties: false
+      required: [items, hasMore]
+      properties:
+        items:
+          type: array
+          maxItems: 50
+          items: { $ref: "#/components/schemas/SupportEvaluation" }
+        nextCursor: { type: [string, "null"], minLength: 1, maxLength: 256 }
+        hasMore: { type: boolean }
     SupportEvidence:
       type: object
       additionalProperties: false

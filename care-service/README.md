@@ -63,6 +63,8 @@ The Care Liquibase changelog owns:
 
 The reference-data migrations publish immutable English PHQ-9, current controlled-Capstone Vietnamese PHQ-9 v2, and Vietnamese GAD-7 definitions. PHQ-9 v1 remains readable as a retired immutable definition so historical results reopen against their original wording and bands. GAD-7 contains seven questions, the approved four-choice self-administered mapping, standard `0..21` bands, explicit non-applicable safety semantics, and auditable source provenance. These publications are approved only for controlled local/demo Capstone use and do not represent production clinical/domain approval.
 
+The v1 support-routing policy serves Vietnamese screening meanings with content version `mb-screening-meaning-vi-vn-v2`. The expanded copy explains what each PHQ-9 or GAD-7 band reflects over 14 days, keeps the two instruments separate, and preserves the non-diagnostic limitation. The routing tier and safety behavior are unchanged.
+
 Assessment answer text must never be copied into outbox payloads, logs, errors, metrics, or unrestricted audit metadata.
 
 ## Configuration

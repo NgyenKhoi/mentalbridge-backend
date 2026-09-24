@@ -307,7 +307,13 @@ Exact allow-list linking a support policy to compatible immutable questionnaire 
 
 ### `public.screening_band_meaning`
 
-Policy-, instrument-, and band-specific Vietnamese meaning. It stores stable `meaning_code`, `content_version`, the 14-day reference period, reviewed meaning text, and the non-diagnostic limitation.
+Policy-, instrument-, and band-specific Vietnamese meaning. The rows are authoritative Care reference data used to explain a completed screening without changing its score, band, safety result, or support pathway.
+
+- `meaning_code`: Stable machine-readable key for the instrument and band so historical results resolve the intended explanation independently of display wording.
+- `content_version`: Immutable copy version used to reproduce the explanation shown for a result. Migration `017-screening-meaning-copy.sql` moves the current controlled-demo rows to `mb-screening-meaning-vi-vn-v2` without changing table structure or prior assessment facts.
+- `reference_period_days`: Instrument reference window in days; currently `14` for PHQ-9 and GAD-7 meanings.
+- `meaning_text`: Reviewed Vietnamese explanation of what the instrument-specific band reflects over its reference period; it is descriptive and not a diagnosis.
+- `limitation_text`: Reviewed Vietnamese boundary explaining that the screening is limited, non-diagnostic, and does not replace professional evaluation.
 
 ### `public.support_tier_guidance`
 

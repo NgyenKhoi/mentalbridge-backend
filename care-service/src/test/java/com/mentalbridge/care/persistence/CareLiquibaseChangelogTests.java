@@ -34,7 +34,8 @@ class CareLiquibaseChangelogTests {
 					"care-014-support-plan-choice-activation",
 					"care-015-support-plan-activity-occurrences",
 					"care-016-support-plan-lifecycle-history",
-					"care-017-support-plan-engagement");
+					"care-017-support-plan-engagement",
+					"care-018-screening-meaning-copy");
 		}
 	}
 

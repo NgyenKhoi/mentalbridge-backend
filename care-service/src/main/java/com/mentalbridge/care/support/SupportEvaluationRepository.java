@@ -1,10 +1,12 @@
 package com.mentalbridge.care.support;
 
 import java.time.Instant;
+import java.util.List;
 import java.util.Optional;
 import java.util.UUID;
 
 import org.springframework.data.jpa.repository.JpaRepository;
+import org.springframework.data.domain.Pageable;
 import org.springframework.data.jpa.repository.Modifying;
 import org.springframework.data.jpa.repository.Query;
 import org.springframework.data.repository.query.Param;
@@ -69,6 +71,19 @@ interface SupportEvaluationRepository extends JpaRepository<SupportEvaluationEnt
 			UUID phq9AssessmentId, UUID gad7AssessmentId, String policyVersion);
 
 	Optional<SupportEvaluationEntity> findByIdAndUserId(UUID id, UUID userId);
+
+	List<SupportEvaluationEntity> findByUserIdOrderByEvaluatedAtDescIdDesc(UUID userId, Pageable pageable);
+
+	@Query("""
+			select evaluation from SupportEvaluationEntity evaluation
+			where evaluation.userId = :userId
+			  and (evaluation.evaluatedAt < :cursorEvaluatedAt
+			       or (evaluation.evaluatedAt = :cursorEvaluatedAt and evaluation.id < :cursorId))
+			order by evaluation.evaluatedAt desc, evaluation.id desc
+			""")
+	List<SupportEvaluationEntity> findHistoryAfter(@Param("userId") UUID userId,
+			@Param("cursorEvaluatedAt") Instant cursorEvaluatedAt, @Param("cursorId") UUID cursorId,
+			Pageable pageable);
 
 	@Modifying
 	@Query(value = """

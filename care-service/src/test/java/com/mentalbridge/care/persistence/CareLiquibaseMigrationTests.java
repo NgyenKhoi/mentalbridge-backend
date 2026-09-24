@@ -52,6 +52,11 @@ class CareLiquibaseMigrationTests extends CareTestProperties {
 				"PHQ9|phq9-vi-vn-capstone-v1|phq9-standard-bands-v1",
 				"PHQ9|phq9-vi-vn-capstone-v2|phq9-standard-bands-v1");
 		assertThat(jdbc.sql("select count(*) from screening_band_meaning").query(Long.class).single()).isEqualTo(9);
+		assertThat(jdbc.sql("""
+				select count(*) from screening_band_meaning
+				where content_version='mb-screening-meaning-vi-vn-v2'
+				  and length(meaning_text) > 180 and length(limitation_text) > 180
+				""").query(Long.class).single()).isEqualTo(9);
 		assertThat(safety).isEqualTo(SupportEvaluationService.SAFETY_FALLBACK);
 	}
 
