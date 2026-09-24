@@ -29,7 +29,7 @@ First apply `mentalbridge-repository-workflow`. Immediately before Git/GitHub wr
 
 1. Obtain user authorization before branch/switch, commit, push, issue, PR, rebase, merge, or force-push actions.
 2. Inspect branch, status, remote/upstream, intended base, all file states, and complete diff. Preserve unrelated work.
-3. Search for an equivalent issue and use exact templates. Use `<type>/<scope>-<short-description>` branches and `<type>(<scope>): <lowercase imperative description>` commits.
+3. Search for an equivalent issue and use exact templates. Use `<type>/<scope>-<short-description>-(<TASK-KEY>)` branches, with the real uppercase task key required, and `<type>(<scope>): <lowercase imperative description>` commits. Quote branch names in shell commands because the required task-key suffix contains parentheses.
 4. Stage only one reviewed commit slice at a time. Run `git diff --check`; inspect unstaged and cached diffs; exclude secrets, unrelated binaries, generated junk, and teammate changes. For material persistence changes, verify the owner migration and canonical logical model are updated together; never execute the documentation-only canonical PostgreSQL schema.
 5. Before push, synchronize safely when required, rerun gates, inspect base-to-head diff, and push only the intended branch. Never force-push shared work without explicit authorization.
 6. After push, verify remote SHA/branch and PR checks. Report failures truthfully.

@@ -21,20 +21,26 @@ git rev-list --left-right --count origin/dev...HEAD
 
 The first count is commits present only on `origin/dev`; a value greater than zero means the feature is behind. Integrate the current base before coding: rebase a branch owned by one developer, or merge `origin/dev` into a branch shared by multiple developers. Resolve conflicts deliberately and run the smallest baseline gates before adding new changes. Do not knowingly build a feature on a stale architectural, contract, migration, or security baseline.
 
-Branch names use lowercase kebab-case:
+Branch names use lowercase kebab-case for type, scope, and description, followed
+by the real uppercase task key in parentheses:
 
 ```text
-<type>/<scope>-<short-description>
+<type>/<scope>-<short-description>-(<TASK-KEY>)
 ```
 
 Allowed types mirror the PR template: `feat`, `fix`, `refactor`, `chore`, `docs`, `test`. Preferred scopes are module/domain names such as `identity`, `care`, `consultation`, `journal-ai`, `realtime`, `content-notification`, `phobert`, `database`, `platform`, `ci`, or `docs`.
 
+The task key is mandatory and must match the tracked task exactly; do not invent
+one. Quote the complete branch name in shell commands because unescaped
+parentheses have special meaning in some shells. If no tracked task exists,
+obtain one before creating the branch.
+
 Examples:
 
 ```text
-feat/realtime-message-receipts
-fix/consultation-double-booking
-docs/platform-agent-workflow
+feat/realtime-message-receipts-(MB-412)
+fix/consultation-double-booking-(MB-287)
+docs/platform-agent-workflow-(MB-519)
 ```
 
 ## Issues
