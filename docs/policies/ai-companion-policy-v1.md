@@ -120,7 +120,7 @@ entries and neither period contains more than twice the entries of the other.
 When this rule fails, `sufficientForComparison` is false and every exposed
 change direction is `INSUFFICIENT_DATA`.
 
-Care's future Story 6501 composition calls the minimized
+Care's MB-386 Story 6501 composition calls the minimized
 `REASSESSMENT_SUMMARY` read with an explicit deadline and the verified end-user
 bearer context. Journal/AI rechecks current `AI_PROCESSING` consent and fails
 closed on denial or Care unavailability. The response includes exact source
@@ -180,6 +180,5 @@ PhoBERT remains optional and deferred under ADR 0011.
 
 The single-entry and longitudinal owner runtimes, current-consent checks,
 provider adapters, exact-source persistence/deletion behavior, and minimized
-Care read are implemented. Care Reassessment Summary composition remains in
-Story 6501; frontend presentation is owned by that consumer flow rather than
-MB-371.
+Care read and MB-386 Reassessment Summary composition are implemented. The
+actor-facing presentation remains dependent Story 6502 rather than MB-371.

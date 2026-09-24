@@ -22,8 +22,8 @@
  * its default public schema. Cross-owner identifiers are logical/external
  * references and are deliberately not physical foreign keys.
  *
- * Reconciled from owner migrations on 2026-09-21. It includes the Care
- * SupportPlan draft, activation, lifecycle, and activity occurrence migrations. Technical indexes and migration bookkeeping are
+ * Reconciled from owner migrations on 2026-09-24. It includes the Care
+ * SupportPlan and immutable Reassessment Summary migrations. Technical indexes and migration bookkeeping are
  * intentionally omitted; owner migrations remain authoritative for exact DDL.
  */
 
@@ -647,6 +647,30 @@ CREATE TABLE care.support_plan_activity_occurrence (
         REFERENCES care.support_plan_activity_schedule(id, support_plan_id, user_id),
     FOREIGN KEY (support_plan_id, user_id)
         REFERENCES care.support_plan(id, user_id)
+);
+
+CREATE TABLE care.reassessment_summary (
+    id uuid PRIMARY KEY,
+    user_id uuid NOT NULL REFERENCES care.user_profile(account_id),
+    idempotency_key varchar(128) NOT NULL,
+    request_hash char(64) NOT NULL,
+    summary_version varchar(64) NOT NULL,
+    journal_analysis_id uuid NOT NULL, -- external -> journal-ai longitudinal analysis
+    previous_period_start timestamptz NOT NULL,
+    previous_period_end timestamptz NOT NULL,
+    current_period_start timestamptz NOT NULL,
+    current_period_end timestamptz NOT NULL,
+    snapshot jsonb NOT NULL,
+    composed_at timestamptz NOT NULL,
+    UNIQUE (user_id, idempotency_key),
+    CHECK (summary_version = 'reassessment-summary-v1'),
+    CHECK (
+        previous_period_start < previous_period_end
+        AND previous_period_end <= current_period_start
+        AND current_period_start < current_period_end
+        AND previous_period_end - previous_period_start = current_period_end - current_period_start
+        AND previous_period_end - previous_period_start BETWEEN interval '7 days' AND interval '31 days'
+    )
 );
 
 /* ========================================================================== */

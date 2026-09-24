@@ -91,8 +91,9 @@ publishes an approved owner contract. MB-367 implements the consented
 exact-revision backend with MongoDB jobs,
 normalized results, and a deterministic fake provider. MB-371 implements the
 bounded exact-source longitudinal backend, conservative coverage policy,
-deletion coupling, and minimized current-consent Care projection; Care
-Reassessment Summary composition and its frontend remain Story 6501.
+deletion coupling, and minimized current-consent Care projection. MB-386
+implements Care Reassessment Summary composition; the frontend remains Story
+6502.
 MB-369 implements the entitlement-aware router, structured
 Gemini/OpenAI adapters, and synthetic benchmark harness, but does not activate
 a real route until that pinned candidate passes its separately reviewed

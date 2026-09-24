@@ -177,8 +177,16 @@ The requirements are represented in domain/architecture documentation, but the l
   Mongo-owned jobs/results retain exact source versions, coverage, route, and
   provider provenance without raw text; sparse or greater-than-2:1 imbalanced
   periods force `INSUFFICIENT_DATA`. Owner polling and a minimized current-
-  consent Care projection are implemented, with Story 6501 remaining the
-  Reassessment Summary composition consumer.
+  consent Care projection are implemented as the Journal/AI boundary consumed
+  by MB-386's Story 6501 Reassessment Summary composition.
+- 2026-09-24: MB-386 implements Story 6501 in Care. The authenticated owner
+  idempotently composes selected current PHQ-9/GAD-7 results, the canonical
+  minimized Journal/AI projection, and explicitly reusable SupportPlan
+  engagement/reflection into one immutable `reassessment-summary-v1` snapshot.
+  Current/detail/history APIs preserve exact source versions, periods, coverage,
+  provenance, and explicit `UNAVAILABLE`/`INSUFFICIENT_DATA` states. Care never
+  creates a combined direction, improvement score, recovery claim, or fallback
+  trend. Story 6502 remains the separate actor-facing frontend consumer.
 - 2026-09-16: MB-369 is bounded to provider/model routing and benchmark
   enablement. Consultation adds an authoritative current-entitlement read model
   with `DEFAULT_FREE`, explicit `DEMO`, and future `PAID` provenance but no

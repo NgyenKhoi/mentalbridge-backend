@@ -2,7 +2,7 @@
 
 This index is the centralized entry point for MentalBridge persisted entities
 and document aggregates. It was reconciled against the current owner
-migrations on 2026-09-21, including the Care SupportPlan activity occurrence
+migrations on 2026-09-24, including the Care Reassessment Summary snapshot
 migration in the same pull request. Exact columns, validators, constraints, and indexes remain
 authoritative in owner migrations.
 
@@ -59,6 +59,7 @@ See [README](README.md) for status and relationship semantics.
 | `support_plan_command_selection` | care-service | PostgreSQL | ACTIVE | Physical child preserving the ordered exact resource-version intent committed by activation. |
 | `support_plan_activity_schedule` | care-service | PostgreSQL | ACTIVE | Physical child of a plan; snapshots recurrence, local time, IANA timezone, and exact selected-resource provenance. |
 | `support_plan_activity_occurrence` | care-service | PostgreSQL | ACTIVE | Physical child of a schedule and owner-matched plan; deterministic dated state plus versioned owner-only helpfulness/barrier/reflection and visibility, with exact source provenance. |
+| `reassessment_summary` | care-service | PostgreSQL | ACTIVE | Immutable owner-scoped snapshot of separate screening, minimized journal/context, explicitly reusable SupportPlan engagement, and user-reflection dimensions; never a combined score. |
 | Specialist access grants/scopes | care-service | PostgreSQL | PROPOSED | Approved consent concept; no Care owner migration exists yet. Selected Journal IDs would be logical/external Journal/AI references. |
 | Follow-up plan/check-in | care-service | PostgreSQL | PROPOSED | Broader clinical follow-up remains proposed; MB-513 SupportPlan wellbeing activity occurrences are the separate active aggregate above. |
 | `support_classification` / `intervention_plan` | care-service | PostgreSQL | HISTORICAL | Superseded logical names; active persistence uses versioned SupportEvaluation, Support Guide, and SupportPlan aggregates. |

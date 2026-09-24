@@ -127,8 +127,18 @@ current owned revisions by `occurredAt`, supports explicit exclusions, and
 caps selection at 50 entries per period. Directional comparison requires at
 least three entries in each period and no greater than a 2:1 count imbalance.
 Care consumes only the minimized exact-source evidence under current
-`AI_PROCESSING` consent; Story 6501 owns its later Reassessment Summary
+`AI_PROCESSING` consent; MB-386 implements Story 6501's Reassessment Summary
 composition.
+
+MB-386 implements the Care composition as an immutable owner snapshot. The
+selected current PHQ-9/GAD-7 results are compared locally with their immediately
+preceding compatible results. Journal/AI evidence must match the requested
+periods and degrades to an explicit `UNAVAILABLE` state without hiding local
+dimensions. Only SupportPlan occurrences explicitly approved for summary reuse
+contribute engagement, helpfulness, or reflection. Sparse evidence is
+`INSUFFICIENT_DATA`, never a neutral trend. Current and history reads preserve
+the original sourced result even when a journal analysis or mutable engagement
+record is later deleted.
 
 AI may surface contextual signals, recurring themes, preferences, barriers, and
 helpful patterns for a SupportPlan review. Care remains responsible for finding

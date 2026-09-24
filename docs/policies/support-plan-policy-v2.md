@@ -236,3 +236,12 @@ specialist monitoring, or a recovery score.
   `SupportPlan engagement` evidence dimension beside screening trend,
   journal/context trend, and user reflection. It must not combine the
   dimensions into an improvement or recovery score.
+
+MB-386 implements that composition using only occurrences with explicit
+`summaryReuseApproved=true`. The occurrence `scheduledAt` decides whether the
+fact belongs to the previous or current half-open period. Completion, skip, and
+coded barrier remain the engagement dimension; helpfulness and the approved
+bounded reflection remain the user-reflection dimension. Care snapshots the
+exact facts and provenance without deriving adherence, an engagement score, or
+a direction. Both periods need at least one reusable fact for the corresponding
+dimension to be `AVAILABLE`; otherwise it is `INSUFFICIENT_DATA`.

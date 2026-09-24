@@ -6,13 +6,14 @@ import org.springframework.boot.context.properties.ConfigurationPropertiesScan;
 import org.springframework.cloud.openfeign.EnableFeignClients;
 
 import com.mentalbridge.care.resourceeligibility.ContentResourceEligibilityHttpClient;
+import com.mentalbridge.care.reassessment.JournalLongitudinalHttpClient;
 import com.mentalbridge.care.safetydirectory.ContentSafetyDirectoryHttpClient;
 import com.mentalbridge.care.entitlement.ConsultationEntitlementHttpClient;
 
 @SpringBootApplication
 @ConfigurationPropertiesScan
 @EnableFeignClients(clients = { ContentResourceEligibilityHttpClient.class, ContentSafetyDirectoryHttpClient.class,
-		ConsultationEntitlementHttpClient.class })
+		ConsultationEntitlementHttpClient.class, JournalLongitudinalHttpClient.class })
 public class CareServiceApplication {
 
 	public static void main(String[] args) {
