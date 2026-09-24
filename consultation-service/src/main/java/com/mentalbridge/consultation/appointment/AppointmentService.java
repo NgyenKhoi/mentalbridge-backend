@@ -112,7 +112,8 @@ public class AppointmentService {
 	@Transactional(readOnly = true)
 	public AppointmentResponse.BookableSlotList bookableSlots(Instant from, Instant to) {
 		var now = clock.instant();
-		var lower = from == null ? now.plus(MINIMUM_LEAD_TIME) : from;
+		var minimumStart = now.plus(MINIMUM_LEAD_TIME);
+		var lower = from == null || from.isBefore(minimumStart) ? minimumStart : from;
 		var upper = to == null ? now.plus(Duration.ofDays(90)) : to;
 		if (!upper.isAfter(lower) || Duration.between(lower, upper).compareTo(Duration.ofDays(90)) > 0) {
 			throw new ApiException(HttpStatus.BAD_REQUEST, "INVALID_BOOKABLE_SLOT_RANGE", "Slot range must be positive and no longer than 90 days");

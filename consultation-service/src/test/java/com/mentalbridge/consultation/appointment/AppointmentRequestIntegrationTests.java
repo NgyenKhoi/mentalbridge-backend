@@ -82,6 +82,19 @@ class AppointmentRequestIntegrationTests extends ConsultationTestProperties {
 	}
 
 	@Test
+	void bookableSlotsClampRequestedFromToMinimumLeadTime() throws Exception {
+		var now = Instant.now();
+		var tooSoon = chatSlot(now.plusSeconds(10_800));
+		var bookable = chatSlot(now.plusSeconds(18_000));
+
+		mvc.perform(get("/api/v1/bookable-slots").with(user(UUID.randomUUID()))
+				.param("from", now.toString()).param("to", now.plusSeconds(86_400).toString()))
+				.andExpect(status().isOk())
+				.andExpect(jsonPath("$.items[?(@.id == '%s')]".formatted(tooSoon)).isEmpty())
+				.andExpect(jsonPath("$.items[?(@.id == '%s')]".formatted(bookable)).isNotEmpty());
+	}
+
+	@Test
 	void concurrentUsersCannotDoubleHoldOneSlot() throws Exception {
 		var first = paidUser("PLUS");
 		var second = paidUser("PLUS");
