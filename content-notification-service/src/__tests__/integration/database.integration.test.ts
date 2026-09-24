@@ -220,6 +220,77 @@ describe('Database Integration', () => {
         actionable_videos: '3',
       });
 
+      const supportGuideCoverage = await pool.query<{
+        resource_id: string;
+        target_domain: string;
+        instrument: string;
+        screening_levels: string[];
+        support_tiers: string[];
+      }>(
+        `SELECT p.resource_id::text, d.target_domain, d.instrument,
+           d.screening_levels, d.support_tiers
+         FROM resource_eligibility_publication p
+         JOIN resource_eligibility_declaration d ON d.publication_id = p.id
+         WHERE p.resource_id = ANY($1::uuid[])
+           AND p.content_version = 0
+           AND d.eligibility_role = 'PRIMARY'
+         ORDER BY p.resource_id`,
+        [
+          [
+            '00000000-0000-4000-8000-000000000201',
+            '00000000-0000-4000-8000-000000000205',
+            '00000000-0000-4000-8000-000000000206',
+            '00000000-0000-4000-8000-000000000208',
+          ],
+        ],
+      );
+      expect(supportGuideCoverage.rows).toEqual([
+        {
+          resource_id: '00000000-0000-4000-8000-000000000201',
+          target_domain: 'ANXIETY_SYMPTOMS',
+          instrument: 'GAD_7',
+          screening_levels: ['MINIMAL', 'MILD', 'MODERATE', 'SEVERE'],
+          support_tiers: [
+            'SELF_GUIDED_SUPPORT',
+            'PROFESSIONAL_SUPPORT_RECOMMENDED',
+            'SAFETY_FOLLOW_UP_RECOMMENDED',
+          ],
+        },
+        {
+          resource_id: '00000000-0000-4000-8000-000000000205',
+          target_domain: 'DEPRESSIVE_SYMPTOMS',
+          instrument: 'PHQ_9',
+          screening_levels: ['MINIMAL', 'MILD', 'MODERATE', 'MODERATELY_SEVERE', 'SEVERE'],
+          support_tiers: [
+            'SELF_GUIDED_SUPPORT',
+            'PROFESSIONAL_SUPPORT_RECOMMENDED',
+            'SAFETY_FOLLOW_UP_RECOMMENDED',
+          ],
+        },
+        {
+          resource_id: '00000000-0000-4000-8000-000000000206',
+          target_domain: 'ANXIETY_SYMPTOMS',
+          instrument: 'GAD_7',
+          screening_levels: ['MINIMAL', 'MILD', 'MODERATE', 'SEVERE'],
+          support_tiers: [
+            'SELF_GUIDED_SUPPORT',
+            'PROFESSIONAL_SUPPORT_RECOMMENDED',
+            'SAFETY_FOLLOW_UP_RECOMMENDED',
+          ],
+        },
+        {
+          resource_id: '00000000-0000-4000-8000-000000000208',
+          target_domain: 'DEPRESSIVE_SYMPTOMS',
+          instrument: 'PHQ_9',
+          screening_levels: ['MINIMAL', 'MILD', 'MODERATE', 'MODERATELY_SEVERE', 'SEVERE'],
+          support_tiers: [
+            'SELF_GUIDED_SUPPORT',
+            'PROFESSIONAL_SUPPORT_RECOMMENDED',
+            'SAFETY_FOLLOW_UP_RECOMMENDED',
+          ],
+        },
+      ]);
+
       const legacy = await pool.query<{
         listed: string;
         resource_104_category: string;

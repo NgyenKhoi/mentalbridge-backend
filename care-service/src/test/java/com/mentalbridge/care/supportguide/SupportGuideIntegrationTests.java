@@ -4,6 +4,7 @@ import static org.assertj.core.api.Assertions.assertThat;
 import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.ArgumentMatchers.anyString;
 import static org.mockito.Mockito.doAnswer;
+import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.when;
 import static org.springframework.security.test.web.servlet.request.SecurityMockMvcRequestPostProcessors.jwt;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.get;
@@ -19,6 +20,7 @@ import java.util.concurrent.TimeUnit;
 
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
+import org.mockito.ArgumentCaptor;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.boot.test.context.SpringBootTest;
 import org.springframework.boot.webmvc.test.autoconfigure.AutoConfigureMockMvc;
@@ -34,10 +36,15 @@ import com.mentalbridge.care.CareTestProperties;
 import com.mentalbridge.care.TestcontainersConfiguration;
 import com.mentalbridge.care.resourceeligibility.ResourceEligibilityClient;
 import com.mentalbridge.care.resourceeligibility.generated.ResourceEligibilityContract.EligibilityRole;
+import com.mentalbridge.care.resourceeligibility.generated.ResourceEligibilityContract.RequiredEligibilityRole;
+import com.mentalbridge.care.resourceeligibility.generated.ResourceEligibilityContract.ResourceEligibilityBatchRequest;
 import com.mentalbridge.care.resourceeligibility.generated.ResourceEligibilityContract.ResourceCategory;
 import com.mentalbridge.care.resourceeligibility.generated.ResourceEligibilityContract.ResourceEligibilityBatchResponse;
 import com.mentalbridge.care.resourceeligibility.generated.ResourceEligibilityContract.ResourceEligibilityOutcome;
 import com.mentalbridge.care.resourceeligibility.generated.ResourceEligibilityContract.ResourceEligibilityReasonCode;
+import com.mentalbridge.care.resourceeligibility.generated.ResourceEligibilityContract.ScreeningInstrument;
+import com.mentalbridge.care.resourceeligibility.generated.ResourceEligibilityContract.ScreeningLevel;
+import com.mentalbridge.care.resourceeligibility.generated.ResourceEligibilityContract.SupportTier;
 import com.mentalbridge.care.resourceeligibility.generated.ResourceEligibilityContract.ResourceEligibilityResult;
 
 @Import(TestcontainersConfiguration.class)
@@ -85,6 +92,19 @@ class SupportGuideIntegrationTests extends CareTestProperties {
 				.andReturn();
 		var json = objectMapper.readTree(response.getResponse().getContentAsString());
 		var guideId = UUID.fromString(json.get("supportGuideId").asText());
+		var requestCaptor = ArgumentCaptor.forClass(ResourceEligibilityBatchRequest.class);
+		verify(eligibility).resolve(requestCaptor.capture(), anyString(), any());
+		var moderateAnxietyQueries = requestCaptor.getValue().requests().stream()
+				.filter(query -> query.targetDomain().name().equals("ANXIETY_SYMPTOMS"))
+				.toList();
+		assertThat(moderateAnxietyQueries).hasSize(2).allSatisfy(query -> {
+			assertThat(query.resourceId()).isIn("00000000-0000-4000-8000-000000000201",
+					"00000000-0000-4000-8000-000000000206");
+			assertThat(query.requiredRole()).isEqualTo(RequiredEligibilityRole.PRIMARY);
+			assertThat(query.instrument()).isEqualTo(ScreeningInstrument.GAD_7);
+			assertThat(query.screeningLevel()).isEqualTo(ScreeningLevel.MODERATE);
+			assertThat(query.supportTier()).isEqualTo(SupportTier.PROFESSIONAL_SUPPORT_RECOMMENDED);
+		});
 
 		mvc.perform(get("/api/v1/support-guides/{id}", guideId).with(user(owner, "PREMIUM")))
 				.andExpect(status().isOk()).andExpect(jsonPath("$.supportGuideId").value(guideId.toString()));

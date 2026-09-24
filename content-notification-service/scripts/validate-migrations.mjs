@@ -156,6 +156,10 @@ assert.match(reviewedResourceCatalogue, /https:\/\/www\.youtube\.com\/watch\?v=t
 assert.match(reviewedResourceCatalogue, /https:\/\/www\.youtube\.com\/watch\?v=9GURt2pvdAg/);
 assert.match(reviewedResourceCatalogue, /<> 15/);
 assert.match(reviewedResourceCatalogue, /<> 27/);
+assert.match(
+  reviewedResourceCatalogue,
+  /SupportGuide replacements must preserve moderate PRIMARY coverage/,
+);
 assert.doesNotMatch(reviewedResourceCatalogue, /CREATE DATABASE|CREATE SCHEMA/i);
 const areaAliasValues = safetyDirectoryAreaAliases.match(
   /INSERT INTO safety_directory_area_alias[\s\S]*?\bVALUES\s*([\s\S]*?)\s*ON CONFLICT \(seed_key\)/,
