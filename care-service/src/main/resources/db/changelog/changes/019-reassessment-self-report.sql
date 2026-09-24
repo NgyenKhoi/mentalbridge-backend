@@ -60,5 +60,11 @@ CREATE TABLE reassessment_self_report (
 );
 
 CREATE INDEX ix_reassessment_self_report_owner_current
-    ON reassessment_self_report (user_id, updated_at DESC, id DESC)
+    ON reassessment_self_report (
+        user_id,
+        current_period_end DESC,
+        current_period_start DESC,
+        updated_at DESC,
+        id DESC
+    )
     WHERE deleted_at IS NULL;

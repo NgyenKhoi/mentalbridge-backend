@@ -41,7 +41,8 @@ class ReassessmentSelfReportStore {
 		return jdbc.sql("""
 				select * from reassessment_self_report
 				where user_id=:userId and deleted_at is null
-				order by updated_at desc, id desc limit 1
+				order by current_period_end desc, current_period_start desc, updated_at desc, id desc
+				limit 1
 				""").param("userId", userId).query(this::stored).optional();
 	}
 

@@ -327,6 +327,29 @@ class ReassessmentSummaryIntegrationTests extends CareTestProperties {
 	}
 
 	@Test
+	void keepsTheLatestPeriodCurrentWhenAnOlderReportIsEditedLater() throws Exception {
+		var owner = insertProfile();
+		var olderReportId = createSelfReport(owner, "reassessment-self-older-period", "UNSURE", null,
+				"The earlier period was difficult.", PREVIOUS_START, PREVIOUS_END);
+		var latestReportId = createSelfReport(owner, "reassessment-self-latest-period", "BETTER",
+				"The current period felt steadier.", null, CURRENT_START, CURRENT_END);
+
+		Thread.sleep(5);
+		mvc.perform(put("/api/v1/reassessment-self-reports/{id}", olderReportId).with(user(owner))
+				.header("If-Match", "\"0\"").contentType(MediaType.APPLICATION_JSON).content("""
+						{"currentExperience":"ABOUT_THE_SAME","helpfulContext":null,
+						 "difficultContext":"The earlier period was edited later."}
+						"""))
+				.andExpect(status().isOk()).andExpect(jsonPath("$.version").value(1));
+
+		mvc.perform(get("/api/v1/reassessment-self-reports/current").with(user(owner)))
+				.andExpect(status().isOk())
+				.andExpect(jsonPath("$.selfReportId").value(latestReportId.toString()))
+				.andExpect(jsonPath("$.currentPeriod.startAt").value(CURRENT_START.toString()))
+				.andExpect(jsonPath("$.currentPeriod.endAt").value(CURRENT_END.toString()));
+	}
+
+	@Test
 	void returnsCreatedUnavailableSummaryWithinTheThreeSecondCallerBudget() throws Exception {
 		var owner = insertProfile();
 		var evidence = assessments(owner);
@@ -364,10 +387,15 @@ class ReassessmentSummaryIntegrationTests extends CareTestProperties {
 
 	private UUID createSelfReport(UUID owner, String key, String experience, String helpful, String difficult)
 			throws Exception {
+		return createSelfReport(owner, key, experience, helpful, difficult, CURRENT_START, CURRENT_END);
+	}
+
+	private UUID createSelfReport(UUID owner, String key, String experience, String helpful, String difficult,
+			Instant periodStart, Instant periodEnd) throws Exception {
 		String body = """
 				{"currentPeriod":{"startAt":"%s","endAt":"%s"},"currentExperience":"%s",
 				 "helpfulContext":%s,"difficultContext":%s}
-				""".formatted(CURRENT_START, CURRENT_END, experience, json(helpful), json(difficult));
+				""".formatted(periodStart, periodEnd, experience, json(helpful), json(difficult));
 		var result = mvc.perform(post("/api/v1/reassessment-self-reports").with(user(owner))
 				.header("Idempotency-Key", key).contentType(MediaType.APPLICATION_JSON).content(body))
 				.andExpect(status().isCreated()).andExpect(jsonPath("$.sourceVersion")
