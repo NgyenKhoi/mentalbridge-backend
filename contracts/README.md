@@ -45,6 +45,12 @@ SupportPlan engagement, and user reflection as separate dimensions with exact
 source/version/period/coverage provenance and explicit unavailable or
 insufficient states. It has no combined score or overall direction.
 
+That MB-386 shape is the implemented pre-ADR-0022 compatibility baseline. The
+canonical target requires a distinct explicit user-authored reassessment
+self-report as dimension four; occurrence helpfulness/reflection becomes
+supporting evidence only. The target is not `implemented` until an additive
+versioned contract, owner persistence, tests, and consumer adoption land.
+
 ## Required paired changes
 
 - REST route behavior changes together with its OpenAPI contract and provider contract tests.

@@ -1,5 +1,9 @@
 # Architecture
 
+> Current product authority/navigation: [Current Product Blueprint](CURRENT_PRODUCT_BLUEPRINT.md).
+> The architecture follows ADR 0017 as prospectively amended by ADR 0022 and
+> distinguishes approved targets from implemented runtime.
+
 ## 1. Architectural drivers
 
 1. Mental-health and journal data require least privilege, consent enforcement, traceability, deletion, and minimized exposure.
@@ -13,7 +17,7 @@
 | Context | Owns | Does not own |
 | --- | --- | --- |
 | Identity | credentials, account state, roles, sessions | profile health data |
-| Care | user profile, consent, assessment, safety/support policy, SupportEvaluation, SupportPlan proposal/lifecycle, follow-up | raw chat messages or resource definitions |
+| Care | user profile, consent, assessment, safety/support policy, SupportEvaluation, persisted Support Guide, SupportPlan proposal/lifecycle, reassessment and `PlanChangeRequest` decisions, follow-up | raw chat messages or resource definitions |
 | Consultation/Billing | specialist profile/approval, plan versions, subscriptions, payments, consultation credits, slots, appointments, earnings, payout destinations/requests, reviews | account passwords, journals, chat messages |
 | Journal/AI | journal revisions, analysis jobs/results, AI evaluation | authoritative assessment scoring |
 | Realtime | conversations, messages, receipts, presence | consent source of truth |
@@ -26,11 +30,17 @@ ADR 0005 assigns the cohesive billing bounded context to `consultation-service` 
 
 ADR 0012 bounds V1 screening and post-screening support to PHQ-9/`DEPRESSIVE_SYMPTOMS` and GAD-7/`ANXIETY_SYMPTOMS`. ADR 0013 freezes immutable SupportPlan template policy, compositional selection, slot bounds, eligibility roles, safety presentation, and lifecycle. Safety remains cross-cutting. Care owns domain-aware evaluation and final plan eligibility; Content/Notification owns exact reviewed resource definitions and eligibility provenance. Neither service reads the other's database, and AI owns neither decision.
 
-ADR 0017 defines scope v2 across these owners: canonical packages are `FREE`,
+ADR 0017, as prospectively amended by ADR 0022, defines scope v2 across these owners: canonical packages are `FREE`,
 `PLUS`, and `PREMIUM`; every package receives a one-time Support Guide while
 only paid packages receive the durable Care-owned SupportPlan; new
 consultations use in-app chat/video only; and real payment/payout is VND through
 MoMo after its price, allocation, and credential gates pass.
+
+The Support Guide is a persisted immutable historical snapshot for one
+screening context, not ephemeral data and not a lifecycle aggregate. The
+approved consultation-credit-v2 target is `FREE=0`, `PLUS=4`, `PREMIUM=10`,
+with no rollover and concurrent active-reservation caps `0/2/4`; the implemented
+historical credit-v1 ledger remains `0/1/3` until compatible delivery lands.
 
 ## 3. Container view
 
@@ -120,8 +130,10 @@ At-least-once business delivery is assumed. See ADR 0016.
    claims “nearest”. The flow never automatically calls, shares location,
    sends safety email, or notifies a third party.
 6. The active v1 tier remains coarse historical routing and does not select a resource or SupportPlan. Additive v2 exposes exact domain-local contributions and independent item-9 safety for future plan composition (#48); it does not create or mutate a plan.
-7. Care produces a one-time approved Support Guide after screening for every
-   package. It is not a lifecycle aggregate.
+7. Care produces and persists a one-time approved Support Guide after screening
+   for every package. One-time means one immutable result per screening context;
+   it is not ephemeral, has no automatic time-based expiry, and is not a
+   lifecycle aggregate.
 8. For an entitled `PLUS`/`PREMIUM` user, Care obtains exact versioned
    eligibility from Content/Notification, creates a bounded system-proposed
    draft, and remains the sole owner of the official SupportPlan. Specialist
@@ -141,7 +153,7 @@ At-least-once business delivery is assumed. See ADR 0016.
 3. A local worker atomically claims the job with a bounded lease and re-checks Care consent with the same ephemeral bearer immediately before each provider attempt. It also forwards that bearer to Consultation's current-entitlement endpoint; no client tier claim or cross-service database read participates in routing. Absence of an effective stored entitlement is authoritative `FREE` with `DEFAULT_FREE` provenance.
 4. The versioned `EXACT_REVISION` router selects one approved provider/model route from the current `FREE`/`PLUS`/`PREMIUM` decision. `FREE` and `PLUS` share the baseline route; `PREMIUM` may use a stronger approved route. The first attempt snapshots the route, every retry must keep it, and entitlement change or dependency uncertainty stops the attempt. There is no automatic cross-provider fallback. Each provider attempt times out after 30 seconds and has at most one retry for HTTP 429, provider 5xx, or transport failure.
 5. The worker rejects malformed/unsafe output and stores only the normalized structured result plus entitlement, routing, provider/model/prompt/schema provenance, usage/cost estimate, timing, and job state. Raw provider responses and hidden reasoning are not persisted. Gemini/OpenAI stay config- and approval-gated; local/test/CI uses the deterministic fake.
-6. Care consumes only approved structured indicators, never free-form model reasoning. For reassessment it composes standardized screening trend, non-standardized available-journal context trend with coverage, SupportPlan engagement, and user reflection as separate dimensions; it never creates a combined improvement score.
+6. Care consumes only approved structured indicators, never free-form model reasoning. For the implemented MB-386 compatibility baseline it composes standardized screening trend, non-standardized available-journal context trend with coverage, SupportPlan engagement, and reusable occurrence reflection as separate dimensions. The canonical ADR 0022 target replaces that fourth-dimension interpretation with an explicit user-authored reassessment self-report; activity helpfulness/reflection may support but never replace it. Care never creates a combined improvement score.
 7. Failure produces a terminal job state after the bounded retry; the user can still read the journal. Reproducible synthetic evidence for each configured Gemini/OpenAI candidate gates its approval identifier and official controlled-demo enablement; a run may evaluate one provider or compare both, and adapters/harnesses alone do not constitute approval.
 
 Package routing applies outside the model's authority: `FREE` defaults to five
@@ -171,15 +183,21 @@ authorization contract. See ADR 0021.
 1. A new `PLUS`/`PREMIUM` purchase or `PLUS`-to-`PREMIUM` upgrade creates a
    VND MoMo payment attempt. The versioned IPN is signature-verified,
    deduplicated, and matched before activating an immutable plan version and
-   granting one or three credits exactly once. No downgrade or user refund API
-   exists.
+   granting the exact versioned period allocation once. New
+   `consultation-credit-v2` periods target four `PLUS` or ten `PREMIUM` credits
+   with no rollover; historical `consultation-credit-v1` periods keep their
+   original one/three allocation. No downgrade or user refund API exists.
 2. An upgrade holds eligible unused credits and calculates its VND minor-unit
    offset from versioned facts before a verified webhook starts the new full
    `PREMIUM` period.
 3. An approved specialist publishes a 60-minute `IN_APP_CHAT` or
-   `IN_APP_VIDEO` slot. A booking transaction locks that slot and one available
-   credit, then snapshots start, end, timezone, and mode. New in-person, phone,
-   and external-link appointments are rejected.
+   `IN_APP_VIDEO` slot. A booking transaction verifies package booking access,
+   one available credit, reservation capacity below the target package cap, and
+   a still-selectable slot before atomically holding the credit and slot and
+   snapshotting start, end, timezone, and mode. Reschedule-as-new replaces one
+   logical reservation and must not fail solely because the old appointment
+   occupies the user's cap. New in-person, phone, and external-link appointments
+   are rejected.
 4. At scheduled end, Consultation records `SESSION_ENDED` and closes chat/video
    access. Time alone cannot complete the appointment. The versioned evidence
    policy evaluates server-observed chat or server/provider-observed video

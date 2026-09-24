@@ -14,12 +14,12 @@ delivery, or SupportPlan state.
 | Capability | Main behavior | Acceptance |
 | --- | --- | --- |
 | Current entitlement | Resolve the authenticated user's effective `FREE`/`PLUS`/`PREMIUM` package for owner-to-owner capability checks | No effective row returns `FREE`/`DEFAULT_FREE`; explicit `DEMO` and future `PAID` rows retain provenance and bounded windows; no client tier is trusted |
-| Service credits | Idempotently provision and display the current plan-period credit ledger | `FREE=0`, `PLUS=1`, `PREMIUM=3`; server returns available/held/consumed/forfeited and release history; demo and paid provenance never mix |
+| Service credits | Idempotently provision and display the current plan-period credit ledger | Implemented `consultation-credit-v1` remains `FREE=0`, `PLUS=1`, `PREMIUM=3`; approved `consultation-credit-v2` targets `0/4/10`, no rollover, and reservation caps `0/2/4` without rewriting v1 periods |
 | Specialist approval | Submit public profile fields; admin approves, rejects, suspends, or restores with a stable reason | Only approved specialists are discoverable/bookable; suspension cancels future unstarted appointments with credit release; no credential document is collected |
 | Subscription/billing | Publish immutable VND plan versions; accept MoMo webhooks; purchase paid packages; upgrade `PLUS` to `PREMIUM`; expose credit/earning history | Exact minor units; replay safe; no downgrade/user-refund API; real money disabled until price/allocation/credentials gates pass |
 | Discovery/matching | Filter approved specialists and rank domain/support-area match, availability, language, timezone, rating, then experience | Deterministic pagination; criteria/policy version and explanation recorded; no disease/global-severity/clinical matcher or hidden health-data join |
 | Availability | Publish non-overlapping 60-minute `IN_APP_CHAT` or `IN_APP_VIDEO` slots | New in-person/phone/external links rejected; invalid overlap rejected; video runtime requires its detailed contract |
-| Appointment | Request, accept/reject/expire, cancel/reschedule, end channel, evaluate evidence, complete/no-show/dispute | At 60 minutes record `SESSION_ENDED` and close channel; only accepted server/provider evidence completes and consumes credit |
+| Appointment | Request, accept/reject/expire, cancel/reschedule, end channel, evaluate evidence, complete/no-show/dispute | Booking requires an allowed package, `AVAILABLE` credit, reservation capacity, and selectable slot; reschedule replaces one logical reservation; at 60 minutes record `SESSION_ENDED`, while only accepted server/provider evidence completes and consumes credit |
 | Brief, summary, and next steps | Expose a user-approved pre-session `ConsultationBrief`; create post-session `SessionSummary`/`AgreedNextSteps`; submit resource proposal | No raw journals/answers/full AI history; reuse requires user approval; resource proposal becomes Care-owned `PlanChangeRequest`, not another plan |
 | Payout | Encrypt/verify specialist destinations; submit idempotent MoMo payouts; reconcile result/IPN/status | MoMo is the sole production provider after credentials; `UNKNOWN` queried, not blindly retried; real payout currency must be approved |
 | Consented view/dashboard | Show own workload and fetch scoped owner data | Care authorization is current and fails closed; Journal/AI returns only allowed fields; no remote call inside transaction |
@@ -41,7 +41,9 @@ delivery, or SupportPlan state.
   bounded `PAID` row into this model in its own transaction; explicit demo/test
   rows use `DEMO`, and no effective row is returned as `FREE`/`DEFAULT_FREE`.
 - MB-377 adds plan-period credit provisioning, owner transitions, ledger
-  history, and balance reads. Purchase, renewal, cancellation, and appointment
+  history, and balance reads under historical `consultation-credit-v1`
+  (`0/1/3`). Credit-v2 quantities, no-rollover period provisioning,
+  reservation-cap enforcement, purchase, renewal, cancellation, and appointment
   commands remain later stories.
 
 ## Ordered tasks
@@ -53,9 +55,10 @@ delivery, or SupportPlan state.
 - [~] CON-04 Story 6101 adds profile/approval persistence, MB-362 adds availability constraints, and MB-377 adds credit periods/rows/ledger; other Consultation aggregates remain pending.
 - [~] CON-05 Story 6101 implements save, submit, pending-admin queue/detail, and approve without document upload and with admin audit. Rejection/suspension/restoration remains Story 6102.
 - [ ] CON-06 Implement discovery/matching with versioned explainable provenance.
-- [ ] CON-07 Implement VND/MoMo purchase/upgrade, credit ledger, chat/video
-  availability, channel end, and race-safe evidence-backed appointment
-  transitions.
+- [ ] CON-07 Implement VND/MoMo purchase/upgrade, `consultation-credit-v2`
+  `0/4/10` no-rollover periods, `0/2/4` reservation caps, chat/video channel
+  end, and race-safe evidence-backed appointment transitions without rewriting
+  historical v1 ledger periods.
 - [ ] CON-08 Implement consented view/dashboard, reviews and review moderation.
 - [ ] CON-09 Verify simultaneous booking/upgrade, exact proration rounding, transition conflicts, authorization, provider timeout, webhook/command duplicates, expiry and outbox/event duplicates.
 - [ ] CON-10 Add observability/configuration, update README, and pass module/contract/migration gates.

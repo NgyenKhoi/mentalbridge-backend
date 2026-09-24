@@ -6,13 +6,13 @@
 | --- | --- |
 | Policy ID | `MB-SUPPORT-CARE-001` |
 | Policy version | `1.4-scope-v2` |
-| Status | `CONTROLLED CAPSTONE V1 ROUTING PUBLISHED; SCOPE V2 PRODUCT POLICY APPROVED; V2 RUNTIME UNAVAILABLE` |
+| Status | `CONTROLLED CAPSTONE V1 ROUTING PUBLISHED; SCOPE V2 FOUNDATIONS PARTIALLY IMPLEMENTED; ADR 0022 AMENDMENTS DELIVERY-GATED` |
 | Blueprint effective date | 2026-09-02 |
-| Product Owner decision | Prior decisions retained; scope v2 amendments approved as `MB-SCOPE-V2-001` on 2026-09-15 |
+| Product Owner decision | Prior decisions retained; scope v2 approved as `MB-SCOPE-V2-001` on 2026-09-15 and prospectively amended by `MB-SCOPE-V2-002` on 2026-09-24 |
 | Mentor/domain review | Mentor closure review pending; domain review required before executable production routing |
 | Owners | Care for selection; Content/Notification for reviewed resource content |
 | Applies to | Registered MentalBridge users in Vietnam |
-| Related decisions | [ADR 0012](../adr/0012-two-domain-screening-and-system-proposed-support-plans.md), [ADR 0013](../adr/0013-freeze-support-plan-policy-v1.md), [ADR 0015](../adr/0015-ai-companion-analysis-contract.md), and the [ADR 0017 scope v2 amendment](../adr/0017-product-scope-v2.md) |
+| Related decisions | [ADR 0012](../adr/0012-two-domain-screening-and-system-proposed-support-plans.md), [ADR 0013](../adr/0013-freeze-support-plan-policy-v1.md), [ADR 0015](../adr/0015-ai-companion-analysis-contract.md), [ADR 0017 scope v2](../adr/0017-product-scope-v2.md), and [ADR 0022 current blueprint amendments](../adr/0022-current-product-blueprint-amendments.md) |
 
 V1 supports exactly `DEPRESSIVE_SYMPTOMS` through PHQ-9 and `ANXIETY_SYMPTOMS` through GAD-7, focused on generalized anxiety symptoms. Equal bands from the two instruments remain different domain evidence. The system never creates a global mental-health severity, and a new domain requires a separately approved product vertical.
 
@@ -91,8 +91,11 @@ AI may explain only active approved entries already selected inside a determinis
 
 No personalized intervention item is approved by the MB-179 routing decision. Published generic self-help resources may be displayed independently of personalized routing, but review/publication does not make them universally eligible for a plan.
 
-The approved forward direction is: a one-time Support Guide for every package,
-then an optional paid domain-aware SupportPlan. [SupportPlan policy v2](support-plan-policy-v2.md)
+The approved forward direction is: a persisted immutable Support Guide for one
+screening context for every package, then an optional paid domain-aware
+SupportPlan. One-time does not mean ephemeral; the Guide has no automatic
+time-based expiry, lifecycle, schedule, or occurrence tracking unless a
+separate retention/deletion policy applies. [SupportPlan policy v2](support-plan-policy-v2.md)
 retains immutable Care templates, `CORE`/`OPTIONAL` slots, 1-5 selected-resource
 bounds, compositional rules, and exact-version eligibility while limiting the
 durable plan to `PLUS`/`PREMIUM`. Care owns one official current plan. A
@@ -100,11 +103,13 @@ specialist proposal enters through `PlanChangeRequest`; Care revalidates and the
 user confirms. The client, AI, and specialist never author or mutate a plan
 directly.
 
-At reassessment, Care presents standardized screening trend, AI-derived
-available-journal context trend, SupportPlan engagement, and user
-helpfulness/reflection as four separate dimensions. It never creates a combined
-improvement score. AI context may explain candidates for review, but Care finds
-only allowed alternatives and the user confirms any SupportPlan change.
+At reassessment, Care presents standardized Screening change, bounded Journal
+context, factual Plan engagement, and explicit user-authored Self-reported
+experience as four separate dimensions. Activity helpfulness/reflection may
+support the fourth dimension but cannot replace the explicit reassessment
+self-report. It never creates a combined improvement score. AI context may
+explain candidates for review, but Care freshly revalidates only allowed
+alternatives and the user confirms any SupportPlan change.
 
 ## Entitlement policy
 
@@ -113,11 +118,17 @@ only allowed alternatives and the user confirms any SupportPlan change.
 - `FREE`: standard one-time Support Guide, Journal, emotion check-in, reviewed
   resources, and the default AI quota; no durable SupportPlan or consultation
   credit.
-- `PLUS`: higher AI quota, durable SupportPlan/lifecycle tracking, and one
-  consultation credit per paid period.
+- `PLUS`: higher AI quota, durable SupportPlan/lifecycle tracking, four
+  consultation credits per new v2 paid period, and at most two active
+  appointment reservations.
 - `PREMIUM`: no displayed daily AI-response limit subject to server fair-use
-  controls, optional stronger model, advanced recommendations, and three
-  credits per paid period.
+  controls, optional stronger model, advanced recommendations, ten credits per
+  new v2 paid period, and at most four active appointment reservations.
+
+New v2 periods do not roll unused credits forward. Historical
+`consultation-credit-v1` periods remain `0/1/3` and immutable under their exact
+policy/version. Credit balance and concurrent reservation capacity are separate
+server-authoritative checks.
 
 Resource count is not limited by package. Exact paid benefits remain governed
 by the immutable Consultation plan version. Safety output, the one-time Support
@@ -147,7 +158,11 @@ or entitlement decision.
 - [ ] Domain review is recorded before this becomes an executable production support policy.
 
 Care may return the bounded v1 support-tier result in the controlled Capstone
-runtime. Scope v2 behavior remains unavailable until its contracts, migrations,
-frontend, directory content, notification scheduling, and production gates
-pass. No safety flow automatically calls, shares location, sends email, or
-notifies a third party.
+runtime. Support Guide and SupportPlan draft/activation/lifecycle/scheduling/
+engagement foundations plus the MB-386 compatibility reassessment are
+implemented. The ADR 0022 explicit reassessment self-report, governed plan
+review, credit-v2/reservation-cap behavior, remaining consumers, directory
+content, notification scheduling, and production gates remain unavailable
+until their contracts, migrations, tests, and owner integrations pass. No
+safety flow automatically calls, shares location, sends email, or notifies a
+third party.
