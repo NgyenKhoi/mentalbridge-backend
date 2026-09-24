@@ -10,6 +10,7 @@ import static org.springframework.test.web.servlet.request.MockMvcRequestBuilder
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.jsonPath;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.status;
 
+import java.time.Duration;
 import java.time.Instant;
 import java.time.LocalDate;
 import java.time.OffsetDateTime;
@@ -209,6 +210,30 @@ class ReassessmentSummaryIntegrationTests extends CareTestProperties {
 				.contentType(MediaType.APPLICATION_JSON).content(body(evidence.currentPhq9(), evidence.currentGad7(),
 						UUID.randomUUID(), PREVIOUS_START, PREVIOUS_END, CURRENT_START, CURRENT_END)))
 				.andExpect(status().isConflict()).andExpect(jsonPath("$.code").value("IDEMPOTENCY_KEY_REUSED"));
+	}
+
+	@Test
+	void returnsCreatedUnavailableSummaryWithinTheThreeSecondCallerBudget() throws Exception {
+		var owner = insertProfile();
+		var evidence = assessments(owner);
+		var analysisId = UUID.randomUUID();
+		when(journal.read(any(), any(), any(), any(), anyString(), any())).thenAnswer(invocation -> {
+			Thread.sleep(2100);
+			return new Projection("UNAVAILABLE", "DEPENDENCY_UNAVAILABLE", null);
+		});
+
+		long startedAt = System.nanoTime();
+		mvc.perform(post("/api/v1/reassessment-summaries").with(user(owner))
+				.header("Idempotency-Key", "reassessment-timeout-fallback")
+				.contentType(MediaType.APPLICATION_JSON).content(body(evidence.currentPhq9(), evidence.currentGad7(),
+						analysisId, PREVIOUS_START, PREVIOUS_END, CURRENT_START, CURRENT_END)))
+				.andExpect(status().isCreated())
+				.andExpect(jsonPath("$.screening.state").value("AVAILABLE"))
+				.andExpect(jsonPath("$.journalContext.state").value("UNAVAILABLE"))
+				.andExpect(jsonPath("$.journalContext.unavailableReason").value("DEPENDENCY_UNAVAILABLE"));
+		var elapsed = Duration.ofNanos(System.nanoTime() - startedAt);
+
+		assertThat(elapsed).isLessThan(Duration.ofSeconds(3));
 	}
 
 	private AssessmentSet assessments(UUID owner) {

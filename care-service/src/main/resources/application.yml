@@ -51,8 +51,8 @@ mentalbridge:
       read-timeout: ${CONSULTATION_ENTITLEMENT_READ_TIMEOUT:PT2S}
     journal-longitudinal:
       base-url: ${JOURNAL_AI_LONGITUDINAL_BASE_URL:}
-      connect-timeout: ${JOURNAL_AI_LONGITUDINAL_CONNECT_TIMEOUT:PT0.5S}
-      read-timeout: ${JOURNAL_AI_LONGITUDINAL_READ_TIMEOUT:PT2S}
+      connect-timeout: ${JOURNAL_AI_LONGITUDINAL_CONNECT_TIMEOUT:PT0.2S}
+      read-timeout: ${JOURNAL_AI_LONGITUDINAL_READ_TIMEOUT:PT0.8S}
       max-attempts: ${JOURNAL_AI_LONGITUDINAL_MAX_ATTEMPTS:2}
       retry-wait: ${JOURNAL_AI_LONGITUDINAL_RETRY_WAIT:PT0.1S}
       circuit-window-size: ${JOURNAL_AI_LONGITUDINAL_CIRCUIT_WINDOW_SIZE:10}

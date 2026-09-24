@@ -43,9 +43,11 @@ explicit safe fallback reasons. Valid sparse or imbalanced coverage remains
 `INSUFFICIENT_DATA` rather than becoming an unavailable or unchanged result.
 
 The outbound adapter forwards the verified end-user bearer context and
-correlation ID, uses a 500 ms connection deadline, 2 s read deadline, at most
-one transient retry, and a separate circuit breaker. The remote call completes
-before the snapshot transaction begins.
+correlation ID, uses a 200 ms connection deadline, 800 ms read deadline, at
+most one transient retry, and a separate circuit breaker. Startup rejects
+overrides whose conservative retry budget exceeds 2.5 seconds, leaving time
+for Care to persist and return a safe fallback before the three-second caller
+deadline. The remote call completes before the snapshot transaction begins.
 
 ## Verification
 
@@ -63,10 +65,10 @@ Commands executed from `care-service` unless noted:
 
 | Command | Result |
 | --- | --- |
-| `.\mvnw.cmd -q '-Dtest=CareOpenApiContractTests,JournalLongitudinalClientTests,JournalLongitudinalHttpConsumerContractTests' test` | Passed: 15 contract, resilience, malformed-response, and real-Feign HTTP consumer tests |
-| `$env:DOCKER_HOST='npipe:////./pipe/dockerDesktopLinuxEngine'; .\mvnw.cmd -q -Dtest=ReassessmentSummaryIntegrationTests test` | Passed: 3 focused PostgreSQL integration tests |
-| `$env:DOCKER_HOST='npipe:////./pipe/dockerDesktopLinuxEngine'; .\mvnw.cmd -q test` | Passed: 202 tests, 0 failures, 0 errors, 0 skipped |
-| `.\scripts\verify-repository.ps1 -BaseSha origin/dev` from the repository root | Passed: 703 tracked files and all paired-change policies |
+| `.\mvnw.cmd -q '-Dtest=CareOpenApiContractTests,JournalLongitudinalClientTests,JournalLongitudinalHttpConsumerContractTests' test` | Passed: 17 contract, resilience, malformed-response, configuration-budget, and real-Feign HTTP consumer tests; stalled provider fallback completed in 1.802 s |
+| `$env:DOCKER_HOST='npipe:////./pipe/dockerDesktopLinuxEngine'; .\mvnw.cmd -q -Dtest=ReassessmentSummaryIntegrationTests test` | Passed: 4 focused PostgreSQL integration tests; the endpoint persisted and returned `201 + UNAVAILABLE` in 2.242 s when Journal/AI was unavailable within the caller budget |
+| `$env:DOCKER_HOST='npipe:////./pipe/dockerDesktopLinuxEngine'; .\mvnw.cmd -q test` | Passed: 205 tests, 0 failures, 0 errors, 0 skipped |
+| `.\scripts\verify-repository.ps1 -BaseSha origin/dev` from the repository root | Passed: 720 tracked files and all paired-change policies |
 | `git diff --check` from the repository root | Passed |
 
 The focused scenarios cover sufficient and contradictory dimensions, sparse
@@ -81,5 +83,5 @@ malformed projection rejection, and snapshot stability after source deletion.
 
 MB-386 changes the backend owner capability only. The separate frontend
 worktree remains unchanged because actor-facing composition, copy, and visual
-presentation are Story 6502. No Jira transition, comment, commit, or push is
-part of this implementation evidence.
+presentation are Story 6502. No Jira transition or actor-facing frontend
+evidence is part of this implementation evidence.

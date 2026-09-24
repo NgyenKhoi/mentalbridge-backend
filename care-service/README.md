@@ -93,8 +93,8 @@ Assessment answer text must never be copied into outbox payloads, logs, errors, 
 | `CONSULTATION_ENTITLEMENT_CONNECT_TIMEOUT` | No | Bounded TCP connection deadline for the authoritative current entitlement read | `PT0.5S` |
 | `CONSULTATION_ENTITLEMENT_READ_TIMEOUT` | No | Total response-read deadline for current entitlement | `PT2S` |
 | `JOURNAL_AI_LONGITUDINAL_BASE_URL` | Local/demo only | Direct Journal/AI URL because the Node service does not register with Eureka | `http://localhost:3000` |
-| `JOURNAL_AI_LONGITUDINAL_CONNECT_TIMEOUT` | No | Bounded connection deadline for minimized reassessment evidence | `PT0.5S` |
-| `JOURNAL_AI_LONGITUDINAL_READ_TIMEOUT` | No | Total response-read deadline before the journal dimension becomes unavailable | `PT2S` |
+| `JOURNAL_AI_LONGITUDINAL_CONNECT_TIMEOUT` | No | Bounded connection deadline for minimized reassessment evidence | `PT0.2S` |
+| `JOURNAL_AI_LONGITUDINAL_READ_TIMEOUT` | No | Response-read deadline before one Journal/AI attempt times out | `PT0.8S` |
 | `JOURNAL_AI_LONGITUDINAL_MAX_ATTEMPTS` | No | Total attempts for the idempotent GET, one or two | `2` |
 | `JOURNAL_AI_LONGITUDINAL_RETRY_WAIT` | No | Positive base delay for bounded transient retry with jitter | `PT0.1S` |
 | `JOURNAL_AI_LONGITUDINAL_CIRCUIT_WINDOW_SIZE` | No | Reassessment projection breaker window | `10` |
@@ -148,7 +148,7 @@ MB-89 implements the deterministic PHQ-9 runtime. MB-178 adds the backend-owned,
 - Inbound REST: the canonical Care OpenAPI file is the source of truth.
 - Inbound Support Guide REST: `care-support-guide-v1.yaml` defines authenticated generation, owner-only history/detail, idempotency, immutable provenance, and stable resource-resolution states. It is intentionally separate from SupportPlan lifecycle.
 - Outbound REST: the consumer-owned OpenFeign Resource Eligibility v1 adapter queries Content with the end-user bearer context, explicit correlation, 500 ms connect and 2 s read deadlines, bounded exponential transient retry with jitter, and a Resilience4j circuit breaker. HTTP 429 is not retried because the provider contract does not define `Retry-After`; timeout, dependency errors, malformed payloads and enum evolution map every candidate to `UNAVAILABLE`. Callers must commit no proposal mutation. No Care transaction spans the call.
-- Outbound reassessment REST: the consumer-owned Journal/AI adapter forwards the verified end-user bearer and correlation ID to the canonical `REASSESSMENT_SUMMARY` projection. It applies a 500 ms connect deadline, 2 s read deadline, at most one transient retry, and a separate circuit breaker. It validates attribution, exact periods, source counts, coverage sufficiency, directions, and provenance before persistence. No transaction spans the remote call; every safe fallback is snapshotted explicitly.
+- Outbound reassessment REST: the consumer-owned Journal/AI adapter forwards the verified end-user bearer and correlation ID to the canonical `REASSESSMENT_SUMMARY` projection. It applies a 200 ms connect deadline, 800 ms read deadline, at most one transient retry, and a separate circuit breaker. Startup rejects overrides whose conservative two-attempt budget exceeds 2.5 seconds, preserving time for Care to return the explicit safe fallback before the three-second caller deadline. It validates attribution, exact periods, source counts, coverage sufficiency, directions, and provenance before persistence. No transaction spans the remote call; every safe fallback is snapshotted explicitly.
 - Async: future assessment, support, consent, intervention, and follow-up events use Kafka with a transactional outbox and language-neutral schemas.
 - Discovery: Care registers as `care-service`; registry metadata never grants authorization.
 

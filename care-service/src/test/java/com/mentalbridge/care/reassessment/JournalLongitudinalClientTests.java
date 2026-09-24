@@ -1,6 +1,7 @@
 package com.mentalbridge.care.reassessment;
 
 import static org.assertj.core.api.Assertions.assertThat;
+import static org.assertj.core.api.Assertions.assertThatThrownBy;
 
 import java.net.SocketTimeoutException;
 import java.nio.charset.StandardCharsets;
@@ -122,9 +123,24 @@ class JournalLongitudinalClientTests {
 		assertThat(client.circuitState()).isEqualTo(CircuitBreaker.State.OPEN);
 	}
 
+	@Test
+	void rejectsConfigurationThatCanOutliveTheCallerBudget() {
+		assertThatThrownBy(() -> new JournalLongitudinalClientProperties("", Duration.ofMillis(500),
+				Duration.ofSeconds(2), 2, Duration.ofMillis(100), 10, 5, 50,
+				Duration.ofSeconds(10), 2))
+				.isInstanceOf(IllegalArgumentException.class)
+				.hasMessage("Journal/AI call budget must not exceed PT2.5S");
+
+		var bounded = new JournalLongitudinalClientProperties("", Duration.ofMillis(200),
+				Duration.ofMillis(800), 2, Duration.ofMillis(100), 10, 5, 50,
+				Duration.ofSeconds(10), 2);
+		assertThat(bounded.connectTimeout()).isEqualTo(Duration.ofMillis(200));
+		assertThat(bounded.readTimeout()).isEqualTo(Duration.ofMillis(800));
+	}
+
 	private JournalLongitudinalClient client(JournalLongitudinalHttpClient http, int attempts, int minimumCalls) {
-		return new JournalLongitudinalClient(http, new JournalLongitudinalClientProperties("", Duration.ofMillis(500),
-				Duration.ofSeconds(2), attempts, Duration.ofMillis(1), minimumCalls, minimumCalls, 50,
+		return new JournalLongitudinalClient(http, new JournalLongitudinalClientProperties("", Duration.ofMillis(200),
+				Duration.ofMillis(800), attempts, Duration.ofMillis(1), minimumCalls, minimumCalls, 50,
 				Duration.ofSeconds(10), 1));
 	}
 

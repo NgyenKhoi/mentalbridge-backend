@@ -9,7 +9,10 @@ import java.nio.file.Path;
 import java.time.Duration;
 import java.time.Instant;
 import java.util.UUID;
+import java.util.concurrent.ExecutorService;
+import java.util.concurrent.Executors;
 import java.util.concurrent.atomic.AtomicInteger;
+import java.util.concurrent.atomic.AtomicLong;
 import java.util.concurrent.atomic.AtomicReference;
 
 import org.junit.jupiter.api.AfterEach;
@@ -46,6 +49,7 @@ class JournalLongitudinalHttpConsumerContractTests {
 	private static OpenAPI providerContract;
 
 	private HttpServer server;
+	private ExecutorService serverExecutor;
 	private Stub stub;
 
 	@BeforeAll
@@ -63,6 +67,8 @@ class JournalLongitudinalHttpConsumerContractTests {
 	@BeforeEach
 	void startProviderStub() throws IOException {
 		server = HttpServer.create(new InetSocketAddress("127.0.0.1", 0), 0);
+		serverExecutor = Executors.newCachedThreadPool();
+		server.setExecutor(serverExecutor);
 		stub = new Stub();
 		server.createContext("/internal/v1/users/" + USER_ID + "/longitudinal-analyses/" + ANALYSIS_ID,
 				stub::handle);
@@ -72,6 +78,7 @@ class JournalLongitudinalHttpConsumerContractTests {
 	@AfterEach
 	void stopProviderStub() {
 		server.stop(0);
+		serverExecutor.shutdownNow();
 	}
 
 	@Test
@@ -109,9 +116,31 @@ class JournalLongitudinalHttpConsumerContractTests {
 		assertThat(projection.unavailableReason()).isEqualTo("DEPENDENCY_UNAVAILABLE");
 	}
 
+	@Test
+	void returnsSafeFallbackWithinTheThreeSecondCallerBudgetWhenProviderStalls() {
+		stub.respondDelayed(200, validEvidence(), Duration.ofSeconds(2));
+		var properties = new JournalLongitudinalClientProperties("", Duration.ofMillis(200),
+				Duration.ofMillis(800), 2, Duration.ofMillis(100), 10, 5, 50,
+				Duration.ofSeconds(10), 2);
+
+		long startedAt = System.nanoTime();
+		var projection = client(properties).read(USER_ID, ANALYSIS_ID, PREVIOUS, CURRENT,
+				"user-jwt", CORRELATION_ID);
+		var elapsed = Duration.ofNanos(System.nanoTime() - startedAt);
+
+		assertThat(projection.state()).isEqualTo("UNAVAILABLE");
+		assertThat(projection.unavailableReason()).isEqualTo("DEPENDENCY_UNAVAILABLE");
+		assertThat(stub.attempts()).isEqualTo(2);
+		assertThat(elapsed).isLessThan(Duration.ofSeconds(3));
+	}
+
 	private JournalLongitudinalClient client() {
 		var properties = new JournalLongitudinalClientProperties("", Duration.ofMillis(100), Duration.ofSeconds(1),
 				1, Duration.ofMillis(1), 10, 5, 50, Duration.ofSeconds(10), 2);
+		return client(properties);
+	}
+
+	private JournalLongitudinalClient client(JournalLongitudinalClientProperties properties) {
 		var configuration = new JournalLongitudinalFeignConfiguration();
 		var httpClient = Feign.builder()
 				.contract(new SpringMvcContract())
@@ -199,6 +228,8 @@ class JournalLongitudinalHttpConsumerContractTests {
 
 	private final class Stub {
 		private final AtomicInteger status = new AtomicInteger();
+		private final AtomicInteger attempts = new AtomicInteger();
+		private final AtomicLong delayMillis = new AtomicLong();
 		private final AtomicReference<String> body = new AtomicReference<>();
 		private final AtomicReference<String> authorization = new AtomicReference<>();
 		private final AtomicReference<String> correlationId = new AtomicReference<>();
@@ -213,13 +244,29 @@ class JournalLongitudinalHttpConsumerContractTests {
 		void respondRaw(int responseStatus, String responseBody) {
 			status.set(responseStatus);
 			body.set(responseBody);
+			delayMillis.set(0);
+		}
+
+		void respondDelayed(int responseStatus, String responseBody, Duration delay) {
+			assertContractResponse(responseStatus, responseBody);
+			status.set(responseStatus);
+			body.set(responseBody);
+			delayMillis.set(delay.toMillis());
 		}
 
 		void handle(HttpExchange exchange) throws IOException {
+			attempts.incrementAndGet();
 			authorization.set(exchange.getRequestHeaders().getFirst("Authorization"));
 			correlationId.set(exchange.getRequestHeaders().getFirst("X-Correlation-Id"));
 			query.set(exchange.getRequestURI().getQuery());
 			method.set(exchange.getRequestMethod());
+			try {
+				Thread.sleep(delayMillis.get());
+			}
+			catch (InterruptedException exception) {
+				Thread.currentThread().interrupt();
+				throw new IOException(exception);
+			}
 			byte[] bytes = body.get().getBytes(StandardCharsets.UTF_8);
 			exchange.getResponseHeaders().set("Content-Type",
 					status.get() == 200 ? "application/json" : "application/problem+json");
@@ -243,6 +290,10 @@ class JournalLongitudinalHttpConsumerContractTests {
 
 		String method() {
 			return method.get();
+		}
+
+		int attempts() {
+			return attempts.get();
 		}
 	}
 }

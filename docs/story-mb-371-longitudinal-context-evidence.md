@@ -80,8 +80,8 @@ versions, and absence of raw text/token/provider-response persistence.
 
 ## Intentional deferrals
 
-- MB-386 delivers Story 6501's Care `ReassessmentSummary` composition, standard
-  2-second Journal/AI client deadline, and resilience policy. Actor-facing
+- MB-386 delivers Story 6501's Care `ReassessmentSummary` composition, bounded
+  sub-three-second Journal/AI client budget, and resilience policy. Actor-facing
   presentation remains Story 6502.
 - The frontend has no direct MB-371 surface because this Story exposes the
   Journal/AI owner capability and Care consumer boundary; it does not own the
