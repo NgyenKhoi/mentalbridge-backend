@@ -14,6 +14,8 @@ NestJS service that owns reviewed self-help resource definitions, immutable exac
 - `GET /health/live` — liveness without a database dependency
 - `GET /health/ready` — PostgreSQL readiness check
 - `GET /api/v1/resources` — lists active reviewed published self-help resources; returns empty array when none match; returns neutral fallback when service is unreachable; no hotline number or emergency dispatch claim (ADR 0009)
+- `GET /api/v1/resources/{id}` — returns the full reviewed body, exact `contentVersion`, and structured source provenance; an optional `contentVersion` query fails closed when a persisted reference no longer matches
+- MB-556 Review 1 catalogue — 15 Vietnamese resources with structured source metadata and verified YouTube actions for every `VIDEO`; legacy synthetic resources remain exact-ID compatible but are hidden from catalogue browsing
 - `POST|DELETE /__test/content/outage` — test-only local outage switch; unavailable unless `E2E_TEST_MODE=true` and the exact `x-e2e-secret` is supplied
 - Strict startup configuration, safe Problem Details, structured redacted request logs, CORS deny-by-default, and graceful NestJS shutdown
 - `node-pg-migrate` baseline for the service-owned `mentalbridge_content_notification` database
@@ -87,7 +89,7 @@ npm run migration:check
 npm run migrate:up
 ```
 
-Migrations run explicitly before deployment and never on application startup. The database and login are operator prerequisites; migrations do not create databases or schemas. Once merged, an applied migration is never edited or rolled back in a shared environment; add a forward migration instead. Migration `2_remove_hotline_catalogue.sql` removes the obsolete table after the historical baseline is applied; migration `6_add_resource_eligibility_v1.sql` adds immutable publications, declarations, withdrawals and command replay snapshots without changing existing resource rows.
+Migrations run explicitly before deployment and never on application startup. The database and login are operator prerequisites; migrations do not create databases or schemas. Once merged, an applied migration is never edited or rolled back in a shared environment; add a forward migration instead. Migration `2_remove_hotline_catalogue.sql` removes the obsolete table after the historical baseline is applied; migration `6_add_resource_eligibility_v1.sql` adds immutable publications, declarations, withdrawals and command replay snapshots without changing existing resource rows; migration `9_add_resource_source_provenance.sql` adds structured source fields, catalogue visibility, and VIDEO URL constraints.
 
 The controlled Review 1 seed, MB-337 eligibility matrix, and visibly synthetic non-dialable safety-directory fixture are owner-module migrations with a separate ledger (`pgmigrations_review1`), so running normal schema migrations cannot accidentally mark controlled data as applied. The seeds reject drift from their reviewed decisions. Machine-readable resource inventory, reviewer rationale, explicit ineligible decisions, and Care requests are kept in `../contracts/fixtures/content/resource-eligibility-v1-controlled-demo.json`. No real safety contact is published by the controlled fixture. For the shared dev/staging database only, run:
 
@@ -95,7 +97,7 @@ The controlled Review 1 seed, MB-337 eligibility matrix, and visibly synthetic n
 npm run migrate:review1:up
 ```
 
-Review 1 Compose runs schema migrations, controlled resources, and the initial eligibility publication sequentially through `npm run migrate:review1-demo`. Future production deployment must run `npm run migrate:up` only.
+Review 1 Compose runs schema migrations, controlled resources, the initial eligibility publication, and the MB-556 reviewed catalogue sequentially through `npm run migrate:review1-demo`. The MB-556 copy is an implementation draft and still requires the documented clinical, legal, and licensing review before production publication. Future production deployment must run `npm run migrate:up` only.
 
 ## Verification
 

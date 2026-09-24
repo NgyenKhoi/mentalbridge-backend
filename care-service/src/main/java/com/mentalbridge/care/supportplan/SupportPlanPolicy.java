@@ -31,12 +31,12 @@ class SupportPlanPolicy {
 
 	private static final String DEPRESSION = "DEPRESSIVE_SYMPTOMS";
 	private static final String ANXIETY = "ANXIETY_SYMPTOMS";
-	private static final String ARTICLE_DEPRESSION = "00000000-0000-4000-8000-000000000102";
-	private static final String ACTIVITY_DEPRESSION = "00000000-0000-4000-8000-000000000104";
-	private static final String ARTICLE_ANXIETY = "00000000-0000-4000-8000-000000000103";
-	private static final String ACTIVITY_ANXIETY = "00000000-0000-4000-8000-000000000101";
-	private static final String SLEEP_ADJUNCT = "00000000-0000-4000-8000-000000000105";
-	private static final String JOURNAL_ADJUNCT = "00000000-0000-4000-8000-000000000106";
+	private static final String ARTICLE_DEPRESSION = "00000000-0000-4000-8000-000000000205";
+	private static final String ACTIVITY_DEPRESSION = "00000000-0000-4000-8000-000000000208";
+	private static final String ARTICLE_ANXIETY = "00000000-0000-4000-8000-000000000206";
+	private static final String ACTIVITY_ANXIETY = "00000000-0000-4000-8000-000000000201";
+	private static final String SLEEP_ADJUNCT = "00000000-0000-4000-8000-000000000207";
+	private static final String JOURNAL_ADJUNCT = "00000000-0000-4000-8000-000000000212";
 
 	ProposalRequest request(EvaluationView evaluation) {
 		var families = new ArrayList<FamilyDraft>();

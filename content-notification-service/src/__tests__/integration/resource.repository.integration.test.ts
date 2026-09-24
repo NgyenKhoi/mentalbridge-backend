@@ -57,6 +57,11 @@ describe('ResourceRepository integration', () => {
       'utf8',
     );
     await pool.query(review1Seed);
+    const sourceProvenanceMigration = readFileSync(
+      join(__dirname, '../../../migrations/9_add_resource_source_provenance.sql'),
+      'utf8',
+    );
+    await pool.query(sourceProvenanceMigration);
 
     const dbService: Pick<DatabaseService, 'query'> = {
       query: <T extends Record<string, unknown>>(text: string, params?: unknown[]) =>
@@ -80,6 +85,10 @@ describe('ResourceRepository integration', () => {
       status: 'PUBLISHED',
       reviewed_by: 'a0eebc99-9c0b-4ef8-bb6d-6bb9bd380a11',
       reviewed_at: new Date().toISOString(),
+      source_organization: 'MentalBridge test fixture',
+      source_title: 'Reviewed integration fixture',
+      source_url: 'https://example.com/reviewed-resource',
+      source_review_note: 'Fixture provenance for repository integration coverage.',
     };
     const merged = { ...base, ...overrides };
     const entries = Object.entries(merged).filter(([, v]) => v !== null && v !== undefined);

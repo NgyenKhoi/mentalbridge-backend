@@ -1,7 +1,7 @@
 openapi: 3.1.0
 info:
   title: Content-Notification Service API
-  version: 1.2.0
+  version: 1.3.0
   description: >
     MentalBridge Content/Notification bounded context.
     Manages reviewed self-help resources, reviewed Vietnam safety-directory
@@ -237,6 +237,16 @@ paths:
       operationId: getResource
       parameters:
         - $ref: "#/components/parameters/Locale"
+        - name: contentVersion
+          in: query
+          required: false
+          description: >
+            Exact non-negative content version requested by a persisted consumer reference.
+            When present, a different current version returns 404 rather than substituting content.
+          schema:
+            type: string
+            pattern: "^(0|[1-9][0-9]*)$"
+            maxLength: 19
       responses:
         "200":
           description: Resource detail
@@ -278,6 +288,8 @@ paths:
         "403": { $ref: "#/components/responses/Forbidden" }
         "409":
           $ref: "#/components/responses/Conflict"
+        "422":
+          $ref: "#/components/responses/ValidationError"
 
     delete:
       tags: [Resources]
@@ -969,6 +981,10 @@ components:
         externalUrl:
           type: string
           nullable: true
+        sourceOrganization:
+          type: string
+          nullable: true
+          description: Simple accountable source label for catalogue cards.
         status:
           $ref: "#/components/schemas/ResourceStatus"
         reviewedAt:
@@ -986,9 +1002,25 @@ components:
       allOf:
         - $ref: "#/components/schemas/ResourceSummary"
         - type: object
-          required: [contentBody, effectiveAt, expiresAt]
+          required: [contentVersion, contentBody, effectiveAt, expiresAt]
           properties:
+            contentVersion:
+              type: string
+              pattern: "^(0|[1-9][0-9]*)$"
+              maxLength: 19
+              description: Exact immutable resource version represented by this detail response.
             contentBody:
+              type: string
+              nullable: true
+            sourceTitle:
+              type: string
+              nullable: true
+            sourceUrl:
+              type: string
+              format: uri
+              pattern: "^https?://"
+              nullable: true
+            sourceReviewNote:
               type: string
               nullable: true
             effectiveAt:
@@ -1059,6 +1091,23 @@ components:
           format: uri
           pattern: "^https?://"
           nullable: true
+          description: VIDEO resources require a verified HTTPS YouTube URL.
+        sourceOrganization:
+          type: string
+          maxLength: 200
+          nullable: true
+        sourceTitle:
+          type: string
+          maxLength: 500
+          nullable: true
+        sourceUrl:
+          type: string
+          format: uri
+          pattern: "^https?://"
+          nullable: true
+        sourceReviewNote:
+          type: string
+          nullable: true
         effectiveAt:
           type: string
           format: date-time
@@ -1086,6 +1135,23 @@ components:
           type: string
           format: uri
           pattern: "^https?://"
+          nullable: true
+          description: VIDEO resources require a verified HTTPS YouTube URL.
+        sourceOrganization:
+          type: string
+          maxLength: 200
+          nullable: true
+        sourceTitle:
+          type: string
+          maxLength: 500
+          nullable: true
+        sourceUrl:
+          type: string
+          format: uri
+          pattern: "^https?://"
+          nullable: true
+        sourceReviewNote:
+          type: string
           nullable: true
         effectiveAt:
           type: string

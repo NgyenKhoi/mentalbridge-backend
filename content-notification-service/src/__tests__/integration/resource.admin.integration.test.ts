@@ -25,6 +25,10 @@ const baseCreate = {
   summary: 'Concurrency test resource',
   contentBody: 'Body',
   externalUrl: null,
+  sourceOrganization: 'MentalBridge test fixture',
+  sourceTitle: 'Reviewed integration fixture',
+  sourceUrl: 'https://example.com/reviewed-resource',
+  sourceReviewNote: 'Fixture provenance for repository integration coverage.',
 };
 
 describe('ResourceRepository command consistency', () => {
@@ -52,6 +56,7 @@ describe('ResourceRepository command consistency', () => {
       '3_add_review_provenance_fields.sql',
       '4_add_idempotency_key.sql',
       '5_add_resource_command_records.sql',
+      '9_add_resource_source_provenance.sql',
     ]) {
       await migrationPool.query(await readFile(join(migrationDirectory, name), 'utf8'));
     }
@@ -225,7 +230,10 @@ describe('ResourceRepository command consistency', () => {
       [active.id, future.id, ADMIN_B],
     );
 
-    await expect(repository.findPublishedEligibleById(active.id, 'vi-VN')).resolves.not.toBeNull();
+    await expect(
+      repository.findPublishedEligibleById(active.id, 'vi-VN', '0'),
+    ).resolves.not.toBeNull();
+    await expect(repository.findPublishedEligibleById(active.id, 'vi-VN', '1')).resolves.toBeNull();
     await expect(repository.findPublishedEligibleById(active.id, 'en-US')).resolves.toBeNull();
     await expect(repository.findPublishedEligibleById(future.id, 'vi-VN')).resolves.toBeNull();
     await repository.archive(active.id, 0, {

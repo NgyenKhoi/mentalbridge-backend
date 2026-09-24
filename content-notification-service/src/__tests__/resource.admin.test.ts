@@ -28,6 +28,11 @@ const resource: ResourceRow = {
   summary: 'Draft summary',
   content_body: 'Draft body',
   external_url: null,
+  source_organization: null,
+  source_title: null,
+  source_url: null,
+  source_review_note: null,
+  catalogue_visibility: 'LISTED',
   status: 'DRAFT',
   reviewed_by: null,
   reviewed_at: null,
@@ -151,23 +156,46 @@ describe('resource HTTP and authorization boundary', () => {
 
     expect(detail.body).toMatchObject({ id: RESOURCE_ID, status: 'DRAFT', version: 0 });
     await request(server()).get(`/api/v1/resources/${RESOURCE_ID}?locale=vi-VN`).expect(404);
-    expect(repository.findPublishedEligibleById).toHaveBeenCalledWith(RESOURCE_ID, 'vi-VN');
+    expect(repository.findPublishedEligibleById).toHaveBeenCalledWith(
+      RESOURCE_ID,
+      'vi-VN',
+      undefined,
+    );
   });
 
-  it('omits reviewer and version from eligible public detail', async () => {
+  it('exposes and verifies the exact public content version without admin provenance', async () => {
     vi.mocked(repository.findPublishedEligibleById).mockResolvedValueOnce({
       ...resource,
       status: 'PUBLISHED',
+      source_organization: 'NHS',
+      source_title: 'Reviewed source',
+      source_url: 'https://www.nhs.uk/mental-health/',
+      source_review_note: 'Reviewed for catalogue use',
       reviewed_by: ADMIN_ID,
       reviewed_at: new Date('2026-09-01T01:00:00Z'),
     });
 
     const response = await request(server())
-      .get(`/api/v1/resources/${RESOURCE_ID}?locale=vi-VN`)
+      .get(`/api/v1/resources/${RESOURCE_ID}?locale=vi-VN&contentVersion=0`)
       .expect(200);
     expect(response.body.contentBody).toBe('Draft body');
+    expect(response.body).toMatchObject({
+      sourceOrganization: 'NHS',
+      sourceTitle: 'Reviewed source',
+      sourceUrl: 'https://www.nhs.uk/mental-health/',
+      sourceReviewNote: 'Reviewed for catalogue use',
+      contentVersion: '0',
+    });
+    expect(repository.findPublishedEligibleById).toHaveBeenCalledWith(RESOURCE_ID, 'vi-VN', '0');
     expect(response.body).not.toHaveProperty('reviewedBy');
     expect(response.body).not.toHaveProperty('version');
+  });
+
+  it('rejects malformed public content versions', async () => {
+    await request(server())
+      .get(`/api/v1/resources/${RESOURCE_ID}?locale=vi-VN&contentVersion=latest`)
+      .expect(400);
+    expect(repository.findPublishedEligibleById).not.toHaveBeenCalled();
   });
 
   it('preserves validation Problem Details and field violations', async () => {
@@ -212,6 +240,64 @@ describe('resource HTTP and authorization boundary', () => {
       'create-2',
       { actorId: ADMIN_ID, correlationId: CORRELATION_ID },
     );
+  });
+
+  it('rejects VIDEO drafts without a verified YouTube URL', async () => {
+    const adminToken = await token(ADMIN_ID, ['ADMIN']);
+
+    const missingUrl = await request(server())
+      .post('/api/v1/resources')
+      .set('authorization', `Bearer ${adminToken}`)
+      .set('idempotency-key', 'create-video-missing-url')
+      .send({ category: 'VIDEO', title: 'Video', summary: 'Summary', contentBody: 'Body' })
+      .expect(422);
+    expect(missingUrl.body.fieldViolations).toEqual(
+      expect.arrayContaining([expect.objectContaining({ field: 'externalUrl' })]),
+    );
+
+    const untrustedUrl = await request(server())
+      .post('/api/v1/resources')
+      .set('authorization', `Bearer ${adminToken}`)
+      .set('idempotency-key', 'create-video-untrusted-url')
+      .send({
+        category: 'VIDEO',
+        title: 'Video',
+        summary: 'Summary',
+        contentBody: 'Body',
+        externalUrl: 'https://example.com/video',
+      })
+      .expect(422);
+    expect(untrustedUrl.body.fieldViolations).toEqual(
+      expect.arrayContaining([expect.objectContaining({ field: 'externalUrl' })]),
+    );
+  });
+
+  it('rejects VIDEO updates that remove or replace the verified YouTube URL', async () => {
+    const adminToken = await token(ADMIN_ID, ['ADMIN']);
+    const video = {
+      ...resource,
+      category: 'VIDEO' as const,
+      external_url: 'https://www.youtube.com/watch?v=wfDTp2GogaQ',
+    };
+    vi.mocked(repository.findById).mockResolvedValueOnce(video).mockResolvedValueOnce(video);
+
+    for (const externalUrl of [null, 'https://example.com/video']) {
+      const response = await request(server())
+        .patch(`/api/v1/resources/${RESOURCE_ID}?version=0`)
+        .set('authorization', `Bearer ${adminToken}`)
+        .send({ externalUrl })
+        .expect(422);
+      expect(response.body).toMatchObject({
+        code: 'VALIDATION_ERROR',
+        fieldViolations: [
+          expect.objectContaining({
+            field: 'externalUrl',
+            message: 'VIDEO resources require a verified HTTPS YouTube URL',
+          }),
+        ],
+      });
+    }
+    expect(repository.update).not.toHaveBeenCalled();
   });
 
   it('requires optimistic versioning for delete', async () => {

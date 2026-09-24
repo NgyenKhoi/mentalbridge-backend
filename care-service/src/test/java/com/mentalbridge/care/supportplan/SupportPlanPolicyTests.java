@@ -45,6 +45,9 @@ class SupportPlanPolicyTests {
 				.containsExactly("DEPRESSIVE_SELF_GUIDED");
 		assertThat(proposal.slots()).extracting(SupportPlanPolicy.SlotDraft::slotId)
 				.containsExactly("depression-psychoeducation", "depression-support-activity");
+		assertThat(request.batch().requests()).extracting(query -> query.resourceId())
+				.containsExactly("00000000-0000-4000-8000-000000000205",
+						"00000000-0000-4000-8000-000000000208");
 	}
 
 	@Test

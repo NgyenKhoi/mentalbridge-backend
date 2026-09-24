@@ -23,6 +23,25 @@ const urlSchema = z.url().refine(
   { message: 'externalUrl must be an HTTP(S) URL without credentials' },
 );
 
+export const VerifiedVideoUrlSchema = urlSchema.refine(
+  (value) => {
+    const url = new URL(value);
+    const hostname = url.hostname.toLowerCase();
+    return (
+      url.protocol === 'https:' &&
+      (hostname === 'youtube.com' || hostname === 'www.youtube.com' || hostname === 'youtu.be')
+    );
+  },
+  { message: 'VIDEO resources require a verified YouTube URL' },
+);
+
+const sourceFields = {
+  sourceOrganization: z.string().min(1).max(200).nullish(),
+  sourceTitle: z.string().min(1).max(500).nullish(),
+  sourceUrl: urlSchema.nullish(),
+  sourceReviewNote: z.string().min(1).nullish(),
+};
+
 const nullableDateTime = z.iso
   .datetime({ offset: true })
   .transform((value) => new Date(value))
@@ -39,6 +58,7 @@ export const CreateResourceDtoSchema = z
     summary: z.string().min(1),
     contentBody: z.string().nullish(),
     externalUrl: urlSchema.nullish(),
+    ...sourceFields,
     effectiveAt: nullableDateTime,
     expiresAt: nullableDateTime,
   })
@@ -46,6 +66,14 @@ export const CreateResourceDtoSchema = z
     message: 'Either contentBody or externalUrl must be provided',
     path: ['contentBody'],
   })
+  .refine(
+    (data) =>
+      data.category !== 'VIDEO' || VerifiedVideoUrlSchema.safeParse(data.externalUrl).success,
+    {
+      message: 'VIDEO resources require a verified YouTube URL',
+      path: ['externalUrl'],
+    },
+  )
   .refine(resourceDates, {
     message: 'effectiveAt must be before expiresAt',
     path: ['effectiveAt'],
@@ -60,6 +88,7 @@ export const UpdateResourceDtoSchema = z
     summary: z.string().min(1).optional(),
     contentBody: z.string().nullish(),
     externalUrl: urlSchema.nullish(),
+    ...sourceFields,
     effectiveAt: nullableDateTime,
     expiresAt: nullableDateTime,
   })

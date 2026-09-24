@@ -1343,7 +1343,12 @@ The fixed UUID `00000000-0000-4000-8000-000000000101` identifies a visibly label
 | `title` | Reviewed user-facing title. |
 | `summary` | Reviewed short description used in listings. |
 | `content_body` | Optional reviewed first-party content body; one body or external URL is required. |
-| `external_url` | Optional reviewed external destination; one body or external URL is required. |
+| `external_url` | Optional reviewed external destination; required for `VIDEO` and restricted to verified YouTube URLs. A resource may also carry a reviewed body. |
+| `source_organization` | Organization responsible for the referenced source. Required for new published catalogue resources. |
+| `source_title` | Human-readable title of the referenced source. Required for new published catalogue resources. |
+| `source_url` | HTTP(S) provenance URL, distinct from the user action in `external_url`. Required for new published catalogue resources. |
+| `source_review_note` | Review/licensing note documenting how MentalBridge adapted and checked the source. Required for new published catalogue resources. |
+| `catalogue_visibility` | `LISTED` for catalogue browsing or `DIRECT_ONLY` for exact-version compatibility links that must not appear in the public list. |
 | `status` | Publication lifecycle controlling user visibility: `DRAFT`, `PUBLISHED`, or `ARCHIVED`. |
 | `reviewed_by` | Administrator account UUID that approved the content for publication; null before review. |
 | `reviewed_at` | UTC instant of the latest administrator approval; null before review. Only rows with both fields set are served to users. |
@@ -1572,7 +1577,12 @@ These fields establish reviewed public visibility only. SupportPlan eligibility 
 | `title` | Reviewed user-facing resource title displayed in lists and detail views; maximum 255 characters. |
 | `summary` | Reviewed brief description shown in previews and search results. |
 | `content_body` | Optional full reviewed content body; nullable when using external URL instead. |
-| `external_url` | Optional validated external link to content hosted elsewhere; mutually exclusive use with content body. |
+| `external_url` | Optional validated user action URL; required for `VIDEO` and restricted to verified YouTube URLs. It is distinct from provenance and may coexist with `content_body`. |
+| `source_organization` | Organization responsible for the source used to review or adapt this resource. |
+| `source_title` | Title of the source material shown on Resource Detail. |
+| `source_url` | Validated HTTP(S) provenance link shown separately from the resource action. |
+| `source_review_note` | Internal/public review note preserving clinical, legal, and licensing caveats for the adapted content. |
+| `catalogue_visibility` | Browsing scope: `LISTED` appears in the public catalogue; `DIRECT_ONLY` remains retrievable by exact ID for existing SupportPlans. |
 | `status` | Authoritative workflow state controlling visibility: `DRAFT` (editable), `PUBLISHED` (immutable, public), or `ARCHIVED` (immutable, hidden). |
 | `reviewed_by` | Identity UUID carried by a separately approved review decision; required while `PUBLISHED`. ADMIN authentication alone is not review approval. |
 | `reviewed_at` | UTC timestamp carried by a separately approved review decision; required while `PUBLISHED`. New publication remains blocked until MB-251 approves that decision model and authority. |
