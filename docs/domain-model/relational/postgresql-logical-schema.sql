@@ -817,6 +817,26 @@ CREATE TABLE consultation.availability_slot (
     UNIQUE (specialist_account_id, idempotency_key)
 );
 
+CREATE TABLE consultation.appointment (
+    id uuid PRIMARY KEY,
+    user_account_id uuid NOT NULL, -- external -> identity.account.id
+    specialist_account_id uuid NOT NULL REFERENCES consultation.specialist_profile(account_id),
+    availability_slot_id uuid NOT NULL REFERENCES consultation.availability_slot(id),
+    service_credit_id uuid NOT NULL REFERENCES consultation.service_credit(id),
+    status varchar(24) NOT NULL,
+    modality varchar(24) NOT NULL,
+    scheduled_start_at timestamptz NOT NULL,
+    scheduled_end_at timestamptz NOT NULL,
+    display_timezone varchar(64) NOT NULL,
+    requested_at timestamptz NOT NULL,
+    decision_deadline_at timestamptz NOT NULL,
+    idempotency_key varchar(128) NOT NULL,
+    created_at timestamptz NOT NULL,
+    updated_at timestamptz NOT NULL,
+    version bigint NOT NULL,
+    UNIQUE (user_account_id, idempotency_key)
+);
+
 /* ========================================================================== */
 /* ACTIVE — content-notification-service / mentalbridge_content_notification  */
 /* Evidence: node-pg-migrate-compatible SQL migrations 1-9.                   */

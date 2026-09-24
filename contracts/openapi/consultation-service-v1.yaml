@@ -1,8 +1,8 @@
 openapi: 3.1.0
 info:
   title: MentalBridge Consultation Service API
-  version: 1.2.0
-  description: Consultation-owned specialist profile approval, service-plan entitlement and credit lookup, and online availability management.
+  version: 1.3.0
+  description: Consultation-owned specialist profile approval, service-plan entitlement and credit lookup, online availability, and appointment requests.
 servers:
   - url: http://localhost:8082
 paths:
@@ -186,6 +186,64 @@ paths:
         '409': { $ref: '#/components/responses/AvailabilityConflictProblem' }
         '412': { $ref: '#/components/responses/AvailabilityVersionProblem' }
         '428': { $ref: '#/components/responses/AvailabilityVersionRequiredProblem' }
+  /api/v1/bookable-slots:
+    x-mentalbridge-status: implemented
+    get:
+      operationId: listBookableSlots
+      description: Lists approved specialists' currently selectable exact 60-minute online slots. Disabled video slots and slots already held by an active appointment are excluded.
+      security: [{ bearerAuth: [] }]
+      parameters:
+        - name: from
+          in: query
+          schema: { type: string, format: date-time }
+        - name: to
+          in: query
+          schema: { type: string, format: date-time }
+      responses:
+        '200':
+          description: Current selectable online slots
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/BookableSlotList' }
+        '400': { $ref: '#/components/responses/ValidationProblem' }
+        '401': { $ref: '#/components/responses/UnauthorizedProblem' }
+        '403': { $ref: '#/components/responses/EntitlementForbiddenProblem' }
+  /api/v1/appointments:
+    x-mentalbridge-status: implemented
+    get:
+      operationId: listOwnAppointments
+      description: Lists the authenticated user's authoritative appointment snapshots, including request deadline and held credit identity.
+      security: [{ bearerAuth: [] }]
+      responses:
+        '200':
+          description: User-owned appointment history
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/AppointmentList' }
+        '401': { $ref: '#/components/responses/UnauthorizedProblem' }
+        '403': { $ref: '#/components/responses/EntitlementForbiddenProblem' }
+    post:
+      operationId: requestAppointment
+      description: Atomically creates a REQUESTED appointment for one exact slot and holds the earliest-expiring credit that covers its start. Exact command replays return the original appointment.
+      security: [{ bearerAuth: [] }]
+      parameters:
+        - $ref: '#/components/parameters/IdempotencyKey'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: '#/components/schemas/RequestAppointment' }
+      responses:
+        '201':
+          description: Appointment requested or exact replay returned
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/Appointment' }
+        '400': { $ref: '#/components/responses/ValidationProblem' }
+        '401': { $ref: '#/components/responses/UnauthorizedProblem' }
+        '403': { $ref: '#/components/responses/AppointmentForbiddenProblem' }
+        '404': { $ref: '#/components/responses/AppointmentSlotNotFoundProblem' }
+        '409': { $ref: '#/components/responses/AppointmentConflictProblem' }
   /api/v1/admin/specialist-profiles:
     x-mentalbridge-status: implemented
     get:
@@ -505,6 +563,68 @@ components:
         videoPublishingEnabled:
           type: boolean
           description: True only while the reviewed video capability/provider contract gate is enabled.
+    AppointmentModality:
+      type: string
+      enum: [IN_APP_CHAT, IN_APP_VIDEO]
+    RequestAppointment:
+      type: object
+      additionalProperties: false
+      required: [slotId, modality]
+      properties:
+        slotId: { type: string, format: uuid }
+        modality: { $ref: '#/components/schemas/AppointmentModality' }
+    BookableSlot:
+      type: object
+      additionalProperties: false
+      required: [id, specialistAccountId, specialistDisplayName, startAt, endAt, timezone, modality]
+      properties:
+        id: { type: string, format: uuid }
+        specialistAccountId: { type: string, format: uuid }
+        specialistDisplayName: { type: string, minLength: 1, maxLength: 120 }
+        startAt: { type: string, format: date-time }
+        endAt: { type: string, format: date-time }
+        timezone: { type: string, minLength: 1, maxLength: 64 }
+        modality: { $ref: '#/components/schemas/AppointmentModality' }
+    BookableSlotList:
+      type: object
+      additionalProperties: false
+      required: [items, count, generatedAt, videoEnabled]
+      properties:
+        items:
+          type: array
+          maxItems: 200
+          items: { $ref: '#/components/schemas/BookableSlot' }
+        count: { type: integer, minimum: 0, maximum: 200 }
+        generatedAt: { type: string, format: date-time }
+        videoEnabled: { type: boolean }
+    Appointment:
+      type: object
+      additionalProperties: false
+      required: [id, slotId, specialistAccountId, specialistDisplayName, status, modality, scheduledStartAt, scheduledEndAt, timezone, requestedAt, decisionDeadlineAt, heldCreditId]
+      properties:
+        id: { type: string, format: uuid }
+        slotId: { type: string, format: uuid }
+        specialistAccountId: { type: string, format: uuid }
+        specialistDisplayName: { type: string, minLength: 1, maxLength: 120 }
+        status: { type: string, enum: [REQUESTED, CONFIRMED, REJECTED, EXPIRED, CANCELLED] }
+        modality: { $ref: '#/components/schemas/AppointmentModality' }
+        scheduledStartAt: { type: string, format: date-time }
+        scheduledEndAt: { type: string, format: date-time }
+        timezone: { type: string, minLength: 1, maxLength: 64 }
+        requestedAt: { type: string, format: date-time }
+        decisionDeadlineAt: { type: string, format: date-time }
+        heldCreditId: { type: string, format: uuid }
+    AppointmentList:
+      type: object
+      additionalProperties: false
+      required: [items, count, generatedAt]
+      properties:
+        items:
+          type: array
+          maxItems: 100
+          items: { $ref: '#/components/schemas/Appointment' }
+        count: { type: integer, minimum: 0, maximum: 100 }
+        generatedAt: { type: string, format: date-time }
     Problem:
       type: object
       additionalProperties: true
@@ -527,6 +647,21 @@ components:
               code: { type: string }
               message: { type: string }
   responses:
+    AppointmentForbiddenProblem:
+      description: USER role or a current PLUS/PREMIUM entitlement is required (PAID_PLAN_REQUIRED).
+      content:
+        application/problem+json:
+          schema: { $ref: '#/components/schemas/Problem' }
+    AppointmentSlotNotFoundProblem:
+      description: The selected slot does not exist (APPOINTMENT_SLOT_NOT_FOUND).
+      content:
+        application/problem+json:
+          schema: { $ref: '#/components/schemas/Problem' }
+    AppointmentConflictProblem:
+      description: Slot, modality, lead time, video capability, credit, concurrency, or idempotency prevents the request.
+      content:
+        application/problem+json:
+          schema: { $ref: '#/components/schemas/Problem' }
     CreditConflictProblem:
       description: Entitlement period conflicts with an already provisioned immutable credit period
       content:
