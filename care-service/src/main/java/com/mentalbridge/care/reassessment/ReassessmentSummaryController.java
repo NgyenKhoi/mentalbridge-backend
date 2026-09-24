@@ -49,8 +49,8 @@ public class ReassessmentSummaryController {
 		var result = summaries.compose(subject(jwt), jwt.getTokenValue(), key,
 				correlationId == null ? UUID.randomUUID() : correlationId,
 				new ComposeCommand(request.phq9AssessmentId(), request.gad7AssessmentId(),
-						request.journalAnalysisId(), request.previousPeriod().toPeriod(),
-						request.currentPeriod().toPeriod()));
+						request.journalAnalysisId(), request.journalJobId(), request.previousPeriod().toPeriod(),
+						request.currentPeriod().toPeriod(), request.selfReportId()));
 		return ResponseEntity.created(URI.create("/api/v1/reassessment-summaries/" + result.summaryId())).body(result);
 	}
 
@@ -64,6 +64,11 @@ public class ReassessmentSummaryController {
 	@GetMapping("/current")
 	ReassessmentSummaryView current(@AuthenticationPrincipal Jwt jwt) {
 		return summaries.current(subject(jwt));
+	}
+
+	@GetMapping("/context")
+	ReassessmentSummaryService.ReassessmentContextView context(@AuthenticationPrincipal Jwt jwt) {
+		return summaries.context(subject(jwt));
 	}
 
 	@GetMapping("/{summaryId}")
@@ -82,8 +87,8 @@ public class ReassessmentSummaryController {
 	}
 
 	public record ComposeRequest(@NotNull UUID phq9AssessmentId, @NotNull UUID gad7AssessmentId,
-			@NotNull UUID journalAnalysisId, @Valid @NotNull PeriodRequest previousPeriod,
-			@Valid @NotNull PeriodRequest currentPeriod) { }
+			UUID journalAnalysisId, UUID journalJobId, @Valid @NotNull PeriodRequest previousPeriod,
+			@Valid @NotNull PeriodRequest currentPeriod, UUID selfReportId) { }
 
 	public record PeriodRequest(@NotNull Instant startAt, @NotNull Instant endAt) {
 		Period toPeriod() {

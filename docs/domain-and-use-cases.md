@@ -143,14 +143,13 @@ Care consumes only the minimized exact-source evidence under current
 `AI_PROCESSING` consent.
 
 MB-386 implements the first Care composition baseline as an immutable owner
-snapshot. The selected current PHQ-9/GAD-7 results are compared locally with
-their immediately preceding compatible results. Journal/AI evidence must match
-the requested periods and degrades to an explicit `UNAVAILABLE` state without
-hiding local dimensions. Pre-ADR-0022 MB-386 uses approved SupportPlan
-occurrence helpfulness/reflection as its fourth-dimension source; those
-snapshots remain historically valid. The canonical target now requires a
-separate explicit user reassessment self-report before the four-dimension
-contract is considered fully aligned.
+snapshot. MB-559 adds a versioned explicit current-period self-report and
+canonical v2 composition while keeping historical v1 snapshots readable. The
+selected current PHQ-9/GAD-7 results are compared locally with their immediately
+preceding compatible results. Journal/AI evidence must match the requested
+periods and degrades to an explicit `UNAVAILABLE` state without hiding local
+dimensions. Activity helpfulness/reflection remains separately labelled
+supporting evidence rather than the fourth dimension itself.
 
 Reassessment never mutates a SupportPlan. Care freshly revalidates the current
 plan and alternatives. If the current plan remains valid, the user may continue

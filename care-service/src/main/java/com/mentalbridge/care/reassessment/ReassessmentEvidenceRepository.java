@@ -65,6 +65,22 @@ class ReassessmentEvidenceRepository {
 				.optional();
 	}
 
+	Optional<AssessmentEvidence> findLatest(UUID userId, String instrument) {
+		return jdbc.sql("""
+				select submission.id, submission.submitted_at, submission.voided_at,
+				       definition.instrument, definition.version as questionnaire_version,
+				       result.total_score, result.screening_level, result.scoring_version
+				from assessment_submission submission
+				join questionnaire_definition definition on definition.id = submission.definition_id
+				join assessment_result result on result.submission_id = submission.id
+				where submission.user_id = :userId and submission.voided_at is null
+				  and definition.instrument = :instrument
+				order by submission.submitted_at desc, submission.id desc
+				limit 1
+				""").param("userId", userId).param("instrument", instrument)
+				.query(this::assessment).optional();
+	}
+
 	List<EngagementEvidence> findReusableEngagement(UUID userId, Instant startAt, Instant endAt) {
 		return jdbc.sql("""
 				select id, support_plan_id, source_plan_version, source_slot_key, source_resource_id,

@@ -130,7 +130,7 @@ Reassessment never changes a SupportPlan automatically. After fresh Care revalid
 - `CURRENT_PLAN_VALID_ALTERNATIVES_AVAILABLE` -> user may keep or replace;
 - `CURRENT_PLAN_NOT_ADMISSIBLE` -> current plan is not offered as a normal keep choice; present an admissible replacement path.
 
-The current MB-386 runtime merged before ADR 0022 is a compatibility baseline and still needs the explicit self-report amendment before the four-dimension contract is fully aligned.
+Historical MB-386 v1 snapshots remain a compatibility baseline. MB-559 implements the explicit owner-authored self-report and canonical v2 composition without rewriting those records.
 
 ## 6. Specialist and consultation boundary
 
@@ -206,7 +206,7 @@ Do not claim a target as executable merely because it appears in this blueprint.
 As of the ADR 0022 amendment:
 
 - Support Guide persistence/history and SupportPlan draft/activation/lifecycle/scheduling/engagement foundations exist on `dev`;
-- the first MB-386 reassessment composition exists but its fourth dimension still requires the explicit self-report amendment;
+- MB-559 completes canonical reassessment composition with a versioned explicit self-report while preserving MB-386 v1 history;
 - `consultation-credit-v1` ledger foundation exists with historical `0/1/3`; `consultation-credit-v2` `0/4/10`, no-rollover, and `0/2/4` reservation caps require MB-558 delivery;
 - specialist discovery and the full appointment/session/payment/payout journeys remain gated by their Jira delivery chain.
 

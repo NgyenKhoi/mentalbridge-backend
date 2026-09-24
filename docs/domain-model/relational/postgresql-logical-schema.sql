@@ -649,13 +649,40 @@ CREATE TABLE care.support_plan_activity_occurrence (
         REFERENCES care.support_plan(id, user_id)
 );
 
+CREATE TABLE care.reassessment_self_report (
+    id uuid PRIMARY KEY,
+    user_id uuid NOT NULL REFERENCES care.user_profile(account_id),
+    idempotency_key varchar(128) NOT NULL,
+    request_hash char(64) NOT NULL,
+    source_version varchar(64) NOT NULL,
+    current_period_start timestamptz NOT NULL,
+    current_period_end timestamptz NOT NULL,
+    current_experience varchar(32),
+    helpful_context varchar(500),
+    difficult_context varchar(500),
+    version bigint NOT NULL,
+    authored_at timestamptz NOT NULL,
+    updated_at timestamptz NOT NULL,
+    deleted_at timestamptz,
+    UNIQUE (user_id, idempotency_key),
+    CHECK (source_version = 'reassessment-self-report-v1'),
+    CHECK (current_experience IS NULL OR current_experience IN
+        ('BETTER', 'ABOUT_THE_SAME', 'MORE_DIFFICULT', 'UNSURE')),
+    CHECK (
+        (deleted_at IS NULL AND current_experience IS NOT NULL)
+        OR (deleted_at IS NOT NULL AND current_experience IS NULL
+            AND helpful_context IS NULL AND difficult_context IS NULL)
+    )
+);
+
 CREATE TABLE care.reassessment_summary (
     id uuid PRIMARY KEY,
     user_id uuid NOT NULL REFERENCES care.user_profile(account_id),
     idempotency_key varchar(128) NOT NULL,
     request_hash char(64) NOT NULL,
     summary_version varchar(64) NOT NULL,
-    journal_analysis_id uuid NOT NULL, -- external -> journal-ai longitudinal analysis
+    journal_job_id uuid, -- canonical v2 external -> journal-ai longitudinal job
+    journal_analysis_id uuid, -- v1 reference or resolved v2 analysis when available
     previous_period_start timestamptz NOT NULL,
     previous_period_end timestamptz NOT NULL,
     current_period_start timestamptz NOT NULL,
@@ -663,7 +690,12 @@ CREATE TABLE care.reassessment_summary (
     snapshot jsonb NOT NULL,
     composed_at timestamptz NOT NULL,
     UNIQUE (user_id, idempotency_key),
-    CHECK (summary_version = 'reassessment-summary-v1'),
+    CHECK (summary_version IN ('reassessment-summary-v1', 'reassessment-summary-v2')),
+    CHECK (
+        (summary_version = 'reassessment-summary-v1'
+            AND journal_analysis_id IS NOT NULL AND journal_job_id IS NULL)
+        OR (summary_version = 'reassessment-summary-v2' AND journal_job_id IS NOT NULL)
+    ),
     CHECK (
         previous_period_start < previous_period_end
         AND previous_period_end <= current_period_start
