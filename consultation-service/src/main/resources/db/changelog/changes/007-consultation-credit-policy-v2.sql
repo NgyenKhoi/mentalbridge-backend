@@ -1,6 +1,6 @@
 --liquibase formatted sql
 
---changeset mentalbridge:consultation-006-consultation-credit-policy-v2
+--changeset mentalbridge:consultation-007-consultation-credit-policy-v2
 alter table service_credit_period
     add column credit_policy_version varchar(64);
 

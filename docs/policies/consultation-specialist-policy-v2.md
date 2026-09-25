@@ -5,7 +5,7 @@
 | Field | Value |
 | --- | --- |
 | Scope decisions | `MB-SCOPE-V2-001`, amended by `MB-SCOPE-V2-002` |
-| Status | `PRODUCT POLICY APPROVED; MB-362 AVAILABILITY, MB-378 REQUEST, AND MB-558 CREDIT V2/CAP RUNTIMES IMPLEMENTED; DISCOVERY / APPOINTMENT LIFECYCLE / VIDEO SESSION RUNTIMES DELIVERY-GATED` |
+| Status | `PRODUCT POLICY APPROVED; MB-360 LIFECYCLE, MB-362 AVAILABILITY, MB-378 APPOINTMENT REQUEST, AND MB-558 CREDIT V2/CAP RUNTIMES IMPLEMENTED; DISCOVERY / VIDEO SESSION RUNTIMES DELIVERY-GATED` |
 | Effective decision date | 2026-09-24 for ADR 0022 amendments |
 | Appointment, specialist, evidence, and billing owner | Consultation |
 | Brief and SupportPlan-change decision owner | Care |
@@ -75,6 +75,37 @@ MB-558 implements `consultation-credit-v2` for newly created periods and keeps
 existing MB-377 `consultation-credit-v1` periods immutable. The owner response
 and booking command expose/enforce reservation capacity separately from credit
 balance.
+
+## Specialist exception lifecycle
+
+MB-360 implements the same-profile lifecycle below. Every decision appends an
+audit record with the actor, resulting state, stable reason where required, and
+time. A rejected specialist may edit the six public fields and explicitly
+resubmit the same profile; resubmission clears the current rejection reason and
+returns the profile to `PENDING`. It never creates a replacement identity or
+profile.
+
+```text
+PENDING -> APPROVED | REJECTED
+REJECTED -> PENDING
+APPROVED -> SUSPENDED
+SUSPENDED -> APPROVED
+```
+
+Rejection reasons are `PROFILE_INFORMATION_INCOMPLETE`,
+`PROFILE_CONTENT_NOT_APPROVED`, and `OUTSIDE_SUPPORTED_SCOPE`. Suspension
+reasons are `POLICY_VIOLATION`, `QUALITY_REVIEW_REQUIRED`, and
+`ACCOUNT_REVIEW_REQUIRED`. Other values fail closed.
+
+Suspension is one owner-local transaction: lock the profile, record the stable
+reason, withdraw every future active slot, cancel every future not-started
+`REQUESTED` or `CONFIRMED` appointment, and release exactly its held credit
+with append-only credit and appointment histories. Any credit inconsistency
+rolls the transaction back. Restoration returns the profile to `APPROVED`; it
+does not revive withdrawn slots, cancelled appointments, or released holds.
+The reason is available through authenticated owner/admin reads. This
+synchronous owner-local flow has no independent notification consumer, so it
+does not add Kafka or an outbox.
 
 ## Modes and session boundary
 

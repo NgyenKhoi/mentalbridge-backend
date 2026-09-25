@@ -2,7 +2,7 @@ openapi: 3.1.0
 info:
   title: MentalBridge Consultation Service API
   version: 1.4.0
-  description: Consultation-owned specialist profile approval, service-plan entitlement and credit lookup, online availability, and appointment requests.
+  description: Consultation-owned specialist profile lifecycle, service-plan entitlement and credit lookup, online availability, appointment requests, credit reservation limits, and suspension outcomes.
 servers:
   - url: http://localhost:8082
 paths:
@@ -53,7 +53,7 @@ paths:
         '404': { $ref: '#/components/responses/NotFoundProblem' }
     put:
       operationId: saveOwnSpecialistProfileDraft
-      description: Creates a PENDING unsubmitted profile or replaces an existing PENDING profile draft. Editing a submitted profile clears submittedAt and removes it from the review queue until submitted again.
+      description: Creates a PENDING unsubmitted profile or replaces an existing PENDING or REJECTED profile. Editing a submitted PENDING profile clears submittedAt; editing a REJECTED profile preserves its stable reason until explicit resubmission.
       security: [{ bearerAuth: [] }]
       parameters:
         - $ref: '#/components/parameters/OptionalIfMatch'
@@ -96,6 +96,28 @@ paths:
       responses:
         '200':
           description: Profile submitted or unchanged replay
+          headers:
+            ETag: { $ref: '#/components/headers/ProfileETag' }
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/SpecialistProfile' }
+        '401': { $ref: '#/components/responses/UnauthorizedProblem' }
+        '403': { $ref: '#/components/responses/ForbiddenProblem' }
+        '404': { $ref: '#/components/responses/NotFoundProblem' }
+        '409': { $ref: '#/components/responses/ConflictProblem' }
+        '412': { $ref: '#/components/responses/VersionProblem' }
+        '428': { $ref: '#/components/responses/VersionRequiredProblem' }
+  /api/v1/specialist-profile/resubmit:
+    x-mentalbridge-status: implemented
+    post:
+      operationId: resubmitOwnSpecialistProfile
+      description: Resubmits the same rejected profile after remediation, returns it to PENDING review, and clears the prior decision fields without changing its identity.
+      security: [{ bearerAuth: [] }]
+      parameters:
+        - $ref: '#/components/parameters/RequiredIfMatch'
+      responses:
+        '200':
+          description: Rejected profile resubmitted for review
           headers:
             ETag: { $ref: '#/components/headers/ProfileETag' }
           content:
@@ -247,20 +269,28 @@ paths:
   /api/v1/admin/specialist-profiles:
     x-mentalbridge-status: implemented
     get:
-      operationId: listPendingSpecialistProfiles
-      description: Returns submitted PENDING profiles ordered by oldest submission first.
+      operationId: listSpecialistProfilesForAdmin
+      description: Returns the requested operational lifecycle state. PENDING returns only submitted profiles ordered oldest first; other states are ordered by most recent update.
       security: [{ bearerAuth: [] }]
       parameters:
+        - name: status
+          in: query
+          required: false
+          description: Lifecycle state to list. Defaults to the submitted PENDING review queue.
+          schema:
+            allOf:
+              - $ref: '#/components/schemas/SpecialistApprovalStatus'
+            default: PENDING
         - name: limit
           in: query
           required: false
           schema: { type: integer, minimum: 1, maximum: 100, default: 50 }
       responses:
         '200':
-          description: Pending review queue
+          description: Bounded profiles in the requested lifecycle state
           content:
             application/json:
-              schema: { $ref: '#/components/schemas/PendingSpecialistProfiles' }
+              schema: { $ref: '#/components/schemas/SpecialistProfiles' }
         '400': { $ref: '#/components/responses/ValidationProblem' }
         '401': { $ref: '#/components/responses/UnauthorizedProblem' }
         '403': { $ref: '#/components/responses/ForbiddenProblem' }
@@ -295,6 +325,90 @@ paths:
       responses:
         '200':
           description: Approved profile
+          headers:
+            ETag: { $ref: '#/components/headers/ProfileETag' }
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/SpecialistProfile' }
+        '401': { $ref: '#/components/responses/UnauthorizedProblem' }
+        '403': { $ref: '#/components/responses/ForbiddenProblem' }
+        '404': { $ref: '#/components/responses/NotFoundProblem' }
+        '409': { $ref: '#/components/responses/ConflictProblem' }
+        '412': { $ref: '#/components/responses/VersionProblem' }
+        '428': { $ref: '#/components/responses/VersionRequiredProblem' }
+  /api/v1/admin/specialist-profiles/{specialistAccountId}/reject:
+    x-mentalbridge-status: implemented
+    parameters:
+      - $ref: '#/components/parameters/SpecialistAccountId'
+    post:
+      operationId: rejectSpecialistProfile
+      description: Rejects one submitted PENDING profile with a stable remediation reason. An exact replay against the current matching REJECTED version creates no duplicate audit row.
+      security: [{ bearerAuth: [] }]
+      parameters:
+        - $ref: '#/components/parameters/RequiredIfMatch'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: '#/components/schemas/RejectSpecialistRequest' }
+      responses:
+        '200':
+          description: Rejected profile and safe reason
+          headers:
+            ETag: { $ref: '#/components/headers/ProfileETag' }
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/SpecialistProfile' }
+        '400': { $ref: '#/components/responses/ValidationProblem' }
+        '401': { $ref: '#/components/responses/UnauthorizedProblem' }
+        '403': { $ref: '#/components/responses/ForbiddenProblem' }
+        '404': { $ref: '#/components/responses/NotFoundProblem' }
+        '409': { $ref: '#/components/responses/ConflictProblem' }
+        '412': { $ref: '#/components/responses/VersionProblem' }
+        '428': { $ref: '#/components/responses/VersionRequiredProblem' }
+  /api/v1/admin/specialist-profiles/{specialistAccountId}/suspend:
+    x-mentalbridge-status: implemented
+    parameters:
+      - $ref: '#/components/parameters/SpecialistAccountId'
+    post:
+      operationId: suspendSpecialistProfile
+      description: Suspends one APPROVED profile with a stable reason, withdraws future availability, cancels future not-started appointments, and releases each affected held credit exactly once in one owner transaction.
+      security: [{ bearerAuth: [] }]
+      parameters:
+        - $ref: '#/components/parameters/RequiredIfMatch'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: '#/components/schemas/SuspendSpecialistRequest' }
+      responses:
+        '200':
+          description: Suspended profile and committed downstream outcomes
+          headers:
+            ETag: { $ref: '#/components/headers/ProfileETag' }
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/SpecialistSuspensionResult' }
+        '400': { $ref: '#/components/responses/ValidationProblem' }
+        '401': { $ref: '#/components/responses/UnauthorizedProblem' }
+        '403': { $ref: '#/components/responses/ForbiddenProblem' }
+        '404': { $ref: '#/components/responses/NotFoundProblem' }
+        '409': { $ref: '#/components/responses/ConflictProblem' }
+        '412': { $ref: '#/components/responses/VersionProblem' }
+        '428': { $ref: '#/components/responses/VersionRequiredProblem' }
+  /api/v1/admin/specialist-profiles/{specialistAccountId}/restore:
+    x-mentalbridge-status: implemented
+    parameters:
+      - $ref: '#/components/parameters/SpecialistAccountId'
+    post:
+      operationId: restoreSpecialistProfile
+      description: Restores one SUSPENDED profile to APPROVED. Previously withdrawn availability and cancelled appointments remain unchanged and require new owner actions.
+      security: [{ bearerAuth: [] }]
+      parameters:
+        - $ref: '#/components/parameters/RequiredIfMatch'
+      responses:
+        '200':
+          description: Restored approved profile
           headers:
             ETag: { $ref: '#/components/headers/ProfileETag' }
           content:
@@ -448,6 +562,21 @@ components:
     SpecialistApprovalStatus:
       type: string
       enum: [PENDING, APPROVED, REJECTED, SUSPENDED]
+    SpecialistDecisionReasonCode:
+      type: string
+      enum:
+        - PROFILE_INFORMATION_INCOMPLETE
+        - PROFILE_CONTENT_NOT_APPROVED
+        - OUTSIDE_SUPPORTED_SCOPE
+        - POLICY_VIOLATION
+        - QUALITY_REVIEW_REQUIRED
+        - ACCOUNT_REVIEW_REQUIRED
+    SpecialistRejectionReasonCode:
+      type: string
+      enum: [PROFILE_INFORMATION_INCOMPLETE, PROFILE_CONTENT_NOT_APPROVED, OUTSIDE_SUPPORTED_SCOPE]
+    SpecialistSuspensionReasonCode:
+      type: string
+      enum: [POLICY_VIOLATION, QUALITY_REVIEW_REQUIRED, ACCOUNT_REVIEW_REQUIRED]
     LanguageTag:
       type: string
       enum: [vi, en]
@@ -502,11 +631,14 @@ components:
         submittedAt: { type: [string, 'null'], format: date-time }
         reviewedAt: { type: [string, 'null'], format: date-time }
         reviewedBy: { type: [string, 'null'], format: uuid }
-        decisionReasonCode: { type: [string, 'null'], maxLength: 64 }
+        decisionReasonCode:
+          oneOf:
+            - $ref: '#/components/schemas/SpecialistDecisionReasonCode'
+            - type: 'null'
         createdAt: { type: string, format: date-time }
         updatedAt: { type: string, format: date-time }
         version: { type: integer, format: int64, minimum: 0 }
-    PendingSpecialistProfiles:
+    SpecialistProfiles:
       type: object
       additionalProperties: false
       required: [items, count]
@@ -516,6 +648,33 @@ components:
           maxItems: 100
           items: { $ref: '#/components/schemas/SpecialistProfile' }
         count: { type: integer, minimum: 0, maximum: 100 }
+    RejectSpecialistRequest:
+      type: object
+      additionalProperties: false
+      required: [reasonCode]
+      properties:
+        reasonCode: { $ref: '#/components/schemas/SpecialistRejectionReasonCode' }
+    SuspendSpecialistRequest:
+      type: object
+      additionalProperties: false
+      required: [reasonCode]
+      properties:
+        reasonCode: { $ref: '#/components/schemas/SpecialistSuspensionReasonCode' }
+    SpecialistSuspensionEffects:
+      type: object
+      additionalProperties: false
+      required: [withdrawnAvailabilitySlots, cancelledAppointments, releasedCredits]
+      properties:
+        withdrawnAvailabilitySlots: { type: integer, minimum: 0 }
+        cancelledAppointments: { type: integer, minimum: 0 }
+        releasedCredits: { type: integer, minimum: 0 }
+    SpecialistSuspensionResult:
+      type: object
+      additionalProperties: false
+      required: [profile, effects]
+      properties:
+        profile: { $ref: '#/components/schemas/SpecialistProfile' }
+        effects: { $ref: '#/components/schemas/SpecialistSuspensionEffects' }
     AvailabilityModality:
       type: string
       enum: [IN_APP_CHAT, IN_APP_VIDEO]

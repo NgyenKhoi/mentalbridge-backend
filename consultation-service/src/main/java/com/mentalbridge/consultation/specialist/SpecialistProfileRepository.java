@@ -25,4 +25,7 @@ interface SpecialistProfileRepository extends JpaRepository<SpecialistProfileEnt
 			order by profile.submittedAt asc, profile.accountId asc
 			""")
 	List<SpecialistProfileEntity> findSubmittedPending(Pageable pageable);
+
+	List<SpecialistProfileEntity> findByApprovalStatusOrderByUpdatedAtDescAccountIdAsc(
+			SpecialistApprovalStatus approvalStatus, Pageable pageable);
 }

@@ -10,4 +10,6 @@ databaseChangeLog:
   - include:
       file: db/changelog/changes/005-online-appointment-request.sql
   - include:
-      file: db/changelog/changes/006-consultation-credit-policy-v2.sql
+      file: db/changelog/changes/006-specialist-lifecycle.sql
+  - include:
+      file: db/changelog/changes/007-consultation-credit-policy-v2.sql

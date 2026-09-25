@@ -227,6 +227,49 @@ class AppointmentRequestIntegrationTests extends ConsultationTestProperties {
 				""").param("userId", userId).query(Long.class).single()).isEqualTo(2L);
 	}
 
+	@Test
+	void concurrentSuspensionEitherRejectsOrCancelsRequestWithoutLeavingHeldCredit() throws Exception {
+		var userId = paidUser("PLUS");
+		var slotId = chatSlot(Instant.now().plusSeconds(172_800));
+		var specialistId = jdbc.sql("select specialist_account_id from availability_slot where id=:id")
+				.param("id", slotId).query(UUID.class).single();
+		var ready = new CountDownLatch(2);
+		var go = new CountDownLatch(1);
+		try (var executor = Executors.newFixedThreadPool(2)) {
+			var request = executor.submit(() -> {
+				ready.countDown();
+				go.await();
+				return mvc.perform(post("/api/v1/appointments").with(user(userId))
+						.header("Idempotency-Key", "suspension-race-request")
+						.contentType(MediaType.APPLICATION_JSON).content(body(slotId, "IN_APP_CHAT")))
+						.andReturn().getResponse().getStatus();
+			});
+			var suspension = executor.submit(() -> {
+				ready.countDown();
+				go.await();
+				return mvc.perform(post("/api/v1/admin/specialist-profiles/{id}/suspend", specialistId)
+						.with(admin(UUID.randomUUID())).header("If-Match", "\"0\"")
+						.contentType(MediaType.APPLICATION_JSON)
+						.content("{\"reasonCode\":\"QUALITY_REVIEW_REQUIRED\"}"))
+						.andReturn().getResponse().getStatus();
+			});
+			ready.await();
+			go.countDown();
+			assertThat(suspension.get()).isEqualTo(200);
+			assertThat(request.get()).isIn(201, 409);
+		}
+
+		assertThat(jdbc.sql("select approval_status from specialist_profile where account_id=:id")
+				.param("id", specialistId).query(String.class).single()).isEqualTo("SUSPENDED");
+		assertThat(jdbc.sql("select count(*) from appointment where availability_slot_id=:id and status in ('REQUESTED','CONFIRMED')")
+				.param("id", slotId).query(Long.class).single()).isZero();
+		assertThat(jdbc.sql("""
+				select count(*) from service_credit credit
+				join service_credit_period period on period.id=credit.period_id
+				where period.account_id=:userId and credit.appointment_id is not null and credit.state='HELD'
+				""").param("userId", userId).query(Long.class).single()).isZero();
+	}
+
 	private UUID paidUser(String packageCode) {
 		var id = UUID.randomUUID();
 		var now = Instant.now();
@@ -260,6 +303,10 @@ class AppointmentRequestIntegrationTests extends ConsultationTestProperties {
 
 	private org.springframework.test.web.servlet.request.RequestPostProcessor user(UUID id) {
 		return jwt().jwt(token -> token.subject(id.toString())).authorities(new SimpleGrantedAuthority("ROLE_USER"));
+	}
+
+	private org.springframework.test.web.servlet.request.RequestPostProcessor admin(UUID id) {
+		return jwt().jwt(token -> token.subject(id.toString())).authorities(new SimpleGrantedAuthority("ROLE_ADMIN"));
 	}
 
 	private String body(UUID slotId, String modality) {

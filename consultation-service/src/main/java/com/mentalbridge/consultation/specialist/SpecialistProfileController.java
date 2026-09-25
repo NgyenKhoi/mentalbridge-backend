@@ -60,6 +60,13 @@ public class SpecialistProfileController {
 		return response(profile);
 	}
 
+	@PostMapping("/resubmit")
+	ResponseEntity<SpecialistProfileResponse> resubmit(@AuthenticationPrincipal Jwt jwt,
+			@RequestHeader(name = "If-Match", required = false) String ifMatch) {
+		var profile = profiles.resubmit(RequestIdentity.subject(jwt), RequestIdentity.requiredVersion(ifMatch));
+		return response(profile);
+	}
+
 	private ResponseEntity<SpecialistProfileResponse> response(SpecialistProfileService.ProfileView profile) {
 		return ResponseEntity.ok().eTag(Long.toString(profile.version()))
 				.body(SpecialistProfileResponse.from(profile));

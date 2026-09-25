@@ -76,11 +76,11 @@ See [README](README.md) for status and relationship semantics.
 | `current_service_entitlement` | consultation-service | PostgreSQL | ACTIVE | Account and establishing actor are logical/external Identity references; current narrow package decision for consumers. |
 | `availability_slot` | consultation-service | PostgreSQL | ACTIVE | Physical many-to-one to `specialist_profile`; active slots cannot overlap for one specialist. |
 | `service_credit_period`, `service_credit`, `service_credit_ledger` | consultation-service | PostgreSQL | ACTIVE | Current entitlement provisions bounded credits; appointment transitions hold and later release/consume one credit with append-only evidence. |
-| `appointment` | consultation-service | PostgreSQL | ACTIVE | MB-378 owns the REQUESTED snapshot, exact online slot and held credit; MB-558 adds package reservation caps and linked atomic replacement while retaining the old snapshot. |
+| `appointment`, `appointment_status_history` | consultation-service | PostgreSQL | ACTIVE | MB-378 owns the REQUESTED snapshot, exact online slot and held credit; MB-360 records suspension cancellation outcomes and releases the exact held credit; MB-558 adds package reservation caps and linked atomic replacement while retaining the old snapshot. |
 | Specialty catalogue/assignment | consultation-service | PostgreSQL | PROPOSED | Discovery policy exists, but no owner migration implements specialty persistence. |
 | Subscription plan/version/entitlement | consultation-service | PostgreSQL | PROPOSED | ADR 0017 approves package semantics; exact VND prices/allocations and owner migrations remain gated. |
 | User subscription/payment/IPN/upgrade | consultation-service | PostgreSQL | PROPOSED | Approved billing boundary without active migration; must not be inferred from `current_service_entitlement`. |
-| Appointment status history/completion evidence | consultation-service | PostgreSQL | PROPOSED | The initial request row is active; later decision/session history and evidence remain separate stories. |
+| Appointment completion evidence | consultation-service | PostgreSQL | PROPOSED | Request and suspension-cancellation history are active; later decision/session evidence remains in separate stories. |
 | Specialist earning/payout/reconciliation | consultation-service | PostgreSQL | PROPOSED | Approved financial boundary remains gated by pricing, credentials, and owner migrations. |
 | Specialist review | consultation-service | PostgreSQL | PROPOSED | Product scope exists, but no persistence migration is active. |
 

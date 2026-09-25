@@ -772,7 +772,7 @@ Database checks require a submitted timestamp once review starts, reviewer ident
 | `submitted_at` | UTC instant the specialist submitted a complete profile for review; null before submission. |
 | `reviewed_at` | UTC instant the latest administrator decision became effective; null until reviewed. |
 | `reviewed_by` | External Identity administrator UUID responsible for the latest decision; null until reviewed. |
-| `decision_reason_code` | Optional stable, non-sensitive reason for rejection or suspension; unrestricted document/evidence text is not stored. |
+| `decision_reason_code` | Optional stable, non-sensitive rejection or suspension enum. MB-360 allows only the reviewed incomplete/content/scope rejection reasons and policy/quality/account-review suspension reasons; unrestricted evidence text is not stored. |
 | `created_at` | Immutable UTC profile creation instant. |
 | `updated_at` | UTC instant of the latest persisted profile or approval change. |
 | `version` | Optimistic-lock counter preventing lost specialist-profile updates. |
@@ -807,7 +807,7 @@ decisions. It stores no uploaded evidence or unrestricted notes.
 | `id` | Immutable UUID audit-entry identifier. |
 | `specialist_account_id` | Specialist profile whose state was submitted or changed. |
 | `approval_status` | State established by this explicit action. |
-| `reason_code` | Stable reason for rejection/suspension when those later transitions are implemented. |
+| `reason_code` | Stable reviewed reason for an applied rejection or suspension; null for submit, resubmit, approval, and restoration. |
 | `actor_account_id` | Identity UUID of the specialist or administrator performing the action. |
 | `actor_role` | `SPECIALIST` or `ADMIN` operational actor class. |
 | `occurred_at` | UTC instant when the action became effective. |
@@ -913,8 +913,23 @@ Implemented MB-378/MB-558 request aggregate. One row is the immutable scheduling
 | `decision_deadline_at` | Earlier of 24 hours after request or two hours before start; the decision/expiry owner consumes this handoff. |
 | `idempotency_key` | Printable user-scoped request key; exact retry returns this row and conflicting reuse fails. |
 | `replaces_appointment_id` | Optional self-reference to the active appointment replaced by this request. The old immutable schedule is retained as `CANCELLED`; its held credit and reservation capacity move to the replacement atomically. One old appointment may be replaced only once. |
+| `cancellation_reason` | Optional stable reviewed reason paired with `cancelled_at`; MB-360 writes `SPECIALIST_SUSPENDED`, while cancellation flows without owned metadata may leave both fields null. |
+| `cancelled_at` | Optional server UTC cancellation instant paired with `cancellation_reason`; the pair is populated together or left null together. |
 | `created_at` / `updated_at` | UTC insertion and latest authoritative state-change instants. |
 | `version` | Optimistic state-transition counter for later decision commands. |
+
+### `consultation.appointment_status_history`
+
+Append-only transition evidence introduced by MB-360 for appointment outcomes.
+
+| Field | Purpose |
+| --- | --- |
+| `id` | Immutable transition UUID. |
+| `appointment_id` | Appointment whose authoritative status changed. |
+| `from_status` / `to_status` | Valid current appointment states before and after the transition, including the shared `IN_PROGRESS` state used by the credit/reschedule lifecycle. |
+| `changed_by` | Identity actor UUID responsible for the transition. |
+| `reason` | Stable reviewed outcome reason without private consultation content. |
+| `changed_at` | Server UTC instant at which the transition committed. |
 
 ### `consultation.subscription_plan_version`
 
@@ -1175,53 +1190,6 @@ introduced by a historical migration, remain separate and readable.
 | `created_at` | Immutable UTC slot creation instant. |
 | `updated_at` | UTC instant of the latest slot state or schedule change. |
 | `version` | Optimistic-lock counter preventing lost concurrent slot updates. |
-
-### `consultation.appointment`
-
-Authoritative scheduled consultation between one user and specialist for an
-owned availability slot and credit. Historical v1 in-person appointments keep
-their immutable location snapshot. New v2 appointments are chat/video only and
-require channel-end, provider/server evidence, summary/next-step reuse approval,
-and dispute fields before runtime is claimed.
-
-Composite foreign keys require the appointment specialist to own the slot and the appointment user to own the credit; the application cannot create a locally inconsistent pairing.
-
-| Field | Purpose |
-| --- | --- |
-| `id` | Immutable UUID exposed in appointment REST resources and Kafka events. |
-| `slot_id` | Owned availability slot reserved by the appointment and protected by a unique active-booking constraint. |
-| `credit_id` | Consultation credit reserved by this appointment; a partial unique index prevents concurrent active use while allowing reuse after eligible cancellation. |
-| `user_id` | External Care profile UUID of the person requesting consultation. |
-| `specialist_id` | Consultation-owned specialist UUID denormalized for authorization and query efficiency. |
-| `status` | Authoritative appointment workflow state; transitions are validated and recorded in history. |
-| `scheduled_start_at` | Inclusive UTC start copied from the selected specialist slot at booking; chat waiting may begin ten minutes before it, but sending cannot. |
-| `scheduled_end_at` | Exclusive UTC end copied from the selected specialist slot; join/send ends here even if the source availability later changes. |
-| `scheduled_timezone` | Specialist slot's IANA timezone snapshot used to reproduce the originally booked schedule. |
-| `channel` | Booked mode snapshot. Historical v1 includes `IN_PERSON`; new v2 records allow `IN_APP_CHAT` or contract-enabled `IN_APP_VIDEO` only. |
-| `user_timezone` | IANA timezone captured at booking so the schedule remains understandable after device timezone changes. |
-| `idempotency_key` | Caller retry key unique per user so uncertain REST retries return the original booking outcome. |
-| `cancellation_reason` | Reviewed explanation recorded when a permitted cancellation occurs. |
-| `requested_at` | UTC instant the booking request was accepted. |
-| `confirmed_at` | UTC instant the appointment became confirmed; null otherwise. |
-| `completed_at` | UTC instant the consultation reached evidence-based or user-confirmed completion; null otherwise. A specialist action alone is insufficient. |
-| `cancelled_at` | UTC instant cancellation became effective; null otherwise. |
-| `created_at` | Immutable UTC database insertion instant. |
-| `updated_at` | UTC instant of the latest persisted appointment transition/change. |
-| `version` | Optimistic-lock counter preventing lost concurrent appointment transitions. |
-
-### `consultation.appointment_status_history`
-
-Append-only audit timeline of validated appointment state transitions.
-
-| Field | Purpose |
-| --- | --- |
-| `id` | Immutable UUID identifying one transition record. |
-| `appointment_id` | Appointment whose workflow state changed. |
-| `from_status` | Previous state; null only for the initial creation transition. |
-| `to_status` | New authoritative state reached by the transition. |
-| `changed_by` | Identity account responsible for the transition; null for approved system actions. |
-| `reason` | Optional reviewed reason explaining the transition without sensitive conversation content. |
-| `changed_at` | UTC instant the transition committed. |
 
 ### `consultation.consultation_credit_ledger_entry`
 

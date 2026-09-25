@@ -67,13 +67,13 @@ Cross-owner identifiers in the canonical logical model make relationships visibl
 
 ### Booking model status
 
-- Availability is `ACTIVE`; later booking/appointment entities in this section are approved `PROPOSED` models until an owner migration exists.
+- Availability and the initial appointment-request aggregate are `ACTIVE`; later decision/session entities in this section remain approved `PROPOSED` models until an owner migration exists.
 - Availability uses `[start_at, end_at)` semantics and validates start before end.
 - An approved specialist publishes discrete 60-minute online slots as UTC instants plus an IANA display timezone. MB-362 stores no PracticeLocation, phone, or external meeting link. A later booking flow snapshots start, end, timezone, and modality without mutating the source slot.
 - An exclusion constraint prevents overlapping active slots for the same specialist.
 - A partial unique index permits only one active appointment per slot.
 - A second partial unique index permits only one active appointment per credit; booking locks the slot and credit together.
-- `appointment_status_history` provides an auditable state-transition timeline.
+- `appointment_status_history` currently records MB-360 suspension cancellations and accepts shared lifecycle states including MB-558 `IN_PROGRESS`; later appointment decisions extend the same auditable timeline.
 - Historical v1 may retain `IN_PERSON` appointment provenance. New MB-362 slots
   accept only `IN_APP_CHAT` and capability-gated `IN_APP_VIDEO`; video session
   runtime remains unavailable until its detailed provider contract passes.
