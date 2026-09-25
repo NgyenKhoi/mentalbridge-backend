@@ -142,7 +142,12 @@ and a distance calculation, copy says “cơ sở trong khu vực đã chọn”
 
 > Nếu bạn cảm thấy mình không an toàn hoặc có nguy cơ gây hại cho bản thân, hãy chủ động liên hệ dịch vụ khẩn cấp hoặc cơ sở y tế phù hợp tại khu vực của bạn.
 
-This wording is not approved production content. It may be adopted for a controlled Capstone demo only through an explicit Product Owner content decision. A specific number such as `115` remains excluded unless a separate production legal/domain decision approves it inside versioned safety content.
+This wording is not approved production content. It may be adopted for a
+controlled Capstone demo only through an explicit Product Owner content
+decision. [ADR 0024](../adr/0024-global-anonymous-crisis-support.md)
+prospectively approves `112` and `115` inside the separately versioned global
+web safety content; it does not change historical assessment output or approve
+any additional contact.
 
 Self-screening may be available 24/7. That availability never implies 24/7
 human monitoring. Positive item 9 or explicit “Tôi cần hỗ trợ ngay” opens the

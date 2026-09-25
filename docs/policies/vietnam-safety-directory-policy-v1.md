@@ -5,19 +5,23 @@
 | Field | Value |
 | --- | --- |
 | Policy ID | `MB-VN-SAFETY-DIRECTORY-001` |
-| Policy version | `1.0` |
-| Status | `CONTROLLED DEMO IMPLEMENTED; REAL CONTENT AND PRODUCTION RELEASE UNAPPROVED` |
+| Policy version | `1.1` |
+| Status | `WEB 112/115 CONTENT APPROVED; REAL AREA-DIRECTORY CONTENT UNAPPROVED` |
 | Decision date | 2026-09-17 |
+| Fixed web content amendment date | 2026-09-25 |
 | Directory owner | Content/Notification |
 | Safety trigger and fallback owner | Care |
 | Review authority | Authenticated `ADMIN` |
+| Fixed web content authority | Product Owner under ADR 0024 |
 | Verification cadence | 90 days |
 | Applies to | Manually selected or entered coarse areas in Vietnam |
-| Decision | [ADR 0018](../adr/0018-reviewed-vietnam-safety-directory.md) |
+| Decision | [ADR 0018](../adr/0018-reviewed-vietnam-safety-directory.md), amended by [ADR 0024](../adr/0024-global-anonymous-crisis-support.md) |
 
 This policy approves the directory shape and behavior needed for implementation.
-It does not approve any real facility, hotline, telephone number, production
-deployment, emergency dispatch, or guaranteed response.
+It does not approve any real area-specific facility or hotline record,
+emergency dispatch by MentalBridge, or guaranteed response. ADR 0024 separately
+approves the fixed national `112` and `115` web content described below; those
+nationally assigned services are not area-directory records.
 
 ## Directory record schema
 
@@ -126,9 +130,14 @@ The controlled-Capstone fallback remains:
 
 > Nếu bạn cảm thấy mình không an toàn hoặc có nguy cơ gây hại cho bản thân, hãy chủ động liên hệ dịch vụ khẩn cấp hoặc cơ sở y tế phù hợp tại khu vực của bạn.
 
-No specific number is approved by this policy. Production safety wording and
-each real directory record still require their stated domain, legal, privacy,
-content, and operational gates.
+The reviewed fixed web release `mb-crisis-support-vi-vn-v1` displays `112` as
+`Tổng đài khẩn cấp quốc gia` with the official `24/7` service-hours statement,
+followed by `115` as `Cấp cứu y tế`. Both numbers are visible without login,
+assessment, area selection, form submission, or an optional-service request.
+Their official source references and 2026-09-25 review date are fixed by ADR
+0023 and must be rechecked at least every 90 days. A new number or changed claim
+requires a new reviewed content version. Each real area-directory record still
+requires its existing domain, legal, privacy, content, and operational gates.
 
 ## Prohibited behavior
 

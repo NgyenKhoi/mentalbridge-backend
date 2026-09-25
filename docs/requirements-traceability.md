@@ -70,6 +70,9 @@ These constraints refine rather than contradict the source documents:
 - The system proposes a bounded SupportPlan draft; the user controls allowed choices and explicit activation but does not author an arbitrary initial resource set.
 - AI output cannot downgrade or change a deterministic safety status.
 - Approved safety guidance is returned synchronously and remains available when AI, Kafka, Redis, WebSocket, email, or push delivery fails.
+- Every web route exposes the anonymous crisis-support panel with reviewed
+  national `112` and medical-emergency `115` call actions before optional area
+  input. A call starts only after the user deliberately selects `Gọi`.
 - Area-filtered directory results require source/provenance, review/verification timestamps, address, phone, coverage, and active state; without coordinates/distance they never claim “nearest”.
 - Safety never automatically calls, shares location, emails an alert, or notifies a third party.
 - The platform provides screening/referral support, not diagnosis, treatment, continuous monitoring, or guaranteed emergency response.

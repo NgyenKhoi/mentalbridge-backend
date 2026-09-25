@@ -178,9 +178,16 @@ Safety activates when either:
 
 A `High` or `Severe` screening band alone is not a safety trigger.
 
-The user manually chooses an area. MentalBridge does not infer precise location, automatically call, dispatch, contact a third party, auto-book a specialist, or send an automatic safety email.
+The global anonymous crisis-support panel exposes the reviewed national `112`
+and `115` contacts before any area selection. The user must deliberately select
+`Gọi`; MentalBridge never starts a call automatically. Area-specific results
+still require a manually chosen coarse area. MentalBridge does not infer precise
+location, dispatch, contact a third party, auto-book a specialist, or send an
+automatic safety email.
 
 Safety is independent of package, AI availability, consultation credits, and specialist availability.
+
+Detailed national-contact amendment: [ADR 0024](adr/0024-global-anonymous-crisis-support.md).
 
 ## 9. Owner boundaries
 

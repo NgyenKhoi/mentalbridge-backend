@@ -9,8 +9,11 @@ Use ADR **filename + Decision ID**, not numeric prefix alone, when a reference c
 | [0017-product-scope-v2.md](0017-product-scope-v2.md) | `MB-SCOPE-V2-001` | Accepted | Base cross-feature v2 scope |
 | [0022-current-product-blueprint-amendments.md](0022-current-product-blueprint-amendments.md) | `MB-SCOPE-V2-002` | Accepted | Latest amendments for Support Guide semantics, reassessment, PlanChangeRequest handoff, consultation credits, no-rollover, and reservation caps |
 | [0023-persist-guided-screening-episodes.md](0023-persist-guided-screening-episodes.md) | `MB-SCREENING-EPISODE-001` | Accepted | Care-owned exact grouping and resume context for guided initial check and reassessment evidence |
+| [0024-global-anonymous-crisis-support.md](0024-global-anonymous-crisis-support.md) | `MB-GLOBAL-CRISIS-SUPPORT-001` | Accepted | Latest safety amendment for the global anonymous panel and reviewed national `112`/`115` contacts |
 
-For clauses explicitly amended by ADR 0022, ADR 0022 is the current prospective authority. Historical records keep their original policy/version.
+For clauses explicitly amended by ADR 0022 or ADR 0024, the relevant latest
+amendment is the current prospective authority. Historical records keep their
+original policy/version.
 
 ## Known numeric-prefix collisions
 
