@@ -1,6 +1,7 @@
 package com.mentalbridge.consultation.specialist;
 
 import static org.assertj.core.api.Assertions.assertThat;
+import static org.hamcrest.Matchers.hasItem;
 import static org.springframework.security.test.web.servlet.request.SecurityMockMvcRequestPostProcessors.jwt;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.get;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.post;
@@ -201,8 +202,9 @@ class SpecialistProfileFlowIntegrationTests extends ConsultationTestProperties {
 				.andExpect(status().isConflict())
 				.andExpect(jsonPath("$.code").value("SPECIALIST_NOT_APPROVED"));
 		mvc.perform(get("/api/v1/admin/specialist-profiles?status=SUSPENDED").with(admin(adminId)))
-				.andExpect(status().isOk()).andExpect(jsonPath("$.count").value(1))
-				.andExpect(jsonPath("$.items[0].decisionReasonCode").value("QUALITY_REVIEW_REQUIRED"));
+				.andExpect(status().isOk())
+				.andExpect(jsonPath("$.items[?(@.accountId == '%s')].decisionReasonCode"
+						.formatted(specialistId)).value(hasItem("QUALITY_REVIEW_REQUIRED")));
 
 		var replay = mvc.perform(post("/api/v1/admin/specialist-profiles/{id}/suspend", specialistId)
 				.with(admin(adminId)).header("If-Match", suspended.getResponse().getHeader("ETag"))

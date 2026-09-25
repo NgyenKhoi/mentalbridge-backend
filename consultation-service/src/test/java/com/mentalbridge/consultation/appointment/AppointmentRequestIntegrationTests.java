@@ -152,7 +152,7 @@ class AppointmentRequestIntegrationTests extends ConsultationTestProperties {
 			assertThat(request.get()).isIn(201, 409);
 		}
 
-		assertThat(jdbc.sql("select status from specialist_profile where account_id=:id")
+		assertThat(jdbc.sql("select approval_status from specialist_profile where account_id=:id")
 				.param("id", specialistId).query(String.class).single()).isEqualTo("SUSPENDED");
 		assertThat(jdbc.sql("select count(*) from appointment where availability_slot_id=:id and status in ('REQUESTED','CONFIRMED')")
 				.param("id", slotId).query(Long.class).single()).isZero();
