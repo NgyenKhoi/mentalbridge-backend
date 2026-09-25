@@ -167,9 +167,9 @@ class ConsultationLiquibaseMigrationTests extends ConsultationTestProperties {
 		var periodId = UUID.randomUUID();
 		jdbc.sql("""
 				insert into service_credit_period (
-				    id, account_id, plan_version, package_code, source, source_reference,
+				    id, account_id, plan_version, credit_policy_version, package_code, source, source_reference,
 				    period_start, period_end, allocated_count, created_at, updated_at
-				) values (:id, :accountId, 'migration-policy', 'PLUS', 'DEMO',
+				) values (:id, :accountId, 'migration-policy', 'consultation-credit-v1', 'PLUS', 'DEMO',
 				    'migration-specialist-lifecycle', :start, :end, 1, :now, :now)
 				""").param("id", periodId).param("accountId", UUID.randomUUID())
 				.param("start", OffsetDateTime.now().minusDays(1)).param("end", OffsetDateTime.now().plusDays(60))

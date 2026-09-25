@@ -111,10 +111,10 @@ The requirements are represented in domain/architecture documentation, but the l
   `PlanChangeRequest` and applies a change only after user confirmation. New
   `consultation-credit-v2` periods target `FREE=0`, `PLUS=4`, `PREMIUM=10`, no
   rollover, and concurrent active-reservation caps `0/2/4`; historical v1
-  `0/1/3` periods remain immutable. The MB-386 composition and v1 credit ledger
-  remain implemented compatibility baselines; MB-559 adds canonical explicit
-  reassessment self-report without rewriting v1 snapshots, while
-  credit-v2/reservation-cap runtime remains delivery-gated. See
+  `0/1/3` periods remain immutable. MB-558 implements the credit-v2 allocation,
+  distinct reservation-cap response/enforcement, race-safe capacity check, and
+  atomic replacement-request path. MB-559 adds canonical explicit reassessment
+  self-report without rewriting v1 snapshots. See
   [ADR 0022](adr/0022-current-product-blueprint-amendments.md), the
   [SupportPlan policy v2](policies/support-plan-policy-v2.md), and the
   [Consultation policy v2](policies/consultation-specialist-policy-v2.md).

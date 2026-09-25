@@ -742,7 +742,7 @@ ALTER TABLE care.support_plan_command
 
 /* ========================================================================== */
 /* ACTIVE — consultation-service / mentalbridge_consultation                  */
-/* Evidence: Consultation Liquibase changesets 001-005.                       */
+/* Evidence: Consultation Liquibase changesets 001-007.                       */
 /* ========================================================================== */
 
 CREATE TABLE consultation.specialist_profile (
@@ -801,6 +801,7 @@ CREATE TABLE consultation.service_credit_period (
     id uuid PRIMARY KEY,
     account_id uuid NOT NULL, -- external -> identity.account.id
     plan_version varchar(64) NOT NULL,
+    credit_policy_version varchar(64) NOT NULL,
     package_code varchar(16) NOT NULL,
     source varchar(16) NOT NULL,
     source_reference varchar(128) NOT NULL,
@@ -866,6 +867,7 @@ CREATE TABLE consultation.appointment (
     requested_at timestamptz NOT NULL,
     decision_deadline_at timestamptz NOT NULL,
     idempotency_key varchar(128) NOT NULL,
+    replaces_appointment_id uuid REFERENCES consultation.appointment(id),
     cancellation_reason varchar(64),
     cancelled_at timestamptz,
     created_at timestamptz NOT NULL,

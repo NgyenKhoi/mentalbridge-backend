@@ -295,9 +295,9 @@ class SpecialistProfileFlowIntegrationTests extends ConsultationTestProperties {
 		var periodId = UUID.randomUUID();
 		jdbc.sql("""
 				insert into service_credit_period (
-				    id, account_id, plan_version, package_code, source, source_reference,
+				    id, account_id, plan_version, credit_policy_version, package_code, source, source_reference,
 				    period_start, period_end, allocated_count, created_at, updated_at
-				) values (:id, :userId, 'lifecycle-test-v1', 'PLUS', 'DEMO',
+				) values (:id, :userId, 'lifecycle-test-v1', 'consultation-credit-v1', 'PLUS', 'DEMO',
 				    'mb-360-suspension-test', :periodStart, :periodEnd, 1, :now, :now)
 				""").param("id", periodId).param("userId", userId).param("periodStart", now.minusDays(1))
 				.param("periodEnd", now.plusDays(30)).param("now", now).update();

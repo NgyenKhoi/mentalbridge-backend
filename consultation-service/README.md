@@ -24,6 +24,10 @@ MB-378 adds the first appointment request slice. A paid user selects one exact
 online slot and Consultation atomically creates a `REQUESTED` snapshot while
 holding one eligible credit. Slot/credit concurrency and command replay are
 enforced locally; specialist decisions and scheduled expiry remain MB-379.
+MB-558 adds `consultation-credit-v2` for new periods (`FREE=0`, `PLUS=4`,
+`PREMIUM=10`), preserves existing v1 periods as `0/1/3`, and exposes/enforces
+separate active-reservation limits `0/2/4`. Replacement requests retain the old
+appointment snapshot while moving its credit and reservation atomically.
 Appointment existence alone does not grant sensitive data access;
 Care owns the user-approved appointment-scoped `ConsultationBrief` and sharing
 decision.
@@ -86,11 +90,11 @@ or owns the shared dev/staging Consultation database.
 - `GET|POST /api/v1/availability-slots`
 - `DELETE /api/v1/availability-slots/{slotId}`
 
-## Implemented MB-377 endpoint
+## Implemented MB-377/MB-558 endpoint
 
 - `GET /api/v1/service-credits`
 
-## Implemented MB-378 endpoints
+## Implemented MB-378/MB-558 endpoints
 
 - `GET /api/v1/bookable-slots`
 - `GET|POST /api/v1/appointments`

@@ -37,10 +37,10 @@ consultations use in-app chat/video only; and real payment/payout is VND through
 MoMo after its price, allocation, and credential gates pass.
 
 The Support Guide is a persisted immutable historical snapshot for one
-screening context, not ephemeral data and not a lifecycle aggregate. The
-approved consultation-credit-v2 target is `FREE=0`, `PLUS=4`, `PREMIUM=10`,
-with no rollover and concurrent active-reservation caps `0/2/4`; the implemented
-historical credit-v1 ledger remains `0/1/3` until compatible delivery lands.
+screening context, not ephemeral data and not a lifecycle aggregate. New
+`consultation-credit-v2` periods use `FREE=0`, `PLUS=4`, `PREMIUM=10`, with no
+rollover and concurrent active-reservation caps `0/2/4`; historical credit-v1
+periods remain immutable `0/1/3`.
 
 ## 3. Container view
 

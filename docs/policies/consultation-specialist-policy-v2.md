@@ -5,7 +5,7 @@
 | Field | Value |
 | --- | --- |
 | Scope decisions | `MB-SCOPE-V2-001`, amended by `MB-SCOPE-V2-002` |
-| Status | `PRODUCT POLICY APPROVED; MB-360 LIFECYCLE, MB-362 AVAILABILITY, AND MB-378 APPOINTMENT REQUEST RUNTIMES IMPLEMENTED; CREDIT V2 / DISCOVERY / VIDEO SESSION RUNTIMES DELIVERY-GATED` |
+| Status | `PRODUCT POLICY APPROVED; MB-360 LIFECYCLE, MB-362 AVAILABILITY, MB-378 APPOINTMENT REQUEST, AND MB-558 CREDIT V2/CAP RUNTIMES IMPLEMENTED; DISCOVERY / VIDEO SESSION RUNTIMES DELIVERY-GATED` |
 | Effective decision date | 2026-09-24 for ADR 0022 amendments |
 | Appointment, specialist, evidence, and billing owner | Consultation |
 | Brief and SupportPlan-change decision owner | Care |
@@ -71,9 +71,10 @@ the reservation cap must still be able to replace the reservation being
 rescheduled through one atomic/reconciled operation without temporarily
 counting both old and replacement reservations as independent capacity.
 
-The `consultation-credit-v2` target is approved by ADR 0022 but is not runtime
-truth until MB-558 or equivalent delivery updates the owner ledger and booking
-consumers. Existing MB-377 runtime remains truthful `consultation-credit-v1`.
+MB-558 implements `consultation-credit-v2` for newly created periods and keeps
+existing MB-377 `consultation-credit-v1` periods immutable. The owner response
+and booking command expose/enforce reservation capacity separately from credit
+balance.
 
 ## Specialist exception lifecycle
 

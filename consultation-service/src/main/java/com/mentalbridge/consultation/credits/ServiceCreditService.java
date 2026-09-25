@@ -21,7 +21,8 @@ import com.mentalbridge.consultation.shared.ApiException;
 @Service
 public class ServiceCreditService {
 
-	static final String POLICY_VERSION = "consultation-credit-v1";
+	static final String CURRENT_POLICY_VERSION = "consultation-credit-v2";
+	static final String HISTORICAL_POLICY_VERSION = "consultation-credit-v1";
 	private static final int HISTORY_LIMIT = 100;
 
 	private final CurrentServiceEntitlementService entitlements;
@@ -129,25 +130,27 @@ public class ServiceCreditService {
 		var periodId = UUID.randomUUID();
 		jdbc.sql("""
 				insert into service_credit_period (
-				    id, account_id, plan_version, package_code, source, source_reference,
+				    id, account_id, plan_version, credit_policy_version, package_code, source, source_reference,
 				    period_start, period_end, allocated_count, created_at, updated_at
 				) values (
-				    :id, :accountId, :planVersion, :packageCode, :source, :sourceReference,
+				    :id, :accountId, :planVersion, :creditPolicyVersion, :packageCode, :source, :sourceReference,
 				    :periodStart, :periodEnd, :allocatedCount, :now, :now
 				) on conflict (account_id, plan_version, period_start, period_end) do nothing
 				""").param("id", periodId).param("accountId", entitlement.accountId())
 				.param("planVersion", entitlement.policyVersion()).param("packageCode", entitlement.packageCode().name())
+				.param("creditPolicyVersion", CURRENT_POLICY_VERSION)
 				.param("source", entitlement.source().name()).param("sourceReference", entitlement.sourceReference())
 				.param("periodStart", databaseInstant(entitlement.effectiveFrom()))
 				.param("periodEnd", databaseInstant(entitlement.effectiveUntil()))
-				.param("allocatedCount", allocation(entitlement.packageCode())).param("now", databaseNow()).update();
+				.param("allocatedCount", allocation(CURRENT_POLICY_VERSION, entitlement.packageCode()))
+				.param("now", databaseNow()).update();
 
 		var period = findPeriod(entitlement);
 		if (period.source() != entitlement.source() || !period.sourceReference().equals(entitlement.sourceReference())) {
 			throw conflict("CREDIT_PERIOD_PROVENANCE_CONFLICT",
 					"The entitlement period already has different credit provenance");
 		}
-		var target = allocation(entitlement.packageCode());
+		var target = allocation(period.creditPolicyVersion(), entitlement.packageCode());
 		if (period.allocatedCount() > target) {
 			throw conflict("SUBSCRIPTION_DOWNGRADE_NOT_SUPPORTED", "Credit entitlement cannot be downgraded in place");
 		}
@@ -166,7 +169,7 @@ public class ServiceCreditService {
 
 	private CreditPeriod findPeriod(CurrentServiceEntitlementService.EntitlementDecision entitlement) {
 		return jdbc.sql("""
-				select id, package_code, source, source_reference, allocated_count
+				select id, credit_policy_version, package_code, source, source_reference, allocated_count
 				from service_credit_period
 				where account_id=:accountId and plan_version=:planVersion
 				  and period_start=:periodStart and period_end=:periodEnd
@@ -174,7 +177,7 @@ public class ServiceCreditService {
 				""").param("accountId", entitlement.accountId()).param("planVersion", entitlement.policyVersion())
 				.param("periodStart", databaseInstant(entitlement.effectiveFrom()))
 				.param("periodEnd", databaseInstant(entitlement.effectiveUntil()))
-				.query((row, ignored) -> new CreditPeriod(row.getObject("id", UUID.class),
+				.query((row, ignored) -> new CreditPeriod(row.getObject("id", UUID.class), row.getString("credit_policy_version"),
 						ServicePackage.valueOf(row.getString("package_code")),
 						EntitlementSource.valueOf(row.getString("source")), row.getString("source_reference"),
 						row.getInt("allocated_count"))).single();
@@ -212,13 +215,26 @@ public class ServiceCreditService {
 		var balance = new ServiceCreditResponse.Balance(counts.getOrDefault("AVAILABLE", 0),
 				counts.getOrDefault("HELD", 0), counts.getOrDefault("CONSUMED", 0),
 				counts.getOrDefault("FORFEITED", 0), period == null ? 0 : period.allocatedCount(), released);
+		var activeReservations = activeReservations(accountId);
+		var maximumReservations = reservationLimit(packageCode);
+		var capacity = new ServiceCreditResponse.ReservationCapacity(activeReservations, maximumReservations,
+				Math.max(0, maximumReservations - activeReservations));
 		return new ServiceCreditResponse(accountId, packageCode, source, sourceReference, periodStart, periodEnd,
-				POLICY_VERSION, balance, history, clock.instant());
+				period == null ? CURRENT_POLICY_VERSION : period.creditPolicyVersion(), balance, capacity, history,
+				clock.instant());
+	}
+
+	private int activeReservations(UUID accountId) {
+		return jdbc.sql("""
+				select count(*)::integer from appointment
+				where user_account_id=:accountId and status in ('REQUESTED', 'CONFIRMED', 'IN_PROGRESS')
+				""").param("accountId", accountId).query(Integer.class).single();
 	}
 
 	private List<ServiceCreditResponse.LedgerEvent> history(UUID accountId) {
 		return jdbc.sql("""
-				select l.id, l.credit_id, l.event_type, p.source, p.package_code, l.appointment_id, l.occurred_at
+				select l.id, l.credit_id, l.event_type, p.source, p.package_code,
+				       p.credit_policy_version, l.appointment_id, l.occurred_at
 				from service_credit_ledger l
 				join service_credit c on c.id=l.credit_id
 				join service_credit_period p on p.id=c.period_id
@@ -229,14 +245,24 @@ public class ServiceCreditService {
 						row.getObject("credit_id", UUID.class), CreditEventType.valueOf(row.getString("event_type")),
 						EntitlementSource.valueOf(row.getString("source")),
 						ServicePackage.valueOf(row.getString("package_code")),
+						row.getString("credit_policy_version"),
 						row.getObject("appointment_id", UUID.class), row.getTimestamp("occurred_at").toInstant())).list();
 	}
 
-	private int allocation(ServicePackage packageCode) {
+	private int allocation(String policyVersion, ServicePackage packageCode) {
+		if (packageCode == ServicePackage.FREE) return 0;
+		return switch (policyVersion) {
+			case HISTORICAL_POLICY_VERSION -> packageCode == ServicePackage.PLUS ? 1 : 3;
+			case CURRENT_POLICY_VERSION -> packageCode == ServicePackage.PLUS ? 4 : 10;
+			default -> throw new IllegalStateException("Unsupported consultation-credit policy: " + policyVersion);
+		};
+	}
+
+	private int reservationLimit(ServicePackage packageCode) {
 		return switch (packageCode) {
 			case FREE -> 0;
-			case PLUS -> 1;
-			case PREMIUM -> 3;
+			case PLUS -> 2;
+			case PREMIUM -> 4;
 		};
 	}
 
@@ -252,7 +278,7 @@ public class ServiceCreditService {
 		return OffsetDateTime.ofInstant(instant, ZoneOffset.UTC);
 	}
 
-	private record CreditPeriod(UUID id, ServicePackage packageCode, EntitlementSource source,
+	private record CreditPeriod(UUID id, String creditPolicyVersion, ServicePackage packageCode, EntitlementSource source,
 			String sourceReference, int allocatedCount) {
 	}
 
