@@ -73,7 +73,7 @@ Cross-owner identifiers in the canonical logical model make relationships visibl
 - An exclusion constraint prevents overlapping active slots for the same specialist.
 - A partial unique index permits only one active appointment per slot.
 - A second partial unique index permits only one active appointment per credit; booking locks the slot and credit together.
-- `appointment_status_history` currently records MB-360 suspension cancellations; later appointment decisions extend the same auditable timeline.
+- `appointment_status_history` currently records MB-360 suspension cancellations and accepts shared lifecycle states including MB-558 `IN_PROGRESS`; later appointment decisions extend the same auditable timeline.
 - Historical v1 may retain `IN_PERSON` appointment provenance. New MB-362 slots
   accept only `IN_APP_CHAT` and capability-gated `IN_APP_VIDEO`; video session
   runtime remains unavailable until its detailed provider contract passes.

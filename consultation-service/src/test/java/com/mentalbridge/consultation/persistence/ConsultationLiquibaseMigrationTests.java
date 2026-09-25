@@ -103,7 +103,7 @@ class ConsultationLiquibaseMigrationTests extends ConsultationTestProperties {
 	}
 
 	@Test
-	void databaseRejectsUnreviewedSpecialistReasonsAndInconsistentAppointmentCancellation() {
+	void databaseRejectsUnreviewedReasonsAndKeepsCancellationCompatibleWithRescheduling() {
 		var specialistId = insertPendingProfile();
 		assertThatThrownBy(() -> jdbc.sql("""
 				update specialist_profile set decision_reason_code='FREE_TEXT_REASON'
@@ -127,21 +127,40 @@ class ConsultationLiquibaseMigrationTests extends ConsultationTestProperties {
 				""").param("id", slotId).param("specialist", specialistId).param("start", start)
 				.param("end", start.plusHours(1)).param("now", OffsetDateTime.now()).update();
 		var creditId = insertCredit();
-		assertThatThrownBy(() -> jdbc.sql("""
+		var appointmentId = UUID.randomUUID();
+		jdbc.sql("""
 				insert into appointment (
 				    id, availability_slot_id, service_credit_id, user_account_id,
 				    specialist_account_id, status, modality, scheduled_start_at,
 				    scheduled_end_at, display_timezone, decision_deadline_at,
-				    idempotency_key, cancellation_reason,
-				    requested_at, created_at, updated_at
-				) values (:id, :slotId, :creditId, :userId, :specialistId, 'CANCELLED',
+				    idempotency_key, requested_at, created_at, updated_at
+				) values (:id, :slotId, :creditId, :userId, :specialistId, 'REQUESTED',
 				    'IN_APP_CHAT', :start, :end, 'Asia/Ho_Chi_Minh', :deadline,
-				    'migration-appointment-request', null, :requestedAt, :now, :now)
-				""").param("id", UUID.randomUUID()).param("slotId", slotId).param("creditId", creditId)
+				    'migration-appointment-request', :requestedAt, :now, :now)
+				""").param("id", appointmentId).param("slotId", slotId).param("creditId", creditId)
 				.param("userId", UUID.randomUUID()).param("specialistId", specialistId).param("start", start)
 				.param("end", start.plusHours(1)).param("deadline", start.minusHours(2))
-				.param("requestedAt", OffsetDateTime.now()).param("now", OffsetDateTime.now()).update())
+				.param("requestedAt", OffsetDateTime.now()).param("now", OffsetDateTime.now()).update();
+
+		assertThat(jdbc.sql("""
+				update appointment set status='CANCELLED', updated_at=:now, version=version+1
+				where id=:id
+				""").param("id", appointmentId).param("now", OffsetDateTime.now()).update()).isOne();
+		assertThatThrownBy(() -> jdbc.sql("""
+				update appointment set cancellation_reason='SPECIALIST_SUSPENDED'
+				where id=:id
+				""").param("id", appointmentId).update())
 				.isInstanceOf(DataIntegrityViolationException.class);
+		assertThat(jdbc.sql("""
+				update appointment set cancellation_reason='SPECIALIST_SUSPENDED', cancelled_at=:now
+				where id=:id
+				""").param("id", appointmentId).param("now", OffsetDateTime.now()).update()).isOne();
+		assertThat(jdbc.sql("""
+				insert into appointment_status_history (
+				    id, appointment_id, from_status, to_status, reason, changed_at
+				) values (:id, :appointmentId, 'IN_PROGRESS', 'CANCELLED', 'USER_RESCHEDULED', :now)
+				""").param("id", UUID.randomUUID()).param("appointmentId", appointmentId)
+				.param("now", OffsetDateTime.now()).update()).isOne();
 	}
 
 	private UUID insertCredit() {

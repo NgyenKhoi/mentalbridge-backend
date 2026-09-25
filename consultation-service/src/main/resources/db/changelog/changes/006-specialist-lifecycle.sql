@@ -55,8 +55,8 @@ alter table appointment add column cancellation_reason varchar(64);
 alter table appointment add column cancelled_at timestamptz;
 
 alter table appointment add constraint ck_appointment_cancellation check (
-    (status = 'CANCELLED' and cancelled_at is not null and cancellation_reason is not null)
-    or (status <> 'CANCELLED' and cancelled_at is null and cancellation_reason is null)
+    (cancelled_at is null and cancellation_reason is null)
+    or (status = 'CANCELLED' and cancelled_at is not null and cancellation_reason is not null)
 );
 
 create index ix_appointment_specialist_future
@@ -73,9 +73,9 @@ create table appointment_status_history (
     changed_at timestamptz not null,
     constraint ck_appointment_history_status check (
         (from_status is null or from_status in (
-            'REQUESTED', 'CONFIRMED', 'REJECTED', 'EXPIRED', 'CANCELLED'
+            'REQUESTED', 'CONFIRMED', 'IN_PROGRESS', 'REJECTED', 'EXPIRED', 'CANCELLED'
         )) and to_status in (
-            'REQUESTED', 'CONFIRMED', 'REJECTED', 'EXPIRED', 'CANCELLED'
+            'REQUESTED', 'CONFIRMED', 'IN_PROGRESS', 'REJECTED', 'EXPIRED', 'CANCELLED'
         )
     )
 );

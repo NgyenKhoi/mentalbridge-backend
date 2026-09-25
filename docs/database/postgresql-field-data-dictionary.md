@@ -911,8 +911,8 @@ Implemented MB-378 request aggregate. One row is the immutable scheduling snapsh
 | `requested_at` | Server UTC command instant used for lead-time and deadline calculation. |
 | `decision_deadline_at` | Earlier of 24 hours after request or two hours before start; the decision/expiry owner consumes this handoff. |
 | `idempotency_key` | Printable user-scoped request key; exact retry returns this row and conflicting reuse fails. |
-| `cancellation_reason` | Stable reviewed reason required for a cancelled appointment; MB-360 writes `SPECIALIST_SUSPENDED`. |
-| `cancelled_at` | Server UTC instant required when status is `CANCELLED`; null for every other current status. |
+| `cancellation_reason` | Optional stable reviewed reason paired with `cancelled_at`; MB-360 writes `SPECIALIST_SUSPENDED`, while cancellation flows without owned metadata may leave both fields null. |
+| `cancelled_at` | Optional server UTC cancellation instant paired with `cancellation_reason`; the pair is populated together or left null together. |
 | `created_at` / `updated_at` | UTC insertion and latest authoritative state-change instants. |
 | `version` | Optimistic state-transition counter for later decision commands. |
 
@@ -924,7 +924,7 @@ Append-only transition evidence introduced by MB-360 for appointment outcomes.
 | --- | --- |
 | `id` | Immutable transition UUID. |
 | `appointment_id` | Appointment whose authoritative status changed. |
-| `from_status` / `to_status` | Valid current appointment states before and after the transition. |
+| `from_status` / `to_status` | Valid current appointment states before and after the transition, including the shared `IN_PROGRESS` state used by the credit/reschedule lifecycle. |
 | `changed_by` | Identity actor UUID responsible for the transition. |
 | `reason` | Stable reviewed outcome reason without private consultation content. |
 | `changed_at` | Server UTC instant at which the transition committed. |
