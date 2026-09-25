@@ -273,6 +273,14 @@ The requirements are represented in domain/architecture documentation, but the l
   `reassessment-summary-v2`; failures and unchanged proposals do not mutate
   either plan. Specialist `PlanChangeRequest` must reuse this governed path and
   has no second replacement mutation. See [MB-375 evidence](story-mb-375-support-plan-replacement-evidence.md).
+
+- 2026-09-25: MB-292 corrective delivery persists Care-owned
+  `screening_episode` grouping for guided initial checks and reassessments.
+  Frontend session cookies and latest-history lookup are no longer evidence
+  authority. SupportPlan proposal requires episode-backed v2 evaluation, and
+  replacement fails with `REASSESSMENT_SCREENING_CONTEXT_MISMATCH` when the
+  summary and proposed draft do not use the same exact PHQ-9/GAD-7 pair. See
+  [ADR 0023](adr/0023-persist-guided-screening-episodes.md).
 - 2026-09-13: `MB-SUPPORT-PLAN-POLICY-001` freezes SupportPlan policy v1. Care owns immutable versioned templates and compositional `mb-support-plan-selection-v1` rules; templates use `CORE` and `OPTIONAL` slots; an activatable plan contains 1-5 resources; exact eligibility roles are `PRIMARY` and `ADJUNCT`; safety-positive activation uses the normal explicit action after higher-priority safety/professional presentation; and each user has at most one draft plus one active-or-paused plan with atomic explicit replacement. This product-policy approval did not itself implement SupportEvaluation v2, Resource Eligibility v1, plan persistence, endpoints, or frontend runtime. See [ADR 0013](adr/0013-freeze-support-plan-policy-v1.md) and [SupportPlan policy v1](policies/support-plan-policy-v1.md).
 - 2026-09-12: `MB-SCOPE-DOMAIN-001` limits V1 screening and post-screening support to PHQ-9/`DEPRESSIVE_SYMPTOMS` and GAD-7/`ANXIETY_SYMPTOMS`, keeps safety cross-cutting, prohibits global severity, and changes the forward SupportPlan flow to a domain-aware system proposal followed by bounded user choice, revalidation and explicit activation. Active v1 contracts/history remain immutable; #48 tracks compatible evaluation, #49 the plan-policy gate, #50 resource eligibility, and #51 frontend impact. Runtime stories remain separately gated. See [ADR 0012](adr/0012-two-domain-screening-and-system-proposed-support-plans.md).
 - 2026-09-11: ADR 0011 keeps benchmark execution provider-neutral and defers `phobert-worker` as an optional Vietnamese NLP baseline. Initial AI implementation and benchmark work may use OpenAI and Gemini without a Python worker. PhoBERT activation requires an approved narrow task, label taxonomy, governed dataset/evaluation split, deterministic preprocessing, and a pinned compatible fine-tuned checkpoint; it is not a current Compose, readiness, Sprint, or release dependency.

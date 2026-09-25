@@ -22,6 +22,7 @@ import com.mentalbridge.care.entitlement.EntitlementClient;
 import com.mentalbridge.care.resourceeligibility.ResourceEligibilityClient;
 import com.mentalbridge.care.reassessment.ReassessmentSummaryService;
 import com.mentalbridge.care.reassessment.ReassessmentSummaryView;
+import com.mentalbridge.care.screeningepisode.ScreeningEpisodeService;
 import com.mentalbridge.care.shared.ApiException;
 import com.mentalbridge.care.support.SupportEvaluationService;
 import com.mentalbridge.care.support.SupportEvaluationV2Service;
@@ -46,17 +47,19 @@ public class SupportPlanService {
 	private final SupportPlanPolicy policy;
 	private final SupportPlanWriter writer;
 	private final ReassessmentSummaryService reassessments;
+	private final ScreeningEpisodeService screeningEpisodes;
 	private final Clock clock;
 
 	public SupportPlanService(EntitlementClient entitlements, SupportEvaluationV2Service evaluations,
 			ResourceEligibilityClient eligibility, SupportPlanPolicy policy, SupportPlanWriter writer,
-			ReassessmentSummaryService reassessments, Clock clock) {
+			ReassessmentSummaryService reassessments, ScreeningEpisodeService screeningEpisodes, Clock clock) {
 		this.entitlements = entitlements;
 		this.evaluations = evaluations;
 		this.eligibility = eligibility;
 		this.policy = policy;
 		this.writer = writer;
 		this.reassessments = reassessments;
+		this.screeningEpisodes = screeningEpisodes;
 		this.clock = clock;
 	}
 
@@ -73,6 +76,7 @@ public class SupportPlanService {
 
 		CurrentEntitlementResponse entitlement = paidEntitlement(userId, bearerToken, correlationId);
 		var evaluation = evaluations.getCurrentCompatible(userId, command.sourceSupportEvaluationId());
+		screeningEpisodes.requiredEvaluationContext(userId, command.sourceSupportEvaluationId());
 		var proposalRequest = policy.request(evaluation);
 		var resolved = eligibility.resolve(proposalRequest.batch(), bearerToken, correlationId);
 		var proposal = policy.compose(proposalRequest, resolved);
@@ -189,6 +193,7 @@ public class SupportPlanService {
 		validateCurrentVersion(current, command.currentVersion(), draftId);
 		ReassessmentSummaryView summary = reassessments.currentForPlanReview(userId,
 				command.reassessmentSummaryId());
+		assertReassessmentScreeningContext(userId, draft, summary);
 		CurrentEntitlementResponse entitlement = paidEntitlement(userId, bearerToken, correlationId);
 		String currentFailure = currentInadmissibility(userId, bearerToken, correlationId, current, entitlement);
 		var choices = selectedChoices(draft);
@@ -203,6 +208,24 @@ public class SupportPlanService {
 		var review = new ReplacementReviewView(outcome, rationale, comparison(current, draft),
 				view(current), view(draft), summary, clock.instant());
 		return new ReplacementReview(review, choices, evidence);
+	}
+
+	private void assertReassessmentScreeningContext(UUID userId, StoredPlan draft,
+			ReassessmentSummaryView summary) {
+		var evaluation = evaluations.getCurrentCompatible(userId, draft.plan().supportEvaluationId());
+		var expected = evaluation.contributingDomains().stream()
+				.collect(java.util.stream.Collectors.toMap(
+						SupportEvaluationV2Service.DomainContributionView::instrument,
+						SupportEvaluationV2Service.DomainContributionView::assessmentId));
+		var actual = summary.screening().trends().stream()
+				.filter(trend -> trend.current() != null)
+				.collect(java.util.stream.Collectors.toMap(
+						ReassessmentSummaryView.ScreeningTrend::instrument,
+						trend -> trend.current().assessmentId()));
+		if (!expected.equals(actual)) {
+			throw new ApiException(HttpStatus.CONFLICT, "REASSESSMENT_SCREENING_CONTEXT_MISMATCH",
+					"Reassessment summary and proposed SupportPlan must use the same PHQ-9 and GAD-7 evidence");
+		}
 	}
 
 	private String currentInadmissibility(UUID userId, String bearerToken, UUID correlationId,

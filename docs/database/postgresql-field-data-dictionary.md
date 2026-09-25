@@ -456,6 +456,28 @@ contract semantics.
 | `support_evaluation_id` | Immutable v2 outcome; composite foreign key prevents a cross-owner alias. |
 | `created_at` | Immutable UTC instant when Care accepted this v2 key. |
 
+### `public.screening_episode`
+
+Care-owned grouping and resume context for one guided `INITIAL_CHECK` or
+`REASSESSMENT`. It prevents session cookies or a changing “latest assessment”
+query from choosing SupportPlan evidence. Standalone assessment history is not
+attached implicitly.
+
+| Field | Purpose |
+| --- | --- |
+| `id` / `user_id` | Opaque episode identifier and authenticated Care owner. |
+| `purpose` | Exact guided journey: `INITIAL_CHECK` or `REASSESSMENT`. |
+| `status` | `IN_PROGRESS`, `READY` after both instruments, or `COMPLETED` after exact evaluation. |
+| `phq9_assessment_id` / `gad7_assessment_id` | Owner-matched assessment pair submitted inside this episode. |
+| `support_evaluation_id` | Exact immutable v2 SupportEvaluation consumed by Support Guide/SupportPlan policy. |
+| `presentation_evaluation_id` | Optional v1 presentation-compatible evaluation used by the current result UI; it has no SupportPlan authority. |
+| `created_at` / `updated_at` / `completed_at` | Resume, ordering, and completion instants in UTC. |
+| `version` | Optimistic aggregate version. |
+
+A partial unique index permits at most one `IN_PROGRESS` or `READY` episode per
+owner and purpose. Completed episodes remain immutable history, and a new
+guided run creates a new episode.
+
 ### `public.support_guide`
 
 Immutable one-time MB-511 guidance owned by Care. It is deliberately not a

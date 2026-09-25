@@ -942,6 +942,38 @@ class SupportPlanIntegrationTests extends CareTestProperties {
 	}
 
 	@Test
+	void replacementRejectsSummaryFromADifferentScreeningEpisode() throws Exception {
+		var userId = insertProfile();
+		var currentEvaluation = evaluation(userId, "MINIMAL", "MINIMAL", false);
+		var current = createPlan(userId, currentEvaluation, "support-plan-context-current");
+		var currentId = UUID.fromString(current.path("supportPlanId").asText());
+		mvc.perform(post("/api/v1/support-plans/{id}/activate", currentId).with(user(userId))
+				.header("If-Match", "\"0\"").header("Idempotency-Key", "support-plan-context-activate"))
+				.andExpect(status().isOk());
+
+		var replacementEvaluation = evaluation(userId, "MILD", "MINIMAL", false);
+		var replacement = createPlan(userId, replacementEvaluation, "support-plan-context-draft");
+		var replacementId = UUID.fromString(replacement.path("supportPlanId").asText());
+		var mismatchedSummaryId = insertReassessmentSummary(userId, Instant.now().minusSeconds(60), "ACTIVE");
+		String request = replacementBody(currentId, 1, mismatchedSummaryId);
+
+		mvc.perform(post("/api/v1/support-plans/{id}/replacement-review", replacementId).with(user(userId))
+				.header("If-Match", "\"0\"").contentType(MediaType.APPLICATION_JSON).content(request))
+				.andExpect(status().isConflict())
+				.andExpect(jsonPath("$.code").value("REASSESSMENT_SCREENING_CONTEXT_MISMATCH"));
+		mvc.perform(post("/api/v1/support-plans/{id}/replace", replacementId).with(user(userId))
+				.header("If-Match", "\"0\"").header("Idempotency-Key", "support-plan-context-confirm")
+				.contentType(MediaType.APPLICATION_JSON).content(request))
+				.andExpect(status().isConflict())
+				.andExpect(jsonPath("$.code").value("REASSESSMENT_SCREENING_CONTEXT_MISMATCH"));
+
+		assertThat(jdbc.sql("select status from support_plan where id = :id").param("id", currentId)
+				.query(String.class).single()).isEqualTo("ACTIVE");
+		assertThat(jdbc.sql("select status from support_plan where id = :id").param("id", replacementId)
+				.query(String.class).single()).isEqualTo("DRAFT");
+	}
+
+	@Test
 	void staleEntitlementWithdrawnAndUnavailableReviewsLeaveBothPlansUnchanged() throws Exception {
 		var userId = insertProfile();
 		var currentEvaluation = evaluation(userId, "MINIMAL", "MINIMAL", false);
@@ -1096,7 +1128,15 @@ class SupportPlanIntegrationTests extends CareTestProperties {
 				.contentType(MediaType.APPLICATION_JSON)
 				.content("{\"phq9AssessmentId\":\"" + phq9 + "\",\"gad7AssessmentId\":\"" + gad7 + "\"}"))
 				.andExpect(status().isCreated()).andReturn().getResponse().getContentAsString();
-		return UUID.fromString(objectMapper.readTree(response).path("supportEvaluationId").asText());
+		var evaluationId = UUID.fromString(objectMapper.readTree(response).path("supportEvaluationId").asText());
+		jdbc.sql("""
+				insert into screening_episode
+				(id,user_id,purpose,status,phq9_assessment_id,gad7_assessment_id,support_evaluation_id,
+				 created_at,updated_at,completed_at,version)
+				values (:id,:userId,'INITIAL_CHECK','COMPLETED',:phq9,:gad7,:evaluation,now(),now(),now(),0)
+				""").param("id", UUID.randomUUID()).param("userId", userId).param("phq9", phq9)
+				.param("gad7", gad7).param("evaluation", evaluationId).update();
+		return evaluationId;
 	}
 
 	private UUID insertProfile() {
@@ -1120,6 +1160,10 @@ class SupportPlanIntegrationTests extends CareTestProperties {
 	}
 
 	private UUID insertReassessmentSummary(UUID userId, Instant end) throws Exception {
+		return insertReassessmentSummary(userId, end, "DRAFT");
+	}
+
+	private UUID insertReassessmentSummary(UUID userId, Instant end, String planStatus) throws Exception {
 		var id = UUID.randomUUID();
 		var jobId = UUID.randomUUID();
 		var currentStart = end.minusSeconds(14L * 24 * 60 * 60);
@@ -1130,7 +1174,24 @@ class SupportPlanIntegrationTests extends CareTestProperties {
 		snapshot.putObject("previousPeriod").put("startAt", previousStart.toString())
 				.put("endAt", currentStart.toString());
 		snapshot.putObject("currentPeriod").put("startAt", currentStart.toString()).put("endAt", end.toString());
-		snapshot.putObject("screening").put("state", "INSUFFICIENT_DATA").putArray("trends");
+		var draftEvidence = jdbc.sql("""
+				select evaluation.phq9_assessment_id, evaluation.gad7_assessment_id
+				from support_plan plan
+				join support_evaluation_v2 evaluation on evaluation.id = plan.support_evaluation_id
+				where plan.user_id = :userId and plan.status = :planStatus
+				""").param("userId", userId).param("planStatus", planStatus).query((row, number) -> List.of(
+				row.getObject("phq9_assessment_id", UUID.class),
+				row.getObject("gad7_assessment_id", UUID.class))).single();
+		var trends = snapshot.putObject("screening").put("state", "INSUFFICIENT_DATA").putArray("trends");
+		for (int index = 0; index < 2; index++) {
+			var trend = trends.addObject().put("instrument", index == 0 ? "PHQ9" : "GAD7")
+					.put("state", "INSUFFICIENT_DATA").put("scoringVersion", "test-v1");
+			trend.putNull("previous");
+			trend.putObject("current").put("assessmentId", draftEvidence.get(index).toString())
+					.put("questionnaireVersion", "test-v1").put("submittedAt", end.toString())
+					.put("totalScore", 0).put("screeningLevel", "MINIMAL");
+			trend.putNull("rawDelta").put("direction", "INSUFFICIENT_DATA");
+		}
 		var journal = snapshot.putObject("journalContext");
 		journal.put("state", "UNAVAILABLE").put("unavailableReason", "DEPENDENCY_UNAVAILABLE")
 				.put("jobId", jobId.toString());

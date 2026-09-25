@@ -39,3 +39,5 @@ databaseChangeLog:
       file: db/changelog/changes/019-reassessment-self-report.sql
   - include:
       file: db/changelog/changes/020-support-plan-replacement-review.sql
+  - include:
+      file: db/changelog/changes/021-screening-episode.sql

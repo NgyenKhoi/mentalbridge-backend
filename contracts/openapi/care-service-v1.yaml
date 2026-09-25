@@ -366,6 +366,126 @@ paths:
         "404": { $ref: "#/components/responses/NotFoundProblem" }
         "409":
           { $ref: "#/components/responses/InsufficientComparableDataProblem" }
+  /api/v1/screening-episodes:
+    x-mentalbridge-status: implemented
+    post:
+      tags: [Assessment]
+      operationId: startScreeningEpisode
+      summary: Start or resume the open guided screening episode for one purpose
+      description: |
+        Care returns the existing IN_PROGRESS or READY episode for the purpose, or
+        creates a new one when no open episode exists. Standalone assessment history
+        is never attached implicitly.
+      security:
+        - bearerAuth: []
+      parameters:
+        - $ref: "#/components/parameters/CorrelationId"
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: "#/components/schemas/ScreeningEpisodeStartRequest" }
+      responses:
+        "201":
+          description: Guided screening episode started or resumed
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/ScreeningEpisode" }
+        "400": { $ref: "#/components/responses/ValidationProblem" }
+        "401": { $ref: "#/components/responses/UnauthorizedProblem" }
+        "403": { $ref: "#/components/responses/ForbiddenProblem" }
+        "404": { $ref: "#/components/responses/NotFoundProblem" }
+  /api/v1/screening-episodes/current:
+    x-mentalbridge-status: implemented
+    get:
+      tags: [Assessment]
+      operationId: getCurrentScreeningEpisode
+      summary: Resume the latest persisted guided screening episode for one purpose
+      security:
+        - bearerAuth: []
+      parameters:
+        - name: purpose
+          in: query
+          required: true
+          schema: { $ref: "#/components/schemas/ScreeningEpisodePurpose" }
+        - $ref: "#/components/parameters/CorrelationId"
+      responses:
+        "200":
+          description: Latest guided episode returned
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/ScreeningEpisode" }
+        "400": { $ref: "#/components/responses/ValidationProblem" }
+        "401": { $ref: "#/components/responses/UnauthorizedProblem" }
+        "403": { $ref: "#/components/responses/ForbiddenProblem" }
+        "404": { $ref: "#/components/responses/NotFoundProblem" }
+  /api/v1/screening-episodes/{episodeId}/assessments/{instrument}:
+    x-mentalbridge-status: implemented
+    post:
+      tags: [Assessment]
+      operationId: submitScreeningEpisodeAssessment
+      summary: Submit one assessment directly into its exact guided episode
+      description: |
+        PHQ-9 must precede GAD-7. Submission, scoring, and attachment use the same
+        Care transaction, so browser cookies and latest-history inference are not
+        evidence authority.
+      security:
+        - bearerAuth: []
+      parameters:
+        - name: episodeId
+          in: path
+          required: true
+          schema: { type: string, format: uuid }
+        - name: instrument
+          in: path
+          required: true
+          schema: { $ref: "#/components/schemas/Instrument" }
+        - $ref: "#/components/parameters/IdempotencyKey"
+        - $ref: "#/components/parameters/CorrelationId"
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: "#/components/schemas/AssessmentSubmissionRequest" }
+      responses:
+        "201":
+          description: Assessment persisted and attached to the episode
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/Assessment" }
+        "400": { $ref: "#/components/responses/ValidationProblem" }
+        "401": { $ref: "#/components/responses/UnauthorizedProblem" }
+        "403": { $ref: "#/components/responses/ForbiddenProblem" }
+        "404": { $ref: "#/components/responses/NotFoundProblem" }
+        "409": { $ref: "#/components/responses/ConflictProblem" }
+  /api/v1/screening-episodes/{episodeId}/support-evaluation:
+    x-mentalbridge-status: implemented
+    post:
+      tags: [Assessment, Support]
+      operationId: completeScreeningEpisodeEvaluation
+      summary: Evaluate the exact PHQ-9 and GAD-7 pair attached to a guided episode
+      description: |
+        Care creates the immutable domain-aware SupportEvaluation used by downstream
+        support and the v1 presentation evaluation used by the current client. The
+        completed episode persists both references and replays them on retry.
+      security:
+        - bearerAuth: []
+      parameters:
+        - name: episodeId
+          in: path
+          required: true
+          schema: { type: string, format: uuid }
+        - $ref: "#/components/parameters/CorrelationId"
+      responses:
+        "201":
+          description: Exact episode evidence evaluated and persisted
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/ScreeningEpisodeEvaluationOutcome" }
+        "401": { $ref: "#/components/responses/UnauthorizedProblem" }
+        "403": { $ref: "#/components/responses/ForbiddenProblem" }
+        "404": { $ref: "#/components/responses/NotFoundProblem" }
+        "409": { $ref: "#/components/responses/ConflictProblem" }
   /api/v1/reassessment-self-reports:
     x-mentalbridge-status: implemented
     post:
@@ -2158,6 +2278,41 @@ components:
           uniqueItems: true
           description: Exactly one answer for every question in the referenced definition; order is not authoritative
           items: { $ref: "#/components/schemas/AssessmentAnswer" }
+    ScreeningEpisodePurpose:
+      type: string
+      enum: [INITIAL_CHECK, REASSESSMENT]
+    ScreeningEpisodeStatus:
+      type: string
+      enum: [IN_PROGRESS, READY, COMPLETED]
+    ScreeningEpisodeStartRequest:
+      type: object
+      additionalProperties: false
+      required: [purpose]
+      properties:
+        purpose: { $ref: "#/components/schemas/ScreeningEpisodePurpose" }
+    ScreeningEpisode:
+      type: object
+      additionalProperties: false
+      required: [episodeId, purpose, status, createdAt, updatedAt, version]
+      properties:
+        episodeId: { type: string, format: uuid }
+        purpose: { $ref: "#/components/schemas/ScreeningEpisodePurpose" }
+        status: { $ref: "#/components/schemas/ScreeningEpisodeStatus" }
+        phq9AssessmentId: { type: [string, "null"], format: uuid }
+        gad7AssessmentId: { type: [string, "null"], format: uuid }
+        supportEvaluationId: { type: [string, "null"], format: uuid }
+        presentationEvaluationId: { type: [string, "null"], format: uuid }
+        createdAt: { type: string, format: date-time }
+        updatedAt: { type: string, format: date-time }
+        completedAt: { type: [string, "null"], format: date-time }
+        version: { type: integer, format: int64, minimum: 0 }
+    ScreeningEpisodeEvaluationOutcome:
+      type: object
+      additionalProperties: false
+      required: [episode, presentationEvaluation]
+      properties:
+        episode: { $ref: "#/components/schemas/ScreeningEpisode" }
+        presentationEvaluation: { $ref: "#/components/schemas/SupportEvaluation" }
     AssessmentAnswer:
       type: object
       additionalProperties: false
@@ -2920,7 +3075,7 @@ components:
         application/problem+json:
           schema: { $ref: '#/components/schemas/Problem' }
     SupportPlanLifecycleConflictProblem:
-      description: The requested lifecycle transition is invalid, reassessment is stale, or replacement is unchanged (SUPPORT_PLAN_TRANSITION_INVALID, REASSESSMENT_SUMMARY_STALE, or SUPPORT_PLAN_REPLACEMENT_UNCHANGED)
+      description: The requested lifecycle transition is invalid, reassessment is stale or uses different screening evidence, or replacement is unchanged (SUPPORT_PLAN_TRANSITION_INVALID, REASSESSMENT_SUMMARY_STALE, REASSESSMENT_SCREENING_CONTEXT_MISMATCH, or SUPPORT_PLAN_REPLACEMENT_UNCHANGED)
       content:
         application/problem+json:
           schema: { $ref: '#/components/schemas/Problem' }
