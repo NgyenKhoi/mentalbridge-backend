@@ -5,6 +5,14 @@ idempotent, atomic SupportPlan replacement path described below.
 
 Care owns user profiles, independent `PRIVACY_POLICY` and `AI_PROCESSING` consent decisions, questionnaires, assessment submissions and results, deterministic safety/support policy, SupportEvaluation, persisted Support Guides, the single official SupportPlan, reassessment, and follow-up. Story 1103 exposes immutable coarse v1 evaluation. MB-335 adds `/api/v2/support-evaluations` with exact PHQ-9/GAD-7 provenance, two independent domain contributions, and separate PHQ-9 item-9 safety evidence. MB-372 adds paid deterministic draft creation and current-draft reload. MB-373 adds bounded admitted-choice replacement, exact revalidation, explicit activation idempotency, and authoritative current-plan reload. MB-513 adds deterministic local-time schedules and persisted activity occurrences. MB-374 completes the owner lifecycle with optional coded completion context and immutable terminal history/detail reads. MB-376 adds versioned owner-only completion, skip, reopen, visibility, helpfulness, barrier, private reflection, and deletion semantics on exact occurrences. MB-386 introduced immutable reassessment snapshots; MB-559 completes the canonical fourth dimension with an explicit owner-authored current-period self-report while keeping occurrence helpfulness/reflection separately labelled as supporting activity evidence. Care never creates a global severity, treatment-adherence score, recovery score, specialist-monitoring feed, or AI-controlled state. Safety-critical scoring and evaluation remain local and do not depend on Eureka, Kafka, Redis, AI, or notification availability.
 
+MB-292 persists `screening_episode` as the Care-authoritative resume and
+grouping context for guided initial checks and reassessments. PHQ-9 and GAD-7
+submitted through a guided episode stay paired across logout or browser loss;
+standalone history never silently replaces either member. SupportPlan proposal
+requires an episode-backed v2 SupportEvaluation, and replacement rejects a
+ReassessmentSummary whose current assessment pair differs from the draft's
+evaluation with `REASSESSMENT_SCREENING_CONTEXT_MISMATCH`.
+
 ## MB-88 foundation
 
 The canonical [`care-service-v1.yaml`](../contracts/openapi/care-service-v1.yaml) contract marks profile, independent privacy/AI-processing disclosure and consent, questionnaire retrieval, assessment history, and authenticated/anonymous screening paths as `implemented`. MB-367 adds the backend-only `AI_PROCESSING` decision and minimal current authorization response without adding frontend consent UI or production-provider approval.
@@ -92,6 +100,7 @@ The Care Liquibase changelog owns:
 | `support_evaluation_v2_domain` | Two immutable instrument/domain/level/pathway/reason snapshots used for independent composition |
 | `support_evaluation_v2_safety` | Independent PHQ-9 item-9 status and safety-policy snapshot without a raw answer |
 | `support_evaluation_v2_request` | Per-user v2 idempotency aliases; separate namespace from v1 keys |
+| `screening_episode` | Persisted Care-owned grouping/resume context for exact guided PHQ-9, GAD-7, and SupportEvaluation evidence; standalone history is never inferred into it |
 | `support_plan` | One Care-owned paid proposal/current-plan snapshot with exact source, entitlement, rationale, safety, lifecycle instants, optional coded completion reason, and optimistic version provenance; terminal rows are immutable owner history |
 | `support_plan_template_family` | Ordered immutable domain template families composed into the draft |
 | `support_plan_slot` | Ordered bounded slots; core selection is required while an optional selection may be explicitly removed |

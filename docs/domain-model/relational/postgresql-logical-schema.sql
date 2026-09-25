@@ -403,6 +403,30 @@ CREATE TABLE care.support_evaluation_v2_request (
         REFERENCES care.support_evaluation_v2(id, user_id)
 );
 
+CREATE TABLE care.screening_episode (
+    id uuid PRIMARY KEY,
+    user_id uuid NOT NULL REFERENCES care.user_profile(account_id),
+    purpose varchar(24) NOT NULL,       -- INITIAL_CHECK | REASSESSMENT
+    status varchar(16) NOT NULL,        -- IN_PROGRESS | READY | COMPLETED
+    phq9_assessment_id uuid,
+    gad7_assessment_id uuid,
+    support_evaluation_id uuid,
+    presentation_evaluation_id uuid,   -- compatibility v1 presentation result
+    created_at timestamptz NOT NULL,
+    updated_at timestamptz NOT NULL,
+    completed_at timestamptz,
+    version bigint NOT NULL,
+    UNIQUE (id, user_id),
+    FOREIGN KEY (phq9_assessment_id, user_id)
+        REFERENCES care.assessment_submission(id, user_id),
+    FOREIGN KEY (gad7_assessment_id, user_id)
+        REFERENCES care.assessment_submission(id, user_id),
+    FOREIGN KEY (support_evaluation_id, user_id)
+        REFERENCES care.support_evaluation_v2(id, user_id),
+    FOREIGN KEY (presentation_evaluation_id, user_id)
+        REFERENCES care.support_evaluation(id, user_id)
+);
+
 CREATE TABLE care.support_guide (
     id uuid PRIMARY KEY,
     user_id uuid NOT NULL REFERENCES care.user_profile(account_id),

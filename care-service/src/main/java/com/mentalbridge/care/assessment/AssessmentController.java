@@ -139,7 +139,7 @@ public class AssessmentController {
 			String questionnaireVersion, String privacyPolicyVersion, Instant submittedAt, Instant voidedAt,
 			ResultResponse result) {
 
-		static AssessmentResponse from(AssessmentService.AssessmentView view) {
+		public static AssessmentResponse from(AssessmentService.AssessmentView view) {
 			return new AssessmentResponse(view.assessmentId(), view.questionnaireDefinitionId(), view.instrument(),
 					view.questionnaireVersion(), view.privacyPolicyVersion(), view.submittedAt(), view.voidedAt(),
 					ResultResponse.from(view.result()));

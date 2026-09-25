@@ -37,6 +37,7 @@ import com.mentalbridge.care.reassessment.ReassessmentSummaryView.ScreeningDimen
 import com.mentalbridge.care.reassessment.ReassessmentSummaryView.ScreeningPoint;
 import com.mentalbridge.care.reassessment.ReassessmentSummaryView.ScreeningTrend;
 import com.mentalbridge.care.reassessment.ReassessmentSummaryView.SelfReportedExperienceDimension;
+import com.mentalbridge.care.screeningepisode.ScreeningEpisodeService;
 import com.mentalbridge.care.shared.ApiException;
 
 @Service
@@ -55,16 +56,18 @@ public class ReassessmentSummaryService {
 	private final JournalLongitudinalClient journal;
 	private final ReassessmentSummaryStore summaries;
 	private final ReassessmentSelfReportService selfReports;
+	private final ScreeningEpisodeService screeningEpisodes;
 	private final ObjectMapper objectMapper;
 	private final Clock clock;
 
 	public ReassessmentSummaryService(ReassessmentEvidenceRepository evidence, JournalLongitudinalClient journal,
 			ReassessmentSummaryStore summaries, ReassessmentSelfReportService selfReports,
-			ObjectMapper objectMapper, Clock clock) {
+			ScreeningEpisodeService screeningEpisodes, ObjectMapper objectMapper, Clock clock) {
 		this.evidence = evidence;
 		this.journal = journal;
 		this.summaries = summaries;
 		this.selfReports = selfReports;
+		this.screeningEpisodes = screeningEpisodes;
 		this.objectMapper = objectMapper;
 		this.clock = clock;
 	}
@@ -74,8 +77,9 @@ public class ReassessmentSummaryService {
 		boolean jobFlow = validateEvidenceReference(command);
 		if (jobFlow) {
 			validatePolicyPeriods(command.previousPeriod(), command.currentPeriod());
-			validateCurrentAssessment(userId, command.phq9AssessmentId(), "PHQ9");
-			validateCurrentAssessment(userId, command.gad7AssessmentId(), "GAD7");
+			var episode = screeningEpisodes.requiredCompleted(userId, "REASSESSMENT");
+			validateEpisodeAssessment(command.phq9AssessmentId(), episode.phq9AssessmentId(), "PHQ9");
+			validateEpisodeAssessment(command.gad7AssessmentId(), episode.gad7AssessmentId(), "GAD7");
 		}
 		else {
 			validateLegacyPeriods(command.previousPeriod(), command.currentPeriod());
@@ -126,8 +130,20 @@ public class ReassessmentSummaryService {
 		Instant end = clock.instant().truncatedTo(ChronoUnit.DAYS);
 		var current = new Period(end.minus(COMPARISON_PERIOD), end);
 		var previous = new Period(current.startAt().minus(COMPARISON_PERIOD), current.startAt());
-		var phq9 = evidence.findLatest(userId, "PHQ9").filter(AssessmentEvidence::usable);
-		var gad7 = evidence.findLatest(userId, "GAD7").filter(AssessmentEvidence::usable);
+		ScreeningEpisodeService.EpisodeView episode;
+		try {
+			episode = screeningEpisodes.current(userId, "REASSESSMENT");
+		}
+		catch (ApiException exception) {
+			if (!"SCREENING_EPISODE_NOT_FOUND".equals(exception.code())) throw exception;
+			episode = null;
+		}
+		var phq9 = episode == null || episode.phq9AssessmentId() == null
+				? java.util.Optional.<AssessmentEvidence>empty()
+				: evidence.findAssessment(userId, episode.phq9AssessmentId()).filter(AssessmentEvidence::usable);
+		var gad7 = episode == null || episode.gad7AssessmentId() == null
+				? java.util.Optional.<AssessmentEvidence>empty()
+				: evidence.findAssessment(userId, episode.gad7AssessmentId()).filter(AssessmentEvidence::usable);
 		var missing = new ArrayList<String>();
 		if (phq9.isEmpty()) missing.add("PHQ9");
 		if (gad7.isEmpty()) missing.add("GAD7");
@@ -275,13 +291,10 @@ public class ReassessmentSummaryService {
 		return job;
 	}
 
-	private void validateCurrentAssessment(UUID userId, UUID selectedId, String instrument) {
-		var latest = evidence.findLatest(userId, instrument).filter(AssessmentEvidence::usable)
-				.orElseThrow(() -> new ApiException(HttpStatus.CONFLICT, "ASSESSMENT_CONTEXT_INCOMPLETE",
-						"A current " + instrument + " assessment is required"));
-		if (!latest.assessmentId().equals(selectedId)) {
-			throw new ApiException(HttpStatus.CONFLICT, "ASSESSMENT_NOT_CURRENT",
-					"Selected " + instrument + " assessment is no longer current");
+	private void validateEpisodeAssessment(UUID selectedId, UUID episodeAssessmentId, String instrument) {
+		if (episodeAssessmentId == null || !episodeAssessmentId.equals(selectedId)) {
+			throw new ApiException(HttpStatus.CONFLICT, "REASSESSMENT_SCREENING_CONTEXT_MISMATCH",
+					"Selected " + instrument + " assessment does not belong to the current reassessment episode");
 		}
 	}
 
