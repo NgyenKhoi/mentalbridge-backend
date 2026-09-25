@@ -126,7 +126,7 @@ class SupportPlanWriter {
 		plans.saveAndFlush(plan);
 		activities.activate(plan, now);
 		persistCommand(userId, idempotencyKey, "ACTIVATE", requestHash, plan, expectedVersion,
-				choices, evidence, now);
+				choices, evidence, null, null, null, null, now);
 		plans.insertActivationOutbox(UUID.randomUUID(), plan.id(), plan.version(), correlationId,
 				activationPayload(plan, evidence), now);
 		return stored(plan);
@@ -174,16 +174,19 @@ class SupportPlanWriter {
 
 	@Transactional
 	StoredPlan replace(UUID userId, UUID draftId, long draftVersion, UUID currentPlanId,
-			long currentVersion, Instant now) {
+			long currentVersion, String idempotencyKey, String requestHash, List<Choice> choices,
+			Revalidation evidence, UUID reassessmentSummaryId, String reviewOutcome,
+			UUID correlationId, Instant now) {
 		now = now.truncatedTo(ChronoUnit.MICROS);
 		lockOwner(userId);
+		var replay = commandReplay(userId, idempotencyKey, "REPLACE", requestHash);
+		if (replay != null) {
+			return replay.plan();
+		}
 		var draft = plans.findByIdAndUserIdForUpdate(draftId, userId).orElseThrow(() -> new ApiException(
 				HttpStatus.NOT_FOUND, "SUPPORT_PLAN_NOT_FOUND", "SupportPlan was not found"));
 		var current = plans.findByIdAndUserIdForUpdate(currentPlanId, userId).orElseThrow(() -> new ApiException(
 				HttpStatus.NOT_FOUND, "SUPPORT_PLAN_NOT_FOUND", "SupportPlan was not found"));
-		if ("ACTIVE".equals(draft.status()) && "SUPERSEDED".equals(current.status())) {
-			return stored(draft);
-		}
 		if (draft.version() != draftVersion || current.version() != currentVersion) {
 			throw new ApiException(HttpStatus.PRECONDITION_FAILED, "SUPPORT_PLAN_VERSION_MISMATCH",
 					"SupportPlan version does not match the replacement request");
@@ -192,12 +195,17 @@ class SupportPlanWriter {
 				|| draft.id().equals(current.id())) {
 			throw invalidTransition();
 		}
+		validateStoredChoices(draft, choices);
 		current.supersede(now);
 		activities.end(current.id(), "PLAN_REPLACED", now);
 		plans.saveAndFlush(current);
 		draft.activate(now);
 		plans.saveAndFlush(draft);
 		activities.activate(draft, now);
+		persistCommand(userId, idempotencyKey, "REPLACE", requestHash, draft, draftVersion,
+				choices, evidence, currentPlanId, currentVersion, reassessmentSummaryId, reviewOutcome, now);
+		plans.insertActivationOutbox(UUID.randomUUID(), draft.id(), draft.version(), correlationId,
+				activationPayload(draft, evidence), now);
 		return stored(draft);
 	}
 
@@ -238,7 +246,9 @@ class SupportPlanWriter {
 				.toList();
 		return new CommandOutcome(required(userId, command.getPlanId()), command.getCommandType(),
 				command.getRequestHash(), command.getExpectedVersion(), command.getResultingVersion(),
-				command.getResultingStatus(), command.getResultingUpdatedAt(), selections);
+				command.getResultingStatus(), command.getResultingUpdatedAt(), selections,
+				command.getSourcePlanId(), command.getSourcePlanVersion(), command.getReassessmentSummaryId(),
+				command.getReplacementReviewOutcome());
 	}
 
 	@Transactional(readOnly = true)
@@ -353,13 +363,16 @@ class SupportPlanWriter {
 	}
 
 	private void persistCommand(UUID userId, String idempotencyKey, String commandType, String requestHash,
-			SupportPlanEntity plan, long expectedVersion, List<Choice> choices, Revalidation evidence, Instant now) {
+			SupportPlanEntity plan, long expectedVersion, List<Choice> choices, Revalidation evidence,
+			UUID sourcePlanId, Long sourcePlanVersion, UUID reassessmentSummaryId, String reviewOutcome,
+			Instant now) {
 		var entitlement = evidence.entitlement();
 		plans.insertCommand(userId, idempotencyKey, commandType, requestHash, plan.id(), expectedVersion,
 				plan.version(), plan.status(), plan.updatedAt(), evidence.evaluationPolicyVersion(),
 				entitlement.packageCode().name(), entitlement.source().name(), entitlement.policyVersion(),
 				entitlement.version(), entitlement.decidedAt(), evidence.resourcePolicyVersion(),
-				evidence.resourcesResolvedAt(), now);
+				evidence.resourcesResolvedAt(), now, sourcePlanId, sourcePlanVersion,
+				reassessmentSummaryId, reviewOutcome);
 		for (int index = 0; index < choices.size(); index++) {
 			var choice = choices.get(index);
 			plans.insertCommandSelection(userId, idempotencyKey, index + 1, choice.slotId(),
@@ -427,7 +440,8 @@ class SupportPlanWriter {
 			List<StoredSlot> slots) { }
 	record CommandOutcome(StoredPlan plan, String commandType, String requestHash, long expectedVersion,
 			long resultingVersion, String resultingStatus, Instant resultingUpdatedAt,
-			List<ChoiceReference> selections) { }
+			List<ChoiceReference> selections, UUID sourcePlanId, Long sourcePlanVersion,
+			UUID reassessmentSummaryId, String replacementReviewOutcome) { }
 	record ActivationPayload(UUID supportPlanId, UUID userId, long planVersion, Instant activatedAt,
 			String evaluationPolicyVersion, String resourceEligibilityPolicyVersion, String packageCode) { }
 }

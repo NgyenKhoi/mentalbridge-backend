@@ -307,13 +307,14 @@ class SpecialistProfileFlowIntegrationTests extends ConsultationTestProperties {
 				.param("appointmentId", appointmentId).param("now", now).update();
 		jdbc.sql("""
 				insert into appointment (
-				    id, slot_id, credit_id, user_id, specialist_id, status,
-				    scheduled_start_at, scheduled_end_at, scheduled_timezone, channel,
-				    user_timezone, response_deadline, idempotency_key, requested_at,
+				    id, availability_slot_id, service_credit_id, user_account_id,
+				    specialist_account_id, status, modality, scheduled_start_at,
+				    scheduled_end_at, display_timezone, decision_deadline_at,
+				    idempotency_key, requested_at,
 				    created_at, updated_at
 				) values (:id, :slotId, :creditId, :userId, :specialistId, 'CONFIRMED',
-				    :start, :end, 'Asia/Ho_Chi_Minh', 'IN_APP_CHAT', 'Asia/Ho_Chi_Minh',
-				    :deadline, 'suspension-appointment-request', :requestedAt, :now, :now)
+				    'IN_APP_CHAT', :start, :end, 'Asia/Ho_Chi_Minh', :deadline,
+				    'suspension-appointment-request', :requestedAt, :now, :now)
 				""").param("id", appointmentId).param("slotId", slotId).param("creditId", creditId)
 				.param("userId", userId).param("specialistId", specialistId).param("start", start)
 				.param("end", start.plusHours(1)).param("deadline", start.minusHours(2))

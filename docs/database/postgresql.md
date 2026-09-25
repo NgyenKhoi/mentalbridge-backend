@@ -63,17 +63,17 @@ Cross-owner identifiers in the canonical logical model make relationships visibl
 - Stored total score and screening band live in the one-to-one result and are authoritative only after server validation; `scoring_version` records the algorithm, `safety_item_positive` preserves the questionnaire fact, and the paired safety status/policy version records the independent response decision.
 - Support-tier results store policy version, reason codes and exact source IDs to make decisions reproducible; safety status remains a separate assessment result.
 - Existing `mb-support-routing-capstone-v1` rows remain immutable coarse evaluations. They preserve PHQ-9 and GAD-7 evidence separately and are not a global severity or sufficient plan-eligibility decision.
-- Resource Eligibility v1 is Content-owned, append-only and exact-versioned under #50. Domain-aware SupportEvaluation v2 is additive Care-owned persistence under #48. MB-372 adds deterministic SupportPlan draft persistence/reload; MB-373 adds admitted-choice replacement with optimistic concurrency, audited idempotent activation, exact revalidation, and one-current-plan enforcement. MB-513 adds explicit lifecycle commands plus deterministic local-time schedules and persisted occurrences. MB-374 adds an optional constrained completion-reason code and a partial owner/time index for immutable terminal-plan history; it does not store free-text completion notes. MB-376 adds constrained mutable engagement fields to exact occurrences and a minimized atomic outbox fact; private reflection stays out of that event. None of these migrations rewrites historical v1 evaluation or reviewed-resource rows.
+- Resource Eligibility v1 is Content-owned, append-only and exact-versioned under #50. Domain-aware SupportEvaluation v2 is additive Care-owned persistence under #48. MB-372 adds deterministic SupportPlan draft persistence/reload; MB-373 adds admitted-choice replacement with optimistic concurrency, audited idempotent activation, exact revalidation, and one-current-plan enforcement. MB-513 adds deterministic local-time schedules, persisted occurrences, and their effects from plan lifecycle transitions. MB-374 owns the explicit pause/resume/complete/discard journey, an optional constrained completion-reason code, and a partial owner/time index for immutable terminal-plan history; it does not store free-text completion notes. MB-376 adds constrained mutable engagement fields to exact occurrences and a minimized atomic outbox fact; private reflection stays out of that event. None of these migrations rewrites historical v1 evaluation or reviewed-resource rows.
 
 ### Booking model status
 
-- Availability is `ACTIVE`; later booking/appointment entities in this section are approved `PROPOSED` models until an owner migration exists.
+- Availability and the initial appointment-request aggregate are `ACTIVE`; later decision/session entities in this section remain approved `PROPOSED` models until an owner migration exists.
 - Availability uses `[start_at, end_at)` semantics and validates start before end.
 - An approved specialist publishes discrete 60-minute online slots as UTC instants plus an IANA display timezone. MB-362 stores no PracticeLocation, phone, or external meeting link. A later booking flow snapshots start, end, timezone, and modality without mutating the source slot.
 - An exclusion constraint prevents overlapping active slots for the same specialist.
 - A partial unique index permits only one active appointment per slot.
 - A second partial unique index permits only one active appointment per credit; booking locks the slot and credit together.
-- `appointment_status_history` provides an auditable state-transition timeline.
+- `appointment_status_history` currently records MB-360 suspension cancellations; later appointment decisions extend the same auditable timeline.
 - Historical v1 may retain `IN_PERSON` appointment provenance. New MB-362 slots
   accept only `IN_APP_CHAT` and capability-gated `IN_APP_VIDEO`; video session
   runtime remains unavailable until its detailed provider contract passes.

@@ -23,6 +23,9 @@ class ConsultationOpenApiContractTests {
 			"GET /api/v1/availability-slots",
 			"POST /api/v1/availability-slots",
 			"DELETE /api/v1/availability-slots/{slotId}",
+			"GET /api/v1/bookable-slots",
+			"GET /api/v1/appointments",
+			"POST /api/v1/appointments",
 			"GET /api/v1/admin/specialist-profiles",
 			"GET /api/v1/admin/specialist-profiles/{specialistAccountId}",
 			"POST /api/v1/admin/specialist-profiles/{specialistAccountId}/approve",
@@ -74,6 +77,18 @@ class ConsultationOpenApiContractTests {
 		assertThat(request.getProperties()).containsOnlyKeys("startAt", "endAt", "timezone", "modality");
 		assertThat(request.getProperties()).doesNotContainKeys("practiceLocationId", "phone", "meetingLink", "url");
 		assertThat(modality.getEnum()).containsExactly("IN_APP_CHAT", "IN_APP_VIDEO");
+	}
+
+	@Test
+	void appointmentRequestUsesOnlyAnExactOnlineSlotAndModality() {
+		var contract = Path.of("..", "contracts", "openapi", "consultation-service-v1.yaml").toString();
+		var api = new OpenAPIV3Parser().read(contract);
+		var request = api.getComponents().getSchemas().get("RequestAppointment");
+		var appointment = api.getComponents().getSchemas().get("Appointment");
+
+		assertThat(request.getProperties()).containsOnlyKeys("slotId", "modality");
+		assertThat(appointment.getProperties()).containsKeys("status", "decisionDeadlineAt", "heldCreditId");
+		assertThat(appointment.getProperties()).doesNotContainKeys("practiceLocationId", "phone", "meetingLink", "url");
 	}
 
 	@Test

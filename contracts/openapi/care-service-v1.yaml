@@ -1,7 +1,7 @@
 openapi: 3.1.0
 info:
   title: MentalBridge Care API
-  version: 1.1.0
+  version: 1.2.0
   description: |
     V1 contracts for the Care-owned profile, platform consent, and PHQ-9 foundation.
     Profile, consent, questionnaire, and assessment paths are implemented. Assessment
@@ -27,6 +27,7 @@ tags:
   - name: AI processing disclosure
   - name: Questionnaire
   - name: Assessment
+  - name: Reassessment summary
   - name: Support evaluation
   - name: SupportPlan draft
   - name: SupportPlan activity
@@ -365,6 +366,364 @@ paths:
         "404": { $ref: "#/components/responses/NotFoundProblem" }
         "409":
           { $ref: "#/components/responses/InsufficientComparableDataProblem" }
+  /api/v1/screening-episodes:
+    x-mentalbridge-status: implemented
+    post:
+      tags: [Assessment]
+      operationId: startScreeningEpisode
+      summary: Start or resume the open guided screening episode for one purpose
+      description: |
+        Care returns the existing IN_PROGRESS or READY episode for the purpose, or
+        creates a new one when no open episode exists. Standalone assessment history
+        is never attached implicitly.
+      security:
+        - bearerAuth: []
+      parameters:
+        - $ref: "#/components/parameters/CorrelationId"
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: "#/components/schemas/ScreeningEpisodeStartRequest" }
+      responses:
+        "201":
+          description: Guided screening episode started or resumed
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/ScreeningEpisode" }
+        "400": { $ref: "#/components/responses/ValidationProblem" }
+        "401": { $ref: "#/components/responses/UnauthorizedProblem" }
+        "403": { $ref: "#/components/responses/ForbiddenProblem" }
+        "404": { $ref: "#/components/responses/NotFoundProblem" }
+  /api/v1/screening-episodes/current:
+    x-mentalbridge-status: implemented
+    get:
+      tags: [Assessment]
+      operationId: getCurrentScreeningEpisode
+      summary: Resume the latest persisted guided screening episode for one purpose
+      security:
+        - bearerAuth: []
+      parameters:
+        - name: purpose
+          in: query
+          required: true
+          schema: { $ref: "#/components/schemas/ScreeningEpisodePurpose" }
+        - $ref: "#/components/parameters/CorrelationId"
+      responses:
+        "200":
+          description: Latest guided episode returned
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/ScreeningEpisode" }
+        "400": { $ref: "#/components/responses/ValidationProblem" }
+        "401": { $ref: "#/components/responses/UnauthorizedProblem" }
+        "403": { $ref: "#/components/responses/ForbiddenProblem" }
+        "404": { $ref: "#/components/responses/NotFoundProblem" }
+  /api/v1/screening-episodes/{episodeId}/assessments/{instrument}:
+    x-mentalbridge-status: implemented
+    post:
+      tags: [Assessment]
+      operationId: submitScreeningEpisodeAssessment
+      summary: Submit one assessment directly into its exact guided episode
+      description: |
+        PHQ-9 must precede GAD-7. Submission, scoring, and attachment use the same
+        Care transaction, so browser cookies and latest-history inference are not
+        evidence authority.
+      security:
+        - bearerAuth: []
+      parameters:
+        - name: episodeId
+          in: path
+          required: true
+          schema: { type: string, format: uuid }
+        - name: instrument
+          in: path
+          required: true
+          schema: { $ref: "#/components/schemas/Instrument" }
+        - $ref: "#/components/parameters/IdempotencyKey"
+        - $ref: "#/components/parameters/CorrelationId"
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: "#/components/schemas/AssessmentSubmissionRequest" }
+      responses:
+        "201":
+          description: Assessment persisted and attached to the episode
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/Assessment" }
+        "400": { $ref: "#/components/responses/ValidationProblem" }
+        "401": { $ref: "#/components/responses/UnauthorizedProblem" }
+        "403": { $ref: "#/components/responses/ForbiddenProblem" }
+        "404": { $ref: "#/components/responses/NotFoundProblem" }
+        "409": { $ref: "#/components/responses/ConflictProblem" }
+  /api/v1/screening-episodes/{episodeId}/support-evaluation:
+    x-mentalbridge-status: implemented
+    post:
+      tags: [Assessment, Support]
+      operationId: completeScreeningEpisodeEvaluation
+      summary: Evaluate the exact PHQ-9 and GAD-7 pair attached to a guided episode
+      description: |
+        Care creates the immutable domain-aware SupportEvaluation used by downstream
+        support and the v1 presentation evaluation used by the current client. The
+        completed episode persists both references and replays them on retry.
+      security:
+        - bearerAuth: []
+      parameters:
+        - name: episodeId
+          in: path
+          required: true
+          schema: { type: string, format: uuid }
+        - $ref: "#/components/parameters/CorrelationId"
+      responses:
+        "201":
+          description: Exact episode evidence evaluated and persisted
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/ScreeningEpisodeEvaluationOutcome" }
+        "401": { $ref: "#/components/responses/UnauthorizedProblem" }
+        "403": { $ref: "#/components/responses/ForbiddenProblem" }
+        "404": { $ref: "#/components/responses/NotFoundProblem" }
+        "409": { $ref: "#/components/responses/ConflictProblem" }
+  /api/v1/reassessment-self-reports:
+    x-mentalbridge-status: implemented
+    post:
+      tags: [Reassessment summary]
+      operationId: createOwnReassessmentSelfReport
+      summary: Record explicit current-period reassessment experience
+      description: Creates one owner-authored, non-diagnostic self-report for a bounded current comparison period. Optional context is private Care-owned evidence and is never inferred from Journal or SupportPlan activity.
+      security:
+        - bearerAuth: []
+      parameters:
+        - $ref: "#/components/parameters/IdempotencyKey"
+        - $ref: "#/components/parameters/CorrelationId"
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: "#/components/schemas/ReassessmentSelfReportCreateRequest" }
+      responses:
+        "201":
+          description: Created self-report or identical idempotent replay
+          headers:
+            ETag: { schema: { type: string, pattern: '^"[0-9]+"$' } }
+            Location: { schema: { type: string } }
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/ReassessmentSelfReport" }
+        "400": { $ref: "#/components/responses/ValidationProblem" }
+        "401": { $ref: "#/components/responses/UnauthorizedProblem" }
+        "403": { $ref: "#/components/responses/ForbiddenProblem" }
+        "409": { $ref: "#/components/responses/ConflictProblem" }
+  /api/v1/reassessment-self-reports/current:
+    x-mentalbridge-status: implemented
+    get:
+      tags: [Reassessment summary]
+      operationId: getOwnCurrentReassessmentSelfReport
+      summary: Read the latest active self-report
+      security:
+        - bearerAuth: []
+      parameters:
+        - $ref: "#/components/parameters/CorrelationId"
+      responses:
+        "200":
+          description: Latest active owner self-report
+          headers:
+            ETag: { schema: { type: string, pattern: '^"[0-9]+"$' } }
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/ReassessmentSelfReport" }
+        "401": { $ref: "#/components/responses/UnauthorizedProblem" }
+        "403": { $ref: "#/components/responses/ForbiddenProblem" }
+        "404": { $ref: "#/components/responses/NotFoundProblem" }
+  /api/v1/reassessment-self-reports/{selfReportId}:
+    x-mentalbridge-status: implemented
+    parameters:
+      - name: selfReportId
+        in: path
+        required: true
+        schema: { type: string, format: uuid }
+      - $ref: "#/components/parameters/CorrelationId"
+    put:
+      tags: [Reassessment summary]
+      operationId: replaceOwnReassessmentSelfReport
+      summary: Replace the mutable response for one owned self-report
+      security:
+        - bearerAuth: []
+      parameters:
+        - name: If-Match
+          in: header
+          required: true
+          schema: { type: string, pattern: '^"[0-9]+"$' }
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: "#/components/schemas/ReassessmentSelfReportReplaceRequest" }
+      responses:
+        "200":
+          description: Replaced self-report
+          headers:
+            ETag: { schema: { type: string, pattern: '^"[0-9]+"$' } }
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/ReassessmentSelfReport" }
+        "400": { $ref: "#/components/responses/ValidationProblem" }
+        "401": { $ref: "#/components/responses/UnauthorizedProblem" }
+        "403": { $ref: "#/components/responses/ForbiddenProblem" }
+        "404": { $ref: "#/components/responses/NotFoundProblem" }
+        "412": { $ref: "#/components/responses/VersionProblem" }
+    delete:
+      tags: [Reassessment summary]
+      operationId: deleteOwnReassessmentSelfReport
+      summary: Delete mutable self-report content
+      description: Clears the categorical response and optional contexts while retaining a minimal owner/version/period tombstone. Existing immutable summary snapshots remain unchanged; the deleted source is unavailable to future composition.
+      security:
+        - bearerAuth: []
+      parameters:
+        - name: If-Match
+          in: header
+          required: true
+          schema: { type: string, pattern: '^"[0-9]+"$' }
+      responses:
+        "204": { description: Self-report content deleted }
+        "400": { $ref: "#/components/responses/ValidationProblem" }
+        "401": { $ref: "#/components/responses/UnauthorizedProblem" }
+        "403": { $ref: "#/components/responses/ForbiddenProblem" }
+        "404": { $ref: "#/components/responses/NotFoundProblem" }
+        "412": { $ref: "#/components/responses/VersionProblem" }
+  /api/v1/reassessment-summaries:
+    x-mentalbridge-status: implemented
+    get:
+      tags: [Reassessment summary]
+      operationId: listOwnReassessmentSummaries
+      summary: List immutable four-dimension reassessment snapshots
+      description: Results are ordered by composedAt and summaryId descending. Every item is the exact persisted snapshot originally returned by Care.
+      security:
+        - bearerAuth: []
+      parameters:
+        - $ref: "#/components/parameters/PageLimit"
+        - name: cursor
+          in: query
+          required: false
+          schema: { type: string, minLength: 1, maxLength: 256 }
+        - $ref: "#/components/parameters/CorrelationId"
+      responses:
+        "200":
+          description: Reassessment snapshot history
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/ReassessmentSummaryHistoryPage" }
+        "400": { $ref: "#/components/responses/ValidationProblem" }
+        "401": { $ref: "#/components/responses/UnauthorizedProblem" }
+        "403": { $ref: "#/components/responses/ForbiddenProblem" }
+    post:
+      tags: [Reassessment summary]
+      operationId: composeOwnReassessmentSummary
+      summary: Persist one reproducible four-dimension reassessment snapshot
+      description: |
+        Care validates two selected owned PHQ-9/GAD-7 results, calculates their
+        standardized trends locally, reads only the minimized Journal/AI projection,
+        snapshots explicitly reusable SupportPlan engagement/reflection from the
+        same two periods, and separately snapshots an optional explicit owner
+        self-report for the exact current period. Journal absence, consent denial, malformed data, timeout,
+        or dependency failure is persisted as an explicit UNAVAILABLE journal
+        dimension while the local dimensions remain available. Sparse local or
+        journal evidence is INSUFFICIENT_DATA. Dimensions are never collapsed into
+        a global improvement, recovery, or wellness score.
+      security:
+        - bearerAuth: []
+      parameters:
+        - $ref: "#/components/parameters/IdempotencyKey"
+        - $ref: "#/components/parameters/CorrelationId"
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: "#/components/schemas/ReassessmentSummaryCreateRequest" }
+      responses:
+        "201":
+          description: New snapshot or identical idempotent replay
+          headers:
+            Location:
+              schema: { type: string }
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/ReassessmentSummary" }
+              examples:
+                contradictory:
+                  $ref: "#/components/examples/ContradictoryReassessmentSummary"
+        "400": { $ref: "#/components/responses/ValidationProblem" }
+        "401": { $ref: "#/components/responses/UnauthorizedProblem" }
+        "403": { $ref: "#/components/responses/ForbiddenProblem" }
+        "404": { $ref: "#/components/responses/NotFoundProblem" }
+        "409": { $ref: "#/components/responses/ConflictProblem" }
+  /api/v1/reassessment-summaries/context:
+    x-mentalbridge-status: implemented
+    get:
+      tags: [Reassessment summary]
+      operationId: getOwnReassessmentContext
+      summary: Resolve the authoritative inputs and comparison periods for a new reassessment
+      description: |
+        Care selects the latest usable owned PHQ-9 and GAD-7 evidence and issues
+        the two adjacent comparison periods defined by its versioned policy. The
+        browser displays and submits these facts; it does not infer assessment
+        compatibility or calculate period boundaries.
+      security:
+        - bearerAuth: []
+      parameters:
+        - $ref: "#/components/parameters/CorrelationId"
+      responses:
+        "200":
+          description: Current Care-owned reassessment context
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/ReassessmentContext" }
+        "401": { $ref: "#/components/responses/UnauthorizedProblem" }
+        "403": { $ref: "#/components/responses/ForbiddenProblem" }
+  /api/v1/reassessment-summaries/current:
+    x-mentalbridge-status: implemented
+    get:
+      tags: [Reassessment summary]
+      operationId: getOwnCurrentReassessmentSummary
+      summary: Read the latest persisted reassessment snapshot
+      security:
+        - bearerAuth: []
+      parameters:
+        - $ref: "#/components/parameters/CorrelationId"
+      responses:
+        "200":
+          description: Latest immutable snapshot
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/ReassessmentSummary" }
+        "401": { $ref: "#/components/responses/UnauthorizedProblem" }
+        "403": { $ref: "#/components/responses/ForbiddenProblem" }
+        "404": { $ref: "#/components/responses/NotFoundProblem" }
+  /api/v1/reassessment-summaries/{summaryId}:
+    x-mentalbridge-status: implemented
+    get:
+      tags: [Reassessment summary]
+      operationId: getOwnReassessmentSummary
+      summary: Read one owned immutable reassessment snapshot
+      security:
+        - bearerAuth: []
+      parameters:
+        - name: summaryId
+          in: path
+          required: true
+          schema: { type: string, format: uuid }
+        - $ref: "#/components/parameters/CorrelationId"
+      responses:
+        "200":
+          description: Immutable snapshot
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/ReassessmentSummary" }
+        "401": { $ref: "#/components/responses/UnauthorizedProblem" }
+        "403": { $ref: "#/components/responses/ForbiddenProblem" }
+        "404": { $ref: "#/components/responses/NotFoundProblem" }
   /api/v1/support-evaluations:
     x-mentalbridge-status: implemented
     get:
@@ -715,6 +1074,7 @@ paths:
       parameters:
         - $ref: '#/components/parameters/SupportPlanId'
         - $ref: '#/components/parameters/RequiredIfMatch'
+        - $ref: '#/components/parameters/IdempotencyKey'
         - $ref: '#/components/parameters/CorrelationId'
       requestBody:
         required: true
@@ -723,6 +1083,42 @@ paths:
             schema: { $ref: '#/components/schemas/ReplaceCurrentSupportPlanRequest' }
       responses:
         '200': { $ref: '#/components/responses/SupportPlanCommandResult' }
+        '400': { $ref: '#/components/responses/ValidationProblem' }
+        '401': { $ref: '#/components/responses/UnauthorizedProblem' }
+        '403': { $ref: '#/components/responses/SupportPlanEntitlementProblem' }
+        '404': { $ref: '#/components/responses/SupportPlanNotFoundProblem' }
+        '409': { $ref: '#/components/responses/SupportPlanLifecycleConflictProblem' }
+        '412': { $ref: '#/components/responses/SupportPlanVersionProblem' }
+        '503': { $ref: '#/components/responses/SupportPlanDependencyProblem' }
+  /api/v1/support-plans/{supportPlanId}/replacement-review:
+    x-mentalbridge-status: implemented
+    post:
+      tags: [SupportPlan activity]
+      operationId: reviewOwnSupportPlanReplacement
+      summary: Review the current plan against one admissible replacement draft
+      description: |
+        Care reloads persisted owner state, requires the current canonical
+        ReassessmentSummary v2, and freshly revalidates entitlement, both plan
+        versions, evaluation/template compatibility, and exact resource
+        eligibility before returning one of the three governed review outcomes.
+        This operation never mutates either plan.
+      security:
+        - bearerAuth: []
+      parameters:
+        - $ref: '#/components/parameters/SupportPlanId'
+        - $ref: '#/components/parameters/RequiredIfMatch'
+        - $ref: '#/components/parameters/CorrelationId'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: '#/components/schemas/ReplaceCurrentSupportPlanRequest' }
+      responses:
+        '200':
+          description: Truthful persisted comparison and separate reassessment context
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/SupportPlanReplacementReview' }
         '400': { $ref: '#/components/responses/ValidationProblem' }
         '401': { $ref: '#/components/responses/UnauthorizedProblem' }
         '403': { $ref: '#/components/responses/SupportPlanEntitlementProblem' }
@@ -986,6 +1382,78 @@ components:
       description: Strong ETag containing the Care-owned draft version
       schema: { type: string, pattern: '^"[0-9]+"$' }
   examples:
+    ContradictoryReassessmentSummary:
+      summary: A lower PHQ-9 score coexists with more-frequent journal stress and a reported barrier
+      value:
+        summaryId: 65010000-0000-4000-8000-000000000001
+        summaryVersion: reassessment-summary-v2
+        composedAt: "2026-09-24T07:00:00Z"
+        previousPeriod: { startAt: "2026-08-27T00:00:00Z", endAt: "2026-09-10T00:00:00Z" }
+        currentPeriod: { startAt: "2026-09-10T00:00:00Z", endAt: "2026-09-24T00:00:00Z" }
+        screening:
+          state: AVAILABLE
+          trends:
+            - instrument: PHQ9
+              state: AVAILABLE
+              scoringVersion: phq9-standard-bands-v1
+              previous: { assessmentId: 65010000-0000-4000-8000-000000000011, questionnaireVersion: phq9-vi-vn-capstone-v2, submittedAt: "2026-09-09T08:00:00Z", totalScore: 13, screeningLevel: MODERATE }
+              current: { assessmentId: 65010000-0000-4000-8000-000000000012, questionnaireVersion: phq9-vi-vn-capstone-v2, submittedAt: "2026-09-23T08:00:00Z", totalScore: 8, screeningLevel: MILD }
+              rawDelta: -5
+              direction: DECREASED
+            - instrument: GAD7
+              state: AVAILABLE
+              scoringVersion: gad7-standard-bands-v1
+              previous: { assessmentId: 65010000-0000-4000-8000-000000000013, questionnaireVersion: gad7-vi-vn-capstone-v1, submittedAt: "2026-09-09T08:05:00Z", totalScore: 7, screeningLevel: MILD }
+              current: { assessmentId: 65010000-0000-4000-8000-000000000014, questionnaireVersion: gad7-vi-vn-capstone-v1, submittedAt: "2026-09-23T08:05:00Z", totalScore: 9, screeningLevel: MILD }
+              rawDelta: 2
+              direction: INCREASED
+        journalContext:
+          state: AVAILABLE
+          unavailableReason: null
+          jobId: 65010000-0000-4000-8000-000000000020
+          analysisId: 65010000-0000-4000-8000-000000000021
+          sourceJournalRevisions:
+            - { journalId: 65010000-0000-4000-8000-000000000031, journalRevision: 1, period: PREVIOUS }
+            - { journalId: 65010000-0000-4000-8000-000000000032, journalRevision: 2, period: PREVIOUS }
+            - { journalId: 65010000-0000-4000-8000-000000000033, journalRevision: 1, period: PREVIOUS }
+            - { journalId: 65010000-0000-4000-8000-000000000034, journalRevision: 1, period: CURRENT }
+            - { journalId: 65010000-0000-4000-8000-000000000035, journalRevision: 1, period: CURRENT }
+            - { journalId: 65010000-0000-4000-8000-000000000036, journalRevision: 3, period: CURRENT }
+          contextSignals: [work-pressure]
+          emotionIndicators: [stress]
+          recurringThemes: [deadline-pressure]
+          changesComparedWithPreviousPeriod: [{ signal: stress, direction: MORE_FREQUENT }]
+          preferences: []
+          barriers: [low-energy]
+          helpfulPatterns: []
+          dataCoverage: { previousPeriodJournalEntryCount: 3, currentPeriodJournalEntryCount: 3, sufficientForComparison: true }
+          provenance: { provider: DETERMINISTIC_FAKE, model: deterministic-longitudinal-v1, promptVersion: longitudinal-v1, schemaVersion: 1, createdAt: "2026-09-24T06:55:00Z" }
+        supportPlanEngagement:
+          state: AVAILABLE
+          previousPeriod: { completedCount: 1, skippedCount: 0 }
+          currentPeriod: { completedCount: 0, skippedCount: 1 }
+          sources:
+            - { occurrenceId: 65010000-0000-4000-8000-000000000041, supportPlanId: 65010000-0000-4000-8000-000000000051, sourcePlanVersion: 2, sourceSlotId: grounding, sourceResourceId: 65010000-0000-4000-8000-000000000061, sourceContentVersion: 4, scheduledAt: "2026-09-03T11:00:00Z", period: PREVIOUS, state: COMPLETED, barrierCode: null }
+            - { occurrenceId: 65010000-0000-4000-8000-000000000042, supportPlanId: 65010000-0000-4000-8000-000000000051, sourcePlanVersion: 2, sourceSlotId: grounding, sourceResourceId: 65010000-0000-4000-8000-000000000061, sourceContentVersion: 4, scheduledAt: "2026-09-17T11:00:00Z", period: CURRENT, state: SKIPPED, barrierCode: LOW_ENERGY }
+        selfReportedExperience:
+          state: AVAILABLE
+          unavailableReason: null
+          source:
+            selfReportId: 65010000-0000-4000-8000-000000000071
+            sourceVersion: reassessment-self-report-v1
+            sourceRevision: 0
+            currentPeriod: { startAt: "2026-09-10T00:00:00Z", endAt: "2026-09-24T00:00:00Z" }
+            currentExperience: MORE_DIFFICULT
+            helpfulContext: "Short breathing pauses helped during meetings."
+            difficultContext: "Work pressure felt harder this period."
+            authoredAt: "2026-09-24T06:50:00Z"
+            updatedAt: "2026-09-24T06:50:00Z"
+        activityReflection:
+          state: AVAILABLE
+          sources:
+            - { occurrenceId: 65010000-0000-4000-8000-000000000041, period: PREVIOUS, helpfulness: HELPFUL, reflection: "The short exercise felt manageable.", engagementUpdatedAt: "2026-09-03T11:15:00Z" }
+            - { occurrenceId: 65010000-0000-4000-8000-000000000042, period: CURRENT, helpfulness: null, reflection: "I had less energy after work.", engagementUpdatedAt: "2026-09-17T11:10:00Z" }
+        disclaimerCode: FOUR_DIMENSIONS_NOT_COMBINED
     SelfGuidedSupportEvaluation:
       summary: Minimal and mild screening bands route to self-guided support
       value:
@@ -1203,6 +1671,312 @@ components:
       required: false
       schema: { type: integer, minimum: 1, maximum: 50, default: 20 }
   schemas:
+    ReassessmentPeriod:
+      type: object
+      additionalProperties: false
+      required: [startAt, endAt]
+      properties:
+        startAt: { type: string, format: date-time }
+        endAt: { type: string, format: date-time }
+      description: Half-open UTC period. Canonical v2 periods are issued by the Care reassessment context policy.
+    ReassessmentContext:
+      type: object
+      additionalProperties: false
+      required: [policyVersion, state, missingInstruments, phq9AssessmentId, gad7AssessmentId, previousPeriod, currentPeriod]
+      properties:
+        policyVersion: { type: string, const: reassessment-comparison-v1 }
+        state: { type: string, enum: [READY, INCOMPLETE] }
+        missingInstruments:
+          type: array
+          maxItems: 2
+          uniqueItems: true
+          items: { $ref: "#/components/schemas/Instrument" }
+        phq9AssessmentId: { type: [string, "null"], format: uuid }
+        gad7AssessmentId: { type: [string, "null"], format: uuid }
+        previousPeriod: { $ref: "#/components/schemas/ReassessmentPeriod" }
+        currentPeriod: { $ref: "#/components/schemas/ReassessmentPeriod" }
+    ReassessmentSummaryCreateRequest:
+      type: object
+      additionalProperties: false
+      required: [phq9AssessmentId, gad7AssessmentId, previousPeriod, currentPeriod]
+      oneOf:
+        - required: [journalAnalysisId]
+        - required: [journalJobId]
+      properties:
+        phq9AssessmentId: { type: string, format: uuid }
+        gad7AssessmentId: { type: string, format: uuid }
+        journalAnalysisId:
+          type: string
+          format: uuid
+          description: Deprecated MB-386 v1 compatibility input. Exactly one Journal evidence reference is required.
+        journalJobId:
+          type: string
+          format: uuid
+          description: Canonical v2 input; Care resolves the authoritative Journal job status and result.
+        previousPeriod: { $ref: "#/components/schemas/ReassessmentPeriod" }
+        currentPeriod: { $ref: "#/components/schemas/ReassessmentPeriod" }
+        selfReportId:
+          type: string
+          format: uuid
+          description: Optional explicit owner self-report for the exact current period. Omission produces INSUFFICIENT_DATA and is never inferred from other evidence.
+    ReassessmentCurrentExperience:
+      type: string
+      enum: [BETTER, ABOUT_THE_SAME, MORE_DIFFICULT, UNSURE]
+      description: Non-diagnostic comparison of how the current period has felt to the user.
+    ReassessmentSelfReportCreateRequest:
+      type: object
+      additionalProperties: false
+      required: [currentPeriod, currentExperience]
+      properties:
+        currentPeriod: { $ref: "#/components/schemas/ReassessmentPeriod" }
+        currentExperience: { $ref: "#/components/schemas/ReassessmentCurrentExperience" }
+        helpfulContext: { type: [string, "null"], minLength: 1, maxLength: 500 }
+        difficultContext: { type: [string, "null"], minLength: 1, maxLength: 500 }
+    ReassessmentSelfReportReplaceRequest:
+      type: object
+      additionalProperties: false
+      required: [currentExperience]
+      properties:
+        currentExperience: { $ref: "#/components/schemas/ReassessmentCurrentExperience" }
+        helpfulContext: { type: [string, "null"], minLength: 1, maxLength: 500 }
+        difficultContext: { type: [string, "null"], minLength: 1, maxLength: 500 }
+    ReassessmentSelfReport:
+      type: object
+      additionalProperties: false
+      required: [selfReportId, sourceVersion, currentPeriod, currentExperience, helpfulContext, difficultContext, version, authoredAt, updatedAt]
+      properties:
+        selfReportId: { type: string, format: uuid }
+        sourceVersion: { type: string, const: reassessment-self-report-v1 }
+        currentPeriod: { $ref: "#/components/schemas/ReassessmentPeriod" }
+        currentExperience: { $ref: "#/components/schemas/ReassessmentCurrentExperience" }
+        helpfulContext: { type: [string, "null"], minLength: 1, maxLength: 500 }
+        difficultContext: { type: [string, "null"], minLength: 1, maxLength: 500 }
+        version: { type: integer, format: int64, minimum: 0 }
+        authoredAt: { type: string, format: date-time }
+        updatedAt: { type: string, format: date-time }
+    ReassessmentDimensionState:
+      type: string
+      enum: [AVAILABLE, INSUFFICIENT_DATA, UNAVAILABLE]
+    ReassessmentScreeningPoint:
+      type: object
+      additionalProperties: true
+      required: [assessmentId, questionnaireVersion, submittedAt, totalScore, screeningLevel]
+      properties:
+        assessmentId: { type: string, format: uuid }
+        questionnaireVersion: { type: string, minLength: 1, maxLength: 32 }
+        submittedAt: { type: string, format: date-time }
+        totalScore: { type: integer, minimum: 0, maximum: 27 }
+        screeningLevel: { $ref: "#/components/schemas/ScreeningLevel" }
+    ReassessmentScreeningTrend:
+      type: object
+      additionalProperties: true
+      required: [instrument, state, scoringVersion, previous, current, rawDelta, direction]
+      properties:
+        instrument: { $ref: "#/components/schemas/Instrument" }
+        state: { $ref: "#/components/schemas/ReassessmentDimensionState" }
+        scoringVersion: { type: string, minLength: 1, maxLength: 32 }
+        previous:
+          oneOf:
+            - $ref: "#/components/schemas/ReassessmentScreeningPoint"
+            - type: "null"
+        current: { $ref: "#/components/schemas/ReassessmentScreeningPoint" }
+        rawDelta: { type: [integer, "null"], minimum: -27, maximum: 27 }
+        direction:
+          type: string
+          enum: [INCREASED, DECREASED, UNCHANGED, INSUFFICIENT_DATA]
+    ReassessmentScreeningDimension:
+      type: object
+      additionalProperties: true
+      required: [state, trends]
+      properties:
+        state: { $ref: "#/components/schemas/ReassessmentDimensionState" }
+        trends:
+          type: array
+          minItems: 2
+          maxItems: 2
+          items: { $ref: "#/components/schemas/ReassessmentScreeningTrend" }
+    ReassessmentJournalSourceRevision:
+      type: object
+      additionalProperties: false
+      required: [journalId, journalRevision, period]
+      properties:
+        journalId: { type: string, format: uuid }
+        journalRevision: { type: integer, minimum: 1, maximum: 200 }
+        period: { type: string, enum: [PREVIOUS, CURRENT] }
+    ReassessmentJournalChange:
+      type: object
+      additionalProperties: false
+      required: [signal, direction]
+      properties:
+        signal: { type: string, minLength: 1, maxLength: 64 }
+        direction: { type: string, enum: [MORE_FREQUENT, LESS_FREQUENT, SIMILAR, INSUFFICIENT_DATA] }
+    ReassessmentJournalCoverage:
+      type: object
+      additionalProperties: false
+      required: [previousPeriodJournalEntryCount, currentPeriodJournalEntryCount, sufficientForComparison]
+      properties:
+        previousPeriodJournalEntryCount: { type: integer, minimum: 0, maximum: 100 }
+        currentPeriodJournalEntryCount: { type: integer, minimum: 0, maximum: 100 }
+        sufficientForComparison: { type: boolean }
+    ReassessmentJournalProvenance:
+      type: object
+      additionalProperties: false
+      required: [provider, model, promptVersion, schemaVersion, createdAt]
+      properties:
+        provider: { type: string, enum: [DETERMINISTIC_FAKE, GEMINI, OPENAI] }
+        model: { type: string, minLength: 1, maxLength: 128 }
+        promptVersion: { type: string, minLength: 1, maxLength: 96 }
+        schemaVersion: { type: integer, minimum: 1 }
+        createdAt: { type: string, format: date-time }
+    ReassessmentJournalDimension:
+      type: object
+      additionalProperties: true
+      required: [state, unavailableReason, jobId, analysisId, sourceJournalRevisions, contextSignals, emotionIndicators, recurringThemes, changesComparedWithPreviousPeriod, preferences, barriers, helpfulPatterns, dataCoverage, provenance]
+      properties:
+        state: { $ref: "#/components/schemas/ReassessmentDimensionState" }
+        unavailableReason:
+          type: [string, "null"]
+          enum: [SOURCE_NOT_FOUND, CONSENT_REQUIRED, CONSENT_REVOKED, CONSENT_UNAVAILABLE, ENTITLEMENT_UNAVAILABLE, ENTITLEMENT_CHANGED, AUTHORIZATION_CONTEXT_LOST, SOURCE_REVISION_CHANGED, SOURCE_DELETED, PROVIDER_TIMEOUT, PROVIDER_UNAVAILABLE, INVALID_PROVIDER_RESULT, INTERNAL_ERROR, DEPENDENCY_UNAVAILABLE, INVALID_PROJECTION, null]
+        jobId:
+          type: [string, "null"]
+          format: uuid
+          description: Present for canonical v2 snapshots, including failed jobs.
+        analysisId:
+          type: [string, "null"]
+          format: uuid
+          description: Present only when Journal produced an analysis (or for a legacy v1 snapshot).
+        sourceJournalRevisions:
+          type: array
+          maxItems: 100
+          items: { $ref: "#/components/schemas/ReassessmentJournalSourceRevision" }
+        contextSignals: { type: array, maxItems: 12, items: { type: string, maxLength: 64 } }
+        emotionIndicators: { type: array, maxItems: 12, items: { type: string, maxLength: 64 } }
+        recurringThemes: { type: array, maxItems: 12, items: { type: string, maxLength: 64 } }
+        changesComparedWithPreviousPeriod: { type: array, maxItems: 24, items: { $ref: "#/components/schemas/ReassessmentJournalChange" } }
+        preferences: { type: array, maxItems: 12, items: { type: string, maxLength: 64 } }
+        barriers: { type: array, maxItems: 12, items: { type: string, maxLength: 64 } }
+        helpfulPatterns: { type: array, maxItems: 12, items: { type: string, maxLength: 64 } }
+        dataCoverage:
+          oneOf:
+            - $ref: "#/components/schemas/ReassessmentJournalCoverage"
+            - type: "null"
+        provenance:
+          oneOf:
+            - $ref: "#/components/schemas/ReassessmentJournalProvenance"
+            - type: "null"
+    ReassessmentEngagementPeriod:
+      type: object
+      additionalProperties: false
+      required: [completedCount, skippedCount]
+      properties:
+        completedCount: { type: integer, minimum: 0 }
+        skippedCount: { type: integer, minimum: 0 }
+    ReassessmentEngagementSource:
+      type: object
+      additionalProperties: false
+      required: [occurrenceId, supportPlanId, sourcePlanVersion, sourceSlotId, sourceResourceId, sourceContentVersion, scheduledAt, period, state, barrierCode]
+      properties:
+        occurrenceId: { type: string, format: uuid }
+        supportPlanId: { type: string, format: uuid }
+        sourcePlanVersion: { type: integer, format: int64, minimum: 0 }
+        sourceSlotId: { type: string, minLength: 1, maxLength: 64 }
+        sourceResourceId: { type: string, format: uuid }
+        sourceContentVersion: { type: integer, format: int64, minimum: 0 }
+        scheduledAt: { type: string, format: date-time }
+        period: { type: string, enum: [PREVIOUS, CURRENT] }
+        state: { type: string, enum: [COMPLETED, SKIPPED] }
+        barrierCode: { type: [string, "null"], enum: [LOW_ENERGY, NOT_ENOUGH_TIME, DIFFICULT_TO_START, NOT_A_GOOD_FIT, OTHER, null] }
+    ReassessmentEngagementDimension:
+      type: object
+      additionalProperties: true
+      required: [state, previousPeriod, currentPeriod, sources]
+      properties:
+        state: { $ref: "#/components/schemas/ReassessmentDimensionState" }
+        previousPeriod: { $ref: "#/components/schemas/ReassessmentEngagementPeriod" }
+        currentPeriod: { $ref: "#/components/schemas/ReassessmentEngagementPeriod" }
+        sources:
+          type: array
+          maxItems: 200
+          items: { $ref: "#/components/schemas/ReassessmentEngagementSource" }
+    ReassessmentReflectionSource:
+      type: object
+      additionalProperties: false
+      required: [occurrenceId, period, helpfulness, reflection, engagementUpdatedAt]
+      properties:
+        occurrenceId: { type: string, format: uuid }
+        period: { type: string, enum: [PREVIOUS, CURRENT] }
+        helpfulness: { type: [string, "null"], enum: [NOT_HELPFUL, A_LITTLE_HELPFUL, HELPFUL, VERY_HELPFUL, null] }
+        reflection: { type: [string, "null"], minLength: 1, maxLength: 500 }
+        engagementUpdatedAt: { type: string, format: date-time }
+    ReassessmentReflectionDimension:
+      type: object
+      additionalProperties: true
+      required: [state, sources]
+      properties:
+        state: { $ref: "#/components/schemas/ReassessmentDimensionState" }
+        sources:
+          type: array
+          maxItems: 200
+          items: { $ref: "#/components/schemas/ReassessmentReflectionSource" }
+    ReassessmentExplicitSelfReport:
+      type: object
+      additionalProperties: false
+      required: [selfReportId, sourceVersion, sourceRevision, currentPeriod, currentExperience, helpfulContext, difficultContext, authoredAt, updatedAt]
+      properties:
+        selfReportId: { type: string, format: uuid }
+        sourceVersion: { type: string, const: reassessment-self-report-v1 }
+        sourceRevision: { type: integer, format: int64, minimum: 0 }
+        currentPeriod: { $ref: "#/components/schemas/ReassessmentPeriod" }
+        currentExperience: { $ref: "#/components/schemas/ReassessmentCurrentExperience" }
+        helpfulContext: { type: [string, "null"], minLength: 1, maxLength: 500 }
+        difficultContext: { type: [string, "null"], minLength: 1, maxLength: 500 }
+        authoredAt: { type: string, format: date-time }
+        updatedAt: { type: string, format: date-time }
+    ReassessmentSelfReportedExperienceDimension:
+      type: object
+      additionalProperties: false
+      required: [state, unavailableReason, source]
+      properties:
+        state: { $ref: "#/components/schemas/ReassessmentDimensionState" }
+        unavailableReason:
+          type: [string, "null"]
+          enum: [NOT_PROVIDED, SOURCE_DELETED, null]
+        source:
+          oneOf:
+            - $ref: "#/components/schemas/ReassessmentExplicitSelfReport"
+            - type: "null"
+    ReassessmentSummary:
+      type: object
+      additionalProperties: true
+      required: [summaryId, summaryVersion, composedAt, previousPeriod, currentPeriod, screening, journalContext, supportPlanEngagement, disclaimerCode]
+      description: v1 snapshots expose userReflection; v2 snapshots expose selfReportedExperience and activityReflection as distinct sources.
+      properties:
+        summaryId: { type: string, format: uuid }
+        summaryVersion: { type: string, enum: [reassessment-summary-v1, reassessment-summary-v2] }
+        composedAt: { type: string, format: date-time }
+        previousPeriod: { $ref: "#/components/schemas/ReassessmentPeriod" }
+        currentPeriod: { $ref: "#/components/schemas/ReassessmentPeriod" }
+        screening: { $ref: "#/components/schemas/ReassessmentScreeningDimension" }
+        journalContext: { $ref: "#/components/schemas/ReassessmentJournalDimension" }
+        supportPlanEngagement: { $ref: "#/components/schemas/ReassessmentEngagementDimension" }
+        selfReportedExperience: { $ref: "#/components/schemas/ReassessmentSelfReportedExperienceDimension" }
+        activityReflection: { $ref: "#/components/schemas/ReassessmentReflectionDimension" }
+        userReflection:
+          description: Deprecated MB-386 v1 activity-reflection field retained only on historical snapshots.
+          allOf:
+            - $ref: "#/components/schemas/ReassessmentReflectionDimension"
+        disclaimerCode: { type: string, const: FOUR_DIMENSIONS_NOT_COMBINED }
+    ReassessmentSummaryHistoryPage:
+      type: object
+      additionalProperties: false
+      required: [items, nextCursor, hasMore]
+      properties:
+        items:
+          type: array
+          maxItems: 50
+          items: { $ref: "#/components/schemas/ReassessmentSummary" }
+        nextCursor: { type: [string, "null"], minLength: 1, maxLength: 256 }
+        hasMore: { type: boolean }
     SafetyDirectoryTrigger:
       type: string
       description: Presentation provenance only; never a suicide-risk classification
@@ -1504,6 +2278,41 @@ components:
           uniqueItems: true
           description: Exactly one answer for every question in the referenced definition; order is not authoritative
           items: { $ref: "#/components/schemas/AssessmentAnswer" }
+    ScreeningEpisodePurpose:
+      type: string
+      enum: [INITIAL_CHECK, REASSESSMENT]
+    ScreeningEpisodeStatus:
+      type: string
+      enum: [IN_PROGRESS, READY, COMPLETED]
+    ScreeningEpisodeStartRequest:
+      type: object
+      additionalProperties: false
+      required: [purpose]
+      properties:
+        purpose: { $ref: "#/components/schemas/ScreeningEpisodePurpose" }
+    ScreeningEpisode:
+      type: object
+      additionalProperties: false
+      required: [episodeId, purpose, status, createdAt, updatedAt, version]
+      properties:
+        episodeId: { type: string, format: uuid }
+        purpose: { $ref: "#/components/schemas/ScreeningEpisodePurpose" }
+        status: { $ref: "#/components/schemas/ScreeningEpisodeStatus" }
+        phq9AssessmentId: { type: [string, "null"], format: uuid }
+        gad7AssessmentId: { type: [string, "null"], format: uuid }
+        supportEvaluationId: { type: [string, "null"], format: uuid }
+        presentationEvaluationId: { type: [string, "null"], format: uuid }
+        createdAt: { type: string, format: date-time }
+        updatedAt: { type: string, format: date-time }
+        completedAt: { type: [string, "null"], format: date-time }
+        version: { type: integer, format: int64, minimum: 0 }
+    ScreeningEpisodeEvaluationOutcome:
+      type: object
+      additionalProperties: false
+      required: [episode, presentationEvaluation]
+      properties:
+        episode: { $ref: "#/components/schemas/ScreeningEpisode" }
+        presentationEvaluation: { $ref: "#/components/schemas/SupportEvaluation" }
     AssessmentAnswer:
       type: object
       additionalProperties: false
@@ -1850,10 +2659,51 @@ components:
     ReplaceCurrentSupportPlanRequest:
       type: object
       additionalProperties: false
-      required: [currentSupportPlanId, currentVersion]
+      required: [currentSupportPlanId, currentVersion, reassessmentSummaryId]
       properties:
         currentSupportPlanId: { type: string, format: uuid }
         currentVersion: { type: integer, minimum: 0 }
+        reassessmentSummaryId: { type: string, format: uuid }
+    SupportPlanReplacementReview:
+      type: object
+      additionalProperties: false
+      required: [outcome, rationaleCodes, comparison, currentPlan, proposedPlan, reassessmentSummary, reviewedAt]
+      properties:
+        outcome:
+          type: string
+          enum: [CURRENT_PLAN_VALID_NO_BETTER_ALTERNATIVE, CURRENT_PLAN_VALID_ALTERNATIVES_AVAILABLE, CURRENT_PLAN_NOT_ADMISSIBLE]
+        rationaleCodes:
+          type: array
+          minItems: 2
+          maxItems: 2
+          items:
+            type: string
+            enum: [CURRENT_PLAN_ADMISSIBLE, EXACT_SELECTION_UNCHANGED, PROPOSED_SELECTION_DIFFERS, PROPOSED_PLAN_ADMISSIBLE, SUPPORT_EVALUATION_STALE, SUPPORT_PLAN_POLICY_STALE, RESOURCE_VERSION_STALE, SUPPORT_PLAN_INVALID_CHOICE, SUPPORT_PLAN_CORE_UNAVAILABLE]
+        comparison:
+          type: array
+          minItems: 1
+          maxItems: 10
+          items: { $ref: '#/components/schemas/SupportPlanReplacementComparisonItem' }
+        currentPlan: { $ref: '#/components/schemas/SupportPlan' }
+        proposedPlan: { $ref: '#/components/schemas/SupportPlan' }
+        reassessmentSummary: { $ref: '#/components/schemas/ReassessmentSummary' }
+        reviewedAt: { type: string, format: date-time }
+    SupportPlanReplacementComparisonItem:
+      type: object
+      additionalProperties: false
+      required: [change, currentSlotId, currentResource, proposedSlotId, proposedResource]
+      properties:
+        change: { type: string, enum: [UNCHANGED, CHANGED, ADDED, REMOVED] }
+        currentSlotId: { type: [string, 'null'], minLength: 1, maxLength: 64 }
+        currentResource:
+          oneOf:
+            - { $ref: '#/components/schemas/SupportPlanResource' }
+            - { type: 'null' }
+        proposedSlotId: { type: [string, 'null'], minLength: 1, maxLength: 64 }
+        proposedResource:
+          oneOf:
+            - { $ref: '#/components/schemas/SupportPlanResource' }
+            - { type: 'null' }
     SupportPlanDraft:
       $ref: '#/components/schemas/SupportPlan'
     SupportPlan:
@@ -2225,7 +3075,7 @@ components:
         application/problem+json:
           schema: { $ref: '#/components/schemas/Problem' }
     SupportPlanLifecycleConflictProblem:
-      description: The requested lifecycle transition is invalid or a replacement source is stale (SUPPORT_PLAN_TRANSITION_INVALID)
+      description: The requested lifecycle transition is invalid, reassessment is stale or uses different screening evidence, or replacement is unchanged (SUPPORT_PLAN_TRANSITION_INVALID, REASSESSMENT_SUMMARY_STALE, REASSESSMENT_SCREENING_CONTEXT_MISMATCH, or SUPPORT_PLAN_REPLACEMENT_UNCHANGED)
       content:
         application/problem+json:
           schema: { $ref: '#/components/schemas/Problem' }

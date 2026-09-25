@@ -43,7 +43,7 @@ public class SecurityConfiguration {
 								"/api/v1/consent-decisions/**", "/api/v1/assessments/**",
 								"/api/v1/support-evaluations/**", "/api/v2/support-evaluations/**",
 								"/api/v1/support-guides/**", "/api/v1/support-plans/**",
-								"/api/v1/support-plan-occurrences/**").hasRole("USER")
+								"/api/v1/support-plan-occurrences/**", "/api/v1/reassessment-summaries/**").hasRole("USER")
 						.anyRequest().authenticated())
 				.exceptionHandling(errors -> errors.authenticationEntryPoint(securityProblems)
 						.accessDeniedHandler(securityProblems))

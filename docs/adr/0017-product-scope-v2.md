@@ -3,11 +3,20 @@
 - Status: Accepted
 - Date: 2026-09-15
 - Decision ID: `MB-SCOPE-V2-001`
+- Amended by: [ADR 0022 — Current product blueprint amendments](0022-current-product-blueprint-amendments.md) (`MB-SCOPE-V2-002`)
 - Amends: [ADR 0005](0005-consultation-billing-and-credit-settlement.md),
   [ADR 0009](0009-care-screening-safety-and-support-boundaries.md),
   [ADR 0013](0013-freeze-support-plan-policy-v1.md),
   [ADR 0014](0014-appointment-specialist-and-consultation-continuity.md), and
   [ADR 0015](0015-ai-companion-analysis-contract.md)
+
+> **Current-authority note (2026-09-24):** ADR 0022 prospectively amends the
+> consultation-credit quantities and reassessment/user-reflection semantics.
+> The original `PLUS=1` / `PREMIUM=3` values below are retained as historical
+> ADR 0017 rationale. Current target periods use `PLUS=4` / `PREMIUM=10`, no
+> rollover, and concurrent active-reservation caps `2` / `4`. ADR 0022 also
+> requires an explicit user-authored reassessment self-report as the canonical
+> fourth dimension. Historical records keep their original policy provenance.
 
 ## Context
 
@@ -35,6 +44,10 @@ The only canonical package codes are `FREE`, `PLUS`, and `PREMIUM`.
 | `FREE` | Standard one-time Support Guide after screening, Journal, emotion check-in, reviewed resources, and a default AI chat quota of five successfully delivered assistant responses per day |
 | `PLUS` | A higher versioned AI quota, persistent SupportPlan capability, and one consultation credit per paid period |
 | `PREMIUM` | No daily response limit displayed to the user, while server-side token, rate, abuse, and fair-use limits still apply; a stronger configured model may be used; three consultation credits per paid period; advanced recommendation capability |
+
+The consultation-credit quantities in this original table are superseded for
+new target periods by ADR 0022. The table remains unchanged to preserve this
+ADR's historical decision text.
 
 Reviewed resources are not count-limited by package. Commercial access controls
 gate capabilities, consultation credits, and AI token/request quota, not the
@@ -79,6 +92,10 @@ assessment references. Reload reads the stored snapshot; it does not silently
 re-resolve or convert a guide into a SupportPlan. Optional AI may rephrase only
 approved copy. The approved Care copy is the required fallback and safety never
 waits for Content or AI.
+
+ADR 0022 clarifies that this persisted immutable guide is historical data and
+does not automatically expire merely because time passes. “One-time” means one
+guidance result for one screening context; it does not mean ephemeral storage.
 
 A `SupportPlan` is durable Care-owned data with an explicit lifecycle and
 activity tracking. It is available only to `PLUS` and `PREMIUM`. At most one
@@ -138,6 +155,10 @@ Published v2 plan versions and real payments use VND. MoMo is the only real
 payment and payout provider. One evidence-backed `COMPLETED` appointment
 consumes exactly one credit.
 
+ADR 0022 changes new target plan-period quantities to `FREE=0`, `PLUS=4`, and
+`PREMIUM=10`, with no rollover and concurrent active-reservation caps
+`0/2/4`. Historical periods created under the older policy remain immutable.
+
 Each issued credit snapshots a fixed VND `creditAllocation`. A completed
 appointment creates a specialist earning equal to 70% of that credit's
 snapshotted `creditAllocation`, never 70% of the package price. No earning is
@@ -168,8 +189,8 @@ third party, or claim guaranteed response.
 ## Ownership
 
 - Care owns screening, both safety triggers, Support Guide, SupportPlan,
-  eligibility revalidation, `PlanChangeRequest` decisions, and user
-  confirmation.
+  reassessment composition, eligibility revalidation, `PlanChangeRequest`
+  decisions, and user confirmation.
 - Consultation/Billing owns package versions, entitlements, credits,
   appointments, evidence evaluation, summaries, earnings, and payouts.
 - Realtime owns in-app chat delivery; the selected video adapter remains behind
@@ -197,11 +218,16 @@ storage.
   `IN_APP_VIDEO` requires a versioned signaling/provider, authorization,
   evidence, failure, and recording-prohibition contract before runtime use.
 - Existing v1 SupportPlan records and selection provenance remain immutable.
-  Support Guide, tier entitlement, `PlanChangeRequest`, reminder, and summary
-  reuse behavior require compatible contracts and append-only owner migrations.
-- Existing runtime and contracts must not claim v2 availability until their
-  delivery gates pass. This ADR approves target behavior; it does not silently
-  make an endpoint, provider, credential, migration, or UI executable.
+  Support Guide, tier entitlement, `PlanChangeRequest`, reminder, summary reuse,
+  reassessment self-report, and plan-review behavior require compatible
+  contracts and append-only owner migrations.
+- Existing `consultation-credit-v1` `0/1/3` periods and pre-amendment
+  ReassessmentSummary snapshots remain readable under their original
+  provenance; they are not rewritten to new target policy.
+- Existing runtime and contracts must not claim v2 or ADR-0022 availability
+  until their delivery gates pass. These ADRs approve target behavior; they do
+  not silently make an endpoint, provider, credential, migration, or UI
+  executable.
 
 ## Consequences
 
@@ -209,8 +235,8 @@ storage.
   and model choices remain versioned configuration.
 - `FREE` users retain useful post-screening guidance without receiving a durable
   paid SupportPlan.
-- Specialist recommendations, AI assistance, and reminders enter governed
-  owner flows rather than mutating business state.
+- Specialist recommendations, AI assistance, reassessment, and reminders enter
+  governed owner flows rather than mutating business state.
 - A closed 60-minute channel is not financial proof; completion, credit
   consumption, earning creation, and payout remain evidence-backed.
 - Location language and directory provenance match the product's actual

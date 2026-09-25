@@ -2,7 +2,7 @@
 
 - Status: Accepted
 - Date: 2026-09-13
-- Last amended: 2026-09-16 (MB-421 Mongo-only runtime and Care consent; MB-369 entitlement-aware provider routing and benchmark gate)
+- Last amended: 2026-09-24 (MB-386 Care-owned immutable Reassessment Summary composition)
 - Decision ID: `MB-AI-COMPANION-001`
 - Complements: [ADR 0011](0011-defer-phobert-optional-benchmark-baseline.md)
 - Amended by: [ADR 0017](0017-product-scope-v2.md), which adds package quota/model behavior and permits AI accompaniment across SupportPlan, reassessment, and approved reminder wording without transferring business-state authority
@@ -161,6 +161,40 @@ context. Journal/AI rechecks current `AI_PROCESSING` consent and owner identity;
 dependency uncertainty fails closed. The projection contains coverage, exact
 source versions, normalized signals, and provenance, but no journal text,
 provider raw response, combined score, or clinical-improvement conclusion.
+
+### MB-386 composition decisions
+
+Care accepts the exact current PHQ-9 result, current GAD-7 result, Journal/AI
+analysis ID, and the same two comparison periods used by the longitudinal job.
+It validates equal non-overlapping 7-31 day periods and requires a successful
+projection to attribute the requested analysis and exact bounds. Care selects
+the immediately preceding owned, non-voided result with the same instrument and
+scoring version for each standardized trend. A missing compatible predecessor
+is `INSUFFICIENT_DATA`; it is not an unchanged trend.
+
+SupportPlan engagement and reflection use the occurrence `scheduled_at` period
+and only records for which the owner explicitly set
+`summary_reuse_approved=true`. Completion/skip and coded barriers form the
+engagement dimension. Helpfulness and the approved bounded reflection form the
+separate user-reflection dimension. Care does not infer adherence,
+self-reported change, recovery, or a direction from those facts.
+
+The composition command is owner-scoped and idempotent. Care performs no remote
+call inside the snapshot transaction and persists the complete returned
+four-dimension JSON as `reassessment-summary-v1`. Current, detail, and history
+queries read that immutable snapshot, so later source mutation or deletion
+cannot rewrite a past summary. A deleted/missing analysis is
+`UNAVAILABLE/SOURCE_NOT_FOUND`; consent denial is
+`UNAVAILABLE/CONSENT_UNAVAILABLE`; timeout, transport, or provider failure is
+`UNAVAILABLE/DEPENDENCY_UNAVAILABLE`; invalid attribution or content is
+`UNAVAILABLE/INVALID_PROJECTION`. Sparse valid journal coverage remains
+`INSUFFICIENT_DATA` with its exact coverage.
+
+Actor copy must say that unavailable journal information does not hide the
+other dimensions, that insufficient data cannot support comparison, and that
+different dimensions may point in different directions. It must not resolve a
+contradiction into one verdict. The Care OpenAPI contradictory example is the
+canonical backend fixture for Story 6502.
 
 The provider-neutral contract, adapters, and asynchronous job runtime do not
 wait for the OpenAI-versus-Gemini benchmark. The benchmark does gate final

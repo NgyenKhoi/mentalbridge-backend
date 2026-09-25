@@ -22,8 +22,8 @@
  * its default public schema. Cross-owner identifiers are logical/external
  * references and are deliberately not physical foreign keys.
  *
- * Reconciled from owner migrations on 2026-09-21. It includes the Care
- * SupportPlan draft, activation, lifecycle, and activity occurrence migrations. Technical indexes and migration bookkeeping are
+ * Reconciled from owner migrations on 2026-09-24. It includes the Care
+ * SupportPlan and immutable Reassessment Summary migrations. Technical indexes and migration bookkeeping are
  * intentionally omitted; owner migrations remain authoritative for exact DDL.
  */
 
@@ -403,6 +403,30 @@ CREATE TABLE care.support_evaluation_v2_request (
         REFERENCES care.support_evaluation_v2(id, user_id)
 );
 
+CREATE TABLE care.screening_episode (
+    id uuid PRIMARY KEY,
+    user_id uuid NOT NULL REFERENCES care.user_profile(account_id),
+    purpose varchar(24) NOT NULL,       -- INITIAL_CHECK | REASSESSMENT
+    status varchar(16) NOT NULL,        -- IN_PROGRESS | READY | COMPLETED
+    phq9_assessment_id uuid,
+    gad7_assessment_id uuid,
+    support_evaluation_id uuid,
+    presentation_evaluation_id uuid,   -- compatibility v1 presentation result
+    created_at timestamptz NOT NULL,
+    updated_at timestamptz NOT NULL,
+    completed_at timestamptz,
+    version bigint NOT NULL,
+    UNIQUE (id, user_id),
+    FOREIGN KEY (phq9_assessment_id, user_id)
+        REFERENCES care.assessment_submission(id, user_id),
+    FOREIGN KEY (gad7_assessment_id, user_id)
+        REFERENCES care.assessment_submission(id, user_id),
+    FOREIGN KEY (support_evaluation_id, user_id)
+        REFERENCES care.support_evaluation_v2(id, user_id),
+    FOREIGN KEY (presentation_evaluation_id, user_id)
+        REFERENCES care.support_evaluation(id, user_id)
+);
+
 CREATE TABLE care.support_guide (
     id uuid PRIMARY KEY,
     user_id uuid NOT NULL REFERENCES care.user_profile(account_id),
@@ -543,7 +567,7 @@ CREATE TABLE care.support_plan_request (
 CREATE TABLE care.support_plan_command (
     user_id uuid NOT NULL,
     idempotency_key varchar(128) NOT NULL,
-    command_type varchar(16) NOT NULL CHECK (command_type = 'ACTIVATE'),
+    command_type varchar(16) NOT NULL CHECK (command_type IN ('ACTIVATE','REPLACE')),
     request_hash varchar(64) NOT NULL,
     support_plan_id uuid NOT NULL,
     expected_version bigint NOT NULL,
@@ -558,9 +582,15 @@ CREATE TABLE care.support_plan_command (
     entitlement_decided_at timestamptz NOT NULL,
     resource_policy_version varchar(64) NOT NULL,
     resources_resolved_at timestamptz NOT NULL,
+    source_support_plan_id uuid,
+    source_support_plan_version bigint,
+    reassessment_summary_id uuid,
+    replacement_review_outcome varchar(64),
     created_at timestamptz NOT NULL,
     PRIMARY KEY (user_id, idempotency_key),
     FOREIGN KEY (support_plan_id, user_id)
+        REFERENCES care.support_plan(id, user_id),
+    FOREIGN KEY (source_support_plan_id, user_id)
         REFERENCES care.support_plan(id, user_id)
 );
 
@@ -648,6 +678,67 @@ CREATE TABLE care.support_plan_activity_occurrence (
     FOREIGN KEY (support_plan_id, user_id)
         REFERENCES care.support_plan(id, user_id)
 );
+
+CREATE TABLE care.reassessment_self_report (
+    id uuid PRIMARY KEY,
+    user_id uuid NOT NULL REFERENCES care.user_profile(account_id),
+    idempotency_key varchar(128) NOT NULL,
+    request_hash char(64) NOT NULL,
+    source_version varchar(64) NOT NULL,
+    current_period_start timestamptz NOT NULL,
+    current_period_end timestamptz NOT NULL,
+    current_experience varchar(32),
+    helpful_context varchar(500),
+    difficult_context varchar(500),
+    version bigint NOT NULL,
+    authored_at timestamptz NOT NULL,
+    updated_at timestamptz NOT NULL,
+    deleted_at timestamptz,
+    UNIQUE (user_id, idempotency_key),
+    CHECK (source_version = 'reassessment-self-report-v1'),
+    CHECK (current_experience IS NULL OR current_experience IN
+        ('BETTER', 'ABOUT_THE_SAME', 'MORE_DIFFICULT', 'UNSURE')),
+    CHECK (
+        (deleted_at IS NULL AND current_experience IS NOT NULL)
+        OR (deleted_at IS NOT NULL AND current_experience IS NULL
+            AND helpful_context IS NULL AND difficult_context IS NULL)
+    )
+);
+
+CREATE TABLE care.reassessment_summary (
+    id uuid PRIMARY KEY,
+    user_id uuid NOT NULL REFERENCES care.user_profile(account_id),
+    idempotency_key varchar(128) NOT NULL,
+    request_hash char(64) NOT NULL,
+    summary_version varchar(64) NOT NULL,
+    journal_job_id uuid, -- canonical v2 external -> journal-ai longitudinal job
+    journal_analysis_id uuid, -- v1 reference or resolved v2 analysis when available
+    previous_period_start timestamptz NOT NULL,
+    previous_period_end timestamptz NOT NULL,
+    current_period_start timestamptz NOT NULL,
+    current_period_end timestamptz NOT NULL,
+    snapshot jsonb NOT NULL,
+    composed_at timestamptz NOT NULL,
+    UNIQUE (user_id, idempotency_key),
+    UNIQUE (id, user_id),
+    CHECK (summary_version IN ('reassessment-summary-v1', 'reassessment-summary-v2')),
+    CHECK (
+        (summary_version = 'reassessment-summary-v1'
+            AND journal_analysis_id IS NOT NULL AND journal_job_id IS NULL)
+        OR (summary_version = 'reassessment-summary-v2' AND journal_job_id IS NOT NULL)
+    ),
+    CHECK (
+        previous_period_start < previous_period_end
+        AND previous_period_end <= current_period_start
+        AND current_period_start < current_period_end
+        AND previous_period_end - previous_period_start = current_period_end - current_period_start
+        AND previous_period_end - previous_period_start BETWEEN interval '7 days' AND interval '31 days'
+    )
+);
+
+ALTER TABLE care.support_plan_command
+    ADD FOREIGN KEY (reassessment_summary_id, user_id)
+        REFERENCES care.reassessment_summary(id, user_id);
 
 /* ========================================================================== */
 /* ACTIVE — consultation-service / mentalbridge_consultation                  */
@@ -758,35 +849,29 @@ CREATE TABLE consultation.availability_slot (
     created_at timestamptz NOT NULL,
     updated_at timestamptz NOT NULL,
     version bigint NOT NULL,
-    UNIQUE (specialist_account_id, idempotency_key),
-    UNIQUE (id, specialist_account_id)
+    UNIQUE (specialist_account_id, idempotency_key)
 );
 
 CREATE TABLE consultation.appointment (
     id uuid PRIMARY KEY,
-    slot_id uuid NOT NULL,
-    credit_id uuid NOT NULL REFERENCES consultation.service_credit(id),
-    user_id uuid NOT NULL, -- external -> identity.account.id
-    specialist_id uuid NOT NULL REFERENCES consultation.specialist_profile(account_id),
+    user_account_id uuid NOT NULL, -- external -> identity.account.id
+    specialist_account_id uuid NOT NULL REFERENCES consultation.specialist_profile(account_id),
+    availability_slot_id uuid NOT NULL REFERENCES consultation.availability_slot(id),
+    service_credit_id uuid NOT NULL REFERENCES consultation.service_credit(id),
     status varchar(24) NOT NULL,
+    modality varchar(24) NOT NULL,
     scheduled_start_at timestamptz NOT NULL,
     scheduled_end_at timestamptz NOT NULL,
-    scheduled_timezone varchar(64) NOT NULL,
-    channel varchar(24) NOT NULL,
-    user_timezone varchar(64) NOT NULL,
-    response_deadline timestamptz NOT NULL,
+    display_timezone varchar(64) NOT NULL,
+    requested_at timestamptz NOT NULL,
+    decision_deadline_at timestamptz NOT NULL,
     idempotency_key varchar(128) NOT NULL,
     cancellation_reason varchar(64),
-    requested_at timestamptz NOT NULL,
-    confirmed_at timestamptz,
-    completed_at timestamptz,
     cancelled_at timestamptz,
     created_at timestamptz NOT NULL,
     updated_at timestamptz NOT NULL,
     version bigint NOT NULL,
-    FOREIGN KEY (slot_id, specialist_id)
-        REFERENCES consultation.availability_slot(id, specialist_account_id),
-    UNIQUE (user_id, idempotency_key)
+    UNIQUE (user_account_id, idempotency_key)
 );
 
 CREATE TABLE consultation.appointment_status_history (

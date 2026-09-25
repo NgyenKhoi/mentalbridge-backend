@@ -2,7 +2,7 @@
 
 This index is the centralized entry point for MentalBridge persisted entities
 and document aggregates. It was reconciled against the current owner
-migrations on 2026-09-21, including the Care SupportPlan activity occurrence
+migrations on 2026-09-24, including the Care Reassessment Summary snapshot
 migration in the same pull request. Exact columns, validators, constraints, and indexes remain
 authoritative in owner migrations.
 
@@ -59,6 +59,8 @@ See [README](README.md) for status and relationship semantics.
 | `support_plan_command_selection` | care-service | PostgreSQL | ACTIVE | Physical child preserving the ordered exact resource-version intent committed by activation. |
 | `support_plan_activity_schedule` | care-service | PostgreSQL | ACTIVE | Physical child of a plan; snapshots recurrence, local time, IANA timezone, and exact selected-resource provenance. |
 | `support_plan_activity_occurrence` | care-service | PostgreSQL | ACTIVE | Physical child of a schedule and owner-matched plan; deterministic dated state plus versioned owner-only helpfulness/barrier/reflection and visibility, with exact source provenance. |
+| `reassessment_self_report` | care-service | PostgreSQL | ACTIVE | Versioned owner-authored current-period experience with bounded optional context; deletion clears response content and retains only a minimal tombstone/provenance. |
+| `reassessment_summary` | care-service | PostgreSQL | ACTIVE | Immutable owner-scoped snapshot of separate screening, minimized journal/context, SupportPlan engagement, explicit self-reported experience, and separately labelled supporting activity reflection; never a combined score. |
 | Specialist access grants/scopes | care-service | PostgreSQL | PROPOSED | Approved consent concept; no Care owner migration exists yet. Selected Journal IDs would be logical/external Journal/AI references. |
 | Follow-up plan/check-in | care-service | PostgreSQL | PROPOSED | Broader clinical follow-up remains proposed; MB-513 SupportPlan wellbeing activity occurrences are the separate active aggregate above. |
 | `support_classification` / `intervention_plan` | care-service | PostgreSQL | HISTORICAL | Superseded logical names; active persistence uses versioned SupportEvaluation, Support Guide, and SupportPlan aggregates. |
@@ -73,10 +75,12 @@ See [README](README.md) for status and relationship semantics.
 | `specialist_profile_status_history` | consultation-service | PostgreSQL | ACTIVE | Physical history child; actor ID is a logical/external Identity reference. |
 | `current_service_entitlement` | consultation-service | PostgreSQL | ACTIVE | Account and establishing actor are logical/external Identity references; current narrow package decision for consumers. |
 | `availability_slot` | consultation-service | PostgreSQL | ACTIVE | Physical many-to-one to `specialist_profile`; active slots cannot overlap for one specialist. |
+| `service_credit_period`, `service_credit`, `service_credit_ledger` | consultation-service | PostgreSQL | ACTIVE | Current entitlement provisions bounded credits; appointment transitions hold and later release/consume one credit with append-only evidence. |
+| `appointment`, `appointment_status_history` | consultation-service | PostgreSQL | ACTIVE | MB-378 owns the REQUESTED snapshot, exact online slot and held credit; MB-360 records suspension cancellation outcomes and releases the exact held credit. |
 | Specialty catalogue/assignment | consultation-service | PostgreSQL | PROPOSED | Discovery policy exists, but no owner migration implements specialty persistence. |
 | Subscription plan/version/entitlement | consultation-service | PostgreSQL | PROPOSED | ADR 0017 approves package semantics; exact VND prices/allocations and owner migrations remain gated. |
-| User subscription/payment/IPN/upgrade/credit ledger | consultation-service | PostgreSQL | PROPOSED | Approved billing boundary without active migration; must not be inferred from `current_service_entitlement`. |
-| Appointment/status history/completion evidence | consultation-service | PostgreSQL | PROPOSED | Flow is approved, but no appointment owner migration exists. `availability_slot` alone is not a booking. |
+| User subscription/payment/IPN/upgrade | consultation-service | PostgreSQL | PROPOSED | Approved billing boundary without active migration; must not be inferred from `current_service_entitlement`. |
+| Appointment completion evidence | consultation-service | PostgreSQL | PROPOSED | Request and suspension-cancellation history are active; later decision/session evidence remains in separate stories. |
 | Specialist earning/payout/reconciliation | consultation-service | PostgreSQL | PROPOSED | Approved financial boundary remains gated by pricing, credentials, and owner migrations. |
 | Specialist review | consultation-service | PostgreSQL | PROPOSED | Product scope exists, but no persistence migration is active. |
 

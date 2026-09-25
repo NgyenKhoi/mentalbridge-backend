@@ -176,8 +176,8 @@ is never stored in jobs, results, logs, or the Care projection. Deleting any
 source journal removes every dependent longitudinal job and result.
 
 The Care projection requires purpose `REASSESSMENT_SUMMARY`, a matching
-forwarded end-user bearer, and current `AI_PROCESSING` consent. Care Story 6501
-is the composition consumer and must call this endpoint with its standard
+forwarded end-user bearer, and current `AI_PROCESSING` consent. MB-386 implements
+Care Story 6501 as the composition consumer and calls this endpoint with its standard
 2-second internal REST deadline and fail safely when Journal/AI or consent is
 unavailable.
 

@@ -41,11 +41,12 @@ public class SpecialistProfileService {
 
 	@Transactional
 	public void requireApprovedForAvailability(UUID accountId) {
-		var profile = locked(accountId);
-		if (profile.approvalStatus() != SpecialistApprovalStatus.APPROVED) {
-			throw new ApiException(HttpStatus.CONFLICT, "SPECIALIST_NOT_APPROVED",
-					"Only an approved specialist can publish availability");
-		}
+		requireApproved(accountId, "Only an approved specialist can publish availability");
+	}
+
+	@Transactional
+	public void requireApprovedForBooking(UUID accountId) {
+		requireApproved(accountId, "Only an approved specialist can receive appointment requests");
 	}
 
 	@Transactional
@@ -221,6 +222,13 @@ public class SpecialistProfileService {
 
 	private ApiException versionMismatch(String message) {
 		return new ApiException(HttpStatus.PRECONDITION_FAILED, "SPECIALIST_PROFILE_VERSION_MISMATCH", message);
+	}
+
+	private void requireApproved(UUID accountId, String message) {
+		var profile = locked(accountId);
+		if (profile.approvalStatus() != SpecialistApprovalStatus.APPROVED) {
+			throw new ApiException(HttpStatus.CONFLICT, "SPECIALIST_NOT_APPROVED", message);
+		}
 	}
 
 	private ApiException reasonMismatch(String operation) {

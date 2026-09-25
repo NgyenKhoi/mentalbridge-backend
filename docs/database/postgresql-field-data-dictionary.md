@@ -456,6 +456,28 @@ contract semantics.
 | `support_evaluation_id` | Immutable v2 outcome; composite foreign key prevents a cross-owner alias. |
 | `created_at` | Immutable UTC instant when Care accepted this v2 key. |
 
+### `public.screening_episode`
+
+Care-owned grouping and resume context for one guided `INITIAL_CHECK` or
+`REASSESSMENT`. It prevents session cookies or a changing “latest assessment”
+query from choosing SupportPlan evidence. Standalone assessment history is not
+attached implicitly.
+
+| Field | Purpose |
+| --- | --- |
+| `id` / `user_id` | Opaque episode identifier and authenticated Care owner. |
+| `purpose` | Exact guided journey: `INITIAL_CHECK` or `REASSESSMENT`. |
+| `status` | `IN_PROGRESS`, `READY` after both instruments, or `COMPLETED` after exact evaluation. |
+| `phq9_assessment_id` / `gad7_assessment_id` | Owner-matched assessment pair submitted inside this episode. |
+| `support_evaluation_id` | Exact immutable v2 SupportEvaluation consumed by Support Guide/SupportPlan policy. |
+| `presentation_evaluation_id` | Optional v1 presentation-compatible evaluation used by the current result UI; it has no SupportPlan authority. |
+| `created_at` / `updated_at` / `completed_at` | Resume, ordering, and completion instants in UTC. |
+| `version` | Optimistic aggregate version. |
+
+A partial unique index permits at most one `IN_PROGRESS` or `READY` episode per
+owner and purpose. Completed episodes remain immutable history, and a new
+guided run creates a new episode.
+
 ### `public.support_guide`
 
 Immutable one-time MB-511 guidance owned by Care. It is deliberately not a
@@ -581,7 +603,8 @@ matches the aggregate bound.
 
 ### `public.support_plan_command`
 
-Owner-scoped append-only audit and replay record for MB-373 activation. Choice
+Owner-scoped append-only audit and replay record for activation and MB-375
+replacement confirmation. Choice
 replacement uses PUT semantics plus optimistic concurrency and does not create
 a request-deduplication record. This table stores no bearer token, assessment
 answer, journal content, or client-authored display text.
@@ -589,17 +612,20 @@ answer, journal content, or client-authored display text.
 | Field | Purpose |
 | --- | --- |
 | `user_id` / `idempotency_key` | Owner-scoped printable retry namespace and primary key. |
-| `command_type` / `request_hash` | `ACTIVATE` and the SHA-256 fingerprint of plan/version for exact retry matching. |
+| `command_type` / `request_hash` | `ACTIVATE` or `REPLACE` and the SHA-256 fingerprint of every referenced plan/version and reassessment summary for exact retry matching. |
 | `support_plan_id` / `expected_version` | Owner-matched target and optimistic version explicitly acted on by the user. |
 | `resulting_version` / `resulting_status` / `resulting_updated_at` | Exact replay outcome; resulting version is the expected version plus one. |
 | `evaluation_policy_version` | Current compatible Care evaluation policy revalidated immediately before the local command transaction. |
 | `entitlement_package` / `entitlement_source` / `entitlement_policy_version` / `entitlement_version` / `entitlement_decided_at` | Fresh authoritative paid-entitlement evidence used by the command. |
 | `resource_policy_version` / `resources_resolved_at` | Exact Content eligibility policy and resolution instant used for final exact-version validation. |
+| `source_support_plan_id` / `source_support_plan_version` | For `REPLACE`, the exact former current plan and pre-supersede optimistic version; null for initial activation. This is the immutable replacement relation. |
+| `reassessment_summary_id` | For `REPLACE`, the owner-matched canonical v2 summary presented during review; null for initial activation. The JSON snapshot remains in `reassessment_summary` rather than being duplicated here. |
+| `replacement_review_outcome` | Governed review outcome that admitted confirmation. Unchanged reviews are not persisted because they cannot mutate a plan. |
 | `created_at` | UTC instant the command and its outcome committed. |
 
 ### `public.support_plan_command_selection`
 
-Ordered exact final selection set committed by activation. A missing optional
+Ordered exact final selection set committed by activation or replacement. A missing optional
 slot represents a choice removed before activation; the plan snapshot preserves
 the authoritative state.
 
@@ -654,6 +680,50 @@ generation idempotent.
 | `reflection` | Optional private trimmed owner reflection, 1-500 characters; excluded from the integration event. |
 | `summary_reuse_approved` | Explicit approval to reuse minimized coded facts in a later bounded summary; never broad checklist monitoring consent. |
 | `engagement_updated_at` | Latest accepted replacement or deletion instant. Deletion clears mutable values but retains provenance. |
+
+### `public.reassessment_self_report`
+
+Versioned Care-owned source for the user's explicit, non-diagnostic account of
+the current comparison period. Only the authenticated owner may create, read,
+replace, or delete it. Deletion clears the categorical response and both
+optional contexts; the remaining tombstone prevents accidental resurrection
+and preserves period/version provenance. Earlier immutable summary snapshots
+remain unchanged.
+
+| Field | Purpose |
+| --- | --- |
+| `id` | Stable UUID referenced by canonical reassessment composition. |
+| `user_id` | Owning Care profile; every command and query is owner-scoped. |
+| `idempotency_key` / `request_hash` | Owner-scoped create replay identity and SHA-256 request fingerprint. |
+| `source_version` | Exact input contract version, currently `reassessment-self-report-v1`. |
+| `current_period_start` / `current_period_end` | Half-open period the response describes. The canonical MB-559 flow uses the exact Care-issued 14-day policy window. |
+| `current_experience` | Required active categorical response: `BETTER`, `ABOUT_THE_SAME`, `MORE_DIFFICULT`, or `UNSURE`; cleared on deletion. |
+| `helpful_context` / `difficult_context` | Optional trimmed owner-authored context, each at most 500 characters; cleared on deletion. |
+| `version` | Optimistic concurrency revision included in ETags and summary provenance. |
+| `authored_at` / `updated_at` | Original creation and latest accepted replacement/deletion instants. |
+| `deleted_at` | Null while active; deletion instant on a content-cleared tombstone. |
+
+### `public.reassessment_summary`
+
+Immutable Care-owned snapshot composed for an authenticated owner. The JSON
+snapshot preserves the exact response after source assessments, Journal/AI
+evidence, or mutable engagement later changes or is deleted. It contains no raw
+journal text, provider response, assessment answers, combined score, or clinical
+improvement verdict.
+
+| Field | Purpose |
+| --- | --- |
+| `id` | Immutable UUID exposed as the reassessment-summary identifier. |
+| `user_id` | Care profile that owns the snapshot; the physical foreign key and every query enforce owner isolation. |
+| `idempotency_key` | Caller retry key unique per owner, 16-128 visible ASCII characters at the API boundary. |
+| `request_hash` | SHA-256 of the exact PHQ-9/GAD-7 assessment IDs, Journal job/legacy analysis reference, comparison-period bounds, and optional self-report ID; conflicting key reuse fails. |
+| `summary_version` | Composition/schema policy version. Historical compatibility rows remain `reassessment-summary-v1`; canonical explicit-self-report rows use `reassessment-summary-v2`. |
+| `journal_job_id` | Required external Journal longitudinal job UUID for canonical v2 snapshots, including failed-job snapshots. Care resolves its authoritative status. Null only on historical v1 rows. |
+| `journal_analysis_id` | Resolved analysis UUID when a v2 job succeeded, or the requested legacy v1 analysis UUID. It is nullable for failed/unavailable v2 jobs. |
+| `previous_period_start` / `previous_period_end` | Half-open UTC bounds for the prior evidence period. Database checks require 7-31 days. |
+| `current_period_start` / `current_period_end` | Half-open UTC bounds for the current evidence period. It must have the same duration and cannot overlap the prior period. |
+| `snapshot` | Authoritative derived JSON object returned by current/detail/history reads. V2 keeps explicit self-reported experience separate from supporting activity reflection, plus the other three dimensions, exact source/version/coverage data, explicit `UNAVAILABLE` or `INSUFFICIENT_DATA` states, and the no-combined-score disclaimer. Reassessment composition is the only writer. |
+| `composed_at` | Immutable UTC instant when Care completed local calculation, safe Journal/AI fallback, and snapshot persistence. |
 
 ### `care.intervention_plan`
 
@@ -822,6 +892,42 @@ Append-only evidence for provisioning and appointment-driven transitions.
 | `appointment_id` | Required correlation for every non-provisioning transition. |
 | `idempotency_key` | Owner command key unique per account; exact replay does not append another event. |
 | `occurred_at` | Immutable server UTC transition instant. |
+
+### `consultation.appointment`
+
+Implemented MB-378 request aggregate. One row is the immutable scheduling snapshot created while the same local transaction locks the exact availability slot and holds one eligible credit. New requests support only in-app chat or gated in-app video.
+
+| Field | Purpose |
+| --- | --- |
+| `id` | Server-generated appointment UUID and local credit-ledger correlation. |
+| `user_account_id` | External Identity USER UUID that owns and may reload the request. |
+| `specialist_account_id` | Approved specialist snapshotted from the selected slot. |
+| `availability_slot_id` | Exact published 60-minute slot; a partial unique index permits at most one active request/confirmation. |
+| `service_credit_id` | Earliest-expiring available credit that covers the appointment start; unique while the appointment is active. |
+| `status` | Initial `REQUESTED`; later decision stories may move it to `CONFIRMED`, `REJECTED`, `EXPIRED`, or `CANCELLED`. |
+| `modality` | `IN_APP_CHAT` or `IN_APP_VIDEO`; physical, phone, and external-link modes are not accepted. |
+| `scheduled_start_at` / `scheduled_end_at` | Immutable exact UTC interval copied from availability and constrained to 60 minutes. |
+| `display_timezone` | IANA timezone copied from the slot for stable user display. |
+| `requested_at` | Server UTC command instant used for lead-time and deadline calculation. |
+| `decision_deadline_at` | Earlier of 24 hours after request or two hours before start; the decision/expiry owner consumes this handoff. |
+| `idempotency_key` | Printable user-scoped request key; exact retry returns this row and conflicting reuse fails. |
+| `cancellation_reason` | Stable reviewed reason required for a cancelled appointment; MB-360 writes `SPECIALIST_SUSPENDED`. |
+| `cancelled_at` | Server UTC instant required when status is `CANCELLED`; null for every other current status. |
+| `created_at` / `updated_at` | UTC insertion and latest authoritative state-change instants. |
+| `version` | Optimistic state-transition counter for later decision commands. |
+
+### `consultation.appointment_status_history`
+
+Append-only transition evidence introduced by MB-360 for appointment outcomes.
+
+| Field | Purpose |
+| --- | --- |
+| `id` | Immutable transition UUID. |
+| `appointment_id` | Appointment whose authoritative status changed. |
+| `from_status` / `to_status` | Valid current appointment states before and after the transition. |
+| `changed_by` | Identity actor UUID responsible for the transition. |
+| `reason` | Stable reviewed outcome reason without private consultation content. |
+| `changed_at` | Server UTC instant at which the transition committed. |
 
 ### `consultation.subscription_plan_version`
 
@@ -1082,59 +1188,6 @@ introduced by a historical migration, remain separate and readable.
 | `created_at` | Immutable UTC slot creation instant. |
 | `updated_at` | UTC instant of the latest slot state or schedule change. |
 | `version` | Optimistic-lock counter preventing lost concurrent slot updates. |
-
-### `consultation.appointment`
-
-Authoritative scheduled consultation between one user and specialist for an
-owned availability slot and credit. Historical v1 in-person appointments keep
-their immutable location snapshot. New v2 appointments are chat/video only and
-require channel-end, provider/server evidence, summary/next-step reuse approval,
-and dispute fields before runtime is claimed.
-
-MB-360 introduces the owner table and status history narrowly so suspension can
-atomically cancel already persisted future `REQUESTED`/`CONFIRMED` appointments
-and release their exact held credits. MB-6402 still owns the public booking
-command, slot/credit hold creation, and request actor flow.
-
-Composite foreign keys require the appointment specialist to own the slot and the appointment user to own the credit; the application cannot create a locally inconsistent pairing.
-
-| Field | Purpose |
-| --- | --- |
-| `id` | Immutable UUID exposed in appointment REST resources and Kafka events. |
-| `slot_id` | Owned availability slot reserved by the appointment and protected by a unique active-booking constraint. |
-| `credit_id` | Consultation credit reserved by this appointment; a partial unique index prevents concurrent active use while allowing reuse after eligible cancellation. |
-| `user_id` | External Care profile UUID of the person requesting consultation. |
-| `specialist_id` | Consultation-owned specialist UUID denormalized for authorization and query efficiency. |
-| `status` | Authoritative appointment workflow state; transitions are validated and recorded in history. |
-| `scheduled_start_at` | Inclusive UTC start copied from the selected specialist slot at booking; chat waiting may begin ten minutes before it, but sending cannot. |
-| `scheduled_end_at` | Exclusive UTC end copied from the selected specialist slot; join/send ends here even if the source availability later changes. |
-| `scheduled_timezone` | Specialist slot's IANA timezone snapshot used to reproduce the originally booked schedule. |
-| `channel` | Booked mode snapshot. Historical v1 includes `IN_PERSON`; new v2 records allow `IN_APP_CHAT` or contract-enabled `IN_APP_VIDEO` only. |
-| `user_timezone` | IANA timezone captured at booking so the schedule remains understandable after device timezone changes. |
-| `response_deadline` | Exclusive UTC deadline for the specialist response; it is after request time and before the scheduled start. |
-| `idempotency_key` | Caller retry key unique per user so uncertain REST retries return the original booking outcome. |
-| `cancellation_reason` | Reviewed explanation recorded when a permitted cancellation occurs. |
-| `requested_at` | UTC instant the booking request was accepted. |
-| `confirmed_at` | UTC instant the appointment became confirmed; null otherwise. |
-| `completed_at` | UTC instant the consultation reached evidence-based or user-confirmed completion; null otherwise. A specialist action alone is insufficient. |
-| `cancelled_at` | UTC instant cancellation became effective; null otherwise. |
-| `created_at` | Immutable UTC database insertion instant. |
-| `updated_at` | UTC instant of the latest persisted appointment transition/change. |
-| `version` | Optimistic-lock counter preventing lost concurrent appointment transitions. |
-
-### `consultation.appointment_status_history`
-
-Append-only audit timeline of validated appointment state transitions.
-
-| Field | Purpose |
-| --- | --- |
-| `id` | Immutable UUID identifying one transition record. |
-| `appointment_id` | Appointment whose workflow state changed. |
-| `from_status` | Previous state; null only for the initial creation transition. |
-| `to_status` | New authoritative state reached by the transition. |
-| `changed_by` | Identity account responsible for the transition; null for approved system actions. |
-| `reason` | Optional reviewed reason explaining the transition without sensitive conversation content. |
-| `changed_at` | UTC instant the transition committed. |
 
 ### `consultation.consultation_credit_ledger_entry`
 

@@ -2,7 +2,9 @@
 
 The historical ownership gap is resolved by ADR 0005. ADR 0017 amends the
 catalogue, currency, supported appointment modes, and earning gate for scope
-v2. This file keeps its existing path so module links remain stable.
+v2. ADR 0022 prospectively amends credit quantities, rollover, and concurrent
+reservation capacity. This file keeps its existing path so module links remain
+stable.
 
 ## Boundary
 
@@ -14,13 +16,18 @@ It shares the Consultation PostgreSQL transaction boundary with booking and
 evidence-backed completion. No other service stores an authoritative
 entitlement, credit, earning, or payout balance.
 
-## Current catalogue
+## Approved target catalogue
 
-| Plan | V2 price/paid period | Credits | Credit allocation | Specialist earning/completed credit |
-| --- | ---: | ---: | ---: | ---: |
-| `FREE` | VND 0 | 0 | Not applicable | Not applicable |
-| `PLUS` | VND amount pending approval | 1 | Fixed VND amount pending approval | 70% of the credit's allocation |
-| `PREMIUM` | VND amount pending approval | 3 | Fixed VND amount pending approval for each credit | 70% of each credit's allocation |
+| Plan | V2 price/paid period | Credits | Max active reservations | Credit allocation | Specialist earning/completed credit |
+| --- | ---: | ---: | ---: | ---: | ---: |
+| `FREE` | VND 0 | 0 | 0 | Not applicable | Not applicable |
+| `PLUS` | VND amount pending approval | 4 | 2 | Fixed VND amount pending approval | 70% of the credit's allocation |
+| `PREMIUM` | VND amount pending approval | 10 | 4 | Fixed VND amount pending approval for each credit | 70% of each credit's allocation |
+
+This is the approved `consultation-credit-v2` target, not implemented runtime.
+The MB-377 `consultation-credit-v1` ledger remains `FREE=0`, `PLUS=1`,
+`PREMIUM=3`; existing periods and ledger facts keep that exact provenance and
+are never rewritten.
 
 All plan facts are immutable and versioned. Specialist earning is 70% of the
 fixed `creditAllocation` snapshotted on the consumed credit; it is never
@@ -29,10 +36,10 @@ calculated from the whole package price. One credit funds one 60-minute
 count-limited by package; packages differentiate capabilities, credits, and AI
 quota/model routing.
 
-`FREE` includes the standard Support Guide, Journal, emotion check-in, and a
+`FREE` includes the standard persisted Support Guide, Journal, emotion check-in, and a
 default five successfully delivered AI responses per day. `PLUS` adds a higher
-AI quota, the persistent SupportPlan capability, and one credit per paid
-period. `PREMIUM` adds three credits, advanced recommendation capability, and
+AI quota, the persistent SupportPlan capability, and four credits per paid
+period. `PREMIUM` adds ten credits, advanced recommendation capability, and
 may use a stronger model; no daily response limit is displayed, but server-side
 token, rate, abuse, cost, and fair-use limits still apply.
 
@@ -88,16 +95,21 @@ amountDueMinor = newPlanPriceMinor
 The period fraction uses actual UTC seconds. Upgrade checkout changes included
 available credits to `UPGRADE_HELD` so booking cannot consume them concurrently.
 Verified payment revokes them, ends the old period, starts the full `PREMIUM`
-period, and grants three new credits atomically. Failed/expired checkout
+period, and grants ten new v2 credits atomically. Failed/expired checkout
 releases them to `AVAILABLE` or `EXPIRED`.
 
 Reserved credits are not offset or revoked by an upgrade; their appointments continue under the old snapshot. Consumed, expired, forfeited, and revoked credits have no upgrade value.
 
 ## Appointment and settlement
 
-- Booking atomically reserves one slot and one earliest-expiring available credit.
+- Booking requires a package allowed to book, one earliest-expiring `AVAILABLE`
+  credit, active reservations below the package cap, and a still-selectable
+  slot; Consultation holds the slot and credit atomically.
 - Specialist rejection/cancellation/no-show, platform failure, and eligible user cancellation release the credit.
-- Rescheduling cancels the old appointment under its applicable credit rule and creates a new request; it never swaps or rewrites the old slot snapshot.
+- Rescheduling preserves the old appointment snapshot and creates a linked
+  replacement request as one logical reservation replacement. The old
+  reservation is released/rebound atomically, or excluded from the cap check,
+  so the user's own occupied cap cannot by itself block rescheduling.
 - The specialist publishes discrete 60-minute `IN_APP_CHAT` or `IN_APP_VIDEO`
   slots. Appointment creation snapshots interval, IANA timezone, and mode.
 - At scheduled end the channel closes and the appointment becomes

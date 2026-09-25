@@ -63,9 +63,9 @@ The service-integration assertions verify this redacted suspension outcome:
 ```
 
 This is service-integration evidence, not a live cross-stack claim. Public
-discovery and booking remain their separately owned runtime stories. MB-360
-adds only the narrow appointment persistence needed to make suspension safe for
-already-persisted future appointments. Notification behavior is the
+discovery remains its separately owned runtime story. MB-360 extends the
+MB-378 appointment request aggregate with cancellation evidence and makes
+booking serialize against the specialist lifecycle lock. Notification behavior is the
 authenticated reason/outcome returned on reload; no independent asynchronous
 notification consumer exists in this slice, so Kafka/outbox work is
 intentionally deferred.

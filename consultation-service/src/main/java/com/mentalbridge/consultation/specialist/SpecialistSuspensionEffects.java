@@ -29,13 +29,13 @@ class SpecialistSuspensionEffects {
 				where specialist_account_id=:specialistId and status='ACTIVE' and start_at > :now
 				""").param("specialistId", specialistAccountId).param("now", databaseInstant(now)).update();
 		var appointments = jdbc.sql("""
-				select id, credit_id, user_id, status from appointment
-				where specialist_id=:specialistId and scheduled_start_at > :now
+				select id, service_credit_id, user_account_id, status from appointment
+				where specialist_account_id=:specialistId and scheduled_start_at > :now
 				and status in ('REQUESTED', 'CONFIRMED')
 				order by scheduled_start_at, id for update
 				""").param("specialistId", specialistAccountId).param("now", databaseInstant(now))
 				.query((row, ignored) -> new AppointmentHold(row.getObject("id", UUID.class),
-						row.getObject("credit_id", UUID.class), row.getObject("user_id", UUID.class),
+						row.getObject("service_credit_id", UUID.class), row.getObject("user_account_id", UUID.class),
 						row.getString("status"))).list();
 		for (var appointment : appointments) cancelAndRelease(appointment, adminAccountId, now);
 		return new Effects(withdrawnSlots, appointments.size(), appointments.size());

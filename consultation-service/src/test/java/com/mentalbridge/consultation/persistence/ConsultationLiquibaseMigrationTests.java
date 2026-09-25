@@ -129,13 +129,14 @@ class ConsultationLiquibaseMigrationTests extends ConsultationTestProperties {
 		var creditId = insertCredit();
 		assertThatThrownBy(() -> jdbc.sql("""
 				insert into appointment (
-				    id, slot_id, credit_id, user_id, specialist_id, status,
-				    scheduled_start_at, scheduled_end_at, scheduled_timezone, channel,
-				    user_timezone, response_deadline, idempotency_key, cancellation_reason,
+				    id, availability_slot_id, service_credit_id, user_account_id,
+				    specialist_account_id, status, modality, scheduled_start_at,
+				    scheduled_end_at, display_timezone, decision_deadline_at,
+				    idempotency_key, cancellation_reason,
 				    requested_at, created_at, updated_at
 				) values (:id, :slotId, :creditId, :userId, :specialistId, 'CANCELLED',
-				    :start, :end, 'Asia/Ho_Chi_Minh', 'IN_APP_CHAT', 'Asia/Ho_Chi_Minh',
-				    :deadline, 'migration-appointment-request', null, :requestedAt, :now, :now)
+				    'IN_APP_CHAT', :start, :end, 'Asia/Ho_Chi_Minh', :deadline,
+				    'migration-appointment-request', null, :requestedAt, :now, :now)
 				""").param("id", UUID.randomUUID()).param("slotId", slotId).param("creditId", creditId)
 				.param("userId", UUID.randomUUID()).param("specialistId", specialistId).param("start", start)
 				.param("end", start.plusHours(1)).param("deadline", start.minusHours(2))

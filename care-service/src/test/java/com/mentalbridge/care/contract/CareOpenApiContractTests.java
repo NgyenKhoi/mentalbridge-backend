@@ -32,6 +32,19 @@ class CareOpenApiContractTests {
 			"POST /api/v1/assessments",
 			"GET /api/v1/assessments/{assessmentId}",
 			"GET /api/v1/assessments/{assessmentId}/progress",
+			"POST /api/v1/screening-episodes",
+			"GET /api/v1/screening-episodes/current",
+			"POST /api/v1/screening-episodes/{episodeId}/assessments/{instrument}",
+			"POST /api/v1/screening-episodes/{episodeId}/support-evaluation",
+			"POST /api/v1/reassessment-self-reports",
+			"GET /api/v1/reassessment-self-reports/current",
+			"PUT /api/v1/reassessment-self-reports/{selfReportId}",
+			"DELETE /api/v1/reassessment-self-reports/{selfReportId}",
+			"GET /api/v1/reassessment-summaries",
+			"POST /api/v1/reassessment-summaries",
+			"GET /api/v1/reassessment-summaries/context",
+			"GET /api/v1/reassessment-summaries/current",
+			"GET /api/v1/reassessment-summaries/{summaryId}",
 			"GET /api/v1/support-evaluations",
 			"POST /api/v1/support-evaluations",
 			"GET /api/v1/support-evaluations/{supportEvaluationId}",
@@ -44,6 +57,7 @@ class CareOpenApiContractTests {
 			"POST /api/v1/support-plans/{supportPlanId}/activate",
 			"PUT /api/v1/support-plans/{supportPlanId}/status",
 			"POST /api/v1/support-plans/{supportPlanId}/replace",
+			"POST /api/v1/support-plans/{supportPlanId}/replacement-review",
 			"GET /api/v1/support-plan-occurrences",
 			"GET /api/v1/support-plan-occurrences/{occurrenceId}",
 			"PUT /api/v1/support-plan-occurrences/{occurrenceId}/state",
@@ -66,6 +80,17 @@ class CareOpenApiContractTests {
 			"/api/v1/assessments",
 			"/api/v1/assessments/{assessmentId}",
 			"/api/v1/assessments/{assessmentId}/progress",
+			"/api/v1/screening-episodes",
+			"/api/v1/screening-episodes/current",
+			"/api/v1/screening-episodes/{episodeId}/assessments/{instrument}",
+			"/api/v1/screening-episodes/{episodeId}/support-evaluation",
+			"/api/v1/reassessment-self-reports",
+			"/api/v1/reassessment-self-reports/current",
+			"/api/v1/reassessment-self-reports/{selfReportId}",
+			"/api/v1/reassessment-summaries",
+			"/api/v1/reassessment-summaries/context",
+			"/api/v1/reassessment-summaries/current",
+			"/api/v1/reassessment-summaries/{summaryId}",
 			"/api/v1/support-evaluations",
 			"/api/v1/support-evaluations/{supportEvaluationId}",
 			"/api/v1/support-plans",
@@ -77,6 +102,7 @@ class CareOpenApiContractTests {
 			"/api/v1/support-plans/{supportPlanId}/activate",
 			"/api/v1/support-plans/{supportPlanId}/status",
 			"/api/v1/support-plans/{supportPlanId}/replace",
+			"/api/v1/support-plans/{supportPlanId}/replacement-review",
 			"/api/v1/support-plan-occurrences",
 			"/api/v1/support-plan-occurrences/{occurrenceId}",
 			"/api/v1/support-plan-occurrences/{occurrenceId}/state",
@@ -96,6 +122,19 @@ class CareOpenApiContractTests {
 			"POST /api/v1/assessments",
 			"GET /api/v1/assessments/{assessmentId}",
 			"GET /api/v1/assessments/{assessmentId}/progress",
+			"POST /api/v1/screening-episodes",
+			"GET /api/v1/screening-episodes/current",
+			"POST /api/v1/screening-episodes/{episodeId}/assessments/{instrument}",
+			"POST /api/v1/screening-episodes/{episodeId}/support-evaluation",
+			"POST /api/v1/reassessment-self-reports",
+			"GET /api/v1/reassessment-self-reports/current",
+			"PUT /api/v1/reassessment-self-reports/{selfReportId}",
+			"DELETE /api/v1/reassessment-self-reports/{selfReportId}",
+			"GET /api/v1/reassessment-summaries",
+			"POST /api/v1/reassessment-summaries",
+			"GET /api/v1/reassessment-summaries/context",
+			"GET /api/v1/reassessment-summaries/current",
+			"GET /api/v1/reassessment-summaries/{summaryId}",
 			"GET /api/v1/support-evaluations",
 			"POST /api/v1/support-evaluations",
 			"GET /api/v1/support-evaluations/{supportEvaluationId}",
@@ -108,6 +147,7 @@ class CareOpenApiContractTests {
 			"POST /api/v1/support-plans/{supportPlanId}/activate",
 			"PUT /api/v1/support-plans/{supportPlanId}/status",
 			"POST /api/v1/support-plans/{supportPlanId}/replace",
+			"POST /api/v1/support-plans/{supportPlanId}/replacement-review",
 			"GET /api/v1/support-plan-occurrences",
 			"GET /api/v1/support-plan-occurrences/{occurrenceId}",
 			"PUT /api/v1/support-plan-occurrences/{occurrenceId}/state",
@@ -121,9 +161,13 @@ class CareOpenApiContractTests {
 	private static final Set<String> IDEMPOTENT_OPERATIONS = Set.of(
 			"POST /api/v1/consent-decisions",
 			"POST /api/v1/assessments",
+			"POST /api/v1/screening-episodes/{episodeId}/assessments/{instrument}",
+			"POST /api/v1/reassessment-self-reports",
+			"POST /api/v1/reassessment-summaries",
 			"POST /api/v1/support-evaluations",
 			"POST /api/v1/support-plans",
 			"POST /api/v1/support-plans/{supportPlanId}/activate",
+			"POST /api/v1/support-plans/{supportPlanId}/replace",
 			"POST /api/v1/anonymous-assessment-sessions/{sessionId}/assessments");
 
 	@Test
@@ -205,9 +249,34 @@ class CareOpenApiContractTests {
 				"safetyGuidance", "disclaimer").doesNotContainKeys("totalScore", "compositeScore", "overallSeverity");
 		assertThat(examples).containsKeys("SelfGuidedSupportEvaluation", "ProfessionalSupportEvaluation",
 				"SafetyFollowUpSupportEvaluation");
-		assertThat(examples.values()).extracting(example -> supportTier(example.getValue()))
+		assertThat(Set.of("SelfGuidedSupportEvaluation", "ProfessionalSupportEvaluation",
+				"SafetyFollowUpSupportEvaluation").stream().map(examples::get))
+				.extracting(example -> supportTier(example.getValue()))
 				.containsExactlyInAnyOrder("SELF_GUIDED_SUPPORT", "PROFESSIONAL_SUPPORT_RECOMMENDED",
 						"SAFETY_FOLLOW_UP_RECOMMENDED");
+	}
+
+	@Test
+	void reassessmentContractKeepsFourSourcedDimensionsAndAContradictoryExample() {
+		var contract = Path.of("..", "contracts", "openapi", "care-service-v1.yaml").toAbsolutePath();
+		var openApi = new OpenAPIV3Parser().readLocation(contract.toUri().toString(), null, null).getOpenAPI();
+		var request = openApi.getComponents().getSchemas().get("ReassessmentSummaryCreateRequest");
+		var response = openApi.getComponents().getSchemas().get("ReassessmentSummary");
+		var journal = openApi.getComponents().getSchemas().get("ReassessmentJournalDimension");
+		var example = openApi.getComponents().getExamples().get("ContradictoryReassessmentSummary");
+
+		assertThat(request.getRequired()).containsExactlyInAnyOrder("phq9AssessmentId", "gad7AssessmentId",
+				"previousPeriod", "currentPeriod");
+		assertThat(request.getOneOf()).hasSize(2);
+		assertThat(request.getProperties()).containsKeys("journalAnalysisId", "journalJobId", "selfReportId");
+		assertThat(response.getProperties()).containsKeys("screening", "journalContext", "supportPlanEngagement",
+				"selfReportedExperience", "activityReflection", "userReflection", "disclaimerCode")
+				.doesNotContainKeys("combinedScore", "improvementScore",
+						"recoveryPercentage", "overallDirection");
+		assertThat(journal.getProperties()).containsKeys("state", "unavailableReason", "jobId", "analysisId", "dataCoverage",
+				"sourceJournalRevisions", "provenance").doesNotContainKeys("journalText", "rawResponse");
+		assertThat(String.valueOf(example.getValue())).contains("DECREASED", "MORE_FREQUENT", "MORE_DIFFICULT",
+				"FOUR_DIMENSIONS_NOT_COMBINED");
 	}
 
 	@Test

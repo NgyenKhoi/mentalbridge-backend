@@ -1,6 +1,17 @@
 # Care Service
 
-Care owns user profiles, independent `PRIVACY_POLICY` and `AI_PROCESSING` consent decisions, questionnaires, assessment submissions and results, deterministic safety/support policy, SupportEvaluation, the single official SupportPlan, and follow-up. Story 1103 exposes immutable coarse v1 evaluation. MB-335 adds `/api/v2/support-evaluations` with exact PHQ-9/GAD-7 provenance, two independent domain contributions, and separate PHQ-9 item-9 safety evidence. MB-372 adds paid deterministic draft creation and current-draft reload. MB-373 adds bounded admitted-choice replacement, exact revalidation, explicit activation idempotency, and authoritative current-plan reload. MB-513 adds Care-owned lifecycle commands plus deterministic local-time schedules and persisted activity occurrences. MB-374 completes the owner lifecycle with optional coded completion context and immutable terminal history/detail reads. MB-376 adds versioned owner-only completion, skip, reopen, visibility, helpfulness, barrier, private reflection, and deletion semantics on exact occurrences. It never creates a global severity, treatment-adherence score, recovery score, specialist-monitoring feed, or AI-controlled state and does not modify v1 rows, APIs, or events. Safety-critical scoring and evaluation remain local and do not depend on Eureka, Kafka, Redis, AI, or notification availability.
+MB-375 adds the Care-authoritative reassessment review and the single audited,
+idempotent, atomic SupportPlan replacement path described below.
+
+Care owns user profiles, independent `PRIVACY_POLICY` and `AI_PROCESSING` consent decisions, questionnaires, assessment submissions and results, deterministic safety/support policy, SupportEvaluation, persisted Support Guides, the single official SupportPlan, reassessment, and follow-up. Story 1103 exposes immutable coarse v1 evaluation. MB-335 adds `/api/v2/support-evaluations` with exact PHQ-9/GAD-7 provenance, two independent domain contributions, and separate PHQ-9 item-9 safety evidence. MB-372 adds paid deterministic draft creation and current-draft reload. MB-373 adds bounded admitted-choice replacement, exact revalidation, explicit activation idempotency, and authoritative current-plan reload. MB-513 adds deterministic local-time schedules and persisted activity occurrences. MB-374 completes the owner lifecycle with optional coded completion context and immutable terminal history/detail reads. MB-376 adds versioned owner-only completion, skip, reopen, visibility, helpfulness, barrier, private reflection, and deletion semantics on exact occurrences. MB-386 introduced immutable reassessment snapshots; MB-559 completes the canonical fourth dimension with an explicit owner-authored current-period self-report while keeping occurrence helpfulness/reflection separately labelled as supporting activity evidence. Care never creates a global severity, treatment-adherence score, recovery score, specialist-monitoring feed, or AI-controlled state. Safety-critical scoring and evaluation remain local and do not depend on Eureka, Kafka, Redis, AI, or notification availability.
+
+MB-292 persists `screening_episode` as the Care-authoritative resume and
+grouping context for guided initial checks and reassessments. PHQ-9 and GAD-7
+submitted through a guided episode stay paired across logout or browser loss;
+standalone history never silently replaces either member. SupportPlan proposal
+requires an episode-backed v2 SupportEvaluation, and replacement rejects a
+ReassessmentSummary whose current assessment pair differs from the draft's
+evaluation with `REASSESSMENT_SCREENING_CONTEXT_MISMATCH`.
 
 ## MB-88 foundation
 
@@ -9,6 +20,45 @@ The canonical [`care-service-v1.yaml`](../contracts/openapi/care-service-v1.yaml
 MB-205 adds authenticated descriptive progress for a selected owned assessment. Care compares it only with the immediately preceding non-voided result for the same instrument and identical scoring version, ordered by submission instant and assessment ID. The response contains arithmetic score direction, raw delta, band transition and elapsed duration without safety-status comparison, clinical interpretation, causation or optional-service side effects. Missing, voided or incompatible evidence returns `INSUFFICIENT_COMPARABLE_DATA`; missing and cross-owner identifiers share the same `ASSESSMENT_NOT_FOUND` response.
 
 The read-only query lives in the cohesive `progress` feature package. The existing partial index `ix_assessment_submission_user_history (user_id, submitted_at DESC, id DESC) WHERE user_id IS NOT NULL AND voided_at IS NULL` already supports the owner/time/tie-breaker scan, so MB-205 adds no table, field, index or Liquibase changeset.
+
+MB-386 adds `POST /api/v1/reassessment-summaries`, owner-only current/detail/history reads, and the immutable `reassessment_summary` snapshot. Historical v1 calls select one owned PHQ-9 result, one owned GAD-7 result, one Journal/AI analysis and two equal non-overlapping 7-31 day periods. Care selects the immediately preceding compatible result for each instrument and calculates arithmetic direction locally. Sparse coverage remains `INSUFFICIENT_DATA`. SupportPlan evidence is selected by occurrence `scheduled_at` inside the periods and only when the owner previously set `summary_reuse_approved=true`; private reflection is included only under that same approval. Reads never re-query mutable or deleted sources.
+
+MB-386 v1 snapshots remain a compatibility baseline under their exact
+policy/source provenance. ADR 0022 does not rewrite them. MB-559 adds
+`reassessment-self-report-v1` create/current/replace/delete APIs and canonical
+`reassessment-summary-v2` composition. `GET /reassessment-summaries/context`
+selects the latest usable owned PHQ-9/GAD-7 evidence and issues two adjacent
+14-day periods under `reassessment-comparison-v1`. Canonical composition takes
+the Journal `jobId`; Care resolves RUNNING/SUCCEEDED/FAILED authoritatively and
+never relies on a browser-created analysis identifier or unavailable claim.
+Omitted self-report is
+`INSUFFICIENT_DATA`; a selected deleted source is `UNAVAILABLE`; activity
+reflection remains separate supporting evidence. Source replacement or deletion
+never rewrites an already persisted summary snapshot. MB-559 also supplies the
+functional actor journey that renders all four dimensions without an overall
+verdict; later presentation work is history and refinement only.
+
+## MB-375 reassessment review and replacement
+
+`POST /api/v1/support-plans/{draftId}/replacement-review` is read-only. It
+requires the latest owned `reassessment-summary-v2`, reloads the persisted
+current and proposed plans, and freshly checks paid entitlement, current
+SupportEvaluation/template compatibility, exact content versions, publication
+and effective state, eligibility, and plan constraints. It returns exactly one
+governed outcome while preserving the four reassessment dimensions separately:
+`CURRENT_PLAN_VALID_NO_BETTER_ALTERNATIVE`,
+`CURRENT_PLAN_VALID_ALTERNATIVES_AVAILABLE`, or
+`CURRENT_PLAN_NOT_ADMISSIBLE`.
+
+`POST /api/v1/support-plans/{draftId}/replace` is the only mutation path. It
+requires `If-Match`, `Idempotency-Key`, the current plan/version, and the exact
+reassessment summary ID. After repeating the same fresh checks, one owner-locked
+transaction supersedes the current plan, ends its future occurrences, activates
+and schedules the draft, records the immutable source-plan/summary/outcome audit
+relation, and writes the activation outbox row. Any stale, withdrawn,
+unauthorized, concurrent, or unavailable condition leaves the current plan and
+draft unchanged. A proposal with the same exact slot/resource versions is not a
+replacement and returns `SUPPORT_PLAN_REPLACEMENT_UNCHANGED`.
 
 The contract establishes these boundaries:
 
@@ -50,6 +100,7 @@ The Care Liquibase changelog owns:
 | `support_evaluation_v2_domain` | Two immutable instrument/domain/level/pathway/reason snapshots used for independent composition |
 | `support_evaluation_v2_safety` | Independent PHQ-9 item-9 status and safety-policy snapshot without a raw answer |
 | `support_evaluation_v2_request` | Per-user v2 idempotency aliases; separate namespace from v1 keys |
+| `screening_episode` | Persisted Care-owned grouping/resume context for exact guided PHQ-9, GAD-7, and SupportEvaluation evidence; standalone history is never inferred into it |
 | `support_plan` | One Care-owned paid proposal/current-plan snapshot with exact source, entitlement, rationale, safety, lifecycle instants, optional coded completion reason, and optimistic version provenance; terminal rows are immutable owner history |
 | `support_plan_template_family` | Ordered immutable domain template families composed into the draft |
 | `support_plan_slot` | Ordered bounded slots; core selection is required while an optional selection may be explicitly removed |
@@ -59,6 +110,8 @@ The Care Liquibase changelog owns:
 | `support_plan_command_selection` | Ordered exact resource-version intent committed by activation |
 | `support_plan_activity_schedule` | Versioned recurrence and local-time/source snapshot owned by one plan |
 | `support_plan_activity_occurrence` | Deterministic dated activity plus versioned owner engagement/visibility with exact source provenance |
+| `reassessment_self_report` | Versioned owner-authored current-period response with optional bounded helpful/difficult context and content-clearing deletion tombstones |
+| `reassessment_summary` | Immutable owner-scoped v1/v2 snapshot with request idempotency, exact periods, external Journal/AI provenance, explicit self-report provenance, separately labelled reusable occurrence evidence, and explicit unavailable/insufficient states |
 | `outbox_event` | Minimal integration fact persisted in the aggregate transaction |
 
 The reference-data migrations publish immutable English PHQ-9, current controlled-Capstone Vietnamese PHQ-9 v2, and Vietnamese GAD-7 definitions. PHQ-9 v1 remains readable as a retired immutable definition so historical results reopen against their original wording and bands. GAD-7 contains seven questions, the approved four-choice self-administered mapping, standard `0..21` bands, explicit non-applicable safety semantics, and auditable source provenance. These publications are approved only for controlled local/demo Capstone use and do not represent production clinical/domain approval.
@@ -89,6 +142,16 @@ Assessment answer text must never be copied into outbox payloads, logs, errors, 
 | `CONSULTATION_ENTITLEMENT_BASE_URL` | Local/test only | Optional direct Consultation URL; leave empty outside tests so OpenFeign resolves `consultation-service` through Eureka | `http://localhost:8082` |
 | `CONSULTATION_ENTITLEMENT_CONNECT_TIMEOUT` | No | Bounded TCP connection deadline for the authoritative current entitlement read | `PT0.5S` |
 | `CONSULTATION_ENTITLEMENT_READ_TIMEOUT` | No | Total response-read deadline for current entitlement | `PT2S` |
+| `JOURNAL_AI_LONGITUDINAL_BASE_URL` | Local/demo only | Direct Journal/AI URL because the Node service does not register with Eureka | `http://localhost:3000` |
+| `JOURNAL_AI_LONGITUDINAL_CONNECT_TIMEOUT` | No | Bounded connection deadline for minimized reassessment evidence | `PT0.2S` |
+| `JOURNAL_AI_LONGITUDINAL_READ_TIMEOUT` | No | Response-read deadline before one Journal/AI attempt times out | `PT0.8S` |
+| `JOURNAL_AI_LONGITUDINAL_MAX_ATTEMPTS` | No | Total attempts for the idempotent GET, one or two | `2` |
+| `JOURNAL_AI_LONGITUDINAL_RETRY_WAIT` | No | Positive base delay for bounded transient retry with jitter | `PT0.1S` |
+| `JOURNAL_AI_LONGITUDINAL_CIRCUIT_WINDOW_SIZE` | No | Reassessment projection breaker window | `10` |
+| `JOURNAL_AI_LONGITUDINAL_CIRCUIT_MINIMUM_CALLS` | No | Calls required before the breaker may open | `5` |
+| `JOURNAL_AI_LONGITUDINAL_CIRCUIT_FAILURE_RATE` | No | Percentage of transport/malformed failures that opens the breaker | `50` |
+| `JOURNAL_AI_LONGITUDINAL_CIRCUIT_OPEN_DURATION` | No | Bounded breaker-open interval | `PT10S` |
+| `JOURNAL_AI_LONGITUDINAL_CIRCUIT_HALF_OPEN_CALLS` | No | Permitted half-open probes | `2` |
 | `CARE_DB_URL` | Yes | Care-owned PostgreSQL JDBC URL; production uses a TLS-capable connection | `jdbc:postgresql://localhost:5432/mentalbridge_care` |
 | `CARE_DB_USERNAME` | Yes | Care-owned PostgreSQL login | `mentalbridge_care` |
 | `CARE_DB_PASSWORD` | Yes | Care PostgreSQL password injected outside source control | `replace-with-a-local-secret` |
@@ -135,6 +198,7 @@ MB-89 implements the deterministic PHQ-9 runtime. MB-178 adds the backend-owned,
 - Inbound REST: the canonical Care OpenAPI file is the source of truth.
 - Inbound Support Guide REST: `care-support-guide-v1.yaml` defines authenticated generation, owner-only history/detail, idempotency, immutable provenance, and stable resource-resolution states. It is intentionally separate from SupportPlan lifecycle.
 - Outbound REST: the consumer-owned OpenFeign Resource Eligibility v1 adapter queries Content with the end-user bearer context, explicit correlation, 500 ms connect and 2 s read deadlines, bounded exponential transient retry with jitter, and a Resilience4j circuit breaker. HTTP 429 is not retried because the provider contract does not define `Retry-After`; timeout, dependency errors, malformed payloads and enum evolution map every candidate to `UNAVAILABLE`. Callers must commit no proposal mutation. No Care transaction spans the call.
+- Outbound reassessment REST: the consumer-owned Journal/AI adapter forwards the verified end-user bearer and correlation ID to the canonical `REASSESSMENT_SUMMARY` projection. It applies a 200 ms connect deadline, 800 ms read deadline, at most one transient retry, and a separate circuit breaker. Startup rejects overrides whose conservative two-attempt budget exceeds 2.5 seconds, preserving time for Care to return the explicit safe fallback before the three-second caller deadline. It validates attribution, exact periods, source counts, coverage sufficiency, directions, and provenance before persistence. No transaction spans the remote call; every safe fallback is snapshotted explicitly.
 - Async: future assessment, support, consent, intervention, and follow-up events use Kafka with a transactional outbox and language-neutral schemas.
 - Discovery: Care registers as `care-service`; registry metadata never grants authorization.
 
@@ -144,4 +208,4 @@ MB-89 implements the deterministic PHQ-9 runtime. MB-178 adds the backend-owned,
 .\mvnw.cmd test
 ```
 
-The PostgreSQL integration suite applies Liquibase to a disposable real PostgreSQL database and validates owner isolation, profile optimistic concurrency, append-only consent history/idempotency/revocation, disclosure enforcement, stable history pagination, deterministic compatible progress selection, support-routing evidence validation and concurrency/idempotency, Support Guide safety/resource failure/history/ownership behavior, policy lookup serialization and fallback behavior, seed data, authenticated-versus-anonymous ownership, scoring boundaries, item-9 independence, token isolation/expiry, answer/result ranges, questionnaire version uniqueness, and minimized outbox payloads. Resource eligibility consumer tests additionally run the generated Java boundary through real Feign HTTP serialization against a stub validated from the canonical Content OpenAPI. They cover auth/correlation propagation, every documented 4xx/5xx status, deadlines, connection refusal, bounded retry, 429 no-retry behavior, breaker opening, malformed/truncated JSON, null/missing/unknown fields, response attribution, and unknown enum failure. Live Eureka registration is disabled in tests. The versioned assessment and support-tier event contracts exist, while a Kafka relay remains a separate delivery slice; scoring, progress, support routing, and Support Guide safety never wait for a broker.
+The PostgreSQL integration suite applies Liquibase to a disposable real PostgreSQL database and validates owner isolation, profile optimistic concurrency, append-only consent history/idempotency/revocation, disclosure enforcement, stable history pagination, deterministic compatible progress selection, support-routing evidence validation and concurrency/idempotency, Support Guide safety/resource failure/history/ownership behavior, immutable Reassessment Summary creation/replay/current/history behavior and source-change independence, policy lookup serialization and fallback behavior, seed data, authenticated-versus-anonymous ownership, scoring boundaries, item-9 independence, token isolation/expiry, answer/result ranges, questionnaire version uniqueness, and minimized outbox payloads. Resource eligibility and Journal/AI consumer tests cover auth/correlation propagation, documented failures, deadlines, bounded retry, breaker opening, malformed data, response attribution, source deletion, consent denial, and safe fallback. Live Eureka registration is disabled in tests. The versioned assessment and support-tier event contracts exist, while a Kafka relay remains a separate delivery slice; scoring, progress, support routing, Support Guide safety, and local reassessment dimensions never wait for a broker.

@@ -1,13 +1,15 @@
 # Requirements Traceability
 
-This document maps the approved project sources to the backend architecture. The source documents remain authoritative for product scope:
+This document maps the approved project sources to the backend architecture. For current product behavior, start with the [Current Product Blueprint](CURRENT_PRODUCT_BLUEPRINT.md) and follow its authority chain: latest accepted scope ADR/amendment, current approved domain policy, versioned contract and owner migration, integrated domain/architecture documentation, runtime evidence, then Jira delivery state.
+
+The original project sources remain traceability inputs:
 
 - [Capstone registration](<../FA26_TraLTB_MentalBridge (1).docx>)
 - [Project tracking workbook](../Report3_Project%20Tracking.xlsx), especially the 162 WBS functions, seven delivery use cases, and actor flows
 
 The registration file contains student/supervisor contact details. Confirm repository visibility and team approval before publishing the binary; this traceability document intentionally does not reproduce those personal details.
 
-Architecture may add safety, privacy, reliability, and implementation constraints, but must not silently remove a required feature. Any scope change requires supervisor/product approval and an ADR or updated tracking source.
+Architecture may add safety, privacy, reliability, and implementation constraints, but must not silently remove a required feature. Any scope change requires supervisor/product approval and an accepted ADR or amendment. Jira records delivery; it does not redefine the business rule.
 
 ## Product and technology alignment
 
@@ -24,7 +26,7 @@ Architecture may add safety, privacy, reliability, and implementation constraint
 | AWS EC2, Docker, Nginx, Docker Compose, GitHub Actions                                                      | Deployment baseline retained; Kafka and Redis included in local/hosted composition                                                                                                  |
 | Grafana, Prometheus, Swagger/OpenAPI                                                                        | Metrics/observability and contract rules are required by engineering guides                                                                                                         |
 | Privacy, consent, audit, deletion and retention                                                             | Care consent owner, owner-enforced authorization, minimized audit projection, idempotent deletion workflow                                                                          |
-| `FREE`/`PLUS`/`PREMIUM`, VND payment, upgrade, consultation credits, specialist earnings and payout history | ADR 0017 fixes v2 names/capabilities, one/three paid credits, purchase and `PLUS`-to-`PREMIUM` upgrade only, 70% of fixed `creditAllocation`, and MoMo-only real payment/payout     |
+| `FREE`/`PLUS`/`PREMIUM`, VND payment, upgrade, consultation credits, specialist earnings and payout history | ADR 0017 as amended by ADR 0022 fixes the target at `PLUS=4` / `PREMIUM=10`, no rollover, active-reservation caps `2/4`, purchase and `PLUS`-to-`PREMIUM` upgrade only, 70% of fixed `creditAllocation`, and MoMo-only real payment/payout; historical `consultation-credit-v1` `0/1/3` periods remain immutable |
 
 Kafka and Redis are architecture additions supporting realtime and asynchronous workloads. Kafka is the durable event/task backbone only for features that meet ADR 0016's asynchronous/fan-out/replay criteria; synchronous owner-local features do not depend on it. Redis is limited to ephemeral presence/routing/fan-out, rate-limit, delivery/idempotency, and expiring hashed OTP state; it is not a database-query cache and never replaces PostgreSQL, MongoDB, or Kafka where those dependencies are actually selected.
 
@@ -97,6 +99,25 @@ The requirements are represented in domain/architecture documentation, but the l
 
 ## Approved scope changes
 
+- 2026-09-24: `MB-SCOPE-V2-002` prospectively amends the current product
+  blueprint. A Support Guide is persisted immutable history for one screening
+  context, not ephemeral data and not a lifecycle-tracked SupportPlan.
+  Reassessment keeps Screening change, Journal context, Plan engagement, and
+  explicit user-authored Self-reported experience as four separate dimensions;
+  occurrence helpfulness/reflection is supporting evidence only. Care freshly
+  revalidates the current plan and alternatives into three canonical outcomes,
+  and reassessment never mutates a plan automatically. Consultation records a
+  specialist's exact-version resource proposal, while Care owns the governed
+  `PlanChangeRequest` and applies a change only after user confirmation. New
+  `consultation-credit-v2` periods target `FREE=0`, `PLUS=4`, `PREMIUM=10`, no
+  rollover, and concurrent active-reservation caps `0/2/4`; historical v1
+  `0/1/3` periods remain immutable. The MB-386 composition and v1 credit ledger
+  remain implemented compatibility baselines; MB-559 adds canonical explicit
+  reassessment self-report without rewriting v1 snapshots, while
+  credit-v2/reservation-cap runtime remains delivery-gated. See
+  [ADR 0022](adr/0022-current-product-blueprint-amendments.md), the
+  [SupportPlan policy v2](policies/support-plan-policy-v2.md), and the
+  [Consultation policy v2](policies/consultation-specialist-policy-v2.md).
 - 2026-09-22: MB-376 adds an owner-only SupportPlan engagement workspace on
   exact scheduled occurrences. Care accepts idempotent optimistic replacement,
   reopen, hide/show, helpfulness, coded barriers, bounded private reflection,
@@ -111,11 +132,12 @@ The requirements are represented in domain/architecture documentation, but the l
 - 2026-09-21: MB-513 implements Care-owned
   `support-plan-activity-schedule-v1` schedules and persisted occurrences for
   the single active/paused SupportPlan. The owner APIs expose bounded local-date
-  windows, exact source/version provenance, explicit user complete/skip input,
-  and optimistic lifecycle commands. Deterministic identity plus database
-  uniqueness prevents retry/reload duplicates; timezone/DST, pause/resume,
-  completion, replacement, discard, stale versions, and concurrency have
-  focused coverage. Journal/emotion prompts remain distinct self-reported
+  windows, exact source/version provenance, and explicit user occurrence
+  complete/skip input. Deterministic identity plus database uniqueness prevents
+  retry/reload duplicates; schedules respond consistently to lifecycle changes.
+  MB-374 owns the pause/resume/complete/discard journey and immutable terminal
+  history. Timezone/DST, replacement effects, stale versions, and concurrency
+  have focused coverage. Journal/emotion prompts remain distinct self-reported
   wellbeing sources, never treatment adherence. AI cannot select lifecycle or
   occurrence state. See [ADR 0020](adr/0020-support-plan-activity-occurrence-scheduling.md)
   and [MB-513 evidence](story-mb-513-support-plan-activity-occurrences-evidence.md).
@@ -151,9 +173,11 @@ The requirements are represented in domain/architecture documentation, but the l
   wellbeing reminders are at most daily, resource-specific reminders are
   opt-in, appointment reminders are separate and once near one hour before,
   and no automatic safety email exists. V2 real money is VND/MoMo only, with
-  one/three paid credits and specialist earnings equal to 70% of fixed
-  per-credit `creditAllocation`; real enablement waits for prices, allocations,
-  and credentials. Safety activates from positive PHQ-9 item 9 or explicit
+  the original historical one/three paid-credit target and specialist earnings
+  equal to 70% of fixed per-credit `creditAllocation`; ADR 0022 prospectively
+  supersedes those target quantities without rewriting v1 periods. Real
+  enablement waits for prices, allocations, and credentials. Safety activates
+  from positive PHQ-9 item 9 or explicit
   “Tôi cần hỗ trợ ngay”; area results require provenance and cannot claim
   “nearest” without coordinates/distance. See [ADR 0017](adr/0017-product-scope-v2.md)
   and the [SupportPlan](policies/support-plan-policy-v2.md),
@@ -162,13 +186,21 @@ The requirements are represented in domain/architecture documentation, but the l
 - 2026-09-15: MB-337 publishes six controlled-demo `vi-VN` content versions under `content-eligibility-v1`, with explicit item-level domain roles, instrument bands, support tiers, locale, effective state, and synthetic administrator provenance. MB-350 inventories the versions, MB-351 records the machine-readable item review and rationale in `contracts/fixtures/content/resource-eligibility-v1-controlled-demo.json`, MB-352 publishes the append-only mapping, and MB-353 verifies coverage and the Care fixture. The matrix supplies separate depression and anxiety psychoeducation/activity `PRIMARY` alternatives, keeps sleep and professional-support preparation `ADJUNCT`, records missing domain declarations as explicit ineligibility, and publishes an ordered Care-compatible exact-version/no-match fixture. Safety guidance, booking, SupportPlan proposal/lifecycle runtime, and type-based automatic eligibility remain outside this data story.
 - 2026-09-14: ADR 0016 makes Kafka and OpenTelemetry feature-scoped rather than blanket service dependencies. Synchronous owner-local CRUD/approval uses REST and the owner database without Kafka/outbox/broker tests. OpenTelemetry is added only for a demonstrated distributed or asynchronous diagnostic need; structured logs, correlation IDs, health/readiness, and focused Prometheus metrics remain the lightweight baseline.
 - 2026-09-14: Story 6101 implements the first Consultation runtime slice: specialist-owned save/read/submit of the six approved public profile fields and administrator pending-list/detail/approve with optimistic concurrency and an approval-status audit history. It collects no credential, license, certificate, or verification document. Rejection/suspension/restoration, discovery, availability, and appointments remain separate runtime stories.
-- 2026-09-24: MB-360/Story 6102 completes the Consultation-owned specialist exception lifecycle. Rejection and suspension require closed stable reason codes and every transition is audited. Rejected specialists edit and explicitly resubmit the same profile. Suspension atomically withdraws future availability, cancels future not-started appointments, releases each exact held credit, and records both histories; any mismatch rolls back. Restoration returns the specialist to approved without reviving withdrawn or cancelled records. The narrow appointment persistence supports these required side effects only; public booking remains a later story.
+- 2026-09-24: MB-360/Story 6102 completes the Consultation-owned specialist exception lifecycle. Rejection and suspension require closed stable reason codes and every transition is audited. Rejected specialists edit and explicitly resubmit the same profile. Suspension atomically withdraws future availability, cancels future not-started appointments, releases each exact held credit, and records both histories; any mismatch rolls back. Restoration returns the specialist to approved without reviving withdrawn or cancelled records. MB-360 extends the MB-378 appointment aggregate with cancellation evidence and serializes booking against specialist suspension.
 - 2026-09-17: MB-362 implements approved-specialist publication, owner listing,
   and tombstone withdrawal for exact non-overlapping 60-minute online slots.
   The additive contract and migration accept `IN_APP_CHAT` and capability-gated
   `IN_APP_VIDEO`, store UTC plus an IANA display timezone, persist idempotency,
   and contain no PracticeLocation, phone, or external meeting-link field. See
   [ADR 0019](adr/0019-online-specialist-availability.md).
+- 2026-09-23: MB-378 implements the first authoritative appointment slice.
+  A `PLUS` or `PREMIUM` user selects one exact 60-minute online slot;
+  Consultation locks the slot and earliest-expiring eligible credit in one
+  local PostgreSQL transaction, persists a `REQUESTED` snapshot and decision
+  deadline, and returns exact idempotent replays. Active slot/credit uniqueness,
+  lead time, stale selection, modality mismatch, video disablement, and
+  concurrent double-hold behavior fail closed. Specialist decision and expiry
+  execution remain MB-379 and consume the persisted deadline handoff.
 
 - 2026-09-13: Story 5103 delivers Content-owned Resource Eligibility v1 for exact immutable resource versions. The additive contract and PostgreSQL model record explicit approved domain, role, instrument band, support tier, locale, policy version, publication state, and effective window; reviewed or published content receives no implicit plan eligibility. Content resolves bounded request-order-stable batches, while the Care adapter applies explicit deadlines, bounded transient-only retry, circuit breaking, strict response attribution, and fail-closed `UNAVAILABLE` outcomes without opening a Care transaction. The delivery does not publish the separate initial demo eligibility matrix or enable SupportPlan proposal/lifecycle runtime.
 - 2026-09-13: `MB-AI-COMPANION-001` freezes exact-revision, explicit-request, consent-gated asynchronous journal analysis plus bounded longitudinal journal/context comparison. Each run uses one provider, a 30-second timeout per attempt, and at most one retry for 429/5xx/transport; no automatic cross-provider fallback or raw-response/hidden-reasoning persistence is allowed. Care presents standardized screening trend, model-derived available-journal context trend with coverage, SupportPlan engagement, and user reflection as four separate reassessment dimensions—never one improvement score. AI cannot score, diagnose, decide clinical improvement/eligibility, or mutate a SupportPlan. Benchmark results gate final production-provider selection and official controlled-demo enablement, not contract/adapters/job-runtime implementation. See [ADR 0015](adr/0015-ai-companion-analysis-contract.md) and [AI Companion policy v1](policies/ai-companion-policy-v1.md).
@@ -178,8 +210,28 @@ The requirements are represented in domain/architecture documentation, but the l
   Mongo-owned jobs/results retain exact source versions, coverage, route, and
   provider provenance without raw text; sparse or greater-than-2:1 imbalanced
   periods force `INSUFFICIENT_DATA`. Owner polling and a minimized current-
-  consent Care projection are implemented, with Story 6501 remaining the
-  Reassessment Summary composition consumer.
+  consent Care projection are implemented as the Journal/AI boundary consumed
+  by MB-386's Story 6501 Reassessment Summary composition.
+- 2026-09-24: MB-386 implements Story 6501 in Care. The authenticated owner
+  idempotently composes selected current PHQ-9/GAD-7 results, the canonical
+  minimized Journal/AI projection, and explicitly reusable SupportPlan
+  engagement/reflection into one immutable `reassessment-summary-v1` snapshot.
+  Current/detail/history APIs preserve exact source versions, periods, coverage,
+  provenance, and explicit `UNAVAILABLE`/`INSUFFICIENT_DATA` states. Care never
+  creates a combined direction, improvement score, recovery claim, or fallback
+  trend. Story 6502 remains the separate actor-facing frontend consumer.
+- 2026-09-24: MB-559 adds `reassessment-self-report-v1` owner
+  create/current/replace/delete behavior and `reassessment-summary-v2`.
+  Categorical current experience is explicit and non-diagnostic; optional
+  helpful/difficult context is bounded to 500 characters. Summary composition
+  snapshots the exact source revision separately from occurrence
+  helpfulness/reflection, preserves contradictions, and represents absent or
+  deleted sources without inference. Care issues versioned adjacent 14-day
+  periods and current compatible assessment IDs, then resolves the supplied
+  Journal job status itself. The frontend creates and polls that job, composes
+  the snapshot, and renders four separate dimensions with no overall verdict.
+  Historical v1 summaries remain immutable; later MB-387 work is limited to
+  history and presentation refinement where it is not already satisfied.
 - 2026-09-16: MB-369 is bounded to provider/model routing and benchmark
   enablement. Consultation adds an authoritative current-entitlement read model
   with `DEFAULT_FREE`, explicit `DEMO`, and future `PAID` provenance but no
@@ -212,6 +264,24 @@ The requirements are represented in domain/architecture documentation, but the l
   Pause/resume, completion, replacement, activities, and specialist
   `PlanChangeRequest` remain unavailable. See [SupportPlan policy v2](policies/support-plan-policy-v2.md)
   and [MB-373 evidence](story-mb-373-support-plan-activation-evidence.md).
+- 2026-09-24: MB-375 implements truthful SupportPlan replacement after
+  reassessment. Care returns one of the three policy outcomes while exposing
+  screening, Journal context, plan engagement, and explicit self-report as
+  separate evidence with periods and provenance. The current plan remains
+  usable until an explicit idempotent confirmation repeats all authoritative
+  checks and atomically records `SUPERSEDED` plus replacement `ACTIVE` state.
+  The command audit links both plan versions and the exact immutable
+  `reassessment-summary-v2`; failures and unchanged proposals do not mutate
+  either plan. Specialist `PlanChangeRequest` must reuse this governed path and
+  has no second replacement mutation. See [MB-375 evidence](story-mb-375-support-plan-replacement-evidence.md).
+
+- 2026-09-25: MB-292 corrective delivery persists Care-owned
+  `screening_episode` grouping for guided initial checks and reassessments.
+  Frontend session cookies and latest-history lookup are no longer evidence
+  authority. SupportPlan proposal requires episode-backed v2 evaluation, and
+  replacement fails with `REASSESSMENT_SCREENING_CONTEXT_MISMATCH` when the
+  summary and proposed draft do not use the same exact PHQ-9/GAD-7 pair. See
+  [ADR 0023](adr/0023-persist-guided-screening-episodes.md).
 - 2026-09-13: `MB-SUPPORT-PLAN-POLICY-001` freezes SupportPlan policy v1. Care owns immutable versioned templates and compositional `mb-support-plan-selection-v1` rules; templates use `CORE` and `OPTIONAL` slots; an activatable plan contains 1-5 resources; exact eligibility roles are `PRIMARY` and `ADJUNCT`; safety-positive activation uses the normal explicit action after higher-priority safety/professional presentation; and each user has at most one draft plus one active-or-paused plan with atomic explicit replacement. This product-policy approval did not itself implement SupportEvaluation v2, Resource Eligibility v1, plan persistence, endpoints, or frontend runtime. See [ADR 0013](adr/0013-freeze-support-plan-policy-v1.md) and [SupportPlan policy v1](policies/support-plan-policy-v1.md).
 - 2026-09-12: `MB-SCOPE-DOMAIN-001` limits V1 screening and post-screening support to PHQ-9/`DEPRESSIVE_SYMPTOMS` and GAD-7/`ANXIETY_SYMPTOMS`, keeps safety cross-cutting, prohibits global severity, and changes the forward SupportPlan flow to a domain-aware system proposal followed by bounded user choice, revalidation and explicit activation. Active v1 contracts/history remain immutable; #48 tracks compatible evaluation, #49 the plan-policy gate, #50 resource eligibility, and #51 frontend impact. Runtime stories remain separately gated. See [ADR 0012](adr/0012-two-domain-screening-and-system-proposed-support-plans.md).
 - 2026-09-11: ADR 0011 keeps benchmark execution provider-neutral and defers `phobert-worker` as an optional Vietnamese NLP baseline. Initial AI implementation and benchmark work may use OpenAI and Gemini without a Python worker. PhoBERT activation requires an approved narrow task, label taxonomy, governed dataset/evaluation split, deterministic preprocessing, and a pinned compatible fine-tuned checkpoint; it is not a current Compose, readiness, Sprint, or release dependency.
