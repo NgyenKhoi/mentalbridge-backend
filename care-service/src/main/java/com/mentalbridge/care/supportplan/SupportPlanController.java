@@ -123,12 +123,26 @@ public class SupportPlanController {
 	ResponseEntity<SupportPlanView> replace(@AuthenticationPrincipal Jwt jwt,
 			@PathVariable UUID supportPlanId,
 			@RequestHeader("If-Match") @Pattern(regexp = "^\"[0-9]+\"$") String ifMatch,
+			@RequestHeader("Idempotency-Key") @Size(min = 16, max = 128) @Pattern(regexp = "^[!-~]+$") String key,
 			@RequestHeader(name = "X-Correlation-Id", required = false) UUID correlationId,
 			@Valid @RequestBody ReplacePlanRequest request) {
-		var plan = plans.replace(subject(jwt), jwt.getTokenValue(), supportPlanId, version(ifMatch),
+		var plan = plans.replace(subject(jwt), jwt.getTokenValue(), supportPlanId, version(ifMatch), key,
 				correlationId == null ? UUID.randomUUID() : correlationId,
-				new ReplacePlanCommand(request.currentSupportPlanId(), request.currentVersion()));
+				new ReplacePlanCommand(request.currentSupportPlanId(), request.currentVersion(),
+						request.reassessmentSummaryId()));
 		return ResponseEntity.ok().header(HttpHeaders.ETAG, '"' + Long.toString(plan.version()) + '"').body(plan);
+	}
+
+	@PostMapping("/{supportPlanId}/replacement-review")
+	SupportPlanService.ReplacementReviewView replacementReview(@AuthenticationPrincipal Jwt jwt,
+			@PathVariable UUID supportPlanId,
+			@RequestHeader("If-Match") @Pattern(regexp = "^\"[0-9]+\"$") String ifMatch,
+			@RequestHeader(name = "X-Correlation-Id", required = false) UUID correlationId,
+			@Valid @RequestBody ReplacePlanRequest request) {
+		return plans.reviewReplacement(subject(jwt), jwt.getTokenValue(), supportPlanId, version(ifMatch),
+				correlationId == null ? UUID.randomUUID() : correlationId,
+				new ReplacePlanCommand(request.currentSupportPlanId(), request.currentVersion(),
+						request.reassessmentSummaryId()));
 	}
 
 	private UUID subject(Jwt jwt) {
@@ -153,5 +167,5 @@ public class SupportPlanController {
 			@NotNull @Pattern(regexp = "^(ACTIVE|PAUSED|COMPLETED|DISCARDED)$") String status,
 			@Pattern(regexp = "^(USER_DECISION|PLAN_NO_LONGER_FITS|OTHER)$") String completionReason) { }
 	public record ReplacePlanRequest(@NotNull UUID currentSupportPlanId,
-			@NotNull @PositiveOrZero Long currentVersion) { }
+			@NotNull @PositiveOrZero Long currentVersion, @NotNull UUID reassessmentSummaryId) { }
 }

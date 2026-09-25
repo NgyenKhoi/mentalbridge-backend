@@ -12,6 +12,7 @@ import static org.springframework.test.web.servlet.request.MockMvcRequestBuilder
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.jsonPath;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.status;
 
+import java.time.Clock;
 import java.time.Duration;
 import java.time.Instant;
 import java.time.LocalDate;
@@ -60,9 +61,12 @@ class ReassessmentSummaryIntegrationTests extends CareTestProperties {
 	@Autowired JdbcClient jdbc;
 	@Autowired ObjectMapper objectMapper;
 	@MockitoBean JournalLongitudinalClient journal;
+	@MockitoBean Clock clock;
 
 	@BeforeEach
 	void sufficientJournalProjection() {
+		when(clock.instant()).thenReturn(Instant.parse("2026-09-24T12:00:00Z"));
+		when(clock.getZone()).thenReturn(ZoneOffset.UTC);
 		when(journal.read(any(), any(), any(), any(), anyString(), any())).thenAnswer(invocation -> {
 			UUID analysisId = invocation.getArgument(1);
 			return new Projection("AVAILABLE", null, journalEvidence(analysisId, true, 3, 3));
@@ -238,7 +242,7 @@ class ReassessmentSummaryIntegrationTests extends CareTestProperties {
 	}
 
 	@Test
-	void issuesCareOwnedContextAndRejectsStaleAssessmentSelection() throws Exception {
+	void issuesEpisodeOwnedContextAndIgnoresNewerStandaloneHistory() throws Exception {
 		var owner = insertProfile();
 		var selected = assessments(owner);
 
@@ -258,8 +262,9 @@ class ReassessmentSummaryIntegrationTests extends CareTestProperties {
 				.contentType(MediaType.APPLICATION_JSON).content(jobBody(selected.currentPhq9(),
 						selected.currentGad7(), UUID.randomUUID(), PREVIOUS_START, PREVIOUS_END,
 						CURRENT_START, CURRENT_END)))
-				.andExpect(status().isConflict())
-				.andExpect(jsonPath("$.code").value("ASSESSMENT_NOT_CURRENT"));
+				.andExpect(status().isCreated())
+				.andExpect(jsonPath("$.screening.trends[0].current.assessmentId")
+						.value(selected.currentPhq9().toString()));
 	}
 
 	@Test
@@ -382,6 +387,7 @@ class ReassessmentSummaryIntegrationTests extends CareTestProperties {
 				Instant.parse("2026-09-22T08:00:00Z"));
 		var currentGad7 = insertAssessment(owner, GAD7_DEFINITION, 10, "MODERATE", "gad7-standard-bands-v1",
 				Instant.parse("2026-09-22T09:00:00Z"));
+		insertReassessmentEpisode(owner, currentPhq9, currentGad7);
 		return new AssessmentSet(previousPhq9, previousGad7, currentPhq9, currentGad7);
 	}
 
@@ -414,7 +420,26 @@ class ReassessmentSummaryIntegrationTests extends CareTestProperties {
 				Instant.parse("2026-09-22T08:00:00Z"));
 		var currentGad7 = insertAssessment(owner, GAD7_DEFINITION, 10, "MODERATE", "gad7-standard-bands-v1",
 				Instant.parse("2026-09-22T09:00:00Z"));
+		insertReassessmentEpisode(owner, currentPhq9, currentGad7);
 		return new AssessmentSet(null, null, currentPhq9, currentGad7);
+	}
+
+	private void insertReassessmentEpisode(UUID userId, UUID phq9AssessmentId, UUID gad7AssessmentId) {
+		var evaluationId = UUID.randomUUID();
+		var now = OffsetDateTime.parse("2026-09-22T10:00:00Z");
+		jdbc.sql("""
+				insert into support_evaluation_v2
+				(id,user_id,phq9_assessment_id,gad7_assessment_id,policy_version,evaluated_at)
+				values (:id,:userId,:phq9,:gad7,'mb-support-routing-capstone-v2',:now)
+				""").param("id", evaluationId).param("userId", userId).param("phq9", phq9AssessmentId)
+				.param("gad7", gad7AssessmentId).param("now", now).update();
+		jdbc.sql("""
+				insert into screening_episode
+				(id,user_id,purpose,status,phq9_assessment_id,gad7_assessment_id,support_evaluation_id,
+				 created_at,updated_at,completed_at,version)
+				values (:id,:userId,'REASSESSMENT','COMPLETED',:phq9,:gad7,:evaluation,:now,:now,:now,0)
+				""").param("id", UUID.randomUUID()).param("userId", userId).param("phq9", phq9AssessmentId)
+				.param("gad7", gad7AssessmentId).param("evaluation", evaluationId).param("now", now).update();
 	}
 
 	private UUID insertProfile() {
@@ -450,13 +475,12 @@ class ReassessmentSummaryIntegrationTests extends CareTestProperties {
 	}
 
 	private void insertReusableEngagement(UUID userId, UUID phq9AssessmentId, UUID gad7AssessmentId) {
-		UUID evaluationId = UUID.randomUUID();
-		jdbc.sql("""
-				insert into support_evaluation_v2
-					(id,user_id,phq9_assessment_id,gad7_assessment_id,policy_version,evaluated_at)
-				values (:id,:userId,:phq9,:gad7,'mb-support-routing-capstone-v2',:now)
-				""").param("id", evaluationId).param("userId", userId).param("phq9", phq9AssessmentId)
-				.param("gad7", gad7AssessmentId).param("now", OffsetDateTime.parse("2026-09-22T10:00:00Z")).update();
+		UUID evaluationId = jdbc.sql("""
+				select id from support_evaluation_v2
+				where user_id = :userId and phq9_assessment_id = :phq9 and gad7_assessment_id = :gad7
+				  and policy_version = 'mb-support-routing-capstone-v2'
+				""").param("userId", userId).param("phq9", phq9AssessmentId).param("gad7", gad7AssessmentId)
+				.query(UUID.class).single();
 		UUID planId = UUID.randomUUID();
 		jdbc.sql("""
 				insert into support_plan

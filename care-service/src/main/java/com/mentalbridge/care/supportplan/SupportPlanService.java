@@ -20,6 +20,9 @@ import com.mentalbridge.care.entitlement.CurrentEntitlementResponse;
 import com.mentalbridge.care.entitlement.CurrentEntitlementResponse.ServicePackage;
 import com.mentalbridge.care.entitlement.EntitlementClient;
 import com.mentalbridge.care.resourceeligibility.ResourceEligibilityClient;
+import com.mentalbridge.care.reassessment.ReassessmentSummaryService;
+import com.mentalbridge.care.reassessment.ReassessmentSummaryView;
+import com.mentalbridge.care.screeningepisode.ScreeningEpisodeService;
 import com.mentalbridge.care.shared.ApiException;
 import com.mentalbridge.care.support.SupportEvaluationService;
 import com.mentalbridge.care.support.SupportEvaluationV2Service;
@@ -43,15 +46,20 @@ public class SupportPlanService {
 	private final ResourceEligibilityClient eligibility;
 	private final SupportPlanPolicy policy;
 	private final SupportPlanWriter writer;
+	private final ReassessmentSummaryService reassessments;
+	private final ScreeningEpisodeService screeningEpisodes;
 	private final Clock clock;
 
 	public SupportPlanService(EntitlementClient entitlements, SupportEvaluationV2Service evaluations,
-			ResourceEligibilityClient eligibility, SupportPlanPolicy policy, SupportPlanWriter writer, Clock clock) {
+			ResourceEligibilityClient eligibility, SupportPlanPolicy policy, SupportPlanWriter writer,
+			ReassessmentSummaryService reassessments, ScreeningEpisodeService screeningEpisodes, Clock clock) {
 		this.entitlements = entitlements;
 		this.evaluations = evaluations;
 		this.eligibility = eligibility;
 		this.policy = policy;
 		this.writer = writer;
+		this.reassessments = reassessments;
+		this.screeningEpisodes = screeningEpisodes;
 		this.clock = clock;
 	}
 
@@ -68,6 +76,7 @@ public class SupportPlanService {
 
 		CurrentEntitlementResponse entitlement = paidEntitlement(userId, bearerToken, correlationId);
 		var evaluation = evaluations.getCurrentCompatible(userId, command.sourceSupportEvaluationId());
+		screeningEpisodes.requiredEvaluationContext(userId, command.sourceSupportEvaluationId());
 		var proposalRequest = policy.request(evaluation);
 		var resolved = eligibility.resolve(proposalRequest.batch(), bearerToken, correlationId);
 		var proposal = policy.compose(proposalRequest, resolved);
@@ -152,27 +161,151 @@ public class SupportPlanService {
 				completionReason, clock.instant()));
 	}
 
+	public ReplacementReviewView reviewReplacement(UUID userId, String bearerToken, UUID draftId,
+			long draftVersion, UUID correlationId, ReplacePlanCommand command) {
+		return replacementReview(userId, bearerToken, draftId, draftVersion, correlationId, command).view();
+	}
+
 	public SupportPlanView replace(UUID userId, String bearerToken, UUID draftId, long draftVersion,
-			UUID correlationId, ReplacePlanCommand command) {
+			String idempotencyKey, UUID correlationId, ReplacePlanCommand command) {
+		String requestHash = hash("REPLACE\n" + draftId + "\n" + draftVersion + "\n"
+				+ command.currentSupportPlanId() + "\n" + command.currentVersion() + "\n"
+				+ command.reassessmentSummaryId());
+		var replay = replay(userId, idempotencyKey, "REPLACE", requestHash);
+		if (replay != null) {
+			return view(replay);
+		}
+		var review = replacementReview(userId, bearerToken, draftId, draftVersion, correlationId, command);
+		if ("CURRENT_PLAN_VALID_NO_BETTER_ALTERNATIVE".equals(review.view().outcome())) {
+			throw new ApiException(HttpStatus.CONFLICT, "SUPPORT_PLAN_REPLACEMENT_UNCHANGED",
+					"The proposed SupportPlan does not change the current exact resource selection");
+		}
+		return view(writer.replace(userId, draftId, draftVersion, command.currentSupportPlanId(),
+				command.currentVersion(), idempotencyKey, requestHash, review.choices(), review.evidence(),
+				command.reassessmentSummaryId(), review.view().outcome(), correlationId, clock.instant()));
+	}
+
+	private ReplacementReview replacementReview(UUID userId, String bearerToken, UUID draftId,
+			long draftVersion, UUID correlationId, ReplacePlanCommand command) {
 		var draft = writer.required(userId, draftId);
 		var current = writer.required(userId, command.currentSupportPlanId());
-		if ("ACTIVE".equals(draft.plan().status()) && "SUPERSEDED".equals(current.plan().status())) {
-			return view(draft);
-		}
 		validateDraftVersion(draft, draftVersion);
-		var selections = draft.slots().stream().filter(slot -> slot.slot().selectedResource() != null)
+		validateCurrentVersion(current, command.currentVersion(), draftId);
+		ReassessmentSummaryView summary = reassessments.currentForPlanReview(userId,
+				command.reassessmentSummaryId());
+		assertReassessmentScreeningContext(userId, draft, summary);
+		CurrentEntitlementResponse entitlement = paidEntitlement(userId, bearerToken, correlationId);
+		String currentFailure = currentInadmissibility(userId, bearerToken, correlationId, current, entitlement);
+		var choices = selectedChoices(draft);
+		var evidence = revalidate(userId, bearerToken, correlationId, draft, choices, entitlement);
+		String outcome = currentFailure != null ? "CURRENT_PLAN_NOT_ADMISSIBLE"
+				: sameExactResources(current, draft) ? "CURRENT_PLAN_VALID_NO_BETTER_ALTERNATIVE"
+				: "CURRENT_PLAN_VALID_ALTERNATIVES_AVAILABLE";
+		var rationale = currentFailure != null ? List.of(currentFailure, "PROPOSED_PLAN_ADMISSIBLE")
+				: "CURRENT_PLAN_VALID_NO_BETTER_ALTERNATIVE".equals(outcome)
+						? List.of("CURRENT_PLAN_ADMISSIBLE", "EXACT_SELECTION_UNCHANGED")
+						: List.of("CURRENT_PLAN_ADMISSIBLE", "PROPOSED_SELECTION_DIFFERS");
+		var review = new ReplacementReviewView(outcome, rationale, comparison(current, draft),
+				view(current), view(draft), summary, clock.instant());
+		return new ReplacementReview(review, choices, evidence);
+	}
+
+	private void assertReassessmentScreeningContext(UUID userId, StoredPlan draft,
+			ReassessmentSummaryView summary) {
+		var evaluation = evaluations.getCurrentCompatible(userId, draft.plan().supportEvaluationId());
+		var expected = evaluation.contributingDomains().stream()
+				.collect(java.util.stream.Collectors.toMap(
+						SupportEvaluationV2Service.DomainContributionView::instrument,
+						SupportEvaluationV2Service.DomainContributionView::assessmentId));
+		var actual = summary.screening().trends().stream()
+				.filter(trend -> trend.current() != null)
+				.collect(java.util.stream.Collectors.toMap(
+						ReassessmentSummaryView.ScreeningTrend::instrument,
+						trend -> trend.current().assessmentId()));
+		if (!expected.equals(actual)) {
+			throw new ApiException(HttpStatus.CONFLICT, "REASSESSMENT_SCREENING_CONTEXT_MISMATCH",
+					"Reassessment summary and proposed SupportPlan must use the same PHQ-9 and GAD-7 evidence");
+		}
+	}
+
+	private String currentInadmissibility(UUID userId, String bearerToken, UUID correlationId,
+			StoredPlan current, CurrentEntitlementResponse entitlement) {
+		try {
+			revalidate(userId, bearerToken, correlationId, current, selectedChoices(current), entitlement);
+			return null;
+		}
+		catch (ApiException exception) {
+			if (List.of("SUPPORT_EVALUATION_STALE", "SUPPORT_PLAN_POLICY_STALE", "RESOURCE_VERSION_STALE",
+					"SUPPORT_PLAN_INVALID_CHOICE", "SUPPORT_PLAN_CORE_UNAVAILABLE").contains(exception.code())) {
+				return exception.code();
+			}
+			throw exception;
+		}
+	}
+
+	private void validateCurrentVersion(StoredPlan current, long expectedVersion, UUID draftId) {
+		if (current.plan().id().equals(draftId)
+				|| !List.of("ACTIVE", "PAUSED").contains(current.plan().status())) {
+			throw new ApiException(HttpStatus.CONFLICT, "SUPPORT_PLAN_TRANSITION_INVALID",
+					"Replacement requires the current ACTIVE or PAUSED SupportPlan");
+		}
+		if (current.plan().version() != expectedVersion) {
+			throw new ApiException(HttpStatus.PRECONDITION_FAILED, "SUPPORT_PLAN_VERSION_MISMATCH",
+					"Current SupportPlan version does not match the replacement review");
+		}
+	}
+
+	private List<Choice> selectedChoices(StoredPlan stored) {
+		var selections = stored.slots().stream().filter(slot -> slot.slot().selectedResource() != null)
 				.map(slot -> new SlotSelection(slot.slot().slotKey(), slot.slot().selectedResource().resourceId(),
 						Long.toString(slot.slot().selectedResource().contentVersion())))
 				.toList();
-		var choices = admittedChoices(draft, selections);
-		revalidate(userId, bearerToken, correlationId, draft, choices);
-		return view(writer.replace(userId, draftId, draftVersion, command.currentSupportPlanId(),
-				command.currentVersion(), clock.instant()));
+		return admittedChoices(stored, selections);
+	}
+
+	private boolean sameExactResources(StoredPlan current, StoredPlan proposed) {
+		var currentKeys = current.slots().stream().filter(slot -> slot.slot().selectedResource() != null)
+				.collect(java.util.stream.Collectors.toMap(slot -> slot.slot().slotKey(),
+						slot -> slot.slot().selectedResource().key()));
+		var proposedKeys = proposed.slots().stream().filter(slot -> slot.slot().selectedResource() != null)
+				.collect(java.util.stream.Collectors.toMap(slot -> slot.slot().slotKey(),
+						slot -> slot.slot().selectedResource().key()));
+		return currentKeys.equals(proposedKeys);
+	}
+
+	private List<ComparisonItemView> comparison(StoredPlan current, StoredPlan proposed) {
+		var proposedBySlot = proposed.slots().stream().collect(java.util.stream.Collectors.toMap(
+				value -> value.slot().slotKey(), value -> value));
+		var items = new ArrayList<ComparisonItemView>();
+		for (var currentSlot : current.slots()) {
+			var proposedSlot = proposedBySlot.remove(currentSlot.slot().slotKey());
+			var currentResource = resource(currentSlot.slot().selectedResource());
+			var proposedResource = proposedSlot == null ? null : resource(proposedSlot.slot().selectedResource());
+			String change = currentResource == null ? proposedResource == null ? "UNCHANGED" : "ADDED"
+					: proposedResource == null ? "REMOVED"
+							: currentSlot.slot().selectedResource().key()
+									.equals(proposedSlot.slot().selectedResource().key()) ? "UNCHANGED" : "CHANGED";
+			items.add(new ComparisonItemView(change, currentSlot.slot().slotKey(), currentResource,
+					proposedSlot == null ? null : proposedSlot.slot().slotKey(), proposedResource));
+		}
+		for (var proposedSlot : proposedBySlot.values()) {
+			if (proposedSlot.slot().selectedResource() == null) {
+				continue;
+			}
+			items.add(new ComparisonItemView("ADDED", null, null, proposedSlot.slot().slotKey(),
+					resource(proposedSlot.slot().selectedResource())));
+		}
+		return List.copyOf(items);
 	}
 
 	private Revalidation revalidate(UUID userId, String bearerToken, UUID correlationId,
 			StoredPlan stored, List<Choice> choices) {
 		var entitlement = paidEntitlement(userId, bearerToken, correlationId);
+		return revalidate(userId, bearerToken, correlationId, stored, choices, entitlement);
+	}
+
+	private Revalidation revalidate(UUID userId, String bearerToken, UUID correlationId,
+			StoredPlan stored, List<Choice> choices, CurrentEntitlementResponse entitlement) {
 		var evaluation = evaluations.getCurrentCompatible(userId, stored.plan().supportEvaluationId());
 		var selected = choices.stream().map(choice -> new SelectedResource(choice.slotId(),
 				choice.resource().resourceId(), choice.resource().contentVersion())).toList();
@@ -390,7 +523,13 @@ public class SupportPlanService {
 	public record ProposeCommand(UUID sourceSupportEvaluationId) { }
 	public record SlotSelection(String slotId, UUID resourceId, String contentVersion) { }
 	public record ReplaceChoicesCommand(List<SlotSelection> slotSelections) { }
-	public record ReplacePlanCommand(UUID currentSupportPlanId, long currentVersion) { }
+	public record ReplacePlanCommand(UUID currentSupportPlanId, long currentVersion, UUID reassessmentSummaryId) { }
+	public record ComparisonItemView(String change, String currentSlotId, ResourceView currentResource,
+			String proposedSlotId, ResourceView proposedResource) { }
+	public record ReplacementReviewView(String outcome, List<String> rationaleCodes,
+			List<ComparisonItemView> comparison, SupportPlanView currentPlan, SupportPlanView proposedPlan,
+			ReassessmentSummaryView reassessmentSummary, Instant reviewedAt) { }
+	private record ReplacementReview(ReplacementReviewView view, List<Choice> choices, Revalidation evidence) { }
 	public record SourceView(UUID supportEvaluationId, int evaluationVersion, String evaluationPolicyVersion,
 			Instant evaluatedAt, String selectionPolicyVersion, String resourceEligibilityPolicyVersion,
 			Instant resourcesResolvedAt) { }

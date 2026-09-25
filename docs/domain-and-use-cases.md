@@ -42,6 +42,7 @@ System actors include configured AI providers, the notification provider, object
 - **Journal entry**: user-authored private text. It is not a clinical record.
 - **Analysis**: structured AI output tied to exact journal source revision(s), bounded period where applicable, prompt version, provider, and model.
 - **Reassessment Summary**: Care-owned presentation of four separate dimensions—Screening change, Journal context, Plan engagement, and explicit Self-reported experience—without a combined improvement score. Activity helpfulness/reflection may support the fourth dimension but cannot replace the explicit reassessment self-report.
+- **Screening Episode**: Care-owned persisted grouping for the exact PHQ-9 and GAD-7 submitted in one guided `INITIAL_CHECK` or `REASSESSMENT`. It is the resume context across sessions and the provenance boundary for downstream SupportEvaluation; standalone screening history is never inferred into it.
 - **Consent grant**: explicit, scoped, revocable permission from one user to one specialist.
 - **Referral**: recommendation to seek human support and its operational status.
 - **Subscription period**: one paid, time-bounded activation of an immutable plan version.

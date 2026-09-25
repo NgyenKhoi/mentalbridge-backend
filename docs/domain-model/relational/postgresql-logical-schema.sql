@@ -403,6 +403,30 @@ CREATE TABLE care.support_evaluation_v2_request (
         REFERENCES care.support_evaluation_v2(id, user_id)
 );
 
+CREATE TABLE care.screening_episode (
+    id uuid PRIMARY KEY,
+    user_id uuid NOT NULL REFERENCES care.user_profile(account_id),
+    purpose varchar(24) NOT NULL,       -- INITIAL_CHECK | REASSESSMENT
+    status varchar(16) NOT NULL,        -- IN_PROGRESS | READY | COMPLETED
+    phq9_assessment_id uuid,
+    gad7_assessment_id uuid,
+    support_evaluation_id uuid,
+    presentation_evaluation_id uuid,   -- compatibility v1 presentation result
+    created_at timestamptz NOT NULL,
+    updated_at timestamptz NOT NULL,
+    completed_at timestamptz,
+    version bigint NOT NULL,
+    UNIQUE (id, user_id),
+    FOREIGN KEY (phq9_assessment_id, user_id)
+        REFERENCES care.assessment_submission(id, user_id),
+    FOREIGN KEY (gad7_assessment_id, user_id)
+        REFERENCES care.assessment_submission(id, user_id),
+    FOREIGN KEY (support_evaluation_id, user_id)
+        REFERENCES care.support_evaluation_v2(id, user_id),
+    FOREIGN KEY (presentation_evaluation_id, user_id)
+        REFERENCES care.support_evaluation(id, user_id)
+);
+
 CREATE TABLE care.support_guide (
     id uuid PRIMARY KEY,
     user_id uuid NOT NULL REFERENCES care.user_profile(account_id),
@@ -543,7 +567,7 @@ CREATE TABLE care.support_plan_request (
 CREATE TABLE care.support_plan_command (
     user_id uuid NOT NULL,
     idempotency_key varchar(128) NOT NULL,
-    command_type varchar(16) NOT NULL CHECK (command_type = 'ACTIVATE'),
+    command_type varchar(16) NOT NULL CHECK (command_type IN ('ACTIVATE','REPLACE')),
     request_hash varchar(64) NOT NULL,
     support_plan_id uuid NOT NULL,
     expected_version bigint NOT NULL,
@@ -558,9 +582,15 @@ CREATE TABLE care.support_plan_command (
     entitlement_decided_at timestamptz NOT NULL,
     resource_policy_version varchar(64) NOT NULL,
     resources_resolved_at timestamptz NOT NULL,
+    source_support_plan_id uuid,
+    source_support_plan_version bigint,
+    reassessment_summary_id uuid,
+    replacement_review_outcome varchar(64),
     created_at timestamptz NOT NULL,
     PRIMARY KEY (user_id, idempotency_key),
     FOREIGN KEY (support_plan_id, user_id)
+        REFERENCES care.support_plan(id, user_id),
+    FOREIGN KEY (source_support_plan_id, user_id)
         REFERENCES care.support_plan(id, user_id)
 );
 
@@ -690,6 +720,7 @@ CREATE TABLE care.reassessment_summary (
     snapshot jsonb NOT NULL,
     composed_at timestamptz NOT NULL,
     UNIQUE (user_id, idempotency_key),
+    UNIQUE (id, user_id),
     CHECK (summary_version IN ('reassessment-summary-v1', 'reassessment-summary-v2')),
     CHECK (
         (summary_version = 'reassessment-summary-v1'
@@ -704,6 +735,10 @@ CREATE TABLE care.reassessment_summary (
         AND previous_period_end - previous_period_start BETWEEN interval '7 days' AND interval '31 days'
     )
 );
+
+ALTER TABLE care.support_plan_command
+    ADD FOREIGN KEY (reassessment_summary_id, user_id)
+        REFERENCES care.reassessment_summary(id, user_id);
 
 /* ========================================================================== */
 /* ACTIVE — consultation-service / mentalbridge_consultation                  */
