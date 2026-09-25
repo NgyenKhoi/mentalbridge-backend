@@ -50,10 +50,10 @@ delivery, or SupportPlan state.
 
 - [x] CON-01 Retain the historical ADR 0014 rationale and adopt ADR 0017's
   chat/video, evidence, summary reuse, and PlanChangeRequest target rules.
-- [~] CON-02 Specialist approval, MB-362 availability, and MB-377 credit balance are implemented; discovery, payment, appointment, earnings/payout, dashboard and review remain.
+- [~] CON-02 Specialist approval and MB-360 exception lifecycle, MB-362 availability, MB-377 credit balance, and MB-378 appointment requests are implemented; discovery, appointment decisions, payment, earnings/payout, dashboard and review remain.
 - [ ] CON-03 Define subscription/appointment/earning/review/moderation event schemas and required Care/Journal/Realtime consumer contracts.
-- [~] CON-04 Story 6101 adds profile/approval persistence, MB-362 adds availability constraints, and MB-377 adds credit periods/rows/ledger; other Consultation aggregates remain pending.
-- [~] CON-05 Story 6101 implements save, submit, pending-admin queue/detail, and approve without document upload and with admin audit. Rejection/suspension/restoration remains Story 6102.
+- [~] CON-04 Story 6101 adds profile/approval persistence, MB-362 adds availability constraints, MB-377 adds credit periods/rows/ledger, MB-378 adds appointment requests, and MB-360 adds suspension-cancellation history; other Consultation aggregates remain pending.
+- [x] CON-05 Story 6101 implements save, submit, pending-admin queue/detail, and approve without document upload; MB-360/Story 6102 adds audited rejection, same-profile resubmission, suspension side effects, and restoration.
 - [ ] CON-06 Implement discovery/matching with versioned explainable provenance.
 - [ ] CON-07 Implement VND/MoMo purchase/upgrade, `consultation-credit-v2`
   `0/4/10` no-rollover periods, `0/2/4` reservation caps, chat/video channel

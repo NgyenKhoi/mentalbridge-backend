@@ -20,6 +20,7 @@ import com.mentalbridge.consultation.credits.ServiceCreditService;
 import com.mentalbridge.consultation.entitlement.CurrentServiceEntitlementService;
 import com.mentalbridge.consultation.entitlement.ServicePackage;
 import com.mentalbridge.consultation.shared.ApiException;
+import com.mentalbridge.consultation.specialist.SpecialistProfileService;
 
 @Service
 public class AppointmentService {
@@ -32,14 +33,17 @@ public class AppointmentService {
 	private final JdbcClient jdbc;
 	private final CurrentServiceEntitlementService entitlements;
 	private final ServiceCreditService credits;
+	private final SpecialistProfileService profiles;
 	private final AvailabilityProperties availability;
 	private final Clock clock;
 
 	public AppointmentService(JdbcClient jdbc, CurrentServiceEntitlementService entitlements,
-			ServiceCreditService credits, AvailabilityProperties availability, Clock clock) {
+			ServiceCreditService credits, SpecialistProfileService profiles,
+			AvailabilityProperties availability, Clock clock) {
 		this.jdbc = jdbc;
 		this.entitlements = entitlements;
 		this.credits = credits;
+		this.profiles = profiles;
 		this.availability = availability;
 		this.clock = clock;
 	}
@@ -61,7 +65,9 @@ public class AppointmentService {
 					"A PLUS or PREMIUM package is required to request an appointment");
 		}
 		credits.current(userId);
-		var slot = lockSlot(slotId);
+		var specialistId = specialistForSlot(slotId);
+		profiles.requireApprovedForBooking(specialistId);
+		var slot = lockSlot(slotId, specialistId);
 		if (!slot.status().equals("ACTIVE")) throw conflict("APPOINTMENT_SLOT_STALE", "The slot is no longer selectable");
 		if (slot.modality() != requestedModality) throw conflict("APPOINTMENT_MODALITY_MISMATCH", "The requested modality does not match the slot");
 		if (requestedModality == AppointmentModality.IN_APP_VIDEO && !availability.videoEnabled()) {
@@ -135,11 +141,17 @@ public class AppointmentService {
 		return new AppointmentResponse.BookableSlotList(items, items.size(), now, availability.videoEnabled());
 	}
 
-	private Slot lockSlot(UUID slotId) {
+	private UUID specialistForSlot(UUID slotId) {
+		return jdbc.sql("select specialist_account_id from availability_slot where id=:slotId")
+				.param("slotId", slotId).query(UUID.class).optional()
+				.orElseThrow(() -> new ApiException(HttpStatus.NOT_FOUND, "APPOINTMENT_SLOT_NOT_FOUND", "The slot was not found"));
+	}
+
+	private Slot lockSlot(UUID slotId, UUID specialistId) {
 		return jdbc.sql("""
 				select specialist_account_id, start_at, end_at, timezone, modality, status
-				from availability_slot where id=:slotId for update
-				""").param("slotId", slotId).query((row, ignored) -> new Slot(
+				from availability_slot where id=:slotId and specialist_account_id=:specialistId for update
+				""").param("slotId", slotId).param("specialistId", specialistId).query((row, ignored) -> new Slot(
 				row.getObject("specialist_account_id", UUID.class), row.getTimestamp("start_at").toInstant(),
 				row.getTimestamp("end_at").toInstant(), row.getString("timezone"),
 				AppointmentModality.valueOf(row.getString("modality")), row.getString("status"))).optional()

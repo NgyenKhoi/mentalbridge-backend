@@ -21,7 +21,8 @@ class SpecialistProfileStatusHistoryEntity {
 	private UUID actorAccountId;
 	@Enumerated(EnumType.STRING)
 	private ActorRole actorRole;
-	private String reasonCode;
+	@Enumerated(EnumType.STRING)
+	private SpecialistDecisionReasonCode reasonCode;
 	private Instant occurredAt;
 
 	protected SpecialistProfileStatusHistoryEntity() {
@@ -29,11 +30,17 @@ class SpecialistProfileStatusHistoryEntity {
 
 	SpecialistProfileStatusHistoryEntity(UUID specialistAccountId, SpecialistApprovalStatus approvalStatus,
 			UUID actorAccountId, ActorRole actorRole, Instant occurredAt) {
+		this(specialistAccountId, approvalStatus, actorAccountId, actorRole, null, occurredAt);
+	}
+
+	SpecialistProfileStatusHistoryEntity(UUID specialistAccountId, SpecialistApprovalStatus approvalStatus,
+			UUID actorAccountId, ActorRole actorRole, SpecialistDecisionReasonCode reasonCode, Instant occurredAt) {
 		this.id = UUID.randomUUID();
 		this.specialistAccountId = specialistAccountId;
 		this.approvalStatus = approvalStatus;
 		this.actorAccountId = actorAccountId;
 		this.actorRole = actorRole;
+		this.reasonCode = reasonCode;
 		this.occurredAt = occurredAt;
 	}
 

@@ -34,7 +34,8 @@ class SpecialistProfileEntity {
 	private Instant submittedAt;
 	private Instant reviewedAt;
 	private UUID reviewedBy;
-	private String decisionReasonCode;
+	@Enumerated(EnumType.STRING)
+	private SpecialistDecisionReasonCode decisionReasonCode;
 	private Instant createdAt;
 	private Instant updatedAt;
 	@Version
@@ -65,7 +66,7 @@ class SpecialistProfileEntity {
 
 	void updateDraft(SpecialistProfileService.ProfileCommand command, Instant now) {
 		applyDraft(command, now);
-		this.submittedAt = null;
+		if (approvalStatus == SpecialistApprovalStatus.PENDING) this.submittedAt = null;
 	}
 
 	void submit(Instant now) {
@@ -76,6 +77,39 @@ class SpecialistProfileEntity {
 	}
 
 	void approve(UUID adminAccountId, Instant now) {
+		this.approvalStatus = SpecialistApprovalStatus.APPROVED;
+		this.reviewedAt = now;
+		this.reviewedBy = adminAccountId;
+		this.decisionReasonCode = null;
+		this.updatedAt = now;
+	}
+
+	void reject(UUID adminAccountId, SpecialistDecisionReasonCode reasonCode, Instant now) {
+		this.approvalStatus = SpecialistApprovalStatus.REJECTED;
+		this.reviewedAt = now;
+		this.reviewedBy = adminAccountId;
+		this.decisionReasonCode = reasonCode;
+		this.updatedAt = now;
+	}
+
+	void resubmit(Instant now) {
+		this.approvalStatus = SpecialistApprovalStatus.PENDING;
+		this.submittedAt = now;
+		this.reviewedAt = null;
+		this.reviewedBy = null;
+		this.decisionReasonCode = null;
+		this.updatedAt = now;
+	}
+
+	void suspend(UUID adminAccountId, SpecialistDecisionReasonCode reasonCode, Instant now) {
+		this.approvalStatus = SpecialistApprovalStatus.SUSPENDED;
+		this.reviewedAt = now;
+		this.reviewedBy = adminAccountId;
+		this.decisionReasonCode = reasonCode;
+		this.updatedAt = now;
+	}
+
+	void restore(UUID adminAccountId, Instant now) {
 		this.approvalStatus = SpecialistApprovalStatus.APPROVED;
 		this.reviewedAt = now;
 		this.reviewedBy = adminAccountId;
@@ -104,7 +138,7 @@ class SpecialistProfileEntity {
 	Instant submittedAt() { return submittedAt; }
 	Instant reviewedAt() { return reviewedAt; }
 	UUID reviewedBy() { return reviewedBy; }
-	String decisionReasonCode() { return decisionReasonCode; }
+	SpecialistDecisionReasonCode decisionReasonCode() { return decisionReasonCode; }
 	Instant createdAt() { return createdAt; }
 	Instant updatedAt() { return updatedAt; }
 	long version() { return version; }
