@@ -138,7 +138,7 @@ public class AppointmentService {
 				from availability_slot s join specialist_profile p on p.account_id=s.specialist_account_id
 				where s.status='ACTIVE' and p.approval_status='APPROVED'
 				and s.start_at>=:from and s.start_at<:to
-				and not exists (select 1 from appointment a where a.availability_slot_id=s.id and a.status in ('REQUESTED','CONFIRMED'))
+				and not exists (select 1 from appointment a where a.availability_slot_id=s.id and a.status in ('REQUESTED','CONFIRMED','IN_PROGRESS'))
 				and (s.modality<>'IN_APP_VIDEO' or :videoEnabled)
 				order by s.start_at, s.id limit 200
 				""").param("from", database(lower)).param("to", database(upper))
@@ -193,7 +193,7 @@ public class AppointmentService {
 	}
 
 	private boolean activeAppointmentExists(UUID slotId) {
-		return jdbc.sql("select exists(select 1 from appointment where availability_slot_id=:slotId and status in ('REQUESTED','CONFIRMED'))")
+		return jdbc.sql("select exists(select 1 from appointment where availability_slot_id=:slotId and status in ('REQUESTED','CONFIRMED','IN_PROGRESS'))")
 				.param("slotId", slotId).query(Boolean.class).single();
 	}
 

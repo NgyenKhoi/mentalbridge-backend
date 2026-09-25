@@ -155,6 +155,27 @@ class AppointmentRequestIntegrationTests extends ConsultationTestProperties {
 	}
 
 	@Test
+	void inProgressAppointmentCountsTowardThePlusReservationCap() throws Exception {
+		var userId = paidUser("PLUS");
+		var inProgress = request(userId, chatSlot(Instant.now().plusSeconds(86_400)),
+				"in-progress-first-0001", null);
+		var inProgressId = UUID.fromString(json.readTree(inProgress.getResponse().getContentAsByteArray()).get("id").asText());
+		jdbc.sql("update appointment set status='IN_PROGRESS', updated_at=now() where id=:id")
+				.param("id", inProgressId).update();
+		request(userId, chatSlot(Instant.now().plusSeconds(90_000)), "in-progress-second-001", null);
+
+		mvc.perform(get("/api/v1/service-credits").with(user(userId))).andExpect(status().isOk())
+				.andExpect(jsonPath("$.reservationCapacity.active").value(2))
+				.andExpect(jsonPath("$.reservationCapacity.maximum").value(2))
+				.andExpect(jsonPath("$.reservationCapacity.remaining").value(0));
+		mvc.perform(post("/api/v1/appointments").with(user(userId))
+				.header("Idempotency-Key", "in-progress-third-0001").contentType(MediaType.APPLICATION_JSON)
+				.content(body(chatSlot(Instant.now().plusSeconds(93_600)), "IN_APP_CHAT")))
+				.andExpect(status().isConflict())
+				.andExpect(jsonPath("$.code").value("APPOINTMENT_RESERVATION_LIMIT_REACHED"));
+	}
+
+	@Test
 	void rescheduleAtCapAtomicallyReusesTheHeldCreditAndPreservesTheOldSnapshot() throws Exception {
 		var userId = paidUser("PLUS");
 		var first = request(userId, chatSlot(Instant.now().plusSeconds(86_400)), "reschedule-first-00001", null);

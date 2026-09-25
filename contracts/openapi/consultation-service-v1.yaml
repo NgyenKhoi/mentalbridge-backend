@@ -623,7 +623,7 @@ components:
         slotId: { type: string, format: uuid }
         specialistAccountId: { type: string, format: uuid }
         specialistDisplayName: { type: string, minLength: 1, maxLength: 120 }
-        status: { type: string, enum: [REQUESTED, CONFIRMED, REJECTED, EXPIRED, CANCELLED] }
+        status: { type: string, enum: [REQUESTED, CONFIRMED, IN_PROGRESS, REJECTED, EXPIRED, CANCELLED] }
         modality: { $ref: '#/components/schemas/AppointmentModality' }
         scheduledStartAt: { type: string, format: date-time }
         scheduledEndAt: { type: string, format: date-time }

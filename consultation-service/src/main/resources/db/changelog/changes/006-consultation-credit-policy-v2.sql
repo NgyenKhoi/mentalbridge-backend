@@ -25,8 +25,21 @@ alter table service_credit
 
 alter table appointment
     add column replaces_appointment_id uuid references appointment(id),
+    drop constraint ck_appointment_status,
+    add constraint ck_appointment_status
+        check (status in ('REQUESTED', 'CONFIRMED', 'IN_PROGRESS', 'REJECTED', 'EXPIRED', 'CANCELLED')),
     add constraint ck_appointment_not_self_replacement
         check (replaces_appointment_id is null or replaces_appointment_id <> id);
+
+drop index uq_appointment_active_slot;
+create unique index uq_appointment_active_slot
+    on appointment (availability_slot_id)
+    where status in ('REQUESTED', 'CONFIRMED', 'IN_PROGRESS');
+
+drop index uq_appointment_active_credit;
+create unique index uq_appointment_active_credit
+    on appointment (service_credit_id)
+    where status in ('REQUESTED', 'CONFIRMED', 'IN_PROGRESS');
 
 create unique index uq_appointment_replacement
     on appointment (replaces_appointment_id)

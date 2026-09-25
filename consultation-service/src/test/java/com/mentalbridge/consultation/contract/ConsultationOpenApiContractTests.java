@@ -94,6 +94,10 @@ class ConsultationOpenApiContractTests {
 		assertThat(request.getRequired()).containsExactlyInAnyOrder("slotId", "modality");
 		assertThat(appointment.getProperties()).containsKeys("status", "decisionDeadlineAt", "heldCreditId",
 				"replacesAppointmentId");
+		var statuses = ((Schema<?>) appointment.getProperties().get("status")).getEnum().stream()
+				.map(String::valueOf).toList();
+		assertThat(statuses).containsExactly("REQUESTED", "CONFIRMED", "IN_PROGRESS", "REJECTED", "EXPIRED",
+				"CANCELLED");
 		assertThat(appointment.getRequired()).contains("replacesAppointmentId");
 		assertThat(appointment.getProperties()).doesNotContainKeys("practiceLocationId", "phone", "meetingLink", "url");
 	}

@@ -905,7 +905,7 @@ Implemented MB-378/MB-558 request aggregate. One row is the immutable scheduling
 | `specialist_account_id` | Approved specialist snapshotted from the selected slot. |
 | `availability_slot_id` | Exact published 60-minute slot; a partial unique index permits at most one active request/confirmation. |
 | `service_credit_id` | Earliest-expiring available credit that covers the appointment start; unique while the appointment is active. |
-| `status` | Initial `REQUESTED`; later decision stories may move it to `CONFIRMED`, `REJECTED`, `EXPIRED`, or `CANCELLED`. |
+| `status` | Initial `REQUESTED`; active reservations are `REQUESTED`, `CONFIRMED`, or `IN_PROGRESS`; terminal decision stories may move it to `REJECTED`, `EXPIRED`, or `CANCELLED`. |
 | `modality` | `IN_APP_CHAT` or `IN_APP_VIDEO`; physical, phone, and external-link modes are not accepted. |
 | `scheduled_start_at` / `scheduled_end_at` | Immutable exact UTC interval copied from availability and constrained to 60 minutes. |
 | `display_timezone` | IANA timezone copied from the slot for stable user display. |
