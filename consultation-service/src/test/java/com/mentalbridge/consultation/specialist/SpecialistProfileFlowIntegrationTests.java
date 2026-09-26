@@ -312,11 +312,11 @@ class SpecialistProfileFlowIntegrationTests extends ConsultationTestProperties {
 				    id, availability_slot_id, service_credit_id, user_account_id,
 				    specialist_account_id, status, modality, scheduled_start_at,
 				    scheduled_end_at, display_timezone, decision_deadline_at,
-				    idempotency_key, requested_at,
+				    idempotency_key, requested_at, decided_at, decision_reason,
 				    created_at, updated_at
 				) values (:id, :slotId, :creditId, :userId, :specialistId, 'CONFIRMED',
 				    'IN_APP_CHAT', :start, :end, 'Asia/Ho_Chi_Minh', :deadline,
-				    'suspension-appointment-request', :requestedAt, :now, :now)
+				    'suspension-appointment-request', :requestedAt, :now, 'SPECIALIST_ACCEPTED', :now, :now)
 				""").param("id", appointmentId).param("slotId", slotId).param("creditId", creditId)
 				.param("userId", userId).param("specialistId", specialistId).param("start", start)
 				.param("end", start.plusHours(1)).param("deadline", start.minusHours(2))

@@ -7,7 +7,7 @@ import java.util.UUID;
 public record AppointmentResponse(UUID id, UUID slotId, UUID specialistAccountId, String specialistDisplayName,
 		String status, AppointmentModality modality, Instant scheduledStartAt, Instant scheduledEndAt,
 		String timezone, Instant requestedAt, Instant decisionDeadlineAt, UUID heldCreditId,
-		UUID replacesAppointmentId) {
+		UUID replacesAppointmentId, Instant decidedAt, String decisionReason, String creditState, long version) {
 
 	public record ListResponse(List<AppointmentResponse> items, int count, Instant generatedAt) {
 	}

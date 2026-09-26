@@ -160,7 +160,10 @@ class AppointmentRequestIntegrationTests extends ConsultationTestProperties {
 		var inProgress = request(userId, chatSlot(Instant.now().plusSeconds(86_400)),
 				"in-progress-first-0001", null);
 		var inProgressId = UUID.fromString(json.readTree(inProgress.getResponse().getContentAsByteArray()).get("id").asText());
-		jdbc.sql("update appointment set status='IN_PROGRESS', updated_at=now() where id=:id")
+		jdbc.sql("""
+				update appointment set status='IN_PROGRESS', decided_at=now(),
+				decision_reason='SPECIALIST_ACCEPTED', updated_at=now() where id=:id
+				""")
 				.param("id", inProgressId).update();
 		request(userId, chatSlot(Instant.now().plusSeconds(90_000)), "in-progress-second-001", null);
 

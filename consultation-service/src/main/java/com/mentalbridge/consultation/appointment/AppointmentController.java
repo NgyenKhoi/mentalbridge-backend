@@ -50,7 +50,8 @@ public class AppointmentController {
 			@Pattern(regexp = "^[!-~]+$") String idempotencyKey, @Valid @RequestBody RequestAppointment body) {
 		var result = appointments.request(RequestIdentity.subject(jwt), idempotencyKey, body.slotId(), body.modality(),
 				body.replacesAppointmentId());
-		return ResponseEntity.created(URI.create("/api/v1/appointments/" + result.id())).body(result);
+		return ResponseEntity.created(URI.create("/api/v1/appointments/" + result.id()))
+				.eTag(Long.toString(result.version())).body(result);
 	}
 
 	private Instant parse(String value) {
