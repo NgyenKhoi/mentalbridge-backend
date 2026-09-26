@@ -13,6 +13,8 @@ import java.util.UUID;
 import java.util.function.Predicate;
 import java.util.function.Supplier;
 
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
 import org.springframework.stereotype.Component;
 
 import com.mentalbridge.care.configuration.ResourceEligibilityClientProperties;
@@ -37,6 +39,7 @@ import io.github.resilience4j.retry.RetryConfig;
 public class ResourceEligibilityClient {
 
 	private static final String POLICY_VERSION = "content-eligibility-v1";
+	private static final Logger LOGGER = LoggerFactory.getLogger(ResourceEligibilityClient.class);
 
 	private final ContentResourceEligibilityHttpClient httpClient;
 	private final Clock clock;
@@ -76,6 +79,8 @@ public class ResourceEligibilityClient {
 			return Retry.decorateSupplier(retry, remote).get();
 		}
 		catch (RuntimeException exception) {
+			LOGGER.warn("content_resource_eligibility_failed correlationId={} category={} httpStatus={}",
+					correlationId, failureCategory(exception), httpStatus(exception));
 			return unavailable(request.requests());
 		}
 	}
@@ -183,6 +188,20 @@ public class ResourceEligibilityClient {
 
 	private static boolean countsForCircuit(Throwable error) {
 		return error instanceof MalformedEligibilityResponseException || isTransientFailure(error);
+	}
+
+	static String failureCategory(Throwable error) {
+		if (error instanceof FeignException exception) {
+			if (exception.status() == 401) return "AUTHENTICATION_REJECTED";
+			if (exception.status() == 403) return "AUTHORIZATION_REJECTED";
+			if (exception.status() >= 400 && exception.status() < 500) return "CLIENT_REQUEST_REJECTED";
+		}
+		if (error instanceof MalformedEligibilityResponseException) return "INVALID_PROVIDER_RESPONSE";
+		return "DEPENDENCY_UNAVAILABLE";
+	}
+
+	private static Integer httpStatus(Throwable error) {
+		return error instanceof FeignException exception ? exception.status() : null;
 	}
 
 	private static boolean hasCause(Throwable error, Class<? extends Throwable> type) {
