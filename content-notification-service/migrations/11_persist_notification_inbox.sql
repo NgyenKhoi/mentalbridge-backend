@@ -76,8 +76,8 @@ ALTER TABLE notification
       OR (action_type = 'OPEN_RESOURCE' AND action_target_id IS NOT NULL)
     );
 
-CREATE UNIQUE INDEX uq_notification_source_identity
-  ON notification (source, source_identity);
+CREATE UNIQUE INDEX uq_notification_recipient_source_identity
+  ON notification (recipient_id, source, source_identity);
 
 CREATE INDEX ix_notification_recipient_inbox
   ON notification (recipient_id, created_at DESC, id DESC)

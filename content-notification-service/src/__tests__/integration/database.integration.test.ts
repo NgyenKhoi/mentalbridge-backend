@@ -523,7 +523,7 @@ describe('Database Integration', () => {
       expect(rows).toHaveLength(1);
     });
 
-    it('deduplicates identical producer retries and rejects changed reuse', async () => {
+    it('deduplicates per recipient while allowing one source event to fan out', async () => {
       const database = {
         query: (text: string, parameters?: unknown[]) => pool.query(text, parameters),
         withTransaction: async <T>(operation: (client: Pool) => Promise<T>) => operation(pool),
@@ -549,6 +549,15 @@ describe('Database Integration', () => {
       expect(retry.id).toBe(first.id);
       expect(retry.action?.href).toBe('/resources/11000000-0000-4000-8000-000000000002');
 
+      const secondOwnerCommand = {
+        ...command,
+        ownerId: '11000000-0000-4000-8000-000000000003',
+      };
+      const secondOwner = await service.create(secondOwnerCommand);
+      const secondOwnerRetry = await service.create(secondOwnerCommand);
+      expect(secondOwner.id).not.toBe(first.id);
+      expect(secondOwnerRetry.id).toBe(secondOwner.id);
+
       await expect(service.create({ ...command, title: 'Changed retry' })).rejects.toBeInstanceOf(
         NotificationDedupeConflictError,
       );
@@ -557,7 +566,7 @@ describe('Database Integration', () => {
          WHERE source = 'CONTENT' AND source_identity = $1`,
         [command.sourceIdentity],
       );
-      expect(count.rows[0].count).toBe('1');
+      expect(count.rows[0].count).toBe('2');
     });
 
     it('paginates newest first with an opaque cursor and isolates owners', async () => {

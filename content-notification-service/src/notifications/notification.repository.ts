@@ -89,7 +89,7 @@ export class NotificationRepository {
          (recipient_id, category, title, body, action_type, action_target_id, priority,
           expires_at, occurred_at, source, source_identity, request_fingerprint)
        VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12)
-       ON CONFLICT (source, source_identity) DO NOTHING
+       ON CONFLICT (recipient_id, source, source_identity) DO NOTHING
        RETURNING ${COLUMNS}`,
       [
         command.ownerId,
@@ -109,8 +109,10 @@ export class NotificationRepository {
     if (inserted.rows[0]) return toNotificationItem(inserted.rows[0]);
 
     const existing = await this.db.query<NotificationRow>(
-      `SELECT ${COLUMNS} FROM notification WHERE source = $1 AND source_identity = $2`,
-      [command.source, command.sourceIdentity],
+      `SELECT ${COLUMNS}
+       FROM notification
+       WHERE recipient_id = $1 AND source = $2 AND source_identity = $3`,
+      [command.ownerId, command.source, command.sourceIdentity],
     );
     if (!existing.rows[0] || existing.rows[0].request_fingerprint !== fingerprint) {
       throw new NotificationDedupeConflictError();

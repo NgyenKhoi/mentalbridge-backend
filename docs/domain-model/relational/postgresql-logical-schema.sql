@@ -958,7 +958,7 @@ CREATE TABLE content.notification (
     request_fingerprint char(64) NOT NULL,
     delivery_state varchar(16) NOT NULL,
     version bigint NOT NULL,
-    UNIQUE (source, source_identity)
+    UNIQUE (recipient_id, source, source_identity)
 );
 
 CREATE TABLE content.resource_idempotency_record (

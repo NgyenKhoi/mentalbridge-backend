@@ -104,7 +104,7 @@ channel/category matrix into one atomic owner aggregate while preserving any
 existing owner choices.
 
 Migration `11_persist_notification_inbox.sql` completes the durable inbox
-aggregate with source deduplication, occurred time, approved internal actions,
+aggregate with per-recipient source deduplication, occurred time, approved internal actions,
 delivery state, optimistic lifecycle versioning, and a maximum 90-day retention
 deadline. Inbox reads tombstone expired rows before returning active items.
 

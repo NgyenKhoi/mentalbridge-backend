@@ -1469,7 +1469,7 @@ Durable in-app notification and safe delivery payload owned by Content/Notificat
 | `created_at` | Immutable UTC creation instant used for cursor ordering. |
 | `deleted_at` | UTC user/policy tombstone instant; null while visible in history. |
 | `source` | Stable bounded producer namespace such as `CONTENT` or `REALTIME`; it carries no provider payload or user-authored text. |
-| `source_identity` | Stable producer-owned event identity used with `source` to collapse duplicate delivery retries. |
+| `source_identity` | Stable producer-owned event identity used with `recipient_id` and `source` to collapse retries for one recipient while allowing legitimate fan-out of the same source event to other recipients. |
 | `request_fingerprint` | SHA-256 of the validated minimized create command; changed reuse of a dedupe identity is rejected instead of overwriting the original notification. |
 | `delivery_state` | Durable delivery lifecycle (`PENDING`, `DELIVERED`, `FAILED`, or `CANCELLED`); only `DELIVERED` records appear in the inbox. |
 | `version` | Monotonic mutation counter incremented for the first read or tombstone transition. |

@@ -11,8 +11,10 @@ lifecycle operations.
 The aggregate supports reminder, message, appointment, system/resource,
 assessment/reassessment, and streak/milestone kinds. Producers supply only a
 closed action enum and optional UUID target; the service derives the relative
-route and never stores an arbitrary external URL. `(source, source_identity)`
-is unique and a request fingerprint rejects changed retry payloads.
+route and never stores an arbitrary external URL.
+`(recipient_id, source, source_identity)` is unique so one source event can fan
+out to multiple recipients, while a request fingerprint rejects changed retry
+payloads for the same recipient.
 
 ## Privacy and retention
 
