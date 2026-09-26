@@ -172,6 +172,8 @@ export interface ProviderReply {
   outputTokens: number;
 }
 
+const companionMaxOutputTokens = 2_000;
+
 const providerOutputJsonSchema = {
   type: "object",
   additionalProperties: false,
@@ -984,7 +986,7 @@ export class RoutedChatProvider implements ChatProvider {
                 responseMimeType: "application/json",
                 responseJsonSchema: providerOutputJsonSchema,
                 temperature: 0.2,
-                maxOutputTokens: 300,
+                maxOutputTokens: companionMaxOutputTokens,
               },
             }),
             signal: AbortSignal.timeout(this.configuration.PROVIDER_TIMEOUT_MS),
@@ -1004,7 +1006,7 @@ export class RoutedChatProvider implements ChatProvider {
               store: false,
               instructions: system,
               input: userMessage,
-              max_output_tokens: 300,
+              max_output_tokens: companionMaxOutputTokens,
               text: {
                 format: {
                   type: "json_schema",

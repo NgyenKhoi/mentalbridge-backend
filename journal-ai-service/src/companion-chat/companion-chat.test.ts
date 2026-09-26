@@ -638,10 +638,13 @@ void test("requests strict structured output from Gemini and OpenAI", async () =
     const geminiGeneration = requestBodies[0]?.generationConfig as {
       responseMimeType?: unknown;
       responseJsonSchema?: unknown;
+      maxOutputTokens?: unknown;
     };
     assert.equal(geminiGeneration.responseMimeType, "application/json");
     assert.ok(geminiGeneration.responseJsonSchema);
+    assert.equal(geminiGeneration.maxOutputTokens, 2_000);
     assert.equal(requestBodies[1]?.store, false);
+    assert.equal(requestBodies[1].max_output_tokens, 2_000);
     assert.equal(
       (
         requestBodies[1].text as {
