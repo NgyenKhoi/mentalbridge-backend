@@ -949,9 +949,16 @@ CREATE TABLE content.notification (
     action_target_id uuid,
     priority varchar(16) NOT NULL,
     read_at timestamptz,
-    expires_at timestamptz,
+    expires_at timestamptz NOT NULL,
+    occurred_at timestamptz NOT NULL,
     created_at timestamptz NOT NULL,
-    deleted_at timestamptz
+    deleted_at timestamptz,
+    source varchar(64) NOT NULL,
+    source_identity varchar(160) NOT NULL,
+    request_fingerprint char(64) NOT NULL,
+    delivery_state varchar(16) NOT NULL,
+    version bigint NOT NULL,
+    UNIQUE (source, source_identity)
 );
 
 CREATE TABLE content.resource_idempotency_record (

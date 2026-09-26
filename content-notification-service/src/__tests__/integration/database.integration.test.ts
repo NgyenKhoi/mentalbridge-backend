@@ -9,6 +9,11 @@ import {
   NotificationPreferenceRepository,
   NotificationPreferenceVersionMismatchError,
 } from '../../notification-preferences/notification-preference.repository.js';
+import {
+  NotificationDedupeConflictError,
+  NotificationRepository,
+} from '../../notifications/notification.repository.js';
+import { NotificationService } from '../../notifications/notification.service.js';
 
 const __dirname = dirname(fileURLToPath(import.meta.url));
 
@@ -59,6 +64,7 @@ describe('Database Integration', () => {
       '8_add_safety_directory_area_alias.sql',
       '9_add_resource_source_provenance.sql',
       '10_persist_notification_preferences.sql',
+      '11_persist_notification_inbox.sql',
     ]) {
       if (migration === '10_persist_notification_preferences.sql') {
         await pool.query(
@@ -71,6 +77,13 @@ describe('Database Integration', () => {
                '{"enabled":true,"start":"21:30","end":"06:15","timeZone":"Europe/Paris"}'),
              ('90000000-0000-4000-8000-000000000001', 'PUSH', 'SYSTEM', false,
                '{"enabled":true,"start":"21:30","end":"06:15","timeZone":"Europe/Paris"}')`,
+        );
+      }
+      if (migration === '11_persist_notification_inbox.sql') {
+        await pool.query(
+          `INSERT INTO notification (recipient_id, category, title, body)
+           VALUES ('90000000-0000-4000-8000-000000000002', 'SAFETY',
+             'Legacy safety copy', 'Legacy record must not become active')`,
         );
       }
       const sql = readFileSync(join(__dirname, '../../../migrations', migration), 'utf8');
@@ -469,11 +482,36 @@ describe('Database Integration', () => {
   });
 
   describe('notification table', () => {
+    it('migrates legacy rows without activating old safety notifications', async () => {
+      const { rows } = await pool.query<{
+        occurred_at: Date;
+        delivery_state: string;
+        expires_at: Date;
+      }>(
+        `SELECT occurred_at, delivery_state, expires_at
+         FROM notification
+         WHERE recipient_id = '90000000-0000-4000-8000-000000000002'`,
+      );
+      expect(rows[0].occurred_at).toBeInstanceOf(Date);
+      expect(rows[0].expires_at).toBeInstanceOf(Date);
+      expect(rows[0].delivery_state).toBe('CANCELLED');
+    });
+
     it('rejects invalid priority', async () => {
       await expect(
         pool.query(
-          'INSERT INTO notification (recipient_id, category, title, body, priority) VALUES ($1,$2,$3,$4,$5)',
-          ['a0eebc99-9c0b-4ef8-bb6d-6bb9bd380a11', 'ASSESSMENT', 'T', 'B', 'CRITICAL'],
+          `INSERT INTO notification
+             (recipient_id, category, title, body, priority, occurred_at, expires_at,
+              source, source_identity, request_fingerprint)
+           VALUES ($1,$2,$3,$4,$5,now(),now() + interval '30 days','TEST','priority:invalid',$6)`,
+          [
+            'a0eebc99-9c0b-4ef8-bb6d-6bb9bd380a11',
+            'ASSESSMENT',
+            'T',
+            'B',
+            'CRITICAL',
+            'c'.repeat(64),
+          ],
         ),
       ).rejects.toThrow(/violates check constraint/);
     });
@@ -483,6 +521,132 @@ describe('Database Integration', () => {
         `SELECT indexname FROM pg_indexes WHERE tablename='notification' AND indexname='ix_notification_recipient_unread'`,
       );
       expect(rows).toHaveLength(1);
+    });
+
+    it('deduplicates identical producer retries and rejects changed reuse', async () => {
+      const database = {
+        query: (text: string, parameters?: unknown[]) => pool.query(text, parameters),
+        withTransaction: async <T>(operation: (client: Pool) => Promise<T>) => operation(pool),
+      } as unknown as DatabaseService;
+      const repository = new NotificationRepository(database);
+      const service = new NotificationService(repository);
+      const command = {
+        ownerId: '11000000-0000-4000-8000-000000000001',
+        kind: 'SYSTEM_RESOURCE',
+        title: 'Tài nguyên mới',
+        body: 'Một tài nguyên đã được cập nhật.',
+        occurredAt: new Date().toISOString(),
+        action: {
+          type: 'OPEN_RESOURCE',
+          targetId: '11000000-0000-4000-8000-000000000002',
+        },
+        source: 'CONTENT',
+        sourceIdentity: 'resource:11000000-0000-4000-8000-000000000002:0',
+        priority: 'NORMAL',
+      };
+
+      const [first, retry] = await Promise.all([service.create(command), service.create(command)]);
+      expect(retry.id).toBe(first.id);
+      expect(retry.action?.href).toBe('/resources/11000000-0000-4000-8000-000000000002');
+
+      await expect(service.create({ ...command, title: 'Changed retry' })).rejects.toBeInstanceOf(
+        NotificationDedupeConflictError,
+      );
+      const count = await pool.query<{ count: string }>(
+        `SELECT count(*)::text AS count FROM notification
+         WHERE source = 'CONTENT' AND source_identity = $1`,
+        [command.sourceIdentity],
+      );
+      expect(count.rows[0].count).toBe('1');
+    });
+
+    it('paginates newest first with an opaque cursor and isolates owners', async () => {
+      const database = {
+        query: (text: string, parameters?: unknown[]) => pool.query(text, parameters),
+        withTransaction: async <T>(operation: (client: Pool) => Promise<T>) => operation(pool),
+      } as unknown as DatabaseService;
+      const repository = new NotificationRepository(database);
+      const owner = '12000000-0000-4000-8000-000000000001';
+      for (const [index, occurredAt] of [
+        '2026-09-26T01:00:00.000Z',
+        '2026-09-26T02:00:00.000Z',
+        '2026-09-26T03:00:00.000Z',
+      ].entries()) {
+        await pool.query(
+          `INSERT INTO notification
+             (recipient_id, category, title, body, occurred_at, source, source_identity,
+              request_fingerprint, expires_at, created_at)
+           VALUES ($1, 'REMINDER', $2, 'Safe copy', $3, 'TEST', $4, $5,
+             now() + interval '30 days', $3)`,
+          [owner, `Reminder ${index}`, occurredAt, `page:${index}`, `${index}`.padStart(64, '0')],
+        );
+      }
+      await pool.query(
+        `INSERT INTO notification
+           (recipient_id, category, title, body, occurred_at, source, source_identity,
+            request_fingerprint, expires_at)
+         VALUES ('12000000-0000-4000-8000-000000000099', 'MESSAGE', 'Other owner',
+           'Safe copy', now(), 'TEST', 'other-owner', $1, now() + interval '30 days')`,
+        ['f'.repeat(64)],
+      );
+
+      const first = await repository.list(owner, 2, null);
+      expect(first.items.map((item) => item.title)).toEqual(['Reminder 2', 'Reminder 1']);
+      expect(first.hasMore).toBe(true);
+      expect(first.nextCursor).toBeTruthy();
+      expect(first.unreadCount).toBe(3);
+
+      const second = await new NotificationService(repository).list(owner, '2', first.nextCursor!);
+      expect(second.items.map((item) => item.title)).toEqual(['Reminder 0']);
+      expect(second.hasMore).toBe(false);
+    });
+
+    it('keeps one exact read time under races, enforces ownership, and excludes expired/deleted rows', async () => {
+      const database = {
+        query: (text: string, parameters?: unknown[]) => pool.query(text, parameters),
+        withTransaction: async <T>(operation: (client: Pool) => Promise<T>) => operation(pool),
+      } as unknown as DatabaseService;
+      const repository = new NotificationRepository(database);
+      const owner = '13000000-0000-4000-8000-000000000001';
+      const otherOwner = '13000000-0000-4000-8000-000000000002';
+      const active = await pool.query<{ id: string }>(
+        `INSERT INTO notification
+           (recipient_id, category, title, body, occurred_at, source, source_identity,
+            request_fingerprint, expires_at)
+         VALUES ($1, 'MESSAGE', 'New message', 'You have a new message.', now(),
+           'REALTIME', 'message:1', $2, now() + interval '30 days') RETURNING id`,
+        [owner, 'a'.repeat(64)],
+      );
+      await pool.query(
+        `INSERT INTO notification
+           (recipient_id, category, title, body, occurred_at, source, source_identity,
+            request_fingerprint, created_at, expires_at)
+         VALUES ($1, 'REMINDER', 'Expired', 'Old reminder', now() - interval '91 days',
+           'TEST', 'expired:1', $2, now() - interval '91 days', now() - interval '1 day')`,
+        [owner, 'b'.repeat(64)],
+      );
+
+      const [left, right] = await Promise.all([
+        repository.markRead(owner, active.rows[0].id),
+        repository.markRead(owner, active.rows[0].id),
+      ]);
+      expect(left.outcome).toBe('UPDATED');
+      expect(right.outcome).toBe('UPDATED');
+      if (left.outcome === 'UPDATED' && right.outcome === 'UPDATED') {
+        expect(right.item.readAt).toBe(left.item.readAt);
+      }
+      expect((await repository.markRead(otherOwner, active.rows[0].id)).outcome).toBe('NOT_FOUND');
+
+      const page = await repository.list(owner, 20, null);
+      expect(page.items.map((item) => item.title)).toEqual(['New message']);
+      const expired = await pool.query<{ deleted_at: Date | null }>(
+        `SELECT deleted_at FROM notification WHERE source_identity = 'expired:1'`,
+      );
+      expect(expired.rows[0].deleted_at).not.toBeNull();
+
+      expect(await repository.delete(owner, active.rows[0].id)).toBe('DELETED');
+      expect(await repository.delete(owner, active.rows[0].id)).toBe('DELETED');
+      expect((await repository.list(owner, 20, null)).items).toEqual([]);
     });
   });
 });

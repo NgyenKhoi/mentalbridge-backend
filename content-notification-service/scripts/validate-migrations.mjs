@@ -29,6 +29,7 @@ const safetyDirectory = requiredMigration('7_add_safety_directory.sql');
 const safetyDirectoryAreaAlias = requiredMigration('8_add_safety_directory_area_alias.sql');
 const resourceSourceProvenance = requiredMigration('9_add_resource_source_provenance.sql');
 const notificationPreferences = requiredMigration('10_persist_notification_preferences.sql');
+const notificationInbox = requiredMigration('11_persist_notification_inbox.sql');
 const review1Seed = await readFile(
   new URL('../migrations/review1/1_seed_review1_controlled_resource.sql', import.meta.url),
   'utf8',
@@ -149,6 +150,13 @@ assert.match(notificationPreferences, /quiet_hours_start/);
 assert.match(notificationPreferences, /time_zone/);
 assert.match(notificationPreferences, /email_cadence/);
 assert.match(notificationPreferences, /version bigint/);
+assert.match(notificationInbox, /ADD COLUMN occurred_at\b/);
+assert.match(notificationInbox, /ADD COLUMN source_identity\b/);
+assert.match(notificationInbox, /uq_notification_source_identity/);
+assert.match(notificationInbox, /ck_notification_action/);
+assert.match(notificationInbox, /interval '90 days'/);
+assert.match(notificationInbox, /ix_notification_recipient_inbox/);
+assert.match(notificationInbox, /delivery_state = 'CANCELLED'[\s\S]*category = 'SAFETY'/);
 assert.match(safetyDirectoryAreaAliases, /area-alias-ha-noi-canonical/);
 assert.match(safetyDirectoryAreaAliases, /area-alias-da-nang-canonical/);
 assert.match(safetyDirectoryAreaAliases, /area-alias-hcm-canonical/);

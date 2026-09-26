@@ -1460,13 +1460,19 @@ Durable in-app notification and safe delivery payload owned by Content/Notificat
 | `category` | Stable category used for preference, priority, and presentation rules. |
 | `title` | Reviewed/minimized user-visible title safe for the selected channel. |
 | `body` | Reviewed/minimized user-visible body that excludes raw sensitive source content. |
-| `action_type` | Optional stable client action the notification may open. |
-| `action_target_id` | Optional opaque resource UUID resolved through an authorized REST request. |
+| `action_type` | Optional approved internal action enum used to derive a relative client route; arbitrary producer URLs are never stored. |
+| `action_target_id` | Optional opaque resource UUID, required only for `OPEN_RESOURCE` and resolved through an authorized owner request. |
 | `priority` | Delivery/presentation priority, not a clinical severity decision. |
 | `read_at` | UTC instant the recipient marked the in-app notification read; null while unread. |
-| `expires_at` | Optional UTC instant after which the notification should no longer be presented. |
+| `expires_at` | Required UTC inbox-retention deadline, no later than 90 days after creation; expired rows are tombstoned and no longer returned. |
+| `occurred_at` | Authoritative UTC instant of the source event, kept separate from inbox insertion time for delayed delivery. |
 | `created_at` | Immutable UTC creation instant used for cursor ordering. |
 | `deleted_at` | UTC user/policy tombstone instant; null while visible in history. |
+| `source` | Stable bounded producer namespace such as `CONTENT` or `REALTIME`; it carries no provider payload or user-authored text. |
+| `source_identity` | Stable producer-owned event identity used with `source` to collapse duplicate delivery retries. |
+| `request_fingerprint` | SHA-256 of the validated minimized create command; changed reuse of a dedupe identity is rejected instead of overwriting the original notification. |
+| `delivery_state` | Durable delivery lifecycle (`PENDING`, `DELIVERED`, `FAILED`, or `CANCELLED`); only `DELIVERED` records appear in the inbox. |
+| `version` | Monotonic mutation counter incremented for the first read or tombstone transition. |
 
 ## Conceptual owner `ai` (owner-local `public` tables)
 
