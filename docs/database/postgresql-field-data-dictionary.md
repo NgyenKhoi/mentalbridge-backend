@@ -1421,16 +1421,33 @@ The fixed UUID `00000000-0000-4000-8000-000000000101` identifies a visibly label
 
 ### `content.notification_preference`
 
-Per-user channel and category choice controlling optional notification delivery.
+Owner-scoped aggregate containing the shared notification preference contract. A
+single row is updated atomically so channel, content-group, quiet-hour, timezone,
+and email choices cannot drift across web, email, inbox, or future mobile consumers.
 
 | Field | Purpose |
 | --- | --- |
-| `user_id` | External Care profile UUID whose preference is recorded. |
-| `channel` | Delivery channel governed by this preference. |
-| `category` | Notification category governed independently for this channel. |
-| `enabled` | Whether optional delivery is allowed; safety/legal exceptions require explicit policy. |
-| `quiet_hours` | Validated local-time window and timezone settings delaying non-urgent delivery. |
-| `updated_at` | UTC instant the user last changed this preference. |
+| `user_id` | External Identity account UUID and aggregate owner; it comes only from the verified JWT. |
+| `notifications_enabled` | Top-level user switch for optional notification delivery. |
+| `channel_in_app_enabled` | Whether optional in-app delivery is enabled. |
+| `channel_email_enabled` | Whether email delivery is enabled; email delivery still requires an applicable behavior and opt-in. |
+| `channel_push_enabled` | Persisted future-mobile preference only; it does not imply a registered device or active provider. |
+| `group_journal_reminder_enabled` | Independent journal/reminder content-group choice. |
+| `group_emotion_check_in_enabled` | Independent emotion check-in content-group choice. |
+| `group_streak_milestone_enabled` | Independent streak/milestone content-group choice. |
+| `group_screening_reassessment_enabled` | Independent screening/reassessment content-group choice. |
+| `group_appointment_message_enabled` | Independent appointment/message content-group choice. |
+| `group_resource_system_enabled` | Independent resource/system content-group choice. |
+| `quiet_hours_enabled` | Whether non-bypass delivery observes the local quiet window. |
+| `quiet_hours_start` | Inclusive local wall-clock start in `time_zone`; later-than-end windows cross midnight. |
+| `quiet_hours_end` | Exclusive local wall-clock end in `time_zone`; it must differ from start when enabled. |
+| `time_zone` | Validated IANA timezone used for deterministic local-day and daylight-saving interpretation. |
+| `email_cadence` | Explicit email cadence: `IMMEDIATE`, `DAILY_DIGEST`, or `WEEKLY_DIGEST`. |
+| `email_wellbeing_digest_enabled` | Explicit opt-in for wellbeing digest emails. |
+| `email_resource_reminders_enabled` | Explicit opt-in for resource reminder emails. |
+| `version` | Optimistic-lock counter returned in a strong ETag and required by updates. |
+| `created_at` | UTC instant when stable defaults were first persisted. |
+| `updated_at` | UTC instant the owner last changed this aggregate. |
 
 ### `content.notification`
 

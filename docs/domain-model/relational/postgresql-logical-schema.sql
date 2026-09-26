@@ -916,13 +916,27 @@ CREATE TABLE content.resource (
 );
 
 CREATE TABLE content.notification_preference (
-    user_id uuid NOT NULL, -- external -> identity.account.id
-    channel varchar(16) NOT NULL,
-    category varchar(32) NOT NULL,
-    enabled boolean NOT NULL,
-    quiet_hours jsonb,
-    updated_at timestamptz NOT NULL,
-    PRIMARY KEY (user_id, channel, category)
+    user_id uuid PRIMARY KEY, -- external -> identity.account.id
+    notifications_enabled boolean NOT NULL,
+    channel_in_app_enabled boolean NOT NULL,
+    channel_email_enabled boolean NOT NULL,
+    channel_push_enabled boolean NOT NULL,
+    group_journal_reminder_enabled boolean NOT NULL,
+    group_emotion_check_in_enabled boolean NOT NULL,
+    group_streak_milestone_enabled boolean NOT NULL,
+    group_screening_reassessment_enabled boolean NOT NULL,
+    group_appointment_message_enabled boolean NOT NULL,
+    group_resource_system_enabled boolean NOT NULL,
+    quiet_hours_enabled boolean NOT NULL,
+    quiet_hours_start time NOT NULL,
+    quiet_hours_end time NOT NULL,
+    time_zone varchar(64) NOT NULL,
+    email_cadence varchar(24) NOT NULL,
+    email_wellbeing_digest_enabled boolean NOT NULL,
+    email_resource_reminders_enabled boolean NOT NULL,
+    version bigint NOT NULL,
+    created_at timestamptz NOT NULL,
+    updated_at timestamptz NOT NULL
 );
 
 CREATE TABLE content.notification (

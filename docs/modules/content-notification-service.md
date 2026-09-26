@@ -38,9 +38,11 @@ and area wording for the directory and forbids automatic safety email.
 - [ ] CN-02 Implement exact-version domain/band/pathway eligibility with approved `PRIMARY`/`ADJUNCT` roles (#50), plus notification template, mandatory-category, delivery retry and retention policies.
   - [x] Exact-version eligibility provider, Care consumer, and initial controlled-demo item matrix are implemented; the notification-policy remainder stays open.
 - [ ] CN-03 Define resource/preference/notification OpenAPI and notification event schemas.
+  - [x] MB-562 defines the owner preference OpenAPI; notification history and event schemas remain open.
 - [x] CN-04 Add owner `node-pg-migrate` migrations, constraints/indexes and field dictionary entries.
 - [ ] CN-05 Implement reviewed content administration and safe current-resource reads.
 - [ ] CN-06 Implement preferences and durable notification history/state.
+  - [x] MB-562 implements persisted owner preferences; notification history/state remains open.
 - [ ] CN-07 Implement idempotent event consumption, versioned rendering, provider attempts and outbox to Realtime.
 - [ ] CN-08 Verify authorization, stale content, duplicate/replay, rate limit, provider timeout/429/5xx, dead letter and outbox rollback.
 - [ ] CN-09 Add observability/readiness/configuration, README, and pass Node/contract/PostgreSQL/Kafka gates.

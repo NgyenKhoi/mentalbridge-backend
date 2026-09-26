@@ -28,6 +28,7 @@ const resourceEligibility = requiredMigration('6_add_resource_eligibility_v1.sql
 const safetyDirectory = requiredMigration('7_add_safety_directory.sql');
 const safetyDirectoryAreaAlias = requiredMigration('8_add_safety_directory_area_alias.sql');
 const resourceSourceProvenance = requiredMigration('9_add_resource_source_provenance.sql');
+const notificationPreferences = requiredMigration('10_persist_notification_preferences.sql');
 const review1Seed = await readFile(
   new URL('../migrations/review1/1_seed_review1_controlled_resource.sql', import.meta.url),
   'utf8',
@@ -137,6 +138,17 @@ for (const column of [
 assert.match(resourceSourceProvenance, /ck_resource_published_source\b/);
 assert.match(resourceSourceProvenance, /ck_resource_video_external_url\b/);
 assert.match(resourceSourceProvenance, /youtube\\\.com\|youtu\\\.be/);
+assert.match(
+  notificationPreferences,
+  /ALTER TABLE notification_preference RENAME TO notification_preference_legacy/,
+);
+assert.match(notificationPreferences, /PRIMARY KEY/);
+assert.match(notificationPreferences, /channel_push_enabled/);
+assert.match(notificationPreferences, /group_screening_reassessment_enabled/);
+assert.match(notificationPreferences, /quiet_hours_start/);
+assert.match(notificationPreferences, /time_zone/);
+assert.match(notificationPreferences, /email_cadence/);
+assert.match(notificationPreferences, /version bigint/);
 assert.match(safetyDirectoryAreaAliases, /area-alias-ha-noi-canonical/);
 assert.match(safetyDirectoryAreaAliases, /area-alias-da-nang-canonical/);
 assert.match(safetyDirectoryAreaAliases, /area-alias-hcm-canonical/);

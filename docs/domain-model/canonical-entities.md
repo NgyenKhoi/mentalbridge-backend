@@ -95,7 +95,7 @@ See [README](README.md) for status and relationship semantics.
 | `resource_eligibility_declaration` | content-notification-service | PostgreSQL | ACTIVE | Physical child of publication with domain/role/instrument eligibility. |
 | `resource_eligibility_withdrawal` | content-notification-service | PostgreSQL | ACTIVE | Physical one-to-one append-only withdrawal of a publication. |
 | `resource_eligibility_command_record` | content-notification-service | PostgreSQL | ACTIVE | Physical replay reference to publication; actor ID is external. |
-| `notification_preference` | content-notification-service | PostgreSQL | ACTIVE | User ID is a logical/external Identity reference. |
+| `notification_preference` | content-notification-service | PostgreSQL | ACTIVE | One atomic aggregate per external Identity owner covering channels, content groups, quiet hours/timezone, and email cadence/opt-ins. |
 | `notification` | content-notification-service | PostgreSQL | ACTIVE | Recipient ID is a logical/external Identity reference. |
 | Area directory | content-notification-service | PostgreSQL | PROPOSED | ADR 0017 requires provenance-bearing area entries, but no current migration defines the entity. |
 | `hotline` | content-notification-service | PostgreSQL | HISTORICAL | Created by migration 1 and explicitly dropped by migration 2; it must not appear as active safety data. |
