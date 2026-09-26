@@ -152,6 +152,10 @@ Assessment answer text must never be copied into outbox payloads, logs, errors, 
 | `JOURNAL_AI_LONGITUDINAL_CIRCUIT_FAILURE_RATE` | No | Percentage of transport/malformed failures that opens the breaker | `50` |
 | `JOURNAL_AI_LONGITUDINAL_CIRCUIT_OPEN_DURATION` | No | Bounded breaker-open interval | `PT10S` |
 | `JOURNAL_AI_LONGITUDINAL_CIRCUIT_HALF_OPEN_CALLS` | No | Permitted half-open probes | `2` |
+| `JOURNAL_AI_SUPPORT_GUIDE_BASE_URL` | Local/demo only | Direct Journal/AI URL for optional consent-gated Support Guide phrasing | `http://localhost:3000` |
+| `JOURNAL_AI_SUPPORT_GUIDE_CONNECT_TIMEOUT` | No | Bounded connection deadline for optional Support Guide phrasing | `PT0.5S` |
+| `JOURNAL_AI_SUPPORT_GUIDE_READ_TIMEOUT` | No | Bounded response deadline before Care persists its approved-copy fallback | `PT8S` |
+| `JOURNAL_AI_SUPPORT_GUIDE_CIRCUIT_*` | No | Circuit-breaker window, threshold, open duration, and half-open probe budget for optional phrasing | See `.env.example` |
 | `CARE_DB_URL` | Yes | Care-owned PostgreSQL JDBC URL; production uses a TLS-capable connection | `jdbc:postgresql://localhost:5432/mentalbridge_care` |
 | `CARE_DB_USERNAME` | Yes | Care-owned PostgreSQL login | `mentalbridge_care` |
 | `CARE_DB_PASSWORD` | Yes | Care PostgreSQL password injected outside source control | `replace-with-a-local-secret` |
@@ -199,6 +203,7 @@ MB-89 implements the deterministic PHQ-9 runtime. MB-178 adds the backend-owned,
 - Inbound Support Guide REST: `care-support-guide-v1.yaml` defines authenticated generation, owner-only history/detail, idempotency, immutable provenance, and stable resource-resolution states. It is intentionally separate from SupportPlan lifecycle.
 - Outbound REST: the consumer-owned OpenFeign Resource Eligibility v1 adapter queries Content with the end-user bearer context, explicit correlation, 500 ms connect and 2 s read deadlines, bounded exponential transient retry with jitter, and a Resilience4j circuit breaker. HTTP 429 is not retried because the provider contract does not define `Retry-After`; timeout, dependency errors, malformed payloads and enum evolution map every candidate to `UNAVAILABLE`. Callers must commit no proposal mutation. No Care transaction spans the call.
 - Outbound reassessment REST: the consumer-owned Journal/AI adapter forwards the verified end-user bearer and correlation ID to the canonical `REASSESSMENT_SUMMARY` projection. It applies a 200 ms connect deadline, 800 ms read deadline, at most one transient retry, and a separate circuit breaker. Startup rejects overrides whose conservative two-attempt budget exceeds 2.5 seconds, preserving time for Care to return the explicit safe fallback before the three-second caller deadline. It validates attribution, exact periods, source counts, coverage sufficiency, directions, and provenance before persistence. No transaction spans the remote call; every safe fallback is snapshotted explicitly.
+- Outbound Support Guide phrasing REST: Care forwards the verified end-user bearer and only the exact approved explanation copy to Journal/AI. The call has bounded connect/read deadlines, no retry, and a fail-fast circuit breaker. Current `AI_PROCESSING` consent and real-provider approval remain Journal/AI responsibilities; any rejection, timeout, open circuit, malformed output, or provider failure persists the exact Care-approved fallback with `AI_UNAVAILABLE_FALLBACK`.
 - Async: future assessment, support, consent, intervention, and follow-up events use Kafka with a transactional outbox and language-neutral schemas.
 - Discovery: Care registers as `care-service`; registry metadata never grants authorization.
 

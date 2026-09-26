@@ -1,8 +1,8 @@
 openapi: 3.1.0
 info:
   title: MentalBridge Journal AI Service API
-  version: 1.3.1
-  description: Private journal CRUD, daily self-reported emotion check-ins, consent-gated analysis, and quota-governed AI Companion conversations.
+  version: 1.4.0
+  description: Private journal CRUD, daily self-reported emotion check-ins, consent-gated analysis, bounded Support Guide phrasing, and quota-governed AI Companion conversations.
 servers:
   - url: http://localhost:3000
 security:
@@ -18,6 +18,8 @@ tags:
     description: Owner-scoped comparison of exact journal revisions across two bounded periods.
   - name: AI Companion
     description: Owner-scoped encrypted conversations with consent, entitlement, and server-side quota enforcement.
+  - name: Support Guide phrasing
+    description: Consent-gated rephrasing of exact Care-approved Support Guide copy without decision authority.
   - name: Operations
     description: Service health and metrics endpoints.
 paths:
@@ -580,6 +582,32 @@ paths:
         "403": { $ref: "#/components/responses/Forbidden" }
         "404": { $ref: "#/components/responses/NotFound" }
         "503": { $ref: "#/components/responses/DependencyUnavailable" }
+  /internal/v1/support-guide-phrasing:
+    x-mentalbridge-status: implemented
+    post:
+      tags: [Support Guide phrasing]
+      summary: Rephrase exact Care-approved Support Guide copy.
+      description: Care forwards the verified end-user bearer. Journal/AI verifies current AI_PROCESSING consent and may only rephrase the supplied approved text; it cannot add resources, decide safety or eligibility, or mutate Care state.
+      operationId: phraseSupportGuideCopy
+      parameters:
+        - $ref: "#/components/parameters/CorrelationId"
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/SupportGuidePhrasingRequest"
+      responses:
+        "201":
+          description: A bounded rephrasing and provider provenance were returned.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/SupportGuidePhrasingResponse"
+        "400": { $ref: "#/components/responses/BadRequest" }
+        "401": { $ref: "#/components/responses/Unauthorized" }
+        "403": { $ref: "#/components/responses/Forbidden" }
+        "503": { $ref: "#/components/responses/DependencyUnavailable" }
 components:
   securitySchemes:
     bearerAuth:
@@ -739,6 +767,23 @@ components:
           schema:
             $ref: "#/components/schemas/Problem"
   schemas:
+    SupportGuidePhrasingRequest:
+      type: object
+      additionalProperties: false
+      required: [approvedText, locale]
+      properties:
+        approvedText: { type: string, minLength: 1, maxLength: 1600 }
+        locale: { type: string, const: vi-VN }
+    SupportGuidePhrasingResponse:
+      type: object
+      additionalProperties: false
+      required: [text, provider, model, promptVersion, schemaVersion]
+      properties:
+        text: { type: string, minLength: 1, maxLength: 1600 }
+        provider: { type: string, enum: [DETERMINISTIC_FAKE, GEMINI, OPENAI] }
+        model: { type: string, minLength: 1, maxLength: 128 }
+        promptVersion: { type: string, const: support-guide-phrasing-v1 }
+        schemaVersion: { type: integer, const: 1 }
     CreateAiConversationRequest:
       type: object
       additionalProperties: false

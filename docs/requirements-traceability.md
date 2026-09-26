@@ -163,7 +163,11 @@ The requirements are represented in domain/architecture documentation, but the l
   exposes owner-only generation/history/detail. Content returns reviewed
   exact-version snapshots. The UI distinguishes the one-time guide from
   SupportPlan, displays stable empty/stale/unavailable states, and uses approved
-  Care copy when optional AI phrasing is unavailable. No entitlement gate,
+  Care copy when optional AI phrasing is unavailable. The implemented optional
+  phrasing boundary forwards the user bearer to Journal/AI, rechecks current
+  `AI_PROCESSING` consent, and permits the provider to rephrase only that exact
+  approved copy; Care keeps all safety, resource, eligibility, and action
+  authority and falls back unchanged on any failure. No entitlement gate,
   diagnosis/treatment field, raw answer, plan lifecycle, or AI decision is
   introduced.
 - 2026-09-15: `MB-SCOPE-V2-001` standardizes packages as `FREE`, `PLUS`, and

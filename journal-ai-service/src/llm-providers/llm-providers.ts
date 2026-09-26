@@ -17,6 +17,11 @@ import {
   type LongitudinalPromptCoverage,
   type LongitudinalPromptSource,
 } from "../prompts/longitudinal.js";
+import {
+  normalizedSupportGuidePhrasingSchema,
+  supportGuidePhrasingPrompt,
+  type SupportGuidePhrasingPrompt,
+} from "../prompts/support-guide-phrasing.js";
 
 export interface ProviderUsage {
   readonly inputTokens: number | null;
@@ -40,6 +45,10 @@ export interface LongitudinalProvider {
     coverage: LongitudinalPromptCoverage,
     route: LongitudinalAnalysisRoute,
   ): Promise<ProviderAnalysis>;
+}
+
+export interface SupportGuidePhrasingProvider {
+  phrase(approvedText: string): Promise<ProviderAnalysis>;
 }
 
 export interface ProviderFailureDiagnostics {
@@ -67,9 +76,19 @@ export class ProviderFailure extends Error {
 interface LlmProvider {
   readonly id: Exclude<AiProviderId, "DETERMINISTIC_FAKE">;
   generate(
-    prompt: ExactRevisionPrompt | LongitudinalPrompt,
-    route: AnalysisRoute | LongitudinalAnalysisRoute,
+    prompt:
+      ExactRevisionPrompt | LongitudinalPrompt | SupportGuidePhrasingPrompt,
+    route:
+      AnalysisRoute | LongitudinalAnalysisRoute | SupportGuideProviderRoute,
   ): Promise<ProviderAnalysis>;
+}
+
+interface SupportGuideProviderRoute {
+  readonly workload: "SUPPORT_GUIDE_PHRASING";
+  readonly provider: AiProviderId;
+  readonly model: string;
+  readonly inputCostMicroUsdPerMillionTokens: number;
+  readonly outputCostMicroUsdPerMillionTokens: number;
 }
 
 const tokenCount = z.number().int().min(0);
@@ -306,8 +325,10 @@ export class GeminiProvider extends HttpLlmProvider implements LlmProvider {
   readonly id = "GEMINI" as const;
 
   async generate(
-    prompt: ExactRevisionPrompt | LongitudinalPrompt,
-    route: AnalysisRoute | LongitudinalAnalysisRoute,
+    prompt:
+      ExactRevisionPrompt | LongitudinalPrompt | SupportGuidePhrasingPrompt,
+    route:
+      AnalysisRoute | LongitudinalAnalysisRoute | SupportGuideProviderRoute,
   ) {
     if (!this.configuration.GEMINI_API_KEY)
       throw new ProviderFailure("PERMANENT", "UNAVAILABLE");
@@ -380,8 +401,10 @@ export class OpenAiProvider extends HttpLlmProvider implements LlmProvider {
   readonly id = "OPENAI" as const;
 
   async generate(
-    prompt: ExactRevisionPrompt | LongitudinalPrompt,
-    route: AnalysisRoute | LongitudinalAnalysisRoute,
+    prompt:
+      ExactRevisionPrompt | LongitudinalPrompt | SupportGuidePhrasingPrompt,
+    route:
+      AnalysisRoute | LongitudinalAnalysisRoute | SupportGuideProviderRoute,
   ) {
     if (!this.configuration.OPENAI_API_KEY)
       throw new ProviderFailure("PERMANENT", "UNAVAILABLE");
@@ -401,7 +424,9 @@ export class OpenAiProvider extends HttpLlmProvider implements LlmProvider {
             name:
               route.workload === "LONGITUDINAL"
                 ? "mentalbridge_longitudinal"
-                : "mentalbridge_exact_revision",
+                : route.workload === "SUPPORT_GUIDE_PHRASING"
+                  ? "mentalbridge_support_guide_phrasing"
+                  : "mentalbridge_exact_revision",
             strict: true,
             schema: prompt.schema,
           },
@@ -541,5 +566,58 @@ export class RoutedLongitudinalProvider implements LongitudinalProvider {
     const provider = this.providers.get(route.provider);
     if (!provider) throw new ProviderFailure("PERMANENT", "UNAVAILABLE");
     return provider.generate(longitudinalPrompt(sources, coverage), route);
+  }
+}
+
+export class RoutedSupportGuidePhrasingProvider implements SupportGuidePhrasingProvider {
+  private readonly providers: ReadonlyMap<AiProviderId, LlmProvider>;
+
+  constructor(private readonly configuration: ServiceConfiguration) {
+    const providers: LlmProvider[] = [
+      new GeminiProvider(configuration),
+      new OpenAiProvider(configuration),
+    ];
+    this.providers = new Map(
+      providers.map((provider) => [provider.id, provider]),
+    );
+  }
+
+  async phrase(approvedText: string): Promise<ProviderAnalysis> {
+    if (this.configuration.PROVIDER_MODE === "DETERMINISTIC_FAKE") {
+      return {
+        output: { text: approvedText },
+        latencyMs: 0,
+        usage: {
+          inputTokens: null,
+          outputTokens: null,
+          estimatedCostMicroUsd: null,
+        },
+      };
+    }
+    const configured = this.configuration.FREE_PLUS_ROUTE;
+    if (!configured || !this.configuration.PROVIDER_APPROVAL_VERSION)
+      throw new ProviderFailure("PERMANENT", "UNAVAILABLE");
+    const provider = this.providers.get(configured.provider);
+    if (!provider) throw new ProviderFailure("PERMANENT", "UNAVAILABLE");
+    const analysis = await provider.generate(
+      supportGuidePhrasingPrompt(approvedText),
+      {
+        workload: "SUPPORT_GUIDE_PHRASING",
+        provider: configured.provider,
+        model: configured.model,
+        inputCostMicroUsdPerMillionTokens:
+          configured.inputCostMicroUsdPerMillionTokens,
+        outputCostMicroUsdPerMillionTokens:
+          configured.outputCostMicroUsdPerMillionTokens,
+      },
+    );
+    const parsed = normalizedSupportGuidePhrasingSchema.safeParse(
+      analysis.output,
+    );
+    if (!parsed.success)
+      throw new ProviderFailure("PERMANENT", "INVALID_RESULT", {
+        schemaIssues: schemaIssues(parsed.error),
+      });
+    return { ...analysis, output: parsed.data };
   }
 }

@@ -30,6 +30,11 @@ Support Guide, SupportPlan, eligibility, and confirmation authority.
 - Define OpenAPI, provider output schema, and MongoDB validation/migrations before handlers. TypeScript strict plus runtime validation is mandatory. Add Kafka schemas only for a separately accepted publication feature; MB-367 has none.
 - Use MongoDB for every Journal/AI operational aggregate. Analysis workers use atomic claim and bounded leases; future publication requires a Mongo-owned outbox or another accepted recoverable design.
 - AI adapters receive minimized decrypted content only for the approved operation; raw provider responses and hidden reasoning are never persisted.
+- Support Guide phrasing accepts only Care-approved Vietnamese copy, rechecks
+  current `AI_PROCESSING` consent using the forwarded user bearer, and returns
+  structured provider/model/prompt provenance. It cannot receive raw
+  assessment answers or change Care-owned safety, resource, eligibility, or
+  action decisions; Care retains its exact approved copy on every failure.
 - The normalized result follows `MB-AI-COMPANION-001`: optional summary/sentiment, context and emotion indicators, themes, preferences, barriers, `modelConfidence`, one allow-listed `suggestedAction`, and complete provider/model/prompt/schema provenance.
 - Longitudinal results retain exact source revisions, bounded periods, comparison direction, coverage sufficiency, and provenance. Journal/AI supplies this non-standardized evidence to Care; Care composes the four-dimensional Reassessment Summary and owns every SupportPlan decision.
 - ADR 0017 package routing is server-side and versioned. AI may accompany a

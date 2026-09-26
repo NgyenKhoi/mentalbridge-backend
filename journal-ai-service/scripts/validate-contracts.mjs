@@ -36,6 +36,7 @@ const implementedOperations = new Set([
   "POST /api/v1/longitudinal-analysis-jobs",
   "GET /api/v1/longitudinal-analysis-jobs/{jobId}",
   "GET /internal/v1/users/{userId}/longitudinal-analyses/{analysisId}",
+  "POST /internal/v1/support-guide-phrasing",
   "POST /api/v1/emotion-check-ins",
   "GET /api/v1/emotion-check-ins",
   "GET /api/v1/emotion-check-ins/{localDate}",
@@ -76,6 +77,10 @@ const implementedResponses = new Map([
   [
     "GET /internal/v1/users/{userId}/longitudinal-analyses/{analysisId}",
     new Set(["200", "400", "401", "403", "404", "503"]),
+  ],
+  [
+    "POST /internal/v1/support-guide-phrasing",
+    new Set(["201", "400", "401", "403", "503"]),
   ],
   [
     "POST /api/v1/emotion-check-ins",
