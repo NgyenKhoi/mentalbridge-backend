@@ -4,6 +4,11 @@ import { GenericContainer, type StartedTestContainer } from 'testcontainers';
 import { readFileSync } from 'fs';
 import { join, dirname } from 'path';
 import { fileURLToPath } from 'url';
+import type { DatabaseService } from '../../database/database.service.js';
+import {
+  NotificationPreferenceRepository,
+  NotificationPreferenceVersionMismatchError,
+} from '../../notification-preferences/notification-preference.repository.js';
 
 const __dirname = dirname(fileURLToPath(import.meta.url));
 
@@ -53,7 +58,21 @@ describe('Database Integration', () => {
       '7_add_safety_directory.sql',
       '8_add_safety_directory_area_alias.sql',
       '9_add_resource_source_provenance.sql',
+      '10_persist_notification_preferences.sql',
     ]) {
+      if (migration === '10_persist_notification_preferences.sql') {
+        await pool.query(
+          `INSERT INTO notification_preference
+             (user_id, channel, category, enabled, quiet_hours)
+           VALUES
+             ('90000000-0000-4000-8000-000000000001', 'IN_APP', 'ASSESSMENT', true,
+               '{"enabled":true,"start":"21:30","end":"06:15","timeZone":"Europe/Paris"}'),
+             ('90000000-0000-4000-8000-000000000001', 'EMAIL', 'FOLLOW_UP', true,
+               '{"enabled":true,"start":"21:30","end":"06:15","timeZone":"Europe/Paris"}'),
+             ('90000000-0000-4000-8000-000000000001', 'PUSH', 'SYSTEM', false,
+               '{"enabled":true,"start":"21:30","end":"06:15","timeZone":"Europe/Paris"}')`,
+        );
+      }
       const sql = readFileSync(join(__dirname, '../../../migrations', migration), 'utf8');
       await pool.query(sql);
     }
@@ -327,26 +346,125 @@ describe('Database Integration', () => {
   });
 
   describe('notification_preference table', () => {
-    it('rejects invalid channel', async () => {
-      await expect(
-        pool.query(
-          'INSERT INTO notification_preference (user_id, channel, category) VALUES ($1,$2,$3)',
-          ['a0eebc99-9c0b-4ef8-bb6d-6bb9bd380a11', 'INVALID', 'ASSESSMENT'],
-        ),
-      ).rejects.toThrow(/violates check constraint/);
+    it('maps legacy channel, group and quiet-hour choices forward', async () => {
+      const { rows } = await pool.query(
+        `SELECT channel_in_app_enabled, channel_email_enabled, channel_push_enabled,
+           group_journal_reminder_enabled, group_screening_reassessment_enabled,
+           group_resource_system_enabled, quiet_hours_enabled,
+           quiet_hours_start::text, quiet_hours_end::text, time_zone
+         FROM notification_preference
+         WHERE user_id = '90000000-0000-4000-8000-000000000001'`,
+      );
+      expect(rows[0]).toEqual({
+        channel_in_app_enabled: true,
+        channel_email_enabled: true,
+        channel_push_enabled: false,
+        group_journal_reminder_enabled: true,
+        group_screening_reassessment_enabled: true,
+        group_resource_system_enabled: false,
+        quiet_hours_enabled: true,
+        quiet_hours_start: '21:30:00',
+        quiet_hours_end: '06:15:00',
+        time_zone: 'Europe/Paris',
+      });
     });
 
-    it('enforces composite primary key', async () => {
-      await pool.query(
-        'INSERT INTO notification_preference (user_id, channel, category) VALUES ($1,$2,$3)',
-        ['b0eebc99-9c0b-4ef8-bb6d-6bb9bd380a11', 'EMAIL', 'CHAT'],
+    it('persists one complete default aggregate per owner', async () => {
+      const userId = 'a0eebc99-9c0b-4ef8-bb6d-6bb9bd380a11';
+      const { rows } = await pool.query(
+        `INSERT INTO notification_preference (user_id)
+         VALUES ($1)
+         RETURNING notifications_enabled, channel_in_app_enabled, channel_email_enabled,
+           channel_push_enabled, quiet_hours_enabled, quiet_hours_start::text,
+           quiet_hours_end::text, time_zone, email_cadence, version`,
+        [userId],
       );
+
+      expect(rows[0]).toMatchObject({
+        notifications_enabled: true,
+        channel_in_app_enabled: true,
+        channel_email_enabled: false,
+        channel_push_enabled: false,
+        quiet_hours_enabled: false,
+        quiet_hours_start: '22:00:00',
+        quiet_hours_end: '07:00:00',
+        time_zone: 'Asia/Ho_Chi_Minh',
+        email_cadence: 'IMMEDIATE',
+        version: '0',
+      });
+    });
+
+    it('rejects invalid quiet windows and email cadence', async () => {
       await expect(
         pool.query(
-          'INSERT INTO notification_preference (user_id, channel, category) VALUES ($1,$2,$3)',
-          ['b0eebc99-9c0b-4ef8-bb6d-6bb9bd380a11', 'EMAIL', 'CHAT'],
+          `INSERT INTO notification_preference
+             (user_id, quiet_hours_enabled, quiet_hours_start, quiet_hours_end)
+           VALUES ($1, true, '08:00', '08:00')`,
+          ['c0eebc99-9c0b-4ef8-bb6d-6bb9bd380a11'],
         ),
+      ).rejects.toThrow(/ck_notification_preference_quiet_window/);
+
+      await expect(
+        pool.query('INSERT INTO notification_preference (user_id, email_cadence) VALUES ($1,$2)', [
+          'd0eebc99-9c0b-4ef8-bb6d-6bb9bd380a11',
+          'HOURLY',
+        ]),
+      ).rejects.toThrow(/ck_notification_preference_email_cadence/);
+    });
+
+    it('enforces one aggregate per owner', async () => {
+      await pool.query('INSERT INTO notification_preference (user_id) VALUES ($1)', [
+        'b0eebc99-9c0b-4ef8-bb6d-6bb9bd380a11',
+      ]);
+      await expect(
+        pool.query('INSERT INTO notification_preference (user_id) VALUES ($1)', [
+          'b0eebc99-9c0b-4ef8-bb6d-6bb9bd380a11',
+        ]),
       ).rejects.toThrow(/duplicate key/);
+    });
+
+    it('persists a partial/full aggregate across repository instances and isolates owners', async () => {
+      const database = {
+        query: (text: string, parameters?: unknown[]) => pool.query(text, parameters),
+      } as unknown as DatabaseService;
+      const firstDevice = new NotificationPreferenceRepository(database);
+      const secondDevice = new NotificationPreferenceRepository(database);
+      const owner = 'e0eebc99-9c0b-4ef8-bb6d-6bb9bd380a11';
+
+      const initial = await firstDevice.getOrCreate(owner);
+      const saved = await firstDevice.update(owner, initial.version, {
+        ...initial,
+        channels: { inApp: true, email: true, push: true },
+        contentGroups: {
+          ...initial.contentGroups,
+          emotionCheckIn: false,
+          appointmentMessage: false,
+        },
+        quietHours: {
+          enabled: true,
+          start: '23:15',
+          end: '06:45',
+          timeZone: 'America/New_York',
+        },
+        email: {
+          cadence: 'WEEKLY_DIGEST',
+          wellbeingDigestEnabled: true,
+          resourceRemindersEnabled: true,
+        },
+      });
+
+      const reloaded = await secondDevice.getOrCreate(owner);
+      expect(reloaded).toEqual(saved);
+      expect(reloaded.version).toBe(1);
+      expect(reloaded.quietHours.timeZone).toBe('America/New_York');
+
+      const otherOwner = await secondDevice.getOrCreate('f0eebc99-9c0b-4ef8-bb6d-6bb9bd380a11');
+      expect(otherOwner.channels.email).toBe(false);
+      expect(otherOwner.contentGroups.appointmentMessage).toBe(true);
+
+      await expect(firstDevice.update(owner, 0, saved)).rejects.toBeInstanceOf(
+        NotificationPreferenceVersionMismatchError,
+      );
     });
   });
 

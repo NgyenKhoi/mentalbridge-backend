@@ -12,6 +12,8 @@ import {
   RESOURCE_ELIGIBILITY_SERVICE_TOKEN,
   SAFETY_DIRECTORY_REPOSITORY_TOKEN,
   SAFETY_DIRECTORY_SERVICE_TOKEN,
+  NOTIFICATION_PREFERENCE_REPOSITORY_TOKEN,
+  NOTIFICATION_PREFERENCE_SERVICE_TOKEN,
 } from './application.tokens.js';
 import type { ServiceConfiguration } from './configuration/configuration.js';
 import { DatabaseService, type ReadinessProbe } from './database/database.service.js';
@@ -32,6 +34,9 @@ import {
 } from './safety-directory/safety-directory.controller.js';
 import { SafetyDirectoryRepository } from './safety-directory/safety-directory.repository.js';
 import { SafetyDirectoryService } from './safety-directory/safety-directory.service.js';
+import { NotificationPreferenceController } from './notification-preferences/notification-preference.controller.js';
+import { NotificationPreferenceRepository } from './notification-preferences/notification-preference.repository.js';
+import { NotificationPreferenceService } from './notification-preferences/notification-preference.service.js';
 
 export interface ApplicationDependencies {
   readonly readinessProbe?: ReadinessProbe;
@@ -39,6 +44,7 @@ export interface ApplicationDependencies {
   readonly outageState?: { enabled: boolean };
   readonly resourceEligibilityRepository?: ResourceEligibilityRepository;
   readonly safetyDirectoryRepository?: SafetyDirectoryRepository;
+  readonly notificationPreferenceRepository?: NotificationPreferenceRepository;
 }
 
 @Module({})
@@ -77,6 +83,16 @@ export const createAppModule = (
         useValue: dependencies.safetyDirectoryRepository,
       }
     : { provide: SAFETY_DIRECTORY_REPOSITORY_TOKEN, useClass: SafetyDirectoryRepository };
+  const notificationPreferenceRepositoryProvider: Provider =
+    dependencies.notificationPreferenceRepository
+      ? {
+          provide: NOTIFICATION_PREFERENCE_REPOSITORY_TOKEN,
+          useValue: dependencies.notificationPreferenceRepository,
+        }
+      : {
+          provide: NOTIFICATION_PREFERENCE_REPOSITORY_TOKEN,
+          useClass: NotificationPreferenceRepository,
+        };
 
   return {
     module: ContentNotificationModule,
@@ -88,6 +104,7 @@ export const createAppModule = (
       E2eOutageController,
       SafetyDirectoryController,
       SafetyDirectoryLookupController,
+      NotificationPreferenceController,
     ],
     providers: [
       { provide: CONFIGURATION_TOKEN, useValue: configuration },
@@ -104,6 +121,8 @@ export const createAppModule = (
       { provide: RESOURCE_ELIGIBILITY_SERVICE_TOKEN, useClass: ResourceEligibilityService },
       safetyDirectoryRepositoryProvider,
       { provide: SAFETY_DIRECTORY_SERVICE_TOKEN, useClass: SafetyDirectoryService },
+      notificationPreferenceRepositoryProvider,
+      { provide: NOTIFICATION_PREFERENCE_SERVICE_TOKEN, useClass: NotificationPreferenceService },
       JwtStrategy,
       {
         provide: RolesGuard,

@@ -27,6 +27,8 @@ const expectedImplemented = new Set([
   'POST /api/v1/safety-directory/admin/entries/{entryId}/review',
   'POST /api/v1/safety-directory/admin/entries/{entryId}/deactivate',
   'POST /api/v1/safety-directory:lookup',
+  'GET /api/v1/notification-preferences',
+  'PATCH /api/v1/notification-preferences',
 ]);
 
 const implementedResponses = new Map([
@@ -71,6 +73,11 @@ const implementedResponses = new Map([
     new Set(['200', '400', '401', '403', '409', '503']),
   ],
   ['POST /api/v1/safety-directory:lookup', new Set(['200', '422', '503'])],
+  ['GET /api/v1/notification-preferences', new Set(['200', '401', '503'])],
+  [
+    'PATCH /api/v1/notification-preferences',
+    new Set(['200', '400', '401', '412', '422', '428', '503']),
+  ],
 ]);
 
 const implementedMustBePublic = new Set([

@@ -24,6 +24,12 @@ Resource Eligibility v1 independently validates target domain, `PRIMARY`/`ADJUNC
 
 Admin write operations (`POST`, `PATCH`, `DELETE`, publish, archive) are explicitly `planned` in `../contracts/openapi/content-notification-service.yaml`. Safety screening and versioned safety guidance remain Care-owned behavior.
 
+MB-562 also implements `GET|PATCH /api/v1/notification-preferences` for the
+authenticated owner. The atomic preference aggregate covers `IN_APP`, `EMAIL`,
+and future `PUSH` channel choices, six independent content groups,
+timezone-aware quiet hours, and email cadence/opt-ins. `PUSH` is persisted only;
+device registration and provider delivery remain deferred.
+
 ## Stack
 
 - Node.js 22 or newer, strict TypeScript, NestJS 11
@@ -90,6 +96,10 @@ npm run migrate:up
 ```
 
 Migrations run explicitly before deployment and never on application startup. The database and login are operator prerequisites; migrations do not create databases or schemas. Once merged, an applied migration is never edited or rolled back in a shared environment; add a forward migration instead. Migration `2_remove_hotline_catalogue.sql` removes the obsolete table after the historical baseline is applied; migration `6_add_resource_eligibility_v1.sql` adds immutable publications, declarations, withdrawals and command replay snapshots without changing existing resource rows; migration `9_add_resource_source_provenance.sql` adds structured source fields, catalogue visibility, and VIDEO URL constraints.
+
+Migration `10_persist_notification_preferences.sql` converts the legacy
+channel/category matrix into one atomic owner aggregate while preserving any
+existing owner choices.
 
 The controlled Review 1 seed, MB-337 eligibility matrix, and visibly synthetic non-dialable safety-directory fixture are owner-module migrations with a separate ledger (`pgmigrations_review1`), so running normal schema migrations cannot accidentally mark controlled data as applied. The seeds reject drift from their reviewed decisions. Machine-readable resource inventory, reviewer rationale, explicit ineligible decisions, and Care requests are kept in `../contracts/fixtures/content/resource-eligibility-v1-controlled-demo.json`. No real safety contact is published by the controlled fixture. For the shared dev/staging database only, run:
 
