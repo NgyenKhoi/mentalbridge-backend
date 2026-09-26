@@ -138,6 +138,7 @@ encrypted demo data exists. Do not commit local `.env` files or secrets.
 | `GET`    | `/api/v1/ai-companion/conversations`                              | List bounded retained conversation summaries without message bodies   |
 | `GET`    | `/api/v1/ai-companion/conversations/{conversationId}`             | Resume one owned conversation                                         |
 | `POST`   | `/api/v1/ai-companion/conversations/{conversationId}/messages`    | Deliver one quota-governed normalized assistant response              |
+| `POST`   | `/internal/v1/support-guide-phrasing`                             | Rephrase exact Care-approved guide copy after current AI consent      |
 | `DELETE` | `/api/v1/ai-companion/conversations/{conversationId}`             | Hard-delete the conversation and replay snapshots                     |
 
 Incoming requests echo a valid bounded `x-correlation-id` or receive a generated one. Request logs include the same correlation ID and redact authorization and cookie headers. Non-public application routes require an Identity-issued RS256 bearer token; signature, issuer, audience, lifetime, subject, token ID, and roles are validated before a principal is attached to the request.

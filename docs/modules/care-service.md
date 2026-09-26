@@ -35,7 +35,10 @@ Kafka, Redis, WebSocket, notification, or directory delivery.
   independent item-9 safety through owner-scoped `/api/v2` resources without a
   global tier or severity.
   MB-511 implements the one-time all-tier Support Guide on the v2 evaluation
-  boundary using exact eligibility. MB-372 adds the bounded initial
+  boundary using exact eligibility. Care may ask Journal/AI to rephrase only
+  the exact approved explanation after Journal/AI rechecks current
+  `AI_PROCESSING` consent; provider, consent, or transport failure preserves
+  the approved Care copy and records `AI_UNAVAILABLE_FALLBACK`. MB-372 adds the bounded initial
   `PLUS`/`PREMIUM` draft and exact persisted reload. MB-373 adds admitted-choice
   mutation, exact revalidation, explicit activation, one-current-plan
   enforcement, and authoritative current reload. MB-374 adds the explicit
@@ -67,7 +70,9 @@ area directory as target behavior without claiming they are implemented.
 Specialist plan changes, directory expansion, and production consent/retention
 remain separate runtime gates in `docs/policies/`. MB-511 adds owner-scoped Support Guide
 generation/history under `/api/v1/support-guides` with immutable provenance,
-local safety, stable dependency outcomes, and no plan lifecycle fields.
+local safety, stable dependency outcomes, optional consent-gated AI phrasing
+of approved copy, and no plan lifecycle fields. AI never selects safety,
+resources, eligibility, or a next action.
 MB-372 adds owner-scoped create/current-draft routes under
 `/api/v1/support-plans`. Care obtains current entitlement from Consultation
 with the forwarded bearer, revalidates an owned current-policy

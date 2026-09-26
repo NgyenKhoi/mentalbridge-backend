@@ -104,6 +104,76 @@ afterEach(async () => {
 });
 
 describe('Resource Eligibility HTTP boundary', () => {
+  it('accepts an Identity token when the configured public key uses escaped line breaks', async () => {
+    await app?.close();
+    app = undefined;
+    const configuration: ServiceConfiguration = {
+      NODE_ENV: 'test',
+      PORT: 3003,
+      DATABASE_URL: 'postgres://test:test@localhost:5432/test',
+      DB_POOL_MAX: 2,
+      DB_IDLE_TIMEOUT_MS: 100,
+      DB_CONNECT_TIMEOUT_MS: 100,
+      LOG_LEVEL: 'silent',
+      CORS_ORIGINS: '',
+      SERVICE_NAME: 'content-notification-service',
+      ALLOWED_ORIGINS: [],
+      IDENTITY_JWT_ISSUER: ISSUER,
+      IDENTITY_JWT_AUDIENCE: AUDIENCE,
+      IDENTITY_JWT_PUBLIC_KEY: publicKey.replace(/\n/g, '\\n'),
+      IDENTITY_JWT_CLOCK_TOLERANCE_SECONDS: 0,
+    };
+    app = await createApplication(configuration, {
+      readinessProbe: { check: async () => undefined },
+      resourceEligibilityRepository: repository,
+    });
+    await app.init();
+
+    await request(server())
+      .post('/internal/v1/resource-eligibility:resolve')
+      .set('authorization', `Bearer ${await token(USER_ID, ['USER'])}`)
+      .send({ requests: [eligibilityQuery()] })
+      .expect(200);
+  });
+
+  it('accepts a recently expired Identity token inside the configured clock tolerance', async () => {
+    await app?.close();
+    app = undefined;
+    const configuration: ServiceConfiguration = {
+      NODE_ENV: 'test',
+      PORT: 3003,
+      DATABASE_URL: 'postgres://test:test@localhost:5432/test',
+      DB_POOL_MAX: 2,
+      DB_IDLE_TIMEOUT_MS: 100,
+      DB_CONNECT_TIMEOUT_MS: 100,
+      LOG_LEVEL: 'silent',
+      CORS_ORIGINS: '',
+      SERVICE_NAME: 'content-notification-service',
+      ALLOWED_ORIGINS: [],
+      IDENTITY_JWT_ISSUER: ISSUER,
+      IDENTITY_JWT_AUDIENCE: AUDIENCE,
+      IDENTITY_JWT_PUBLIC_KEY: publicKey,
+      IDENTITY_JWT_CLOCK_TOLERANCE_SECONDS: 60,
+    };
+    app = await createApplication(configuration, {
+      readinessProbe: { check: async () => undefined },
+      resourceEligibilityRepository: repository,
+    });
+    await app.init();
+
+    await request(server())
+      .post('/internal/v1/resource-eligibility:resolve')
+      .set('authorization', `Bearer ${await token(USER_ID, ['USER'], -30)}`)
+      .send({ requests: [eligibilityQuery()] })
+      .expect(200);
+
+    await request(server())
+      .post('/internal/v1/resource-eligibility:resolve')
+      .set('authorization', `Bearer ${await token(USER_ID, ['USER'], -61)}`)
+      .send({ requests: [eligibilityQuery()] })
+      .expect(401);
+  });
+
   it('publishes explicit exact-version eligibility for an administrator', async () => {
     const response = await request(server())
       .post(`/api/v1/resources/${RESOURCE_ID}/versions/3/eligibility-publications`)
@@ -270,7 +340,7 @@ function eligibilityQuery() {
   };
 }
 
-async function token(subject: string, roles: string[]) {
+async function token(subject: string, roles: string[], expiresIn = 300) {
   const now = Math.floor(Date.now() / 1000);
   return new SignJWT({ roles })
     .setProtectedHeader({ alg: 'RS256' })
@@ -279,7 +349,7 @@ async function token(subject: string, roles: string[]) {
     .setAudience(AUDIENCE)
     .setIssuedAt(now)
     .setNotBefore(now)
-    .setExpirationTime(now + 300)
+    .setExpirationTime(now + expiresIn)
     .setJti(crypto.randomUUID())
     .sign(privateKey);
 }

@@ -33,6 +33,7 @@ import com.mentalbridge.care.support.SupportEvaluationV2Service.DomainContributi
 import com.mentalbridge.care.support.SupportEvaluationV2Service.EvaluationView;
 import com.mentalbridge.care.support.SupportEvaluationV2Service.SafetyEvidenceView;
 import com.mentalbridge.care.supportguide.SupportGuideWriter.StoredGuide;
+import com.mentalbridge.care.supportguide.SupportGuidePhrasingClient.Phrasing;
 
 class SupportGuideServiceTests {
 
@@ -68,6 +69,14 @@ class SupportGuideServiceTests {
 	}
 
 	@Test
+	void persistsAiPhrasingWhenTheBoundedProviderSucceeds() {
+		var view = generate(ResourceEligibilityOutcome.ELIGIBLE, false, true);
+
+		assertThat(view.explanation().text()).isEqualTo("Diễn giải AI đã được kiểm soát.");
+		assertThat(view.phrasing().status()).isEqualTo("STANDARD");
+	}
+
+	@Test
 	void returnsStableEmptyAndStaleOutcomesWithoutResources() {
 		assertThat(generate(ResourceEligibilityOutcome.INELIGIBLE, false).resourceResolution().status())
 				.isEqualTo("EMPTY");
@@ -76,8 +85,14 @@ class SupportGuideServiceTests {
 	}
 
 	private SupportGuideService.SupportGuideView generate(ResourceEligibilityOutcome outcome, boolean positive) {
+		return generate(outcome, positive, false);
+	}
+
+	private SupportGuideService.SupportGuideView generate(ResourceEligibilityOutcome outcome, boolean positive,
+			boolean aiAvailable) {
 		var evaluations = mock(SupportEvaluationV2Service.class);
 		var eligibility = mock(ResourceEligibilityClient.class);
+		var phrasing = mock(SupportGuidePhrasingClient.class);
 		var writer = mock(SupportGuideWriter.class);
 		var evaluation = evaluation(positive);
 		when(evaluations.evaluate(eq(USER_ID), anyString(), any(), any())).thenReturn(evaluation);
@@ -87,6 +102,9 @@ class SupportGuideServiceTests {
 					.toList();
 			return new ResourceEligibilityBatchResponse("content-eligibility-v1", NOW.toString(), results);
 		});
+		when(phrasing.phrase(anyString(), eq("user-token"), any())).thenAnswer(invocation ->
+				aiAvailable ? new Phrasing("Diễn giải AI đã được kiểm soát.", "STANDARD")
+						: new Phrasing(invocation.getArgument(0), "AI_UNAVAILABLE_FALLBACK"));
 		when(writer.persist(eq(USER_ID), anyString(), anyString(), any())).thenAnswer(invocation -> {
 			var draft = (SupportGuideWriter.Draft) invocation.getArgument(3);
 			var guide = new SupportGuideEntity(UUID.randomUUID(), USER_ID, draft.supportEvaluationId(),
@@ -102,7 +120,7 @@ class SupportGuideServiceTests {
 			return new StoredGuide(guide, resources);
 		});
 
-		var service = new SupportGuideService(evaluations, eligibility, writer,
+		var service = new SupportGuideService(evaluations, eligibility, phrasing, writer,
 				Clock.fixed(NOW, ZoneOffset.UTC));
 		return service.generate(USER_ID, "user-token", "support-guide-unit-0001", UUID.randomUUID(),
 				new SupportGuideService.GenerateCommand(PHQ9_ID, GAD7_ID));

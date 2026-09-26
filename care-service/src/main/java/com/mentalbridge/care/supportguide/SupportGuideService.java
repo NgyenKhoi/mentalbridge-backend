@@ -47,13 +47,15 @@ public class SupportGuideService {
 
 	private final SupportEvaluationV2Service evaluations;
 	private final ResourceEligibilityClient eligibility;
+	private final SupportGuidePhrasingClient phrasing;
 	private final SupportGuideWriter writer;
 	private final Clock clock;
 
 	public SupportGuideService(SupportEvaluationV2Service evaluations, ResourceEligibilityClient eligibility,
-			SupportGuideWriter writer, Clock clock) {
+			SupportGuidePhrasingClient phrasing, SupportGuideWriter writer, Clock clock) {
 		this.evaluations = evaluations;
 		this.eligibility = eligibility;
+		this.phrasing = phrasing;
 		this.writer = writer;
 		this.clock = clock;
 	}
@@ -78,13 +80,14 @@ public class SupportGuideService {
 		String resourceStatus = resourceStatus(selected.size(), resolved.results());
 		var safety = evaluation.safetyEvidence();
 		boolean positive = safety.status() == SafetyStatus.POSITIVE_SAFETY_SCREEN;
+		var expressed = phrasing.phrase(approvedExplanation(selected), bearerToken, correlationId);
 		var stored = writer.persist(userId, idempotencyKey, requestHash,
 				new Draft(evaluation.supportEvaluationId(), clock.instant(), "STANDARD_POST_SCREENING_GUIDANCE",
-						EXPLANATION, safety.status().name(), safety.reasonCode().name(), safety.policyVersion(),
+						expressed.text(), safety.status().name(), safety.reasonCode().name(), safety.policyVersion(),
 						positive ? "REVIEW_SAFETY_GUIDANCE" : "STANDARD_SAFETY_REMINDER",
 						positive ? SupportEvaluationService.SAFETY_FALLBACK : STANDARD_SAFETY,
 						resourceStatus, resolved.policyVersion(), OffsetDateTime.parse(resolved.resolvedAt()).toInstant(),
-						"AI_UNAVAILABLE_FALLBACK", selected));
+						expressed.status(), selected));
 		return view(evaluation, stored);
 	}
 
@@ -139,6 +142,11 @@ public class SupportGuideService {
 		if (unavailable) return "UNAVAILABLE";
 		if (stale) return "STALE";
 		return "EMPTY";
+	}
+
+	private String approvedExplanation(List<ResourceDraft> resources) {
+		if (resources.isEmpty()) return EXPLANATION;
+		return EXPLANATION + " Bạn có thể bắt đầu bằng cách chọn một tài nguyên phù hợp bên dưới, thử một bước nhỏ và xem điều gì hữu ích với mình.";
 	}
 
 	private SupportGuideView view(UUID userId, StoredGuide stored) {

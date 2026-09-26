@@ -95,6 +95,14 @@ class ResourceEligibilityClientTests {
 	}
 
 	@Test
+	void classifiesAuthenticationRejectionSeparatelyFromDependencyOutage() {
+		assertThat(ResourceEligibilityClient.failureCategory(httpFailure(401)))
+				.isEqualTo("AUTHENTICATION_REJECTED");
+		assertThat(ResourceEligibilityClient.failureCategory(httpFailure(503)))
+				.isEqualTo("DEPENDENCY_UNAVAILABLE");
+	}
+
+	@Test
 	void doesNotRetryRateLimitingWithoutAContractedRetryAfterPolicy() {
 		AtomicInteger attempts = new AtomicInteger();
 		var client = client((auth, correlationId, request) -> {

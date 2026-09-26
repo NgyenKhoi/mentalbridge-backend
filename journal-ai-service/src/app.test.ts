@@ -330,6 +330,60 @@ void test("returns unavailable when MongoDB readiness fails", async () => {
   }
 });
 
+void test("serves consent-gated Support Guide phrasing over the internal boundary", async () => {
+  const app = await createApplication(testConfiguration, {
+    ...readyDependencies,
+    supportGuidePhrasing: {
+      consentClient: {
+        check: () => Promise.resolve({ authorized: true, reason: "GRANTED" }),
+      },
+      provider: {
+        phrase: (approvedText) =>
+          Promise.resolve({
+            output: { text: approvedText },
+            latencyMs: 1,
+            usage: {
+              inputTokens: null,
+              outputTokens: null,
+              estimatedCostMicroUsd: null,
+            },
+          }),
+      },
+    },
+  });
+  await app.init();
+
+  try {
+    const now = Math.floor(Date.now() / 1_000);
+    const token = await new SignJWT({ roles: ["USER"] })
+      .setProtectedHeader({ alg: "RS256", kid: "test-key" })
+      .setIssuer(testConfiguration.IDENTITY_JWT_ISSUER)
+      .setAudience(testConfiguration.IDENTITY_JWT_AUDIENCE)
+      .setSubject("11111111-1111-4111-8111-111111111111")
+      .setIssuedAt(now)
+      .setNotBefore(now)
+      .setExpirationTime(now + 60)
+      .setJti("support-guide-token-id")
+      .sign(testPrivateKey);
+
+    await request(app.getHttpServer() as unknown as Server)
+      .post("/internal/v1/support-guide-phrasing")
+      .set("authorization", `Bearer ${token}`)
+      .set("x-correlation-id", "support-guide-correlation")
+      .send({ approvedText: "Nội dung Care đã duyệt.", locale: "vi-VN" })
+      .expect(201)
+      .expect({
+        text: "Nội dung Care đã duyệt.",
+        provider: "DETERMINISTIC_FAKE",
+        model: "deterministic-support-guide-phrasing-v1",
+        promptVersion: "support-guide-phrasing-v1",
+        schemaVersion: 1,
+      });
+  } finally {
+    await app.close();
+  }
+});
+
 void test("verifies Identity issuer, audience, signature and claims", async () => {
   const app = await createApplication(testConfiguration, readyDependencies);
   await app.init();
