@@ -163,6 +163,58 @@ class ConsultationLiquibaseMigrationTests extends ConsultationTestProperties {
 				.param("now", OffsetDateTime.now()).update()).isOne();
 	}
 
+	@Test
+	void appointmentDecisionEvidenceAndCommandReplayAreDatabaseConstrained() {
+		var specialistId = insertPendingProfile();
+		var slotId = UUID.randomUUID();
+		var start = OffsetDateTime.now().plusDays(30).withNano(0);
+		jdbc.sql("""
+				insert into availability_slot (
+				 id, specialist_account_id, start_at, end_at, timezone, modality,
+				 idempotency_key, created_at, updated_at
+				) values (:id, :specialist, :start, :end, 'Asia/Ho_Chi_Minh', 'IN_APP_CHAT',
+				 'migration-decision-slot', :now, :now)
+				""").param("id", slotId).param("specialist", specialistId).param("start", start)
+				.param("end", start.plusHours(1)).param("now", OffsetDateTime.now()).update();
+		var creditId = insertCredit();
+		var appointmentId = UUID.randomUUID();
+		jdbc.sql("""
+				insert into appointment (
+				 id, availability_slot_id, service_credit_id, user_account_id, specialist_account_id,
+				 status, modality, scheduled_start_at, scheduled_end_at, display_timezone,
+				 decision_deadline_at, idempotency_key, requested_at, created_at, updated_at
+				) values (:id, :slotId, :creditId, :userId, :specialistId, 'REQUESTED', 'IN_APP_CHAT',
+				 :start, :end, 'Asia/Ho_Chi_Minh', :deadline, 'migration-decision-request', :now, :now, :now)
+				""").param("id", appointmentId).param("slotId", slotId).param("creditId", creditId)
+				.param("userId", UUID.randomUUID()).param("specialistId", specialistId).param("start", start)
+				.param("end", start.plusHours(1)).param("deadline", start.minusHours(2))
+				.param("now", OffsetDateTime.now()).update();
+
+		assertThatThrownBy(() -> jdbc.sql("update appointment set status='CONFIRMED' where id=:id")
+				.param("id", appointmentId).update()).isInstanceOf(DataIntegrityViolationException.class);
+		assertThat(jdbc.sql("""
+				update appointment set status='CONFIRMED', decided_at=:now,
+				decision_reason='SPECIALIST_ACCEPTED' where id=:id
+				""").param("now", OffsetDateTime.now()).param("id", appointmentId).update()).isOne();
+
+		var commandKey = "migration-decision-command-0001";
+		jdbc.sql("""
+				insert into appointment_status_history (
+				 id, appointment_id, from_status, to_status, changed_by, reason, idempotency_key, changed_at
+				) values (:id, :appointmentId, 'REQUESTED', 'CONFIRMED', :actor,
+				 'SPECIALIST_ACCEPTED', :key, :now)
+				""").param("id", UUID.randomUUID()).param("appointmentId", appointmentId)
+				.param("actor", specialistId).param("key", commandKey).param("now", OffsetDateTime.now()).update();
+		assertThatThrownBy(() -> jdbc.sql("""
+				insert into appointment_status_history (
+				 id, appointment_id, from_status, to_status, changed_by, reason, idempotency_key, changed_at
+				) values (:id, :appointmentId, 'REQUESTED', 'CONFIRMED', :actor,
+				 'SPECIALIST_ACCEPTED', :key, :now)
+				""").param("id", UUID.randomUUID()).param("appointmentId", appointmentId)
+				.param("actor", specialistId).param("key", commandKey).param("now", OffsetDateTime.now()).update())
+				.isInstanceOf(DataIntegrityViolationException.class);
+	}
+
 	private UUID insertCredit() {
 		var periodId = UUID.randomUUID();
 		jdbc.sql("""

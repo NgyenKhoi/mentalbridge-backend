@@ -20,10 +20,13 @@ tombstone withdrawal of exact online slots; it does not create appointments.
 MB-377 adds Consultation-owned plan-period credit rows, an append-only
 transition ledger, and an authenticated owner balance. Provisioning is
 idempotent and keeps `DEMO` distinct from `PAID`; it does not infer payment.
-MB-378 adds the first appointment request slice. A paid user selects one exact
+MB-378 adds the appointment request slice. A paid user selects one exact
 online slot and Consultation atomically creates a `REQUESTED` snapshot while
 holding one eligible credit. Slot/credit concurrency and command replay are
-enforced locally; specialist decisions and scheduled expiry remain MB-379.
+enforced locally. MB-379 lets only the assigned specialist accept or reject an
+eligible request with optimistic concurrency and idempotent history. Acceptance
+keeps the credit held; rejection and server-scheduled deadline expiry release
+the exact credit once in the same local transaction.
 MB-558 adds `consultation-credit-v2` for new periods (`FREE=0`, `PLUS=4`,
 `PREMIUM=10`), preserves existing v1 periods as `0/1/3`, and exposes/enforces
 separate active-reservation limits `0/2/4`. Replacement requests retain the old
@@ -98,6 +101,12 @@ or owns the shared dev/staging Consultation database.
 
 - `GET /api/v1/bookable-slots`
 - `GET|POST /api/v1/appointments`
+
+## Implemented MB-379 endpoints
+
+- `GET /api/v1/specialist/appointments`
+- `POST /api/v1/specialist/appointments/{appointmentId}/accept`
+- `POST /api/v1/specialist/appointments/{appointmentId}/reject`
 
 Availability accepts only exact future 60-minute `IN_APP_CHAT` and gated
 `IN_APP_VIDEO` slots. It stores UTC instants and an IANA display timezone,
