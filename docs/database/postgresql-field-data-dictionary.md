@@ -896,7 +896,7 @@ Append-only evidence for provisioning and appointment-driven transitions.
 
 ### `consultation.appointment`
 
-Implemented MB-378/MB-558 request aggregate. One row is the immutable scheduling snapshot created while the same local transaction locks the exact availability slot, holds one eligible credit, and enforces the package reservation cap. New requests support only in-app chat or gated in-app video.
+Implemented MB-378/MB-558 request aggregate with MB-379 decision settlement. One row is the immutable scheduling snapshot created while the same local transaction locks the exact availability slot, holds one eligible credit, and enforces the package reservation cap. New requests support only in-app chat or gated in-app video.
 
 | Field | Purpose |
 | --- | --- |
@@ -913,6 +913,8 @@ Implemented MB-378/MB-558 request aggregate. One row is the immutable scheduling
 | `decision_deadline_at` | Earlier of 24 hours after request or two hours before start; the decision/expiry owner consumes this handoff. |
 | `idempotency_key` | Printable user-scoped request key; exact retry returns this row and conflicting reuse fails. |
 | `replaces_appointment_id` | Optional self-reference to the active appointment replaced by this request. The old immutable schedule is retained as `CANCELLED`; its held credit and reservation capacity move to the replacement atomically. One old appointment may be replaced only once. |
+| `decided_at` | Server UTC instant of specialist acceptance/rejection or deterministic deadline expiry; null until a request decision occurs. |
+| `decision_reason` | Stable `SPECIALIST_ACCEPTED`, `SPECIALIST_REJECTED`, or `DECISION_DEADLINE_EXPIRED` outcome paired with `decided_at`. |
 | `cancellation_reason` | Optional stable reviewed reason paired with `cancelled_at`; MB-360 writes `SPECIALIST_SUSPENDED`, while cancellation flows without owned metadata may leave both fields null. |
 | `cancelled_at` | Optional server UTC cancellation instant paired with `cancellation_reason`; the pair is populated together or left null together. |
 | `created_at` / `updated_at` | UTC insertion and latest authoritative state-change instants. |
@@ -920,7 +922,7 @@ Implemented MB-378/MB-558 request aggregate. One row is the immutable scheduling
 
 ### `consultation.appointment_status_history`
 
-Append-only transition evidence introduced by MB-360 for appointment outcomes.
+Append-only transition evidence introduced by MB-360 and extended by MB-379 for idempotent appointment decisions and expiry.
 
 | Field | Purpose |
 | --- | --- |
@@ -929,6 +931,7 @@ Append-only transition evidence introduced by MB-360 for appointment outcomes.
 | `from_status` / `to_status` | Valid current appointment states before and after the transition, including the shared `IN_PROGRESS` state used by the credit/reschedule lifecycle. |
 | `changed_by` | Identity actor UUID responsible for the transition. |
 | `reason` | Stable reviewed outcome reason without private consultation content. |
+| `idempotency_key` | Optional printable command key. MB-379 specialist decisions and deterministic expiry use one key per appointment command; a partial unique index prevents duplicate evidence. |
 | `changed_at` | Server UTC instant at which the transition committed. |
 
 ### `consultation.subscription_plan_version`

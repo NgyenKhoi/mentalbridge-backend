@@ -121,11 +121,12 @@ public class AppointmentService {
 	@Transactional(readOnly = true)
 	public AppointmentResponse.ListResponse list(UUID userId) {
 		var items = jdbc.sql("""
-				select a.*, p.display_name from appointment a
+				select a.*, p.display_name, c.state as credit_state from appointment a
 				join specialist_profile p on p.account_id=a.specialist_account_id
+				join service_credit c on c.id=a.service_credit_id
 				where a.user_account_id=:userId
 				order by a.scheduled_start_at desc, a.id desc limit :limit
-				""").param("userId", userId).param("limit", LIST_LIMIT).query(this::map).list();
+				""").param("userId", userId).param("limit", LIST_LIMIT).query(AppointmentRowMapper::map).list();
 		return new AppointmentResponse.ListResponse(items, items.size(), clock.instant());
 	}
 
@@ -210,25 +211,20 @@ public class AppointmentService {
 
 	private AppointmentResponse findByCommand(UUID userId, String key) {
 		return jdbc.sql("""
-				select a.*, p.display_name from appointment a join specialist_profile p on p.account_id=a.specialist_account_id
+				select a.*, p.display_name, c.state as credit_state from appointment a
+				join specialist_profile p on p.account_id=a.specialist_account_id
+				join service_credit c on c.id=a.service_credit_id
 				where a.user_account_id=:userId and a.idempotency_key=:key
-				""").param("userId", userId).param("key", key).query(this::map).optional().orElse(null);
+				""").param("userId", userId).param("key", key).query(AppointmentRowMapper::map).optional().orElse(null);
 	}
 
 	private AppointmentResponse findById(UUID userId, UUID id) {
 		return jdbc.sql("""
-				select a.*, p.display_name from appointment a join specialist_profile p on p.account_id=a.specialist_account_id
+				select a.*, p.display_name, c.state as credit_state from appointment a
+				join specialist_profile p on p.account_id=a.specialist_account_id
+				join service_credit c on c.id=a.service_credit_id
 				where a.user_account_id=:userId and a.id=:id
-				""").param("userId", userId).param("id", id).query(this::map).single();
-	}
-
-	private AppointmentResponse map(java.sql.ResultSet row, int ignored) throws java.sql.SQLException {
-		return new AppointmentResponse(row.getObject("id", UUID.class), row.getObject("availability_slot_id", UUID.class),
-				row.getObject("specialist_account_id", UUID.class), row.getString("display_name"), row.getString("status"),
-				AppointmentModality.valueOf(row.getString("modality")), row.getTimestamp("scheduled_start_at").toInstant(),
-				row.getTimestamp("scheduled_end_at").toInstant(), row.getString("display_timezone"),
-				row.getTimestamp("requested_at").toInstant(), row.getTimestamp("decision_deadline_at").toInstant(),
-				row.getObject("service_credit_id", UUID.class), row.getObject("replaces_appointment_id", UUID.class));
+				""").param("userId", userId).param("id", id).query(AppointmentRowMapper::map).single();
 	}
 
 	private Instant earlier(Instant first, Instant second) { return first.isBefore(second) ? first : second; }

@@ -27,6 +27,9 @@ class ConsultationOpenApiContractTests {
 			"GET /api/v1/bookable-slots",
 			"GET /api/v1/appointments",
 			"POST /api/v1/appointments",
+			"GET /api/v1/specialist/appointments",
+			"POST /api/v1/specialist/appointments/{appointmentId}/accept",
+			"POST /api/v1/specialist/appointments/{appointmentId}/reject",
 			"GET /api/v1/admin/specialist-profiles",
 			"GET /api/v1/admin/specialist-profiles/{specialistAccountId}",
 			"POST /api/v1/admin/specialist-profiles/{specialistAccountId}/approve",
@@ -97,7 +100,7 @@ class ConsultationOpenApiContractTests {
 		assertThat(request.getProperties()).containsOnlyKeys("slotId", "modality", "replacesAppointmentId");
 		assertThat(request.getRequired()).containsExactlyInAnyOrder("slotId", "modality");
 		assertThat(appointment.getProperties()).containsKeys("status", "decisionDeadlineAt", "heldCreditId",
-				"replacesAppointmentId");
+				"replacesAppointmentId", "decidedAt", "decisionReason", "creditState", "version");
 		var statuses = ((Schema<?>) appointment.getProperties().get("status")).getEnum().stream()
 				.map(String::valueOf).toList();
 		assertThat(statuses).containsExactly("REQUESTED", "CONFIRMED", "IN_PROGRESS", "REJECTED", "EXPIRED",

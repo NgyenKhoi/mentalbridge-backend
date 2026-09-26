@@ -266,6 +266,70 @@ paths:
         '403': { $ref: '#/components/responses/AppointmentForbiddenProblem' }
         '404': { $ref: '#/components/responses/AppointmentSlotNotFoundProblem' }
         '409': { $ref: '#/components/responses/AppointmentConflictProblem' }
+  /api/v1/specialist/appointments:
+    x-mentalbridge-status: implemented
+    get:
+      operationId: listAssignedAppointments
+      description: Lists appointment snapshots assigned to the authenticated specialist, with decision deadline, current credit state, and optimistic version.
+      security: [{ bearerAuth: [] }]
+      responses:
+        '200':
+          description: Assigned appointment history with decision-eligible requests first
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/AppointmentList' }
+        '401': { $ref: '#/components/responses/UnauthorizedProblem' }
+        '403': { $ref: '#/components/responses/ForbiddenProblem' }
+  /api/v1/specialist/appointments/{appointmentId}/accept:
+    x-mentalbridge-status: implemented
+    parameters:
+      - $ref: '#/components/parameters/AppointmentId'
+    post:
+      operationId: acceptAssignedAppointment
+      description: Moves one still-eligible assigned REQUESTED appointment to CONFIRMED while its consultation credit remains HELD. Exact command replay returns the current appointment without duplicate history.
+      security: [{ bearerAuth: [] }]
+      parameters:
+        - $ref: '#/components/parameters/AppointmentIfMatch'
+        - $ref: '#/components/parameters/IdempotencyKey'
+      responses:
+        '200':
+          description: Confirmed appointment or exact replay
+          headers:
+            ETag: { $ref: '#/components/headers/AppointmentETag' }
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/Appointment' }
+        '401': { $ref: '#/components/responses/UnauthorizedProblem' }
+        '403': { $ref: '#/components/responses/AppointmentDecisionForbiddenProblem' }
+        '404': { $ref: '#/components/responses/AppointmentNotFoundProblem' }
+        '409': { $ref: '#/components/responses/AppointmentDecisionConflictProblem' }
+        '412': { $ref: '#/components/responses/AppointmentVersionProblem' }
+        '428': { $ref: '#/components/responses/AppointmentVersionRequiredProblem' }
+  /api/v1/specialist/appointments/{appointmentId}/reject:
+    x-mentalbridge-status: implemented
+    parameters:
+      - $ref: '#/components/parameters/AppointmentId'
+    post:
+      operationId: rejectAssignedAppointment
+      description: Moves one still-eligible assigned REQUESTED appointment to REJECTED and releases its slot and exact held credit once. Exact command replay returns the current appointment without duplicate history or ledger events.
+      security: [{ bearerAuth: [] }]
+      parameters:
+        - $ref: '#/components/parameters/AppointmentIfMatch'
+        - $ref: '#/components/parameters/IdempotencyKey'
+      responses:
+        '200':
+          description: Rejected appointment or exact replay
+          headers:
+            ETag: { $ref: '#/components/headers/AppointmentETag' }
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/Appointment' }
+        '401': { $ref: '#/components/responses/UnauthorizedProblem' }
+        '403': { $ref: '#/components/responses/AppointmentDecisionForbiddenProblem' }
+        '404': { $ref: '#/components/responses/AppointmentNotFoundProblem' }
+        '409': { $ref: '#/components/responses/AppointmentDecisionConflictProblem' }
+        '412': { $ref: '#/components/responses/AppointmentVersionProblem' }
+        '428': { $ref: '#/components/responses/AppointmentVersionRequiredProblem' }
   /api/v1/admin/specialist-profiles:
     x-mentalbridge-status: implemented
     get:
@@ -449,11 +513,16 @@ components:
       in: path
       required: true
       schema: { type: string, format: uuid }
+    AppointmentId:
+      name: appointmentId
+      in: path
+      required: true
+      schema: { type: string, format: uuid }
     IdempotencyKey:
       name: Idempotency-Key
       in: header
       required: true
-      description: Printable caller key scoped to the authenticated specialist and retained with the slot outcome.
+      description: Printable caller key scoped to the authenticated actor and retained with the command outcome.
       schema: { type: string, minLength: 16, maxLength: 128, pattern: '^[!-~]+$' }
     AvailabilitySlotIfMatch:
       name: If-Match
@@ -461,12 +530,21 @@ components:
       required: true
       description: Quoted current non-negative availability slot version.
       schema: { type: string, pattern: '^"[0-9]+"$' }
+    AppointmentIfMatch:
+      name: If-Match
+      in: header
+      required: true
+      description: Quoted current non-negative appointment version.
+      schema: { type: string, pattern: '^"[0-9]+"$' }
   headers:
     ProfileETag:
       description: Quoted current profile version for If-Match.
       schema: { type: string, pattern: '^"[0-9]+"$' }
     AvailabilitySlotETag:
       description: Quoted current availability slot version for If-Match.
+      schema: { type: string, pattern: '^"[0-9]+"$' }
+    AppointmentETag:
+      description: Quoted current appointment version for If-Match.
       schema: { type: string, pattern: '^"[0-9]+"$' }
   schemas:
     ServicePackage:
@@ -776,7 +854,7 @@ components:
     Appointment:
       type: object
       additionalProperties: false
-      required: [id, slotId, specialistAccountId, specialistDisplayName, status, modality, scheduledStartAt, scheduledEndAt, timezone, requestedAt, decisionDeadlineAt, heldCreditId, replacesAppointmentId]
+      required: [id, slotId, specialistAccountId, specialistDisplayName, status, modality, scheduledStartAt, scheduledEndAt, timezone, requestedAt, decisionDeadlineAt, heldCreditId, replacesAppointmentId, decidedAt, decisionReason, creditState, version]
       properties:
         id: { type: string, format: uuid }
         slotId: { type: string, format: uuid }
@@ -791,6 +869,12 @@ components:
         decisionDeadlineAt: { type: string, format: date-time }
         heldCreditId: { type: string, format: uuid }
         replacesAppointmentId: { type: [string, 'null'], format: uuid }
+        decidedAt: { type: [string, 'null'], format: date-time }
+        decisionReason:
+          type: [string, 'null']
+          enum: [SPECIALIST_ACCEPTED, SPECIALIST_REJECTED, DECISION_DEADLINE_EXPIRED, null]
+        creditState: { type: string, enum: [AVAILABLE, HELD, CONSUMED, FORFEITED] }
+        version: { type: integer, format: int64, minimum: 0 }
     AppointmentList:
       type: object
       additionalProperties: false
@@ -836,6 +920,31 @@ components:
           schema: { $ref: '#/components/schemas/Problem' }
     AppointmentConflictProblem:
       description: Slot, modality, lead time, video capability, credit, reservation capacity, replacement state, concurrency, or idempotency prevents the request.
+      content:
+        application/problem+json:
+          schema: { $ref: '#/components/schemas/Problem' }
+    AppointmentDecisionForbiddenProblem:
+      description: The authenticated specialist is not assigned to this appointment (APPOINTMENT_NOT_ASSIGNED).
+      content:
+        application/problem+json:
+          schema: { $ref: '#/components/schemas/Problem' }
+    AppointmentNotFoundProblem:
+      description: Appointment does not exist (APPOINTMENT_NOT_FOUND).
+      content:
+        application/problem+json:
+          schema: { $ref: '#/components/schemas/Problem' }
+    AppointmentDecisionConflictProblem:
+      description: The request is terminal, past its decision deadline, has inconsistent held credit, or reuses an idempotency key for another decision.
+      content:
+        application/problem+json:
+          schema: { $ref: '#/components/schemas/Problem' }
+    AppointmentVersionProblem:
+      description: If-Match does not equal the current appointment version (APPOINTMENT_VERSION_MISMATCH).
+      content:
+        application/problem+json:
+          schema: { $ref: '#/components/schemas/Problem' }
+    AppointmentVersionRequiredProblem:
+      description: If-Match is required for a specialist appointment decision (APPOINTMENT_VERSION_REQUIRED).
       content:
         application/problem+json:
           schema: { $ref: '#/components/schemas/Problem' }
