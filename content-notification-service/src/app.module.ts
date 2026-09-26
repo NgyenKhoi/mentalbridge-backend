@@ -14,6 +14,8 @@ import {
   SAFETY_DIRECTORY_SERVICE_TOKEN,
   NOTIFICATION_PREFERENCE_REPOSITORY_TOKEN,
   NOTIFICATION_PREFERENCE_SERVICE_TOKEN,
+  NOTIFICATION_REPOSITORY_TOKEN,
+  NOTIFICATION_SERVICE_TOKEN,
 } from './application.tokens.js';
 import type { ServiceConfiguration } from './configuration/configuration.js';
 import { DatabaseService, type ReadinessProbe } from './database/database.service.js';
@@ -37,6 +39,9 @@ import { SafetyDirectoryService } from './safety-directory/safety-directory.serv
 import { NotificationPreferenceController } from './notification-preferences/notification-preference.controller.js';
 import { NotificationPreferenceRepository } from './notification-preferences/notification-preference.repository.js';
 import { NotificationPreferenceService } from './notification-preferences/notification-preference.service.js';
+import { NotificationController } from './notifications/notification.controller.js';
+import { NotificationRepository } from './notifications/notification.repository.js';
+import { NotificationService } from './notifications/notification.service.js';
 
 export interface ApplicationDependencies {
   readonly readinessProbe?: ReadinessProbe;
@@ -45,6 +50,7 @@ export interface ApplicationDependencies {
   readonly resourceEligibilityRepository?: ResourceEligibilityRepository;
   readonly safetyDirectoryRepository?: SafetyDirectoryRepository;
   readonly notificationPreferenceRepository?: NotificationPreferenceRepository;
+  readonly notificationRepository?: NotificationRepository;
 }
 
 @Module({})
@@ -93,6 +99,9 @@ export const createAppModule = (
           provide: NOTIFICATION_PREFERENCE_REPOSITORY_TOKEN,
           useClass: NotificationPreferenceRepository,
         };
+  const notificationRepositoryProvider: Provider = dependencies.notificationRepository
+    ? { provide: NOTIFICATION_REPOSITORY_TOKEN, useValue: dependencies.notificationRepository }
+    : { provide: NOTIFICATION_REPOSITORY_TOKEN, useClass: NotificationRepository };
 
   return {
     module: ContentNotificationModule,
@@ -105,6 +114,7 @@ export const createAppModule = (
       SafetyDirectoryController,
       SafetyDirectoryLookupController,
       NotificationPreferenceController,
+      NotificationController,
     ],
     providers: [
       { provide: CONFIGURATION_TOKEN, useValue: configuration },
@@ -123,6 +133,8 @@ export const createAppModule = (
       { provide: SAFETY_DIRECTORY_SERVICE_TOKEN, useClass: SafetyDirectoryService },
       notificationPreferenceRepositoryProvider,
       { provide: NOTIFICATION_PREFERENCE_SERVICE_TOKEN, useClass: NotificationPreferenceService },
+      notificationRepositoryProvider,
+      { provide: NOTIFICATION_SERVICE_TOKEN, useClass: NotificationService },
       JwtStrategy,
       {
         provide: RolesGuard,

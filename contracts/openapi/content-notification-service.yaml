@@ -1,7 +1,7 @@
 openapi: 3.1.0
 info:
   title: Content-Notification Service API
-  version: 1.4.0
+  version: 1.5.0
   description: >
     MentalBridge Content/Notification bounded context.
     Manages reviewed self-help resources, reviewed Vietnam safety-directory
@@ -22,6 +22,8 @@ tags:
     description: Reviewed Vietnam area-directory administration and current area lookup
   - name: Notification preferences
     description: Owner-scoped persisted notification delivery choices
+  - name: Notification inbox
+    description: Owner-scoped durable in-app notification history and read lifecycle
 
 paths:
   /health/live:
@@ -674,6 +676,94 @@ paths:
         "428": { $ref: "#/components/responses/PreferenceVersionRequired" }
         "503": { $ref: "#/components/responses/ServiceUnavailable" }
 
+  /api/v1/notifications:
+    x-mentalbridge-status: implemented
+    get:
+      x-mentalbridge-operation-status: implemented
+      tags: [Notification inbox]
+      summary: List the authenticated user's active inbox newest first
+      operationId: listNotifications
+      security: [{ BearerAuth: [] }]
+      parameters:
+        - name: limit
+          in: query
+          schema: { type: integer, minimum: 1, maximum: 50, default: 20 }
+        - name: cursor
+          in: query
+          description: Opaque continuation token returned by the previous page.
+          schema: { type: string, minLength: 1, maxLength: 256 }
+      responses:
+        "200":
+          description: Active, non-expired notifications owned by the authenticated user
+          headers:
+            Cache-Control:
+              schema: { type: string, const: "private, no-store" }
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/NotificationPage" }
+        "401": { $ref: "#/components/responses/Unauthorized" }
+        "422": { $ref: "#/components/responses/ValidationError" }
+        "503": { $ref: "#/components/responses/ServiceUnavailable" }
+
+  /api/v1/notifications/{notificationId}/read:
+    x-mentalbridge-status: implemented
+    patch:
+      x-mentalbridge-operation-status: implemented
+      tags: [Notification inbox]
+      summary: Mark one owned notification read idempotently
+      operationId: markNotificationRead
+      security: [{ BearerAuth: [] }]
+      parameters:
+        - $ref: "#/components/parameters/NotificationId"
+      responses:
+        "200":
+          description: Current notification with the original or newly assigned read time
+          headers:
+            Cache-Control:
+              schema: { type: string, const: "private, no-store" }
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/Notification" }
+        "401": { $ref: "#/components/responses/Unauthorized" }
+        "404": { $ref: "#/components/responses/NotificationNotFound" }
+        "410": { $ref: "#/components/responses/NotificationGone" }
+        "422": { $ref: "#/components/responses/ValidationError" }
+        "503": { $ref: "#/components/responses/ServiceUnavailable" }
+
+  /api/v1/notifications/mark-all-read:
+    x-mentalbridge-status: implemented
+    post:
+      x-mentalbridge-operation-status: implemented
+      tags: [Notification inbox]
+      summary: Mark every active unread notification owned by the user read
+      operationId: markAllNotificationsRead
+      security: [{ BearerAuth: [] }]
+      responses:
+        "200":
+          description: Number of notifications changed by this idempotent operation
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/NotificationBulkReadResult" }
+        "401": { $ref: "#/components/responses/Unauthorized" }
+        "503": { $ref: "#/components/responses/ServiceUnavailable" }
+
+  /api/v1/notifications/{notificationId}:
+    x-mentalbridge-status: implemented
+    delete:
+      x-mentalbridge-operation-status: implemented
+      tags: [Notification inbox]
+      summary: Tombstone one notification owned by the authenticated user
+      operationId: deleteNotification
+      security: [{ BearerAuth: [] }]
+      parameters:
+        - $ref: "#/components/parameters/NotificationId"
+      responses:
+        "204": { description: Notification is deleted or was already deleted }
+        "401": { $ref: "#/components/responses/Unauthorized" }
+        "404": { $ref: "#/components/responses/NotificationNotFound" }
+        "422": { $ref: "#/components/responses/ValidationError" }
+        "503": { $ref: "#/components/responses/ServiceUnavailable" }
+
 components:
   parameters:
     ResourceId:
@@ -735,6 +825,11 @@ components:
       required: true
       description: Strong ETag from the last owner preference read.
       schema: { type: string, pattern: '^"(0|[1-9][0-9]*)"$' }
+    NotificationId:
+      name: notificationId
+      in: path
+      required: true
+      schema: { type: string, format: uuid }
   headers:
     NotificationPreferenceETag:
       description: Strong ETag containing the current preference version.
@@ -837,8 +932,107 @@ components:
       content:
         application/problem+json:
           schema: { $ref: "#/components/schemas/ProblemDetails" }
+    NotificationNotFound:
+      description: The notification does not exist for the authenticated owner
+      content:
+        application/problem+json:
+          schema: { $ref: "#/components/schemas/ProblemDetails" }
+    NotificationGone:
+      description: The owned notification was deleted or expired before the read command
+      content:
+        application/problem+json:
+          schema: { $ref: "#/components/schemas/ProblemDetails" }
 
   schemas:
+    NotificationKind:
+      type: string
+      enum:
+        [
+          REMINDER,
+          MESSAGE,
+          APPOINTMENT,
+          SYSTEM_RESOURCE,
+          ASSESSMENT_REASSESSMENT,
+          STREAK_MILESTONE,
+        ]
+    NotificationPriority:
+      type: string
+      enum: [LOW, NORMAL, HIGH]
+    NotificationActionType:
+      type: string
+      enum:
+        [
+          OPEN_JOURNAL,
+          OPEN_MESSAGES,
+          OPEN_APPOINTMENTS,
+          OPEN_RESOURCES,
+          OPEN_ASSESSMENTS,
+          OPEN_RESOURCE,
+        ]
+    NotificationAction:
+      type: object
+      additionalProperties: false
+      required: [type, targetId, href]
+      properties:
+        type: { $ref: "#/components/schemas/NotificationActionType" }
+        targetId: { type: [string, "null"], format: uuid }
+        href:
+          type: string
+          description: Server-derived relative route from the approved action type; never a producer URL.
+          pattern: "^/"
+          maxLength: 256
+    Notification:
+      type: object
+      additionalProperties: false
+      required:
+        [
+          id,
+          kind,
+          title,
+          body,
+          priority,
+          occurredAt,
+          createdAt,
+          read,
+          readAt,
+          action,
+          lifecycleState,
+          expiresAt,
+        ]
+      properties:
+        id: { type: string, format: uuid }
+        kind: { $ref: "#/components/schemas/NotificationKind" }
+        title: { type: string, minLength: 1, maxLength: 255 }
+        body: { type: string, minLength: 1, maxLength: 1000 }
+        priority: { $ref: "#/components/schemas/NotificationPriority" }
+        occurredAt: { type: string, format: date-time }
+        createdAt: { type: string, format: date-time }
+        read: { type: boolean }
+        readAt: { type: [string, "null"], format: date-time }
+        action:
+          oneOf:
+            - $ref: "#/components/schemas/NotificationAction"
+            - type: "null"
+        lifecycleState: { type: string, const: ACTIVE }
+        expiresAt: { type: string, format: date-time }
+    NotificationPage:
+      type: object
+      additionalProperties: false
+      required: [items, nextCursor, hasMore, unreadCount]
+      properties:
+        items:
+          type: array
+          maxItems: 50
+          items: { $ref: "#/components/schemas/Notification" }
+        nextCursor: { type: [string, "null"], maxLength: 256 }
+        hasMore: { type: boolean }
+        unreadCount: { type: integer, minimum: 0 }
+    NotificationBulkReadResult:
+      type: object
+      additionalProperties: false
+      required: [updatedCount]
+      properties:
+        updatedCount: { type: integer, minimum: 0 }
     NotificationChannels:
       type: object
       additionalProperties: false
