@@ -34,6 +34,14 @@ export class NotificationPreferenceService {
     private readonly repository: NotificationPreferenceRepository,
   ) {}
 
+  async initializeForAccount(userId: string): Promise<void> {
+    try {
+      await this.repository.createDefaults(userId);
+    } catch {
+      throw new ServiceUnavailableException();
+    }
+  }
+
   async get(userId: string): Promise<NotificationPreferences> {
     try {
       return await this.repository.getOrCreate(userId);

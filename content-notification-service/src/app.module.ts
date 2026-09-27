@@ -51,6 +51,10 @@ import { ReminderMaterializationService } from './reminders/reminder-materializa
 import type { ReminderActivityClient } from './reminders/reminder-activity.client.js';
 import type { ReminderClock } from './reminders/reminder-materialization.service.js';
 import { ReminderScheduler } from './reminders/reminder.scheduler.js';
+import {
+  AccountLifecycleConsumer,
+  AccountLifecycleProjector,
+} from './notification-preferences/account-lifecycle.consumer.js';
 
 export interface ApplicationDependencies {
   readonly readinessProbe?: ReadinessProbe;
@@ -159,6 +163,8 @@ export const createAppModule = (
         useValue: dependencies.reminderClock ?? { now: () => new Date() },
       },
       { provide: REMINDER_SCHEDULER_TOKEN, useClass: ReminderScheduler },
+      AccountLifecycleProjector,
+      AccountLifecycleConsumer,
       JwtStrategy,
       {
         provide: RolesGuard,

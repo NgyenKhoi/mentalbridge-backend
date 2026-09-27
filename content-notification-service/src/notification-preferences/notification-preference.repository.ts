@@ -66,13 +66,17 @@ export class NotificationPreferenceRepository {
     private readonly db: DatabaseService,
   ) {}
 
-  async getOrCreate(userId: string): Promise<NotificationPreferences> {
+  async createDefaults(userId: string): Promise<void> {
     await this.db.query(
       `INSERT INTO notification_preference (user_id)
        VALUES ($1)
        ON CONFLICT (user_id) DO NOTHING`,
       [userId],
     );
+  }
+
+  async getOrCreate(userId: string): Promise<NotificationPreferences> {
+    await this.createDefaults(userId);
     const result = await this.db.query<NotificationPreferenceRow>(
       `SELECT ${COLUMNS} FROM notification_preference WHERE user_id = $1`,
       [userId],

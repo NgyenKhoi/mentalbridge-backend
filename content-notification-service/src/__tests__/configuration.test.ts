@@ -22,6 +22,7 @@ describe('configuration', () => {
     expect(configuration.REMINDER_SCHEDULER_ENABLED).toBe(false);
     expect(configuration.REMINDER_SCHEDULER_INTERVAL_MS).toBe(60_000);
     expect(configuration.REMINDER_SCHEDULER_BATCH_SIZE).toBe(100);
+    expect(configuration.CONTENT_ACCOUNT_LIFECYCLE_CONSUMER_ENABLED).toBeUndefined();
   });
 
   it('normalizes configured CORS origins', () => {
@@ -59,5 +60,22 @@ describe('configuration', () => {
     });
 
     expect(configuration.REMINDER_SCHEDULER_ENABLED).toBe(true);
+  });
+
+  it('requires Kafka brokers when the account lifecycle consumer is enabled', () => {
+    expect(() =>
+      loadConfiguration({
+        ...requiredEnvironment,
+        CONTENT_ACCOUNT_LIFECYCLE_CONSUMER_ENABLED: 'true',
+      }),
+    ).toThrow();
+
+    const configuration = loadConfiguration({
+      ...requiredEnvironment,
+      CONTENT_ACCOUNT_LIFECYCLE_CONSUMER_ENABLED: 'true',
+      KAFKA_BOOTSTRAP_SERVERS: 'localhost:9092',
+    });
+
+    expect(configuration.CONTENT_ACCOUNT_LIFECYCLE_CONSUMER_ENABLED).toBe('true');
   });
 });

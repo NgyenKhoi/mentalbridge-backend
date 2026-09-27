@@ -30,6 +30,8 @@ const environmentSchema = z
       .max(3_600_000)
       .default(60_000),
     REMINDER_SCHEDULER_BATCH_SIZE: z.coerce.number().int().min(1).max(500).default(100),
+    KAFKA_BOOTSTRAP_SERVERS: z.string().min(1).optional(),
+    CONTENT_ACCOUNT_LIFECYCLE_CONSUMER_ENABLED: z.enum(['true', 'false']).optional(),
     E2E_TEST_MODE: z.coerce.boolean().default(false),
     E2E_TEST_SECRET: z.string().min(16).optional(),
   })
@@ -42,6 +44,16 @@ const environmentSchema = z
         code: 'custom',
         path: ['JOURNAL_AI_REMINDER_SERVICE_TOKEN'],
         message: 'is required when the reminder scheduler is enabled',
+      });
+    }
+    if (
+      environment.CONTENT_ACCOUNT_LIFECYCLE_CONSUMER_ENABLED === 'true' &&
+      !environment.KAFKA_BOOTSTRAP_SERVERS
+    ) {
+      context.addIssue({
+        code: 'custom',
+        path: ['KAFKA_BOOTSTRAP_SERVERS'],
+        message: 'is required when the account lifecycle consumer is enabled',
       });
     }
   })

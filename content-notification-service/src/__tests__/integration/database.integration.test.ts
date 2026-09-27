@@ -408,6 +408,26 @@ describe('Database Integration', () => {
       });
     });
 
+    it('initializes one default aggregate idempotently from account lifecycle delivery', async () => {
+      const database = {
+        query: (text: string, parameters?: unknown[]) => pool.query(text, parameters),
+      } as unknown as DatabaseService;
+      const repository = new NotificationPreferenceRepository(database);
+      const owner = 'a1eebc99-9c0b-4ef8-bb6d-6bb9bd380a11';
+
+      await repository.createDefaults(owner);
+      await repository.createDefaults(owner);
+
+      const { rows } = await pool.query(
+        `SELECT count(*)::int AS aggregate_count,
+                bool_and(notifications_enabled AND channel_in_app_enabled) AS defaults_enabled
+         FROM notification_preference
+         WHERE user_id = $1`,
+        [owner],
+      );
+      expect(rows[0]).toEqual({ aggregate_count: 1, defaults_enabled: true });
+    });
+
     it('rejects invalid quiet windows and email cadence', async () => {
       await expect(
         pool.query(
