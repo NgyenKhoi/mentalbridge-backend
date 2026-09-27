@@ -116,6 +116,11 @@ Key fields: run/case/provider/model identity, status/error classification,
 quality/safety result, matched evidence counts, execution metrics, normalized
 output, and creation time.
 
+Migration `011_bedrock_provider.cjs` extends exact-revision, longitudinal,
+benchmark, and AI Companion provenance with `BEDROCK` while retaining existing
+provider values. Benchmark runs may contain up to three pinned candidates; raw
+provider output and credentials remain excluded from every collection.
+
 ### AI Companion Conversation — ACTIVE
 
 Collection: `ai_companion_conversations`

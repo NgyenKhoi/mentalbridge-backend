@@ -165,6 +165,10 @@ success allowance. Consultation remains authoritative for the current service
 plan, and Care remains authoritative for current `AI_PROCESSING` consent and
 SupportPlan context.
 
+Migration `011_bedrock_provider.cjs` additively accepts `BEDROCK` in assistant
+route provenance. It retains the existing deterministic fake, Gemini, and
+OpenAI values, so historical conversations remain valid.
+
 ## `analysis_jobs`
 
 One durable owner-scoped command per idempotency key. The public API maps both
@@ -290,6 +294,9 @@ Gemini/OpenAI provenance, prompt `exact-revision-v2`, and bounded execution
 metrics while retaining legacy fake-provider documents. A configured adapter
 does not imply approval: real routes require a separately recorded benchmark
 approval identifier.
+
+Migration `011_bedrock_provider.cjs` additively accepts Bedrock route and result
+provenance without rewriting historical documents.
 
 ## `longitudinal_analysis_jobs`
 
@@ -418,6 +425,8 @@ days. At least three entries in each period and no greater than a 2:1 count
 ratio are required for sufficient coverage. Migration
 `009_longitudinal_context_analysis.cjs` creates this collection and its unique
 analysis/job plus user/period and exact-source indexes.
+Migration `011_bedrock_provider.cjs` additively accepts Bedrock route and result
+provenance while preserving existing provider values.
 
 ## `conversations`
 
@@ -526,8 +535,8 @@ SHA-256 content digest, case count, and registration time. The raw synthetic
 cases remain version-controlled input rather than copied into operational
 MongoDB.
 
-`benchmark_runs` binds the exact dataset digest, prompt/schema version, one or
-two pinned provider/model candidates, lifecycle, and aggregate quality, safety,
+`benchmark_runs` binds the exact dataset digest, prompt/schema version, one to
+three pinned provider/model candidates, lifecycle, and aggregate quality, safety,
 latency, token, cost, and error evidence. `benchmark_case_results` stores one
 validated normalized output or stable error classification per run/case/
 provider/model. It never stores raw provider responses or hidden reasoning.
@@ -549,6 +558,8 @@ db.benchmark_case_results.createIndex(
 ```
 
 Migration `008_ai_benchmark_metadata.cjs` owns these validators and indexes.
+Migration `011_bedrock_provider.cjs` adds Bedrock to benchmark provenance and
+raises the candidate/aggregate upper bound to three.
 Changing dataset content without a new version is rejected by its stored
 digest. Running the paid benchmark requires an explicit enable flag and at
 least one complete candidate with its credential, pinned model, and explicit

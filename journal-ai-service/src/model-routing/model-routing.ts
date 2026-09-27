@@ -6,7 +6,8 @@ import { LONGITUDINAL_PROMPT_VERSION } from "../prompts/longitudinal.js";
 
 export type ServicePlan = "FREE" | "PLUS" | "PREMIUM";
 export type EntitlementSource = "DEFAULT_FREE" | "DEMO" | "PAID";
-export type AiProviderId = "DETERMINISTIC_FAKE" | "GEMINI" | "OPENAI";
+export type AiProviderId =
+  "DETERMINISTIC_FAKE" | "GEMINI" | "OPENAI" | "BEDROCK";
 
 export interface EntitlementDecision {
   readonly packageCode: ServicePlan;

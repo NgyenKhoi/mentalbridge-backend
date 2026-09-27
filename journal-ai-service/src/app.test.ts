@@ -48,12 +48,16 @@ const testConfiguration: ServiceConfiguration = {
   GEMINI_API_KEY: null,
   OPENAI_BASE_URL: "https://api.openai.com",
   OPENAI_API_KEY: null,
+  BEDROCK_REGION: "ap-southeast-1",
+  BEDROCK_API_KEY: null,
   PROVIDER_TIMEOUT_MS: 30_000,
+  BEDROCK_SCHEMA_WARMUP_TIMEOUT_MS: 300_000,
   BENCHMARK_ENABLED: false,
   BENCHMARK_DATASET_PATH:
     "benchmarks/datasets/exact-revision-synthetic-v1.json",
   BENCHMARK_GEMINI_ROUTE: null,
   BENCHMARK_OPENAI_ROUTE: null,
+  BENCHMARK_BEDROCK_ROUTE: null,
   ANALYSIS_ENABLED: true,
   ANALYSIS_POLL_INTERVAL_MS: 250,
   ANALYSIS_LEASE_MS: 35_000,
@@ -243,6 +247,112 @@ void test("accepts a complete Gemini-only benchmark candidate", () => {
 
   assert.equal(configuration.BENCHMARK_GEMINI_ROUTE?.provider, "GEMINI");
   assert.equal(configuration.BENCHMARK_OPENAI_ROUTE, null);
+  assert.equal(configuration.BENCHMARK_BEDROCK_ROUTE, null);
+});
+
+void test("accepts Bedrock runtime routes and benchmark candidates with explicit credentials", () => {
+  const identity = {
+    NODE_ENV: "development",
+    IDENTITY_JWT_ISSUER: "https://identity.test.mentalbridge",
+    IDENTITY_JWT_AUDIENCE: "mentalbridge-api",
+    IDENTITY_JWT_KEY_ID: "test-key",
+    IDENTITY_JWT_PUBLIC_KEY: testPublicKeyPem,
+    AWS_BEARER_TOKEN_BEDROCK: "bedrock-test-secret",
+  };
+  const configuration = loadConfiguration({
+    ...identity,
+    JOURNAL_AI_PROVIDER_MODE: "APPROVED_REAL",
+    JOURNAL_AI_PROVIDER_APPROVAL_VERSION: "approval-v1",
+    JOURNAL_AI_FREE_PLUS_PROVIDER: "BEDROCK",
+    JOURNAL_AI_FREE_PLUS_MODEL: "apac.bedrock-model-v1:0",
+    JOURNAL_AI_FREE_PLUS_INPUT_COST_MICRO_USD_PER_MILLION_TOKENS: "1",
+    JOURNAL_AI_FREE_PLUS_OUTPUT_COST_MICRO_USD_PER_MILLION_TOKENS: "2",
+    JOURNAL_AI_PREMIUM_PROVIDER: "BEDROCK",
+    JOURNAL_AI_PREMIUM_MODEL: "apac.bedrock-model-v1:0",
+    JOURNAL_AI_PREMIUM_INPUT_COST_MICRO_USD_PER_MILLION_TOKENS: "1",
+    JOURNAL_AI_PREMIUM_OUTPUT_COST_MICRO_USD_PER_MILLION_TOKENS: "2",
+  });
+  assert.equal(configuration.FREE_PLUS_ROUTE?.provider, "BEDROCK");
+  assert.equal(configuration.BEDROCK_REGION, "ap-southeast-1");
+
+  const benchmark = loadConfiguration({
+    ...identity,
+    JOURNAL_AI_BENCHMARK_ENABLED: "true",
+    JOURNAL_AI_BENCHMARK_BEDROCK_MODEL: "apac.bedrock-model-v1:0",
+    JOURNAL_AI_BENCHMARK_BEDROCK_INPUT_COST_MICRO_USD_PER_MILLION_TOKENS: "1",
+    JOURNAL_AI_BENCHMARK_BEDROCK_OUTPUT_COST_MICRO_USD_PER_MILLION_TOKENS: "2",
+  });
+  assert.equal(benchmark.BENCHMARK_BEDROCK_ROUTE?.provider, "BEDROCK");
+});
+
+void test("accepts Bedrock inference-profile ARNs beyond the generic model limit", () => {
+  const longProfileName = `mentalbridge-${"profile".repeat(24)}`;
+  const model = `arn:aws:bedrock:ap-southeast-1:123456789012:application-inference-profile/${longProfileName}`;
+  assert.ok(model.length > 128);
+
+  const configuration = loadConfiguration({
+    NODE_ENV: "development",
+    IDENTITY_JWT_ISSUER: "https://identity.test.mentalbridge",
+    IDENTITY_JWT_AUDIENCE: "mentalbridge-api",
+    IDENTITY_JWT_KEY_ID: "test-key",
+    IDENTITY_JWT_PUBLIC_KEY: testPublicKeyPem,
+    JOURNAL_AI_PROVIDER_MODE: "APPROVED_REAL",
+    JOURNAL_AI_PROVIDER_APPROVAL_VERSION: "approval-v1",
+    AWS_BEARER_TOKEN_BEDROCK: "bedrock-test-secret",
+    JOURNAL_AI_FREE_PLUS_PROVIDER: "BEDROCK",
+    JOURNAL_AI_FREE_PLUS_MODEL: model,
+    JOURNAL_AI_FREE_PLUS_INPUT_COST_MICRO_USD_PER_MILLION_TOKENS: "1",
+    JOURNAL_AI_FREE_PLUS_OUTPUT_COST_MICRO_USD_PER_MILLION_TOKENS: "2",
+    JOURNAL_AI_PREMIUM_PROVIDER: "BEDROCK",
+    JOURNAL_AI_PREMIUM_MODEL: model,
+    JOURNAL_AI_PREMIUM_INPUT_COST_MICRO_USD_PER_MILLION_TOKENS: "1",
+    JOURNAL_AI_PREMIUM_OUTPUT_COST_MICRO_USD_PER_MILLION_TOKENS: "2",
+  });
+
+  assert.equal(configuration.FREE_PLUS_ROUTE?.model, model);
+  assert.equal(configuration.PREMIUM_ROUTE?.model, model);
+  assert.throws(() =>
+    loadConfiguration({
+      NODE_ENV: "development",
+      IDENTITY_JWT_ISSUER: "https://identity.test.mentalbridge",
+      IDENTITY_JWT_AUDIENCE: "mentalbridge-api",
+      IDENTITY_JWT_KEY_ID: "test-key",
+      IDENTITY_JWT_PUBLIC_KEY: testPublicKeyPem,
+      JOURNAL_AI_PROVIDER_MODE: "APPROVED_REAL",
+      JOURNAL_AI_PROVIDER_APPROVAL_VERSION: "approval-v1",
+      JOURNAL_AI_GEMINI_API_KEY: "gemini-test-secret",
+      JOURNAL_AI_FREE_PLUS_PROVIDER: "GEMINI",
+      JOURNAL_AI_FREE_PLUS_MODEL: model,
+      JOURNAL_AI_FREE_PLUS_INPUT_COST_MICRO_USD_PER_MILLION_TOKENS: "1",
+      JOURNAL_AI_FREE_PLUS_OUTPUT_COST_MICRO_USD_PER_MILLION_TOKENS: "2",
+      JOURNAL_AI_PREMIUM_PROVIDER: "GEMINI",
+      JOURNAL_AI_PREMIUM_MODEL: "gemini-test-model",
+      JOURNAL_AI_PREMIUM_INPUT_COST_MICRO_USD_PER_MILLION_TOKENS: "1",
+      JOURNAL_AI_PREMIUM_OUTPUT_COST_MICRO_USD_PER_MILLION_TOKENS: "2",
+    }),
+  );
+});
+
+void test("rejects Bedrock routes without a Bedrock bearer token", () => {
+  assert.throws(() =>
+    loadConfiguration({
+      NODE_ENV: "development",
+      IDENTITY_JWT_ISSUER: "https://identity.test.mentalbridge",
+      IDENTITY_JWT_AUDIENCE: "mentalbridge-api",
+      IDENTITY_JWT_KEY_ID: "test-key",
+      IDENTITY_JWT_PUBLIC_KEY: testPublicKeyPem,
+      JOURNAL_AI_PROVIDER_MODE: "APPROVED_REAL",
+      JOURNAL_AI_PROVIDER_APPROVAL_VERSION: "approval-v1",
+      JOURNAL_AI_FREE_PLUS_PROVIDER: "BEDROCK",
+      JOURNAL_AI_FREE_PLUS_MODEL: "bedrock-model",
+      JOURNAL_AI_FREE_PLUS_INPUT_COST_MICRO_USD_PER_MILLION_TOKENS: "1",
+      JOURNAL_AI_FREE_PLUS_OUTPUT_COST_MICRO_USD_PER_MILLION_TOKENS: "2",
+      JOURNAL_AI_PREMIUM_PROVIDER: "BEDROCK",
+      JOURNAL_AI_PREMIUM_MODEL: "bedrock-model",
+      JOURNAL_AI_PREMIUM_INPUT_COST_MICRO_USD_PER_MILLION_TOKENS: "1",
+      JOURNAL_AI_PREMIUM_OUTPUT_COST_MICRO_USD_PER_MILLION_TOKENS: "2",
+    }),
+  );
 });
 
 void test("rejects an incomplete or missing benchmark candidate", () => {

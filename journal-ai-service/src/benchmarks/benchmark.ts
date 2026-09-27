@@ -247,9 +247,13 @@ export const buildBenchmarkCandidates = (
     candidates.push({
       route: route("OPENAI", configuration.BENCHMARK_OPENAI_ROUTE),
     });
+  if (configuration.BENCHMARK_BEDROCK_ROUTE)
+    candidates.push({
+      route: route("BEDROCK", configuration.BENCHMARK_BEDROCK_ROUTE),
+    });
   if (candidates.length === 0)
     throw new Error(
-      "At least one Gemini or OpenAI benchmark route is required",
+      "At least one Gemini, OpenAI, or Bedrock benchmark route is required",
     );
   return candidates;
 };

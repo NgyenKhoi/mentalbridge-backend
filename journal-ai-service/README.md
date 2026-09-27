@@ -34,7 +34,9 @@ provider per run, normalized result, bounded retry, and no raw-response or
 bearer-token persistence. MB-367 adds the backend runtime with a deterministic
 fake provider. MB-369 adds Consultation-authoritative package lookup,
 workload/package routing, gated Gemini/OpenAI adapters, prompt/provenance
-versioning, and a synthetic benchmark harness. MB-371 adds exact-source
+versioning, and a synthetic benchmark harness. MB-568 extends that shared
+provider boundary and AI Companion with Amazon Bedrock Converse support.
+MB-371 adds exact-source
 longitudinal jobs, conservative coverage handling, deletion coupling, and a
 minimized Care read. Frontend reassessment presentation, AI Chat quota, general
 dataset import, and billing lifecycle remain separate.
@@ -57,6 +59,7 @@ npm run test:integration
 npm run contract:check
 npm run migration:check
 npm run benchmark:exact-revision # only with explicit paid-benchmark config
+npm run bedrock:warm-structured-outputs # explicit paid warm-up; never run in CI
 npm run build
 npm start
 ```
@@ -84,14 +87,17 @@ npm start
 | `JOURNAL_AI_PROVIDER_MODE`                       | No                       | `DETERMINISTIC_FAKE`                             | Selects fake runtime or explicitly approved real routes; tests require fake             |
 | `JOURNAL_AI_ROUTING_POLICY_VERSION`              | No                       | `exact-revision-routing-v1`                      | Version attached to every workload/package route                                        |
 | `JOURNAL_AI_PROVIDER_APPROVAL_VERSION`           | Approved real only       | None                                             | Accepted benchmark approval identifier required before real routing                     |
-| `JOURNAL_AI_FREE_PLUS_PROVIDER/MODEL`            | Approved real only       | None                                             | Pinned baseline route; provider is `GEMINI` or `OPENAI`                                 |
+| `JOURNAL_AI_FREE_PLUS_PROVIDER/MODEL`            | Approved real only       | None                                             | Pinned baseline route; provider is `GEMINI`, `OPENAI`, or `BEDROCK`                     |
 | `JOURNAL_AI_PREMIUM_PROVIDER/MODEL`              | Approved real only       | None                                             | Pinned Premium route; it may be stronger but is never selected from client input        |
 | `JOURNAL_AI_GEMINI_API_KEY`                      | Selected route/benchmark | None                                             | Gemini credential; never committed or logged                                            |
 | `JOURNAL_AI_OPENAI_API_KEY`                      | Selected route/benchmark | None                                             | OpenAI credential; never committed or logged                                            |
+| `JOURNAL_AI_BEDROCK_REGION`                      | Bedrock route/benchmark  | `ap-southeast-1`                                 | Region used to build the Bedrock Runtime Converse endpoint                              |
+| `AWS_BEARER_TOKEN_BEDROCK`                       | Bedrock route/benchmark  | None                                             | Bedrock long-term API key used as a bearer token; never committed or logged             |
 | `JOURNAL_AI_PROVIDER_TIMEOUT_MS`                 | No                       | `30000`                                          | Per-provider HTTP timeout                                                               |
+| `JOURNAL_AI_BEDROCK_SCHEMA_WARMUP_TIMEOUT_MS`    | No                       | `300000`                                         | Bedrock-only timeout for the explicit cold structured-output compile command            |
 | `JOURNAL_AI_BENCHMARK_ENABLED`                   | No                       | `false`                                          | Explicit paid-run gate; rejected in test/CI                                             |
 | `JOURNAL_AI_BENCHMARK_DATASET_PATH`              | No                       | synthetic v1 dataset path                        | Version-controlled exact-revision benchmark input                                       |
-| `JOURNAL_AI_BENCHMARK_*_MODEL`                   | Benchmark only           | None                                             | At least one complete pinned Gemini or OpenAI candidate; no implicit latest alias       |
+| `JOURNAL_AI_BENCHMARK_*_MODEL`                   | Benchmark only           | None                                             | At least one complete pinned Gemini, OpenAI, or Bedrock candidate; no latest alias      |
 | `JOURNAL_AI_*_COST_MICRO_USD_PER_MILLION_TOKENS` | Real route/benchmark     | None                                             | Explicit pricing snapshot used only for cost estimation                                 |
 | `JOURNAL_AI_ANALYSIS_ENABLED`                    | No                       | `true` outside production; `false` in production | Enables the deterministic exact-revision backend runtime; production remains gated      |
 | `JOURNAL_AI_ANALYSIS_POLL_INTERVAL_MS`           | No                       | `250`                                            | Interval for due/expired-lease job claims                                               |
@@ -157,6 +163,7 @@ Incoming requests echo a valid bounded `x-correlation-id` or receive a generated
 - Synthetic benchmark metadata/run/case-result collections: `migrations/008_ai_benchmark_metadata.cjs`
 - Longitudinal analysis job/result validators and indexes: `migrations/009_longitudinal_context_analysis.cjs`
 - AI Companion conversation, command, quota, rate, and TTL indexes: `migrations/010_ai_companion_chat_quotas.cjs`
+- Bedrock provider provenance and three-candidate benchmark validation: `migrations/011_bedrock_provider.cjs`
 
 AI Companion chat follows ADR 0021. List responses contain metadata-only
 summaries; full bounded message history is returned only by the owner-scoped
@@ -166,7 +173,7 @@ persisted assistant responses, derives the reset from a server-configured IANA t
 and keeps Premium UI copy free of an infrastructure-unlimited claim. MongoDB
 must provide replica-set transaction semantics. Local/test/CI use the
 deterministic fake; a real route additionally requires the existing approved
-provider/model configuration and the corresponding external API key.
+provider/model configuration and the corresponding external credential.
 
 Longitudinal requests use equal, half-open, non-overlapping periods of 7-31
 days. The current period cannot end in the future. The service selects no more
@@ -200,7 +207,7 @@ contains factual current/longest streaks and 7/14/30-day label counts only; it
 does not average intensity or claim adherence, improvement, or recovery.
 
 The committed benchmark dataset is synthetic and CC0-labelled. A run evaluates
-one or both explicitly configured Gemini/OpenAI candidates; credentials for an
+one or more explicitly configured Gemini/OpenAI/Bedrock candidates; credentials for an
 unconfigured provider are not required. Running the harness does not approve a
 candidate. An accepted result must be reviewed and recorded separately as
 `JOURNAL_AI_PROVIDER_APPROVAL_VERSION` before `APPROVED_REAL` runtime mode can
@@ -211,6 +218,39 @@ status, provider code, retry delay, quota identifier, finish reason, and schema
 issue paths. It never emits the API key, request headers, raw provider response,
 or hidden reasoning. Daily-quota fail-fast is deferred to MB-432 follow-up
 verification.
+
+### Bedrock enablement
+
+Bedrock uses the Runtime `Converse` HTTPS endpoint with
+`Authorization: Bearer <AWS_BEARER_TOKEN_BEDROCK>`. IAM/SigV4 support is
+intentionally deferred. Structured-output schemas are adapted for Bedrock on a
+deep copy; the canonical Zod-derived schema and normalized result validation
+remain unchanged. Provider failures use the existing bounded retry policy and
+never fall back to Gemini or OpenAI.
+
+After the AWS account has Bedrock model access and sufficient quota:
+
+1. Set `AWS_BEARER_TOKEN_BEDROCK`, `JOURNAL_AI_BEDROCK_REGION`, and a pinned
+   Bedrock model ID. Do not commit the token.
+2. Configure the matching Bedrock input/output cost snapshot. For benchmark
+   evidence, set the three `JOURNAL_AI_BENCHMARK_BEDROCK_*` variables and
+   explicitly enable `JOURNAL_AI_BENCHMARK_ENABLED` only for the paid run.
+3. Run `npm run bedrock:warm-structured-outputs` immediately before the
+   controlled traffic window. It sends one paid Converse request for each of
+   the exact-revision, longitudinal, Support Guide phrasing, and Companion Chat
+   schemas to every distinct configured Bedrock route model. The command uses
+   only `JOURNAL_AI_BEDROCK_SCHEMA_WARMUP_TIMEOUT_MS`; ordinary runtime calls
+   retain the bounded provider timeout. Repeat after a model/schema change and
+   before another traffic window when AWS's 24-hour schema cache may be cold.
+4. Run `npm run benchmark:exact-revision` and review the recorded quality,
+   safety, latency, token, cost, and failure evidence.
+5. Record the accepted evidence as `JOURNAL_AI_PROVIDER_APPROVAL_VERSION`, set
+   the applicable route provider to `BEDROCK`, and only then switch
+   `JOURNAL_AI_PROVIDER_MODE` to `APPROVED_REAL`.
+
+No paid live Bedrock call is part of automated tests or this implementation
+evidence. Until account/model quota is available and the approval steps above
+are completed, production routing must remain unchanged.
 
 Story 6201 keeps journal content plain text and adds the stable `GREAT`, `GOOD`,
 `OKAY`, `LOW`, and `VERY_LOW` mood labels. The API accepts an omitted mood for

@@ -42,6 +42,11 @@ import {
   type ServicePlan,
 } from "../model-routing/model-routing.js";
 import type { AuthenticatedRequest } from "../security/authenticated-principal.js";
+import {
+  bedrockConverseRequest,
+  bedrockConverseUrl,
+  parseBedrockConverseResponse,
+} from "../llm-providers/bedrock.js";
 
 const REPOSITORY = "COMPANION_CHAT_REPOSITORY";
 const CONSENT = "COMPANION_CHAT_CONSENT";
@@ -172,9 +177,9 @@ export interface ProviderReply {
   outputTokens: number;
 }
 
-const companionMaxOutputTokens = 2_000;
+export const companionMaxOutputTokens = 2_000;
 
-const providerOutputJsonSchema = {
+export const providerOutputJsonSchema = {
   type: "object",
   additionalProperties: false,
   required: [
@@ -964,10 +969,10 @@ export class RoutedChatProvider implements ChatProvider {
         ? `BEGIN AUTHORIZED UNTRUSTED CONTEXT\n${context.prompt}\nEND AUTHORIZED UNTRUSTED CONTEXT`
         : "No additional context was authorized.",
     ].join("\n");
-    const startedAt = performance.now();
+    const providerId: string = route.provider;
     let response: Response;
     try {
-      if (route.provider === "GEMINI") {
+      if (providerId === "GEMINI") {
         response = await fetch(
           new URL(
             `/v1beta/models/${encodeURIComponent(route.model.replace(/^models\//, ""))}:generateContent`,
@@ -992,7 +997,7 @@ export class RoutedChatProvider implements ChatProvider {
             signal: AbortSignal.timeout(this.configuration.PROVIDER_TIMEOUT_MS),
           },
         );
-      } else {
+      } else if (providerId === "OPENAI") {
         response = await fetch(
           new URL("/v1/responses", this.configuration.OPENAI_BASE_URL),
           {
@@ -1019,6 +1024,31 @@ export class RoutedChatProvider implements ChatProvider {
             signal: AbortSignal.timeout(this.configuration.PROVIDER_TIMEOUT_MS),
           },
         );
+      } else if (providerId === "BEDROCK") {
+        if (!this.configuration.BEDROCK_API_KEY)
+          throw new Error("Bedrock credentials are unavailable");
+        response = await fetch(
+          bedrockConverseUrl(this.configuration.BEDROCK_REGION, route.model),
+          {
+            method: "POST",
+            headers: {
+              "content-type": "application/json",
+              authorization: `Bearer ${this.configuration.BEDROCK_API_KEY}`,
+            },
+            body: JSON.stringify(
+              bedrockConverseRequest(
+                system,
+                userMessage,
+                providerOutputJsonSchema,
+                "mentalbridge_companion_reply",
+                companionMaxOutputTokens,
+              ),
+            ),
+            signal: AbortSignal.timeout(this.configuration.PROVIDER_TIMEOUT_MS),
+          },
+        );
+      } else {
+        throw new Error("Unsupported AI provider");
       }
     } catch {
       throw new ChatProblem(
@@ -1033,56 +1063,70 @@ export class RoutedChatProvider implements ChatProvider {
         "CHAT_PROVIDER_UNAVAILABLE",
         "AI provider is unavailable",
       );
-    const body: unknown = await response.json();
-    const text =
-      route.provider === "GEMINI"
-        ? z
-            .object({
-              candidates: z
+    let body: unknown;
+    try {
+      body = await response.json();
+    } catch {
+      throw new ChatProblem(
+        503,
+        "CHAT_PROVIDER_INVALID_RESPONSE",
+        "AI response is invalid",
+      );
+    }
+    let message: string | undefined;
+    let inputTokens: number | null = null;
+    let outputTokens: number | null = null;
+    const responseProvider: string = route.provider;
+    if (responseProvider === "GEMINI") {
+      const parsed = z
+        .object({
+          candidates: z
+            .array(
+              z.object({
+                content: z.object({
+                  parts: z.array(z.object({ text: z.string() })),
+                }),
+              }),
+            )
+            .min(1),
+        })
+        .safeParse(body);
+      if (parsed.success)
+        message = parsed.data.candidates[0]?.content.parts
+          .map((part) => part.text)
+          .join("");
+    } else if (responseProvider === "OPENAI") {
+      const parsed = z
+        .object({
+          output: z.array(
+            z.object({
+              content: z
                 .array(
                   z.object({
-                    content: z.object({
-                      parts: z.array(z.object({ text: z.string() })),
-                    }),
+                    type: z.string(),
+                    text: z.string().optional(),
                   }),
                 )
-                .min(1),
-            })
-            .safeParse(body)
-        : z
-            .object({
-              output: z.array(
-                z.object({
-                  content: z
-                    .array(
-                      z.object({
-                        type: z.string(),
-                        text: z.string().optional(),
-                      }),
-                    )
-                    .optional(),
-                }),
-              ),
-            })
-            .safeParse(body);
-    let message: string | undefined;
-    if (text.success) {
-      message =
-        route.provider === "GEMINI"
-          ? (
-              text.data as {
-                candidates: { content: { parts: { text: string }[] } }[];
-              }
-            ).candidates[0]?.content.parts
-              .map((part) => part.text)
-              .join("")
-          : (
-              text.data as {
-                output: { content?: { type: string; text?: string }[] }[];
-              }
-            ).output
-              .flatMap((item) => item.content ?? [])
-              .find((item) => item.type === "output_text")?.text;
+                .optional(),
+            }),
+          ),
+        })
+        .safeParse(body);
+      if (parsed.success)
+        message = parsed.data.output
+          .flatMap((item) => item.content ?? [])
+          .find((item) => item.type === "output_text")?.text;
+    } else if (responseProvider === "BEDROCK") {
+      const parsed = parseBedrockConverseResponse(body);
+      message = parsed?.text;
+      inputTokens = parsed?.inputTokens ?? null;
+      outputTokens = parsed?.outputTokens ?? null;
+    } else {
+      throw new ChatProblem(
+        503,
+        "CHAT_PROVIDER_UNAVAILABLE",
+        "AI provider is unavailable",
+      );
     }
     let output: unknown;
     try {
@@ -1102,11 +1146,11 @@ export class RoutedChatProvider implements ChatProvider {
         "AI response is invalid",
       );
     const normalized = validatedAssistantMessage(parsedOutput.data.message);
-    void startedAt;
     return {
       message: normalized,
-      inputTokens: Math.ceil((system.length + userMessage.length) / 4),
-      outputTokens: Math.ceil(normalized.length / 4),
+      inputTokens:
+        inputTokens ?? Math.ceil((system.length + userMessage.length) / 4),
+      outputTokens: outputTokens ?? Math.ceil(normalized.length / 4),
     };
   }
 }

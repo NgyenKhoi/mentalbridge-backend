@@ -577,7 +577,7 @@ void test("fails closed on prompt injection and claimed SupportPlan mutation", a
   }
 });
 
-const chatRoute = (providerId: "GEMINI" | "OPENAI"): ChatRoute => ({
+const chatRoute = (providerId: "GEMINI" | "OPENAI" | "BEDROCK"): ChatRoute => ({
   workload: "COMPANION_CHAT",
   servicePlan: "FREE",
   entitlementSource: "DEFAULT_FREE",
@@ -661,6 +661,114 @@ void test("requests strict structured output from Gemini and OpenAI", async () =
       ).format?.strict,
       true,
     );
+  } finally {
+    globalThis.fetch = originalFetch;
+  }
+});
+
+void test("uses the explicit Bedrock Converse path with structured output and actual usage", async () => {
+  const originalFetch = globalThis.fetch;
+  let requestedUrl = "";
+  let authorization = "";
+  let requestBody: Record<string, unknown> = {};
+  const output = {
+    message: "Mình đang lắng nghe và có thể cùng bạn chọn một bước nhỏ.",
+    language: "vi",
+    authority: "SUPPORT_ONLY",
+    clinicalAssessment: "NONE",
+    safetyDecision: "NONE",
+    eligibilityDecision: "NONE",
+    businessAction: "NONE",
+    thirdPartyAction: "NONE",
+  };
+  globalThis.fetch = (input: string | URL | Request, init?: RequestInit) => {
+    requestedUrl = input instanceof Request ? input.url : input.toString();
+    authorization = new Headers(init?.headers).get("authorization") ?? "";
+    if (typeof init?.body !== "string") throw new Error("Expected JSON body");
+    requestBody = JSON.parse(init.body) as Record<string, unknown>;
+    return Promise.resolve(
+      Response.json({
+        output: {
+          message: { content: [{ text: JSON.stringify(output) }] },
+        },
+        usage: { inputTokens: 33, outputTokens: 7 },
+      }),
+    );
+  };
+
+  try {
+    const bedrockConfiguration = {
+      ...configuration,
+      BEDROCK_REGION: "ap-southeast-1",
+      BEDROCK_API_KEY: "bedrock-secret",
+    } as ServiceConfiguration;
+    const result = await new RoutedChatProvider(bedrockConfiguration).reply(
+      "Xin hỗ trợ",
+      { kinds: ["JOURNAL"], prompt: "Dữ liệu được phép sử dụng" },
+      chatRoute("BEDROCK"),
+    );
+
+    assert.equal(
+      requestedUrl,
+      "https://bedrock-runtime.ap-southeast-1.amazonaws.com/model/reviewed-model/converse",
+    );
+    assert.equal(authorization, "Bearer bedrock-secret");
+    assert.match(
+      String((requestBody.system as { text: string }[])[0]?.text),
+      /MentalBridge AI Companion/,
+    );
+    assert.equal(
+      (requestBody.messages as { content: { text: string }[] }[])[0]?.content[0]
+        ?.text,
+      "Xin hỗ trợ",
+    );
+    assert.equal(
+      (requestBody.inferenceConfig as { maxTokens: number }).maxTokens,
+      2_000,
+    );
+    const schema = JSON.parse(
+      (
+        requestBody.outputConfig as {
+          textFormat: {
+            structure: { jsonSchema: { name: string; schema: string } };
+          };
+        }
+      ).textFormat.structure.jsonSchema.schema,
+    ) as { properties: { message: Record<string, unknown> } };
+    assert.equal(schema.properties.message.minLength, undefined);
+    assert.equal(result.message, output.message);
+    assert.equal(result.inputTokens, 33);
+    assert.equal(result.outputTokens, 7);
+  } finally {
+    globalThis.fetch = originalFetch;
+  }
+});
+
+void test("fails closed instead of routing an unknown provider through Bedrock", async () => {
+  const originalFetch = globalThis.fetch;
+  let calls = 0;
+  globalThis.fetch = () => {
+    calls += 1;
+    return Promise.reject(new Error("must not call a provider"));
+  };
+
+  try {
+    await assert.rejects(
+      () =>
+        new RoutedChatProvider(configuration).reply(
+          "Xin hỗ trợ",
+          { kinds: [], prompt: "" },
+          {
+            ...chatRoute("BEDROCK"),
+            provider: "FUTURE_PROVIDER",
+          } as unknown as ChatRoute,
+        ),
+      (error: unknown) =>
+        error instanceof HttpException &&
+        (error.getResponse() as { code?: string }).code ===
+          "CHAT_PROVIDER_UNAVAILABLE",
+    );
+    assert.equal(calls, 0);
   } finally {
     globalThis.fetch = originalFetch;
   }
