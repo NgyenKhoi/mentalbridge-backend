@@ -12,6 +12,47 @@ x-java-service-environment: &java-service-environment
   IDENTITY_JWT_PUBLIC_KEY: ${IDENTITY_JWT_PUBLIC_KEY:?Generate local Identity keys and set IDENTITY_JWT_PUBLIC_KEY in .env}
 
 services:
+  kafka:
+    image: apache/kafka:3.9.1
+    profiles: *demo-profiles
+    restart: unless-stopped
+    environment:
+      KAFKA_NODE_ID: 1
+      KAFKA_PROCESS_ROLES: broker,controller
+      KAFKA_LISTENERS: PLAINTEXT://:9092,CONTROLLER://:9093
+      KAFKA_ADVERTISED_LISTENERS: PLAINTEXT://kafka:9092
+      KAFKA_LISTENER_SECURITY_PROTOCOL_MAP: CONTROLLER:PLAINTEXT,PLAINTEXT:PLAINTEXT
+      KAFKA_CONTROLLER_LISTENER_NAMES: CONTROLLER
+      KAFKA_CONTROLLER_QUORUM_VOTERS: 1@kafka:9093
+      KAFKA_OFFSETS_TOPIC_REPLICATION_FACTOR: 1
+      KAFKA_TRANSACTION_STATE_LOG_REPLICATION_FACTOR: 1
+      KAFKA_TRANSACTION_STATE_LOG_MIN_ISR: 1
+      KAFKA_GROUP_INITIAL_REBALANCE_DELAY_MS: 0
+    healthcheck:
+      test: ["CMD-SHELL", "/opt/kafka/bin/kafka-topics.sh --bootstrap-server localhost:9092 --list >/dev/null 2>&1"]
+      interval: 5s
+      timeout: 5s
+      retries: 20
+      start_period: 10s
+    networks:
+      - review1
+
+  kafka-init:
+    image: apache/kafka:3.9.1
+    profiles: *demo-profiles
+    restart: "no"
+    command:
+      - /bin/sh
+      - -ec
+      - |
+        /opt/kafka/bin/kafka-topics.sh --bootstrap-server kafka:9092 --create --if-not-exists --topic mentalbridge.identity.account-lifecycle.v1 --partitions 3 --replication-factor 1
+        /opt/kafka/bin/kafka-topics.sh --bootstrap-server kafka:9092 --create --if-not-exists --topic mentalbridge.content-notification.account-preference-dead-letter.v1 --partitions 1 --replication-factor 1
+    depends_on:
+      kafka:
+        condition: service_healthy
+    networks:
+      - review1
+
   identity-migrate:
     build:
       context: ./identity-service
@@ -50,12 +91,21 @@ services:
       IDENTITY_BREVO_SENDER_NAME: ${IDENTITY_BREVO_SENDER_NAME:-MentalBridge}
       IDENTITY_VERIFICATION_URL: ${IDENTITY_VERIFICATION_URL:-http://localhost:3000/verify-email}
       IDENTITY_LOCAL_VERIFICATION_DIRECTORY: /var/lib/mentalbridge/identity-verification
+      KAFKA_BOOTSTRAP_SERVERS: kafka:9092
+      IDENTITY_OUTBOX_RELAY_ENABLED: ${IDENTITY_OUTBOX_RELAY_ENABLED:-true}
+      IDENTITY_OUTBOX_RELAY_BATCH_SIZE: ${IDENTITY_OUTBOX_RELAY_BATCH_SIZE:-100}
+      IDENTITY_OUTBOX_RELAY_INTERVAL: ${IDENTITY_OUTBOX_RELAY_INTERVAL:-PT5S}
+      IDENTITY_OUTBOX_RELAY_SEND_TIMEOUT: ${IDENTITY_OUTBOX_RELAY_SEND_TIMEOUT:-PT5S}
+      IDENTITY_OUTBOX_RELAY_RETRY_BASE: ${IDENTITY_OUTBOX_RELAY_RETRY_BASE:-PT5S}
+      IDENTITY_OUTBOX_RELAY_RETRY_MAXIMUM: ${IDENTITY_OUTBOX_RELAY_RETRY_MAXIMUM:-PT5M}
     volumes:
       - identity-verification:/var/lib/mentalbridge/identity-verification
     ports:
       - "${SERVICE_BIND_ADDRESS:-127.0.0.1}:${IDENTITY_PORT:-8080}:8080"
     depends_on:
       identity-migrate:
+        condition: service_completed_successfully
+      kafka-init:
         condition: service_completed_successfully
     healthcheck:
       test: ["CMD", "wget", "-q", "-O", "/dev/null", "http://localhost:8080/actuator/health"]
@@ -195,6 +245,8 @@ services:
       REMINDER_SCHEDULER_ENABLED: ${CONTENT_REMINDER_SCHEDULER_ENABLED:-true}
       REMINDER_SCHEDULER_INTERVAL_MS: ${CONTENT_REMINDER_SCHEDULER_INTERVAL_MS:-60000}
       REMINDER_SCHEDULER_BATCH_SIZE: ${CONTENT_REMINDER_SCHEDULER_BATCH_SIZE:-100}
+      KAFKA_BOOTSTRAP_SERVERS: kafka:9092
+      CONTENT_ACCOUNT_LIFECYCLE_CONSUMER_ENABLED: ${CONTENT_ACCOUNT_LIFECYCLE_CONSUMER_ENABLED:-true}
     ports:
       - "${SERVICE_BIND_ADDRESS:-127.0.0.1}:${CONTENT_PORT:-3003}:3003"
     depends_on:
@@ -202,6 +254,8 @@ services:
         condition: service_completed_successfully
       journal-ai:
         condition: service_healthy
+      kafka-init:
+        condition: service_completed_successfully
     networks:
       - review1
 

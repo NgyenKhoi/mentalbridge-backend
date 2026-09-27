@@ -40,6 +40,14 @@ and retried by a later scheduler run; it cannot make existing inbox history or
 other owners' reminder production unavailable. Reading the inbox has no
 producer side effect.
 
+Identity publishes its existing `identity.account.registered` contract from the
+transactional outbox to `mentalbridge.identity.account-lifecycle.v1`.
+Content/Notification consumes registered `USER` events and idempotently creates
+the default preference aggregate before the owner first opens notification
+settings or the inbox. Specialist registrations are ignored. The lazy
+`getOrCreate()` API behavior remains only as a compatibility repair path for
+pre-existing accounts and delayed/dead-letter recovery.
+
 The implemented kinds are:
 
 - `JOURNAL_REMINDER`
@@ -76,6 +84,8 @@ Email consumption and mobile push delivery remain unavailable in this slice.
   logic in Journal/AI.
 - In-app materialization is driven by the Content/Notification scheduler over
   persisted preferences and does not depend on inbox navigation.
+- Newly registered users enter the scheduler candidate source through durable
+  account lifecycle delivery instead of requiring a prior preference API read.
 - The reminder service credential is injected at deployment, redacted from
   logs, and authorizes only the minimized Journal/AI projection.
 - Copy is reviewed deterministic Vietnamese text. AI does not decide timing,

@@ -8,7 +8,7 @@ PostgreSQL persistence uses Hibernate and Spring Data JPA types inside the ownin
 
 - Inbound REST: [`identity-service-v1.yaml`](../contracts/openapi/identity-service-v1.yaml) defines public authentication and bounded account-administration APIs.
 - Outbound REST: none in the initial architecture, so this service does not include OpenFeign.
-- Async: account lifecycle, deletion, and safe audit events will use Kafka with a transactional outbox.
+- Async: account lifecycle events use Kafka with a transactional outbox; deletion and safe audit events retain the same approved boundary for their delivery slices.
 - Discovery: registers as `identity-service` in Eureka. Eureka supplies location metadata only.
 
 ## Configuration
@@ -17,6 +17,13 @@ PostgreSQL persistence uses Hibernate and Spring Data JPA types inside the ownin
 | --- | --- | --- | --- |
 | `EUREKA_DEFAULT_ZONE` | Production | Eureka registry endpoint shared by Spring services | `http://localhost:8761/eureka/` |
 | `EUREKA_CLIENT_ENABLED` | No | Enables Eureka registration; disable it when running Identity by itself locally | `false` |
+| `KAFKA_BOOTSTRAP_SERVERS` | When relay enabled | Comma-separated Kafka brokers used only by the transactional outbox relay | `localhost:9092` |
+| `IDENTITY_OUTBOX_RELAY_ENABLED` | No | Publishes due Identity outbox lifecycle events; keep disabled unless versioned topics exist | `false` |
+| `IDENTITY_OUTBOX_RELAY_BATCH_SIZE` | No | Maximum rows claimed per relay run | `100` |
+| `IDENTITY_OUTBOX_RELAY_INTERVAL` | No | Delay between bounded relay runs | `PT5S` |
+| `IDENTITY_OUTBOX_RELAY_SEND_TIMEOUT` | No | Maximum Kafka acknowledgement wait per event | `PT5S` |
+| `IDENTITY_OUTBOX_RELAY_RETRY_BASE` | No | Initial retry delay after a failed publish | `PT5S` |
+| `IDENTITY_OUTBOX_RELAY_RETRY_MAXIMUM` | No | Maximum retry delay for a still-unpublished row | `PT5M` |
 | `IDENTITY_DB_URL` | Yes | PostgreSQL JDBC URL; use `sslmode=require` for an RDS connection | `jdbc:postgresql://localhost:5432/mentalbridge_identity` |
 | `IDENTITY_DB_USERNAME` | Yes | Identity-owned PostgreSQL login | `mentalbridge_identity` |
 | `IDENTITY_DB_PASSWORD` | Yes | Identity PostgreSQL password injected outside source control | `replace-with-a-local-secret` |
@@ -38,7 +45,7 @@ PostgreSQL persistence uses Hibernate and Spring Data JPA types inside the ownin
 | `IDENTITY_E2E_USER_B_EMAIL` | When seeded | User B address; must end in `@synthetic.invalid` | `e2e-user-b@synthetic.invalid` |
 | `IDENTITY_E2E_PASSWORD` | When seeded | Shared local-only password for the two synthetic accounts | injected secret |
 
-Production must override the local Eureka URL. Kafka and Redis variables will be documented when those runtime adapters are introduced.
+Production must override the local Eureka URL. The outbox relay is disabled by default and is enabled only when the version-controlled lifecycle topic has been provisioned. Redis variables will be documented when that runtime adapter is introduced.
 Registration persists the account with exactly one immutable `USER` or `SPECIALIST` role, hashed challenge, idempotent outcome, and outbox event in one transaction. The configured delivery adapter runs only after that transaction commits and never logs the recipient or challenge. Automated tests keep delivery isolated and never use live Brevo credentials.
 
 To prepare a new local checkout from the repository root, copy the committed template and generate development-only signing and encryption material:
