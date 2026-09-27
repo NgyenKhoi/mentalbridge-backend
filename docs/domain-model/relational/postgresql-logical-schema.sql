@@ -459,7 +459,23 @@ CREATE TABLE care.support_guide_resource (
     publication_id uuid NOT NULL,    -- external -> content.resource_eligibility_publication.id
     domain varchar(48) NOT NULL,
     eligibility_role varchar(16) NOT NULL,
-    category varchar(32) NOT NULL,
+    category varchar(32) NOT NULL CHECK (category IN (
+        'REMINDER',
+        'MESSAGE',
+        'APPOINTMENT',
+        'SYSTEM_RESOURCE',
+        'ASSESSMENT_REASSESSMENT',
+        'STREAK_MILESTONE',
+        'JOURNAL_REMINDER',
+        'EMOTION_CHECKIN_REMINDER',
+        'JOURNAL_STREAK_MILESTONE',
+        'EMOTION_STREAK_MILESTONE',
+        'ASSESSMENT',
+        'CHAT',
+        'FOLLOW_UP',
+        'SAFETY',
+        'SYSTEM'
+    )),
     title varchar(255) NOT NULL,
     summary text NOT NULL,
     external_url varchar(2048)

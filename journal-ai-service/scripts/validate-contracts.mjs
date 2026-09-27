@@ -45,6 +45,7 @@ const implementedOperations = new Set([
   "GET /api/v1/emotion-check-in-progress",
   "GET /api/v1/emotion-check-in-context",
   "GET /api/v1/notification-activity",
+  "POST /internal/v1/notification-activity",
   "POST /api/v1/ai-companion/conversations",
   "GET /api/v1/ai-companion/conversations",
   "GET /api/v1/ai-companion/conversations/{conversationId}",
@@ -110,6 +111,10 @@ const implementedResponses = new Map([
     new Set(["200", "400", "401", "403", "503"]),
   ],
   ["GET /api/v1/notification-activity", new Set(["200", "400", "401", "503"])],
+  [
+    "POST /internal/v1/notification-activity",
+    new Set(["200", "400", "401", "503"]),
+  ],
   ["POST /api/v1/ai-companion/conversations", new Set(["201", "400", "401"])],
   ["GET /api/v1/ai-companion/conversations", new Set(["200", "401"])],
   [

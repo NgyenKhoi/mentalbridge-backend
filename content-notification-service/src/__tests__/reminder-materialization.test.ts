@@ -61,7 +61,6 @@ function fixture(
   let currentActivity = initialActivity;
   let now = NOW;
   const service = new ReminderMaterializationService(
-    { get: async () => currentPreferences } as never,
     {
       async get() {
         activityReads += 1;
@@ -80,6 +79,7 @@ function fixture(
   );
   return {
     service,
+    preferences: currentPreferences,
     created,
     attempts,
     activityReads: () => activityReads,
@@ -99,7 +99,9 @@ describe('ReminderMaterializationService', () => {
       activity({ journal: { completedToday: true, currentStreak: 3, longestStreak: 3 } }),
     );
 
-    await expect(subject.service.materialize(OWNER, 'token', 'correlation')).resolves.toBe(1);
+    await expect(
+      subject.service.materialize(OWNER, subject.preferences, 'correlation'),
+    ).resolves.toBe(1);
     expect([...subject.created.values()].map((item) => item.kind)).toEqual([
       'EMOTION_CHECKIN_REMINDER',
     ]);
@@ -108,9 +110,9 @@ describe('ReminderMaterializationService', () => {
   it('uses stable local-day commands so later duplicate retries retain one identity and payload', async () => {
     const subject = fixture();
 
-    await subject.service.materialize(OWNER, 'token', 'correlation');
+    await subject.service.materialize(OWNER, subject.preferences, 'correlation');
     subject.setNow(new Date('2026-09-24T15:30:00.000Z'));
-    await subject.service.materialize(OWNER, 'token', 'correlation');
+    await subject.service.materialize(OWNER, subject.preferences, 'correlation');
 
     expect(subject.created.size).toBe(2);
     expect([...subject.created.keys()].sort()).toEqual([
@@ -136,7 +138,9 @@ describe('ReminderMaterializationService', () => {
       }),
     );
 
-    await expect(subject.service.materialize(OWNER, 'token', 'correlation')).resolves.toBe(2);
+    await expect(
+      subject.service.materialize(OWNER, subject.preferences, 'correlation'),
+    ).resolves.toBe(2);
     expect([...subject.created.values()].map((item) => item.kind)).toEqual([
       'JOURNAL_STREAK_MILESTONE',
       'EMOTION_STREAK_MILESTONE',
@@ -160,8 +164,8 @@ describe('ReminderMaterializationService', () => {
       }),
     );
 
-    await subject.service.materialize(OWNER, 'token', 'correlation');
-    await subject.service.materialize(OWNER, 'token', 'correlation');
+    await subject.service.materialize(OWNER, subject.preferences, 'correlation');
+    await subject.service.materialize(OWNER, subject.preferences, 'correlation');
     expect(subject.created.size).toBe(1);
     expect([...subject.created.values()][0]?.kind).toBe('EMOTION_STREAK_MILESTONE');
   });
@@ -179,13 +183,15 @@ describe('ReminderMaterializationService', () => {
       activity({ journal: { completedToday: true, currentStreak: 3, longestStreak: 4 } }),
     );
 
-    await expect(subject.service.materialize(OWNER, 'token', 'correlation')).resolves.toBe(0);
+    await expect(
+      subject.service.materialize(OWNER, subject.preferences, 'correlation'),
+    ).resolves.toBe(0);
     expect(subject.created.size).toBe(0);
   });
 
   it('uses shared preference and quiet-hour policy before reading owner activity', async () => {
     const disabled = fixture(preferences({ notificationsEnabled: false }));
-    expect(await disabled.service.materialize(OWNER, 'token', 'correlation')).toBe(0);
+    expect(await disabled.service.materialize(OWNER, disabled.preferences, 'correlation')).toBe(0);
     expect(disabled.activityReads()).toBe(0);
 
     const quiet = fixture(
@@ -198,21 +204,23 @@ describe('ReminderMaterializationService', () => {
         },
       }),
     );
-    expect(await quiet.service.materialize(OWNER, 'token', 'correlation')).toBe(0);
+    expect(await quiet.service.materialize(OWNER, quiet.preferences, 'correlation')).toBe(0);
     expect(quiet.activityReads()).toBe(0);
   });
 
   it('fails closed when activity attribution does not match the requested local day', async () => {
     const subject = fixture(preferences(), activity({ asOfLocalDate: '2026-09-23' }));
-    await expect(subject.service.materialize(OWNER, 'token', 'correlation')).resolves.toBe(0);
+    await expect(
+      subject.service.materialize(OWNER, subject.preferences, 'correlation'),
+    ).resolves.toBe(0);
     expect(subject.created.size).toBe(0);
   });
 
   it('fails without creating a notification when authoritative activity is unavailable', async () => {
     const subject = fixture(preferences(), activity(), true);
-    await expect(subject.service.materialize(OWNER, 'token', 'correlation')).rejects.toThrow(
-      'unavailable',
-    );
+    await expect(
+      subject.service.materialize(OWNER, subject.preferences, 'correlation'),
+    ).rejects.toThrow('unavailable');
     expect(subject.created.size).toBe(0);
   });
 });

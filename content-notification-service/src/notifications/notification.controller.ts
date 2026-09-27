@@ -5,7 +5,6 @@ import {
   HttpCode,
   HttpStatus,
   Inject,
-  Headers,
   Param,
   Patch,
   Post,
@@ -16,17 +15,13 @@ import {
 } from '@nestjs/common';
 import type { Response } from 'express';
 
-import {
-  NOTIFICATION_SERVICE_TOKEN,
-  REMINDER_MATERIALIZATION_SERVICE_TOKEN,
-} from '../application.tokens.js';
+import { NOTIFICATION_SERVICE_TOKEN } from '../application.tokens.js';
 import { CurrentUser } from '../auth/current-user.decorator.js';
 import type { AuthenticatedUser } from '../auth/jwt.strategy.js';
 import { JwtAuthGuard } from '../auth/jwt-auth.guard.js';
 import { NotificationIdSchema } from './notification.dto.js';
 import type { NotificationService } from './notification.service.js';
 import type { NotificationItem, NotificationPage } from './notification.types.js';
-import type { ReminderMaterializationService } from '../reminders/reminder-materialization.service.js';
 
 function id(value: string): string {
   if (NotificationIdSchema.safeParse(value).success) return value;
@@ -44,8 +39,6 @@ export class NotificationController {
   constructor(
     @Inject(NOTIFICATION_SERVICE_TOKEN)
     private readonly service: NotificationService,
-    @Inject(REMINDER_MATERIALIZATION_SERVICE_TOKEN)
-    private readonly reminders: ReminderMaterializationService,
   ) {}
 
   @Get()
@@ -53,16 +46,9 @@ export class NotificationController {
     @CurrentUser() user: AuthenticatedUser,
     @Query('limit') limit: string | undefined,
     @Query('cursor') cursor: string | undefined,
-    @Headers('authorization') authorization: string | undefined,
-    @Headers('x-correlation-id') correlationId: string | undefined,
     @Res({ passthrough: true }) response: Response,
   ): Promise<NotificationPage> {
     response.setHeader('Cache-Control', 'private, no-store');
-    if (!cursor && authorization?.startsWith('Bearer ')) {
-      await this.reminders
-        .materialize(user.accountId, authorization.slice('Bearer '.length), correlationId ?? '')
-        .catch(() => undefined);
-    }
     return this.service.list(user.accountId, limit, cursor);
   }
 

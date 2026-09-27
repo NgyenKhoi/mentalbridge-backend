@@ -19,6 +19,9 @@ describe('configuration', () => {
     expect(configuration.DB_POOL_MAX).toBe(10);
     expect(configuration.PORT).toBe(3003);
     expect(configuration.LOG_LEVEL).toBe('info');
+    expect(configuration.REMINDER_SCHEDULER_ENABLED).toBe(false);
+    expect(configuration.REMINDER_SCHEDULER_INTERVAL_MS).toBe(60_000);
+    expect(configuration.REMINDER_SCHEDULER_BATCH_SIZE).toBe(100);
   });
 
   it('normalizes configured CORS origins', () => {
@@ -39,5 +42,22 @@ describe('configuration', () => {
 
   it('rejects an invalid port', () => {
     expect(() => loadConfiguration({ ...requiredEnvironment, PORT: '70000' })).toThrow();
+  });
+
+  it('requires a scoped service token when the reminder scheduler is enabled', () => {
+    expect(() =>
+      loadConfiguration({
+        ...requiredEnvironment,
+        REMINDER_SCHEDULER_ENABLED: 'true',
+      }),
+    ).toThrow();
+
+    const configuration = loadConfiguration({
+      ...requiredEnvironment,
+      REMINDER_SCHEDULER_ENABLED: 'true',
+      JOURNAL_AI_REMINDER_SERVICE_TOKEN: 'test-reminder-service-token-at-least-32-characters',
+    });
+
+    expect(configuration.REMINDER_SCHEDULER_ENABLED).toBe(true);
   });
 });

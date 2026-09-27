@@ -16,26 +16,29 @@ authoritative Journal and emotion activity records. The browser must not
 calculate or persist streak state, and no integration may expose Journal text
 or emotion note text.
 
-The current delivery slice has an authenticated web session but no approved
-background email flow, mobile device registration, or service credential that
-may impersonate every end user. The in-app producer therefore needs a bounded
-end-user-authorized materialization path while those delivery channels remain
-deferred.
+The current delivery slice has no approved background email flow or mobile
+device registration. In-app reminders still need to be produced without the
+owner opening the inbox, so the integration requires a narrowly scoped service
+credential rather than retained or replayed end-user access tokens.
 
 ## Decision
 
-Journal/AI exposes one owner-scoped, bearer-authorized notification activity
-projection. It returns only the current local date, timezone, and independent
-`completedToday`, `currentStreak`, and `longestStreak` facts for Journal and
-emotion check-ins. It never returns entry text, note text, mood, intensity, or
-an AI interpretation.
+Journal/AI exposes one service-authorized notification activity projection for
+an explicit owner and timezone. It returns only the current local date,
+timezone, and independent `completedToday`, `currentStreak`, and
+`longestStreak` facts for Journal and emotion check-ins. It never returns entry
+text, note text, mood, intensity, or an AI interpretation. The endpoint accepts
+only the dedicated reminder service token; it does not grant general Journal
+or emotion access.
 
-Content/Notification forwards the same authenticated end-user bearer when an
-owner opens the first page of the in-app inbox. Content reads the persisted
-preference aggregate, applies the shared channel/content-group and quiet-hour
-policy, obtains the minimized activity projection, and materializes due inbox
-records. A Journal/AI failure cannot make existing inbox history unavailable;
-it only defers creation until a later owner-authorized retry.
+Content/Notification periodically pages persisted preference aggregates for
+owners with in-app Journal, emotion, or milestone notifications enabled. For
+each owner it applies the shared channel/content-group and quiet-hour policy,
+obtains the minimized activity projection with the scoped service credential,
+and materializes due inbox records. One owner's Journal/AI failure is isolated
+and retried by a later scheduler run; it cannot make existing inbox history or
+other owners' reminder production unavailable. Reading the inbox has no
+producer side effect.
 
 The implemented kinds are:
 
@@ -50,9 +53,10 @@ and source identity makes concurrent or repeated evaluation idempotent.
 
 Journal activity dates are derived from active Journal `occurredAt` instants in
 the persisted notification timezone. Emotion activity uses the aggregate's
-frozen `localDate`; same-day revisions remain one activity day. Deleted or
-missing local days are absent and therefore break continuity. An open current
-day does not break a streak ending yesterday.
+frozen `localDate` and the same shared calculator used by the authoritative
+MB-567 progress read model; same-day revisions remain one activity day.
+Deleted or missing local days are absent and therefore break continuity. An
+open current day does not break a streak ending yesterday.
 
 Factual milestones are emitted at 7, 14, and 30 consecutive days, matching the
 approved MB-567 progress windows. A milestone is emitted only when that domain
@@ -70,9 +74,10 @@ Email consumption and mobile push delivery remain unavailable in this slice.
   deduplication; browser state is not authoritative.
 - Quiet hours remain one Content/Notification policy rather than producer
   logic in Journal/AI.
-- In-app materialization occurs while the authenticated owner is active. An
-  autonomous background scheduler requires a separately approved service
-  identity and is not simulated by storing or replaying user access tokens.
+- In-app materialization is driven by the Content/Notification scheduler over
+  persisted preferences and does not depend on inbox navigation.
+- The reminder service credential is injected at deployment, redacted from
+  logs, and authorizes only the minimized Journal/AI projection.
 - Copy is reviewed deterministic Vietnamese text. AI does not decide timing,
   eligibility, kind, threshold, or suppression.
 - Existing historical generic notification kinds remain readable.
@@ -83,6 +88,9 @@ Email consumption and mobile push delivery remain unavailable in this slice.
   retries, and same-day edits would drift from owner truth.
 - Content reading Journal MongoDB: rejected because it violates service data
   ownership.
+- Inbox-read materialization: rejected because a reminder that appears only
+  after the owner opens the inbox cannot prompt the intended activity and may
+  be skipped permanently when the activity is completed first.
 - Persisting user bearer tokens for a background scheduler: rejected because a
   notification worker must not retain or impersonate end-user sessions.
 - Sending raw Journal or emotion content in an event: rejected because dates

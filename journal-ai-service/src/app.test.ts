@@ -39,6 +39,7 @@ const testConfiguration: ServiceConfiguration = {
   CARE_TIMEOUT_MS: 100,
   CONSULTATION_BASE_URL: "http://localhost:8082",
   CONSULTATION_TIMEOUT_MS: 100,
+  REMINDER_SERVICE_TOKEN: "test-reminder-service-token-at-least-32-characters",
   PROVIDER_MODE: "DETERMINISTIC_FAKE",
   ROUTING_POLICY_VERSION: "exact-revision-routing-v1",
   PROVIDER_APPROVAL_VERSION: null,
@@ -170,6 +171,34 @@ void test("validates configuration", () => {
   assert.equal(configuration.PORT, 3100);
   assert.equal(configuration.LOG_LEVEL, "debug");
   assert.equal(configuration.JOURNAL_ENCRYPTION_KEY_ID, "single-key");
+  assert.equal(configuration.REMINDER_SERVICE_TOKEN, null);
+});
+
+void test("validates the reminder service token", () => {
+  const identity = {
+    NODE_ENV: "development",
+    IDENTITY_JWT_ISSUER: "https://identity.test.mentalbridge",
+    IDENTITY_JWT_AUDIENCE: "mentalbridge-api",
+    IDENTITY_JWT_KEY_ID: "test-key",
+    IDENTITY_JWT_PUBLIC_KEY: testPublicKeyPem,
+  };
+
+  assert.throws(() =>
+    loadConfiguration({
+      ...identity,
+      JOURNAL_AI_REMINDER_SERVICE_TOKEN: "too-short",
+    }),
+  );
+
+  const configuration = loadConfiguration({
+    ...identity,
+    JOURNAL_AI_REMINDER_SERVICE_TOKEN:
+      "test-reminder-service-token-at-least-32-characters",
+  });
+  assert.equal(
+    configuration.REMINDER_SERVICE_TOKEN,
+    "test-reminder-service-token-at-least-32-characters",
+  );
 });
 
 void test("rejects an invalid port", () => {
@@ -488,6 +517,58 @@ void test("serves consent-gated Support Guide phrasing over the internal boundar
         model: "deterministic-support-guide-phrasing-v1",
         promptVersion: "support-guide-phrasing-v1",
         schemaVersion: 1,
+      });
+  } finally {
+    await app.close();
+  }
+});
+
+void test("authorizes the scoped notification scheduler service boundary", async () => {
+  const ownerId = "11111111-1111-4111-8111-111111111111";
+  const app = await createApplication(testConfiguration, {
+    ...readyDependencies,
+    notificationActivity: {
+      repository: {
+        snapshot: (requestedOwnerId) => {
+          assert.equal(requestedOwnerId, ownerId);
+          return Promise.resolve({
+            journalOccurredAt: [new Date("2026-09-27T08:00:00.000Z")],
+            emotionLocalDates: ["2026-09-27"],
+          });
+        },
+      },
+      clock: { now: () => new Date("2026-09-27T12:00:00.000Z") },
+    },
+  });
+  await app.init();
+
+  try {
+    const server = app.getHttpServer() as unknown as Server;
+    const body = { ownerAccountId: ownerId, timezone: "Asia/Ho_Chi_Minh" };
+    await request(server)
+      .post("/internal/v1/notification-activity")
+      .send(body)
+      .expect(401);
+    await request(server)
+      .post("/internal/v1/notification-activity")
+      .set("x-mentalbridge-service-token", "wrong-service-token")
+      .send(body)
+      .expect(401);
+    await request(server)
+      .post("/internal/v1/notification-activity")
+      .set(
+        "x-mentalbridge-service-token",
+        testConfiguration.REMINDER_SERVICE_TOKEN ?? "",
+      )
+      .send(body)
+      .expect(200)
+      .expect((response) => {
+        const result = response.body as {
+          asOfLocalDate?: unknown;
+          emotionCheckIn?: { currentStreak?: unknown };
+        };
+        assert.equal(result.asOfLocalDate, "2026-09-27");
+        assert.equal(result.emotionCheckIn?.currentStreak, 1);
       });
   } finally {
     await app.close();

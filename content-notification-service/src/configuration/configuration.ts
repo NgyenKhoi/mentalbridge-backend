@@ -21,12 +21,34 @@ const environmentSchema = z
     IDENTITY_JWT_CLOCK_TOLERANCE_SECONDS: z.coerce.number().int().min(0).default(60),
     JOURNAL_AI_SERVICE_URL: z.url().default('http://localhost:3005'),
     JOURNAL_AI_SERVICE_TIMEOUT_MS: z.coerce.number().int().min(100).max(5_000).default(2_000),
+    JOURNAL_AI_REMINDER_SERVICE_TOKEN: z.string().min(32).optional(),
+    REMINDER_SCHEDULER_ENABLED: z.enum(['true', 'false']).default('false'),
+    REMINDER_SCHEDULER_INTERVAL_MS: z.coerce
+      .number()
+      .int()
+      .min(10_000)
+      .max(3_600_000)
+      .default(60_000),
+    REMINDER_SCHEDULER_BATCH_SIZE: z.coerce.number().int().min(1).max(500).default(100),
     E2E_TEST_MODE: z.coerce.boolean().default(false),
     E2E_TEST_SECRET: z.string().min(16).optional(),
+  })
+  .superRefine((environment, context) => {
+    if (
+      environment.REMINDER_SCHEDULER_ENABLED === 'true' &&
+      !environment.JOURNAL_AI_REMINDER_SERVICE_TOKEN
+    ) {
+      context.addIssue({
+        code: 'custom',
+        path: ['JOURNAL_AI_REMINDER_SERVICE_TOKEN'],
+        message: 'is required when the reminder scheduler is enabled',
+      });
+    }
   })
   .transform((environment) => ({
     ...environment,
     SERVICE_NAME: 'content-notification-service' as const,
+    REMINDER_SCHEDULER_ENABLED: environment.REMINDER_SCHEDULER_ENABLED === 'true',
     ALLOWED_ORIGINS: environment.CORS_ORIGINS.split(',')
       .map((origin) => origin.trim())
       .filter(Boolean),

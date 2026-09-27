@@ -19,6 +19,7 @@ import {
   REMINDER_ACTIVITY_CLIENT_TOKEN,
   REMINDER_MATERIALIZATION_SERVICE_TOKEN,
   REMINDER_CLOCK_TOKEN,
+  REMINDER_SCHEDULER_TOKEN,
 } from './application.tokens.js';
 import type { ServiceConfiguration } from './configuration/configuration.js';
 import { DatabaseService, type ReadinessProbe } from './database/database.service.js';
@@ -49,6 +50,7 @@ import { JournalAiReminderActivityClient } from './reminders/reminder-activity.c
 import { ReminderMaterializationService } from './reminders/reminder-materialization.service.js';
 import type { ReminderActivityClient } from './reminders/reminder-activity.client.js';
 import type { ReminderClock } from './reminders/reminder-materialization.service.js';
+import { ReminderScheduler } from './reminders/reminder.scheduler.js';
 
 export interface ApplicationDependencies {
   readonly readinessProbe?: ReadinessProbe;
@@ -156,6 +158,7 @@ export const createAppModule = (
         provide: REMINDER_CLOCK_TOKEN,
         useValue: dependencies.reminderClock ?? { now: () => new Date() },
       },
+      { provide: REMINDER_SCHEDULER_TOKEN, useClass: ReminderScheduler },
       JwtStrategy,
       {
         provide: RolesGuard,

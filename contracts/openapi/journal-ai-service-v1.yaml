@@ -1,8 +1,8 @@
 openapi: 3.1.0
 info:
   title: MentalBridge Journal AI Service API
-  version: 1.6.0
-  description: Private journal CRUD, daily self-reported emotion check-ins with factual progress and a note-free notification activity projection, consent-gated analysis, bounded Support Guide phrasing, and quota-governed AI Companion conversations.
+  version: 1.7.0
+  description: Private journal CRUD, daily self-reported emotion check-ins with factual progress and a service-authorized note-free notification activity projection, consent-gated analysis, bounded Support Guide phrasing, and quota-governed AI Companion conversations.
 servers:
   - url: http://localhost:3000
 security:
@@ -252,6 +252,33 @@ paths:
           description: Current persisted IANA timezone used to derive Journal local dates and the as-of local day. Emotion activity retains its frozen creation local date.
           schema: { type: string, minLength: 1, maxLength: 64 }
         - $ref: "#/components/parameters/CorrelationId"
+      responses:
+        "200":
+          description: Independent factual Journal and emotion activity.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/NotificationActivity"
+        "400": { $ref: "#/components/responses/BadRequest" }
+        "401": { $ref: "#/components/responses/Unauthorized" }
+        "503": { $ref: "#/components/responses/DependencyUnavailable" }
+  /internal/v1/notification-activity:
+    x-mentalbridge-status: implemented
+    post:
+      tags: [Notification activity]
+      security:
+        - reminderServiceToken: []
+      summary: Resolve one owner's minimized activity for the Content reminder scheduler.
+      description: Requires the configured Content/Notification service credential. The response is note-free and reuses the authoritative emotion progress calculation.
+      operationId: resolveNotificationActivityForScheduler
+      parameters:
+        - $ref: "#/components/parameters/CorrelationId"
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/NotificationActivityRequest"
       responses:
         "200":
           description: Independent factual Journal and emotion activity.
@@ -664,6 +691,10 @@ components:
       type: http
       scheme: bearer
       bearerFormat: JWT
+    reminderServiceToken:
+      type: apiKey
+      in: header
+      name: x-mentalbridge-service-token
   parameters:
     LocalDate:
       name: localDate
@@ -1091,6 +1122,13 @@ components:
         completedToday: { type: boolean }
         currentStreak: { type: integer, minimum: 0 }
         longestStreak: { type: integer, minimum: 0 }
+    NotificationActivityRequest:
+      type: object
+      additionalProperties: false
+      required: [ownerAccountId, timezone]
+      properties:
+        ownerAccountId: { type: string, format: uuid }
+        timezone: { type: string, minLength: 1, maxLength: 64 }
     NotificationActivity:
       type: object
       additionalProperties: false

@@ -25,7 +25,11 @@ const NotificationActivitySchema = z
 export type NotificationActivity = z.infer<typeof NotificationActivitySchema>;
 
 export interface ReminderActivityClient {
-  get(accessToken: string, timezone: string, correlationId: string): Promise<NotificationActivity>;
+  get(
+    ownerAccountId: string,
+    timezone: string,
+    correlationId: string,
+  ): Promise<NotificationActivity>;
 }
 
 @Injectable()
@@ -36,7 +40,7 @@ export class JournalAiReminderActivityClient implements ReminderActivityClient {
   ) {}
 
   async get(
-    accessToken: string,
+    ownerAccountId: string,
     timezone: string,
     correlationId: string,
   ): Promise<NotificationActivity> {
@@ -46,19 +50,22 @@ export class JournalAiReminderActivityClient implements ReminderActivityClient {
     }, this.configuration.JOURNAL_AI_SERVICE_TIMEOUT_MS);
     try {
       const url = new URL(
-        '/api/v1/notification-activity',
+        '/internal/v1/notification-activity',
         this.configuration.JOURNAL_AI_SERVICE_URL,
       );
-      url.searchParams.set('timezone', timezone);
+      const serviceToken = this.configuration.JOURNAL_AI_REMINDER_SERVICE_TOKEN;
+      if (!serviceToken) throw new ServiceUnavailableException();
       const response = await fetch(url, {
-        method: 'GET',
+        method: 'POST',
         redirect: 'error',
         signal: controller.signal,
         headers: {
           Accept: 'application/json',
-          Authorization: `Bearer ${accessToken}`,
+          'Content-Type': 'application/json',
+          'X-MentalBridge-Service-Token': serviceToken,
           'X-Correlation-Id': correlationId,
         },
+        body: JSON.stringify({ ownerAccountId, timezone }),
       });
       if (!response.ok) throw new ServiceUnavailableException();
       return NotificationActivitySchema.parse(await response.json());

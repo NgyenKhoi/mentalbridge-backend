@@ -1,12 +1,10 @@
 import { Inject, Injectable } from '@nestjs/common';
 
 import {
-  NOTIFICATION_PREFERENCE_SERVICE_TOKEN,
   NOTIFICATION_SERVICE_TOKEN,
   REMINDER_ACTIVITY_CLIENT_TOKEN,
   REMINDER_CLOCK_TOKEN,
 } from '../application.tokens.js';
-import type { NotificationPreferenceService } from '../notification-preferences/notification-preference.service.js';
 import type { NotificationPreferences } from '../notification-preferences/notification-preference.types.js';
 import type { NotificationService } from '../notifications/notification.service.js';
 import type { NotificationCreate, NotificationKind } from '../notifications/notification.types.js';
@@ -105,8 +103,6 @@ const command = (
 @Injectable()
 export class ReminderMaterializationService {
   constructor(
-    @Inject(NOTIFICATION_PREFERENCE_SERVICE_TOKEN)
-    private readonly preferences: NotificationPreferenceService,
     @Inject(REMINDER_ACTIVITY_CLIENT_TOKEN)
     private readonly activityClient: ReminderActivityClient,
     @Inject(NOTIFICATION_SERVICE_TOKEN)
@@ -114,8 +110,11 @@ export class ReminderMaterializationService {
     @Inject(REMINDER_CLOCK_TOKEN) private readonly clock: ReminderClock,
   ) {}
 
-  async materialize(ownerId: string, accessToken: string, correlationId: string): Promise<number> {
-    const preferences = await this.preferences.get(ownerId);
+  async materialize(
+    ownerId: string,
+    preferences: NotificationPreferences,
+    correlationId: string,
+  ): Promise<number> {
     const now = this.clock.now();
     if (
       !preferences.notificationsEnabled ||
@@ -129,7 +128,7 @@ export class ReminderMaterializationService {
     }
 
     const activity = await this.activityClient.get(
-      accessToken,
+      ownerId,
       preferences.quietHours.timeZone,
       correlationId,
     );

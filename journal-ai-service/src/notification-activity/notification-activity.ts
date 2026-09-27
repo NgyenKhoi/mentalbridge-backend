@@ -1,10 +1,15 @@
 import {
   BadRequestException,
+  Body,
   Controller,
   Get,
+  Headers,
+  HttpCode,
+  HttpStatus,
   Inject,
   Injectable,
   Module,
+  Post,
   Query,
   Req,
   ServiceUnavailableException,
@@ -14,10 +19,13 @@ import {
   type Provider,
 } from "@nestjs/common";
 import { MongoClient, type Collection } from "mongodb";
+import { timingSafeEqual } from "node:crypto";
 import { z } from "zod";
 
 import type { ServiceConfiguration as Configuration } from "../configuration/configuration.js";
 import type { AuthenticatedRequest } from "../security/authenticated-principal.js";
+import { Public } from "../security/public.decorator.js";
+import { calculateEmotionStreak } from "../emotion-check-ins/emotion-progress.js";
 
 const REPOSITORY = "NOTIFICATION_ACTIVITY_REPOSITORY";
 const CLOCK = "NOTIFICATION_ACTIVITY_CLOCK";
@@ -64,6 +72,9 @@ const timezoneSchema = z
   });
 
 const uuidSchema = z.uuid();
+const internalRequestSchema = z
+  .object({ ownerAccountId: uuidSchema, timezone: timezoneSchema })
+  .strict();
 
 const owner = (request: AuthenticatedRequest): string => {
   const accountId = request.principal?.accountId;
@@ -194,11 +205,27 @@ export class NotificationActivityService {
       asOfLocalDate,
       timezone: parsedTimezone.data,
       journal: factualStreak(journalDates, asOfLocalDate),
-      emotionCheckIn: factualStreak(snapshot.emotionLocalDates, asOfLocalDate),
+      emotionCheckIn: calculateEmotionStreak(
+        snapshot.emotionLocalDates,
+        asOfLocalDate,
+      ),
       interpretation: "FACTUAL_ACTIVITY_NOT_ADHERENCE_OR_RECOVERY" as const,
     };
   }
 }
+
+const matchesServiceToken = (
+  candidate: string | undefined,
+  expected: string | null,
+): boolean => {
+  if (!candidate || !expected) return false;
+  const candidateBuffer = Buffer.from(candidate);
+  const expectedBuffer = Buffer.from(expected);
+  return (
+    candidateBuffer.length === expectedBuffer.length &&
+    timingSafeEqual(candidateBuffer, expectedBuffer)
+  );
+};
 
 @Controller("api/v1/notification-activity")
 export class NotificationActivityController {
@@ -210,6 +237,34 @@ export class NotificationActivityController {
     @Query("timezone") timezone: string,
   ) {
     return this.service.get(owner(request), timezone);
+  }
+}
+
+@Public()
+@Controller("internal/v1/notification-activity")
+export class InternalNotificationActivityController {
+  constructor(
+    private readonly service: NotificationActivityService,
+    @Inject("NOTIFICATION_ACTIVITY_CONFIGURATION")
+    private readonly configuration: Configuration,
+  ) {}
+
+  @Post()
+  @HttpCode(HttpStatus.OK)
+  get(
+    @Headers("x-mentalbridge-service-token") serviceToken: string | undefined,
+    @Body() body: unknown,
+  ) {
+    if (
+      !matchesServiceToken(
+        serviceToken,
+        this.configuration.REMINDER_SERVICE_TOKEN,
+      )
+    )
+      throw new UnauthorizedException();
+    const parsed = internalRequestSchema.safeParse(body);
+    if (!parsed.success) throw new BadRequestException();
+    return this.service.get(parsed.data.ownerAccountId, parsed.data.timezone);
   }
 }
 
@@ -226,10 +281,17 @@ export const registerNotificationActivityModule = (
       };
   return {
     module: NotificationActivityModule,
-    controllers: [NotificationActivityController],
+    controllers: [
+      NotificationActivityController,
+      InternalNotificationActivityController,
+    ],
     providers: [
       NotificationActivityService,
       repository,
+      {
+        provide: "NOTIFICATION_ACTIVITY_CONFIGURATION",
+        useValue: configuration,
+      },
       {
         provide: CLOCK,
         useValue: dependencies.clock ?? { now: () => new Date() },
