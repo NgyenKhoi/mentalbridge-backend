@@ -10,6 +10,7 @@ Use ADR **filename + Decision ID**, not numeric prefix alone, when a reference c
 | [0022-current-product-blueprint-amendments.md](0022-current-product-blueprint-amendments.md) | `MB-SCOPE-V2-002` | Accepted | Latest amendments for Support Guide semantics, reassessment, PlanChangeRequest handoff, consultation credits, no-rollover, and reservation caps |
 | [0023-persist-guided-screening-episodes.md](0023-persist-guided-screening-episodes.md) | `MB-SCREENING-EPISODE-001` | Accepted | Care-owned exact grouping and resume context for guided initial check and reassessment evidence |
 | [0024-global-anonymous-crisis-support.md](0024-global-anonymous-crisis-support.md) | `MB-GLOBAL-CRISIS-SUPPORT-001` | Accepted | Latest safety amendment for the global anonymous panel and reviewed national `112`/`115` contacts |
+| [0025-authoritative-emotion-check-in-progress.md](0025-authoritative-emotion-check-in-progress.md) | `MB-EMOTION-CHECK-IN-PROGRESS-001` | Accepted | Journal/AI-owned factual emotion history, streak, and 7/14/30-day read-model semantics |
 
 For clauses explicitly amended by ADR 0022 or ADR 0024, the relevant latest
 amendment is the current prospective authority. Historical records keep their

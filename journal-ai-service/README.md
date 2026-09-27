@@ -17,6 +17,7 @@ The service provides:
 - graceful shutdown for `SIGINT` and `SIGTERM`
 - owner-scoped journal create, list, detail, revise, and tombstone deletion
 - one encrypted owner-scoped daily self-reported emotion check-in per local day
+- authoritative factual emotion history, streaks, and 7/14/30-day coverage
 - AES-256-GCM encrypted journal revisions with lifetime idempotency records
 - optional backwards-compatible, user-selected mood encrypted with each revision
 - optimistic concurrency through `If-Match` and deterministic cursor pagination
@@ -190,6 +191,13 @@ the encrypted envelope, and deletion immediately removes all encrypted
 revisions. Only a note-free AI projection is exposed under current Care
 `AI_PROCESSING` consent. Reminder composition remains unavailable because it has
 no approved consent authorization contract.
+
+ADR 0025 extends that aggregate with a recomputed, note-free progress read
+model. The caller's valid IANA timezone anchors the server-derived current
+local date. One active local date counts once, same-day revisions do not
+increment coverage, and deleted or missing dates break continuity. The response
+contains factual current/longest streaks and 7/14/30-day label counts only; it
+does not average intensity or claim adherence, improvement, or recovery.
 
 The committed benchmark dataset is synthetic and CC0-labelled. A run evaluates
 one or both explicitly configured Gemini/OpenAI candidates; credentials for an

@@ -195,6 +195,41 @@ void test("persists owner-isolated daily emotion check-ins with real MongoDB", a
     assert.equal(historyBody.label, "SELF_REPORTED_EMOTION");
     assert.equal(historyBody.items.length, 1);
 
+    const progress = await request(server)
+      .get("/api/v1/emotion-check-in-progress?timezone=Asia%2FHo_Chi_Minh")
+      .set("Authorization", `Bearer ${ownerToken}`)
+      .expect(200);
+    const progressBody = progress.body as {
+      currentEmotion: string | null;
+      currentStreak: number;
+      longestStreak: number;
+      windows: {
+        days: number;
+        checkedInDays: number;
+        distribution: Record<string, number>;
+      }[];
+    };
+    assert.ok(["LOW", "GREAT"].includes(progressBody.currentEmotion ?? ""));
+    assert.equal(progressBody.currentStreak, 1);
+    assert.equal(progressBody.longestStreak, 1);
+    assert.deepEqual(
+      progressBody.windows.map((window) => [window.days, window.checkedInDays]),
+      [
+        [7, 1],
+        [14, 1],
+        [30, 1],
+      ],
+    );
+    assert.equal(
+      progressBody.windows[0]?.distribution[progressBody.currentEmotion ?? ""],
+      1,
+    );
+
+    await request(server)
+      .get("/api/v1/emotion-check-in-progress?timezone=Mars%2FOlympus")
+      .set("Authorization", `Bearer ${ownerToken}`)
+      .expect(400);
+
     const context = await request(server)
       .get("/api/v1/emotion-check-in-context?purpose=AI_REFLECTION")
       .set("Authorization", `Bearer ${ownerToken}`)

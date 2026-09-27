@@ -7,6 +7,7 @@
 | Aggregate owner | Journal/AI |
 | Consent owner | Care |
 | Decision | [ADR 0018](../adr/0018-daily-emotion-check-in.md) |
+| Progress extension | [ADR 0025](../adr/0025-authoritative-emotion-check-in-progress.md) |
 
 ## Vocabulary and claims
 
@@ -16,8 +17,23 @@
   `NOT_DIAGNOSIS_OR_RECOVERY`.
 - No value is a clinical score, safety classifier, severity, improvement,
   recovery, or treatment outcome.
-- UI copy must not reward streaks or infer positive/negative trends from
-  intensity.
+- UI copy may state authoritative factual streak and coverage counts under ADR
+  0025. It must not reward or shame streaks, infer positive/negative trends
+  from intensity, or describe adherence, improvement, or recovery.
+
+## Factual progress
+
+- One active local date is one checked-in day; same-day revisions never add a
+  day.
+- The current streak ends on the caller's server-derived current local date,
+  or the immediately preceding date while the current day is still open. A
+  missing completed date or a deleted date breaks the run.
+- The longest streak is recomputed from active emotion check-in dates only.
+  Journal dates are an independent signal.
+- Rolling 7-, 14-, and 30-day windows expose checked-in-day coverage and label
+  counts only. Empty and sparse data remain explicit.
+- The authoritative calculation belongs to Journal/AI and is not reimplemented
+  in browser state or a notification producer.
 
 ## Local day and editing
 

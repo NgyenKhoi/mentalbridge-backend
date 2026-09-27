@@ -1,8 +1,8 @@
 openapi: 3.1.0
 info:
   title: MentalBridge Journal AI Service API
-  version: 1.4.0
-  description: Private journal CRUD, daily self-reported emotion check-ins, consent-gated analysis, bounded Support Guide phrasing, and quota-governed AI Companion conversations.
+  version: 1.5.0
+  description: Private journal CRUD, daily self-reported emotion check-ins with factual progress, consent-gated analysis, bounded Support Guide phrasing, and quota-governed AI Companion conversations.
 servers:
   - url: http://localhost:3000
 security:
@@ -183,6 +183,30 @@ paths:
         "400": { $ref: "#/components/responses/BadRequest" }
         "401": { $ref: "#/components/responses/Unauthorized" }
         "404": { $ref: "#/components/responses/NotFound" }
+        "503": { $ref: "#/components/responses/DependencyUnavailable" }
+  /api/v1/emotion-check-in-progress:
+    x-mentalbridge-status: implemented
+    get:
+      tags: [Emotion check-ins]
+      summary: Read authoritative factual emotion check-in streaks and rolling coverage.
+      description: Counts active owner check-in local dates only. Same-day revisions remain one checked-in day; deleted or missing completed days do not count, while an open current day does not break a streak ending yesterday. The result is self-tracking evidence, not a clinical, adherence, improvement, or recovery claim.
+      operationId: getEmotionCheckInProgress
+      parameters:
+        - name: timezone
+          in: query
+          required: true
+          description: Current valid IANA timezone used to derive the as-of local date and rolling windows. Each stored aggregate keeps its immutable creation timezone.
+          schema: { type: string, minLength: 1, maxLength: 64 }
+        - $ref: "#/components/parameters/CorrelationId"
+      responses:
+        "200":
+          description: Authoritative current/longest streak and 7/14/30-day factual counts.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/EmotionCheckInProgress"
+        "400": { $ref: "#/components/responses/BadRequest" }
+        "401": { $ref: "#/components/responses/Unauthorized" }
         "503": { $ref: "#/components/responses/DependencyUnavailable" }
   /api/v1/emotion-check-in-context:
     x-mentalbridge-status: implemented
@@ -973,6 +997,66 @@ components:
             nextBefore: { type: string, format: date }
         label: { type: string, const: SELF_REPORTED_EMOTION }
         interpretation: { type: string, const: NOT_DIAGNOSIS_OR_RECOVERY }
+    EmotionDistribution:
+      type: object
+      additionalProperties: false
+      required: [GREAT, GOOD, OKAY, LOW, VERY_LOW]
+      properties:
+        GREAT: { type: integer, minimum: 0 }
+        GOOD: { type: integer, minimum: 0 }
+        OKAY: { type: integer, minimum: 0 }
+        LOW: { type: integer, minimum: 0 }
+        VERY_LOW: { type: integer, minimum: 0 }
+    EmotionProgressWindow:
+      type: object
+      additionalProperties: false
+      required:
+        [
+          days,
+          startLocalDate,
+          endLocalDate,
+          checkedInDays,
+          totalDays,
+          distribution,
+        ]
+      properties:
+        days: { type: integer, enum: [7, 14, 30] }
+        startLocalDate: { type: string, format: date }
+        endLocalDate: { type: string, format: date }
+        checkedInDays: { type: integer, minimum: 0, maximum: 30 }
+        totalDays: { type: integer, enum: [7, 14, 30] }
+        distribution: { $ref: "#/components/schemas/EmotionDistribution" }
+    EmotionCheckInProgress:
+      type: object
+      additionalProperties: false
+      required:
+        [
+          asOfLocalDate,
+          timezone,
+          currentEmotion,
+          currentStreak,
+          longestStreak,
+          windows,
+          label,
+          interpretation,
+        ]
+      properties:
+        asOfLocalDate: { type: string, format: date }
+        timezone: { type: string, minLength: 1, maxLength: 64 }
+        currentEmotion:
+          oneOf:
+            - $ref: "#/components/schemas/Emotion"
+            - type: "null"
+        currentStreak: { type: integer, minimum: 0 }
+        longestStreak: { type: integer, minimum: 0 }
+        windows:
+          type: array
+          minItems: 3
+          maxItems: 3
+          items: { $ref: "#/components/schemas/EmotionProgressWindow" }
+        label: { type: string, const: SELF_REPORTED_EMOTION }
+        interpretation:
+          { type: string, const: FACTUAL_COUNTS_NOT_DIAGNOSIS_OR_RECOVERY }
     EmotionCheckInTombstone:
       type: object
       additionalProperties: false

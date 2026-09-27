@@ -130,7 +130,10 @@ retained until explicit owner/account deletion. Migration
 
 Owner responses may decrypt the current or historical revision after current
 authorization. The consent-gated AI projection excludes document ID and note.
-No reminder projection or Kafka event exists in v1.
+The MB-567 progress read model scans active owner/local-date identities for
+current and longest streaks, then decrypts only the bounded current 30-day
+window to count self-reported labels. It persists no derived counter and
+returns no note. No reminder projection or Kafka event exists in v1.
 
 ## AI Companion conversation and quota collections
 
