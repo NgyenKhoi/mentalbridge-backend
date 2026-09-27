@@ -5,6 +5,7 @@ import { NotificationPreferenceVersionMismatchError } from './notification-prefe
 import type {
   NotificationPreferences,
   NotificationPreferenceUpdate,
+  ReminderCandidate,
 } from './notification-preference.types.js';
 
 function validTimeZone(value: string): boolean {
@@ -32,6 +33,14 @@ export class NotificationPreferenceService {
     @Inject(NOTIFICATION_PREFERENCE_REPOSITORY_TOKEN)
     private readonly repository: NotificationPreferenceRepository,
   ) {}
+
+  async initializeForAccount(userId: string): Promise<void> {
+    try {
+      await this.repository.createDefaults(userId);
+    } catch {
+      throw new ServiceUnavailableException();
+    }
+  }
 
   async get(userId: string): Promise<NotificationPreferences> {
     try {
@@ -80,6 +89,17 @@ export class NotificationPreferenceService {
       return await this.repository.update(userId, expectedVersion, next);
     } catch (error) {
       if (error instanceof NotificationPreferenceVersionMismatchError) throw error;
+      throw new ServiceUnavailableException();
+    }
+  }
+
+  async listReminderCandidates(
+    afterOwnerId: string | null,
+    limit: number,
+  ): Promise<readonly ReminderCandidate[]> {
+    try {
+      return await this.repository.listReminderCandidates(afterOwnerId, limit);
+    } catch {
       throw new ServiceUnavailableException();
     }
   }

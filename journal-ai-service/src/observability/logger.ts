@@ -13,6 +13,7 @@ export const createLogger = (configuration: ServiceConfiguration): Logger =>
       paths: [
         "req.headers.authorization",
         "req.headers.cookie",
+        "req.headers['x-mentalbridge-service-token']",
         "req.headers['set-cookie']",
         "res.headers['set-cookie']",
       ],

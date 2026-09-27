@@ -87,6 +87,12 @@ describe('ResourceEligibilityRepository integration', () => {
       IDENTITY_JWT_AUDIENCE: 'test',
       IDENTITY_JWT_PUBLIC_KEY: 'test',
       IDENTITY_JWT_CLOCK_TOLERANCE_SECONDS: 0,
+      JOURNAL_AI_SERVICE_URL: 'http://localhost:3005',
+      JOURNAL_AI_SERVICE_TIMEOUT_MS: 2_000,
+      JOURNAL_AI_REMINDER_SERVICE_TOKEN: undefined,
+      REMINDER_SCHEDULER_ENABLED: false,
+      REMINDER_SCHEDULER_INTERVAL_MS: 60_000,
+      REMINDER_SCHEDULER_BATCH_SIZE: 100,
     };
     database = new DatabaseService(configuration);
     repository = new ResourceEligibilityRepository(database);

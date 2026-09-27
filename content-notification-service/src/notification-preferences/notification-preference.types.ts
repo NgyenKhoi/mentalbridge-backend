@@ -54,6 +54,11 @@ export interface NotificationPreferences {
   readonly updatedAt: string;
 }
 
+export interface ReminderCandidate {
+  readonly ownerId: string;
+  readonly preferences: NotificationPreferences;
+}
+
 export interface NotificationPreferenceUpdate {
   readonly notificationsEnabled?: boolean;
   readonly channels?: {

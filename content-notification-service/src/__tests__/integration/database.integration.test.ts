@@ -65,6 +65,7 @@ describe('Database Integration', () => {
       '9_add_resource_source_provenance.sql',
       '10_persist_notification_preferences.sql',
       '11_persist_notification_inbox.sql',
+      '12_add_journal_emotion_notification_kinds.sql',
     ]) {
       if (migration === '10_persist_notification_preferences.sql') {
         await pool.query(
@@ -407,6 +408,26 @@ describe('Database Integration', () => {
       });
     });
 
+    it('initializes one default aggregate idempotently from account lifecycle delivery', async () => {
+      const database = {
+        query: (text: string, parameters?: unknown[]) => pool.query(text, parameters),
+      } as unknown as DatabaseService;
+      const repository = new NotificationPreferenceRepository(database);
+      const owner = 'a1eebc99-9c0b-4ef8-bb6d-6bb9bd380a11';
+
+      await repository.createDefaults(owner);
+      await repository.createDefaults(owner);
+
+      const { rows } = await pool.query(
+        `SELECT count(*)::int AS aggregate_count,
+                bool_and(notifications_enabled AND channel_in_app_enabled) AS defaults_enabled
+         FROM notification_preference
+         WHERE user_id = $1`,
+        [owner],
+      );
+      expect(rows[0]).toEqual({ aggregate_count: 1, defaults_enabled: true });
+    });
+
     it('rejects invalid quiet windows and email cadence', async () => {
       await expect(
         pool.query(
@@ -478,6 +499,31 @@ describe('Database Integration', () => {
       await expect(firstDevice.update(owner, 0, saved)).rejects.toBeInstanceOf(
         NotificationPreferenceVersionMismatchError,
       );
+    });
+
+    it('pages only enabled in-app reminder candidates', async () => {
+      const database = {
+        query: (text: string, parameters?: unknown[]) => pool.query(text, parameters),
+      } as unknown as DatabaseService;
+      const repository = new NotificationPreferenceRepository(database);
+      const enabledOwner = '11000000-0000-4000-8000-000000000001';
+      const disabledOwner = '11000000-0000-4000-8000-000000000002';
+      const emailOnlyOwner = '11000000-0000-4000-8000-000000000003';
+
+      await pool.query(
+        `INSERT INTO notification_preference
+           (user_id, notifications_enabled, channel_in_app_enabled)
+         VALUES ($1, true, true), ($2, false, true), ($3, true, false)`,
+        [enabledOwner, disabledOwner, emailOnlyOwner],
+      );
+
+      const firstPage = await repository.listReminderCandidates(null, 1);
+      const secondPage = await repository.listReminderCandidates(firstPage[0]?.ownerId ?? null, 20);
+      const owners = [...firstPage, ...secondPage].map((candidate) => candidate.ownerId);
+
+      expect(owners).toContain(enabledOwner);
+      expect(owners).not.toContain(disabledOwner);
+      expect(owners).not.toContain(emailOnlyOwner);
     });
   });
 

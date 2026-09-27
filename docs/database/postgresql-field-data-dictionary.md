@@ -1460,7 +1460,7 @@ Durable in-app notification and safe delivery payload owned by Content/Notificat
 | --- | --- |
 | `id` | Immutable UUID used for REST history, Kafka delivery, and read idempotency. |
 | `recipient_id` | External Identity account UUID of the intended recipient. |
-| `category` | Stable category used for preference, priority, and presentation rules. |
+| `category` | Stable kind used for preference, priority, and presentation rules. MB-564 adds separate `JOURNAL_REMINDER`, `EMOTION_CHECKIN_REMINDER`, `JOURNAL_STREAK_MILESTONE`, and `EMOTION_STREAK_MILESTONE` values while retaining historical generic kinds. |
 | `title` | Reviewed/minimized user-visible title safe for the selected channel. |
 | `body` | Reviewed/minimized user-visible body that excludes raw sensitive source content. |
 | `action_type` | Optional approved internal action enum used to derive a relative client route; arbitrary producer URLs are never stored. |
@@ -1472,7 +1472,7 @@ Durable in-app notification and safe delivery payload owned by Content/Notificat
 | `created_at` | Immutable UTC creation instant used for cursor ordering. |
 | `deleted_at` | UTC user/policy tombstone instant; null while visible in history. |
 | `source` | Stable bounded producer namespace such as `CONTENT` or `REALTIME`; it carries no provider payload or user-authored text. |
-| `source_identity` | Stable producer-owned event identity used with `recipient_id` and `source` to collapse retries for one recipient while allowing legitimate fan-out of the same source event to other recipients. |
+| `source_identity` | Stable producer-owned event identity used with `recipient_id` and `source` to collapse retries for one recipient while allowing legitimate fan-out of the same source event to other recipients. Journal/emotion notifications use `<kind>:<local-date>` so repeated materialization of one owner/day/kind remains one inbox row. |
 | `request_fingerprint` | SHA-256 of the validated minimized create command; changed reuse of a dedupe identity is rejected instead of overwriting the original notification. |
 | `delivery_state` | Durable delivery lifecycle (`PENDING`, `DELIVERED`, `FAILED`, or `CANCELLED`); only `DELIVERED` records appear in the inbox. |
 | `version` | Monotonic mutation counter incremented for the first read or tombstone transition. |
