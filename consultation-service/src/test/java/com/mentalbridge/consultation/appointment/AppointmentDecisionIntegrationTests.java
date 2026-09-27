@@ -10,9 +10,12 @@ import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.
 
 import java.sql.Timestamp;
 import java.time.Instant;
+import java.util.List;
 import java.util.UUID;
 import java.util.concurrent.CountDownLatch;
 import java.util.concurrent.Executors;
+
+import javax.sql.DataSource;
 
 import org.junit.jupiter.api.Test;
 import org.springframework.beans.factory.annotation.Autowired;
@@ -38,6 +41,7 @@ class AppointmentDecisionIntegrationTests extends ConsultationTestProperties {
 	@Autowired JdbcClient jdbc;
 	@Autowired ObjectMapper json;
 	@Autowired AppointmentDecisionService decisions;
+	@Autowired DataSource dataSource;
 
 	@Test
 	void assignedSpecialistAcceptsOnceAndCreditRemainsHeld() throws Exception {
@@ -87,6 +91,30 @@ class AppointmentDecisionIntegrationTests extends ConsultationTestProperties {
 	}
 
 	@Test
+	void concurrentDuplicateAcceptsReplayOneDecision() throws Exception {
+		var fixture = requestedAppointment();
+
+		var results = concurrentDecisions(fixture, true, "concurrent-accept-command-0001");
+
+		assertThat(results).extracting(AppointmentResponse::status).containsOnly("CONFIRMED");
+		assertThat(historyCount(fixture.appointmentId())).isOne();
+		assertThat(creditState(fixture.creditId())).isEqualTo("HELD");
+		assertThat(releaseCount(fixture.appointmentId())).isZero();
+	}
+
+	@Test
+	void concurrentDuplicateRejectionsReplayOneDecisionAndRelease() throws Exception {
+		var fixture = requestedAppointment();
+
+		var results = concurrentDecisions(fixture, false, "concurrent-reject-command-0001");
+
+		assertThat(results).extracting(AppointmentResponse::status).containsOnly("REJECTED");
+		assertThat(historyCount(fixture.appointmentId())).isOne();
+		assertThat(creditState(fixture.creditId())).isEqualTo("AVAILABLE");
+		assertThat(releaseCount(fixture.appointmentId())).isOne();
+	}
+
+	@Test
 	void wrongSpecialistAndStaleVersionFailWithoutChangingTheRequest() throws Exception {
 		var fixture = requestedAppointment();
 
@@ -123,6 +151,25 @@ class AppointmentDecisionIntegrationTests extends ConsultationTestProperties {
 	}
 
 	@Test
+	void schedulerRecoversExpiryAfterTheHeldCreditPeriodEnded() throws Exception {
+		var fixture = requestedAppointment();
+		makeDue(fixture.appointmentId());
+		jdbc.sql("""
+				update service_credit_period set period_end=:periodEnd, updated_at=:periodEnd
+				where id=(select period_id from service_credit where id=:creditId)
+				""").param("periodEnd", Timestamp.from(Instant.now().minusSeconds(60)))
+				.param("creditId", fixture.creditId()).update();
+
+		assertThat(decisions.expire(fixture.appointmentId())).isTrue();
+		assertThat(decisions.expire(fixture.appointmentId())).isFalse();
+
+		assertThat(appointmentStatus(fixture.appointmentId())).isEqualTo("EXPIRED");
+		assertThat(creditState(fixture.creditId())).isEqualTo("AVAILABLE");
+		assertThat(historyCount(fixture.appointmentId())).isOne();
+		assertThat(releaseCount(fixture.appointmentId())).isOne();
+	}
+
+	@Test
 	void decisionVersusExpiryRaceEndsExpiredWithoutDoubleRelease() throws Exception {
 		var fixture = requestedAppointment();
 		makeDue(fixture.appointmentId());
@@ -151,6 +198,52 @@ class AppointmentDecisionIntegrationTests extends ConsultationTestProperties {
 		assertThat(appointmentStatus(fixture.appointmentId())).isEqualTo("EXPIRED");
 		assertThat(releaseCount(fixture.appointmentId())).isOne();
 		assertThat(historyCount(fixture.appointmentId())).isOne();
+	}
+
+	private List<AppointmentResponse> concurrentDecisions(Fixture fixture, boolean accept, String idempotencyKey)
+			throws Exception {
+		try (var connection = dataSource.getConnection(); var statement = connection.prepareStatement("""
+				select a.id from appointment a join service_credit c on c.id=a.service_credit_id
+				where a.id=? for update of a, c
+				""")) {
+			connection.setAutoCommit(false);
+			statement.setObject(1, fixture.appointmentId());
+			statement.executeQuery();
+			var ready = new CountDownLatch(2);
+			var go = new CountDownLatch(1);
+			try (var executor = Executors.newFixedThreadPool(2)) {
+				var first = executor.submit(() -> decide(fixture, accept, idempotencyKey, ready, go));
+				var second = executor.submit(() -> decide(fixture, accept, idempotencyKey, ready, go));
+				ready.await();
+				go.countDown();
+				var bothWaiting = waitForDecisionLocks();
+				connection.commit();
+				assertThat(bothWaiting).isTrue();
+				return List.of(first.get(), second.get());
+			}
+		}
+	}
+
+	private AppointmentResponse decide(Fixture fixture, boolean accept, String idempotencyKey,
+			CountDownLatch ready, CountDownLatch go) throws Exception {
+		ready.countDown();
+		go.await();
+		return accept
+				? decisions.accept(fixture.specialistId(), fixture.appointmentId(), 0, idempotencyKey)
+				: decisions.reject(fixture.specialistId(), fixture.appointmentId(), 0, idempotencyKey);
+	}
+
+	private boolean waitForDecisionLocks() throws InterruptedException {
+		for (int attempt = 0; attempt < 500; attempt++) {
+			var waiting = jdbc.sql("""
+					select count(*) from pg_stat_activity
+					where datname=current_database() and wait_event_type='Lock'
+					  and query like '%for update of a, c%'
+					""").query(Long.class).single();
+			if (waiting >= 2) return true;
+			Thread.sleep(10);
+		}
+		return false;
 	}
 
 	private Fixture requestedAppointment() throws Exception {

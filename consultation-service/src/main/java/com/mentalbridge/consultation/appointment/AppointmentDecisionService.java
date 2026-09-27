@@ -93,14 +93,11 @@ public class AppointmentDecisionService {
 
 	private AppointmentResponse decide(UUID specialistId, UUID appointmentId, long expectedVersion,
 			String idempotencyKey, String nextStatus, String reason, boolean releaseCredit) {
-		var replay = command(appointmentId, idempotencyKey, specialistId);
-		if (replay != null) {
-			if (!replay.toStatus().equals(nextStatus) || !replay.reason().equals(reason)) {
-				throw conflict("IDEMPOTENCY_KEY_REUSED", "Idempotency-Key was already used for another appointment decision");
-			}
-			return find(appointmentId, specialistId);
-		}
+		var replay = replay(appointmentId, idempotencyKey, specialistId, nextStatus, reason);
+		if (replay != null) return replay;
 		var appointment = lock(appointmentId);
+		replay = replay(appointmentId, idempotencyKey, specialistId, nextStatus, reason);
+		if (replay != null) return replay;
 		if (!appointment.specialistId().equals(specialistId)) {
 			throw new ApiException(HttpStatus.FORBIDDEN, "APPOINTMENT_NOT_ASSIGNED",
 					"Only the assigned specialist can decide this appointment request");
@@ -128,6 +125,16 @@ public class AppointmentDecisionService {
 					"appointment-rejection:" + appointment.id());
 		}
 		insertHistory(appointment, specialistId, nextStatus, reason, idempotencyKey, now);
+		return find(appointmentId, specialistId);
+	}
+
+	private AppointmentResponse replay(UUID appointmentId, String idempotencyKey, UUID specialistId,
+			String nextStatus, String reason) {
+		var replay = command(appointmentId, idempotencyKey, specialistId);
+		if (replay == null) return null;
+		if (!replay.toStatus().equals(nextStatus) || !replay.reason().equals(reason)) {
+			throw conflict("IDEMPOTENCY_KEY_REUSED", "Idempotency-Key was already used for another appointment decision");
+		}
 		return find(appointmentId, specialistId);
 	}
 

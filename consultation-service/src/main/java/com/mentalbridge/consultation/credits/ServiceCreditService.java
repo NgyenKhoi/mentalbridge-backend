@@ -76,7 +76,7 @@ public class ServiceCreditService {
 						row.getObject("appointment_id", UUID.class), row.getTimestamp("period_end").toInstant())).optional()
 				.orElseThrow(() -> new ApiException(HttpStatus.NOT_FOUND, "SERVICE_CREDIT_NOT_FOUND",
 						"Service credit was not found"));
-		if (!credit.periodEnd().isAfter(commandTime)) {
+		if (eventType == CreditEventType.HELD && !credit.periodEnd().isAfter(commandTime)) {
 			throw conflict("SERVICE_CREDIT_PERIOD_EXPIRED", "Service credit period has ended");
 		}
 		var nextState = nextState(credit, appointmentId, eventType);
