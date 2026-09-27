@@ -147,6 +147,7 @@ Safety handling must be deterministic, immediate, auditable, non-paywalled, and 
 - [Engineering rules](docs/engineering-rules.md)
 - [Mandatory agent workflow and review guide](docs/agent-guides/README.md)
 - [Sprint 2 integrated journey and release evidence](docs/sprint-2-integrated-release-evidence.md)
+- [MB-379 appointment decisions and expiry evidence](docs/mb-379-appointment-decisions-evidence.md)
 - [PostgreSQL data model](docs/database/postgresql.md)
 - [MongoDB collections](docs/database/mongodb.md)
 - [Canonical domain model — start here for entities and diagrams](docs/domain-model/README.md)

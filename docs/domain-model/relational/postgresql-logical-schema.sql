@@ -868,6 +868,8 @@ CREATE TABLE consultation.appointment (
     decision_deadline_at timestamptz NOT NULL,
     idempotency_key varchar(128) NOT NULL,
     replaces_appointment_id uuid REFERENCES consultation.appointment(id),
+    decided_at timestamptz,
+    decision_reason varchar(64),
     cancellation_reason varchar(64),
     cancelled_at timestamptz,
     created_at timestamptz NOT NULL,
@@ -883,6 +885,7 @@ CREATE TABLE consultation.appointment_status_history (
     to_status varchar(24) NOT NULL,
     changed_by uuid, -- external -> identity.account.id
     reason varchar(64),
+    idempotency_key varchar(128),
     changed_at timestamptz NOT NULL
 );
 
