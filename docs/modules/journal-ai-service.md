@@ -46,7 +46,7 @@ Support Guide, SupportPlan, eligibility, and confirmation authority.
   changes. `FREE` and `PLUS` share the v1 baseline route; `PREMIUM` may use a
   stronger approved route. No client tier, direct Consultation database read,
   or automatic cross-provider fallback is permitted.
-- Gemini and OpenAI adapters, exact-revision prompt registry, synthetic
+- Gemini, OpenAI, and Bedrock adapters, exact-revision prompt registry, synthetic
   benchmark harness, and benchmark metadata remain provider-neutral. Real
   execution needs explicit credentials/configuration and an approval version;
   deterministic fake execution remains mandatory for local/test/CI.
@@ -60,8 +60,8 @@ Support Guide, SupportPlan, eligibility, and confirmation authority.
 - [ ] JAI-04 Define analysis command/result schemas and Care consent/structured-indicator contracts. Exact-revision, longitudinal, and `AI_PROCESSING` contracts are complete; specialist-sharing remains deferred.
 - [ ] JAI-05 Add `migrate-mongo` validators/indexes for journal, job, result, dataset, and benchmark collections plus data documentation. Journal, exact-revision and longitudinal job/result, and MB-369 synthetic benchmark metadata collections are complete; general dataset import remains deferred.
 - [x] JAI-06 Implement encrypted journal revisions, authorization, pagination and deletion.
-- [ ] JAI-07 Implement consent-gated idempotent analysis orchestration, adapters, bounded retry and reconciliation. MB-367 completes the exact-revision job runtime; MB-369 adds gated Gemini/OpenAI adapters and entitlement routing. An accepted real route and broader reconciliation remain deferred until benchmark approval.
-- [ ] JAI-08 Implement dataset import/versioning and reproducible benchmark coordination. MB-369 completes the exact-revision synthetic harness for one or both configured Gemini/OpenAI candidates; general governed dataset import remains deferred.
+- [ ] JAI-07 Implement consent-gated idempotent analysis orchestration, adapters, bounded retry and reconciliation. MB-367 completes the exact-revision job runtime; MB-369 adds gated Gemini/OpenAI adapters and entitlement routing; MB-568 adds Bedrock Converse behind the same single-provider boundary. An accepted real route and broader reconciliation remain deferred until benchmark approval.
+- [ ] JAI-08 Implement dataset import/versioning and reproducible benchmark coordination. MB-369 completes the exact-revision synthetic harness and MB-568 adds Bedrock as a third optional candidate; general governed dataset import remains deferred.
 - [ ] JAI-09 Verify malformed AI output, prompt injection boundary, timeout/cost limit, duplicates/reordering, cross-store recovery and deletion.
 - [ ] JAI-10 Add observability/configuration, module README, and pass Node/contract/Mongo gates. Journal/AI is Mongo-only and has no PostgreSQL gate.
 
@@ -120,6 +120,24 @@ in [MB-369 model routing and benchmark foundation evidence](../story-mb-369-mode
 The live harness has been exercised, but the full candidate gate remains
 deferred after Gemini daily free-tier exhaustion; runtime remains
 `DETERMINISTIC_FAKE`.
+
+## MB-568 delivery boundary
+
+MB-568 adds Amazon Bedrock Runtime `Converse` over HTTPS bearer authentication
+to the existing shared exact-revision, longitudinal, Support Guide phrasing,
+benchmark, and explicit AI Companion provider paths. It does not change the
+canonical Zod output contracts, retry policy, routing authority, or no-fallback
+invariant. Migration `011_bedrock_provider.cjs` adds `BEDROCK` to persisted
+provenance validators and raises the benchmark candidate bound from two to
+three while retaining historical provider values.
+
+The adapter removes only Bedrock-unsupported JSON Schema keywords from a deep
+copy before transport; normalized outputs still pass the canonical runtime
+validators before persistence. Configuration requires a region, a long-term
+Bedrock API key in `AWS_BEARER_TOKEN_BEDROCK`, a pinned model, and explicit cost
+inputs. IAM/SigV4 is deferred. A real paid validation run remains blocked until
+the AWS account has model access and quota, so Bedrock must not be approved for
+production routing solely because the adapter exists.
 
 ## Story 6201 authoring decision
 

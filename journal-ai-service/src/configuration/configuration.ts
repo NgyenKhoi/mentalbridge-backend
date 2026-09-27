@@ -3,7 +3,7 @@ import { z } from "zod";
 
 const nodeEnvironments = ["development", "test", "production"] as const;
 const providerModes = ["DETERMINISTIC_FAKE", "APPROVED_REAL"] as const;
-const realProviders = ["GEMINI", "OPENAI"] as const;
+const realProviders = ["GEMINI", "OPENAI", "BEDROCK"] as const;
 const versionPattern = /^[A-Za-z0-9._-]{1,96}$/;
 const modelPattern = /^[A-Za-z0-9._:/-]{1,128}$/;
 const localEncryptionKey = Buffer.alloc(32, 7).toString("base64");
@@ -124,6 +124,11 @@ const environmentSchema = z
     JOURNAL_AI_GEMINI_API_KEY: z.string().min(1).optional(),
     JOURNAL_AI_OPENAI_BASE_URL: z.url().default("https://api.openai.com"),
     JOURNAL_AI_OPENAI_API_KEY: z.string().min(1).optional(),
+    JOURNAL_AI_BEDROCK_REGION: z
+      .string()
+      .regex(/^[a-z0-9-]{3,32}$/)
+      .default("ap-southeast-1"),
+    AWS_BEARER_TOKEN_BEDROCK: z.string().min(1).optional(),
     JOURNAL_AI_PROVIDER_TIMEOUT_MS: z.coerce
       .number()
       .int()
@@ -150,6 +155,14 @@ const environmentSchema = z
     JOURNAL_AI_BENCHMARK_OPENAI_INPUT_COST_MICRO_USD_PER_MILLION_TOKENS:
       z.coerce.number().int().min(0).max(1_000_000_000).optional(),
     JOURNAL_AI_BENCHMARK_OPENAI_OUTPUT_COST_MICRO_USD_PER_MILLION_TOKENS:
+      z.coerce.number().int().min(0).max(1_000_000_000).optional(),
+    JOURNAL_AI_BENCHMARK_BEDROCK_MODEL: z
+      .string()
+      .regex(modelPattern)
+      .optional(),
+    JOURNAL_AI_BENCHMARK_BEDROCK_INPUT_COST_MICRO_USD_PER_MILLION_TOKENS:
+      z.coerce.number().int().min(0).max(1_000_000_000).optional(),
+    JOURNAL_AI_BENCHMARK_BEDROCK_OUTPUT_COST_MICRO_USD_PER_MILLION_TOKENS:
       z.coerce.number().int().min(0).max(1_000_000_000).optional(),
     JOURNAL_AI_ANALYSIS_ENABLED: z.enum(["true", "false"]).optional(),
     JOURNAL_AI_ANALYSIS_POLL_INTERVAL_MS: z.coerce
@@ -268,6 +281,12 @@ const environmentSchema = z
           path: ["JOURNAL_AI_OPENAI_API_KEY"],
           message: "OpenAI credentials are required by the approved route",
         });
+      if (selected.has("BEDROCK") && !environment.AWS_BEARER_TOKEN_BEDROCK)
+        context.addIssue({
+          code: "custom",
+          path: ["AWS_BEARER_TOKEN_BEDROCK"],
+          message: "Bedrock credentials are required by the approved route",
+        });
     }
     if (environment.JOURNAL_AI_BENCHMARK_ENABLED === "true") {
       if (environment.NODE_ENV === "test" || environment.CI === "true")
@@ -294,6 +313,15 @@ const environmentSchema = z
             "JOURNAL_AI_BENCHMARK_OPENAI_MODEL",
             "JOURNAL_AI_BENCHMARK_OPENAI_INPUT_COST_MICRO_USD_PER_MILLION_TOKENS",
             "JOURNAL_AI_BENCHMARK_OPENAI_OUTPUT_COST_MICRO_USD_PER_MILLION_TOKENS",
+          ],
+        },
+        {
+          name: "Bedrock",
+          credential: "AWS_BEARER_TOKEN_BEDROCK",
+          routeKeys: [
+            "JOURNAL_AI_BENCHMARK_BEDROCK_MODEL",
+            "JOURNAL_AI_BENCHMARK_BEDROCK_INPUT_COST_MICRO_USD_PER_MILLION_TOKENS",
+            "JOURNAL_AI_BENCHMARK_BEDROCK_OUTPUT_COST_MICRO_USD_PER_MILLION_TOKENS",
           ],
         },
       ] as const;
@@ -339,7 +367,7 @@ const environmentSchema = z
           code: "custom",
           path: ["JOURNAL_AI_BENCHMARK_ENABLED"],
           message:
-            "At least one complete Gemini or OpenAI benchmark candidate is required",
+            "At least one complete Gemini, OpenAI, or Bedrock benchmark candidate is required",
         });
       }
     }
@@ -384,6 +412,8 @@ const environmentSchema = z
     GEMINI_API_KEY: environment.JOURNAL_AI_GEMINI_API_KEY ?? null,
     OPENAI_BASE_URL: environment.JOURNAL_AI_OPENAI_BASE_URL,
     OPENAI_API_KEY: environment.JOURNAL_AI_OPENAI_API_KEY ?? null,
+    BEDROCK_REGION: environment.JOURNAL_AI_BEDROCK_REGION,
+    BEDROCK_API_KEY: environment.AWS_BEARER_TOKEN_BEDROCK ?? null,
     PROVIDER_TIMEOUT_MS: environment.JOURNAL_AI_PROVIDER_TIMEOUT_MS,
     BENCHMARK_ENABLED: environment.JOURNAL_AI_BENCHMARK_ENABLED === "true",
     BENCHMARK_DATASET_PATH: environment.JOURNAL_AI_BENCHMARK_DATASET_PATH,
@@ -398,6 +428,12 @@ const environmentSchema = z
       environment.JOURNAL_AI_BENCHMARK_OPENAI_MODEL,
       environment.JOURNAL_AI_BENCHMARK_OPENAI_INPUT_COST_MICRO_USD_PER_MILLION_TOKENS,
       environment.JOURNAL_AI_BENCHMARK_OPENAI_OUTPUT_COST_MICRO_USD_PER_MILLION_TOKENS,
+    ),
+    BENCHMARK_BEDROCK_ROUTE: configuredRoute(
+      "BEDROCK",
+      environment.JOURNAL_AI_BENCHMARK_BEDROCK_MODEL,
+      environment.JOURNAL_AI_BENCHMARK_BEDROCK_INPUT_COST_MICRO_USD_PER_MILLION_TOKENS,
+      environment.JOURNAL_AI_BENCHMARK_BEDROCK_OUTPUT_COST_MICRO_USD_PER_MILLION_TOKENS,
     ),
     ANALYSIS_ENABLED:
       environment.JOURNAL_AI_ANALYSIS_ENABLED !== undefined

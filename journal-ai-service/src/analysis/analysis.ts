@@ -126,7 +126,7 @@ export interface AnalysisResult {
   entitlementVersion: number;
   routingPolicyVersion: string;
   providerApprovalVersion: string;
-  provider: "DETERMINISTIC_FAKE" | "GEMINI" | "OPENAI";
+  provider: "DETERMINISTIC_FAKE" | "GEMINI" | "OPENAI" | "BEDROCK";
   model: string;
   promptVersion: string;
   schemaVersion: 1;

@@ -75,6 +75,7 @@ void test("builds a Gemini-only benchmark candidate when OpenAI is not configure
       outputCostMicroUsdPerMillionTokens: 2,
     },
     BENCHMARK_OPENAI_ROUTE: null,
+    BENCHMARK_BEDROCK_ROUTE: null,
   } as ServiceConfiguration);
 
   assert.deepEqual(
@@ -89,8 +90,32 @@ void test("rejects benchmark execution without any configured candidate", () => 
       buildBenchmarkCandidates({
         BENCHMARK_GEMINI_ROUTE: null,
         BENCHMARK_OPENAI_ROUTE: null,
+        BENCHMARK_BEDROCK_ROUTE: null,
       } as ServiceConfiguration),
-    /At least one Gemini or OpenAI benchmark route is required/,
+    /At least one Gemini, OpenAI, or Bedrock benchmark route is required/,
+  );
+});
+
+void test("builds a configured Bedrock benchmark candidate alongside existing providers", () => {
+  const candidates = buildBenchmarkCandidates({
+    BENCHMARK_GEMINI_ROUTE: null,
+    BENCHMARK_OPENAI_ROUTE: {
+      provider: "OPENAI",
+      model: "openai-test-model",
+      inputCostMicroUsdPerMillionTokens: 1,
+      outputCostMicroUsdPerMillionTokens: 2,
+    },
+    BENCHMARK_BEDROCK_ROUTE: {
+      provider: "BEDROCK",
+      model: "apac.bedrock-test-model-v1:0",
+      inputCostMicroUsdPerMillionTokens: 3,
+      outputCostMicroUsdPerMillionTokens: 4,
+    },
+  } as ServiceConfiguration);
+
+  assert.deepEqual(
+    candidates.map((candidate) => candidate.route.provider),
+    ["OPENAI", "BEDROCK"],
   );
 });
 
@@ -103,6 +128,7 @@ void test("retries one transient provider failure on the same benchmark route", 
       outputCostMicroUsdPerMillionTokens: 2,
     },
     BENCHMARK_OPENAI_ROUTE: null,
+    BENCHMARK_BEDROCK_ROUTE: null,
   } as ServiceConfiguration)[0];
   assert.ok(candidate);
   let calls = 0;
@@ -153,6 +179,7 @@ void test("stops after the single allowed benchmark retry with safe diagnostics"
       outputCostMicroUsdPerMillionTokens: 2,
     },
     BENCHMARK_OPENAI_ROUTE: null,
+    BENCHMARK_BEDROCK_ROUTE: null,
   } as ServiceConfiguration)[0];
   assert.ok(candidate);
   let calls = 0;

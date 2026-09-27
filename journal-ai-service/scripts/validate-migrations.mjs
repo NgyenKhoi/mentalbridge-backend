@@ -12,6 +12,7 @@ const routingMigration = require("../migrations/007_entitlement_aware_model_rout
 const benchmarkMigration = require("../migrations/008_ai_benchmark_metadata.cjs");
 const longitudinalMigration = require("../migrations/009_longitudinal_context_analysis.cjs");
 const companionChatMigration = require("../migrations/010_ai_companion_chat_quotas.cjs");
+const bedrockMigration = require("../migrations/011_bedrock_provider.cjs");
 
 assert.equal(migration.collectionName, "journal_entries");
 assert.equal(typeof migration.up, "function");
@@ -114,6 +115,27 @@ assert.equal(
     .items.properties.content.properties.algorithm.enum[0],
   "AES-256-GCM",
 );
+assert.equal(typeof bedrockMigration.up, "function");
+assert.equal(typeof bedrockMigration.down, "function");
+assert.deepEqual(
+  bedrockMigration.exactResultValidator.$jsonSchema.properties.provider.enum,
+  ["DETERMINISTIC_FAKE", "GEMINI", "OPENAI", "BEDROCK"],
+);
+assert.deepEqual(
+  bedrockMigration.benchmarkCaseResultValidator.$jsonSchema.properties.provider
+    .enum,
+  ["GEMINI", "OPENAI", "BEDROCK"],
+);
+assert.equal(
+  bedrockMigration.benchmarkRunValidator.$jsonSchema.properties.candidates
+    .maxItems,
+  3,
+);
+assert.ok(
+  bedrockMigration.companionConversationValidator.$jsonSchema.properties.messages.items.properties.route.properties.provider.enum.includes(
+    "BEDROCK",
+  ),
+);
 assert.equal(typeof commandsMigration.up, "function");
 assert.equal(typeof commandsMigration.down, "function");
 assert.ok(
@@ -148,5 +170,5 @@ assert.equal(
 );
 
 console.log(
-  "Validated Mongo migrations: 001_journal_entries_baseline.cjs through 010_ai_companion_chat_quotas.cjs",
+  "Validated Mongo migrations: 001_journal_entries_baseline.cjs through 011_bedrock_provider.cjs",
 );

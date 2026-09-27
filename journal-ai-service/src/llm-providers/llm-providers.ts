@@ -22,6 +22,11 @@ import {
   supportGuidePhrasingPrompt,
   type SupportGuidePhrasingPrompt,
 } from "../prompts/support-guide-phrasing.js";
+import {
+  bedrockConverseRequest,
+  bedrockConverseUrl,
+  parseBedrockConverseResponse,
+} from "./bedrock.js";
 
 export interface ProviderUsage {
   readonly inputTokens: number | null;
@@ -258,6 +263,24 @@ const safeFinishReason = (body: unknown): string | undefined => {
   return typeof value === "string" && value.length <= 96 ? value : undefined;
 };
 
+const safeHeaderErrorCode = (value: string | null): string | undefined => {
+  if (!value) return undefined;
+  const code = value.split(":", 1)[0]?.trim();
+  return code && /^[A-Za-z0-9._-]{1,96}$/.test(code) ? code : undefined;
+};
+
+const structuredOutputName = (
+  workload:
+    | AnalysisRoute["workload"]
+    | LongitudinalAnalysisRoute["workload"]
+    | SupportGuideProviderRoute["workload"],
+): string =>
+  workload === "LONGITUDINAL"
+    ? "mentalbridge_longitudinal"
+    : workload === "SUPPORT_GUIDE_PHRASING"
+      ? "mentalbridge_support_guide_phrasing"
+      : "mentalbridge_exact_revision";
+
 abstract class HttpLlmProvider {
   constructor(protected readonly configuration: ServiceConfiguration) {}
 
@@ -288,7 +311,10 @@ abstract class HttpLlmProvider {
     }
   }
 
-  protected async requireSuccess(response: Response): Promise<void> {
+  protected async requireSuccess(
+    response: Response,
+    headerErrorCode?: string,
+  ): Promise<void> {
     if (response.ok) return;
     let body: unknown;
     try {
@@ -296,7 +322,7 @@ abstract class HttpLlmProvider {
     } catch {
       body = undefined;
     }
-    const providerErrorCode = safeProviderErrorCode(body);
+    const providerErrorCode = headerErrorCode ?? safeProviderErrorCode(body);
     const providerDetails = safeProviderErrorDetails(body);
     const retryDelay =
       retryAfterMs(response.headers.get("retry-after")) ??
@@ -473,6 +499,65 @@ export class OpenAiProvider extends HttpLlmProvider implements LlmProvider {
   }
 }
 
+export class BedrockProvider extends HttpLlmProvider implements LlmProvider {
+  readonly id = "BEDROCK" as const;
+
+  async generate(
+    prompt:
+      ExactRevisionPrompt | LongitudinalPrompt | SupportGuidePhrasingPrompt,
+    route:
+      AnalysisRoute | LongitudinalAnalysisRoute | SupportGuideProviderRoute,
+  ) {
+    if (!this.configuration.BEDROCK_API_KEY)
+      throw new ProviderFailure("PERMANENT", "UNAVAILABLE");
+    const startedAt = performance.now();
+    const response = await this.post(
+      bedrockConverseUrl(this.configuration.BEDROCK_REGION, route.model),
+      { authorization: `Bearer ${this.configuration.BEDROCK_API_KEY}` },
+      bedrockConverseRequest(
+        prompt.system,
+        prompt.user,
+        prompt.schema,
+        structuredOutputName(route.workload),
+        1_200,
+      ),
+    );
+    await this.requireSuccess(
+      response,
+      safeHeaderErrorCode(response.headers.get("x-amzn-errortype")),
+    );
+    let body: unknown;
+    try {
+      body = await response.json();
+    } catch (error) {
+      throw new ProviderFailure(
+        "PERMANENT",
+        "INVALID_RESULT",
+        { schemaIssues: ["response:invalid_json"] },
+        { cause: error },
+      );
+    }
+    const parsed = parseBedrockConverseResponse(body);
+    if (!parsed)
+      throw new ProviderFailure("PERMANENT", "INVALID_RESULT", {
+        schemaIssues: ["output.message.content:text_missing"],
+      });
+    return {
+      output: parseOutput(parsed.text),
+      latencyMs: Math.max(0, Math.round(performance.now() - startedAt)),
+      usage: {
+        inputTokens: parsed.inputTokens,
+        outputTokens: parsed.outputTokens,
+        estimatedCostMicroUsd: estimatedCost(
+          route,
+          parsed.inputTokens,
+          parsed.outputTokens,
+        ),
+      },
+    };
+  }
+}
+
 export class RoutedExactRevisionProvider implements ExactRevisionProvider {
   private readonly providers: ReadonlyMap<AiProviderId, LlmProvider>;
 
@@ -480,6 +565,7 @@ export class RoutedExactRevisionProvider implements ExactRevisionProvider {
     const providers: LlmProvider[] = [
       new GeminiProvider(configuration),
       new OpenAiProvider(configuration),
+      new BedrockProvider(configuration),
     ];
     this.providers = new Map(
       providers.map((provider) => [provider.id, provider]),
@@ -525,6 +611,7 @@ export class RoutedLongitudinalProvider implements LongitudinalProvider {
     const providers: LlmProvider[] = [
       new GeminiProvider(configuration),
       new OpenAiProvider(configuration),
+      new BedrockProvider(configuration),
     ];
     this.providers = new Map(
       providers.map((provider) => [provider.id, provider]),
@@ -576,6 +663,7 @@ export class RoutedSupportGuidePhrasingProvider implements SupportGuidePhrasingP
     const providers: LlmProvider[] = [
       new GeminiProvider(configuration),
       new OpenAiProvider(configuration),
+      new BedrockProvider(configuration),
     ];
     this.providers = new Map(
       providers.map((provider) => [provider.id, provider]),
