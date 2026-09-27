@@ -68,11 +68,11 @@ const bedrockResponseSchema = z.object({
     .optional(),
 });
 
-export type BedrockConverseOutput = {
+export interface BedrockConverseOutput {
   readonly text: string;
   readonly inputTokens: number | null;
   readonly outputTokens: number | null;
-};
+}
 
 export const parseBedrockConverseResponse = (
   value: unknown,

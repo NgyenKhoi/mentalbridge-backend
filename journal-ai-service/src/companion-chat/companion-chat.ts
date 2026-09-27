@@ -1023,7 +1023,7 @@ export class RoutedChatProvider implements ChatProvider {
             signal: AbortSignal.timeout(this.configuration.PROVIDER_TIMEOUT_MS),
           },
         );
-      } else if (route.provider === "BEDROCK") {
+      } else {
         if (!this.configuration.BEDROCK_API_KEY)
           throw new Error("Bedrock credentials are unavailable");
         response = await fetch(
@@ -1046,8 +1046,6 @@ export class RoutedChatProvider implements ChatProvider {
             signal: AbortSignal.timeout(this.configuration.PROVIDER_TIMEOUT_MS),
           },
         );
-      } else {
-        throw new Error("Unsupported AI provider");
       }
     } catch {
       throw new ChatProblem(
@@ -1114,7 +1112,7 @@ export class RoutedChatProvider implements ChatProvider {
         message = parsed.data.output
           .flatMap((item) => item.content ?? [])
           .find((item) => item.type === "output_text")?.text;
-    } else if (route.provider === "BEDROCK") {
+    } else {
       const parsed = parseBedrockConverseResponse(body);
       message = parsed?.text;
       inputTokens = parsed?.inputTokens ?? null;
