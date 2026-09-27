@@ -177,9 +177,9 @@ export interface ProviderReply {
   outputTokens: number;
 }
 
-const companionMaxOutputTokens = 2_000;
+export const companionMaxOutputTokens = 2_000;
 
-const providerOutputJsonSchema = {
+export const providerOutputJsonSchema = {
   type: "object",
   additionalProperties: false,
   required: [

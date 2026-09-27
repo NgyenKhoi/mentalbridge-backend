@@ -70,6 +70,7 @@ void test("persists encrypted quota-governed AI Companion conversations with rea
     BEDROCK_REGION: "ap-southeast-1",
     BEDROCK_API_KEY: null,
     PROVIDER_TIMEOUT_MS: 30_000,
+    BEDROCK_SCHEMA_WARMUP_TIMEOUT_MS: 300_000,
     BENCHMARK_ENABLED: false,
     BENCHMARK_DATASET_PATH:
       "benchmarks/datasets/exact-revision-synthetic-v1.json",

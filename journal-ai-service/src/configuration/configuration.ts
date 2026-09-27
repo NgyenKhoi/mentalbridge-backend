@@ -144,6 +144,12 @@ const environmentSchema = z
       .min(1_000)
       .max(30_000)
       .default(30_000),
+    JOURNAL_AI_BEDROCK_SCHEMA_WARMUP_TIMEOUT_MS: z.coerce
+      .number()
+      .int()
+      .min(30_000)
+      .max(600_000)
+      .default(300_000),
     JOURNAL_AI_BENCHMARK_ENABLED: z.enum(["true", "false"]).default("false"),
     JOURNAL_AI_BENCHMARK_DATASET_PATH: z
       .string()
@@ -440,6 +446,8 @@ const environmentSchema = z
     BEDROCK_REGION: environment.JOURNAL_AI_BEDROCK_REGION,
     BEDROCK_API_KEY: environment.AWS_BEARER_TOKEN_BEDROCK ?? null,
     PROVIDER_TIMEOUT_MS: environment.JOURNAL_AI_PROVIDER_TIMEOUT_MS,
+    BEDROCK_SCHEMA_WARMUP_TIMEOUT_MS:
+      environment.JOURNAL_AI_BEDROCK_SCHEMA_WARMUP_TIMEOUT_MS,
     BENCHMARK_ENABLED: environment.JOURNAL_AI_BENCHMARK_ENABLED === "true",
     BENCHMARK_DATASET_PATH: environment.JOURNAL_AI_BENCHMARK_DATASET_PATH,
     BENCHMARK_GEMINI_ROUTE: configuredRoute(

@@ -59,6 +59,7 @@ npm run test:integration
 npm run contract:check
 npm run migration:check
 npm run benchmark:exact-revision # only with explicit paid-benchmark config
+npm run bedrock:warm-structured-outputs # explicit paid warm-up; never run in CI
 npm run build
 npm start
 ```
@@ -93,6 +94,7 @@ npm start
 | `JOURNAL_AI_BEDROCK_REGION`                      | Bedrock route/benchmark  | `ap-southeast-1`                                 | Region used to build the Bedrock Runtime Converse endpoint                              |
 | `AWS_BEARER_TOKEN_BEDROCK`                       | Bedrock route/benchmark  | None                                             | Bedrock long-term API key used as a bearer token; never committed or logged             |
 | `JOURNAL_AI_PROVIDER_TIMEOUT_MS`                 | No                       | `30000`                                          | Per-provider HTTP timeout                                                               |
+| `JOURNAL_AI_BEDROCK_SCHEMA_WARMUP_TIMEOUT_MS`    | No                       | `300000`                                         | Bedrock-only timeout for the explicit cold structured-output compile command            |
 | `JOURNAL_AI_BENCHMARK_ENABLED`                   | No                       | `false`                                          | Explicit paid-run gate; rejected in test/CI                                             |
 | `JOURNAL_AI_BENCHMARK_DATASET_PATH`              | No                       | synthetic v1 dataset path                        | Version-controlled exact-revision benchmark input                                       |
 | `JOURNAL_AI_BENCHMARK_*_MODEL`                   | Benchmark only           | None                                             | At least one complete pinned Gemini, OpenAI, or Bedrock candidate; no latest alias      |
@@ -233,10 +235,16 @@ After the AWS account has Bedrock model access and sufficient quota:
 2. Configure the matching Bedrock input/output cost snapshot. For benchmark
    evidence, set the three `JOURNAL_AI_BENCHMARK_BEDROCK_*` variables and
    explicitly enable `JOURNAL_AI_BENCHMARK_ENABLED` only for the paid run.
-3. Verify one real Converse request in the configured region, then run
-   `npm run benchmark:exact-revision` and review the recorded quality, safety,
-   latency, token, cost, and failure evidence.
-4. Record the accepted evidence as `JOURNAL_AI_PROVIDER_APPROVAL_VERSION`, set
+3. Run `npm run bedrock:warm-structured-outputs` immediately before the
+   controlled traffic window. It sends one paid Converse request for each of
+   the exact-revision, longitudinal, Support Guide phrasing, and Companion Chat
+   schemas to every distinct configured Bedrock route model. The command uses
+   only `JOURNAL_AI_BEDROCK_SCHEMA_WARMUP_TIMEOUT_MS`; ordinary runtime calls
+   retain the bounded provider timeout. Repeat after a model/schema change and
+   before another traffic window when AWS's 24-hour schema cache may be cold.
+4. Run `npm run benchmark:exact-revision` and review the recorded quality,
+   safety, latency, token, cost, and failure evidence.
+5. Record the accepted evidence as `JOURNAL_AI_PROVIDER_APPROVAL_VERSION`, set
    the applicable route provider to `BEDROCK`, and only then switch
    `JOURNAL_AI_PROVIDER_MODE` to `APPROVED_REAL`.
 

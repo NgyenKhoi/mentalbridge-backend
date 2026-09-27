@@ -139,6 +139,14 @@ inputs. IAM/SigV4 is deferred. A real paid validation run remains blocked until
 the AWS account has model access and quota, so Bedrock must not be approved for
 production routing solely because the adapter exists.
 
+Bedrock structured-output schemas are compiled deliberately before a
+controlled traffic window with `npm run bedrock:warm-structured-outputs`. The
+paid command covers all four workload schemas for every distinct configured
+Bedrock route model and has its own bounded compile timeout; it does not widen
+the ordinary Gemini, OpenAI, or Bedrock request timeout. Operators rerun it
+after model/schema changes and before traffic when the provider's 24-hour
+schema cache may be cold.
+
 ## Story 6201 authoring decision
 
 Journal authoring remains bounded plain text. The approved mood vocabulary is
