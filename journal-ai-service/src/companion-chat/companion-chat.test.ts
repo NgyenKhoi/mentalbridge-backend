@@ -744,6 +744,36 @@ void test("uses the explicit Bedrock Converse path with structured output and ac
   }
 });
 
+void test("fails closed instead of routing an unknown provider through Bedrock", async () => {
+  const originalFetch = globalThis.fetch;
+  let calls = 0;
+  globalThis.fetch = () => {
+    calls += 1;
+    return Promise.reject(new Error("must not call a provider"));
+  };
+
+  try {
+    await assert.rejects(
+      () =>
+        new RoutedChatProvider(configuration).reply(
+          "Xin hỗ trợ",
+          { kinds: [], prompt: "" },
+          {
+            ...chatRoute("BEDROCK"),
+            provider: "FUTURE_PROVIDER",
+          } as unknown as ChatRoute,
+        ),
+      (error: unknown) =>
+        error instanceof HttpException &&
+        (error.getResponse() as { code?: string }).code ===
+          "CHAT_PROVIDER_UNAVAILABLE",
+    );
+    assert.equal(calls, 0);
+  } finally {
+    globalThis.fetch = originalFetch;
+  }
+});
+
 void test("rejects a real-provider envelope that claims a business action", async () => {
   const originalFetch = globalThis.fetch;
   globalThis.fetch = () =>

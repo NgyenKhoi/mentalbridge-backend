@@ -412,6 +412,33 @@ void test("Bedrock maps throttling and timeout without provider fallback", async
 
     globalThis.fetch = () => {
       calls += 1;
+      return Promise.resolve(
+        Response.json(
+          { message: "model timed out" },
+          {
+            status: 408,
+            headers: { "x-amzn-errortype": "ModelTimeoutException" },
+          },
+        ),
+      );
+    };
+    await assert.rejects(
+      () =>
+        new RoutedExactRevisionProvider(configuration).analyze(
+          "synthetic journal",
+          route("BEDROCK"),
+        ),
+      (error: unknown) =>
+        error instanceof ProviderFailure &&
+        error.kind === "RETRYABLE" &&
+        error.reason === "TIMEOUT" &&
+        error.diagnostics.httpStatus === 408 &&
+        error.diagnostics.providerErrorCode === "ModelTimeoutException",
+    );
+    assert.equal(calls, 2);
+
+    globalThis.fetch = () => {
+      calls += 1;
       const error = new Error("timed out");
       error.name = "TimeoutError";
       return Promise.reject(error);
@@ -427,7 +454,7 @@ void test("Bedrock maps throttling and timeout without provider fallback", async
         error.kind === "RETRYABLE" &&
         error.reason === "TIMEOUT",
     );
-    assert.equal(calls, 2);
+    assert.equal(calls, 3);
   } finally {
     globalThis.fetch = originalFetch;
   }

@@ -284,6 +284,54 @@ void test("accepts Bedrock runtime routes and benchmark candidates with explicit
   assert.equal(benchmark.BENCHMARK_BEDROCK_ROUTE?.provider, "BEDROCK");
 });
 
+void test("accepts Bedrock inference-profile ARNs beyond the generic model limit", () => {
+  const longProfileName = `mentalbridge-${"profile".repeat(24)}`;
+  const model = `arn:aws:bedrock:ap-southeast-1:123456789012:application-inference-profile/${longProfileName}`;
+  assert.ok(model.length > 128);
+
+  const configuration = loadConfiguration({
+    NODE_ENV: "development",
+    IDENTITY_JWT_ISSUER: "https://identity.test.mentalbridge",
+    IDENTITY_JWT_AUDIENCE: "mentalbridge-api",
+    IDENTITY_JWT_KEY_ID: "test-key",
+    IDENTITY_JWT_PUBLIC_KEY: testPublicKeyPem,
+    JOURNAL_AI_PROVIDER_MODE: "APPROVED_REAL",
+    JOURNAL_AI_PROVIDER_APPROVAL_VERSION: "approval-v1",
+    AWS_BEARER_TOKEN_BEDROCK: "bedrock-test-secret",
+    JOURNAL_AI_FREE_PLUS_PROVIDER: "BEDROCK",
+    JOURNAL_AI_FREE_PLUS_MODEL: model,
+    JOURNAL_AI_FREE_PLUS_INPUT_COST_MICRO_USD_PER_MILLION_TOKENS: "1",
+    JOURNAL_AI_FREE_PLUS_OUTPUT_COST_MICRO_USD_PER_MILLION_TOKENS: "2",
+    JOURNAL_AI_PREMIUM_PROVIDER: "BEDROCK",
+    JOURNAL_AI_PREMIUM_MODEL: model,
+    JOURNAL_AI_PREMIUM_INPUT_COST_MICRO_USD_PER_MILLION_TOKENS: "1",
+    JOURNAL_AI_PREMIUM_OUTPUT_COST_MICRO_USD_PER_MILLION_TOKENS: "2",
+  });
+
+  assert.equal(configuration.FREE_PLUS_ROUTE?.model, model);
+  assert.equal(configuration.PREMIUM_ROUTE?.model, model);
+  assert.throws(() =>
+    loadConfiguration({
+      NODE_ENV: "development",
+      IDENTITY_JWT_ISSUER: "https://identity.test.mentalbridge",
+      IDENTITY_JWT_AUDIENCE: "mentalbridge-api",
+      IDENTITY_JWT_KEY_ID: "test-key",
+      IDENTITY_JWT_PUBLIC_KEY: testPublicKeyPem,
+      JOURNAL_AI_PROVIDER_MODE: "APPROVED_REAL",
+      JOURNAL_AI_PROVIDER_APPROVAL_VERSION: "approval-v1",
+      JOURNAL_AI_GEMINI_API_KEY: "gemini-test-secret",
+      JOURNAL_AI_FREE_PLUS_PROVIDER: "GEMINI",
+      JOURNAL_AI_FREE_PLUS_MODEL: model,
+      JOURNAL_AI_FREE_PLUS_INPUT_COST_MICRO_USD_PER_MILLION_TOKENS: "1",
+      JOURNAL_AI_FREE_PLUS_OUTPUT_COST_MICRO_USD_PER_MILLION_TOKENS: "2",
+      JOURNAL_AI_PREMIUM_PROVIDER: "GEMINI",
+      JOURNAL_AI_PREMIUM_MODEL: "gemini-test-model",
+      JOURNAL_AI_PREMIUM_INPUT_COST_MICRO_USD_PER_MILLION_TOKENS: "1",
+      JOURNAL_AI_PREMIUM_OUTPUT_COST_MICRO_USD_PER_MILLION_TOKENS: "2",
+    }),
+  );
+});
+
 void test("rejects Bedrock routes without a Bedrock bearer token", () => {
   assert.throws(() =>
     loadConfiguration({

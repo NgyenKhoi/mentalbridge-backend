@@ -313,7 +313,10 @@ abstract class HttpLlmProvider {
 
   protected async requireSuccess(
     response: Response,
-    headerErrorCode?: string,
+    options: {
+      readonly headerErrorCode?: string | undefined;
+      readonly timeoutFailure?: boolean | undefined;
+    } = {},
   ): Promise<void> {
     if (response.ok) return;
     let body: unknown;
@@ -322,16 +325,19 @@ abstract class HttpLlmProvider {
     } catch {
       body = undefined;
     }
-    const providerErrorCode = headerErrorCode ?? safeProviderErrorCode(body);
+    const providerErrorCode =
+      options.headerErrorCode ?? safeProviderErrorCode(body);
     const providerDetails = safeProviderErrorDetails(body);
     const retryDelay =
       retryAfterMs(response.headers.get("retry-after")) ??
       providerDetails.retryAfterMs;
     throw new ProviderFailure(
-      response.status === 429 || response.status >= 500
+      options.timeoutFailure ||
+        response.status === 429 ||
+        response.status >= 500
         ? "RETRYABLE"
         : "PERMANENT",
-      "UNAVAILABLE",
+      options.timeoutFailure ? "TIMEOUT" : "UNAVAILABLE",
       {
         httpStatus: response.status,
         ...(providerErrorCode === undefined ? {} : { providerErrorCode }),
@@ -522,10 +528,15 @@ export class BedrockProvider extends HttpLlmProvider implements LlmProvider {
         1_200,
       ),
     );
-    await this.requireSuccess(
-      response,
-      safeHeaderErrorCode(response.headers.get("x-amzn-errortype")),
+    const providerErrorCode = safeHeaderErrorCode(
+      response.headers.get("x-amzn-errortype"),
     );
+    await this.requireSuccess(response, {
+      headerErrorCode: providerErrorCode,
+      timeoutFailure:
+        response.status === 408 ||
+        providerErrorCode === "ModelTimeoutException",
+    });
     let body: unknown;
     try {
       body = await response.json();

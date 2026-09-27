@@ -6,6 +6,15 @@ const providerModes = ["DETERMINISTIC_FAKE", "APPROVED_REAL"] as const;
 const realProviders = ["GEMINI", "OPENAI", "BEDROCK"] as const;
 const versionPattern = /^[A-Za-z0-9._-]{1,96}$/;
 const modelPattern = /^[A-Za-z0-9._:/-]{1,128}$/;
+const bedrockModelIdPattern =
+  /^(?:arn:aws(?:-[A-Za-z0-9-]+)?:bedrock:[a-z0-9-]{1,20}:(?::|[0-9]{12}:)[A-Za-z0-9._:/-]+|arn:aws:sagemaker:[a-z0-9-]+:[0-9]{12}:endpoint\/[A-Za-z0-9-]+|[A-Za-z0-9][A-Za-z0-9._:-]{0,2047})$/;
+const modelSchema = z.string().regex(modelPattern);
+const bedrockModelIdSchema = z
+  .string()
+  .min(1)
+  .max(2_048)
+  .regex(bedrockModelIdPattern);
+const routedModelSchema = z.string().min(1).max(2_048);
 const localEncryptionKey = Buffer.alloc(32, 7).toString("base64");
 const localIdempotencyKey = Buffer.alloc(32, 8).toString("base64");
 
@@ -91,7 +100,7 @@ const environmentSchema = z
       .regex(versionPattern)
       .optional(),
     JOURNAL_AI_FREE_PLUS_PROVIDER: z.enum(realProviders).optional(),
-    JOURNAL_AI_FREE_PLUS_MODEL: z.string().regex(modelPattern).optional(),
+    JOURNAL_AI_FREE_PLUS_MODEL: routedModelSchema.optional(),
     JOURNAL_AI_FREE_PLUS_INPUT_COST_MICRO_USD_PER_MILLION_TOKENS: z.coerce
       .number()
       .int()
@@ -105,7 +114,7 @@ const environmentSchema = z
       .max(1_000_000_000)
       .optional(),
     JOURNAL_AI_PREMIUM_PROVIDER: z.enum(realProviders).optional(),
-    JOURNAL_AI_PREMIUM_MODEL: z.string().regex(modelPattern).optional(),
+    JOURNAL_AI_PREMIUM_MODEL: routedModelSchema.optional(),
     JOURNAL_AI_PREMIUM_INPUT_COST_MICRO_USD_PER_MILLION_TOKENS: z.coerce
       .number()
       .int()
@@ -140,26 +149,17 @@ const environmentSchema = z
       .string()
       .min(1)
       .default("benchmarks/datasets/exact-revision-synthetic-v1.json"),
-    JOURNAL_AI_BENCHMARK_GEMINI_MODEL: z
-      .string()
-      .regex(modelPattern)
-      .optional(),
+    JOURNAL_AI_BENCHMARK_GEMINI_MODEL: modelSchema.optional(),
     JOURNAL_AI_BENCHMARK_GEMINI_INPUT_COST_MICRO_USD_PER_MILLION_TOKENS:
       z.coerce.number().int().min(0).max(1_000_000_000).optional(),
     JOURNAL_AI_BENCHMARK_GEMINI_OUTPUT_COST_MICRO_USD_PER_MILLION_TOKENS:
       z.coerce.number().int().min(0).max(1_000_000_000).optional(),
-    JOURNAL_AI_BENCHMARK_OPENAI_MODEL: z
-      .string()
-      .regex(modelPattern)
-      .optional(),
+    JOURNAL_AI_BENCHMARK_OPENAI_MODEL: modelSchema.optional(),
     JOURNAL_AI_BENCHMARK_OPENAI_INPUT_COST_MICRO_USD_PER_MILLION_TOKENS:
       z.coerce.number().int().min(0).max(1_000_000_000).optional(),
     JOURNAL_AI_BENCHMARK_OPENAI_OUTPUT_COST_MICRO_USD_PER_MILLION_TOKENS:
       z.coerce.number().int().min(0).max(1_000_000_000).optional(),
-    JOURNAL_AI_BENCHMARK_BEDROCK_MODEL: z
-      .string()
-      .regex(modelPattern)
-      .optional(),
+    JOURNAL_AI_BENCHMARK_BEDROCK_MODEL: bedrockModelIdSchema.optional(),
     JOURNAL_AI_BENCHMARK_BEDROCK_INPUT_COST_MICRO_USD_PER_MILLION_TOKENS:
       z.coerce.number().int().min(0).max(1_000_000_000).optional(),
     JOURNAL_AI_BENCHMARK_BEDROCK_OUTPUT_COST_MICRO_USD_PER_MILLION_TOKENS:
@@ -224,6 +224,31 @@ const environmentSchema = z
       .default("companion-chat-routing-v1"),
   })
   .superRefine((environment, context) => {
+    for (const route of [
+      {
+        provider: environment.JOURNAL_AI_FREE_PLUS_PROVIDER,
+        model: environment.JOURNAL_AI_FREE_PLUS_MODEL,
+        path: "JOURNAL_AI_FREE_PLUS_MODEL",
+      },
+      {
+        provider: environment.JOURNAL_AI_PREMIUM_PROVIDER,
+        model: environment.JOURNAL_AI_PREMIUM_MODEL,
+        path: "JOURNAL_AI_PREMIUM_MODEL",
+      },
+    ] as const) {
+      if (route.model === undefined) continue;
+      const schema =
+        route.provider === "BEDROCK" ? bedrockModelIdSchema : modelSchema;
+      if (!schema.safeParse(route.model).success)
+        context.addIssue({
+          code: "custom",
+          path: [route.path],
+          message:
+            route.provider === "BEDROCK"
+              ? `${route.path} must be a valid Bedrock Converse model or inference-profile identifier`
+              : `${route.path} must be a valid provider model identifier of at most 128 characters`,
+        });
+    }
     if (
       environment.NODE_ENV === "production" &&
       environment.JOURNAL_AI_ENCRYPTION_KEY.equals(
