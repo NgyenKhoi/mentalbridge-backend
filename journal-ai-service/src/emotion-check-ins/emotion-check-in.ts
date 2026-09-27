@@ -105,6 +105,11 @@ export interface EmotionCheckInRepository {
     limit: number,
     before?: string,
   ): Promise<{ rows: EmotionCheckInDocument[]; hasMore: boolean }>;
+  progressSnapshot(
+    ownerAccountId: string,
+    startLocalDate: string,
+    endLocalDate: string,
+  ): Promise<{ dates: string[]; rows: EmotionCheckInDocument[] }>;
   update(
     ownerAccountId: string,
     localDate: string,
@@ -178,6 +183,11 @@ const contextQuerySchema = z
     limit: z.coerce.number().int().min(1).max(30).default(14),
   })
   .strict();
+const progressQuerySchema = z
+  .object({
+    timezone: timezoneSchema,
+  })
+  .strict();
 const idempotencyKeySchema = z.string().min(16).max(128);
 const revisionHeaderSchema = z.coerce.number().int().min(1).max(MAX_REVISIONS);
 
@@ -226,6 +236,16 @@ export const localDateAt = (instant: Date, timezone: string): string => {
   };
   return `${part("year")}-${part("month")}-${part("day")}`;
 };
+
+const localDateOrdinal = (localDate: string): number => {
+  const [year, month, day] = localDate.split("-").map(Number);
+  if (year === undefined || month === undefined || day === undefined)
+    throw new BadRequestException();
+  return Math.floor(Date.UTC(year, month - 1, day) / 86_400_000);
+};
+
+const localDateFromOrdinal = (ordinal: number): string =>
+  new Date(ordinal * 86_400_000).toISOString().slice(0, 10);
 
 @Injectable()
 export class EmotionCheckInCrypto {
@@ -372,6 +392,49 @@ export class MongoEmotionCheckInRepository
       .limit(limit + 1)
       .toArray();
     return { rows: rows.slice(0, limit), hasMore: rows.length > limit };
+  }
+
+  async progressSnapshot(
+    ownerAccountId: string,
+    startLocalDate: string,
+    endLocalDate: string,
+  ) {
+    const result = await (
+      await this.values()
+    )
+      .aggregate<{
+        dates: { localDate: string }[];
+        rows: EmotionCheckInDocument[];
+      }>(
+        [
+          { $match: { ownerAccountId, deleted: false } },
+          {
+            $facet: {
+              dates: [
+                { $sort: { localDate: 1 } },
+                { $project: { _id: 0, localDate: 1 } },
+              ],
+              rows: [
+                {
+                  $match: {
+                    localDate: {
+                      $gte: startLocalDate,
+                      $lte: endLocalDate,
+                    },
+                  },
+                },
+                { $sort: { localDate: -1 } },
+              ],
+            },
+          },
+        ],
+        { hint: "emotion_check_ins_owner_history_idx" },
+      )
+      .next();
+    return {
+      dates: result?.dates.map((row) => row.localDate) ?? [],
+      rows: result?.rows ?? [],
+    };
   }
 
   async update(
@@ -610,6 +673,87 @@ export class EmotionCheckInService {
     };
   }
 
+  async progress(
+    request: CheckInRequest,
+    query: Record<string, string | undefined>,
+  ) {
+    const parsed = progressQuerySchema.safeParse(query);
+    if (!parsed.success) throw new BadRequestException();
+    const ownerAccountId = owner(request);
+    const asOfLocalDate = localDateAt(this.clock.now(), parsed.data.timezone);
+    const asOfOrdinal = localDateOrdinal(asOfLocalDate);
+    const startLocalDate = localDateFromOrdinal(asOfOrdinal - 29);
+    const snapshot = await this.repository.progressSnapshot(
+      ownerAccountId,
+      startLocalDate,
+      asOfLocalDate,
+    );
+    const activeDateOrdinals = new Set(
+      snapshot.dates
+        .filter((localDate) => localDate <= asOfLocalDate)
+        .map(localDateOrdinal),
+    );
+
+    let currentStreak = 0;
+    let streakOrdinal = asOfOrdinal;
+    if (!activeDateOrdinals.has(streakOrdinal)) streakOrdinal -= 1;
+    for (
+      let ordinal = streakOrdinal;
+      activeDateOrdinals.has(ordinal);
+      ordinal -= 1
+    )
+      currentStreak += 1;
+
+    let longestStreak = 0;
+    let run = 0;
+    let previous: number | undefined;
+    for (const ordinal of [...activeDateOrdinals].sort(
+      (left, right) => left - right,
+    )) {
+      run = previous !== undefined && ordinal === previous + 1 ? run + 1 : 1;
+      longestStreak = Math.max(longestStreak, run);
+      previous = ordinal;
+    }
+
+    const recent = snapshot.rows.map((document) => {
+      const output = this.output(document);
+      return { localDate: output.localDate, emotion: output.emotion };
+    });
+    const windows = ([7, 14, 30] as const).map((days) => {
+      const windowStartOrdinal = asOfOrdinal - days + 1;
+      const items = recent.filter(
+        (item) => localDateOrdinal(item.localDate) >= windowStartOrdinal,
+      );
+      const distribution: Record<Emotion, number> = {
+        GREAT: 0,
+        GOOD: 0,
+        OKAY: 0,
+        LOW: 0,
+        VERY_LOW: 0,
+      };
+      for (const item of items) distribution[item.emotion] += 1;
+      return {
+        days,
+        startLocalDate: localDateFromOrdinal(windowStartOrdinal),
+        endLocalDate: asOfLocalDate,
+        checkedInDays: items.length,
+        totalDays: days,
+        distribution,
+      };
+    });
+    const current = recent.find((item) => item.localDate === asOfLocalDate);
+    return {
+      asOfLocalDate,
+      timezone: parsed.data.timezone,
+      currentEmotion: current?.emotion ?? null,
+      currentStreak,
+      longestStreak,
+      windows,
+      label: "SELF_REPORTED_EMOTION" as const,
+      interpretation: "FACTUAL_COUNTS_NOT_DIAGNOSIS_OR_RECOVERY" as const,
+    };
+  }
+
   async update(request: CheckInRequest, localDate: string) {
     if (!localDateSchema.safeParse(localDate).success)
       throw new BadRequestException();
@@ -811,6 +955,19 @@ export class EmotionCheckInContextController {
   }
 }
 
+@Controller("api/v1/emotion-check-in-progress")
+export class EmotionCheckInProgressController {
+  constructor(private readonly service: EmotionCheckInService) {}
+
+  @Get()
+  progress(
+    @Req() request: CheckInRequest,
+    @Query() query: Record<string, string | undefined>,
+  ) {
+    return this.service.progress(request, query);
+  }
+}
+
 export const registerEmotionCheckInModule = (
   configuration: Configuration,
   dependencies: EmotionCheckInDependencies = {},
@@ -829,7 +986,11 @@ export const registerEmotionCheckInModule = (
       };
   return {
     module: EmotionCheckInModule,
-    controllers: [EmotionCheckInController, EmotionCheckInContextController],
+    controllers: [
+      EmotionCheckInController,
+      EmotionCheckInContextController,
+      EmotionCheckInProgressController,
+    ],
     providers: [
       EmotionCheckInService,
       repository,

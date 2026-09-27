@@ -42,6 +42,7 @@ const implementedOperations = new Set([
   "GET /api/v1/emotion-check-ins/{localDate}",
   "PATCH /api/v1/emotion-check-ins/{localDate}",
   "DELETE /api/v1/emotion-check-ins/{localDate}",
+  "GET /api/v1/emotion-check-in-progress",
   "GET /api/v1/emotion-check-in-context",
   "POST /api/v1/ai-companion/conversations",
   "GET /api/v1/ai-companion/conversations",
@@ -98,6 +99,10 @@ const implementedResponses = new Map([
   [
     "DELETE /api/v1/emotion-check-ins/{localDate}",
     new Set(["200", "400", "401", "404", "503"]),
+  ],
+  [
+    "GET /api/v1/emotion-check-in-progress",
+    new Set(["200", "400", "401", "503"]),
   ],
   [
     "GET /api/v1/emotion-check-in-context",
@@ -202,6 +207,7 @@ if (journalText?.pattern !== ".*\\S.*") {
 
 const checkIn = schemas?.EmotionCheckIn;
 const consumerItem = schemas?.EmotionCheckInConsumerItem;
+const progress = schemas?.EmotionCheckInProgress;
 if (
   schemas?.Emotion?.enum?.join(",") !== "GREAT,GOOD,OKAY,LOW,VERY_LOW" ||
   checkIn?.properties?.sourceLabel?.const !== "SELF_REPORTED_EMOTION" ||
@@ -213,6 +219,16 @@ if (
 if (consumerItem?.properties?.note || consumerItem?.properties?.id) {
   throw new Error(
     "Consumer context must exclude raw notes and owner identifiers",
+  );
+}
+if (
+  progress?.properties?.interpretation?.const !==
+    "FACTUAL_COUNTS_NOT_DIAGNOSIS_OR_RECOVERY" ||
+  progress?.properties?.windows?.minItems !== 3 ||
+  progress?.properties?.windows?.maxItems !== 3
+) {
+  throw new Error(
+    "Emotion progress must remain factual and expose 7/14/30 windows",
   );
 }
 

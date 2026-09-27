@@ -73,6 +73,27 @@ class MemoryRepository implements EmotionCheckInRepository {
     });
   }
 
+  progressSnapshot(
+    ownerAccountId: string,
+    startLocalDate: string,
+    endLocalDate: string,
+  ) {
+    const active = this.documents.filter(
+      (candidate) =>
+        candidate.ownerAccountId === ownerAccountId && !candidate.deleted,
+    );
+    return Promise.resolve({
+      dates: active.map((candidate) => candidate.localDate).sort(),
+      rows: active
+        .filter(
+          (candidate) =>
+            candidate.localDate >= startLocalDate &&
+            candidate.localDate <= endLocalDate,
+        )
+        .sort((left, right) => right.localDate.localeCompare(left.localDate)),
+    });
+  }
+
   update(
     ownerAccountId: string,
     localDate: string,
@@ -175,6 +196,39 @@ const subject = (consentClient: ConsentClient = grantedConsent) => {
       { now: () => new Date(now) },
     ),
   };
+};
+
+const seedCheckIn = (
+  repository: MemoryRepository,
+  localDate: string,
+  emotion: "GREAT" | "GOOD" | "OKAY" | "LOW" | "VERY_LOW" = "GOOD",
+) => {
+  const crypto = new EmotionCheckInCrypto(configuration);
+  const recordedAt = new Date(`${localDate}T08:00:00.000Z`);
+  repository.documents.push({
+    _id: `00000000-0000-4000-8000-${localDate.replaceAll("-", "")}00`,
+    ownerAccountId: ownerId,
+    localDate,
+    timezone: "Asia/Ho_Chi_Minh",
+    currentRevision: 1,
+    revisions: [
+      {
+        revision: 1,
+        recordedAt,
+        payload: crypto.encrypt(ownerId, localDate, 1, {
+          emotion,
+          intensity: 3,
+          note: null,
+        }),
+      },
+    ],
+    commands: [],
+    createdAt: recordedAt,
+    updatedAt: recordedAt,
+    deleted: false,
+    deletedAt: null,
+    purgeAfter: null,
+  });
 };
 
 void test("creates one encrypted owner-scoped check-in and replays exact retries", async () => {
@@ -340,4 +394,152 @@ void test("returns note-free context only under current consent", async () => {
       }),
     ServiceUnavailableException,
   );
+});
+
+void test("calculates factual current/longest streaks and 7/14/30-day coverage", async () => {
+  const { repository, service } = subject();
+  for (const localDate of [
+    "2026-09-05",
+    "2026-09-06",
+    "2026-09-07",
+    "2026-09-08",
+    "2026-09-09",
+  ])
+    seedCheckIn(repository, localDate, "OKAY");
+  seedCheckIn(repository, "2026-09-14", "LOW");
+  seedCheckIn(repository, "2026-09-15", "GOOD");
+  seedCheckIn(repository, "2026-09-16", "GREAT");
+  seedCheckIn(repository, "2026-09-17", "GOOD");
+
+  const progress = await service.progress(request({}), {
+    timezone: "Asia/Ho_Chi_Minh",
+  });
+
+  assert.equal(progress.asOfLocalDate, "2026-09-17");
+  assert.equal(progress.currentEmotion, "GOOD");
+  assert.equal(progress.currentStreak, 4);
+  assert.equal(progress.longestStreak, 5);
+  assert.deepEqual(
+    progress.windows.map((window) => [window.days, window.checkedInDays]),
+    [
+      [7, 4],
+      [14, 9],
+      [30, 9],
+    ],
+  );
+  assert.deepEqual(progress.windows[0]?.distribution, {
+    GREAT: 1,
+    GOOD: 2,
+    OKAY: 0,
+    LOW: 1,
+    VERY_LOW: 0,
+  });
+  assert.equal(
+    progress.interpretation,
+    "FACTUAL_COUNTS_NOT_DIAGNOSIS_OR_RECOVERY",
+  );
+});
+
+void test("same-day edit changes distribution without incrementing coverage or streak", async () => {
+  const { service } = subject();
+  await service.create(request(createBody));
+  await service.update(
+    request(
+      { emotion: "LOW", intensity: 2, note: null },
+      "emotion-progress-update",
+      1,
+    ),
+    createBody.localDate,
+  );
+
+  const progress = await service.progress(request({}), {
+    timezone: "Asia/Ho_Chi_Minh",
+  });
+
+  assert.equal(progress.currentStreak, 1);
+  assert.equal(progress.windows[0]?.checkedInDays, 1);
+  assert.equal(progress.windows[0].distribution.LOW, 1);
+  assert.equal(progress.windows[0].distribution.GOOD, 0);
+});
+
+void test("missing and deleted local days break streaks while longest is recomputed", async () => {
+  const { repository, service } = subject();
+  seedCheckIn(repository, "2026-09-14");
+  seedCheckIn(repository, "2026-09-15");
+  seedCheckIn(repository, "2026-09-17");
+
+  let progress = await service.progress(request({}), {
+    timezone: "Asia/Ho_Chi_Minh",
+  });
+  assert.equal(progress.currentStreak, 1);
+  assert.equal(progress.longestStreak, 2);
+
+  const current = repository.documents.find(
+    (document) => document.localDate === "2026-09-17",
+  );
+  assert.ok(current);
+  current.deleted = true;
+  progress = await service.progress(request({}), {
+    timezone: "Asia/Ho_Chi_Minh",
+  });
+  assert.equal(progress.currentEmotion, null);
+  assert.equal(progress.currentStreak, 0);
+  assert.equal(progress.longestStreak, 2);
+});
+
+void test("anchors progress windows to the requested valid IANA timezone", async () => {
+  const { repository, service } = subject();
+  seedCheckIn(repository, "2026-09-16", "OKAY");
+  seedCheckIn(repository, "2026-09-17", "GREAT");
+
+  const vietnam = await service.progress(request({}), {
+    timezone: "Asia/Ho_Chi_Minh",
+  });
+  const newYork = await service.progress(request({}), {
+    timezone: "America/New_York",
+  });
+
+  assert.equal(vietnam.asOfLocalDate, "2026-09-17");
+  assert.equal(vietnam.currentEmotion, "GREAT");
+  assert.equal(vietnam.currentStreak, 2);
+  assert.equal(newYork.asOfLocalDate, "2026-09-16");
+  assert.equal(newYork.currentEmotion, "OKAY");
+  assert.equal(newYork.currentStreak, 1);
+  await assert.rejects(
+    () => service.progress(request({}), { timezone: "Mars/Olympus" }),
+    BadRequestException,
+  );
+});
+
+void test("keeps yesterday's streak current until the open local day is complete", async () => {
+  const { repository, service } = subject();
+  seedCheckIn(repository, "2026-09-15", "OKAY");
+  seedCheckIn(repository, "2026-09-16", "GOOD");
+
+  const progress = await service.progress(request({}), {
+    timezone: "Asia/Ho_Chi_Minh",
+  });
+
+  assert.equal(progress.asOfLocalDate, "2026-09-17");
+  assert.equal(progress.currentEmotion, null);
+  assert.equal(progress.currentStreak, 2);
+  assert.equal(progress.longestStreak, 2);
+});
+
+void test("returns truthful zero progress when no check-ins exist", async () => {
+  const { service } = subject();
+  const progress = await service.progress(request({}), {
+    timezone: "Asia/Ho_Chi_Minh",
+  });
+  assert.equal(progress.currentEmotion, null);
+  assert.equal(progress.currentStreak, 0);
+  assert.equal(progress.longestStreak, 0);
+  assert.ok(progress.windows.every((window) => window.checkedInDays === 0));
+  assert.deepEqual(progress.windows[2]?.distribution, {
+    GREAT: 0,
+    GOOD: 0,
+    OKAY: 0,
+    LOW: 0,
+    VERY_LOW: 0,
+  });
 });
