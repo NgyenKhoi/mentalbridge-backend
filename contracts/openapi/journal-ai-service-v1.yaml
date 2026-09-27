@@ -1,8 +1,8 @@
 openapi: 3.1.0
 info:
   title: MentalBridge Journal AI Service API
-  version: 1.5.0
-  description: Private journal CRUD, daily self-reported emotion check-ins with factual progress, consent-gated analysis, bounded Support Guide phrasing, and quota-governed AI Companion conversations.
+  version: 1.6.0
+  description: Private journal CRUD, daily self-reported emotion check-ins with factual progress and a note-free notification activity projection, consent-gated analysis, bounded Support Guide phrasing, and quota-governed AI Companion conversations.
 servers:
   - url: http://localhost:3000
 security:
@@ -12,6 +12,8 @@ tags:
     description: Owner-scoped, non-clinical daily self-reported emotion records.
   - name: Journals
     description: Private journal entries owned by the authenticated account.
+  - name: Notification activity
+    description: Owner-scoped, note-free factual Journal and emotion activity used by Content/Notification policy.
   - name: Analysis jobs
     description: Owner-scoped asynchronous analysis of one exact current revision.
   - name: Longitudinal analysis
@@ -235,6 +237,30 @@ paths:
         "400": { $ref: "#/components/responses/BadRequest" }
         "401": { $ref: "#/components/responses/Unauthorized" }
         "403": { $ref: "#/components/responses/Forbidden" }
+        "503": { $ref: "#/components/responses/DependencyUnavailable" }
+  /api/v1/notification-activity:
+    x-mentalbridge-status: implemented
+    get:
+      tags: [Notification activity]
+      summary: Read minimized authoritative Journal and emotion activity for notification policy.
+      description: Returns dates-derived factual completion and streak values only. It never returns Journal text, emotion note text, a clinical interpretation, an adherence score, or a recovery claim.
+      operationId: getNotificationActivity
+      parameters:
+        - name: timezone
+          in: query
+          required: true
+          description: Current persisted IANA timezone used to derive Journal local dates and the as-of local day. Emotion activity retains its frozen creation local date.
+          schema: { type: string, minLength: 1, maxLength: 64 }
+        - $ref: "#/components/parameters/CorrelationId"
+      responses:
+        "200":
+          description: Independent factual Journal and emotion activity.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/NotificationActivity"
+        "400": { $ref: "#/components/responses/BadRequest" }
+        "401": { $ref: "#/components/responses/Unauthorized" }
         "503": { $ref: "#/components/responses/DependencyUnavailable" }
   /api/v1/journals:
     x-mentalbridge-status: implemented
@@ -1057,6 +1083,27 @@ components:
         label: { type: string, const: SELF_REPORTED_EMOTION }
         interpretation:
           { type: string, const: FACTUAL_COUNTS_NOT_DIAGNOSIS_OR_RECOVERY }
+    NotificationActivityStreak:
+      type: object
+      additionalProperties: false
+      required: [completedToday, currentStreak, longestStreak]
+      properties:
+        completedToday: { type: boolean }
+        currentStreak: { type: integer, minimum: 0 }
+        longestStreak: { type: integer, minimum: 0 }
+    NotificationActivity:
+      type: object
+      additionalProperties: false
+      required:
+        [asOfLocalDate, timezone, journal, emotionCheckIn, interpretation]
+      properties:
+        asOfLocalDate: { type: string, format: date }
+        timezone: { type: string, minLength: 1, maxLength: 64 }
+        journal: { $ref: "#/components/schemas/NotificationActivityStreak" }
+        emotionCheckIn:
+          { $ref: "#/components/schemas/NotificationActivityStreak" }
+        interpretation:
+          { type: string, const: FACTUAL_ACTIVITY_NOT_ADHERENCE_OR_RECOVERY }
     EmotionCheckInTombstone:
       type: object
       additionalProperties: false

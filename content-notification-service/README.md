@@ -4,6 +4,13 @@ NestJS service that owns reviewed self-help resource definitions, immutable exac
 
 ## Current capability
 
+MB-564 materializes owner-visible Journal and emotion reminders plus factual
+7/14/30-day streak milestones when the authenticated owner opens the first
+inbox page. Content applies persisted channel/content-group preferences and
+quiet hours, then forwards the same end-user bearer to Journal/AI's note-free
+activity projection. A projection failure defers new materialization without
+making persisted inbox history unavailable.
+
 - `POST /api/v1/resources/{id}/versions/{contentVersion}/eligibility-publications` — ADMIN-only immutable eligibility publication with persisted idempotent replay
 - `POST /api/v1/resources/{id}/versions/{contentVersion}/eligibility-publications/withdrawal` — ADMIN-only append-only eligibility withdrawal
 - `POST /internal/v1/resource-eligibility:resolve` — authenticated USER-context batch resolution for Care with exact-version outcomes and no content or moderation payload
@@ -107,6 +114,11 @@ Migration `11_persist_notification_inbox.sql` completes the durable inbox
 aggregate with per-recipient source deduplication, occurred time, approved internal actions,
 delivery state, optimistic lifecycle versioning, and a maximum 90-day retention
 deadline. Inbox reads tombstone expired rows before returning active items.
+
+Migration `12_add_journal_emotion_notification_kinds.sql` adds the four MB-564
+Journal/emotion reminder and milestone kinds without rewriting historical
+generic notifications. The Journal/AI projection uses
+`JOURNAL_AI_SERVICE_URL` and the bounded `JOURNAL_AI_SERVICE_TIMEOUT_MS`.
 
 The controlled Review 1 seed, MB-337 eligibility matrix, and visibly synthetic non-dialable safety-directory fixture are owner-module migrations with a separate ledger (`pgmigrations_review1`), so running normal schema migrations cannot accidentally mark controlled data as applied. The seeds reject drift from their reviewed decisions. Machine-readable resource inventory, reviewer rationale, explicit ineligible decisions, and Care requests are kept in `../contracts/fixtures/content/resource-eligibility-v1-controlled-demo.json`. No real safety contact is published by the controlled fixture. For the shared dev/staging database only, run:
 

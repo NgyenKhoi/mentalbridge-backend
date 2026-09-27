@@ -44,6 +44,7 @@ const implementedOperations = new Set([
   "DELETE /api/v1/emotion-check-ins/{localDate}",
   "GET /api/v1/emotion-check-in-progress",
   "GET /api/v1/emotion-check-in-context",
+  "GET /api/v1/notification-activity",
   "POST /api/v1/ai-companion/conversations",
   "GET /api/v1/ai-companion/conversations",
   "GET /api/v1/ai-companion/conversations/{conversationId}",
@@ -108,6 +109,7 @@ const implementedResponses = new Map([
     "GET /api/v1/emotion-check-in-context",
     new Set(["200", "400", "401", "403", "503"]),
   ],
+  ["GET /api/v1/notification-activity", new Set(["200", "400", "401", "503"])],
   ["POST /api/v1/ai-companion/conversations", new Set(["201", "400", "401"])],
   ["GET /api/v1/ai-companion/conversations", new Set(["200", "401"])],
   [
@@ -208,6 +210,7 @@ if (journalText?.pattern !== ".*\\S.*") {
 const checkIn = schemas?.EmotionCheckIn;
 const consumerItem = schemas?.EmotionCheckInConsumerItem;
 const progress = schemas?.EmotionCheckInProgress;
+const notificationActivity = schemas?.NotificationActivity;
 if (
   schemas?.Emotion?.enum?.join(",") !== "GREAT,GOOD,OKAY,LOW,VERY_LOW" ||
   checkIn?.properties?.sourceLabel?.const !== "SELF_REPORTED_EMOTION" ||
@@ -215,6 +218,17 @@ if (
     "NOT_A_DIAGNOSIS_OR_SAFETY_CLASSIFIER"
 ) {
   throw new Error("Daily emotion check-in labels differ from the accepted ADR");
+}
+if (
+  notificationActivity?.properties?.interpretation?.const !==
+    "FACTUAL_ACTIVITY_NOT_ADHERENCE_OR_RECOVERY" ||
+  JSON.stringify(notificationActivity).match(
+    /journalText|emotionNote|content|intensity/i,
+  )
+) {
+  throw new Error(
+    "Notification activity must remain factual and exclude sensitive content",
+  );
 }
 if (consumerItem?.properties?.note || consumerItem?.properties?.id) {
   throw new Error(

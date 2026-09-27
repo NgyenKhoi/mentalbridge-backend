@@ -30,6 +30,9 @@ const safetyDirectoryAreaAlias = requiredMigration('8_add_safety_directory_area_
 const resourceSourceProvenance = requiredMigration('9_add_resource_source_provenance.sql');
 const notificationPreferences = requiredMigration('10_persist_notification_preferences.sql');
 const notificationInbox = requiredMigration('11_persist_notification_inbox.sql');
+const journalEmotionNotificationKinds = requiredMigration(
+  '12_add_journal_emotion_notification_kinds.sql',
+);
 const review1Seed = await readFile(
   new URL('../migrations/review1/1_seed_review1_controlled_resource.sql', import.meta.url),
   'utf8',
@@ -158,6 +161,14 @@ assert.match(notificationInbox, /ck_notification_action/);
 assert.match(notificationInbox, /interval '90 days'/);
 assert.match(notificationInbox, /ix_notification_recipient_inbox/);
 assert.match(notificationInbox, /delivery_state = 'CANCELLED'[\s\S]*category = 'SAFETY'/);
+for (const kind of [
+  'JOURNAL_REMINDER',
+  'EMOTION_CHECKIN_REMINDER',
+  'JOURNAL_STREAK_MILESTONE',
+  'EMOTION_STREAK_MILESTONE',
+]) {
+  assert.match(journalEmotionNotificationKinds, new RegExp(`'${kind}'`));
+}
 assert.match(safetyDirectoryAreaAliases, /area-alias-ha-noi-canonical/);
 assert.match(safetyDirectoryAreaAliases, /area-alias-da-nang-canonical/);
 assert.match(safetyDirectoryAreaAliases, /area-alias-hcm-canonical/);

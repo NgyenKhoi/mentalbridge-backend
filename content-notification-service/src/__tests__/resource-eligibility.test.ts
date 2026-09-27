@@ -90,6 +90,8 @@ beforeEach(async () => {
     IDENTITY_JWT_AUDIENCE: AUDIENCE,
     IDENTITY_JWT_PUBLIC_KEY: publicKey,
     IDENTITY_JWT_CLOCK_TOLERANCE_SECONDS: 0,
+    JOURNAL_AI_SERVICE_URL: 'http://localhost:3005',
+    JOURNAL_AI_SERVICE_TIMEOUT_MS: 2_000,
   };
   app = await createApplication(configuration, {
     readinessProbe: { check: async () => undefined },
@@ -122,6 +124,8 @@ describe('Resource Eligibility HTTP boundary', () => {
       IDENTITY_JWT_AUDIENCE: AUDIENCE,
       IDENTITY_JWT_PUBLIC_KEY: publicKey.replace(/\n/g, '\\n'),
       IDENTITY_JWT_CLOCK_TOLERANCE_SECONDS: 0,
+      JOURNAL_AI_SERVICE_URL: 'http://localhost:3005',
+      JOURNAL_AI_SERVICE_TIMEOUT_MS: 2_000,
     };
     app = await createApplication(configuration, {
       readinessProbe: { check: async () => undefined },
@@ -154,6 +158,8 @@ describe('Resource Eligibility HTTP boundary', () => {
       IDENTITY_JWT_AUDIENCE: AUDIENCE,
       IDENTITY_JWT_PUBLIC_KEY: publicKey,
       IDENTITY_JWT_CLOCK_TOLERANCE_SECONDS: 60,
+      JOURNAL_AI_SERVICE_URL: 'http://localhost:3005',
+      JOURNAL_AI_SERVICE_TIMEOUT_MS: 2_000,
     };
     app = await createApplication(configuration, {
       readinessProbe: { check: async () => undefined },
@@ -309,6 +315,8 @@ describe('Resource Eligibility HTTP boundary', () => {
       IDENTITY_JWT_AUDIENCE: AUDIENCE,
       IDENTITY_JWT_PUBLIC_KEY: publicKey,
       IDENTITY_JWT_CLOCK_TOLERANCE_SECONDS: 0,
+      JOURNAL_AI_SERVICE_URL: 'http://localhost:3005',
+      JOURNAL_AI_SERVICE_TIMEOUT_MS: 2_000,
     };
     app = await createApplication(configuration, {
       readinessProbe: { check: async () => undefined },

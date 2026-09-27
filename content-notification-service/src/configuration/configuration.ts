@@ -19,6 +19,8 @@ const environmentSchema = z
     IDENTITY_JWT_PUBLIC_KEY: z.string().min(1),
     IDENTITY_JWT_KEY_ID: z.string().min(1).optional(),
     IDENTITY_JWT_CLOCK_TOLERANCE_SECONDS: z.coerce.number().int().min(0).default(60),
+    JOURNAL_AI_SERVICE_URL: z.url().default('http://localhost:3005'),
+    JOURNAL_AI_SERVICE_TIMEOUT_MS: z.coerce.number().int().min(100).max(5_000).default(2_000),
     E2E_TEST_MODE: z.coerce.boolean().default(false),
     E2E_TEST_SECRET: z.string().min(16).optional(),
   })
