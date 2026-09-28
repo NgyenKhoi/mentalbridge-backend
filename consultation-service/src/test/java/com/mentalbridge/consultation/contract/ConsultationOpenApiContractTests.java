@@ -25,6 +25,8 @@ class ConsultationOpenApiContractTests {
 			"POST /api/v1/availability-slots",
 			"DELETE /api/v1/availability-slots/{slotId}",
 			"GET /api/v1/bookable-slots",
+			"GET /api/v1/specialists",
+			"GET /api/v1/specialists/{specialistAccountId}",
 			"GET /api/v1/appointments",
 			"POST /api/v1/appointments",
 			"GET /api/v1/specialist/appointments",
@@ -107,6 +109,28 @@ class ConsultationOpenApiContractTests {
 				"CANCELLED");
 		assertThat(appointment.getRequired()).contains("replacesAppointmentId");
 		assertThat(appointment.getProperties()).doesNotContainKeys("practiceLocationId", "phone", "meetingLink", "url");
+	}
+
+	@Test
+	void discoveryContractIsApprovedOnlineMinimalAndBookingNeutral() {
+		var contract = Path.of("..", "contracts", "openapi", "consultation-service-v1.yaml").toString();
+		var api = new OpenAPIV3Parser().read(contract);
+		var item = api.getComponents().getSchemas().get("SpecialistDiscoveryItem");
+		var slot = api.getComponents().getSchemas().get("DiscoverySlot");
+		var explanation = api.getComponents().getSchemas().get("DiscoveryExplanation");
+		var page = api.getComponents().getSchemas().get("SpecialistDiscoveryPage");
+
+		assertThat(item.getProperties()).containsOnlyKeys("specialistAccountId", "displayName", "bio",
+				"supportAreas", "languages", "yearsOfExperience", "timezone", "explanation", "selectableSlots");
+		assertThat(item.getProperties()).doesNotContainKeys("approvalStatus", "practiceLocation", "address", "phone",
+				"price", "credentials", "license", "certificates", "specialties", "journal", "assessmentAnswers",
+				"chatContent", "meetingLink");
+		assertThat(slot.getProperties()).containsOnlyKeys("id", "specialistAccountId", "startAt", "endAt",
+				"timezone", "modality", "version");
+		assertThat(explanation.getProperties()).containsKeys("compatibility", "languageMatched", "hasSelectableSlot",
+				"timezoneMatch", "ratingTieBreakerApplied", "codes");
+		assertThat(page.getProperties()).containsKeys("rankingPolicyVersion", "contextState", "packageCode",
+				"bookingHandoff", "videoEnabled", "nextCursor");
 	}
 
 	@Test

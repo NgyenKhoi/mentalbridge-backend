@@ -5,13 +5,14 @@
 | Field | Value |
 | --- | --- |
 | Scope decisions | `MB-SCOPE-V2-001`, amended by `MB-SCOPE-V2-002` |
-| Status | `PRODUCT POLICY APPROVED; MB-360 LIFECYCLE, MB-362 AVAILABILITY, MB-378 APPOINTMENT REQUEST, MB-379 DECISION/EXPIRY, AND MB-558 CREDIT V2/CAP RUNTIMES IMPLEMENTED; DISCOVERY / VIDEO SESSION RUNTIMES DELIVERY-GATED` |
+| Status | `PRODUCT POLICY APPROVED; MB-360 LIFECYCLE, MB-362 AVAILABILITY, MB-363 DISCOVERY OWNER, MB-378 APPOINTMENT REQUEST, MB-379 DECISION/EXPIRY, AND MB-558 CREDIT V2/CAP RUNTIMES IMPLEMENTED; MB-363 CONSUMER AND VIDEO SESSION RUNTIMES DELIVERY-GATED` |
 | Effective decision date | 2026-09-24 for ADR 0022 amendments |
 | Appointment, specialist, evidence, and billing owner | Consultation |
 | Brief and SupportPlan-change decision owner | Care |
 | Chat owner | Realtime |
 | Base decision | [ADR 0017](../adr/0017-product-scope-v2.md) |
 | Current amendment | [ADR 0022](../adr/0022-current-product-blueprint-amendments.md) |
+| Discovery decision | [ADR 0026](../adr/0026-approved-online-specialist-discovery.md) (`MB-SPECIALIST-DISCOVERY-001`) |
 | Historical credit implementation | [ADR 0020 consultation-credit v1](../adr/0020-service-plan-consultation-credits.md) |
 | Amends | [Consultation and specialist policy v1](consultation-specialist-policy-v1.md) |
 
@@ -29,6 +30,35 @@ current booking modes.
 `FREE` may browse approved specialists and currently selectable online slots
 but cannot book. Booking authority is server-side Consultation entitlement and
 credit policy.
+
+Discovery follows `MB-SPECIALIST-DISCOVERY-001`. It rechecks the current
+Consultation-owned profile and availability state on every request. Only
+`APPROVED` profiles may appear, and only active, unheld, future, exact
+60-minute `IN_APP_CHAT` or enabled `IN_APP_VIDEO` slots may be returned. An
+approved profile may remain browseable with an empty slot list. A suspension,
+withdrawal, started slot, active appointment hold, or disabled video capability
+must fail closed rather than be hidden behind stale cached eligibility.
+
+When an exact owned SupportEvaluation is supplied, Consultation may use only
+Care's versioned domain, instrument-specific screening level, and domain-local
+support pathway in memory. No raw answers, scores, safety evidence, Journal,
+or chat content is persisted, logged, or returned. Missing or unavailable Care
+context removes personalized compatibility and produces a neutral explained
+rank; it never authorizes a stale or guessed health context.
+
+The `specialist-discovery-v1` comparison order is domain/pathway compatibility,
+requested language, current availability, and timezone. Only after those four
+factors tie may an authoritative rating aggregate break a tie for a current
+`PREMIUM` user. Rating is neutral for `FREE` and `PLUS`, is never a primary or
+sole recommendation factor, and is omitted when the rating capability is not
+implemented. Years of experience remains informational and is not a v1 rank
+factor. The final stable tie-breaker is specialist account ID.
+
+The response exposes stable explanation codes and policy version but never a
+clinical-suitability claim or hidden weighted score. Public discovery fields
+exclude PracticeLocation, address, phone, external links, prices, free-intro
+claims, credentials, licenses, certificates, unsupported titles/specialties,
+and sensitive Care/Journal/chat content.
 
 A booking request may be created only when all are true:
 

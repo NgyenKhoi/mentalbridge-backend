@@ -14,8 +14,10 @@ verification-document claim is accepted. MB-360 completes rejection,
 same-profile resubmission, suspension, and restoration with closed reasons and
 audited transitions. Suspension atomically withdraws future availability,
 cancels future not-started appointments, and releases their exact held credits;
-restoration never revives those records. Discovery, billing, and cross-service
-brief/chat integrations remain later stories. MB-362 adds approved-specialist publication, owner listing, and
+restoration never revives those records. MB-363 adds approved-only discovery,
+public profile detail, deterministic explanations, and current exact-slot
+handoff. Billing purchase and cross-service brief/chat integrations remain
+later stories. MB-362 adds approved-specialist publication, owner listing, and
 tombstone withdrawal of exact online slots; it does not create appointments.
 MB-377 adds Consultation-owned plan-period credit rows, an append-only
 transition ledger, and an authenticated owner balance. Provisioning is
@@ -38,7 +40,11 @@ decision.
 ## Integration
 
 - Inbound REST: implemented specialist/admin APIs are defined in `../contracts/openapi/consultation-service-v1.yaml`.
-- Outbound REST: calls Care for current consent and authorization decisions through a consumer-owned OpenFeign adapter and Resilience4j; uncertainty fails closed.
+- Outbound REST: discovery optionally calls Care for one exact owned
+  SupportEvaluation through a narrow OpenFeign adapter. It reduces the response
+  to domain/pathway priorities in memory; unavailable or malformed context
+  produces explained neutral ranking and never exposes raw assessment data.
+  Other consent/authorization integrations remain separately gated.
 - Async: the implemented profile lifecycle has no independent asynchronous consumer, so it has no Kafka runtime,
   topic, producer, consumer, outbox, or Kafka test container. A later feature
   may add these only when its accepted flow requires durable asynchronous work
@@ -92,6 +98,20 @@ or owns the shared dev/staging Consultation database.
 
 - `GET|POST /api/v1/availability-slots`
 - `DELETE /api/v1/availability-slots/{slotId}`
+
+## Implemented MB-363 owner endpoints
+
+- `GET /api/v1/specialists`
+- `GET /api/v1/specialists/{specialistAccountId}`
+
+Discovery uses the existing profile, language/support-area, availability,
+appointment-hold, and current-entitlement tables in one owner database; MB-363
+requires no new persistence or migration. Every request rechecks current
+`APPROVED` state and selectable slots. `FREE` receives `BROWSE_ONLY`, while
+`PLUS`/`PREMIUM` receive an exact slot identity with
+`BOOKING_POLICY_CHECK_REQUIRED`; MB-378 remains the booking authority and
+revalidates all mutable state. Rating is not fabricated and is currently
+reported as unavailable/unused.
 
 ## Implemented MB-377/MB-558 endpoint
 

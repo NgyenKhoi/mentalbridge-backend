@@ -136,6 +136,14 @@ Historical MB-386 v1 snapshots remain a compatibility baseline. MB-559 implement
 
 Specialist discovery exposes only approved/active specialists and selectable `IN_APP_CHAT` / `IN_APP_VIDEO` slots. Physical PracticeLocation, phone consultation, and external meeting links are not current scope.
 
+Discovery uses the deterministic primary order fixed by
+[ADR 0026](adr/0026-approved-online-specialist-discovery.md): minimized
+screened domain/pathway compatibility, requested language, current
+availability, then timezone. An authoritative rating may break a tie only for
+`PREMIUM` after every primary factor ties; it is never a clinical match or sole
+recommendation factor. `FREE` may browse the same approved profiles and slots
+but cannot enter the booking command.
+
 A specialist never authors or mutates the official SupportPlan. After an eligible completed appointment they may publish bounded `SessionSummary`, `AgreedNextSteps`, and an exact-version resource proposal. Care owns `PlanChangeRequest` revalidation and the user confirms any applied change.
 
 Every appointment is exactly 60 minutes. The scheduled end produces `SESSION_ENDED`; elapsed time alone never produces `COMPLETED`, credit consumption, earning, or payout. Completion requires approved server/provider participation evidence.
@@ -215,7 +223,11 @@ As of the ADR 0022 amendment:
 - Support Guide persistence/history and SupportPlan draft/activation/lifecycle/scheduling/engagement foundations exist on `dev`;
 - MB-559 completes canonical reassessment composition with a versioned explicit self-report while preserving MB-386 v1 history;
 - `consultation-credit-v1` periods remain historical `0/1/3`; MB-558 implements new `consultation-credit-v2` `0/4/10` periods, no rollover, separate `0/2/4` reservation caps, and atomic replacement requests;
-- specialist discovery and the full appointment/session/payment/payout journeys remain gated by their Jira delivery chain.
+- the MB-363 Consultation owner now implements approved-only discovery,
+  deterministic explanations, current selectable-slot projection, and exact
+  MB-378 handoff; its frontend/BFF consumer now provides list, filter, detail,
+  explanation, slot selection, and truthful plan states. The remaining
+  session/payment/payout journeys remain gated by their Jira delivery chain.
 
 ## 11. Historical documents
 
