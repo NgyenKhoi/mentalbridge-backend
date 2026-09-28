@@ -5,7 +5,7 @@
 | Field | Value |
 | --- | --- |
 | Scope decisions | `MB-SCOPE-V2-001`, amended by `MB-SCOPE-V2-002` |
-| Status | `PRODUCT POLICY APPROVED; MB-360 LIFECYCLE, MB-362 AVAILABILITY, MB-378 APPOINTMENT REQUEST, MB-379 DECISION/EXPIRY, AND MB-558 CREDIT V2/CAP RUNTIMES IMPLEMENTED; DISCOVERY / VIDEO SESSION RUNTIMES DELIVERY-GATED` |
+| Status | `PRODUCT POLICY APPROVED; MB-360 LIFECYCLE, MB-362 AVAILABILITY, MB-378 APPOINTMENT REQUEST, MB-379 DECISION/EXPIRY, MB-380 APPOINTMENT CHANGE, AND MB-558 CREDIT V2/CAP RUNTIMES IMPLEMENTED; DISCOVERY / VIDEO SESSION RUNTIMES DELIVERY-GATED` |
 | Effective decision date | 2026-09-24 for ADR 0022 amendments |
 | Appointment, specialist, evidence, and billing owner | Consultation |
 | Brief and SupportPlan-change decision owner | Care |
@@ -150,6 +150,16 @@ Cancellation and reschedule preserve immutable appointment history. Reschedule
 creates a linked replacement request and never mutates the original interval or
 mode snapshot. Failure to create the replacement must not fabricate success or
 double-settle credit/slot state.
+
+MB-380 allows the appointment owner to cancel only a future `REQUESTED` or
+`CONFIRMED` appointment. `REQUESTED` cancellation releases the held credit.
+`CONFIRMED` cancellation releases it when the command occurs at least 24 hours
+before the snapshotted start and forfeits it otherwise. Reschedule applies the
+same boundary: an eligible released hold transfers to the linked replacement;
+a late confirmed replacement forfeits the old hold and must atomically acquire
+another eligible credit. Actor, stable reason, server time, relation, and exact
+credit outcome are immutable audit facts. Optimistic version and idempotency
+prevent repeated commands or races from settling twice.
 
 ## Brief, summary, next steps, and plan proposals
 

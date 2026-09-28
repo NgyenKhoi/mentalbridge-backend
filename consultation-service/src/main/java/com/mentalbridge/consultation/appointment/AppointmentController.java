@@ -16,6 +16,7 @@ import org.springframework.http.ResponseEntity;
 import org.springframework.security.core.annotation.AuthenticationPrincipal;
 import org.springframework.security.oauth2.jwt.Jwt;
 import org.springframework.web.bind.annotation.GetMapping;
+import org.springframework.web.bind.annotation.PathVariable;
 import org.springframework.web.bind.annotation.PostMapping;
 import org.springframework.web.bind.annotation.RequestBody;
 import org.springframework.web.bind.annotation.RequestHeader;
@@ -47,11 +48,22 @@ public class AppointmentController {
 	@PostMapping("/api/v1/appointments")
 	ResponseEntity<AppointmentResponse> request(@AuthenticationPrincipal Jwt jwt,
 			@RequestHeader("Idempotency-Key") @NotBlank @Size(min = 16, max = 128)
-			@Pattern(regexp = "^[!-~]+$") String idempotencyKey, @Valid @RequestBody RequestAppointment body) {
+			@Pattern(regexp = "^[!-~]+$") String idempotencyKey,
+			@RequestHeader(name = "If-Match", required = false) String ifMatch,
+			@Valid @RequestBody RequestAppointment body) {
 		var result = appointments.request(RequestIdentity.subject(jwt), idempotencyKey, body.slotId(), body.modality(),
-				body.replacesAppointmentId());
+				body.replacesAppointmentId(), version(ifMatch, body.replacesAppointmentId() != null));
 		return ResponseEntity.created(URI.create("/api/v1/appointments/" + result.id()))
 				.eTag(Long.toString(result.version())).body(result);
+	}
+
+	@PostMapping("/api/v1/appointments/{appointmentId}/cancel")
+	ResponseEntity<AppointmentResponse> cancel(@AuthenticationPrincipal Jwt jwt, @PathVariable UUID appointmentId,
+			@RequestHeader("Idempotency-Key") @NotBlank @Size(min = 16, max = 128)
+			@Pattern(regexp = "^[!-~]+$") String idempotencyKey,
+			@RequestHeader(name = "If-Match", required = false) String ifMatch) {
+		var result = appointments.cancel(RequestIdentity.subject(jwt), appointmentId, version(ifMatch, true), idempotencyKey);
+		return ResponseEntity.ok().eTag(Long.toString(result.version())).body(result);
 	}
 
 	private Instant parse(String value) {
@@ -59,6 +71,21 @@ public class AppointmentController {
 		try { return Instant.parse(value); }
 		catch (DateTimeParseException exception) {
 			throw new ApiException(HttpStatus.BAD_REQUEST, "INVALID_BOOKABLE_SLOT_RANGE", "from and to must be UTC instants");
+		}
+	}
+
+	private Long version(String ifMatch, boolean required) {
+		if (ifMatch == null && !required) return null;
+		if (ifMatch == null || !ifMatch.matches("\\\"[0-9]+\\\"")) {
+			throw new ApiException(HttpStatus.PRECONDITION_REQUIRED, "APPOINTMENT_VERSION_REQUIRED",
+					"If-Match must contain the quoted current appointment version");
+		}
+		try {
+			return Long.parseLong(ifMatch.substring(1, ifMatch.length() - 1));
+		}
+		catch (NumberFormatException exception) {
+			throw new ApiException(HttpStatus.PRECONDITION_REQUIRED, "APPOINTMENT_VERSION_REQUIRED",
+					"If-Match must contain the quoted current appointment version");
 		}
 	}
 

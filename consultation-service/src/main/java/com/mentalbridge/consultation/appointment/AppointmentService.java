@@ -27,7 +27,13 @@ public class AppointmentService {
 	private static final Duration MINIMUM_LEAD_TIME = Duration.ofHours(4);
 	private static final Duration DECISION_WINDOW = Duration.ofHours(24);
 	private static final Duration DECISION_BUFFER = Duration.ofHours(2);
+	private static final Duration EARLY_CANCELLATION_WINDOW = Duration.ofHours(24);
 	private static final int LIST_LIMIT = 100;
+	private static final String USER_CANCELLED = "USER_CANCELLED";
+	private static final String USER_RESCHEDULED = "USER_RESCHEDULED";
+	private static final String RELEASED = "RELEASED";
+	private static final String FORFEITED = "FORFEITED";
+	private static final String TRANSFERRED = "TRANSFERRED_TO_REPLACEMENT";
 
 	private final JdbcClient jdbc;
 	private final ServiceCreditService credits;
@@ -46,7 +52,7 @@ public class AppointmentService {
 
 	@Transactional
 	public AppointmentResponse request(UUID userId, String idempotencyKey, UUID slotId,
-			AppointmentModality requestedModality, UUID replacesAppointmentId) {
+			AppointmentModality requestedModality, UUID replacesAppointmentId, Long expectedReplacementVersion) {
 		var replay = findByCommand(userId, idempotencyKey);
 		if (replay != null) {
 			if (!replay.slotId().equals(slotId) || replay.modality() != requestedModality
@@ -63,7 +69,8 @@ public class AppointmentService {
 		}
 		var specialistId = specialistForSlot(slotId);
 		profiles.requireApprovedForBooking(specialistId);
-		var replacement = replacesAppointmentId == null ? null : lockReplacement(userId, replacesAppointmentId);
+		var replacement = replacesAppointmentId == null ? null
+				: lockReplacement(userId, replacesAppointmentId, expectedReplacementVersion, now);
 		if (replacement == null && creditAccount.reservationCapacity().remaining() == 0) {
 			throw conflict("APPOINTMENT_RESERVATION_LIMIT_REACHED",
 					"The package active appointment reservation limit has been reached");
@@ -78,21 +85,18 @@ public class AppointmentService {
 			throw conflict("APPOINTMENT_LEAD_TIME_INVALID", "Appointments require at least four hours lead time");
 		}
 		if (activeAppointmentExists(slotId)) throw conflict("APPOINTMENT_SLOT_UNAVAILABLE", "The slot is already held");
-		var credit = replacement == null ? lockCredit(userId, slot.startAt(), now) : replacement.creditId();
-		if (replacement != null && (replacement.periodStart().isAfter(now)
-				|| !replacement.periodEnd().isAfter(slot.startAt()))) {
+		var replacementOutcome = replacement == null ? null : replacementOutcome(replacement, now);
+		var credit = replacement == null || replacementOutcome.equals(FORFEITED)
+				? lockCredit(userId, slot.startAt(), now) : replacement.creditId();
+		if (replacement != null && !replacementOutcome.equals(FORFEITED)
+				&& (replacement.periodStart().isAfter(now) || !replacement.periodEnd().isAfter(slot.startAt()))) {
 			throw conflict("APPOINTMENT_CREDIT_UNAVAILABLE", "The replacement credit does not cover this appointment");
 		}
 		var appointmentId = UUID.randomUUID();
 		var deadline = earlier(now.plus(DECISION_WINDOW), slot.startAt().minus(DECISION_BUFFER));
 		try {
 			if (replacement != null) {
-				jdbc.sql("""
-						update appointment set status='CANCELLED', updated_at=:now, version=version+1
-						where id=:id and status in ('REQUESTED', 'CONFIRMED', 'IN_PROGRESS')
-						""").param("now", database(now)).param("id", replacement.appointmentId()).update();
-				credits.transition(userId, credit, replacement.appointmentId(), CreditEventType.RELEASED,
-						"reschedule-release:" + appointmentId);
+				cancelForReplacement(userId, replacement, appointmentId, replacementOutcome, now);
 			}
 			jdbc.sql("""
 					insert into appointment (
@@ -111,6 +115,8 @@ public class AppointmentService {
 					.param("now", database(now)).param("deadline", database(deadline)).param("key", idempotencyKey)
 					.param("replacesAppointmentId", replacesAppointmentId).update();
 			credits.transition(userId, credit, appointmentId, CreditEventType.HELD, "appointment-hold:" + appointmentId);
+			insertHistory(appointmentId, null, "REQUESTED", userId, "APPOINTMENT_REQUESTED",
+					"request:" + appointmentId, null, now);
 		}
 		catch (DataIntegrityViolationException exception) {
 			throw conflict("APPOINTMENT_SLOT_UNAVAILABLE", "The slot or credit is already held");
@@ -118,16 +124,56 @@ public class AppointmentService {
 		return findById(userId, appointmentId);
 	}
 
+	@Transactional
+	public AppointmentResponse cancel(UUID userId, UUID appointmentId, long expectedVersion, String idempotencyKey) {
+		var replay = cancellationReplay(userId, appointmentId, idempotencyKey);
+		if (replay != null) return replay;
+		var appointment = lockCancellation(userId, appointmentId);
+		replay = cancellationReplay(userId, appointmentId, idempotencyKey);
+		if (replay != null) return replay;
+		if (appointment.version() != expectedVersion) {
+			throw new ApiException(HttpStatus.PRECONDITION_FAILED, "APPOINTMENT_VERSION_MISMATCH",
+					"The appointment version is stale");
+		}
+		if (!List.of("REQUESTED", "CONFIRMED").contains(appointment.status())) {
+			throw conflict("APPOINTMENT_NOT_CANCELLATION_ELIGIBLE",
+					"Only a future requested or confirmed appointment can be cancelled");
+		}
+		var now = clock.instant();
+		if (!now.isBefore(appointment.scheduledStartAt())) {
+			throw conflict("APPOINTMENT_CHANGE_WINDOW_CLOSED", "The appointment has already started");
+		}
+		var outcome = cancellationOutcome(appointment.status(), appointment.scheduledStartAt(), now);
+		jdbc.sql("""
+				update appointment
+				set status='CANCELLED', cancelled_at=:now, cancelled_by=:userId,
+				    cancellation_reason=:reason, cancellation_credit_outcome=:outcome,
+				    updated_at=:now, version=version+1
+				where id=:id and version=:version
+				""").param("now", database(now)).param("userId", userId).param("reason", USER_CANCELLED)
+				.param("outcome", outcome).param("id", appointmentId).param("version", appointment.version()).update();
+		credits.transition(userId, appointment.creditId(), appointmentId,
+				outcome.equals(RELEASED) ? CreditEventType.RELEASED : CreditEventType.FORFEITED,
+				"appointment-cancel:" + appointmentId);
+		insertHistory(appointmentId, appointment.status(), "CANCELLED", userId, USER_CANCELLED,
+				idempotencyKey, outcome, now);
+		return findById(userId, appointmentId);
+	}
+
 	@Transactional(readOnly = true)
 	public AppointmentResponse.ListResponse list(UUID userId) {
 		var items = jdbc.sql("""
-				select a.*, p.display_name, c.state as credit_state from appointment a
+				select a.*, p.display_name, c.state as credit_state,
+				       replacement.id as replaced_by_appointment_id
+				from appointment a
 				join specialist_profile p on p.account_id=a.specialist_account_id
 				join service_credit c on c.id=a.service_credit_id
+				left join appointment replacement on replacement.replaces_appointment_id=a.id
 				where a.user_account_id=:userId
 				order by a.scheduled_start_at desc, a.id desc limit :limit
 				""").param("userId", userId).param("limit", LIST_LIMIT).query(AppointmentRowMapper::map).list();
-		return new AppointmentResponse.ListResponse(items, items.size(), clock.instant());
+		var withHistory = AppointmentHistoryReader.attach(jdbc, items);
+		return new AppointmentResponse.ListResponse(withHistory, withHistory.size(), clock.instant());
 	}
 
 	@Transactional(readOnly = true)
@@ -173,9 +219,14 @@ public class AppointmentService {
 				.orElseThrow(() -> new ApiException(HttpStatus.NOT_FOUND, "APPOINTMENT_SLOT_NOT_FOUND", "The slot was not found"));
 	}
 
-	private Replacement lockReplacement(UUID userId, UUID appointmentId) {
+	private Replacement lockReplacement(UUID userId, UUID appointmentId, Long expectedVersion, Instant now) {
+		if (expectedVersion == null) {
+			throw new ApiException(HttpStatus.PRECONDITION_REQUIRED, "APPOINTMENT_VERSION_REQUIRED",
+					"If-Match is required when replacing an appointment");
+		}
 		var replacement = jdbc.sql("""
-				select a.id, a.service_credit_id, a.status, p.period_start, p.period_end
+				select a.id, a.service_credit_id, a.status, a.scheduled_start_at, a.version,
+				       p.period_start, p.period_end
 				from appointment a
 				join service_credit c on c.id=a.service_credit_id
 				join service_credit_period p on p.id=c.period_id
@@ -184,11 +235,19 @@ public class AppointmentService {
 				""").param("appointmentId", appointmentId).param("userId", userId)
 				.query((row, ignored) -> new Replacement(row.getObject("id", UUID.class),
 						row.getObject("service_credit_id", UUID.class), row.getString("status"),
+						row.getTimestamp("scheduled_start_at").toInstant(), row.getLong("version"),
 						row.getTimestamp("period_start").toInstant(), row.getTimestamp("period_end").toInstant()))
 				.optional().orElseThrow(() -> new ApiException(HttpStatus.NOT_FOUND,
 						"APPOINTMENT_REPLACEMENT_NOT_FOUND", "The appointment to replace was not found"));
-		if (!List.of("REQUESTED", "CONFIRMED", "IN_PROGRESS").contains(replacement.status())) {
+		if (replacement.version() != expectedVersion) {
+			throw new ApiException(HttpStatus.PRECONDITION_FAILED, "APPOINTMENT_VERSION_MISMATCH",
+					"The appointment version is stale");
+		}
+		if (!List.of("REQUESTED", "CONFIRMED").contains(replacement.status())) {
 			throw conflict("APPOINTMENT_REPLACEMENT_NOT_ACTIVE", "Only an active reservation can be replaced");
+		}
+		if (!now.isBefore(replacement.scheduledStartAt())) {
+			throw conflict("APPOINTMENT_CHANGE_WINDOW_CLOSED", "The appointment has already started");
 		}
 		return replacement;
 	}
@@ -210,21 +269,98 @@ public class AppointmentService {
 	}
 
 	private AppointmentResponse findByCommand(UUID userId, String key) {
-		return jdbc.sql("""
-				select a.*, p.display_name, c.state as credit_state from appointment a
+		var appointment = jdbc.sql("""
+				select a.*, p.display_name, c.state as credit_state,
+				       replacement.id as replaced_by_appointment_id
+				from appointment a
 				join specialist_profile p on p.account_id=a.specialist_account_id
 				join service_credit c on c.id=a.service_credit_id
+				left join appointment replacement on replacement.replaces_appointment_id=a.id
 				where a.user_account_id=:userId and a.idempotency_key=:key
 				""").param("userId", userId).param("key", key).query(AppointmentRowMapper::map).optional().orElse(null);
+		return appointment == null ? null : AppointmentHistoryReader.attach(jdbc, appointment);
 	}
 
 	private AppointmentResponse findById(UUID userId, UUID id) {
-		return jdbc.sql("""
-				select a.*, p.display_name, c.state as credit_state from appointment a
+		var appointment = jdbc.sql("""
+				select a.*, p.display_name, c.state as credit_state,
+				       replacement.id as replaced_by_appointment_id
+				from appointment a
 				join specialist_profile p on p.account_id=a.specialist_account_id
 				join service_credit c on c.id=a.service_credit_id
+				left join appointment replacement on replacement.replaces_appointment_id=a.id
 				where a.user_account_id=:userId and a.id=:id
 				""").param("userId", userId).param("id", id).query(AppointmentRowMapper::map).single();
+		return AppointmentHistoryReader.attach(jdbc, appointment);
+	}
+
+	private AppointmentResponse cancellationReplay(UUID userId, UUID appointmentId, String key) {
+		var replay = jdbc.sql("""
+				select exists(
+				  select 1 from appointment_status_history history
+				  join appointment appointment on appointment.id=history.appointment_id
+				  where history.appointment_id=:appointmentId and history.idempotency_key=:key
+				    and history.changed_by=:userId and history.reason=:reason
+				    and appointment.user_account_id=:userId
+				)
+				""").param("appointmentId", appointmentId).param("key", key).param("userId", userId)
+				.param("reason", USER_CANCELLED).query(Boolean.class).single();
+		return replay ? findById(userId, appointmentId) : null;
+	}
+
+	private CancellationHold lockCancellation(UUID userId, UUID appointmentId) {
+		return jdbc.sql("""
+				select a.id, a.service_credit_id, a.status, a.scheduled_start_at, a.version
+				from appointment a join service_credit credit on credit.id=a.service_credit_id
+				where a.id=:id and a.user_account_id=:userId
+				for update of a, credit
+				""").param("id", appointmentId).param("userId", userId)
+				.query((row, ignored) -> new CancellationHold(row.getObject("id", UUID.class),
+						row.getObject("service_credit_id", UUID.class), row.getString("status"),
+						row.getTimestamp("scheduled_start_at").toInstant(), row.getLong("version")))
+				.optional().orElseThrow(() -> new ApiException(HttpStatus.NOT_FOUND, "APPOINTMENT_NOT_FOUND",
+						"The appointment was not found"));
+	}
+
+	private String replacementOutcome(Replacement replacement, Instant now) {
+		return cancellationOutcome(replacement.status(), replacement.scheduledStartAt(), now).equals(RELEASED)
+				? TRANSFERRED : FORFEITED;
+	}
+
+	private String cancellationOutcome(String status, Instant scheduledStartAt, Instant now) {
+		if (status.equals("REQUESTED")) return RELEASED;
+		return !scheduledStartAt.isBefore(now.plus(EARLY_CANCELLATION_WINDOW)) ? RELEASED : FORFEITED;
+	}
+
+	private void cancelForReplacement(UUID userId, Replacement replacement, UUID replacementAppointmentId,
+			String outcome, Instant now) {
+		jdbc.sql("""
+				update appointment
+				set status='CANCELLED', cancelled_at=:now, cancelled_by=:userId,
+				    cancellation_reason=:reason, cancellation_credit_outcome=:outcome,
+				    updated_at=:now, version=version+1
+				where id=:id and version=:version
+				""").param("now", database(now)).param("userId", userId).param("reason", USER_RESCHEDULED)
+				.param("outcome", outcome).param("id", replacement.appointmentId())
+				.param("version", replacement.version()).update();
+		credits.transition(userId, replacement.creditId(), replacement.appointmentId(),
+				outcome.equals(FORFEITED) ? CreditEventType.FORFEITED : CreditEventType.RELEASED,
+				"reschedule-settle:" + replacementAppointmentId);
+		insertHistory(replacement.appointmentId(), replacement.status(), "CANCELLED", userId,
+				USER_RESCHEDULED, "reschedule:" + replacementAppointmentId, outcome, now);
+	}
+
+	private void insertHistory(UUID appointmentId, String fromStatus, String toStatus, UUID actor, String reason,
+			String idempotencyKey, String creditOutcome, Instant now) {
+		jdbc.sql("""
+				insert into appointment_status_history (
+				 id, appointment_id, from_status, to_status, changed_by, reason,
+				 idempotency_key, changed_at, credit_outcome
+				) values (:id, :appointmentId, :fromStatus, :toStatus, :actor, :reason, :key, :now, :creditOutcome)
+				""").param("id", UUID.randomUUID()).param("appointmentId", appointmentId)
+				.param("fromStatus", fromStatus).param("toStatus", toStatus).param("actor", actor)
+				.param("reason", reason).param("key", idempotencyKey).param("now", database(now))
+				.param("creditOutcome", creditOutcome).update();
 	}
 
 	private Instant earlier(Instant first, Instant second) { return first.isBefore(second) ? first : second; }
@@ -232,6 +368,8 @@ public class AppointmentService {
 	private ApiException conflict(String code, String message) { return new ApiException(HttpStatus.CONFLICT, code, message); }
 	private record Slot(UUID specialistId, Instant startAt, Instant endAt, String timezone,
 			AppointmentModality modality, String status) { }
-	private record Replacement(UUID appointmentId, UUID creditId, String status, Instant periodStart,
-			Instant periodEnd) { }
+	private record Replacement(UUID appointmentId, UUID creditId, String status, Instant scheduledStartAt,
+			long version, Instant periodStart, Instant periodEnd) { }
+	private record CancellationHold(UUID appointmentId, UUID creditId, String status, Instant scheduledStartAt,
+			long version) { }
 }

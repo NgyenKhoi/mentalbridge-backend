@@ -121,6 +121,12 @@ The requirements are represented in domain/architecture documentation, but the l
   [ADR 0022](adr/0022-current-product-blueprint-amendments.md), the
   [SupportPlan policy v2](policies/support-plan-policy-v2.md), and the
   [Consultation policy v2](policies/consultation-specialist-policy-v2.md).
+- 2026-09-27: MB-380 implements owner cancellation and completes the MB-558
+  replacement path with optimistic concurrency, exact-once credit settlement,
+  immutable request/cancellation history, old/new relationship reads, and the
+  approved 24-hour release-versus-forfeit boundary. Replacement failure rolls
+  back the old appointment, credit, and slot outcome together. See
+  [MB-380 evidence](story-mb-380-appointment-changes-evidence.md).
 - 2026-09-22: MB-376 adds an owner-only SupportPlan engagement workspace on
   exact scheduled occurrences. Care accepts idempotent optimistic replacement,
   reopen, hide/show, helpfulness, coded barriers, bounded private reflection,
