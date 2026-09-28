@@ -27,6 +27,7 @@ class ConsultationOpenApiContractTests {
 			"GET /api/v1/bookable-slots",
 			"GET /api/v1/appointments",
 			"POST /api/v1/appointments",
+			"POST /api/v1/appointments/{appointmentId}/cancel",
 			"GET /api/v1/specialist/appointments",
 			"POST /api/v1/specialist/appointments/{appointmentId}/accept",
 			"POST /api/v1/specialist/appointments/{appointmentId}/reject",
@@ -100,12 +101,14 @@ class ConsultationOpenApiContractTests {
 		assertThat(request.getProperties()).containsOnlyKeys("slotId", "modality", "replacesAppointmentId");
 		assertThat(request.getRequired()).containsExactlyInAnyOrder("slotId", "modality");
 		assertThat(appointment.getProperties()).containsKeys("status", "decisionDeadlineAt", "heldCreditId",
-				"replacesAppointmentId", "decidedAt", "decisionReason", "creditState", "version");
+				"replacesAppointmentId", "replacedByAppointmentId", "decidedAt", "decisionReason", "cancelledAt",
+				"cancellationReason", "cancellationActor", "cancellationCreditOutcome", "creditState", "history", "version");
 		var statuses = ((Schema<?>) appointment.getProperties().get("status")).getEnum().stream()
 				.map(String::valueOf).toList();
 		assertThat(statuses).containsExactly("REQUESTED", "CONFIRMED", "IN_PROGRESS", "REJECTED", "EXPIRED",
 				"CANCELLED");
-		assertThat(appointment.getRequired()).contains("replacesAppointmentId");
+		assertThat(appointment.getRequired()).contains("replacesAppointmentId", "replacedByAppointmentId",
+				"cancelledAt", "cancellationReason", "cancellationActor", "cancellationCreditOutcome", "history");
 		assertThat(appointment.getProperties()).doesNotContainKeys("practiceLocationId", "phone", "meetingLink", "url");
 	}
 

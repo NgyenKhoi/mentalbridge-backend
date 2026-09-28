@@ -1,8 +1,8 @@
 openapi: 3.1.0
 info:
   title: MentalBridge Consultation Service API
-  version: 1.4.0
-  description: Consultation-owned specialist profile lifecycle, service-plan entitlement and credit lookup, online availability, appointment requests, credit reservation limits, and suspension outcomes.
+  version: 1.5.0
+  description: Consultation-owned specialist profile lifecycle, service-plan entitlement and credit lookup, online availability, appointment requests and auditable owner cancellation/reschedule outcomes, credit reservation limits, and suspension outcomes.
 servers:
   - url: http://localhost:8082
 paths:
@@ -246,10 +246,11 @@ paths:
         '403': { $ref: '#/components/responses/EntitlementForbiddenProblem' }
     post:
       operationId: requestAppointment
-      description: Atomically creates a REQUESTED appointment for one exact slot after enforcing both available-credit and concurrent-reservation limits. When replacesAppointmentId is supplied, the active appointment and its held credit are atomically moved to a linked replacement request without temporarily consuming another reservation. Exact command replays return the original appointment.
+      description: Atomically creates a REQUESTED appointment for one exact slot after enforcing both available-credit and concurrent-reservation limits. When replacesAppointmentId is supplied, If-Match must carry that appointment's current version; the eligible future appointment is cancelled with an auditable credit outcome and linked to the replacement without temporarily consuming another reservation. Exact command replays return the original appointment.
       security: [{ bearerAuth: [] }]
       parameters:
         - $ref: '#/components/parameters/IdempotencyKey'
+        - $ref: '#/components/parameters/OptionalAppointmentIfMatch'
       requestBody:
         required: true
         content:
@@ -266,6 +267,33 @@ paths:
         '403': { $ref: '#/components/responses/AppointmentForbiddenProblem' }
         '404': { $ref: '#/components/responses/AppointmentSlotNotFoundProblem' }
         '409': { $ref: '#/components/responses/AppointmentConflictProblem' }
+        '412': { $ref: '#/components/responses/AppointmentVersionProblem' }
+        '428': { $ref: '#/components/responses/AppointmentVersionRequiredProblem' }
+  /api/v1/appointments/{appointmentId}/cancel:
+    x-mentalbridge-status: implemented
+    parameters:
+      - $ref: '#/components/parameters/AppointmentId'
+    post:
+      operationId: cancelOwnAppointment
+      description: Cancels one future user-owned REQUESTED or CONFIRMED appointment. REQUESTED and confirmations at least 24 hours before start release the exact held credit; later confirmed cancellations forfeit it. The command records actor, stable reason, occurrence time, credit outcome, and immutable history exactly once.
+      security: [{ bearerAuth: [] }]
+      parameters:
+        - $ref: '#/components/parameters/AppointmentIfMatch'
+        - $ref: '#/components/parameters/IdempotencyKey'
+      responses:
+        '200':
+          description: Cancelled appointment or exact command replay
+          headers:
+            ETag: { $ref: '#/components/headers/AppointmentETag' }
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/Appointment' }
+        '401': { $ref: '#/components/responses/UnauthorizedProblem' }
+        '403': { $ref: '#/components/responses/AppointmentForbiddenProblem' }
+        '404': { $ref: '#/components/responses/AppointmentNotFoundProblem' }
+        '409': { $ref: '#/components/responses/AppointmentConflictProblem' }
+        '412': { $ref: '#/components/responses/AppointmentVersionProblem' }
+        '428': { $ref: '#/components/responses/AppointmentVersionRequiredProblem' }
   /api/v1/specialist/appointments:
     x-mentalbridge-status: implemented
     get:
@@ -535,6 +563,12 @@ components:
       in: header
       required: true
       description: Quoted current non-negative appointment version.
+      schema: { type: string, pattern: '^"[0-9]+"$' }
+    OptionalAppointmentIfMatch:
+      name: If-Match
+      in: header
+      required: false
+      description: Required with replacesAppointmentId and ignored only for a normal non-replacement request. Contains the quoted current version of the appointment being replaced.
       schema: { type: string, pattern: '^"[0-9]+"$' }
   headers:
     ProfileETag:
@@ -827,6 +861,29 @@ components:
           type: [string, 'null']
           format: uuid
           description: Active user-owned appointment atomically replaced by this new request; omit for a normal request.
+    AppointmentCancellationCreditOutcome:
+      type: string
+      enum: [RELEASED, FORFEITED, TRANSFERRED_TO_REPLACEMENT]
+    AppointmentHistoryEntry:
+      type: object
+      additionalProperties: false
+      required: [eventId, fromStatus, toStatus, actorType, actorId, reason, creditOutcome, occurredAt]
+      properties:
+        eventId: { type: string, format: uuid }
+        fromStatus:
+          type: [string, 'null']
+          enum: [REQUESTED, CONFIRMED, IN_PROGRESS, REJECTED, EXPIRED, CANCELLED, null]
+        toStatus: { type: string, enum: [REQUESTED, CONFIRMED, IN_PROGRESS, REJECTED, EXPIRED, CANCELLED] }
+        actorType: { type: string, enum: [USER, SPECIALIST, ADMIN, SYSTEM] }
+        actorId: { type: [string, 'null'], format: uuid }
+        reason:
+          type: string
+          enum: [APPOINTMENT_REQUESTED, USER_CANCELLED, USER_RESCHEDULED, SPECIALIST_ACCEPTED, SPECIALIST_REJECTED, DECISION_DEADLINE_EXPIRED, SPECIALIST_SUSPENDED]
+        creditOutcome:
+          oneOf:
+            - { $ref: '#/components/schemas/AppointmentCancellationCreditOutcome' }
+            - { type: 'null' }
+        occurredAt: { type: string, format: date-time }
     BookableSlot:
       type: object
       additionalProperties: false
@@ -854,7 +911,7 @@ components:
     Appointment:
       type: object
       additionalProperties: false
-      required: [id, slotId, specialistAccountId, specialistDisplayName, status, modality, scheduledStartAt, scheduledEndAt, timezone, requestedAt, decisionDeadlineAt, heldCreditId, replacesAppointmentId, decidedAt, decisionReason, creditState, version]
+      required: [id, slotId, specialistAccountId, specialistDisplayName, status, modality, scheduledStartAt, scheduledEndAt, timezone, requestedAt, decisionDeadlineAt, heldCreditId, replacesAppointmentId, replacedByAppointmentId, decidedAt, decisionReason, cancelledAt, cancellationReason, cancellationActor, cancellationCreditOutcome, creditState, history, version]
       properties:
         id: { type: string, format: uuid }
         slotId: { type: string, format: uuid }
@@ -869,11 +926,27 @@ components:
         decisionDeadlineAt: { type: string, format: date-time }
         heldCreditId: { type: string, format: uuid }
         replacesAppointmentId: { type: [string, 'null'], format: uuid }
+        replacedByAppointmentId: { type: [string, 'null'], format: uuid }
         decidedAt: { type: [string, 'null'], format: date-time }
         decisionReason:
           type: [string, 'null']
           enum: [SPECIALIST_ACCEPTED, SPECIALIST_REJECTED, DECISION_DEADLINE_EXPIRED, null]
+        cancelledAt: { type: [string, 'null'], format: date-time }
+        cancellationReason:
+          type: [string, 'null']
+          enum: [USER_CANCELLED, USER_RESCHEDULED, SPECIALIST_SUSPENDED, null]
+        cancellationActor:
+          type: [string, 'null']
+          enum: [USER, ADMIN, null]
+        cancellationCreditOutcome:
+          oneOf:
+            - { $ref: '#/components/schemas/AppointmentCancellationCreditOutcome' }
+            - { type: 'null' }
         creditState: { type: string, enum: [AVAILABLE, HELD, CONSUMED, FORFEITED] }
+        history:
+          type: array
+          maxItems: 20
+          items: { $ref: '#/components/schemas/AppointmentHistoryEntry' }
         version: { type: integer, format: int64, minimum: 0 }
     AppointmentList:
       type: object
@@ -919,7 +992,7 @@ components:
         application/problem+json:
           schema: { $ref: '#/components/schemas/Problem' }
     AppointmentConflictProblem:
-      description: Slot, modality, lead time, video capability, credit, reservation capacity, replacement state, concurrency, or idempotency prevents the request.
+      description: Slot, modality, lead time, video capability, credit, reservation capacity, cancellation/replacement eligibility or time window, concurrency, or idempotency prevents the command.
       content:
         application/problem+json:
           schema: { $ref: '#/components/schemas/Problem' }
@@ -944,7 +1017,7 @@ components:
         application/problem+json:
           schema: { $ref: '#/components/schemas/Problem' }
     AppointmentVersionRequiredProblem:
-      description: If-Match is required for a specialist appointment decision (APPOINTMENT_VERSION_REQUIRED).
+      description: If-Match is required for a specialist decision, owner cancellation, or replacement request (APPOINTMENT_VERSION_REQUIRED).
       content:
         application/problem+json:
           schema: { $ref: '#/components/schemas/Problem' }

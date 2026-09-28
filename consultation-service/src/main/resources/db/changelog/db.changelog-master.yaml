@@ -15,3 +15,5 @@ databaseChangeLog:
       file: db/changelog/changes/007-consultation-credit-policy-v2.sql
   - include:
       file: db/changelog/changes/008-appointment-decisions.sql
+  - include:
+      file: db/changelog/changes/009-appointment-changes.sql

@@ -24,7 +24,8 @@ class ConsultationLiquibaseChangelogTests {
 							"consultation-005-online-appointment-request",
 							"consultation-006-specialist-lifecycle",
 							"consultation-007-consultation-credit-policy-v2",
-							"consultation-008-appointment-decisions");
+							"consultation-008-appointment-decisions",
+							"consultation-009-appointment-changes");
 		}
 	}
 }

@@ -38,16 +38,20 @@ public class AppointmentDecisionService {
 	@Transactional(readOnly = true)
 	public AppointmentResponse.ListResponse list(UUID specialistId) {
 		var items = jdbc.sql("""
-				select a.*, p.display_name, c.state as credit_state from appointment a
+				select a.*, p.display_name, c.state as credit_state,
+				       replacement.id as replaced_by_appointment_id
+				from appointment a
 				join specialist_profile p on p.account_id=a.specialist_account_id
 				join service_credit c on c.id=a.service_credit_id
+				left join appointment replacement on replacement.replaces_appointment_id=a.id
 				where a.specialist_account_id=:specialistId
 				order by case when a.status='REQUESTED' then 0 else 1 end,
 				         a.decision_deadline_at, a.scheduled_start_at, a.id
 				limit :limit
 				""").param("specialistId", specialistId).param("limit", LIST_LIMIT)
 				.query(AppointmentRowMapper::map).list();
-		return new AppointmentResponse.ListResponse(items, items.size(), clock.instant());
+		var withHistory = AppointmentHistoryReader.attach(jdbc, items);
+		return new AppointmentResponse.ListResponse(withHistory, withHistory.size(), clock.instant());
 	}
 
 	@Transactional
@@ -166,13 +170,17 @@ public class AppointmentDecisionService {
 	}
 
 	private AppointmentResponse find(UUID appointmentId, UUID specialistId) {
-		return jdbc.sql("""
-				select a.*, p.display_name, c.state as credit_state from appointment a
+		var appointment = jdbc.sql("""
+				select a.*, p.display_name, c.state as credit_state,
+				       replacement.id as replaced_by_appointment_id
+				from appointment a
 				join specialist_profile p on p.account_id=a.specialist_account_id
 				join service_credit c on c.id=a.service_credit_id
+				left join appointment replacement on replacement.replaces_appointment_id=a.id
 				where a.id=:appointmentId and a.specialist_account_id=:specialistId
 				""").param("appointmentId", appointmentId).param("specialistId", specialistId)
 				.query(AppointmentRowMapper::map).single();
+		return AppointmentHistoryReader.attach(jdbc, appointment);
 	}
 
 	private void assertHeld(AppointmentHold appointment) {

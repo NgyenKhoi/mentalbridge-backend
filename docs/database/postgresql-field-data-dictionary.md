@@ -896,7 +896,7 @@ Append-only evidence for provisioning and appointment-driven transitions.
 
 ### `consultation.appointment`
 
-Implemented MB-378/MB-558 request aggregate with MB-379 decision settlement. One row is the immutable scheduling snapshot created while the same local transaction locks the exact availability slot, holds one eligible credit, and enforces the package reservation cap. New requests support only in-app chat or gated in-app video.
+Implemented MB-378/MB-558 request aggregate with MB-379 decision settlement and MB-380 owner cancellation/reschedule audit. One row is the immutable scheduling snapshot created while the same local transaction locks the exact availability slot, holds one eligible credit, and enforces the package reservation cap. New requests support only in-app chat or gated in-app video.
 
 | Field | Purpose |
 | --- | --- |
@@ -912,17 +912,19 @@ Implemented MB-378/MB-558 request aggregate with MB-379 decision settlement. One
 | `requested_at` | Server UTC command instant used for lead-time and deadline calculation. |
 | `decision_deadline_at` | Earlier of 24 hours after request or two hours before start; the decision/expiry owner consumes this handoff. |
 | `idempotency_key` | Printable user-scoped request key; exact retry returns this row and conflicting reuse fails. |
-| `replaces_appointment_id` | Optional self-reference to the active appointment replaced by this request. The old immutable schedule is retained as `CANCELLED`; its held credit and reservation capacity move to the replacement atomically. One old appointment may be replaced only once. |
+| `replaces_appointment_id` | Optional self-reference to the eligible future appointment replaced by this request. The old immutable schedule is retained as `CANCELLED`; its reservation capacity and, when policy permits, exact held credit move to the replacement atomically. One old appointment may be replaced only once. |
 | `decided_at` | Server UTC instant of specialist acceptance/rejection or deterministic deadline expiry; null until a request decision occurs. |
 | `decision_reason` | Stable `SPECIALIST_ACCEPTED`, `SPECIALIST_REJECTED`, or `DECISION_DEADLINE_EXPIRED` outcome paired with `decided_at`. |
-| `cancellation_reason` | Optional stable reviewed reason paired with `cancelled_at`; MB-360 writes `SPECIALIST_SUSPENDED`, while cancellation flows without owned metadata may leave both fields null. |
-| `cancelled_at` | Optional server UTC cancellation instant paired with `cancellation_reason`; the pair is populated together or left null together. |
+| `cancellation_reason` | Stable reason required only for `CANCELLED`: `USER_CANCELLED`, `USER_RESCHEDULED`, or `SPECIALIST_SUSPENDED`. |
+| `cancelled_at` | Server UTC cancellation instant required only for `CANCELLED`. |
+| `cancelled_by` | Identity actor UUID required only for `CANCELLED`; owner commands record the user and suspension records the administrator. |
+| `cancellation_credit_outcome` | Immutable `RELEASED`, `FORFEITED`, or `TRANSFERRED_TO_REPLACEMENT` result required only for `CANCELLED`. It describes this appointment's settlement even when the shared credit is currently held by its replacement. |
 | `created_at` / `updated_at` | UTC insertion and latest authoritative state-change instants. |
 | `version` | Optimistic state-transition counter for later decision commands. |
 
 ### `consultation.appointment_status_history`
 
-Append-only transition evidence introduced by MB-360 and extended by MB-379 for idempotent appointment decisions and expiry.
+Append-only transition evidence introduced by MB-360, extended by MB-379 for idempotent decisions/expiry, and completed by MB-380 for initial request plus cancellation/reschedule settlement history.
 
 | Field | Purpose |
 | --- | --- |
@@ -932,6 +934,7 @@ Append-only transition evidence introduced by MB-360 and extended by MB-379 for 
 | `changed_by` | Identity actor UUID responsible for the transition. |
 | `reason` | Stable reviewed outcome reason without private consultation content. |
 | `idempotency_key` | Optional printable command key. MB-379 specialist decisions and deterministic expiry use one key per appointment command; a partial unique index prevents duplicate evidence. |
+| `credit_outcome` | Null for non-cancellation transitions; immutable `RELEASED`, `FORFEITED`, or `TRANSFERRED_TO_REPLACEMENT` for a transition into `CANCELLED`. |
 | `changed_at` | Server UTC instant at which the transition committed. |
 
 ### `consultation.subscription_plan_version`

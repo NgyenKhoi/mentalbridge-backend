@@ -888,6 +888,8 @@ CREATE TABLE consultation.appointment (
     decision_reason varchar(64),
     cancellation_reason varchar(64),
     cancelled_at timestamptz,
+    cancelled_by uuid, -- external -> identity.account.id
+    cancellation_credit_outcome varchar(40),
     created_at timestamptz NOT NULL,
     updated_at timestamptz NOT NULL,
     version bigint NOT NULL,
@@ -902,6 +904,7 @@ CREATE TABLE consultation.appointment_status_history (
     changed_by uuid, -- external -> identity.account.id
     reason varchar(64),
     idempotency_key varchar(128),
+    credit_outcome varchar(40),
     changed_at timestamptz NOT NULL
 );
 
