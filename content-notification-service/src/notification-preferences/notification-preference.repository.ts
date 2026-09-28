@@ -4,6 +4,7 @@ import type { DatabaseService } from '../database/database.service.js';
 import type {
   NotificationPreferenceRow,
   NotificationPreferences,
+  ReminderCandidate,
 } from './notification-preference.types.js';
 
 const COLUMNS = `user_id, notifications_enabled,
@@ -65,13 +66,17 @@ export class NotificationPreferenceRepository {
     private readonly db: DatabaseService,
   ) {}
 
-  async getOrCreate(userId: string): Promise<NotificationPreferences> {
+  async createDefaults(userId: string): Promise<void> {
     await this.db.query(
       `INSERT INTO notification_preference (user_id)
        VALUES ($1)
        ON CONFLICT (user_id) DO NOTHING`,
       [userId],
     );
+  }
+
+  async getOrCreate(userId: string): Promise<NotificationPreferences> {
+    await this.createDefaults(userId);
     const result = await this.db.query<NotificationPreferenceRow>(
       `SELECT ${COLUMNS} FROM notification_preference WHERE user_id = $1`,
       [userId],
@@ -131,5 +136,30 @@ export class NotificationPreferenceRepository {
     );
     if (!result.rows[0]) throw new NotificationPreferenceVersionMismatchError();
     return toNotificationPreferences(result.rows[0]);
+  }
+
+  async listReminderCandidates(
+    afterOwnerId: string | null,
+    limit: number,
+  ): Promise<readonly ReminderCandidate[]> {
+    const result = await this.db.query<NotificationPreferenceRow>(
+      `SELECT ${COLUMNS}
+       FROM notification_preference
+       WHERE notifications_enabled = true
+         AND channel_in_app_enabled = true
+         AND (
+           group_journal_reminder_enabled = true
+           OR group_emotion_check_in_enabled = true
+           OR group_streak_milestone_enabled = true
+         )
+         AND ($1::uuid IS NULL OR user_id > $1::uuid)
+       ORDER BY user_id
+       LIMIT $2`,
+      [afterOwnerId, limit],
+    );
+    return result.rows.map((row) => ({
+      ownerId: row.user_id,
+      preferences: toNotificationPreferences(row),
+    }));
   }
 }

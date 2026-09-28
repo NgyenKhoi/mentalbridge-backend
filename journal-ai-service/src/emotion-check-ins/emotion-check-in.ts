@@ -35,6 +35,11 @@ import { z } from "zod";
 import type { ServiceConfiguration as Configuration } from "../configuration/configuration.js";
 import { CareConsentClient, type ConsentClient } from "../analysis/analysis.js";
 import type { AuthenticatedRequest } from "../security/authenticated-principal.js";
+import {
+  calculateEmotionStreak,
+  localDateFromOrdinal,
+  localDateOrdinal,
+} from "./emotion-progress.js";
 
 const REPOSITORY = "EMOTION_CHECK_IN_REPOSITORY";
 const CRYPTO = "EMOTION_CHECK_IN_CRYPTO";
@@ -236,16 +241,6 @@ export const localDateAt = (instant: Date, timezone: string): string => {
   };
   return `${part("year")}-${part("month")}-${part("day")}`;
 };
-
-const localDateOrdinal = (localDate: string): number => {
-  const [year, month, day] = localDate.split("-").map(Number);
-  if (year === undefined || month === undefined || day === undefined)
-    throw new BadRequestException();
-  return Math.floor(Date.UTC(year, month - 1, day) / 86_400_000);
-};
-
-const localDateFromOrdinal = (ordinal: number): string =>
-  new Date(ordinal * 86_400_000).toISOString().slice(0, 10);
 
 @Injectable()
 export class EmotionCheckInCrypto {
@@ -688,32 +683,7 @@ export class EmotionCheckInService {
       startLocalDate,
       asOfLocalDate,
     );
-    const activeDateOrdinals = new Set(
-      snapshot.dates
-        .filter((localDate) => localDate <= asOfLocalDate)
-        .map(localDateOrdinal),
-    );
-
-    let currentStreak = 0;
-    let streakOrdinal = asOfOrdinal;
-    if (!activeDateOrdinals.has(streakOrdinal)) streakOrdinal -= 1;
-    for (
-      let ordinal = streakOrdinal;
-      activeDateOrdinals.has(ordinal);
-      ordinal -= 1
-    )
-      currentStreak += 1;
-
-    let longestStreak = 0;
-    let run = 0;
-    let previous: number | undefined;
-    for (const ordinal of [...activeDateOrdinals].sort(
-      (left, right) => left - right,
-    )) {
-      run = previous !== undefined && ordinal === previous + 1 ? run + 1 : 1;
-      longestStreak = Math.max(longestStreak, run);
-      previous = ordinal;
-    }
+    const streak = calculateEmotionStreak(snapshot.dates, asOfLocalDate);
 
     const recent = snapshot.rows.map((document) => {
       const output = this.output(document);
@@ -746,8 +716,8 @@ export class EmotionCheckInService {
       asOfLocalDate,
       timezone: parsed.data.timezone,
       currentEmotion: current?.emotion ?? null,
-      currentStreak,
-      longestStreak,
+      currentStreak: streak.currentStreak,
+      longestStreak: streak.longestStreak,
       windows,
       label: "SELF_REPORTED_EMOTION" as const,
       interpretation: "FACTUAL_COUNTS_NOT_DIAGNOSIS_OR_RECOVERY" as const,

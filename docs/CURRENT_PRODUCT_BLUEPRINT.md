@@ -137,7 +137,7 @@ Historical MB-386 v1 snapshots remain a compatibility baseline. MB-559 implement
 Specialist discovery exposes only approved/active specialists and selectable `IN_APP_CHAT` / `IN_APP_VIDEO` slots. Physical PracticeLocation, phone consultation, and external meeting links are not current scope.
 
 Discovery uses the deterministic primary order fixed by
-[ADR 0026](adr/0026-approved-online-specialist-discovery.md): minimized
+[ADR 0027](adr/0027-approved-online-specialist-discovery.md): minimized
 screened domain/pathway compatibility, requested language, current
 availability, then timezone. An authoritative rating may break a tie only for
 `PREMIUM` after every primary factor ties; it is never a clinical match or sole

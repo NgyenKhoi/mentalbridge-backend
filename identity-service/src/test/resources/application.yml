@@ -13,3 +13,14 @@ eureka:
 
 springdotenv:
   enabled: false
+
+mentalbridge:
+  identity:
+    outbox-relay:
+      enabled: false
+      topic: mentalbridge.identity.account-lifecycle.v1
+      batch-size: 100
+      interval: PT5S
+      send-timeout: PT5S
+      retry-base: PT5S
+      retry-maximum: PT5M

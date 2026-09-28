@@ -4,6 +4,18 @@ NestJS service that owns reviewed self-help resource definitions, immutable exac
 
 ## Current capability
 
+MB-564 materializes owner-visible Journal and emotion reminders plus factual
+7/14/30-day streak milestones from a bounded periodic producer. Content pages
+persisted channel/content-group preferences, applies quiet hours, and calls
+Journal/AI's note-free projection with a dedicated service credential. Inbox
+reads have no producer side effects. A failure for one owner is retried by a
+later run without hiding persisted inbox history or stopping other owners.
+Identity's transactional account lifecycle event initializes the default
+preference aggregate for every newly registered `USER`. Duplicate delivery is
+collapsed by the aggregate's unique owner key; specialist registrations do not
+create user reminder preferences. The preference API retains `getOrCreate()` as
+a compatibility repair path for accounts created before this consumer existed.
+
 - `POST /api/v1/resources/{id}/versions/{contentVersion}/eligibility-publications` — ADMIN-only immutable eligibility publication with persisted idempotent replay
 - `POST /api/v1/resources/{id}/versions/{contentVersion}/eligibility-publications/withdrawal` — ADMIN-only append-only eligibility withdrawal
 - `POST /internal/v1/resource-eligibility:resolve` — authenticated USER-context batch resolution for Care with exact-version outcomes and no content or moderation payload
@@ -107,6 +119,19 @@ Migration `11_persist_notification_inbox.sql` completes the durable inbox
 aggregate with per-recipient source deduplication, occurred time, approved internal actions,
 delivery state, optimistic lifecycle versioning, and a maximum 90-day retention
 deadline. Inbox reads tombstone expired rows before returning active items.
+
+Migration `12_add_journal_emotion_notification_kinds.sql` adds the four MB-564
+Journal/emotion reminder and milestone kinds without rewriting historical
+generic notifications. The scheduled producer uses `JOURNAL_AI_SERVICE_URL`,
+the bounded `JOURNAL_AI_SERVICE_TIMEOUT_MS`, and the shared
+`JOURNAL_AI_REMINDER_SERVICE_TOKEN`. Enable it with
+`REMINDER_SCHEDULER_ENABLED=true`; interval and database page size are bounded
+by `REMINDER_SCHEDULER_INTERVAL_MS` and `REMINDER_SCHEDULER_BATCH_SIZE`.
+`CONTENT_ACCOUNT_LIFECYCLE_CONSUMER_ENABLED=true` consumes
+`mentalbridge.identity.account-lifecycle.v1` from `KAFKA_BOOTSTRAP_SERVERS`.
+After three bounded projection attempts, a safe metadata-only record is written
+to `mentalbridge.content-notification.account-preference-dead-letter.v1`; raw
+invalid event bodies are never copied into diagnostics.
 
 The controlled Review 1 seed, MB-337 eligibility matrix, and visibly synthetic non-dialable safety-directory fixture are owner-module migrations with a separate ledger (`pgmigrations_review1`), so running normal schema migrations cannot accidentally mark controlled data as applied. The seeds reject drift from their reviewed decisions. Machine-readable resource inventory, reviewer rationale, explicit ineligible decisions, and Care requests are kept in `../contracts/fixtures/content/resource-eligibility-v1-controlled-demo.json`. No real safety contact is published by the controlled fixture. For the shared dev/staging database only, run:
 

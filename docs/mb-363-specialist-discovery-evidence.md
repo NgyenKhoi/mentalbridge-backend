@@ -26,7 +26,7 @@ non-sensitive synthetic fixtures and is not evidence of a deployed environment.
   substitutes another specialist, time, or modality.
 
 The full decision and user flow are in
-[ADR 0026](adr/0026-approved-online-specialist-discovery.md)
+[ADR 0027](adr/0027-approved-online-specialist-discovery.md)
 (`MB-SPECIALIST-DISCOVERY-001`).
 
 ## Evidence by subtask
@@ -50,7 +50,7 @@ Verification run on 2026-09-27 from the backend repository root:
 Focused link command:
 
 ```powershell
-$targets=@('docs/adr/0026-approved-online-specialist-discovery.md','docs/adr/0014-appointment-specialist-and-consultation-continuity.md','docs/adr/0017-product-scope-v2.md','docs/adr/0022-current-product-blueprint-amendments.md','docs/adr/0019-online-specialist-availability.md'); $targets | ForEach-Object { if(-not(Test-Path -LiteralPath $_)){ throw "Missing link target: $_" } }; 'Focused ADR link targets passed: 5 files.'
+$targets=@('docs/adr/0027-approved-online-specialist-discovery.md','docs/adr/0014-appointment-specialist-and-consultation-continuity.md','docs/adr/0017-product-scope-v2.md','docs/adr/0022-current-product-blueprint-amendments.md','docs/adr/0019-online-specialist-availability.md'); $targets | ForEach-Object { if(-not(Test-Path -LiteralPath $_)){ throw "Missing link target: $_" } }; 'Focused ADR link targets passed: 5 files.'
 ```
 
 Result: pass, exit `0`; all five unique ADR link targets introduced or changed
@@ -59,7 +59,7 @@ by this subtask exist.
 Focused decision-coverage command:
 
 ```powershell
-$patterns=@('PracticeLocation','phone','external meeting link','price','credential','raw assessment','Journal content','chat content','PREMIUM','rating','FREE','PLUS','specialist-discovery-v1'); foreach($pattern in $patterns){if(-not(Select-String -LiteralPath docs\adr\0026-approved-online-specialist-discovery.md -SimpleMatch $pattern)){throw "Missing decision coverage: $pattern"}}; 'ADR decision coverage passed.'
+$patterns=@('PracticeLocation','phone','external meeting link','price','credential','raw assessment','Journal content','chat content','PREMIUM','rating','FREE','PLUS','specialist-discovery-v1'); foreach($pattern in $patterns){if(-not(Select-String -LiteralPath docs\adr\0027-approved-online-specialist-discovery.md -SimpleMatch $pattern)){throw "Missing decision coverage: $pattern"}}; 'ADR decision coverage passed.'
 ```
 
 Result: pass, exit `0`; ranking, entitlement, prohibited fields,

@@ -1,4 +1,4 @@
-# ADR 0026: Approved online specialist discovery
+# ADR 0027: Approved online specialist discovery
 
 - Status: Accepted
 - Date: 2026-09-27

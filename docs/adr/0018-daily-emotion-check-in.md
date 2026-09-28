@@ -71,8 +71,9 @@ projection are sufficient for this slice.
 - A user cannot recreate a check-in for a deleted local day until its tombstone
   expires; this preserves safe delete replay and prevents a delayed retry from
   deleting replacement data.
-- Reminder integration remains deliberately unavailable instead of silently
-  broadening consent.
+- Reminder integration remains unavailable under this original decision.
+  ADR 0026 prospectively authorizes the minimized owner-scoped notification
+  activity projection and does not expose emotion note text.
 
 ## Rejected alternatives
 

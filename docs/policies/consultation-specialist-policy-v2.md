@@ -12,7 +12,7 @@
 | Chat owner | Realtime |
 | Base decision | [ADR 0017](../adr/0017-product-scope-v2.md) |
 | Current amendment | [ADR 0022](../adr/0022-current-product-blueprint-amendments.md) |
-| Discovery decision | [ADR 0026](../adr/0026-approved-online-specialist-discovery.md) (`MB-SPECIALIST-DISCOVERY-001`) |
+| Discovery decision | [ADR 0027](../adr/0027-approved-online-specialist-discovery.md) (`MB-SPECIALIST-DISCOVERY-001`) |
 | Historical credit implementation | [ADR 0020 consultation-credit v1](../adr/0020-service-plan-consultation-credits.md) |
 | Amends | [Consultation and specialist policy v1](consultation-specialist-policy-v1.md) |
 

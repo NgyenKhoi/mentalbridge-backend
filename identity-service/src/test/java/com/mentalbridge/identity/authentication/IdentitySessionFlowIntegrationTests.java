@@ -34,6 +34,7 @@ import com.fasterxml.jackson.databind.JsonNode;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import com.mentalbridge.identity.IdentityTestProperties;
 import com.mentalbridge.identity.TestcontainersConfiguration;
+import com.mentalbridge.identity.registration.OutboxRelayPersistence;
 import com.mentalbridge.identity.registration.RegistrationRequested;
 import com.mentalbridge.identity.registration.VerificationDelivery;
 import com.mentalbridge.identity.credential.CredentialDeliveryRequested;
@@ -72,6 +73,9 @@ class IdentitySessionFlowIntegrationTests extends IdentityTestProperties {
 	private JdbcClient jdbc;
 
 	@Autowired
+	private OutboxRelayPersistence outboxRelayPersistence;
+
+	@Autowired
 	@Qualifier("requestMappingHandlerMapping")
 	private RequestMappingHandlerMapping handlerMapping;
 
@@ -90,6 +94,11 @@ class IdentitySessionFlowIntegrationTests extends IdentityTestProperties {
 				.header("Idempotency-Key", "registration-flow-0001").contentType(MediaType.APPLICATION_JSON)
 				.content(registrationBody)).andExpect(status().isCreated()).andReturn();
 		var firstAccountId = json(firstRegistration.getResponse().getContentAsString()).get("accountId").asText();
+		assertThat(outboxRelayPersistence.claimBatch()).anySatisfy(event -> {
+			assertThat(event.aggregateId().toString()).isEqualTo(firstAccountId);
+			assertThat(event.messageType()).isEqualTo("identity.account.registered");
+			assertThat(event.payload().get("actorType")).isEqualTo("USER");
+		});
 
 		mvc.perform(post("/api/v1/auth/registrations").header("Idempotency-Key", "registration-flow-0001")
 				.contentType(MediaType.APPLICATION_JSON).content(registrationBody)).andExpect(status().isCreated())

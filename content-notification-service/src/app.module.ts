@@ -16,6 +16,10 @@ import {
   NOTIFICATION_PREFERENCE_SERVICE_TOKEN,
   NOTIFICATION_REPOSITORY_TOKEN,
   NOTIFICATION_SERVICE_TOKEN,
+  REMINDER_ACTIVITY_CLIENT_TOKEN,
+  REMINDER_MATERIALIZATION_SERVICE_TOKEN,
+  REMINDER_CLOCK_TOKEN,
+  REMINDER_SCHEDULER_TOKEN,
 } from './application.tokens.js';
 import type { ServiceConfiguration } from './configuration/configuration.js';
 import { DatabaseService, type ReadinessProbe } from './database/database.service.js';
@@ -42,6 +46,15 @@ import { NotificationPreferenceService } from './notification-preferences/notifi
 import { NotificationController } from './notifications/notification.controller.js';
 import { NotificationRepository } from './notifications/notification.repository.js';
 import { NotificationService } from './notifications/notification.service.js';
+import { JournalAiReminderActivityClient } from './reminders/reminder-activity.client.js';
+import { ReminderMaterializationService } from './reminders/reminder-materialization.service.js';
+import type { ReminderActivityClient } from './reminders/reminder-activity.client.js';
+import type { ReminderClock } from './reminders/reminder-materialization.service.js';
+import { ReminderScheduler } from './reminders/reminder.scheduler.js';
+import {
+  AccountLifecycleConsumer,
+  AccountLifecycleProjector,
+} from './notification-preferences/account-lifecycle.consumer.js';
 
 export interface ApplicationDependencies {
   readonly readinessProbe?: ReadinessProbe;
@@ -51,6 +64,8 @@ export interface ApplicationDependencies {
   readonly safetyDirectoryRepository?: SafetyDirectoryRepository;
   readonly notificationPreferenceRepository?: NotificationPreferenceRepository;
   readonly notificationRepository?: NotificationRepository;
+  readonly reminderActivityClient?: ReminderActivityClient;
+  readonly reminderClock?: ReminderClock;
 }
 
 @Module({})
@@ -102,6 +117,9 @@ export const createAppModule = (
   const notificationRepositoryProvider: Provider = dependencies.notificationRepository
     ? { provide: NOTIFICATION_REPOSITORY_TOKEN, useValue: dependencies.notificationRepository }
     : { provide: NOTIFICATION_REPOSITORY_TOKEN, useClass: NotificationRepository };
+  const reminderActivityClientProvider: Provider = dependencies.reminderActivityClient
+    ? { provide: REMINDER_ACTIVITY_CLIENT_TOKEN, useValue: dependencies.reminderActivityClient }
+    : { provide: REMINDER_ACTIVITY_CLIENT_TOKEN, useClass: JournalAiReminderActivityClient };
 
   return {
     module: ContentNotificationModule,
@@ -135,6 +153,18 @@ export const createAppModule = (
       { provide: NOTIFICATION_PREFERENCE_SERVICE_TOKEN, useClass: NotificationPreferenceService },
       notificationRepositoryProvider,
       { provide: NOTIFICATION_SERVICE_TOKEN, useClass: NotificationService },
+      reminderActivityClientProvider,
+      {
+        provide: REMINDER_MATERIALIZATION_SERVICE_TOKEN,
+        useClass: ReminderMaterializationService,
+      },
+      {
+        provide: REMINDER_CLOCK_TOKEN,
+        useValue: dependencies.reminderClock ?? { now: () => new Date() },
+      },
+      { provide: REMINDER_SCHEDULER_TOKEN, useClass: ReminderScheduler },
+      AccountLifecycleProjector,
+      AccountLifecycleConsumer,
       JwtStrategy,
       {
         provide: RolesGuard,
