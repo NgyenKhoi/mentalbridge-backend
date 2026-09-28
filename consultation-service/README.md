@@ -36,6 +36,12 @@ appointment snapshot while moving its credit and reservation atomically.
 Appointment existence alone does not grant sensitive data access;
 Care owns the user-approved appointment-scoped `ConsultationBrief` and sharing
 decision.
+MB-380 adds optimistic, idempotent owner cancellation and completes
+reschedule-as-new audit. Requested cancellations and confirmations at least 24
+hours before start release the held credit; later confirmed cancellations
+forfeit it. Every cancellation records actor, stable reason, instant, exact
+credit outcome, and append-only history. Replacement creation and old
+appointment settlement remain one transaction.
 
 ## Integration
 
@@ -121,6 +127,10 @@ reported as unavailable/unused.
 
 - `GET /api/v1/bookable-slots`
 - `GET|POST /api/v1/appointments`
+
+## Implemented MB-380 endpoint
+
+- `POST /api/v1/appointments/{appointmentId}/cancel`
 
 ## Implemented MB-379 endpoints
 

@@ -28,8 +28,6 @@ import org.springframework.test.web.servlet.MvcResult;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import com.mentalbridge.consultation.ConsultationTestProperties;
 import com.mentalbridge.consultation.TestcontainersConfiguration;
-import com.mentalbridge.consultation.credits.CreditEventType;
-import com.mentalbridge.consultation.credits.ServiceCreditService;
 
 @Import(TestcontainersConfiguration.class)
 @SpringBootTest
@@ -39,7 +37,6 @@ class AppointmentRequestIntegrationTests extends ConsultationTestProperties {
 	@Autowired MockMvc mvc;
 	@Autowired JdbcClient jdbc;
 	@Autowired ObjectMapper json;
-	@Autowired ServiceCreditService credits;
 
 	@Test
 	void paidUserRequestsExactChatSlotAndReloadsHeldCreditSnapshot() throws Exception {
@@ -142,11 +139,10 @@ class AppointmentRequestIntegrationTests extends ConsultationTestProperties {
 				.andExpect(jsonPath("$.reservationCapacity.remaining").value(0));
 
 		var firstId = UUID.fromString(json.readTree(first.getResponse().getContentAsByteArray()).get("id").asText());
-		var firstCredit = jdbc.sql("select service_credit_id from appointment where id=:id")
-				.param("id", firstId).query(UUID.class).single();
-		jdbc.sql("update appointment set status='CANCELLED', updated_at=now() where id=:id")
-				.param("id", firstId).update();
-		credits.transition(userId, firstCredit, firstId, CreditEventType.RELEASED, "terminal-release-command-0001");
+		mvc.perform(post("/api/v1/appointments/{id}/cancel", firstId).with(user(userId))
+				.header("If-Match", "\"0\"").header("Idempotency-Key", "terminal-release-command-0001"))
+				.andExpect(status().isOk())
+				.andExpect(jsonPath("$.cancellationCreditOutcome").value("RELEASED"));
 
 		mvc.perform(post("/api/v1/appointments").with(user(userId))
 				.header("Idempotency-Key", "cap-request-after-terminal").contentType(MediaType.APPLICATION_JSON)
@@ -193,12 +189,195 @@ class AppointmentRequestIntegrationTests extends ConsultationTestProperties {
 
 		assertThat(replacementJson.get("replacesAppointmentId").asText()).isEqualTo(firstId.toString());
 		assertThat(replacementJson.get("heldCreditId").asText()).isEqualTo(firstCredit);
-		assertThat(jdbc.sql("select status from appointment where id=:id").param("id", firstId)
-				.query(String.class).single()).isEqualTo("CANCELLED");
+		mvc.perform(get("/api/v1/appointments").with(user(userId))).andExpect(status().isOk())
+				.andExpect(jsonPath("$.items[?(@.id == '%s')].status".formatted(firstId)).value("CANCELLED"))
+				.andExpect(jsonPath("$.items[?(@.id == '%s')].replacedByAppointmentId".formatted(firstId))
+						.value(replacementJson.get("id").asText()))
+				.andExpect(jsonPath("$.items[?(@.id == '%s')].cancellationReason".formatted(firstId))
+						.value("USER_RESCHEDULED"))
+				.andExpect(jsonPath("$.items[?(@.id == '%s')].cancellationCreditOutcome".formatted(firstId))
+						.value("TRANSFERRED_TO_REPLACEMENT"));
 		assertThat(jdbc.sql("""
 				select count(*) from appointment
 				where user_account_id=:userId and status in ('REQUESTED', 'CONFIRMED', 'IN_PROGRESS')
 				""").param("userId", userId).query(Long.class).single()).isEqualTo(2L);
+	}
+
+	@Test
+	void requestedCancellationReleasesCreditOnceAndReplaysItsAuditResult() throws Exception {
+		var userId = paidUser("PLUS");
+		var created = request(userId, chatSlot(Instant.now().plusSeconds(86_400)), "cancel-requested-create", null);
+		var appointmentId = UUID.fromString(json.readTree(created.getResponse().getContentAsByteArray()).get("id").asText());
+		mvc.perform(post("/api/v1/appointments/{id}/cancel", appointmentId).with(user(userId))
+				.header("Idempotency-Key", "cancel-version-required"))
+				.andExpect(status().isPreconditionRequired())
+				.andExpect(jsonPath("$.code").value("APPOINTMENT_VERSION_REQUIRED"));
+		mvc.perform(post("/api/v1/appointments/{id}/cancel", appointmentId).with(user(userId))
+				.header("If-Match", "\"999999999999999999999999999999\"")
+				.header("Idempotency-Key", "cancel-version-overflow"))
+				.andExpect(status().isPreconditionRequired())
+				.andExpect(jsonPath("$.code").value("APPOINTMENT_VERSION_REQUIRED"));
+
+		for (int replay = 0; replay < 2; replay++) {
+			mvc.perform(post("/api/v1/appointments/{id}/cancel", appointmentId).with(user(userId))
+					.header("If-Match", "\"0\"").header("Idempotency-Key", "cancel-requested-command"))
+					.andExpect(status().isOk())
+					.andExpect(jsonPath("$.status").value("CANCELLED"))
+					.andExpect(jsonPath("$.cancellationActor").value("USER"))
+					.andExpect(jsonPath("$.cancellationReason").value("USER_CANCELLED"))
+					.andExpect(jsonPath("$.cancellationCreditOutcome").value("RELEASED"))
+					.andExpect(jsonPath("$.history.length()").value(2));
+		}
+
+		assertThat(jdbc.sql("""
+				select count(*) from appointment_status_history
+				where appointment_id=:id and reason='USER_CANCELLED'
+				""").param("id", appointmentId).query(Long.class).single()).isOne();
+		assertThat(jdbc.sql("""
+				select count(*) from service_credit_ledger
+				where appointment_id=:id and event_type='RELEASED'
+				""").param("id", appointmentId).query(Long.class).single()).isOne();
+	}
+
+	@Test
+	void lateConfirmedCancellationForfeitsCreditAndRejectsStaleOrRepeatedCommands() throws Exception {
+		var userId = paidUser("PLUS");
+		var created = request(userId, chatSlot(Instant.now().plusSeconds(21_600)), "cancel-late-create-001", null);
+		var appointmentId = UUID.fromString(json.readTree(created.getResponse().getContentAsByteArray()).get("id").asText());
+		jdbc.sql("""
+				update appointment set status='CONFIRMED', decided_at=now(), decision_reason='SPECIALIST_ACCEPTED',
+				updated_at=now(), version=version+1 where id=:id
+				""").param("id", appointmentId).update();
+
+		mvc.perform(post("/api/v1/appointments/{id}/cancel", appointmentId).with(user(userId))
+				.header("If-Match", "\"0\"").header("Idempotency-Key", "cancel-late-stale-001"))
+				.andExpect(status().isPreconditionFailed())
+				.andExpect(jsonPath("$.code").value("APPOINTMENT_VERSION_MISMATCH"));
+		mvc.perform(post("/api/v1/appointments/{id}/cancel", appointmentId).with(user(userId))
+				.header("If-Match", "\"1\"").header("Idempotency-Key", "cancel-late-command-01"))
+				.andExpect(status().isOk())
+				.andExpect(jsonPath("$.cancellationCreditOutcome").value("FORFEITED"))
+				.andExpect(jsonPath("$.creditState").value("FORFEITED"));
+		mvc.perform(post("/api/v1/appointments/{id}/cancel", appointmentId).with(user(userId))
+				.header("If-Match", "\"2\"").header("Idempotency-Key", "cancel-late-different"))
+				.andExpect(status().isConflict())
+				.andExpect(jsonPath("$.code").value("APPOINTMENT_NOT_CANCELLATION_ELIGIBLE"));
+		mvc.perform(post("/api/v1/appointments/{id}/cancel", appointmentId).with(user(UUID.randomUUID()))
+				.header("If-Match", "\"2\"").header("Idempotency-Key", "cancel-wrong-owner-001"))
+				.andExpect(status().isNotFound());
+	}
+
+	@Test
+	void earlyConfirmedCancellationReleasesTheHeldCredit() throws Exception {
+		var userId = paidUser("PLUS");
+		var created = request(userId, chatSlot(Instant.now().plusSeconds(90_000)), "cancel-early-create-01", null);
+		var appointmentId = UUID.fromString(json.readTree(created.getResponse().getContentAsByteArray()).get("id").asText());
+		jdbc.sql("""
+				update appointment set status='CONFIRMED', decided_at=now(), decision_reason='SPECIALIST_ACCEPTED',
+				updated_at=now(), version=version+1 where id=:id
+				""").param("id", appointmentId).update();
+
+		mvc.perform(post("/api/v1/appointments/{id}/cancel", appointmentId).with(user(userId))
+				.header("If-Match", "\"1\"").header("Idempotency-Key", "cancel-early-command-01"))
+				.andExpect(status().isOk())
+				.andExpect(jsonPath("$.cancellationCreditOutcome").value("RELEASED"))
+				.andExpect(jsonPath("$.creditState").value("AVAILABLE"));
+	}
+
+	@Test
+	void lateConfirmedRescheduleAtCapForfeitsOldCreditAndAtomicallyUsesAnother() throws Exception {
+		var userId = paidUser("PLUS");
+		var original = request(userId, chatSlot(Instant.now().plusSeconds(21_600)),
+				"late-reschedule-original", null);
+		request(userId, chatSlot(Instant.now().plusSeconds(86_400)), "late-reschedule-second-1", null);
+		var originalJson = json.readTree(original.getResponse().getContentAsByteArray());
+		var originalId = UUID.fromString(originalJson.get("id").asText());
+		var originalCreditId = UUID.fromString(originalJson.get("heldCreditId").asText());
+		jdbc.sql("""
+				update appointment set status='CONFIRMED', decided_at=now(), decision_reason='SPECIALIST_ACCEPTED',
+				updated_at=now(), version=version+1 where id=:id
+				""").param("id", originalId).update();
+
+		var replacementSlot = chatSlot(Instant.now().plusSeconds(93_600));
+		var result = mvc.perform(post("/api/v1/appointments").with(user(userId))
+				.header("If-Match", "\"1\"").header("Idempotency-Key", "late-reschedule-replace")
+				.contentType(MediaType.APPLICATION_JSON)
+				.content(body(replacementSlot, "IN_APP_CHAT", originalId)))
+				.andExpect(status().isCreated())
+				.andExpect(jsonPath("$.replacesAppointmentId").value(originalId.toString()))
+				.andReturn();
+		var replacementJson = json.readTree(result.getResponse().getContentAsByteArray());
+
+		assertThat(UUID.fromString(replacementJson.get("heldCreditId").asText())).isNotEqualTo(originalCreditId);
+		assertThat(jdbc.sql("select state from service_credit where id=:id").param("id", originalCreditId)
+				.query(String.class).single()).isEqualTo("FORFEITED");
+		assertThat(jdbc.sql("select cancellation_credit_outcome from appointment where id=:id")
+				.param("id", originalId).query(String.class).single()).isEqualTo("FORFEITED");
+		assertThat(jdbc.sql("""
+				select count(*) from appointment
+				where user_account_id=:userId and status in ('REQUESTED', 'CONFIRMED', 'IN_PROGRESS')
+				""").param("userId", userId).query(Long.class).single()).isEqualTo(2L);
+	}
+
+	@Test
+	void replacementFailureOrStaleVersionLeavesOriginalAppointmentAndCreditUntouched() throws Exception {
+		var userId = paidUser("PLUS");
+		var original = request(userId, chatSlot(Instant.now().plusSeconds(86_400)), "replace-safe-original", null);
+		var originalJson = json.readTree(original.getResponse().getContentAsByteArray());
+		var originalId = UUID.fromString(originalJson.get("id").asText());
+		var occupiedSlot = chatSlot(Instant.now().plusSeconds(90_000));
+		request(paidUser("PLUS"), occupiedSlot, "replace-safe-occupier", null);
+
+		mvc.perform(post("/api/v1/appointments").with(user(userId))
+				.header("Idempotency-Key", "replace-safe-stale-001").header("If-Match", "\"9\"")
+				.contentType(MediaType.APPLICATION_JSON).content(body(occupiedSlot, "IN_APP_CHAT", originalId)))
+				.andExpect(status().isPreconditionFailed());
+		mvc.perform(post("/api/v1/appointments").with(user(userId))
+				.header("Idempotency-Key", "replace-safe-conflict-1").header("If-Match", "\"0\"")
+				.contentType(MediaType.APPLICATION_JSON).content(body(occupiedSlot, "IN_APP_CHAT", originalId)))
+				.andExpect(status().isConflict())
+				.andExpect(jsonPath("$.code").value("APPOINTMENT_SLOT_UNAVAILABLE"));
+
+		assertThat(jdbc.sql("select status from appointment where id=:id").param("id", originalId)
+				.query(String.class).single()).isEqualTo("REQUESTED");
+		assertThat(jdbc.sql("select state from service_credit where id=:id")
+				.param("id", UUID.fromString(originalJson.get("heldCreditId").asText()))
+				.query(String.class).single()).isEqualTo("HELD");
+		assertThat(jdbc.sql("select count(*) from appointment_status_history where appointment_id=:id")
+				.param("id", originalId).query(Long.class).single()).isOne();
+	}
+
+	@Test
+	void concurrentCancellationSettlesOneCreditAndOneImmutableHistoryEvent() throws Exception {
+		var userId = paidUser("PLUS");
+		var created = request(userId, chatSlot(Instant.now().plusSeconds(172_800)), "cancel-race-create-01", null);
+		var appointmentId = UUID.fromString(json.readTree(created.getResponse().getContentAsByteArray()).get("id").asText());
+		var ready = new CountDownLatch(2);
+		var go = new CountDownLatch(1);
+		try (var executor = Executors.newFixedThreadPool(2)) {
+			var keys = List.of("cancel-race-command-a", "cancel-race-command-b");
+			var futures = keys.stream().map(key -> executor.submit(() -> {
+				ready.countDown();
+				go.await();
+				return mvc.perform(post("/api/v1/appointments/{id}/cancel", appointmentId).with(user(userId))
+						.header("If-Match", "\"0\"").header("Idempotency-Key", key))
+						.andReturn().getResponse().getStatus();
+			})).toList();
+			ready.await();
+			go.countDown();
+			assertThat(futures.stream().map(future -> {
+				try { return future.get(); }
+				catch (Exception exception) { throw new IllegalStateException(exception); }
+			}).toList()).containsExactlyInAnyOrder(200, 412);
+		}
+		assertThat(jdbc.sql("""
+				select count(*) from appointment_status_history
+				where appointment_id=:id and reason='USER_CANCELLED'
+				""").param("id", appointmentId).query(Long.class).single()).isOne();
+		assertThat(jdbc.sql("""
+				select count(*) from service_credit_ledger
+				where appointment_id=:id and event_type='RELEASED'
+				""").param("id", appointmentId).query(Long.class).single()).isOne();
 	}
 
 	@Test
@@ -322,10 +501,11 @@ class AppointmentRequestIntegrationTests extends ConsultationTestProperties {
 	}
 
 	private MvcResult request(UUID userId, UUID slotId, String key, UUID replacesAppointmentId) throws Exception {
-		return mvc.perform(post("/api/v1/appointments").with(user(userId))
+		var request = post("/api/v1/appointments").with(user(userId))
 				.header("Idempotency-Key", key).contentType(MediaType.APPLICATION_JSON)
 				.content(replacesAppointmentId == null ? body(slotId, "IN_APP_CHAT")
-						: body(slotId, "IN_APP_CHAT", replacesAppointmentId)))
-				.andExpect(status().isCreated()).andReturn();
+						: body(slotId, "IN_APP_CHAT", replacesAppointmentId));
+		if (replacesAppointmentId != null) request.header("If-Match", "\"0\"");
+		return mvc.perform(request).andExpect(status().isCreated()).andReturn();
 	}
 }

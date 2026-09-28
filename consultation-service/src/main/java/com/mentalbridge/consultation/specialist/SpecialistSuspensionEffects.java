@@ -44,9 +44,11 @@ class SpecialistSuspensionEffects {
 	private void cancelAndRelease(AppointmentHold appointment, UUID adminAccountId, Instant now) {
 		var cancelled = jdbc.sql("""
 				update appointment set status='CANCELLED', cancellation_reason=:reason,
-				cancelled_at=:now, updated_at=:now, version=version+1
+				cancelled_at=:now, cancelled_by=:cancelledBy, cancellation_credit_outcome='RELEASED',
+				updated_at=:now, version=version+1
 				where id=:appointmentId and status in ('REQUESTED', 'CONFIRMED')
 				""").param("reason", CANCELLATION_REASON).param("now", databaseInstant(now))
+				.param("cancelledBy", adminAccountId)
 				.param("appointmentId", appointment.id()).update();
 		if (cancelled != 1) throw consistencyConflict();
 
@@ -73,8 +75,8 @@ class SpecialistSuspensionEffects {
 
 		jdbc.sql("""
 				insert into appointment_status_history (
-				    id, appointment_id, from_status, to_status, changed_by, reason, changed_at
-				) values (:id, :appointmentId, :fromStatus, 'CANCELLED', :changedBy, :reason, :now)
+				    id, appointment_id, from_status, to_status, changed_by, reason, changed_at, credit_outcome
+				) values (:id, :appointmentId, :fromStatus, 'CANCELLED', :changedBy, :reason, :now, 'RELEASED')
 				""").param("id", UUID.randomUUID()).param("appointmentId", appointment.id())
 				.param("fromStatus", appointment.status()).param("changedBy", adminAccountId)
 				.param("reason", CANCELLATION_REASON).param("now", databaseInstant(now)).update();

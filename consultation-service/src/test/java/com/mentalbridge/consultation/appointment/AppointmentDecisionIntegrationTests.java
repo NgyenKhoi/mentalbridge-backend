@@ -63,7 +63,7 @@ class AppointmentDecisionIntegrationTests extends ConsultationTestProperties {
 				.header("Idempotency-Key", "accept-appointment-command-0001"))
 				.andExpect(status().isOk()).andExpect(jsonPath("$.status").value("CONFIRMED"));
 
-		assertThat(historyCount(fixture.appointmentId())).isOne();
+		assertThat(decisionHistoryCount(fixture.appointmentId())).isOne();
 		assertThat(creditState(fixture.creditId())).isEqualTo("HELD");
 		assertThat(releaseCount(fixture.appointmentId())).isZero();
 	}
@@ -86,7 +86,7 @@ class AppointmentDecisionIntegrationTests extends ConsultationTestProperties {
 				.andExpect(status().isOk()).andExpect(jsonPath("$.items[0].status").value("REJECTED"))
 				.andExpect(jsonPath("$.items[0].creditState").value("AVAILABLE"));
 
-		assertThat(historyCount(fixture.appointmentId())).isOne();
+		assertThat(decisionHistoryCount(fixture.appointmentId())).isOne();
 		assertThat(releaseCount(fixture.appointmentId())).isOne();
 	}
 
@@ -97,7 +97,7 @@ class AppointmentDecisionIntegrationTests extends ConsultationTestProperties {
 		var results = concurrentDecisions(fixture, true, "concurrent-accept-command-0001");
 
 		assertThat(results).extracting(AppointmentResponse::status).containsOnly("CONFIRMED");
-		assertThat(historyCount(fixture.appointmentId())).isOne();
+		assertThat(decisionHistoryCount(fixture.appointmentId())).isOne();
 		assertThat(creditState(fixture.creditId())).isEqualTo("HELD");
 		assertThat(releaseCount(fixture.appointmentId())).isZero();
 	}
@@ -109,7 +109,7 @@ class AppointmentDecisionIntegrationTests extends ConsultationTestProperties {
 		var results = concurrentDecisions(fixture, false, "concurrent-reject-command-0001");
 
 		assertThat(results).extracting(AppointmentResponse::status).containsOnly("REJECTED");
-		assertThat(historyCount(fixture.appointmentId())).isOne();
+		assertThat(decisionHistoryCount(fixture.appointmentId())).isOne();
 		assertThat(creditState(fixture.creditId())).isEqualTo("AVAILABLE");
 		assertThat(releaseCount(fixture.appointmentId())).isOne();
 	}
@@ -130,7 +130,7 @@ class AppointmentDecisionIntegrationTests extends ConsultationTestProperties {
 
 		assertThat(appointmentStatus(fixture.appointmentId())).isEqualTo("REQUESTED");
 		assertThat(creditState(fixture.creditId())).isEqualTo("HELD");
-		assertThat(historyCount(fixture.appointmentId())).isZero();
+		assertThat(decisionHistoryCount(fixture.appointmentId())).isZero();
 	}
 
 	@Test
@@ -146,7 +146,7 @@ class AppointmentDecisionIntegrationTests extends ConsultationTestProperties {
 				.andExpect(jsonPath("$.items[0].decisionReason").value("DECISION_DEADLINE_EXPIRED"))
 				.andExpect(jsonPath("$.items[0].creditState").value("AVAILABLE"));
 
-		assertThat(historyCount(fixture.appointmentId())).isOne();
+		assertThat(decisionHistoryCount(fixture.appointmentId())).isOne();
 		assertThat(releaseCount(fixture.appointmentId())).isOne();
 	}
 
@@ -165,7 +165,7 @@ class AppointmentDecisionIntegrationTests extends ConsultationTestProperties {
 
 		assertThat(appointmentStatus(fixture.appointmentId())).isEqualTo("EXPIRED");
 		assertThat(creditState(fixture.creditId())).isEqualTo("AVAILABLE");
-		assertThat(historyCount(fixture.appointmentId())).isOne();
+		assertThat(decisionHistoryCount(fixture.appointmentId())).isOne();
 		assertThat(releaseCount(fixture.appointmentId())).isOne();
 	}
 
@@ -197,7 +197,7 @@ class AppointmentDecisionIntegrationTests extends ConsultationTestProperties {
 
 		assertThat(appointmentStatus(fixture.appointmentId())).isEqualTo("EXPIRED");
 		assertThat(releaseCount(fixture.appointmentId())).isOne();
-		assertThat(historyCount(fixture.appointmentId())).isOne();
+		assertThat(decisionHistoryCount(fixture.appointmentId())).isOne();
 	}
 
 	private List<AppointmentResponse> concurrentDecisions(Fixture fixture, boolean accept, String idempotencyKey)
@@ -308,8 +308,11 @@ class AppointmentDecisionIntegrationTests extends ConsultationTestProperties {
 				.query(String.class).single();
 	}
 
-	private long historyCount(UUID appointmentId) {
-		return jdbc.sql("select count(*) from appointment_status_history where appointment_id=:id")
+	private long decisionHistoryCount(UUID appointmentId) {
+		return jdbc.sql("""
+				select count(*) from appointment_status_history
+				where appointment_id=:id and reason <> 'APPOINTMENT_REQUESTED'
+				""")
 				.param("id", appointmentId).query(Long.class).single();
 	}
 
