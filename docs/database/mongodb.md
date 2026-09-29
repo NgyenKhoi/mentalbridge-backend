@@ -143,8 +143,10 @@ indexes for four Journal/AI collections:
 - `ai_companion_conversations` stores one owner-scoped conversation with a
   bounded array of AES-256-GCM encrypted user and assistant messages. The
   envelope AAD binds owner, conversation, and message IDs. Persisted context is
-  limited to bounded kind labels; assembled prompts, bearer credentials, raw
-  provider responses, and hidden reasoning are never fields. Owner/update
+  limited to the conversation's source-selection flags, at most 20 unique
+  resource IDs, an update timestamp, and bounded kind labels on assistant
+  messages. Assembled prompts, selected source plaintext, bearer credentials,
+  raw provider responses, and hidden reasoning are never fields. Owner/update
   cursor indexes support deterministic history and `expiresAt` has a TTL index
   for the configured retention period.
 - `ai_companion_commands` stores the keyed idempotency hash and fingerprint plus
@@ -168,6 +170,14 @@ SupportPlan context.
 Migration `011_bedrock_provider.cjs` additively accepts `BEDROCK` in assistant
 route provenance. It retains the existing deterministic fake, Gemini, and
 OpenAI values, so historical conversations remain valid.
+
+Migration `012_ai_companion_conversation_context.cjs` backfills every existing
+conversation with the conservative default `{ plan: true, diary: false,
+screening: false, resourceIds: [] }`, then requires the owner-scoped context
+subdocument under strict validation. It also extends message provenance with
+`RESOURCE`. The application treats this stored selection as authoritative and
+ignores legacy message-body context; resource IDs are revalidated against the
+owner's recent Content progress before any minimized context is assembled.
 
 ## `analysis_jobs`
 

@@ -12,6 +12,7 @@ import {
   NotFoundException,
   Param,
   Post,
+  Put,
   Req,
   type DynamicModule,
   type OnApplicationShutdown,
@@ -63,19 +64,24 @@ const createConversationSchema = z
 const sendMessageSchema = z
   .object({
     message: z.string().trim().min(1).max(2_000),
-    context: z
+    // Accepted temporarily for old clients, but deliberately ignored. The
+    // persisted owner-scoped conversation context is authoritative.
+    context: z.unknown().optional(),
+  })
+  .strict();
+const conversationContextSchema = z
+  .object({
+    sources: z
       .object({
-        journalIds: z.array(uuid).max(3).default([]),
-        longitudinalAnalysisId: uuid.optional(),
-        includeCurrentSupportPlan: z.boolean().default(true),
-        includeReminderContext: z.boolean().default(false),
+        plan: z.boolean(),
+        diary: z.boolean(),
+        screening: z.boolean(),
+        resourceIds: z
+          .array(uuid)
+          .max(20)
+          .refine((ids) => new Set(ids).size === ids.length),
       })
-      .strict()
-      .default({
-        journalIds: [],
-        includeCurrentSupportPlan: true,
-        includeReminderContext: false,
-      }),
+      .strict(),
   })
   .strict();
 
@@ -111,13 +117,29 @@ export interface ChatMessage {
   content: EncryptedChatText;
   createdAt: Date;
   route: ChatRoute | null;
-  contextKinds: ("JOURNAL" | "SUPPORT_PLAN" | "REASSESSMENT")[];
+  contextKinds: ContextKind[];
+}
+
+export type ContextKind =
+  "JOURNAL" | "SUPPORT_PLAN" | "REASSESSMENT" | "RESOURCE";
+
+export interface ConversationContextSources {
+  plan: boolean;
+  diary: boolean;
+  screening: boolean;
+  resourceIds: string[];
+}
+
+export interface ConversationContext {
+  sources: ConversationContextSources;
+  updatedAt: Date;
 }
 
 export interface Conversation {
   _id: string;
   ownerAccountId: string;
   title: string;
+  context: ConversationContext;
   messages: ChatMessage[];
   createdAt: Date;
   updatedAt: Date;
@@ -140,6 +162,7 @@ export interface SendResult {
   assistantMessageId: string;
   assistant: string;
   createdAt: string;
+  contextKinds: ContextKind[];
   quota: QuotaSnapshot;
 }
 
@@ -160,14 +183,14 @@ export interface ChatCommand {
 }
 
 export interface ContextSelection {
-  journalIds: string[];
-  longitudinalAnalysisId?: string | undefined;
-  includeCurrentSupportPlan: boolean;
-  includeReminderContext: boolean;
+  plan: boolean;
+  diary: boolean;
+  screening: boolean;
+  resourceIds: string[];
 }
 
 export interface MinimizedContext {
-  kinds: ("JOURNAL" | "SUPPORT_PLAN" | "REASSESSMENT")[];
+  kinds: ContextKind[];
   prompt: string;
 }
 
@@ -274,6 +297,11 @@ export interface ChatRepository {
   findConversation(
     ownerAccountId: string,
     conversationId: string,
+  ): Promise<Conversation | null>;
+  updateConversationContext(
+    ownerAccountId: string,
+    conversationId: string,
+    context: ConversationContext,
   ): Promise<Conversation | null>;
   deleteConversation(
     ownerAccountId: string,
@@ -504,6 +532,7 @@ export class MongoChatRepository
             _id: 1,
             ownerAccountId: 1,
             title: 1,
+            context: 1,
             createdAt: 1,
             updatedAt: 1,
             expiresAt: 1,
@@ -516,6 +545,19 @@ export class MongoChatRepository
   async findConversation(ownerAccountId: string, conversationId: string) {
     await this.connect();
     return this.conversations.findOne({ _id: conversationId, ownerAccountId });
+  }
+
+  async updateConversationContext(
+    ownerAccountId: string,
+    conversationId: string,
+    context: ConversationContext,
+  ) {
+    await this.connect();
+    return this.conversations.findOneAndUpdate(
+      { _id: conversationId, ownerAccountId },
+      { $set: { context, updatedAt: context.updatedAt } },
+      { returnDocument: "after" },
+    );
   }
 
   async deleteConversation(ownerAccountId: string, conversationId: string) {
@@ -757,18 +799,6 @@ export class MongoChatRepository
   }
 }
 
-interface LongitudinalResultRow {
-  _id: string;
-  userId: string;
-  result: {
-    contextSignals: string[];
-    recurringThemes: string[];
-    preferences: string[];
-    barriers: string[];
-    helpfulPatterns: string[];
-  };
-}
-
 const supportPlanSchema = z.looseObject({
   supportPlanId: uuid,
   status: z.enum(["ACTIVE", "PAUSED"]),
@@ -789,13 +819,42 @@ const supportPlanSchema = z.looseObject({
     .max(5),
 });
 
+const assessmentHistorySchema = z.looseObject({
+  items: z
+    .array(
+      z.looseObject({
+        assessmentId: uuid,
+        instrument: z.enum(["PHQ9", "GAD7"]),
+        submittedAt: z.string(),
+        result: z.looseObject({
+          totalScore: z.number().int().min(0).max(27),
+          screeningLevel: z.string().min(1).max(32),
+          disclaimerCode: z.string().min(1).max(64),
+        }),
+      }),
+    )
+    .max(50),
+});
+
+const resourceProgressSchema = z.looseObject({
+  items: z.array(z.looseObject({ resourceId: uuid })).max(500),
+});
+
+const resourceDetailSchema = z.looseObject({
+  id: uuid,
+  title: z.string().min(1).max(255),
+  summary: z.string().max(4_096),
+  contentBody: z.string().max(20_000).nullable().optional(),
+});
+
+const dateOnly = (value: Date) => value.toISOString().slice(0, 10);
+
 @Injectable()
 export class OwnerVerifiedContextAssembler
   implements ChatContextAssembler, OnApplicationShutdown
 {
   private readonly client: MongoClient;
   private readonly journals: Collection<Entry>;
-  private readonly longitudinal: Collection<LongitudinalResultRow>;
 
   constructor(private readonly configuration: ServiceConfiguration) {
     this.client = new MongoClient(configuration.MONGODB_URI, {
@@ -804,7 +863,6 @@ export class OwnerVerifiedContextAssembler
     });
     const db = this.client.db(configuration.MONGODB_DATABASE);
     this.journals = db.collection("journal_entries");
-    this.longitudinal = db.collection("journal_longitudinal_analysis_results");
   }
 
   async onApplicationShutdown() {
@@ -817,36 +875,24 @@ export class OwnerVerifiedContextAssembler
     correlationId: string,
     selection: ContextSelection,
   ): Promise<MinimizedContext> {
-    if (selection.includeReminderContext)
-      throw new ChatProblem(
-        409,
-        "REMINDER_CONTEXT_UNAVAILABLE",
-        "Reminder context has no approved owner contract",
-      );
     await this.client.connect();
     const sections: string[] = [];
     const kinds = new Set<MinimizedContext["kinds"][number]>();
 
-    if (selection.journalIds.length > 0) {
+    if (selection.diary) {
       const rows = await this.journals
         .find({
-          _id: { $in: selection.journalIds },
           ownerAccountId,
           deleted: false,
         })
+        .sort({ occurredAt: -1, createdAt: -1, _id: -1 })
+        .limit(3)
         .toArray();
-      if (rows.length !== selection.journalIds.length)
-        throw new ChatProblem(
-          404,
-          "CHAT_CONTEXT_NOT_FOUND",
-          "Selected context was not found",
-        );
-      for (const journalId of selection.journalIds) {
-        const row = rows.find((candidate) => candidate._id === journalId);
-        const revision = row?.revisions.find(
+      for (const row of rows) {
+        const revision = row.revisions.find(
           (candidate: Revision) => candidate.revision === row.currentRevision,
         );
-        if (!row || !revision)
+        if (!revision)
           throw new ChatProblem(
             404,
             "CHAT_CONTEXT_NOT_FOUND",
@@ -859,7 +905,7 @@ export class OwnerVerifiedContextAssembler
         );
         decipher.setAAD(
           Buffer.from(
-            `${ownerAccountId}:${journalId}:${String(row.currentRevision)}`,
+            `${ownerAccountId}:${row._id}:${String(row.currentRevision)}`,
           ),
         );
         decipher.setAuthTag(buffer(revision.content.tag));
@@ -869,33 +915,62 @@ export class OwnerVerifiedContextAssembler
         ]).toString("utf8");
         sections.push(`Journal reflection: ${text.slice(0, 1_500)}`);
       }
-      kinds.add("JOURNAL");
+      if (rows.length > 0) kinds.add("JOURNAL");
     }
 
-    if (selection.longitudinalAnalysisId) {
-      const row = await this.longitudinal.findOne({
-        _id: selection.longitudinalAnalysisId,
-        userId: ownerAccountId,
-      });
-      if (!row)
-        throw new ChatProblem(
-          404,
-          "CHAT_CONTEXT_NOT_FOUND",
-          "Selected context was not found",
+    if (selection.screening) {
+      let response: Response;
+      try {
+        response = await fetch(
+          new URL(
+            "/api/v1/assessments?limit=3",
+            this.configuration.CARE_BASE_URL,
+          ),
+          {
+            headers: {
+              authorization: `Bearer ${authorization}`,
+              "x-correlation-id": correlationId,
+            },
+            signal: AbortSignal.timeout(this.configuration.CARE_TIMEOUT_MS),
+          },
         );
-      sections.push(
-        `Reassessment context (non-clinical): ${JSON.stringify({
-          contextSignals: row.result.contextSignals,
-          recurringThemes: row.result.recurringThemes,
-          preferences: row.result.preferences,
-          barriers: row.result.barriers,
-          helpfulPatterns: row.result.helpfulPatterns,
-        })}`,
-      );
-      kinds.add("REASSESSMENT");
+      } catch {
+        throw new ChatProblem(
+          503,
+          "CHAT_CONTEXT_UNAVAILABLE",
+          "Care context is unavailable",
+        );
+      }
+      if (!response.ok)
+        throw new ChatProblem(
+          503,
+          "CHAT_CONTEXT_UNAVAILABLE",
+          "Care context is unavailable",
+        );
+      const parsed = assessmentHistorySchema.safeParse(await response.json());
+      if (!parsed.success)
+        throw new ChatProblem(
+          503,
+          "CHAT_CONTEXT_UNAVAILABLE",
+          "Care context is invalid",
+        );
+      if (parsed.data.items.length > 0) {
+        sections.push(
+          `Recent screening summaries (not diagnoses): ${JSON.stringify(
+            parsed.data.items.slice(0, 3).map((item) => ({
+              instrument: item.instrument,
+              submittedAt: item.submittedAt,
+              totalScore: item.result.totalScore,
+              screeningLevel: item.result.screeningLevel,
+              disclaimerCode: item.result.disclaimerCode,
+            })),
+          )}`,
+        );
+        kinds.add("REASSESSMENT");
+      }
     }
 
-    if (selection.includeCurrentSupportPlan) {
+    if (selection.plan) {
       let response: Response;
       try {
         response = await fetch(
@@ -950,6 +1025,104 @@ export class OwnerVerifiedContextAssembler
         );
         kinds.add("SUPPORT_PLAN");
       }
+    }
+
+    if (selection.resourceIds.length > 0) {
+      const now = new Date();
+      const from = new Date(now.getTime() - 31 * 86_400_000);
+      const progressUrl = new URL(
+        "/api/v1/resource-progress",
+        this.configuration.CONTENT_BASE_URL,
+      );
+      progressUrl.searchParams.set("from", dateOnly(from));
+      progressUrl.searchParams.set("to", dateOnly(now));
+      let progressResponse: Response;
+      try {
+        progressResponse = await fetch(progressUrl, {
+          headers: {
+            authorization: `Bearer ${authorization}`,
+            "x-correlation-id": correlationId,
+          },
+          signal: AbortSignal.timeout(this.configuration.CONTENT_TIMEOUT_MS),
+        });
+      } catch {
+        throw new ChatProblem(
+          503,
+          "CHAT_CONTEXT_UNAVAILABLE",
+          "Resource context is unavailable",
+        );
+      }
+      if (!progressResponse.ok)
+        throw new ChatProblem(
+          503,
+          "CHAT_CONTEXT_UNAVAILABLE",
+          "Resource context is unavailable",
+        );
+      const progress = resourceProgressSchema.safeParse(
+        await progressResponse.json(),
+      );
+      if (!progress.success)
+        throw new ChatProblem(
+          503,
+          "CHAT_CONTEXT_UNAVAILABLE",
+          "Resource context is invalid",
+        );
+      const owned = new Set(progress.data.items.map((item) => item.resourceId));
+      if (selection.resourceIds.some((resourceId) => !owned.has(resourceId)))
+        throw new ChatProblem(
+          404,
+          "CHAT_CONTEXT_NOT_FOUND",
+          "Selected resource context was not found",
+        );
+      const resources = await Promise.all(
+        selection.resourceIds.map(async (resourceId) => {
+          let response: Response;
+          try {
+            response = await fetch(
+              new URL(
+                `/api/v1/resources/${encodeURIComponent(resourceId)}?locale=vi-VN`,
+                this.configuration.CONTENT_BASE_URL,
+              ),
+              {
+                headers: { "x-correlation-id": correlationId },
+                signal: AbortSignal.timeout(
+                  this.configuration.CONTENT_TIMEOUT_MS,
+                ),
+              },
+            );
+          } catch {
+            throw new ChatProblem(
+              503,
+              "CHAT_CONTEXT_UNAVAILABLE",
+              "Resource context is unavailable",
+            );
+          }
+          if (!response.ok)
+            throw new ChatProblem(
+              404,
+              "CHAT_CONTEXT_NOT_FOUND",
+              "Selected resource context was not found",
+            );
+          const parsed = resourceDetailSchema.safeParse(await response.json());
+          if (!parsed.success)
+            throw new ChatProblem(
+              503,
+              "CHAT_CONTEXT_UNAVAILABLE",
+              "Resource context is invalid",
+            );
+          return parsed.data;
+        }),
+      );
+      sections.push(
+        `Resources the user viewed: ${JSON.stringify(
+          resources.map((resource) => ({
+            title: resource.title,
+            summary: resource.summary,
+            content: resource.contentBody?.slice(0, 1_200) ?? null,
+          })),
+        )}`,
+      );
+      kinds.add("RESOURCE");
     }
 
     return { kinds: [...kinds], prompt: sections.join("\n").slice(0, 8_000) };
@@ -1178,6 +1351,10 @@ const publicConversation = (
 ) => ({
   conversationId: conversation._id,
   title: conversation.title,
+  context: {
+    sources: conversation.context.sources,
+    updatedAt: conversation.context.updatedAt.toISOString(),
+  },
   createdAt: conversation.createdAt.toISOString(),
   updatedAt: conversation.updatedAt.toISOString(),
   expiresAt: conversation.expiresAt.toISOString(),
@@ -1227,6 +1404,15 @@ export class CompanionChatService {
       _id: randomUUID(),
       ownerAccountId: owner,
       title: body.data.title ?? "Cuộc trò chuyện mới",
+      context: {
+        sources: {
+          plan: true,
+          diary: false,
+          screening: false,
+          resourceIds: [],
+        },
+        updatedAt: now,
+      },
       messages: [],
       createdAt: now,
       updatedAt: now,
@@ -1259,6 +1445,25 @@ export class CompanionChatService {
       throw new BadRequestException();
     if (!(await this.repository.deleteConversation(owner, conversationId)))
       throw new NotFoundException();
+  }
+
+  async updateContext(request: ChatRequest, conversationId: string) {
+    const owner = requestOwner(request);
+    if (!uuid.safeParse(conversationId).success)
+      throw new BadRequestException();
+    const parsed = conversationContextSchema.safeParse(request.body);
+    if (!parsed.success) throw new BadRequestException();
+    const context: ConversationContext = {
+      sources: parsed.data.sources,
+      updatedAt: this.clock.now(),
+    };
+    const conversation = await this.repository.updateConversationContext(
+      owner,
+      conversationId,
+      context,
+    );
+    if (!conversation) throw new NotFoundException();
+    return publicConversation(this.crypto, conversation);
   }
 
   async send(
@@ -1394,7 +1599,7 @@ export class CompanionChatService {
         owner,
         bearer(request),
         request.id ?? randomUUID(),
-        parsed.data.context,
+        conversation.context.sources,
       );
       const route = this.route(decision);
       const reply = await this.provider.reply(
@@ -1452,6 +1657,7 @@ export class CompanionChatService {
         assistantMessageId,
         assistant,
         createdAt: createdAt.toISOString(),
+        contextKinds: minimized.kinds,
         quota: {
           plan: decision.packageCode,
           policyVersion: "companion-quota-v1",
@@ -1584,6 +1790,14 @@ export class CompanionChatController {
     @Param("conversationId") conversationId: string,
   ) {
     return this.service.send(request, conversationId);
+  }
+
+  @Put(":conversationId/context")
+  updateContext(
+    @Req() request: ChatRequest,
+    @Param("conversationId") conversationId: string,
+  ) {
+    return this.service.updateContext(request, conversationId);
   }
 
   @Delete(":conversationId")

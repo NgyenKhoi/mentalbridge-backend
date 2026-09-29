@@ -12,10 +12,10 @@ import type { ServiceConfiguration } from "../configuration/configuration.js";
 import type { ServicePlan } from "../model-routing/model-routing.js";
 
 const require = createRequire(import.meta.url);
-const migration =
-  require("../../migrations/010_ai_companion_chat_quotas.cjs") as {
-    up(database: unknown): Promise<void>;
-  };
+const migrations = [
+  require("../../migrations/010_ai_companion_chat_quotas.cjs"),
+  require("../../migrations/012_ai_companion_conversation_context.cjs"),
+] as { up(database: unknown): Promise<void> }[];
 
 void test("persists encrypted quota-governed AI Companion conversations with real MongoDB", async () => {
   const externalUri = process.env.JOURNAL_INTEGRATION_MONGODB_URI;
@@ -34,7 +34,7 @@ void test("persists encrypted quota-governed AI Companion conversations with rea
   );
   const database = client.db(databaseName);
   assert.equal((await database.listCollections().toArray()).length, 0);
-  await migration.up(database);
+  for (const migration of migrations) await migration.up(database);
 
   const { privateKey, publicKey } = await generateKeyPair("RS256", {
     extractable: true,
@@ -55,6 +55,8 @@ void test("persists encrypted quota-governed AI Companion conversations with rea
     IDENTITY_JWT_KEY_ID: "companion-integration-key",
     IDENTITY_JWT_PUBLIC_KEY: await exportSPKI(publicKey),
     CARE_BASE_URL: "http://localhost:8081",
+    CONTENT_BASE_URL: "http://localhost:3003",
+    CONTENT_TIMEOUT_MS: 2_000,
     CARE_TIMEOUT_MS: 100,
     CONSULTATION_BASE_URL: "http://localhost:8082",
     CONSULTATION_TIMEOUT_MS: 100,

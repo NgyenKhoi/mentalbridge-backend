@@ -27,6 +27,7 @@ a compatibility repair path for accounts created before this consumer existed.
 - `GET /health/ready` — PostgreSQL readiness check
 - `GET /api/v1/resources` — lists active reviewed published self-help resources; returns empty array when none match; returns neutral fallback when service is unreachable; no hotline number or emergency dispatch claim (ADR 0009)
 - `GET /api/v1/resources/{id}` — returns the full reviewed body, exact `contentVersion`, and structured source provenance; an optional `contentVersion` query fails closed when a persisted reference no longer matches
+- `GET /api/v1/resource-progress` and `PUT /api/v1/resource-progress/{resourceId}/{localDate}` — persist owner-scoped, non-clinical daily checklist/completion state without changing SupportPlan occurrences; a confirmed completion is terminal while checklist selections remain editable
 - `GET /api/v1/notifications` — returns the authenticated owner's durable inbox newest first with bounded opaque cursor pagination and authoritative unread count
 - `PATCH /api/v1/notifications/{id}/read`, `POST /api/v1/notifications/mark-all-read`, and `DELETE /api/v1/notifications/{id}` — persist idempotent read and tombstone lifecycle changes without exposing another owner's records
 - MB-556 Review 1 catalogue — 15 Vietnamese resources with structured source metadata and verified YouTube actions for every `VIDEO`; legacy synthetic resources remain exact-ID compatible but are hidden from catalogue browsing
@@ -132,6 +133,11 @@ by `REMINDER_SCHEDULER_INTERVAL_MS` and `REMINDER_SCHEDULER_BATCH_SIZE`.
 After three bounded projection attempts, a safe metadata-only record is written
 to `mentalbridge.content-notification.account-preference-dead-letter.v1`; raw
 invalid event bodies are never copied into diagnostics.
+
+Migration `13_add_resource_daily_progress.sql` adds MB-603's owner-scoped daily
+resource progress. It stores only resource/version references, a bounded action
+identifier set, status, and timestamps; it never stores free-text reflection or
+redefines SupportPlan occurrence tracking.
 
 The controlled Review 1 seed, MB-337 eligibility matrix, and visibly synthetic non-dialable safety-directory fixture are owner-module migrations with a separate ledger (`pgmigrations_review1`), so running normal schema migrations cannot accidentally mark controlled data as applied. The seeds reject drift from their reviewed decisions. Machine-readable resource inventory, reviewer rationale, explicit ineligible decisions, and Care requests are kept in `../contracts/fixtures/content/resource-eligibility-v1-controlled-demo.json`. No real safety contact is published by the controlled fixture. For the shared dev/staging database only, run:
 
