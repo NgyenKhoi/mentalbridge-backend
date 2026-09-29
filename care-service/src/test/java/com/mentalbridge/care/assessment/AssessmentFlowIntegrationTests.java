@@ -93,6 +93,13 @@ class AssessmentFlowIntegrationTests extends CareTestProperties {
 			"GET /api/v1/reassessment-summaries/context",
 			"GET /api/v1/reassessment-summaries/current",
 			"GET /api/v1/reassessment-summaries/{summaryId}",
+			"GET /api/v1/consultation-briefs/screening-contexts",
+			"GET /api/v1/consultation-briefs/{appointmentId}",
+			"PUT /api/v1/consultation-briefs/{appointmentId}/draft",
+			"POST /api/v1/consultation-briefs/{appointmentId}/approve",
+			"POST /api/v1/consultation-briefs/{appointmentId}/revoke",
+			"DELETE /api/v1/consultation-briefs/{appointmentId}",
+			"GET /api/v1/specialist/consultation-briefs/{appointmentId}",
 			"POST /api/v1/anonymous-assessment-sessions/{sessionId}/assessments",
 			"GET /api/v1/anonymous-assessment-sessions/{sessionId}/assessments/{assessmentId}",
 			"POST /api/v1/safety-directory-lookups");
