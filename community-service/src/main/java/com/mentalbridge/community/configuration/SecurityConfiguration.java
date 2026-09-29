@@ -22,19 +22,25 @@ import org.springframework.security.oauth2.server.resource.authentication.JwtAut
 import org.springframework.security.oauth2.server.resource.authentication.JwtGrantedAuthoritiesConverter;
 import org.springframework.security.web.SecurityFilterChain;
 
+import com.mentalbridge.community.shared.SecurityProblemSupport;
+
 @Configuration(proxyBeanMethods = false)
 public class SecurityConfiguration {
 
 	@Bean
 	SecurityFilterChain securityFilterChain(HttpSecurity http,
-			Converter<Jwt, AbstractAuthenticationToken> jwtAuthenticationConverter) throws Exception {
+			Converter<Jwt, AbstractAuthenticationToken> jwtAuthenticationConverter,
+			SecurityProblemSupport problems) throws Exception {
 		http.csrf(csrf -> csrf.disable())
 				.sessionManagement(session -> session.sessionCreationPolicy(SessionCreationPolicy.STATELESS))
 				.authorizeHttpRequests(authorize -> authorize
 						.requestMatchers("/actuator/health", "/actuator/health/**").permitAll()
+						.requestMatchers("/api/v1/community/**").hasRole("USER")
 						.anyRequest().authenticated())
+				.exceptionHandling(errors -> errors.authenticationEntryPoint(problems).accessDeniedHandler(problems))
 				.oauth2ResourceServer(resourceServer -> resourceServer
-						.jwt(jwt -> jwt.jwtAuthenticationConverter(jwtAuthenticationConverter)));
+						.jwt(jwt -> jwt.jwtAuthenticationConverter(jwtAuthenticationConverter))
+						.authenticationEntryPoint(problems));
 		return http.build();
 	}
 

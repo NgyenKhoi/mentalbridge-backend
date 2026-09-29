@@ -31,7 +31,7 @@ MentalBridge is an early mental-health screening and support platform for Vietna
 
 MentalBridge does not diagnose, prescribe, provide psychotherapy as an autonomous system, infer a global recovery score, dispatch emergency responders, automatically contact third parties, or give AI authority over safety, eligibility, SupportPlan mutation, appointment completion, credits, or financial state.
 
-ADR 0027 formally adds an independent peer-support Community context. Its ranking and filtering remain isolated from screening, SupportPlan, Journal, emotion, and AI-analysis data. The MB-604 runtime is foundation-only; Community business paths become executable only through MB-574 through MB-582.
+ADR 0027 formally adds an independent peer-support Community context. Its ranking and filtering remain isolated from screening, SupportPlan, Journal, emotion, and AI-analysis data. MB-574 activates authenticated feed, topic catalogue, and post-detail reads; later Community paths remain gated by MB-575 through MB-582.
 
 The governing AI invariant is:
 
