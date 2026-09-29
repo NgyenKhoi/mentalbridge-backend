@@ -213,7 +213,7 @@ describe('Database Integration', () => {
       expect(rows).toHaveLength(1);
     });
 
-    it('seeds the reviewed MB-556 catalogue idempotently with provenance and real video actions', async () => {
+    it('seeds the reviewed resource catalogue idempotently with provenance and wellbeing summaries', async () => {
       for (const migration of [
         '2_publish_initial_resource_eligibility.sql',
         '3_seed_safety_directory_controlled_demo.sql',
@@ -221,12 +221,15 @@ describe('Database Integration', () => {
         '5_seed_safety_directory_area_aliases.sql',
         '6_seed_mb556_reviewed_resource_catalogue.sql',
         '7_seed_mb603_resource_experience.sql',
+        '8_correct_mb603_demo_effective_time.sql',
+        '9_update_mb603_resource_wellbeing_summaries.sql',
       ]) {
         const sql = readFileSync(join(__dirname, '../../../migrations/review1', migration), 'utf8');
         await pool.query(sql);
         if (
           migration === '6_seed_mb556_reviewed_resource_catalogue.sql' ||
-          migration === '7_seed_mb603_resource_experience.sql'
+          migration === '7_seed_mb603_resource_experience.sql' ||
+          migration === '9_update_mb603_resource_wellbeing_summaries.sql'
         ) {
           await pool.query(sql);
         }
@@ -258,6 +261,27 @@ describe('Database Integration', () => {
         sourced: '15',
         videos: '3',
         actionable_videos: '3',
+      });
+
+      const wellbeingSummaries = await pool.query<{
+        count: string;
+        matching_overview: string;
+        reviewed_today: string;
+      }>(
+        `SELECT
+           count(*)::text AS count,
+           count(*) FILTER (WHERE summary = structured_content ->> 'overview')::text
+             AS matching_overview,
+           count(*) FILTER (WHERE source_retrieved_at = TIMESTAMPTZ '2026-09-30 00:00:00+00')::text
+             AS reviewed_today
+         FROM resource
+         WHERE id BETWEEN '00000000-0000-4000-8000-000000000201'::uuid
+                      AND '00000000-0000-4000-8000-000000000223'::uuid`,
+      );
+      expect(wellbeingSummaries.rows[0]).toEqual({
+        count: '23',
+        matching_overview: '23',
+        reviewed_today: '23',
       });
 
       const supportGuideCoverage = await pool.query<{
