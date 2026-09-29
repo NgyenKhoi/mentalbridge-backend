@@ -937,6 +937,20 @@ CREATE TABLE content.resource (
     version bigint NOT NULL
 );
 
+CREATE TABLE content.resource_daily_progress (
+    owner_id uuid NOT NULL, -- external -> identity.account.id
+    resource_id uuid NOT NULL REFERENCES content.resource(id),
+    local_date date NOT NULL,
+    resource_version bigint NOT NULL,
+    status varchar(16) NOT NULL,
+    completed_action_ids text[] NOT NULL,
+    completed_at timestamptz,
+    created_at timestamptz NOT NULL,
+    updated_at timestamptz NOT NULL,
+    version bigint NOT NULL,
+    PRIMARY KEY (owner_id, resource_id, local_date)
+);
+
 CREATE TABLE content.notification_preference (
     user_id uuid PRIMARY KEY, -- external -> identity.account.id
     notifications_enabled boolean NOT NULL,
