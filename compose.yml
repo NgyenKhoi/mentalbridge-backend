@@ -312,6 +312,8 @@ services:
     env_file:
       - path: ./journal-ai-service/.env
         required: false
+    environment:
+      JOURNAL_AI_IDEMPOTENCY_HMAC_KEY: ${JOURNAL_AI_IDEMPOTENCY_HMAC_KEY:?Set a base64-encoded 32-byte JOURNAL_AI_IDEMPOTENCY_HMAC_KEY in .env}
     networks:
       - review1
 
@@ -333,6 +335,7 @@ services:
       JOURNAL_AI_CARE_BASE_URL: http://care:8081
       JOURNAL_AI_CONSULTATION_BASE_URL: http://consultation:8082
       JOURNAL_AI_REMINDER_SERVICE_TOKEN: ${JOURNAL_AI_REMINDER_SERVICE_TOKEN:?Set a shared reminder service token of at least 32 characters in .env}
+      JOURNAL_AI_IDEMPOTENCY_HMAC_KEY: ${JOURNAL_AI_IDEMPOTENCY_HMAC_KEY:?Set a base64-encoded 32-byte JOURNAL_AI_IDEMPOTENCY_HMAC_KEY in .env}
     ports:
       - "${SERVICE_BIND_ADDRESS:-127.0.0.1}:${JOURNAL_AI_PORT:-3005}:3000"
     depends_on:
