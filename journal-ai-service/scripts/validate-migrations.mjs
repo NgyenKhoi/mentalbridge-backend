@@ -13,6 +13,7 @@ const benchmarkMigration = require("../migrations/008_ai_benchmark_metadata.cjs"
 const longitudinalMigration = require("../migrations/009_longitudinal_context_analysis.cjs");
 const companionChatMigration = require("../migrations/010_ai_companion_chat_quotas.cjs");
 const bedrockMigration = require("../migrations/011_bedrock_provider.cjs");
+const conversationContextMigration = require("../migrations/012_ai_companion_conversation_context.cjs");
 
 assert.equal(migration.collectionName, "journal_entries");
 assert.equal(typeof migration.up, "function");
@@ -46,6 +47,18 @@ assert.equal(
 );
 assert.ok(
   analysisMigration.jobValidator.$jsonSchema.required.includes("keyHash"),
+);
+assert.equal(typeof conversationContextMigration.up, "function");
+assert.equal(typeof conversationContextMigration.down, "function");
+assert.ok(
+  conversationContextMigration.conversationValidator.$jsonSchema.required.includes(
+    "context",
+  ),
+);
+assert.ok(
+  conversationContextMigration.conversationValidator.$jsonSchema.properties.messages.items.properties.contextKinds.items.enum.includes(
+    "RESOURCE",
+  ),
 );
 assert.ok(
   analysisMigration.jobValidator.$jsonSchema.required.includes("nextAttemptAt"),
@@ -170,5 +183,5 @@ assert.equal(
 );
 
 console.log(
-  "Validated Mongo migrations: 001_journal_entries_baseline.cjs through 011_bedrock_provider.cjs",
+  "Validated Mongo migrations: 001_journal_entries_baseline.cjs through 012_ai_companion_conversation_context.cjs",
 );

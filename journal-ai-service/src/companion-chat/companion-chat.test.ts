@@ -60,6 +60,19 @@ class MemoryRepository implements ChatRepository {
       ) ?? null,
     );
   }
+  updateConversationContext(
+    owner: string,
+    id: string,
+    context: Conversation["context"],
+  ) {
+    const conversation = this.conversations.find(
+      (row) => row.ownerAccountId === owner && row._id === id,
+    );
+    if (!conversation) return Promise.resolve(null);
+    conversation.context = context;
+    conversation.updatedAt = context.updatedAt;
+    return Promise.resolve(conversation);
+  }
   deleteConversation(owner: string, id: string) {
     const index = this.conversations.findIndex(
       (row) => row.ownerAccountId === owner && row._id === id,
@@ -262,6 +275,52 @@ void test("creates encrypted owner-scoped conversations and hard deletes their c
   await service.delete(request({}, "unused"), conversation.conversationId);
   assert.equal(repository.conversations.length, 0);
   assert.equal(repository.commands.length, 0);
+});
+
+void test("persists context per conversation and ignores client-supplied send context", async () => {
+  let assembledSelection:
+    Parameters<ChatContextAssembler["assemble"]>[3] | null = null;
+  const verifiedContext: ChatContextAssembler = {
+    assemble: (_owner, _bearer, _correlation, selection) => {
+      assembledSelection = selection;
+      return Promise.resolve({
+        kinds: ["JOURNAL", "SUPPORT_PLAN"],
+        prompt: "Owner-verified persisted context",
+      });
+    },
+  };
+  const { service } = subject("FREE", { context: verifiedContext });
+  const conversation = await create(service);
+  assert.deepEqual(conversation.context.sources, {
+    plan: true,
+    diary: false,
+    screening: false,
+    resourceIds: [],
+  });
+  const updated = await service.updateContext(
+    request({
+      sources: {
+        plan: true,
+        diary: true,
+        screening: false,
+        resourceIds: [],
+      },
+    }),
+    conversation.conversationId,
+  );
+  assert.equal(updated.context.sources.diary, true);
+  const result = await service.send(
+    request({
+      message: "Dùng cấu hình đã lưu",
+      context: {
+        journalIds: [],
+        includeCurrentSupportPlan: false,
+      },
+    }),
+    conversation.conversationId,
+  );
+  assert.deepEqual(assembledSelection, updated.context.sources);
+  assert.deepEqual(result.contextKinds, ["JOURNAL", "SUPPORT_PLAN"]);
 });
 
 void test("enforces five FREE successes, replays exactly, and resets on the next local day", async () => {
