@@ -103,10 +103,44 @@ try {
     }
 
     foreach ($contract in Get-ChildItem -LiteralPath 'contracts/openapi' -File -Filter '*.yaml') {
-        $pathCount = @(Select-String -LiteralPath $contract.FullName -Pattern '^  /').Count
-        $statusMatches = @(Select-String -LiteralPath $contract.FullName -Pattern '^    x-mentalbridge-status: (implemented|planned)$')
-        if ($pathCount -ne $statusMatches.Count) {
-            Add-Failure "$($contract.Name) has $pathCount paths but $($statusMatches.Count) explicit availability statuses"
+        $invalidStatusPaths = [System.Collections.Generic.List[string]]::new()
+        $currentPath = $null
+        $pathHasStatus = $false
+        $operationCount = 0
+        $operationStatusCount = 0
+
+        $finalizePath = {
+            if ($null -ne $currentPath -and -not $pathHasStatus -and ($operationCount -eq 0 -or $operationStatusCount -ne $operationCount)) {
+                $invalidStatusPaths.Add($currentPath)
+            }
+        }
+
+        foreach ($line in Get-Content -LiteralPath $contract.FullName) {
+            if ($line -match '^  (/[^:]+):\s*$') {
+                & $finalizePath
+                $currentPath = $Matches[1]
+                $pathHasStatus = $false
+                $operationCount = 0
+                $operationStatusCount = 0
+                continue
+            }
+            if ($null -eq $currentPath) {
+                continue
+            }
+            if ($line -match '^    x-mentalbridge-status: (implemented|planned)\s*$') {
+                $pathHasStatus = $true
+            }
+            elseif ($line -match '^    (get|put|post|delete|patch|options|head|trace):\s*$') {
+                $operationCount++
+            }
+            elseif ($line -match '^      x-mentalbridge-status: (implemented|planned)\s*$') {
+                $operationStatusCount++
+            }
+        }
+        & $finalizePath
+
+        if ($invalidStatusPaths.Count -gt 0) {
+            Add-Failure "$($contract.Name) has paths without a path-level status or per-operation statuses: $($invalidStatusPaths -join ', ')"
         }
     }
 
@@ -204,6 +238,7 @@ try {
             'journal-ai-service' = 'contracts/openapi/journal-ai-service-v1.yaml'
             'realtime-service' = 'contracts/openapi/realtime-service-v1.yaml'
             'content-notification-service' = 'contracts/openapi/content-notification-service.yaml'
+            'community-service' = 'contracts/openapi/community-service-v1.yaml'
         }
 
         $realtimeGatewayChanged = Has-Changed $changedFiles '^realtime-service/.+gateway\.ts$'

@@ -318,6 +318,7 @@ services:
       NODE_ENV: production
       JOURNAL_AI_MONGODB_URI: ${REALTIME_MONGODB_URI:?Set the shared dev/staging MongoDB URI in .env}
       JOURNAL_AI_MONGODB_DATABASE: ${JOURNAL_AI_MONGODB_DATABASE:-mentalbridge_journal_ai}
+      JOURNAL_AI_IDEMPOTENCY_HMAC_KEY: ${JOURNAL_AI_IDEMPOTENCY_HMAC_KEY:?Set a base64-encoded 32-byte JOURNAL_AI_IDEMPOTENCY_HMAC_KEY in .env}
     networks:
       - review1
 
@@ -335,7 +336,7 @@ services:
       JOURNAL_AI_MONGODB_URI: ${REALTIME_MONGODB_URI:?Set the shared dev/staging MongoDB URI in .env}
       JOURNAL_AI_MONGODB_DATABASE: ${JOURNAL_AI_MONGODB_DATABASE:-mentalbridge_journal_ai}
       JOURNAL_AI_ENCRYPTION_KEY: ${REALTIME_MESSAGE_ENCRYPTION_KEY:?Set the shared dev/staging encryption key in .env}
-      JOURNAL_AI_IDEMPOTENCY_HMAC_KEY: ${JOURNAL_AI_IDEMPOTENCY_HMAC_KEY:?Set JOURNAL_AI_IDEMPOTENCY_HMAC_KEY in .env}
+      JOURNAL_AI_IDEMPOTENCY_HMAC_KEY: ${JOURNAL_AI_IDEMPOTENCY_HMAC_KEY:?Set a base64-encoded 32-byte JOURNAL_AI_IDEMPOTENCY_HMAC_KEY in .env}
       IDENTITY_JWT_ISSUER: ${IDENTITY_JWT_ISSUER:?Set IDENTITY_JWT_ISSUER in .env}
       IDENTITY_JWT_AUDIENCE: ${IDENTITY_JWT_AUDIENCE:?Set IDENTITY_JWT_AUDIENCE in .env}
       IDENTITY_JWT_KEY_ID: ${IDENTITY_JWT_KEY_ID:-review1-demo-key}
@@ -384,6 +385,8 @@ services:
       JOURNAL_AI_SERVICE_TIMEOUT_MS: ${JOURNAL_AI_SERVICE_TIMEOUT_MS:-15000}
       CONSULTATION_SERVICE_URL: http://consultation:8082
       CONSULTATION_SERVICE_TIMEOUT_MS: ${CONSULTATION_SERVICE_TIMEOUT_MS:-15000}
+      COMMUNITY_SERVICE_URL: http://community:8084
+      COMMUNITY_SERVICE_TIMEOUT_MS: ${COMMUNITY_SERVICE_TIMEOUT_MS:-15000}
     ports:
       - "${FRONTEND_BIND_ADDRESS:-0.0.0.0}:${FRONTEND_PORT:-3000}:3000"
     depends_on:
@@ -396,6 +399,8 @@ services:
       journal-ai:
         condition: service_healthy
       consultation:
+        condition: service_healthy
+      community:
         condition: service_healthy
     networks:
       - review1

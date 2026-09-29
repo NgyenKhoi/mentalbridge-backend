@@ -669,13 +669,30 @@ export class MongoChatRepository
         },
         { returnDocument: "after" },
       );
-      if (!quota) throw new Error("quota-limit");
+      if (!quota) {
+        const current = await this.quotas.findOne(
+          { _id: quotaId },
+          { projection: { usedTokens: 1 } },
+        );
+        if (current && current.usedTokens >= tokenBudget)
+          throw new ChatProblem(
+            429,
+            "CHAT_TOKEN_BUDGET_EXHAUSTED",
+            "AI token budget is exhausted",
+          );
+        throw new ChatProblem(
+          429,
+          "CHAT_QUOTA_EXHAUSTED",
+          "The AI Companion quota is exhausted",
+        );
+      }
       return {
         successfulAnswers: quota.successfulAnswers,
         usedTokens: quota.usedTokens,
       };
-    } catch {
+    } catch (error) {
       await this.rates.updateOne({ _id: rateId }, { $inc: { count: -1 } });
+      if (error instanceof ChatProblem) throw error;
       throw new ChatProblem(
         429,
         "CHAT_QUOTA_EXHAUSTED",
