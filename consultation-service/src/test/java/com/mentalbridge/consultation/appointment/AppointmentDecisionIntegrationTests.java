@@ -207,8 +207,12 @@ class AppointmentDecisionIntegrationTests extends ConsultationTestProperties {
 		chatEligibility(UUID.randomUUID(), "USER", fixture.appointmentId(), "HISTORY")
 				.andExpect(status().isNotFound()).andExpect(jsonPath("$.code").value("APPOINTMENT_CHAT_NOT_FOUND"));
 
-		jdbc.sql("update appointment set status='CANCELLED', cancelled_at=now(), cancellation_reason='USER_CANCELLED' where id=:id")
-				.param("id", fixture.appointmentId()).update();
+		jdbc.sql("""
+				update appointment
+				set status='CANCELLED', cancelled_at=now(), cancellation_reason='USER_CANCELLED',
+				    cancelled_by=:actorId, cancellation_credit_outcome='RELEASED'
+				where id=:id
+				""").param("actorId", fixture.userId()).param("id", fixture.appointmentId()).update();
 		chatEligibility(fixture.userId(), "USER", fixture.appointmentId(), "SEND")
 				.andExpect(status().isOk()).andExpect(jsonPath("$.phase").value("CANCELLED"))
 				.andExpect(jsonPath("$.historyAllowed").value(true))
@@ -225,8 +229,12 @@ class AppointmentDecisionIntegrationTests extends ConsultationTestProperties {
 		jdbc.sql("update appointment set replaces_appointment_id=:originalId where id=:replacementId")
 				.param("originalId", original.appointmentId())
 				.param("replacementId", replacement.appointmentId()).update();
-		jdbc.sql("update appointment set status='CANCELLED', cancelled_at=now(), cancellation_reason='USER_RESCHEDULED' where id=:id")
-				.param("id", original.appointmentId()).update();
+		jdbc.sql("""
+				update appointment
+				set status='CANCELLED', cancelled_at=now(), cancellation_reason='USER_RESCHEDULED',
+				    cancelled_by=:actorId, cancellation_credit_outcome='TRANSFERRED_TO_REPLACEMENT'
+				where id=:id
+				""").param("actorId", original.userId()).param("id", original.appointmentId()).update();
 
 		chatEligibility(original.specialistId(), "SPECIALIST", original.appointmentId(), "SEND")
 				.andExpect(status().isOk()).andExpect(jsonPath("$.phase").value("RESCHEDULED"))
