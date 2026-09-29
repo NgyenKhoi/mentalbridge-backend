@@ -1,0 +1,8 @@
+databaseChangeLog:
+  - changeSet:
+      id: 0001-community-foundation
+      author: mentalbridge
+      comment: Record the empty Community database baseline without creating business tables.
+      changes:
+        - tagDatabase:
+            tag: community-foundation-v1

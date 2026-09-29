@@ -21,6 +21,7 @@ Current cross-feature scope is governed by:
 
 - [ADR 0017 — Product scope v2](adr/0017-product-scope-v2.md)
 - [ADR 0022 — Current product blueprint amendments](adr/0022-current-product-blueprint-amendments.md)
+- [ADR 0027 — Independent Community service boundary](adr/0027-community-service-boundary.md)
 
 For the rules amended on 2026-09-24, ADR 0022 is authoritative over the older clause.
 
@@ -29,6 +30,8 @@ For the rules amended on 2026-09-24, ADR 0022 is authoritative over the older cl
 MentalBridge is an early mental-health screening and support platform for Vietnamese users, focused on the current adult capstone cohort. It supports screening, reviewed self-help guidance, private Journal/emotion tracking, governed AI assistance, paid ongoing SupportPlan capability, online specialist consultation, and reviewed safety support.
 
 MentalBridge does not diagnose, prescribe, provide psychotherapy as an autonomous system, infer a global recovery score, dispatch emergency responders, automatically contact third parties, or give AI authority over safety, eligibility, SupportPlan mutation, appointment completion, credits, or financial state.
+
+ADR 0027 formally adds an independent peer-support Community context. Its ranking and filtering remain isolated from screening, SupportPlan, Journal, emotion, and AI-analysis data. MB-574 activates authenticated feed, topic catalogue, and post-detail reads; later Community paths remain gated by MB-575 through MB-582.
 
 The governing AI invariant is:
 

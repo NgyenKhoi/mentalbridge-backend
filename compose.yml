@@ -206,6 +206,49 @@ services:
     networks:
       - review1
 
+  community-migrate:
+    build:
+      context: ./community-service
+      target: migration
+    profiles: *demo-profiles
+    restart: "no"
+    environment:
+      COMMUNITY_DB_URL: ${COMMUNITY_DB_URL:?Set the shared dev/staging Community database URL in .env}
+      COMMUNITY_DB_USERNAME: ${COMMUNITY_DB_USERNAME:?Set the shared dev/staging Community database username in .env}
+      COMMUNITY_DB_PASSWORD: ${COMMUNITY_DB_PASSWORD:?Set COMMUNITY_DB_PASSWORD in .env}
+    networks:
+      - review1
+
+  community:
+    build:
+      context: ./community-service
+      target: runtime
+    profiles: *demo-profiles
+    restart: unless-stopped
+    environment:
+      <<: *java-service-environment
+      SERVER_PORT: 8084
+      COMMUNITY_DB_URL: ${COMMUNITY_DB_URL:?Set the shared dev/staging Community database URL in .env}
+      COMMUNITY_DB_USERNAME: ${COMMUNITY_DB_USERNAME:?Set the shared dev/staging Community database username in .env}
+      COMMUNITY_DB_PASSWORD: ${COMMUNITY_DB_PASSWORD:?Set COMMUNITY_DB_PASSWORD in .env}
+      COMMUNITY_LIQUIBASE_ENABLED: "false"
+      CLOUDINARY_CLOUD_NAME: ${CLOUDINARY_CLOUD_NAME:?Set CLOUDINARY_CLOUD_NAME in .env}
+      CLOUDINARY_API_KEY: ${CLOUDINARY_API_KEY:?Set CLOUDINARY_API_KEY in .env}
+      CLOUDINARY_API_SECRET: ${CLOUDINARY_API_SECRET:?Set CLOUDINARY_API_SECRET in .env}
+    ports:
+      - "${SERVICE_BIND_ADDRESS:-127.0.0.1}:${COMMUNITY_PORT:-8084}:8084"
+    depends_on:
+      community-migrate:
+        condition: service_completed_successfully
+    healthcheck:
+      test: ["CMD", "wget", "-q", "-O", "/dev/null", "http://localhost:8084/actuator/health"]
+      interval: 10s
+      timeout: 5s
+      retries: 12
+      start_period: 30s
+    networks:
+      - review1
+
   content-migrate:
     build:
       context: ./content-notification-service
@@ -269,6 +312,8 @@ services:
     env_file:
       - path: ./journal-ai-service/.env
         required: false
+    environment:
+      JOURNAL_AI_IDEMPOTENCY_HMAC_KEY: ${JOURNAL_AI_IDEMPOTENCY_HMAC_KEY:?Set a base64-encoded 32-byte JOURNAL_AI_IDEMPOTENCY_HMAC_KEY in .env}
     networks:
       - review1
 
@@ -290,6 +335,7 @@ services:
       JOURNAL_AI_CARE_BASE_URL: http://care:8081
       JOURNAL_AI_CONSULTATION_BASE_URL: http://consultation:8082
       JOURNAL_AI_REMINDER_SERVICE_TOKEN: ${JOURNAL_AI_REMINDER_SERVICE_TOKEN:?Set a shared reminder service token of at least 32 characters in .env}
+      JOURNAL_AI_IDEMPOTENCY_HMAC_KEY: ${JOURNAL_AI_IDEMPOTENCY_HMAC_KEY:?Set a base64-encoded 32-byte JOURNAL_AI_IDEMPOTENCY_HMAC_KEY in .env}
     ports:
       - "${SERVICE_BIND_ADDRESS:-127.0.0.1}:${JOURNAL_AI_PORT:-3005}:3000"
     depends_on:
@@ -328,6 +374,8 @@ services:
       JOURNAL_AI_SERVICE_TIMEOUT_MS: ${JOURNAL_AI_SERVICE_TIMEOUT_MS:-15000}
       CONSULTATION_SERVICE_URL: http://consultation:8082
       CONSULTATION_SERVICE_TIMEOUT_MS: ${CONSULTATION_SERVICE_TIMEOUT_MS:-15000}
+      COMMUNITY_SERVICE_URL: http://community:8084
+      COMMUNITY_SERVICE_TIMEOUT_MS: ${COMMUNITY_SERVICE_TIMEOUT_MS:-15000}
     ports:
       - "${FRONTEND_BIND_ADDRESS:-0.0.0.0}:${FRONTEND_PORT:-3000}:3000"
     depends_on:
@@ -340,6 +388,8 @@ services:
       journal-ai:
         condition: service_healthy
       consultation:
+        condition: service_healthy
+      community:
         condition: service_healthy
     networks:
       - review1

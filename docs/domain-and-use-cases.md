@@ -413,8 +413,10 @@ context, and follow-up charts avoid diagnostic or causal claims.
 - isolated provider-neutral benchmark dataset pipeline, with PhoBERT comparison optional after its activation gate passes.
 
 In-app video is the second approved v2 mode but remains unavailable until its
-call/signaling/provider/security/evidence contract passes. New in-person, phone,
-external meeting links, room management, social/community feeds, organization
+call/signaling/provider/security/evidence contract passes. ADR 0027 formally
+adds only the governed Community Contract v1 peer-support context; broader
+social networking and mental-health-profiled ranking remain out of scope. New
+in-person, phone, external meeting links, room management, organization
 tenancy, automatic emergency dispatch, custom model training, automated cash
 refunds, and Kubernetes are out of scope unless formally added. Real MoMo
 payment/payout remains disabled until exact VND prices, fixed
