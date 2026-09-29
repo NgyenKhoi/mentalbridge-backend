@@ -101,6 +101,10 @@ The Care Liquibase changelog owns:
 | `support_evaluation_v2_safety` | Independent PHQ-9 item-9 status and safety-policy snapshot without a raw answer |
 | `support_evaluation_v2_request` | Per-user v2 idempotency aliases; separate namespace from v1 keys |
 | `screening_episode` | Persisted Care-owned grouping/resume context for exact guided PHQ-9, GAD-7, and SupportEvaluation evidence; standalone history is never inferred into it |
+| `consultation_brief` | Appointment-scoped owner draft with minimized current situation, exact SupportEvaluation v2 reference, goals, and optimistic versioning |
+| `consultation_brief_snapshot` | Immutable exact content and screening-provenance snapshot created only by explicit owner approval |
+| `consultation_brief_grant` | Assigned-specialist, appointment, purpose, snapshot, access-window, and revocation authority |
+| `consultation_brief_audit` | Content-free allowed/denied draft, approval, revoke, delete, and specialist-read facts |
 | `support_plan` | One Care-owned paid proposal/current-plan snapshot with exact source, entitlement, rationale, safety, lifecycle instants, optional coded completion reason, and optimistic version provenance; terminal rows are immutable owner history |
 | `support_plan_template_family` | Ordered immutable domain template families composed into the draft |
 | `support_plan_slot` | Ordered bounded slots; core selection is required while an optional selection may be explicitly removed |

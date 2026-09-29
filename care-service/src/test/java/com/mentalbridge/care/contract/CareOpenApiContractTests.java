@@ -48,6 +48,13 @@ class CareOpenApiContractTests {
 			"GET /api/v1/support-evaluations",
 			"POST /api/v1/support-evaluations",
 			"GET /api/v1/support-evaluations/{supportEvaluationId}",
+			"PUT /api/v1/consultation-briefs/{appointmentId}/draft",
+			"GET /api/v1/consultation-briefs/{appointmentId}",
+			"DELETE /api/v1/consultation-briefs/{appointmentId}",
+			"POST /api/v1/consultation-briefs/{appointmentId}/approve",
+			"POST /api/v1/consultation-briefs/{appointmentId}/revoke",
+			"GET /api/v1/specialist/consultation-briefs/{appointmentId}",
+			"GET /api/v1/consultation-briefs/screening-contexts",
 			"POST /api/v1/support-plans",
 			"GET /api/v1/support-plans/current-draft",
 			"GET /api/v1/support-plans/current",
@@ -93,6 +100,12 @@ class CareOpenApiContractTests {
 			"/api/v1/reassessment-summaries/{summaryId}",
 			"/api/v1/support-evaluations",
 			"/api/v1/support-evaluations/{supportEvaluationId}",
+			"/api/v1/consultation-briefs/{appointmentId}/draft",
+			"/api/v1/consultation-briefs/{appointmentId}",
+			"/api/v1/consultation-briefs/{appointmentId}/approve",
+			"/api/v1/consultation-briefs/{appointmentId}/revoke",
+			"/api/v1/specialist/consultation-briefs/{appointmentId}",
+			"/api/v1/consultation-briefs/screening-contexts",
 			"/api/v1/support-plans",
 			"/api/v1/support-plans/current-draft",
 			"/api/v1/support-plans/current",
@@ -138,6 +151,13 @@ class CareOpenApiContractTests {
 			"GET /api/v1/support-evaluations",
 			"POST /api/v1/support-evaluations",
 			"GET /api/v1/support-evaluations/{supportEvaluationId}",
+			"PUT /api/v1/consultation-briefs/{appointmentId}/draft",
+			"GET /api/v1/consultation-briefs/{appointmentId}",
+			"DELETE /api/v1/consultation-briefs/{appointmentId}",
+			"POST /api/v1/consultation-briefs/{appointmentId}/approve",
+			"POST /api/v1/consultation-briefs/{appointmentId}/revoke",
+			"GET /api/v1/specialist/consultation-briefs/{appointmentId}",
+			"GET /api/v1/consultation-briefs/screening-contexts",
 			"POST /api/v1/support-plans",
 			"GET /api/v1/support-plans/current-draft",
 			"GET /api/v1/support-plans/current",
@@ -291,6 +311,22 @@ class CareOpenApiContractTests {
 		assertThat(draft.getProperties()).containsKeys("source", "entitlement", "rationale", "safety",
 				"templateFamilies", "slots", "selectedResourceCount", "disclaimer")
 				.doesNotContainKeys("assessmentAnswers", "journalContent", "diagnosis", "treatment");
+	}
+
+	@Test
+	void consultationBriefAcceptsOnlyMinimizedUserAuthoredFieldsAndExactCareEvidence() {
+		var contract = Path.of("..", "contracts", "openapi", "care-service-v1.yaml").toAbsolutePath();
+		var openApi = new OpenAPIV3Parser().readLocation(contract.toUri().toString(), null, null).getOpenAPI();
+		var request = openApi.getComponents().getSchemas().get("ConsultationBriefDraftRequest");
+		var brief = openApi.getComponents().getSchemas().get("ConsultationBrief");
+		var specialist = openApi.getComponents().getSchemas().get("SpecialistConsultationBrief");
+
+		assertThat(request.getProperties()).containsOnlyKeys("currentSituation", "supportEvaluationId", "userGoals")
+				.doesNotContainKeys("assessmentAnswers", "journalContent", "chat", "diagnosis", "privateNotes");
+		assertThat(brief.getProperties()).containsKeys("approvedSnapshotId", "sharingStatus", "accessStartAt",
+				"accessEndAt", "version").doesNotContainKeys("assessmentAnswers", "journalContent", "chat", "diagnosis");
+		assertThat(specialist.getProperties()).containsOnlyKeys("snapshotId", "appointmentId", "currentSituation",
+				"supportEvaluationId", "screeningContext", "userGoals", "snapshotVersion", "approvedAt");
 	}
 
 	@Test

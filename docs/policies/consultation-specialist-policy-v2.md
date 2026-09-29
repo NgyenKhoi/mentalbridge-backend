@@ -167,6 +167,27 @@ prevent repeated commands or races from settling twice.
 only after the user reviews and explicitly approves the appointment-scoped
 snapshot under current sharing consent.
 
+MB-381 implements that boundary for controlled local/test/demo use. Consultation
+returns only authoritative appointment identity, assignment, status, timing, and
+version to the authenticated owner or assigned specialist. Care owns the editable
+draft, immutable approved snapshot, appointment-purpose grant, immediate
+revocation, content-clearing deletion, and content-free audit. Specialist reads
+serialize with revocation and are allowed only for the assigned `CONFIRMED` or
+`IN_PROGRESS` appointment from 24 hours before through 24 hours after its
+snapshotted start. Assignment or schedule changes invalidate the approved grant
+until the user reviews and approves a new exact snapshot. Early, expired,
+revoked, deleted, wrong-actor, wrong-appointment, changed-appointment, or
+dependency-unavailable reads fail closed.
+
+The snapshot contains only bounded current situation, the exact approved
+SupportEvaluation v2 domain/level/version provenance, and bounded user goals. It
+never contains raw assessment answers, raw journals, chat, private notes,
+diagnosis, or an unapproved generated summary. MB-385 remains the owner of
+`SessionSummary`; until that exact-version source exists, prior-summary reuse is
+unavailable rather than accepting client-authored continuity text. When added,
+reuse requires a separate approval tied to the exact summary snapshot/version and
+must never inherit this appointment-preparation grant.
+
 After an eligible completed session, the specialist may create a user-visible
 `SessionSummary` and `AgreedNextSteps`. These are not a second SupportPlan and
 do not mutate the Care-owned plan. Reuse in a later brief, SupportPlan review,

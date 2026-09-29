@@ -29,6 +29,7 @@ tags:
   - name: Assessment
   - name: Reassessment summary
   - name: Support evaluation
+  - name: Consultation brief
   - name: SupportPlan draft
   - name: SupportPlan activity
   - name: Anonymous assessment
@@ -724,6 +725,163 @@ paths:
         "401": { $ref: "#/components/responses/UnauthorizedProblem" }
         "403": { $ref: "#/components/responses/ForbiddenProblem" }
         "404": { $ref: "#/components/responses/NotFoundProblem" }
+  /api/v1/consultation-briefs/{appointmentId}/draft:
+    x-mentalbridge-status: implemented
+    put:
+      tags: [Consultation brief]
+      operationId: saveConsultationBriefDraft
+      summary: Create or replace the appointment owner's draft
+      description: The request contains only minimized user-authored context and an exact Care-owned support-evaluation reference. Updating an existing draft requires its current version.
+      security: [{ bearerAuth: [] }]
+      parameters:
+        - $ref: "#/components/parameters/AppointmentId"
+        - $ref: "#/components/parameters/OptionalIfMatch"
+        - $ref: "#/components/parameters/CorrelationId"
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: "#/components/schemas/ConsultationBriefDraftRequest" }
+      responses:
+        "200":
+          description: Persisted draft
+          headers:
+            ETag: { schema: { type: string, pattern: '^"[0-9]+"$' } }
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/ConsultationBrief" }
+        "400": { $ref: "#/components/responses/ValidationProblem" }
+        "401": { $ref: "#/components/responses/UnauthorizedProblem" }
+        "403": { $ref: "#/components/responses/ForbiddenProblem" }
+        "404": { $ref: "#/components/responses/NotFoundProblem" }
+        "409": { $ref: "#/components/responses/ConflictProblem" }
+        "412": { $ref: "#/components/responses/VersionProblem" }
+        "428": { $ref: "#/components/responses/VersionRequiredProblem" }
+  /api/v1/consultation-briefs/screening-contexts:
+    x-mentalbridge-status: implemented
+    get:
+      tags: [Consultation brief]
+      operationId: listOwnConsultationBriefScreeningContexts
+      summary: List bounded Care-owned screening contexts available for explicit selection
+      security: [{ bearerAuth: [] }]
+      parameters:
+        - $ref: "#/components/parameters/CorrelationId"
+      responses:
+        "200":
+          description: Up to twenty newest domain-aware screening contexts
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/ConsultationBriefScreeningContextList" }
+        "401": { $ref: "#/components/responses/UnauthorizedProblem" }
+        "403": { $ref: "#/components/responses/ForbiddenProblem" }
+  /api/v1/consultation-briefs/{appointmentId}:
+    x-mentalbridge-status: implemented
+    get:
+      tags: [Consultation brief]
+      operationId: getOwnConsultationBrief
+      summary: Read the appointment owner's current draft or approved state
+      security: [{ bearerAuth: [] }]
+      parameters:
+        - $ref: "#/components/parameters/AppointmentId"
+        - $ref: "#/components/parameters/CorrelationId"
+      responses:
+        "200":
+          description: Current owner view
+          headers:
+            ETag: { schema: { type: string, pattern: '^"[0-9]+"$' } }
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/ConsultationBrief" }
+        "401": { $ref: "#/components/responses/UnauthorizedProblem" }
+        "403": { $ref: "#/components/responses/ForbiddenProblem" }
+        "404": { $ref: "#/components/responses/NotFoundProblem" }
+    delete:
+      tags: [Consultation brief]
+      operationId: deleteOwnConsultationBrief
+      summary: Delete brief content and revoke any future specialist access
+      security: [{ bearerAuth: [] }]
+      parameters:
+        - $ref: "#/components/parameters/AppointmentId"
+        - $ref: "#/components/parameters/RequiredIfMatch"
+        - $ref: "#/components/parameters/CorrelationId"
+      responses:
+        "204": { description: Brief content deleted and active access revoked }
+        "401": { $ref: "#/components/responses/UnauthorizedProblem" }
+        "403": { $ref: "#/components/responses/ForbiddenProblem" }
+        "404": { $ref: "#/components/responses/NotFoundProblem" }
+        "412": { $ref: "#/components/responses/VersionProblem" }
+        "428": { $ref: "#/components/responses/VersionRequiredProblem" }
+  /api/v1/consultation-briefs/{appointmentId}/approve:
+    x-mentalbridge-status: implemented
+    post:
+      tags: [Consultation brief]
+      operationId: approveConsultationBriefSnapshot
+      summary: Approve the exact current draft snapshot for the assigned specialist
+      security: [{ bearerAuth: [] }]
+      parameters:
+        - $ref: "#/components/parameters/AppointmentId"
+        - $ref: "#/components/parameters/RequiredIfMatch"
+        - $ref: "#/components/parameters/CorrelationId"
+      responses:
+        "200":
+          description: Immutable snapshot approved with an appointment-scoped access window
+          headers:
+            ETag: { schema: { type: string, pattern: '^"[0-9]+"$' } }
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/ConsultationBrief" }
+        "401": { $ref: "#/components/responses/UnauthorizedProblem" }
+        "403": { $ref: "#/components/responses/ForbiddenProblem" }
+        "404": { $ref: "#/components/responses/NotFoundProblem" }
+        "409": { $ref: "#/components/responses/ConflictProblem" }
+        "412": { $ref: "#/components/responses/VersionProblem" }
+        "428": { $ref: "#/components/responses/VersionRequiredProblem" }
+  /api/v1/consultation-briefs/{appointmentId}/revoke:
+    x-mentalbridge-status: implemented
+    post:
+      tags: [Consultation brief]
+      operationId: revokeConsultationBriefAccess
+      summary: Revoke all future reads of the currently approved snapshot
+      security: [{ bearerAuth: [] }]
+      parameters:
+        - $ref: "#/components/parameters/AppointmentId"
+        - $ref: "#/components/parameters/RequiredIfMatch"
+        - $ref: "#/components/parameters/CorrelationId"
+      responses:
+        "200":
+          description: Specialist access revoked
+          headers:
+            ETag: { schema: { type: string, pattern: '^"[0-9]+"$' } }
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/ConsultationBrief" }
+        "401": { $ref: "#/components/responses/UnauthorizedProblem" }
+        "403": { $ref: "#/components/responses/ForbiddenProblem" }
+        "404": { $ref: "#/components/responses/NotFoundProblem" }
+        "409": { $ref: "#/components/responses/ConflictProblem" }
+        "412": { $ref: "#/components/responses/VersionProblem" }
+        "428": { $ref: "#/components/responses/VersionRequiredProblem" }
+  /api/v1/specialist/consultation-briefs/{appointmentId}:
+    x-mentalbridge-status: implemented
+    get:
+      tags: [Consultation brief]
+      operationId: getAssignedSpecialistConsultationBrief
+      summary: Read the immutable approved snapshot within its appointment-scoped window
+      description: Fails closed for the wrong specialist, wrong appointment state, an early or expired window, revoked access, or a deleted brief/source. Every allowed or denied read is audited without brief content.
+      security: [{ bearerAuth: [] }]
+      parameters:
+        - $ref: "#/components/parameters/AppointmentId"
+        - $ref: "#/components/parameters/CorrelationId"
+      responses:
+        "200":
+          description: Exact approved snapshot
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/SpecialistConsultationBrief" }
+        "401": { $ref: "#/components/responses/UnauthorizedProblem" }
+        "403": { $ref: "#/components/responses/ForbiddenProblem" }
+        "404": { $ref: "#/components/responses/NotFoundProblem" }
+        "410": { $ref: "#/components/responses/ConflictProblem" }
   /api/v1/support-evaluations:
     x-mentalbridge-status: implemented
     get:
@@ -1598,6 +1756,11 @@ components:
       in: path
       required: true
       schema: { type: string, format: uuid }
+    AppointmentId:
+      name: appointmentId
+      in: path
+      required: true
+      schema: { type: string, format: uuid }
     SupportEvaluationId:
       name: supportEvaluationId
       in: path
@@ -1671,6 +1834,99 @@ components:
       required: false
       schema: { type: integer, minimum: 1, maximum: 50, default: 20 }
   schemas:
+    ConsultationBriefDraftRequest:
+      type: object
+      additionalProperties: false
+      required: [currentSituation, supportEvaluationId, userGoals]
+      properties:
+        currentSituation: { type: string, minLength: 1, maxLength: 1000 }
+        supportEvaluationId: { type: string, format: uuid }
+        userGoals:
+          type: array
+          minItems: 1
+          maxItems: 5
+          items: { type: string, minLength: 1, maxLength: 200 }
+    ConsultationBriefScreeningContext:
+      type: object
+      additionalProperties: false
+      required: [instrument, domain, screeningLevel, questionnaireVersion, scoringVersion, evaluatedAt, policyVersion]
+      properties:
+        instrument: { type: string, enum: [PHQ9, GAD7] }
+        domain: { type: string, enum: [DEPRESSIVE_SYMPTOMS, ANXIETY_SYMPTOMS] }
+        screeningLevel: { type: string, enum: [MINIMAL, MILD, MODERATE, MODERATELY_SEVERE, SEVERE] }
+        questionnaireVersion: { type: string, minLength: 1, maxLength: 32 }
+        scoringVersion: { type: string, minLength: 1, maxLength: 32 }
+        evaluatedAt: { type: string, format: date-time }
+        policyVersion: { type: string, minLength: 1, maxLength: 64 }
+    ConsultationBrief:
+      type: object
+      additionalProperties: false
+      required: [id, appointmentId, status, currentSituation, supportEvaluationId, screeningContext, userGoals, approvedSnapshotId, sharingStatus, accessStartAt, accessEndAt, version, updatedAt]
+      properties:
+        id: { type: string, format: uuid }
+        appointmentId: { type: string, format: uuid }
+        status: { type: string, enum: [DRAFT, APPROVED] }
+        currentSituation: { type: string, minLength: 1, maxLength: 1000 }
+        supportEvaluationId: { type: string, format: uuid }
+        screeningContext:
+          type: array
+          minItems: 2
+          maxItems: 2
+          items: { $ref: "#/components/schemas/ConsultationBriefScreeningContext" }
+        userGoals:
+          type: array
+          minItems: 1
+          maxItems: 5
+          items: { type: string, minLength: 1, maxLength: 200 }
+        approvedSnapshotId: { type: [string, "null"], format: uuid }
+        sharingStatus: { type: string, enum: [NONE, ACTIVE, REVOKED] }
+        accessStartAt: { type: [string, "null"], format: date-time }
+        accessEndAt: { type: [string, "null"], format: date-time }
+        version: { type: integer, format: int64, minimum: 0 }
+        updatedAt: { type: string, format: date-time }
+    ConsultationBriefScreeningContextChoice:
+      type: object
+      additionalProperties: false
+      required: [supportEvaluationId, evaluatedAt, screeningContext]
+      properties:
+        supportEvaluationId: { type: string, format: uuid }
+        evaluatedAt: { type: string, format: date-time }
+        screeningContext:
+          type: array
+          minItems: 2
+          maxItems: 2
+          items: { $ref: "#/components/schemas/ConsultationBriefScreeningContext" }
+    ConsultationBriefScreeningContextList:
+      type: object
+      additionalProperties: false
+      required: [items, count]
+      properties:
+        items:
+          type: array
+          maxItems: 20
+          items: { $ref: "#/components/schemas/ConsultationBriefScreeningContextChoice" }
+        count: { type: integer, minimum: 0, maximum: 20 }
+    SpecialistConsultationBrief:
+      type: object
+      additionalProperties: false
+      required: [snapshotId, appointmentId, currentSituation, supportEvaluationId, screeningContext, userGoals, snapshotVersion, approvedAt]
+      properties:
+        snapshotId: { type: string, format: uuid }
+        appointmentId: { type: string, format: uuid }
+        currentSituation: { type: string, minLength: 1, maxLength: 1000 }
+        supportEvaluationId: { type: string, format: uuid }
+        screeningContext:
+          type: array
+          minItems: 2
+          maxItems: 2
+          items: { $ref: "#/components/schemas/ConsultationBriefScreeningContext" }
+        userGoals:
+          type: array
+          minItems: 1
+          maxItems: 5
+          items: { type: string, minLength: 1, maxLength: 200 }
+        snapshotVersion: { type: integer, format: int64, minimum: 1 }
+        approvedAt: { type: string, format: date-time }
     ReassessmentPeriod:
       type: object
       additionalProperties: false
@@ -3129,7 +3385,12 @@ components:
         application/problem+json:
           schema: { $ref: "#/components/schemas/Problem" }
     VersionProblem:
-      description: If-Match is missing for an existing profile or does not match its current version (PROFILE_VERSION_MISMATCH)
+      description: If-Match does not match the current resource version
+      content:
+        application/problem+json:
+          schema: { $ref: "#/components/schemas/Problem" }
+    VersionRequiredProblem:
+      description: A quoted current resource version is required in If-Match
       content:
         application/problem+json:
           schema: { $ref: "#/components/schemas/Problem" }

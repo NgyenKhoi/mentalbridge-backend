@@ -69,6 +69,30 @@ class AppointmentDecisionIntegrationTests extends ConsultationTestProperties {
 	}
 
 	@Test
+	void consultationBriefContextIsVisibleOnlyToTheOwnerAndAssignedSpecialist() throws Exception {
+		var fixture = requestedAppointment();
+
+		mvc.perform(get("/internal/v1/appointments/{id}/consultation-brief-context", fixture.appointmentId())
+				.with(user(fixture.userId())))
+				.andExpect(status().isOk())
+				.andExpect(jsonPath("$.appointmentId").value(fixture.appointmentId().toString()))
+				.andExpect(jsonPath("$.userAccountId").value(fixture.userId().toString()))
+				.andExpect(jsonPath("$.specialistAccountId").value(fixture.specialistId().toString()))
+				.andExpect(jsonPath("$.status").value("REQUESTED"))
+				.andExpect(jsonPath("$.scheduledStartAt").exists())
+				.andExpect(jsonPath("$.scheduledEndAt").exists())
+				.andExpect(jsonPath("$.version").value(0))
+				.andExpect(jsonPath("$.heldCreditId").doesNotExist());
+		mvc.perform(get("/internal/v1/appointments/{id}/consultation-brief-context", fixture.appointmentId())
+				.with(specialist(fixture.specialistId())))
+				.andExpect(status().isOk());
+		mvc.perform(get("/internal/v1/appointments/{id}/consultation-brief-context", fixture.appointmentId())
+				.with(specialist(UUID.randomUUID())))
+				.andExpect(status().isNotFound())
+				.andExpect(jsonPath("$.code").value("APPOINTMENT_NOT_FOUND"));
+	}
+
+	@Test
 	void assignedSpecialistRejectsOnceAndReloadShowsReleasedCredit() throws Exception {
 		var fixture = requestedAppointment();
 

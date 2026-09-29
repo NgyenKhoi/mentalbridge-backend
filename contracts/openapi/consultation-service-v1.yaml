@@ -35,6 +35,26 @@ paths:
               schema: { $ref: '#/components/schemas/CurrentServiceEntitlement' }
         '401': { $ref: '#/components/responses/UnauthorizedProblem' }
         '403': { $ref: '#/components/responses/EntitlementForbiddenProblem' }
+  /internal/v1/appointments/{appointmentId}/consultation-brief-context:
+    x-mentalbridge-status: implemented
+    get:
+      operationId: getConsultationBriefAppointmentContext
+      description: Returns only appointment authority and timing facts required by Care to enforce appointment-scoped ConsultationBrief access. The authenticated actor must own the appointment or be its assigned specialist.
+      security: [{ bearerAuth: [] }]
+      parameters:
+        - name: appointmentId
+          in: path
+          required: true
+          schema: { type: string, format: uuid }
+      responses:
+        '200':
+          description: Minimal authoritative appointment context
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/ConsultationBriefAppointmentContext' }
+        '401': { $ref: '#/components/responses/UnauthorizedProblem' }
+        '403': { $ref: '#/components/responses/ForbiddenProblem' }
+        '404': { $ref: '#/components/responses/NotFoundProblem' }
   /api/v1/specialist-profile:
     x-mentalbridge-status: implemented
     get:
@@ -947,6 +967,18 @@ components:
           type: array
           maxItems: 20
           items: { $ref: '#/components/schemas/AppointmentHistoryEntry' }
+        version: { type: integer, format: int64, minimum: 0 }
+    ConsultationBriefAppointmentContext:
+      type: object
+      additionalProperties: false
+      required: [appointmentId, userAccountId, specialistAccountId, status, scheduledStartAt, scheduledEndAt, version]
+      properties:
+        appointmentId: { type: string, format: uuid }
+        userAccountId: { type: string, format: uuid }
+        specialistAccountId: { type: string, format: uuid }
+        status: { type: string, enum: [REQUESTED, CONFIRMED, IN_PROGRESS, REJECTED, EXPIRED, CANCELLED] }
+        scheduledStartAt: { type: string, format: date-time }
+        scheduledEndAt: { type: string, format: date-time }
         version: { type: integer, format: int64, minimum: 0 }
     AppointmentList:
       type: object
