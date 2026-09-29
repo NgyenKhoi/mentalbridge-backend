@@ -376,6 +376,8 @@ services:
       REALTIME_SERVICE_URL: http://realtime:3004
       REALTIME_PUBLIC_URL: ${PUBLIC_REALTIME_ORIGIN:-http://localhost:3004}
       REALTIME_SERVICE_TIMEOUT_MS: ${REALTIME_SERVICE_TIMEOUT_MS:-3000}
+      COMMUNITY_SERVICE_URL: http://community:8084
+      COMMUNITY_SERVICE_TIMEOUT_MS: ${COMMUNITY_SERVICE_TIMEOUT_MS:-15000}
     ports:
       - "${FRONTEND_BIND_ADDRESS:-0.0.0.0}:${FRONTEND_PORT:-3000}:3000"
     depends_on:
@@ -390,6 +392,8 @@ services:
       consultation:
         condition: service_healthy
       realtime:
+        condition: service_healthy
+      community:
         condition: service_healthy
     networks:
       - review1

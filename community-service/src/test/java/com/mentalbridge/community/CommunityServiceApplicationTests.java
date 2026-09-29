@@ -58,7 +58,7 @@ class CommunityServiceApplicationTests extends CommunityTestProperties {
 	}
 
 	@Test
-	void baselineLiquibaseMigrationAppliesWithoutBusinessTables() {
+	void communityMigrationsApplyTheFeedReadModel() {
 		var changeSets = jdbc.sql("select id from databasechangelog order by orderexecuted")
 				.query(String.class).list();
 		var businessTables = jdbc.sql("""
@@ -69,8 +69,9 @@ class CommunityServiceApplicationTests extends CommunityTestProperties {
 				order by table_name
 				""").query(String.class).list();
 
-		assertThat(changeSets).containsExactly("0001-community-foundation");
-		assertThat(businessTables).isEmpty();
+		assertThat(changeSets).containsExactly("0001-community-foundation", "0002-community-feed");
+		assertThat(businessTables).containsExactly("community_block", "community_media", "community_post",
+				"community_post_topic", "community_profile");
 	}
 
 	@Test

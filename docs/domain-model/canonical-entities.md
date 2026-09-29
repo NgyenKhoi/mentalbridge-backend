@@ -84,6 +84,17 @@ See [README](README.md) for status and relationship semantics.
 | Specialist earning/payout/reconciliation | consultation-service | PostgreSQL | PROPOSED | Approved financial boundary remains gated by pricing, credentials, and owner migrations. |
 | Specialist review | consultation-service | PostgreSQL | PROPOSED | Product scope exists, but no persistence migration is active. |
 
+## Community — PostgreSQL
+
+| Entity | Owner service | Storage | Status | Key relationships |
+| --- | --- | --- | --- | --- |
+| `community_profile` | community-service | PostgreSQL | ACTIVE | `account_subject` is a private logical/external Identity reference; public APIs expose only the Community profile ID and chosen display identity. |
+| `community_post` | community-service | PostgreSQL | ACTIVE | Physical many-to-one to `community_profile`; active reads are newest-first and fail closed for hidden, removed, or blocked content. |
+| `community_post_topic` | community-service | PostgreSQL | ACTIVE | Physical many-to-one classification using only governed non-diagnostic Community topic codes. |
+| `community_media` | community-service | PostgreSQL/object storage | ACTIVE | Physical owner/post references hold safe metadata only; binary content remains in object storage and only `READY` delivery metadata is public. |
+| `community_block` | community-service | PostgreSQL | ACTIVE | Physical profile-to-profile visibility rule applied symmetrically to feed and detail reads. |
+| Comments, reactions, bookmarks, reports, moderation cases/actions, and command replay | community-service | PostgreSQL | PROPOSED | Frozen Community Contract v1 paths and enums exist, but their delivery stories have not added runtime persistence. |
+
 ## Content/Notification — PostgreSQL
 
 | Entity | Owner service | Storage | Status | Key relationships |

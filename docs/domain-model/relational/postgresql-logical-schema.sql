@@ -17,13 +17,13 @@
  * Any persisted model change introduced by a service migration
  * must update this logical model in the same pull request.
  *
- * The identity, care, consultation, and content qualifiers below are visual
+ * The identity, care, consultation, community, and content qualifiers below are visual
  * owner namespaces only. Runtime PostgreSQL uses a separate owner database and
  * its default public schema. Cross-owner identifiers are logical/external
  * references and are deliberately not physical foreign keys.
  *
- * Reconciled from owner migrations on 2026-09-24. It includes the Care
- * SupportPlan and immutable Reassessment Summary migrations. Technical indexes and migration bookkeeping are
+ * Reconciled from owner migrations through 2026-09-29. It includes the Care
+ * SupportPlan, immutable Reassessment Summary, and Community feed migrations. Technical indexes and migration bookkeeping are
  * intentionally omitted; owner migrations remain authoritative for exact DDL.
  */
 
@@ -906,6 +906,63 @@ CREATE TABLE consultation.appointment_status_history (
     idempotency_key varchar(128),
     credit_outcome varchar(40),
     changed_at timestamptz NOT NULL
+);
+
+/* ========================================================================== */
+/* ACTIVE — community-service / mentalbridge_community                        */
+/* Evidence: community-service Liquibase changes 0001-0002.                  */
+/* ========================================================================== */
+
+CREATE TABLE community.community_profile (
+    id uuid PRIMARY KEY,
+    account_subject uuid NOT NULL UNIQUE, -- external -> identity.account.id
+    display_name varchar(80) NOT NULL,
+    status varchar(16) NOT NULL,
+    created_at timestamptz NOT NULL,
+    updated_at timestamptz NOT NULL,
+    version bigint NOT NULL
+);
+
+CREATE TABLE community.community_post (
+    id uuid PRIMARY KEY,
+    author_profile_id uuid NOT NULL REFERENCES community.community_profile(id),
+    content varchar(5000) NOT NULL,
+    state varchar(24) NOT NULL,
+    comment_count integer NOT NULL,
+    reaction_count integer NOT NULL,
+    published_at timestamptz NOT NULL,
+    updated_at timestamptz NOT NULL,
+    version bigint NOT NULL
+);
+
+CREATE TABLE community.community_post_topic (
+    post_id uuid NOT NULL REFERENCES community.community_post(id),
+    topic_code varchar(32) NOT NULL,
+    PRIMARY KEY (post_id, topic_code)
+);
+
+CREATE TABLE community.community_media (
+    id uuid PRIMARY KEY,
+    owner_profile_id uuid NOT NULL REFERENCES community.community_profile(id),
+    post_id uuid REFERENCES community.community_post(id),
+    media_type varchar(16) NOT NULL,
+    state varchar(16) NOT NULL,
+    delivery_url varchar(2048),
+    width integer,
+    height integer,
+    duration_seconds integer,
+    alt_text varchar(300),
+    position smallint NOT NULL,
+    created_at timestamptz NOT NULL,
+    updated_at timestamptz NOT NULL,
+    version bigint NOT NULL
+);
+
+CREATE TABLE community.community_block (
+    blocker_profile_id uuid NOT NULL REFERENCES community.community_profile(id),
+    blocked_profile_id uuid NOT NULL REFERENCES community.community_profile(id),
+    created_at timestamptz NOT NULL,
+    PRIMARY KEY (blocker_profile_id, blocked_profile_id)
 );
 
 /* ========================================================================== */

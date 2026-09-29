@@ -15,7 +15,7 @@
 
 The edge gateway/reverse proxy and Eureka service registry are infrastructure, not business modules, and contain no orchestration or domain logic. Eureka publishes service location metadata only. Language does not change ownership. Node.js and Spring communicate through REST/JSON DTOs and Kafka contracts and never share framework models.
 
-ADR 0027 establishes `community-service` as a privacy-isolated owner. Community ranking and filtering never query or infer from screening, SupportPlan, Journal, emotion, or AI-analysis data. MB-604 provides only the service foundation; later business paths require their own active contracts.
+ADR 0027 establishes `community-service` as a privacy-isolated owner. Community ranking and filtering never query or infer from screening, SupportPlan, Journal, emotion, or AI-analysis data. MB-574 activates only feed, topic catalogue, and post-detail reads; later business paths require their own active contracts.
 
 ADR 0005 assigns subscription/payment, upgrade, consultation-credit, earning, and provider-payout behavior to one billing feature inside `consultation-service`. Booking and credit transitions share its local PostgreSQL transaction. No consumer may derive or store a mutable entitlement, credit, earning, or payout balance independently.
 

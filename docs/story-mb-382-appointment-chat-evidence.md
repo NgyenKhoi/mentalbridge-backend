@@ -31,7 +31,7 @@ and the socket disconnects at the original Identity expiry.
 | Realtime typecheck, contract validation and build    | Passed                                                                                                |
 | Realtime lint                                        | Passed                                                                                                |
 | Realtime Vitest unit/contract/HTTP suite             | 42/42 passed across 8 files using the bundled config loader                                           |
-| Frontend quality gate                                | Format, lint, typecheck, contract checks, 538/538 tests across 113 files, and production build passed |
+| Frontend quality gate                                | Format, lint, typecheck, contract checks, 555/555 tests across 117 files, and production build passed |
 | Docker-backed Consultation/Realtime integration      | Attempted, but Docker/Testcontainers was unavailable in this environment                              |
 
 The integration suite covers wrong actors, waiting/active/ended windows,

@@ -6,7 +6,75 @@ When service-owned migrations are introduced, update this dictionary and the can
 
 ## Database `mentalbridge_community` (schema `public`)
 
-MB-604 establishes only the Liquibase bookkeeping baseline (`databasechangelog` and `databasechangeloglock`). It creates no Community business table or field. Future Community delivery stories must document every owner field here when they add their corresponding migration and canonical logical model.
+### `public.community_profile`
+
+Community-owned public display identity kept separate from private Care and Identity profile data.
+
+| Field | Purpose |
+| --- | --- |
+| `id` | Immutable opaque UUID exposed publicly as the Community profile identifier. |
+| `account_subject` | Private unique Identity JWT subject used only for ownership, blocks, abuse controls, moderation, and deletion coordination; never returned by Community APIs. |
+| `display_name` | User-chosen Community name shown on active posts; bounded to 80 characters and replaced by a neutral tombstone label when the profile is deleted. |
+| `status` | Community-local display lifecycle `ACTIVE` or `DELETED`; it is not an Identity account-state copy. |
+| `created_at` | Immutable UTC insertion instant for the Community display identity. |
+| `updated_at` | UTC instant of the latest persisted Community display change. |
+| `version` | Optimistic-lock counter reserved for the profile update contract. |
+
+### `public.community_post`
+
+Authoritative Community-owned personal-story publication. It is not Care, Journal, SupportPlan, or AI evidence.
+
+| Field | Purpose |
+| --- | --- |
+| `id` | Immutable opaque UUID used by feed/detail links and future Community interactions. |
+| `author_profile_id` | Physical reference to the chosen Community display identity; it never exposes the linked account subject. |
+| `content` | User-authored peer-support text, bounded to 5,000 characters; it is excluded from cross-service events. |
+| `state` | Publication lifecycle `ACTIVE`, `OWNER_DELETED`, `MODERATION_HIDDEN`, or `MODERATION_REMOVED`; only `ACTIVE` is returned to ordinary users. |
+| `comment_count` | Non-negative Community-owned display count, updated transactionally by the future comment slice. |
+| `reaction_count` | Non-negative Community-owned display count, updated transactionally by the future supportive-reaction slice. |
+| `published_at` | Immutable UTC publication instant used as the primary newest-first cursor key. |
+| `updated_at` | UTC instant of the latest persisted owner or moderation change. |
+| `version` | Optimistic-lock counter reserved for owner edits/deletion and moderation changes. |
+
+### `public.community_post_topic`
+
+Governed non-diagnostic topic membership used only for explicit user-selected filtering.
+
+| Field | Purpose |
+| --- | --- |
+| `post_id` | Physical parent post reference; deleting a never-published test/post row cascades its classifications. |
+| `topic_code` | Stable v1 category `MY_STORY`, `SMALL_MILESTONE`, `HELPFUL_REFLECTION`, `PEER_QUESTION`, `EXPERIENCE_SHARING`, or `HELPFUL_RESOURCE`; it never represents diagnosis or severity. |
+
+### `public.community_media`
+
+Safe metadata for Community-owned image/video objects. Binary content and provider payloads are not stored in PostgreSQL.
+
+| Field | Purpose |
+| --- | --- |
+| `id` | Immutable opaque UUID used by the owner-scoped media contract. |
+| `owner_profile_id` | Physical Community owner reference used to prevent another profile attaching media. |
+| `post_id` | Nullable physical attachment to one post; null while an upload is pending/orphaned or after post detachment. |
+| `media_type` | Closed display kind `IMAGE` or `VIDEO`. |
+| `state` | Provider-independent lifecycle `PENDING`, `PROCESSING`, `READY`, `REJECTED`, `DELETED`, or `EXPIRED`; only `READY` delivery metadata is returned publicly. |
+| `delivery_url` | HTTPS delivery URL present only for `READY` media; secrets, signatures, upload URLs, and provider responses are never stored here. |
+| `width` | Optional positive pixel width used to reserve truthful layout space. |
+| `height` | Optional positive pixel height used to reserve truthful layout space. |
+| `duration_seconds` | Optional positive whole-second video duration. |
+| `alt_text` | Optional bounded user-facing accessibility text; null when unavailable. |
+| `position` | Stable zero-based order within a post, bounded to ten media positions. |
+| `created_at` | Immutable UTC metadata creation instant. |
+| `updated_at` | UTC instant of the latest processing, attachment, or lifecycle change. |
+| `version` | Optimistic-lock counter reserved for media lifecycle commands. |
+
+### `public.community_block`
+
+Community-local bilateral visibility exclusion applied by feed and detail queries without calling Identity, Care, or Journal.
+
+| Field | Purpose |
+| --- | --- |
+| `blocker_profile_id` | Physical Community profile that chose to block another profile. |
+| `blocked_profile_id` | Physical Community profile hidden from the blocker; the database forbids self-blocking. |
+| `created_at` | Immutable UTC instant when the block became effective. |
 
 ## Database `mentalbridge_identity` (schema `public`)
 
