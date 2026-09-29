@@ -4,6 +4,10 @@ This document explains the business purpose of PostgreSQL fields. The [canonical
 
 When service-owned migrations are introduced, update this dictionary and the canonical logical model in the same change whenever persisted domain structure materially changes. A field description must explain why the value is persisted, whether it is authoritative, derived, external, or sensitive, and how nullability, time, versioning, or idempotency affects behavior. Content/Notification's executable history starts at `content-notification-service/migrations/1_initial_schema.sql`; migration 2 removes the obsolete hotline table, the separate Review 1 migrations insert controlled demo content and its initial item-level eligibility matrix, migration 6 adds immutable Resource Eligibility v1 provenance, migration 7 adds the separately governed reviewed safety directory, and migration 8 adds its deterministic reviewed area vocabulary. The field descriptions under its conceptual owner below describe the resulting physical `public` tables.
 
+## Database `mentalbridge_community` (schema `public`)
+
+MB-604 establishes only the Liquibase bookkeeping baseline (`databasechangelog` and `databasechangeloglock`). It creates no Community business table or field. Future Community delivery stories must document every owner field here when they add their corresponding migration and canonical logical model.
+
 ## Database `mentalbridge_identity` (schema `public`)
 
 ### `public.account`

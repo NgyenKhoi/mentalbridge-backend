@@ -206,6 +206,49 @@ services:
     networks:
       - review1
 
+  community-migrate:
+    build:
+      context: ./community-service
+      target: migration
+    profiles: *demo-profiles
+    restart: "no"
+    environment:
+      COMMUNITY_DB_URL: ${COMMUNITY_DB_URL:?Set the shared dev/staging Community database URL in .env}
+      COMMUNITY_DB_USERNAME: ${COMMUNITY_DB_USERNAME:?Set the shared dev/staging Community database username in .env}
+      COMMUNITY_DB_PASSWORD: ${COMMUNITY_DB_PASSWORD:?Set COMMUNITY_DB_PASSWORD in .env}
+    networks:
+      - review1
+
+  community:
+    build:
+      context: ./community-service
+      target: runtime
+    profiles: *demo-profiles
+    restart: unless-stopped
+    environment:
+      <<: *java-service-environment
+      SERVER_PORT: 8084
+      COMMUNITY_DB_URL: ${COMMUNITY_DB_URL:?Set the shared dev/staging Community database URL in .env}
+      COMMUNITY_DB_USERNAME: ${COMMUNITY_DB_USERNAME:?Set the shared dev/staging Community database username in .env}
+      COMMUNITY_DB_PASSWORD: ${COMMUNITY_DB_PASSWORD:?Set COMMUNITY_DB_PASSWORD in .env}
+      COMMUNITY_LIQUIBASE_ENABLED: "false"
+      CLOUDINARY_CLOUD_NAME: ${CLOUDINARY_CLOUD_NAME:?Set CLOUDINARY_CLOUD_NAME in .env}
+      CLOUDINARY_API_KEY: ${CLOUDINARY_API_KEY:?Set CLOUDINARY_API_KEY in .env}
+      CLOUDINARY_API_SECRET: ${CLOUDINARY_API_SECRET:?Set CLOUDINARY_API_SECRET in .env}
+    ports:
+      - "${SERVICE_BIND_ADDRESS:-127.0.0.1}:${COMMUNITY_PORT:-8084}:8084"
+    depends_on:
+      community-migrate:
+        condition: service_completed_successfully
+    healthcheck:
+      test: ["CMD", "wget", "-q", "-O", "/dev/null", "http://localhost:8084/actuator/health"]
+      interval: 10s
+      timeout: 5s
+      retries: 12
+      start_period: 30s
+    networks:
+      - review1
+
   content-migrate:
     build:
       context: ./content-notification-service
