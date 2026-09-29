@@ -22,9 +22,10 @@
 | Journal/AI | journal revisions, analysis jobs/results, AI evaluation | authoritative assessment scoring |
 | Realtime | conversations, messages, receipts, presence | consent source of truth |
 | Content/Notification | reviewed self-help resource definitions and versioned eligibility metadata, notification preferences/delivery | screening, safety, SupportEvaluation, or final SupportPlan decisions |
+| Community | Community display identity and future peer-support publication, interaction, moderation, report, block, and media metadata | Identity credentials or Care/Journal/AI mental-health data |
 | Governance/Reporting | audit events, moderation cases, de-identified projections | transactional sources of truth |
 
-The core deployable business services are fixed as Spring Boot `identity-service`, `care-service`, and `consultation-service`, plus NestJS/TypeScript `journal-ai-service`, `realtime-service`, and `content-notification-service` using the ADR 0006 stack. ADR 0011 defers Python `phobert-worker` as an optional future benchmark baseline; it is not a current runtime or release dependency. Governance/reporting is implemented as bounded admin APIs and Kafka projections inside the relevant owner until a future ADR justifies another deployable. The edge gateway/reverse proxy and Eureka registry are infrastructure and contain no business orchestration.
+The core deployable business services are fixed as Spring Boot `identity-service`, `care-service`, `consultation-service`, and `community-service`, plus NestJS/TypeScript `journal-ai-service`, `realtime-service`, and `content-notification-service` using the ADR 0006 stack. ADR 0027 adds Community without granting it access to Care or Journal/AI data. ADR 0011 defers Python `phobert-worker` as an optional future benchmark baseline; it is not a current runtime or release dependency. Governance/reporting is implemented as bounded admin APIs and Kafka projections inside the relevant owner until a future ADR justifies another deployable. The edge gateway/reverse proxy and Eureka registry are infrastructure and contain no business orchestration.
 
 ADR 0005 assigns the cohesive billing bounded context to `consultation-service` without adding another deployable. Its PostgreSQL database is authoritative for plan versions, paid subscriptions, MoMo payments/IPNs, upgrade offsets, consultation credits and ledger entries, specialist earnings, encrypted payout destinations, and MoMo payout reconciliation. Other services query narrow current entitlement or appointment-eligibility decisions and never maintain a shadow balance.
 
@@ -50,7 +51,7 @@ Mobile App / Admin Web
        v
  Edge reverse proxy
        |
-       +--> Identity / Care / Consultation+Billing (Spring Boot) --> PostgreSQL
+       +--> Identity / Care / Consultation+Billing / Community (Spring Boot) --> PostgreSQL
        +--> Journal-AI (Node.js) --> MongoDB
        +--> Realtime (Node.js) --> MongoDB + Redis --> WebSocket clients
        +--> Content-Notification (Node.js) --> PostgreSQL + Brevo/push providers
