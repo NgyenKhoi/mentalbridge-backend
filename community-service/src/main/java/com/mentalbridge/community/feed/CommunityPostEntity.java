@@ -56,8 +56,14 @@ class CommunityPostEntity {
 	@Column(name = "updated_at", nullable = false)
 	private Instant updatedAt;
 
+	@Column(name = "idempotency_key", length = 128)
+	private String idempotencyKey;
+
+	@Column(name = "request_fingerprint", length = 64)
+	private String requestFingerprint;
+
 	@Version
-	private long version;
+	private Long version;
 
 	@ElementCollection(fetch = FetchType.LAZY)
 	@CollectionTable(name = "community_post_topic", joinColumns = @JoinColumn(name = "post_id"))
@@ -72,6 +78,21 @@ class CommunityPostEntity {
 	private List<CommunityMediaEntity> media = new ArrayList<>();
 
 	protected CommunityPostEntity() {
+	}
+
+	CommunityPostEntity(UUID id, CommunityProfileEntity author, String content, Set<CommunityTopic> topics,
+			String idempotencyKey, String requestFingerprint, Instant now) {
+		this.id = id;
+		this.author = author;
+		this.content = content;
+		this.state = State.ACTIVE;
+		this.commentCount = 0;
+		this.reactionCount = 0;
+		this.publishedAt = now;
+		this.updatedAt = now;
+		this.idempotencyKey = idempotencyKey;
+		this.requestFingerprint = requestFingerprint;
+		this.topics.addAll(topics);
 	}
 
 	UUID id() {
@@ -108,5 +129,39 @@ class CommunityPostEntity {
 
 	List<CommunityMediaEntity> media() {
 		return List.copyOf(media);
+	}
+
+	State state() {
+		return state;
+	}
+
+	long version() {
+		return version;
+	}
+
+	String requestFingerprint() {
+		return requestFingerprint;
+	}
+
+	void update(String content, Set<CommunityTopic> topics, Instant now) {
+		this.content = content;
+		this.topics.clear();
+		this.topics.addAll(topics);
+		this.updatedAt = now;
+	}
+
+	void delete(Instant now) {
+		this.state = State.OWNER_DELETED;
+		this.updatedAt = now;
+	}
+
+	void addMedia(CommunityMediaEntity item) {
+		if (!media.contains(item)) {
+			media.add(item);
+		}
+	}
+
+	void removeMedia(CommunityMediaEntity item) {
+		media.remove(item);
 	}
 }

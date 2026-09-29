@@ -99,4 +99,24 @@ class CommunityMediaEntity {
 	String altText() {
 		return altText;
 	}
+
+	CommunityProfileEntity owner() {
+		return owner;
+	}
+
+	CommunityPostEntity post() {
+		return post;
+	}
+
+	void attachTo(CommunityPostEntity post, short position, Instant now) {
+		this.post = post;
+		this.position = position;
+		this.updatedAt = now;
+	}
+
+	void detach(Instant now) {
+		this.post = null;
+		this.position = 0;
+		this.updatedAt = now;
+	}
 }

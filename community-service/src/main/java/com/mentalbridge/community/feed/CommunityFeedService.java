@@ -53,9 +53,11 @@ public class CommunityFeedService {
 	}
 
 	@Transactional(readOnly = true)
-	public PostDetail detail(UUID accountSubject, UUID postId) {
+	public VersionedPost detail(UUID accountSubject, UUID postId) {
 		var viewerProfileId = profiles.findIdByAccountSubject(accountSubject).orElse(null);
-		return posts.findVisibleById(postId, viewerProfileId).map(this::detail)
+		return posts.findVisibleById(postId, viewerProfileId)
+				.map(post -> new VersionedPost(toDetail(post), post.author().accountSubject().equals(accountSubject)
+						? post.version() : null))
 				.orElseThrow(CommunityApiException::postNotFound);
 	}
 
@@ -70,7 +72,7 @@ public class CommunityFeedService {
 				mediaAvailability(post), counts(post), post.publishedAt(), post.updatedAt());
 	}
 
-	private PostDetail detail(CommunityPostEntity post) {
+	PostDetail toDetail(CommunityPostEntity post) {
 		return new PostDetail(post.id(), author(post.author()), post.content(), sortedTopics(post), media(post),
 				mediaAvailability(post), counts(post), post.publishedAt(), post.updatedAt());
 	}
@@ -140,5 +142,8 @@ public class CommunityFeedService {
 	}
 
 	private record Cursor(Instant publishedAt, UUID postId) {
+	}
+
+	public record VersionedPost(PostDetail body, Long ownerVersion) {
 	}
 }
