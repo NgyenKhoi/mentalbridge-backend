@@ -35,9 +35,10 @@ Discovery follows `MB-SPECIALIST-DISCOVERY-001`. It rechecks the current
 Consultation-owned profile and availability state on every request. Only
 `APPROVED` profiles may appear, and only active, unheld, future, exact
 60-minute `IN_APP_CHAT` or enabled `IN_APP_VIDEO` slots may be returned. An
-approved profile may remain browseable with an empty slot list. A suspension,
-withdrawal, started slot, active appointment hold, or disabled video capability
-must fail closed rather than be hidden behind stale cached eligibility.
+approved profile appears only while at least one such selectable slot remains.
+A suspension, withdrawal, started slot, active appointment hold, or disabled
+video capability must fail closed rather than be hidden behind stale cached
+eligibility.
 
 When an exact owned SupportEvaluation is supplied, Consultation may use only
 Care's versioned domain, instrument-specific screening level, and domain-local

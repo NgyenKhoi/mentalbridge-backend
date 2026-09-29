@@ -29,11 +29,13 @@ current Consultation profile state is `APPROVED`. `PENDING`, `REJECTED`, and
 same owner state used by MB-360; discovery does not authorize from a cache,
 eventual projection, browser claim, or copied approval flag.
 
-A discoverable profile may have no current slot. Every returned slot must be
-an active, unheld, future, exact 60-minute `IN_APP_CHAT` or enabled
-`IN_APP_VIDEO` slot at the request's server time. Withdrawn, started, held,
-overlapping-invalid, disabled-video, and otherwise stale slots are omitted.
-Each reload and detail request evaluates current profile and slot state again.
+A discoverable profile must have at least one current selectable slot. Every
+returned slot must be an active, unheld, future, exact 60-minute
+`IN_APP_CHAT` or enabled `IN_APP_VIDEO` slot at the request's server time.
+Withdrawn, started, held, overlapping-invalid, disabled-video, and otherwise
+stale slots are omitted. Each reload and detail request evaluates current
+profile and slot state again; detail returns `SPECIALIST_NOT_DISCOVERABLE`
+when no selectable slot remains.
 
 The discovery response carries the exact owner `slotId`, specialist identity,
 interval, IANA timezone, modality, and current version needed for the MB-378
@@ -73,8 +75,8 @@ Ranking is a lexicographic comparison under policy
 
 1. screened domain/pathway compatibility class;
 2. requested language match;
-3. current availability, with at least one selectable slot before none and
-   the earliest selectable `startAt` first;
+3. current availability, with the earliest selectable `startAt` first among
+   profiles that each have at least one selectable slot;
 4. timezone compatibility, using exact requested IANA-zone match before the
    absolute UTC-offset distance calculated at the response `generatedAt`;
 5. for a current `PREMIUM` entitlement only, an authoritative rating aggregate
@@ -113,8 +115,9 @@ slot.
 6. MB-378 and MB-558 remain authoritative for paid-plan, available-credit,
    reservation-capacity, lead-time, concurrency, and stale-slot outcomes.
 
-Loading, empty catalogue, approved profiles without slots, dependency
-degradation, video disabled, and slot-stale-on-selection are explicit states.
+Loading, empty catalogue, dependency degradation, video disabled, and
+slot-stale-on-selection are explicit states. Approved profiles without a
+selectable slot are part of the empty catalogue rather than visible cards.
 A stale selection triggers a reload and never silently chooses another time or
 modality.
 

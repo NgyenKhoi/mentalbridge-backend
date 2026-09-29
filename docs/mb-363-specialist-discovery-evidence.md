@@ -10,6 +10,9 @@ non-sensitive synthetic fixtures and is not evidence of a deployed environment.
 
 - Consultation owns current approved-profile discovery, deterministic ranking,
   profile detail, and exact selectable-slot projection.
+- A profile is discoverable only while it is `APPROVED` and has at least one
+  currently selectable slot; losing the final slot removes it from list and
+  makes detail return `SPECIALIST_NOT_DISCOVERABLE`.
 - `FREE`, `PLUS`, and `PREMIUM` may browse. Booking remains an MB-378 command
   governed by MB-558 entitlement, credit, and reservation-cap policy.
 - Ranking is lexicographic: minimized domain/pathway compatibility, language,
@@ -155,6 +158,35 @@ counted as evidence. The recorded passing command used the same production
 standalone build with three manually managed hidden fixture processes; those
 exact processes were stopped after the run and ports 3100, 3201, and 3202 were
 confirmed closed.
+
+## Zero-slot invariant correction on 2026-09-29
+
+The review found that `DiscoveryService.load()` used `left join lateral` for
+the selectable-slot projection. PostgreSQL therefore retained one profile row
+with null slot columns when an approved specialist had no qualifying slot.
+That contradicted the parent Story's approved-and-selectable catalogue
+invariant and made zero-slot profiles visible after restoration or an active
+appointment hold.
+
+The owner query now uses an inner lateral join, so the same current-state SQL
+requires both `APPROVED` profile state and at least one selectable slot. The
+detail endpoint uses this same query and therefore returns
+`SPECIALIST_NOT_DISCOVERABLE` when the last slot is withdrawn, held, outside
+the window, or disabled by the video gate. The OpenAPI item schema now requires
+at least one `selectableSlots` entry. Exact 60-minute duration and closed online
+modalities remain enforced by the MB-362 owner validation and PostgreSQL
+constraints rather than being redefined in discovery.
+
+| Command | Result |
+| --- | --- |
+| `$env:JAVA_TOOL_OPTIONS='-Duser.timezone=Asia/Ho_Chi_Minh'; mvn.cmd -q "-Dtest=DiscoveryFlowIntegrationTests,DiscoveryVideoEnabledIntegrationTests,ConsultationOpenApiContractTests" test` | Pass; 3 suites / 14 tests, 0 failures, errors, or skips |
+| `$env:JAVA_TOOL_OPTIONS='-Duser.timezone=Asia/Ho_Chi_Minh'; mvn.cmd -q test` | Pass; 14 suites / 66 tests, 0 failures, errors, or skips |
+| `git diff --check` | Pass; no whitespace errors |
+
+The first focused run failed before application startup because Docker Desktop
+was not running. Docker Desktop was started, `docker info` succeeded, and the
+same focused command then passed. This failed environment attempt is not
+counted as product evidence.
 
 ## Intentional deferrals
 

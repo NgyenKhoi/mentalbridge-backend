@@ -50,9 +50,18 @@ class DiscoveryFlowIntegrationTests extends ConsultationTestProperties {
 		slot(approved, Instant.now().plusSeconds(3_600), "IN_APP_CHAT", "ACTIVE");
 		slot(approved, Instant.now().plusSeconds(90_000), "IN_APP_CHAT", "WITHDRAWN");
 		slot(approved, Instant.now().plusSeconds(93_600), "IN_APP_VIDEO", "ACTIVE");
-		profile("PENDING", "Pending specialist", "Asia/Ho_Chi_Minh", SupportArea.ANXIETY_SYMPTOMS, "vi");
-		profile("REJECTED", "Rejected specialist", "Asia/Ho_Chi_Minh", SupportArea.ANXIETY_SYMPTOMS, "vi");
-		profile("SUSPENDED", "Suspended specialist", "Asia/Ho_Chi_Minh", SupportArea.ANXIETY_SYMPTOMS, "vi");
+		var pending = profile("PENDING", "Pending specialist", "Asia/Ho_Chi_Minh",
+				SupportArea.ANXIETY_SYMPTOMS, "vi");
+		var rejected = profile("REJECTED", "Rejected specialist", "Asia/Ho_Chi_Minh",
+				SupportArea.ANXIETY_SYMPTOMS, "vi");
+		var suspended = profile("SUSPENDED", "Suspended specialist", "Asia/Ho_Chi_Minh",
+				SupportArea.ANXIETY_SYMPTOMS, "vi");
+		slot(pending, Instant.now().plusSeconds(100_800), "IN_APP_CHAT", "ACTIVE");
+		slot(rejected, Instant.now().plusSeconds(104_400), "IN_APP_CHAT", "ACTIVE");
+		slot(suspended, Instant.now().plusSeconds(108_000), "IN_APP_CHAT", "ACTIVE");
+		var videoOnly = profile("APPROVED", "Video-only specialist", "Asia/Ho_Chi_Minh",
+				SupportArea.ANXIETY_SYMPTOMS, "vi");
+		slot(videoOnly, Instant.now().plusSeconds(97_200), "IN_APP_VIDEO", "ACTIVE");
 
 		var response = discover(UUID.randomUUID());
 
@@ -86,8 +95,9 @@ class DiscoveryFlowIntegrationTests extends ConsultationTestProperties {
 				.with(admin(admin)).header("If-Match", suspended.getResponse().getHeader("ETag")))
 				.andExpect(status().isOk()).andReturn();
 		assertThat(restored.getResponse().getHeader("ETag")).isNotBlank();
-		discover(UUID.randomUUID()).andExpect(status().isOk()).andExpect(jsonPath("$.count").value(1))
-				.andExpect(jsonPath("$.items[0].selectableSlots").isEmpty());
+		discover(UUID.randomUUID()).andExpect(status().isOk()).andExpect(jsonPath("$.count").value(0));
+		mvc.perform(get("/api/v1/specialists/{id}", specialist).with(user(UUID.randomUUID())))
+				.andExpect(status().isNotFound()).andExpect(jsonPath("$.code").value("SPECIALIST_NOT_DISCOVERABLE"));
 		assertThat(jdbc.sql("select status from availability_slot where id=:id").param("id", originalSlot)
 				.query(String.class).single()).isEqualTo("WITHDRAWN");
 
@@ -98,8 +108,9 @@ class DiscoveryFlowIntegrationTests extends ConsultationTestProperties {
 
 	@Test
 	void freeCanBrowseWhilePaidPlansReceiveOnlyTheBookingPolicyHandoff() throws Exception {
-		profile("APPROVED", "Entitlement specialist", "Asia/Ho_Chi_Minh",
+		var specialist = profile("APPROVED", "Entitlement specialist", "Asia/Ho_Chi_Minh",
 				SupportArea.ANXIETY_SYMPTOMS, "vi");
+		slot(specialist, Instant.now().plusSeconds(86_400), "IN_APP_CHAT", "ACTIVE");
 
 		discover(UUID.randomUUID()).andExpect(status().isOk())
 				.andExpect(jsonPath("$.packageCode").value("FREE"))
@@ -123,6 +134,7 @@ class DiscoveryFlowIntegrationTests extends ConsultationTestProperties {
 		var compatible = profile("APPROVED", "Primary match", "UTC", SupportArea.ANXIETY_SYMPTOMS, "en");
 		var secondary = profile("APPROVED", "Secondary match", "Asia/Ho_Chi_Minh",
 				SupportArea.DEPRESSIVE_SYMPTOMS, "vi");
+		slot(compatible, Instant.now().plusSeconds(172_800), "IN_APP_CHAT", "ACTIVE");
 		slot(secondary, Instant.now().plusSeconds(86_400), "IN_APP_CHAT", "ACTIVE");
 
 		mvc.perform(get("/api/v1/specialists").with(user(UUID.randomUUID()))
@@ -139,6 +151,9 @@ class DiscoveryFlowIntegrationTests extends ConsultationTestProperties {
 				.param("first", compatible).param("second", secondary).update();
 		var firstTie = profile("APPROVED", "Tie A", "UTC", SupportArea.ANXIETY_SYMPTOMS, "en");
 		var secondTie = profile("APPROVED", "Tie B", "UTC", SupportArea.ANXIETY_SYMPTOMS, "en");
+		var tieStart = Instant.now().plusSeconds(86_400);
+		slot(firstTie, tieStart, "IN_APP_CHAT", "ACTIVE");
+		slot(secondTie, tieStart, "IN_APP_CHAT", "ACTIVE");
 		var expectedFirst = firstTie.compareTo(secondTie) < 0 ? firstTie : secondTie;
 		var expectedSecond = firstTie.equals(expectedFirst) ? secondTie : firstTie;
 
@@ -157,6 +172,9 @@ class DiscoveryFlowIntegrationTests extends ConsultationTestProperties {
 		var specialist = profile("APPROVED", "Stale slot specialist", "Asia/Ho_Chi_Minh",
 				SupportArea.ANXIETY_SYMPTOMS, "vi");
 		var heldSlot = slot(specialist, Instant.now().plusSeconds(86_400), "IN_APP_CHAT", "ACTIVE");
+		var available = profile("APPROVED", "Available specialist", "Asia/Ho_Chi_Minh",
+				SupportArea.ANXIETY_SYMPTOMS, "vi");
+		slot(available, Instant.now().plusSeconds(172_800), "IN_APP_CHAT", "ACTIVE");
 		var paid = paidUser("PLUS");
 		mvc.perform(post("/api/v1/appointments").with(user(paid))
 				.header("Idempotency-Key", "discovery-held-slot-request")
@@ -169,8 +187,11 @@ class DiscoveryFlowIntegrationTests extends ConsultationTestProperties {
 		mvc.perform(get("/api/v1/specialists").with(user(UUID.randomUUID()))
 				.param("supportEvaluationId", evaluation.toString()))
 				.andExpect(status().isOk()).andExpect(jsonPath("$.contextState").value("UNAVAILABLE"))
-				.andExpect(jsonPath("$.items[0].selectableSlots").isEmpty())
+				.andExpect(jsonPath("$.count").value(1))
+				.andExpect(jsonPath("$.items[0].specialistAccountId").value(available.toString()))
 				.andExpect(jsonPath("$.items[0].explanation.compatibility").value("UNAVAILABLE"));
+		mvc.perform(get("/api/v1/specialists/{id}", specialist).with(user(UUID.randomUUID())))
+				.andExpect(status().isNotFound()).andExpect(jsonPath("$.code").value("SPECIALIST_NOT_DISCOVERABLE"));
 		mvc.perform(get("/api/v1/specialists").with(user(UUID.randomUUID())).param("cursor", "not-a-cursor"))
 				.andExpect(status().isConflict()).andExpect(jsonPath("$.code").value("DISCOVERY_CURSOR_STALE"));
 	}

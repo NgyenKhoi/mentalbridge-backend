@@ -137,7 +137,7 @@ public class DiscoveryService {
 				 slot.id slot_id, slot.start_at, slot.end_at, slot.timezone slot_timezone,
 				 slot.modality, slot.version slot_version
 				from specialist_profile p
-				left join lateral (
+				join lateral (
 				 select s.id, s.start_at, s.end_at, s.timezone, s.modality, s.version
 				 from availability_slot s
 				 where s.specialist_account_id=p.account_id and s.status='ACTIVE'

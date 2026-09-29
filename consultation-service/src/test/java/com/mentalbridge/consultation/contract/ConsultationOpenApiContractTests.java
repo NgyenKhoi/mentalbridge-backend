@@ -128,6 +128,7 @@ class ConsultationOpenApiContractTests {
 		assertThat(item.getProperties()).doesNotContainKeys("approvalStatus", "practiceLocation", "address", "phone",
 				"price", "credentials", "license", "certificates", "specialties", "journal", "assessmentAnswers",
 				"chatContent", "meetingLink");
+		assertThat(((Schema<?>) item.getProperties().get("selectableSlots")).getMinItems()).isEqualTo(1);
 		assertThat(slot.getProperties()).containsOnlyKeys("id", "specialistAccountId", "startAt", "endAt",
 				"timezone", "modality", "version");
 		assertThat(explanation.getProperties()).containsKeys("compatibility", "languageMatched", "hasSelectableSlot",
