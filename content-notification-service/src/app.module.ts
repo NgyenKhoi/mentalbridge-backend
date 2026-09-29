@@ -7,6 +7,8 @@ import {
   DATABASE_SERVICE_TOKEN,
   RESOURCE_REPOSITORY_TOKEN,
   RESOURCE_SERVICE_TOKEN,
+  RESOURCE_PROGRESS_REPOSITORY_TOKEN,
+  RESOURCE_PROGRESS_SERVICE_TOKEN,
   E2E_OUTAGE_STATE_TOKEN,
   RESOURCE_ELIGIBILITY_REPOSITORY_TOKEN,
   RESOURCE_ELIGIBILITY_SERVICE_TOKEN,
@@ -27,6 +29,9 @@ import { HealthController } from './health/health.controller.js';
 import { ResourceController } from './resources/resource.controller.js';
 import { ResourceRepository } from './resources/resource.repository.js';
 import { ResourceService } from './resources/resource.service.js';
+import { ResourceProgressController } from './resources/resource-progress.controller.js';
+import { ResourceProgressRepository } from './resources/resource-progress.repository.js';
+import { ResourceProgressService } from './resources/resource-progress.service.js';
 import { E2eOutageController } from './e2e/e2e-outage.controller.js';
 import { AuthModule } from './auth/auth.module.js';
 import { JwtStrategy } from './auth/jwt.strategy.js';
@@ -59,6 +64,7 @@ import {
 export interface ApplicationDependencies {
   readonly readinessProbe?: ReadinessProbe;
   readonly resourceRepository?: ResourceRepository;
+  readonly resourceProgressRepository?: ResourceProgressRepository;
   readonly outageState?: { enabled: boolean };
   readonly resourceEligibilityRepository?: ResourceEligibilityRepository;
   readonly safetyDirectoryRepository?: SafetyDirectoryRepository;
@@ -92,6 +98,12 @@ export const createAppModule = (
     provide: RESOURCE_SERVICE_TOKEN,
     useClass: ResourceService,
   };
+  const resourceProgressRepositoryProvider: Provider = dependencies.resourceProgressRepository
+    ? {
+        provide: RESOURCE_PROGRESS_REPOSITORY_TOKEN,
+        useValue: dependencies.resourceProgressRepository,
+      }
+    : { provide: RESOURCE_PROGRESS_REPOSITORY_TOKEN, useClass: ResourceProgressRepository };
   const eligibilityRepositoryProvider: Provider = dependencies.resourceEligibilityRepository
     ? {
         provide: RESOURCE_ELIGIBILITY_REPOSITORY_TOKEN,
@@ -127,6 +139,7 @@ export const createAppModule = (
     controllers: [
       HealthController,
       ResourceController,
+      ResourceProgressController,
       ResourceEligibilityController,
       E2eOutageController,
       SafetyDirectoryController,
@@ -145,6 +158,8 @@ export const createAppModule = (
       dbServiceProvider,
       repositoryProvider,
       serviceProvider,
+      resourceProgressRepositoryProvider,
+      { provide: RESOURCE_PROGRESS_SERVICE_TOKEN, useClass: ResourceProgressService },
       eligibilityRepositoryProvider,
       { provide: RESOURCE_ELIGIBILITY_SERVICE_TOKEN, useClass: ResourceEligibilityService },
       safetyDirectoryRepositoryProvider,

@@ -910,7 +910,7 @@ CREATE TABLE consultation.appointment_status_history (
 
 /* ========================================================================== */
 /* ACTIVE — community-service / mentalbridge_community                        */
-/* Evidence: community-service Liquibase changes 0001-0002.                  */
+/* Evidence: community-service Liquibase changes 0001-0003.                  */
 /* ========================================================================== */
 
 CREATE TABLE community.community_profile (
@@ -930,6 +930,8 @@ CREATE TABLE community.community_post (
     state varchar(24) NOT NULL,
     comment_count integer NOT NULL,
     reaction_count integer NOT NULL,
+    idempotency_key varchar(128),
+    request_fingerprint char(64),
     published_at timestamptz NOT NULL,
     updated_at timestamptz NOT NULL,
     version bigint NOT NULL
@@ -992,6 +994,20 @@ CREATE TABLE content.resource (
     created_at timestamptz NOT NULL,
     updated_at timestamptz NOT NULL,
     version bigint NOT NULL
+);
+
+CREATE TABLE content.resource_daily_progress (
+    owner_id uuid NOT NULL, -- external -> identity.account.id
+    resource_id uuid NOT NULL REFERENCES content.resource(id),
+    local_date date NOT NULL,
+    resource_version bigint NOT NULL,
+    status varchar(16) NOT NULL,
+    completed_action_ids text[] NOT NULL,
+    completed_at timestamptz,
+    created_at timestamptz NOT NULL,
+    updated_at timestamptz NOT NULL,
+    version bigint NOT NULL,
+    PRIMARY KEY (owner_id, resource_id, local_date)
 );
 
 CREATE TABLE content.notification_preference (

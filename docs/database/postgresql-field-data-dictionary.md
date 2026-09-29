@@ -32,6 +32,8 @@ Authoritative Community-owned personal-story publication. It is not Care, Journa
 | `state` | Publication lifecycle `ACTIVE`, `OWNER_DELETED`, `MODERATION_HIDDEN`, or `MODERATION_REMOVED`; only `ACTIVE` is returned to ordinary users. |
 | `comment_count` | Non-negative Community-owned display count, updated transactionally by the future comment slice. |
 | `reaction_count` | Non-negative Community-owned display count, updated transactionally by the future supportive-reaction slice. |
+| `idempotency_key` | Owner-scoped create-command key. It is nullable only for posts that predate MB-575 and unique together with `author_profile_id`, so separate owners may reuse the same client-generated value safely. |
+| `request_fingerprint` | SHA-256 digest of normalized create input used to distinguish a safe retry from conflicting reuse; it is not Community content and is present exactly when `idempotency_key` is present. |
 | `published_at` | Immutable UTC publication instant used as the primary newest-first cursor key. |
 | `updated_at` | UTC instant of the latest persisted owner or moderation change. |
 | `version` | Optimistic-lock counter reserved for owner edits/deletion and moderation changes. |
@@ -1496,6 +1498,25 @@ The fixed UUID `00000000-0000-4000-8000-000000000101` identifies a visibly label
 | `created_at` | Immutable UTC content creation instant. |
 | `updated_at` | UTC instant of the latest content or publication change. |
 | `version` | Optimistic-lock counter preventing lost concurrent content edits. |
+
+### `content.resource_daily_progress`
+
+Owner-scoped, non-clinical participation state for one reviewed resource on one local calendar day. It supports consistent checklist/progress presentation and never changes SupportPlan occurrence history, screening results, or clinical decisions.
+
+| Field                  | Purpose                                                                                                                                                                                                |
+| ---------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ |
+| `owner_id`             | External Identity account UUID from the verified JWT; it scopes every read and write and is not copied from request content.                                                                           |
+| `resource_id`          | Content-owned resource UUID whose reviewed activity the owner followed. The local foreign key prevents progress for an unknown resource.                                                               |
+| `local_date`           | User-selected calendar date in `YYYY-MM-DD` form used to group the gentle daily experience; it is not an adherence deadline.                                                                           |
+| `resource_version`     | Exact resource version visible when the progress was last saved, retained so later catalogue edits cannot be presented as the content originally followed.                                             |
+| `status`               | Lightweight participation state: `IN_PROGRESS` or terminal `COMPLETED`; once confirmed for the resource and local date, later checklist edits cannot downgrade it. Absence of a row means not started. |
+| `completed_action_ids` | Bounded identifiers of the user's current interactive-step selections for that resource version; they remain editable after completion and contain no journal, reflection, or other free text.         |
+| `completed_at`         | UTC instant when the item first reached `COMPLETED`; null while in progress and preserved permanently after confirmation, including across later checklist edits.                                      |
+| `created_at`           | Immutable UTC insertion instant for the daily progress row.                                                                                                                                            |
+| `updated_at`           | UTC instant of the latest changed progress state or action set.                                                                                                                                        |
+| `version`              | Monotonic mutation counter for diagnosing multi-surface synchronization; identical replacement writes are no-ops.                                                                                      |
+
+The `(owner_id, local_date DESC, updated_at DESC)` index supports bounded weekly history and recent-completion views. Daily completion is encouragement only; missed days do not create rows, penalties, or clinical meaning.
 
 ### `content.notification_preference`
 

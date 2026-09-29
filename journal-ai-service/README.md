@@ -24,7 +24,8 @@ The service provides:
 - optimistic concurrency through `If-Match` and deterministic cursor pagination
 - consented idempotent longitudinal comparison across two bounded journal periods
 - minimized exact-source longitudinal evidence for future Care reassessment composition
-- encrypted AI Companion conversations with server-side plan quotas and deletion
+- encrypted AI Companion conversations with persisted owner-controlled context,
+  server-side plan quotas, and deletion
 - lint, type-check, test, and build scripts
 - production multi-stage Docker image
 
@@ -83,6 +84,8 @@ npm start
 | `IDENTITY_JWT_PUBLIC_KEY`                        | Yes                      | None                                             | X.509 RSA public key matching the Identity signing key; the private key is never shared |
 | `JOURNAL_AI_CARE_BASE_URL`                       | Production               | `http://localhost:8081` outside production       | Care base URL for current AI-processing consent checks                                  |
 | `JOURNAL_AI_CARE_TIMEOUT_MS`                     | No                       | `2000`                                           | Bounded Care consent REST timeout from 100 through 5000 milliseconds                    |
+| `JOURNAL_AI_CONTENT_BASE_URL`                    | Production               | `http://localhost:3003` outside production       | Content base URL for validating and assembling selected resource context                |
+| `JOURNAL_AI_CONTENT_TIMEOUT_MS`                  | No                       | `2000`                                           | Bounded Content resource/progress REST timeout from 100 through 5000 milliseconds       |
 | `JOURNAL_AI_CONSULTATION_BASE_URL`               | Production               | `http://localhost:8082` outside production       | Consultation base URL for authoritative current entitlement lookup                      |
 | `JOURNAL_AI_CONSULTATION_TIMEOUT_MS`             | No                       | `2000`                                           | Bounded Consultation entitlement REST timeout                                           |
 | `JOURNAL_AI_REMINDER_SERVICE_TOKEN`              | Reminder scheduler       | None                                             | Dedicated 32+ character credential for Content's minimized activity projection          |
@@ -148,6 +151,7 @@ encrypted demo data exists. Do not commit local `.env` files or secrets.
 | `POST`   | `/api/v1/ai-companion/conversations`                              | Start an encrypted owner-scoped conversation                                       |
 | `GET`    | `/api/v1/ai-companion/conversations`                              | List bounded retained conversation summaries without message bodies                |
 | `GET`    | `/api/v1/ai-companion/conversations/{conversationId}`             | Resume one owned conversation                                                      |
+| `PUT`    | `/api/v1/ai-companion/conversations/{conversationId}/context`     | Replace the owned conversation's persisted context-source selection                |
 | `POST`   | `/api/v1/ai-companion/conversations/{conversationId}/messages`    | Deliver one quota-governed normalized assistant response                           |
 | `POST`   | `/internal/v1/support-guide-phrasing`                             | Rephrase exact Care-approved guide copy after current AI consent                   |
 | `DELETE` | `/api/v1/ai-companion/conversations/{conversationId}`             | Hard-delete the conversation and replay snapshots                                  |
@@ -168,13 +172,19 @@ Incoming requests echo a valid bounded `x-correlation-id` or receive a generated
 - Longitudinal analysis job/result validators and indexes: `migrations/009_longitudinal_context_analysis.cjs`
 - AI Companion conversation, command, quota, rate, and TTL indexes: `migrations/010_ai_companion_chat_quotas.cjs`
 - Bedrock provider provenance and three-candidate benchmark validation: `migrations/011_bedrock_provider.cjs`
+- Persisted AI Companion source selection and RESOURCE provenance: `migrations/012_ai_companion_conversation_context.cjs`
 
 AI Companion chat follows ADR 0021. List responses contain metadata-only
 summaries; full bounded message history is returned only by the owner-scoped
 detail endpoint. Real-provider replies use strict structured output and a
 fail-closed authority validator before persistence. It counts only successfully
 persisted assistant responses, derives the reset from a server-configured IANA timezone,
-and keeps Premium UI copy free of an infrastructure-unlimited claim. MongoDB
+and keeps Premium UI copy free of an infrastructure-unlimited claim. Context
+selection is stored on the owner-scoped conversation; message payload context
+from older clients is accepted only for compatibility and is ignored. The
+server assembles only the enabled plan, recent journal, screening, and validated
+resource sources, while persisting provenance labels rather than assembled
+plaintext. MongoDB
 must provide replica-set transaction semantics. Local/test/CI use the
 deterministic fake; a real route additionally requires the existing approved
 provider/model configuration and the corresponding external credential.
