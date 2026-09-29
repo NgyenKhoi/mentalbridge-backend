@@ -163,6 +163,53 @@ class CommunityPostLifecycleIntegrationTests extends CommunityTestProperties {
 	}
 
 	@Test
+	void editPreservesSamePostNonReadyMediaThatTheReadProjectionOmits() throws Exception {
+		var ownerProfile = UUID.randomUUID();
+		profile(ownerProfile, OWNER_SUBJECT);
+		var ready = UUID.randomUUID();
+		var processing = UUID.randomUUID();
+		media(ready, ownerProfile, "READY", "https://media.example.test/ready.webp");
+		media(processing, ownerProfile, "PROCESSING", null);
+
+		var created = mvc.perform(post("/api/v1/community/posts")
+				.header("Idempotency-Key", "post-partial-media-0001")
+				.contentType(MediaType.APPLICATION_JSON)
+				.content(request("Bài có media đang xử lý", List.of("MY_STORY"), List.of(ready)))
+				.with(user(OWNER_SUBJECT)))
+				.andExpect(status().isCreated())
+				.andExpect(jsonPath("$.mediaAvailability").value("READY"))
+				.andReturn().getResponse().getContentAsString();
+		var postId = UUID.fromString(objectMapper.readTree(created).path("postId").asText());
+		attachMedia(processing, postId, 1);
+
+		mvc.perform(get("/api/v1/community/posts/{postId}", postId).with(user(OWNER_SUBJECT)))
+				.andExpect(status().isOk())
+				.andExpect(jsonPath("$.media.length()").value(1))
+				.andExpect(jsonPath("$.media[0].mediaId").value(ready.toString()))
+				.andExpect(jsonPath("$.mediaAvailability").value("PARTIAL"));
+
+		mvc.perform(patch("/api/v1/community/posts/{postId}", postId).header("If-Match", "\"0\"")
+				.contentType(MediaType.APPLICATION_JSON)
+				.content(request("Nội dung và chủ đề đã sửa", List.of("SMALL_MILESTONE"), List.of(ready)))
+				.with(user(OWNER_SUBJECT)))
+				.andExpect(status().isOk())
+				.andExpect(header().string("ETag", "\"1\""))
+				.andExpect(jsonPath("$.content").value("Nội dung và chủ đề đã sửa"))
+				.andExpect(jsonPath("$.topics[0]").value("SMALL_MILESTONE"))
+				.andExpect(jsonPath("$.media.length()").value(1))
+				.andExpect(jsonPath("$.media[0].mediaId").value(ready.toString()))
+				.andExpect(jsonPath("$.mediaAvailability").value("PARTIAL"));
+
+		assertThat(attachedPostId(processing)).contains(postId);
+
+		mvc.perform(delete("/api/v1/community/posts/{postId}", postId).header("If-Match", "\"1\"")
+				.with(user(OWNER_SUBJECT)))
+				.andExpect(status().isNoContent());
+		assertThat(attachedPostId(ready)).isEmpty();
+		assertThat(attachedPostId(processing)).isEmpty();
+	}
+
+	@Test
 	void validationIsBoundedAndDoesNotCountEmojiAsTwoCharacters() throws Exception {
 		mvc.perform(post("/api/v1/community/posts").header("Idempotency-Key", "post-too-long-0001")
 				.contentType(MediaType.APPLICATION_JSON)
@@ -211,6 +258,16 @@ class CommunityPostLifecycleIntegrationTests extends CommunityTestProperties {
 				values (:id, :ownerId, null, 'IMAGE', :state, :url, 0, :now, :now, 0)
 				""").param("id", id).param("ownerId", ownerId).param("state", state).param("now", dbTime(NOW));
 		statement.param("url", url, Types.VARCHAR).update();
+	}
+
+	private void attachMedia(UUID mediaId, UUID postId, int position) {
+		jdbc.sql("update community_media set post_id = :postId, position = :position where id = :mediaId")
+				.param("postId", postId).param("position", position).param("mediaId", mediaId).update();
+	}
+
+	private java.util.Optional<UUID> attachedPostId(UUID mediaId) {
+		return jdbc.sql("select post_id from community_media where id = :mediaId")
+				.param("mediaId", mediaId).query(UUID.class).optional();
 	}
 
 	private OffsetDateTime dbTime(Instant instant) {

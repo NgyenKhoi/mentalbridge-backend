@@ -112,13 +112,17 @@ public class CommunityPostService {
 		}
 		var byId = requested.stream().collect(java.util.stream.Collectors.toMap(CommunityMediaEntity::id, item -> item));
 		for (var item : requested) {
-			if (!item.owner().id().equals(owner.id()) || item.state() != CommunityMediaEntity.State.READY
-					|| (item.post() != null && !item.post().id().equals(post.id()))) {
+			var alreadyAttachedToPost = item.post() != null && item.post().id().equals(post.id());
+			if (!item.owner().id().equals(owner.id())
+					|| (!alreadyAttachedToPost && (item.state() != CommunityMediaEntity.State.READY || item.post() != null))) {
 				throw CommunityApiException.mediaNotAttachable();
 			}
 		}
 		for (var existing : new ArrayList<>(post.media())) {
-			if (!byId.containsKey(existing.id())) {
+			// Non-READY attachments are deliberately absent from the read projection. Their
+			// omission from mediaIds therefore cannot mean that the owner asked to detach
+			// them. Only an omitted READY attachment is an explicit removal.
+			if (!byId.containsKey(existing.id()) && existing.state() == CommunityMediaEntity.State.READY) {
 				existing.detach(now);
 				post.removeMedia(existing);
 			}
