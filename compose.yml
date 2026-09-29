@@ -7,6 +7,8 @@ x-demo-profiles: &demo-profiles
 x-java-service-environment: &java-service-environment
   SPRINGDOTENV_ENABLED: "false"
   EUREKA_CLIENT_ENABLED: "false"
+  SPRING_DATASOURCE_HIKARI_MAXIMUM_POOL_SIZE: ${JAVA_DB_POOL_MAX:-3}
+  SPRING_DATASOURCE_HIKARI_MINIMUM_IDLE: ${JAVA_DB_POOL_MIN_IDLE:-1}
   IDENTITY_JWT_ISSUER: ${IDENTITY_JWT_ISSUER:?Set IDENTITY_JWT_ISSUER in .env}
   IDENTITY_JWT_AUDIENCE: ${IDENTITY_JWT_AUDIENCE:?Set IDENTITY_JWT_AUDIENCE in .env}
   IDENTITY_JWT_PUBLIC_KEY: ${IDENTITY_JWT_PUBLIC_KEY:?Generate local Identity keys and set IDENTITY_JWT_PUBLIC_KEY in .env}
@@ -272,7 +274,7 @@ services:
       NODE_ENV: production
       PORT: 3003
       DATABASE_URL: ${CONTENT_DATABASE_URL:?Set the shared dev/staging Content database URL in .env}
-      DB_POOL_MAX: ${CONTENT_DB_POOL_MAX:-10}
+      DB_POOL_MAX: ${CONTENT_DB_POOL_MAX:-3}
       DB_IDLE_TIMEOUT_MS: ${CONTENT_DB_IDLE_TIMEOUT_MS:-30000}
       DB_CONNECT_TIMEOUT_MS: ${CONTENT_DB_CONNECT_TIMEOUT_MS:-2000}
       LOG_LEVEL: ${CONTENT_LOG_LEVEL:-info}
@@ -312,6 +314,10 @@ services:
     env_file:
       - path: ./journal-ai-service/.env
         required: false
+    environment:
+      NODE_ENV: production
+      JOURNAL_AI_MONGODB_URI: ${REALTIME_MONGODB_URI:?Set the shared dev/staging MongoDB URI in .env}
+      JOURNAL_AI_MONGODB_DATABASE: ${JOURNAL_AI_MONGODB_DATABASE:-mentalbridge_journal_ai}
     networks:
       - review1
 
@@ -326,13 +332,20 @@ services:
         required: false
     environment:
       JOURNAL_AI_PORT: 3000
+      JOURNAL_AI_MONGODB_URI: ${REALTIME_MONGODB_URI:?Set the shared dev/staging MongoDB URI in .env}
+      JOURNAL_AI_MONGODB_DATABASE: ${JOURNAL_AI_MONGODB_DATABASE:-mentalbridge_journal_ai}
+      JOURNAL_AI_ENCRYPTION_KEY: ${REALTIME_MESSAGE_ENCRYPTION_KEY:?Set the shared dev/staging encryption key in .env}
+      JOURNAL_AI_IDEMPOTENCY_HMAC_KEY: ${JOURNAL_AI_IDEMPOTENCY_HMAC_KEY:?Set JOURNAL_AI_IDEMPOTENCY_HMAC_KEY in .env}
       IDENTITY_JWT_ISSUER: ${IDENTITY_JWT_ISSUER:?Set IDENTITY_JWT_ISSUER in .env}
       IDENTITY_JWT_AUDIENCE: ${IDENTITY_JWT_AUDIENCE:?Set IDENTITY_JWT_AUDIENCE in .env}
       IDENTITY_JWT_KEY_ID: ${IDENTITY_JWT_KEY_ID:-review1-demo-key}
       IDENTITY_JWT_PUBLIC_KEY: ${IDENTITY_JWT_PUBLIC_KEY:?Generate local Identity keys and set IDENTITY_JWT_PUBLIC_KEY in .env}
       JOURNAL_AI_CARE_BASE_URL: http://care:8081
+      JOURNAL_AI_CONTENT_BASE_URL: http://content-notification:3003
       JOURNAL_AI_CONSULTATION_BASE_URL: http://consultation:8082
       JOURNAL_AI_REMINDER_SERVICE_TOKEN: ${JOURNAL_AI_REMINDER_SERVICE_TOKEN:?Set a shared reminder service token of at least 32 characters in .env}
+      JOURNAL_AI_ANALYSIS_ENABLED: ${JOURNAL_AI_ANALYSIS_ENABLED:-true}
+      JOURNAL_AI_PROVIDER_MODE: ${JOURNAL_AI_PROVIDER_MODE:-APPROVED_REAL}
     ports:
       - "${SERVICE_BIND_ADDRESS:-127.0.0.1}:${JOURNAL_AI_PORT:-3005}:3000"
     depends_on:
