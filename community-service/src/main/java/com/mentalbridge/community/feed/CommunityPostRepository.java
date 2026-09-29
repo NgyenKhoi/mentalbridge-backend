@@ -7,8 +7,11 @@ import java.util.UUID;
 
 import org.springframework.data.domain.Pageable;
 import org.springframework.data.jpa.repository.JpaRepository;
+import org.springframework.data.jpa.repository.Lock;
 import org.springframework.data.jpa.repository.Query;
 import org.springframework.data.repository.query.Param;
+
+import jakarta.persistence.LockModeType;
 
 interface CommunityPostRepository extends JpaRepository<CommunityPostEntity, UUID> {
 
@@ -49,4 +52,20 @@ interface CommunityPostRepository extends JpaRepository<CommunityPostEntity, UUI
 			""", nativeQuery = true)
 	Optional<CommunityPostEntity> findVisibleById(@Param("postId") UUID postId,
 			@Param("viewerProfileId") UUID viewerProfileId);
+
+	@Lock(LockModeType.PESSIMISTIC_WRITE)
+	@Query("""
+			select post from CommunityPostEntity post
+			where post.author.id = :ownerId and post.idempotencyKey = :idempotencyKey
+			""")
+	Optional<CommunityPostEntity> findByOwnerAndIdempotencyKeyForUpdate(@Param("ownerId") UUID ownerId,
+			@Param("idempotencyKey") String idempotencyKey);
+
+	@Lock(LockModeType.PESSIMISTIC_WRITE)
+	@Query("""
+			select post from CommunityPostEntity post
+			where post.id = :postId and post.author.accountSubject = :subject and post.state = :state
+			""")
+	Optional<CommunityPostEntity> findOwnedActiveByIdForUpdate(@Param("postId") UUID postId,
+			@Param("subject") UUID subject, @Param("state") CommunityPostEntity.State state);
 }

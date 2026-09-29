@@ -32,7 +32,7 @@ paths:
         "403": { $ref: "#/components/responses/Problem" }
   /api/v1/community/posts:
     post:
-      x-mentalbridge-status: planned
+      x-mentalbridge-status: implemented
       operationId: createCommunityPost
       security: [{ BearerAuth: [] }]
       parameters:
@@ -45,6 +45,8 @@ paths:
       responses:
         "201":
           description: Created personal-story post.
+          headers:
+            ETag: { $ref: "#/components/headers/OwnerVersion" }
           content:
             application/json:
               schema: { $ref: "#/components/schemas/CommunityPostDetail" }
@@ -62,6 +64,11 @@ paths:
       responses:
         "200":
           description: Active post visible to the authenticated USER.
+          headers:
+            ETag:
+              description: Quoted owner-only optimistic-concurrency version. Omitted for non-owners.
+              required: false
+              schema: { type: string, pattern: '^"(0|[1-9]\d*)"$' }
           content:
             application/json:
               schema: { $ref: "#/components/schemas/CommunityPostDetail" }
@@ -69,7 +76,7 @@ paths:
         "403": { $ref: "#/components/responses/Problem" }
         "404": { $ref: "#/components/responses/Problem" }
     patch:
-      x-mentalbridge-status: planned
+      x-mentalbridge-status: implemented
       operationId: updateCommunityPost
       security: [{ BearerAuth: [] }]
       parameters:
@@ -82,6 +89,8 @@ paths:
       responses:
         "200":
           description: Updated owner post.
+          headers:
+            ETag: { $ref: "#/components/headers/OwnerVersion" }
           content:
             application/json:
               schema: { $ref: "#/components/schemas/CommunityPostDetail" }
@@ -91,7 +100,7 @@ paths:
         "404": { $ref: "#/components/responses/Problem" }
         "412": { $ref: "#/components/responses/Problem" }
     delete:
-      x-mentalbridge-status: planned
+      x-mentalbridge-status: implemented
       operationId: deleteCommunityPost
       security: [{ BearerAuth: [] }]
       parameters:
@@ -483,6 +492,11 @@ components:
       content:
         application/problem+json:
           schema: { $ref: "#/components/schemas/Problem" }
+  headers:
+    OwnerVersion:
+      description: Quoted optimistic-concurrency version for the owner resource.
+      required: true
+      schema: { type: string, pattern: '^"(0|[1-9]\d*)"$' }
   schemas:
     CommunityTopicCode:
       type: string

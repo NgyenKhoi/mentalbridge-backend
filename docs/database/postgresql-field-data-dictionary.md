@@ -32,6 +32,8 @@ Authoritative Community-owned personal-story publication. It is not Care, Journa
 | `state` | Publication lifecycle `ACTIVE`, `OWNER_DELETED`, `MODERATION_HIDDEN`, or `MODERATION_REMOVED`; only `ACTIVE` is returned to ordinary users. |
 | `comment_count` | Non-negative Community-owned display count, updated transactionally by the future comment slice. |
 | `reaction_count` | Non-negative Community-owned display count, updated transactionally by the future supportive-reaction slice. |
+| `idempotency_key` | Owner-scoped create-command key. It is nullable only for posts that predate MB-575 and unique together with `author_profile_id`, so separate owners may reuse the same client-generated value safely. |
+| `request_fingerprint` | SHA-256 digest of normalized create input used to distinguish a safe retry from conflicting reuse; it is not Community content and is present exactly when `idempotency_key` is present. |
 | `published_at` | Immutable UTC publication instant used as the primary newest-first cursor key. |
 | `updated_at` | UTC instant of the latest persisted owner or moderation change. |
 | `version` | Optimistic-lock counter reserved for owner edits/deletion and moderation changes. |

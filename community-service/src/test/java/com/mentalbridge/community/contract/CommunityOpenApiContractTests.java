@@ -14,7 +14,10 @@ class CommunityOpenApiContractTests {
 
 	private static final Set<String> IMPLEMENTED = Set.of(
 			"GET /api/v1/community/feed",
+			"POST /api/v1/community/posts",
 			"GET /api/v1/community/posts/{postId}",
+			"PATCH /api/v1/community/posts/{postId}",
+			"DELETE /api/v1/community/posts/{postId}",
 			"GET /api/v1/community/topics");
 
 	private static final Set<String> ALL_OPERATIONS = Set.of(
@@ -45,7 +48,7 @@ class CommunityOpenApiContractTests {
 			"POST /api/v1/community/admin/moderation-cases/{caseId}/actions");
 
 	@Test
-	void frozenV1ContractIsValidAndMarksOnlyMb574OperationsImplemented() {
+	void frozenV1ContractIsValidAndMarksDeliveredOperationsImplemented() {
 		var options = new ParseOptions();
 		options.setResolve(true);
 		options.setResolveFully(true);

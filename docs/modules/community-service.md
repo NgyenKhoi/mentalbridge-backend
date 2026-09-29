@@ -26,4 +26,13 @@ It does not own Identity credentials, Care profiles, screening, SupportPlan, Jou
 
 ## Delivery boundary
 
-MB-574 does not create posts, upload media, add comments/reactions/bookmarks, report, moderate, or publish asynchronous integrations. Those planned operations remain owned by MB-575 through MB-582. Community remains independent of synchronous Identity business, Care, and Journal/AI APIs.
+MB-574 does not upload media, add comments/reactions/bookmarks, report, moderate, or publish asynchronous integrations. Those planned operations remain owned by MB-576 through MB-582. Community remains independent of synchronous Identity business, Care, and Journal/AI APIs.
+
+## MB-575 personal-story lifecycle
+
+- `POST /api/v1/community/posts` creates one active owner post with one to three governed topics and up to ten already-owned `READY` media IDs. `Idempotency-Key` is scoped by Community owner and conflicting reuse is rejected.
+- A neutral Community-local display profile is provisioned on first publish when MB-581 profile setup has not run. No synchronous Identity, Care, Journal/AI, assessment, or SupportPlan business API is called.
+- Owner detail, create, and update expose the quoted post version as `ETag`; `PATCH` and `DELETE` require the same quoted version in `If-Match` and reject stale commands.
+- Cross-owner, absent, hidden, removed, and owner-deleted mutations share the bounded not-found contract and do not disclose ownership or moderation state.
+- Owner deletion changes the post to `OWNER_DELETED`, detaches media, and removes it from feed/detail immediately while retaining auditable content and lifecycle state in Community storage.
+- Community story text remains inside `community-service`; it is not emitted or copied into Care, reassessment, Journal/AI, SupportPlan, or specialist context.
