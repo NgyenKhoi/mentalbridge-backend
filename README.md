@@ -10,10 +10,10 @@ The root [`compose.yml`](compose.yml) is intentionally scoped to executable Revi
 
 | Profile | Services |
 | --- | --- |
-| `demo` | Frontend, Identity, Care, Consultation, Community, Journal/AI, Content/Notification, and explicit migrations against the shared dev/staging databases |
+| `demo` | Frontend, Identity, Care, Consultation, Community, Journal/AI, Content/Notification, Realtime, Redis, and explicit migrations against the shared dev/staging databases |
 | `full-test` | Everything in `demo`, plus Realtime, its migration against the shared dev/staging MongoDB deployment, and local ephemeral Redis |
 
-Consultation and Journal/AI are included because entitlement-aware SupportPlan and journal-reflection journeys now call them directly. Eureka and Kafka remain outside this stack because the current demo uses explicit container URLs and has no accepted broker-dependent journey. PhoBERT is an optional deferred benchmark baseline under ADR 0011 and is not a Review 1 or initial AI runtime dependency. Realtime is available for foundation testing but is not part of the critical mentor-demo path.
+Consultation, Journal/AI and Realtime are included because entitlement-aware SupportPlan, journal-reflection and appointment-chat journeys call them directly. Eureka remains outside this stack because the current demo uses explicit container URLs. PhoBERT is an optional deferred benchmark baseline under ADR 0011 and is not a Review 1 or initial AI runtime dependency.
 
 Keep the backend and frontend repositories as sibling directories. From this backend repository, prepare the ignored Compose environment file and local Identity keys:
 

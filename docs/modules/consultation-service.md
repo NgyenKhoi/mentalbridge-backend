@@ -51,7 +51,7 @@ delivery, or SupportPlan state.
 
 - [x] CON-01 Retain the historical ADR 0014 rationale and adopt ADR 0017's
   chat/video, evidence, summary reuse, and PlanChangeRequest target rules.
-- [~] CON-02 Specialist approval and MB-360 exception lifecycle, MB-362 availability, MB-377 credit balance, MB-378 appointment requests, and MB-379 decisions/expiry are implemented; discovery, session settlement, payment, earnings/payout, dashboard and review remain.
+- [~] CON-02 Specialist approval and MB-360 exception lifecycle, MB-362 availability, MB-377 credit balance, MB-378 appointment requests, MB-379 decisions/expiry, and MB-382 appointment-chat eligibility are implemented; discovery, session settlement, payment, earnings/payout, dashboard and review remain.
 - [ ] CON-03 Define subscription/appointment/earning/review/moderation event schemas and required Care/Journal/Realtime consumer contracts.
 - [~] CON-04 Story 6101 adds profile/approval persistence, MB-362 adds availability constraints, MB-377 adds credit periods/rows/ledger, MB-378 adds appointment requests, MB-379 adds idempotent decision/expiry evidence, and MB-360 adds suspension-cancellation history; other Consultation aggregates remain pending.
 - [x] CON-05 Story 6101 implements save, submit, pending-admin queue/detail, and approve without document upload; MB-360/Story 6102 adds audited rejection, same-profile resubmission, suspension side effects, and restoration.

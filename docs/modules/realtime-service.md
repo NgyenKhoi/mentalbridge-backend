@@ -34,9 +34,9 @@ Realtime owns conversations, encrypted messages, attachments metadata, tombstone
 - [ ] RT-02 Resolve appointment join grace, read-only history, attachment, tombstone/retention and moderation policies; define video separately before enabling that channel.
 - [ ] RT-03 Define conversation/history OpenAPI, WebSocket schemas and Kafka event contracts.
 - [x] RT-04 Add migrate-mongo validators/indexes and encrypted-content/data documentation.
-- [ ] RT-05 Implement owner-authorized conversation lifecycle and REST history.
-- [ ] RT-06 Implement authenticated WebSocket subscribe/send, idempotent persist-before-ack and Redis fan-out.
-- [ ] RT-07 Implement receipts, presence, reconnect/resync and live notification delivery.
+- [x] RT-05 Implement owner-authorized appointment conversation lifecycle and REST history.
+- [~] RT-06 Implement one-use credential authenticated WebSocket subscribe/send and idempotent persist-before-ack; cross-instance Redis fan-out remains.
+- [~] RT-07 Implement presence and client reconnect/resync; receipts and live notification delivery remain.
 - [ ] RT-08 Implement tombstone, scoped reporting and message moderation.
 - [ ] RT-09 Verify unauthorized subscription, duplicate send, ordering, reconnect, Redis loss, Kafka retry, dependency timeout and rate/back-pressure limits.
 - [ ] RT-10 Add observability/configuration, README, and pass Node/contract/Mongo/Redis/Kafka gates.
@@ -47,4 +47,4 @@ Sprint 1 covers RT-01, the foundational contract and migration parts of RT-03/RT
 
 The current foundation publishes Realtime REST and WebSocket v1 contracts, validates Identity-issued RS256 access tokens through the connected session's expiry boundary, maintains bounded TTL presence, and encrypts and idempotently persists messages before acknowledgement. Duplicate retries do not emit a second live event, and acknowledgements report live delivery as not applicable until fan-out or receipts can prove it.
 
-Cursor history primitives exist behind an eligibility port, but the OpenAPI operation is `planned`. The production eligibility adapter deliberately fails closed with `503` until Consultation publishes the current appointment authorization contract; integration tests supply only synthetic authorization and disposable MongoDB/Redis infrastructure. Encryption rotation retains prior key versions in a configured decryption keyring so stored messages remain readable during a controlled rotation.
+MB-382 implements cursor history and the production Consultation eligibility adapter. Subscribe, send and history are reauthorized against the participant-bound appointment and server clock; dependency uncertainty fails closed. A one-use Redis ticket keeps the reusable Identity bearer out of browser JavaScript. Encryption rotation retains prior key versions in a configured decryption keyring so stored messages remain readable during a controlled rotation.

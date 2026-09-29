@@ -170,6 +170,72 @@ class AppointmentDecisionIntegrationTests extends ConsultationTestProperties {
 	}
 
 	@Test
+	void appointmentChatUsesServerTimeForWaitingActiveAndEndedPermissions() throws Exception {
+		var fixture = requestedAppointment();
+		decisions.accept(fixture.specialistId(), fixture.appointmentId(), 0, "accept-chat-window-command-001");
+
+		setSchedule(fixture.appointmentId(), Instant.now().plusSeconds(20 * 60));
+		chatEligibility(fixture.userId(), "USER", fixture.appointmentId(), "SUBSCRIBE")
+				.andExpect(status().isOk()).andExpect(jsonPath("$.phase").value("TOO_EARLY"))
+				.andExpect(jsonPath("$.subscribeAllowed").value(false))
+				.andExpect(jsonPath("$.sendAllowed").value(false));
+
+		setSchedule(fixture.appointmentId(), Instant.now().plusSeconds(5 * 60));
+		chatEligibility(fixture.specialistId(), "SPECIALIST", fixture.appointmentId(), "SUBSCRIBE")
+				.andExpect(status().isOk()).andExpect(jsonPath("$.phase").value("WAITING"))
+				.andExpect(jsonPath("$.subscribeAllowed").value(true))
+				.andExpect(jsonPath("$.sendAllowed").value(false));
+
+		setSchedule(fixture.appointmentId(), Instant.now().minusSeconds(60));
+		chatEligibility(fixture.userId(), "USER", fixture.appointmentId(), "SEND")
+				.andExpect(status().isOk()).andExpect(jsonPath("$.phase").value("ACTIVE"))
+				.andExpect(jsonPath("$.sendAllowed").value(true));
+
+		setSchedule(fixture.appointmentId(), Instant.now().minusSeconds(3_700));
+		chatEligibility(fixture.userId(), "USER", fixture.appointmentId(), "HISTORY")
+				.andExpect(status().isOk()).andExpect(jsonPath("$.phase").value("ENDED"))
+				.andExpect(jsonPath("$.historyAllowed").value(true))
+				.andExpect(jsonPath("$.sendAllowed").value(false));
+	}
+
+	@Test
+	void appointmentChatHidesWrongActorsAndMakesCancellationReadOnly() throws Exception {
+		var fixture = requestedAppointment();
+		decisions.accept(fixture.specialistId(), fixture.appointmentId(), 0, "accept-chat-cancel-command-01");
+		setSchedule(fixture.appointmentId(), Instant.now().plusSeconds(5 * 60));
+
+		chatEligibility(UUID.randomUUID(), "USER", fixture.appointmentId(), "HISTORY")
+				.andExpect(status().isNotFound()).andExpect(jsonPath("$.code").value("APPOINTMENT_CHAT_NOT_FOUND"));
+
+		jdbc.sql("update appointment set status='CANCELLED', cancelled_at=now(), cancellation_reason='USER_CANCELLED' where id=:id")
+				.param("id", fixture.appointmentId()).update();
+		chatEligibility(fixture.userId(), "USER", fixture.appointmentId(), "SEND")
+				.andExpect(status().isOk()).andExpect(jsonPath("$.phase").value("CANCELLED"))
+				.andExpect(jsonPath("$.historyAllowed").value(true))
+				.andExpect(jsonPath("$.sendAllowed").value(false));
+	}
+
+	@Test
+	void appointmentChatMakesReplacedAppointmentHistoryReadOnly() throws Exception {
+		var original = requestedAppointment();
+		decisions.accept(original.specialistId(), original.appointmentId(), 0,
+				"accept-chat-reschedule-command-01");
+		setSchedule(original.appointmentId(), Instant.now().plusSeconds(5 * 60));
+		var replacement = requestedAppointment();
+		jdbc.sql("update appointment set replaces_appointment_id=:originalId where id=:replacementId")
+				.param("originalId", original.appointmentId())
+				.param("replacementId", replacement.appointmentId()).update();
+		jdbc.sql("update appointment set status='CANCELLED', cancelled_at=now(), cancellation_reason='USER_RESCHEDULED' where id=:id")
+				.param("id", original.appointmentId()).update();
+
+		chatEligibility(original.specialistId(), "SPECIALIST", original.appointmentId(), "SEND")
+				.andExpect(status().isOk()).andExpect(jsonPath("$.phase").value("RESCHEDULED"))
+				.andExpect(jsonPath("$.subscribeAllowed").value(false))
+				.andExpect(jsonPath("$.historyAllowed").value(true))
+				.andExpect(jsonPath("$.sendAllowed").value(false));
+	}
+
+	@Test
 	void decisionVersusExpiryRaceEndsExpiredWithoutDoubleRelease() throws Exception {
 		var fixture = requestedAppointment();
 		makeDue(fixture.appointmentId());
@@ -296,6 +362,20 @@ class AppointmentDecisionIntegrationTests extends ConsultationTestProperties {
 		jdbc.sql("update appointment set requested_at=:requestedAt, decision_deadline_at=:deadline where id=:id")
 				.param("requestedAt", Timestamp.from(now.minusSeconds(90_000)))
 				.param("deadline", Timestamp.from(now.minusSeconds(3_600))).param("id", appointmentId).update();
+	}
+
+	private void setSchedule(UUID appointmentId, Instant start) {
+		jdbc.sql("update appointment set scheduled_start_at=:startAt, scheduled_end_at=:endAt where id=:id")
+				.param("startAt", Timestamp.from(start)).param("endAt", Timestamp.from(start.plusSeconds(3_600)))
+				.param("id", appointmentId).update();
+	}
+
+	private org.springframework.test.web.servlet.ResultActions chatEligibility(UUID actorId, String role,
+			UUID appointmentId, String operation) throws Exception {
+		return mvc.perform(get("/internal/v1/appointments/{id}/chat-eligibility", appointmentId)
+				.param("operation", operation)
+				.with(jwt().jwt(token -> token.subject(actorId.toString()).claim("roles", List.of(role)))
+						.authorities(new SimpleGrantedAuthority("ROLE_" + role))));
 	}
 
 	private String appointmentStatus(UUID appointmentId) {

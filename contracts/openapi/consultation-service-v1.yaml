@@ -1,8 +1,8 @@
 openapi: 3.1.0
 info:
   title: MentalBridge Consultation Service API
-  version: 1.5.0
-  description: Consultation-owned specialist profile lifecycle, service-plan entitlement and credit lookup, online availability, appointment requests and auditable owner cancellation/reschedule outcomes, credit reservation limits, and suspension outcomes.
+  version: 1.6.0
+  description: Consultation-owned specialist profile lifecycle, service-plan entitlement and credit lookup, online availability, appointment requests, appointment-scoped chat eligibility, auditable owner cancellation/reschedule outcomes, credit reservation limits, and suspension outcomes.
 servers:
   - url: http://localhost:8082
 paths:
@@ -35,6 +35,34 @@ paths:
               schema: { $ref: '#/components/schemas/CurrentServiceEntitlement' }
         '401': { $ref: '#/components/responses/UnauthorizedProblem' }
         '403': { $ref: '#/components/responses/EntitlementForbiddenProblem' }
+  /internal/v1/appointments/{conversationId}/chat-eligibility:
+    x-mentalbridge-status: implemented
+    parameters:
+      - name: conversationId
+        in: path
+        required: true
+        description: The appointment UUID is the stable one-to-one conversation identifier.
+        schema: { type: string, format: uuid }
+    get:
+      operationId: getAppointmentChatEligibility
+      description: Returns the authenticated assigned participant's server-authoritative appointment chat phase and operation permissions. Waiting-room entry opens ten minutes before the exact confirmed IN_APP_CHAT interval; sending is allowed only in the half-open scheduled interval. Ended or cancelled conversations remain history-only when a conversation exists.
+      security: [{ bearerAuth: [] }]
+      parameters:
+        - name: operation
+          in: query
+          required: true
+          schema:
+            type: string
+            enum: [SUBSCRIBE, SEND, HISTORY]
+      responses:
+        '200':
+          description: Current appointment-scoped chat decision
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/AppointmentChatEligibility' }
+        '401': { $ref: '#/components/responses/UnauthorizedProblem' }
+        '403': { $ref: '#/components/responses/ForbiddenProblem' }
+        '404': { $ref: '#/components/responses/AppointmentNotFoundProblem' }
   /api/v1/specialist-profile:
     x-mentalbridge-status: implemented
     get:
@@ -908,6 +936,27 @@ components:
         count: { type: integer, minimum: 0, maximum: 200 }
         generatedAt: { type: string, format: date-time }
         videoEnabled: { type: boolean }
+    AppointmentChatEligibility:
+      type: object
+      additionalProperties: false
+      required: [conversationId, appointmentId, userAccountId, specialistAccountId, phase, reasonCode, subscribeAllowed, sendAllowed, historyAllowed, scheduledStartAt, scheduledEndAt, serverTime]
+      properties:
+        conversationId: { type: string, format: uuid }
+        appointmentId: { type: string, format: uuid }
+        userAccountId: { type: string, format: uuid }
+        specialistAccountId: { type: string, format: uuid }
+        phase:
+          type: string
+          enum: [NOT_AVAILABLE, TOO_EARLY, WAITING, ACTIVE, ENDED, CANCELLED, RESCHEDULED]
+        reasonCode:
+          type: string
+          enum: [APPOINTMENT_NOT_CONFIRMED, CHAT_ENTRY_TOO_EARLY, APPOINTMENT_WAITING, APPOINTMENT_ACTIVE, APPOINTMENT_ENDED, APPOINTMENT_CANCELLED, APPOINTMENT_RESCHEDULED]
+        subscribeAllowed: { type: boolean }
+        sendAllowed: { type: boolean }
+        historyAllowed: { type: boolean }
+        scheduledStartAt: { type: string, format: date-time }
+        scheduledEndAt: { type: string, format: date-time }
+        serverTime: { type: string, format: date-time }
     Appointment:
       type: object
       additionalProperties: false

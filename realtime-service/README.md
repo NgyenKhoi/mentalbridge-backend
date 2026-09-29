@@ -4,18 +4,18 @@ NestJS 11 service on Node.js 24 that owns MentalBridge conversations, encrypted 
 
 ## Current scope
 
-- Socket.IO `/realtime` namespace with Identity-issued RS256 JWT authentication
+- Socket.IO `/realtime` namespace with one-use, 30-second browser credentials bound to Identity-issued RS256 JWTs
 - strict versioned command, acknowledgement, error and server-event envelopes
 - Redis TTL presence and bounded per-account connection routing
 - encrypted MongoDB message persistence before acknowledgement
 - sender-scoped `clientMessageId` idempotency
-- planned cursor-based REST message history, currently fail-closed in production
+- implemented, owner-authorized cursor-based REST message history
 - liveness, readiness, Prometheus metrics, safe structured logs and correlation IDs
 - disposable MongoDB and Redis integration tests
 
-Conversation eligibility remains fail-closed because Consultation has not published its appointment eligibility OpenAPI contract. Tests inject a synthetic eligibility implementation; production has no unrestricted-chat fallback. The history OpenAPI operation is marked `planned` and returns `503` in production until that adapter exists. Appointment activation, cross-instance Redis fan-out, Kafka publication, receipts, moderation, attachments, tombstone policy and live notification delivery remain outside this baseline.
+Consultation is authoritative for appointment participants, status and server-time chat windows. Realtime checks its eligibility projection for every subscribe, send and history operation and fails closed when Consultation is unavailable. Sending is restricted to confirmed `IN_APP_CHAT` appointments in `[scheduledStartAt, scheduledEndAt)`; the ten-minute waiting window is subscribe-only, and terminal history is read-only. Cross-instance Redis fan-out, Kafka publication, receipts, moderation, attachments, and tombstone policy remain outside this slice.
 
-Socket authentication is valid only through the JWT expiry boundary. The gateway retains the verified expiry, rejects commands at or after it, emits `AUTHENTICATION_EXPIRED`, and disconnects the socket. Revocation before expiry is deferred to a separately contracted Identity integration.
+The browser exchanges its server-owned Identity session through a same-origin BFF for a random one-use ticket. Realtime stores a hashed ticket key and AES-GCM encrypted bearer in Redis, atomically consumes it with `GETDEL`, then retains the bearer only in socket memory through the original JWT expiry boundary. The gateway rejects commands at or after expiry, emits `AUTHENTICATION_EXPIRED`, and disconnects the socket. Revocation before expiry is deferred to a separately contracted Identity integration.
 
 Message acknowledgements use `liveDelivery: not_applicable` because this baseline cannot prove recipient delivery. An idempotent duplicate returns the original message acknowledgement without emitting another `message.created` event.
 
@@ -70,6 +70,8 @@ npm start
 | `IDENTITY_JWT_KEY_ID`                     | Yes        | none                        | Active public verification key ID                 |
 | `IDENTITY_JWT_PUBLIC_KEY`                 | Yes        | none                        | Identity X.509 RSA public key                     |
 | `IDENTITY_JWT_CLOCK_TOLERANCE_SECONDS`    | No         | `60`                        | Bounded JWT clock tolerance                       |
+| `CONSULTATION_BASE_URL`                   | No         | `http://localhost:8083`     | Consultation eligibility authority                |
+| `CONSULTATION_TIMEOUT_MS`                 | No         | `1500`                      | Eligibility request timeout                       |
 
 Local `.env` loading is enabled only in development and never overrides real environment variables. Tests inject isolated configuration and do not read developer `.env` files.
 

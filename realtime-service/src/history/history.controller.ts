@@ -1,3 +1,5 @@
+import { randomUUID } from 'node:crypto';
+
 import { BadRequestException, Controller, Get, Param, Query, Req, UseGuards } from '@nestjs/common';
 import { z } from 'zod';
 
@@ -25,8 +27,16 @@ export class HistoryController {
     const limit = this.parse(limitSchema, limitInput);
     const cursor = this.parse(cursorSchema, cursorInput);
     const accountId = request.principal?.accountId;
-    if (!accountId) throw new BadRequestException('Authenticated actor is missing');
-    return this.messages.history(accountId, conversationId, limit, cursor);
+    const bearerToken = request.bearerToken;
+    if (!accountId || !bearerToken) throw new BadRequestException('Authenticated actor is missing');
+    return this.messages.history(
+      bearerToken,
+      accountId,
+      conversationId,
+      limit,
+      request.id ?? randomUUID(),
+      cursor,
+    );
   }
 
   private parse<T>(schema: z.ZodType<T>, value: unknown): T {

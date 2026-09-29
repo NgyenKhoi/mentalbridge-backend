@@ -159,6 +159,73 @@ describe('Realtime HTTP boundary', () => {
     }
   });
 
+  it('issues a bounded one-use socket credential for a chat participant', async () => {
+    const credentialRedis = {
+      ping: () => Promise.resolve(true),
+      execute: (callback: (client: { set: () => Promise<string> }) => Promise<unknown>) =>
+        callback({ set: () => Promise.resolve('OK') }),
+      onApplicationShutdown: () => Promise.resolve(),
+    } as unknown as RedisService;
+    const app = await createApplication(configuration, { mongo, redis: credentialRedis });
+    await app.init();
+    try {
+      await request(app.getHttpServer() as Server)
+        .post('/internal/v1/socket-credentials')
+        .set('authorization', `Bearer ${token}`)
+        .expect(201)
+        .expect((response) => {
+          const body = response.body as { accessToken?: unknown; expiresAt?: unknown };
+          expect(body.accessToken).toEqual(expect.stringMatching(/^[A-Za-z0-9_-]{43}$/));
+          expect(body.expiresAt).toEqual(expect.any(String));
+        });
+    } finally {
+      await app.close();
+    }
+  });
+
+  it('rejects ADMIN socket credential exchange', async () => {
+    const adminToken = await issueToken(keys.privateKey, configuration, undefined, {
+      role: 'ADMIN',
+      tokenId: 'admin-token',
+    });
+    const app = await createApplication(configuration, { mongo, redis });
+    await app.init();
+    try {
+      await request(app.getHttpServer() as Server)
+        .post('/internal/v1/socket-credentials')
+        .set('authorization', `Bearer ${adminToken}`)
+        .expect(403)
+        .expect((response) => {
+          const body = response.body as { code?: unknown };
+          expect(body.code).toBe('ACCESS_DENIED');
+        });
+    } finally {
+      await app.close();
+    }
+  });
+
+  it('returns dependency unavailable when a socket credential cannot be stored', async () => {
+    const failedRedis = {
+      ping: () => Promise.resolve(false),
+      execute: () => Promise.reject(new Error('offline')),
+      onApplicationShutdown: () => Promise.resolve(),
+    } as unknown as RedisService;
+    const app = await createApplication(configuration, { mongo, redis: failedRedis });
+    await app.init();
+    try {
+      await request(app.getHttpServer() as Server)
+        .post('/internal/v1/socket-credentials')
+        .set('authorization', `Bearer ${token}`)
+        .expect(503)
+        .expect((response) => {
+          const body = response.body as { code?: unknown };
+          expect(body.code).toBe('DEPENDENCY_UNAVAILABLE');
+        });
+    } finally {
+      await app.close();
+    }
+  });
+
   it('exposes Prometheus metrics', async () => {
     const app = await createApplication(configuration, { mongo, redis });
     await app.init();
