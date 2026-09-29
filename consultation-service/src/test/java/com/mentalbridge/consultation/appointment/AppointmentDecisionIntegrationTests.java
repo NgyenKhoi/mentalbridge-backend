@@ -365,8 +365,16 @@ class AppointmentDecisionIntegrationTests extends ConsultationTestProperties {
 	}
 
 	private void setSchedule(UUID appointmentId, Instant start) {
-		jdbc.sql("update appointment set scheduled_start_at=:startAt, scheduled_end_at=:endAt where id=:id")
-				.param("startAt", Timestamp.from(start)).param("endAt", Timestamp.from(start.plusSeconds(3_600)))
+		var deadline = start.minusSeconds(60);
+		jdbc.sql("""
+				update appointment
+				set requested_at=:requestedAt, decision_deadline_at=:deadline,
+				    scheduled_start_at=:startAt, scheduled_end_at=:endAt
+				where id=:id
+				""").param("requestedAt", Timestamp.from(deadline.minusSeconds(60)))
+				.param("deadline", Timestamp.from(deadline))
+				.param("startAt", Timestamp.from(start))
+				.param("endAt", Timestamp.from(start.plusSeconds(3_600)))
 				.param("id", appointmentId).update();
 	}
 
