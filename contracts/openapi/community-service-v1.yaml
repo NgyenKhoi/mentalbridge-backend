@@ -1,0 +1,755 @@
+openapi: 3.1.0
+info:
+  title: MentalBridge Community API
+  version: 1.0.0
+  description: Privacy-isolated peer-support Community Contract v1. Feed ordering is newest-first and never uses Care, Journal, emotion, SupportPlan, or AI data.
+servers:
+  - url: http://localhost:8084
+paths:
+  /api/v1/community/feed:
+    x-mentalbridge-status: implemented
+    get:
+      operationId: browseCommunityFeed
+      security: [{ BearerAuth: [] }]
+      parameters:
+        - name: topic
+          in: query
+          schema: { $ref: "#/components/schemas/CommunityTopicCode" }
+        - name: cursor
+          in: query
+          schema: { type: string, maxLength: 256 }
+        - name: limit
+          in: query
+          schema: { type: integer, minimum: 1, maximum: 50, default: 20 }
+      responses:
+        "200":
+          description: Newest-first active posts visible to the authenticated USER.
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/CommunityFeedPage" }
+        "400": { $ref: "#/components/responses/Problem" }
+        "401": { $ref: "#/components/responses/Problem" }
+        "403": { $ref: "#/components/responses/Problem" }
+  /api/v1/community/posts:
+    post:
+      x-mentalbridge-status: planned
+      operationId: createCommunityPost
+      security: [{ BearerAuth: [] }]
+      parameters:
+        - $ref: "#/components/parameters/IdempotencyKey"
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: "#/components/schemas/CreatePostRequest" }
+      responses:
+        "201":
+          description: Created personal-story post.
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/CommunityPostDetail" }
+        "400": { $ref: "#/components/responses/Problem" }
+        "401": { $ref: "#/components/responses/Problem" }
+        "403": { $ref: "#/components/responses/Problem" }
+        "409": { $ref: "#/components/responses/Problem" }
+  /api/v1/community/posts/{postId}:
+    parameters:
+      - $ref: "#/components/parameters/PostId"
+    get:
+      x-mentalbridge-status: implemented
+      operationId: getCommunityPost
+      security: [{ BearerAuth: [] }]
+      responses:
+        "200":
+          description: Active post visible to the authenticated USER.
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/CommunityPostDetail" }
+        "401": { $ref: "#/components/responses/Problem" }
+        "403": { $ref: "#/components/responses/Problem" }
+        "404": { $ref: "#/components/responses/Problem" }
+    patch:
+      x-mentalbridge-status: planned
+      operationId: updateCommunityPost
+      security: [{ BearerAuth: [] }]
+      parameters:
+        - $ref: "#/components/parameters/IfMatch"
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: "#/components/schemas/UpdatePostRequest" }
+      responses:
+        "200":
+          description: Updated owner post.
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/CommunityPostDetail" }
+        "400": { $ref: "#/components/responses/Problem" }
+        "401": { $ref: "#/components/responses/Problem" }
+        "403": { $ref: "#/components/responses/Problem" }
+        "404": { $ref: "#/components/responses/Problem" }
+        "412": { $ref: "#/components/responses/Problem" }
+    delete:
+      x-mentalbridge-status: planned
+      operationId: deleteCommunityPost
+      security: [{ BearerAuth: [] }]
+      parameters:
+        - $ref: "#/components/parameters/IfMatch"
+      responses:
+        "204": { description: Owner post tombstoned. }
+        "401": { $ref: "#/components/responses/Problem" }
+        "403": { $ref: "#/components/responses/Problem" }
+        "404": { $ref: "#/components/responses/Problem" }
+        "412": { $ref: "#/components/responses/Problem" }
+  /api/v1/community/media/upload-intents:
+    x-mentalbridge-status: planned
+    post:
+      operationId: createCommunityMediaUploadIntent
+      security: [{ BearerAuth: [] }]
+      parameters:
+        - $ref: "#/components/parameters/IdempotencyKey"
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: "#/components/schemas/CreateMediaUploadIntentRequest" }
+      responses:
+        "201":
+          description: Short-lived owner-scoped upload intent.
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/MediaUploadIntent" }
+        "400": { $ref: "#/components/responses/Problem" }
+        "401": { $ref: "#/components/responses/Problem" }
+        "403": { $ref: "#/components/responses/Problem" }
+        "409": { $ref: "#/components/responses/Problem" }
+  /api/v1/community/media/{mediaId}/finalize:
+    x-mentalbridge-status: planned
+    post:
+      operationId: finalizeCommunityMedia
+      security: [{ BearerAuth: [] }]
+      parameters:
+        - $ref: "#/components/parameters/MediaId"
+        - $ref: "#/components/parameters/IdempotencyKey"
+      responses:
+        "200":
+          description: Current processing state after provider verification.
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/CommunityMediaRecord" }
+        "401": { $ref: "#/components/responses/Problem" }
+        "403": { $ref: "#/components/responses/Problem" }
+        "404": { $ref: "#/components/responses/Problem" }
+        "409": { $ref: "#/components/responses/Problem" }
+  /api/v1/community/media/{mediaId}:
+    x-mentalbridge-status: planned
+    delete:
+      operationId: deleteCommunityMedia
+      security: [{ BearerAuth: [] }]
+      parameters:
+        - $ref: "#/components/parameters/MediaId"
+        - $ref: "#/components/parameters/IfMatch"
+      responses:
+        "204": { description: Owner media tombstoned. }
+        "401": { $ref: "#/components/responses/Problem" }
+        "403": { $ref: "#/components/responses/Problem" }
+        "404": { $ref: "#/components/responses/Problem" }
+        "412": { $ref: "#/components/responses/Problem" }
+  /api/v1/community/posts/{postId}/comments:
+    parameters:
+      - $ref: "#/components/parameters/PostId"
+    get:
+      x-mentalbridge-status: planned
+      operationId: listCommunityComments
+      security: [{ BearerAuth: [] }]
+      parameters:
+        - name: cursor
+          in: query
+          schema: { type: string, maxLength: 256 }
+        - name: limit
+          in: query
+          schema: { type: integer, minimum: 1, maximum: 50, default: 20 }
+      responses:
+        "200":
+          description: Visible comments in deterministic chronological order.
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/CommunityCommentPage" }
+        "401": { $ref: "#/components/responses/Problem" }
+        "403": { $ref: "#/components/responses/Problem" }
+        "404": { $ref: "#/components/responses/Problem" }
+    post:
+      x-mentalbridge-status: planned
+      operationId: createCommunityComment
+      security: [{ BearerAuth: [] }]
+      parameters:
+        - $ref: "#/components/parameters/IdempotencyKey"
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: "#/components/schemas/CreateCommentRequest" }
+      responses:
+        "201":
+          description: Created comment or reply.
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/CommunityComment" }
+        "400": { $ref: "#/components/responses/Problem" }
+        "401": { $ref: "#/components/responses/Problem" }
+        "403": { $ref: "#/components/responses/Problem" }
+        "404": { $ref: "#/components/responses/Problem" }
+        "409": { $ref: "#/components/responses/Problem" }
+  /api/v1/community/comments/{commentId}:
+    parameters:
+      - $ref: "#/components/parameters/CommentId"
+    patch:
+      x-mentalbridge-status: planned
+      operationId: updateCommunityComment
+      security: [{ BearerAuth: [] }]
+      parameters:
+        - $ref: "#/components/parameters/IfMatch"
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: "#/components/schemas/UpdateCommentRequest" }
+      responses:
+        "200":
+          description: Updated owner comment.
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/CommunityComment" }
+        "400": { $ref: "#/components/responses/Problem" }
+        "401": { $ref: "#/components/responses/Problem" }
+        "403": { $ref: "#/components/responses/Problem" }
+        "404": { $ref: "#/components/responses/Problem" }
+        "412": { $ref: "#/components/responses/Problem" }
+    delete:
+      x-mentalbridge-status: planned
+      operationId: deleteCommunityComment
+      security: [{ BearerAuth: [] }]
+      parameters:
+        - $ref: "#/components/parameters/IfMatch"
+      responses:
+        "204": { description: Owner comment tombstoned. }
+        "401": { $ref: "#/components/responses/Problem" }
+        "403": { $ref: "#/components/responses/Problem" }
+        "404": { $ref: "#/components/responses/Problem" }
+        "412": { $ref: "#/components/responses/Problem" }
+  /api/v1/community/posts/{postId}/reaction:
+    parameters:
+      - $ref: "#/components/parameters/PostId"
+    put:
+      x-mentalbridge-status: planned
+      operationId: putCommunityReaction
+      security: [{ BearerAuth: [] }]
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: "#/components/schemas/PutReactionRequest" }
+      responses:
+        "200":
+          description: Current owner reaction.
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/CommunityReaction" }
+        "401": { $ref: "#/components/responses/Problem" }
+        "403": { $ref: "#/components/responses/Problem" }
+        "404": { $ref: "#/components/responses/Problem" }
+    delete:
+      x-mentalbridge-status: planned
+      operationId: deleteCommunityReaction
+      security: [{ BearerAuth: [] }]
+      responses:
+        "204": { description: Owner reaction removed or already absent. }
+        "401": { $ref: "#/components/responses/Problem" }
+        "403": { $ref: "#/components/responses/Problem" }
+        "404": { $ref: "#/components/responses/Problem" }
+  /api/v1/community/posts/{postId}/bookmark:
+    parameters:
+      - $ref: "#/components/parameters/PostId"
+    put:
+      x-mentalbridge-status: planned
+      operationId: putCommunityBookmark
+      security: [{ BearerAuth: [] }]
+      responses:
+        "204": { description: Owner bookmark created or already present. }
+        "401": { $ref: "#/components/responses/Problem" }
+        "403": { $ref: "#/components/responses/Problem" }
+        "404": { $ref: "#/components/responses/Problem" }
+    delete:
+      x-mentalbridge-status: planned
+      operationId: deleteCommunityBookmark
+      security: [{ BearerAuth: [] }]
+      responses:
+        "204": { description: Owner bookmark removed or already absent. }
+        "401": { $ref: "#/components/responses/Problem" }
+        "403": { $ref: "#/components/responses/Problem" }
+        "404": { $ref: "#/components/responses/Problem" }
+  /api/v1/community/reports:
+    x-mentalbridge-status: planned
+    post:
+      operationId: createCommunityReport
+      security: [{ BearerAuth: [] }]
+      parameters:
+        - $ref: "#/components/parameters/IdempotencyKey"
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: "#/components/schemas/CreateReportRequest" }
+      responses:
+        "202": { description: Report accepted without exposing moderation state. }
+        "400": { $ref: "#/components/responses/Problem" }
+        "401": { $ref: "#/components/responses/Problem" }
+        "403": { $ref: "#/components/responses/Problem" }
+        "404": { $ref: "#/components/responses/Problem" }
+        "409": { $ref: "#/components/responses/Problem" }
+  /api/v1/community/blocks/{communityProfileId}:
+    parameters:
+      - $ref: "#/components/parameters/CommunityProfileId"
+    put:
+      x-mentalbridge-status: planned
+      operationId: putCommunityBlock
+      security: [{ BearerAuth: [] }]
+      responses:
+        "204": { description: Profile blocked or already blocked. }
+        "401": { $ref: "#/components/responses/Problem" }
+        "403": { $ref: "#/components/responses/Problem" }
+        "404": { $ref: "#/components/responses/Problem" }
+    delete:
+      x-mentalbridge-status: planned
+      operationId: deleteCommunityBlock
+      security: [{ BearerAuth: [] }]
+      responses:
+        "204": { description: Profile unblocked or already unblocked. }
+        "401": { $ref: "#/components/responses/Problem" }
+        "403": { $ref: "#/components/responses/Problem" }
+        "404": { $ref: "#/components/responses/Problem" }
+  /api/v1/community/profile:
+    get:
+      x-mentalbridge-status: planned
+      operationId: getOwnCommunityProfile
+      security: [{ BearerAuth: [] }]
+      responses:
+        "200":
+          description: Authenticated owner's Community display profile.
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/CommunityProfile" }
+        "401": { $ref: "#/components/responses/Problem" }
+        "403": { $ref: "#/components/responses/Problem" }
+    put:
+      x-mentalbridge-status: planned
+      operationId: putOwnCommunityProfile
+      security: [{ BearerAuth: [] }]
+      parameters:
+        - $ref: "#/components/parameters/IfMatchOptional"
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: "#/components/schemas/PutCommunityProfileRequest" }
+      responses:
+        "200":
+          description: Current Community display profile.
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/CommunityProfile" }
+        "400": { $ref: "#/components/responses/Problem" }
+        "401": { $ref: "#/components/responses/Problem" }
+        "403": { $ref: "#/components/responses/Problem" }
+        "412": { $ref: "#/components/responses/Problem" }
+  /api/v1/community/topics:
+    x-mentalbridge-status: implemented
+    get:
+      operationId: listCommunityTopics
+      security: [{ BearerAuth: [] }]
+      responses:
+        "200":
+          description: Governed non-diagnostic Community topic catalogue.
+          content:
+            application/json:
+              schema:
+                type: array
+                items: { $ref: "#/components/schemas/CommunityTopic" }
+        "401": { $ref: "#/components/responses/Problem" }
+        "403": { $ref: "#/components/responses/Problem" }
+  /api/v1/community/admin/moderation-cases:
+    x-mentalbridge-status: planned
+    get:
+      operationId: listCommunityModerationCases
+      security: [{ BearerAuth: [] }]
+      responses:
+        "200":
+          description: Bounded admin moderation queue.
+          content:
+            application/json:
+              schema:
+                type: array
+                items: { $ref: "#/components/schemas/ModerationCase" }
+        "401": { $ref: "#/components/responses/Problem" }
+        "403": { $ref: "#/components/responses/Problem" }
+  /api/v1/community/admin/moderation-cases/{caseId}:
+    x-mentalbridge-status: planned
+    get:
+      operationId: getCommunityModerationCase
+      security: [{ BearerAuth: [] }]
+      parameters:
+        - $ref: "#/components/parameters/ModerationCaseId"
+      responses:
+        "200":
+          description: Exact moderation case visible to an authorized admin.
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/ModerationCase" }
+        "401": { $ref: "#/components/responses/Problem" }
+        "403": { $ref: "#/components/responses/Problem" }
+        "404": { $ref: "#/components/responses/Problem" }
+  /api/v1/community/admin/moderation-cases/{caseId}/actions:
+    x-mentalbridge-status: planned
+    post:
+      operationId: createCommunityModerationAction
+      security: [{ BearerAuth: [] }]
+      parameters:
+        - $ref: "#/components/parameters/ModerationCaseId"
+        - $ref: "#/components/parameters/IdempotencyKey"
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: "#/components/schemas/CreateModerationActionRequest" }
+      responses:
+        "201":
+          description: Audited moderation action.
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/ModerationCase" }
+        "400": { $ref: "#/components/responses/Problem" }
+        "401": { $ref: "#/components/responses/Problem" }
+        "403": { $ref: "#/components/responses/Problem" }
+        "404": { $ref: "#/components/responses/Problem" }
+        "409": { $ref: "#/components/responses/Problem" }
+components:
+  securitySchemes:
+    BearerAuth: { type: http, scheme: bearer, bearerFormat: JWT }
+  parameters:
+    PostId:
+      name: postId
+      in: path
+      required: true
+      schema: { type: string, format: uuid }
+    CommentId:
+      name: commentId
+      in: path
+      required: true
+      schema: { type: string, format: uuid }
+    MediaId:
+      name: mediaId
+      in: path
+      required: true
+      schema: { type: string, format: uuid }
+    CommunityProfileId:
+      name: communityProfileId
+      in: path
+      required: true
+      schema: { type: string, format: uuid }
+    ModerationCaseId:
+      name: caseId
+      in: path
+      required: true
+      schema: { type: string, format: uuid }
+    IdempotencyKey:
+      name: Idempotency-Key
+      in: header
+      required: true
+      schema: { type: string, minLength: 16, maxLength: 128, pattern: "^[!-~]+$" }
+    IfMatch:
+      name: If-Match
+      in: header
+      required: true
+      schema: { type: string, pattern: '^"(0|[1-9]\d*)"$' }
+    IfMatchOptional:
+      name: If-Match
+      in: header
+      required: false
+      schema: { type: string, pattern: '^"(0|[1-9]\d*)"$' }
+  responses:
+    Problem:
+      description: RFC 9457 problem response with a stable application code.
+      content:
+        application/problem+json:
+          schema: { $ref: "#/components/schemas/Problem" }
+  schemas:
+    CommunityTopicCode:
+      type: string
+      enum: [MY_STORY, SMALL_MILESTONE, HELPFUL_REFLECTION, PEER_QUESTION, EXPERIENCE_SHARING, HELPFUL_RESOURCE]
+    CommunityTopic:
+      type: object
+      additionalProperties: false
+      required: [code, label, description]
+      properties:
+        code: { $ref: "#/components/schemas/CommunityTopicCode" }
+        label: { type: string, minLength: 1, maxLength: 80 }
+        description: { type: string, minLength: 1, maxLength: 240 }
+    CommunityAuthor:
+      type: object
+      additionalProperties: false
+      required: [communityProfileId, displayName, state]
+      properties:
+        communityProfileId: { type: string, format: uuid }
+        displayName: { type: string, minLength: 1, maxLength: 80 }
+        state: { type: string, enum: [ACTIVE, DELETED] }
+    CommunityCounts:
+      type: object
+      additionalProperties: false
+      required: [comments, reactions]
+      properties:
+        comments: { type: integer, minimum: 0 }
+        reactions: { type: integer, minimum: 0 }
+    CommunityMedia:
+      type: object
+      additionalProperties: false
+      required: [mediaId, type, url, width, height, durationSeconds, altText]
+      properties:
+        mediaId: { type: string, format: uuid }
+        type: { type: string, enum: [IMAGE, VIDEO] }
+        url: { type: string, format: uri, pattern: "^https://", maxLength: 2048 }
+        width: { type: [integer, "null"], minimum: 1 }
+        height: { type: [integer, "null"], minimum: 1 }
+        durationSeconds: { type: [integer, "null"], minimum: 1 }
+        altText: { type: [string, "null"], maxLength: 300 }
+    CommunityPostSummary:
+      type: object
+      additionalProperties: false
+      required: [postId, author, contentPreview, topics, media, mediaAvailability, counts, publishedAt, updatedAt]
+      properties:
+        postId: { type: string, format: uuid }
+        author: { $ref: "#/components/schemas/CommunityAuthor" }
+        contentPreview: { type: string, minLength: 1, maxLength: 421 }
+        topics:
+          type: array
+          minItems: 1
+          uniqueItems: true
+          items: { $ref: "#/components/schemas/CommunityTopicCode" }
+        media:
+          type: array
+          maxItems: 10
+          items: { $ref: "#/components/schemas/CommunityMedia" }
+        mediaAvailability: { type: string, enum: [NONE, READY, PARTIAL, UNAVAILABLE] }
+        counts: { $ref: "#/components/schemas/CommunityCounts" }
+        publishedAt: { type: string, format: date-time }
+        updatedAt: { type: string, format: date-time }
+    CommunityPostDetail:
+      type: object
+      additionalProperties: false
+      required: [postId, author, content, topics, media, mediaAvailability, counts, publishedAt, updatedAt]
+      properties:
+        postId: { type: string, format: uuid }
+        author: { $ref: "#/components/schemas/CommunityAuthor" }
+        content: { type: string, minLength: 1, maxLength: 5000 }
+        topics:
+          type: array
+          minItems: 1
+          uniqueItems: true
+          items: { $ref: "#/components/schemas/CommunityTopicCode" }
+        media:
+          type: array
+          maxItems: 10
+          items: { $ref: "#/components/schemas/CommunityMedia" }
+        mediaAvailability: { type: string, enum: [NONE, READY, PARTIAL, UNAVAILABLE] }
+        counts: { $ref: "#/components/schemas/CommunityCounts" }
+        publishedAt: { type: string, format: date-time }
+        updatedAt: { type: string, format: date-time }
+    CommunityFeedPage:
+      type: object
+      additionalProperties: false
+      required: [items, nextCursor, hasMore]
+      properties:
+        items:
+          type: array
+          items: { $ref: "#/components/schemas/CommunityPostSummary" }
+        nextCursor: { type: [string, "null"], maxLength: 256 }
+        hasMore: { type: boolean }
+    CreatePostRequest:
+      type: object
+      additionalProperties: false
+      required: [content, topics, mediaIds]
+      properties:
+        content: { type: string, minLength: 1, maxLength: 5000 }
+        topics:
+          type: array
+          minItems: 1
+          maxItems: 3
+          uniqueItems: true
+          items: { $ref: "#/components/schemas/CommunityTopicCode" }
+        mediaIds:
+          type: array
+          maxItems: 10
+          uniqueItems: true
+          items: { type: string, format: uuid }
+    UpdatePostRequest:
+      allOf:
+        - $ref: "#/components/schemas/CreatePostRequest"
+    CommunityMediaState:
+      type: string
+      enum: [PENDING, PROCESSING, READY, REJECTED, DELETED, EXPIRED]
+    CreateMediaUploadIntentRequest:
+      type: object
+      additionalProperties: false
+      required: [fileName, mediaType, mimeType, sizeBytes]
+      properties:
+        fileName: { type: string, minLength: 1, maxLength: 255 }
+        mediaType: { type: string, enum: [IMAGE, VIDEO] }
+        mimeType: { type: string, minLength: 1, maxLength: 120 }
+        sizeBytes: { type: integer, minimum: 1 }
+    MediaUploadIntent:
+      type: object
+      additionalProperties: false
+      required: [mediaId, state, uploadUrl, expiresAt, requiredHeaders, version]
+      properties:
+        mediaId: { type: string, format: uuid }
+        state: { type: string, const: PENDING }
+        uploadUrl: { type: string, format: uri }
+        expiresAt: { type: string, format: date-time }
+        requiredHeaders:
+          type: object
+          additionalProperties: { type: string }
+        version: { type: integer, minimum: 0 }
+    CommunityMediaRecord:
+      type: object
+      additionalProperties: false
+      required: [mediaId, mediaType, state, version, createdAt, updatedAt]
+      properties:
+        mediaId: { type: string, format: uuid }
+        mediaType: { type: string, enum: [IMAGE, VIDEO] }
+        state: { $ref: "#/components/schemas/CommunityMediaState" }
+        version: { type: integer, minimum: 0 }
+        createdAt: { type: string, format: date-time }
+        updatedAt: { type: string, format: date-time }
+    CommunityCommentState:
+      type: string
+      enum: [ACTIVE, OWNER_DELETED, MODERATION_HIDDEN, MODERATION_REMOVED]
+    CommunityComment:
+      type: object
+      additionalProperties: false
+      required: [commentId, postId, parentCommentId, author, content, state, version, createdAt, updatedAt]
+      properties:
+        commentId: { type: string, format: uuid }
+        postId: { type: string, format: uuid }
+        parentCommentId: { type: [string, "null"], format: uuid }
+        author: { $ref: "#/components/schemas/CommunityAuthor" }
+        content: { type: string, maxLength: 2000 }
+        state: { $ref: "#/components/schemas/CommunityCommentState" }
+        version: { type: integer, minimum: 0 }
+        createdAt: { type: string, format: date-time }
+        updatedAt: { type: string, format: date-time }
+    CommunityCommentPage:
+      type: object
+      additionalProperties: false
+      required: [items, nextCursor, hasMore]
+      properties:
+        items:
+          type: array
+          items: { $ref: "#/components/schemas/CommunityComment" }
+        nextCursor: { type: [string, "null"], maxLength: 256 }
+        hasMore: { type: boolean }
+    CreateCommentRequest:
+      type: object
+      additionalProperties: false
+      required: [content, parentCommentId]
+      properties:
+        content: { type: string, minLength: 1, maxLength: 2000 }
+        parentCommentId: { type: [string, "null"], format: uuid }
+    UpdateCommentRequest:
+      type: object
+      additionalProperties: false
+      required: [content]
+      properties:
+        content: { type: string, minLength: 1, maxLength: 2000 }
+    SupportiveReaction:
+      type: string
+      enum: [SUPPORT, RELATE, THANK_YOU]
+    PutReactionRequest:
+      type: object
+      additionalProperties: false
+      required: [reaction]
+      properties:
+        reaction: { $ref: "#/components/schemas/SupportiveReaction" }
+    CommunityReaction:
+      type: object
+      additionalProperties: false
+      required: [postId, reaction]
+      properties:
+        postId: { type: string, format: uuid }
+        reaction: { $ref: "#/components/schemas/SupportiveReaction" }
+    ReportReason:
+      type: string
+      enum: [HARASSMENT, PRIVACY_OR_DOXXING, MEDICAL_MISINFORMATION, SELF_HARM_OR_CRISIS_CONCERN, SPAM, SEXUAL_OR_VIOLENT_CONTENT, OTHER]
+    CreateReportRequest:
+      type: object
+      additionalProperties: false
+      required: [targetType, targetId, reason, details]
+      properties:
+        targetType: { type: string, enum: [POST, COMMENT, COMMUNITY_PROFILE] }
+        targetId: { type: string, format: uuid }
+        reason: { $ref: "#/components/schemas/ReportReason" }
+        details: { type: [string, "null"], maxLength: 1000 }
+    PutCommunityProfileRequest:
+      type: object
+      additionalProperties: false
+      required: [displayName]
+      properties:
+        displayName: { type: string, minLength: 1, maxLength: 80 }
+    CommunityProfile:
+      type: object
+      additionalProperties: false
+      required: [communityProfileId, displayName, status, version, createdAt, updatedAt]
+      properties:
+        communityProfileId: { type: string, format: uuid }
+        displayName: { type: string, minLength: 1, maxLength: 80 }
+        status: { type: string, enum: [ACTIVE, DELETED] }
+        version: { type: integer, minimum: 0 }
+        createdAt: { type: string, format: date-time }
+        updatedAt: { type: string, format: date-time }
+    ModerationCaseState:
+      type: string
+      enum: [OPEN, IN_REVIEW, RESOLVED]
+    ModerationAction:
+      type: string
+      enum: [NO_ACTION, HIDE, REMOVE, RESTORE, RESTRICT_COMMUNITY_ACCESS]
+    ModerationCase:
+      type: object
+      additionalProperties: false
+      required: [caseId, targetType, targetId, state, reportReasons, createdAt, updatedAt]
+      properties:
+        caseId: { type: string, format: uuid }
+        targetType: { type: string, enum: [POST, COMMENT, COMMUNITY_PROFILE] }
+        targetId: { type: string, format: uuid }
+        state: { $ref: "#/components/schemas/ModerationCaseState" }
+        reportReasons:
+          type: array
+          uniqueItems: true
+          items: { $ref: "#/components/schemas/ReportReason" }
+        createdAt: { type: string, format: date-time }
+        updatedAt: { type: string, format: date-time }
+    CreateModerationActionRequest:
+      type: object
+      additionalProperties: false
+      required: [action, reasonCode]
+      properties:
+        action: { $ref: "#/components/schemas/ModerationAction" }
+        reasonCode: { type: string, minLength: 1, maxLength: 64 }
+    Problem:
+      type: object
+      additionalProperties: false
+      required: [type, title, status, code, correlationId]
+      properties:
+        type: { type: string, format: uri }
+        title: { type: string }
+        status: { type: integer }
+        code: { type: string }
+        correlationId: { type: string, format: uuid }
