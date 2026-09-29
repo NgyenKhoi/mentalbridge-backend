@@ -155,7 +155,7 @@ try {
         }
     }
 
-    foreach ($service in @('identity-service', 'care-service', 'consultation-service')) {
+    foreach ($service in @('identity-service', 'care-service', 'consultation-service', 'community-service')) {
         $pomPath = Join-Path $service 'pom.xml'
         if (-not (Test-Path -LiteralPath $pomPath)) {
             continue
@@ -226,7 +226,7 @@ try {
             }
         }
 
-        $postgresMigrationPattern = '^((identity|care|consultation)-service/src/main/resources/db/changelog/|content-notification-service/migrations/).+\.(sql|ya?ml|xml|js|cjs|mjs|ts)$'
+        $postgresMigrationPattern = '^((identity|care|consultation|community)-service/src/main/resources/db/changelog/|content-notification-service/migrations/).+\.(sql|ya?ml|xml|js|cjs|mjs|ts)$'
         $postgresMigrationFiles = @($changedFiles | Where-Object { $_ -match $postgresMigrationPattern })
         $migrationChanged = $postgresMigrationFiles.Count -gt 0
         if ($migrationChanged -and $changedFiles -notcontains 'docs/database/postgresql-field-data-dictionary.md') {
@@ -257,7 +257,7 @@ try {
             }
         }
 
-        foreach ($service in @('identity-service', 'care-service', 'consultation-service', 'journal-ai-service', 'realtime-service', 'content-notification-service')) {
+        foreach ($service in @('identity-service', 'care-service', 'consultation-service', 'community-service', 'journal-ai-service', 'realtime-service', 'content-notification-service')) {
             $configurationChanged = Has-Changed $changedFiles "^$([regex]::Escape($service))/src/.+(configuration|config).+\.(java|ts)$"
             if (-not $configurationChanged) {
                 continue
@@ -267,7 +267,7 @@ try {
             }
         }
 
-        foreach ($service in @('identity-service', 'care-service', 'consultation-service', 'journal-ai-service', 'realtime-service', 'content-notification-service')) {
+        foreach ($service in @('identity-service', 'care-service', 'consultation-service', 'community-service', 'journal-ai-service', 'realtime-service', 'content-notification-service')) {
             if ($changedFiles -contains "$service/.env.example" -and $changedFiles -notcontains "$service/README.md") {
                 Add-Failure "$service .env.example changed without README.md"
             }
