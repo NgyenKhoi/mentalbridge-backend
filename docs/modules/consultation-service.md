@@ -17,7 +17,7 @@ delivery, or SupportPlan state.
 | Service credits | Idempotently provision and display the current plan-period credit ledger | New `consultation-credit-v2` periods use `FREE=0`, `PLUS=4`, `PREMIUM=10`, no rollover, and separate reservation caps `0/2/4`; historical v1 periods remain immutable `0/1/3` |
 | Specialist approval | Submit public profile fields; admin approves, rejects, suspends, or restores with a stable reason | Only approved specialists are discoverable/bookable; suspension cancels future unstarted appointments with credit release; no credential document is collected |
 | Subscription/billing | Publish immutable VND plan versions; accept MoMo webhooks; purchase paid packages; upgrade `PLUS` to `PREMIUM`; expose credit/earning history | Exact minor units; replay safe; no downgrade/user-refund API; real money disabled until price/allocation/credentials gates pass |
-| Discovery/matching | Filter approved specialists and rank domain/support-area match, availability, language, timezone, rating, then experience | Deterministic pagination; criteria/policy version and explanation recorded; no disease/global-severity/clinical matcher or hidden health-data join |
+| Discovery/matching | Filter current approved specialists and rank minimized domain/pathway compatibility, language, selectable availability, then timezone; authoritative rating is a Premium-only tie-breaker | Deterministic pagination and exact slot handoff; criteria/policy version and explanation recorded; no disease/global-severity/clinical matcher, hidden health-data join, fake rating, or unsupported public field |
 | Availability | Publish non-overlapping 60-minute `IN_APP_CHAT` or `IN_APP_VIDEO` slots | New in-person/phone/external links rejected; invalid overlap rejected; video runtime requires its detailed contract |
 | Appointment | Request, accept/reject/expire, cancel/reschedule, end channel, evaluate evidence, complete/no-show/dispute | Booking requires an allowed package, `AVAILABLE` credit, reservation capacity, and selectable slot; reschedule replaces one logical reservation; at 60 minutes record `SESSION_ENDED`, while only accepted server/provider evidence completes and consumes credit |
 | Brief, summary, and next steps | Expose a user-approved pre-session `ConsultationBrief`; create post-session `SessionSummary`/`AgreedNextSteps`; submit resource proposal | No raw journals/answers/full AI history; reuse requires user approval; resource proposal becomes Care-owned `PlanChangeRequest`, not another plan |
@@ -52,11 +52,18 @@ delivery, or SupportPlan state.
 
 - [x] CON-01 Retain the historical ADR 0014 rationale and adopt ADR 0017's
   chat/video, evidence, summary reuse, and PlanChangeRequest target rules.
-- [~] CON-02 Specialist approval and MB-360 exception lifecycle, MB-362 availability, MB-377 credit balance, MB-378 appointment requests, and MB-379 decisions/expiry are implemented; discovery, session settlement, payment, earnings/payout, dashboard and review remain.
+- [~] CON-02 Specialist approval, MB-360 exception lifecycle, MB-362
+  availability, MB-363 discovery owner capability, MB-377 credit balance,
+  MB-378 appointment requests, and MB-379 decisions/expiry are implemented;
+  session settlement, payment, earnings/payout, dashboard and review remain.
 - [ ] CON-03 Define subscription/appointment/earning/review/moderation event schemas and required Care/Journal/Realtime consumer contracts.
 - [~] CON-04 Story 6101 adds profile/approval persistence, MB-362 adds availability constraints, MB-377 adds credit periods/rows/ledger, MB-378 adds appointment requests, MB-379 adds idempotent decision/expiry evidence, and MB-360 adds suspension-cancellation history; other Consultation aggregates remain pending.
 - [x] CON-05 Story 6101 implements save, submit, pending-admin queue/detail, and approve without document upload; MB-360/Story 6102 adds audited rejection, same-profile resubmission, suspension side effects, and restoration.
-- [ ] CON-06 Implement discovery/matching with versioned explainable provenance.
+- [x] CON-06 ADR `MB-SPECIALIST-DISCOVERY-001` fixes approved-only discovery,
+  deterministic explainable ranking, all-package browsing, Premium-only rating
+  tie-breaking, prohibited fields, and exact slot handoff. The Consultation
+  owner contract/query/runtime, frontend/BFF consumer, and focused owner,
+  consumer, browser, concurrency, failure-path, and privacy checks are complete.
 - [ ] CON-07 Implement VND/MoMo purchase/upgrade, `consultation-credit-v2`
   `0/4/10` no-rollover periods, `0/2/4` reservation caps, chat/video channel
   end, and race-safe evidence-backed appointment transitions without rewriting

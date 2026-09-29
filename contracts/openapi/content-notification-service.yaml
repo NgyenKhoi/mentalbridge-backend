@@ -1,7 +1,7 @@
 openapi: 3.1.0
 info:
   title: Content-Notification Service API
-  version: 1.5.0
+  version: 1.6.0
   description: >
     MentalBridge Content/Notification bounded context.
     Manages reviewed self-help resources, reviewed Vietnam safety-directory
@@ -18,6 +18,8 @@ tags:
     description: Liveness and readiness probes
   - name: Resources
     description: Self-help content management with reviewed admin lifecycle and public eligibility boundaries
+  - name: Resource progress
+    description: Owner-scoped lightweight daily participation progress for reviewed resources
   - name: Safety directory
     description: Reviewed Vietnam area-directory administration and current area lookup
   - name: Notification preferences
@@ -316,6 +318,77 @@ paths:
         "403": { $ref: "#/components/responses/Forbidden" }
         "409":
           $ref: "#/components/responses/Conflict"
+
+  /api/v1/resource-progress:
+    x-mentalbridge-status: implemented
+    get:
+      tags: [Resource progress]
+      summary: List the authenticated owner's resource progress for a bounded local-date range
+      operationId: listResourceProgress
+      security:
+        - BearerAuth: []
+      parameters:
+        - name: from
+          in: query
+          required: true
+          schema:
+            type: string
+            format: date
+        - name: to
+          in: query
+          required: true
+          schema:
+            type: string
+            format: date
+      responses:
+        "200":
+          description: Owner-scoped progress ordered by local date and recent activity
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ResourceProgressList"
+        "401": { $ref: "#/components/responses/Unauthorized" }
+        "422": { $ref: "#/components/responses/ValidationError" }
+        "503": { $ref: "#/components/responses/ServiceUnavailable" }
+
+  /api/v1/resource-progress/{resourceId}/{localDate}:
+    x-mentalbridge-status: implemented
+    put:
+      tags: [Resource progress]
+      summary: Replace one daily progress item for the authenticated owner
+      operationId: saveResourceProgress
+      security:
+        - BearerAuth: []
+      parameters:
+        - name: resourceId
+          in: path
+          required: true
+          schema:
+            type: string
+            format: uuid
+        - name: localDate
+          in: path
+          required: true
+          schema:
+            type: string
+            format: date
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/ResourceProgressUpdate"
+      responses:
+        "200":
+          description: Persisted daily progress
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ResourceProgressItem"
+        "401": { $ref: "#/components/responses/Unauthorized" }
+        "404": { $ref: "#/components/responses/NotFound" }
+        "422": { $ref: "#/components/responses/ValidationError" }
+        "503": { $ref: "#/components/responses/ServiceUnavailable" }
 
   /api/v1/resources/{id}/publish:
     x-mentalbridge-status: implemented
@@ -1336,6 +1409,92 @@ components:
     ResourceStatus:
       type: string
       enum: [DRAFT, PUBLISHED, ARCHIVED]
+
+    ResourceProgressStatus:
+      type: string
+      enum: [IN_PROGRESS, COMPLETED]
+      description: >-
+        Daily participation state. COMPLETED is terminal for a resource and
+        local date; later checklist edits cannot return it to IN_PROGRESS.
+
+    ResourceProgressItem:
+      type: object
+      required:
+        [
+          resourceId,
+          localDate,
+          contentVersion,
+          status,
+          completedActionIds,
+          completedAt,
+          updatedAt,
+          version,
+        ]
+      properties:
+        resourceId:
+          type: string
+          format: uuid
+        localDate:
+          type: string
+          format: date
+        contentVersion:
+          type: string
+          pattern: "^(0|[1-9][0-9]*)$"
+          maxLength: 19
+        status:
+          $ref: "#/components/schemas/ResourceProgressStatus"
+        completedActionIds:
+          type: array
+          description: >-
+            Current user-managed checklist selections. These selections remain
+            editable after COMPLETED without reversing the recorded completion.
+          maxItems: 32
+          uniqueItems: true
+          items:
+            type: string
+            minLength: 1
+            maxLength: 64
+            pattern: "^[A-Za-z0-9:_-]+$"
+        completedAt:
+          type: string
+          format: date-time
+          nullable: true
+        updatedAt:
+          type: string
+          format: date-time
+        version:
+          type: string
+          pattern: "^(0|[1-9][0-9]*)$"
+          maxLength: 19
+
+    ResourceProgressList:
+      type: object
+      required: [items]
+      properties:
+        items:
+          type: array
+          items:
+            $ref: "#/components/schemas/ResourceProgressItem"
+
+    ResourceProgressUpdate:
+      type: object
+      additionalProperties: false
+      required: [status, completedActionIds]
+      properties:
+        status:
+          $ref: "#/components/schemas/ResourceProgressStatus"
+        completedActionIds:
+          type: array
+          description: >-
+            Current user-managed checklist selections. These selections remain
+            editable after COMPLETED without reversing the recorded completion.
+          maxItems: 32
+          uniqueItems: true
+          items:
+            type: string
+            minLength: 1
+            maxLength: 64
+            pattern: "^[A-Za-z0-9:_-]+$"
 
     ResourceSummary:
       type: object

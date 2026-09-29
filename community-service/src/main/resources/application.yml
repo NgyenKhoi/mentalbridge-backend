@@ -1,0 +1,61 @@
+server:
+  port: ${SERVER_PORT:8084}
+  shutdown: graceful
+
+spring:
+  application:
+    name: community-service
+  datasource:
+    url: ${COMMUNITY_DB_URL}
+    username: ${COMMUNITY_DB_USERNAME}
+    password: ${COMMUNITY_DB_PASSWORD}
+  jpa:
+    hibernate:
+      ddl-auto: validate
+    open-in-view: false
+    properties:
+      hibernate:
+        default_schema: public
+        jdbc:
+          time_zone: UTC
+  liquibase:
+    enabled: ${COMMUNITY_LIQUIBASE_ENABLED:false}
+    change-log: classpath:db/changelog/db.changelog-master.yaml
+    default-schema: public
+
+mentalbridge:
+  community:
+    jwt:
+      issuer: ${IDENTITY_JWT_ISSUER}
+      audience: ${IDENTITY_JWT_AUDIENCE}
+      public-key: ${IDENTITY_JWT_PUBLIC_KEY}
+    cloudinary:
+      cloud-name: ${CLOUDINARY_CLOUD_NAME}
+      api-key: ${CLOUDINARY_API_KEY}
+      api-secret: ${CLOUDINARY_API_SECRET}
+
+eureka:
+  client:
+    enabled: ${EUREKA_CLIENT_ENABLED:true}
+    service-url:
+      defaultZone: ${EUREKA_DEFAULT_ZONE:http://localhost:8761/eureka/}
+
+springdotenv:
+  ignoreIfMissing: true
+  exportToSystemProperties: false
+
+management:
+  endpoints:
+    web:
+      exposure:
+        include: health,prometheus
+  endpoint:
+    health:
+      probes:
+        enabled: true
+      show-details: never
+
+logging:
+  level:
+    org.springframework.web: INFO
+    org.hibernate.SQL: INFO

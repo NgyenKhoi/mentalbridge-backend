@@ -49,6 +49,8 @@ void test("runs the owner HTTP flow against migrated MongoDB", async () => {
     IDENTITY_JWT_KEY_ID: "analysis-integration-key",
     IDENTITY_JWT_PUBLIC_KEY: await exportSPKI(publicKey),
     CARE_BASE_URL: "http://localhost:8081",
+    CONTENT_BASE_URL: "http://localhost:3003",
+    CONTENT_TIMEOUT_MS: 2_000,
     CARE_TIMEOUT_MS: 100,
     CONSULTATION_BASE_URL: "http://localhost:8082",
     CONSULTATION_TIMEOUT_MS: 100,

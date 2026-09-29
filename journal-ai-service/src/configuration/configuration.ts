@@ -81,6 +81,13 @@ const environmentSchema = z
       .min(100)
       .max(5_000)
       .default(2_000),
+    JOURNAL_AI_CONTENT_BASE_URL: z.url(),
+    JOURNAL_AI_CONTENT_TIMEOUT_MS: z.coerce
+      .number()
+      .int()
+      .min(100)
+      .max(5_000)
+      .default(2_000),
     JOURNAL_AI_CONSULTATION_BASE_URL: z.url(),
     JOURNAL_AI_CONSULTATION_TIMEOUT_MS: z.coerce
       .number()
@@ -422,6 +429,8 @@ const environmentSchema = z
     IDENTITY_JWT_PUBLIC_KEY: environment.IDENTITY_JWT_PUBLIC_KEY,
     CARE_BASE_URL: environment.JOURNAL_AI_CARE_BASE_URL,
     CARE_TIMEOUT_MS: environment.JOURNAL_AI_CARE_TIMEOUT_MS,
+    CONTENT_BASE_URL: environment.JOURNAL_AI_CONTENT_BASE_URL,
+    CONTENT_TIMEOUT_MS: environment.JOURNAL_AI_CONTENT_TIMEOUT_MS,
     CONSULTATION_BASE_URL: environment.JOURNAL_AI_CONSULTATION_BASE_URL,
     CONSULTATION_TIMEOUT_MS: environment.JOURNAL_AI_CONSULTATION_TIMEOUT_MS,
     REMINDER_SERVICE_TOKEN:
@@ -517,6 +526,8 @@ export const loadConfiguration = (
             environment.JOURNAL_AI_IDEMPOTENCY_HMAC_KEY ?? localIdempotencyKey,
           JOURNAL_AI_CARE_BASE_URL:
             environment.JOURNAL_AI_CARE_BASE_URL ?? "http://localhost:8081",
+          JOURNAL_AI_CONTENT_BASE_URL:
+            environment.JOURNAL_AI_CONTENT_BASE_URL ?? "http://localhost:3003",
           JOURNAL_AI_CONSULTATION_BASE_URL:
             environment.JOURNAL_AI_CONSULTATION_BASE_URL ??
             "http://localhost:8082",

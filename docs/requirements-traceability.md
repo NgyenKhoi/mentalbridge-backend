@@ -20,7 +20,7 @@ Architecture may add safety, privacy, reliability, and implementation constraint
 | Consumer product for Vietnamese users aged 18–30                                                            | User/guest APIs, `vi-VN` locale baseline, mobile-facing REST plus realtime WebSocket                                                                                                |
 | V1 screening and post-screening scope                                                                       | Exactly PHQ-9/`DEPRESSIVE_SYMPTOMS` and GAD-7/`ANXIETY_SYMPTOMS`; another domain is a separately approved product vertical                                                          |
 | React web admin and end-user mobile application                                                             | Edge proxy exposes REST/JSON; only Realtime Service exposes WSS                                                                                                                     |
-| Spring Boot and Node.js backend                                                                             | Three Spring Boot and three NestJS/TypeScript services as fixed by ADR 0001 and ADR 0006                                                                                            |
+| Spring Boot and Node.js backend                                                                             | Four Spring Boot and three NestJS/TypeScript services; ADR 0027 adds the privacy-isolated Community owner to the ADR 0001/0006 baseline                                             |
 | PostgreSQL and MongoDB                                                                                      | PostgreSQL owns relational transactions and Care consent; MongoDB owns all Journal/AI operational data including jobs/results, plus Realtime conversations/messages                 |
 | Gemini/OpenAI through prompt engineering                                                                    | Node.js Journal/AI provider adapters with ADR 0015 normalized output, one provider per run, bounded retry, and no raw-response persistence; no fine-tuning                          |
 | PhoBERT inference-only comparison                                                                           | Deferred optional Vietnamese NLP baseline under ADR 0011; activation requires an approved task, labels, governed data, preprocessing, and a pinned compatible fine-tuned checkpoint |
@@ -43,7 +43,7 @@ Kafka and Redis are architecture additions supporting realtime and asynchronous 
 | 28–29, 150–156        | benchmark execution/results and dataset administration                                                     | Journal/AI; optional future PhoBERT inference only                         | Private object storage, MongoDB-owned metadata and provider adapters; production-provider and publication design remain gated                                                                          |
 | 30–31, 89–94, 98–101  | safety/explicit help, Support Guide, SupportPlan, follow-up and personal analytics                         | Care; Journal/AI supplies approved structured indicators                   | Local safety authority, one-time all-tier guide, one paid official plan, area-directory result, and bounded projections                                                                                |
 | 32–35, 95–97, 130–139 | self-help content, area directory, reminders, notification history and content administration              | Content/Notification Service (Node.js)                                     | PostgreSQL; reviewed resources/directory provenance, at-most-daily digest, opt-in resource reminders, separate appointment reminder, durable delivery state                                            |
-| 36–41                 | specialist discovery, filtering and matching                                                               | Consultation Service (Spring)                                              | Approved profiles only; transparent ADR 0014 non-clinical ranking order and seeded-demo disclosure                                                                                                     |
+| 36–41                 | specialist discovery, filtering and matching                                                               | Consultation Service (Spring)                                              | Current approved profiles and selectable online slots only; ADR `MB-SPECIALIST-DISCOVERY-001` uses minimized domain/pathway, language, availability and timezone before a Premium-only authoritative rating tie-breaker; no fabricated rating or clinical claim             |
 | 42–51                 | `FREE`/`PLUS`/`PREMIUM`, VND purchase/payment, `PLUS`-to-`PREMIUM` upgrade, and consultation-credit ledger | Consultation/Billing                                                       | PostgreSQL authority; signed MoMo webhook; exact VND minor-unit upgrade offset; no downgrade/user-refund API                                                                                           |
 | 52–61, 117–122        | specialist profile, approval, historical location requirement, online availability and administration      | Consultation Service                                                       | PostgreSQL with audited stable approval/suspension reasons; MB-362 v2 availability has no PracticeLocation; no verification/license workflow; WBS 54 document upload removed                           |
 | 62–73, 148–149        | in-app chat/video booking, transitions, evidence, history and read-only admin monitoring                   | Consultation/Billing                                                       | 60-minute slot; channel closes at `SESSION_ENDED`; server/provider evidence gates completion, credit consumption, and earning                                                                          |
@@ -86,20 +86,19 @@ These constraints refine rather than contradict the source documents:
 The requirements are represented in domain/architecture documentation, but the logical database baseline still needs explicit aggregates or decisions before the affected iteration is implemented:
 
 1. Referral status/history for the Moderate intervention path.
-2. Discovery persistence and API shape for the accepted ADR 0014 ranking order, result provenance, explanation, and seeded-demo disclosure.
-3. Notification templates, at-most-daily digest deduplication, explicit
+2. Notification templates, at-most-daily digest deduplication, explicit
    per-resource opt-in, one-time appointment reminders, quiet-hour behavior,
    and provider delivery-attempt history.
-4. Dedicated read projections for personal analytics, admin activity, platform trends, and consolidated audit search.
-5. Explicit anonymous-assessment expiry/cleanup configuration and deletion evidence.
-6. Moderation evidence snapshot/access policy and appeal/action history.
-7. Dataset metadata edit semantics: immutable version replacement versus narrowly editable administrative metadata.
-8. Exact MoMo payment method/request type, credentials/key rotation,
+3. Dedicated read projections for personal analytics, admin activity, platform trends, and consolidated audit search.
+4. Explicit anonymous-assessment expiry/cleanup configuration and deletion evidence.
+5. Moderation evidence snapshot/access policy and appeal/action history.
+6. Dataset metadata edit semantics: immutable version replacement versus narrowly editable administrative metadata.
+7. Exact MoMo payment method/request type, credentials/key rotation,
    status-query schedule, settlement delay, chargeback reconciliation, payout
    onboarding, VND `PLUS`/`PREMIUM` prices, fixed `creditAllocation`, and
    financial retention. ADR 0017 prohibits runtime FX, downgrade, and user
    refund APIs and gates earnings on evidence-backed completion.
-9. WBS 28-29 and 155-156 both describe running/viewing AI benchmark evaluation; confirm whether they are different actor views or duplicate catalogue entries before defining benchmark/admin contracts. This does not block ADR 0015 contract, adapter, or async-job implementation.
+8. WBS 28-29 and 155-156 both describe running/viewing AI benchmark evaluation; confirm whether they are different actor views or duplicate catalogue entries before defining benchmark/admin contracts. This does not block ADR 0015 contract, adapter, or async-job implementation.
    Agents must not invent these behaviors independently. Resolve the relevant rule through product/domain review, then update the contract, data dictionary, migration, tests, and this traceability document together.
 
 ## Approved scope changes

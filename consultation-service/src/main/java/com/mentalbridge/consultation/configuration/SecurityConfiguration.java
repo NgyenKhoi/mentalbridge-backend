@@ -41,7 +41,7 @@ public class SecurityConfiguration {
 						.hasAnyRole("USER", "SPECIALIST")
 						.requestMatchers("/api/v1/service-credits").hasRole("USER")
 						.requestMatchers("/api/v1/specialist/appointments/**").hasRole("SPECIALIST")
-						.requestMatchers("/api/v1/appointments/**", "/api/v1/bookable-slots").hasRole("USER")
+						.requestMatchers("/api/v1/appointments/**", "/api/v1/bookable-slots", "/api/v1/specialists/**").hasRole("USER")
 						.requestMatchers("/api/v1/specialist-profile/**").hasRole("SPECIALIST")
 						.requestMatchers("/api/v1/availability-slots/**").hasRole("SPECIALIST")
 						.requestMatchers("/api/v1/admin/specialist-profiles/**").hasRole("ADMIN")

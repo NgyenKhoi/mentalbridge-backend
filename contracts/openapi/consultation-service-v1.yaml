@@ -2,7 +2,7 @@ openapi: 3.1.0
 info:
   title: MentalBridge Consultation Service API
   version: 1.5.0
-  description: Consultation-owned specialist profile lifecycle, service-plan entitlement and credit lookup, online availability, appointment requests and auditable owner cancellation/reschedule outcomes, credit reservation limits, and suspension outcomes.
+  description: Consultation-owned specialist profile lifecycle, approved online discovery, service-plan entitlement and credit lookup, online availability, appointment requests and auditable owner cancellation/reschedule outcomes, credit reservation limits, and suspension outcomes.
 servers:
   - url: http://localhost:8082
 paths:
@@ -250,6 +250,56 @@ paths:
         '400': { $ref: '#/components/responses/ValidationProblem' }
         '401': { $ref: '#/components/responses/UnauthorizedProblem' }
         '403': { $ref: '#/components/responses/EntitlementForbiddenProblem' }
+  /api/v1/specialists:
+    x-mentalbridge-status: implemented
+    get:
+      operationId: discoverApprovedSpecialists
+      description: Returns only current APPROVED profiles and their current selectable exact 60-minute online slots. FREE, PLUS, and PREMIUM may browse. Optional personalization reads one exact owned Care SupportEvaluation server-to-server; its health content is never returned or persisted, and unavailable context degrades to a neutral explained rank.
+      security: [{ bearerAuth: [] }]
+      parameters:
+        - { name: supportEvaluationId, in: query, schema: { type: string, format: uuid } }
+        - { name: supportArea, in: query, schema: { $ref: '#/components/schemas/SupportArea' } }
+        - { name: language, in: query, schema: { $ref: '#/components/schemas/LanguageTag' } }
+        - { name: timezone, in: query, schema: { type: string, minLength: 1, maxLength: 64 } }
+        - { name: modality, in: query, schema: { $ref: '#/components/schemas/AppointmentModality' } }
+        - { name: from, in: query, schema: { type: string, format: date-time } }
+        - { name: to, in: query, schema: { type: string, format: date-time } }
+        - { name: limit, in: query, schema: { type: integer, minimum: 1, maximum: 50, default: 20 } }
+        - { name: cursor, in: query, schema: { type: string, minLength: 1, maxLength: 2048 } }
+      responses:
+        '200':
+          description: Deterministically ranked approved specialist page
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/SpecialistDiscoveryPage' }
+        '400': { $ref: '#/components/responses/ValidationProblem' }
+        '401': { $ref: '#/components/responses/UnauthorizedProblem' }
+        '403': { $ref: '#/components/responses/EntitlementForbiddenProblem' }
+        '409': { $ref: '#/components/responses/DiscoveryCursorConflictProblem' }
+  /api/v1/specialists/{specialistAccountId}:
+    x-mentalbridge-status: implemented
+    get:
+      operationId: getApprovedSpecialistDetail
+      description: Rechecks current approval and slot selectability and returns one approved public profile only when at least one selectable slot remains. A profile that is suspended, rejected, pending, missing, or has no selectable slot is indistinguishable as SPECIALIST_NOT_DISCOVERABLE.
+      security: [{ bearerAuth: [] }]
+      parameters:
+        - $ref: '#/components/parameters/SpecialistAccountId'
+        - { name: supportEvaluationId, in: query, schema: { type: string, format: uuid } }
+        - { name: language, in: query, schema: { $ref: '#/components/schemas/LanguageTag' } }
+        - { name: timezone, in: query, schema: { type: string, minLength: 1, maxLength: 64 } }
+        - { name: modality, in: query, schema: { $ref: '#/components/schemas/AppointmentModality' } }
+        - { name: from, in: query, schema: { type: string, format: date-time } }
+        - { name: to, in: query, schema: { type: string, format: date-time } }
+      responses:
+        '200':
+          description: Current approved public specialist detail and selectable slots
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/SpecialistDiscoveryItem' }
+        '400': { $ref: '#/components/responses/ValidationProblem' }
+        '401': { $ref: '#/components/responses/UnauthorizedProblem' }
+        '403': { $ref: '#/components/responses/EntitlementForbiddenProblem' }
+        '404': { $ref: '#/components/responses/DiscoveryNotFoundProblem' }
   /api/v1/appointments:
     x-mentalbridge-status: implemented
     get:
@@ -928,6 +978,98 @@ components:
         count: { type: integer, minimum: 0, maximum: 200 }
         generatedAt: { type: string, format: date-time }
         videoEnabled: { type: boolean }
+    DiscoveryContextState:
+      type: string
+      enum: [NOT_REQUESTED, APPLIED, UNAVAILABLE]
+    BookingHandoff:
+      type: string
+      description: BROWSE_ONLY forbids starting a booking command. BOOKING_POLICY_CHECK_REQUIRED permits handoff only; MB-378/MB-558 still recheck entitlement, credit, reservation capacity, specialist, and slot.
+      enum: [BROWSE_ONLY, BOOKING_POLICY_CHECK_REQUIRED]
+    DiscoveryCompatibility:
+      type: string
+      enum: [NEUTRAL, MATCHED, NOT_MATCHED, UNAVAILABLE]
+    DiscoveryTimezoneMatch:
+      type: string
+      enum: [NOT_REQUESTED, EXACT, OFFSET_DISTANCE]
+    DiscoveryExplanation:
+      type: object
+      additionalProperties: false
+      required: [compatibility, languageMatched, hasSelectableSlot, earliestSelectableStartAt, timezoneMatch, timezoneOffsetDistanceMinutes, ratingTieBreakerApplied, codes]
+      properties:
+        compatibility: { $ref: '#/components/schemas/DiscoveryCompatibility' }
+        languageMatched: { type: [boolean, 'null'] }
+        hasSelectableSlot: { type: boolean }
+        earliestSelectableStartAt: { type: [string, 'null'], format: date-time }
+        timezoneMatch: { $ref: '#/components/schemas/DiscoveryTimezoneMatch' }
+        timezoneOffsetDistanceMinutes: { type: [integer, 'null'], minimum: 0, maximum: 1440 }
+        ratingTieBreakerApplied:
+          type: boolean
+          description: False until an authoritative eligible rating aggregate exists; never overrides a primary factor.
+        codes:
+          type: array
+          minItems: 4
+          maxItems: 5
+          uniqueItems: true
+          items:
+            type: string
+            enum: [SCREENED_SUPPORT_AREA_MATCH, NO_SCREENED_SUPPORT_AREA_MATCH, NO_SCREENING_CONTEXT, SCREENING_CONTEXT_UNAVAILABLE, REQUESTED_LANGUAGE_MATCH, REQUESTED_LANGUAGE_NOT_MATCHED, NO_REQUESTED_LANGUAGE, SELECTABLE_SLOT_AVAILABLE, NO_SELECTABLE_SLOT, EXACT_TIMEZONE_MATCH, TIMEZONE_OFFSET_DISTANCE, NO_REQUESTED_TIMEZONE, RATING_NOT_AVAILABLE]
+    DiscoverySlot:
+      type: object
+      additionalProperties: false
+      required: [id, specialistAccountId, startAt, endAt, timezone, modality, version]
+      properties:
+        id: { type: string, format: uuid }
+        specialistAccountId: { type: string, format: uuid }
+        startAt: { type: string, format: date-time }
+        endAt: { type: string, format: date-time }
+        timezone: { type: string, minLength: 1, maxLength: 64 }
+        modality: { $ref: '#/components/schemas/AppointmentModality' }
+        version: { type: integer, format: int64, minimum: 0 }
+    SpecialistDiscoveryItem:
+      type: object
+      additionalProperties: false
+      required: [specialistAccountId, displayName, bio, supportAreas, languages, yearsOfExperience, timezone, explanation, selectableSlots]
+      properties:
+        specialistAccountId: { type: string, format: uuid }
+        displayName: { type: string, minLength: 1, maxLength: 120 }
+        bio: { type: string, minLength: 1, maxLength: 2000 }
+        supportAreas:
+          type: array
+          minItems: 1
+          maxItems: 2
+          uniqueItems: true
+          items: { $ref: '#/components/schemas/SupportArea' }
+        languages:
+          type: array
+          minItems: 1
+          maxItems: 2
+          uniqueItems: true
+          items: { $ref: '#/components/schemas/LanguageTag' }
+        yearsOfExperience: { type: integer, minimum: 0, maximum: 80 }
+        timezone: { type: string, minLength: 1, maxLength: 64 }
+        explanation: { $ref: '#/components/schemas/DiscoveryExplanation' }
+        selectableSlots:
+          type: array
+          minItems: 1
+          maxItems: 20
+          items: { $ref: '#/components/schemas/DiscoverySlot' }
+    SpecialistDiscoveryPage:
+      type: object
+      additionalProperties: false
+      required: [items, count, nextCursor, rankingPolicyVersion, generatedAt, contextState, packageCode, bookingHandoff, videoEnabled]
+      properties:
+        items:
+          type: array
+          maxItems: 50
+          items: { $ref: '#/components/schemas/SpecialistDiscoveryItem' }
+        count: { type: integer, minimum: 0, maximum: 50 }
+        nextCursor: { type: [string, 'null'], minLength: 1, maxLength: 2048 }
+        rankingPolicyVersion: { type: string, const: specialist-discovery-v1 }
+        generatedAt: { type: string, format: date-time }
+        contextState: { $ref: '#/components/schemas/DiscoveryContextState' }
+        packageCode: { $ref: '#/components/schemas/ServicePackage' }
+        bookingHandoff: { $ref: '#/components/schemas/BookingHandoff' }
+        videoEnabled: { type: boolean }
     Appointment:
       type: object
       additionalProperties: false
@@ -1050,6 +1192,16 @@ components:
           schema: { $ref: '#/components/schemas/Problem' }
     AppointmentVersionRequiredProblem:
       description: If-Match is required for a specialist decision, owner cancellation, or replacement request (APPOINTMENT_VERSION_REQUIRED).
+      content:
+        application/problem+json:
+          schema: { $ref: '#/components/schemas/Problem' }
+    DiscoveryNotFoundProblem:
+      description: The profile is absent or is not currently approved (SPECIALIST_NOT_DISCOVERABLE).
+      content:
+        application/problem+json:
+          schema: { $ref: '#/components/schemas/Problem' }
+    DiscoveryCursorConflictProblem:
+      description: The cursor belongs to another criteria set or ranking policy (DISCOVERY_CURSOR_STALE).
       content:
         application/problem+json:
           schema: { $ref: '#/components/schemas/Problem' }

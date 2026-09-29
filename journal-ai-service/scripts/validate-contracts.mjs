@@ -51,6 +51,7 @@ const implementedOperations = new Set([
   "GET /api/v1/ai-companion/conversations/{conversationId}",
   "DELETE /api/v1/ai-companion/conversations/{conversationId}",
   "POST /api/v1/ai-companion/conversations/{conversationId}/messages",
+  "PUT /api/v1/ai-companion/conversations/{conversationId}/context",
 ]);
 const implementedResponses = new Map([
   ["GET /health/live", new Set(["200"])],
@@ -128,6 +129,10 @@ const implementedResponses = new Map([
   [
     "POST /api/v1/ai-companion/conversations/{conversationId}/messages",
     new Set(["201", "400", "401", "403", "404", "409", "429", "503"]),
+  ],
+  [
+    "PUT /api/v1/ai-companion/conversations/{conversationId}/context",
+    new Set(["200", "400", "401", "404"]),
   ],
 ]);
 const plannedOperations = new Set();

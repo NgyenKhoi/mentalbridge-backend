@@ -10,7 +10,7 @@ The root [`compose.yml`](compose.yml) is intentionally scoped to executable Revi
 
 | Profile | Services |
 | --- | --- |
-| `demo` | Frontend, Identity, Care, Consultation, Journal/AI, Content/Notification, and explicit migrations against the shared dev/staging databases |
+| `demo` | Frontend, Identity, Care, Consultation, Community, Journal/AI, Content/Notification, and explicit migrations against the shared dev/staging databases |
 | `full-test` | Everything in `demo`, plus Realtime, its migration against the shared dev/staging MongoDB deployment, and local ephemeral Redis |
 
 Consultation and Journal/AI are included because entitlement-aware SupportPlan and journal-reflection journeys now call them directly. Eureka and Kafka remain outside this stack because the current demo uses explicit container URLs and has no accepted broker-dependent journey. PhoBERT is an optional deferred benchmark baseline under ADR 0011 and is not a Review 1 or initial AI runtime dependency. Realtime is available for foundation testing but is not part of the critical mentor-demo path.
@@ -90,12 +90,15 @@ The recommended starting point is a **small microservice landscape**, not one se
 | Identity Service | Spring Boot 4.x | Accounts, roles, sessions, password reset | PostgreSQL |
 | Care Service | Spring Boot 4.x | Profiles, consent grants, assessments, safety/support policy, interventions, follow-up | PostgreSQL |
 | Consultation Service | Spring Boot 4.x | Specialist approval/discovery, subscription/payment/upgrade, credits, scheduled consultations, earnings/provider payouts, reviews | PostgreSQL |
+| Community Service | Spring Boot 4.x | Community display identity and future peer-support publication, interaction, moderation, block, and media metadata | PostgreSQL |
 | Journal & AI Service | Node.js 22+, TypeScript, NestJS | Journals, LLM orchestration, analysis jobs/results, benchmark coordination | MongoDB |
 | Realtime Service | Node.js 22+, TypeScript, NestJS, Socket.IO | REST message APIs, WebSocket chat/notification delivery, presence, receipts | MongoDB + Redis |
 | Content & Notification Service | Node.js 22+, TypeScript, NestJS | Self-help resources, preferences, notification/provider delivery | PostgreSQL |
 | PhoBERT Worker (optional/deferred) | Python | Future experimental Vietnamese NLP benchmark inference only | No authoritative business store |
 
 ADR 0005 assigns the workbook's financial bounded context to a cohesive `billing` feature inside Consultation Service without adding another core deployable. It owns paid subscriptions, Care-to-Plus upgrades, consultation credits, specialist earnings, and payout reconciliation. Downgrade and user-initiated refund are unsupported; MoMo is the sole production payment/payout provider, while local/CI uses MoMo-shaped fakes.
+
+ADR 0027 adds Community as an independent Spring Boot/PostgreSQL bounded context. MB-574 now provides the authenticated, privacy-isolated feed, topic catalogue, and post-detail read slice; MB-575 through MB-582 promote the remaining authoring, interaction, reporting, and moderation capabilities through their own contracts and migrations.
 
 Use REST/JSON DTOs for synchronous business APIs and service-to-service queries. Spring services register with Eureka and Java consumers use OpenFeign only as a REST client adapter; discovery does not change ownership, authorization, or OpenAPI contracts. WebSocket terminates only at Realtime Service for live client chat, presence, receipts, and in-app notifications. Kafka carries durable asynchronous commands/events only for accepted features that require independent consumers, fan-out, or replay; MB-367 analysis jobs remain local MongoDB work. Redis carries only ephemeral presence, connection routing, fan-out, rate-limit, delivery/idempotency, and expiring hashed OTP state; it is not a database-query cache or business source of truth.
 
@@ -194,8 +197,8 @@ development and service integration tests:
 ```
 
 Start Docker Desktop first and wait until `docker info` succeeds. The compose
-file exposes separate PostgreSQL databases for Identity, Care, and
-Content/Notification, plus MongoDB, Redis, and single-node Kafka. The passwords
+file exposes separate PostgreSQL databases for Identity, Care,
+Content/Notification, and Community, plus MongoDB, Redis, and single-node Kafka. The passwords
 are local-only development values and must never be reused outside this stack.
 
 Spring integration tests use Testcontainers and start isolated temporary

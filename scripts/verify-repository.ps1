@@ -103,10 +103,44 @@ try {
     }
 
     foreach ($contract in Get-ChildItem -LiteralPath 'contracts/openapi' -File -Filter '*.yaml') {
-        $pathCount = @(Select-String -LiteralPath $contract.FullName -Pattern '^  /').Count
-        $statusMatches = @(Select-String -LiteralPath $contract.FullName -Pattern '^    x-mentalbridge-status: (implemented|planned)$')
-        if ($pathCount -ne $statusMatches.Count) {
-            Add-Failure "$($contract.Name) has $pathCount paths but $($statusMatches.Count) explicit availability statuses"
+        $invalidStatusPaths = [System.Collections.Generic.List[string]]::new()
+        $currentPath = $null
+        $pathHasStatus = $false
+        $operationCount = 0
+        $operationStatusCount = 0
+
+        $finalizePath = {
+            if ($null -ne $currentPath -and -not $pathHasStatus -and ($operationCount -eq 0 -or $operationStatusCount -ne $operationCount)) {
+                $invalidStatusPaths.Add($currentPath)
+            }
+        }
+
+        foreach ($line in Get-Content -LiteralPath $contract.FullName) {
+            if ($line -match '^  (/[^:]+):\s*$') {
+                & $finalizePath
+                $currentPath = $Matches[1]
+                $pathHasStatus = $false
+                $operationCount = 0
+                $operationStatusCount = 0
+                continue
+            }
+            if ($null -eq $currentPath) {
+                continue
+            }
+            if ($line -match '^    x-mentalbridge-status: (implemented|planned)\s*$') {
+                $pathHasStatus = $true
+            }
+            elseif ($line -match '^    (get|put|post|delete|patch|options|head|trace):\s*$') {
+                $operationCount++
+            }
+            elseif ($line -match '^      x-mentalbridge-status: (implemented|planned)\s*$') {
+                $operationStatusCount++
+            }
+        }
+        & $finalizePath
+
+        if ($invalidStatusPaths.Count -gt 0) {
+            Add-Failure "$($contract.Name) has paths without a path-level status or per-operation statuses: $($invalidStatusPaths -join ', ')"
         }
     }
 
@@ -155,7 +189,7 @@ try {
         }
     }
 
-    foreach ($service in @('identity-service', 'care-service', 'consultation-service')) {
+    foreach ($service in @('identity-service', 'care-service', 'consultation-service', 'community-service')) {
         $pomPath = Join-Path $service 'pom.xml'
         if (-not (Test-Path -LiteralPath $pomPath)) {
             continue
@@ -204,6 +238,7 @@ try {
             'journal-ai-service' = 'contracts/openapi/journal-ai-service-v1.yaml'
             'realtime-service' = 'contracts/openapi/realtime-service-v1.yaml'
             'content-notification-service' = 'contracts/openapi/content-notification-service.yaml'
+            'community-service' = 'contracts/openapi/community-service-v1.yaml'
         }
 
         $realtimeGatewayChanged = Has-Changed $changedFiles '^realtime-service/.+gateway\.ts$'
@@ -226,7 +261,7 @@ try {
             }
         }
 
-        $postgresMigrationPattern = '^((identity|care|consultation)-service/src/main/resources/db/changelog/|content-notification-service/migrations/).+\.(sql|ya?ml|xml|js|cjs|mjs|ts)$'
+        $postgresMigrationPattern = '^((identity|care|consultation|community)-service/src/main/resources/db/changelog/|content-notification-service/migrations/).+\.(sql|ya?ml|xml|js|cjs|mjs|ts)$'
         $postgresMigrationFiles = @($changedFiles | Where-Object { $_ -match $postgresMigrationPattern })
         $migrationChanged = $postgresMigrationFiles.Count -gt 0
         if ($migrationChanged -and $changedFiles -notcontains 'docs/database/postgresql-field-data-dictionary.md') {
@@ -257,7 +292,7 @@ try {
             }
         }
 
-        foreach ($service in @('identity-service', 'care-service', 'consultation-service', 'journal-ai-service', 'realtime-service', 'content-notification-service')) {
+        foreach ($service in @('identity-service', 'care-service', 'consultation-service', 'community-service', 'journal-ai-service', 'realtime-service', 'content-notification-service')) {
             $configurationChanged = Has-Changed $changedFiles "^$([regex]::Escape($service))/src/.+(configuration|config).+\.(java|ts)$"
             if (-not $configurationChanged) {
                 continue
@@ -267,7 +302,7 @@ try {
             }
         }
 
-        foreach ($service in @('identity-service', 'care-service', 'consultation-service', 'journal-ai-service', 'realtime-service', 'content-notification-service')) {
+        foreach ($service in @('identity-service', 'care-service', 'consultation-service', 'community-service', 'journal-ai-service', 'realtime-service', 'content-notification-service')) {
             if ($changedFiles -contains "$service/.env.example" -and $changedFiles -notcontains "$service/README.md") {
                 Add-Failure "$service .env.example changed without README.md"
             }

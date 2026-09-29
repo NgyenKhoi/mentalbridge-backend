@@ -126,9 +126,13 @@ provider output and credentials remain excluded from every collection.
 Collection: `ai_companion_conversations`
 
 Key fields: conversation/owner IDs, title, bounded encrypted messages,
-assistant route provenance, context-kind labels, activity timestamps, and
-retention expiry. Plaintext content, assembled prompts, bearer credentials, raw
-provider output, and hidden reasoning are not fields.
+owner-controlled context-source flags, up to 20 selected resource IDs, context
+update time, assistant route provenance, context-kind labels (including
+`RESOURCE`), activity timestamps, and retention expiry. Plaintext content,
+assembled prompts, selected source plaintext, bearer credentials, raw provider
+output, and hidden reasoning are not fields. Migration
+`012_ai_companion_conversation_context.cjs` backfills the default context before
+enforcing the strict validator.
 
 ### AI Companion Command — ACTIVE
 

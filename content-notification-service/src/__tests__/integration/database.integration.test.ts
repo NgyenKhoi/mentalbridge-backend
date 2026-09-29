@@ -14,6 +14,7 @@ import {
   NotificationRepository,
 } from '../../notifications/notification.repository.js';
 import { NotificationService } from '../../notifications/notification.service.js';
+import { ResourceProgressRepository } from '../../resources/resource-progress.repository.js';
 
 const __dirname = dirname(fileURLToPath(import.meta.url));
 
@@ -66,6 +67,7 @@ describe('Database Integration', () => {
       '10_persist_notification_preferences.sql',
       '11_persist_notification_inbox.sql',
       '12_add_journal_emotion_notification_kinds.sql',
+      '13_add_resource_daily_progress.sql',
     ]) {
       if (migration === '10_persist_notification_preferences.sql') {
         await pool.query(
@@ -524,6 +526,89 @@ describe('Database Integration', () => {
       expect(owners).toContain(enabledOwner);
       expect(owners).not.toContain(disabledOwner);
       expect(owners).not.toContain(emailOnlyOwner);
+    });
+  });
+
+  describe('resource_daily_progress table', () => {
+    it('persists idempotent owner-scoped daily progress for an active reviewed resource', async () => {
+      const database = {
+        query: (text: string, parameters?: unknown[]) => pool.query(text, parameters),
+      } as unknown as DatabaseService;
+      const repository = new ResourceProgressRepository(database);
+      const owner = '12500000-0000-4000-8000-000000000001';
+      const otherOwner = '12500000-0000-4000-8000-000000000002';
+      const resource = await pool.query<{ id: string }>(
+        `INSERT INTO resource
+           (category, locale, title, summary, content_body, source_organization,
+            source_title, source_url, source_review_note, status, reviewed_by,
+            reviewed_at, effective_at)
+         VALUES ('BREATHING', 'vi-VN', 'Daily breathing', 'Daily summary', 'Body',
+           'Reviewed source', 'Reviewed title', 'https://example.com/source', 'Reviewed note',
+           'PUBLISHED', '12500000-0000-4000-8000-000000000099', now(), now())
+         RETURNING id`,
+      );
+
+      const first = await repository.save(owner, resource.rows[0].id, '2026-09-28', {
+        status: 'IN_PROGRESS',
+        completedActionIds: ['breath-1'],
+      });
+      const replay = await repository.save(owner, resource.rows[0].id, '2026-09-28', {
+        status: 'IN_PROGRESS',
+        completedActionIds: ['breath-1'],
+      });
+      expect(first?.version).toBe('0');
+      expect(replay?.version).toBe('0');
+
+      const completed = await repository.save(owner, resource.rows[0].id, '2026-09-28', {
+        status: 'COMPLETED',
+        completedActionIds: ['breath-1', 'breath-2'],
+      });
+      expect(completed).toMatchObject({ status: 'COMPLETED', version: '1' });
+      expect(completed?.completedAt).not.toBeNull();
+
+      const editedAfterCompletion = await repository.save(
+        owner,
+        resource.rows[0].id,
+        '2026-09-28',
+        {
+          status: 'IN_PROGRESS',
+          completedActionIds: ['breath-1'],
+        },
+      );
+      expect(editedAfterCompletion).toMatchObject({
+        status: 'COMPLETED',
+        completedActionIds: ['breath-1'],
+        completedAt: completed?.completedAt,
+        version: '2',
+      });
+
+      const allTicksRemoved = await repository.save(owner, resource.rows[0].id, '2026-09-28', {
+        status: 'IN_PROGRESS',
+        completedActionIds: [],
+      });
+      expect(allTicksRemoved).toMatchObject({
+        status: 'COMPLETED',
+        completedActionIds: [],
+        completedAt: completed?.completedAt,
+        version: '3',
+      });
+      expect(await repository.list(otherOwner, '2026-09-22', '2026-09-28')).toEqual([]);
+      expect(await repository.list(owner, '2026-09-22', '2026-09-28')).toHaveLength(1);
+    });
+
+    it('rejects progress for inactive or unknown resources', async () => {
+      const database = {
+        query: (text: string, parameters?: unknown[]) => pool.query(text, parameters),
+      } as unknown as DatabaseService;
+      const repository = new ResourceProgressRepository(database);
+      expect(
+        await repository.save(
+          '12600000-0000-4000-8000-000000000001',
+          '12600000-0000-4000-8000-000000000099',
+          '2026-09-28',
+          { status: 'IN_PROGRESS', completedActionIds: [] },
+        ),
+      ).toBeNull();
     });
   });
 

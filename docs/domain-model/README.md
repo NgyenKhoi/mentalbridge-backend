@@ -11,7 +11,8 @@ START HERE when:
 
 Runtime database truth is always the owner-service migration history:
 
-- Liquibase for `identity-service`, `care-service`, and `consultation-service`;
+- Liquibase for `identity-service`, `care-service`, `consultation-service`, and
+  `community-service`;
 - the current SQL migration mechanism for `content-notification-service`;
 - `migrate-mongo` migrations and validators for `journal-ai-service` and
   `realtime-service`.

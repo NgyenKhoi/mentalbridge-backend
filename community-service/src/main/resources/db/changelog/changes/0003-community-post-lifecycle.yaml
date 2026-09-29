@@ -1,0 +1,23 @@
+databaseChangeLog:
+  - changeSet:
+      id: 0003-community-post-lifecycle
+      author: mentalbridge
+      comment: Add owner-scoped idempotency provenance for MB-575 post creation.
+      changes:
+        - sql:
+            splitStatements: false
+            sql: |
+              ALTER TABLE community_post
+                  ADD COLUMN idempotency_key varchar(128),
+                  ADD COLUMN request_fingerprint char(64),
+                  ADD CONSTRAINT ck_community_post_idempotency
+                      CHECK ((idempotency_key IS NULL) = (request_fingerprint IS NULL)),
+                  ADD CONSTRAINT ck_community_post_idempotency_key
+                      CHECK (idempotency_key IS NULL OR (char_length(idempotency_key) BETWEEN 16 AND 128
+                          AND idempotency_key ~ '^[!-~]+$')),
+                  ADD CONSTRAINT ck_community_post_request_fingerprint
+                      CHECK (request_fingerprint IS NULL OR request_fingerprint ~ '^[0-9a-f]{64}$');
+
+              CREATE UNIQUE INDEX ux_community_post_owner_idempotency
+                  ON community_post (author_profile_id, idempotency_key)
+                  WHERE idempotency_key IS NOT NULL;

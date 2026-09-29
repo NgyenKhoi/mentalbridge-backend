@@ -11,7 +11,7 @@ All language-neutral integration contracts live under this directory. Service-lo
 
 ## OpenAPI lifecycle
 
-Every OpenAPI path item declares `x-mentalbridge-status`:
+Every OpenAPI path item declares `x-mentalbridge-status` when all methods share one state. A mixed path declares it on each operation instead:
 
 - `implemented`: the owning service has a production handler and tests for the documented method, authorization, success response, and stable errors;
 - `planned`: the shape is design input only and must not be advertised as an available runtime endpoint.
