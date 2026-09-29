@@ -38,7 +38,7 @@ function isValidCategory(value: unknown): value is ResourceCategory {
   return typeof value === 'string' && VALID_CATEGORIES.has(value as ResourceCategory);
 }
 
-function toSummary(row: ResourceRow): ResourceSummary | null {
+export function toResourceSummary(row: ResourceRow): ResourceSummary | null {
   if (
     typeof row.id !== 'string' ||
     !isValidCategory(row.category) ||
@@ -51,6 +51,15 @@ function toSummary(row: ResourceRow): ResourceSummary | null {
   return {
     id: row.id,
     category: row.category,
+    resourceKind: row.resource_kind,
+    interactionType: row.interaction_type,
+    repeatability: row.repeatability,
+    completionMode: row.completion_mode,
+    streakEligible: row.streak_eligible,
+    expectedDurationMinutes: row.expected_duration_minutes,
+    cooldownDays: row.cooldown_days,
+    recommendedFrequencyPerWeek: row.recommended_frequency_per_week,
+    planTags: row.plan_tags,
     locale: row.locale,
     title: row.title,
     summary: row.summary,
@@ -64,7 +73,7 @@ function toSummary(row: ResourceRow): ResourceSummary | null {
 }
 
 function toDetail(row: ResourceRow): ResourceDetail | null {
-  const summary = toSummary(row);
+  const summary = toResourceSummary(row);
   if (!summary) return null;
 
   return {
@@ -74,6 +83,15 @@ function toDetail(row: ResourceRow): ResourceDetail | null {
     sourceTitle: row.source_title ?? null,
     sourceUrl: row.source_url ?? null,
     sourceReviewNote: row.source_review_note ?? null,
+    structuredContent: row.structured_content,
+    interactionConfig: row.interaction_config,
+    safetyNotes: row.safety_notes,
+    sourceRetrievedAt: row.source_retrieved_at
+      ? new Date(row.source_retrieved_at).toISOString()
+      : null,
+    sourceContentHash: row.source_content_hash ?? null,
+    contentVersionLabel: row.content_version_label,
+    sourceReviewStatus: row.source_review_status,
     reviewedBy: row.reviewed_by ?? null,
     effectiveAt: row.effective_at ? new Date(row.effective_at).toISOString() : null,
     expiresAt: row.expires_at ? new Date(row.expires_at).toISOString() : null,
@@ -87,6 +105,15 @@ function toPublicDetail(row: ResourceRow): PublicResourceDetail | null {
   return {
     id: detail.id,
     category: detail.category,
+    resourceKind: detail.resourceKind,
+    interactionType: detail.interactionType,
+    repeatability: detail.repeatability,
+    completionMode: detail.completionMode,
+    streakEligible: detail.streakEligible,
+    expectedDurationMinutes: detail.expectedDurationMinutes,
+    cooldownDays: detail.cooldownDays,
+    recommendedFrequencyPerWeek: detail.recommendedFrequencyPerWeek,
+    planTags: detail.planTags,
     locale: detail.locale,
     title: detail.title,
     summary: detail.summary,
@@ -101,6 +128,13 @@ function toPublicDetail(row: ResourceRow): PublicResourceDetail | null {
     sourceTitle: detail.sourceTitle,
     sourceUrl: detail.sourceUrl,
     sourceReviewNote: detail.sourceReviewNote,
+    structuredContent: detail.structuredContent,
+    interactionConfig: detail.interactionConfig,
+    safetyNotes: detail.safetyNotes,
+    sourceRetrievedAt: detail.sourceRetrievedAt,
+    sourceContentHash: detail.sourceContentHash,
+    contentVersionLabel: detail.contentVersionLabel,
+    sourceReviewStatus: detail.sourceReviewStatus,
     effectiveAt: detail.effectiveAt,
     expiresAt: detail.expiresAt,
   };
@@ -174,7 +208,9 @@ export class ResourceService {
       (row) => row.status === 'PUBLISHED' && row.reviewed_at !== null,
     );
 
-    const data = publishedRows.map(toSummary).filter((r): r is ResourceSummary => r !== null);
+    const data = publishedRows
+      .map(toResourceSummary)
+      .filter((r): r is ResourceSummary => r !== null);
 
     return {
       data,
@@ -210,7 +246,7 @@ export class ResourceService {
 
     const hasMore = rows.length > limit;
     const pageRows = hasMore ? rows.slice(0, limit) : rows;
-    const data = pageRows.map(toSummary).filter((r): r is ResourceSummary => r !== null);
+    const data = pageRows.map(toResourceSummary).filter((r): r is ResourceSummary => r !== null);
 
     return {
       data,

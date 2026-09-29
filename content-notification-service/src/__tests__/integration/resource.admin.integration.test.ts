@@ -57,6 +57,7 @@ describe('ResourceRepository command consistency', () => {
       '4_add_idempotency_key.sql',
       '5_add_resource_command_records.sql',
       '9_add_resource_source_provenance.sql',
+      '14_add_resource_experience_model.sql',
     ]) {
       await migrationPool.query(await readFile(join(migrationDirectory, name), 'utf8'));
     }

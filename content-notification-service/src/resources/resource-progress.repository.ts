@@ -8,6 +8,13 @@ import type {
   ResourceProgressUpdate,
 } from './resource-progress.types.js';
 
+interface ProgressResourceRow {
+  readonly id: string;
+  readonly version: string | number;
+  readonly repeatability: 'ONE_TIME' | 'REPEATABLE';
+  readonly resource_kind: 'LEARNING' | 'PRACTICE' | 'HABIT' | 'ACTION' | 'REFLECTION';
+}
+
 const COLUMNS = `owner_id, resource_id, local_date, resource_version, status,
   completed_action_ids, completed_at, created_at, updated_at, version`;
 
@@ -52,21 +59,26 @@ export class ResourceProgressRepository {
     localDate: string,
     update: ResourceProgressUpdate,
   ): Promise<ResourceProgressItem | null> {
-    const result = await this.db.query<ResourceProgressRow>(
-      `WITH eligible AS (
-         SELECT id, version
+    return this.db.withTransaction(async (client) => {
+      const eligible = await client.query<ProgressResourceRow>(
+        `SELECT id, version, repeatability, resource_kind
          FROM resource
-         WHERE id = $2 AND status = 'PUBLISHED'
+         WHERE id = $1 AND status = 'PUBLISHED'
            AND reviewed_at IS NOT NULL
            AND (effective_at IS NULL OR effective_at <= now())
-           AND (expires_at IS NULL OR expires_at > now())
-       ), written AS (
+           AND (expires_at IS NULL OR expires_at > now())`,
+        [resourceId],
+      );
+      const resource = eligible.rows.at(0);
+      if (!resource) return null;
+
+      const result = await client.query<ResourceProgressRow>(
+        `WITH written AS (
          INSERT INTO resource_daily_progress
            (owner_id, resource_id, local_date, resource_version, status,
             completed_action_ids, completed_at)
-         SELECT $1, id, $3::date, version, $4::varchar(16), $5::text[],
-           CASE WHEN $4::varchar(16) = 'COMPLETED' THEN now() ELSE NULL END
-         FROM eligible
+         VALUES ($1, $2, $3::date, $4, $5::varchar(16), $6::text[],
+           CASE WHEN $5::varchar(16) = 'COMPLETED' THEN now() ELSE NULL END)
          ON CONFLICT (owner_id, resource_id, local_date) DO UPDATE
          SET resource_version = EXCLUDED.resource_version,
              status = CASE
@@ -97,8 +109,37 @@ export class ResourceProgressRepository {
        WHERE owner_id = $1 AND resource_id = $2 AND local_date = $3::date
          AND NOT EXISTS (SELECT 1 FROM written)
        LIMIT 1`,
-      [ownerId, resourceId, localDate, update.status, [...update.completedActionIds]],
-    );
-    return result.rows[0] ? item(result.rows[0]) : null;
+        [
+          ownerId,
+          resourceId,
+          localDate,
+          Number(resource.version),
+          update.status,
+          [...update.completedActionIds],
+        ],
+      );
+
+      if (update.status === 'COMPLETED') {
+        if (resource.repeatability === 'ONE_TIME' || resource.resource_kind === 'LEARNING') {
+          await client.query(
+            `INSERT INTO resource_learning_completion
+               (owner_id, resource_id, resource_version, local_date)
+             VALUES ($1, $2, $3, $4::date)
+             ON CONFLICT (owner_id, resource_id) DO NOTHING`,
+            [ownerId, resourceId, Number(resource.version), localDate],
+          );
+        } else {
+          await client.query(
+            `INSERT INTO resource_practice_session
+               (owner_id, resource_id, resource_version, local_date)
+             VALUES ($1, $2, $3, $4::date)
+             ON CONFLICT (owner_id, resource_id, local_date) DO NOTHING`,
+            [ownerId, resourceId, Number(resource.version), localDate],
+          );
+        }
+      }
+
+      return result.rows[0] ? item(result.rows[0]) : null;
+    });
   }
 }

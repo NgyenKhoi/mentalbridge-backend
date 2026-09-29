@@ -55,12 +55,18 @@ type IdempotencyRow = {
   readonly resource_id: string | null;
 };
 
-type ResourceDatabaseRow = Omit<ResourceRow, 'version'> & { readonly version: string | number };
+export type ResourceDatabaseRow = Omit<ResourceRow, 'version'> & {
+  readonly version: string | number;
+};
 
-const RESOURCE_COLUMNS = `id, category, locale, title, summary, content_body, external_url,
+export const RESOURCE_COLUMNS = `id, category, locale, title, summary, content_body, external_url,
   source_organization, source_title, source_url, source_review_note, catalogue_visibility,
   status, reviewed_by, reviewed_at, effective_at, expires_at,
-  created_at, updated_at, version`;
+  created_at, updated_at, version, resource_kind, interaction_type, repeatability,
+  completion_mode, streak_eligible, expected_duration_minutes, cooldown_days,
+  recommended_frequency_per_week, plan_tags, structured_content, interaction_config,
+  safety_notes, source_retrieved_at, source_content_hash, content_version_label,
+  source_review_status`;
 
 export class ResourceIdempotencyConflictError extends Error {
   constructor() {
@@ -69,7 +75,7 @@ export class ResourceIdempotencyConflictError extends Error {
   }
 }
 
-function toResourceRow(row: ResourceDatabaseRow): ResourceRow {
+export function toResourceRow(row: ResourceDatabaseRow): ResourceRow {
   return { ...row, version: Number(row.version) };
 }
 

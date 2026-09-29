@@ -62,6 +62,12 @@ describe('ResourceRepository integration', () => {
       'utf8',
     );
     await pool.query(sourceProvenanceMigration);
+    await pool.query(
+      readFileSync(
+        join(__dirname, '../../../migrations/14_add_resource_experience_model.sql'),
+        'utf8',
+      ),
+    );
 
     const dbService: Pick<DatabaseService, 'query'> = {
       query: <T extends Record<string, unknown>>(text: string, params?: unknown[]) =>

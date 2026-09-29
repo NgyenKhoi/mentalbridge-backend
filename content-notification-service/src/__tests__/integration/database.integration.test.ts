@@ -68,6 +68,7 @@ describe('Database Integration', () => {
       '11_persist_notification_inbox.sql',
       '12_add_journal_emotion_notification_kinds.sql',
       '13_add_resource_daily_progress.sql',
+      '14_add_resource_experience_model.sql',
     ]) {
       if (migration === '10_persist_notification_preferences.sql') {
         await pool.query(
@@ -219,10 +220,14 @@ describe('Database Integration', () => {
         '4_align_controlled_demo_area.sql',
         '5_seed_safety_directory_area_aliases.sql',
         '6_seed_mb556_reviewed_resource_catalogue.sql',
+        '7_seed_mb603_resource_experience.sql',
       ]) {
         const sql = readFileSync(join(__dirname, '../../../migrations/review1', migration), 'utf8');
         await pool.query(sql);
-        if (migration === '6_seed_mb556_reviewed_resource_catalogue.sql') {
+        if (
+          migration === '6_seed_mb556_reviewed_resource_catalogue.sql' ||
+          migration === '7_seed_mb603_resource_experience.sql'
+        ) {
           await pool.query(sql);
         }
       }
@@ -533,6 +538,7 @@ describe('Database Integration', () => {
     it('persists idempotent owner-scoped daily progress for an active reviewed resource', async () => {
       const database = {
         query: (text: string, parameters?: unknown[]) => pool.query(text, parameters),
+        withTransaction: async <T>(operation: (client: Pool) => Promise<T>) => operation(pool),
       } as unknown as DatabaseService;
       const repository = new ResourceProgressRepository(database);
       const owner = '12500000-0000-4000-8000-000000000001';
@@ -599,6 +605,7 @@ describe('Database Integration', () => {
     it('rejects progress for inactive or unknown resources', async () => {
       const database = {
         query: (text: string, parameters?: unknown[]) => pool.query(text, parameters),
+        withTransaction: async <T>(operation: (client: Pool) => Promise<T>) => operation(pool),
       } as unknown as DatabaseService;
       const repository = new ResourceProgressRepository(database);
       expect(
