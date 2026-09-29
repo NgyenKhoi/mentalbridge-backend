@@ -22,6 +22,11 @@ spring:
     openfeign:
       circuitbreaker:
         enabled: true
+      client:
+        config:
+          careSupportEvaluationClient:
+            connect-timeout: 500
+            read-timeout: 2000
 
 mentalbridge:
   consultation:
