@@ -69,4 +69,27 @@ public class CommunityApiException extends RuntimeException {
 				"Community access is unavailable");
 	}
 
+	public static CommunityApiException profileNotFound() {
+		return new CommunityApiException(HttpStatus.NOT_FOUND, "COMMUNITY_PROFILE_NOT_FOUND",
+				"Community profile was not found");
+	}
+
+	public static CommunityApiException invalidProfile(String message) {
+		return new CommunityApiException(HttpStatus.BAD_REQUEST, "VALIDATION_FAILED", message);
+	}
+
+	public static CommunityApiException invalidIfMatch() {
+		return new CommunityApiException(HttpStatus.BAD_REQUEST, "INVALID_IF_MATCH",
+				"If-Match must be a quoted non-negative Community profile version");
+	}
+
+	public static CommunityApiException profileVersionRequired() {
+		return new CommunityApiException(HttpStatus.PRECONDITION_FAILED, "COMMUNITY_PROFILE_VERSION_REQUIRED",
+				"If-Match is required when replacing an existing Community profile");
+	}
+
+	public static CommunityApiException profileVersionMismatch(String message) {
+		return new CommunityApiException(HttpStatus.PRECONDITION_FAILED, "COMMUNITY_PROFILE_VERSION_MISMATCH", message);
+	}
+
 }

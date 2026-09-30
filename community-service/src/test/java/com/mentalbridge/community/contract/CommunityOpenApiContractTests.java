@@ -18,6 +18,8 @@ class CommunityOpenApiContractTests {
 			"GET /api/v1/community/posts/{postId}",
 			"PATCH /api/v1/community/posts/{postId}",
 			"DELETE /api/v1/community/posts/{postId}",
+			"GET /api/v1/community/profile",
+			"PUT /api/v1/community/profile",
 			"GET /api/v1/community/topics");
 
 	private static final Set<String> ALL_OPERATIONS = Set.of(
@@ -78,11 +80,22 @@ class CommunityOpenApiContractTests {
 		var post = api.getComponents().getSchemas().get("CommunityPostSummary");
 		var feedParameters = api.getPaths().get("/api/v1/community/feed").getGet().getParameters();
 
-		assertThat(author.getProperties()).containsOnlyKeys("communityProfileId", "displayName", "state");
+		assertThat(author.getProperties()).containsOnlyKeys("communityProfileId", "displayName", "avatarPreset", "state");
 		assertThat(post.getProperties()).containsOnlyKeys("postId", "author", "contentPreview", "topics", "media",
 				"mediaAvailability", "counts", "publishedAt", "updatedAt");
 		assertThat(feedParameters).extracting(parameter -> parameter.getName())
 				.containsExactly("topic", "cursor", "limit");
+	}
+
+	@Test
+	void profileContractExposesOnlyCommunityOwnedDisplayIdentity() {
+		var api = new OpenAPIV3Parser().read(contract().toString());
+		var request = api.getComponents().getSchemas().get("PutCommunityProfileRequest");
+		var response = api.getComponents().getSchemas().get("CommunityProfile");
+
+		assertThat(request.getProperties()).containsOnlyKeys("displayName", "avatarPreset");
+		assertThat(response.getProperties()).containsOnlyKeys("communityProfileId", "displayName", "avatarPreset",
+				"status", "version", "createdAt", "updatedAt");
 	}
 
 	private Path contract() {

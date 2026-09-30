@@ -22,7 +22,7 @@ public final class CommunityResponses {
 			Instant updatedAt) {
 	}
 
-	public record Author(UUID communityProfileId, String displayName, AuthorState state) {
+	public record Author(UUID communityProfileId, String displayName, AvatarPreset avatarPreset, AuthorState state) {
 	}
 
 	public enum AuthorState { ACTIVE, DELETED }

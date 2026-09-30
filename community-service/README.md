@@ -1,6 +1,6 @@
 # Community Service
 
-`community-service` is the independent Spring Boot owner for the Community bounded context. MB-574 adds authenticated newest-first feed, topic catalogue, and post detail reads against the frozen Community Contract v1. Create/edit/delete, interaction, reporting, and moderation operations remain planned for MB-575 through MB-582.
+`community-service` is the independent Spring Boot owner for the Community bounded context. MB-574 adds authenticated newest-first feed, topic catalogue, and post detail reads. MB-581 adds the owner-scoped Community display profile, including a pseudonym and optional governed avatar preset. Post creation/edit/delete, interaction, reporting, and moderation operations remain planned in their independent slices.
 
 ## Runtime
 
@@ -11,6 +11,13 @@
 - Actuator health/readiness and Prometheus metrics
 - opaque cursor pagination with optional governed topic filtering
 - fail-closed post visibility for moderation and bilateral Community blocks
+- Community-owned display identity resolved from the locally verified JWT subject, without synchronous Identity or Care calls
+
+## Display identity policy
+
+The private Identity JWT subject is retained only as the ownership key and is never returned by a Community API. Public responses expose the opaque `communityProfileId`, chosen display name, and an optional closed avatar preset. Arbitrary avatar URLs are not accepted.
+
+Feed, post, and future comment reads render the author's current active Community display identity. Changing a display identity does not update post content or any immutable moderation evidence snapshot. A deleted Community profile renders the neutral tombstone name and no avatar. External account lifecycle handling remains an independently replayable future adapter; current requests rely on local JWT signature, issuer, audience, expiry, and role verification and never synchronously call Identity or Care.
 
 The service uses Maven, matching the other Spring modules. Liquibase is disabled in normal application replicas and runs through the Docker `migration` target or `./mvnw liquibase:update`.
 
@@ -42,6 +49,6 @@ Do not commit `.env`, credentials, private keys, media signatures, or delivery U
 ./mvnw test
 ```
 
-The test suite starts disposable PostgreSQL, applies the Community migrations, boots the application with synthetic JWT/Cloudinary settings, and verifies feed/detail visibility, pagination, topics, authentication, the public health endpoint, and fail-closed application routes.
+The test suite starts disposable PostgreSQL, applies the Community migrations, boots the application with synthetic JWT/Cloudinary settings, and verifies feed/detail visibility, owner-isolated display profiles, Unicode bounds, optimistic concurrency, authentication, the public health endpoint, and fail-closed application routes without Identity or Care APIs running.
 
-The canonical REST contract is [`contracts/openapi/community-service-v1.yaml`](../contracts/openapi/community-service-v1.yaml). Only feed, post detail, and topics are executable in MB-574; the remaining frozen v1 operations are marked `planned`.
+The canonical REST contract is [`contracts/openapi/community-service-v1.yaml`](../contracts/openapi/community-service-v1.yaml). Contract v1.1 records the additive MB-581 avatar-preset amendment and marks feed, post detail, topics, and own-profile operations as implemented; remaining operations stay `planned`.
