@@ -24,6 +24,11 @@ import {
   REMINDER_MATERIALIZATION_SERVICE_TOKEN,
   REMINDER_CLOCK_TOKEN,
   REMINDER_SCHEDULER_TOKEN,
+  WELLBEING_DIGEST_REPOSITORY_TOKEN,
+  WELLBEING_DIGEST_SERVICE_TOKEN,
+  WELLBEING_EMAIL_DELIVERY_TOKEN,
+  WELLBEING_RECIPIENT_CLIENT_TOKEN,
+  WELLBEING_DIGEST_SCHEDULER_TOKEN,
 } from './application.tokens.js';
 import type { ServiceConfiguration } from './configuration/configuration.js';
 import { DatabaseService, type ReadinessProbe } from './database/database.service.js';
@@ -65,6 +70,14 @@ import {
   AccountLifecycleConsumer,
   AccountLifecycleProjector,
 } from './notification-preferences/account-lifecycle.consumer.js';
+import { WellbeingDigestController } from './wellbeing-digest/wellbeing-digest.controller.js';
+import { WellbeingDigestRepository } from './wellbeing-digest/wellbeing-digest.repository.js';
+import { WellbeingDigestService } from './wellbeing-digest/wellbeing-digest.service.js';
+import { WellbeingDigestScheduler } from './wellbeing-digest/wellbeing-digest.scheduler.js';
+import {
+  BrevoWellbeingEmailDelivery,
+  IdentityWellbeingRecipientClient,
+} from './wellbeing-digest/wellbeing-delivery.clients.js';
 
 export interface ApplicationDependencies {
   readonly readinessProbe?: ReadinessProbe;
@@ -78,6 +91,7 @@ export interface ApplicationDependencies {
   readonly notificationRepository?: NotificationRepository;
   readonly reminderActivityClient?: ReminderActivityClient;
   readonly reminderClock?: ReminderClock;
+  readonly wellbeingDigestService?: WellbeingDigestService;
 }
 
 @Module({})
@@ -159,6 +173,7 @@ export const createAppModule = (
       SafetyDirectoryLookupController,
       NotificationPreferenceController,
       NotificationController,
+      WellbeingDigestController,
     ],
     providers: [
       { provide: CONFIGURATION_TOKEN, useValue: configuration },
@@ -193,6 +208,13 @@ export const createAppModule = (
         useValue: dependencies.reminderClock ?? { now: () => new Date() },
       },
       { provide: REMINDER_SCHEDULER_TOKEN, useClass: ReminderScheduler },
+      { provide: WELLBEING_DIGEST_REPOSITORY_TOKEN, useClass: WellbeingDigestRepository },
+      { provide: WELLBEING_EMAIL_DELIVERY_TOKEN, useClass: BrevoWellbeingEmailDelivery },
+      { provide: WELLBEING_RECIPIENT_CLIENT_TOKEN, useClass: IdentityWellbeingRecipientClient },
+      dependencies.wellbeingDigestService
+        ? { provide: WELLBEING_DIGEST_SERVICE_TOKEN, useValue: dependencies.wellbeingDigestService }
+        : { provide: WELLBEING_DIGEST_SERVICE_TOKEN, useClass: WellbeingDigestService },
+      { provide: WELLBEING_DIGEST_SCHEDULER_TOKEN, useClass: WellbeingDigestScheduler },
       AccountLifecycleProjector,
       AccountLifecycleConsumer,
       JwtStrategy,

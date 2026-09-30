@@ -43,6 +43,8 @@ export const NotificationPreferencePatchSchema = z
         cadence: z.enum(['IMMEDIATE', 'DAILY_DIGEST', 'WEEKLY_DIGEST']).optional(),
         wellbeingDigestEnabled: z.boolean().optional(),
         resourceRemindersEnabled: z.boolean().optional(),
+        dailyDigestTime: TimeSchema.optional(),
+        resourceReminderTime: TimeSchema.optional(),
       })
       .strict()
       .refine((value) => Object.keys(value).length > 0, 'at least one email field is required')

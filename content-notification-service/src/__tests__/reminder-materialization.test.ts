@@ -35,6 +35,8 @@ const preferences = (
     cadence: 'IMMEDIATE',
     wellbeingDigestEnabled: false,
     resourceRemindersEnabled: false,
+    dailyDigestTime: '19:00',
+    resourceReminderTime: '18:30',
   },
   version: 0,
   updatedAt: NOW.toISOString(),

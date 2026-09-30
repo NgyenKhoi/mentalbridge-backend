@@ -297,6 +297,27 @@ paths:
         '400': { $ref: '#/components/responses/ValidationProblem' }
         '401': { $ref: '#/components/responses/UnauthorizedProblem' }
         '403': { $ref: '#/components/responses/ForbiddenProblem' }
+  /internal/v1/notification-delivery-contacts/{accountId}:
+    x-mentalbridge-status: implemented
+    get:
+      tags: [Account]
+      operationId: getNotificationDeliveryContact
+      summary: Resolve an active verified account's email for the notification owner service
+      parameters:
+        - $ref: '#/components/parameters/AccountId'
+        - name: X-MentalBridge-Service-Token
+          in: header
+          required: true
+          schema: { type: string, minLength: 32, maxLength: 512 }
+        - $ref: '#/components/parameters/CorrelationId'
+      responses:
+        '200':
+          description: Current delivery contact
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/NotificationDeliveryContact' }
+        '401': { $ref: '#/components/responses/UnauthorizedProblem' }
+        '404': { $ref: '#/components/responses/NotFoundProblem' }
   /api/v1/admin/accounts/{accountId}:
     x-mentalbridge-status: planned
     get:
@@ -496,6 +517,12 @@ components:
         createdAt: { type: string, format: date-time }
         updatedAt: { type: string, format: date-time }
         version: { type: integer, format: int64, minimum: 0 }
+    NotificationDeliveryContact:
+      type: object
+      additionalProperties: false
+      required: [email]
+      properties:
+        email: { type: string, format: email, maxLength: 254 }
     AccountPage:
       type: object
       additionalProperties: false

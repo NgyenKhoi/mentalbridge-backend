@@ -16,6 +16,7 @@ import {
 import { NotificationService } from '../../notifications/notification.service.js';
 import { ResourceProgressRepository } from '../../resources/resource-progress.repository.js';
 import { ResourceJourneyRepository } from '../../resources/resource-journey.repository.js';
+import { WellbeingDigestRepository } from '../../wellbeing-digest/wellbeing-digest.repository.js';
 
 const __dirname = dirname(fileURLToPath(import.meta.url));
 
@@ -71,6 +72,7 @@ describe('Database Integration', () => {
       '13_add_resource_daily_progress.sql',
       '14_add_resource_experience_model.sql',
       '15_harden_resource_journey.sql',
+      '16_add_wellbeing_digest_delivery.sql',
     ]) {
       if (migration === '10_persist_notification_preferences.sql') {
         await pool.query(
@@ -594,6 +596,8 @@ describe('Database Integration', () => {
           cadence: 'WEEKLY_DIGEST',
           wellbeingDigestEnabled: true,
           resourceRemindersEnabled: true,
+          dailyDigestTime: '19:00',
+          resourceReminderTime: '18:30',
         },
       });
 
@@ -634,6 +638,78 @@ describe('Database Integration', () => {
       expect(owners).toContain(enabledOwner);
       expect(owners).not.toContain(disabledOwner);
       expect(owners).not.toContain(emailOnlyOwner);
+    });
+
+    it('pages only opted-in email candidates and enforces one delivery kind per local day', async () => {
+      const database = {
+        query: (text: string, parameters?: unknown[]) => pool.query(text, parameters),
+        withTransaction: async <T>(
+          operation: (
+            client: import('../../database/database.service.js').DatabaseClient,
+          ) => Promise<T>,
+        ) => {
+          const client = await pool.connect();
+          try {
+            await client.query('BEGIN');
+            const result = await operation(client);
+            await client.query('COMMIT');
+            return result;
+          } catch (error) {
+            await client.query('ROLLBACK');
+            throw error;
+          } finally {
+            client.release();
+          }
+        },
+      } as unknown as DatabaseService;
+      const repository = new NotificationPreferenceRepository(database);
+      const digestRepository = new WellbeingDigestRepository(database);
+      const owner = '11800000-0000-4000-8000-000000000001';
+      await pool.query(
+        `INSERT INTO notification_preference
+           (user_id, channel_email_enabled, email_wellbeing_digest_enabled, email_cadence)
+         VALUES ($1, true, true, 'DAILY_DIGEST')`,
+        [owner],
+      );
+      expect(
+        (await repository.listEmailCandidates(null, 500)).map((item) => item.ownerId),
+      ).toContain(owner);
+
+      const claims = await Promise.all(
+        Array.from({ length: 7 }, () =>
+          digestRepository.claim(owner, '2026-09-30', 'Asia/Ho_Chi_Minh', 'DAILY_DIGEST', {
+            resources: 2,
+          }),
+        ),
+      );
+      expect(claims.filter(Boolean)).toHaveLength(1);
+      const count = await pool.query<{ count: string }>(
+        `SELECT count(*)::text AS count FROM wellbeing_email_delivery
+         WHERE owner_id = $1 AND local_date = '2026-09-30' AND delivery_kind = 'DAILY_DIGEST'`,
+        [owner],
+      );
+      expect(count.rows[0]?.count).toBe('1');
+
+      await pool.query(
+        `UPDATE wellbeing_email_delivery
+         SET claimed_at = now() - interval '10 minutes'
+         WHERE owner_id = $1 AND local_date = '2026-09-30' AND delivery_kind = 'DAILY_DIGEST'`,
+        [owner],
+      );
+      await expect(
+        digestRepository.claim(owner, '2026-09-30', 'Asia/Ho_Chi_Minh', 'DAILY_DIGEST', {
+          resources: 1,
+        }),
+      ).resolves.toEqual(expect.objectContaining({ kind: 'DAILY_DIGEST' }));
+      const reclaimed = await pool.query<{
+        attempt_count: number;
+        content_counts: { resources: number };
+      }>(
+        `SELECT attempt_count, content_counts FROM wellbeing_email_delivery
+         WHERE owner_id = $1 AND local_date = '2026-09-30' AND delivery_kind = 'DAILY_DIGEST'`,
+        [owner],
+      );
+      expect(reclaimed.rows[0]).toEqual({ attempt_count: 2, content_counts: { resources: 1 } });
     });
   });
 

@@ -30,6 +30,20 @@ const environmentSchema = z
       .max(3_600_000)
       .default(60_000),
     REMINDER_SCHEDULER_BATCH_SIZE: z.coerce.number().int().min(1).max(500).default(100),
+    WELLBEING_DIGEST_SCHEDULER_ENABLED: z.enum(['true', 'false']).default('false'),
+    WELLBEING_DIGEST_SCHEDULER_INTERVAL_MS: z.coerce
+      .number()
+      .int()
+      .min(10_000)
+      .max(3_600_000)
+      .default(60_000),
+    WELLBEING_DIGEST_BATCH_SIZE: z.coerce.number().int().min(1).max(500).default(100),
+    IDENTITY_SERVICE_URL: z.url().default('http://localhost:8081'),
+    IDENTITY_NOTIFICATION_SERVICE_TOKEN: z.string().min(32).optional(),
+    BREVO_BASE_URL: z.url().default('https://api.brevo.com'),
+    BREVO_API_KEY: z.string().min(1).optional(),
+    BREVO_SENDER_EMAIL: z.email().optional(),
+    BREVO_SENDER_NAME: z.string().trim().min(1).max(80).default('MentalBridge'),
     KAFKA_BOOTSTRAP_SERVERS: z.string().min(1).optional(),
     CONTENT_ACCOUNT_LIFECYCLE_CONSUMER_ENABLED: z.enum(['true', 'false']).optional(),
     E2E_TEST_MODE: z.coerce.boolean().default(false),
@@ -46,6 +60,21 @@ const environmentSchema = z
         message: 'is required when the reminder scheduler is enabled',
       });
     }
+    if (environment.WELLBEING_DIGEST_SCHEDULER_ENABLED === 'true') {
+      for (const key of [
+        'IDENTITY_NOTIFICATION_SERVICE_TOKEN',
+        'BREVO_API_KEY',
+        'BREVO_SENDER_EMAIL',
+      ] as const) {
+        if (!environment[key]) {
+          context.addIssue({
+            code: 'custom',
+            path: [key],
+            message: 'is required when the wellbeing digest scheduler is enabled',
+          });
+        }
+      }
+    }
     if (
       environment.CONTENT_ACCOUNT_LIFECYCLE_CONSUMER_ENABLED === 'true' &&
       !environment.KAFKA_BOOTSTRAP_SERVERS
@@ -61,6 +90,7 @@ const environmentSchema = z
     ...environment,
     SERVICE_NAME: 'content-notification-service' as const,
     REMINDER_SCHEDULER_ENABLED: environment.REMINDER_SCHEDULER_ENABLED === 'true',
+    WELLBEING_DIGEST_SCHEDULER_ENABLED: environment.WELLBEING_DIGEST_SCHEDULER_ENABLED === 'true',
     ALLOWED_ORIGINS: environment.CORS_ORIGINS.split(',')
       .map((origin) => origin.trim())
       .filter(Boolean),
