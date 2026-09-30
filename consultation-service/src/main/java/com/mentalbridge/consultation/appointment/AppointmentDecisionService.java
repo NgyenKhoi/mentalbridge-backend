@@ -28,11 +28,14 @@ public class AppointmentDecisionService {
 	private final JdbcClient jdbc;
 	private final ServiceCreditService credits;
 	private final Clock clock;
+	private final AppointmentStatusOutbox outbox;
 
-	public AppointmentDecisionService(JdbcClient jdbc, ServiceCreditService credits, Clock clock) {
+	public AppointmentDecisionService(JdbcClient jdbc, ServiceCreditService credits, Clock clock,
+			AppointmentStatusOutbox outbox) {
 		this.jdbc = jdbc;
 		this.credits = credits;
 		this.clock = clock;
+		this.outbox = outbox;
 	}
 
 	@Transactional(readOnly = true)
@@ -92,6 +95,7 @@ public class AppointmentDecisionService {
 		credits.transition(appointment.userId(), appointment.creditId(), appointment.id(), CreditEventType.RELEASED,
 				"appointment-expiry:" + appointment.id());
 		insertHistory(appointment, null, "EXPIRED", EXPIRED, "appointment-expiry:" + appointment.id(), now);
+		outbox.record(appointment.id(), UUID.randomUUID(), now);
 		return true;
 	}
 
@@ -129,6 +133,7 @@ public class AppointmentDecisionService {
 					"appointment-rejection:" + appointment.id());
 		}
 		insertHistory(appointment, specialistId, nextStatus, reason, idempotencyKey, now);
+		outbox.record(appointment.id(), UUID.randomUUID(), now);
 		return find(appointmentId, specialistId);
 	}
 

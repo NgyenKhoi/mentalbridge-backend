@@ -143,9 +143,12 @@ At-least-once business delivery is assumed. See ADR 0016.
    never silently changes the plan.
 9. Content/Notification schedules at most one default wellbeing digest per
    user/day. Per-resource reminders require explicit opt-in; the separate
-   appointment reminder is sent once approximately one hour before start. AI
-   may phrase approved facts but cannot decide scheduling, and no safety email
-   is generated automatically.
+   appointment reminder targets exactly 60 minutes before start under
+   [`MB-APPOINTMENT-EMAIL-REMINDER-001`](adr/0030-one-appointment-email-reminder.md),
+   with a dedicated opt-in, quiet-hour handling, appointment/version
+   deduplication, lifecycle invalidation, and a strict before-start cutoff. AI
+   may phrase approved facts but cannot decide recipient or scheduling, and no
+   safety email is generated automatically.
 
 ### Journal analysis
 

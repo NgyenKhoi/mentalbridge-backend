@@ -38,7 +38,7 @@ const environmentSchema = z
       .max(3_600_000)
       .default(60_000),
     WELLBEING_DIGEST_BATCH_SIZE: z.coerce.number().int().min(1).max(500).default(100),
-    IDENTITY_SERVICE_URL: z.url().default('http://localhost:8081'),
+    IDENTITY_SERVICE_URL: z.url().default('http://localhost:8080'),
     IDENTITY_NOTIFICATION_SERVICE_TOKEN: z.string().min(32).optional(),
     BREVO_BASE_URL: z.url().default('https://api.brevo.com'),
     BREVO_API_KEY: z.string().min(1).optional(),
@@ -46,6 +46,17 @@ const environmentSchema = z
     BREVO_SENDER_NAME: z.string().trim().min(1).max(80).default('MentalBridge'),
     KAFKA_BOOTSTRAP_SERVERS: z.string().min(1).optional(),
     CONTENT_ACCOUNT_LIFECYCLE_CONSUMER_ENABLED: z.enum(['true', 'false']).optional(),
+    APPOINTMENT_REMINDER_ENABLED: z.enum(['true', 'false']).default('false'),
+    APPOINTMENT_REMINDER_SERVICE_TOKEN: z.string().min(32).optional(),
+    CONSULTATION_SERVICE_URL: z.url().default('http://localhost:8082'),
+    APPOINTMENT_REMINDER_HTTP_TIMEOUT_MS: z.coerce
+      .number()
+      .int()
+      .min(100)
+      .max(5_000)
+      .default(2_000),
+    CONTENT_APPOINTMENT_CONSUMER_ENABLED: z.enum(['true', 'false']).default('false'),
+    APPOINTMENT_REMINDER_APP_URL: z.url().default('http://localhost:3000/appointments'),
     E2E_TEST_MODE: z.coerce.boolean().default(false),
     E2E_TEST_SECRET: z.string().min(16).optional(),
   })
@@ -61,11 +72,7 @@ const environmentSchema = z
       });
     }
     if (environment.WELLBEING_DIGEST_SCHEDULER_ENABLED === 'true') {
-      for (const key of [
-        'IDENTITY_NOTIFICATION_SERVICE_TOKEN',
-        'BREVO_API_KEY',
-        'BREVO_SENDER_EMAIL',
-      ] as const) {
+      for (const key of ['BREVO_API_KEY', 'BREVO_SENDER_EMAIL'] as const) {
         if (!environment[key]) {
           context.addIssue({
             code: 'custom',
@@ -85,12 +92,40 @@ const environmentSchema = z
         message: 'is required when the account lifecycle consumer is enabled',
       });
     }
+    if (environment.APPOINTMENT_REMINDER_ENABLED === 'true') {
+      for (const key of [
+        'APPOINTMENT_REMINDER_SERVICE_TOKEN',
+        'BREVO_API_KEY',
+        'BREVO_SENDER_EMAIL',
+      ] as const) {
+        if (!environment[key]) {
+          context.addIssue({
+            code: 'custom',
+            path: [key],
+            message: 'is required when appointment reminders are enabled',
+          });
+        }
+      }
+    }
+    if (
+      environment.CONTENT_APPOINTMENT_CONSUMER_ENABLED === 'true' &&
+      !environment.KAFKA_BOOTSTRAP_SERVERS
+    ) {
+      context.addIssue({
+        code: 'custom',
+        path: ['KAFKA_BOOTSTRAP_SERVERS'],
+        message: 'is required when the appointment consumer is enabled',
+      });
+    }
   })
   .transform((environment) => ({
     ...environment,
     SERVICE_NAME: 'content-notification-service' as const,
     REMINDER_SCHEDULER_ENABLED: environment.REMINDER_SCHEDULER_ENABLED === 'true',
     WELLBEING_DIGEST_SCHEDULER_ENABLED: environment.WELLBEING_DIGEST_SCHEDULER_ENABLED === 'true',
+    APPOINTMENT_REMINDER_ENABLED: environment.APPOINTMENT_REMINDER_ENABLED === 'true',
+    CONTENT_APPOINTMENT_CONSUMER_ENABLED:
+      environment.CONTENT_APPOINTMENT_CONSUMER_ENABLED === 'true',
     ALLOWED_ORIGINS: environment.CORS_ORIGINS.split(',')
       .map((origin) => origin.trim())
       .filter(Boolean),

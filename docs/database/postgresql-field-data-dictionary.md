@@ -1094,6 +1094,23 @@ Separate user consent for future reuse of one exact summary snapshot. Appointmen
 | `version` / `updated_at` | Optimistic concurrency and latest decision instant. |
 | `approved_at` / `revoked_at` | Auditable approval or latest revocation instant without copying the summary. |
 
+### `consultation.appointment_outbox_event`
+
+Transactional handoff of one minimized appointment lifecycle version to the
+Content/Notification reminder consumer. The row commits with the appointment
+transition and excludes email addresses and consultation content.
+
+| Field | Purpose |
+| --- | --- |
+| `id` | Stable Kafka `messageId` reused across relay attempts. |
+| `appointment_id`, `appointment_version` | Unique aggregate/version identity preserving per-appointment order and dedupe. |
+| `correlation_id` | Safe request/job correlation UUID. |
+| `payload` | Minimized owner ID, status, UTC start, modality, and replacement link only. |
+| `occurred_at` | Authoritative transition instant. |
+| `published_at` | Kafka acknowledgement instant; null while pending. |
+| `attempt_count`, `next_attempt_at` | Bounded observable relay retry/lease state. |
+| `created_at` | Immutable insertion instant. |
+
 ### `consultation.subscription_plan_version`
 
 Immutable price, allocation, credit, revenue-share, and cancellation policy purchased by a subscription period.
@@ -1659,6 +1676,7 @@ and email choices cannot drift across web, email, inbox, or future mobile consum
 | `email_resource_reminders_enabled` | Explicit opt-in for resource reminder emails. |
 | `email_daily_digest_time` | Owner-selected local wall-clock time for the daily digest, interpreted in `time_zone`. |
 | `email_resource_reminder_time` | Owner-selected local wall-clock time for the capped resource reminder, interpreted in `time_zone`. |
+| `email_appointment_reminders_enabled` | Dedicated default-off opt-in for the single appointment email; digest cadence does not alter it. |
 | `version` | Optimistic-lock counter returned in a strong ETag and required by updates. |
 | `created_at` | UTC instant when stable defaults were first persisted. |
 | `updated_at` | UTC instant the owner last changed this aggregate. |
@@ -1691,6 +1709,45 @@ Durable in-app notification and safe delivery payload owned by Content/Notificat
 | `request_fingerprint` | SHA-256 of the validated minimized create command; changed reuse of a dedupe identity is rejected instead of overwriting the original notification. |
 | `delivery_state` | Durable delivery lifecycle (`PENDING`, `DELIVERED`, `FAILED`, or `CANCELLED`); only `DELIVERED` records appear in the inbox. |
 | `version` | Monotonic mutation counter incremented for the first read or tombstone transition. |
+
+### `content.appointment_email_reminder`
+
+Content/Notification-owned intent and privacy-safe delivery evidence for one
+exact confirmed appointment version. It never stores the email address or
+rendered body.
+
+| Field | Purpose |
+| --- | --- |
+| `id` | Internal immutable reminder UUID. |
+| `recipient_id` | External Identity USER owner; part of the dedupe identity. |
+| `appointment_id` | External opaque Consultation appointment UUID. |
+| `appointment_version` | Exact confirmed aggregate version; stale versions are invalidated. |
+| `appointment_status` | Minimized status snapshot, initially `CONFIRMED`. |
+| `modality` | Safe `IN_APP_CHAT` or `IN_APP_VIDEO` template fact. |
+| `scheduled_start_at` | Authoritative UTC start used as the absolute send cutoff. |
+| `target_at` | Exact start-minus-60-minutes policy instant. |
+| `due_at` | Current deterministic candidate after late confirmation or quiet-hour deferral. |
+| `delivery_state` | Pending/processing or terminal delivered, invalidated, suppressed, failed, expired, or unknown outcome. |
+| `attempt_count` | Bounded provider submission count, never greater than three. |
+| `first_attempt_at`, `last_attempt_at`, `next_attempt_at` | Safe retry timing and provider-idempotency TTL evidence. |
+| `provider_idempotency_key` | Deterministic UUID reused for all attempts of the same reminder identity. |
+| `provider_message_id` | Provider acknowledgement identifier; it contains no recipient or message body. |
+| `failure_code` | Coarse stable diagnostic category without downstream response text. |
+| `delivered_at`, `invalidated_at` | Terminal outcome instants. |
+| `created_at`, `updated_at` | Owner-local audit timestamps. |
+
+### `content.appointment_reminder_checkpoint`
+
+Latest consumed Consultation version per appointment. It prevents delayed or
+replayed lifecycle events from recreating stale reminder intent.
+
+| Field | Purpose |
+| --- | --- |
+| `appointment_id` | External Consultation aggregate identity. |
+| `latest_version` | Highest applied aggregate version. |
+| `latest_status` | Safe latest lifecycle status used for diagnostics. |
+| `last_message_id` | Last applied integration-event UUID. |
+| `updated_at` | UTC application instant. |
 
 ## Conceptual owner `ai` (owner-local `public` tables)
 

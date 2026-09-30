@@ -21,6 +21,7 @@ class ConsultationOpenApiContractTests {
 			"GET /internal/v1/appointments/{appointmentId}/reusable-session-summaries/{summaryId}",
 			"GET /internal/v1/appointments/{conversationId}/chat-eligibility",
 			"POST /internal/v1/appointments/{appointmentId}/chat-evidence",
+			"GET /internal/v1/appointments/{appointmentId}/notification-eligibility",
 			"GET /api/v1/specialist-profile",
 			"PUT /api/v1/specialist-profile",
 			"POST /api/v1/specialist-profile/submit",
@@ -64,7 +65,12 @@ class ConsultationOpenApiContractTests {
 			assertThat(item.getExtensions()).containsEntry("x-mentalbridge-status", "implemented");
 			item.readOperationsMap().forEach((method, operation) -> {
 				operations.add(method.name() + " " + path);
-				assertThat(operation.getSecurity()).anySatisfy(requirement -> assertThat(requirement).containsKey("bearerAuth"));
+				if (path.contains("notification-eligibility")) {
+					assertThat(operation.getSecurity()).anySatisfy(requirement -> assertThat(requirement).containsKey("serviceToken"));
+				}
+				else {
+					assertThat(operation.getSecurity()).anySatisfy(requirement -> assertThat(requirement).containsKey("bearerAuth"));
+				}
 			});
 		});
 		assertThat(operations).isEqualTo(OPERATIONS);

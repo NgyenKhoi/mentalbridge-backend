@@ -13,6 +13,7 @@
 | Base decision | [ADR 0017](../adr/0017-product-scope-v2.md) |
 | Current amendment | [ADR 0022](../adr/0022-current-product-blueprint-amendments.md) |
 | Discovery decision | [ADR 0027](../adr/0027-approved-online-specialist-discovery.md) (`MB-SPECIALIST-DISCOVERY-001`) |
+| Appointment email reminder decision | [ADR 0030](../adr/0030-one-appointment-email-reminder.md) (`MB-APPOINTMENT-EMAIL-REMINDER-001`) |
 | Historical credit implementation | [ADR 0020 consultation-credit v1](../adr/0020-service-plan-consultation-credits.md) |
 | Amends | [Consultation and specialist policy v1](consultation-specialist-policy-v1.md) |
 
@@ -234,11 +235,16 @@ state directly.
 
 ## Appointment reminder
 
-An appointment reminder is separate from the wellbeing digest. The scheduler
-may send it once, approximately one hour before `scheduledStartAt`, according
-to approved deterministic policy. Rejection, expiry, cancellation, reschedule,
-or terminal state invalidates stale reminder intent. AI may phrase approved
-content only and does not decide whether or when the reminder is sent.
+An appointment reminder is separate from the wellbeing digest. Under
+`MB-APPOINTMENT-EMAIL-REMINDER-001`, Content/Notification may send the owning
+user once for one exact confirmed appointment/version at the 60-minute target.
+Current preference and quiet hours may defer it only until the quiet window ends
+strictly before start or suppress it. Rejection, expiry, cancellation,
+reschedule, a newer/non-confirmed version, or terminal/end state invalidates the
+stale intent. No email is sent at or after start. The minimized template contains
+only local appointment time/timezone, in-app modality, and the authenticated
+in-app appointment entry link. AI does not decide recipient, timing,
+suppression, retry, or safety-triggered delivery.
 
 ## Video runtime gate
 

@@ -21,6 +21,7 @@ export interface NotificationPreferenceRow {
   readonly email_resource_reminders_enabled: boolean;
   readonly email_daily_digest_time: string;
   readonly email_resource_reminder_time: string;
+  readonly email_appointment_reminders_enabled: boolean;
   readonly version: string | number;
   readonly created_at: Date | string;
   readonly updated_at: Date | string;
@@ -53,6 +54,7 @@ export interface NotificationPreferences {
     readonly resourceRemindersEnabled: boolean;
     readonly dailyDigestTime: string;
     readonly resourceReminderTime: string;
+    readonly appointmentRemindersEnabled: boolean;
   };
   readonly version: number;
   readonly updatedAt: string;
@@ -90,5 +92,6 @@ export interface NotificationPreferenceUpdate {
     readonly resourceRemindersEnabled?: boolean;
     readonly dailyDigestTime?: string;
     readonly resourceReminderTime?: string;
+    readonly appointmentRemindersEnabled?: boolean;
   };
 }

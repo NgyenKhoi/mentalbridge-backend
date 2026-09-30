@@ -34,6 +34,7 @@ const journalEmotionNotificationKinds = requiredMigration(
   '12_add_journal_emotion_notification_kinds.sql',
 );
 const resourceDailyProgress = requiredMigration('13_add_resource_daily_progress.sql');
+const appointmentEmailReminders = requiredMigration('17_add_appointment_email_reminders.sql');
 const review1Seed = await readFile(
   new URL('../migrations/review1/1_seed_review1_controlled_resource.sql', import.meta.url),
   'utf8',
@@ -175,6 +176,10 @@ assert.match(resourceDailyProgress, /PRIMARY KEY \(owner_id, resource_id, local_
 assert.match(resourceDailyProgress, /REFERENCES resource\(id\)/);
 assert.match(resourceDailyProgress, /ck_resource_daily_progress_completion\b/);
 assert.match(resourceDailyProgress, /ix_resource_daily_progress_owner_history\b/);
+assert.match(appointmentEmailReminders, /email_appointment_reminders_enabled\b/);
+assert.match(appointmentEmailReminders, /CREATE TABLE appointment_email_reminder\b/);
+assert.match(appointmentEmailReminders, /uq_appointment_email_reminder_identity\b/);
+assert.match(appointmentEmailReminders, /CREATE TABLE appointment_reminder_checkpoint\b/);
 assert.match(safetyDirectoryAreaAliases, /area-alias-ha-noi-canonical/);
 assert.match(safetyDirectoryAreaAliases, /area-alias-da-nang-canonical/);
 assert.match(safetyDirectoryAreaAliases, /area-alias-hcm-canonical/);

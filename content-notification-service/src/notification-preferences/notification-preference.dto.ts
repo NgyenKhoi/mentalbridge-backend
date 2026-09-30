@@ -45,6 +45,7 @@ export const NotificationPreferencePatchSchema = z
         resourceRemindersEnabled: z.boolean().optional(),
         dailyDigestTime: TimeSchema.optional(),
         resourceReminderTime: TimeSchema.optional(),
+        appointmentRemindersEnabled: z.boolean().optional(),
       })
       .strict()
       .refine((value) => Object.keys(value).length > 0, 'at least one email field is required')

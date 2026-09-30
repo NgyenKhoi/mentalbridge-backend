@@ -186,8 +186,9 @@ The requirements are represented in domain/architecture documentation, but the l
   `IN_APP_VIDEO`; separates channel-end `SESSION_ENDED` from evidence-backed
   completion; and requires user approval before summary reuse. Default
   wellbeing reminders are at most daily, resource-specific reminders are
-  opt-in, appointment reminders are separate and once near one hour before,
-  and no automatic safety email exists. V2 real money is VND/MoMo only, with
+  opt-in, appointment reminders are separate and target exactly 60 minutes
+  before start under `MB-APPOINTMENT-EMAIL-REMINDER-001`, and no automatic
+  safety email exists. V2 real money is VND/MoMo only, with
   the original historical one/three paid-credit target and specialist earnings
   equal to 70% of fixed per-credit `creditAllocation`; ADR 0022 prospectively
   supersedes those target quantities without rewriting v1 periods. Real
@@ -273,6 +274,15 @@ The requirements are represented in domain/architecture documentation, but the l
 - 2026-09-16: MB-510 adds one Journal/AI-owned encrypted daily emotion check-in per owner/local day under `MB-DAILY-EMOTION-CHECK-IN-001`. History is labelled self-reported and non-clinical; optimistic revisions and hashed idempotency cover duplicate/concurrent saves; deletion removes encrypted payloads and retains a bounded tombstone. Only a note-free AI projection is available under current Care `AI_PROCESSING` consent; reminder access remains unavailable pending a separate consent contract. See [ADR 0018](adr/0018-daily-emotion-check-in.md), [policy v1](policies/daily-emotion-check-in-policy-v1.md), and [verification evidence](story-mb-510-daily-emotion-check-in-evidence.md).
 - 2026-09-27: MB-567 adds the Journal/AI-owned authoritative emotion progress read model under `MB-EMOTION-CHECK-IN-PROGRESS-001`. Active local dates drive current/longest streaks and factual 7/14/30-day coverage; same-day revisions count once, deletion is reflected immediately, and label distributions remain self-reported and non-clinical. The browser and future MB-564 producer consume this result rather than duplicating streak logic. See [ADR 0025](adr/0025-authoritative-emotion-check-in-progress.md).
 - 2026-09-27: MB-564 adds the service-authorized, note-free Journal/emotion notification activity projection and a Content-owned scheduled in-app producer under `MB-WELLBEING-NOTIFICATION-001`. The scheduler pages persisted preference aggregates independently of inbox reads; Identity account-registration outbox events initialize default aggregates for new users before their first settings/inbox read; preferences and quiet hours gate four distinct reminder/milestone kinds; `<kind>:<local-date>` identities collapse retries; emotion streaks reuse the authoritative MB-567 calculator; factual milestones use 7/14/30-day thresholds; and one projection failure does not hide existing inbox history or stop other owners. See [ADR 0026](adr/0026-journal-emotion-notification-materialization.md).
+- 2026-09-30: MB-547 accepts
+  `MB-APPOINTMENT-EMAIL-REMINDER-001`. One user-owned appointment email targets
+  exactly 60 minutes before the exact confirmed appointment/version, requires a
+  dedicated opt-in, defers through quiet hours only when their end remains
+  before start, invalidates stale lifecycle/version intents, and never submits
+  at or after start. Content/Notification owns intent and delivery while
+  Consultation remains appointment truth. The minimized template contains only
+  local appointment time/timezone, in-app modality, and an authenticated
+  in-app entry link. See [ADR 0030](adr/0030-one-appointment-email-reminder.md).
 - 2026-09-20: MB-373 implements bounded user choice and explicit activation
   for the MB-372 paid SupportPlan draft. Care accepts only exact alternatives
   already admitted for the current slot, permits removal only for optional

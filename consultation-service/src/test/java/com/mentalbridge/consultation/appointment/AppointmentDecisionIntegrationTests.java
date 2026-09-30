@@ -34,7 +34,7 @@ import com.mentalbridge.consultation.ConsultationTestProperties;
 import com.mentalbridge.consultation.TestcontainersConfiguration;
 
 @Import(TestcontainersConfiguration.class)
-@SpringBootTest
+@SpringBootTest(properties = "mentalbridge.consultation.appointment-notifications.service-token=synthetic-appointment-test-token")
 @AutoConfigureMockMvc
 class AppointmentDecisionIntegrationTests extends ConsultationTestProperties {
 
@@ -68,6 +68,46 @@ class AppointmentDecisionIntegrationTests extends ConsultationTestProperties {
 		assertThat(decisionHistoryCount(fixture.appointmentId())).isOne();
 		assertThat(creditState(fixture.creditId())).isEqualTo("HELD");
 		assertThat(releaseCount(fixture.appointmentId())).isZero();
+	}
+
+	@Test
+	void reminderTruthAndOutboxFollowTheConfirmedVersionUntilCancellation() throws Exception {
+		var fixture = requestedAppointment();
+		var endpoint = "/internal/v1/appointments/{id}/notification-eligibility";
+		mvc.perform(get(endpoint, fixture.appointmentId()).param("appointmentVersion", "0"))
+				.andExpect(status().isUnauthorized());
+		mvc.perform(get(endpoint, fixture.appointmentId()).param("appointmentVersion", "0")
+				.header("X-MentalBridge-Service-Token", "synthetic-appointment-test-token"))
+				.andExpect(status().isOk()).andExpect(jsonPath("$.eligible").value(false));
+
+		decisions.accept(fixture.specialistId(), fixture.appointmentId(), 0,
+				"confirm-for-reminder-truth-test");
+		mvc.perform(get(endpoint, fixture.appointmentId()).param("appointmentVersion", "1")
+				.header("X-MentalBridge-Service-Token", "synthetic-appointment-test-token"))
+				.andExpect(status().isOk()).andExpect(jsonPath("$.status").value("CONFIRMED"))
+				.andExpect(jsonPath("$.eligible").value(true));
+		mvc.perform(get(endpoint, fixture.appointmentId()).param("appointmentVersion", "0")
+				.header("X-MentalBridge-Service-Token", "synthetic-appointment-test-token"))
+				.andExpect(status().isOk()).andExpect(jsonPath("$.eligible").value(false));
+
+		mvc.perform(post("/api/v1/appointments/{id}/cancel", fixture.appointmentId())
+				.with(user(fixture.userId())).header("If-Match", "\"1\"")
+				.header("Idempotency-Key", "cancel-for-reminder-truth-test"))
+				.andExpect(status().isOk()).andExpect(jsonPath("$.status").value("CANCELLED"));
+		mvc.perform(get(endpoint, fixture.appointmentId()).param("appointmentVersion", "1")
+				.header("X-MentalBridge-Service-Token", "synthetic-appointment-test-token"))
+				.andExpect(status().isOk()).andExpect(jsonPath("$.eligible").value(false));
+
+		var outbox = jdbc.sql("""
+				select appointment_version, payload::text from appointment_outbox_event
+				where appointment_id=:appointmentId order by appointment_version
+				""").param("appointmentId", fixture.appointmentId())
+				.query((row, ignored) -> List.of(row.getLong(1), row.getString(2))).list();
+		assertThat(outbox).hasSize(3);
+		assertThat(outbox.get(0).get(1).toString()).contains("REQUESTED");
+		assertThat(outbox.get(1).get(1).toString()).contains("CONFIRMED");
+		assertThat(outbox.get(2).get(1).toString()).contains("CANCELLED");
+		assertThat(outbox.toString()).doesNotContainIgnoringCase("journal", "assessment", "brief", "chat content");
 	}
 
 	@Test

@@ -14,6 +14,12 @@ spring:
         default_schema: public
         jdbc:
           time_zone: UTC
+  kafka:
+    bootstrap-servers: ${KAFKA_BOOTSTRAP_SERVERS:localhost:9092}
+    producer:
+      acks: all
+      properties:
+        enable.idempotence: true
   liquibase:
     enabled: ${CONSULTATION_LIQUIBASE_ENABLED:false}
     change-log: classpath:db/changelog/db.changelog-master.yaml
@@ -37,6 +43,15 @@ mentalbridge:
       public-key: ${IDENTITY_JWT_PUBLIC_KEY}
     availability:
       video-enabled: ${CONSULTATION_VIDEO_AVAILABILITY_ENABLED:false}
+    appointment-notifications:
+      service-token: ${APPOINTMENT_REMINDER_SERVICE_TOKEN:}
+      relay-enabled: ${CONSULTATION_APPOINTMENT_OUTBOX_RELAY_ENABLED:false}
+      topic: mentalbridge.consultation.appointment-status.v1
+      batch-size: ${CONSULTATION_APPOINTMENT_OUTBOX_BATCH_SIZE:100}
+      relay-interval: ${CONSULTATION_APPOINTMENT_OUTBOX_INTERVAL:PT5S}
+      send-timeout: ${CONSULTATION_APPOINTMENT_OUTBOX_SEND_TIMEOUT:PT5S}
+      retry-base: ${CONSULTATION_APPOINTMENT_OUTBOX_RETRY_BASE:PT5S}
+      retry-maximum: ${CONSULTATION_APPOINTMENT_OUTBOX_RETRY_MAXIMUM:PT5M}
 
 eureka:
   client:
