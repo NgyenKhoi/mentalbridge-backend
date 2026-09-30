@@ -1574,9 +1574,15 @@ and email choices cannot drift across web, email, inbox, or future mobile consum
 | `email_cadence` | Explicit email cadence: `IMMEDIATE`, `DAILY_DIGEST`, or `WEEKLY_DIGEST`. |
 | `email_wellbeing_digest_enabled` | Explicit opt-in for wellbeing digest emails. |
 | `email_resource_reminders_enabled` | Explicit opt-in for resource reminder emails. |
+| `email_daily_digest_time` | Owner-selected local wall-clock time for the daily digest, interpreted in `time_zone`. |
+| `email_resource_reminder_time` | Owner-selected local wall-clock time for the capped resource reminder, interpreted in `time_zone`. |
 | `version` | Optimistic-lock counter returned in a strong ETag and required by updates. |
 | `created_at` | UTC instant when stable defaults were first persisted. |
 | `updated_at` | UTC instant the owner last changed this aggregate. |
+
+### `content.wellbeing_email_delivery`
+
+MB-514's auditable email-delivery ledger. The unique owner/local-date/kind key guarantees at-most-once successful delivery for each daily digest or capped resource reminder. `content_counts` stores aggregate non-sensitive counts only; recipient email and Journal, assessment, chat, or provider payload content are never stored. State, bounded attempt count, safe failure code, provider message identifier, and timestamps support retry/audit without duplicating the authoritative preference aggregate.
 
 ### `content.notification`
 

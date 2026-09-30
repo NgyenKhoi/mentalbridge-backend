@@ -32,6 +32,7 @@ const expectedImplemented = new Set([
   'POST /api/v1/safety-directory:lookup',
   'GET /api/v1/notification-preferences',
   'PATCH /api/v1/notification-preferences',
+  'GET /api/v1/wellbeing-digest/preview',
   'GET /api/v1/notifications',
   'PATCH /api/v1/notifications/{notificationId}/read',
   'POST /api/v1/notifications/mark-all-read',
@@ -87,6 +88,7 @@ const implementedResponses = new Map([
   ],
   ['POST /api/v1/safety-directory:lookup', new Set(['200', '422', '503'])],
   ['GET /api/v1/notification-preferences', new Set(['200', '401', '503'])],
+  ['GET /api/v1/wellbeing-digest/preview', new Set(['200', '401', '503'])],
   [
     'PATCH /api/v1/notification-preferences',
     new Set(['200', '400', '401', '412', '422', '428', '503']),

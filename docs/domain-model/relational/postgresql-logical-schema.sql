@@ -969,7 +969,7 @@ CREATE TABLE community.community_block (
 
 /* ========================================================================== */
 /* ACTIVE — content-notification-service / mentalbridge_content_notification  */
-/* Evidence: node-pg-migrate-compatible SQL migrations 1-14.                  */
+/* Evidence: node-pg-migrate-compatible SQL migrations 1-16.                  */
 /* ========================================================================== */
 
 CREATE TABLE content.resource (
@@ -1107,9 +1107,30 @@ CREATE TABLE content.notification_preference (
     email_cadence varchar(24) NOT NULL,
     email_wellbeing_digest_enabled boolean NOT NULL,
     email_resource_reminders_enabled boolean NOT NULL,
+    email_daily_digest_time time NOT NULL,
+    email_resource_reminder_time time NOT NULL,
     version bigint NOT NULL,
     created_at timestamptz NOT NULL,
     updated_at timestamptz NOT NULL
+);
+
+CREATE TABLE content.wellbeing_email_delivery (
+    id uuid PRIMARY KEY,
+    owner_id uuid NOT NULL, -- external -> identity.account.id
+    local_date date NOT NULL,
+    delivery_kind varchar(24) NOT NULL,
+    time_zone varchar(64) NOT NULL,
+    state varchar(16) NOT NULL,
+    attempt_count smallint NOT NULL,
+    content_counts jsonb NOT NULL,
+    provider_message_id varchar(160),
+    failure_code varchar(48),
+    claimed_at timestamptz NOT NULL,
+    attempted_at timestamptz,
+    delivered_at timestamptz,
+    created_at timestamptz NOT NULL,
+    updated_at timestamptz NOT NULL,
+    UNIQUE (owner_id, local_date, delivery_kind)
 );
 
 CREATE TABLE content.notification (

@@ -45,6 +45,23 @@ and future `PUSH` channel choices, six independent content groups,
 timezone-aware quiet hours, and email cadence/opt-ins. `PUSH` is persisted only;
 device registration and provider delivery remain deferred.
 
+MB-514 extends that same preference aggregate with the owner's local daily
+digest and explicit resource-reminder times. The bounded wellbeing scheduler
+builds only factual, approved resource and Journal activity projections,
+respects email opt-in, cadence, timezone and quiet hours, and records a durable
+per-owner/local-day delivery claim before calling Brevo. It never includes raw
+Journal text, assessment answers, chat content, or automatic safety email.
+
+Email delivery is disabled by default. To enable it, set
+`WELLBEING_DIGEST_SCHEDULER_ENABLED=true` and provide
+`IDENTITY_SERVICE_URL`, a shared 32-character-or-longer
+`IDENTITY_NOTIFICATION_SERVICE_TOKEN`, plus `BREVO_API_KEY` and a verified
+`BREVO_SENDER_EMAIL`. The same service token must be configured in Identity.
+Keep the interval and database page size bounded with
+`WELLBEING_DIGEST_SCHEDULER_INTERVAL_MS` and
+`WELLBEING_DIGEST_BATCH_SIZE`. `BREVO_BASE_URL` and `BREVO_SENDER_NAME` are
+optional operational overrides.
+
 ## Stack
 
 - Node.js 22 or newer, strict TypeScript, NestJS 11
@@ -138,6 +155,13 @@ Migration `13_add_resource_daily_progress.sql` adds MB-603's owner-scoped daily
 resource progress. It stores only resource/version references, a bounded action
 identifier set, status, and timestamps; it never stores free-text reflection or
 redefines SupportPlan occurrence tracking.
+
+Migration `16_add_wellbeing_digest_delivery.sql` adds the MB-514 delivery-time
+preferences and the durable wellbeing email delivery ledger. Its unique
+owner/local-day/kind key prevents duplicate default digests, while bounded
+claim, retry, provider outcome, and cancellation metadata make crashes,
+provider outages, late runs, opt-out, and deleted recipients recoverable
+without persisting message bodies or sensitive source content.
 
 The controlled Review 1 seed, MB-337 eligibility matrix, and visibly synthetic non-dialable safety-directory fixture are owner-module migrations with a separate ledger (`pgmigrations_review1`), so running normal schema migrations cannot accidentally mark controlled data as applied. The seeds reject drift from their reviewed decisions. Machine-readable resource inventory, reviewer rationale, explicit ineligible decisions, and Care requests are kept in `../contracts/fixtures/content/resource-eligibility-v1-controlled-demo.json`. No real safety contact is published by the controlled fixture. For the shared dev/staging database only, run:
 

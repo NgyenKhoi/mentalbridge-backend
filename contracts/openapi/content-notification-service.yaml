@@ -815,6 +815,23 @@ paths:
         "422": { $ref: "#/components/responses/ValidationError" }
         "503": { $ref: "#/components/responses/ServiceUnavailable" }
 
+  /api/v1/wellbeing-digest/preview:
+    x-mentalbridge-status: implemented
+    get:
+      x-mentalbridge-operation-status: implemented
+      tags: [Notification preferences]
+      summary: Preview today's privacy-safe wellbeing email digest
+      operationId: previewWellbeingDigest
+      security: [{ BearerAuth: [] }]
+      responses:
+        "200":
+          description: Current local-day digest preview built from real pending items
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/WellbeingDigestPreview" }
+        "401": { $ref: "#/components/responses/Unauthorized" }
+        "503": { $ref: "#/components/responses/ServiceUnavailable" }
+
   /api/v1/notifications/{notificationId}/read:
     x-mentalbridge-status: implemented
     patch:
@@ -1224,11 +1241,13 @@ components:
     EmailPreferences:
       type: object
       additionalProperties: false
-      required: [cadence, wellbeingDigestEnabled, resourceRemindersEnabled]
+      required: [cadence, wellbeingDigestEnabled, resourceRemindersEnabled, dailyDigestTime, resourceReminderTime]
       properties:
         cadence: { $ref: "#/components/schemas/EmailCadence" }
         wellbeingDigestEnabled: { type: boolean }
         resourceRemindersEnabled: { type: boolean }
+        dailyDigestTime: { type: string, pattern: "^([01][0-9]|2[0-3]):[0-5][0-9]$" }
+        resourceReminderTime: { type: string, pattern: "^([01][0-9]|2[0-3]):[0-5][0-9]$" }
     EmailPreferencesPatch:
       type: object
       additionalProperties: false
@@ -1237,6 +1256,31 @@ components:
         cadence: { $ref: "#/components/schemas/EmailCadence" }
         wellbeingDigestEnabled: { type: boolean }
         resourceRemindersEnabled: { type: boolean }
+        dailyDigestTime: { type: string, pattern: "^([01][0-9]|2[0-3]):[0-5][0-9]$" }
+        resourceReminderTime: { type: string, pattern: "^([01][0-9]|2[0-3]):[0-5][0-9]$" }
+    WellbeingDigestResourceItem:
+      type: object
+      additionalProperties: false
+      required: [id, title]
+      properties:
+        id: { type: string, format: uuid }
+        title: { type: string, minLength: 1, maxLength: 240 }
+    WellbeingDigestPreview:
+      type: object
+      additionalProperties: false
+      required: [localDate, timeZone, scheduledTime, eligibleNow, resourceItems, includeJournalPrompt, includeEmotionPrompt, empty]
+      properties:
+        localDate: { type: string, format: date }
+        timeZone: { type: string, minLength: 1, maxLength: 64 }
+        scheduledTime: { type: string, pattern: "^([01][0-9]|2[0-3]):[0-5][0-9]$" }
+        eligibleNow: { type: boolean }
+        resourceItems:
+          type: array
+          maxItems: 8
+          items: { $ref: "#/components/schemas/WellbeingDigestResourceItem" }
+        includeJournalPrompt: { type: boolean }
+        includeEmotionPrompt: { type: boolean }
+        empty: { type: boolean }
     NotificationPreferences:
       type: object
       additionalProperties: false

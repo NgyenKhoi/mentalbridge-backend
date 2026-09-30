@@ -19,6 +19,8 @@ export interface NotificationPreferenceRow {
   readonly email_cadence: EmailCadence;
   readonly email_wellbeing_digest_enabled: boolean;
   readonly email_resource_reminders_enabled: boolean;
+  readonly email_daily_digest_time: string;
+  readonly email_resource_reminder_time: string;
   readonly version: string | number;
   readonly created_at: Date | string;
   readonly updated_at: Date | string;
@@ -49,6 +51,8 @@ export interface NotificationPreferences {
     readonly cadence: EmailCadence;
     readonly wellbeingDigestEnabled: boolean;
     readonly resourceRemindersEnabled: boolean;
+    readonly dailyDigestTime: string;
+    readonly resourceReminderTime: string;
   };
   readonly version: number;
   readonly updatedAt: string;
@@ -84,5 +88,7 @@ export interface NotificationPreferenceUpdate {
     readonly cadence?: EmailCadence;
     readonly wellbeingDigestEnabled?: boolean;
     readonly resourceRemindersEnabled?: boolean;
+    readonly dailyDigestTime?: string;
+    readonly resourceReminderTime?: string;
   };
 }

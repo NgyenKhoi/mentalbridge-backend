@@ -23,6 +23,7 @@ describe('configuration', () => {
     expect(configuration.REMINDER_SCHEDULER_INTERVAL_MS).toBe(60_000);
     expect(configuration.REMINDER_SCHEDULER_BATCH_SIZE).toBe(100);
     expect(configuration.CONTENT_ACCOUNT_LIFECYCLE_CONSUMER_ENABLED).toBeUndefined();
+    expect(configuration.WELLBEING_DIGEST_SCHEDULER_ENABLED).toBe(false);
   });
 
   it('normalizes configured CORS origins', () => {
@@ -77,5 +78,23 @@ describe('configuration', () => {
     });
 
     expect(configuration.CONTENT_ACCOUNT_LIFECYCLE_CONSUMER_ENABLED).toBe('true');
+  });
+
+  it('requires scoped contact and Brevo configuration when wellbeing email is enabled', () => {
+    expect(() =>
+      loadConfiguration({
+        ...requiredEnvironment,
+        WELLBEING_DIGEST_SCHEDULER_ENABLED: 'true',
+      }),
+    ).toThrow();
+
+    const configuration = loadConfiguration({
+      ...requiredEnvironment,
+      WELLBEING_DIGEST_SCHEDULER_ENABLED: 'true',
+      IDENTITY_NOTIFICATION_SERVICE_TOKEN: 'test-notification-service-token-at-least-32-characters',
+      BREVO_API_KEY: 'test-key',
+      BREVO_SENDER_EMAIL: 'no-reply@example.test',
+    });
+    expect(configuration.WELLBEING_DIGEST_SCHEDULER_ENABLED).toBe(true);
   });
 });

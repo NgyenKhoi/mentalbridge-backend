@@ -69,6 +69,8 @@ describe('notification preference contract', () => {
       'cadence',
       'wellbeingDigestEnabled',
       'resourceRemindersEnabled',
+      'dailyDigestTime',
+      'resourceReminderTime',
     ]);
     expect(JSON.stringify(preferences.properties)).not.toMatch(
       /journalText|assessmentAnswer|messageBody|specialistName/i,

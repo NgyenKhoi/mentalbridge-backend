@@ -41,6 +41,8 @@ function defaults(): NotificationPreferences {
       cadence: 'IMMEDIATE',
       wellbeingDigestEnabled: false,
       resourceRemindersEnabled: false,
+      dailyDigestTime: '19:00',
+      resourceReminderTime: '18:30',
     },
     version: 0,
     updatedAt: '2026-09-26T00:00:00.000Z',
@@ -49,6 +51,18 @@ function defaults(): NotificationPreferences {
 
 let records: Map<string, NotificationPreferences>;
 let repository: NotificationPreferenceRepository;
+const wellbeingDigestService = {
+  preview: vi.fn(async (_ownerId: string, ownerPreferences: NotificationPreferences) => ({
+    localDate: '2026-09-30',
+    timeZone: ownerPreferences.quietHours.timeZone,
+    scheduledTime: ownerPreferences.email.dailyDigestTime,
+    eligibleNow: false,
+    resourceItems: [{ id: '00000000-0000-4000-8000-000000000001', title: 'Thở chậm' }],
+    includeJournalPrompt: true,
+    includeEmotionPrompt: false,
+    empty: false,
+  })),
+};
 
 beforeAll(async () => {
   const keys = await generateKeyPair('RS256');
@@ -105,6 +119,7 @@ beforeEach(async () => {
   app = await createApplication(configuration, {
     readinessProbe: { check: async () => undefined },
     notificationPreferenceRepository: repository,
+    wellbeingDigestService: wellbeingDigestService as never,
   });
   await app.init();
 });
@@ -124,6 +139,26 @@ async function token(subject = OWNER_A): Promise<string> {
 }
 
 describe('notification preference HTTP boundary', () => {
+  it('requires authentication for the privacy-safe owner digest preview', async () => {
+    await request(app.getHttpServer()).get('/api/v1/wellbeing-digest/preview').expect(401);
+
+    const response = await request(app.getHttpServer())
+      .get('/api/v1/wellbeing-digest/preview')
+      .set('Authorization', `Bearer ${await token()}`)
+      .expect(200)
+      .expect('Cache-Control', 'private, no-store');
+
+    expect(response.body).not.toHaveProperty('ownerId');
+    expect(response.body.resourceItems).toEqual([
+      { id: '00000000-0000-4000-8000-000000000001', title: 'Thở chậm' },
+    ]);
+    expect(wellbeingDigestService.preview).toHaveBeenCalledWith(
+      OWNER_A,
+      expect.any(Object),
+      expect.any(String),
+    );
+  });
+
   it('requires authentication and returns stable owner defaults without caching', async () => {
     await request(app.getHttpServer()).get('/api/v1/notification-preferences').expect(401);
 
@@ -156,6 +191,8 @@ describe('notification preference HTTP boundary', () => {
           cadence: 'DAILY_DIGEST',
           wellbeingDigestEnabled: true,
           resourceRemindersEnabled: true,
+          dailyDigestTime: '19:00',
+          resourceReminderTime: '18:30',
         },
       })
       .expect(200)
@@ -174,6 +211,8 @@ describe('notification preference HTTP boundary', () => {
       cadence: 'DAILY_DIGEST',
       wellbeingDigestEnabled: true,
       resourceRemindersEnabled: true,
+      dailyDigestTime: '19:00',
+      resourceReminderTime: '18:30',
     });
   });
 
