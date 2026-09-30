@@ -10,5 +10,6 @@ export interface AuthenticatedPrincipal {
 export interface AuthenticatedRequest {
   readonly headers: Readonly<Record<string, string | string[] | undefined>>;
   principal?: AuthenticatedPrincipal;
+  bearerToken?: string;
   id?: string;
 }

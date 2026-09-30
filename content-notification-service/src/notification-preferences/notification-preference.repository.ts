@@ -14,6 +14,7 @@ const COLUMNS = `user_id, notifications_enabled,
   group_appointment_message_enabled, group_resource_system_enabled,
   quiet_hours_enabled, quiet_hours_start::text, quiet_hours_end::text, time_zone,
   email_cadence, email_wellbeing_digest_enabled, email_resource_reminders_enabled,
+  email_daily_digest_time::text, email_resource_reminder_time::text,
   version, created_at, updated_at`;
 
 export class NotificationPreferenceVersionMismatchError extends Error {
@@ -53,6 +54,8 @@ export function toNotificationPreferences(row: NotificationPreferenceRow): Notif
       cadence: row.email_cadence,
       wellbeingDigestEnabled: row.email_wellbeing_digest_enabled,
       resourceRemindersEnabled: row.email_resource_reminders_enabled,
+      dailyDigestTime: time(row.email_daily_digest_time),
+      resourceReminderTime: time(row.email_resource_reminder_time),
     },
     version: Number(row.version),
     updatedAt: new Date(row.updated_at).toISOString(),
@@ -108,6 +111,8 @@ export class NotificationPreferenceRepository {
            email_cadence = $17,
            email_wellbeing_digest_enabled = $18,
            email_resource_reminders_enabled = $19,
+           email_daily_digest_time = $20::time,
+           email_resource_reminder_time = $21::time,
            version = version + 1,
            updated_at = now()
        WHERE user_id = $1 AND version = $2
@@ -132,6 +137,8 @@ export class NotificationPreferenceRepository {
         preferences.email.cadence,
         preferences.email.wellbeingDigestEnabled,
         preferences.email.resourceRemindersEnabled,
+        preferences.email.dailyDigestTime,
+        preferences.email.resourceReminderTime,
       ],
     );
     if (!result.rows[0]) throw new NotificationPreferenceVersionMismatchError();
@@ -152,6 +159,27 @@ export class NotificationPreferenceRepository {
            OR group_emotion_check_in_enabled = true
            OR group_streak_milestone_enabled = true
          )
+         AND ($1::uuid IS NULL OR user_id > $1::uuid)
+       ORDER BY user_id
+       LIMIT $2`,
+      [afterOwnerId, limit],
+    );
+    return result.rows.map((row) => ({
+      ownerId: row.user_id,
+      preferences: toNotificationPreferences(row),
+    }));
+  }
+
+  async listEmailCandidates(
+    afterOwnerId: string | null,
+    limit: number,
+  ): Promise<readonly ReminderCandidate[]> {
+    const result = await this.db.query<NotificationPreferenceRow>(
+      `SELECT ${COLUMNS}
+       FROM notification_preference
+       WHERE notifications_enabled = true
+         AND channel_email_enabled = true
+         AND (email_wellbeing_digest_enabled = true OR email_resource_reminders_enabled = true)
          AND ($1::uuid IS NULL OR user_id > $1::uuid)
        ORDER BY user_id
        LIMIT $2`,

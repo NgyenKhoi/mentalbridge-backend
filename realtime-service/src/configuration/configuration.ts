@@ -73,6 +73,8 @@ const environmentSchema = z
     REALTIME_MESSAGE_ENCRYPTION_KEY: z.string().min(1),
     REALTIME_MESSAGE_ENCRYPTION_KEY_VERSION: z.string().regex(keyVersionPattern),
     REALTIME_MESSAGE_DECRYPTION_KEYS: encodedDecryptionKeysSchema,
+    CONSULTATION_BASE_URL: z.url(),
+    CONSULTATION_TIMEOUT_MS: z.coerce.number().int().min(100).max(30_000).default(2000),
     IDENTITY_JWT_ISSUER: z.url(),
     IDENTITY_JWT_AUDIENCE: z.string().min(1),
     IDENTITY_JWT_KEY_ID: z.string().min(1),
@@ -172,6 +174,8 @@ const environmentSchema = z
       MESSAGE_ENCRYPTION_KEY: messageEncryptionKey,
       MESSAGE_ENCRYPTION_KEY_VERSION: environment.REALTIME_MESSAGE_ENCRYPTION_KEY_VERSION,
       MESSAGE_DECRYPTION_KEYS: messageDecryptionKeys,
+      CONSULTATION_BASE_URL: environment.CONSULTATION_BASE_URL,
+      CONSULTATION_TIMEOUT_MS: environment.CONSULTATION_TIMEOUT_MS,
       IDENTITY_JWT_ISSUER: environment.IDENTITY_JWT_ISSUER,
       IDENTITY_JWT_AUDIENCE: environment.IDENTITY_JWT_AUDIENCE,
       IDENTITY_JWT_KEY_ID: environment.IDENTITY_JWT_KEY_ID,
@@ -197,6 +201,7 @@ export const loadConfiguration = (
           REALTIME_MONGODB_DATABASE:
             environment.REALTIME_MONGODB_DATABASE ?? 'mentalbridge_realtime',
           REALTIME_REDIS_URL: environment.REALTIME_REDIS_URL ?? 'redis://localhost:6379',
+          CONSULTATION_BASE_URL: environment.CONSULTATION_BASE_URL ?? 'http://localhost:8082',
         };
   return environmentSchema.parse({ ...environment, ...localDefaults });
 };

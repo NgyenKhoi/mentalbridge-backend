@@ -9,6 +9,8 @@ import {
   RESOURCE_SERVICE_TOKEN,
   RESOURCE_PROGRESS_REPOSITORY_TOKEN,
   RESOURCE_PROGRESS_SERVICE_TOKEN,
+  RESOURCE_JOURNEY_REPOSITORY_TOKEN,
+  RESOURCE_JOURNEY_SERVICE_TOKEN,
   E2E_OUTAGE_STATE_TOKEN,
   RESOURCE_ELIGIBILITY_REPOSITORY_TOKEN,
   RESOURCE_ELIGIBILITY_SERVICE_TOKEN,
@@ -22,6 +24,11 @@ import {
   REMINDER_MATERIALIZATION_SERVICE_TOKEN,
   REMINDER_CLOCK_TOKEN,
   REMINDER_SCHEDULER_TOKEN,
+  WELLBEING_DIGEST_REPOSITORY_TOKEN,
+  WELLBEING_DIGEST_SERVICE_TOKEN,
+  WELLBEING_EMAIL_DELIVERY_TOKEN,
+  WELLBEING_RECIPIENT_CLIENT_TOKEN,
+  WELLBEING_DIGEST_SCHEDULER_TOKEN,
 } from './application.tokens.js';
 import type { ServiceConfiguration } from './configuration/configuration.js';
 import { DatabaseService, type ReadinessProbe } from './database/database.service.js';
@@ -32,6 +39,9 @@ import { ResourceService } from './resources/resource.service.js';
 import { ResourceProgressController } from './resources/resource-progress.controller.js';
 import { ResourceProgressRepository } from './resources/resource-progress.repository.js';
 import { ResourceProgressService } from './resources/resource-progress.service.js';
+import { ResourceJourneyController } from './resources/resource-journey.controller.js';
+import { ResourceJourneyRepository } from './resources/resource-journey.repository.js';
+import { ResourceJourneyService } from './resources/resource-journey.service.js';
 import { E2eOutageController } from './e2e/e2e-outage.controller.js';
 import { AuthModule } from './auth/auth.module.js';
 import { JwtStrategy } from './auth/jwt.strategy.js';
@@ -60,11 +70,20 @@ import {
   AccountLifecycleConsumer,
   AccountLifecycleProjector,
 } from './notification-preferences/account-lifecycle.consumer.js';
+import { WellbeingDigestController } from './wellbeing-digest/wellbeing-digest.controller.js';
+import { WellbeingDigestRepository } from './wellbeing-digest/wellbeing-digest.repository.js';
+import { WellbeingDigestService } from './wellbeing-digest/wellbeing-digest.service.js';
+import { WellbeingDigestScheduler } from './wellbeing-digest/wellbeing-digest.scheduler.js';
+import {
+  BrevoWellbeingEmailDelivery,
+  IdentityWellbeingRecipientClient,
+} from './wellbeing-digest/wellbeing-delivery.clients.js';
 
 export interface ApplicationDependencies {
   readonly readinessProbe?: ReadinessProbe;
   readonly resourceRepository?: ResourceRepository;
   readonly resourceProgressRepository?: ResourceProgressRepository;
+  readonly resourceJourneyRepository?: ResourceJourneyRepository;
   readonly outageState?: { enabled: boolean };
   readonly resourceEligibilityRepository?: ResourceEligibilityRepository;
   readonly safetyDirectoryRepository?: SafetyDirectoryRepository;
@@ -72,6 +91,7 @@ export interface ApplicationDependencies {
   readonly notificationRepository?: NotificationRepository;
   readonly reminderActivityClient?: ReminderActivityClient;
   readonly reminderClock?: ReminderClock;
+  readonly wellbeingDigestService?: WellbeingDigestService;
 }
 
 @Module({})
@@ -104,6 +124,12 @@ export const createAppModule = (
         useValue: dependencies.resourceProgressRepository,
       }
     : { provide: RESOURCE_PROGRESS_REPOSITORY_TOKEN, useClass: ResourceProgressRepository };
+  const resourceJourneyRepositoryProvider: Provider = dependencies.resourceJourneyRepository
+    ? {
+        provide: RESOURCE_JOURNEY_REPOSITORY_TOKEN,
+        useValue: dependencies.resourceJourneyRepository,
+      }
+    : { provide: RESOURCE_JOURNEY_REPOSITORY_TOKEN, useClass: ResourceJourneyRepository };
   const eligibilityRepositoryProvider: Provider = dependencies.resourceEligibilityRepository
     ? {
         provide: RESOURCE_ELIGIBILITY_REPOSITORY_TOKEN,
@@ -140,12 +166,14 @@ export const createAppModule = (
       HealthController,
       ResourceController,
       ResourceProgressController,
+      ResourceJourneyController,
       ResourceEligibilityController,
       E2eOutageController,
       SafetyDirectoryController,
       SafetyDirectoryLookupController,
       NotificationPreferenceController,
       NotificationController,
+      WellbeingDigestController,
     ],
     providers: [
       { provide: CONFIGURATION_TOKEN, useValue: configuration },
@@ -160,6 +188,8 @@ export const createAppModule = (
       serviceProvider,
       resourceProgressRepositoryProvider,
       { provide: RESOURCE_PROGRESS_SERVICE_TOKEN, useClass: ResourceProgressService },
+      resourceJourneyRepositoryProvider,
+      { provide: RESOURCE_JOURNEY_SERVICE_TOKEN, useClass: ResourceJourneyService },
       eligibilityRepositoryProvider,
       { provide: RESOURCE_ELIGIBILITY_SERVICE_TOKEN, useClass: ResourceEligibilityService },
       safetyDirectoryRepositoryProvider,
@@ -178,6 +208,13 @@ export const createAppModule = (
         useValue: dependencies.reminderClock ?? { now: () => new Date() },
       },
       { provide: REMINDER_SCHEDULER_TOKEN, useClass: ReminderScheduler },
+      { provide: WELLBEING_DIGEST_REPOSITORY_TOKEN, useClass: WellbeingDigestRepository },
+      { provide: WELLBEING_EMAIL_DELIVERY_TOKEN, useClass: BrevoWellbeingEmailDelivery },
+      { provide: WELLBEING_RECIPIENT_CLIENT_TOKEN, useClass: IdentityWellbeingRecipientClient },
+      dependencies.wellbeingDigestService
+        ? { provide: WELLBEING_DIGEST_SERVICE_TOKEN, useValue: dependencies.wellbeingDigestService }
+        : { provide: WELLBEING_DIGEST_SERVICE_TOKEN, useClass: WellbeingDigestService },
+      { provide: WELLBEING_DIGEST_SCHEDULER_TOKEN, useClass: WellbeingDigestScheduler },
       AccountLifecycleProjector,
       AccountLifecycleConsumer,
       JwtStrategy,

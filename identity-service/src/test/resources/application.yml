@@ -16,6 +16,7 @@ springdotenv:
 
 mentalbridge:
   identity:
+    notification-service-token: test-notification-service-token-at-least-32-characters
     outbox-relay:
       enabled: false
       topic: mentalbridge.identity.account-lifecycle.v1

@@ -980,6 +980,7 @@ CREATE TABLE community.community_profile (
     id uuid PRIMARY KEY,
     account_subject uuid NOT NULL UNIQUE, -- external -> identity.account.id
     display_name varchar(80) NOT NULL,
+    avatar_preset varchar(24),
     status varchar(16) NOT NULL,
     created_at timestamptz NOT NULL,
     updated_at timestamptz NOT NULL,
@@ -1032,7 +1033,7 @@ CREATE TABLE community.community_block (
 
 /* ========================================================================== */
 /* ACTIVE — content-notification-service / mentalbridge_content_notification  */
-/* Evidence: node-pg-migrate-compatible SQL migrations 1-9.                   */
+/* Evidence: node-pg-migrate-compatible SQL migrations 1-16.                  */
 /* ========================================================================== */
 
 CREATE TABLE content.resource (
@@ -1047,6 +1048,22 @@ CREATE TABLE content.resource (
     source_title varchar(500),
     source_url varchar(2048),
     source_review_note text,
+    resource_kind varchar(24) NOT NULL,
+    interaction_type varchar(48) NOT NULL,
+    repeatability varchar(16) NOT NULL,
+    completion_mode varchar(24) NOT NULL,
+    streak_eligible boolean NOT NULL,
+    expected_duration_minutes smallint NOT NULL,
+    cooldown_days smallint NOT NULL,
+    recommended_frequency_per_week smallint NOT NULL,
+    plan_tags text[] NOT NULL,
+    structured_content jsonb NOT NULL,
+    interaction_config jsonb NOT NULL,
+    safety_notes text[] NOT NULL,
+    source_retrieved_at timestamptz,
+    source_content_hash char(64),
+    content_version_label varchar(64) NOT NULL,
+    source_review_status varchar(24) NOT NULL,
     catalogue_visibility varchar(16) NOT NULL DEFAULT 'LISTED',
     status varchar(16) NOT NULL,
     reviewed_by uuid, -- external -> identity.account.id
@@ -1073,6 +1090,68 @@ CREATE TABLE content.resource_daily_progress (
     PRIMARY KEY (owner_id, resource_id, local_date)
 );
 
+CREATE TABLE content.resource_learning_completion (
+    owner_id uuid NOT NULL, -- external -> identity.account.id
+    resource_id uuid NOT NULL REFERENCES content.resource(id),
+    resource_version bigint NOT NULL,
+    support_plan_id uuid, -- external -> care.support_plan.id
+    local_date date NOT NULL,
+    completed_at timestamptz NOT NULL,
+    PRIMARY KEY (owner_id, resource_id)
+);
+
+CREATE TABLE content.resource_practice_session (
+    id uuid PRIMARY KEY,
+    owner_id uuid NOT NULL, -- external -> identity.account.id
+    resource_id uuid NOT NULL REFERENCES content.resource(id),
+    resource_version bigint NOT NULL,
+    support_plan_id uuid, -- external -> care.support_plan.id
+    local_date date NOT NULL,
+    completed_at timestamptz NOT NULL,
+    UNIQUE (owner_id, resource_id, local_date)
+);
+
+CREATE TABLE content.resource_daily_assignment (
+    id uuid PRIMARY KEY,
+    owner_id uuid NOT NULL, -- external -> identity.account.id
+    local_date date NOT NULL,
+    time_zone varchar(64) NOT NULL,
+    support_plan_id uuid NOT NULL, -- external -> care.support_plan.id
+    support_plan_version bigint NOT NULL,
+    plan_tags text[] NOT NULL,
+    created_at timestamptz NOT NULL,
+    UNIQUE (owner_id, local_date)
+);
+
+CREATE TABLE content.resource_daily_assignment_item (
+    assignment_id uuid NOT NULL REFERENCES content.resource_daily_assignment(id) ON DELETE CASCADE,
+    ordinal smallint NOT NULL,
+    resource_id uuid NOT NULL REFERENCES content.resource(id),
+    selection_reason varchar(24) NOT NULL,
+    PRIMARY KEY (assignment_id, ordinal),
+    UNIQUE (assignment_id, resource_id)
+);
+
+CREATE TABLE content.resource_weekly_bingo (
+    id uuid PRIMARY KEY,
+    owner_id uuid NOT NULL, -- external -> identity.account.id
+    week_start date NOT NULL,
+    time_zone varchar(64) NOT NULL,
+    support_plan_id uuid NOT NULL, -- external -> care.support_plan.id
+    support_plan_version bigint NOT NULL,
+    plan_tags text[] NOT NULL,
+    created_at timestamptz NOT NULL,
+    UNIQUE (owner_id, week_start)
+);
+
+CREATE TABLE content.resource_weekly_bingo_item (
+    board_id uuid NOT NULL REFERENCES content.resource_weekly_bingo(id) ON DELETE CASCADE,
+    ordinal smallint NOT NULL,
+    resource_id uuid NOT NULL REFERENCES content.resource(id),
+    PRIMARY KEY (board_id, ordinal),
+    UNIQUE (board_id, resource_id)
+);
+
 CREATE TABLE content.notification_preference (
     user_id uuid PRIMARY KEY, -- external -> identity.account.id
     notifications_enabled boolean NOT NULL,
@@ -1092,9 +1171,30 @@ CREATE TABLE content.notification_preference (
     email_cadence varchar(24) NOT NULL,
     email_wellbeing_digest_enabled boolean NOT NULL,
     email_resource_reminders_enabled boolean NOT NULL,
+    email_daily_digest_time time NOT NULL,
+    email_resource_reminder_time time NOT NULL,
     version bigint NOT NULL,
     created_at timestamptz NOT NULL,
     updated_at timestamptz NOT NULL
+);
+
+CREATE TABLE content.wellbeing_email_delivery (
+    id uuid PRIMARY KEY,
+    owner_id uuid NOT NULL, -- external -> identity.account.id
+    local_date date NOT NULL,
+    delivery_kind varchar(24) NOT NULL,
+    time_zone varchar(64) NOT NULL,
+    state varchar(16) NOT NULL,
+    attempt_count smallint NOT NULL,
+    content_counts jsonb NOT NULL,
+    provider_message_id varchar(160),
+    failure_code varchar(48),
+    claimed_at timestamptz NOT NULL,
+    attempted_at timestamptz,
+    delivered_at timestamptz,
+    created_at timestamptz NOT NULL,
+    updated_at timestamptz NOT NULL,
+    UNIQUE (owner_id, local_date, delivery_kind)
 );
 
 CREATE TABLE content.notification (

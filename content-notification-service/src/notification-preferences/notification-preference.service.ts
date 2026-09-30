@@ -103,4 +103,15 @@ export class NotificationPreferenceService {
       throw new ServiceUnavailableException();
     }
   }
+
+  async listEmailCandidates(
+    afterOwnerId: string | null,
+    limit: number,
+  ): Promise<readonly ReminderCandidate[]> {
+    try {
+      return await this.repository.listEmailCandidates(afterOwnerId, limit);
+    } catch {
+      throw new ServiceUnavailableException();
+    }
+  }
 }

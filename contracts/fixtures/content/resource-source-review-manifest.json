@@ -1,0 +1,203 @@
+{
+  "schemaVersion": 1,
+  "retrievedAt": "2026-09-29T22:14:53.095Z",
+  "items": [
+    {
+      "resourceId": "00000000-0000-4000-8000-000000000201",
+      "requestedUrl": "https://www.nhs.uk/mental-health/self-help/guides-tools-and-activities/breathing-exercises-for-stress/",
+      "previousContentHash": "945a4299f00e14f9441fc972512a6208af76ffc5999ea8154a0a754939045631",
+      "status": "FETCHED_PENDING_HUMAN_REVIEW",
+      "finalUrl": "https://www.nhs.uk/mental-health/self-help/guides-tools-and-activities/breathing-exercises-for-stress/",
+      "contentHash": "9ca1854238e1a66364cb7c734068441e15e7e6af5b6d70186278644efc82ca32",
+      "normalizedCharacterCount": 2023
+    },
+    {
+      "resourceId": "00000000-0000-4000-8000-000000000202",
+      "requestedUrl": "https://www.emro.who.int/mhps/dealing_with_stress.html",
+      "previousContentHash": "1c585bbfc87aecca9eb1e4806a63cfbf70cfe4b42e451556e21a9a438d1a87a0",
+      "status": "FETCHED_PENDING_HUMAN_REVIEW",
+      "finalUrl": "https://www.emro.who.int/mhps/dealing_with_stress.html",
+      "contentHash": "3b9835c848452bd380a28f3a0b854935d6d10fc32c784c0910048d589c9d9c16",
+      "normalizedCharacterCount": 38832
+    },
+    {
+      "resourceId": "00000000-0000-4000-8000-000000000203",
+      "requestedUrl": "https://www.who.int/publications-detail-redirect/9789240003927",
+      "previousContentHash": "325e9748c90d587b3d9b290cab431699986ffa3b0dc17d3cf780012283c649d0",
+      "status": "FETCH_FAILED",
+      "error": "HTTP 403"
+    },
+    {
+      "resourceId": "00000000-0000-4000-8000-000000000204",
+      "requestedUrl": "https://cci.health.wa.gov.au/Resources/Looking-After-Yourself/Self-Compassion",
+      "previousContentHash": "47b4bf47cced175296c82258a4e23e6421db8d5cb26eed31de8de79ac6b3bc19",
+      "status": "FETCH_FAILED",
+      "error": "fetch failed"
+    },
+    {
+      "resourceId": "00000000-0000-4000-8000-000000000205",
+      "requestedUrl": "https://www.nimh.nih.gov/health/publications/depression",
+      "previousContentHash": "3b40f61584fbcf205d14d68d035c9f3f2f83a9db1858487e03366ea87bdf27fb",
+      "status": "FETCHED_PENDING_HUMAN_REVIEW",
+      "finalUrl": "https://www.nimh.nih.gov/health/publications/depression",
+      "contentHash": "3fd74191288fbcf8e6aac59633d14683bd3417466d34e4a2117122a25af158b5",
+      "normalizedCharacterCount": 24698
+    },
+    {
+      "resourceId": "00000000-0000-4000-8000-000000000206",
+      "requestedUrl": "https://www.nimh.nih.gov/health/publications/generalized-anxiety-disorder-gad",
+      "previousContentHash": "3a910015775b0ab3c2e501d3e776bef0001d0589753e69c3e2e4195fd549a39c",
+      "status": "FETCHED_PENDING_HUMAN_REVIEW",
+      "finalUrl": "https://www.nimh.nih.gov/health/publications/generalized-anxiety-disorder-gad",
+      "contentHash": "66b06b7891af40b70c2d1f82d8a9d9b09ef584fe2a9a036cead974612382cca2",
+      "normalizedCharacterCount": 20367
+    },
+    {
+      "resourceId": "00000000-0000-4000-8000-000000000207",
+      "requestedUrl": "https://www.nhs.uk/every-mind-matters/mental-wellbeing-tips/how-to-fall-asleep-faster-and-sleep-better/",
+      "previousContentHash": "414e697502ada6e72068253bd67b9efa44156647e536ba528cc9e0a52fc87eef",
+      "status": "FETCHED_PENDING_HUMAN_REVIEW",
+      "finalUrl": "https://www.nhs.uk/every-mind-matters/mental-wellbeing-tips/how-to-fall-asleep-faster-and-sleep-better/",
+      "contentHash": "b3737825f45b46cc7d1c9d7919bac9a7f0f4981978ab62e7615fdbc5c98a1ec0",
+      "normalizedCharacterCount": 5107
+    },
+    {
+      "resourceId": "00000000-0000-4000-8000-000000000208",
+      "requestedUrl": "https://www.nhs.uk/every-mind-matters/mental-wellbeing-tips/self-help-cbt-techniques/tackling-your-to-do-list/",
+      "previousContentHash": "7b590bff3ca335c88bdd15292b4d23d7935f6f0a1f90f420a440f2466898f0f0",
+      "status": "FETCHED_PENDING_HUMAN_REVIEW",
+      "finalUrl": "https://www.nhs.uk/every-mind-matters/mental-wellbeing-tips/self-help-cbt-techniques/tackling-your-to-do-list/",
+      "contentHash": "6bd7d4b32b35ff69e1430b8f0ce9cba77d36446b76a1d168ef3e06533650b045",
+      "normalizedCharacterCount": 5460
+    },
+    {
+      "resourceId": "00000000-0000-4000-8000-000000000209",
+      "requestedUrl": "https://www.nhs.uk/every-mind-matters/mental-wellbeing-tips/self-help-cbt-techniques/problem-solving/",
+      "previousContentHash": "9150435d9676c931180eafeea7a84f1072e43fd7752b4c9d14c7196bb3a8e64b",
+      "status": "FETCHED_PENDING_HUMAN_REVIEW",
+      "finalUrl": "https://www.nhs.uk/every-mind-matters/mental-wellbeing-tips/self-help-cbt-techniques/problem-solving/",
+      "contentHash": "ceb32a76ff5d8abbb012617aa700afe4606cfbbe6a8ea19c94429badb23eba49",
+      "normalizedCharacterCount": 5152
+    },
+    {
+      "resourceId": "00000000-0000-4000-8000-000000000210",
+      "requestedUrl": "https://www.nhs.uk/every-mind-matters/mental-wellbeing-tips/self-help-cbt-techniques/thought-record/",
+      "previousContentHash": "4347cbd90eb311eb81da2ef6fd93cfd0f13f23be8285021959b6fcafca4807e7",
+      "status": "FETCHED_PENDING_HUMAN_REVIEW",
+      "finalUrl": "https://www.nhs.uk/every-mind-matters/mental-wellbeing-tips/self-help-cbt-techniques/thought-record/",
+      "contentHash": "2f82931654509a7f435af5fb14df5e72df6da489b35eb21400e7418900d40720",
+      "normalizedCharacterCount": 3095
+    },
+    {
+      "resourceId": "00000000-0000-4000-8000-000000000211",
+      "requestedUrl": "https://www.nhs.uk/every-mind-matters/mental-wellbeing-tips/self-help-cbt-techniques/tackling-your-worries/",
+      "previousContentHash": "5889e7b242c5f70331f7685f23c6366ce749193ba7552446a2cdca29fd546920",
+      "status": "FETCHED_PENDING_HUMAN_REVIEW",
+      "finalUrl": "https://www.nhs.uk/every-mind-matters/mental-wellbeing-tips/self-help-cbt-techniques/tackling-your-worries/",
+      "contentHash": "2896adc9da83590638c2a59f85e4d09e7e62101390e535a66de6c8578d067322",
+      "normalizedCharacterCount": 5108
+    },
+    {
+      "resourceId": "00000000-0000-4000-8000-000000000212",
+      "requestedUrl": "https://www.nimh.nih.gov/health/publications/tips-for-talking-with-your-health-care-provider",
+      "previousContentHash": "5d61213451f194100da2917a8406280bd3a9769a7b4afb02cad56a36133518d5",
+      "status": "FETCHED_PENDING_HUMAN_REVIEW",
+      "finalUrl": "https://www.nimh.nih.gov/health/publications/tips-for-talking-with-your-health-care-provider",
+      "contentHash": "774f021f3b3601db353dd7595d91038857274b82e3d88f2ae03ceb2de628c15a",
+      "normalizedCharacterCount": 13244
+    },
+    {
+      "resourceId": "00000000-0000-4000-8000-000000000213",
+      "requestedUrl": "https://www.nhs.uk/every-mind-matters/mental-wellbeing-tips/top-tips-to-improve-your-mental-wellbeing/",
+      "previousContentHash": "2ea0b00f26c5b91a9ed927a1817b0b19339bff0928d9afbb0e90eeef55d39756",
+      "status": "FETCHED_PENDING_HUMAN_REVIEW",
+      "finalUrl": "https://www.nhs.uk/every-mind-matters/mental-wellbeing-tips/top-tips-to-improve-your-mental-wellbeing/",
+      "contentHash": "3062831b37bcea31f4f980afcaec303e63b26420f26a271972c807b68e12a803",
+      "normalizedCharacterCount": 4735
+    },
+    {
+      "resourceId": "00000000-0000-4000-8000-000000000214",
+      "requestedUrl": "https://www.nhs.uk/every-mind-matters/mental-wellbeing-tips/self-help-cbt-techniques/reframing-unhelpful-thoughts/",
+      "previousContentHash": "3c02fcc2774502a7143aa323e551c06363c65a2381f0fb10a6a5d8678a37aad1",
+      "status": "FETCHED_PENDING_HUMAN_REVIEW",
+      "finalUrl": "https://www.nhs.uk/every-mind-matters/mental-wellbeing-tips/self-help-cbt-techniques/reframing-unhelpful-thoughts/",
+      "contentHash": "65d4186b7f436f0b2d08fc650ae0763823e0bb7e1821b26537579bc169309f14",
+      "normalizedCharacterCount": 6059
+    },
+    {
+      "resourceId": "00000000-0000-4000-8000-000000000215",
+      "requestedUrl": "https://www.nhs.uk/every-mind-matters/lifes-challenges/health-issues/",
+      "previousContentHash": "bb99e74243afcc733aa2761a8ee88686faa1967063b274dd1821fb95b3344f4a",
+      "status": "FETCHED_PENDING_HUMAN_REVIEW",
+      "finalUrl": "https://www.nhs.uk/every-mind-matters/lifes-challenges/health-issues/",
+      "contentHash": "8f062e87748d8c83351d0d86e2309ab6e6558a21a3b2a4928d52e6cb6404efd5",
+      "normalizedCharacterCount": 6942
+    },
+    {
+      "resourceId": "00000000-0000-4000-8000-000000000216",
+      "requestedUrl": "https://www.nccih.nih.gov/health/relaxation-techniques-what-you-need-to-know",
+      "previousContentHash": "d5fa7119a4b8715843d7425bdc38ff5da506e4717ab808de0a7bb84dcbca8a23",
+      "status": "FETCHED_PENDING_HUMAN_REVIEW",
+      "finalUrl": "https://www.nccih.nih.gov/health/relaxation-techniques-what-you-need-to-know",
+      "contentHash": "bcd0250ffdd3fc85c9608b9b3d83b5ed77e451f1d113836c00329df8a6919920",
+      "normalizedCharacterCount": 42998
+    },
+    {
+      "resourceId": "00000000-0000-4000-8000-000000000217",
+      "requestedUrl": "https://www.who.int/news-room/fact-sheets/detail/physical-activity",
+      "previousContentHash": "d32ecbe6d792e176f4124072f090c6886a49d25c8b9bafd0ef2bb5069b43aa7f",
+      "status": "FETCH_FAILED",
+      "error": "HTTP 403"
+    },
+    {
+      "resourceId": "00000000-0000-4000-8000-000000000218",
+      "requestedUrl": "https://www.nhs.uk/every-mind-matters/mental-wellbeing-tips/be-active-for-your-mental-health/",
+      "previousContentHash": "777b149e718536a71de98bc12362971edc6b569336c7f3d1201396f578b4d404",
+      "status": "FETCHED_PENDING_HUMAN_REVIEW",
+      "finalUrl": "https://www.nhs.uk/every-mind-matters/mental-wellbeing-tips/be-active-for-your-mental-health/",
+      "contentHash": "1aa2fac4f516a5cf5af9b4998138d1b5ea7126cfef3d46c5c6b241552b4ec9fa",
+      "normalizedCharacterCount": 8839
+    },
+    {
+      "resourceId": "00000000-0000-4000-8000-000000000219",
+      "requestedUrl": "https://www.nhs.uk/every-mind-matters/mental-wellbeing-tips/self-help-cbt-techniques/problem-solving/",
+      "previousContentHash": "3d310f9a9393d1f2bac25f4e62752c821609c4280d5923869d4a8a6a40cc3600",
+      "status": "FETCHED_PENDING_HUMAN_REVIEW",
+      "finalUrl": "https://www.nhs.uk/every-mind-matters/mental-wellbeing-tips/self-help-cbt-techniques/problem-solving/",
+      "contentHash": "ceb32a76ff5d8abbb012617aa700afe4606cfbbe6a8ea19c94429badb23eba49",
+      "normalizedCharacterCount": 5152
+    },
+    {
+      "resourceId": "00000000-0000-4000-8000-000000000220",
+      "requestedUrl": "https://www.nhs.uk/every-mind-matters/mental-wellbeing-tips/self-help-cbt-techniques/tackling-your-to-do-list/",
+      "previousContentHash": "e2adc1dbfaaec161c63f7e0cedce1ff06f3b000d6ab2c88bdbd53f86f7d37cb7",
+      "status": "FETCHED_PENDING_HUMAN_REVIEW",
+      "finalUrl": "https://www.nhs.uk/every-mind-matters/mental-wellbeing-tips/self-help-cbt-techniques/tackling-your-to-do-list/",
+      "contentHash": "6bd7d4b32b35ff69e1430b8f0ce9cba77d36446b76a1d168ef3e06533650b045",
+      "normalizedCharacterCount": 5460
+    },
+    {
+      "resourceId": "00000000-0000-4000-8000-000000000221",
+      "requestedUrl": "https://www.who.int/publications/i/item/9789240003927",
+      "previousContentHash": "8e99b582becc9c8368b75366f6934097b46a3d2e199b6ffb9ce649cfd8d02c4d",
+      "status": "FETCH_FAILED",
+      "error": "HTTP 403"
+    },
+    {
+      "resourceId": "00000000-0000-4000-8000-000000000222",
+      "requestedUrl": "https://www.who.int/publications/i/item/9789240003927",
+      "previousContentHash": "930c515773a326e05e70cac5a2d61e722e180d84f057dd7c60fdfe6bd0691079",
+      "status": "FETCH_FAILED",
+      "error": "HTTP 403"
+    },
+    {
+      "resourceId": "00000000-0000-4000-8000-000000000223",
+      "requestedUrl": "https://www.nhs.uk/every-mind-matters/mental-wellbeing-tips/self-help-cbt-techniques/staying-on-top-of-things/",
+      "previousContentHash": "68b3ecbdceb1dd266b6a12e36e99c7ddc16d83f1cab7a547263360f091409e67",
+      "status": "FETCHED_PENDING_HUMAN_REVIEW",
+      "finalUrl": "https://www.nhs.uk/every-mind-matters/mental-wellbeing-tips/self-help-cbt-techniques/staying-on-top-of-things/",
+      "contentHash": "42c3b464e12e69498b582c852f4e7e8cb3cbf5c8eda9472cd2ee47b12a8bdc21",
+      "normalizedCharacterCount": 5090
+    }
+  ]
+}

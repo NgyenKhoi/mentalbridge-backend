@@ -28,6 +28,8 @@ const preferences: NotificationPreferences = {
     cadence: 'IMMEDIATE',
     wellbeingDigestEnabled: false,
     resourceRemindersEnabled: false,
+    dailyDigestTime: '19:00',
+    resourceReminderTime: '18:30',
   },
   version: 0,
   updatedAt: '2026-09-28T00:00:00.000Z',

@@ -18,13 +18,14 @@ import { MessageService } from '../messages/message.service.js';
 import { normalizeCorrelationId } from '../observability/correlation-id.js';
 import type { RealtimeMetrics } from '../observability/metrics.js';
 import { PresenceService } from '../presence/presence.service.js';
-import { IdentityJwtVerifier } from '../security/identity-jwt-verifier.js';
 import type { AuthenticatedPrincipal } from '../security/principal.js';
+import { SocketCredentialService } from '../security/socket-credential.service.js';
 import { CONFIGURATION_TOKEN, METRICS_TOKEN } from '../shared/tokens.js';
 import { commandSchema, type RealtimeCommand } from './command.schema.js';
 
 interface SocketData {
   principal?: AuthenticatedPrincipal;
+  bearerToken?: string;
   correlationId?: string;
   countedActive?: boolean;
   expiryTimer?: NodeJS.Timeout;
@@ -45,7 +46,7 @@ type RealtimeSocket = Socket<
 const handshakeSchema = z
   .object({
     schemaVersion: z.literal(1),
-    accessToken: z.string().min(1).max(8192),
+    accessToken: z.string().min(32).max(128),
     correlationId: z
       .string()
       .regex(/^[A-Za-z0-9._:-]{1,128}$/)
@@ -74,7 +75,7 @@ export class RealtimeGateway implements OnGatewayInit, OnGatewayConnection, OnGa
   private readonly rateWindows = new Map<string, { startedAt: number; count: number }>();
 
   constructor(
-    private readonly verifier: IdentityJwtVerifier,
+    private readonly credentials: SocketCredentialService,
     private readonly presence: PresenceService,
     private readonly messages: MessageService,
     @Inject(CONFIGURATION_TOKEN) private readonly configuration: ServiceConfiguration,
@@ -193,7 +194,9 @@ export class RealtimeGateway implements OnGatewayInit, OnGatewayConnection, OnGa
 
   private async authenticate(socket: RealtimeSocket): Promise<void> {
     const handshake = handshakeSchema.parse(socket.handshake.auth);
-    socket.data.principal = await this.verifier.verify(handshake.accessToken);
+    const authenticated = await this.credentials.consume(handshake.accessToken);
+    socket.data.principal = authenticated.principal;
+    socket.data.bearerToken = authenticated.bearerToken;
     socket.data.correlationId = normalizeCorrelationId(handshake.correlationId);
   }
 
@@ -212,11 +215,17 @@ export class RealtimeGateway implements OnGatewayInit, OnGatewayConnection, OnGa
       );
     }
     if (command.commandType === 'conversation.subscribe') {
-      await this.messages.subscribe(principal.accountId, command.payload.conversationId);
+      const bearerToken = this.bearerToken(socket);
+      await this.messages.subscribe(
+        bearerToken,
+        principal.accountId,
+        command.payload.conversationId,
+        command.correlationId,
+      );
       await socket.join(this.room(command.payload.conversationId));
       return this.accept(command, false, undefined, 'not_applicable');
     }
-    const result = await this.messages.send({
+    const result = await this.messages.send(this.bearerToken(socket), command.correlationId, {
       senderId: principal.accountId,
       ...command.payload,
     });
@@ -282,6 +291,12 @@ export class RealtimeGateway implements OnGatewayInit, OnGatewayConnection, OnGa
       RATE_LIMITED: 'Command rate limit was exceeded',
       ACCESS_DENIED: 'Conversation access is denied',
       CHAT_ELIGIBILITY_UNAVAILABLE: 'Conversation eligibility is unavailable',
+      APPOINTMENT_NOT_CONFIRMED: 'The appointment is not confirmed for chat',
+      CHAT_NOT_STARTED: 'The appointment chat has not started',
+      CHAT_ENDED: 'The appointment chat has ended',
+      CHAT_CANCELLED: 'The appointment was cancelled',
+      CHAT_RESCHEDULED: 'The appointment was rescheduled',
+      CONVERSATION_BINDING_CONFLICT: 'Conversation binding conflicts with the appointment',
       IDEMPOTENCY_CONFLICT: 'Client message ID conflicts with an earlier command',
       DEPENDENCY_UNAVAILABLE: 'A required dependency is unavailable',
     };
@@ -356,5 +371,13 @@ export class RealtimeGateway implements OnGatewayInit, OnGatewayConnection, OnGa
       ),
     );
     socket.disconnect(true);
+  }
+
+  private bearerToken(socket: RealtimeSocket): string {
+    const bearerToken = socket.data.bearerToken;
+    if (!bearerToken) {
+      throw new ApplicationException(401, 'AUTHENTICATION_REQUIRED', 'Authentication is required');
+    }
+    return bearerToken;
   }
 }

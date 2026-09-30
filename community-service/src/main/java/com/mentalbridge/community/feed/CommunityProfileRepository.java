@@ -16,6 +16,8 @@ interface CommunityProfileRepository extends JpaRepository<CommunityProfileEntit
 	@Query("select profile.id from CommunityProfileEntity profile where profile.accountSubject = :subject")
 	Optional<UUID> findIdByAccountSubject(@Param("subject") UUID subject);
 
+	Optional<CommunityProfileEntity> findByAccountSubject(UUID accountSubject);
+
 	@Lock(LockModeType.PESSIMISTIC_WRITE)
 	@Query("select profile from CommunityProfileEntity profile where profile.accountSubject = :subject")
 	Optional<CommunityProfileEntity> findByAccountSubjectForUpdate(@Param("subject") UUID subject);

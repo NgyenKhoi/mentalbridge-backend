@@ -83,12 +83,12 @@ export class NotificationRepository {
   ) {}
 
   async create(command: NotificationCreate, fingerprint: string): Promise<NotificationItem> {
-    const expiresAt = command.expiresAt ?? new Date(Date.now() + 90 * 86_400_000).toISOString();
     const inserted = await this.db.query<NotificationRow>(
       `INSERT INTO notification
          (recipient_id, category, title, body, action_type, action_target_id, priority,
           expires_at, occurred_at, source, source_identity, request_fingerprint)
-       VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12)
+       VALUES ($1,$2,$3,$4,$5,$6,$7,
+         COALESCE($8::timestamptz, now() + interval '90 days'),$9,$10,$11,$12)
        ON CONFLICT (recipient_id, source, source_identity) DO NOTHING
        RETURNING ${COLUMNS}`,
       [
@@ -99,7 +99,7 @@ export class NotificationRepository {
         command.action?.type ?? null,
         command.action?.targetId ?? null,
         command.priority,
-        expiresAt,
+        command.expiresAt ?? null,
         command.occurredAt,
         command.source,
         command.sourceIdentity,

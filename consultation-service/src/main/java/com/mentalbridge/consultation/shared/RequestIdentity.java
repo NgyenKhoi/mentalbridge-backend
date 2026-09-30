@@ -22,6 +22,14 @@ public final class RequestIdentity {
 		}
 	}
 
+	public static String role(Jwt jwt) {
+		var roles = jwt.getClaimAsStringList("roles");
+		if (roles == null || roles.size() != 1 || !java.util.Set.of("USER", "SPECIALIST", "ADMIN").contains(roles.getFirst())) {
+			throw new ApiException(HttpStatus.UNAUTHORIZED, "UNAUTHENTICATED", "Authenticated account role is invalid");
+		}
+		return roles.getFirst();
+	}
+
 	public static long requiredVersion(String ifMatch) {
 		if (ifMatch == null || !ifMatch.matches("\\\"[0-9]+\\\"")) {
 			throw new ApiException(HttpStatus.PRECONDITION_REQUIRED, "PROFILE_VERSION_REQUIRED",

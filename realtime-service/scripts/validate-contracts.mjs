@@ -14,7 +14,8 @@ const expectedAvailability = new Map([
   ['GET /health/live', 'implemented'],
   ['GET /health/ready', 'implemented'],
   ['GET /metrics', 'implemented'],
-  ['GET /api/v1/conversations/{conversationId}/messages', 'planned'],
+  ['POST /internal/v1/socket-credentials', 'implemented'],
+  ['GET /api/v1/conversations/{conversationId}/messages', 'implemented'],
 ]);
 const actualAvailability = new Map();
 for (const [path, pathItem] of Object.entries(openApi.paths ?? {})) {

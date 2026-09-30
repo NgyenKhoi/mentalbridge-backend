@@ -33,6 +33,13 @@ export class MessageRepository {
     }
   }
 
+  async removeNew(message: StoredMessage): Promise<void> {
+    await this.database.collection<StoredMessage>('messages').deleteOne({
+      _id: message._id,
+      messageId: message.messageId,
+    });
+  }
+
   async list(
     conversationId: string,
     limit: number,
