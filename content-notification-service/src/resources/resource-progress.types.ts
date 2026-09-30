@@ -27,6 +27,9 @@ export interface ResourceProgressItem {
 export interface ResourceProgressUpdate {
   readonly status: ResourceProgressStatus;
   readonly completedActionIds: readonly string[];
+  readonly practiceSessionId?: string;
+  readonly practiceStartedAt?: string;
+  readonly practiceDurationSeconds?: number;
 }
 
 export interface ResourceProgressList {

@@ -20,6 +20,7 @@
     "test:watch": "vitest",
     "test:integration": "vitest run --config vitest.integration.config.ts",
     "contract:generate": "node scripts/generate-resource-eligibility-contract.mjs",
+    "source:ingest": "node scripts/ingest-resource-sources.mjs",
     "migrate:up": "node-pg-migrate up",
     "migrate:down": "node-pg-migrate down",
     "migrate:review1:up": "node-pg-migrate up --migrations-dir migrations/review1 --migrations-table pgmigrations_review1",

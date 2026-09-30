@@ -18,7 +18,21 @@ export const ResourceProgressUpdateSchema = z
       .refine((values) => new Set(values).size === values.length, {
         message: 'must contain unique action identifiers',
       }),
+    practiceSessionId: z.uuid().optional(),
+    practiceStartedAt: z.iso.datetime({ offset: true }).optional(),
+    practiceDurationSeconds: z.number().int().min(1).max(7_200).optional(),
   })
-  .strict();
+  .strict()
+  .superRefine((value, context) => {
+    if (
+      (value.practiceStartedAt !== undefined || value.practiceDurationSeconds !== undefined) &&
+      value.practiceSessionId === undefined
+    ) {
+      context.addIssue({
+        code: 'custom',
+        message: 'practiceSessionId is required for practice session metadata',
+      });
+    }
+  });
 
 export type ResourceProgressUpdateDto = z.infer<typeof ResourceProgressUpdateSchema>;

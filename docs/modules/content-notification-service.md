@@ -15,6 +15,7 @@ and area wording for the directory and forbids automatic safety email.
 | Capability | Main behavior | Acceptance |
 | --- | --- | --- |
 | Resources | Admin versions, publishes, retires and reviews localized self-help content and separately governed eligibility | Only reviewed active versions served; locale/effective/review dates explicit; future plan use also requires explicit domain/instrument-band/pathway eligibility; unavailable content has an explicit fallback status |
+| Resource journey | Materialize an owner/date daily challenge and Monday-based bingo from the active SupportPlan snapshot supplied by the trusted BFF | Stable persisted assignment; completed one-time learning excluded; repeatable practice remains reusable; daily completion, learning completion, and practice streak remain distinct |
 | Area directory | Publish sourced, reviewed and verified entries for user-selected province/district/area | Source/provenance, `reviewedAt`, `verifiedAt`, address, phone, coverage and active state required; never claim nearest without coordinates/distance |
 | Preferences | User manages channel/category choices | Mandatory safety/security categories follow approved policy; owner authorization and optimistic locking enforced |
 | Reminder scheduling | Create at most one default wellbeing digest/day, explicit opt-in resource reminders, and one appointment reminder near one hour before start | Deterministic selection/deduplication; AI only phrases approved facts; no automatic safety email |
@@ -31,6 +32,8 @@ and area wording for the directory and forbids automatic safety email.
 - Define public/admin OpenAPI and versioned consumed/published events first. PostgreSQL migrations include template/delivery-attempt aggregates and outbox/inbox deduplication.
 - Template rendering and provider APIs sit behind application ports. Optional delivery never becomes safety truth and cannot claim a human or emergency service was notified.
 - Existing resource contracts and rows remain valid for reviewed public reads. Resource Eligibility v1 adds immutable exact-version publications, explicit declarations, withdrawal and a bounded Care batch resolver under #50; no service infers universal plan eligibility from current data.
+- MB-603 adds semantic `resourceKind`/`interactionType` metadata and `PUT /api/v1/resource-journeys/{localDate}`. The browser supplies only date/timezone to the BFF; the BFF reads Care's active SupportPlan and forwards its authoritative identity, version, domains, and selected resource IDs. Content persists the resulting assignment and completion/session evidence.
+- Runtime never scrapes or translates third-party sources. Offline/admin ingestion records source URL, retrieval instant, SHA-256 content hash, version label, and explicit review status before reviewed Vietnamese content is published.
 
 ## Ordered tasks
 

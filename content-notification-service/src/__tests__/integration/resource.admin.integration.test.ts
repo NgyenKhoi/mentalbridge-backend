@@ -57,6 +57,7 @@ describe('ResourceRepository command consistency', () => {
       '4_add_idempotency_key.sql',
       '5_add_resource_command_records.sql',
       '9_add_resource_source_provenance.sql',
+      '14_add_resource_experience_model.sql',
     ]) {
       await migrationPool.query(await readFile(join(migrationDirectory, name), 'utf8'));
     }
@@ -231,6 +232,7 @@ describe('ResourceRepository command consistency', () => {
     await migrationPool.query(
       `UPDATE resource
        SET status = 'PUBLISHED', reviewed_by = $3, reviewed_at = now(),
+           source_review_status = 'REVIEWED',
            effective_at = CASE WHEN id = $2 THEN now() + interval '1 day' ELSE NULL END
        WHERE id IN ($1, $2)`,
       [active.id, future.id, ADMIN_B],

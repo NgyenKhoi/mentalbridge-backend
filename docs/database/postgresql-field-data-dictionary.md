@@ -2,7 +2,7 @@
 
 This document explains the business purpose of PostgreSQL fields. The [canonical PostgreSQL logical schema](../domain-model/relational/postgresql-logical-schema.sql) is a non-executable documentation model and must never provision or migrate an environment. Names such as `consultation.availability_slot` identify a visual owner namespace; the physical table is `public.availability_slot` in the separate `mentalbridge_consultation` database. Service-owned migration histories are the executable runtime sources of truth: Liquibase for Spring services and the current SQL migration mechanism for Node.js services. This dictionary is written for developers and reviewers; descriptions are intentionally kept out of executable migrations.
 
-When service-owned migrations are introduced, update this dictionary and the canonical logical model in the same change whenever persisted domain structure materially changes. A field description must explain why the value is persisted, whether it is authoritative, derived, external, or sensitive, and how nullability, time, versioning, or idempotency affects behavior. Content/Notification's executable history starts at `content-notification-service/migrations/1_initial_schema.sql`; migration 2 removes the obsolete hotline table, the separate Review 1 migrations insert controlled demo content and its initial item-level eligibility matrix, migration 6 adds immutable Resource Eligibility v1 provenance, migration 7 adds the separately governed reviewed safety directory, and migration 8 adds its deterministic reviewed area vocabulary. The field descriptions under its conceptual owner below describe the resulting physical `public` tables.
+When service-owned migrations are introduced, update this dictionary and the canonical logical model in the same change whenever persisted domain structure materially changes. A field description must explain why the value is persisted, whether it is authoritative, derived, external, or sensitive, and how nullability, time, versioning, or idempotency affects behavior. Content/Notification's executable history starts at `content-notification-service/migrations/1_initial_schema.sql`; migration 2 removes the obsolete hotline table, the separate Review 1 migrations insert controlled demo content and its initial item-level eligibility matrix, migration 6 adds immutable Resource Eligibility v1 provenance, migration 7 adds the separately governed reviewed safety directory, migration 8 adds its deterministic reviewed area vocabulary, and migration 14 adds semantic resource metadata plus durable learning, practice, daily-assignment, and weekly-bingo state. The field descriptions under its conceptual owner below describe the resulting physical `public` tables.
 
 ## Database `mentalbridge_community` (schema `public`)
 
@@ -1489,6 +1489,20 @@ The fixed UUID `00000000-0000-4000-8000-000000000101` identifies a visibly label
 | `source_title` | Human-readable title of the referenced source. Required for new published catalogue resources. |
 | `source_url` | HTTP(S) provenance URL, distinct from the user action in `external_url`. Required for new published catalogue resources. |
 | `source_review_note` | Review/licensing note documenting how MentalBridge adapted and checked the source. Required for new published catalogue resources. |
+| `resource_kind` | Product meaning independent of media format: `LEARNING`, `PRACTICE`, `HABIT`, `ACTION`, or `REFLECTION`. |
+| `interaction_type` | Renderer key for the reviewed experience. Unknown values must fall back to a reader/checklist and must never imply breathing instructions. |
+| `repeatability` | `ONE_TIME` records durable learning completion; `REPEATABLE` records each deliberately confirmed practice session with a client-generated idempotency ID. |
+| `completion_mode` | Reviewed completion interaction: explicit confirmation, video confirmation, timed practice, or discrete steps. |
+| `streak_eligible` | Whether completed repeatable sessions may contribute to the separate practice streak. Learning and daily checklist state never contribute. |
+| `expected_duration_minutes` | Reviewed duration estimate, constrained to 1..120 minutes. |
+| `cooldown_days` / `recommended_frequency_per_week` | Gentle scheduling metadata used to avoid mechanical repetition; neither is a clinical adherence target. |
+| `plan_tags` | Bounded SupportPlan domain/template-family tags used only after the BFF supplies the authoritative active plan snapshot. |
+| `structured_content` | Reviewed section/callout/checklist JSON rendered by the generic reader. It contains no user-authored data. |
+| `interaction_config` | Reviewed, interaction-specific configuration such as timed phases or action labels. |
+| `safety_notes` | Reviewed user-facing cautions and stop conditions appropriate to the resource. |
+| `source_retrieved_at` / `source_content_hash` | Offline ingestion provenance. The optional lowercase SHA-256 hash detects source drift without scraping at runtime. |
+| `content_version_label` | Human-readable curated content release label, separate from the optimistic-lock `version`. |
+| `source_review_status` | Explicit editorial gate: `REVIEWED`, `REVIEW_REQUIRED`, or `NEEDS_SOURCE_REVIEW`. Only `REVIEWED` rows are eligible for public listing, detail, progress, or daily scheduling. |
 | `catalogue_visibility` | `LISTED` for catalogue browsing or `DIRECT_ONLY` for exact-version compatibility links that must not appear in the public list. |
 | `status` | Publication lifecycle controlling user visibility: `DRAFT`, `PUBLISHED`, or `ARCHIVED`. |
 | `reviewed_by` | Administrator account UUID that approved the content for publication; null before review. |
@@ -1517,6 +1531,22 @@ Owner-scoped, non-clinical participation state for one reviewed resource on one 
 | `version`              | Monotonic mutation counter for diagnosing multi-surface synchronization; identical replacement writes are no-ops.                                                                                      |
 
 The `(owner_id, local_date DESC, updated_at DESC)` index supports bounded weekly history and recent-completion views. Daily completion is encouragement only; missed days do not create rows, penalties, or clinical meaning.
+
+### `content.resource_learning_completion`
+
+Durable owner-scoped proof that a one-time learning resource was confirmed once. The `(owner_id, resource_id)` primary key prevents re-completion from inflating practice streaks; the first completion date/time and exact resource version remain authoritative.
+
+### `content.resource_practice_session`
+
+Repeatable practice history. `id` is a client-generated idempotency key for one deliberate completion, so retries do not duplicate a session while multiple sessions on the same day remain representable. `support_plan_id` must come from the persisted daily assignment; direct/out-of-plan progress never creates streak evidence. `started_at` and `duration_seconds` retain optional measured session metadata. Only sessions for the current plan and resources with `streak_eligible=true` count toward practice streak.
+
+### `content.resource_daily_assignment` and `content.resource_daily_assignment_item`
+
+Persisted, owner/date-scoped daily challenge derived from an authoritative active SupportPlan snapshot supplied by the trusted BFF. Materialization is allowed only for local Plan Days 1–14. The header stores timezone, plan identity/version, and plan tags; ordered items store exact resource IDs and a non-clinical selection reason. The unique owner/date key keeps reloads stable even if catalogue ordering changes.
+
+### `content.resource_weekly_bingo` and `content.resource_weekly_bingo_item`
+
+Persisted Monday-based board derived from the same plan snapshot. The unique owner/week key prevents reshuffling during the week. Item completion is derived from durable learning completions or practice sessions; the board itself does not create completion evidence.
 
 ### `content.notification_preference`
 

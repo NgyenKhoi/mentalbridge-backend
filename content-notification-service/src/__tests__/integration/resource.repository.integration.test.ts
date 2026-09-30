@@ -62,6 +62,12 @@ describe('ResourceRepository integration', () => {
       'utf8',
     );
     await pool.query(sourceProvenanceMigration);
+    await pool.query(
+      readFileSync(
+        join(__dirname, '../../../migrations/14_add_resource_experience_model.sql'),
+        'utf8',
+      ),
+    );
 
     const dbService: Pick<DatabaseService, 'query'> = {
       query: <T extends Record<string, unknown>>(text: string, params?: unknown[]) =>
@@ -89,6 +95,7 @@ describe('ResourceRepository integration', () => {
       source_title: 'Reviewed integration fixture',
       source_url: 'https://example.com/reviewed-resource',
       source_review_note: 'Fixture provenance for repository integration coverage.',
+      source_review_status: 'REVIEWED',
     };
     const merged = { ...base, ...overrides };
     const entries = Object.entries(merged).filter(([, v]) => v !== null && v !== undefined);
@@ -121,6 +128,14 @@ describe('ResourceRepository integration', () => {
     const rows = await repository.listPublished({ limit: 100 });
     const found = rows.find((r) => (r as unknown as { title: string }).title === tag);
     expect(found).toBeUndefined();
+  });
+
+  it('does not expose published resources awaiting source review', async () => {
+    const tag = 'source-review-' + Date.now();
+    await insertResource({ title: tag, source_review_status: 'REVIEW_REQUIRED' });
+
+    const rows = await repository.listPublished({ limit: 100 });
+    expect(rows.some((resource) => resource.title === tag)).toBe(false);
   });
 
   it('does not return future-effective resources', async () => {
