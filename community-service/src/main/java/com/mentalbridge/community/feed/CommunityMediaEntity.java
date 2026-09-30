@@ -44,6 +44,30 @@ class CommunityMediaEntity {
 	@Column(name = "delivery_url", length = 2048)
 	private String deliveryUrl;
 
+	@Column(name = "storage_provider", length = 24)
+	private String storageProvider;
+
+	@Column(name = "storage_key", length = 512)
+	private String storageKey;
+
+	@Column(name = "expected_mime_type", length = 120)
+	private String expectedMimeType;
+
+	@Column(name = "expected_size_bytes")
+	private Long expectedSizeBytes;
+
+	@Column(name = "upload_expires_at")
+	private Instant uploadExpiresAt;
+
+	@Column(name = "idempotency_key", length = 128)
+	private String idempotencyKey;
+
+	@Column(name = "request_fingerprint", length = 64)
+	private String requestFingerprint;
+
+	@Column(name = "rejection_reason", length = 64)
+	private String rejectionReason;
+
 	private Integer width;
 	private Integer height;
 
@@ -68,6 +92,25 @@ class CommunityMediaEntity {
 	protected CommunityMediaEntity() {
 	}
 
+	CommunityMediaEntity(UUID id, CommunityProfileEntity owner, Type mediaType, String storageKey,
+			String expectedMimeType, long expectedSizeBytes, Instant uploadExpiresAt, String idempotencyKey,
+			String requestFingerprint, Instant now) {
+		this.id = id;
+		this.owner = owner;
+		this.mediaType = mediaType;
+		this.state = State.PENDING;
+		this.storageProvider = "CLOUDINARY";
+		this.storageKey = storageKey;
+		this.expectedMimeType = expectedMimeType;
+		this.expectedSizeBytes = expectedSizeBytes;
+		this.uploadExpiresAt = uploadExpiresAt;
+		this.idempotencyKey = idempotencyKey;
+		this.requestFingerprint = requestFingerprint;
+		this.position = 0;
+		this.createdAt = now;
+		this.updatedAt = now;
+	}
+
 	UUID id() {
 		return id;
 	}
@@ -78,6 +121,38 @@ class CommunityMediaEntity {
 
 	State state() {
 		return state;
+	}
+
+	String storageKey() {
+		return storageKey;
+	}
+
+	String expectedMimeType() {
+		return expectedMimeType;
+	}
+
+	Long expectedSizeBytes() {
+		return expectedSizeBytes;
+	}
+
+	Instant uploadExpiresAt() {
+		return uploadExpiresAt;
+	}
+
+	String requestFingerprint() {
+		return requestFingerprint;
+	}
+
+	Instant createdAt() {
+		return createdAt;
+	}
+
+	Instant updatedAt() {
+		return updatedAt;
+	}
+
+	long version() {
+		return version;
 	}
 
 	String deliveryUrl() {
@@ -117,6 +192,55 @@ class CommunityMediaEntity {
 	void detach(Instant now) {
 		this.post = null;
 		this.position = 0;
+		this.updatedAt = now;
+	}
+
+	void markReady(String deliveryUrl, int width, int height, Integer durationSeconds, Instant now) {
+		this.state = State.READY;
+		this.deliveryUrl = deliveryUrl;
+		this.width = width;
+		this.height = height;
+		this.durationSeconds = durationSeconds;
+		this.rejectionReason = null;
+		this.updatedAt = now;
+	}
+
+	void reject(String reason, Instant now) {
+		this.state = State.REJECTED;
+		this.deliveryUrl = null;
+		this.width = null;
+		this.height = null;
+		this.durationSeconds = null;
+		this.rejectionReason = reason;
+		this.updatedAt = now;
+	}
+
+	void delete(Instant now) {
+		this.state = State.DELETED;
+		this.deliveryUrl = null;
+		this.width = null;
+		this.height = null;
+		this.durationSeconds = null;
+		this.rejectionReason = null;
+		this.post = null;
+		this.position = 0;
+		this.updatedAt = now;
+	}
+
+	void expire(Instant now) {
+		this.state = State.EXPIRED;
+		this.deliveryUrl = null;
+		this.width = null;
+		this.height = null;
+		this.durationSeconds = null;
+		this.rejectionReason = null;
+		this.updatedAt = now;
+	}
+
+	void clearStorageReference(Instant now) {
+		this.storageProvider = null;
+		this.storageKey = null;
+		this.uploadExpiresAt = null;
 		this.updatedAt = now;
 	}
 }

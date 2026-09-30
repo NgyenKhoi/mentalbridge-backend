@@ -36,3 +36,12 @@ MB-574 does not upload media, add comments/reactions/bookmarks, report, moderate
 - Cross-owner, absent, hidden, removed, and owner-deleted mutations share the bounded not-found contract and do not disclose ownership or moderation state.
 - Owner deletion changes the post to `OWNER_DELETED`, detaches media, and removes it from feed/detail immediately while retaining auditable content and lifecycle state in Community storage.
 - Community story text remains inside `community-service`; it is not emitted or copied into Care, reassessment, Journal/AI, SupportPlan, or specialist context.
+
+## MB-576 bounded Community media lifecycle
+
+- `POST /api/v1/community/media/upload-intents` creates an idempotent, owner-scoped ten-minute signed Cloudinary upload for allowlisted JPEG, PNG, WebP, MP4, WebM, or QuickTime files. Images are limited to 10 MiB; videos are limited to 50 MiB and 60 seconds.
+- Browser uploads use Cloudinary `authenticated` storage and a server-signed immutable storage key. The API secret, original object URL, and provider response are never returned by Community APIs or persisted in a post.
+- `POST /api/v1/community/media/{mediaId}/finalize` verifies the exact storage identity, detected format, byte count, dimensions, and video duration outside a database transaction. Valid objects become `READY`; mismatches become `REJECTED`.
+- READY images and videos are delivered only through signed transformed URLs. Cloudinary transformations strip location-sensitive image metadata and minimize delivered video metadata while originals remain authenticated.
+- A post may attach at most ten distinct media items that are `READY`, owned by its author, and unattached elsewhere. An attached media item must be removed through the post update contract before its own DELETE endpoint can tombstone it.
+- The scheduled retention job expires timed-out uploads and unattached READY/REJECTED objects after 24 hours. Provider deletion is retried for retained `DELETED` or `EXPIRED` rows without holding a database transaction across the provider call.

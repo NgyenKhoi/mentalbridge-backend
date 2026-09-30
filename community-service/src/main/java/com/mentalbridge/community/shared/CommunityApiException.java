@@ -54,6 +54,36 @@ public class CommunityApiException extends RuntimeException {
 				"One or more media items cannot be attached");
 	}
 
+	public static CommunityApiException invalidMediaInput() {
+		return new CommunityApiException(HttpStatus.BAD_REQUEST, "COMMUNITY_MEDIA_INVALID",
+				"Community media input is invalid");
+	}
+
+	public static CommunityApiException mediaLimitReached() {
+		return new CommunityApiException(HttpStatus.CONFLICT, "COMMUNITY_MEDIA_LIMIT_REACHED",
+				"Too many unattached Community media items exist");
+	}
+
+	public static CommunityApiException mediaNotFound() {
+		return new CommunityApiException(HttpStatus.NOT_FOUND, "COMMUNITY_MEDIA_NOT_FOUND",
+				"Community media was not found");
+	}
+
+	public static CommunityApiException mediaUploadMissing() {
+		return new CommunityApiException(HttpStatus.CONFLICT, "COMMUNITY_MEDIA_UPLOAD_MISSING",
+				"Community media upload is not available yet");
+	}
+
+	public static CommunityApiException mediaStorageUnavailable() {
+		return new CommunityApiException(HttpStatus.SERVICE_UNAVAILABLE, "COMMUNITY_MEDIA_STORAGE_UNAVAILABLE",
+				"Community media storage is temporarily unavailable");
+	}
+
+	public static CommunityApiException mediaVersionMismatch() {
+		return new CommunityApiException(HttpStatus.PRECONDITION_FAILED, "COMMUNITY_MEDIA_VERSION_MISMATCH",
+				"Community media changed before this request completed");
+	}
+
 	public static CommunityApiException versionMismatch() {
 		return new CommunityApiException(HttpStatus.PRECONDITION_FAILED, "COMMUNITY_POST_VERSION_MISMATCH",
 				"Community post changed before this request completed");

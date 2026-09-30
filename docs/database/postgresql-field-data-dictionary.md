@@ -59,7 +59,15 @@ Safe metadata for Community-owned image/video objects. Binary content and provid
 | `post_id` | Nullable physical attachment to one post; null while an upload is pending/orphaned or after post detachment. |
 | `media_type` | Closed display kind `IMAGE` or `VIDEO`. |
 | `state` | Provider-independent lifecycle `PENDING`, `PROCESSING`, `READY`, `REJECTED`, `DELETED`, or `EXPIRED`; only `READY` delivery metadata is returned publicly. |
-| `delivery_url` | HTTPS delivery URL present only for `READY` media; secrets, signatures, upload URLs, and provider responses are never stored here. |
+| `delivery_url` | Signed HTTPS transformed-delivery URL present only for `READY` media. It delivers a metadata-stripped derivative rather than exposing the authenticated original object. |
+| `storage_provider` | Nullable provider discriminator. MB-576-created objects use `CLOUDINARY`; the value is cleared after confirmed provider deletion and remains nullable for legacy fixture rows. |
+| `storage_key` | Unique provider-side public identifier scoped beneath the Community profile and media UUID. It is not a delivery URL or credential and is cleared only after provider deletion succeeds. |
+| `expected_mime_type` | Normalized allowlisted MIME type declared from the browser file before upload and verified against the provider-detected format during finalize. |
+| `expected_size_bytes` | Browser-observed byte count used with the media-type limit and exact provider byte count to reject substituted or oversized uploads. |
+| `upload_expires_at` | UTC deadline for the signed upload intent; pending objects beyond it are expired by the retention job. |
+| `idempotency_key` | Printable caller retry key unique per Community owner so an uncertain intent request returns the original bounded upload authorization. |
+| `request_fingerprint` | SHA-256 of normalized file name, media type, MIME type, and declared byte count used to reject conflicting reuse of an upload-intent key. It cannot recover file content. |
+| `rejection_reason` | Stable internal reason code present only for `REJECTED` media. Provider payloads and user file content are never stored in this field or returned publicly. |
 | `width` | Optional positive pixel width used to reserve truthful layout space. |
 | `height` | Optional positive pixel height used to reserve truthful layout space. |
 | `duration_seconds` | Optional positive whole-second video duration. |

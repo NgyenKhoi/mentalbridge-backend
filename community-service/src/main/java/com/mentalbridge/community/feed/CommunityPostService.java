@@ -111,6 +111,13 @@ public class CommunityPostService {
 			throw CommunityApiException.mediaNotAttachable();
 		}
 		var byId = requested.stream().collect(java.util.stream.Collectors.toMap(CommunityMediaEntity::id, item -> item));
+		var preservedNonReady = post.media().stream()
+				.filter(existing -> existing.state() != CommunityMediaEntity.State.READY
+						&& !byId.containsKey(existing.id()))
+				.count();
+		if (requestedIds.size() + preservedNonReady > 10) {
+			throw CommunityApiException.mediaNotAttachable();
+		}
 		for (var item : requested) {
 			var alreadyAttachedToPost = item.post() != null && item.post().id().equals(post.id());
 			if (!item.owner().id().equals(owner.id())

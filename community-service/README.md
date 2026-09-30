@@ -1,6 +1,6 @@
 # Community Service
 
-`community-service` is the independent Spring Boot owner for the Community bounded context. MB-574 adds authenticated newest-first feed, topic catalogue, and post detail reads. MB-581 adds the owner-scoped Community display profile, including a pseudonym and optional governed avatar preset. Post creation/edit/delete, interaction, reporting, and moderation operations remain planned in their independent slices.
+`community-service` is the independent Spring Boot owner for the Community bounded context. MB-574 adds authenticated newest-first feed, topic catalogue, and post detail reads. MB-575 adds personal-story lifecycle operations, MB-581 adds the owner-scoped display profile, and MB-576 adds bounded owner-only image and short-video upload lifecycle operations. Interaction, reporting, and moderation operations remain planned in their independent slices.
 
 ## Runtime
 
@@ -12,6 +12,8 @@
 - opaque cursor pagination with optional governed topic filtering
 - fail-closed post visibility for moderation and bilateral Community blocks
 - Community-owned display identity resolved from the locally verified JWT subject, without synchronous Identity or Care calls
+- short-lived signed Cloudinary uploads with server-side format, size, duration, and ownership verification
+- authenticated originals, signed metadata-stripped delivery transformations, and scheduled orphan cleanup
 
 ## Display identity policy
 
@@ -37,6 +39,13 @@ Copy `.env.example` to `.env` for local development. Real environment variables 
 | `CLOUDINARY_CLOUD_NAME` | yes | Cloudinary tenant name |
 | `CLOUDINARY_API_KEY` | yes | Cloudinary API identifier |
 | `CLOUDINARY_API_SECRET` | yes | Cloudinary signing credential |
+| `CLOUDINARY_TIMEOUT_SECONDS` | no | Bounded Admin API request/connect timeout; defaults to 5 seconds |
+| `COMMUNITY_MEDIA_MAX_IMAGE_BYTES` | no | Maximum image upload size; defaults to 10 MiB |
+| `COMMUNITY_MEDIA_MAX_VIDEO_BYTES` | no | Maximum video upload size; defaults to 50 MiB |
+| `COMMUNITY_MEDIA_MAX_VIDEO_DURATION_SECONDS` | no | Maximum verified video duration; defaults to 60 seconds |
+| `COMMUNITY_MEDIA_UPLOAD_INTENT_TTL` | no | Signed upload window as a Spring duration; defaults to `10m` |
+| `COMMUNITY_MEDIA_ORPHAN_RETENTION` | no | Retention before unattached finalized media expires; defaults to `24h` |
+| `COMMUNITY_MEDIA_CLEANUP_INTERVAL` | no | Scheduled cleanup cadence; defaults to `1h` |
 | `SERVER_PORT` | no | HTTP port; defaults to `8084` |
 | `EUREKA_CLIENT_ENABLED` | no | Enables service discovery; defaults to `true` |
 | `EUREKA_DEFAULT_ZONE` | no | Eureka registry URL |
@@ -51,4 +60,4 @@ Do not commit `.env`, credentials, private keys, media signatures, or delivery U
 
 The test suite starts disposable PostgreSQL, applies the Community migrations, boots the application with synthetic JWT/Cloudinary settings, and verifies feed/detail visibility, owner-isolated display profiles, Unicode bounds, optimistic concurrency, authentication, the public health endpoint, and fail-closed application routes without Identity or Care APIs running.
 
-The canonical REST contract is [`contracts/openapi/community-service-v1.yaml`](../contracts/openapi/community-service-v1.yaml). Contract v1.1 records the additive MB-581 avatar-preset amendment and marks feed, post detail, topics, and own-profile operations as implemented; remaining operations stay `planned`.
+The canonical REST contract is [`contracts/openapi/community-service-v1.yaml`](../contracts/openapi/community-service-v1.yaml). Contract v1.2 records the additive MB-576 media lifecycle and marks feed, post lifecycle, media lifecycle, topics, and own-profile operations as implemented; remaining operations stay `planned`.

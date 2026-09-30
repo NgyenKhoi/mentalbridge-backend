@@ -1,8 +1,8 @@
 openapi: 3.1.0
 info:
   title: MentalBridge Community API
-  version: 1.1.0
-  description: Privacy-isolated peer-support Community Contract v1.1. Feed ordering is newest-first and never uses Care, Journal, emotion, SupportPlan, or AI data. MB-581 adds an optional governed avatar preset; public post rendering always uses the author's current active display identity, while moderation evidence retains its immutable capture independently.
+  version: 1.2.0
+  description: Privacy-isolated peer-support Community Contract v1.2. Feed ordering is newest-first and never uses Care, Journal, emotion, SupportPlan, or AI data. MB-581 adds a governed display identity and MB-576 adds bounded owner-scoped image and short-video upload lifecycle operations.
 servers:
   - url: http://localhost:8084
 paths:
@@ -112,7 +112,7 @@ paths:
         "404": { $ref: "#/components/responses/Problem" }
         "412": { $ref: "#/components/responses/Problem" }
   /api/v1/community/media/upload-intents:
-    x-mentalbridge-status: planned
+    x-mentalbridge-status: implemented
     post:
       operationId: createCommunityMediaUploadIntent
       security: [{ BearerAuth: [] }]
@@ -133,14 +133,14 @@ paths:
         "401": { $ref: "#/components/responses/Problem" }
         "403": { $ref: "#/components/responses/Problem" }
         "409": { $ref: "#/components/responses/Problem" }
+        "503": { $ref: "#/components/responses/Problem" }
   /api/v1/community/media/{mediaId}/finalize:
-    x-mentalbridge-status: planned
+    x-mentalbridge-status: implemented
     post:
       operationId: finalizeCommunityMedia
       security: [{ BearerAuth: [] }]
       parameters:
         - $ref: "#/components/parameters/MediaId"
-        - $ref: "#/components/parameters/IdempotencyKey"
       responses:
         "200":
           description: Current processing state after provider verification.
@@ -151,8 +151,9 @@ paths:
         "403": { $ref: "#/components/responses/Problem" }
         "404": { $ref: "#/components/responses/Problem" }
         "409": { $ref: "#/components/responses/Problem" }
+        "503": { $ref: "#/components/responses/Problem" }
   /api/v1/community/media/{mediaId}:
-    x-mentalbridge-status: planned
+    x-mentalbridge-status: implemented
     delete:
       operationId: deleteCommunityMedia
       security: [{ BearerAuth: [] }]
@@ -160,10 +161,12 @@ paths:
         - $ref: "#/components/parameters/MediaId"
         - $ref: "#/components/parameters/IfMatch"
       responses:
-        "204": { description: Owner media tombstoned. }
+        "204": { description: Unattached owner media tombstoned. Attached media must first be removed through the post update contract. }
+        "400": { $ref: "#/components/responses/Problem" }
         "401": { $ref: "#/components/responses/Problem" }
         "403": { $ref: "#/components/responses/Problem" }
         "404": { $ref: "#/components/responses/Problem" }
+        "409": { $ref: "#/components/responses/Problem" }
         "412": { $ref: "#/components/responses/Problem" }
   /api/v1/community/posts/{postId}/comments:
     parameters:
@@ -640,18 +643,23 @@ components:
         fileName: { type: string, minLength: 1, maxLength: 255 }
         mediaType: { type: string, enum: [IMAGE, VIDEO] }
         mimeType: { type: string, minLength: 1, maxLength: 120 }
-        sizeBytes: { type: integer, minimum: 1 }
+        sizeBytes:
+          type: integer
+          minimum: 1
+          maximum: 52428800
+          description: Browser-observed size in bytes. Images are limited to 10 MiB and videos to 50 MiB.
     MediaUploadIntent:
       type: object
       additionalProperties: false
-      required: [mediaId, state, uploadUrl, expiresAt, requiredHeaders, version]
+      required: [mediaId, state, uploadUrl, expiresAt, uploadFields, version]
       properties:
         mediaId: { type: string, format: uuid }
         state: { type: string, const: PENDING }
         uploadUrl: { type: string, format: uri }
         expiresAt: { type: string, format: date-time }
-        requiredHeaders:
+        uploadFields:
           type: object
+          description: Signed fields that must be copied unchanged into the multipart provider upload together with the file field.
           additionalProperties: { type: string }
         version: { type: integer, minimum: 0 }
     CommunityMediaRecord:
