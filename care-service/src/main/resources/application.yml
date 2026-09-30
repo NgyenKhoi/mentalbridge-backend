@@ -49,6 +49,11 @@ mentalbridge:
       base-url: ${CONSULTATION_ENTITLEMENT_BASE_URL:}
       connect-timeout: ${CONSULTATION_ENTITLEMENT_CONNECT_TIMEOUT:PT0.5S}
       read-timeout: ${CONSULTATION_ENTITLEMENT_READ_TIMEOUT:PT2S}
+    activity-dashboard:
+      journal-base-url: ${JOURNAL_AI_ACTIVITY_DASHBOARD_BASE_URL:}
+      consultation-base-url: ${CONSULTATION_ACTIVITY_DASHBOARD_BASE_URL:}
+      connect-timeout: ${ACTIVITY_DASHBOARD_CONNECT_TIMEOUT:PT0.5S}
+      read-timeout: ${ACTIVITY_DASHBOARD_READ_TIMEOUT:PT2S}
     journal-longitudinal:
       base-url: ${JOURNAL_AI_LONGITUDINAL_BASE_URL:}
       connect-timeout: ${JOURNAL_AI_LONGITUDINAL_CONNECT_TIMEOUT:PT0.2S}

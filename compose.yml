@@ -151,6 +151,8 @@ services:
       CONTENT_RESOURCE_ELIGIBILITY_BASE_URL: http://content-notification:3003
       CONTENT_SAFETY_DIRECTORY_BASE_URL: http://content-notification:3003
       CONSULTATION_ENTITLEMENT_BASE_URL: http://consultation:8082
+      CONSULTATION_ACTIVITY_DASHBOARD_BASE_URL: http://consultation:8082
+      JOURNAL_AI_ACTIVITY_DASHBOARD_BASE_URL: http://journal-ai:3000
       JOURNAL_AI_LONGITUDINAL_BASE_URL: http://journal-ai:3000
       JOURNAL_AI_SUPPORT_GUIDE_BASE_URL: http://journal-ai:3000
     ports:

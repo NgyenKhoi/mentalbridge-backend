@@ -27,6 +27,7 @@ tags:
   - name: AI processing disclosure
   - name: Questionnaire
   - name: Assessment
+  - name: Activity dashboard
   - name: Reassessment summary
   - name: Support evaluation
   - name: Consultation brief
@@ -1534,6 +1535,49 @@ paths:
                   $ref: "#/components/schemas/CareSafetyDirectoryLookupResponse",
                 }
         "400": { $ref: "#/components/responses/ValidationProblem" }
+  /api/v1/activity-dashboard:
+    x-mentalbridge-status: implemented
+    get:
+      tags: [Activity dashboard]
+      operationId: getOwnActivityDashboard
+      summary: Read factual cross-feature activity aggregates for a selected recent window
+      description: |
+        Returns zero-filled local-date buckets and summary counts assembled from authoritative
+        domain APIs. It never returns source record identifiers, assessment scores or answers,
+        journal content, emotion notes, chat content, or specialist-private data. The daily
+        emotion level is a five-point self-reported category used only for the owner's chart.
+        Counts are activity facts only and are not adherence, diagnosis, improvement, or recovery.
+        An unavailable source is named explicitly and makes partial true; remaining sources are
+        still returned. A limited source means the bounded upstream read may have older facts
+        outside this response.
+      security:
+        - bearerAuth: []
+      parameters:
+        - $ref: "#/components/parameters/CorrelationId"
+        - name: timezone
+          in: query
+          required: true
+          schema: { type: string, minLength: 1, maxLength: 64, example: Asia/Bangkok }
+          description: IANA timezone used to place immutable timestamps into local-date buckets.
+        - name: range
+          in: query
+          required: true
+          schema: { type: integer, enum: [7, 30, 90], default: 30 }
+          description: Number of recent local dates included in every aggregate and chart.
+      responses:
+        "200":
+          description: Factual bounded activity aggregates returned
+          headers:
+            X-Correlation-Id:
+              schema: { type: string, format: uuid }
+            Cache-Control:
+              schema: { type: string, const: no-store }
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/ActivityDashboard" }
+        "400": { $ref: "#/components/responses/ValidationProblem" }
+        "401": { $ref: "#/components/responses/UnauthorizedProblem" }
+        "403": { $ref: "#/components/responses/ForbiddenProblem" }
 components:
   headers:
     SupportPlanETag:
@@ -3186,6 +3230,78 @@ components:
         resourceId: { type: [string, 'null'], format: uuid }
         contentVersion: { type: [string, 'null'], pattern: '^[0-9]+$' }
         title: { type: string, minLength: 1, maxLength: 255 }
+    ActivityDashboard:
+      type: object
+      additionalProperties: false
+      required: [asOfLocalDate, startLocalDate, timezone, summary, daily, sources, partial, bounded]
+      properties:
+        asOfLocalDate: { type: string, format: date }
+        startLocalDate: { type: string, format: date }
+        timezone: { type: string, minLength: 1, maxLength: 64 }
+        summary: { $ref: "#/components/schemas/ActivityDashboardSummary" }
+        daily:
+          type: array
+          minItems: 7
+          maxItems: 90
+          items: { $ref: "#/components/schemas/ActivityDashboardDailyBucket" }
+        sources: { $ref: "#/components/schemas/ActivityDashboardSources" }
+        partial: { type: boolean }
+        bounded: { $ref: "#/components/schemas/ActivityDashboardBounds" }
+    ActivityDashboardSummary:
+      type: object
+      additionalProperties: false
+      required: [totalActivities, activeDays, assessmentSubmissions, journalEntries, journalActiveDays, emotionCheckIns, emotionActiveDays, supportCompleted, supportSkipped, appointmentEvents, currentEmotionStreak, latestAssessmentInstrument, latestAssessmentSubmittedAt]
+      properties:
+        totalActivities: { type: integer, minimum: 0 }
+        activeDays: { type: integer, minimum: 0, maximum: 90 }
+        assessmentSubmissions: { type: integer, minimum: 0 }
+        journalEntries: { type: integer, minimum: 0 }
+        journalActiveDays: { type: integer, minimum: 0, maximum: 90 }
+        emotionCheckIns: { type: integer, minimum: 0 }
+        emotionActiveDays: { type: integer, minimum: 0, maximum: 90 }
+        supportCompleted: { type: integer, minimum: 0 }
+        supportSkipped: { type: integer, minimum: 0 }
+        appointmentEvents: { type: integer, minimum: 0 }
+        currentEmotionStreak: { type: integer, minimum: 0, maximum: 90 }
+        latestAssessmentInstrument: { type: [string, "null"], enum: [PHQ9, GAD7, null] }
+        latestAssessmentSubmittedAt: { type: [string, "null"], format: date-time }
+    ActivityDashboardDailyBucket:
+      type: object
+      additionalProperties: false
+      required: [localDate, assessments, journals, emotions, emotionLevel, supportCompleted, supportSkipped, appointments, total]
+      properties:
+        localDate: { type: string, format: date }
+        assessments: { type: integer, minimum: 0 }
+        journals: { type: integer, minimum: 0 }
+        emotions: { type: integer, minimum: 0 }
+        emotionLevel: { type: [integer, "null"], minimum: 1, maximum: 5 }
+        supportCompleted: { type: integer, minimum: 0 }
+        supportSkipped: { type: integer, minimum: 0 }
+        appointments: { type: integer, minimum: 0 }
+        total: { type: integer, minimum: 0 }
+    ActivityDashboardSources:
+      type: object
+      additionalProperties: false
+      required: [assessments, journals, emotions, supportPlans, appointments]
+      properties:
+        assessments: { $ref: "#/components/schemas/ActivityDashboardSourceState" }
+        journals: { $ref: "#/components/schemas/ActivityDashboardSourceState" }
+        emotions: { $ref: "#/components/schemas/ActivityDashboardSourceState" }
+        supportPlans: { $ref: "#/components/schemas/ActivityDashboardSourceState" }
+        appointments: { $ref: "#/components/schemas/ActivityDashboardSourceState" }
+    ActivityDashboardSourceState:
+      type: string
+      enum: [available, empty, limited, unavailable]
+    ActivityDashboardBounds:
+      type: object
+      additionalProperties: false
+      required: [windowDays, assessmentLimit, journalLimit, emotionLimit, appointmentLimit]
+      properties:
+        windowDays: { type: integer, enum: [7, 30, 90] }
+        assessmentLimit: { type: integer, const: 50 }
+        journalLimit: { type: integer, const: 50 }
+        emotionLimit: { type: integer, const: 90 }
+        appointmentLimit: { type: integer, const: 100 }
     Problem:
       type: object
       additionalProperties: true
