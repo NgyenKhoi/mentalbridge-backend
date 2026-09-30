@@ -1906,6 +1906,33 @@ Reviewed, deterministic vocabulary for resolving deliberately entered manual are
 | `seed_key` | Optional unique controlled-release identifier used only by owner migrations. |
 | `created_at` | Immutable database UTC insertion instant. |
 
+### `public.consultation_brief`
+
+Care-owned editable aggregate for one Consultation-owned appointment. Content is cleared on deletion; approved snapshots remain immutable audit/provenance records.
+
+| Field | Purpose |
+| --- | --- |
+| `appointment_id` | Exact external Consultation appointment UUID; one brief per appointment. |
+| `user_id` / `specialist_id` | Owner and assigned specialist copied from current appointment authority, never accepted from the client. |
+| `appointment_start_at` / `appointment_end_at` / `appointment_version` | Appointment timing/version last verified through the owner API. |
+| `status` | `DRAFT`, `APPROVED`, or content-clearing `DELETED`. |
+| `current_situation` | Owner-authored bounded non-diagnostic current context. |
+| `support_evaluation_id` | Exact owned SupportEvaluation v2 provenance; raw answers and scores are excluded. |
+| `user_goals` | JSON array of one to five bounded owner-authored goals. |
+| `version` | Optimistic concurrency version required for updates, approval, revoke, and deletion. |
+
+### `public.consultation_brief_snapshot`
+
+Immutable snapshot created by one explicit approval. `screening_context` contains only the two domain/instrument levels and their questionnaire, scoring, policy, and evaluation provenance. It contains no journal, answer, chat, diagnosis, or private-note content. Owner deletion is the sole lifecycle exception: it atomically revokes access, clears all snapshot content/reference fields, and records `deleted_at`, leaving only a content-free tombstone and audit facts.
+
+### `public.consultation_brief_grant`
+
+Appointment-purpose read authority for exactly one snapshot and assigned specialist. `ACTIVE` grants use the bounded appointment window; `REVOKED` records retain `revoked_at` and cannot authorize future reads. Read and revoke lock the same row to provide one database ordering for races.
+
+### `public.consultation_brief_audit`
+
+Append-only content-free access facts. It stores actor, action, allowed/denied outcome, stable reason, correlation identifier, and time; it deliberately omits all brief fields and screening content.
+
 ### `public.resource_idempotency_record`
 
 Durable retry ownership for resource creation. The transaction serializes the same actor, operation, and key; identical requests replay the original resource and a changed payload returns `IDEMPOTENCY_CONFLICT`.

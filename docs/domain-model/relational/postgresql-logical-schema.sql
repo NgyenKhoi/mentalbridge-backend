@@ -756,6 +756,69 @@ ALTER TABLE care.support_plan_command
     ADD FOREIGN KEY (reassessment_summary_id, user_id)
         REFERENCES care.reassessment_summary(id, user_id);
 
+CREATE TABLE care.consultation_brief (
+    id uuid PRIMARY KEY,
+    appointment_id uuid NOT NULL UNIQUE, -- external -> consultation.appointment.id
+    user_id uuid NOT NULL REFERENCES care.user_profile(account_id),
+    specialist_id uuid NOT NULL, -- external -> identity.account.id
+    appointment_start_at timestamptz NOT NULL,
+    appointment_end_at timestamptz NOT NULL,
+    appointment_version bigint NOT NULL,
+    status varchar(16) NOT NULL,
+    current_situation varchar(1000),
+    support_evaluation_id uuid REFERENCES care.support_evaluation_v2(id),
+    user_goals jsonb,
+    version bigint NOT NULL,
+    created_at timestamptz NOT NULL,
+    updated_at timestamptz NOT NULL,
+    deleted_at timestamptz
+);
+
+CREATE TABLE care.consultation_brief_snapshot (
+    id uuid PRIMARY KEY,
+    brief_id uuid NOT NULL REFERENCES care.consultation_brief(id),
+    snapshot_version bigint NOT NULL,
+    appointment_id uuid NOT NULL,
+    user_id uuid NOT NULL,
+    specialist_id uuid NOT NULL,
+    current_situation varchar(1000),
+    support_evaluation_id uuid REFERENCES care.support_evaluation_v2(id),
+    screening_context jsonb,
+    user_goals jsonb,
+    created_at timestamptz NOT NULL,
+    deleted_at timestamptz,
+    UNIQUE (brief_id, snapshot_version)
+);
+
+CREATE TABLE care.consultation_brief_grant (
+    id uuid PRIMARY KEY,
+    brief_id uuid NOT NULL REFERENCES care.consultation_brief(id),
+    snapshot_id uuid NOT NULL REFERENCES care.consultation_brief_snapshot(id),
+    appointment_id uuid NOT NULL,
+    user_id uuid NOT NULL,
+    specialist_id uuid NOT NULL,
+    purpose varchar(32) NOT NULL,
+    status varchar(16) NOT NULL,
+    access_start_at timestamptz NOT NULL,
+    access_end_at timestamptz NOT NULL,
+    approved_at timestamptz NOT NULL,
+    revoked_at timestamptz,
+    version bigint NOT NULL
+);
+
+CREATE TABLE care.consultation_brief_audit (
+    id uuid PRIMARY KEY,
+    appointment_id uuid NOT NULL,
+    grant_id uuid,
+    actor_id uuid NOT NULL,
+    actor_type varchar(16) NOT NULL,
+    action varchar(32) NOT NULL,
+    outcome varchar(16) NOT NULL,
+    reason_code varchar(64) NOT NULL,
+    correlation_id uuid NOT NULL,
+    occurred_at timestamptz NOT NULL
+);
+
 /* ========================================================================== */
 /* ACTIVE — consultation-service / mentalbridge_consultation                  */
 /* Evidence: Consultation Liquibase changesets 001-007.                       */

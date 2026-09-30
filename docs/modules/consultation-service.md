@@ -46,6 +46,7 @@ delivery, or SupportPlan state.
   `0/2/4` reservation-cap enforcement, and atomic replacement requests without
   rewriting v1 periods. Purchase and general renewal/cancellation lifecycles
   remain later stories.
+- MB-381 adds the bearer-protected internal appointment-context projection used by Care. It returns only appointment/user/specialist identifiers, status, start/end, and version, and is readable only by that appointment's owner or assigned specialist. Consultation stores no brief content and exposes no credit, history, decision, or display-name fields through this projection.
 
 ## Ordered tasks
 
@@ -68,6 +69,6 @@ delivery, or SupportPlan state.
   `0/4/10` no-rollover periods, `0/2/4` reservation caps, chat/video channel
   end, and race-safe evidence-backed appointment transitions without rewriting
   historical v1 ledger periods.
-- [ ] CON-08 Implement consented view/dashboard, reviews and review moderation.
+- [~] CON-08 MB-381 implements the assigned specialist's read-only approved pre-session brief path through Care; general consented dashboard, reviews, and moderation remain deferred.
 - [ ] CON-09 Verify simultaneous booking/upgrade, exact proration rounding, transition conflicts, authorization, provider timeout, webhook/command duplicates, expiry and outbox/event duplicates.
 - [ ] CON-10 Add observability/configuration, update README, and pass module/contract/migration gates.

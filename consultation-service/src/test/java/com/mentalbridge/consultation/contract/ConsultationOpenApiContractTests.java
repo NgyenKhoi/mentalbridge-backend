@@ -17,6 +17,7 @@ class ConsultationOpenApiContractTests {
 	private static final Set<String> OPERATIONS = Set.of(
 			"GET /api/v1/service-credits",
 			"GET /internal/v1/entitlements/current",
+			"GET /internal/v1/appointments/{appointmentId}/consultation-brief-context",
 			"GET /internal/v1/appointments/{conversationId}/chat-eligibility",
 			"GET /api/v1/specialist-profile",
 			"PUT /api/v1/specialist-profile",
@@ -113,6 +114,18 @@ class ConsultationOpenApiContractTests {
 		assertThat(appointment.getRequired()).contains("replacesAppointmentId", "replacedByAppointmentId",
 				"cancelledAt", "cancellationReason", "cancellationActor", "cancellationCreditOutcome", "history");
 		assertThat(appointment.getProperties()).doesNotContainKeys("practiceLocationId", "phone", "meetingLink", "url");
+	}
+
+	@Test
+	void consultationBriefContextExposesOnlyAppointmentAuthorityAndTiming() {
+		var contract = Path.of("..", "contracts", "openapi", "consultation-service-v1.yaml").toString();
+		var api = new OpenAPIV3Parser().read(contract);
+		var context = api.getComponents().getSchemas().get("ConsultationBriefAppointmentContext");
+
+		assertThat(context.getProperties()).containsOnlyKeys("appointmentId", "userAccountId", "specialistAccountId",
+				"status", "scheduledStartAt", "scheduledEndAt", "version");
+		assertThat(context.getProperties()).doesNotContainKeys("heldCreditId", "history", "decisionReason",
+				"cancellationReason", "specialistDisplayName");
 	}
 
 	@Test

@@ -1,5 +1,7 @@
 # Requirements Traceability
 
+- 2026-09-28: MB-381 adds the Care-owned non-diagnostic ConsultationBrief draft, immutable explicit-approval snapshot, appointment-purpose specialist grant, immediate revocation/deletion, minimized allowed/denied audit, Consultation-owned appointment authority endpoint, and owner/specialist UI. Access is limited to the assigned active appointment and its 24-hour-before/after-start window. Raw journals, answers, chat, notes, diagnosis, and unapproved summaries are excluded; SessionSummary reuse remains fail-closed until MB-385 supplies an exact source and separate approval contract. Evidence: `docs/story-mb-381-consultation-brief-evidence.md`.
+
 This document maps the approved project sources to the backend architecture. For current product behavior, start with the [Current Product Blueprint](CURRENT_PRODUCT_BLUEPRINT.md) and follow its authority chain: latest accepted scope ADR/amendment, current approved domain policy, versioned contract and owner migration, integrated domain/architecture documentation, runtime evidence, then Jira delivery state.
 
 The original project sources remain traceability inputs:

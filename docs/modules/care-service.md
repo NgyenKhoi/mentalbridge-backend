@@ -53,6 +53,7 @@ Kafka, Redis, WebSocket, notification, or directory delivery.
 - Care combines reassessment dimensions without normalizing them into one score. Journal/AI context remains model-derived evidence limited to available consented entries; Care maps it only to policy-allowed review candidates and requires user confirmation.
 - MB-386 retains compatible explicit 7-31 day analysis composition. MB-559's canonical path issues adjacent 14-day periods from a versioned Care context, validates that the selected PHQ-9/GAD-7 results remain current, resolves a Journal job authoritatively, requires the selected self-report to match the current bounds, and snapshots truthful `UNAVAILABLE` or `INSUFFICIENT_DATA` states. Local engagement/reflection selects only owner-approved reusable occurrences by `scheduled_at`; a source change or deletion after composition cannot rewrite history.
 - Exceptional Identity lookups use a consumer-owned Feign port outside transactions with timeout/breaker and safe failure semantics.
+- MB-381 adds `consultationbrief`: a minimized owner draft, immutable approved snapshot, appointment-purpose specialist grant, content-clearing deletion, and content-free access audit. Appointment authority is fetched from Consultation before local writes; read/revoke serialize on the grant row. This does not create broad journal, assessment-answer, chat, or dashboard access, and later SessionSummary reuse still requires MB-385 plus separate exact-version approval.
 
 ## MB-88 delivered foundation
 
@@ -99,7 +100,7 @@ MB-178 does not implement specialist grants, automatic follow-up, clinical progr
 - [ ] CARE-02 Extend the MB-88 profile, platform-consent and PHQ-9 OpenAPI foundation with consent authorization, safety/support, intervention, follow-up and analytics contracts.
 - [ ] CARE-03 Define assessment/support/consent/follow-up event schemas and journal-indicator consumer contract.
 - [ ] CARE-04 Extend the MB-88 Liquibase/reference-data foundation with approved grants, safety/support, intervention and follow-up persistence.
-- [ ] CARE-05 Profile and general privacy decisions are implemented by MB-178; specialist scoped grants and their concurrent revoke/read protection remain deferred.
+- [~] CARE-05 Profile and general privacy decisions are implemented by MB-178; MB-381 implements only the appointment-scoped ConsultationBrief grant and concurrent revoke/read protection, while broader specialist scopes remain deferred.
 - [x] CARE-06 Implement anonymous and authenticated assessment, validation, scoring and idempotency for published PHQ-9 and GAD-7 reference data while retaining retired definitions for history.
 - [x] CARE-07a Publish deterministic cross-cutting safety, coarse `mb-support-routing-capstone-v1`, synchronous fallback and provenance through Story 1103.
 - [x] CARE-07b Preserve v1 history and implement compatible domain-aware SupportEvaluation (#48) plus exact eligible resources (#50).
@@ -108,6 +109,7 @@ MB-178 does not implement specialist grants, automatic follow-up, clinical progr
 - [x] CARE-07e Implement MB-374 owner lifecycle and immutable terminal history, MB-513 deterministic schedules/occurrences, and MB-376 owner engagement without adherence or specialist-monitoring semantics.
 - [x] CARE-07f Implement the MB-386 compatibility Reassessment Summary composition with safe Journal/AI fallback and owner current/history queries.
 - [x] CARE-07g Implement MB-559 explicit reassessment self-report, deletion semantics, and canonical v2 composition.
+- [x] CARE-07h Implement MB-381 ConsultationBrief draft, exact approval snapshot, assigned-specialist window, revoke/delete, and minimized audit.
 - [ ] CARE-08 Add the ADR 0022 explicit reassessment self-report and governed plan-review outcome contract; follow-up, other analytics projections, export and deletion participation remain open.
 - [ ] CARE-09 Verify scoring boundaries, item-9 safety, stale/missing input, concurrency, rollback/outbox, duplicate/reordered events and dependency failures.
 - [ ] CARE-10 Add safe observability/configuration, update README, and pass module/contract/migration gates.
