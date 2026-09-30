@@ -44,7 +44,7 @@ public class SecurityConfiguration {
 								"/api/v1/support-evaluations/**", "/api/v2/support-evaluations/**",
 								"/api/v1/support-guides/**", "/api/v1/support-plans/**",
 								"/api/v1/support-plan-occurrences/**", "/api/v1/reassessment-summaries/**",
-								"/api/v1/consultation-briefs/**").hasRole("USER")
+								"/api/v1/consultation-briefs/**", "/api/v1/activity-dashboard").hasRole("USER")
 						.requestMatchers("/api/v1/specialist/consultation-briefs/**").hasRole("SPECIALIST")
 						.anyRequest().authenticated())
 				.exceptionHandling(errors -> errors.authenticationEntryPoint(securityProblems)
