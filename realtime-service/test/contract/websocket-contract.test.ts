@@ -18,12 +18,13 @@ const validator = async (name: string) => {
 const commandId = '11111111-1111-4111-8111-111111111111';
 const conversationId = '22222222-2222-4222-8222-222222222222';
 const correlationId = '33333333-3333-4333-8333-333333333333';
+const socketCredential = 'synthetic-one-use-socket-credential-00000001';
 
 describe('WebSocket v1 contracts', () => {
   it('validates handshake and message command examples', async () => {
     const validateHandshake = await validator('handshake-v1.schema.json');
     const validateCommand = await validator('command-envelope-v1.schema.json');
-    expect(validateHandshake({ schemaVersion: 1, accessToken: 'synthetic-test-token' })).toBe(true);
+    expect(validateHandshake({ schemaVersion: 1, accessToken: socketCredential })).toBe(true);
     expect(
       validateCommand({
         schemaVersion: 1,
@@ -44,14 +45,12 @@ describe('WebSocket v1 contracts', () => {
   it('rejects missing, incompatible and extended handshake fields', async () => {
     const validateHandshake = await validator('handshake-v1.schema.json');
     expect(validateHandshake({ schemaVersion: 1 })).toBe(false);
-    expect(validateHandshake({ accessToken: 'synthetic-test-token' })).toBe(false);
-    expect(validateHandshake({ schemaVersion: 2, accessToken: 'synthetic-test-token' })).toBe(
-      false,
-    );
+    expect(validateHandshake({ accessToken: socketCredential })).toBe(false);
+    expect(validateHandshake({ schemaVersion: 2, accessToken: socketCredential })).toBe(false);
     expect(
       validateHandshake({
         schemaVersion: 1,
-        accessToken: 'synthetic-test-token',
+        accessToken: socketCredential,
         actorId: commandId,
       }),
     ).toBe(false);

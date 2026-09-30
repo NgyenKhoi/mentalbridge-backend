@@ -17,6 +17,7 @@ class ConsultationOpenApiContractTests {
 	private static final Set<String> OPERATIONS = Set.of(
 			"GET /api/v1/service-credits",
 			"GET /internal/v1/entitlements/current",
+			"GET /internal/v1/appointments/{conversationId}/chat-eligibility",
 			"GET /api/v1/specialist-profile",
 			"PUT /api/v1/specialist-profile",
 			"POST /api/v1/specialist-profile/submit",

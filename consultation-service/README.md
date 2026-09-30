@@ -137,6 +137,7 @@ reported as unavailable/unused.
 - `GET /api/v1/specialist/appointments`
 - `POST /api/v1/specialist/appointments/{appointmentId}/accept`
 - `POST /api/v1/specialist/appointments/{appointmentId}/reject`
+- `GET /internal/v1/appointments/{conversationId}/chat-eligibility` for participant-bound Realtime subscribe/send/history authorization
 
 Availability accepts only exact future 60-minute `IN_APP_CHAT` and gated
 `IN_APP_VIDEO` slots. It stores UTC instants and an IANA display timezone,
