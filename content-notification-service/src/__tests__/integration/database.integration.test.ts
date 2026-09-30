@@ -15,6 +15,7 @@ import {
 } from '../../notifications/notification.repository.js';
 import { NotificationService } from '../../notifications/notification.service.js';
 import { ResourceProgressRepository } from '../../resources/resource-progress.repository.js';
+import { ResourceJourneyRepository } from '../../resources/resource-journey.repository.js';
 
 const __dirname = dirname(fileURLToPath(import.meta.url));
 
@@ -69,6 +70,7 @@ describe('Database Integration', () => {
       '12_add_journal_emotion_notification_kinds.sql',
       '13_add_resource_daily_progress.sql',
       '14_add_resource_experience_model.sql',
+      '15_harden_resource_journey.sql',
     ]) {
       if (migration === '10_persist_notification_preferences.sql') {
         await pool.query(
@@ -223,13 +225,17 @@ describe('Database Integration', () => {
         '7_seed_mb603_resource_experience.sql',
         '8_correct_mb603_demo_effective_time.sql',
         '9_update_mb603_resource_wellbeing_summaries.sql',
+        '10_align_mb603_timed_practice_duration.sql',
+        '11_record_mb603_source_content_hashes.sql',
       ]) {
         const sql = readFileSync(join(__dirname, '../../../migrations/review1', migration), 'utf8');
         await pool.query(sql);
         if (
           migration === '6_seed_mb556_reviewed_resource_catalogue.sql' ||
           migration === '7_seed_mb603_resource_experience.sql' ||
-          migration === '9_update_mb603_resource_wellbeing_summaries.sql'
+          migration === '9_update_mb603_resource_wellbeing_summaries.sql' ||
+          migration === '10_align_mb603_timed_practice_duration.sql' ||
+          migration === '11_record_mb603_source_content_hashes.sql'
         ) {
           await pool.query(sql);
         }
@@ -266,14 +272,13 @@ describe('Database Integration', () => {
       const wellbeingSummaries = await pool.query<{
         count: string;
         matching_overview: string;
-        reviewed_today: string;
+        source_hashed: string;
       }>(
         `SELECT
            count(*)::text AS count,
            count(*) FILTER (WHERE summary = structured_content ->> 'overview')::text
              AS matching_overview,
-           count(*) FILTER (WHERE source_retrieved_at = TIMESTAMPTZ '2026-09-30 00:00:00+00')::text
-             AS reviewed_today
+           count(*) FILTER (WHERE source_content_hash IS NOT NULL)::text AS source_hashed
          FROM resource
          WHERE id BETWEEN '00000000-0000-4000-8000-000000000201'::uuid
                       AND '00000000-0000-4000-8000-000000000223'::uuid`,
@@ -281,7 +286,29 @@ describe('Database Integration', () => {
       expect(wellbeingSummaries.rows[0]).toEqual({
         count: '23',
         matching_overview: '23',
-        reviewed_today: '23',
+        source_hashed: '18',
+      });
+
+      const timedDurations = await pool.query<{
+        breathing_seconds: string;
+        relaxation_seconds: string;
+      }>(
+        `SELECT
+           (SELECT ((interaction_config ->> 'inhaleSeconds')::integer
+                    + (interaction_config ->> 'exhaleSeconds')::integer
+                    + (interaction_config ->> 'holdSeconds')::integer)
+                   * (interaction_config ->> 'cycles')::integer
+            FROM resource WHERE id = '00000000-0000-4000-8000-000000000201')::text
+             AS breathing_seconds,
+           (SELECT sum((step ->> 'seconds')::integer)
+            FROM resource,
+                 jsonb_array_elements(interaction_config -> 'steps') AS step
+            WHERE id = '00000000-0000-4000-8000-000000000216')::text
+             AS relaxation_seconds`,
+      );
+      expect(timedDurations.rows[0]).toEqual({
+        breathing_seconds: '297',
+        relaxation_seconds: '600',
       });
 
       const supportGuideCoverage = await pool.query<{
@@ -380,6 +407,58 @@ describe('Database Integration', () => {
         resource_104_version: '0',
         resource_104_source_organization: null,
       });
+    });
+
+    it('materializes seven same-week dates concurrently without racing the bingo board', async () => {
+      const database = {
+        query: (text: string, parameters?: unknown[]) => pool.query(text, parameters),
+        withTransaction: async <T>(operation: (client: Pool) => Promise<T>) => {
+          const client = await pool.connect();
+          try {
+            await client.query('BEGIN');
+            const result = await operation(client as unknown as Pool);
+            await client.query('COMMIT');
+            return result;
+          } catch (error) {
+            await client.query('ROLLBACK');
+            throw error;
+          } finally {
+            client.release();
+          }
+        },
+      } as unknown as DatabaseService;
+      const repository = new ResourceJourneyRepository(database);
+      const owner = '12700000-0000-4000-8000-000000000001';
+      const dates = Array.from({ length: 7 }, (_, index) =>
+        new Date(Date.UTC(2026, 8, 28 + index)).toISOString().slice(0, 10),
+      );
+      const journeys = await Promise.all(
+        dates.map((requestedDate) =>
+          repository.materialize(owner, requestedDate, {
+            timeZone: 'Asia/Ho_Chi_Minh',
+            supportPlan: {
+              supportPlanId: '12700000-0000-4000-8000-000000000099',
+              version: 1,
+              status: 'ACTIVE',
+              activatedAt: '2026-09-27T17:00:00Z',
+              domains: ['DEPRESSIVE_SYMPTOMS', 'ANXIETY_SYMPTOMS'],
+              selectedResourceIds: [],
+            },
+          }),
+        ),
+      );
+
+      expect(journeys.every((journey) => journey !== null)).toBe(true);
+      expect(journeys.map((journey) => journey?.weekStart)).toEqual(
+        Array.from({ length: 7 }, () => '2026-09-28'),
+      );
+      const boardCount = await pool.query<{ count: string }>(
+        `SELECT count(*)::text AS count
+         FROM resource_weekly_bingo
+         WHERE owner_id = $1 AND week_start = '2026-09-28'`,
+        [owner],
+      );
+      expect(boardCount.rows[0].count).toBe('1');
     });
   });
 
@@ -571,10 +650,12 @@ describe('Database Integration', () => {
         `INSERT INTO resource
            (category, locale, title, summary, content_body, source_organization,
             source_title, source_url, source_review_note, status, reviewed_by,
-            reviewed_at, effective_at)
+            reviewed_at, effective_at, source_review_status, resource_kind,
+            interaction_type, repeatability, completion_mode, streak_eligible)
          VALUES ('BREATHING', 'vi-VN', 'Daily breathing', 'Daily summary', 'Body',
            'Reviewed source', 'Reviewed title', 'https://example.com/source', 'Reviewed note',
-           'PUBLISHED', '12500000-0000-4000-8000-000000000099', now(), now())
+           'PUBLISHED', '12500000-0000-4000-8000-000000000099', now(), now(),
+           'REVIEWED', 'PRACTICE', 'BREATHING_PACER', 'REPEATABLE', 'TIMED', true)
          RETURNING id`,
       );
 
@@ -624,6 +705,60 @@ describe('Database Integration', () => {
       });
       expect(await repository.list(otherOwner, '2026-09-22', '2026-09-28')).toEqual([]);
       expect(await repository.list(owner, '2026-09-22', '2026-09-28')).toHaveLength(1);
+    });
+
+    it('records multiple idempotent plan-bound practice sessions on one local day', async () => {
+      const database = {
+        query: (text: string, parameters?: unknown[]) => pool.query(text, parameters),
+        withTransaction: async <T>(operation: (client: Pool) => Promise<T>) => operation(pool),
+      } as unknown as DatabaseService;
+      const repository = new ResourceProgressRepository(database);
+      const owner = '12500000-0000-4000-8000-000000000011';
+      const planId = '12500000-0000-4000-8000-000000000012';
+      const resourceId = '00000000-0000-4000-8000-000000000201';
+      const assignment = await pool.query<{ id: string }>(
+        `INSERT INTO resource_daily_assignment
+           (owner_id, local_date, time_zone, support_plan_id, support_plan_version, plan_tags)
+         VALUES ($1, '2026-09-30', 'Asia/Ho_Chi_Minh', $2, 1,
+           ARRAY['ANXIETY_SYMPTOMS'])
+         RETURNING id`,
+        [owner, planId],
+      );
+      await pool.query(
+        `INSERT INTO resource_daily_assignment_item
+           (assignment_id, ordinal, resource_id, selection_reason)
+         VALUES ($1, 0, $2, 'PLAN_DOMAIN')`,
+        [assignment.rows[0].id, resourceId],
+      );
+      const firstSessionId = '12500000-0000-4000-8000-000000000013';
+      const secondSessionId = '12500000-0000-4000-8000-000000000014';
+      const update = (practiceSessionId: string) =>
+        repository.save(owner, resourceId, '2026-09-30', {
+          status: 'COMPLETED',
+          completedActionIds: ['pace'],
+          practiceSessionId,
+          practiceStartedAt: '2026-09-29T08:00:00Z',
+          practiceDurationSeconds: 297,
+        });
+
+      await update(firstSessionId);
+      await update(firstSessionId);
+      await update(secondSessionId);
+
+      const sessions = await pool.query<{
+        id: string;
+        support_plan_id: string;
+        duration_seconds: number;
+      }>(
+        `SELECT id, support_plan_id, duration_seconds
+         FROM resource_practice_session
+         WHERE owner_id = $1 AND resource_id = $2
+         ORDER BY id`,
+        [owner, resourceId],
+      );
+      expect(sessions.rows).toHaveLength(2);
+      expect(sessions.rows.every((row) => row.support_plan_id === planId)).toBe(true);
+      expect(sessions.rows.every((row) => row.duration_seconds === 297)).toBe(true);
     });
 
     it('rejects progress for inactive or unknown resources', async () => {

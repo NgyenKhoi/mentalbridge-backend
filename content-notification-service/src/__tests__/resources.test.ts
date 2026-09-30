@@ -46,6 +46,7 @@ const publishedResource: ResourceRow = {
   source_url:
     'https://www.nhs.uk/mental-health/self-help/guides-tools-and-activities/breathing-exercises-for-stress/',
   source_review_note: 'Reviewed test provenance',
+  source_review_status: 'REVIEWED',
   catalogue_visibility: 'LISTED',
   status: 'PUBLISHED',
   reviewed_by: 'a13e4567-e89b-42d3-a456-426614174000',

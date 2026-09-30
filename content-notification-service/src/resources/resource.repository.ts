@@ -2,7 +2,16 @@ import { createHash, randomUUID } from 'node:crypto';
 import { Inject, Injectable } from '@nestjs/common';
 import type { DatabaseClient, DatabaseService } from '../database/database.service.js';
 import { DATABASE_SERVICE_TOKEN } from '../application.tokens.js';
-import type { ResourceCategory, ResourceRow } from './resource.types.js';
+import type {
+  ResourceCategory,
+  ResourceCompletionMode,
+  ResourceInteractionType,
+  ResourceJson,
+  ResourceKind,
+  ResourceRepeatability,
+  ResourceRow,
+  ResourceSourceReviewStatus,
+} from './resource.types.js';
 
 export interface ListResourcesQuery {
   readonly locale?: string;
@@ -27,13 +36,52 @@ export interface CreateResourceData {
   readonly summary: string;
   readonly contentBody?: string | null;
   readonly externalUrl?: string | null;
+  readonly resourceKind?: ResourceKind;
+  readonly interactionType?: ResourceInteractionType;
+  readonly repeatability?: ResourceRepeatability;
+  readonly completionMode?: ResourceCompletionMode;
+  readonly streakEligible?: boolean;
+  readonly expectedDurationMinutes?: number;
+  readonly cooldownDays?: number;
+  readonly recommendedFrequencyPerWeek?: number;
+  readonly planTags?: readonly string[];
+  readonly structuredContent?: ResourceJson;
+  readonly interactionConfig?: ResourceJson;
+  readonly safetyNotes?: readonly string[];
+  readonly catalogueVisibility?: 'LISTED' | 'DIRECT_ONLY';
+  readonly contentVersionLabel?: string;
+  readonly sourceReviewStatus?: ResourceSourceReviewStatus;
   readonly sourceOrganization?: string | null;
   readonly sourceTitle?: string | null;
   readonly sourceUrl?: string | null;
   readonly sourceReviewNote?: string | null;
+  readonly sourceRetrievedAt?: Date | null;
+  readonly sourceContentHash?: string | null;
   readonly effectiveAt?: Date | null;
   readonly expiresAt?: Date | null;
 }
+
+type NormalizedCreateResourceData = CreateResourceData &
+  Required<
+    Pick<
+      CreateResourceData,
+      | 'resourceKind'
+      | 'interactionType'
+      | 'repeatability'
+      | 'completionMode'
+      | 'streakEligible'
+      | 'expectedDurationMinutes'
+      | 'cooldownDays'
+      | 'recommendedFrequencyPerWeek'
+      | 'planTags'
+      | 'structuredContent'
+      | 'interactionConfig'
+      | 'safetyNotes'
+      | 'catalogueVisibility'
+      | 'contentVersionLabel'
+      | 'sourceReviewStatus'
+    >
+  >;
 
 export interface UpdateResourceData {
   readonly locale?: string;
@@ -41,10 +89,27 @@ export interface UpdateResourceData {
   readonly summary?: string;
   readonly contentBody?: string | null;
   readonly externalUrl?: string | null;
+  readonly resourceKind?: ResourceKind;
+  readonly interactionType?: ResourceInteractionType;
+  readonly repeatability?: ResourceRepeatability;
+  readonly completionMode?: ResourceCompletionMode;
+  readonly streakEligible?: boolean;
+  readonly expectedDurationMinutes?: number;
+  readonly cooldownDays?: number;
+  readonly recommendedFrequencyPerWeek?: number;
+  readonly planTags?: readonly string[];
+  readonly structuredContent?: ResourceJson;
+  readonly interactionConfig?: ResourceJson;
+  readonly safetyNotes?: readonly string[];
+  readonly catalogueVisibility?: 'LISTED' | 'DIRECT_ONLY';
+  readonly contentVersionLabel?: string;
+  readonly sourceReviewStatus?: ResourceSourceReviewStatus;
   readonly sourceOrganization?: string | null;
   readonly sourceTitle?: string | null;
   readonly sourceUrl?: string | null;
   readonly sourceReviewNote?: string | null;
+  readonly sourceRetrievedAt?: Date | null;
+  readonly sourceContentHash?: string | null;
   readonly effectiveAt?: Date | null;
   readonly expiresAt?: Date | null;
   readonly version: number;
@@ -79,7 +144,7 @@ export function toResourceRow(row: ResourceDatabaseRow): ResourceRow {
   return { ...row, version: Number(row.version) };
 }
 
-function fingerprint(data: CreateResourceData): string {
+function fingerprint(data: NormalizedCreateResourceData): string {
   return createHash('sha256')
     .update(
       JSON.stringify({
@@ -89,15 +154,109 @@ function fingerprint(data: CreateResourceData): string {
         summary: data.summary,
         contentBody: data.contentBody ?? null,
         externalUrl: data.externalUrl ?? null,
+        resourceKind: data.resourceKind,
+        interactionType: data.interactionType,
+        repeatability: data.repeatability,
+        completionMode: data.completionMode,
+        streakEligible: data.streakEligible,
+        expectedDurationMinutes: data.expectedDurationMinutes,
+        cooldownDays: data.cooldownDays,
+        recommendedFrequencyPerWeek: data.recommendedFrequencyPerWeek,
+        planTags: data.planTags,
+        structuredContent: data.structuredContent,
+        interactionConfig: data.interactionConfig,
+        safetyNotes: data.safetyNotes,
+        catalogueVisibility: data.catalogueVisibility,
+        contentVersionLabel: data.contentVersionLabel,
+        sourceReviewStatus: data.sourceReviewStatus,
         sourceOrganization: data.sourceOrganization ?? null,
         sourceTitle: data.sourceTitle ?? null,
         sourceUrl: data.sourceUrl ?? null,
         sourceReviewNote: data.sourceReviewNote ?? null,
+        sourceRetrievedAt: data.sourceRetrievedAt?.toISOString() ?? null,
+        sourceContentHash: data.sourceContentHash ?? null,
         effectiveAt: data.effectiveAt?.toISOString() ?? null,
         expiresAt: data.expiresAt?.toISOString() ?? null,
       }),
     )
     .digest('hex');
+}
+
+function createDefaults(category: ResourceCategory) {
+  if (category === 'BREATHING') {
+    return {
+      resourceKind: 'PRACTICE' as const,
+      interactionType: 'BREATHING_PACER' as const,
+      repeatability: 'REPEATABLE' as const,
+      completionMode: 'TIMED' as const,
+      streakEligible: true,
+    };
+  }
+  if (category === 'MEDITATION') {
+    return {
+      resourceKind: 'PRACTICE' as const,
+      interactionType: 'GROUNDING_GUIDE' as const,
+      repeatability: 'REPEATABLE' as const,
+      completionMode: 'STEPS' as const,
+      streakEligible: true,
+    };
+  }
+  if (category === 'VIDEO') {
+    return {
+      resourceKind: 'LEARNING' as const,
+      interactionType: 'VIDEO_TRANSCRIPT' as const,
+      repeatability: 'ONE_TIME' as const,
+      completionMode: 'VIDEO_CONFIRMATION' as const,
+      streakEligible: false,
+    };
+  }
+  if (category === 'JOURNALING') {
+    return {
+      resourceKind: 'REFLECTION' as const,
+      interactionType: 'REFLECTION' as const,
+      repeatability: 'REPEATABLE' as const,
+      completionMode: 'STEPS' as const,
+      streakEligible: false,
+    };
+  }
+  if (category === 'COMMUNITY') {
+    return {
+      resourceKind: 'HABIT' as const,
+      interactionType: 'WALK_TIMER' as const,
+      repeatability: 'REPEATABLE' as const,
+      completionMode: 'TIMED' as const,
+      streakEligible: true,
+    };
+  }
+  return {
+    resourceKind: 'LEARNING' as const,
+    interactionType: 'STRUCTURED_READER' as const,
+    repeatability: 'ONE_TIME' as const,
+    completionMode: 'EXPLICIT' as const,
+    streakEligible: false,
+  };
+}
+
+function normalizeCreateData(data: CreateResourceData): NormalizedCreateResourceData {
+  const defaults = createDefaults(data.category);
+  return {
+    ...data,
+    resourceKind: data.resourceKind ?? defaults.resourceKind,
+    interactionType: data.interactionType ?? defaults.interactionType,
+    repeatability: data.repeatability ?? defaults.repeatability,
+    completionMode: data.completionMode ?? defaults.completionMode,
+    streakEligible: data.streakEligible ?? defaults.streakEligible,
+    expectedDurationMinutes: data.expectedDurationMinutes ?? 5,
+    cooldownDays: data.cooldownDays ?? 0,
+    recommendedFrequencyPerWeek: data.recommendedFrequencyPerWeek ?? 1,
+    planTags: data.planTags ?? ['DEPRESSIVE_SYMPTOMS', 'ANXIETY_SYMPTOMS'],
+    structuredContent: data.structuredContent ?? {},
+    interactionConfig: data.interactionConfig ?? {},
+    safetyNotes: data.safetyNotes ?? [],
+    catalogueVisibility: data.catalogueVisibility ?? 'DIRECT_ONLY',
+    contentVersionLabel: data.contentVersionLabel ?? 'draft-v1',
+    sourceReviewStatus: data.sourceReviewStatus ?? 'NEEDS_SOURCE_REVIEW',
+  };
 }
 
 @Injectable()
@@ -113,6 +272,7 @@ export class ResourceRepository {
       "r.status = 'PUBLISHED'",
       'r.reviewed_at IS NOT NULL',
       'r.reviewed_by IS NOT NULL',
+      "r.source_review_status = 'REVIEWED'",
       "r.catalogue_visibility = 'LISTED'",
       '(r.effective_at IS NULL OR r.effective_at <= now())',
       '(r.expires_at IS NULL OR r.expires_at > now())',
@@ -204,6 +364,7 @@ export class ResourceRepository {
          AND status = 'PUBLISHED'
          AND reviewed_by IS NOT NULL
          AND reviewed_at IS NOT NULL
+         AND source_review_status = 'REVIEWED'
          AND (effective_at IS NULL OR effective_at <= now())
          AND (expires_at IS NULL OR expires_at > now())`,
       contentVersion === undefined ? [id, locale] : [id, locale, contentVersion],
@@ -216,7 +377,8 @@ export class ResourceRepository {
     idempotencyKey: string,
     context: ResourceCommandContext,
   ): Promise<ResourceRow> {
-    const requestFingerprint = fingerprint(data);
+    const normalized = normalizeCreateData(data);
+    const requestFingerprint = fingerprint(normalized);
     const lockKey = `${context.actorId}:CREATE_RESOURCE:${idempotencyKey}`;
 
     return this.db.withTransaction(async (client) => {
@@ -243,23 +405,46 @@ export class ResourceRepository {
         `INSERT INTO resource
           (id, category, locale, title, summary, content_body, external_url,
            source_organization, source_title, source_url, source_review_note, status,
-           effective_at, expires_at)
-         VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, 'DRAFT', $12, $13)
+           effective_at, expires_at, resource_kind, interaction_type, repeatability,
+           completion_mode, streak_eligible, expected_duration_minutes, cooldown_days,
+           recommended_frequency_per_week, plan_tags, structured_content,
+           interaction_config, safety_notes, catalogue_visibility, content_version_label,
+           source_review_status, source_retrieved_at, source_content_hash)
+         VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, 'DRAFT', $12, $13,
+           $14, $15, $16, $17, $18, $19, $20, $21, $22::text[], $23::jsonb,
+           $24::jsonb, $25::text[], $26, $27, $28, $29, $30)
          RETURNING ${RESOURCE_COLUMNS}`,
         [
           resourceId,
-          data.category,
-          data.locale,
-          data.title,
-          data.summary,
-          data.contentBody ?? null,
-          data.externalUrl ?? null,
-          data.sourceOrganization ?? null,
-          data.sourceTitle ?? null,
-          data.sourceUrl ?? null,
-          data.sourceReviewNote ?? null,
-          data.effectiveAt ?? null,
-          data.expiresAt ?? null,
+          normalized.category,
+          normalized.locale,
+          normalized.title,
+          normalized.summary,
+          normalized.contentBody ?? null,
+          normalized.externalUrl ?? null,
+          normalized.sourceOrganization ?? null,
+          normalized.sourceTitle ?? null,
+          normalized.sourceUrl ?? null,
+          normalized.sourceReviewNote ?? null,
+          normalized.effectiveAt ?? null,
+          normalized.expiresAt ?? null,
+          normalized.resourceKind,
+          normalized.interactionType,
+          normalized.repeatability,
+          normalized.completionMode,
+          normalized.streakEligible,
+          normalized.expectedDurationMinutes,
+          normalized.cooldownDays,
+          normalized.recommendedFrequencyPerWeek,
+          normalized.planTags,
+          JSON.stringify(normalized.structuredContent),
+          JSON.stringify(normalized.interactionConfig),
+          normalized.safetyNotes,
+          normalized.catalogueVisibility,
+          normalized.contentVersionLabel,
+          normalized.sourceReviewStatus,
+          normalized.sourceRetrievedAt ?? null,
+          normalized.sourceContentHash ?? null,
         ],
       );
       await client.query(
@@ -284,7 +469,10 @@ export class ResourceRepository {
       'reviewed_by = NULL',
       'reviewed_at = NULL',
     ];
-    const params: (string | number | Date | null)[] = [id, data.version];
+    const params: (string | number | boolean | Date | readonly string[] | null)[] = [
+      id,
+      data.version,
+    ];
     let index = 3;
     let contentExpression = 'content_body';
     let urlExpression = 'external_url';
@@ -297,10 +485,33 @@ export class ResourceRepository {
       ['summary', data.summary],
       ['content_body', data.contentBody],
       ['external_url', data.externalUrl],
+      ['resource_kind', data.resourceKind],
+      ['interaction_type', data.interactionType],
+      ['repeatability', data.repeatability],
+      ['completion_mode', data.completionMode],
+      ['streak_eligible', data.streakEligible],
+      ['expected_duration_minutes', data.expectedDurationMinutes],
+      ['cooldown_days', data.cooldownDays],
+      ['recommended_frequency_per_week', data.recommendedFrequencyPerWeek],
+      ['plan_tags', data.planTags],
+      [
+        'structured_content',
+        data.structuredContent === undefined ? undefined : JSON.stringify(data.structuredContent),
+      ],
+      [
+        'interaction_config',
+        data.interactionConfig === undefined ? undefined : JSON.stringify(data.interactionConfig),
+      ],
+      ['safety_notes', data.safetyNotes],
+      ['catalogue_visibility', data.catalogueVisibility],
+      ['content_version_label', data.contentVersionLabel],
+      ['source_review_status', data.sourceReviewStatus],
       ['source_organization', data.sourceOrganization],
       ['source_title', data.sourceTitle],
       ['source_url', data.sourceUrl],
       ['source_review_note', data.sourceReviewNote],
+      ['source_retrieved_at', data.sourceRetrievedAt],
+      ['source_content_hash', data.sourceContentHash],
       ['effective_at', data.effectiveAt],
       ['expires_at', data.expiresAt],
     ] as const) {

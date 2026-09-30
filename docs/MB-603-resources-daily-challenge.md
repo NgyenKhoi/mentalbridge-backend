@@ -8,17 +8,17 @@ The clinical boundary remains unchanged: resources are self-help and early-suppo
 
 ## Domain model
 
-| Concept                        | Meaning                                                                                                                           |
-| ------------------------------ | --------------------------------------------------------------------------------------------------------------------------------- |
-| `resource_kind`                | `LEARNING`, `PRACTICE`, `HABIT`, `ACTION`, or `REFLECTION`.                                                                       |
-| `interaction_type`             | UI/behavior contract such as reader, video transcript, breathing pacer, grounding, walking timer, stretch sequence, or worksheet. |
-| `repeatability`                | `ONE_TIME` knowledge completion or `REPEATABLE` practice.                                                                         |
-| `completion_mode`              | Explicit confirmation, steps, timer, or video confirmation.                                                                       |
-| `resource_learning_completion` | One durable owner/resource completion. Unticking a later checklist does not erase it.                                             |
-| `resource_practice_session`    | At most one owner/resource session per local day; the same practice can create sessions on later days.                            |
-| `resource_daily_progress`      | Editable per-day checklist state. Terminal completion remains terminal.                                                           |
-| `resource_daily_assignment`    | Stable owner/date snapshot of the Support Plan version and selected resources.                                                    |
-| `resource_weekly_bingo`        | Stable owner/week snapshot derived from the plan-aligned candidate pool.                                                          |
+| Concept                        | Meaning                                                                                                                                      |
+| ------------------------------ | -------------------------------------------------------------------------------------------------------------------------------------------- |
+| `resource_kind`                | `LEARNING`, `PRACTICE`, `HABIT`, `ACTION`, or `REFLECTION`.                                                                                  |
+| `interaction_type`             | UI/behavior contract such as reader, video transcript, breathing pacer, grounding, walking timer, stretch sequence, or worksheet.            |
+| `repeatability`                | `ONE_TIME` knowledge completion or `REPEATABLE` practice.                                                                                    |
+| `completion_mode`              | Explicit confirmation, steps, timer, or video confirmation.                                                                                  |
+| `resource_learning_completion` | One durable owner/resource completion. Unticking a later checklist does not erase it.                                                        |
+| `resource_practice_session`    | One row per deliberately confirmed repeatable session; a client-generated ID makes retries idempotent and permits multiple sessions per day. |
+| `resource_daily_progress`      | Editable per-day checklist state. Terminal completion remains terminal.                                                                      |
+| `resource_daily_assignment`    | Stable owner/date snapshot of the Support Plan version and selected resources.                                                               |
+| `resource_weekly_bingo`        | Stable owner/week snapshot derived from the plan-aligned candidate pool.                                                                     |
 
 Learning progress, practice streak, and today's challenge are intentionally separate. A completed article/video contributes to learning progress, not practice streak. Streak only counts dates containing a completed session for a resource with `streak_eligible = true`.
 
@@ -53,8 +53,10 @@ The browser supplies only local date and IANA time zone. The BFF resolves the au
 - Prefer a balanced mix: unfinished learning, practice, habit/action, then reflection or another useful repeatable activity.
 - Explicitly selected Support Plan resources outrank other resources carrying the plan's domain tags.
 - Completed one-time learning is excluded from later learning slots.
-- Repeatable resources respect their cooldown when alternatives exist.
-- The date-based rotation is deterministic, and the result is persisted. Refreshing or returning to a day cannot reshuffle it.
+- Repeatable resources always respect cooldown and `recommended_frequency_per_week`; the planner may return fewer than four items rather than silently bypass either limit.
+- Plan Day 1–14 is derived from `activatedAt` in the user's IANA time zone. Dates before activation and after Plan Day 14 are not materialized.
+- Stage order changes across orientation (days 1–3), core practice (4–7), reinforcement (8–10), maintenance (11–13), and review (14).
+- The Plan-Day-based rotation is deterministic, and the result is persisted. Refreshing or returning to a day cannot reshuffle it.
 - If all learning is consumed early, practice, habit, action and reflection resources remain available for the rest of a 14-day plan.
 - Weekly bingo prioritizes repeatable plan-selected and plan-domain resources. Stamps come from actual daily completions/sessions, not catalogue order.
 
@@ -109,15 +111,17 @@ Resources 101–106 remain in the database because existing Support Plans/public
 
 ## Source ingestion and review
 
-Review seed 7 stores structured adaptations (`overview`, `whenUseful`, `keyIdeas`, `steps`, `cautions`, `nextStep`), source retrieval time, SHA-256 content fingerprint, version label, and review status. It does not copy complete source pages. Retrieval failures must retain provenance, use `NEEDS_SOURCE_REVIEW`, and offer an external-source fallback rather than fabricated content.
+`npm run source:ingest -- --output <manifest.json>` reads resource source URLs, fetches and normalizes the source offline, hashes the normalized source, and emits a review artifact. It never scrapes at request time or marks content reviewed automatically. Review seed 11 records successful fetched hashes; fetch failures clear the invalid legacy hash and use `REVIEW_REQUIRED`, which the public repository and scheduler enforce.
 
 WHO _Doing What Matters in Times of Stress_ is non-commercially adaptable under its stated CC BY-NC-SA 3.0 IGO terms; attribution and production legal review remain required. Third-party videos, translations, captions and the CCI source remain explicitly review-gated.
 
 ## Migrations and compatibility
 
 - Normal migration `14_add_resource_experience_model.sql` adds semantic metadata and four owner-scoped persistence aggregates.
+- Normal migration `15_harden_resource_journey.sql` permits multiple idempotent practice sessions per day and adds optional start/duration evidence.
 - Review/demo migration `review1/7_seed_mb603_resource_experience.sql` enriches 201–215 and adds 216–223.
-- Existing resource creation remains valid through conservative database defaults.
+- Review/demo migrations 10–11 align timer data with displayed duration and replace derived-copy hashes with normalized fetched-source hashes.
+- Existing resource creation remains valid through category-specific semantic defaults; admin create/update also accepts every semantic field explicitly.
 - Existing daily progress rows are retained. A confirmed completion now additionally creates one durable learning completion or one repeatable practice session.
 
 ## Verification coverage

@@ -15,6 +15,10 @@ interface ProgressResourceRow {
   readonly resource_kind: 'LEARNING' | 'PRACTICE' | 'HABIT' | 'ACTION' | 'REFLECTION';
 }
 
+interface AssignedPlanRow {
+  readonly support_plan_id: string;
+}
+
 const COLUMNS = `owner_id, resource_id, local_date, resource_version, status,
   completed_action_ids, completed_at, created_at, updated_at, version`;
 
@@ -64,13 +68,26 @@ export class ResourceProgressRepository {
         `SELECT id, version, repeatability, resource_kind
          FROM resource
          WHERE id = $1 AND status = 'PUBLISHED'
+           AND reviewed_by IS NOT NULL
            AND reviewed_at IS NOT NULL
+           AND source_review_status = 'REVIEWED'
            AND (effective_at IS NULL OR effective_at <= now())
            AND (expires_at IS NULL OR expires_at > now())`,
         [resourceId],
       );
       const resource = eligible.rows.at(0);
       if (!resource) return null;
+      const assignedPlan = (
+        await client.query<AssignedPlanRow>(
+          `SELECT assignment.support_plan_id
+           FROM resource_daily_assignment assignment
+           JOIN resource_daily_assignment_item item ON item.assignment_id = assignment.id
+           WHERE assignment.owner_id = $1
+             AND assignment.local_date = $2::date
+             AND item.resource_id = $3`,
+          [ownerId, localDate, resourceId],
+        )
+      ).rows.at(0);
 
       const result = await client.query<ResourceProgressRow>(
         `WITH written AS (
@@ -123,18 +140,34 @@ export class ResourceProgressRepository {
         if (resource.repeatability === 'ONE_TIME' || resource.resource_kind === 'LEARNING') {
           await client.query(
             `INSERT INTO resource_learning_completion
-               (owner_id, resource_id, resource_version, local_date)
-             VALUES ($1, $2, $3, $4::date)
+               (owner_id, resource_id, resource_version, support_plan_id, local_date)
+             VALUES ($1, $2, $3, $4, $5::date)
              ON CONFLICT (owner_id, resource_id) DO NOTHING`,
-            [ownerId, resourceId, Number(resource.version), localDate],
+            [
+              ownerId,
+              resourceId,
+              Number(resource.version),
+              assignedPlan?.support_plan_id ?? null,
+              localDate,
+            ],
           );
-        } else {
+        } else if (update.practiceSessionId && assignedPlan) {
           await client.query(
             `INSERT INTO resource_practice_session
-               (owner_id, resource_id, resource_version, local_date)
-             VALUES ($1, $2, $3, $4::date)
-             ON CONFLICT (owner_id, resource_id, local_date) DO NOTHING`,
-            [ownerId, resourceId, Number(resource.version), localDate],
+               (id, owner_id, resource_id, resource_version, support_plan_id, local_date,
+                started_at, duration_seconds)
+             VALUES ($1, $2, $3, $4, $5, $6::date, $7::timestamptz, $8)
+             ON CONFLICT (id) DO NOTHING`,
+            [
+              update.practiceSessionId,
+              ownerId,
+              resourceId,
+              Number(resource.version),
+              assignedPlan.support_plan_id,
+              localDate,
+              update.practiceStartedAt ?? null,
+              update.practiceDurationSeconds ?? null,
+            ],
           );
         }
       }

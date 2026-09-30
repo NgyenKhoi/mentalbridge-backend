@@ -1491,7 +1491,7 @@ The fixed UUID `00000000-0000-4000-8000-000000000101` identifies a visibly label
 | `source_review_note` | Review/licensing note documenting how MentalBridge adapted and checked the source. Required for new published catalogue resources. |
 | `resource_kind` | Product meaning independent of media format: `LEARNING`, `PRACTICE`, `HABIT`, `ACTION`, or `REFLECTION`. |
 | `interaction_type` | Renderer key for the reviewed experience. Unknown values must fall back to a reader/checklist and must never imply breathing instructions. |
-| `repeatability` | `ONE_TIME` records durable learning completion; `REPEATABLE` records at most one practice session per owner/resource/local day. |
+| `repeatability` | `ONE_TIME` records durable learning completion; `REPEATABLE` records each deliberately confirmed practice session with a client-generated idempotency ID. |
 | `completion_mode` | Reviewed completion interaction: explicit confirmation, video confirmation, timed practice, or discrete steps. |
 | `streak_eligible` | Whether completed repeatable sessions may contribute to the separate practice streak. Learning and daily checklist state never contribute. |
 | `expected_duration_minutes` | Reviewed duration estimate, constrained to 1..120 minutes. |
@@ -1502,7 +1502,7 @@ The fixed UUID `00000000-0000-4000-8000-000000000101` identifies a visibly label
 | `safety_notes` | Reviewed user-facing cautions and stop conditions appropriate to the resource. |
 | `source_retrieved_at` / `source_content_hash` | Offline ingestion provenance. The optional lowercase SHA-256 hash detects source drift without scraping at runtime. |
 | `content_version_label` | Human-readable curated content release label, separate from the optimistic-lock `version`. |
-| `source_review_status` | Explicit editorial gate: `REVIEWED`, `REVIEW_REQUIRED`, or `NEEDS_SOURCE_REVIEW`. |
+| `source_review_status` | Explicit editorial gate: `REVIEWED`, `REVIEW_REQUIRED`, or `NEEDS_SOURCE_REVIEW`. Only `REVIEWED` rows are eligible for public listing, detail, progress, or daily scheduling. |
 | `catalogue_visibility` | `LISTED` for catalogue browsing or `DIRECT_ONLY` for exact-version compatibility links that must not appear in the public list. |
 | `status` | Publication lifecycle controlling user visibility: `DRAFT`, `PUBLISHED`, or `ARCHIVED`. |
 | `reviewed_by` | Administrator account UUID that approved the content for publication; null before review. |
@@ -1538,11 +1538,11 @@ Durable owner-scoped proof that a one-time learning resource was confirmed once.
 
 ### `content.resource_practice_session`
 
-Repeatable practice history. The unique `(owner_id, resource_id, local_date)` key makes retries and later checklist edits idempotent while allowing the same practice on later days. Only sessions joined to a resource with `streak_eligible=true` count toward practice streak.
+Repeatable practice history. `id` is a client-generated idempotency key for one deliberate completion, so retries do not duplicate a session while multiple sessions on the same day remain representable. `support_plan_id` must come from the persisted daily assignment; direct/out-of-plan progress never creates streak evidence. `started_at` and `duration_seconds` retain optional measured session metadata. Only sessions for the current plan and resources with `streak_eligible=true` count toward practice streak.
 
 ### `content.resource_daily_assignment` and `content.resource_daily_assignment_item`
 
-Persisted, owner/date-scoped daily challenge derived from an authoritative active SupportPlan snapshot supplied by the trusted BFF. The header stores timezone, plan identity/version, and plan tags; ordered items store exact resource IDs and a non-clinical selection reason. The unique owner/date key keeps reloads stable even if catalogue ordering changes.
+Persisted, owner/date-scoped daily challenge derived from an authoritative active SupportPlan snapshot supplied by the trusted BFF. Materialization is allowed only for local Plan Days 1–14. The header stores timezone, plan identity/version, and plan tags; ordered items store exact resource IDs and a non-clinical selection reason. The unique owner/date key keeps reloads stable even if catalogue ordering changes.
 
 ### `content.resource_weekly_bingo` and `content.resource_weekly_bingo_item`
 

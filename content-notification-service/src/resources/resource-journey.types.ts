@@ -2,6 +2,8 @@ import type { ResourceKind, ResourceSummary } from './resource.types.js';
 
 export type SupportPlanDomain = 'DEPRESSIVE_SYMPTOMS' | 'ANXIETY_SYMPTOMS';
 export type AssignmentReason = 'PLAN_SELECTED' | 'PLAN_DOMAIN' | 'CONTINUITY' | 'BALANCE';
+export type SupportPlanStage =
+  'ORIENTATION' | 'CORE_PRACTICE' | 'REINFORCEMENT' | 'MAINTENANCE' | 'REVIEW';
 
 export interface ActiveSupportPlanSnapshot {
   readonly supportPlanId: string;
@@ -22,6 +24,7 @@ export interface PlannerResource {
   readonly resourceKind: ResourceKind;
   readonly repeatability: 'ONE_TIME' | 'REPEATABLE';
   readonly cooldownDays: number;
+  readonly recommendedFrequencyPerWeek: number;
   readonly streakEligible: boolean;
   readonly planTags: readonly string[];
 }
@@ -57,6 +60,8 @@ export interface ResourceJourney {
   readonly localDate: string;
   readonly planId: string;
   readonly planVersion: number;
+  readonly planDay: number;
+  readonly planStage: SupportPlanStage;
   readonly items: readonly ResourceJourneyAssignmentItem[];
   readonly progress: ResourceJourneyProgress;
   readonly weekStart: string;

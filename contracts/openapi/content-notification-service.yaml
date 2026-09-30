@@ -1511,6 +1511,21 @@ components:
             minLength: 1
             maxLength: 64
             pattern: "^[A-Za-z0-9:_-]+$"
+        practiceSessionId:
+          type: string
+          format: uuid
+          description: >-
+            Client-generated idempotency key for one completed repeatable practice
+            session. Omit for ordinary checklist edits and one-time learning resources.
+        practiceStartedAt:
+          type: string
+          format: date-time
+          description: Optional start instant for the practice session.
+        practiceDurationSeconds:
+          type: integer
+          minimum: 1
+          maximum: 7200
+          description: Optional measured duration for the practice session.
         completedAt:
           type: string
           format: date-time
@@ -1697,6 +1712,8 @@ components:
           localDate,
           planId,
           planVersion,
+          planDay,
+          planStage,
           items,
           progress,
           weekStart,
@@ -1715,6 +1732,13 @@ components:
         planVersion:
           type: integer
           minimum: 1
+        planDay:
+          type: integer
+          minimum: 1
+          maximum: 14
+        planStage:
+          type: string
+          enum: [ORIENTATION, CORE_PRACTICE, REINFORCEMENT, MAINTENANCE, REVIEW]
         items:
           type: array
           maxItems: 4
@@ -1913,7 +1937,10 @@ components:
 
     CreateResourceRequest:
       type: object
-      required: [category, title, summary]
+      required:
+        - category
+        - title
+        - summary
       properties:
         category:
           $ref: "#/components/schemas/ResourceCategory"
@@ -1934,6 +1961,59 @@ components:
           pattern: "^https?://"
           nullable: true
           description: VIDEO resources require a verified HTTPS YouTube URL.
+        resourceKind:
+          $ref: "#/components/schemas/ResourceKind"
+        interactionType:
+          $ref: "#/components/schemas/ResourceInteractionType"
+        repeatability:
+          $ref: "#/components/schemas/ResourceRepeatability"
+        completionMode:
+          $ref: "#/components/schemas/ResourceCompletionMode"
+        streakEligible:
+          type: boolean
+        expectedDurationMinutes:
+          type: integer
+          minimum: 1
+          maximum: 120
+        cooldownDays:
+          type: integer
+          minimum: 0
+          maximum: 30
+        recommendedFrequencyPerWeek:
+          type: integer
+          minimum: 1
+          maximum: 7
+        planTags:
+          type: array
+          minItems: 1
+          maxItems: 12
+          uniqueItems: true
+          items:
+            type: string
+        structuredContent:
+          type: object
+          additionalProperties: true
+          default: {}
+        interactionConfig:
+          type: object
+          additionalProperties: true
+          default: {}
+        safetyNotes:
+          type: array
+          maxItems: 12
+          items:
+            type: string
+        catalogueVisibility:
+          type: string
+          enum: [LISTED, DIRECT_ONLY]
+          default: DIRECT_ONLY
+        contentVersionLabel:
+          type: string
+          default: draft-v1
+        sourceReviewStatus:
+          type: string
+          enum: [REVIEWED, REVIEW_REQUIRED, NEEDS_SOURCE_REVIEW]
+          default: NEEDS_SOURCE_REVIEW
         sourceOrganization:
           type: string
           maxLength: 200
@@ -1949,6 +2029,14 @@ components:
           nullable: true
         sourceReviewNote:
           type: string
+          nullable: true
+        sourceRetrievedAt:
+          type: string
+          format: date-time
+          nullable: true
+        sourceContentHash:
+          type: string
+          pattern: "^[a-f0-9]{64}$"
           nullable: true
         effectiveAt:
           type: string
@@ -1979,6 +2067,54 @@ components:
           pattern: "^https?://"
           nullable: true
           description: VIDEO resources require a verified HTTPS YouTube URL.
+        resourceKind:
+          $ref: "#/components/schemas/ResourceKind"
+        interactionType:
+          $ref: "#/components/schemas/ResourceInteractionType"
+        repeatability:
+          $ref: "#/components/schemas/ResourceRepeatability"
+        completionMode:
+          $ref: "#/components/schemas/ResourceCompletionMode"
+        streakEligible:
+          type: boolean
+        expectedDurationMinutes:
+          type: integer
+          minimum: 1
+          maximum: 120
+        cooldownDays:
+          type: integer
+          minimum: 0
+          maximum: 30
+        recommendedFrequencyPerWeek:
+          type: integer
+          minimum: 1
+          maximum: 7
+        planTags:
+          type: array
+          minItems: 1
+          maxItems: 12
+          uniqueItems: true
+          items:
+            type: string
+        structuredContent:
+          type: object
+          additionalProperties: true
+        interactionConfig:
+          type: object
+          additionalProperties: true
+        safetyNotes:
+          type: array
+          maxItems: 12
+          items:
+            type: string
+        catalogueVisibility:
+          type: string
+          enum: [LISTED, DIRECT_ONLY]
+        contentVersionLabel:
+          type: string
+        sourceReviewStatus:
+          type: string
+          enum: [REVIEWED, REVIEW_REQUIRED, NEEDS_SOURCE_REVIEW]
         sourceOrganization:
           type: string
           maxLength: 200
@@ -1994,6 +2130,14 @@ components:
           nullable: true
         sourceReviewNote:
           type: string
+          nullable: true
+        sourceRetrievedAt:
+          type: string
+          format: date-time
+          nullable: true
+        sourceContentHash:
+          type: string
+          pattern: "^[a-f0-9]{64}$"
           nullable: true
         effectiveAt:
           type: string

@@ -1,12 +1,20 @@
 import { z } from 'zod';
 
 const unique = (values: readonly unknown[]): boolean => new Set(values).size === values.length;
+const timeZoneExists = (timeZone: string): boolean => {
+  try {
+    new Intl.DateTimeFormat('en-US', { timeZone }).format();
+    return true;
+  } catch {
+    return false;
+  }
+};
 
 export const ResourceJourneyDateSchema = z.iso.date();
 
 export const ResourceJourneyRequestSchema = z
   .object({
-    timeZone: z.string().min(1).max(64),
+    timeZone: z.string().min(1).max(64).refine(timeZoneExists, 'must be a valid IANA time zone'),
     supportPlan: z
       .object({
         supportPlanId: z.uuid(),

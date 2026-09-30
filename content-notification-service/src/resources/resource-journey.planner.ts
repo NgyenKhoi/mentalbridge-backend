@@ -2,6 +2,7 @@ import type {
   AssignmentReason,
   PlannedResource,
   PlannerResource,
+  SupportPlanStage,
 } from './resource-journey.types.js';
 
 const DAY_MS = 86_400_000;
@@ -24,10 +25,78 @@ function rotate<T>(values: readonly T[], offset: number): T[] {
 
 export interface PlannerContext {
   readonly localDate: string;
+  readonly planDay: number;
+  readonly planStage: SupportPlanStage;
   readonly selectedResourceIds: ReadonlySet<string>;
   readonly completedLearningIds: ReadonlySet<string>;
   readonly latestSessionByResource: ReadonlyMap<string, string>;
+  readonly scheduledThisWeekByResource: ReadonlyMap<string, number>;
 }
+
+export function localDateInTimeZone(instant: string, timeZone: string): string {
+  const parts = new Intl.DateTimeFormat('en-CA', {
+    timeZone,
+    year: 'numeric',
+    month: '2-digit',
+    day: '2-digit',
+  }).formatToParts(new Date(instant));
+  const value = (type: Intl.DateTimeFormatPartTypes) =>
+    parts.find((part) => part.type === type)?.value ?? '';
+  return `${value('year')}-${value('month')}-${value('day')}`;
+}
+
+export function supportPlanDay(
+  activatedAt: string,
+  timeZone: string,
+  requestedDate: string,
+): number | null {
+  const activationDate = localDateInTimeZone(activatedAt, timeZone);
+  const day = daysBetween(activationDate, requestedDate) + 1;
+  return day >= 1 && day <= 14 ? day : null;
+}
+
+export function supportPlanStage(planDay: number): SupportPlanStage {
+  if (planDay <= 3) return 'ORIENTATION';
+  if (planDay <= 7) return 'CORE_PRACTICE';
+  if (planDay <= 10) return 'REINFORCEMENT';
+  if (planDay <= 13) return 'MAINTENANCE';
+  return 'REVIEW';
+}
+
+const STAGE_SLOTS: Readonly<
+  Record<SupportPlanStage, readonly (readonly PlannerResource['resourceKind'][])[]>
+> = {
+  ORIENTATION: [
+    ['LEARNING'],
+    ['PRACTICE'],
+    ['HABIT', 'ACTION'],
+    ['REFLECTION', 'PRACTICE', 'HABIT', 'ACTION', 'LEARNING'],
+  ],
+  CORE_PRACTICE: [
+    ['PRACTICE'],
+    ['LEARNING'],
+    ['HABIT', 'ACTION'],
+    ['REFLECTION', 'PRACTICE', 'HABIT', 'ACTION', 'LEARNING'],
+  ],
+  REINFORCEMENT: [
+    ['PRACTICE'],
+    ['HABIT', 'ACTION'],
+    ['REFLECTION'],
+    ['LEARNING', 'PRACTICE', 'HABIT', 'ACTION'],
+  ],
+  MAINTENANCE: [
+    ['HABIT', 'ACTION'],
+    ['PRACTICE'],
+    ['REFLECTION'],
+    ['LEARNING', 'PRACTICE', 'HABIT', 'ACTION'],
+  ],
+  REVIEW: [
+    ['REFLECTION'],
+    ['PRACTICE'],
+    ['HABIT', 'ACTION'],
+    ['LEARNING', 'PRACTICE', 'HABIT', 'ACTION'],
+  ],
+};
 
 export function planDailyResources(
   resources: readonly PlannerResource[],
@@ -37,23 +106,22 @@ export function planDailyResources(
     if (resource.resourceKind === 'LEARNING' && context.completedLearningIds.has(resource.id)) {
       return false;
     }
+    if (
+      resource.repeatability === 'REPEATABLE' &&
+      (context.scheduledThisWeekByResource.get(resource.id) ?? 0) >=
+        resource.recommendedFrequencyPerWeek
+    ) {
+      return false;
+    }
     const latest = context.latestSessionByResource.get(resource.id);
     return !latest || daysBetween(latest, context.localDate) >= resource.cooldownDays;
   });
-  const pool =
-    eligible.length > 0
-      ? eligible
-      : resources.filter((resource) => {
-          return (
-            resource.resourceKind !== 'LEARNING' || !context.completedLearningIds.has(resource.id)
-          );
-        });
-  const offset = dayNumber(context.localDate);
+  const offset = context.planDay - 1;
   const selected: PlannedResource[] = [];
   const used = new Set<string>();
 
   const take = (kinds: readonly PlannerResource['resourceKind'][], reason: AssignmentReason) => {
-    const matching = pool
+    const matching = eligible
       .filter((resource) => kinds.includes(resource.resourceKind) && !used.has(resource.id))
       .sort((a, b) => a.id.localeCompare(b.id));
     const preferred = rotate(
@@ -73,10 +141,14 @@ export function planDailyResources(
     });
   };
 
-  take(['LEARNING'], 'PLAN_DOMAIN');
-  take(['PRACTICE'], 'CONTINUITY');
-  take(['HABIT', 'ACTION'], 'BALANCE');
-  take(['REFLECTION', 'PRACTICE', 'HABIT', 'ACTION', 'LEARNING'], 'BALANCE');
+  for (const kinds of STAGE_SLOTS[context.planStage]) {
+    const reason: AssignmentReason = kinds.includes('LEARNING')
+      ? 'PLAN_DOMAIN'
+      : kinds.includes('PRACTICE')
+        ? 'CONTINUITY'
+        : 'BALANCE';
+    take(kinds, reason);
+  }
 
   return selected.slice(0, 4);
 }
