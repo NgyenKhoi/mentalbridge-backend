@@ -30,6 +30,10 @@ class CommunityProfileEntity {
 	private String displayName;
 
 	@Enumerated(EnumType.STRING)
+	@Column(name = "avatar_preset", length = 24)
+	private AvatarPreset avatarPreset;
+
+	@Enumerated(EnumType.STRING)
 	@Column(nullable = false, length = 16)
 	private Status status;
 
@@ -45,6 +49,22 @@ class CommunityProfileEntity {
 	protected CommunityProfileEntity() {
 	}
 
+	CommunityProfileEntity(UUID id, UUID accountSubject, String displayName, AvatarPreset avatarPreset, Instant now) {
+		this.id = id;
+		this.accountSubject = accountSubject;
+		this.displayName = displayName;
+		this.avatarPreset = avatarPreset;
+		this.status = Status.ACTIVE;
+		this.createdAt = now;
+		this.updatedAt = now;
+	}
+
+	void update(String displayName, AvatarPreset avatarPreset, Instant now) {
+		this.displayName = displayName;
+		this.avatarPreset = avatarPreset;
+		this.updatedAt = now;
+	}
+
 	UUID id() {
 		return id;
 	}
@@ -57,7 +77,23 @@ class CommunityProfileEntity {
 		return displayName;
 	}
 
+	AvatarPreset avatarPreset() {
+		return avatarPreset;
+	}
+
 	Status status() {
 		return status;
+	}
+
+	Instant createdAt() {
+		return createdAt;
+	}
+
+	Instant updatedAt() {
+		return updatedAt;
+	}
+
+	long version() {
+		return version;
 	}
 }

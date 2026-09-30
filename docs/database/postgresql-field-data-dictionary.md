@@ -15,10 +15,11 @@ Community-owned public display identity kept separate from private Care and Iden
 | `id` | Immutable opaque UUID exposed publicly as the Community profile identifier. |
 | `account_subject` | Private unique Identity JWT subject used only for ownership, blocks, abuse controls, moderation, and deletion coordination; never returned by Community APIs. |
 | `display_name` | User-chosen Community name shown on active posts; bounded to 80 characters and replaced by a neutral tombstone label when the profile is deleted. |
+| `avatar_preset` | Optional closed Community visual preset (`LEAF`, `SUNRISE`, `WAVE`, `LOTUS`, `CLOUD`, or `SPROUT`); arbitrary URLs and account-profile avatars are never persisted here. |
 | `status` | Community-local display lifecycle `ACTIVE` or `DELETED`; it is not an Identity account-state copy. |
 | `created_at` | Immutable UTC insertion instant for the Community display identity. |
 | `updated_at` | UTC instant of the latest persisted Community display change. |
-| `version` | Optimistic-lock counter reserved for the profile update contract. |
+| `version` | Optimistic-lock counter used by the ETag/If-Match profile replacement contract. |
 
 ### `public.community_post`
 

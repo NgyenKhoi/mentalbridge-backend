@@ -1,8 +1,8 @@
 openapi: 3.1.0
 info:
   title: MentalBridge Community API
-  version: 1.0.0
-  description: Privacy-isolated peer-support Community Contract v1. Feed ordering is newest-first and never uses Care, Journal, emotion, SupportPlan, or AI data.
+  version: 1.1.0
+  description: Privacy-isolated peer-support Community Contract v1.1. Feed ordering is newest-first and never uses Care, Journal, emotion, SupportPlan, or AI data. MB-581 adds an optional governed avatar preset; public post rendering always uses the author's current active display identity, while moderation evidence retains its immutable capture independently.
 servers:
   - url: http://localhost:8084
 paths:
@@ -340,19 +340,23 @@ paths:
         "404": { $ref: "#/components/responses/Problem" }
   /api/v1/community/profile:
     get:
-      x-mentalbridge-status: planned
+      x-mentalbridge-status: implemented
       operationId: getOwnCommunityProfile
       security: [{ BearerAuth: [] }]
       responses:
         "200":
           description: Authenticated owner's Community display profile.
+          headers:
+            ETag:
+              schema: { type: string, pattern: '^"(0|[1-9]\d*)"$' }
           content:
             application/json:
               schema: { $ref: "#/components/schemas/CommunityProfile" }
         "401": { $ref: "#/components/responses/Problem" }
         "403": { $ref: "#/components/responses/Problem" }
+        "404": { $ref: "#/components/responses/Problem" }
     put:
-      x-mentalbridge-status: planned
+      x-mentalbridge-status: implemented
       operationId: putOwnCommunityProfile
       security: [{ BearerAuth: [] }]
       parameters:
@@ -363,8 +367,21 @@ paths:
           application/json:
             schema: { $ref: "#/components/schemas/PutCommunityProfileRequest" }
       responses:
+        "201":
+          description: Community display profile created for the authenticated owner.
+          headers:
+            ETag:
+              schema: { type: string, pattern: '^"(0|[1-9]\d*)"$' }
+            Location:
+              schema: { type: string, format: uri-reference }
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/CommunityProfile" }
         "200":
           description: Current Community display profile.
+          headers:
+            ETag:
+              schema: { type: string, pattern: '^"(0|[1-9]\d*)"$' }
           content:
             application/json:
               schema: { $ref: "#/components/schemas/CommunityProfile" }
@@ -512,10 +529,14 @@ components:
     CommunityAuthor:
       type: object
       additionalProperties: false
-      required: [communityProfileId, displayName, state]
+      required: [communityProfileId, displayName, avatarPreset, state]
       properties:
         communityProfileId: { type: string, format: uuid }
         displayName: { type: string, minLength: 1, maxLength: 80 }
+        avatarPreset:
+          anyOf:
+            - $ref: "#/components/schemas/CommunityAvatarPreset"
+            - type: "null"
         state: { type: string, enum: [ACTIVE, DELETED] }
     CommunityCounts:
       type: object
@@ -715,16 +736,28 @@ components:
     PutCommunityProfileRequest:
       type: object
       additionalProperties: false
-      required: [displayName]
+      required: [displayName, avatarPreset]
       properties:
         displayName: { type: string, minLength: 1, maxLength: 80 }
+        avatarPreset:
+          anyOf:
+            - $ref: "#/components/schemas/CommunityAvatarPreset"
+            - type: "null"
+    CommunityAvatarPreset:
+      type: string
+      description: Closed, Community-owned visual preset. Arbitrary image URLs and account-profile avatars are never accepted.
+      enum: [LEAF, SUNRISE, WAVE, LOTUS, CLOUD, SPROUT]
     CommunityProfile:
       type: object
       additionalProperties: false
-      required: [communityProfileId, displayName, status, version, createdAt, updatedAt]
+      required: [communityProfileId, displayName, avatarPreset, status, version, createdAt, updatedAt]
       properties:
         communityProfileId: { type: string, format: uuid }
         displayName: { type: string, minLength: 1, maxLength: 80 }
+        avatarPreset:
+          anyOf:
+            - $ref: "#/components/schemas/CommunityAvatarPreset"
+            - type: "null"
         status: { type: string, enum: [ACTIVE, DELETED] }
         version: { type: integer, minimum: 0 }
         createdAt: { type: string, format: date-time }

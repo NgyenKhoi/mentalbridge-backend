@@ -917,6 +917,7 @@ CREATE TABLE community.community_profile (
     id uuid PRIMARY KEY,
     account_subject uuid NOT NULL UNIQUE, -- external -> identity.account.id
     display_name varchar(80) NOT NULL,
+    avatar_preset varchar(24),
     status varchar(16) NOT NULL,
     created_at timestamptz NOT NULL,
     updated_at timestamptz NOT NULL,

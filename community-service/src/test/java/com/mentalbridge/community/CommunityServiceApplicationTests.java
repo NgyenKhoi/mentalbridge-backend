@@ -70,7 +70,7 @@ class CommunityServiceApplicationTests extends CommunityTestProperties {
 				""").query(String.class).list();
 
 		assertThat(changeSets).containsExactly("0001-community-foundation", "0002-community-feed",
-				"0003-community-post-lifecycle");
+				"0003-community-post-lifecycle", "0004-community-display-identity");
 		assertThat(businessTables).containsExactly("community_block", "community_media", "community_post",
 				"community_post_topic", "community_profile");
 	}
