@@ -953,6 +953,14 @@ CREATE TABLE consultation.appointment (
     cancelled_at timestamptz,
     cancelled_by uuid, -- external -> identity.account.id
     cancellation_credit_outcome varchar(40),
+    session_outcome varchar(40),
+    session_outcome_reason varchar(64),
+    session_policy_version varchar(64),
+    session_ended_at timestamptz,
+    session_settled_at timestamptz,
+    evidence_review_started_at timestamptz,
+    evidence_failure_reason varchar(64),
+    completion_fact_id uuid UNIQUE,
     created_at timestamptz NOT NULL,
     updated_at timestamptz NOT NULL,
     version bigint NOT NULL,
@@ -971,9 +979,23 @@ CREATE TABLE consultation.appointment_status_history (
     changed_at timestamptz NOT NULL
 );
 
+CREATE TABLE consultation.appointment_chat_evidence (
+    id uuid PRIMARY KEY,
+    appointment_id uuid NOT NULL REFERENCES consultation.appointment(id),
+    evidence_id uuid NOT NULL,
+    participant_account_id uuid NOT NULL, -- external -> identity.account.id
+    participant_role varchar(16) NOT NULL,
+    evidence_type varchar(24) NOT NULL,
+    interval_started_at timestamptz,
+    message_id uuid, -- Realtime-owned identifier; no message content crosses the boundary
+    occurred_at timestamptz NOT NULL,
+    received_at timestamptz NOT NULL,
+    UNIQUE (appointment_id, evidence_id)
+);
+
 /* ========================================================================== */
 /* ACTIVE — community-service / mentalbridge_community                        */
-/* Evidence: community-service Liquibase changes 0001-0003.                  */
+/* Evidence: community-service Liquibase changes 0001-0007.                  */
 /* ========================================================================== */
 
 CREATE TABLE community.community_profile (
@@ -995,7 +1017,8 @@ CREATE TABLE community.community_post (
     comment_count integer NOT NULL,
     reaction_count integer NOT NULL,
     idempotency_key varchar(128),
-    request_fingerprint char(64),
+    request_fingerprint varchar(64),
+    author_mode varchar(16) NOT NULL,
     published_at timestamptz NOT NULL,
     updated_at timestamptz NOT NULL,
     version bigint NOT NULL
@@ -1014,6 +1037,14 @@ CREATE TABLE community.community_media (
     media_type varchar(16) NOT NULL,
     state varchar(16) NOT NULL,
     delivery_url varchar(2048),
+    storage_provider varchar(24),
+    storage_key varchar(512),
+    expected_mime_type varchar(120),
+    expected_size_bytes bigint,
+    upload_expires_at timestamptz,
+    idempotency_key varchar(128),
+    request_fingerprint varchar(64),
+    rejection_reason varchar(64),
     width integer,
     height integer,
     duration_seconds integer,

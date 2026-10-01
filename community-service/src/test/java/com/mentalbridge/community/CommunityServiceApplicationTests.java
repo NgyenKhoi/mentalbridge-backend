@@ -70,9 +70,31 @@ class CommunityServiceApplicationTests extends CommunityTestProperties {
 				""").query(String.class).list();
 
 		assertThat(changeSets).containsExactly("0001-community-foundation", "0002-community-feed",
-				"0003-community-post-lifecycle", "0004-community-display-identity");
+				"0003-community-post-lifecycle", "0004-community-display-identity",
+				"0005-community-media-lifecycle", "0006-community-request-fingerprint-varchar",
+				"0007-community-post-author-mode");
 		assertThat(businessTables).containsExactly("community_block", "community_media", "community_post",
 				"community_post_topic", "community_profile");
+	}
+
+	@Test
+	void requestFingerprintsUseTheJpaCompatibleVarcharType() {
+		var fingerprintColumns = jdbc.sql("""
+				select table_name, data_type, character_maximum_length
+				from information_schema.columns
+				where table_schema = 'public'
+				  and table_name in ('community_post', 'community_media')
+				  and column_name = 'request_fingerprint'
+				order by table_name
+				""").query((resultSet, rowNumber) -> List.of(
+					resultSet.getString("table_name"),
+					resultSet.getString("data_type"),
+					resultSet.getString("character_maximum_length")))
+				.list();
+
+		assertThat(fingerprintColumns).containsExactly(
+				List.of("community_media", "character varying", "64"),
+				List.of("community_post", "character varying", "64"));
 	}
 
 	@Test

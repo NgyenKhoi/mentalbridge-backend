@@ -19,6 +19,7 @@ class ConsultationOpenApiContractTests {
 			"GET /internal/v1/entitlements/current",
 			"GET /internal/v1/appointments/{appointmentId}/consultation-brief-context",
 			"GET /internal/v1/appointments/{conversationId}/chat-eligibility",
+			"POST /internal/v1/appointments/{appointmentId}/chat-evidence",
 			"GET /api/v1/specialist-profile",
 			"PUT /api/v1/specialist-profile",
 			"POST /api/v1/specialist-profile/submit",
@@ -106,14 +107,30 @@ class ConsultationOpenApiContractTests {
 		assertThat(request.getRequired()).containsExactlyInAnyOrder("slotId", "modality");
 		assertThat(appointment.getProperties()).containsKeys("status", "decisionDeadlineAt", "heldCreditId",
 				"replacesAppointmentId", "replacedByAppointmentId", "decidedAt", "decisionReason", "cancelledAt",
-				"cancellationReason", "cancellationActor", "cancellationCreditOutcome", "creditState", "history", "version");
+				"cancellationReason", "cancellationActor", "cancellationCreditOutcome", "sessionOutcome",
+				"sessionPolicyVersion", "sessionEndedAt", "sessionSettledAt", "completionFactId",
+				"creditState", "history", "version");
 		var statuses = ((Schema<?>) appointment.getProperties().get("status")).getEnum().stream()
 				.map(String::valueOf).toList();
-		assertThat(statuses).containsExactly("REQUESTED", "CONFIRMED", "IN_PROGRESS", "REJECTED", "EXPIRED",
-				"CANCELLED");
+		assertThat(statuses).containsExactly("REQUESTED", "CONFIRMED", "IN_PROGRESS", "SESSION_ENDED",
+				"COMPLETED", "REJECTED", "EXPIRED", "CANCELLED");
 		assertThat(appointment.getRequired()).contains("replacesAppointmentId", "replacedByAppointmentId",
 				"cancelledAt", "cancellationReason", "cancellationActor", "cancellationCreditOutcome", "history");
 		assertThat(appointment.getProperties()).doesNotContainKeys("practiceLocationId", "phone", "meetingLink", "url");
+	}
+
+	@Test
+	void chatEvidenceContractIsContentFreeAndServerBounded() {
+		var contract = Path.of("..", "contracts", "openapi", "consultation-service-v1.yaml").toString();
+		var api = new OpenAPIV3Parser().read(contract);
+		var request = api.getComponents().getSchemas().get("ChatEvidenceRequest");
+		var eligibility = api.getComponents().getSchemas().get("AppointmentChatEligibility");
+
+		assertThat(request.getProperties()).containsOnlyKeys("evidenceId", "type", "occurredAt",
+				"intervalStartedAt", "messageId");
+		assertThat(request.getProperties()).doesNotContainKeys("content", "messageContent", "diagnosis", "notes");
+		assertThat(eligibility.getProperties()).containsKeys("checkInAllowed", "participantCheckedIn",
+				"sessionOutcome", "creditState");
 	}
 
 	@Test

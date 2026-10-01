@@ -10,10 +10,14 @@ import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.jsonPath;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.status;
 
+import java.nio.ByteBuffer;
+import java.nio.charset.StandardCharsets;
+import java.security.MessageDigest;
 import java.sql.Types;
 import java.time.Instant;
 import java.time.OffsetDateTime;
 import java.time.ZoneOffset;
+import java.util.HexFormat;
 import java.util.List;
 import java.util.Map;
 import java.util.UUID;
@@ -70,6 +74,9 @@ class CommunityPostLifecycleIntegrationTests extends CommunityTestProperties {
 				.andExpect(jsonPath("$.author.displayName").value("Thành viên MentalBridge"))
 				.andReturn().getResponse().getContentAsString();
 		var postId = objectMapper.readTree(first).path("postId").asText();
+		jdbc.sql("update community_post set request_fingerprint = :fingerprint where id = :id")
+				.param("fingerprint", legacyFingerprint(content, "MY_STORY"))
+				.param("id", UUID.fromString(postId)).update();
 
 		mvc.perform(post("/api/v1/community/posts")
 				.header("Idempotency-Key", "post-create-owner-0001")
@@ -88,6 +95,46 @@ class CommunityPostLifecycleIntegrationTests extends CommunityTestProperties {
 		assertThat(jdbc.sql("select count(*) from community_post").query(Long.class).single()).isOne();
 		assertThat(jdbc.sql("select count(*) from community_profile where account_subject = :subject")
 				.param("subject", OWNER_SUBJECT).query(Long.class).single()).isOne();
+	}
+
+	@Test
+	void anonymousModeIsPerPostAndDoesNotExposeTheCommunityProfileIdentifier() throws Exception {
+		var anonymousRequest = objectMapper.writeValueAsString(Map.of(
+				"content", "Một chia sẻ riêng tư",
+				"topics", List.of("MY_STORY"),
+				"mediaIds", List.of(),
+				"authorMode", "ANONYMOUS"));
+		var created = mvc.perform(post("/api/v1/community/posts")
+				.header("Idempotency-Key", "post-anonymous-owner-0001")
+				.contentType(MediaType.APPLICATION_JSON).content(anonymousRequest).with(user(OWNER_SUBJECT)))
+				.andExpect(status().isCreated())
+				.andExpect(jsonPath("$.author.communityProfileId").isEmpty())
+				.andExpect(jsonPath("$.author.displayName").value("Thành viên ẩn danh"))
+				.andExpect(jsonPath("$.author.avatarPreset").isEmpty())
+				.andExpect(jsonPath("$.author.state").value("ANONYMOUS"))
+				.andReturn().getResponse().getContentAsString();
+		var postId = UUID.fromString(objectMapper.readTree(created).path("postId").asText());
+
+		mvc.perform(get("/api/v1/community/feed").with(user(OTHER_SUBJECT)))
+				.andExpect(status().isOk())
+				.andExpect(jsonPath("$.items[0].author.communityProfileId").isEmpty())
+				.andExpect(jsonPath("$.items[0].author.state").value("ANONYMOUS"));
+
+		var row = jdbc.sql("select author_profile_id, author_mode from community_post where id = :id")
+				.param("id", postId).query().singleRow();
+		assertThat(row.get("author_profile_id")).isNotNull();
+		assertThat(row).containsEntry("author_mode", "ANONYMOUS");
+
+		var profileRequest = objectMapper.writeValueAsString(Map.of(
+				"content", "Một chia sẻ riêng tư",
+				"topics", List.of("MY_STORY"),
+				"mediaIds", List.of(),
+				"authorMode", "PROFILE"));
+		mvc.perform(patch("/api/v1/community/posts/{postId}", postId).header("If-Match", "\"0\"")
+				.contentType(MediaType.APPLICATION_JSON).content(profileRequest).with(user(OWNER_SUBJECT)))
+				.andExpect(status().isOk())
+				.andExpect(jsonPath("$.author.communityProfileId").isNotEmpty())
+				.andExpect(jsonPath("$.author.state").value("ACTIVE"));
 	}
 
 	@Test
@@ -268,6 +315,19 @@ class CommunityPostLifecycleIntegrationTests extends CommunityTestProperties {
 	private java.util.Optional<UUID> attachedPostId(UUID mediaId) {
 		return jdbc.sql("select post_id from community_media where id = :mediaId")
 				.param("mediaId", mediaId).query(UUID.class).optional();
+	}
+
+	private String legacyFingerprint(String content, String topic) throws Exception {
+		var digest = MessageDigest.getInstance("SHA-256");
+		addFingerprintPart(digest, content);
+		addFingerprintPart(digest, topic);
+		return HexFormat.of().formatHex(digest.digest());
+	}
+
+	private void addFingerprintPart(MessageDigest digest, String value) {
+		var bytes = value.getBytes(StandardCharsets.UTF_8);
+		digest.update(ByteBuffer.allocate(Integer.BYTES).putInt(bytes.length).array());
+		digest.update(bytes);
 	}
 
 	private OffsetDateTime dbTime(Instant instant) {

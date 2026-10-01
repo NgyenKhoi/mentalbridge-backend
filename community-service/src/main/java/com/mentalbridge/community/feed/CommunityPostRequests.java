@@ -11,6 +11,6 @@ final class CommunityPostRequests {
 	}
 
 	record WritePostRequest(@NotNull String content, @NotNull List<CommunityTopic> topics,
-			@NotNull List<UUID> mediaIds) {
+			@NotNull List<UUID> mediaIds, CommunityPostEntity.AuthorMode authorMode) {
 	}
 }

@@ -30,6 +30,8 @@ class CommunityPostEntity {
 
 	enum State { ACTIVE, OWNER_DELETED, MODERATION_HIDDEN, MODERATION_REMOVED }
 
+	enum AuthorMode { PROFILE, ANONYMOUS }
+
 	@Id
 	private UUID id;
 
@@ -62,6 +64,10 @@ class CommunityPostEntity {
 	@Column(name = "request_fingerprint", length = 64)
 	private String requestFingerprint;
 
+	@Enumerated(EnumType.STRING)
+	@Column(name = "author_mode", nullable = false, length = 16)
+	private AuthorMode authorMode;
+
 	@Version
 	private Long version;
 
@@ -81,7 +87,7 @@ class CommunityPostEntity {
 	}
 
 	CommunityPostEntity(UUID id, CommunityProfileEntity author, String content, Set<CommunityTopic> topics,
-			String idempotencyKey, String requestFingerprint, Instant now) {
+			String idempotencyKey, String requestFingerprint, AuthorMode authorMode, Instant now) {
 		this.id = id;
 		this.author = author;
 		this.content = content;
@@ -92,6 +98,7 @@ class CommunityPostEntity {
 		this.updatedAt = now;
 		this.idempotencyKey = idempotencyKey;
 		this.requestFingerprint = requestFingerprint;
+		this.authorMode = authorMode;
 		this.topics.addAll(topics);
 	}
 
@@ -143,10 +150,15 @@ class CommunityPostEntity {
 		return requestFingerprint;
 	}
 
-	void update(String content, Set<CommunityTopic> topics, Instant now) {
+	AuthorMode authorMode() {
+		return authorMode;
+	}
+
+	void update(String content, Set<CommunityTopic> topics, AuthorMode authorMode, Instant now) {
 		this.content = content;
 		this.topics.clear();
 		this.topics.addAll(topics);
+		this.authorMode = authorMode;
 		this.updatedAt = now;
 	}
 

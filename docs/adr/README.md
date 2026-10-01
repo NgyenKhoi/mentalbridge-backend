@@ -14,6 +14,7 @@ Use ADR **filename + Decision ID**, not numeric prefix alone, when a reference c
 | [0026-journal-emotion-notification-materialization.md](0026-journal-emotion-notification-materialization.md) | `MB-WELLBEING-NOTIFICATION-001` | Accepted | Owner-authorized Journal/emotion activity projection and Content-owned in-app reminder/milestone materialization |
 | [0027-approved-online-specialist-discovery.md](0027-approved-online-specialist-discovery.md) | `MB-SPECIALIST-DISCOVERY-001` | Accepted | Approved-only online specialist discovery, privacy-minimized deterministic ranking, entitlement boundary, and exact selectable-slot handoff |
 | [0028-community-service-boundary.md](0027-community-service-boundary.md) | `MB-COMMUNITY-SERVICE-001` | Accepted | Independent Community owner, Spring/PostgreSQL runtime, and privacy-isolated foundation |
+| [0029-evidence-backed-chat-session-completion.md](0029-evidence-backed-chat-session-completion.md) | `MB-CHAT-SESSION-COMPLETION-001` | Accepted | Server-evidenced in-app chat completion, no-show outcomes, grace/reconciliation, and credit settlement |
 
 For clauses explicitly amended by ADR 0022 or ADR 0024, the relevant latest
 amendment is the current prospective authority. Historical records keep their

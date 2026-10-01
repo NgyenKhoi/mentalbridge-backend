@@ -20,7 +20,7 @@ It does not own Identity credentials, Care profiles, screening, SupportPlan, Jou
 - `GET /api/v1/community/feed` returns only active posts in deterministic `(publishedAt, postId)` descending order, with an optional governed topic filter and opaque cursor.
 - `GET /api/v1/community/posts/{postId}` returns an active visible post or the same bounded not-found response for absent, hidden, removed, and blocked content.
 - `GET /api/v1/community/topics` returns the six non-diagnostic v1 topic definitions.
-- Public author data is limited to Community profile ID, chosen display name, and active/deleted presentation state. Deleted authors receive a neutral tombstone label.
+- Public author data is limited to the chosen per-post projection: Community profile ID/display name/avatar for `PROFILE`, or a neutral unlinkable label for `ANONYMOUS`. Deleted authors receive a neutral tombstone label.
 - Only `READY` media delivery metadata is public. `PARTIAL` and `UNAVAILABLE` states remain explicit without leaking provider or moderation details.
 - Feed/detail visibility uses only Community-owned post, topic, media, profile, and block data. It never reads Care, Journal/AI, SupportPlan, assessment, emotion, package, diagnosis, or severity data.
 
@@ -36,3 +36,19 @@ MB-574 does not upload media, add comments/reactions/bookmarks, report, moderate
 - Cross-owner, absent, hidden, removed, and owner-deleted mutations share the bounded not-found contract and do not disclose ownership or moderation state.
 - Owner deletion changes the post to `OWNER_DELETED`, detaches media, and removes it from feed/detail immediately while retaining auditable content and lifecycle state in Community storage.
 - Community story text remains inside `community-service`; it is not emitted or copied into Care, reassessment, Journal/AI, SupportPlan, or specialist context.
+
+## MB-576 bounded Community media lifecycle
+
+- `POST /api/v1/community/media/upload-intents` creates an idempotent, owner-scoped ten-minute signed Cloudinary upload for allowlisted JPEG, PNG, WebP, MP4, WebM, or QuickTime files. Images are limited to 10 MiB; videos are limited to 50 MiB and 60 seconds.
+- Browser uploads use Cloudinary `authenticated` storage and a server-signed immutable storage key. The API secret, original object URL, and provider response are never returned by Community APIs or persisted in a post.
+- `POST /api/v1/community/media/{mediaId}/finalize` verifies the exact storage identity, detected format, byte count, dimensions, and video duration outside a database transaction. Valid objects become `READY`; mismatches become `REJECTED`.
+- READY images and videos are delivered only through signed transformed URLs. Cloudinary transformations strip location-sensitive image metadata and minimize delivered video metadata while originals remain authenticated.
+- A post may attach at most ten distinct media items that are `READY`, owned by its author, and unattached elsewhere. An attached media item must be removed through the post update contract before its own DELETE endpoint can tombstone it.
+- The scheduled retention job expires timed-out uploads and unattached READY/REJECTED objects after 24 hours. Provider deletion is retried for retained `DELETED` or `EXPIRED` rows without holding a database transaction across the provider call.
+- Liquibase change `0006-community-request-fingerprint-varchar` upgrades the post and media SHA-256 fingerprint columns from fixed-width `char(64)` to JPA-compatible `varchar(64)` without rewriting their values or changing idempotency semantics.
+
+## MB-609 per-post public identity
+
+- Each create or update may explicitly choose `PROFILE` or `ANONYMOUS`; omitted create values remain `PROFILE`, and omitted update values preserve the current mode for rolling-client compatibility.
+- Anonymous feed and detail responses return a neutral label with a null `communityProfileId` and no avatar preset, preventing public linkage to the author's other posts or Community display identity.
+- `author_profile_id` remains private and authoritative for owner authorization, moderation, abuse controls, and audit. Anonymous mode never removes ownership evidence or changes bilateral block enforcement.

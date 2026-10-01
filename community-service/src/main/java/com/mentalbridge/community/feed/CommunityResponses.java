@@ -25,7 +25,7 @@ public final class CommunityResponses {
 	public record Author(UUID communityProfileId, String displayName, AvatarPreset avatarPreset, AuthorState state) {
 	}
 
-	public enum AuthorState { ACTIVE, DELETED }
+	public enum AuthorState { ACTIVE, DELETED, ANONYMOUS }
 
 	public record Media(UUID mediaId, MediaType type, String url, Integer width, Integer height,
 			Integer durationSeconds, String altText) {

@@ -23,12 +23,11 @@ Keep the backend and frontend repositories as sibling directories. From this bac
 
 The helper generates the ignored `.env`, Identity key material, and application-only secrets without printing secret values or replacing an existing file. It deliberately does not generate or copy database credentials. Populate every cloud connection placeholder from the deployment secret source before starting Compose. To configure it manually instead, copy `.env.compose.example` to `.env`, run `scripts/generate-local-jwt-keys.ps1`, and replace every `replace-*` value. `CONTENT_DATABASE_URL`, `REALTIME_MONGODB_URI`, and `REALTIME_REDIS_URL` must contain URL-encoded passwords when a password includes reserved URL characters.
 
-Consultation and Journal/AI keep their service-owned demo settings in ignored `consultation-service/.env` and `journal-ai-service/.env` files. The Journal/AI file must include its MongoDB connection, encryption/HMAC keys for production mode, and any explicitly approved provider route. Compose overrides only container-internal service URLs and the container port.
+Consultation reads its service-owned database settings from the ignored root `.env` used by Compose. Journal/AI reads its shared MongoDB and encryption/HMAC settings from that root file and keeps any explicitly approved provider route in the ignored `journal-ai-service/.env` file. Compose overrides only container-internal service URLs and the container port.
 
-For a first-time local setup, copy each service example and replace its placeholders without committing the resulting files:
+To configure an approved Journal/AI provider route, copy its service example and replace the route placeholders without committing the resulting file:
 
 ```powershell
-Copy-Item consultation-service/.env.example consultation-service/.env
 Copy-Item journal-ai-service/.env.example journal-ai-service/.env
 ```
 
@@ -98,7 +97,7 @@ The recommended starting point is a **small microservice landscape**, not one se
 
 ADR 0005 assigns the workbook's financial bounded context to a cohesive `billing` feature inside Consultation Service without adding another core deployable. It owns paid subscriptions, Care-to-Plus upgrades, consultation credits, specialist earnings, and payout reconciliation. Downgrade and user-initiated refund are unsupported; MoMo is the sole production payment/payout provider, while local/CI uses MoMo-shaped fakes.
 
-ADR 0027 adds Community as an independent Spring Boot/PostgreSQL bounded context. MB-574 now provides the authenticated, privacy-isolated feed, topic catalogue, and post-detail read slice; MB-575 through MB-582 promote the remaining authoring, interaction, reporting, and moderation capabilities through their own contracts and migrations.
+ADR 0027 adds Community as an independent Spring Boot/PostgreSQL bounded context. MB-574 provides the authenticated, privacy-isolated feed, topic catalogue, and post-detail read slice; MB-576 owns bounded media upload, and MB-609 adds a versioned per-post `PROFILE`/`ANONYMOUS` author mode whose public anonymous projection cannot be linked to the Community profile. MB-575 through MB-582 promote the remaining interaction, reporting, and moderation capabilities through their own contracts and migrations.
 
 Use REST/JSON DTOs for synchronous business APIs and service-to-service queries. Spring services register with Eureka and Java consumers use OpenFeign only as a REST client adapter; discovery does not change ownership, authorization, or OpenAPI contracts. WebSocket terminates only at Realtime Service for live client chat, presence, receipts, and in-app notifications. Kafka carries durable asynchronous commands/events only for accepted features that require independent consumers, fan-out, or replay; MB-367 analysis jobs remain local MongoDB work. Redis carries only ephemeral presence, connection routing, fan-out, rate-limit, delivery/idempotency, and expiring hashed OTP state; it is not a database-query cache or business source of truth.
 

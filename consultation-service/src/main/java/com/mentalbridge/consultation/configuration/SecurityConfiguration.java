@@ -38,7 +38,8 @@ public class SecurityConfiguration {
 						.permitAll()
 						.requestMatchers("/internal/v1/entitlements/current").hasRole("USER")
 						.requestMatchers("/internal/v1/appointments/*/consultation-brief-context",
-								"/internal/v1/appointments/*/chat-eligibility")
+								"/internal/v1/appointments/*/chat-eligibility",
+								"/internal/v1/appointments/*/chat-evidence")
 						.hasAnyRole("USER", "SPECIALIST")
 						.requestMatchers("/api/v1/service-credits").hasRole("USER")
 						.requestMatchers("/api/v1/specialist/appointments/**").hasRole("SPECIALIST")
