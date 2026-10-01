@@ -8,10 +8,14 @@ import { MongoClient, ObjectId } from 'mongodb';
 import { io, type Socket } from 'socket.io-client';
 import request from 'supertest';
 import { GenericContainer, type StartedTestContainer, Wait } from 'testcontainers';
-import { afterAll, beforeAll, describe, expect, it } from 'vitest';
+import { afterAll, beforeAll, beforeEach, describe, expect, it } from 'vitest';
 
 import { createApplication } from '../../src/application.js';
 import type { ConversationEligibility } from '../../src/conversations/conversation-eligibility.js';
+import type {
+  ConversationEvidence,
+  ConversationEvidenceInput,
+} from '../../src/conversations/conversation-evidence.js';
 import type { ServiceConfiguration } from '../../src/configuration/configuration.js';
 import { RedisService } from '../../src/database/redis.service.js';
 import { MessageEncryptionService } from '../../src/messages/message-encryption.service.js';
@@ -39,10 +43,21 @@ const eligibility: ConversationEligibility = {
       subscribeAllowed: true,
       sendAllowed: true,
       historyAllowed: true,
+      checkInAllowed: true,
+      participantCheckedIn: false,
+      sessionOutcome: null,
+      creditState: 'HELD',
       scheduledStartAt: new Date(Date.now() - 60_000).toISOString(),
       scheduledEndAt: new Date(Date.now() + 3_540_000).toISOString(),
       serverTime: new Date().toISOString(),
     }),
+};
+const evidenceRecords: ConversationEvidenceInput[] = [];
+const evidence: ConversationEvidence = {
+  record: (_bearer, _appointment, input) => {
+    evidenceRecords.push(input);
+    return Promise.resolve();
+  },
 };
 
 describe('Realtime MongoDB, Redis and Socket.IO integration', { concurrent: false }, () => {
@@ -55,6 +70,8 @@ describe('Realtime MongoDB, Redis and Socket.IO integration', { concurrent: fals
   let identityPrivateKey: Parameters<typeof issueToken>[0];
   let baseUrl: string;
   let redisStopped = false;
+
+  beforeEach(() => evidenceRecords.splice(0));
 
   beforeAll(async () => {
     [mongoContainer, redisContainer] = await Promise.all([
@@ -86,7 +103,7 @@ describe('Realtime MongoDB, Redis and Socket.IO integration', { concurrent: fals
     await mongoClient.connect();
     await migration.up(mongoClient.db(databaseName));
 
-    app = await createApplication(configuration, { eligibility });
+    app = await createApplication(configuration, { eligibility, evidence });
     await app.listen(0);
     const httpServer = app.getHttpServer() as unknown as {
       address(): AddressInfo | string | null;
@@ -262,10 +279,14 @@ describe('Realtime MongoDB, Redis and Socket.IO integration', { concurrent: fals
   });
 
   it('refreshes the actual Redis presence TTL on heartbeat', async () => {
-    const socket = await connectClient();
+    const heartbeatAccountId = randomUUID();
+    const heartbeatToken = await issueToken(identityPrivateKey, configuration, heartbeatAccountId, {
+      tokenId: `heartbeat-${heartbeatAccountId}`,
+    });
+    const socket = await connectClient(heartbeatToken);
     try {
       const presence = app.get(PresenceService);
-      expect(await presence.status(accountId)).toBe('online');
+      expect(await presence.status(heartbeatAccountId)).toBe('online');
       const redis = app.get(RedisService);
       const socketId = socket.id;
       if (!socketId) throw new Error('Connected socket ID is unavailable');
@@ -278,8 +299,26 @@ describe('Realtime MongoDB, Redis and Socket.IO integration', { concurrent: fals
         client.pTTL(`realtime:v1:socket:${socketId}`),
       );
       expect(afterHeartbeat).toBeGreaterThan(beforeHeartbeat + 500);
-      await new Promise((resolve) => setTimeout(resolve, 2200));
-      expect(await presence.status(accountId)).toBe('offline');
+      await eventually(async () => (await presence.status(heartbeatAccountId)) === 'offline');
+    } finally {
+      socket.close();
+    }
+  });
+
+  it('records explicit check-in then server-derived presence without chat content', async () => {
+    const socket = await connectClient();
+    try {
+      expect(await command(socket, 'conversation.check-in', { conversationId })).toMatchObject({
+        status: 'accepted',
+      });
+      await new Promise((resolve) => setTimeout(resolve, 25));
+      expect(await command(socket, 'presence.heartbeat', {})).toMatchObject({ status: 'accepted' });
+
+      expect(evidenceRecords[0]).toMatchObject({ type: 'CHECK_IN' });
+      expect(evidenceRecords[1]?.type).toBe('PRESENCE_INTERVAL');
+      expect(typeof evidenceRecords[1]?.intervalStartedAt).toBe('string');
+      expect(typeof evidenceRecords[1]?.occurredAt).toBe('string');
+      expect(evidenceRecords.every((record) => !Object.hasOwn(record, 'content'))).toBe(true);
     } finally {
       socket.close();
     }

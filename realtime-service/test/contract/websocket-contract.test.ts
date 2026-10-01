@@ -56,6 +56,25 @@ describe('WebSocket v1 contracts', () => {
     ).toBe(false);
   });
 
+  it('validates explicit check-in and rejects forged presence duration', async () => {
+    const validateCommand = await validator('command-envelope-v1.schema.json');
+    const checkIn = {
+      schemaVersion: 1,
+      commandId,
+      commandType: 'conversation.check-in',
+      correlationId,
+      sentAt: '2026-10-01T02:00:00Z',
+      payload: { conversationId },
+    };
+    expect(validateCommand(checkIn)).toBe(true);
+    expect(
+      validateCommand({
+        ...checkIn,
+        payload: { conversationId, presentForSeconds: 1800 },
+      }),
+    ).toBe(false);
+  });
+
   it('rejects missing IDs, unknown commands and forged actors', async () => {
     const validateCommand = await validator('command-envelope-v1.schema.json');
     const validMessage = {

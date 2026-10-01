@@ -28,6 +28,7 @@ export const testConfiguration = (
   MESSAGE_DECRYPTION_KEYS: { 'test-v1': encryptionKey },
   CONSULTATION_BASE_URL: 'http://consultation.test',
   CONSULTATION_TIMEOUT_MS: 2000,
+  CONSULTATION_EVIDENCE_SERVICE_TOKEN: 'test-consultation-evidence-token-32-characters',
   IDENTITY_JWT_ISSUER: 'https://identity.test.mentalbridge',
   IDENTITY_JWT_AUDIENCE: 'mentalbridge-api',
   IDENTITY_JWT_KEY_ID: 'test-key',

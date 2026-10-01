@@ -5,7 +5,7 @@ import type { ServiceConfiguration } from '../configuration/configuration.js';
 import { ApplicationException } from '../http/application.exception.js';
 import { CONFIGURATION_TOKEN } from '../shared/tokens.js';
 
-export type ConversationOperation = 'subscribe' | 'send' | 'history';
+export type ConversationOperation = 'subscribe' | 'send' | 'history' | 'check-in';
 
 const eligibilitySchema = z
   .object({
@@ -18,22 +18,33 @@ const eligibilitySchema = z
       'TOO_EARLY',
       'WAITING',
       'ACTIVE',
-      'ENDED',
+      'ENDED_PROCESSING',
+      'COMPLETED',
+      'USER_NO_SHOW',
+      'SPECIALIST_NO_SHOW',
+      'BOTH_NO_SHOW',
+      'INSUFFICIENT_EVIDENCE',
+      'EVIDENCE_REVIEW',
       'CANCELLED',
       'RESCHEDULED',
     ]),
-    reasonCode: z.enum([
-      'APPOINTMENT_NOT_CONFIRMED',
-      'CHAT_ENTRY_TOO_EARLY',
-      'APPOINTMENT_WAITING',
-      'APPOINTMENT_ACTIVE',
-      'APPOINTMENT_ENDED',
-      'APPOINTMENT_CANCELLED',
-      'APPOINTMENT_RESCHEDULED',
-    ]),
+    reasonCode: z.string().min(1).max(64),
     subscribeAllowed: z.boolean(),
     sendAllowed: z.boolean(),
     historyAllowed: z.boolean(),
+    checkInAllowed: z.boolean(),
+    participantCheckedIn: z.boolean(),
+    sessionOutcome: z
+      .enum([
+        'COMPLETED',
+        'USER_NO_SHOW',
+        'SPECIALIST_NO_SHOW',
+        'BOTH_NO_SHOW',
+        'INSUFFICIENT_EVIDENCE',
+        'EVIDENCE_REVIEW',
+      ])
+      .nullable(),
+    creditState: z.enum(['AVAILABLE', 'HELD', 'CONSUMED', 'FORFEITED']),
     scheduledStartAt: z.iso.datetime({ offset: true }),
     scheduledEndAt: z.iso.datetime({ offset: true }),
     serverTime: z.iso.datetime({ offset: true }),
@@ -69,7 +80,7 @@ export class ConsultationConversationEligibility implements ConversationEligibil
         `/internal/v1/appointments/${encodeURIComponent(conversationId)}/chat-eligibility`,
         this.configuration.CONSULTATION_BASE_URL,
       );
-      endpoint.searchParams.set('operation', operation.toUpperCase());
+      endpoint.searchParams.set('operation', operation.replace('-', '_').toUpperCase());
       response = await fetch(endpoint, {
         headers: {
           authorization: `Bearer ${bearerToken}`,
@@ -108,7 +119,9 @@ export class ConsultationConversationEligibility implements ConversationEligibil
         ? parsed.data.subscribeAllowed
         : operation === 'send'
           ? parsed.data.sendAllowed
-          : parsed.data.historyAllowed;
+          : operation === 'history'
+            ? parsed.data.historyAllowed
+            : parsed.data.checkInAllowed;
     if (!allowed) throw denied(parsed.data.reasonCode);
     return parsed.data;
   }
@@ -118,7 +131,13 @@ const reasonCodes: Readonly<Record<string, string>> = {
   APPOINTMENT_NOT_CONFIRMED: 'APPOINTMENT_NOT_CONFIRMED',
   CHAT_ENTRY_TOO_EARLY: 'CHAT_NOT_STARTED',
   APPOINTMENT_WAITING: 'CHAT_NOT_STARTED',
-  APPOINTMENT_ENDED: 'CHAT_ENDED',
+  SESSION_OUTCOME_PROCESSING: 'CHAT_ENDED',
+  SESSION_EVIDENCE_REVIEW: 'CHAT_ENDED',
+  SESSION_COMPLETED: 'CHAT_ENDED',
+  SESSION_USER_NO_SHOW: 'CHAT_ENDED',
+  SESSION_SPECIALIST_NO_SHOW: 'CHAT_ENDED',
+  SESSION_BOTH_NO_SHOW: 'CHAT_ENDED',
+  SESSION_INSUFFICIENT_EVIDENCE: 'CHAT_ENDED',
   APPOINTMENT_CANCELLED: 'CHAT_CANCELLED',
   APPOINTMENT_RESCHEDULED: 'CHAT_RESCHEDULED',
 };
