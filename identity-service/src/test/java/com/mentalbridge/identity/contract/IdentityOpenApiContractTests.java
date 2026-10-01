@@ -27,17 +27,20 @@ class IdentityOpenApiContractTests {
 			"POST /api/v1/auth/password-resets",
 			"PUT /api/v1/account/password",
 			"GET /api/v1/account",
-			"GET /internal/v1/notification-delivery-contacts/{accountId}");
-
-	private static final Set<String> PLANNED_OPERATIONS = Set.of(
+			"GET /internal/v1/notification-delivery-contacts/{accountId}",
 			"GET /api/v1/admin/accounts",
 			"GET /api/v1/admin/accounts/{accountId}",
 			"PUT /api/v1/admin/accounts/{accountId}/state");
+
+	private static final Set<String> PLANNED_OPERATIONS = Set.of();
 	private static final Set<String> PROTECTED_OPERATIONS = Set.of(
 			"POST /api/v1/auth/logout",
 			"POST /api/v1/auth/logout-all",
 			"PUT /api/v1/account/password",
-			"GET /api/v1/account");
+			"GET /api/v1/account",
+			"GET /api/v1/admin/accounts",
+			"GET /api/v1/admin/accounts/{accountId}",
+			"PUT /api/v1/admin/accounts/{accountId}/state");
 	private static final Map<String, Set<String>> IMPLEMENTED_RESPONSES = Map.ofEntries(
 			Map.entry("POST /api/v1/auth/registrations", Set.of("201", "400", "409", "429")),
 			Map.entry("POST /api/v1/auth/email-verifications", Set.of("200", "400", "429")),
@@ -50,7 +53,10 @@ class IdentityOpenApiContractTests {
 			Map.entry("POST /api/v1/auth/password-resets", Set.of("204", "400")),
 			Map.entry("PUT /api/v1/account/password", Set.of("204", "400", "401")),
 			Map.entry("GET /api/v1/account", Set.of("200", "401")),
-			Map.entry("GET /internal/v1/notification-delivery-contacts/{accountId}", Set.of("200", "401", "404")));
+			Map.entry("GET /internal/v1/notification-delivery-contacts/{accountId}", Set.of("200", "401", "404")),
+			Map.entry("GET /api/v1/admin/accounts", Set.of("200", "400", "401", "403")),
+			Map.entry("GET /api/v1/admin/accounts/{accountId}", Set.of("200", "401", "403", "404")),
+			Map.entry("PUT /api/v1/admin/accounts/{accountId}/state", Set.of("200", "400", "401", "403", "404", "409", "412")));
 
 	@Test
 	void identityContractIsValidAndFullyResolved() {

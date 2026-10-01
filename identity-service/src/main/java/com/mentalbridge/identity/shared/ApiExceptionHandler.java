@@ -13,6 +13,10 @@ import org.springframework.web.bind.annotation.RestControllerAdvice;
 import org.springframework.web.method.annotation.HandlerMethodValidationException;
 import org.springframework.http.converter.HttpMessageNotReadableException;
 
+import com.mentalbridge.identity.account.AccountNotFoundException;
+import com.mentalbridge.identity.account.AccountVersionMismatchException;
+import com.mentalbridge.identity.account.DedicatedAdminProtectionException;
+import com.mentalbridge.identity.account.InvalidStateTransitionException;
 import com.mentalbridge.identity.authentication.InvalidCredentialsException;
 import com.mentalbridge.identity.authentication.InvalidSessionException;
 import com.mentalbridge.identity.idempotency.IdempotencyConflictException;
@@ -60,6 +64,26 @@ public class ApiExceptionHandler {
 	@ExceptionHandler(IdempotencyConflictException.class)
 	ProblemDetail idempotencyConflict(IdempotencyConflictException exception, HttpServletRequest request) {
 		return problem(HttpStatus.CONFLICT, "IDEMPOTENCY_KEY_REUSED", "Idempotency key was reused", request);
+	}
+
+	@ExceptionHandler(AccountNotFoundException.class)
+	ProblemDetail accountNotFound(AccountNotFoundException exception, HttpServletRequest request) {
+		return problem(HttpStatus.NOT_FOUND, "NOT_FOUND", exception.getMessage(), request);
+	}
+
+	@ExceptionHandler(DedicatedAdminProtectionException.class)
+	ProblemDetail dedicatedAdminProtection(DedicatedAdminProtectionException exception, HttpServletRequest request) {
+		return problem(HttpStatus.FORBIDDEN, "FORBIDDEN", exception.getMessage(), request);
+	}
+
+	@ExceptionHandler(AccountVersionMismatchException.class)
+	ProblemDetail versionMismatch(AccountVersionMismatchException exception, HttpServletRequest request) {
+		return problem(HttpStatus.PRECONDITION_FAILED, "VERSION_CONFLICT", exception.getMessage(), request);
+	}
+
+	@ExceptionHandler(InvalidStateTransitionException.class)
+	ProblemDetail invalidStateTransition(InvalidStateTransitionException exception, HttpServletRequest request) {
+		return problem(HttpStatus.BAD_REQUEST, "VALIDATION_FAILED", exception.getMessage(), request);
 	}
 
 	private ProblemDetail problem(HttpStatus status, String code, String title, HttpServletRequest request) {

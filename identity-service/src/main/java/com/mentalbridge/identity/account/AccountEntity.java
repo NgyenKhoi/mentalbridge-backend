@@ -79,6 +79,21 @@ public class AccountEntity {
 		updatedAt = verifiedAt;
 	}
 
+	public void disable(Instant disabledAt) {
+		status = AccountStatus.DISABLED;
+		updatedAt = disabledAt;
+	}
+
+	public void restore(Instant restoredAt) {
+		if (emailVerifiedAt != null) {
+			status = AccountStatus.ACTIVE;
+		}
+		else {
+			status = AccountStatus.PENDING_EMAIL_VERIFICATION;
+		}
+		updatedAt = restoredAt;
+	}
+
 	public void recordFailedLogin(Instant attemptedAt) {
 		failedLoginCount = lockedUntil != null && !lockedUntil.isAfter(attemptedAt) ? 1 : failedLoginCount + 1;
 		if (failedLoginCount >= 5) {
