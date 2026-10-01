@@ -1,0 +1,13 @@
+databaseChangeLog:
+  - changeSet:
+      id: 0007-community-post-author-mode
+      author: mentalbridge
+      comment: Persist the author-selected public identity mode for each Community post.
+      changes:
+        - sql:
+            splitStatements: false
+            sql: |
+              ALTER TABLE community_post
+                  ADD COLUMN author_mode varchar(16) NOT NULL DEFAULT 'PROFILE',
+                  ADD CONSTRAINT ck_community_post_author_mode
+                      CHECK (author_mode IN ('PROFILE', 'ANONYMOUS'));

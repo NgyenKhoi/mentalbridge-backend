@@ -1,8 +1,8 @@
 openapi: 3.1.0
 info:
   title: MentalBridge Community API
-  version: 1.2.0
-  description: Privacy-isolated peer-support Community Contract v1.2. Feed ordering is newest-first and never uses Care, Journal, emotion, SupportPlan, or AI data. MB-581 adds a governed display identity and MB-576 adds bounded owner-scoped image and short-video upload lifecycle operations.
+  version: 1.3.0
+  description: Privacy-isolated peer-support Community Contract v1.3. Feed ordering is newest-first and never uses Care, Journal, emotion, SupportPlan, or AI data. MB-581 adds a governed display identity, MB-576 adds bounded owner-scoped media, and MB-609 adds a per-post anonymous public identity while retaining private ownership and audit.
 servers:
   - url: http://localhost:8084
 paths:
@@ -534,13 +534,19 @@ components:
       additionalProperties: false
       required: [communityProfileId, displayName, avatarPreset, state]
       properties:
-        communityProfileId: { type: string, format: uuid }
+        communityProfileId:
+          type: [string, "null"]
+          format: uuid
+          description: Null for an anonymous post so public responses cannot link it to the author's Community profile.
         displayName: { type: string, minLength: 1, maxLength: 80 }
         avatarPreset:
           anyOf:
             - $ref: "#/components/schemas/CommunityAvatarPreset"
             - type: "null"
-        state: { type: string, enum: [ACTIVE, DELETED] }
+        state: { type: string, enum: [ACTIVE, DELETED, ANONYMOUS] }
+    CommunityPostAuthorMode:
+      type: string
+      enum: [PROFILE, ANONYMOUS]
     CommunityCounts:
       type: object
       additionalProperties: false
@@ -629,6 +635,9 @@ components:
           maxItems: 10
           uniqueItems: true
           items: { type: string, format: uuid }
+        authorMode:
+          $ref: "#/components/schemas/CommunityPostAuthorMode"
+          description: Defaults to PROFILE when omitted on create; omission on update preserves the current mode.
     UpdatePostRequest:
       allOf:
         - $ref: "#/components/schemas/CreatePostRequest"

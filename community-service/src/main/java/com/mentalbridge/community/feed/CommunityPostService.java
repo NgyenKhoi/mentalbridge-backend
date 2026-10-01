@@ -42,8 +42,9 @@ public class CommunityPostService {
 	@Transactional
 	public VersionedPost create(UUID subject, String idempotencyKey, WritePostRequest request) {
 		var key = validateIdempotencyKey(idempotencyKey);
-		var input = validate(request);
-		var fingerprint = fingerprint(input);
+		var input = validate(request, CommunityPostEntity.AuthorMode.PROFILE);
+		var fingerprint = fingerprint(input, true);
+		var legacyFingerprint = request.authorMode() == null ? fingerprint(input, false) : null;
 		var now = Instant.now();
 		profiles.createIfAbsent(UUID.randomUUID(), subject, DEFAULT_DISPLAY_NAME, now);
 		var owner = profiles.findByAccountSubjectForUpdate(subject)
@@ -52,14 +53,16 @@ public class CommunityPostService {
 
 		var replay = posts.findByOwnerAndIdempotencyKeyForUpdate(owner.id(), key);
 		if (replay.isPresent()) {
-			if (!fingerprint.equals(replay.get().requestFingerprint())) {
+			var storedFingerprint = replay.get().requestFingerprint();
+			if (!fingerprint.equals(storedFingerprint)
+					&& (legacyFingerprint == null || !legacyFingerprint.equals(storedFingerprint))) {
 				throw CommunityApiException.idempotencyKeyReused();
 			}
 			return versioned(replay.get());
 		}
 
 		var post = new CommunityPostEntity(UUID.randomUUID(), owner, input.content(), input.topics(), key,
-				fingerprint, now);
+				fingerprint, input.authorMode(), now);
 		post = posts.saveAndFlush(post);
 		replaceMedia(post, owner, input.mediaIds(), now);
 		posts.flush();
@@ -68,11 +71,11 @@ public class CommunityPostService {
 
 	@Transactional
 	public VersionedPost update(UUID subject, UUID postId, long expectedVersion, WritePostRequest request) {
-		var input = validate(request);
 		var post = owned(postId, subject);
+		var input = validate(request, post.authorMode());
 		verifyVersion(post, expectedVersion);
 		var now = Instant.now();
-		post.update(input.content(), input.topics(), now);
+		post.update(input.content(), input.topics(), input.authorMode(), now);
 		replaceMedia(post, post.author(), input.mediaIds(), now);
 		posts.flush();
 		return versioned(post);
@@ -141,7 +144,7 @@ public class CommunityPostService {
 		}
 	}
 
-	private ValidatedPost validate(WritePostRequest request) {
+	private ValidatedPost validate(WritePostRequest request, CommunityPostEntity.AuthorMode fallbackAuthorMode) {
 		var content = Normalizer.normalize(request.content(), Normalizer.Form.NFC).trim();
 		if (content.isEmpty() || content.codePointCount(0, content.length()) > 5000 || hasUnpairedSurrogate(content)) {
 			throw CommunityApiException.invalidPostInput();
@@ -157,7 +160,8 @@ public class CommunityPostService {
 			throw CommunityApiException.invalidPostInput();
 		}
 		var mediaIds = List.copyOf(suppliedMediaIds);
-		return new ValidatedPost(content, topics, mediaIds);
+		var authorMode = request.authorMode() == null ? fallbackAuthorMode : request.authorMode();
+		return new ValidatedPost(content, topics, mediaIds, authorMode);
 	}
 
 	private boolean hasUnpairedSurrogate(String value) {
@@ -183,13 +187,16 @@ public class CommunityPostService {
 		return value;
 	}
 
-	private String fingerprint(ValidatedPost input) {
+	private String fingerprint(ValidatedPost input, boolean includeAuthorMode) {
 		try {
 			var digest = MessageDigest.getInstance("SHA-256");
 			add(digest, input.content());
 			input.topics().stream().sorted(Comparator.comparingInt(Enum::ordinal))
 					.forEach(topic -> add(digest, topic.name()));
 			input.mediaIds().forEach(id -> add(digest, id.toString()));
+			if (includeAuthorMode) {
+				add(digest, input.authorMode().name());
+			}
 			return HexFormat.of().formatHex(digest.digest());
 		}
 		catch (NoSuchAlgorithmException exception) {
@@ -207,7 +214,8 @@ public class CommunityPostService {
 		return new VersionedPost(feed.toDetail(post), post.version());
 	}
 
-	private record ValidatedPost(String content, Set<CommunityTopic> topics, List<UUID> mediaIds) {
+	private record ValidatedPost(String content, Set<CommunityTopic> topics, List<UUID> mediaIds,
+			CommunityPostEntity.AuthorMode authorMode) {
 	}
 
 	public record VersionedPost(PostDetail body, long version) {

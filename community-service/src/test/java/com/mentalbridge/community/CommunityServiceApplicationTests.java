@@ -71,7 +71,8 @@ class CommunityServiceApplicationTests extends CommunityTestProperties {
 
 		assertThat(changeSets).containsExactly("0001-community-foundation", "0002-community-feed",
 				"0003-community-post-lifecycle", "0004-community-display-identity",
-				"0005-community-media-lifecycle", "0006-community-request-fingerprint-varchar");
+				"0005-community-media-lifecycle", "0006-community-request-fingerprint-varchar",
+				"0007-community-post-author-mode");
 		assertThat(businessTables).containsExactly("community_block", "community_media", "community_post",
 				"community_post_topic", "community_profile");
 	}

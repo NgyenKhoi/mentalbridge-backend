@@ -81,11 +81,13 @@ class CommunityOpenApiContractTests {
 		var api = new OpenAPIV3Parser().read(contract().toString());
 		var author = api.getComponents().getSchemas().get("CommunityAuthor");
 		var post = api.getComponents().getSchemas().get("CommunityPostSummary");
+		var createPost = api.getComponents().getSchemas().get("CreatePostRequest");
 		var feedParameters = api.getPaths().get("/api/v1/community/feed").getGet().getParameters();
 
 		assertThat(author.getProperties()).containsOnlyKeys("communityProfileId", "displayName", "avatarPreset", "state");
 		assertThat(post.getProperties()).containsOnlyKeys("postId", "author", "contentPreview", "topics", "media",
 				"mediaAvailability", "counts", "publishedAt", "updatedAt");
+		assertThat(createPost.getProperties()).containsOnlyKeys("content", "topics", "mediaIds", "authorMode");
 		assertThat(feedParameters).extracting(parameter -> parameter.getName())
 				.containsExactly("topic", "cursor", "limit");
 	}
