@@ -18,6 +18,7 @@ class ConsultationOpenApiContractTests {
 			"GET /api/v1/service-credits",
 			"GET /internal/v1/entitlements/current",
 			"GET /internal/v1/appointments/{appointmentId}/consultation-brief-context",
+			"GET /internal/v1/appointments/{appointmentId}/reusable-session-summaries/{summaryId}",
 			"GET /internal/v1/appointments/{conversationId}/chat-eligibility",
 			"POST /internal/v1/appointments/{appointmentId}/chat-evidence",
 			"GET /api/v1/specialist-profile",
@@ -33,7 +34,12 @@ class ConsultationOpenApiContractTests {
 			"GET /api/v1/appointments",
 			"POST /api/v1/appointments",
 			"POST /api/v1/appointments/{appointmentId}/cancel",
+			"GET /api/v1/appointments/{appointmentId}/session-summaries",
+			"PUT /api/v1/session-summaries/{summaryId}/reuse-consent",
+			"PUT /api/v1/agreed-next-steps/{nextStepId}",
 			"GET /api/v1/specialist/appointments",
+			"GET /api/v1/specialist/appointments/{appointmentId}/session-summaries",
+			"POST /api/v1/specialist/appointments/{appointmentId}/session-summaries",
 			"POST /api/v1/specialist/appointments/{appointmentId}/accept",
 			"POST /api/v1/specialist/appointments/{appointmentId}/reject",
 			"GET /api/v1/admin/specialist-profiles",
@@ -143,6 +149,23 @@ class ConsultationOpenApiContractTests {
 				"status", "scheduledStartAt", "scheduledEndAt", "version");
 		assertThat(context.getProperties()).doesNotContainKeys("heldCreditId", "history", "decisionReason",
 				"cancellationReason", "specialistDisplayName");
+	}
+
+	@Test
+	void sessionSummaryIsBoundedUserVisibleAndKeepsNextStepsSeparate() {
+		var contract = Path.of("..", "contracts", "openapi", "consultation-service-v1.yaml").toString();
+		var api = new OpenAPIV3Parser().read(contract);
+		var request = api.getComponents().getSchemas().get("PublishSessionSummaryRequest");
+		var response = api.getComponents().getSchemas().get("SessionSummary");
+		var step = api.getComponents().getSchemas().get("AgreedNextStep");
+
+		assertThat(request.getProperties()).containsOnlyKeys("topicsDiscussed", "progressSummary",
+				"specialistNoteForUser", "followUpSuggested", "agreedNextSteps");
+		assertThat(response.getProperties()).containsKeys("version", "schemaVersion", "amendsSummaryId",
+				"reuseConsent", "agreedNextSteps", "publishedAt");
+		assertThat(request.getProperties()).doesNotContainKeys("diagnosis", "riskLevel", "privateNotes",
+				"journal", "assessmentAnswers", "chatTranscript");
+		assertThat(step.getProperties()).containsKeys("state", "hidden", "resourceId", "resourceVersion");
 	}
 
 	@Test

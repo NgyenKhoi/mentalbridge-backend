@@ -26,7 +26,8 @@ class ConsultationLiquibaseChangelogTests {
 							"consultation-007-consultation-credit-policy-v2",
 							"consultation-008-appointment-decisions",
 							"consultation-009-appointment-changes",
-							"consultation-010-chat-session-completion");
+							"consultation-010-chat-session-completion",
+							"consultation-011-session-summary");
 		}
 	}
 }
