@@ -17,3 +17,5 @@ databaseChangeLog:
       file: db/changelog/changes/008-appointment-decisions.sql
   - include:
       file: db/changelog/changes/009-appointment-changes.sql
+  - include:
+      file: db/changelog/changes/010-chat-session-completion.sql

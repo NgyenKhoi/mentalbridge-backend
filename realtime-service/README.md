@@ -72,6 +72,7 @@ npm start
 | `IDENTITY_JWT_CLOCK_TOLERANCE_SECONDS`    | No         | `60`                        | Bounded JWT clock tolerance                       |
 | `CONSULTATION_BASE_URL`                   | No         | `http://localhost:8083`     | Consultation eligibility authority                |
 | `CONSULTATION_TIMEOUT_MS`                 | No         | `1500`                      | Eligibility request timeout                       |
+| `CONSULTATION_EVIDENCE_SERVICE_TOKEN`     | Yes        |                             | Shared token for trusted chat evidence writes     |
 
 Local `.env` loading is enabled only in development and never overrides real environment variables. Tests inject isolated configuration and do not read developer `.env` files.
 

@@ -6,6 +6,7 @@ import {
 } from '@nestjs/common';
 
 import type { ConversationEligibility } from './conversations/conversation-eligibility.js';
+import type { ConversationEvidence } from './conversations/conversation-evidence.js';
 import type { ServiceConfiguration } from './configuration/configuration.js';
 import { MongoDatabaseService } from './database/mongo-database.service.js';
 import { RedisService } from './database/redis.service.js';
@@ -18,6 +19,7 @@ export interface ApplicationDependencies {
   readonly mongo?: MongoDatabaseService;
   readonly redis?: RedisService;
   readonly eligibility?: ConversationEligibility;
+  readonly evidence?: ConversationEvidence;
 }
 
 @Module({})
@@ -31,7 +33,7 @@ export class AppModule implements NestModule {
       imports: [
         PlatformModule.register(configuration, dependencies),
         OperationsModule,
-        WebsocketModule.register(dependencies.eligibility),
+        WebsocketModule.register(dependencies.eligibility, dependencies.evidence),
       ],
     };
   }

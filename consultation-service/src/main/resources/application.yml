@@ -30,6 +30,7 @@ spring:
 
 mentalbridge:
   consultation:
+    evidence-service-token: ${CONSULTATION_EVIDENCE_SERVICE_TOKEN}
     jwt:
       issuer: ${IDENTITY_JWT_ISSUER}
       audience: ${IDENTITY_JWT_AUDIENCE}

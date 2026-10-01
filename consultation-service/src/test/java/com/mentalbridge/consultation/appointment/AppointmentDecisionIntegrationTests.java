@@ -26,6 +26,7 @@ import org.springframework.http.MediaType;
 import org.springframework.jdbc.core.simple.JdbcClient;
 import org.springframework.security.core.authority.SimpleGrantedAuthority;
 import org.springframework.test.web.servlet.MockMvc;
+import org.springframework.test.web.servlet.request.MockHttpServletRequestBuilder;
 
 import com.fasterxml.jackson.databind.JsonNode;
 import com.fasterxml.jackson.databind.ObjectMapper;
@@ -41,6 +42,7 @@ class AppointmentDecisionIntegrationTests extends ConsultationTestProperties {
 	@Autowired JdbcClient jdbc;
 	@Autowired ObjectMapper json;
 	@Autowired AppointmentDecisionService decisions;
+	@Autowired ChatSessionSettlementService settlements;
 	@Autowired DataSource dataSource;
 
 	@Test
@@ -217,7 +219,7 @@ class AppointmentDecisionIntegrationTests extends ConsultationTestProperties {
 
 		setSchedule(fixture.appointmentId(), Instant.now().minusSeconds(3_700));
 		chatEligibility(fixture.userId(), "USER", fixture.appointmentId(), "HISTORY")
-				.andExpect(status().isOk()).andExpect(jsonPath("$.phase").value("ENDED"))
+				.andExpect(status().isOk()).andExpect(jsonPath("$.phase").value("ENDED_PROCESSING"))
 				.andExpect(jsonPath("$.historyAllowed").value(true))
 				.andExpect(jsonPath("$.sendAllowed").value(false));
 	}
@@ -265,6 +267,247 @@ class AppointmentDecisionIntegrationTests extends ConsultationTestProperties {
 				.andExpect(jsonPath("$.subscribeAllowed").value(false))
 				.andExpect(jsonPath("$.historyAllowed").value(true))
 				.andExpect(jsonPath("$.sendAllowed").value(false));
+	}
+
+	@Test
+	void explicitCheckInIsParticipantBoundAndIdempotentWithoutChatContent() throws Exception {
+		var fixture = requestedAppointment();
+		decisions.accept(fixture.specialistId(), fixture.appointmentId(), 0, "accept-chat-evidence-command-01");
+		setSchedule(fixture.appointmentId(), Instant.now().plusSeconds(5 * 60));
+		var evidenceId = UUID.randomUUID();
+		var occurredAt = Instant.now().toString();
+		var body = """
+				{"evidenceId":"%s","type":"CHECK_IN","occurredAt":"%s"}
+				""".formatted(evidenceId, occurredAt);
+
+		mvc.perform(evidencePost(fixture.appointmentId())
+				.with(user(fixture.userId())).contentType(MediaType.APPLICATION_JSON).content(body))
+				.andExpect(status().isOk()).andExpect(jsonPath("$.accepted").value(true))
+				.andExpect(jsonPath("$.duplicate").value(false));
+		mvc.perform(evidencePost(fixture.appointmentId())
+				.with(user(fixture.userId())).contentType(MediaType.APPLICATION_JSON).content(body))
+				.andExpect(status().isOk()).andExpect(jsonPath("$.accepted").value(true))
+				.andExpect(jsonPath("$.duplicate").value(true));
+		chatEligibility(fixture.userId(), "USER", fixture.appointmentId(), "CHECK_IN")
+				.andExpect(status().isOk()).andExpect(jsonPath("$.checkInAllowed").value(true))
+				.andExpect(jsonPath("$.participantCheckedIn").value(true));
+		mvc.perform(evidencePost(fixture.appointmentId())
+				.with(user(UUID.randomUUID())).contentType(MediaType.APPLICATION_JSON).content(body))
+				.andExpect(status().isNotFound());
+		mvc.perform(evidencePost(fixture.appointmentId())
+				.with(user(fixture.userId())).contentType(MediaType.APPLICATION_JSON)
+				.content("""
+						{"evidenceId":"%s","type":"CHECK_IN","occurredAt":"%s","content":"private"}
+						""".formatted(UUID.randomUUID(), occurredAt)))
+				.andExpect(status().isBadRequest());
+	}
+
+	@Test
+	void chatEvidenceRejectsCallsThatDoNotComeFromTheRealtimeService() throws Exception {
+		var fixture = requestedAppointment();
+		var body = """
+				{"evidenceId":"%s","type":"CHECK_IN","occurredAt":"%s"}
+				""".formatted(UUID.randomUUID(), Instant.now());
+
+		mvc.perform(post("/internal/v1/appointments/{id}/chat-evidence", fixture.appointmentId())
+				.with(user(fixture.userId())).contentType(MediaType.APPLICATION_JSON).content(body))
+				.andExpect(status().isUnauthorized());
+		mvc.perform(post("/internal/v1/appointments/{id}/chat-evidence", fixture.appointmentId())
+				.header("X-MentalBridge-Service-Token", "wrong-service-token-with-at-least-32-characters")
+				.with(user(fixture.userId())).contentType(MediaType.APPLICATION_JSON).content(body))
+				.andExpect(status().isUnauthorized());
+		assertThat(evidenceCount(fixture.appointmentId())).isZero();
+	}
+
+	@Test
+	void lateEvidenceCannotRewriteAWindowAfterTheFiveMinuteGrace() throws Exception {
+		var fixture = requestedAppointment();
+		decisions.accept(fixture.specialistId(), fixture.appointmentId(), 0, "accept-late-evidence-command-001");
+		var start = Instant.now().minusSeconds(66 * 60);
+		setSchedule(fixture.appointmentId(), start);
+		var occurredAt = start.plusSeconds(30 * 60);
+
+		mvc.perform(evidencePost(fixture.appointmentId())
+				.with(user(fixture.userId())).contentType(MediaType.APPLICATION_JSON)
+				.content("""
+						{"evidenceId":"%s","type":"ACCEPTED_MESSAGE","occurredAt":"%s","messageId":"%s"}
+						""".formatted(UUID.randomUUID(), occurredAt, UUID.randomUUID())))
+				.andExpect(status().isOk()).andExpect(jsonPath("$.accepted").value(false))
+				.andExpect(jsonPath("$.reasonCode").value("EVIDENCE_WINDOW_CLOSED"));
+	}
+
+	@Test
+	void delayedEvidenceThatOccurredBeforeEndIsAcceptedDuringGrace() throws Exception {
+		var fixture = requestedAppointment();
+		decisions.accept(fixture.specialistId(), fixture.appointmentId(), 0, "accept-grace-evidence-command-001");
+		var start = Instant.now().minusSeconds(64 * 60);
+		setSchedule(fixture.appointmentId(), start);
+
+		mvc.perform(evidencePost(fixture.appointmentId())
+				.with(user(fixture.userId())).contentType(MediaType.APPLICATION_JSON)
+				.content("""
+						{"evidenceId":"%s","type":"ACCEPTED_MESSAGE","occurredAt":"%s","messageId":"%s"}
+						""".formatted(UUID.randomUUID(), start.plusSeconds(3_590), UUID.randomUUID())))
+				.andExpect(status().isOk()).andExpect(jsonPath("$.accepted").value(true));
+	}
+
+	@Test
+	void evidenceThatOccurredAfterEndIsRejectedDuringGrace() throws Exception {
+		var fixture = requestedAppointment();
+		decisions.accept(fixture.specialistId(), fixture.appointmentId(), 0, "accept-post-end-evidence-command-01");
+		var start = Instant.now().minusSeconds(61 * 60);
+		setSchedule(fixture.appointmentId(), start);
+
+		mvc.perform(evidencePost(fixture.appointmentId())
+				.with(user(fixture.userId())).contentType(MediaType.APPLICATION_JSON)
+				.content("""
+						{"evidenceId":"%s","type":"ACCEPTED_MESSAGE","occurredAt":"%s","messageId":"%s"}
+						""".formatted(UUID.randomUUID(), Instant.now(), UUID.randomUUID())))
+				.andExpect(status().isOk()).andExpect(jsonPath("$.accepted").value(false))
+				.andExpect(jsonPath("$.reasonCode").value("EVIDENCE_OCCURRED_OUTSIDE_WINDOW"));
+	}
+
+	@Test
+	void duplicateAcceptedMessageMetadataIsIdempotent() throws Exception {
+		var fixture = requestedAppointment();
+		decisions.accept(fixture.specialistId(), fixture.appointmentId(), 0, "accept-message-replay-command-001");
+		setSchedule(fixture.appointmentId(), Instant.now().minusSeconds(60));
+		var body = """
+				{"evidenceId":"%s","type":"ACCEPTED_MESSAGE","occurredAt":"%s","messageId":"%s"}
+				""".formatted(UUID.randomUUID(), Instant.now(), UUID.randomUUID());
+
+		mvc.perform(evidencePost(fixture.appointmentId())
+				.with(user(fixture.userId())).contentType(MediaType.APPLICATION_JSON).content(body))
+				.andExpect(status().isOk()).andExpect(jsonPath("$.duplicate").value(false));
+		mvc.perform(evidencePost(fixture.appointmentId())
+				.with(user(fixture.userId())).contentType(MediaType.APPLICATION_JSON).content(body))
+				.andExpect(status().isOk()).andExpect(jsonPath("$.accepted").value(true))
+				.andExpect(jsonPath("$.duplicate").value(true));
+		assertThat(evidenceCount(fixture.appointmentId())).isOne();
+	}
+
+	@Test
+	void subscribingWithoutCheckInOrActivityRemainsBothNoShow() throws Exception {
+		var fixture = requestedAppointment();
+		decisions.accept(fixture.specialistId(), fixture.appointmentId(), 0, "accept-subscribe-only-command-001");
+		setSchedule(fixture.appointmentId(), Instant.now().minusSeconds(65 * 60));
+		chatEligibility(fixture.userId(), "USER", fixture.appointmentId(), "SUBSCRIBE")
+				.andExpect(status().isOk()).andExpect(jsonPath("$.historyAllowed").value(true));
+
+		settlements.end(fixture.appointmentId());
+		settlements.settle(fixture.appointmentId());
+
+		assertThat(evidenceCount(fixture.appointmentId())).isZero();
+		assertThat(sessionOutcome(fixture.appointmentId())).isEqualTo("BOTH_NO_SHOW");
+	}
+
+	@Test
+	void sessionEndKeepsCreditHeldUntilGraceThenReleasesBothNoShowExactlyOnce() throws Exception {
+		var fixture = requestedAppointment();
+		decisions.accept(fixture.specialistId(), fixture.appointmentId(), 0, "accept-both-no-show-command-001");
+		setSchedule(fixture.appointmentId(), Instant.now().minusSeconds(65 * 60));
+
+		settlements.end(fixture.appointmentId());
+
+		assertThat(appointmentStatus(fixture.appointmentId())).isEqualTo("SESSION_ENDED");
+		assertThat(sessionOutcome(fixture.appointmentId())).isNull();
+		assertThat(creditState(fixture.creditId())).isEqualTo("HELD");
+		assertThat(releaseCount(fixture.appointmentId())).isZero();
+
+		settlements.settle(fixture.appointmentId());
+		settlements.settle(fixture.appointmentId());
+
+		assertThat(appointmentStatus(fixture.appointmentId())).isEqualTo("SESSION_ENDED");
+		assertThat(sessionOutcome(fixture.appointmentId())).isEqualTo("BOTH_NO_SHOW");
+		assertThat(creditState(fixture.creditId())).isEqualTo("AVAILABLE");
+		assertThat(releaseCount(fixture.appointmentId())).isOne();
+	}
+
+	@Test
+	void completeSessionConsumesCreditAndCreatesOneCompletionFact() throws Exception {
+		var fixture = requestedAppointment();
+		decisions.accept(fixture.specialistId(), fixture.appointmentId(), 0, "accept-completed-chat-command-001");
+		var start = Instant.now().minusSeconds(66 * 60);
+		setSchedule(fixture.appointmentId(), start);
+		insertCompletionEvidence(fixture, start);
+
+		settlements.end(fixture.appointmentId());
+		settlements.settle(fixture.appointmentId());
+		settlements.settle(fixture.appointmentId());
+
+		assertThat(appointmentStatus(fixture.appointmentId())).isEqualTo("COMPLETED");
+		assertThat(sessionOutcome(fixture.appointmentId())).isEqualTo("COMPLETED");
+		assertThat(completionFactId(fixture.appointmentId())).isNotNull();
+		assertThat(creditState(fixture.creditId())).isEqualTo("CONSUMED");
+		assertThat(creditEventCount(fixture.appointmentId(), "CONSUMED")).isOne();
+		assertThat(creditEventTypes(fixture.appointmentId())).containsExactlyInAnyOrder("HELD", "CONSUMED");
+	}
+
+	@Test
+	void userNoShowForfeitsTheCreditExactlyOnce() throws Exception {
+		var fixture = requestedAppointment();
+		decisions.accept(fixture.specialistId(), fixture.appointmentId(), 0, "accept-user-no-show-command-001");
+		var start = Instant.now().minusSeconds(66 * 60);
+		setSchedule(fixture.appointmentId(), start);
+		insertEvidence(fixture.appointmentId(), fixture.specialistId(), "SPECIALIST", "CHECK_IN", null, null, start);
+		for (int minute = 0; minute < 15; minute++) {
+			var intervalStart = start.plusSeconds(minute * 60L);
+			insertEvidence(fixture.appointmentId(), fixture.specialistId(), "SPECIALIST", "PRESENCE_INTERVAL",
+					intervalStart, null, intervalStart.plusSeconds(60));
+		}
+
+		settlements.end(fixture.appointmentId());
+		settlements.settle(fixture.appointmentId());
+		settlements.settle(fixture.appointmentId());
+
+		assertThat(sessionOutcome(fixture.appointmentId())).isEqualTo("USER_NO_SHOW");
+		assertThat(creditState(fixture.creditId())).isEqualTo("FORFEITED");
+		assertThat(creditEventCount(fixture.appointmentId(), "FORFEITED")).isOne();
+	}
+
+	@Test
+	void recoveredEvidenceIsEvaluatedNormallyDuringTheExtendedWindow() throws Exception {
+		var fixture = requestedAppointment();
+		decisions.accept(fixture.specialistId(), fixture.appointmentId(), 0, "accept-recovered-evidence-command-001");
+		var start = Instant.now().minusSeconds(66 * 60);
+		setSchedule(fixture.appointmentId(), start);
+		settlements.end(fixture.appointmentId());
+		markEvidenceFailure(fixture.appointmentId());
+
+		settlements.settle(fixture.appointmentId());
+		assertThat(sessionOutcome(fixture.appointmentId())).isNull();
+		assertThat(creditState(fixture.creditId())).isEqualTo("HELD");
+		chatEligibility(fixture.userId(), "USER", fixture.appointmentId(), "HISTORY")
+				.andExpect(status().isOk()).andExpect(jsonPath("$.phase").value("EVIDENCE_REVIEW"))
+				.andExpect(jsonPath("$.creditState").value("HELD"));
+
+		mvc.perform(evidencePost(fixture.appointmentId())
+				.with(user(fixture.userId())).contentType(MediaType.APPLICATION_JSON)
+				.content("""
+						{"evidenceId":"%s","type":"ACCEPTED_MESSAGE","occurredAt":"%s","messageId":"%s"}
+						""".formatted(UUID.randomUUID(), start.plusSeconds(30), UUID.randomUUID())))
+				.andExpect(status().isOk()).andExpect(jsonPath("$.accepted").value(true));
+		settlements.settle(fixture.appointmentId());
+
+		assertThat(sessionOutcome(fixture.appointmentId())).isEqualTo("INSUFFICIENT_EVIDENCE");
+		assertThat(creditState(fixture.creditId())).isEqualTo("AVAILABLE");
+		assertThat(evidenceFailureReason(fixture.appointmentId())).isNull();
+	}
+
+	@Test
+	void unresolvedEvidenceFailureReleasesCreditAtTheFinalDeadline() throws Exception {
+		var fixture = requestedAppointment();
+		decisions.accept(fixture.specialistId(), fixture.appointmentId(), 0, "accept-evidence-timeout-command-001");
+		setSchedule(fixture.appointmentId(), Instant.now().minusSeconds(96 * 60));
+		settlements.end(fixture.appointmentId());
+		markEvidenceFailure(fixture.appointmentId());
+
+		settlements.settle(fixture.appointmentId());
+		settlements.settle(fixture.appointmentId());
+
+		assertThat(sessionOutcome(fixture.appointmentId())).isEqualTo("EVIDENCE_REVIEW");
+		assertThat(creditState(fixture.creditId())).isEqualTo("AVAILABLE");
+		assertThat(releaseCount(fixture.appointmentId())).isOne();
 	}
 
 	@Test
@@ -410,12 +653,52 @@ class AppointmentDecisionIntegrationTests extends ConsultationTestProperties {
 				.param("id", appointmentId).update();
 	}
 
+	private void insertCompletionEvidence(Fixture fixture, Instant start) {
+		insertEvidence(fixture.appointmentId(), fixture.userId(), "USER", "CHECK_IN", null, null, start);
+		insertEvidence(fixture.appointmentId(), fixture.specialistId(), "SPECIALIST", "CHECK_IN", null, null, start);
+		insertEvidence(fixture.appointmentId(), fixture.userId(), "USER", "ACCEPTED_MESSAGE", null,
+				UUID.randomUUID(), start.plusSeconds(30));
+		insertEvidence(fixture.appointmentId(), fixture.specialistId(), "SPECIALIST", "ACCEPTED_MESSAGE", null,
+				UUID.randomUUID(), start.plusSeconds(45));
+		for (int minute = 0; minute < 30; minute++) {
+			var intervalStart = start.plusSeconds(minute * 60L);
+			insertEvidence(fixture.appointmentId(), fixture.userId(), "USER", "PRESENCE_INTERVAL", intervalStart,
+					null, intervalStart.plusSeconds(60));
+			insertEvidence(fixture.appointmentId(), fixture.specialistId(), "SPECIALIST", "PRESENCE_INTERVAL",
+					intervalStart, null, intervalStart.plusSeconds(60));
+		}
+	}
+
+	private void insertEvidence(UUID appointmentId, UUID actorId, String role, String type,
+			Instant intervalStart, UUID messageId, Instant occurredAt) {
+		jdbc.sql("""
+				insert into appointment_chat_evidence (
+				 id, appointment_id, evidence_id, participant_account_id, participant_role,
+				 evidence_type, interval_started_at, message_id, occurred_at, received_at
+				) values (:id, :appointmentId, :evidenceId, :actorId, :role,
+				 :type, :intervalStart, :messageId, :occurredAt, now())
+				""").param("id", UUID.randomUUID()).param("appointmentId", appointmentId)
+				.param("evidenceId", UUID.randomUUID()).param("actorId", actorId).param("role", role)
+				.param("type", type).param("intervalStart", intervalStart == null ? null : Timestamp.from(intervalStart))
+				.param("messageId", messageId).param("occurredAt", Timestamp.from(occurredAt)).update();
+	}
+
+	private void markEvidenceFailure(UUID appointmentId) {
+		jdbc.sql("update appointment set evidence_failure_reason='TEST_EVIDENCE_FAILURE' where id=:id")
+				.param("id", appointmentId).update();
+	}
+
 	private org.springframework.test.web.servlet.ResultActions chatEligibility(UUID actorId, String role,
 			UUID appointmentId, String operation) throws Exception {
 		return mvc.perform(get("/internal/v1/appointments/{id}/chat-eligibility", appointmentId)
 				.param("operation", operation)
 				.with(jwt().jwt(token -> token.subject(actorId.toString()).claim("roles", List.of(role)))
 						.authorities(new SimpleGrantedAuthority("ROLE_" + role))));
+	}
+
+	private MockHttpServletRequestBuilder evidencePost(UUID appointmentId) {
+		return post("/internal/v1/appointments/{id}/chat-evidence", appointmentId)
+				.header("X-MentalBridge-Service-Token", EVIDENCE_SERVICE_TOKEN);
 	}
 
 	private String appointmentStatus(UUID appointmentId) {
@@ -443,12 +726,46 @@ class AppointmentDecisionIntegrationTests extends ConsultationTestProperties {
 				""").param("id", appointmentId).query(Long.class).single();
 	}
 
+	private long creditEventCount(UUID appointmentId, String eventType) {
+		return jdbc.sql("""
+				select count(*) from service_credit_ledger
+				where appointment_id=:id and event_type=:eventType
+				""").param("id", appointmentId).param("eventType", eventType).query(Long.class).single();
+	}
+
+	private List<String> creditEventTypes(UUID appointmentId) {
+		return jdbc.sql("select event_type from service_credit_ledger where appointment_id=:id")
+				.param("id", appointmentId).query(String.class).list();
+	}
+
+	private long evidenceCount(UUID appointmentId) {
+		return jdbc.sql("select count(*) from appointment_chat_evidence where appointment_id=:id")
+				.param("id", appointmentId).query(Long.class).single();
+	}
+
+	private String sessionOutcome(UUID appointmentId) {
+		return jdbc.sql("select session_outcome from appointment where id=:id").param("id", appointmentId)
+				.query(String.class).optional().orElse(null);
+	}
+
+	private UUID completionFactId(UUID appointmentId) {
+		return jdbc.sql("select completion_fact_id from appointment where id=:id").param("id", appointmentId)
+				.query(UUID.class).optional().orElse(null);
+	}
+
+	private String evidenceFailureReason(UUID appointmentId) {
+		return jdbc.sql("select evidence_failure_reason from appointment where id=:id").param("id", appointmentId)
+				.query(String.class).optional().orElse(null);
+	}
+
 	private org.springframework.test.web.servlet.request.RequestPostProcessor user(UUID id) {
-		return jwt().jwt(token -> token.subject(id.toString())).authorities(new SimpleGrantedAuthority("ROLE_USER"));
+		return jwt().jwt(token -> token.subject(id.toString()).claim("roles", List.of("USER")))
+				.authorities(new SimpleGrantedAuthority("ROLE_USER"));
 	}
 
 	private org.springframework.test.web.servlet.request.RequestPostProcessor specialist(UUID id) {
-		return jwt().jwt(token -> token.subject(id.toString())).authorities(new SimpleGrantedAuthority("ROLE_SPECIALIST"));
+		return jwt().jwt(token -> token.subject(id.toString()).claim("roles", List.of("SPECIALIST")))
+				.authorities(new SimpleGrantedAuthority("ROLE_SPECIALIST"));
 	}
 
 	private record Fixture(UUID appointmentId, UUID userId, UUID specialistId, UUID creditId) {

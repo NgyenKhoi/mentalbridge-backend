@@ -953,6 +953,14 @@ CREATE TABLE consultation.appointment (
     cancelled_at timestamptz,
     cancelled_by uuid, -- external -> identity.account.id
     cancellation_credit_outcome varchar(40),
+    session_outcome varchar(40),
+    session_outcome_reason varchar(64),
+    session_policy_version varchar(64),
+    session_ended_at timestamptz,
+    session_settled_at timestamptz,
+    evidence_review_started_at timestamptz,
+    evidence_failure_reason varchar(64),
+    completion_fact_id uuid UNIQUE,
     created_at timestamptz NOT NULL,
     updated_at timestamptz NOT NULL,
     version bigint NOT NULL,
@@ -969,6 +977,20 @@ CREATE TABLE consultation.appointment_status_history (
     idempotency_key varchar(128),
     credit_outcome varchar(40),
     changed_at timestamptz NOT NULL
+);
+
+CREATE TABLE consultation.appointment_chat_evidence (
+    id uuid PRIMARY KEY,
+    appointment_id uuid NOT NULL REFERENCES consultation.appointment(id),
+    evidence_id uuid NOT NULL,
+    participant_account_id uuid NOT NULL, -- external -> identity.account.id
+    participant_role varchar(16) NOT NULL,
+    evidence_type varchar(24) NOT NULL,
+    interval_started_at timestamptz,
+    message_id uuid, -- Realtime-owned identifier; no message content crosses the boundary
+    occurred_at timestamptz NOT NULL,
+    received_at timestamptz NOT NULL,
+    UNIQUE (appointment_id, evidence_id)
 );
 
 /* ========================================================================== */

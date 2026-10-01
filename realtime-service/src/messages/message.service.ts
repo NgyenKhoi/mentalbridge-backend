@@ -5,9 +5,13 @@ import { ObjectId } from 'mongodb';
 import { z } from 'zod';
 
 import type { ConversationEligibility } from '../conversations/conversation-eligibility.js';
+import type {
+  ConversationEvidence,
+  ConversationEvidenceInput,
+} from '../conversations/conversation-evidence.js';
 import { ConversationRepository } from '../conversations/conversation.repository.js';
 import { ApplicationException } from '../http/application.exception.js';
-import { ELIGIBILITY_TOKEN, METRICS_TOKEN } from '../shared/tokens.js';
+import { ELIGIBILITY_TOKEN, EVIDENCE_TOKEN, METRICS_TOKEN } from '../shared/tokens.js';
 import type { RealtimeMetrics } from '../observability/metrics.js';
 import { MessageEncryptionService } from './message-encryption.service.js';
 import { MessageRepository, type MessageCursor } from './message.repository.js';
@@ -32,6 +36,7 @@ export class MessageService {
     private readonly conversations: ConversationRepository,
     private readonly encryption: MessageEncryptionService,
     @Inject(ELIGIBILITY_TOKEN) private readonly eligibility: ConversationEligibility,
+    @Inject(EVIDENCE_TOKEN) private readonly evidence: ConversationEvidence,
     @Inject(METRICS_TOKEN) private readonly metrics: RealtimeMetrics,
   ) {}
 
@@ -40,7 +45,7 @@ export class MessageService {
     accountId: string,
     conversationId: string,
     correlationId: string,
-  ): Promise<void> {
+  ) {
     const decision = await this.eligibility.check(
       bearerToken,
       accountId,
@@ -49,6 +54,47 @@ export class MessageService {
       correlationId,
     );
     await this.conversations.bind(decision);
+    return decision;
+  }
+
+  async checkIn(
+    bearerToken: string,
+    accountId: string,
+    conversationId: string,
+    evidenceId: string,
+    correlationId: string,
+  ): Promise<void> {
+    const decision = await this.eligibility.check(
+      bearerToken,
+      accountId,
+      conversationId,
+      'check-in',
+      correlationId,
+    );
+    await this.conversations.bind(decision);
+    await this.evidence.record(
+      bearerToken,
+      conversationId,
+      { evidenceId, type: 'CHECK_IN', occurredAt: new Date().toISOString() },
+      correlationId,
+    );
+  }
+
+  async recordPresence(
+    bearerToken: string,
+    conversationId: string,
+    evidenceId: string,
+    intervalStartedAt: Date,
+    occurredAt: Date,
+    correlationId: string,
+  ): Promise<void> {
+    const evidence: ConversationEvidenceInput = {
+      evidenceId,
+      type: 'PRESENCE_INTERVAL',
+      intervalStartedAt: intervalStartedAt.toISOString(),
+      occurredAt: occurredAt.toISOString(),
+    };
+    await this.evidence.record(bearerToken, conversationId, evidence, correlationId);
   }
 
   async send(
@@ -109,6 +155,17 @@ export class MessageService {
         if (!result.duplicate) await this.repository.removeNew(result.message);
         throw error;
       }
+      await this.evidence.record(
+        bearerToken,
+        input.conversationId,
+        {
+          evidenceId: result.message.messageId,
+          type: 'ACCEPTED_MESSAGE',
+          occurredAt: result.message.sentAt.toISOString(),
+          messageId: result.message.messageId,
+        },
+        correlationId,
+      );
       return { message: this.toView(result.message), duplicate: result.duplicate };
     } finally {
       stopTimer();

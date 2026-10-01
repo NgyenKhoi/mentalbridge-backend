@@ -12,6 +12,7 @@ Realtime owns conversations, encrypted messages, attachments metadata, tombstone
 | Messaging | Persist message then acknowledge/fan out with client idempotency | Same sender/clientMessageId returns original; server assigns sender/context; Redis/Kafka failure cannot lose durable message |
 | History/reconnect | Cursor list and resynchronize missed state | Stable ordering/tie-breaker; reconnect recovers through REST; back-pressure and size limits explicit |
 | Receipts/presence | Maintain high-water delivered/read marks and TTL presence | Stale receipt cannot move backward; presence may become unknown on Redis failure; no durable content in Redis |
+| Completion evidence | Forward explicit check-in, bounded server-observed presence, and accepted-message metadata to Consultation | Subscribe alone never counts; no raw message content crosses; evidence failure is retryable and cannot fabricate completion |
 | Tombstone/moderation | Delete display content and process scoped report/action | Retention policy decides ciphertext removal; report grants no broad conversation access; evidence/action audited |
 | Live notification | Consume safe `NotificationCreated` and emit to existing session | Durable notification remains owned elsewhere; duplicate event does not duplicate side effect beyond defined delivery semantics |
 
@@ -48,3 +49,9 @@ Sprint 1 covers RT-01, the foundational contract and migration parts of RT-03/RT
 The current foundation publishes Realtime REST and WebSocket v1 contracts, validates Identity-issued RS256 access tokens through the connected session's expiry boundary, maintains bounded TTL presence, and encrypts and idempotently persists messages before acknowledgement. Duplicate retries do not emit a second live event, and acknowledgements report live delivery as not applicable until fan-out or receipts can prove it.
 
 MB-382 implements cursor history and the production Consultation eligibility adapter. Subscribe, send and history are reauthorized against the participant-bound appointment and server clock; dependency uncertainty fails closed. A one-use Redis ticket keeps the reusable Identity bearer out of browser JavaScript. Encryption rotation retains prior key versions in a configured decryption keyring so stored messages remain readable during a controlled rotation.
+
+MB-383 adds the explicit `conversation.check-in` command. Only checked-in
+appointment conversations accumulate presence from successful server heartbeat
+processing. Reconnect subscription can resume future presence after Consultation
+confirms the prior explicit check-in, but that subscription itself remains
+non-evidence. Accepted messages send only their IDs/timestamps to Consultation.

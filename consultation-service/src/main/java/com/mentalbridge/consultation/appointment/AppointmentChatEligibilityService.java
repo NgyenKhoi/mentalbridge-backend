@@ -30,16 +30,22 @@ public class AppointmentChatEligibilityService {
 			AppointmentChatEligibility.Operation operation) {
 		var appointment = jdbc.sql("""
 				select a.id, a.user_account_id, a.specialist_account_id, a.status, a.modality,
-				       a.scheduled_start_at, a.scheduled_end_at,
+				       a.scheduled_start_at, a.scheduled_end_at, a.session_outcome,
+				       a.evidence_failure_reason, c.state as credit_state,
+				       exists(select 1 from appointment_chat_evidence e
+				              where e.appointment_id=a.id and e.participant_account_id=:actorId
+				                and e.evidence_type='CHECK_IN') as participant_checked_in,
 				       exists(select 1 from appointment replacement where replacement.replaces_appointment_id=a.id) as was_rescheduled,
 				       exists(select 1 from appointment_status_history h
 				              where h.appointment_id=a.id and h.to_status='CONFIRMED') as was_confirmed
-				from appointment a where a.id=:id
-				""").param("id", conversationId).query((row, ignored) -> new AppointmentChat(
+				from appointment a join service_credit c on c.id=a.service_credit_id where a.id=:id
+				""").param("id", conversationId).param("actorId", actorId).query((row, ignored) -> new AppointmentChat(
 				row.getObject("id", UUID.class), row.getObject("user_account_id", UUID.class),
 				row.getObject("specialist_account_id", UUID.class), row.getString("status"),
 				AppointmentModality.valueOf(row.getString("modality")),
 				row.getTimestamp("scheduled_start_at").toInstant(), row.getTimestamp("scheduled_end_at").toInstant(),
+				row.getString("session_outcome"), row.getString("evidence_failure_reason"),
+				row.getString("credit_state"), row.getBoolean("participant_checked_in"),
 				row.getBoolean("was_rescheduled"), row.getBoolean("was_confirmed")))
 				.optional().orElseThrow(this::notFound);
 		if (!participantMatches(appointment, actorId, actorRole)) throw notFound();
@@ -50,26 +56,33 @@ public class AppointmentChatEligibilityService {
 
 	private Decision classify(AppointmentChat appointment, Instant now) {
 		if (appointment.modality() != AppointmentModality.IN_APP_CHAT || !appointment.wasConfirmed()) {
-			return new Decision(AppointmentChatEligibility.Phase.NOT_AVAILABLE, "APPOINTMENT_NOT_CONFIRMED", false, false, false);
+			return new Decision(AppointmentChatEligibility.Phase.NOT_AVAILABLE, "APPOINTMENT_NOT_CONFIRMED", false, false, false, false);
 		}
 		if (appointment.status().equals("CANCELLED")) {
 			var rescheduled = appointment.wasRescheduled();
 			return new Decision(rescheduled ? AppointmentChatEligibility.Phase.RESCHEDULED : AppointmentChatEligibility.Phase.CANCELLED,
-					rescheduled ? "APPOINTMENT_RESCHEDULED" : "APPOINTMENT_CANCELLED", false, false, true);
+					rescheduled ? "APPOINTMENT_RESCHEDULED" : "APPOINTMENT_CANCELLED", false, false, true, false);
 		}
-		if (!now.isBefore(appointment.scheduledEndAt())) {
-			return new Decision(AppointmentChatEligibility.Phase.ENDED, "APPOINTMENT_ENDED", false, false, true);
+		if (appointment.sessionOutcome() != null) {
+			return new Decision(AppointmentChatEligibility.Phase.valueOf(appointment.sessionOutcome()),
+					"SESSION_" + appointment.sessionOutcome(), false, false, true, false);
+		}
+		if (appointment.status().equals("SESSION_ENDED") || !now.isBefore(appointment.scheduledEndAt())) {
+			var review = appointment.evidenceFailureReason() != null;
+			return new Decision(review ? AppointmentChatEligibility.Phase.EVIDENCE_REVIEW
+					: AppointmentChatEligibility.Phase.ENDED_PROCESSING,
+					review ? "SESSION_EVIDENCE_REVIEW" : "SESSION_OUTCOME_PROCESSING", false, false, true, false);
 		}
 		if (now.isBefore(appointment.scheduledStartAt().minus(WAITING_WINDOW))) {
-			return new Decision(AppointmentChatEligibility.Phase.TOO_EARLY, "CHAT_ENTRY_TOO_EARLY", false, false, false);
+			return new Decision(AppointmentChatEligibility.Phase.TOO_EARLY, "CHAT_ENTRY_TOO_EARLY", false, false, false, false);
 		}
 		if (now.isBefore(appointment.scheduledStartAt())) {
-			return new Decision(AppointmentChatEligibility.Phase.WAITING, "APPOINTMENT_WAITING", true, false, true);
+			return new Decision(AppointmentChatEligibility.Phase.WAITING, "APPOINTMENT_WAITING", true, false, true, true);
 		}
 		if (!appointment.status().equals("CONFIRMED") && !appointment.status().equals("IN_PROGRESS")) {
-			return new Decision(AppointmentChatEligibility.Phase.NOT_AVAILABLE, "APPOINTMENT_NOT_CONFIRMED", false, false, true);
+			return new Decision(AppointmentChatEligibility.Phase.NOT_AVAILABLE, "APPOINTMENT_NOT_CONFIRMED", false, false, true, false);
 		}
-		return new Decision(AppointmentChatEligibility.Phase.ACTIVE, "APPOINTMENT_ACTIVE", true, true, true);
+		return new Decision(AppointmentChatEligibility.Phase.ACTIVE, "APPOINTMENT_ACTIVE", true, true, true, true);
 	}
 
 	private boolean participantMatches(AppointmentChat appointment, UUID actorId, String actorRole) {
@@ -80,7 +93,8 @@ public class AppointmentChatEligibilityService {
 	private AppointmentChatEligibility response(AppointmentChat appointment, Decision decision, Instant now) {
 		return new AppointmentChatEligibility(appointment.id(), appointment.id(), appointment.userId(),
 				appointment.specialistId(), decision.phase(), decision.reasonCode(), decision.subscribeAllowed(),
-				decision.sendAllowed(), decision.historyAllowed(), appointment.scheduledStartAt(),
+				decision.sendAllowed(), decision.historyAllowed(), decision.checkInAllowed(), appointment.participantCheckedIn(),
+				appointment.sessionOutcome(), appointment.creditState(), appointment.scheduledStartAt(),
 				appointment.scheduledEndAt(), now);
 	}
 
@@ -90,8 +104,9 @@ public class AppointmentChatEligibilityService {
 
 	private record AppointmentChat(UUID id, UUID userId, UUID specialistId, String status,
 			AppointmentModality modality, Instant scheduledStartAt, Instant scheduledEndAt,
-			boolean wasRescheduled, boolean wasConfirmed) { }
+			String sessionOutcome, String evidenceFailureReason, String creditState,
+			boolean participantCheckedIn, boolean wasRescheduled, boolean wasConfirmed) { }
 
 	private record Decision(AppointmentChatEligibility.Phase phase, String reasonCode,
-			boolean subscribeAllowed, boolean sendAllowed, boolean historyAllowed) { }
+			boolean subscribeAllowed, boolean sendAllowed, boolean historyAllowed, boolean checkInAllowed) { }
 }

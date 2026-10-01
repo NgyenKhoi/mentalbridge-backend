@@ -980,7 +980,7 @@ Append-only evidence for provisioning and appointment-driven transitions.
 
 ### `consultation.appointment`
 
-Implemented MB-378/MB-558 request aggregate with MB-379 decision settlement and MB-380 owner cancellation/reschedule audit. One row is the immutable scheduling snapshot created while the same local transaction locks the exact availability slot, holds one eligible credit, and enforces the package reservation cap. New requests support only in-app chat or gated in-app video.
+Implemented MB-378/MB-558 request aggregate with MB-379 decision settlement, MB-380 owner cancellation/reschedule audit, and MB-383 evidence-backed chat settlement. One row is the immutable scheduling snapshot created while the same local transaction locks the exact availability slot, holds one eligible credit, and enforces the package reservation cap. New requests support only in-app chat or gated in-app video.
 
 | Field | Purpose |
 | --- | --- |
@@ -989,7 +989,7 @@ Implemented MB-378/MB-558 request aggregate with MB-379 decision settlement and 
 | `specialist_account_id` | Approved specialist snapshotted from the selected slot. |
 | `availability_slot_id` | Exact published 60-minute slot; a partial unique index permits at most one active request/confirmation. |
 | `service_credit_id` | Earliest-expiring available credit that covers the appointment start; unique while the appointment is active. |
-| `status` | Initial `REQUESTED`; active reservations are `REQUESTED`, `CONFIRMED`, or `IN_PROGRESS`; terminal decision stories may move it to `REJECTED`, `EXPIRED`, or `CANCELLED`. |
+| `status` | Initial `REQUESTED`; active reservations are `REQUESTED`, `CONFIRMED`, or `IN_PROGRESS`; channel end records `SESSION_ENDED`; only evidence-backed completion advances to `COMPLETED`; decision/cancellation outcomes may be `REJECTED`, `EXPIRED`, or `CANCELLED`. |
 | `modality` | `IN_APP_CHAT` or `IN_APP_VIDEO`; physical, phone, and external-link modes are not accepted. |
 | `scheduled_start_at` / `scheduled_end_at` | Immutable exact UTC interval copied from availability and constrained to 60 minutes. |
 | `display_timezone` | IANA timezone copied from the slot for stable user display. |
@@ -1003,6 +1003,11 @@ Implemented MB-378/MB-558 request aggregate with MB-379 decision settlement and 
 | `cancelled_at` | Server UTC cancellation instant required only for `CANCELLED`. |
 | `cancelled_by` | Identity actor UUID required only for `CANCELLED`; owner commands record the user and suspension records the administrator. |
 | `cancellation_credit_outcome` | Immutable `RELEASED`, `FORFEITED`, or `TRANSFERRED_TO_REPLACEMENT` result required only for `CANCELLED`. It describes this appointment's settlement even when the shared credit is currently held by its replacement. |
+| `session_outcome` / `session_outcome_reason` | Separate final chat result and stable reason: completion, either/both no-show, insufficient evidence, or timed-out evidence review. Null while the grace/reconciliation window is open. |
+| `session_policy_version` | `chat-session-completion-v1` provenance set when the scheduled channel ends. |
+| `session_ended_at` / `session_settled_at` | Server instants for history-only channel end and later outcome/credit settlement. End alone never consumes a credit. |
+| `evidence_review_started_at` / `evidence_failure_reason` | Minimized technical-reconciliation state. Credit stays held until normal recovery or the end-plus-35-minute fallback. |
+| `completion_fact_id` | Opaque unique fact present only for evidence-backed `COMPLETED`; reserved as MB-516's future earning input. MB-383 creates no earning. |
 | `created_at` / `updated_at` | UTC insertion and latest authoritative state-change instants. |
 | `version` | Optimistic state-transition counter for later decision commands. |
 
@@ -1020,6 +1025,23 @@ Append-only transition evidence introduced by MB-360, extended by MB-379 for ide
 | `idempotency_key` | Optional printable command key. MB-379 specialist decisions and deterministic expiry use one key per appointment command; a partial unique index prevents duplicate evidence. |
 | `credit_outcome` | Null for non-cancellation transitions; immutable `RELEASED`, `FORFEITED`, or `TRANSFERRED_TO_REPLACEMENT` for a transition into `CANCELLED`. |
 | `changed_at` | Server UTC instant at which the transition committed. |
+
+### `consultation.appointment_chat_evidence`
+
+Content-free, append-only evidence received from Realtime for an assigned
+participant. Subscribe/join is deliberately absent and raw chat content is
+never stored.
+
+| Field | Purpose |
+| --- | --- |
+| `id` | Internal immutable evidence-row UUID. |
+| `appointment_id` / `evidence_id` | Owner-local appointment and source idempotency identity; the pair is unique. |
+| `participant_account_id` / `participant_role` | Server-authenticated assigned `USER` or `SPECIALIST`; never accepted from a client claim. |
+| `evidence_type` | `CHECK_IN`, `PRESENCE_INTERVAL`, or `ACCEPTED_MESSAGE`. |
+| `interval_started_at` | Required only for a server-observed presence interval, capped at 60 seconds per fact. |
+| `message_id` | Realtime-owned accepted-message UUID required only for message evidence; it is not message content. |
+| `occurred_at` | Server-observed occurrence used for the half-open appointment-window calculation. |
+| `received_at` | Consultation receipt time used to enforce grace and reconciliation deadlines. |
 
 ### `consultation.subscription_plan_version`
 
