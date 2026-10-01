@@ -973,7 +973,7 @@ CREATE TABLE consultation.appointment_status_history (
 
 /* ========================================================================== */
 /* ACTIVE — community-service / mentalbridge_community                        */
-/* Evidence: community-service Liquibase changes 0001-0005.                  */
+/* Evidence: community-service Liquibase changes 0001-0006.                  */
 /* ========================================================================== */
 
 CREATE TABLE community.community_profile (
@@ -995,7 +995,7 @@ CREATE TABLE community.community_post (
     comment_count integer NOT NULL,
     reaction_count integer NOT NULL,
     idempotency_key varchar(128),
-    request_fingerprint char(64),
+    request_fingerprint varchar(64),
     published_at timestamptz NOT NULL,
     updated_at timestamptz NOT NULL,
     version bigint NOT NULL
@@ -1020,7 +1020,7 @@ CREATE TABLE community.community_media (
     expected_size_bytes bigint,
     upload_expires_at timestamptz,
     idempotency_key varchar(128),
-    request_fingerprint char(64),
+    request_fingerprint varchar(64),
     rejection_reason varchar(64),
     width integer,
     height integer,

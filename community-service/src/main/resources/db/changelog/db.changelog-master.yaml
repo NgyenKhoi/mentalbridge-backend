@@ -9,3 +9,5 @@ databaseChangeLog:
       file: db/changelog/changes/0004-community-display-identity.yaml
   - include:
       file: db/changelog/changes/0005-community-media-lifecycle.yaml
+  - include:
+      file: db/changelog/changes/0006-community-request-fingerprint-varchar.yaml
