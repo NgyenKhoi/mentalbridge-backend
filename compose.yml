@@ -177,9 +177,10 @@ services:
       target: migration
     profiles: *demo-profiles
     restart: "no"
-    env_file:
-      - path: ./consultation-service/.env
-        required: false
+    environment:
+      CONSULTATION_DB_URL: ${CONSULTATION_DB_URL:?Set the shared dev/staging Consultation database URL in .env}
+      CONSULTATION_DB_USERNAME: ${CONSULTATION_DB_USERNAME:?Set the shared dev/staging Consultation database username in .env}
+      CONSULTATION_DB_PASSWORD: ${CONSULTATION_DB_PASSWORD:?Set CONSULTATION_DB_PASSWORD in .env}
     networks:
       - review1
 
@@ -189,12 +190,12 @@ services:
       target: runtime
     profiles: *demo-profiles
     restart: unless-stopped
-    env_file:
-      - path: ./consultation-service/.env
-        required: false
     environment:
       <<: *java-service-environment
       SERVER_PORT: 8082
+      CONSULTATION_DB_URL: ${CONSULTATION_DB_URL:?Set the shared dev/staging Consultation database URL in .env}
+      CONSULTATION_DB_USERNAME: ${CONSULTATION_DB_USERNAME:?Set the shared dev/staging Consultation database username in .env}
+      CONSULTATION_DB_PASSWORD: ${CONSULTATION_DB_PASSWORD:?Set CONSULTATION_DB_PASSWORD in .env}
       CONSULTATION_LIQUIBASE_ENABLED: "false"
       CONSULTATION_VIDEO_AVAILABILITY_ENABLED: ${CONSULTATION_VIDEO_AVAILABILITY_ENABLED:-false}
     ports:
@@ -362,7 +363,7 @@ services:
       JOURNAL_AI_CONSULTATION_BASE_URL: http://consultation:8082
       JOURNAL_AI_REMINDER_SERVICE_TOKEN: ${JOURNAL_AI_REMINDER_SERVICE_TOKEN:?Set a shared reminder service token of at least 32 characters in .env}
       JOURNAL_AI_ANALYSIS_ENABLED: ${JOURNAL_AI_ANALYSIS_ENABLED:-true}
-      JOURNAL_AI_PROVIDER_MODE: ${JOURNAL_AI_PROVIDER_MODE:-APPROVED_REAL}
+      JOURNAL_AI_PROVIDER_MODE: ${JOURNAL_AI_PROVIDER_MODE:-DETERMINISTIC_FAKE}
     ports:
       - "${SERVICE_BIND_ADDRESS:-127.0.0.1}:${JOURNAL_AI_PORT:-3005}:3000"
     depends_on:
@@ -484,6 +485,8 @@ services:
       REALTIME_MESSAGE_ENCRYPTION_KEY: ${REALTIME_MESSAGE_ENCRYPTION_KEY:?Set a base64-encoded 32-byte key in .env}
       REALTIME_MESSAGE_ENCRYPTION_KEY_VERSION: ${REALTIME_MESSAGE_ENCRYPTION_KEY_VERSION:-review1-demo-v1}
       REALTIME_MESSAGE_DECRYPTION_KEYS: ${REALTIME_MESSAGE_DECRYPTION_KEYS:?Set a JSON object in .env, normally empty JSON}
+      CONSULTATION_BASE_URL: ${CONSULTATION_BASE_URL:-http://consultation:8082}
+      CONSULTATION_TIMEOUT_MS: ${CONSULTATION_TIMEOUT_MS:-2000}
       IDENTITY_JWT_ISSUER: ${IDENTITY_JWT_ISSUER:?Set IDENTITY_JWT_ISSUER in .env}
       IDENTITY_JWT_AUDIENCE: ${IDENTITY_JWT_AUDIENCE:?Set IDENTITY_JWT_AUDIENCE in .env}
       IDENTITY_JWT_KEY_ID: ${IDENTITY_JWT_KEY_ID:-review1-demo-key}

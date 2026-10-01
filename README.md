@@ -23,12 +23,11 @@ Keep the backend and frontend repositories as sibling directories. From this bac
 
 The helper generates the ignored `.env`, Identity key material, and application-only secrets without printing secret values or replacing an existing file. It deliberately does not generate or copy database credentials. Populate every cloud connection placeholder from the deployment secret source before starting Compose. To configure it manually instead, copy `.env.compose.example` to `.env`, run `scripts/generate-local-jwt-keys.ps1`, and replace every `replace-*` value. `CONTENT_DATABASE_URL`, `REALTIME_MONGODB_URI`, and `REALTIME_REDIS_URL` must contain URL-encoded passwords when a password includes reserved URL characters.
 
-Consultation and Journal/AI keep their service-owned demo settings in ignored `consultation-service/.env` and `journal-ai-service/.env` files. The Journal/AI file must include its MongoDB connection, encryption/HMAC keys for production mode, and any explicitly approved provider route. Compose overrides only container-internal service URLs and the container port.
+Consultation reads its service-owned database settings from the ignored root `.env` used by Compose. Journal/AI reads its shared MongoDB and encryption/HMAC settings from that root file and keeps any explicitly approved provider route in the ignored `journal-ai-service/.env` file. Compose overrides only container-internal service URLs and the container port.
 
-For a first-time local setup, copy each service example and replace its placeholders without committing the resulting files:
+To configure an approved Journal/AI provider route, copy its service example and replace the route placeholders without committing the resulting file:
 
 ```powershell
-Copy-Item consultation-service/.env.example consultation-service/.env
 Copy-Item journal-ai-service/.env.example journal-ai-service/.env
 ```
 
