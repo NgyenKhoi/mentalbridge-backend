@@ -35,6 +35,7 @@ Authoritative Community-owned personal-story publication. It is not Care, Journa
 | `reaction_count` | Non-negative Community-owned display count, updated transactionally by the future supportive-reaction slice. |
 | `idempotency_key` | Owner-scoped create-command key. It is nullable only for posts that predate MB-575 and unique together with `author_profile_id`, so separate owners may reuse the same client-generated value safely. |
 | `request_fingerprint` | SHA-256 digest of normalized create input used to distinguish a safe retry from conflicting reuse; it is not Community content and is present exactly when `idempotency_key` is present. |
+| `author_mode` | Author-selected public identity mode for this post: `PROFILE` renders the current Community display identity, while `ANONYMOUS` returns a neutral name with no Community profile identifier or avatar that can link the post publicly; the private owner reference remains available only for authorization, moderation, and audit. |
 | `published_at` | Immutable UTC publication instant used as the primary newest-first cursor key. |
 | `updated_at` | UTC instant of the latest persisted owner or moderation change. |
 | `version` | Optimistic-lock counter reserved for owner edits/deletion and moderation changes. |
@@ -59,7 +60,15 @@ Safe metadata for Community-owned image/video objects. Binary content and provid
 | `post_id` | Nullable physical attachment to one post; null while an upload is pending/orphaned or after post detachment. |
 | `media_type` | Closed display kind `IMAGE` or `VIDEO`. |
 | `state` | Provider-independent lifecycle `PENDING`, `PROCESSING`, `READY`, `REJECTED`, `DELETED`, or `EXPIRED`; only `READY` delivery metadata is returned publicly. |
-| `delivery_url` | HTTPS delivery URL present only for `READY` media; secrets, signatures, upload URLs, and provider responses are never stored here. |
+| `delivery_url` | Signed HTTPS transformed-delivery URL present only for `READY` media. It delivers a metadata-stripped derivative rather than exposing the authenticated original object. |
+| `storage_provider` | Nullable provider discriminator. MB-576-created objects use `CLOUDINARY`; the value is cleared after confirmed provider deletion and remains nullable for legacy fixture rows. |
+| `storage_key` | Unique provider-side public identifier scoped beneath the Community profile and media UUID. It is not a delivery URL or credential and is cleared only after provider deletion succeeds. |
+| `expected_mime_type` | Normalized allowlisted MIME type declared from the browser file before upload and verified against the provider-detected format during finalize. |
+| `expected_size_bytes` | Browser-observed byte count used with the media-type limit and exact provider byte count to reject substituted or oversized uploads. |
+| `upload_expires_at` | UTC deadline for the signed upload intent; pending objects beyond it are expired by the retention job. |
+| `idempotency_key` | Printable caller retry key unique per Community owner so an uncertain intent request returns the original bounded upload authorization. |
+| `request_fingerprint` | SHA-256 of normalized file name, media type, MIME type, and declared byte count used to reject conflicting reuse of an upload-intent key. It cannot recover file content. |
+| `rejection_reason` | Stable internal reason code present only for `REJECTED` media. Provider payloads and user file content are never stored in this field or returned publicly. |
 | `width` | Optional positive pixel width used to reserve truthful layout space. |
 | `height` | Optional positive pixel height used to reserve truthful layout space. |
 | `duration_seconds` | Optional positive whole-second video duration. |

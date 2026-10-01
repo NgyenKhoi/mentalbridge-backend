@@ -24,6 +24,13 @@ public abstract class CommunityTestProperties {
 		properties.add("mentalbridge.community.cloudinary.cloud-name", () -> "test-cloud");
 		properties.add("mentalbridge.community.cloudinary.api-key", () -> "test-api-key");
 		properties.add("mentalbridge.community.cloudinary.api-secret", () -> "test-api-secret");
+		properties.add("mentalbridge.community.cloudinary.timeout-seconds", () -> "5");
+		properties.add("mentalbridge.community.media.max-image-bytes", () -> "10485760");
+		properties.add("mentalbridge.community.media.max-video-bytes", () -> "52428800");
+		properties.add("mentalbridge.community.media.max-video-duration-seconds", () -> "60");
+		properties.add("mentalbridge.community.media.upload-intent-ttl", () -> "10m");
+		properties.add("mentalbridge.community.media.orphan-retention", () -> "24h");
+		properties.add("mentalbridge.community.media.cleanup-interval", () -> "1h");
 	}
 
 	private static KeyPair keyPair() {

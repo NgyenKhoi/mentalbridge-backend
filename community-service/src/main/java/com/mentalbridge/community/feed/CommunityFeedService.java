@@ -28,6 +28,7 @@ import com.mentalbridge.community.shared.CommunityApiException;
 public class CommunityFeedService {
 
 	private static final int PREVIEW_CODE_POINTS = 420;
+	private static final String ANONYMOUS_AUTHOR_NAME = "Thành viên ẩn danh";
 	private static final String DELETED_AUTHOR_NAME = "Thành viên đã rời cộng đồng";
 
 	private final CommunityPostRepository posts;
@@ -68,16 +69,20 @@ public class CommunityFeedService {
 	}
 
 	private PostSummary summary(CommunityPostEntity post) {
-		return new PostSummary(post.id(), author(post.author()), preview(post.content()), sortedTopics(post), media(post),
+		return new PostSummary(post.id(), author(post), preview(post.content()), sortedTopics(post), media(post),
 				mediaAvailability(post), counts(post), post.publishedAt(), post.updatedAt());
 	}
 
 	PostDetail toDetail(CommunityPostEntity post) {
-		return new PostDetail(post.id(), author(post.author()), post.content(), sortedTopics(post), media(post),
+		return new PostDetail(post.id(), author(post), post.content(), sortedTopics(post), media(post),
 				mediaAvailability(post), counts(post), post.publishedAt(), post.updatedAt());
 	}
 
-	private Author author(CommunityProfileEntity profile) {
+	private Author author(CommunityPostEntity post) {
+		if (post.authorMode() == CommunityPostEntity.AuthorMode.ANONYMOUS) {
+			return new Author(null, ANONYMOUS_AUTHOR_NAME, null, AuthorState.ANONYMOUS);
+		}
+		var profile = post.author();
 		var deleted = profile.status() == CommunityProfileEntity.Status.DELETED;
 		return new Author(profile.id(), deleted ? DELETED_AUTHOR_NAME : profile.displayName(),
 				deleted ? null : profile.avatarPreset(),

@@ -18,6 +18,9 @@ class CommunityOpenApiContractTests {
 			"GET /api/v1/community/posts/{postId}",
 			"PATCH /api/v1/community/posts/{postId}",
 			"DELETE /api/v1/community/posts/{postId}",
+			"POST /api/v1/community/media/upload-intents",
+			"POST /api/v1/community/media/{mediaId}/finalize",
+			"DELETE /api/v1/community/media/{mediaId}",
 			"GET /api/v1/community/profile",
 			"PUT /api/v1/community/profile",
 			"GET /api/v1/community/topics");
@@ -78,11 +81,13 @@ class CommunityOpenApiContractTests {
 		var api = new OpenAPIV3Parser().read(contract().toString());
 		var author = api.getComponents().getSchemas().get("CommunityAuthor");
 		var post = api.getComponents().getSchemas().get("CommunityPostSummary");
+		var createPost = api.getComponents().getSchemas().get("CreatePostRequest");
 		var feedParameters = api.getPaths().get("/api/v1/community/feed").getGet().getParameters();
 
 		assertThat(author.getProperties()).containsOnlyKeys("communityProfileId", "displayName", "avatarPreset", "state");
 		assertThat(post.getProperties()).containsOnlyKeys("postId", "author", "contentPreview", "topics", "media",
 				"mediaAvailability", "counts", "publishedAt", "updatedAt");
+		assertThat(createPost.getProperties()).containsOnlyKeys("content", "topics", "mediaIds", "authorMode");
 		assertThat(feedParameters).extracting(parameter -> parameter.getName())
 				.containsExactly("topic", "cursor", "limit");
 	}
@@ -96,6 +101,17 @@ class CommunityOpenApiContractTests {
 		assertThat(request.getProperties()).containsOnlyKeys("displayName", "avatarPreset");
 		assertThat(response.getProperties()).containsOnlyKeys("communityProfileId", "displayName", "avatarPreset",
 				"status", "version", "createdAt", "updatedAt");
+	}
+
+	@Test
+	void mediaIntentCarriesOnlyShortLivedSignedUploadFields() {
+		var api = new OpenAPIV3Parser().read(contract().toString());
+		var intent = api.getComponents().getSchemas().get("MediaUploadIntent");
+		var request = api.getComponents().getSchemas().get("CreateMediaUploadIntentRequest");
+
+		assertThat(intent.getProperties()).containsOnlyKeys("mediaId", "state", "uploadUrl", "expiresAt",
+				"uploadFields", "version");
+		assertThat(request.getProperties()).containsOnlyKeys("fileName", "mediaType", "mimeType", "sizeBytes");
 	}
 
 	private Path contract() {
