@@ -280,12 +280,9 @@ describe('Realtime MongoDB, Redis and Socket.IO integration', { concurrent: fals
 
   it('refreshes the actual Redis presence TTL on heartbeat', async () => {
     const heartbeatAccountId = randomUUID();
-    const heartbeatToken = await issueToken(
-      identityPrivateKey,
-      configuration,
-      heartbeatAccountId,
-      { tokenId: `heartbeat-${heartbeatAccountId}` },
-    );
+    const heartbeatToken = await issueToken(identityPrivateKey, configuration, heartbeatAccountId, {
+      tokenId: `heartbeat-${heartbeatAccountId}`,
+    });
     const socket = await connectClient(heartbeatToken);
     try {
       const presence = app.get(PresenceService);
