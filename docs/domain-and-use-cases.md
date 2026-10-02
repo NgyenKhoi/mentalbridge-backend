@@ -386,6 +386,16 @@ context, and follow-up charts avoid diagnostic or causal claims.
 
 **Exceptions and acceptance:** admin role does not grant unrestricted raw journal/chat/assessment, payout-destination data, or provider payload access. Changes record stable reasons and append-only audit facts. Aggregates enforce cohort/privacy thresholds and projection freshness. Retention changes remain owner-enforced and do not rewrite historical audit evidence. A payout becomes successful only from a verified provider result/status query.
 
+### UC-08 Community peer support
+
+**Actor:** User
+
+**Scope:** pseudonymous personal-story publication, chronological comments and one-level replies, supportive interaction, and governed visibility inside the independent Community context.
+
+**Main flow:** an authenticated user reads active visible posts, publishes under a per-post Community or anonymous identity, and may add an idempotent comment or reply to one active top-level comment. The comment author may edit or tombstone their own text with exact-version concurrency; Community updates the active post count and retains immutable local revision history.
+
+**Exceptions and acceptance:** hidden/removed posts and comments plus either direction of a Community block fail closed. Community text is not emitted or reused as Care, Journal/AI, screening, SupportPlan, specialist, or diagnostic evidence. V1 comment ordering is deterministic `(created_at, id)` ascending and reply nesting is limited to one level.
+
 ## 5. Suggested MVP and deferrals
 
 ### MVP (iterations 1-2)

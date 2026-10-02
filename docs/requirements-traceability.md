@@ -103,6 +103,14 @@ The requirements are represented in domain/architecture documentation, but the l
 
 ## Approved scope changes
 
+- 2026-10-01: MB-577 implements the Community Contract v1 comment slice under
+  ADR 0027: active visible posts accept idempotent comments and one-level
+  replies, deterministic chronological cursor reads, owner-only exact-version
+  edit/delete, transactional active counts, bilateral-block fail-closed
+  visibility, and immutable Community-local revisions. Comment text remains
+  excluded from Care, Journal/AI, screening, SupportPlan, specialist, and
+  diagnostic evidence.
+
 - 2026-09-24: `MB-SCOPE-V2-002` prospectively amends the current product
   blueprint. A Support Guide is persisted immutable history for one screening
   context, not ephemeral data and not a lifecycle-tracked SupportPlan.

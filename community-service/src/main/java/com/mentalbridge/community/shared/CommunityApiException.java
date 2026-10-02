@@ -25,6 +25,25 @@ public class CommunityApiException extends RuntimeException {
 		return new CommunityApiException(HttpStatus.BAD_REQUEST, "INVALID_CURSOR", "Feed cursor is invalid");
 	}
 
+	public static CommunityApiException invalidCommentCursor() {
+		return new CommunityApiException(HttpStatus.BAD_REQUEST, "INVALID_CURSOR", "Comment cursor is invalid");
+	}
+
+	public static CommunityApiException commentNotFound() {
+		return new CommunityApiException(HttpStatus.NOT_FOUND, "COMMUNITY_COMMENT_NOT_FOUND",
+				"Community comment was not found");
+	}
+
+	public static CommunityApiException invalidCommentInput() {
+		return new CommunityApiException(HttpStatus.BAD_REQUEST, "COMMUNITY_COMMENT_INVALID",
+				"Community comment input is invalid");
+	}
+
+	public static CommunityApiException commentVersionMismatch() {
+		return new CommunityApiException(HttpStatus.PRECONDITION_FAILED, "COMMUNITY_COMMENT_VERSION_MISMATCH",
+				"Community comment changed before this request completed");
+	}
+
 	public static CommunityApiException postNotFound() {
 		return new CommunityApiException(HttpStatus.NOT_FOUND, "COMMUNITY_POST_NOT_FOUND",
 				"Community post was not found");

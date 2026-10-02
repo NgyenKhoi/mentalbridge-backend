@@ -973,7 +973,7 @@ CREATE TABLE consultation.appointment_status_history (
 
 /* ========================================================================== */
 /* ACTIVE — community-service / mentalbridge_community                        */
-/* Evidence: community-service Liquibase changes 0001-0007.                  */
+/* Evidence: community-service Liquibase changes 0001-0008.                  */
 /* ========================================================================== */
 
 CREATE TABLE community.community_profile (
@@ -1038,6 +1038,36 @@ CREATE TABLE community.community_block (
     blocked_profile_id uuid NOT NULL REFERENCES community.community_profile(id),
     created_at timestamptz NOT NULL,
     PRIMARY KEY (blocker_profile_id, blocked_profile_id)
+);
+
+CREATE TABLE community.community_comment (
+    id uuid PRIMARY KEY,
+    post_id uuid NOT NULL REFERENCES community.community_post(id),
+    parent_comment_id uuid,
+    author_profile_id uuid NOT NULL REFERENCES community.community_profile(id),
+    content varchar(2000) NOT NULL,
+    state varchar(24) NOT NULL,
+    idempotency_key varchar(128) NOT NULL,
+    request_fingerprint varchar(64) NOT NULL,
+    created_at timestamptz NOT NULL,
+    updated_at timestamptz NOT NULL,
+    version bigint NOT NULL,
+    UNIQUE (id, post_id),
+    UNIQUE (author_profile_id, idempotency_key),
+    FOREIGN KEY (parent_comment_id, post_id)
+        REFERENCES community.community_comment(id, post_id)
+);
+
+CREATE TABLE community.community_comment_revision (
+    id uuid PRIMARY KEY,
+    comment_id uuid NOT NULL REFERENCES community.community_comment(id),
+    changed_by_profile_id uuid NOT NULL REFERENCES community.community_profile(id),
+    change_type varchar(16) NOT NULL,
+    content_snapshot varchar(2000) NOT NULL,
+    state_snapshot varchar(24) NOT NULL,
+    comment_version bigint NOT NULL,
+    changed_at timestamptz NOT NULL,
+    UNIQUE (comment_id, comment_version)
 );
 
 /* ========================================================================== */
