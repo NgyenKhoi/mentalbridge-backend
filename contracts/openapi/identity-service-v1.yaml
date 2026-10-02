@@ -540,8 +540,14 @@ components:
       additionalProperties: false
       required: [status, reasonCode]
       properties:
-        status: { $ref: '#/components/schemas/AccountStatus' }
-        reasonCode: { type: string, minLength: 1, maxLength: 64, pattern: '^[A-Z0-9_]+$' }
+        status:
+          type: string
+          enum: [ACTIVE, DISABLED]
+          description: DISABLED suspends an account; ACTIVE restores a disabled account according to email-verification state.
+        reasonCode:
+          type: string
+          enum: [SAFETY_CONCERN, POLICY_VIOLATION, ACCOUNT_REVIEW_REQUIRED, REVIEW_COMPLETED]
+          description: REVIEW_COMPLETED is reserved for restoration; the other values are suspension reasons.
     Problem:
       type: object
       additionalProperties: true

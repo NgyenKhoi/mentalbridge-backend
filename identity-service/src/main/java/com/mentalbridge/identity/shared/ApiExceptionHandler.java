@@ -12,11 +12,13 @@ import org.springframework.web.bind.annotation.ExceptionHandler;
 import org.springframework.web.bind.annotation.RestControllerAdvice;
 import org.springframework.web.method.annotation.HandlerMethodValidationException;
 import org.springframework.http.converter.HttpMessageNotReadableException;
+import org.springframework.web.method.annotation.MethodArgumentTypeMismatchException;
 
 import com.mentalbridge.identity.account.AccountNotFoundException;
 import com.mentalbridge.identity.account.AccountVersionMismatchException;
 import com.mentalbridge.identity.account.DedicatedAdminProtectionException;
 import com.mentalbridge.identity.account.InvalidStateTransitionException;
+import com.mentalbridge.identity.account.InvalidAdminAccountQueryException;
 import com.mentalbridge.identity.authentication.InvalidCredentialsException;
 import com.mentalbridge.identity.authentication.InvalidSessionException;
 import com.mentalbridge.identity.idempotency.IdempotencyConflictException;
@@ -33,7 +35,8 @@ public class ApiExceptionHandler {
 	}
 
 	@ExceptionHandler({ HandlerMethodValidationException.class, MissingRequestHeaderException.class,
-			HttpMessageNotReadableException.class })
+			HttpMessageNotReadableException.class, MethodArgumentTypeMismatchException.class,
+			InvalidAdminAccountQueryException.class })
 	ProblemDetail requestValidation(Exception exception, HttpServletRequest request) {
 		return problem(HttpStatus.BAD_REQUEST, "VALIDATION_FAILED", "Request validation failed", request);
 	}

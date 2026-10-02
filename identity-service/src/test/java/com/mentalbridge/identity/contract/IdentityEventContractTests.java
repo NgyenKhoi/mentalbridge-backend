@@ -17,7 +17,7 @@ class IdentityEventContractTests {
 	void accountLifecycleSchemasAreValidJsonSchemaDocuments() throws Exception {
 		var directory = Path.of("..", "contracts", "events", "identity").toAbsolutePath();
 		for (var name : new String[] { "account-registered-v1.schema.json",
-				"account-email-verified-v1.schema.json" }) {
+				"account-email-verified-v1.schema.json", "account-state-changed-v1.schema.json" }) {
 			var schema = objectMapper.readTree(Files.readString(directory.resolve(name)));
 			assertThat(schema.get("$schema").asText()).isEqualTo("https://json-schema.org/draft/2020-12/schema");
 			assertThat(schema.get("additionalProperties").asBoolean()).isFalse();

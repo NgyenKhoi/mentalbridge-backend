@@ -1,6 +1,10 @@
 package com.mentalbridge.identity.account;
 
 import jakarta.validation.Valid;
+import jakarta.validation.constraints.Email;
+import jakarta.validation.constraints.Max;
+import jakarta.validation.constraints.Min;
+import jakarta.validation.constraints.Size;
 import java.util.UUID;
 import org.springframework.http.ResponseEntity;
 import org.springframework.security.access.prepost.PreAuthorize;
@@ -32,9 +36,9 @@ public class AdminAccountController {
     public ResponseEntity<AdminAccountService.AccountPage> searchAccounts(
             @RequestParam(required = false) AccountStatus status,
             @RequestParam(required = false) RoleCode role,
-            @RequestParam(required = false) String email,
-            @RequestParam(required = false) String cursor,
-            @RequestParam(required = false) Integer limit) {
+            @RequestParam(required = false) @Email @Size(max = 254) String email,
+            @RequestParam(required = false) @Size(max = 512) String cursor,
+            @RequestParam(required = false) @Min(1) @Max(100) Integer limit) {
         AdminAccountService.AccountPage page = service.searchAccounts(status, role, email, cursor, limit);
         return ResponseEntity.ok(page);
     }
@@ -55,16 +59,8 @@ public class AdminAccountController {
             @RequestHeader("X-Correlation-Id") UUID correlationId,
             @AuthenticationPrincipal Jwt jwt,
             @Valid @RequestBody AccountStateChangeRequest request) {
-        String cleanVersion = ifMatch.replace("\"", "").trim();
-        long expectedVersion = Long.parseLong(cleanVersion);
-
-        UUID actorId = null;
-        if (jwt != null && jwt.getSubject() != null) {
-            try {
-                actorId = UUID.fromString(jwt.getSubject());
-            } catch (IllegalArgumentException ignored) {
-            }
-        }
+        long expectedVersion = parseIfMatch(ifMatch);
+        UUID actorId = jwt == null ? null : UUID.fromString(jwt.getSubject());
 
         AccountController.AccountResponse updated = service.changeAccountState(
                 actorId, accountId, request, expectedVersion, correlationId);
@@ -72,5 +68,17 @@ public class AdminAccountController {
         return ResponseEntity.ok()
                 .eTag("\"" + updated.version() + "\"")
                 .body(updated);
+    }
+
+    private long parseIfMatch(String ifMatch) {
+        if (ifMatch == null || !ifMatch.matches("^\\\"[0-9]+\\\"$")) {
+            throw new InvalidAdminAccountQueryException("If-Match must be a quoted numeric ETag");
+        }
+        try {
+            return Long.parseLong(ifMatch.substring(1, ifMatch.length() - 1));
+        }
+        catch (NumberFormatException exception) {
+            throw new InvalidAdminAccountQueryException("If-Match version is outside the supported range");
+        }
     }
 }

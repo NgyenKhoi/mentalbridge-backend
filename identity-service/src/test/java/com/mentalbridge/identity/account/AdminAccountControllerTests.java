@@ -63,7 +63,7 @@ class AdminAccountControllerTests {
     void changeStateReturns200WithEtag() throws Exception {
         UUID id = UUID.randomUUID();
         UUID corr = UUID.randomUUID();
-        AccountStateChangeRequest req = new AccountStateChangeRequest(AccountStatus.DISABLED, "SAFETY_CONCERN");
+        AccountStateChangeRequest req = new AccountStateChangeRequest(AccountStatus.DISABLED, AccountStateReasonCode.SAFETY_CONCERN);
         when(service.changeAccountState(any(), eq(id), any(), eq(2L), any()))
                 .thenReturn(new AccountController.AccountResponse(
                         id, "user@example.com", AccountStatus.DISABLED, List.of(RoleCode.USER),
@@ -82,7 +82,7 @@ class AdminAccountControllerTests {
     void changeStateReturns412OnVersionMismatch() throws Exception {
         UUID id = UUID.randomUUID();
         UUID corr = UUID.randomUUID();
-        AccountStateChangeRequest req = new AccountStateChangeRequest(AccountStatus.DISABLED, "SAFETY_CONCERN");
+        AccountStateChangeRequest req = new AccountStateChangeRequest(AccountStatus.DISABLED, AccountStateReasonCode.SAFETY_CONCERN);
         when(service.changeAccountState(any(), eq(id), any(), eq(1L), any()))
                 .thenThrow(new AccountVersionMismatchException(id, 1L, 2L));
 
@@ -98,7 +98,7 @@ class AdminAccountControllerTests {
     void changeStateReturns403OnDedicatedAdminProtection() throws Exception {
         UUID id = UUID.randomUUID();
         UUID corr = UUID.randomUUID();
-        AccountStateChangeRequest req = new AccountStateChangeRequest(AccountStatus.DISABLED, "SAFETY_CONCERN");
+        AccountStateChangeRequest req = new AccountStateChangeRequest(AccountStatus.DISABLED, AccountStateReasonCode.SAFETY_CONCERN);
         when(service.changeAccountState(any(), eq(id), any(), any(Long.class), any()))
                 .thenThrow(new DedicatedAdminProtectionException(id));
 
@@ -114,7 +114,7 @@ class AdminAccountControllerTests {
     void changeStateReturns404WhenNotFound() throws Exception {
         UUID id = UUID.randomUUID();
         UUID corr = UUID.randomUUID();
-        AccountStateChangeRequest req = new AccountStateChangeRequest(AccountStatus.DISABLED, "SAFETY_CONCERN");
+        AccountStateChangeRequest req = new AccountStateChangeRequest(AccountStatus.DISABLED, AccountStateReasonCode.SAFETY_CONCERN);
         when(service.changeAccountState(any(), eq(id), any(), any(Long.class), any()))
                 .thenThrow(new AccountNotFoundException(id));
 
@@ -130,7 +130,7 @@ class AdminAccountControllerTests {
     void changeStateReturns400OnInvalidStateTransition() throws Exception {
         UUID id = UUID.randomUUID();
         UUID corr = UUID.randomUUID();
-        AccountStateChangeRequest req = new AccountStateChangeRequest(AccountStatus.DISABLED, "SAFETY_CONCERN");
+        AccountStateChangeRequest req = new AccountStateChangeRequest(AccountStatus.DISABLED, AccountStateReasonCode.SAFETY_CONCERN);
         when(service.changeAccountState(any(), eq(id), any(), any(Long.class), any()))
                 .thenThrow(new InvalidStateTransitionException("Invalid transition"));
 
@@ -139,6 +139,30 @@ class AdminAccountControllerTests {
                         .header("If-Match", "\"1\"")
                         .header("X-Correlation-Id", corr.toString())
                         .content(objectMapper.writeValueAsString(req)))
+                .andExpect(status().isBadRequest());
+    }
+    @Test
+    void changeStateRejectsMalformedIfMatch() throws Exception {
+        UUID id = UUID.randomUUID();
+        UUID corr = UUID.randomUUID();
+
+        mockMvc.perform(put("/api/v1/admin/accounts/" + id + "/state")
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .header("If-Match", "not-an-etag")
+                        .header("X-Correlation-Id", corr.toString())
+                        .content("{\"status\":\"DISABLED\",\"reasonCode\":\"SAFETY_CONCERN\"}"))
+                .andExpect(status().isBadRequest());
+    }
+
+    @Test
+    void changeStateRejectsAStatusOutsideTheAdminContract() throws Exception {
+        UUID id = UUID.randomUUID();
+
+        mockMvc.perform(put("/api/v1/admin/accounts/" + id + "/state")
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .header("If-Match", "\"1\"")
+                        .header("X-Correlation-Id", UUID.randomUUID().toString())
+                        .content("{\"status\":\"DELETION_PENDING\",\"reasonCode\":\"SAFETY_CONCERN\"}"))
                 .andExpect(status().isBadRequest());
     }
 }
