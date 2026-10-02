@@ -32,6 +32,12 @@ interface CommunityCommentRepository extends JpaRepository<CommunityCommentEntit
 			      WHERE (block.blocker_profile_id = :viewerProfileId AND block.blocked_profile_id = parent.author_profile_id)
 			         OR (block.blocker_profile_id = parent.author_profile_id AND block.blocked_profile_id = :viewerProfileId)
 			  ))
+			  AND (:viewerProfileId IS NULL OR NOT EXISTS (
+			      SELECT 1 FROM community_content_hide hidden
+			      WHERE hidden.hider_profile_id = :viewerProfileId
+			        AND ((hidden.target_type = 'COMMENT' AND hidden.target_id = comment.id)
+			          OR (hidden.target_type = 'POST' AND hidden.target_id = comment.post_id))
+			  ))
 			  AND (CAST(:cursorCreatedAt AS timestamptz) IS NULL
 			       OR comment.created_at > :cursorCreatedAt
 			       OR (comment.created_at = :cursorCreatedAt AND comment.id > :cursorCommentId))

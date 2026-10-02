@@ -1046,7 +1046,7 @@ CREATE TABLE consultation.session_summary_reuse_consent (
 
 /* ========================================================================== */
 /* ACTIVE — community-service / mentalbridge_community                        */
-/* Evidence: community-service Liquibase changes 0001-0008.                  */
+/* Evidence: community-service Liquibase changes 0001-0009.                  */
 /* ========================================================================== */
 
 CREATE TABLE community.community_profile (
@@ -1134,13 +1134,77 @@ CREATE TABLE community.community_comment (
 CREATE TABLE community.community_comment_revision (
     id uuid PRIMARY KEY,
     comment_id uuid NOT NULL REFERENCES community.community_comment(id),
-    changed_by_profile_id uuid NOT NULL REFERENCES community.community_profile(id),
+    changed_by_profile_id uuid REFERENCES community.community_profile(id),
+    changed_by_subject uuid,
     change_type varchar(16) NOT NULL,
     content_snapshot varchar(2000) NOT NULL,
     state_snapshot varchar(24) NOT NULL,
     comment_version bigint NOT NULL,
     changed_at timestamptz NOT NULL,
     UNIQUE (comment_id, comment_version)
+);
+
+CREATE TABLE community.community_report (
+    id uuid PRIMARY KEY,
+    reporter_profile_id uuid NOT NULL REFERENCES community.community_profile(id),
+    target_type varchar(16) NOT NULL,
+    target_id uuid NOT NULL,
+    reason varchar(40) NOT NULL,
+    details varchar(1000),
+    idempotency_key varchar(128) NOT NULL,
+    request_fingerprint varchar(64) NOT NULL,
+    created_at timestamptz NOT NULL,
+    UNIQUE (reporter_profile_id, idempotency_key),
+    UNIQUE (reporter_profile_id, target_type, target_id)
+);
+
+CREATE TABLE community.community_content_hide (
+    hider_profile_id uuid NOT NULL REFERENCES community.community_profile(id),
+    target_type varchar(16) NOT NULL,
+    target_id uuid NOT NULL,
+    created_at timestamptz NOT NULL,
+    PRIMARY KEY (hider_profile_id, target_type, target_id)
+);
+
+CREATE TABLE community.community_moderation_case (
+    id uuid PRIMARY KEY,
+    target_type varchar(24) NOT NULL,
+    target_id uuid NOT NULL,
+    target_author_profile_id uuid NOT NULL REFERENCES community.community_profile(id),
+    state varchar(16) NOT NULL,
+    priority varchar(16) NOT NULL,
+    evidence_content varchar(5000) NOT NULL,
+    evidence_state varchar(24) NOT NULL,
+    evidence_version bigint NOT NULL,
+    created_at timestamptz NOT NULL,
+    updated_at timestamptz NOT NULL,
+    version bigint NOT NULL,
+    UNIQUE (target_type, target_id)
+);
+
+CREATE TABLE community.community_moderation_action (
+    id uuid PRIMARY KEY,
+    case_id uuid NOT NULL REFERENCES community.community_moderation_case(id),
+    actor_subject uuid NOT NULL, -- external -> identity.account.id
+    action varchar(32) NOT NULL,
+    reason_code varchar(64) NOT NULL,
+    prior_state varchar(32) NOT NULL,
+    resulting_state varchar(32) NOT NULL,
+    target_version bigint NOT NULL,
+    idempotency_key varchar(128) NOT NULL,
+    request_fingerprint varchar(64) NOT NULL,
+    created_at timestamptz NOT NULL,
+    UNIQUE (actor_subject, idempotency_key)
+);
+
+CREATE TABLE community.community_access_restriction (
+    profile_id uuid PRIMARY KEY REFERENCES community.community_profile(id),
+    case_id uuid NOT NULL REFERENCES community.community_moderation_case(id),
+    reason_code varchar(64) NOT NULL,
+    restricted_by_subject uuid NOT NULL, -- external -> identity.account.id
+    restricted_at timestamptz NOT NULL,
+    lifted_by_subject uuid, -- external -> identity.account.id
+    lifted_at timestamptz
 );
 
 /* ========================================================================== */
