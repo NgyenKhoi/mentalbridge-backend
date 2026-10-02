@@ -176,4 +176,17 @@ class CommunityPostEntity {
 	void removeMedia(CommunityMediaEntity item) {
 		media.remove(item);
 	}
+
+	void addComment(Instant now) {
+		commentCount++;
+		updatedAt = now;
+	}
+
+	void removeComment(Instant now) {
+		if (commentCount == 0) {
+			throw new IllegalStateException("Comment count cannot be negative");
+		}
+		commentCount--;
+		updatedAt = now;
+	}
 }

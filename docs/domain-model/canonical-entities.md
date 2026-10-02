@@ -94,7 +94,9 @@ See [README](README.md) for status and relationship semantics.
 | `community_post_topic` | community-service | PostgreSQL | ACTIVE | Physical many-to-one classification using only governed non-diagnostic Community topic codes. |
 | `community_media` | community-service | PostgreSQL/object storage | ACTIVE | Physical owner/post references hold safe metadata only; binary content remains in object storage and only `READY` delivery metadata is public. |
 | `community_block` | community-service | PostgreSQL | ACTIVE | Physical profile-to-profile visibility rule applied symmetrically to feed and detail reads. |
-| Comments, reactions, bookmarks, reports, moderation cases/actions, and command replay | community-service | PostgreSQL | PROPOSED | Frozen Community Contract v1 paths and enums exist, but their delivery stories have not added runtime persistence. |
+| `community_comment` | community-service | PostgreSQL | ACTIVE | Physical post, optional same-post root parent, and author profile references implement chronological comments and one-level replies with owner-scoped command replay. |
+| `community_comment_revision` | community-service | PostgreSQL | ACTIVE | Physical comment and acting-profile references retain immutable create/edit/delete snapshots for moderation-compatible audit. |
+| Reactions, bookmarks, reports, moderation cases/actions, and their command replay | community-service | PostgreSQL | PROPOSED | Frozen Community Contract v1 paths and enums exist, but their delivery stories have not added runtime persistence. |
 
 ## Content/Notification — PostgreSQL
 
