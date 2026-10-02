@@ -70,6 +70,7 @@ interface SupportPlanRepository extends JpaRepository<SupportPlanEntity, UUID> {
 			       source_support_plan_id as "sourcePlanId",
 			       source_support_plan_version as "sourcePlanVersion",
 			       reassessment_summary_id as "reassessmentSummaryId",
+			       plan_change_request_id as "planChangeRequestId",
 			       replacement_review_outcome as "replacementReviewOutcome"
 			from support_plan_command
 			where user_id = :userId and idempotency_key = :idempotencyKey
@@ -85,12 +86,12 @@ interface SupportPlanRepository extends JpaRepository<SupportPlanEntity, UUID> {
 				 entitlement_package,entitlement_source,entitlement_policy_version,entitlement_version,
 				 entitlement_decided_at,resource_policy_version,resources_resolved_at,created_at,
 				 source_support_plan_id,source_support_plan_version,reassessment_summary_id,
-				 replacement_review_outcome)
+				 plan_change_request_id,replacement_review_outcome)
 			values (:userId,:idempotencyKey,:commandType,:requestHash,:planId,:expectedVersion,
 				:resultingVersion,:resultingStatus,:resultingUpdatedAt,:evaluationPolicyVersion,
 				:entitlementPackage,:entitlementSource,:entitlementPolicyVersion,:entitlementVersion,
 				:entitlementDecidedAt,:resourcePolicyVersion,:resourcesResolvedAt,:createdAt,
-				:sourcePlanId,:sourcePlanVersion,:summaryId,:reviewOutcome)
+				:sourcePlanId,:sourcePlanVersion,:summaryId,:planChangeRequestId,:reviewOutcome)
 			""", nativeQuery = true)
 	int insertCommand(@Param("userId") UUID userId, @Param("idempotencyKey") String idempotencyKey,
 			@Param("commandType") String commandType, @Param("requestHash") String requestHash,
@@ -107,6 +108,7 @@ interface SupportPlanRepository extends JpaRepository<SupportPlanEntity, UUID> {
 			@Param("resourcesResolvedAt") Instant resourcesResolvedAt,
 			@Param("createdAt") Instant createdAt, @Param("sourcePlanId") UUID sourcePlanId,
 			@Param("sourcePlanVersion") Long sourcePlanVersion, @Param("summaryId") UUID summaryId,
+			@Param("planChangeRequestId") UUID planChangeRequestId,
 			@Param("reviewOutcome") String reviewOutcome);
 
 	@Modifying
@@ -155,6 +157,7 @@ interface SupportPlanRepository extends JpaRepository<SupportPlanEntity, UUID> {
 		UUID getSourcePlanId();
 		Long getSourcePlanVersion();
 		UUID getReassessmentSummaryId();
+		UUID getPlanChangeRequestId();
 		String getReplacementReviewOutcome();
 	}
 

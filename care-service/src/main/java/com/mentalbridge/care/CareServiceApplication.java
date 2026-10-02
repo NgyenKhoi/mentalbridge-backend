@@ -13,13 +13,15 @@ import com.mentalbridge.care.reassessment.JournalLongitudinalHttpClient;
 import com.mentalbridge.care.resourceeligibility.ContentResourceEligibilityHttpClient;
 import com.mentalbridge.care.safetydirectory.ContentSafetyDirectoryHttpClient;
 import com.mentalbridge.care.supportguide.JournalSupportGuidePhrasingHttpClient;
+import com.mentalbridge.care.supportplan.ConsultationResourceProposalHttpClient;
 
 @SpringBootApplication
 @ConfigurationPropertiesScan
 @EnableFeignClients(clients = { ContentResourceEligibilityHttpClient.class, ContentSafetyDirectoryHttpClient.class,
 		ConsultationEntitlementHttpClient.class, JournalLongitudinalHttpClient.class,
 		JournalSupportGuidePhrasingHttpClient.class, ConsultationAppointmentHttpClient.class,
-		JournalActivityHttpClient.class, ConsultationActivityHttpClient.class })
+		JournalActivityHttpClient.class, ConsultationActivityHttpClient.class,
+		ConsultationResourceProposalHttpClient.class })
 public class CareServiceApplication {
 
 	public static void main(String[] args) {

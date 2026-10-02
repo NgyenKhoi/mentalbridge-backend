@@ -155,9 +155,11 @@ stable `AVAILABLE`/`PARTIAL`/`EMPTY`/`STALE`/`UNAVAILABLE` outcomes, local
 synchronous safety, owner-only history, and approved-copy fallback when AI is
 unavailable.
 
-`PlanChangeRequest` and notification delivery remain separately delivery-gated
-where their owner contracts are not yet complete. Explicit reassessment
-self-report and approved occurrence summary reuse are implemented in Care.
+MB-560 implements the Care-owned `PlanChangeRequest` path for exact specialist
+resource proposals and explicit user decisions. Notification delivery remains
+separately delivery-gated where its owner contracts are not yet complete.
+Explicit reassessment self-report and approved occurrence summary reuse are
+implemented in Care.
 
 MB-513 implements Care-owned schedules/occurrences. MB-374 implements owner
 lifecycle/history. MB-376 implements owner engagement/helpfulness. Do not cite
@@ -166,8 +168,10 @@ MB-513 as the owner of pause/resume/complete/discard lifecycle commands.
 ## MB-372 initial draft runtime
 
 MB-372 enables only deterministic creation and reload of the current `DRAFT`.
-It does not enable choice mutation, activation, pause/resume, completion,
-replacement, activity tracking, reminders, or `PlanChangeRequest` handling.
+It did not by itself enable choice mutation, activation, pause/resume,
+completion, replacement, activity tracking, reminders, or `PlanChangeRequest`
+handling; those capabilities are owned by their later stories, including
+MB-560 for specialist proposals.
 
 - A new draft requires a current authoritative `PLUS` or `PREMIUM` decision
   from Consultation. `FREE`, entitlement uncertainty, or a client-supplied

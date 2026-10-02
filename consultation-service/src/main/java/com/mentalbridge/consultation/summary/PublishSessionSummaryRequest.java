@@ -28,7 +28,8 @@ public record PublishSessionSummaryRequest(
 	}
 
 	public record NextStep(@NotNull AgreedNextStepType type, @NotBlank @Size(max = 160) String title,
-			@Size(max = 500) String details, UUID resourceId, @Size(max = 64) String resourceVersion) {
+			@Size(max = 500) String details, UUID resourceId, @Size(max = 64) String resourceVersion,
+			ResourceProposalReasonCode resourceProposalReasonCode) {
 		@JsonAnySetter
 		public void rejectUnknownField(String name, Object value) {
 			throw new IllegalArgumentException("Unsupported agreed next step field: " + name);

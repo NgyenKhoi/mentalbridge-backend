@@ -111,6 +111,38 @@ class SessionSummaryFlowIntegrationTests extends ConsultationTestProperties {
 	}
 
 	@Test
+	void exactResourceProposalExposesOnlyCurrentCompletedSessionProvenance() throws Exception {
+		var fixture = completedAppointment();
+		var published = mvc.perform(publish(fixture, fixture.specialistId(), "summary-resource-proposal-1",
+				resourceProposalBody())).andExpect(status().isCreated())
+				.andExpect(jsonPath("$.agreedNextSteps[0].resourceProposalReasonCode")
+						.value("TRY_ALTERNATIVE_RESOURCE"))
+				.andReturn();
+		var response = json.readTree(published.getResponse().getContentAsByteArray());
+		var proposalId = response.path("agreedNextSteps").get(0).path("id").asText();
+
+		mvc.perform(get("/internal/v1/resource-proposals/{proposalId}", proposalId)
+				.with(user(fixture.userId())))
+				.andExpect(status().isOk())
+				.andExpect(jsonPath("$.proposalId").value(proposalId))
+				.andExpect(jsonPath("$.appointmentId").value(fixture.appointmentId().toString()))
+				.andExpect(jsonPath("$.specialistAccountId").value(fixture.specialistId().toString()))
+				.andExpect(jsonPath("$.resourceVersion").value("7"))
+				.andExpect(jsonPath("$.reasonCode").value("TRY_ALTERNATIVE_RESOURCE"));
+		mvc.perform(get("/internal/v1/resource-proposals/{proposalId}", proposalId)
+				.with(user(UUID.randomUUID())))
+				.andExpect(status().isNotFound());
+
+		mvc.perform(publish(fixture, fixture.specialistId(), "summary-resource-proposal-2", amendedBody())
+				.header("If-Match", "\"1\""))
+				.andExpect(status().isCreated());
+		mvc.perform(get("/internal/v1/resource-proposals/{proposalId}", proposalId)
+				.with(user(fixture.userId())))
+				.andExpect(status().isConflict())
+				.andExpect(jsonPath("$.code").value("RESOURCE_PROPOSAL_STALE"));
+	}
+
+	@Test
 	void userOwnsNextStepAndSeparateReusableSummaryConsent() throws Exception {
 		var fixture = completedAppointment();
 		var published = mvc.perform(publish(fixture, fixture.specialistId(), "summary-user-controls-1", summaryBody()))
@@ -321,6 +353,16 @@ class SessionSummaryFlowIntegrationTests extends ConsultationTestProperties {
 		return """
 				{"topicsDiscussed":["Giấc ngủ","Thói quen buổi tối"],"progressSummary":"Bổ sung nội dung đã thống nhất.",
 				 "specialistNoteForUser":null,"followUpSuggested":false,"agreedNextSteps":[]}
+				""";
+	}
+
+	private String resourceProposalBody() {
+		return """
+				{"topicsDiscussed":["Giáº¥c ngá»§"],"progressSummary":null,
+				 "specialistNoteForUser":null,"followUpSuggested":false,
+				 "agreedNextSteps":[{"type":"PLATFORM_RESOURCE","title":"BÃ i thá»±c hÃ nh thá»Ÿ",
+				 "details":"Thá»­ trong tuáº§n tá»›i.","resourceId":"00000000-0000-4000-8000-000000000201",
+				 "resourceVersion":"7","resourceProposalReasonCode":"TRY_ALTERNATIVE_RESOURCE"}]}
 				""";
 	}
 

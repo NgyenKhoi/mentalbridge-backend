@@ -47,8 +47,9 @@ Kafka, Redis, WebSocket, notification, or directory delivery.
   occurrence engagement with minimized event provenance. MB-386 adds immutable
   compatibility Reassessment Summary composition and owner-only current/detail/
   history queries without rewriting source evidence. The canonical explicit
-  reassessment self-report, governed `PlanChangeRequest`, and actor-facing
-  reassessment UI are completed by MB-559; richer history/presentation remains a later slice.
+  reassessment self-report and actor-facing reassessment UI are completed by
+  MB-559. MB-560 implements the separately governed `PlanChangeRequest`; richer
+  history/presentation remains a later slice.
 - Care consumes exact Content-owned eligibility through the generated Resource Eligibility v1 OpenFeign boundary with explicit deadlines, bounded retry, circuit breaker and fail-closed `UNAVAILABLE` outcomes. It makes the final future plan decision without cross-database access or a transaction spanning the remote call. Review/publication alone is insufficient.
 - Care combines reassessment dimensions without normalizing them into one score. Journal/AI context remains model-derived evidence limited to available consented entries; Care maps it only to policy-allowed review candidates and requires user confirmation.
 - MB-386 retains compatible explicit 7-31 day analysis composition. MB-559's canonical path issues adjacent 14-day periods from a versioned Care context, validates that the selected PHQ-9/GAD-7 results remain current, resolves a Journal job authoritatively, requires the selected self-report to match the current bounds, and snapshots truthful `UNAVAILABLE` or `INSUFFICIENT_DATA` states. Local engagement/reflection selects only owner-approved reusable occurrences by `scheduled_at`; a source change or deletion after composition cannot rewrite history.
@@ -92,6 +93,16 @@ before activation. Choice replacement is a naturally idempotent PUT guarded by
 partial unique indexes yield exactly one official current plan under retries
 and concurrency. Activation emits one minimized atomic outbox fact.
 
+MB-560 adds owner-scoped `PlanChangeRequest` review and decision endpoints.
+Care retrieves one authoritative exact-version proposal from Consultation,
+revalidates current paid entitlement, current official plan, compatible
+evaluation/template, exact Content publication, and a compatible slot before
+persisting a review snapshot. Only the user may accept or reject. Rejection
+leaves the plan unchanged; acceptance repeats those checks and atomically
+supersedes the old plan, activates its replacement, and records the exact
+request in the SupportPlan command audit. The specialist receives status only
+and never obtains plan-mutation authority.
+
 MB-178 does not implement specialist grants, automatic follow-up, clinical progress interpretation, export/deletion, or production retention. Support/intervention, analytics, Kafka event delivery, and these deferred workflows must not be inferred from the implemented profile/consent/history slice.
 
 ## Ordered tasks
@@ -110,6 +121,7 @@ MB-178 does not implement specialist grants, automatic follow-up, clinical progr
 - [x] CARE-07f Implement the MB-386 compatibility Reassessment Summary composition with safe Journal/AI fallback and owner current/history queries.
 - [x] CARE-07g Implement MB-559 explicit reassessment self-report, deletion semantics, and canonical v2 composition.
 - [x] CARE-07h Implement MB-381 ConsultationBrief draft, exact approval snapshot, assigned-specialist window, revoke/delete, and minimized audit.
+- [x] CARE-07i Implement MB-560 exact specialist resource proposals, Care-owned review, explicit owner decision, and atomic idempotent replacement.
 - [ ] CARE-08 Add the ADR 0022 explicit reassessment self-report and governed plan-review outcome contract; follow-up, other analytics projections, export and deletion participation remain open.
 - [ ] CARE-09 Verify scoring boundaries, item-9 safety, stale/missing input, concurrency, rollback/outbox, duplicate/reordered events and dependency failures.
 - [ ] CARE-10 Add safe observability/configuration, update README, and pass module/contract/migration gates.
