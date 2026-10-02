@@ -25,87 +25,119 @@ import com.mentalbridge.identity.idempotency.IdempotencyConflictException;
 import com.mentalbridge.identity.registration.InvalidVerificationChallengeException;
 
 import jakarta.servlet.http.HttpServletRequest;
+import jakarta.servlet.http.HttpServletResponse;
 
 @RestControllerAdvice
 public class ApiExceptionHandler {
 
 	@ExceptionHandler(MethodArgumentNotValidException.class)
-	ProblemDetail validation(MethodArgumentNotValidException exception, HttpServletRequest request) {
-		return problem(HttpStatus.BAD_REQUEST, "VALIDATION_FAILED", "Request validation failed", request);
+	ProblemDetail validation(MethodArgumentNotValidException exception, HttpServletRequest request,
+			HttpServletResponse response) {
+		return problem(HttpStatus.BAD_REQUEST, "VALIDATION_FAILED", "Request validation failed", request, response);
 	}
 
 	@ExceptionHandler({ HandlerMethodValidationException.class, MissingRequestHeaderException.class,
 			HttpMessageNotReadableException.class, MethodArgumentTypeMismatchException.class,
 			InvalidAdminAccountQueryException.class })
-	ProblemDetail requestValidation(Exception exception, HttpServletRequest request) {
-		return problem(HttpStatus.BAD_REQUEST, "VALIDATION_FAILED", "Request validation failed", request);
+	ProblemDetail requestValidation(Exception exception, HttpServletRequest request,
+			HttpServletResponse response) {
+		return problem(HttpStatus.BAD_REQUEST, "VALIDATION_FAILED", "Request validation failed", request, response);
 	}
 
 	@ExceptionHandler(InvalidVerificationChallengeException.class)
-	ProblemDetail invalidChallenge(InvalidVerificationChallengeException exception, HttpServletRequest request) {
-		return problem(HttpStatus.BAD_REQUEST, "INVALID_CHALLENGE", "Challenge is invalid", request);
+	ProblemDetail invalidChallenge(InvalidVerificationChallengeException exception, HttpServletRequest request,
+			HttpServletResponse response) {
+		return problem(HttpStatus.BAD_REQUEST, "INVALID_CHALLENGE", "Challenge is invalid", request, response);
 	}
 
 	@ExceptionHandler(DataIntegrityViolationException.class)
-	ProblemDetail conflict(DataIntegrityViolationException exception, HttpServletRequest request) {
+	ProblemDetail conflict(DataIntegrityViolationException exception, HttpServletRequest request,
+			HttpServletResponse response) {
 		var duplicateEmail = exception.getMostSpecificCause().getMessage().contains("ux_account_email");
 		return problem(HttpStatus.CONFLICT, duplicateEmail ? "ACCOUNT_ALREADY_EXISTS" : "CONFLICT",
 				duplicateEmail ? "Account registration conflicts with existing data" : "Request conflicts with current state",
-				request);
+				request, response);
 	}
 
 	@ExceptionHandler(InvalidCredentialsException.class)
-	ProblemDetail invalidCredentials(InvalidCredentialsException exception, HttpServletRequest request) {
-		return problem(HttpStatus.UNAUTHORIZED, "INVALID_CREDENTIALS", "Credentials are invalid", request);
+	ProblemDetail invalidCredentials(InvalidCredentialsException exception, HttpServletRequest request,
+			HttpServletResponse response) {
+		return problem(HttpStatus.UNAUTHORIZED, "INVALID_CREDENTIALS", "Credentials are invalid", request, response);
 	}
 
 	@ExceptionHandler(InvalidSessionException.class)
-	ProblemDetail invalidSession(InvalidSessionException exception, HttpServletRequest request) {
-		return problem(HttpStatus.UNAUTHORIZED, "INVALID_SESSION", "Session is invalid", request);
+	ProblemDetail invalidSession(InvalidSessionException exception, HttpServletRequest request,
+			HttpServletResponse response) {
+		return problem(HttpStatus.UNAUTHORIZED, "INVALID_SESSION", "Session is invalid", request, response);
 	}
 
 	@ExceptionHandler(IdempotencyConflictException.class)
-	ProblemDetail idempotencyConflict(IdempotencyConflictException exception, HttpServletRequest request) {
-		return problem(HttpStatus.CONFLICT, "IDEMPOTENCY_KEY_REUSED", "Idempotency key was reused", request);
+	ProblemDetail idempotencyConflict(IdempotencyConflictException exception, HttpServletRequest request,
+			HttpServletResponse response) {
+		return problem(HttpStatus.CONFLICT, "IDEMPOTENCY_KEY_REUSED", "Idempotency key was reused", request, response);
 	}
 
 	@ExceptionHandler(AccountNotFoundException.class)
-	ProblemDetail accountNotFound(AccountNotFoundException exception, HttpServletRequest request) {
-		return problem(HttpStatus.NOT_FOUND, "NOT_FOUND", exception.getMessage(), request);
+	ProblemDetail accountNotFound(AccountNotFoundException exception, HttpServletRequest request,
+			HttpServletResponse response) {
+		return problem(HttpStatus.NOT_FOUND, "NOT_FOUND", exception.getMessage(), request, response);
 	}
 
 	@ExceptionHandler(DedicatedAdminProtectionException.class)
-	ProblemDetail dedicatedAdminProtection(DedicatedAdminProtectionException exception, HttpServletRequest request) {
-		return problem(HttpStatus.FORBIDDEN, "FORBIDDEN", exception.getMessage(), request);
+	ProblemDetail dedicatedAdminProtection(DedicatedAdminProtectionException exception, HttpServletRequest request,
+			HttpServletResponse response) {
+		return problem(HttpStatus.FORBIDDEN, "FORBIDDEN", exception.getMessage(), request, response);
 	}
 
 	@ExceptionHandler(AccountVersionMismatchException.class)
-	ProblemDetail versionMismatch(AccountVersionMismatchException exception, HttpServletRequest request) {
-		return problem(HttpStatus.PRECONDITION_FAILED, "VERSION_CONFLICT", exception.getMessage(), request);
+	ProblemDetail versionMismatch(AccountVersionMismatchException exception, HttpServletRequest request,
+			HttpServletResponse response) {
+		return problem(HttpStatus.PRECONDITION_FAILED, "VERSION_CONFLICT", exception.getMessage(), request, response);
 	}
 
 	@ExceptionHandler(InvalidStateTransitionException.class)
-	ProblemDetail invalidStateTransition(InvalidStateTransitionException exception, HttpServletRequest request) {
-		return problem(HttpStatus.BAD_REQUEST, "VALIDATION_FAILED", exception.getMessage(), request);
+	ProblemDetail invalidStateTransition(InvalidStateTransitionException exception, HttpServletRequest request,
+			HttpServletResponse response) {
+		return problem(HttpStatus.BAD_REQUEST, "VALIDATION_FAILED", exception.getMessage(), request, response);
 	}
 
-	private ProblemDetail problem(HttpStatus status, String code, String title, HttpServletRequest request) {
+	private ProblemDetail problem(HttpStatus status, String code, String title, HttpServletRequest request,
+			HttpServletResponse response) {
 		var problem = ProblemDetail.forStatusAndDetail(status, title);
 		problem.setTitle(title);
 		problem.setType(URI.create("/problems/" + code.toLowerCase().replace('_', '-')));
 		problem.setProperty("code", code);
-		problem.setProperty("correlationId", correlationId(request));
+		UUID correlationId = correlationId(request);
+		problem.setProperty("correlationId", correlationId);
+		if (response != null) {
+			response.setHeader("X-Correlation-Id", correlationId.toString());
+		}
 		return problem;
 	}
 
 	private UUID correlationId(HttpServletRequest request) {
-		var supplied = request.getHeader("X-Correlation-Id");
-		try {
-			return supplied == null ? UUID.randomUUID() : UUID.fromString(supplied);
+		if (request != null) {
+			var attribute = request.getAttribute("correlationId");
+			if (attribute instanceof UUID uuid) {
+				return uuid;
+			}
+			if (attribute instanceof String str && !str.isBlank()) {
+				try {
+					return UUID.fromString(str);
+				}
+				catch (IllegalArgumentException ignored) {
+				}
+			}
+			var supplied = request.getHeader("X-Correlation-Id");
+			try {
+				if (supplied != null && !supplied.isBlank()) {
+					return UUID.fromString(supplied);
+				}
+			}
+			catch (IllegalArgumentException ignored) {
+			}
 		}
-		catch (IllegalArgumentException exception) {
-			return UUID.randomUUID();
-		}
+		return UUID.randomUUID();
 	}
 
 }

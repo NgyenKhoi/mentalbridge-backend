@@ -1,5 +1,6 @@
 package com.mentalbridge.identity.account;
 
+import jakarta.servlet.http.HttpServletRequest;
 import jakarta.validation.Valid;
 import jakarta.validation.constraints.Email;
 import jakarta.validation.constraints.Max;
@@ -38,17 +39,32 @@ public class AdminAccountController {
             @RequestParam(required = false) RoleCode role,
             @RequestParam(required = false) @Email @Size(max = 254) String email,
             @RequestParam(required = false) @Size(max = 512) String cursor,
-            @RequestParam(required = false) @Min(1) @Max(100) Integer limit) {
+            @RequestParam(required = false) @Min(1) @Max(100) Integer limit,
+            @RequestHeader(name = "X-Correlation-Id", required = false) UUID correlationId,
+            HttpServletRequest servletRequest) {
+        UUID effectiveCorrelationId = correlationId == null ? UUID.randomUUID() : correlationId;
+        if (servletRequest != null) {
+            servletRequest.setAttribute("correlationId", effectiveCorrelationId);
+        }
         AdminAccountService.AccountPage page = service.searchAccounts(status, role, email, cursor, limit);
-        return ResponseEntity.ok(page);
+        return ResponseEntity.ok()
+                .header("X-Correlation-Id", effectiveCorrelationId.toString())
+                .body(page);
     }
 
     @GetMapping("/{accountId}")
     public ResponseEntity<AccountController.AccountResponse> getAccountDetail(
-            @PathVariable UUID accountId) {
+            @PathVariable UUID accountId,
+            @RequestHeader(name = "X-Correlation-Id", required = false) UUID correlationId,
+            HttpServletRequest servletRequest) {
+        UUID effectiveCorrelationId = correlationId == null ? UUID.randomUUID() : correlationId;
+        if (servletRequest != null) {
+            servletRequest.setAttribute("correlationId", effectiveCorrelationId);
+        }
         AccountController.AccountResponse detail = service.getAccountDetail(accountId);
         return ResponseEntity.ok()
                 .eTag("\"" + detail.version() + "\"")
+                .header("X-Correlation-Id", effectiveCorrelationId.toString())
                 .body(detail);
     }
 
@@ -56,17 +72,23 @@ public class AdminAccountController {
     public ResponseEntity<AccountController.AccountResponse> changeAccountState(
             @PathVariable UUID accountId,
             @RequestHeader("If-Match") String ifMatch,
-            @RequestHeader("X-Correlation-Id") UUID correlationId,
+            @RequestHeader(name = "X-Correlation-Id", required = false) UUID correlationId,
             @AuthenticationPrincipal Jwt jwt,
+            HttpServletRequest servletRequest,
             @Valid @RequestBody AccountStateChangeRequest request) {
+        UUID effectiveCorrelationId = correlationId == null ? UUID.randomUUID() : correlationId;
+        if (servletRequest != null) {
+            servletRequest.setAttribute("correlationId", effectiveCorrelationId);
+        }
         long expectedVersion = parseIfMatch(ifMatch);
         UUID actorId = jwt == null ? null : UUID.fromString(jwt.getSubject());
 
         AccountController.AccountResponse updated = service.changeAccountState(
-                actorId, accountId, request, expectedVersion, correlationId);
+                actorId, accountId, request, expectedVersion, effectiveCorrelationId);
 
         return ResponseEntity.ok()
                 .eTag("\"" + updated.version() + "\"")
+                .header("X-Correlation-Id", effectiveCorrelationId.toString())
                 .body(updated);
     }
 

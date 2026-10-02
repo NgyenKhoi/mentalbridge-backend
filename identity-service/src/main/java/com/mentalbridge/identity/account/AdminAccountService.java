@@ -84,13 +84,24 @@ public class AdminAccountService {
 				.map(this::response).orElseThrow(() -> new AccountNotFoundException(accountId));
 	}
 
-	@Transactional
+	@Transactional(noRollbackFor = DedicatedAdminProtectionException.class)
 	public AccountController.AccountResponse changeAccountState(UUID actorId, UUID accountId,
 			AccountStateChangeRequest request, long expectedVersion, UUID correlationId) {
 		var account = accounts.findByIdForUpdate(accountId)
 				.filter(candidate -> candidate.status() != AccountStatus.DELETED)
 				.orElseThrow(() -> new AccountNotFoundException(accountId));
-		if (account.role() == RoleCode.ADMIN) throw new DedicatedAdminProtectionException(accountId);
+		if (account.role() == RoleCode.ADMIN) {
+			Instant now = clock.instant();
+			String action = request != null && request.status() == AccountStatus.ACTIVE
+					? "ACCOUNT_RESTORED"
+					: "ACCOUNT_DISABLED";
+			String reason = request != null && request.reasonCode() != null
+					? request.reasonCode().name()
+					: "DEDICATED_ADMIN_PROTECTED";
+			auditEvents.save(new SecurityAuditEventEntity(UUID.randomUUID(), account.id(), actorId, action, "DENIED",
+					reason, correlationId, null, now, now));
+			throw new DedicatedAdminProtectionException(accountId);
+		}
 		if (account.version() != expectedVersion) {
 			throw new AccountVersionMismatchException(accountId, expectedVersion, account.version());
 		}

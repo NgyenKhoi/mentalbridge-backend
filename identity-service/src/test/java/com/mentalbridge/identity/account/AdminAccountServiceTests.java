@@ -143,18 +143,115 @@ class AdminAccountServiceTests {
 	}
 
 	@Test
-	void rejectsStaleVersionDedicatedAdminAndInvalidReason() {
+	void dedicatedAdminMutationWritesDeniedAuditDoesNotMutateAndDoesNotEmitOutbox() {
+		AccountEntity admin = active(RoleCode.ADMIN);
+		UUID actorId = UUID.randomUUID();
+		UUID correlationId = UUID.randomUUID();
+		when(accounts.findByIdForUpdate(admin.id())).thenReturn(Optional.of(admin));
+
+		AccountStateChangeRequest request = new AccountStateChangeRequest(AccountStatus.DISABLED,
+				AccountStateReasonCode.POLICY_VIOLATION);
+
+		assertThatThrownBy(() -> service.changeAccountState(actorId, admin.id(), request, admin.version(),
+				correlationId)).isInstanceOf(DedicatedAdminProtectionException.class);
+
+		var auditCaptor = ArgumentCaptor.forClass(SecurityAuditEventEntity.class);
+		verify(audits).save(auditCaptor.capture());
+		SecurityAuditEventEntity audit = auditCaptor.getValue();
+		assertThat(audit.getActorId()).isEqualTo(actorId);
+		assertThat(audit.getAccountId()).isEqualTo(admin.id());
+		assertThat(audit.getAction()).isEqualTo("ACCOUNT_DISABLED");
+		assertThat(audit.getOutcome()).isEqualTo("DENIED");
+		assertThat(audit.getReasonCode()).isEqualTo("POLICY_VIOLATION");
+		assertThat(audit.getCorrelationId()).isEqualTo(correlationId);
+		assertThat(audit.getOccurredAt()).isEqualTo(NOW);
+		assertThat(audit.getSubjectReferenceHash()).isNull();
+
+		assertThat(admin.status()).isEqualTo(AccountStatus.ACTIVE);
+		assertThat(admin.version()).isEqualTo(0L);
+		verify(outbox, never()).save(any());
+		verify(accounts, never()).saveAndFlush(any());
+		verify(authentication, never()).revokeAll(any(), any(), any());
+	}
+
+	@Test
+	void specialistSuspendAndRestoreLifecycleWithIdempotence() {
+		AccountEntity specialist = active(RoleCode.SPECIALIST);
+		UUID actorId = UUID.randomUUID();
+		UUID correlationId = UUID.randomUUID();
+		when(accounts.findByIdForUpdate(specialist.id())).thenReturn(Optional.of(specialist));
+
+		// 1. Suspend SPECIALIST
+		var suspended = service.changeAccountState(actorId, specialist.id(),
+				new AccountStateChangeRequest(AccountStatus.DISABLED, AccountStateReasonCode.ACCOUNT_REVIEW_REQUIRED),
+				specialist.version(), correlationId);
+
+		assertThat(suspended.status()).isEqualTo(AccountStatus.DISABLED);
+		assertThat(suspended.roles()).containsExactly(RoleCode.SPECIALIST);
+		verify(authentication).revokeAll(specialist.id(), "ACCOUNT_DISABLED", NOW);
+
+		var auditCaptor = ArgumentCaptor.forClass(SecurityAuditEventEntity.class);
+		verify(audits).save(auditCaptor.capture());
+		assertThat(auditCaptor.getValue().getOutcome()).isEqualTo("SUCCEEDED");
+		assertThat(auditCaptor.getValue().getAction()).isEqualTo("ACCOUNT_DISABLED");
+		assertThat(auditCaptor.getValue().getReasonCode()).isEqualTo("ACCOUNT_REVIEW_REQUIRED");
+		assertThat(auditCaptor.getValue().getCorrelationId()).isEqualTo(correlationId);
+
+		var outboxCaptor = ArgumentCaptor.forClass(OutboxEventEntity.class);
+		verify(outbox).save(outboxCaptor.capture());
+		assertThat(outboxCaptor.getValue().messageType()).isEqualTo("identity.account.state-changed");
+		assertThat(outboxCaptor.getValue().aggregateId()).isEqualTo(specialist.id());
+		assertThat(outboxCaptor.getValue().correlationId()).isEqualTo(correlationId);
+		assertThat(outboxCaptor.getValue().payload())
+				.containsEntry("accountId", specialist.id().toString())
+				.containsEntry("status", "DISABLED")
+				.containsEntry("role", "SPECIALIST")
+				.containsEntry("reasonCode", "ACCOUNT_REVIEW_REQUIRED");
+
+		// 2. Repeated suspend SPECIALIST (idempotent no-op)
+		var repeatSuspended = service.changeAccountState(actorId, specialist.id(),
+				new AccountStateChangeRequest(AccountStatus.DISABLED, AccountStateReasonCode.ACCOUNT_REVIEW_REQUIRED),
+				specialist.version(), UUID.randomUUID());
+		assertThat(repeatSuspended.status()).isEqualTo(AccountStatus.DISABLED);
+		verify(audits, org.mockito.Mockito.times(1)).save(any());
+		verify(outbox, org.mockito.Mockito.times(1)).save(any());
+
+		// 3. Restore SPECIALIST
+		UUID restoreCorrelationId = UUID.randomUUID();
+		var restored = service.changeAccountState(actorId, specialist.id(),
+				new AccountStateChangeRequest(AccountStatus.ACTIVE, AccountStateReasonCode.REVIEW_COMPLETED),
+				specialist.version(), restoreCorrelationId);
+
+		assertThat(restored.status()).isEqualTo(AccountStatus.ACTIVE);
+		assertThat(restored.roles()).containsExactly(RoleCode.SPECIALIST);
+		verify(audits, org.mockito.Mockito.times(2)).save(auditCaptor.capture());
+		assertThat(auditCaptor.getValue().getOutcome()).isEqualTo("SUCCEEDED");
+		assertThat(auditCaptor.getValue().getAction()).isEqualTo("ACCOUNT_RESTORED");
+		assertThat(auditCaptor.getValue().getReasonCode()).isEqualTo("REVIEW_COMPLETED");
+		assertThat(auditCaptor.getValue().getCorrelationId()).isEqualTo(restoreCorrelationId);
+
+		verify(outbox, org.mockito.Mockito.times(2)).save(outboxCaptor.capture());
+		assertThat(outboxCaptor.getValue().payload())
+				.containsEntry("status", "ACTIVE")
+				.containsEntry("role", "SPECIALIST")
+				.containsEntry("reasonCode", "REVIEW_COMPLETED");
+
+		// 4. Repeated restore SPECIALIST (idempotent no-op)
+		var repeatRestored = service.changeAccountState(actorId, specialist.id(),
+				new AccountStateChangeRequest(AccountStatus.ACTIVE, AccountStateReasonCode.REVIEW_COMPLETED),
+				specialist.version(), UUID.randomUUID());
+		assertThat(repeatRestored.status()).isEqualTo(AccountStatus.ACTIVE);
+		verify(audits, org.mockito.Mockito.times(2)).save(any());
+		verify(outbox, org.mockito.Mockito.times(2)).save(any());
+	}
+
+	@Test
+	void rejectsStaleVersionAndInvalidReason() {
 		AccountEntity user = active(RoleCode.USER);
 		when(accounts.findByIdForUpdate(user.id())).thenReturn(Optional.of(user));
 		assertThatThrownBy(() -> service.changeAccountState(UUID.randomUUID(), user.id(),
 				new AccountStateChangeRequest(AccountStatus.DISABLED, AccountStateReasonCode.SAFETY_CONCERN),
 				user.version() + 1, UUID.randomUUID())).isInstanceOf(AccountVersionMismatchException.class);
-
-		AccountEntity admin = active(RoleCode.ADMIN);
-		when(accounts.findByIdForUpdate(admin.id())).thenReturn(Optional.of(admin));
-		assertThatThrownBy(() -> service.changeAccountState(UUID.randomUUID(), admin.id(),
-				new AccountStateChangeRequest(AccountStatus.DISABLED, AccountStateReasonCode.SAFETY_CONCERN),
-				admin.version(), UUID.randomUUID())).isInstanceOf(DedicatedAdminProtectionException.class);
 
 		assertThatThrownBy(() -> service.changeAccountState(UUID.randomUUID(), user.id(),
 				new AccountStateChangeRequest(AccountStatus.DISABLED, AccountStateReasonCode.REVIEW_COMPLETED),

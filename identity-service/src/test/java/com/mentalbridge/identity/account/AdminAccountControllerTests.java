@@ -1,5 +1,6 @@
 package com.mentalbridge.identity.account;
 
+import static org.assertj.core.api.Assertions.assertThat;
 import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.ArgumentMatchers.eq;
 import static org.mockito.Mockito.mock;
@@ -16,6 +17,7 @@ import java.util.List;
 import java.util.UUID;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
+import org.mockito.ArgumentCaptor;
 import org.springframework.http.MediaType;
 import org.springframework.security.web.method.annotation.AuthenticationPrincipalArgumentResolver;
 import org.springframework.test.web.servlet.MockMvc;
@@ -43,7 +45,8 @@ class AdminAccountControllerTests {
                 .thenReturn(new AdminAccountService.AccountPage(List.of(), null));
 
         mockMvc.perform(get("/api/v1/admin/accounts"))
-                .andExpect(status().isOk());
+                .andExpect(status().isOk())
+                .andExpect(header().exists("X-Correlation-Id"));
     }
 
     @Test
@@ -56,7 +59,8 @@ class AdminAccountControllerTests {
 
         mockMvc.perform(get("/api/v1/admin/accounts/" + id))
                 .andExpect(status().isOk())
-                .andExpect(header().string("ETag", "\"3\""));
+                .andExpect(header().string("ETag", "\"3\""))
+                .andExpect(header().exists("X-Correlation-Id"));
     }
 
     @Test
@@ -75,7 +79,29 @@ class AdminAccountControllerTests {
                         .header("X-Correlation-Id", corr.toString())
                         .content(objectMapper.writeValueAsString(req)))
                 .andExpect(status().isOk())
-                .andExpect(header().string("ETag", "\"3\""));
+                .andExpect(header().string("ETag", "\"3\""))
+                .andExpect(header().string("X-Correlation-Id", corr.toString()));
+    }
+
+    @Test
+    void changeStateSucceedsWithoutCallerSuppliedCorrelationHeaderAndGeneratesOne() throws Exception {
+        UUID id = UUID.randomUUID();
+        AccountStateChangeRequest req = new AccountStateChangeRequest(AccountStatus.DISABLED, AccountStateReasonCode.SAFETY_CONCERN);
+        ArgumentCaptor<UUID> correlationCaptor = ArgumentCaptor.forClass(UUID.class);
+        when(service.changeAccountState(any(), eq(id), any(), eq(2L), correlationCaptor.capture()))
+                .thenReturn(new AccountController.AccountResponse(
+                        id, "user@example.com", AccountStatus.DISABLED, List.of(RoleCode.USER),
+                        true, Instant.now(), Instant.now(), 3L));
+
+        mockMvc.perform(put("/api/v1/admin/accounts/" + id + "/state")
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .header("If-Match", "\"2\"")
+                        .content(objectMapper.writeValueAsString(req)))
+                .andExpect(status().isOk())
+                .andExpect(header().string("ETag", "\"3\""))
+                .andExpect(header().exists("X-Correlation-Id"));
+
+        assertThat(correlationCaptor.getValue()).isNotNull();
     }
 
     @Test
