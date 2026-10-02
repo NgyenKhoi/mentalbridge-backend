@@ -7,6 +7,7 @@ import java.sql.ResultSet;
 import java.sql.SQLException;
 import java.sql.Timestamp;
 import java.time.Clock;
+import java.time.Duration;
 import java.time.Instant;
 import java.util.HexFormat;
 import java.util.List;
@@ -26,6 +27,7 @@ import com.mentalbridge.consultation.shared.ApiException;
 public class SessionSummaryService {
 
 	private static final String SCHEMA_VERSION = "session-summary-v1";
+	private static final Duration BRIEF_ACCESS_WINDOW = Duration.ofHours(24);
 	private final JdbcClient jdbc;
 	private final ObjectMapper json;
 	private final Clock clock;
@@ -198,22 +200,39 @@ public class SessionSummaryService {
 	@Transactional(readOnly = true)
 	public SessionSummaryResponse reusable(UUID actorId, boolean user, boolean specialist,
 			UUID targetAppointmentId, UUID summaryId, long version) {
-		var targetUserId = jdbc.sql("""
-				select user_account_id from appointment
+		var target = jdbc.sql("""
+				select user_account_id, status, scheduled_start_at from appointment
 				where id=:appointmentId and ((:userRole and user_account_id=:actorId)
 				 or (:specialistRole and specialist_account_id=:actorId))
 				""").param("appointmentId", targetAppointmentId).param("userRole", user)
 				.param("specialistRole", specialist).param("actorId", actorId)
-				.query(UUID.class).optional().orElseThrow(() -> notFound());
-		var allowed = jdbc.sql("""
-				select count(*) from session_summary s
+				.query((rs, row) -> new ReuseTarget(rs.getObject("user_account_id", UUID.class),
+						rs.getString("status"), rs.getTimestamp("scheduled_start_at").toInstant()))
+				.optional().orElseThrow(() -> notFound());
+		if (!List.of("CONFIRMED", "IN_PROGRESS").contains(target.status())) throw reuseNotEligible();
+		var now = clock.instant();
+		if (user && !now.isBefore(target.scheduledStartAt())) throw reuseNotEligible();
+		if (specialist && (now.isBefore(target.scheduledStartAt().minus(BRIEF_ACCESS_WINDOW))
+				|| now.isAfter(target.scheduledStartAt().plus(BRIEF_ACCESS_WINDOW)))) throw reuseNotEligible();
+
+		var source = jdbc.sql("""
+				select s.appointment_id, s.user_account_id, s.summary_version, c.approved,
+				       source.scheduled_end_at
+				from session_summary s
 				join session_summary_reuse_consent c on c.summary_id=s.id
-				where s.id=:summaryId and s.summary_version=:version
-				  and s.user_account_id=:userId and c.approved
-				""").param("summaryId", summaryId).param("version", version).param("userId", targetUserId)
-				.query(Long.class).single();
-		if (allowed != 1) throw new ApiException(HttpStatus.FORBIDDEN, "SESSION_SUMMARY_REUSE_NOT_APPROVED",
+				join appointment source on source.id=s.appointment_id
+				where s.id=:summaryId
+				""").param("summaryId", summaryId)
+				.query((rs, row) -> new ReuseSource(rs.getObject("appointment_id", UUID.class),
+						rs.getObject("user_account_id", UUID.class), rs.getLong("summary_version"),
+						rs.getBoolean("approved"), rs.getTimestamp("scheduled_end_at").toInstant()))
+				.optional().orElseThrow(() -> notFound());
+		if (source.version() != version || !source.approved()) {
+			throw new ApiException(HttpStatus.FORBIDDEN, "SESSION_SUMMARY_REUSE_NOT_APPROVED",
 				"The exact session summary version is not approved for reuse");
+		}
+		if (!source.userId().equals(target.userId()) || source.appointmentId().equals(targetAppointmentId)
+				|| !source.scheduledEndAt().isBefore(target.scheduledStartAt())) throw reuseNotEligible();
 		return readById(summaryId, false);
 	}
 
@@ -309,11 +328,19 @@ public class SessionSummaryService {
 				"The session summary state changed before this command was applied");
 	}
 
+	private ApiException reuseNotEligible() {
+		return new ApiException(HttpStatus.FORBIDDEN, "SESSION_SUMMARY_REUSE_NOT_ELIGIBLE",
+				"The session summary is not eligible for this later appointment");
+	}
+
 	private record AppointmentAuthority(UUID userId, String status, UUID completionFactId) { }
 	private record PreviousSummary(UUID id, long version) { }
 	private record Command(UUID id, UUID appointmentId, String requestHash) { }
 	private record Consent(long version, boolean approved) { }
 	private record StepOwner(UUID summaryId, long version) { }
+	private record ReuseTarget(UUID userId, String status, Instant scheduledStartAt) { }
+	private record ReuseSource(UUID appointmentId, UUID userId, long version, boolean approved,
+			Instant scheduledEndAt) { }
 	private record SummaryRow(UUID id, UUID appointmentId, UUID userId, UUID specialistId, long version,
 			String schemaVersion, List<String> topics, String progressSummary, String noteForUser,
 			boolean followUpSuggested, UUID amendsId, Instant publishedAt,

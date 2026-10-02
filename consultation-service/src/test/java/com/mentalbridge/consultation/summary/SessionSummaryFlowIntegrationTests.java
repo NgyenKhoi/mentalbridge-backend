@@ -129,15 +129,55 @@ class SessionSummaryFlowIntegrationTests extends ConsultationTestProperties {
 				.header("If-Match", "\"0\"").contentType(MediaType.APPLICATION_JSON)
 				.content("{\"approved\":true}"))
 				.andExpect(status().isOk()).andExpect(jsonPath("$.reuseConsent.approved").value(true));
+		var now = Instant.now();
+		moveAppointment(fixture.appointmentId(), now.minusSeconds(172_800));
+		var targetAppointmentId = laterAppointment(fixture, now.plusSeconds(3_600), "CONFIRMED");
 		mvc.perform(get("/internal/v1/appointments/{appointmentId}/reusable-session-summaries/{summaryId}",
 				fixture.appointmentId(), summaryId).param("version", "1").with(specialist(fixture.specialistId())))
+				.andExpect(status().isForbidden())
+				.andExpect(jsonPath("$.code").value("SESSION_SUMMARY_REUSE_NOT_ELIGIBLE"));
+		mvc.perform(get("/internal/v1/appointments/{appointmentId}/reusable-session-summaries/{summaryId}",
+				targetAppointmentId, summaryId).param("version", "1").with(specialist(fixture.specialistId())))
 				.andExpect(status().isOk()).andExpect(jsonPath("$.version").value(1));
+		mvc.perform(get("/internal/v1/appointments/{appointmentId}/reusable-session-summaries/{summaryId}",
+				targetAppointmentId, summaryId).param("version", "1").with(user(fixture.userId())))
+				.andExpect(status().isOk());
 		mvc.perform(put("/api/v1/session-summaries/{id}/reuse-consent", summaryId).with(user(fixture.userId()))
 				.header("If-Match", "\"1\"").contentType(MediaType.APPLICATION_JSON)
 				.content("{\"approved\":false}"))
 				.andExpect(status().isOk());
 		mvc.perform(get("/internal/v1/appointments/{appointmentId}/reusable-session-summaries/{summaryId}",
-				fixture.appointmentId(), summaryId).param("version", "1").with(specialist(fixture.specialistId())))
+				targetAppointmentId, summaryId).param("version", "1").with(specialist(fixture.specialistId())))
+				.andExpect(status().isForbidden());
+	}
+
+	@Test
+	void reusableSummaryRequiresAnActiveLaterAppointmentAndSpecialistAccessWindow() throws Exception {
+		var fixture = completedAppointment();
+		var published = mvc.perform(publish(fixture, fixture.specialistId(), "summary-reuse-boundary-1", summaryBody()))
+				.andExpect(status().isCreated()).andReturn();
+		var summaryId = json.readTree(published.getResponse().getContentAsByteArray()).get("id").asText();
+		mvc.perform(put("/api/v1/session-summaries/{id}/reuse-consent", summaryId).with(user(fixture.userId()))
+				.header("If-Match", "\"0\"").contentType(MediaType.APPLICATION_JSON)
+				.content("{\"approved\":true}"))
+				.andExpect(status().isOk());
+
+		var now = Instant.now();
+		moveAppointment(fixture.appointmentId(), now.minusSeconds(345_600));
+		var targetAppointmentId = laterAppointment(fixture, now.plusSeconds(172_800), "CONFIRMED");
+		mvc.perform(get("/internal/v1/appointments/{appointmentId}/reusable-session-summaries/{summaryId}",
+				targetAppointmentId, summaryId).param("version", "1").with(specialist(fixture.specialistId())))
+				.andExpect(status().isForbidden())
+				.andExpect(jsonPath("$.code").value("SESSION_SUMMARY_REUSE_NOT_ELIGIBLE"));
+
+		setTarget(targetAppointmentId, now.plusSeconds(3_600), "REQUESTED");
+		mvc.perform(get("/internal/v1/appointments/{appointmentId}/reusable-session-summaries/{summaryId}",
+				targetAppointmentId, summaryId).param("version", "1").with(user(fixture.userId())))
+				.andExpect(status().isForbidden());
+
+		setTarget(targetAppointmentId, now.minusSeconds(172_800), "CONFIRMED");
+		mvc.perform(get("/internal/v1/appointments/{appointmentId}/reusable-session-summaries/{summaryId}",
+				targetAppointmentId, summaryId).param("version", "1").with(specialist(fixture.specialistId())))
 				.andExpect(status().isForbidden());
 	}
 
@@ -221,6 +261,52 @@ class SessionSummaryFlowIntegrationTests extends ConsultationTestProperties {
 				 session_settled_at=now(), completion_fact_id=:fact, updated_at=now()
 				where id=:id
 				""").param("fact", UUID.randomUUID()).param("id", appointmentId).update();
+	}
+
+	private void moveAppointment(UUID appointmentId, Instant start) {
+		jdbc.sql("""
+				update appointment set scheduled_start_at=:start, scheduled_end_at=:end,
+				 requested_at=:requestedAt, decision_deadline_at=:deadline where id=:id
+				""")
+				.param("start", Timestamp.from(start)).param("end", Timestamp.from(start.plusSeconds(3_600)))
+				.param("requestedAt", Timestamp.from(start.minusSeconds(18_000)))
+				.param("deadline", Timestamp.from(start.minusSeconds(7_200)))
+				.param("id", appointmentId).update();
+	}
+
+	private UUID laterAppointment(Fixture source, Instant start, String status) {
+		var id = UUID.randomUUID();
+		jdbc.sql("""
+				insert into appointment (
+				 id,user_account_id,specialist_account_id,availability_slot_id,service_credit_id,
+				 status,modality,scheduled_start_at,scheduled_end_at,display_timezone,requested_at,
+				 decision_deadline_at,idempotency_key,created_at,updated_at,version,decided_at,decision_reason
+				)
+				select :id,user_account_id,specialist_account_id,availability_slot_id,service_credit_id,
+				 :status,modality,:start,:end,display_timezone,:requestedAt,:deadline,:key,now(),now(),0,
+				 case when :status='REQUESTED' then null else now() end,
+				 case when :status='REQUESTED' then null else 'SPECIALIST_ACCEPTED' end
+				from appointment where id=:sourceId
+				""").param("id", id).param("status", status).param("start", Timestamp.from(start))
+				.param("end", Timestamp.from(start.plusSeconds(3_600)))
+				.param("requestedAt", Timestamp.from(start.minusSeconds(18_000)))
+				.param("deadline", Timestamp.from(start.minusSeconds(7_200)))
+				.param("key", "target-" + id).param("sourceId", source.appointmentId()).update();
+		return id;
+	}
+
+	private void setTarget(UUID appointmentId, Instant start, String status) {
+		jdbc.sql("""
+				update appointment set status=:status,scheduled_start_at=:start,scheduled_end_at=:end,
+				 requested_at=:requestedAt,decision_deadline_at=:deadline,
+				 decided_at=case when :status='REQUESTED' then null else now() end,
+				 decision_reason=case when :status='REQUESTED' then null else 'SPECIALIST_ACCEPTED' end
+				where id=:id
+				""").param("status", status).param("start", Timestamp.from(start))
+				.param("end", Timestamp.from(start.plusSeconds(3_600)))
+				.param("requestedAt", Timestamp.from(start.minusSeconds(18_000)))
+				.param("deadline", Timestamp.from(start.minusSeconds(7_200)))
+				.param("id", appointmentId).update();
 	}
 
 	private String summaryBody() {

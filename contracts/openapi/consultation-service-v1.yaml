@@ -119,7 +119,7 @@ paths:
     x-mentalbridge-status: implemented
     get:
       operationId: getApprovedReusableSessionSummary
-      description: Returns one exact immutable summary snapshot only when it belongs to the same user as the target appointment and that user currently approves reuse. This is the bounded ConsultationBrief handoff; appointment-preparation consent never implies this separate approval.
+      description: Returns one exact immutable summary snapshot only when the user currently approves reuse and the target is a different, later CONFIRMED or IN_PROGRESS appointment for the same user. Owner preparation closes when the target starts; assigned-specialist access is limited to the target appointment's 24-hour-before/after-start window. This is the bounded ConsultationBrief handoff; summary consent alone does not approve a target brief or grant specialist access outside that boundary.
       security: [{ bearerAuth: [] }]
       parameters:
         - $ref: '#/components/parameters/AppointmentId'
