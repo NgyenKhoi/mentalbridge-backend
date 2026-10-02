@@ -1,8 +1,8 @@
 openapi: 3.1.0
 info:
   title: MentalBridge Consultation Service API
-  version: 1.7.0
-  description: Consultation-owned specialist profile lifecycle, approved online discovery, service-plan entitlement and credit lookup, online availability, appointment requests, appointment-scoped chat eligibility and minimized completion evidence, auditable owner cancellation/reschedule/session outcomes, credit reservation limits, and suspension outcomes.
+  version: 1.8.0
+  description: Consultation-owned specialist profile lifecycle, approved online discovery, service-plan entitlement and credit lookup, online availability, appointment requests, appointment-scoped chat eligibility and minimized completion evidence, auditable owner cancellation/reschedule/session outcomes, immutable user-visible session summaries and agreed next steps, credit reservation limits, and suspension outcomes.
 servers:
   - url: http://localhost:8082
 paths:
@@ -115,6 +115,28 @@ paths:
         '401': { $ref: '#/components/responses/UnauthorizedProblem' }
         '403': { $ref: '#/components/responses/ForbiddenProblem' }
         '404': { $ref: '#/components/responses/AppointmentNotFoundProblem' }
+  /internal/v1/appointments/{appointmentId}/reusable-session-summaries/{summaryId}:
+    x-mentalbridge-status: implemented
+    get:
+      operationId: getApprovedReusableSessionSummary
+      description: Returns one exact immutable summary snapshot only when the user currently approves reuse and the target is a different, later CONFIRMED or IN_PROGRESS appointment for the same user. Owner preparation closes when the target starts; assigned-specialist access is limited to the target appointment's 24-hour-before/after-start window. This is the bounded ConsultationBrief handoff; summary consent alone does not approve a target brief or grant specialist access outside that boundary.
+      security: [{ bearerAuth: [] }]
+      parameters:
+        - $ref: '#/components/parameters/AppointmentId'
+        - $ref: '#/components/parameters/SessionSummaryId'
+        - name: version
+          in: query
+          required: true
+          schema: { type: integer, format: int64, minimum: 1 }
+      responses:
+        '200':
+          description: Exact approved reusable snapshot without user checklist state
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/SessionSummary' }
+        '401': { $ref: '#/components/responses/UnauthorizedProblem' }
+        '403': { $ref: '#/components/responses/ForbiddenProblem' }
+        '404': { $ref: '#/components/responses/NotFoundProblem' }
   /api/v1/specialist-profile:
     x-mentalbridge-status: implemented
     get:
@@ -424,6 +446,75 @@ paths:
         '409': { $ref: '#/components/responses/AppointmentConflictProblem' }
         '412': { $ref: '#/components/responses/AppointmentVersionProblem' }
         '428': { $ref: '#/components/responses/AppointmentVersionRequiredProblem' }
+  /api/v1/appointments/{appointmentId}/session-summaries:
+    x-mentalbridge-status: implemented
+    get:
+      operationId: listOwnSessionSummaries
+      description: Returns immutable published versions for one user-owned completed appointment, including user-owned next-step state and separate reuse consent.
+      security: [{ bearerAuth: [] }]
+      parameters:
+        - $ref: '#/components/parameters/AppointmentId'
+      responses:
+        '200':
+          description: Newest summary version first
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/SessionSummaryList' }
+        '401': { $ref: '#/components/responses/UnauthorizedProblem' }
+        '403': { $ref: '#/components/responses/ForbiddenProblem' }
+        '404': { $ref: '#/components/responses/NotFoundProblem' }
+  /api/v1/session-summaries/{summaryId}/reuse-consent:
+    x-mentalbridge-status: implemented
+    put:
+      operationId: updateOwnSessionSummaryReuseConsent
+      description: Approves or revokes future reuse of one exact immutable summary version. This does not change an existing ConsultationBrief snapshot.
+      security: [{ bearerAuth: [] }]
+      parameters:
+        - $ref: '#/components/parameters/SessionSummaryId'
+        - $ref: '#/components/parameters/SessionSummaryIfMatch'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: '#/components/schemas/SessionSummaryReuseConsentRequest' }
+      responses:
+        '200':
+          description: Updated user-visible summary state
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/SessionSummary' }
+        '400': { $ref: '#/components/responses/ValidationProblem' }
+        '401': { $ref: '#/components/responses/UnauthorizedProblem' }
+        '403': { $ref: '#/components/responses/ForbiddenProblem' }
+        '404': { $ref: '#/components/responses/NotFoundProblem' }
+        '412': { $ref: '#/components/responses/VersionProblem' }
+        '428': { $ref: '#/components/responses/VersionRequiredProblem' }
+  /api/v1/agreed-next-steps/{nextStepId}:
+    x-mentalbridge-status: implemented
+    put:
+      operationId: updateOwnAgreedNextStep
+      description: Lets the owning user mark an agreed next step pending, completed, skipped, or hidden. Specialists cannot read this mutable tracking state and the operation never creates a SupportPlan occurrence.
+      security: [{ bearerAuth: [] }]
+      parameters:
+        - $ref: '#/components/parameters/AgreedNextStepId'
+        - $ref: '#/components/parameters/SessionSummaryIfMatch'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: '#/components/schemas/UpdateAgreedNextStepRequest' }
+      responses:
+        '200':
+          description: Parent summary with updated user-owned next-step state
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/SessionSummary' }
+        '400': { $ref: '#/components/responses/ValidationProblem' }
+        '401': { $ref: '#/components/responses/UnauthorizedProblem' }
+        '403': { $ref: '#/components/responses/ForbiddenProblem' }
+        '404': { $ref: '#/components/responses/NotFoundProblem' }
+        '412': { $ref: '#/components/responses/VersionProblem' }
+        '428': { $ref: '#/components/responses/VersionRequiredProblem' }
   /api/v1/specialist/appointments:
     x-mentalbridge-status: implemented
     get:
@@ -438,6 +529,49 @@ paths:
               schema: { $ref: '#/components/schemas/AppointmentList' }
         '401': { $ref: '#/components/responses/UnauthorizedProblem' }
         '403': { $ref: '#/components/responses/ForbiddenProblem' }
+  /api/v1/specialist/appointments/{appointmentId}/session-summaries:
+    x-mentalbridge-status: implemented
+    get:
+      operationId: listAssignedAppointmentSessionSummaries
+      description: Returns immutable published versions for the assigned specialist. User-owned checklist and reuse-consent state are intentionally omitted.
+      security: [{ bearerAuth: [] }]
+      parameters:
+        - $ref: '#/components/parameters/AppointmentId'
+      responses:
+        '200':
+          description: Newest summary version first without user tracking state
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/SessionSummaryList' }
+        '401': { $ref: '#/components/responses/UnauthorizedProblem' }
+        '403': { $ref: '#/components/responses/ForbiddenProblem' }
+        '404': { $ref: '#/components/responses/NotFoundProblem' }
+    post:
+      operationId: publishAssignedAppointmentSessionSummary
+      description: Publishes the first immutable user-visible snapshot after evidence-backed COMPLETED, or appends an explicit amendment when If-Match identifies the current summary version. Exact command replay is idempotent.
+      security: [{ bearerAuth: [] }]
+      parameters:
+        - $ref: '#/components/parameters/AppointmentId'
+        - $ref: '#/components/parameters/IdempotencyKey'
+        - $ref: '#/components/parameters/OptionalSessionSummaryIfMatch'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: '#/components/schemas/PublishSessionSummaryRequest' }
+      responses:
+        '201':
+          description: Published immutable summary snapshot or exact replay
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/SessionSummary' }
+        '400': { $ref: '#/components/responses/ValidationProblem' }
+        '401': { $ref: '#/components/responses/UnauthorizedProblem' }
+        '403': { $ref: '#/components/responses/ForbiddenProblem' }
+        '404': { $ref: '#/components/responses/NotFoundProblem' }
+        '409': { $ref: '#/components/responses/ConflictProblem' }
+        '412': { $ref: '#/components/responses/VersionProblem' }
+        '428': { $ref: '#/components/responses/VersionRequiredProblem' }
   /api/v1/specialist/appointments/{appointmentId}/accept:
     x-mentalbridge-status: implemented
     parameters:
@@ -676,6 +810,16 @@ components:
       in: path
       required: true
       schema: { type: string, format: uuid }
+    SessionSummaryId:
+      name: summaryId
+      in: path
+      required: true
+      schema: { type: string, format: uuid }
+    AgreedNextStepId:
+      name: nextStepId
+      in: path
+      required: true
+      schema: { type: string, format: uuid }
     IdempotencyKey:
       name: Idempotency-Key
       in: header
@@ -699,6 +843,18 @@ components:
       in: header
       required: false
       description: Required with replacesAppointmentId and ignored only for a normal non-replacement request. Contains the quoted current version of the appointment being replaced.
+      schema: { type: string, pattern: '^"[0-9]+"$' }
+    SessionSummaryIfMatch:
+      name: If-Match
+      in: header
+      required: true
+      description: Quoted current non-negative consent or next-step state version.
+      schema: { type: string, pattern: '^"[0-9]+"$' }
+    OptionalSessionSummaryIfMatch:
+      name: If-Match
+      in: header
+      required: false
+      description: Omit for the first publication; required for an amendment and contains the quoted current summary version.
       schema: { type: string, pattern: '^"[0-9]+"$' }
   headers:
     ProfileETag:
@@ -980,6 +1136,124 @@ components:
     AppointmentModality:
       type: string
       enum: [IN_APP_CHAT, IN_APP_VIDEO]
+    AgreedNextStepType:
+      type: string
+      enum: [CHECKLIST, JOURNAL, EMOTION_CHECK_IN, REASSESSMENT, FOLLOW_UP_APPOINTMENT, PLATFORM_RESOURCE]
+    AgreedNextStepState:
+      type: string
+      enum: [PENDING, COMPLETED, SKIPPED]
+    PublishAgreedNextStep:
+      type: object
+      additionalProperties: false
+      required: [type, title]
+      properties:
+        type: { $ref: '#/components/schemas/AgreedNextStepType' }
+        title: { type: string, minLength: 1, maxLength: 160 }
+        details: { type: [string, 'null'], maxLength: 500 }
+        resourceId:
+          type: [string, 'null']
+          format: uuid
+          description: Required only for PLATFORM_RESOURCE and records a proposal without changing a SupportPlan.
+        resourceVersion:
+          type: [string, 'null']
+          maxLength: 64
+          description: Exact immutable Content resource version required only for PLATFORM_RESOURCE.
+    PublishSessionSummaryRequest:
+      type: object
+      additionalProperties: false
+      required: [topicsDiscussed, followUpSuggested, agreedNextSteps]
+      properties:
+        topicsDiscussed:
+          type: array
+          minItems: 1
+          maxItems: 8
+          items: { type: string, minLength: 1, maxLength: 160 }
+        progressSummary: { type: [string, 'null'], maxLength: 1000 }
+        specialistNoteForUser: { type: [string, 'null'], maxLength: 1000 }
+        followUpSuggested: { type: boolean }
+        agreedNextSteps:
+          type: array
+          maxItems: 8
+          items: { $ref: '#/components/schemas/PublishAgreedNextStep' }
+    SessionSummaryReuseConsentRequest:
+      type: object
+      additionalProperties: false
+      required: [approved]
+      properties:
+        approved: { type: boolean }
+    UpdateAgreedNextStepRequest:
+      type: object
+      additionalProperties: false
+      required: [state, hidden]
+      properties:
+        state: { $ref: '#/components/schemas/AgreedNextStepState' }
+        hidden: { type: boolean }
+    SessionSummaryReuseConsent:
+      type: object
+      additionalProperties: false
+      required: [approved, version, updatedAt]
+      properties:
+        approved: { type: boolean }
+        version: { type: integer, format: int64, minimum: 0 }
+        updatedAt: { type: string, format: date-time }
+    AgreedNextStep:
+      type: object
+      additionalProperties: false
+      required: [id, type, title, details, resourceId, resourceVersion, state, hidden, stateVersion, stateUpdatedAt]
+      properties:
+        id: { type: string, format: uuid }
+        type: { $ref: '#/components/schemas/AgreedNextStepType' }
+        title: { type: string, minLength: 1, maxLength: 160 }
+        details: { type: [string, 'null'], maxLength: 500 }
+        resourceId: { type: [string, 'null'], format: uuid }
+        resourceVersion: { type: [string, 'null'], maxLength: 64 }
+        state:
+          oneOf:
+            - { $ref: '#/components/schemas/AgreedNextStepState' }
+            - { type: 'null' }
+        hidden: { type: boolean }
+        stateVersion: { type: [integer, 'null'], format: int64, minimum: 0 }
+        stateUpdatedAt: { type: [string, 'null'], format: date-time }
+    SessionSummary:
+      type: object
+      additionalProperties: false
+      required: [id, appointmentId, userAccountId, specialistAccountId, version, schemaVersion, topicsDiscussed, progressSummary, specialistNoteForUser, followUpSuggested, amendsSummaryId, publishedAt, reuseConsent, agreedNextSteps]
+      properties:
+        id: { type: string, format: uuid }
+        appointmentId: { type: string, format: uuid }
+        userAccountId: { type: string, format: uuid }
+        specialistAccountId: { type: string, format: uuid }
+        version: { type: integer, format: int64, minimum: 1 }
+        schemaVersion: { type: string, const: session-summary-v1 }
+        topicsDiscussed:
+          type: array
+          minItems: 1
+          maxItems: 8
+          items: { type: string, minLength: 1, maxLength: 160 }
+        progressSummary: { type: [string, 'null'], maxLength: 1000 }
+        specialistNoteForUser: { type: [string, 'null'], maxLength: 1000 }
+        followUpSuggested: { type: boolean }
+        amendsSummaryId: { type: [string, 'null'], format: uuid }
+        publishedAt: { type: string, format: date-time }
+        reuseConsent:
+          oneOf:
+            - { $ref: '#/components/schemas/SessionSummaryReuseConsent' }
+            - { type: 'null' }
+        agreedNextSteps:
+          type: array
+          maxItems: 8
+          items: { $ref: '#/components/schemas/AgreedNextStep' }
+    SessionSummaryList:
+      type: object
+      additionalProperties: false
+      required: [items, count, generatedAt]
+      properties:
+        items:
+          type: array
+          maxItems: 100
+          items: { $ref: '#/components/schemas/SessionSummary' }
+        count: { type: integer, minimum: 0, maximum: 100 }
+        generatedAt: { type: string, format: date-time }
     RequestAppointment:
       type: object
       additionalProperties: false

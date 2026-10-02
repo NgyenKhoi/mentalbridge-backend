@@ -1043,6 +1043,57 @@ never stored.
 | `occurred_at` | Server-observed occurrence used for the half-open appointment-window calculation. |
 | `received_at` | Consultation receipt time used to enforce grace and reconciliation deadlines. |
 
+### `consultation.session_summary`
+
+Append-only MB-385 snapshot published by the assigned specialist only after the appointment has evidence-backed `COMPLETED` authority. Amendments create a new row and never rewrite the prior user-visible version.
+
+| Field | Purpose |
+| --- | --- |
+| `id` | Immutable summary-snapshot UUID. |
+| `appointment_id` | Completed owner appointment; version numbering is scoped to this appointment. |
+| `user_account_id` / `specialist_account_id` | Denormalized user owner and publishing specialist provenance. |
+| `summary_version` / `schema_version` | Monotonic appointment version and bounded `session-summary-v1` payload contract. |
+| `topics_discussed` | One to eight short, user-visible, non-diagnostic topics. |
+| `progress_summary` / `specialist_note_for_user` | Optional bounded user-visible text; private notes, raw journals, assessment answers, and chat transcript are excluded. |
+| `follow_up_suggested` | Non-binding indication that another appointment may be useful. |
+| `amends_summary_id` | Prior immutable snapshot corrected by this version; null only for version one. |
+| `idempotency_key` / `request_hash` | Specialist-scoped command replay and conflicting-reuse evidence. |
+| `published_at` | Immutable server publication instant. |
+
+### `consultation.agreed_next_step`
+
+Immutable steps agreed in one published summary. They are user-visible suggestions and never become Care SupportPlan occurrences automatically.
+
+| Field | Purpose |
+| --- | --- |
+| `id` / `summary_id` / `ordinal` | Stable step identity and display order within an immutable summary version. |
+| `step_type` | Bounded checklist, journal, emotion check-in, reassessment, follow-up appointment, or platform resource type. |
+| `title` / `details` | Bounded user-visible action wording. |
+| `resource_id` / `resource_version` | Exact Content resource proposal required only for `PLATFORM_RESOURCE`; Care revalidates any later plan change under MB-560. |
+| `created_at` | Server creation instant inherited from summary publication. |
+
+### `consultation.agreed_next_step_state`
+
+Mutable checklist projection controlled only by the user. It is intentionally excluded from specialist reads and is not clinical monitoring.
+
+| Field | Purpose |
+| --- | --- |
+| `next_step_id` / `user_account_id` | One state row for the owning user's immutable agreed step. |
+| `state` | User-selected `PENDING`, `COMPLETED`, or `SKIPPED`. |
+| `hidden` | User-controlled visibility in their own checklist. |
+| `version` / `updated_at` | Optimistic concurrency and latest user action instant. |
+
+### `consultation.session_summary_reuse_consent`
+
+Separate user consent for future reuse of one exact summary snapshot. Appointment-preparation sharing does not imply this consent, and revocation blocks later handoff reads.
+
+| Field | Purpose |
+| --- | --- |
+| `summary_id` / `user_account_id` | Exact immutable snapshot and owning user. |
+| `approved` | Current user decision for future ConsultationBrief reuse. |
+| `version` / `updated_at` | Optimistic concurrency and latest decision instant. |
+| `approved_at` / `revoked_at` | Auditable approval or latest revocation instant without copying the summary. |
+
 ### `consultation.subscription_plan_version`
 
 Immutable price, allocation, credit, revenue-share, and cancellation policy purchased by a subscription period.
