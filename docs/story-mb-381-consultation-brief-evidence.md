@@ -17,7 +17,7 @@ The default access window is `[scheduledStartAt - 24h, scheduledStartAt + 24h]`.
 
 ## Later SessionSummary reuse
 
-MB-385 owns SessionSummary creation and its exact immutable source contract. MB-381 does not accept client-authored prior-session text and does not treat brief approval as summary-reuse consent. Until MB-385 exists, reuse is unavailable. A later reuse command must carry separate explicit approval and an exact summary snapshot/version; it cannot inherit the appointment-preparation grant.
+MB-385 now owns SessionSummary creation and its exact immutable source contract. MB-381 does not accept client-authored prior-session text and does not treat brief approval as summary-reuse consent. Consultation exposes only an exact summary snapshot/version after a separate current user approval; Care must use that owner handoff rather than accepting copied text. The existing appointment-preparation grant never implies summary-reuse consent.
 
 ## Verification
 
