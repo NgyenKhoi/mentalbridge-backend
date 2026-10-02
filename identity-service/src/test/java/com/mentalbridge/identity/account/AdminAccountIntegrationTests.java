@@ -24,6 +24,8 @@ import com.mentalbridge.identity.IdentityTestProperties;
 import com.mentalbridge.identity.TestcontainersConfiguration;
 import com.mentalbridge.identity.authentication.JwtTokenService;
 
+import jakarta.persistence.EntityManager;
+
 @Import(TestcontainersConfiguration.class)
 @SpringBootTest
 @AutoConfigureMockMvc
@@ -33,6 +35,7 @@ class AdminAccountIntegrationTests extends IdentityTestProperties {
 	@Autowired MockMvc mvc;
 	@Autowired JdbcClient jdbc;
 	@Autowired JwtTokenService tokens;
+	@Autowired EntityManager entityManager;
 
 	@Test
 	void adminSearchDetailSuspendRestoreAndConcurrencyUseRealPersistence() throws Exception {
@@ -64,6 +67,7 @@ class AdminAccountIntegrationTests extends IdentityTestProperties {
 				.andExpect(status().isOk()).andExpect(header().string("ETag", "\"1\""))
 				.andExpect(jsonPath("$.status").value("DISABLED"));
 
+		entityManager.flush();
 		assertThat(count("security_audit_event", "account_id", userId)).isEqualTo(1);
 		assertThat(count("outbox_event", "aggregate_id", userId)).isEqualTo(1);
 		assertThat(jdbc.sql("select count(*) from refresh_session where account_id = :id and revoked_at is not null")
