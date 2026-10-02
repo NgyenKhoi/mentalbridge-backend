@@ -43,6 +43,23 @@ describe('Realtime command envelope', () => {
     ).toBe(false);
   });
 
+  it('accepts an explicit check-in without client-supplied attendance facts', () => {
+    expect(
+      commandSchema.safeParse({
+        ...base,
+        commandType: 'conversation.check-in',
+        payload: { conversationId: randomUUID() },
+      }).success,
+    ).toBe(true);
+    expect(
+      commandSchema.safeParse({
+        ...base,
+        commandType: 'conversation.check-in',
+        payload: { conversationId: randomUUID(), presentForSeconds: 1800 },
+      }).success,
+    ).toBe(false);
+  });
+
   it('rejects unsupported versions and unknown commands', () => {
     expect(
       commandSchema.safeParse({

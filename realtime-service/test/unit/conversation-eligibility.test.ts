@@ -20,6 +20,10 @@ const active: ConversationEligibilityDecision = {
   subscribeAllowed: true,
   sendAllowed: true,
   historyAllowed: true,
+  checkInAllowed: true,
+  participantCheckedIn: false,
+  sessionOutcome: null,
+  creditState: 'HELD',
   scheduledStartAt: '2026-09-29T02:00:00.000Z',
   scheduledEndAt: '2026-09-29T03:00:00.000Z',
   serverTime: '2026-09-29T02:30:00.000Z',
@@ -50,7 +54,7 @@ describe('ConsultationConversationEligibility', () => {
 
   it.each([
     ['WAITING', 'APPOINTMENT_WAITING', 'CHAT_NOT_STARTED'],
-    ['ENDED', 'APPOINTMENT_ENDED', 'CHAT_ENDED'],
+    ['ENDED_PROCESSING', 'SESSION_OUTCOME_PROCESSING', 'CHAT_ENDED'],
     ['CANCELLED', 'APPOINTMENT_CANCELLED', 'CHAT_CANCELLED'],
     ['RESCHEDULED', 'APPOINTMENT_RESCHEDULED', 'CHAT_RESCHEDULED'],
   ] as const)('rejects SEND during %s with %s', async (phase, reasonCode, expectedCode) => {

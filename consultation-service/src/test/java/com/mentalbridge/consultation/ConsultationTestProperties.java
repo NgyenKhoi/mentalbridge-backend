@@ -9,6 +9,7 @@ import org.springframework.test.context.DynamicPropertySource;
 
 public abstract class ConsultationTestProperties {
 
+	protected static final String EVIDENCE_SERVICE_TOKEN = "test-consultation-evidence-token-32-characters";
 	private static final KeyPair JWT_KEY_PAIR = keyPair();
 
 	@DynamicPropertySource
@@ -17,6 +18,7 @@ public abstract class ConsultationTestProperties {
 		properties.add("mentalbridge.consultation.jwt.audience", () -> "mentalbridge-test-api");
 		properties.add("mentalbridge.consultation.jwt.public-key",
 				() -> Base64.getEncoder().encodeToString(JWT_KEY_PAIR.getPublic().getEncoded()));
+		properties.add("mentalbridge.consultation.evidence-service-token", () -> EVIDENCE_SERVICE_TOKEN);
 	}
 
 	private static KeyPair keyPair() {

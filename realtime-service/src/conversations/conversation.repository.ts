@@ -41,13 +41,11 @@ export class ConversationRepository {
           'Conversation is closed',
         );
       }
-      if (
-        decision.phase === 'ENDED' ||
-        decision.phase === 'CANCELLED' ||
-        decision.phase === 'RESCHEDULED'
-      ) {
+      if (!['WAITING', 'ACTIVE'].includes(decision.phase)) {
         const closedAt = new Date(
-          decision.phase === 'ENDED' ? decision.scheduledEndAt : decision.serverTime,
+          ['CANCELLED', 'RESCHEDULED'].includes(decision.phase)
+            ? decision.serverTime
+            : decision.scheduledEndAt,
         );
         await collection.updateOne(
           { conversationId: decision.conversationId, status: 'ACTIVE' },

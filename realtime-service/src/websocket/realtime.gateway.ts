@@ -29,6 +29,7 @@ interface SocketData {
   correlationId?: string;
   countedActive?: boolean;
   expiryTimer?: NodeJS.Timeout;
+  checkedInConversations?: Map<string, number>;
 }
 
 interface ServerToClientEvents {
@@ -207,6 +208,9 @@ export class RealtimeGateway implements OnGatewayInit, OnGatewayConnection, OnGa
   ): Promise<SocketAcknowledgement> {
     if (command.commandType === 'presence.heartbeat') {
       const result = await this.presence.heartbeat(principal.accountId, socket.id);
+      if (result === 'connected') {
+        await this.recordConversationPresence(socket, command.commandId, command.correlationId);
+      }
       return this.accept(
         command,
         false,
@@ -216,12 +220,27 @@ export class RealtimeGateway implements OnGatewayInit, OnGatewayConnection, OnGa
     }
     if (command.commandType === 'conversation.subscribe') {
       const bearerToken = this.bearerToken(socket);
-      await this.messages.subscribe(
+      const decision = await this.messages.subscribe(
         bearerToken,
         principal.accountId,
         command.payload.conversationId,
         command.correlationId,
       );
+      if (decision.participantCheckedIn) {
+        this.checkedInConversations(socket).set(command.payload.conversationId, Date.now());
+      }
+      await socket.join(this.room(command.payload.conversationId));
+      return this.accept(command, false, undefined, 'not_applicable');
+    }
+    if (command.commandType === 'conversation.check-in') {
+      await this.messages.checkIn(
+        this.bearerToken(socket),
+        principal.accountId,
+        command.payload.conversationId,
+        command.commandId,
+        command.correlationId,
+      );
+      this.checkedInConversations(socket).set(command.payload.conversationId, Date.now());
       await socket.join(this.room(command.payload.conversationId));
       return this.accept(command, false, undefined, 'not_applicable');
     }
@@ -291,6 +310,9 @@ export class RealtimeGateway implements OnGatewayInit, OnGatewayConnection, OnGa
       RATE_LIMITED: 'Command rate limit was exceeded',
       ACCESS_DENIED: 'Conversation access is denied',
       CHAT_ELIGIBILITY_UNAVAILABLE: 'Conversation eligibility is unavailable',
+      CHAT_EVIDENCE_UNAVAILABLE: 'Conversation attendance could not be recorded',
+      EVIDENCE_WINDOW_CLOSED: 'The attendance window is closed',
+      EVIDENCE_OCCURRED_OUTSIDE_WINDOW: 'Attendance was outside the appointment window',
       APPOINTMENT_NOT_CONFIRMED: 'The appointment is not confirmed for chat',
       CHAT_NOT_STARTED: 'The appointment chat has not started',
       CHAT_ENDED: 'The appointment chat has ended',
@@ -337,6 +359,36 @@ export class RealtimeGateway implements OnGatewayInit, OnGatewayConnection, OnGa
 
   private room(conversationId: string): string {
     return `conversation:${conversationId}`;
+  }
+
+  private checkedInConversations(socket: RealtimeSocket): Map<string, number> {
+    socket.data.checkedInConversations ??= new Map<string, number>();
+    return socket.data.checkedInConversations;
+  }
+
+  private async recordConversationPresence(
+    socket: RealtimeSocket,
+    evidenceId: string,
+    correlationId: string,
+  ): Promise<void> {
+    const now = Date.now();
+    for (const [conversationId, previous] of this.checkedInConversations(socket)) {
+      const intervalStart = Math.max(
+        previous,
+        now - this.configuration.PRESENCE_TTL_SECONDS * 1000,
+      );
+      if (intervalStart < now) {
+        await this.messages.recordPresence(
+          this.bearerToken(socket),
+          conversationId,
+          evidenceId,
+          new Date(intervalStart),
+          new Date(now),
+          correlationId,
+        );
+      }
+      this.checkedInConversations(socket).set(conversationId, now);
+    }
   }
 
   private isExpired(principal: AuthenticatedPrincipal): boolean {

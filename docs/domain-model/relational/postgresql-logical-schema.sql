@@ -953,6 +953,14 @@ CREATE TABLE consultation.appointment (
     cancelled_at timestamptz,
     cancelled_by uuid, -- external -> identity.account.id
     cancellation_credit_outcome varchar(40),
+    session_outcome varchar(40),
+    session_outcome_reason varchar(64),
+    session_policy_version varchar(64),
+    session_ended_at timestamptz,
+    session_settled_at timestamptz,
+    evidence_review_started_at timestamptz,
+    evidence_failure_reason varchar(64),
+    completion_fact_id uuid UNIQUE,
     created_at timestamptz NOT NULL,
     updated_at timestamptz NOT NULL,
     version bigint NOT NULL,
@@ -969,6 +977,71 @@ CREATE TABLE consultation.appointment_status_history (
     idempotency_key varchar(128),
     credit_outcome varchar(40),
     changed_at timestamptz NOT NULL
+);
+
+CREATE TABLE consultation.appointment_chat_evidence (
+    id uuid PRIMARY KEY,
+    appointment_id uuid NOT NULL REFERENCES consultation.appointment(id),
+    evidence_id uuid NOT NULL,
+    participant_account_id uuid NOT NULL, -- external -> identity.account.id
+    participant_role varchar(16) NOT NULL,
+    evidence_type varchar(24) NOT NULL,
+    interval_started_at timestamptz,
+    message_id uuid, -- Realtime-owned identifier; no message content crosses the boundary
+    occurred_at timestamptz NOT NULL,
+    received_at timestamptz NOT NULL,
+    UNIQUE (appointment_id, evidence_id)
+);
+
+CREATE TABLE consultation.session_summary (
+    id uuid PRIMARY KEY,
+    appointment_id uuid NOT NULL REFERENCES consultation.appointment(id),
+    user_account_id uuid NOT NULL, -- external -> identity.account.id
+    specialist_account_id uuid NOT NULL, -- external -> identity.account.id
+    summary_version bigint NOT NULL,
+    schema_version varchar(40) NOT NULL,
+    topics_discussed jsonb NOT NULL,
+    progress_summary varchar(1000),
+    specialist_note_for_user varchar(1000),
+    follow_up_suggested boolean NOT NULL,
+    amends_summary_id uuid REFERENCES consultation.session_summary(id),
+    idempotency_key varchar(128) NOT NULL,
+    request_hash varchar(64) NOT NULL,
+    published_at timestamptz NOT NULL,
+    UNIQUE (appointment_id, summary_version),
+    UNIQUE (specialist_account_id, idempotency_key)
+);
+
+CREATE TABLE consultation.agreed_next_step (
+    id uuid PRIMARY KEY,
+    summary_id uuid NOT NULL REFERENCES consultation.session_summary(id),
+    ordinal smallint NOT NULL,
+    step_type varchar(32) NOT NULL,
+    title varchar(160) NOT NULL,
+    details varchar(500),
+    resource_id uuid, -- external -> content.resource.id
+    resource_version varchar(64),
+    created_at timestamptz NOT NULL,
+    UNIQUE (summary_id, ordinal)
+);
+
+CREATE TABLE consultation.agreed_next_step_state (
+    next_step_id uuid PRIMARY KEY REFERENCES consultation.agreed_next_step(id),
+    user_account_id uuid NOT NULL, -- external -> identity.account.id
+    state varchar(16) NOT NULL,
+    hidden boolean NOT NULL,
+    version bigint NOT NULL,
+    updated_at timestamptz NOT NULL
+);
+
+CREATE TABLE consultation.session_summary_reuse_consent (
+    summary_id uuid PRIMARY KEY REFERENCES consultation.session_summary(id),
+    user_account_id uuid NOT NULL, -- external -> identity.account.id
+    approved boolean NOT NULL,
+    version bigint NOT NULL,
+    updated_at timestamptz NOT NULL,
+    approved_at timestamptz,
+    revoked_at timestamptz
 );
 
 /* ========================================================================== */

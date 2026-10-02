@@ -6,6 +6,7 @@ const validEnvironment = {
   NODE_ENV: 'test',
   REALTIME_MESSAGE_ENCRYPTION_KEY: Buffer.alloc(32, 1).toString('base64'),
   REALTIME_MESSAGE_ENCRYPTION_KEY_VERSION: 'test-v1',
+  CONSULTATION_EVIDENCE_SERVICE_TOKEN: 'test-consultation-evidence-token-32-characters',
   IDENTITY_JWT_ISSUER: 'https://identity.test.mentalbridge',
   IDENTITY_JWT_AUDIENCE: 'mentalbridge-api',
   IDENTITY_JWT_KEY_ID: 'test-key',
@@ -65,6 +66,15 @@ describe('Realtime configuration', () => {
       loadConfiguration({
         ...validEnvironment,
         REALTIME_MESSAGE_ENCRYPTION_KEY: Buffer.alloc(16).toString('base64'),
+      }),
+    ).toThrow();
+  });
+
+  it('rejects a short Consultation evidence service token', () => {
+    expect(() =>
+      loadConfiguration({
+        ...validEnvironment,
+        CONSULTATION_EVIDENCE_SERVICE_TOKEN: 'too-short',
       }),
     ).toThrow();
   });

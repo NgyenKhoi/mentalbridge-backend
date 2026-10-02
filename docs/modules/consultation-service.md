@@ -47,6 +47,7 @@ delivery, or SupportPlan state.
   rewriting v1 periods. Purchase and general renewal/cancellation lifecycles
   remain later stories.
 - MB-381 adds the bearer-protected internal appointment-context projection used by Care. It returns only appointment/user/specialist identifiers, status, start/end, and version, and is readable only by that appointment's owner or assigned specialist. Consultation stores no brief content and exposes no credit, history, decision, or display-name fields through this projection.
+- MB-383 implements `chat-session-completion-v1`: Realtime submits only assigned-participant check-in, bounded presence, and accepted-message metadata; Consultation records `SESSION_ENDED`, applies the five-minute grace and technical reconciliation window, stores a separate deterministic outcome, and settles the held credit exactly once. Completion stores an opaque fact for MB-516 but creates no earning.
 
 ## Ordered tasks
 
@@ -65,10 +66,10 @@ delivery, or SupportPlan state.
   tie-breaking, prohibited fields, and exact slot handoff. The Consultation
   owner contract/query/runtime, frontend/BFF consumer, and focused owner,
   consumer, browser, concurrency, failure-path, and privacy checks are complete.
-- [ ] CON-07 Implement VND/MoMo purchase/upgrade, `consultation-credit-v2`
-  `0/4/10` no-rollover periods, `0/2/4` reservation caps, chat/video channel
-  end, and race-safe evidence-backed appointment transitions without rewriting
-  historical v1 ledger periods.
+- [~] CON-07 `consultation-credit-v2` `0/4/10` no-rollover periods,
+  `0/2/4` reservation caps, chat channel end, and race-safe evidence-backed chat
+  settlement are implemented; VND/MoMo purchase/upgrade and video evidence
+  remain delivery-gated without rewriting historical v1 ledger periods.
 - [~] CON-08 MB-381 implements the assigned specialist's read-only approved pre-session brief path through Care; general consented dashboard, reviews, and moderation remain deferred.
 - [ ] CON-09 Verify simultaneous booking/upgrade, exact proration rounding, transition conflicts, authorization, provider timeout, webhook/command duplicates, expiry and outbox/event duplicates.
 - [ ] CON-10 Add observability/configuration, update README, and pass module/contract/migration gates.
