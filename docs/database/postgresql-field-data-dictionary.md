@@ -781,6 +781,30 @@ matches the aggregate bound.
 | `support_plan_id` | Owner-matched stored draft returned for identical retries and concurrent aliases. |
 | `created_at` | UTC instant at which Care accepted the alias. |
 
+### `public.plan_change_request`
+
+Care-owned, user-reviewed request derived from one authoritative exact-version
+resource proposal in a completed Consultation appointment. Creating the request
+only records a review snapshot; it never creates a draft or changes the current
+plan. Acceptance repeats every authoritative check and links the replacement
+created in the same transaction.
+
+| Field | Purpose |
+| --- | --- |
+| `id` / `version` | Stable request identity and optimistic decision version. |
+| `user_id` / `specialist_id` | Owning user and advisory specialist; only the user can decide. |
+| `source_proposal_id` / `source_proposal_version` | Exact Consultation proposal identity and version; unique so retries cannot create competing requests. |
+| `source_appointment_id` / `source_summary_id` / `source_summary_version` / `source_completion_fact_id` | Immutable evidence that the proposal came from the latest visible summary of the completed appointment. |
+| `proposal_reason_code` / `proposal_title` / `proposal_details` | Bounded user-visible rationale and snapshot; no raw chat, journal, or assessment answers. |
+| `resource_id` / `resource_version` | Exact Content version revalidated at review and again on acceptance. |
+| `current_support_plan_id` / `current_support_plan_version` | Exact official plan reviewed when the request was created; any later change makes acceptance stale. |
+| `target_slot_id` / `current_resource_id` / `current_resource_version` / `current_resource_title` | Compatible Care-owned slot and its optional current exact resource for the comparison UI. |
+| `replacement_support_plan_id` / `replacement_support_plan_version` | Null while pending or rejected; populated only by the atomic accepted replacement. |
+| `status` / `outcome_code` | `READY_FOR_REVIEW`, `ACCEPTED`, or `REJECTED` with stable admissible/applied/rejected outcome. |
+| `idempotency_key` / `request_hash` | Owner-scoped exact retry identity for review creation. |
+| `decision_idempotency_key` / `decision_hash` | Owner-scoped exact retry identity for the final accept/reject command. |
+| `reviewed_at` / `decided_at` / `created_at` / `updated_at` | Server-owned review, decision, and persistence instants. |
+
 ### `public.support_plan_command`
 
 Owner-scoped append-only audit and replay record for activation and MB-375
@@ -800,6 +824,7 @@ answer, journal content, or client-authored display text.
 | `resource_policy_version` / `resources_resolved_at` | Exact Content eligibility policy and resolution instant used for final exact-version validation. |
 | `source_support_plan_id` / `source_support_plan_version` | For `REPLACE`, the exact former current plan and pre-supersede optimistic version; null for initial activation. This is the immutable replacement relation. |
 | `reassessment_summary_id` | For `REPLACE`, the owner-matched canonical v2 summary presented during review; null for initial activation. The JSON snapshot remains in `reassessment_summary` rather than being duplicated here. |
+| `plan_change_request_id` | For an MB-560 specialist-proposal replacement, the exact Care-owned accepted request; mutually exclusive with `reassessment_summary_id`. |
 | `replacement_review_outcome` | Governed review outcome that admitted confirmation. Unchanged reviews are not persisted because they cannot mutate a plan. |
 | `created_at` | UTC instant the command and its outcome committed. |
 
@@ -1166,6 +1191,7 @@ Immutable steps agreed in one published summary. They are user-visible suggestio
 | `step_type` | Bounded checklist, journal, emotion check-in, reassessment, follow-up appointment, or platform resource type. |
 | `title` / `details` | Bounded user-visible action wording. |
 | `resource_id` / `resource_version` | Exact Content resource proposal required only for `PLATFORM_RESOURCE`; Care revalidates any later plan change under MB-560. |
+| `resource_proposal_reason_code` | Required bounded rationale for `PLATFORM_RESOURCE`: post-consultation continuity, an alternative resource, or an addressed reported barrier; null for every other step type. |
 | `created_at` | Server creation instant inherited from summary publication. |
 
 ### `consultation.agreed_next_step_state`

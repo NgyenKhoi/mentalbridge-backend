@@ -137,6 +137,26 @@ paths:
         '401': { $ref: '#/components/responses/UnauthorizedProblem' }
         '403': { $ref: '#/components/responses/ForbiddenProblem' }
         '404': { $ref: '#/components/responses/NotFoundProblem' }
+  /internal/v1/resource-proposals/{proposalId}:
+    x-mentalbridge-status: implemented
+    get:
+      operationId: getAuthorizedResourceProposal
+      description: Returns the exact latest resource proposal from an evidence-backed completed appointment for its user or assigned specialist. Superseded, hidden, skipped, missing, or unauthorized proposals fail closed. This endpoint supplies provenance to Care and never mutates a SupportPlan.
+      security: [{ bearerAuth: [] }]
+      parameters:
+        - name: proposalId
+          in: path
+          required: true
+          schema: { type: string, format: uuid }
+      responses:
+        '200':
+          description: Exact active specialist proposal with completion and summary provenance
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/ResourceProposal' }
+        '401': { $ref: '#/components/responses/UnauthorizedProblem' }
+        '404': { $ref: '#/components/responses/NotFoundProblem' }
+        '409': { $ref: '#/components/responses/ConflictProblem' }
   /api/v1/specialist-profile:
     x-mentalbridge-status: implemented
     get:
@@ -1142,6 +1162,9 @@ components:
     AgreedNextStepState:
       type: string
       enum: [PENDING, COMPLETED, SKIPPED]
+    ResourceProposalReasonCode:
+      type: string
+      enum: [POST_CONSULTATION_CONTINUITY, TRY_ALTERNATIVE_RESOURCE, ADDRESS_REPORTED_BARRIER]
     PublishAgreedNextStep:
       type: object
       additionalProperties: false
@@ -1158,6 +1181,11 @@ components:
           type: [string, 'null']
           maxLength: 64
           description: Exact immutable Content resource version required only for PLATFORM_RESOURCE.
+        resourceProposalReasonCode:
+          oneOf:
+            - { $ref: '#/components/schemas/ResourceProposalReasonCode' }
+            - { type: 'null' }
+          description: Required only for PLATFORM_RESOURCE; records bounded specialist context without raw private notes.
     PublishSessionSummaryRequest:
       type: object
       additionalProperties: false
@@ -1199,7 +1227,7 @@ components:
     AgreedNextStep:
       type: object
       additionalProperties: false
-      required: [id, type, title, details, resourceId, resourceVersion, state, hidden, stateVersion, stateUpdatedAt]
+      required: [id, type, title, details, resourceId, resourceVersion, resourceProposalReasonCode, state, hidden, stateVersion, stateUpdatedAt]
       properties:
         id: { type: string, format: uuid }
         type: { $ref: '#/components/schemas/AgreedNextStepType' }
@@ -1207,6 +1235,10 @@ components:
         details: { type: [string, 'null'], maxLength: 500 }
         resourceId: { type: [string, 'null'], format: uuid }
         resourceVersion: { type: [string, 'null'], maxLength: 64 }
+        resourceProposalReasonCode:
+          oneOf:
+            - { $ref: '#/components/schemas/ResourceProposalReasonCode' }
+            - { type: 'null' }
         state:
           oneOf:
             - { $ref: '#/components/schemas/AgreedNextStepState' }
@@ -1254,6 +1286,26 @@ components:
           items: { $ref: '#/components/schemas/SessionSummary' }
         count: { type: integer, minimum: 0, maximum: 100 }
         generatedAt: { type: string, format: date-time }
+    ResourceProposal:
+      type: object
+      additionalProperties: false
+      required: [proposalId, version, appointmentId, userAccountId, specialistAccountId, summaryId, summaryVersion, completionFactId, resourceId, resourceVersion, reasonCode, title, details, summarySchemaVersion, proposedAt]
+      properties:
+        proposalId: { type: string, format: uuid }
+        version: { type: integer, format: int64, minimum: 1 }
+        appointmentId: { type: string, format: uuid }
+        userAccountId: { type: string, format: uuid }
+        specialistAccountId: { type: string, format: uuid }
+        summaryId: { type: string, format: uuid }
+        summaryVersion: { type: integer, format: int64, minimum: 1 }
+        completionFactId: { type: string, format: uuid }
+        resourceId: { type: string, format: uuid }
+        resourceVersion: { type: string, pattern: '^[0-9]+$' }
+        reasonCode: { $ref: '#/components/schemas/ResourceProposalReasonCode' }
+        title: { type: string, minLength: 1, maxLength: 160 }
+        details: { type: [string, 'null'], maxLength: 500 }
+        summarySchemaVersion: { type: string, const: session-summary-v1 }
+        proposedAt: { type: string, format: date-time }
     RequestAppointment:
       type: object
       additionalProperties: false
