@@ -25,9 +25,17 @@ class CommunityOpenApiContractTests {
 			"POST /api/v1/community/posts/{postId}/comments",
 			"PATCH /api/v1/community/comments/{commentId}",
 			"DELETE /api/v1/community/comments/{commentId}",
+			"POST /api/v1/community/reports",
+			"PUT /api/v1/community/hidden-content/{targetType}/{targetId}",
+			"DELETE /api/v1/community/hidden-content/{targetType}/{targetId}",
+			"PUT /api/v1/community/blocks/{communityProfileId}",
+			"DELETE /api/v1/community/blocks/{communityProfileId}",
 			"GET /api/v1/community/profile",
 			"PUT /api/v1/community/profile",
-			"GET /api/v1/community/topics");
+			"GET /api/v1/community/topics",
+			"GET /api/v1/community/admin/moderation-cases",
+			"GET /api/v1/community/admin/moderation-cases/{caseId}",
+			"POST /api/v1/community/admin/moderation-cases/{caseId}/actions");
 
 	private static final Set<String> ALL_OPERATIONS = Set.of(
 			"GET /api/v1/community/feed",
@@ -47,6 +55,8 @@ class CommunityOpenApiContractTests {
 			"PUT /api/v1/community/posts/{postId}/bookmark",
 			"DELETE /api/v1/community/posts/{postId}/bookmark",
 			"POST /api/v1/community/reports",
+			"PUT /api/v1/community/hidden-content/{targetType}/{targetId}",
+			"DELETE /api/v1/community/hidden-content/{targetType}/{targetId}",
 			"PUT /api/v1/community/blocks/{communityProfileId}",
 			"DELETE /api/v1/community/blocks/{communityProfileId}",
 			"GET /api/v1/community/profile",

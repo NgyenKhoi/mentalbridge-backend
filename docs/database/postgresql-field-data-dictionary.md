@@ -114,12 +114,75 @@ Immutable Community-local audit snapshots for comment creation and mutation. It 
 | --- | --- |
 | `id` | Immutable opaque UUID identifying one audit snapshot. |
 | `comment_id` | Physical reference to the comment whose historical state is retained. |
-| `changed_by_profile_id` | Physical Community profile that performed the recorded owner or future moderation action. |
+| `changed_by_profile_id` | Nullable physical Community profile for an owner-authored mutation; mutually exclusive with `changed_by_subject`. |
+| `changed_by_subject` | Nullable private Identity subject for an authorized ADMIN moderation mutation; never exposed publicly and mutually exclusive with `changed_by_profile_id`. |
 | `change_type` | Stable action `CREATED`, `EDITED`, `OWNER_DELETED`, or `MODERATED` used by audit and moderation review. |
 | `content_snapshot` | Exact Community comment text at the recorded version, retained only for governed audit and moderation compatibility. |
 | `state_snapshot` | Comment lifecycle state after the recorded action. |
 | `comment_version` | Exact optimistic-lock version represented by the snapshot; unique per comment for deterministic history. |
 | `changed_at` | Immutable UTC instant when the recorded change committed. |
+
+### `public.community_report`
+
+Immutable, idempotent user report of one visible post or comment. Reports route content governance only and never become clinical evidence.
+
+| Field | Purpose |
+| --- | --- |
+| `id` | Immutable report UUID. |
+| `reporter_profile_id` | Private Community reporter reference; never returned in an admin case response. |
+| `target_type`, `target_id` | Community-owned post/comment reference captured without a polymorphic cross-service foreign key. |
+| `reason` | Stable governed report reason, including the non-diagnostic crisis-concern routing reason. |
+| `details` | Optional bounded untrusted reporter context, visible only to authorized moderation. |
+| `idempotency_key`, `request_fingerprint` | Owner-scoped retry identity and normalized SHA-256 command fingerprint. |
+| `created_at` | Immutable accepted-report instant. |
+
+### `public.community_content_hide`
+
+Owner-scoped feed/comment exclusion that does not alter the target or another user's view.
+
+| Field | Purpose |
+| --- | --- |
+| `hider_profile_id` | Community profile that chose the personal hide. |
+| `target_type`, `target_id` | Hidden post/comment identity. |
+| `created_at` | Immutable instant at which the personal hide became effective. |
+
+### `public.community_moderation_case`
+
+One Community-local governed case per reported target, with a minimized immutable first-report evidence snapshot.
+
+| Field | Purpose |
+| --- | --- |
+| `id` | Opaque case UUID exposed only to ADMIN. |
+| `target_type`, `target_id` | Exact Community target under review. |
+| `target_author_profile_id` | Private author reference used for bounded Community access restriction. |
+| `state` | Workflow state `OPEN`, `IN_REVIEW`, or `RESOLVED`. |
+| `priority` | `HIGH` only when at least one user selected `SELF_HARM_OR_CRISIS_CONCERN`; it is routing priority, not diagnosis or inferred risk. |
+| `evidence_content`, `evidence_state`, `evidence_version` | Minimized target snapshot fixed when the case is first created. |
+| `created_at`, `updated_at`, `version` | Creation, latest decision time, and optimistic audit sequence. |
+
+### `public.community_moderation_action`
+
+Append-only ADMIN decision record preserving exact actor, reason, target version, and before/after state.
+
+| Field | Purpose |
+| --- | --- |
+| `id`, `case_id` | Immutable action UUID and owning moderation case. |
+| `actor_subject` | Private ADMIN Identity subject used for accountability. |
+| `action`, `reason_code` | Bounded governed decision and stable rationale code. |
+| `prior_state`, `resulting_state`, `target_version` | Exact transition and resulting target version. |
+| `idempotency_key`, `request_fingerprint` | ADMIN-scoped retry identity and normalized SHA-256 command fingerprint. |
+| `created_at` | Immutable committed-decision instant. |
+
+### `public.community_access_restriction`
+
+Community-only access restriction derived from an auditable case. It does not change Identity, Care, SupportPlan, booking, or third-party contact state.
+
+| Field | Purpose |
+| --- | --- |
+| `profile_id`, `case_id` | Restricted Community profile and authorizing moderation case. |
+| `reason_code` | Stable bounded governance rationale. |
+| `restricted_by_subject`, `restricted_at` | ADMIN subject and UTC activation instant. |
+| `lifted_by_subject`, `lifted_at` | Nullable paired ADMIN subject/time recording restoration without deleting history. |
 
 ## Database `mentalbridge_identity` (schema `public`)
 

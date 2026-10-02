@@ -35,6 +35,7 @@ public class SecurityConfiguration {
 				.sessionManagement(session -> session.sessionCreationPolicy(SessionCreationPolicy.STATELESS))
 				.authorizeHttpRequests(authorize -> authorize
 						.requestMatchers("/actuator/health", "/actuator/health/**").permitAll()
+						.requestMatchers("/api/v1/community/admin/**").hasRole("ADMIN")
 						.requestMatchers("/api/v1/community/**").hasRole("USER")
 						.anyRequest().authenticated())
 				.exceptionHandling(errors -> errors.authenticationEntryPoint(problems).accessDeniedHandler(problems))

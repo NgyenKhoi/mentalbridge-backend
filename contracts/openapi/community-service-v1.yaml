@@ -1,8 +1,8 @@
 openapi: 3.1.0
 info:
   title: MentalBridge Community API
-  version: 1.4.0
-  description: Privacy-isolated peer-support Community Contract v1.4. Feed ordering is newest-first and never uses Care, Journal, emotion, SupportPlan, or AI data. MB-581 adds a governed display identity, MB-576 adds bounded owner-scoped media, MB-609 adds a per-post anonymous public identity while retaining private ownership and audit, and MB-577 adds one-level comments and replies with chronological cursor pagination.
+  version: 1.5.0
+  description: Privacy-isolated peer-support Community Contract v1.5. Feed ordering is newest-first and never uses Care, Journal, emotion, SupportPlan, or AI data. MB-578 adds idempotent reports, owner-scoped hide/block controls, and bounded auditable administration without clinical inference.
 servers:
   - url: http://localhost:8084
 paths:
@@ -307,7 +307,7 @@ paths:
         "403": { $ref: "#/components/responses/Problem" }
         "404": { $ref: "#/components/responses/Problem" }
   /api/v1/community/reports:
-    x-mentalbridge-status: planned
+    x-mentalbridge-status: implemented
     post:
       operationId: createCommunityReport
       security: [{ BearerAuth: [] }]
@@ -325,11 +325,37 @@ paths:
         "403": { $ref: "#/components/responses/Problem" }
         "404": { $ref: "#/components/responses/Problem" }
         "409": { $ref: "#/components/responses/Problem" }
+  /api/v1/community/hidden-content/{targetType}/{targetId}:
+    x-mentalbridge-status: implemented
+    parameters:
+      - name: targetType
+        in: path
+        required: true
+        schema: { $ref: "#/components/schemas/ReportTargetType" }
+      - name: targetId
+        in: path
+        required: true
+        schema: { type: string, format: uuid }
+    put:
+      operationId: putCommunityContentHide
+      security: [{ BearerAuth: [] }]
+      responses:
+        "204": { description: Content hidden from the owner's Community experience. }
+        "401": { $ref: "#/components/responses/Problem" }
+        "403": { $ref: "#/components/responses/Problem" }
+        "404": { $ref: "#/components/responses/Problem" }
+    delete:
+      operationId: deleteCommunityContentHide
+      security: [{ BearerAuth: [] }]
+      responses:
+        "204": { description: Personal content hide removed or already absent. }
+        "401": { $ref: "#/components/responses/Problem" }
+        "403": { $ref: "#/components/responses/Problem" }
   /api/v1/community/blocks/{communityProfileId}:
     parameters:
       - $ref: "#/components/parameters/CommunityProfileId"
     put:
-      x-mentalbridge-status: planned
+      x-mentalbridge-status: implemented
       operationId: putCommunityBlock
       security: [{ BearerAuth: [] }]
       responses:
@@ -338,7 +364,7 @@ paths:
         "403": { $ref: "#/components/responses/Problem" }
         "404": { $ref: "#/components/responses/Problem" }
     delete:
-      x-mentalbridge-status: planned
+      x-mentalbridge-status: implemented
       operationId: deleteCommunityBlock
       security: [{ BearerAuth: [] }]
       responses:
@@ -413,10 +439,20 @@ paths:
         "401": { $ref: "#/components/responses/Problem" }
         "403": { $ref: "#/components/responses/Problem" }
   /api/v1/community/admin/moderation-cases:
-    x-mentalbridge-status: planned
+    x-mentalbridge-status: implemented
     get:
       operationId: listCommunityModerationCases
       security: [{ BearerAuth: [] }]
+      parameters:
+        - name: state
+          in: query
+          schema: { $ref: "#/components/schemas/ModerationCaseState" }
+        - name: targetType
+          in: query
+          schema: { $ref: "#/components/schemas/ReportTargetType" }
+        - name: priority
+          in: query
+          schema: { $ref: "#/components/schemas/ModerationPriority" }
       responses:
         "200":
           description: Bounded admin moderation queue.
@@ -428,7 +464,7 @@ paths:
         "401": { $ref: "#/components/responses/Problem" }
         "403": { $ref: "#/components/responses/Problem" }
   /api/v1/community/admin/moderation-cases/{caseId}:
-    x-mentalbridge-status: planned
+    x-mentalbridge-status: implemented
     get:
       operationId: getCommunityModerationCase
       security: [{ BearerAuth: [] }]
@@ -444,7 +480,7 @@ paths:
         "403": { $ref: "#/components/responses/Problem" }
         "404": { $ref: "#/components/responses/Problem" }
   /api/v1/community/admin/moderation-cases/{caseId}/actions:
-    x-mentalbridge-status: planned
+    x-mentalbridge-status: implemented
     post:
       operationId: createCommunityModerationAction
       security: [{ BearerAuth: [] }]
@@ -746,12 +782,15 @@ components:
     ReportReason:
       type: string
       enum: [HARASSMENT, PRIVACY_OR_DOXXING, MEDICAL_MISINFORMATION, SELF_HARM_OR_CRISIS_CONCERN, SPAM, SEXUAL_OR_VIOLENT_CONTENT, OTHER]
+    ReportTargetType:
+      type: string
+      enum: [POST, COMMENT]
     CreateReportRequest:
       type: object
       additionalProperties: false
       required: [targetType, targetId, reason, details]
       properties:
-        targetType: { type: string, enum: [POST, COMMENT, COMMUNITY_PROFILE] }
+        targetType: { $ref: "#/components/schemas/ReportTargetType" }
         targetId: { type: string, format: uuid }
         reason: { $ref: "#/components/schemas/ReportReason" }
         details: { type: [string, "null"], maxLength: 1000 }
@@ -787,24 +826,59 @@ components:
     ModerationCaseState:
       type: string
       enum: [OPEN, IN_REVIEW, RESOLVED]
+    ModerationPriority:
+      type: string
+      enum: [NORMAL, HIGH]
     ModerationAction:
       type: string
       enum: [NO_ACTION, HIDE, REMOVE, RESTORE, RESTRICT_COMMUNITY_ACCESS]
     ModerationCase:
       type: object
       additionalProperties: false
-      required: [caseId, targetType, targetId, state, reportReasons, createdAt, updatedAt]
+      required: [caseId, targetType, targetId, state, priority, reportReasons, reportContexts, evidence, actions, createdAt, updatedAt, version]
       properties:
         caseId: { type: string, format: uuid }
-        targetType: { type: string, enum: [POST, COMMENT, COMMUNITY_PROFILE] }
+        targetType: { $ref: "#/components/schemas/ReportTargetType" }
         targetId: { type: string, format: uuid }
         state: { $ref: "#/components/schemas/ModerationCaseState" }
+        priority: { $ref: "#/components/schemas/ModerationPriority" }
         reportReasons:
           type: array
           uniqueItems: true
           items: { $ref: "#/components/schemas/ReportReason" }
+        reportContexts:
+          type: array
+          maxItems: 20
+          description: Bounded reporter-provided context without reporter identity.
+          items: { type: string, minLength: 1, maxLength: 1000 }
+        evidence: { $ref: "#/components/schemas/ModerationEvidence" }
+        actions:
+          type: array
+          items: { $ref: "#/components/schemas/ModerationActionRecord" }
         createdAt: { type: string, format: date-time }
         updatedAt: { type: string, format: date-time }
+        version: { type: integer, minimum: 0 }
+    ModerationEvidence:
+      type: object
+      additionalProperties: false
+      required: [content, state, version]
+      properties:
+        content: { type: string, maxLength: 5000 }
+        state: { type: string, minLength: 1, maxLength: 24 }
+        version: { type: integer, minimum: 0 }
+    ModerationActionRecord:
+      type: object
+      additionalProperties: false
+      required: [actionId, action, reasonCode, actorSubject, priorState, resultingState, targetVersion, createdAt]
+      properties:
+        actionId: { type: string, format: uuid }
+        action: { $ref: "#/components/schemas/ModerationAction" }
+        reasonCode: { type: string, minLength: 1, maxLength: 64, pattern: "^[A-Z0-9_]+$" }
+        actorSubject: { type: string, format: uuid }
+        priorState: { type: string, minLength: 1, maxLength: 32 }
+        resultingState: { type: string, minLength: 1, maxLength: 32 }
+        targetVersion: { type: integer, minimum: 0 }
+        createdAt: { type: string, format: date-time }
     CreateModerationActionRequest:
       type: object
       additionalProperties: false

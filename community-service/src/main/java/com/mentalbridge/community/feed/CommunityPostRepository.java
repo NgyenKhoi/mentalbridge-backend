@@ -28,6 +28,11 @@ interface CommunityPostRepository extends JpaRepository<CommunityPostEntity, UUI
 			      WHERE (block.blocker_profile_id = :viewerProfileId AND block.blocked_profile_id = post.author_profile_id)
 			         OR (block.blocker_profile_id = post.author_profile_id AND block.blocked_profile_id = :viewerProfileId)
 			  ))
+			  AND (:viewerProfileId IS NULL OR NOT EXISTS (
+			      SELECT 1 FROM community_content_hide hidden
+			      WHERE hidden.hider_profile_id = :viewerProfileId
+			        AND hidden.target_type = 'POST' AND hidden.target_id = post.id
+			  ))
 			  AND (CAST(:cursorPublishedAt AS timestamptz) IS NULL
 			       OR post.published_at < :cursorPublishedAt
 			       OR (post.published_at = :cursorPublishedAt AND post.id < :cursorPostId))
@@ -49,6 +54,11 @@ interface CommunityPostRepository extends JpaRepository<CommunityPostEntity, UUI
 			      WHERE (block.blocker_profile_id = :viewerProfileId AND block.blocked_profile_id = post.author_profile_id)
 			         OR (block.blocker_profile_id = post.author_profile_id AND block.blocked_profile_id = :viewerProfileId)
 			  ))
+			  AND (:viewerProfileId IS NULL OR NOT EXISTS (
+			      SELECT 1 FROM community_content_hide hidden
+			      WHERE hidden.hider_profile_id = :viewerProfileId
+			        AND hidden.target_type = 'POST' AND hidden.target_id = post.id
+			  ))
 			""", nativeQuery = true)
 	Optional<CommunityPostEntity> findVisibleById(@Param("postId") UUID postId,
 			@Param("viewerProfileId") UUID viewerProfileId);
@@ -62,6 +72,11 @@ interface CommunityPostRepository extends JpaRepository<CommunityPostEntity, UUI
 			      SELECT 1 FROM community_block block
 			      WHERE (block.blocker_profile_id = :viewerProfileId AND block.blocked_profile_id = post.author_profile_id)
 			         OR (block.blocker_profile_id = post.author_profile_id AND block.blocked_profile_id = :viewerProfileId)
+			  )
+			  AND NOT EXISTS (
+			      SELECT 1 FROM community_content_hide hidden
+			      WHERE hidden.hider_profile_id = :viewerProfileId
+			        AND hidden.target_type = 'POST' AND hidden.target_id = post.id
 			  )
 			FOR UPDATE
 			""", nativeQuery = true)
