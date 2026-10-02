@@ -88,6 +88,39 @@ Community-local bilateral visibility exclusion applied by feed and detail querie
 | `blocked_profile_id` | Physical Community profile hidden from the blocker; the database forbids self-blocking. |
 | `created_at` | Immutable UTC instant when the block became effective. |
 
+### `public.community_comment`
+
+Authoritative Community-owned comment or one-level reply. Its text is peer-support content and is never Care, Journal, screening, SupportPlan, specialist, or AI evidence.
+
+| Field | Purpose |
+| --- | --- |
+| `id` | Immutable opaque UUID exposed as the comment identifier for replies and owner commands. |
+| `post_id` | Physical parent post reference used to enforce visibility and update the post's active comment count transactionally. |
+| `parent_comment_id` | Nullable physical reference to a top-level comment on the same post; non-null identifies a V1 one-level reply and database/application constraints prevent cross-post or deeper nesting. |
+| `author_profile_id` | Physical Community display-profile owner used for public identity, bilateral block checks, owner authorization, moderation, and audit without exposing the private account subject. |
+| `content` | Current user-authored peer-support text bounded to 2,000 characters and retained inside Community storage after owner deletion for governed audit. |
+| `state` | Lifecycle `ACTIVE`, `OWNER_DELETED`, `MODERATION_HIDDEN`, or `MODERATION_REMOVED`; ordinary reads expose active content and a neutral owner-deleted tombstone, while moderation states fail closed. |
+| `idempotency_key` | Printable caller retry key unique per Community author, so a repeated create returns the original comment without incrementing counts twice. |
+| `request_fingerprint` | SHA-256 digest of normalized post, parent, and content input used to reject conflicting idempotency-key reuse; it cannot recover comment text. |
+| `created_at` | Immutable UTC insertion instant and primary chronological pagination key. |
+| `updated_at` | UTC instant of the latest persisted owner or moderation change. |
+| `version` | Optimistic-lock counter exposed in the comment and quoted ETag for exact `If-Match` edit/delete commands. |
+
+### `public.community_comment_revision`
+
+Immutable Community-local audit snapshots for comment creation and mutation. It is not exposed through the public comment API.
+
+| Field | Purpose |
+| --- | --- |
+| `id` | Immutable opaque UUID identifying one audit snapshot. |
+| `comment_id` | Physical reference to the comment whose historical state is retained. |
+| `changed_by_profile_id` | Physical Community profile that performed the recorded owner or future moderation action. |
+| `change_type` | Stable action `CREATED`, `EDITED`, `OWNER_DELETED`, or `MODERATED` used by audit and moderation review. |
+| `content_snapshot` | Exact Community comment text at the recorded version, retained only for governed audit and moderation compatibility. |
+| `state_snapshot` | Comment lifecycle state after the recorded action. |
+| `comment_version` | Exact optimistic-lock version represented by the snapshot; unique per comment for deterministic history. |
+| `changed_at` | Immutable UTC instant when the recorded change committed. |
+
 ## Database `mentalbridge_identity` (schema `public`)
 
 ### `public.account`

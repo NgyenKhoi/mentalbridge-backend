@@ -1,8 +1,8 @@
 openapi: 3.1.0
 info:
   title: MentalBridge Community API
-  version: 1.3.0
-  description: Privacy-isolated peer-support Community Contract v1.3. Feed ordering is newest-first and never uses Care, Journal, emotion, SupportPlan, or AI data. MB-581 adds a governed display identity, MB-576 adds bounded owner-scoped media, and MB-609 adds a per-post anonymous public identity while retaining private ownership and audit.
+  version: 1.4.0
+  description: Privacy-isolated peer-support Community Contract v1.4. Feed ordering is newest-first and never uses Care, Journal, emotion, SupportPlan, or AI data. MB-581 adds a governed display identity, MB-576 adds bounded owner-scoped media, MB-609 adds a per-post anonymous public identity while retaining private ownership and audit, and MB-577 adds one-level comments and replies with chronological cursor pagination.
 servers:
   - url: http://localhost:8084
 paths:
@@ -172,7 +172,7 @@ paths:
     parameters:
       - $ref: "#/components/parameters/PostId"
     get:
-      x-mentalbridge-status: planned
+      x-mentalbridge-status: implemented
       operationId: listCommunityComments
       security: [{ BearerAuth: [] }]
       parameters:
@@ -192,7 +192,7 @@ paths:
         "403": { $ref: "#/components/responses/Problem" }
         "404": { $ref: "#/components/responses/Problem" }
     post:
-      x-mentalbridge-status: planned
+      x-mentalbridge-status: implemented
       operationId: createCommunityComment
       security: [{ BearerAuth: [] }]
       parameters:
@@ -205,6 +205,8 @@ paths:
       responses:
         "201":
           description: Created comment or reply.
+          headers:
+            ETag: { $ref: "#/components/headers/OwnerVersion" }
           content:
             application/json:
               schema: { $ref: "#/components/schemas/CommunityComment" }
@@ -217,7 +219,7 @@ paths:
     parameters:
       - $ref: "#/components/parameters/CommentId"
     patch:
-      x-mentalbridge-status: planned
+      x-mentalbridge-status: implemented
       operationId: updateCommunityComment
       security: [{ BearerAuth: [] }]
       parameters:
@@ -230,6 +232,8 @@ paths:
       responses:
         "200":
           description: Updated owner comment.
+          headers:
+            ETag: { $ref: "#/components/headers/OwnerVersion" }
           content:
             application/json:
               schema: { $ref: "#/components/schemas/CommunityComment" }
@@ -239,13 +243,14 @@ paths:
         "404": { $ref: "#/components/responses/Problem" }
         "412": { $ref: "#/components/responses/Problem" }
     delete:
-      x-mentalbridge-status: planned
+      x-mentalbridge-status: implemented
       operationId: deleteCommunityComment
       security: [{ BearerAuth: [] }]
       parameters:
         - $ref: "#/components/parameters/IfMatch"
       responses:
         "204": { description: Owner comment tombstoned. }
+        "400": { $ref: "#/components/responses/Problem" }
         "401": { $ref: "#/components/responses/Problem" }
         "403": { $ref: "#/components/responses/Problem" }
         "404": { $ref: "#/components/responses/Problem" }

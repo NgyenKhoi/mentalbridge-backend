@@ -21,6 +21,10 @@ class CommunityOpenApiContractTests {
 			"POST /api/v1/community/media/upload-intents",
 			"POST /api/v1/community/media/{mediaId}/finalize",
 			"DELETE /api/v1/community/media/{mediaId}",
+			"GET /api/v1/community/posts/{postId}/comments",
+			"POST /api/v1/community/posts/{postId}/comments",
+			"PATCH /api/v1/community/comments/{commentId}",
+			"DELETE /api/v1/community/comments/{commentId}",
 			"GET /api/v1/community/profile",
 			"PUT /api/v1/community/profile",
 			"GET /api/v1/community/topics");
