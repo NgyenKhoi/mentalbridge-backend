@@ -44,6 +44,7 @@ PostgreSQL persistence uses Hibernate and Spring Data JPA types inside the ownin
 | `IDENTITY_E2E_USER_A_EMAIL` | When seeded | User A address; must end in `@synthetic.invalid` | `e2e-user-a@synthetic.invalid` |
 | `IDENTITY_E2E_USER_B_EMAIL` | When seeded | User B address; must end in `@synthetic.invalid` | `e2e-user-b@synthetic.invalid` |
 | `IDENTITY_E2E_PASSWORD` | When seeded | Shared local-only password for the two synthetic accounts | injected secret |
+| `APPOINTMENT_REMINDER_SERVICE_TOKEN` | When reminder flow enabled | Shared credential for the narrow verified-delivery-address read | injected secret |
 
 Production must override the local Eureka URL. The outbox relay is disabled by default and is enabled only when the version-controlled lifecycle topic has been provisioned. Redis variables will be documented when that runtime adapter is introduced.
 Registration persists the account with exactly one immutable `USER` or `SPECIALIST` role, hashed challenge, idempotent outcome, and outbox event in one transaction. The configured delivery adapter runs only after that transaction commits and never logs the recipient or challenge. Automated tests keep delivery isolated and never use live Brevo credentials.
@@ -106,6 +107,11 @@ $env:IDENTITY_DB_PASSWORD='<identity-password>'
 The generated context test uses PostgreSQL, Kafka, and Redis Testcontainers and disables live Eureka registration.
 
 ## Runtime contract status
+
+The implemented internal endpoint
+`GET /internal/v1/accounts/{accountId}/verified-email` returns an address only
+for an active account with a verified email and requires the dedicated service
+token. It is not a general account/profile read.
 
 Only OpenAPI paths marked `x-mentalbridge-status: implemented` have runtime handlers. They currently cover registration, email verification/resend, login, refresh, logout/logout-all, password recovery/reset/change, and current-account retrieval. Contract and provider tests compare this exact set with the Spring request mappings so an unavailable operation cannot silently become a frontend-facing 404.
 

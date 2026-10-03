@@ -1241,13 +1241,14 @@ components:
     EmailPreferences:
       type: object
       additionalProperties: false
-      required: [cadence, wellbeingDigestEnabled, resourceRemindersEnabled, dailyDigestTime, resourceReminderTime]
+      required: [cadence, wellbeingDigestEnabled, resourceRemindersEnabled, dailyDigestTime, resourceReminderTime, appointmentRemindersEnabled]
       properties:
         cadence: { $ref: "#/components/schemas/EmailCadence" }
         wellbeingDigestEnabled: { type: boolean }
         resourceRemindersEnabled: { type: boolean }
         dailyDigestTime: { type: string, pattern: "^([01][0-9]|2[0-3]):[0-5][0-9]$" }
         resourceReminderTime: { type: string, pattern: "^([01][0-9]|2[0-3]):[0-5][0-9]$" }
+        appointmentRemindersEnabled: { type: boolean }
     EmailPreferencesPatch:
       type: object
       additionalProperties: false
@@ -1258,6 +1259,7 @@ components:
         resourceRemindersEnabled: { type: boolean }
         dailyDigestTime: { type: string, pattern: "^([01][0-9]|2[0-3]):[0-5][0-9]$" }
         resourceReminderTime: { type: string, pattern: "^([01][0-9]|2[0-3]):[0-5][0-9]$" }
+        appointmentRemindersEnabled: { type: boolean }
     WellbeingDigestResourceItem:
       type: object
       additionalProperties: false

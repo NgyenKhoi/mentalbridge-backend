@@ -9,6 +9,7 @@ import org.springframework.http.HttpStatus;
 import org.springframework.jdbc.core.simple.JdbcClient;
 import org.springframework.stereotype.Service;
 
+import com.mentalbridge.consultation.appointment.AppointmentStatusOutbox;
 import com.mentalbridge.consultation.shared.ApiException;
 
 @Service
@@ -17,9 +18,11 @@ class SpecialistSuspensionEffects {
 	private static final String CANCELLATION_REASON = "SPECIALIST_SUSPENDED";
 
 	private final JdbcClient jdbc;
+	private final AppointmentStatusOutbox outbox;
 
-	SpecialistSuspensionEffects(JdbcClient jdbc) {
+	SpecialistSuspensionEffects(JdbcClient jdbc, AppointmentStatusOutbox outbox) {
 		this.jdbc = jdbc;
+		this.outbox = outbox;
 	}
 
 	Effects apply(UUID specialistAccountId, UUID adminAccountId, Instant now) {
@@ -80,6 +83,7 @@ class SpecialistSuspensionEffects {
 				""").param("id", UUID.randomUUID()).param("appointmentId", appointment.id())
 				.param("fromStatus", appointment.status()).param("changedBy", adminAccountId)
 				.param("reason", CANCELLATION_REASON).param("now", databaseInstant(now)).update();
+		outbox.record(appointment.id(), UUID.randomUUID(), now);
 	}
 
 	private ApiException consistencyConflict() {

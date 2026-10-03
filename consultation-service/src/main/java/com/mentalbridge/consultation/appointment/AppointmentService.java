@@ -40,14 +40,16 @@ public class AppointmentService {
 	private final SpecialistProfileService profiles;
 	private final AvailabilityProperties availability;
 	private final Clock clock;
+	private final AppointmentStatusOutbox outbox;
 
 	public AppointmentService(JdbcClient jdbc, ServiceCreditService credits, SpecialistProfileService profiles,
-			AvailabilityProperties availability, Clock clock) {
+			AvailabilityProperties availability, Clock clock, AppointmentStatusOutbox outbox) {
 		this.jdbc = jdbc;
 		this.credits = credits;
 		this.profiles = profiles;
 		this.availability = availability;
 		this.clock = clock;
+		this.outbox = outbox;
 	}
 
 	@Transactional
@@ -117,6 +119,7 @@ public class AppointmentService {
 			credits.transition(userId, credit, appointmentId, CreditEventType.HELD, "appointment-hold:" + appointmentId);
 			insertHistory(appointmentId, null, "REQUESTED", userId, "APPOINTMENT_REQUESTED",
 					"request:" + appointmentId, null, now);
+			outbox.record(appointmentId, UUID.randomUUID(), now);
 		}
 		catch (DataIntegrityViolationException exception) {
 			throw conflict("APPOINTMENT_SLOT_UNAVAILABLE", "The slot or credit is already held");
@@ -157,6 +160,7 @@ public class AppointmentService {
 				"appointment-cancel:" + appointmentId);
 		insertHistory(appointmentId, appointment.status(), "CANCELLED", userId, USER_CANCELLED,
 				idempotencyKey, outcome, now);
+		outbox.record(appointmentId, UUID.randomUUID(), now);
 		return findById(userId, appointmentId);
 	}
 
@@ -348,6 +352,7 @@ public class AppointmentService {
 				"reschedule-settle:" + replacementAppointmentId);
 		insertHistory(replacement.appointmentId(), replacement.status(), "CANCELLED", userId,
 				USER_RESCHEDULED, "reschedule:" + replacementAppointmentId, outcome, now);
+		outbox.record(replacement.appointmentId(), UUID.randomUUID(), now);
 	}
 
 	private void insertHistory(UUID appointmentId, String fromStatus, String toStatus, UUID actor, String reason,

@@ -1089,6 +1089,20 @@ CREATE TABLE consultation.session_summary_reuse_consent (
     revoked_at timestamptz
 );
 
+CREATE TABLE consultation.appointment_outbox_event (
+    id uuid PRIMARY KEY,
+    appointment_id uuid NOT NULL REFERENCES consultation.appointment(id),
+    appointment_version bigint NOT NULL,
+    correlation_id uuid NOT NULL,
+    payload jsonb NOT NULL,
+    occurred_at timestamptz NOT NULL,
+    published_at timestamptz,
+    attempt_count integer NOT NULL,
+    next_attempt_at timestamptz,
+    created_at timestamptz NOT NULL,
+    UNIQUE (appointment_id, appointment_version)
+);
+
 /* ========================================================================== */
 /* ACTIVE — community-service / mentalbridge_community                        */
 /* Evidence: community-service Liquibase changes 0001-0011.                  */
@@ -1422,6 +1436,7 @@ CREATE TABLE content.notification_preference (
     email_resource_reminders_enabled boolean NOT NULL,
     email_daily_digest_time time NOT NULL,
     email_resource_reminder_time time NOT NULL,
+    email_appointment_reminders_enabled boolean NOT NULL,
     version bigint NOT NULL,
     created_at timestamptz NOT NULL,
     updated_at timestamptz NOT NULL
@@ -1466,6 +1481,39 @@ CREATE TABLE content.notification (
     delivery_state varchar(16) NOT NULL,
     version bigint NOT NULL,
     UNIQUE (recipient_id, source, source_identity)
+);
+
+CREATE TABLE content.appointment_email_reminder (
+    id uuid PRIMARY KEY,
+    recipient_id uuid NOT NULL, -- external -> identity.account.id
+    appointment_id uuid NOT NULL, -- external -> consultation.appointment.id
+    appointment_version bigint NOT NULL,
+    appointment_status varchar(24) NOT NULL,
+    modality varchar(24) NOT NULL,
+    scheduled_start_at timestamptz NOT NULL,
+    target_at timestamptz NOT NULL,
+    due_at timestamptz NOT NULL,
+    delivery_state varchar(24) NOT NULL,
+    attempt_count integer NOT NULL,
+    first_attempt_at timestamptz,
+    last_attempt_at timestamptz,
+    next_attempt_at timestamptz,
+    provider_idempotency_key uuid NOT NULL,
+    provider_message_id varchar(255),
+    failure_code varchar(64),
+    delivered_at timestamptz,
+    invalidated_at timestamptz,
+    created_at timestamptz NOT NULL,
+    updated_at timestamptz NOT NULL,
+    UNIQUE (recipient_id, appointment_id, appointment_version)
+);
+
+CREATE TABLE content.appointment_reminder_checkpoint (
+    appointment_id uuid PRIMARY KEY, -- external -> consultation.appointment.id
+    latest_version bigint NOT NULL,
+    latest_status varchar(24) NOT NULL,
+    last_message_id uuid NOT NULL,
+    updated_at timestamptz NOT NULL
 );
 
 CREATE TABLE content.resource_idempotency_record (

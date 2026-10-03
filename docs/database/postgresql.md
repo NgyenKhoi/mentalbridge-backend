@@ -14,8 +14,8 @@ runtime source of truth. Exact field purposes are documented in the
 | --- | --- | --- |
 | `mentalbridge_identity` | Identity Service | account, role, refresh session, verification/reset token |
 | `mentalbridge_care` | Care Service | user profile, consent, anonymous session, questionnaire, assessment result, safety, SupportEvaluation, Support Guide, SupportPlan lifecycle/activity occurrences |
-| `mentalbridge_consultation` | Consultation Service | specialist approval, current service entitlement, online availability, service-credit periods and ledger; payment/booking/settlement remain proposed |
-| `mentalbridge_content_notification` | Content/Notification Service | reviewed resource definitions, immutable exact-version eligibility provenance, and notification preference/delivery |
+| `mentalbridge_consultation` | Consultation Service | specialist approval, current service entitlement, online availability, appointments, service-credit periods/ledger, and appointment status outbox |
+| `mentalbridge_content_notification` | Content/Notification Service | reviewed resource definitions, exact-version eligibility provenance, notification preferences/inbox, and appointment email reminder delivery state |
 | owner-local tables | each producer; Governance reads safe events | implemented owner outbox/audit tables only; deletion/retention projections remain proposed |
 
 ADR 0005 assigns billing to Consultation; ADR 0017 amends the v2 catalogue to
@@ -74,6 +74,8 @@ Cross-owner identifiers in the canonical logical model make relationships visibl
 - A partial unique index permits only one active appointment per slot.
 - A second partial unique index permits only one active appointment per credit; booking locks the slot and credit together.
 - `appointment_status_history` records MB-360 suspension cancellations and MB-379 idempotent acceptance, rejection, and expiry outcomes while accepting shared lifecycle states including MB-558 `IN_PROGRESS`.
+- `appointment_outbox_event` atomically records minimized versioned status facts used by the independent appointment-reminder consumer; raw health, Journal, assessment, brief, and chat content are excluded.
+- Content/Notification owns one `appointment_email_reminder` per recipient/appointment/version and one latest-version checkpoint. It persists status and provider evidence, but not the delivery email address or rendered email body.
 - Historical v1 may retain `IN_PERSON` appointment provenance. New MB-362 slots
   accept only `IN_APP_CHAT` and capability-gated `IN_APP_VIDEO`; video session
   runtime remains unavailable until its detailed provider contract passes.
