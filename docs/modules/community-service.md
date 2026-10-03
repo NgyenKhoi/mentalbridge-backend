@@ -66,3 +66,11 @@ MB-574 does not upload media, add comments/reactions/bookmarks, report, moderate
 - Personal content hides and bilateral profile blocks fail closed in feed, detail, comment reads, and new interactions without changing the target for other users.
 - ADMIN-only case queries expose a minimized first-report evidence snapshot and aggregate stable reasons. Actions append actor, reason, timestamp, target version, prior state, and resulting state before changing visibility or Community-only access.
 - `SELF_HARM_OR_CRISIS_CONCERN` raises queue priority and the UI may offer the existing help-now route. It never diagnoses, infers suicidality, books care, contacts a third party, or mutates Care/SupportPlan state.
+
+## MB-579 supportive reactions and private bookmarks
+
+- A USER may keep at most one `SUPPORT`, `RELATE`, or `THANK_YOU` reaction per active visible post. Replacing a reaction leaves the aggregate count unchanged; repeated PUT/DELETE requests are natural no-ops.
+- Reaction create/remove locks the owning post row so concurrent commands cannot lose or duplicate the non-negative display count.
+- A USER may bookmark an active visible post privately. Feed and detail responses expose only that authenticated viewer's reaction/bookmark state and never another profile's bookmarks.
+- Owner-deleted, moderation-hidden, moderation-removed, personally hidden, and bilaterally blocked posts share the bounded not-found mutation behavior and cannot receive new interactions.
+- Reactions and bookmarks remain Community-owned peer-support facts. They do not alter feed order, a clinical recommendation, Care, Journal/AI, screening, SupportPlan, or a hidden mental-health profile.

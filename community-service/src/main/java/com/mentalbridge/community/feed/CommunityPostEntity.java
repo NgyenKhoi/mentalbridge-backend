@@ -189,4 +189,17 @@ class CommunityPostEntity {
 		commentCount--;
 		updatedAt = now;
 	}
+
+	void addReaction(Instant now) {
+		reactionCount++;
+		updatedAt = now;
+	}
+
+	void removeReaction(Instant now) {
+		if (reactionCount == 0) {
+			throw new IllegalStateException("Reaction count cannot be negative");
+		}
+		reactionCount--;
+		updatedAt = now;
+	}
 }
