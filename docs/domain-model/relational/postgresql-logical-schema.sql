@@ -1091,7 +1091,7 @@ CREATE TABLE consultation.session_summary_reuse_consent (
 
 /* ========================================================================== */
 /* ACTIVE — community-service / mentalbridge_community                        */
-/* Evidence: community-service Liquibase changes 0001-0009.                  */
+/* Evidence: community-service Liquibase changes 0001-0010.                  */
 /* ========================================================================== */
 
 CREATE TABLE community.community_profile (
@@ -1124,6 +1124,22 @@ CREATE TABLE community.community_post_topic (
     post_id uuid NOT NULL REFERENCES community.community_post(id),
     topic_code varchar(32) NOT NULL,
     PRIMARY KEY (post_id, topic_code)
+);
+
+CREATE TABLE community.community_post_reaction (
+    post_id uuid NOT NULL REFERENCES community.community_post(id),
+    profile_id uuid NOT NULL REFERENCES community.community_profile(id),
+    reaction varchar(16) NOT NULL,
+    created_at timestamptz NOT NULL,
+    updated_at timestamptz NOT NULL,
+    PRIMARY KEY (post_id, profile_id)
+);
+
+CREATE TABLE community.community_post_bookmark (
+    post_id uuid NOT NULL REFERENCES community.community_post(id),
+    profile_id uuid NOT NULL REFERENCES community.community_profile(id),
+    created_at timestamptz NOT NULL,
+    PRIMARY KEY (post_id, profile_id)
 );
 
 CREATE TABLE community.community_media (

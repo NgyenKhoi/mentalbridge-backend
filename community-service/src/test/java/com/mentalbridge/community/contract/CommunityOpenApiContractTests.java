@@ -25,6 +25,10 @@ class CommunityOpenApiContractTests {
 			"POST /api/v1/community/posts/{postId}/comments",
 			"PATCH /api/v1/community/comments/{commentId}",
 			"DELETE /api/v1/community/comments/{commentId}",
+			"PUT /api/v1/community/posts/{postId}/reaction",
+			"DELETE /api/v1/community/posts/{postId}/reaction",
+			"PUT /api/v1/community/posts/{postId}/bookmark",
+			"DELETE /api/v1/community/posts/{postId}/bookmark",
 			"POST /api/v1/community/reports",
 			"PUT /api/v1/community/hidden-content/{targetType}/{targetId}",
 			"DELETE /api/v1/community/hidden-content/{targetType}/{targetId}",
@@ -100,7 +104,7 @@ class CommunityOpenApiContractTests {
 
 		assertThat(author.getProperties()).containsOnlyKeys("communityProfileId", "displayName", "avatarPreset", "state");
 		assertThat(post.getProperties()).containsOnlyKeys("postId", "author", "contentPreview", "topics", "media",
-				"mediaAvailability", "counts", "publishedAt", "updatedAt");
+				"mediaAvailability", "counts", "viewerState", "publishedAt", "updatedAt");
 		assertThat(createPost.getProperties()).containsOnlyKeys("content", "topics", "mediaIds", "authorMode");
 		assertThat(feedParameters).extracting(parameter -> parameter.getName())
 				.containsExactly("topic", "cursor", "limit");

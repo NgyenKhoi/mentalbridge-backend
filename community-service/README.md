@@ -1,6 +1,6 @@
 # Community Service
 
-`community-service` is the independent Spring Boot owner for the Community bounded context. MB-574 adds authenticated newest-first feed, topic catalogue, and post detail reads. MB-575 adds personal-story lifecycle operations, MB-581 adds the owner-scoped display profile, MB-576 adds bounded owner-only image and short-video upload lifecycle operations, and MB-578 adds reports, personal hide/block controls, and auditable administration.
+`community-service` is the independent Spring Boot owner for the Community bounded context. MB-574 adds authenticated newest-first feed, topic catalogue, and post detail reads. MB-575 adds personal-story lifecycle operations, MB-581 adds the owner-scoped display profile, MB-576 adds bounded owner-only image and short-video upload lifecycle operations, MB-578 adds reports, personal hide/block controls, and auditable administration, and MB-579 adds supportive reactions and owner-private bookmarks.
 
 ## Runtime
 
@@ -14,6 +14,7 @@
 - Community-owned display identity resolved from the locally verified JWT subject, without synchronous Identity or Care calls
 - short-lived signed Cloudinary uploads with server-side format, size, duration, and ownership verification
 - authenticated originals, signed metadata-stripped delivery transformations, and scheduled orphan cleanup
+- naturally idempotent supportive reactions and private bookmarks with transactionally consistent reaction counts
 
 ## Display identity policy
 
@@ -60,4 +61,6 @@ Do not commit `.env`, credentials, private keys, media signatures, or delivery U
 
 The test suite starts disposable PostgreSQL, applies the Community migrations, boots the application with synthetic JWT/Cloudinary settings, and verifies feed/detail visibility, owner-isolated display profiles, Unicode bounds, optimistic concurrency, authentication, the public health endpoint, and fail-closed application routes without Identity or Care APIs running.
 
-The canonical REST contract is [`contracts/openapi/community-service-v1.yaml`](../contracts/openapi/community-service-v1.yaml). Contract v1.5 marks feed, post/comment/media/profile lifecycle, reports, personal hide/block controls, and moderation cases/actions as implemented; reactions, bookmarks, and notification-producing interactions remain planned.
+The canonical REST contract is [`contracts/openapi/community-service-v1.yaml`](../contracts/openapi/community-service-v1.yaml). Contract v1.6 marks feed, post/comment/media/profile lifecycle, reports, personal hide/block controls, moderation cases/actions, supportive reactions, and private bookmarks as implemented; notification-producing interactions remain planned.
+
+MB-579 uses a compatibility-first rollout: deploy the frontend that accepts both v1.5 responses without `viewerState` and v1.6 responses with it before deploying Community v1.6. The frontend treats the presence of valid `viewerState` as the capability signal and does not render or call reaction/bookmark controls against v1.5. Do not deploy this backend ahead of that compatibility consumer.

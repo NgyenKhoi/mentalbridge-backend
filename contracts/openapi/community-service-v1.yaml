@@ -1,8 +1,8 @@
 openapi: 3.1.0
 info:
   title: MentalBridge Community API
-  version: 1.5.0
-  description: Privacy-isolated peer-support Community Contract v1.5. Feed ordering is newest-first and never uses Care, Journal, emotion, SupportPlan, or AI data. MB-578 adds idempotent reports, owner-scoped hide/block controls, and bounded auditable administration without clinical inference.
+  version: 1.6.0
+  description: Privacy-isolated peer-support Community Contract v1.6. Feed ordering is newest-first and never uses Care, Journal, emotion, SupportPlan, or AI data. MB-579 adds bounded supportive reactions and owner-private bookmarks with naturally idempotent replacement and removal semantics.
 servers:
   - url: http://localhost:8084
 paths:
@@ -259,7 +259,7 @@ paths:
     parameters:
       - $ref: "#/components/parameters/PostId"
     put:
-      x-mentalbridge-status: planned
+      x-mentalbridge-status: implemented
       operationId: putCommunityReaction
       security: [{ BearerAuth: [] }]
       requestBody:
@@ -277,7 +277,7 @@ paths:
         "403": { $ref: "#/components/responses/Problem" }
         "404": { $ref: "#/components/responses/Problem" }
     delete:
-      x-mentalbridge-status: planned
+      x-mentalbridge-status: implemented
       operationId: deleteCommunityReaction
       security: [{ BearerAuth: [] }]
       responses:
@@ -289,7 +289,7 @@ paths:
     parameters:
       - $ref: "#/components/parameters/PostId"
     put:
-      x-mentalbridge-status: planned
+      x-mentalbridge-status: implemented
       operationId: putCommunityBookmark
       security: [{ BearerAuth: [] }]
       responses:
@@ -298,7 +298,7 @@ paths:
         "403": { $ref: "#/components/responses/Problem" }
         "404": { $ref: "#/components/responses/Problem" }
     delete:
-      x-mentalbridge-status: planned
+      x-mentalbridge-status: implemented
       operationId: deleteCommunityBookmark
       security: [{ BearerAuth: [] }]
       responses:
@@ -610,7 +610,7 @@ components:
     CommunityPostSummary:
       type: object
       additionalProperties: false
-      required: [postId, author, contentPreview, topics, media, mediaAvailability, counts, publishedAt, updatedAt]
+      required: [postId, author, contentPreview, topics, media, mediaAvailability, counts, viewerState, publishedAt, updatedAt]
       properties:
         postId: { type: string, format: uuid }
         author: { $ref: "#/components/schemas/CommunityAuthor" }
@@ -626,12 +626,13 @@ components:
           items: { $ref: "#/components/schemas/CommunityMedia" }
         mediaAvailability: { type: string, enum: [NONE, READY, PARTIAL, UNAVAILABLE] }
         counts: { $ref: "#/components/schemas/CommunityCounts" }
+        viewerState: { $ref: "#/components/schemas/CommunityViewerState" }
         publishedAt: { type: string, format: date-time }
         updatedAt: { type: string, format: date-time }
     CommunityPostDetail:
       type: object
       additionalProperties: false
-      required: [postId, author, content, topics, media, mediaAvailability, counts, publishedAt, updatedAt]
+      required: [postId, author, content, topics, media, mediaAvailability, counts, viewerState, publishedAt, updatedAt]
       properties:
         postId: { type: string, format: uuid }
         author: { $ref: "#/components/schemas/CommunityAuthor" }
@@ -647,6 +648,7 @@ components:
           items: { $ref: "#/components/schemas/CommunityMedia" }
         mediaAvailability: { type: string, enum: [NONE, READY, PARTIAL, UNAVAILABLE] }
         counts: { $ref: "#/components/schemas/CommunityCounts" }
+        viewerState: { $ref: "#/components/schemas/CommunityViewerState" }
         publishedAt: { type: string, format: date-time }
         updatedAt: { type: string, format: date-time }
     CommunityFeedPage:
@@ -766,6 +768,18 @@ components:
     SupportiveReaction:
       type: string
       enum: [SUPPORT, RELATE, THANK_YOU]
+    CommunityViewerState:
+      type: object
+      additionalProperties: false
+      required: [reaction, bookmarked]
+      properties:
+        reaction:
+          anyOf:
+            - $ref: "#/components/schemas/SupportiveReaction"
+            - type: "null"
+        bookmarked:
+          type: boolean
+          description: True only when the authenticated owner bookmarked this post; another viewer's bookmark state is never exposed.
     PutReactionRequest:
       type: object
       additionalProperties: false

@@ -211,7 +211,7 @@ public class CommunityPostService {
 	}
 
 	private VersionedPost versioned(CommunityPostEntity post) {
-		return new VersionedPost(feed.toDetail(post), post.version());
+		return new VersionedPost(feed.toDetail(post, post.author().id()), post.version());
 	}
 
 	private record ValidatedPost(String content, Set<CommunityTopic> topics, List<UUID> mediaIds,

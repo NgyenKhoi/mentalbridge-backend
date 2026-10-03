@@ -13,12 +13,12 @@ public final class CommunityResponses {
 	}
 
 	public record PostSummary(UUID postId, Author author, String contentPreview, List<CommunityTopic> topics,
-			List<Media> media, MediaAvailability mediaAvailability, Counts counts, Instant publishedAt,
+			List<Media> media, MediaAvailability mediaAvailability, Counts counts, ViewerState viewerState, Instant publishedAt,
 			Instant updatedAt) {
 	}
 
 	public record PostDetail(UUID postId, Author author, String content, List<CommunityTopic> topics,
-			List<Media> media, MediaAvailability mediaAvailability, Counts counts, Instant publishedAt,
+			List<Media> media, MediaAvailability mediaAvailability, Counts counts, ViewerState viewerState, Instant publishedAt,
 			Instant updatedAt) {
 	}
 
@@ -36,6 +36,9 @@ public final class CommunityResponses {
 	public enum MediaAvailability { NONE, READY, PARTIAL, UNAVAILABLE }
 
 	public record Counts(int comments, int reactions) {
+	}
+
+	public record ViewerState(CommunityPostReactionEntity.Reaction reaction, boolean bookmarked) {
 	}
 
 	public record Topic(CommunityTopic code, String label, String description) {
