@@ -8,6 +8,9 @@ spring:
     enabled: true
   jpa:
     open-in-view: false
+  kafka:
+    listener:
+      auto-startup: false
 
 eureka:
   client:

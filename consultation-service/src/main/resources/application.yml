@@ -18,6 +18,15 @@ spring:
     enabled: ${CONSULTATION_LIQUIBASE_ENABLED:false}
     change-log: classpath:db/changelog/db.changelog-master.yaml
     default-schema: public
+  kafka:
+    bootstrap-servers: ${KAFKA_BOOTSTRAP_SERVERS:localhost:9092}
+    consumer:
+      group-id: ${CONSULTATION_ACCOUNT_LIFECYCLE_GROUP:consultation-account-lifecycle-v1}
+      auto-offset-reset: earliest
+      key-deserializer: org.apache.kafka.common.serialization.StringDeserializer
+      value-deserializer: org.apache.kafka.common.serialization.StringDeserializer
+    listener:
+      auto-startup: ${CONSULTATION_KAFKA_LISTENER_AUTO_STARTUP:false}
   cloud:
     openfeign:
       circuitbreaker:
@@ -37,6 +46,8 @@ mentalbridge:
       public-key: ${IDENTITY_JWT_PUBLIC_KEY}
     availability:
       video-enabled: ${CONSULTATION_VIDEO_AVAILABILITY_ENABLED:false}
+    account-lifecycle:
+      topic: ${CONSULTATION_ACCOUNT_LIFECYCLE_TOPIC:mentalbridge.identity.account-lifecycle.v1}
 
 eureka:
   client:

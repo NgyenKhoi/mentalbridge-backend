@@ -48,4 +48,28 @@ class SpecialistProfileStatusHistoryEntity {
 		SPECIALIST,
 		ADMIN
 	}
+
+	UUID specialistAccountId() {
+		return specialistAccountId;
+	}
+
+	SpecialistApprovalStatus approvalStatus() {
+		return approvalStatus;
+	}
+
+	UUID actorAccountId() {
+		return actorAccountId;
+	}
+
+	ActorRole actorRole() {
+		return actorRole;
+	}
+
+	SpecialistDecisionReasonCode reasonCode() {
+		return reasonCode;
+	}
+
+	Instant occurredAt() {
+		return occurredAt;
+	}
 }
