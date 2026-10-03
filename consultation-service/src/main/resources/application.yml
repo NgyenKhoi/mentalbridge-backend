@@ -47,6 +47,7 @@ mentalbridge:
     availability:
       video-enabled: ${CONSULTATION_VIDEO_AVAILABILITY_ENABLED:false}
     account-lifecycle:
+      enabled: ${CONSULTATION_ACCOUNT_LIFECYCLE_ENABLED:false}
       topic: ${CONSULTATION_ACCOUNT_LIFECYCLE_TOPIC:mentalbridge.identity.account-lifecycle.v1}
 
 eureka:

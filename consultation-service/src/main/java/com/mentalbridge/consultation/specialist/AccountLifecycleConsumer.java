@@ -5,6 +5,7 @@ import java.util.UUID;
 
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
+import org.springframework.boot.autoconfigure.condition.ConditionalOnProperty;
 import org.springframework.kafka.annotation.KafkaListener;
 import org.springframework.stereotype.Component;
 
@@ -12,6 +13,7 @@ import com.fasterxml.jackson.databind.JsonNode;
 import com.fasterxml.jackson.databind.ObjectMapper;
 
 @Component
+@ConditionalOnProperty(prefix = "mentalbridge.consultation.account-lifecycle", name = "enabled", havingValue = "true")
 public class AccountLifecycleConsumer {
 
 	private static final Logger LOGGER = LoggerFactory.getLogger(AccountLifecycleConsumer.class);
