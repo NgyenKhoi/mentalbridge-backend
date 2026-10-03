@@ -20,13 +20,16 @@ class CommunityInteractionService {
 	private final CommunityPostRepository posts;
 	private final CommunityPostReactionRepository reactions;
 	private final CommunityPostBookmarkRepository bookmarks;
+	private final CommunityInteractionEventPolicy interactionEvents;
 
 	CommunityInteractionService(CommunityProfileRepository profiles, CommunityPostRepository posts,
-			CommunityPostReactionRepository reactions, CommunityPostBookmarkRepository bookmarks) {
+			CommunityPostReactionRepository reactions, CommunityPostBookmarkRepository bookmarks,
+			CommunityInteractionEventPolicy interactionEvents) {
 		this.profiles = profiles;
 		this.posts = posts;
 		this.reactions = reactions;
 		this.bookmarks = bookmarks;
+		this.interactionEvents = interactionEvents;
 	}
 
 	@Transactional
@@ -36,6 +39,7 @@ class CommunityInteractionService {
 		var id = new CommunityPostReactionId(postId, profile.id());
 		var existing = reactions.findById(id);
 		var now = Instant.now();
+		var created = existing.isEmpty();
 		if (existing.isEmpty()) {
 			reactions.save(new CommunityPostReactionEntity(post, profile, reaction, now));
 			post.addReaction(now);
@@ -45,6 +49,9 @@ class CommunityInteractionService {
 		}
 		reactions.flush();
 		posts.flush();
+		if (created) {
+			interactionEvents.reactionCreated(post, profile, reaction, now);
+		}
 		return new CommunityReaction(postId, reaction);
 	}
 

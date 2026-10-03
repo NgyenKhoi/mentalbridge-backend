@@ -1,6 +1,6 @@
 # Community Service
 
-`community-service` is the independent Spring Boot owner for the Community bounded context. MB-574 adds authenticated newest-first feed, topic catalogue, and post detail reads. MB-575 adds personal-story lifecycle operations, MB-581 adds the owner-scoped display profile, MB-576 adds bounded owner-only image and short-video upload lifecycle operations, MB-578 adds reports, personal hide/block controls, and auditable administration, and MB-579 adds supportive reactions and owner-private bookmarks.
+`community-service` is the independent Spring Boot owner for the Community bounded context. MB-574 adds authenticated newest-first feed, topic catalogue, and post detail reads. MB-575 adds personal-story lifecycle operations, MB-581 adds the owner-scoped display profile, MB-576 adds bounded owner-only image and short-video upload lifecycle operations, MB-578 adds reports, personal hide/block controls, and auditable administration, MB-579 adds supportive reactions and owner-private bookmarks, and MB-580 publishes minimized interaction facts through a transactional outbox.
 
 ## Runtime
 
@@ -15,6 +15,7 @@
 - short-lived signed Cloudinary uploads with server-side format, size, duration, and ownership verification
 - authenticated originals, signed metadata-stripped delivery transformations, and scheduled orphan cleanup
 - naturally idempotent supportive reactions and private bookmarks with transactionally consistent reaction counts
+- minimized comment, reply, and first-reaction facts committed atomically and relayed independently to Kafka
 
 ## Display identity policy
 
@@ -47,6 +48,13 @@ Copy `.env.example` to `.env` for local development. Real environment variables 
 | `COMMUNITY_MEDIA_UPLOAD_INTENT_TTL` | no | Signed upload window as a Spring duration; defaults to `10m` |
 | `COMMUNITY_MEDIA_ORPHAN_RETENTION` | no | Retention before unattached finalized media expires; defaults to `24h` |
 | `COMMUNITY_MEDIA_CLEANUP_INTERVAL` | no | Scheduled cleanup cadence; defaults to `1h` |
+| `KAFKA_BOOTSTRAP_SERVERS` | when relay enabled | Comma-separated brokers used only by the Community interaction relay |
+| `COMMUNITY_INTERACTION_RELAY_ENABLED` | no | Publishes due interaction facts; defaults to `false` unless the topic is provisioned |
+| `COMMUNITY_INTERACTION_RELAY_BATCH_SIZE` | no | Maximum outbox rows claimed per relay run; defaults to `100` |
+| `COMMUNITY_INTERACTION_RELAY_INTERVAL` | no | Delay between relay runs; defaults to `PT5S` |
+| `COMMUNITY_INTERACTION_RELAY_SEND_TIMEOUT` | no | Maximum Kafka acknowledgement wait; defaults to `PT5S` |
+| `COMMUNITY_INTERACTION_RELAY_RETRY_BASE` | no | Initial independent retry delay; defaults to `PT5S` |
+| `COMMUNITY_INTERACTION_RELAY_RETRY_MAXIMUM` | no | Maximum retry delay; defaults to `PT5M` |
 | `SERVER_PORT` | no | HTTP port; defaults to `8084` |
 | `EUREKA_CLIENT_ENABLED` | no | Enables service discovery; defaults to `true` |
 | `EUREKA_DEFAULT_ZONE` | no | Eureka registry URL |
@@ -61,6 +69,8 @@ Do not commit `.env`, credentials, private keys, media signatures, or delivery U
 
 The test suite starts disposable PostgreSQL, applies the Community migrations, boots the application with synthetic JWT/Cloudinary settings, and verifies feed/detail visibility, owner-isolated display profiles, Unicode bounds, optimistic concurrency, authentication, the public health endpoint, and fail-closed application routes without Identity or Care APIs running.
 
-The canonical REST contract is [`contracts/openapi/community-service-v1.yaml`](../contracts/openapi/community-service-v1.yaml). Contract v1.6 marks feed, post/comment/media/profile lifecycle, reports, personal hide/block controls, moderation cases/actions, supportive reactions, and private bookmarks as implemented; notification-producing interactions remain planned.
+The canonical REST contract is [`contracts/openapi/community-service-v1.yaml`](../contracts/openapi/community-service-v1.yaml). Contract v1.6 marks feed, post/comment/media/profile lifecycle, reports, personal hide/block controls, moderation cases/actions, supportive reactions, and private bookmarks as implemented. The versioned event schema is [`contracts/events/community/community-interaction-v1.schema.json`](../contracts/events/community/community-interaction-v1.schema.json), published on `mentalbridge.community.interaction.v1`.
+
+Eligible external root comments route to the post owner, replies route to the parent-comment owner, and the first reaction for an actor/post pair routes to the post owner. Self-interactions, bookmarks, reaction replacement/removal, and repeated logical commands do not create notification facts. Kafka and Notification are never called inside Community commands; an unavailable broker leaves the committed outbox row retryable.
 
 MB-579 uses a compatibility-first rollout: deploy the frontend that accepts both v1.5 responses without `viewerState` and v1.6 responses with it before deploying Community v1.6. The frontend treats the presence of valid `viewerState` as the capability signal and does not render or call reaction/bookmark controls against v1.5. Do not deploy this backend ahead of that compatibility consumer.

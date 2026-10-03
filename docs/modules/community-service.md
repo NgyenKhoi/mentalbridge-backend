@@ -75,3 +75,10 @@ MB-574 does not upload media, add comments/reactions/bookmarks, report, moderate
 - Owner-deleted, moderation-hidden, moderation-removed, personally hidden, and bilaterally blocked posts share the bounded not-found mutation behavior and cannot receive new interactions.
 - Reactions and bookmarks remain Community-owned peer-support facts. They do not alter feed order, a clinical recommendation, Care, Journal/AI, screening, SupportPlan, or a hidden mental-health profile.
 - Rolling deployment is compatibility-first: deploy the frontend consumer that accepts both absent and present `viewerState` before Community v1.6. Absence means interaction capability is unavailable and controls stay hidden; once v1.6 returns valid viewer state, controls activate automatically. Backend-first deployment is not supported because the legacy strict parser rejects additional post fields.
+
+## MB-580 minimized interaction facts
+
+- Eligible external root comments, replies, and first reactions create one `mentalbridge.community.interaction.v1` outbox fact in the same local transaction as the Community interaction.
+- Root comments route to the post owner, replies route to the parent-comment owner, and reactions route to the post owner. Self-interactions, bookmarks, reaction replacement/removal, and repeated logical interactions do not publish another fact.
+- The event contains only its UUID/version, actor Community profile UUID, private target-owner routing UUID, target type/UUID, bounded interaction kind, occurrence time, and a Community-post deep-link descriptor. It excludes all content, media, display identity, email, and Care/Journal/AI/SupportPlan data.
+- Kafka relay is post-commit, retryable, and optional at runtime. Kafka or downstream Notification absence cannot fail or roll back Community REST commands, and Notification consumption remains outside Community authority.

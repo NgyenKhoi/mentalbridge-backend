@@ -22,6 +22,16 @@ spring:
     enabled: ${COMMUNITY_LIQUIBASE_ENABLED:false}
     change-log: classpath:db/changelog/db.changelog-master.yaml
     default-schema: public
+  kafka:
+    bootstrap-servers: ${KAFKA_BOOTSTRAP_SERVERS:localhost:9092}
+    producer:
+      acks: all
+      retries: 3
+      properties:
+        enable.idempotence: true
+        max.in.flight.requests.per.connection: 5
+      key-serializer: org.apache.kafka.common.serialization.StringSerializer
+      value-serializer: org.apache.kafka.common.serialization.StringSerializer
 
 mentalbridge:
   community:
@@ -41,6 +51,14 @@ mentalbridge:
       upload-intent-ttl: ${COMMUNITY_MEDIA_UPLOAD_INTENT_TTL:10m}
       orphan-retention: ${COMMUNITY_MEDIA_ORPHAN_RETENTION:24h}
       cleanup-interval: ${COMMUNITY_MEDIA_CLEANUP_INTERVAL:1h}
+    interaction-relay:
+      enabled: ${COMMUNITY_INTERACTION_RELAY_ENABLED:false}
+      topic: mentalbridge.community.interaction.v1
+      batch-size: ${COMMUNITY_INTERACTION_RELAY_BATCH_SIZE:100}
+      interval: ${COMMUNITY_INTERACTION_RELAY_INTERVAL:PT5S}
+      send-timeout: ${COMMUNITY_INTERACTION_RELAY_SEND_TIMEOUT:PT5S}
+      retry-base: ${COMMUNITY_INTERACTION_RELAY_RETRY_BASE:PT5S}
+      retry-maximum: ${COMMUNITY_INTERACTION_RELAY_RETRY_MAXIMUM:PT5M}
 
 eureka:
   client:
