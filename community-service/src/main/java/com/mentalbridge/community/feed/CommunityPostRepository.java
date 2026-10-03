@@ -84,6 +84,11 @@ interface CommunityPostRepository extends JpaRepository<CommunityPostEntity, UUI
 			@Param("viewerProfileId") UUID viewerProfileId);
 
 	@Lock(LockModeType.PESSIMISTIC_WRITE)
+	@Query(value = "select post.* from community_post post where post.id = :postId and post.state = 'ACTIVE' for update",
+			nativeQuery = true)
+	Optional<CommunityPostEntity> findActiveByIdForUpdate(@Param("postId") UUID postId);
+
+	@Lock(LockModeType.PESSIMISTIC_WRITE)
 	@Query("""
 			select post from CommunityPostEntity post
 			where post.author.id = :ownerId and post.idempotencyKey = :idempotencyKey

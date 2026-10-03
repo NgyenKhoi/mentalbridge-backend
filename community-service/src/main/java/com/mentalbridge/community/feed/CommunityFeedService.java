@@ -6,7 +6,10 @@ import java.util.Arrays;
 import java.util.Base64;
 import java.util.Comparator;
 import java.util.List;
+import java.util.Map;
 import java.util.UUID;
+import java.util.function.Function;
+import java.util.stream.Collectors;
 
 import org.springframework.data.domain.PageRequest;
 import org.springframework.stereotype.Service;
@@ -22,6 +25,7 @@ import com.mentalbridge.community.feed.CommunityResponses.MediaType;
 import com.mentalbridge.community.feed.CommunityResponses.PostDetail;
 import com.mentalbridge.community.feed.CommunityResponses.PostSummary;
 import com.mentalbridge.community.feed.CommunityResponses.Topic;
+import com.mentalbridge.community.feed.CommunityResponses.ViewerState;
 import com.mentalbridge.community.shared.CommunityApiException;
 
 @Service
@@ -33,10 +37,15 @@ public class CommunityFeedService {
 
 	private final CommunityPostRepository posts;
 	private final CommunityProfileRepository profiles;
+	private final CommunityPostReactionRepository reactions;
+	private final CommunityPostBookmarkRepository bookmarks;
 
-	public CommunityFeedService(CommunityPostRepository posts, CommunityProfileRepository profiles) {
+	public CommunityFeedService(CommunityPostRepository posts, CommunityProfileRepository profiles,
+			CommunityPostReactionRepository reactions, CommunityPostBookmarkRepository bookmarks) {
 		this.posts = posts;
 		this.profiles = profiles;
+		this.reactions = reactions;
+		this.bookmarks = bookmarks;
 	}
 
 	@Transactional(readOnly = true)
@@ -48,7 +57,8 @@ public class CommunityFeedService {
 				PageRequest.of(0, limit + 1));
 		var hasMore = page.size() > limit;
 		var visible = hasMore ? page.subList(0, limit) : page;
-		var items = visible.stream().map(this::summary).toList();
+		var states = viewerStates(visible, viewerProfileId);
+		var items = visible.stream().map(post -> summary(post, states.get(post.id()))).toList();
 		var nextCursor = hasMore ? encode(visible.getLast().publishedAt(), visible.getLast().id()) : null;
 		return new Feed(items, nextCursor, hasMore);
 	}
@@ -57,7 +67,7 @@ public class CommunityFeedService {
 	public VersionedPost detail(UUID accountSubject, UUID postId) {
 		var viewerProfileId = profiles.findIdByAccountSubject(accountSubject).orElse(null);
 		return posts.findVisibleById(postId, viewerProfileId)
-				.map(post -> new VersionedPost(toDetail(post), post.author().accountSubject().equals(accountSubject)
+				.map(post -> new VersionedPost(toDetail(post, viewerProfileId), post.author().accountSubject().equals(accountSubject)
 						? post.version() : null))
 				.orElseThrow(CommunityApiException::postNotFound);
 	}
@@ -68,14 +78,42 @@ public class CommunityFeedService {
 				.toList();
 	}
 
-	private PostSummary summary(CommunityPostEntity post) {
+	private PostSummary summary(CommunityPostEntity post, ViewerState viewerState) {
 		return new PostSummary(post.id(), author(post), preview(post.content()), sortedTopics(post), media(post),
-				mediaAvailability(post), counts(post), post.publishedAt(), post.updatedAt());
+				mediaAvailability(post), counts(post), viewerState, post.publishedAt(), post.updatedAt());
 	}
 
-	PostDetail toDetail(CommunityPostEntity post) {
+	PostDetail toDetail(CommunityPostEntity post, UUID viewerProfileId) {
 		return new PostDetail(post.id(), author(post), post.content(), sortedTopics(post), media(post),
-				mediaAvailability(post), counts(post), post.publishedAt(), post.updatedAt());
+				mediaAvailability(post), counts(post), viewerState(post.id(), viewerProfileId), post.publishedAt(),
+				post.updatedAt());
+	}
+
+	private Map<UUID, ViewerState> viewerStates(List<CommunityPostEntity> visible, UUID viewerProfileId) {
+		if (viewerProfileId == null || visible.isEmpty()) {
+			return visible.stream().collect(Collectors.toMap(CommunityPostEntity::id,
+					post -> new ViewerState(null, false)));
+		}
+		var postIds = visible.stream().map(CommunityPostEntity::id).toList();
+		var byPost = reactions.findAllByProfileIdAndPostIdIn(viewerProfileId, postIds).stream()
+				.collect(Collectors.toMap(CommunityPostReactionEntity::postId, Function.identity()));
+		var bookmarked = bookmarks.findAllByProfileIdAndPostIdIn(viewerProfileId, postIds).stream()
+				.map(CommunityPostBookmarkEntity::postId).collect(Collectors.toSet());
+		return visible.stream().collect(Collectors.toMap(CommunityPostEntity::id, post -> {
+			var reaction = byPost.get(post.id());
+			return new ViewerState(reaction == null ? null : reaction.reaction(), bookmarked.contains(post.id()));
+		}));
+	}
+
+	private ViewerState viewerState(UUID postId, UUID viewerProfileId) {
+		if (viewerProfileId == null) {
+			return new ViewerState(null, false);
+		}
+		var reaction = reactions.findById(new CommunityPostReactionEntity.CommunityPostReactionId(postId,
+				viewerProfileId)).map(CommunityPostReactionEntity::reaction).orElse(null);
+		var bookmarked = bookmarks.existsById(new CommunityPostBookmarkEntity.CommunityPostBookmarkId(postId,
+				viewerProfileId));
+		return new ViewerState(reaction, bookmarked);
 	}
 
 	private Author author(CommunityPostEntity post) {

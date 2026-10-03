@@ -34,13 +34,16 @@ class CommunityCommentService {
 	private final CommunityPostRepository posts;
 	private final CommunityCommentRepository comments;
 	private final CommunityCommentRevisionRepository revisions;
+	private final CommunityInteractionEventPolicy interactionEvents;
 
 	CommunityCommentService(CommunityProfileRepository profiles, CommunityPostRepository posts,
-			CommunityCommentRepository comments, CommunityCommentRevisionRepository revisions) {
+			CommunityCommentRepository comments, CommunityCommentRevisionRepository revisions,
+			CommunityInteractionEventPolicy interactionEvents) {
 		this.profiles = profiles;
 		this.posts = posts;
 		this.comments = comments;
 		this.revisions = revisions;
+		this.interactionEvents = interactionEvents;
 	}
 
 	@Transactional(readOnly = true)
@@ -89,6 +92,7 @@ class CommunityCommentService {
 		revisions.save(new CommunityCommentRevisionEntity(UUID.randomUUID(), comment, author,
 				CommunityCommentRevisionEntity.ChangeType.CREATED, content, comment.state(), comment.version(), now));
 		comments.flush();
+		interactionEvents.commentCreated(comment, now);
 		return versioned(comment);
 	}
 

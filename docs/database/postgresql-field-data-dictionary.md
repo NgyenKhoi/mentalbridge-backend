@@ -32,7 +32,7 @@ Authoritative Community-owned personal-story publication. It is not Care, Journa
 | `content` | User-authored peer-support text, bounded to 5,000 characters; it is excluded from cross-service events. |
 | `state` | Publication lifecycle `ACTIVE`, `OWNER_DELETED`, `MODERATION_HIDDEN`, or `MODERATION_REMOVED`; only `ACTIVE` is returned to ordinary users. |
 | `comment_count` | Non-negative Community-owned display count, updated transactionally by the future comment slice. |
-| `reaction_count` | Non-negative Community-owned display count, updated transactionally by the future supportive-reaction slice. |
+| `reaction_count` | Non-negative Community-owned display count, updated transactionally with reaction create/remove while the post row is locked so retries and concurrent commands cannot drift the total. |
 | `idempotency_key` | Owner-scoped create-command key. It is nullable only for posts that predate MB-575 and unique together with `author_profile_id`, so separate owners may reuse the same client-generated value safely. |
 | `request_fingerprint` | SHA-256 digest of normalized create input used to distinguish a safe retry from conflicting reuse; it is not Community content and is present exactly when `idempotency_key` is present. |
 | `author_mode` | Author-selected public identity mode for this post: `PROFILE` renders the current Community display identity, while `ANONYMOUS` returns a neutral name with no Community profile identifier or avatar that can link the post publicly; the private owner reference remains available only for authorization, moderation, and audit. |
@@ -48,6 +48,44 @@ Governed non-diagnostic topic membership used only for explicit user-selected fi
 | --- | --- |
 | `post_id` | Physical parent post reference; deleting a never-published test/post row cascades its classifications. |
 | `topic_code` | Stable v1 category `MY_STORY`, `SMALL_MILESTONE`, `HELPFUL_REFLECTION`, `PEER_QUESTION`, `EXPERIENCE_SHARING`, or `HELPFUL_RESOURCE`; it never represents diagnosis or severity. |
+
+### `public.community_post_reaction`
+
+One owner-scoped supportive reaction per post. This interaction is a Community peer-support fact and is never used as clinical, screening, Journal, SupportPlan, or ranking evidence.
+
+| Field | Purpose |
+| --- | --- |
+| `post_id` | Physical active Community post target; paired with `profile_id` as the natural idempotency key. |
+| `profile_id` | Private Community actor reference used to enforce one reaction per profile without exposing the linked account subject. |
+| `reaction` | Current bounded supportive value `SUPPORT`, `RELATE`, or `THANK_YOU`; replacement changes the value without incrementing the post count. |
+| `created_at` | Immutable UTC instant when this profile first reacted to the post. |
+| `updated_at` | UTC instant when the profile last replaced its reaction; unchanged retries are no-ops. |
+
+### `public.community_post_bookmark`
+
+Private owner-scoped saved-post membership. Only the owning viewer's bookmark state appears in their personalized Community response.
+
+| Field | Purpose |
+| --- | --- |
+| `post_id` | Physical active Community post target; paired with `profile_id` so repeated PUT/DELETE commands are naturally idempotent. |
+| `profile_id` | Private Community owner reference used for authorization and retrieval; bookmarks are never listed or counted for another viewer. |
+| `created_at` | Immutable UTC instant when the owner first bookmarked the post. |
+
+### `public.community_interaction_outbox`
+
+Community-owned durable publication facts for eligible comments, replies, and first reactions. The table is committed in the same local transaction as the interaction and relayed independently, so Kafka or Notification availability cannot roll back an accepted Community command.
+
+| Field | Purpose |
+| --- | --- |
+| `id` | Immutable event UUID included as `eventId` in the versioned Community interaction fact. |
+| `deduplication_key` | Stable logical interaction identity, unique across the retained outbox, so command retries, reaction replacement, and remove/re-add flows cannot create another notification fact for the same interaction. |
+| `target_id` | Community post or parent-comment UUID used as the Kafka partition key without copying content. |
+| `event_payload` | Exact minimized `mentalbridge.community.interaction.v1` JSON object. It contains routing identifiers, interaction kind, UTC occurrence time, and safe Community-post deep-link metadata only; post/comment text, media, display identity, email, and Care/Journal/AI/SupportPlan data are prohibited. |
+| `occurred_at` | Immutable UTC instant when the eligible Community interaction committed. |
+| `published_at` | Nullable UTC Kafka acknowledgement time; null keeps the row eligible for independent relay retry. |
+| `attempt_count` | Non-negative number of relay claims, used only for bounded retry backoff and observability. |
+| `next_attempt_at` | Nullable UTC lease or retry deadline; null before first claim and after acknowledged publication. |
+| `created_at` | Immutable UTC insertion instant, equal to the interaction occurrence time. |
 
 ### `public.community_media`
 

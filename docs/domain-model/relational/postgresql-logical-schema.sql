@@ -1105,7 +1105,7 @@ CREATE TABLE consultation.appointment_outbox_event (
 
 /* ========================================================================== */
 /* ACTIVE — community-service / mentalbridge_community                        */
-/* Evidence: community-service Liquibase changes 0001-0009.                  */
+/* Evidence: community-service Liquibase changes 0001-0011.                  */
 /* ========================================================================== */
 
 CREATE TABLE community.community_profile (
@@ -1138,6 +1138,34 @@ CREATE TABLE community.community_post_topic (
     post_id uuid NOT NULL REFERENCES community.community_post(id),
     topic_code varchar(32) NOT NULL,
     PRIMARY KEY (post_id, topic_code)
+);
+
+CREATE TABLE community.community_post_reaction (
+    post_id uuid NOT NULL REFERENCES community.community_post(id),
+    profile_id uuid NOT NULL REFERENCES community.community_profile(id),
+    reaction varchar(16) NOT NULL,
+    created_at timestamptz NOT NULL,
+    updated_at timestamptz NOT NULL,
+    PRIMARY KEY (post_id, profile_id)
+);
+
+CREATE TABLE community.community_post_bookmark (
+    post_id uuid NOT NULL REFERENCES community.community_post(id),
+    profile_id uuid NOT NULL REFERENCES community.community_profile(id),
+    created_at timestamptz NOT NULL,
+    PRIMARY KEY (post_id, profile_id)
+);
+
+CREATE TABLE community.community_interaction_outbox (
+    id uuid PRIMARY KEY,
+    deduplication_key varchar(200) NOT NULL UNIQUE,
+    target_id uuid NOT NULL,
+    event_payload jsonb NOT NULL,
+    occurred_at timestamptz NOT NULL,
+    published_at timestamptz,
+    attempt_count integer NOT NULL,
+    next_attempt_at timestamptz,
+    created_at timestamptz NOT NULL
 );
 
 CREATE TABLE community.community_media (

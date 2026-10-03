@@ -48,6 +48,7 @@ services:
       - -ec
       - |
         /opt/kafka/bin/kafka-topics.sh --bootstrap-server kafka:9092 --create --if-not-exists --topic mentalbridge.identity.account-lifecycle.v1 --partitions 3 --replication-factor 1
+        /opt/kafka/bin/kafka-topics.sh --bootstrap-server kafka:9092 --create --if-not-exists --topic mentalbridge.community.interaction.v1 --partitions 3 --replication-factor 1
         /opt/kafka/bin/kafka-topics.sh --bootstrap-server kafka:9092 --create --if-not-exists --topic mentalbridge.content-notification.account-preference-dead-letter.v1 --partitions 1 --replication-factor 1
     depends_on:
       kafka:
@@ -242,6 +243,13 @@ services:
       CLOUDINARY_CLOUD_NAME: ${CLOUDINARY_CLOUD_NAME:?Set CLOUDINARY_CLOUD_NAME in .env}
       CLOUDINARY_API_KEY: ${CLOUDINARY_API_KEY:?Set CLOUDINARY_API_KEY in .env}
       CLOUDINARY_API_SECRET: ${CLOUDINARY_API_SECRET:?Set CLOUDINARY_API_SECRET in .env}
+      KAFKA_BOOTSTRAP_SERVERS: kafka:9092
+      COMMUNITY_INTERACTION_RELAY_ENABLED: ${COMMUNITY_INTERACTION_RELAY_ENABLED:-true}
+      COMMUNITY_INTERACTION_RELAY_BATCH_SIZE: ${COMMUNITY_INTERACTION_RELAY_BATCH_SIZE:-100}
+      COMMUNITY_INTERACTION_RELAY_INTERVAL: ${COMMUNITY_INTERACTION_RELAY_INTERVAL:-PT5S}
+      COMMUNITY_INTERACTION_RELAY_SEND_TIMEOUT: ${COMMUNITY_INTERACTION_RELAY_SEND_TIMEOUT:-PT5S}
+      COMMUNITY_INTERACTION_RELAY_RETRY_BASE: ${COMMUNITY_INTERACTION_RELAY_RETRY_BASE:-PT5S}
+      COMMUNITY_INTERACTION_RELAY_RETRY_MAXIMUM: ${COMMUNITY_INTERACTION_RELAY_RETRY_MAXIMUM:-PT5M}
     ports:
       - "${SERVICE_BIND_ADDRESS:-127.0.0.1}:${COMMUNITY_PORT:-8084}:8084"
     depends_on:

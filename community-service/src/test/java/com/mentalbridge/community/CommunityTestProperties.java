@@ -31,6 +31,14 @@ public abstract class CommunityTestProperties {
 		properties.add("mentalbridge.community.media.upload-intent-ttl", () -> "10m");
 		properties.add("mentalbridge.community.media.orphan-retention", () -> "24h");
 		properties.add("mentalbridge.community.media.cleanup-interval", () -> "1h");
+		properties.add("mentalbridge.community.interaction-relay.enabled", () -> "false");
+		properties.add("mentalbridge.community.interaction-relay.topic",
+				() -> "mentalbridge.community.interaction.v1");
+		properties.add("mentalbridge.community.interaction-relay.batch-size", () -> "100");
+		properties.add("mentalbridge.community.interaction-relay.interval", () -> "5s");
+		properties.add("mentalbridge.community.interaction-relay.send-timeout", () -> "5s");
+		properties.add("mentalbridge.community.interaction-relay.retry-base", () -> "5s");
+		properties.add("mentalbridge.community.interaction-relay.retry-maximum", () -> "5m");
 	}
 
 	private static KeyPair keyPair() {
