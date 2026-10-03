@@ -1,0 +1,36 @@
+databaseChangeLog:
+  - changeSet:
+      id: 0011-community-interaction-outbox
+      author: mentalbridge
+      comment: Persist minimized Community interaction facts for independent relay under MB-580.
+      changes:
+        - sql:
+            splitStatements: false
+            sql: |
+              CREATE TABLE community_interaction_outbox (
+                  id uuid PRIMARY KEY,
+                  deduplication_key varchar(200) NOT NULL,
+                  target_id uuid NOT NULL,
+                  event_payload jsonb NOT NULL,
+                  occurred_at timestamptz NOT NULL,
+                  published_at timestamptz,
+                  attempt_count integer NOT NULL DEFAULT 0,
+                  next_attempt_at timestamptz,
+                  created_at timestamptz NOT NULL,
+                  CONSTRAINT ux_community_interaction_outbox_deduplication
+                      UNIQUE (deduplication_key),
+                  CONSTRAINT ck_community_interaction_outbox_deduplication
+                      CHECK (char_length(deduplication_key) BETWEEN 1 AND 200),
+                  CONSTRAINT ck_community_interaction_outbox_payload
+                      CHECK (jsonb_typeof(event_payload) = 'object'),
+                  CONSTRAINT ck_community_interaction_outbox_attempt_count
+                      CHECK (attempt_count >= 0),
+                  CONSTRAINT ck_community_interaction_outbox_publish_state
+                      CHECK (published_at IS NULL OR next_attempt_at IS NULL)
+              );
+
+              CREATE INDEX ix_community_interaction_outbox_due
+                  ON community_interaction_outbox (
+                      COALESCE(next_attempt_at, occurred_at), occurred_at, id
+                  )
+                  WHERE published_at IS NULL;

@@ -71,6 +71,22 @@ Private owner-scoped saved-post membership. Only the owning viewer's bookmark st
 | `profile_id` | Private Community owner reference used for authorization and retrieval; bookmarks are never listed or counted for another viewer. |
 | `created_at` | Immutable UTC instant when the owner first bookmarked the post. |
 
+### `public.community_interaction_outbox`
+
+Community-owned durable publication facts for eligible comments, replies, and first reactions. The table is committed in the same local transaction as the interaction and relayed independently, so Kafka or Notification availability cannot roll back an accepted Community command.
+
+| Field | Purpose |
+| --- | --- |
+| `id` | Immutable event UUID included as `eventId` in the versioned Community interaction fact. |
+| `deduplication_key` | Stable logical interaction identity, unique across the retained outbox, so command retries, reaction replacement, and remove/re-add flows cannot create another notification fact for the same interaction. |
+| `target_id` | Community post or parent-comment UUID used as the Kafka partition key without copying content. |
+| `event_payload` | Exact minimized `mentalbridge.community.interaction.v1` JSON object. It contains routing identifiers, interaction kind, UTC occurrence time, and safe Community-post deep-link metadata only; post/comment text, media, display identity, email, and Care/Journal/AI/SupportPlan data are prohibited. |
+| `occurred_at` | Immutable UTC instant when the eligible Community interaction committed. |
+| `published_at` | Nullable UTC Kafka acknowledgement time; null keeps the row eligible for independent relay retry. |
+| `attempt_count` | Non-negative number of relay claims, used only for bounded retry backoff and observability. |
+| `next_attempt_at` | Nullable UTC lease or retry deadline; null before first claim and after acknowledged publication. |
+| `created_at` | Immutable UTC insertion instant, equal to the interaction occurrence time. |
+
 ### `public.community_media`
 
 Safe metadata for Community-owned image/video objects. Binary content and provider payloads are not stored in PostgreSQL.
