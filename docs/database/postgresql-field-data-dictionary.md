@@ -32,7 +32,7 @@ Authoritative Community-owned personal-story publication. It is not Care, Journa
 | `content` | User-authored peer-support text, bounded to 5,000 characters; it is excluded from cross-service events. |
 | `state` | Publication lifecycle `ACTIVE`, `OWNER_DELETED`, `MODERATION_HIDDEN`, or `MODERATION_REMOVED`; only `ACTIVE` is returned to ordinary users. |
 | `comment_count` | Non-negative Community-owned display count, updated transactionally by the future comment slice. |
-| `reaction_count` | Non-negative Community-owned display count, updated transactionally by the future supportive-reaction slice. |
+| `reaction_count` | Non-negative Community-owned display count, updated transactionally with reaction create/remove while the post row is locked so retries and concurrent commands cannot drift the total. |
 | `idempotency_key` | Owner-scoped create-command key. It is nullable only for posts that predate MB-575 and unique together with `author_profile_id`, so separate owners may reuse the same client-generated value safely. |
 | `request_fingerprint` | SHA-256 digest of normalized create input used to distinguish a safe retry from conflicting reuse; it is not Community content and is present exactly when `idempotency_key` is present. |
 | `author_mode` | Author-selected public identity mode for this post: `PROFILE` renders the current Community display identity, while `ANONYMOUS` returns a neutral name with no Community profile identifier or avatar that can link the post publicly; the private owner reference remains available only for authorization, moderation, and audit. |
@@ -48,6 +48,44 @@ Governed non-diagnostic topic membership used only for explicit user-selected fi
 | --- | --- |
 | `post_id` | Physical parent post reference; deleting a never-published test/post row cascades its classifications. |
 | `topic_code` | Stable v1 category `MY_STORY`, `SMALL_MILESTONE`, `HELPFUL_REFLECTION`, `PEER_QUESTION`, `EXPERIENCE_SHARING`, or `HELPFUL_RESOURCE`; it never represents diagnosis or severity. |
+
+### `public.community_post_reaction`
+
+One owner-scoped supportive reaction per post. This interaction is a Community peer-support fact and is never used as clinical, screening, Journal, SupportPlan, or ranking evidence.
+
+| Field | Purpose |
+| --- | --- |
+| `post_id` | Physical active Community post target; paired with `profile_id` as the natural idempotency key. |
+| `profile_id` | Private Community actor reference used to enforce one reaction per profile without exposing the linked account subject. |
+| `reaction` | Current bounded supportive value `SUPPORT`, `RELATE`, or `THANK_YOU`; replacement changes the value without incrementing the post count. |
+| `created_at` | Immutable UTC instant when this profile first reacted to the post. |
+| `updated_at` | UTC instant when the profile last replaced its reaction; unchanged retries are no-ops. |
+
+### `public.community_post_bookmark`
+
+Private owner-scoped saved-post membership. Only the owning viewer's bookmark state appears in their personalized Community response.
+
+| Field | Purpose |
+| --- | --- |
+| `post_id` | Physical active Community post target; paired with `profile_id` so repeated PUT/DELETE commands are naturally idempotent. |
+| `profile_id` | Private Community owner reference used for authorization and retrieval; bookmarks are never listed or counted for another viewer. |
+| `created_at` | Immutable UTC instant when the owner first bookmarked the post. |
+
+### `public.community_interaction_outbox`
+
+Community-owned durable publication facts for eligible comments, replies, and first reactions. The table is committed in the same local transaction as the interaction and relayed independently, so Kafka or Notification availability cannot roll back an accepted Community command.
+
+| Field | Purpose |
+| --- | --- |
+| `id` | Immutable event UUID included as `eventId` in the versioned Community interaction fact. |
+| `deduplication_key` | Stable logical interaction identity, unique across the retained outbox, so command retries, reaction replacement, and remove/re-add flows cannot create another notification fact for the same interaction. |
+| `target_id` | Community post or parent-comment UUID used as the Kafka partition key without copying content. |
+| `event_payload` | Exact minimized `mentalbridge.community.interaction.v1` JSON object. It contains routing identifiers, interaction kind, UTC occurrence time, and safe Community-post deep-link metadata only; post/comment text, media, display identity, email, and Care/Journal/AI/SupportPlan data are prohibited. |
+| `occurred_at` | Immutable UTC instant when the eligible Community interaction committed. |
+| `published_at` | Nullable UTC Kafka acknowledgement time; null keeps the row eligible for independent relay retry. |
+| `attempt_count` | Non-negative number of relay claims, used only for bounded retry backoff and observability. |
+| `next_attempt_at` | Nullable UTC lease or retry deadline; null before first claim and after acknowledged publication. |
+| `created_at` | Immutable UTC insertion instant, equal to the interaction occurrence time. |
 
 ### `public.community_media`
 
@@ -781,6 +819,30 @@ matches the aggregate bound.
 | `support_plan_id` | Owner-matched stored draft returned for identical retries and concurrent aliases. |
 | `created_at` | UTC instant at which Care accepted the alias. |
 
+### `public.plan_change_request`
+
+Care-owned, user-reviewed request derived from one authoritative exact-version
+resource proposal in a completed Consultation appointment. Creating the request
+only records a review snapshot; it never creates a draft or changes the current
+plan. Acceptance repeats every authoritative check and links the replacement
+created in the same transaction.
+
+| Field | Purpose |
+| --- | --- |
+| `id` / `version` | Stable request identity and optimistic decision version. |
+| `user_id` / `specialist_id` | Owning user and advisory specialist; only the user can decide. |
+| `source_proposal_id` / `source_proposal_version` | Exact Consultation proposal identity and version; unique so retries cannot create competing requests. |
+| `source_appointment_id` / `source_summary_id` / `source_summary_version` / `source_completion_fact_id` | Immutable evidence that the proposal came from the latest visible summary of the completed appointment. |
+| `proposal_reason_code` / `proposal_title` / `proposal_details` | Bounded user-visible rationale and snapshot; no raw chat, journal, or assessment answers. |
+| `resource_id` / `resource_version` | Exact Content version revalidated at review and again on acceptance. |
+| `current_support_plan_id` / `current_support_plan_version` | Exact official plan reviewed when the request was created; any later change makes acceptance stale. |
+| `target_slot_id` / `current_resource_id` / `current_resource_version` / `current_resource_title` | Compatible Care-owned slot and its optional current exact resource for the comparison UI. |
+| `replacement_support_plan_id` / `replacement_support_plan_version` | Null while pending or rejected; populated only by the atomic accepted replacement. |
+| `status` / `outcome_code` | `READY_FOR_REVIEW`, `ACCEPTED`, or `REJECTED` with stable admissible/applied/rejected outcome. |
+| `idempotency_key` / `request_hash` | Owner-scoped exact retry identity for review creation. |
+| `decision_idempotency_key` / `decision_hash` | Owner-scoped exact retry identity for the final accept/reject command. |
+| `reviewed_at` / `decided_at` / `created_at` / `updated_at` | Server-owned review, decision, and persistence instants. |
+
 ### `public.support_plan_command`
 
 Owner-scoped append-only audit and replay record for activation and MB-375
@@ -800,6 +862,7 @@ answer, journal content, or client-authored display text.
 | `resource_policy_version` / `resources_resolved_at` | Exact Content eligibility policy and resolution instant used for final exact-version validation. |
 | `source_support_plan_id` / `source_support_plan_version` | For `REPLACE`, the exact former current plan and pre-supersede optimistic version; null for initial activation. This is the immutable replacement relation. |
 | `reassessment_summary_id` | For `REPLACE`, the owner-matched canonical v2 summary presented during review; null for initial activation. The JSON snapshot remains in `reassessment_summary` rather than being duplicated here. |
+| `plan_change_request_id` | For an MB-560 specialist-proposal replacement, the exact Care-owned accepted request; mutually exclusive with `reassessment_summary_id`. |
 | `replacement_review_outcome` | Governed review outcome that admitted confirmation. Unchanged reviews are not persisted because they cannot mutate a plan. |
 | `created_at` | UTC instant the command and its outcome committed. |
 
@@ -1166,6 +1229,7 @@ Immutable steps agreed in one published summary. They are user-visible suggestio
 | `step_type` | Bounded checklist, journal, emotion check-in, reassessment, follow-up appointment, or platform resource type. |
 | `title` / `details` | Bounded user-visible action wording. |
 | `resource_id` / `resource_version` | Exact Content resource proposal required only for `PLATFORM_RESOURCE`; Care revalidates any later plan change under MB-560. |
+| `resource_proposal_reason_code` | Required bounded rationale for `PLATFORM_RESOURCE`: post-consultation continuity, an alternative resource, or an addressed reported barrier; null for every other step type. |
 | `created_at` | Server creation instant inherited from summary publication. |
 
 ### `consultation.agreed_next_step_state`

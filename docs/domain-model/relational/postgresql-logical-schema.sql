@@ -580,6 +580,49 @@ CREATE TABLE care.support_plan_request (
         REFERENCES care.support_plan(id, user_id)
 );
 
+CREATE TABLE care.plan_change_request (
+    id uuid PRIMARY KEY,
+    user_id uuid NOT NULL REFERENCES care.user_profile(account_id),
+    specialist_id uuid NOT NULL, -- external -> identity.account.id
+    source_proposal_id uuid NOT NULL UNIQUE, -- external -> consultation.agreed_next_step.id
+    source_proposal_version bigint NOT NULL,
+    source_appointment_id uuid NOT NULL, -- external -> consultation.appointment.id
+    source_summary_id uuid NOT NULL, -- external -> consultation.session_summary.id
+    source_summary_version bigint NOT NULL,
+    source_completion_fact_id uuid NOT NULL, -- external -> consultation appointment completion fact
+    proposal_reason_code varchar(48) NOT NULL,
+    resource_id uuid NOT NULL, -- external -> content.resource.id
+    resource_version bigint NOT NULL,
+    proposal_title varchar(160) NOT NULL,
+    proposal_details varchar(500),
+    current_support_plan_id uuid NOT NULL,
+    current_support_plan_version bigint NOT NULL,
+    replacement_support_plan_id uuid,
+    replacement_support_plan_version bigint,
+    target_slot_id varchar(64) NOT NULL,
+    current_resource_id uuid,
+    current_resource_version bigint,
+    current_resource_title varchar(255),
+    status varchar(32) NOT NULL CHECK (status IN ('READY_FOR_REVIEW','ACCEPTED','REJECTED')),
+    outcome_code varchar(64) NOT NULL CHECK (outcome_code IN
+        ('PROPOSAL_ADMISSIBLE','PROPOSAL_APPLIED','USER_REJECTED')),
+    idempotency_key varchar(128) NOT NULL,
+    request_hash varchar(64) NOT NULL,
+    decision_idempotency_key varchar(128),
+    decision_hash varchar(64),
+    version bigint NOT NULL,
+    reviewed_at timestamptz NOT NULL,
+    decided_at timestamptz,
+    created_at timestamptz NOT NULL,
+    updated_at timestamptz NOT NULL,
+    UNIQUE (user_id, idempotency_key),
+    UNIQUE (user_id, decision_idempotency_key),
+    FOREIGN KEY (current_support_plan_id, user_id)
+        REFERENCES care.support_plan(id, user_id),
+    FOREIGN KEY (replacement_support_plan_id, user_id)
+        REFERENCES care.support_plan(id, user_id)
+);
+
 CREATE TABLE care.support_plan_command (
     user_id uuid NOT NULL,
     idempotency_key varchar(128) NOT NULL,
@@ -601,6 +644,7 @@ CREATE TABLE care.support_plan_command (
     source_support_plan_id uuid,
     source_support_plan_version bigint,
     reassessment_summary_id uuid,
+    plan_change_request_id uuid REFERENCES care.plan_change_request(id),
     replacement_review_outcome varchar(64),
     created_at timestamptz NOT NULL,
     PRIMARY KEY (user_id, idempotency_key),
@@ -1021,6 +1065,7 @@ CREATE TABLE consultation.agreed_next_step (
     details varchar(500),
     resource_id uuid, -- external -> content.resource.id
     resource_version varchar(64),
+    resource_proposal_reason_code varchar(48),
     created_at timestamptz NOT NULL,
     UNIQUE (summary_id, ordinal)
 );
@@ -1046,7 +1091,7 @@ CREATE TABLE consultation.session_summary_reuse_consent (
 
 /* ========================================================================== */
 /* ACTIVE — community-service / mentalbridge_community                        */
-/* Evidence: community-service Liquibase changes 0001-0009.                  */
+/* Evidence: community-service Liquibase changes 0001-0011.                  */
 /* ========================================================================== */
 
 CREATE TABLE community.community_profile (
@@ -1079,6 +1124,34 @@ CREATE TABLE community.community_post_topic (
     post_id uuid NOT NULL REFERENCES community.community_post(id),
     topic_code varchar(32) NOT NULL,
     PRIMARY KEY (post_id, topic_code)
+);
+
+CREATE TABLE community.community_post_reaction (
+    post_id uuid NOT NULL REFERENCES community.community_post(id),
+    profile_id uuid NOT NULL REFERENCES community.community_profile(id),
+    reaction varchar(16) NOT NULL,
+    created_at timestamptz NOT NULL,
+    updated_at timestamptz NOT NULL,
+    PRIMARY KEY (post_id, profile_id)
+);
+
+CREATE TABLE community.community_post_bookmark (
+    post_id uuid NOT NULL REFERENCES community.community_post(id),
+    profile_id uuid NOT NULL REFERENCES community.community_profile(id),
+    created_at timestamptz NOT NULL,
+    PRIMARY KEY (post_id, profile_id)
+);
+
+CREATE TABLE community.community_interaction_outbox (
+    id uuid PRIMARY KEY,
+    deduplication_key varchar(200) NOT NULL UNIQUE,
+    target_id uuid NOT NULL,
+    event_payload jsonb NOT NULL,
+    occurred_at timestamptz NOT NULL,
+    published_at timestamptz,
+    attempt_count integer NOT NULL,
+    next_attempt_at timestamptz,
+    created_at timestamptz NOT NULL
 );
 
 CREATE TABLE community.community_media (

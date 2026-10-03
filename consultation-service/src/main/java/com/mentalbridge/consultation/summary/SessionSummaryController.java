@@ -86,6 +86,12 @@ public class SessionSummaryController {
 				"SPECIALIST".equals(role), appointmentId, summaryId, version);
 	}
 
+	@GetMapping("/internal/v1/resource-proposals/{proposalId}")
+	ResourceProposalResponse resourceProposal(@AuthenticationPrincipal Jwt jwt,
+			@PathVariable UUID proposalId) {
+		return summaries.resourceProposal(RequestIdentity.subject(jwt), proposalId);
+	}
+
 	private Long version(String ifMatch, boolean required) {
 		if (ifMatch == null && !required) return null;
 		if (ifMatch == null || !ifMatch.matches("\\\"[0-9]+\\\"")) {

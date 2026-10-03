@@ -313,6 +313,14 @@ The requirements are represented in domain/architecture documentation, but the l
   `reassessment-summary-v2`; failures and unchanged proposals do not mutate
   either plan. Specialist `PlanChangeRequest` must reuse this governed path and
   has no second replacement mutation. See [MB-375 evidence](story-mb-375-support-plan-replacement-evidence.md).
+- 2026-10-02: MB-560 implements the governed specialist resource-proposal
+  handoff. Consultation exposes only an exact proposal from the latest visible
+  summary of an evidence-completed appointment. Care creates a review snapshot
+  only after fresh entitlement, current-plan, evaluation/template, exact
+  publication, and compatible-slot checks. Only the user accepts or rejects;
+  acceptance repeats those checks and atomically replaces the official plan,
+  while rejection, stale evidence, withdrawn content, dependency uncertainty,
+  and retries cannot create a second plan. See [MB-560 evidence](story-mb-560-plan-change-request-evidence.md).
 
 - 2026-09-25: MB-292 corrective delivery persists Care-owned
   `screening_episode` grouping for guided initial checks and reassessments.

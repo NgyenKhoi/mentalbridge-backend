@@ -66,32 +66,8 @@ class SupportPlanWriter {
 			return stored(existing.orElseThrow());
 		}
 
-		var safety = evaluation.safetyEvidence();
-		var plan = new SupportPlanEntity(UUID.randomUUID(), userId, evaluation.supportEvaluationId(),
-				evaluation.policyVersion(), evaluation.evaluatedAt(), proposal.resourcePolicyVersion(),
-				proposal.resourcesResolvedAt(), entitlement.packageCode().name(), entitlement.source().name(),
-				entitlement.policyVersion(), entitlement.version(), entitlement.decidedAt(), rationaleText,
-				safety.status().name(), safety.reasonCode().name(), safety.policyVersion(), safetyGuidanceCode,
-				safetyGuidance, proposal.slots().size(), now);
-		plans.saveAndFlush(plan);
-
-		for (int index = 0; index < proposal.families().size(); index++) {
-			var family = proposal.families().get(index);
-			families.save(new SupportPlanTemplateFamilyEntity(UUID.randomUUID(), plan.id(), index + 1,
-					family.family(), family.targetDomain()));
-		}
-		families.flush();
-
-		for (int index = 0; index < proposal.slots().size(); index++) {
-			var slotDraft = proposal.slots().get(index);
-			var slot = new SupportPlanSlotEntity(UUID.randomUUID(), plan.id(), index + 1, slotDraft);
-			slots.saveAndFlush(slot);
-			for (int alternativeIndex = 0; alternativeIndex < slotDraft.allowedAlternatives().size(); alternativeIndex++) {
-				alternatives.save(new SupportPlanSlotAlternativeEntity(UUID.randomUUID(), slot.id(),
-						alternativeIndex + 1, slotDraft.allowedAlternatives().get(alternativeIndex)));
-			}
-		}
-		alternatives.flush();
+		var plan = createDraft(userId, evaluation, entitlement, proposal, rationaleText,
+				safetyGuidanceCode, safetyGuidance, now);
 		plans.insertRequest(userId, idempotencyKey, requestHash, plan.id(), now);
 		return stored(plan);
 	}
@@ -126,7 +102,7 @@ class SupportPlanWriter {
 		plans.saveAndFlush(plan);
 		activities.activate(plan, now);
 		persistCommand(userId, idempotencyKey, "ACTIVATE", requestHash, plan, expectedVersion,
-				choices, evidence, null, null, null, null, now);
+				choices, evidence, null, null, null, null, null, now);
 		plans.insertActivationOutbox(UUID.randomUUID(), plan.id(), plan.version(), correlationId,
 				activationPayload(plan, evidence), now);
 		return stored(plan);
@@ -203,10 +179,48 @@ class SupportPlanWriter {
 		plans.saveAndFlush(draft);
 		activities.activate(draft, now);
 		persistCommand(userId, idempotencyKey, "REPLACE", requestHash, draft, draftVersion,
-				choices, evidence, currentPlanId, currentVersion, reassessmentSummaryId, reviewOutcome, now);
+				choices, evidence, currentPlanId, currentVersion, reassessmentSummaryId, null, reviewOutcome, now);
 		plans.insertActivationOutbox(UUID.randomUUID(), draft.id(), draft.version(), correlationId,
 				activationPayload(draft, evidence), now);
 		return stored(draft);
+	}
+
+	@Transactional
+	StoredPlan replaceFromPlanChange(UUID userId, UUID planChangeRequestId, UUID currentPlanId,
+			long currentVersion, String idempotencyKey, String requestHash, EvaluationView evaluation,
+			CurrentEntitlementResponse entitlement, Proposal proposal, List<Choice> choices,
+			Revalidation evidence, UUID correlationId, Instant now) {
+		now = now.truncatedTo(ChronoUnit.MICROS);
+		lockOwner(userId);
+		var replay = commandReplay(userId, idempotencyKey, "REPLACE", requestHash);
+		if (replay != null) return replay.plan();
+		if (plans.findByUserIdAndStatus(userId, "DRAFT").isPresent()) {
+			throw new ApiException(HttpStatus.CONFLICT, "SUPPORT_PLAN_DRAFT_EXISTS",
+					"An existing SupportPlan draft must be resolved before accepting this proposal");
+		}
+		var current = plans.findByIdAndUserIdForUpdate(currentPlanId, userId).orElseThrow(() ->
+				new ApiException(HttpStatus.CONFLICT, "PLAN_CHANGE_REQUEST_STALE",
+						"The SupportPlan reviewed for this proposal is no longer current"));
+		if (current.version() != currentVersion || !List.of("ACTIVE", "PAUSED").contains(current.status())) {
+			throw new ApiException(HttpStatus.CONFLICT, "PLAN_CHANGE_REQUEST_STALE",
+					"The SupportPlan reviewed for this proposal is no longer current");
+		}
+		var replacement = createDraft(userId, evaluation, entitlement, proposal,
+				"A user-approved specialist resource proposal was reviewed against current Care policy.",
+				current.safetyGuidanceCode(), current.safetyGuidance(), now);
+		validateStoredChoices(replacement, choices);
+		current.supersede(now);
+		activities.end(current.id(), "PLAN_REPLACED", now);
+		plans.saveAndFlush(current);
+		replacement.activate(now);
+		plans.saveAndFlush(replacement);
+		activities.activate(replacement, now);
+		persistCommand(userId, idempotencyKey, "REPLACE", requestHash, replacement, 0,
+				choices, evidence, currentPlanId, currentVersion, null, planChangeRequestId,
+				"SPECIALIST_PROPOSAL_ACCEPTED", now);
+		plans.insertActivationOutbox(UUID.randomUUID(), replacement.id(), replacement.version(), correlationId,
+				activationPayload(replacement, evidence), now);
+		return stored(replacement);
 	}
 
 	@Transactional(readOnly = true)
@@ -364,7 +378,8 @@ class SupportPlanWriter {
 
 	private void persistCommand(UUID userId, String idempotencyKey, String commandType, String requestHash,
 			SupportPlanEntity plan, long expectedVersion, List<Choice> choices, Revalidation evidence,
-			UUID sourcePlanId, Long sourcePlanVersion, UUID reassessmentSummaryId, String reviewOutcome,
+			UUID sourcePlanId, Long sourcePlanVersion, UUID reassessmentSummaryId, UUID planChangeRequestId,
+			String reviewOutcome,
 			Instant now) {
 		var entitlement = evidence.entitlement();
 		plans.insertCommand(userId, idempotencyKey, commandType, requestHash, plan.id(), expectedVersion,
@@ -372,12 +387,42 @@ class SupportPlanWriter {
 				entitlement.packageCode().name(), entitlement.source().name(), entitlement.policyVersion(),
 				entitlement.version(), entitlement.decidedAt(), evidence.resourcePolicyVersion(),
 				evidence.resourcesResolvedAt(), now, sourcePlanId, sourcePlanVersion,
-				reassessmentSummaryId, reviewOutcome);
+				reassessmentSummaryId, planChangeRequestId, reviewOutcome);
 		for (int index = 0; index < choices.size(); index++) {
 			var choice = choices.get(index);
 			plans.insertCommandSelection(userId, idempotencyKey, index + 1, choice.slotId(),
 					choice.resource().resourceId(), choice.resource().contentVersion());
 		}
+	}
+
+	private SupportPlanEntity createDraft(UUID userId, EvaluationView evaluation,
+			CurrentEntitlementResponse entitlement, Proposal proposal, String rationaleText,
+			String safetyGuidanceCode, String safetyGuidance, Instant now) {
+		var safety = evaluation.safetyEvidence();
+		var plan = new SupportPlanEntity(UUID.randomUUID(), userId, evaluation.supportEvaluationId(),
+				evaluation.policyVersion(), evaluation.evaluatedAt(), proposal.resourcePolicyVersion(),
+				proposal.resourcesResolvedAt(), entitlement.packageCode().name(), entitlement.source().name(),
+				entitlement.policyVersion(), entitlement.version(), entitlement.decidedAt(), rationaleText,
+				safety.status().name(), safety.reasonCode().name(), safety.policyVersion(), safetyGuidanceCode,
+				safetyGuidance, proposal.slots().size(), now);
+		plan = plans.saveAndFlush(plan);
+		for (int index = 0; index < proposal.families().size(); index++) {
+			var family = proposal.families().get(index);
+			families.save(new SupportPlanTemplateFamilyEntity(UUID.randomUUID(), plan.id(), index + 1,
+					family.family(), family.targetDomain()));
+		}
+		families.flush();
+		for (int index = 0; index < proposal.slots().size(); index++) {
+			var slotDraft = proposal.slots().get(index);
+			var slot = new SupportPlanSlotEntity(UUID.randomUUID(), plan.id(), index + 1, slotDraft);
+			slots.saveAndFlush(slot);
+			for (int alternativeIndex = 0; alternativeIndex < slotDraft.allowedAlternatives().size(); alternativeIndex++) {
+				alternatives.save(new SupportPlanSlotAlternativeEntity(UUID.randomUUID(), slot.id(),
+						alternativeIndex + 1, slotDraft.allowedAlternatives().get(alternativeIndex)));
+			}
+		}
+		alternatives.flush();
+		return plan;
 	}
 
 	private CommandOutcome commandReplay(UUID userId, String idempotencyKey, String commandType, String requestHash) {

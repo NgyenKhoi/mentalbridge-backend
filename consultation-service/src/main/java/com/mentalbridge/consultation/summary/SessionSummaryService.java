@@ -118,12 +118,17 @@ public class SessionSummaryService {
 			var stepId = UUID.randomUUID();
 			jdbc.sql("""
 					insert into agreed_next_step (
-					 id, summary_id, ordinal, step_type, title, details, resource_id, resource_version, created_at
-					) values (:id, :summaryId, :ordinal, :type, :title, :details, :resourceId, :resourceVersion, :now)
+					 id, summary_id, ordinal, step_type, title, details, resource_id, resource_version,
+					 resource_proposal_reason_code, created_at
+					) values (:id, :summaryId, :ordinal, :type, :title, :details, :resourceId, :resourceVersion,
+					 :reasonCode, :now)
 					""").param("id", stepId).param("summaryId", summaryId).param("ordinal", index)
 					.param("type", step.type().name()).param("title", step.title().trim())
 					.param("details", clean(step.details())).param("resourceId", step.resourceId())
-					.param("resourceVersion", clean(step.resourceVersion())).param("now", Timestamp.from(now)).update();
+					.param("resourceVersion", clean(step.resourceVersion()))
+					.param("reasonCode", step.resourceProposalReasonCode() == null ? null
+							: step.resourceProposalReasonCode().name())
+					.param("now", Timestamp.from(now)).update();
 			jdbc.sql("""
 					insert into agreed_next_step_state (next_step_id, user_account_id, updated_at)
 					values (:stepId, :userId, :now)
@@ -236,6 +241,49 @@ public class SessionSummaryService {
 		return readById(summaryId, false);
 	}
 
+	@Transactional(readOnly = true)
+	public ResourceProposalResponse resourceProposal(UUID actorId, UUID proposalId) {
+		var proposal = jdbc.sql("""
+				select ns.id, ns.summary_id, ns.resource_id, ns.resource_version,
+				       ns.resource_proposal_reason_code, ns.title, ns.details,
+				       s.appointment_id, s.user_account_id, s.specialist_account_id,
+				       s.summary_version, s.schema_version, s.published_at,
+				       a.status, a.completion_fact_id,
+				       st.state, st.hidden,
+				       (select max(latest.summary_version) from session_summary latest
+				        where latest.appointment_id=s.appointment_id) as latest_summary_version
+				from agreed_next_step ns
+				join session_summary s on s.id=ns.summary_id
+				join appointment a on a.id=s.appointment_id
+				join agreed_next_step_state st on st.next_step_id=ns.id
+				where ns.id=:proposalId and ns.step_type='PLATFORM_RESOURCE'
+				  and (s.user_account_id=:actorId or s.specialist_account_id=:actorId)
+				""").param("proposalId", proposalId).param("actorId", actorId)
+				.query((rs, row) -> new ProposalRow(
+						rs.getObject("id", UUID.class), rs.getObject("summary_id", UUID.class),
+						rs.getObject("appointment_id", UUID.class), rs.getObject("user_account_id", UUID.class),
+						rs.getObject("specialist_account_id", UUID.class), rs.getLong("summary_version"),
+						rs.getLong("latest_summary_version"), rs.getString("schema_version"),
+						rs.getTimestamp("published_at").toInstant(), rs.getString("status"),
+						rs.getObject("completion_fact_id", UUID.class), rs.getObject("resource_id", UUID.class),
+						rs.getString("resource_version"), rs.getString("resource_proposal_reason_code"),
+						rs.getString("title"), rs.getString("details"), rs.getString("state"),
+						rs.getBoolean("hidden")))
+				.optional().orElseThrow(() -> new ApiException(HttpStatus.NOT_FOUND,
+						"RESOURCE_PROPOSAL_NOT_FOUND", "The resource proposal was not found"));
+		if (!"COMPLETED".equals(proposal.appointmentStatus()) || proposal.completionFactId() == null
+				|| proposal.summaryVersion() != proposal.latestSummaryVersion()
+				|| "SKIPPED".equals(proposal.state()) || proposal.hidden()) {
+			throw new ApiException(HttpStatus.CONFLICT, "RESOURCE_PROPOSAL_STALE",
+					"The resource proposal is no longer eligible for review");
+		}
+		return new ResourceProposalResponse(proposal.id(), proposal.summaryVersion(), proposal.appointmentId(),
+				proposal.userId(), proposal.specialistId(), proposal.summaryId(), proposal.summaryVersion(),
+				proposal.completionFactId(), proposal.resourceId(), proposal.resourceVersion(),
+				ResourceProposalReasonCode.valueOf(proposal.reasonCode()), proposal.title(), proposal.details(),
+				proposal.schemaVersion(), proposal.proposedAt());
+	}
+
 	private SessionSummaryResponse.ListResponse history(UUID appointmentId, boolean includeUserState) {
 		var ids = jdbc.sql("""
 				select id from session_summary where appointment_id=:appointmentId
@@ -258,7 +306,9 @@ public class SessionSummaryService {
 				""").param("id", id).query((rs, row) -> new SessionSummaryResponse.AgreedNextStep(
 					rs.getObject("id", UUID.class), AgreedNextStepType.valueOf(rs.getString("step_type")),
 					rs.getString("title"), rs.getString("details"), rs.getObject("resource_id", UUID.class),
-					rs.getString("resource_version"), includeUserState ? AgreedNextStepState.valueOf(rs.getString("state")) : null,
+					rs.getString("resource_version"), rs.getString("resource_proposal_reason_code") == null ? null
+							: ResourceProposalReasonCode.valueOf(rs.getString("resource_proposal_reason_code")),
+					includeUserState ? AgreedNextStepState.valueOf(rs.getString("state")) : null,
 					includeUserState && rs.getBoolean("hidden"), includeUserState ? rs.getLong("state_version") : null,
 					includeUserState ? rs.getTimestamp("state_updated_at").toInstant() : null)).list();
 		return new SessionSummaryResponse(summary.id(), summary.appointmentId(), summary.userId(), summary.specialistId(),
@@ -287,9 +337,13 @@ public class SessionSummaryService {
 	private void validateResourceSteps(List<PublishSessionSummaryRequest.NextStep> steps) {
 		for (var step : steps) {
 			var resource = step.type() == AgreedNextStepType.PLATFORM_RESOURCE;
-			if (resource != (step.resourceId() != null && clean(step.resourceVersion()) != null)) {
+			var hasProposal = step.resourceId() != null && clean(step.resourceVersion()) != null
+					&& step.resourceProposalReasonCode() != null;
+			var hasAnyProposalField = step.resourceId() != null || clean(step.resourceVersion()) != null
+					|| step.resourceProposalReasonCode() != null;
+			if ((resource && !hasProposal) || (!resource && hasAnyProposalField)) {
 				throw new ApiException(HttpStatus.BAD_REQUEST, "INVALID_AGREED_NEXT_STEP",
-						"Platform resources require an exact resource id and version; other steps must omit them");
+						"Platform resources require an exact resource id, version, and reason; other steps must omit them");
 			}
 		}
 	}
@@ -341,6 +395,11 @@ public class SessionSummaryService {
 	private record ReuseTarget(UUID userId, String status, Instant scheduledStartAt) { }
 	private record ReuseSource(UUID appointmentId, UUID userId, long version, boolean approved,
 			Instant scheduledEndAt) { }
+	private record ProposalRow(UUID id, UUID summaryId, UUID appointmentId, UUID userId,
+			UUID specialistId, long summaryVersion, long latestSummaryVersion, String schemaVersion,
+			Instant proposedAt, String appointmentStatus, UUID completionFactId, UUID resourceId,
+			String resourceVersion, String reasonCode, String title, String details, String state,
+			boolean hidden) { }
 	private record SummaryRow(UUID id, UUID appointmentId, UUID userId, UUID specialistId, long version,
 			String schemaVersion, List<String> topics, String progressSummary, String noteForUser,
 			boolean followUpSuggested, UUID amendsId, Instant publishedAt,

@@ -144,6 +144,25 @@ class SupportPlanPolicy {
 		return new RevalidationResult(response.policyVersion(), OffsetDateTime.parse(response.resolvedAt()).toInstant());
 	}
 
+	ResourceDraft exactResource(RevalidationRequest request, ResourceEligibilityBatchResponse response,
+			String slotId, UUID resourceId, long contentVersion) {
+		var slot = request.slots().stream().filter(value -> value.slotId().equals(slotId))
+				.findFirst().orElseThrow(() -> invalidProposal());
+		var result = response.results().stream()
+				.filter(value -> value.requestId().equals(requestId(slot.slotId(), resourceId.toString())))
+				.findFirst().orElseThrow(() -> invalidProposal());
+		if (result.outcome() != ResourceEligibilityOutcome.ELIGIBLE
+				|| !Long.toString(contentVersion).equals(result.contentVersion())) {
+			throw invalidProposal();
+		}
+		return resource(result);
+	}
+
+	private ApiException invalidProposal() {
+		return new ApiException(HttpStatus.CONFLICT, "PLAN_CHANGE_RESOURCE_INADMISSIBLE",
+				"The proposed exact resource version is not admitted by the current SupportPlan policy");
+	}
+
 	private String family(DomainContributionView domain) {
 		boolean minimal = domain.screeningLevel() == ScreeningLevel.MINIMAL;
 		boolean mild = domain.screeningLevel() == ScreeningLevel.MILD;

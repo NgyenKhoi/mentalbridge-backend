@@ -27,7 +27,10 @@ import com.mentalbridge.care.shared.ApiException;
 import com.mentalbridge.care.support.SupportEvaluationService;
 import com.mentalbridge.care.support.SupportEvaluationV2Service;
 import com.mentalbridge.care.supportplan.SupportPlanPolicy.ResourceDraft;
+import com.mentalbridge.care.supportplan.SupportPlanPolicy.FamilyDraft;
+import com.mentalbridge.care.supportplan.SupportPlanPolicy.Proposal;
 import com.mentalbridge.care.supportplan.SupportPlanPolicy.SelectedResource;
+import com.mentalbridge.care.supportplan.SupportPlanPolicy.SlotDraft;
 import com.mentalbridge.care.supportplan.SupportPlanWriter.Choice;
 import com.mentalbridge.care.supportplan.SupportPlanWriter.CommandOutcome;
 import com.mentalbridge.care.supportplan.SupportPlanWriter.Revalidation;
@@ -183,6 +186,74 @@ public class SupportPlanService {
 		return view(writer.replace(userId, draftId, draftVersion, command.currentSupportPlanId(),
 				command.currentVersion(), idempotencyKey, requestHash, review.choices(), review.evidence(),
 				command.reassessmentSummaryId(), review.view().outcome(), correlationId, clock.instant()));
+	}
+
+	PreparedPlanChange preparePlanChange(UUID userId, String bearerToken, UUID resourceId,
+			long resourceVersion, UUID expectedCurrentPlanId, Long expectedCurrentPlanVersion,
+			UUID correlationId) {
+		var current = writer.currentPlan(userId);
+		if (expectedCurrentPlanId != null && (!expectedCurrentPlanId.equals(current.plan().id())
+				|| expectedCurrentPlanVersion == null
+				|| expectedCurrentPlanVersion.longValue() != current.plan().version())) {
+			throw new ApiException(HttpStatus.CONFLICT, "PLAN_CHANGE_REQUEST_STALE",
+					"The SupportPlan reviewed for this proposal is no longer current");
+		}
+		var entitlement = paidEntitlement(userId, bearerToken, correlationId);
+		var evaluation = evaluations.getCurrentCompatible(userId, current.plan().supportEvaluationId());
+		var template = policy.request(evaluation);
+		assertTemplateCompatibility(current, template.families(), template.slots());
+		var proposedKey = resourceId + ":" + resourceVersion;
+		if (current.slots().stream().map(value -> value.slot().selectedResource())
+				.filter(java.util.Objects::nonNull).anyMatch(value -> value.key().equals(proposedKey))) {
+			throw new ApiException(HttpStatus.CONFLICT, "PLAN_CHANGE_NO_CHANGE",
+					"The proposed exact resource version is already selected");
+		}
+		var specs = template.slots().stream().collect(java.util.stream.Collectors.toMap(
+				SupportPlanPolicy.SlotSpec::slotId, value -> value));
+		var target = current.slots().stream().filter(value -> {
+			var spec = specs.get(value.slot().slotKey());
+			return spec != null && spec.resourceIds().contains(resourceId.toString());
+		}).findFirst().orElseThrow(() -> new ApiException(HttpStatus.CONFLICT,
+				"PLAN_CHANGE_RESOURCE_INADMISSIBLE",
+				"The proposed resource is not admitted by any current SupportPlan slot"));
+		var selections = current.slots().stream().flatMap(value -> {
+			if (value == target) {
+				return java.util.stream.Stream.of(
+						new SelectedResource(value.slot().slotKey(), resourceId, resourceVersion));
+			}
+			var selected = value.slot().selectedResource();
+			return selected == null ? java.util.stream.Stream.empty()
+					: java.util.stream.Stream.of(new SelectedResource(value.slot().slotKey(),
+							selected.resourceId(), selected.contentVersion()));
+		})
+				.toList();
+		var request = policy.revalidationRequest(evaluation, selections);
+		var response = eligibility.resolve(request.batch(), bearerToken, correlationId);
+		var result = policy.validate(request, response);
+		var proposedResource = policy.exactResource(request, response, target.slot().slotKey(),
+				resourceId, resourceVersion);
+		var families = current.families().stream().map(value ->
+				new FamilyDraft(value.family(), value.targetDomain())).toList();
+		var slots = current.slots().stream().map(value -> {
+			var selected = value == target ? proposedResource : value.slot().selectedResource();
+			var candidates = new java.util.LinkedHashMap<String, ResourceDraft>();
+			if (value == target && value.slot().selectedResource() != null) {
+				candidates.put(value.slot().selectedResource().key(), value.slot().selectedResource());
+			}
+			value.alternatives().stream().map(SupportPlanSlotAlternativeEntity::resource)
+					.forEach(resource -> candidates.putIfAbsent(resource.key(), resource));
+			candidates.remove(selected.key());
+			return new SlotDraft(value.slot().slotKey(), value.slot().slotKind(),
+					value.slot().targetDomain(), value.slot().purposeCode(), selected,
+					List.copyOf(candidates.values()));
+		}).toList();
+		var proposal = new Proposal(families, slots, result.resourcePolicyVersion(), result.resourcesResolvedAt());
+		var choices = slots.stream().filter(value -> value.selectedResource() != null)
+				.map(value -> new Choice(value.slotId(), value.selectedResource())).toList();
+		var evidence = new Revalidation(evaluation.policyVersion(), entitlement,
+				result.resourcePolicyVersion(), result.resourcesResolvedAt());
+		return new PreparedPlanChange(current, target.slot().slotKey(), target.slot().selectedResource(),
+				proposedResource, evaluation, entitlement, proposal, choices, evidence);
 	}
 
 	private ReplacementReview replacementReview(UUID userId, String bearerToken, UUID draftId,
@@ -530,6 +601,10 @@ public class SupportPlanService {
 			List<ComparisonItemView> comparison, SupportPlanView currentPlan, SupportPlanView proposedPlan,
 			ReassessmentSummaryView reassessmentSummary, Instant reviewedAt) { }
 	private record ReplacementReview(ReplacementReviewView view, List<Choice> choices, Revalidation evidence) { }
+	record PreparedPlanChange(StoredPlan current, String targetSlotId, ResourceDraft currentResource,
+			ResourceDraft proposedResource, SupportEvaluationV2Service.EvaluationView evaluation,
+			CurrentEntitlementResponse entitlement, Proposal proposal, List<Choice> choices,
+			Revalidation evidence) { }
 	public record SourceView(UUID supportEvaluationId, int evaluationVersion, String evaluationPolicyVersion,
 			Instant evaluatedAt, String selectionPolicyVersion, String resourceEligibilityPolicyVersion,
 			Instant resourcesResolvedAt) { }

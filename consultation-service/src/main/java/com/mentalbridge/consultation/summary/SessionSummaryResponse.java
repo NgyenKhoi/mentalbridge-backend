@@ -14,7 +14,8 @@ public record SessionSummaryResponse(UUID id, UUID appointmentId, UUID userAccou
 	}
 
 	public record AgreedNextStep(UUID id, AgreedNextStepType type, String title, String details,
-			UUID resourceId, String resourceVersion, AgreedNextStepState state, boolean hidden,
+			UUID resourceId, String resourceVersion, ResourceProposalReasonCode resourceProposalReasonCode,
+			AgreedNextStepState state, boolean hidden,
 			Long stateVersion, Instant stateUpdatedAt) {
 	}
 
