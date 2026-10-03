@@ -104,6 +104,14 @@ The requirements are represented in domain/architecture documentation, but the l
 
 ## Approved scope changes
 
+- 2026-10-01: MB-577 implements the Community Contract v1 comment slice under
+  ADR 0027: active visible posts accept idempotent comments and one-level
+  replies, deterministic chronological cursor reads, owner-only exact-version
+  edit/delete, transactional active counts, bilateral-block fail-closed
+  visibility, and immutable Community-local revisions. Comment text remains
+  excluded from Care, Journal/AI, screening, SupportPlan, specialist, and
+  diagnostic evidence.
+
 - 2026-09-24: `MB-SCOPE-V2-002` prospectively amends the current product
   blueprint. A Support Guide is persisted immutable history for one screening
   context, not ephemeral data and not a lifecycle-tracked SupportPlan.
@@ -306,6 +314,14 @@ The requirements are represented in domain/architecture documentation, but the l
   `reassessment-summary-v2`; failures and unchanged proposals do not mutate
   either plan. Specialist `PlanChangeRequest` must reuse this governed path and
   has no second replacement mutation. See [MB-375 evidence](story-mb-375-support-plan-replacement-evidence.md).
+- 2026-10-02: MB-560 implements the governed specialist resource-proposal
+  handoff. Consultation exposes only an exact proposal from the latest visible
+  summary of an evidence-completed appointment. Care creates a review snapshot
+  only after fresh entitlement, current-plan, evaluation/template, exact
+  publication, and compatible-slot checks. Only the user accepts or rejects;
+  acceptance repeats those checks and atomically replaces the official plan,
+  while rejection, stale evidence, withdrawn content, dependency uncertainty,
+  and retries cannot create a second plan. See [MB-560 evidence](story-mb-560-plan-change-request-evidence.md).
 
 - 2026-09-25: MB-292 corrective delivery persists Care-owned
   `screening_episode` grouping for guided initial checks and reassessments.

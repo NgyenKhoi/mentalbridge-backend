@@ -40,7 +40,8 @@ class CareLiquibaseChangelogTests {
 					"care-020-reassessment-self-report",
 					"care-021-support-plan-replacement-review",
 					"care-022-screening-episode",
-					"care-023-consultation-brief");
+					"care-023-consultation-brief",
+					"care-024-plan-change-request");
 		}
 	}
 

@@ -55,6 +55,7 @@ See [README](README.md) for status and relationship semantics.
 | `support_plan_slot` | care-service | PostgreSQL | ACTIVE | Physical child of plan; exact resource/publication IDs are logical/external Content references. |
 | `support_plan_slot_alternative` | care-service | PostgreSQL | ACTIVE | Physical child of slot with admitted exact Content alternatives. |
 | `support_plan_request` | care-service | PostgreSQL | ACTIVE | Physical owner-scoped idempotency alias to plan. |
+| `plan_change_request` | care-service | PostgreSQL | ACTIVE | MB-560 Care-owned review/decision snapshot for one exact Consultation resource proposal; links the reviewed current plan and, only after acceptance, the atomic replacement plan. |
 | `support_plan_command` | care-service | PostgreSQL | ACTIVE | Physical owner/plan reference; idempotent activation outcome with exact revalidation evidence. |
 | `support_plan_command_selection` | care-service | PostgreSQL | ACTIVE | Physical child preserving the ordered exact resource-version intent committed by activation. |
 | `support_plan_activity_schedule` | care-service | PostgreSQL | ACTIVE | Physical child of a plan; snapshots recurrence, local time, IANA timezone, and exact selected-resource provenance. |
@@ -77,7 +78,7 @@ See [README](README.md) for status and relationship semantics.
 | `availability_slot` | consultation-service | PostgreSQL | ACTIVE | Physical many-to-one to `specialist_profile`; active slots cannot overlap for one specialist. |
 | `service_credit_period`, `service_credit`, `service_credit_ledger` | consultation-service | PostgreSQL | ACTIVE | Current entitlement provisions bounded credits; appointment transitions hold and later release/consume one credit with append-only evidence. |
 | `appointment`, `appointment_status_history`, `appointment_chat_evidence` | consultation-service | PostgreSQL | ACTIVE | MB-378 owns the REQUESTED snapshot, exact online slot and held credit; MB-379 settles assigned specialist acceptance/rejection and deterministic expiry with idempotent history; MB-360 records suspension cancellation outcomes; MB-558 adds package reservation caps and linked atomic replacement; MB-380 records owner cancellation/reschedule audit; MB-383 stores content-free check-in/presence/accepted-message evidence and deterministically settles chat outcome and credit under `chat-session-completion-v1`. |
-| `session_summary`, `agreed_next_step`, `agreed_next_step_state`, `session_summary_reuse_consent` | consultation-service | PostgreSQL | ACTIVE | MB-385 appends immutable user-visible summary versions after evidence-backed completion, keeps agreed steps separate from SupportPlan occurrences, lets only the user manage checklist state, and records separate exact-snapshot reuse consent. |
+| `session_summary`, `agreed_next_step`, `agreed_next_step_state`, `session_summary_reuse_consent` | consultation-service | PostgreSQL | ACTIVE | MB-385 appends immutable user-visible summary versions after evidence-backed completion, keeps agreed steps separate from SupportPlan occurrences, lets only the user manage checklist state, and records separate exact-snapshot reuse consent. MB-560 adds a bounded reason code to exact-version `PLATFORM_RESOURCE` steps so Care can authoritatively retrieve proposal provenance. |
 | `appointment_outbox_event` | consultation-service | PostgreSQL | ACTIVE | One minimized asynchronous status fact per appointment/version, atomically committed with appointment state and containing no clinical or message content. |
 | Specialty catalogue/assignment | consultation-service | PostgreSQL | PROPOSED | Discovery policy exists, but no owner migration implements specialty persistence. |
 | Subscription plan/version/entitlement | consultation-service | PostgreSQL | PROPOSED | ADR 0017 approves package semantics; exact VND prices/allocations and owner migrations remain gated. |
@@ -95,7 +96,9 @@ See [README](README.md) for status and relationship semantics.
 | `community_post_topic` | community-service | PostgreSQL | ACTIVE | Physical many-to-one classification using only governed non-diagnostic Community topic codes. |
 | `community_media` | community-service | PostgreSQL/object storage | ACTIVE | Physical owner/post references hold safe metadata only; binary content remains in object storage and only `READY` delivery metadata is public. |
 | `community_block` | community-service | PostgreSQL | ACTIVE | Physical profile-to-profile visibility rule applied symmetrically to feed and detail reads. |
-| Comments, reactions, bookmarks, reports, moderation cases/actions, and command replay | community-service | PostgreSQL | PROPOSED | Frozen Community Contract v1 paths and enums exist, but their delivery stories have not added runtime persistence. |
+| `community_comment` | community-service | PostgreSQL | ACTIVE | Physical post, optional same-post root parent, and author profile references implement chronological comments and one-level replies with owner-scoped command replay. |
+| `community_comment_revision` | community-service | PostgreSQL | ACTIVE | Physical comment and acting-profile references retain immutable create/edit/delete snapshots for moderation-compatible audit. |
+| Reactions, bookmarks, reports, moderation cases/actions, and their command replay | community-service | PostgreSQL | PROPOSED | Frozen Community Contract v1 paths and enums exist, but their delivery stories have not added runtime persistence. |
 
 ## Content/Notification — PostgreSQL
 

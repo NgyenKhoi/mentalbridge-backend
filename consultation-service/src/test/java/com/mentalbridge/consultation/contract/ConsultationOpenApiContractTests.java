@@ -19,6 +19,7 @@ class ConsultationOpenApiContractTests {
 			"GET /internal/v1/entitlements/current",
 			"GET /internal/v1/appointments/{appointmentId}/consultation-brief-context",
 			"GET /internal/v1/appointments/{appointmentId}/reusable-session-summaries/{summaryId}",
+			"GET /internal/v1/resource-proposals/{proposalId}",
 			"GET /internal/v1/appointments/{conversationId}/chat-eligibility",
 			"POST /internal/v1/appointments/{appointmentId}/chat-evidence",
 			"GET /internal/v1/appointments/{appointmentId}/notification-eligibility",
@@ -171,7 +172,11 @@ class ConsultationOpenApiContractTests {
 				"reuseConsent", "agreedNextSteps", "publishedAt");
 		assertThat(request.getProperties()).doesNotContainKeys("diagnosis", "riskLevel", "privateNotes",
 				"journal", "assessmentAnswers", "chatTranscript");
-		assertThat(step.getProperties()).containsKeys("state", "hidden", "resourceId", "resourceVersion");
+		assertThat(step.getProperties()).containsKeys("state", "hidden", "resourceId", "resourceVersion",
+				"resourceProposalReasonCode");
+		var proposal = api.getComponents().getSchemas().get("ResourceProposal");
+		assertThat(proposal.getProperties()).containsKeys("proposalId", "summaryId", "summaryVersion",
+				"completionFactId", "resourceId", "resourceVersion", "reasonCode", "proposedAt");
 	}
 
 	@Test

@@ -49,6 +49,7 @@ import com.mentalbridge.care.resourceeligibility.generated.ResourceEligibilityCo
 import com.mentalbridge.care.resourceeligibility.generated.ResourceEligibilityContract.ResourceEligibilityOutcome;
 import com.mentalbridge.care.resourceeligibility.generated.ResourceEligibilityContract.ResourceEligibilityReasonCode;
 import com.mentalbridge.care.resourceeligibility.generated.ResourceEligibilityContract.ResourceEligibilityResult;
+import com.mentalbridge.care.supportplan.ConsultationResourceProposalHttpClient.ResourceProposal;
 
 @Import(TestcontainersConfiguration.class)
 @SpringBootTest
@@ -63,11 +64,78 @@ class SupportPlanIntegrationTests extends CareTestProperties {
 	@Autowired ObjectMapper objectMapper;
 	@MockitoBean EntitlementClient entitlements;
 	@MockitoBean ResourceEligibilityClient eligibility;
+	@MockitoBean ConsultationResourceProposalClient resourceProposals;
 
 	@BeforeEach
 	void dependencies() {
 		when(entitlements.current(any(), anyString(), any())).thenAnswer(invocation -> paid(invocation.getArgument(0)));
 		eligible(ResourceEligibilityOutcome.ELIGIBLE, ResourceEligibilityReasonCode.ELIGIBLE_MATCH);
+	}
+
+	@Test
+	void userReviewsRejectsOrAtomicallyAcceptsAnExactSpecialistProposal() throws Exception {
+		var userId = insertProfile();
+		var specialistId = UUID.randomUUID();
+		var current = createPlan(userId, evaluation(userId, "MINIMAL", "MINIMAL", false),
+				"plan-change-current-create");
+		var currentId = UUID.fromString(current.path("supportPlanId").asText());
+		mvc.perform(post("/api/v1/support-plans/{id}/activate", currentId).with(user(userId))
+				.header("If-Match", "\"0\"").header("Idempotency-Key", "plan-change-current-activate"))
+				.andExpect(status().isOk());
+
+		var firstProposalId = UUID.randomUUID();
+		when(resourceProposals.get(org.mockito.ArgumentMatchers.eq(firstProposalId), anyString(), any()))
+				.thenReturn(resourceProposal(firstProposalId, userId, specialistId,
+						"00000000-0000-4000-8000-000000000205"));
+		var rejected = mvc.perform(post("/api/v1/plan-change-requests").with(user(userId))
+				.header("Idempotency-Key", "plan-change-create-reject")
+				.contentType(MediaType.APPLICATION_JSON)
+				.content("{\"proposalId\":\"" + firstProposalId + "\"}"))
+				.andExpect(status().isCreated()).andExpect(header().string("ETag", "\"0\""))
+				.andExpect(jsonPath("$.status").value("READY_FOR_REVIEW"))
+				.andExpect(jsonPath("$.proposedResource.resourceId")
+						.value("00000000-0000-4000-8000-000000000205"))
+				.andReturn().getResponse().getContentAsString();
+		var rejectedId = UUID.fromString(objectMapper.readTree(rejected).path("requestId").asText());
+		mvc.perform(put("/api/v1/plan-change-requests/{id}/decision", rejectedId).with(user(userId))
+				.header("If-Match", "\"0\"").header("Idempotency-Key", "plan-change-reject-command")
+				.contentType(MediaType.APPLICATION_JSON).content("{\"decision\":\"REJECT\"}"))
+				.andExpect(status().isOk()).andExpect(jsonPath("$.status").value("REJECTED"));
+		assertThat(jdbc.sql("select status from support_plan where id=:id").param("id", currentId)
+				.query(String.class).single()).isEqualTo("ACTIVE");
+
+		var secondProposalId = UUID.randomUUID();
+		when(resourceProposals.get(org.mockito.ArgumentMatchers.eq(secondProposalId), anyString(), any()))
+				.thenReturn(resourceProposal(secondProposalId, userId, specialistId,
+						"00000000-0000-4000-8000-000000000205"));
+		var created = mvc.perform(post("/api/v1/plan-change-requests").with(user(userId))
+				.header("Idempotency-Key", "plan-change-create-accept")
+				.contentType(MediaType.APPLICATION_JSON)
+				.content("{\"proposalId\":\"" + secondProposalId + "\"}"))
+				.andExpect(status().isCreated()).andExpect(jsonPath("$.status").value("READY_FOR_REVIEW"))
+				.andReturn().getResponse().getContentAsString();
+		var requestId = UUID.fromString(objectMapper.readTree(created).path("requestId").asText());
+		mvc.perform(put("/api/v1/plan-change-requests/{id}/decision", requestId).with(user(userId))
+				.header("If-Match", "\"0\"").header("Idempotency-Key", "plan-change-reject-command")
+				.contentType(MediaType.APPLICATION_JSON).content("{\"decision\":\"ACCEPT\"}"))
+				.andExpect(status().isConflict()).andExpect(jsonPath("$.code").value("IDEMPOTENCY_KEY_REUSED"));
+		for (int retry = 0; retry < 2; retry++) {
+			mvc.perform(put("/api/v1/plan-change-requests/{id}/decision", requestId).with(user(userId))
+					.header("If-Match", "\"0\"").header("Idempotency-Key", "plan-change-accept-command")
+					.contentType(MediaType.APPLICATION_JSON).content("{\"decision\":\"ACCEPT\"}"))
+					.andExpect(status().isOk()).andExpect(jsonPath("$.status").value("ACCEPTED"))
+					.andExpect(jsonPath("$.replacementSupportPlanId").isString());
+		}
+		mvc.perform(get("/api/v1/specialist/plan-change-requests/by-proposal/{id}", secondProposalId)
+				.with(jwt().jwt(token -> token.subject(specialistId.toString()))
+						.authorities(new SimpleGrantedAuthority("ROLE_SPECIALIST"))))
+				.andExpect(status().isOk()).andExpect(jsonPath("$.status").value("ACCEPTED"));
+		assertThat(jdbc.sql("select status from support_plan where id=:id").param("id", currentId)
+				.query(String.class).single()).isEqualTo("SUPERSEDED");
+		assertThat(jdbc.sql("select count(*) from support_plan where user_id=:id and status='ACTIVE'")
+				.param("id", userId).query(Long.class).single()).isEqualTo(1);
+		assertThat(jdbc.sql("select count(*) from support_plan_command where plan_change_request_id=:id")
+				.param("id", requestId).query(Long.class).single()).isEqualTo(1);
 	}
 
 	@Test
@@ -1118,6 +1186,15 @@ class SupportPlanIntegrationTests extends CareTestProperties {
 		return new CurrentEntitlementResponse(userId, ServicePackage.PLUS, EntitlementSource.DEMO, "mb372-test",
 				Instant.parse("2026-09-18T00:00:00Z"), Instant.parse("2026-10-18T00:00:00Z"),
 				"service-entitlement-v1", 1, Instant.parse("2026-09-19T00:00:00Z"));
+	}
+
+	private ResourceProposal resourceProposal(UUID proposalId, UUID userId, UUID specialistId,
+			String resourceId) {
+		return new ResourceProposal(proposalId, 1, UUID.randomUUID(), userId, specialistId,
+				UUID.randomUUID(), 1, UUID.randomUUID(), UUID.fromString(resourceId), "1",
+				"TRY_ALTERNATIVE_RESOURCE", "Tài nguyên hỗ trợ được đề xuất",
+				"Đề xuất sau nội dung đã trao đổi.", "session-summary-v1",
+				Instant.parse("2026-10-02T02:00:00Z"));
 	}
 
 	private UUID evaluation(UUID userId, String phqLevel, String gadLevel, boolean positive) throws Exception {

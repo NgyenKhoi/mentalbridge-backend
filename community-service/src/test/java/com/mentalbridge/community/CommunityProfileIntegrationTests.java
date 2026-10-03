@@ -36,6 +36,8 @@ class CommunityProfileIntegrationTests extends CommunityTestProperties {
 
 	@BeforeEach
 	void cleanBusinessData() {
+		jdbc.sql("delete from community_comment_revision").update();
+		jdbc.sql("delete from community_comment").update();
 		jdbc.sql("delete from community_block").update();
 		jdbc.sql("delete from community_media").update();
 		jdbc.sql("delete from community_post_topic").update();

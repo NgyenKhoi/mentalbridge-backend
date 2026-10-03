@@ -88,6 +88,102 @@ Community-local bilateral visibility exclusion applied by feed and detail querie
 | `blocked_profile_id` | Physical Community profile hidden from the blocker; the database forbids self-blocking. |
 | `created_at` | Immutable UTC instant when the block became effective. |
 
+### `public.community_comment`
+
+Authoritative Community-owned comment or one-level reply. Its text is peer-support content and is never Care, Journal, screening, SupportPlan, specialist, or AI evidence.
+
+| Field | Purpose |
+| --- | --- |
+| `id` | Immutable opaque UUID exposed as the comment identifier for replies and owner commands. |
+| `post_id` | Physical parent post reference used to enforce visibility and update the post's active comment count transactionally. |
+| `parent_comment_id` | Nullable physical reference to a top-level comment on the same post; non-null identifies a V1 one-level reply and database/application constraints prevent cross-post or deeper nesting. |
+| `author_profile_id` | Physical Community display-profile owner used for public identity, bilateral block checks, owner authorization, moderation, and audit without exposing the private account subject. |
+| `content` | Current user-authored peer-support text bounded to 2,000 characters and retained inside Community storage after owner deletion for governed audit. |
+| `state` | Lifecycle `ACTIVE`, `OWNER_DELETED`, `MODERATION_HIDDEN`, or `MODERATION_REMOVED`; ordinary reads expose active content and a neutral owner-deleted tombstone, while moderation states fail closed. |
+| `idempotency_key` | Printable caller retry key unique per Community author, so a repeated create returns the original comment without incrementing counts twice. |
+| `request_fingerprint` | SHA-256 digest of normalized post, parent, and content input used to reject conflicting idempotency-key reuse; it cannot recover comment text. |
+| `created_at` | Immutable UTC insertion instant and primary chronological pagination key. |
+| `updated_at` | UTC instant of the latest persisted owner or moderation change. |
+| `version` | Optimistic-lock counter exposed in the comment and quoted ETag for exact `If-Match` edit/delete commands. |
+
+### `public.community_comment_revision`
+
+Immutable Community-local audit snapshots for comment creation and mutation. It is not exposed through the public comment API.
+
+| Field | Purpose |
+| --- | --- |
+| `id` | Immutable opaque UUID identifying one audit snapshot. |
+| `comment_id` | Physical reference to the comment whose historical state is retained. |
+| `changed_by_profile_id` | Nullable physical Community profile for an owner-authored mutation; mutually exclusive with `changed_by_subject`. |
+| `changed_by_subject` | Nullable private Identity subject for an authorized ADMIN moderation mutation; never exposed publicly and mutually exclusive with `changed_by_profile_id`. |
+| `change_type` | Stable action `CREATED`, `EDITED`, `OWNER_DELETED`, or `MODERATED` used by audit and moderation review. |
+| `content_snapshot` | Exact Community comment text at the recorded version, retained only for governed audit and moderation compatibility. |
+| `state_snapshot` | Comment lifecycle state after the recorded action. |
+| `comment_version` | Exact optimistic-lock version represented by the snapshot; unique per comment for deterministic history. |
+| `changed_at` | Immutable UTC instant when the recorded change committed. |
+
+### `public.community_report`
+
+Immutable, idempotent user report of one visible post or comment. Reports route content governance only and never become clinical evidence.
+
+| Field | Purpose |
+| --- | --- |
+| `id` | Immutable report UUID. |
+| `reporter_profile_id` | Private Community reporter reference; never returned in an admin case response. |
+| `target_type`, `target_id` | Community-owned post/comment reference captured without a polymorphic cross-service foreign key. |
+| `reason` | Stable governed report reason, including the non-diagnostic crisis-concern routing reason. |
+| `details` | Optional bounded untrusted reporter context, visible only to authorized moderation. |
+| `idempotency_key`, `request_fingerprint` | Owner-scoped retry identity and normalized SHA-256 command fingerprint. |
+| `created_at` | Immutable accepted-report instant. |
+
+### `public.community_content_hide`
+
+Owner-scoped feed/comment exclusion that does not alter the target or another user's view.
+
+| Field | Purpose |
+| --- | --- |
+| `hider_profile_id` | Community profile that chose the personal hide. |
+| `target_type`, `target_id` | Hidden post/comment identity. |
+| `created_at` | Immutable instant at which the personal hide became effective. |
+
+### `public.community_moderation_case`
+
+One Community-local governed case per reported target, with a minimized immutable first-report evidence snapshot.
+
+| Field | Purpose |
+| --- | --- |
+| `id` | Opaque case UUID exposed only to ADMIN. |
+| `target_type`, `target_id` | Exact Community target under review. |
+| `target_author_profile_id` | Private author reference used for bounded Community access restriction. |
+| `state` | Workflow state `OPEN`, `IN_REVIEW`, or `RESOLVED`. |
+| `priority` | `HIGH` only when at least one user selected `SELF_HARM_OR_CRISIS_CONCERN`; it is routing priority, not diagnosis or inferred risk. |
+| `evidence_content`, `evidence_state`, `evidence_version` | Minimized target snapshot fixed when the case is first created. |
+| `created_at`, `updated_at`, `version` | Creation, latest decision time, and optimistic audit sequence. |
+
+### `public.community_moderation_action`
+
+Append-only ADMIN decision record preserving exact actor, reason, target version, and before/after state.
+
+| Field | Purpose |
+| --- | --- |
+| `id`, `case_id` | Immutable action UUID and owning moderation case. |
+| `actor_subject` | Private ADMIN Identity subject used for accountability. |
+| `action`, `reason_code` | Bounded governed decision and stable rationale code. |
+| `prior_state`, `resulting_state`, `target_version` | Exact transition and resulting target version. |
+| `idempotency_key`, `request_fingerprint` | ADMIN-scoped retry identity and normalized SHA-256 command fingerprint. |
+| `created_at` | Immutable committed-decision instant. |
+
+### `public.community_access_restriction`
+
+Community-only access restriction derived from an auditable case. It does not change Identity, Care, SupportPlan, booking, or third-party contact state.
+
+| Field | Purpose |
+| --- | --- |
+| `profile_id`, `case_id` | Restricted Community profile and authorizing moderation case. |
+| `reason_code` | Stable bounded governance rationale. |
+| `restricted_by_subject`, `restricted_at` | ADMIN subject and UTC activation instant. |
+| `lifted_by_subject`, `lifted_at` | Nullable paired ADMIN subject/time recording restoration without deleting history. |
+
 ## Database `mentalbridge_identity` (schema `public`)
 
 ### `public.account`
@@ -685,6 +781,30 @@ matches the aggregate bound.
 | `support_plan_id` | Owner-matched stored draft returned for identical retries and concurrent aliases. |
 | `created_at` | UTC instant at which Care accepted the alias. |
 
+### `public.plan_change_request`
+
+Care-owned, user-reviewed request derived from one authoritative exact-version
+resource proposal in a completed Consultation appointment. Creating the request
+only records a review snapshot; it never creates a draft or changes the current
+plan. Acceptance repeats every authoritative check and links the replacement
+created in the same transaction.
+
+| Field | Purpose |
+| --- | --- |
+| `id` / `version` | Stable request identity and optimistic decision version. |
+| `user_id` / `specialist_id` | Owning user and advisory specialist; only the user can decide. |
+| `source_proposal_id` / `source_proposal_version` | Exact Consultation proposal identity and version; unique so retries cannot create competing requests. |
+| `source_appointment_id` / `source_summary_id` / `source_summary_version` / `source_completion_fact_id` | Immutable evidence that the proposal came from the latest visible summary of the completed appointment. |
+| `proposal_reason_code` / `proposal_title` / `proposal_details` | Bounded user-visible rationale and snapshot; no raw chat, journal, or assessment answers. |
+| `resource_id` / `resource_version` | Exact Content version revalidated at review and again on acceptance. |
+| `current_support_plan_id` / `current_support_plan_version` | Exact official plan reviewed when the request was created; any later change makes acceptance stale. |
+| `target_slot_id` / `current_resource_id` / `current_resource_version` / `current_resource_title` | Compatible Care-owned slot and its optional current exact resource for the comparison UI. |
+| `replacement_support_plan_id` / `replacement_support_plan_version` | Null while pending or rejected; populated only by the atomic accepted replacement. |
+| `status` / `outcome_code` | `READY_FOR_REVIEW`, `ACCEPTED`, or `REJECTED` with stable admissible/applied/rejected outcome. |
+| `idempotency_key` / `request_hash` | Owner-scoped exact retry identity for review creation. |
+| `decision_idempotency_key` / `decision_hash` | Owner-scoped exact retry identity for the final accept/reject command. |
+| `reviewed_at` / `decided_at` / `created_at` / `updated_at` | Server-owned review, decision, and persistence instants. |
+
 ### `public.support_plan_command`
 
 Owner-scoped append-only audit and replay record for activation and MB-375
@@ -704,6 +824,7 @@ answer, journal content, or client-authored display text.
 | `resource_policy_version` / `resources_resolved_at` | Exact Content eligibility policy and resolution instant used for final exact-version validation. |
 | `source_support_plan_id` / `source_support_plan_version` | For `REPLACE`, the exact former current plan and pre-supersede optimistic version; null for initial activation. This is the immutable replacement relation. |
 | `reassessment_summary_id` | For `REPLACE`, the owner-matched canonical v2 summary presented during review; null for initial activation. The JSON snapshot remains in `reassessment_summary` rather than being duplicated here. |
+| `plan_change_request_id` | For an MB-560 specialist-proposal replacement, the exact Care-owned accepted request; mutually exclusive with `reassessment_summary_id`. |
 | `replacement_review_outcome` | Governed review outcome that admitted confirmation. Unchanged reviews are not persisted because they cannot mutate a plan. |
 | `created_at` | UTC instant the command and its outcome committed. |
 
@@ -1070,6 +1191,7 @@ Immutable steps agreed in one published summary. They are user-visible suggestio
 | `step_type` | Bounded checklist, journal, emotion check-in, reassessment, follow-up appointment, or platform resource type. |
 | `title` / `details` | Bounded user-visible action wording. |
 | `resource_id` / `resource_version` | Exact Content resource proposal required only for `PLATFORM_RESOURCE`; Care revalidates any later plan change under MB-560. |
+| `resource_proposal_reason_code` | Required bounded rationale for `PLATFORM_RESOURCE`: post-consultation continuity, an alternative resource, or an addressed reported barrier; null for every other step type. |
 | `created_at` | Server creation instant inherited from summary publication. |
 
 ### `consultation.agreed_next_step_state`

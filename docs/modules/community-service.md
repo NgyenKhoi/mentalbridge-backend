@@ -52,3 +52,17 @@ MB-574 does not upload media, add comments/reactions/bookmarks, report, moderate
 - Each create or update may explicitly choose `PROFILE` or `ANONYMOUS`; omitted create values remain `PROFILE`, and omitted update values preserve the current mode for rolling-client compatibility.
 - Anonymous feed and detail responses return a neutral label with a null `communityProfileId` and no avatar preset, preventing public linkage to the author's other posts or Community display identity.
 - `author_profile_id` remains private and authoritative for owner authorization, moderation, abuse controls, and audit. Anonymous mode never removes ownership evidence or changes bilateral block enforcement.
+
+## MB-577 comments and one-level replies
+
+- Active visible posts accept owner-scoped idempotent comments and replies. A reply may reference only an active top-level comment on the same post, so V1 nesting never exceeds one level.
+- Comment reads use deterministic `(created_at, id)` ascending cursor pagination. Hidden/removed comments, hidden/removed posts, and either direction of a Community block fail closed.
+- Comment edits and owner deletion require the exact quoted version through `If-Match`. Deletion keeps a neutral public tombstone so existing replies retain context while the post's active comment count is decremented exactly once.
+- Every create, edit, and owner deletion writes a Community-local immutable revision snapshot. Comment text and revision history remain inside `community-service` and are never reused as Care, Journal/AI, screening, SupportPlan, or specialist evidence.
+
+## MB-578 reports, blocks, and moderation
+
+- A USER may report one currently visible post/comment with a stable reason and bounded optional context. Owner-scoped idempotency keys replay safely and conflicting reuse is rejected.
+- Personal content hides and bilateral profile blocks fail closed in feed, detail, comment reads, and new interactions without changing the target for other users.
+- ADMIN-only case queries expose a minimized first-report evidence snapshot and aggregate stable reasons. Actions append actor, reason, timestamp, target version, prior state, and resulting state before changing visibility or Community-only access.
+- `SELF_HARM_OR_CRISIS_CONCERN` raises queue priority and the UI may offer the existing help-now route. It never diagnoses, infers suicidality, books care, contacts a third party, or mutates Care/SupportPlan state.

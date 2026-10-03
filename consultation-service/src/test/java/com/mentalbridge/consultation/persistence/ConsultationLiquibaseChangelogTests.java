@@ -28,7 +28,8 @@ class ConsultationLiquibaseChangelogTests {
 							"consultation-009-appointment-changes",
 							"consultation-010-chat-session-completion",
 							"consultation-011-session-summary",
-							"consultation-011-appointment-notification-outbox");
+							"consultation-012-resource-proposal",
+							"consultation-013-appointment-notification-outbox");
 		}
 	}
 }

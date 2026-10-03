@@ -1,6 +1,6 @@
 --liquibase formatted sql
 
---changeset mentalbridge:consultation-011-appointment-notification-outbox
+--changeset mentalbridge:consultation-013-appointment-notification-outbox
 create table appointment_outbox_event (
     id uuid primary key,
     appointment_id uuid not null references appointment(id),
