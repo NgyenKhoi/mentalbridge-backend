@@ -1241,7 +1241,7 @@ components:
     EmailPreferences:
       type: object
       additionalProperties: false
-      required: [cadence, wellbeingDigestEnabled, resourceRemindersEnabled, dailyDigestTime, resourceReminderTime, appointmentRemindersEnabled]
+      required: [cadence, wellbeingDigestEnabled, resourceRemindersEnabled, dailyDigestTime, resourceReminderTime]
       properties:
         cadence: { $ref: "#/components/schemas/EmailCadence" }
         wellbeingDigestEnabled: { type: boolean }
