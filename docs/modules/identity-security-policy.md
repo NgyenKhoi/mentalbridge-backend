@@ -35,6 +35,8 @@ Each account has exactly one immutable actor role included in access tokens. Res
 
 Public registration accepts exactly one actor type: `USER` or `SPECIALIST`. It never creates an `ADMIN` account, and neither an administrator nor the account owner can promote, demote, or replace an account role. The initial deployment provisions exactly one dedicated `ADMIN` account through an operator-controlled bootstrap using externally supplied credentials. The database permits at most one `ADMIN`; deployment readiness requires that this account exists. Normal account-administration APIs do not mutate the dedicated administrator account. Account state mutations use optimistic concurrency and emit minimized audit facts.
 
+Account administration supports only suspension (`DISABLED`) and restoration (`ACTIVE`) in this slice. Suspension uses one closed reason code: `SAFETY_CONCERN`, `POLICY_VIOLATION`, or `ACCOUNT_REVIEW_REQUIRED`. Restoration uses `REVIEW_COMPLETED`. Repeating the same operation at the current version is a no-op: it does not advance the account version, revoke sessions again, or emit duplicate audit/outbox facts. Suspending either a user or specialist revokes active Identity refresh sessions. Identity publishes the minimized current account status and immutable actor role; Consultation remains authoritative for specialist discovery and eligibility and must consume or check that lifecycle fact rather than Identity mutating Consultation data directly.
+
 ## Password and credential policy
 
 - Passwords contain 12 to 128 Unicode characters and at most 72 UTF-8 bytes. They must not be silently truncated or normalized before hashing.

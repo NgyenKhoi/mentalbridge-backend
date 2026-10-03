@@ -55,7 +55,10 @@ class IdentitySessionFlowIntegrationTests extends IdentityTestProperties {
 			"POST /api/v1/auth/password-recovery-requests",
 			"POST /api/v1/auth/password-resets",
 			"PUT /api/v1/account/password",
-			"GET /api/v1/account");
+			"GET /api/v1/account",
+			"GET /api/v1/admin/accounts",
+			"GET /api/v1/admin/accounts/{accountId}",
+			"PUT /api/v1/admin/accounts/{accountId}/state");
 
 	@Autowired
 	private MockMvc mvc;
