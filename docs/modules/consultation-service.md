@@ -22,7 +22,7 @@ delivery, or SupportPlan state.
 | Appointment | Request, accept/reject/expire, cancel/reschedule, end channel, evaluate evidence, complete/no-show/dispute | Booking requires an allowed package, `AVAILABLE` credit, reservation capacity, and selectable slot; reschedule replaces one logical reservation; at 60 minutes record `SESSION_ENDED`, while only accepted server/provider evidence completes and consumes credit |
 | Brief, summary, and next steps | Expose a user-approved pre-session `ConsultationBrief`; create post-session `SessionSummary`/`AgreedNextSteps`; submit resource proposal | No raw journals/answers/full AI history; reuse requires user approval; resource proposal becomes Care-owned `PlanChangeRequest`, not another plan |
 | Payout | Encrypt/verify specialist destinations; submit idempotent MoMo payouts; reconcile result/IPN/status | MoMo is the sole production provider after credentials; `UNKNOWN` queried, not blindly retried; real payout currency must be approved |
-| Consented view/dashboard | Show own workload and fetch scoped owner data | Care authorization is current and fails closed; Journal/AI returns only allowed fields; no remote call inside transaction |
+| Consented view/dashboard | Show the specialist's current Consultation-owned workload; add separately authorized owner projections only when required | Profile eligibility fails closed; every metric exposes source/freshness; no health-data fabrication, cross-service database query, or remote call inside transaction |
 | Review/moderation | One review after completed appointment; owner applies reviewed action | Participant/completion verified; duplicate rejected; evidence minimized; action/history auditable |
 
 ## Implementation design
@@ -48,6 +48,11 @@ delivery, or SupportPlan state.
   remain later stories.
 - MB-381 adds the bearer-protected internal appointment-context projection used by Care. It returns only appointment/user/specialist identifiers, status, start/end, and version, and is readable only by that appointment's owner or assigned specialist. Consultation stores no brief content and exposes no credit, history, decision, or display-name fields through this projection.
 - MB-383 implements `chat-session-completion-v1`: Realtime submits only assigned-participant check-in, bounded presence, and accepted-message metadata; Consultation records `SESSION_ENDED`, applies the five-minute grace and technical reconciliation window, stores a separate deterministic outcome, and settles the held credit exactly once. Completion stores an opaque fact for MB-516 but creates no earning.
+- MB-591 adds the specialist operational dashboard projection from local
+  profile, appointment, and availability facts. It returns exact counts and
+  at most five preview items per section with source/as-of metadata. Any
+  non-approved profile produces blocked empty sections; no client identity or
+  health information is part of the response.
 
 ## Ordered tasks
 
@@ -70,6 +75,6 @@ delivery, or SupportPlan state.
   `0/2/4` reservation caps, chat channel end, and race-safe evidence-backed chat
   settlement are implemented; VND/MoMo purchase/upgrade and video evidence
   remain delivery-gated without rewriting historical v1 ledger periods.
-- [~] CON-08 MB-381 implements the assigned specialist's read-only approved pre-session brief path through Care; general consented dashboard, reviews, and moderation remain deferred.
+- [~] CON-08 MB-381 implements the assigned specialist's read-only approved pre-session brief path through Care, and MB-591 implements the local operational dashboard without health data; broader consented health projections, reviews, and moderation remain deferred.
 - [ ] CON-09 Verify simultaneous booking/upgrade, exact proration rounding, transition conflicts, authorization, provider timeout, webhook/command duplicates, expiry and outbox/event duplicates.
 - [ ] CON-10 Add observability/configuration, update README, and pass module/contract/migration gates.

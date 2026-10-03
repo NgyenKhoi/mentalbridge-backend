@@ -535,6 +535,20 @@ paths:
         '404': { $ref: '#/components/responses/NotFoundProblem' }
         '412': { $ref: '#/components/responses/VersionProblem' }
         '428': { $ref: '#/components/responses/VersionRequiredProblem' }
+  /api/v1/specialist/dashboard:
+    x-mentalbridge-status: implemented
+    get:
+      operationId: getSpecialistOperationalDashboard
+      description: Returns a bounded, server-time specialist operations projection from Consultation-owned profile, appointment, and availability facts. Non-approved profiles fail closed with blocked sections and no workload data.
+      security: [{ bearerAuth: [] }]
+      responses:
+        '200':
+          description: Current operational projection or an explicit profile-eligibility block
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/SpecialistDashboard' }
+        '401': { $ref: '#/components/responses/UnauthorizedProblem' }
+        '403': { $ref: '#/components/responses/ForbiddenProblem' }
   /api/v1/specialist/appointments:
     x-mentalbridge-status: implemented
     get:
@@ -1153,6 +1167,129 @@ components:
         videoPublishingEnabled:
           type: boolean
           description: True only while the reviewed video capability/provider contract gate is enabled.
+    DashboardDataState:
+      type: string
+      enum: [AVAILABLE, EMPTY, BLOCKED, UNAVAILABLE]
+    SpecialistOperationalStatus:
+      type: string
+      enum: [READY, PROFILE_REQUIRED, PENDING_APPROVAL, PROFILE_REJECTED, SUSPENDED]
+    SpecialistDashboardActionType:
+      type: string
+      enum:
+        - COMPLETE_PROFILE
+        - AWAIT_PROFILE_APPROVAL
+        - UPDATE_REJECTED_PROFILE
+        - CONTACT_SUPPORT
+        - REVIEW_APPOINTMENT_REQUESTS
+        - PUBLISH_AVAILABILITY
+    SpecialistDashboardProfile:
+      type: object
+      additionalProperties: false
+      required: [source, asOf, state, displayName, timezone, approvalStatus]
+      properties:
+        source: { type: string, const: CONSULTATION }
+        asOf: { type: string, format: date-time }
+        state: { $ref: '#/components/schemas/DashboardDataState' }
+        displayName: { type: [string, 'null'], minLength: 1, maxLength: 120 }
+        timezone: { type: [string, 'null'], minLength: 1, maxLength: 64 }
+        approvalStatus:
+          oneOf:
+            - { $ref: '#/components/schemas/SpecialistApprovalStatus' }
+            - { type: 'null' }
+    SpecialistDashboardAppointmentItem:
+      type: object
+      additionalProperties: false
+      required: [source, asOf, appointmentId, status, modality, scheduledStartAt, scheduledEndAt, timezone, decisionDeadlineAt]
+      properties:
+        source: { type: string, const: CONSULTATION }
+        asOf: { type: string, format: date-time }
+        appointmentId: { type: string, format: uuid }
+        status:
+          type: string
+          enum: [REQUESTED, CONFIRMED, IN_PROGRESS]
+        modality: { $ref: '#/components/schemas/AppointmentModality' }
+        scheduledStartAt: { type: string, format: date-time }
+        scheduledEndAt: { type: string, format: date-time }
+        timezone: { type: string, minLength: 1, maxLength: 64 }
+        decisionDeadlineAt: { type: string, format: date-time }
+    SpecialistDashboardAppointmentCollection:
+      type: object
+      additionalProperties: false
+      required: [source, asOf, state, count, localDate, timezone, items]
+      properties:
+        source: { type: string, const: CONSULTATION }
+        asOf: { type: string, format: date-time }
+        state: { $ref: '#/components/schemas/DashboardDataState' }
+        count: { type: integer, minimum: 0 }
+        localDate: { type: [string, 'null'], format: date }
+        timezone: { type: [string, 'null'], minLength: 1, maxLength: 64 }
+        items:
+          type: array
+          maxItems: 5
+          items: { $ref: '#/components/schemas/SpecialistDashboardAppointmentItem' }
+    SpecialistDashboardNextAppointment:
+      type: object
+      additionalProperties: false
+      required: [source, asOf, state, item]
+      properties:
+        source: { type: string, const: CONSULTATION }
+        asOf: { type: string, format: date-time }
+        state: { $ref: '#/components/schemas/DashboardDataState' }
+        item:
+          oneOf:
+            - { $ref: '#/components/schemas/SpecialistDashboardAppointmentItem' }
+            - { type: 'null' }
+    SpecialistDashboardAvailabilityItem:
+      type: object
+      additionalProperties: false
+      required: [source, asOf, slotId, modality, startAt, endAt, timezone]
+      properties:
+        source: { type: string, const: CONSULTATION }
+        asOf: { type: string, format: date-time }
+        slotId: { type: string, format: uuid }
+        modality: { $ref: '#/components/schemas/AvailabilityModality' }
+        startAt: { type: string, format: date-time }
+        endAt: { type: string, format: date-time }
+        timezone: { type: string, minLength: 1, maxLength: 64 }
+    SpecialistDashboardAvailabilityCollection:
+      type: object
+      additionalProperties: false
+      required: [source, asOf, state, count, items]
+      properties:
+        source: { type: string, const: CONSULTATION }
+        asOf: { type: string, format: date-time }
+        state: { $ref: '#/components/schemas/DashboardDataState' }
+        count: { type: integer, minimum: 0 }
+        items:
+          type: array
+          maxItems: 5
+          items: { $ref: '#/components/schemas/SpecialistDashboardAvailabilityItem' }
+    SpecialistDashboardActionItem:
+      type: object
+      additionalProperties: false
+      required: [source, asOf, type, count]
+      properties:
+        source: { type: string, const: CONSULTATION }
+        asOf: { type: string, format: date-time }
+        type: { $ref: '#/components/schemas/SpecialistDashboardActionType' }
+        count: { type: integer, minimum: 1 }
+    SpecialistDashboard:
+      type: object
+      additionalProperties: false
+      required: [source, generatedAt, operationalStatus, profile, todayConfirmedSessions, pendingAppointmentRequests, nextAppointment, availability, actionRequired]
+      properties:
+        source: { type: string, const: CONSULTATION }
+        generatedAt: { type: string, format: date-time }
+        operationalStatus: { $ref: '#/components/schemas/SpecialistOperationalStatus' }
+        profile: { $ref: '#/components/schemas/SpecialistDashboardProfile' }
+        todayConfirmedSessions: { $ref: '#/components/schemas/SpecialistDashboardAppointmentCollection' }
+        pendingAppointmentRequests: { $ref: '#/components/schemas/SpecialistDashboardAppointmentCollection' }
+        nextAppointment: { $ref: '#/components/schemas/SpecialistDashboardNextAppointment' }
+        availability: { $ref: '#/components/schemas/SpecialistDashboardAvailabilityCollection' }
+        actionRequired:
+          type: array
+          maxItems: 2
+          items: { $ref: '#/components/schemas/SpecialistDashboardActionItem' }
     AppointmentModality:
       type: string
       enum: [IN_APP_CHAT, IN_APP_VIDEO]
