@@ -1202,6 +1202,22 @@ never stored.
 | `occurred_at` | Server-observed occurrence used for the half-open appointment-window calculation. |
 | `received_at` | Consultation receipt time used to enforce grace and reconciliation deadlines. |
 
+### `consultation.specialist_client_continuity_audit`
+
+Content-free MB-592 evidence that an authenticated specialist attempted to load
+the bounded current/recent client relationship projection. It records neither
+client identifiers nor health, assessment, journal, chat, or summary content.
+
+| Field | Purpose |
+| --- | --- |
+| `id` | Immutable audit-event UUID. |
+| `specialist_account_id` | Identity specialist UUID whose current approval and appointment relationships were evaluated. |
+| `action` | Bounded operation name; MB-592 permits only `LIST`. |
+| `outcome` | `ALLOWED` when the bounded projection was returned or `DENIED` when current specialist eligibility failed closed. |
+| `reason_code` | Stable content-free authorization result used for privacy review and operational investigation. |
+| `relationship_count` | Number of relationship rows returned; always zero for a denied attempt and never identifies a client. |
+| `occurred_at` | Immutable server UTC instant at which Consultation evaluated the request. |
+
 ### `consultation.session_summary`
 
 Append-only MB-385 snapshot published by the assigned specialist only after the appointment has evidence-backed `COMPLETED` authority. Amendments create a new row and never rewrite the prior user-visible version.
