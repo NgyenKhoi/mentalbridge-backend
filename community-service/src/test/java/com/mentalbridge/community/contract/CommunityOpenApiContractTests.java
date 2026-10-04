@@ -14,6 +14,7 @@ class CommunityOpenApiContractTests {
 
 	private static final Set<String> IMPLEMENTED = Set.of(
 			"GET /api/v1/community/feed",
+			"GET /api/v1/community/saved-posts",
 			"POST /api/v1/community/posts",
 			"GET /api/v1/community/posts/{postId}",
 			"PATCH /api/v1/community/posts/{postId}",
@@ -43,6 +44,7 @@ class CommunityOpenApiContractTests {
 
 	private static final Set<String> ALL_OPERATIONS = Set.of(
 			"GET /api/v1/community/feed",
+			"GET /api/v1/community/saved-posts",
 			"POST /api/v1/community/posts",
 			"GET /api/v1/community/posts/{postId}",
 			"PATCH /api/v1/community/posts/{postId}",
@@ -121,11 +123,23 @@ class CommunityOpenApiContractTests {
 	@Test
 	void sensitiveContentWarningContractIsBoundedAndVersioned() {
 		var api = new OpenAPIV3Parser().read(contract().toString());
-		assertThat(api.getInfo().getVersion()).isEqualTo("1.9.0");
+		assertThat(api.getInfo().getVersion()).isEqualTo("1.10.0");
 		assertThat(api.getComponents().getSchemas().get("CommunitySensitiveContentWarning").getEnum())
 				.containsExactly("SENSITIVE_CONTENT");
 		assertThat(api.getComponents().getSchemas().get("ModerationAction").getEnum())
 				.contains("APPLY_SENSITIVE_WARNING", "REMOVE_SENSITIVE_WARNING");
+	}
+
+	@Test
+	void savedPostContractIsOwnerScopedAndCursorBounded() {
+		var api = new OpenAPIV3Parser().read(contract().toString());
+		var operation = api.getPaths().get("/api/v1/community/saved-posts").getGet();
+
+		assertThat(operation.getParameters()).extracting(parameter -> parameter.getName())
+				.containsExactly("cursor", "limit");
+		assertThat(operation.getDescription()).isNull();
+		assertThat(operation.getResponses().get("200").getDescription()).contains("authenticated USER")
+				.contains("newest-saved first");
 	}
 
 	@Test

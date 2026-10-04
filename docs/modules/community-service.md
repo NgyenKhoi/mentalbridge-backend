@@ -89,3 +89,11 @@ MB-574 does not upload media, add comments/reactions/bookmarks, report, moderate
 - Authorized ADMIN moderation may apply or remove the marker through idempotent, append-only moderation actions. Those actions audit `NONE` and `SENSITIVE_CONTENT` transitions while leaving the post lifecycle unchanged.
 - The marker is returned by feed/detail only as optional presentation metadata. It contains no body, diagnosis, severity, sentiment result, Care, assessment, Journal/AI, or SupportPlan data.
 - No runtime path automatically derives the marker from negative language or distress. Warning changes never replace `MODERATION_HIDDEN` or `MODERATION_REMOVED`, and hidden/removed targets continue to fail closed.
+
+## MB-616 private saved-post collection
+
+- `GET /api/v1/community/saved-posts` derives the owner only from the authenticated JWT subject and accepts no owner/profile selector.
+- Results are ordered deterministically by immutable bookmark `(created_at, post_id)` descending and continue through an opaque bounded cursor.
+- Only active posts that remain visible under personal-hide and bilateral-block rules are returned. Owner-deleted, moderation-hidden, moderation-removed, personally hidden, and blocked posts fail closed without exposing their retained bookmark row.
+- The query reuses the normal Community post summary, current display identity, media availability, Resource reference, warning, counts, and authenticated viewer state. Successful unbookmark removes the row from the next authoritative query.
+- Saved membership remains private Community data and never becomes a recommendation, popularity, diagnosis, severity, Care, Journal/AI, screening, emotion, or SupportPlan signal.

@@ -75,13 +75,32 @@ class CommunityServiceApplicationTests extends CommunityTestProperties {
 				"0007-community-post-author-mode", "0008-community-comments", "0009-community-moderation",
 				"0010-community-interactions", "0011-community-interaction-outbox",
 				"0012-community-topic-governance", "0013-community-resource-attachment",
-				"0014-community-sensitive-content-warning");
+				"0014-community-sensitive-content-warning", "0015-community-saved-post-ordering");
 		assertThat(businessTables).containsExactly("community_access_restriction", "community_block",
 				"community_comment", "community_comment_revision", "community_content_hide",
 				"community_interaction_outbox", "community_media", "community_moderation_action",
 				"community_moderation_case", "community_post",
 				"community_post_bookmark", "community_post_reaction", "community_post_topic", "community_profile",
 				"community_report", "community_topic");
+	}
+
+	@Test
+	void savedPostOrderingHasAnOwnerFirstCursorIndex() {
+		var columns = jdbc.sql("""
+				select a.attname
+				from pg_class table_class
+				join pg_namespace namespace on namespace.oid = table_class.relnamespace
+				join pg_index index_metadata on index_metadata.indrelid = table_class.oid
+				join pg_class index_class on index_class.oid = index_metadata.indexrelid
+				join unnest(index_metadata.indkey) with ordinality keys(attnum, position) on true
+				join pg_attribute a on a.attrelid = table_class.oid and a.attnum = keys.attnum
+				where namespace.nspname = 'public'
+				  and table_class.relname = 'community_post_bookmark'
+				  and index_class.relname = 'ix_community_post_bookmark_saved_order'
+				order by keys.position
+				""").query(String.class).list();
+
+		assertThat(columns).containsExactly("profile_id", "created_at", "post_id");
 	}
 
 	@Test

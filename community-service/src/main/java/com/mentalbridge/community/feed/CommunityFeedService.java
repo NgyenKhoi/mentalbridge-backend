@@ -6,6 +6,7 @@ import java.util.Base64;
 import java.util.Comparator;
 import java.util.List;
 import java.util.Map;
+import java.util.Objects;
 import java.util.UUID;
 import java.util.function.Function;
 import java.util.stream.Collectors;
@@ -66,6 +67,42 @@ public class CommunityFeedService {
 		var states = viewerStates(visible, viewerProfileId);
 		var items = visible.stream().map(post -> summary(post, states.get(post.id()))).toList();
 		var nextCursor = hasMore ? encode(visible.getLast().publishedAt(), visible.getLast().id()) : null;
+		return new Feed(items, nextCursor, hasMore);
+	}
+
+	@Transactional(readOnly = true)
+	public Feed savedPosts(UUID accountSubject, String cursorValue, int limit) {
+		var cursor = decodeSavedCursor(cursorValue);
+		var viewerProfileId = profiles.findIdByAccountSubject(accountSubject).orElse(null);
+		if (viewerProfileId == null) {
+			return new Feed(List.of(), null, false);
+		}
+		var references = bookmarks.findVisibleSavedPosts(viewerProfileId,
+				cursor == null ? null : cursor.savedAt(), cursor == null ? null : cursor.postId(),
+				PageRequest.of(0, limit + 1));
+		if (references.isEmpty()) {
+			return new Feed(List.of(), null, false);
+		}
+		var hasMore = references.size() > limit;
+		var pageReferences = hasMore ? references.subList(0, limit) : references;
+		var postsById = posts.findVisibleByIds(pageReferences.stream()
+				.map(CommunityPostBookmarkRepository.SavedPostReference::getPostId).toList(), viewerProfileId).stream()
+				.collect(Collectors.toMap(CommunityPostEntity::id, Function.identity()));
+		var visible = pageReferences.stream().map(reference -> postsById.get(reference.getPostId()))
+				.filter(Objects::nonNull).toList();
+		if (visible.isEmpty()) {
+			var last = pageReferences.getLast();
+			return new Feed(List.of(), hasMore ? encodeSavedCursor(last.getSavedAt(), last.getPostId()) : null, hasMore);
+		}
+		var reactionsByPost = reactions.findAllByProfileIdAndPostIdIn(viewerProfileId,
+				visible.stream().map(CommunityPostEntity::id).toList()).stream()
+				.collect(Collectors.toMap(CommunityPostReactionEntity::postId, Function.identity()));
+		var items = visible.stream().map(post -> {
+			var reaction = reactionsByPost.get(post.id());
+			return summary(post, new ViewerState(reaction == null ? null : reaction.reaction(), true));
+		}).toList();
+		var last = pageReferences.getLast();
+		var nextCursor = hasMore ? encodeSavedCursor(last.getSavedAt(), last.getPostId()) : null;
 		return new Feed(items, nextCursor, hasMore);
 	}
 
@@ -194,7 +231,32 @@ public class CommunityFeedService {
 		}
 	}
 
+	private String encodeSavedCursor(Instant savedAt, UUID postId) {
+		var value = "saved|" + savedAt + "|" + postId;
+		return Base64.getUrlEncoder().withoutPadding().encodeToString(value.getBytes(StandardCharsets.UTF_8));
+	}
+
+	private SavedCursor decodeSavedCursor(String value) {
+		if (value == null) {
+			return null;
+		}
+		try {
+			var decoded = new String(Base64.getUrlDecoder().decode(value), StandardCharsets.UTF_8);
+			var parts = decoded.split("\\|", -1);
+			if (parts.length != 3 || !parts[0].equals("saved")) {
+				throw CommunityApiException.invalidCursor();
+			}
+			return new SavedCursor(Instant.parse(parts[1]), UUID.fromString(parts[2]));
+		}
+		catch (IllegalArgumentException exception) {
+			throw CommunityApiException.invalidCursor();
+		}
+	}
+
 	private record Cursor(Instant publishedAt, UUID postId) {
+	}
+
+	private record SavedCursor(Instant savedAt, UUID postId) {
 	}
 
 	public record VersionedPost(PostDetail body, Long ownerVersion) {
