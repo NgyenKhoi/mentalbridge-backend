@@ -1,8 +1,8 @@
 openapi: 3.1.0
 info:
   title: MentalBridge Community API
-  version: 1.7.0
-  description: Privacy-isolated peer-support Community Contract v1.7. Feed ordering and explicit topic discovery never use Care, Journal, emotion, SupportPlan, inferred severity, or AI data. MB-582 adds the governed active topic catalogue and bounded multi-topic filtering.
+  version: 1.8.0
+  description: Privacy-isolated peer-support Community Contract v1.8. Feed ordering and explicit topic discovery never use Care, Journal, emotion, SupportPlan, inferred severity, or AI data. MB-614 adds one optional stable MentalBridge Resource reference without copying Resource content or exposing ResourceVersion semantics.
 servers:
   - url: http://localhost:8084
 paths:
@@ -633,6 +633,10 @@ components:
           maxItems: 10
           items: { $ref: "#/components/schemas/CommunityMedia" }
         mediaAvailability: { type: string, enum: [NONE, READY, PARTIAL, UNAVAILABLE] }
+        resourceAttachment:
+          anyOf:
+            - $ref: "#/components/schemas/CommunityResourceAttachment"
+            - type: "null"
         counts: { $ref: "#/components/schemas/CommunityCounts" }
         viewerState: { $ref: "#/components/schemas/CommunityViewerState" }
         publishedAt: { type: string, format: date-time }
@@ -655,6 +659,10 @@ components:
           maxItems: 10
           items: { $ref: "#/components/schemas/CommunityMedia" }
         mediaAvailability: { type: string, enum: [NONE, READY, PARTIAL, UNAVAILABLE] }
+        resourceAttachment:
+          anyOf:
+            - $ref: "#/components/schemas/CommunityResourceAttachment"
+            - type: "null"
         counts: { $ref: "#/components/schemas/CommunityCounts" }
         viewerState: { $ref: "#/components/schemas/CommunityViewerState" }
         publishedAt: { type: string, format: date-time }
@@ -689,9 +697,20 @@ components:
         authorMode:
           $ref: "#/components/schemas/CommunityPostAuthorMode"
           description: Defaults to PROFILE when omitted on create; omission on update preserves the current mode.
+        resourceId:
+          type: [string, "null"]
+          format: uuid
+          description: Optional stable Content-owned Resource identifier. Null or omission means no attachment; Community never accepts a ResourceVersion or Resource body.
     UpdatePostRequest:
       allOf:
         - $ref: "#/components/schemas/CreatePostRequest"
+    CommunityResourceAttachment:
+      type: object
+      additionalProperties: false
+      required: [resourceId]
+      description: Minimal logical reference to a Content-owned Resource. Current availability and display metadata are resolved through the Content contract.
+      properties:
+        resourceId: { type: string, format: uuid }
     CommunityMediaState:
       type: string
       enum: [PENDING, PROCESSING, READY, REJECTED, DELETED, EXPIRED]

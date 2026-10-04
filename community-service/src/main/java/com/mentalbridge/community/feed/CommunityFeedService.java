@@ -23,6 +23,7 @@ import com.mentalbridge.community.feed.CommunityResponses.MediaAvailability;
 import com.mentalbridge.community.feed.CommunityResponses.MediaType;
 import com.mentalbridge.community.feed.CommunityResponses.PostDetail;
 import com.mentalbridge.community.feed.CommunityResponses.PostSummary;
+import com.mentalbridge.community.feed.CommunityResponses.ResourceAttachment;
 import com.mentalbridge.community.feed.CommunityResponses.Topic;
 import com.mentalbridge.community.feed.CommunityResponses.ViewerState;
 import com.mentalbridge.community.shared.CommunityApiException;
@@ -83,13 +84,17 @@ public class CommunityFeedService {
 
 	private PostSummary summary(CommunityPostEntity post, ViewerState viewerState) {
 		return new PostSummary(post.id(), author(post), preview(post.content()), sortedTopics(post), media(post),
-				mediaAvailability(post), counts(post), viewerState, post.publishedAt(), post.updatedAt());
+				mediaAvailability(post), resourceAttachment(post), counts(post), viewerState, post.publishedAt(), post.updatedAt());
 	}
 
 	PostDetail toDetail(CommunityPostEntity post, UUID viewerProfileId) {
 		return new PostDetail(post.id(), author(post), post.content(), sortedTopics(post), media(post),
-				mediaAvailability(post), counts(post), viewerState(post.id(), viewerProfileId), post.publishedAt(),
+				mediaAvailability(post), resourceAttachment(post), counts(post), viewerState(post.id(), viewerProfileId), post.publishedAt(),
 				post.updatedAt());
+	}
+
+	private ResourceAttachment resourceAttachment(CommunityPostEntity post) {
+		return post.resourceId() == null ? null : new ResourceAttachment(post.resourceId());
 	}
 
 	private Map<UUID, ViewerState> viewerStates(List<CommunityPostEntity> visible, UUID viewerProfileId) {

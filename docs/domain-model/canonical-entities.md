@@ -92,7 +92,7 @@ See [README](README.md) for status and relationship semantics.
 | Entity | Owner service | Storage | Status | Key relationships |
 | --- | --- | --- | --- | --- |
 | `community_profile` | community-service | PostgreSQL | ACTIVE | `account_subject` is a private logical/external Identity reference; public APIs expose only the Community profile ID, chosen display name, and optional governed avatar preset. |
-| `community_post` | community-service | PostgreSQL | ACTIVE | Physical many-to-one to `community_profile`; active reads are newest-first and fail closed for hidden, removed, or blocked content. |
+| `community_post` | community-service | PostgreSQL | ACTIVE | Physical many-to-one to `community_profile`; optional logical `resource_id` reference to a Content-owned Resource; active reads are newest-first and fail closed for hidden, removed, or blocked content. |
 | `community_post_topic` | community-service | PostgreSQL | ACTIVE | Physical many-to-one classification using only governed non-diagnostic Community topic codes. |
 | `community_topic` | community-service | PostgreSQL | ACTIVE | Governed non-diagnostic topic catalogue whose active state controls discovery and new classification without deleting historical post membership. |
 | `community_media` | community-service | PostgreSQL/object storage | ACTIVE | Physical owner/post references hold safe metadata only; binary content remains in object storage and only `READY` delivery metadata is public. |

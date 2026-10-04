@@ -4,6 +4,8 @@ import java.time.Instant;
 import java.util.List;
 import java.util.UUID;
 
+import com.fasterxml.jackson.annotation.JsonInclude;
+
 public final class CommunityResponses {
 
 	private CommunityResponses() {
@@ -13,12 +15,16 @@ public final class CommunityResponses {
 	}
 
 	public record PostSummary(UUID postId, Author author, String contentPreview, List<CommunityTopic> topics,
-			List<Media> media, MediaAvailability mediaAvailability, Counts counts, ViewerState viewerState, Instant publishedAt,
+			List<Media> media, MediaAvailability mediaAvailability,
+			@JsonInclude(JsonInclude.Include.NON_NULL) ResourceAttachment resourceAttachment,
+			Counts counts, ViewerState viewerState, Instant publishedAt,
 			Instant updatedAt) {
 	}
 
 	public record PostDetail(UUID postId, Author author, String content, List<CommunityTopic> topics,
-			List<Media> media, MediaAvailability mediaAvailability, Counts counts, ViewerState viewerState, Instant publishedAt,
+			List<Media> media, MediaAvailability mediaAvailability,
+			@JsonInclude(JsonInclude.Include.NON_NULL) ResourceAttachment resourceAttachment,
+			Counts counts, ViewerState viewerState, Instant publishedAt,
 			Instant updatedAt) {
 	}
 
@@ -34,6 +40,9 @@ public final class CommunityResponses {
 	public enum MediaType { IMAGE, VIDEO }
 
 	public enum MediaAvailability { NONE, READY, PARTIAL, UNAVAILABLE }
+
+	public record ResourceAttachment(UUID resourceId) {
+	}
 
 	public record Counts(int comments, int reactions) {
 	}
