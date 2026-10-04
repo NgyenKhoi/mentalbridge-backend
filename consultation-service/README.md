@@ -147,6 +147,19 @@ reported as unavailable/unused.
 - `POST /api/v1/specialist/appointments/{appointmentId}/reject`
 - `GET /internal/v1/appointments/{conversationId}/chat-eligibility` for participant-bound Realtime subscribe/send/history authorization
 
+## Implemented MB-591 endpoint
+
+- `GET /api/v1/specialist/dashboard`
+
+The dashboard is a bounded, read-only projection of Consultation-owned
+specialist profile, appointment, and availability facts. Counts retain exact
+totals while item previews are capped at five. Every section and item includes
+its source and server as-of time. Missing, pending, rejected, or suspended
+profiles fail closed with blocked workload sections. The projection contains
+no client identity, check-in, clinical risk, recovery/adherence, journal,
+assessment-answer, chat-content, or private-note fields, and it performs no
+cross-service database query.
+
 Availability accepts only exact future 60-minute `IN_APP_CHAT` and gated
 `IN_APP_VIDEO` slots. It stores UTC instants and an IANA display timezone,
 rejects active overlap transactionally, and retains withdrawn slots as

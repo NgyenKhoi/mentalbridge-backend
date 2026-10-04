@@ -1,5 +1,14 @@
 # Requirements Traceability
 
+- 2026-10-02: MB-365 implements dedicated-admin account search/detail and
+  non-admin suspension/restoration across Identity and the web BFF/UI. Identity
+  enforces immutable roles, quoted-version optimistic concurrency, closed reason
+  codes, refresh-session revocation on suspension, dedicated-admin protection,
+  and atomic minimized audit/outbox facts. The UI exposes no health, journal, or
+  private support content and handles stale versions by reloading authoritative
+  state. Contract, unit, BFF, UI, and real-PostgreSQL integration coverage live
+  with the owning implementations; the integration suite requires Docker.
+  MB-416 downstream specialist eligibility runtime verification: VERIFIED. Consultation implements AccountLifecycleConsumer and SpecialistAccountLifecycleService subscribing to mentalbridge.identity.account-lifecycle.v1 (identity.account.state-changed). Specialist suspension marks the Consultation profile SUSPENDED, applies SpecialistSuspensionEffects (withdrawing active future slots, cancelling upcoming appointments, and releasing held credits), and excludes the specialist from discovery and availability/booking eligibility (SPECIALIST_NOT_APPROVED). Specialist restoration restores the profile to APPROVED and restores eligibility. User suspension cancels upcoming appointments and releases held credits. The flow is verified end-to-end with unit and contract tests in AccountLifecycleConsumerTests.
 - 2026-09-28: MB-381 adds the Care-owned non-diagnostic ConsultationBrief draft, immutable explicit-approval snapshot, appointment-purpose specialist grant, immediate revocation/deletion, minimized allowed/denied audit, Consultation-owned appointment authority endpoint, and owner/specialist UI. Access is limited to the assigned active appointment and its 24-hour-before/after-start window. Raw journals, answers, chat, notes, diagnosis, and unapproved summaries are excluded; SessionSummary reuse remains fail-closed until MB-385 supplies an exact source and separate approval contract. Evidence: `docs/story-mb-381-consultation-brief-evidence.md`.
 - 2026-10-02: MB-385 adds Consultation-owned immutable `SessionSummary` versions and separate `AgreedNextSteps` after evidence-backed completion. Only the assigned specialist publishes; amendments append a version; only the user changes checklist state or exact-snapshot reuse consent; specialist reads omit those mutable states. Resource proposals retain exact Content version and never mutate Care SupportPlan data. Evidence: `docs/story-mb-385-session-summary-evidence.md`.
 

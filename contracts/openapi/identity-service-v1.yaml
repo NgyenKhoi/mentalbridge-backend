@@ -282,7 +282,7 @@ paths:
         '400': { $ref: '#/components/responses/ValidationProblem' }
         '401': { $ref: '#/components/responses/InvalidCredentialsProblem' }
   /api/v1/admin/accounts:
-    x-mentalbridge-status: planned
+    x-mentalbridge-status: implemented
     get:
       tags: [Account administration]
       operationId: searchAccounts
@@ -339,7 +339,7 @@ paths:
         '401': { $ref: '#/components/responses/UnauthorizedProblem' }
         '404': { $ref: '#/components/responses/NotFoundProblem' }
   /api/v1/admin/accounts/{accountId}:
-    x-mentalbridge-status: planned
+    x-mentalbridge-status: implemented
     get:
       tags: [Account administration]
       operationId: getAccountById
@@ -360,7 +360,7 @@ paths:
         '403': { $ref: '#/components/responses/ForbiddenProblem' }
         '404': { $ref: '#/components/responses/NotFoundProblem' }
   /api/v1/admin/accounts/{accountId}/state:
-    x-mentalbridge-status: planned
+    x-mentalbridge-status: implemented
     put:
       tags: [Account administration]
       operationId: changeAccountState
@@ -571,8 +571,14 @@ components:
       additionalProperties: false
       required: [status, reasonCode]
       properties:
-        status: { $ref: '#/components/schemas/AccountStatus' }
-        reasonCode: { type: string, minLength: 1, maxLength: 64, pattern: '^[A-Z0-9_]+$' }
+        status:
+          type: string
+          enum: [ACTIVE, DISABLED]
+          description: DISABLED suspends an account; ACTIVE restores a disabled account according to email-verification state.
+        reasonCode:
+          type: string
+          enum: [SAFETY_CONCERN, POLICY_VIOLATION, ACCOUNT_REVIEW_REQUIRED, REVIEW_COMPLETED]
+          description: REVIEW_COMPLETED is reserved for restoration; the other values are suspension reasons.
     Problem:
       type: object
       additionalProperties: true
