@@ -104,8 +104,11 @@ class CommunityOpenApiContractTests {
 
 		assertThat(author.getProperties()).containsOnlyKeys("communityProfileId", "displayName", "avatarPreset", "state");
 		assertThat(post.getProperties()).containsOnlyKeys("postId", "author", "contentPreview", "topics", "media",
-				"mediaAvailability", "counts", "viewerState", "publishedAt", "updatedAt");
-		assertThat(createPost.getProperties()).containsOnlyKeys("content", "topics", "mediaIds", "authorMode");
+				"mediaAvailability", "resourceAttachment", "counts", "viewerState", "publishedAt", "updatedAt");
+		assertThat(createPost.getProperties()).containsOnlyKeys("content", "topics", "mediaIds", "authorMode",
+				"resourceId");
+		var attachment = api.getComponents().getSchemas().get("CommunityResourceAttachment");
+		assertThat(attachment.getProperties()).containsOnlyKeys("resourceId");
 		assertThat(feedParameters).extracting(parameter -> parameter.getName())
 				.containsExactly("topic", "cursor", "limit");
 		var topicFilter = feedParameters.getFirst();

@@ -74,13 +74,35 @@ class CommunityServiceApplicationTests extends CommunityTestProperties {
 				"0005-community-media-lifecycle", "0006-community-request-fingerprint-varchar",
 				"0007-community-post-author-mode", "0008-community-comments", "0009-community-moderation",
 				"0010-community-interactions", "0011-community-interaction-outbox",
-				"0012-community-topic-governance");
+				"0012-community-topic-governance", "0013-community-resource-attachment");
 		assertThat(businessTables).containsExactly("community_access_restriction", "community_block",
 				"community_comment", "community_comment_revision", "community_content_hide",
 				"community_interaction_outbox", "community_media", "community_moderation_action",
 				"community_moderation_case", "community_post",
 				"community_post_bookmark", "community_post_reaction", "community_post_topic", "community_profile",
 				"community_report", "community_topic");
+	}
+
+	@Test
+	void resourceAttachmentIsAFrameworkMappedNullableUuidWithoutACrossDatabaseForeignKey() {
+		var column = jdbc.sql("""
+				select data_type, is_nullable
+				from information_schema.columns
+				where table_schema = 'public'
+				  and table_name = 'community_post'
+				  and column_name = 'resource_id'
+				""").query().singleRow();
+		var foreignKeys = jdbc.sql("""
+				select count(*)
+				from information_schema.key_column_usage
+				where table_schema = 'public'
+				  and table_name = 'community_post'
+				  and column_name = 'resource_id'
+				  and position_in_unique_constraint is not null
+				""").query(Long.class).single();
+
+		assertThat(column).containsEntry("data_type", "uuid").containsEntry("is_nullable", "YES");
+		assertThat(foreignKeys).isZero();
 	}
 
 	@Test

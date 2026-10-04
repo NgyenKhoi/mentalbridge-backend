@@ -36,6 +36,7 @@ Authoritative Community-owned personal-story publication. It is not Care, Journa
 | `idempotency_key` | Owner-scoped create-command key. It is nullable only for posts that predate MB-575 and unique together with `author_profile_id`, so separate owners may reuse the same client-generated value safely. |
 | `request_fingerprint` | SHA-256 digest of normalized create input used to distinguish a safe retry from conflicting reuse; it is not Community content and is present exactly when `idempotency_key` is present. |
 | `author_mode` | Author-selected public identity mode for this post: `PROFILE` renders the current Community display identity, while `ANONYMOUS` returns a neutral name with no Community profile identifier or avatar that can link the post publicly; the private owner reference remains available only for authorization, moderation, and audit. |
+| `resource_id` | Nullable stable UUID logically referencing a Content-owned published Resource selected by the author. Community stores no Resource body or version and has no cross-database foreign key; current availability and display metadata are resolved through the Content REST contract. |
 | `published_at` | Immutable UTC publication instant used as the primary newest-first cursor key. |
 | `updated_at` | UTC instant of the latest persisted owner or moderation change. |
 | `version` | Optimistic-lock counter reserved for owner edits/deletion and moderation changes. |

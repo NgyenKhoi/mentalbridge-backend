@@ -18,6 +18,7 @@ import java.time.Instant;
 import java.time.OffsetDateTime;
 import java.time.ZoneOffset;
 import java.util.HexFormat;
+import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
 import java.util.UUID;
@@ -138,6 +139,57 @@ class CommunityPostLifecycleIntegrationTests extends CommunityTestProperties {
 				.andExpect(status().isOk())
 				.andExpect(jsonPath("$.author.communityProfileId").isNotEmpty())
 				.andExpect(jsonPath("$.author.state").value("ACTIVE"));
+	}
+
+	@Test
+	void resourceAttachmentCanBeCreatedReplayedReplacedAndRemovedOnlyByThePostOwner() throws Exception {
+		var firstResource = UUID.fromString("30000000-0000-4000-8000-000000000614");
+		var replacementResource = UUID.fromString("40000000-0000-4000-8000-000000000614");
+		var created = mvc.perform(post("/api/v1/community/posts")
+				.header("Idempotency-Key", "post-resource-owner-0001")
+				.contentType(MediaType.APPLICATION_JSON)
+				.content(request("Tài nguyên mình thấy hữu ích", List.of("HELPFUL_RESOURCE"), List.of(), firstResource))
+				.with(user(OWNER_SUBJECT)))
+				.andExpect(status().isCreated())
+				.andExpect(jsonPath("$.resourceAttachment.resourceId").value(firstResource.toString()))
+				.andReturn().getResponse().getContentAsString();
+		var postId = UUID.fromString(objectMapper.readTree(created).path("postId").asText());
+
+		mvc.perform(post("/api/v1/community/posts")
+				.header("Idempotency-Key", "post-resource-owner-0001")
+				.contentType(MediaType.APPLICATION_JSON)
+				.content(request("Tài nguyên mình thấy hữu ích", List.of("HELPFUL_RESOURCE"), List.of(), firstResource))
+				.with(user(OWNER_SUBJECT)))
+				.andExpect(status().isCreated())
+				.andExpect(jsonPath("$.postId").value(postId.toString()));
+		mvc.perform(post("/api/v1/community/posts")
+				.header("Idempotency-Key", "post-resource-owner-0001")
+				.contentType(MediaType.APPLICATION_JSON)
+				.content(request("Tài nguyên mình thấy hữu ích", List.of("HELPFUL_RESOURCE"), List.of(), replacementResource))
+				.with(user(OWNER_SUBJECT)))
+				.andExpect(status().isConflict())
+				.andExpect(jsonPath("$.code").value("IDEMPOTENCY_KEY_REUSED"));
+
+		mvc.perform(patch("/api/v1/community/posts/{postId}", postId).header("If-Match", "\"0\"")
+				.contentType(MediaType.APPLICATION_JSON)
+				.content(request("Không được sửa", List.of("HELPFUL_RESOURCE"), List.of(), replacementResource))
+				.with(user(OTHER_SUBJECT)))
+				.andExpect(status().isNotFound());
+		mvc.perform(patch("/api/v1/community/posts/{postId}", postId).header("If-Match", "\"0\"")
+				.contentType(MediaType.APPLICATION_JSON)
+				.content(request("Đã chọn tài nguyên khác", List.of("HELPFUL_RESOURCE"), List.of(), replacementResource))
+				.with(user(OWNER_SUBJECT)))
+				.andExpect(status().isOk())
+				.andExpect(jsonPath("$.resourceAttachment.resourceId").value(replacementResource.toString()));
+		mvc.perform(patch("/api/v1/community/posts/{postId}", postId).header("If-Match", "\"1\"")
+				.contentType(MediaType.APPLICATION_JSON)
+				.content(request("Đã bỏ tài nguyên", List.of("HELPFUL_RESOURCE"), List.of()))
+				.with(user(OWNER_SUBJECT)))
+				.andExpect(status().isOk())
+				.andExpect(jsonPath("$.resourceAttachment").doesNotExist());
+
+		assertThat(jdbc.sql("select resource_id from community_post where id = :id")
+				.param("id", postId).query(UUID.class).optional()).isEmpty();
 	}
 
 	@Test
@@ -285,7 +337,18 @@ class CommunityPostLifecycleIntegrationTests extends CommunityTestProperties {
 	}
 
 	private String request(String content, List<String> topics, List<UUID> mediaIds) throws Exception {
-		return objectMapper.writeValueAsString(Map.of("content", content, "topics", topics, "mediaIds", mediaIds));
+		return request(content, topics, mediaIds, null);
+	}
+
+	private String request(String content, List<String> topics, List<UUID> mediaIds, UUID resourceId) throws Exception {
+		var payload = new LinkedHashMap<String, Object>();
+		payload.put("content", content);
+		payload.put("topics", topics);
+		payload.put("mediaIds", mediaIds);
+		if (resourceId != null) {
+			payload.put("resourceId", resourceId);
+		}
+		return objectMapper.writeValueAsString(payload);
 	}
 
 	private org.springframework.test.web.servlet.request.RequestPostProcessor user(UUID subject) {

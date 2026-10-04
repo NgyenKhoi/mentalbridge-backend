@@ -1139,6 +1139,7 @@ CREATE TABLE community.community_post (
     idempotency_key varchar(128),
     request_fingerprint varchar(64),
     author_mode varchar(16) NOT NULL,
+    resource_id uuid,
     published_at timestamptz NOT NULL,
     updated_at timestamptz NOT NULL,
     version bigint NOT NULL

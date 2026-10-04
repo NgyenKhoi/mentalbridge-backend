@@ -65,7 +65,7 @@ public class CommunityPostService {
 		topicService.validatePostTopics(input.topics(), Set.of());
 
 		var post = new CommunityPostEntity(UUID.randomUUID(), owner, input.content(), input.topics(), key,
-				fingerprint, input.authorMode(), now);
+				fingerprint, input.authorMode(), input.resourceId(), now);
 		post = posts.saveAndFlush(post);
 		replaceMedia(post, owner, input.mediaIds(), now);
 		posts.flush();
@@ -79,7 +79,7 @@ public class CommunityPostService {
 		topicService.validatePostTopics(input.topics(), post.topics());
 		verifyVersion(post, expectedVersion);
 		var now = Instant.now();
-		post.update(input.content(), input.topics(), input.authorMode(), now);
+		post.update(input.content(), input.topics(), input.authorMode(), input.resourceId(), now);
 		replaceMedia(post, post.author(), input.mediaIds(), now);
 		posts.flush();
 		return versioned(post);
@@ -165,7 +165,7 @@ public class CommunityPostService {
 		}
 		var mediaIds = List.copyOf(suppliedMediaIds);
 		var authorMode = request.authorMode() == null ? fallbackAuthorMode : request.authorMode();
-		return new ValidatedPost(content, topics, mediaIds, authorMode);
+		return new ValidatedPost(content, topics, mediaIds, authorMode, request.resourceId());
 	}
 
 	private boolean hasUnpairedSurrogate(String value) {
@@ -198,6 +198,9 @@ public class CommunityPostService {
 			input.topics().stream().sorted(Comparator.comparingInt(Enum::ordinal))
 					.forEach(topic -> add(digest, topic.name()));
 			input.mediaIds().forEach(id -> add(digest, id.toString()));
+			if (input.resourceId() != null) {
+				add(digest, input.resourceId().toString());
+			}
 			if (includeAuthorMode) {
 				add(digest, input.authorMode().name());
 			}
@@ -219,7 +222,7 @@ public class CommunityPostService {
 	}
 
 	private record ValidatedPost(String content, Set<CommunityTopic> topics, List<UUID> mediaIds,
-			CommunityPostEntity.AuthorMode authorMode) {
+			CommunityPostEntity.AuthorMode authorMode, UUID resourceId) {
 	}
 
 	public record VersionedPost(PostDetail body, long version) {

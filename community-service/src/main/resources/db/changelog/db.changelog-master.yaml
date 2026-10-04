@@ -23,3 +23,5 @@ databaseChangeLog:
       file: db/changelog/changes/0011-community-interaction-outbox.yaml
   - include:
       file: db/changelog/changes/0012-community-topic-governance.yaml
+  - include:
+      file: db/changelog/changes/0013-community-resource-attachment.yaml

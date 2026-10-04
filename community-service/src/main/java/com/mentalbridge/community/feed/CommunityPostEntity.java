@@ -64,6 +64,9 @@ class CommunityPostEntity {
 	@Column(name = "request_fingerprint", length = 64)
 	private String requestFingerprint;
 
+	@Column(name = "resource_id")
+	private UUID resourceId;
+
 	@Enumerated(EnumType.STRING)
 	@Column(name = "author_mode", nullable = false, length = 16)
 	private AuthorMode authorMode;
@@ -87,7 +90,7 @@ class CommunityPostEntity {
 	}
 
 	CommunityPostEntity(UUID id, CommunityProfileEntity author, String content, Set<CommunityTopic> topics,
-			String idempotencyKey, String requestFingerprint, AuthorMode authorMode, Instant now) {
+			String idempotencyKey, String requestFingerprint, AuthorMode authorMode, UUID resourceId, Instant now) {
 		this.id = id;
 		this.author = author;
 		this.content = content;
@@ -99,6 +102,7 @@ class CommunityPostEntity {
 		this.idempotencyKey = idempotencyKey;
 		this.requestFingerprint = requestFingerprint;
 		this.authorMode = authorMode;
+		this.resourceId = resourceId;
 		this.topics.addAll(topics);
 	}
 
@@ -154,11 +158,16 @@ class CommunityPostEntity {
 		return authorMode;
 	}
 
-	void update(String content, Set<CommunityTopic> topics, AuthorMode authorMode, Instant now) {
+	UUID resourceId() {
+		return resourceId;
+	}
+
+	void update(String content, Set<CommunityTopic> topics, AuthorMode authorMode, UUID resourceId, Instant now) {
 		this.content = content;
 		this.topics.clear();
 		this.topics.addAll(topics);
 		this.authorMode = authorMode;
+		this.resourceId = resourceId;
 		this.updatedAt = now;
 	}
 
