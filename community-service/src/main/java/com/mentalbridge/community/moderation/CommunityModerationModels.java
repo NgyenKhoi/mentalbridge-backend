@@ -20,7 +20,10 @@ final class CommunityModerationModels {
 
 	enum Priority { NORMAL, HIGH }
 
-	enum Action { NO_ACTION, HIDE, REMOVE, RESTORE, RESTRICT_COMMUNITY_ACCESS }
+	enum Action {
+		NO_ACTION, HIDE, REMOVE, RESTORE, RESTRICT_COMMUNITY_ACCESS,
+		APPLY_SENSITIVE_WARNING, REMOVE_SENSITIVE_WARNING
+	}
 
 	record CreateReportRequest(TargetType targetType, UUID targetId, ReportReason reason, String details) {
 	}

@@ -193,6 +193,72 @@ class CommunityPostLifecycleIntegrationTests extends CommunityTestProperties {
 	}
 
 	@Test
+	void sensitiveWarningIsExplicitOwnerControlledPersistentAndOptimisticallyLocked() throws Exception {
+		var created = mvc.perform(post("/api/v1/community/posts")
+				.header("Idempotency-Key", "post-sensitive-owner-0001")
+				.contentType(MediaType.APPLICATION_JSON)
+				.content(request("Một trải nghiệm khó chia sẻ", List.of("MY_STORY"), List.of(), null,
+						"SENSITIVE_CONTENT"))
+				.with(user(OWNER_SUBJECT)))
+				.andExpect(status().isCreated())
+				.andExpect(header().string("ETag", "\"0\""))
+				.andExpect(jsonPath("$.sensitiveContentWarning").value("SENSITIVE_CONTENT"))
+				.andReturn().getResponse().getContentAsString();
+		var postId = UUID.fromString(objectMapper.readTree(created).path("postId").asText());
+		mvc.perform(post("/api/v1/community/posts")
+				.header("Idempotency-Key", "post-sensitive-owner-0001")
+				.contentType(MediaType.APPLICATION_JSON)
+				.content(request("Một trải nghiệm khó chia sẻ", List.of("MY_STORY"), List.of(), null,
+						"SENSITIVE_CONTENT"))
+				.with(user(OWNER_SUBJECT)))
+				.andExpect(status().isCreated())
+				.andExpect(jsonPath("$.postId").value(postId.toString()));
+		mvc.perform(post("/api/v1/community/posts")
+				.header("Idempotency-Key", "post-sensitive-owner-0001")
+				.contentType(MediaType.APPLICATION_JSON)
+				.content(request("Một trải nghiệm khó chia sẻ", List.of("MY_STORY"), List.of()))
+				.with(user(OWNER_SUBJECT)))
+				.andExpect(status().isConflict())
+				.andExpect(jsonPath("$.code").value("IDEMPOTENCY_KEY_REUSED"));
+
+		mvc.perform(get("/api/v1/community/feed").with(user(OTHER_SUBJECT)))
+				.andExpect(status().isOk())
+				.andExpect(jsonPath("$.items[0].sensitiveContentWarning").value("SENSITIVE_CONTENT"));
+		mvc.perform(get("/api/v1/community/posts/{postId}", postId).with(user(OTHER_SUBJECT)))
+				.andExpect(status().isOk())
+				.andExpect(jsonPath("$.sensitiveContentWarning").value("SENSITIVE_CONTENT"));
+
+		mvc.perform(patch("/api/v1/community/posts/{postId}", postId).header("If-Match", "\"0\"")
+				.contentType(MediaType.APPLICATION_JSON)
+				.content(request("Không được sửa", List.of("MY_STORY"), List.of(), null, null))
+				.with(user(OTHER_SUBJECT)))
+				.andExpect(status().isNotFound());
+		mvc.perform(patch("/api/v1/community/posts/{postId}", postId).header("If-Match", "\"0\"")
+				.contentType(MediaType.APPLICATION_JSON)
+				.content(request("Đã bỏ cảnh báo", List.of("MY_STORY"), List.of(), null, null))
+				.with(user(OWNER_SUBJECT)))
+				.andExpect(status().isOk())
+				.andExpect(header().string("ETag", "\"1\""))
+				.andExpect(jsonPath("$.sensitiveContentWarning").doesNotExist());
+		mvc.perform(patch("/api/v1/community/posts/{postId}", postId).header("If-Match", "\"0\"")
+				.contentType(MediaType.APPLICATION_JSON)
+				.content(request("Ghi đè cũ", List.of("MY_STORY"), List.of(), null, "SENSITIVE_CONTENT"))
+				.with(user(OWNER_SUBJECT)))
+				.andExpect(status().isPreconditionFailed());
+
+		assertThat(jdbc.sql("select sensitive_content_warning from community_post where id = :id")
+				.param("id", postId).query(String.class).optional()).isEmpty();
+
+		mvc.perform(post("/api/v1/community/posts")
+				.header("Idempotency-Key", "post-distress-no-auto-0001")
+				.contentType(MediaType.APPLICATION_JSON)
+				.content(request("Hôm nay mình rất buồn và căng thẳng", List.of("MY_STORY"), List.of()))
+				.with(user(OTHER_SUBJECT)))
+				.andExpect(status().isCreated())
+				.andExpect(jsonPath("$.sensitiveContentWarning").doesNotExist());
+	}
+
+	@Test
 	void editUsesOwnerOnlyEtagAndDeleteTombstonesImmediately() throws Exception {
 		var created = createPost(OWNER_SUBJECT, "post-lifecycle-0001", "Chia sẻ ban đầu");
 		var postId = UUID.fromString(objectMapper.readTree(created).path("postId").asText());
@@ -341,12 +407,20 @@ class CommunityPostLifecycleIntegrationTests extends CommunityTestProperties {
 	}
 
 	private String request(String content, List<String> topics, List<UUID> mediaIds, UUID resourceId) throws Exception {
+		return request(content, topics, mediaIds, resourceId, null);
+	}
+
+	private String request(String content, List<String> topics, List<UUID> mediaIds, UUID resourceId,
+			String sensitiveContentWarning) throws Exception {
 		var payload = new LinkedHashMap<String, Object>();
 		payload.put("content", content);
 		payload.put("topics", topics);
 		payload.put("mediaIds", mediaIds);
 		if (resourceId != null) {
 			payload.put("resourceId", resourceId);
+		}
+		if (sensitiveContentWarning != null) {
+			payload.put("sensitiveContentWarning", sensitiveContentWarning);
 		}
 		return objectMapper.writeValueAsString(payload);
 	}

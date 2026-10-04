@@ -164,6 +164,64 @@ class CommunityModerationIntegrationTests extends CommunityTestProperties {
 				.param("id", caseId).query(Long.class).single()).isEqualTo(2);
 	}
 
+	@Test
+	void moderatorSensitiveWarningActionsAreAuditedIdempotentAndDoNotChangeVisibilityState() throws Exception {
+		var postId = createPost();
+		report(postId, "SEXUAL_OR_VIOLENT_CONTENT", "moderation-warning-report-0001");
+		var caseId = jdbc.sql("select id from community_moderation_case where target_type = 'POST'")
+				.query(UUID.class).single();
+
+		for (var attempt = 0; attempt < 2; attempt++) {
+			mvc.perform(post("/api/v1/community/admin/moderation-cases/{id}/actions", caseId).with(admin())
+					.header("Idempotency-Key", "moderation-warning-apply-0001")
+					.contentType(MediaType.APPLICATION_JSON)
+					.content("{\"action\":\"APPLY_SENSITIVE_WARNING\",\"reasonCode\":\"DISTRESSING_DETAIL\"}"))
+					.andExpect(status().isCreated())
+					.andExpect(jsonPath("$.actions[0].priorState").value("NONE"))
+					.andExpect(jsonPath("$.actions[0].resultingState").value("SENSITIVE_CONTENT"))
+					.andExpect(jsonPath("$.actions[0].targetVersion").value(1));
+		}
+		assertThat(jdbc.sql("select count(*) from community_moderation_action where case_id = :id")
+				.param("id", caseId).query(Long.class).single()).isOne();
+		assertThat(jdbc.sql("select state, sensitive_content_warning, version from community_post where id = :id")
+				.param("id", postId).query().singleRow())
+				.containsEntry("state", "ACTIVE")
+				.containsEntry("sensitive_content_warning", "SENSITIVE_CONTENT")
+				.containsEntry("version", 1L);
+		mvc.perform(get("/api/v1/community/posts/{id}", postId).with(user(REPORTER)))
+				.andExpect(status().isOk())
+				.andExpect(jsonPath("$.sensitiveContentWarning").value("SENSITIVE_CONTENT"));
+
+		mvc.perform(post("/api/v1/community/admin/moderation-cases/{id}/actions", caseId).with(admin())
+				.header("Idempotency-Key", "moderation-warning-remove-0001")
+				.contentType(MediaType.APPLICATION_JSON)
+				.content("{\"action\":\"REMOVE_SENSITIVE_WARNING\",\"reasonCode\":\"WARNING_NO_LONGER_NEEDED\"}"))
+				.andExpect(status().isCreated())
+				.andExpect(jsonPath("$.actions[1].priorState").value("SENSITIVE_CONTENT"))
+				.andExpect(jsonPath("$.actions[1].resultingState").value("NONE"))
+				.andExpect(jsonPath("$.actions[1].targetVersion").value(2));
+		assertThat(jdbc.sql("select sensitive_content_warning from community_post where id = :id")
+				.param("id", postId).query(String.class).optional()).isEmpty();
+	}
+
+	@Test
+	void sensitiveWarningActionRejectsCommentTargets() throws Exception {
+		var postId = createPost();
+		var commentId = createComment(postId);
+		reportTarget("COMMENT", commentId, "SEXUAL_OR_VIOLENT_CONTENT", "moderation-comment-warning-report-0001");
+		var caseId = jdbc.sql("select id from community_moderation_case where target_type = 'COMMENT'")
+				.query(UUID.class).single();
+
+		mvc.perform(post("/api/v1/community/admin/moderation-cases/{id}/actions", caseId).with(admin())
+				.header("Idempotency-Key", "moderation-comment-warning-0001")
+				.contentType(MediaType.APPLICATION_JSON)
+				.content("{\"action\":\"APPLY_SENSITIVE_WARNING\",\"reasonCode\":\"POSTS_ONLY\"}"))
+				.andExpect(status().isBadRequest())
+				.andExpect(jsonPath("$.code").value("VALIDATION_FAILED"));
+		assertThat(jdbc.sql("select count(*) from community_moderation_action where case_id = :id")
+				.param("id", caseId).query(Long.class).single()).isZero();
+	}
+
 	private UUID createPost() throws Exception {
 		var response = mvc.perform(post("/api/v1/community/posts").with(user(AUTHOR))
 				.header("Idempotency-Key", "moderation-post-create-0001")

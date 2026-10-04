@@ -37,6 +37,7 @@ Authoritative Community-owned personal-story publication. It is not Care, Journa
 | `request_fingerprint` | SHA-256 digest of normalized create input used to distinguish a safe retry from conflicting reuse; it is not Community content and is present exactly when `idempotency_key` is present. |
 | `author_mode` | Author-selected public identity mode for this post: `PROFILE` renders the current Community display identity, while `ANONYMOUS` returns a neutral name with no Community profile identifier or avatar that can link the post publicly; the private owner reference remains available only for authorization, moderation, and audit. |
 | `resource_id` | Nullable stable UUID logically referencing a Content-owned published Resource selected by the author. Community stores no Resource body or version and has no cross-database foreign key; current availability and display metadata are resolved through the Content REST contract. |
+| `sensitive_content_warning` | Nullable explicit presentation-governance marker. The only V1 value is `SENSITIVE_CONTENT`, selected by the author or an authorized moderator; it is never inferred from sentiment, distress, Care, assessment, Journal/AI, diagnosis, or severity data and does not replace the post lifecycle state. |
 | `published_at` | Immutable UTC publication instant used as the primary newest-first cursor key. |
 | `updated_at` | UTC instant of the latest persisted owner or moderation change. |
 | `version` | Optimistic-lock counter reserved for owner edits/deletion and moderation changes. |
@@ -221,8 +222,8 @@ Append-only ADMIN decision record preserving exact actor, reason, target version
 | --- | --- |
 | `id`, `case_id` | Immutable action UUID and owning moderation case. |
 | `actor_subject` | Private ADMIN Identity subject used for accountability. |
-| `action`, `reason_code` | Bounded governed decision and stable rationale code. |
-| `prior_state`, `resulting_state`, `target_version` | Exact transition and resulting target version. |
+| `action`, `reason_code` | Bounded governed decision and stable rationale code; post actions include explicit `APPLY_SENSITIVE_WARNING` and `REMOVE_SENSITIVE_WARNING` without automatic classification. |
+| `prior_state`, `resulting_state`, `target_version` | Exact lifecycle or warning transition and resulting target version. Warning actions record `NONE`/`SENSITIVE_CONTENT` and leave the target lifecycle untouched. |
 | `idempotency_key`, `request_fingerprint` | ADMIN-scoped retry identity and normalized SHA-256 command fingerprint. |
 | `created_at` | Immutable committed-decision instant. |
 

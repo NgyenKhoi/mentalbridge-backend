@@ -196,7 +196,7 @@ class CommunityModerationService {
 						rs.getObject(2, UUID.class), rs.getObject(3, UUID.class))).optional()
 				.orElseThrow(CommunityModerationService::caseNotFound);
 		var prior = currentTarget(target);
-		var resulting = applyAction(actorSubject, caseId, target, prior, request);
+		var outcome = applyAction(actorSubject, caseId, target, prior, request);
 		var now = clock.instant();
 		jdbc.sql("""
 				insert into community_moderation_action
@@ -204,7 +204,8 @@ class CommunityModerationService {
 				values (:id, :caseId, :actor, :action, :reason, :prior, :result, :version, :key, :fingerprint, :now)
 				""").param("id", UUID.randomUUID()).param("caseId", caseId).param("actor", actorSubject)
 				.param("action", request.action().name()).param("reason", request.reasonCode())
-				.param("prior", prior.state()).param("result", resulting.state()).param("version", resulting.version())
+				.param("prior", outcome.priorState()).param("result", outcome.resultingState())
+				.param("version", outcome.target().version())
 				.param("key", idempotencyKey).param("fingerprint", fingerprint).param("now", timestamp(now)).update();
 		jdbc.sql("update community_moderation_case set state = 'RESOLVED', updated_at = :now, version = version + 1 where id = :id")
 				.param("now", timestamp(now)).param("id", caseId).update();
@@ -237,14 +238,14 @@ class CommunityModerationService {
 
 	private Snapshot visibleSnapshot(TargetType type, UUID targetId, UUID viewerId) {
 		var sql = type == TargetType.POST ? """
-				select post.content, post.state, post.version, post.author_profile_id
+				select post.content, post.state, post.version, post.author_profile_id, post.sensitive_content_warning
 				from community_post post where post.id = :target and post.state = 'ACTIVE'
 				and not exists (select 1 from community_block block where
 				(block.blocker_profile_id = :viewer and block.blocked_profile_id = post.author_profile_id)
 				or (block.blocker_profile_id = post.author_profile_id and block.blocked_profile_id = :viewer))
 				and not exists (select 1 from community_content_hide hide where hide.hider_profile_id = :viewer and hide.target_type = 'POST' and hide.target_id = post.id)
 				""" : """
-				select comment.content, comment.state, comment.version, comment.author_profile_id
+				select comment.content, comment.state, comment.version, comment.author_profile_id, cast(null as varchar)
 				from community_comment comment join community_post post on post.id = comment.post_id
 				where comment.id = :target and comment.state = 'ACTIVE' and post.state = 'ACTIVE'
 				and not exists (select 1 from community_block block where
@@ -253,19 +254,28 @@ class CommunityModerationService {
 				and not exists (select 1 from community_content_hide hide where hide.hider_profile_id = :viewer and ((hide.target_type = 'POST' and hide.target_id = post.id) or (hide.target_type = 'COMMENT' and hide.target_id = comment.id)))
 				""";
 		return jdbc.sql(sql).param("target", targetId).param("viewer", viewerId)
-				.query((rs, rowNum) -> new Snapshot(rs.getString(1), rs.getString(2), rs.getLong(3), rs.getObject(4, UUID.class)))
+				.query((rs, rowNum) -> new Snapshot(rs.getString(1), rs.getString(2), rs.getLong(3),
+						rs.getObject(4, UUID.class), rs.getString(5)))
 				.optional().orElseThrow(type == TargetType.POST ? CommunityApiException::postNotFound : CommunityApiException::commentNotFound);
 	}
 
 	private Snapshot currentTarget(Target target) {
 		var table = target.type() == TargetType.POST ? "community_post" : "community_comment";
-		return jdbc.sql("select content, state, version, author_profile_id from " + table + " where id = :id for update")
+		var warning = target.type() == TargetType.POST ? "sensitive_content_warning" : "cast(null as varchar)";
+		return jdbc.sql("select content, state, version, author_profile_id, " + warning + " from " + table
+				+ " where id = :id for update")
 				.param("id", target.id()).query((rs, rowNum) -> new Snapshot(rs.getString(1), rs.getString(2),
-						rs.getLong(3), rs.getObject(4, UUID.class))).optional().orElseThrow(CommunityModerationService::caseNotFound);
+						rs.getLong(3), rs.getObject(4, UUID.class), rs.getString(5))).optional()
+				.orElseThrow(CommunityModerationService::caseNotFound);
 	}
 
-	private Snapshot applyAction(UUID actor, UUID caseId, Target target, Snapshot prior, CreateModerationActionRequest request) {
-		if (request.action() == Action.NO_ACTION) return prior;
+	private ActionOutcome applyAction(UUID actor, UUID caseId, Target target, Snapshot prior,
+			CreateModerationActionRequest request) {
+		if (request.action() == Action.NO_ACTION) return unchanged(prior, prior.state());
+		if (request.action() == Action.APPLY_SENSITIVE_WARNING
+				|| request.action() == Action.REMOVE_SENSITIVE_WARNING) {
+			return applySensitiveWarning(target, prior, request.action());
+		}
 		if (request.action() == Action.RESTRICT_COMMUNITY_ACCESS) {
 			jdbc.sql("""
 					insert into community_access_restriction
@@ -276,7 +286,8 @@ class CommunityModerationService {
 					lifted_by_subject = null, lifted_at = null
 					""").param("profile", target.authorId()).param("caseId", caseId).param("reason", request.reasonCode())
 					.param("actor", actor).param("now", timestamp(clock.instant())).update();
-			return new Snapshot(prior.content(), "COMMUNITY_ACCESS_RESTRICTED", prior.version(), prior.authorId());
+			var resulting = new Snapshot(prior.content(), prior.state(), prior.version(), prior.authorId(), prior.warning());
+			return new ActionOutcome(resulting, prior.state(), "COMMUNITY_ACCESS_RESTRICTED");
 		}
 		var nextState = switch (request.action()) {
 			case HIDE -> "MODERATION_HIDDEN";
@@ -284,7 +295,7 @@ class CommunityModerationService {
 			case RESTORE -> "ACTIVE";
 			default -> prior.state();
 		};
-		if (nextState.equals(prior.state())) return prior;
+		if (nextState.equals(prior.state())) return unchanged(prior, prior.state());
 		if (request.action() == Action.RESTORE && !prior.state().startsWith("MODERATION_")) throw invalid("Only moderated content can be restored");
 		var table = target.type() == TargetType.POST ? "community_post" : "community_comment";
 		jdbc.sql("update " + table + " set state = :state, updated_at = :now, version = version + 1 where id = :id")
@@ -299,7 +310,35 @@ class CommunityModerationService {
 					.param("content", prior.content()).param("state", nextState).param("version", prior.version() + 1)
 					.param("now", timestamp(clock.instant())).update();
 		}
-		return new Snapshot(prior.content(), nextState, prior.version() + 1, prior.authorId());
+		var resulting = new Snapshot(prior.content(), nextState, prior.version() + 1, prior.authorId(), prior.warning());
+		return new ActionOutcome(resulting, prior.state(), nextState);
+	}
+
+	private ActionOutcome applySensitiveWarning(Target target, Snapshot prior, Action action) {
+		if (target.type() != TargetType.POST) {
+			throw invalid("Sensitive-content warnings apply only to posts");
+		}
+		var desired = action == Action.APPLY_SENSITIVE_WARNING ? "SENSITIVE_CONTENT" : null;
+		var priorWarning = warningState(prior.warning());
+		var resultingWarning = warningState(desired);
+		if (java.util.Objects.equals(prior.warning(), desired)) {
+			return new ActionOutcome(prior, priorWarning, resultingWarning);
+		}
+		jdbc.sql("""
+				update community_post
+				set sensitive_content_warning = :warning, updated_at = :now, version = version + 1
+				where id = :id
+				""").param("warning", desired).param("now", timestamp(clock.instant())).param("id", target.id()).update();
+		var resulting = new Snapshot(prior.content(), prior.state(), prior.version() + 1, prior.authorId(), desired);
+		return new ActionOutcome(resulting, priorWarning, resultingWarning);
+	}
+
+	private ActionOutcome unchanged(Snapshot snapshot, String state) {
+		return new ActionOutcome(snapshot, state, state);
+	}
+
+	private String warningState(String warning) {
+		return warning == null ? "NONE" : warning;
 	}
 
 	private void adjustCommentCount(UUID commentId, String prior, String next) {
@@ -375,7 +414,10 @@ class CommunityModerationService {
 		return new CommunityApiException(HttpStatus.NOT_FOUND, "COMMUNITY_MODERATION_CASE_NOT_FOUND", "Moderation case was not found");
 	}
 
-	private record Snapshot(String content, String state, long version, UUID authorId) {
+	private record Snapshot(String content, String state, long version, UUID authorId, String warning) {
+	}
+
+	private record ActionOutcome(Snapshot target, String priorState, String resultingState) {
 	}
 
 	private record Target(TargetType type, UUID id, UUID authorId) {

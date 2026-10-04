@@ -82,3 +82,10 @@ MB-574 does not upload media, add comments/reactions/bookmarks, report, moderate
 - Root comments route to the post owner, replies route to the parent-comment owner, and reactions route to the post owner. Self-interactions, bookmarks, reaction replacement/removal, and repeated logical interactions do not publish another fact.
 - The event contains only its UUID/version, actor Community profile UUID, private target-owner routing UUID, target type/UUID, bounded interaction kind, occurrence time, and a Community-post deep-link descriptor. It excludes all content, media, display identity, email, and Care/Journal/AI/SupportPlan data.
 - Kafka relay is post-commit, retryable, and optional at runtime. Kafka or downstream Notification absence cannot fail or roll back Community REST commands, and Notification consumption remains outside Community authority.
+
+## MB-615 bounded sensitive-content warning
+
+- An active post may carry no warning or the single explicit governance marker `SENSITIVE_CONTENT`. The author may add or remove it through the existing owner-only, exact-version post update flow.
+- Authorized ADMIN moderation may apply or remove the marker through idempotent, append-only moderation actions. Those actions audit `NONE` and `SENSITIVE_CONTENT` transitions while leaving the post lifecycle unchanged.
+- The marker is returned by feed/detail only as optional presentation metadata. It contains no body, diagnosis, severity, sentiment result, Care, assessment, Journal/AI, or SupportPlan data.
+- No runtime path automatically derives the marker from negative language or distress. Warning changes never replace `MODERATION_HIDDEN` or `MODERATION_REMOVED`, and hidden/removed targets continue to fail closed.

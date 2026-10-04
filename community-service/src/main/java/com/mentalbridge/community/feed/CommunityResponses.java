@@ -17,6 +17,7 @@ public final class CommunityResponses {
 	public record PostSummary(UUID postId, Author author, String contentPreview, List<CommunityTopic> topics,
 			List<Media> media, MediaAvailability mediaAvailability,
 			@JsonInclude(JsonInclude.Include.NON_NULL) ResourceAttachment resourceAttachment,
+			@JsonInclude(JsonInclude.Include.NON_NULL) CommunitySensitiveContentWarning sensitiveContentWarning,
 			Counts counts, ViewerState viewerState, Instant publishedAt,
 			Instant updatedAt) {
 	}
@@ -24,6 +25,7 @@ public final class CommunityResponses {
 	public record PostDetail(UUID postId, Author author, String content, List<CommunityTopic> topics,
 			List<Media> media, MediaAvailability mediaAvailability,
 			@JsonInclude(JsonInclude.Include.NON_NULL) ResourceAttachment resourceAttachment,
+			@JsonInclude(JsonInclude.Include.NON_NULL) CommunitySensitiveContentWarning sensitiveContentWarning,
 			Counts counts, ViewerState viewerState, Instant publishedAt,
 			Instant updatedAt) {
 	}

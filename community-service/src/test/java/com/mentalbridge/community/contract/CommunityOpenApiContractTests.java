@@ -104,9 +104,10 @@ class CommunityOpenApiContractTests {
 
 		assertThat(author.getProperties()).containsOnlyKeys("communityProfileId", "displayName", "avatarPreset", "state");
 		assertThat(post.getProperties()).containsOnlyKeys("postId", "author", "contentPreview", "topics", "media",
-				"mediaAvailability", "resourceAttachment", "counts", "viewerState", "publishedAt", "updatedAt");
+				"mediaAvailability", "resourceAttachment", "sensitiveContentWarning", "counts", "viewerState",
+				"publishedAt", "updatedAt");
 		assertThat(createPost.getProperties()).containsOnlyKeys("content", "topics", "mediaIds", "authorMode",
-				"resourceId");
+				"resourceId", "sensitiveContentWarning");
 		var attachment = api.getComponents().getSchemas().get("CommunityResourceAttachment");
 		assertThat(attachment.getProperties()).containsOnlyKeys("resourceId");
 		assertThat(feedParameters).extracting(parameter -> parameter.getName())
@@ -115,6 +116,16 @@ class CommunityOpenApiContractTests {
 		assertThat(topicFilter.getExplode()).isTrue();
 		assertThat(topicFilter.getSchema().getMaxItems()).isEqualTo(3);
 		assertThat(topicFilter.getSchema().getUniqueItems()).isTrue();
+	}
+
+	@Test
+	void sensitiveContentWarningContractIsBoundedAndVersioned() {
+		var api = new OpenAPIV3Parser().read(contract().toString());
+		assertThat(api.getInfo().getVersion()).isEqualTo("1.9.0");
+		assertThat(api.getComponents().getSchemas().get("CommunitySensitiveContentWarning").getEnum())
+				.containsExactly("SENSITIVE_CONTENT");
+		assertThat(api.getComponents().getSchemas().get("ModerationAction").getEnum())
+				.contains("APPLY_SENSITIVE_WARNING", "REMOVE_SENSITIVE_WARNING");
 	}
 
 	@Test

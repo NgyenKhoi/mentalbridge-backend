@@ -1,0 +1,18 @@
+databaseChangeLog:
+  - changeSet:
+      id: 0014-community-sensitive-content-warning
+      author: mentalbridge
+      comment: Persist bounded Community sensitive-content presentation state and allow audited moderator warning actions for MB-615.
+      changes:
+        - sql:
+            splitStatements: false
+            sql: |
+              ALTER TABLE community_post
+                  ADD COLUMN sensitive_content_warning varchar(32),
+                  ADD CONSTRAINT ck_community_post_sensitive_warning
+                      CHECK (sensitive_content_warning IS NULL OR sensitive_content_warning = 'SENSITIVE_CONTENT');
+
+              ALTER TABLE community_moderation_action
+                  DROP CONSTRAINT ck_community_moderation_action_action,
+                  ADD CONSTRAINT ck_community_moderation_action_action
+                      CHECK (action IN ('NO_ACTION', 'HIDE', 'REMOVE', 'RESTORE', 'RESTRICT_COMMUNITY_ACCESS', 'APPLY_SENSITIVE_WARNING', 'REMOVE_SENSITIVE_WARNING'));
