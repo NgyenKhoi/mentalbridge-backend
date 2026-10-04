@@ -43,6 +43,7 @@ public class SecurityConfiguration {
 								"/internal/v1/appointments/*/chat-evidence",
 								"/internal/v1/appointments/*/reusable-session-summaries/*")
 						.hasAnyRole("USER", "SPECIALIST")
+						.requestMatchers("/internal/v1/specialist/client-relationships").hasRole("SPECIALIST")
 						.requestMatchers("/api/v1/service-credits").hasRole("USER")
 						.requestMatchers("/api/v1/specialist/dashboard", "/api/v1/specialist/appointments/**")
 						.hasRole("SPECIALIST")

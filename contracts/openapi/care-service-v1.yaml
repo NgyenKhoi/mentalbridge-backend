@@ -883,6 +883,25 @@ paths:
         "403": { $ref: "#/components/responses/ForbiddenProblem" }
         "404": { $ref: "#/components/responses/NotFoundProblem" }
         "410": { $ref: "#/components/responses/ConflictProblem" }
+  /api/v1/specialist/client-continuity:
+    x-mentalbridge-status: implemented
+    get:
+      tags: [Consultation brief]
+      operationId: listAssignedSpecialistClientContinuity
+      summary: List appointment-bounded client continuity rows
+      description: Composes Consultation-owned assigned relationships with Care-owned display identity and current brief-access provenance. It returns no brief content, raw journal, assessment answers, AI analysis, SupportPlan state, or private chat.
+      security: [{ bearerAuth: [] }]
+      parameters:
+        - $ref: "#/components/parameters/CorrelationId"
+      responses:
+        "200":
+          description: Authorized current and recent consultation relationships
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/SpecialistClientContinuityList" }
+        "401": { $ref: "#/components/responses/UnauthorizedProblem" }
+        "403": { $ref: "#/components/responses/ForbiddenProblem" }
+        "503": { $ref: "#/components/responses/DependencyProblem" }
   /api/v1/support-evaluations:
     x-mentalbridge-status: implemented
     get:
@@ -2078,7 +2097,7 @@ components:
     SpecialistConsultationBrief:
       type: object
       additionalProperties: false
-      required: [snapshotId, appointmentId, currentSituation, supportEvaluationId, screeningContext, userGoals, snapshotVersion, approvedAt]
+      required: [snapshotId, appointmentId, currentSituation, supportEvaluationId, screeningContext, userGoals, snapshotVersion, approvedAt, accessStartAt, accessEndAt, sourceType]
       properties:
         snapshotId: { type: string, format: uuid }
         appointmentId: { type: string, format: uuid }
@@ -2096,6 +2115,39 @@ components:
           items: { type: string, minLength: 1, maxLength: 200 }
         snapshotVersion: { type: integer, format: int64, minimum: 1 }
         approvedAt: { type: string, format: date-time }
+        accessStartAt: { type: string, format: date-time }
+        accessEndAt: { type: string, format: date-time }
+        sourceType: { type: string, const: CONSULTATION_BRIEF }
+    SpecialistClientContinuityItem:
+      type: object
+      additionalProperties: false
+      required: [appointmentId, userAccountId, userDisplayName, status, modality, scheduledStartAt, scheduledEndAt, appointmentVersion, briefAccessState, briefSnapshotVersion, briefAccessStartAt, briefAccessEndAt]
+      properties:
+        appointmentId: { type: string, format: uuid }
+        userAccountId: { type: string, format: uuid }
+        userDisplayName: { type: string, minLength: 1, maxLength: 120 }
+        status: { type: string, enum: [CONFIRMED, IN_PROGRESS, SESSION_ENDED, COMPLETED] }
+        modality: { type: string, enum: [IN_APP_CHAT, IN_APP_VIDEO] }
+        scheduledStartAt: { type: string, format: date-time }
+        scheduledEndAt: { type: string, format: date-time }
+        appointmentVersion: { type: integer, format: int64, minimum: 0 }
+        briefAccessState: { type: string, enum: [NOT_SHARED, REVOKED, STALE, TOO_EARLY, AVAILABLE, EXPIRED, UNAVAILABLE] }
+        briefSnapshotVersion: { type: [integer, 'null'], format: int64, minimum: 1 }
+        briefAccessStartAt: { type: [string, 'null'], format: date-time }
+        briefAccessEndAt: { type: [string, 'null'], format: date-time }
+    SpecialistClientContinuityList:
+      type: object
+      additionalProperties: false
+      required: [items, count, generatedAt, recentSince, policyVersion]
+      properties:
+        items:
+          type: array
+          maxItems: 200
+          items: { $ref: "#/components/schemas/SpecialistClientContinuityItem" }
+        count: { type: integer, minimum: 0, maximum: 200 }
+        generatedAt: { type: string, format: date-time }
+        recentSince: { type: string, format: date-time }
+        policyVersion: { type: string, const: specialist-client-continuity-v1 }
     ReassessmentPeriod:
       type: object
       additionalProperties: false
@@ -3592,6 +3644,11 @@ components:
           schema: { $ref: '#/components/schemas/Problem' }
     SupportPlanDependencyProblem:
       description: Entitlement or exact resource eligibility could not be trusted (ENTITLEMENT_UNAVAILABLE or RESOURCE_ELIGIBILITY_UNAVAILABLE); no draft was created
+      content:
+        application/problem+json:
+          schema: { $ref: '#/components/schemas/Problem' }
+    DependencyProblem:
+      description: An authoritative dependency could not be verified; access fails closed.
       content:
         application/problem+json:
           schema: { $ref: '#/components/schemas/Problem' }

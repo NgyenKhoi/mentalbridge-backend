@@ -35,7 +35,11 @@ separate active-reservation limits `0/2/4`. Replacement requests retain the old
 appointment snapshot while moving its credit and reservation atomically.
 Appointment existence alone does not grant sensitive data access;
 Care owns the user-approved appointment-scoped `ConsultationBrief` and sharing
-decision.
+decision. MB-592 exposes a separate internal, audited continuity projection for
+the authenticated currently approved specialist. It contains only assigned
+`CONFIRMED`/in-flight appointments and appointments ending within the last 90
+days, is capped at 200 rows, and never acts as a user directory or carries Care
+content.
 MB-380 adds optimistic, idempotent owner cancellation and completes
 reschedule-as-new audit. Requested cancellations and confirmations at least 24
 hours before start release the held credit; later confirmed cancellations
@@ -159,6 +163,15 @@ profiles fail closed with blocked workload sections. The projection contains
 no client identity, check-in, clinical risk, recovery/adherence, journal,
 assessment-answer, chat-content, or private-note fields, and it performs no
 cross-service database query.
+
+## Implemented MB-592 endpoint
+
+- `GET /internal/v1/specialist/client-relationships`
+
+The endpoint returns appointment/user identifiers, status, modality, exact
+schedule, appointment version, projection time/window, and policy version only.
+Suspended, rejected, pending, or missing specialist profiles fail closed and
+every list attempt records a content-free audit fact.
 
 Availability accepts only exact future 60-minute `IN_APP_CHAT` and gated
 `IN_APP_VIDEO` slots. It stores UTC instants and an IANA display timezone,

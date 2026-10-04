@@ -122,6 +122,7 @@ MB-178 does not implement specialist grants, automatic follow-up, clinical progr
 - [x] CARE-07g Implement MB-559 explicit reassessment self-report, deletion semantics, and canonical v2 composition.
 - [x] CARE-07h Implement MB-381 ConsultationBrief draft, exact approval snapshot, assigned-specialist window, revoke/delete, and minimized audit.
 - [x] CARE-07i Implement MB-560 exact specialist resource proposals, Care-owned review, explicit owner decision, and atomic idempotent replacement.
+- [x] CARE-07j Implement MB-592 appointment-bounded specialist client continuity composition with current display identity, ConsultationBrief access provenance, minimized audit, and fail-closed suspension/revocation/expiry/deletion behavior.
 - [ ] CARE-08 Add the ADR 0022 explicit reassessment self-report and governed plan-review outcome contract; follow-up, other analytics projections, export and deletion participation remain open.
 - [ ] CARE-09 Verify scoring boundaries, item-9 safety, stale/missing input, concurrency, rollback/outbox, duplicate/reordered events and dependency failures.
 - [ ] CARE-10 Add safe observability/configuration, update README, and pass module/contract/migration gates.

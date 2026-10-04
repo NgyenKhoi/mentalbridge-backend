@@ -21,6 +21,7 @@ delivery, or SupportPlan state.
 | Availability | Publish non-overlapping 60-minute `IN_APP_CHAT` or `IN_APP_VIDEO` slots | New in-person/phone/external links rejected; invalid overlap rejected; video runtime requires its detailed contract |
 | Appointment | Request, accept/reject/expire, cancel/reschedule, end channel, evaluate evidence, complete/no-show/dispute | Booking requires an allowed package, `AVAILABLE` credit, reservation capacity, and selectable slot; reschedule replaces one logical reservation; at 60 minutes record `SESSION_ENDED`, while only accepted server/provider evidence completes and consumes credit |
 | Brief, summary, and next steps | Expose a user-approved pre-session `ConsultationBrief`; create post-session `SessionSummary`/`AgreedNextSteps`; submit resource proposal | No raw journals/answers/full AI history; reuse requires user approval; resource proposal becomes Care-owned `PlanChangeRequest`, not another plan |
+| Specialist client continuity | Return a bounded authority projection of the authenticated approved specialist's confirmed, in-flight, and recent appointment relationships | Maximum 200 rows and 90 recent days; appointment facts only; suspension fails closed; every list attempt is content-free audited; never a general user directory |
 | Payout | Encrypt/verify specialist destinations; submit idempotent MoMo payouts; reconcile result/IPN/status | MoMo is the sole production provider after credentials; `UNKNOWN` queried, not blindly retried; real payout currency must be approved |
 | Consented view/dashboard | Show the specialist's current Consultation-owned workload; add separately authorized owner projections only when required | Profile eligibility fails closed; every metric exposes source/freshness; no health-data fabrication, cross-service database query, or remote call inside transaction |
 | Review/moderation | One review after completed appointment; owner applies reviewed action | Participant/completion verified; duplicate rejected; evidence minimized; action/history auditable |
@@ -53,6 +54,10 @@ delivery, or SupportPlan state.
   at most five preview items per section with source/as-of metadata. Any
   non-approved profile produces blocked empty sections; no client identity or
   health information is part of the response.
+- MB-592 adds the internal specialist-client relationship projection used by
+  Care. It rechecks current specialist approval on every request, bounds rows
+  to current or 90-day-recent eligible appointment states, caps the result at
+  200, and persists no health content in its audit.
 
 ## Ordered tasks
 
@@ -75,6 +80,6 @@ delivery, or SupportPlan state.
   `0/2/4` reservation caps, chat channel end, and race-safe evidence-backed chat
   settlement are implemented; VND/MoMo purchase/upgrade and video evidence
   remain delivery-gated without rewriting historical v1 ledger periods.
-- [~] CON-08 MB-381 implements the assigned specialist's read-only approved pre-session brief path through Care, and MB-591 implements the local operational dashboard without health data; broader consented health projections, reviews, and moderation remain deferred.
+- [~] CON-08 MB-381 implements the assigned specialist's read-only approved pre-session brief path through Care, MB-591 implements the local operational dashboard without health data, and MB-592 adds the bounded current/recent client relationship projection; broader consented health projections, reviews, and moderation remain deferred.
 - [ ] CON-09 Verify simultaneous booking/upgrade, exact proration rounding, transition conflicts, authorization, provider timeout, webhook/command duplicates, expiry and outbox/event duplicates.
 - [ ] CON-10 Add observability/configuration, update README, and pass module/contract/migration gates.

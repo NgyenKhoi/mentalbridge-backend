@@ -375,9 +375,9 @@ context, and follow-up charts avoid diagnostic or causal claims.
 
 **Scope:** workload/dashboard, appointments and unread chats, consenting-user list/details, scoped assessment/emotion/journal views, earnings, payout history, and pending payout.
 
-**Main flow:** Consultation composes its own workload and authoritative earnings/provider-payout views, and requests the minimum authorized health projection from Care or Journal/AI.
+**Main flow:** Consultation composes its own workload and authoritative earnings/provider-payout views, and requests the minimum authorized health projection from Care or Journal/AI. The client continuity list is derived only from the currently approved specialist's confirmed, in-flight, or recent appointment relationships; Care adds a display name and current access provenance without turning the view into a user directory.
 
-**Exceptions and acceptance:** each sensitive read checks the current exact grant and fails closed on timeout/revocation. Journal access is selected-entry/range scoped, not all past/future by default. Dashboard projections expose freshness and never become authorization truth. Other services cannot calculate financial balances independently from Consultation/Billing.
+**Exceptions and acceptance:** each sensitive read checks the current exact grant and fails closed on timeout, suspension, revocation, deletion, schedule drift, or expiry. Journal access is selected-entry/range scoped, not all past/future by default. The continuity list excludes raw journals, answers, AI output, SupportPlan state, private chat, and other-specialist notes. Dashboard projections expose freshness and never become authorization truth. Other services cannot calculate financial balances independently from Consultation/Billing.
 
 ### UC-07 Administration
 

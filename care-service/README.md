@@ -204,6 +204,14 @@ MB-89 implements the deterministic PHQ-9 runtime. MB-178 adds the backend-owned,
 ## Integration
 
 - Inbound REST: the canonical Care OpenAPI file is the source of truth.
+- Inbound specialist continuity REST: MB-592 exposes
+  `GET /api/v1/specialist/client-continuity`. Care composes the bounded
+  Consultation relationship authority with only its own display name and
+  current ConsultationBrief access provenance. The response contains no raw
+  journal, screening answers, AI analysis, SupportPlan state, chat content, or
+  another specialist's notes. Dependency failure, suspension, revocation,
+  deletion, schedule/version drift, early access, and expiry remain explicit
+  fail-closed states; the browser cannot create or extend access.
 - Inbound Support Guide REST: `care-support-guide-v1.yaml` defines authenticated generation, owner-only history/detail, idempotency, immutable provenance, and stable resource-resolution states. It is intentionally separate from SupportPlan lifecycle.
 - Outbound REST: the consumer-owned OpenFeign Resource Eligibility v1 adapter queries Content with the end-user bearer context, explicit correlation, 500 ms connect and 2 s read deadlines, bounded exponential transient retry with jitter, and a Resilience4j circuit breaker. HTTP 429 is not retried because the provider contract does not define `Retry-After`; timeout, dependency errors, malformed payloads and enum evolution map every candidate to `UNAVAILABLE`. Callers must commit no proposal mutation. No Care transaction spans the call.
 - Outbound reassessment REST: the consumer-owned Journal/AI adapter forwards the verified end-user bearer and correlation ID to the canonical `REASSESSMENT_SUMMARY` projection. It applies a 200 ms connect deadline, 800 ms read deadline, at most one transient retry, and a separate circuit breaker. Startup rejects overrides whose conservative two-attempt budget exceeds 2.5 seconds, preserving time for Care to return the explicit safe fallback before the three-second caller deadline. It validates attribution, exact periods, source counts, coverage sufficiency, directions, and provenance before persistence. No transaction spans the remote call; every safe fallback is snapshotted explicitly.

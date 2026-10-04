@@ -55,6 +55,7 @@ class CareOpenApiContractTests {
 			"POST /api/v1/consultation-briefs/{appointmentId}/approve",
 			"POST /api/v1/consultation-briefs/{appointmentId}/revoke",
 			"GET /api/v1/specialist/consultation-briefs/{appointmentId}",
+			"GET /api/v1/specialist/client-continuity",
 			"GET /api/v1/consultation-briefs/screening-contexts",
 			"POST /api/v1/plan-change-requests",
 			"GET /api/v1/plan-change-requests/by-proposal/{proposalId}",
@@ -111,6 +112,7 @@ class CareOpenApiContractTests {
 			"/api/v1/consultation-briefs/{appointmentId}/approve",
 			"/api/v1/consultation-briefs/{appointmentId}/revoke",
 			"/api/v1/specialist/consultation-briefs/{appointmentId}",
+			"/api/v1/specialist/client-continuity",
 			"/api/v1/consultation-briefs/screening-contexts",
 			"/api/v1/plan-change-requests",
 			"/api/v1/plan-change-requests/by-proposal/{proposalId}",
@@ -168,6 +170,7 @@ class CareOpenApiContractTests {
 			"POST /api/v1/consultation-briefs/{appointmentId}/approve",
 			"POST /api/v1/consultation-briefs/{appointmentId}/revoke",
 			"GET /api/v1/specialist/consultation-briefs/{appointmentId}",
+			"GET /api/v1/specialist/client-continuity",
 			"GET /api/v1/consultation-briefs/screening-contexts",
 			"POST /api/v1/plan-change-requests",
 			"GET /api/v1/plan-change-requests/by-proposal/{proposalId}",
@@ -343,7 +346,21 @@ class CareOpenApiContractTests {
 		assertThat(brief.getProperties()).containsKeys("approvedSnapshotId", "sharingStatus", "accessStartAt",
 				"accessEndAt", "version").doesNotContainKeys("assessmentAnswers", "journalContent", "chat", "diagnosis");
 		assertThat(specialist.getProperties()).containsOnlyKeys("snapshotId", "appointmentId", "currentSituation",
-				"supportEvaluationId", "screeningContext", "userGoals", "snapshotVersion", "approvedAt");
+				"supportEvaluationId", "screeningContext", "userGoals", "snapshotVersion", "approvedAt",
+				"accessStartAt", "accessEndAt", "sourceType");
+	}
+
+	@Test
+	void specialistClientContinuityContainsOnlyIdentityAppointmentAndAccessProvenance() {
+		var contract = Path.of("..", "contracts", "openapi", "care-service-v1.yaml").toAbsolutePath();
+		var openApi = new OpenAPIV3Parser().readLocation(contract.toUri().toString(), null, null).getOpenAPI();
+		var item = openApi.getComponents().getSchemas().get("SpecialistClientContinuityItem");
+
+		assertThat(item.getProperties()).containsOnlyKeys("appointmentId", "userAccountId", "userDisplayName",
+				"status", "modality", "scheduledStartAt", "scheduledEndAt", "appointmentVersion",
+				"briefAccessState", "briefSnapshotVersion", "briefAccessStartAt", "briefAccessEndAt")
+				.doesNotContainKeys("journal", "assessmentAnswers", "assessmentScore", "aiAnalysis", "supportPlan",
+						"chat", "privateNotes", "diagnosis");
 	}
 
 	@Test

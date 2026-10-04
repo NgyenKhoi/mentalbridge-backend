@@ -19,6 +19,7 @@ class ConsultationOpenApiContractTests {
 			"GET /internal/v1/entitlements/current",
 			"GET /internal/v1/appointments/{appointmentId}/consultation-brief-context",
 			"GET /internal/v1/appointments/{appointmentId}/reusable-session-summaries/{summaryId}",
+			"GET /internal/v1/specialist/client-relationships",
 			"GET /internal/v1/resource-proposals/{proposalId}",
 			"GET /internal/v1/appointments/{conversationId}/chat-eligibility",
 			"POST /internal/v1/appointments/{appointmentId}/chat-evidence",
@@ -149,6 +150,17 @@ class ConsultationOpenApiContractTests {
 		assertThat(appointment.getProperties()).doesNotContainKeys("userAccountId", "clientName", "checkIns",
 				"riskScore", "recovery", "adherence", "journal", "assessmentAnswers", "notes");
 		assertThat(((Schema<?>) appointments.getProperties().get("items")).getMaxItems()).isEqualTo(5);
+	}
+
+	@Test
+	void specialistClientRelationshipProjectionContainsOnlyAppointmentAuthorityFacts() {
+		var contract = Path.of("..", "contracts", "openapi", "consultation-service-v1.yaml").toString();
+		var api = new OpenAPIV3Parser().read(contract);
+		var item = api.getComponents().getSchemas().get("SpecialistClientRelationship");
+
+		assertThat(item.getProperties()).containsOnlyKeys("appointmentId", "userAccountId", "status", "modality",
+				"scheduledStartAt", "scheduledEndAt", "appointmentVersion")
+				.doesNotContainKeys("displayName", "journal", "assessment", "chat", "supportPlan", "privateNotes");
 	}
 
 	@Test
