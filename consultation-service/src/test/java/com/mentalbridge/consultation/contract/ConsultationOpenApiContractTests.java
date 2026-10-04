@@ -38,6 +38,7 @@ class ConsultationOpenApiContractTests {
 			"GET /api/v1/appointments/{appointmentId}/session-summaries",
 			"PUT /api/v1/session-summaries/{summaryId}/reuse-consent",
 			"PUT /api/v1/agreed-next-steps/{nextStepId}",
+			"GET /api/v1/specialist/dashboard",
 			"GET /api/v1/specialist/appointments",
 			"GET /api/v1/specialist/appointments/{appointmentId}/session-summaries",
 			"POST /api/v1/specialist/appointments/{appointmentId}/session-summaries",
@@ -124,6 +125,24 @@ class ConsultationOpenApiContractTests {
 		assertThat(appointment.getRequired()).contains("replacesAppointmentId", "replacedByAppointmentId",
 				"cancelledAt", "cancellationReason", "cancellationActor", "cancellationCreditOutcome", "history");
 		assertThat(appointment.getProperties()).doesNotContainKeys("practiceLocationId", "phone", "meetingLink", "url");
+	}
+
+	@Test
+	void specialistDashboardIsBoundedOperationalAndContainsNoHealthData() {
+		var contract = Path.of("..", "contracts", "openapi", "consultation-service-v1.yaml").toString();
+		var api = new OpenAPIV3Parser().read(contract);
+		var dashboard = api.getComponents().getSchemas().get("SpecialistDashboard");
+		var appointment = api.getComponents().getSchemas().get("SpecialistDashboardAppointmentItem");
+		var appointments = api.getComponents().getSchemas().get("SpecialistDashboardAppointmentCollection");
+
+		assertThat(dashboard.getProperties()).containsOnlyKeys("source", "generatedAt", "operationalStatus",
+				"profile", "todayConfirmedSessions", "pendingAppointmentRequests", "nextAppointment",
+				"availability", "actionRequired");
+		assertThat(appointment.getProperties()).containsOnlyKeys("source", "asOf", "appointmentId", "status",
+				"modality", "scheduledStartAt", "scheduledEndAt", "timezone", "decisionDeadlineAt");
+		assertThat(appointment.getProperties()).doesNotContainKeys("userAccountId", "clientName", "checkIns",
+				"riskScore", "recovery", "adherence", "journal", "assessmentAnswers", "notes");
+		assertThat(((Schema<?>) appointments.getProperties().get("items")).getMaxItems()).isEqualTo(5);
 	}
 
 	@Test
