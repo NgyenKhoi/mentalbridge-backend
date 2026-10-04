@@ -23,6 +23,13 @@ Current cross-feature scope is governed by:
 - [ADR 0022 — Current product blueprint amendments](adr/0022-current-product-blueprint-amendments.md)
 - [ADR 0027 — Independent Community service boundary](adr/0027-community-service-boundary.md)
 
+The one confirmed-appointment email reminder is governed by
+[ADR 0030 — One appointment email reminder](adr/0030-one-appointment-email-reminder.md)
+(`MB-APPOINTMENT-EMAIL-REMINDER-001`). It fixes the exact 60-minute target,
+dedicated opt-in, quiet-hour deferral/suppression, appointment/version identity,
+lifecycle invalidation, strict before-start cutoff, and minimized in-app-only
+content separately from the wellbeing digest.
+
 For the rules amended on 2026-09-24, ADR 0022 is authoritative over the older clause.
 
 ## 2. Product boundary

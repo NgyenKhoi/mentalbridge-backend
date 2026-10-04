@@ -28,6 +28,7 @@ class IdentityOpenApiContractTests {
 			"PUT /api/v1/account/password",
 			"GET /api/v1/account",
 			"GET /internal/v1/notification-delivery-contacts/{accountId}",
+			"GET /internal/v1/accounts/{accountId}/verified-email",
 			"GET /api/v1/admin/accounts",
 			"GET /api/v1/admin/accounts/{accountId}",
 			"PUT /api/v1/admin/accounts/{accountId}/state");
@@ -38,6 +39,7 @@ class IdentityOpenApiContractTests {
 			"POST /api/v1/auth/logout-all",
 			"PUT /api/v1/account/password",
 			"GET /api/v1/account",
+			"GET /internal/v1/accounts/{accountId}/verified-email",
 			"GET /api/v1/admin/accounts",
 			"GET /api/v1/admin/accounts/{accountId}",
 			"PUT /api/v1/admin/accounts/{accountId}/state");
@@ -54,6 +56,7 @@ class IdentityOpenApiContractTests {
 			Map.entry("PUT /api/v1/account/password", Set.of("204", "400", "401")),
 			Map.entry("GET /api/v1/account", Set.of("200", "401")),
 			Map.entry("GET /internal/v1/notification-delivery-contacts/{accountId}", Set.of("200", "401", "404")),
+			Map.entry("GET /internal/v1/accounts/{accountId}/verified-email", Set.of("200", "401", "404")),
 			Map.entry("GET /api/v1/admin/accounts", Set.of("200", "400", "401", "403")),
 			Map.entry("GET /api/v1/admin/accounts/{accountId}", Set.of("200", "401", "403", "404")),
 			Map.entry("PUT /api/v1/admin/accounts/{accountId}/state", Set.of("200", "400", "401", "403", "404", "409", "412")));

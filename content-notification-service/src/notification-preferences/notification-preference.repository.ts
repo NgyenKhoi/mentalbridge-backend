@@ -15,6 +15,7 @@ const COLUMNS = `user_id, notifications_enabled,
   quiet_hours_enabled, quiet_hours_start::text, quiet_hours_end::text, time_zone,
   email_cadence, email_wellbeing_digest_enabled, email_resource_reminders_enabled,
   email_daily_digest_time::text, email_resource_reminder_time::text,
+  email_appointment_reminders_enabled,
   version, created_at, updated_at`;
 
 export class NotificationPreferenceVersionMismatchError extends Error {
@@ -56,6 +57,7 @@ export function toNotificationPreferences(row: NotificationPreferenceRow): Notif
       resourceRemindersEnabled: row.email_resource_reminders_enabled,
       dailyDigestTime: time(row.email_daily_digest_time),
       resourceReminderTime: time(row.email_resource_reminder_time),
+      appointmentRemindersEnabled: row.email_appointment_reminders_enabled,
     },
     version: Number(row.version),
     updatedAt: new Date(row.updated_at).toISOString(),
@@ -113,6 +115,7 @@ export class NotificationPreferenceRepository {
            email_resource_reminders_enabled = $19,
            email_daily_digest_time = $20::time,
            email_resource_reminder_time = $21::time,
+           email_appointment_reminders_enabled = $22,
            version = version + 1,
            updated_at = now()
        WHERE user_id = $1 AND version = $2
@@ -139,6 +142,7 @@ export class NotificationPreferenceRepository {
         preferences.email.resourceRemindersEnabled,
         preferences.email.dailyDigestTime,
         preferences.email.resourceReminderTime,
+        preferences.email.appointmentRemindersEnabled,
       ],
     );
     if (!result.rows[0]) throw new NotificationPreferenceVersionMismatchError();

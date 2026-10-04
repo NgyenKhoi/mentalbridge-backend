@@ -96,7 +96,10 @@ notification.
 The default wellbeing flow sends at most one digest per user per day and may
 combine unfinished plan resources, Journal, and emotion check-in prompts. An
 individual-resource reminder requires explicit user opt-in. Appointment
-reminders are separate and sent once approximately one hour before start.
+email reminders are separate and, under
+`MB-APPOINTMENT-EMAIL-REMINDER-001`, target exactly 60 minutes before start
+with deterministic preference, quiet-hour, lifecycle, and before-start rules.
+AI does not select their recipient, timing, suppression, or retry outcome.
 
 ## Runtime gates
 

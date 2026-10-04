@@ -14,12 +14,12 @@ spring:
         default_schema: public
         jdbc:
           time_zone: UTC
-  liquibase:
-    enabled: ${CONSULTATION_LIQUIBASE_ENABLED:false}
-    change-log: classpath:db/changelog/db.changelog-master.yaml
-    default-schema: public
   kafka:
     bootstrap-servers: ${KAFKA_BOOTSTRAP_SERVERS:localhost:9092}
+    producer:
+      acks: all
+      properties:
+        enable.idempotence: true
     consumer:
       group-id: ${CONSULTATION_ACCOUNT_LIFECYCLE_GROUP:consultation-account-lifecycle-v1}
       auto-offset-reset: earliest
@@ -27,6 +27,10 @@ spring:
       value-deserializer: org.apache.kafka.common.serialization.StringDeserializer
     listener:
       auto-startup: ${CONSULTATION_KAFKA_LISTENER_AUTO_STARTUP:false}
+  liquibase:
+    enabled: ${CONSULTATION_LIQUIBASE_ENABLED:false}
+    change-log: classpath:db/changelog/db.changelog-master.yaml
+    default-schema: public
   cloud:
     openfeign:
       circuitbreaker:
@@ -49,6 +53,15 @@ mentalbridge:
     account-lifecycle:
       enabled: ${CONSULTATION_ACCOUNT_LIFECYCLE_ENABLED:false}
       topic: ${CONSULTATION_ACCOUNT_LIFECYCLE_TOPIC:mentalbridge.identity.account-lifecycle.v1}
+    appointment-notifications:
+      service-token: ${APPOINTMENT_REMINDER_SERVICE_TOKEN:}
+      relay-enabled: ${CONSULTATION_APPOINTMENT_OUTBOX_RELAY_ENABLED:false}
+      topic: mentalbridge.consultation.appointment-status.v1
+      batch-size: ${CONSULTATION_APPOINTMENT_OUTBOX_BATCH_SIZE:100}
+      relay-interval: ${CONSULTATION_APPOINTMENT_OUTBOX_INTERVAL:PT5S}
+      send-timeout: ${CONSULTATION_APPOINTMENT_OUTBOX_SEND_TIMEOUT:PT5S}
+      retry-base: ${CONSULTATION_APPOINTMENT_OUTBOX_RETRY_BASE:PT5S}
+      retry-maximum: ${CONSULTATION_APPOINTMENT_OUTBOX_RETRY_MAXIMUM:PT5M}
 
 eureka:
   client:

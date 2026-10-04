@@ -51,10 +51,11 @@ appointment settlement remain one transaction.
   to domain/pathway priorities in memory; unavailable or malformed context
   produces explained neutral ranking and never exposes raw assessment data.
   Other consent/authorization integrations remain separately gated.
-- Async: the implemented profile lifecycle has no independent asynchronous consumer, so it has no Kafka runtime,
-  topic, producer, consumer, outbox, or Kafka test container. A later feature
-  may add these only when its accepted flow requires durable asynchronous work
-  or an independent consumer, under ADR 0016.
+- Async: appointment lifecycle changes are written to the Consultation-owned
+  transactional outbox and relayed to
+  `mentalbridge.consultation.appointment-status.v1`. The minimized event carries
+  appointment/version, owner, status, start, and modality only; it contains no
+  health, Journal, assessment, brief, or chat content.
 - Discovery: registers as `consultation-service` and resolves Spring providers through Eureka. Registry data does not grant authorization.
 
 ## Configuration
@@ -70,6 +71,9 @@ appointment settlement remain one transaction.
 | `IDENTITY_JWT_AUDIENCE` | Yes | Required API audience | `mentalbridge-api` |
 | `IDENTITY_JWT_PUBLIC_KEY` | Yes | X.509 PEM public key used to verify tokens | local public key |
 | `CONSULTATION_VIDEO_AVAILABILITY_ENABLED` | No | Enables `IN_APP_VIDEO` slot publication only after the provider contract gate passes | `false` |
+| `APPOINTMENT_REMINDER_SERVICE_TOKEN` | When reminder flow enabled | Shared service credential for the narrow eligibility read | injected secret |
+| `KAFKA_BOOTSTRAP_SERVERS` | When relay enabled | Broker list for appointment status events | `localhost:9092` |
+| `CONSULTATION_APPOINTMENT_OUTBOX_RELAY_ENABLED` | No | Enables bounded appointment outbox relay | `false` |
 
 Production must override local URLs and secrets. MoMo IPN signing,
 payout, encryption, and downstream timeout variables will be documented when
@@ -132,6 +136,10 @@ reported as unavailable/unused.
 
 - `POST /api/v1/appointments/{appointmentId}/cancel`
 
+## Implemented MB-548 internal endpoint
+
+- `GET /internal/v1/appointments/{appointmentId}/notification-eligibility?appointmentVersion={version}`
+
 ## Implemented MB-379 endpoints
 
 - `GET /api/v1/specialist/appointments`
@@ -174,5 +182,6 @@ slots withdrawn, appointments cancelled, and credits released.
 .\mvnw.cmd test
 ```
 
-The generated context test uses a PostgreSQL Testcontainer and disables live
-Eureka registration. Kafka is intentionally absent from this synchronous slice.
+The generated context test uses PostgreSQL and Kafka Testcontainers and disables
+live Eureka registration. The appointment relay remains disabled unless its
+versioned topic has been provisioned.

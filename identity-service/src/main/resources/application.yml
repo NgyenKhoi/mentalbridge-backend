@@ -56,6 +56,8 @@ mentalbridge:
       send-timeout: ${IDENTITY_OUTBOX_RELAY_SEND_TIMEOUT:PT5S}
       retry-base: ${IDENTITY_OUTBOX_RELAY_RETRY_BASE:PT5S}
       retry-maximum: ${IDENTITY_OUTBOX_RELAY_RETRY_MAXIMUM:PT5M}
+    delivery-address:
+      service-token: ${APPOINTMENT_REMINDER_SERVICE_TOKEN:}
 
 eureka:
   client:

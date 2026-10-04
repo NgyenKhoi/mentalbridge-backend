@@ -18,6 +18,26 @@ tags:
   - name: Account
   - name: Account administration
 paths:
+  /internal/v1/accounts/{accountId}/verified-email:
+    x-mentalbridge-status: implemented
+    get:
+      tags: [Account]
+      operationId: getVerifiedDeliveryAddress
+      summary: Resolve the current verified email for one exact USER owner
+      security: [{ serviceToken: [] }]
+      parameters:
+        - name: accountId
+          in: path
+          required: true
+          schema: { type: string, format: uuid }
+      responses:
+        '200':
+          description: Minimized current delivery address
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/VerifiedDeliveryAddress' }
+        '401': { $ref: '#/components/responses/UnauthorizedProblem' }
+        '404': { $ref: '#/components/responses/NotFoundProblem' }
   /api/v1/auth/registrations:
     x-mentalbridge-status: implemented
     post:
@@ -377,6 +397,10 @@ components:
       type: http
       scheme: bearer
       bearerFormat: JWT
+    serviceToken:
+      type: apiKey
+      in: header
+      name: X-MentalBridge-Service-Token
   parameters:
     AccountId:
       name: accountId
@@ -401,6 +425,13 @@ components:
       schema: { type: string, pattern: '^"[0-9]+"$' }
       example: '"3"'
   schemas:
+    VerifiedDeliveryAddress:
+      type: object
+      additionalProperties: false
+      required: [accountId, email]
+      properties:
+        accountId: { type: string, format: uuid }
+        email: { type: string, format: email }
     RegistrationRequest:
       type: object
       additionalProperties: false

@@ -36,6 +36,7 @@ public class SecurityConfiguration {
 				.authorizeHttpRequests(authorize -> authorize
 						.requestMatchers("/actuator/health", "/actuator/health/**", "/v3/api-docs/**", "/swagger-ui/**")
 						.permitAll()
+						.requestMatchers("/internal/v1/appointments/*/notification-eligibility").permitAll()
 						.requestMatchers("/internal/v1/entitlements/current").hasRole("USER")
 						.requestMatchers("/internal/v1/appointments/*/consultation-brief-context",
 								"/internal/v1/appointments/*/chat-eligibility",

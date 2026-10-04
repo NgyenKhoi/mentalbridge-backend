@@ -4,7 +4,9 @@ import { GenericContainer, type StartedTestContainer } from 'testcontainers';
 import { readFileSync } from 'fs';
 import { join, dirname } from 'path';
 import { fileURLToPath } from 'url';
-import type { DatabaseService } from '../../database/database.service.js';
+import type { DatabaseClient, DatabaseService } from '../../database/database.service.js';
+import { AppointmentReminderRepository } from '../../appointment-reminders/appointment-reminder.repository.js';
+import type { AppointmentStatusChangedEvent } from '../../appointment-reminders/appointment-reminder.types.js';
 import {
   NotificationPreferenceRepository,
   NotificationPreferenceVersionMismatchError,
@@ -73,6 +75,7 @@ describe('Database Integration', () => {
       '14_add_resource_experience_model.sql',
       '15_harden_resource_journey.sql',
       '16_add_wellbeing_digest_delivery.sql',
+      '17_add_appointment_email_reminders.sql',
     ]) {
       if (migration === '10_persist_notification_preferences.sql') {
         await pool.query(
@@ -598,6 +601,7 @@ describe('Database Integration', () => {
           resourceRemindersEnabled: true,
           dailyDigestTime: '19:00',
           resourceReminderTime: '18:30',
+          appointmentRemindersEnabled: true,
         },
       });
 
@@ -710,6 +714,197 @@ describe('Database Integration', () => {
         [owner],
       );
       expect(reclaimed.rows[0]).toEqual({ attempt_count: 2, content_counts: { resources: 1 } });
+    });
+  });
+
+  describe('appointment email reminder tables', () => {
+    function reminderRepository() {
+      const db = {
+        query: (sql: string, parameters?: unknown[]) => pool.query(sql, parameters),
+        withTransaction: async <T>(
+          operation: (client: DatabaseClient) => Promise<T>,
+        ): Promise<T> => {
+          const client = await pool.connect();
+          try {
+            await client.query('BEGIN');
+            const value = await operation(client);
+            await client.query('COMMIT');
+            return value;
+          } catch (error) {
+            await client.query('ROLLBACK');
+            throw error;
+          } finally {
+            client.release();
+          }
+        },
+      } as unknown as DatabaseService;
+      return new AppointmentReminderRepository(db);
+    }
+
+    function statusEvent(
+      appointmentId: string,
+      version: number,
+      status: AppointmentStatusChangedEvent['payload']['status'],
+      replacementId: string | null = null,
+    ): AppointmentStatusChangedEvent {
+      return {
+        messageId: '24000000-0000-4000-8000-000000000001',
+        messageType: 'consultation.appointment.status-changed',
+        occurredAt: '2029-01-01T00:00:00.000Z',
+        producer: 'consultation-service',
+        schemaVersion: '1.0',
+        correlationId: '24000000-0000-4000-8000-000000000002',
+        aggregateId: appointmentId,
+        aggregateVersion: version,
+        payload: {
+          appointmentId,
+          ownerAccountId: '24000000-0000-4000-8000-000000000003',
+          status,
+          scheduledStartAt: '2030-01-02T03:00:00.000Z',
+          modality: 'IN_APP_CHAT',
+          replacesAppointmentId: replacementId,
+        },
+      };
+    }
+
+    it('keeps the newest checkpoint under simultaneous, duplicate and reordered events', async () => {
+      const repository = reminderRepository();
+      const appointmentId = '24000000-0000-4000-8000-000000000004';
+      const observedAt = new Date('2030-01-01T00:00:00.000Z');
+      await Promise.all([
+        repository.apply(statusEvent(appointmentId, 1, 'CONFIRMED'), observedAt),
+        repository.apply(statusEvent(appointmentId, 2, 'CANCELLED'), observedAt),
+      ]);
+      await repository.apply(statusEvent(appointmentId, 1, 'CONFIRMED'), observedAt);
+
+      const checkpoint = await pool.query(
+        'SELECT latest_version, latest_status FROM appointment_reminder_checkpoint WHERE appointment_id=$1',
+        [appointmentId],
+      );
+      expect(checkpoint.rows[0]).toMatchObject({ latest_version: '2', latest_status: 'CANCELLED' });
+      const reminders = await pool.query(
+        'SELECT delivery_state FROM appointment_email_reminder WHERE appointment_id=$1',
+        [appointmentId],
+      );
+      expect(reminders.rows.every((row) => row.delivery_state === 'INVALIDATED')).toBe(true);
+    });
+
+    it('creates one replacement intent and claims a due version only once across workers', async () => {
+      const repository = reminderRepository();
+      const oldId = '24000000-0000-4000-8000-000000000005';
+      const replacementId = '24000000-0000-4000-8000-000000000006';
+      const observedAt = new Date('2030-01-01T00:00:00.000Z');
+      await repository.apply(statusEvent(oldId, 1, 'CONFIRMED'), observedAt);
+      await repository.apply(statusEvent(oldId, 2, 'CANCELLED'), observedAt);
+      await repository.apply(statusEvent(replacementId, 1, 'CONFIRMED', oldId), observedAt);
+      await repository.apply(statusEvent(replacementId, 1, 'CONFIRMED', oldId), observedAt);
+
+      const old = await pool.query(
+        'SELECT delivery_state FROM appointment_email_reminder WHERE appointment_id=$1',
+        [oldId],
+      );
+      expect(old.rows).toEqual([{ delivery_state: 'INVALIDATED' }]);
+      const replacement = await pool.query(
+        'SELECT count(*)::int AS count FROM appointment_email_reminder WHERE appointment_id=$1',
+        [replacementId],
+      );
+      expect(replacement.rows[0].count).toBe(1);
+      const claimed = await Promise.all([
+        repository.claimDue(new Date('2030-01-02T02:00:00.000Z'), 100),
+        repository.claimDue(new Date('2030-01-02T02:00:00.000Z'), 100),
+      ]);
+      expect(claimed.flat().filter((row) => row.appointmentId === replacementId)).toHaveLength(1);
+    });
+
+    it('deduplicates one reminder per recipient, appointment and version', async () => {
+      const values = [
+        '21000000-0000-4000-8000-000000000001',
+        '22000000-0000-4000-8000-000000000001',
+        7,
+        '2027-01-02T03:00:00.000Z',
+        '23000000-0000-5000-8000-000000000001',
+      ];
+      await pool.query(
+        `INSERT INTO appointment_email_reminder
+           (recipient_id, appointment_id, appointment_version, appointment_status,
+            modality, scheduled_start_at, target_at, due_at, provider_idempotency_key)
+         VALUES ($1,$2,$3,'CONFIRMED','IN_APP_CHAT',$4::timestamptz,
+                 $4::timestamptz - interval '60 minutes',
+                 $4::timestamptz - interval '60 minutes',$5)`,
+        values,
+      );
+
+      await expect(
+        pool.query(
+          `INSERT INTO appointment_email_reminder
+             (recipient_id, appointment_id, appointment_version, appointment_status,
+              modality, scheduled_start_at, target_at, due_at, provider_idempotency_key)
+           VALUES ($1,$2,$3,'CONFIRMED','IN_APP_CHAT',$4::timestamptz,
+                   $4::timestamptz - interval '60 minutes',
+                   $4::timestamptz - interval '60 minutes',$5)`,
+          values,
+        ),
+      ).rejects.toThrow(/duplicate key/);
+    });
+
+    it('rejects reminder targets that are not exactly sixty minutes before start', async () => {
+      await expect(
+        pool.query(
+          `INSERT INTO appointment_email_reminder
+             (recipient_id, appointment_id, appointment_version, appointment_status,
+              modality, scheduled_start_at, target_at, due_at, provider_idempotency_key)
+           VALUES ($1,$2,1,'CONFIRMED','IN_APP_VIDEO',$3::timestamptz,
+                   $3::timestamptz - interval '30 minutes',
+                   $3::timestamptz - interval '30 minutes',$4)`,
+          [
+            '21000000-0000-4000-8000-000000000002',
+            '22000000-0000-4000-8000-000000000002',
+            '2027-01-02T04:00:00.000Z',
+            '23000000-0000-5000-8000-000000000002',
+          ],
+        ),
+      ).rejects.toThrow(/ck_appointment_email_reminder_time/);
+    });
+
+    it('persists late CONFIRMED event after appointment start safely as terminal EXPIRED without provider send', async () => {
+      const repository = reminderRepository();
+      const appointmentId = '24000000-0000-4000-8000-000000000007';
+      const startAt = '2030-01-02T03:00:00.000Z';
+      const observedAfterStart = new Date('2030-01-02T03:15:00.000Z');
+
+      const lateEvent = statusEvent(appointmentId, 1, 'CONFIRMED');
+      lateEvent.payload.scheduledStartAt = startAt;
+
+      // Consumed after start -> must not throw
+      await expect(repository.apply(lateEvent, observedAfterStart)).resolves.not.toThrow();
+
+      // Checkpoint recorded
+      const checkpoint = await pool.query(
+        'SELECT latest_version, latest_status FROM appointment_reminder_checkpoint WHERE appointment_id=$1',
+        [appointmentId],
+      );
+      expect(checkpoint.rows[0]).toMatchObject({ latest_version: '1', latest_status: 'CONFIRMED' });
+
+      // Terminal EXPIRED recorded with LATE_CONFIRMATION and due_at clamped <= scheduled_start_at
+      const reminders = await pool.query<{
+        delivery_state: string;
+        failure_code: string;
+        due_at: string;
+        scheduled_start_at: string;
+      }>(
+        'SELECT delivery_state, failure_code, due_at, scheduled_start_at FROM appointment_email_reminder WHERE appointment_id=$1',
+        [appointmentId],
+      );
+      expect(reminders.rows).toHaveLength(1);
+      expect(reminders.rows[0].delivery_state).toBe('EXPIRED');
+      expect(reminders.rows[0].failure_code).toBe('LATE_CONFIRMATION');
+      expect(new Date(reminders.rows[0].due_at).getTime()).toBeLessThanOrEqual(
+        new Date(reminders.rows[0].scheduled_start_at).getTime(),
+      );
+
+      // Claim due: must not claim terminal EXPIRED reminders (no provider send)
+      const claimed = await repository.claimDue(new Date('2030-01-02T04:00:00.000Z'), 100);
+      expect(claimed.some((row) => row.appointmentId === appointmentId)).toBe(false);
     });
   });
 

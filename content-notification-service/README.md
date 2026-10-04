@@ -61,6 +61,16 @@ Keep the interval and database page size bounded with
 `WELLBEING_DIGEST_SCHEDULER_INTERVAL_MS` and
 `WELLBEING_DIGEST_BATCH_SIZE`. `BREVO_BASE_URL` and `BREVO_SENDER_NAME` are
 optional operational overrides.
+MB-548 adds a separate, opt-in appointment email reminder. A minimized
+Consultation status event materializes at most one row per
+recipient/appointment/version, and rejection, expiry, cancellation, reschedule,
+or ended states invalidate pending older versions. The scheduler rechecks
+authoritative appointment truth, preference, timezone/quiet hours, and verified
+delivery address immediately before Brevo delivery. It never sends at or after
+the appointment start and never combines this message with the wellbeing digest.
+Production enablement also requires Brevo per-contact tracking consent to be
+enabled with unknown-contact tracking disabled; the adapter sends
+`contactPixelTrackingConsent=false` for every reminder recipient.
 
 ## Stack
 
@@ -162,6 +172,10 @@ owner/local-day/kind key prevents duplicate default digests, while bounded
 claim, retry, provider outcome, and cancellation metadata make crashes,
 provider outages, late runs, opt-out, and deleted recipients recoverable
 without persisting message bodies or sensitive source content.
+Migration `17_add_appointment_email_reminders.sql` adds the explicit appointment
+email opt-in, version-deduplicated delivery state, and per-appointment consumer
+checkpoint. The rows contain only safe scheduling/delivery metadata; recipient
+email and rendered message bodies are not persisted.
 
 The controlled Review 1 seed, MB-337 eligibility matrix, and visibly synthetic non-dialable safety-directory fixture are owner-module migrations with a separate ledger (`pgmigrations_review1`), so running normal schema migrations cannot accidentally mark controlled data as applied. The seeds reject drift from their reviewed decisions. Machine-readable resource inventory, reviewer rationale, explicit ineligible decisions, and Care requests are kept in `../contracts/fixtures/content/resource-eligibility-v1-controlled-demo.json`. No real safety contact is published by the controlled fixture. For the shared dev/staging database only, run:
 

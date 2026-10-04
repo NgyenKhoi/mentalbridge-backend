@@ -72,6 +72,7 @@ describe('notification preference contract', () => {
       'dailyDigestTime',
       'resourceReminderTime',
     ]);
+    expect(email.properties).toHaveProperty('appointmentRemindersEnabled');
     expect(JSON.stringify(preferences.properties)).not.toMatch(
       /journalText|assessmentAnswer|messageBody|specialistName/i,
     );

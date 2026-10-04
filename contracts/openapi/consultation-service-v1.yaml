@@ -6,6 +6,29 @@ info:
 servers:
   - url: http://localhost:8082
 paths:
+  /internal/v1/appointments/{appointmentId}/notification-eligibility:
+    x-mentalbridge-status: implemented
+    get:
+      operationId: getAppointmentNotificationEligibility
+      description: Returns the minimized current Consultation truth for one exact appointment/version immediately before notification delivery. It contains no specialist profile, brief, assessment, Journal, or chat content.
+      security: [{ serviceToken: [] }]
+      parameters:
+        - name: appointmentId
+          in: path
+          required: true
+          schema: { type: string, format: uuid }
+        - name: appointmentVersion
+          in: query
+          required: true
+          schema: { type: integer, format: int64, minimum: 0 }
+      responses:
+        '200':
+          description: Current minimized appointment truth and exact-version eligibility
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/AppointmentNotificationEligibility' }
+        '401': { $ref: '#/components/responses/UnauthorizedProblem' }
+        '404': { $ref: '#/components/responses/NotFoundProblem' }
   /api/v1/service-credits:
     x-mentalbridge-status: implemented
     get:
@@ -816,6 +839,10 @@ components:
       type: http
       scheme: bearer
       bearerFormat: JWT
+    serviceToken:
+      type: apiKey
+      in: header
+      name: X-MentalBridge-Service-Token
   parameters:
     SpecialistAccountId:
       name: specialistAccountId
@@ -901,6 +928,18 @@ components:
       description: Quoted current appointment version for If-Match.
       schema: { type: string, pattern: '^"[0-9]+"$' }
   schemas:
+    AppointmentNotificationEligibility:
+      type: object
+      additionalProperties: false
+      required: [appointmentId, ownerAccountId, version, status, scheduledStartAt, modality, eligible]
+      properties:
+        appointmentId: { type: string, format: uuid }
+        ownerAccountId: { type: string, format: uuid }
+        version: { type: integer, format: int64, minimum: 0 }
+        status: { type: string }
+        scheduledStartAt: { type: string, format: date-time }
+        modality: { type: string, enum: [IN_APP_CHAT, IN_APP_VIDEO] }
+        eligible: { type: boolean }
     ServicePackage:
       type: string
       enum: [FREE, PLUS, PREMIUM]

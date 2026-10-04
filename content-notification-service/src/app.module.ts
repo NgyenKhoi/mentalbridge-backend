@@ -29,6 +29,11 @@ import {
   WELLBEING_EMAIL_DELIVERY_TOKEN,
   WELLBEING_RECIPIENT_CLIENT_TOKEN,
   WELLBEING_DIGEST_SCHEDULER_TOKEN,
+  APPOINTMENT_EMAIL_DELIVERY_TOKEN,
+  APPOINTMENT_REMINDER_REPOSITORY_TOKEN,
+  APPOINTMENT_REMINDER_SERVICE_TOKEN,
+  APPOINTMENT_TRUTH_CLIENT_TOKEN,
+  DELIVERY_ADDRESS_CLIENT_TOKEN,
 } from './application.tokens.js';
 import type { ServiceConfiguration } from './configuration/configuration.js';
 import { DatabaseService, type ReadinessProbe } from './database/database.service.js';
@@ -78,6 +83,18 @@ import {
   BrevoWellbeingEmailDelivery,
   IdentityWellbeingRecipientClient,
 } from './wellbeing-digest/wellbeing-delivery.clients.js';
+import { AppointmentReminderRepository } from './appointment-reminders/appointment-reminder.repository.js';
+import { AppointmentReminderService } from './appointment-reminders/appointment-reminder.service.js';
+import {
+  ConsultationAppointmentTruthClient,
+  IdentityDeliveryAddressClient,
+} from './appointment-reminders/appointment-reminder.clients.js';
+import { BrevoAppointmentEmailDelivery } from './appointment-reminders/appointment-email.delivery.js';
+import {
+  AppointmentStatusConsumer,
+  AppointmentStatusProjector,
+} from './appointment-reminders/appointment-status.consumer.js';
+import { AppointmentReminderScheduler } from './appointment-reminders/appointment-reminder.scheduler.js';
 
 export interface ApplicationDependencies {
   readonly readinessProbe?: ReadinessProbe;
@@ -217,6 +234,14 @@ export const createAppModule = (
       { provide: WELLBEING_DIGEST_SCHEDULER_TOKEN, useClass: WellbeingDigestScheduler },
       AccountLifecycleProjector,
       AccountLifecycleConsumer,
+      { provide: APPOINTMENT_REMINDER_REPOSITORY_TOKEN, useClass: AppointmentReminderRepository },
+      { provide: APPOINTMENT_TRUTH_CLIENT_TOKEN, useClass: ConsultationAppointmentTruthClient },
+      { provide: DELIVERY_ADDRESS_CLIENT_TOKEN, useClass: IdentityDeliveryAddressClient },
+      { provide: APPOINTMENT_EMAIL_DELIVERY_TOKEN, useClass: BrevoAppointmentEmailDelivery },
+      { provide: APPOINTMENT_REMINDER_SERVICE_TOKEN, useClass: AppointmentReminderService },
+      AppointmentStatusProjector,
+      AppointmentStatusConsumer,
+      AppointmentReminderScheduler,
       JwtStrategy,
       {
         provide: RolesGuard,

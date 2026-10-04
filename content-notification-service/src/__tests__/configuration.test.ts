@@ -24,6 +24,10 @@ describe('configuration', () => {
     expect(configuration.REMINDER_SCHEDULER_BATCH_SIZE).toBe(100);
     expect(configuration.CONTENT_ACCOUNT_LIFECYCLE_CONSUMER_ENABLED).toBeUndefined();
     expect(configuration.WELLBEING_DIGEST_SCHEDULER_ENABLED).toBe(false);
+    expect(configuration.APPOINTMENT_REMINDER_ENABLED).toBe(false);
+    expect(configuration.CONTENT_APPOINTMENT_CONSUMER_ENABLED).toBe(false);
+    expect(configuration.CONSULTATION_SERVICE_URL).toBe('http://localhost:8082');
+    expect(configuration.IDENTITY_SERVICE_URL).toBe('http://localhost:8080');
   });
 
   it('normalizes configured CORS origins', () => {
@@ -96,5 +100,41 @@ describe('configuration', () => {
       BREVO_SENDER_EMAIL: 'no-reply@example.test',
     });
     expect(configuration.WELLBEING_DIGEST_SCHEDULER_ENABLED).toBe(true);
+  });
+
+  it('requires scoped delivery credentials when appointment reminders are enabled', () => {
+    expect(() =>
+      loadConfiguration({
+        ...requiredEnvironment,
+        APPOINTMENT_REMINDER_ENABLED: 'true',
+      }),
+    ).toThrow();
+
+    const configuration = loadConfiguration({
+      ...requiredEnvironment,
+      APPOINTMENT_REMINDER_ENABLED: 'true',
+      APPOINTMENT_REMINDER_SERVICE_TOKEN: 'appointment-reminder-token-at-least-32-characters',
+      BREVO_API_KEY: 'synthetic-provider-key',
+      BREVO_SENDER_EMAIL: 'no-reply@example.test',
+    });
+
+    expect(configuration.APPOINTMENT_REMINDER_ENABLED).toBe(true);
+  });
+
+  it('requires Kafka brokers when the appointment consumer is enabled', () => {
+    expect(() =>
+      loadConfiguration({
+        ...requiredEnvironment,
+        CONTENT_APPOINTMENT_CONSUMER_ENABLED: 'true',
+      }),
+    ).toThrow();
+
+    const configuration = loadConfiguration({
+      ...requiredEnvironment,
+      CONTENT_APPOINTMENT_CONSUMER_ENABLED: 'true',
+      KAFKA_BOOTSTRAP_SERVERS: 'localhost:9092',
+    });
+
+    expect(configuration.CONTENT_APPOINTMENT_CONSUMER_ENABLED).toBe(true);
   });
 });

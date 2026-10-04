@@ -43,6 +43,7 @@ function defaults(): NotificationPreferences {
       resourceRemindersEnabled: false,
       dailyDigestTime: '19:00',
       resourceReminderTime: '18:30',
+      appointmentRemindersEnabled: false,
     },
     version: 0,
     updatedAt: '2026-09-26T00:00:00.000Z',
@@ -193,6 +194,7 @@ describe('notification preference HTTP boundary', () => {
           resourceRemindersEnabled: true,
           dailyDigestTime: '19:00',
           resourceReminderTime: '18:30',
+          appointmentRemindersEnabled: true,
         },
       })
       .expect(200)
@@ -213,6 +215,7 @@ describe('notification preference HTTP boundary', () => {
       resourceRemindersEnabled: true,
       dailyDigestTime: '19:00',
       resourceReminderTime: '18:30',
+      appointmentRemindersEnabled: true,
     });
   });
 

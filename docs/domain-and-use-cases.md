@@ -356,9 +356,12 @@ milestones/check-ins and repeated assessments. Reassessment combines four
 separate dimensions and includes an explicit user-authored Self-reported
 experience input; it never computes one recovery verdict. Content/Notification
 schedules and persists at most one default wellbeing digest per user/day,
-separately opted-in resource reminders, one appointment reminder approximately
-one hour before start, and delivery attempts. AI may phrase approved facts but
-cannot decide scheduling.
+separately opted-in resource reminders, and one dedicated-opt-in appointment
+email targeting exactly 60 minutes before start under
+`MB-APPOINTMENT-EMAIL-REMINDER-001`. Appointment/version deduplication,
+quiet-hour deferral or suppression, lifecycle invalidation, and a strict
+before-start cutoff govern its delivery attempts. AI may phrase approved facts
+but cannot decide recipient or scheduling.
 
 **Exceptions and acceptance:** reconnect restores missed state through
 cursor-based REST history; duplicate `clientMessageId` returns the original

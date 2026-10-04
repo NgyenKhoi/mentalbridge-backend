@@ -23,3 +23,5 @@ databaseChangeLog:
       file: db/changelog/changes/011-session-summary.sql
   - include:
       file: db/changelog/changes/012-resource-proposal.sql
+  - include:
+      file: db/changelog/changes/013-appointment-notification-outbox.sql
