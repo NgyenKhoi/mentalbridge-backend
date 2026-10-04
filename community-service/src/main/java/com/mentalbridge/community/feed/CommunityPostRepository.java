@@ -19,9 +19,9 @@ interface CommunityPostRepository extends JpaRepository<CommunityPostEntity, UUI
 			SELECT post.*
 			FROM community_post post
 			WHERE post.state = 'ACTIVE'
-			  AND (:topicCode IS NULL OR EXISTS (
+			  AND (:filterByTopics = false OR EXISTS (
 			      SELECT 1 FROM community_post_topic topic
-			      WHERE topic.post_id = post.id AND topic.topic_code = :topicCode
+			      WHERE topic.post_id = post.id AND topic.topic_code IN (:topicCodes)
 			  ))
 			  AND (:viewerProfileId IS NULL OR NOT EXISTS (
 			      SELECT 1 FROM community_block block
@@ -38,7 +38,8 @@ interface CommunityPostRepository extends JpaRepository<CommunityPostEntity, UUI
 			       OR (post.published_at = :cursorPublishedAt AND post.id < :cursorPostId))
 			ORDER BY post.published_at DESC, post.id DESC
 			""", nativeQuery = true)
-	List<CommunityPostEntity> findFeed(@Param("topicCode") String topicCode,
+	List<CommunityPostEntity> findFeed(@Param("filterByTopics") boolean filterByTopics,
+			@Param("topicCodes") List<String> topicCodes,
 			@Param("viewerProfileId") UUID viewerProfileId,
 			@Param("cursorPublishedAt") Instant cursorPublishedAt,
 			@Param("cursorPostId") UUID cursorPostId,

@@ -54,6 +54,7 @@ class CommunityPostLifecycleIntegrationTests extends CommunityTestProperties {
 
 	@BeforeEach
 	void cleanBusinessData() {
+		jdbc.sql("update community_topic set active = true").update();
 		jdbc.sql("delete from community_comment_revision").update();
 		jdbc.sql("delete from community_comment").update();
 		jdbc.sql("delete from community_block").update();
@@ -317,6 +318,42 @@ class CommunityPostLifecycleIntegrationTests extends CommunityTestProperties {
 	private java.util.Optional<UUID> attachedPostId(UUID mediaId) {
 		return jdbc.sql("select post_id from community_media where id = :mediaId")
 				.param("mediaId", mediaId).query(UUID.class).optional();
+	}
+
+	@Test
+	void inactiveTopicCannotBeAddedButAnExistingHistoricalClassificationCanBePreservedOrRemoved() throws Exception {
+		var created = createPost(OWNER_SUBJECT, "post-topic-history-0001", "Chia sẻ ban đầu");
+		var postId = UUID.fromString(objectMapper.readTree(created).path("postId").asText());
+		jdbc.sql("update community_topic set active = false, updated_at = :now where code = 'MY_STORY'")
+				.param("now", dbTime(NOW)).update();
+
+		mvc.perform(post("/api/v1/community/posts").header("Idempotency-Key", "post-topic-history-0001")
+				.contentType(MediaType.APPLICATION_JSON)
+				.content(request("Chia sẻ ban đầu", List.of("MY_STORY"), List.of())).with(user(OWNER_SUBJECT)))
+				.andExpect(status().isCreated())
+				.andExpect(jsonPath("$.postId").value(postId.toString()));
+
+		mvc.perform(post("/api/v1/community/posts").header("Idempotency-Key", "post-inactive-topic-0001")
+				.contentType(MediaType.APPLICATION_JSON)
+				.content(request("Bài mới", List.of("MY_STORY"), List.of())).with(user(OTHER_SUBJECT)))
+				.andExpect(status().isBadRequest())
+				.andExpect(jsonPath("$.code").value("COMMUNITY_TOPIC_UNAVAILABLE"));
+
+		mvc.perform(patch("/api/v1/community/posts/{postId}", postId).header("If-Match", "\"0\"")
+				.contentType(MediaType.APPLICATION_JSON)
+				.content(request("Chỉ sửa nội dung", List.of("MY_STORY"), List.of())).with(user(OWNER_SUBJECT)))
+				.andExpect(status().isOk())
+				.andExpect(jsonPath("$.topics[0]").value("MY_STORY"));
+
+		mvc.perform(patch("/api/v1/community/posts/{postId}", postId).header("If-Match", "\"1\"")
+				.contentType(MediaType.APPLICATION_JSON)
+				.content(request("Chuyển sang chủ đề đang hoạt động", List.of("SMALL_MILESTONE"), List.of()))
+				.with(user(OWNER_SUBJECT)))
+				.andExpect(status().isOk())
+				.andExpect(jsonPath("$.topics[0]").value("SMALL_MILESTONE"));
+
+		assertThat(jdbc.sql("select count(*) from community_post_topic where post_id = :postId and topic_code = 'MY_STORY'")
+				.param("postId", postId).query(Long.class).single()).isZero();
 	}
 
 	private String legacyFingerprint(String content, String topic) throws Exception {

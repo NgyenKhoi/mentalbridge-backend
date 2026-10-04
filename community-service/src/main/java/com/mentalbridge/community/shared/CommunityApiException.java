@@ -58,6 +58,16 @@ public class CommunityApiException extends RuntimeException {
 				"Community post input is invalid");
 	}
 
+	public static CommunityApiException invalidTopicFilter() {
+		return new CommunityApiException(HttpStatus.BAD_REQUEST, "COMMUNITY_TOPIC_FILTER_INVALID",
+				"Select no more than three distinct Community topics");
+	}
+
+	public static CommunityApiException topicUnavailable() {
+		return new CommunityApiException(HttpStatus.BAD_REQUEST, "COMMUNITY_TOPIC_UNAVAILABLE",
+				"One or more Community topics are not active");
+	}
+
 	public static CommunityApiException invalidIdempotencyKey() {
 		return new CommunityApiException(HttpStatus.BAD_REQUEST, "INVALID_IDEMPOTENCY_KEY",
 				"Idempotency-Key is invalid");

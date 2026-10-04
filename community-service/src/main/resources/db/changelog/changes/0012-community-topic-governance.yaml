@@ -1,0 +1,39 @@
+databaseChangeLog:
+  - changeSet:
+      id: 0012-community-topic-governance
+      author: mentalbridge
+      comment: Add the governed active Community topic catalogue and preserve historical post classifications for MB-582.
+      changes:
+        - sql:
+            splitStatements: false
+            sql: |
+              CREATE TABLE community_topic (
+                  code varchar(32) PRIMARY KEY,
+                  label varchar(80) NOT NULL,
+                  description varchar(240) NOT NULL,
+                  active boolean NOT NULL,
+                  display_order smallint NOT NULL,
+                  created_at timestamptz NOT NULL,
+                  updated_at timestamptz NOT NULL,
+                  CONSTRAINT ux_community_topic_display_order UNIQUE (display_order),
+                  CONSTRAINT ck_community_topic_code CHECK (code IN (
+                      'MY_STORY', 'SMALL_MILESTONE', 'HELPFUL_REFLECTION',
+                      'PEER_QUESTION', 'EXPERIENCE_SHARING', 'HELPFUL_RESOURCE'
+                  )),
+                  CONSTRAINT ck_community_topic_display_order CHECK (display_order BETWEEN 0 AND 100)
+              );
+
+              INSERT INTO community_topic
+                  (code, label, description, active, display_order, created_at, updated_at)
+              VALUES
+                  ('MY_STORY', 'Câu chuyện của tôi', 'Chia sẻ trải nghiệm cá nhân theo cách bạn thấy thoải mái.', true, 10, CURRENT_TIMESTAMP, CURRENT_TIMESTAMP),
+                  ('SMALL_MILESTONE', 'Bước tiến nhỏ', 'Ghi nhận một thay đổi nhỏ có ý nghĩa với bạn.', true, 20, CURRENT_TIMESTAMP, CURRENT_TIMESTAMP),
+                  ('HELPFUL_REFLECTION', 'Điều mình nhận ra', 'Chia sẻ một suy ngẫm có thể hữu ích cho người khác.', true, 30, CURRENT_TIMESTAMP, CURRENT_TIMESTAMP),
+                  ('PEER_QUESTION', 'Hỏi cộng đồng', 'Đặt câu hỏi để lắng nghe trải nghiệm từ những người đồng hành.', true, 40, CURRENT_TIMESTAMP, CURRENT_TIMESTAMP),
+                  ('EXPERIENCE_SHARING', 'Chia sẻ trải nghiệm', 'Kể lại điều bạn đã thử và cảm nhận của riêng bạn.', true, 50, CURRENT_TIMESTAMP, CURRENT_TIMESTAMP),
+                  ('HELPFUL_RESOURCE', 'Tài nguyên hữu ích', 'Chia sẻ tài nguyên đã được xem xét và giúp ích cho bạn.', true, 60, CURRENT_TIMESTAMP, CURRENT_TIMESTAMP);
+
+              ALTER TABLE community_post_topic
+                  ADD CONSTRAINT fk_community_post_topic_catalogue
+                  FOREIGN KEY (topic_code) REFERENCES community_topic(code)
+                  ON DELETE RESTRICT;

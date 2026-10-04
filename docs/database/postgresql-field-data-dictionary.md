@@ -47,7 +47,21 @@ Governed non-diagnostic topic membership used only for explicit user-selected fi
 | Field | Purpose |
 | --- | --- |
 | `post_id` | Physical parent post reference; deleting a never-published test/post row cascades its classifications. |
-| `topic_code` | Stable v1 category `MY_STORY`, `SMALL_MILESTONE`, `HELPFUL_REFLECTION`, `PEER_QUESTION`, `EXPERIENCE_SHARING`, or `HELPFUL_RESOURCE`; it never represents diagnosis or severity. |
+| `topic_code` | Stable v1 category referencing `community_topic`; it never represents diagnosis or severity. Deactivation leaves this historical membership intact. |
+
+### `public.community_topic`
+
+Community-owned governed discovery vocabulary. This catalogue is deliberately separate from Care, assessment, Journal, emotion, severity, and AI data.
+
+| Field | Purpose |
+| --- | --- |
+| `code` | Stable non-diagnostic v1 category identifier exposed by Community APIs and retained by historical posts. |
+| `label` | Governed user-facing Vietnamese label; it is never free-form user input or a clinical diagnosis. |
+| `description` | Governed explanatory copy that states the peer-support meaning of the label. |
+| `active` | Discovery/write availability controlled by Community governance. Deactivation removes the topic from the active catalogue and new selections without deleting post history. |
+| `display_order` | Unique bounded ordering used to render the active catalogue consistently. |
+| `created_at` | Immutable UTC instant when the governed catalogue row was seeded. |
+| `updated_at` | UTC instant of the latest governance change to label, description, order, or active state. |
 
 ### `public.community_post_reaction`
 

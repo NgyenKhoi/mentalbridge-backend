@@ -1105,7 +1105,7 @@ CREATE TABLE consultation.appointment_outbox_event (
 
 /* ========================================================================== */
 /* ACTIVE — community-service / mentalbridge_community                        */
-/* Evidence: community-service Liquibase changes 0001-0011.                  */
+/* Evidence: community-service Liquibase changes 0001-0012.                  */
 /* ========================================================================== */
 
 CREATE TABLE community.community_profile (
@@ -1134,9 +1134,19 @@ CREATE TABLE community.community_post (
     version bigint NOT NULL
 );
 
+CREATE TABLE community.community_topic (
+    code varchar(32) PRIMARY KEY,
+    label varchar(80) NOT NULL,
+    description varchar(240) NOT NULL,
+    active boolean NOT NULL,
+    display_order smallint NOT NULL UNIQUE,
+    created_at timestamptz NOT NULL,
+    updated_at timestamptz NOT NULL
+);
+
 CREATE TABLE community.community_post_topic (
     post_id uuid NOT NULL REFERENCES community.community_post(id),
-    topic_code varchar(32) NOT NULL,
+    topic_code varchar(32) NOT NULL REFERENCES community.community_topic(code),
     PRIMARY KEY (post_id, topic_code)
 );
 
