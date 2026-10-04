@@ -30,13 +30,15 @@ public class CommunityPostService {
 	private final CommunityPostRepository posts;
 	private final CommunityMediaRepository media;
 	private final CommunityFeedService feed;
+	private final CommunityTopicService topicService;
 
 	public CommunityPostService(CommunityProfileRepository profiles, CommunityPostRepository posts,
-			CommunityMediaRepository media, CommunityFeedService feed) {
+			CommunityMediaRepository media, CommunityFeedService feed, CommunityTopicService topicService) {
 		this.profiles = profiles;
 		this.posts = posts;
 		this.media = media;
 		this.feed = feed;
+		this.topicService = topicService;
 	}
 
 	@Transactional
@@ -60,6 +62,7 @@ public class CommunityPostService {
 			}
 			return versioned(replay.get());
 		}
+		topicService.validatePostTopics(input.topics(), Set.of());
 
 		var post = new CommunityPostEntity(UUID.randomUUID(), owner, input.content(), input.topics(), key,
 				fingerprint, input.authorMode(), now);
@@ -73,6 +76,7 @@ public class CommunityPostService {
 	public VersionedPost update(UUID subject, UUID postId, long expectedVersion, WritePostRequest request) {
 		var post = owned(postId, subject);
 		var input = validate(request, post.authorMode());
+		topicService.validatePostTopics(input.topics(), post.topics());
 		verifyVersion(post, expectedVersion);
 		var now = Instant.now();
 		post.update(input.content(), input.topics(), input.authorMode(), now);

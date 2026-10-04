@@ -2,7 +2,6 @@ package com.mentalbridge.community.feed;
 
 import java.nio.charset.StandardCharsets;
 import java.time.Instant;
-import java.util.Arrays;
 import java.util.Base64;
 import java.util.Comparator;
 import java.util.List;
@@ -39,20 +38,26 @@ public class CommunityFeedService {
 	private final CommunityProfileRepository profiles;
 	private final CommunityPostReactionRepository reactions;
 	private final CommunityPostBookmarkRepository bookmarks;
+	private final CommunityTopicService topicService;
 
 	public CommunityFeedService(CommunityPostRepository posts, CommunityProfileRepository profiles,
-			CommunityPostReactionRepository reactions, CommunityPostBookmarkRepository bookmarks) {
+			CommunityPostReactionRepository reactions, CommunityPostBookmarkRepository bookmarks,
+			CommunityTopicService topicService) {
 		this.posts = posts;
 		this.profiles = profiles;
 		this.reactions = reactions;
 		this.bookmarks = bookmarks;
+		this.topicService = topicService;
 	}
 
 	@Transactional(readOnly = true)
-	public Feed feed(UUID accountSubject, CommunityTopic topic, String cursorValue, int limit) {
+	public Feed feed(UUID accountSubject, List<CommunityTopic> requestedTopics, String cursorValue, int limit) {
 		var cursor = decode(cursorValue);
+		var selectedTopics = topicService.validateFilter(requestedTopics);
 		var viewerProfileId = profiles.findIdByAccountSubject(accountSubject).orElse(null);
-		var page = posts.findFeed(topic == null ? null : topic.name(), viewerProfileId,
+		var topicCodes = selectedTopics.isEmpty() ? List.of(CommunityTopic.MY_STORY.name())
+				: selectedTopics.stream().map(Enum::name).toList();
+		var page = posts.findFeed(!selectedTopics.isEmpty(), topicCodes, viewerProfileId,
 				cursor == null ? null : cursor.publishedAt(), cursor == null ? null : cursor.postId(),
 				PageRequest.of(0, limit + 1));
 		var hasMore = page.size() > limit;
@@ -73,9 +78,7 @@ public class CommunityFeedService {
 	}
 
 	public List<Topic> topics() {
-		return Arrays.stream(CommunityTopic.values())
-				.map(topic -> new Topic(topic, topic.label(), topic.description()))
-				.toList();
+		return topicService.activeTopics();
 	}
 
 	private PostSummary summary(CommunityPostEntity post, ViewerState viewerState) {

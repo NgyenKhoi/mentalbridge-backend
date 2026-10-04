@@ -51,6 +51,7 @@ class CommunityFeedIntegrationTests extends CommunityTestProperties {
 
 	@BeforeEach
 	void cleanBusinessData() {
+		jdbc.sql("update community_topic set active = true").update();
 		jdbc.sql("delete from community_comment_revision").update();
 		jdbc.sql("delete from community_comment").update();
 		jdbc.sql("delete from community_block").update();
@@ -117,6 +118,28 @@ class CommunityFeedIntegrationTests extends CommunityTestProperties {
 	}
 
 	@Test
+	void multiTopicFilterMatchesAnySelectedActiveTopicWithoutChangingNewestFirstOrder() throws Exception {
+		profile(VIEWER_PROFILE, VIEWER_SUBJECT, "Người đọc", "ACTIVE");
+		profile(AUTHOR_PROFILE, UUID.randomUUID(), "Minh An", "ACTIVE");
+		post(OLDER_POST, AUTHOR_PROFILE, "Câu chuyện cũ hơn", "ACTIVE", NOW.minusSeconds(60));
+		post(NEWEST_POST, AUTHOR_PROFILE, "Bước tiến mới hơn", "ACTIVE", NOW);
+		topic(OLDER_POST, "MY_STORY");
+		topic(NEWEST_POST, "SMALL_MILESTONE");
+
+		mvc.perform(get("/api/v1/community/feed")
+				.param("topic", "MY_STORY", "SMALL_MILESTONE").with(user()))
+				.andExpect(status().isOk())
+				.andExpect(jsonPath("$.items.length()").value(2))
+				.andExpect(jsonPath("$.items[0].postId").value(NEWEST_POST.toString()))
+				.andExpect(jsonPath("$.items[1].postId").value(OLDER_POST.toString()));
+
+		mvc.perform(get("/api/v1/community/feed")
+				.param("topic", "MY_STORY", "MY_STORY").with(user()))
+				.andExpect(status().isBadRequest())
+				.andExpect(jsonPath("$.code").value("COMMUNITY_TOPIC_FILTER_INVALID"));
+	}
+
+	@Test
 	void hiddenAndBlockedPostDetailsShareTheSameNotFoundContract() throws Exception {
 		profile(VIEWER_PROFILE, VIEWER_SUBJECT, "Người đọc", "ACTIVE");
 		profile(AUTHOR_PROFILE, UUID.randomUUID(), "Minh An", "ACTIVE");
@@ -159,6 +182,29 @@ class CommunityFeedIntegrationTests extends CommunityTestProperties {
 				.andExpect(jsonPath("$[0].code").value("MY_STORY"))
 				.andExpect(jsonPath("$[5].code").value("HELPFUL_RESOURCE"))
 				.andExpect(jsonPath("$.length()").value(6));
+	}
+
+	@Test
+	void deactivatedTopicsLeavePostHistoryIntactButAreUnavailableForBrowseAndFiltering() throws Exception {
+		profile(VIEWER_PROFILE, VIEWER_SUBJECT, "Người đọc", "ACTIVE");
+		profile(AUTHOR_PROFILE, UUID.randomUUID(), "Minh An", "ACTIVE");
+		post(NEWEST_POST, AUTHOR_PROFILE, "Một bài viết lịch sử", "ACTIVE", NOW);
+		topic(NEWEST_POST, "MY_STORY");
+		jdbc.sql("update community_topic set active = false, updated_at = :now where code = 'MY_STORY'")
+				.param("now", dbTime(NOW)).update();
+
+		mvc.perform(get("/api/v1/community/topics").with(user()))
+				.andExpect(status().isOk())
+				.andExpect(jsonPath("$[?(@.code == 'MY_STORY')]").isEmpty())
+				.andExpect(jsonPath("$.length()").value(5));
+		mvc.perform(get("/api/v1/community/feed").param("topic", "MY_STORY").with(user()))
+				.andExpect(status().isBadRequest())
+				.andExpect(jsonPath("$.code").value("COMMUNITY_TOPIC_UNAVAILABLE"));
+		mvc.perform(get("/api/v1/community/feed").with(user()))
+				.andExpect(status().isOk())
+				.andExpect(jsonPath("$.items[0].topics[0]").value("MY_STORY"));
+		assertThatThrownBy(() -> jdbc.sql("delete from community_topic where code = 'MY_STORY'").update())
+				.isInstanceOf(DataIntegrityViolationException.class);
 	}
 
 	@Test

@@ -46,10 +46,10 @@ public class CommunityFeedController {
 
 	@GetMapping("/feed")
 	Feed feed(@AuthenticationPrincipal Jwt jwt,
-			@RequestParam(required = false) CommunityTopic topic,
+			@RequestParam(required = false, name = "topic") @Size(max = 3) List<CommunityTopic> topics,
 			@RequestParam(required = false) @Size(max = 256) String cursor,
 			@RequestParam(defaultValue = "20") @Min(1) @Max(50) int limit) {
-		return feed.feed(subject(jwt), topic, cursor, limit);
+		return feed.feed(subject(jwt), topics, cursor, limit);
 	}
 
 	@GetMapping("/posts/{postId}")

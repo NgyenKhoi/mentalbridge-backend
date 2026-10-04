@@ -9,7 +9,7 @@
 - local verification of Identity-issued RS256 JWTs; no synchronous Identity lookup
 - Cloudinary Java SDK configuration seam for later media workflows
 - Actuator health/readiness and Prometheus metrics
-- opaque cursor pagination with optional governed topic filtering
+- opaque cursor pagination with explicit OR filtering across at most three active governed topics
 - fail-closed post visibility for moderation and bilateral Community blocks
 - Community-owned display identity resolved from the locally verified JWT subject, without synchronous Identity or Care calls
 - short-lived signed Cloudinary uploads with server-side format, size, duration, and ownership verification
@@ -69,7 +69,7 @@ Do not commit `.env`, credentials, private keys, media signatures, or delivery U
 
 The test suite starts disposable PostgreSQL, applies the Community migrations, boots the application with synthetic JWT/Cloudinary settings, and verifies feed/detail visibility, owner-isolated display profiles, Unicode bounds, optimistic concurrency, authentication, the public health endpoint, and fail-closed application routes without Identity or Care APIs running.
 
-The canonical REST contract is [`contracts/openapi/community-service-v1.yaml`](../contracts/openapi/community-service-v1.yaml). Contract v1.6 marks feed, post/comment/media/profile lifecycle, reports, personal hide/block controls, moderation cases/actions, supportive reactions, and private bookmarks as implemented. The versioned event schema is [`contracts/events/community/community-interaction-v1.schema.json`](../contracts/events/community/community-interaction-v1.schema.json), published on `mentalbridge.community.interaction.v1`.
+The canonical REST contract is [`contracts/openapi/community-service-v1.yaml`](../contracts/openapi/community-service-v1.yaml). Contract v1.7 marks feed, governed active topic discovery, bounded multi-topic filtering, post/comment/media/profile lifecycle, reports, personal hide/block controls, moderation cases/actions, supportive reactions, and private bookmarks as implemented. Topic selection is explicit and matches any of at most three selected active labels; it never consults Care, assessment, Journal, emotion, severity, or AI data. Deactivation prevents new selection while preserving historical post membership and moderation provenance. The versioned event schema is [`contracts/events/community/community-interaction-v1.schema.json`](../contracts/events/community/community-interaction-v1.schema.json), published on `mentalbridge.community.interaction.v1`.
 
 Eligible external root comments route to the post owner, replies route to the parent-comment owner, and the first reaction for an actor/post pair routes to the post owner. Self-interactions, bookmarks, reaction replacement/removal, and repeated logical commands do not create notification facts. Kafka and Notification are never called inside Community commands; an unavailable broker leaves the committed outbox row retryable.
 

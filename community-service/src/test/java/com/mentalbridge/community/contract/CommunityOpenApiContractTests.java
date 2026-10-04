@@ -108,6 +108,10 @@ class CommunityOpenApiContractTests {
 		assertThat(createPost.getProperties()).containsOnlyKeys("content", "topics", "mediaIds", "authorMode");
 		assertThat(feedParameters).extracting(parameter -> parameter.getName())
 				.containsExactly("topic", "cursor", "limit");
+		var topicFilter = feedParameters.getFirst();
+		assertThat(topicFilter.getExplode()).isTrue();
+		assertThat(topicFilter.getSchema().getMaxItems()).isEqualTo(3);
+		assertThat(topicFilter.getSchema().getUniqueItems()).isTrue();
 	}
 
 	@Test
