@@ -30,7 +30,8 @@ class ConsultationLiquibaseChangelogTests {
 							"consultation-011-session-summary",
 							"consultation-012-resource-proposal",
 							"consultation-013-appointment-notification-outbox",
-							"consultation-014-specialist-client-continuity");
+							"consultation-014-specialist-client-continuity",
+							"consultation-015-appointment-rating");
 		}
 	}
 }

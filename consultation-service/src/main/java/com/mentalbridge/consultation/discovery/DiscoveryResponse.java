@@ -1,5 +1,6 @@
 package com.mentalbridge.consultation.discovery;
 
+import java.math.BigDecimal;
 import java.time.Instant;
 import java.util.List;
 import java.util.Set;
@@ -23,8 +24,11 @@ public final class DiscoveryResponse {
 			BookingHandoff bookingHandoff, boolean videoEnabled) { }
 
 	public record Item(UUID specialistAccountId, String displayName, String bio, Set<SupportArea> supportAreas,
-			Set<String> languages, int yearsOfExperience, String timezone, Explanation explanation,
+			Set<String> languages, int yearsOfExperience, String timezone, RatingAggregate ratingAggregate,
+			Explanation explanation,
 			List<Slot> selectableSlots) { }
+
+	public record RatingAggregate(BigDecimal averageRating, long ratingCount) { }
 
 	public record Explanation(Compatibility compatibility, Boolean languageMatched, boolean hasSelectableSlot,
 			Instant earliestSelectableStartAt, TimezoneMatch timezoneMatch, Integer timezoneOffsetDistanceMinutes,

@@ -1,7 +1,7 @@
 openapi: 3.1.0
 info:
   title: MentalBridge Consultation Service API
-  version: 1.8.0
+  version: 1.9.0
   description: Consultation-owned specialist profile lifecycle, approved online discovery, service-plan entitlement and credit lookup, online availability, appointment requests, appointment-scoped chat eligibility and minimized completion evidence, auditable owner cancellation/reschedule/session outcomes, immutable user-visible session summaries and agreed next steps, credit reservation limits, and suspension outcomes.
 servers:
   - url: http://localhost:8082
@@ -500,6 +500,53 @@ paths:
         '401': { $ref: '#/components/responses/UnauthorizedProblem' }
         '403': { $ref: '#/components/responses/AppointmentForbiddenProblem' }
         '404': { $ref: '#/components/responses/AppointmentNotFoundProblem' }
+        '409': { $ref: '#/components/responses/AppointmentConflictProblem' }
+        '412': { $ref: '#/components/responses/AppointmentVersionProblem' }
+        '428': { $ref: '#/components/responses/AppointmentVersionRequiredProblem' }
+  /api/v1/appointments/{appointmentId}/rating:
+    x-mentalbridge-status: implemented
+    parameters:
+      - $ref: '#/components/parameters/AppointmentId'
+    get:
+      operationId: getOwnAppointmentRating
+      description: Returns the authenticated appointment owner's current rating for one evidence-completed appointment.
+      security: [{ bearerAuth: [] }]
+      responses:
+        '200':
+          description: Current rating and truthful specialist aggregate
+          headers:
+            ETag: { $ref: '#/components/headers/AppointmentETag' }
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/AppointmentRating' }
+        '401': { $ref: '#/components/responses/UnauthorizedProblem' }
+        '404': { $ref: '#/components/responses/NotFoundProblem' }
+    put:
+      operationId: saveOwnAppointmentRating
+      description: Creates the one current 1-5 rating or replaces it when If-Match carries the current rating version. Rating and aggregate update in one transaction.
+      security: [{ bearerAuth: [] }]
+      parameters:
+        - name: If-Match
+          in: header
+          required: false
+          schema: { type: string, pattern: '^"[0-9]+"$' }
+          description: Omit for first create; required with the current rating version for an edit.
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: '#/components/schemas/SaveAppointmentRating' }
+      responses:
+        '200':
+          description: Created, updated, or natural no-op rating
+          headers:
+            ETag: { $ref: '#/components/headers/AppointmentETag' }
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/AppointmentRating' }
+        '400': { $ref: '#/components/responses/ValidationProblem' }
+        '401': { $ref: '#/components/responses/UnauthorizedProblem' }
+        '404': { $ref: '#/components/responses/NotFoundProblem' }
         '409': { $ref: '#/components/responses/AppointmentConflictProblem' }
         '412': { $ref: '#/components/responses/AppointmentVersionProblem' }
         '428': { $ref: '#/components/responses/AppointmentVersionRequiredProblem' }
@@ -1265,6 +1312,16 @@ components:
         scheduledEndAt: { type: string, format: date-time }
         timezone: { type: string, minLength: 1, maxLength: 64 }
         decisionDeadlineAt: { type: string, format: date-time }
+    SpecialistDashboardRatingAggregate:
+      type: object
+      additionalProperties: false
+      required: [source, asOf, state, averageRating, ratingCount]
+      properties:
+        source: { type: string, const: CONSULTATION }
+        asOf: { type: string, format: date-time }
+        state: { $ref: '#/components/schemas/DashboardDataState' }
+        averageRating: { type: [number, 'null'], format: double, minimum: 1, maximum: 5 }
+        ratingCount: { type: integer, format: int64, minimum: 0 }
     SpecialistDashboardAppointmentCollection:
       type: object
       additionalProperties: false
@@ -1329,12 +1386,13 @@ components:
     SpecialistDashboard:
       type: object
       additionalProperties: false
-      required: [source, generatedAt, operationalStatus, profile, todayConfirmedSessions, pendingAppointmentRequests, nextAppointment, availability, actionRequired]
+      required: [source, generatedAt, operationalStatus, profile, ratingAggregate, todayConfirmedSessions, pendingAppointmentRequests, nextAppointment, availability, actionRequired]
       properties:
         source: { type: string, const: CONSULTATION }
         generatedAt: { type: string, format: date-time }
         operationalStatus: { $ref: '#/components/schemas/SpecialistOperationalStatus' }
         profile: { $ref: '#/components/schemas/SpecialistDashboardProfile' }
+        ratingAggregate: { $ref: '#/components/schemas/SpecialistDashboardRatingAggregate' }
         todayConfirmedSessions: { $ref: '#/components/schemas/SpecialistDashboardAppointmentCollection' }
         pendingAppointmentRequests: { $ref: '#/components/schemas/SpecialistDashboardAppointmentCollection' }
         nextAppointment: { $ref: '#/components/schemas/SpecialistDashboardNextAppointment' }
@@ -1629,7 +1687,7 @@ components:
         timezoneOffsetDistanceMinutes: { type: [integer, 'null'], minimum: 0, maximum: 1440 }
         ratingTieBreakerApplied:
           type: boolean
-          description: False until an authoritative eligible rating aggregate exists; never overrides a primary factor.
+          description: True only when the authenticated user has PREMIUM and an authoritative aggregate participates after all primary factors.
         codes:
           type: array
           minItems: 4
@@ -1637,7 +1695,7 @@ components:
           uniqueItems: true
           items:
             type: string
-            enum: [SCREENED_SUPPORT_AREA_MATCH, NO_SCREENED_SUPPORT_AREA_MATCH, NO_SCREENING_CONTEXT, SCREENING_CONTEXT_UNAVAILABLE, REQUESTED_LANGUAGE_MATCH, REQUESTED_LANGUAGE_NOT_MATCHED, NO_REQUESTED_LANGUAGE, SELECTABLE_SLOT_AVAILABLE, NO_SELECTABLE_SLOT, EXACT_TIMEZONE_MATCH, TIMEZONE_OFFSET_DISTANCE, NO_REQUESTED_TIMEZONE, RATING_NOT_AVAILABLE]
+            enum: [SCREENED_SUPPORT_AREA_MATCH, NO_SCREENED_SUPPORT_AREA_MATCH, NO_SCREENING_CONTEXT, SCREENING_CONTEXT_UNAVAILABLE, REQUESTED_LANGUAGE_MATCH, REQUESTED_LANGUAGE_NOT_MATCHED, NO_REQUESTED_LANGUAGE, SELECTABLE_SLOT_AVAILABLE, NO_SELECTABLE_SLOT, EXACT_TIMEZONE_MATCH, TIMEZONE_OFFSET_DISTANCE, NO_REQUESTED_TIMEZONE, RATING_AVAILABLE, RATING_NOT_AVAILABLE]
     DiscoverySlot:
       type: object
       additionalProperties: false
@@ -1653,7 +1711,7 @@ components:
     SpecialistDiscoveryItem:
       type: object
       additionalProperties: false
-      required: [specialistAccountId, displayName, bio, supportAreas, languages, yearsOfExperience, timezone, explanation, selectableSlots]
+      required: [specialistAccountId, displayName, bio, supportAreas, languages, yearsOfExperience, timezone, ratingAggregate, explanation, selectableSlots]
       properties:
         specialistAccountId: { type: string, format: uuid }
         displayName: { type: string, minLength: 1, maxLength: 120 }
@@ -1672,6 +1730,10 @@ components:
           items: { $ref: '#/components/schemas/LanguageTag' }
         yearsOfExperience: { type: integer, minimum: 0, maximum: 80 }
         timezone: { type: string, minLength: 1, maxLength: 64 }
+        ratingAggregate:
+          oneOf:
+            - { $ref: '#/components/schemas/SpecialistRatingAggregate' }
+            - { type: 'null' }
         explanation: { $ref: '#/components/schemas/DiscoveryExplanation' }
         selectableSlots:
           type: array
@@ -1689,12 +1751,37 @@ components:
           items: { $ref: '#/components/schemas/SpecialistDiscoveryItem' }
         count: { type: integer, minimum: 0, maximum: 50 }
         nextCursor: { type: [string, 'null'], minLength: 1, maxLength: 2048 }
-        rankingPolicyVersion: { type: string, const: specialist-discovery-v1 }
+        rankingPolicyVersion: { type: string, const: specialist-discovery-v2 }
         generatedAt: { type: string, format: date-time }
         contextState: { $ref: '#/components/schemas/DiscoveryContextState' }
         packageCode: { $ref: '#/components/schemas/ServicePackage' }
         bookingHandoff: { $ref: '#/components/schemas/BookingHandoff' }
         videoEnabled: { type: boolean }
+    SpecialistRatingAggregate:
+      type: object
+      additionalProperties: false
+      required: [averageRating, ratingCount]
+      properties:
+        averageRating: { type: number, format: double, minimum: 1, maximum: 5, multipleOf: 0.01 }
+        ratingCount: { type: integer, format: int64, minimum: 1 }
+    SaveAppointmentRating:
+      type: object
+      additionalProperties: false
+      required: [rating]
+      properties:
+        rating: { type: integer, minimum: 1, maximum: 5 }
+    AppointmentRating:
+      type: object
+      additionalProperties: false
+      required: [appointmentId, specialistAccountId, rating, createdAt, updatedAt, version, specialistAggregate]
+      properties:
+        appointmentId: { type: string, format: uuid }
+        specialistAccountId: { type: string, format: uuid }
+        rating: { type: integer, minimum: 1, maximum: 5 }
+        createdAt: { type: string, format: date-time }
+        updatedAt: { type: string, format: date-time }
+        version: { type: integer, format: int64, minimum: 0 }
+        specialistAggregate: { $ref: '#/components/schemas/SpecialistRatingAggregate' }
     Appointment:
       type: object
       additionalProperties: false

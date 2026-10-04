@@ -1,5 +1,7 @@
 package com.mentalbridge.consultation.discovery;
 
+import java.math.BigDecimal;
+import java.math.RoundingMode;
 import java.nio.charset.StandardCharsets;
 import java.security.MessageDigest;
 import java.time.Clock;
@@ -41,7 +43,7 @@ import com.mentalbridge.consultation.specialist.SupportArea;
 @Service
 public class DiscoveryService {
 
-	static final String POLICY_VERSION = "specialist-discovery-v1";
+	static final String POLICY_VERSION = "specialist-discovery-v2";
 	private static final Duration MINIMUM_LEAD_TIME = Duration.ofHours(4);
 	private static final Duration MAXIMUM_WINDOW = Duration.ofDays(90);
 	private static final int MAXIMUM_SLOTS_PER_SPECIALIST = 20;
@@ -72,8 +74,8 @@ public class DiscoveryService {
 		var criteria = validate(suppliedCriteria, now);
 		var context = context(criteria.supportEvaluationId(), bearerToken);
 		var entitlement = entitlements.current(userId);
-		var ranked = rank(load(criteria, null, now), criteria, context, now);
-		var criteriaHash = criteriaHash(suppliedCriteria);
+		var ranked = rank(load(criteria, null, now), criteria, context, entitlement.packageCode(), now);
+		var criteriaHash = criteriaHash(suppliedCriteria, entitlement.packageCode());
 		var cursor = encodedCursor == null ? null : decodeCursor(encodedCursor, criteriaHash);
 		if (cursor != null) ranked = ranked.stream()
 				.filter(candidate -> keyComparator().compare(candidate.key(), cursor.key()) > 0).toList();
@@ -90,8 +92,9 @@ public class DiscoveryService {
 		var now = clock.instant();
 		var criteria = validate(suppliedCriteria, now);
 		var context = context(criteria.supportEvaluationId(), bearerToken);
-		entitlements.current(userId);
-		return rank(load(criteria, specialistAccountId, now), criteria, context, now).stream().findFirst()
+		var entitlement = entitlements.current(userId);
+		return rank(load(criteria, specialistAccountId, now), criteria, context, entitlement.packageCode(), now)
+				.stream().findFirst()
 				.map(RankedProfile::item)
 				.orElseThrow(() -> new ApiException(HttpStatus.NOT_FOUND, "SPECIALIST_NOT_DISCOVERABLE",
 						"The specialist is not currently discoverable"));
@@ -135,8 +138,10 @@ public class DiscoveryService {
 				 (select string_agg(pl.language_tag, ',' order by pl.language_tag)
 				  from specialist_profile_language pl where pl.specialist_account_id=p.account_id) languages,
 				 slot.id slot_id, slot.start_at, slot.end_at, slot.timezone slot_timezone,
-				 slot.modality, slot.version slot_version
+				 slot.modality, slot.version slot_version,
+				 rating.rating_count, rating.rating_sum
 				from specialist_profile p
+				left join specialist_rating_aggregate rating on rating.specialist_account_id=p.account_id
 				join lateral (
 				 select s.id, s.start_at, s.end_at, s.timezone, s.modality, s.version
 				 from availability_slot s
@@ -170,7 +175,8 @@ public class DiscoveryService {
 						row.getString("display_name"), row.getString("biography"), row.getInt("years_experience"),
 						row.getString("timezone"), row.getString("support_areas"), row.getString("languages"),
 						row.getObject("slot_id", UUID.class), instant(row, "start_at"), instant(row, "end_at"),
-						row.getString("slot_timezone"), row.getString("modality"), row.getObject("slot_version", Long.class)))
+						row.getString("slot_timezone"), row.getString("modality"), row.getObject("slot_version", Long.class),
+						row.getObject("rating_count", Long.class), row.getObject("rating_sum", Long.class)))
 				.list();
 		var profiles = new LinkedHashMap<UUID, ProfileBuilder>();
 		for (var row : rows) {
@@ -182,12 +188,14 @@ public class DiscoveryService {
 		return profiles.values().stream().map(ProfileBuilder::build).toList();
 	}
 
-	private List<RankedProfile> rank(List<Profile> profiles, Criteria criteria, Context context, Instant generatedAt) {
-		return profiles.stream().map(profile -> ranked(profile, criteria, context, generatedAt))
+	private List<RankedProfile> rank(List<Profile> profiles, Criteria criteria, Context context,
+			ServicePackage packageCode, Instant generatedAt) {
+		return profiles.stream().map(profile -> ranked(profile, criteria, context, packageCode, generatedAt))
 				.sorted(comparator()).toList();
 	}
 
-	private RankedProfile ranked(Profile profile, Criteria criteria, Context context, Instant generatedAt) {
+	private RankedProfile ranked(Profile profile, Criteria criteria, Context context, ServicePackage packageCode,
+			Instant generatedAt) {
 		int compatibilityRank = compatibilityRank(profile, context);
 		var compatibility = switch (context.state()) {
 			case NOT_REQUESTED -> Compatibility.NEUTRAL;
@@ -210,17 +218,21 @@ public class DiscoveryService {
 			timezoneMatch = TimezoneMatch.OFFSET_DISTANCE;
 			timezoneDistance = offsetDistance(criteria.timezone(), profile.timezone(), generatedAt);
 		}
+		var ratingAvailable = profile.ratingAggregate() != null;
+		var ratingApplied = packageCode == ServicePackage.PREMIUM && ratingAvailable;
 		var codes = List.of(compatibilityCode(compatibility), languageCode(languageMatched),
 				profile.slots().isEmpty() ? "NO_SELECTABLE_SLOT" : "SELECTABLE_SLOT_AVAILABLE",
-				timezoneCode(timezoneMatch), "RATING_NOT_AVAILABLE");
+				timezoneCode(timezoneMatch), ratingAvailable ? "RATING_AVAILABLE" : "RATING_NOT_AVAILABLE");
 		var explanation = new DiscoveryResponse.Explanation(compatibility, languageMatched, !profile.slots().isEmpty(),
-				earliest, timezoneMatch, timezoneDistance, false, codes);
+				earliest, timezoneMatch, timezoneDistance, ratingApplied, codes);
 		var item = new DiscoveryResponse.Item(profile.accountId(), profile.displayName(), profile.bio(),
-				profile.supportAreas(), profile.languages(), profile.yearsOfExperience(), profile.timezone(), explanation,
-				profile.slots());
+				profile.supportAreas(), profile.languages(), profile.yearsOfExperience(), profile.timezone(),
+				profile.ratingAggregate(), explanation, profile.slots());
+		var ratingBasisPoints = ratingApplied
+				? profile.ratingAggregate().averageRating().movePointRight(2).intValueExact() : 0;
 		var key = new SortKey(compatibilityRank, Boolean.TRUE.equals(languageMatched) ? 1 : 0,
 				profile.slots().isEmpty() ? 0 : 1, earliest, timezoneMatch == TimezoneMatch.EXACT ? 1 : 0,
-				timezoneDistance == null ? 0 : timezoneDistance, profile.accountId());
+				timezoneDistance == null ? 0 : timezoneDistance, ratingBasisPoints, profile.accountId());
 		return new RankedProfile(item, key);
 	}
 
@@ -241,6 +253,7 @@ public class DiscoveryService {
 				.thenComparing(SortKey::earliestSlot, Comparator.nullsLast(Comparator.naturalOrder()))
 				.thenComparing(Comparator.comparingInt(SortKey::exactTimezoneRank).reversed())
 				.thenComparingInt(SortKey::timezoneDistanceMinutes)
+				.thenComparing(Comparator.comparingInt(SortKey::ratingBasisPoints).reversed())
 				.thenComparing(SortKey::specialistAccountId);
 	}
 
@@ -265,12 +278,12 @@ public class DiscoveryService {
 		}
 	}
 
-	private String criteriaHash(Criteria criteria) {
+	private String criteriaHash(Criteria criteria, ServicePackage packageCode) {
 		try {
 			var canonical = String.join("\n", value(criteria.supportEvaluationId()), value(criteria.supportArea()),
 					value(normalizedLanguage(criteria.language())), value(normalizedTimezone(criteria.timezone())),
 					value(criteria.modality()),
-					value(criteria.from()), value(criteria.to()));
+					value(criteria.from()), value(criteria.to()), value(packageCode));
 			return HexFormat.of().formatHex(MessageDigest.getInstance("SHA-256")
 					.digest(canonical.getBytes(StandardCharsets.UTF_8)));
 		}
@@ -330,13 +343,14 @@ public class DiscoveryService {
 			AppointmentModality modality, Instant from, Instant to) { }
 	private record Context(ContextState state, ScreeningContextResolver.ScreeningContext value) { }
 	private record Profile(UUID accountId, String displayName, String bio, int yearsOfExperience, String timezone,
-			Set<SupportArea> supportAreas, Set<String> languages, List<DiscoveryResponse.Slot> slots) { }
+			Set<SupportArea> supportAreas, Set<String> languages,
+			DiscoveryResponse.RatingAggregate ratingAggregate, List<DiscoveryResponse.Slot> slots) { }
 	private record DiscoveryRow(UUID accountId, String displayName, String bio, int yearsOfExperience, String timezone,
 			String supportAreas, String languages, UUID slotId, Instant startAt, Instant endAt, String slotTimezone,
-			String modality, Long slotVersion) { }
+			String modality, Long slotVersion, Long ratingCount, Long ratingSum) { }
 	private record RankedProfile(DiscoveryResponse.Item item, SortKey key) { }
 	private record SortKey(int compatibilityRank, int languageRank, int availabilityRank, Instant earliestSlot,
-			int exactTimezoneRank, int timezoneDistanceMinutes, UUID specialistAccountId) { }
+			int exactTimezoneRank, int timezoneDistanceMinutes, int ratingBasisPoints, UUID specialistAccountId) { }
 	private record Cursor(String policyVersion, String criteriaHash, SortKey key) { }
 
 	private final class ProfileBuilder {
@@ -344,8 +358,12 @@ public class DiscoveryService {
 		private final List<DiscoveryResponse.Slot> slots = new ArrayList<>();
 		private ProfileBuilder(DiscoveryRow source) { this.source = source; }
 		private Profile build() {
+			var aggregate = source.ratingCount() == null ? null : new DiscoveryResponse.RatingAggregate(
+					BigDecimal.valueOf(source.ratingSum()).divide(BigDecimal.valueOf(source.ratingCount()), 2,
+							RoundingMode.HALF_UP), source.ratingCount());
 			return new Profile(source.accountId(), source.displayName(), source.bio(), source.yearsOfExperience(),
-					source.timezone(), supportAreas(source.supportAreas()), languages(source.languages()), List.copyOf(slots));
+					source.timezone(), supportAreas(source.supportAreas()), languages(source.languages()), aggregate,
+					List.copyOf(slots));
 		}
 	}
 }
