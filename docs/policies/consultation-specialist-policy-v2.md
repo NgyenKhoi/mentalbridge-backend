@@ -48,13 +48,15 @@ or chat content is persisted, logged, or returned. Missing or unavailable Care
 context removes personalized compatibility and produces a neutral explained
 rank; it never authorizes a stale or guessed health context.
 
-The `specialist-discovery-v1` comparison order is domain/pathway compatibility,
+The `specialist-discovery-v2` comparison order is domain/pathway compatibility,
 requested language, current availability, and timezone. Only after those four
 factors tie may an authoritative rating aggregate break a tie for a current
 `PREMIUM` user. Rating is neutral for `FREE` and `PLUS`, is never a primary or
-sole recommendation factor, and is omitted when the rating capability is not
-implemented. Years of experience remains informational and is not a v1 rank
-factor. The final stable tie-breaker is specialist account ID.
+sole recommendation factor. MB-364 supplies this aggregate from one current
+1-5 rating per evidence-backed completed appointment. `FREE` and `PLUS` may
+see the truthful average/count but do not rank by it. Years of experience
+remains informational and is not a v2 rank factor. The final stable tie-breaker
+is specialist account ID; historical v1 cursors are stale under v2.
 
 The response exposes stable explanation codes and policy version but never a
 clinical-suitability claim or hidden weighted score. Public discovery fields

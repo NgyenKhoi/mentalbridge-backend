@@ -1037,6 +1037,24 @@ CREATE TABLE consultation.appointment_chat_evidence (
     UNIQUE (appointment_id, evidence_id)
 );
 
+CREATE TABLE consultation.appointment_rating (
+    appointment_id uuid PRIMARY KEY REFERENCES consultation.appointment(id),
+    user_account_id uuid NOT NULL, -- external -> identity.account.id
+    specialist_account_id uuid NOT NULL REFERENCES consultation.specialist_profile(account_id),
+    rating smallint NOT NULL,
+    version bigint NOT NULL,
+    created_at timestamptz NOT NULL,
+    updated_at timestamptz NOT NULL
+);
+
+CREATE TABLE consultation.specialist_rating_aggregate (
+    specialist_account_id uuid PRIMARY KEY REFERENCES consultation.specialist_profile(account_id),
+    rating_count bigint NOT NULL,
+    rating_sum bigint NOT NULL,
+    version bigint NOT NULL,
+    updated_at timestamptz NOT NULL
+);
+
 CREATE TABLE consultation.specialist_client_continuity_audit (
     id uuid PRIMARY KEY,
     specialist_account_id uuid NOT NULL, -- external -> identity.account.id

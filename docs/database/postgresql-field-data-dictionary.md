@@ -1707,23 +1707,34 @@ Deduplicated receipt of payout IPN/callback events. Only the integrity hash and 
 | `received_at` | UTC instant MentalBridge received the callback. |
 | `processed_at` | UTC instant its verified effect committed; null while unresolved. |
 
-### `consultation.specialist_review`
+### `consultation.appointment_rating`
 
-User rating and moderated feedback tied to one completed appointment.
+One current bounded rating tied to an evidence-backed completed appointment.
+MB-364 does not collect a comment, anonymous flag, diagnosis, or moderation
+payload.
 
 | Field | Purpose |
 | --- | --- |
-| `id` | Immutable UUID exposed for review moderation and REST access. |
-| `appointment_id` | Unique appointment proving one review opportunity and consultation relationship. |
-| `user_id` | External Care profile UUID of the review author. |
-| `specialist_id` | Specialist being reviewed, denormalized for efficient public queries. |
+| `appointment_id` | Primary key and local foreign key proving exactly one current rating opportunity for the completed appointment. |
+| `user_account_id` | External Identity owner UUID copied from the locked appointment; callers cannot supply it. |
+| `specialist_account_id` | Local specialist foreign key copied from the locked appointment for aggregate maintenance. |
 | `rating` | Validated integer rating from one through five. |
-| `comment` | Optional user-authored feedback subject to moderation and logging restrictions. |
-| `moderation_status` | Visibility/tombstone state controlled by moderation policy. |
 | `created_at` | Immutable UTC review submission instant. |
-| `updated_at` | UTC instant of the latest permitted edit or moderation change. |
-| `deleted_at` | UTC user/moderator deletion instant; null while not deleted. |
-| `version` | Optimistic-lock counter preventing lost review/moderation updates. |
+| `updated_at` | UTC instant of the latest owner edit. |
+| `version` | Optimistic-lock counter preventing lost rating edits. |
+
+### `consultation.specialist_rating_aggregate`
+
+Transactionally maintained display/ranking projection. It contains no review
+text and is never accepted from a client.
+
+| Field | Purpose |
+| --- | --- |
+| `specialist_account_id` | Primary/local foreign key for the rated specialist. |
+| `rating_count` | Number of distinct current appointment ratings; always positive while the row exists. |
+| `rating_sum` | Exact sum used with count to derive a two-decimal average without accumulating rounding error. |
+| `version` | Monotonic aggregate update counter for operational verification. |
+| `updated_at` | UTC instant of the latest create/edit contribution. |
 
 ## Conceptual owner `care` (`mentalbridge_care.public`)
 
