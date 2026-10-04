@@ -65,7 +65,7 @@ public class CommunityPostService {
 		topicService.validatePostTopics(input.topics(), Set.of());
 
 		var post = new CommunityPostEntity(UUID.randomUUID(), owner, input.content(), input.topics(), key,
-				fingerprint, input.authorMode(), input.resourceId(), now);
+				fingerprint, input.authorMode(), input.resourceId(), input.sensitiveContentWarning(), now);
 		post = posts.saveAndFlush(post);
 		replaceMedia(post, owner, input.mediaIds(), now);
 		posts.flush();
@@ -79,7 +79,8 @@ public class CommunityPostService {
 		topicService.validatePostTopics(input.topics(), post.topics());
 		verifyVersion(post, expectedVersion);
 		var now = Instant.now();
-		post.update(input.content(), input.topics(), input.authorMode(), input.resourceId(), now);
+		post.update(input.content(), input.topics(), input.authorMode(), input.resourceId(),
+				input.sensitiveContentWarning(), now);
 		replaceMedia(post, post.author(), input.mediaIds(), now);
 		posts.flush();
 		return versioned(post);
@@ -165,7 +166,8 @@ public class CommunityPostService {
 		}
 		var mediaIds = List.copyOf(suppliedMediaIds);
 		var authorMode = request.authorMode() == null ? fallbackAuthorMode : request.authorMode();
-		return new ValidatedPost(content, topics, mediaIds, authorMode, request.resourceId());
+		return new ValidatedPost(content, topics, mediaIds, authorMode, request.resourceId(),
+				request.sensitiveContentWarning());
 	}
 
 	private boolean hasUnpairedSurrogate(String value) {
@@ -201,6 +203,9 @@ public class CommunityPostService {
 			if (input.resourceId() != null) {
 				add(digest, input.resourceId().toString());
 			}
+			if (input.sensitiveContentWarning() != null) {
+				add(digest, input.sensitiveContentWarning().name());
+			}
 			if (includeAuthorMode) {
 				add(digest, input.authorMode().name());
 			}
@@ -222,7 +227,8 @@ public class CommunityPostService {
 	}
 
 	private record ValidatedPost(String content, Set<CommunityTopic> topics, List<UUID> mediaIds,
-			CommunityPostEntity.AuthorMode authorMode, UUID resourceId) {
+			CommunityPostEntity.AuthorMode authorMode, UUID resourceId,
+			CommunitySensitiveContentWarning sensitiveContentWarning) {
 	}
 
 	public record VersionedPost(PostDetail body, long version) {

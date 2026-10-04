@@ -1,8 +1,8 @@
 openapi: 3.1.0
 info:
   title: MentalBridge Community API
-  version: 1.8.0
-  description: Privacy-isolated peer-support Community Contract v1.8. Feed ordering and explicit topic discovery never use Care, Journal, emotion, SupportPlan, inferred severity, or AI data. MB-614 adds one optional stable MentalBridge Resource reference without copying Resource content or exposing ResourceVersion semantics.
+  version: 1.9.0
+  description: Privacy-isolated peer-support Community Contract v1.9. Feed ordering and explicit topic discovery never use Care, Journal, emotion, SupportPlan, inferred severity, or AI data. MB-615 adds an explicit bounded sensitive-content presentation warning controlled by the author or an audited moderator action; it never represents sentiment analysis, diagnosis, inferred severity, or a Care safety classification.
 servers:
   - url: http://localhost:8084
 paths:
@@ -596,6 +596,10 @@ components:
     CommunityPostAuthorMode:
       type: string
       enum: [PROFILE, ANONYMOUS]
+    CommunitySensitiveContentWarning:
+      type: string
+      enum: [SENSITIVE_CONTENT]
+      description: Optional non-clinical Community presentation warning. Absence means no warning; the value is never inferred from sentiment, distress language, screening, Journal, Care, or AI data.
     CommunityCounts:
       type: object
       additionalProperties: false
@@ -637,6 +641,10 @@ components:
           anyOf:
             - $ref: "#/components/schemas/CommunityResourceAttachment"
             - type: "null"
+        sensitiveContentWarning:
+          anyOf:
+            - $ref: "#/components/schemas/CommunitySensitiveContentWarning"
+            - type: "null"
         counts: { $ref: "#/components/schemas/CommunityCounts" }
         viewerState: { $ref: "#/components/schemas/CommunityViewerState" }
         publishedAt: { type: string, format: date-time }
@@ -662,6 +670,10 @@ components:
         resourceAttachment:
           anyOf:
             - $ref: "#/components/schemas/CommunityResourceAttachment"
+            - type: "null"
+        sensitiveContentWarning:
+          anyOf:
+            - $ref: "#/components/schemas/CommunitySensitiveContentWarning"
             - type: "null"
         counts: { $ref: "#/components/schemas/CommunityCounts" }
         viewerState: { $ref: "#/components/schemas/CommunityViewerState" }
@@ -701,6 +713,11 @@ components:
           type: [string, "null"]
           format: uuid
           description: Optional stable Content-owned Resource identifier. Null or omission means no attachment; Community never accepts a ResourceVersion or Resource body.
+        sensitiveContentWarning:
+          anyOf:
+            - $ref: "#/components/schemas/CommunitySensitiveContentWarning"
+            - type: "null"
+          description: Author-selected warning for this post. Null or omission means no warning; the service never infers this value from the post text.
     UpdatePostRequest:
       allOf:
         - $ref: "#/components/schemas/CreatePostRequest"
@@ -872,7 +889,7 @@ components:
       enum: [NORMAL, HIGH]
     ModerationAction:
       type: string
-      enum: [NO_ACTION, HIDE, REMOVE, RESTORE, RESTRICT_COMMUNITY_ACCESS]
+      enum: [NO_ACTION, HIDE, REMOVE, RESTORE, RESTRICT_COMMUNITY_ACCESS, APPLY_SENSITIVE_WARNING, REMOVE_SENSITIVE_WARNING]
     ModerationCase:
       type: object
       additionalProperties: false

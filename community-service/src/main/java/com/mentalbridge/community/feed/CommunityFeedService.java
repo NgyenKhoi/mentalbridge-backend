@@ -84,13 +84,14 @@ public class CommunityFeedService {
 
 	private PostSummary summary(CommunityPostEntity post, ViewerState viewerState) {
 		return new PostSummary(post.id(), author(post), preview(post.content()), sortedTopics(post), media(post),
-				mediaAvailability(post), resourceAttachment(post), counts(post), viewerState, post.publishedAt(), post.updatedAt());
+				mediaAvailability(post), resourceAttachment(post), post.sensitiveContentWarning(), counts(post),
+				viewerState, post.publishedAt(), post.updatedAt());
 	}
 
 	PostDetail toDetail(CommunityPostEntity post, UUID viewerProfileId) {
 		return new PostDetail(post.id(), author(post), post.content(), sortedTopics(post), media(post),
-				mediaAvailability(post), resourceAttachment(post), counts(post), viewerState(post.id(), viewerProfileId), post.publishedAt(),
-				post.updatedAt());
+				mediaAvailability(post), resourceAttachment(post), post.sensitiveContentWarning(), counts(post),
+				viewerState(post.id(), viewerProfileId), post.publishedAt(), post.updatedAt());
 	}
 
 	private ResourceAttachment resourceAttachment(CommunityPostEntity post) {

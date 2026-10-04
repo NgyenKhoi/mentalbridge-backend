@@ -11,6 +11,7 @@ final class CommunityPostRequests {
 	}
 
 	record WritePostRequest(@NotNull String content, @NotNull List<CommunityTopic> topics,
-			@NotNull List<UUID> mediaIds, CommunityPostEntity.AuthorMode authorMode, UUID resourceId) {
+			@NotNull List<UUID> mediaIds, CommunityPostEntity.AuthorMode authorMode, UUID resourceId,
+			CommunitySensitiveContentWarning sensitiveContentWarning) {
 	}
 }

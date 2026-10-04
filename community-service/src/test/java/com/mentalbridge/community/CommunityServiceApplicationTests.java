@@ -74,7 +74,8 @@ class CommunityServiceApplicationTests extends CommunityTestProperties {
 				"0005-community-media-lifecycle", "0006-community-request-fingerprint-varchar",
 				"0007-community-post-author-mode", "0008-community-comments", "0009-community-moderation",
 				"0010-community-interactions", "0011-community-interaction-outbox",
-				"0012-community-topic-governance", "0013-community-resource-attachment");
+				"0012-community-topic-governance", "0013-community-resource-attachment",
+				"0014-community-sensitive-content-warning");
 		assertThat(businessTables).containsExactly("community_access_restriction", "community_block",
 				"community_comment", "community_comment_revision", "community_content_hide",
 				"community_interaction_outbox", "community_media", "community_moderation_action",
@@ -103,6 +104,28 @@ class CommunityServiceApplicationTests extends CommunityTestProperties {
 
 		assertThat(column).containsEntry("data_type", "uuid").containsEntry("is_nullable", "YES");
 		assertThat(foreignKeys).isZero();
+	}
+
+	@Test
+	void sensitiveContentWarningIsNullableAndDatabaseBounded() {
+		var column = jdbc.sql("""
+				select data_type, character_maximum_length, is_nullable
+				from information_schema.columns
+				where table_schema = 'public'
+				  and table_name = 'community_post'
+				  and column_name = 'sensitive_content_warning'
+				""").query().singleRow();
+		var checkClause = jdbc.sql("""
+				select check_clause
+				from information_schema.check_constraints
+				where constraint_schema = 'public'
+				  and constraint_name = 'ck_community_post_sensitive_warning'
+				""").query(String.class).single();
+
+		assertThat(column).containsEntry("data_type", "character varying")
+				.containsEntry("character_maximum_length", 32)
+				.containsEntry("is_nullable", "YES");
+		assertThat(checkClause).contains("SENSITIVE_CONTENT").contains("IS NULL");
 	}
 
 	@Test

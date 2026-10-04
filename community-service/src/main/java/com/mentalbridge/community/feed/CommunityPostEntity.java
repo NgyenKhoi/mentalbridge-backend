@@ -68,6 +68,10 @@ class CommunityPostEntity {
 	private UUID resourceId;
 
 	@Enumerated(EnumType.STRING)
+	@Column(name = "sensitive_content_warning", length = 32)
+	private CommunitySensitiveContentWarning sensitiveContentWarning;
+
+	@Enumerated(EnumType.STRING)
 	@Column(name = "author_mode", nullable = false, length = 16)
 	private AuthorMode authorMode;
 
@@ -90,7 +94,8 @@ class CommunityPostEntity {
 	}
 
 	CommunityPostEntity(UUID id, CommunityProfileEntity author, String content, Set<CommunityTopic> topics,
-			String idempotencyKey, String requestFingerprint, AuthorMode authorMode, UUID resourceId, Instant now) {
+			String idempotencyKey, String requestFingerprint, AuthorMode authorMode, UUID resourceId,
+			CommunitySensitiveContentWarning sensitiveContentWarning, Instant now) {
 		this.id = id;
 		this.author = author;
 		this.content = content;
@@ -103,6 +108,7 @@ class CommunityPostEntity {
 		this.requestFingerprint = requestFingerprint;
 		this.authorMode = authorMode;
 		this.resourceId = resourceId;
+		this.sensitiveContentWarning = sensitiveContentWarning;
 		this.topics.addAll(topics);
 	}
 
@@ -162,12 +168,18 @@ class CommunityPostEntity {
 		return resourceId;
 	}
 
-	void update(String content, Set<CommunityTopic> topics, AuthorMode authorMode, UUID resourceId, Instant now) {
+	CommunitySensitiveContentWarning sensitiveContentWarning() {
+		return sensitiveContentWarning;
+	}
+
+	void update(String content, Set<CommunityTopic> topics, AuthorMode authorMode, UUID resourceId,
+			CommunitySensitiveContentWarning sensitiveContentWarning, Instant now) {
 		this.content = content;
 		this.topics.clear();
 		this.topics.addAll(topics);
 		this.authorMode = authorMode;
 		this.resourceId = resourceId;
+		this.sensitiveContentWarning = sensitiveContentWarning;
 		this.updatedAt = now;
 	}
 
