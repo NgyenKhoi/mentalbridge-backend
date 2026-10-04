@@ -283,7 +283,7 @@ public class ConsultationBriefService {
 			return denied(HttpStatus.FORBIDDEN, "CONSULTATION_BRIEF_ACCESS_EXPIRED",
 					"Consultation brief access has expired");
 		}
-		var view = snapshot(grant.snapshotId());
+		var view = snapshot(grant);
 		if (view == null) {
 			audit(context.appointmentId(), grant.id(), specialistId, "SPECIALIST", "READ", "DENIED",
 					"SNAPSHOT_OR_SOURCE_MISSING", correlationId, now);
@@ -328,7 +328,7 @@ public class ConsultationBriefService {
 		return screening(briefUser(brief.id()), brief.supportEvaluationId());
 	}
 
-	private SpecialistBriefView snapshot(UUID snapshotId) {
+	private SpecialistBriefView snapshot(GrantRow grant) {
 		return jdbc.sql("""
 				select s.id,s.appointment_id,s.current_situation,s.support_evaluation_id,
 				 s.screening_context::text,s.user_goals::text,s.snapshot_version,s.created_at
@@ -338,12 +338,13 @@ public class ConsultationBriefService {
 				where s.id=:id and s.deleted_at is null
 				  and (select count(*) from support_evaluation_v2_domain d
 				       where d.support_evaluation_id=e.id)=2
-				""").param("id", snapshotId).query((rs, row) -> new SpecialistBriefView(
+				""").param("id", grant.snapshotId()).query((rs, row) -> new SpecialistBriefView(
 					rs.getObject("id", UUID.class), rs.getObject("appointment_id", UUID.class),
 					rs.getString("current_situation"), rs.getObject("support_evaluation_id", UUID.class),
 					decode(rs.getString("screening_context"), SCREENING_LIST),
 					decode(rs.getString("user_goals"), STRING_LIST), rs.getLong("snapshot_version"),
-					rs.getTimestamp("created_at").toInstant())).optional().orElse(null);
+					rs.getTimestamp("created_at").toInstant(), grant.accessStartAt(), grant.accessEndAt(),
+					"CONSULTATION_BRIEF")).optional().orElse(null);
 	}
 
 	private List<ScreeningContext> screening(UUID userId, UUID evaluationId) {
@@ -489,7 +490,8 @@ public class ConsultationBriefService {
 			long version, Instant updatedAt) { }
 	public record SpecialistBriefView(UUID snapshotId, UUID appointmentId, String currentSituation,
 			UUID supportEvaluationId, List<ScreeningContext> screeningContext, List<String> userGoals,
-			long snapshotVersion, Instant approvedAt) { }
+			long snapshotVersion, Instant approvedAt, Instant accessStartAt, Instant accessEndAt,
+			String sourceType) { }
 	public record ScreeningContextChoice(UUID supportEvaluationId, Instant evaluatedAt,
 			List<ScreeningContext> screeningContext) { }
 	public record ScreeningContextList(List<ScreeningContextChoice> items, int count) { }

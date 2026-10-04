@@ -17,4 +17,9 @@ public interface ConsultationAppointmentHttpClient {
 	AppointmentContext context(@PathVariable UUID appointmentId,
 			@RequestHeader("Authorization") String authorization,
 			@RequestHeader("X-Correlation-Id") String correlationId);
+
+	@GetMapping("/internal/v1/specialist/client-relationships")
+	SpecialistClientRelationshipProjection clientRelationships(
+			@RequestHeader("Authorization") String authorization,
+			@RequestHeader("X-Correlation-Id") String correlationId);
 }

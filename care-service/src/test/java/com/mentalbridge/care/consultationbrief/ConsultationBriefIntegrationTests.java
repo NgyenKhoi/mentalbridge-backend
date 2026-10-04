@@ -14,6 +14,7 @@ import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.status;
 
 import java.time.Instant;
+import java.util.List;
 import java.util.UUID;
 import java.util.concurrent.CountDownLatch;
 import java.util.concurrent.Executors;
@@ -70,6 +71,9 @@ class ConsultationBriefIntegrationTests extends CareTestProperties {
 				.andExpect(status().isOk()).andExpect(jsonPath("$.currentSituation").value("Work pressure this week"))
 				.andExpect(jsonPath("$.userGoals[0]").value("Discuss a manageable next step"))
 				.andExpect(jsonPath("$.snapshotVersion").value(1))
+				.andExpect(jsonPath("$.sourceType").value("CONSULTATION_BRIEF"))
+				.andExpect(jsonPath("$.accessStartAt").exists())
+				.andExpect(jsonPath("$.accessEndAt").exists())
 				.andExpect(jsonPath("$.assessmentAnswers").doesNotExist())
 				.andExpect(jsonPath("$.diagnosis").doesNotExist());
 		mvc.perform(post("/api/v1/consultation-briefs/{id}/revoke", fixture.appointmentId())
@@ -83,6 +87,51 @@ class ConsultationBriefIntegrationTests extends CareTestProperties {
 
 		assertThat(auditCount(fixture.appointmentId(), "READ", "ALLOWED")).isOne();
 		assertThat(auditCount(fixture.appointmentId(), "READ", "DENIED")).isOne();
+	}
+
+	@Test
+	void continuityListUsesOnlyAuthoritativeRelationshipsAndReturnsNoPrivateContent() throws Exception {
+		var fixture = fixture(Instant.now().plusSeconds(3_600));
+		createAndApprove(fixture);
+		var storedSchedule = jdbc.sql("""
+				select appointment_start_at, appointment_end_at, appointment_version
+				from consultation_brief where appointment_id=:appointmentId
+				""").param("appointmentId", fixture.appointmentId())
+				.query((rs, row) -> new AppointmentSchedule(
+						rs.getTimestamp("appointment_start_at").toInstant(),
+						rs.getTimestamp("appointment_end_at").toInstant(),
+						rs.getLong("appointment_version"))).single();
+		doReturn(new SpecialistClientRelationshipProjection(List.of(
+				new SpecialistClientRelationshipProjection.Item(fixture.appointmentId(), fixture.userId(),
+						"CONFIRMED", "IN_APP_CHAT", storedSchedule.startAt(), storedSchedule.endAt(),
+						storedSchedule.version())),
+				1, Instant.now(), Instant.now().minusSeconds(90L * 24 * 3_600),
+				"specialist-client-continuity-v1"))
+				.when(appointments).clientRelationships(anyString(), any());
+
+		mvc.perform(get("/api/v1/specialist/client-continuity")
+				.with(specialist(fixture.specialistId())))
+				.andExpect(status().isOk())
+				.andExpect(jsonPath("$.count").value(1))
+				.andExpect(jsonPath("$.items[0].userDisplayName").value("Consultation brief user"))
+				.andExpect(jsonPath("$.items[0].briefAccessState").value("AVAILABLE"))
+				.andExpect(jsonPath("$.items[0].briefSnapshotVersion").value(1))
+				.andExpect(jsonPath("$.items[0].currentSituation").doesNotExist())
+				.andExpect(jsonPath("$.items[0].assessmentAnswers").doesNotExist())
+				.andExpect(jsonPath("$.items[0].journal").doesNotExist());
+
+		mvc.perform(post("/api/v1/consultation-briefs/{id}/revoke", fixture.appointmentId())
+				.with(user(fixture.userId())).header("If-Match", "\"1\""))
+				.andExpect(status().isOk());
+		mvc.perform(get("/api/v1/specialist/client-continuity")
+				.with(specialist(fixture.specialistId())))
+				.andExpect(status().isOk())
+				.andExpect(jsonPath("$.items[0].briefAccessState").value("REVOKED"));
+
+		assertThat(jdbc.sql("""
+				select count(*) from consultation_brief_audit
+				where appointment_id=:appointmentId and reason_code='CONTINUITY_LIST_READ'
+				""").param("appointmentId", fixture.appointmentId()).query(Long.class).single()).isEqualTo(2);
 	}
 
 	@Test
@@ -319,4 +368,5 @@ class ConsultationBriefIntegrationTests extends CareTestProperties {
 
 	private record Fixture(UUID appointmentId, UUID userId, UUID specialistId, UUID evaluationId,
 			Instant startAt) { }
+	private record AppointmentSchedule(Instant startAt, Instant endAt, long version) { }
 }

@@ -135,6 +135,46 @@ class AppointmentDecisionIntegrationTests extends ConsultationTestProperties {
 	}
 
 	@Test
+	void continuityRelationshipsIncludeOnlyApprovedSpecialistsBoundedAppointmentsAndAreAudited() throws Exception {
+		var fixture = requestedAppointment();
+		decisions.accept(fixture.specialistId(), fixture.appointmentId(), 0,
+				"accept-continuity-command-0001");
+
+		mvc.perform(get("/internal/v1/specialist/client-relationships")
+				.with(specialist(fixture.specialistId())))
+				.andExpect(status().isOk())
+				.andExpect(jsonPath("$.policyVersion").value("specialist-client-continuity-v1"))
+				.andExpect(jsonPath("$.count").value(1))
+				.andExpect(jsonPath("$.items[0].appointmentId").value(fixture.appointmentId().toString()))
+				.andExpect(jsonPath("$.items[0].userAccountId").value(fixture.userId().toString()))
+				.andExpect(jsonPath("$.items[0].status").value("CONFIRMED"));
+
+		assertThat(jdbc.sql("""
+				select count(*) from specialist_client_continuity_audit
+				where specialist_account_id=:specialistId and outcome='ALLOWED'
+				""").param("specialistId", fixture.specialistId()).query(Long.class).single()).isOne();
+
+		jdbc.sql("""
+				update specialist_profile
+				set approval_status='SUSPENDED', decision_reason_code='ACCOUNT_REVIEW_REQUIRED'
+				where account_id=:specialistId
+				""")
+				.param("specialistId", fixture.specialistId()).update();
+		mvc.perform(get("/internal/v1/specialist/client-relationships")
+				.with(specialist(fixture.specialistId())))
+				.andExpect(status().isForbidden())
+				.andExpect(jsonPath("$.code").value("SPECIALIST_CONTINUITY_ACCESS_DENIED"));
+		mvc.perform(get("/internal/v1/appointments/{id}/consultation-brief-context", fixture.appointmentId())
+				.with(specialist(fixture.specialistId())))
+				.andExpect(status().isNotFound());
+		assertThat(jdbc.sql("""
+				select count(*) from specialist_client_continuity_audit
+				where specialist_account_id=:specialistId and outcome='DENIED'
+				  and reason_code='SPECIALIST_NOT_APPROVED'
+				""").param("specialistId", fixture.specialistId()).query(Long.class).single()).isOne();
+	}
+
+	@Test
 	void assignedSpecialistRejectsOnceAndReloadShowsReleasedCredit() throws Exception {
 		var fixture = requestedAppointment();
 

@@ -1037,6 +1037,16 @@ CREATE TABLE consultation.appointment_chat_evidence (
     UNIQUE (appointment_id, evidence_id)
 );
 
+CREATE TABLE consultation.specialist_client_continuity_audit (
+    id uuid PRIMARY KEY,
+    specialist_account_id uuid NOT NULL, -- external -> identity.account.id
+    action varchar(16) NOT NULL,
+    outcome varchar(16) NOT NULL,
+    reason_code varchar(64) NOT NULL,
+    relationship_count integer NOT NULL,
+    occurred_at timestamptz NOT NULL
+);
+
 CREATE TABLE consultation.session_summary (
     id uuid PRIMARY KEY,
     appointment_id uuid NOT NULL REFERENCES consultation.appointment(id),

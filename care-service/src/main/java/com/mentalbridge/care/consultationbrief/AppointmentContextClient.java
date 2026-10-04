@@ -38,6 +38,37 @@ public class AppointmentContextClient {
 		}
 	}
 
+	public SpecialistClientRelationshipProjection clientRelationships(String bearerToken, UUID correlationId) {
+		if (bearerToken == null || bearerToken.isBlank() || correlationId == null) {
+			throw new IllegalArgumentException("Authenticated relationship request context is required");
+		}
+		try {
+			var projection = http.clientRelationships("Bearer " + bearerToken, correlationId.toString());
+			if (projection == null || projection.items() == null || projection.generatedAt() == null
+					|| projection.recentSince() == null || projection.policyVersion() == null
+					|| projection.count() != projection.items().size()
+					|| projection.items().stream().anyMatch(this::invalid)) throw unavailable();
+			return projection;
+		}
+		catch (ApiException exception) {
+			throw exception;
+		}
+		catch (FeignException.Forbidden exception) {
+			throw new ApiException(HttpStatus.FORBIDDEN, "SPECIALIST_CONTINUITY_ACCESS_DENIED",
+					"Specialist continuity access is unavailable");
+		}
+		catch (RuntimeException exception) {
+			throw unavailable();
+		}
+	}
+
+	private boolean invalid(SpecialistClientRelationshipProjection.Item item) {
+		return item == null || item.appointmentId() == null || item.userAccountId() == null
+				|| item.status() == null || item.modality() == null || item.scheduledStartAt() == null
+				|| item.scheduledEndAt() == null || !item.scheduledEndAt().isAfter(item.scheduledStartAt())
+				|| item.appointmentVersion() < 0;
+	}
+
 	private boolean valid(UUID appointmentId, AppointmentContext context) {
 		return context != null && appointmentId.equals(context.appointmentId())
 				&& context.userAccountId() != null && context.specialistAccountId() != null

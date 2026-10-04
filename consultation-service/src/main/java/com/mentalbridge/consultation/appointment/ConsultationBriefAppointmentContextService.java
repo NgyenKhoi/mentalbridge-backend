@@ -22,12 +22,15 @@ public class ConsultationBriefAppointmentContextService {
 	public ConsultationBriefAppointmentContext read(UUID appointmentId, UUID actorId,
 			boolean user, boolean specialist) {
 		return jdbc.sql("""
-				select id, user_account_id, specialist_account_id, status,
-				       scheduled_start_at, scheduled_end_at, version
-				from appointment
-				where id=:appointmentId
-				  and ((:userRole and user_account_id=:actorId)
-				       or (:specialistRole and specialist_account_id=:actorId))
+				select a.id, a.user_account_id, a.specialist_account_id, a.status,
+				       a.scheduled_start_at, a.scheduled_end_at, a.version
+				from appointment a
+				where a.id=:appointmentId
+				  and ((:userRole and a.user_account_id=:actorId)
+				       or (:specialistRole and a.specialist_account_id=:actorId and exists (
+				           select 1 from specialist_profile p
+				           where p.account_id=a.specialist_account_id and p.approval_status='APPROVED'
+				       )))
 				""")
 				.param("appointmentId", appointmentId)
 				.param("actorId", actorId)
