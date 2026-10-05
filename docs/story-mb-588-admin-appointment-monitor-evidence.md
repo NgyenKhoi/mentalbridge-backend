@@ -48,3 +48,5 @@ does not fall back to mock appointments.
 - Consultation PostgreSQL integration suite: PASS (2 tests) with Docker-backed
   Testcontainers, including ADMIN filtering, minimized output, role denial, and
   invalid/unbounded query rejection.
+- Full Consultation test suite: PASS (129 tests), including shared-database
+  execution with the pagination fixture isolated by its user filter.

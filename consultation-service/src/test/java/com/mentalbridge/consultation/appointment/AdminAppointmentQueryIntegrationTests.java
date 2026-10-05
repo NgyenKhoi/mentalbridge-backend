@@ -55,13 +55,14 @@ class AdminAppointmentQueryIntegrationTests extends ConsultationTestProperties {
 
 		var firstPage = mvc.perform(get("/api/v1/admin/appointments").with(admin())
 				.param("from", "2026-10-01T00:00:00Z").param("to", "2026-11-01T00:00:00Z")
-				.param("limit", "1")).andExpect(status().isOk())
+				.param("userAccountId", userId.toString()).param("limit", "1")).andExpect(status().isOk())
 				.andExpect(jsonPath("$.items[0].appointmentId").value(second.toString()))
 				.andExpect(jsonPath("$.nextCursor").isNotEmpty()).andReturn();
 		var cursor = json.readTree(firstPage.getResponse().getContentAsByteArray()).get("nextCursor").asText();
 		mvc.perform(get("/api/v1/admin/appointments").with(admin())
 				.param("from", "2026-10-01T00:00:00Z").param("to", "2026-11-01T00:00:00Z")
-				.param("limit", "1").param("cursor", cursor)).andExpect(status().isOk())
+				.param("userAccountId", userId.toString()).param("limit", "1").param("cursor", cursor))
+				.andExpect(status().isOk())
 				.andExpect(jsonPath("$.items[0].appointmentId").value(first.toString()))
 				.andExpect(jsonPath("$.nextCursor").doesNotExist());
 	}
