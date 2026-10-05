@@ -20,7 +20,23 @@
       "format": "uuid"
     },
     "eventType": {
-      "type": "string"
+      "type": "string",
+      "enum": [
+        "identity.account.disabled",
+        "identity.account.restored",
+        "consultation.specialist.approved",
+        "consultation.specialist.rejected",
+        "consultation.specialist.suspended",
+        "consultation.specialist.restored",
+        "content.resource.published",
+        "content.resource.archived",
+        "content.safety-directory.reviewed",
+        "content.safety-directory.deactivated",
+        "community.moderation.action-applied",
+        "community.moderation.case-resolved",
+        "community.post.removed",
+        "community.user.suspended"
+      ]
     },
     "occurredAt": {
       "type": "string",

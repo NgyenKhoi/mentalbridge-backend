@@ -53,6 +53,7 @@ class AdministrationAuditIngestionServiceTests {
         AdministrationAuditIngestionService.IngestionCommand command =
                 new AdministrationAuditIngestionService.IngestionCommand(
                         eventId,
+                        "consultation.specialist.suspended",
                         occurredAt,
                         AdministrationAuditService.AuditSourceService.CONSULTATION,
                         AdministrationAuditService.AuditDomain.SPECIALIST_REVIEW,
@@ -87,6 +88,115 @@ class AdministrationAuditIngestionServiceTests {
     }
 
     @Test
+    @DisplayName("Security: tuple mismatch between eventType and sourceService/domain/action is rejected")
+    void rejectTupleMismatchBetweenEventTypeAndDeclaredFields() {
+        UUID eventId = UUID.randomUUID();
+        when(auditRepository.existsById(eventId)).thenReturn(false);
+
+        // Claiming consultation.specialist.suspended but forging CONTENT / RESOURCE_MANAGEMENT / RESOURCE_PUBLISHED
+        AdministrationAuditIngestionService.IngestionCommand command =
+                new AdministrationAuditIngestionService.IngestionCommand(
+                        eventId,
+                        "consultation.specialist.suspended",
+                        Instant.now(),
+                        AdministrationAuditService.AuditSourceService.CONTENT,
+                        AdministrationAuditService.AuditDomain.RESOURCE_MANAGEMENT,
+                        null,
+                        "SYSTEM",
+                        "RESOURCE_PUBLISHED",
+                        "SUCCEEDED",
+                        null,
+                        UUID.randomUUID(),
+                        null,
+                        null
+                );
+
+        boolean result = ingestionService.ingest(command);
+
+        assertThat(result).isFalse();
+        verify(auditRepository, never()).saveAndFlush(any());
+    }
+
+    @Test
+    @DisplayName("Security: tuple mismatch on action is rejected")
+    void rejectTupleMismatchOnAction() {
+        UUID eventId = UUID.randomUUID();
+        when(auditRepository.existsById(eventId)).thenReturn(false);
+
+        // consultation.specialist.suspended descriptor requires SPECIALIST_SUSPENDED, but action sent is SPECIALIST_APPROVED
+        AdministrationAuditIngestionService.IngestionCommand command =
+                new AdministrationAuditIngestionService.IngestionCommand(
+                        eventId,
+                        "consultation.specialist.suspended",
+                        Instant.now(),
+                        AdministrationAuditService.AuditSourceService.CONSULTATION,
+                        AdministrationAuditService.AuditDomain.SPECIALIST_REVIEW,
+                        null,
+                        "SYSTEM",
+                        "SPECIALIST_APPROVED",
+                        "SUCCEEDED",
+                        null,
+                        UUID.randomUUID(),
+                        null,
+                        null
+                );
+
+        boolean result = ingestionService.ingest(command);
+
+        assertThat(result).isFalse();
+        verify(auditRepository, never()).saveAndFlush(any());
+    }
+
+    @Test
+    @DisplayName("Fail-closed: invalid result/outcome is rejected and does not default to SUCCEEDED")
+    void rejectInvalidResultFailClosed() {
+        UUID eventId = UUID.randomUUID();
+        when(auditRepository.existsById(eventId)).thenReturn(false);
+
+        AdministrationAuditIngestionService.IngestionCommand commandWithPending =
+                new AdministrationAuditIngestionService.IngestionCommand(
+                        eventId,
+                        "consultation.specialist.suspended",
+                        Instant.now(),
+                        AdministrationAuditService.AuditSourceService.CONSULTATION,
+                        AdministrationAuditService.AuditDomain.SPECIALIST_REVIEW,
+                        null,
+                        "SYSTEM",
+                        "SPECIALIST_SUSPENDED",
+                        "PENDING",
+                        null,
+                        UUID.randomUUID(),
+                        null,
+                        null
+                );
+
+        boolean resultPending = ingestionService.ingest(commandWithPending);
+        assertThat(resultPending).isFalse();
+        verify(auditRepository, never()).saveAndFlush(any());
+
+        AdministrationAuditIngestionService.IngestionCommand commandWithNull =
+                new AdministrationAuditIngestionService.IngestionCommand(
+                        eventId,
+                        "consultation.specialist.suspended",
+                        Instant.now(),
+                        AdministrationAuditService.AuditSourceService.CONSULTATION,
+                        AdministrationAuditService.AuditDomain.SPECIALIST_REVIEW,
+                        null,
+                        "SYSTEM",
+                        "SPECIALIST_SUSPENDED",
+                        null,
+                        null,
+                        UUID.randomUUID(),
+                        null,
+                        null
+                );
+
+        boolean resultNull = ingestionService.ingest(commandWithNull);
+        assertThat(resultNull).isFalse();
+        verify(auditRepository, never()).saveAndFlush(any());
+    }
+
+    @Test
     @DisplayName("Idempotency: duplicate event ID is ignored and returns false")
     void idempotentRetryIgnoresDuplicateEventId() {
         UUID eventId = UUID.randomUUID();
@@ -95,6 +205,7 @@ class AdministrationAuditIngestionServiceTests {
         AdministrationAuditIngestionService.IngestionCommand command =
                 new AdministrationAuditIngestionService.IngestionCommand(
                         eventId,
+                        "identity.account.disabled",
                         Instant.now(),
                         AdministrationAuditService.AuditSourceService.IDENTITY,
                         AdministrationAuditService.AuditDomain.ACCOUNT_ADMINISTRATION,
@@ -124,6 +235,7 @@ class AdministrationAuditIngestionServiceTests {
         AdministrationAuditIngestionService.IngestionCommand command =
                 new AdministrationAuditIngestionService.IngestionCommand(
                         eventId,
+                        "identity.account.disabled",
                         Instant.now(),
                         AdministrationAuditService.AuditSourceService.IDENTITY,
                         AdministrationAuditService.AuditDomain.ACCOUNT_ADMINISTRATION,
@@ -151,6 +263,7 @@ class AdministrationAuditIngestionServiceTests {
         AdministrationAuditIngestionService.IngestionCommand command =
                 new AdministrationAuditIngestionService.IngestionCommand(
                         eventId,
+                        "content.resource.published",
                         Instant.now(),
                         AdministrationAuditService.AuditSourceService.CONTENT,
                         AdministrationAuditService.AuditDomain.RESOURCE_MANAGEMENT,
@@ -174,17 +287,18 @@ class AdministrationAuditIngestionServiceTests {
     }
 
     @Test
-    @DisplayName("Security: unallowlisted action is rejected and not persisted")
-    void rejectUnallowlistedAction() {
+    @DisplayName("Security: unallowlisted event type is rejected and not persisted")
+    void rejectUnallowlistedEventType() {
         UUID eventId = UUID.randomUUID();
         when(auditRepository.existsById(eventId)).thenReturn(false);
 
         AdministrationAuditIngestionService.IngestionCommand command =
                 new AdministrationAuditIngestionService.IngestionCommand(
                         eventId,
+                        "chat.message.sent",
                         Instant.now(),
-                        AdministrationAuditService.AuditSourceService.COMMUNITY,
-                        AdministrationAuditService.AuditDomain.COMMUNITY_MODERATION,
+                        null,
+                        null,
                         null,
                         "SYSTEM",
                         "SEND_UNAUTHORIZED_CHAT",
@@ -211,6 +325,7 @@ class AdministrationAuditIngestionServiceTests {
         AdministrationAuditIngestionService.IngestionCommand command =
                 new AdministrationAuditIngestionService.IngestionCommand(
                         eventId,
+                        "content.resource.published",
                         Instant.now(),
                         AdministrationAuditService.AuditSourceService.CONTENT,
                         AdministrationAuditService.AuditDomain.RESOURCE_MANAGEMENT,
@@ -236,18 +351,17 @@ class AdministrationAuditIngestionServiceTests {
     }
 
     @Test
-    @DisplayName("Consumer: unallowlisted message type is ignored and never delegated")
-    void consumerIgnoresUnallowlistedMessageType() {
+    @DisplayName("Consumer: unallowlisted event type is ignored and never delegated")
+    void consumerIgnoresUnallowlistedEventType() {
         String json = """
                 {
                   "eventId": "%s",
-                  "messageType": "chat.message.sent",
-                  "payload": {
-                    "action": "SEND_UNAUTHORIZED_CHAT",
-                    "chatBody": "Sensitive private body"
-                  }
+                  "eventType": "chat.message.sent",
+                  "correlationId": "%s",
+                  "action": "SEND_UNAUTHORIZED_CHAT",
+                  "chatBody": "Sensitive private body"
                 }
-                """.formatted(UUID.randomUUID());
+                """.formatted(UUID.randomUUID(), UUID.randomUUID());
 
         consumer.onMessage(json);
 
@@ -255,16 +369,53 @@ class AdministrationAuditIngestionServiceTests {
     }
 
     @Test
-    @DisplayName("Consumer: message with missing eventId is ignored")
+    @DisplayName("Consumer: message with missing eventId is safely ignored without logging raw payload")
     void consumerIgnoresMessageWithMissingEventId() {
         String json = """
                 {
-                  "messageType": "consultation.specialist.suspended",
-                  "payload": {
-                    "action": "SPECIALIST_SUSPENDED"
-                  }
+                  "eventType": "consultation.specialist.suspended",
+                  "action": "SPECIALIST_SUSPENDED",
+                  "rawJournal": "PATIENT_CONFIDENTIAL_JOURNAL"
                 }
                 """;
+
+        consumer.onMessage(json);
+
+        verify(auditRepository, never()).saveAndFlush(any());
+    }
+
+    @Test
+    @DisplayName("Consumer: message with invalid result is rejected fail-closed")
+    void consumerRejectsMessageWithInvalidResult() {
+        String json = """
+                {
+                  "eventId": "%s",
+                  "eventType": "consultation.specialist.suspended",
+                  "action": "SPECIALIST_SUSPENDED",
+                  "result": "PENDING",
+                  "correlationId": "%s"
+                }
+                """.formatted(UUID.randomUUID(), UUID.randomUUID());
+
+        consumer.onMessage(json);
+
+        verify(auditRepository, never()).saveAndFlush(any());
+    }
+
+    @Test
+    @DisplayName("Consumer: message with conflicting tuple is rejected")
+    void consumerRejectsConflictingTupleMessage() {
+        String json = """
+                {
+                  "eventId": "%s",
+                  "eventType": "consultation.specialist.suspended",
+                  "sourceService": "CONTENT",
+                  "domain": "RESOURCE_MANAGEMENT",
+                  "action": "RESOURCE_PUBLISHED",
+                  "result": "SUCCEEDED",
+                  "correlationId": "%s"
+                }
+                """.formatted(UUID.randomUUID(), UUID.randomUUID());
 
         consumer.onMessage(json);
 

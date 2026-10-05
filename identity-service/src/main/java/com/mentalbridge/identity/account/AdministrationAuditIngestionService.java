@@ -4,8 +4,10 @@ import java.nio.charset.StandardCharsets;
 import java.security.MessageDigest;
 import java.security.NoSuchAlgorithmException;
 import java.time.Instant;
+import java.util.Map;
 import java.util.Set;
 import java.util.UUID;
+import java.util.stream.Collectors;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.springframework.dao.DataIntegrityViolationException;
@@ -17,41 +19,97 @@ public class AdministrationAuditIngestionService {
 
     private static final Logger LOGGER = LoggerFactory.getLogger(AdministrationAuditIngestionService.class);
 
-    public static final Set<String> ALLOWED_ACTIONS = Set.of(
+    public record EventTypeDescriptor(
+            AdministrationAuditService.AuditSourceService sourceService,
+            AdministrationAuditService.AuditDomain domain,
+            String action
+    ) {}
+
+    public static final Map<String, EventTypeDescriptor> ALLOWED_EVENT_TYPES = Map.ofEntries(
             // IDENTITY / ACCOUNT_ADMINISTRATION
-            "ACCOUNT_DISABLED",
-            "ACCOUNT_RESTORED",
+            Map.entry("identity.account.disabled",
+                    new EventTypeDescriptor(
+                            AdministrationAuditService.AuditSourceService.IDENTITY,
+                            AdministrationAuditService.AuditDomain.ACCOUNT_ADMINISTRATION,
+                            "ACCOUNT_DISABLED")),
+            Map.entry("identity.account.restored",
+                    new EventTypeDescriptor(
+                            AdministrationAuditService.AuditSourceService.IDENTITY,
+                            AdministrationAuditService.AuditDomain.ACCOUNT_ADMINISTRATION,
+                            "ACCOUNT_RESTORED")),
+
             // CONSULTATION / SPECIALIST_REVIEW
-            "SPECIALIST_APPROVED",
-            "SPECIALIST_REJECTED",
-            "SPECIALIST_SUSPENDED",
-            "SPECIALIST_RESTORED",
+            Map.entry("consultation.specialist.approved",
+                    new EventTypeDescriptor(
+                            AdministrationAuditService.AuditSourceService.CONSULTATION,
+                            AdministrationAuditService.AuditDomain.SPECIALIST_REVIEW,
+                            "SPECIALIST_APPROVED")),
+            Map.entry("consultation.specialist.rejected",
+                    new EventTypeDescriptor(
+                            AdministrationAuditService.AuditSourceService.CONSULTATION,
+                            AdministrationAuditService.AuditDomain.SPECIALIST_REVIEW,
+                            "SPECIALIST_REJECTED")),
+            Map.entry("consultation.specialist.suspended",
+                    new EventTypeDescriptor(
+                            AdministrationAuditService.AuditSourceService.CONSULTATION,
+                            AdministrationAuditService.AuditDomain.SPECIALIST_REVIEW,
+                            "SPECIALIST_SUSPENDED")),
+            Map.entry("consultation.specialist.restored",
+                    new EventTypeDescriptor(
+                            AdministrationAuditService.AuditSourceService.CONSULTATION,
+                            AdministrationAuditService.AuditDomain.SPECIALIST_REVIEW,
+                            "SPECIALIST_RESTORED")),
+
             // CONTENT / RESOURCE_MANAGEMENT
-            "RESOURCE_PUBLISHED",
-            "RESOURCE_ARCHIVED",
-            "SAFETY_DIRECTORY_REVIEWED",
-            "SAFETY_DIRECTORY_DEACTIVATED",
+            Map.entry("content.resource.published",
+                    new EventTypeDescriptor(
+                            AdministrationAuditService.AuditSourceService.CONTENT,
+                            AdministrationAuditService.AuditDomain.RESOURCE_MANAGEMENT,
+                            "RESOURCE_PUBLISHED")),
+            Map.entry("content.resource.archived",
+                    new EventTypeDescriptor(
+                            AdministrationAuditService.AuditSourceService.CONTENT,
+                            AdministrationAuditService.AuditDomain.RESOURCE_MANAGEMENT,
+                            "RESOURCE_ARCHIVED")),
+            Map.entry("content.safety-directory.reviewed",
+                    new EventTypeDescriptor(
+                            AdministrationAuditService.AuditSourceService.CONTENT,
+                            AdministrationAuditService.AuditDomain.RESOURCE_MANAGEMENT,
+                            "SAFETY_DIRECTORY_REVIEWED")),
+            Map.entry("content.safety-directory.deactivated",
+                    new EventTypeDescriptor(
+                            AdministrationAuditService.AuditSourceService.CONTENT,
+                            AdministrationAuditService.AuditDomain.RESOURCE_MANAGEMENT,
+                            "SAFETY_DIRECTORY_DEACTIVATED")),
+
             // COMMUNITY / COMMUNITY_MODERATION
-            "MODERATION_ACTION_APPLIED",
-            "MODERATION_CASE_RESOLVED",
-            "COMMUNITY_POST_REMOVED",
-            "COMMUNITY_USER_SUSPENDED"
+            Map.entry("community.moderation.action-applied",
+                    new EventTypeDescriptor(
+                            AdministrationAuditService.AuditSourceService.COMMUNITY,
+                            AdministrationAuditService.AuditDomain.COMMUNITY_MODERATION,
+                            "MODERATION_ACTION_APPLIED")),
+            Map.entry("community.moderation.case-resolved",
+                    new EventTypeDescriptor(
+                            AdministrationAuditService.AuditSourceService.COMMUNITY,
+                            AdministrationAuditService.AuditDomain.COMMUNITY_MODERATION,
+                            "MODERATION_CASE_RESOLVED")),
+            Map.entry("community.post.removed",
+                    new EventTypeDescriptor(
+                            AdministrationAuditService.AuditSourceService.COMMUNITY,
+                            AdministrationAuditService.AuditDomain.COMMUNITY_MODERATION,
+                            "COMMUNITY_POST_REMOVED")),
+            Map.entry("community.user.suspended",
+                    new EventTypeDescriptor(
+                            AdministrationAuditService.AuditSourceService.COMMUNITY,
+                            AdministrationAuditService.AuditDomain.COMMUNITY_MODERATION,
+                            "COMMUNITY_USER_SUSPENDED"))
     );
 
-    public static final Set<String> ALLOWED_MESSAGE_TYPES = Set.of(
-            "platform.admin.audit-event",
-            "identity.account.state-changed",
-            "consultation.specialist.approved",
-            "consultation.specialist.rejected",
-            "consultation.specialist.suspended",
-            "consultation.specialist.restored",
-            "content.resource.published",
-            "content.resource.archived",
-            "content.safety-directory.reviewed",
-            "content.safety-directory.deactivated",
-            "community.moderation.action-applied",
-            "community.moderation.case-resolved"
-    );
+    public static final Set<String> ALLOWED_ACTIONS = ALLOWED_EVENT_TYPES.values().stream()
+            .map(EventTypeDescriptor::action)
+            .collect(Collectors.toUnmodifiableSet());
+
+    public static final Set<String> ALLOWED_MESSAGE_TYPES = ALLOWED_EVENT_TYPES.keySet();
 
     private final SecurityAuditEventRepository auditRepository;
     private final AccountRepository accountRepository;
@@ -76,37 +134,68 @@ public class AdministrationAuditIngestionService {
             return false;
         }
 
-        // 2. Allowlist action validation
-        String action = command.action();
-        if (action == null || !ALLOWED_ACTIONS.contains(action)) {
-            LOGGER.warn("Rejecting unallowlisted audit action: {}", action);
+        // 2. Strict descriptor lookup & tuple binding
+        EventTypeDescriptor descriptor = null;
+        if (command.eventType() != null) {
+            if (!ALLOWED_EVENT_TYPES.containsKey(command.eventType())) {
+                LOGGER.warn("Rejecting unallowlisted audit eventType: {}", command.eventType());
+                return false;
+            }
+            descriptor = ALLOWED_EVENT_TYPES.get(command.eventType());
+        } else {
+            for (var entry : ALLOWED_EVENT_TYPES.entrySet()) {
+                var d = entry.getValue();
+                if ((command.sourceService() == null || d.sourceService() == command.sourceService())
+                        && (command.domain() == null || d.domain() == command.domain())
+                        && (command.action() != null && d.action().equals(command.action()))) {
+                    descriptor = d;
+                    break;
+                }
+            }
+            if (descriptor == null) {
+                LOGGER.warn("Rejecting audit event with unknown event type or action tuple: action={}", command.action());
+                return false;
+            }
+        }
+
+        // Strict cross-service tuple binding validation: do not trust self-declared fields if conflicting
+        if (command.sourceService() != null && command.sourceService() != descriptor.sourceService()) {
+            LOGGER.warn("Rejecting audit event {} due to sourceService mismatch for {}: expected {}, got {}",
+                    command.eventId(), command.eventType(), descriptor.sourceService(), command.sourceService());
+            return false;
+        }
+        if (command.domain() != null && command.domain() != descriptor.domain()) {
+            LOGGER.warn("Rejecting audit event {} due to domain mismatch for {}: expected {}, got {}",
+                    command.eventId(), command.eventType(), descriptor.domain(), command.domain());
+            return false;
+        }
+        if (command.action() != null && !command.action().equals(descriptor.action())) {
+            LOGGER.warn("Rejecting audit event {} due to action mismatch for {}: expected {}, got {}",
+                    command.eventId(), command.eventType(), descriptor.action(), command.action());
             return false;
         }
 
-        // 3. Privacy & reasonCode fail-closed allowlist
-        String reasonCode = AdministrationAuditService.safeReasonCode(command.reasonCode());
+        AdministrationAuditService.AuditSourceService sourceService = descriptor.sourceService();
+        AdministrationAuditService.AuditDomain domain = descriptor.domain();
+        String action = descriptor.action();
 
-        // 4. Outcome validation
+        // 3. Outcome validation (fail-closed)
         String outcome = command.result();
         if (outcome == null || (!outcome.equals("SUCCEEDED") && !outcome.equals("DENIED") && !outcome.equals("FAILED"))) {
-            outcome = "SUCCEEDED";
+            LOGGER.warn("Rejecting audit event {} with invalid outcome/result: {}", command.eventId(), outcome);
+            return false;
         }
 
-        // 5. Source service and domain resolution
-        AdministrationAuditService.AuditSourceService sourceService = command.sourceService() != null
-                ? command.sourceService()
-                : AdministrationAuditService.AuditSourceService.IDENTITY;
-        AdministrationAuditService.AuditDomain domain = command.domain() != null
-                ? command.domain()
-                : AdministrationAuditService.AuditDomain.ACCOUNT_ADMINISTRATION;
+        // 4. Privacy & reasonCode fail-closed allowlist
+        String reasonCode = AdministrationAuditService.safeReasonCode(command.reasonCode());
 
-        // 6. Actor resolution (only valid accounts can be foreign keys; otherwise SYSTEM)
+        // 5. Actor resolution (only valid accounts can be foreign keys; otherwise SYSTEM)
         UUID resolvedActorId = null;
         if (command.actorId() != null && accountRepository.existsById(command.actorId())) {
             resolvedActorId = command.actorId();
         }
 
-        // 7. Target & Tombstone resolution
+        // 6. Target & Tombstone resolution
         UUID resolvedAccountId = null;
         String subjectReferenceHash = null;
 
@@ -144,7 +233,7 @@ public class AdministrationAuditIngestionService {
         UUID correlationId = command.correlationId() != null ? command.correlationId() : UUID.randomUUID();
         Instant occurredAt = command.occurredAt() != null ? command.occurredAt() : Instant.now();
 
-        // 8. Construct entity with MINIMIZED safe metadata only
+        // 7. Construct entity with MINIMIZED safe metadata only
         SecurityAuditEventEntity entity = new SecurityAuditEventEntity(
                 command.eventId(),
                 resolvedAccountId,
@@ -189,6 +278,7 @@ public class AdministrationAuditIngestionService {
 
     public record IngestionCommand(
             UUID eventId,
+            String eventType,
             Instant occurredAt,
             AdministrationAuditService.AuditSourceService sourceService,
             AdministrationAuditService.AuditDomain domain,
@@ -200,5 +290,22 @@ public class AdministrationAuditIngestionService {
             UUID correlationId,
             UUID targetAccountId,
             String targetIdentifier
-    ) {}
+    ) {
+        public IngestionCommand(
+                UUID eventId,
+                Instant occurredAt,
+                AdministrationAuditService.AuditSourceService sourceService,
+                AdministrationAuditService.AuditDomain domain,
+                UUID actorId,
+                String actorType,
+                String action,
+                String result,
+                String reasonCode,
+                UUID correlationId,
+                UUID targetAccountId,
+                String targetIdentifier
+        ) {
+            this(eventId, null, occurredAt, sourceService, domain, actorId, actorType, action, result, reasonCode, correlationId, targetAccountId, targetIdentifier);
+        }
+    }
 }

@@ -152,30 +152,25 @@ class AdministrationAuditIntegrationTests extends IdentityTestProperties {
         UUID consultationEventId = UUID.randomUUID();
         UUID correlationId = UUID.randomUUID();
 
-        // 1. Ingest cross-service event from CONSULTATION via real consumer with sensitive payload fields
+        // 1. Ingest cross-service event from CONSULTATION conforming strictly to versioned contract
         String consultationEventJson = """
                 {
                   "eventId": "%s",
-                  "messageType": "consultation.specialist.suspended",
+                  "eventType": "consultation.specialist.suspended",
                   "occurredAt": "%s",
                   "producer": "consultation-service",
+                  "schemaVersion": "1.0",
+                  "sourceService": "CONSULTATION",
+                  "domain": "SPECIALIST_REVIEW",
+                  "actorId": "%s",
+                  "actorType": "ADMIN",
+                  "action": "SPECIALIST_SUSPENDED",
+                  "result": "SUCCEEDED",
+                  "reasonCode": "POLICY_VIOLATION",
                   "correlationId": "%s",
-                  "payload": {
-                    "sourceService": "CONSULTATION",
-                    "domain": "SPECIALIST_REVIEW",
-                    "actorId": "%s",
-                    "action": "SPECIALIST_SUSPENDED",
-                    "result": "SUCCEEDED",
-                    "reasonCode": "POLICY_VIOLATION",
-                    "targetAccountId": "%s",
-                    "rawJournal": "PATIENT_CONFIDENTIAL_JOURNAL_NOTES_DO_NOT_STORE",
-                    "chatBody": "PRIVATE_CONSULTATION_TRANSCRIPT_BODY",
-                    "assessmentAnswers": {"item_1": 3, "item_2": 4},
-                    "credentials": "top_secret_bearer_token_xyz",
-                    "providerPayload": {"momoPaymentAccount": "999888777"}
-                  }
+                  "targetAccountId": "%s"
                 }
-                """.formatted(consultationEventId, now.minusSeconds(50), correlationId, adminId, userId);
+                """.formatted(consultationEventId, now.minusSeconds(50), adminId, correlationId, userId);
 
         auditConsumer.onMessage(consultationEventJson);
 
@@ -185,31 +180,59 @@ class AdministrationAuditIntegrationTests extends IdentityTestProperties {
         String contentEventJson = """
                 {
                   "eventId": "%s",
-                  "messageType": "content.resource.published",
+                  "eventType": "content.resource.published",
                   "occurredAt": "%s",
                   "producer": "content-notification-service",
+                  "schemaVersion": "1.0",
+                  "sourceService": "CONTENT",
+                  "domain": "RESOURCE_MANAGEMENT",
+                  "actorId": "%s",
+                  "actorType": "ADMIN",
+                  "action": "RESOURCE_PUBLISHED",
+                  "result": "SUCCEEDED",
+                  "reasonCode": "REVIEW_COMPLETED",
                   "correlationId": "%s",
-                  "payload": {
-                    "sourceService": "CONTENT",
-                    "domain": "RESOURCE_MANAGEMENT",
-                    "actorId": "%s",
-                    "action": "RESOURCE_PUBLISHED",
-                    "result": "SUCCEEDED",
-                    "reasonCode": "REVIEW_COMPLETED",
-                    "targetIdentifier": "tombstone:%s"
-                  }
+                  "targetIdentifier": "tombstone:%s"
                 }
-                """.formatted(contentEventId, now.minusSeconds(30), UUID.randomUUID(), adminId, tombstoneHash);
+                """.formatted(contentEventId, now.minusSeconds(30), adminId, UUID.randomUUID(), tombstoneHash);
 
         auditConsumer.onMessage(contentEventJson);
 
-        // 3. Browse filtering specifically by CONSULTATION source service and SPECIALIST_REVIEW domain
+        // 3. Ingest event with sensitive raw extras to prove projection sanitizes and never stores them
+        UUID sensitiveEventId = UUID.randomUUID();
+        String sensitiveEventJson = """
+                {
+                  "eventId": "%s",
+                  "eventType": "consultation.specialist.approved",
+                  "occurredAt": "%s",
+                  "producer": "consultation-service",
+                  "schemaVersion": "1.0",
+                  "sourceService": "CONSULTATION",
+                  "domain": "SPECIALIST_REVIEW",
+                  "actorId": "%s",
+                  "actorType": "ADMIN",
+                  "action": "SPECIALIST_APPROVED",
+                  "result": "SUCCEEDED",
+                  "reasonCode": "REVIEW_COMPLETED",
+                  "correlationId": "%s",
+                  "targetAccountId": "%s",
+                  "rawJournal": "PATIENT_CONFIDENTIAL_JOURNAL_NOTES_DO_NOT_STORE",
+                  "chatBody": "PRIVATE_CONSULTATION_TRANSCRIPT_BODY",
+                  "credentials": "top_secret_bearer_token_xyz",
+                  "providerPayload": {"momoPaymentAccount": "999888777"}
+                }
+                """.formatted(sensitiveEventId, now.minusSeconds(20), adminId, UUID.randomUUID(), userId);
+
+        auditConsumer.onMessage(sensitiveEventJson);
+
+        // 4. Browse filtering specifically by CONSULTATION source service and SPECIALIST_REVIEW domain
         String consultationBody = mvc.perform(get("/api/v1/admin/audit-events")
                         .header("Authorization", "Bearer " + token)
                         .param("from", now.minusSeconds(3_600).toString())
                         .param("to", now.toString())
                         .param("sourceService", "CONSULTATION")
-                        .param("domain", "SPECIALIST_REVIEW"))
+                        .param("domain", "SPECIALIST_REVIEW")
+                        .param("action", "SPECIALIST_SUSPENDED"))
                 .andExpect(status().isOk())
                 .andExpect(jsonPath("$.items.length()").value(1))
                 .andExpect(jsonPath("$.items[0].eventId").value(consultationEventId.toString()))
@@ -220,15 +243,23 @@ class AdministrationAuditIntegrationTests extends IdentityTestProperties {
                 .andExpect(jsonPath("$.items[0].targetIdentifier").value("account:" + userId))
                 .andReturn().getResponse().getContentAsString();
 
-        // 4. Privacy: Verify that NONE of the sensitive payload fields were exposed or persisted
-        assertThat(consultationBody)
-                .doesNotContain(contentEventId.toString())
+        // 5. Privacy: Verify that NONE of the sensitive payload fields were exposed or persisted
+        String sensitiveBody = mvc.perform(get("/api/v1/admin/audit-events")
+                        .header("Authorization", "Bearer " + token)
+                        .param("from", now.minusSeconds(3_600).toString())
+                        .param("to", now.toString())
+                        .param("action", "SPECIALIST_APPROVED"))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.items.length()").value(1))
+                .andReturn().getResponse().getContentAsString();
+
+        assertThat(sensitiveBody)
                 .doesNotContain("PATIENT_CONFIDENTIAL_JOURNAL_NOTES_DO_NOT_STORE")
                 .doesNotContain("PRIVATE_CONSULTATION_TRANSCRIPT_BODY")
                 .doesNotContain("top_secret_bearer_token_xyz")
                 .doesNotContain("999888777");
 
-        // 5. Browse filtering specifically by CONTENT source service and RESOURCE_MANAGEMENT domain
+        // 6. Browse filtering specifically by CONTENT source service and RESOURCE_MANAGEMENT domain
         mvc.perform(get("/api/v1/admin/audit-events")
                         .header("Authorization", "Bearer " + token)
                         .param("from", now.minusSeconds(3_600).toString())
@@ -243,7 +274,7 @@ class AdministrationAuditIntegrationTests extends IdentityTestProperties {
                 .andExpect(jsonPath("$.items[0].action").value("RESOURCE_PUBLISHED"))
                 .andExpect(jsonPath("$.items[0].targetIdentifier").value("tombstone:" + tombstoneHash));
 
-        // 6. Deduplication & Idempotency: Retrying the exact same event does NOT create duplicate records
+        // 7. Deduplication & Idempotency: Retrying the exact same event does NOT create duplicate records
         auditConsumer.onMessage(consultationEventJson);
 
         mvc.perform(get("/api/v1/admin/audit-events")
@@ -251,22 +282,63 @@ class AdministrationAuditIntegrationTests extends IdentityTestProperties {
                         .param("from", now.minusSeconds(3_600).toString())
                         .param("to", now.toString())
                         .param("sourceService", "CONSULTATION")
-                        .param("domain", "SPECIALIST_REVIEW"))
+                        .param("domain", "SPECIALIST_REVIEW")
+                        .param("action", "SPECIALIST_SUSPENDED"))
                 .andExpect(status().isOk())
                 .andExpect(jsonPath("$.items.length()").value(1));
 
-        // 7. Unallowlisted event type is rejected and never projected
+        // 8. Security: Conflicting tuple payload is rejected
+        UUID conflictingEventId = UUID.randomUUID();
+        String conflictingEventJson = """
+                {
+                  "eventId": "%s",
+                  "eventType": "consultation.specialist.suspended",
+                  "occurredAt": "%s",
+                  "sourceService": "CONTENT",
+                  "domain": "RESOURCE_MANAGEMENT",
+                  "action": "RESOURCE_PUBLISHED",
+                  "result": "SUCCEEDED",
+                  "correlationId": "%s"
+                }
+                """.formatted(conflictingEventId, now.minusSeconds(15), UUID.randomUUID());
+        auditConsumer.onMessage(conflictingEventJson);
+
+        // 9. Fail-closed: Invalid result is rejected
+        UUID invalidResultEventId = UUID.randomUUID();
+        String invalidResultJson = """
+                {
+                  "eventId": "%s",
+                  "eventType": "consultation.specialist.rejected",
+                  "occurredAt": "%s",
+                  "sourceService": "CONSULTATION",
+                  "domain": "SPECIALIST_REVIEW",
+                  "action": "SPECIALIST_REJECTED",
+                  "result": "PENDING",
+                  "correlationId": "%s"
+                }
+                """.formatted(invalidResultEventId, now.minusSeconds(10), UUID.randomUUID());
+        auditConsumer.onMessage(invalidResultJson);
+
+        mvc.perform(get("/api/v1/admin/audit-events")
+                        .header("Authorization", "Bearer " + token)
+                        .param("from", now.minusSeconds(3_600).toString())
+                        .param("to", now.toString())
+                        .param("action", "SPECIALIST_REJECTED"))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.items.length()").value(0));
+
+        // 10. Unallowlisted event type is rejected and never projected
         UUID rejectedEventId = UUID.randomUUID();
         String unallowlistedJson = """
                 {
                   "eventId": "%s",
-                  "messageType": "chat.message.sent",
-                  "payload": {
-                    "action": "SEND_UNAUTHORIZED_CHAT",
-                    "chatBody": "Unallowlisted private message"
-                  }
+                  "eventType": "chat.message.sent",
+                  "occurredAt": "%s",
+                  "action": "SEND_UNAUTHORIZED_CHAT",
+                  "result": "SUCCEEDED",
+                  "correlationId": "%s"
                 }
-                """.formatted(rejectedEventId);
+                """.formatted(rejectedEventId, now.minusSeconds(5), UUID.randomUUID());
         auditConsumer.onMessage(unallowlistedJson);
 
         mvc.perform(get("/api/v1/admin/audit-events")

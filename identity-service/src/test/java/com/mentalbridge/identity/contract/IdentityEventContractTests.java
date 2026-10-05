@@ -99,4 +99,93 @@ class IdentityEventContractTests {
 				.containsEntry("reasonCode", "REVIEW_COMPLETED");
 	}
 
+	@Test
+	void administrationAuditEventSchemaIsStrictAndMinimizesPayload() throws Exception {
+		var path = Path.of("..", "contracts", "events", "identity", "administration-audit-event-v1.schema.json")
+				.toAbsolutePath();
+		var schema = objectMapper.readTree(Files.readString(path));
+
+		assertThat(schema.get("$schema").asText()).isEqualTo("https://json-schema.org/draft/2020-12/schema");
+		assertThat(schema.get("additionalProperties").asBoolean()).isFalse();
+
+		assertThat(schema.get("required")).extracting(node -> node.asText())
+				.containsExactlyInAnyOrder("eventId", "eventType", "occurredAt", "sourceService", "domain", "action", "result", "correlationId");
+
+		assertThat(schema.get("properties").fieldNames()).toIterable()
+				.containsExactlyInAnyOrder(
+						"eventId", "eventType", "occurredAt", "producer", "schemaVersion",
+						"sourceService", "domain", "actorId", "actorType", "action",
+						"result", "reasonCode", "correlationId", "targetAccountId", "targetIdentifier"
+				)
+				.doesNotContain("rawJournal", "chatBody", "assessmentAnswers", "credentials", "providerPayload", "password", "token", "profile", "health");
+
+		assertThat(schema.at("/properties/result/enum")).extracting(node -> node.asText())
+				.containsExactlyInAnyOrder("SUCCEEDED", "DENIED", "FAILED");
+
+		assertThat(schema.at("/properties/sourceService/enum")).extracting(node -> node.asText())
+				.containsExactlyInAnyOrder("IDENTITY", "CONSULTATION", "CONTENT", "COMMUNITY");
+
+		assertThat(schema.at("/properties/domain/enum")).extracting(node -> node.asText())
+				.containsExactlyInAnyOrder("ACCOUNT_ADMINISTRATION", "SPECIALIST_REVIEW", "RESOURCE_MANAGEMENT", "COMMUNITY_MODERATION");
+
+		assertThat(schema.at("/properties/eventType/enum")).extracting(node -> node.asText())
+				.contains("identity.account.disabled", "identity.account.restored",
+						"consultation.specialist.approved", "consultation.specialist.rejected",
+						"consultation.specialist.suspended", "consultation.specialist.restored",
+						"content.resource.published", "content.resource.archived",
+						"content.safety-directory.reviewed", "content.safety-directory.deactivated",
+						"community.moderation.action-applied", "community.moderation.case-resolved");
+	}
+
+	@Test
+	void administrationAuditEventPayloadsConformToContract() throws Exception {
+		var path = Path.of("..", "contracts", "events", "identity", "administration-audit-event-v1.schema.json")
+				.toAbsolutePath();
+		var schema = objectMapper.readTree(Files.readString(path));
+		var requiredFields = schema.get("required");
+		var allowedFields = new java.util.HashSet<String>();
+		schema.get("properties").fieldNames().forEachRemaining(allowedFields::add);
+
+		String samplePayloadJson = """
+				{
+				  "eventId": "%s",
+				  "eventType": "consultation.specialist.suspended",
+				  "occurredAt": "%s",
+				  "producer": "consultation-service",
+				  "schemaVersion": "1.0",
+				  "sourceService": "CONSULTATION",
+				  "domain": "SPECIALIST_REVIEW",
+				  "actorId": "%s",
+				  "actorType": "ADMIN",
+				  "action": "SPECIALIST_SUSPENDED",
+				  "result": "SUCCEEDED",
+				  "reasonCode": "POLICY_VIOLATION",
+				  "correlationId": "%s",
+				  "targetAccountId": "%s"
+				}
+				""".formatted(UUID.randomUUID(), Instant.now(), UUID.randomUUID(), UUID.randomUUID(), UUID.randomUUID());
+
+		var sampleNode = objectMapper.readTree(samplePayloadJson);
+
+		for (var req : requiredFields) {
+			assertThat(sampleNode.hasNonNull(req.asText())).as("Required field %s is present", req.asText()).isTrue();
+		}
+
+		sampleNode.fieldNames().forEachRemaining(field -> {
+			assertThat(allowedFields).as("Field %s is defined in schema properties", field).contains(field);
+		});
+
+		var allowedResults = new java.util.HashSet<String>();
+		schema.at("/properties/result/enum").forEach(n -> allowedResults.add(n.asText()));
+		assertThat(allowedResults).contains(sampleNode.get("result").asText());
+
+		var allowedSources = new java.util.HashSet<String>();
+		schema.at("/properties/sourceService/enum").forEach(n -> allowedSources.add(n.asText()));
+		assertThat(allowedSources).contains(sampleNode.get("sourceService").asText());
+
+		var allowedDomains = new java.util.HashSet<String>();
+		schema.at("/properties/domain/enum").forEach(n -> allowedDomains.add(n.asText()));
+		assertThat(allowedDomains).contains(sampleNode.get("domain").asText());
+	}
+
 }
