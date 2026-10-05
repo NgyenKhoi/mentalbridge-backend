@@ -85,7 +85,7 @@ Private owner-scoped saved-post membership. Only the owning viewer's bookmark st
 | --- | --- |
 | `post_id` | Physical active Community post target; paired with `profile_id` so repeated PUT/DELETE commands are naturally idempotent. |
 | `profile_id` | Private Community owner reference used for authorization and retrieval; bookmarks are never listed or counted for another viewer. |
-| `created_at` | Immutable UTC instant when the owner first bookmarked the post. |
+| `created_at` | Immutable UTC instant when the owner first bookmarked the post; paired with `post_id` for deterministic newest-saved cursor ordering inside that owner’s private collection. |
 
 ### `public.community_interaction_outbox`
 

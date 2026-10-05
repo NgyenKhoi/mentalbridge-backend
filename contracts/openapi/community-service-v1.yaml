@@ -1,8 +1,8 @@
 openapi: 3.1.0
 info:
   title: MentalBridge Community API
-  version: 1.9.0
-  description: Privacy-isolated peer-support Community Contract v1.9. Feed ordering and explicit topic discovery never use Care, Journal, emotion, SupportPlan, inferred severity, or AI data. MB-615 adds an explicit bounded sensitive-content presentation warning controlled by the author or an audited moderator action; it never represents sentiment analysis, diagnosis, inferred severity, or a Care safety classification.
+  version: 1.10.0
+  description: Privacy-isolated peer-support Community Contract v1.10. Feed and saved-post ordering never use Care, Journal, emotion, SupportPlan, inferred severity, or AI data. MB-616 adds an owner-private newest-saved query over the bookmark facts delivered by MB-579; inaccessible posts fail closed and bookmark state never becomes a recommendation profile.
 servers:
   - url: http://localhost:8084
 paths:
@@ -32,6 +32,28 @@ paths:
       responses:
         "200":
           description: Newest-first active posts visible to the authenticated USER.
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/CommunityFeedPage" }
+        "400": { $ref: "#/components/responses/Problem" }
+        "401": { $ref: "#/components/responses/Problem" }
+        "403": { $ref: "#/components/responses/Problem" }
+  /api/v1/community/saved-posts:
+    x-mentalbridge-status: implemented
+    get:
+      operationId: browseSavedCommunityPosts
+      security: [{ BearerAuth: [] }]
+      parameters:
+        - name: cursor
+          in: query
+          description: Opaque continuation cursor for deterministic `(savedAt, postId)` descending order.
+          schema: { type: string, maxLength: 256 }
+        - name: limit
+          in: query
+          schema: { type: integer, minimum: 1, maximum: 50, default: 20 }
+      responses:
+        "200":
+          description: Active bookmarked posts visible only to the authenticated USER, newest-saved first.
           content:
             application/json:
               schema: { $ref: "#/components/schemas/CommunityFeedPage" }

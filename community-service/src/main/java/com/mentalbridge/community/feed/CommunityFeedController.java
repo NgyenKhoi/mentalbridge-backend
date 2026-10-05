@@ -52,6 +52,13 @@ public class CommunityFeedController {
 		return feed.feed(subject(jwt), topics, cursor, limit);
 	}
 
+	@GetMapping("/saved-posts")
+	Feed savedPosts(@AuthenticationPrincipal Jwt jwt,
+			@RequestParam(required = false) @Size(max = 256) String cursor,
+			@RequestParam(defaultValue = "20") @Min(1) @Max(50) int limit) {
+		return feed.savedPosts(subject(jwt), cursor, limit);
+	}
+
 	@GetMapping("/posts/{postId}")
 	ResponseEntity<PostDetail> detail(@AuthenticationPrincipal Jwt jwt, @PathVariable UUID postId) {
 		var result = feed.detail(subject(jwt), postId);

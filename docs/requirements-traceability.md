@@ -121,6 +121,12 @@ The requirements are represented in domain/architecture documentation, but the l
 
 ## Approved scope changes
 
+- 2026-10-04: MB-616 completes the private Community bookmark journey from
+  MB-579 with an authenticated owner-only newest-saved query, opaque bounded
+  pagination, normal feed/detail visibility enforcement, and server-authoritative
+  removal. Saved membership remains excluded from ranking, recommendation,
+  diagnosis, severity, Care, Journal/AI, screening, emotion, and SupportPlan data.
+
 - 2026-10-01: MB-577 implements the Community Contract v1 comment slice under
   ADR 0027: active visible posts accept idempotent comments and one-level
   replies, deterministic chronological cursor reads, owner-only exact-version

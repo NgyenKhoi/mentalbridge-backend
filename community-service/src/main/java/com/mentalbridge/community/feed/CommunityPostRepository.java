@@ -48,6 +48,25 @@ interface CommunityPostRepository extends JpaRepository<CommunityPostEntity, UUI
 	@Query(value = """
 			SELECT post.*
 			FROM community_post post
+			WHERE post.id IN (:postIds)
+			  AND post.state = 'ACTIVE'
+			  AND NOT EXISTS (
+			      SELECT 1 FROM community_block block
+			      WHERE (block.blocker_profile_id = :viewerProfileId AND block.blocked_profile_id = post.author_profile_id)
+			         OR (block.blocker_profile_id = post.author_profile_id AND block.blocked_profile_id = :viewerProfileId)
+			  )
+			  AND NOT EXISTS (
+			      SELECT 1 FROM community_content_hide hidden
+			      WHERE hidden.hider_profile_id = :viewerProfileId
+			        AND hidden.target_type = 'POST' AND hidden.target_id = post.id
+			  )
+			""", nativeQuery = true)
+	List<CommunityPostEntity> findVisibleByIds(@Param("postIds") List<UUID> postIds,
+			@Param("viewerProfileId") UUID viewerProfileId);
+
+	@Query(value = """
+			SELECT post.*
+			FROM community_post post
 			WHERE post.id = :postId
 			  AND post.state = 'ACTIVE'
 			  AND (:viewerProfileId IS NULL OR NOT EXISTS (
