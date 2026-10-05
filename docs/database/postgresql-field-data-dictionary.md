@@ -1870,6 +1870,7 @@ and email choices cannot drift across web, email, inbox, or future mobile consum
 | `group_screening_reassessment_enabled` | Independent screening/reassessment content-group choice. |
 | `group_appointment_message_enabled` | Independent appointment/message content-group choice. |
 | `group_resource_system_enabled` | Independent resource/system content-group choice. |
+| `group_community_interaction_enabled` | Independent in-app choice for eligible Community comment, reply, and first-reaction facts. Disabled facts are durably recorded as cancelled so replay cannot create a later surprise notification. |
 | `quiet_hours_enabled` | Whether non-bypass delivery observes the local quiet window. |
 | `quiet_hours_start` | Inclusive local wall-clock start in `time_zone`; later-than-end windows cross midnight. |
 | `quiet_hours_end` | Exclusive local wall-clock end in `time_zone`; it must differ from start when enabled. |
@@ -1896,20 +1897,20 @@ Durable in-app notification and safe delivery payload owned by Content/Notificat
 | --- | --- |
 | `id` | Immutable UUID used for REST history, Kafka delivery, and read idempotency. |
 | `recipient_id` | External Identity account UUID of the intended recipient. |
-| `category` | Stable kind used for preference, priority, and presentation rules. MB-564 adds separate `JOURNAL_REMINDER`, `EMOTION_CHECKIN_REMINDER`, `JOURNAL_STREAK_MILESTONE`, and `EMOTION_STREAK_MILESTONE` values while retaining historical generic kinds. |
+| `category` | Stable kind used for preference, priority, and presentation rules. MB-564 adds separate Journal/emotion kinds; MB-617 adds `COMMUNITY_COMMENT`, `COMMUNITY_REPLY`, and `COMMUNITY_REACTION` while retaining historical generic kinds. |
 | `title` | Reviewed/minimized user-visible title safe for the selected channel. |
 | `body` | Reviewed/minimized user-visible body that excludes raw sensitive source content. |
 | `action_type` | Optional approved internal action enum used to derive a relative client route; arbitrary producer URLs are never stored. |
-| `action_target_id` | Optional opaque resource UUID, required only for `OPEN_RESOURCE` and resolved through an authorized owner request. |
+| `action_target_id` | Optional opaque target UUID required for `OPEN_RESOURCE` or `OPEN_COMMUNITY_POST`; Community stores only the approved post deep-link ID, and the authorized Community read supplies the same safe unavailable state for removed, hidden, blocked, or unknown content. |
 | `priority` | Delivery/presentation priority, not a clinical severity decision. |
 | `read_at` | UTC instant the recipient marked the in-app notification read; null while unread. |
 | `expires_at` | Required UTC inbox-retention deadline, no later than 90 days after creation; expired rows are tombstoned and no longer returned. |
 | `occurred_at` | Authoritative UTC instant of the source event, kept separate from inbox insertion time for delayed delivery. |
 | `created_at` | Immutable UTC creation instant used for cursor ordering. |
 | `deleted_at` | UTC user/policy tombstone instant; null while visible in history. |
-| `source` | Stable bounded producer namespace such as `CONTENT` or `REALTIME`; it carries no provider payload or user-authored text. |
-| `source_identity` | Stable producer-owned event identity used with `recipient_id` and `source` to collapse retries for one recipient while allowing legitimate fan-out of the same source event to other recipients. Journal/emotion notifications use `<kind>:<local-date>` so repeated materialization of one owner/day/kind remains one inbox row. |
-| `request_fingerprint` | SHA-256 of the validated minimized create command; changed reuse of a dedupe identity is rejected instead of overwriting the original notification. |
+| `source` | Stable bounded producer namespace such as `CONTENT`, `REALTIME`, or `COMMUNITY_INTERACTION_V1`; it carries no provider payload or user-authored text. |
+| `source_identity` | Stable producer-owned event identity used with `recipient_id` and `source` to collapse retries for one recipient while allowing legitimate fan-out of the same source event to other recipients. Journal/emotion notifications use `<kind>:<local-date>`; Community notifications use the v1 fact `eventId`. |
+| `request_fingerprint` | SHA-256 of the validated minimized create command or Community v1 fact; changed reuse of a dedupe identity is rejected instead of overwriting the original notification. |
 | `delivery_state` | Durable delivery lifecycle (`PENDING`, `DELIVERED`, `FAILED`, or `CANCELLED`); only `DELIVERED` records appear in the inbox. |
 | `version` | Monotonic mutation counter incremented for the first read or tombstone transition. |
 

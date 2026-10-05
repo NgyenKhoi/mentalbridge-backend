@@ -26,6 +26,7 @@ describe('configuration', () => {
     expect(configuration.WELLBEING_DIGEST_SCHEDULER_ENABLED).toBe(false);
     expect(configuration.APPOINTMENT_REMINDER_ENABLED).toBe(false);
     expect(configuration.CONTENT_APPOINTMENT_CONSUMER_ENABLED).toBe(false);
+    expect(configuration.CONTENT_COMMUNITY_INTERACTION_CONSUMER_ENABLED).toBe(false);
     expect(configuration.CONSULTATION_SERVICE_URL).toBe('http://localhost:8082');
     expect(configuration.IDENTITY_SERVICE_URL).toBe('http://localhost:8080');
   });
@@ -136,5 +137,22 @@ describe('configuration', () => {
     });
 
     expect(configuration.CONTENT_APPOINTMENT_CONSUMER_ENABLED).toBe(true);
+  });
+
+  it('requires Kafka brokers when the Community interaction consumer is enabled', () => {
+    expect(() =>
+      loadConfiguration({
+        ...requiredEnvironment,
+        CONTENT_COMMUNITY_INTERACTION_CONSUMER_ENABLED: 'true',
+      }),
+    ).toThrow();
+
+    const configuration = loadConfiguration({
+      ...requiredEnvironment,
+      CONTENT_COMMUNITY_INTERACTION_CONSUMER_ENABLED: 'true',
+      KAFKA_BOOTSTRAP_SERVERS: 'localhost:9092',
+    });
+
+    expect(configuration.CONTENT_COMMUNITY_INTERACTION_CONSUMER_ENABLED).toBe(true);
   });
 });

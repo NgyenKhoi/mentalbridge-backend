@@ -64,6 +64,7 @@ describe('notification preference contract', () => {
       'screeningReassessment',
       'appointmentMessage',
       'resourceSystem',
+      'communityInteraction',
     ]);
     expect(email.required).toEqual([
       'cadence',

@@ -54,6 +54,9 @@ describe('notification inbox contract', () => {
       'EMOTION_CHECKIN_REMINDER',
       'JOURNAL_STREAK_MILESTONE',
       'EMOTION_STREAK_MILESTONE',
+      'COMMUNITY_COMMENT',
+      'COMMUNITY_REPLY',
+      'COMMUNITY_REACTION',
     ]);
     expect(notification.required).toEqual(
       expect.arrayContaining(['occurredAt', 'readAt', 'action', 'lifecycleState', 'expiresAt']),
