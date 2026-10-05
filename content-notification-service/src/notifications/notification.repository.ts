@@ -232,43 +232,28 @@ export class NotificationRepository {
        FROM notification`,
     );
 
-    let emailRow = {
-      total: '0',
-      pending: '0',
-      processing: '0',
-      delivered: '0',
-      failed: '0',
-      suppressed: '0',
-      invalidated: '0',
-    };
-    try {
-      const emailResult = await this.db.query<{
-        total: string;
-        pending: string;
-        processing: string;
-        delivered: string;
-        failed: string;
-        suppressed: string;
-        invalidated: string;
-      }>(
-        `SELECT
-          COUNT(*)::text AS total,
-          COUNT(*) FILTER (WHERE delivery_state = 'PENDING')::text AS pending,
-          COUNT(*) FILTER (WHERE delivery_state = 'PROCESSING')::text AS processing,
-          COUNT(*) FILTER (WHERE delivery_state = 'DELIVERED')::text AS delivered,
-          COUNT(*) FILTER (WHERE delivery_state = 'FAILED')::text AS failed,
-          COUNT(*) FILTER (WHERE delivery_state = 'SUPPRESSED')::text AS suppressed,
-          COUNT(*) FILTER (WHERE delivery_state = 'INVALIDATED')::text AS invalidated
-         FROM appointment_email_reminder`,
-      );
-      if (emailResult.rows[0]) {
-        emailRow = emailResult.rows[0];
-      }
-    } catch {
-      // Table may not exist in lightweight test schemas
-    }
+    const emailResult = await this.db.query<{
+      total: string;
+      pending: string;
+      processing: string;
+      delivered: string;
+      failed: string;
+      suppressed: string;
+      invalidated: string;
+    }>(
+      `SELECT
+        COUNT(*)::text AS total,
+        COUNT(*) FILTER (WHERE delivery_state = 'PENDING')::text AS pending,
+        COUNT(*) FILTER (WHERE delivery_state = 'PROCESSING')::text AS processing,
+        COUNT(*) FILTER (WHERE delivery_state = 'DELIVERED')::text AS delivered,
+        COUNT(*) FILTER (WHERE delivery_state = 'FAILED')::text AS failed,
+        COUNT(*) FILTER (WHERE delivery_state = 'SUPPRESSED')::text AS suppressed,
+        COUNT(*) FILTER (WHERE delivery_state = 'INVALIDATED')::text AS invalidated
+       FROM appointment_email_reminder`,
+    );
 
     const inAppRow = inAppResult.rows[0];
+    const emailRow = emailResult.rows[0];
 
     return {
       source: 'CONTENT_NOTIFICATION',

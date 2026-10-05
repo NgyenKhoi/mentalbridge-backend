@@ -31,7 +31,7 @@ public class AdminOperationsService {
 					specialistCounts.put(row.getString("approval_status"), row.getLong("cnt"));
 					return null;
 				})
-				.toList();
+				.list();
 
 		long pendingReview = specialistCounts.getOrDefault("PENDING", 0L);
 		long active = specialistCounts.getOrDefault("APPROVED", 0L);
@@ -48,7 +48,7 @@ public class AdminOperationsService {
 					appointmentCounts.put(row.getString("status"), row.getLong("cnt"));
 					return null;
 				})
-				.toList();
+				.list();
 
 		long requested = appointmentCounts.getOrDefault("REQUESTED", 0L);
 		long confirmed = appointmentCounts.getOrDefault("CONFIRMED", 0L);

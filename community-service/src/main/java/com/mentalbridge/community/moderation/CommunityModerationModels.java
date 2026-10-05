@@ -42,4 +42,7 @@ final class CommunityModerationModels {
 			Priority priority, List<ReportReason> reportReasons, List<String> reportContexts, Evidence evidence,
 			List<ActionRecord> actions, Instant createdAt, Instant updatedAt, long version) {
 	}
+
+	record CommunityOperationsSummary(String source, Instant asOf, long openModerationCases, long totalModerationCases) {
+	}
 }
