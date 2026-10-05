@@ -9,6 +9,9 @@ export const NOTIFICATION_KINDS = [
   'EMOTION_CHECKIN_REMINDER',
   'JOURNAL_STREAK_MILESTONE',
   'EMOTION_STREAK_MILESTONE',
+  'COMMUNITY_COMMENT',
+  'COMMUNITY_REPLY',
+  'COMMUNITY_REACTION',
 ] as const;
 
 export type NotificationKind = (typeof NOTIFICATION_KINDS)[number];
@@ -19,7 +22,8 @@ export type NotificationActionType =
   | 'OPEN_APPOINTMENTS'
   | 'OPEN_RESOURCES'
   | 'OPEN_ASSESSMENTS'
-  | 'OPEN_RESOURCE';
+  | 'OPEN_RESOURCE'
+  | 'OPEN_COMMUNITY_POST';
 
 export interface NotificationAction {
   readonly type: NotificationActionType;

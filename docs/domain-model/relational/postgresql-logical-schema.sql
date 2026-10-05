@@ -1467,6 +1467,7 @@ CREATE TABLE content.notification_preference (
     group_screening_reassessment_enabled boolean NOT NULL,
     group_appointment_message_enabled boolean NOT NULL,
     group_resource_system_enabled boolean NOT NULL,
+    group_community_interaction_enabled boolean NOT NULL,
     quiet_hours_enabled boolean NOT NULL,
     quiet_hours_start time NOT NULL,
     quiet_hours_end time NOT NULL,

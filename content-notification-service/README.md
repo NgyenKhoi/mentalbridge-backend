@@ -2,6 +2,11 @@
 
 NestJS service that owns reviewed self-help resource definitions, immutable exact-version Resource Eligibility v1 provenance, notification preferences, and durable notification delivery state. ADR 0009 removes the hotline catalogue from product scope. ADR 0012 keeps final SupportPlan admission in Care and clarifies that review/publication does not make a resource universally plan-eligible.
 
+MB-617 adds an asynchronous consumer for the minimized
+`mentalbridge.community.interaction.v1` fact. It creates generic comment,
+reply, and first-reaction inbox entries without reading Community content or
+introducing any synchronous Community-to-Notification dependency.
+
 ## Current capability
 
 MB-564 materializes owner-visible Journal and emotion reminders plus factual
@@ -176,6 +181,15 @@ Migration `17_add_appointment_email_reminders.sql` adds the explicit appointment
 email opt-in, version-deduplicated delivery state, and per-appointment consumer
 checkpoint. The rows contain only safe scheduling/delivery metadata; recipient
 email and rendered message bodies are not persisted.
+
+Migration `18_add_community_interaction_notifications.sql` adds the Community
+in-app content-group preference, three presentation kinds, and the approved
+`OPEN_COMMUNITY_POST` action. Enable the consumer with
+`CONTENT_COMMUNITY_INTERACTION_CONSUMER_ENABLED=true`. Strictly malformed or
+incompatible facts are parked as digest/offset metadata in
+`mentalbridge.content-notification.community-interaction-dead-letter.v1`; raw
+event bodies are never copied to that topic or logs. Persistence failures remain
+retryable and do not acknowledge the source offset.
 
 The controlled Review 1 seed, MB-337 eligibility matrix, and visibly synthetic non-dialable safety-directory fixture are owner-module migrations with a separate ledger (`pgmigrations_review1`), so running normal schema migrations cannot accidentally mark controlled data as applied. The seeds reject drift from their reviewed decisions. Machine-readable resource inventory, reviewer rationale, explicit ineligible decisions, and Care requests are kept in `../contracts/fixtures/content/resource-eligibility-v1-controlled-demo.json`. No real safety contact is published by the controlled fixture. For the shared dev/staging database only, run:
 

@@ -52,6 +52,12 @@ Kafka and Redis are architecture additions supporting realtime and asynchronous 
 
 ## WBS ownership map
 
+MB-617 closes the Community-to-inbox projection boundary: Content/Notification
+consumes the minimized `mentalbridge.community.interaction.v1` fact, applies the
+owner's in-app and Community-group preferences, and persists a deduplicated
+notification or cancelled outcome. Community publication remains transactional
+outbox work and never waits for this consumer.
+
 | WBS functions         | Functional area                                                                                            | Authoritative owner                                                        | Main integration/storage                                                                                                                                                                               |
 | --------------------- | ---------------------------------------------------------------------------------------------------------- | -------------------------------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ |
 | 1–5, 7, 111, 113–116  | registration, login/logout, reset, RBAC, admin login and user administration                               | Identity Service (Spring)                                                  | PostgreSQL; REST/JWT; account Kafka events                                                                                                                                                             |

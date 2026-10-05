@@ -34,6 +34,7 @@ import {
   APPOINTMENT_REMINDER_SERVICE_TOKEN,
   APPOINTMENT_TRUTH_CLIENT_TOKEN,
   DELIVERY_ADDRESS_CLIENT_TOKEN,
+  COMMUNITY_INTERACTION_DEAD_LETTER_PUBLISHER_TOKEN,
 } from './application.tokens.js';
 import type { ServiceConfiguration } from './configuration/configuration.js';
 import { DatabaseService, type ReadinessProbe } from './database/database.service.js';
@@ -95,6 +96,12 @@ import {
   AppointmentStatusProjector,
 } from './appointment-reminders/appointment-status.consumer.js';
 import { AppointmentReminderScheduler } from './appointment-reminders/appointment-reminder.scheduler.js';
+import {
+  CommunityInteractionConsumer,
+  CommunityInteractionProjector,
+  KafkaCommunityInteractionDeadLetterPublisher,
+} from './community-notifications/community-interaction.consumer.js';
+import { CommunityNotificationRepository } from './community-notifications/community-notification.repository.js';
 
 export interface ApplicationDependencies {
   readonly readinessProbe?: ReadinessProbe;
@@ -242,6 +249,13 @@ export const createAppModule = (
       AppointmentStatusProjector,
       AppointmentStatusConsumer,
       AppointmentReminderScheduler,
+      CommunityNotificationRepository,
+      CommunityInteractionProjector,
+      {
+        provide: COMMUNITY_INTERACTION_DEAD_LETTER_PUBLISHER_TOKEN,
+        useClass: KafkaCommunityInteractionDeadLetterPublisher,
+      },
+      CommunityInteractionConsumer,
       JwtStrategy,
       {
         provide: RolesGuard,
