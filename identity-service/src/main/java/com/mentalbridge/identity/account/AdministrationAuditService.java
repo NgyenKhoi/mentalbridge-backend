@@ -9,6 +9,7 @@ import java.time.format.DateTimeParseException;
 import java.util.ArrayList;
 import java.util.Base64;
 import java.util.List;
+import java.util.Set;
 import java.util.UUID;
 import org.springframework.data.domain.PageRequest;
 import org.springframework.data.domain.Sort;
@@ -96,11 +97,47 @@ public class AdministrationAuditService {
                 query.action(), query.result(), target);
     }
 
+    private static final Set<String> SAFE_REASON_CODES = Set.of(
+            // Identity account administration
+            "SAFETY_CONCERN",
+            "POLICY_VIOLATION",
+            "ACCOUNT_REVIEW_REQUIRED",
+            "REVIEW_COMPLETED",
+            "DEDICATED_ADMIN_PROTECTED",
+            // Consultation specialist review
+            "PROFILE_INFORMATION_INCOMPLETE",
+            "PROFILE_CONTENT_NOT_APPROVED",
+            "OUTSIDE_SUPPORTED_SCOPE",
+            "QUALITY_REVIEW_REQUIRED",
+            // Community moderation
+            "HARASSMENT",
+            "PRIVACY_OR_DOXXING",
+            "MEDICAL_MISINFORMATION",
+            "SELF_HARM_OR_CRISIS_CONCERN",
+            "SPAM",
+            "SEXUAL_OR_VIOLENT_CONTENT",
+            "OTHER",
+            // Content resource management
+            "RESOURCE_NOT_FOUND",
+            "RESOURCE_ARCHIVED",
+            "RESOURCE_NOT_PUBLISHED",
+            "ELIGIBLE_MATCH",
+            "PRIMARY_REQUIRED",
+            "CONTENT_VERSION_STALE",
+            "DOMAIN_OR_PATHWAY_NOT_ELIGIBLE"
+    );
+
     private Specification<SecurityAuditEventEntity> specification(EffectiveQuery query, Cursor after) {
         return (root, ignored, builder) -> {
             List<Predicate> predicates = new ArrayList<>();
             predicates.add(builder.greaterThanOrEqualTo(root.get("occurredAt"), query.from()));
             predicates.add(builder.lessThanOrEqualTo(root.get("occurredAt"), query.to()));
+            if (query.sourceService() != null) {
+                predicates.add(builder.equal(root.get("sourceService"), query.sourceService().name()));
+            }
+            if (query.domain() != null) {
+                predicates.add(builder.equal(root.get("domain"), query.domain().name()));
+            }
             if (query.actorType() == AuditActorType.ADMIN) predicates.add(builder.isNotNull(root.get("actorId")));
             if (query.actorType() == AuditActorType.SYSTEM) predicates.add(builder.isNull(root.get("actorId")));
             if (query.action() != null) predicates.add(builder.equal(root.get("action"), query.action()));
@@ -145,8 +182,33 @@ public class AdministrationAuditService {
                 : "account:" + event.getAccountId();
         return new AuditEvent(event.getId(), event.getOccurredAt(), actorType, actorIdentifier,
                 safeCode(event.getAction(), "UNKNOWN_EVENT"), AuditResult.valueOf(event.getOutcome()),
-                safeCode(event.getReasonCode(), null), event.getCorrelationId(),
-                AuditSourceService.IDENTITY, AuditDomain.ACCOUNT_ADMINISTRATION, targetIdentifier);
+                safeReasonCode(event.getReasonCode()), event.getCorrelationId(),
+                safeSourceService(event.getSourceService()), safeDomain(event.getDomain()), targetIdentifier);
+    }
+
+    private String safeReasonCode(String value) {
+        if (value == null) {
+            return null;
+        }
+        return SAFE_REASON_CODES.contains(value) ? value : null;
+    }
+
+    private AuditSourceService safeSourceService(String value) {
+        if (value == null) return AuditSourceService.IDENTITY;
+        try {
+            return AuditSourceService.valueOf(value);
+        } catch (IllegalArgumentException e) {
+            return AuditSourceService.IDENTITY;
+        }
+    }
+
+    private AuditDomain safeDomain(String value) {
+        if (value == null) return AuditDomain.ACCOUNT_ADMINISTRATION;
+        try {
+            return AuditDomain.valueOf(value);
+        } catch (IllegalArgumentException e) {
+            return AuditDomain.ACCOUNT_ADMINISTRATION;
+        }
     }
 
     private String safeCode(String value, String fallback) {
@@ -189,8 +251,8 @@ public class AdministrationAuditService {
         }
     }
 
-    public enum AuditSourceService { IDENTITY }
-    public enum AuditDomain { ACCOUNT_ADMINISTRATION }
+    public enum AuditSourceService { IDENTITY, CONSULTATION, CONTENT, COMMUNITY }
+    public enum AuditDomain { ACCOUNT_ADMINISTRATION, SPECIALIST_REVIEW, RESOURCE_MANAGEMENT, COMMUNITY_MODERATION }
     public enum AuditActorType { ADMIN, SYSTEM }
     public enum AuditResult { SUCCEEDED, DENIED, FAILED }
 

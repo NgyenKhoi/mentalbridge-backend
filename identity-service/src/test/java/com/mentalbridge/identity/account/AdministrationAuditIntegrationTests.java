@@ -40,7 +40,7 @@ class AdministrationAuditIntegrationTests extends IdentityTestProperties {
         Instant now = Instant.now().minusSeconds(5);
         UUID newest = insertAudit(userId, adminId, "ACCOUNT_RESTORED", "SUCCEEDED", "REVIEW_COMPLETED",
                 now.minusSeconds(60));
-        UUID matching = insertAudit(userId, adminId, "ACCOUNT_DISABLED", "DENIED", "secret-token-value",
+        UUID matching = insertAudit(userId, adminId, "ACCOUNT_DISABLED", "DENIED", "ACCESS_TOKEN_SECRET_123",
                 now.minusSeconds(120));
         insertAudit(userId, null, "ACCOUNT_DISABLED", "FAILED", "POLICY_VIOLATION", now.minusSeconds(180));
 
@@ -77,7 +77,7 @@ class AdministrationAuditIntegrationTests extends IdentityTestProperties {
                 .andExpect(jsonPath("$.items[0].reasonCode").doesNotExist())
                 .andExpect(jsonPath("$.items[0].targetIdentifier").value(target))
                 .andReturn().getResponse().getContentAsString();
-        assertThat(filteredBody).doesNotContain("secret-token-value", "password", "journal", "chat body");
+        assertThat(filteredBody).doesNotContain("ACCESS_TOKEN_SECRET_123", "password", "journal", "chat body");
 
         String csv = mvc.perform(get("/api/v1/admin/audit-events/export")
                         .header("Authorization", "Bearer " + token)
@@ -90,7 +90,7 @@ class AdministrationAuditIntegrationTests extends IdentityTestProperties {
                 .andExpect(header().string("Content-Disposition", org.hamcrest.Matchers.containsString("attachment")))
                 .andReturn().getResponse().getContentAsString();
         assertThat(csv).contains(matching.toString(), "ACCOUNT_DISABLED", "DENIED", target)
-                .doesNotContain(newest.toString(), "secret-token-value", "admin-audit@example.com");
+                .doesNotContain(newest.toString(), "ACCESS_TOKEN_SECRET_123", "admin-audit@example.com");
     }
 
     @Test
@@ -141,6 +141,47 @@ class AdministrationAuditIntegrationTests extends IdentityTestProperties {
         assertThat(body).doesNotContain(subjectId.toString(), "deleted-subject@example.com");
     }
 
+    @Test
+    void crossServiceEventsCanBeFilteredFromConsolidatedProjection() throws Exception {
+        UUID adminId = insertAccount("admin-cross@example.com", RoleCode.ADMIN);
+        UUID userId = insertAccount("user-cross@example.com", RoleCode.USER);
+        String token = token(adminId, RoleCode.ADMIN);
+        Instant now = Instant.now().minusSeconds(5);
+
+        UUID identityEvent = insertAudit(userId, adminId, "ACCOUNT_DISABLED", "SUCCEEDED", "POLICY_VIOLATION",
+                "IDENTITY", "ACCOUNT_ADMINISTRATION", now.minusSeconds(100));
+        UUID consultationEvent = insertAudit(userId, adminId, "SPECIALIST_SUSPENDED", "SUCCEEDED", "POLICY_VIOLATION",
+                "CONSULTATION", "SPECIALIST_REVIEW", now.minusSeconds(50));
+
+        // Browse filtering specifically by CONSULTATION source service and SPECIALIST_REVIEW domain
+        String body = mvc.perform(get("/api/v1/admin/audit-events")
+                        .header("Authorization", "Bearer " + token)
+                        .param("from", now.minusSeconds(3_600).toString())
+                        .param("to", now.toString())
+                        .param("sourceService", "CONSULTATION")
+                        .param("domain", "SPECIALIST_REVIEW"))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.items.length()").value(1))
+                .andExpect(jsonPath("$.items[0].eventId").value(consultationEvent.toString()))
+                .andExpect(jsonPath("$.items[0].sourceService").value("CONSULTATION"))
+                .andExpect(jsonPath("$.items[0].domain").value("SPECIALIST_REVIEW"))
+                .andExpect(jsonPath("$.items[0].action").value("SPECIALIST_SUSPENDED"))
+                .andExpect(jsonPath("$.items[0].reasonCode").value("POLICY_VIOLATION"))
+                .andReturn().getResponse().getContentAsString();
+        assertThat(body).doesNotContain(identityEvent.toString());
+
+        // Browse filtering specifically by IDENTITY source service
+        mvc.perform(get("/api/v1/admin/audit-events")
+                        .header("Authorization", "Bearer " + token)
+                        .param("from", now.minusSeconds(3_600).toString())
+                        .param("to", now.toString())
+                        .param("sourceService", "IDENTITY")
+                        .param("domain", "ACCOUNT_ADMINISTRATION"))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.items[0].sourceService").value("IDENTITY"))
+                .andExpect(jsonPath("$.items[0].domain").value("ACCOUNT_ADMINISTRATION"));
+    }
+
     private UUID insertAccount(String email, RoleCode role) {
         return jdbc.sql("""
                 insert into account (email, password_hash, role_code, status, email_verified_at)
@@ -149,15 +190,21 @@ class AdministrationAuditIntegrationTests extends IdentityTestProperties {
     }
 
     private UUID insertAudit(UUID accountId, UUID actorId, String action, String outcome, String reason, Instant occurredAt) {
+        return insertAudit(accountId, actorId, action, outcome, reason, "IDENTITY", "ACCOUNT_ADMINISTRATION", occurredAt);
+    }
+
+    private UUID insertAudit(UUID accountId, UUID actorId, String action, String outcome, String reason,
+            String sourceService, String domain, Instant occurredAt) {
         UUID id = UUID.randomUUID();
         jdbc.sql("""
                 insert into security_audit_event
                     (id, account_id, actor_id, action, outcome, reason_code, correlation_id,
-                     subject_reference_hash, occurred_at, created_at)
+                     subject_reference_hash, source_service, domain, occurred_at, created_at)
                 values (:id, :accountId, :actorId, :action, :outcome, :reason, :correlationId,
-                        encode(digest(:accountIdText, 'sha256'), 'hex'), :occurredAt, :occurredAt)
+                        encode(digest(:accountIdText, 'sha256'), 'hex'), :sourceService, :domain, :occurredAt, :occurredAt)
                 """).param("id", id).param("accountId", accountId).param("actorId", actorId)
                 .param("action", action).param("outcome", outcome).param("reason", reason)
+                .param("sourceService", sourceService).param("domain", domain)
                 .param("correlationId", UUID.randomUUID()).param("accountIdText", accountId.toString())
                 .param("occurredAt", java.sql.Timestamp.from(occurredAt)).update();
         return id;

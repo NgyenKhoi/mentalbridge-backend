@@ -36,6 +36,12 @@ public class SecurityAuditEventEntity {
     @Column(name = "subject_reference_hash", length = 64)
     private String subjectReferenceHash;
 
+    @Column(name = "source_service", nullable = false, length = 32)
+    private String sourceService;
+
+    @Column(name = "domain", nullable = false, length = 64)
+    private String domain;
+
     @Column(name = "occurred_at", nullable = false)
     private Instant occurredAt;
 
@@ -55,6 +61,23 @@ public class SecurityAuditEventEntity {
             String subjectReferenceHash,
             Instant occurredAt,
             Instant createdAt) {
+        this(id, accountId, actorId, action, outcome, reasonCode, correlationId, subjectReferenceHash,
+                "IDENTITY", "ACCOUNT_ADMINISTRATION", occurredAt, createdAt);
+    }
+
+    public SecurityAuditEventEntity(
+            UUID id,
+            UUID accountId,
+            UUID actorId,
+            String action,
+            String outcome,
+            String reasonCode,
+            UUID correlationId,
+            String subjectReferenceHash,
+            String sourceService,
+            String domain,
+            Instant occurredAt,
+            Instant createdAt) {
         this.id = id;
         this.accountId = accountId;
         this.actorId = actorId;
@@ -63,6 +86,8 @@ public class SecurityAuditEventEntity {
         this.reasonCode = reasonCode;
         this.correlationId = correlationId;
         this.subjectReferenceHash = subjectReferenceHash;
+        this.sourceService = sourceService != null ? sourceService : "IDENTITY";
+        this.domain = domain != null ? domain : "ACCOUNT_ADMINISTRATION";
         this.occurredAt = occurredAt;
         this.createdAt = createdAt;
     }
@@ -97,6 +122,14 @@ public class SecurityAuditEventEntity {
 
     public String getSubjectReferenceHash() {
         return subjectReferenceHash;
+    }
+
+    public String getSourceService() {
+        return sourceService;
+    }
+
+    public String getDomain() {
+        return domain;
     }
 
     public Instant getOccurredAt() {

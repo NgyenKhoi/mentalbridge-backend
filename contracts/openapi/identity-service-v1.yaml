@@ -681,10 +681,10 @@ components:
           description: REVIEW_COMPLETED is reserved for restoration; the other values are suspension reasons.
     AuditSourceService:
       type: string
-      enum: [IDENTITY]
+      enum: [IDENTITY, CONSULTATION, CONTENT, COMMUNITY]
     AuditDomain:
       type: string
-      enum: [ACCOUNT_ADMINISTRATION]
+      enum: [ACCOUNT_ADMINISTRATION, SPECIALIST_REVIEW, RESOURCE_MANAGEMENT, COMMUNITY_MODERATION]
     AuditActorType:
       type: string
       enum: [ADMIN, SYSTEM]

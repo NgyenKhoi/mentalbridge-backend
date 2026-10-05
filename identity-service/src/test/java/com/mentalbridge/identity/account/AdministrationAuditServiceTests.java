@@ -107,6 +107,44 @@ class AdministrationAuditServiceTests {
                 .isInstanceOf(InvalidAdminAccountQueryException.class);
     }
 
+    @Test
+    void reasonCodeMustBeAllowlistedAndNeverLeaksTokensOrSecretsEvenIfAlphanumeric() {
+        UUID accountId = UUID.randomUUID();
+        var secretEvent = event(accountId, UUID.randomUUID(), "ACCOUNT_DISABLED", "DENIED",
+                "ACCESS_TOKEN_SECRET_123", NOW.minusSeconds(60));
+        when(repository.findAll(any(Specification.class), any(Pageable.class)))
+                .thenReturn(new PageImpl<>(List.of(secretEvent)));
+
+        var page = service.browse(new AuditQuery(null, null, null, null, null, null, null, null), null, 10);
+        assertThat(page.items().getFirst().reasonCode()).isNull();
+
+        var export = service.export(new AuditQuery(null, null, null, null, null, null, null, null));
+        String csv = new String(export.bytes(), java.nio.charset.StandardCharsets.UTF_8);
+        assertThat(csv).doesNotContain("ACCESS_TOKEN_SECRET_123");
+    }
+
+    @Test
+    void supportsCrossServiceAndDomainProjectionEvents() {
+        UUID accountId = UUID.randomUUID();
+        var consultationEvent = new SecurityAuditEventEntity(UUID.randomUUID(), accountId, UUID.randomUUID(),
+                "SPECIALIST_SUSPENDED", "SUCCEEDED", "POLICY_VIOLATION", UUID.randomUUID(), "c".repeat(64),
+                "CONSULTATION", "SPECIALIST_REVIEW", NOW.minusSeconds(30), NOW.minusSeconds(30));
+        when(repository.findAll(any(Specification.class), any(Pageable.class)))
+                .thenReturn(new PageImpl<>(List.of(consultationEvent)));
+
+        var page = service.browse(
+                new AuditQuery(null, null, AdministrationAuditService.AuditSourceService.CONSULTATION,
+                        AdministrationAuditService.AuditDomain.SPECIALIST_REVIEW, null, null, null, null),
+                null, 10);
+
+        assertThat(page.items().getFirst().sourceService())
+                .isEqualTo(AdministrationAuditService.AuditSourceService.CONSULTATION);
+        assertThat(page.items().getFirst().domain())
+                .isEqualTo(AdministrationAuditService.AuditDomain.SPECIALIST_REVIEW);
+        assertThat(page.items().getFirst().action()).isEqualTo("SPECIALIST_SUSPENDED");
+        assertThat(page.items().getFirst().reasonCode()).isEqualTo("POLICY_VIOLATION");
+    }
+
     private SecurityAuditEventEntity event(UUID accountId, UUID actorId, String action, String outcome, String reason,
             Instant occurredAt) {
         return new SecurityAuditEventEntity(UUID.randomUUID(), accountId, actorId, action, outcome, reason,
