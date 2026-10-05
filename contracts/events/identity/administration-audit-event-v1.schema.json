@@ -1,0 +1,75 @@
+﻿{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://mentalbridge.local/contracts/events/identity/administration-audit-event-v1.schema.json",
+  "title": "Platform administration audit event fact v1",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "eventId",
+    "eventType",
+    "occurredAt",
+    "sourceService",
+    "domain",
+    "action",
+    "result",
+    "correlationId"
+  ],
+  "properties": {
+    "eventId": {
+      "type": "string",
+      "format": "uuid"
+    },
+    "eventType": {
+      "type": "string"
+    },
+    "occurredAt": {
+      "type": "string",
+      "format": "date-time"
+    },
+    "producer": {
+      "type": "string"
+    },
+    "schemaVersion": {
+      "const": "1.0"
+    },
+    "sourceService": {
+      "enum": ["IDENTITY", "CONSULTATION", "CONTENT", "COMMUNITY"]
+    },
+    "domain": {
+      "enum": [
+        "ACCOUNT_ADMINISTRATION",
+        "SPECIALIST_REVIEW",
+        "RESOURCE_MANAGEMENT",
+        "COMMUNITY_MODERATION"
+      ]
+    },
+    "actorId": {
+      "type": ["string", "null"],
+      "format": "uuid"
+    },
+    "actorType": {
+      "enum": ["ADMIN", "SYSTEM"]
+    },
+    "action": {
+      "type": "string",
+      "pattern": "^[A-Z0-9_]+$"
+    },
+    "result": {
+      "enum": ["SUCCEEDED", "DENIED", "FAILED"]
+    },
+    "reasonCode": {
+      "type": ["string", "null"]
+    },
+    "correlationId": {
+      "type": "string",
+      "format": "uuid"
+    },
+    "targetAccountId": {
+      "type": ["string", "null"],
+      "format": "uuid"
+    },
+    "targetIdentifier": {
+      "type": ["string", "null"]
+    }
+  }
+}

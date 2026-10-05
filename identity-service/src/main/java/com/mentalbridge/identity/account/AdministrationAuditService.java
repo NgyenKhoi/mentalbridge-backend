@@ -186,14 +186,14 @@ public class AdministrationAuditService {
                 safeSourceService(event.getSourceService()), safeDomain(event.getDomain()), targetIdentifier);
     }
 
-    private String safeReasonCode(String value) {
+    public static String safeReasonCode(String value) {
         if (value == null) {
             return null;
         }
         return SAFE_REASON_CODES.contains(value) ? value : null;
     }
 
-    private AuditSourceService safeSourceService(String value) {
+    public static AuditSourceService safeSourceService(String value) {
         if (value == null) return AuditSourceService.IDENTITY;
         try {
             return AuditSourceService.valueOf(value);
@@ -202,7 +202,7 @@ public class AdministrationAuditService {
         }
     }
 
-    private AuditDomain safeDomain(String value) {
+    public static AuditDomain safeDomain(String value) {
         if (value == null) return AuditDomain.ACCOUNT_ADMINISTRATION;
         try {
             return AuditDomain.valueOf(value);
