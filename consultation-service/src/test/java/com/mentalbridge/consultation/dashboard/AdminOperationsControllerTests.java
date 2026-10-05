@@ -32,7 +32,7 @@ class AdminOperationsControllerTests {
 		var specialists = new AdminOperationsResponse.AdminSpecialistOperationsSummary(
 				10, 2, 7, 1, 0);
 		var appointments = new AdminOperationsResponse.AdminAppointmentOperationsSummary(
-				25, 3, 8, 2, 1, 7, 2, 1, 1);
+				25, 3, 8, 2, 1, 7, 2, 1, 1, 0, 0, 0);
 		var response = new AdminOperationsResponse("CONSULTATION", now, specialists, appointments);
 
 		when(service.getOperationsSummary()).thenReturn(response);
@@ -56,6 +56,9 @@ class AdminOperationsControllerTests {
 				.andExpect(jsonPath("$.appointments.cancelled").value(2))
 				.andExpect(jsonPath("$.appointments.rejected").value(1))
 				.andExpect(jsonPath("$.appointments.expired").value(1))
+				.andExpect(jsonPath("$.appointments.userNoShow").value(0))
+				.andExpect(jsonPath("$.appointments.specialistNoShow").value(0))
+				.andExpect(jsonPath("$.appointments.disputed").value(0))
 				// Assert strictly aggregate facts - no sensitive fields exist
 				.andExpect(jsonPath("$.journal").doesNotExist())
 				.andExpect(jsonPath("$.notes").doesNotExist())

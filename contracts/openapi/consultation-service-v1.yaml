@@ -1428,7 +1428,7 @@ components:
     AdminAppointmentOperationsSummary:
       type: object
       additionalProperties: false
-      required: [total, requested, confirmed, inProgress, sessionEnded, completed, cancelled, rejected, expired]
+      required: [total, requested, confirmed, inProgress, sessionEnded, completed, cancelled, rejected, expired, userNoShow, specialistNoShow, disputed]
       properties:
         total: { type: integer, minimum: 0 }
         requested: { type: integer, minimum: 0 }
@@ -1439,6 +1439,9 @@ components:
         cancelled: { type: integer, minimum: 0 }
         rejected: { type: integer, minimum: 0 }
         expired: { type: integer, minimum: 0 }
+        userNoShow: { type: integer, minimum: 0 }
+        specialistNoShow: { type: integer, minimum: 0 }
+        disputed: { type: integer, minimum: 0 }
     ConsultationOperationsSummary:
       type: object
       additionalProperties: false

@@ -25,4 +25,5 @@ public interface AccountRepository extends JpaRepository<AccountEntity, UUID>, J
 
 	long countByRole(RoleCode role);
 
+	long countByRoleAndStatusNot(RoleCode role, AccountStatus status);
 }

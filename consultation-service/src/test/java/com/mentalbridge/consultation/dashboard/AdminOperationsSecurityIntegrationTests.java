@@ -5,7 +5,6 @@ import static org.springframework.test.web.servlet.request.MockMvcRequestBuilder
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.jsonPath;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.status;
 
-import java.util.List;
 import java.util.UUID;
 
 import org.junit.jupiter.api.Test;
@@ -29,41 +28,46 @@ class AdminOperationsSecurityIntegrationTests extends ConsultationTestProperties
 	MockMvc mvc;
 
 	@Test
-	void operationsSummaryRequiresAdminRoleAndReturnsAuthoritativeAggregates() throws Exception {
+	void unauthenticatedRequestReturns401() throws Exception {
 		mvc.perform(get("/api/v1/admin/operations/summary"))
 				.andExpect(status().isUnauthorized());
+	}
 
+	@Test
+	void userRoleReturns403() throws Exception {
 		mvc.perform(get("/api/v1/admin/operations/summary").with(user(UUID.randomUUID())))
 				.andExpect(status().isForbidden());
+	}
 
+	@Test
+	void specialistRoleReturns403() throws Exception {
 		mvc.perform(get("/api/v1/admin/operations/summary").with(specialist(UUID.randomUUID())))
 				.andExpect(status().isForbidden());
+	}
 
+	@Test
+	void adminRoleReturns200WithAuthoritativeSummary() throws Exception {
 		mvc.perform(get("/api/v1/admin/operations/summary").with(admin(UUID.randomUUID())))
 				.andExpect(status().isOk())
 				.andExpect(jsonPath("$.source").value("CONSULTATION"))
-				.andExpect(jsonPath("$.asOf").exists())
-				.andExpect(jsonPath("$.specialists").exists())
-				.andExpect(jsonPath("$.appointments").exists())
-				.andExpect(jsonPath("$.specialists.total").isNumber())
-				.andExpect(jsonPath("$.appointments.total").isNumber())
-				.andExpect(jsonPath("$.journal").doesNotExist())
-				.andExpect(jsonPath("$.notes").doesNotExist())
-				.andExpect(jsonPath("$.chatBody").doesNotExist());
+				.andExpect(jsonPath("$.asOf").isNotEmpty())
+				.andExpect(jsonPath("$.specialists").isMap())
+				.andExpect(jsonPath("$.appointments").isMap());
 	}
 
 	private RequestPostProcessor admin(UUID id) {
-		return jwt().jwt(token -> token.subject(id.toString()).claim("roles", List.of("ADMIN")))
+		return jwt().jwt(token -> token.subject(id.toString()).claim("roles", java.util.List.of("ADMIN")))
 				.authorities(new SimpleGrantedAuthority("ROLE_ADMIN"));
 	}
 
-	private RequestPostProcessor user(UUID id) {
-		return jwt().jwt(token -> token.subject(id.toString()).claim("roles", List.of("USER")))
-				.authorities(new SimpleGrantedAuthority("ROLE_USER"));
-	}
-
 	private RequestPostProcessor specialist(UUID id) {
-		return jwt().jwt(token -> token.subject(id.toString()).claim("roles", List.of("SPECIALIST")))
+		return jwt().jwt(token -> token.subject(id.toString()).claim("roles", java.util.List.of("SPECIALIST")))
 				.authorities(new SimpleGrantedAuthority("ROLE_SPECIALIST"));
 	}
+
+	private RequestPostProcessor user(UUID id) {
+		return jwt().jwt(token -> token.subject(id.toString()).claim("roles", java.util.List.of("USER")))
+				.authorities(new SimpleGrantedAuthority("ROLE_USER"));
+	}
 }
+

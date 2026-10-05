@@ -343,7 +343,7 @@ paths:
     get:
       tags: [Account administration]
       operationId: getAccountsSummary
-      summary: Read authoritative aggregate account counts and status for admin operations dashboard
+      summary: Read authoritative aggregate account counts and status for admin operations dashboard (excluding soft-deleted accounts)
       security:
         - bearerAuth: []
       parameters:
@@ -612,7 +612,10 @@ components:
       properties:
         source: { type: string, const: IDENTITY }
         asOf: { type: string, format: date-time }
-        totalAccounts: { type: integer, minimum: 0 }
+        totalAccounts:
+          type: integer
+          minimum: 0
+          description: Total manageable accounts in the platform, excluding soft-deleted (purged) accounts. Matches the sum of status breakdown and the sum of role breakdown.
         activeAccounts: { type: integer, minimum: 0 }
         pendingVerificationAccounts: { type: integer, minimum: 0 }
         disabledAccounts: { type: integer, minimum: 0 }

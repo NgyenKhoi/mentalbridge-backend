@@ -25,7 +25,10 @@ public record AdminOperationsResponse(
 			long completed,
 			long cancelled,
 			long rejected,
-			long expired) {
+			long expired,
+			long userNoShow,
+			long specialistNoShow,
+			long disputed) {
 	}
 }
 
