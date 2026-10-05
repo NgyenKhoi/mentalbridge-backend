@@ -118,14 +118,44 @@ jobs:
       - name: Build
         working-directory: ${{ matrix.service }}
         run: npm run build
+
+  community-notification-recovery:
+    name: Cross-service / Community notification recovery
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: '21'
+          cache: maven
+          cache-dependency-path: community-service/pom.xml
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+          cache: npm
+          cache-dependency-path: content-notification-service/package-lock.json
+      - name: Install and build Content/Notification
+        working-directory: content-notification-service
+        run: |
+          npm ci
+          npm run build
+      - name: Verify outage recovery and replay safety
+        working-directory: community-service
+        env:
+          SPRINGDOTENV_ENABLED: 'false'
+        run: |
+          chmod +x mvnw
+          ./mvnw -B -Dtest=CommunityNotificationRecoveryCrossServiceIT test
+
   quality-gate:
     name: quality-gate
     if: always()
-    needs: [promotion-policy, repository-policy, java, node]
+    needs: [promotion-policy, repository-policy, java, node, community-notification-recovery]
     runs-on: ubuntu-latest
     steps:
       - name: Require every quality job
-        if: needs.promotion-policy.result != 'success' || needs.repository-policy.result != 'success' || needs.java.result != 'success' || needs.node.result != 'success'
+        if: needs.promotion-policy.result != 'success' || needs.repository-policy.result != 'success' || needs.java.result != 'success' || needs.node.result != 'success' || needs.community-notification-recovery.result != 'success'
         run: exit 1
       - name: Confirm quality gate
         run: echo "All required backend quality jobs passed."

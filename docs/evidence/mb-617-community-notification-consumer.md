@@ -22,3 +22,14 @@ The inbox action is derived locally as `/community/{postId}`. The Community
 detail route uses one indistinguishable unavailable state for removed, hidden,
 blocked, and unknown posts, so a stale notification cannot reveal moderation or
 existence details.
+
+`CommunityNotificationRecoveryCrossServiceIT` supplies deterministic
+outage-to-recovery evidence with disposable Community and Content/Notification
+PostgreSQL owners plus a real Kafka broker. It commits an eligible comment
+through the Community REST boundary while the Notification process is absent,
+verifies the durable Community outbox and retained v1 Kafka fact, starts the
+real Content/Notification consumer for catch-up, then restarts it and
+republishes the same event. The consumer group advances through both records
+while the inbox retains exactly one notification. The dedicated
+`Cross-service / Community notification recovery` CI job builds both owners and
+runs this test on every pull request.
