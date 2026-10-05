@@ -13,6 +13,7 @@ const preferences: NotificationPreferences = {
     screeningReassessment: true,
     appointmentMessage: true,
     resourceSystem: true,
+    communityInteraction: true,
   },
   quietHours: { enabled: false, start: '22:00', end: '07:00', timeZone: 'Asia/Ho_Chi_Minh' },
   email: {

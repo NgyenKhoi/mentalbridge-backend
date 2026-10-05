@@ -21,6 +21,7 @@ and area wording for the directory and forbids automatic safety email.
 | Reminder scheduling | Create at most one default wellbeing digest/day, explicit opt-in resource reminders, and one dedicated-opt-in appointment email targeting exactly 60 minutes before start | Appointment/version deduplication, quiet-hour deferral/suppression, lifecycle invalidation, strict before-start cutoff; AI does not choose recipient/timing; no automatic safety email |
 | Notification history | Persist list/detail/read/delete state | Bounded cursor pagination; user sees own records only; read/delete idempotent; retention semantics explicit |
 | Domain notification | Consume minimized facts, select versioned template and create notification | Duplicate message creates one logical notification; replay policy prevents repeated external sends |
+| Community interaction notification | Consume `mentalbridge.community.interaction.v1` and create generic owner-scoped inbox copy | Strict v1 validation; per-event dedupe; in-app and Community-group preference enforcement; removed targets resolve through Community's safe unavailable state; no post/comment body or display identity crosses the boundary |
 | Provider delivery | Send through bounded adapter and track every attempt | Domain outcome independent; transient retry honors provider signals; terminal failure visible; no secrets/sensitive body in logs |
 | Live delivery | Publish `NotificationCreated` for Realtime | Durable record/outbox atomic; payload minimal; reconnect relies on REST history, not guaranteed socket delivery |
 
@@ -34,6 +35,7 @@ and area wording for the directory and forbids automatic safety email.
 - Existing resource contracts and rows remain valid for reviewed public reads. Resource Eligibility v1 adds immutable exact-version publications, explicit declarations, withdrawal and a bounded Care batch resolver under #50; no service infers universal plan eligibility from current data.
 - MB-603 adds semantic `resourceKind`/`interactionType` metadata and `PUT /api/v1/resource-journeys/{localDate}`. The browser supplies only date/timezone to the BFF; the BFF reads Care's active SupportPlan and forwards its authoritative identity, version, domains, and selected resource IDs. Content persists the resulting assignment and completion/session evidence.
 - Runtime never scrapes or translates third-party sources. Offline/admin ingestion records source URL, retrieval instant, SHA-256 content hash, version label, and explicit review status before reviewed Vietnamese content is published.
+- MB-617 consumes only MB-580's minimized, versioned Community interaction fact. The consumer transaction persists either a delivered inbox row or a cancelled preference outcome keyed by the source `eventId`; malformed facts are parked as digest-only DLQ metadata, while transient persistence failures leave the Kafka offset retryable. Community commands never call this service synchronously.
 
 ## Ordered tasks
 

@@ -19,6 +19,10 @@ import { NotificationService } from '../../notifications/notification.service.js
 import { ResourceProgressRepository } from '../../resources/resource-progress.repository.js';
 import { ResourceJourneyRepository } from '../../resources/resource-journey.repository.js';
 import { WellbeingDigestRepository } from '../../wellbeing-digest/wellbeing-digest.repository.js';
+import {
+  CommunityNotificationDedupeConflictError,
+  CommunityNotificationRepository,
+} from '../../community-notifications/community-notification.repository.js';
 
 const __dirname = dirname(fileURLToPath(import.meta.url));
 
@@ -76,6 +80,7 @@ describe('Database Integration', () => {
       '15_harden_resource_journey.sql',
       '16_add_wellbeing_digest_delivery.sql',
       '17_add_appointment_email_reminders.sql',
+      '18_add_community_interaction_notifications.sql',
     ]) {
       if (migration === '10_persist_notification_preferences.sql') {
         await pool.query(
@@ -1135,6 +1140,109 @@ describe('Database Integration', () => {
         [command.sourceIdentity],
       );
       expect(count.rows[0].count).toBe('2');
+    });
+
+    it('materializes Community facts once and preserves a disabled preference across replay', async () => {
+      const database = {
+        query: (text: string, parameters?: unknown[]) => pool.query(text, parameters),
+        withTransaction: async <T>(operation: (client: DatabaseClient) => Promise<T>) => {
+          const client = await pool.connect();
+          try {
+            await client.query('BEGIN');
+            const result = await operation(client);
+            await client.query('COMMIT');
+            return result;
+          } catch (error) {
+            await client.query('ROLLBACK');
+            throw error;
+          } finally {
+            client.release();
+          }
+        },
+      } as unknown as DatabaseService;
+      const communityRepository = new CommunityNotificationRepository(database);
+      const inboxRepository = new NotificationRepository(database);
+      const enabledOwner = '11500000-0000-4000-8000-000000000001';
+      const disabledOwner = '11500000-0000-4000-8000-000000000002';
+      const postId = '11500000-0000-4000-8000-000000000003';
+      const enabled = {
+        eventId: '11500000-0000-4000-8000-000000000004',
+        ownerId: enabledOwner,
+        kind: 'COMMUNITY_COMMENT' as const,
+        title: 'Bài viết của bạn có phản hồi mới',
+        body: 'Một thành viên đã để lại lời nhắn hỗ trợ.',
+        occurredAt: '2026-10-05T08:00:00.000Z',
+        postId,
+      };
+
+      const first = await communityRepository.materialize(enabled, 'a'.repeat(64));
+      const replay = await communityRepository.materialize(enabled, 'a'.repeat(64));
+      expect(first).toMatchObject({ delivered: true, replayed: false });
+      expect(replay).toMatchObject({
+        notificationId: first.notificationId,
+        delivered: true,
+        replayed: true,
+      });
+      const page = await inboxRepository.list(enabledOwner, 20, null);
+      expect(page.items).toHaveLength(1);
+      expect(page.items[0]).toMatchObject({
+        kind: 'COMMUNITY_COMMENT',
+        action: {
+          type: 'OPEN_COMMUNITY_POST',
+          targetId: postId,
+          href: `/community/${postId}`,
+        },
+      });
+
+      await pool.query(
+        `INSERT INTO notification_preference
+           (user_id, group_community_interaction_enabled)
+         VALUES ($1, false)`,
+        [disabledOwner],
+      );
+      const disabled = {
+        ...enabled,
+        eventId: '11500000-0000-4000-8000-000000000005',
+        ownerId: disabledOwner,
+      };
+      const suppressed = await communityRepository.materialize(disabled, 'b'.repeat(64));
+      expect(suppressed).toMatchObject({ delivered: false, replayed: false });
+      await pool.query(
+        `UPDATE notification_preference
+         SET group_community_interaction_enabled = true
+         WHERE user_id = $1`,
+        [disabledOwner],
+      );
+      const suppressedReplay = await communityRepository.materialize(disabled, 'b'.repeat(64));
+      expect(suppressedReplay).toMatchObject({
+        notificationId: suppressed.notificationId,
+        delivered: false,
+        replayed: true,
+      });
+      expect((await inboxRepository.list(disabledOwner, 20, null)).items).toEqual([]);
+
+      await expect(
+        communityRepository.materialize({ ...enabled, body: 'Changed' }, 'c'.repeat(64)),
+      ).rejects.toBeInstanceOf(CommunityNotificationDedupeConflictError);
+      const audit = await pool.query<{
+        count: string;
+        source: string;
+        source_identity: string;
+        delivery_state: string;
+      }>(
+        `SELECT count(*)::text AS count, min(source) AS source,
+                min(source_identity) AS source_identity,
+                min(delivery_state) AS delivery_state
+         FROM notification
+         WHERE recipient_id = $1 AND source_identity = $2`,
+        [enabledOwner, enabled.eventId],
+      );
+      expect(audit.rows[0]).toMatchObject({
+        count: '1',
+        source: 'COMMUNITY_INTERACTION_V1',
+        source_identity: enabled.eventId,
+        delivery_state: 'DELIVERED',
+      });
     });
 
     it('paginates newest first with an opaque cursor and isolates owners', async () => {

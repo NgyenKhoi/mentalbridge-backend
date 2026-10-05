@@ -17,6 +17,7 @@ const preferences: NotificationPreferences = {
     screeningReassessment: true,
     appointmentMessage: true,
     resourceSystem: true,
+    communityInteraction: true,
   },
   quietHours: {
     enabled: false,
