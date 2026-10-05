@@ -126,6 +126,29 @@ class DiscoveryFlowIntegrationTests extends ConsultationTestProperties {
 	}
 
 	@Test
+	void exposesTruthfulAggregateAndUsesItOnlyAsPremiumFinalTieBreaker() throws Exception {
+		var start = Instant.now().plusSeconds(86_400);
+		var lowerRated = profile("APPROVED", "Lower rated", "Asia/Ho_Chi_Minh",
+				SupportArea.ANXIETY_SYMPTOMS, "vi");
+		var higherRated = profile("APPROVED", "Higher rated", "Asia/Ho_Chi_Minh",
+				SupportArea.ANXIETY_SYMPTOMS, "vi");
+		slot(lowerRated, start, "IN_APP_CHAT", "ACTIVE");
+		slot(higherRated, start, "IN_APP_CHAT", "ACTIVE");
+		ratingAggregate(lowerRated, 2, 8);
+		ratingAggregate(higherRated, 3, 15);
+
+		discover(paidUser("PLUS")).andExpect(status().isOk())
+				.andExpect(jsonPath("$.items[?(@.specialistAccountId == '%s')].ratingAggregate.averageRating"
+						.formatted(higherRated)).value(5.00))
+				.andExpect(jsonPath("$.items[0].explanation.ratingTieBreakerApplied").value(false));
+		discover(paidUser("PREMIUM")).andExpect(status().isOk())
+				.andExpect(jsonPath("$.items[0].specialistAccountId").value(higherRated.toString()))
+				.andExpect(jsonPath("$.items[0].ratingAggregate.ratingCount").value(3))
+				.andExpect(jsonPath("$.items[0].explanation.ratingTieBreakerApplied").value(true))
+				.andExpect(jsonPath("$.items[0].explanation.codes").value(org.hamcrest.Matchers.hasItem("RATING_AVAILABLE")));
+	}
+
+	@Test
 	void primaryCompatibilityWinsAndUuidBreaksExactTiesDeterministically() throws Exception {
 		var evaluation = UUID.randomUUID();
 		when(screeningContexts.resolve(evaluation, "token")).thenReturn(java.util.Optional.of(
@@ -265,6 +288,14 @@ class DiscoveryFlowIntegrationTests extends ConsultationTestProperties {
 				.param("from", Timestamp.from(now.minusSeconds(60)))
 				.param("until", Timestamp.from(now.plusSeconds(2_592_000))).update();
 		return id;
+	}
+
+	private void ratingAggregate(UUID specialistId, long count, long sum) {
+		jdbc.sql("""
+				insert into specialist_rating_aggregate (
+				 specialist_account_id, rating_count, rating_sum, updated_at
+				) values (:specialistId, :count, :sum, now())
+				""").param("specialistId", specialistId).param("count", count).param("sum", sum).update();
 	}
 
 	private org.springframework.test.web.servlet.request.RequestPostProcessor user(UUID id) {

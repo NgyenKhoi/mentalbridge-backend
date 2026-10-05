@@ -43,6 +43,7 @@ class SpecialistDashboardIntegrationTests extends ConsultationTestProperties {
 	@Test
 	void approvedSpecialistReceivesBoundedCurrentOperationalFacts() throws Exception {
 		var specialistId = profile("APPROVED");
+		rating(specialistId, 3, 14);
 		var todayAppointment = appointment(specialistId, "CONFIRMED", NOW.plusSeconds(3_600),
 				NOW.minusSeconds(900));
 		appointment(specialistId, "REQUESTED", NOW.plusSeconds(86_400), NOW.plusSeconds(7_200));
@@ -58,6 +59,9 @@ class SpecialistDashboardIntegrationTests extends ConsultationTestProperties {
 				.andExpect(jsonPath("$.source").value("CONSULTATION"))
 				.andExpect(jsonPath("$.operationalStatus").value("READY"))
 				.andExpect(jsonPath("$.profile.displayName").value("Dashboard specialist"))
+				.andExpect(jsonPath("$.ratingAggregate.state").value("AVAILABLE"))
+				.andExpect(jsonPath("$.ratingAggregate.averageRating").value(4.67))
+				.andExpect(jsonPath("$.ratingAggregate.ratingCount").value(3))
 				.andExpect(jsonPath("$.todayConfirmedSessions.state").value("AVAILABLE"))
 				.andExpect(jsonPath("$.todayConfirmedSessions.localDate").value("2026-10-03"))
 				.andExpect(jsonPath("$.todayConfirmedSessions.count").value(1))
@@ -82,6 +86,8 @@ class SpecialistDashboardIntegrationTests extends ConsultationTestProperties {
 		mvc.perform(get("/api/v1/specialist/dashboard").with(specialist(pendingId)))
 				.andExpect(status().isOk())
 				.andExpect(jsonPath("$.operationalStatus").value("PENDING_APPROVAL"))
+				.andExpect(jsonPath("$.ratingAggregate.state").value("BLOCKED"))
+				.andExpect(jsonPath("$.ratingAggregate.averageRating").doesNotExist())
 				.andExpect(jsonPath("$.todayConfirmedSessions.state").value("BLOCKED"))
 				.andExpect(jsonPath("$.todayConfirmedSessions.count").value(0))
 				.andExpect(jsonPath("$.availability.state").value("BLOCKED"))
@@ -107,6 +113,17 @@ class SpecialistDashboardIntegrationTests extends ConsultationTestProperties {
 	}
 
 	@Test
+	void approvedSpecialistWithoutRatingsReceivesAnHonestEmptyAggregate() throws Exception {
+		var specialistId = profile("APPROVED");
+
+		mvc.perform(get("/api/v1/specialist/dashboard").with(specialist(specialistId)))
+				.andExpect(status().isOk())
+				.andExpect(jsonPath("$.ratingAggregate.state").value("EMPTY"))
+				.andExpect(jsonPath("$.ratingAggregate.averageRating").doesNotExist())
+				.andExpect(jsonPath("$.ratingAggregate.ratingCount").value(0));
+	}
+
+	@Test
 	void dashboardRequiresTheSpecialistRole() throws Exception {
 		mvc.perform(get("/api/v1/specialist/dashboard"))
 				.andExpect(status().isUnauthorized());
@@ -129,6 +146,15 @@ class SpecialistDashboardIntegrationTests extends ConsultationTestProperties {
 				.param("reviewedAt", reviewed ? database(NOW.minusSeconds(43_200)) : null)
 				.param("reviewedBy", reviewed ? UUID.randomUUID() : null).param("reason", reason).update();
 		return id;
+	}
+
+	private void rating(UUID specialistId, long count, long sum) {
+		jdbc.sql("""
+				insert into specialist_rating_aggregate (
+				 specialist_account_id, rating_count, rating_sum, updated_at
+				) values (:specialistId, :count, :sum, :now)
+				""").param("specialistId", specialistId).param("count", count).param("sum", sum)
+				.param("now", database(NOW)).update();
 	}
 
 	private UUID slot(UUID specialistId, Instant start) {

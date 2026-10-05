@@ -2,11 +2,13 @@ package com.mentalbridge.consultation.dashboard;
 
 import java.time.Instant;
 import java.time.LocalDate;
+import java.math.BigDecimal;
 import java.util.List;
 import java.util.UUID;
 
 public record SpecialistDashboardResponse(String source, Instant generatedAt,
-		OperationalStatus operationalStatus, Profile profile, AppointmentCollection todayConfirmedSessions,
+		OperationalStatus operationalStatus, Profile profile, RatingAggregate ratingAggregate,
+		AppointmentCollection todayConfirmedSessions,
 		AppointmentCollection pendingAppointmentRequests, NextAppointment nextAppointment,
 		AvailabilityCollection availability, List<ActionItem> actionRequired) {
 
@@ -36,6 +38,10 @@ public record SpecialistDashboardResponse(String source, Instant generatedAt,
 
 	public record Profile(String source, Instant asOf, DataState state, String displayName,
 			String timezone, String approvalStatus) {
+	}
+
+	public record RatingAggregate(String source, Instant asOf, DataState state,
+			BigDecimal averageRating, long ratingCount) {
 	}
 
 	public record AppointmentCollection(String source, Instant asOf, DataState state, int count,

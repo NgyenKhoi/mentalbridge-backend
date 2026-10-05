@@ -78,6 +78,7 @@ See [README](README.md) for status and relationship semantics.
 | `availability_slot` | consultation-service | PostgreSQL | ACTIVE | Physical many-to-one to `specialist_profile`; active slots cannot overlap for one specialist. |
 | `service_credit_period`, `service_credit`, `service_credit_ledger` | consultation-service | PostgreSQL | ACTIVE | Current entitlement provisions bounded credits; appointment transitions hold and later release/consume one credit with append-only evidence. |
 | `appointment`, `appointment_status_history`, `appointment_chat_evidence` | consultation-service | PostgreSQL | ACTIVE | MB-378 owns the REQUESTED snapshot, exact online slot and held credit; MB-379 settles assigned specialist acceptance/rejection and deterministic expiry with idempotent history; MB-360 records suspension cancellation outcomes; MB-558 adds package reservation caps and linked atomic replacement; MB-380 records owner cancellation/reschedule audit; MB-383 stores content-free check-in/presence/accepted-message evidence and deterministically settles chat outcome and credit under `chat-session-completion-v1`. |
+| `appointment_rating`, `specialist_rating_aggregate` | consultation-service | PostgreSQL | ACTIVE | MB-364 stores one current 1-5 rating per evidence-completed owned appointment and maintains the specialist count/sum aggregate in the same transaction. |
 | `session_summary`, `agreed_next_step`, `agreed_next_step_state`, `session_summary_reuse_consent` | consultation-service | PostgreSQL | ACTIVE | MB-385 appends immutable user-visible summary versions after evidence-backed completion, keeps agreed steps separate from SupportPlan occurrences, lets only the user manage checklist state, and records separate exact-snapshot reuse consent. MB-560 adds a bounded reason code to exact-version `PLATFORM_RESOURCE` steps so Care can authoritatively retrieve proposal provenance. |
 | `appointment_outbox_event` | consultation-service | PostgreSQL | ACTIVE | One minimized asynchronous status fact per appointment/version, atomically committed with appointment state and containing no clinical or message content. |
 | Specialty catalogue/assignment | consultation-service | PostgreSQL | PROPOSED | Discovery policy exists, but no owner migration implements specialty persistence. |
@@ -85,7 +86,7 @@ See [README](README.md) for status and relationship semantics.
 | User subscription/payment/IPN/upgrade | consultation-service | PostgreSQL | PROPOSED | Approved billing boundary without active migration; must not be inferred from `current_service_entitlement`. |
 | Appointment completion evidence | consultation-service | PostgreSQL | PROPOSED | Request, decision/expiry, and suspension-cancellation history are active; later session completion evidence remains in separate stories. |
 | Specialist earning/payout/reconciliation | consultation-service | PostgreSQL | PROPOSED | Approved financial boundary remains gated by pricing, credentials, and owner migrations. |
-| Specialist review | consultation-service | PostgreSQL | PROPOSED | Product scope exists, but no persistence migration is active. |
+| Free-text specialist review/moderation | consultation-service | PostgreSQL | PROPOSED | MB-364 implements bounded rating only; comments, anonymity, deletion, and moderation remain unavailable. |
 
 ## Community — PostgreSQL
 

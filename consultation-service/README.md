@@ -46,6 +46,10 @@ hours before start release the held credit; later confirmed cancellations
 forfeit it. Every cancellation records actor, stable reason, instant, exact
 credit outcome, and append-only history. Replacement creation and old
 appointment settlement remain one transaction.
+MB-364 lets the appointment owner create and later edit one 1-5 rating only
+after evidence-backed completion. The current rating and specialist count/sum
+aggregate commit together; public discovery discloses average/count and uses
+the aggregate only as the final `PREMIUM` tie-breaker.
 
 ## Integration
 
@@ -124,8 +128,8 @@ requires no new persistence or migration. Every request rechecks current
 `APPROVED` state and selectable slots. `FREE` receives `BROWSE_ONLY`, while
 `PLUS`/`PREMIUM` receive an exact slot identity with
 `BOOKING_POLICY_CHECK_REQUIRED`; MB-378 remains the booking authority and
-revalidates all mutable state. Rating is not fabricated and is currently
-reported as unavailable/unused.
+revalidates all mutable state. Discovery policy v2 displays only authoritative
+MB-364 rating aggregates and never fabricates a score.
 
 ## Implemented MB-377/MB-558 endpoint
 
@@ -139,6 +143,10 @@ reported as unavailable/unused.
 ## Implemented MB-380 endpoint
 
 - `POST /api/v1/appointments/{appointmentId}/cancel`
+
+## Implemented MB-364 endpoint
+
+- `GET|PUT /api/v1/appointments/{appointmentId}/rating`
 
 ## Implemented MB-548 internal endpoint
 

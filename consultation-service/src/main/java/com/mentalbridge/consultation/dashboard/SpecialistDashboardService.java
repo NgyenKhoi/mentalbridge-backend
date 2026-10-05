@@ -6,6 +6,8 @@ import static com.mentalbridge.consultation.dashboard.SpecialistDashboardRespons
 
 import java.sql.ResultSet;
 import java.sql.SQLException;
+import java.math.BigDecimal;
+import java.math.RoundingMode;
 import java.time.Clock;
 import java.time.Instant;
 import java.time.LocalDate;
@@ -31,6 +33,7 @@ import com.mentalbridge.consultation.dashboard.SpecialistDashboardResponse.DataS
 import com.mentalbridge.consultation.dashboard.SpecialistDashboardResponse.NextAppointment;
 import com.mentalbridge.consultation.dashboard.SpecialistDashboardResponse.OperationalStatus;
 import com.mentalbridge.consultation.dashboard.SpecialistDashboardResponse.Profile;
+import com.mentalbridge.consultation.dashboard.SpecialistDashboardResponse.RatingAggregate;
 
 @Service
 public class SpecialistDashboardService {
@@ -71,6 +74,7 @@ public class SpecialistDashboardService {
 				""", null, null, "a.decision_deadline_at, a.scheduled_start_at, a.id");
 		var next = nextAppointment(specialistId, now);
 		var availability = availability(specialistId, now);
+		var rating = rating(specialistId, now);
 		var actions = new ArrayList<ActionItem>();
 		if (pending.count() > 0) {
 			actions.add(new ActionItem(SOURCE, now, ActionType.REVIEW_APPOINTMENT_REQUESTS, pending.count()));
@@ -81,6 +85,7 @@ public class SpecialistDashboardService {
 
 		return new SpecialistDashboardResponse(SOURCE, now, OperationalStatus.READY,
 				new Profile(SOURCE, now, AVAILABLE, profile.displayName(), profile.timezone(), profile.approvalStatus()),
+				rating,
 				new AppointmentCollection(SOURCE, now, state(today.items()), today.count(), localDate,
 						profile.timezone(), today.items()),
 				new AppointmentCollection(SOURCE, now, state(pending.items()), pending.count(), null,
@@ -96,7 +101,8 @@ public class SpecialistDashboardService {
 				profile == null ? null : profile.approvalStatus());
 		var appointments = new AppointmentCollection(SOURCE, now, BLOCKED, 0, null,
 				profile == null ? null : profile.timezone(), List.of());
-		return new SpecialistDashboardResponse(SOURCE, now, status, profileProjection, appointments,
+		return new SpecialistDashboardResponse(SOURCE, now, status, profileProjection,
+				new RatingAggregate(SOURCE, now, BLOCKED, null, 0), appointments,
 				appointments, new NextAppointment(SOURCE, now, BLOCKED, null),
 				new AvailabilityCollection(SOURCE, now, BLOCKED, 0, List.of()),
 				List.of(new ActionItem(SOURCE, now, action, 1)));
@@ -110,6 +116,19 @@ public class SpecialistDashboardService {
 				.query((row, ignored) -> new ProfileRow(row.getString("display_name"), row.getString("timezone"),
 						row.getString("approval_status")))
 				.optional().orElse(null);
+	}
+
+	private RatingAggregate rating(UUID specialistId, Instant now) {
+		var row = jdbc.sql("""
+				select rating_count, rating_sum
+				from specialist_rating_aggregate where specialist_account_id=:specialistId
+				""").param("specialistId", specialistId)
+				.query((result, ignored) -> new RatingRow(result.getLong("rating_count"),
+						result.getLong("rating_sum"))).optional().orElse(null);
+		if (row == null) return new RatingAggregate(SOURCE, now, EMPTY, null, 0);
+		var average = BigDecimal.valueOf(row.sum()).divide(BigDecimal.valueOf(row.count()), 2,
+				RoundingMode.HALF_UP);
+		return new RatingAggregate(SOURCE, now, AVAILABLE, average, row.count());
 	}
 
 	private AppointmentRows appointments(UUID specialistId, Instant now, String predicate,
@@ -212,6 +231,9 @@ public class SpecialistDashboardService {
 	}
 
 	private record ProfileRow(String displayName, String timezone, String approvalStatus) {
+	}
+
+	private record RatingRow(long count, long sum) {
 	}
 
 	private record AppointmentRows(int count, List<AppointmentItem> items) {

@@ -1,5 +1,12 @@
 # Requirements Traceability
 
+- 2026-10-05: MB-364 adds one current 1-5 owner rating per evidence-backed
+  completed appointment, optimistic edit protection, and transactionally
+  maintained specialist count/sum aggregates. Discovery v2 discloses only real
+  average/count data and applies it solely as a final PREMIUM tie-breaker after
+  all primary factors. Comments, anonymity, moderation, diagnosis, and
+  free-form feedback remain unavailable. Evidence:
+  `docs/story-mb-364-appointment-rating-evidence.md`.
 - 2026-10-02: MB-365 implements dedicated-admin account search/detail and
   non-admin suspension/restoration across Identity and the web BFF/UI. Identity
   enforces immutable roles, quoted-version optimistic concurrency, closed reason

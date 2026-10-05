@@ -37,6 +37,8 @@ class ConsultationOpenApiContractTests {
 			"GET /api/v1/appointments",
 			"POST /api/v1/appointments",
 			"POST /api/v1/appointments/{appointmentId}/cancel",
+			"GET /api/v1/appointments/{appointmentId}/rating",
+			"PUT /api/v1/appointments/{appointmentId}/rating",
 			"GET /api/v1/appointments/{appointmentId}/session-summaries",
 			"PUT /api/v1/session-summaries/{summaryId}/reuse-consent",
 			"PUT /api/v1/agreed-next-steps/{nextStepId}",
@@ -143,7 +145,7 @@ class ConsultationOpenApiContractTests {
 		var appointments = api.getComponents().getSchemas().get("SpecialistDashboardAppointmentCollection");
 
 		assertThat(dashboard.getProperties()).containsOnlyKeys("source", "generatedAt", "operationalStatus",
-				"profile", "todayConfirmedSessions", "pendingAppointmentRequests", "nextAppointment",
+				"profile", "ratingAggregate", "todayConfirmedSessions", "pendingAppointmentRequests", "nextAppointment",
 				"availability", "actionRequired");
 		assertThat(appointment.getProperties()).containsOnlyKeys("source", "asOf", "appointmentId", "status",
 				"modality", "scheduledStartAt", "scheduledEndAt", "timezone", "decisionDeadlineAt");
@@ -220,7 +222,8 @@ class ConsultationOpenApiContractTests {
 		var page = api.getComponents().getSchemas().get("SpecialistDiscoveryPage");
 
 		assertThat(item.getProperties()).containsOnlyKeys("specialistAccountId", "displayName", "bio",
-				"supportAreas", "languages", "yearsOfExperience", "timezone", "explanation", "selectableSlots");
+				"supportAreas", "languages", "yearsOfExperience", "timezone", "ratingAggregate", "explanation",
+				"selectableSlots");
 		assertThat(item.getProperties()).doesNotContainKeys("approvalStatus", "practiceLocation", "address", "phone",
 				"price", "credentials", "license", "certificates", "specialties", "journal", "assessmentAnswers",
 				"chatContent", "meetingLink");
@@ -231,6 +234,20 @@ class ConsultationOpenApiContractTests {
 				"timezoneMatch", "ratingTieBreakerApplied", "codes");
 		assertThat(page.getProperties()).containsKeys("rankingPolicyVersion", "contextState", "packageCode",
 				"bookingHandoff", "videoEnabled", "nextCursor");
+	}
+
+	@Test
+	void appointmentRatingContractIsBoundedAndVersioned() {
+		var contract = Path.of("..", "contracts", "openapi", "consultation-service-v1.yaml").toString();
+		var api = new OpenAPIV3Parser().read(contract);
+		var rating = api.getComponents().getSchemas().get("AppointmentRating");
+		var input = api.getComponents().getSchemas().get("SaveAppointmentRating");
+
+		assertThat(api.getPaths()).containsKey("/api/v1/appointments/{appointmentId}/rating");
+		assertThat(input.getProperties()).containsOnlyKeys("rating");
+		assertThat(rating.getProperties()).containsOnlyKeys("appointmentId", "specialistAccountId", "rating",
+				"createdAt", "updatedAt", "version", "specialistAggregate");
+		assertThat(rating.getProperties()).doesNotContainKeys("comment", "anonymous", "diagnosis", "journal");
 	}
 
 	@Test
