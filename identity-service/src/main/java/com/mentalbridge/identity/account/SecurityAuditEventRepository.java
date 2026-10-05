@@ -2,7 +2,9 @@ package com.mentalbridge.identity.account;
 
 import java.util.UUID;
 import org.springframework.data.jpa.repository.JpaRepository;
+import org.springframework.data.jpa.repository.JpaSpecificationExecutor;
 import org.springframework.stereotype.Repository;
 
 @Repository
-public interface SecurityAuditEventRepository extends JpaRepository<SecurityAuditEventEntity, UUID> {}
+public interface SecurityAuditEventRepository extends JpaRepository<SecurityAuditEventEntity, UUID>,
+        JpaSpecificationExecutor<SecurityAuditEventEntity> {}

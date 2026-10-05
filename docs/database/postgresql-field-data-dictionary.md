@@ -354,9 +354,11 @@ Privacy-minimized local security record for authentication, recovery, replay, an
 | `outcome` | Restricted result `SUCCEEDED`, `DENIED`, or `FAILED`. |
 | `reason_code` | Optional stable machine-readable explanation without sensitive free text. |
 | `correlation_id` | Request/workflow UUID used to join safe operational evidence. |
-| `subject_reference_hash` | Optional keyed privacy-minimized 64-character hash used to correlate bounded unknown-account abuse without storing the supplied identifier. |
+| `subject_reference_hash` | Privacy-minimized 64-character SHA-256 reference for a known target UUID, or a bounded hash supplied by an enumeration-safe flow. It remains after account deletion so administration audit reads return a tombstone instead of historical profile data. |
 | `occurred_at` | UTC instant the security decision occurred. |
 | `created_at` | Immutable UTC insertion instant. |
+
+Indexes `ix_security_audit_filter` and `ix_security_audit_subject_reference` support bounded action/result/time and tombstone-target queries. The administration API applies a 365-day read-retention boundary and a maximum 90-day query window; physical archival or deletion remains an operational retention job outside request processing.
 
 ## Owner `care` (`mentalbridge_care.public`)
 

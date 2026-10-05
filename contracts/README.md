@@ -20,6 +20,8 @@ New future APIs should start in `contracts/proposals/`. Existing forward-looking
 
 Framework DTOs, controllers, generated types, database entities, and provider payloads are never the cross-service source of truth.
 
+`openapi/identity-service-v1.yaml` exposes the implemented MB-587 ADMIN-only administration-audit browse and CSV export operations. Both use the same bounded filters, ordering, 365-day read-retention boundary, and privacy-minimized projection fields. Additional service/domain sources require a versioned producer contract and Identity-owned projection; the query API never reads another owner's database.
+
 `events/identity/account-state-changed-v1.schema.json` is the implemented MB-365
 fact emitted atomically when Identity suspends or restores a non-admin account.
 It carries only the account identifier, current status, immutable actor role,

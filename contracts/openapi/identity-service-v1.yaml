@@ -391,6 +391,71 @@ paths:
         '404': { $ref: '#/components/responses/NotFoundProblem' }
         '409': { $ref: '#/components/responses/ConflictProblem' }
         '412': { $ref: '#/components/responses/VersionProblem' }
+  /api/v1/admin/audit-events:
+    x-mentalbridge-status: implemented
+    get:
+      tags: [Administration audit]
+      operationId: browseAdministrationAuditEvents
+      summary: Browse privacy-minimized administration audit events
+      description: Returns only bounded operational metadata retained by Identity. Raw journal, assessment, chat, provider, credential, token, secret, and unnecessary health data are never included.
+      security:
+        - bearerAuth: []
+      parameters:
+        - $ref: '#/components/parameters/AuditFrom'
+        - $ref: '#/components/parameters/AuditTo'
+        - $ref: '#/components/parameters/AuditSourceService'
+        - $ref: '#/components/parameters/AuditDomain'
+        - $ref: '#/components/parameters/AuditActorType'
+        - $ref: '#/components/parameters/AuditAction'
+        - $ref: '#/components/parameters/AuditResult'
+        - $ref: '#/components/parameters/AuditTargetIdentifier'
+        - name: cursor
+          in: query
+          schema: { type: string, minLength: 1, maxLength: 512 }
+        - name: limit
+          in: query
+          schema: { type: integer, minimum: 1, maximum: 100, default: 50 }
+        - $ref: '#/components/parameters/CorrelationId'
+      responses:
+        '200':
+          description: Bounded audit event page
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/AdministrationAuditEventPage' }
+        '400': { $ref: '#/components/responses/ValidationProblem' }
+        '401': { $ref: '#/components/responses/UnauthorizedProblem' }
+        '403': { $ref: '#/components/responses/ForbiddenProblem' }
+  /api/v1/admin/audit-events/export:
+    x-mentalbridge-status: implemented
+    get:
+      tags: [Administration audit]
+      operationId: exportAdministrationAuditEvents
+      summary: Export the currently filtered administration audit events as CSV
+      description: Uses the same authorization, retention window, ordering, and filter semantics as browse. Exports are limited to 5,000 rows and 5 MiB.
+      security:
+        - bearerAuth: []
+      parameters:
+        - $ref: '#/components/parameters/AuditFrom'
+        - $ref: '#/components/parameters/AuditTo'
+        - $ref: '#/components/parameters/AuditSourceService'
+        - $ref: '#/components/parameters/AuditDomain'
+        - $ref: '#/components/parameters/AuditActorType'
+        - $ref: '#/components/parameters/AuditAction'
+        - $ref: '#/components/parameters/AuditResult'
+        - $ref: '#/components/parameters/AuditTargetIdentifier'
+        - $ref: '#/components/parameters/CorrelationId'
+      responses:
+        '200':
+          description: UTF-8 CSV containing only privacy-minimized audit metadata
+          headers:
+            Content-Disposition:
+              schema: { type: string }
+          content:
+            text/csv:
+              schema: { type: string }
+        '400': { $ref: '#/components/responses/ValidationProblem' }
+        '401': { $ref: '#/components/responses/UnauthorizedProblem' }
+        '403': { $ref: '#/components/responses/ForbiddenProblem' }
 components:
   securitySchemes:
     bearerAuth:
@@ -424,6 +489,41 @@ components:
       required: true
       schema: { type: string, pattern: '^"[0-9]+"$' }
       example: '"3"'
+    AuditFrom:
+      name: from
+      in: query
+      description: Inclusive UTC start. Defaults to 30 days before the effective end and cannot precede the 365-day retention boundary.
+      schema: { type: string, format: date-time }
+    AuditTo:
+      name: to
+      in: query
+      description: Inclusive UTC end. Defaults to the current server time. A query window cannot exceed 90 days.
+      schema: { type: string, format: date-time }
+    AuditSourceService:
+      name: sourceService
+      in: query
+      schema: { $ref: '#/components/schemas/AuditSourceService' }
+    AuditDomain:
+      name: domain
+      in: query
+      schema: { $ref: '#/components/schemas/AuditDomain' }
+    AuditActorType:
+      name: actorType
+      in: query
+      schema: { $ref: '#/components/schemas/AuditActorType' }
+    AuditAction:
+      name: action
+      in: query
+      schema: { type: string, minLength: 1, maxLength: 96, pattern: '^[A-Z0-9_]+$' }
+    AuditResult:
+      name: result
+      in: query
+      schema: { $ref: '#/components/schemas/AuditResult' }
+    AuditTargetIdentifier:
+      name: targetIdentifier
+      in: query
+      description: Exact safe identifier returned by this API, either account UUID or tombstone hash.
+      schema: { type: string, minLength: 9, maxLength: 74, pattern: '^(account:[0-9a-fA-F-]{36}|tombstone:[0-9a-f]{64})$' }
   schemas:
     VerifiedDeliveryAddress:
       type: object
@@ -579,6 +679,49 @@ components:
           type: string
           enum: [SAFETY_CONCERN, POLICY_VIOLATION, ACCOUNT_REVIEW_REQUIRED, REVIEW_COMPLETED]
           description: REVIEW_COMPLETED is reserved for restoration; the other values are suspension reasons.
+    AuditSourceService:
+      type: string
+      enum: [IDENTITY]
+    AuditDomain:
+      type: string
+      enum: [ACCOUNT_ADMINISTRATION]
+    AuditActorType:
+      type: string
+      enum: [ADMIN, SYSTEM]
+    AuditResult:
+      type: string
+      enum: [SUCCEEDED, DENIED, FAILED]
+    AdministrationAuditEvent:
+      type: object
+      additionalProperties: false
+      required: [eventId, occurredAt, actorType, actorIdentifier, action, result, correlationId, sourceService, domain, targetIdentifier]
+      properties:
+        eventId: { type: string, format: uuid }
+        occurredAt: { type: string, format: date-time }
+        actorType: { $ref: '#/components/schemas/AuditActorType' }
+        actorIdentifier:
+          type: string
+          description: Safe account identifier or the literal system actor.
+          pattern: '^(account:[0-9a-fA-F-]{36}|system)$'
+        action: { type: string, minLength: 1, maxLength: 96, pattern: '^[A-Z0-9_]+$' }
+        result: { $ref: '#/components/schemas/AuditResult' }
+        reasonCode: { type: [string, 'null'], maxLength: 64, pattern: '^[A-Z0-9_]+$' }
+        correlationId: { type: string, format: uuid }
+        sourceService: { $ref: '#/components/schemas/AuditSourceService' }
+        domain: { $ref: '#/components/schemas/AuditDomain' }
+        targetIdentifier: { type: string, pattern: '^(account:[0-9a-fA-F-]{36}|tombstone:[0-9a-f]{64})$' }
+    AdministrationAuditEventPage:
+      type: object
+      additionalProperties: false
+      required: [items, nextCursor, effectiveFrom, effectiveTo, retentionCutoff]
+      properties:
+        items:
+          type: array
+          items: { $ref: '#/components/schemas/AdministrationAuditEvent' }
+        nextCursor: { type: [string, 'null'], maxLength: 512 }
+        effectiveFrom: { type: string, format: date-time }
+        effectiveTo: { type: string, format: date-time }
+        retentionCutoff: { type: string, format: date-time }
     Problem:
       type: object
       additionalProperties: true

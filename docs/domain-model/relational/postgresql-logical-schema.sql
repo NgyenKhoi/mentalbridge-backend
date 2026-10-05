@@ -118,7 +118,7 @@ CREATE TABLE identity.security_audit_event (
     outcome varchar(32) NOT NULL,
     reason_code varchar(64),
     correlation_id uuid NOT NULL,
-    subject_reference_hash char(64),
+    subject_reference_hash char(64), -- retained safe target tombstone after account deletion
     occurred_at timestamptz NOT NULL,
     created_at timestamptz NOT NULL
 );
