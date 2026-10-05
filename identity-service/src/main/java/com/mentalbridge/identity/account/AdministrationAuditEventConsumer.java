@@ -11,7 +11,7 @@ import org.springframework.kafka.annotation.KafkaListener;
 import org.springframework.stereotype.Component;
 
 @Component
-@ConditionalOnProperty(prefix = "mentalbridge.identity.audit-ingestion", name = "enabled", havingValue = "true", matchIfMissing = true)
+@ConditionalOnProperty(prefix = "mentalbridge.identity.audit-ingestion", name = "enabled", havingValue = "true")
 public class AdministrationAuditEventConsumer {
 
     private static final Logger LOGGER = LoggerFactory.getLogger(AdministrationAuditEventConsumer.class);
@@ -26,7 +26,10 @@ public class AdministrationAuditEventConsumer {
         this.objectMapper = objectMapper;
     }
 
-    @KafkaListener(topics = "${mentalbridge.identity.audit-ingestion.topic:mentalbridge.admin.audit-event.v1}")
+    @KafkaListener(
+            topics = "${mentalbridge.identity.audit-ingestion.topic:mentalbridge.admin.audit-event.v1}",
+            groupId = "${IDENTITY_AUDIT_CONSUMER_GROUP:mentalbridge.identity.audit-consumer}"
+    )
     public void onMessage(String message) {
         try {
             JsonNode root = objectMapper.readTree(message);

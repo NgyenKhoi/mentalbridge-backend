@@ -7,6 +7,8 @@ spring:
   liquibase:
     enabled: true
   kafka:
+    consumer:
+      group-id: mentalbridge.identity.audit-consumer
     listener:
       auto-startup: false
 
