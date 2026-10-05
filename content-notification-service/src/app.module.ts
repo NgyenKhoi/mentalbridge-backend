@@ -64,6 +64,7 @@ import { NotificationPreferenceController } from './notification-preferences/not
 import { NotificationPreferenceRepository } from './notification-preferences/notification-preference.repository.js';
 import { NotificationPreferenceService } from './notification-preferences/notification-preference.service.js';
 import { NotificationController } from './notifications/notification.controller.js';
+import { NotificationAdminController } from './notifications/notification-admin.controller.js';
 import { NotificationRepository } from './notifications/notification.repository.js';
 import { NotificationService } from './notifications/notification.service.js';
 import { JournalAiReminderActivityClient } from './reminders/reminder-activity.client.js';
@@ -190,6 +191,7 @@ export const createAppModule = (
       SafetyDirectoryLookupController,
       NotificationPreferenceController,
       NotificationController,
+      NotificationAdminController,
       WellbeingDigestController,
     ],
     providers: [

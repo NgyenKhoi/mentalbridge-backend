@@ -30,6 +30,7 @@ class IdentityOpenApiContractTests {
 			"GET /internal/v1/notification-delivery-contacts/{accountId}",
 			"GET /internal/v1/accounts/{accountId}/verified-email",
 			"GET /api/v1/admin/accounts",
+			"GET /api/v1/admin/accounts/summary",
 			"GET /api/v1/admin/accounts/{accountId}",
 			"PUT /api/v1/admin/accounts/{accountId}/state");
 
@@ -41,6 +42,7 @@ class IdentityOpenApiContractTests {
 			"GET /api/v1/account",
 			"GET /internal/v1/accounts/{accountId}/verified-email",
 			"GET /api/v1/admin/accounts",
+			"GET /api/v1/admin/accounts/summary",
 			"GET /api/v1/admin/accounts/{accountId}",
 			"PUT /api/v1/admin/accounts/{accountId}/state");
 	private static final Map<String, Set<String>> IMPLEMENTED_RESPONSES = Map.ofEntries(
@@ -58,6 +60,7 @@ class IdentityOpenApiContractTests {
 			Map.entry("GET /internal/v1/notification-delivery-contacts/{accountId}", Set.of("200", "401", "404")),
 			Map.entry("GET /internal/v1/accounts/{accountId}/verified-email", Set.of("200", "401", "404")),
 			Map.entry("GET /api/v1/admin/accounts", Set.of("200", "400", "401", "403")),
+			Map.entry("GET /api/v1/admin/accounts/summary", Set.of("200", "401", "403")),
 			Map.entry("GET /api/v1/admin/accounts/{accountId}", Set.of("200", "401", "403", "404")),
 			Map.entry("PUT /api/v1/admin/accounts/{accountId}/state", Set.of("200", "400", "401", "403", "404", "409", "412")));
 

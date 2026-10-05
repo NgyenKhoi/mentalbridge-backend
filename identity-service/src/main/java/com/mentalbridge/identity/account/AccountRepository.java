@@ -21,4 +21,8 @@ public interface AccountRepository extends JpaRepository<AccountEntity, UUID>, J
 	@Query("select account from AccountEntity account where account.id = :id")
 	Optional<AccountEntity> findByIdForUpdate(@Param("id") UUID id);
 
+	long countByStatus(AccountStatus status);
+
+	long countByRole(RoleCode role);
+
 }

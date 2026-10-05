@@ -180,5 +180,42 @@ public class AdminAccountService {
 		}
 	}
 
+	@Transactional(readOnly = true)
+	public AccountsSummary getAccountsSummary() {
+		Instant now = clock.instant();
+		long total = accounts.count();
+		long active = accounts.countByStatus(AccountStatus.ACTIVE);
+		long pendingVerification = accounts.countByStatus(AccountStatus.PENDING_EMAIL_VERIFICATION);
+		long disabled = accounts.countByStatus(AccountStatus.DISABLED);
+		long deletionPending = accounts.countByStatus(AccountStatus.DELETION_PENDING);
+		long users = accounts.countByRole(RoleCode.USER);
+		long specialists = accounts.countByRole(RoleCode.SPECIALIST);
+		long admins = accounts.countByRole(RoleCode.ADMIN);
+
+		return new AccountsSummary(
+				"IDENTITY",
+				now,
+				total,
+				active,
+				pendingVerification,
+				disabled,
+				deletionPending,
+				new AccountsSummary.RoleBreakdown(users, specialists, admins));
+	}
+
+	public record AccountsSummary(
+			String source,
+			Instant asOf,
+			long totalAccounts,
+			long activeAccounts,
+			long pendingVerificationAccounts,
+			long disabledAccounts,
+			long deletionPendingAccounts,
+			RoleBreakdown byRole) {
+
+		public record RoleBreakdown(long users, long specialists, long admins) {
+		}
+	}
+
 	private record Cursor(Instant createdAt, UUID accountId) { }
 }
