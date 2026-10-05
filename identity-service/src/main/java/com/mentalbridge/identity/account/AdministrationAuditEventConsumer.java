@@ -34,8 +34,13 @@ public class AdministrationAuditEventConsumer {
         try {
             JsonNode root = objectMapper.readTree(message);
 
-            String eventType = root.path("eventType").asText(root.path("messageType").asText(""));
-            if (eventType == null || !AdministrationAuditIngestionService.ALLOWED_EVENT_TYPES.containsKey(eventType)) {
+            if (!root.hasNonNull("eventType")) {
+                LOGGER.warn("Audit message missing eventType, ignoring: correlationId={}", root.path("correlationId").asText(null));
+                return;
+            }
+
+            String eventType = root.get("eventType").asText();
+            if (!AdministrationAuditIngestionService.ALLOWED_EVENT_TYPES.containsKey(eventType)) {
                 LOGGER.debug("Ignoring unallowlisted audit eventType: {}", eventType);
                 return;
             }
@@ -70,20 +75,54 @@ public class AdministrationAuditEventConsumer {
             String action = root.hasNonNull("action")
                     ? root.get("action").asText()
                     : (payload.hasNonNull("action") ? payload.get("action").asText() : null);
+            if (action == null || action.isBlank()) {
+                LOGGER.warn("Audit message missing action, ignoring: eventType={}, eventId={}", eventType, eventId);
+                return;
+            }
 
             String sourceServiceStr = root.hasNonNull("sourceService")
                     ? root.get("sourceService").asText()
                     : (payload.hasNonNull("sourceService") ? payload.get("sourceService").asText() : null);
-            AdministrationAuditService.AuditSourceService sourceService = sourceServiceStr != null
-                    ? AdministrationAuditService.safeSourceService(sourceServiceStr)
-                    : null;
+            if (sourceServiceStr == null || sourceServiceStr.isBlank()) {
+                LOGGER.warn("Audit message missing sourceService, ignoring: eventType={}, eventId={}", eventType, eventId);
+                return;
+            }
+            AdministrationAuditService.AuditSourceService sourceService =
+                    AdministrationAuditService.safeSourceService(sourceServiceStr);
+            if (sourceService == null) {
+                LOGGER.warn("Audit message has invalid sourceService enum '{}', ignoring: eventType={}, eventId={}", sourceServiceStr, eventType, eventId);
+                return;
+            }
 
             String domainStr = root.hasNonNull("domain")
                     ? root.get("domain").asText()
                     : (payload.hasNonNull("domain") ? payload.get("domain").asText() : null);
-            AdministrationAuditService.AuditDomain domain = domainStr != null
-                    ? AdministrationAuditService.safeDomain(domainStr)
-                    : null;
+            if (domainStr == null || domainStr.isBlank()) {
+                LOGGER.warn("Audit message missing domain, ignoring: eventType={}, eventId={}", eventType, eventId);
+                return;
+            }
+            AdministrationAuditService.AuditDomain domain =
+                    AdministrationAuditService.safeDomain(domainStr);
+            if (domain == null) {
+                LOGGER.warn("Audit message has invalid domain enum '{}', ignoring: eventType={}, eventId={}", domainStr, eventType, eventId);
+                return;
+            }
+
+            JsonNode occurredAtNode = root.hasNonNull("occurredAt")
+                    ? root.get("occurredAt")
+                    : (payload.hasNonNull("occurredAt") ? payload.get("occurredAt") : null);
+            if (occurredAtNode == null || occurredAtNode.asText().isBlank()) {
+                LOGGER.warn("Audit message missing occurredAt, ignoring: eventType={}, eventId={}", eventType, eventId);
+                return;
+            }
+
+            Instant occurredAt;
+            try {
+                occurredAt = Instant.parse(occurredAtNode.asText());
+            } catch (Exception e) {
+                LOGGER.warn("Audit message has invalid occurredAt timestamp, ignoring: eventType={}, eventId={}", eventType, eventId);
+                return;
+            }
 
             UUID actorId = null;
             JsonNode actorNode = root.hasNonNull("actorId") ? root.get("actorId") : payload.path("actorId");
@@ -123,15 +162,6 @@ public class AdministrationAuditEventConsumer {
             String targetIdentifier = root.hasNonNull("targetIdentifier")
                     ? root.get("targetIdentifier").asText(null)
                     : (payload.hasNonNull("targetIdentifier") ? payload.get("targetIdentifier").asText(null) : null);
-
-            Instant occurredAt;
-            try {
-                occurredAt = root.hasNonNull("occurredAt")
-                        ? Instant.parse(root.get("occurredAt").asText())
-                        : (payload.hasNonNull("occurredAt") ? Instant.parse(payload.get("occurredAt").asText()) : Instant.now());
-            } catch (Exception e) {
-                occurredAt = Instant.now();
-            }
 
             AdministrationAuditIngestionService.IngestionCommand command =
                     new AdministrationAuditIngestionService.IngestionCommand(

@@ -348,6 +348,54 @@ class AdministrationAuditIntegrationTests extends IdentityTestProperties {
                         .param("action", "SEND_UNAUTHORIZED_CHAT"))
                 .andExpect(status().isOk())
                 .andExpect(jsonPath("$.items.length()").value(0));
+
+        // 11. Fail-closed: Invalid enum (e.g. HACKED_SERVICE) is rejected and never projected
+        UUID hackedServiceEventId = UUID.randomUUID();
+        String hackedServiceJson = """
+                {
+                  "eventId": "%s",
+                  "eventType": "identity.account.disabled",
+                  "occurredAt": "%s",
+                  "sourceService": "HACKED_SERVICE",
+                  "domain": "ACCOUNT_ADMINISTRATION",
+                  "action": "ACCOUNT_DISABLED",
+                  "result": "SUCCEEDED",
+                  "correlationId": "%s"
+                }
+                """.formatted(hackedServiceEventId, now.minusSeconds(4), UUID.randomUUID());
+        auditConsumer.onMessage(hackedServiceJson);
+
+        mvc.perform(get("/api/v1/admin/audit-events")
+                        .header("Authorization", "Bearer " + token)
+                        .param("from", now.minusSeconds(3_600).toString())
+                        .param("to", now.toString())
+                        .param("targetIdentifier", "account:" + userId))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.items[?(@.eventId == '%s')]".formatted(hackedServiceEventId)).doesNotExist());
+
+        // 12. Fail-closed: Invalid occurredAt is rejected and never projected
+        UUID invalidTimestampEventId = UUID.randomUUID();
+        String invalidTimestampJson = """
+                {
+                  "eventId": "%s",
+                  "eventType": "identity.account.disabled",
+                  "occurredAt": "not-valid-iso-8601",
+                  "sourceService": "IDENTITY",
+                  "domain": "ACCOUNT_ADMINISTRATION",
+                  "action": "ACCOUNT_DISABLED",
+                  "result": "SUCCEEDED",
+                  "correlationId": "%s"
+                }
+                """.formatted(invalidTimestampEventId, UUID.randomUUID());
+        auditConsumer.onMessage(invalidTimestampJson);
+
+        mvc.perform(get("/api/v1/admin/audit-events")
+                        .header("Authorization", "Bearer " + token)
+                        .param("from", now.minusSeconds(3_600).toString())
+                        .param("to", now.toString())
+                        .param("targetIdentifier", "account:" + userId))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.items[?(@.eventId == '%s')]".formatted(invalidTimestampEventId)).doesNotExist());
     }
 
     private UUID insertAccount(String email, RoleCode role) {

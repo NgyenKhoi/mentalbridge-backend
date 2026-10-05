@@ -128,6 +128,11 @@ public class AdministrationAuditIngestionService {
             return false;
         }
 
+        if (command.occurredAt() == null) {
+            LOGGER.warn("Rejecting audit ingestion with missing occurredAt: eventId={}", command.eventId());
+            return false;
+        }
+
         // 1. Idempotency check: if event already projected, ignore duplicate
         if (auditRepository.existsById(command.eventId())) {
             LOGGER.info("Duplicate administration audit event ignored: {}", command.eventId());
@@ -158,18 +163,18 @@ public class AdministrationAuditIngestionService {
             }
         }
 
-        // Strict cross-service tuple binding validation: do not trust self-declared fields if conflicting
-        if (command.sourceService() != null && command.sourceService() != descriptor.sourceService()) {
+        // Strict cross-service tuple binding validation (fail-closed)
+        if (command.sourceService() == null || command.sourceService() != descriptor.sourceService()) {
             LOGGER.warn("Rejecting audit event {} due to sourceService mismatch for {}: expected {}, got {}",
                     command.eventId(), command.eventType(), descriptor.sourceService(), command.sourceService());
             return false;
         }
-        if (command.domain() != null && command.domain() != descriptor.domain()) {
+        if (command.domain() == null || command.domain() != descriptor.domain()) {
             LOGGER.warn("Rejecting audit event {} due to domain mismatch for {}: expected {}, got {}",
                     command.eventId(), command.eventType(), descriptor.domain(), command.domain());
             return false;
         }
-        if (command.action() != null && !command.action().equals(descriptor.action())) {
+        if (command.action() == null || !command.action().equals(descriptor.action())) {
             LOGGER.warn("Rejecting audit event {} due to action mismatch for {}: expected {}, got {}",
                     command.eventId(), command.eventType(), descriptor.action(), command.action());
             return false;
@@ -231,7 +236,7 @@ public class AdministrationAuditIngestionService {
         }
 
         UUID correlationId = command.correlationId() != null ? command.correlationId() : UUID.randomUUID();
-        Instant occurredAt = command.occurredAt() != null ? command.occurredAt() : Instant.now();
+        Instant occurredAt = command.occurredAt();
 
         // 7. Construct entity with MINIMIZED safe metadata only
         SecurityAuditEventEntity entity = new SecurityAuditEventEntity(

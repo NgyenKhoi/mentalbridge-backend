@@ -180,10 +180,14 @@ public class AdministrationAuditService {
         String targetIdentifier = event.getAccountId() == null
                 ? "tombstone:" + event.getSubjectReferenceHash()
                 : "account:" + event.getAccountId();
+        AuditSourceService source = safeSourceService(event.getSourceService());
+        if (source == null) source = AuditSourceService.IDENTITY;
+        AuditDomain domain = safeDomain(event.getDomain());
+        if (domain == null) domain = AuditDomain.ACCOUNT_ADMINISTRATION;
         return new AuditEvent(event.getId(), event.getOccurredAt(), actorType, actorIdentifier,
                 safeCode(event.getAction(), "UNKNOWN_EVENT"), AuditResult.valueOf(event.getOutcome()),
                 safeReasonCode(event.getReasonCode()), event.getCorrelationId(),
-                safeSourceService(event.getSourceService()), safeDomain(event.getDomain()), targetIdentifier);
+                source, domain, targetIdentifier);
     }
 
     public static String safeReasonCode(String value) {
@@ -194,20 +198,20 @@ public class AdministrationAuditService {
     }
 
     public static AuditSourceService safeSourceService(String value) {
-        if (value == null) return AuditSourceService.IDENTITY;
+        if (value == null) return null;
         try {
             return AuditSourceService.valueOf(value);
         } catch (IllegalArgumentException e) {
-            return AuditSourceService.IDENTITY;
+            return null;
         }
     }
 
     public static AuditDomain safeDomain(String value) {
-        if (value == null) return AuditDomain.ACCOUNT_ADMINISTRATION;
+        if (value == null) return null;
         try {
             return AuditDomain.valueOf(value);
         } catch (IllegalArgumentException e) {
-            return AuditDomain.ACCOUNT_ADMINISTRATION;
+            return null;
         }
     }
 

@@ -409,9 +409,94 @@ class AdministrationAuditIngestionServiceTests {
                 {
                   "eventId": "%s",
                   "eventType": "consultation.specialist.suspended",
+                  "occurredAt": "%s",
                   "sourceService": "CONTENT",
                   "domain": "RESOURCE_MANAGEMENT",
                   "action": "RESOURCE_PUBLISHED",
+                  "result": "SUCCEEDED",
+                  "correlationId": "%s"
+                }
+                """.formatted(UUID.randomUUID(), Instant.now(), UUID.randomUUID());
+
+        consumer.onMessage(json);
+
+        verify(auditRepository, never()).saveAndFlush(any());
+    }
+
+    @Test
+    @DisplayName("Consumer: message missing eventType (even if messageType present) is rejected")
+    void consumerRejectsMessageMissingEventType() {
+        String json = """
+                {
+                  "eventId": "%s",
+                  "messageType": "consultation.specialist.suspended",
+                  "occurredAt": "%s",
+                  "sourceService": "CONSULTATION",
+                  "domain": "SPECIALIST_REVIEW",
+                  "action": "SPECIALIST_SUSPENDED",
+                  "result": "SUCCEEDED",
+                  "correlationId": "%s"
+                }
+                """.formatted(UUID.randomUUID(), Instant.now(), UUID.randomUUID());
+
+        consumer.onMessage(json);
+
+        verify(auditRepository, never()).saveAndFlush(any());
+    }
+
+    @Test
+    @DisplayName("Consumer: message with invalid sourceService enum like HACKED_SERVICE is rejected fail-closed")
+    void consumerRejectsMessageWithInvalidSourceService() {
+        String json = """
+                {
+                  "eventId": "%s",
+                  "eventType": "identity.account.disabled",
+                  "occurredAt": "%s",
+                  "sourceService": "HACKED_SERVICE",
+                  "domain": "ACCOUNT_ADMINISTRATION",
+                  "action": "ACCOUNT_DISABLED",
+                  "result": "SUCCEEDED",
+                  "correlationId": "%s"
+                }
+                """.formatted(UUID.randomUUID(), Instant.now(), UUID.randomUUID());
+
+        consumer.onMessage(json);
+
+        verify(auditRepository, never()).saveAndFlush(any());
+    }
+
+    @Test
+    @DisplayName("Consumer: message with invalid domain enum like HACKED_DOMAIN is rejected fail-closed")
+    void consumerRejectsMessageWithInvalidDomain() {
+        String json = """
+                {
+                  "eventId": "%s",
+                  "eventType": "identity.account.disabled",
+                  "occurredAt": "%s",
+                  "sourceService": "IDENTITY",
+                  "domain": "HACKED_DOMAIN",
+                  "action": "ACCOUNT_DISABLED",
+                  "result": "SUCCEEDED",
+                  "correlationId": "%s"
+                }
+                """.formatted(UUID.randomUUID(), Instant.now(), UUID.randomUUID());
+
+        consumer.onMessage(json);
+
+        verify(auditRepository, never()).saveAndFlush(any());
+    }
+
+    @Test
+    @DisplayName("Consumer: message with invalid occurredAt timestamp is rejected fail-closed")
+    void consumerRejectsMessageWithInvalidOccurredAt() {
+        String json = """
+                {
+                  "eventId": "%s",
+                  "eventType": "identity.account.disabled",
+                  "occurredAt": "invalid-timestamp-value",
+                  "sourceService": "IDENTITY",
+                  "domain": "ACCOUNT_ADMINISTRATION",
+                  "action": "ACCOUNT_DISABLED",
                   "result": "SUCCEEDED",
                   "correlationId": "%s"
                 }
@@ -419,6 +504,53 @@ class AdministrationAuditIngestionServiceTests {
 
         consumer.onMessage(json);
 
+        verify(auditRepository, never()).saveAndFlush(any());
+    }
+
+    @Test
+    @DisplayName("Consumer: message with missing occurredAt is rejected fail-closed")
+    void consumerRejectsMessageWithMissingOccurredAt() {
+        String json = """
+                {
+                  "eventId": "%s",
+                  "eventType": "identity.account.disabled",
+                  "sourceService": "IDENTITY",
+                  "domain": "ACCOUNT_ADMINISTRATION",
+                  "action": "ACCOUNT_DISABLED",
+                  "result": "SUCCEEDED",
+                  "correlationId": "%s"
+                }
+                """.formatted(UUID.randomUUID(), UUID.randomUUID());
+
+        consumer.onMessage(json);
+
+        verify(auditRepository, never()).saveAndFlush(any());
+    }
+
+    @Test
+    @DisplayName("IngestionService: command with null occurredAt is rejected")
+    void ingestRejectsNullOccurredAt() {
+        UUID eventId = UUID.randomUUID();
+
+        AdministrationAuditIngestionService.IngestionCommand command =
+                new AdministrationAuditIngestionService.IngestionCommand(
+                        eventId,
+                        "identity.account.disabled",
+                        null,
+                        AdministrationAuditService.AuditSourceService.IDENTITY,
+                        AdministrationAuditService.AuditDomain.ACCOUNT_ADMINISTRATION,
+                        null,
+                        "SYSTEM",
+                        "ACCOUNT_DISABLED",
+                        "SUCCEEDED",
+                        "POLICY_VIOLATION",
+                        UUID.randomUUID(),
+                        null,
+                        null
+                );
+
+        boolean result = ingestionService.ingest(command);
+        assertThat(result).isFalse();
         verify(auditRepository, never()).saveAndFlush(any());
     }
 }
