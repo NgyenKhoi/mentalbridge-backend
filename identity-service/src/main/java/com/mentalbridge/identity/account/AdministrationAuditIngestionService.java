@@ -1,4 +1,4 @@
-﻿package com.mentalbridge.identity.account;
+package com.mentalbridge.identity.account;
 
 import java.nio.charset.StandardCharsets;
 import java.security.MessageDigest;

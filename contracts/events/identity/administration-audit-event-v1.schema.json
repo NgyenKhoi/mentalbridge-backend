@@ -1,4 +1,4 @@
-﻿{
+{
   "$schema": "https://json-schema.org/draft/2020-12/schema",
   "$id": "https://mentalbridge.local/contracts/events/identity/administration-audit-event-v1.schema.json",
   "title": "Platform administration audit event fact v1",
