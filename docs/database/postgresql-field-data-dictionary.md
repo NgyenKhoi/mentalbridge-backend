@@ -341,6 +341,34 @@ Identity-owned transactional outbox. An account/session mutation and its integra
 | `next_attempt_at` | UTC instant after which a failed relay may retry; null when no delay is scheduled. |
 | `created_at` | Immutable UTC insertion instant committed with the aggregate change. |
 
+### `public.platform_report_job`
+
+Immutable-scope asynchronous aggregate report request coordinated by Identity. Only an ADMIN may create or browse these jobs; each job is tied to one versioned owner projection and never reads another service database.
+
+| Field | Purpose |
+| --- | --- |
+| `id` | Immutable UUID for report history, retry provenance, and artifact lookup. |
+| `report_type`, `scope_version` | Supported aggregate definition and deterministic output schema version. |
+| `period_start`, `period_end` | Inclusive UTC calendar-day scope, bounded to at most 366 days. |
+| `requested_by`, `requested_at` | ADMIN subject and immutable request instant. |
+| `status` | Durable asynchronous state `QUEUED`, `RUNNING`, `COMPLETED`, `FAILED`, or `STALE`. |
+| `source_versions` | JSON object of exact authoritative source/projection versions captured at request time. |
+| `idempotency_key`, `request_hash` | ADMIN-scoped retry key and normalized SHA-256 request identity. |
+| `retry_of` | Nullable prior failed/stale job; retries create a new job and preserve the original outcome. |
+| `started_at`, `completed_at`, `failed_at`, `failure_code` | Explicit processing and terminal provenance without sensitive failure payloads. |
+
+### `public.platform_report_artifact`
+
+Immutable, bounded-retention aggregate artifact for one completed platform report. Content is limited to one MiB and contains no raw Journal, assessment, chat, private-note, or provider payload fields.
+
+| Field | Purpose |
+| --- | --- |
+| `report_job_id` | Completed job identity and one-to-one artifact key. |
+| `media_type`, `file_name` | Download representation and safe server-defined filename. |
+| `content` | Generated aggregate JSON bytes; deleted after the retention deadline. |
+| `content_sha256`, `content_length` | Integrity digest and bounded byte size. |
+| `generated_at`, `retained_until` | Immutable generation provenance and exclusive download deadline. |
+
 ### `public.security_audit_event`
 
 Privacy-minimized local security record for authentication, recovery, replay, and account-administration decisions. It contains stable facts, never credentials, provider payloads, or free text.
