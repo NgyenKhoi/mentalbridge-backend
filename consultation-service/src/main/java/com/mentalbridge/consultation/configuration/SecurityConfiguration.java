@@ -54,6 +54,7 @@ public class SecurityConfiguration {
 						.requestMatchers("/api/v1/availability-slots/**").hasRole("SPECIALIST")
 						.requestMatchers("/api/v1/admin/specialist-profiles/**").hasRole("ADMIN")
 						.requestMatchers("/api/v1/admin/appointments/**").hasRole("ADMIN")
+						.requestMatchers("/api/v1/admin/appointment-disputes/**").hasRole("ADMIN")
 						.anyRequest().authenticated())
 				.exceptionHandling(errors -> errors.authenticationEntryPoint(securityProblems)
 						.accessDeniedHandler(securityProblems))

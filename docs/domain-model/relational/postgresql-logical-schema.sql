@@ -984,7 +984,7 @@ CREATE TABLE consultation.service_credit_ledger (
     id uuid PRIMARY KEY,
     credit_id uuid NOT NULL REFERENCES consultation.service_credit(id),
     account_id uuid NOT NULL, -- external -> identity.account.id
-    event_type varchar(16) NOT NULL,
+    event_type varchar(32) NOT NULL,
     appointment_id uuid,
     idempotency_key varchar(128) NOT NULL,
     occurred_at timestamptz NOT NULL,
@@ -1066,6 +1066,36 @@ CREATE TABLE consultation.appointment_chat_evidence (
     occurred_at timestamptz NOT NULL,
     received_at timestamptz NOT NULL,
     UNIQUE (appointment_id, evidence_id)
+);
+
+CREATE TABLE consultation.appointment_dispute (
+    id uuid PRIMARY KEY,
+    appointment_id uuid NOT NULL UNIQUE REFERENCES consultation.appointment(id),
+    appointment_version bigint NOT NULL,
+    opened_by_account_id uuid NOT NULL, -- external -> identity.account.id
+    opened_by_role varchar(16) NOT NULL,
+    reason_code varchar(64) NOT NULL,
+    evidence_type varchar(48),
+    evidence_occurred_at timestamptz,
+    opened_at timestamptz NOT NULL,
+    eligible_until timestamptz NOT NULL,
+    status varchar(16) NOT NULL,
+    resolution_outcome varchar(48),
+    resolution_reason varchar(64),
+    resolved_by uuid, -- external -> identity.account.id
+    resolved_at timestamptz,
+    prior_appointment_status varchar(24),
+    prior_session_outcome varchar(40),
+    resulting_appointment_status varchar(24),
+    resulting_session_outcome varchar(40),
+    credit_action varchar(32),
+    open_idempotency_key varchar(128) NOT NULL,
+    resolution_idempotency_key varchar(128),
+    created_at timestamptz NOT NULL,
+    updated_at timestamptz NOT NULL,
+    version bigint NOT NULL,
+    UNIQUE (opened_by_account_id, open_idempotency_key),
+    UNIQUE (resolved_by, resolution_idempotency_key)
 );
 
 CREATE TABLE consultation.appointment_rating (

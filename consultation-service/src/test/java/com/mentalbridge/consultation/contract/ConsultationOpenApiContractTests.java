@@ -38,6 +38,8 @@ class ConsultationOpenApiContractTests {
 			"GET /api/v1/admin/appointments",
 			"POST /api/v1/appointments",
 			"POST /api/v1/appointments/{appointmentId}/cancel",
+			"GET /api/v1/appointments/{appointmentId}/dispute",
+			"POST /api/v1/appointments/{appointmentId}/dispute",
 			"GET /api/v1/appointments/{appointmentId}/rating",
 			"PUT /api/v1/appointments/{appointmentId}/rating",
 			"GET /api/v1/appointments/{appointmentId}/session-summaries",
@@ -45,11 +47,15 @@ class ConsultationOpenApiContractTests {
 			"PUT /api/v1/agreed-next-steps/{nextStepId}",
 			"GET /api/v1/specialist/dashboard",
 			"GET /api/v1/specialist/appointments",
+			"GET /api/v1/specialist/appointments/{appointmentId}/dispute",
+			"POST /api/v1/specialist/appointments/{appointmentId}/dispute",
 			"GET /api/v1/specialist/appointments/{appointmentId}/session-summaries",
 			"POST /api/v1/specialist/appointments/{appointmentId}/session-summaries",
 			"POST /api/v1/specialist/appointments/{appointmentId}/accept",
 			"POST /api/v1/specialist/appointments/{appointmentId}/reject",
 			"GET /api/v1/admin/specialist-profiles",
+			"GET /api/v1/admin/appointment-disputes",
+			"POST /api/v1/admin/appointment-disputes/{disputeId}/resolve",
 			"GET /api/v1/admin/specialist-profiles/{specialistAccountId}",
 			"POST /api/v1/admin/specialist-profiles/{specialistAccountId}/approve",
 			"POST /api/v1/admin/specialist-profiles/{specialistAccountId}/reject",
@@ -266,6 +272,26 @@ class ConsultationOpenApiContractTests {
 		assertThat(rating.getProperties()).containsOnlyKeys("appointmentId", "specialistAccountId", "rating",
 				"createdAt", "updatedAt", "version", "specialistAggregate");
 		assertThat(rating.getProperties()).doesNotContainKeys("comment", "anonymous", "diagnosis", "journal");
+	}
+
+	@Test
+	void appointmentDisputeContractIsBoundedAuditableAndContainsNoSensitiveContent() {
+		var contract = Path.of("..", "contracts", "openapi", "consultation-service-v1.yaml").toString();
+		var api = new OpenAPIV3Parser().read(contract);
+		var open = api.getComponents().getSchemas().get("OpenAppointmentDispute");
+		var resolve = api.getComponents().getSchemas().get("ResolveAppointmentDispute");
+		var dispute = api.getComponents().getSchemas().get("AppointmentDispute");
+
+		assertThat(open.getProperties()).containsOnlyKeys("reasonCode", "evidenceType", "evidenceOccurredAt")
+				.doesNotContainKeys("evidence", "description", "notes", "diagnosis", "chatTranscript", "journal");
+		assertThat(resolve.getProperties()).containsOnlyKeys("outcome", "reasonCode")
+				.doesNotContainKeys("notes", "clinicalConclusion", "summary");
+		assertThat(dispute.getProperties()).containsOnlyKeys("id", "appointmentId", "appointmentVersion", "status",
+				"openedByRole", "reasonCode", "evidenceType", "evidenceOccurredAt", "openedAt", "eligibleUntil",
+				"settlementGated", "resolutionOutcome", "resolutionReason", "resolvedAt", "priorAppointmentStatus",
+				"priorSessionOutcome", "resultingAppointmentStatus", "resultingSessionOutcome", "creditAction", "version")
+				.doesNotContainKeys("userAccountId", "specialistAccountId", "email", "content", "message",
+						"clinicalConclusion", "summary");
 	}
 
 	@Test
