@@ -43,6 +43,7 @@ class ConsultationOpenApiContractTests {
 			"GET /api/v1/appointments/{appointmentId}/session-summaries",
 			"PUT /api/v1/session-summaries/{summaryId}/reuse-consent",
 			"PUT /api/v1/agreed-next-steps/{nextStepId}",
+			"GET /api/v1/specialist/analytics",
 			"GET /api/v1/specialist/dashboard",
 			"GET /api/v1/specialist/appointments",
 			"GET /api/v1/specialist/appointments/{appointmentId}/session-summaries",
@@ -170,6 +171,25 @@ class ConsultationOpenApiContractTests {
 		assertThat(appointment.getProperties()).doesNotContainKeys("userAccountId", "clientName", "checkIns",
 				"riskScore", "recovery", "adherence", "journal", "assessmentAnswers", "notes");
 		assertThat(((Schema<?>) appointments.getProperties().get("items")).getMaxItems()).isEqualTo(5);
+	}
+
+	@Test
+	void specialistAnalyticsContainsOnlyAggregateOperationalFacts() {
+		var contract = Path.of("..", "contracts", "openapi", "consultation-service-v1.yaml").toString();
+		var api = new OpenAPIV3Parser().read(contract);
+		var analytics = api.getComponents().getSchemas().get("SpecialistOperationalAnalytics");
+		var appointments = api.getComponents().getSchemas().get("SpecialistAppointmentMetrics");
+		var financials = api.getComponents().getSchemas().get("SpecialistFinancialMetrics");
+
+		assertThat(analytics.getProperties()).containsOnlyKeys("source", "generatedAt", "operationalStatus",
+				"period", "availability", "appointments", "rating", "financials");
+		assertThat(appointments.getProperties()).containsOnlyKeys("source", "asOf", "state", "requestedCount",
+				"acceptedCount", "rejectedCount", "expiredCount", "cancelledCount", "rescheduledCount",
+				"completedCount", "userNoShowCount", "specialistNoShowCount", "bothNoShowCount")
+				.doesNotContainKeys("userAccountId", "phq9", "gad7", "journal", "emotionTrend", "recoveryScore",
+						"treatmentAdherence", "clientSegments", "chat", "notes");
+		assertThat(financials.getProperties()).containsOnlyKeys("source", "asOf", "state", "currency",
+				"earnedAmountMinor", "paidAmountMinor");
 	}
 
 	@Test
