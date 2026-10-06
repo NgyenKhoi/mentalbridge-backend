@@ -5,7 +5,7 @@ alter table service_credit_period add column credit_allocation_minor bigint;
 update service_credit_period set credit_allocation_minor = 300000;
 alter table service_credit_period alter column credit_allocation_minor set not null;
 alter table service_credit_period alter column credit_allocation_minor set default 300000;
-alter table service_credit_period add constraint ck_service_credit_period_allocation
+alter table service_credit_period add constraint ck_service_credit_period_credit_value
     check (credit_allocation_minor > 0 and credit_allocation_minor <= 1000000000);
 
 create table specialist_earning (
