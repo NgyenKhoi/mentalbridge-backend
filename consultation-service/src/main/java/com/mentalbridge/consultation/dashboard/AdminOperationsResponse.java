@@ -28,7 +28,6 @@ public record AdminOperationsResponse(
 			long expired,
 			long userNoShow,
 			long specialistNoShow,
-			long disputed) {
+			long bothNoShow) {
 	}
 }
-

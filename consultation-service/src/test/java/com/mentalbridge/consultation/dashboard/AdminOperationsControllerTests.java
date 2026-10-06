@@ -58,7 +58,7 @@ class AdminOperationsControllerTests {
 				.andExpect(jsonPath("$.appointments.expired").value(1))
 				.andExpect(jsonPath("$.appointments.userNoShow").value(0))
 				.andExpect(jsonPath("$.appointments.specialistNoShow").value(0))
-				.andExpect(jsonPath("$.appointments.disputed").value(0))
+				.andExpect(jsonPath("$.appointments.bothNoShow").value(0))
 				// Assert strictly aggregate facts - no sensitive fields exist
 				.andExpect(jsonPath("$.journal").doesNotExist())
 				.andExpect(jsonPath("$.notes").doesNotExist())
@@ -66,4 +66,3 @@ class AdminOperationsControllerTests {
 				.andExpect(jsonPath("$.assessment").doesNotExist());
 	}
 }
-

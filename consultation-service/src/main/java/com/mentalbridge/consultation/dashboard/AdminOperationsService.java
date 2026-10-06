@@ -60,15 +60,23 @@ public class AdminOperationsService {
 		long cancelled = appointmentCounts.getOrDefault("CANCELLED", 0L);
 		long rejectedAppt = appointmentCounts.getOrDefault("REJECTED", 0L);
 		long expired = appointmentCounts.getOrDefault("EXPIRED", 0L);
-		long userNoShow = appointmentCounts.getOrDefault("USER_NO_SHOW", 0L);
-		long specialistNoShow = appointmentCounts.getOrDefault("SPECIALIST_NO_SHOW", 0L);
-		long disputed = appointmentCounts.getOrDefault("DISPUTED", 0L);
+
+		Map<String, Long> outcomeCounts = new HashMap<>();
+		jdbc.sql("select session_outcome, count(*) as cnt from appointment where session_outcome is not null group by session_outcome")
+				.query((row, ignored) -> {
+					outcomeCounts.put(row.getString("session_outcome"), row.getLong("cnt"));
+					return null;
+				})
+				.list();
+
+		long userNoShow = outcomeCounts.getOrDefault("USER_NO_SHOW", 0L);
+		long specialistNoShow = outcomeCounts.getOrDefault("SPECIALIST_NO_SHOW", 0L);
+		long bothNoShow = outcomeCounts.getOrDefault("BOTH_NO_SHOW", 0L);
 
 		var appointmentSummary = new AdminOperationsResponse.AdminAppointmentOperationsSummary(
 				totalAppointments, requested, confirmed, inProgress, sessionEnded, completed, cancelled, rejectedAppt, expired,
-				userNoShow, specialistNoShow, disputed);
+				userNoShow, specialistNoShow, bothNoShow);
 
 		return new AdminOperationsResponse(SOURCE, now, specialistSummary, appointmentSummary);
 	}
 }
-
