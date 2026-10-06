@@ -13,6 +13,7 @@ import org.springframework.transaction.annotation.Transactional;
 
 import com.mentalbridge.consultation.credits.CreditEventType;
 import com.mentalbridge.consultation.credits.ServiceCreditService;
+import com.mentalbridge.consultation.earnings.SpecialistEarningService;
 
 @Service
 public class ChatSessionSettlementService {
@@ -21,13 +22,15 @@ public class ChatSessionSettlementService {
 
 	private final JdbcClient jdbc;
 	private final ServiceCreditService credits;
+	private final SpecialistEarningService earnings;
 	private final ChatSessionCompletionPolicy policy;
 	private final Clock clock;
 
 	public ChatSessionSettlementService(JdbcClient jdbc, ServiceCreditService credits,
-			ChatSessionCompletionPolicy policy, Clock clock) {
+			SpecialistEarningService earnings, ChatSessionCompletionPolicy policy, Clock clock) {
 		this.jdbc = jdbc;
 		this.credits = credits;
+		this.earnings = earnings;
 		this.policy = policy;
 		this.clock = clock;
 	}
@@ -134,6 +137,7 @@ public class ChatSessionSettlementService {
 					on conflict (appointment_id, idempotency_key) where idempotency_key is not null do nothing
 					""").param("eventId", UUID.randomUUID()).param("id", appointment.id())
 					.param("key", "session-completed:" + appointment.id()).param("now", databaseInstant(now)).update();
+			earnings.createForCompletedAppointment(appointment.id());
 		}
 	}
 

@@ -20,6 +20,9 @@ public abstract class ConsultationTestProperties {
 				() -> Base64.getEncoder().encodeToString(JWT_KEY_PAIR.getPublic().getEncoded()));
 		properties.add("mentalbridge.consultation.evidence-service-token", () -> EVIDENCE_SERVICE_TOKEN);
 		properties.add("mentalbridge.consultation.account-lifecycle.enabled", () -> "false");
+		properties.add("mentalbridge.consultation.payout.encryption-key",
+				() -> Base64.getEncoder().encodeToString("test-payout-key-32-bytes-long!!!".getBytes()));
+		properties.add("mentalbridge.consultation.payout.mode", () -> "FAKE");
 	}
 
 	private static KeyPair keyPair() {

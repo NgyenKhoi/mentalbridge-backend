@@ -85,7 +85,7 @@ Cross-owner identifiers in the canonical logical model make relationships visibl
   `SessionSummary`/`AgreedNextSteps`, reuse approval, and PlanChangeRequest
   provenance without rewriting historical snapshots.
 
-### Subscription and settlement — PROPOSED
+### Subscription, earning, and settlement
 
 - Published plan versions are immutable and store price, non-consultation allocation, per-credit allocation, credit count, and specialist share in integer minor units/basis points.
 - A verified, deduplicated payment webhook activates a period and grants one credit row per entitlement exactly once.
@@ -101,7 +101,16 @@ Cross-owner identifiers in the canonical logical model make relationships visibl
 - Evidence-backed appointment completion consumes one credit and creates one
   earning snapshot equal to 70% of its fixed `creditAllocation`.
   `SESSION_ENDED`, cancellation, no-show, and dispute create no earning.
-- MoMo Disbursement is the only planned production payout provider, subject to M4B credentials. Local/CI uses a deterministic MoMo-shaped fake. Real payment/payout remains disabled while plan/earning currency is USD and no approved VND plan version or FX policy exists.
+- The earning and payout tables are active under ADR 0031: a seven-day hold,
+  100,000 VND minimum withdrawal, at most one on-demand payout per specialist
+  per server day, and a deterministic fake provider for local/CI.
+- MoMo Disbursement is the only planned production payout provider, subject to
+  explicit production approval and M4B credentials. Planned VND economics are
+  documentation/design inputs and do not enable real payment or payout.
+- Subscription checkout/payment persistence remains a separate delivery scope.
+  Its current integration-test catalogue is `FREE=0`, `PLUS=5,000`, and
+  `PREMIUM=10,000` VND; these fixtures must not be interpreted as production
+  economics.
 
 ### Operations model status
 

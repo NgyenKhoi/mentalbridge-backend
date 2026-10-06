@@ -46,6 +46,9 @@ class ConsultationOpenApiContractTests {
 			"PUT /api/v1/session-summaries/{summaryId}/reuse-consent",
 			"PUT /api/v1/agreed-next-steps/{nextStepId}",
 			"GET /api/v1/specialist/dashboard",
+			"GET /api/v1/specialist/earnings",
+			"PUT /api/v1/specialist/payout-destination",
+			"POST /api/v1/specialist/payouts",
 			"GET /api/v1/specialist/appointments",
 			"GET /api/v1/specialist/appointments/{appointmentId}/dispute",
 			"POST /api/v1/specialist/appointments/{appointmentId}/dispute",
@@ -60,7 +63,9 @@ class ConsultationOpenApiContractTests {
 			"POST /api/v1/admin/specialist-profiles/{specialistAccountId}/approve",
 			"POST /api/v1/admin/specialist-profiles/{specialistAccountId}/reject",
 			"POST /api/v1/admin/specialist-profiles/{specialistAccountId}/suspend",
-			"POST /api/v1/admin/specialist-profiles/{specialistAccountId}/restore");
+			"POST /api/v1/admin/specialist-profiles/{specialistAccountId}/restore",
+			"GET /api/v1/admin/payouts",
+			"POST /internal/v1/payouts/momo/ipn");
 
 	@Test
 	void contractIsValidAndMatchesTheImplementedSurface() {
@@ -77,7 +82,10 @@ class ConsultationOpenApiContractTests {
 			assertThat(item.getExtensions()).containsEntry("x-mentalbridge-status", "implemented");
 			item.readOperationsMap().forEach((method, operation) -> {
 				operations.add(method.name() + " " + path);
-				if (path.contains("notification-eligibility")) {
+				if (path.equals("/internal/v1/payouts/momo/ipn")) {
+					assertThat(operation.getSecurity()).isEmpty();
+				}
+				else if (path.contains("notification-eligibility")) {
 					assertThat(operation.getSecurity()).anySatisfy(requirement -> assertThat(requirement).containsKey("serviceToken"));
 				}
 				else {
