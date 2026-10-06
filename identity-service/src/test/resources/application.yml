@@ -25,3 +25,5 @@ mentalbridge:
       send-timeout: PT5S
       retry-base: PT5S
       retry-maximum: PT5M
+    platform-reporting:
+      enabled: false

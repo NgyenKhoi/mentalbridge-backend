@@ -58,6 +58,10 @@ mentalbridge:
       retry-maximum: ${IDENTITY_OUTBOX_RELAY_RETRY_MAXIMUM:PT5M}
     delivery-address:
       service-token: ${APPOINTMENT_REMINDER_SERVICE_TOKEN:}
+    platform-reporting:
+      enabled: ${IDENTITY_PLATFORM_REPORTING_ENABLED:true}
+      poll-interval: ${IDENTITY_PLATFORM_REPORTING_POLL_INTERVAL:PT2S}
+      retention-sweep-interval: ${IDENTITY_PLATFORM_REPORTING_RETENTION_SWEEP_INTERVAL:PT1H}
 
 eureka:
   client:
