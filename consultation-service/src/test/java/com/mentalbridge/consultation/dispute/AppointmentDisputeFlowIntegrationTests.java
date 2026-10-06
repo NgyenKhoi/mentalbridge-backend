@@ -121,7 +121,7 @@ class AppointmentDisputeFlowIntegrationTests extends ConsultationTestProperties 
 	}
 
 	@Test
-	void rejectsExpiredIneligibleAndInconsistentResolutionCommands() throws Exception {
+	void rejectsExpiredAndInconsistentResolutionCommands() throws Exception {
 		var expired = completedAppointment(Instant.now().minusSeconds(25 * 3_600));
 		mvc.perform(post("/api/v1/appointments/{id}/dispute", expired.appointmentId())
 				.with(actor(expired.userId(), "USER")).header("Idempotency-Key", "expired-dispute-key-001")
@@ -151,6 +151,27 @@ class AppointmentDisputeFlowIntegrationTests extends ConsultationTestProperties 
 						""".formatted(bounded.sessionStart().plusSeconds(7_200))))
 				.andExpect(status().isBadRequest())
 				.andExpect(jsonPath("$.code").value("APPOINTMENT_DISPUTE_EVIDENCE_INVALID"));
+	}
+
+	@Test
+	void ineligibleOwnedAppointmentCreatesNoDisputeOrSettlementSideEffect() throws Exception {
+		var fixture = confirmedAppointment();
+		var before = operationalState(fixture);
+
+		mvc.perform(post("/api/v1/appointments/{id}/dispute", fixture.appointmentId())
+				.with(actor(fixture.userId(), "USER")).header("Idempotency-Key", "ineligible-dispute-key-01")
+				.contentType(MediaType.APPLICATION_JSON).content("{\"reasonCode\":\"OUTCOME_INCORRECT\"}"))
+				.andExpect(status().isConflict())
+				.andExpect(jsonPath("$.code").value("APPOINTMENT_DISPUTE_NOT_ELIGIBLE"));
+
+		assertThat(operationalState(fixture)).isEqualTo(before);
+		assertThat(before.status()).isEqualTo("CONFIRMED");
+		assertThat(before.sessionOutcome()).isNull();
+		assertThat(before.sessionSettledAt()).isNull();
+		assertThat(before.creditState()).isEqualTo("HELD");
+		assertThat(before.disputeCount()).isZero();
+		assertThat(before.adjustmentCount()).isZero();
+		assertThat(settlementGate.earningEligible(fixture.appointmentId())).isFalse();
 	}
 
 	@Test
@@ -275,10 +296,40 @@ class AppointmentDisputeFlowIntegrationTests extends ConsultationTestProperties 
 		return new Fixture(appointmentId, userId, specialistId, creditId, start);
 	}
 
+	private Fixture confirmedAppointment() {
+		var fixture = completedAppointment(Instant.now().minusSeconds(300));
+		jdbc.sql("""
+				update appointment set status='CONFIRMED', session_outcome=null,
+				 session_outcome_reason=null, session_policy_version=null, session_ended_at=null,
+				 session_settled_at=null, completion_fact_id=null where id=:id
+				""").param("id", fixture.appointmentId()).update();
+		jdbc.sql("update service_credit set state='HELD' where id=:id")
+				.param("id", fixture.creditId()).update();
+		jdbc.sql("update service_credit_ledger set event_type='HELD' where appointment_id=:id")
+				.param("id", fixture.appointmentId()).update();
+		return fixture;
+	}
+
+	private OperationalState operationalState(Fixture fixture) {
+		return jdbc.sql("""
+				select a.status, a.session_outcome, a.session_settled_at, c.state as credit_state,
+				 (select count(*) from appointment_dispute d where d.appointment_id=a.id) as dispute_count,
+				 (select count(*) from service_credit_ledger l
+				   where l.appointment_id=a.id and l.event_type='ADJUSTED_RELEASED') as adjustment_count
+				from appointment a join service_credit c on c.id=a.service_credit_id
+				where a.id=:id
+				""").param("id", fixture.appointmentId()).query((row, ignored) -> new OperationalState(
+				row.getString("status"), row.getString("session_outcome"),
+				row.getTimestamp("session_settled_at") == null ? null : row.getTimestamp("session_settled_at").toInstant(),
+				row.getString("credit_state"), row.getLong("dispute_count"), row.getLong("adjustment_count"))).single();
+	}
+
 	private org.springframework.test.web.servlet.request.RequestPostProcessor actor(UUID id, String role) {
 		return jwt().jwt(token -> token.subject(id.toString()).claim("roles", List.of(role)))
 				.authorities(new SimpleGrantedAuthority("ROLE_" + role));
 	}
 
 	private record Fixture(UUID appointmentId, UUID userId, UUID specialistId, UUID creditId, Instant sessionStart) { }
+	private record OperationalState(String status, String sessionOutcome, Instant sessionSettledAt, String creditState,
+			long disputeCount, long adjustmentCount) { }
 }

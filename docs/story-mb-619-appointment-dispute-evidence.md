@@ -16,5 +16,6 @@ eligible settled session outcomes.
 - Returning a terminal credit appends one `ADJUSTED_RELEASED` ledger fact before
   restoring availability. The earlier `CONSUMED` or `FORFEITED` fact is retained.
 - PostgreSQL integration tests cover wrong actor, expired window, participant
-  roles, open/resolve replay, simultaneous open/resolve races, invalid
+  roles, an owned but ineligible lifecycle with zero dispute/credit/settlement
+  side effects, open/resolve replay, simultaneous open/resolve races, invalid
   resolution pairing, both earning-gate outcomes, and exactly-one adjustment.
