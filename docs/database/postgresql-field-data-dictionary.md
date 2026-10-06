@@ -1176,7 +1176,7 @@ Append-only evidence for provisioning and appointment-driven transitions.
 | `id` | Immutable event UUID. |
 | `credit_id` | Credit whose state changed. |
 | `account_id` | Denormalized owner UUID for bounded history and account-scoped idempotency. |
-| `event_type` | `PROVISIONED`, `HELD`, `RELEASED`, `CONSUMED`, or `FORFEITED`. |
+| `event_type` | `PROVISIONED`, `HELD`, `RELEASED`, `CONSUMED`, `FORFEITED`, or explicit post-settlement `ADJUSTED_RELEASED`. The adjustment appends a correction fact and never deletes the original terminal transition. |
 | `appointment_id` | Required correlation for every non-provisioning transition. |
 | `idempotency_key` | Owner command key unique per account; exact replay does not append another event. |
 | `occurred_at` | Immutable server UTC transition instant. |
@@ -1245,6 +1245,27 @@ never stored.
 | `message_id` | Realtime-owned accepted-message UUID required only for message evidence; it is not message content. |
 | `occurred_at` | Server-observed occurrence used for the half-open appointment-window calculation. |
 | `received_at` | Consultation receipt time used to enforce grace and reconciliation deadlines. |
+
+### `consultation.appointment_dispute`
+
+MB-619's one-per-appointment dispute aggregate. It stores only operational reason/provenance and bounded evidence metadata; raw chat, ConsultationBrief, Journal, assessment, recording, private notes, and clinical conclusions are prohibited.
+
+| Field | Purpose |
+| --- | --- |
+| `id` / `appointment_id` | Stable dispute identity and unique contested appointment. |
+| `appointment_version` | Exact appointment version observed when the dispute opened. |
+| `opened_by_account_id` / `opened_by_role` | Server-authenticated participant provenance; role is `USER` or assigned `SPECIALIST`. |
+| `reason_code` | Stable bounded operational reason; never free-text session content. |
+| `evidence_type` / `evidence_occurred_at` | Optional minimized operational metadata identifying an access, connection, or provider fact and its occurrence time. |
+| `opened_at` / `eligible_until` | Server timestamps proving the command was accepted inside the 24-hour post-settlement window. |
+| `status` | `OPEN` gates future earning eligibility; `RESOLVED` is immutable. |
+| `resolution_outcome` / `resolution_reason` | Bounded admin decision and stable non-clinical rationale. |
+| `resolved_by` / `resolved_at` | Resolving administrator and server audit time. |
+| `prior_appointment_status` / `prior_session_outcome` | Exact immutable source facts observed during resolution. |
+| `resulting_appointment_status` / `resulting_session_outcome` | Explicit resulting facts; MB-619 does not silently rewrite them. |
+| `credit_action` | Exact `NONE`, `ALREADY_AVAILABLE`, or `ADJUSTED_RELEASED` result. |
+| `open_idempotency_key` / `resolution_idempotency_key` | Stable command identities for replay-safe open and resolution. |
+| `created_at` / `updated_at` / `version` | UTC persistence timestamps and optimistic resolution version. |
 
 ### `consultation.specialist_client_continuity_audit`
 

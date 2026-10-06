@@ -1,5 +1,12 @@
 # Requirements Traceability
 
+- 2026-10-06: MB-619 adds one Consultation-owned dispute per eligible settled
+  appointment. USER or assigned SPECIALIST may open it within 24 hours using a
+  closed reason and optional minimized operational evidence metadata. Open and
+  credit-release outcomes gate payable earnings; ADMIN resolution is bounded,
+  immutable, replay-safe, and records an explicit `ADJUSTED_RELEASED` ledger
+  fact without rewriting the original settlement. Evidence:
+  `docs/story-mb-619-appointment-dispute-evidence.md`.
 - 2026-10-05: MB-588 replaces admin appointment mock data with a bounded,
   read-only Consultation-owned operations query and frontend monitor. ADMIN may
   filter lifecycle facts by time, status, modality, user, and specialist but

@@ -30,6 +30,13 @@ dedicated opt-in, quiet-hour deferral/suppression, appointment/version identity,
 lifecycle invalidation, strict before-start cutoff, and minimized in-app-only
 content separately from the wellbeing digest.
 
+Appointment disputes are governed by
+[ADR 0031 — Appointment dispute and settlement gate](adr/0031-appointment-dispute-settlement-gate.md)
+(`MB-APPOINTMENT-DISPUTE-001`). One assigned participant may open a minimized
+dispute within 24 hours of an eligible settled outcome. An open dispute blocks
+future earning eligibility; resolution never rewrites prior financial facts and
+any credit return is an explicit ledger adjustment.
+
 For the rules amended on 2026-09-24, ADR 0022 is authoritative over the older clause.
 
 ## 2. Product boundary

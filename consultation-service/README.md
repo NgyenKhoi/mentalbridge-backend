@@ -57,6 +57,12 @@ reason codes, and credit settlement state but no brief, summary, journal,
 assessment, chat, or private-note content. It grants no appointment mutation or
 clinical authority.
 
+MB-619 lets either assigned participant open one minimized dispute within 24
+hours of an eligible settled session outcome. An open dispute blocks future
+earning eligibility. Admin resolution is bounded to upholding the recorded
+outcome or releasing user credit; a terminal credit release appends an explicit
+`ADJUSTED_RELEASED` ledger fact and preserves prior settlement history.
+
 ## Integration
 
 - Inbound REST: implemented specialist/admin APIs are defined in `../contracts/openapi/consultation-service-v1.yaml`.
@@ -153,6 +159,13 @@ MB-364 rating aggregates and never fabricates a score.
 ## Implemented MB-364 endpoint
 
 - `GET|PUT /api/v1/appointments/{appointmentId}/rating`
+
+## Implemented MB-619 endpoints
+
+- `GET|POST /api/v1/appointments/{appointmentId}/dispute`
+- `GET|POST /api/v1/specialist/appointments/{appointmentId}/dispute`
+- `GET /api/v1/admin/appointment-disputes?status=OPEN|RESOLVED`
+- `POST /api/v1/admin/appointment-disputes/{disputeId}/resolve`
 
 ## Implemented MB-548 internal endpoint
 
