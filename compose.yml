@@ -272,6 +272,8 @@ services:
     depends_on:
       community-migrate:
         condition: service_completed_successfully
+      kafka-init:
+        condition: service_completed_successfully
     healthcheck:
       test: ["CMD", "wget", "-q", "-O", "/dev/null", "http://localhost:8084/actuator/health"]
       interval: 10s
