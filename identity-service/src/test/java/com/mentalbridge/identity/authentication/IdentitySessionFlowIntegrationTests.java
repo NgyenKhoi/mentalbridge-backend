@@ -57,8 +57,14 @@ class IdentitySessionFlowIntegrationTests extends IdentityTestProperties {
 			"PUT /api/v1/account/password",
 			"GET /api/v1/account",
 			"GET /api/v1/admin/accounts",
+			"GET /api/v1/admin/accounts/summary",
 			"GET /api/v1/admin/accounts/{accountId}",
-			"PUT /api/v1/admin/accounts/{accountId}/state");
+			"PUT /api/v1/admin/accounts/{accountId}/state",
+			"GET /api/v1/admin/platform-reports/catalogue",
+			"GET /api/v1/admin/platform-reports",
+			"POST /api/v1/admin/platform-reports",
+			"POST /api/v1/admin/platform-reports/{reportId}/retries",
+			"GET /api/v1/admin/platform-reports/{reportId}/artifact");
 
 	@Autowired
 	private MockMvc mvc;

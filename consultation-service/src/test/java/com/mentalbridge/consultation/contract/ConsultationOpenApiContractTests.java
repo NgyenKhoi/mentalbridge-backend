@@ -35,6 +35,7 @@ class ConsultationOpenApiContractTests {
 			"GET /api/v1/specialists",
 			"GET /api/v1/specialists/{specialistAccountId}",
 			"GET /api/v1/appointments",
+			"GET /api/v1/admin/appointments",
 			"POST /api/v1/appointments",
 			"POST /api/v1/appointments/{appointmentId}/cancel",
 			"GET /api/v1/appointments/{appointmentId}/rating",
@@ -135,6 +136,23 @@ class ConsultationOpenApiContractTests {
 		assertThat(appointment.getRequired()).contains("replacesAppointmentId", "replacedByAppointmentId",
 				"cancelledAt", "cancellationReason", "cancellationActor", "cancellationCreditOutcome", "history");
 		assertThat(appointment.getProperties()).doesNotContainKeys("practiceLocationId", "phone", "meetingLink", "url");
+	}
+
+	@Test
+	void adminAppointmentContractIsReadOnlyBoundedAndContentFree() {
+		var contract = Path.of("..", "contracts", "openapi", "consultation-service-v1.yaml").toString();
+		var api = new OpenAPIV3Parser().read(contract);
+		var item = api.getComponents().getSchemas().get("AdminAppointmentItem");
+		var page = api.getComponents().getSchemas().get("AdminAppointmentPage");
+
+		assertThat(item.getProperties()).containsOnlyKeys("appointmentId", "availabilitySlotId", "userAccountId",
+				"specialistAccountId", "status", "modality", "scheduledStartAt", "scheduledEndAt", "timezone",
+				"requestedAt", "decisionDeadlineAt", "decidedAt", "decisionReasonCode", "cancelledAt",
+				"cancellationReasonCode", "cancellationCreditOutcome", "sessionEndedAt", "sessionSettledAt",
+				"sessionOutcome", "sessionOutcomeReasonCode", "settlementState", "updatedAt", "version");
+		assertThat(item.getProperties()).doesNotContainKeys("consultationBrief", "sessionSummary", "chatMessages",
+				"journal", "assessmentAnswers", "privateNotes", "aiPayload", "heldCreditId");
+		assertThat(page.getProperties()).containsKeys("source", "dataState", "queryFrom", "queryTo", "nextCursor");
 	}
 
 	@Test

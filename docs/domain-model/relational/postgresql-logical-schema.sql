@@ -123,6 +123,37 @@ CREATE TABLE identity.security_audit_event (
     created_at timestamptz NOT NULL
 );
 
+CREATE TABLE identity.platform_report_job (
+    id uuid PRIMARY KEY,
+    report_type varchar(64) NOT NULL,
+    scope_version varchar(64) NOT NULL,
+    period_start date NOT NULL,
+    period_end date NOT NULL,
+    requested_by uuid NOT NULL REFERENCES identity.account(id),
+    requested_at timestamptz NOT NULL,
+    status varchar(24) NOT NULL,
+    source_versions jsonb NOT NULL,
+    idempotency_key varchar(128) NOT NULL,
+    request_hash char(64) NOT NULL,
+    retry_of uuid REFERENCES identity.platform_report_job(id),
+    started_at timestamptz,
+    completed_at timestamptz,
+    failed_at timestamptz,
+    failure_code varchar(64),
+    UNIQUE (requested_by, idempotency_key)
+);
+
+CREATE TABLE identity.platform_report_artifact (
+    report_job_id uuid PRIMARY KEY REFERENCES identity.platform_report_job(id),
+    media_type varchar(96) NOT NULL,
+    file_name varchar(160) NOT NULL,
+    content bytea NOT NULL,
+    content_sha256 char(64) NOT NULL,
+    content_length bigint NOT NULL,
+    generated_at timestamptz NOT NULL,
+    retained_until timestamptz NOT NULL
+);
+
 /* ========================================================================== */
 /* ACTIVE — care-service / mentalbridge_care                                  */
 /* Evidence: Care migration files 001-012, ending with changeset care-013.    */

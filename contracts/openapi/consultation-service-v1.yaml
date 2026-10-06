@@ -439,6 +439,49 @@ paths:
         '401': { $ref: '#/components/responses/UnauthorizedProblem' }
         '403': { $ref: '#/components/responses/EntitlementForbiddenProblem' }
         '404': { $ref: '#/components/responses/DiscoveryNotFoundProblem' }
+  /api/v1/admin/appointments:
+    x-mentalbridge-status: implemented
+    get:
+      operationId: searchAdminAppointments
+      description: Returns a bounded, read-only Consultation-authoritative operational view. It excludes brief, summary, chat, Journal, assessment-answer, private-note, and AI content and grants no session mutation authority.
+      security: [{ bearerAuth: [] }]
+      parameters:
+        - name: status
+          in: query
+          schema: { $ref: '#/components/schemas/AppointmentStatus' }
+        - name: modality
+          in: query
+          schema: { $ref: '#/components/schemas/AppointmentModality' }
+        - name: from
+          in: query
+          required: true
+          schema: { type: string, format: date-time }
+        - name: to
+          in: query
+          required: true
+          description: Exclusive upper bound. The requested range cannot exceed 180 days.
+          schema: { type: string, format: date-time }
+        - name: userAccountId
+          in: query
+          schema: { type: string, format: uuid }
+        - name: specialistAccountId
+          in: query
+          schema: { type: string, format: uuid }
+        - name: cursor
+          in: query
+          schema: { type: string, minLength: 1, maxLength: 512 }
+        - name: limit
+          in: query
+          schema: { type: integer, minimum: 1, maximum: 100, default: 20 }
+      responses:
+        '200':
+          description: Current owner-authoritative operational appointment page
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/AdminAppointmentPage' }
+        '400': { $ref: '#/components/responses/ValidationProblem' }
+        '401': { $ref: '#/components/responses/UnauthorizedProblem' }
+        '403': { $ref: '#/components/responses/ForbiddenProblem' }
   /api/v1/appointments:
     x-mentalbridge-status: implemented
     get:
@@ -1615,6 +1658,56 @@ components:
           type: [string, 'null']
           format: uuid
           description: Active user-owned appointment atomically replaced by this new request; omit for a normal request.
+    AppointmentStatus:
+      type: string
+      enum: [REQUESTED, CONFIRMED, IN_PROGRESS, SESSION_ENDED, COMPLETED, REJECTED, EXPIRED, CANCELLED]
+    AdminAppointmentItem:
+      type: object
+      additionalProperties: false
+      required: [appointmentId, availabilitySlotId, userAccountId, specialistAccountId, status, modality, scheduledStartAt, scheduledEndAt, timezone, requestedAt, decisionDeadlineAt, decidedAt, decisionReasonCode, cancelledAt, cancellationReasonCode, cancellationCreditOutcome, sessionEndedAt, sessionSettledAt, sessionOutcome, sessionOutcomeReasonCode, settlementState, updatedAt, version]
+      properties:
+        appointmentId: { type: string, format: uuid }
+        availabilitySlotId: { type: string, format: uuid }
+        userAccountId: { type: string, format: uuid }
+        specialistAccountId: { type: string, format: uuid }
+        status: { $ref: '#/components/schemas/AppointmentStatus' }
+        modality: { $ref: '#/components/schemas/AppointmentModality' }
+        scheduledStartAt: { type: string, format: date-time }
+        scheduledEndAt: { type: string, format: date-time }
+        timezone: { type: string, minLength: 1, maxLength: 64 }
+        requestedAt: { type: string, format: date-time }
+        decisionDeadlineAt: { type: string, format: date-time }
+        decidedAt: { type: [string, 'null'], format: date-time }
+        decisionReasonCode: { type: [string, 'null'], minLength: 1, maxLength: 64 }
+        cancelledAt: { type: [string, 'null'], format: date-time }
+        cancellationReasonCode: { type: [string, 'null'], minLength: 1, maxLength: 64 }
+        cancellationCreditOutcome:
+          oneOf:
+            - { $ref: '#/components/schemas/AppointmentCancellationCreditOutcome' }
+            - { type: 'null' }
+        sessionEndedAt: { type: [string, 'null'], format: date-time }
+        sessionSettledAt: { type: [string, 'null'], format: date-time }
+        sessionOutcome: { type: [string, 'null'], enum: [COMPLETED, USER_NO_SHOW, SPECIALIST_NO_SHOW, BOTH_NO_SHOW, INSUFFICIENT_EVIDENCE, EVIDENCE_REVIEW, null] }
+        sessionOutcomeReasonCode: { type: [string, 'null'], minLength: 1, maxLength: 64 }
+        settlementState: { type: string, enum: [AVAILABLE, HELD, CONSUMED, FORFEITED] }
+        updatedAt: { type: string, format: date-time }
+        version: { type: integer, format: int64, minimum: 0 }
+    AdminAppointmentPage:
+      type: object
+      additionalProperties: false
+      required: [source, dataState, generatedAt, queryFrom, queryTo, items, count, nextCursor]
+      properties:
+        source: { type: string, const: CONSULTATION }
+        dataState: { type: string, enum: [CURRENT, STALE, UNAVAILABLE] }
+        generatedAt: { type: string, format: date-time }
+        queryFrom: { type: string, format: date-time }
+        queryTo: { type: string, format: date-time }
+        items:
+          type: array
+          maxItems: 100
+          items: { $ref: '#/components/schemas/AdminAppointmentItem' }
+        count: { type: integer, minimum: 0, maximum: 100 }
+        nextCursor: { type: [string, 'null'], minLength: 1, maxLength: 512 }
     AppointmentCancellationCreditOutcome:
       type: string
       enum: [RELEASED, FORFEITED, TRANSFERRED_TO_REPLACEMENT]

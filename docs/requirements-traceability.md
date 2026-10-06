@@ -1,5 +1,11 @@
 # Requirements Traceability
 
+- 2026-10-05: MB-588 replaces admin appointment mock data with a bounded,
+  read-only Consultation-owned operations query and frontend monitor. ADMIN may
+  filter lifecycle facts by time, status, modality, user, and specialist but
+  receives no ConsultationBrief, SessionSummary content, journal, assessment
+  answer, chat body, or private note and gains no clinical/session mutation
+  authority. Evidence: `docs/story-mb-588-admin-appointment-monitor-evidence.md`.
 - 2026-10-05: MB-364 adds one current 1-5 owner rating per evidence-backed
   completed appointment, optimistic edit protection, and transactionally
   maintained specialist count/sum aggregates. Discovery v2 discloses only real

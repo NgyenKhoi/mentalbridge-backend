@@ -32,7 +32,12 @@ class IdentityOpenApiContractTests {
 			"GET /api/v1/admin/accounts",
 			"GET /api/v1/admin/accounts/summary",
 			"GET /api/v1/admin/accounts/{accountId}",
-			"PUT /api/v1/admin/accounts/{accountId}/state");
+			"PUT /api/v1/admin/accounts/{accountId}/state",
+			"GET /api/v1/admin/platform-reports/catalogue",
+			"GET /api/v1/admin/platform-reports",
+			"POST /api/v1/admin/platform-reports",
+			"POST /api/v1/admin/platform-reports/{reportId}/retries",
+			"GET /api/v1/admin/platform-reports/{reportId}/artifact");
 
 	private static final Set<String> PLANNED_OPERATIONS = Set.of();
 	private static final Set<String> PROTECTED_OPERATIONS = Set.of(
@@ -44,7 +49,12 @@ class IdentityOpenApiContractTests {
 			"GET /api/v1/admin/accounts",
 			"GET /api/v1/admin/accounts/summary",
 			"GET /api/v1/admin/accounts/{accountId}",
-			"PUT /api/v1/admin/accounts/{accountId}/state");
+			"PUT /api/v1/admin/accounts/{accountId}/state",
+			"GET /api/v1/admin/platform-reports/catalogue",
+			"GET /api/v1/admin/platform-reports",
+			"POST /api/v1/admin/platform-reports",
+			"POST /api/v1/admin/platform-reports/{reportId}/retries",
+			"GET /api/v1/admin/platform-reports/{reportId}/artifact");
 	private static final Map<String, Set<String>> IMPLEMENTED_RESPONSES = Map.ofEntries(
 			Map.entry("POST /api/v1/auth/registrations", Set.of("201", "400", "409", "429")),
 			Map.entry("POST /api/v1/auth/email-verifications", Set.of("200", "400", "429")),
@@ -62,7 +72,12 @@ class IdentityOpenApiContractTests {
 			Map.entry("GET /api/v1/admin/accounts", Set.of("200", "400", "401", "403")),
 			Map.entry("GET /api/v1/admin/accounts/summary", Set.of("200", "401", "403")),
 			Map.entry("GET /api/v1/admin/accounts/{accountId}", Set.of("200", "401", "403", "404")),
-			Map.entry("PUT /api/v1/admin/accounts/{accountId}/state", Set.of("200", "400", "401", "403", "404", "409", "412")));
+			Map.entry("PUT /api/v1/admin/accounts/{accountId}/state", Set.of("200", "400", "401", "403", "404", "409", "412")),
+			Map.entry("GET /api/v1/admin/platform-reports/catalogue", Set.of("200", "401", "403")),
+			Map.entry("GET /api/v1/admin/platform-reports", Set.of("200", "400", "401", "403")),
+			Map.entry("POST /api/v1/admin/platform-reports", Set.of("202", "400", "401", "403", "409")),
+			Map.entry("POST /api/v1/admin/platform-reports/{reportId}/retries", Set.of("202", "400", "401", "403", "404", "409")),
+			Map.entry("GET /api/v1/admin/platform-reports/{reportId}/artifact", Set.of("200", "401", "403", "404", "409", "410")));
 
 	@Test
 	void identityContractIsValidAndFullyResolved() {
