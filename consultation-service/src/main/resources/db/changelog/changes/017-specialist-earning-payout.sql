@@ -1,6 +1,6 @@
 --liquibase formatted sql
 
---changeset mentalbridge:consultation-016-specialist-earning-payout
+--changeset mentalbridge:consultation-017-specialist-earning-payout
 alter table service_credit_period add column credit_allocation_minor bigint;
 update service_credit_period set credit_allocation_minor = 300000;
 alter table service_credit_period alter column credit_allocation_minor set not null;

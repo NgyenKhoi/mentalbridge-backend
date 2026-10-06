@@ -437,7 +437,7 @@ in-person, phone, external meeting links, room management, organization
 tenancy, automatic emergency dispatch, custom model training, automated cash
 refunds, and Kubernetes are out of scope unless formally added. Real MoMo
 payment/payout remains disabled until explicit production approval, credentials,
-retention, and operational reconciliation readiness exist. ADR 0031 fixes the
+retention, and operational reconciliation readiness exist. ADR 0032 fixes the
 planned VND design values and the current 0/5,000/10,000 VND integration-test
 catalogue without turning either into permission for real-money production.
 

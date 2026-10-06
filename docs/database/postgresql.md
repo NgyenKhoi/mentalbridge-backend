@@ -101,7 +101,7 @@ Cross-owner identifiers in the canonical logical model make relationships visibl
 - Evidence-backed appointment completion consumes one credit and creates one
   earning snapshot equal to 70% of its fixed `creditAllocation`.
   `SESSION_ENDED`, cancellation, no-show, and dispute create no earning.
-- The earning and payout tables are active under ADR 0031: a seven-day hold,
+- The earning and payout tables are active under ADR 0032: a seven-day hold,
   100,000 VND minimum withdrawal, at most one on-demand payout per specialist
   per server day, and a deterministic fake provider for local/CI.
 - MoMo Disbursement is the only planned production payout provider, subject to

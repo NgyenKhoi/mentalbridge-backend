@@ -59,7 +59,7 @@ Architecture may add safety, privacy, reliability, and implementation constraint
 | AWS EC2, Docker, Nginx, Docker Compose, GitHub Actions                                                      | Deployment baseline retained; Kafka and Redis included in local/hosted composition                                                                                                  |
 | Grafana, Prometheus, Swagger/OpenAPI                                                                        | Metrics/observability and contract rules are required by engineering guides                                                                                                         |
 | Privacy, consent, audit, deletion and retention                                                             | Care consent owner, owner-enforced authorization, minimized audit projection, idempotent deletion workflow                                                                          |
-| `FREE`/`PLUS`/`PREMIUM`, VND payment, upgrade, consultation credits, specialist earnings and payout history | ADR 0017/0022 fix `PLUS=4` / `PREMIUM=10`, no rollover, reservation caps `2/4`, purchase and `PLUS`-to-`PREMIUM` upgrade only. ADR 0031 fixes planned economics, the 0/5,000/10,000 VND integration fixtures, 70% of the fixed per-credit allocation, fake local/CI payout, and explicit real-money enablement gates; historical `consultation-credit-v1` `0/1/3` periods remain immutable |
+| `FREE`/`PLUS`/`PREMIUM`, VND payment, upgrade, consultation credits, specialist earnings and payout history | ADR 0017/0022 fix `PLUS=4` / `PREMIUM=10`, no rollover, reservation caps `2/4`, purchase and `PLUS`-to-`PREMIUM` upgrade only. ADR 0032 fixes planned economics, the 0/5,000/10,000 VND integration fixtures, 70% of the snapshotted per-credit allocation, fake local/CI payout, and explicit real-money enablement gates; historical `consultation-credit-v1` `0/1/3` periods remain immutable |
 
 Kafka and Redis are architecture additions supporting realtime and asynchronous workloads. Kafka is the durable event/task backbone only for features that meet ADR 0016's asynchronous/fan-out/replay criteria; synchronous owner-local features do not depend on it. Redis is limited to ephemeral presence/routing/fan-out, rate-limit, delivery/idempotency, and expiring hashed OTP state; it is not a database-query cache and never replaces PostgreSQL, MongoDB, or Kafka where those dependencies are actually selected.
 
@@ -132,7 +132,7 @@ The requirements are represented in domain/architecture documentation, but the l
 6. Dataset metadata edit semantics: immutable version replacement versus narrowly editable administrative metadata.
 7. Production credential/key rotation, status-query schedule, chargeback
    reconciliation, payout onboarding, financial retention, and explicit go-live
-   approval remain open. ADR 0031 resolves the planned VND prices, fixed
+   approval remain open. ADR 0032 resolves the planned VND prices, fixed
    `creditAllocation`, seven-day hold, withdrawal policy, `captureWallet` for
    the 5,000 VND test fixture, and fake-only local/CI behavior. ADR 0017 still
    prohibits runtime FX, downgrade, and user refund APIs and gates earnings on

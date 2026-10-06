@@ -1,4 +1,4 @@
-# ADR 0031: Payment and specialist payout baseline
+# ADR 0032: Payment and specialist payout baseline
 
 - Decision ID: `MB-PAYMENT-PAYOUT-BASELINE-001`
 - Status: Accepted
