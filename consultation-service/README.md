@@ -50,6 +50,12 @@ MB-364 lets the appointment owner create and later edit one 1-5 rating only
 after evidence-backed completion. The current rating and specialist count/sum
 aggregate commit together; public discovery discloses average/count and uses
 the aggregate only as the final `PREMIUM` tie-breaker.
+MB-588 adds an ADMIN-only, read-only appointment operations projection with
+bounded time/status/modality/account filters and cursor pagination. Consultation
+remains the lifecycle authority; the projection carries operational timestamps,
+reason codes, and credit settlement state but no brief, summary, journal,
+assessment, chat, or private-note content. It grants no appointment mutation or
+clinical authority.
 
 ## Integration
 
@@ -171,6 +177,16 @@ profiles fail closed with blocked workload sections. The projection contains
 no client identity, check-in, clinical risk, recovery/adherence, journal,
 assessment-answer, chat-content, or private-note fields, and it performs no
 cross-service database query.
+
+## Implemented MB-588 endpoint
+
+- `GET /api/v1/admin/appointments`
+
+The query requires an explicit range of at most 180 days, caps pages at 100,
+and may filter by appointment status, modality, user account, or specialist
+account. Responses identify Consultation as the authoritative source and mark
+the data state explicitly. The operation is available only to `ADMIN` and is
+not a substitute for any owner or specialist command endpoint.
 
 ## Implemented MB-592 endpoint
 
