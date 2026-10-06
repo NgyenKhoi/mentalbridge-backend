@@ -16,15 +16,19 @@ It shares the Consultation PostgreSQL transaction boundary with booking and
 evidence-backed completion. No other service stores an authoritative
 entitlement, credit, earning, or payout balance.
 
-## Approved target catalogue
+## Approved production-planned economics
 
 | Plan | V2 price/paid period | Credits | Max active reservations | Credit allocation | Specialist earning/completed credit |
 | --- | ---: | ---: | ---: | ---: | ---: |
 | `FREE` | VND 0 | 0 | 0 | Not applicable | Not applicable |
-| `PLUS` | VND amount pending approval | 4 | 2 | Fixed VND amount pending approval | 70% of the credit's allocation |
-| `PREMIUM` | VND amount pending approval | 10 | 4 | Fixed VND amount pending approval for each credit | 70% of each credit's allocation |
+| `PLUS` | VND 1,390,000 | 4 | 2 | VND 300,000 | VND 210,000 |
+| `PREMIUM` | VND 3,490,000 | 10 | 4 | VND 300,000 each | VND 210,000 each |
 
-This is the approved `consultation-credit-v2` target, not implemented runtime.
+These prices are production-planned documentation/design values, not runtime
+prices, and do not enable real-money production. The current integration-test
+runtime catalogue is `FREE=0`, `PLUS=5,000`, and `PREMIUM=10,000` VND. Those
+small values are fixtures only and cannot support profitability conclusions.
+The credit quantities are the approved `consultation-credit-v2` runtime target.
 The MB-377 `consultation-credit-v1` ledger remains `FREE=0`, `PLUS=1`,
 `PREMIUM=3`; existing periods and ledger facts keep that exact provenance and
 are never rewritten.
@@ -119,11 +123,15 @@ Reserved credits are not offset or revoked by an upgrade; their appointments con
   complete unilaterally.
 - `SESSION_ENDED`, cancellation, either no-show, and dispute create no earning.
 - Earnings move from `PENDING_SETTLEMENT` to `AVAILABLE`, then attach to at most one idempotent provider payout.
+- The settlement/dispute hold is seven days. Minimum withdrawal is VND 100,000,
+  requested on demand, with at most one logical payout per specialist per day.
 - MoMo Disbursement is the only planned production payout adapter. Local/CI uses the deterministic fake implementing the same state contract.
 - A logical payout fixes its destination, currency, amount, and earning items. Each provider call is a numbered attempt: a definite `FAILED` attempt may be retried with a new provider idempotency key, while `UNKNOWN` is queried and blocks another transfer attempt. The payout becomes `SUCCEEDED` only after verified provider confirmation/status reconciliation.
-- Real MoMo payment and payout remain disabled until the VND price table, fixed
-  VND `creditAllocation` values, and MoMo credentials are approved and
-  configured. Runtime FX conversion is prohibited.
+- Real MoMo payment and payout remain disabled until separate production
+  approval and credentials are configured. Runtime FX conversion is prohibited.
+- The 5,000 VND test `PLUS` checkout uses One-Time E-Wallet
+  `requestType=captureWallet`; it does not use generic `initiate`, whose minimum
+  amount is 10,000 VND. Local/CI never depends on MoMo availability.
 
 ## Required contracts and verification
 
@@ -142,11 +150,10 @@ Reserved credits are not offset or revoked by an upgrade; their appointments con
 
 ## Remaining provider/configuration decisions
 
-- exact MoMo `requestType`/payment methods enabled per environment and hosted-checkout behavior;
+- production MoMo payment methods and hosted-checkout behavior beyond the
+  approved sandbox `captureWallet` test path;
 - MoMo credential provisioning, signature-key versioning/rotation, IP allow-list decision, and status-query reconciliation schedule;
-- settlement delay and dispute handling;
-- MoMo payout product access/credentials and encrypted destination onboarding;
-- exact VND `PLUS`/`PREMIUM` prices and fixed per-credit `creditAllocation`;
+- production MoMo payout product access/credentials and operational onboarding;
 - financial retention and chargeback reconciliation;
 - `IN_APP_VIDEO` signaling/provider/security/evidence/failure contract; v2
   rejects new in-person, phone, and external-link appointments.

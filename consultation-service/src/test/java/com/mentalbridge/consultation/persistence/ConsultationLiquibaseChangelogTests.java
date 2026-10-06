@@ -32,7 +32,8 @@ class ConsultationLiquibaseChangelogTests {
 							"consultation-013-appointment-notification-outbox",
 							"consultation-014-specialist-client-continuity",
 							"consultation-015-appointment-rating",
-							"consultation-016-appointment-disputes");
+							"consultation-016-appointment-disputes",
+							"consultation-017-specialist-earning-payout");
 		}
 	}
 }

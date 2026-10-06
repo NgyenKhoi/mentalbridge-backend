@@ -59,7 +59,7 @@ Architecture may add safety, privacy, reliability, and implementation constraint
 | AWS EC2, Docker, Nginx, Docker Compose, GitHub Actions                                                      | Deployment baseline retained; Kafka and Redis included in local/hosted composition                                                                                                  |
 | Grafana, Prometheus, Swagger/OpenAPI                                                                        | Metrics/observability and contract rules are required by engineering guides                                                                                                         |
 | Privacy, consent, audit, deletion and retention                                                             | Care consent owner, owner-enforced authorization, minimized audit projection, idempotent deletion workflow                                                                          |
-| `FREE`/`PLUS`/`PREMIUM`, VND payment, upgrade, consultation credits, specialist earnings and payout history | ADR 0017 as amended by ADR 0022 fixes the target at `PLUS=4` / `PREMIUM=10`, no rollover, active-reservation caps `2/4`, purchase and `PLUS`-to-`PREMIUM` upgrade only, 70% of fixed `creditAllocation`, and MoMo-only real payment/payout; historical `consultation-credit-v1` `0/1/3` periods remain immutable |
+| `FREE`/`PLUS`/`PREMIUM`, VND payment, upgrade, consultation credits, specialist earnings and payout history | ADR 0017/0022 fix `PLUS=4` / `PREMIUM=10`, no rollover, reservation caps `2/4`, purchase and `PLUS`-to-`PREMIUM` upgrade only. ADR 0032 fixes planned economics, the 0/5,000/10,000 VND integration fixtures, 70% of the snapshotted per-credit allocation, fake local/CI payout, and explicit real-money enablement gates; historical `consultation-credit-v1` `0/1/3` periods remain immutable |
 
 Kafka and Redis are architecture additions supporting realtime and asynchronous workloads. Kafka is the durable event/task backbone only for features that meet ADR 0016's asynchronous/fan-out/replay criteria; synchronous owner-local features do not depend on it. Redis is limited to ephemeral presence/routing/fan-out, rate-limit, delivery/idempotency, and expiring hashed OTP state; it is not a database-query cache and never replaces PostgreSQL, MongoDB, or Kafka where those dependencies are actually selected.
 
@@ -87,7 +87,7 @@ outbox work and never waits for this consumer.
 | 74–82, 145–147        | conversations/chat/receipts/tombstone/report and message moderation                                        | Realtime Service (Node.js)                                                 | MongoDB truth; Redis ephemeral fan-out; Kafka facts                                                                                                                                                    |
 | 83–88, 140–144        | specialist reviews and moderation                                                                          | Consultation Service                                                       | PostgreSQL; minimized evidence and audit events                                                                                                                                                        |
 | 102–107               | specialist dashboard and consented user data                                                               | Consultation composes workload; Care and Journal/AI own sensitive data     | Current owner authorization; no shared DB                                                                                                                                                              |
-| 108–110, 123–129      | specialist earnings/payout views and administration                                                        | Consultation/Billing                                                       | MoMo-only payout after credentials plus approved VND price/`creditAllocation`; no runtime FX; MoMo-shaped fake for local/CI                                                                            |
+| 108–110, 123–129      | specialist earnings/payout views and administration                                                        | Consultation/Billing                                                       | Evidence-completed + consumed credit only; 7-day hold; 100,000 VND minimum; one on-demand payout/day; fake local/CI; real MoMo payout only after approval and credentials                              |
 | 112, 157–158          | admin dashboard, activity and platform trends                                                              | Owner-specific projections; financial facts from Consultation/Billing      | Bounded queries; freshness/cohort protections; no runtime distributed join                                                                                                                             |
 | 159–162               | audit search and retention policy                                                                          | Identity coordinates minimized projection; every owner enforces its policy | Kafka audit facts and owner administration                                                                                                                                                             |
 
@@ -130,11 +130,13 @@ The requirements are represented in domain/architecture documentation, but the l
 4. Explicit anonymous-assessment expiry/cleanup configuration and deletion evidence.
 5. Moderation evidence snapshot/access policy and appeal/action history.
 6. Dataset metadata edit semantics: immutable version replacement versus narrowly editable administrative metadata.
-7. Exact MoMo payment method/request type, credentials/key rotation,
-   status-query schedule, settlement delay, chargeback reconciliation, payout
-   onboarding, VND `PLUS`/`PREMIUM` prices, fixed `creditAllocation`, and
-   financial retention. ADR 0017 prohibits runtime FX, downgrade, and user
-   refund APIs and gates earnings on evidence-backed completion.
+7. Production credential/key rotation, status-query schedule, chargeback
+   reconciliation, payout onboarding, financial retention, and explicit go-live
+   approval remain open. ADR 0032 resolves the planned VND prices, fixed
+   `creditAllocation`, seven-day hold, withdrawal policy, `captureWallet` for
+   the 5,000 VND test fixture, and fake-only local/CI behavior. ADR 0017 still
+   prohibits runtime FX, downgrade, and user refund APIs and gates earnings on
+   evidence-backed completion.
 8. WBS 28-29 and 155-156 both describe running/viewing AI benchmark evaluation; confirm whether they are different actor views or duplicate catalogue entries before defining benchmark/admin contracts. This does not block ADR 0015 contract, adapter, or async-job implementation.
    Agents must not invent these behaviors independently. Resolve the relevant rule through product/domain review, then update the contract, data dictionary, migration, tests, and this traceability document together.
 

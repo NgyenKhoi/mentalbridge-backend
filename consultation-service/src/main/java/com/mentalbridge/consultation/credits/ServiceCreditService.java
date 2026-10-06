@@ -23,6 +23,7 @@ public class ServiceCreditService {
 
 	static final String CURRENT_POLICY_VERSION = "consultation-credit-v2";
 	static final String HISTORICAL_POLICY_VERSION = "consultation-credit-v1";
+	static final long CURRENT_CREDIT_ALLOCATION_VND = 300_000;
 	private static final int HISTORY_LIMIT = 100;
 
 	private final CurrentServiceEntitlementService entitlements;
@@ -172,10 +173,10 @@ public class ServiceCreditService {
 		jdbc.sql("""
 				insert into service_credit_period (
 				    id, account_id, plan_version, credit_policy_version, package_code, source, source_reference,
-				    period_start, period_end, allocated_count, created_at, updated_at
+				    period_start, period_end, allocated_count, credit_allocation_minor, created_at, updated_at
 				) values (
 				    :id, :accountId, :planVersion, :creditPolicyVersion, :packageCode, :source, :sourceReference,
-				    :periodStart, :periodEnd, :allocatedCount, :now, :now
+				    :periodStart, :periodEnd, :allocatedCount, :creditAllocation, :now, :now
 				) on conflict (account_id, plan_version, period_start, period_end) do nothing
 				""").param("id", periodId).param("accountId", entitlement.accountId())
 				.param("planVersion", entitlement.policyVersion()).param("packageCode", entitlement.packageCode().name())
@@ -184,6 +185,7 @@ public class ServiceCreditService {
 				.param("periodStart", databaseInstant(entitlement.effectiveFrom()))
 				.param("periodEnd", databaseInstant(entitlement.effectiveUntil()))
 				.param("allocatedCount", allocation(CURRENT_POLICY_VERSION, entitlement.packageCode()))
+				.param("creditAllocation", CURRENT_CREDIT_ALLOCATION_VND)
 				.param("now", databaseNow()).update();
 
 		var period = findPeriod(entitlement);
@@ -210,7 +212,8 @@ public class ServiceCreditService {
 
 	private CreditPeriod findPeriod(CurrentServiceEntitlementService.EntitlementDecision entitlement) {
 		return jdbc.sql("""
-				select id, credit_policy_version, package_code, source, source_reference, allocated_count
+				select id, credit_policy_version, package_code, source, source_reference,
+				       allocated_count, credit_allocation_minor
 				from service_credit_period
 				where account_id=:accountId and plan_version=:planVersion
 				  and period_start=:periodStart and period_end=:periodEnd
@@ -221,7 +224,7 @@ public class ServiceCreditService {
 				.query((row, ignored) -> new CreditPeriod(row.getObject("id", UUID.class), row.getString("credit_policy_version"),
 						ServicePackage.valueOf(row.getString("package_code")),
 						EntitlementSource.valueOf(row.getString("source")), row.getString("source_reference"),
-						row.getInt("allocated_count"))).single();
+						row.getInt("allocated_count"), row.getLong("credit_allocation_minor"))).single();
 	}
 
 	private void provision(CreditPeriod period, int ordinal) {
@@ -320,7 +323,7 @@ public class ServiceCreditService {
 	}
 
 	private record CreditPeriod(UUID id, String creditPolicyVersion, ServicePackage packageCode, EntitlementSource source,
-			String sourceReference, int allocatedCount) {
+			String sourceReference, int allocatedCount, long creditAllocationVnd) {
 	}
 
 	private record CreditState(String state, UUID appointmentId, Instant periodEnd) {

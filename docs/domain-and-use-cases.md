@@ -178,8 +178,8 @@ For new target periods governed by `consultation-credit-v2`:
 | Package   |        V2 price/paid period | Consultation credits | Max active reservations | Main access |
 | --------- | --------------------------: | -------------------: | ----------------------: | ----------- |
 | `FREE`    |                       VND 0 |                    0 |                       0 | Standard persisted Support Guide, Journal, emotion check-in, reviewed resources, default five delivered AI responses/day, specialist browse only |
-| `PLUS`    | VND amount pending approval |                    4 |                       2 | Higher AI quota, persistent SupportPlan/lifecycle tracking, four credits per paid period |
-| `PREMIUM` | VND amount pending approval |                   10 |                       4 | No displayed daily AI-response limit, server fair-use/token/rate limits, optional stronger model, advanced recommendations, ten credits per paid period |
+| `PLUS`    | VND 5,000 test fixture |                    4 |                       2 | Higher AI quota, persistent SupportPlan/lifecycle tracking, four credits per paid period |
+| `PREMIUM` | VND 10,000 test fixture |                   10 |                       4 | No displayed daily AI-response limit, server fair-use/token/rate limits, optional stronger model, advanced recommendations, ten credits per paid period |
 
 - `FREE` is the default. Scoring, disclaimer, safety flow, Support Guide,
   reviewed safety guidance, reviewed-resource count, specialist browse, and
@@ -201,6 +201,10 @@ For new target periods governed by `consultation-credit-v2`:
 - Each credit snapshots a fixed VND `creditAllocation`; a completed appointment
   creates a 70% specialist share of that allocation. It is never 70% of the
   package price.
+- The production-planned prices are 1,390,000 VND for `PLUS` and 3,490,000 VND
+  for `PREMIUM`; both allocate 300,000 VND per consumed credit and therefore
+  create a 210,000 VND specialist earning. Planned values are documentation and
+  design only; runtime continues to use the explicit 5,000/10,000 VND fixtures.
 - Real payment and payout use MoMo only and remain disabled until exact VND
   prices, fixed `creditAllocation` values, provider/reconciliation contracts,
   and credentials are approved.
@@ -432,9 +436,10 @@ social networking and mental-health-profiled ranking remain out of scope. New
 in-person, phone, external meeting links, room management, organization
 tenancy, automatic emergency dispatch, custom model training, automated cash
 refunds, and Kubernetes are out of scope unless formally added. Real MoMo
-payment/payout remains disabled until exact VND prices, fixed
-`creditAllocation`, credentials, settlement, retention, and reconciliation
-requirements are approved.
+payment/payout remains disabled until explicit production approval, credentials,
+retention, and operational reconciliation readiness exist. ADR 0032 fixes the
+planned VND design values and the current 0/5,000/10,000 VND integration-test
+catalogue without turning either into permission for real-money production.
 
 ## 6. Open product decisions
 

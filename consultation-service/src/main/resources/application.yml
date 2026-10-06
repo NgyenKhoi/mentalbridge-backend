@@ -62,6 +62,20 @@ mentalbridge:
       send-timeout: ${CONSULTATION_APPOINTMENT_OUTBOX_SEND_TIMEOUT:PT5S}
       retry-base: ${CONSULTATION_APPOINTMENT_OUTBOX_RETRY_BASE:PT5S}
       retry-maximum: ${CONSULTATION_APPOINTMENT_OUTBOX_RETRY_MAXIMUM:PT5M}
+    payout:
+      mode: ${CONSULTATION_PAYOUT_MODE:FAKE}
+      settlement-hold: ${CONSULTATION_PAYOUT_SETTLEMENT_HOLD:P7D}
+      minimum-withdrawal-vnd: ${CONSULTATION_PAYOUT_MINIMUM_WITHDRAWAL_VND:100000}
+      encryption-key: ${CONSULTATION_PAYOUT_ENCRYPTION_KEY:}
+      encryption-key-version: ${CONSULTATION_PAYOUT_ENCRYPTION_KEY_VERSION:v1}
+      momo-partner-code: ${MOMO_PAYOUT_PARTNER_CODE:}
+      momo-access-key: ${MOMO_PAYOUT_ACCESS_KEY:}
+      momo-secret-key: ${MOMO_PAYOUT_SECRET_KEY:}
+      production-approved: ${MOMO_PAYOUT_PRODUCTION_APPROVED:false}
+      momo-base-url: ${MOMO_PAYOUT_BASE_URL:https://test-payment.momo.vn}
+      momo-store-id: ${MOMO_PAYOUT_STORE_ID:}
+      momo-public-key: ${MOMO_PAYOUT_PUBLIC_KEY:}
+      momo-ipn-url: ${MOMO_PAYOUT_IPN_URL:}
 
 eureka:
   client:

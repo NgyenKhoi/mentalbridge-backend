@@ -192,6 +192,12 @@ Commercial direction remains:
 - VND + MoMo for real payment/payout;
 - specialist earning = 70% of the consumed credit's snapshotted `creditAllocation`, not 70% of package price.
 
+ADR 0032 fixes planned production design values at 1,390,000 VND for `PLUS`
+and 3,490,000 VND for `PREMIUM`, with 300,000 VND allocated per consumed credit
+and a 210,000 VND specialist earning. These are not runtime prices. The current
+integration-test catalogue is only 0/5,000/10,000 VND, and real payment/payout
+remains disabled pending explicit production approval and credentials.
+
 Detailed amendment: [ADR 0022](adr/0022-current-product-blueprint-amendments.md).
 
 ## 8. Safety boundary

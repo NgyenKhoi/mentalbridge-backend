@@ -67,6 +67,8 @@ class ServiceCreditFlowIntegrationTests extends ConsultationTestProperties {
 		mvc.perform(get("/api/v1/service-credits").with(user(userId))).andExpect(status().isOk())
 				.andExpect(jsonPath("$.balance.total").value(4))
 				.andExpect(jsonPath("$.history.length()").value(4));
+		assertThat(periodAllocation(userId)).isEqualTo(4L * 300_000L);
+		assertThat(payableEarnings(userId)).isZero();
 
 		jdbc.sql("update current_service_entitlement set package_code='PREMIUM', version=version+1 where account_id=:id")
 				.param("id", userId).update();
@@ -74,6 +76,22 @@ class ServiceCreditFlowIntegrationTests extends ConsultationTestProperties {
 				.andExpect(jsonPath("$.packageCode").value("PREMIUM"))
 				.andExpect(jsonPath("$.balance.available").value(10))
 				.andExpect(jsonPath("$.history.length()").value(10));
+		assertThat(periodAllocation(userId)).isEqualTo(10L * 300_000L);
+		assertThat(payableEarnings(userId)).isZero();
+	}
+
+	private long periodAllocation(UUID userId) {
+		return jdbc.sql("""
+				select allocated_count * credit_allocation_minor from service_credit_period
+				where account_id=:accountId order by created_at desc limit 1
+				""").param("accountId", userId).query(Long.class).single();
+	}
+
+	private long payableEarnings(UUID userId) {
+		return jdbc.sql("""
+				select count(*) from specialist_earning e
+				join appointment a on a.id=e.appointment_id where a.user_account_id=:accountId
+				""").param("accountId", userId).query(Long.class).single();
 	}
 
 	@Test
