@@ -50,14 +50,16 @@ class PayoutTransactions {
 
 		var provider = properties.getMode().equals("FAKE") ? "FAKE" : "MOMO";
 		var destination = jdbc.sql("""
-				select id from specialist_payout_destination
+				select id, destination_type, destination_ciphertext from specialist_payout_destination
 				where id=:destinationId and specialist_account_id=:specialistId
 				  and payout_provider=:provider and status='VERIFIED'
 				for update
 				""").param("destinationId", destinationId).param("specialistId", specialistId)
-				.param("provider", provider).query(UUID.class).optional()
+				.param("provider", provider).query((row, ignored) -> new Destination(
+						row.getObject("id", UUID.class), row.getString("destination_type"),
+						row.getString("destination_ciphertext"))).optional()
 				.orElseThrow(() -> new ApiException(HttpStatus.NOT_FOUND, "PAYOUT_DESTINATION_NOT_FOUND",
-						"Payout destination was not found"));
+					"Payout destination was not found"));
 		var earnings = jdbc.sql("""
 				select id, specialist_amount_minor from specialist_earning
 				where specialist_account_id=:specialistId and status='AVAILABLE'
@@ -80,7 +82,7 @@ class PayoutTransactions {
 					 status, idempotency_key, requested_on, requested_at, created_at, updated_at
 					) values (:id, :specialistId, :destinationId, 'VND', :amount, :provider,
 					 'PROCESSING', :key, :requestedOn, :now, :now, :now)
-					""").param("id", payoutId).param("specialistId", specialistId).param("destinationId", destination)
+					""").param("id", payoutId).param("specialistId", specialistId).param("destinationId", destination.id())
 					.param("amount", amount).param("provider", provider).param("key", idempotencyKey)
 					.param("requestedOn", java.time.LocalDate.now(clock)).param("now", databaseInstant(now)).update();
 		}
@@ -88,6 +90,7 @@ class PayoutTransactions {
 			throw new ApiException(HttpStatus.CONFLICT, "PAYOUT_DAILY_LIMIT_REACHED",
 					"Only one payout request is allowed per day");
 		}
+		var providerKey = payoutId + ":1";
 		for (var earning : earnings) {
 			jdbc.sql("insert into specialist_payout_item (payout_id, earning_id, amount_minor) values (:payoutId, :earningId, :amount)")
 					.param("payoutId", payoutId).param("earningId", earning.id()).param("amount", earning.amount()).update();
@@ -100,9 +103,11 @@ class PayoutTransactions {
 				 status, requested_at, created_at, updated_at
 				) values (:id, :payoutId, :provider, 1, :providerKey, 'PROCESSING', :now, :now, :now)
 				""").param("id", attemptId).param("payoutId", payoutId).param("provider", provider)
-				.param("providerKey", payoutId + ":1").param("now", databaseInstant(now)).update();
+					.param("providerKey", providerKey).param("now", databaseInstant(now)).update();
 		insertHistory(payoutId, null, "PROCESSING", "SPECIALIST_REQUESTED", now);
-		return new PreparedPayout(payoutId, attemptId, amount, "VND", true);
+		return new PreparedPayout(payoutId, attemptId, amount, "VND", true,
+				new PayoutProvider.Command(payoutId, attemptId, providerKey, amount, "VND",
+						destination.destinationType(), destination.destinationCiphertext()));
 	}
 
 	private PreparedPayout replay(ExistingPayout payout) {
@@ -111,7 +116,7 @@ class PayoutTransactions {
 					select id from specialist_payout_attempt
 					where payout_id=:payoutId order by attempt_number desc limit 1
 					""").param("payoutId", payout.id()).query(UUID.class).single();
-			return new PreparedPayout(payout.id(), attemptId, payout.amount(), payout.currency(), false);
+			return new PreparedPayout(payout.id(), attemptId, payout.amount(), payout.currency(), false, null);
 		}
 
 		var earnings = jdbc.sql("""
@@ -132,6 +137,8 @@ class PayoutTransactions {
 				from specialist_payout_attempt where payout_id=:payoutId
 				""").param("payoutId", payout.id()).query(Integer.class).single();
 		var attemptId = UUID.randomUUID();
+		var providerKey = payout.id() + ":" + attemptNumber;
+		var destination = destinationForPayout(payout.id());
 		var now = clock.instant();
 		var restored = jdbc.sql("""
 				update specialist_earning set status='PROCESSING', updated_at=:now, version=version+1
@@ -150,14 +157,26 @@ class PayoutTransactions {
 				 'PROCESSING', :now, :now, :now)
 				""").param("id", attemptId).param("payoutId", payout.id())
 				.param("provider", properties.getMode().equals("FAKE") ? "FAKE" : "MOMO")
-				.param("attemptNumber", attemptNumber).param("providerKey", payout.id() + ":" + attemptNumber)
+				.param("attemptNumber", attemptNumber).param("providerKey", providerKey)
 				.param("now", databaseInstant(now)).update();
 		jdbc.sql("""
 				update specialist_payout set status='PROCESSING', last_failure_code=null,
 				 completed_at=null, updated_at=:now, version=version+1 where id=:payoutId
 				""").param("now", databaseInstant(now)).param("payoutId", payout.id()).update();
 		insertHistory(payout.id(), "FAILED", "PROCESSING", "SPECIALIST_RETRIED", now);
-		return new PreparedPayout(payout.id(), attemptId, payout.amount(), payout.currency(), true);
+		return new PreparedPayout(payout.id(), attemptId, payout.amount(), payout.currency(), true,
+				new PayoutProvider.Command(payout.id(), attemptId, providerKey, payout.amount(), payout.currency(),
+						destination.destinationType(), destination.destinationCiphertext()));
+	}
+
+	private Destination destinationForPayout(UUID payoutId) {
+		return jdbc.sql("""
+				select d.id, d.destination_type, d.destination_ciphertext
+				from specialist_payout p join specialist_payout_destination d on d.id=p.destination_id
+				where p.id=:payoutId
+				""").param("payoutId", payoutId).query((row, ignored) -> new Destination(
+				row.getObject("id", UUID.class), row.getString("destination_type"),
+				row.getString("destination_ciphertext"))).single();
 	}
 
 	@Transactional
@@ -265,7 +284,11 @@ class PayoutTransactions {
 		return OffsetDateTime.ofInstant(instant, ZoneOffset.UTC);
 	}
 
-	record PreparedPayout(UUID payoutId, UUID attemptId, long amountVnd, String currency, boolean submit) {
+	record PreparedPayout(UUID payoutId, UUID attemptId, long amountVnd, String currency, boolean submit,
+			PayoutProvider.Command command) {
+	}
+
+	private record Destination(UUID id, String destinationType, String destinationCiphertext) {
 	}
 
 	private record EarningAmount(UUID id, long amount) {

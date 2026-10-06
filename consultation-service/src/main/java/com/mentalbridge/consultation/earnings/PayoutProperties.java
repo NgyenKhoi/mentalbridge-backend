@@ -15,6 +15,11 @@ public class PayoutProperties {
 	private String momoPartnerCode = "";
 	private String momoAccessKey = "";
 	private String momoSecretKey = "";
+	private boolean productionApproved;
+	private String momoBaseUrl = "https://test-payment.momo.vn";
+	private String momoStoreId = "";
+	private String momoPublicKey = "";
+	private String momoIpnUrl = "";
 
 	public String getMode() { return mode; }
 	public void setMode(String mode) { this.mode = mode; }
@@ -32,4 +37,23 @@ public class PayoutProperties {
 	public void setMomoAccessKey(String momoAccessKey) { this.momoAccessKey = momoAccessKey; }
 	public String getMomoSecretKey() { return momoSecretKey; }
 	public void setMomoSecretKey(String momoSecretKey) { this.momoSecretKey = momoSecretKey; }
+	public boolean isProductionApproved() { return productionApproved; }
+	public void setProductionApproved(boolean productionApproved) { this.productionApproved = productionApproved; }
+	public String getMomoBaseUrl() { return momoBaseUrl; }
+	public void setMomoBaseUrl(String momoBaseUrl) { this.momoBaseUrl = momoBaseUrl; }
+	public String getMomoStoreId() { return momoStoreId; }
+	public void setMomoStoreId(String momoStoreId) { this.momoStoreId = momoStoreId; }
+	public String getMomoPublicKey() { return momoPublicKey; }
+	public void setMomoPublicKey(String momoPublicKey) { this.momoPublicKey = momoPublicKey; }
+	public String getMomoIpnUrl() { return momoIpnUrl; }
+	public void setMomoIpnUrl(String momoIpnUrl) { this.momoIpnUrl = momoIpnUrl; }
+
+	boolean momoReady() {
+		return mode.equals("MOMO") && productionApproved && present(momoPartnerCode) && present(momoAccessKey)
+				&& present(momoSecretKey) && present(momoStoreId) && present(momoPublicKey)
+				&& https(momoBaseUrl) && https(momoIpnUrl);
+	}
+
+	private boolean present(String value) { return value != null && !value.isBlank(); }
+	private boolean https(String value) { return present(value) && value.startsWith("https://"); }
 }

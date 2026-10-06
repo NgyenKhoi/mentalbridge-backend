@@ -1,6 +1,13 @@
 --liquibase formatted sql
 
 --changeset mentalbridge:consultation-016-specialist-earning-payout
+alter table service_credit_period add column credit_allocation_minor bigint;
+update service_credit_period set credit_allocation_minor = 300000;
+alter table service_credit_period alter column credit_allocation_minor set not null;
+alter table service_credit_period alter column credit_allocation_minor set default 300000;
+alter table service_credit_period add constraint ck_service_credit_period_allocation
+    check (credit_allocation_minor > 0 and credit_allocation_minor <= 1000000000);
+
 create table specialist_earning (
     id uuid primary key,
     appointment_id uuid not null references appointment(id),
@@ -27,10 +34,12 @@ create table specialist_earning (
     constraint uq_specialist_earning_source unique (idempotency_source),
     constraint ck_specialist_earning_currency check (currency = 'VND'),
     constraint ck_specialist_earning_values check (
-        credit_allocation_minor = 300000
-        and specialist_share_bps = 7000
-        and specialist_amount_minor = 210000
-        and platform_allocation_minor = 90000
+        credit_allocation_minor > 0
+        and credit_allocation_minor <= 1000000000
+        and specialist_share_bps > 0
+        and specialist_share_bps <= 10000
+        and specialist_amount_minor = (credit_allocation_minor * specialist_share_bps) / 10000
+        and platform_allocation_minor = credit_allocation_minor - specialist_amount_minor
         and specialist_amount_minor + platform_allocation_minor = credit_allocation_minor
     ),
     constraint ck_specialist_earning_status check (

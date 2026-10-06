@@ -71,6 +71,11 @@ mentalbridge:
       momo-partner-code: ${MOMO_PAYOUT_PARTNER_CODE:}
       momo-access-key: ${MOMO_PAYOUT_ACCESS_KEY:}
       momo-secret-key: ${MOMO_PAYOUT_SECRET_KEY:}
+      production-approved: ${MOMO_PAYOUT_PRODUCTION_APPROVED:false}
+      momo-base-url: ${MOMO_PAYOUT_BASE_URL:https://test-payment.momo.vn}
+      momo-store-id: ${MOMO_PAYOUT_STORE_ID:}
+      momo-public-key: ${MOMO_PAYOUT_PUBLIC_KEY:}
+      momo-ipn-url: ${MOMO_PAYOUT_IPN_URL:}
 
 eureka:
   client:

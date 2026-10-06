@@ -44,6 +44,24 @@ class PayoutDestinationCipher {
 		}
 	}
 
+	String decrypt(String value) {
+		try {
+			var combined = Base64.getDecoder().decode(value);
+			if (combined.length <= 12) throw new IllegalArgumentException();
+			var iv = java.util.Arrays.copyOfRange(combined, 0, 12);
+			var encrypted = java.util.Arrays.copyOfRange(combined, 12, combined.length);
+			var cipher = Cipher.getInstance("AES/GCM/NoPadding");
+			cipher.init(Cipher.DECRYPT_MODE, new SecretKeySpec(key(), "AES"), new GCMParameterSpec(128, iv));
+			return new String(cipher.doFinal(encrypted), StandardCharsets.UTF_8);
+		}
+		catch (ApiException exception) {
+			throw exception;
+		}
+		catch (Exception exception) {
+			throw new IllegalStateException("Unable to read payout destination", exception);
+		}
+	}
+
 	String fingerprint(String value) {
 		try {
 			return java.util.HexFormat.of().formatHex(MessageDigest.getInstance("SHA-256")

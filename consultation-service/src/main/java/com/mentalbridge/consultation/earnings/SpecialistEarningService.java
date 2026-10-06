@@ -13,10 +13,7 @@ public class SpecialistEarningService {
 
 	static final String POLICY_VERSION = "specialist-earning-v1";
 	static final String CURRENCY = "VND";
-	static final long CREDIT_ALLOCATION_VND = 300_000;
 	static final int SPECIALIST_SHARE_BPS = 7_000;
-	static final long SPECIALIST_AMOUNT_VND = 210_000;
-	static final long PLATFORM_ALLOCATION_VND = 90_000;
 
 	private final JdbcClient jdbc;
 	private final PayoutProperties properties;
@@ -31,7 +28,7 @@ public class SpecialistEarningService {
 	public void createForCompletedAppointment(UUID appointmentId) {
 		var source = jdbc.sql("""
 				select a.id, a.completion_fact_id, a.service_credit_id, a.specialist_account_id,
-				       a.session_settled_at, p.plan_version
+				       a.session_settled_at, p.plan_version, p.credit_allocation_minor
 				from appointment a
 				join service_credit c on c.id=a.service_credit_id
 				join service_credit_period p on p.id=c.period_id
@@ -42,11 +39,14 @@ public class SpecialistEarningService {
 				""").param("appointmentId", appointmentId).query((row, ignored) -> new Source(
 				row.getObject("id", UUID.class), row.getObject("completion_fact_id", UUID.class),
 				row.getObject("service_credit_id", UUID.class), row.getObject("specialist_account_id", UUID.class),
-				row.getTimestamp("session_settled_at").toInstant(), row.getString("plan_version"))).optional();
+				row.getTimestamp("session_settled_at").toInstant(), row.getString("plan_version"),
+				row.getLong("credit_allocation_minor"))).optional();
 		if (source.isEmpty()) return;
 		var value = source.orElseThrow();
 		var availableAt = value.earnedAt().plus(properties.getSettlementHold());
 		var now = clock.instant();
+		var specialistAmount = Math.multiplyExact(value.creditAllocationVnd(), SPECIALIST_SHARE_BPS) / 10_000;
+		var platformAmount = value.creditAllocationVnd() - specialistAmount;
 		jdbc.sql("""
 				insert into specialist_earning (
 				 id, appointment_id, completion_fact_id, consumed_credit_id, specialist_account_id,
@@ -62,9 +62,9 @@ public class SpecialistEarningService {
 				""").param("id", UUID.randomUUID()).param("appointmentId", value.appointmentId())
 				.param("completionFactId", value.completionFactId()).param("creditId", value.creditId())
 				.param("specialistId", value.specialistId()).param("planVersion", value.planVersion())
-				.param("currency", CURRENCY).param("allocation", CREDIT_ALLOCATION_VND)
-				.param("share", SPECIALIST_SHARE_BPS).param("specialistAmount", SPECIALIST_AMOUNT_VND)
-				.param("platformAmount", PLATFORM_ALLOCATION_VND)
+				.param("currency", CURRENCY).param("allocation", value.creditAllocationVnd())
+				.param("share", SPECIALIST_SHARE_BPS).param("specialistAmount", specialistAmount)
+				.param("platformAmount", platformAmount)
 				.param("source", "completion:" + value.completionFactId())
 				.param("earnedAt", databaseInstant(value.earnedAt())).param("availableAt", databaseInstant(availableAt))
 				.param("now", databaseInstant(now)).update();
@@ -75,6 +75,6 @@ public class SpecialistEarningService {
 	}
 
 	private record Source(UUID appointmentId, UUID completionFactId, UUID creditId, UUID specialistId,
-			java.time.Instant earnedAt, String planVersion) {
+			java.time.Instant earnedAt, String planVersion, long creditAllocationVnd) {
 	}
 }

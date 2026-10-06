@@ -731,7 +731,7 @@ paths:
     x-mentalbridge-status: implemented
     put:
       operationId: saveSpecialistPayoutDestination
-      description: Encrypts one specialist-owned payout destination and returns only a masked hint. The current integration runtime uses the deterministic FAKE provider; real MoMo payout stays disabled.
+      description: Encrypts one specialist-owned payout destination and returns only a masked hint. Local and CI use the deterministic FAKE provider. MoMo disbursement requires explicit production approval and complete credentials.
       security: [{ bearerAuth: [] }]
       requestBody:
         required: true
@@ -1670,10 +1670,12 @@ components:
     SavePayoutDestination:
       type: object
       additionalProperties: false
-      required: [destinationType, accountReference]
+      required: [destinationType, accountReference, accountHolderName]
       properties:
         destinationType: { type: string, enum: [MOMO_WALLET, BANK_ACCOUNT] }
         accountReference: { type: string, pattern: '^[0-9]{6,32}$' }
+        accountHolderName: { type: string, minLength: 1, maxLength: 100 }
+        bankCode: { type: string, maxLength: 32, description: Required when destinationType is BANK_ACCOUNT. }
     CreateSpecialistPayout:
       type: object
       additionalProperties: false
@@ -1698,9 +1700,9 @@ components:
         appointmentId: { type: string, format: uuid }
         consumedCreditId: { type: string, format: uuid }
         planVersion: { type: string, minLength: 1, maxLength: 64 }
-        creditAllocationVnd: { type: integer, format: int64, const: 300000 }
+        creditAllocationVnd: { type: integer, format: int64, minimum: 1, maximum: 1000000000, description: Allocation snapshot from the consumed credit period. }
         sharePercent: { type: integer, const: 70 }
-        earningAmountVnd: { type: integer, format: int64, const: 210000 }
+        earningAmountVnd: { type: integer, format: int64, minimum: 1, description: Exactly 70 percent of creditAllocationVnd under specialist-earning-v1. }
         status: { type: string, enum: [PENDING_SETTLEMENT, AVAILABLE, PROCESSING, PAID, REVERSED] }
         earnedAt: { type: string, format: date-time }
         settlementAvailableAt: { type: string, format: date-time }

@@ -26,9 +26,11 @@ not become runtime prices and do not enable real-money production:
 
 Each evidence-backed completed appointment that consumes one credit creates
 one immutable earning. The earning snapshots plan version, consumed credit,
-300,000 VND allocation, 7000 basis-point share, 210,000 VND specialist amount,
+the allocation attached to that credit period (300,000 VND for this policy),
+7000 basis-point share, the arithmetically derived specialist amount,
 currency, specialist, appointment, completion fact, and idempotency source.
-The remaining 90,000 VND allocation is not described as profit because it also
+For this policy the resulting 210,000 VND specialist share and remaining
+90,000 VND allocation are not described as profit because the remainder also
 funds payment fees, AI, infrastructure, tax, operations, and support. Specialist
 earning is never calculated from subscription price.
 
@@ -55,7 +57,9 @@ fake adapters and never depend on MoMo availability.
 
 ## Consequences
 
-- MB-516 may implement the earning and fake payout lifecycle now.
+- MB-516 implements the earning lifecycle, deterministic fake payout for
+  local/CI, and a MoMo outbound adapter that cannot run without explicit
+  production approval plus complete credentials.
 - MB-515 may use the 0/5,000/10,000 VND test catalogue but must keep planned
   production prices out of runtime configuration.
 - No production deployment may enable real payment or payout merely because

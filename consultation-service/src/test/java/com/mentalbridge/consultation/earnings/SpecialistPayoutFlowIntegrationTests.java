@@ -41,6 +41,17 @@ class SpecialistPayoutFlowIntegrationTests extends ConsultationTestProperties {
 	@Autowired PayoutTransactions transactions;
 
 	@Test
+	void earningResponsePreservesTheAllocationSnapshotInsteadOfAssumingOneFixedAmount() throws Exception {
+		var fixture = earningFixture(Instant.now().minusSeconds(8 * 86_400L), 175_000);
+
+		mvc.perform(get("/api/v1/specialist/earnings").with(specialist(fixture.specialistId())))
+				.andExpect(status().isOk())
+				.andExpect(jsonPath("$.earnings[0].creditAllocationVnd").value(250000))
+				.andExpect(jsonPath("$.earnings[0].earningAmountVnd").value(175000))
+				.andExpect(jsonPath("$.earnings[0].sharePercent").value(70));
+	}
+
+	@Test
 	void specialistWithdrawsSettledEarningOnceThroughDeterministicFake() throws Exception {
 		var fixture = earningFixture(Instant.now().minusSeconds(8 * 86_400L), 210_000);
 
@@ -53,7 +64,7 @@ class SpecialistPayoutFlowIntegrationTests extends ConsultationTestProperties {
 
 		var destinationResult = mvc.perform(put("/api/v1/specialist/payout-destination")
 				.with(specialist(fixture.specialistId())).contentType(MediaType.APPLICATION_JSON)
-				.content("{\"destinationType\":\"MOMO_WALLET\",\"accountReference\":\"0912345678\"}"))
+				.content("{\"destinationType\":\"MOMO_WALLET\",\"accountReference\":\"0912345678\",\"accountHolderName\":\"Nguyen Thu Ha\"}"))
 				.andExpect(status().isOk()).andExpect(jsonPath("$.displayHint").value("•••• 5678"))
 				.andExpect(jsonPath("$.provider").value("FAKE")).andReturn();
 		var destinationId = UUID.fromString(json.readTree(destinationResult.getResponse().getContentAsByteArray())
@@ -96,7 +107,7 @@ class SpecialistPayoutFlowIntegrationTests extends ConsultationTestProperties {
 				.andExpect(status().isForbidden());
 		var destinationResult = mvc.perform(put("/api/v1/specialist/payout-destination")
 				.with(specialist(pending.specialistId())).contentType(MediaType.APPLICATION_JSON)
-				.content("{\"destinationType\":\"MOMO_WALLET\",\"accountReference\":\"0987654321\"}"))
+				.content("{\"destinationType\":\"MOMO_WALLET\",\"accountReference\":\"0987654321\",\"accountHolderName\":\"Nguyen Thu Ha\"}"))
 				.andExpect(status().isOk()).andReturn();
 		var destinationId = json.readTree(destinationResult.getResponse().getContentAsByteArray()).get("id").asText();
 		mvc.perform(post("/api/v1/specialist/payouts").with(specialist(pending.specialistId()))
@@ -110,7 +121,7 @@ class SpecialistPayoutFlowIntegrationTests extends ConsultationTestProperties {
 	void definiteProviderFailureCanRetryTheSameLogicalPayoutWithoutDoublePaying() {
 		var fixture = earningFixture(Instant.now().minusSeconds(8 * 86_400L), 210_000);
 		var destination = payouts.saveDestination(fixture.specialistId(),
-				new SavePayoutDestinationRequest("MOMO_WALLET", "0900000001"));
+				new SavePayoutDestinationRequest("MOMO_WALLET", "0900000001", "Nguyen Thu Ha", null));
 		payouts.earnings(fixture.specialistId());
 
 		var first = transactions.prepare(fixture.specialistId(), destination.id(), "retry-provider-command-0001");
@@ -136,7 +147,7 @@ class SpecialistPayoutFlowIntegrationTests extends ConsultationTestProperties {
 	void momoCallbackRejectsAmountMismatchAndDeduplicatesAValidProviderEvent() {
 		var fixture = earningFixture(Instant.now().minusSeconds(8 * 86_400L), 210_000);
 		var destination = payouts.saveDestination(fixture.specialistId(),
-				new SavePayoutDestinationRequest("MOMO_WALLET", "0900000002"));
+				new SavePayoutDestinationRequest("MOMO_WALLET", "0900000002", "Nguyen Thu Ha", null));
 		payouts.earnings(fixture.specialistId());
 		var prepared = transactions.prepare(fixture.specialistId(), destination.id(), "momo-callback-command-0001");
 		var requestId = "momo-request-0001";
@@ -173,6 +184,8 @@ class SpecialistPayoutFlowIntegrationTests extends ConsultationTestProperties {
 	}
 
 	private Fixture earningFixture(Instant earnedAt, long amount) {
+		var allocation = Math.multiplyExact(amount, 10_000) / 7_000;
+		var platformAllocation = allocation - amount;
 		var specialistId = UUID.randomUUID();
 		var userId = UUID.randomUUID();
 		var periodId = UUID.randomUUID();
@@ -191,10 +204,11 @@ class SpecialistPayoutFlowIntegrationTests extends ConsultationTestProperties {
 		jdbc.sql("""
 				insert into service_credit_period (
 				 id, account_id, plan_version, credit_policy_version, package_code, source, source_reference,
-				 period_start, period_end, allocated_count, created_at, updated_at
+				 period_start, period_end, allocated_count, credit_allocation_minor, created_at, updated_at
 				) values (:id, :userId, 'service-entitlement-v1', 'consultation-credit-v2', 'PLUS', 'PAID',
-				 :reference, now() - interval '1 day', now() + interval '29 days', 4, now(), now())
-				""").param("id", periodId).param("userId", userId).param("reference", "payout-fixture-" + periodId).update();
+				 :reference, now() - interval '1 day', now() + interval '29 days', 4, :allocation, now(), now())
+				""").param("id", periodId).param("userId", userId).param("reference", "payout-fixture-" + periodId)
+				.param("allocation", allocation).update();
 		jdbc.sql("""
 				insert into service_credit (id, period_id, ordinal, state, appointment_id, created_at, updated_at)
 				values (:id, :periodId, 1, 'HELD', :appointmentId, now(), now())
@@ -223,11 +237,12 @@ class SpecialistPayoutFlowIntegrationTests extends ConsultationTestProperties {
 				 specialist_amount_minor, platform_allocation_minor, idempotency_source,
 				 status, earned_at, settlement_available_at, created_at, updated_at
 				) values (:id, :appointmentId, :completionFactId, :creditId, :specialistId,
-				 'service-entitlement-v1', 'VND', 300000, 7000, :amount, 90000, :source,
+				 'service-entitlement-v1', 'VND', :allocation, 7000, :amount, :platformAllocation, :source,
 				 'PENDING_SETTLEMENT', :earnedAt, :availableAt, now(), now())
 				""").param("id", UUID.randomUUID()).param("appointmentId", appointmentId)
 				.param("completionFactId", completionFactId).param("creditId", creditId)
 				.param("specialistId", specialistId).param("amount", amount)
+				.param("allocation", allocation).param("platformAllocation", platformAllocation)
 				.param("source", "test-completion:" + completionFactId).param("earnedAt", Timestamp.from(earnedAt))
 				.param("availableAt", Timestamp.from(earnedAt.plusSeconds(7 * 86_400L))).update();
 		return new Fixture(specialistId, creditId);

@@ -10,6 +10,7 @@ import org.springframework.jdbc.core.simple.JdbcClient;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
+import com.fasterxml.jackson.databind.ObjectMapper;
 import com.mentalbridge.consultation.shared.ApiException;
 
 @Service
@@ -20,15 +21,17 @@ public class SpecialistPayoutService {
 	private final PayoutDestinationCipher cipher;
 	private final PayoutTransactions transactions;
 	private final PayoutProvider provider;
+	private final ObjectMapper json;
 	private final Clock clock;
 
 	public SpecialistPayoutService(JdbcClient jdbc, PayoutProperties properties, PayoutDestinationCipher cipher,
-			PayoutTransactions transactions, PayoutProvider provider, Clock clock) {
+			PayoutTransactions transactions, PayoutProvider provider, ObjectMapper json, Clock clock) {
 		this.jdbc = jdbc;
 		this.properties = properties;
 		this.cipher = cipher;
 		this.transactions = transactions;
 		this.provider = provider;
+		this.json = json;
 		this.clock = clock;
 	}
 
@@ -36,16 +39,21 @@ public class SpecialistPayoutService {
 	public SpecialistEarningsResponse.Destination saveDestination(UUID specialistId, SavePayoutDestinationRequest request) {
 		assertApprovedSpecialist(specialistId);
 		var reference = request.accountReference().trim();
+		var holderName = request.accountHolderName().trim();
+		var bankCode = request.bankCode() == null ? "" : request.bankCode().trim();
 		if (!reference.matches("[0-9]{6,32}")) {
 			throw new ApiException(HttpStatus.BAD_REQUEST, "PAYOUT_DESTINATION_INVALID",
 					"Payout destination must contain 6 to 32 digits");
 		}
-		var providerName = properties.getMode().equals("FAKE") ? "FAKE" : "MOMO";
-		if (!providerName.equals("FAKE")) {
-			throw new ApiException(HttpStatus.SERVICE_UNAVAILABLE, "REAL_PAYOUT_DISABLED",
-					"Real payout is not enabled");
+		if (request.destinationType().equals("BANK_ACCOUNT") && bankCode.isBlank()) {
+			throw new ApiException(HttpStatus.BAD_REQUEST, "PAYOUT_DESTINATION_INVALID", "Bank code is required");
 		}
-		var fingerprint = cipher.fingerprint(request.destinationType() + ":" + reference);
+		var providerName = properties.getMode().equals("FAKE") ? "FAKE" : "MOMO";
+		if (providerName.equals("MOMO") && !properties.momoReady()) {
+			throw new ApiException(HttpStatus.SERVICE_UNAVAILABLE, "REAL_PAYOUT_DISABLED",
+					"Real payout requires explicit production approval and complete MoMo credentials");
+		}
+		var fingerprint = cipher.fingerprint(request.destinationType() + ":" + reference + ":" + bankCode);
 		var existing = jdbc.sql("""
 				select id from specialist_payout_destination
 				where specialist_account_id=:specialistId and destination_fingerprint=:fingerprint
@@ -53,6 +61,7 @@ public class SpecialistPayoutService {
 		if (existing.isPresent()) return destination(specialistId, existing.orElseThrow());
 		var now = clock.instant();
 		var id = UUID.randomUUID();
+		var details = writeDestination(new PayoutDestinationDetails(reference, holderName, bankCode));
 		jdbc.sql("""
 				insert into specialist_payout_destination (
 				 id, specialist_account_id, payout_provider, destination_type, destination_ciphertext,
@@ -61,7 +70,7 @@ public class SpecialistPayoutService {
 				) values (:id, :specialistId, :provider, :type, :ciphertext,
 				 :keyVersion, :fingerprint, :hint, 'VERIFIED', :now, :now, :now)
 				""").param("id", id).param("specialistId", specialistId).param("provider", providerName)
-				.param("type", request.destinationType()).param("ciphertext", cipher.encrypt(reference))
+				.param("type", request.destinationType()).param("ciphertext", cipher.encrypt(details))
 				.param("keyVersion", properties.getEncryptionKeyVersion()).param("fingerprint", fingerprint)
 				.param("hint", mask(reference)).param("now", databaseInstant(now)).update();
 		return destination(specialistId, id);
@@ -71,7 +80,7 @@ public class SpecialistPayoutService {
 		assertApprovedSpecialist(specialistId);
 		var prepared = transactions.prepare(specialistId, destinationId, idempotencyKey);
 		if (prepared.submit()) {
-			var result = provider.submit(prepared.payoutId(), prepared.attemptId(), prepared.amountVnd(), prepared.currency());
+			var result = provider.submit(prepared.command());
 			transactions.reconcile(prepared.payoutId(), prepared.attemptId(), result);
 		}
 		return earnings(specialistId);
@@ -145,6 +154,18 @@ public class SpecialistPayoutService {
 
 	private String mask(String value) {
 		return "\u2022\u2022\u2022\u2022 " + value.substring(value.length() - 4);
+	}
+
+	private String writeDestination(PayoutDestinationDetails details) {
+		try {
+			return json.writeValueAsString(details);
+		}
+		catch (Exception exception) {
+			throw new IllegalStateException("Unable to protect payout destination", exception);
+		}
+	}
+
+	record PayoutDestinationDetails(String accountReference, String accountHolderName, String bankCode) {
 	}
 
 	private java.time.Instant instant(java.sql.ResultSet row, String column) throws java.sql.SQLException {
