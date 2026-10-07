@@ -501,6 +501,7 @@ class AppointmentDecisionIntegrationTests extends ConsultationTestProperties {
 		assertThat(sessionOutcome(fixture.appointmentId())).isEqualTo("BOTH_NO_SHOW");
 		assertThat(creditState(fixture.creditId())).isEqualTo("AVAILABLE");
 		assertThat(releaseCount(fixture.appointmentId())).isOne();
+		assertThat(earningCount(fixture.appointmentId())).isZero();
 	}
 
 	@Test
@@ -521,6 +522,16 @@ class AppointmentDecisionIntegrationTests extends ConsultationTestProperties {
 		assertThat(creditState(fixture.creditId())).isEqualTo("CONSUMED");
 		assertThat(creditEventCount(fixture.appointmentId(), "CONSUMED")).isOne();
 		assertThat(creditEventTypes(fixture.appointmentId())).containsExactlyInAnyOrder("HELD", "CONSUMED");
+		var earning = jdbc.sql("""
+				select specialist_account_id, consumed_credit_id, currency, credit_allocation_minor,
+				 specialist_share_bps, specialist_amount_minor, platform_allocation_minor, status
+				from specialist_earning where appointment_id=:appointmentId
+				""").param("appointmentId", fixture.appointmentId()).query((row, ignored) -> List.of(
+				row.getObject("specialist_account_id", UUID.class), row.getObject("consumed_credit_id", UUID.class),
+				row.getString("currency"), row.getLong("credit_allocation_minor"), row.getInt("specialist_share_bps"),
+				row.getLong("specialist_amount_minor"), row.getLong("platform_allocation_minor"), row.getString("status"))).list();
+		assertThat(earning).containsExactly(List.of(fixture.specialistId(), fixture.creditId(), "VND",
+				300_000L, 7_000, 210_000L, 90_000L, "PENDING_SETTLEMENT"));
 	}
 
 	@Test
@@ -543,6 +554,7 @@ class AppointmentDecisionIntegrationTests extends ConsultationTestProperties {
 		assertThat(sessionOutcome(fixture.appointmentId())).isEqualTo("USER_NO_SHOW");
 		assertThat(creditState(fixture.creditId())).isEqualTo("FORFEITED");
 		assertThat(creditEventCount(fixture.appointmentId(), "FORFEITED")).isOne();
+		assertThat(earningCount(fixture.appointmentId())).isZero();
 	}
 
 	@Test
@@ -820,6 +832,11 @@ class AppointmentDecisionIntegrationTests extends ConsultationTestProperties {
 
 	private long evidenceCount(UUID appointmentId) {
 		return jdbc.sql("select count(*) from appointment_chat_evidence where appointment_id=:id")
+				.param("id", appointmentId).query(Long.class).single();
+	}
+
+	private long earningCount(UUID appointmentId) {
+		return jdbc.sql("select count(*) from specialist_earning where appointment_id=:id")
 				.param("id", appointmentId).query(Long.class).single();
 	}
 

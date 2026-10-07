@@ -35,6 +35,9 @@ const journalEmotionNotificationKinds = requiredMigration(
 );
 const resourceDailyProgress = requiredMigration('13_add_resource_daily_progress.sql');
 const appointmentEmailReminders = requiredMigration('17_add_appointment_email_reminders.sql');
+const communityInteractionNotifications = requiredMigration(
+  '18_add_community_interaction_notifications.sql',
+);
 const review1Seed = await readFile(
   new URL('../migrations/review1/1_seed_review1_controlled_resource.sql', import.meta.url),
   'utf8',
@@ -180,6 +183,14 @@ assert.match(appointmentEmailReminders, /email_appointment_reminders_enabled\b/)
 assert.match(appointmentEmailReminders, /CREATE TABLE appointment_email_reminder\b/);
 assert.match(appointmentEmailReminders, /uq_appointment_email_reminder_identity\b/);
 assert.match(appointmentEmailReminders, /CREATE TABLE appointment_reminder_checkpoint\b/);
+assert.match(
+  communityInteractionNotifications,
+  /ADD COLUMN group_community_interaction_enabled boolean NOT NULL DEFAULT true/,
+);
+for (const kind of ['COMMUNITY_COMMENT', 'COMMUNITY_REPLY', 'COMMUNITY_REACTION']) {
+  assert.match(communityInteractionNotifications, new RegExp(`'${kind}'`));
+}
+assert.match(communityInteractionNotifications, /OPEN_COMMUNITY_POST/);
 assert.match(safetyDirectoryAreaAliases, /area-alias-ha-noi-canonical/);
 assert.match(safetyDirectoryAreaAliases, /area-alias-da-nang-canonical/);
 assert.match(safetyDirectoryAreaAliases, /area-alias-hcm-canonical/);

@@ -50,6 +50,18 @@ MB-364 lets the appointment owner create and later edit one 1-5 rating only
 after evidence-backed completion. The current rating and specialist count/sum
 aggregate commit together; public discovery discloses average/count and uses
 the aggregate only as the final `PREMIUM` tie-breaker.
+MB-588 adds an ADMIN-only, read-only appointment operations projection with
+bounded time/status/modality/account filters and cursor pagination. Consultation
+remains the lifecycle authority; the projection carries operational timestamps,
+reason codes, and credit settlement state but no brief, summary, journal,
+assessment, chat, or private-note content. It grants no appointment mutation or
+clinical authority.
+
+MB-619 lets either assigned participant open one minimized dispute within 24
+hours of an eligible settled session outcome. An open dispute blocks future
+earning eligibility. Admin resolution is bounded to upholding the recorded
+outcome or releasing user credit; a terminal credit release appends an explicit
+`ADJUSTED_RELEASED` ledger fact and preserves prior settlement history.
 
 ## Integration
 
@@ -82,10 +94,16 @@ the aggregate only as the final `PREMIUM` tie-breaker.
 | `APPOINTMENT_REMINDER_SERVICE_TOKEN` | When reminder flow enabled | Shared service credential for the narrow eligibility read | injected secret |
 | `KAFKA_BOOTSTRAP_SERVERS` | When relay enabled | Broker list for appointment status events | `localhost:9092` |
 | `CONSULTATION_APPOINTMENT_OUTBOX_RELAY_ENABLED` | No | Enables bounded appointment outbox relay | `false` |
+| `CONSULTATION_PAYOUT_MODE` | No | `FAKE` for deterministic local/CI payout; real MoMo payout is not enabled by this story | `FAKE` |
+| `CONSULTATION_PAYOUT_SETTLEMENT_HOLD` | No | Evidence-backed earning settlement/dispute hold | `P7D` |
+| `CONSULTATION_PAYOUT_MINIMUM_WITHDRAWAL_VND` | No | Minimum server-authoritative withdrawal | `100000` |
+| `CONSULTATION_PAYOUT_ENCRYPTION_KEY` | Destination setup | Base64-encoded 32-byte AES key protecting payout destination data | local secret |
+| `CONSULTATION_PAYOUT_ENCRYPTION_KEY_VERSION` | No | Key identifier retained with ciphertext for controlled rotation | `v1` |
+| `MOMO_PAYOUT_PARTNER_CODE` / `MOMO_PAYOUT_ACCESS_KEY` / `MOMO_PAYOUT_SECRET_KEY` | Signed sandbox callback only | MoMo sandbox callback verification credentials; do not enable real payout | injected sandbox secrets |
 
-Production must override local URLs and secrets. MoMo IPN signing,
-payout, encryption, and downstream timeout variables will be documented when
-their typed configuration is introduced. No refund adapter is planned.
+Production must override local URLs and secrets. Real payment and payout remain
+off until a separate production approval and credentials. No refund adapter is
+planned.
 
 For container-based local/demo startup, copy `.env.example` to an untracked
 `.env` and replace the database placeholder values. The root Compose profile
@@ -148,6 +166,13 @@ MB-364 rating aggregates and never fabricates a score.
 
 - `GET|PUT /api/v1/appointments/{appointmentId}/rating`
 
+## Implemented MB-619 endpoints
+
+- `GET|POST /api/v1/appointments/{appointmentId}/dispute`
+- `GET|POST /api/v1/specialist/appointments/{appointmentId}/dispute`
+- `GET /api/v1/admin/appointment-disputes?status=OPEN|RESOLVED`
+- `POST /api/v1/admin/appointment-disputes/{disputeId}/resolve`
+
 ## Implemented MB-548 internal endpoint
 
 - `GET /internal/v1/appointments/{appointmentId}/notification-eligibility?appointmentVersion={version}`
@@ -172,9 +197,35 @@ no client identity, check-in, clinical risk, recovery/adherence, journal,
 assessment-answer, chat-content, or private-note fields, and it performs no
 cross-service database query.
 
+## Implemented MB-588 endpoint
+
+- `GET /api/v1/admin/appointments`
+
+The query requires an explicit range of at most 180 days, caps pages at 100,
+and may filter by appointment status, modality, user account, or specialist
+account. Responses identify Consultation as the authoritative source and mark
+the data state explicitly. The operation is available only to `ADMIN` and is
+not a substitute for any owner or specialist command endpoint.
+
 ## Implemented MB-592 endpoint
 
 - `GET /internal/v1/specialist/client-relationships`
+
+## Implemented MB-516 endpoints
+
+- `GET /api/v1/specialist/earnings`
+- `PUT /api/v1/specialist/payout-destination`
+- `POST /api/v1/specialist/payouts`
+- `GET /api/v1/admin/payouts`
+- `POST /internal/v1/payouts/momo/ipn`
+
+Evidence-backed `COMPLETED` and exact credit `CONSUMED` create one immutable
+210,000 VND earning snapshot from the fixed 300,000 VND allocation. Earnings
+remain pending for seven days. Local/CI payout is deterministic and fake;
+destinations are encrypted, withdrawal amount is always server-derived, the
+minimum is 100,000 VND, and one specialist may request at most one payout per
+day. The MoMo route verifies signed sandbox callbacks only; it does not enable
+real transfer submission.
 
 The endpoint returns appointment/user identifiers, status, modality, exact
 schedule, appointment version, projection time/window, and policy version only.

@@ -33,3 +33,5 @@ mentalbridge:
     audit-ingestion:
       enabled: true
       topic: mentalbridge.admin.audit-event.v1
+    platform-reporting:
+      enabled: false

@@ -1,6 +1,6 @@
 --liquibase formatted sql
 
---changeset mentalbridge:identity-003-audit-browse-support
+--changeset mentalbridge:identity-009-audit-browse-support
 ALTER TABLE security_audit_event
     ADD COLUMN source_service varchar(32) NOT NULL DEFAULT 'IDENTITY',
     ADD COLUMN domain varchar(64) NOT NULL DEFAULT 'ACCOUNT_ADMINISTRATION';

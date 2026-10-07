@@ -1086,6 +1086,9 @@ components:
           EMOTION_CHECKIN_REMINDER,
           JOURNAL_STREAK_MILESTONE,
           EMOTION_STREAK_MILESTONE,
+          COMMUNITY_COMMENT,
+          COMMUNITY_REPLY,
+          COMMUNITY_REACTION,
         ]
     NotificationPriority:
       type: string
@@ -1100,6 +1103,7 @@ components:
           OPEN_RESOURCES,
           OPEN_ASSESSMENTS,
           OPEN_RESOURCE,
+          OPEN_COMMUNITY_POST,
         ]
     NotificationAction:
       type: object
@@ -1194,6 +1198,7 @@ components:
           screeningReassessment,
           appointmentMessage,
           resourceSystem,
+          communityInteraction,
         ]
       properties:
         journalReminder: { type: boolean }
@@ -1202,6 +1207,7 @@ components:
         screeningReassessment: { type: boolean }
         appointmentMessage: { type: boolean }
         resourceSystem: { type: boolean }
+        communityInteraction: { type: boolean }
     NotificationContentGroupsPatch:
       type: object
       additionalProperties: false
@@ -1213,6 +1219,7 @@ components:
         screeningReassessment: { type: boolean }
         appointmentMessage: { type: boolean }
         resourceSystem: { type: boolean }
+        communityInteraction: { type: boolean }
     QuietHours:
       type: object
       additionalProperties: false

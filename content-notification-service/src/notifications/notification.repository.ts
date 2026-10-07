@@ -54,7 +54,9 @@ function action(row: NotificationRow): NotificationItem['action'] {
     href:
       row.action_type === 'OPEN_RESOURCE' && targetId
         ? `/resources/${encodeURIComponent(targetId)}`
-        : href[row.action_type],
+        : row.action_type === 'OPEN_COMMUNITY_POST' && targetId
+          ? `/community/${encodeURIComponent(targetId)}`
+          : href[row.action_type],
   };
 }
 

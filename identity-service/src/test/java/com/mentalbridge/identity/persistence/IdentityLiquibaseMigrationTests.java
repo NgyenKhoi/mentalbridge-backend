@@ -39,7 +39,8 @@ class IdentityLiquibaseMigrationTests extends IdentityTestProperties {
 		var roles = jdbc.sql("select code from role order by code").query(String.class).list();
 
 		assertThat(tables).contains("account", "role", "refresh_session", "one_time_token",
-				"idempotency_record", "outbox_event", "security_audit_event")
+				"idempotency_record", "outbox_event", "security_audit_event", "platform_report_job",
+				"platform_report_artifact")
 				.doesNotContain("account_role");
 		assertThat(identitySchemaCount).isZero();
 		assertThat(roles).containsExactly("ADMIN", "SPECIALIST", "USER");

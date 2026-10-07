@@ -66,6 +66,10 @@ mentalbridge:
     audit-ingestion:
       enabled: ${IDENTITY_AUDIT_INGESTION_ENABLED:true}
       topic: ${IDENTITY_AUDIT_INGESTION_TOPIC:mentalbridge.admin.audit-event.v1}
+    platform-reporting:
+      enabled: ${IDENTITY_PLATFORM_REPORTING_ENABLED:true}
+      poll-interval: ${IDENTITY_PLATFORM_REPORTING_POLL_INTERVAL:PT2S}
+      retention-sweep-interval: ${IDENTITY_PLATFORM_REPORTING_RETENTION_SWEEP_INTERVAL:PT1H}
 
 eureka:
   client:

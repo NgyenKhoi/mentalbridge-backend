@@ -17,6 +17,7 @@ const ContentGroupPatchSchema = z
     screeningReassessment: z.boolean().optional(),
     appointmentMessage: z.boolean().optional(),
     resourceSystem: z.boolean().optional(),
+    communityInteraction: z.boolean().optional(),
   })
   .strict()
   .refine((value) => Object.keys(value).length > 0, 'at least one content group is required');

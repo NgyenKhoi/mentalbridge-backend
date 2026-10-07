@@ -341,6 +341,34 @@ Identity-owned transactional outbox. An account/session mutation and its integra
 | `next_attempt_at` | UTC instant after which a failed relay may retry; null when no delay is scheduled. |
 | `created_at` | Immutable UTC insertion instant committed with the aggregate change. |
 
+### `public.platform_report_job`
+
+Immutable-scope asynchronous aggregate report request coordinated by Identity. Only an ADMIN may create or browse these jobs; each job is tied to one versioned owner projection and never reads another service database.
+
+| Field | Purpose |
+| --- | --- |
+| `id` | Immutable UUID for report history, retry provenance, and artifact lookup. |
+| `report_type`, `scope_version` | Supported aggregate definition and deterministic output schema version. |
+| `period_start`, `period_end` | Inclusive UTC calendar-day scope, bounded to at most 366 days. |
+| `requested_by`, `requested_at` | ADMIN subject and immutable request instant. |
+| `status` | Durable asynchronous state `QUEUED`, `RUNNING`, `COMPLETED`, `FAILED`, or `STALE`. |
+| `source_versions` | JSON object of exact authoritative source/projection versions captured at request time. |
+| `idempotency_key`, `request_hash` | ADMIN-scoped retry key and normalized SHA-256 request identity. |
+| `retry_of` | Nullable prior failed/stale job; retries create a new job and preserve the original outcome. |
+| `started_at`, `completed_at`, `failed_at`, `failure_code` | Explicit processing and terminal provenance without sensitive failure payloads. |
+
+### `public.platform_report_artifact`
+
+Immutable, bounded-retention aggregate artifact for one completed platform report. Content is limited to one MiB and contains no raw Journal, assessment, chat, private-note, or provider payload fields.
+
+| Field | Purpose |
+| --- | --- |
+| `report_job_id` | Completed job identity and one-to-one artifact key. |
+| `media_type`, `file_name` | Download representation and safe server-defined filename. |
+| `content` | Generated aggregate JSON bytes; deleted after the retention deadline. |
+| `content_sha256`, `content_length` | Integrity digest and bounded byte size. |
+| `generated_at`, `retained_until` | Immutable generation provenance and exclusive download deadline. |
+
 ### `public.security_audit_event`
 
 Privacy-minimized local security record for authentication, recovery, replay, and account-administration decisions. It contains stable facts, never credentials, provider payloads, or free text.
@@ -1152,7 +1180,7 @@ Append-only evidence for provisioning and appointment-driven transitions.
 | `id` | Immutable event UUID. |
 | `credit_id` | Credit whose state changed. |
 | `account_id` | Denormalized owner UUID for bounded history and account-scoped idempotency. |
-| `event_type` | `PROVISIONED`, `HELD`, `RELEASED`, `CONSUMED`, or `FORFEITED`. |
+| `event_type` | `PROVISIONED`, `HELD`, `RELEASED`, `CONSUMED`, `FORFEITED`, or explicit post-settlement `ADJUSTED_RELEASED`. The adjustment appends a correction fact and never deletes the original terminal transition. |
 | `appointment_id` | Required correlation for every non-provisioning transition. |
 | `idempotency_key` | Owner command key unique per account; exact replay does not append another event. |
 | `occurred_at` | Immutable server UTC transition instant. |
@@ -1186,7 +1214,7 @@ Implemented MB-378/MB-558 request aggregate with MB-379 decision settlement, MB-
 | `session_policy_version` | `chat-session-completion-v1` provenance set when the scheduled channel ends. |
 | `session_ended_at` / `session_settled_at` | Server instants for history-only channel end and later outcome/credit settlement. End alone never consumes a credit. |
 | `evidence_review_started_at` / `evidence_failure_reason` | Minimized technical-reconciliation state. Credit stays held until normal recovery or the end-plus-35-minute fallback. |
-| `completion_fact_id` | Opaque unique fact present only for evidence-backed `COMPLETED`; reserved as MB-516's future earning input. MB-383 creates no earning. |
+| `completion_fact_id` | Opaque unique fact present only for evidence-backed `COMPLETED`; MB-516 uses it as a unique earning input. Timer-only session end still creates no earning. |
 | `created_at` / `updated_at` | UTC insertion and latest authoritative state-change instants. |
 | `version` | Optimistic state-transition counter for later decision commands. |
 
@@ -1221,6 +1249,27 @@ never stored.
 | `message_id` | Realtime-owned accepted-message UUID required only for message evidence; it is not message content. |
 | `occurred_at` | Server-observed occurrence used for the half-open appointment-window calculation. |
 | `received_at` | Consultation receipt time used to enforce grace and reconciliation deadlines. |
+
+### `consultation.appointment_dispute`
+
+MB-619's one-per-appointment dispute aggregate. It stores only operational reason/provenance and bounded evidence metadata; raw chat, ConsultationBrief, Journal, assessment, recording, private notes, and clinical conclusions are prohibited.
+
+| Field | Purpose |
+| --- | --- |
+| `id` / `appointment_id` | Stable dispute identity and unique contested appointment. |
+| `appointment_version` | Exact appointment version observed when the dispute opened. |
+| `opened_by_account_id` / `opened_by_role` | Server-authenticated participant provenance; role is `USER` or assigned `SPECIALIST`. |
+| `reason_code` | Stable bounded operational reason; never free-text session content. |
+| `evidence_type` / `evidence_occurred_at` | Optional minimized operational metadata identifying an access, connection, or provider fact and its occurrence time. |
+| `opened_at` / `eligible_until` | Server timestamps proving the command was accepted inside the 24-hour post-settlement window. |
+| `status` | `OPEN` gates future earning eligibility; `RESOLVED` is immutable. |
+| `resolution_outcome` / `resolution_reason` | Bounded admin decision and stable non-clinical rationale. |
+| `resolved_by` / `resolved_at` | Resolving administrator and server audit time. |
+| `prior_appointment_status` / `prior_session_outcome` | Exact immutable source facts observed during resolution. |
+| `resulting_appointment_status` / `resulting_session_outcome` | Explicit resulting facts; MB-619 does not silently rewrite them. |
+| `credit_action` | Exact `NONE`, `ALREADY_AVAILABLE`, or `ADJUSTED_RELEASED` result. |
+| `open_idempotency_key` / `resolution_idempotency_key` | Stable command identities for replay-safe open and resolution. |
+| `created_at` / `updated_at` / `version` | UTC persistence timestamps and optimistic resolution version. |
 
 ### `consultation.specialist_client_continuity_audit`
 
@@ -1586,24 +1635,29 @@ Append-only evidence for every credit grant, booking reservation/release, upgrad
 
 ### `consultation.specialist_earning`
 
-One immutable monetary allocation created only by a completed appointment; current status supports settlement and provider payout reconciliation.
+Implemented by MB-516. One immutable VND allocation is created in the same
+transaction as an evidence-backed `COMPLETED` appointment and exact credit
+consumption. Elapsed time, `SESSION_ENDED`, no-show, cancellation, and released
+or forfeited credits do not create an earning.
 
 | Field | Purpose |
 | --- | --- |
 | `id` | Immutable earning UUID shown in specialist/admin history. |
 | `appointment_id` | Unique completed appointment proving that one earning may exist. |
-| `credit_id` | Unique consumed credit whose snapshotted allocation funds the earning. |
-| `specialist_id` | Specialist who completed the appointment and owns the payable amount. |
+| `completion_fact_id` | Unique opaque completion evidence fact, preventing any second earning for the same completion. |
+| `consumed_credit_id` | Unique consumed credit whose allocation funds the earning. |
+| `specialist_account_id` | Specialist who completed the appointment and owns the payable amount. |
+| `plan_version` | Entitlement/plan version snapshotted from the consumed credit period. |
 | `currency` | ISO 4217 currency of all amounts in the earning. |
-| `allocated_value_minor` | Credit allocation snapshot; current plan versions use 500. |
-| `specialist_share_bps` | Revenue-share snapshot; current plan versions use 7000. |
-| `specialist_amount_minor` | Exact specialist amount; current versions use 350 per completed credit. |
-| `platform_amount_minor` | Exact remainder of the credit allocation; current versions use 150. |
+| `credit_allocation_minor` | Exact fixed allocation snapshot, currently 300,000 VND per consumed credit. |
+| `specialist_share_bps` | Revenue-share snapshot, currently 7000 (70%). |
+| `specialist_amount_minor` | Exact specialist amount, currently 210,000 VND. It is never derived from subscription price. |
+| `platform_allocation_minor` | Remaining 90,000 VND allocation. This is not represented or described as platform profit. |
+| `idempotency_source` | Stable completion-fact source preventing duplicate creation on settlement replay. |
 | `status` | Settlement/payout state. `PAID` requires a linked payout with verified `SUCCEEDED` provider outcome. |
 | `earned_at` | UTC appointment-completion instant. |
-| `settlement_available_at` | UTC instant the earning becomes eligible for a provider payout request. |
-| `reversed_at` | UTC instant an approved chargeback/reconciliation reversal was recorded; null otherwise. |
-| `reversal_reason_code` | Stable non-sensitive reversal reason; null unless reversed. |
+| `settlement_available_at` | UTC instant seven days after earning at which it becomes payout eligible. |
+| `paid_at` | UTC verified payout-success instant; null until `PAID`. |
 | `created_at` | Immutable UTC insertion instant. |
 | `updated_at` | UTC instant of the latest settlement/payout/reversal state change. |
 | `version` | Optimistic-lock counter protecting settlement and payout races. |
@@ -1615,7 +1669,7 @@ Encrypted specialist-owned destination used by a provider payout adapter. Raw wa
 | Field | Purpose |
 | --- | --- |
 | `id` | Immutable destination UUID referenced by payout requests. |
-| `specialist_id` | Specialist who owns and may manage this destination. |
+| `specialist_account_id` | Specialist who owns and may manage this destination. |
 | `payout_provider` | `MOMO` in real environments or MoMo-shaped `FAKE` locally; only MoMo may be used in production after credential approval. |
 | `destination_type` | Allow-listed provider route: MoMo wallet or domestic bank account. |
 | `destination_ciphertext` | Encrypted provider-required wallet/account details; never returned as stored ciphertext to clients. |
@@ -1638,13 +1692,14 @@ allowed.
 | Field | Purpose |
 | --- | --- |
 | `id` | Immutable payout request UUID. |
-| `specialist_id` | Specialist receiving the attached available earnings. |
+| `specialist_account_id` | Specialist receiving the attached available earnings. |
 | `destination_id` | Verified encrypted payout destination selected for this request. |
 | `currency` | ISO 4217 currency shared by every attached earning. |
 | `amount_minor` | Exact positive requested amount in minor units, equal to attached payout items. |
 | `payout_provider` | `MOMO`/`FAKE` namespace used for request, status, and IPN reconciliation. |
 | `status` | `PENDING`, `PROCESSING`, `SUCCEEDED`, `FAILED`, or uncertainty-preserving `UNKNOWN`. |
 | `idempotency_key` | Specialist-scoped command key preventing duplicate logical payout creation. Provider attempts derive separate keys. |
+| `requested_on` | Server-local request date enforcing the planned maximum of one payout request per specialist per day. |
 | `requested_at` | UTC instant MentalBridge created the payout request. |
 | `completed_at` | UTC instant a verified provider attempt proved the logical payout succeeded; required for `SUCCEEDED`. |
 | `last_failure_code` | Safe diagnostic from the latest definite failure; never contains destination/raw payload data. |
@@ -1874,6 +1929,7 @@ and email choices cannot drift across web, email, inbox, or future mobile consum
 | `group_screening_reassessment_enabled` | Independent screening/reassessment content-group choice. |
 | `group_appointment_message_enabled` | Independent appointment/message content-group choice. |
 | `group_resource_system_enabled` | Independent resource/system content-group choice. |
+| `group_community_interaction_enabled` | Independent in-app choice for eligible Community comment, reply, and first-reaction facts. Disabled facts are durably recorded as cancelled so replay cannot create a later surprise notification. |
 | `quiet_hours_enabled` | Whether non-bypass delivery observes the local quiet window. |
 | `quiet_hours_start` | Inclusive local wall-clock start in `time_zone`; later-than-end windows cross midnight. |
 | `quiet_hours_end` | Exclusive local wall-clock end in `time_zone`; it must differ from start when enabled. |
@@ -1900,20 +1956,20 @@ Durable in-app notification and safe delivery payload owned by Content/Notificat
 | --- | --- |
 | `id` | Immutable UUID used for REST history, Kafka delivery, and read idempotency. |
 | `recipient_id` | External Identity account UUID of the intended recipient. |
-| `category` | Stable kind used for preference, priority, and presentation rules. MB-564 adds separate `JOURNAL_REMINDER`, `EMOTION_CHECKIN_REMINDER`, `JOURNAL_STREAK_MILESTONE`, and `EMOTION_STREAK_MILESTONE` values while retaining historical generic kinds. |
+| `category` | Stable kind used for preference, priority, and presentation rules. MB-564 adds separate Journal/emotion kinds; MB-617 adds `COMMUNITY_COMMENT`, `COMMUNITY_REPLY`, and `COMMUNITY_REACTION` while retaining historical generic kinds. |
 | `title` | Reviewed/minimized user-visible title safe for the selected channel. |
 | `body` | Reviewed/minimized user-visible body that excludes raw sensitive source content. |
 | `action_type` | Optional approved internal action enum used to derive a relative client route; arbitrary producer URLs are never stored. |
-| `action_target_id` | Optional opaque resource UUID, required only for `OPEN_RESOURCE` and resolved through an authorized owner request. |
+| `action_target_id` | Optional opaque target UUID required for `OPEN_RESOURCE` or `OPEN_COMMUNITY_POST`; Community stores only the approved post deep-link ID, and the authorized Community read supplies the same safe unavailable state for removed, hidden, blocked, or unknown content. |
 | `priority` | Delivery/presentation priority, not a clinical severity decision. |
 | `read_at` | UTC instant the recipient marked the in-app notification read; null while unread. |
 | `expires_at` | Required UTC inbox-retention deadline, no later than 90 days after creation; expired rows are tombstoned and no longer returned. |
 | `occurred_at` | Authoritative UTC instant of the source event, kept separate from inbox insertion time for delayed delivery. |
 | `created_at` | Immutable UTC creation instant used for cursor ordering. |
 | `deleted_at` | UTC user/policy tombstone instant; null while visible in history. |
-| `source` | Stable bounded producer namespace such as `CONTENT` or `REALTIME`; it carries no provider payload or user-authored text. |
-| `source_identity` | Stable producer-owned event identity used with `recipient_id` and `source` to collapse retries for one recipient while allowing legitimate fan-out of the same source event to other recipients. Journal/emotion notifications use `<kind>:<local-date>` so repeated materialization of one owner/day/kind remains one inbox row. |
-| `request_fingerprint` | SHA-256 of the validated minimized create command; changed reuse of a dedupe identity is rejected instead of overwriting the original notification. |
+| `source` | Stable bounded producer namespace such as `CONTENT`, `REALTIME`, or `COMMUNITY_INTERACTION_V1`; it carries no provider payload or user-authored text. |
+| `source_identity` | Stable producer-owned event identity used with `recipient_id` and `source` to collapse retries for one recipient while allowing legitimate fan-out of the same source event to other recipients. Journal/emotion notifications use `<kind>:<local-date>`; Community notifications use the v1 fact `eventId`. |
+| `request_fingerprint` | SHA-256 of the validated minimized create command or Community v1 fact; changed reuse of a dedupe identity is rejected instead of overwriting the original notification. |
 | `delivery_state` | Durable delivery lifecycle (`PENDING`, `DELIVERED`, `FAILED`, or `CANCELLED`); only `DELIVERED` records appear in the inbox. |
 | `version` | Monotonic mutation counter incremented for the first read or tombstone transition. |
 

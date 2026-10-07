@@ -168,6 +168,15 @@ No earning is created for cancellation, rejection, expiry, insufficient
 evidence, either no-show, provider failure, or unresolved dispute unless a
 future explicit settlement decision amends that outcome.
 
+Under `MB-APPOINTMENT-DISPUTE-001`, either assigned participant may open the
+single appointment dispute during the 24 hours after an eligible settled
+outcome. The dispute carries only stable operational reason/provenance and
+optional bounded evidence type/time. While it is `OPEN`, specialist earning and
+payout materialization fail closed. Admin resolution may uphold the recorded
+outcome or release user credit; a terminal credit correction appends an
+`ADJUSTED_RELEASED` ledger fact and leaves every prior appointment, outcome,
+credit, and settlement fact auditable.
+
 ## Appointment request, decision, and change
 
 A request snapshots the exact 60-minute interval, specialist, mode, applicable

@@ -17,6 +17,7 @@ tags:
   - name: Recovery
   - name: Account
   - name: Account administration
+  - name: Platform reporting
 paths:
   /internal/v1/accounts/{accountId}/verified-email:
     x-mentalbridge-status: implemented
@@ -317,6 +318,124 @@ paths:
         '400': { $ref: '#/components/responses/ValidationProblem' }
         '401': { $ref: '#/components/responses/UnauthorizedProblem' }
         '403': { $ref: '#/components/responses/ForbiddenProblem' }
+  /api/v1/admin/platform-reports/catalogue:
+    x-mentalbridge-status: implemented
+    get:
+      tags: [Platform reporting]
+      operationId: listPlatformReportTypes
+      summary: List report types backed by an available authoritative source
+      security: [{ bearerAuth: [] }]
+      responses:
+        '200':
+          description: Current supported report catalogue
+          content:
+            application/json:
+              schema:
+                type: array
+                maxItems: 20
+                items: { $ref: '#/components/schemas/PlatformReportType' }
+        '401': { $ref: '#/components/responses/UnauthorizedProblem' }
+        '403': { $ref: '#/components/responses/ForbiddenProblem' }
+  /api/v1/admin/platform-reports:
+    x-mentalbridge-status: implemented
+    get:
+      tags: [Platform reporting]
+      operationId: browsePlatformReports
+      summary: Browse immutable platform report job history
+      security: [{ bearerAuth: [] }]
+      parameters:
+        - $ref: '#/components/parameters/CorrelationId'
+        - name: cursor
+          in: query
+          schema: { type: string, maxLength: 512 }
+        - name: limit
+          in: query
+          schema: { type: integer, minimum: 1, maximum: 50, default: 20 }
+      responses:
+        '200':
+          description: Newest-first report history
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/PlatformReportPage' }
+        '400': { $ref: '#/components/responses/ValidationProblem' }
+        '401': { $ref: '#/components/responses/UnauthorizedProblem' }
+        '403': { $ref: '#/components/responses/ForbiddenProblem' }
+    post:
+      tags: [Platform reporting]
+      operationId: requestPlatformReport
+      summary: Queue an aggregate platform report
+      security: [{ bearerAuth: [] }]
+      parameters:
+        - $ref: '#/components/parameters/IdempotencyKey'
+        - $ref: '#/components/parameters/CorrelationId'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: '#/components/schemas/PlatformReportRequest' }
+      responses:
+        '202':
+          description: Report job accepted or replayed
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/PlatformReport' }
+        '400': { $ref: '#/components/responses/ValidationProblem' }
+        '401': { $ref: '#/components/responses/UnauthorizedProblem' }
+        '403': { $ref: '#/components/responses/ForbiddenProblem' }
+        '409': { $ref: '#/components/responses/IdempotencyConflictProblem' }
+  /api/v1/admin/platform-reports/{reportId}/retries:
+    x-mentalbridge-status: implemented
+    post:
+      tags: [Platform reporting]
+      operationId: retryPlatformReport
+      summary: Retry a failed or stale report as a new immutable job
+      security: [{ bearerAuth: [] }]
+      parameters:
+        - $ref: '#/components/parameters/ReportId'
+        - $ref: '#/components/parameters/IdempotencyKey'
+        - $ref: '#/components/parameters/CorrelationId'
+      responses:
+        '202':
+          description: Retry job accepted or replayed
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/PlatformReport' }
+        '400': { $ref: '#/components/responses/ValidationProblem' }
+        '401': { $ref: '#/components/responses/UnauthorizedProblem' }
+        '403': { $ref: '#/components/responses/ForbiddenProblem' }
+        '404': { $ref: '#/components/responses/NotFoundProblem' }
+        '409': { $ref: '#/components/responses/IdempotencyConflictProblem' }
+  /api/v1/admin/platform-reports/{reportId}/artifact:
+    x-mentalbridge-status: implemented
+    get:
+      tags: [Platform reporting]
+      operationId: downloadPlatformReportArtifact
+      summary: Download an unexpired completed aggregate artifact
+      security: [{ bearerAuth: [] }]
+      parameters:
+        - $ref: '#/components/parameters/ReportId'
+        - $ref: '#/components/parameters/CorrelationId'
+      responses:
+        '200':
+          description: Immutable report artifact with SHA-256 integrity and retention headers
+          headers:
+            Content-Disposition:
+              description: Attachment filename for the generated artifact
+              schema: { type: string }
+            X-Content-SHA256:
+              description: Lowercase hexadecimal SHA-256 digest of the response body
+              schema: { type: string, pattern: '^[0-9a-f]{64}$' }
+            X-Retained-Until:
+              description: Instant after which the artifact is no longer downloadable
+              schema: { type: string, format: date-time }
+          content:
+            application/json:
+              schema: { type: string, format: binary }
+        '401': { $ref: '#/components/responses/UnauthorizedProblem' }
+        '403': { $ref: '#/components/responses/ForbiddenProblem' }
+        '404': { $ref: '#/components/responses/NotFoundProblem' }
+        '409': { $ref: '#/components/responses/ConflictProblem' }
+        '410': { $ref: '#/components/responses/GoneProblem' }
   /internal/v1/notification-delivery-contacts/{accountId}:
     x-mentalbridge-status: implemented
     get:
@@ -472,6 +591,11 @@ components:
       in: path
       required: true
       schema: { type: string, format: uuid }
+    ReportId:
+      name: reportId
+      in: path
+      required: true
+      schema: { type: string, format: uuid }
     CorrelationId:
       name: X-Correlation-Id
       in: header
@@ -525,6 +649,68 @@ components:
       description: Exact safe identifier returned by this API, either account UUID or tombstone hash.
       schema: { type: string, minLength: 9, maxLength: 74, pattern: '^(account:[0-9a-fA-F-]{36}|tombstone:[0-9a-f]{64})$' }
   schemas:
+    PlatformReportTypeCode:
+      type: string
+      enum: [ACCOUNT_ACTIVITY]
+    PlatformReportStatus:
+      type: string
+      enum: [QUEUED, RUNNING, COMPLETED, FAILED, STALE]
+    PlatformReportType:
+      type: object
+      additionalProperties: false
+      required: [reportType, label, description, scopeVersion, maximumPeriodDays]
+      properties:
+        reportType: { $ref: '#/components/schemas/PlatformReportTypeCode' }
+        label: { type: string, maxLength: 120 }
+        description: { type: string, maxLength: 500 }
+        scopeVersion: { type: string, maxLength: 64 }
+        maximumPeriodDays: { type: integer, minimum: 1, maximum: 366 }
+    PlatformReportRequest:
+      type: object
+      additionalProperties: false
+      required: [reportType, periodStart, periodEnd]
+      properties:
+        reportType: { $ref: '#/components/schemas/PlatformReportTypeCode' }
+        periodStart: { type: string, format: date }
+        periodEnd: { type: string, format: date }
+    PlatformReport:
+      type: object
+      additionalProperties: false
+      required: [reportId, reportType, scopeVersion, periodStart, periodEnd, requestedBy, requestedAt, status, sourceVersions, downloadable]
+      properties:
+        reportId: { type: string, format: uuid }
+        reportType: { $ref: '#/components/schemas/PlatformReportTypeCode' }
+        scopeVersion: { type: string, maxLength: 64 }
+        periodStart: { type: string, format: date }
+        periodEnd: { type: string, format: date }
+        requestedBy: { type: string, format: uuid }
+        requestedAt: { type: string, format: date-time }
+        status: { $ref: '#/components/schemas/PlatformReportStatus' }
+        sourceVersions:
+          type: object
+          additionalProperties: { type: string, maxLength: 64 }
+          maxProperties: 20
+        retryOf: { type: [string, 'null'], format: uuid }
+        startedAt: { type: [string, 'null'], format: date-time }
+        completedAt: { type: [string, 'null'], format: date-time }
+        failedAt: { type: [string, 'null'], format: date-time }
+        failureCode: { type: [string, 'null'], maxLength: 64 }
+        downloadable: { type: boolean }
+        fileName: { type: [string, 'null'], maxLength: 160 }
+        mediaType: { type: [string, 'null'], maxLength: 96 }
+        contentLength: { type: [integer, 'null'], format: int64, minimum: 1, maximum: 1048576 }
+        contentSha256: { type: [string, 'null'], pattern: '^[0-9a-f]{64}$' }
+        retainedUntil: { type: [string, 'null'], format: date-time }
+    PlatformReportPage:
+      type: object
+      additionalProperties: false
+      required: [items]
+      properties:
+        items:
+          type: array
+          maxItems: 50
+          items: { $ref: '#/components/schemas/PlatformReport' }
+        nextCursor: { type: [string, 'null'], maxLength: 512 }
     VerifiedDeliveryAddress:
       type: object
       additionalProperties: false
@@ -794,6 +980,11 @@ components:
           schema: { $ref: '#/components/schemas/Problem' }
     ConflictProblem:
       description: State or uniqueness conflict
+      content:
+        application/problem+json:
+          schema: { $ref: '#/components/schemas/Problem' }
+    GoneProblem:
+      description: The bounded artifact retention window has ended
       content:
         application/problem+json:
           schema: { $ref: '#/components/schemas/Problem' }
