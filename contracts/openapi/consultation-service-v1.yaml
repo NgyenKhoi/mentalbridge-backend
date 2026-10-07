@@ -699,6 +699,32 @@ paths:
         '404': { $ref: '#/components/responses/NotFoundProblem' }
         '412': { $ref: '#/components/responses/VersionProblem' }
         '428': { $ref: '#/components/responses/VersionRequiredProblem' }
+  /api/v1/specialist/analytics:
+    x-mentalbridge-status: implemented
+    get:
+      operationId: getSpecialistOperationalAnalytics
+      description: Returns Consultation-owned operational analytics for the authenticated specialist. Lifecycle counts come from immutable transition facts in the half-open requested period; slot utilization is based on slots scheduled in that period and remains true after later appointment changes. Financial metrics sum MB-516 earning facts and successful payouts completed within the same period.
+      security: [{ bearerAuth: [] }]
+      parameters:
+        - name: from
+          in: query
+          required: false
+          description: Inclusive UTC period start. Must be supplied together with to; defaults to 30 days before server time.
+          schema: { type: string, format: date-time }
+        - name: to
+          in: query
+          required: false
+          description: Exclusive UTC period end. Must be supplied together with from and defaults to server time. A small forward clock skew is clamped to server time; materially future values are rejected.
+          schema: { type: string, format: date-time }
+      responses:
+        '200':
+          description: Factual specialist operational analytics or explicitly blocked sections
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/SpecialistOperationalAnalytics' }
+        '400': { $ref: '#/components/responses/ValidationProblem' }
+        '401': { $ref: '#/components/responses/UnauthorizedProblem' }
+        '403': { $ref: '#/components/responses/ForbiddenProblem' }
   /api/v1/specialist/dashboard:
     x-mentalbridge-status: implemented
     get:
@@ -1656,6 +1682,81 @@ components:
           type: array
           maxItems: 2
           items: { $ref: '#/components/schemas/SpecialistDashboardActionItem' }
+    SpecialistAnalyticsDataState:
+      type: string
+      enum: [AVAILABLE, EMPTY, BLOCKED, UNAVAILABLE, STALE]
+    SpecialistAnalyticsPeriod:
+      type: object
+      additionalProperties: false
+      required: [from, to, timezone]
+      properties:
+        from: { type: string, format: date-time }
+        to: { type: string, format: date-time }
+        timezone: { type: string, minLength: 1, maxLength: 64 }
+    SpecialistAvailabilityMetrics:
+      type: object
+      additionalProperties: false
+      required: [source, asOf, state, publishedSlotCount, utilizedSlotCount, unusedSlotCount, utilizationRate]
+      properties:
+        source: { type: string, const: CONSULTATION }
+        asOf: { type: string, format: date-time }
+        state: { $ref: '#/components/schemas/SpecialistAnalyticsDataState' }
+        publishedSlotCount: { type: [integer, 'null'], format: int64, minimum: 0 }
+        utilizedSlotCount: { type: [integer, 'null'], format: int64, minimum: 0 }
+        unusedSlotCount: { type: [integer, 'null'], format: int64, minimum: 0 }
+        utilizationRate: { type: [number, 'null'], format: double, minimum: 0, maximum: 100 }
+    SpecialistAppointmentMetrics:
+      type: object
+      additionalProperties: false
+      required: [source, asOf, state, requestedCount, acceptedCount, rejectedCount, expiredCount, cancelledCount, rescheduledCount, completedCount, userNoShowCount, specialistNoShowCount, bothNoShowCount]
+      properties:
+        source: { type: string, const: CONSULTATION }
+        asOf: { type: string, format: date-time }
+        state: { $ref: '#/components/schemas/SpecialistAnalyticsDataState' }
+        requestedCount: { type: [integer, 'null'], format: int64, minimum: 0 }
+        acceptedCount: { type: [integer, 'null'], format: int64, minimum: 0 }
+        rejectedCount: { type: [integer, 'null'], format: int64, minimum: 0 }
+        expiredCount: { type: [integer, 'null'], format: int64, minimum: 0 }
+        cancelledCount: { type: [integer, 'null'], format: int64, minimum: 0 }
+        rescheduledCount: { type: [integer, 'null'], format: int64, minimum: 0 }
+        completedCount: { type: [integer, 'null'], format: int64, minimum: 0 }
+        userNoShowCount: { type: [integer, 'null'], format: int64, minimum: 0 }
+        specialistNoShowCount: { type: [integer, 'null'], format: int64, minimum: 0 }
+        bothNoShowCount: { type: [integer, 'null'], format: int64, minimum: 0 }
+    SpecialistRatingMetrics:
+      type: object
+      additionalProperties: false
+      required: [source, asOf, state, averageRating, ratingCount]
+      properties:
+        source: { type: string, const: CONSULTATION }
+        asOf: { type: string, format: date-time }
+        state: { $ref: '#/components/schemas/SpecialistAnalyticsDataState' }
+        averageRating: { type: [number, 'null'], format: double, minimum: 1, maximum: 5 }
+        ratingCount: { type: [integer, 'null'], format: int64, minimum: 0 }
+    SpecialistFinancialMetrics:
+      type: object
+      additionalProperties: false
+      required: [source, asOf, state, currency, earnedAmountMinor, paidAmountMinor]
+      properties:
+        source: { type: string, const: CONSULTATION }
+        asOf: { type: string, format: date-time }
+        state: { $ref: '#/components/schemas/SpecialistAnalyticsDataState' }
+        currency: { type: [string, 'null'], pattern: '^[A-Z]{3}$' }
+        earnedAmountMinor: { type: [integer, 'null'], format: int64, minimum: 0 }
+        paidAmountMinor: { type: [integer, 'null'], format: int64, minimum: 0 }
+    SpecialistOperationalAnalytics:
+      type: object
+      additionalProperties: false
+      required: [source, generatedAt, operationalStatus, period, availability, appointments, rating, financials]
+      properties:
+        source: { type: string, const: CONSULTATION }
+        generatedAt: { type: string, format: date-time }
+        operationalStatus: { $ref: '#/components/schemas/SpecialistOperationalStatus' }
+        period: { $ref: '#/components/schemas/SpecialistAnalyticsPeriod' }
+        availability: { $ref: '#/components/schemas/SpecialistAvailabilityMetrics' }
+        appointments: { $ref: '#/components/schemas/SpecialistAppointmentMetrics' }
+        rating: { $ref: '#/components/schemas/SpecialistRatingMetrics' }
+        financials: { $ref: '#/components/schemas/SpecialistFinancialMetrics' }
     PayoutDestination:
       type: object
       additionalProperties: false

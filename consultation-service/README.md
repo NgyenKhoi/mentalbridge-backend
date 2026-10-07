@@ -207,6 +207,25 @@ account. Responses identify Consultation as the authoritative source and mark
 the data state explicitly. The operation is available only to `ADMIN` and is
 not a substitute for any owner or specialist command endpoint.
 
+## Implemented MB-593 endpoint
+
+- `GET /api/v1/specialist/analytics?from={instant}&to={instant}`
+
+The authenticated specialist receives Consultation-owned operational facts for
+an explicit half-open period, defaulting to the previous 30 days and capped at
+366 days. A requested end up to 30 seconds ahead is clamped to Consultation's
+server time to tolerate cross-service clock skew; materially future ends remain
+invalid. Appointment lifecycle totals come from append-only transition facts,
+so a later cancellation or reschedule does not erase an earlier request or
+acceptance. Slot utilization uses slots scheduled in the period and preserves
+whether a slot was ever accepted. Current MB-364 rating aggregates are marked
+with their own as-of time. MB-516 earning and successful payout facts are
+summed within the same period without demo amounts. Suspended specialists retain
+their own historical analytics with an explicit `SUSPENDED` operational state;
+profiles that were never approved receive blocked sections. No user identity,
+health outcome, Journal, emotion, assessment, adherence, recovery, chat, or
+private-note data is exposed.
+
 ## Implemented MB-592 endpoint
 
 - `GET /internal/v1/specialist/client-relationships`
