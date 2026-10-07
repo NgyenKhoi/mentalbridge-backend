@@ -167,6 +167,12 @@ Every appointment is exactly 60 minutes. The scheduled end produces `SESSION_END
 
 Detailed rules: [Consultation and specialist policy v2](policies/consultation-specialist-policy-v2.md).
 
+Approved-profile edits use the separate reviewed amendment direction in
+[ADR 0033](adr/0033-reviewed-specialist-profile-amendment.md)
+(`MB-SPECIALIST-PROFILE-AMENDMENT-001`, MB-635). Draft/review/rejection preserves
+the live approved profile; only ADMIN approval promotes new public content.
+Existing appointments and availability are not rewritten by normal amendments.
+
 ## 7. Service plans and consultation credits
 
 Current target entitlement for new `consultation-credit-v2` plan periods:

@@ -345,6 +345,15 @@ unsupported. No earning is created for timer-only `SESSION_ENDED`, cancellation,
 no-show, or unresolved dispute. Appointment existence never grants
 health/journal access; sharing requires an approved pre-session brief and grant.
 
+MB-635 extends UC-04 with a private amendment to an approved specialist profile.
+The live approved fields stay public and eligible while the specialist saves,
+submits, corrects or resubmits a proposed change. ADMIN reviews amendments
+separately from initial submissions; approval atomically promotes a new immutable
+approved content version, while rejection leaves the previous snapshot unchanged.
+Suspension still controls operations, and normal amendments never rewrite
+appointments, credits or availability. See
+[ADR 0033](adr/0033-reviewed-specialist-profile-amendment.md).
+
 ### UC-05 Communication & Follow-up
 
 **Actors:** User, Specialist, Admin, System

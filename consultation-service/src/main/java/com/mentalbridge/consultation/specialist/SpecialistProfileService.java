@@ -24,14 +24,16 @@ public class SpecialistProfileService {
 	private final SpecialistProfileStatusHistoryRepository history;
 	private final SpecialistSuspensionEffects suspensionEffects;
 	private final Clock clock;
+	private final ApprovedProfileVersionRepository approvedVersions;
 
 	public SpecialistProfileService(SpecialistProfileRepository profiles,
 			SpecialistProfileStatusHistoryRepository history,
-			SpecialistSuspensionEffects suspensionEffects, Clock clock) {
+			SpecialistSuspensionEffects suspensionEffects, Clock clock, ApprovedProfileVersionRepository approvedVersions) {
 		this.profiles = profiles;
 		this.history = history;
 		this.suspensionEffects = suspensionEffects;
 		this.clock = clock;
+		this.approvedVersions = approvedVersions;
 	}
 
 	@Transactional(readOnly = true)
@@ -136,6 +138,7 @@ public class SpecialistProfileService {
 		var now = clock.instant();
 		profile.approve(adminAccountId, now);
 		profiles.saveAndFlush(profile);
+		approvedVersions.saveAndFlush(new ApprovedProfileVersionEntity(profile, null));
 		history.saveAndFlush(new SpecialistProfileStatusHistoryEntity(accountId,
 				SpecialistApprovalStatus.APPROVED, adminAccountId,
 				SpecialistProfileStatusHistoryEntity.ActorRole.ADMIN, now));
@@ -236,7 +239,7 @@ public class SpecialistProfileService {
 				"Reason code is not valid for specialist " + operation);
 	}
 
-	private void validate(ProfileCommand command) {
+	void validate(ProfileCommand command) {
 		try {
 			ZoneId.of(command.timezone().strip());
 		}
@@ -253,13 +256,13 @@ public class SpecialistProfileService {
 				List.of(new ApiException.FieldViolation(field, code, message)));
 	}
 
-	private ProfileView view(SpecialistProfileEntity profile) {
+	ProfileView view(SpecialistProfileEntity profile) {
 		var supportAreas = profile.supportAreas().stream().sorted(Comparator.comparing(Enum::name)).toList();
 		var languages = profile.languages().stream().sorted().toList();
 		return new ProfileView(profile.accountId(), profile.displayName(), profile.bio(), supportAreas, languages,
 				profile.yearsOfExperience(), profile.timezone(), profile.approvalStatus(), profile.submittedAt(),
 				profile.reviewedAt(), profile.reviewedBy(), profile.decisionReasonCode(), profile.createdAt(),
-				profile.updatedAt(), profile.version());
+				profile.updatedAt(), profile.version(), profile.publishedVersion());
 	}
 
 	public record ProfileCommand(String displayName, String bio, Set<SupportArea> supportAreas,
@@ -271,7 +274,7 @@ public class SpecialistProfileService {
 			SpecialistApprovalStatus approvalStatus, java.time.Instant submittedAt, java.time.Instant reviewedAt,
 			UUID reviewedBy, SpecialistDecisionReasonCode decisionReasonCode,
 			java.time.Instant createdAt, java.time.Instant updatedAt,
-			long version) {
+			long version, long publishedVersion) {
 	}
 
 	public record SavedProfile(ProfileView profile, boolean created) {

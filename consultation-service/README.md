@@ -262,9 +262,39 @@ Updates and decisions use the returned `ETag` in `If-Match`. Editing a
 submitted pending profile withdraws it from the review queue until the
 specialist explicitly submits it again. Rejected profiles retain their reason
 while being edited and require explicit resubmission. Approved and suspended
-profiles are immutable. Rejection and suspension accept only their documented
+profiles cannot be directly edited. MB-635 permits approved specialists to use a
+separate reviewed amendment without changing the current public profile.
+Rejection and suspension accept only their documented
 stable reason sets. A suspension response reports the exact number of future
 slots withdrawn, appointments cancelled, and credits released.
+
+## MB-635 reviewed profile amendments
+
+- `GET /api/v1/specialist-profile/amendments/current`: live profile plus latest private amendment.
+- `POST /api/v1/specialist-profile/amendments`: start/reuse a draft with the live profile ETag.
+- `PUT /api/v1/specialist-profile/amendments/{amendmentId}`: save the six proposed fields.
+- `POST /api/v1/specialist-profile/amendments/{amendmentId}/submit|resubmit`: explicit review submission.
+- `GET /api/v1/admin/specialist-profiles/amendments?limit=50&page=0`: bounded pending-review queue, separate from initial submissions.
+- `GET /api/v1/admin/specialist-profiles/amendments/{amendmentId}`: proposed versus approved values.
+- `POST /api/v1/admin/specialist-profiles/amendments/{amendmentId}/approve|reject`: version-checked ADMIN decision.
+
+Commands other than start use the amendment ETag. Approval and the immutable
+approved snapshot/history commit together. Rejection and draft operations never
+change the live profile, appointments or availability. Suspension is serialized
+with these commands and blocks them. Review provenance includes each exact
+proposed payload; no unrestricted review notes or verification documents are stored.
+
+Apply migration 018 before owner rollout. It backfills one approved-content
+baseline for existing approved/suspended profiles without inventing older content
+versions. Drain old owner instances before enabling amendment writes. Never run
+the documentation logical schema against a database. See
+[ADR 0033](../docs/adr/0033-reviewed-specialist-profile-amendment.md).
+
+Focused owner verification:
+
+```powershell
+.\mvnw.cmd '-Dtest=ProfileAmendmentIntegrationTests,SpecialistProfileFlowIntegrationTests,ConsultationOpenApiContractTests,AccountLifecycleConsumerTests' test
+```
 
 ## Run and test
 
