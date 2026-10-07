@@ -1,9 +1,4 @@
-import {
-  Controller,
-  Get,
-  Inject,
-  UseGuards,
-} from '@nestjs/common';
+import { Controller, Get, Inject, UseGuards } from '@nestjs/common';
 
 import { NOTIFICATION_SERVICE_TOKEN } from '../application.tokens.js';
 import { JwtAuthGuard } from '../auth/jwt-auth.guard.js';
@@ -26,4 +21,3 @@ export class NotificationAdminController {
     return this.service.getOperationsSummary();
   }
 }
-

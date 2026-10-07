@@ -16,10 +16,7 @@ import {
   NotificationDedupeConflictError,
   type NotificationRepository,
 } from './notification.repository.js';
-import type {
-  NotificationItem,
-  NotificationOperationsSummary,
-} from './notification.types.js';
+import type { NotificationItem, NotificationOperationsSummary } from './notification.types.js';
 
 function problem(status: number, code: string, title: string): Record<string, unknown> {
   return { type: `https://mentalbridge.io/errors/${code}`, title, status, code };

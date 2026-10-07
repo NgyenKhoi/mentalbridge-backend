@@ -98,9 +98,7 @@ afterEach(async () => app.close());
 
 describe('Admin Notification Operations Summary API', () => {
   it('returns 401 when request is unauthenticated', async () => {
-    await request(app.getHttpServer())
-      .get('/api/v1/admin/notifications/summary')
-      .expect(401);
+    await request(app.getHttpServer()).get('/api/v1/admin/notifications/summary').expect(401);
   });
 
   it('returns 403 when non-admin role accesses the endpoint', async () => {
@@ -142,4 +140,3 @@ describe('Admin Notification Operations Summary API', () => {
       .expect(503);
   });
 });
-
