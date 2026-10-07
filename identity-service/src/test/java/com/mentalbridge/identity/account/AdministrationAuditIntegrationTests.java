@@ -198,7 +198,7 @@ class AdministrationAuditIntegrationTests extends IdentityTestProperties {
 
         auditConsumer.onMessage(contentEventJson);
 
-        // 3. Ingest event with sensitive raw extras to prove projection sanitizes and never stores them
+        // 3. Reject event with sensitive raw extras fail-closed to prove projection never stores them
         UUID sensitiveEventId = UUID.randomUUID();
         String sensitiveEventJson = """
                 {
@@ -224,6 +224,29 @@ class AdministrationAuditIntegrationTests extends IdentityTestProperties {
                 """.formatted(sensitiveEventId, now.minusSeconds(20), adminId, UUID.randomUUID(), userId);
 
         auditConsumer.onMessage(sensitiveEventJson);
+
+        // 3b. Ingest valid approved event conforming strictly to versioned contract
+        UUID validApprovedEventId = UUID.randomUUID();
+        String validApprovedJson = """
+                {
+                  "eventId": "%s",
+                  "eventType": "consultation.specialist.approved",
+                  "occurredAt": "%s",
+                  "producer": "consultation-service",
+                  "schemaVersion": "1.0",
+                  "sourceService": "CONSULTATION",
+                  "domain": "SPECIALIST_REVIEW",
+                  "actorId": "%s",
+                  "actorType": "ADMIN",
+                  "action": "SPECIALIST_APPROVED",
+                  "result": "SUCCEEDED",
+                  "reasonCode": "REVIEW_COMPLETED",
+                  "correlationId": "%s",
+                  "targetAccountId": "%s"
+                }
+                """.formatted(validApprovedEventId, now.minusSeconds(20), adminId, UUID.randomUUID(), userId);
+
+        auditConsumer.onMessage(validApprovedJson);
 
         // 4. Browse filtering specifically by CONSULTATION source service and SPECIALIST_REVIEW domain
         String consultationBody = mvc.perform(get("/api/v1/admin/audit-events")
@@ -251,9 +274,11 @@ class AdministrationAuditIntegrationTests extends IdentityTestProperties {
                         .param("action", "SPECIALIST_APPROVED"))
                 .andExpect(status().isOk())
                 .andExpect(jsonPath("$.items.length()").value(1))
+                .andExpect(jsonPath("$.items[0].eventId").value(validApprovedEventId.toString()))
                 .andReturn().getResponse().getContentAsString();
 
         assertThat(sensitiveBody)
+                .doesNotContain(sensitiveEventId.toString())
                 .doesNotContain("PATIENT_CONFIDENTIAL_JOURNAL_NOTES_DO_NOT_STORE")
                 .doesNotContain("PRIVATE_CONSULTATION_TRANSCRIPT_BODY")
                 .doesNotContain("top_secret_bearer_token_xyz")
@@ -398,6 +423,73 @@ class AdministrationAuditIntegrationTests extends IdentityTestProperties {
                 .andExpect(jsonPath("$.items[?(@.eventId == '%s')]".formatted(invalidTimestampEventId)).doesNotExist());
     }
 
+    @Test
+    void deletedAdminActorReturnsSafeTombstoneAndPreservesAdminActorType() throws Exception {
+        UUID adminId = insertAccount("admin-to-delete@example.com", RoleCode.ADMIN);
+        UUID userId = insertAccount("user-target@example.com", RoleCode.USER);
+        Instant now = Instant.now().minusSeconds(5);
+        Instant occurredAt = now.minusSeconds(60);
+        String adminHash = subjectHash(adminId);
+
+        insertAudit(userId, adminId, "ACCOUNT_DISABLED", "SUCCEEDED", "POLICY_VIOLATION", occurredAt);
+
+        // Delete the admin actor account
+        jdbc.sql("delete from account where id = :id").param("id", adminId).update();
+
+        // Query using a new admin
+        UUID queryAdminId = insertAccount("admin-query@example.com", RoleCode.ADMIN);
+        String queryToken = token(queryAdminId, RoleCode.ADMIN);
+
+        mvc.perform(get("/api/v1/admin/audit-events")
+                        .header("Authorization", "Bearer " + queryToken)
+                        .param("from", now.minusSeconds(3_600).toString())
+                        .param("to", now.toString())
+                        .param("actorType", "ADMIN"))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.items.length()").value(1))
+                .andExpect(jsonPath("$.items[0].actorType").value("ADMIN"))
+                .andExpect(jsonPath("$.items[0].actorIdentifier").value("tombstone:" + adminHash))
+                .andExpect(jsonPath("$.items[0].targetIdentifier").value("account:" + userId));
+    }
+
+    @Test
+    void absentTargetReturnsNullTargetIdentifier() throws Exception {
+        UUID adminId = insertAccount("admin-no-target@example.com", RoleCode.ADMIN);
+        String token = token(adminId, RoleCode.ADMIN);
+        Instant now = Instant.now().minusSeconds(5);
+        Instant occurredAt = now.minusSeconds(30);
+
+        UUID eventId = UUID.randomUUID();
+        String json = """
+                {
+                  "eventId": "%s",
+                  "eventType": "community.moderation.case-resolved",
+                  "occurredAt": "%s",
+                  "producer": "community-service",
+                  "schemaVersion": "1.0",
+                  "sourceService": "COMMUNITY",
+                  "domain": "COMMUNITY_MODERATION",
+                  "actorId": "%s",
+                  "actorType": "ADMIN",
+                  "action": "MODERATION_CASE_RESOLVED",
+                  "result": "SUCCEEDED",
+                  "reasonCode": "REVIEW_COMPLETED",
+                  "correlationId": "%s"
+                }
+                """.formatted(eventId, occurredAt, adminId, UUID.randomUUID());
+
+        auditConsumer.onMessage(json);
+
+        mvc.perform(get("/api/v1/admin/audit-events")
+                        .header("Authorization", "Bearer " + token)
+                        .param("from", now.minusSeconds(3_600).toString())
+                        .param("to", now.toString())
+                        .param("action", "MODERATION_CASE_RESOLVED"))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.items.length()").value(1))
+                .andExpect(jsonPath("$.items[0].targetIdentifier").doesNotExist());
+    }
+
     private UUID insertAccount(String email, RoleCode role) {
         return jdbc.sql("""
                 insert into account (email, password_hash, role_code, status, email_verified_at)
@@ -412,15 +504,20 @@ class AdministrationAuditIntegrationTests extends IdentityTestProperties {
     private UUID insertAudit(UUID accountId, UUID actorId, String action, String outcome, String reason,
             String sourceService, String domain, Instant occurredAt) {
         UUID id = UUID.randomUUID();
+        String actorType = actorId != null ? "ADMIN" : "SYSTEM";
+        String actorHash = actorId != null ? subjectHash(actorId) : null;
         jdbc.sql("""
                 insert into security_audit_event
                     (id, account_id, actor_id, action, outcome, reason_code, correlation_id,
-                     subject_reference_hash, source_service, domain, occurred_at, created_at)
+                     subject_reference_hash, source_service, domain, actor_type, actor_reference_hash,
+                     occurred_at, created_at)
                 values (:id, :accountId, :actorId, :action, :outcome, :reason, :correlationId,
-                        encode(digest(:accountIdText, 'sha256'), 'hex'), :sourceService, :domain, :occurredAt, :occurredAt)
+                        encode(digest(:accountIdText, 'sha256'), 'hex'), :sourceService, :domain,
+                        :actorType, :actorHash, :occurredAt, :occurredAt)
                 """).param("id", id).param("accountId", accountId).param("actorId", actorId)
                 .param("action", action).param("outcome", outcome).param("reason", reason)
                 .param("sourceService", sourceService).param("domain", domain)
+                .param("actorType", actorType).param("actorHash", actorHash)
                 .param("correlationId", UUID.randomUUID()).param("accountIdText", accountId.toString())
                 .param("occurredAt", java.sql.Timestamp.from(occurredAt)).update();
         return id;

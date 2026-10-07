@@ -133,6 +133,11 @@ public class AdministrationAuditIngestionService {
             return false;
         }
 
+        if (command.correlationId() == null) {
+            LOGGER.warn("Rejecting audit ingestion with missing correlationId: eventId={}", command.eventId());
+            return false;
+        }
+
         // 1. Idempotency check: if event already projected, ignore duplicate
         if (auditRepository.existsById(command.eventId())) {
             LOGGER.info("Duplicate administration audit event ignored: {}", command.eventId());
@@ -194,13 +199,34 @@ public class AdministrationAuditIngestionService {
         // 4. Privacy & reasonCode fail-closed allowlist
         String reasonCode = AdministrationAuditService.safeReasonCode(command.reasonCode());
 
-        // 5. Actor resolution (only valid accounts can be foreign keys; otherwise SYSTEM)
-        UUID resolvedActorId = null;
-        if (command.actorId() != null && accountRepository.existsById(command.actorId())) {
-            resolvedActorId = command.actorId();
+        // 5. Actor resolution (stable actor model)
+        String actorType = command.actorType();
+        if (actorType == null) {
+            actorType = command.actorId() != null ? "ADMIN" : "SYSTEM";
+        }
+        if (!"ADMIN".equals(actorType) && !"SYSTEM".equals(actorType)) {
+            LOGGER.warn("Rejecting audit event {} with invalid actorType: {}", command.eventId(), actorType);
+            return false;
+        }
+        if ("SYSTEM".equals(actorType) && command.actorId() != null) {
+            LOGGER.warn("Rejecting audit event {} with SYSTEM actorType but non-null actorId", command.eventId());
+            return false;
+        }
+        if ("ADMIN".equals(actorType) && command.actorId() == null) {
+            LOGGER.warn("Rejecting audit event {} with ADMIN actorType but null actorId", command.eventId());
+            return false;
         }
 
-        // 6. Target & Tombstone resolution
+        UUID resolvedActorId = null;
+        String actorReferenceHash = null;
+        if ("ADMIN".equals(actorType)) {
+            actorReferenceHash = sha256Hex(command.actorId().toString());
+            if (accountRepository.existsById(command.actorId())) {
+                resolvedActorId = command.actorId();
+            }
+        }
+
+        // 6. Target & Tombstone resolution (never fabricate fake eventId tombstone)
         UUID resolvedAccountId = null;
         String subjectReferenceHash = null;
 
@@ -231,11 +257,8 @@ public class AdministrationAuditIngestionService {
         if (subjectReferenceHash == null && resolvedAccountId != null) {
             subjectReferenceHash = sha256Hex(resolvedAccountId.toString());
         }
-        if (subjectReferenceHash == null) {
-            subjectReferenceHash = sha256Hex(command.eventId().toString());
-        }
 
-        UUID correlationId = command.correlationId() != null ? command.correlationId() : UUID.randomUUID();
+        UUID correlationId = command.correlationId();
         Instant occurredAt = command.occurredAt();
 
         // 7. Construct entity with MINIMIZED safe metadata only
@@ -250,6 +273,8 @@ public class AdministrationAuditIngestionService {
                 subjectReferenceHash,
                 sourceService.name(),
                 domain.name(),
+                actorType,
+                actorReferenceHash,
                 occurredAt,
                 Instant.now()
         );

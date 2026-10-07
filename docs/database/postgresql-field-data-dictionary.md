@@ -378,6 +378,8 @@ Privacy-minimized local security record for authentication, recovery, replay, an
 | `id` | Immutable UUID identifying the audit fact. |
 | `account_id` | Affected account when known; nullable for enumeration-safe failures and retained as null after account deletion. |
 | `actor_id` | Authenticated actor responsible for an administrative action; nullable for guests/system actions and after actor deletion. |
+| `actor_type` | Restricted actor category (`ADMIN`, `SYSTEM`). |
+| `actor_reference_hash` | Privacy-minimized 64-character SHA-256 reference for an administrative actor account UUID, retained after account deletion so reads return a safe tombstone identifier rather than leaking deleted account details or misattributing to SYSTEM. |
 | `action` | Stable security action code such as login, password recovery, or account-state change. |
 | `outcome` | Restricted result `SUCCEEDED`, `DENIED`, or `FAILED`. |
 | `reason_code` | Optional stable machine-readable explanation without sensitive free text. |
@@ -388,7 +390,7 @@ Privacy-minimized local security record for authentication, recovery, replay, an
 | `occurred_at` | UTC instant the security decision occurred. |
 | `created_at` | Immutable UTC insertion instant. |
 
-Indexes `ix_security_audit_filter`, `ix_security_audit_subject_reference`, and `ix_security_audit_service_domain` support bounded action/result/time, tombstone-target, and multi-service/domain queries. The administration API applies a 365-day read-retention boundary and a maximum 90-day query window; physical archival or deletion remains an operational retention job outside request processing.
+Indexes `ix_security_audit_filter`, `ix_security_audit_subject_reference`, `ix_security_audit_service_domain`, `ix_security_audit_actor_reference`, and `ix_security_audit_actor_type` support bounded action/result/time, tombstone-target, multi-service/domain, and actor queries. The administration API applies a 365-day read-retention boundary and a maximum 90-day query window; physical archival or deletion remains an operational retention job outside request processing.
 
 ## Owner `care` (`mentalbridge_care.public`)
 

@@ -26,6 +26,24 @@ public class AdministrationAuditEventConsumer {
         this.objectMapper = objectMapper;
     }
 
+    private static final java.util.Set<String> ALLOWED_TOP_LEVEL_FIELDS = java.util.Set.of(
+            "eventId",
+            "eventType",
+            "occurredAt",
+            "producer",
+            "schemaVersion",
+            "sourceService",
+            "domain",
+            "actorId",
+            "actorType",
+            "action",
+            "result",
+            "reasonCode",
+            "correlationId",
+            "targetAccountId",
+            "targetIdentifier"
+    );
+
     @KafkaListener(
             topics = "${mentalbridge.identity.audit-ingestion.topic:mentalbridge.admin.audit-event.v1}",
             groupId = "${IDENTITY_AUDIT_CONSUMER_GROUP:mentalbridge.identity.audit-consumer}"
@@ -33,135 +51,171 @@ public class AdministrationAuditEventConsumer {
     public void onMessage(String message) {
         try {
             JsonNode root = objectMapper.readTree(message);
-
-            if (!root.hasNonNull("eventType")) {
-                LOGGER.warn("Audit message missing eventType, ignoring: correlationId={}", root.path("correlationId").asText(null));
+            if (!root.isObject()) {
+                LOGGER.warn("Audit message is not a JSON object, ignoring");
                 return;
             }
 
+            // Reject unexpected fields fail-closed (additionalProperties: false per schema v1)
+            var fieldIterator = root.fieldNames();
+            while (fieldIterator.hasNext()) {
+                String fieldName = fieldIterator.next();
+                if (!ALLOWED_TOP_LEVEL_FIELDS.contains(fieldName)) {
+                    LOGGER.warn("Audit message contains unexpected field '{}', rejecting fail-closed: eventType={}, correlationId={}",
+                            fieldName, root.path("eventType").asText(null), root.path("correlationId").asText(null));
+                    return;
+                }
+            }
+
+            // Required fields per schema v1: eventId, eventType, occurredAt, sourceService, domain, action, result, correlationId
+            if (!root.hasNonNull("eventId") || !root.hasNonNull("eventType") || !root.hasNonNull("occurredAt")
+                    || !root.hasNonNull("sourceService") || !root.hasNonNull("domain")
+                    || !root.hasNonNull("action") || !root.hasNonNull("result") || !root.hasNonNull("correlationId")) {
+                LOGGER.warn("Audit message missing required fields, ignoring: eventType={}, correlationId={}",
+                        root.path("eventType").asText(null), root.path("correlationId").asText(null));
+                return;
+            }
+
+            // correlationId
+            UUID correlationId;
+            try {
+                correlationId = UUID.fromString(root.get("correlationId").asText());
+            } catch (IllegalArgumentException e) {
+                LOGGER.warn("Audit message has invalid correlationId UUID, ignoring: eventType={}",
+                        root.path("eventType").asText(null));
+                return;
+            }
+
+            // eventId
+            UUID eventId;
+            try {
+                eventId = UUID.fromString(root.get("eventId").asText());
+            } catch (IllegalArgumentException e) {
+                LOGGER.warn("Audit message has invalid eventId UUID, ignoring: correlationId={}", correlationId);
+                return;
+            }
+
+            // eventType
             String eventType = root.get("eventType").asText();
             if (!AdministrationAuditIngestionService.ALLOWED_EVENT_TYPES.containsKey(eventType)) {
                 LOGGER.debug("Ignoring unallowlisted audit eventType: {}", eventType);
                 return;
             }
 
-            String correlationIdStr = root.path("correlationId").asText(null);
-            if (!root.hasNonNull("eventId")) {
-                LOGGER.warn("Audit message missing eventId, ignoring: eventType={}, correlationId={}", eventType, correlationIdStr);
-                return;
+            // schemaVersion (if present, must be 1.0)
+            if (root.has("schemaVersion")) {
+                String schemaVersion = root.get("schemaVersion").asText();
+                if (!"1.0".equals(schemaVersion)) {
+                    LOGGER.warn("Audit message has unsupported schemaVersion '{}', ignoring: eventType={}, eventId={}",
+                            schemaVersion, eventType, eventId);
+                    return;
+                }
             }
 
-            UUID eventId;
-            try {
-                eventId = UUID.fromString(root.get("eventId").asText());
-            } catch (IllegalArgumentException e) {
-                LOGGER.warn("Audit message has invalid eventId UUID, ignoring: eventType={}, correlationId={}", eventType, correlationIdStr);
-                return;
-            }
-
-            JsonNode payload = root.has("payload") && !root.path("payload").isMissingNode()
-                    ? root.path("payload")
-                    : root;
-
-            // Fail-closed outcome validation per review
-            String result = root.hasNonNull("result")
-                    ? root.get("result").asText()
-                    : (payload.hasNonNull("result") ? payload.get("result").asText() : null);
-            if (result == null || (!result.equals("SUCCEEDED") && !result.equals("DENIED") && !result.equals("FAILED"))) {
+            // result (fail-closed)
+            String result = root.get("result").asText();
+            if (!result.equals("SUCCEEDED") && !result.equals("DENIED") && !result.equals("FAILED")) {
                 LOGGER.warn("Audit message with invalid result, ignoring: eventType={}, eventId={}", eventType, eventId);
                 return;
             }
 
-            String action = root.hasNonNull("action")
-                    ? root.get("action").asText()
-                    : (payload.hasNonNull("action") ? payload.get("action").asText() : null);
-            if (action == null || action.isBlank()) {
-                LOGGER.warn("Audit message missing action, ignoring: eventType={}, eventId={}", eventType, eventId);
+            // action
+            String action = root.get("action").asText();
+            if (action.isBlank() || !action.matches("^[A-Z0-9_]+$")) {
+                LOGGER.warn("Audit message missing or invalid action, ignoring: eventType={}, eventId={}", eventType, eventId);
                 return;
             }
 
-            String sourceServiceStr = root.hasNonNull("sourceService")
-                    ? root.get("sourceService").asText()
-                    : (payload.hasNonNull("sourceService") ? payload.get("sourceService").asText() : null);
-            if (sourceServiceStr == null || sourceServiceStr.isBlank()) {
-                LOGGER.warn("Audit message missing sourceService, ignoring: eventType={}, eventId={}", eventType, eventId);
-                return;
-            }
+            // sourceService
+            String sourceServiceStr = root.get("sourceService").asText();
             AdministrationAuditService.AuditSourceService sourceService =
                     AdministrationAuditService.safeSourceService(sourceServiceStr);
             if (sourceService == null) {
-                LOGGER.warn("Audit message has invalid sourceService enum '{}', ignoring: eventType={}, eventId={}", sourceServiceStr, eventType, eventId);
+                LOGGER.warn("Audit message has invalid sourceService enum '{}', ignoring: eventType={}, eventId={}",
+                        sourceServiceStr, eventType, eventId);
                 return;
             }
 
-            String domainStr = root.hasNonNull("domain")
-                    ? root.get("domain").asText()
-                    : (payload.hasNonNull("domain") ? payload.get("domain").asText() : null);
-            if (domainStr == null || domainStr.isBlank()) {
-                LOGGER.warn("Audit message missing domain, ignoring: eventType={}, eventId={}", eventType, eventId);
-                return;
-            }
+            // domain
+            String domainStr = root.get("domain").asText();
             AdministrationAuditService.AuditDomain domain =
                     AdministrationAuditService.safeDomain(domainStr);
             if (domain == null) {
-                LOGGER.warn("Audit message has invalid domain enum '{}', ignoring: eventType={}, eventId={}", domainStr, eventType, eventId);
+                LOGGER.warn("Audit message has invalid domain enum '{}', ignoring: eventType={}, eventId={}",
+                        domainStr, eventType, eventId);
                 return;
             }
 
-            JsonNode occurredAtNode = root.hasNonNull("occurredAt")
-                    ? root.get("occurredAt")
-                    : (payload.hasNonNull("occurredAt") ? payload.get("occurredAt") : null);
-            if (occurredAtNode == null || occurredAtNode.asText().isBlank()) {
-                LOGGER.warn("Audit message missing occurredAt, ignoring: eventType={}, eventId={}", eventType, eventId);
-                return;
-            }
-
+            // occurredAt
             Instant occurredAt;
             try {
-                occurredAt = Instant.parse(occurredAtNode.asText());
+                occurredAt = Instant.parse(root.get("occurredAt").asText());
             } catch (Exception e) {
-                LOGGER.warn("Audit message has invalid occurredAt timestamp, ignoring: eventType={}, eventId={}", eventType, eventId);
+                LOGGER.warn("Audit message has invalid occurredAt timestamp, ignoring: eventType={}, eventId={}",
+                        eventType, eventId);
                 return;
             }
 
+            // actorId & actorType
             UUID actorId = null;
-            JsonNode actorNode = root.hasNonNull("actorId") ? root.get("actorId") : payload.path("actorId");
-            if (actorNode != null && !actorNode.isMissingNode() && !actorNode.isNull()) {
+            if (root.hasNonNull("actorId")) {
                 try {
-                    actorId = UUID.fromString(actorNode.asText());
-                } catch (IllegalArgumentException ignored) {
+                    actorId = UUID.fromString(root.get("actorId").asText());
+                } catch (IllegalArgumentException e) {
+                    LOGGER.warn("Audit message has invalid actorId UUID, ignoring: eventType={}, eventId={}",
+                            eventType, eventId);
+                    return;
                 }
             }
 
-            String actorType = root.hasNonNull("actorType")
-                    ? root.get("actorType").asText()
-                    : (payload.hasNonNull("actorType") ? payload.get("actorType").asText() : "STAFF");
-
-            String reasonCode = root.hasNonNull("reasonCode")
-                    ? root.get("reasonCode").asText(null)
-                    : (payload.hasNonNull("reasonCode") ? payload.get("reasonCode").asText(null) : null);
-
-            UUID correlationId = null;
-            JsonNode corrNode = root.hasNonNull("correlationId") ? root.get("correlationId") : payload.path("correlationId");
-            if (corrNode != null && !corrNode.isMissingNode() && !corrNode.isNull()) {
-                try {
-                    correlationId = UUID.fromString(corrNode.asText());
-                } catch (IllegalArgumentException ignored) {
+            String actorType = null;
+            if (root.hasNonNull("actorType")) {
+                actorType = root.get("actorType").asText();
+                if (!"ADMIN".equals(actorType) && !"SYSTEM".equals(actorType)) {
+                    LOGGER.warn("Audit message has invalid actorType '{}', ignoring: eventType={}, eventId={}",
+                            actorType, eventType, eventId);
+                    return;
                 }
+            } else {
+                actorType = actorId != null ? "ADMIN" : "SYSTEM";
             }
 
+            if ("SYSTEM".equals(actorType) && actorId != null) {
+                LOGGER.warn("Audit message has actorType=SYSTEM but non-null actorId, ignoring: eventType={}, eventId={}",
+                        eventType, eventId);
+                return;
+            }
+            if ("ADMIN".equals(actorType) && actorId == null) {
+                LOGGER.warn("Audit message has actorType=ADMIN but null actorId, ignoring: eventType={}, eventId={}",
+                        eventType, eventId);
+                return;
+            }
+
+            // reasonCode
+            String reasonCode = root.hasNonNull("reasonCode") ? root.get("reasonCode").asText(null) : null;
+
+            // targetAccountId
             UUID targetAccountId = null;
-            JsonNode targetAccNode = root.hasNonNull("targetAccountId") ? root.get("targetAccountId") : payload.path("targetAccountId");
-            if (targetAccNode != null && !targetAccNode.isMissingNode() && !targetAccNode.isNull()) {
+            if (root.hasNonNull("targetAccountId")) {
                 try {
-                    targetAccountId = UUID.fromString(targetAccNode.asText());
-                } catch (IllegalArgumentException ignored) {
+                    targetAccountId = UUID.fromString(root.get("targetAccountId").asText());
+                } catch (IllegalArgumentException e) {
+                    LOGGER.warn("Audit message has invalid targetAccountId UUID, ignoring: eventType={}, eventId={}",
+                            eventType, eventId);
+                    return;
                 }
             }
 
-            String targetIdentifier = root.hasNonNull("targetIdentifier")
-                    ? root.get("targetIdentifier").asText(null)
-                    : (payload.hasNonNull("targetIdentifier") ? payload.get("targetIdentifier").asText(null) : null);
+            // targetIdentifier
+            String targetIdentifier = null;
+            if (root.hasNonNull("targetIdentifier")) {
+                targetIdentifier = root.get("targetIdentifier").asText();
+                if (!targetIdentifier.matches("^(account:[0-9a-fA-F-]{36}|tombstone:[0-9a-f]{64})$")) {
+                    LOGGER.warn("Audit message has invalid targetIdentifier shape, ignoring: eventType={}, eventId={}",
+                            eventType, eventId);
+                    return;
+                }
+            }
 
             AdministrationAuditIngestionService.IngestionCommand command =
                     new AdministrationAuditIngestionService.IngestionCommand(

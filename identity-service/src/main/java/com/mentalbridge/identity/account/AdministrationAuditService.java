@@ -138,8 +138,8 @@ public class AdministrationAuditService {
             if (query.domain() != null) {
                 predicates.add(builder.equal(root.get("domain"), query.domain().name()));
             }
-            if (query.actorType() == AuditActorType.ADMIN) predicates.add(builder.isNotNull(root.get("actorId")));
-            if (query.actorType() == AuditActorType.SYSTEM) predicates.add(builder.isNull(root.get("actorId")));
+            if (query.actorType() == AuditActorType.ADMIN) predicates.add(builder.equal(root.get("actorType"), "ADMIN"));
+            if (query.actorType() == AuditActorType.SYSTEM) predicates.add(builder.equal(root.get("actorType"), "SYSTEM"));
             if (query.action() != null) predicates.add(builder.equal(root.get("action"), query.action()));
             if (query.result() != null) predicates.add(builder.equal(root.get("outcome"), query.result().name()));
             if (query.target() != null && query.target().accountId() != null) {
@@ -175,11 +175,29 @@ public class AdministrationAuditService {
     }
 
     private AuditEvent response(SecurityAuditEventEntity event) {
-        String actorIdentifier = event.getActorId() == null ? "system" : "account:" + event.getActorId();
-        AuditActorType actorType = event.getActorId() == null ? AuditActorType.SYSTEM : AuditActorType.ADMIN;
-        String targetIdentifier = event.getAccountId() == null
-                ? "tombstone:" + event.getSubjectReferenceHash()
-                : "account:" + event.getAccountId();
+        AuditActorType actorType = "ADMIN".equalsIgnoreCase(event.getActorType())
+                ? AuditActorType.ADMIN
+                : AuditActorType.SYSTEM;
+        String actorIdentifier;
+        if (actorType == AuditActorType.ADMIN) {
+            if (event.getActorId() != null) {
+                actorIdentifier = "account:" + event.getActorId();
+            } else if (event.getActorReferenceHash() != null) {
+                actorIdentifier = "tombstone:" + event.getActorReferenceHash();
+            } else {
+                actorIdentifier = "system";
+            }
+        } else {
+            actorIdentifier = "system";
+        }
+
+        String targetIdentifier = null;
+        if (event.getAccountId() != null) {
+            targetIdentifier = "account:" + event.getAccountId();
+        } else if (event.getSubjectReferenceHash() != null) {
+            targetIdentifier = "tombstone:" + event.getSubjectReferenceHash();
+        }
+
         AuditSourceService source = safeSourceService(event.getSourceService());
         if (source == null) source = AuditSourceService.IDENTITY;
         AuditDomain domain = safeDomain(event.getDomain());
@@ -223,7 +241,7 @@ public class AdministrationAuditService {
         return List.of(event.eventId().toString(), event.occurredAt().toString(), event.actorType().name(),
                 event.actorIdentifier(), event.action(), event.result().name(), nullToEmpty(event.reasonCode()),
                 event.correlationId().toString(), event.sourceService().name(), event.domain().name(),
-                event.targetIdentifier()).stream().map(this::csvCell).reduce((left, right) -> left + "," + right)
+                nullToEmpty(event.targetIdentifier())).stream().map(this::csvCell).reduce((left, right) -> left + "," + right)
                 .orElse("") + "\r\n";
     }
 

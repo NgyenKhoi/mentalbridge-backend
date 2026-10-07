@@ -114,11 +114,15 @@ CREATE TABLE identity.security_audit_event (
     id uuid PRIMARY KEY,
     account_id uuid REFERENCES identity.account(id),
     actor_id uuid REFERENCES identity.account(id),
+    actor_type varchar(16) NOT NULL DEFAULT 'ADMIN',
+    actor_reference_hash char(64), -- retained safe actor tombstone after account deletion
     action varchar(96) NOT NULL,
     outcome varchar(32) NOT NULL,
     reason_code varchar(64),
     correlation_id uuid NOT NULL,
     subject_reference_hash char(64), -- retained safe target tombstone after account deletion
+    source_service varchar(32) NOT NULL DEFAULT 'IDENTITY',
+    domain varchar(64) NOT NULL DEFAULT 'ACCOUNT_ADMINISTRATION',
     occurred_at timestamptz NOT NULL,
     created_at timestamptz NOT NULL
 );

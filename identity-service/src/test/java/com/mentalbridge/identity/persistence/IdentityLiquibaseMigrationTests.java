@@ -60,6 +60,7 @@ class IdentityLiquibaseMigrationTests extends IdentityTestProperties {
 				    ('refresh_session', 'user_agent_hash'),
 				    ('one_time_token', 'token_hash'),
 				    ('idempotency_record', 'request_hash'),
+				    ('security_audit_event', 'actor_reference_hash'),
 				    ('security_audit_event', 'subject_reference_hash')
 				  )
 				order by table_name, column_name
@@ -67,7 +68,7 @@ class IdentityLiquibaseMigrationTests extends IdentityTestProperties {
 
 		assertThat(columns).containsExactly("idempotency_record.request_hash", "one_time_token.token_hash",
 				"refresh_session.ip_hash", "refresh_session.token_hash", "refresh_session.user_agent_hash",
-				"security_audit_event.subject_reference_hash");
+				"security_audit_event.actor_reference_hash", "security_audit_event.subject_reference_hash");
 	}
 
 	@Test

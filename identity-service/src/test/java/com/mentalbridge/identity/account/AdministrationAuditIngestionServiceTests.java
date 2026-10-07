@@ -553,4 +553,302 @@ class AdministrationAuditIngestionServiceTests {
         assertThat(result).isFalse();
         verify(auditRepository, never()).saveAndFlush(any());
     }
+
+    @Test
+    @DisplayName("Consumer: message with unexpected top-level field is rejected fail-closed (schema additionalProperties: false)")
+    void consumerRejectsMessageWithUnexpectedTopLevelField() {
+        String json = """
+                {
+                  "eventId": "%s",
+                  "eventType": "consultation.specialist.suspended",
+                  "occurredAt": "%s",
+                  "sourceService": "CONSULTATION",
+                  "domain": "SPECIALIST_REVIEW",
+                  "actorId": "%s",
+                  "actorType": "ADMIN",
+                  "action": "SPECIALIST_SUSPENDED",
+                  "result": "SUCCEEDED",
+                  "correlationId": "%s",
+                  "rawJournal": "PATIENT_CONFIDENTIAL_JOURNAL"
+                }
+                """.formatted(UUID.randomUUID(), Instant.now(), UUID.randomUUID(), UUID.randomUUID());
+
+        consumer.onMessage(json);
+
+        verify(auditRepository, never()).saveAndFlush(any());
+    }
+
+    @Test
+    @DisplayName("Consumer: message with nested payload shape is rejected fail-closed")
+    void consumerRejectsMessageWithNestedPayloadShape() {
+        String json = """
+                {
+                  "eventId": "%s",
+                  "eventType": "consultation.specialist.suspended",
+                  "correlationId": "%s",
+                  "payload": {
+                    "occurredAt": "%s",
+                    "sourceService": "CONSULTATION",
+                    "domain": "SPECIALIST_REVIEW",
+                    "action": "SPECIALIST_SUSPENDED",
+                    "result": "SUCCEEDED"
+                  }
+                }
+                """.formatted(UUID.randomUUID(), UUID.randomUUID(), Instant.now());
+
+        consumer.onMessage(json);
+
+        verify(auditRepository, never()).saveAndFlush(any());
+    }
+
+    @Test
+    @DisplayName("Consumer: message with missing correlationId is rejected fail-closed")
+    void consumerRejectsMessageWithMissingCorrelationId() {
+        String json = """
+                {
+                  "eventId": "%s",
+                  "eventType": "consultation.specialist.suspended",
+                  "occurredAt": "%s",
+                  "sourceService": "CONSULTATION",
+                  "domain": "SPECIALIST_REVIEW",
+                  "actorId": "%s",
+                  "actorType": "ADMIN",
+                  "action": "SPECIALIST_SUSPENDED",
+                  "result": "SUCCEEDED"
+                }
+                """.formatted(UUID.randomUUID(), Instant.now(), UUID.randomUUID());
+
+        consumer.onMessage(json);
+
+        verify(auditRepository, never()).saveAndFlush(any());
+    }
+
+    @Test
+    @DisplayName("Consumer: message with malformed correlationId is rejected fail-closed")
+    void consumerRejectsMessageWithMalformedCorrelationId() {
+        String json = """
+                {
+                  "eventId": "%s",
+                  "eventType": "consultation.specialist.suspended",
+                  "occurredAt": "%s",
+                  "sourceService": "CONSULTATION",
+                  "domain": "SPECIALIST_REVIEW",
+                  "actorId": "%s",
+                  "actorType": "ADMIN",
+                  "action": "SPECIALIST_SUSPENDED",
+                  "result": "SUCCEEDED",
+                  "correlationId": "not-a-valid-uuid"
+                }
+                """.formatted(UUID.randomUUID(), Instant.now(), UUID.randomUUID());
+
+        consumer.onMessage(json);
+
+        verify(auditRepository, never()).saveAndFlush(any());
+    }
+
+    @Test
+    @DisplayName("IngestionService: command with null correlationId is rejected fail-closed")
+    void ingestRejectsNullCorrelationId() {
+        UUID eventId = UUID.randomUUID();
+
+        AdministrationAuditIngestionService.IngestionCommand command =
+                new AdministrationAuditIngestionService.IngestionCommand(
+                        eventId,
+                        "identity.account.disabled",
+                        Instant.now(),
+                        AdministrationAuditService.AuditSourceService.IDENTITY,
+                        AdministrationAuditService.AuditDomain.ACCOUNT_ADMINISTRATION,
+                        null,
+                        "SYSTEM",
+                        "ACCOUNT_DISABLED",
+                        "SUCCEEDED",
+                        "POLICY_VIOLATION",
+                        null,
+                        null,
+                        null
+                );
+
+        boolean result = ingestionService.ingest(command);
+        assertThat(result).isFalse();
+        verify(auditRepository, never()).saveAndFlush(any());
+    }
+
+    @Test
+    @DisplayName("IngestionService: valid producer correlationId is preserved exactly, never fabricated")
+    void ingestPreservesExactCorrelationId() {
+        UUID eventId = UUID.randomUUID();
+        UUID correlationId = UUID.randomUUID();
+        Instant occurredAt = Instant.now();
+        when(auditRepository.existsById(eventId)).thenReturn(false);
+
+        AdministrationAuditIngestionService.IngestionCommand command =
+                new AdministrationAuditIngestionService.IngestionCommand(
+                        eventId,
+                        "identity.account.disabled",
+                        occurredAt,
+                        AdministrationAuditService.AuditSourceService.IDENTITY,
+                        AdministrationAuditService.AuditDomain.ACCOUNT_ADMINISTRATION,
+                        null,
+                        "SYSTEM",
+                        "ACCOUNT_DISABLED",
+                        "SUCCEEDED",
+                        "POLICY_VIOLATION",
+                        correlationId,
+                        null,
+                        null
+                );
+
+        boolean result = ingestionService.ingest(command);
+        assertThat(result).isTrue();
+
+        ArgumentCaptor<SecurityAuditEventEntity> captor = ArgumentCaptor.forClass(SecurityAuditEventEntity.class);
+        verify(auditRepository).saveAndFlush(captor.capture());
+        assertThat(captor.getValue().getCorrelationId()).isEqualTo(correlationId);
+    }
+
+    @Test
+    @DisplayName("Consumer: message with invalid actorType like STAFF is rejected fail-closed")
+    void consumerRejectsMessageWithInvalidActorType() {
+        String json = """
+                {
+                  "eventId": "%s",
+                  "eventType": "consultation.specialist.suspended",
+                  "occurredAt": "%s",
+                  "sourceService": "CONSULTATION",
+                  "domain": "SPECIALIST_REVIEW",
+                  "actorId": "%s",
+                  "actorType": "STAFF",
+                  "action": "SPECIALIST_SUSPENDED",
+                  "result": "SUCCEEDED",
+                  "correlationId": "%s"
+                }
+                """.formatted(UUID.randomUUID(), Instant.now(), UUID.randomUUID(), UUID.randomUUID());
+
+        consumer.onMessage(json);
+
+        verify(auditRepository, never()).saveAndFlush(any());
+    }
+
+    @Test
+    @DisplayName("Consumer: SYSTEM actor with non-null actorId is rejected fail-closed")
+    void consumerRejectsSystemActorWithActorId() {
+        String json = """
+                {
+                  "eventId": "%s",
+                  "eventType": "identity.account.disabled",
+                  "occurredAt": "%s",
+                  "sourceService": "IDENTITY",
+                  "domain": "ACCOUNT_ADMINISTRATION",
+                  "actorId": "%s",
+                  "actorType": "SYSTEM",
+                  "action": "ACCOUNT_DISABLED",
+                  "result": "SUCCEEDED",
+                  "correlationId": "%s"
+                }
+                """.formatted(UUID.randomUUID(), Instant.now(), UUID.randomUUID(), UUID.randomUUID());
+
+        consumer.onMessage(json);
+
+        verify(auditRepository, never()).saveAndFlush(any());
+    }
+
+    @Test
+    @DisplayName("Consumer: ADMIN actor with null actorId is rejected fail-closed")
+    void consumerRejectsAdminActorWithNullActorId() {
+        String json = """
+                {
+                  "eventId": "%s",
+                  "eventType": "identity.account.disabled",
+                  "occurredAt": "%s",
+                  "sourceService": "IDENTITY",
+                  "domain": "ACCOUNT_ADMINISTRATION",
+                  "actorType": "ADMIN",
+                  "action": "ACCOUNT_DISABLED",
+                  "result": "SUCCEEDED",
+                  "correlationId": "%s"
+                }
+                """.formatted(UUID.randomUUID(), Instant.now(), UUID.randomUUID());
+
+        consumer.onMessage(json);
+
+        verify(auditRepository, never()).saveAndFlush(any());
+    }
+
+    @Test
+    @DisplayName("Actor semantics: deleted admin actor preserves ADMIN actorType and actorReferenceHash")
+    void deletedAdminActorPreservesAdminActorTypeAndHash() {
+        UUID eventId = UUID.randomUUID();
+        UUID adminId = UUID.randomUUID();
+        UUID correlationId = UUID.randomUUID();
+        Instant occurredAt = Instant.now();
+
+        when(auditRepository.existsById(eventId)).thenReturn(false);
+        // Admin account does not exist in Identity account repository (e.g. deleted or external)
+        when(accountRepository.existsById(adminId)).thenReturn(false);
+
+        AdministrationAuditIngestionService.IngestionCommand command =
+                new AdministrationAuditIngestionService.IngestionCommand(
+                        eventId,
+                        "consultation.specialist.suspended",
+                        occurredAt,
+                        AdministrationAuditService.AuditSourceService.CONSULTATION,
+                        AdministrationAuditService.AuditDomain.SPECIALIST_REVIEW,
+                        adminId,
+                        "ADMIN",
+                        "SPECIALIST_SUSPENDED",
+                        "SUCCEEDED",
+                        "POLICY_VIOLATION",
+                        correlationId,
+                        null,
+                        null
+                );
+
+        boolean result = ingestionService.ingest(command);
+        assertThat(result).isTrue();
+
+        ArgumentCaptor<SecurityAuditEventEntity> captor = ArgumentCaptor.forClass(SecurityAuditEventEntity.class);
+        verify(auditRepository).saveAndFlush(captor.capture());
+
+        SecurityAuditEventEntity saved = captor.getValue();
+        assertThat(saved.getActorType()).isEqualTo("ADMIN");
+        assertThat(saved.getActorId()).isNull();
+        assertThat(saved.getActorReferenceHash()).isEqualTo(AdministrationAuditIngestionService.sha256Hex(adminId.toString()));
+    }
+
+    @Test
+    @DisplayName("Target tombstone: absent target does not fabricate fake eventId tombstone")
+    void absentTargetDoesNotFabricateTombstone() {
+        UUID eventId = UUID.randomUUID();
+        UUID correlationId = UUID.randomUUID();
+        Instant occurredAt = Instant.now();
+
+        when(auditRepository.existsById(eventId)).thenReturn(false);
+
+        AdministrationAuditIngestionService.IngestionCommand command =
+                new AdministrationAuditIngestionService.IngestionCommand(
+                        eventId,
+                        "identity.account.disabled",
+                        occurredAt,
+                        AdministrationAuditService.AuditSourceService.IDENTITY,
+                        AdministrationAuditService.AuditDomain.ACCOUNT_ADMINISTRATION,
+                        null,
+                        "SYSTEM",
+                        "ACCOUNT_DISABLED",
+                        "SUCCEEDED",
+                        "POLICY_VIOLATION",
+                        correlationId,
+                        null,
+                        null
+                );
+
+        boolean result = ingestionService.ingest(command);
+        assertThat(result).isTrue();
+
+        ArgumentCaptor<SecurityAuditEventEntity> captor = ArgumentCaptor.forClass(SecurityAuditEventEntity.class);
+        verify(auditRepository).saveAndFlush(captor.capture());
+
+        SecurityAuditEventEntity saved = captor.getValue();
+        assertThat(saved.getAccountId()).isNull();
+        assertThat(saved.getSubjectReferenceHash()).isNull();
+    }
 }
