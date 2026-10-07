@@ -84,9 +84,10 @@ class CommunityModerationController {
 	@PostMapping("/admin/moderation-cases/{caseId}/actions")
 	ResponseEntity<ModerationCase> act(@AuthenticationPrincipal Jwt jwt, @PathVariable UUID caseId,
 			@RequestHeader("Idempotency-Key") String idempotencyKey,
+			@RequestHeader(name = "X-Correlation-Id", required = false) UUID correlationId,
 			@RequestBody CreateModerationActionRequest request) {
 		return ResponseEntity.status(HttpStatus.CREATED)
-				.body(moderation.act(subject(jwt), caseId, idempotencyKey, request));
+				.body(moderation.act(subject(jwt), caseId, idempotencyKey, request, correlationId));
 	}
 
 	private UUID subject(Jwt jwt) {

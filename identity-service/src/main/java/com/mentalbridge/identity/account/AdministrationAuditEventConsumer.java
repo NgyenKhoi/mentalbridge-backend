@@ -68,66 +68,83 @@ public class AdministrationAuditEventConsumer {
             }
 
             // Required fields per schema v1: eventId, eventType, occurredAt, sourceService, domain, action, result, correlationId
-            if (!root.hasNonNull("eventId") || !root.hasNonNull("eventType") || !root.hasNonNull("occurredAt")
-                    || !root.hasNonNull("sourceService") || !root.hasNonNull("domain")
-                    || !root.hasNonNull("action") || !root.hasNonNull("result") || !root.hasNonNull("correlationId")) {
-                LOGGER.warn("Audit message missing required fields, ignoring: eventType={}, correlationId={}",
-                        root.path("eventType").asText(null), root.path("correlationId").asText(null));
+            if (!root.has("eventId") || !root.get("eventId").isTextual()
+                    || !root.has("eventType") || !root.get("eventType").isTextual()
+                    || !root.has("occurredAt") || !root.get("occurredAt").isTextual()
+                    || !root.has("sourceService") || !root.get("sourceService").isTextual()
+                    || !root.has("domain") || !root.get("domain").isTextual()
+                    || !root.has("action") || !root.get("action").isTextual()
+                    || !root.has("result") || !root.get("result").isTextual()
+                    || !root.has("correlationId") || !root.get("correlationId").isTextual()) {
+                LOGGER.warn("Audit message missing or non-textual required fields, ignoring: eventType={}, correlationId={}",
+                        root.path("eventType").isTextual() ? root.path("eventType").textValue() : null,
+                        root.path("correlationId").isTextual() ? root.path("correlationId").textValue() : null);
                 return;
+            }
+
+            // producer (optional string)
+            if (root.has("producer") && !root.get("producer").isNull()) {
+                if (!root.get("producer").isTextual()) {
+                    LOGGER.warn("Audit message has non-textual producer, ignoring");
+                    return;
+                }
+            }
+
+            // schemaVersion (optional string, const "1.0")
+            if (root.has("schemaVersion") && !root.get("schemaVersion").isNull()) {
+                if (!root.get("schemaVersion").isTextual()) {
+                    LOGGER.warn("Audit message has non-textual schemaVersion, ignoring");
+                    return;
+                }
+                String schemaVersion = root.get("schemaVersion").textValue();
+                if (!"1.0".equals(schemaVersion)) {
+                    LOGGER.warn("Audit message has unsupported schemaVersion '{}', ignoring", schemaVersion);
+                    return;
+                }
             }
 
             // correlationId
             UUID correlationId;
             try {
-                correlationId = UUID.fromString(root.get("correlationId").asText());
+                correlationId = UUID.fromString(root.get("correlationId").textValue());
             } catch (IllegalArgumentException e) {
                 LOGGER.warn("Audit message has invalid correlationId UUID, ignoring: eventType={}",
-                        root.path("eventType").asText(null));
+                        root.get("eventType").textValue());
                 return;
             }
 
             // eventId
             UUID eventId;
             try {
-                eventId = UUID.fromString(root.get("eventId").asText());
+                eventId = UUID.fromString(root.get("eventId").textValue());
             } catch (IllegalArgumentException e) {
                 LOGGER.warn("Audit message has invalid eventId UUID, ignoring: correlationId={}", correlationId);
                 return;
             }
 
             // eventType
-            String eventType = root.get("eventType").asText();
+            String eventType = root.get("eventType").textValue();
             if (!AdministrationAuditIngestionService.ALLOWED_EVENT_TYPES.containsKey(eventType)) {
                 LOGGER.debug("Ignoring unallowlisted audit eventType: {}", eventType);
                 return;
             }
 
-            // schemaVersion (if present, must be 1.0)
-            if (root.has("schemaVersion")) {
-                String schemaVersion = root.get("schemaVersion").asText();
-                if (!"1.0".equals(schemaVersion)) {
-                    LOGGER.warn("Audit message has unsupported schemaVersion '{}', ignoring: eventType={}, eventId={}",
-                            schemaVersion, eventType, eventId);
-                    return;
-                }
-            }
-
             // result (fail-closed)
-            String result = root.get("result").asText();
+            String result = root.get("result").textValue();
             if (!result.equals("SUCCEEDED") && !result.equals("DENIED") && !result.equals("FAILED")) {
                 LOGGER.warn("Audit message with invalid result, ignoring: eventType={}, eventId={}", eventType, eventId);
                 return;
             }
 
             // action
-            String action = root.get("action").asText();
+            String action = root.get("action").textValue();
             if (action.isBlank() || !action.matches("^[A-Z0-9_]+$")) {
                 LOGGER.warn("Audit message missing or invalid action, ignoring: eventType={}, eventId={}", eventType, eventId);
                 return;
             }
 
             // sourceService
-            String sourceServiceStr = root.get("sourceService").asText();
+            String sourceServiceStr = root.get("sourceService").textValue();
             AdministrationAuditService.AuditSourceService sourceService =
                     AdministrationAuditService.safeSourceService(sourceServiceStr);
             if (sourceService == null) {
@@ -137,7 +154,7 @@ public class AdministrationAuditEventConsumer {
             }
 
             // domain
-            String domainStr = root.get("domain").asText();
+            String domainStr = root.get("domain").textValue();
             AdministrationAuditService.AuditDomain domain =
                     AdministrationAuditService.safeDomain(domainStr);
             if (domain == null) {
@@ -149,7 +166,7 @@ public class AdministrationAuditEventConsumer {
             // occurredAt
             Instant occurredAt;
             try {
-                occurredAt = Instant.parse(root.get("occurredAt").asText());
+                occurredAt = Instant.parse(root.get("occurredAt").textValue());
             } catch (Exception e) {
                 LOGGER.warn("Audit message has invalid occurredAt timestamp, ignoring: eventType={}, eventId={}",
                         eventType, eventId);
@@ -159,8 +176,13 @@ public class AdministrationAuditEventConsumer {
             // actorId & actorType
             UUID actorId = null;
             if (root.hasNonNull("actorId")) {
+                if (!root.get("actorId").isTextual()) {
+                    LOGGER.warn("Audit message has non-textual actorId, ignoring: eventType={}, eventId={}",
+                            eventType, eventId);
+                    return;
+                }
                 try {
-                    actorId = UUID.fromString(root.get("actorId").asText());
+                    actorId = UUID.fromString(root.get("actorId").textValue());
                 } catch (IllegalArgumentException e) {
                     LOGGER.warn("Audit message has invalid actorId UUID, ignoring: eventType={}, eventId={}",
                             eventType, eventId);
@@ -170,7 +192,12 @@ public class AdministrationAuditEventConsumer {
 
             String actorType = null;
             if (root.hasNonNull("actorType")) {
-                actorType = root.get("actorType").asText();
+                if (!root.get("actorType").isTextual()) {
+                    LOGGER.warn("Audit message has non-textual actorType, ignoring: eventType={}, eventId={}",
+                            eventType, eventId);
+                    return;
+                }
+                actorType = root.get("actorType").textValue();
                 if (!"ADMIN".equals(actorType) && !"SYSTEM".equals(actorType)) {
                     LOGGER.warn("Audit message has invalid actorType '{}', ignoring: eventType={}, eventId={}",
                             actorType, eventType, eventId);
@@ -192,13 +219,26 @@ public class AdministrationAuditEventConsumer {
             }
 
             // reasonCode
-            String reasonCode = root.hasNonNull("reasonCode") ? root.get("reasonCode").asText(null) : null;
+            String reasonCode = null;
+            if (root.hasNonNull("reasonCode")) {
+                if (!root.get("reasonCode").isTextual()) {
+                    LOGGER.warn("Audit message has non-textual reasonCode, ignoring: eventType={}, eventId={}",
+                            eventType, eventId);
+                    return;
+                }
+                reasonCode = root.get("reasonCode").textValue();
+            }
 
             // targetAccountId
             UUID targetAccountId = null;
             if (root.hasNonNull("targetAccountId")) {
+                if (!root.get("targetAccountId").isTextual()) {
+                    LOGGER.warn("Audit message has non-textual targetAccountId, ignoring: eventType={}, eventId={}",
+                            eventType, eventId);
+                    return;
+                }
                 try {
-                    targetAccountId = UUID.fromString(root.get("targetAccountId").asText());
+                    targetAccountId = UUID.fromString(root.get("targetAccountId").textValue());
                 } catch (IllegalArgumentException e) {
                     LOGGER.warn("Audit message has invalid targetAccountId UUID, ignoring: eventType={}, eventId={}",
                             eventType, eventId);
@@ -209,7 +249,12 @@ public class AdministrationAuditEventConsumer {
             // targetIdentifier
             String targetIdentifier = null;
             if (root.hasNonNull("targetIdentifier")) {
-                targetIdentifier = root.get("targetIdentifier").asText();
+                if (!root.get("targetIdentifier").isTextual()) {
+                    LOGGER.warn("Audit message has non-textual targetIdentifier, ignoring: eventType={}, eventId={}",
+                            eventType, eventId);
+                    return;
+                }
+                targetIdentifier = root.get("targetIdentifier").textValue();
                 if (!targetIdentifier.matches("^(account:[0-9a-fA-F-]{36}|tombstone:[0-9a-f]{64})$")) {
                     LOGGER.warn("Audit message has invalid targetIdentifier shape, ignoring: eventType={}, eventId={}",
                             eventType, eventId);

@@ -8,6 +8,7 @@ import type { SafetyDirectoryCoverage, SafetyDirectoryRow } from './safety-direc
 
 export interface SafetyDirectoryCommandContext {
   readonly actorId: string;
+  readonly correlationId?: string;
 }
 
 type DirectoryDatabaseRow = Omit<SafetyDirectoryRow, 'record_version' | 'coverage'> & {

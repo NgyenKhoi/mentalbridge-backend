@@ -1,4 +1,15 @@
-import { ConflictException, Inject, Injectable, ServiceUnavailableException } from '@nestjs/common';
+import {
+  ConflictException,
+  Inject,
+  Injectable,
+  Optional,
+  ServiceUnavailableException,
+} from '@nestjs/common';
+import { randomUUID } from 'node:crypto';
+import {
+  CONTENT_ADMIN_AUDIT_PUBLISHER_TOKEN,
+  type ContentAdminAuditPublisher,
+} from '../audit/content-admin-audit.publisher.js';
 
 import { SAFETY_DIRECTORY_REPOSITORY_TOKEN } from '../application.tokens.js';
 import type { SafetyDirectoryEntryWrite, SafetyDirectoryLookup } from './safety-directory.dto.js';
@@ -62,6 +73,9 @@ export class SafetyDirectoryService {
   constructor(
     @Inject(SAFETY_DIRECTORY_REPOSITORY_TOKEN)
     private readonly repository: SafetyDirectoryRepository,
+    @Optional()
+    @Inject(CONTENT_ADMIN_AUDIT_PUBLISHER_TOKEN)
+    private readonly auditPublisher?: ContentAdminAuditPublisher,
   ) {}
 
   async listAdmin(): Promise<SafetyDirectoryAdminEntry[]> {
@@ -106,7 +120,27 @@ export class SafetyDirectoryService {
   ): Promise<SafetyDirectoryAdminEntry | null> {
     return this.wrap(async () => {
       const row = await this.repository.review(id, version, context);
-      return row ? toAdmin(row) : null;
+      if (!row) return null;
+      if (this.auditPublisher) {
+        await this.auditPublisher.publish({
+          eventId: randomUUID(),
+          eventType: 'content.safety-directory.reviewed',
+          occurredAt: new Date().toISOString(),
+          producer: 'content-notification-service',
+          schemaVersion: '1.0',
+          sourceService: 'CONTENT',
+          domain: 'RESOURCE_MANAGEMENT',
+          actorId: context.actorId,
+          actorType: 'ADMIN',
+          action: 'SAFETY_DIRECTORY_REVIEWED',
+          result: 'SUCCEEDED',
+          reasonCode: null,
+          correlationId: context.correlationId ?? randomUUID(),
+          targetAccountId: null,
+          targetIdentifier: `safety-directory:${id}`,
+        });
+      }
+      return toAdmin(row);
     });
   }
 
@@ -117,7 +151,27 @@ export class SafetyDirectoryService {
   ): Promise<SafetyDirectoryAdminEntry | null> {
     return this.wrap(async () => {
       const row = await this.repository.deactivate(id, version, context);
-      return row ? toAdmin(row) : null;
+      if (!row) return null;
+      if (this.auditPublisher) {
+        await this.auditPublisher.publish({
+          eventId: randomUUID(),
+          eventType: 'content.safety-directory.deactivated',
+          occurredAt: new Date().toISOString(),
+          producer: 'content-notification-service',
+          schemaVersion: '1.0',
+          sourceService: 'CONTENT',
+          domain: 'RESOURCE_MANAGEMENT',
+          actorId: context.actorId,
+          actorType: 'ADMIN',
+          action: 'SAFETY_DIRECTORY_DEACTIVATED',
+          result: 'SUCCEEDED',
+          reasonCode: null,
+          correlationId: context.correlationId ?? randomUUID(),
+          targetAccountId: null,
+          targetIdentifier: `safety-directory:${id}`,
+        });
+      }
+      return toAdmin(row);
     });
   }
 

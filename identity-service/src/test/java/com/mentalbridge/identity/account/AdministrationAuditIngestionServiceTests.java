@@ -851,4 +851,163 @@ class AdministrationAuditIngestionServiceTests {
         assertThat(saved.getAccountId()).isNull();
         assertThat(saved.getSubjectReferenceHash()).isNull();
     }
+
+    @Test
+    @DisplayName("Consumer: numeric schemaVersion (e.g. 1.0) is rejected fail-closed")
+    void consumerRejectsNumericSchemaVersion() {
+        String json = """
+                {
+                  "eventId": "%s",
+                  "eventType": "identity.account.disabled",
+                  "occurredAt": "%s",
+                  "sourceService": "IDENTITY",
+                  "domain": "ACCOUNT_ADMINISTRATION",
+                  "actorType": "SYSTEM",
+                  "action": "ACCOUNT_DISABLED",
+                  "result": "SUCCEEDED",
+                  "correlationId": "%s",
+                  "schemaVersion": 1.0
+                }
+                """.formatted(UUID.randomUUID(), Instant.now(), UUID.randomUUID());
+
+        consumer.onMessage(json);
+        verify(auditRepository, never()).saveAndFlush(any());
+    }
+
+    @Test
+    @DisplayName("Consumer: numeric producer is rejected fail-closed")
+    void consumerRejectsNumericProducer() {
+        String json = """
+                {
+                  "eventId": "%s",
+                  "eventType": "identity.account.disabled",
+                  "occurredAt": "%s",
+                  "sourceService": "IDENTITY",
+                  "domain": "ACCOUNT_ADMINISTRATION",
+                  "actorType": "SYSTEM",
+                  "action": "ACCOUNT_DISABLED",
+                  "result": "SUCCEEDED",
+                  "correlationId": "%s",
+                  "producer": 123
+                }
+                """.formatted(UUID.randomUUID(), Instant.now(), UUID.randomUUID());
+
+        consumer.onMessage(json);
+        verify(auditRepository, never()).saveAndFlush(any());
+    }
+
+    @Test
+    @DisplayName("Consumer: boolean or numeric actorType is rejected fail-closed")
+    void consumerRejectsNonTextualActorType() {
+        String json = """
+                {
+                  "eventId": "%s",
+                  "eventType": "identity.account.disabled",
+                  "occurredAt": "%s",
+                  "sourceService": "IDENTITY",
+                  "domain": "ACCOUNT_ADMINISTRATION",
+                  "actorType": 42,
+                  "action": "ACCOUNT_DISABLED",
+                  "result": "SUCCEEDED",
+                  "correlationId": "%s"
+                }
+                """.formatted(UUID.randomUUID(), Instant.now(), UUID.randomUUID());
+
+        consumer.onMessage(json);
+        verify(auditRepository, never()).saveAndFlush(any());
+    }
+
+    @Test
+    @DisplayName("Consumer: object reasonCode is rejected fail-closed")
+    void consumerRejectsObjectReasonCode() {
+        String json = """
+                {
+                  "eventId": "%s",
+                  "eventType": "identity.account.disabled",
+                  "occurredAt": "%s",
+                  "sourceService": "IDENTITY",
+                  "domain": "ACCOUNT_ADMINISTRATION",
+                  "actorType": "SYSTEM",
+                  "action": "ACCOUNT_DISABLED",
+                  "result": "SUCCEEDED",
+                  "correlationId": "%s",
+                  "reasonCode": {"code": "POLICY_VIOLATION"}
+                }
+                """.formatted(UUID.randomUUID(), Instant.now(), UUID.randomUUID());
+
+        consumer.onMessage(json);
+        verify(auditRepository, never()).saveAndFlush(any());
+    }
+
+    @Test
+    @DisplayName("Consumer: numeric targetIdentifier is rejected fail-closed")
+    void consumerRejectsNumericTargetIdentifier() {
+        String json = """
+                {
+                  "eventId": "%s",
+                  "eventType": "identity.account.disabled",
+                  "occurredAt": "%s",
+                  "sourceService": "IDENTITY",
+                  "domain": "ACCOUNT_ADMINISTRATION",
+                  "actorType": "SYSTEM",
+                  "action": "ACCOUNT_DISABLED",
+                  "result": "SUCCEEDED",
+                  "correlationId": "%s",
+                  "targetIdentifier": 12345
+                }
+                """.formatted(UUID.randomUUID(), Instant.now(), UUID.randomUUID());
+
+        consumer.onMessage(json);
+        verify(auditRepository, never()).saveAndFlush(any());
+    }
+
+    @Test
+    @DisplayName("Consumer: nested payload shape is rejected fail-closed")
+    void consumerRejectsNestedPayloadShape() {
+        String json = """
+                {
+                  "eventId": "%s",
+                  "eventType": "identity.account.disabled",
+                  "occurredAt": "%s",
+                  "correlationId": "%s",
+                  "payload": {
+                    "sourceService": "IDENTITY",
+                    "domain": "ACCOUNT_ADMINISTRATION",
+                    "actorType": "SYSTEM",
+                    "action": "ACCOUNT_DISABLED",
+                    "result": "SUCCEEDED"
+                  }
+                }
+                """.formatted(UUID.randomUUID(), Instant.now(), UUID.randomUUID());
+
+        consumer.onMessage(json);
+        verify(auditRepository, never()).saveAndFlush(any());
+    }
+
+    @Test
+    @DisplayName("Consumer: valid exact v1 event fact is accepted and persisted")
+    void consumerAcceptsValidExactV1Event() {
+        UUID eventId = UUID.randomUUID();
+        UUID correlationId = UUID.randomUUID();
+        when(auditRepository.existsById(eventId)).thenReturn(false);
+
+        String json = """
+                {
+                  "eventId": "%s",
+                  "eventType": "consultation.specialist.approved",
+                  "occurredAt": "%s",
+                  "producer": "consultation-service",
+                  "schemaVersion": "1.0",
+                  "sourceService": "CONSULTATION",
+                  "domain": "SPECIALIST_REVIEW",
+                  "actorType": "SYSTEM",
+                  "action": "SPECIALIST_APPROVED",
+                  "result": "SUCCEEDED",
+                  "correlationId": "%s"
+                }
+                """.formatted(eventId, Instant.now(), correlationId);
+
+        consumer.onMessage(json);
+        verify(auditRepository).saveAndFlush(any(SecurityAuditEventEntity.class));
+    }
 }

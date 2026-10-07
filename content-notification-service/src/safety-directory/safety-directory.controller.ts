@@ -91,9 +91,11 @@ export class SafetyDirectoryController {
     @Param('entryId') entryId: string,
     @Query('version') versionValue: string | undefined,
     @CurrentUser() user: AuthenticatedUser,
+    @Headers('x-correlation-id') correlationId?: string,
   ): Promise<SafetyDirectoryAdminEntry> {
     const result = await this.service.review(this.entryId(entryId), this.version(versionValue), {
       actorId: user.accountId,
+      correlationId,
     });
     return this.requireMutation(result);
   }
@@ -105,12 +107,14 @@ export class SafetyDirectoryController {
     @Param('entryId') entryId: string,
     @Query('version') versionValue: string | undefined,
     @CurrentUser() user: AuthenticatedUser,
+    @Headers('x-correlation-id') correlationId?: string,
   ): Promise<SafetyDirectoryAdminEntry> {
     const result = await this.service.deactivate(
       this.entryId(entryId),
       this.version(versionValue),
       {
         actorId: user.accountId,
+        correlationId,
       },
     );
     return this.requireMutation(result);

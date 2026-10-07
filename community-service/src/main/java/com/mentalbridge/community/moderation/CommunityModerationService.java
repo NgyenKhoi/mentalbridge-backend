@@ -41,10 +41,16 @@ class CommunityModerationService {
 
 	private final JdbcClient jdbc;
 	private final Clock clock;
+	private final org.springframework.context.ApplicationEventPublisher eventPublisher;
 
 	CommunityModerationService(JdbcClient jdbc, Clock clock) {
+		this(jdbc, clock, null);
+	}
+
+	CommunityModerationService(JdbcClient jdbc, Clock clock, org.springframework.context.ApplicationEventPublisher eventPublisher) {
 		this.jdbc = jdbc;
 		this.clock = clock;
+		this.eventPublisher = eventPublisher;
 	}
 
 	@Transactional
@@ -177,8 +183,12 @@ class CommunityModerationService {
 				row.createdAt(), row.updatedAt(), row.version());
 	}
 
-	@Transactional
 	ModerationCase act(UUID actorSubject, UUID caseId, String idempotencyKey, CreateModerationActionRequest request) {
+		return act(actorSubject, caseId, idempotencyKey, request, null);
+	}
+
+	@Transactional
+	ModerationCase act(UUID actorSubject, UUID caseId, String idempotencyKey, CreateModerationActionRequest request, UUID correlationId) {
 		validateKey(idempotencyKey);
 		if (request == null || request.action() == null || request.reasonCode() == null
 				|| !request.reasonCode().matches("[A-Z0-9_]{1,64}")) throw invalid("Moderation action is invalid");
@@ -209,6 +219,49 @@ class CommunityModerationService {
 				.param("key", idempotencyKey).param("fingerprint", fingerprint).param("now", timestamp(now)).update();
 		jdbc.sql("update community_moderation_case set state = 'RESOLVED', updated_at = :now, version = version + 1 where id = :id")
 				.param("now", timestamp(now)).param("id", caseId).update();
+
+		if (eventPublisher != null) {
+			String eventType;
+			String actionName;
+			String targetIdentifier;
+			UUID targetAccountId = target.authorId();
+
+			if (request.action() == Action.REMOVE && target.type() == TargetType.POST) {
+				eventType = "community.post.removed";
+				actionName = "COMMUNITY_POST_REMOVED";
+				targetIdentifier = "post:" + target.id();
+			} else if (request.action() == Action.RESTRICT_COMMUNITY_ACCESS) {
+				eventType = "community.user.suspended";
+				actionName = "COMMUNITY_USER_SUSPENDED";
+				targetIdentifier = "account:" + target.authorId();
+			} else if (request.action() == Action.NO_ACTION) {
+				eventType = "community.moderation.case-resolved";
+				actionName = "MODERATION_CASE_RESOLVED";
+				targetIdentifier = target.type() == TargetType.POST ? ("post:" + target.id()) : ("comment:" + target.id());
+			} else {
+				eventType = "community.moderation.action-applied";
+				actionName = "MODERATION_ACTION_APPLIED";
+				targetIdentifier = target.type() == TargetType.POST ? ("post:" + target.id()) : ("comment:" + target.id());
+			}
+
+			eventPublisher.publishEvent(new CommunityAdminAuditEvent(
+					UUID.randomUUID(),
+					eventType,
+					now,
+					"community-service",
+					"1.0",
+					"COMMUNITY",
+					"COMMUNITY_MODERATION",
+					actorSubject,
+					"ADMIN",
+					actionName,
+					"SUCCEEDED",
+					request.reasonCode(),
+					correlationId != null ? correlationId : UUID.randomUUID(),
+					targetAccountId,
+					targetIdentifier
+			));
+		}
 		return get(caseId);
 	}
 
@@ -391,7 +444,7 @@ class CommunityModerationService {
 		}
 	}
 
-	private String fingerprint(String... values) {
+	String fingerprint(String... values) {
 		try {
 			var digest = MessageDigest.getInstance("SHA-256");
 			for (var value : values) {
@@ -414,19 +467,19 @@ class CommunityModerationService {
 		return new CommunityApiException(HttpStatus.NOT_FOUND, "COMMUNITY_MODERATION_CASE_NOT_FOUND", "Moderation case was not found");
 	}
 
-	private record Snapshot(String content, String state, long version, UUID authorId, String warning) {
+	record Snapshot(String content, String state, long version, UUID authorId, String warning) {
 	}
 
-	private record ActionOutcome(Snapshot target, String priorState, String resultingState) {
+	record ActionOutcome(Snapshot target, String priorState, String resultingState) {
 	}
 
-	private record Target(TargetType type, UUID id, UUID authorId) {
+	record Target(TargetType type, UUID id, UUID authorId) {
 	}
 
-	private record Replay(String fingerprint, UUID caseId) {
+	record Replay(String fingerprint, UUID caseId) {
 	}
 
-	private record CaseRow(UUID id, TargetType targetType, UUID targetId, CaseState state, Priority priority,
+	record CaseRow(UUID id, TargetType targetType, UUID targetId, CaseState state, Priority priority,
 			String evidenceContent, String evidenceState, long evidenceVersion, Instant createdAt, Instant updatedAt,
 			long version) {
 	}

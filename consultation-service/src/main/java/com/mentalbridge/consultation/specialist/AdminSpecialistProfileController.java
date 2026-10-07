@@ -51,9 +51,10 @@ public class AdminSpecialistProfileController {
 	@PostMapping("/{specialistAccountId}/approve")
 	ResponseEntity<SpecialistProfileResponse> approve(@AuthenticationPrincipal Jwt jwt,
 			@PathVariable UUID specialistAccountId,
-			@RequestHeader(name = "If-Match", required = false) String ifMatch) {
+			@RequestHeader(name = "If-Match", required = false) String ifMatch,
+			@RequestHeader(name = "X-Correlation-Id", required = false) UUID correlationId) {
 		var profile = profiles.approve(specialistAccountId, RequestIdentity.subject(jwt),
-				RequestIdentity.requiredVersion(ifMatch));
+				RequestIdentity.requiredVersion(ifMatch), correlationId);
 		return response(profile);
 	}
 
@@ -61,9 +62,10 @@ public class AdminSpecialistProfileController {
 	ResponseEntity<SpecialistProfileResponse> reject(@AuthenticationPrincipal Jwt jwt,
 			@PathVariable UUID specialistAccountId,
 			@RequestHeader(name = "If-Match", required = false) String ifMatch,
+			@RequestHeader(name = "X-Correlation-Id", required = false) UUID correlationId,
 			@Valid @RequestBody DecisionReasonRequest request) {
 		var profile = profiles.reject(specialistAccountId, RequestIdentity.subject(jwt),
-				RequestIdentity.requiredVersion(ifMatch), request.reasonCode());
+				RequestIdentity.requiredVersion(ifMatch), request.reasonCode(), correlationId);
 		return response(profile);
 	}
 
@@ -71,9 +73,10 @@ public class AdminSpecialistProfileController {
 	ResponseEntity<SpecialistSuspensionResponse> suspend(@AuthenticationPrincipal Jwt jwt,
 			@PathVariable UUID specialistAccountId,
 			@RequestHeader(name = "If-Match", required = false) String ifMatch,
+			@RequestHeader(name = "X-Correlation-Id", required = false) UUID correlationId,
 			@Valid @RequestBody DecisionReasonRequest request) {
 		var result = profiles.suspend(specialistAccountId, RequestIdentity.subject(jwt),
-				RequestIdentity.requiredVersion(ifMatch), request.reasonCode());
+				RequestIdentity.requiredVersion(ifMatch), request.reasonCode(), correlationId);
 		return ResponseEntity.ok().eTag(Long.toString(result.profile().version()))
 				.body(SpecialistSuspensionResponse.from(result));
 	}
@@ -81,9 +84,10 @@ public class AdminSpecialistProfileController {
 	@PostMapping("/{specialistAccountId}/restore")
 	ResponseEntity<SpecialistProfileResponse> restore(@AuthenticationPrincipal Jwt jwt,
 			@PathVariable UUID specialistAccountId,
-			@RequestHeader(name = "If-Match", required = false) String ifMatch) {
+			@RequestHeader(name = "If-Match", required = false) String ifMatch,
+			@RequestHeader(name = "X-Correlation-Id", required = false) UUID correlationId) {
 		var profile = profiles.restore(specialistAccountId, RequestIdentity.subject(jwt),
-				RequestIdentity.requiredVersion(ifMatch));
+				RequestIdentity.requiredVersion(ifMatch), correlationId);
 		return response(profile);
 	}
 

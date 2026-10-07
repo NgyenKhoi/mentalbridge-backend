@@ -2,9 +2,15 @@ import {
   Inject,
   Injectable,
   Logger,
+  Optional,
   ServiceUnavailableException,
   UnprocessableEntityException,
 } from '@nestjs/common';
+import { randomUUID } from 'node:crypto';
+import {
+  CONTENT_ADMIN_AUDIT_PUBLISHER_TOKEN,
+  type ContentAdminAuditPublisher,
+} from '../audit/content-admin-audit.publisher.js';
 import type {
   ResourceRepository,
   ListResourcesQuery,
@@ -164,6 +170,9 @@ export class ResourceService {
     private readonly repository: ResourceRepository,
     @Inject(E2E_OUTAGE_STATE_TOKEN)
     private readonly outageState: E2eOutageState,
+    @Optional()
+    @Inject(CONTENT_ADMIN_AUDIT_PUBLISHER_TOKEN)
+    private readonly auditPublisher?: ContentAdminAuditPublisher,
   ) {}
 
   async listPublished(options: ListResourcesOptions): Promise<ResourceListResult> {
@@ -322,7 +331,27 @@ export class ResourceService {
     context: ResourceCommandContext,
   ): Promise<ResourceDetail | null> {
     const row = await this.repository.archive(id, version, context);
-    return row ? toDetail(row) : null;
+    if (!row) return null;
+    if (this.auditPublisher) {
+      await this.auditPublisher.publish({
+        eventId: randomUUID(),
+        eventType: 'content.resource.archived',
+        occurredAt: new Date().toISOString(),
+        producer: 'content-notification-service',
+        schemaVersion: '1.0',
+        sourceService: 'CONTENT',
+        domain: 'RESOURCE_MANAGEMENT',
+        actorId: context.actorId,
+        actorType: 'ADMIN',
+        action: 'RESOURCE_ARCHIVED',
+        result: 'SUCCEEDED',
+        reasonCode: 'RESOURCE_ARCHIVED',
+        correlationId: context.correlationId,
+        targetAccountId: null,
+        targetIdentifier: `resource:${id}`,
+      });
+    }
+    return toDetail(row);
   }
 
   async auditPublishBlocked(

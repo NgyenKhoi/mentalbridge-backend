@@ -24,14 +24,23 @@ public class SpecialistProfileService {
 	private final SpecialistProfileStatusHistoryRepository history;
 	private final SpecialistSuspensionEffects suspensionEffects;
 	private final Clock clock;
+	private final org.springframework.context.ApplicationEventPublisher eventPublisher;
 
 	public SpecialistProfileService(SpecialistProfileRepository profiles,
 			SpecialistProfileStatusHistoryRepository history,
 			SpecialistSuspensionEffects suspensionEffects, Clock clock) {
+		this(profiles, history, suspensionEffects, clock, null);
+	}
+
+	public SpecialistProfileService(SpecialistProfileRepository profiles,
+			SpecialistProfileStatusHistoryRepository history,
+			SpecialistSuspensionEffects suspensionEffects, Clock clock,
+			org.springframework.context.ApplicationEventPublisher eventPublisher) {
 		this.profiles = profiles;
 		this.history = history;
 		this.suspensionEffects = suspensionEffects;
 		this.clock = clock;
+		this.eventPublisher = eventPublisher;
 	}
 
 	@Transactional(readOnly = true)
@@ -126,6 +135,11 @@ public class SpecialistProfileService {
 
 	@Transactional
 	public ProfileView approve(UUID accountId, UUID adminAccountId, long expectedVersion) {
+		return approve(accountId, adminAccountId, expectedVersion, null);
+	}
+
+	@Transactional
+	public ProfileView approve(UUID accountId, UUID adminAccountId, long expectedVersion, UUID correlationId) {
 		var profile = locked(accountId);
 		checkVersion(profile, expectedVersion);
 		if (profile.approvalStatus() == SpecialistApprovalStatus.APPROVED) return view(profile);
@@ -139,12 +153,37 @@ public class SpecialistProfileService {
 		history.saveAndFlush(new SpecialistProfileStatusHistoryEntity(accountId,
 				SpecialistApprovalStatus.APPROVED, adminAccountId,
 				SpecialistProfileStatusHistoryEntity.ActorRole.ADMIN, now));
+		if (eventPublisher != null) {
+			eventPublisher.publishEvent(new ConsultationAdminAuditEvent(
+					UUID.randomUUID(),
+					"consultation.specialist.approved",
+					now,
+					"consultation-service",
+					"1.0",
+					"CONSULTATION",
+					"SPECIALIST_REVIEW",
+					adminAccountId,
+					"ADMIN",
+					"SPECIALIST_APPROVED",
+					"SUCCEEDED",
+					null,
+					correlationId != null ? correlationId : UUID.randomUUID(),
+					accountId,
+					"account:" + accountId
+			));
+		}
 		return view(profile);
 	}
 
 	@Transactional
 	public ProfileView reject(UUID accountId, UUID adminAccountId, long expectedVersion,
 			SpecialistDecisionReasonCode reasonCode) {
+		return reject(accountId, adminAccountId, expectedVersion, reasonCode, null);
+	}
+
+	@Transactional
+	public ProfileView reject(UUID accountId, UUID adminAccountId, long expectedVersion,
+			SpecialistDecisionReasonCode reasonCode, UUID correlationId) {
 		if (!reasonCode.isRejection()) throw reasonMismatch("rejection");
 		var profile = locked(accountId);
 		checkVersion(profile, expectedVersion);
@@ -160,12 +199,37 @@ public class SpecialistProfileService {
 		history.saveAndFlush(new SpecialistProfileStatusHistoryEntity(accountId,
 				SpecialistApprovalStatus.REJECTED, adminAccountId,
 				SpecialistProfileStatusHistoryEntity.ActorRole.ADMIN, reasonCode, now));
+		if (eventPublisher != null) {
+			eventPublisher.publishEvent(new ConsultationAdminAuditEvent(
+					UUID.randomUUID(),
+					"consultation.specialist.rejected",
+					now,
+					"consultation-service",
+					"1.0",
+					"CONSULTATION",
+					"SPECIALIST_REVIEW",
+					adminAccountId,
+					"ADMIN",
+					"SPECIALIST_REJECTED",
+					"SUCCEEDED",
+					reasonCode.name(),
+					correlationId != null ? correlationId : UUID.randomUUID(),
+					accountId,
+					"account:" + accountId
+			));
+		}
 		return view(profile);
 	}
 
 	@Transactional
 	public SuspensionResult suspend(UUID accountId, UUID adminAccountId, long expectedVersion,
 			SpecialistDecisionReasonCode reasonCode) {
+		return suspend(accountId, adminAccountId, expectedVersion, reasonCode, null);
+	}
+
+	@Transactional
+	public SuspensionResult suspend(UUID accountId, UUID adminAccountId, long expectedVersion,
+			SpecialistDecisionReasonCode reasonCode, UUID correlationId) {
 		if (!reasonCode.isSuspension()) throw reasonMismatch("suspension");
 		var profile = locked(accountId);
 		checkVersion(profile, expectedVersion);
@@ -184,11 +248,35 @@ public class SpecialistProfileService {
 		history.saveAndFlush(new SpecialistProfileStatusHistoryEntity(accountId,
 				SpecialistApprovalStatus.SUSPENDED, adminAccountId,
 				SpecialistProfileStatusHistoryEntity.ActorRole.ADMIN, reasonCode, now));
+		if (eventPublisher != null) {
+			eventPublisher.publishEvent(new ConsultationAdminAuditEvent(
+					UUID.randomUUID(),
+					"consultation.specialist.suspended",
+					now,
+					"consultation-service",
+					"1.0",
+					"CONSULTATION",
+					"SPECIALIST_REVIEW",
+					adminAccountId,
+					"ADMIN",
+					"SPECIALIST_SUSPENDED",
+					"SUCCEEDED",
+					reasonCode.name(),
+					correlationId != null ? correlationId : UUID.randomUUID(),
+					accountId,
+					"account:" + accountId
+			));
+		}
 		return new SuspensionResult(view(profile), effects);
 	}
 
 	@Transactional
 	public ProfileView restore(UUID accountId, UUID adminAccountId, long expectedVersion) {
+		return restore(accountId, adminAccountId, expectedVersion, null);
+	}
+
+	@Transactional
+	public ProfileView restore(UUID accountId, UUID adminAccountId, long expectedVersion, UUID correlationId) {
 		var profile = locked(accountId);
 		checkVersion(profile, expectedVersion);
 		if (profile.approvalStatus() == SpecialistApprovalStatus.APPROVED) return view(profile);
@@ -202,6 +290,25 @@ public class SpecialistProfileService {
 		history.saveAndFlush(new SpecialistProfileStatusHistoryEntity(accountId,
 				SpecialistApprovalStatus.APPROVED, adminAccountId,
 				SpecialistProfileStatusHistoryEntity.ActorRole.ADMIN, now));
+		if (eventPublisher != null) {
+			eventPublisher.publishEvent(new ConsultationAdminAuditEvent(
+					UUID.randomUUID(),
+					"consultation.specialist.restored",
+					now,
+					"consultation-service",
+					"1.0",
+					"CONSULTATION",
+					"SPECIALIST_REVIEW",
+					adminAccountId,
+					"ADMIN",
+					"SPECIALIST_RESTORED",
+					"SUCCEEDED",
+					null,
+					correlationId != null ? correlationId : UUID.randomUUID(),
+					accountId,
+					"account:" + accountId
+			));
+		}
 		return view(profile);
 	}
 
