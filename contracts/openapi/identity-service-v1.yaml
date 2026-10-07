@@ -457,6 +457,24 @@ paths:
               schema: { $ref: '#/components/schemas/NotificationDeliveryContact' }
         '401': { $ref: '#/components/responses/UnauthorizedProblem' }
         '404': { $ref: '#/components/responses/NotFoundProblem' }
+  /api/v1/admin/accounts/summary:
+    x-mentalbridge-status: implemented
+    get:
+      tags: [Account administration]
+      operationId: getAccountsSummary
+      summary: Read authoritative aggregate account counts and status for admin operations dashboard (excluding soft-deleted accounts)
+      security:
+        - bearerAuth: []
+      parameters:
+        - $ref: '#/components/parameters/CorrelationId'
+      responses:
+        '200':
+          description: Authoritative aggregate account summary
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/AccountsSummary' }
+        '401': { $ref: '#/components/responses/UnauthorizedProblem' }
+        '403': { $ref: '#/components/responses/ForbiddenProblem' }
   /api/v1/admin/accounts/{accountId}:
     x-mentalbridge-status: implemented
     get:
@@ -765,6 +783,30 @@ components:
           type: string
           enum: [SAFETY_CONCERN, POLICY_VIOLATION, ACCOUNT_REVIEW_REQUIRED, REVIEW_COMPLETED]
           description: REVIEW_COMPLETED is reserved for restoration; the other values are suspension reasons.
+    AccountsSummaryRoleBreakdown:
+      type: object
+      additionalProperties: false
+      required: [users, specialists, admins]
+      properties:
+        users: { type: integer, minimum: 0 }
+        specialists: { type: integer, minimum: 0 }
+        admins: { type: integer, minimum: 0 }
+    AccountsSummary:
+      type: object
+      additionalProperties: false
+      required: [source, asOf, totalAccounts, activeAccounts, pendingVerificationAccounts, disabledAccounts, deletionPendingAccounts, byRole]
+      properties:
+        source: { type: string, const: IDENTITY }
+        asOf: { type: string, format: date-time }
+        totalAccounts:
+          type: integer
+          minimum: 0
+          description: Total manageable accounts in the platform, excluding soft-deleted (purged) accounts. Matches the sum of status breakdown and the sum of role breakdown.
+        activeAccounts: { type: integer, minimum: 0 }
+        pendingVerificationAccounts: { type: integer, minimum: 0 }
+        disabledAccounts: { type: integer, minimum: 0 }
+        deletionPendingAccounts: { type: integer, minimum: 0 }
+        byRole: { $ref: '#/components/schemas/AccountsSummaryRoleBreakdown' }
     Problem:
       type: object
       additionalProperties: true

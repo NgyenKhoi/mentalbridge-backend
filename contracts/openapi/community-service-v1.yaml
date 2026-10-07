@@ -533,6 +533,19 @@ paths:
         "403": { $ref: "#/components/responses/Problem" }
         "404": { $ref: "#/components/responses/Problem" }
         "409": { $ref: "#/components/responses/Problem" }
+  /api/v1/community/admin/operations/summary:
+    x-mentalbridge-status: implemented
+    get:
+      operationId: getCommunityOperationsSummary
+      security: [{ BearerAuth: [] }]
+      responses:
+        "200":
+          description: Authoritative aggregate community moderation facts for admin operations dashboard.
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/CommunityOperationsSummary" }
+        "401": { $ref: "#/components/responses/Problem" }
+        "403": { $ref: "#/components/responses/Problem" }
 components:
   securitySchemes:
     BearerAuth: { type: http, scheme: bearer, bearerFormat: JWT }
@@ -966,6 +979,23 @@ components:
       properties:
         action: { $ref: "#/components/schemas/ModerationAction" }
         reasonCode: { type: string, minLength: 1, maxLength: 64 }
+    CommunityOperationsSummary:
+      type: object
+      additionalProperties: false
+      required: [source, asOf, openModerationCases, totalModerationCases]
+      properties:
+        source:
+          type: string
+          enum: [COMMUNITY]
+        asOf:
+          type: string
+          format: date-time
+        openModerationCases:
+          type: integer
+          minimum: 0
+        totalModerationCases:
+          type: integer
+          minimum: 0
     Problem:
       type: object
       additionalProperties: false

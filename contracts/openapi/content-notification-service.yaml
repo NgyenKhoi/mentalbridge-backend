@@ -892,6 +892,30 @@ paths:
         "422": { $ref: "#/components/responses/ValidationError" }
         "503": { $ref: "#/components/responses/ServiceUnavailable" }
 
+  /api/v1/admin/notifications/summary:
+    x-mentalbridge-status: implemented
+    get:
+      x-mentalbridge-operation-status: implemented
+      tags: [Notification inbox]
+      summary: Retrieve operational delivery facts for platform notifications and reminders
+      operationId: getNotificationOperationsSummary
+      security: [{ BearerAuth: [] }]
+      responses:
+        "200":
+          description: Aggregate delivery statistics across in-app notifications and email reminders
+          headers:
+            Cache-Control:
+              schema:
+                type: string
+                const: "private, no-store"
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/NotificationOperationsSummary"
+        "401": { $ref: "#/components/responses/Unauthorized" }
+        "403": { $ref: "#/components/responses/Forbidden" }
+        "503": { $ref: "#/components/responses/ServiceUnavailable" }
+
 components:
   parameters:
     ResourceId:
@@ -2485,3 +2509,45 @@ components:
           type: array
           items:
             $ref: "#/components/schemas/ResourceEligibilityResult"
+
+    NotificationOperationsSummary:
+      type: object
+      additionalProperties: false
+      required: [source, asOf, inApp, emailReminders]
+      properties:
+        source:
+          type: string
+          example: CONTENT_NOTIFICATION
+        asOf:
+          type: string
+          format: date-time
+        inApp:
+          $ref: "#/components/schemas/InAppNotificationOperationsSummary"
+        emailReminders:
+          $ref: "#/components/schemas/EmailReminderOperationsSummary"
+
+    InAppNotificationOperationsSummary:
+      type: object
+      additionalProperties: false
+      required: [total, delivered, pending, failed, cancelled, unread, read]
+      properties:
+        total: { type: integer, minimum: 0 }
+        delivered: { type: integer, minimum: 0 }
+        pending: { type: integer, minimum: 0 }
+        failed: { type: integer, minimum: 0 }
+        cancelled: { type: integer, minimum: 0 }
+        unread: { type: integer, minimum: 0 }
+        read: { type: integer, minimum: 0 }
+
+    EmailReminderOperationsSummary:
+      type: object
+      additionalProperties: false
+      required: [total, pending, processing, delivered, failed, suppressed, invalidated]
+      properties:
+        total: { type: integer, minimum: 0 }
+        pending: { type: integer, minimum: 0 }
+        processing: { type: integer, minimum: 0 }
+        delivered: { type: integer, minimum: 0 }
+        failed: { type: integer, minimum: 0 }
+        suppressed: { type: integer, minimum: 0 }
+        invalidated: { type: integer, minimum: 0 }

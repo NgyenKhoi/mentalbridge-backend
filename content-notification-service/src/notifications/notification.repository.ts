@@ -6,6 +6,7 @@ import type {
   NotificationCreate,
   NotificationCursor,
   NotificationItem,
+  NotificationOperationsSummary,
   NotificationPage,
   NotificationRow,
 } from './notification.types.js';
@@ -207,6 +208,75 @@ export class NotificationRepository {
       [notificationId, ownerId],
     );
     return Boolean(result.rows[0]);
+  }
+
+  async getOperationsSummary(): Promise<NotificationOperationsSummary> {
+    const asOf = new Date().toISOString();
+    const inAppResult = await this.db.query<{
+      total: string;
+      delivered: string;
+      pending: string;
+      failed: string;
+      cancelled: string;
+      unread: string;
+      read: string;
+    }>(
+      `SELECT
+        COUNT(*)::text AS total,
+        COUNT(*) FILTER (WHERE delivery_state = 'DELIVERED')::text AS delivered,
+        COUNT(*) FILTER (WHERE delivery_state = 'PENDING')::text AS pending,
+        COUNT(*) FILTER (WHERE delivery_state = 'FAILED')::text AS failed,
+        COUNT(*) FILTER (WHERE delivery_state = 'CANCELLED')::text AS cancelled,
+        COUNT(*) FILTER (WHERE delivery_state = 'DELIVERED' AND read_at IS NULL AND deleted_at IS NULL AND expires_at > now())::text AS unread,
+        COUNT(*) FILTER (WHERE delivery_state = 'DELIVERED' AND read_at IS NOT NULL)::text AS read
+       FROM notification`,
+    );
+
+    const emailResult = await this.db.query<{
+      total: string;
+      pending: string;
+      processing: string;
+      delivered: string;
+      failed: string;
+      suppressed: string;
+      invalidated: string;
+    }>(
+      `SELECT
+        COUNT(*)::text AS total,
+        COUNT(*) FILTER (WHERE delivery_state = 'PENDING')::text AS pending,
+        COUNT(*) FILTER (WHERE delivery_state = 'PROCESSING')::text AS processing,
+        COUNT(*) FILTER (WHERE delivery_state = 'DELIVERED')::text AS delivered,
+        COUNT(*) FILTER (WHERE delivery_state = 'FAILED')::text AS failed,
+        COUNT(*) FILTER (WHERE delivery_state = 'SUPPRESSED')::text AS suppressed,
+        COUNT(*) FILTER (WHERE delivery_state = 'INVALIDATED')::text AS invalidated
+       FROM appointment_email_reminder`,
+    );
+
+    const inAppRow = inAppResult.rows[0];
+    const emailRow = emailResult.rows[0];
+
+    return {
+      source: 'CONTENT_NOTIFICATION',
+      asOf,
+      inApp: {
+        total: Number(inAppRow.total),
+        delivered: Number(inAppRow.delivered),
+        pending: Number(inAppRow.pending),
+        failed: Number(inAppRow.failed),
+        cancelled: Number(inAppRow.cancelled),
+        unread: Number(inAppRow.unread),
+        read: Number(inAppRow.read),
+      },
+      emailReminders: {
+        total: Number(emailRow.total),
+        pending: Number(emailRow.pending),
+        processing: Number(emailRow.processing),
+        delivered: Number(emailRow.delivered),
+        failed: Number(emailRow.failed),
+        suppressed: Number(emailRow.suppressed),
+        invalidated: Number(emailRow.invalidated),
+      },
+    };
   }
 }
 

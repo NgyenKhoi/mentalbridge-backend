@@ -23,6 +23,12 @@ public interface AccountRepository extends JpaRepository<AccountEntity, UUID>, J
 	@Query("select account from AccountEntity account where account.id = :id")
 	Optional<AccountEntity> findByIdForUpdate(@Param("id") UUID id);
 
+	long countByStatus(AccountStatus status);
+
+	long countByRole(RoleCode role);
+
+	long countByRoleAndStatusNot(RoleCode role, AccountStatus status);
+
 	@Query("""
 			select account.role, account.status, count(account)
 			from AccountEntity account
@@ -32,5 +38,4 @@ public interface AccountRepository extends JpaRepository<AccountEntity, UUID>, J
 			""")
 	List<Object[]> aggregateCreatedAccounts(@Param("periodStart") Instant periodStart,
 			@Param("periodEndExclusive") Instant periodEndExclusive);
-
 }

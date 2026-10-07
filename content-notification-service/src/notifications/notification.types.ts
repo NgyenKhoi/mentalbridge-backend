@@ -94,3 +94,30 @@ export interface NotificationRow {
   readonly deleted_at: Date | string | null;
   readonly version: string | number;
 }
+
+export interface InAppNotificationOperationsSummary {
+  readonly total: number;
+  readonly delivered: number;
+  readonly pending: number;
+  readonly failed: number;
+  readonly cancelled: number;
+  readonly unread: number;
+  readonly read: number;
+}
+
+export interface EmailReminderOperationsSummary {
+  readonly total: number;
+  readonly pending: number;
+  readonly processing: number;
+  readonly delivered: number;
+  readonly failed: number;
+  readonly suppressed: number;
+  readonly invalidated: number;
+}
+
+export interface NotificationOperationsSummary {
+  readonly source: 'CONTENT_NOTIFICATION';
+  readonly asOf: string;
+  readonly inApp: InAppNotificationOperationsSummary;
+  readonly emailReminders: EmailReminderOperationsSummary;
+}

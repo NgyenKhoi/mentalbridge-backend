@@ -37,6 +37,7 @@ const expectedImplemented = new Set([
   'PATCH /api/v1/notifications/{notificationId}/read',
   'POST /api/v1/notifications/mark-all-read',
   'DELETE /api/v1/notifications/{notificationId}',
+  'GET /api/v1/admin/notifications/summary',
 ]);
 
 const implementedResponses = new Map([
@@ -100,6 +101,7 @@ const implementedResponses = new Map([
   ],
   ['POST /api/v1/notifications/mark-all-read', new Set(['200', '401', '503'])],
   ['DELETE /api/v1/notifications/{notificationId}', new Set(['204', '401', '404', '422', '503'])],
+  ['GET /api/v1/admin/notifications/summary', new Set(['200', '401', '403', '503'])],
 ]);
 
 const implementedMustBePublic = new Set([

@@ -180,5 +180,44 @@ public class AdminAccountService {
 		}
 	}
 
+	@Transactional(readOnly = true)
+	public AccountsSummary getAccountsSummary() {
+		Instant now = clock.instant();
+		long active = accounts.countByStatus(AccountStatus.ACTIVE);
+		long pendingVerification = accounts.countByStatus(AccountStatus.PENDING_EMAIL_VERIFICATION);
+		long disabled = accounts.countByStatus(AccountStatus.DISABLED);
+		long deletionPending = accounts.countByStatus(AccountStatus.DELETION_PENDING);
+		// Authoritative operational semantics: Exclude soft-deleted (purged) accounts from active operational total
+		// and role breakdown, ensuring total strictly matches status sum and role sum (consistent with admin account search).
+		long total = active + pendingVerification + disabled + deletionPending;
+		long users = accounts.countByRoleAndStatusNot(RoleCode.USER, AccountStatus.DELETED);
+		long specialists = accounts.countByRoleAndStatusNot(RoleCode.SPECIALIST, AccountStatus.DELETED);
+		long admins = accounts.countByRoleAndStatusNot(RoleCode.ADMIN, AccountStatus.DELETED);
+
+		return new AccountsSummary(
+				"IDENTITY",
+				now,
+				total,
+				active,
+				pendingVerification,
+				disabled,
+				deletionPending,
+				new AccountsSummary.RoleBreakdown(users, specialists, admins));
+	}
+
+	public record AccountsSummary(
+			String source,
+			Instant asOf,
+			long totalAccounts,
+			long activeAccounts,
+			long pendingVerificationAccounts,
+			long disabledAccounts,
+			long deletionPendingAccounts,
+			RoleBreakdown byRole) {
+
+		public record RoleBreakdown(long users, long specialists, long admins) {
+		}
+	}
+
 	private record Cursor(Instant createdAt, UUID accountId) { }
 }
