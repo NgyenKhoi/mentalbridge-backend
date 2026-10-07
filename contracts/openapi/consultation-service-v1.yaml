@@ -714,7 +714,7 @@ paths:
         - name: to
           in: query
           required: false
-          description: Exclusive UTC period end. Must be supplied together with from, cannot be in the future, and defaults to server time.
+          description: Exclusive UTC period end. Must be supplied together with from and defaults to server time. A small forward clock skew is clamped to server time; materially future values are rejected.
           schema: { type: string, format: date-time }
       responses:
         '200':

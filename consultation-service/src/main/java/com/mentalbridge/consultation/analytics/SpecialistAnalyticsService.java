@@ -36,6 +36,7 @@ public class SpecialistAnalyticsService {
 	private static final String SOURCE = "CONSULTATION";
 	private static final Duration DEFAULT_PERIOD = Duration.ofDays(30);
 	private static final Duration MAXIMUM_PERIOD = Duration.ofDays(366);
+	private static final Duration CLOCK_SKEW_TOLERANCE = Duration.ofSeconds(30);
 
 	private final JdbcClient jdbc;
 	private final Clock clock;
@@ -66,12 +67,15 @@ public class SpecialistAnalyticsService {
 			throw invalidPeriod("Both from and to are required when filtering analytics");
 		}
 		var from = requestedFrom == null ? now.minus(DEFAULT_PERIOD) : requestedFrom;
-		var to = requestedTo == null ? now : requestedTo;
+		var requestedEnd = requestedTo == null ? now : requestedTo;
+		if (requestedEnd.isAfter(now.plus(CLOCK_SKEW_TOLERANCE))) {
+			throw invalidPeriod("Analytics to cannot be after the current server time");
+		}
+		var to = requestedEnd.isAfter(now) ? now : requestedEnd;
 		if (!from.isBefore(to)) throw invalidPeriod("Analytics from must be before to");
 		if (Duration.between(from, to).compareTo(MAXIMUM_PERIOD) > 0) {
 			throw invalidPeriod("Analytics period cannot exceed 366 days");
 		}
-		if (to.isAfter(now)) throw invalidPeriod("Analytics to cannot be after the current server time");
 		return new QueryPeriod(from, to);
 	}
 

@@ -213,7 +213,9 @@ not a substitute for any owner or specialist command endpoint.
 
 The authenticated specialist receives Consultation-owned operational facts for
 an explicit half-open period, defaulting to the previous 30 days and capped at
-366 days. Appointment lifecycle totals come from append-only transition facts,
+366 days. A requested end up to 30 seconds ahead is clamped to Consultation's
+server time to tolerate cross-service clock skew; materially future ends remain
+invalid. Appointment lifecycle totals come from append-only transition facts,
 so a later cancellation or reschedule does not erase an earlier request or
 acceptance. Slot utilization uses slots scheduled in the period and preserves
 whether a slot was ever accepted. Current MB-364 rating aggregates are marked

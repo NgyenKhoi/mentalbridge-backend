@@ -126,6 +126,30 @@ class SpecialistAnalyticsIntegrationTests extends ConsultationTestProperties {
 				.andExpect(status().isForbidden());
 	}
 
+	@Test
+	void clampsSmallForwardClockSkewToBackendTime() throws Exception {
+		var specialistId = profile("APPROVED");
+
+		mvc.perform(get("/api/v1/specialist/analytics")
+				.param("from", FROM.toString()).param("to", NOW.plusSeconds(5).toString())
+				.with(specialist(specialistId)))
+				.andExpect(status().isOk())
+				.andExpect(jsonPath("$.generatedAt").value(NOW.toString()))
+				.andExpect(jsonPath("$.period.from").value(FROM.toString()))
+				.andExpect(jsonPath("$.period.to").value(NOW.toString()));
+	}
+
+	@Test
+	void rejectsMateriallyFutureAnalyticsPeriod() throws Exception {
+		var specialistId = profile("APPROVED");
+
+		mvc.perform(get("/api/v1/specialist/analytics")
+				.param("from", FROM.toString()).param("to", NOW.plusSeconds(300).toString())
+				.with(specialist(specialistId)))
+				.andExpect(status().isBadRequest())
+				.andExpect(jsonPath("$.code").value("SPECIALIST_ANALYTICS_PERIOD_INVALID"));
+	}
+
 	private UUID profile(String status) {
 		var id = UUID.randomUUID();
 		var reviewed = status.equals("APPROVED") || status.equals("SUSPENDED");
