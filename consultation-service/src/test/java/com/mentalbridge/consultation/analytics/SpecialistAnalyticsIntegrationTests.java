@@ -59,6 +59,7 @@ class SpecialistAnalyticsIntegrationTests extends ConsultationTestProperties {
 		history(rescheduled, null, "REQUESTED", "APPOINTMENT_REQUESTED", NOW.minusSeconds(2 * 86_400L));
 		history(rescheduled, "REQUESTED", "CANCELLED", "USER_RESCHEDULED", NOW.minusSeconds(86_400L));
 		rating(specialistId, 4, 18);
+		financialFacts(specialistId, cancelled);
 
 		mvc.perform(get("/api/v1/specialist/analytics")
 				.param("from", FROM.toString()).param("to", NOW.toString()).with(specialist(specialistId)))
@@ -76,8 +77,10 @@ class SpecialistAnalyticsIntegrationTests extends ConsultationTestProperties {
 				.andExpect(jsonPath("$.appointments.rescheduledCount").value(1))
 				.andExpect(jsonPath("$.appointments.userNoShowCount").value(1))
 				.andExpect(jsonPath("$.rating.averageRating").value(4.50))
-				.andExpect(jsonPath("$.financials.state").value("UNAVAILABLE"))
-				.andExpect(jsonPath("$.financials.currency").isEmpty())
+				.andExpect(jsonPath("$.financials.state").value("AVAILABLE"))
+				.andExpect(jsonPath("$.financials.currency").value("VND"))
+				.andExpect(jsonPath("$.financials.earnedAmountMinor").value(210_000))
+				.andExpect(jsonPath("$.financials.paidAmountMinor").value(210_000))
 				.andExpect(content().string(not(containsString("phq"))))
 				.andExpect(content().string(not(containsString("journal"))))
 				.andExpect(content().string(not(containsString("userAccountId"))));
@@ -231,6 +234,50 @@ class SpecialistAnalyticsIntegrationTests extends ConsultationTestProperties {
 				) values (:specialistId, :count, :sum, :now)
 				""").param("specialistId", specialistId).param("count", count).param("sum", sum)
 				.param("now", database(NOW)).update();
+	}
+
+	private void financialFacts(UUID specialistId, UUID appointmentId) {
+		var creditId = jdbc.sql("select service_credit_id from appointment where id=:appointmentId")
+				.param("appointmentId", appointmentId).query(UUID.class).single();
+		var earningId = UUID.randomUUID();
+		var completionFactId = UUID.randomUUID();
+		var destinationId = UUID.randomUUID();
+		jdbc.sql("""
+				insert into specialist_earning (
+				 id, appointment_id, completion_fact_id, consumed_credit_id, specialist_account_id,
+				 plan_version, currency, credit_allocation_minor, specialist_share_bps,
+				 specialist_amount_minor, platform_allocation_minor, idempotency_source,
+				 status, earned_at, settlement_available_at, paid_at, created_at, updated_at
+				) values (:id, :appointmentId, :completionFactId, :creditId, :specialistId,
+				 'analytics-plan-v1', 'VND', 300000, 7000, 210000, 90000, :source,
+				 'PAID', :earnedAt, :availableAt, :paidAt, :createdAt, :createdAt)
+				""").param("id", earningId).param("appointmentId", appointmentId)
+				.param("completionFactId", completionFactId).param("creditId", creditId)
+				.param("specialistId", specialistId).param("source", "analytics-completion:" + completionFactId)
+				.param("earnedAt", database(NOW.minusSeconds(5 * 86_400L)))
+				.param("availableAt", database(NOW.minusSeconds(4 * 86_400L)))
+				.param("paidAt", database(NOW.minusSeconds(2 * 86_400L))).param("createdAt", database(FROM)).update();
+		jdbc.sql("""
+				insert into specialist_payout_destination (
+				 id, specialist_account_id, payout_provider, destination_type, destination_ciphertext,
+				 encryption_key_version, destination_fingerprint, display_hint, status,
+				 verified_at, created_at, updated_at
+				) values (:id, :specialistId, 'FAKE', 'MOMO_WALLET', 'ciphertext', 'test-v1',
+				 :fingerprint, '•••• 6789', 'VERIFIED', :at, :at, :at)
+				""").param("id", destinationId).param("specialistId", specialistId)
+				.param("fingerprint", "a".repeat(64)).param("at", database(FROM)).update();
+		jdbc.sql("""
+				insert into specialist_payout (
+				 id, specialist_account_id, destination_id, currency, amount_minor, payout_provider,
+				 status, idempotency_key, requested_on, requested_at, completed_at,
+				 created_at, updated_at
+				) values (:id, :specialistId, :destinationId, 'VND', 210000, 'FAKE', 'SUCCEEDED',
+				 :key, :requestedOn, :requestedAt, :completedAt, :createdAt, :createdAt)
+				""").param("id", UUID.randomUUID()).param("specialistId", specialistId)
+				.param("destinationId", destinationId).param("key", "analytics-payout-" + specialistId)
+				.param("requestedOn", java.time.LocalDate.ofInstant(NOW.minusSeconds(3 * 86_400L), ZoneOffset.UTC))
+				.param("requestedAt", database(NOW.minusSeconds(3 * 86_400L)))
+				.param("completedAt", database(NOW.minusSeconds(2 * 86_400L))).param("createdAt", database(FROM)).update();
 	}
 
 	private OffsetDateTime database(Instant value) {

@@ -3,7 +3,6 @@ package com.mentalbridge.consultation.analytics;
 import static com.mentalbridge.consultation.analytics.SpecialistAnalyticsResponse.DataState.AVAILABLE;
 import static com.mentalbridge.consultation.analytics.SpecialistAnalyticsResponse.DataState.BLOCKED;
 import static com.mentalbridge.consultation.analytics.SpecialistAnalyticsResponse.DataState.EMPTY;
-import static com.mentalbridge.consultation.analytics.SpecialistAnalyticsResponse.DataState.UNAVAILABLE;
 
 import java.math.BigDecimal;
 import java.math.RoundingMode;
@@ -59,7 +58,7 @@ public class SpecialistAnalyticsService {
 		var explicitPeriod = new Period(period.from(), period.to(), profile.timezone());
 		return new SpecialistAnalyticsResponse(SOURCE, now, operationalStatus, explicitPeriod,
 				availability(specialistId, period, now), appointments(specialistId, period, now),
-				rating(specialistId, now), unavailableFinancials(now));
+				rating(specialistId, now), financials(specialistId, period, now));
 	}
 
 	private QueryPeriod period(Instant requestedFrom, Instant requestedTo, Instant now) {
@@ -147,8 +146,28 @@ public class SpecialistAnalyticsService {
 		return new RatingMetrics(SOURCE, now, AVAILABLE, average, row.count());
 	}
 
-	private FinancialMetrics unavailableFinancials(Instant now) {
-		return new FinancialMetrics(SOURCE, now, UNAVAILABLE, null, null, null);
+	private FinancialMetrics financials(UUID specialistId, QueryPeriod period, Instant now) {
+		var row = jdbc.sql("""
+				select coalesce((
+				         select sum(specialist_amount_minor)
+				         from specialist_earning
+				         where specialist_account_id=:specialistId
+				           and status <> 'REVERSED'
+				           and earned_at >= :from and earned_at < :to
+				       ), 0) as earned_amount_minor,
+				       coalesce((
+				         select sum(amount_minor)
+				         from specialist_payout
+				         where specialist_account_id=:specialistId
+				           and status='SUCCEEDED'
+				           and completed_at >= :from and completed_at < :to
+				       ), 0) as paid_amount_minor
+				""").param("specialistId", specialistId).param("from", database(period.from()))
+				.param("to", database(period.to()))
+				.query((result, ignored) -> new FinancialRow(result.getLong("earned_amount_minor"),
+						result.getLong("paid_amount_minor"))).single();
+		var financialState = row.earned() == 0 && row.paid() == 0 ? EMPTY : AVAILABLE;
+		return new FinancialMetrics(SOURCE, now, financialState, "VND", row.earned(), row.paid());
 	}
 
 	private SpecialistAnalyticsResponse blocked(Instant now, OperationalStatus status,
@@ -209,4 +228,5 @@ public class SpecialistAnalyticsService {
 	private record NoShowRow(long user, long specialist, long both) {
 		long total() { return user + specialist + both; }
 	}
+	private record FinancialRow(long earned, long paid) { }
 }

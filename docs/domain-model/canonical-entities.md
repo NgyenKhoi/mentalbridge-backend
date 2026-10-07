@@ -84,8 +84,8 @@ See [README](README.md) for status and relationship semantics.
 | Specialty catalogue/assignment | consultation-service | PostgreSQL | PROPOSED | Discovery policy exists, but no owner migration implements specialty persistence. |
 | Subscription plan/version/entitlement | consultation-service | PostgreSQL | PROPOSED | ADR 0017 approves package semantics; exact VND prices/allocations and owner migrations remain gated. |
 | User subscription/payment/IPN/upgrade | consultation-service | PostgreSQL | PROPOSED | Approved billing boundary without active migration; must not be inferred from `current_service_entitlement`. |
-| Appointment completion evidence | consultation-service | PostgreSQL | PROPOSED | Request, decision/expiry, and suspension-cancellation history are active; later session completion evidence remains in separate stories. |
-| Specialist earning/payout/reconciliation | consultation-service | PostgreSQL | PROPOSED | Approved financial boundary remains gated by pricing, credentials, and owner migrations. |
+| Appointment completion evidence | consultation-service | PostgreSQL | ACTIVE | MB-383 records content-free check-in/presence/message evidence and only an accepted completion outcome may consume a credit. |
+| `specialist_earning`, payout destination/request/attempt/item/status history, provider event | consultation-service | PostgreSQL | ACTIVE | MB-516 snapshots the consumed period's per-credit allocation and its 70% specialist share for each evidence-backed completion plus consumed credit. Local/CI use deterministic fake payout; MoMo outbound remains gated by explicit production approval and complete credentials. |
 | Free-text specialist review/moderation | consultation-service | PostgreSQL | PROPOSED | MB-364 implements bounded rating only; comments, anonymity, deletion, and moderation remain unavailable. |
 
 ## Community — PostgreSQL

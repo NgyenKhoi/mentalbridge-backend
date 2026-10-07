@@ -1,8 +1,8 @@
 openapi: 3.1.0
 info:
   title: MentalBridge Consultation Service API
-  version: 1.9.0
-  description: Consultation-owned specialist profile lifecycle, approved online discovery, service-plan entitlement and credit lookup, online availability, appointment requests, appointment-scoped chat eligibility and minimized completion evidence, auditable owner cancellation/reschedule/session outcomes, immutable user-visible session summaries and agreed next steps, credit reservation limits, and suspension outcomes.
+  version: 1.10.0
+  description: Consultation-owned specialist profile lifecycle, approved online discovery, service-plan entitlement and credit lookup, online availability, appointment requests, appointment-scoped chat eligibility and minimized completion evidence, auditable owner cancellation/reschedule/session outcomes, immutable user-visible session summaries and agreed next steps, evidence-backed specialist earnings, fake local payout reconciliation, credit reservation limits, and suspension outcomes.
 servers:
   - url: http://localhost:8082
 paths:
@@ -546,6 +546,43 @@ paths:
         '409': { $ref: '#/components/responses/AppointmentConflictProblem' }
         '412': { $ref: '#/components/responses/AppointmentVersionProblem' }
         '428': { $ref: '#/components/responses/AppointmentVersionRequiredProblem' }
+  /api/v1/appointments/{appointmentId}/dispute:
+    x-mentalbridge-status: implemented
+    parameters:
+      - $ref: '#/components/parameters/AppointmentId'
+    get:
+      operationId: getOwnAppointmentDispute
+      description: Returns the one dispute for an owned appointment without exposing the other participant's account identity or private evidence.
+      security: [{ bearerAuth: [] }]
+      responses:
+        '200':
+          description: Owned appointment dispute
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/AppointmentDispute' }
+        '401': { $ref: '#/components/responses/UnauthorizedProblem' }
+        '404': { $ref: '#/components/responses/NotFoundProblem' }
+    post:
+      operationId: openOwnAppointmentDispute
+      description: Opens the single dispute for an eligible settled appointment within 24 hours. The command records only stable reason and optional bounded operational evidence metadata; it gates specialist earning eligibility and never carries chat, brief, Journal, assessment, recording, or clinical content.
+      security: [{ bearerAuth: [] }]
+      parameters:
+        - $ref: '#/components/parameters/IdempotencyKey'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: '#/components/schemas/OpenAppointmentDispute' }
+      responses:
+        '200':
+          description: Open dispute or exact command replay
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/AppointmentDispute' }
+        '400': { $ref: '#/components/responses/ValidationProblem' }
+        '401': { $ref: '#/components/responses/UnauthorizedProblem' }
+        '404': { $ref: '#/components/responses/NotFoundProblem' }
+        '409': { $ref: '#/components/responses/ConflictProblem' }
   /api/v1/appointments/{appointmentId}/rating:
     x-mentalbridge-status: implemented
     parameters:
@@ -666,7 +703,7 @@ paths:
     x-mentalbridge-status: implemented
     get:
       operationId: getSpecialistOperationalAnalytics
-      description: Returns Consultation-owned operational analytics for the authenticated specialist. Lifecycle counts come from immutable transition facts in the half-open requested period; slot utilization is based on slots scheduled in that period and remains true after later appointment changes. Financial metrics remain explicitly unavailable until their owner capability is delivered.
+      description: Returns Consultation-owned operational analytics for the authenticated specialist. Lifecycle counts come from immutable transition facts in the half-open requested period; slot utilization is based on slots scheduled in that period and remains true after later appointment changes. Financial metrics sum MB-516 earning facts and successful payouts completed within the same period.
       security: [{ bearerAuth: [] }]
       parameters:
         - name: from
@@ -702,6 +739,100 @@ paths:
               schema: { $ref: '#/components/schemas/SpecialistDashboard' }
         '401': { $ref: '#/components/responses/UnauthorizedProblem' }
         '403': { $ref: '#/components/responses/ForbiddenProblem' }
+  /api/v1/specialist/earnings:
+    x-mentalbridge-status: implemented
+    get:
+      operationId: getSpecialistEarnings
+      description: Returns the authenticated approved specialist's evidence-backed earning balances, immutable earning snapshots, masked destination, and payout history. Settlement eligibility is evaluated against server time.
+      security: [{ bearerAuth: [] }]
+      responses:
+        '200':
+          description: Current earning and payout projection
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/SpecialistEarnings' }
+        '401': { $ref: '#/components/responses/UnauthorizedProblem' }
+        '403': { $ref: '#/components/responses/ForbiddenProblem' }
+  /api/v1/specialist/payout-destination:
+    x-mentalbridge-status: implemented
+    put:
+      operationId: saveSpecialistPayoutDestination
+      description: Encrypts one specialist-owned payout destination and returns only a masked hint. Local and CI use the deterministic FAKE provider. MoMo disbursement requires explicit production approval and complete credentials.
+      security: [{ bearerAuth: [] }]
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: '#/components/schemas/SavePayoutDestination' }
+      responses:
+        '200':
+          description: Masked verified destination
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/PayoutDestination' }
+        '400': { $ref: '#/components/responses/ValidationProblem' }
+        '401': { $ref: '#/components/responses/UnauthorizedProblem' }
+        '403': { $ref: '#/components/responses/ForbiddenProblem' }
+        '503': { $ref: '#/components/responses/UnavailableProblem' }
+  /api/v1/specialist/payouts:
+    x-mentalbridge-status: implemented
+    post:
+      operationId: requestSpecialistPayout
+      description: Idempotently attaches all currently available earnings to at most one payout request per specialist per day. Server-side earnings determine the amount; the client cannot submit an amount.
+      security: [{ bearerAuth: [] }]
+      parameters:
+        - name: Idempotency-Key
+          in: header
+          required: true
+          schema: { type: string, minLength: 16, maxLength: 128 }
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: '#/components/schemas/CreateSpecialistPayout' }
+      responses:
+        '200':
+          description: Updated earning and payout projection
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/SpecialistEarnings' }
+        '400': { $ref: '#/components/responses/ValidationProblem' }
+        '401': { $ref: '#/components/responses/UnauthorizedProblem' }
+        '403': { $ref: '#/components/responses/ForbiddenProblem' }
+        '404': { $ref: '#/components/responses/NotFoundProblem' }
+        '409': { $ref: '#/components/responses/ConflictProblem' }
+  /api/v1/admin/payouts:
+    x-mentalbridge-status: implemented
+    get:
+      operationId: listAdminPayouts
+      description: Returns a bounded reconciliation view with masked destinations and no raw provider payload or destination data.
+      security: [{ bearerAuth: [] }]
+      responses:
+        '200':
+          description: Recent provider payout reconciliation rows
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/AdminPayoutList' }
+        '401': { $ref: '#/components/responses/UnauthorizedProblem' }
+        '403': { $ref: '#/components/responses/ForbiddenProblem' }
+  /internal/v1/payouts/momo/ipn:
+    x-mentalbridge-status: implemented
+    post:
+      operationId: receiveMomoPayoutIpn
+      description: Accepts only a correctly signed MoMo payout callback whose partner, order, request, and authoritative amount match one known attempt. Replays are idempotent.
+      security: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: '#/components/schemas/MomoPayoutIpn' }
+      responses:
+        '204': { description: Callback verified and reconciled or already processed }
+        '400': { $ref: '#/components/responses/ValidationProblem' }
+        '401': { $ref: '#/components/responses/UnauthorizedProblem' }
+        '404': { $ref: '#/components/responses/NotFoundProblem' }
+        '409': { $ref: '#/components/responses/ConflictProblem' }
+        '503': { $ref: '#/components/responses/UnavailableProblem' }
   /api/v1/specialist/appointments:
     x-mentalbridge-status: implemented
     get:
@@ -809,6 +940,87 @@ paths:
         '409': { $ref: '#/components/responses/AppointmentDecisionConflictProblem' }
         '412': { $ref: '#/components/responses/AppointmentVersionProblem' }
         '428': { $ref: '#/components/responses/AppointmentVersionRequiredProblem' }
+  /api/v1/specialist/appointments/{appointmentId}/dispute:
+    x-mentalbridge-status: implemented
+    parameters:
+      - $ref: '#/components/parameters/AppointmentId'
+    get:
+      operationId: getAssignedAppointmentDispute
+      description: Returns the one dispute only when the authenticated specialist is assigned to the appointment.
+      security: [{ bearerAuth: [] }]
+      responses:
+        '200':
+          description: Assigned appointment dispute
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/AppointmentDispute' }
+        '401': { $ref: '#/components/responses/UnauthorizedProblem' }
+        '404': { $ref: '#/components/responses/NotFoundProblem' }
+    post:
+      operationId: openAssignedAppointmentDispute
+      description: Opens the single dispute for an eligible assigned appointment within 24 hours using the same minimized participant contract as the user flow.
+      security: [{ bearerAuth: [] }]
+      parameters:
+        - $ref: '#/components/parameters/IdempotencyKey'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: '#/components/schemas/OpenAppointmentDispute' }
+      responses:
+        '200':
+          description: Open dispute or exact command replay
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/AppointmentDispute' }
+        '400': { $ref: '#/components/responses/ValidationProblem' }
+        '401': { $ref: '#/components/responses/UnauthorizedProblem' }
+        '404': { $ref: '#/components/responses/NotFoundProblem' }
+        '409': { $ref: '#/components/responses/ConflictProblem' }
+  /api/v1/admin/appointment-disputes:
+    x-mentalbridge-status: implemented
+    get:
+      operationId: listAppointmentDisputesForAdmin
+      description: Lists a bounded operational dispute queue without participant identity, raw session content, or private evidence.
+      security: [{ bearerAuth: [] }]
+      parameters:
+        - { name: status, in: query, schema: { type: string, enum: [OPEN, RESOLVED], default: OPEN } }
+      responses:
+        '200':
+          description: Bounded dispute queue
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/AppointmentDisputeList' }
+        '400': { $ref: '#/components/responses/ValidationProblem' }
+        '401': { $ref: '#/components/responses/UnauthorizedProblem' }
+        '403': { $ref: '#/components/responses/ForbiddenProblem' }
+  /api/v1/admin/appointment-disputes/{disputeId}/resolve:
+    x-mentalbridge-status: implemented
+    post:
+      operationId: resolveAppointmentDispute
+      description: Records one immutable bounded resolution. Releasing a terminal credit creates an explicit ADJUSTED_RELEASED ledger fact; prior appointment, outcome, credit, and settlement facts remain auditable.
+      security: [{ bearerAuth: [] }]
+      parameters:
+        - { name: disputeId, in: path, required: true, schema: { type: string, format: uuid } }
+        - $ref: '#/components/parameters/AppointmentIfMatch'
+        - $ref: '#/components/parameters/IdempotencyKey'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: '#/components/schemas/ResolveAppointmentDispute' }
+      responses:
+        '200':
+          description: Immutable resolution or exact command replay
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/AppointmentDispute' }
+        '400': { $ref: '#/components/responses/ValidationProblem' }
+        '401': { $ref: '#/components/responses/UnauthorizedProblem' }
+        '403': { $ref: '#/components/responses/ForbiddenProblem' }
+        '404': { $ref: '#/components/responses/NotFoundProblem' }
+        '409': { $ref: '#/components/responses/ConflictProblem' }
+        '412': { $ref: '#/components/responses/AppointmentVersionProblem' }
   /api/v1/admin/specialist-profiles:
     x-mentalbridge-status: implemented
     get:
@@ -1545,6 +1757,138 @@ components:
         appointments: { $ref: '#/components/schemas/SpecialistAppointmentMetrics' }
         rating: { $ref: '#/components/schemas/SpecialistRatingMetrics' }
         financials: { $ref: '#/components/schemas/SpecialistFinancialMetrics' }
+    PayoutDestination:
+      type: object
+      additionalProperties: false
+      required: [id, provider, destinationType, displayHint, status, verifiedAt]
+      properties:
+        id: { type: string, format: uuid }
+        provider: { type: string, enum: [FAKE, MOMO] }
+        destinationType: { type: string, enum: [MOMO_WALLET, BANK_ACCOUNT] }
+        displayHint: { type: string, minLength: 1, maxLength: 64 }
+        status: { type: string, enum: [VERIFIED, DISABLED] }
+        verifiedAt: { type: string, format: date-time }
+    SavePayoutDestination:
+      type: object
+      additionalProperties: false
+      required: [destinationType, accountReference, accountHolderName]
+      properties:
+        destinationType: { type: string, enum: [MOMO_WALLET, BANK_ACCOUNT] }
+        accountReference: { type: string, pattern: '^[0-9]{6,32}$' }
+        accountHolderName: { type: string, minLength: 1, maxLength: 100 }
+        bankCode: { type: string, maxLength: 32, description: Required when destinationType is BANK_ACCOUNT. }
+    CreateSpecialistPayout:
+      type: object
+      additionalProperties: false
+      required: [destinationId]
+      properties:
+        destinationId: { type: string, format: uuid }
+    SpecialistEarningBalance:
+      type: object
+      additionalProperties: false
+      required: [pendingSettlementVnd, availableVnd, processingVnd, paidVnd]
+      properties:
+        pendingSettlementVnd: { type: integer, format: int64, minimum: 0 }
+        availableVnd: { type: integer, format: int64, minimum: 0 }
+        processingVnd: { type: integer, format: int64, minimum: 0 }
+        paidVnd: { type: integer, format: int64, minimum: 0 }
+    SpecialistEarning:
+      type: object
+      additionalProperties: false
+      required: [id, appointmentId, consumedCreditId, planVersion, creditAllocationVnd, sharePercent, earningAmountVnd, status, earnedAt, settlementAvailableAt]
+      properties:
+        id: { type: string, format: uuid }
+        appointmentId: { type: string, format: uuid }
+        consumedCreditId: { type: string, format: uuid }
+        planVersion: { type: string, minLength: 1, maxLength: 64 }
+        creditAllocationVnd: { type: integer, format: int64, minimum: 1, maximum: 1000000000, description: Allocation snapshot from the consumed credit period. }
+        sharePercent: { type: integer, const: 70 }
+        earningAmountVnd: { type: integer, format: int64, minimum: 1, description: Exactly 70 percent of creditAllocationVnd under specialist-earning-v1. }
+        status: { type: string, enum: [PENDING_SETTLEMENT, AVAILABLE, PROCESSING, PAID, REVERSED] }
+        earnedAt: { type: string, format: date-time }
+        settlementAvailableAt: { type: string, format: date-time }
+    SpecialistPayout:
+      type: object
+      additionalProperties: false
+      required: [id, destinationId, amountVnd, provider, status, requestedAt]
+      properties:
+        id: { type: string, format: uuid }
+        destinationId: { type: string, format: uuid }
+        amountVnd: { type: integer, format: int64, minimum: 100000 }
+        provider: { type: string, enum: [FAKE, MOMO] }
+        status: { type: string, enum: [PENDING, PROCESSING, SUCCEEDED, FAILED, UNKNOWN] }
+        providerReference: { type: [string, 'null'], maxLength: 128 }
+        failureCode: { type: [string, 'null'], maxLength: 64 }
+        requestedAt: { type: string, format: date-time }
+        completedAt: { type: [string, 'null'], format: date-time }
+    SpecialistEarnings:
+      type: object
+      additionalProperties: false
+      required: [currency, earningPolicyVersion, settlementHoldDays, minimumWithdrawalVnd, generatedAt, balance, earnings, payouts]
+      properties:
+        currency: { type: string, const: VND }
+        earningPolicyVersion: { type: string, const: specialist-earning-v1 }
+        settlementHoldDays: { type: integer, const: 7 }
+        minimumWithdrawalVnd: { type: integer, format: int64, const: 100000 }
+        generatedAt: { type: string, format: date-time }
+        balance: { $ref: '#/components/schemas/SpecialistEarningBalance' }
+        destination:
+          anyOf:
+            - { $ref: '#/components/schemas/PayoutDestination' }
+            - { type: 'null' }
+        earnings:
+          type: array
+          maxItems: 100
+          items: { $ref: '#/components/schemas/SpecialistEarning' }
+        payouts:
+          type: array
+          maxItems: 100
+          items: { $ref: '#/components/schemas/SpecialistPayout' }
+    AdminPayout:
+      type: object
+      additionalProperties: false
+      required: [payoutId, specialistAccountId, destinationHint, amountVnd, currency, provider, status, earningCount, requestedAt]
+      properties:
+        payoutId: { type: string, format: uuid }
+        specialistAccountId: { type: string, format: uuid }
+        destinationHint: { type: string, maxLength: 64 }
+        amountVnd: { type: integer, format: int64, minimum: 100000 }
+        currency: { type: string, const: VND }
+        provider: { type: string, enum: [FAKE, MOMO] }
+        status: { type: string, enum: [PENDING, PROCESSING, SUCCEEDED, FAILED, UNKNOWN] }
+        earningCount: { type: integer, minimum: 1 }
+        providerReference: { type: [string, 'null'], maxLength: 128 }
+        failureCode: { type: [string, 'null'], maxLength: 64 }
+        requestedAt: { type: string, format: date-time }
+        completedAt: { type: [string, 'null'], format: date-time }
+    AdminPayoutList:
+      type: object
+      additionalProperties: false
+      required: [generatedAt, count, items]
+      properties:
+        generatedAt: { type: string, format: date-time }
+        count: { type: integer, minimum: 0, maximum: 200 }
+        items:
+          type: array
+          maxItems: 200
+          items: { $ref: '#/components/schemas/AdminPayout' }
+    MomoPayoutIpn:
+      type: object
+      additionalProperties: false
+      required: [partnerCode, orderId, requestId, amount, resultCode, transId, responseTime, signature]
+      properties:
+        partnerCode: { type: string, minLength: 1, maxLength: 64 }
+        orderId: { type: string, minLength: 1, maxLength: 128 }
+        requestId: { type: string, minLength: 1, maxLength: 128 }
+        amount: { type: integer, format: int64, minimum: 1000 }
+        resultCode: { type: integer }
+        transId: { type: integer, format: int64, minimum: 0 }
+        responseTime: { type: integer, format: int64, minimum: 0 }
+        message: { type: [string, 'null'], maxLength: 255 }
+        orderInfo: { type: [string, 'null'], maxLength: 255 }
+        orderType: { type: [string, 'null'], maxLength: 64 }
+        extraData: { type: [string, 'null'], maxLength: 1024 }
+        signature: { type: string, pattern: '^[0-9a-fA-F]{64}$' }
     AppointmentModality:
       type: string
       enum: [IN_APP_CHAT, IN_APP_VIDEO]
@@ -2024,6 +2368,63 @@ components:
           maxItems: 20
           items: { $ref: '#/components/schemas/AppointmentHistoryEntry' }
         version: { type: integer, format: int64, minimum: 0 }
+    OpenAppointmentDispute:
+      type: object
+      additionalProperties: false
+      required: [reasonCode]
+      properties:
+        reasonCode:
+          type: string
+          enum: [OUTCOME_INCORRECT, PARTICIPATION_EVIDENCE_INCORRECT, SESSION_DELIVERY_NOT_RECOGNIZED, TECHNICAL_FAILURE]
+        evidenceType:
+          type: [string, 'null']
+          enum: [ACCESS_LOG, CONNECTION_INCIDENT, PROVIDER_INCIDENT, null]
+        evidenceOccurredAt: { type: [string, 'null'], format: date-time }
+    ResolveAppointmentDispute:
+      type: object
+      additionalProperties: false
+      required: [outcome, reasonCode]
+      properties:
+        outcome: { type: string, enum: [UPHOLD_RECORDED_OUTCOME, RELEASE_USER_CREDIT] }
+        reasonCode:
+          type: string
+          enum: [EVIDENCE_SUPPORTS_RECORDED_OUTCOME, EVIDENCE_INCONCLUSIVE_RELEASED, TECHNICAL_FAILURE_CONFIRMED]
+    AppointmentDispute:
+      type: object
+      additionalProperties: false
+      required: [id, appointmentId, appointmentVersion, status, openedByRole, reasonCode, evidenceType, evidenceOccurredAt, openedAt, eligibleUntil, settlementGated, resolutionOutcome, resolutionReason, resolvedAt, priorAppointmentStatus, priorSessionOutcome, resultingAppointmentStatus, resultingSessionOutcome, creditAction, version]
+      properties:
+        id: { type: string, format: uuid }
+        appointmentId: { type: string, format: uuid }
+        appointmentVersion: { type: integer, format: int64, minimum: 0 }
+        status: { type: string, enum: [OPEN, RESOLVED] }
+        openedByRole: { type: string, enum: [USER, SPECIALIST] }
+        reasonCode: { type: string, enum: [OUTCOME_INCORRECT, PARTICIPATION_EVIDENCE_INCORRECT, SESSION_DELIVERY_NOT_RECOGNIZED, TECHNICAL_FAILURE] }
+        evidenceType: { type: [string, 'null'], enum: [ACCESS_LOG, CONNECTION_INCIDENT, PROVIDER_INCIDENT, null] }
+        evidenceOccurredAt: { type: [string, 'null'], format: date-time }
+        openedAt: { type: string, format: date-time }
+        eligibleUntil: { type: string, format: date-time }
+        settlementGated: { type: boolean }
+        resolutionOutcome: { type: [string, 'null'], enum: [UPHOLD_RECORDED_OUTCOME, RELEASE_USER_CREDIT, null] }
+        resolutionReason: { type: [string, 'null'], enum: [EVIDENCE_SUPPORTS_RECORDED_OUTCOME, EVIDENCE_INCONCLUSIVE_RELEASED, TECHNICAL_FAILURE_CONFIRMED, null] }
+        resolvedAt: { type: [string, 'null'], format: date-time }
+        priorAppointmentStatus: { type: [string, 'null'] }
+        priorSessionOutcome: { type: [string, 'null'] }
+        resultingAppointmentStatus: { type: [string, 'null'] }
+        resultingSessionOutcome: { type: [string, 'null'] }
+        creditAction: { type: [string, 'null'], enum: [NONE, ALREADY_AVAILABLE, ADJUSTED_RELEASED, null] }
+        version: { type: integer, format: int64, minimum: 0 }
+    AppointmentDisputeList:
+      type: object
+      additionalProperties: false
+      required: [items, count, generatedAt]
+      properties:
+        items:
+          type: array
+          maxItems: 100
+          items: { $ref: '#/components/schemas/AppointmentDispute' }
+        count: { type: integer, minimum: 0, maximum: 100 }
+        generatedAt: { type: string, format: date-time }
     ConsultationBriefAppointmentContext:
       type: object
       additionalProperties: false
@@ -2206,6 +2607,11 @@ components:
           schema: { $ref: '#/components/schemas/Problem' }
     AvailabilityVersionRequiredProblem:
       description: If-Match is required for withdrawal (AVAILABILITY_SLOT_VERSION_REQUIRED).
+      content:
+        application/problem+json:
+          schema: { $ref: '#/components/schemas/Problem' }
+    UnavailableProblem:
+      description: Payout encryption or MoMo callback credentials are not configured; real payout remains disabled.
       content:
         application/problem+json:
           schema: { $ref: '#/components/schemas/Problem' }
