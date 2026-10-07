@@ -49,6 +49,7 @@ delivery, or SupportPlan state.
   remain later stories.
 - MB-381 adds the bearer-protected internal appointment-context projection used by Care. It returns only appointment/user/specialist identifiers, status, start/end, and version, and is readable only by that appointment's owner or assigned specialist. Consultation stores no brief content and exposes no credit, history, decision, or display-name fields through this projection.
 - MB-383 implements `chat-session-completion-v1`: Realtime submits only assigned-participant check-in, bounded presence, and accepted-message metadata; Consultation records `SESSION_ENDED`, applies the five-minute grace and technical reconciliation window, stores a separate deterministic outcome, and settles the held credit exactly once. Completion stores an opaque fact for MB-516 but creates no earning.
+- MB-619 implements one participant-authorized appointment dispute per eligible settled outcome. The 24-hour open window, minimized reason/evidence metadata, immutable admin resolution, explicit credit adjustment ledger, and earning gate remain local to Consultation; no support ticket or clinical conclusion is created.
 - MB-591 adds the specialist operational dashboard projection from local
   profile, appointment, and availability facts. It returns exact counts and
   at most five preview items per section with source/as-of metadata. Any

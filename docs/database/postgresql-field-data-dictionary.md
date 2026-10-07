@@ -1176,7 +1176,7 @@ Append-only evidence for provisioning and appointment-driven transitions.
 | `id` | Immutable event UUID. |
 | `credit_id` | Credit whose state changed. |
 | `account_id` | Denormalized owner UUID for bounded history and account-scoped idempotency. |
-| `event_type` | `PROVISIONED`, `HELD`, `RELEASED`, `CONSUMED`, or `FORFEITED`. |
+| `event_type` | `PROVISIONED`, `HELD`, `RELEASED`, `CONSUMED`, `FORFEITED`, or explicit post-settlement `ADJUSTED_RELEASED`. The adjustment appends a correction fact and never deletes the original terminal transition. |
 | `appointment_id` | Required correlation for every non-provisioning transition. |
 | `idempotency_key` | Owner command key unique per account; exact replay does not append another event. |
 | `occurred_at` | Immutable server UTC transition instant. |
@@ -1210,7 +1210,7 @@ Implemented MB-378/MB-558 request aggregate with MB-379 decision settlement, MB-
 | `session_policy_version` | `chat-session-completion-v1` provenance set when the scheduled channel ends. |
 | `session_ended_at` / `session_settled_at` | Server instants for history-only channel end and later outcome/credit settlement. End alone never consumes a credit. |
 | `evidence_review_started_at` / `evidence_failure_reason` | Minimized technical-reconciliation state. Credit stays held until normal recovery or the end-plus-35-minute fallback. |
-| `completion_fact_id` | Opaque unique fact present only for evidence-backed `COMPLETED`; reserved as MB-516's future earning input. MB-383 creates no earning. |
+| `completion_fact_id` | Opaque unique fact present only for evidence-backed `COMPLETED`; MB-516 uses it as a unique earning input. Timer-only session end still creates no earning. |
 | `created_at` / `updated_at` | UTC insertion and latest authoritative state-change instants. |
 | `version` | Optimistic state-transition counter for later decision commands. |
 
@@ -1245,6 +1245,27 @@ never stored.
 | `message_id` | Realtime-owned accepted-message UUID required only for message evidence; it is not message content. |
 | `occurred_at` | Server-observed occurrence used for the half-open appointment-window calculation. |
 | `received_at` | Consultation receipt time used to enforce grace and reconciliation deadlines. |
+
+### `consultation.appointment_dispute`
+
+MB-619's one-per-appointment dispute aggregate. It stores only operational reason/provenance and bounded evidence metadata; raw chat, ConsultationBrief, Journal, assessment, recording, private notes, and clinical conclusions are prohibited.
+
+| Field | Purpose |
+| --- | --- |
+| `id` / `appointment_id` | Stable dispute identity and unique contested appointment. |
+| `appointment_version` | Exact appointment version observed when the dispute opened. |
+| `opened_by_account_id` / `opened_by_role` | Server-authenticated participant provenance; role is `USER` or assigned `SPECIALIST`. |
+| `reason_code` | Stable bounded operational reason; never free-text session content. |
+| `evidence_type` / `evidence_occurred_at` | Optional minimized operational metadata identifying an access, connection, or provider fact and its occurrence time. |
+| `opened_at` / `eligible_until` | Server timestamps proving the command was accepted inside the 24-hour post-settlement window. |
+| `status` | `OPEN` gates future earning eligibility; `RESOLVED` is immutable. |
+| `resolution_outcome` / `resolution_reason` | Bounded admin decision and stable non-clinical rationale. |
+| `resolved_by` / `resolved_at` | Resolving administrator and server audit time. |
+| `prior_appointment_status` / `prior_session_outcome` | Exact immutable source facts observed during resolution. |
+| `resulting_appointment_status` / `resulting_session_outcome` | Explicit resulting facts; MB-619 does not silently rewrite them. |
+| `credit_action` | Exact `NONE`, `ALREADY_AVAILABLE`, or `ADJUSTED_RELEASED` result. |
+| `open_idempotency_key` / `resolution_idempotency_key` | Stable command identities for replay-safe open and resolution. |
+| `created_at` / `updated_at` / `version` | UTC persistence timestamps and optimistic resolution version. |
 
 ### `consultation.specialist_client_continuity_audit`
 
@@ -1610,24 +1631,29 @@ Append-only evidence for every credit grant, booking reservation/release, upgrad
 
 ### `consultation.specialist_earning`
 
-One immutable monetary allocation created only by a completed appointment; current status supports settlement and provider payout reconciliation.
+Implemented by MB-516. One immutable VND allocation is created in the same
+transaction as an evidence-backed `COMPLETED` appointment and exact credit
+consumption. Elapsed time, `SESSION_ENDED`, no-show, cancellation, and released
+or forfeited credits do not create an earning.
 
 | Field | Purpose |
 | --- | --- |
 | `id` | Immutable earning UUID shown in specialist/admin history. |
 | `appointment_id` | Unique completed appointment proving that one earning may exist. |
-| `credit_id` | Unique consumed credit whose snapshotted allocation funds the earning. |
-| `specialist_id` | Specialist who completed the appointment and owns the payable amount. |
+| `completion_fact_id` | Unique opaque completion evidence fact, preventing any second earning for the same completion. |
+| `consumed_credit_id` | Unique consumed credit whose allocation funds the earning. |
+| `specialist_account_id` | Specialist who completed the appointment and owns the payable amount. |
+| `plan_version` | Entitlement/plan version snapshotted from the consumed credit period. |
 | `currency` | ISO 4217 currency of all amounts in the earning. |
-| `allocated_value_minor` | Credit allocation snapshot; current plan versions use 500. |
-| `specialist_share_bps` | Revenue-share snapshot; current plan versions use 7000. |
-| `specialist_amount_minor` | Exact specialist amount; current versions use 350 per completed credit. |
-| `platform_amount_minor` | Exact remainder of the credit allocation; current versions use 150. |
+| `credit_allocation_minor` | Exact fixed allocation snapshot, currently 300,000 VND per consumed credit. |
+| `specialist_share_bps` | Revenue-share snapshot, currently 7000 (70%). |
+| `specialist_amount_minor` | Exact specialist amount, currently 210,000 VND. It is never derived from subscription price. |
+| `platform_allocation_minor` | Remaining 90,000 VND allocation. This is not represented or described as platform profit. |
+| `idempotency_source` | Stable completion-fact source preventing duplicate creation on settlement replay. |
 | `status` | Settlement/payout state. `PAID` requires a linked payout with verified `SUCCEEDED` provider outcome. |
 | `earned_at` | UTC appointment-completion instant. |
-| `settlement_available_at` | UTC instant the earning becomes eligible for a provider payout request. |
-| `reversed_at` | UTC instant an approved chargeback/reconciliation reversal was recorded; null otherwise. |
-| `reversal_reason_code` | Stable non-sensitive reversal reason; null unless reversed. |
+| `settlement_available_at` | UTC instant seven days after earning at which it becomes payout eligible. |
+| `paid_at` | UTC verified payout-success instant; null until `PAID`. |
 | `created_at` | Immutable UTC insertion instant. |
 | `updated_at` | UTC instant of the latest settlement/payout/reversal state change. |
 | `version` | Optimistic-lock counter protecting settlement and payout races. |
@@ -1639,7 +1665,7 @@ Encrypted specialist-owned destination used by a provider payout adapter. Raw wa
 | Field | Purpose |
 | --- | --- |
 | `id` | Immutable destination UUID referenced by payout requests. |
-| `specialist_id` | Specialist who owns and may manage this destination. |
+| `specialist_account_id` | Specialist who owns and may manage this destination. |
 | `payout_provider` | `MOMO` in real environments or MoMo-shaped `FAKE` locally; only MoMo may be used in production after credential approval. |
 | `destination_type` | Allow-listed provider route: MoMo wallet or domestic bank account. |
 | `destination_ciphertext` | Encrypted provider-required wallet/account details; never returned as stored ciphertext to clients. |
@@ -1662,13 +1688,14 @@ allowed.
 | Field | Purpose |
 | --- | --- |
 | `id` | Immutable payout request UUID. |
-| `specialist_id` | Specialist receiving the attached available earnings. |
+| `specialist_account_id` | Specialist receiving the attached available earnings. |
 | `destination_id` | Verified encrypted payout destination selected for this request. |
 | `currency` | ISO 4217 currency shared by every attached earning. |
 | `amount_minor` | Exact positive requested amount in minor units, equal to attached payout items. |
 | `payout_provider` | `MOMO`/`FAKE` namespace used for request, status, and IPN reconciliation. |
 | `status` | `PENDING`, `PROCESSING`, `SUCCEEDED`, `FAILED`, or uncertainty-preserving `UNKNOWN`. |
 | `idempotency_key` | Specialist-scoped command key preventing duplicate logical payout creation. Provider attempts derive separate keys. |
+| `requested_on` | Server-local request date enforcing the planned maximum of one payout request per specialist per day. |
 | `requested_at` | UTC instant MentalBridge created the payout request. |
 | `completed_at` | UTC instant a verified provider attempt proved the logical payout succeeded; required for `SUCCEEDED`. |
 | `last_failure_code` | Safe diagnostic from the latest definite failure; never contains destination/raw payload data. |

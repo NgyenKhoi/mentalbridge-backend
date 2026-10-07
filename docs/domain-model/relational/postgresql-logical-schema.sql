@@ -984,7 +984,7 @@ CREATE TABLE consultation.service_credit_ledger (
     id uuid PRIMARY KEY,
     credit_id uuid NOT NULL REFERENCES consultation.service_credit(id),
     account_id uuid NOT NULL, -- external -> identity.account.id
-    event_type varchar(16) NOT NULL,
+    event_type varchar(32) NOT NULL,
     appointment_id uuid,
     idempotency_key varchar(128) NOT NULL,
     occurred_at timestamptz NOT NULL,
@@ -1068,6 +1068,36 @@ CREATE TABLE consultation.appointment_chat_evidence (
     UNIQUE (appointment_id, evidence_id)
 );
 
+CREATE TABLE consultation.appointment_dispute (
+    id uuid PRIMARY KEY,
+    appointment_id uuid NOT NULL UNIQUE REFERENCES consultation.appointment(id),
+    appointment_version bigint NOT NULL,
+    opened_by_account_id uuid NOT NULL, -- external -> identity.account.id
+    opened_by_role varchar(16) NOT NULL,
+    reason_code varchar(64) NOT NULL,
+    evidence_type varchar(48),
+    evidence_occurred_at timestamptz,
+    opened_at timestamptz NOT NULL,
+    eligible_until timestamptz NOT NULL,
+    status varchar(16) NOT NULL,
+    resolution_outcome varchar(48),
+    resolution_reason varchar(64),
+    resolved_by uuid, -- external -> identity.account.id
+    resolved_at timestamptz,
+    prior_appointment_status varchar(24),
+    prior_session_outcome varchar(40),
+    resulting_appointment_status varchar(24),
+    resulting_session_outcome varchar(40),
+    credit_action varchar(32),
+    open_idempotency_key varchar(128) NOT NULL,
+    resolution_idempotency_key varchar(128),
+    created_at timestamptz NOT NULL,
+    updated_at timestamptz NOT NULL,
+    version bigint NOT NULL,
+    UNIQUE (opened_by_account_id, open_idempotency_key),
+    UNIQUE (resolved_by, resolution_idempotency_key)
+);
+
 CREATE TABLE consultation.appointment_rating (
     appointment_id uuid PRIMARY KEY REFERENCES consultation.appointment(id),
     user_account_id uuid NOT NULL, -- external -> identity.account.id
@@ -1084,6 +1114,115 @@ CREATE TABLE consultation.specialist_rating_aggregate (
     rating_sum bigint NOT NULL,
     version bigint NOT NULL,
     updated_at timestamptz NOT NULL
+);
+
+CREATE TABLE consultation.specialist_earning (
+    id uuid PRIMARY KEY,
+    appointment_id uuid NOT NULL UNIQUE REFERENCES consultation.appointment(id),
+    completion_fact_id uuid NOT NULL UNIQUE,
+    consumed_credit_id uuid NOT NULL UNIQUE REFERENCES consultation.service_credit(id),
+    specialist_account_id uuid NOT NULL REFERENCES consultation.specialist_profile(account_id),
+    plan_version varchar(64) NOT NULL,
+    currency char(3) NOT NULL,
+    credit_allocation_minor bigint NOT NULL,
+    specialist_share_bps integer NOT NULL,
+    specialist_amount_minor bigint NOT NULL,
+    platform_allocation_minor bigint NOT NULL,
+    idempotency_source varchar(128) NOT NULL UNIQUE,
+    status varchar(24) NOT NULL,
+    earned_at timestamptz NOT NULL,
+    settlement_available_at timestamptz NOT NULL,
+    paid_at timestamptz,
+    created_at timestamptz NOT NULL,
+    updated_at timestamptz NOT NULL,
+    version bigint NOT NULL
+);
+
+CREATE TABLE consultation.specialist_payout_destination (
+    id uuid PRIMARY KEY,
+    specialist_account_id uuid NOT NULL REFERENCES consultation.specialist_profile(account_id),
+    payout_provider varchar(16) NOT NULL,
+    destination_type varchar(24) NOT NULL,
+    destination_ciphertext text NOT NULL,
+    encryption_key_version varchar(32) NOT NULL,
+    destination_fingerprint char(64) NOT NULL,
+    display_hint varchar(64) NOT NULL,
+    status varchar(16) NOT NULL,
+    verified_at timestamptz NOT NULL,
+    created_at timestamptz NOT NULL,
+    updated_at timestamptz NOT NULL,
+    version bigint NOT NULL,
+    UNIQUE (specialist_account_id, destination_fingerprint)
+);
+
+CREATE TABLE consultation.specialist_payout (
+    id uuid PRIMARY KEY,
+    specialist_account_id uuid NOT NULL REFERENCES consultation.specialist_profile(account_id),
+    destination_id uuid NOT NULL REFERENCES consultation.specialist_payout_destination(id),
+    currency char(3) NOT NULL,
+    amount_minor bigint NOT NULL,
+    payout_provider varchar(16) NOT NULL,
+    status varchar(16) NOT NULL,
+    idempotency_key varchar(128) NOT NULL,
+    requested_on date NOT NULL,
+    requested_at timestamptz NOT NULL,
+    completed_at timestamptz,
+    last_failure_code varchar(64),
+    created_at timestamptz NOT NULL,
+    updated_at timestamptz NOT NULL,
+    version bigint NOT NULL,
+    UNIQUE (specialist_account_id, idempotency_key),
+    UNIQUE (specialist_account_id, requested_on)
+);
+
+CREATE TABLE consultation.specialist_payout_attempt (
+    id uuid PRIMARY KEY,
+    payout_id uuid NOT NULL REFERENCES consultation.specialist_payout(id),
+    payout_provider varchar(16) NOT NULL,
+    attempt_number integer NOT NULL,
+    provider_idempotency_key varchar(128) NOT NULL,
+    provider_payout_reference varchar(128),
+    status varchar(16) NOT NULL,
+    requested_at timestamptz NOT NULL,
+    provider_confirmed_at timestamptz,
+    failed_at timestamptz,
+    failure_code varchar(64),
+    created_at timestamptz NOT NULL,
+    updated_at timestamptz NOT NULL,
+    version bigint NOT NULL,
+    UNIQUE (payout_id, attempt_number),
+    UNIQUE (payout_provider, provider_idempotency_key),
+    UNIQUE (payout_provider, provider_payout_reference)
+);
+
+CREATE TABLE consultation.specialist_payout_item (
+    payout_id uuid NOT NULL REFERENCES consultation.specialist_payout(id),
+    earning_id uuid NOT NULL UNIQUE REFERENCES consultation.specialist_earning(id),
+    amount_minor bigint NOT NULL,
+    PRIMARY KEY (payout_id, earning_id)
+);
+
+CREATE TABLE consultation.specialist_payout_status_history (
+    id uuid PRIMARY KEY,
+    payout_id uuid NOT NULL REFERENCES consultation.specialist_payout(id),
+    from_status varchar(16),
+    to_status varchar(16) NOT NULL,
+    reason_code varchar(64) NOT NULL,
+    changed_at timestamptz NOT NULL
+);
+
+CREATE TABLE consultation.payout_provider_event (
+    id uuid PRIMARY KEY,
+    payout_attempt_id uuid REFERENCES consultation.specialist_payout_attempt(id),
+    payout_provider varchar(16) NOT NULL,
+    provider_event_id varchar(128) NOT NULL,
+    event_type varchar(32) NOT NULL,
+    payload_sha256 char(64) NOT NULL,
+    processing_status varchar(24) NOT NULL,
+    failure_code varchar(64),
+    received_at timestamptz NOT NULL,
+    processed_at timestamptz,
+    UNIQUE (payout_provider, provider_event_id)
 );
 
 CREATE TABLE consultation.specialist_client_continuity_audit (

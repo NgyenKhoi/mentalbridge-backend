@@ -23,6 +23,7 @@ public class ServiceCreditService {
 
 	static final String CURRENT_POLICY_VERSION = "consultation-credit-v2";
 	static final String HISTORICAL_POLICY_VERSION = "consultation-credit-v1";
+	static final long CURRENT_CREDIT_ALLOCATION_VND = 300_000;
 	private static final int HISTORY_LIMIT = 100;
 
 	private final CurrentServiceEntitlementService entitlements;
@@ -49,7 +50,7 @@ public class ServiceCreditService {
 	@Transactional
 	public void transition(UUID accountId, UUID creditId, UUID appointmentId, CreditEventType eventType,
 			String idempotencyKey) {
-		if (eventType == CreditEventType.PROVISIONED || idempotencyKey == null
+		if (eventType == CreditEventType.PROVISIONED || eventType == CreditEventType.ADJUSTED_RELEASED || idempotencyKey == null
 				|| idempotencyKey.length() < 16 || idempotencyKey.length() > 128) {
 			throw new IllegalArgumentException("A valid transition and idempotency key are required");
 		}
@@ -96,6 +97,47 @@ public class ServiceCreditService {
 				.param("now", databaseInstant(commandTime)).update();
 	}
 
+	@Transactional
+	public boolean adjustRelease(UUID accountId, UUID creditId, UUID appointmentId, String idempotencyKey) {
+		var replay = jdbc.sql("""
+				select credit_id, appointment_id from service_credit_ledger
+				where account_id=:accountId and idempotency_key=:key and event_type='ADJUSTED_RELEASED'
+				""").param("accountId", accountId).param("key", idempotencyKey)
+				.query((row, ignored) -> new ExistingAdjustment(row.getObject("credit_id", UUID.class),
+						row.getObject("appointment_id", UUID.class))).optional();
+		if (replay.isPresent()) {
+			var existing = replay.orElseThrow();
+			if (existing.creditId().equals(creditId) && existing.appointmentId().equals(appointmentId)) return true;
+			throw conflict("IDEMPOTENCY_KEY_REUSED", "Idempotency key was reused for another credit adjustment");
+		}
+		var credit = jdbc.sql("""
+				select c.state, c.appointment_id from service_credit c
+				join service_credit_period p on p.id=c.period_id
+				where c.id=:creditId and p.account_id=:accountId for update
+				""").param("creditId", creditId).param("accountId", accountId)
+				.query((row, ignored) -> new AdjustmentCredit(row.getString("state"),
+						row.getObject("appointment_id", UUID.class))).optional()
+				.orElseThrow(() -> new ApiException(HttpStatus.NOT_FOUND, "SERVICE_CREDIT_NOT_FOUND",
+						"Service credit was not found"));
+		if (credit.state().equals("AVAILABLE")) return false;
+		if (!appointmentId.equals(credit.appointmentId())
+				|| !java.util.Set.of("CONSUMED", "FORFEITED").contains(credit.state())) {
+			throw conflict("SERVICE_CREDIT_ADJUSTMENT_CONFLICT", "Service credit cannot be released by this adjustment");
+		}
+		var now = databaseNow();
+		jdbc.sql("""
+				update service_credit set state='AVAILABLE', appointment_id=null, updated_at=:now, version=version+1
+				where id=:creditId
+				""").param("now", now).param("creditId", creditId).update();
+		jdbc.sql("""
+				insert into service_credit_ledger (
+				 id, credit_id, account_id, event_type, appointment_id, idempotency_key, occurred_at
+				) values (:id, :creditId, :accountId, 'ADJUSTED_RELEASED', :appointmentId, :key, :now)
+				""").param("id", UUID.randomUUID()).param("creditId", creditId).param("accountId", accountId)
+				.param("appointmentId", appointmentId).param("key", idempotencyKey).param("now", now).update();
+		return true;
+	}
+
 	private String nextState(CreditState credit, UUID appointmentId, CreditEventType eventType) {
 		return switch (eventType) {
 			case HELD -> {
@@ -114,7 +156,7 @@ public class ServiceCreditService {
 				assertHeldBy(credit, appointmentId);
 				yield "FORFEITED";
 			}
-			case PROVISIONED -> throw new IllegalArgumentException("Provisioning is automatic");
+			case PROVISIONED, ADJUSTED_RELEASED -> throw new IllegalArgumentException("Transition is not available here");
 		};
 	}
 
@@ -131,10 +173,10 @@ public class ServiceCreditService {
 		jdbc.sql("""
 				insert into service_credit_period (
 				    id, account_id, plan_version, credit_policy_version, package_code, source, source_reference,
-				    period_start, period_end, allocated_count, created_at, updated_at
+				    period_start, period_end, allocated_count, credit_allocation_minor, created_at, updated_at
 				) values (
 				    :id, :accountId, :planVersion, :creditPolicyVersion, :packageCode, :source, :sourceReference,
-				    :periodStart, :periodEnd, :allocatedCount, :now, :now
+				    :periodStart, :periodEnd, :allocatedCount, :creditAllocation, :now, :now
 				) on conflict (account_id, plan_version, period_start, period_end) do nothing
 				""").param("id", periodId).param("accountId", entitlement.accountId())
 				.param("planVersion", entitlement.policyVersion()).param("packageCode", entitlement.packageCode().name())
@@ -143,6 +185,7 @@ public class ServiceCreditService {
 				.param("periodStart", databaseInstant(entitlement.effectiveFrom()))
 				.param("periodEnd", databaseInstant(entitlement.effectiveUntil()))
 				.param("allocatedCount", allocation(CURRENT_POLICY_VERSION, entitlement.packageCode()))
+				.param("creditAllocation", CURRENT_CREDIT_ALLOCATION_VND)
 				.param("now", databaseNow()).update();
 
 		var period = findPeriod(entitlement);
@@ -169,7 +212,8 @@ public class ServiceCreditService {
 
 	private CreditPeriod findPeriod(CurrentServiceEntitlementService.EntitlementDecision entitlement) {
 		return jdbc.sql("""
-				select id, credit_policy_version, package_code, source, source_reference, allocated_count
+				select id, credit_policy_version, package_code, source, source_reference,
+				       allocated_count, credit_allocation_minor
 				from service_credit_period
 				where account_id=:accountId and plan_version=:planVersion
 				  and period_start=:periodStart and period_end=:periodEnd
@@ -180,7 +224,7 @@ public class ServiceCreditService {
 				.query((row, ignored) -> new CreditPeriod(row.getObject("id", UUID.class), row.getString("credit_policy_version"),
 						ServicePackage.valueOf(row.getString("package_code")),
 						EntitlementSource.valueOf(row.getString("source")), row.getString("source_reference"),
-						row.getInt("allocated_count"))).single();
+						row.getInt("allocated_count"), row.getLong("credit_allocation_minor"))).single();
 	}
 
 	private void provision(CreditPeriod period, int ordinal) {
@@ -279,7 +323,7 @@ public class ServiceCreditService {
 	}
 
 	private record CreditPeriod(UUID id, String creditPolicyVersion, ServicePackage packageCode, EntitlementSource source,
-			String sourceReference, int allocatedCount) {
+			String sourceReference, int allocatedCount, long creditAllocationVnd) {
 	}
 
 	private record CreditState(String state, UUID appointmentId, Instant periodEnd) {
@@ -287,4 +331,8 @@ public class ServiceCreditService {
 
 	private record ExistingCommand(UUID creditId, CreditEventType eventType, UUID appointmentId) {
 	}
+
+	private record ExistingAdjustment(UUID creditId, UUID appointmentId) { }
+
+	private record AdjustmentCredit(String state, UUID appointmentId) { }
 }

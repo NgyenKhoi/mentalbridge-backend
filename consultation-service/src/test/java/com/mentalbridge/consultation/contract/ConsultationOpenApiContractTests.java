@@ -38,24 +38,35 @@ class ConsultationOpenApiContractTests {
 			"GET /api/v1/admin/appointments",
 			"POST /api/v1/appointments",
 			"POST /api/v1/appointments/{appointmentId}/cancel",
+			"GET /api/v1/appointments/{appointmentId}/dispute",
+			"POST /api/v1/appointments/{appointmentId}/dispute",
 			"GET /api/v1/appointments/{appointmentId}/rating",
 			"PUT /api/v1/appointments/{appointmentId}/rating",
 			"GET /api/v1/appointments/{appointmentId}/session-summaries",
 			"PUT /api/v1/session-summaries/{summaryId}/reuse-consent",
 			"PUT /api/v1/agreed-next-steps/{nextStepId}",
 			"GET /api/v1/specialist/dashboard",
+			"GET /api/v1/specialist/earnings",
+			"PUT /api/v1/specialist/payout-destination",
+			"POST /api/v1/specialist/payouts",
 			"GET /api/v1/specialist/appointments",
+			"GET /api/v1/specialist/appointments/{appointmentId}/dispute",
+			"POST /api/v1/specialist/appointments/{appointmentId}/dispute",
 			"GET /api/v1/specialist/appointments/{appointmentId}/session-summaries",
 			"POST /api/v1/specialist/appointments/{appointmentId}/session-summaries",
 			"POST /api/v1/specialist/appointments/{appointmentId}/accept",
 			"POST /api/v1/specialist/appointments/{appointmentId}/reject",
 			"GET /api/v1/admin/operations/summary",
 			"GET /api/v1/admin/specialist-profiles",
+			"GET /api/v1/admin/appointment-disputes",
+			"POST /api/v1/admin/appointment-disputes/{disputeId}/resolve",
 			"GET /api/v1/admin/specialist-profiles/{specialistAccountId}",
 			"POST /api/v1/admin/specialist-profiles/{specialistAccountId}/approve",
 			"POST /api/v1/admin/specialist-profiles/{specialistAccountId}/reject",
 			"POST /api/v1/admin/specialist-profiles/{specialistAccountId}/suspend",
-			"POST /api/v1/admin/specialist-profiles/{specialistAccountId}/restore");
+			"POST /api/v1/admin/specialist-profiles/{specialistAccountId}/restore",
+			"GET /api/v1/admin/payouts",
+			"POST /internal/v1/payouts/momo/ipn");
 
 	@Test
 	void contractIsValidAndMatchesTheImplementedSurface() {
@@ -72,7 +83,10 @@ class ConsultationOpenApiContractTests {
 			assertThat(item.getExtensions()).containsEntry("x-mentalbridge-status", "implemented");
 			item.readOperationsMap().forEach((method, operation) -> {
 				operations.add(method.name() + " " + path);
-				if (path.contains("notification-eligibility")) {
+				if (path.equals("/internal/v1/payouts/momo/ipn")) {
+					assertThat(operation.getSecurity()).isEmpty();
+				}
+				else if (path.contains("notification-eligibility")) {
 					assertThat(operation.getSecurity()).anySatisfy(requirement -> assertThat(requirement).containsKey("serviceToken"));
 				}
 				else {
@@ -267,6 +281,26 @@ class ConsultationOpenApiContractTests {
 		assertThat(rating.getProperties()).containsOnlyKeys("appointmentId", "specialistAccountId", "rating",
 				"createdAt", "updatedAt", "version", "specialistAggregate");
 		assertThat(rating.getProperties()).doesNotContainKeys("comment", "anonymous", "diagnosis", "journal");
+	}
+
+	@Test
+	void appointmentDisputeContractIsBoundedAuditableAndContainsNoSensitiveContent() {
+		var contract = Path.of("..", "contracts", "openapi", "consultation-service-v1.yaml").toString();
+		var api = new OpenAPIV3Parser().read(contract);
+		var open = api.getComponents().getSchemas().get("OpenAppointmentDispute");
+		var resolve = api.getComponents().getSchemas().get("ResolveAppointmentDispute");
+		var dispute = api.getComponents().getSchemas().get("AppointmentDispute");
+
+		assertThat(open.getProperties()).containsOnlyKeys("reasonCode", "evidenceType", "evidenceOccurredAt")
+				.doesNotContainKeys("evidence", "description", "notes", "diagnosis", "chatTranscript", "journal");
+		assertThat(resolve.getProperties()).containsOnlyKeys("outcome", "reasonCode")
+				.doesNotContainKeys("notes", "clinicalConclusion", "summary");
+		assertThat(dispute.getProperties()).containsOnlyKeys("id", "appointmentId", "appointmentVersion", "status",
+				"openedByRole", "reasonCode", "evidenceType", "evidenceOccurredAt", "openedAt", "eligibleUntil",
+				"settlementGated", "resolutionOutcome", "resolutionReason", "resolvedAt", "priorAppointmentStatus",
+				"priorSessionOutcome", "resultingAppointmentStatus", "resultingSessionOutcome", "creditAction", "version")
+				.doesNotContainKeys("userAccountId", "specialistAccountId", "email", "content", "message",
+						"clinicalConclusion", "summary");
 	}
 
 	@Test

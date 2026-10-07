@@ -30,6 +30,13 @@ dedicated opt-in, quiet-hour deferral/suppression, appointment/version identity,
 lifecycle invalidation, strict before-start cutoff, and minimized in-app-only
 content separately from the wellbeing digest.
 
+Appointment disputes are governed by
+[ADR 0031 — Appointment dispute and settlement gate](adr/0031-appointment-dispute-settlement-gate.md)
+(`MB-APPOINTMENT-DISPUTE-001`). One assigned participant may open a minimized
+dispute within 24 hours of an eligible settled outcome. An open dispute blocks
+future earning eligibility; resolution never rewrites prior financial facts and
+any credit return is an explicit ledger adjustment.
+
 For the rules amended on 2026-09-24, ADR 0022 is authoritative over the older clause.
 
 ## 2. Product boundary
@@ -184,6 +191,12 @@ Commercial direction remains:
 - no user refund API in V1;
 - VND + MoMo for real payment/payout;
 - specialist earning = 70% of the consumed credit's snapshotted `creditAllocation`, not 70% of package price.
+
+ADR 0032 fixes planned production design values at 1,390,000 VND for `PLUS`
+and 3,490,000 VND for `PREMIUM`, with 300,000 VND allocated per consumed credit
+and a 210,000 VND specialist earning. These are not runtime prices. The current
+integration-test catalogue is only 0/5,000/10,000 VND, and real payment/payout
+remains disabled pending explicit production approval and credentials.
 
 Detailed amendment: [ADR 0022](adr/0022-current-product-blueprint-amendments.md).
 
