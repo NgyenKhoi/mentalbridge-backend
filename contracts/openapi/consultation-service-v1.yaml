@@ -1,11 +1,248 @@
 openapi: 3.1.0
 info:
   title: MentalBridge Consultation Service API
-  version: 1.10.0
+  version: 1.11.0
   description: Consultation-owned specialist profile lifecycle, approved online discovery, service-plan entitlement and credit lookup, online availability, appointment requests, appointment-scoped chat eligibility and minimized completion evidence, auditable owner cancellation/reschedule/session outcomes, immutable user-visible session summaries and agreed next steps, evidence-backed specialist earnings, fake local payout reconciliation, credit reservation limits, and suspension outcomes.
 servers:
   - url: http://localhost:8082
 paths:
+  /api/v1/specialist-profile/amendments/current:
+    x-mentalbridge-status: implemented
+    get:
+      operationId: getOwnProfileAmendment
+      description: Returns the live approved profile and latest private amendment (null when absent). Amendment ETag when present; otherwise current profile ETag.
+      security: [{ bearerAuth: [] }]
+      responses:
+        '200':
+          description: Current authoritative result
+          headers:
+            ETag: { $ref: '#/components/headers/ProfileETag' }
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/ProfileAmendmentDetail' }
+        '400': { $ref: '#/components/responses/ValidationProblem' }
+        '401': { $ref: '#/components/responses/UnauthorizedProblem' }
+        '403': { $ref: '#/components/responses/ForbiddenProblem' }
+        '404': { $ref: '#/components/responses/NotFoundProblem' }
+        '409': { $ref: '#/components/responses/ConflictProblem' }
+        '412': { $ref: '#/components/responses/VersionProblem' }
+        '428': { $ref: '#/components/responses/VersionRequiredProblem' }
+  /api/v1/specialist-profile/amendments:
+    x-mentalbridge-status: implemented
+    post:
+      operationId: startOwnProfileAmendment
+      description: Requires the approved profile If-Match. Returns the existing non-approved amendment or starts a draft derived from the latest published profile. Does not mutate the public profile.
+      security: [{ bearerAuth: [] }]
+      parameters:
+        - $ref: '#/components/parameters/RequiredIfMatch'
+      responses:
+        '200':
+          description: Current authoritative result
+          headers:
+            ETag: { $ref: '#/components/headers/ProfileETag' }
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/ProfileAmendment' }
+        '400': { $ref: '#/components/responses/ValidationProblem' }
+        '401': { $ref: '#/components/responses/UnauthorizedProblem' }
+        '403': { $ref: '#/components/responses/ForbiddenProblem' }
+        '404': { $ref: '#/components/responses/NotFoundProblem' }
+        '409': { $ref: '#/components/responses/ConflictProblem' }
+        '412': { $ref: '#/components/responses/VersionProblem' }
+        '428': { $ref: '#/components/responses/VersionRequiredProblem' }
+  /api/v1/specialist-profile/amendments/{amendmentId}:
+    x-mentalbridge-status: implemented
+    put:
+      operationId: updateOwnProfileAmendment
+      description: Replaces the six proposed fields. Editing PENDING_REVIEW withdraws to DRAFT. REJECTED retains review feedback until explicit resubmission. Approved amendments are immutable.
+      security: [{ bearerAuth: [] }]
+      parameters:
+        - name: amendmentId
+          in: path
+          required: true
+          schema: { type: string, format: uuid }
+        - $ref: '#/components/parameters/RequiredIfMatch'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: '#/components/schemas/SpecialistProfileRequest' }
+      responses:
+        '200':
+          description: Current authoritative result
+          headers:
+            ETag: { $ref: '#/components/headers/ProfileETag' }
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/ProfileAmendment' }
+        '400': { $ref: '#/components/responses/ValidationProblem' }
+        '401': { $ref: '#/components/responses/UnauthorizedProblem' }
+        '403': { $ref: '#/components/responses/ForbiddenProblem' }
+        '404': { $ref: '#/components/responses/NotFoundProblem' }
+        '409': { $ref: '#/components/responses/ConflictProblem' }
+        '412': { $ref: '#/components/responses/VersionProblem' }
+        '428': { $ref: '#/components/responses/VersionRequiredProblem' }
+  /api/v1/specialist-profile/amendments/{amendmentId}/submit:
+    x-mentalbridge-status: implemented
+    post:
+      operationId: submitOwnProfileAmendment
+      description: Private approved-profile amendment operation; never changes appointments or availability.
+      security: [{ bearerAuth: [] }]
+      parameters:
+        - name: amendmentId
+          in: path
+          required: true
+          schema: { type: string, format: uuid }
+        - $ref: '#/components/parameters/RequiredIfMatch'
+      responses:
+        '200':
+          description: Current authoritative result
+          headers:
+            ETag: { $ref: '#/components/headers/ProfileETag' }
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/ProfileAmendment' }
+        '400': { $ref: '#/components/responses/ValidationProblem' }
+        '401': { $ref: '#/components/responses/UnauthorizedProblem' }
+        '403': { $ref: '#/components/responses/ForbiddenProblem' }
+        '404': { $ref: '#/components/responses/NotFoundProblem' }
+        '409': { $ref: '#/components/responses/ConflictProblem' }
+        '412': { $ref: '#/components/responses/VersionProblem' }
+        '428': { $ref: '#/components/responses/VersionRequiredProblem' }
+  /api/v1/specialist-profile/amendments/{amendmentId}/resubmit:
+    x-mentalbridge-status: implemented
+    post:
+      operationId: resubmitOwnProfileAmendment
+      description: Private approved-profile amendment operation; never changes appointments or availability.
+      security: [{ bearerAuth: [] }]
+      parameters:
+        - name: amendmentId
+          in: path
+          required: true
+          schema: { type: string, format: uuid }
+        - $ref: '#/components/parameters/RequiredIfMatch'
+      responses:
+        '200':
+          description: Current authoritative result
+          headers:
+            ETag: { $ref: '#/components/headers/ProfileETag' }
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/ProfileAmendment' }
+        '400': { $ref: '#/components/responses/ValidationProblem' }
+        '401': { $ref: '#/components/responses/UnauthorizedProblem' }
+        '403': { $ref: '#/components/responses/ForbiddenProblem' }
+        '404': { $ref: '#/components/responses/NotFoundProblem' }
+        '409': { $ref: '#/components/responses/ConflictProblem' }
+        '412': { $ref: '#/components/responses/VersionProblem' }
+        '428': { $ref: '#/components/responses/VersionRequiredProblem' }
+  /api/v1/admin/specialist-profiles/amendments:
+    x-mentalbridge-status: implemented
+    get:
+      operationId: listProfileAmendmentsForAdmin
+      description: Lists only pending-review amendments separately from initial submissions. Suspension removes an amendment from the reviewable queue. Stable submission/id ordering; bounded page offset and limit.
+      security: [{ bearerAuth: [] }]
+      parameters:
+        - name: limit
+          in: query
+          schema: { type: integer, minimum: 1, maximum: 100, default: 50 }
+        - name: page
+          in: query
+          schema: { type: integer, minimum: 0, maximum: 1000, default: 0 }
+      responses:
+        '200':
+          description: Bounded review queue
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/ProfileAmendments' }
+        '401': { $ref: '#/components/responses/UnauthorizedProblem' }
+        '403': { $ref: '#/components/responses/ForbiddenProblem' }
+        '400': { $ref: '#/components/responses/ValidationProblem' }
+  /api/v1/admin/specialist-profiles/amendments/{amendmentId}:
+    x-mentalbridge-status: implemented
+    get:
+      operationId: getProfileAmendmentForAdmin
+      description: Private approved-profile amendment operation; never changes appointments or availability.
+      security: [{ bearerAuth: [] }]
+      parameters:
+        - name: amendmentId
+          in: path
+          required: true
+          schema: { type: string, format: uuid }
+      responses:
+        '200':
+          description: Current authoritative result
+          headers:
+            ETag: { $ref: '#/components/headers/ProfileETag' }
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/ProfileAmendmentDetail' }
+        '400': { $ref: '#/components/responses/ValidationProblem' }
+        '401': { $ref: '#/components/responses/UnauthorizedProblem' }
+        '403': { $ref: '#/components/responses/ForbiddenProblem' }
+        '404': { $ref: '#/components/responses/NotFoundProblem' }
+        '409': { $ref: '#/components/responses/ConflictProblem' }
+        '412': { $ref: '#/components/responses/VersionProblem' }
+        '428': { $ref: '#/components/responses/VersionRequiredProblem' }
+  /api/v1/admin/specialist-profiles/amendments/{amendmentId}/approve:
+    x-mentalbridge-status: implemented
+    post:
+      operationId: approveProfileAmendment
+      description: Atomically promotes a pending amendment against its base published version, appends immutable approved history, and leaves all appointments unchanged.
+      security: [{ bearerAuth: [] }]
+      parameters:
+        - name: amendmentId
+          in: path
+          required: true
+          schema: { type: string, format: uuid }
+        - $ref: '#/components/parameters/RequiredIfMatch'
+      responses:
+        '200':
+          description: Current authoritative result
+          headers:
+            ETag: { $ref: '#/components/headers/ProfileETag' }
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/ProfileAmendment' }
+        '400': { $ref: '#/components/responses/ValidationProblem' }
+        '401': { $ref: '#/components/responses/UnauthorizedProblem' }
+        '403': { $ref: '#/components/responses/ForbiddenProblem' }
+        '404': { $ref: '#/components/responses/NotFoundProblem' }
+        '409': { $ref: '#/components/responses/ConflictProblem' }
+        '412': { $ref: '#/components/responses/VersionProblem' }
+        '428': { $ref: '#/components/responses/VersionRequiredProblem' }
+  /api/v1/admin/specialist-profiles/amendments/{amendmentId}/reject:
+    x-mentalbridge-status: implemented
+    post:
+      operationId: rejectProfileAmendment
+      description: Rejects only the amendment, preserving the live approved profile exactly; reason and review payload are retained for audit.
+      security: [{ bearerAuth: [] }]
+      parameters:
+        - name: amendmentId
+          in: path
+          required: true
+          schema: { type: string, format: uuid }
+        - $ref: '#/components/parameters/RequiredIfMatch'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: '#/components/schemas/RejectSpecialistRequest' }
+      responses:
+        '200':
+          description: Current authoritative result
+          headers:
+            ETag: { $ref: '#/components/headers/ProfileETag' }
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/ProfileAmendment' }
+        '400': { $ref: '#/components/responses/ValidationProblem' }
+        '401': { $ref: '#/components/responses/UnauthorizedProblem' }
+        '403': { $ref: '#/components/responses/ForbiddenProblem' }
+        '404': { $ref: '#/components/responses/NotFoundProblem' }
+        '409': { $ref: '#/components/responses/ConflictProblem' }
+        '412': { $ref: '#/components/responses/VersionProblem' }
+        '428': { $ref: '#/components/responses/VersionRequiredProblem' }
   /internal/v1/appointments/{appointmentId}/notification-eligibility:
     x-mentalbridge-status: implemented
     get:
@@ -1393,6 +1630,47 @@ components:
     LanguageTag:
       type: string
       enum: [vi, en]
+    ProfileAmendment:
+      type: object
+      additionalProperties: false
+      required: [id, specialistAccountId, basePublishedVersion, status, proposedProfile, submittedAt, reviewedAt, reviewedBy, reasonCode, createdAt, updatedAt, version]
+      properties:
+        id: { type: string, format: uuid }
+        specialistAccountId: { type: string, format: uuid }
+        basePublishedVersion: { type: integer, format: int64, minimum: 1 }
+        status: { type: string, enum: [DRAFT, PENDING_REVIEW, REJECTED, APPROVED] }
+        proposedProfile: { $ref: '#/components/schemas/SpecialistProfileRequest' }
+        submittedAt: { type: [string, 'null'], format: date-time }
+        reviewedAt: { type: [string, 'null'], format: date-time }
+        reviewedBy: { type: [string, 'null'], format: uuid }
+        reasonCode:
+          oneOf:
+            - $ref: '#/components/schemas/SpecialistRejectionReasonCode'
+            - type: 'null'
+        createdAt: { type: string, format: date-time }
+        updatedAt: { type: string, format: date-time }
+        version: { type: integer, format: int64, minimum: 0 }
+    ProfileAmendmentDetail:
+      type: object
+      additionalProperties: false
+      required: [approvedProfile, amendment]
+      properties:
+        approvedProfile: { $ref: '#/components/schemas/SpecialistProfile' }
+        amendment:
+          oneOf:
+            - $ref: '#/components/schemas/ProfileAmendment'
+            - type: 'null'
+    ProfileAmendments:
+      type: object
+      additionalProperties: false
+      required: [items, count, hasMore]
+      properties:
+        items:
+          type: array
+          maxItems: 100
+          items: { $ref: '#/components/schemas/ProfileAmendment' }
+        count: { type: integer, minimum: 0, maximum: 100 }
+        hasMore: { type: boolean }
     SpecialistProfileRequest:
       type: object
       additionalProperties: false
@@ -1425,6 +1703,7 @@ components:
       properties:
         accountId: { type: string, format: uuid }
         displayName: { type: string, minLength: 1, maxLength: 120 }
+        publishedVersion: { type: integer, format: int64, minimum: 0, description: Monotonic approved-content version; unaffected by draft edits and suspension/restoration. }
         bio: { type: string, minLength: 1, maxLength: 2000 }
         supportAreas:
           type: array
@@ -2581,7 +2860,7 @@ components:
         application/problem+json:
           schema: { $ref: '#/components/schemas/Problem' }
     VersionProblem:
-      description: If-Match does not equal the current profile version (SPECIALIST_PROFILE_VERSION_MISMATCH).
+      description: If-Match does not equal the current version (SPECIALIST_PROFILE_VERSION_MISMATCH for initial/operational profile commands; PROFILE_AMENDMENT_VERSION_MISMATCH for amendment commands).
       content:
         application/problem+json:
           schema: { $ref: '#/components/schemas/Problem' }

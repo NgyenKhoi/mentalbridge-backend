@@ -18,6 +18,7 @@ Use ADR **filename + Decision ID**, not numeric prefix alone, when a reference c
 | [0030-one-appointment-email-reminder.md](0030-one-appointment-email-reminder.md) | `MB-APPOINTMENT-EMAIL-REMINDER-001` | Accepted | One user-owned appointment email with fixed timing, lifecycle invalidation, preference/quiet-hour rules, minimized content, and strict before-start delivery |
 | [0031-appointment-dispute-settlement-gate.md](0031-appointment-dispute-settlement-gate.md) | `MB-APPOINTMENT-DISPUTE-001` | Accepted | Minimized participant dispute, earning gate, immutable resolution, and explicit credit adjustment |
 | [0032-payment-and-specialist-payout-baseline.md](0032-payment-and-specialist-payout-baseline.md) | `MB-PAYMENT-PAYOUT-BASELINE-001` | Accepted | Separates production-planned economics from the 0/5k/10k runtime test catalogue and fixes earning, hold, withdrawal, fake-adapter, and MoMo sandbox rules |
+| [0033-reviewed-specialist-profile-amendment.md](0033-reviewed-specialist-profile-amendment.md) | `MB-SPECIALIST-PROFILE-AMENDMENT-001` | Accepted product direction | Keeps approved profiles public while private amendments undergo separate ADMIN review |
 
 For clauses explicitly amended by ADR 0022 or ADR 0024, the relevant latest
 amendment is the current prospective authority. Historical records keep their

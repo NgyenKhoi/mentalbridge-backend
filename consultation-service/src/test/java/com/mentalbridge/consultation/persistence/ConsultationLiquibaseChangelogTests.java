@@ -33,7 +33,8 @@ class ConsultationLiquibaseChangelogTests {
 							"consultation-014-specialist-client-continuity",
 							"consultation-015-appointment-rating",
 							"consultation-016-appointment-disputes",
-							"consultation-017-specialist-earning-payout");
+							"consultation-017-specialist-earning-payout",
+							"consultation-018-specialist-profile-amendment");
 		}
 	}
 }

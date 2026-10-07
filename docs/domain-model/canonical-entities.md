@@ -71,6 +71,9 @@ See [README](README.md) for status and relationship semantics.
 | Entity | Owner service | Storage | Status | Key relationships |
 | --- | --- | --- | --- | --- |
 | `specialist_profile` | consultation-service | PostgreSQL | ACTIVE | `account_id` and reviewer IDs are logical/external Identity references. |
+| `specialist_profile_approved_version` | consultation-service | PostgreSQL | ACTIVE | MB-635 append-only approved content snapshots; unique owner/published version; optional source amendment FK. |
+| `specialist_profile_amendment` | consultation-service | PostgreSQL | ACTIVE | Private post-approval draft/review state with composite approved-base FK; one open amendment per specialist; never a public discovery source. |
+| `specialist_profile_amendment_history` | consultation-service | PostgreSQL | ACTIVE | Append-only exact amendment revision/review payload and bounded actor/reason/time provenance. |
 | `specialist_profile_support_area` | consultation-service | PostgreSQL | ACTIVE | Physical many-to-one child of `specialist_profile`. |
 | `specialist_profile_language` | consultation-service | PostgreSQL | ACTIVE | Physical many-to-one child of `specialist_profile`. |
 | `specialist_profile_status_history` | consultation-service | PostgreSQL | ACTIVE | Physical history child; actor ID is a logical/external Identity reference. |

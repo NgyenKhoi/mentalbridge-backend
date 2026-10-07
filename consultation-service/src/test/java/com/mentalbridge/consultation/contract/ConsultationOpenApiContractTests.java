@@ -15,6 +15,15 @@ import io.swagger.v3.oas.models.media.Schema;
 class ConsultationOpenApiContractTests {
 
 	private static final Set<String> OPERATIONS = Set.of(
+			"GET /api/v1/specialist-profile/amendments/current",
+			"POST /api/v1/specialist-profile/amendments",
+			"PUT /api/v1/specialist-profile/amendments/{amendmentId}",
+			"POST /api/v1/specialist-profile/amendments/{amendmentId}/submit",
+			"POST /api/v1/specialist-profile/amendments/{amendmentId}/resubmit",
+			"GET /api/v1/admin/specialist-profiles/amendments",
+			"GET /api/v1/admin/specialist-profiles/amendments/{amendmentId}",
+			"POST /api/v1/admin/specialist-profiles/amendments/{amendmentId}/approve",
+			"POST /api/v1/admin/specialist-profiles/amendments/{amendmentId}/reject",
 			"GET /api/v1/service-credits",
 			"GET /internal/v1/entitlements/current",
 			"GET /internal/v1/appointments/{appointmentId}/consultation-brief-context",
