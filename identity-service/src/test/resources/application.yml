@@ -6,6 +6,11 @@ spring:
       enabled: false
   liquibase:
     enabled: true
+  kafka:
+    consumer:
+      group-id: mentalbridge.identity.audit-consumer
+    listener:
+      auto-startup: false
 
 eureka:
   client:
@@ -25,5 +30,8 @@ mentalbridge:
       send-timeout: PT5S
       retry-base: PT5S
       retry-maximum: PT5M
+    audit-ingestion:
+      enabled: true
+      topic: mentalbridge.admin.audit-event.v1
     platform-reporting:
       enabled: false

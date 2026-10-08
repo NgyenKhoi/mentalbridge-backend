@@ -378,13 +378,19 @@ Privacy-minimized local security record for authentication, recovery, replay, an
 | `id` | Immutable UUID identifying the audit fact. |
 | `account_id` | Affected account when known; nullable for enumeration-safe failures and retained as null after account deletion. |
 | `actor_id` | Authenticated actor responsible for an administrative action; nullable for guests/system actions and after actor deletion. |
+| `actor_type` | Restricted actor category (`ADMIN`, `SYSTEM`). |
+| `actor_reference_hash` | Privacy-minimized 64-character SHA-256 reference for an administrative actor account UUID, retained after account deletion so reads return a safe tombstone identifier rather than leaking deleted account details or misattributing to SYSTEM. |
 | `action` | Stable security action code such as login, password recovery, or account-state change. |
 | `outcome` | Restricted result `SUCCEEDED`, `DENIED`, or `FAILED`. |
 | `reason_code` | Optional stable machine-readable explanation without sensitive free text. |
 | `correlation_id` | Request/workflow UUID used to join safe operational evidence. |
-| `subject_reference_hash` | Optional keyed privacy-minimized 64-character hash used to correlate bounded unknown-account abuse without storing the supplied identifier. |
+| `subject_reference_hash` | Privacy-minimized 64-character SHA-256 reference for a known target UUID, or a bounded hash supplied by an enumeration-safe flow. It remains after account deletion so administration audit reads return a tombstone instead of historical profile data. |
+| `source_service` | Platform service that produced the audit fact (`IDENTITY`, `CONSULTATION`, `CONTENT`, `COMMUNITY`). |
+| `domain` | Administrative bounded domain (`ACCOUNT_ADMINISTRATION`, `SPECIALIST_REVIEW`, `RESOURCE_MANAGEMENT`, `COMMUNITY_MODERATION`). |
 | `occurred_at` | UTC instant the security decision occurred. |
 | `created_at` | Immutable UTC insertion instant. |
+
+Indexes `ix_security_audit_filter`, `ix_security_audit_subject_reference`, `ix_security_audit_service_domain`, `ix_security_audit_actor_reference`, and `ix_security_audit_actor_type` support bounded action/result/time, tombstone-target, multi-service/domain, and actor queries. The administration API applies a 365-day read-retention boundary and a maximum 90-day query window; physical archival or deletion remains an operational retention job outside request processing.
 
 ## Owner `care` (`mentalbridge_care.public`)
 
@@ -1409,6 +1415,24 @@ transition and excludes email addresses and consultation content.
 | `attempt_count`, `next_attempt_at` | Bounded observable relay retry/lease state. |
 | `created_at` | Immutable insertion instant. |
 
+### `consultation.consultation_admin_audit_outbox`
+
+Consultation-owned durable transactional outbox for administrator actions (specialist profile approve, reject, suspend, restore). The row commits in the same local transaction as the profile and status history update, and is relayed to Kafka topic `mentalbridge.admin.audit-event.v1`.
+
+| Field | Purpose |
+| --- | --- |
+| `id` | Immutable event UUID matching the `eventId` in the audit event fact. |
+| `deduplication_key` | Stable unique command idempotency key preventing duplicate outbox entries on retried actions. |
+| `event_type` | Stable language-neutral event type (e.g. `consultation.specialist.approved`). |
+| `correlation_id` | End-to-end trace correlation UUID passed from caller ingress. |
+| `target_account_id` | Nullable specialist account UUID subject of the administrative action. |
+| `payload` | Strict minimized `administration-audit-event-v1` JSON object; excludes clinical notes and sensitive credentials. |
+| `occurred_at` | Authoritative UTC timestamp of the administrative decision. |
+| `published_at` | Nullable UTC instant when published and acknowledged by Kafka; null while pending. |
+| `attempt_count` | Non-negative relay retry counter for observable bounded backoff. |
+| `next_attempt_at` | Scheduled UTC instant for the next retry attempt when relay fails. |
+| `created_at` | Immutable row creation timestamp. |
+
 ### `consultation.subscription_plan_version`
 
 Immutable price, allocation, credit, revenue-share, and cancellation policy purchased by a subscription period.
@@ -2360,6 +2384,23 @@ Reviewed, deterministic vocabulary for resolving deliberately entered manual are
 | `canonical` | Marks the preferred reviewed label for the area pair without changing lookup eligibility. |
 | `seed_key` | Optional unique controlled-release identifier used only by owner migrations. |
 | `created_at` | Immutable database UTC insertion instant. |
+
+### `public.content_admin_audit_outbox`
+
+Content-owned durable transactional outbox for administrator actions (resource archive, safety directory review, deactivate). The row commits in the same local database transaction as the aggregate mutation and is relayed to Kafka topic `mentalbridge.admin.audit-event.v1`.
+
+| Field | Purpose |
+| --- | --- |
+| `id` | Immutable event UUID matching the `eventId` in the audit event fact. |
+| `deduplication_key` | Stable unique deduplication key preventing duplicate outbox entries on retried actions. |
+| `event_type` | Stable language-neutral event type (e.g. `content.resource.archived`). |
+| `correlation_id` | End-to-end trace correlation UUID established at controller ingress. |
+| `payload` | Strict minimized `administration-audit-event-v1` JSON object; excludes sensitive directory secrets or raw content. |
+| `occurred_at` | Authoritative UTC timestamp of the administrative decision. |
+| `published_at` | Nullable UTC instant when published and acknowledged by Kafka; null while pending. |
+| `attempt_count` | Non-negative relay retry counter for observable bounded backoff. |
+| `next_attempt_at` | Scheduled UTC instant for next retry attempt when relay fails. |
+| `created_at` | Immutable row creation timestamp. |
 
 ### `public.consultation_brief`
 

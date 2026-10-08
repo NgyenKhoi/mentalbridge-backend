@@ -166,9 +166,27 @@ class CommunityEndToEndJourneyIntegrationTests extends CommunityTestProperties {
 
 		var eventPayloads = jdbc.sql("select event_payload::text from community_interaction_outbox order by occurred_at, id")
 				.query(String.class).list().stream().map(this::readTree).toList();
-		assertThat(eventPayloads).hasSize(3);
-		assertThat(eventPayloads).extracting(event -> event.path("interactionKind").asText())
+		var interactionPayloads = eventPayloads.stream()
+				.filter(event -> event.hasNonNull("interactionKind"))
+				.toList();
+		var auditPayloads = eventPayloads.stream()
+				.filter(event -> "COMMUNITY_MODERATION".equals(event.path("domain").asText())
+						|| ("COMMUNITY".equals(event.path("sourceService").asText()) && event.hasNonNull("action")))
+				.toList();
+
+		assertThat(interactionPayloads).hasSize(3);
+		assertThat(interactionPayloads).extracting(event -> event.path("interactionKind").asText())
 				.containsExactlyInAnyOrder("COMMENT", "REPLY", "SUPPORT");
+
+		assertThat(auditPayloads).hasSize(1);
+		var auditEvent = auditPayloads.get(0);
+		assertThat(auditEvent.path("eventType").asText()).isEqualTo("community.moderation.action-applied");
+		assertThat(auditEvent.path("action").asText()).isEqualTo("MODERATION_ACTION_APPLIED");
+		assertThat(auditEvent.path("result").asText()).isEqualTo("SUCCEEDED");
+		assertThat(auditEvent.path("sourceService").asText()).isEqualTo("COMMUNITY");
+		assertThat(auditEvent.path("domain").asText()).isEqualTo("COMMUNITY_MODERATION");
+		assertThat(auditEvent.path("actorType").asText()).isEqualTo("ADMIN");
+
 		assertThat(eventPayloads.toString()).doesNotContain(PRIVATE_POST_BODY, PRIVATE_COMMENT_BODY, "displayName",
 				"email", "assessment", "journal", "supportPlan", "aiAnalysis");
 	}

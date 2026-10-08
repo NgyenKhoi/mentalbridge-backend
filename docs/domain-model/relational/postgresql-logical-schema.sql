@@ -114,11 +114,15 @@ CREATE TABLE identity.security_audit_event (
     id uuid PRIMARY KEY,
     account_id uuid REFERENCES identity.account(id),
     actor_id uuid REFERENCES identity.account(id),
+    actor_type varchar(16) NOT NULL DEFAULT 'ADMIN',
+    actor_reference_hash char(64), -- retained safe actor tombstone after account deletion
     action varchar(96) NOT NULL,
     outcome varchar(32) NOT NULL,
     reason_code varchar(64),
     correlation_id uuid NOT NULL,
-    subject_reference_hash char(64),
+    subject_reference_hash char(64), -- retained safe target tombstone after account deletion
+    source_service varchar(32) NOT NULL DEFAULT 'IDENTITY',
+    domain varchar(64) NOT NULL DEFAULT 'ACCOUNT_ADMINISTRATION',
     occurred_at timestamptz NOT NULL,
     created_at timestamptz NOT NULL
 );
@@ -1346,6 +1350,20 @@ CREATE TABLE consultation.appointment_outbox_event (
     UNIQUE (appointment_id, appointment_version)
 );
 
+CREATE TABLE consultation.consultation_admin_audit_outbox (
+    id uuid PRIMARY KEY,
+    deduplication_key varchar(200) NOT NULL UNIQUE,
+    event_type varchar(120) NOT NULL,
+    correlation_id uuid NOT NULL,
+    target_account_id uuid,
+    payload jsonb NOT NULL,
+    occurred_at timestamptz NOT NULL,
+    published_at timestamptz,
+    attempt_count integer NOT NULL DEFAULT 0,
+    next_attempt_at timestamptz,
+    created_at timestamptz NOT NULL
+);
+
 /* ========================================================================== */
 /* ACTIVE — community-service / mentalbridge_community                        */
 /* Evidence: community-service Liquibase changes 0001-0012.                  */
@@ -1893,6 +1911,19 @@ CREATE TABLE content.safety_directory_area_alias (
     canonical boolean NOT NULL,
     seed_key varchar(128) UNIQUE,
     created_at timestamptz NOT NULL
+);
+
+CREATE TABLE content.content_admin_audit_outbox (
+    id uuid PRIMARY KEY,
+    deduplication_key varchar(200) NOT NULL UNIQUE,
+    event_type varchar(120) NOT NULL,
+    correlation_id uuid NOT NULL,
+    payload jsonb NOT NULL,
+    occurred_at timestamptz NOT NULL,
+    published_at timestamptz,
+    attempt_count integer NOT NULL DEFAULT 0,
+    next_attempt_at timestamptz,
+    created_at timestamptz NOT NULL DEFAULT now()
 );
 
 /*

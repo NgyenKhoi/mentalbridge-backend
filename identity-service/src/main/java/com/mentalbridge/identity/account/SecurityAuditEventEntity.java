@@ -36,6 +36,18 @@ public class SecurityAuditEventEntity {
     @Column(name = "subject_reference_hash", length = 64)
     private String subjectReferenceHash;
 
+    @Column(name = "source_service", nullable = false, length = 32)
+    private String sourceService;
+
+    @Column(name = "domain", nullable = false, length = 64)
+    private String domain;
+
+    @Column(name = "actor_type", nullable = false, length = 16)
+    private String actorType;
+
+    @Column(name = "actor_reference_hash", length = 64)
+    private String actorReferenceHash;
+
     @Column(name = "occurred_at", nullable = false)
     private Instant occurredAt;
 
@@ -55,6 +67,48 @@ public class SecurityAuditEventEntity {
             String subjectReferenceHash,
             Instant occurredAt,
             Instant createdAt) {
+        this(id, accountId, actorId, action, outcome, reasonCode, correlationId, subjectReferenceHash,
+                "IDENTITY", "ACCOUNT_ADMINISTRATION",
+                actorId != null ? "ADMIN" : "SYSTEM",
+                actorId != null ? AdministrationAuditIngestionService.sha256Hex(actorId.toString()) : null,
+                occurredAt, createdAt);
+    }
+
+    public SecurityAuditEventEntity(
+            UUID id,
+            UUID accountId,
+            UUID actorId,
+            String action,
+            String outcome,
+            String reasonCode,
+            UUID correlationId,
+            String subjectReferenceHash,
+            String sourceService,
+            String domain,
+            Instant occurredAt,
+            Instant createdAt) {
+        this(id, accountId, actorId, action, outcome, reasonCode, correlationId, subjectReferenceHash,
+                sourceService, domain,
+                actorId != null ? "ADMIN" : "SYSTEM",
+                actorId != null ? AdministrationAuditIngestionService.sha256Hex(actorId.toString()) : null,
+                occurredAt, createdAt);
+    }
+
+    public SecurityAuditEventEntity(
+            UUID id,
+            UUID accountId,
+            UUID actorId,
+            String action,
+            String outcome,
+            String reasonCode,
+            UUID correlationId,
+            String subjectReferenceHash,
+            String sourceService,
+            String domain,
+            String actorType,
+            String actorReferenceHash,
+            Instant occurredAt,
+            Instant createdAt) {
         this.id = id;
         this.accountId = accountId;
         this.actorId = actorId;
@@ -63,6 +117,10 @@ public class SecurityAuditEventEntity {
         this.reasonCode = reasonCode;
         this.correlationId = correlationId;
         this.subjectReferenceHash = subjectReferenceHash;
+        this.sourceService = sourceService != null ? sourceService : "IDENTITY";
+        this.domain = domain != null ? domain : "ACCOUNT_ADMINISTRATION";
+        this.actorType = actorType != null ? actorType : (actorId != null ? "ADMIN" : "SYSTEM");
+        this.actorReferenceHash = actorReferenceHash;
         this.occurredAt = occurredAt;
         this.createdAt = createdAt;
     }
@@ -77,6 +135,14 @@ public class SecurityAuditEventEntity {
 
     public UUID getActorId() {
         return actorId;
+    }
+
+    public String getActorType() {
+        return actorType;
+    }
+
+    public String getActorReferenceHash() {
+        return actorReferenceHash;
     }
 
     public String getAction() {
@@ -97,6 +163,14 @@ public class SecurityAuditEventEntity {
 
     public String getSubjectReferenceHash() {
         return subjectReferenceHash;
+    }
+
+    public String getSourceService() {
+        return sourceService;
+    }
+
+    public String getDomain() {
+        return domain;
     }
 
     public Instant getOccurredAt() {

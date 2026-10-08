@@ -5,3 +5,5 @@ databaseChangeLog:
       file: db/changelog/changes/002-single-account-role.sql
   - include:
       file: db/changelog/changes/003-platform-reporting.sql
+  - include:
+      file: db/changelog/changes/004-audit-browse-support.sql

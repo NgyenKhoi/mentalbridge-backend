@@ -42,6 +42,7 @@ import { RolesGuard } from '../auth/roles.guard.js';
 import { CurrentUser } from '../auth/current-user.decorator.js';
 import type { AuthenticatedUser } from '../auth/jwt.strategy.js';
 import type { Request } from 'express';
+import { randomUUID } from 'node:crypto';
 
 const UUID_RE = /^[\da-f]{8}-[\da-f]{4}-[\da-f]{4}-[\da-f]{4}-[\da-f]{12}$/i;
 const CONTENT_VERSION_RE = /^(0|[1-9]\d{0,18})$/;
@@ -55,7 +56,15 @@ const VALID_CATEGORIES = new Set<ResourceCategory>([
 ]);
 
 function requestCorrelationId(request: Request): string {
-  return String(request.headers['x-correlation-id']);
+  const header = request.headers['x-correlation-id'];
+  if (header === undefined || header === '') {
+    return randomUUID();
+  }
+  const value = (Array.isArray(header) ? header[0] : header).trim();
+  if (!UUID_RE.test(value)) {
+    throw new BadRequestException('Invalid X-Correlation-Id header');
+  }
+  return value;
 }
 
 @Controller('api/v1/resources')

@@ -20,6 +20,7 @@
   all primary factors. Comments, anonymity, moderation, diagnosis, and
   free-form feedback remain unavailable. Evidence:
   `docs/story-mb-364-appointment-rating-evidence.md`.
+- 2026-10-05: MB-587 exposes the Identity-owned minimized administration audit projection to ADMIN through cursor pagination, bounded time/service/domain/actor/action/result/target filters, and CSV export with identical semantics. Reads are limited to a 90-day window inside a 365-day boundary; exports are capped at 5,000 rows and 5 MiB. Deleted subjects resolve to retained safe tombstones, and no other service database or private journal, assessment, chat, provider, credential, token, secret, email, or profile field is read or returned. Additional cross-service sources remain contract-first projection inputs rather than direct database queries.
 - 2026-10-02: MB-365 implements dedicated-admin account search/detail and
   non-admin suspension/restoration across Identity and the web BFF/UI. Identity
   enforces immutable roles, quoted-version optimistic concurrency, closed reason

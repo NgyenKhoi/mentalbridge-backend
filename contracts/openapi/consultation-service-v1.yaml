@@ -1314,6 +1314,7 @@ paths:
       security: [{ bearerAuth: [] }]
       parameters:
         - $ref: '#/components/parameters/RequiredIfMatch'
+        - $ref: '#/components/parameters/CorrelationId'
       responses:
         '200':
           description: Approved profile
@@ -1338,6 +1339,7 @@ paths:
       security: [{ bearerAuth: [] }]
       parameters:
         - $ref: '#/components/parameters/RequiredIfMatch'
+        - $ref: '#/components/parameters/CorrelationId'
       requestBody:
         required: true
         content:
@@ -1368,6 +1370,7 @@ paths:
       security: [{ bearerAuth: [] }]
       parameters:
         - $ref: '#/components/parameters/RequiredIfMatch'
+        - $ref: '#/components/parameters/CorrelationId'
       requestBody:
         required: true
         content:
@@ -1398,6 +1401,7 @@ paths:
       security: [{ bearerAuth: [] }]
       parameters:
         - $ref: '#/components/parameters/RequiredIfMatch'
+        - $ref: '#/components/parameters/CorrelationId'
       responses:
         '200':
           description: Restored approved profile
@@ -1423,6 +1427,12 @@ components:
       in: header
       name: X-MentalBridge-Service-Token
   parameters:
+    CorrelationId:
+      name: X-Correlation-Id
+      in: header
+      required: false
+      schema: { type: string, format: uuid }
+      description: Caller correlation identifier; the server generates one when omitted
     SpecialistAccountId:
       name: specialistAccountId
       in: path

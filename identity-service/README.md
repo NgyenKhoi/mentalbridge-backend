@@ -7,8 +7,9 @@ PostgreSQL persistence uses Hibernate and Spring Data JPA types inside the ownin
 ## Integration
 
 - Inbound REST: [`identity-service-v1.yaml`](../contracts/openapi/identity-service-v1.yaml) defines public authentication and bounded account-administration APIs.
+- Administration audit: ADMIN-only browse and CSV export use the same bounded filters over Identity-owned, privacy-minimized audit facts. Queries are limited to a 90-day window inside a 365-day read-retention boundary; export is capped at 5,000 rows and 5 MiB. Cross-service audit events from Consultation, Content, and Community are ingested via versioned Kafka event facts (`mentalbridge.admin.audit-event.v1`) into the minimized projection with deduplication and privacy filtering.
 - Outbound REST: none in the initial architecture, so this service does not include OpenFeign.
-- Async: account lifecycle events use Kafka with a transactional outbox; deletion and safe audit events retain the same approved boundary for their delivery slices.
+- Async: account lifecycle events use Kafka with a transactional outbox; cross-service administrative audit events consume from `mentalbridge.admin.audit-event.v1` with strict privacy allowlisting and deduplication.
 - Discovery: registers as `identity-service` in Eureka. Eureka supplies location metadata only.
 
 ## Configuration
@@ -17,7 +18,9 @@ PostgreSQL persistence uses Hibernate and Spring Data JPA types inside the ownin
 | --- | --- | --- | --- |
 | `EUREKA_DEFAULT_ZONE` | Production | Eureka registry endpoint shared by Spring services | `http://localhost:8761/eureka/` |
 | `EUREKA_CLIENT_ENABLED` | No | Enables Eureka registration; disable it when running Identity by itself locally | `false` |
-| `KAFKA_BOOTSTRAP_SERVERS` | When relay enabled | Comma-separated Kafka brokers used only by the transactional outbox relay | `localhost:9092` |
+| `KAFKA_BOOTSTRAP_SERVERS` | When relay/consumer enabled | Comma-separated Kafka brokers used by the outbox relay and audit consumer | `localhost:9092` |
+| `IDENTITY_AUDIT_INGESTION_ENABLED` | No | Enables Kafka consumer for cross-service administration audit facts | `true` |
+| `IDENTITY_AUDIT_INGESTION_TOPIC` | No | Kafka topic consumed for cross-service administration audit facts | `mentalbridge.admin.audit-event.v1` |
 | `IDENTITY_OUTBOX_RELAY_ENABLED` | No | Publishes due Identity outbox lifecycle events; keep disabled unless versioned topics exist | `false` |
 | `IDENTITY_OUTBOX_RELAY_BATCH_SIZE` | No | Maximum rows claimed per relay run | `100` |
 | `IDENTITY_OUTBOX_RELAY_INTERVAL` | No | Delay between bounded relay runs | `PT5S` |
@@ -82,6 +85,8 @@ cd identity-service
 The Brevo adapter is the only runtime email delivery path. It sends verification and password-recovery URLs only for eligible accounts after the owning transaction commits. Provider failure is logged with safe identifiers only and does not change the endpoint's generic response. Automated tests replace the delivery port with a mock and never call Brevo. Do not commit or share the `.env`, and use a development provider key rather than a production credential.
 
 The initial deployment provisions one dedicated `ADMIN` account through an operator-controlled bootstrap with externally supplied credentials. Public registration and account-administration APIs never create or promote an administrator. Liquibase enforces at most one `ADMIN` account but deliberately does not contain administrator credentials; deployment readiness must verify that secure provisioning has completed.
+
+Audit responses expose only stable action/result codes, timestamps, correlation IDs, source metadata, safe actor IDs, and account/tombstone target identifiers. They never join another service database or expose email, profile data, raw journal or chat content, assessment answers, provider payloads, credentials, tokens, or secrets. Cross-service sources require a separate versioned event/API projection before they can appear in this view.
 
 Create the service-owned `mentalbridge_identity` database before running this module. Liquibase connects directly to that database and creates extensions, tables, indexes, constraints, reference data, and its tracking tables in the default `public` schema. Application startup deliberately does not run migrations.
 

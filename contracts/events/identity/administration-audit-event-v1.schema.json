@@ -1,0 +1,132 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://mentalbridge.local/contracts/events/identity/administration-audit-event-v1.schema.json",
+  "title": "Platform administration audit event fact v1",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "eventId",
+    "eventType",
+    "occurredAt",
+    "producer",
+    "schemaVersion",
+    "sourceService",
+    "domain",
+    "actorType",
+    "action",
+    "result",
+    "correlationId"
+  ],
+  "properties": {
+    "eventId": {
+      "type": "string",
+      "format": "uuid"
+    },
+    "eventType": {
+      "type": "string",
+      "enum": [
+        "identity.account.disabled",
+        "identity.account.restored",
+        "consultation.specialist.approved",
+        "consultation.specialist.rejected",
+        "consultation.specialist.suspended",
+        "consultation.specialist.restored",
+        "content.resource.archived",
+        "content.safety-directory.reviewed",
+        "content.safety-directory.deactivated",
+        "community.moderation.action-applied",
+        "community.moderation.case-resolved",
+        "community.post.removed",
+        "community.user.suspended"
+      ]
+    },
+    "occurredAt": {
+      "type": "string",
+      "format": "date-time"
+    },
+    "producer": {
+      "type": "string"
+    },
+    "schemaVersion": {
+      "const": "1.0"
+    },
+    "sourceService": {
+      "enum": ["IDENTITY", "CONSULTATION", "CONTENT", "COMMUNITY"]
+    },
+    "domain": {
+      "enum": [
+        "ACCOUNT_ADMINISTRATION",
+        "SPECIALIST_REVIEW",
+        "RESOURCE_MANAGEMENT",
+        "COMMUNITY_MODERATION"
+      ]
+    },
+    "actorId": {
+      "type": ["string", "null"],
+      "format": "uuid"
+    },
+    "actorType": {
+      "enum": ["ADMIN", "SYSTEM"]
+    },
+    "action": {
+      "type": "string",
+      "pattern": "^[A-Z0-9_]+$"
+    },
+    "result": {
+      "enum": ["SUCCEEDED", "DENIED", "FAILED"]
+    },
+    "reasonCode": {
+      "type": ["string", "null"]
+    },
+    "correlationId": {
+      "type": "string",
+      "format": "uuid"
+    },
+    "targetAccountId": {
+      "type": ["string", "null"],
+      "format": "uuid"
+    },
+    "targetIdentifier": {
+      "oneOf": [
+        {
+          "type": "string",
+          "pattern": "^account:[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{12}$"
+        },
+        {
+          "type": "string",
+          "pattern": "^tombstone:[0-9a-f]{64}$"
+        },
+        {
+          "type": "null"
+        }
+      ]
+    }
+  },
+  "allOf": [
+    {
+      "if": {
+        "properties": {
+          "actorType": { "const": "ADMIN" }
+        }
+      },
+      "then": {
+        "properties": {
+          "actorId": { "type": "string", "format": "uuid" }
+        },
+        "required": ["actorId"]
+      }
+    },
+    {
+      "if": {
+        "properties": {
+          "actorType": { "const": "SYSTEM" }
+        }
+      },
+      "then": {
+        "properties": {
+          "actorId": { "type": "null" }
+        }
+      }
+    }
+  ]
+}

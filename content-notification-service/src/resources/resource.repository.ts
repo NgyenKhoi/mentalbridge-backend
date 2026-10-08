@@ -571,21 +571,61 @@ export class ResourceRepository {
     version: number,
     context: ResourceCommandContext,
   ): Promise<ResourceRow | null> {
-    const result = await this.db.query<ResourceDatabaseRow>(
-      `WITH updated AS (
-         UPDATE resource
+    return this.db.withTransaction(async (client) => {
+      const result = await client.query<ResourceDatabaseRow>(
+        `UPDATE resource
          SET status = 'ARCHIVED', updated_at = now(), version = version + 1
          WHERE id = $1 AND version = $2 AND status = 'PUBLISHED'
-         RETURNING ${RESOURCE_COLUMNS}
-       ), audited AS (
-         INSERT INTO resource_audit_event
-           (actor_id, action, resource_id, resource_version, correlation_id)
-         SELECT $3, 'RESOURCE_ARCHIVED', id, version, $4 FROM updated
-       )
-       SELECT * FROM updated`,
-      [id, version, context.actorId, context.correlationId],
-    );
-    return result.rows[0] ? toResourceRow(result.rows[0]) : null;
+         RETURNING ${RESOURCE_COLUMNS}`,
+        [id, version],
+      );
+      if ((result.rowCount ?? 0) === 0) {
+        return null;
+      }
+      const row = result.rows[0];
+
+      await client.query(
+        `INSERT INTO resource_audit_event
+          (actor_id, action, resource_id, resource_version, correlation_id)
+         VALUES ($1, 'RESOURCE_ARCHIVED', $2, $3, $4)`,
+        [context.actorId, id, row.version, context.correlationId],
+      );
+
+      const auditEvent = {
+        eventId: randomUUID(),
+        eventType: 'content.resource.archived',
+        occurredAt: new Date().toISOString(),
+        producer: 'content-notification-service',
+        schemaVersion: '1.0',
+        sourceService: 'CONTENT',
+        domain: 'RESOURCE_MANAGEMENT',
+        actorId: context.actorId,
+        actorType: 'ADMIN',
+        action: 'RESOURCE_ARCHIVED',
+        result: 'SUCCEEDED',
+        reasonCode: null,
+        correlationId: context.correlationId,
+        targetAccountId: null,
+        targetIdentifier: null,
+      };
+
+      await client.query(
+        `INSERT INTO content_admin_audit_outbox
+          (id, deduplication_key, event_type, correlation_id, payload, occurred_at)
+         VALUES ($1, $2, $3, $4, $5, $6)
+         ON CONFLICT (deduplication_key) DO NOTHING`,
+        [
+          auditEvent.eventId,
+          `audit:content:resource-archived:${id}:${String(row.version)}`,
+          auditEvent.eventType,
+          auditEvent.correlationId,
+          JSON.stringify(auditEvent),
+          auditEvent.occurredAt,
+        ],
+      );
+
+      return toResourceRow(row);
+    });
   }
 
   async auditPublishBlocked(

@@ -322,7 +322,8 @@ export class ResourceService {
     context: ResourceCommandContext,
   ): Promise<ResourceDetail | null> {
     const row = await this.repository.archive(id, version, context);
-    return row ? toDetail(row) : null;
+    if (!row) return null;
+    return toDetail(row);
   }
 
   async auditPublishBlocked(
