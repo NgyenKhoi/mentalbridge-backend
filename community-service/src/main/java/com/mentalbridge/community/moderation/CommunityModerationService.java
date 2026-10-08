@@ -12,11 +12,14 @@ import java.util.HexFormat;
 import java.util.List;
 import java.util.UUID;
 
+import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.dao.DataIntegrityViolationException;
 import org.springframework.http.HttpStatus;
 import org.springframework.jdbc.core.simple.JdbcClient;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
+
+import com.fasterxml.jackson.databind.ObjectMapper;
 
 import com.mentalbridge.community.moderation.CommunityModerationModels.Action;
 import com.mentalbridge.community.moderation.CommunityModerationModels.ActionRecord;

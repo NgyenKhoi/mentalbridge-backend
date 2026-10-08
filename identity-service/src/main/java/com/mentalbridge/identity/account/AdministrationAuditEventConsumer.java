@@ -232,7 +232,7 @@ public class AdministrationAuditEventConsumer {
                 }
             }
 
-            // targetIdentifier
+            // targetIdentifier & target consistency (fail-closed)
             String targetIdentifier = null;
             if (root.hasNonNull("targetIdentifier")) {
                 if (!root.get("targetIdentifier").isTextual()) {
@@ -240,19 +240,37 @@ public class AdministrationAuditEventConsumer {
                             eventType, eventId);
                     return;
                 }
-                targetIdentifier = root.get("targetIdentifier").textValue();
-                if (!targetIdentifier.matches("^(account:[0-9a-fA-F-]{36}|tombstone:[0-9a-f]{64})$")) {
-                    LOGGER.warn("Audit message has invalid targetIdentifier shape, ignoring: eventType={}, eventId={}",
-                            eventType, eventId);
-                    return;
-                }
-            }
-
-            // Target consistency (fail-closed)
-            if (targetIdentifier != null && targetIdentifier.startsWith("account:")) {
-                if (targetAccountId == null || !targetIdentifier.equals("account:" + targetAccountId)) {
-                    LOGGER.warn("Audit message has contradictory targetAccountId and targetIdentifier, ignoring: eventType={}, eventId={}",
-                            eventType, eventId);
+                targetIdentifier = root.get("targetIdentifier").textValue().trim();
+                if (targetIdentifier.startsWith("account:")) {
+                    String rawUuid = targetIdentifier.substring("account:".length());
+                    UUID parsedUuid;
+                    try {
+                        parsedUuid = UUID.fromString(rawUuid);
+                    } catch (IllegalArgumentException e) {
+                        LOGGER.warn("Audit message has malformed account UUID in targetIdentifier, ignoring: eventType={}, eventId={}, targetIdentifier={}",
+                                eventType, eventId, targetIdentifier);
+                        return;
+                    }
+                    if (targetAccountId == null || !parsedUuid.equals(targetAccountId)) {
+                        LOGGER.warn("Audit message has contradictory targetAccountId and targetIdentifier, ignoring: eventType={}, eventId={}",
+                                eventType, eventId);
+                        return;
+                    }
+                } else if (targetIdentifier.startsWith("tombstone:")) {
+                    String hash = targetIdentifier.substring("tombstone:".length());
+                    if (!hash.matches("^[0-9a-f]{64}$")) {
+                        LOGGER.warn("Audit message has invalid tombstone hash in targetIdentifier, ignoring: eventType={}, eventId={}, targetIdentifier={}",
+                                eventType, eventId, targetIdentifier);
+                        return;
+                    }
+                    if (targetAccountId != null) {
+                        LOGGER.warn("Audit message has targetAccountId with tombstone targetIdentifier, ignoring: eventType={}, eventId={}",
+                                eventType, eventId);
+                        return;
+                    }
+                } else {
+                    LOGGER.warn("Audit message has invalid targetIdentifier prefix, ignoring: eventType={}, eventId={}, targetIdentifier={}",
+                            eventType, eventId, targetIdentifier);
                     return;
                 }
             }

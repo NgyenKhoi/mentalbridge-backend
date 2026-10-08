@@ -54,6 +54,9 @@ export class KafkaContentAdminAuditPublisher
     this.topic = process.env.CONTENT_ADMIN_AUDIT_TOPIC ?? 'mentalbridge.admin.audit-event.v1';
   }
 
+  private relayTimer?: NodeJS.Timeout;
+  private isPublishing = false;
+
   async onModuleInit(): Promise<void> {
     const bootstrapServers = this.configuration.KAFKA_BOOTSTRAP_SERVERS;
     if (!bootstrapServers) return;
@@ -69,6 +72,7 @@ export class KafkaContentAdminAuditPublisher
       this.producer = kafka.producer({ idempotent: true });
       await this.producer.connect();
       await this.publishDue();
+      this.startRelay();
     } catch (error) {
       this.logger.warn({
         event: 'audit_producer_connect_failed',
@@ -77,38 +81,25 @@ export class KafkaContentAdminAuditPublisher
     }
   }
 
+  private startRelay(): void {
+    if (this.relayTimer) return;
+    this.relayTimer = setInterval(() => {
+      void this.publishDue();
+    }, 5000);
+    this.relayTimer.unref();
+  }
+
   async onApplicationShutdown(): Promise<void> {
+    if (this.relayTimer) {
+      clearInterval(this.relayTimer);
+      this.relayTimer = undefined;
+    }
     if (this.producer) {
       await this.producer.disconnect();
     }
   }
 
   async publish(event: ContentAdminAuditEvent): Promise<void> {
-    if (this.db) {
-      try {
-        await this.db.query(
-          `INSERT INTO content_admin_audit_outbox
-            (id, deduplication_key, event_type, correlation_id, payload, occurred_at)
-           VALUES ($1, $2, $3, $4, $5, $6)
-           ON CONFLICT (deduplication_key) DO NOTHING`,
-          [
-            event.eventId,
-            `audit:content:${event.action}:${event.eventId}`,
-            event.eventType,
-            event.correlationId,
-            JSON.stringify(event),
-            event.occurredAt,
-          ],
-        );
-      } catch (dbError) {
-        this.logger.warn({
-          event: 'audit_outbox_insert_failed',
-          eventId: event.eventId,
-          error: (dbError as Error).message,
-        });
-      }
-    }
-
     if (!this.producer) {
       this.logger.debug({ event: 'audit_producer_unavailable', eventId: event.eventId });
       return;
@@ -123,33 +114,19 @@ export class KafkaContentAdminAuditPublisher
           },
         ],
       });
-      if (this.db) {
-        await this.db.query(
-          `UPDATE content_admin_audit_outbox
-           SET published_at = now(), next_attempt_at = NULL
-           WHERE id = $1 AND published_at IS NULL`,
-          [event.eventId],
-        );
-      }
     } catch (error) {
       this.logger.error({
         event: 'audit_publish_failed',
         eventId: event.eventId,
         error: (error as Error).message,
       });
-      if (this.db) {
-        await this.db.query(
-          `UPDATE content_admin_audit_outbox
-           SET attempt_count = attempt_count + 1, next_attempt_at = now() + interval '5 seconds'
-           WHERE id = $1 AND published_at IS NULL`,
-          [event.eventId],
-        );
-      }
     }
   }
 
   private async publishDue(): Promise<void> {
     if (!this.db || !this.producer) return;
+    if (this.isPublishing) return;
+    this.isPublishing = true;
     try {
       const result = await this.db.query<{ id: string; payload: ContentAdminAuditEvent }>(
         `SELECT id, payload
@@ -177,6 +154,11 @@ export class KafkaContentAdminAuditPublisher
             [row.id],
           );
         } catch (sendError) {
+          this.logger.warn({
+            event: 'audit_publish_due_failed',
+            id: row.id,
+            error: (sendError as Error).message,
+          });
           await this.db.query(
             `UPDATE content_admin_audit_outbox
              SET attempt_count = attempt_count + 1, next_attempt_at = now() + interval '10 seconds'
@@ -187,6 +169,8 @@ export class KafkaContentAdminAuditPublisher
       }
     } catch {
       // Outbox table may not exist in non-migrated test environments
+    } finally {
+      this.isPublishing = false;
     }
   }
 }

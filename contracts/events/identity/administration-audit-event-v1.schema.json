@@ -87,7 +87,19 @@
       "format": "uuid"
     },
     "targetIdentifier": {
-      "type": ["string", "null"]
+      "oneOf": [
+        {
+          "type": "string",
+          "pattern": "^account:[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{12}$"
+        },
+        {
+          "type": "string",
+          "pattern": "^tombstone:[0-9a-f]{64}$"
+        },
+        {
+          "type": "null"
+        }
+      ]
     }
   },
   "allOf": [

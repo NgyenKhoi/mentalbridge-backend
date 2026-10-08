@@ -222,12 +222,33 @@ public class AdministrationAuditIngestionService {
         if (command.targetIdentifier() != null) {
             String target = command.targetIdentifier().trim();
             if (target.startsWith("account:")) {
-                if (command.targetAccountId() == null || !target.equals("account:" + command.targetAccountId())) {
+                String rawUuid = target.substring("account:".length());
+                UUID parsedUuid;
+                try {
+                    parsedUuid = UUID.fromString(rawUuid);
+                } catch (IllegalArgumentException e) {
+                    LOGGER.warn("Rejecting audit event {} with malformed account UUID in targetIdentifier: {}",
+                            command.eventId(), target);
+                    return false;
+                }
+                if (command.targetAccountId() == null || !parsedUuid.equals(command.targetAccountId())) {
                     LOGGER.warn("Rejecting audit event {} with contradictory targetAccountId and targetIdentifier: targetAccountId={}, targetIdentifier={}",
                             command.eventId(), command.targetAccountId(), command.targetIdentifier());
                     return false;
                 }
-            } else if (!target.startsWith("tombstone:")) {
+            } else if (target.startsWith("tombstone:")) {
+                String hash = target.substring("tombstone:".length());
+                if (!hash.matches("^[0-9a-f]{64}$")) {
+                    LOGGER.warn("Rejecting audit event {} with invalid tombstone hash in targetIdentifier: {}",
+                            command.eventId(), target);
+                    return false;
+                }
+                if (command.targetAccountId() != null) {
+                    LOGGER.warn("Rejecting audit event {} with targetAccountId and tombstone targetIdentifier: targetAccountId={}, targetIdentifier={}",
+                            command.eventId(), command.targetAccountId(), command.targetIdentifier());
+                    return false;
+                }
+            } else {
                 LOGGER.warn("Rejecting audit event {} with invalid targetIdentifier shape: {}", command.eventId(), target);
                 return false;
             }

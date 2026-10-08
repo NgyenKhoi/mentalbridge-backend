@@ -28,10 +28,15 @@ class KafkaCommunityInteractionEventSink implements CommunityInteractionEventSin
 	@Override
 	public void publish(UUID targetId, JsonNode eventPayload) throws Exception {
 		String topic = properties.topic();
-		if (eventPayload.has("sourceService") && "COMMUNITY".equals(eventPayload.get("sourceService").asText())) {
+		if (isAuditEvent(eventPayload)) {
 			topic = System.getProperty("mentalbridge.admin.audit.topic", "mentalbridge.admin.audit-event.v1");
 		}
 		kafka.send(topic, targetId.toString(), objectMapper.writeValueAsString(eventPayload))
 				.get(properties.sendTimeout().toMillis(), TimeUnit.MILLISECONDS);
+	}
+
+	private boolean isAuditEvent(JsonNode eventPayload) {
+		return "COMMUNITY_MODERATION".equals(eventPayload.path("domain").asText())
+				|| ("COMMUNITY".equals(eventPayload.path("sourceService").asText()) && eventPayload.has("action"));
 	}
 }

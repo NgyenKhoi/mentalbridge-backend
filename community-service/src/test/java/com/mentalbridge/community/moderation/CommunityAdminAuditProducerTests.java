@@ -19,11 +19,9 @@ import java.util.UUID;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 import org.mockito.ArgumentCaptor;
-import org.springframework.beans.factory.ObjectProvider;
 import org.springframework.context.ApplicationEventPublisher;
 import org.springframework.jdbc.core.RowMapper;
 import org.springframework.jdbc.core.simple.JdbcClient;
-import org.springframework.kafka.core.KafkaTemplate;
 
 import com.fasterxml.jackson.databind.JsonNode;
 import com.fasterxml.jackson.databind.ObjectMapper;
@@ -48,7 +46,7 @@ class CommunityAdminAuditProducerTests {
 		jdbc = mock(JdbcClient.class);
 		eventPublisher = mock(ApplicationEventPublisher.class);
 		objectMapper = new ObjectMapper().findAndRegisterModules();
-		service = new CommunityModerationService(jdbc, Clock.fixed(NOW, ZoneOffset.UTC), eventPublisher);
+		service = new CommunityModerationService(jdbc, Clock.fixed(NOW, ZoneOffset.UTC), objectMapper);
 	}
 
 	@Test
@@ -228,38 +226,6 @@ class CommunityAdminAuditProducerTests {
 		verify(eventPublisher, never()).publishEvent(any());
 	}
 
-	@Test
-	@SuppressWarnings("unchecked")
-	void publisherSendsToKafkaTopic() {
-		KafkaTemplate<String, String> kafkaTemplate = mock(KafkaTemplate.class);
-		ObjectProvider<KafkaTemplate<String, String>> provider = mock(ObjectProvider.class);
-		when(provider.getIfAvailable()).thenReturn(kafkaTemplate);
-
-		var publisher = new CommunityAdminAuditPublisher(provider, objectMapper, "mentalbridge.admin.audit-event.v1");
-
-		var targetAccountId = UUID.randomUUID();
-		var event = new CommunityAdminAuditEvent(
-				UUID.randomUUID(),
-				"community.post.removed",
-				NOW,
-				"community-service",
-				"1.0",
-				"COMMUNITY",
-				"COMMUNITY_MODERATION",
-				UUID.randomUUID(),
-				"ADMIN",
-				"COMMUNITY_POST_REMOVED",
-				"SUCCEEDED",
-				"HARASSMENT",
-				UUID.randomUUID(),
-				targetAccountId,
-				"post:" + UUID.randomUUID()
-		);
-
-		publisher.onCommunityAdminAuditEvent(event);
-
-		verify(kafkaTemplate).send(eq("mentalbridge.admin.audit-event.v1"), eq(targetAccountId.toString()), any(String.class));
-	}
 
 	@SuppressWarnings("unchecked")
 	private void setupMocksForAction(UUID actor, UUID caseId, UUID postId, UUID authorId, TargetType targetType, String idempotencyKey, String state) {

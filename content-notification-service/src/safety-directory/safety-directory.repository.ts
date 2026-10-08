@@ -212,6 +212,41 @@ export class SafetyDirectoryRepository {
          VALUES ($1, $2, 'REVIEWED', $3, $4)`,
         [id, row.record_version, context.actorId, row.source_reference],
       );
+
+      const correlationId = context.correlationId ?? randomUUID();
+      const auditEvent = {
+        eventId: randomUUID(),
+        eventType: 'content.safety-directory.reviewed',
+        occurredAt: new Date().toISOString(),
+        producer: 'content-notification-service',
+        schemaVersion: '1.0',
+        sourceService: 'CONTENT',
+        domain: 'RESOURCE_MANAGEMENT',
+        actorId: context.actorId,
+        actorType: 'ADMIN',
+        action: 'SAFETY_DIRECTORY_REVIEWED',
+        result: 'SUCCEEDED',
+        reasonCode: null,
+        correlationId,
+        targetAccountId: null,
+        targetIdentifier: null,
+      };
+
+      await client.query(
+        `INSERT INTO content_admin_audit_outbox
+          (id, deduplication_key, event_type, correlation_id, payload, occurred_at)
+         VALUES ($1, $2, $3, $4, $5, $6)
+         ON CONFLICT (deduplication_key) DO NOTHING`,
+        [
+          auditEvent.eventId,
+          `audit:content:safety-reviewed:${id}:${String(row.record_version)}`,
+          auditEvent.eventType,
+          correlationId,
+          JSON.stringify(auditEvent),
+          auditEvent.occurredAt,
+        ],
+      );
+
       return this.selectById(client, id);
     });
   }
@@ -243,6 +278,41 @@ export class SafetyDirectoryRepository {
          VALUES ($1, $2, 'DEACTIVATED', $3, $4)`,
         [id, row.record_version, context.actorId, row.source_reference],
       );
+
+      const correlationId = context.correlationId ?? randomUUID();
+      const auditEvent = {
+        eventId: randomUUID(),
+        eventType: 'content.safety-directory.deactivated',
+        occurredAt: new Date().toISOString(),
+        producer: 'content-notification-service',
+        schemaVersion: '1.0',
+        sourceService: 'CONTENT',
+        domain: 'RESOURCE_MANAGEMENT',
+        actorId: context.actorId,
+        actorType: 'ADMIN',
+        action: 'SAFETY_DIRECTORY_DEACTIVATED',
+        result: 'SUCCEEDED',
+        reasonCode: null,
+        correlationId,
+        targetAccountId: null,
+        targetIdentifier: null,
+      };
+
+      await client.query(
+        `INSERT INTO content_admin_audit_outbox
+          (id, deduplication_key, event_type, correlation_id, payload, occurred_at)
+         VALUES ($1, $2, $3, $4, $5, $6)
+         ON CONFLICT (deduplication_key) DO NOTHING`,
+        [
+          auditEvent.eventId,
+          `audit:content:safety-deactivated:${id}:${String(row.record_version)}`,
+          auditEvent.eventType,
+          correlationId,
+          JSON.stringify(auditEvent),
+          auditEvent.occurredAt,
+        ],
+      );
+
       return this.selectById(client, id);
     });
   }

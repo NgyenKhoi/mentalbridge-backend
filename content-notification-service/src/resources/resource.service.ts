@@ -2,11 +2,9 @@ import {
   Inject,
   Injectable,
   Logger,
-  Optional,
   ServiceUnavailableException,
   UnprocessableEntityException,
 } from '@nestjs/common';
-import { randomUUID } from 'node:crypto';
 import {
   CONTENT_ADMIN_AUDIT_PUBLISHER_TOKEN,
   type ContentAdminAuditPublisher,
@@ -331,25 +329,6 @@ export class ResourceService {
   ): Promise<ResourceDetail | null> {
     const row = await this.repository.archive(id, version, context);
     if (!row) return null;
-    if (this.auditPublisher) {
-      await this.auditPublisher.publish({
-        eventId: randomUUID(),
-        eventType: 'content.resource.archived',
-        occurredAt: new Date().toISOString(),
-        producer: 'content-notification-service',
-        schemaVersion: '1.0',
-        sourceService: 'CONTENT',
-        domain: 'RESOURCE_MANAGEMENT',
-        actorId: context.actorId,
-        actorType: 'ADMIN',
-        action: 'RESOURCE_ARCHIVED',
-        result: 'SUCCEEDED',
-        reasonCode: 'RESOURCE_ARCHIVED',
-        correlationId: context.correlationId,
-        targetAccountId: null,
-        targetIdentifier: null,
-      });
-    }
     return toDetail(row);
   }
 

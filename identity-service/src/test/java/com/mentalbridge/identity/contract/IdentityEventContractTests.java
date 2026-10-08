@@ -109,7 +109,10 @@ class IdentityEventContractTests {
 		assertThat(schema.get("additionalProperties").asBoolean()).isFalse();
 
 		assertThat(schema.get("required")).extracting(node -> node.asText())
-				.containsExactlyInAnyOrder("eventId", "eventType", "occurredAt", "sourceService", "domain", "action", "result", "correlationId");
+				.containsExactlyInAnyOrder(
+						"eventId", "eventType", "occurredAt", "producer", "schemaVersion",
+						"sourceService", "domain", "actorType", "action", "result", "correlationId"
+				);
 
 		assertThat(schema.get("properties").fieldNames()).toIterable()
 				.containsExactlyInAnyOrder(
@@ -132,7 +135,7 @@ class IdentityEventContractTests {
 				.contains("identity.account.disabled", "identity.account.restored",
 						"consultation.specialist.approved", "consultation.specialist.rejected",
 						"consultation.specialist.suspended", "consultation.specialist.restored",
-						"content.resource.published", "content.resource.archived",
+						"content.resource.archived",
 						"content.safety-directory.reviewed", "content.safety-directory.deactivated",
 						"community.moderation.action-applied", "community.moderation.case-resolved");
 	}

@@ -124,10 +124,14 @@ export class SafetyDirectoryController {
   }
 
   private effectiveCorrelationId(supplied?: string): string {
-    if (supplied && UUID_RE.test(supplied)) {
-      return supplied;
+    if (supplied === undefined || supplied === '') {
+      return randomUUID();
     }
-    return randomUUID();
+    const trimmed = supplied.trim();
+    if (!UUID_RE.test(trimmed)) {
+      throw new BadRequestException('Invalid X-Correlation-Id header');
+    }
+    return trimmed;
   }
 
   private parseWrite(body: unknown): SafetyDirectoryEntryWrite {
