@@ -117,3 +117,4 @@ public class ConsultationAdminAuditRelay {
 	record PendingOutboxEvent(UUID id, UUID targetAccountId, String payload, Instant occurredAt, int attempt) {
 	}
 }
+

@@ -21,3 +21,4 @@ create table consultation_admin_audit_outbox (
 create index ix_consultation_admin_audit_due
     on consultation_admin_audit_outbox (coalesce(next_attempt_at, occurred_at), occurred_at, id)
     where published_at is null;
+

@@ -56,3 +56,4 @@ public class ConsultationAdminAuditOutbox {
 		return OffsetDateTime.ofInstant(instant, ZoneOffset.UTC);
 	}
 }
+

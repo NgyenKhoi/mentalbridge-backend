@@ -22,3 +22,4 @@ CREATE TABLE IF NOT EXISTS content_admin_audit_outbox (
 CREATE INDEX IF NOT EXISTS ix_content_admin_audit_outbox_due
   ON content_admin_audit_outbox (COALESCE(next_attempt_at, occurred_at), occurred_at, id)
   WHERE published_at IS NULL;
+
