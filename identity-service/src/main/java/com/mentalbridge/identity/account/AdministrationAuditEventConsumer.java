@@ -67,12 +67,15 @@ public class AdministrationAuditEventConsumer {
                 }
             }
 
-            // Required fields per schema v1: eventId, eventType, occurredAt, sourceService, domain, action, result, correlationId
+            // Required fields per schema v1: eventId, eventType, occurredAt, producer, schemaVersion, sourceService, domain, actorType, action, result, correlationId
             if (!root.has("eventId") || !root.get("eventId").isTextual()
                     || !root.has("eventType") || !root.get("eventType").isTextual()
                     || !root.has("occurredAt") || !root.get("occurredAt").isTextual()
+                    || !root.has("producer") || !root.get("producer").isTextual()
+                    || !root.has("schemaVersion") || !root.get("schemaVersion").isTextual()
                     || !root.has("sourceService") || !root.get("sourceService").isTextual()
                     || !root.has("domain") || !root.get("domain").isTextual()
+                    || !root.has("actorType") || !root.get("actorType").isTextual()
                     || !root.has("action") || !root.get("action").isTextual()
                     || !root.has("result") || !root.get("result").isTextual()
                     || !root.has("correlationId") || !root.get("correlationId").isTextual()) {
@@ -82,25 +85,18 @@ public class AdministrationAuditEventConsumer {
                 return;
             }
 
-            // producer (optional string)
-            if (root.has("producer") && !root.get("producer").isNull()) {
-                if (!root.get("producer").isTextual()) {
-                    LOGGER.warn("Audit message has non-textual producer, ignoring");
-                    return;
-                }
+            // producer
+            String producer = root.get("producer").textValue();
+            if (producer.isBlank()) {
+                LOGGER.warn("Audit message has blank producer, ignoring");
+                return;
             }
 
-            // schemaVersion (optional string, const "1.0")
-            if (root.has("schemaVersion") && !root.get("schemaVersion").isNull()) {
-                if (!root.get("schemaVersion").isTextual()) {
-                    LOGGER.warn("Audit message has non-textual schemaVersion, ignoring");
-                    return;
-                }
-                String schemaVersion = root.get("schemaVersion").textValue();
-                if (!"1.0".equals(schemaVersion)) {
-                    LOGGER.warn("Audit message has unsupported schemaVersion '{}', ignoring", schemaVersion);
-                    return;
-                }
+            // schemaVersion (strict const "1.0")
+            String schemaVersion = root.get("schemaVersion").textValue();
+            if (!"1.0".equals(schemaVersion)) {
+                LOGGER.warn("Audit message has unsupported schemaVersion '{}', ignoring", schemaVersion);
+                return;
             }
 
             // correlationId
@@ -174,6 +170,13 @@ public class AdministrationAuditEventConsumer {
             }
 
             // actorId & actorType
+            String actorType = root.get("actorType").textValue();
+            if (!"ADMIN".equals(actorType) && !"SYSTEM".equals(actorType)) {
+                LOGGER.warn("Audit message has invalid actorType '{}', ignoring: eventType={}, eventId={}",
+                        actorType, eventType, eventId);
+                return;
+            }
+
             UUID actorId = null;
             if (root.hasNonNull("actorId")) {
                 if (!root.get("actorId").isTextual()) {
@@ -188,23 +191,6 @@ public class AdministrationAuditEventConsumer {
                             eventType, eventId);
                     return;
                 }
-            }
-
-            String actorType = null;
-            if (root.hasNonNull("actorType")) {
-                if (!root.get("actorType").isTextual()) {
-                    LOGGER.warn("Audit message has non-textual actorType, ignoring: eventType={}, eventId={}",
-                            eventType, eventId);
-                    return;
-                }
-                actorType = root.get("actorType").textValue();
-                if (!"ADMIN".equals(actorType) && !"SYSTEM".equals(actorType)) {
-                    LOGGER.warn("Audit message has invalid actorType '{}', ignoring: eventType={}, eventId={}",
-                            actorType, eventType, eventId);
-                    return;
-                }
-            } else {
-                actorType = actorId != null ? "ADMIN" : "SYSTEM";
             }
 
             if ("SYSTEM".equals(actorType) && actorId != null) {
@@ -257,6 +243,15 @@ public class AdministrationAuditEventConsumer {
                 targetIdentifier = root.get("targetIdentifier").textValue();
                 if (!targetIdentifier.matches("^(account:[0-9a-fA-F-]{36}|tombstone:[0-9a-f]{64})$")) {
                     LOGGER.warn("Audit message has invalid targetIdentifier shape, ignoring: eventType={}, eventId={}",
+                            eventType, eventId);
+                    return;
+                }
+            }
+
+            // Target consistency (fail-closed)
+            if (targetIdentifier != null && targetIdentifier.startsWith("account:")) {
+                if (targetAccountId == null || !targetIdentifier.equals("account:" + targetAccountId)) {
+                    LOGGER.warn("Audit message has contradictory targetAccountId and targetIdentifier, ignoring: eventType={}, eventId={}",
                             eventType, eventId);
                     return;
                 }

@@ -180,7 +180,7 @@ class AdministrationAuditIntegrationTests extends IdentityTestProperties {
         String contentEventJson = """
                 {
                   "eventId": "%s",
-                  "eventType": "content.resource.published",
+                  "eventType": "content.resource.archived",
                   "occurredAt": "%s",
                   "producer": "content-notification-service",
                   "schemaVersion": "1.0",
@@ -188,9 +188,9 @@ class AdministrationAuditIntegrationTests extends IdentityTestProperties {
                   "domain": "RESOURCE_MANAGEMENT",
                   "actorId": "%s",
                   "actorType": "ADMIN",
-                  "action": "RESOURCE_PUBLISHED",
+                  "action": "RESOURCE_ARCHIVED",
                   "result": "SUCCEEDED",
-                  "reasonCode": "REVIEW_COMPLETED",
+                  "reasonCode": "RESOURCE_ARCHIVED",
                   "correlationId": "%s",
                   "targetIdentifier": "tombstone:%s"
                 }
@@ -296,7 +296,7 @@ class AdministrationAuditIntegrationTests extends IdentityTestProperties {
                 .andExpect(jsonPath("$.items[0].eventId").value(contentEventId.toString()))
                 .andExpect(jsonPath("$.items[0].sourceService").value("CONTENT"))
                 .andExpect(jsonPath("$.items[0].domain").value("RESOURCE_MANAGEMENT"))
-                .andExpect(jsonPath("$.items[0].action").value("RESOURCE_PUBLISHED"))
+                .andExpect(jsonPath("$.items[0].action").value("RESOURCE_ARCHIVED"))
                 .andExpect(jsonPath("$.items[0].targetIdentifier").value("tombstone:" + tombstoneHash));
 
         // 7. Deduplication & Idempotency: Retrying the exact same event does NOT create duplicate records

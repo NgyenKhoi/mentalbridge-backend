@@ -24,23 +24,20 @@ public class SpecialistProfileService {
 	private final SpecialistProfileStatusHistoryRepository history;
 	private final SpecialistSuspensionEffects suspensionEffects;
 	private final Clock clock;
-	private final org.springframework.context.ApplicationEventPublisher eventPublisher;
-
-	public SpecialistProfileService(SpecialistProfileRepository profiles,
-			SpecialistProfileStatusHistoryRepository history,
-			SpecialistSuspensionEffects suspensionEffects, Clock clock) {
-		this(profiles, history, suspensionEffects, clock, null);
-	}
+	private final ApprovedProfileVersionRepository approvedVersions;
+	private final ConsultationAdminAuditOutbox auditOutbox;
 
 	public SpecialistProfileService(SpecialistProfileRepository profiles,
 			SpecialistProfileStatusHistoryRepository history,
 			SpecialistSuspensionEffects suspensionEffects, Clock clock,
-			org.springframework.context.ApplicationEventPublisher eventPublisher) {
+			ApprovedProfileVersionRepository approvedVersions,
+			ConsultationAdminAuditOutbox auditOutbox) {
 		this.profiles = profiles;
 		this.history = history;
 		this.suspensionEffects = suspensionEffects;
 		this.clock = clock;
-		this.eventPublisher = eventPublisher;
+		this.approvedVersions = approvedVersions;
+		this.auditOutbox = auditOutbox;
 	}
 
 	@Transactional(readOnly = true)
@@ -150,27 +147,29 @@ public class SpecialistProfileService {
 		var now = clock.instant();
 		profile.approve(adminAccountId, now);
 		profiles.saveAndFlush(profile);
+		approvedVersions.saveAndFlush(new ApprovedProfileVersionEntity(profile, null));
 		history.saveAndFlush(new SpecialistProfileStatusHistoryEntity(accountId,
 				SpecialistApprovalStatus.APPROVED, adminAccountId,
 				SpecialistProfileStatusHistoryEntity.ActorRole.ADMIN, now));
-		if (eventPublisher != null) {
-			eventPublisher.publishEvent(new ConsultationAdminAuditEvent(
-					UUID.randomUUID(),
-					"consultation.specialist.approved",
-					now,
-					"consultation-service",
-					"1.0",
-					"CONSULTATION",
-					"SPECIALIST_REVIEW",
-					adminAccountId,
-					"ADMIN",
-					"SPECIALIST_APPROVED",
-					"SUCCEEDED",
-					null,
-					correlationId != null ? correlationId : UUID.randomUUID(),
-					accountId,
-					"account:" + accountId
-			));
+		if (auditOutbox != null && correlationId != null) {
+			auditOutbox.record("audit:specialist:approve:" + accountId + ":" + expectedVersion,
+					new ConsultationAdminAuditEvent(
+							UUID.randomUUID(),
+							"consultation.specialist.approved",
+							now,
+							"consultation-service",
+							"1.0",
+							"CONSULTATION",
+							"SPECIALIST_REVIEW",
+							adminAccountId,
+							"ADMIN",
+							"SPECIALIST_APPROVED",
+							"SUCCEEDED",
+							null,
+							correlationId,
+							accountId,
+							"account:" + accountId
+					));
 		}
 		return view(profile);
 	}
@@ -199,24 +198,25 @@ public class SpecialistProfileService {
 		history.saveAndFlush(new SpecialistProfileStatusHistoryEntity(accountId,
 				SpecialistApprovalStatus.REJECTED, adminAccountId,
 				SpecialistProfileStatusHistoryEntity.ActorRole.ADMIN, reasonCode, now));
-		if (eventPublisher != null) {
-			eventPublisher.publishEvent(new ConsultationAdminAuditEvent(
-					UUID.randomUUID(),
-					"consultation.specialist.rejected",
-					now,
-					"consultation-service",
-					"1.0",
-					"CONSULTATION",
-					"SPECIALIST_REVIEW",
-					adminAccountId,
-					"ADMIN",
-					"SPECIALIST_REJECTED",
-					"SUCCEEDED",
-					reasonCode.name(),
-					correlationId != null ? correlationId : UUID.randomUUID(),
-					accountId,
-					"account:" + accountId
-			));
+		if (auditOutbox != null && correlationId != null) {
+			auditOutbox.record("audit:specialist:reject:" + accountId + ":" + expectedVersion,
+					new ConsultationAdminAuditEvent(
+							UUID.randomUUID(),
+							"consultation.specialist.rejected",
+							now,
+							"consultation-service",
+							"1.0",
+							"CONSULTATION",
+							"SPECIALIST_REVIEW",
+							adminAccountId,
+							"ADMIN",
+							"SPECIALIST_REJECTED",
+							"SUCCEEDED",
+							reasonCode.name(),
+							correlationId,
+							accountId,
+							"account:" + accountId
+					));
 		}
 		return view(profile);
 	}
@@ -248,24 +248,25 @@ public class SpecialistProfileService {
 		history.saveAndFlush(new SpecialistProfileStatusHistoryEntity(accountId,
 				SpecialistApprovalStatus.SUSPENDED, adminAccountId,
 				SpecialistProfileStatusHistoryEntity.ActorRole.ADMIN, reasonCode, now));
-		if (eventPublisher != null) {
-			eventPublisher.publishEvent(new ConsultationAdminAuditEvent(
-					UUID.randomUUID(),
-					"consultation.specialist.suspended",
-					now,
-					"consultation-service",
-					"1.0",
-					"CONSULTATION",
-					"SPECIALIST_REVIEW",
-					adminAccountId,
-					"ADMIN",
-					"SPECIALIST_SUSPENDED",
-					"SUCCEEDED",
-					reasonCode.name(),
-					correlationId != null ? correlationId : UUID.randomUUID(),
-					accountId,
-					"account:" + accountId
-			));
+		if (auditOutbox != null && correlationId != null) {
+			auditOutbox.record("audit:specialist:suspend:" + accountId + ":" + expectedVersion,
+					new ConsultationAdminAuditEvent(
+							UUID.randomUUID(),
+							"consultation.specialist.suspended",
+							now,
+							"consultation-service",
+							"1.0",
+							"CONSULTATION",
+							"SPECIALIST_REVIEW",
+							adminAccountId,
+							"ADMIN",
+							"SPECIALIST_SUSPENDED",
+							"SUCCEEDED",
+							reasonCode.name(),
+							correlationId,
+							accountId,
+							"account:" + accountId
+					));
 		}
 		return new SuspensionResult(view(profile), effects);
 	}
@@ -290,24 +291,25 @@ public class SpecialistProfileService {
 		history.saveAndFlush(new SpecialistProfileStatusHistoryEntity(accountId,
 				SpecialistApprovalStatus.APPROVED, adminAccountId,
 				SpecialistProfileStatusHistoryEntity.ActorRole.ADMIN, now));
-		if (eventPublisher != null) {
-			eventPublisher.publishEvent(new ConsultationAdminAuditEvent(
-					UUID.randomUUID(),
-					"consultation.specialist.restored",
-					now,
-					"consultation-service",
-					"1.0",
-					"CONSULTATION",
-					"SPECIALIST_REVIEW",
-					adminAccountId,
-					"ADMIN",
-					"SPECIALIST_RESTORED",
-					"SUCCEEDED",
-					null,
-					correlationId != null ? correlationId : UUID.randomUUID(),
-					accountId,
-					"account:" + accountId
-			));
+		if (auditOutbox != null && correlationId != null) {
+			auditOutbox.record("audit:specialist:restore:" + accountId + ":" + expectedVersion,
+					new ConsultationAdminAuditEvent(
+							UUID.randomUUID(),
+							"consultation.specialist.restored",
+							now,
+							"consultation-service",
+							"1.0",
+							"CONSULTATION",
+							"SPECIALIST_REVIEW",
+							adminAccountId,
+							"ADMIN",
+							"SPECIALIST_RESTORED",
+							"SUCCEEDED",
+							null,
+							correlationId,
+							accountId,
+							"account:" + accountId
+					));
 		}
 		return view(profile);
 	}
@@ -343,7 +345,7 @@ public class SpecialistProfileService {
 				"Reason code is not valid for specialist " + operation);
 	}
 
-	private void validate(ProfileCommand command) {
+	void validate(ProfileCommand command) {
 		try {
 			ZoneId.of(command.timezone().strip());
 		}
@@ -360,13 +362,13 @@ public class SpecialistProfileService {
 				List.of(new ApiException.FieldViolation(field, code, message)));
 	}
 
-	private ProfileView view(SpecialistProfileEntity profile) {
+	ProfileView view(SpecialistProfileEntity profile) {
 		var supportAreas = profile.supportAreas().stream().sorted(Comparator.comparing(Enum::name)).toList();
 		var languages = profile.languages().stream().sorted().toList();
 		return new ProfileView(profile.accountId(), profile.displayName(), profile.bio(), supportAreas, languages,
 				profile.yearsOfExperience(), profile.timezone(), profile.approvalStatus(), profile.submittedAt(),
 				profile.reviewedAt(), profile.reviewedBy(), profile.decisionReasonCode(), profile.createdAt(),
-				profile.updatedAt(), profile.version());
+				profile.updatedAt(), profile.version(), profile.publishedVersion());
 	}
 
 	public record ProfileCommand(String displayName, String bio, Set<SupportArea> supportAreas,
@@ -378,7 +380,7 @@ public class SpecialistProfileService {
 			SpecialistApprovalStatus approvalStatus, java.time.Instant submittedAt, java.time.Instant reviewedAt,
 			UUID reviewedBy, SpecialistDecisionReasonCode decisionReasonCode,
 			java.time.Instant createdAt, java.time.Instant updatedAt,
-			long version) {
+			long version, long publishedVersion) {
 	}
 
 	public record SavedProfile(ProfileView profile, boolean created) {

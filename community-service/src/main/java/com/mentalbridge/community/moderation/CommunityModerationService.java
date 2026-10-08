@@ -41,16 +41,17 @@ class CommunityModerationService {
 
 	private final JdbcClient jdbc;
 	private final Clock clock;
-	private final org.springframework.context.ApplicationEventPublisher eventPublisher;
+	private final ObjectMapper objectMapper;
 
 	CommunityModerationService(JdbcClient jdbc, Clock clock) {
-		this(jdbc, clock, null);
+		this(jdbc, clock, new ObjectMapper().findAndRegisterModules());
 	}
 
-	CommunityModerationService(JdbcClient jdbc, Clock clock, org.springframework.context.ApplicationEventPublisher eventPublisher) {
+	@Autowired
+	public CommunityModerationService(JdbcClient jdbc, Clock clock, ObjectMapper objectMapper) {
 		this.jdbc = jdbc;
 		this.clock = clock;
-		this.eventPublisher = eventPublisher;
+		this.objectMapper = objectMapper;
 	}
 
 	@Transactional
@@ -220,31 +221,34 @@ class CommunityModerationService {
 		jdbc.sql("update community_moderation_case set state = 'RESOLVED', updated_at = :now, version = version + 1 where id = :id")
 				.param("now", timestamp(now)).param("id", caseId).update();
 
-		if (eventPublisher != null) {
+		if (correlationId != null) {
 			String eventType;
 			String actionName;
-			String targetIdentifier;
-			UUID targetAccountId = target.authorId();
 
 			if (request.action() == Action.REMOVE && target.type() == TargetType.POST) {
 				eventType = "community.post.removed";
 				actionName = "COMMUNITY_POST_REMOVED";
-				targetIdentifier = "post:" + target.id();
 			} else if (request.action() == Action.RESTRICT_COMMUNITY_ACCESS) {
 				eventType = "community.user.suspended";
 				actionName = "COMMUNITY_USER_SUSPENDED";
-				targetIdentifier = "account:" + target.authorId();
 			} else if (request.action() == Action.NO_ACTION) {
 				eventType = "community.moderation.case-resolved";
 				actionName = "MODERATION_CASE_RESOLVED";
-				targetIdentifier = target.type() == TargetType.POST ? ("post:" + target.id()) : ("comment:" + target.id());
 			} else {
 				eventType = "community.moderation.action-applied";
 				actionName = "MODERATION_ACTION_APPLIED";
-				targetIdentifier = target.type() == TargetType.POST ? ("post:" + target.id()) : ("comment:" + target.id());
 			}
 
-			eventPublisher.publishEvent(new CommunityAdminAuditEvent(
+			UUID authorAccountSubject = null;
+			if (target.authorId() != null) {
+				authorAccountSubject = jdbc.sql("select account_subject from community_profile where id = :profileId")
+						.param("profileId", target.authorId()).query(UUID.class).optional().orElse(null);
+			}
+
+			UUID targetAccountId = authorAccountSubject;
+			String targetIdentifier = authorAccountSubject != null ? ("account:" + authorAccountSubject) : null;
+
+			var auditEvent = new CommunityAdminAuditEvent(
 					UUID.randomUUID(),
 					eventType,
 					now,
@@ -257,10 +261,30 @@ class CommunityModerationService {
 					actionName,
 					"SUCCEEDED",
 					request.reasonCode(),
-					correlationId != null ? correlationId : UUID.randomUUID(),
+					correlationId,
 					targetAccountId,
 					targetIdentifier
-			));
+			);
+
+			try {
+				String payloadJson = objectMapper.writeValueAsString(auditEvent);
+				jdbc.sql("""
+						insert into community_interaction_outbox (
+						    id, deduplication_key, target_id, event_payload, occurred_at, created_at
+						) values (
+						    :id, :dedupKey, :targetId, :payload::jsonb, :occurredAt, :createdAt
+						) on conflict (deduplication_key) do nothing
+						""").param("id", auditEvent.eventId())
+						.param("dedupKey", "audit:moderation:" + caseId + ":" + outcome.target().version() + ":" + request.action().name())
+						.param("targetId", targetAccountId != null ? targetAccountId : caseId)
+						.param("payload", payloadJson)
+						.param("occurredAt", timestamp(now))
+						.param("createdAt", timestamp(now))
+						.update();
+			}
+			catch (Exception e) {
+				throw new IllegalStateException("Failed to persist community admin audit outbox event", e);
+			}
 		}
 		return get(caseId);
 	}

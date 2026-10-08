@@ -170,9 +170,8 @@ export class ResourceService {
     private readonly repository: ResourceRepository,
     @Inject(E2E_OUTAGE_STATE_TOKEN)
     private readonly outageState: E2eOutageState,
-    @Optional()
     @Inject(CONTENT_ADMIN_AUDIT_PUBLISHER_TOKEN)
-    private readonly auditPublisher?: ContentAdminAuditPublisher,
+    private readonly auditPublisher: ContentAdminAuditPublisher,
   ) {}
 
   async listPublished(options: ListResourcesOptions): Promise<ResourceListResult> {
@@ -348,7 +347,7 @@ export class ResourceService {
         reasonCode: 'RESOURCE_ARCHIVED',
         correlationId: context.correlationId,
         targetAccountId: null,
-        targetIdentifier: `resource:${id}`,
+        targetIdentifier: null,
       });
     }
     return toDetail(row);

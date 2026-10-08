@@ -73,9 +73,8 @@ export class SafetyDirectoryService {
   constructor(
     @Inject(SAFETY_DIRECTORY_REPOSITORY_TOKEN)
     private readonly repository: SafetyDirectoryRepository,
-    @Optional()
     @Inject(CONTENT_ADMIN_AUDIT_PUBLISHER_TOKEN)
-    private readonly auditPublisher?: ContentAdminAuditPublisher,
+    private readonly auditPublisher: ContentAdminAuditPublisher,
   ) {}
 
   async listAdmin(): Promise<SafetyDirectoryAdminEntry[]> {
@@ -121,7 +120,7 @@ export class SafetyDirectoryService {
     return this.wrap(async () => {
       const row = await this.repository.review(id, version, context);
       if (!row) return null;
-      if (this.auditPublisher) {
+      if (this.auditPublisher && context.correlationId) {
         await this.auditPublisher.publish({
           eventId: randomUUID(),
           eventType: 'content.safety-directory.reviewed',
@@ -135,9 +134,9 @@ export class SafetyDirectoryService {
           action: 'SAFETY_DIRECTORY_REVIEWED',
           result: 'SUCCEEDED',
           reasonCode: null,
-          correlationId: context.correlationId ?? randomUUID(),
+          correlationId: context.correlationId,
           targetAccountId: null,
-          targetIdentifier: `safety-directory:${id}`,
+          targetIdentifier: null,
         });
       }
       return toAdmin(row);
@@ -152,7 +151,7 @@ export class SafetyDirectoryService {
     return this.wrap(async () => {
       const row = await this.repository.deactivate(id, version, context);
       if (!row) return null;
-      if (this.auditPublisher) {
+      if (this.auditPublisher && context.correlationId) {
         await this.auditPublisher.publish({
           eventId: randomUUID(),
           eventType: 'content.safety-directory.deactivated',
@@ -166,9 +165,9 @@ export class SafetyDirectoryService {
           action: 'SAFETY_DIRECTORY_DEACTIVATED',
           result: 'SUCCEEDED',
           reasonCode: null,
-          correlationId: context.correlationId ?? randomUUID(),
+          correlationId: context.correlationId,
           targetAccountId: null,
-          targetIdentifier: `safety-directory:${id}`,
+          targetIdentifier: null,
         });
       }
       return toAdmin(row);

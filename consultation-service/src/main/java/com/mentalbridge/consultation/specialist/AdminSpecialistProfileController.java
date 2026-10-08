@@ -53,8 +53,9 @@ public class AdminSpecialistProfileController {
 			@PathVariable UUID specialistAccountId,
 			@RequestHeader(name = "If-Match", required = false) String ifMatch,
 			@RequestHeader(name = "X-Correlation-Id", required = false) UUID correlationId) {
+		UUID effectiveCorrelationId = correlationId != null ? correlationId : UUID.randomUUID();
 		var profile = profiles.approve(specialistAccountId, RequestIdentity.subject(jwt),
-				RequestIdentity.requiredVersion(ifMatch), correlationId);
+				RequestIdentity.requiredVersion(ifMatch), effectiveCorrelationId);
 		return response(profile);
 	}
 
@@ -64,8 +65,9 @@ public class AdminSpecialistProfileController {
 			@RequestHeader(name = "If-Match", required = false) String ifMatch,
 			@RequestHeader(name = "X-Correlation-Id", required = false) UUID correlationId,
 			@Valid @RequestBody DecisionReasonRequest request) {
+		UUID effectiveCorrelationId = correlationId != null ? correlationId : UUID.randomUUID();
 		var profile = profiles.reject(specialistAccountId, RequestIdentity.subject(jwt),
-				RequestIdentity.requiredVersion(ifMatch), request.reasonCode(), correlationId);
+				RequestIdentity.requiredVersion(ifMatch), request.reasonCode(), effectiveCorrelationId);
 		return response(profile);
 	}
 
@@ -75,8 +77,9 @@ public class AdminSpecialistProfileController {
 			@RequestHeader(name = "If-Match", required = false) String ifMatch,
 			@RequestHeader(name = "X-Correlation-Id", required = false) UUID correlationId,
 			@Valid @RequestBody DecisionReasonRequest request) {
+		UUID effectiveCorrelationId = correlationId != null ? correlationId : UUID.randomUUID();
 		var result = profiles.suspend(specialistAccountId, RequestIdentity.subject(jwt),
-				RequestIdentity.requiredVersion(ifMatch), request.reasonCode(), correlationId);
+				RequestIdentity.requiredVersion(ifMatch), request.reasonCode(), effectiveCorrelationId);
 		return ResponseEntity.ok().eTag(Long.toString(result.profile().version()))
 				.body(SpecialistSuspensionResponse.from(result));
 	}
@@ -86,8 +89,9 @@ public class AdminSpecialistProfileController {
 			@PathVariable UUID specialistAccountId,
 			@RequestHeader(name = "If-Match", required = false) String ifMatch,
 			@RequestHeader(name = "X-Correlation-Id", required = false) UUID correlationId) {
+		UUID effectiveCorrelationId = correlationId != null ? correlationId : UUID.randomUUID();
 		var profile = profiles.restore(specialistAccountId, RequestIdentity.subject(jwt),
-				RequestIdentity.requiredVersion(ifMatch), correlationId);
+				RequestIdentity.requiredVersion(ifMatch), effectiveCorrelationId);
 		return response(profile);
 	}
 

@@ -1069,6 +1069,7 @@ Database checks require a submitted timestamp once review starts, reviewer ident
 | `created_at` | Immutable UTC profile creation instant. |
 | `updated_at` | UTC instant of the latest persisted profile or approval change. |
 | `version` | Optimistic-lock counter preventing lost specialist-profile updates. |
+| `published_version` | Monotonic approved-content version: initial approval/promotion increments it, draft edits and suspension/restoration do not. Zero means no approved snapshot yet. |
 
 ### `consultation.specialist_profile_support_area`
 
@@ -1104,6 +1105,62 @@ decisions. It stores no uploaded evidence or unrestricted notes.
 | `actor_account_id` | Identity UUID of the specialist or administrator performing the action. |
 | `actor_role` | `SPECIALIST` or `ADMIN` operational actor class. |
 | `occurred_at` | UTC instant when the action became effective. |
+
+### `consultation.specialist_profile_approved_version`
+
+MB-635 append-only approved six-field snapshots. Consultation is authoritative;
+one baseline is captured for existing approved/suspended profiles, without
+reconstructing unavailable old content. Profile snapshots contain professional
+display data, never account credentials, verification files or health data.
+
+| Field | Purpose |
+| --- | --- |
+| `id` | Immutable opaque snapshot identifier; migration baseline reuses the owner UUID. |
+| `specialist_account_id` | Local specialist profile FK; paired with published_version for immutable content identity. |
+| `published_version` | Positive per-specialist approved-content sequence, unique with specialist_account_id. |
+| `profile_snapshot` | Exact approved JSON object with displayName, bio, supportAreas, languages, yearsOfExperience and timezone. Append-only; no amendment draft content leaks into discovery. |
+| `approved_by` | External Identity UUID of the approving ADMIN; baseline uses available approval audit metadata. |
+| `approved_at` | UTC effective approval time; baseline uses available approval metadata, not a fabricated historic content version. |
+| `source_amendment_id` | Optional local amendment FK identifying promotion; null for initial/baseline approval. |
+
+### `consultation.specialist_profile_amendment`
+
+Separate private amendment to the approved public snapshot. At most one
+DRAFT/PENDING_REVIEW/REJECTED row per specialist; approved rows remain historical.
+Only owner SPECIALIST and ADMIN can read it. Every command locks the owner profile
+first and checks optimistic version; promotion additionally checks published base.
+
+| Field | Purpose |
+| --- | --- |
+| `id` | Immutable opaque UUID used by owner/admin amendment APIs. |
+| `specialist_account_id` | Local owning specialist profile FK; JWT subject determines owner access. |
+| `base_published_version` | Exact approved content sequence used to derive the draft; composite FK to approved history prevents nonexistent bases. |
+| `status` | DRAFT, PENDING_REVIEW, REJECTED or APPROVED amendment state; never replaces profile approval_status. |
+| `proposed_profile` | Authoritative six-field proposed JSON payload, validated like the initial profile. It is private until reviewed promotion. |
+| `submitted_at` | UTC latest explicit submission; null for DRAFT, cleared on pending-review edits. |
+| `reviewed_at` | UTC latest ADMIN amendment decision; null before review/after resubmission. |
+| `reviewed_by` | External Identity ADMIN UUID for latest decision, nullable before review/after resubmission. |
+| `reason_code` | Closed rejection reason only; retained while correcting REJECTED content, cleared on explicit resubmission. No unrestricted notes. |
+| `created_at` | Immutable UTC draft creation time, used with id to select latest owner amendment. |
+| `updated_at` | UTC last persisted amendment change, distinct from public profile updated_at. |
+| `version` | Optimistic-lock counter in amendment ETag; stale edits/submissions/decisions return 412. |
+
+### `consultation.specialist_profile_amendment_history`
+
+Append-only exact revision/provenance, including the payload ADMIN reviewed.
+Later correction/resubmission never overwrites a rejected payload or actor/time.
+
+| Field | Purpose |
+| --- | --- |
+| `id` | Immutable opaque history UUID. |
+| `amendment_id` | Local amendment FK retaining the full audit chain. |
+| `amendment_version` | Persisted revision corresponding to this history fact; unique with amendment_id. |
+| `status` | Resulting amendment state for this revision. |
+| `proposed_profile` | Exact six-field JSON payload of that revision, retained for approved/rejected review audit. |
+| `actor_account_id` | External Identity UUID of the specialist editor/submitter or ADMIN reviewer. |
+| `actor_role` | Bounded SPECIALIST/ADMIN actor class; no user identity content. |
+| `reason_code` | Closed rejection reason for REJECTED facts, null otherwise. |
+| `occurred_at` | UTC effective revision instant; ordering uses amendment_version, not wall-clock alone. |
 
 ### `consultation.subscription_plan`
 
@@ -1357,6 +1414,24 @@ transition and excludes email addresses and consultation content.
 | `published_at` | Kafka acknowledgement instant; null while pending. |
 | `attempt_count`, `next_attempt_at` | Bounded observable relay retry/lease state. |
 | `created_at` | Immutable insertion instant. |
+
+### `consultation.consultation_admin_audit_outbox`
+
+Consultation-owned durable transactional outbox for administrator actions (specialist profile approve, reject, suspend, restore). The row commits in the same local transaction as the profile and status history update, and is relayed to Kafka topic `mentalbridge.admin.audit-event.v1`.
+
+| Field | Purpose |
+| --- | --- |
+| `id` | Immutable event UUID matching the `eventId` in the audit event fact. |
+| `deduplication_key` | Stable unique command idempotency key preventing duplicate outbox entries on retried actions. |
+| `event_type` | Stable language-neutral event type (e.g. `consultation.specialist.approved`). |
+| `correlation_id` | End-to-end trace correlation UUID passed from caller ingress. |
+| `target_account_id` | Nullable specialist account UUID subject of the administrative action. |
+| `payload` | Strict minimized `administration-audit-event-v1` JSON object; excludes clinical notes and sensitive credentials. |
+| `occurred_at` | Authoritative UTC timestamp of the administrative decision. |
+| `published_at` | Nullable UTC instant when published and acknowledged by Kafka; null while pending. |
+| `attempt_count` | Non-negative relay retry counter for observable bounded backoff. |
+| `next_attempt_at` | Scheduled UTC instant for the next retry attempt when relay fails. |
+| `created_at` | Immutable row creation timestamp. |
 
 ### `consultation.subscription_plan_version`
 
@@ -2309,6 +2384,23 @@ Reviewed, deterministic vocabulary for resolving deliberately entered manual are
 | `canonical` | Marks the preferred reviewed label for the area pair without changing lookup eligibility. |
 | `seed_key` | Optional unique controlled-release identifier used only by owner migrations. |
 | `created_at` | Immutable database UTC insertion instant. |
+
+### `public.content_admin_audit_outbox`
+
+Content-owned durable transactional outbox for administrator actions (resource archive, safety directory review, deactivate). The row commits in the same local database transaction as the aggregate mutation and is relayed to Kafka topic `mentalbridge.admin.audit-event.v1`.
+
+| Field | Purpose |
+| --- | --- |
+| `id` | Immutable event UUID matching the `eventId` in the audit event fact. |
+| `deduplication_key` | Stable unique deduplication key preventing duplicate outbox entries on retried actions. |
+| `event_type` | Stable language-neutral event type (e.g. `content.resource.archived`). |
+| `correlation_id` | End-to-end trace correlation UUID established at controller ingress. |
+| `payload` | Strict minimized `administration-audit-event-v1` JSON object; excludes sensitive directory secrets or raw content. |
+| `occurred_at` | Authoritative UTC timestamp of the administrative decision. |
+| `published_at` | Nullable UTC instant when published and acknowledged by Kafka; null while pending. |
+| `attempt_count` | Non-negative relay retry counter for observable bounded backoff. |
+| `next_attempt_at` | Scheduled UTC instant for next retry attempt when relay fails. |
+| `created_at` | Immutable row creation timestamp. |
 
 ### `public.consultation_brief`
 

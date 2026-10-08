@@ -8,8 +8,11 @@
     "eventId",
     "eventType",
     "occurredAt",
+    "producer",
+    "schemaVersion",
     "sourceService",
     "domain",
+    "actorType",
     "action",
     "result",
     "correlationId"
@@ -28,7 +31,6 @@
         "consultation.specialist.rejected",
         "consultation.specialist.suspended",
         "consultation.specialist.restored",
-        "content.resource.published",
         "content.resource.archived",
         "content.safety-directory.reviewed",
         "content.safety-directory.deactivated",
@@ -87,5 +89,32 @@
     "targetIdentifier": {
       "type": ["string", "null"]
     }
-  }
+  },
+  "allOf": [
+    {
+      "if": {
+        "properties": {
+          "actorType": { "const": "ADMIN" }
+        }
+      },
+      "then": {
+        "properties": {
+          "actorId": { "type": "string", "format": "uuid" }
+        },
+        "required": ["actorId"]
+      }
+    },
+    {
+      "if": {
+        "properties": {
+          "actorType": { "const": "SYSTEM" }
+        }
+      },
+      "then": {
+        "properties": {
+          "actorId": { "type": "null" }
+        }
+      }
+    }
+  ]
 }

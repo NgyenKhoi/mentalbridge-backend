@@ -71,7 +71,8 @@ describe('Content Administration Audit Producer', () => {
     expect(event.result).toBe('SUCCEEDED');
     expect(event.reasonCode).toBe('RESOURCE_ARCHIVED');
     expect(event.correlationId).toBe(correlationId);
-    expect(event.targetIdentifier).toBe(`resource:${resourceId}`);
+    expect(event.targetIdentifier).toBeNull();
+    expect(event.targetAccountId).toBeNull();
     expect(event.schemaVersion).toBe('1.0');
     expect(event.producer).toBe('content-notification-service');
   });
@@ -128,7 +129,8 @@ describe('Content Administration Audit Producer', () => {
     expect(event.result).toBe('SUCCEEDED');
     expect(event.reasonCode).toBeNull();
     expect(event.correlationId).toBe(correlationId);
-    expect(event.targetIdentifier).toBe(`safety-directory:${entryId}`);
+    expect(event.targetIdentifier).toBeNull();
+    expect(event.targetAccountId).toBeNull();
   });
 
   it('safety directory deactivate produces content.safety-directory.deactivated fact', async () => {
@@ -182,7 +184,8 @@ describe('Content Administration Audit Producer', () => {
     expect(event.actorType).toBe('ADMIN');
     expect(event.result).toBe('SUCCEEDED');
     expect(event.correlationId).toBe(correlationId);
-    expect(event.targetIdentifier).toBe(`safety-directory:${entryId}`);
+    expect(event.targetIdentifier).toBeNull();
+    expect(event.targetAccountId).toBeNull();
   });
 
   it('failed mutation or version mismatch does not emit audit fact', async () => {
@@ -215,8 +218,9 @@ describe('Content Administration Audit Producer', () => {
 
     (publisher as any).producer = { send: sendMock };
 
+    const eventId = randomUUID();
     const event: ContentAdminAuditEvent = {
-      eventId: randomUUID(),
+      eventId,
       eventType: 'content.resource.archived',
       occurredAt: new Date().toISOString(),
       producer: 'content-notification-service',
@@ -230,7 +234,7 @@ describe('Content Administration Audit Producer', () => {
       reasonCode: 'RESOURCE_ARCHIVED',
       correlationId: randomUUID(),
       targetAccountId: null,
-      targetIdentifier: 'resource:test',
+      targetIdentifier: null,
     };
 
     await publisher.publish(event);
@@ -240,7 +244,7 @@ describe('Content Administration Audit Producer', () => {
       topic: 'mentalbridge.admin.audit-event.v1',
       messages: [
         {
-          key: 'resource:test',
+          key: eventId,
           value: JSON.stringify(event),
         },
       ],

@@ -50,7 +50,8 @@ class AccountLifecycleConsumerTests {
 		lifecycleService = new SpecialistAccountLifecycleService(profiles, history, suspensionEffects, jdbc);
 		consumer = new AccountLifecycleConsumer(lifecycleService, objectMapper);
 		profileService = new SpecialistProfileService(profiles, history, suspensionEffects,
-				Clock.fixed(NOW, ZoneOffset.UTC));
+				Clock.fixed(NOW, ZoneOffset.UTC), mock(ApprovedProfileVersionRepository.class),
+				mock(ConsultationAdminAuditOutbox.class));
 	}
 
 	@Test

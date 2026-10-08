@@ -15,6 +15,15 @@ import io.swagger.v3.oas.models.media.Schema;
 class ConsultationOpenApiContractTests {
 
 	private static final Set<String> OPERATIONS = Set.of(
+			"GET /api/v1/specialist-profile/amendments/current",
+			"POST /api/v1/specialist-profile/amendments",
+			"PUT /api/v1/specialist-profile/amendments/{amendmentId}",
+			"POST /api/v1/specialist-profile/amendments/{amendmentId}/submit",
+			"POST /api/v1/specialist-profile/amendments/{amendmentId}/resubmit",
+			"GET /api/v1/admin/specialist-profiles/amendments",
+			"GET /api/v1/admin/specialist-profiles/amendments/{amendmentId}",
+			"POST /api/v1/admin/specialist-profiles/amendments/{amendmentId}/approve",
+			"POST /api/v1/admin/specialist-profiles/amendments/{amendmentId}/reject",
 			"GET /api/v1/service-credits",
 			"GET /internal/v1/entitlements/current",
 			"GET /internal/v1/appointments/{appointmentId}/consultation-brief-context",
@@ -45,6 +54,7 @@ class ConsultationOpenApiContractTests {
 			"GET /api/v1/appointments/{appointmentId}/session-summaries",
 			"PUT /api/v1/session-summaries/{summaryId}/reuse-consent",
 			"PUT /api/v1/agreed-next-steps/{nextStepId}",
+			"GET /api/v1/specialist/analytics",
 			"GET /api/v1/specialist/dashboard",
 			"GET /api/v1/specialist/earnings",
 			"PUT /api/v1/specialist/payout-destination",
@@ -184,6 +194,25 @@ class ConsultationOpenApiContractTests {
 		assertThat(appointment.getProperties()).doesNotContainKeys("userAccountId", "clientName", "checkIns",
 				"riskScore", "recovery", "adherence", "journal", "assessmentAnswers", "notes");
 		assertThat(((Schema<?>) appointments.getProperties().get("items")).getMaxItems()).isEqualTo(5);
+	}
+
+	@Test
+	void specialistAnalyticsContainsOnlyAggregateOperationalFacts() {
+		var contract = Path.of("..", "contracts", "openapi", "consultation-service-v1.yaml").toString();
+		var api = new OpenAPIV3Parser().read(contract);
+		var analytics = api.getComponents().getSchemas().get("SpecialistOperationalAnalytics");
+		var appointments = api.getComponents().getSchemas().get("SpecialistAppointmentMetrics");
+		var financials = api.getComponents().getSchemas().get("SpecialistFinancialMetrics");
+
+		assertThat(analytics.getProperties()).containsOnlyKeys("source", "generatedAt", "operationalStatus",
+				"period", "availability", "appointments", "rating", "financials");
+		assertThat(appointments.getProperties()).containsOnlyKeys("source", "asOf", "state", "requestedCount",
+				"acceptedCount", "rejectedCount", "expiredCount", "cancelledCount", "rescheduledCount",
+				"completedCount", "userNoShowCount", "specialistNoShowCount", "bothNoShowCount")
+				.doesNotContainKeys("userAccountId", "phq9", "gad7", "journal", "emotionTrend", "recoveryScore",
+						"treatmentAdherence", "clientSegments", "chat", "notes");
+		assertThat(financials.getProperties()).containsOnlyKeys("source", "asOf", "state", "currency",
+				"earnedAmountMinor", "paidAmountMinor");
 	}
 
 	@Test

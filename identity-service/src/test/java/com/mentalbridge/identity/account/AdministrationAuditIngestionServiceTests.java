@@ -93,7 +93,7 @@ class AdministrationAuditIngestionServiceTests {
         UUID eventId = UUID.randomUUID();
         when(auditRepository.existsById(eventId)).thenReturn(false);
 
-        // Claiming consultation.specialist.suspended but forging CONTENT / RESOURCE_MANAGEMENT / RESOURCE_PUBLISHED
+        // Claiming consultation.specialist.suspended but forging CONTENT / RESOURCE_MANAGEMENT / RESOURCE_ARCHIVED
         AdministrationAuditIngestionService.IngestionCommand command =
                 new AdministrationAuditIngestionService.IngestionCommand(
                         eventId,
@@ -103,7 +103,7 @@ class AdministrationAuditIngestionServiceTests {
                         AdministrationAuditService.AuditDomain.RESOURCE_MANAGEMENT,
                         null,
                         "SYSTEM",
-                        "RESOURCE_PUBLISHED",
+                        "RESOURCE_ARCHIVED",
                         "SUCCEEDED",
                         null,
                         UUID.randomUUID(),
@@ -263,13 +263,13 @@ class AdministrationAuditIngestionServiceTests {
         AdministrationAuditIngestionService.IngestionCommand command =
                 new AdministrationAuditIngestionService.IngestionCommand(
                         eventId,
-                        "content.resource.published",
+                        "content.resource.archived",
                         Instant.now(),
                         AdministrationAuditService.AuditSourceService.CONTENT,
                         AdministrationAuditService.AuditDomain.RESOURCE_MANAGEMENT,
                         null,
                         "SYSTEM",
-                        "RESOURCE_PUBLISHED",
+                        "RESOURCE_ARCHIVED",
                         "SUCCEEDED",
                         "ACCESS_TOKEN_SECRET_123",
                         UUID.randomUUID(),
@@ -325,15 +325,15 @@ class AdministrationAuditIngestionServiceTests {
         AdministrationAuditIngestionService.IngestionCommand command =
                 new AdministrationAuditIngestionService.IngestionCommand(
                         eventId,
-                        "content.resource.published",
+                        "content.resource.archived",
                         Instant.now(),
                         AdministrationAuditService.AuditSourceService.CONTENT,
                         AdministrationAuditService.AuditDomain.RESOURCE_MANAGEMENT,
                         null,
                         "SYSTEM",
-                        "RESOURCE_PUBLISHED",
+                        "RESOURCE_ARCHIVED",
                         "SUCCEEDED",
-                        "REVIEW_COMPLETED",
+                        "RESOURCE_ARCHIVED",
                         UUID.randomUUID(),
                         null,
                         "tombstone:" + tombstoneHash
@@ -410,9 +410,12 @@ class AdministrationAuditIngestionServiceTests {
                   "eventId": "%s",
                   "eventType": "consultation.specialist.suspended",
                   "occurredAt": "%s",
+                  "producer": "content-notification-service",
+                  "schemaVersion": "1.0",
                   "sourceService": "CONTENT",
                   "domain": "RESOURCE_MANAGEMENT",
-                  "action": "RESOURCE_PUBLISHED",
+                  "actorType": "SYSTEM",
+                  "action": "RESOURCE_ARCHIVED",
                   "result": "SUCCEEDED",
                   "correlationId": "%s"
                 }
@@ -452,8 +455,11 @@ class AdministrationAuditIngestionServiceTests {
                   "eventId": "%s",
                   "eventType": "identity.account.disabled",
                   "occurredAt": "%s",
+                  "producer": "identity-service",
+                  "schemaVersion": "1.0",
                   "sourceService": "HACKED_SERVICE",
                   "domain": "ACCOUNT_ADMINISTRATION",
+                  "actorType": "SYSTEM",
                   "action": "ACCOUNT_DISABLED",
                   "result": "SUCCEEDED",
                   "correlationId": "%s"
@@ -473,8 +479,11 @@ class AdministrationAuditIngestionServiceTests {
                   "eventId": "%s",
                   "eventType": "identity.account.disabled",
                   "occurredAt": "%s",
+                  "producer": "identity-service",
+                  "schemaVersion": "1.0",
                   "sourceService": "IDENTITY",
                   "domain": "HACKED_DOMAIN",
+                  "actorType": "SYSTEM",
                   "action": "ACCOUNT_DISABLED",
                   "result": "SUCCEEDED",
                   "correlationId": "%s"

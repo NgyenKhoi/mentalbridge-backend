@@ -61,11 +61,6 @@ public class AdministrationAuditIngestionService {
                             "SPECIALIST_RESTORED")),
 
             // CONTENT / RESOURCE_MANAGEMENT
-            Map.entry("content.resource.published",
-                    new EventTypeDescriptor(
-                            AdministrationAuditService.AuditSourceService.CONTENT,
-                            AdministrationAuditService.AuditDomain.RESOURCE_MANAGEMENT,
-                            "RESOURCE_PUBLISHED")),
             Map.entry("content.resource.archived",
                     new EventTypeDescriptor(
                             AdministrationAuditService.AuditSourceService.CONTENT,
@@ -199,13 +194,10 @@ public class AdministrationAuditIngestionService {
         // 4. Privacy & reasonCode fail-closed allowlist
         String reasonCode = AdministrationAuditService.safeReasonCode(command.reasonCode());
 
-        // 5. Actor resolution (stable actor model)
+        // 5. Actor resolution (stable actor model, required actorType)
         String actorType = command.actorType();
-        if (actorType == null) {
-            actorType = command.actorId() != null ? "ADMIN" : "SYSTEM";
-        }
-        if (!"ADMIN".equals(actorType) && !"SYSTEM".equals(actorType)) {
-            LOGGER.warn("Rejecting audit event {} with invalid actorType: {}", command.eventId(), actorType);
+        if (actorType == null || (!"ADMIN".equals(actorType) && !"SYSTEM".equals(actorType))) {
+            LOGGER.warn("Rejecting audit event {} with missing or invalid actorType: {}", command.eventId(), actorType);
             return false;
         }
         if ("SYSTEM".equals(actorType) && command.actorId() != null) {
@@ -226,7 +218,21 @@ public class AdministrationAuditIngestionService {
             }
         }
 
-        // 6. Target & Tombstone resolution (never fabricate fake eventId tombstone)
+        // 6. Target & Tombstone consistency & resolution (fail-closed, never fabricate fake eventId tombstone)
+        if (command.targetIdentifier() != null) {
+            String target = command.targetIdentifier().trim();
+            if (target.startsWith("account:")) {
+                if (command.targetAccountId() == null || !target.equals("account:" + command.targetAccountId())) {
+                    LOGGER.warn("Rejecting audit event {} with contradictory targetAccountId and targetIdentifier: targetAccountId={}, targetIdentifier={}",
+                            command.eventId(), command.targetAccountId(), command.targetIdentifier());
+                    return false;
+                }
+            } else if (!target.startsWith("tombstone:")) {
+                LOGGER.warn("Rejecting audit event {} with invalid targetIdentifier shape: {}", command.eventId(), target);
+                return false;
+            }
+        }
+
         UUID resolvedAccountId = null;
         String subjectReferenceHash = null;
 
@@ -237,16 +243,7 @@ public class AdministrationAuditIngestionService {
             }
         } else if (command.targetIdentifier() != null) {
             String target = command.targetIdentifier().trim();
-            if (target.startsWith("account:")) {
-                try {
-                    UUID id = UUID.fromString(target.substring("account:".length()));
-                    subjectReferenceHash = sha256Hex(id.toString());
-                    if (accountRepository.existsById(id)) {
-                        resolvedAccountId = id;
-                    }
-                } catch (IllegalArgumentException ignored) {
-                }
-            } else if (target.startsWith("tombstone:")) {
+            if (target.startsWith("tombstone:")) {
                 String hash = target.substring("tombstone:".length());
                 if (hash.matches("^[0-9a-f]{64}$")) {
                     subjectReferenceHash = hash;

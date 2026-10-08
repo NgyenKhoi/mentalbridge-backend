@@ -26,6 +26,13 @@ delivery, or SupportPlan state.
 | Consented view/dashboard | Show the specialist's current Consultation-owned workload; add separately authorized owner projections only when required | Profile eligibility fails closed; every metric exposes source/freshness; no health-data fabrication, cross-service database query, or remote call inside transaction |
 | Review/moderation | One review after completed appointment; owner applies reviewed action | Participant/completion verified; duplicate rejected; evidence minimized; action/history auditable |
 
+MB-635 adds a private approved-profile amendment workflow under the existing
+specialist profile feature. Consultation keeps serving the last approved content
+until ADMIN promotion atomically updates it. Approved-content version history
+and exact amendment revision/review provenance are append-only; normal amendments
+never modify appointments/credits/availability. See
+[ADR 0033](../adr/0033-reviewed-specialist-profile-amendment.md).
+
 ## Implementation design
 
 - Feature slices: `specialists`, `discovery`, `matching`, `billing`, `credits`,

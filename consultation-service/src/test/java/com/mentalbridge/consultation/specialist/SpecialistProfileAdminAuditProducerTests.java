@@ -3,6 +3,7 @@ package com.mentalbridge.consultation.specialist;
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
 import static org.mockito.ArgumentMatchers.any;
+import static org.mockito.ArgumentMatchers.anyString;
 import static org.mockito.ArgumentMatchers.eq;
 import static org.mockito.Mockito.mock;
 import static org.mockito.Mockito.never;
@@ -20,7 +21,6 @@ import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 import org.mockito.ArgumentCaptor;
 import org.springframework.beans.factory.ObjectProvider;
-import org.springframework.context.ApplicationEventPublisher;
 import org.springframework.kafka.core.KafkaTemplate;
 
 import com.fasterxml.jackson.databind.JsonNode;
@@ -34,7 +34,8 @@ class SpecialistProfileAdminAuditProducerTests {
 	private SpecialistProfileRepository profiles;
 	private SpecialistProfileStatusHistoryRepository history;
 	private SpecialistSuspensionEffects suspensionEffects;
-	private ApplicationEventPublisher eventPublisher;
+	private ApprovedProfileVersionRepository approvedVersions;
+	private ConsultationAdminAuditOutbox auditOutbox;
 	private SpecialistProfileService service;
 	private ObjectMapper objectMapper;
 
@@ -43,7 +44,8 @@ class SpecialistProfileAdminAuditProducerTests {
 		profiles = mock(SpecialistProfileRepository.class);
 		history = mock(SpecialistProfileStatusHistoryRepository.class);
 		suspensionEffects = mock(SpecialistSuspensionEffects.class);
-		eventPublisher = mock(ApplicationEventPublisher.class);
+		approvedVersions = mock(ApprovedProfileVersionRepository.class);
+		auditOutbox = mock(ConsultationAdminAuditOutbox.class);
 		objectMapper = new ObjectMapper().findAndRegisterModules();
 
 		service = new SpecialistProfileService(
@@ -51,7 +53,8 @@ class SpecialistProfileAdminAuditProducerTests {
 				history,
 				suspensionEffects,
 				Clock.fixed(NOW, ZoneOffset.UTC),
-				eventPublisher
+				approvedVersions,
+				auditOutbox
 		);
 	}
 
@@ -67,7 +70,7 @@ class SpecialistProfileAdminAuditProducerTests {
 		service.approve(specialistId, adminId, profile.version(), correlationId);
 
 		var captor = ArgumentCaptor.forClass(ConsultationAdminAuditEvent.class);
-		verify(eventPublisher).publishEvent(captor.capture());
+		verify(auditOutbox).record(anyString(), captor.capture());
 
 		var event = captor.getValue();
 		assertThat(event.eventId()).isNotNull();
@@ -108,7 +111,7 @@ class SpecialistProfileAdminAuditProducerTests {
 		service.reject(specialistId, adminId, profile.version(), SpecialistDecisionReasonCode.PROFILE_INFORMATION_INCOMPLETE, correlationId);
 
 		var captor = ArgumentCaptor.forClass(ConsultationAdminAuditEvent.class);
-		verify(eventPublisher).publishEvent(captor.capture());
+		verify(auditOutbox).record(anyString(), captor.capture());
 
 		var event = captor.getValue();
 		assertThat(event.eventType()).isEqualTo("consultation.specialist.rejected");
@@ -130,7 +133,7 @@ class SpecialistProfileAdminAuditProducerTests {
 		service.suspend(specialistId, adminId, profile.version(), SpecialistDecisionReasonCode.POLICY_VIOLATION, correlationId);
 
 		var captor = ArgumentCaptor.forClass(ConsultationAdminAuditEvent.class);
-		verify(eventPublisher).publishEvent(captor.capture());
+		verify(auditOutbox).record(anyString(), captor.capture());
 
 		var event = captor.getValue();
 		assertThat(event.eventType()).isEqualTo("consultation.specialist.suspended");
@@ -145,14 +148,14 @@ class SpecialistProfileAdminAuditProducerTests {
 		var adminId = UUID.randomUUID();
 		var correlationId = UUID.randomUUID();
 		var profile = approvedProfile(specialistId);
-		profile.suspend(adminId, SpecialistDecisionReasonCode.POLICY_VIOLATION, NOW.minusSeconds(100));
+		profile.suspend(adminId, SpecialistDecisionReasonCode.QUALITY_REVIEW_REQUIRED, NOW.minusSeconds(600));
 
 		when(profiles.findByIdForUpdate(specialistId)).thenReturn(Optional.of(profile));
 
 		service.restore(specialistId, adminId, profile.version(), correlationId);
 
 		var captor = ArgumentCaptor.forClass(ConsultationAdminAuditEvent.class);
-		verify(eventPublisher).publishEvent(captor.capture());
+		verify(auditOutbox).record(anyString(), captor.capture());
 
 		var event = captor.getValue();
 		assertThat(event.eventType()).isEqualTo("consultation.specialist.restored");
@@ -162,18 +165,18 @@ class SpecialistProfileAdminAuditProducerTests {
 	}
 
 	@Test
-	void rollbackOrErrorDoesNotEmitAuditEvent() {
+	void rollbackDoesNotEmitAuditFact() {
 		var specialistId = UUID.randomUUID();
 		var adminId = UUID.randomUUID();
 		var profile = submittedProfile(specialistId);
 
 		when(profiles.findByIdForUpdate(specialistId)).thenReturn(Optional.of(profile));
 
-		// Version mismatch throws exception
-		assertThatThrownBy(() -> service.approve(specialistId, adminId, 99999L, UUID.randomUUID()))
+		// Calling approve with wrong expectedVersion throws Precondition Failed
+		assertThatThrownBy(() -> service.approve(specialistId, adminId, profile.version() + 99L, UUID.randomUUID()))
 				.isInstanceOf(ApiException.class);
 
-		verify(eventPublisher, never()).publishEvent(any());
+		verify(auditOutbox, never()).record(anyString(), any());
 	}
 
 	@Test
@@ -187,40 +190,7 @@ class SpecialistProfileAdminAuditProducerTests {
 		// Already approved: returns view without emitting new event
 		service.approve(specialistId, adminId, profile.version(), UUID.randomUUID());
 
-		verify(eventPublisher, never()).publishEvent(any());
-	}
-
-	@Test
-	@SuppressWarnings("unchecked")
-	void publisherSendsToKafkaTopic() {
-		KafkaTemplate<String, String> kafkaTemplate = mock(KafkaTemplate.class);
-		ObjectProvider<KafkaTemplate<String, String>> provider = mock(ObjectProvider.class);
-		when(provider.getIfAvailable()).thenReturn(kafkaTemplate);
-
-		var publisher = new ConsultationAdminAuditPublisher(provider, objectMapper, "mentalbridge.admin.audit-event.v1");
-
-		var specialistId = UUID.randomUUID();
-		var event = new ConsultationAdminAuditEvent(
-				UUID.randomUUID(),
-				"consultation.specialist.approved",
-				NOW,
-				"consultation-service",
-				"1.0",
-				"CONSULTATION",
-				"SPECIALIST_REVIEW",
-				UUID.randomUUID(),
-				"ADMIN",
-				"SPECIALIST_APPROVED",
-				"SUCCEEDED",
-				null,
-				UUID.randomUUID(),
-				specialistId,
-				"account:" + specialistId
-		);
-
-		publisher.onSpecialistAdminAuditEvent(event);
-
-		verify(kafkaTemplate).send(eq("mentalbridge.admin.audit-event.v1"), eq(specialistId.toString()), any(String.class));
+		verify(auditOutbox, never()).record(anyString(), any());
 	}
 
 	private SpecialistProfileEntity submittedProfile(UUID specialistId) {

@@ -16,6 +16,7 @@ import {
   UnprocessableEntityException,
   UseGuards,
 } from '@nestjs/common';
+import { randomUUID } from 'node:crypto';
 import type { Response } from 'express';
 import { ZodError } from 'zod';
 
@@ -93,9 +94,10 @@ export class SafetyDirectoryController {
     @CurrentUser() user: AuthenticatedUser,
     @Headers('x-correlation-id') correlationId?: string,
   ): Promise<SafetyDirectoryAdminEntry> {
+    const effectiveCorrelationId = this.effectiveCorrelationId(correlationId);
     const result = await this.service.review(this.entryId(entryId), this.version(versionValue), {
       actorId: user.accountId,
-      correlationId,
+      correlationId: effectiveCorrelationId,
     });
     return this.requireMutation(result);
   }
@@ -109,15 +111,23 @@ export class SafetyDirectoryController {
     @CurrentUser() user: AuthenticatedUser,
     @Headers('x-correlation-id') correlationId?: string,
   ): Promise<SafetyDirectoryAdminEntry> {
+    const effectiveCorrelationId = this.effectiveCorrelationId(correlationId);
     const result = await this.service.deactivate(
       this.entryId(entryId),
       this.version(versionValue),
       {
         actorId: user.accountId,
-        correlationId,
+        correlationId: effectiveCorrelationId,
       },
     );
     return this.requireMutation(result);
+  }
+
+  private effectiveCorrelationId(supplied?: string): string {
+    if (supplied && UUID_RE.test(supplied)) {
+      return supplied;
+    }
+    return randomUUID();
   }
 
   private parseWrite(body: unknown): SafetyDirectoryEntryWrite {

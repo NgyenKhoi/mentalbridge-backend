@@ -916,7 +916,8 @@ CREATE TABLE consultation.specialist_profile (
     decision_reason_code varchar(64),
     created_at timestamptz NOT NULL,
     updated_at timestamptz NOT NULL,
-    version bigint NOT NULL
+    version bigint NOT NULL,
+    published_version bigint NOT NULL
 );
 
 CREATE TABLE consultation.specialist_profile_support_area (
@@ -939,6 +940,50 @@ CREATE TABLE consultation.specialist_profile_status_history (
     actor_role varchar(16) NOT NULL,
     reason_code varchar(64),
     occurred_at timestamptz NOT NULL
+);
+
+CREATE TABLE consultation.specialist_profile_approved_version (
+    id uuid PRIMARY KEY,
+    specialist_account_id uuid NOT NULL REFERENCES consultation.specialist_profile(account_id),
+    published_version bigint NOT NULL,
+    profile_snapshot jsonb NOT NULL,
+    approved_by uuid NOT NULL,
+    approved_at timestamptz NOT NULL,
+    source_amendment_id uuid,
+    UNIQUE (specialist_account_id, published_version)
+);
+
+CREATE TABLE consultation.specialist_profile_amendment (
+    id uuid PRIMARY KEY,
+    specialist_account_id uuid NOT NULL REFERENCES consultation.specialist_profile(account_id),
+    base_published_version bigint NOT NULL,
+    status varchar(24) NOT NULL,
+    proposed_profile jsonb NOT NULL,
+    submitted_at timestamptz,
+    reviewed_at timestamptz,
+    reviewed_by uuid,
+    reason_code varchar(64),
+    created_at timestamptz NOT NULL,
+    updated_at timestamptz NOT NULL,
+    version bigint NOT NULL,
+    FOREIGN KEY (specialist_account_id, base_published_version)
+        REFERENCES consultation.specialist_profile_approved_version(specialist_account_id, published_version)
+);
+
+ALTER TABLE consultation.specialist_profile_approved_version ADD FOREIGN KEY (source_amendment_id)
+    REFERENCES consultation.specialist_profile_amendment(id);
+
+CREATE TABLE consultation.specialist_profile_amendment_history (
+    id uuid PRIMARY KEY,
+    amendment_id uuid NOT NULL REFERENCES consultation.specialist_profile_amendment(id),
+    amendment_version bigint NOT NULL,
+    status varchar(24) NOT NULL,
+    proposed_profile jsonb NOT NULL,
+    actor_account_id uuid NOT NULL,
+    actor_role varchar(16) NOT NULL,
+    reason_code varchar(64),
+    occurred_at timestamptz NOT NULL,
+    UNIQUE (amendment_id, amendment_version)
 );
 
 CREATE TABLE consultation.current_service_entitlement (
@@ -1303,6 +1348,20 @@ CREATE TABLE consultation.appointment_outbox_event (
     next_attempt_at timestamptz,
     created_at timestamptz NOT NULL,
     UNIQUE (appointment_id, appointment_version)
+);
+
+CREATE TABLE consultation.consultation_admin_audit_outbox (
+    id uuid PRIMARY KEY,
+    deduplication_key varchar(200) NOT NULL UNIQUE,
+    event_type varchar(120) NOT NULL,
+    correlation_id uuid NOT NULL,
+    target_account_id uuid,
+    payload jsonb NOT NULL,
+    occurred_at timestamptz NOT NULL,
+    published_at timestamptz,
+    attempt_count integer NOT NULL DEFAULT 0,
+    next_attempt_at timestamptz,
+    created_at timestamptz NOT NULL
 );
 
 /* ========================================================================== */
@@ -1852,6 +1911,19 @@ CREATE TABLE content.safety_directory_area_alias (
     canonical boolean NOT NULL,
     seed_key varchar(128) UNIQUE,
     created_at timestamptz NOT NULL
+);
+
+CREATE TABLE content.content_admin_audit_outbox (
+    id uuid PRIMARY KEY,
+    deduplication_key varchar(200) NOT NULL UNIQUE,
+    event_type varchar(120) NOT NULL,
+    correlation_id uuid NOT NULL,
+    payload jsonb NOT NULL,
+    occurred_at timestamptz NOT NULL,
+    published_at timestamptz,
+    attempt_count integer NOT NULL DEFAULT 0,
+    next_attempt_at timestamptz,
+    created_at timestamptz NOT NULL DEFAULT now()
 );
 
 /*

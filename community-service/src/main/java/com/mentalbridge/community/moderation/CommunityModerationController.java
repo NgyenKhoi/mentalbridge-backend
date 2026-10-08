@@ -86,8 +86,9 @@ class CommunityModerationController {
 			@RequestHeader("Idempotency-Key") String idempotencyKey,
 			@RequestHeader(name = "X-Correlation-Id", required = false) UUID correlationId,
 			@RequestBody CreateModerationActionRequest request) {
+		UUID effectiveCorrelationId = correlationId != null ? correlationId : UUID.randomUUID();
 		return ResponseEntity.status(HttpStatus.CREATED)
-				.body(moderation.act(subject(jwt), caseId, idempotencyKey, request, correlationId));
+				.body(moderation.act(subject(jwt), caseId, idempotencyKey, request, effectiveCorrelationId));
 	}
 
 	private UUID subject(Jwt jwt) {

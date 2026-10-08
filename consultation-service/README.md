@@ -207,6 +207,25 @@ account. Responses identify Consultation as the authoritative source and mark
 the data state explicitly. The operation is available only to `ADMIN` and is
 not a substitute for any owner or specialist command endpoint.
 
+## Implemented MB-593 endpoint
+
+- `GET /api/v1/specialist/analytics?from={instant}&to={instant}`
+
+The authenticated specialist receives Consultation-owned operational facts for
+an explicit half-open period, defaulting to the previous 30 days and capped at
+366 days. A requested end up to 30 seconds ahead is clamped to Consultation's
+server time to tolerate cross-service clock skew; materially future ends remain
+invalid. Appointment lifecycle totals come from append-only transition facts,
+so a later cancellation or reschedule does not erase an earlier request or
+acceptance. Slot utilization uses slots scheduled in the period and preserves
+whether a slot was ever accepted. Current MB-364 rating aggregates are marked
+with their own as-of time. MB-516 earning and successful payout facts are
+summed within the same period without demo amounts. Suspended specialists retain
+their own historical analytics with an explicit `SUSPENDED` operational state;
+profiles that were never approved receive blocked sections. No user identity,
+health outcome, Journal, emotion, assessment, adherence, recovery, chat, or
+private-note data is exposed.
+
 ## Implemented MB-592 endpoint
 
 - `GET /internal/v1/specialist/client-relationships`
@@ -243,9 +262,39 @@ Updates and decisions use the returned `ETag` in `If-Match`. Editing a
 submitted pending profile withdraws it from the review queue until the
 specialist explicitly submits it again. Rejected profiles retain their reason
 while being edited and require explicit resubmission. Approved and suspended
-profiles are immutable. Rejection and suspension accept only their documented
+profiles cannot be directly edited. MB-635 permits approved specialists to use a
+separate reviewed amendment without changing the current public profile.
+Rejection and suspension accept only their documented
 stable reason sets. A suspension response reports the exact number of future
 slots withdrawn, appointments cancelled, and credits released.
+
+## MB-635 reviewed profile amendments
+
+- `GET /api/v1/specialist-profile/amendments/current`: live profile plus latest private amendment.
+- `POST /api/v1/specialist-profile/amendments`: start/reuse a draft with the live profile ETag.
+- `PUT /api/v1/specialist-profile/amendments/{amendmentId}`: save the six proposed fields.
+- `POST /api/v1/specialist-profile/amendments/{amendmentId}/submit|resubmit`: explicit review submission.
+- `GET /api/v1/admin/specialist-profiles/amendments?limit=50&page=0`: bounded pending-review queue, separate from initial submissions.
+- `GET /api/v1/admin/specialist-profiles/amendments/{amendmentId}`: proposed versus approved values.
+- `POST /api/v1/admin/specialist-profiles/amendments/{amendmentId}/approve|reject`: version-checked ADMIN decision.
+
+Commands other than start use the amendment ETag. Approval and the immutable
+approved snapshot/history commit together. Rejection and draft operations never
+change the live profile, appointments or availability. Suspension is serialized
+with these commands and blocks them. Review provenance includes each exact
+proposed payload; no unrestricted review notes or verification documents are stored.
+
+Apply migration 018 before owner rollout. It backfills one approved-content
+baseline for existing approved/suspended profiles without inventing older content
+versions. Drain old owner instances before enabling amendment writes. Never run
+the documentation logical schema against a database. See
+[ADR 0033](../docs/adr/0033-reviewed-specialist-profile-amendment.md).
+
+Focused owner verification:
+
+```powershell
+.\mvnw.cmd '-Dtest=ProfileAmendmentIntegrationTests,SpecialistProfileFlowIntegrationTests,ConsultationOpenApiContractTests,AccountLifecycleConsumerTests' test
+```
 
 ## Run and test
 
