@@ -67,7 +67,7 @@ class CommunityAdminAuditProducerTests {
 		verify(outboxStmt).param(eq("payload"), payloadCaptor.capture());
 		verify(outboxStmt).param(eq("dedupKey"), dedupKeyCaptor.capture());
 
-		assertThat(dedupKeyCaptor.getValue()).isEqualTo("audit:moderation:" + caseId + ":1:REMOVE");
+		assertThat(dedupKeyCaptor.getValue()).isEqualTo("audit:moderation:" + caseId + ":2:REMOVE");
 
 		JsonNode json = objectMapper.readTree(payloadCaptor.getValue());
 		assertThat(json.path("eventId").asText()).isNotBlank();
@@ -286,6 +286,11 @@ class CommunityAdminAuditProducerTests {
 		when(jdbc.sql(contains("update community_comment"))).thenReturn(updateStmt);
 		when(jdbc.sql(contains("insert into community_moderation_action"))).thenReturn(updateStmt);
 		when(jdbc.sql(contains("update community_moderation_case set state = 'RESOLVED'"))).thenReturn(updateStmt);
+
+		var accessRestrictionStmt = mock(JdbcClient.StatementSpec.class);
+		when(jdbc.sql(contains("insert into community_access_restriction"))).thenReturn(accessRestrictionStmt);
+		when(accessRestrictionStmt.param(any(String.class), any())).thenReturn(accessRestrictionStmt);
+		when(accessRestrictionStmt.update()).thenReturn(1);
 
 		// 5. Account subject lookup from community_profile
 		var profileStmt = mock(JdbcClient.StatementSpec.class);
