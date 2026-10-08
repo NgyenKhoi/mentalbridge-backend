@@ -1,13 +1,4 @@
-import {
-  ConflictException,
-  Inject,
-  Injectable,
-  ServiceUnavailableException,
-} from '@nestjs/common';
-import {
-  CONTENT_ADMIN_AUDIT_PUBLISHER_TOKEN,
-  type ContentAdminAuditPublisher,
-} from '../audit/content-admin-audit.publisher.js';
+import { ConflictException, Inject, Injectable, ServiceUnavailableException } from '@nestjs/common';
 
 import { SAFETY_DIRECTORY_REPOSITORY_TOKEN } from '../application.tokens.js';
 import type { SafetyDirectoryEntryWrite, SafetyDirectoryLookup } from './safety-directory.dto.js';
@@ -71,8 +62,6 @@ export class SafetyDirectoryService {
   constructor(
     @Inject(SAFETY_DIRECTORY_REPOSITORY_TOKEN)
     private readonly repository: SafetyDirectoryRepository,
-    @Inject(CONTENT_ADMIN_AUDIT_PUBLISHER_TOKEN)
-    private readonly auditPublisher: ContentAdminAuditPublisher,
   ) {}
 
   async listAdmin(): Promise<SafetyDirectoryAdminEntry[]> {

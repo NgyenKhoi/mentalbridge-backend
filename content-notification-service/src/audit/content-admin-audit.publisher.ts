@@ -56,11 +56,20 @@ export class KafkaContentAdminAuditPublisher
 
   private relayTimer?: NodeJS.Timeout;
   private isPublishing = false;
+  private isConnecting = false;
 
-  async onModuleInit(): Promise<void> {
+  private async ensureProducer(): Promise<Producer | null> {
+    if (this.producer) {
+      return this.producer;
+    }
     const bootstrapServers = this.configuration.KAFKA_BOOTSTRAP_SERVERS;
-    if (!bootstrapServers) return;
-
+    if (!bootstrapServers) {
+      return null;
+    }
+    if (this.isConnecting) {
+      return null;
+    }
+    this.isConnecting = true;
     try {
       const kafka = new Kafka({
         clientId: 'content-notification-service-audit',
@@ -69,16 +78,28 @@ export class KafkaContentAdminAuditPublisher
           .map((b) => b.trim())
           .filter(Boolean),
       });
-      this.producer = kafka.producer({ idempotent: true });
-      await this.producer.connect();
-      await this.publishDue();
-      this.startRelay();
+      const producer = kafka.producer({ idempotent: true });
+      await producer.connect();
+      this.producer = producer;
+      return this.producer;
     } catch (error) {
       this.logger.warn({
         event: 'audit_producer_connect_failed',
         error: (error as Error).message,
       });
+      return null;
+    } finally {
+      this.isConnecting = false;
     }
+  }
+
+  async onModuleInit(): Promise<void> {
+    const bootstrapServers = this.configuration.KAFKA_BOOTSTRAP_SERVERS;
+    if (!bootstrapServers) return;
+
+    this.startRelay();
+    await this.ensureProducer();
+    await this.publishDue();
   }
 
   private startRelay(): void {
@@ -96,16 +117,18 @@ export class KafkaContentAdminAuditPublisher
     }
     if (this.producer) {
       await this.producer.disconnect();
+      this.producer = undefined;
     }
   }
 
   async publish(event: ContentAdminAuditEvent): Promise<void> {
-    if (!this.producer) {
+    const producer = await this.ensureProducer();
+    if (!producer) {
       this.logger.debug({ event: 'audit_producer_unavailable', eventId: event.eventId });
       return;
     }
     try {
-      await this.producer.send({
+      await producer.send({
         topic: this.topic,
         messages: [
           {
@@ -123,8 +146,10 @@ export class KafkaContentAdminAuditPublisher
     }
   }
 
-  private async publishDue(): Promise<void> {
-    if (!this.db || !this.producer) return;
+  async publishDue(): Promise<void> {
+    if (!this.db) return;
+    const producer = await this.ensureProducer();
+    if (!producer) return;
     if (this.isPublishing) return;
     this.isPublishing = true;
     try {
@@ -138,7 +163,7 @@ export class KafkaContentAdminAuditPublisher
       for (const row of result.rows) {
         const event = row.payload;
         try {
-          await this.producer.send({
+          await producer.send({
             topic: this.topic,
             messages: [
               {
@@ -167,8 +192,11 @@ export class KafkaContentAdminAuditPublisher
           );
         }
       }
-    } catch {
-      // Outbox table may not exist in non-migrated test environments
+    } catch (dbError) {
+      this.logger.warn({
+        event: 'audit_outbox_query_failed',
+        error: (dbError as Error).message,
+      });
     } finally {
       this.isPublishing = false;
     }

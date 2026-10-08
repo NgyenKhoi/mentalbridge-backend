@@ -5,10 +5,6 @@ import {
   ServiceUnavailableException,
   UnprocessableEntityException,
 } from '@nestjs/common';
-import {
-  CONTENT_ADMIN_AUDIT_PUBLISHER_TOKEN,
-  type ContentAdminAuditPublisher,
-} from '../audit/content-admin-audit.publisher.js';
 import type {
   ResourceRepository,
   ListResourcesQuery,
@@ -168,8 +164,6 @@ export class ResourceService {
     private readonly repository: ResourceRepository,
     @Inject(E2E_OUTAGE_STATE_TOKEN)
     private readonly outageState: E2eOutageState,
-    @Inject(CONTENT_ADMIN_AUDIT_PUBLISHER_TOKEN)
-    private readonly auditPublisher: ContentAdminAuditPublisher,
   ) {}
 
   async listPublished(options: ListResourcesOptions): Promise<ResourceListResult> {

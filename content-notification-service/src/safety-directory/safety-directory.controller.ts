@@ -62,11 +62,15 @@ export class SafetyDirectoryController {
     @Body() body: unknown,
     @Headers('idempotency-key') idempotencyKey: string | undefined,
     @CurrentUser() user: AuthenticatedUser,
+    @Headers('x-correlation-id') correlationId?: string,
   ): Promise<SafetyDirectoryAdminEntry> {
     if (!idempotencyKey || !/^[A-Za-z0-9_-]{1,128}$/.test(idempotencyKey)) {
       throw new BadRequestException('Idempotency-Key header is required');
     }
-    return this.service.create(this.parseWrite(body), idempotencyKey, { actorId: user.accountId });
+    return this.service.create(this.parseWrite(body), idempotencyKey, {
+      actorId: user.accountId,
+      correlationId: this.effectiveCorrelationId(correlationId),
+    });
   }
 
   @Patch('admin/entries/:entryId')

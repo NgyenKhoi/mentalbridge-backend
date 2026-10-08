@@ -8,7 +8,7 @@ import type { SafetyDirectoryCoverage, SafetyDirectoryRow } from './safety-direc
 
 export interface SafetyDirectoryCommandContext {
   readonly actorId: string;
-  readonly correlationId?: string;
+  readonly correlationId: string;
 }
 
 type DirectoryDatabaseRow = Omit<SafetyDirectoryRow, 'record_version' | 'coverage'> & {
@@ -213,7 +213,7 @@ export class SafetyDirectoryRepository {
         [id, row.record_version, context.actorId, row.source_reference],
       );
 
-      const correlationId = context.correlationId ?? randomUUID();
+      const correlationId = context.correlationId;
       const auditEvent = {
         eventId: randomUUID(),
         eventType: 'content.safety-directory.reviewed',
@@ -279,7 +279,7 @@ export class SafetyDirectoryRepository {
         [id, row.record_version, context.actorId, row.source_reference],
       );
 
-      const correlationId = context.correlationId ?? randomUUID();
+      const correlationId = context.correlationId;
       const auditEvent = {
         eventId: randomUUID(),
         eventType: 'content.safety-directory.deactivated',
