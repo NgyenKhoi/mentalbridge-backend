@@ -11,7 +11,7 @@ paths:
     get:
       operationId: getConsultationProductJourneyMetrics
       summary: Read privacy-bounded appointment journey aggregates
-      description: Counts appointments requested in the explicit window and whether that same request cohort ever reached confirmed or completed. No participant, brief, summary, chat, clinical, or private-note data is returned.
+      description: Counts request, confirmation, and completion events whose authoritative timestamps fall inside the explicit half-open window. No participant, brief, summary, chat, clinical, or private-note data is returned.
       security: [{ bearerAuth: [] }]
       parameters:
         - name: from
@@ -24,7 +24,7 @@ paths:
           schema: { type: string, format: date-time }
       responses:
         '200':
-          description: Aggregate lifecycle facts for the requested appointment cohort
+          description: Aggregate appointment lifecycle events recorded inside the requested window
           content:
             application/json:
               schema: { $ref: '#/components/schemas/ConsultationProductJourneyMetrics' }
@@ -1538,7 +1538,7 @@ components:
       required: [source, sourceVersion, asOf, consultationsRequested, consultationsConfirmed, consultationsCompleted]
       properties:
         source: { type: string, const: CONSULTATION }
-        sourceVersion: { type: string, const: consultation-product-journey-v1 }
+        sourceVersion: { type: string, const: consultation-product-journey-v2 }
         asOf: { type: string, format: date-time }
         consultationsRequested: { type: integer, format: int64, minimum: 0 }
         consultationsConfirmed: { type: integer, format: int64, minimum: 0 }

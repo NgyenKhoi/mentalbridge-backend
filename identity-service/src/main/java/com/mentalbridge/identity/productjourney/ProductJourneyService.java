@@ -1,7 +1,6 @@
 package com.mentalbridge.identity.productjourney;
 
 import java.math.BigDecimal;
-import java.math.RoundingMode;
 import java.time.Clock;
 import java.time.Duration;
 import java.time.Instant;
@@ -30,14 +29,13 @@ public class ProductJourneyService {
 	public Response metrics(Instant from, Instant to, String bearerToken) {
 		validate(from, to, bearerToken);
 		Instant identityAsOf = clock.instant();
-		long registered = accounts.countRegisteredBetween(from, to);
-		long active = accounts.countCurrentlyActiveRegisteredBetween(from, to);
+		long registered = accounts.countUserRegistrationsBetween(from, to);
+		long activated = accounts.countUserActivationsBetween(from, to);
 		var sourceStates = new ArrayList<SourceState>();
 		var stages = new ArrayList<Stage>();
-		sourceStates.add(SourceState.available("IDENTITY", "identity-account-projection-v1", identityAsOf));
-		stages.add(Stage.available("REGISTERED_ACCOUNTS", "IDENTITY", registered, null));
-		stages.add(Stage.available("ACTIVE_REGISTERED_ACCOUNTS", "IDENTITY", active,
-				rate(active, registered, "REGISTERED_ACCOUNTS")));
+		sourceStates.add(SourceState.available("IDENTITY", "identity-account-projection-v2", identityAsOf));
+		stages.add(Stage.available("USER_ACCOUNTS_REGISTERED", "IDENTITY", registered, null));
+		stages.add(Stage.available("USER_ACCOUNTS_ACTIVATED", "IDENTITY", activated, null));
 
 		try {
 			var care = sources.care(from, to, bearerToken);
@@ -62,10 +60,10 @@ public class ProductJourneyService {
 			sourceStates.add(SourceState.available("CONSULTATION", consultation.sourceVersion(), consultation.asOf()));
 			long requested = consultation.consultationsRequested();
 			stages.add(Stage.available("CONSULTATIONS_REQUESTED", "CONSULTATION", requested, null));
-			stages.add(Stage.available("CONSULTATIONS_CONFIRMED", "CONSULTATION", consultation.consultationsConfirmed(),
-					rate(consultation.consultationsConfirmed(), requested, "CONSULTATIONS_REQUESTED")));
-			stages.add(Stage.available("CONSULTATIONS_COMPLETED", "CONSULTATION", consultation.consultationsCompleted(),
-					rate(consultation.consultationsCompleted(), requested, "CONSULTATIONS_REQUESTED")));
+			stages.add(Stage.available("CONSULTATIONS_CONFIRMED", "CONSULTATION",
+					consultation.consultationsConfirmed(), null));
+			stages.add(Stage.available("CONSULTATIONS_COMPLETED", "CONSULTATION",
+					consultation.consultationsCompleted(), null));
 		}
 		catch (RuntimeException exception) {
 			sourceStates.add(SourceState.unavailable("CONSULTATION"));
@@ -86,16 +84,9 @@ public class ProductJourneyService {
 
 	private boolean validConsultation(ProductJourneySourceClient.ConsultationMetrics value) {
 		return value != null && "CONSULTATION".equals(value.source())
-				&& "consultation-product-journey-v1".equals(value.sourceVersion()) && value.asOf() != null
+				&& "consultation-product-journey-v2".equals(value.sourceVersion()) && value.asOf() != null
 				&& value.consultationsRequested() >= 0 && value.consultationsConfirmed() >= 0
-				&& value.consultationsCompleted() >= 0 && value.consultationsConfirmed() <= value.consultationsRequested()
-				&& value.consultationsCompleted() <= value.consultationsRequested();
-	}
-
-	private Rate rate(long numerator, long denominator, String denominatorStage) {
-		if (denominator == 0) return null;
-		return new Rate(denominatorStage, BigDecimal.valueOf(numerator * 100.0 / denominator)
-				.setScale(1, RoundingMode.HALF_UP));
+				&& value.consultationsCompleted() >= 0;
 	}
 
 	private void validate(Instant from, Instant to, String bearerToken) {
