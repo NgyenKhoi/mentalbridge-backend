@@ -274,6 +274,7 @@ slots withdrawn, appointments cancelled, and credits released.
 - `POST /api/v1/specialist-profile/amendments`: start/reuse a draft with the live profile ETag.
 - `PUT /api/v1/specialist-profile/amendments/{amendmentId}`: save the six proposed fields.
 - `POST /api/v1/specialist-profile/amendments/{amendmentId}/submit|resubmit`: explicit review submission.
+- `POST /api/v1/specialist-profile/amendments/{amendmentId}/cancel`: owner cancellation of an open amendment, retaining audit and public content.
 - `GET /api/v1/admin/specialist-profiles/amendments?limit=50&page=0`: bounded pending-review queue, separate from initial submissions.
 - `GET /api/v1/admin/specialist-profiles/amendments/{amendmentId}`: proposed versus approved values.
 - `POST /api/v1/admin/specialist-profiles/amendments/{amendmentId}/approve|reject`: version-checked ADMIN decision.
@@ -289,6 +290,11 @@ baseline for existing approved/suspended profiles without inventing older conten
 versions. Drain old owner instances before enabling amendment writes. Never run
 the documentation logical schema against a database. See
 [ADR 0033](../docs/adr/0033-reviewed-specialist-profile-amendment.md).
+
+The follow-up cancellation requires migration 019 before the updated owner
+starts and the 1.12.0 consumer to be deployed alongside it. `CANCELLED` is
+terminal; a new edit starts a fresh amendment from the public snapshot. The
+published profile and approved history are not reverted or deleted.
 
 Focused owner verification:
 

@@ -1,7 +1,7 @@
 openapi: 3.1.0
 info:
   title: MentalBridge Consultation Service API
-  version: 1.11.0
+  version: 1.12.0
   description: Consultation-owned specialist profile lifecycle, approved online discovery, service-plan entitlement and credit lookup, online availability, appointment requests, appointment-scoped chat eligibility and minimized completion evidence, auditable owner cancellation/reschedule/session outcomes, immutable user-visible session summaries and agreed next steps, evidence-backed specialist earnings, fake local payout reconciliation, credit reservation limits, and suspension outcomes.
 servers:
   - url: http://localhost:8082
@@ -31,7 +31,7 @@ paths:
     x-mentalbridge-status: implemented
     post:
       operationId: startOwnProfileAmendment
-      description: Requires the approved profile If-Match. Returns the existing non-approved amendment or starts a draft derived from the latest published profile. Does not mutate the public profile.
+      description: Requires the approved profile If-Match. Returns the existing open amendment or starts a draft derived from the latest published profile after approval or cancellation. Does not mutate the public profile.
       security: [{ bearerAuth: [] }]
       parameters:
         - $ref: '#/components/parameters/RequiredIfMatch'
@@ -54,7 +54,7 @@ paths:
     x-mentalbridge-status: implemented
     put:
       operationId: updateOwnProfileAmendment
-      description: Replaces the six proposed fields. Editing PENDING_REVIEW withdraws to DRAFT. REJECTED retains review feedback until explicit resubmission. Approved amendments are immutable.
+      description: Replaces the six proposed fields. Editing PENDING_REVIEW withdraws to DRAFT. REJECTED retains review feedback until explicit resubmission. Approved and cancelled amendments are immutable.
       security: [{ bearerAuth: [] }]
       parameters:
         - name: amendmentId
@@ -124,6 +124,33 @@ paths:
       responses:
         '200':
           description: Current authoritative result
+          headers:
+            ETag: { $ref: '#/components/headers/ProfileETag' }
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/ProfileAmendment' }
+        '400': { $ref: '#/components/responses/ValidationProblem' }
+        '401': { $ref: '#/components/responses/UnauthorizedProblem' }
+        '403': { $ref: '#/components/responses/ForbiddenProblem' }
+        '404': { $ref: '#/components/responses/NotFoundProblem' }
+        '409': { $ref: '#/components/responses/ConflictProblem' }
+        '412': { $ref: '#/components/responses/VersionProblem' }
+        '428': { $ref: '#/components/responses/VersionRequiredProblem' }
+  /api/v1/specialist-profile/amendments/{amendmentId}/cancel:
+    x-mentalbridge-status: implemented
+    post:
+      operationId: cancelOwnProfileAmendment
+      description: Only the owning approved specialist may cancel DRAFT, PENDING_REVIEW or REJECTED. Records terminal CANCELLED and an immutable audit revision, removes pending review, and preserves the published profile, appointments and availability. Clears current submission/review metadata; prior revisions retain it. Current resulting ETag replay is a no-op; stale ETag is 412. An approved amendment cannot be cancelled.
+      security: [{ bearerAuth: [] }]
+      parameters:
+        - name: amendmentId
+          in: path
+          required: true
+          schema: { type: string, format: uuid }
+        - $ref: '#/components/parameters/RequiredIfMatch'
+      responses:
+        '200':
+          description: Cancelled amendment retained for history
           headers:
             ETag: { $ref: '#/components/headers/ProfileETag' }
           content:
@@ -1638,7 +1665,7 @@ components:
         id: { type: string, format: uuid }
         specialistAccountId: { type: string, format: uuid }
         basePublishedVersion: { type: integer, format: int64, minimum: 1 }
-        status: { type: string, enum: [DRAFT, PENDING_REVIEW, REJECTED, APPROVED] }
+        status: { type: string, enum: [DRAFT, PENDING_REVIEW, REJECTED, APPROVED, CANCELLED] }
         proposedProfile: { $ref: '#/components/schemas/SpecialistProfileRequest' }
         submittedAt: { type: [string, 'null'], format: date-time }
         reviewedAt: { type: [string, 'null'], format: date-time }

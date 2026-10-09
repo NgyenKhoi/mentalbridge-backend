@@ -69,6 +69,15 @@ class ProfileAmendmentEntity {
 		updatedAt = now;
 	}
 
+	void cancel(Instant now) {
+		status = Status.CANCELLED;
+		submittedAt = null;
+		reviewedAt = null;
+		reviewedBy = null;
+		reasonCode = null;
+		updatedAt = now;
+	}
+
 	UUID id() { return id; }
 	UUID specialistAccountId() { return specialistAccountId; }
 	long basePublishedVersion() { return basePublishedVersion; }
@@ -82,5 +91,5 @@ class ProfileAmendmentEntity {
 	Instant updatedAt() { return updatedAt; }
 	long version() { return version; }
 
-	enum Status { DRAFT, PENDING_REVIEW, REJECTED, APPROVED }
+	enum Status { DRAFT, PENDING_REVIEW, REJECTED, APPROVED, CANCELLED }
 }

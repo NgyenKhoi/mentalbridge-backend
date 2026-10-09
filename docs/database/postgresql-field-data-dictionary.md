@@ -1120,7 +1120,7 @@ display data, never account credentials, verification files or health data.
 ### `consultation.specialist_profile_amendment`
 
 Separate private amendment to the approved public snapshot. At most one
-DRAFT/PENDING_REVIEW/REJECTED row per specialist; approved rows remain historical.
+DRAFT/PENDING_REVIEW/REJECTED row per specialist; approved and cancelled rows remain historical.
 Only owner SPECIALIST and ADMIN can read it. Every command locks the owner profile
 first and checks optimistic version; promotion additionally checks published base.
 
@@ -1129,12 +1129,12 @@ first and checks optimistic version; promotion additionally checks published bas
 | `id` | Immutable opaque UUID used by owner/admin amendment APIs. |
 | `specialist_account_id` | Local owning specialist profile FK; JWT subject determines owner access. |
 | `base_published_version` | Exact approved content sequence used to derive the draft; composite FK to approved history prevents nonexistent bases. |
-| `status` | DRAFT, PENDING_REVIEW, REJECTED or APPROVED amendment state; never replaces profile approval_status. |
+| `status` | DRAFT, PENDING_REVIEW, REJECTED, APPROVED or terminal CANCELLED amendment state; never replaces profile approval_status. Owner cancellation preserves the public profile and prior audit revisions, clears current submission/review metadata and frees the one-open-amendment constraint. |
 | `proposed_profile` | Authoritative six-field proposed JSON payload, validated like the initial profile. It is private until reviewed promotion. |
-| `submitted_at` | UTC latest explicit submission; null for DRAFT, cleared on pending-review edits. |
-| `reviewed_at` | UTC latest ADMIN amendment decision; null before review/after resubmission. |
-| `reviewed_by` | External Identity ADMIN UUID for latest decision, nullable before review/after resubmission. |
-| `reason_code` | Closed rejection reason only; retained while correcting REJECTED content, cleared on explicit resubmission. No unrestricted notes. |
+| `submitted_at` | UTC latest explicit submission; null for DRAFT/CANCELLED, cleared on pending-review edits or cancellation. |
+| `reviewed_at` | UTC latest ADMIN amendment decision; null before review, after resubmission or cancellation. Prior decisions remain in history. |
+| `reviewed_by` | External Identity ADMIN UUID for latest decision, nullable before review, after resubmission or cancellation. |
+| `reason_code` | Closed rejection reason only; retained while correcting REJECTED content, cleared on explicit resubmission or cancellation. No unrestricted notes. |
 | `created_at` | Immutable UTC draft creation time, used with id to select latest owner amendment. |
 | `updated_at` | UTC last persisted amendment change, distinct from public profile updated_at. |
 | `version` | Optimistic-lock counter in amendment ETag; stale edits/submissions/decisions return 412. |
