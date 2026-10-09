@@ -1,7 +1,7 @@
 openapi: 3.1.0
 info:
   title: MentalBridge Journal AI Service API
-  version: 1.7.0
+  version: 1.8.0
   description: Private journal CRUD, daily self-reported emotion check-ins with factual progress and a service-authorized note-free notification activity projection, consent-gated analysis, bounded Support Guide phrasing, and quota-governed AI Companion conversations.
 servers:
   - url: http://localhost:3000
@@ -885,7 +885,7 @@ components:
       required: [text, provider, model, promptVersion, schemaVersion]
       properties:
         text: { type: string, minLength: 1, maxLength: 1600 }
-        provider: { type: string, enum: [DETERMINISTIC_FAKE, GEMINI, OPENAI] }
+        provider: { type: string, enum: [DETERMINISTIC_FAKE, GEMINI, OPENAI, BEDROCK] }
         model: { type: string, minLength: 1, maxLength: 128 }
         promptVersion: { type: string, const: support-guide-phrasing-v1 }
         schemaVersion: { type: integer, const: 1 }
@@ -1552,7 +1552,7 @@ components:
         providerApprovalVersion: { type: string, minLength: 1, maxLength: 96 }
         provider:
           type: string
-          enum: [DETERMINISTIC_FAKE, GEMINI, OPENAI]
+          enum: [DETERMINISTIC_FAKE, GEMINI, OPENAI, BEDROCK]
         model: { type: string, minLength: 1, maxLength: 128 }
         promptVersion: { type: string, minLength: 1, maxLength: 96 }
         schemaVersion: { type: integer, const: 1 }
@@ -1691,7 +1691,7 @@ components:
         dataCoverage: { $ref: "#/components/schemas/LongitudinalDataCoverage" }
         provider:
           type: string
-          enum: [DETERMINISTIC_FAKE, GEMINI, OPENAI]
+          enum: [DETERMINISTIC_FAKE, GEMINI, OPENAI, BEDROCK]
         model: { type: string, minLength: 1, maxLength: 128 }
         promptVersion: { type: string, const: longitudinal-v1 }
         schemaVersion: { type: integer, const: 1 }
