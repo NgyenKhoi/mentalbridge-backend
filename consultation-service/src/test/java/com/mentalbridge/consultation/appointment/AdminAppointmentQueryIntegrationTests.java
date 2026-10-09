@@ -81,6 +81,35 @@ class AdminAppointmentQueryIntegrationTests extends ConsultationTestProperties {
 				.andExpect(status().isBadRequest()).andExpect(jsonPath("$.code").value("INVALID_ADMIN_APPOINTMENT_QUERY"));
 	}
 
+	@Test
+	void productJourneyCountsOnlyTheRequestedCohortAndItsLifecycleFacts() throws Exception {
+		var specialistId = approvedSpecialist();
+		var first = appointment(UUID.randomUUID(), specialistId, Instant.parse("2026-10-02T10:00:00Z"), "CONFIRMED");
+		appointment(UUID.randomUUID(), specialistId, Instant.parse("2026-10-03T10:00:00Z"), "REQUESTED");
+		jdbc.sql("""
+				insert into appointment_status_history
+				(id, appointment_id, from_status, to_status, changed_by, reason, changed_at)
+				values (:confirmedId, :appointmentId, 'REQUESTED', 'CONFIRMED', :actor, 'SPECIALIST_ACCEPTED', :at),
+				       (:completedId, :appointmentId, 'IN_PROGRESS', 'COMPLETED', :actor, 'SESSION_COMPLETED', :at)
+				""").param("confirmedId", UUID.randomUUID()).param("completedId", UUID.randomUUID())
+				.param("appointmentId", first).param("actor", specialistId)
+				.param("at", Timestamp.from(Instant.parse("2026-10-02T12:00:00Z"))).update();
+
+		mvc.perform(get("/api/v1/admin/product-journey-metrics").with(admin())
+				.param("from", "2026-09-01T00:00:00Z").param("to", "2026-10-09T00:00:00Z"))
+				.andExpect(status().isOk()).andExpect(jsonPath("$.source").value("CONSULTATION"))
+				.andExpect(jsonPath("$.sourceVersion").value("consultation-product-journey-v1"))
+				.andExpect(jsonPath("$.consultationsRequested").value(2))
+				.andExpect(jsonPath("$.consultationsConfirmed").value(1))
+				.andExpect(jsonPath("$.consultationsCompleted").value(1))
+				.andExpect(jsonPath("$.userAccountId").doesNotExist())
+				.andExpect(jsonPath("$.chat").doesNotExist());
+
+		mvc.perform(get("/api/v1/admin/product-journey-metrics").with(user())
+				.param("from", "2026-09-01T00:00:00Z").param("to", "2026-10-09T00:00:00Z"))
+				.andExpect(status().isForbidden());
+	}
+
 	private UUID approvedSpecialist() {
 		var id = UUID.randomUUID();
 		jdbc.sql("""

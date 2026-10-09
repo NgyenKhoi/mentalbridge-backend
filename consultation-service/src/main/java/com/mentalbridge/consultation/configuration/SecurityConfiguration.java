@@ -39,6 +39,7 @@ public class SecurityConfiguration {
 						.requestMatchers("/internal/v1/payouts/momo/ipn").permitAll()
 						.requestMatchers("/internal/v1/appointments/*/notification-eligibility").permitAll()
 						.requestMatchers("/internal/v1/entitlements/current").hasRole("USER")
+						.requestMatchers("/api/v1/admin/**").hasRole("ADMIN")
 						.requestMatchers("/internal/v1/appointments/*/consultation-brief-context",
 								"/internal/v1/appointments/*/chat-eligibility",
 								"/internal/v1/appointments/*/chat-evidence",
@@ -55,10 +56,6 @@ public class SecurityConfiguration {
 						.hasRole("USER")
 						.requestMatchers("/api/v1/specialist-profile/**").hasRole("SPECIALIST")
 						.requestMatchers("/api/v1/availability-slots/**").hasRole("SPECIALIST")
-						.requestMatchers("/api/v1/admin/specialist-profiles/**").hasRole("ADMIN")
-						.requestMatchers("/api/v1/admin/appointments/**").hasRole("ADMIN")
-						.requestMatchers("/api/v1/admin/appointment-disputes/**").hasRole("ADMIN")
-						.requestMatchers("/api/v1/admin/payouts").hasRole("ADMIN")
 						.anyRequest().authenticated())
 				.exceptionHandling(errors -> errors.authenticationEntryPoint(securityProblems)
 						.accessDeniedHandler(securityProblems))

@@ -6,6 +6,31 @@ info:
 servers:
   - url: http://localhost:8082
 paths:
+  /api/v1/admin/product-journey-metrics:
+    x-mentalbridge-status: implemented
+    get:
+      operationId: getConsultationProductJourneyMetrics
+      summary: Read privacy-bounded appointment journey aggregates
+      description: Counts appointments requested in the explicit window and whether that same request cohort ever reached confirmed or completed. No participant, brief, summary, chat, clinical, or private-note data is returned.
+      security: [{ bearerAuth: [] }]
+      parameters:
+        - name: from
+          in: query
+          required: true
+          schema: { type: string, format: date-time }
+        - name: to
+          in: query
+          required: true
+          schema: { type: string, format: date-time }
+      responses:
+        '200':
+          description: Aggregate lifecycle facts for the requested appointment cohort
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/ConsultationProductJourneyMetrics' }
+        '400': { $ref: '#/components/responses/ValidationProblem' }
+        '401': { $ref: '#/components/responses/UnauthorizedProblem' }
+        '403': { $ref: '#/components/responses/ForbiddenProblem' }
   /api/v1/specialist-profile/amendments/current:
     x-mentalbridge-status: implemented
     get:
@@ -1507,6 +1532,17 @@ components:
       description: Quoted current appointment version for If-Match.
       schema: { type: string, pattern: '^"[0-9]+"$' }
   schemas:
+    ConsultationProductJourneyMetrics:
+      type: object
+      additionalProperties: false
+      required: [source, sourceVersion, asOf, consultationsRequested, consultationsConfirmed, consultationsCompleted]
+      properties:
+        source: { type: string, const: CONSULTATION }
+        sourceVersion: { type: string, const: consultation-product-journey-v1 }
+        asOf: { type: string, format: date-time }
+        consultationsRequested: { type: integer, format: int64, minimum: 0 }
+        consultationsConfirmed: { type: integer, format: int64, minimum: 0 }
+        consultationsCompleted: { type: integer, format: int64, minimum: 0 }
     AppointmentNotificationEligibility:
       type: object
       additionalProperties: false

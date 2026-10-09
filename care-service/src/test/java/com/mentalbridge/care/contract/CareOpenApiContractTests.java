@@ -19,6 +19,7 @@ import io.swagger.v3.parser.core.models.ParseOptions;
 class CareOpenApiContractTests {
 
 	private static final Set<String> ALL_OPERATIONS = Set.of(
+			"GET /api/v1/admin/product-journey-metrics",
 			"GET /api/v1/profile",
 			"PUT /api/v1/profile",
 			"GET /api/v1/consents",
@@ -82,6 +83,7 @@ class CareOpenApiContractTests {
 			"POST /api/v1/safety-directory-lookups");
 
 	private static final Set<String> IMPLEMENTED_PATHS = Set.of(
+			"/api/v1/admin/product-journey-metrics",
 			"/api/v1/profile",
 			"/api/v1/consents",
 			"/api/v1/consents/ai-processing/authorization",
@@ -138,6 +140,7 @@ class CareOpenApiContractTests {
 			"/api/v1/safety-directory-lookups");
 
 	private static final Set<String> BEARER_OPERATIONS = Set.of(
+			"GET /api/v1/admin/product-journey-metrics",
 			"GET /api/v1/profile",
 			"PUT /api/v1/profile",
 			"GET /api/v1/consents",
