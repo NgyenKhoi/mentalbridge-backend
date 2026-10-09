@@ -33,4 +33,18 @@ public interface AccountRepository extends JpaRepository<AccountEntity, UUID>, J
 	List<Object[]> aggregateCreatedAccounts(@Param("periodStart") Instant periodStart,
 			@Param("periodEndExclusive") Instant periodEndExclusive);
 
+	@Query("""
+			select count(account) from AccountEntity account
+			where account.role = com.mentalbridge.identity.account.RoleCode.USER
+			  and account.createdAt >= :from and account.createdAt < :to
+			""")
+	long countUserRegistrationsBetween(@Param("from") Instant from, @Param("to") Instant to);
+
+	@Query("""
+			select count(account) from AccountEntity account
+			where account.role = com.mentalbridge.identity.account.RoleCode.USER
+			  and account.emailVerifiedAt >= :from and account.emailVerifiedAt < :to
+			""")
+	long countUserActivationsBetween(@Param("from") Instant from, @Param("to") Instant to);
+
 }

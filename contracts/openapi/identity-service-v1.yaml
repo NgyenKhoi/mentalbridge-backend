@@ -336,6 +336,33 @@ paths:
                 items: { $ref: '#/components/schemas/PlatformReportType' }
         '401': { $ref: '#/components/responses/UnauthorizedProblem' }
         '403': { $ref: '#/components/responses/ForbiddenProblem' }
+  /api/v1/admin/product-journey-metrics:
+    x-mentalbridge-status: implemented
+    get:
+      tags: [Platform reporting]
+      operationId: getProductJourneyMetrics
+      summary: Read privacy-bounded aggregate product journey facts
+      description: Returns independent event totals whose authoritative timestamps fall inside the same half-open [from,to) window. Identity stages include USER registrations and USER email-verification activations only; SPECIALIST and ADMIN accounts are excluded. It does not represent conversion, clinical effectiveness, recovery, or causation. Unavailable owner capabilities remain explicitly unavailable.
+      security: [{ bearerAuth: [] }]
+      parameters:
+        - name: from
+          in: query
+          required: true
+          schema: { type: string, format: date-time }
+        - name: to
+          in: query
+          required: true
+          schema: { type: string, format: date-time }
+        - $ref: '#/components/parameters/CorrelationId'
+      responses:
+        '200':
+          description: Aggregate platform journey projection for the explicit half-open window
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/ProductJourneyMetrics' }
+        '400': { $ref: '#/components/responses/ValidationProblem' }
+        '401': { $ref: '#/components/responses/UnauthorizedProblem' }
+        '403': { $ref: '#/components/responses/ForbiddenProblem' }
   /api/v1/admin/platform-reports:
     x-mentalbridge-status: implemented
     get:
@@ -549,6 +576,64 @@ components:
       schema: { type: string, pattern: '^"[0-9]+"$' }
       example: '"3"'
   schemas:
+    ProductJourneyMetrics:
+      type: object
+      additionalProperties: false
+      required: [projectionVersion, window, asOf, interpretation, sources, stages]
+      properties:
+        projectionVersion: { type: string, const: product-journey-metrics-v1 }
+        window:
+          type: object
+          additionalProperties: false
+          required: [from, to]
+          properties:
+            from: { type: string, format: date-time }
+            to: { type: string, format: date-time }
+        asOf: { type: string, format: date-time }
+        interpretation: { type: string, const: DESCRIPTIVE_PRODUCT_ACTIVITY_NOT_CLINICAL_EFFECTIVENESS }
+        sources:
+          type: array
+          minItems: 3
+          maxItems: 3
+          items: { $ref: '#/components/schemas/ProductJourneySource' }
+        stages:
+          type: array
+          minItems: 9
+          maxItems: 9
+          items: { $ref: '#/components/schemas/ProductJourneyStage' }
+    ProductJourneySource:
+      type: object
+      additionalProperties: false
+      required: [source, status]
+      properties:
+        source: { type: string, enum: [IDENTITY, CARE, CONSULTATION] }
+        sourceVersion: { type: [string, 'null'], maxLength: 64 }
+        status: { type: string, enum: [AVAILABLE, UNAVAILABLE] }
+        asOf: { type: [string, 'null'], format: date-time }
+        unavailableReason: { type: [string, 'null'], enum: [DEPENDENCY_UNAVAILABLE, null] }
+    ProductJourneyStage:
+      type: object
+      additionalProperties: false
+      required: [stage, source, status]
+      properties:
+        stage:
+          type: string
+          enum: [USER_ACCOUNTS_REGISTERED, USER_ACCOUNTS_ACTIVATED, COMPLETED_SCREENING_EPISODES, SUPPORT_GUIDES_GENERATED, SUPPORT_GUIDES_OPENED, PAID_SUPPORT_PLANS_ACTIVATED, CONSULTATIONS_REQUESTED, CONSULTATIONS_CONFIRMED, CONSULTATIONS_COMPLETED]
+        source: { type: string, enum: [IDENTITY, CARE, CONSULTATION] }
+        status: { type: string, enum: [AVAILABLE, UNAVAILABLE] }
+        count: { type: [integer, 'null'], format: int64, minimum: 0 }
+        rate:
+          oneOf:
+            - type: 'null'
+            - $ref: '#/components/schemas/ProductJourneyRate'
+        unavailableReason: { type: [string, 'null'], enum: [SOURCE_UNAVAILABLE, AUTHORITATIVE_USAGE_FACT_UNAVAILABLE, null] }
+    ProductJourneyRate:
+      type: object
+      additionalProperties: false
+      required: [denominatorStage, percentage]
+      properties:
+        denominatorStage: { type: string, enum: [USER_ACCOUNTS_REGISTERED, CONSULTATIONS_REQUESTED] }
+        percentage: { type: number, minimum: 0, maximum: 100 }
     PlatformReportTypeCode:
       type: string
       enum: [ACCOUNT_ACTIVITY]

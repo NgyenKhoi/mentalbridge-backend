@@ -204,6 +204,7 @@ MB-89 implements the deterministic PHQ-9 runtime. MB-178 adds the backend-owned,
 ## Integration
 
 - Inbound REST: the canonical Care OpenAPI file is the source of truth.
+- Inbound ADMIN product journey REST: MB-596 exposes only platform-wide counts of completed screening episodes, generated Support Guides, and paid SupportPlan activations for a bounded window. It does not expose scores, bands, answers, Journal/emotion data, AI output, user identity, or recovery outcomes; Support Guide opens remain unavailable because Care owns no authoritative open fact.
 - Inbound specialist continuity REST: MB-592 exposes
   `GET /api/v1/specialist/client-continuity`. Care composes the bounded
   Consultation relationship authority with only its own display name and

@@ -1,0 +1,9 @@
+# MB-596 product journey metrics
+
+The ADMIN-only `GET /api/v1/admin/product-journey-metrics` projection accepts an explicit half-open UTC window capped at 366 days. Identity composes USER-only registration and activation events with bounded aggregate responses from Care and Consultation over REST. SPECIALIST and ADMIN accounts are excluded from the end-user journey. Every source reports a version and as-of instant; a failed dependency produces `UNAVAILABLE` stages with null counts rather than inferred zeroes.
+
+The projection contains aggregate event counts only. It has no cohort breakdown, account identifier, PHQ-9/GAD-7 score or band, assessment answer, Journal or emotion content, AI analysis, consultation participant, chat, private note, or user-level outcome. Identity activation is the authoritative `email_verified_at` event, not current account state. Independent stage totals do not expose conversion rates. The response explicitly labels all metrics as descriptive product activity, not clinical effectiveness or causation.
+
+Care owns completed screening episodes, generated Support Guides, and paid SupportPlan activations. No authoritative Support Guide open fact exists, so that stage remains explicitly unavailable. Consultation counts requests by `requested_at` and confirmation/completion transitions by lifecycle-history `changed_at`; every event must be inside the same requested `[from,to)` window.
+
+Focused verification covers USER-role filtering, exact lower/upper boundaries, transition events after `to`, endpoint-level ADMIN/USER/SPECIALIST/anonymous authorization, dependency degradation, source/contract versions, null unavailable counts, and absence of sensitive response fields. The frontend consumes the same Identity OpenAPI projection through an ADMIN-authenticated same-origin BFF and verifies that the authoritative response window exactly matches the request.

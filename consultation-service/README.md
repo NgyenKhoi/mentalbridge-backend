@@ -226,6 +226,12 @@ profiles that were never approved receive blocked sections. No user identity,
 health outcome, Journal, emotion, assessment, adherence, recovery, chat, or
 private-note data is exposed.
 
+## Implemented MB-596 endpoint
+
+- `GET /api/v1/admin/product-journey-metrics?from={instant}&to={instant}`
+
+The ADMIN-only projection counts independent request, confirmation, and completion events whose authoritative timestamps fall in the bounded half-open window. Confirmation and completion come from immutable lifecycle history and are not inferred from current appointment state or a request cohort. It returns counts and source timing/version only, with no participant, brief, summary, chat, clinical, or private-note fields.
+
 ## Implemented MB-592 endpoint
 
 - `GET /internal/v1/specialist/client-relationships`

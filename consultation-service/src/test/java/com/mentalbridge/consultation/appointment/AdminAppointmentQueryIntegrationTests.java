@@ -81,6 +81,44 @@ class AdminAppointmentQueryIntegrationTests extends ConsultationTestProperties {
 				.andExpect(status().isBadRequest()).andExpect(jsonPath("$.code").value("INVALID_ADMIN_APPOINTMENT_QUERY"));
 	}
 
+	@Test
+	void productJourneyCountsIndependentEventsInsideTheHalfOpenWindow() throws Exception {
+		var specialistId = approvedSpecialist();
+		var first = appointment(UUID.randomUUID(), specialistId, Instant.parse("2001-02-03T10:00:00Z"), "CONFIRMED");
+		appointment(UUID.randomUUID(), specialistId, Instant.parse("2001-02-03T11:00:00Z"), "REQUESTED");
+		var confirmedAfterWindow = appointment(UUID.randomUUID(), specialistId,
+				Instant.parse("2001-02-03T12:00:00Z"), "CONFIRMED");
+		var requestedBeforeWindow = appointment(UUID.randomUUID(), specialistId,
+				Instant.parse("2001-02-03T01:00:00Z"), "CONFIRMED");
+		jdbc.sql("""
+				insert into appointment_status_history
+				(id, appointment_id, from_status, to_status, changed_by, reason, changed_at)
+				values (:confirmedId, :appointmentId, 'REQUESTED', 'CONFIRMED', :actor, 'SPECIALIST_ACCEPTED', :inside),
+				       (:completedId, :appointmentId, 'IN_PROGRESS', 'COMPLETED', :actor, 'SESSION_COMPLETED', :inside),
+				       (:lateId, :lateAppointment, 'REQUESTED', 'CONFIRMED', :actor, 'SPECIALIST_ACCEPTED', :afterWindow),
+				       (:priorId, :priorAppointment, 'REQUESTED', 'CONFIRMED', :actor, 'SPECIALIST_ACCEPTED', :inside)
+				""").param("confirmedId", UUID.randomUUID()).param("completedId", UUID.randomUUID())
+				.param("lateId", UUID.randomUUID()).param("priorId", UUID.randomUUID())
+				.param("appointmentId", first).param("actor", specialistId)
+				.param("lateAppointment", confirmedAfterWindow).param("priorAppointment", requestedBeforeWindow)
+				.param("inside", Timestamp.from(Instant.parse("2001-02-03T12:00:00Z")))
+				.param("afterWindow", Timestamp.from(Instant.parse("2001-02-04T00:00:00Z"))).update();
+
+		mvc.perform(get("/api/v1/admin/product-journey-metrics").with(admin())
+				.param("from", "2001-02-03T00:00:00Z").param("to", "2001-02-04T00:00:00Z"))
+				.andExpect(status().isOk()).andExpect(jsonPath("$.source").value("CONSULTATION"))
+				.andExpect(jsonPath("$.sourceVersion").value("consultation-product-journey-v2"))
+				.andExpect(jsonPath("$.consultationsRequested").value(3))
+				.andExpect(jsonPath("$.consultationsConfirmed").value(2))
+				.andExpect(jsonPath("$.consultationsCompleted").value(1))
+				.andExpect(jsonPath("$.userAccountId").doesNotExist())
+				.andExpect(jsonPath("$.chat").doesNotExist());
+
+		mvc.perform(get("/api/v1/admin/product-journey-metrics").with(user())
+				.param("from", "2001-02-03T00:00:00Z").param("to", "2001-02-04T00:00:00Z"))
+				.andExpect(status().isForbidden());
+	}
+
 	private UUID approvedSpecialist() {
 		var id = UUID.randomUUID();
 		jdbc.sql("""
