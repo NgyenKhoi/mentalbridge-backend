@@ -45,6 +45,17 @@ public class PlatformReportService {
 
 	@Transactional
 	public ReportResponse request(UUID actorId, ReportRequest request, String idempotencyKey) {
+		return enqueue(actorId, request, idempotencyKey, null, null);
+	}
+
+	@Transactional
+	public ReportResponse requestScheduled(UUID actorId, ReportRequest request, String idempotencyKey,
+			UUID scheduleId, Instant scheduledFor) {
+		return enqueue(actorId, request, idempotencyKey, scheduleId, scheduledFor);
+	}
+
+	private ReportResponse enqueue(UUID actorId, ReportRequest request, String idempotencyKey,
+			UUID scheduleId, Instant scheduledFor) {
 		validateActor(actorId);
 		validateRequest(request);
 		String requestHash = hash(request.reportType() + "|" + request.periodStart() + "|" + request.periodEnd());
@@ -55,6 +66,7 @@ public class PlatformReportService {
 		}
 		var job = PlatformReportJobEntity.queued(request.reportType(), request.periodStart(), request.periodEnd(),
 				actorId, clock.instant(), idempotencyKey, requestHash, null);
+		if (scheduleId != null) job.schedule(scheduleId, scheduledFor);
 		return response(jobs.save(job));
 	}
 

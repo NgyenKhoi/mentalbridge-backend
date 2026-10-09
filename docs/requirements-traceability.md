@@ -93,6 +93,12 @@ outbox work and never waits for this consumer.
 
 ## Actor-flow coverage
 
+MB-586 implements recurring aggregate platform reporting under the Admin
+reporting flow: bounded Identity schedule management, duplicate-safe occurrence
+enqueue into existing report jobs, and ADMIN-only history/artifact delivery.
+The paired frontend delivers schedule controls in Admin Reports; no individual
+health projection, arbitrary recipient, or external delivery channel is active.
+
 - **Anonymous:** one supported-domain questionnaire → instrument-specific result → screening/safety guidance → optional register. Anonymous data is never silently linked to the new account.
 - **User:** assessment/journal → optional AI Companion → screening/safety → one-time Support Guide → optional paid SupportPlan → explicit activation/change confirmation → specialist discovery → VND purchase/upgrade/credit → request a 60-minute in-app chat/video slot → approve pre-session brief → bounded session → completion evidence → approve summary reuse → review/follow-up.
 - **Specialist:** register → complete public profile → admin approval → publish chat/video availability → accept/reject bounded requests → read only the approved pre-session brief → consult during the scheduled window → create post-session `SessionSummary`/`AgreedNextSteps` → optionally submit `PlanChangeRequest` → earnings/provider-payout projection after evidence-backed completion → reviews.

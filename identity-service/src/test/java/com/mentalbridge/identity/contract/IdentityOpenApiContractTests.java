@@ -36,7 +36,11 @@ class IdentityOpenApiContractTests {
 			"GET /api/v1/admin/platform-reports",
 			"POST /api/v1/admin/platform-reports",
 			"POST /api/v1/admin/platform-reports/{reportId}/retries",
-			"GET /api/v1/admin/platform-reports/{reportId}/artifact");
+			"GET /api/v1/admin/platform-reports/{reportId}/artifact",
+			"GET /api/v1/admin/platform-report-schedules",
+			"POST /api/v1/admin/platform-report-schedules",
+			"PUT /api/v1/admin/platform-report-schedules/{scheduleId}",
+			"DELETE /api/v1/admin/platform-report-schedules/{scheduleId}");
 
 	private static final Set<String> PLANNED_OPERATIONS = Set.of();
 	private static final Set<String> PROTECTED_OPERATIONS = Set.of(
@@ -52,7 +56,11 @@ class IdentityOpenApiContractTests {
 			"GET /api/v1/admin/platform-reports",
 			"POST /api/v1/admin/platform-reports",
 			"POST /api/v1/admin/platform-reports/{reportId}/retries",
-			"GET /api/v1/admin/platform-reports/{reportId}/artifact");
+			"GET /api/v1/admin/platform-reports/{reportId}/artifact",
+			"GET /api/v1/admin/platform-report-schedules",
+			"POST /api/v1/admin/platform-report-schedules",
+			"PUT /api/v1/admin/platform-report-schedules/{scheduleId}",
+			"DELETE /api/v1/admin/platform-report-schedules/{scheduleId}");
 	private static final Map<String, Set<String>> IMPLEMENTED_RESPONSES = Map.ofEntries(
 			Map.entry("POST /api/v1/auth/registrations", Set.of("201", "400", "409", "429")),
 			Map.entry("POST /api/v1/auth/email-verifications", Set.of("200", "400", "429")),
@@ -74,7 +82,11 @@ class IdentityOpenApiContractTests {
 			Map.entry("GET /api/v1/admin/platform-reports", Set.of("200", "400", "401", "403")),
 			Map.entry("POST /api/v1/admin/platform-reports", Set.of("202", "400", "401", "403", "409")),
 			Map.entry("POST /api/v1/admin/platform-reports/{reportId}/retries", Set.of("202", "400", "401", "403", "404", "409")),
-			Map.entry("GET /api/v1/admin/platform-reports/{reportId}/artifact", Set.of("200", "401", "403", "404", "409", "410")));
+			Map.entry("GET /api/v1/admin/platform-reports/{reportId}/artifact", Set.of("200", "401", "403", "404", "409", "410")),
+			Map.entry("GET /api/v1/admin/platform-report-schedules", Set.of("200", "401", "403")),
+			Map.entry("POST /api/v1/admin/platform-report-schedules", Set.of("201", "400", "401", "403", "409")),
+			Map.entry("PUT /api/v1/admin/platform-report-schedules/{scheduleId}", Set.of("200", "400", "401", "403", "404", "412")),
+			Map.entry("DELETE /api/v1/admin/platform-report-schedules/{scheduleId}", Set.of("204", "400", "401", "403", "404", "412")));
 
 	@Test
 	void identityContractIsValidAndFullyResolved() {

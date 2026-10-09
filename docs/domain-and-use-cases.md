@@ -402,6 +402,14 @@ context, and follow-up charts avoid diagnostic or causal claims.
 
 **Main flow:** each data owner exposes an authorized admin command/query or publishes a minimized projection. Moderation snapshots only necessary evidence; reporting uses versioned projections instead of runtime distributed joins.
 
+MB-586 adds bounded Identity-owned recurring ACCOUNT_ACTIVITY schedules. The
+owner-confirmed delivery group/target is ADMIN / ADMIN_REPORT_HISTORY. Scheduled
+occurrences enter the same versioned report-job engine as manual requests, with
+atomic schedule advancement and unique occurrence identity. ADMIN can pause,
+resume, replace, and soft-delete schedules using current revisions. Existing
+report history, protected artifact downloads, failure evidence, and idempotent
+retry remain authoritative; no raw health content or external delivery is added.
+
 **Exceptions and acceptance:** admin role does not grant unrestricted raw journal/chat/assessment, payout-destination data, or provider payload access. Changes record stable reasons and append-only audit facts. Aggregates enforce cohort/privacy thresholds and projection freshness. Retention changes remain owner-enforced and do not rewrite historical audit evidence. A payout becomes successful only from a verified provider result/status query.
 
 ### UC-08 Community peer support

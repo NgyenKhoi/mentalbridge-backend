@@ -10,13 +10,16 @@ import org.springframework.stereotype.Component;
 class PlatformReportScheduler {
 
 	private final PlatformReportProcessor processor;
+	private final ReportScheduleService schedules;
 
-	PlatformReportScheduler(PlatformReportProcessor processor) {
+	PlatformReportScheduler(PlatformReportProcessor processor, ReportScheduleService schedules) {
 		this.processor = processor;
+		this.schedules = schedules;
 	}
 
 	@Scheduled(fixedDelayString = "${mentalbridge.identity.platform-reporting.poll-interval:PT2S}")
 	void generate() {
+		schedules.enqueueNext();
 		processor.processNext();
 	}
 

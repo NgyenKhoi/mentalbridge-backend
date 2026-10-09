@@ -341,6 +341,27 @@ Identity-owned transactional outbox. An account/session mutation and its integra
 | `next_attempt_at` | UTC instant after which a failed relay may retry; null when no delay is scheduled. |
 | `created_at` | Immutable UTC insertion instant committed with the aggregate change. |
 
+### `public.platform_report_schedule`
+
+Identity owns at most 50 nondeleted recurring aggregate schedules. ADMIN-only
+report history is the approved recipient/delivery target for MB-586; no email,
+external URL, sensitive user projection, or second report engine is introduced.
+
+| Field | Purpose |
+| --- | --- |
+| `id` | Immutable UUID used by schedule management and occurrence provenance. |
+| `report_type` | Supported owner-backed aggregate definition; currently ACCOUNT_ACTIVITY only. |
+| `cadence` | DAILY, WEEKLY (Monday), or MONTHLY (day 1), interpreted in the recorded timezone. |
+| `timezone`, `local_time` | Valid IANA zone and minute-resolution local wall time; DST gaps shift forward and overlaps use the earlier offset. |
+| `period_days` | 1–366 completed UTC calendar days before the scheduled occurrence's UTC date. |
+| `recipient_group`, `delivery_target` | Closed approved values ADMIN / ADMIN_REPORT_HISTORY; never a caller-supplied address or URL. |
+| `status` | ACTIVE, PAUSED, or soft-deleted DELETED; deletion stops future work and preserves existing jobs. |
+| `created_by`, `created_at` | Immutable local ADMIN account reference and UTC creation evidence. |
+| `updated_at` | UTC last configuration, pause/resume/delete, or scheduler advancement instant. |
+| `next_run_at` | UTC occurrence identity/due index; creation, update, and resume select a strictly future occurrence. |
+| `last_failure_code` | Nullable minimized reason; ADMIN_ACCESS_UNAVAILABLE pauses generation when the owner account loses access. |
+| `version` | Optimistic revision; stale update/delete fails with HTTP 412. |
+
 ### `public.platform_report_job`
 
 Immutable-scope asynchronous aggregate report request coordinated by Identity. Only an ADMIN may create or browse these jobs; each job is tied to one versioned owner projection and never reads another service database.
@@ -354,6 +375,7 @@ Immutable-scope asynchronous aggregate report request coordinated by Identity. O
 | `status` | Durable asynchronous state `QUEUED`, `RUNNING`, `COMPLETED`, `FAILED`, or `STALE`. |
 | `source_versions` | JSON object of exact authoritative source/projection versions captured at request time. |
 | `idempotency_key`, `request_hash` | ADMIN-scoped retry key and normalized SHA-256 request identity. |
+| `schedule_id`, `scheduled_for` | Nullable together for manual jobs; schedule FK and exact UTC occurrence instant form a unique atomic deduplication key. Original scheduled jobs remain linked after soft deletion; retry_of preserves retry lineage. |
 | `retry_of` | Nullable prior failed/stale job; retries create a new job and preserve the original outcome. |
 | `started_at`, `completed_at`, `failed_at`, `failure_code` | Explicit processing and terminal provenance without sensitive failure payloads. |
 
