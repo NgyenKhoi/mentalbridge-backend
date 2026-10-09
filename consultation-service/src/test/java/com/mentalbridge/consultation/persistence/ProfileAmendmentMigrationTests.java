@@ -63,6 +63,25 @@ class ProfileAmendmentMigrationTests {
 						select gen_random_uuid(), specialist_account_id, 1, 'REJECTED', profile_snapshot,
 						now(), now(), approved_by, null, now(), now() from specialist_profile_approved_version limit 1
 						""")).isInstanceOf(java.sql.SQLException.class).hasMessageContaining("ck_amendment_state");
+				statement.execute("""
+						insert into specialist_profile_amendment (id, specialist_account_id, base_published_version, status, proposed_profile, created_at, updated_at)
+						select gen_random_uuid(), specialist_account_id, 1, 'DRAFT', profile_snapshot, now(), now()
+						from specialist_profile_approved_version limit 1
+						""");
+				statement.execute(migration("019-profile-amendment-cancellation"));
+				statement.execute("update specialist_profile_amendment set status='CANCELLED'");
+				statement.execute("""
+						insert into specialist_profile_amendment_history (id, amendment_id, amendment_version, status, proposed_profile, actor_account_id, actor_role, occurred_at)
+						select gen_random_uuid(), id, 0, 'CANCELLED', proposed_profile, specialist_account_id, 'SPECIALIST', now()
+						from specialist_profile_amendment
+						""");
+				assertThatThrownBy(() -> statement.execute("update specialist_profile_amendment set submitted_at=now()"))
+						.isInstanceOf(java.sql.SQLException.class).hasMessageContaining("ck_amendment_state");
+				statement.execute("""
+						insert into specialist_profile_amendment (id, specialist_account_id, base_published_version, status, proposed_profile, created_at, updated_at)
+						select gen_random_uuid(), specialist_account_id, 1, 'DRAFT', proposed_profile, now(), now()
+						from specialist_profile_amendment where status='CANCELLED'
+						""");
 			}
 		}
 	}

@@ -23,7 +23,19 @@ APPROVED profile (unchanged, public and operational)
                          -> REJECTED          -> next amendment DRAFT
                               -> edit REJECTED -> explicit resubmit PENDING_REVIEW
 PENDING_REVIEW -> edit -> DRAFT (withdraw review)
+DRAFT | PENDING_REVIEW | REJECTED -> cancel -> CANCELLED (terminal)
+CANCELLED -> new amendment DRAFT from the current public snapshot
 ```
+
+The owner's follow-up request on 2026-10-08 adds cancellation. It is an
+ETag-protected owner command serialized with ADMIN review, not deletion or
+local hiding. Public content, appointments and availability are unchanged.
+The cancellation revision retains the proposed payload and actor/time in
+append-only history. Current submission/review metadata is cleared; historical
+review revisions remain intact. Cancelled amendments cannot be edited or
+submitted again. Missing/stale version and suspension protections still apply.
+Migration 019 expands both persisted state checks before enabling cancellation;
+old strict-enum consumers must be upgraded together with the owner.
 
 Suspension wins over amendment commands through the existing profile lock.
 It does not destroy the private amendment; it blocks edits, submission and

@@ -13,6 +13,8 @@ import java.util.concurrent.Executors;
 import java.util.concurrent.TimeUnit;
 
 import org.junit.jupiter.api.Test;
+import org.junit.jupiter.params.ParameterizedTest;
+import org.junit.jupiter.params.provider.ValueSource;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.boot.test.context.SpringBootTest;
 import org.springframework.boot.webmvc.test.autoconfigure.AutoConfigureMockMvc;
@@ -206,6 +208,100 @@ class ProfileAmendmentIntegrationTests extends ConsultationTestProperties {
 		mvc.perform(put(OWN + "/{id}", id).with(actor(owner, "SPECIALIST")).header("If-Match", etag(submitted))
 				.contentType(MediaType.APPLICATION_JSON).content(body("Suspended edit"))).andExpect(status().isConflict());
 		assertThat(publicState(owner)).contains("SUSPENDED");
+	}
+
+	@ParameterizedTest
+	@ValueSource(strings = { "DRAFT", "PENDING_REVIEW", "REJECTED" })
+	void cancellationIsTerminalAuditedAndKeepsPublicAndOperationalData(String state) throws Exception {
+		var owner = UUID.randomUUID();
+		var reviewer = UUID.randomUUID();
+		var initial = approved(owner, reviewer);
+		var slot = slot(owner);
+		var appointment = confirmedAppointment(owner, slot);
+		var publicBefore = publicState(owner);
+		var appointmentBefore = appointmentState(appointment);
+		var started = start(owner, etag(initial));
+		var id = id(started);
+		var current = edit(owner, id, etag(started), "Private proposal");
+		if (!state.equals("DRAFT")) current = command(OWN, id, "submit", owner, "SPECIALIST", etag(current));
+		if (state.equals("REJECTED")) current = mvc.perform(post(ADMIN + "/{id}/reject", id).with(actor(reviewer, "ADMIN"))
+				.header("If-Match", etag(current)).contentType(MediaType.APPLICATION_JSON)
+				.content("{\"reasonCode\":\"PROFILE_CONTENT_NOT_APPROVED\"}")).andExpect(status().isOk()).andReturn();
+		var cancelled = command(OWN, id, "cancel", owner, "SPECIALIST", etag(current));
+		assertThat(json.readTree(cancelled.getResponse().getContentAsString()).path("status").asText()).isEqualTo("CANCELLED");
+		assertThat(publicState(owner)).isEqualTo(publicBefore);
+		assertThat(appointmentState(appointment)).isEqualTo(appointmentBefore);
+		assertThat(jdbc.sql("select status from availability_slot where id=:id").param("id", slot).query(String.class).single()).isEqualTo("ACTIVE");
+		assertThat(jdbc.sql("select proposed_profile->>'displayName' from specialist_profile_amendment_history where amendment_id=:id and status='CANCELLED'")
+				.param("id", id).query(String.class).list()).containsExactly("Private proposal");
+		command(OWN, id, "cancel", owner, "SPECIALIST", etag(cancelled));
+		assertThat(jdbc.sql("select count(*) from specialist_profile_amendment_history where amendment_id=:id and status='CANCELLED'")
+				.param("id", id).query(Long.class).single()).isEqualTo(1);
+		mvc.perform(post(OWN + "/{id}/cancel", id).with(actor(owner, "SPECIALIST")).header("If-Match", etag(current)))
+				.andExpect(status().isPreconditionFailed());
+		mvc.perform(put(OWN + "/{id}", id).with(actor(owner, "SPECIALIST")).header("If-Match", etag(cancelled))
+				.contentType(MediaType.APPLICATION_JSON).content(body("Revive"))).andExpect(status().isConflict());
+		mvc.perform(post(OWN + "/{id}/submit", id).with(actor(owner, "SPECIALIST")).header("If-Match", etag(cancelled)))
+				.andExpect(status().isConflict());
+		mvc.perform(post(ADMIN + "/{id}/approve", id).with(actor(reviewer, "ADMIN")).header("If-Match", etag(cancelled)))
+				.andExpect(status().isConflict());
+		var next = start(owner, etag(initial));
+		assertThat(id(next)).isNotEqualTo(id);
+		assertThat(json.readTree(next.getResponse().getContentAsString()).path("proposedProfile").path("displayName").asText()).isEqualTo("Original");
+		if (state.equals("REJECTED")) assertThat(jdbc.sql("select count(*) from specialist_profile_amendment_history where amendment_id=:id and status='REJECTED' and reason_code='PROFILE_CONTENT_NOT_APPROVED'")
+				.param("id", id).query(Long.class).single()).isEqualTo(1);
+	}
+
+	@Test
+	void cancellationRequiresOwnerRoleAndVersionAndCannotUndoApproval() throws Exception {
+		var owner = UUID.randomUUID();
+		var reviewer = UUID.randomUUID();
+		var other = UUID.randomUUID();
+		approved(other, reviewer);
+		var started = start(owner, etag(approved(owner, reviewer)));
+		var id = id(started);
+		mvc.perform(post(OWN + "/{id}/cancel", id)).andExpect(status().isUnauthorized());
+		mvc.perform(post(OWN + "/{id}/cancel", id).with(actor(owner, "USER"))).andExpect(status().isForbidden());
+		mvc.perform(post(OWN + "/{id}/cancel", id).with(actor(other, "SPECIALIST")).header("If-Match", etag(started)))
+				.andExpect(status().isNotFound());
+		mvc.perform(post(OWN + "/{id}/cancel", id).with(actor(owner, "SPECIALIST"))).andExpect(status().isPreconditionRequired());
+		var submitted = command(OWN, id, "submit", owner, "SPECIALIST", etag(started));
+		var promoted = command(ADMIN, id, "approve", reviewer, "ADMIN", etag(submitted));
+		mvc.perform(post(OWN + "/{id}/cancel", id).with(actor(owner, "SPECIALIST")).header("If-Match", etag(promoted)))
+				.andExpect(status().isConflict());
+	}
+
+	@Test
+	void cancellationAndApprovalRaceHasOnlyOneWinner() throws Exception {
+		var owner = UUID.randomUUID();
+		var reviewer = UUID.randomUUID();
+		var started = start(owner, etag(approved(owner, reviewer)));
+		var id = id(started);
+		var edited = edit(owner, id, etag(started), "Reviewed proposal");
+		var submitted = command(OWN, id, "submit", owner, "SPECIALIST", etag(edited));
+		var ready = new CountDownLatch(2);
+		var go = new CountDownLatch(1);
+		try (var workers = Executors.newFixedThreadPool(2)) {
+			var cancel = workers.submit(() -> {
+				ready.countDown();
+				assertThat(go.await(10, TimeUnit.SECONDS)).isTrue();
+				return mvc.perform(post(OWN + "/{id}/cancel", id).with(actor(owner, "SPECIALIST"))
+						.header("If-Match", etag(submitted))).andReturn().getResponse().getStatus();
+			});
+			var approve = workers.submit(() -> {
+				ready.countDown();
+				assertThat(go.await(10, TimeUnit.SECONDS)).isTrue();
+				return mvc.perform(post(ADMIN + "/{id}/approve", id).with(actor(reviewer, "ADMIN"))
+						.header("If-Match", etag(submitted))).andReturn().getResponse().getStatus();
+			});
+			assertThat(ready.await(10, TimeUnit.SECONDS)).isTrue();
+			go.countDown();
+			assertThat(List.of(cancel.get(20, TimeUnit.SECONDS), approve.get(20, TimeUnit.SECONDS))).containsExactlyInAnyOrder(200, 412);
+		}
+		var terminal = jdbc.sql("select status from specialist_profile_amendment where id=:id").param("id", id).query(String.class).single();
+		assertThat(publicState(owner)).contains(terminal.equals("CANCELLED") ? "Original" : "Reviewed proposal");
+		assertThat(jdbc.sql("select count(*) from specialist_profile_amendment_history where amendment_id=:id and status in ('CANCELLED','APPROVED')")
+				.param("id", id).query(Long.class).single()).isEqualTo(1);
 	}
 
 	private MvcResult approved(UUID owner, UUID reviewer) throws Exception {

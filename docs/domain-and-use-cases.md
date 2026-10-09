@@ -347,7 +347,9 @@ health/journal access; sharing requires an approved pre-session brief and grant.
 
 MB-635 extends UC-04 with a private amendment to an approved specialist profile.
 The live approved fields stay public and eligible while the specialist saves,
-submits, corrects or resubmits a proposed change. ADMIN reviews amendments
+submits, corrects, resubmits or cancels a proposed change. Cancellation is
+terminal, keeps the private audit history and allows a new amendment from the
+current public snapshot. ADMIN reviews amendments
 separately from initial submissions; approval atomically promotes a new immutable
 approved content version, while rejection leaves the previous snapshot unchanged.
 Suspension still controls operations, and normal amendments never rewrite

@@ -20,6 +20,7 @@ class ConsultationOpenApiContractTests {
 			"PUT /api/v1/specialist-profile/amendments/{amendmentId}",
 			"POST /api/v1/specialist-profile/amendments/{amendmentId}/submit",
 			"POST /api/v1/specialist-profile/amendments/{amendmentId}/resubmit",
+			"POST /api/v1/specialist-profile/amendments/{amendmentId}/cancel",
 			"GET /api/v1/admin/specialist-profiles/amendments",
 			"GET /api/v1/admin/specialist-profiles/amendments/{amendmentId}",
 			"POST /api/v1/admin/specialist-profiles/amendments/{amendmentId}/approve",
