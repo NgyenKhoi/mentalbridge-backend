@@ -4,6 +4,13 @@ NestJS service on Node.js that owns private journal entries and coordinates AI a
 
 ## Current scope
 
+Public OpenAPI v1.8.0 aligns exact-analysis, longitudinal evidence and Support
+Guide phrasing provider enums with the existing approved `BEDROCK` runtime
+route and migration 011. Consumers must accept this provider without relaxing
+other result validation. `contract:check` compares these public enums with the
+migrated result validators. This publication does not activate a provider,
+change routing/approval/consent gates, or change persisted data.
+
 The service provides:
 
 - Node.js 22 or newer runtime

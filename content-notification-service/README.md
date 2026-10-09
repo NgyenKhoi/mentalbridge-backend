@@ -95,6 +95,13 @@ npm run dev
 
 The application loads `.env` only in development. Test and production environments require real process variables and never depend on a repository `.env` file.
 
+When a local Docker Desktop container can reach the shared PostgreSQL port but
+TLS 1.3 negotiation resets before authentication, set
+`CONTENT_NODE_OPTIONS=--tls-max-v1.2` in the root Compose `.env` and recreate
+only `content-notification`. Leave this option unset when TLS 1.3 works. The
+remote database URL must still require TLS; this setting does not permit a
+plaintext connection.
+
 For live local E2E, set `E2E_TEST_MODE=true` and a random `E2E_TEST_SECRET`.
 The Playwright harness can then toggle the service itself:
 

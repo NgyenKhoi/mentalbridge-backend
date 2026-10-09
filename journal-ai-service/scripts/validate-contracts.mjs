@@ -1,4 +1,5 @@
 import SwaggerParser from "@apidevtools/swagger-parser";
+import { createRequire } from "node:module";
 import { fileURLToPath } from "node:url";
 
 const contractPath = fileURLToPath(
@@ -184,6 +185,27 @@ if (
 }
 
 const schemas = contract.components?.schemas;
+const require = createRequire(import.meta.url);
+const {
+  exactResultValidator,
+  longitudinalResultValidator,
+} = require("../migrations/011_bedrock_provider.cjs");
+for (const [schemaName, validator] of [
+  ["NormalizedAnalysisResult", exactResultValidator],
+  ["LongitudinalEvidence", longitudinalResultValidator],
+  ["SupportGuidePhrasingResponse", exactResultValidator],
+]) {
+  if (
+    !setsEqual(
+      new Set(schemas?.[schemaName]?.properties?.provider?.enum ?? []),
+      new Set(validator.$jsonSchema.properties.provider.enum),
+    )
+  ) {
+    throw new Error(
+      `${schemaName} provider enum differs from migrated runtime providers`,
+    );
+  }
+}
 const journalEntry = schemas?.JournalEntry;
 const journalList = schemas?.JournalListResponse;
 const detailContent = journalEntry?.allOf?.[1]?.properties?.content;
