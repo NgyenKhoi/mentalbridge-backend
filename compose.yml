@@ -304,6 +304,7 @@ services:
     restart: unless-stopped
     environment:
       NODE_ENV: production
+      NODE_OPTIONS: ${CONTENT_NODE_OPTIONS:-}
       PORT: 3003
       DATABASE_URL: ${CONTENT_DATABASE_URL:?Set the shared dev/staging Content database URL in .env}
       DB_POOL_MAX: ${CONTENT_DB_POOL_MAX:-3}
