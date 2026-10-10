@@ -10,6 +10,12 @@ See [README](README.md) for status and relationship semantics.
 
 ## Identity — PostgreSQL
 
+MB-586 adds ACTIVE `platform_report_schedule` (physical ADMIN creator and
+versioned configuration), and nullable occurrence provenance on ACTIVE
+`platform_report_job`. Jobs link physically to the soft-deleted schedule and
+one immutable `platform_report_artifact`; the unique schedule/UTC occurrence
+pair prevents duplicate generation. Manual and scheduled jobs use one engine.
+
 | Entity | Owner service | Storage | Status | Key relationships |
 | --- | --- | --- | --- | --- |
 | `role` | identity-service | PostgreSQL | ACTIVE | Physical one-to-many to `account` through `account.role_code`. |

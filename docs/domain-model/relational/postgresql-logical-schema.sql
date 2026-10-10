@@ -123,6 +123,24 @@ CREATE TABLE identity.security_audit_event (
     created_at timestamptz NOT NULL
 );
 
+CREATE TABLE identity.platform_report_schedule (
+    id uuid PRIMARY KEY,
+    report_type varchar(64) NOT NULL CHECK (report_type = 'ACCOUNT_ACTIVITY'),
+    cadence varchar(16) NOT NULL CHECK (cadence IN ('DAILY', 'WEEKLY', 'MONTHLY')),
+    timezone varchar(64) NOT NULL,
+    local_time time NOT NULL CHECK (extract(second FROM local_time) = 0),
+    period_days integer NOT NULL CHECK (period_days BETWEEN 1 AND 366),
+    recipient_group varchar(16) NOT NULL CHECK (recipient_group = 'ADMIN'),
+    delivery_target varchar(24) NOT NULL CHECK (delivery_target = 'ADMIN_REPORT_HISTORY'),
+    status varchar(16) NOT NULL CHECK (status IN ('ACTIVE', 'PAUSED', 'DELETED')),
+    created_by uuid NOT NULL REFERENCES identity.account(id),
+    created_at timestamptz NOT NULL,
+    updated_at timestamptz NOT NULL,
+    next_run_at timestamptz NOT NULL,
+    last_failure_code varchar(64),
+    version bigint NOT NULL DEFAULT 0
+);
+
 CREATE TABLE identity.platform_report_job (
     id uuid PRIMARY KEY,
     report_type varchar(64) NOT NULL,
@@ -136,6 +154,10 @@ CREATE TABLE identity.platform_report_job (
     idempotency_key varchar(128) NOT NULL,
     request_hash char(64) NOT NULL,
     retry_of uuid REFERENCES identity.platform_report_job(id),
+    schedule_id uuid REFERENCES identity.platform_report_schedule(id),
+    scheduled_for timestamptz,
+    UNIQUE (schedule_id, scheduled_for),
+    CHECK ((schedule_id IS NULL) = (scheduled_for IS NULL)),
     started_at timestamptz,
     completed_at timestamptz,
     failed_at timestamptz,
