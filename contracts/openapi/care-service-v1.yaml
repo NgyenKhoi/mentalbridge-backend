@@ -775,6 +775,55 @@ paths:
               schema: { $ref: "#/components/schemas/ConsultationBriefScreeningContextList" }
         "401": { $ref: "#/components/responses/UnauthorizedProblem" }
         "403": { $ref: "#/components/responses/ForbiddenProblem" }
+  /api/v1/consultation-briefs/{appointmentId}/ai-draft-jobs:
+    x-mentalbridge-status: implemented
+    post:
+      tags: [Consultation brief]
+      operationId: createConsultationBriefAiDraftJob
+      summary: Request an optional AI suggestion for the exact current private draft
+      description: Care resolves the exact saved draft and minimized screening context. Journal/AI rechecks current AI_PROCESSING consent and the approved provider route. The job cannot save, approve, share, or change the ConsultationBrief.
+      security: [{ bearerAuth: [] }]
+      parameters:
+        - $ref: "#/components/parameters/AppointmentId"
+        - $ref: "#/components/parameters/RequiredIfMatch"
+        - $ref: "#/components/parameters/IdempotencyKey"
+        - $ref: "#/components/parameters/CorrelationId"
+      responses:
+        "202":
+          description: Versioned asynchronous draft job accepted or replayed
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/ConsultationBriefAiDraftJob" }
+        "400": { $ref: "#/components/responses/ValidationProblem" }
+        "401": { $ref: "#/components/responses/UnauthorizedProblem" }
+        "403": { $ref: "#/components/responses/ForbiddenProblem" }
+        "404": { $ref: "#/components/responses/NotFoundProblem" }
+        "409": { $ref: "#/components/responses/ConflictProblem" }
+        "412": { $ref: "#/components/responses/VersionProblem" }
+        "428": { $ref: "#/components/responses/VersionRequiredProblem" }
+  /api/v1/consultation-briefs/{appointmentId}/ai-draft-jobs/{jobId}:
+    x-mentalbridge-status: implemented
+    get:
+      tags: [Consultation brief]
+      operationId: getOwnConsultationBriefAiDraftJob
+      summary: Read one owned AI draft job and its editable suggestion
+      security: [{ bearerAuth: [] }]
+      parameters:
+        - $ref: "#/components/parameters/AppointmentId"
+        - name: jobId
+          in: path
+          required: true
+          schema: { type: string, format: uuid }
+        - $ref: "#/components/parameters/CorrelationId"
+      responses:
+        "200":
+          description: Current private job state
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/ConsultationBriefAiDraftJob" }
+        "401": { $ref: "#/components/responses/UnauthorizedProblem" }
+        "403": { $ref: "#/components/responses/ForbiddenProblem" }
+        "404": { $ref: "#/components/responses/NotFoundProblem" }
   /api/v1/consultation-briefs/{appointmentId}:
     x-mentalbridge-status: implemented
     get:
@@ -2094,6 +2143,42 @@ components:
           maxItems: 20
           items: { $ref: "#/components/schemas/ConsultationBriefScreeningContextChoice" }
         count: { type: integer, minimum: 0, maximum: 20 }
+    ConsultationBriefAiDraftJob:
+      type: object
+      additionalProperties: false
+      required: [jobId, appointmentId, consultationBriefId, consultationBriefVersion, supportEvaluationId, sourceSetVersion, status, attemptCount, terminalReason, currentSituation, userGoals, consentPolicyVersion, servicePlan, entitlementSource, entitlementPolicyVersion, entitlementVersion, routingPolicyVersion, providerApprovalVersion, provider, model, promptVersion, schemaVersion, createdAt, updatedAt, completedAt]
+      properties:
+        jobId: { type: string, format: uuid }
+        appointmentId: { type: string, format: uuid }
+        consultationBriefId: { type: string, format: uuid }
+        consultationBriefVersion: { type: integer, format: int64, minimum: 0 }
+        supportEvaluationId: { type: string, format: uuid }
+        sourceSetVersion: { type: string, const: consultation-brief-ai-source-v1 }
+        status: { type: string, enum: [RUNNING, SUCCEEDED, FAILED] }
+        attemptCount: { type: integer, minimum: 0, maximum: 2 }
+        terminalReason: { type: [string, "null"], enum: [CONSENT_REQUIRED, AUTHORIZATION_REJECTED, SOURCE_CHANGED, SOURCE_DELETED, PROVIDER_UNAVAILABLE, INVALID_PROVIDER_RESULT, null] }
+        currentSituation: { type: [string, "null"], minLength: 1, maxLength: 1000 }
+        userGoals:
+          oneOf:
+            - type: "null"
+            - type: array
+              minItems: 1
+              maxItems: 5
+              items: { type: string, minLength: 1, maxLength: 200 }
+        consentPolicyVersion: { type: [string, "null"], maxLength: 64 }
+        servicePlan: { type: [string, "null"], enum: [FREE, PLUS, PREMIUM, null] }
+        entitlementSource: { type: [string, "null"], enum: [DEFAULT_FREE, DEMO, PAID, null] }
+        entitlementPolicyVersion: { type: [string, "null"], maxLength: 96 }
+        entitlementVersion: { type: [integer, "null"], format: int64, minimum: 0 }
+        routingPolicyVersion: { type: [string, "null"], maxLength: 96 }
+        providerApprovalVersion: { type: [string, "null"], maxLength: 96 }
+        provider: { type: [string, "null"], enum: [DETERMINISTIC_FAKE, GEMINI, OPENAI, BEDROCK, null] }
+        model: { type: [string, "null"], maxLength: 128 }
+        promptVersion: { type: [string, "null"], enum: [consultation-brief-draft-v1, null] }
+        schemaVersion: { type: [integer, "null"], enum: [1, null] }
+        createdAt: { type: string, format: date-time }
+        updatedAt: { type: string, format: date-time }
+        completedAt: { type: [string, "null"], format: date-time }
     SpecialistConsultationBrief:
       type: object
       additionalProperties: false
@@ -2607,7 +2692,7 @@ components:
       required: [consentType, policyVersion, granted]
       properties:
         consentType: { type: string, const: AI_PROCESSING }
-        policyVersion: { type: string, const: ai-processing-capstone-v1 }
+        policyVersion: { type: string, const: ai-processing-capstone-v2 }
         granted: { type: boolean }
     ConsentDecision:
       type: object
@@ -2661,7 +2746,7 @@ components:
       required: [consentType, version, locale, title, content, capstoneOnly]
       properties:
         consentType: { type: string, const: AI_PROCESSING }
-        version: { type: string, const: ai-processing-capstone-v1 }
+        version: { type: string, const: ai-processing-capstone-v2 }
         locale: { type: string, const: vi-VN }
         title: { type: string, minLength: 1, maxLength: 160 }
         content: { type: string, minLength: 1, maxLength: 4000 }

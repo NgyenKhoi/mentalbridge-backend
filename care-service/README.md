@@ -15,7 +15,7 @@ evaluation with `REASSESSMENT_SCREENING_CONTEXT_MISMATCH`.
 
 ## MB-88 foundation
 
-The canonical [`care-service-v1.yaml`](../contracts/openapi/care-service-v1.yaml) contract marks profile, independent privacy/AI-processing disclosure and consent, questionnaire retrieval, assessment history, and authenticated/anonymous screening paths as `implemented`. MB-367 adds the backend-only `AI_PROCESSING` decision and minimal current authorization response without adding frontend consent UI or production-provider approval.
+The canonical [`care-service-v1.yaml`](../contracts/openapi/care-service-v1.yaml) contract marks profile, independent privacy/AI-processing disclosure and consent, questionnaire retrieval, assessment history, and authenticated/anonymous screening paths as `implemented`. MB-370 uses the existing `AI_PROCESSING` decision/UI at current policy v2 for optional ConsultationBrief suggestions; production-provider approval remains separately gated.
 
 MB-205 adds authenticated descriptive progress for a selected owned assessment. Care compares it only with the immediately preceding non-voided result for the same instrument and identical scoring version, ordered by submission instant and assessment ID. The response contains arithmetic score direction, raw delta, band transition and elapsed duration without safety-status comparison, clinical interpretation, causation or optional-service side effects. Missing, voided or incompatible evidence returns `INSUFFICIENT_COMPARABLE_DATA`; missing and cross-owner identifiers share the same `ASSESSMENT_NOT_FOUND` response.
 
@@ -105,6 +105,7 @@ The Care Liquibase changelog owns:
 | `consultation_brief_snapshot` | Immutable exact content and screening-provenance snapshot created only by explicit owner approval |
 | `consultation_brief_grant` | Assigned-specialist, appointment, purpose, snapshot, access-window, and revocation authority |
 | `consultation_brief_audit` | Content-free allowed/denied draft, approval, revoke, delete, and specialist-read facts |
+| `consultation_brief_ai_draft_job` | Owner-private asynchronous suggestion request with exact saved-brief/source versions and consent, entitlement, routing, provider, model, prompt, and schema provenance; deletion scrubs generated content |
 | `support_plan` | One Care-owned paid proposal/current-plan snapshot with exact source, entitlement, rationale, safety, lifecycle instants, optional coded completion reason, and optimistic version provenance; terminal rows are immutable owner history |
 | `support_plan_template_family` | Ordered immutable domain template families composed into the draft |
 | `support_plan_slot` | Ordered bounded slots; core selection is required while an optional selection may be explicitly removed |
@@ -160,6 +161,9 @@ Assessment answer text must never be copied into outbox payloads, logs, errors, 
 | `JOURNAL_AI_SUPPORT_GUIDE_CONNECT_TIMEOUT` | No | Bounded connection deadline for optional Support Guide phrasing | `PT0.5S` |
 | `JOURNAL_AI_SUPPORT_GUIDE_READ_TIMEOUT` | No | Bounded response deadline before Care persists its approved-copy fallback | `PT8S` |
 | `JOURNAL_AI_SUPPORT_GUIDE_CIRCUIT_*` | No | Circuit-breaker window, threshold, open duration, and half-open probe budget for optional phrasing | See `.env.example` |
+| `JOURNAL_AI_CONSULTATION_BRIEF_DRAFT_BASE_URL` | Local/demo only | Direct Journal/AI URL for optional ConsultationBrief suggestions | `http://localhost:3000` |
+| `JOURNAL_AI_CONSULTATION_BRIEF_DRAFT_CONNECT_TIMEOUT` | No | Bounded connection deadline for the asynchronous worker call | `PT0.5S` |
+| `JOURNAL_AI_CONSULTATION_BRIEF_DRAFT_READ_TIMEOUT` | No | Bounded provider response deadline; a timeout leaves the manual draft usable | `PT12S` |
 | `CARE_DB_URL` | Yes | Care-owned PostgreSQL JDBC URL; production uses a TLS-capable connection | `jdbc:postgresql://localhost:5432/mentalbridge_care` |
 | `CARE_DB_USERNAME` | Yes | Care-owned PostgreSQL login | `mentalbridge_care` |
 | `CARE_DB_PASSWORD` | Yes | Care PostgreSQL password injected outside source control | `replace-with-a-local-secret` |
@@ -199,7 +203,7 @@ The canonical policy register is maintained in [`docs/policies/`](../docs/polici
 
 Questionnaire publication does not depend on SupportPlan or specialist workflow. Each capability follows its own gate. Publishing localized content must update the source artifact/provenance record, tests, configuration, append-only migrations/data dictionary when needed, and this README together. ADR 0012 requires the forward plan to be system-proposed from domain-aware evaluation and exact eligible content; ADR 0013 freezes the product policy and still does not change active v1 contracts or rows. Public real-user deployment additionally requires production privacy, retention, security, legal, safety-content, and operational review.
 
-MB-89 implements the deterministic PHQ-9 runtime. MB-178 adds the backend-owned, versioned privacy disclosure and `PRIVACY_POLICY`; Story 1102 makes `privacy-capstone-v3` current for PHQ-9/GAD-7. MB-367 adds the independent backend-only `AI_PROCESSING` stream at `ai-processing-capstone-v1` for exact-revision and bounded-longitudinal journal analysis. Its user-facing consent UI remains follow-up work. Research, marketing, specialist sharing, production retention/deletion/export, and automatic clinical reminders remain unavailable rather than being inferred from either consent.
+MB-89 implements the deterministic PHQ-9 runtime. MB-178 adds the backend-owned, versioned privacy disclosure and `PRIVACY_POLICY`; Story 1102 makes `privacy-capstone-v3` current for PHQ-9/GAD-7. MB-367 introduced the independent `AI_PROCESSING` stream. MB-370 makes `ai-processing-capstone-v2` current and extends the explicit user-request scope to an already saved private ConsultationBrief plus minimized PHQ-9/GAD-7 levels. The AI output remains an editable suggestion and cannot save, approve, share, grant access, change appointments, score answers, or create clinical conclusions.
 
 ## Integration
 
@@ -216,6 +220,7 @@ MB-89 implements the deterministic PHQ-9 runtime. MB-178 adds the backend-owned,
 - Outbound REST: the consumer-owned OpenFeign Resource Eligibility v1 adapter queries Content with the end-user bearer context, explicit correlation, 500 ms connect and 2 s read deadlines, bounded exponential transient retry with jitter, and a Resilience4j circuit breaker. HTTP 429 is not retried because the provider contract does not define `Retry-After`; timeout, dependency errors, malformed payloads and enum evolution map every candidate to `UNAVAILABLE`. Callers must commit no proposal mutation. No Care transaction spans the call.
 - Outbound reassessment REST: the consumer-owned Journal/AI adapter forwards the verified end-user bearer and correlation ID to the canonical `REASSESSMENT_SUMMARY` projection. It applies a 200 ms connect deadline, 800 ms read deadline, at most one transient retry, and a separate circuit breaker. Startup rejects overrides whose conservative two-attempt budget exceeds 2.5 seconds, preserving time for Care to return the explicit safe fallback before the three-second caller deadline. It validates attribution, exact periods, source counts, coverage sufficiency, directions, and provenance before persistence. No transaction spans the remote call; every safe fallback is snapshotted explicitly.
 - Outbound Support Guide phrasing REST: Care forwards the verified end-user bearer and only the exact approved explanation copy to Journal/AI. The call has bounded connect/read deadlines, no retry, and a fail-fast circuit breaker. Current `AI_PROCESSING` consent and real-provider approval remain Journal/AI responsibilities; any rejection, timeout, open circuit, malformed output, or provider failure persists the exact Care-approved fallback with `AI_UNAVAILABLE_FALLBACK`.
+- Outbound ConsultationBrief AI draft REST: an owner-only asynchronous Care job sends one exact saved draft version and minimized screening levels to Journal/AI with the verified bearer. Care persists source and model provenance, retries a transient provider failure once, rejects stale results, and never mutates or shares the brief from the worker.
 - Async: future assessment, support, consent, intervention, and follow-up events use Kafka with a transactional outbox and language-neutral schemas.
 - Discovery: Care registers as `care-service`; registry metadata never grants authorization.
 

@@ -19,7 +19,7 @@ MentalBridge must not combine these purposes into one broad toggle:
 | Purpose | Required treatment |
 | --- | --- |
 | Deterministic assessment processing | The user must view and grant the backend-owned `privacy-capstone-v3` consent; this is a processing gate, not a clinical-eligibility rule, and no AI processing is implied |
-| AI processing | Backend consent type `AI_PROCESSING` at `ai-processing-capstone-v1`; covers only explicit exact-source single-entry and bounded longitudinal journal analysis; user-facing consent UI remains a Story 6203/follow-up dependency |
+| AI processing | Backend consent type `AI_PROCESSING` at `ai-processing-capstone-v2`; covers explicit exact-source journal analysis and optional suggestions from one saved private ConsultationBrief plus minimized screening levels |
 | Specialist sharing | Product semantics approved by `MB-CONSULTATION-FLOW-001`; separate revocable grant scopes subject, specialist, appointment, approved snapshot, purpose, and time window |
 | Research use | Deferred; `RESEARCH_DATA` is not exposed and production data is excluded by default |
 | Marketing notification | Deferred; `MARKETING_NOTIFICATION` is not exposed until a corresponding feature exists |
@@ -36,8 +36,20 @@ attempt and retry but does not erase a previously normalized result.
 
 ### Immutable AI-processing disclosure text
 
-`ai-processing-capstone-v1` is current for new exact-revision and bounded
-longitudinal journal analysis and publishes this Vietnamese title and content:
+`ai-processing-capstone-v2` is current. It covers the existing explicit journal
+analysis purposes and an explicit request to create an editable suggestion from
+one saved private ConsultationBrief plus minimized PHQ-9/GAD-7 levels. The
+ConsultationBrief purpose excludes raw Journal content, screening answers, chat,
+diagnoses, private notes, automatic saving, approval, sharing, access grants, and
+appointment changes. The backend publishes this Vietnamese title and content:
+
+> **Đồng ý xử lý dữ liệu bằng AI**
+>
+> MentalBridge chỉ dùng AI khi bạn chủ động yêu cầu. Phạm vi bao gồm nội dung nhật ký cụ thể bạn chọn, các phiên bản nhật ký trong khoảng thời gian giới hạn, hoặc bản tóm tắt trước buổi tư vấn đã lưu cùng mức sàng lọc tối giản. AI chỉ tạo gợi ý để bạn xem lại và chỉnh sửa; không chẩn đoán, không chấm PHQ-9/GAD-7, không quyết định an toàn, quyền lợi hay kế hoạch hỗ trợ, và không tự phê duyệt hoặc chia sẻ với chuyên gia. Nội dung nhật ký, câu trả lời sàng lọc, chat và ghi chú riêng không được dùng cho gợi ý tóm tắt này. Bạn có thể rút lại đồng ý để chặn các yêu cầu hoặc lần thử lại mới.
+
+`ai-processing-capstone-v1` remains an immutable historical decision value for
+exact-revision and bounded longitudinal journal analysis and published this title
+and content:
 
 > **Đồng ý xử lý nhật ký bằng AI**
 >
@@ -116,7 +128,7 @@ The existing null registered-retention deadline means only that the controlled d
 
 - [x] Product Owner approved synthetic/test-data-only Sprint 2 validation and the non-executable MB-179 sharing boundary.
 - [x] Product Owner approved the versioned assessment-processing disclosure and its separation from clinical eligibility.
-- [x] Product Owner approved backend ownership of immutable versioned disclosure text; `privacy-capstone-v3` is current for PHQ-9/GAD-7 while v1/v2 remain historical, and `ai-processing-capstone-v1` is current for exact-revision/bounded-longitudinal AI processing. AI consent UI and specialist-sharing runtime remain follow-up work; research and marketing remain deferred.
+- [x] Product Owner approved backend ownership of immutable versioned disclosure text; `privacy-capstone-v3` is current for PHQ-9/GAD-7 while v1/v2 remain historical, and MB-370 makes `ai-processing-capstone-v2` current for explicit journal analysis and optional saved-ConsultationBrief suggestions. Specialist sharing remains a separate explicit grant; research and marketing remain deferred.
 - [x] Product Owner approved a 30-minute sliding inactivity deadline, two-hour absolute lifetime, and persisted idempotent completion semantics.
 - [x] Product Owner approved registered history only for controlled synthetic/test/demo use without a production retention claim.
 - [x] Product Owner approved the appointment-scoped `SPECIALIST_SHARING` grant and user-approved `ConsultationBrief` boundary under ADR 0014.

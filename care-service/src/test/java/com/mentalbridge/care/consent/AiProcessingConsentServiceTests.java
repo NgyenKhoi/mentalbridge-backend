@@ -38,10 +38,10 @@ class AiProcessingConsentServiceTests {
 		when(decisions.saveAndFlush(any())).thenAnswer(invocation -> invocation.getArgument(0));
 
 		var recorded = service.record(userId, "ai-consent-command-001",
-				new ConsentService.DecisionCommand("AI_PROCESSING", "ai-processing-capstone-v1", true));
+				new ConsentService.DecisionCommand("AI_PROCESSING", "ai-processing-capstone-v2", true));
 
 		assertThat(recorded.consentType()).isEqualTo("AI_PROCESSING");
-		assertThat(recorded.policyVersion()).isEqualTo("ai-processing-capstone-v1");
+		assertThat(recorded.policyVersion()).isEqualTo("ai-processing-capstone-v2");
 		assertThat(recorded.granted()).isTrue();
 		assertThat(recorded.decidedAt()).isEqualTo(now);
 		verify(decisions).saveAndFlush(any());
@@ -65,10 +65,10 @@ class AiProcessingConsentServiceTests {
 		when(decisions.findFirstByUserIdAndConsentTypeOrderByDecidedAtDescIdDesc(userId, "AI_PROCESSING"))
 				.thenReturn(Optional.empty())
 				.thenReturn(Optional.of(new ConsentDecisionEntity(userId, "AI_PROCESSING",
-						"ai-processing-capstone-v1", true, "ai-consent-command-003",
+						"ai-processing-capstone-v2", true, "ai-consent-command-003",
 						"a".repeat(64), now)))
 				.thenReturn(Optional.of(new ConsentDecisionEntity(userId, "AI_PROCESSING",
-						"ai-processing-capstone-v1", false, "ai-consent-command-004",
+						"ai-processing-capstone-v2", false, "ai-consent-command-004",
 						"b".repeat(64), now.plusSeconds(1))));
 
 		assertThat(service.authorizeAiProcessing(userId).reason()).isEqualTo("MISSING");

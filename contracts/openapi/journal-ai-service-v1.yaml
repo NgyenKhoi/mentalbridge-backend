@@ -709,6 +709,30 @@ paths:
         "401": { $ref: "#/components/responses/Unauthorized" }
         "403": { $ref: "#/components/responses/Forbidden" }
         "503": { $ref: "#/components/responses/DependencyUnavailable" }
+  /internal/v1/consultation-brief-drafts:
+    x-mentalbridge-status: implemented
+    post:
+      tags: [Consultation brief draft]
+      summary: Generate an editable suggestion from one exact minimized Care-owned draft source
+      description: Requires the forwarded verified end-user bearer and current AI_PROCESSING consent. It may rewrite only currentSituation and userGoals. It cannot change the screening source, save or approve a brief, grant specialist access, or consume Journal, chat, raw assessment answers, or private specialist notes.
+      operationId: generateConsultationBriefDraftSuggestion
+      parameters:
+        - $ref: "#/components/parameters/CorrelationId"
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: "#/components/schemas/ConsultationBriefAiDraftProviderRequest" }
+      responses:
+        "200":
+          description: Bounded editable suggestion with provider and source provenance
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/ConsultationBriefAiDraftProviderResponse" }
+        "400": { $ref: "#/components/responses/BadRequest" }
+        "401": { $ref: "#/components/responses/Unauthorized" }
+        "403": { $ref: "#/components/responses/Forbidden" }
+        "503": { $ref: "#/components/responses/DependencyUnavailable" }
 components:
   securitySchemes:
     bearerAuth:
@@ -872,6 +896,66 @@ components:
           schema:
             $ref: "#/components/schemas/Problem"
   schemas:
+    ConsultationBriefAiDraftScreeningContext:
+      type: object
+      additionalProperties: false
+      required: [instrument, domain, screeningLevel, questionnaireVersion, scoringVersion, evaluatedAt, policyVersion]
+      properties:
+        instrument: { type: string, enum: [PHQ9, GAD7] }
+        domain: { type: string, enum: [DEPRESSIVE_SYMPTOMS, ANXIETY_SYMPTOMS] }
+        screeningLevel: { type: string, enum: [MINIMAL, MILD, MODERATE, MODERATELY_SEVERE, SEVERE] }
+        questionnaireVersion: { type: string, minLength: 1, maxLength: 32 }
+        scoringVersion: { type: string, minLength: 1, maxLength: 32 }
+        evaluatedAt: { type: string, format: date-time }
+        policyVersion: { type: string, minLength: 1, maxLength: 64 }
+    ConsultationBriefAiDraftProviderRequest:
+      type: object
+      additionalProperties: false
+      required: [appointmentId, consultationBriefId, consultationBriefVersion, supportEvaluationId, currentSituation, userGoals, screeningContext, sourceSetVersion]
+      properties:
+        appointmentId: { type: string, format: uuid }
+        consultationBriefId: { type: string, format: uuid }
+        consultationBriefVersion: { type: integer, format: int64, minimum: 0 }
+        supportEvaluationId: { type: string, format: uuid }
+        currentSituation: { type: string, minLength: 1, maxLength: 1000 }
+        userGoals:
+          type: array
+          minItems: 1
+          maxItems: 5
+          items: { type: string, minLength: 1, maxLength: 200 }
+        screeningContext:
+          type: array
+          minItems: 2
+          maxItems: 2
+          items: { $ref: "#/components/schemas/ConsultationBriefAiDraftScreeningContext" }
+        sourceSetVersion: { type: string, const: consultation-brief-ai-source-v1 }
+    ConsultationBriefAiDraftProviderResponse:
+      type: object
+      additionalProperties: false
+      required: [currentSituation, userGoals, sourceSetVersion, consentPolicyVersion, servicePlan, entitlementSource, entitlementPolicyVersion, entitlementVersion, routingPolicyVersion, providerApprovalVersion, provider, model, promptVersion, schemaVersion, latencyMs, inputTokens, outputTokens, estimatedCostMicroUsd]
+      properties:
+        currentSituation: { type: string, minLength: 1, maxLength: 1000 }
+        userGoals:
+          type: array
+          minItems: 1
+          maxItems: 5
+          items: { type: string, minLength: 1, maxLength: 200 }
+        sourceSetVersion: { type: string, const: consultation-brief-ai-source-v1 }
+        consentPolicyVersion: { type: string, minLength: 1, maxLength: 64 }
+        servicePlan: { type: string, enum: [FREE, PLUS, PREMIUM] }
+        entitlementSource: { type: string, enum: [DEFAULT_FREE, DEMO, PAID] }
+        entitlementPolicyVersion: { type: string, minLength: 1, maxLength: 96 }
+        entitlementVersion: { type: integer, format: int64, minimum: 0 }
+        routingPolicyVersion: { type: string, minLength: 1, maxLength: 96 }
+        providerApprovalVersion: { type: string, minLength: 1, maxLength: 96 }
+        provider: { type: string, enum: [DETERMINISTIC_FAKE, GEMINI, OPENAI, BEDROCK] }
+        model: { type: string, minLength: 1, maxLength: 128 }
+        promptVersion: { type: string, const: consultation-brief-draft-v1 }
+        schemaVersion: { type: integer, const: 1 }
+        latencyMs: { type: integer, format: int64, minimum: 0 }
+        inputTokens: { type: [integer, "null"], format: int64, minimum: 0 }
+        outputTokens: { type: [integer, "null"], format: int64, minimum: 0 }
+        estimatedCostMicroUsd: { type: [integer, "null"], format: int64, minimum: 0 }
     SupportGuidePhrasingRequest:
       type: object
       additionalProperties: false

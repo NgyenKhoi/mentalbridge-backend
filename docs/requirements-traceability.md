@@ -1,5 +1,6 @@
 # Requirements Traceability
 
+- 2026-10-10: MB-370 adds an optional asynchronous AI ConsultationBrief suggestion. Care binds each owner-private job to one saved brief/evaluation version, while Journal/AI rechecks `AI_PROCESSING` and approved provider routing. Only situation, goals, and minimized PHQ-9/GAD-7 level provenance cross the boundary. The result is unsaved editable text; manual editing, explicit save, approval, sharing, and appointment authority remain unchanged. See [ADR 0014](adr/0014-appointment-specialist-and-consultation-continuity.md) and [verification evidence](story-mb-370-ai-consultation-brief-evidence.md).
 - 2026-10-06: MB-619 adds one Consultation-owned dispute per eligible settled
   appointment. USER or assigned SPECIALIST may open it within 24 hours using a
   closed reason and optional minimized operational evidence metadata. Open and

@@ -38,6 +38,7 @@ const implementedOperations = new Set([
   "GET /api/v1/longitudinal-analysis-jobs/{jobId}",
   "GET /internal/v1/users/{userId}/longitudinal-analyses/{analysisId}",
   "POST /internal/v1/support-guide-phrasing",
+  "POST /internal/v1/consultation-brief-drafts",
   "POST /api/v1/emotion-check-ins",
   "GET /api/v1/emotion-check-ins",
   "GET /api/v1/emotion-check-ins/{localDate}",
@@ -86,6 +87,10 @@ const implementedResponses = new Map([
   [
     "POST /internal/v1/support-guide-phrasing",
     new Set(["201", "400", "401", "403", "503"]),
+  ],
+  [
+    "POST /internal/v1/consultation-brief-drafts",
+    new Set(["200", "400", "401", "403", "503"]),
   ],
   [
     "POST /api/v1/emotion-check-ins",
@@ -194,6 +199,7 @@ for (const [schemaName, validator] of [
   ["NormalizedAnalysisResult", exactResultValidator],
   ["LongitudinalEvidence", longitudinalResultValidator],
   ["SupportGuidePhrasingResponse", exactResultValidator],
+  ["ConsultationBriefAiDraftProviderResponse", exactResultValidator],
 ]) {
   if (
     !setsEqual(
