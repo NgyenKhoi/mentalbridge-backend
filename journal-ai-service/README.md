@@ -33,6 +33,10 @@ The service provides:
 - minimized exact-source longitudinal evidence for future Care reassessment composition
 - encrypted AI Companion conversations with persisted owner-controlled context,
   server-side plan quotas, and deletion
+- an internal consent-gated ConsultationBrief suggestion endpoint that accepts only
+  a saved situation, owner goals, and minimized PHQ-9/GAD-7 level provenance;
+  it returns editable text with provider/model/prompt/schema provenance and stores
+  no ConsultationBrief content
 - lint, type-check, test, and build scripts
 - production multi-stage Docker image
 

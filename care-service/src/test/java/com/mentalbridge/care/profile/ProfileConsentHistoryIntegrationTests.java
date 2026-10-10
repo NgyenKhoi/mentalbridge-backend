@@ -133,7 +133,7 @@ class ProfileConsentHistoryIntegrationTests extends CareTestProperties {
 		mvc.perform(get("/api/v1/ai-processing-disclosures/current"))
 				.andExpect(status().isOk())
 				.andExpect(jsonPath("$.consentType").value("AI_PROCESSING"))
-				.andExpect(jsonPath("$.version").value("ai-processing-capstone-v1"));
+				.andExpect(jsonPath("$.version").value("ai-processing-capstone-v2"));
 		mvc.perform(get("/api/v1/consents/ai-processing/authorization").with(user(userId)))
 				.andExpect(status().isOk()).andExpect(jsonPath("$.authorized").value(false))
 				.andExpect(jsonPath("$.reason").value("MISSING"));
@@ -229,7 +229,7 @@ class ProfileConsentHistoryIntegrationTests extends CareTestProperties {
 	}
 
 	private String aiConsentBody(boolean granted) {
-		return "{\"consentType\":\"AI_PROCESSING\",\"policyVersion\":\"ai-processing-capstone-v1\",\"granted\":"
+		return "{\"consentType\":\"AI_PROCESSING\",\"policyVersion\":\"ai-processing-capstone-v2\",\"granted\":"
 				+ granted + "}";
 	}
 

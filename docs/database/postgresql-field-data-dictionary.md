@@ -2410,6 +2410,10 @@ Appointment-purpose read authority for exactly one snapshot and assigned special
 
 Append-only content-free access facts. It stores actor, action, allowed/denied outcome, stable reason, correlation identifier, and time; it deliberately omits all brief fields and screening content.
 
+### `public.consultation_brief_ai_draft_job`
+
+Owner-private asynchronous AI suggestion state. `brief_version`, `support_evaluation_id`, `source_set_version`, and the request fingerprint bind the result to one exact saved draft. The nullable consent, entitlement, routing, provider, model, prompt, and schema fields record the successful provider decision. Suggested situation/goals exist only for `SUCCEEDED`; terminal failures retain a reason without generated content. Brief deletion marks jobs `SOURCE_DELETED` and clears both suggestion fields. The table contains no raw Journal content, screening answers, chat, diagnosis, or private specialist notes.
+
 ### `public.resource_idempotency_record`
 
 Durable retry ownership for resource creation. The transaction serializes the same actor, operation, and key; identical requests replay the original resource and a changed payload returns `IDEMPOTENCY_CONFLICT`.

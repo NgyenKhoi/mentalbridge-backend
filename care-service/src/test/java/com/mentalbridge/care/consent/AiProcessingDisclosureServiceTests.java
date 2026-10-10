@@ -16,9 +16,10 @@ class AiProcessingDisclosureServiceTests {
 		var disclosure = disclosures.current("vi-VN");
 
 		assertThat(disclosure.consentType()).isEqualTo("AI_PROCESSING");
-		assertThat(disclosure.version()).isEqualTo("ai-processing-capstone-v1");
-		assertThat(disclosure.content()).contains("một phiên bản nhật ký cụ thể", "không bao gồm nghiên cứu",
-				"không tự động xóa");
+		assertThat(disclosure.version()).isEqualTo("ai-processing-capstone-v2");
+		assertThat(disclosure.content()).contains("bản tóm tắt trước buổi tư vấn đã lưu",
+				"AI chỉ tạo gợi ý để bạn xem lại và chỉnh sửa", "không tự phê duyệt hoặc chia sẻ với chuyên gia",
+				"Nội dung nhật ký, câu trả lời sàng lọc, chat và ghi chú riêng không được dùng");
 	}
 
 	@Test

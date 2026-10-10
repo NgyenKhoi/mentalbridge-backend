@@ -3,6 +3,7 @@ import { z } from "zod";
 import type { ServiceConfiguration } from "../configuration/configuration.js";
 import { EXACT_REVISION_PROMPT_VERSION } from "../prompts/exact-revision.js";
 import { LONGITUDINAL_PROMPT_VERSION } from "../prompts/longitudinal.js";
+import { CONSULTATION_BRIEF_DRAFT_PROMPT_VERSION } from "../prompts/consultation-brief-draft.js";
 
 export type ServicePlan = "FREE" | "PLUS" | "PREMIUM";
 export type EntitlementSource = "DEFAULT_FREE" | "DEMO" | "PAID";
@@ -39,6 +40,14 @@ export interface LongitudinalAnalysisRoute extends Omit<
   readonly promptVersion: typeof LONGITUDINAL_PROMPT_VERSION;
 }
 
+export interface ConsultationBriefDraftRoute extends Omit<
+  AnalysisRoute,
+  "workload" | "promptVersion"
+> {
+  readonly workload: "CONSULTATION_BRIEF_DRAFT";
+  readonly promptVersion: typeof CONSULTATION_BRIEF_DRAFT_PROMPT_VERSION;
+}
+
 export interface EntitlementClient {
   current(
     bearerToken: string,
@@ -52,6 +61,10 @@ export interface ModelRouter {
 
 export interface LongitudinalModelRouter {
   route(entitlement: EntitlementDecision): LongitudinalAnalysisRoute;
+}
+
+export interface ConsultationBriefDraftModelRouter {
+  route(entitlement: EntitlementDecision): ConsultationBriefDraftRoute;
 }
 
 const entitlementSchema = z
@@ -197,9 +210,44 @@ export class VersionedLongitudinalModelRouter implements LongitudinalModelRouter
   }
 }
 
+export class VersionedConsultationBriefDraftModelRouter implements ConsultationBriefDraftModelRouter {
+  private readonly exactRevisionRouter: VersionedModelRouter;
+
+  constructor(configuration: ServiceConfiguration) {
+    this.exactRevisionRouter = new VersionedModelRouter(configuration);
+  }
+
+  route(entitlement: EntitlementDecision): ConsultationBriefDraftRoute {
+    const route = this.exactRevisionRouter.route(entitlement);
+    return {
+      ...route,
+      workload: "CONSULTATION_BRIEF_DRAFT",
+      model:
+        route.provider === "DETERMINISTIC_FAKE"
+          ? "deterministic-consultation-brief-v1"
+          : route.model,
+      promptVersion: CONSULTATION_BRIEF_DRAFT_PROMPT_VERSION,
+    };
+  }
+}
+
 export const sameProviderRoute = (
-  first: AnalysisRoute,
-  second: AnalysisRoute,
+  first: Pick<
+    AnalysisRoute,
+    | "routingPolicyVersion"
+    | "providerApprovalVersion"
+    | "provider"
+    | "model"
+    | "promptVersion"
+  >,
+  second: Pick<
+    AnalysisRoute,
+    | "routingPolicyVersion"
+    | "providerApprovalVersion"
+    | "provider"
+    | "model"
+    | "promptVersion"
+  >,
 ): boolean =>
   first.routingPolicyVersion === second.routingPolicyVersion &&
   first.providerApprovalVersion === second.providerApprovalVersion &&

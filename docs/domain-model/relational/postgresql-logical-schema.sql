@@ -916,6 +916,38 @@ CREATE TABLE care.consultation_brief_audit (
     occurred_at timestamptz NOT NULL
 );
 
+CREATE TABLE care.consultation_brief_ai_draft_job (
+    id uuid PRIMARY KEY,
+    appointment_id uuid NOT NULL,
+    brief_id uuid NOT NULL REFERENCES care.consultation_brief(id),
+    user_id uuid NOT NULL,
+    brief_version bigint NOT NULL,
+    support_evaluation_id uuid NOT NULL REFERENCES care.support_evaluation_v2(id),
+    idempotency_key varchar(128) NOT NULL,
+    request_fingerprint varchar(64) NOT NULL,
+    source_set_version varchar(64) NOT NULL,
+    status varchar(16) NOT NULL,
+    attempt_count integer NOT NULL,
+    terminal_reason varchar(64),
+    suggested_current_situation varchar(1000),
+    suggested_user_goals jsonb,
+    consent_policy_version varchar(64),
+    service_plan varchar(16),
+    entitlement_source varchar(32),
+    entitlement_policy_version varchar(96),
+    entitlement_version bigint,
+    routing_policy_version varchar(96),
+    provider_approval_version varchar(96),
+    provider varchar(32),
+    model varchar(128),
+    prompt_version varchar(96),
+    schema_version integer,
+    created_at timestamptz NOT NULL,
+    updated_at timestamptz NOT NULL,
+    completed_at timestamptz,
+    UNIQUE (user_id, idempotency_key)
+);
+
 /* ========================================================================== */
 /* ACTIVE — consultation-service / mentalbridge_consultation                  */
 /* Evidence: Consultation Liquibase changesets 001-007.                       */

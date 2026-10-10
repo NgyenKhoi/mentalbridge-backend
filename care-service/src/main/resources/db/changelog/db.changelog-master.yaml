@@ -45,3 +45,5 @@ databaseChangeLog:
       file: db/changelog/changes/022-consultation-brief.sql
   - include:
       file: db/changelog/changes/023-plan-change-request.sql
+  - include:
+      file: db/changelog/changes/024-consultation-brief-ai-draft.sql
