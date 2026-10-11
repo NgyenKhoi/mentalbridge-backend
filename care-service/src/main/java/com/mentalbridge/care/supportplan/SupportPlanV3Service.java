@@ -125,7 +125,9 @@ public class SupportPlanV3Service {
 		}
 		var grouped = new LinkedHashMap<String, List<SupportPlanSlotEntity>>();
 		var professionalDomains = new java.util.HashSet<String>();
+		var familyByDomain = new java.util.HashMap<String, SupportPlanTemplateFamilyEntity>();
 		for (var family : families.findBySupportPlanIdOrderByOrdinal(plan.id())) {
+			familyByDomain.put(family.targetDomain(), family);
 			if (family.family().endsWith("_PROFESSIONAL_ADJUNCT")) {
 				professionalDomains.add(family.targetDomain());
 				grouped.putIfAbsent(family.targetDomain(), new ArrayList<>());
@@ -139,6 +141,7 @@ public class SupportPlanV3Service {
 		var result = new ArrayList<PlanFocusView>();
 		int focusOrdinal = 1;
 		for (var entry : grouped.entrySet()) {
+			var family = familyByDomain.get(entry.getKey());
 			var actionViews = new ArrayList<PlanActionView>();
 			if (professionalDomains.contains(entry.getKey())) {
 				actionViews.add(adaptedProfessionalSupport(plan, entry.getKey()));
@@ -148,8 +151,14 @@ public class SupportPlanV3Service {
 						scheduleBySlot.getOrDefault(slot.slotKey(), List.of()),
 						professionalDomains.contains(entry.getKey()), actionViews.size() + 1));
 			}
-			result.add(new PlanFocusView(virtualFocusId(plan.id(), entry.getKey()), focusTitle(entry.getKey()),
-					plan.rationaleText(), focusOrdinal++, List.copyOf(actionViews)));
+			String title = family != null && family.focusTitle() != null
+					? family.focusTitle() : focusTitle(entry.getKey());
+			String rationale = family != null && family.focusRationale() != null
+					? family.focusRationale() : plan.rationaleText();
+			var personalization = family != null && family.focusReasonCode() != null
+					? personalization(plan, family.focusReasonCode()) : null;
+			result.add(new PlanFocusView(virtualFocusId(plan.id(), entry.getKey()), title,
+					rationale, personalization, focusOrdinal++, List.copyOf(actionViews)));
 		}
 		return result;
 	}
@@ -209,7 +218,7 @@ public class SupportPlanV3Service {
 					.toList();
 			if (!actionViews.isEmpty()) {
 				result.add(new PlanFocusView(focus.id().toString(), focus.title(), focus.rationale(),
-						focus.ordinal(), actionViews));
+						personalization(plan, "USER_PREFERENCE_AND_CARE_POLICY"), focus.ordinal(), actionViews));
 			}
 		}
 		return result;
@@ -249,6 +258,11 @@ public class SupportPlanV3Service {
 		return plan.modelVersion() == 2 ? REPRESENTATION_V2 : REPRESENTATION_V3;
 	}
 
+	private FocusPersonalizationProvenanceView personalization(SupportPlanEntity plan, String reasonCode) {
+		return plan.personalizationId() == null ? null : new FocusPersonalizationProvenanceView(
+				plan.personalizationId(), plan.personalizationRevision(), plan.personalizationSchemaVersion(), reasonCode);
+	}
+
 	private String virtualFocusId(UUID planId, String targetDomain) {
 		return UUID.nameUUIDFromBytes((REPRESENTATION_V2 + ":" + planId + ":" + targetDomain)
 				.getBytes(StandardCharsets.UTF_8)).toString();
@@ -286,8 +300,11 @@ public class SupportPlanV3Service {
 			Instant discardedAt, String disclaimerCode, String disclaimer) { }
 	public record SafetyView(String status, String reasonCode, String policyVersion,
 			String guidanceCode, String guidance) { }
-	public record PlanFocusView(String focusId, String title, String rationale, int ordinal,
+	public record PlanFocusView(String focusId, String title, String rationale,
+			FocusPersonalizationProvenanceView personalizationProvenance, int ordinal,
 			List<PlanActionView> actions) { }
+	public record FocusPersonalizationProvenanceView(UUID personalizationId, long revision,
+			String schemaVersion, String reasonCode) { }
 	public record PlanActionView(String actionId, String actionType, long actionVersion,
 			String representationMode, String status, String pathRole, String purposeCode, String rationale, int ordinal,
 			ActionSourceReferenceView source, ActionProvenanceView provenance,

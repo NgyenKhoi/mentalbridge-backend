@@ -545,6 +545,39 @@ CREATE TABLE care.support_guide_request (
         REFERENCES care.support_guide(id, user_id)
 );
 
+CREATE TABLE care.support_plan_personalization (
+    id uuid PRIMARY KEY,
+    user_id uuid NOT NULL REFERENCES care.user_profile(account_id),
+    revision bigint NOT NULL,
+    schema_version varchar(64) NOT NULL,
+    status varchar(16) NOT NULL,
+    preferred_focus varchar(32),
+    desired_pace varchar(16),
+    daily_time_budget_minutes smallint,
+    preferred_daypart varchar(16),
+    submitted_at timestamptz NOT NULL,
+    UNIQUE (user_id, revision),
+    UNIQUE (id, user_id, revision)
+);
+
+CREATE TABLE care.support_plan_personalization_activity_mode (
+    id uuid PRIMARY KEY,
+    personalization_id uuid NOT NULL REFERENCES care.support_plan_personalization(id),
+    ordinal smallint NOT NULL,
+    activity_mode varchar(32) NOT NULL,
+    UNIQUE (personalization_id, ordinal),
+    UNIQUE (personalization_id, activity_mode)
+);
+
+CREATE TABLE care.support_plan_personalization_barrier (
+    id uuid PRIMARY KEY,
+    personalization_id uuid NOT NULL REFERENCES care.support_plan_personalization(id),
+    ordinal smallint NOT NULL,
+    barrier varchar(32) NOT NULL,
+    UNIQUE (personalization_id, ordinal),
+    UNIQUE (personalization_id, barrier)
+);
+
 CREATE TABLE care.support_plan (
     id uuid PRIMARY KEY,
     user_id uuid NOT NULL REFERENCES care.user_profile(account_id),
@@ -559,6 +592,9 @@ CREATE TABLE care.support_plan (
     selection_policy_version varchar(64),
     resource_policy_version varchar(64),
     resources_resolved_at timestamptz,
+    personalization_id uuid,
+    personalization_revision bigint,
+    personalization_schema_version varchar(64),
     entitlement_package varchar(16) NOT NULL,
     entitlement_source varchar(16) NOT NULL,
     entitlement_policy_version varchar(64) NOT NULL,
@@ -581,7 +617,9 @@ CREATE TABLE care.support_plan (
     updated_at timestamptz NOT NULL,
     UNIQUE (id, user_id),
     FOREIGN KEY (support_evaluation_id, user_id)
-        REFERENCES care.support_evaluation_v2(id, user_id)
+        REFERENCES care.support_evaluation_v2(id, user_id),
+    FOREIGN KEY (personalization_id, user_id, personalization_revision)
+        REFERENCES care.support_plan_personalization(id, user_id, revision)
 );
 
 CREATE TABLE care.support_plan_focus (
@@ -649,7 +687,10 @@ CREATE TABLE care.support_plan_template_family (
     ordinal smallint NOT NULL,
     family varchar(64) NOT NULL,
     template_version integer NOT NULL,
-    target_domain varchar(48) NOT NULL
+    target_domain varchar(48) NOT NULL,
+    focus_title varchar(255),
+    focus_rationale varchar(2048),
+    focus_reason_code varchar(64)
 );
 
 CREATE TABLE care.support_plan_slot (

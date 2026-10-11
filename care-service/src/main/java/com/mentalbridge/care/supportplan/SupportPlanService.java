@@ -49,18 +49,21 @@ public class SupportPlanService {
 	private final ResourceEligibilityClient eligibility;
 	private final SupportPlanPolicy policy;
 	private final SupportPlanWriter writer;
+	private final SupportPlanPersonalizationService personalizations;
 	private final ReassessmentSummaryService reassessments;
 	private final ScreeningEpisodeService screeningEpisodes;
 	private final Clock clock;
 
 	public SupportPlanService(EntitlementClient entitlements, SupportEvaluationV2Service evaluations,
 			ResourceEligibilityClient eligibility, SupportPlanPolicy policy, SupportPlanWriter writer,
-			ReassessmentSummaryService reassessments, ScreeningEpisodeService screeningEpisodes, Clock clock) {
+			SupportPlanPersonalizationService personalizations, ReassessmentSummaryService reassessments,
+			ScreeningEpisodeService screeningEpisodes, Clock clock) {
 		this.entitlements = entitlements;
 		this.evaluations = evaluations;
 		this.eligibility = eligibility;
 		this.policy = policy;
 		this.writer = writer;
+		this.personalizations = personalizations;
 		this.reassessments = reassessments;
 		this.screeningEpisodes = screeningEpisodes;
 		this.clock = clock;
@@ -77,14 +80,16 @@ public class SupportPlanService {
 			return view(writer.required(userId, replay.getPlanId()));
 		}
 
+		var personalization = personalizations.currentSnapshot(userId).orElse(null);
 		CurrentEntitlementResponse entitlement = paidEntitlement(userId, bearerToken, correlationId);
 		var evaluation = evaluations.getCurrentCompatible(userId, command.sourceSupportEvaluationId());
 		screeningEpisodes.requiredEvaluationContext(userId, command.sourceSupportEvaluationId());
-		var proposalRequest = policy.request(evaluation);
+		var proposalRequest = policy.request(evaluation, personalization);
 		var resolved = eligibility.resolve(proposalRequest.batch(), bearerToken, correlationId);
-		var proposal = policy.compose(proposalRequest, resolved);
+		var proposal = policy.compose(proposalRequest, resolved, personalization);
 		boolean safetyPositive = evaluation.safetyEvidence().status() == SafetyStatus.POSITIVE_SAFETY_SCREEN;
 		var stored = writer.persist(userId, idempotencyKey, requestHash, evaluation, entitlement, proposal,
+				personalization,
 				RATIONALE, safetyPositive ? "REVIEW_SAFETY_GUIDANCE" : "STANDARD_SAFETY_REMINDER",
 				safetyPositive ? SupportEvaluationService.SAFETY_FALLBACK : STANDARD_SAFETY, clock.instant());
 		return view(stored);
@@ -233,7 +238,8 @@ public class SupportPlanService {
 		var proposedResource = policy.exactResource(request, response, target.slot().slotKey(),
 				resourceId, resourceVersion);
 		var families = current.families().stream().map(value ->
-				new FamilyDraft(value.family(), value.targetDomain())).toList();
+				new FamilyDraft(value.family(), value.targetDomain(), value.focusTitle(),
+						value.focusRationale(), value.focusReasonCode())).toList();
 		var slots = current.slots().stream().map(value -> {
 			var selected = value == target ? proposedResource : value.slot().selectedResource();
 			var candidates = new java.util.LinkedHashMap<String, ResourceDraft>();

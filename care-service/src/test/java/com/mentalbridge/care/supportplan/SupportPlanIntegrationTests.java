@@ -89,6 +89,170 @@ class SupportPlanIntegrationTests extends CareTestProperties {
 	}
 
 	@Test
+	void storesVersionedPersonalizationWithoutLeakingItToAnotherActor() throws Exception {
+		var userId = insertProfile();
+		var otherUser = insertProfile();
+
+		mvc.perform(get("/api/v2/support-plan-personalization").with(user(userId)))
+				.andExpect(status().isOk()).andExpect(header().string("ETag", "\"0\""))
+				.andExpect(jsonPath("$.status").value("NOT_PROVIDED"))
+				.andExpect(jsonPath("$.planReview.required").value(false));
+
+		String request = """
+				{"preferredFocus":"SLEEP","desiredPace":"GENTLE","dailyTimeBudgetMinutes":10,
+				 "preferredDaypart":"EVENING","preferredActivityModes":["READING","JOURNALING"],
+				 "commonBarriers":["LOW_ENERGY"]}
+				""";
+		mvc.perform(put("/api/v2/support-plan-personalization").with(user(userId))
+				.header("If-Match", "\"0\"").contentType(MediaType.APPLICATION_JSON).content(request))
+				.andExpect(status().isOk()).andExpect(header().string("ETag", "\"1\""))
+				.andExpect(jsonPath("$.schemaVersion").value("support-plan-personalization-v1"))
+				.andExpect(jsonPath("$.revision").value(1))
+				.andExpect(jsonPath("$.preferredFocus").value("SLEEP"))
+				.andExpect(jsonPath("$.preferredActivityModes[1]").value("JOURNALING"));
+
+		mvc.perform(put("/api/v2/support-plan-personalization").with(user(userId))
+				.header("If-Match", "\"0\"").contentType(MediaType.APPLICATION_JSON).content(request))
+				.andExpect(status().isPreconditionFailed())
+				.andExpect(jsonPath("$.code").value("SUPPORT_PLAN_PERSONALIZATION_VERSION_MISMATCH"));
+		mvc.perform(put("/api/v2/support-plan-personalization").with(user(userId))
+				.header("If-Match", "\"1\"").contentType(MediaType.APPLICATION_JSON)
+				.content("{\"preferredActivityModes\":[null],\"commonBarriers\":[]}"))
+				.andExpect(status().isBadRequest());
+
+		mvc.perform(get("/api/v2/support-plan-personalization").with(user(otherUser)))
+				.andExpect(status().isOk()).andExpect(jsonPath("$.status").value("NOT_PROVIDED"));
+		mvc.perform(get("/api/v2/support-plan-personalization")
+				.with(jwt().jwt(token -> token.subject(userId.toString()))
+						.authorities(new SimpleGrantedAuthority("ROLE_SPECIALIST"))))
+				.andExpect(status().isForbidden());
+
+		assertThat(jdbc.sql("select count(*) from support_plan_personalization where user_id = :userId")
+				.param("userId", userId).query(Integer.class).single()).isEqualTo(1);
+		assertThat(jdbc.sql("select count(*) from support_plan_personalization_activity_mode")
+				.query(Integer.class).single()).isGreaterThanOrEqualTo(2);
+	}
+
+	@Test
+	void snapshotsPartialPreferencesAndRequiresReviewWithoutMutatingTheActivePlan() throws Exception {
+		var userId = insertProfile();
+		var evaluationId = evaluation(userId, "MINIMAL", "MINIMAL", false);
+		String eveningPreference = """
+				{"preferredFocus":"MOTIVATION","preferredDaypart":"EVENING",
+				 "preferredActivityModes":[],"commonBarriers":[]}
+				""";
+		var saved = mvc.perform(put("/api/v2/support-plan-personalization").with(user(userId))
+				.header("If-Match", "\"0\"").contentType(MediaType.APPLICATION_JSON)
+				.content(eveningPreference))
+				.andExpect(status().isOk()).andExpect(header().string("ETag", "\"1\""))
+				.andExpect(jsonPath("$.status").value("PROVIDED"))
+				.andReturn().getResponse().getContentAsString();
+		var personalizationId = UUID.fromString(objectMapper.readTree(saved).path("personalizationId").asText());
+
+		var created = createPlan(userId, evaluationId, "personalized-plan-create");
+		var planId = UUID.fromString(created.path("supportPlanId").asText());
+		mvc.perform(get("/api/v2/support-plans/{id}", planId).with(user(userId)))
+				.andExpect(status().isOk())
+				.andExpect(jsonPath("$.focuses[0].title").value("Bắt đầu bằng bước nhỏ"))
+				.andExpect(jsonPath("$.focuses[0].personalizationProvenance.personalizationId")
+						.value(personalizationId.toString()))
+				.andExpect(jsonPath("$.focuses[0].personalizationProvenance.revision").value(1));
+		assertThat(jdbc.sql("select personalization_revision from support_plan where id=:id")
+				.param("id", planId).query(Long.class).single()).isEqualTo(1L);
+
+		mvc.perform(post("/api/v1/support-plans/{id}/activate", planId).with(user(userId))
+				.header("If-Match", "\"0\"").header("Idempotency-Key", "personalized-plan-activate"))
+				.andExpect(status().isOk());
+		assertThat(jdbc.sql("""
+				select to_char(local_time, 'HH24:MI') from support_plan_activity_schedule
+				where support_plan_id=:id and ordinal=1
+				""").param("id", planId).query(String.class).single()).isEqualTo("18:00");
+
+		String morningPreference = """
+				{"preferredFocus":"SLEEP","preferredDaypart":"MORNING",
+				 "preferredActivityModes":[],"commonBarriers":["DIFFICULT_TO_START"]}
+				""";
+		mvc.perform(put("/api/v2/support-plan-personalization").with(user(userId))
+				.header("If-Match", "\"1\"").contentType(MediaType.APPLICATION_JSON)
+				.content(morningPreference))
+				.andExpect(status().isOk()).andExpect(header().string("ETag", "\"2\""))
+				.andExpect(jsonPath("$.planReview.required").value(true))
+				.andExpect(jsonPath("$.planReview.supportPlanId").value(planId.toString()))
+				.andExpect(jsonPath("$.planReview.reasonCode")
+						.value("PREFERENCES_CHANGED_AFTER_PLAN_ACTIVATION"));
+
+		assertThat(jdbc.sql("select personalization_revision from support_plan where id=:id")
+				.param("id", planId).query(Long.class).single()).isEqualTo(1L);
+		assertThat(jdbc.sql("""
+				select to_char(local_time, 'HH24:MI') from support_plan_activity_schedule
+				where support_plan_id=:id and ordinal=1
+				""").param("id", planId).query(String.class).single()).isEqualTo("18:00");
+		mvc.perform(post("/api/v1/support-plans").with(user(userId))
+				.header("Idempotency-Key", "personalized-plan-create")
+				.contentType(MediaType.APPLICATION_JSON).content(body(evaluationId)))
+				.andExpect(status().isCreated())
+				.andExpect(jsonPath("$.supportPlanId").value(planId.toString()));
+	}
+
+	@Test
+	void blocksActivationOfAStalePersonalizedDraftUntilItIsDiscardedAndRegenerated() throws Exception {
+		var userId = insertProfile();
+		var evaluationId = evaluation(userId, "MINIMAL", "MINIMAL", false);
+		String eveningPreference = """
+				{"preferredFocus":"MOTIVATION","preferredDaypart":"EVENING",
+				 "preferredActivityModes":[],"commonBarriers":[]}
+				""";
+		mvc.perform(put("/api/v2/support-plan-personalization").with(user(userId))
+				.header("If-Match", "\"0\"").contentType(MediaType.APPLICATION_JSON)
+				.content(eveningPreference))
+				.andExpect(status().isOk());
+		var firstDraft = createPlan(userId, evaluationId, "stale-personalized-draft-create");
+		var firstDraftId = UUID.fromString(firstDraft.path("supportPlanId").asText());
+
+		String morningPreference = """
+				{"preferredFocus":"ANXIETY","preferredDaypart":"MORNING",
+				 "preferredActivityModes":[],"commonBarriers":[]}
+				""";
+		mvc.perform(put("/api/v2/support-plan-personalization").with(user(userId))
+				.header("If-Match", "\"1\"").contentType(MediaType.APPLICATION_JSON)
+				.content(morningPreference))
+				.andExpect(status().isOk())
+				.andExpect(jsonPath("$.planReview.required").value(true))
+				.andExpect(jsonPath("$.planReview.supportPlanId").value(firstDraftId.toString()))
+				.andExpect(jsonPath("$.planReview.reasonCode")
+						.value("PREFERENCES_CHANGED_AFTER_DRAFT_CREATION"));
+
+		mvc.perform(post("/api/v1/support-plans/{id}/activate", firstDraftId).with(user(userId))
+				.header("If-Match", "\"0\"")
+				.header("Idempotency-Key", "stale-personalized-draft-activate"))
+				.andExpect(status().isConflict())
+				.andExpect(jsonPath("$.code").value("SUPPORT_PLAN_PERSONALIZATION_REVIEW_REQUIRED"));
+		assertThat(jdbc.sql("select status from support_plan where id=:id").param("id", firstDraftId)
+				.query(String.class).single()).isEqualTo("DRAFT");
+		assertThat(jdbc.sql("select count(*) from support_plan_activity_schedule where support_plan_id=:id")
+				.param("id", firstDraftId).query(Integer.class).single()).isZero();
+
+		mvc.perform(put("/api/v1/support-plans/{id}/status", firstDraftId).with(user(userId))
+				.header("If-Match", "\"0\"").contentType(MediaType.APPLICATION_JSON)
+				.content("{\"status\":\"DISCARDED\"}"))
+				.andExpect(status().isOk());
+		var regenerated = createPlan(userId, evaluationId, "stale-personalized-draft-regenerate");
+		var regeneratedId = UUID.fromString(regenerated.path("supportPlanId").asText());
+		assertThat(regeneratedId).isNotEqualTo(firstDraftId);
+		assertThat(jdbc.sql("select personalization_revision from support_plan where id=:id")
+				.param("id", regeneratedId).query(Long.class).single()).isEqualTo(2L);
+
+		mvc.perform(post("/api/v1/support-plans/{id}/activate", regeneratedId).with(user(userId))
+				.header("If-Match", "\"0\"")
+				.header("Idempotency-Key", "regenerated-personalized-draft-activate"))
+				.andExpect(status().isOk());
+		assertThat(jdbc.sql("""
+				select to_char(local_time, 'HH24:MI') from support_plan_activity_schedule
+				where support_plan_id=:id and ordinal=1
+				""").param("id", regeneratedId).query(String.class).single()).isEqualTo("08:00");
+	}
+
+	@Test
 	void acceptsBoundedEvidenceAndEndsNativeActionWithoutRewritingOccurrenceHistory()
 			throws Exception {
 		var userId = insertProfile();
@@ -306,12 +470,27 @@ class SupportPlanIntegrationTests extends CareTestProperties {
 	void userReviewsRejectsOrAtomicallyAcceptsAnExactSpecialistProposal() throws Exception {
 		var userId = insertProfile();
 		var specialistId = UUID.randomUUID();
+		mvc.perform(put("/api/v2/support-plan-personalization").with(user(userId))
+				.header("If-Match", "\"0\"").contentType(MediaType.APPLICATION_JSON)
+				.content("""
+						{"preferredFocus":"MOTIVATION","preferredDaypart":"EVENING",
+						 "preferredActivityModes":[],"commonBarriers":[]}
+						"""))
+				.andExpect(status().isOk()).andExpect(header().string("ETag", "\"1\""));
 		var current = createPlan(userId, evaluation(userId, "MINIMAL", "MINIMAL", false),
 				"plan-change-current-create");
 		var currentId = UUID.fromString(current.path("supportPlanId").asText());
 		mvc.perform(post("/api/v1/support-plans/{id}/activate", currentId).with(user(userId))
 				.header("If-Match", "\"0\"").header("Idempotency-Key", "plan-change-current-activate"))
 				.andExpect(status().isOk());
+		mvc.perform(put("/api/v2/support-plan-personalization").with(user(userId))
+				.header("If-Match", "\"1\"").contentType(MediaType.APPLICATION_JSON)
+				.content("""
+						{"preferredFocus":"ANXIETY","preferredDaypart":"MORNING",
+						 "preferredActivityModes":[],"commonBarriers":[]}
+						"""))
+				.andExpect(status().isOk()).andExpect(header().string("ETag", "\"2\""))
+				.andExpect(jsonPath("$.planReview.required").value(true));
 
 		var firstProposalId = UUID.randomUUID();
 		when(resourceProposals.get(org.mockito.ArgumentMatchers.eq(firstProposalId), anyString(), any()))
@@ -364,6 +543,8 @@ class SupportPlanIntegrationTests extends CareTestProperties {
 				.query(String.class).single()).isEqualTo("SUPERSEDED");
 		assertThat(jdbc.sql("select count(*) from support_plan where user_id=:id and status='ACTIVE'")
 				.param("id", userId).query(Long.class).single()).isEqualTo(1);
+		assertThat(jdbc.sql("select personalization_revision from support_plan where user_id=:id and status='ACTIVE'")
+				.param("id", userId).query(Long.class).single()).isEqualTo(1L);
 		assertThat(jdbc.sql("select count(*) from support_plan_command where plan_change_request_id=:id")
 				.param("id", requestId).query(Long.class).single()).isEqualTo(1);
 	}
