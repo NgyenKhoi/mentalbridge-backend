@@ -203,11 +203,19 @@ public class SupportPlanActivityOccurrenceService {
 	 */
 	@Transactional
 	public ActionEndResult endAction(UUID userId, UUID actionId) {
+		var planId = actions.findSupportPlanIdByIdAndUserId(actionId, userId).orElseThrow(() ->
+				new ApiException(HttpStatus.NOT_FOUND, "PLAN_ACTION_NOT_FOUND", "PlanAction was not found"));
+		var plan = plans.findByIdAndUserIdForUpdate(planId, userId).orElseThrow(() ->
+				new ApiException(HttpStatus.NOT_FOUND, "SUPPORT_PLAN_NOT_FOUND", "SupportPlan was not found"));
 		var action = actions.findByIdAndUserIdForUpdate(actionId, userId).orElseThrow(() ->
 				new ApiException(HttpStatus.NOT_FOUND, "PLAN_ACTION_NOT_FOUND", "PlanAction was not found"));
 		if ("DRAFT".equals(action.status())) {
 			throw new ApiException(HttpStatus.CONFLICT, "PLAN_ACTION_NOT_ACTIVE",
 					"A draft PlanAction cannot be ended");
+		}
+		if (!List.of("ACTIVE", "PAUSED").contains(plan.status())) {
+			throw new ApiException(HttpStatus.CONFLICT, "SUPPORT_PLAN_NOT_MUTABLE",
+					"A terminal SupportPlan does not accept action lifecycle changes");
 		}
 		if (!List.of("ACTIVE", "ENDED").contains(action.status())) {
 			throw new ApiException(HttpStatus.CONFLICT, "PLAN_ACTION_STATE_INVALID",
@@ -215,8 +223,10 @@ public class SupportPlanActivityOccurrenceService {
 		}
 
 		Instant now = clock.instant().truncatedTo(ChronoUnit.MICROS);
+		boolean actionChanged = false;
 		if ("ACTIVE".equals(action.status())) {
 			action.end(now);
+			actionChanged = true;
 		}
 		int endedSchedules = 0;
 		for (var schedule : schedules.findBySourceActionIdAndUserIdForUpdate(actionId, userId)) {
@@ -226,7 +236,10 @@ public class SupportPlanActivityOccurrenceService {
 				endedSchedules++;
 			}
 		}
-		actions.saveAndFlush(action);
+		if (actionChanged || endedSchedules > 0) {
+			plan.actionChanged(now);
+			plans.saveAndFlush(plan);
+		}
 		int cancelledOccurrences = occurrences.cancelFutureForEndedAction(actionId, userId, now);
 		return new ActionEndResult(action.id(), action.version(), action.status(), action.endedAt(),
 				endedSchedules, cancelledOccurrences);

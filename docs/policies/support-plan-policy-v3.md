@@ -48,6 +48,11 @@ creates a new action in a later plan revision and ends future generation for the
 old action. Editing wording, order, rationale, instructions, or a schedule is a
 versioned change that affects future behavior only.
 
+Ending an action is also a versioned SupportPlan change: Care advances the
+parent plan revision and validator in the same transaction when the nested
+action or schedule representation changes. An unchanged retry is a no-op, and
+a terminal plan accepts no further action lifecycle mutation.
+
 ## Allowed action types
 
 | Type | Source authority | Schedule and completion policy |

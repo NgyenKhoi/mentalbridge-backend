@@ -178,6 +178,10 @@ class SupportPlanEntity {
 		this.updatedAt = changedAt;
 	}
 
+	void actionChanged(Instant changedAt) {
+		this.updatedAt = changedAt.isAfter(this.updatedAt) ? changedAt : this.updatedAt.plusNanos(1_000);
+	}
+
 	void complete(String completionReason, Instant changedAt) {
 		this.status = "COMPLETED";
 		this.completedAt = changedAt;

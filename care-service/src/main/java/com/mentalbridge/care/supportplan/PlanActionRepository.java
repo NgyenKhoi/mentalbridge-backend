@@ -16,6 +16,9 @@ interface PlanActionRepository extends JpaRepository<PlanActionEntity, UUID> {
 	List<PlanActionEntity> findBySupportPlanIdAndUserIdOrderByPlanFocusIdAscOrdinalAsc(
 			UUID supportPlanId, UUID userId);
 
+	@Query("select action.supportPlanId from PlanActionEntity action where action.id = :id and action.userId = :userId")
+	Optional<UUID> findSupportPlanIdByIdAndUserId(@Param("id") UUID id, @Param("userId") UUID userId);
+
 	@Lock(LockModeType.PESSIMISTIC_WRITE)
 	@Query("select action from PlanActionEntity action where action.id = :id and action.userId = :userId")
 	Optional<PlanActionEntity> findByIdAndUserIdForUpdate(@Param("id") UUID id,

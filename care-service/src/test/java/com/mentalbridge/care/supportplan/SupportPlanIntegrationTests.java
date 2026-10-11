@@ -53,6 +53,7 @@ import com.mentalbridge.care.resourceeligibility.generated.ResourceEligibilityCo
 import com.mentalbridge.care.resourceeligibility.generated.ResourceEligibilityContract.ResourceEligibilityOutcome;
 import com.mentalbridge.care.resourceeligibility.generated.ResourceEligibilityContract.ResourceEligibilityReasonCode;
 import com.mentalbridge.care.resourceeligibility.generated.ResourceEligibilityContract.ResourceEligibilityResult;
+import com.mentalbridge.care.shared.ApiException;
 import com.mentalbridge.care.supportplan.ConsultationResourceProposalHttpClient.ResourceProposal;
 import com.mentalbridge.care.supportplan.PlanActionEntity.Presentation;
 import com.mentalbridge.care.supportplan.PlanActionSourcePolicy.Provenance;
@@ -101,7 +102,7 @@ class SupportPlanIntegrationTests extends CareTestProperties {
 				"PLUS", "DEMO", "service-entitlement-v1", 1, now,
 				"DOMAIN_AWARE_WELLBEING_SUPPORT", "Kế hoạch hỗ trợ sức khỏe tinh thần tổng quát.",
 				"NEGATIVE_SAFETY_SCREEN", "NO_ITEM9_SIGNAL", "MB-SAFETY-PHQ9-001-v1",
-				"STANDARD_SAFETY_GUIDANCE", "Tìm hỗ trợ khẩn cấp khi cần.", 1, now);
+				"STANDARD_SAFETY_GUIDANCE", "Tìm hỗ trợ khẩn cấp khi cần.", 2, now);
 		plan = plans.saveAndFlush(plan);
 		var focus = focuses.saveAndFlush(new SupportPlanFocusEntity(UUID.randomUUID(), plan.id(), userId,
 				1, "Kết nối với hỗ trợ phù hợp", "Thực hiện bước đã chọn.", now));
@@ -111,10 +112,16 @@ class SupportPlanIntegrationTests extends CareTestProperties {
 						"consultation-routing-v1", null, null, now),
 				new Provenance("USER_SELECTED", null, null, now),
 				new Presentation("Buổi hỗ trợ đã đặt", "Theo dõi lịch đã xác nhận.", null, null), now));
+		var pendingAction = actions.saveAndFlush(new PlanActionEntity(UUID.randomUUID(), plan.id(), focus.id(),
+				userId, 2, "SELF_REPORT_REVIEW", "REVIEW_PLAN", "Review current plan progress.", null,
+				new Provenance("USER_SELECTED", null, null, now),
+				new Presentation("Review plan", "Review the current support plan.", null, null), now));
 		plan.activate(now);
 		plan = plans.saveAndFlush(plan);
 		action.activate(now);
 		action = actions.saveAndFlush(action);
+		pendingAction.activate(now);
+		pendingAction = actions.saveAndFlush(pendingAction);
 		var schedule = schedules.saveAndFlush(new SupportPlanActivityScheduleEntity(UUID.randomUUID(),
 				plan.id(), userId, 1, plan.version(), action, "support-plan-schedule-v3",
 				"DAILY", null, LocalTime.of(9, 0), "Asia/Ho_Chi_Minh", today, true, now));
@@ -172,12 +179,42 @@ class SupportPlanIntegrationTests extends CareTestProperties {
 		mvc.perform(get("/api/v1/support-plan-occurrences/{id}", firstOccurrenceId).with(user(userId)))
 				.andExpect(status().isConflict())
 				.andExpect(jsonPath("$.code").value("SUPPORT_PLAN_MODEL_VERSION_UNSUPPORTED"));
+		var beforeActionEnd = mvc.perform(get("/api/v2/support-plans/{id}", plan.id()).with(user(userId)))
+				.andExpect(status().isOk())
+				.andExpect(header().string("ETag", "\"1\""))
+				.andExpect(jsonPath("$.version").value(1))
+				.andExpect(jsonPath("$.focuses[0].actions[0].status").value("ACTIVE"))
+				.andExpect(jsonPath("$.focuses[0].actions[0].schedules[0].status").value("ACTIVE"))
+				.andReturn().getResponse().getContentAsString();
 
 		var ended = activityOccurrences.endAction(userId, action.id());
 		assertThat(ended.status()).isEqualTo("ENDED");
 		assertThat(ended.actionVersion()).isEqualTo(2);
 		assertThat(ended.endedScheduleCount()).isEqualTo(1);
 		assertThat(ended.cancelledOccurrenceCount()).isEqualTo(1);
+		var afterActionEnd = mvc.perform(get("/api/v2/support-plans/{id}", plan.id()).with(user(userId)))
+				.andExpect(status().isOk())
+				.andExpect(header().string("ETag", "\"2\""))
+				.andExpect(jsonPath("$.version").value(2))
+				.andExpect(jsonPath("$.focuses[0].actions[0].status").value("ENDED"))
+				.andExpect(jsonPath("$.focuses[0].actions[0].schedules[0].status").value("ENDED"))
+				.andReturn().getResponse().getContentAsString();
+		assertThat(objectMapper.readTree(afterActionEnd).path("updatedAt"))
+				.isNotEqualTo(objectMapper.readTree(beforeActionEnd).path("updatedAt"));
+		var endedReplay = activityOccurrences.endAction(userId, action.id());
+		assertThat(endedReplay.actionVersion()).isEqualTo(ended.actionVersion());
+		assertThat(endedReplay.endedScheduleCount()).isZero();
+		assertThat(endedReplay.cancelledOccurrenceCount()).isZero();
+		var afterReplay = mvc.perform(get("/api/v2/support-plans/{id}", plan.id()).with(user(userId)))
+				.andExpect(status().isOk())
+				.andExpect(header().string("ETag", "\"2\""))
+				.andReturn().getResponse().getContentAsString();
+		assertThat(objectMapper.readTree(afterReplay)).isEqualTo(objectMapper.readTree(afterActionEnd));
+		mvc.perform(get("/api/v2/support-plans/current").with(user(userId)))
+				.andExpect(status().isOk())
+				.andExpect(header().string("ETag", "\"2\""))
+				.andExpect(jsonPath("$.version").value(2))
+				.andExpect(jsonPath("$.focuses[0].actions[0].status").value("ENDED"));
 		assertThat(jdbc.sql("select status || '|' || source_action_version "
 				+ "from support_plan_activity_schedule where id=:id")
 				.param("id", schedule.id()).query(String.class).single()).isEqualTo("ENDED|1");
@@ -199,6 +236,19 @@ class SupportPlanIntegrationTests extends CareTestProperties {
 				.andExpect(jsonPath("$.occurrences[0].stateReason").value("ACTION_ENDED"));
 		assertThat(jdbc.sql("select count(*) from support_plan_activity_occurrence where source_action_id=:id")
 				.param("id", action.id()).query(Long.class).single()).isEqualTo(2);
+
+		plan = plans.findByIdAndUserId(plan.id(), userId).orElseThrow();
+		plan.complete("USER_DECISION", Instant.now().truncatedTo(ChronoUnit.MICROS));
+		plans.saveAndFlush(plan);
+		var terminalActionId = pendingAction.id();
+		assertThatThrownBy(() -> activityOccurrences.endAction(userId, terminalActionId))
+				.isInstanceOfSatisfying(ApiException.class, exception ->
+						assertThat(exception.code()).isEqualTo("SUPPORT_PLAN_NOT_MUTABLE"));
+		mvc.perform(get("/api/v2/support-plans/{id}", plan.id()).with(user(userId)))
+				.andExpect(status().isOk())
+				.andExpect(header().string("ETag", "\"3\""))
+				.andExpect(jsonPath("$.status").value("COMPLETED"))
+				.andExpect(jsonPath("$.focuses[0].actions[1].status").value("ACTIVE"));
 	}
 
 	@Test
