@@ -77,6 +77,11 @@ class CareLiquibaseMb639UpgradeTests {
 				.isEqualTo("true|true|true|true|true|true|true|true|true");
 		assertThat(scalar("select count(*) from support_plan_focus")).isEqualTo("0");
 		assertThat(scalar("select count(*) from support_plan_action")).isEqualTo("0");
+		assertThat(scalar("""
+				select (personalization_id is null) || '|' || (personalization_revision is null) || '|'
+				       || (personalization_schema_version is null)
+				from support_plan where id = '%s'
+				""".formatted(PLAN_ID))).isEqualTo("true|true|true");
 
 		insertNativeV3ResourceAction();
 		assertThat(scalar("""
@@ -247,7 +252,9 @@ class CareLiquibaseMb639UpgradeTests {
 
 	private String legacyPlanSnapshot() throws SQLException {
 		return scalar("""
-				select (to_jsonb(sp) - 'model_version' - 'plan_policy_version' - 'action_count')::text
+				select (to_jsonb(sp) - 'model_version' - 'plan_policy_version' - 'action_count'
+				        - 'personalization_id' - 'personalization_revision'
+				        - 'personalization_schema_version')::text
 				from support_plan sp where id = '%s'
 				""".formatted(PLAN_ID));
 	}

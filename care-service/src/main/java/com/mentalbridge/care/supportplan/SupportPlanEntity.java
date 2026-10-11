@@ -25,6 +25,9 @@ class SupportPlanEntity {
 	private String selectionPolicyVersion;
 	private String resourcePolicyVersion;
 	private Instant resourcesResolvedAt;
+	private UUID personalizationId;
+	private Long personalizationRevision;
+	private String personalizationSchemaVersion;
 	private String entitlementPackage;
 	private String entitlementSource;
 	private String entitlementPolicyVersion;
@@ -135,6 +138,9 @@ class SupportPlanEntity {
 	String selectionPolicyVersion() { return selectionPolicyVersion; }
 	String resourcePolicyVersion() { return resourcePolicyVersion; }
 	Instant resourcesResolvedAt() { return resourcesResolvedAt; }
+	UUID personalizationId() { return personalizationId; }
+	Long personalizationRevision() { return personalizationRevision; }
+	String personalizationSchemaVersion() { return personalizationSchemaVersion; }
 	String entitlementPackage() { return entitlementPackage; }
 	String entitlementSource() { return entitlementSource; }
 	String entitlementPolicyVersion() { return entitlementPolicyVersion; }
@@ -155,6 +161,19 @@ class SupportPlanEntity {
 	String completionReason() { return completionReason; }
 	Instant supersededAt() { return supersededAt; }
 	Instant discardedAt() { return discardedAt; }
+
+	void snapshotPersonalization(SupportPlanPersonalizationService.PersonalizationSnapshot personalization) {
+		if (personalization == null) return;
+		this.personalizationId = personalization.personalizationId();
+		this.personalizationRevision = personalization.revision();
+		this.personalizationSchemaVersion = personalization.schemaVersion();
+	}
+
+	void copyPersonalizationFrom(SupportPlanEntity source) {
+		this.personalizationId = source.personalizationId;
+		this.personalizationRevision = source.personalizationRevision;
+		this.personalizationSchemaVersion = source.personalizationSchemaVersion;
+	}
 
 
 	void changeChoices(int selectedResourceCount, Instant changedAt) {

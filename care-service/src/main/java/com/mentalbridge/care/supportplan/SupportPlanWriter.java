@@ -49,7 +49,8 @@ class SupportPlanWriter {
 
 	@Transactional
 	StoredPlan persist(UUID userId, String idempotencyKey, String requestHash, EvaluationView evaluation,
-			CurrentEntitlementResponse entitlement, Proposal proposal, String rationaleText,
+			CurrentEntitlementResponse entitlement, Proposal proposal,
+			SupportPlanPersonalizationService.PersonalizationSnapshot personalization, String rationaleText,
 			String safetyGuidanceCode, String safetyGuidance, Instant now) {
 		now = now.truncatedTo(ChronoUnit.MICROS);
 		lockOwner(userId);
@@ -66,7 +67,7 @@ class SupportPlanWriter {
 			return stored(existing.orElseThrow());
 		}
 
-		var plan = createDraft(userId, evaluation, entitlement, proposal, rationaleText,
+		var plan = createDraft(userId, evaluation, entitlement, proposal, personalization, rationaleText,
 				safetyGuidanceCode, safetyGuidance, now);
 		plans.insertRequest(userId, idempotencyKey, requestHash, plan.id(), now);
 		return stored(plan);
@@ -205,9 +206,10 @@ class SupportPlanWriter {
 			throw new ApiException(HttpStatus.CONFLICT, "PLAN_CHANGE_REQUEST_STALE",
 					"The SupportPlan reviewed for this proposal is no longer current");
 		}
-		var replacement = createDraft(userId, evaluation, entitlement, proposal,
+		var replacement = createDraft(userId, evaluation, entitlement, proposal, null,
 				"A user-approved specialist resource proposal was reviewed against current Care policy.",
 				current.safetyGuidanceCode(), current.safetyGuidance(), now);
+		replacement.copyPersonalizationFrom(current);
 		validateStoredChoices(replacement, choices);
 		current.supersede(now);
 		activities.end(current.id(), "PLAN_REPLACED", now);
@@ -396,7 +398,8 @@ class SupportPlanWriter {
 	}
 
 	private SupportPlanEntity createDraft(UUID userId, EvaluationView evaluation,
-			CurrentEntitlementResponse entitlement, Proposal proposal, String rationaleText,
+			CurrentEntitlementResponse entitlement, Proposal proposal,
+			SupportPlanPersonalizationService.PersonalizationSnapshot personalization, String rationaleText,
 			String safetyGuidanceCode, String safetyGuidance, Instant now) {
 		var safety = evaluation.safetyEvidence();
 		var plan = new SupportPlanEntity(UUID.randomUUID(), userId, evaluation.supportEvaluationId(),
@@ -405,11 +408,13 @@ class SupportPlanWriter {
 				entitlement.policyVersion(), entitlement.version(), entitlement.decidedAt(), rationaleText,
 				safety.status().name(), safety.reasonCode().name(), safety.policyVersion(), safetyGuidanceCode,
 				safetyGuidance, proposal.slots().size(), now);
+		plan.snapshotPersonalization(personalization);
 		plan = plans.saveAndFlush(plan);
 		for (int index = 0; index < proposal.families().size(); index++) {
 			var family = proposal.families().get(index);
 			families.save(new SupportPlanTemplateFamilyEntity(UUID.randomUUID(), plan.id(), index + 1,
-					family.family(), family.targetDomain()));
+					family.family(), family.targetDomain(), family.focusTitle(), family.focusRationale(),
+					family.focusReasonCode()));
 		}
 		families.flush();
 		for (int index = 0; index < proposal.slots().size(); index++) {

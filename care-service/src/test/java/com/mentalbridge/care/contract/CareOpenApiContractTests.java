@@ -82,6 +82,8 @@ class CareOpenApiContractTests {
 			"GET /api/v2/support-plans/current",
 			"GET /api/v2/support-plans/{supportPlanId}",
 			"GET /api/v2/support-plan-occurrences",
+			"GET /api/v2/support-plan-personalization",
+			"PUT /api/v2/support-plan-personalization",
 			"POST /api/v1/anonymous-assessment-sessions",
 			"POST /api/v1/anonymous-assessment-sessions/{sessionId}/assessments",
 			"GET /api/v1/anonymous-assessment-sessions/{sessionId}/assessments/{assessmentId}",
@@ -143,6 +145,7 @@ class CareOpenApiContractTests {
 			"/api/v2/support-plans/current",
 			"/api/v2/support-plans/{supportPlanId}",
 			"/api/v2/support-plan-occurrences",
+			"/api/v2/support-plan-personalization",
 			"/api/v1/anonymous-assessment-sessions",
 			"/api/v1/anonymous-assessment-sessions/{sessionId}/assessments",
 			"/api/v1/anonymous-assessment-sessions/{sessionId}/assessments/{assessmentId}",
@@ -206,7 +209,9 @@ class CareOpenApiContractTests {
 			"DELETE /api/v1/support-plan-occurrences/{occurrenceId}/engagement",
 			"GET /api/v2/support-plans/current",
 			"GET /api/v2/support-plans/{supportPlanId}",
-			"GET /api/v2/support-plan-occurrences");
+			"GET /api/v2/support-plan-occurrences",
+			"GET /api/v2/support-plan-personalization",
+			"PUT /api/v2/support-plan-personalization");
 
 	private static final Set<String> ANONYMOUS_TOKEN_OPERATIONS = Set.of(
 			"POST /api/v1/anonymous-assessment-sessions/{sessionId}/assessments",
@@ -413,7 +418,8 @@ class CareOpenApiContractTests {
 				.doesNotContainKeys("slots", "assessmentAnswers", "journalContent", "emotionValue");
 		assertThat(enumValues(property(plan, "representationMode")))
 				.containsExactly("V2_RESOURCE_ADAPTER", "NATIVE_V3");
-		assertThat(focus.getProperties()).containsKeys("focusId", "title", "rationale", "actions")
+		assertThat(focus.getProperties()).containsKeys("focusId", "title", "rationale",
+				"personalizationProvenance", "actions")
 				.doesNotContainKeys("diagnosis", "score", "clinicalOutcome");
 		assertThat(enumValues(property(action, "actionType"))).containsExactly(
 				"RESOURCE", "JOURNAL", "EMOTION_CHECK_IN", "ROUTINE_SELF_MANAGEMENT",
@@ -436,6 +442,30 @@ class CareOpenApiContractTests {
 				.doesNotContainKeys("adherence", "recoveryScore", "sourcePayload");
 		assertThat(evidence.getProperties()).containsOnlyKeys("kind", "ownerDomain", "factId", "factRevision",
 				"occurredAt", "verifiedAt");
+	}
+
+	@Test
+	void supportPlanPersonalizationIsBoundedVersionedAndNonDiagnostic() {
+		var contract = Path.of("..", "contracts", "openapi", "care-service-v1.yaml").toAbsolutePath();
+		var openApi = new OpenAPIV3Parser().readLocation(contract.toUri().toString(), null, null).getOpenAPI();
+		var path = openApi.getPaths().get("/api/v2/support-plan-personalization");
+		var request = openApi.getComponents().getSchemas().get("ReplaceSupportPlanPersonalizationRequest");
+		var response = openApi.getComponents().getSchemas().get("SupportPlanPersonalization");
+		var provenance = openApi.getComponents().getSchemas().get("FocusPersonalizationProvenance");
+
+		assertThat(path.getGet()).isNotNull();
+		assertThat(path.getPut()).isNotNull();
+		assertThat(request.getProperties()).containsOnlyKeys("preferredFocus", "desiredPace",
+				"dailyTimeBudgetMinutes", "preferredDaypart", "preferredActivityModes", "commonBarriers")
+				.doesNotContainKeys("diagnosis", "assessmentAnswers", "screeningScore", "journalText");
+		assertThat(enumValues(property(request, "preferredFocus"))).containsExactly(
+				"ANXIETY", "MOOD", "SLEEP", "MOTIVATION", "UNDERSTANDING_EMOTIONS", "null");
+		assertThat(response.getAllOf()).isNull();
+		assertThat(allowsAdditionalProperties(response)).isFalse();
+		assertThat(response.getProperties()).containsKeys("personalizationId", "schemaVersion", "revision",
+				"status", "preferredFocus", "preferredActivityModes", "commonBarriers", "planReview");
+		assertThat(provenance.getProperties()).containsOnlyKeys("personalizationId", "revision",
+				"schemaVersion", "reasonCode");
 	}
 
 	private boolean allowsAdditionalProperties(Schema<?> schema) {

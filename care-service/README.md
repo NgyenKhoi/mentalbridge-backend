@@ -38,6 +38,21 @@ never rewrites an already persisted summary snapshot. MB-559 also supplies the
 functional actor journey that renders all four dimensions without an overall
 verdict; later presentation work is history and refinement only.
 
+## MB-638 SupportPlan personalization
+
+`GET/PUT /api/v2/support-plan-personalization` exposes one USER-owned current
+view over immutable `support-plan-personalization-v1` revisions. ETag revision
+zero is the deterministic `NOT_PROVIDED` fallback; a replacement with no fields
+records `SKIPPED`. Care stores multi-value modes and barriers as ordered bounded
+children rather than free text or screening evidence.
+
+Draft composition snapshots the exact revision, persists human-readable focus
+copy/provenance, and may reorder only resources already admitted by the current
+Care/Content policy. The snapshotted daypart can select the existing schedule
+default time. A later preference revision does not rewrite an active or paused
+plan and instead returns an explicit plan-review reference. MB-640 owns future
+schedule editing and richer cadence/workload controls.
+
 ## MB-639 SupportPlan v3 actions
 
 ADR 0034 makes `SupportPlan -> PlanFocus -> PlanAction -> ActionSchedule ->
@@ -152,6 +167,9 @@ The Care Liquibase changelog owns:
 | `support_plan` | One Care-owned paid proposal/current-plan snapshot with exact source, entitlement, rationale, safety, lifecycle instants, optional coded completion reason, and optimistic version provenance; terminal rows are immutable owner history |
 | `support_plan_focus` | Ordered versioned native v3 focus inside one plan; plain-language intent only, never diagnosis or outcome |
 | `support_plan_action` | Ordered typed native v3 action with bounded presentation, source-owner/reference, provenance, capabilities, and optimistic versioning |
+| `support_plan_personalization` | Immutable owner-local revisions of optional bounded focus and practical-fit inputs, separate from screening evidence |
+| `support_plan_personalization_activity_mode` | Ordered unique bounded activity-mode choices for one personalization revision |
+| `support_plan_personalization_barrier` | Ordered unique bounded practical barriers for one personalization revision |
 | `support_plan_template_family` | Ordered immutable domain template families composed into the draft |
 | `support_plan_slot` | Ordered bounded slots; core selection is required while an optional selection may be explicitly removed |
 | `support_plan_slot_alternative` | Server-admitted exact alternatives for a stored slot; not client-authored choices |

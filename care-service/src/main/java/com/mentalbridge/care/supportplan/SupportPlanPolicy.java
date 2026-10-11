@@ -25,6 +25,9 @@ import com.mentalbridge.care.resourceeligibility.generated.ResourceEligibilityCo
 import com.mentalbridge.care.shared.ApiException;
 import com.mentalbridge.care.support.SupportEvaluationV2Service.DomainContributionView;
 import com.mentalbridge.care.support.SupportEvaluationV2Service.EvaluationView;
+import com.mentalbridge.care.supportplan.SupportPlanPersonalizationService.ActivityMode;
+import com.mentalbridge.care.supportplan.SupportPlanPersonalizationService.PersonalizationSnapshot;
+import com.mentalbridge.care.supportplan.SupportPlanPersonalizationService.PreferredFocus;
 
 @Component
 class SupportPlanPolicy {
@@ -39,11 +42,20 @@ class SupportPlanPolicy {
 	private static final String JOURNAL_ADJUNCT = "00000000-0000-4000-8000-000000000212";
 
 	ProposalRequest request(EvaluationView evaluation) {
+		return request(evaluation, null);
+	}
+
+	ProposalRequest request(EvaluationView evaluation, PersonalizationSnapshot personalization) {
 		var families = new ArrayList<FamilyDraft>();
 		var slots = new ArrayList<SlotSpec>();
+		String personalizedDomain = personalizedDomain(evaluation, personalization);
 		for (DomainContributionView domain : evaluation.contributingDomains()) {
 			var family = family(domain);
-			families.add(new FamilyDraft(family, domain.domain().name()));
+			var focus = domain.domain().name().equals(personalizedDomain)
+					? personalizedFocus(domain.domain().name(), personalization) : null;
+			families.add(new FamilyDraft(family, domain.domain().name(),
+					focus == null ? null : focus.title(), focus == null ? null : focus.rationale(),
+					focus == null ? null : "USER_PREFERENCE_AND_CARE_POLICY"));
 			slots.addAll(slots(domain, family));
 		}
 		var queries = new ArrayList<ResourceEligibilityQuery>();
@@ -57,6 +69,11 @@ class SupportPlanPolicy {
 	}
 
 	Proposal compose(ProposalRequest request, ResourceEligibilityBatchResponse response) {
+		return compose(request, response, null);
+	}
+
+	Proposal compose(ProposalRequest request, ResourceEligibilityBatchResponse response,
+			PersonalizationSnapshot personalization) {
 		Map<String, ResourceEligibilityResult> byRequest = new HashMap<>();
 		for (ResourceEligibilityResult result : response.results()) {
 			if (result.outcome() == ResourceEligibilityOutcome.UNAVAILABLE) {
@@ -78,6 +95,7 @@ class SupportPlanPolicy {
 					.map(resourceId -> byRequest.get(requestId(slot.slotId(), resourceId)))
 					.filter(result -> result != null && result.outcome() == ResourceEligibilityOutcome.ELIGIBLE)
 					.map(this::resource)
+					.sorted(java.util.Comparator.comparingInt(resource -> preferenceRank(resource, personalization)))
 					.toList();
 			var selected = eligible.stream().filter(resource -> selectedVersions.add(resource.key())).findFirst().orElse(null);
 			if (selected == null) {
@@ -97,6 +115,58 @@ class SupportPlanPolicy {
 		}
 		return new Proposal(request.families(), List.copyOf(composed), response.policyVersion(),
 				OffsetDateTime.parse(response.resolvedAt()).toInstant());
+	}
+
+	private int preferenceRank(ResourceDraft resource, PersonalizationSnapshot personalization) {
+		if (personalization == null) return Integer.MAX_VALUE;
+		for (int index = 0; index < personalization.preferredActivityModes().size(); index++) {
+			if (matches(personalization.preferredActivityModes().get(index), resource.category())) return index;
+		}
+		return Integer.MAX_VALUE;
+	}
+
+	private boolean matches(ActivityMode mode, String category) {
+		return switch (mode) {
+			case READING -> List.of("ARTICLE", "VIDEO").contains(category);
+			case GUIDED_PRACTICE -> List.of("BREATHING", "MEDITATION").contains(category);
+			case JOURNALING -> "JOURNALING".equals(category);
+			case EMOTION_CHECK_IN, ROUTINE -> false;
+		};
+	}
+
+	private String personalizedDomain(EvaluationView evaluation, PersonalizationSnapshot personalization) {
+		if (!hasPreferences(personalization)) return null;
+		var domains = evaluation.contributingDomains().stream().map(value -> value.domain().name()).toList();
+		PreferredFocus preferredFocus = personalization.preferredFocus();
+		String preferred = preferredFocus == null ? null : switch (preferredFocus) {
+			case ANXIETY -> ANXIETY;
+			case MOOD, MOTIVATION -> DEPRESSION;
+			case SLEEP, UNDERSTANDING_EMOTIONS -> null;
+		};
+		return preferred != null && domains.contains(preferred) ? preferred : domains.getFirst();
+	}
+
+	private boolean hasPreferences(PersonalizationSnapshot value) {
+		return value != null && (value.preferredFocus() != null || value.desiredPace() != null
+				|| value.dailyTimeBudgetMinutes() != null || value.preferredDaypart() != null
+				|| !value.preferredActivityModes().isEmpty() || !value.commonBarriers().isEmpty());
+	}
+
+	private FocusCopy personalizedFocus(String domain, PersonalizationSnapshot personalization) {
+		PreferredFocus preferredFocus = personalization.preferredFocus();
+		String title = preferredFocus == null
+				? (ANXIETY.equals(domain) ? "Hỗ trợ bình tâm" : "Hỗ trợ tâm trạng")
+				: switch (preferredFocus) {
+			case ANXIETY -> "Làm dịu lo âu";
+			case MOOD -> "Chăm sóc tâm trạng";
+			case SLEEP -> "Xây dựng nhịp ngủ dễ chịu";
+			case MOTIVATION -> "Bắt đầu bằng bước nhỏ";
+			case UNDERSTANDING_EMOTIONS -> "Hiểu cảm xúc của mình";
+		};
+		String rationale = personalization.preferredFocus() == null
+				? "Bạn đã chia sẻ điều gì phù hợp với nhịp sống của mình. Care chỉ dùng các lựa chọn này trong những hoạt động đã được chính sách cho phép."
+				: "Bạn đã chọn trọng tâm này. Care chỉ dùng lựa chọn đó để sắp xếp những hoạt động hỗ trợ sức khỏe tổng quát đã được chính sách cho phép.";
+		return new FocusCopy(title, rationale);
 	}
 
 	RevalidationRequest revalidationRequest(EvaluationView evaluation, List<SelectedResource> selections) {
@@ -233,7 +303,13 @@ class SupportPlanPolicy {
 	record ProposalRequest(List<FamilyDraft> families, List<SlotSpec> slots, ResourceEligibilityBatchRequest batch) { }
 	record Proposal(List<FamilyDraft> families, List<SlotDraft> slots, String resourcePolicyVersion,
 			java.time.Instant resourcesResolvedAt) { }
-	record FamilyDraft(String family, String targetDomain) { }
+	record FamilyDraft(String family, String targetDomain, String focusTitle,
+			String focusRationale, String focusReasonCode) {
+		FamilyDraft(String family, String targetDomain) {
+			this(family, targetDomain, null, null, null);
+		}
+	}
+	record FocusCopy(String title, String rationale) { }
 	record SlotSpec(String slotId, String kind, String targetDomain, String purposeCode,
 			RequiredEligibilityRole requiredRole, String instrument, String screeningLevel, String supportTier,
 			List<String> resourceIds) { }

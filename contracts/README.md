@@ -54,6 +54,13 @@ never substitutes for the self-report. Historical `reassessment-summary-v1`
 snapshots remain readable without rewrite. Neither version has a combined score
 or overall direction.
 
+The same Care contract exposes MB-638 `GET/PUT
+/api/v2/support-plan-personalization`. It returns a revision-zero deterministic
+fallback for an existing user without saved input, persists only a bounded
+non-diagnostic vocabulary, and uses strong ETag replacement. `PlanFocus`
+includes optional exact personalization provenance; updating preferences
+returns a review-required reference instead of silently mutating an active plan.
+
 ## Required paired changes
 
 - REST route behavior changes together with its OpenAPI contract and provider contract tests.

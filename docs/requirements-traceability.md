@@ -149,6 +149,16 @@ The requirements are represented in domain/architecture documentation, but the l
 
 ## Approved scope changes
 
+- 2026-10-11: MB-638 adds Care-owned immutable
+  `support-plan-personalization-v1` revisions for optional focus, pace, time,
+  daypart, activity-mode, and practical-barrier choices. The exact revision is
+  snapshotted into a generated plan and surfaced through human-readable focus
+  provenance. Preferences may order only already admitted choices and choose
+  schedule defaults; they never override eligibility, safety, or professional
+  support. An update never mutates an active/paused plan and instead exposes an
+  explicit review path. Existing users retain the deterministic no-preference
+  fallback; MB-640 owns schedule editing and full cadence/workload controls.
+
 - 2026-10-11: frontend PR #129 merged and Jira MB-637 completed the
   `MB-SUPPORT-PLAN-V3-ACTIONS-001` decision gate. The prospective canonical
   hierarchy is `SupportPlan -> PlanFocus -> PlanAction -> ActionSchedule ->
