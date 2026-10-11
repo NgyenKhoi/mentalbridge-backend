@@ -367,7 +367,7 @@ export class ResourceService {
         Boolean(resource?.source_url) &&
         Boolean(resource?.source_review_note?.trim()) &&
         resource?.source_retrieved_at != null &&
-        resource?.source_content_hash != null;
+        resource.source_content_hash != null;
       if (isCurrentDraft && !completeProvenance) {
         throw new UnprocessableEntityException({
           type: 'https://mentalbridge.io/errors/RESOURCE_PROVENANCE_INCOMPLETE',
