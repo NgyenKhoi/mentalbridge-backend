@@ -216,9 +216,11 @@ public class ServiceCreditService {
 				select plan_version, credit_allocation_minor from service_credit_period
 				where account_id=:accountId and source_reference=:source
 				  and period_start=:periodStart and period_end=:periodEnd
+				  and (source <> 'PAID' or package_code=:packageCode)
 				""").param("accountId", entitlement.accountId()).param("source", entitlement.sourceReference())
 				.param("periodStart", databaseInstant(entitlement.effectiveFrom()))
 				.param("periodEnd", databaseInstant(entitlement.effectiveUntil()))
+				.param("packageCode", entitlement.packageCode().name())
 				.query((row, ignored) -> new PurchasedPlan(row.getString("plan_version"),
 						row.getLong("credit_allocation_minor"))).optional();
 		if (established.isPresent()) return established.orElseThrow();

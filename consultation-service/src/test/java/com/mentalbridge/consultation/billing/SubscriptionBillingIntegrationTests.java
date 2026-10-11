@@ -47,6 +47,7 @@ class SubscriptionBillingIntegrationTests extends ConsultationTestProperties {
 	@Autowired ObjectMapper json;
 	@Autowired SubscriptionBillingService billing;
 	@org.springframework.test.context.bean.override.mockito.MockitoSpyBean MomoCheckoutGateway checkoutGateway;
+	@org.springframework.test.context.bean.override.mockito.MockitoSpyBean java.time.Clock clock;
 	@Autowired com.mentalbridge.consultation.credits.ServiceCreditService credits;
 
 	@Test
@@ -280,6 +281,27 @@ class SubscriptionBillingIntegrationTests extends ConsultationTestProperties {
 		assertThatThrownBy(() -> billing.checkout(userId, PLUS, key("downgrade")))
 				.isInstanceOfSatisfying(ApiException.class,
 						exception -> assertThat(exception.code()).isEqualTo("SUBSCRIPTION_DOWNGRADE_NOT_SUPPORTED"));
+	}
+
+	@Test
+	void sameInstantSandboxUpgradeCreatesTenNewCreditsWithoutRewritingPlusSnapshots() throws Exception {
+		var now = Instant.now().truncatedTo(java.time.temporal.ChronoUnit.MILLIS);
+		org.mockito.Mockito.doReturn(now).when(clock).instant();
+		var userId = UUID.randomUUID();
+		var plus = billing.checkout(userId, PLUS, key("same-instant-plus"));
+		var purchased = fixture(plus.paymentId(), 0, now.toEpochMilli(), Math.abs((long) UUID.randomUUID().hashCode()) + 1);
+		sign(purchased);
+		postIpn(purchased, 204);
+		var upgrade = billing.checkout(userId, PREMIUM, key("same-instant-premium"));
+		var upgraded = fixture(upgrade.paymentId(), 0, now.toEpochMilli(), Math.abs((long) UUID.randomUUID().hashCode()) + 1);
+		sign(upgraded);
+		postIpn(upgraded, 204);
+		postIpn(upgraded, 204);
+		assertThat(credits.current(userId).balance().available()).isEqualTo(10);
+		assertThat(jdbc.sql("select count(*) from service_credit_period where account_id=:id")
+				.param("id", userId).query(Long.class).single()).isEqualTo(2);
+		assertThat(jdbc.sql("select package_code from service_credit_period where account_id=:id and plan_version=:version")
+				.param("id", userId).param("version", PLUS.toString()).query(String.class).single()).isEqualTo("PLUS");
 	}
 
 	@Test
