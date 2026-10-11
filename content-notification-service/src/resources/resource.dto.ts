@@ -239,3 +239,10 @@ export const UpdateResourceDtoSchema = z
   });
 
 export type UpdateResourceDto = z.infer<typeof UpdateResourceDtoSchema>;
+
+export const ReviewResourceDtoSchema = z.object({
+  decision: z.enum(['APPROVED', 'REJECTED']),
+  reasonCode: z.string().regex(/^[A-Z][A-Z0-9_]{1,63}$/),
+});
+
+export type ReviewResourceDto = z.infer<typeof ReviewResourceDtoSchema>;

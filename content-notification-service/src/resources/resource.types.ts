@@ -107,6 +107,16 @@ export interface ResourceDetail extends PublicResourceDetail {
   readonly version: number;
 }
 
+export interface ResourceReviewDecision {
+  readonly resourceId: string;
+  readonly contentVersion: string;
+  readonly decision: 'APPROVED' | 'REJECTED';
+  readonly reasonCode: string;
+  readonly authorityVersion: string;
+  readonly reviewedBy: string;
+  readonly reviewedAt: string;
+}
+
 export interface ResourceListResponse {
   readonly data: ResourceSummary[];
   readonly count: number;

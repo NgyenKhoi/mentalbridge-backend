@@ -29,6 +29,8 @@ const baseCreate = {
   sourceTitle: 'Reviewed integration fixture',
   sourceUrl: 'https://example.com/reviewed-resource',
   sourceReviewNote: 'Fixture provenance for repository integration coverage.',
+  sourceRetrievedAt: new Date('2026-10-01T00:00:00Z'),
+  sourceContentHash: 'a'.repeat(64),
 };
 
 describe('ResourceRepository command consistency', () => {
@@ -58,6 +60,7 @@ describe('ResourceRepository command consistency', () => {
       '5_add_resource_command_records.sql',
       '9_add_resource_source_provenance.sql',
       '14_add_resource_experience_model.sql',
+      '19_complete_resource_editorial_lifecycle.sql',
     ]) {
       await migrationPool.query(await readFile(join(migrationDirectory, name), 'utf8'));
     }
@@ -164,6 +167,102 @@ describe('ResourceRepository command consistency', () => {
       }),
     ).resolves.toBe(false);
     expect((await repository.findById(created.id))?.title).toBe('Latest title');
+  });
+
+  it('publishes only an approved exact version and keeps its snapshot immutable', async () => {
+    const draft = await repository.create(baseCreate, 'reviewed-publication', {
+      actorId: ADMIN_A,
+      correlationId: CORRELATION_A,
+    });
+    await expect(
+      repository.publish(draft.id, draft.version, {
+        actorId: ADMIN_A,
+        correlationId: CORRELATION_A,
+      }),
+    ).resolves.toBeNull();
+
+    await repository.review(
+      draft.id,
+      draft.version,
+      'APPROVED',
+      'SOURCE_AND_CONTENT_APPROVED',
+      'content-resource-review-authority-v1',
+      { actorId: ADMIN_B, correlationId: CORRELATION_B },
+    );
+    const published = await repository.publish(draft.id, draft.version, {
+      actorId: ADMIN_A,
+      correlationId: CORRELATION_A,
+    });
+    expect(published).toMatchObject({ status: 'PUBLISHED', version: draft.version });
+    await expect(
+      repository.review(
+        draft.id,
+        draft.version,
+        'APPROVED',
+        'SOURCE_AND_CONTENT_APPROVED',
+        'content-resource-review-authority-v1',
+        { actorId: ADMIN_B, correlationId: CORRELATION_B },
+      ),
+    ).resolves.toMatchObject({ decision: 'APPROVED', contentVersion: String(draft.version) });
+
+    const snapshot = await migrationPool.query<{
+      content_version: string;
+      title: string;
+      review_decision_id: string;
+    }>(
+      `SELECT content_version::text, snapshot->>'title' AS title, review_decision_id::text
+       FROM resource_publication_snapshot WHERE resource_id = $1`,
+      [draft.id],
+    );
+    expect(snapshot.rows[0]).toMatchObject({
+      content_version: String(draft.version),
+      title: baseCreate.title,
+    });
+    expect(snapshot.rows[0].review_decision_id).toBeTruthy();
+    await expect(
+      migrationPool.query(
+        `UPDATE resource_publication_snapshot SET snapshot = '{}'::jsonb WHERE resource_id = $1`,
+        [draft.id],
+      ),
+    ).rejects.toThrow(/append-only/);
+  });
+
+  it('archives without deleting history and opens only the next correction version', async () => {
+    const draft = await repository.create(baseCreate, 'correction-version', {
+      actorId: ADMIN_A,
+      correlationId: CORRELATION_A,
+    });
+    await repository.review(
+      draft.id,
+      draft.version,
+      'APPROVED',
+      'SOURCE_AND_CONTENT_APPROVED',
+      'content-resource-review-authority-v1',
+      { actorId: ADMIN_B, correlationId: CORRELATION_B },
+    );
+    await repository.publish(draft.id, draft.version, {
+      actorId: ADMIN_A,
+      correlationId: CORRELATION_A,
+    });
+    const archived = await repository.archive(draft.id, draft.version, {
+      actorId: ADMIN_A,
+      correlationId: CORRELATION_A,
+    });
+    expect(archived?.status).toBe('ARCHIVED');
+
+    const correction = await repository.createVersion(draft.id, draft.version, {
+      actorId: ADMIN_A,
+      correlationId: CORRELATION_A,
+    });
+    expect(correction).toMatchObject({ status: 'DRAFT', version: draft.version + 1 });
+    expect(correction?.reviewed_by).toBeNull();
+    const history = await migrationPool.query(
+      `SELECT 1 FROM resource_publication_snapshot WHERE resource_id = $1 AND content_version = $2
+       UNION ALL
+       SELECT 1 FROM resource_publication_withdrawal WHERE resource_id = $1 AND content_version = $2`,
+      [draft.id, draft.version],
+    );
+    expect(history.rowCount).toBe(2);
   });
 
   it('writes minimized audit facts for mutations and blocked publish outcomes', async () => {

@@ -1847,7 +1847,7 @@ CREATE TABLE community.community_access_restriction (
 
 /* ========================================================================== */
 /* ACTIVE — content-notification-service / mentalbridge_content_notification  */
-/* Evidence: node-pg-migrate-compatible SQL migrations 1-16.                  */
+/* Evidence: node-pg-migrate-compatible SQL migrations 1-19.                  */
 /* ========================================================================== */
 
 CREATE TABLE content.resource (
@@ -1888,6 +1888,39 @@ CREATE TABLE content.resource (
     created_at timestamptz NOT NULL,
     updated_at timestamptz NOT NULL,
     version bigint NOT NULL
+);
+
+CREATE TABLE content.resource_review_decision (
+    id uuid PRIMARY KEY,
+    resource_id uuid NOT NULL REFERENCES content.resource(id),
+    content_version bigint NOT NULL,
+    decision varchar(16) NOT NULL,
+    reason_code varchar(64) NOT NULL,
+    authority_version varchar(64) NOT NULL,
+    reviewed_by uuid NOT NULL, -- external -> identity.account.id
+    reviewed_at timestamptz NOT NULL,
+    UNIQUE (resource_id, content_version)
+);
+
+CREATE TABLE content.resource_publication_snapshot (
+    resource_id uuid NOT NULL REFERENCES content.resource(id),
+    content_version bigint NOT NULL,
+    review_decision_id uuid REFERENCES content.resource_review_decision(id),
+    snapshot jsonb NOT NULL,
+    published_by uuid NOT NULL, -- external -> identity.account.id
+    published_at timestamptz NOT NULL,
+    PRIMARY KEY (resource_id, content_version)
+);
+
+CREATE TABLE content.resource_publication_withdrawal (
+    resource_id uuid NOT NULL,
+    content_version bigint NOT NULL,
+    reason_code varchar(32) NOT NULL,
+    withdrawn_by uuid NOT NULL, -- external -> identity.account.id
+    withdrawn_at timestamptz NOT NULL,
+    PRIMARY KEY (resource_id, content_version),
+    FOREIGN KEY (resource_id, content_version)
+      REFERENCES content.resource_publication_snapshot(resource_id, content_version)
 );
 
 CREATE TABLE content.resource_daily_progress (

@@ -4,6 +4,7 @@ import {
   Logger,
   ServiceUnavailableException,
   UnprocessableEntityException,
+  ForbiddenException,
 } from '@nestjs/common';
 import type {
   ResourceRepository,
@@ -12,7 +13,12 @@ import type {
   UpdateResourceData,
   ResourceCommandContext,
 } from './resource.repository.js';
-import { E2E_OUTAGE_STATE_TOKEN, RESOURCE_REPOSITORY_TOKEN } from '../application.tokens.js';
+import {
+  CONFIGURATION_TOKEN,
+  E2E_OUTAGE_STATE_TOKEN,
+  RESOURCE_REPOSITORY_TOKEN,
+} from '../application.tokens.js';
+import type { ServiceConfiguration } from '../configuration/configuration.js';
 import type {
   ResourceCategory,
   ResourceListResult,
@@ -20,8 +26,11 @@ import type {
   ResourceSummary,
   ResourceDetail,
   PublicResourceDetail,
+  ResourceReviewDecision,
 } from './resource.types.js';
 import { VerifiedVideoUrlSchema } from './resource.dto.js';
+
+const REVIEW_AUTHORITY_VERSION = 'content-resource-review-authority-v1';
 
 const UNAVAILABLE_MESSAGE = 'Tài nguyên hỗ trợ tạm thời không khả dụng. Vui lòng thử lại sau.';
 
@@ -164,6 +173,8 @@ export class ResourceService {
     private readonly repository: ResourceRepository,
     @Inject(E2E_OUTAGE_STATE_TOKEN)
     private readonly outageState: E2eOutageState,
+    @Inject(CONFIGURATION_TOKEN)
+    private readonly configuration: ServiceConfiguration,
   ) {}
 
   async listPublished(options: ListResourcesOptions): Promise<ResourceListResult> {
@@ -322,6 +333,76 @@ export class ResourceService {
     context: ResourceCommandContext,
   ): Promise<ResourceDetail | null> {
     const row = await this.repository.archive(id, version, context);
+    return row ? toDetail(row) : null;
+  }
+
+  async review(
+    id: string,
+    version: number,
+    decision: 'APPROVED' | 'REJECTED',
+    reasonCode: string,
+    context: ResourceCommandContext,
+  ): Promise<ResourceReviewDecision | null> {
+    const reviewers = new Set(
+      (this.configuration.RESOURCE_REVIEWER_ACCOUNT_IDS ?? '')
+        .split(',')
+        .map((value) => value.trim().toLowerCase())
+        .filter(Boolean),
+    );
+    if (!reviewers.has(context.actorId.toLowerCase())) {
+      throw new ForbiddenException({
+        type: 'https://mentalbridge.io/errors/RESOURCE_REVIEW_AUTHORITY_REQUIRED',
+        title: 'Configured resource review authority is required',
+        status: 403,
+        code: 'RESOURCE_REVIEW_AUTHORITY_REQUIRED',
+      });
+    }
+
+    if (decision === 'APPROVED') {
+      const resource = await this.repository.findById(id);
+      const isCurrentDraft = resource?.status === 'DRAFT' && resource.version === version;
+      const completeProvenance =
+        Boolean(resource?.source_organization?.trim()) &&
+        Boolean(resource?.source_title?.trim()) &&
+        Boolean(resource?.source_url) &&
+        Boolean(resource?.source_review_note?.trim()) &&
+        resource?.source_retrieved_at != null &&
+        resource?.source_content_hash != null;
+      if (isCurrentDraft && !completeProvenance) {
+        throw new UnprocessableEntityException({
+          type: 'https://mentalbridge.io/errors/RESOURCE_PROVENANCE_INCOMPLETE',
+          title: 'Structured source provenance is required before approval',
+          status: 422,
+          code: 'RESOURCE_PROVENANCE_INCOMPLETE',
+        });
+      }
+    }
+
+    return this.repository.review(
+      id,
+      version,
+      decision,
+      reasonCode,
+      REVIEW_AUTHORITY_VERSION,
+      context,
+    );
+  }
+
+  async publish(
+    id: string,
+    version: number,
+    context: ResourceCommandContext,
+  ): Promise<ResourceDetail | null> {
+    const row = await this.repository.publish(id, version, context);
+    return row ? toDetail(row) : null;
+  }
+
+  async createVersion(
+    id: string,
+    version: number,
+    context: ResourceCommandContext,
+  ): Promise<ResourceDetail | null> {
+    const row = await this.repository.createVersion(id, version, context);
     return row ? toDetail(row) : null;
   }
 

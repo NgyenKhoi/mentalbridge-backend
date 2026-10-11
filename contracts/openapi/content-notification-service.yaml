@@ -431,7 +431,7 @@ paths:
     x-mentalbridge-status: implemented
     post:
       tags: [Resources]
-      summary: Publish a reviewed DRAFT resource (blocked pending MB-251 policy approval)
+      summary: Publish an exact approved DRAFT resource version
       operationId: publishResource
       security:
         - BearerAuth: []
@@ -449,10 +449,71 @@ paths:
             type: integer
             minimum: 0
       responses:
+        "200":
+          description: Immutable exact-version publication created
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/ResourceSummary" }
         "400": { $ref: "#/components/responses/RequestRejected" }
         "401": { $ref: "#/components/responses/Unauthorized" }
         "403": { $ref: "#/components/responses/Forbidden" }
         "409": { $ref: "#/components/responses/ReviewApprovalRequired" }
+
+  /api/v1/resources/{id}/review:
+    x-mentalbridge-status: implemented
+    post:
+      tags: [Resources]
+      summary: Record a configured-authority decision for one exact draft
+      operationId: reviewResource
+      security:
+        - BearerAuth: []
+      parameters:
+        - $ref: "#/components/parameters/ResourceId"
+        - name: version
+          in: query
+          required: true
+          schema: { type: integer, minimum: 0 }
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: "#/components/schemas/ResourceReviewRequest" }
+      responses:
+        "200":
+          description: Immutable review decision for the exact draft version
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/ResourceReviewDecision" }
+        "400": { $ref: "#/components/responses/RequestRejected" }
+        "401": { $ref: "#/components/responses/Unauthorized" }
+        "403": { $ref: "#/components/responses/Forbidden" }
+        "409": { $ref: "#/components/responses/Conflict" }
+        "422": { $ref: "#/components/responses/ValidationError" }
+
+  /api/v1/resources/{id}/versions:
+    x-mentalbridge-status: implemented
+    post:
+      tags: [Resources]
+      summary: Start a correction draft after archiving an exact publication
+      operationId: createResourceVersion
+      security:
+        - BearerAuth: []
+      parameters:
+        - $ref: "#/components/parameters/ResourceId"
+        - name: version
+          in: query
+          required: true
+          schema: { type: integer, minimum: 0 }
+      responses:
+        "200":
+          description: New editable content version
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/AdminResourceDetail" }
+        "400": { $ref: "#/components/responses/RequestRejected" }
+        "401": { $ref: "#/components/responses/Unauthorized" }
+        "403": { $ref: "#/components/responses/Forbidden" }
+        "409": { $ref: "#/components/responses/Conflict" }
 
   /api/v1/resources/{id}/archive:
     x-mentalbridge-status: implemented
@@ -993,7 +1054,7 @@ components:
         application/problem+json:
           schema: { $ref: "#/components/schemas/ProblemDetails" }
     ReviewApprovalRequired:
-      description: Publish is unavailable until an approved MB-251 review decision is recorded
+      description: The exact draft lacks an approved configured-authority review decision
       content:
         application/problem+json:
           schema: { $ref: "#/components/schemas/ProblemDetails" }
@@ -2200,6 +2261,32 @@ components:
           type: string
           format: date-time
           nullable: true
+
+    ResourceReviewRequest:
+      type: object
+      additionalProperties: false
+      required: [decision, reasonCode]
+      properties:
+        decision:
+          type: string
+          enum: [APPROVED, REJECTED]
+        reasonCode:
+          type: string
+          pattern: "^[A-Z][A-Z0-9_]{1,63}$"
+
+    ResourceReviewDecision:
+      type: object
+      additionalProperties: false
+      required:
+        [resourceId, contentVersion, decision, reasonCode, authorityVersion, reviewedBy, reviewedAt]
+      properties:
+        resourceId: { type: string, format: uuid }
+        contentVersion: { type: string, pattern: "^(0|[1-9][0-9]*)$" }
+        decision: { type: string, enum: [APPROVED, REJECTED] }
+        reasonCode: { type: string }
+        authorityVersion: { type: string }
+        reviewedBy: { type: string, format: uuid }
+        reviewedAt: { type: string, format: date-time }
 
     EligibilityPolicyVersion:
       type: string
