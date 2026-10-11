@@ -44,7 +44,10 @@ MB-643 lets an explicit user booking request retain an optional opaque
 Care-owned `originatingPlanActionId`. It is a presentation correlation only:
 there is no cross-service foreign key, Consultation never edits or completes a
 SupportPlan, and opening specialist discovery alone creates no appointment or
-data-sharing consent.
+data-sharing consent. Reschedule-as-new inherits the owned prior appointment's
+reference when an older client omits it and rejects a conflicting explicit
+reference. The owner appointment list accepts an optional exact action filter
+that is applied before its 100-row bound.
 MB-380 adds optimistic, idempotent owner cancellation and completes
 reschedule-as-new audit. Requested cancellations and confirmations at least 24
 hours before start release the held credit; later confirmed cancellations

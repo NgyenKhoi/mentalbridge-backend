@@ -150,9 +150,16 @@ class ConsultationOpenApiContractTests {
 		var api = new OpenAPIV3Parser().read(contract);
 		var request = api.getComponents().getSchemas().get("RequestAppointment");
 		var appointment = api.getComponents().getSchemas().get("Appointment");
+		var listParameters = api.getPaths().get("/api/v1/appointments").getGet().getParameters();
 
 		assertThat(request.getProperties()).containsOnlyKeys("slotId", "modality", "replacesAppointmentId",
 				"originatingPlanActionId");
+		assertThat(listParameters).singleElement().satisfies(parameter -> {
+			assertThat(parameter.getName()).isEqualTo("originatingPlanActionId");
+			assertThat(parameter.getIn()).isEqualTo("query");
+			assertThat(parameter.getRequired()).isFalse();
+			assertThat(parameter.getSchema().getFormat()).isEqualTo("uuid");
+		});
 		assertThat(request.getRequired()).containsExactlyInAnyOrder("slotId", "modality");
 		assertThat(appointment.getProperties()).containsKeys("status", "decisionDeadlineAt", "heldCreditId",
 				"replacesAppointmentId", "replacedByAppointmentId", "originatingPlanActionId", "decidedAt",

@@ -66,8 +66,14 @@ public class AppointmentService {
 		var replay = findByCommand(userId, idempotencyKey);
 		if (replay != null) {
 			if (!replay.slotId().equals(slotId) || replay.modality() != requestedModality
-					|| !java.util.Objects.equals(replay.replacesAppointmentId(), replacesAppointmentId)
-					|| !java.util.Objects.equals(replay.originatingPlanActionId(), originatingPlanActionId)) {
+					|| !java.util.Objects.equals(replay.replacesAppointmentId(), replacesAppointmentId)) {
+				throw conflict("IDEMPOTENCY_KEY_REUSED", "Idempotency-Key was already used for another appointment request");
+			}
+			var effectiveOriginatingPlanActionId = originatingPlanActionId;
+			if (effectiveOriginatingPlanActionId == null && replacesAppointmentId != null) {
+				effectiveOriginatingPlanActionId = existingPlanActionOrigin(userId, replacesAppointmentId);
+			}
+			if (!java.util.Objects.equals(replay.originatingPlanActionId(), effectiveOriginatingPlanActionId)) {
 				throw conflict("IDEMPOTENCY_KEY_REUSED", "Idempotency-Key was already used for another appointment request");
 			}
 			return replay;
@@ -82,6 +88,8 @@ public class AppointmentService {
 		profiles.requireApprovedForBooking(specialistId);
 		var replacement = replacesAppointmentId == null ? null
 				: lockReplacement(userId, replacesAppointmentId, expectedReplacementVersion, now);
+		var effectiveOriginatingPlanActionId = replacement == null
+				? originatingPlanActionId : resolveReplacementOrigin(replacement.originatingPlanActionId(), originatingPlanActionId);
 		if (replacement == null && creditAccount.reservationCapacity().remaining() == 0) {
 			throw conflict("APPOINTMENT_RESERVATION_LIMIT_REACHED",
 					"The package active appointment reservation limit has been reached");
@@ -126,7 +134,7 @@ public class AppointmentService {
 					.param("endAt", database(slot.endAt())).param("timezone", slot.timezone())
 					.param("now", database(now)).param("deadline", database(deadline)).param("key", idempotencyKey)
 					.param("replacesAppointmentId", replacesAppointmentId)
-					.param("originatingPlanActionId", originatingPlanActionId).update();
+					.param("originatingPlanActionId", effectiveOriginatingPlanActionId).update();
 			credits.transition(userId, credit, appointmentId, CreditEventType.HELD, "appointment-hold:" + appointmentId);
 			insertHistory(appointmentId, null, "REQUESTED", userId, "APPOINTMENT_REQUESTED",
 					"request:" + appointmentId, null, now);
@@ -177,7 +185,13 @@ public class AppointmentService {
 
 	@Transactional(readOnly = true)
 	public AppointmentResponse.ListResponse list(UUID userId) {
-		var items = jdbc.sql("""
+		return list(userId, null);
+	}
+
+	@Transactional(readOnly = true)
+	public AppointmentResponse.ListResponse list(UUID userId, UUID originatingPlanActionId) {
+		var filter = originatingPlanActionId == null ? "" : " and a.originating_plan_action_id=:originatingPlanActionId";
+		var statement = jdbc.sql("""
 				select a.*, p.display_name, c.state as credit_state,
 				       replacement.id as replaced_by_appointment_id
 				from appointment a
@@ -185,8 +199,13 @@ public class AppointmentService {
 				join service_credit c on c.id=a.service_credit_id
 				left join appointment replacement on replacement.replaces_appointment_id=a.id
 				where a.user_account_id=:userId
+				%s
 				order by a.scheduled_start_at desc, a.id desc limit :limit
-				""").param("userId", userId).param("limit", LIST_LIMIT).query(AppointmentRowMapper::map).list();
+				""".formatted(filter)).param("userId", userId).param("limit", LIST_LIMIT);
+		if (originatingPlanActionId != null) {
+			statement = statement.param("originatingPlanActionId", originatingPlanActionId);
+		}
+		var items = statement.query(AppointmentRowMapper::map).list();
 		var withHistory = AppointmentHistoryReader.attach(jdbc, items);
 		return new AppointmentResponse.ListResponse(withHistory, withHistory.size(), clock.instant());
 	}
@@ -241,6 +260,7 @@ public class AppointmentService {
 		}
 		var replacement = jdbc.sql("""
 				select a.id, a.service_credit_id, a.status, a.scheduled_start_at, a.version,
+				       a.originating_plan_action_id,
 				       p.period_start, p.period_end
 				from appointment a
 				join service_credit c on c.id=a.service_credit_id
@@ -251,6 +271,7 @@ public class AppointmentService {
 				.query((row, ignored) -> new Replacement(row.getObject("id", UUID.class),
 						row.getObject("service_credit_id", UUID.class), row.getString("status"),
 						row.getTimestamp("scheduled_start_at").toInstant(), row.getLong("version"),
+						row.getObject("originating_plan_action_id", UUID.class),
 						row.getTimestamp("period_start").toInstant(), row.getTimestamp("period_end").toInstant()))
 				.optional().orElseThrow(() -> new ApiException(HttpStatus.NOT_FOUND,
 						"APPOINTMENT_REPLACEMENT_NOT_FOUND", "The appointment to replace was not found"));
@@ -265,6 +286,26 @@ public class AppointmentService {
 			throw conflict("APPOINTMENT_CHANGE_WINDOW_CLOSED", "The appointment has already started");
 		}
 		return replacement;
+	}
+
+	private UUID existingPlanActionOrigin(UUID userId, UUID appointmentId) {
+		return jdbc.sql("""
+				select originating_plan_action_id
+				from appointment
+				where id=:appointmentId and user_account_id=:userId
+				""").param("appointmentId", appointmentId).param("userId", userId)
+				.query((row, ignored) -> new OriginReference(row.getObject("originating_plan_action_id", UUID.class)))
+				.optional().orElseThrow(() -> new ApiException(HttpStatus.NOT_FOUND,
+						"APPOINTMENT_REPLACEMENT_NOT_FOUND", "The appointment to replace was not found"))
+				.value();
+	}
+
+	private UUID resolveReplacementOrigin(UUID existingOrigin, UUID requestedOrigin) {
+		if (existingOrigin != null && requestedOrigin != null && !existingOrigin.equals(requestedOrigin)) {
+			throw conflict("APPOINTMENT_PLAN_ACTION_ORIGIN_CONFLICT",
+					"The replacement must keep the originating PlanAction reference");
+		}
+		return requestedOrigin == null ? existingOrigin : requestedOrigin;
 	}
 
 	private UUID lockCredit(UUID userId, Instant appointmentStart, Instant now) {
@@ -385,7 +426,8 @@ public class AppointmentService {
 	private record Slot(UUID specialistId, Instant startAt, Instant endAt, String timezone,
 			AppointmentModality modality, String status) { }
 	private record Replacement(UUID appointmentId, UUID creditId, String status, Instant scheduledStartAt,
-			long version, Instant periodStart, Instant periodEnd) { }
+			long version, UUID originatingPlanActionId, Instant periodStart, Instant periodEnd) { }
+	private record OriginReference(UUID value) { }
 	private record CancellationHold(UUID appointmentId, UUID creditId, String status, Instant scheduledStartAt,
 			long version) { }
 }

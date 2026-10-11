@@ -41,8 +41,9 @@ public class AppointmentController {
 	}
 
 	@GetMapping("/api/v1/appointments")
-	AppointmentResponse.ListResponse list(@AuthenticationPrincipal Jwt jwt) {
-		return appointments.list(RequestIdentity.subject(jwt));
+	AppointmentResponse.ListResponse list(@AuthenticationPrincipal Jwt jwt,
+			@RequestParam(required = false) UUID originatingPlanActionId) {
+		return appointments.list(RequestIdentity.subject(jwt), originatingPlanActionId);
 	}
 
 	@PostMapping("/api/v1/appointments")
