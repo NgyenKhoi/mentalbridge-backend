@@ -57,6 +57,34 @@ fake adapters and never depend on MoMo availability.
 
 ## Consequences
 
+### MB-622 sandbox amendment (2026-10-11)
+
+The owner confirmed the 5,000/10,000 VND test catalogue and explicitly approved
+`sandbox-full-price-v1`: a sandbox PLUS-to-PREMIUM upgrade charges the full
+10,000 VND target price with zero offset. The 300,000 VND per-credit allocation
+and 210,000 VND earning remain synthetic demonstration values, not funded
+production liabilities or cash redeemable from a sandbox purchase. The sandbox
+non-consultation value is zero. The nominal value of held unused credits remains
+recorded separately from the zero applied offset.
+
+Verified upgrade success revokes only upgrade-held unused PLUS credits and
+grants ten new PREMIUM credits. Credits held by existing appointments retain
+their original period/version/allocation. Failure or expiry restores the exact
+upgrade-held credits under the existing expiry policy. No downgrade/refund is
+introduced.
+
+New immutable sandbox plan versions replace the old offers. Historical prices,
+periods, financial facts and `upgrade-offset-v1` calculations are not rewritten.
+Mixed historical/sandbox upgrades fail closed. The sandbox catalogue is allowed
+only with FAKE checkout or the explicitly configured MoMo test origin; it must
+not be charged by the production origin. Sandbox earnings cannot enter a real
+provider payout, even if production credentials are subsequently enabled.
+
+This amendment does not enable production payment/payout or change ordinary
+upgrade offsets. Deployment requires the new owner migration before new code;
+drain old billing writers before enabling the sandbox offers because they do
+not understand the zero-offset pricing policy.
+
 - MB-516 implements the earning lifecycle, deterministic fake payout for
   local/CI, and a MoMo outbound adapter that cannot run without explicit
   production approval plus complete credentials.

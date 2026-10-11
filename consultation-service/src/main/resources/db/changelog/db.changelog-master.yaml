@@ -41,3 +41,5 @@ databaseChangeLog:
       file: db/changelog/changes/020-subscription-momo-payment.sql
   - include:
       file: db/changelog/changes/021-appointment-plan-action-reference.sql
+  - include:
+      file: db/changelog/changes/021-sandbox-commercial-policy.sql

@@ -1308,7 +1308,7 @@ Implemented MB-377/MB-558 allocation boundary. One row freezes the highest packa
 | --- | --- |
 | `id` | Server-generated period UUID. |
 | `account_id` | External Identity user UUID that owns every credit in the period. |
-| `plan_version` | Exact source entitlement policy version used by the idempotency key. |
+| `plan_version` | Exact purchased plan-version UUID text for new billing periods, resolved from the matching successful payment and period start. Legacy/demo periods retain their original entitlement-policy label; reload never re-provisions them under a new identifier. |
 | `credit_policy_version` | Exact allocation policy frozen at period creation: historical `consultation-credit-v1` or current `consultation-credit-v2`. |
 | `package_code` | Highest allocated package in the period: `PLUS` or `PREMIUM`. |
 | `source` | Explicit `DEMO` or `PAID` provenance; never inferred by the client. |
@@ -1528,7 +1528,8 @@ Immutable price, allocation, credit, revenue-share, and cancellation policy purc
 | `plan_code` | Stable parent plan identity. |
 | `version` | Immutable version within the plan; published versions are never rewritten. |
 | `currency` | Contract-fixed `VND` currency for every amount. |
-| `price_minor` | Exact monthly price: FREE 0, PLUS 1,390,000, or PREMIUM 3,490,000 VND for the seeded v2 version. |
+| `price_minor` | Immutable monthly VND price. New MB-622 sandbox versions use PLUS 5,000/PREMIUM 10,000; retired v2 versions retain 1,390,000/3,490,000 without historical rewriting. |
+| `pricing_policy_version` | Immutable rule: ordinary/historical `upgrade-offset-v1` or synthetic `sandbox-full-price-v1`; sandbox upgrade applies zero offset and cannot enable real payout. |
 | `billing_period_months` | Calendar-month period count; MB-515 supports exactly one month. |
 | `consultation_credits_per_period` | Credits granted for the active period: FREE 0, PLUS 4, or PREMIUM 10; unused credits never roll over. |
 | `max_active_reservations` | Frozen active appointment cap: FREE 0, PLUS 2, or PREMIUM 4. |
@@ -1667,7 +1668,8 @@ rows retain their original plan-version provenance.
 | `remaining_period_seconds` | Exact positive seconds remaining at quote time, not greater than total seconds. |
 | `remaining_feature_value_minor` | `floor(old non-consultation value × remaining / total)` in minor units. |
 | `available_credit_value_minor` | Sum of allocations for old credits atomically moved from available to upgrade-held. |
-| `offset_minor` | Non-withdrawable sum of remaining feature and held-credit value, usable only by this upgrade. |
+| `offset_minor` | Applied non-withdrawable offset: sum of remaining feature and held-credit value for upgrade-offset-v1; exactly zero for sandbox-full-price-v1. Nominal credit value stays recorded separately. |
+| `pricing_policy_version` | Snapshotted pricing rule selected from both immutable plan versions; historical rows default to upgrade-offset-v1. Mixed policy upgrades are rejected. |
 | `amount_due_minor` | Exact target full-period price minus offset; positive and verified against payment. |
 | `currency` | ISO 4217 currency shared by both plan versions, held credits, and payment. |
 | `status` | Pending payment, applied, failed, or expired; only one pending upgrade per subscription. |

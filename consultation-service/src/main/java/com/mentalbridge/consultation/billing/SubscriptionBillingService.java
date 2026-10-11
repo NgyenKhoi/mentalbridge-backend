@@ -20,6 +20,7 @@ import com.mentalbridge.consultation.shared.ApiException;
 public class SubscriptionBillingService {
 
 	private static final int HISTORY_LIMIT = 50;
+	private static final String SANDBOX_POLICY = "sandbox-full-price-v1";
 	private final JdbcClient jdbc;
 	private final Clock clock;
 	private final BillingProperties properties;
@@ -40,19 +41,21 @@ public class SubscriptionBillingService {
 				select v.id, v.plan_code, v.version, p.display_name, v.currency, v.price_minor,
 				       v.billing_period_months, v.consultation_credits_per_period,
 				       v.max_active_reservations, v.credit_value_minor, v.ai_quota_code,
-				       v.support_plan_enabled, v.effective_from
+				       v.support_plan_enabled, v.effective_from, v.pricing_policy_version
 				from subscription_plan_version v join subscription_plan p on p.code=v.plan_code
 				where v.effective_from <= :now and (v.retired_at is null or v.retired_at > :now)
 				order by p.sort_order
 				""").param("now", now).query((row, ignored) -> new PlanCatalogueResponse.Plan(
 				row.getObject("id", UUID.class), row.getString("plan_code"), row.getString("version"),
-				row.getString("display_name"), row.getString("currency"), row.getLong("price_minor"),
+				row.getString("display_name"), row.getString("currency"), row.getString("pricing_policy_version"), row.getLong("price_minor"),
 				row.getInt("billing_period_months"), row.getInt("consultation_credits_per_period"),
 				row.getInt("max_active_reservations"), row.getLong("credit_value_minor"),
 				row.getString("ai_quota_code"), row.getBoolean("support_plan_enabled"),
 				entitlements(row.getObject("id", UUID.class)), upgrades(row.getString("plan_code")),
 				row.getTimestamp("effective_from").toInstant())).list();
-		return new PlanCatalogueResponse(plans, properties.checkoutEnabled(), "MOMO", clock.instant());
+		var checkoutEnabled = properties.checkoutEnabled() && plans.stream().allMatch(plan ->
+				!SANDBOX_POLICY.equals(plan.pricingPolicyVersion()) || properties.sandboxCheckoutAllowed());
+		return new PlanCatalogueResponse(plans, checkoutEnabled, "MOMO", clock.instant());
 	}
 
 	@Transactional
@@ -69,6 +72,10 @@ public class SubscriptionBillingService {
 			return replay;
 		}
 		var target = activePlan(targetVersionId);
+		if (SANDBOX_POLICY.equals(target.pricingPolicyVersion()) && !properties.sandboxCheckoutAllowed()) {
+			throw new ApiException(HttpStatus.SERVICE_UNAVAILABLE, "PAYMENT_CHECKOUT_DISABLED",
+					"Sandbox plans cannot use a production checkout provider");
+		}
 		if ("FREE".equals(target.planCode())) throw conflict("FREE_PLAN_CHECKOUT_NOT_REQUIRED",
 				"The free plan does not require checkout");
 		if (jdbc.sql("select count(*) from user_subscription where user_id=:userId and status='PENDING_PAYMENT'")
@@ -139,6 +146,9 @@ public class SubscriptionBillingService {
 	}
 
 	private PaymentResponse upgrade(CurrentSubscription current, Plan target, String idempotencyKey) {
+		if (!current.pricingPolicyVersion().equals(target.pricingPolicyVersion())) {
+			throw conflict("SUBSCRIPTION_PRICING_POLICY_MISMATCH", "Historical and sandbox pricing cannot be combined");
+		}
 		var now = clock.instant();
 		if (!current.periodEnd().isAfter(now)) throw conflict("SUBSCRIPTION_PERIOD_EXPIRED",
 				"The current subscription period has ended");
@@ -157,7 +167,8 @@ public class SubscriptionBillingService {
 				.query(Long.class).single();
 		var remainingFeature = Math.floorDiv(Math.multiplyExact(current.nonConsultationValueMinor(), remainingSeconds),
 				totalSeconds);
-		var offset = Math.addExact(remainingFeature, availableValue);
+		var offset = SANDBOX_POLICY.equals(target.pricingPolicyVersion()) ? 0L
+				: Math.addExact(remainingFeature, availableValue);
 		var due = target.priceMinor() - offset;
 		if (due <= 0) throw conflict("SUBSCRIPTION_UPGRADE_AMOUNT_INVALID", "Upgrade amount must be positive");
 		var payment = createPayment(current.id(), target, "UPGRADE", idempotencyKey, due, now);
@@ -166,10 +177,10 @@ public class SubscriptionBillingService {
 				insert into subscription_upgrade (id, subscription_id, from_plan_version_id, to_plan_version_id,
 				 payment_id, old_period_start, old_period_end, total_period_seconds, remaining_period_seconds,
 				 remaining_feature_value_minor, available_credit_value_minor, offset_minor, amount_due_minor,
-				 currency, status, idempotency_key, quoted_at, quote_expires_at, created_at, updated_at)
+				 currency, status, idempotency_key, quoted_at, quote_expires_at, created_at, updated_at, pricing_policy_version)
 				values (:id, :subscriptionId, :fromVersion, :toVersion, :paymentId, :periodStart, :periodEnd,
 				 :totalSeconds, :remainingSeconds, :featureValue, :creditValue, :offset, :due, 'VND',
-				 'PENDING_PAYMENT', :key, :now, :expiresAt, :now, :now)
+				 'PENDING_PAYMENT', :key, :now, :expiresAt, :now, :now, :pricingPolicy)
 				""").param("id", upgradeId).param("subscriptionId", current.id())
 				.param("fromVersion", current.planVersionId()).param("toVersion", target.id())
 				.param("paymentId", payment.paymentId()).param("periodStart", databaseInstant(current.periodStart()))
@@ -177,7 +188,8 @@ public class SubscriptionBillingService {
 				.param("remainingSeconds", remainingSeconds).param("featureValue", remainingFeature)
 				.param("creditValue", availableValue).param("offset", offset).param("due", due)
 				.param("key", idempotencyKey).param("now", databaseInstant(now))
-				.param("expiresAt", databaseInstant(payment.expiresAt())).update();
+				.param("expiresAt", databaseInstant(payment.expiresAt()))
+				.param("pricingPolicy", target.pricingPolicyVersion()).update();
 		jdbc.sql("""
 				insert into subscription_upgrade_credit (upgrade_id, credit_id, allocated_value_minor)
 				select :upgradeId, c.id, p.credit_allocation_minor from service_credit c
@@ -271,7 +283,7 @@ public class SubscriptionBillingService {
 
 	private PaymentResponse findPaymentById(UUID paymentId) {
 		return jdbc.sql("""
-				select pt.id, pt.subscription_id, pt.target_plan_version_id, v.plan_code, v.version,
+				select pt.id, pt.subscription_id, pt.target_plan_version_id, v.plan_code, v.version, v.pricing_policy_version,
 				 pt.purpose, pt.payment_provider, pt.status, pt.amount_minor, pt.currency,
 				 pt.checkout_url, pt.qr_code_url, pt.expires_at, pt.created_at, pt.paid_at, pt.failed_at
 				from payment_transaction pt join subscription_plan_version v on v.id=pt.target_plan_version_id
@@ -279,7 +291,7 @@ public class SubscriptionBillingService {
 				""").param("id", paymentId).query((row, ignored) -> new PaymentResponse(
 				row.getObject("id", UUID.class), row.getObject("subscription_id", UUID.class),
 				row.getObject("target_plan_version_id", UUID.class), row.getString("plan_code"),
-				row.getString("version"), row.getString("purpose"), row.getString("payment_provider"),
+				row.getString("version"), row.getString("pricing_policy_version"), row.getString("purpose"), row.getString("payment_provider"),
 				row.getString("status"), row.getLong("amount_minor"), row.getString("currency"),
 				row.getString("checkout_url"), row.getString("qr_code_url"), row.getTimestamp("expires_at").toInstant(),
 				row.getTimestamp("created_at").toInstant(), instant(row, "paid_at"), instant(row, "failed_at"))).single();
@@ -287,24 +299,24 @@ public class SubscriptionBillingService {
 
 	private CurrentSubscription currentSubscription(UUID userId) {
 		return jdbc.sql("""
-				select s.id, s.user_id, s.plan_version_id, v.plan_code, v.non_consultation_value_minor,
+				select s.id, s.user_id, s.plan_version_id, v.plan_code, v.non_consultation_value_minor, v.pricing_policy_version,
 				 s.current_period_start, s.current_period_end from user_subscription s
 				join subscription_plan_version v on v.id=s.plan_version_id
 				where s.user_id=:userId and s.status='ACTIVE' and s.current_period_end > :now for update
 				""").param("userId", userId).param("now", databaseNow()).query((row, ignored) -> new CurrentSubscription(
 				row.getObject("id", UUID.class), row.getObject("user_id", UUID.class),
-				row.getObject("plan_version_id", UUID.class), row.getString("plan_code"),
+				row.getObject("plan_version_id", UUID.class), row.getString("plan_code"), row.getString("pricing_policy_version"),
 				row.getLong("non_consultation_value_minor"), row.getTimestamp("current_period_start").toInstant(),
 				row.getTimestamp("current_period_end").toInstant())).optional().orElse(null);
 	}
 
 	private Plan activePlan(UUID id) {
 		return jdbc.sql("""
-				select id, plan_code, version, price_minor, non_consultation_value_minor,
+				select id, plan_code, version, pricing_policy_version, price_minor, non_consultation_value_minor,
 				 consultation_credits_per_period, credit_value_minor from subscription_plan_version
 				where id=:id and currency='VND' and effective_from <= :now and (retired_at is null or retired_at > :now)
 				""").param("id", id).param("now", databaseNow()).query((row, ignored) -> new Plan(
-				row.getObject("id", UUID.class), row.getString("plan_code"), row.getString("version"),
+				row.getObject("id", UUID.class), row.getString("plan_code"), row.getString("version"), row.getString("pricing_policy_version"),
 				row.getLong("price_minor"), row.getLong("non_consultation_value_minor"),
 				row.getInt("consultation_credits_per_period"), row.getLong("credit_value_minor"))).optional()
 				.orElseThrow(() -> new ApiException(HttpStatus.NOT_FOUND, "PLAN_VERSION_NOT_AVAILABLE",
@@ -340,11 +352,11 @@ public class SubscriptionBillingService {
 	private OffsetDateTime databaseInstant(Instant value) { return OffsetDateTime.ofInstant(value, ZoneOffset.UTC); }
 	private ApiException conflict(String code, String message) { return new ApiException(HttpStatus.CONFLICT, code, message); }
 
-	private record Plan(UUID id, String planCode, String version, long priceMinor,
+	private record Plan(UUID id, String planCode, String version, String pricingPolicyVersion, long priceMinor,
 			long nonConsultationValueMinor, int credits, long creditValueMinor) { }
 
 	private record CurrentSubscription(UUID id, UUID userId, UUID planVersionId, String planCode,
-			long nonConsultationValueMinor, Instant periodStart, Instant periodEnd) { }
+			String pricingPolicyVersion, long nonConsultationValueMinor, Instant periodStart, Instant periodEnd) { }
 
 	private record ExpiringPayment(UUID subscriptionId, String purpose) { }
 }

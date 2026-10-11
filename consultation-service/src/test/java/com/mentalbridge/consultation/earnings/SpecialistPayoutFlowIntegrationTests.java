@@ -39,6 +39,27 @@ class SpecialistPayoutFlowIntegrationTests extends ConsultationTestProperties {
 	@Autowired ObjectMapper json;
 	@Autowired SpecialistPayoutService payouts;
 	@Autowired PayoutTransactions transactions;
+	@Autowired PayoutProperties properties;
+
+	@Test
+	void sandboxEarningCannotEnterARealTransferEvenWhenPayoutModeChanges() {
+		var fixture = earningFixture(Instant.now().minusSeconds(8 * 86_400L), 210_000);
+		jdbc.sql("update specialist_earning set plan_version='62200000-0000-4000-8000-000000000002' where consumed_credit_id=:id")
+				.param("id", fixture.creditId()).update();
+		var previousMode = properties.getMode();
+		try {
+			properties.setMode("MOMO");
+			assertThatThrownBy(() -> transactions.prepare(fixture.specialistId(), UUID.randomUUID(),
+					"sandbox-real-transfer-blocked-01"))
+					.isInstanceOfSatisfying(ApiException.class, error -> assertThat(error.code())
+							.isEqualTo("SANDBOX_EARNINGS_REAL_PAYOUT_DISABLED"));
+		}
+		finally {
+			properties.setMode(previousMode);
+		}
+		assertThat(jdbc.sql("select count(*) from specialist_payout where specialist_account_id=:id")
+				.param("id", fixture.specialistId()).query(Long.class).single()).isZero();
+	}
 
 	@Test
 	void earningResponsePreservesTheAllocationSnapshotInsteadOfAssumingOneFixedAmount() throws Exception {

@@ -27,6 +27,15 @@ class PayoutTransactions {
 
 	@Transactional
 	PreparedPayout prepare(UUID specialistId, UUID destinationId, String idempotencyKey) {
+		if (!"FAKE".equals(properties.getMode()) && jdbc.sql("""
+				select count(*) from specialist_earning e
+				join subscription_plan_version v on v.id::text=e.plan_version
+				where e.specialist_account_id=:specialistId and e.status in ('AVAILABLE', 'PENDING_SETTLEMENT')
+				  and v.pricing_policy_version='sandbox-full-price-v1'
+				""").param("specialistId", specialistId).query(Long.class).single() > 0) {
+			throw new ApiException(HttpStatus.CONFLICT, "SANDBOX_EARNINGS_REAL_PAYOUT_DISABLED",
+					"Sandbox earnings cannot be transferred by a real provider");
+		}
 		promoteSettledEarnings(specialistId);
 		var replay = jdbc.sql("""
 				select p.id, p.amount_minor, p.currency, p.status

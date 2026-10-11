@@ -171,6 +171,16 @@ MB-364 rating aggregates and never fabricates a score.
 
 ## Implemented MB-515 endpoints
 
+MB-622 replaces the active test offers with immutable PLUS 5,000/PREMIUM 10,000
+VND sandbox versions. The owner-approved sandbox upgrade charges 10,000 VND
+with zero offset and records `sandbox-full-price-v1` plus the nominal held-credit
+value. Existing held appointment credits and ordinary/historical prices/offsets
+are preserved. Mixed pricing policies fail closed. New paid credit periods
+snapshot the exact purchased plan-version UUID and allocation. Sandbox earning
+amounts are demonstration facts and may use FAKE payout only, never real money.
+Apply migration 021 and drain old billing writers before enabling new offers.
+No runtime secret or production approval flag is changed by this story.
+
 - `GET /api/v1/service-plans`
 - `POST /api/v1/subscriptions/checkout`
 - `POST /internal/v1/payments/momo/ipn`
