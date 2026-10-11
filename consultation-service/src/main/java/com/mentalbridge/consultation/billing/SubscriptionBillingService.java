@@ -12,7 +12,10 @@ import org.springframework.http.HttpStatus;
 import org.springframework.jdbc.core.simple.JdbcClient;
 import org.springframework.scheduling.annotation.Scheduled;
 import org.springframework.stereotype.Service;
+import org.springframework.transaction.PlatformTransactionManager;
+import org.springframework.transaction.annotation.Propagation;
 import org.springframework.transaction.annotation.Transactional;
+import org.springframework.transaction.support.TransactionTemplate;
 
 import com.mentalbridge.consultation.shared.ApiException;
 
@@ -25,13 +28,15 @@ public class SubscriptionBillingService {
 	private final Clock clock;
 	private final BillingProperties properties;
 	private final MomoCheckoutGateway gateway;
+	private final TransactionTemplate transactions;
 
 	public SubscriptionBillingService(JdbcClient jdbc, Clock clock, BillingProperties properties,
-			MomoCheckoutGateway gateway) {
+			MomoCheckoutGateway gateway, PlatformTransactionManager transactionManager) {
 		this.jdbc = jdbc;
 		this.clock = clock;
 		this.properties = properties;
 		this.gateway = gateway;
+		this.transactions = new TransactionTemplate(transactionManager);
 	}
 
 	@Transactional(readOnly = true)
@@ -58,18 +63,35 @@ public class SubscriptionBillingService {
 		return new PlanCatalogueResponse(plans, checkoutEnabled, "MOMO", clock.instant());
 	}
 
-	@Transactional
+	@Transactional(propagation = Propagation.NOT_SUPPORTED)
 	public PaymentResponse checkout(UUID userId, UUID targetVersionId, String idempotencyKey) {
 		validateKey(idempotencyKey);
 		if (!properties.checkoutEnabled()) throw new ApiException(HttpStatus.SERVICE_UNAVAILABLE,
 				"PAYMENT_CHECKOUT_DISABLED", "Payment checkout is not enabled");
+		var prepared = transactions.execute(ignored -> prepareCheckout(userId, targetVersionId, idempotencyKey));
+		if (!prepared.created()) return prepared.payment();
+		var payment = prepared.payment();
+		var request = jdbc.sql("select momo_order_id, momo_request_id from payment_transaction where id=:id")
+				.param("id", payment.paymentId()).query((row, ignored) -> new String[]{row.getString(1), row.getString(2)}).single();
+		var checkout = gateway.create(request[0], request[1], payment.amountVnd(), "MentalBridge " + payment.planCode());
+		return transactions.execute(ignored -> {
+			jdbc.sql("""
+					update payment_transaction set checkout_url=:url, qr_code_url=:qr, updated_at=:now, version=version+1
+					where id=:id and checkout_url is null
+					""").param("url", checkout.payUrl()).param("qr", checkout.qrCodeUrl())
+					.param("now", databaseNow()).param("id", payment.paymentId()).update();
+			return findPaymentById(payment.paymentId());
+		});
+	}
+
+	private CheckoutPreparation prepareCheckout(UUID userId, UUID targetVersionId, String idempotencyKey) {
 		jdbc.sql("select pg_advisory_xact_lock(hashtextextended(:lockKey, 0))")
 				.param("lockKey", "subscription-checkout:" + userId).query(String.class).single();
 		var replay = findByUserAndKey(userId, idempotencyKey);
 		if (replay != null) {
 			if (!replay.planVersionId().equals(targetVersionId)) throw conflict("IDEMPOTENCY_KEY_REUSED",
 					"Idempotency key was reused for another plan");
-			return replay;
+			return new CheckoutPreparation(replay, false);
 		}
 		var target = activePlan(targetVersionId);
 		if (SANDBOX_POLICY.equals(target.pricingPolicyVersion()) && !properties.sandboxCheckoutAllowed()) {
@@ -90,10 +112,10 @@ public class SubscriptionBillingService {
 					""").param("userId", userId).param("now", databaseNow()).query(String.class).optional();
 			if (projected.isPresent()) throw conflict("SUBSCRIPTION_NOT_MANAGED",
 					"The current paid or demo entitlement is not managed by this checkout flow");
-			return purchase(userId, target, idempotencyKey);
+			return new CheckoutPreparation(purchase(userId, target, idempotencyKey), true);
 		}
 		if ("PLUS".equals(current.planCode()) && "PREMIUM".equals(target.planCode())) {
-			return upgrade(current, target, idempotencyKey);
+			return new CheckoutPreparation(upgrade(current, target, idempotencyKey), true);
 		}
 		if ("PREMIUM".equals(current.planCode()) && "PLUS".equals(target.planCode())) {
 			throw conflict("SUBSCRIPTION_DOWNGRADE_NOT_SUPPORTED", "Subscription downgrade is not supported");
@@ -209,7 +231,6 @@ public class SubscriptionBillingService {
 		var paymentId = UUID.randomUUID();
 		var orderId = "MB" + paymentId.toString().replace("-", "");
 		var requestId = UUID.randomUUID().toString();
-		var checkout = gateway.create(orderId, requestId, amount, "MentalBridge " + target.planCode());
 		var expiresAt = now.plus(properties.getCheckoutTtl());
 		jdbc.sql("""
 				insert into payment_transaction (id, subscription_id, target_plan_version_id, payment_provider,
@@ -221,8 +242,8 @@ public class SubscriptionBillingService {
 				.param("planVersionId", target.id()).param("provider", properties.fake() ? "FAKE" : "MOMO")
 				.param("orderId", orderId).param("requestId", requestId).param("amount", amount)
 				.param("purpose", purpose).param("key", idempotencyKey)
-				.param("expiresAt", databaseInstant(expiresAt)).param("checkoutUrl", checkout.payUrl())
-				.param("qrCodeUrl", checkout.qrCodeUrl()).param("now", databaseInstant(now)).update();
+				.param("expiresAt", databaseInstant(expiresAt)).param("checkoutUrl", null)
+				.param("qrCodeUrl", null).param("now", databaseInstant(now)).update();
 		return findPaymentById(paymentId);
 	}
 
@@ -359,4 +380,5 @@ public class SubscriptionBillingService {
 			String pricingPolicyVersion, long nonConsultationValueMinor, Instant periodStart, Instant periodEnd) { }
 
 	private record ExpiringPayment(UUID subscriptionId, String purpose) { }
+	private record CheckoutPreparation(PaymentResponse payment, boolean created) { }
 }

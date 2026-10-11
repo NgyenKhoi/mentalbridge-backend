@@ -46,7 +46,35 @@ class SubscriptionBillingIntegrationTests extends ConsultationTestProperties {
 	@Autowired JdbcClient jdbc;
 	@Autowired ObjectMapper json;
 	@Autowired SubscriptionBillingService billing;
+	@org.springframework.test.context.bean.override.mockito.MockitoSpyBean MomoCheckoutGateway checkoutGateway;
 	@Autowired com.mentalbridge.consultation.credits.ServiceCreditService credits;
+
+	@Test
+	void providerTimeoutLeavesOneCommittedPaymentAndReplayNeverResendsTheCharge() throws Exception {
+		var userId = UUID.randomUUID();
+		var commandKey = key("provider-timeout");
+		org.mockito.Mockito.doAnswer(invocation -> {
+			assertThat(org.springframework.transaction.support.TransactionSynchronizationManager.isActualTransactionActive()).isFalse();
+			assertThat(billing.history(userId).items()).hasSize(1);
+			throw new ApiException(org.springframework.http.HttpStatus.SERVICE_UNAVAILABLE,
+					"MOMO_CHECKOUT_UNAVAILABLE", "MoMo checkout is unavailable");
+		}).when(checkoutGateway).create(org.mockito.ArgumentMatchers.anyString(), org.mockito.ArgumentMatchers.anyString(),
+				org.mockito.ArgumentMatchers.anyLong(), org.mockito.ArgumentMatchers.anyString());
+		assertThatThrownBy(() -> billing.checkout(userId, PLUS, commandKey)).isInstanceOf(ApiException.class);
+		var pending = billing.checkout(userId, PLUS, commandKey);
+		assertThat(pending.status()).isEqualTo("PENDING");
+		assertThat(pending.checkoutUrl()).isNull();
+		assertThat(pending.qrCodeUrl()).isNull();
+		assertThat(billing.history(userId).items()).hasSize(1);
+		org.mockito.Mockito.verify(checkoutGateway).create(org.mockito.ArgumentMatchers.anyString(), org.mockito.ArgumentMatchers.anyString(),
+				org.mockito.ArgumentMatchers.anyLong(), org.mockito.ArgumentMatchers.anyString());
+		var callback = fixture(pending.paymentId(), 0, Instant.now().toEpochMilli(), Math.abs((long) UUID.randomUUID().hashCode()) + 1);
+		sign(callback);
+		postIpn(callback, 204);
+		postIpn(callback, 204);
+		assertThat(billing.payment(userId, pending.paymentId()).status()).isEqualTo("SUCCEEDED");
+		assertThat(credits.current(userId).balance().available()).isEqualTo(4);
+	}
 
 	@Test
 	void adminReadsCanonicalPaymentFactsWithoutCheckoutOrCustomerSecrets() throws Exception {

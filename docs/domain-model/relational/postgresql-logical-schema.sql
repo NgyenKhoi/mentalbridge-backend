@@ -1246,7 +1246,7 @@ CREATE TABLE consultation.payment_transaction (
     paid_at timestamptz,
     failed_at timestamptz,
     expires_at timestamptz NOT NULL,
-    checkout_url varchar(2048) NOT NULL,
+    checkout_url varchar(2048),
     qr_code_url varchar(2048),
     created_at timestamptz NOT NULL,
     updated_at timestamptz NOT NULL,
@@ -1254,6 +1254,7 @@ CREATE TABLE consultation.payment_transaction (
     UNIQUE (payment_provider, momo_order_id),
     UNIQUE (payment_provider, momo_request_id),
     UNIQUE (payment_provider, momo_trans_id),
+    CHECK (checkout_url IS NOT NULL OR qr_code_url IS NULL),
     UNIQUE (subscription_id, idempotency_key)
 );
 

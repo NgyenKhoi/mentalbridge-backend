@@ -1609,7 +1609,7 @@ MoMo-backed payment attempt and current externally confirmed outcome. `FAKE` may
 | `paid_at` | Provider-confirmed UTC success instant; null until successful. |
 | `failed_at` | UTC terminal failure instant; null unless failed. |
 | `expires_at` | UTC deadline after which the pending attempt can no longer activate rights. |
-| `checkout_url` | Safe provider redirect returned to the authenticated caller; never treated as authorization evidence. |
+| `checkout_url` | Nullable safe provider redirect. Null while durable checkout preparation is awaiting an unconfirmed provider response (including timeout); no redirect or automatic charge resend. Verified callback may finalize the payment even when null. Historical URLs are unchanged. Never authorization evidence. |
 | `qr_code_url` | Optional safe MoMo QR URL returned with checkout. |
 | `created_at` | Immutable UTC attempt creation instant. |
 | `updated_at` | UTC instant of the latest verified payment-state change. |

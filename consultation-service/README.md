@@ -191,6 +191,15 @@ are preserved. Mixed pricing policies fail closed. New paid credit periods
 snapshot the exact purchased plan-version UUID and allocation. Sandbox earning
 amounts are demonstration facts and may use FAKE payout only, never real money.
 Apply migration 021 and drain old billing writers before enabling new offers.
+
+Migration 022 permits a null checkout URL. Roll out the nullable-URL consumer
+before the new checkout writer and drain old writers. Checkout commits its
+canonical payment, quote and held credits before calling the provider outside
+any database transaction. Only the first reservation calls create; same-key
+replay returns the stored payment without re-sending a possible charge. A
+provider timeout leaves an auditable pending record, recoverable by verified
+IPN or existing expiry/reconciliation, never browser-side activation. There is
+no automatic create retry or production payment/payout enablement in MB-622.
 No runtime secret or production approval flag is changed by this story.
 
 - `GET /api/v1/service-plans`

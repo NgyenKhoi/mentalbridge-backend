@@ -1,7 +1,7 @@
 openapi: 3.1.0
 info:
   title: MentalBridge Consultation Service API
-  version: 1.15.0
+  version: 1.16.0
   description: Consultation-owned specialist profile lifecycle, approved online discovery, service-plan entitlement and credit lookup, online availability, appointment requests, appointment-scoped chat eligibility and minimized completion evidence, auditable owner cancellation/reschedule/session outcomes, immutable user-visible session summaries and agreed next steps, evidence-backed specialist earnings, fake local payout reconciliation, credit reservation limits, and suspension outcomes.
 servers:
   - url: http://localhost:8082
@@ -1713,7 +1713,11 @@ components:
         status: { type: string, enum: [PENDING, SUCCEEDED, FAILED, CHARGEBACK] }
         amountVnd: { type: integer, format: int64, minimum: 1 }
         currency: { type: string, const: VND }
-        checkoutUrl: { type: string, format: uri, pattern: '^https://' }
+        checkoutUrl:
+          type: [string, 'null']
+          format: uri
+          pattern: '^https://'
+          description: Null while provider checkout creation is unconfirmed. The canonical pending payment remains auditable; do not redirect or automatically resend a charge. Verified IPN remains authoritative even when checkout creation times out.
         qrCodeUrl: { type: [string, 'null'], format: uri, pattern: '^https://' }
         expiresAt: { type: string, format: date-time }
         createdAt: { type: string, format: date-time }
