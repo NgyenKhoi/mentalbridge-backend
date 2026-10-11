@@ -1363,6 +1363,7 @@ CREATE TABLE consultation.appointment (
     decision_deadline_at timestamptz NOT NULL,
     idempotency_key varchar(128) NOT NULL,
     replaces_appointment_id uuid REFERENCES consultation.appointment(id),
+    originating_plan_action_id uuid, -- opaque external -> care.plan_action/action projection; no FK or lifecycle authority
     decided_at timestamptz,
     decision_reason varchar(64),
     cancellation_reason varchar(64),

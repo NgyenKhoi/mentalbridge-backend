@@ -36,7 +36,8 @@ class ConsultationLiquibaseChangelogTests {
 							"consultation-017-specialist-earning-payout",
 							"consultation-018-specialist-profile-amendment",
 							"consultation-019-profile-amendment-cancellation",
-							"consultation-020-subscription-momo-payment");
+							"consultation-020-subscription-momo-payment",
+							"consultation-021-appointment-plan-action-reference");
 		}
 	}
 }

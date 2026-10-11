@@ -157,6 +157,14 @@ booking, appointment state, and fulfilment. SupportPlan edits never change an
 appointment. Current crisis/safety policy always precedes plan creation and
 ordinary plan controls.
 
+Discovery is navigation only. Consultation may persist the originating Care
+action ID only when the user explicitly submits a booking request. That opaque
+reference lets clients present bounded request/confirmation/cancellation/
+completion progress in the originating plan; it grants no plan authority and
+is separate from any `ConsultationBrief` sharing consent. Appointment changes
+never advance, pause, complete, or replace the plan, and specialist proposals
+remain separate user-confirmed `PlanChangeRequest` decisions.
+
 ## v2 compatibility
 
 Existing v2 resource plans remain authoritative historical records under
@@ -175,6 +183,13 @@ The v3 read boundary may translate a v2 slot into a virtual `RESOURCE` action:
   history; and
 - the projection is labelled `V2_RESOURCE_ADAPTER` with its v2 plan/policy
   version and exact source provenance.
+
+For a stored `*_PROFESSIONAL_ADJUNCT` template family, the adapter also exposes
+a deterministic virtual `PROFESSIONAL_SUPPORT` action as `PRIMARY` and marks
+the projected self-help resources in that focus as `ADJUNCT`. Minimal/mild
+self-guided families retain primary resource actions. This classification is a
+projection of persisted routing provenance, not a client or adapter severity
+inference.
 
 The adapter does not create native v3 rows and does not change v2 write rules.
 Contracts and events expose the model version and distinguish native Care

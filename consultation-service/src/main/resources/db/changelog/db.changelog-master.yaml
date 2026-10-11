@@ -39,3 +39,5 @@ databaseChangeLog:
       file: db/changelog/changes/019-profile-amendment-cancellation.sql
   - include:
       file: db/changelog/changes/020-subscription-momo-payment.sql
+  - include:
+      file: db/changelog/changes/021-appointment-plan-action-reference.sql

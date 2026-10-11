@@ -126,7 +126,12 @@ silent dual-write:
    inferred clinical claim.
 5. Every such projection is marked `V2_RESOURCE_ADAPTER` and keeps the exact
    ResourceVersion/publication provenance.
-6. Native v3 actions use their own versioned model and do not make the adapter
+6. If the persisted template family is `*_PROFESSIONAL_ADJUNCT`, the adapter
+   also emits one deterministic virtual `PROFESSIONAL_SUPPORT` action as the
+   primary path and marks the resource actions in that focus as adjunct. This
+   reads stored routing provenance; it does not recompute severity or book an
+   appointment.
+7. Native v3 actions use their own versioned model and do not make the adapter
    projection canonical persistence.
 
 A later materialized migration requires a separate accepted, auditable plan.

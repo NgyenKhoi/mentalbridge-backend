@@ -3546,7 +3546,7 @@ components:
     SupportPlanV3:
       type: object
       additionalProperties: false
-      required: [supportPlanId, modelVersion, planPolicyVersion, representationMode, status, version, focuses,
+      required: [supportPlanId, modelVersion, planPolicyVersion, representationMode, status, version, safety, focuses,
         createdAt, updatedAt, activatedAt, completedAt, completionReason, supersededAt,
         discardedAt, disclaimerCode, disclaimer]
       properties:
@@ -3563,6 +3563,7 @@ components:
           description: Identifies a non-destructive v2 read projection or canonical v3 storage.
         status: { type: string, enum: [DRAFT, ACTIVE, PAUSED, COMPLETED, SUPERSEDED, DISCARDED] }
         version: { type: integer, minimum: 0 }
+        safety: { $ref: '#/components/schemas/SupportPlanSafety' }
         focuses:
           type: array
           minItems: 1
@@ -3601,7 +3602,7 @@ components:
     PlanAction:
       type: object
       additionalProperties: false
-      required: [actionId, actionType, actionVersion, representationMode, status, purposeCode,
+      required: [actionId, actionType, actionVersion, representationMode, status, pathRole, purposeCode,
         rationale, ordinal, source, provenance, presentation, schedules, createdAt, updatedAt,
         activatedAt, endedAt]
       properties:
@@ -3609,7 +3610,7 @@ components:
           type: string
           minLength: 1
           maxLength: 128
-          description: Native identity or the existing v2 slot identity used by the read adapter.
+          description: Native identity, existing v2 slot identity, or a stable deterministic virtual identity produced by the read adapter.
         actionType:
           type: string
           enum: [RESOURCE, JOURNAL, EMOTION_CHECK_IN, ROUTINE_SELF_MANAGEMENT,
@@ -3617,6 +3618,10 @@ components:
         actionVersion: { type: integer, minimum: 0 }
         representationMode: { type: string, enum: [V2_RESOURCE_ADAPTER, NATIVE_V3] }
         status: { type: string, enum: [DRAFT, ACTIVE, ENDED] }
+        pathRole:
+          type: string
+          enum: [PRIMARY, ADJUNCT]
+          description: PRIMARY is the recommended path; ADJUNCT complements it and never replaces professional support. In a native focus, a non-ended PROFESSIONAL_SUPPORT action is primary and its sibling actions are adjunct; without that context actions are primary. purposeCode is never used to classify this role.
         purposeCode: { type: string, minLength: 1, maxLength: 64 }
         rationale: { type: [string, 'null'], minLength: 1, maxLength: 2048 }
         ordinal: { type: integer, minimum: 1, maximum: 20 }

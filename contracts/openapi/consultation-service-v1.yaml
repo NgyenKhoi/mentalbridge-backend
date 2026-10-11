@@ -842,19 +842,26 @@ paths:
     x-mentalbridge-status: implemented
     get:
       operationId: listOwnAppointments
-      description: Lists the authenticated user's authoritative appointment snapshots, including request deadline and held credit identity.
+      description: Lists at most 100 newest authoritative appointment snapshots owned by the authenticated user. When originatingPlanActionId is supplied, the exact owner-and-action filter is applied before the bound so a caller can recover correlated SupportPlan progress without scanning general history.
       security: [{ bearerAuth: [] }]
+      parameters:
+        - name: originatingPlanActionId
+          in: query
+          required: false
+          description: Optional opaque Care PlanAction reference. Filtering remains owner-scoped and grants no SupportPlan authority.
+          schema: { type: string, format: uuid }
       responses:
         '200':
           description: User-owned appointment history
           content:
             application/json:
               schema: { $ref: '#/components/schemas/AppointmentList' }
+        '400': { $ref: '#/components/responses/ValidationProblem' }
         '401': { $ref: '#/components/responses/UnauthorizedProblem' }
         '403': { $ref: '#/components/responses/EntitlementForbiddenProblem' }
     post:
       operationId: requestAppointment
-      description: Atomically creates a REQUESTED appointment for one exact slot after enforcing both available-credit and concurrent-reservation limits. When replacesAppointmentId is supplied, If-Match must carry that appointment's current version; the eligible future appointment is cancelled with an auditable credit outcome and linked to the replacement without temporarily consuming another reservation. Exact command replays return the original appointment.
+      description: Atomically creates a REQUESTED appointment for one exact slot after enforcing both available-credit and concurrent-reservation limits. When replacesAppointmentId is supplied, If-Match must carry that appointment's current version; the eligible future appointment is cancelled with an auditable credit outcome and linked to the replacement without temporarily consuming another reservation. A replacement inherits an omitted originatingPlanActionId from the owned appointment and rejects a conflicting explicit value. Exact command replays return the original appointment.
       security: [{ bearerAuth: [] }]
       parameters:
         - $ref: '#/components/parameters/IdempotencyKey'
@@ -2550,6 +2557,10 @@ components:
           type: [string, 'null']
           format: uuid
           description: Active user-owned appointment atomically replaced by this new request; omit for a normal request.
+        originatingPlanActionId:
+          type: [string, 'null']
+          format: uuid
+          description: Optional opaque Care PlanAction reference from an explicit user navigation and booking flow. A replacement inherits the owned prior appointment's value when omitted and must not supply a conflicting value. It never authorizes Consultation to mutate the SupportPlan.
     AppointmentStatus:
       type: string
       enum: [REQUESTED, CONFIRMED, IN_PROGRESS, SESSION_ENDED, COMPLETED, REJECTED, EXPIRED, CANCELLED]
@@ -2820,7 +2831,7 @@ components:
     Appointment:
       type: object
       additionalProperties: false
-      required: [id, slotId, specialistAccountId, specialistDisplayName, status, modality, scheduledStartAt, scheduledEndAt, timezone, requestedAt, decisionDeadlineAt, heldCreditId, replacesAppointmentId, replacedByAppointmentId, decidedAt, decisionReason, cancelledAt, cancellationReason, cancellationActor, cancellationCreditOutcome, sessionOutcome, sessionOutcomeReason, sessionPolicyVersion, sessionEndedAt, sessionSettledAt, completionFactId, creditState, history, version]
+      required: [id, slotId, specialistAccountId, specialistDisplayName, status, modality, scheduledStartAt, scheduledEndAt, timezone, requestedAt, decisionDeadlineAt, heldCreditId, replacesAppointmentId, replacedByAppointmentId, originatingPlanActionId, decidedAt, decisionReason, cancelledAt, cancellationReason, cancellationActor, cancellationCreditOutcome, sessionOutcome, sessionOutcomeReason, sessionPolicyVersion, sessionEndedAt, sessionSettledAt, completionFactId, creditState, history, version]
       properties:
         id: { type: string, format: uuid }
         slotId: { type: string, format: uuid }
@@ -2836,6 +2847,10 @@ components:
         heldCreditId: { type: string, format: uuid }
         replacesAppointmentId: { type: [string, 'null'], format: uuid }
         replacedByAppointmentId: { type: [string, 'null'], format: uuid }
+        originatingPlanActionId:
+          type: [string, 'null']
+          format: uuid
+          description: Opaque Care-owned PlanAction reference used only to present appointment progress in the originating SupportPlan.
         decidedAt: { type: [string, 'null'], format: date-time }
         decisionReason:
           type: [string, 'null']

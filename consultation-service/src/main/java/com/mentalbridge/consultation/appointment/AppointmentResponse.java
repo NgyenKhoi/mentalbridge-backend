@@ -7,7 +7,8 @@ import java.util.UUID;
 public record AppointmentResponse(UUID id, UUID slotId, UUID specialistAccountId, String specialistDisplayName,
 		String status, AppointmentModality modality, Instant scheduledStartAt, Instant scheduledEndAt,
 		String timezone, Instant requestedAt, Instant decisionDeadlineAt, UUID heldCreditId,
-		UUID replacesAppointmentId, UUID replacedByAppointmentId, Instant decidedAt, String decisionReason,
+		UUID replacesAppointmentId, UUID replacedByAppointmentId, UUID originatingPlanActionId,
+		Instant decidedAt, String decisionReason,
 		Instant cancelledAt, String cancellationReason, String cancellationActor,
 		String cancellationCreditOutcome, String sessionOutcome, String sessionOutcomeReason,
 		String sessionPolicyVersion, Instant sessionEndedAt, Instant sessionSettledAt, UUID completionFactId,
@@ -16,7 +17,7 @@ public record AppointmentResponse(UUID id, UUID slotId, UUID specialistAccountId
 	AppointmentResponse withHistory(List<HistoryEntry> value) {
 		return new AppointmentResponse(id, slotId, specialistAccountId, specialistDisplayName, status, modality,
 				scheduledStartAt, scheduledEndAt, timezone, requestedAt, decisionDeadlineAt, heldCreditId,
-				replacesAppointmentId, replacedByAppointmentId, decidedAt, decisionReason, cancelledAt,
+				replacesAppointmentId, replacedByAppointmentId, originatingPlanActionId, decidedAt, decisionReason, cancelledAt,
 				cancellationReason, cancellationActor, cancellationCreditOutcome, sessionOutcome,
 				sessionOutcomeReason, sessionPolicyVersion, sessionEndedAt, sessionSettledAt, completionFactId,
 				creditState, value, version);
