@@ -40,6 +40,11 @@ the authenticated currently approved specialist. It contains only assigned
 `CONFIRMED`/in-flight appointments and appointments ending within the last 90
 days, is capped at 200 rows, and never acts as a user directory or carries Care
 content.
+MB-643 lets an explicit user booking request retain an optional opaque
+Care-owned `originatingPlanActionId`. It is a presentation correlation only:
+there is no cross-service foreign key, Consultation never edits or completes a
+SupportPlan, and opening specialist discovery alone creates no appointment or
+data-sharing consent.
 MB-380 adds optimistic, idempotent owner cancellation and completes
 reschedule-as-new audit. Requested cancellations and confirmations at least 24
 hours before start release the held credit; later confirmed cancellations

@@ -55,10 +55,19 @@ public class AppointmentService {
 	@Transactional
 	public AppointmentResponse request(UUID userId, String idempotencyKey, UUID slotId,
 			AppointmentModality requestedModality, UUID replacesAppointmentId, Long expectedReplacementVersion) {
+		return request(userId, idempotencyKey, slotId, requestedModality, replacesAppointmentId,
+				expectedReplacementVersion, null);
+	}
+
+	@Transactional
+	public AppointmentResponse request(UUID userId, String idempotencyKey, UUID slotId,
+			AppointmentModality requestedModality, UUID replacesAppointmentId, Long expectedReplacementVersion,
+			UUID originatingPlanActionId) {
 		var replay = findByCommand(userId, idempotencyKey);
 		if (replay != null) {
 			if (!replay.slotId().equals(slotId) || replay.modality() != requestedModality
-					|| !java.util.Objects.equals(replay.replacesAppointmentId(), replacesAppointmentId)) {
+					|| !java.util.Objects.equals(replay.replacesAppointmentId(), replacesAppointmentId)
+					|| !java.util.Objects.equals(replay.originatingPlanActionId(), originatingPlanActionId)) {
 				throw conflict("IDEMPOTENCY_KEY_REUSED", "Idempotency-Key was already used for another appointment request");
 			}
 			return replay;
@@ -104,18 +113,20 @@ public class AppointmentService {
 					insert into appointment (
 					 id, user_account_id, specialist_account_id, availability_slot_id, service_credit_id,
 					 status, modality, scheduled_start_at, scheduled_end_at, display_timezone,
-					 requested_at, decision_deadline_at, idempotency_key, replaces_appointment_id, created_at, updated_at
+					 requested_at, decision_deadline_at, idempotency_key, replaces_appointment_id,
+					 originating_plan_action_id, created_at, updated_at
 					) values (
 					 :id, :userId, :specialistId, :slotId, :creditId,
 					 'REQUESTED', :modality, :startAt, :endAt, :timezone,
-					 :now, :deadline, :key, :replacesAppointmentId, :now, :now
+					 :now, :deadline, :key, :replacesAppointmentId, :originatingPlanActionId, :now, :now
 					)
 					""").param("id", appointmentId).param("userId", userId)
 					.param("specialistId", slot.specialistId()).param("slotId", slotId).param("creditId", credit)
 					.param("modality", requestedModality.name()).param("startAt", database(slot.startAt()))
 					.param("endAt", database(slot.endAt())).param("timezone", slot.timezone())
 					.param("now", database(now)).param("deadline", database(deadline)).param("key", idempotencyKey)
-					.param("replacesAppointmentId", replacesAppointmentId).update();
+					.param("replacesAppointmentId", replacesAppointmentId)
+					.param("originatingPlanActionId", originatingPlanActionId).update();
 			credits.transition(userId, credit, appointmentId, CreditEventType.HELD, "appointment-hold:" + appointmentId);
 			insertHistory(appointmentId, null, "REQUESTED", userId, "APPOINTMENT_REQUESTED",
 					"request:" + appointmentId, null, now);

@@ -62,6 +62,23 @@ class AppointmentRequestIntegrationTests extends ConsultationTestProperties {
 	}
 
 	@Test
+	void explicitBookingCanRetainOpaqueOriginatingPlanActionReference() throws Exception {
+		var userId = paidUser("PLUS");
+		var slotId = chatSlot(Instant.now().plusSeconds(86_400));
+		var planActionId = UUID.randomUUID();
+		var body = "{\"slotId\":\"%s\",\"modality\":\"IN_APP_CHAT\",\"originatingPlanActionId\":\"%s\"}"
+				.formatted(slotId, planActionId);
+
+		mvc.perform(post("/api/v1/appointments").with(user(userId))
+				.header("Idempotency-Key", "plan-action-request-0001").contentType(MediaType.APPLICATION_JSON)
+				.content(body)).andExpect(status().isCreated())
+				.andExpect(jsonPath("$.originatingPlanActionId").value(planActionId.toString()));
+
+		assertThat(jdbc.sql("select originating_plan_action_id from appointment where user_account_id=:userId")
+				.param("userId", userId).query(UUID.class).single()).isEqualTo(planActionId);
+	}
+
+	@Test
 	void freeWrongModeStaleLeadTimeAndUnavailableCreditFailStably() throws Exception {
 		var slotId = chatSlot(Instant.now().plusSeconds(86_400));
 		mvc.perform(post("/api/v1/appointments").with(user(UUID.randomUUID()))

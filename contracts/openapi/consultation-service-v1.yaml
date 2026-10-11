@@ -2550,6 +2550,10 @@ components:
           type: [string, 'null']
           format: uuid
           description: Active user-owned appointment atomically replaced by this new request; omit for a normal request.
+        originatingPlanActionId:
+          type: [string, 'null']
+          format: uuid
+          description: Optional opaque Care PlanAction reference from an explicit user navigation and booking flow. It never authorizes Consultation to mutate the SupportPlan.
     AppointmentStatus:
       type: string
       enum: [REQUESTED, CONFIRMED, IN_PROGRESS, SESSION_ENDED, COMPLETED, REJECTED, EXPIRED, CANCELLED]
@@ -2820,7 +2824,7 @@ components:
     Appointment:
       type: object
       additionalProperties: false
-      required: [id, slotId, specialistAccountId, specialistDisplayName, status, modality, scheduledStartAt, scheduledEndAt, timezone, requestedAt, decisionDeadlineAt, heldCreditId, replacesAppointmentId, replacedByAppointmentId, decidedAt, decisionReason, cancelledAt, cancellationReason, cancellationActor, cancellationCreditOutcome, sessionOutcome, sessionOutcomeReason, sessionPolicyVersion, sessionEndedAt, sessionSettledAt, completionFactId, creditState, history, version]
+      required: [id, slotId, specialistAccountId, specialistDisplayName, status, modality, scheduledStartAt, scheduledEndAt, timezone, requestedAt, decisionDeadlineAt, heldCreditId, replacesAppointmentId, replacedByAppointmentId, originatingPlanActionId, decidedAt, decisionReason, cancelledAt, cancellationReason, cancellationActor, cancellationCreditOutcome, sessionOutcome, sessionOutcomeReason, sessionPolicyVersion, sessionEndedAt, sessionSettledAt, completionFactId, creditState, history, version]
       properties:
         id: { type: string, format: uuid }
         slotId: { type: string, format: uuid }
@@ -2836,6 +2840,10 @@ components:
         heldCreditId: { type: string, format: uuid }
         replacesAppointmentId: { type: [string, 'null'], format: uuid }
         replacedByAppointmentId: { type: [string, 'null'], format: uuid }
+        originatingPlanActionId:
+          type: [string, 'null']
+          format: uuid
+          description: Opaque Care-owned PlanAction reference used only to present appointment progress in the originating SupportPlan.
         decidedAt: { type: [string, 'null'], format: date-time }
         decisionReason:
           type: [string, 'null']
