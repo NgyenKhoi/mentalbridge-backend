@@ -26,6 +26,11 @@ class ConsultationOpenApiContractTests {
 			"POST /api/v1/admin/specialist-profiles/amendments/{amendmentId}/approve",
 			"POST /api/v1/admin/specialist-profiles/amendments/{amendmentId}/reject",
 			"GET /api/v1/service-credits",
+			"GET /api/v1/service-plans",
+			"POST /api/v1/subscriptions/checkout",
+			"GET /api/v1/payments",
+			"GET /api/v1/payments/{paymentId}",
+			"POST /internal/v1/payments/momo/ipn",
 			"GET /internal/v1/entitlements/current",
 			"GET /internal/v1/appointments/{appointmentId}/consultation-brief-context",
 			"GET /internal/v1/appointments/{appointmentId}/reusable-session-summaries/{summaryId}",
@@ -93,7 +98,7 @@ class ConsultationOpenApiContractTests {
 			assertThat(item.getExtensions()).containsEntry("x-mentalbridge-status", "implemented");
 			item.readOperationsMap().forEach((method, operation) -> {
 				operations.add(method.name() + " " + path);
-				if (path.equals("/internal/v1/payouts/momo/ipn")) {
+				if (path.equals("/internal/v1/payouts/momo/ipn") || path.equals("/internal/v1/payments/momo/ipn")) {
 					assertThat(operation.getSecurity()).isEmpty();
 				}
 				else if (path.contains("notification-eligibility")) {
