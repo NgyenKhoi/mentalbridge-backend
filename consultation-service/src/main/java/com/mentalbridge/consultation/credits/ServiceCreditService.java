@@ -257,8 +257,10 @@ public class ServiceCreditService {
 				""").param("accountId", accountId).query(Integer.class).single();
 		var history = history(accountId);
 		var balance = new ServiceCreditResponse.Balance(counts.getOrDefault("AVAILABLE", 0),
-				counts.getOrDefault("HELD", 0), counts.getOrDefault("CONSUMED", 0),
-				counts.getOrDefault("FORFEITED", 0), period == null ? 0 : period.allocatedCount(), released);
+				counts.getOrDefault("HELD", 0) + counts.getOrDefault("UPGRADE_HELD", 0),
+				counts.getOrDefault("CONSUMED", 0), counts.getOrDefault("FORFEITED", 0)
+						+ counts.getOrDefault("EXPIRED", 0) + counts.getOrDefault("REVOKED", 0),
+				period == null ? 0 : period.allocatedCount(), released);
 		var activeReservations = activeReservations(accountId);
 		var maximumReservations = reservationLimit(packageCode);
 		var capacity = new ServiceCreditResponse.ReservationCapacity(activeReservations, maximumReservations,

@@ -24,10 +24,10 @@ entitlement, credit, earning, or payout balance.
 | `PLUS` | VND 1,390,000 | 4 | 2 | VND 300,000 | VND 210,000 |
 | `PREMIUM` | VND 3,490,000 | 10 | 4 | VND 300,000 each | VND 210,000 each |
 
-These prices are production-planned documentation/design values, not runtime
-prices, and do not enable real-money production. The current integration-test
-runtime catalogue is `FREE=0`, `PLUS=5,000`, and `PREMIUM=10,000` VND. Those
-small values are fixtures only and cannot support profitability conclusions.
+These versioned prices are the runtime catalogue used by local/CI fake checkout,
+but do not enable real-money production. Production MoMo remains disabled until
+the independent configuration, credential, callback, and operational approval
+gates pass. Tests never call the provider or use a second production method.
 The credit quantities are the approved `consultation-credit-v2` runtime target.
 The MB-377 `consultation-credit-v1` ledger remains `FREE=0`, `PLUS=1`,
 `PREMIUM=3`; existing periods and ledger facts keep that exact provenance and
@@ -129,9 +129,8 @@ Reserved credits are not offset or revoked by an upgrade; their appointments con
 - A logical payout fixes its destination, currency, amount, and earning items. Each provider call is a numbered attempt: a definite `FAILED` attempt may be retried with a new provider idempotency key, while `UNKNOWN` is queried and blocks another transfer attempt. The payout becomes `SUCCEEDED` only after verified provider confirmation/status reconciliation.
 - Real MoMo payment and payout remain disabled until separate production
   approval and credentials are configured. Runtime FX conversion is prohibited.
-- The 5,000 VND test `PLUS` checkout uses One-Time E-Wallet
-  `requestType=captureWallet`; it does not use generic `initiate`, whose minimum
-  amount is 10,000 VND. Local/CI never depends on MoMo availability.
+- Checkout uses One-Time E-Wallet `requestType=captureWallet`. Local/CI uses the
+  deterministic MoMo-shaped fake and never depends on MoMo availability.
 
 ## Required contracts and verification
 

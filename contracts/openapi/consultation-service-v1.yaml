@@ -1,7 +1,7 @@
 openapi: 3.1.0
 info:
   title: MentalBridge Consultation Service API
-  version: 1.12.0
+  version: 1.13.0
   description: Consultation-owned specialist profile lifecycle, approved online discovery, service-plan entitlement and credit lookup, online availability, appointment requests, appointment-scoped chat eligibility and minimized completion evidence, auditable owner cancellation/reschedule/session outcomes, immutable user-visible session summaries and agreed next steps, evidence-backed specialist earnings, fake local payout reconciliation, credit reservation limits, and suspension outcomes.
 servers:
   - url: http://localhost:8082
@@ -308,6 +308,98 @@ paths:
         '401': { $ref: '#/components/responses/UnauthorizedProblem' }
         '403': { $ref: '#/components/responses/EntitlementForbiddenProblem' }
         '409': { $ref: '#/components/responses/CreditConflictProblem' }
+  /api/v1/service-plans:
+    x-mentalbridge-status: implemented
+    get:
+      operationId: listActiveServicePlanVersions
+      description: Returns the authoritative active VND catalogue. Price, credits, concurrent-reservation capacity, credit allocation, AI quota, SupportPlan entitlement, effective date, and allowed upgrades are immutable version facts; clients must not derive them from plan names. MoMo checkout remains gated independently.
+      security: [{ bearerAuth: [] }]
+      responses:
+        '200':
+          description: Active versioned VND catalogue
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/ServicePlanCatalogue' }
+        '401': { $ref: '#/components/responses/UnauthorizedProblem' }
+        '403': { $ref: '#/components/responses/ForbiddenProblem' }
+  /api/v1/subscriptions/checkout:
+    x-mentalbridge-status: implemented
+    post:
+      operationId: createPlanCheckout
+      description: Creates one idempotent MoMo purchase for FREE to PLUS/PREMIUM or upgrade for PLUS to PREMIUM. The server resolves the exact active version and amount. There is no downgrade or user-refund operation.
+      security: [{ bearerAuth: [] }]
+      parameters:
+        - $ref: '#/components/parameters/IdempotencyKey'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: '#/components/schemas/CreatePlanCheckout' }
+      responses:
+        '201':
+          description: Pending payment and provider-controlled HTTPS checkout destinations
+          headers:
+            Location:
+              schema: { type: string }
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/PlanPayment' }
+        '400': { $ref: '#/components/responses/ValidationProblem' }
+        '401': { $ref: '#/components/responses/UnauthorizedProblem' }
+        '403': { $ref: '#/components/responses/ForbiddenProblem' }
+        '404': { $ref: '#/components/responses/NotFoundProblem' }
+        '409': { $ref: '#/components/responses/ConflictProblem' }
+        '503': { $ref: '#/components/responses/UnavailableProblem' }
+  /api/v1/payments:
+    x-mentalbridge-status: implemented
+    get:
+      operationId: listOwnPlanPayments
+      description: Returns up to 50 authenticated-owner payment attempts in stable newest-first order.
+      security: [{ bearerAuth: [] }]
+      responses:
+        '200':
+          description: Bounded payment history
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/PlanPaymentHistory' }
+        '401': { $ref: '#/components/responses/UnauthorizedProblem' }
+        '403': { $ref: '#/components/responses/ForbiddenProblem' }
+  /api/v1/payments/{paymentId}:
+    x-mentalbridge-status: implemented
+    get:
+      operationId: getOwnPlanPayment
+      description: Returns one authenticated-owner payment attempt and its stable current state.
+      security: [{ bearerAuth: [] }]
+      parameters:
+        - name: paymentId
+          in: path
+          required: true
+          schema: { type: string, format: uuid }
+      responses:
+        '200':
+          description: Current payment state
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/PlanPayment' }
+        '401': { $ref: '#/components/responses/UnauthorizedProblem' }
+        '403': { $ref: '#/components/responses/ForbiddenProblem' }
+        '404': { $ref: '#/components/responses/NotFoundProblem' }
+  /internal/v1/payments/momo/ipn:
+    x-mentalbridge-status: implemented
+    post:
+      operationId: receiveMomoPlanPaymentIpn
+      description: Signature-verifies the complete MoMo One-Time Payment v2 callback, deduplicates the verified tuple, and acknowledges quickly. Only a matching, unexpired resultCode 0 activates the exact plan version. Raw payload, signature, orderInfo, and extraData are never persisted.
+      security: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: '#/components/schemas/MomoPaymentIpn' }
+      responses:
+        '204': { description: 'Verified callback acknowledged, including duplicate or unmatched verified events' }
+        '400': { $ref: '#/components/responses/ValidationProblem' }
+        '401': { $ref: '#/components/responses/UnauthorizedProblem' }
+        '503': { $ref: '#/components/responses/UnavailableProblem' }
   /internal/v1/entitlements/current:
     x-mentalbridge-status: implemented
     get:
@@ -1534,6 +1626,105 @@ components:
       description: Quoted current appointment version for If-Match.
       schema: { type: string, pattern: '^"[0-9]+"$' }
   schemas:
+    ServicePlanCatalogue:
+      type: object
+      additionalProperties: false
+      required: [plans, checkoutEnabled, paymentProvider, generatedAt]
+      properties:
+        plans:
+          type: array
+          minItems: 3
+          maxItems: 3
+          items: { $ref: '#/components/schemas/ServicePlanVersion' }
+        checkoutEnabled: { type: boolean }
+        paymentProvider: { type: string, const: MOMO }
+        generatedAt: { type: string, format: date-time }
+    ServicePlanVersion:
+      type: object
+      additionalProperties: false
+      required: [planVersionId, planCode, version, displayName, currency, priceVnd, billingPeriodMonths, consultationCredits, maxActiveReservations, creditAllocationVnd, aiQuotaCode, supportPlanEnabled, entitlements, allowedUpgrades, effectiveFrom]
+      properties:
+        planVersionId: { type: string, format: uuid }
+        planCode: { $ref: '#/components/schemas/ServicePackage' }
+        version: { type: string, minLength: 1, maxLength: 64 }
+        displayName: { type: string, minLength: 1, maxLength: 64 }
+        currency: { type: string, const: VND }
+        priceVnd: { type: integer, format: int64, minimum: 0 }
+        billingPeriodMonths: { type: integer, const: 1 }
+        consultationCredits: { type: integer, enum: [0, 4, 10] }
+        maxActiveReservations: { type: integer, enum: [0, 2, 4] }
+        creditAllocationVnd: { type: integer, format: int64, minimum: 0 }
+        aiQuotaCode: { type: string, minLength: 1, maxLength: 64 }
+        supportPlanEnabled: { type: boolean }
+        entitlements:
+          type: array
+          uniqueItems: true
+          items: { type: string, minLength: 1, maxLength: 64 }
+        allowedUpgrades:
+          type: array
+          uniqueItems: true
+          items: { type: string, enum: [PLUS, PREMIUM] }
+        effectiveFrom: { type: string, format: date-time }
+    CreatePlanCheckout:
+      type: object
+      additionalProperties: false
+      required: [planVersionId]
+      properties:
+        planVersionId: { type: string, format: uuid }
+    PlanPayment:
+      type: object
+      additionalProperties: false
+      required: [paymentId, subscriptionId, planVersionId, planCode, planVersion, purpose, provider, status, amountVnd, currency, checkoutUrl, qrCodeUrl, expiresAt, createdAt, paidAt, failedAt]
+      properties:
+        paymentId: { type: string, format: uuid }
+        subscriptionId: { type: string, format: uuid }
+        planVersionId: { type: string, format: uuid }
+        planCode: { type: string, enum: [PLUS, PREMIUM] }
+        planVersion: { type: string, minLength: 1, maxLength: 64 }
+        purpose: { type: string, enum: [PURCHASE, UPGRADE] }
+        provider: { type: string, enum: [FAKE, MOMO] }
+        status: { type: string, enum: [PENDING, SUCCEEDED, FAILED, CHARGEBACK] }
+        amountVnd: { type: integer, format: int64, minimum: 1 }
+        currency: { type: string, const: VND }
+        checkoutUrl: { type: string, format: uri, pattern: '^https://' }
+        qrCodeUrl: { type: [string, 'null'], format: uri, pattern: '^https://' }
+        expiresAt: { type: string, format: date-time }
+        createdAt: { type: string, format: date-time }
+        paidAt: { type: [string, 'null'], format: date-time }
+        failedAt: { type: [string, 'null'], format: date-time }
+    PlanPaymentHistory:
+      type: object
+      additionalProperties: false
+      required: [items, count, generatedAt]
+      properties:
+        items:
+          type: array
+          maxItems: 50
+          items: { $ref: '#/components/schemas/PlanPayment' }
+        count: { type: integer, minimum: 0, maximum: 50 }
+        generatedAt: { type: string, format: date-time }
+    MomoPaymentIpn:
+      type: object
+      required: [partnerCode, orderId, requestId, amount, orderInfo, orderType, transId, resultCode, message, payType, responseTime, extraData, signature]
+      properties:
+        partnerCode: { type: string, minLength: 1, maxLength: 64 }
+        orderId: { type: string, minLength: 1, maxLength: 128 }
+        requestId: { type: string, minLength: 1, maxLength: 128 }
+        amount: { type: integer, format: int64, minimum: 1 }
+        orderInfo: { type: string, maxLength: 1024 }
+        orderType: { type: string, minLength: 1, maxLength: 64 }
+        transId: { type: integer, format: int64 }
+        resultCode: { type: integer, format: int32 }
+        message: { type: string, maxLength: 256 }
+        payType: { type: string, minLength: 1, maxLength: 32 }
+        responseTime: { type: integer, format: int64, minimum: 1 }
+        extraData: { type: string, maxLength: 8192 }
+        signature: { type: string, pattern: '^[0-9a-fA-F]{64}$' }
+        partnerUserId: { type: string }
+        storeId: { type: string }
+        paymentOption: { type: string }
+        userFee: { type: integer, format: int64 }
+        promotionInfo: {}
     AppointmentNotificationEligibility:
       type: object
       additionalProperties: false

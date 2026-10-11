@@ -23,6 +23,11 @@ public abstract class ConsultationTestProperties {
 		properties.add("mentalbridge.consultation.payout.encryption-key",
 				() -> Base64.getEncoder().encodeToString("test-payout-key-32-bytes-long!!!".getBytes()));
 		properties.add("mentalbridge.consultation.payout.mode", () -> "FAKE");
+		properties.add("mentalbridge.consultation.billing.mode", () -> "FAKE");
+		properties.add("mentalbridge.consultation.billing.momo-partner-code", () -> "MOMO_TEST_PARTNER");
+		properties.add("mentalbridge.consultation.billing.momo-access-key", () -> "test-payment-access-key");
+		properties.add("mentalbridge.consultation.billing.momo-secret-key", () -> "test-payment-secret-key");
+		properties.add("mentalbridge.consultation.billing.momo-signature-key-version", () -> "test-v1");
 	}
 
 	private static KeyPair keyPair() {
