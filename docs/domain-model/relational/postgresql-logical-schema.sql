@@ -1036,6 +1036,149 @@ CREATE TABLE consultation.specialist_profile_amendment_history (
     UNIQUE (amendment_id, amendment_version)
 );
 
+CREATE TABLE consultation.subscription_plan (
+    code varchar(16) PRIMARY KEY,
+    display_name varchar(64) NOT NULL,
+    sort_order integer NOT NULL UNIQUE
+);
+
+CREATE TABLE consultation.subscription_plan_version (
+    id uuid PRIMARY KEY,
+    plan_code varchar(16) NOT NULL REFERENCES consultation.subscription_plan(code),
+    version varchar(64) NOT NULL,
+    currency char(3) NOT NULL,
+    price_minor bigint NOT NULL,
+    billing_period_months integer NOT NULL,
+    consultation_credits_per_period integer NOT NULL,
+    max_active_reservations integer NOT NULL,
+    non_consultation_value_minor bigint NOT NULL,
+    credit_value_minor bigint NOT NULL,
+    specialist_share_bps integer NOT NULL,
+    ai_quota_code varchar(64) NOT NULL,
+    support_plan_enabled boolean NOT NULL,
+    effective_from timestamptz NOT NULL,
+    retired_at timestamptz,
+    created_at timestamptz NOT NULL,
+    UNIQUE (plan_code, version)
+);
+
+CREATE TABLE consultation.subscription_plan_entitlement (
+    plan_version_id uuid NOT NULL REFERENCES consultation.subscription_plan_version(id),
+    entitlement_code varchar(64) NOT NULL,
+    PRIMARY KEY (plan_version_id, entitlement_code)
+);
+
+CREATE TABLE consultation.user_subscription (
+    id uuid PRIMARY KEY,
+    user_id uuid NOT NULL, -- external -> identity.account.id
+    plan_version_id uuid NOT NULL REFERENCES consultation.subscription_plan_version(id),
+    status varchar(24) NOT NULL,
+    current_period_start timestamptz,
+    current_period_end timestamptz,
+    ended_at timestamptz,
+    idempotency_key varchar(128) NOT NULL,
+    created_at timestamptz NOT NULL,
+    updated_at timestamptz NOT NULL,
+    version bigint NOT NULL,
+    UNIQUE (user_id, idempotency_key)
+);
+
+CREATE TABLE consultation.subscription_status_history (
+    id uuid PRIMARY KEY,
+    subscription_id uuid NOT NULL REFERENCES consultation.user_subscription(id),
+    from_status varchar(24),
+    to_status varchar(24) NOT NULL,
+    reason_code varchar(64) NOT NULL,
+    changed_at timestamptz NOT NULL
+);
+
+CREATE TABLE consultation.payment_transaction (
+    id uuid PRIMARY KEY,
+    subscription_id uuid NOT NULL REFERENCES consultation.user_subscription(id),
+    target_plan_version_id uuid NOT NULL REFERENCES consultation.subscription_plan_version(id),
+    payment_provider varchar(16) NOT NULL,
+    momo_order_id varchar(128) NOT NULL,
+    momo_request_id varchar(128) NOT NULL,
+    momo_trans_id bigint,
+    amount_minor bigint NOT NULL,
+    currency char(3) NOT NULL,
+    status varchar(16) NOT NULL,
+    purpose varchar(16) NOT NULL,
+    momo_result_code integer,
+    momo_pay_type varchar(32),
+    idempotency_key varchar(128) NOT NULL,
+    momo_response_time_epoch_ms bigint,
+    provider_occurred_at timestamptz,
+    paid_at timestamptz,
+    failed_at timestamptz,
+    expires_at timestamptz NOT NULL,
+    checkout_url varchar(2048) NOT NULL,
+    qr_code_url varchar(2048),
+    created_at timestamptz NOT NULL,
+    updated_at timestamptz NOT NULL,
+    version bigint NOT NULL,
+    UNIQUE (payment_provider, momo_order_id),
+    UNIQUE (payment_provider, momo_request_id),
+    UNIQUE (payment_provider, momo_trans_id),
+    UNIQUE (subscription_id, idempotency_key)
+);
+
+CREATE TABLE consultation.momo_payment_ipn (
+    id uuid PRIMARY KEY,
+    payment_id uuid REFERENCES consultation.payment_transaction(id),
+    contract_version varchar(32) NOT NULL,
+    deduplication_key char(64) NOT NULL UNIQUE,
+    partner_code varchar(64) NOT NULL,
+    order_id varchar(128) NOT NULL,
+    request_id varchar(128) NOT NULL,
+    amount_minor bigint NOT NULL,
+    currency char(3) NOT NULL,
+    order_info_sha256 char(64) NOT NULL,
+    order_type varchar(64) NOT NULL,
+    trans_id bigint NOT NULL,
+    result_code integer NOT NULL,
+    result_message varchar(256) NOT NULL,
+    pay_type varchar(32) NOT NULL,
+    response_time_epoch_ms bigint NOT NULL,
+    extra_data_sha256 char(64) NOT NULL,
+    provider_occurred_at timestamptz NOT NULL,
+    safe_optional_details jsonb NOT NULL,
+    payload_sha256 char(64) NOT NULL,
+    signature_key_version varchar(32) NOT NULL,
+    signature_verified_at timestamptz NOT NULL,
+    processing_status varchar(32) NOT NULL,
+    failure_code varchar(64),
+    received_at timestamptz NOT NULL,
+    processed_at timestamptz,
+    acknowledged_at timestamptz
+);
+
+CREATE TABLE consultation.subscription_upgrade (
+    id uuid PRIMARY KEY,
+    subscription_id uuid NOT NULL REFERENCES consultation.user_subscription(id),
+    from_plan_version_id uuid NOT NULL REFERENCES consultation.subscription_plan_version(id),
+    to_plan_version_id uuid NOT NULL REFERENCES consultation.subscription_plan_version(id),
+    payment_id uuid NOT NULL UNIQUE REFERENCES consultation.payment_transaction(id),
+    old_period_start timestamptz NOT NULL,
+    old_period_end timestamptz NOT NULL,
+    total_period_seconds bigint NOT NULL,
+    remaining_period_seconds bigint NOT NULL,
+    remaining_feature_value_minor bigint NOT NULL,
+    available_credit_value_minor bigint NOT NULL,
+    offset_minor bigint NOT NULL,
+    amount_due_minor bigint NOT NULL,
+    currency char(3) NOT NULL,
+    status varchar(24) NOT NULL,
+    idempotency_key varchar(128) NOT NULL,
+    quoted_at timestamptz NOT NULL,
+    quote_expires_at timestamptz NOT NULL,
+    applied_at timestamptz,
+    created_at timestamptz NOT NULL,
+    updated_at timestamptz NOT NULL,
+    version bigint NOT NULL,
+    UNIQUE (subscription_id, idempotency_key)
+);
+
 CREATE TABLE consultation.current_service_entitlement (
     account_id uuid PRIMARY KEY, -- external -> identity.account.id
     package_code varchar(16) NOT NULL,
@@ -1077,6 +1220,13 @@ CREATE TABLE consultation.service_credit (
     updated_at timestamptz NOT NULL,
     version bigint NOT NULL,
     UNIQUE (period_id, ordinal)
+);
+
+CREATE TABLE consultation.subscription_upgrade_credit (
+    upgrade_id uuid NOT NULL REFERENCES consultation.subscription_upgrade(id),
+    credit_id uuid NOT NULL UNIQUE REFERENCES consultation.service_credit(id),
+    allocated_value_minor bigint NOT NULL,
+    PRIMARY KEY (upgrade_id, credit_id)
 );
 
 CREATE TABLE consultation.service_credit_ledger (

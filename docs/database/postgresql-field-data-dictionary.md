@@ -1184,12 +1184,9 @@ Stable plan identity used to group immutable commercial versions.
 
 | Field | Purpose |
 | --- | --- |
-| `code` | Stable plan code. Historical v1 values `PREMIUM_CARE`/`PREMIUM_PLUS` remain readable; new v2 catalogue values are `FREE`, `PLUS`, and `PREMIUM`. |
+| `code` | Stable authoritative catalogue code: `FREE`, `PLUS`, or `PREMIUM`. |
 | `display_name` | Reviewed user-facing plan name. |
-| `tier_rank` | Unique ordering used to allow only `PLUS`-to-`PREMIUM` upgrade and reject every downgrade; zero is `FREE`. |
-| `active` | Controls whether a plan accepts new purchases without deleting historical versions. |
-| `created_at` | Immutable UTC plan creation instant. |
-| `updated_at` | UTC instant of the latest catalogue-level activation/name change. |
+| `sort_order` | Unique presentation and upgrade ordering; zero is `FREE`, followed by `PLUS` and `PREMIUM`. |
 
 ### `consultation.current_service_entitlement`
 
@@ -1241,8 +1238,8 @@ One indivisible consultation right. Current state is owner-controlled; balances 
 | `id` | Stable credit UUID. |
 | `period_id` | Owning immutable-provenance service-credit period. |
 | `ordinal` | One-based position within the policy-versioned allocation; unique per period and capped at ten. |
-| `state` | `AVAILABLE`, `HELD`, `CONSUMED`, or `FORFEITED`. A release returns the state to `AVAILABLE` while the ledger preserves the fact. |
-| `appointment_id` | Future local appointment UUID required for held and terminal appointment outcomes. |
+| `state` | `AVAILABLE`, appointment `HELD`, upgrade `UPGRADE_HELD`, `CONSUMED`, `FORFEITED`, period `EXPIRED`, or upgrade-applied `REVOKED`. A release returns the state to `AVAILABLE` while the ledger preserves the fact. |
+| `appointment_id` | Local appointment UUID required only for appointment-held and appointment-terminal outcomes; upgrade-held/expired/revoked credits keep it null. |
 | `created_at` / `updated_at` | UTC creation and latest transition instants. |
 | `version` | Optimistic transition counter. |
 
@@ -1255,8 +1252,8 @@ Append-only evidence for provisioning and appointment-driven transitions.
 | `id` | Immutable event UUID. |
 | `credit_id` | Credit whose state changed. |
 | `account_id` | Denormalized owner UUID for bounded history and account-scoped idempotency. |
-| `event_type` | `PROVISIONED`, `HELD`, `RELEASED`, `CONSUMED`, `FORFEITED`, or explicit post-settlement `ADJUSTED_RELEASED`. The adjustment appends a correction fact and never deletes the original terminal transition. |
-| `appointment_id` | Required correlation for every non-provisioning transition. |
+| `event_type` | Stable provisioning, booking, upgrade hold/release, consumption, expiry, forfeiture, revocation, or explicit post-settlement adjustment fact. The ledger never represents a refund. |
+| `appointment_id` | Appointment correlation for booking/session transitions; null for provisioning and subscription-upgrade transitions. |
 | `idempotency_key` | Owner command key unique per account; exact replay does not append another event. |
 | `occurred_at` | Immutable server UTC transition instant. |
 
@@ -1439,15 +1436,17 @@ Immutable price, allocation, credit, revenue-share, and cancellation policy purc
 | --- | --- |
 | `id` | Immutable plan-version UUID referenced by subscriptions, upgrades, payments, and credits. |
 | `plan_code` | Stable parent plan identity. |
-| `version` | Monotonically increasing version within the plan; published versions are never rewritten. |
-| `currency` | ISO 4217 currency for every amount. Historical demo versions may use `USD`; every new real-payment v2 version uses `VND`. |
-| `price_minor` | Exact period price in currency minor units. Historical values remain immutable; v2 VND values require approval before publication. |
-| `billing_period_months` | Calendar-month period count; current plans use one month rather than a fixed 30-day duration. |
-| `consultation_credits_per_period` | Number of indivisible credits granted after a successful payment: 0, 1, or 3. |
+| `version` | Immutable version within the plan; published versions are never rewritten. |
+| `currency` | Contract-fixed `VND` currency for every amount. |
+| `price_minor` | Exact monthly price: FREE 0, PLUS 1,390,000, or PREMIUM 3,490,000 VND for the seeded v2 version. |
+| `billing_period_months` | Calendar-month period count; MB-515 supports exactly one month. |
+| `consultation_credits_per_period` | Credits granted for the active period: FREE 0, PLUS 4, or PREMIUM 10; unused credits never roll over. |
+| `max_active_reservations` | Frozen active appointment cap: FREE 0, PLUS 2, or PREMIUM 4. |
 | `non_consultation_value_minor` | Versioned price allocation for non-consultation features, used for upgrade calculation without runtime FX. |
-| `credit_value_minor` | Fixed per-credit `creditAllocation`; v2 stores its approved VND amount so earnings are not derived from the whole package. |
+| `credit_value_minor` | Fixed per-credit allocation; paid v2 versions store 300,000 VND so earnings are not derived from the whole package. |
 | `specialist_share_bps` | Specialist share in basis points snapshotted into each credit; 7000 means 70%. |
-| `cancellation_cutoff_hours` | Optional whole-hour cutoff separating eligible credit release from late cancellation forfeiture. Current conceptual rows leave it null because product approval is still pending; booking cannot be production-enabled without a published policy. |
+| `ai_quota_code` | Stable quota/configuration code frozen with the purchased plan version. |
+| `support_plan_enabled` | Frozen plan decision controlling SupportPlan entitlement for the period. |
 | `effective_from` | UTC instant at which the version may be offered to new purchases. |
 | `retired_at` | Optional UTC instant after which new purchases cannot select the version; historical records remain valid. |
 | `created_at` | Immutable UTC insertion instant. |
@@ -1464,22 +1463,17 @@ Allow-list of feature decisions attached to one immutable plan version.
 ### `consultation.user_subscription`
 
 Authoritative paid-subscription lifecycle for one user. Absence of an active
-paid row means `FREE` entitlement. Historical plan codes remain unchanged;
-new v2 plan versions use `PLUS` or `PREMIUM`.
-
-Legacy cancellation/renewal fields below preserve the conceptual v1 history;
-they do not authorize a v2 user-facing operation. Scope v2 exposes only new
-purchase and `PLUS`-to-`PREMIUM` upgrade, with no downgrade/refund API.
+paid row means `FREE` entitlement. MB-515 exposes new purchase and
+`PLUS`-to-`PREMIUM` upgrade only, with no downgrade/refund API.
 
 | Field | Purpose |
 | --- | --- |
-| `id` | Immutable subscription UUID exposed in payment/status/history APIs. |
-| `user_id` | External Care user UUID owning the subscription; not proof of current account authorization. |
+| `id` | Immutable subscription UUID used by payment, upgrade, status, and audit records. |
+| `user_id` | External Identity user UUID owning the subscription; not proof of current request authorization. |
 | `plan_version_id` | Current immutable paid-plan version; an applied upgrade changes this reference while upgrade history preserves the prior version. |
-| `status` | Current lifecycle state. `CANCEL_PENDING_SESSION_END` means paid features are already disabled but one consultation that had started may finish at its snapshotted end. |
+| `status` | Current lifecycle state: `PENDING_PAYMENT`, `ACTIVE`, or terminal `ENDED`. |
 | `current_period_start` | UTC start of the active provider billing period; null while initial payment is pending. |
 | `current_period_end` | UTC exclusive end of the current billing period used for benefit/credit expiry and exact upgrade seconds. |
-| `cancellation_requested_at` | UTC instant immediate cancellation was requested; null otherwise. It does not imply a refund. |
 | `ended_at` | UTC instant the paid subscription ceased being current; null while active/pending. |
 | `idempotency_key` | User-scoped creation retry key returning the original subscription outcome. |
 | `created_at` | Immutable UTC insertion instant. |
@@ -1496,7 +1490,7 @@ Append-only timeline of subscription status transitions.
 | `subscription_id` | Subscription whose authoritative status changed. |
 | `from_status` | Previous status; null only for initial creation. |
 | `to_status` | New validated status. |
-| `reason_code` | Optional stable machine-readable reason without provider payload text. |
+| `reason_code` | Required stable machine-readable reason without provider payload text. |
 | `changed_at` | UTC instant the transition committed. |
 
 ### `consultation.payment_transaction`
@@ -1506,7 +1500,8 @@ MoMo-backed payment attempt and current externally confirmed outcome. `FAKE` may
 | Field | Purpose |
 | --- | --- |
 | `id` | Immutable payment UUID exposed in bounded payment history. |
-| `subscription_id` | Paid subscription receiving an initial period, renewal, or upgrade. |
+| `subscription_id` | Paid subscription receiving an initial purchase or upgrade. |
+| `target_plan_version_id` | Exact immutable plan version whose price and rights were used to create this attempt. |
 | `payment_provider` | `MOMO` in real environments or MoMo-shaped `FAKE` in local/CI; no other production provider is supported. |
 | `momo_order_id` | Merchant-generated MoMo `orderId`, unique per provider and used as the primary IPN correlation key. |
 | `momo_request_id` | Merchant-generated MoMo `requestId`, unique per provider and matched exactly on IPN. |
@@ -1522,6 +1517,9 @@ MoMo-backed payment attempt and current externally confirmed outcome. `FAKE` may
 | `provider_occurred_at` | UTC instant parsed from verified MoMo `responseTime`; null while checkout is pending. |
 | `paid_at` | Provider-confirmed UTC success instant; null until successful. |
 | `failed_at` | UTC terminal failure instant; null unless failed. |
+| `expires_at` | UTC deadline after which the pending attempt can no longer activate rights. |
+| `checkout_url` | Safe provider redirect returned to the authenticated caller; never treated as authorization evidence. |
+| `qr_code_url` | Optional safe MoMo QR URL returned with checkout. |
 | `created_at` | Immutable UTC attempt creation instant. |
 | `updated_at` | UTC instant of the latest verified payment-state change. |
 | `version` | Optimistic-lock counter preventing conflicting webhook/status application. |
@@ -1560,32 +1558,6 @@ Verified, deduplicated receipt of the selected MoMo One-Time Payment v2 IPN cont
 | `processed_at` | UTC instant business effects committed; null while unprocessed. |
 | `acknowledged_at` | Best-effort UTC evidence that HTTP 204 was emitted; latency metrics remain authoritative for the 15-second SLA. |
 
-### `consultation.consultation_credit`
-
-One indivisible consultation right and authoritative current state; available balance is counted from these rows, never stored separately.
-
-A composite foreign key guarantees the credit owner matches its subscription owner. Booking uses another composite key so a user cannot attach another user's credit.
-
-| Field | Purpose |
-| --- | --- |
-| `id` | Immutable credit UUID used by booking, upgrade, ledger, and earning records. |
-| `user_id` | External Care user UUID owning the credit. |
-| `subscription_id` | Paid subscription whose successful period granted the credit. |
-| `source_payment_id` | Successful payment that granted this exact credit and prevents unbacked grants. |
-| `plan_version_id` | Immutable plan policy whose money/share values are snapshotted below. |
-| `period_start` | UTC source-period start used for history and upgrade validation. |
-| `period_end` | UTC source-period exclusive end; an appointment must start before it. |
-| `ordinal` | One-based position within a subscription period, unique with period start. |
-| `currency` | ISO 4217 currency of all monetary snapshots on the credit. |
-| `allocated_value_minor` | Exact fixed `creditAllocation` in plan currency minor units; historical values remain immutable and v2 uses approved VND values. |
-| `specialist_share_bps` | Snapshotted specialist share; current value is 7000. |
-| `specialist_earning_minor` | Precomputed 70% share of `allocated_value_minor`, payable only after evidence-backed `COMPLETED`. |
-| `status` | Authoritative state: available, appointment-reserved, upgrade-held, consumed, expired, forfeited, or revoked. |
-| `expires_at` | UTC expiry equal to the source period end for an unreserved credit. |
-| `created_at` | Immutable UTC grant instant. |
-| `updated_at` | UTC instant of the latest validated state transition. |
-| `version` | Optimistic-lock counter protecting booking, expiry, cancellation, and upgrade races. |
-
 ### `consultation.subscription_upgrade`
 
 Immutable calculation snapshot and workflow for the only supported v2
@@ -1598,7 +1570,7 @@ rows retain their original plan-version provenance.
 | `subscription_id` | Current paid subscription being upgraded. |
 | `from_plan_version_id` | `PLUS` version used for remaining-value calculation; historical v1 upgrade references remain valid. |
 | `to_plan_version_id` | Higher `PREMIUM` version that starts a full new period after verified payment. |
-| `payment_id` | Unique upgrade payment attempt; null only before checkout creation completes. |
+| `payment_id` | Required unique upgrade payment attempt created with the quote in one transaction. |
 | `old_period_start` | Snapshotted UTC start of the period being ended. |
 | `old_period_end` | Snapshotted UTC end used to calculate actual total/remaining seconds. |
 | `total_period_seconds` | Exact positive number of seconds in the old provider period; never assumed to be 30 days. |
@@ -1690,23 +1662,6 @@ introduced by a historical migration, remain separate and readable.
 | `created_at` | Immutable UTC slot creation instant. |
 | `updated_at` | UTC instant of the latest slot state or schedule change. |
 | `version` | Optimistic-lock counter preventing lost concurrent slot updates. |
-
-### `consultation.consultation_credit_ledger_entry`
-
-Append-only evidence for every credit grant, booking reservation/release, upgrade hold/release, consumption, expiry, forfeiture, and revocation.
-
-| Field | Purpose |
-| --- | --- |
-| `id` | Immutable ledger-entry UUID. |
-| `credit_id` | Credit whose authoritative state changed. |
-| `appointment_id` | Optional appointment that caused reservation, release, consumption, or forfeiture. |
-| `upgrade_id` | Optional upgrade that caused a hold, hold release, or revocation; mutually exclusive with appointment cause. |
-| `entry_type` | Stable transition fact, including upgrade hold/release; it never represents a payment refund. |
-| `from_status` | Previous credit state; null only for the grant entry. |
-| `to_status` | New authoritative credit state after the transaction. |
-| `reason_code` | Optional safe machine-readable policy/provider reason. |
-| `idempotency_key` | Credit-scoped transition identity preventing replay from appending or applying the effect twice. |
-| `occurred_at` | UTC instant the credit transition committed. |
 
 ### `consultation.specialist_earning`
 

@@ -91,6 +91,14 @@ outcome or releasing user credit; a terminal credit release appends an explicit
 | `IDENTITY_JWT_AUDIENCE` | Yes | Required API audience | `mentalbridge-api` |
 | `IDENTITY_JWT_PUBLIC_KEY` | Yes | X.509 PEM public key used to verify tokens | local public key |
 | `CONSULTATION_VIDEO_AVAILABILITY_ENABLED` | No | Enables `IN_APP_VIDEO` slot publication only after the provider contract gate passes | `false` |
+| `CONSULTATION_BILLING_MODE` | No | Subscription checkout mode: safe default `DISABLED`, deterministic local/CI `FAKE`, or explicitly approved `MOMO` | `DISABLED` |
+| `CONSULTATION_BILLING_CHECKOUT_TTL` | No | Maximum lifetime of a pending purchase or upgrade checkout | `PT15M` |
+| `CONSULTATION_BILLING_EXPIRY_INTERVAL` | No | Scheduler interval for expiring abandoned checkouts and releasing upgrade-held credits | `PT1M` |
+| `MOMO_PAYMENT_PRODUCTION_APPROVED` | Real checkout | Explicit operational gate required together with complete credentials and HTTPS URLs | `false` |
+| `MOMO_PAYMENT_PARTNER_CODE` / `MOMO_PAYMENT_ACCESS_KEY` / `MOMO_PAYMENT_SECRET_KEY` | Real checkout | MoMo One-Time Payment credentials used to create and verify signed requests | injected secrets |
+| `MOMO_PAYMENT_SIGNATURE_KEY_VERSION` | Real checkout | Non-secret identifier retained with verified IPN evidence for key rotation | `v1` |
+| `MOMO_PAYMENT_BASE_URL` | Real checkout | Approved MoMo API origin | `https://test-payment.momo.vn` |
+| `MOMO_PAYMENT_IPN_URL` / `MOMO_PAYMENT_REDIRECT_URL` | Real checkout | Public HTTPS callback and browser return URLs | deployment URLs |
 | `APPOINTMENT_REMINDER_SERVICE_TOKEN` | When reminder flow enabled | Shared service credential for the narrow eligibility read | injected secret |
 | `KAFKA_BOOTSTRAP_SERVERS` | When relay enabled | Broker list for appointment status events | `localhost:9092` |
 | `CONSULTATION_APPOINTMENT_OUTBOX_RELAY_ENABLED` | No | Enables bounded appointment outbox relay | `false` |
@@ -152,6 +160,21 @@ MB-364 rating aggregates and never fabricates a score.
 ## Implemented MB-377/MB-558 endpoint
 
 - `GET /api/v1/service-credits`
+
+## Implemented MB-515 endpoints
+
+- `GET /api/v1/service-plans`
+- `POST /api/v1/subscriptions/checkout`
+- `POST /internal/v1/payments/momo/ipn`
+
+The catalogue returns only currently effective immutable plan versions. Checkout
+accepts the selected version and a user-scoped idempotency key; price, currency,
+credit allocation, reservation limit, AI quota, and SupportPlan entitlement are
+always loaded from Consultation-owned data. A verified, exactly matched MoMo IPN
+activates the purchase or `PLUS`-to-`PREMIUM` upgrade once. Invalid, duplicate,
+late, conflicting, or out-of-order callbacks cannot grant rights. Real checkout
+remains disabled until the production approval flag, credentials, and HTTPS URLs
+are all present. No downgrade or refund command is exposed.
 
 ## Implemented MB-378/MB-558 endpoints
 
