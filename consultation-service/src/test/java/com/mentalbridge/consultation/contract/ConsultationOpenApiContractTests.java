@@ -151,10 +151,12 @@ class ConsultationOpenApiContractTests {
 		var request = api.getComponents().getSchemas().get("RequestAppointment");
 		var appointment = api.getComponents().getSchemas().get("Appointment");
 
-		assertThat(request.getProperties()).containsOnlyKeys("slotId", "modality", "replacesAppointmentId");
+		assertThat(request.getProperties()).containsOnlyKeys("slotId", "modality", "replacesAppointmentId",
+				"originatingPlanActionId");
 		assertThat(request.getRequired()).containsExactlyInAnyOrder("slotId", "modality");
 		assertThat(appointment.getProperties()).containsKeys("status", "decisionDeadlineAt", "heldCreditId",
-				"replacesAppointmentId", "replacedByAppointmentId", "decidedAt", "decisionReason", "cancelledAt",
+				"replacesAppointmentId", "replacedByAppointmentId", "originatingPlanActionId", "decidedAt",
+				"decisionReason", "cancelledAt",
 				"cancellationReason", "cancellationActor", "cancellationCreditOutcome", "sessionOutcome",
 				"sessionPolicyVersion", "sessionEndedAt", "sessionSettledAt", "completionFactId",
 				"creditState", "history", "version");
@@ -163,6 +165,7 @@ class ConsultationOpenApiContractTests {
 		assertThat(statuses).containsExactly("REQUESTED", "CONFIRMED", "IN_PROGRESS", "SESSION_ENDED",
 				"COMPLETED", "REJECTED", "EXPIRED", "CANCELLED");
 		assertThat(appointment.getRequired()).contains("replacesAppointmentId", "replacedByAppointmentId",
+				"originatingPlanActionId",
 				"cancelledAt", "cancellationReason", "cancellationActor", "cancellationCreditOutcome", "history");
 		assertThat(appointment.getProperties()).doesNotContainKeys("practiceLocationId", "phone", "meetingLink", "url");
 	}
