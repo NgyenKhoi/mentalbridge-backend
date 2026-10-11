@@ -34,6 +34,7 @@ tags:
   - name: SupportPlan draft
   - name: SupportPlan activity
   - name: SupportPlan v3
+  - name: SupportPlan personalization
   - name: Anonymous assessment
   - name: Safety directory
 paths:
@@ -1236,7 +1237,9 @@ paths:
         The authenticated user explicitly activates the owned draft. Care
         immediately revalidates current paid entitlement, SupportEvaluation,
         template policy, every selected exact resource version and eligibility
-        role before opening the local transaction. The normal command also
+        role before opening the local transaction. A draft pinned to an older
+        personalization revision must be explicitly discarded and regenerated
+        before activation; Care never rewrites it silently. The normal command also
         applies to safety-positive users and accepts no safety acknowledgement field.
       security:
         - bearerAuth: []
@@ -1582,6 +1585,67 @@ paths:
         '400': { $ref: '#/components/responses/ValidationProblem' }
         '401': { $ref: '#/components/responses/UnauthorizedProblem' }
         '404': { $ref: '#/components/responses/SupportPlanCurrentNotFoundProblem' }
+  /api/v2/support-plan-personalization:
+    x-mentalbridge-status: implemented
+    get:
+      tags: [SupportPlan personalization]
+      operationId: getOwnSupportPlanPersonalization
+      summary: Read the authenticated user's current SupportPlan preferences
+      description: |
+        Returns the latest immutable Care-owned preference revision. Existing
+        users without a saved revision receive NOT_PROVIDED at revision zero.
+        The fields describe practical preferences only; they are not symptoms,
+        diagnoses, screening evidence, or permission to bypass Care policy.
+      security:
+        - bearerAuth: []
+      parameters:
+        - $ref: '#/components/parameters/CorrelationId'
+      responses:
+        '200':
+          description: Current preference revision or deterministic not-provided fallback
+          headers:
+            ETag:
+              $ref: '#/components/headers/SupportPlanPersonalizationETag'
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/SupportPlanPersonalization' }
+        '401': { $ref: '#/components/responses/UnauthorizedProblem' }
+        '403': { $ref: '#/components/responses/ForbiddenProblem' }
+        '404': { $ref: '#/components/responses/NotFoundProblem' }
+    put:
+      tags: [SupportPlan personalization]
+      operationId: replaceOwnSupportPlanPersonalization
+      summary: Replace the authenticated user's bounded SupportPlan preferences
+      description: |
+        Writes a new immutable revision only when the replacement differs from
+        the current value. Revision zero creates the first saved value. Empty
+        optional fields explicitly record SKIPPED. Saving preferences never
+        mutates an active or paused plan; planReview identifies the explicit
+        review path when the current plan used another preference revision.
+      security:
+        - bearerAuth: []
+      parameters:
+        - $ref: '#/components/parameters/RequiredIfMatch'
+        - $ref: '#/components/parameters/CorrelationId'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: '#/components/schemas/ReplaceSupportPlanPersonalizationRequest' }
+      responses:
+        '200':
+          description: Persisted current preference revision
+          headers:
+            ETag:
+              $ref: '#/components/headers/SupportPlanPersonalizationETag'
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/SupportPlanPersonalization' }
+        '400': { $ref: '#/components/responses/ValidationProblem' }
+        '401': { $ref: '#/components/responses/UnauthorizedProblem' }
+        '403': { $ref: '#/components/responses/ForbiddenProblem' }
+        '404': { $ref: '#/components/responses/NotFoundProblem' }
+        '412': { $ref: '#/components/responses/SupportPlanPersonalizationVersionProblem' }
   /api/v1/anonymous-assessment-sessions:
     x-mentalbridge-status: implemented
     post:
@@ -1858,6 +1922,9 @@ components:
   headers:
     SupportPlanETag:
       description: Strong ETag containing the Care-owned draft version
+      schema: { type: string, pattern: '^"[0-9]+"$' }
+    SupportPlanPersonalizationETag:
+      description: Strong ETag containing the current preference revision; zero means no saved revision
       schema: { type: string, pattern: '^"[0-9]+"$' }
   examples:
     ContradictoryReassessmentSummary:
@@ -3543,6 +3610,98 @@ components:
         title: { type: string, minLength: 1, maxLength: 255 }
         summary: { type: string, minLength: 1, maxLength: 4096 }
         externalUrl: { type: [string, 'null'], format: uri, maxLength: 2048 }
+    ReplaceSupportPlanPersonalizationRequest:
+      type: object
+      additionalProperties: false
+      required: [preferredActivityModes, commonBarriers]
+      properties:
+        preferredFocus:
+          type: [string, 'null']
+          enum: [ANXIETY, MOOD, SLEEP, MOTIVATION, UNDERSTANDING_EMOTIONS, null]
+          description: Optional non-diagnostic area the user wants to work on.
+        desiredPace:
+          type: [string, 'null']
+          enum: [GENTLE, BALANCED, ACTIVE, null]
+        dailyTimeBudgetMinutes:
+          type: [integer, 'null']
+          enum: [5, 10, 15, 20, 30, null]
+        preferredDaypart:
+          type: [string, 'null']
+          enum: [MORNING, AFTERNOON, EVENING, FLEXIBLE, null]
+        preferredActivityModes:
+          type: array
+          maxItems: 5
+          uniqueItems: true
+          items:
+            type: string
+            enum: [READING, GUIDED_PRACTICE, JOURNALING, EMOTION_CHECK_IN, ROUTINE]
+        commonBarriers:
+          type: array
+          maxItems: 3
+          uniqueItems: true
+          items:
+            type: string
+            enum: [LOW_ENERGY, LIMITED_TIME, DIFFICULT_TO_START]
+    SupportPlanPersonalization:
+      type: object
+      additionalProperties: false
+      required: [personalizationId, schemaVersion, revision, status, preferredActivityModes,
+        commonBarriers, submittedAt, planReview]
+      properties:
+        personalizationId: { type: [string, 'null'], format: uuid }
+        schemaVersion: { type: string, const: support-plan-personalization-v1 }
+        revision: { type: integer, minimum: 0 }
+        status: { type: string, enum: [NOT_PROVIDED, PROVIDED, SKIPPED] }
+        preferredFocus:
+          type: [string, 'null']
+          enum: [ANXIETY, MOOD, SLEEP, MOTIVATION, UNDERSTANDING_EMOTIONS, null]
+          description: Optional non-diagnostic area the user wants to work on.
+        desiredPace:
+          type: [string, 'null']
+          enum: [GENTLE, BALANCED, ACTIVE, null]
+        dailyTimeBudgetMinutes:
+          type: [integer, 'null']
+          enum: [5, 10, 15, 20, 30, null]
+        preferredDaypart:
+          type: [string, 'null']
+          enum: [MORNING, AFTERNOON, EVENING, FLEXIBLE, null]
+        preferredActivityModes:
+          type: array
+          maxItems: 5
+          uniqueItems: true
+          items:
+            type: string
+            enum: [READING, GUIDED_PRACTICE, JOURNALING, EMOTION_CHECK_IN, ROUTINE]
+        commonBarriers:
+          type: array
+          maxItems: 3
+          uniqueItems: true
+          items:
+            type: string
+            enum: [LOW_ENERGY, LIMITED_TIME, DIFFICULT_TO_START]
+        submittedAt: { type: [string, 'null'], format: date-time }
+        planReview: { $ref: '#/components/schemas/SupportPlanPersonalizationReview' }
+    SupportPlanPersonalizationReview:
+      type: object
+      additionalProperties: false
+      required: [required, supportPlanId, supportPlanVersion, reasonCode]
+      properties:
+        required: { type: boolean }
+        supportPlanId: { type: [string, 'null'], format: uuid }
+        supportPlanVersion: { type: [integer, 'null'], minimum: 0 }
+        reasonCode:
+          type: [string, 'null']
+          enum: [PREFERENCES_CHANGED_AFTER_DRAFT_CREATION, PREFERENCES_CHANGED_AFTER_PLAN_ACTIVATION, null]
+      description: A true value asks the user to explicitly review/change the current plan; it never mutates it.
+    FocusPersonalizationProvenance:
+      type: object
+      additionalProperties: false
+      required: [personalizationId, revision, schemaVersion, reasonCode]
+      properties:
+        personalizationId: { type: string, format: uuid }
+        revision: { type: integer, minimum: 1 }
+        schemaVersion: { type: string, const: support-plan-personalization-v1 }
+        reasonCode: { type: string, const: USER_PREFERENCE_AND_CARE_POLICY }
     SupportPlanV3:
       type: object
       additionalProperties: false
@@ -3584,7 +3743,7 @@ components:
     PlanFocus:
       type: object
       additionalProperties: false
-      required: [focusId, title, rationale, ordinal, actions]
+      required: [focusId, title, rationale, personalizationProvenance, ordinal, actions]
       properties:
         focusId:
           type: string
@@ -3593,6 +3752,11 @@ components:
           description: Native identity or stable virtual identity when adapted from v2.
         title: { type: string, minLength: 1, maxLength: 255 }
         rationale: { type: [string, 'null'], minLength: 1, maxLength: 2048 }
+        personalizationProvenance:
+          description: Exact preference revision that shaped this focus; null for deterministic fallback focuses.
+          oneOf:
+            - { $ref: '#/components/schemas/FocusPersonalizationProvenance' }
+            - { type: 'null' }
         ordinal: { type: integer, minimum: 1, maximum: 20 }
         actions:
           type: array
@@ -4291,12 +4455,17 @@ components:
         application/problem+json:
           schema: { $ref: '#/components/schemas/Problem' }
     SupportPlanActivationConflictProblem:
-      description: The activation command reuses a key differently, targets a non-draft, conflicts with another current plan, or fails current policy or eligibility
+      description: The activation command reuses a key differently, targets a non-draft, conflicts with another current plan, uses a stale personalization revision (SUPPORT_PLAN_PERSONALIZATION_REVIEW_REQUIRED), or fails current policy or eligibility
       content:
         application/problem+json:
           schema: { $ref: '#/components/schemas/Problem' }
     SupportPlanVersionProblem:
       description: If-Match does not equal the current Care-owned SupportPlan version (SUPPORT_PLAN_VERSION_MISMATCH)
+      content:
+        application/problem+json:
+          schema: { $ref: '#/components/schemas/Problem' }
+    SupportPlanPersonalizationVersionProblem:
+      description: If-Match does not equal the current preference revision (SUPPORT_PLAN_PERSONALIZATION_VERSION_MISMATCH)
       content:
         application/problem+json:
           schema: { $ref: '#/components/schemas/Problem' }

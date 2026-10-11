@@ -810,6 +810,41 @@ assessment answers or scores.
 | `support_guide_id` | Owner-matched immutable replay result. |
 | `created_at` | UTC instant the key was accepted. |
 
+### `public.support_plan_personalization`
+
+Immutable Care-owned revisions of optional, non-diagnostic user preferences
+used only to shape policy-admitted SupportPlan choices and defaults. Screening
+evidence remains in its own aggregates. A revision with no selected field is an
+explicit `SKIPPED` fact rather than inferred preference data.
+
+| Field | Purpose |
+| --- | --- |
+| `id` | Immutable revision UUID exposed only as bounded provenance. |
+| `user_id` / `revision` | Owner and strictly increasing owner-local revision; profile locking serializes creation. |
+| `schema_version` | Exact input vocabulary, fixed initially to `support-plan-personalization-v1`. |
+| `status` | `PROVIDED` when any bounded field is present or `SKIPPED` when the user submits none. |
+| `preferred_focus` | Optional non-diagnostic `ANXIETY`, `MOOD`, `SLEEP`, `MOTIVATION`, or `UNDERSTANDING_EMOTIONS` intent. |
+| `desired_pace` | Optional practical `GENTLE`, `BALANCED`, or `ACTIVE` workload preference. |
+| `daily_time_budget_minutes` | Optional approximate bounded budget of 5, 10, 15, 20, or 30 minutes. |
+| `preferred_daypart` | Optional `MORNING`, `AFTERNOON`, `EVENING`, or `FLEXIBLE` defaulting preference. |
+| `submitted_at` | UTC instant the user submitted this exact immutable revision. |
+
+### `public.support_plan_personalization_activity_mode`
+
+| Field | Purpose |
+| --- | --- |
+| `id` | Internal immutable child UUID. |
+| `personalization_id` / `ordinal` | Parent revision and stable user-selected order. |
+| `activity_mode` | Unique bounded mode: `READING`, `GUIDED_PRACTICE`, `JOURNALING`, `EMOTION_CHECK_IN`, or `ROUTINE`. |
+
+### `public.support_plan_personalization_barrier`
+
+| Field | Purpose |
+| --- | --- |
+| `id` | Internal immutable child UUID. |
+| `personalization_id` / `ordinal` | Parent revision and stable user-selected order. |
+| `barrier` | Unique bounded practical barrier: `LOW_ENERGY`, `LIMITED_TIME`, or `DIFFICULT_TO_START`; never a diagnosis. |
+
 ### `public.support_plan`
 
 Care-owned runtime aggregate for the supported v2 Resource-slot model and the
@@ -832,6 +867,7 @@ concurrent guards for one draft and one official current plan per owner.
 | `evaluation_policy_version` / `evaluated_at` | Exact current-compatible Care evaluation policy and original UTC evaluation instant. |
 | `selection_policy_version` | Deterministic v2 Care composition version, fixed to `mb-support-plan-selection-v1`; null for v3. |
 | `resource_policy_version` / `resources_resolved_at` | Exact v2 Content eligibility policy and UTC resolution instant used before the Care transaction; both null for v3. |
+| `personalization_id` / `personalization_revision` / `personalization_schema_version` | Optional exact immutable preference revision snapshotted when the plan draft was composed. Later preference changes never rewrite this reference or the active plan. |
 | `entitlement_package` / `entitlement_source` | Authoritative `PLUS`/`PREMIUM` and `DEMO`/`PAID` provenance returned by Consultation; never inferred from JWT/client state. |
 | `entitlement_policy_version` / `entitlement_version` / `entitlement_decided_at` | Exact Consultation read-model version and UTC decision evidence that admitted creation. |
 | `rationale_code` / `rationale_text` | Stable general-wellbeing explanation snapshot; not diagnosis, treatment, or AI reasoning. |
@@ -891,6 +927,8 @@ authority and reference shape are constrained by action type.
 | `family` | Approved immutable family selected deterministically from one domain-local instrument band. |
 | `template_version` | Exact immutable Care template version; MB-372 publishes version 1 only. |
 | `target_domain` | `DEPRESSIVE_SYMPTOMS` or `ANXIETY_SYMPTOMS`; never a combined severity. |
+| `focus_title` / `focus_rationale` | Optional bounded human-readable focus copy persisted when a preference revision shapes this policy-admitted family; both null for deterministic fallback. |
+| `focus_reason_code` | `USER_PREFERENCE_AND_CARE_POLICY` when the family copy was personalized; makes the reason visible without copying screening evidence. |
 
 ### `public.support_plan_slot`
 

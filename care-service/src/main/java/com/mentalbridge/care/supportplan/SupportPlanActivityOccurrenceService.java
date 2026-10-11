@@ -41,22 +41,30 @@ public class SupportPlanActivityOccurrenceService {
 	private final SupportPlanActivityScheduleRepository schedules;
 	private final SupportPlanActivityOccurrenceRepository occurrences;
 	private final UserProfileRepository profiles;
+	private final SupportPlanPersonalizationService personalizations;
 	private final Clock clock;
 	private final ObjectMapper objectMapper;
 	private final PlanActionSourcePolicy actionPolicy = new PlanActionSourcePolicy();
 
 	public SupportPlanActivityOccurrenceService(SupportPlanRepository plans, SupportPlanSlotRepository slots,
 			PlanActionRepository actions, SupportPlanActivityScheduleRepository schedules,
-			SupportPlanActivityOccurrenceRepository occurrences, UserProfileRepository profiles, Clock clock,
-			ObjectMapper objectMapper) {
+			SupportPlanActivityOccurrenceRepository occurrences, UserProfileRepository profiles,
+			SupportPlanPersonalizationService personalizations, Clock clock, ObjectMapper objectMapper) {
 		this.plans = plans;
 		this.slots = slots;
 		this.actions = actions;
 		this.schedules = schedules;
 		this.occurrences = occurrences;
 		this.profiles = profiles;
+		this.personalizations = personalizations;
 		this.clock = clock;
 		this.objectMapper = objectMapper;
+	}
+
+	@Transactional
+	void activateUserDraft(SupportPlanEntity plan, Instant now) {
+		assertCurrentPersonalization(plan);
+		activate(plan, now);
 	}
 
 	@Transactional
@@ -67,6 +75,11 @@ public class SupportPlanActivityOccurrenceService {
 		LocalDate start = now.atZone(zone).toLocalDate();
 		var selectedSlots = slots.findBySupportPlanIdOrderByOrdinal(plan.id()).stream()
 				.filter(slot -> slot.selectedResource() != null).toList();
+		var personalization = plan.personalizationId() == null ? null
+				: personalizations.snapshot(plan.personalizationId(), plan.userId(), plan.personalizationRevision())
+						.orElseThrow(() -> new ApiException(HttpStatus.CONFLICT,
+								"SUPPORT_PLAN_PERSONALIZATION_INVALID",
+								"SupportPlan personalization provenance is unavailable"));
 		if (schedules.findBySupportPlanIdOrderByOrdinal(plan.id()).isEmpty()) {
 			for (SupportPlanSlotEntity slot : selectedSlots) {
 				var resource = slot.selectedResource();
@@ -75,12 +88,39 @@ public class SupportPlanActivityOccurrenceService {
 				var schedule = new SupportPlanActivityScheduleEntity(UUID.randomUUID(), plan.id(), plan.userId(),
 						slot.ordinal(), plan.version(), slot, daily ? "DAILY" : "WEEKLY",
 						daily ? null : (short) start.getDayOfWeek().getValue(),
-						DEFAULT_TIMES.get(slot.ordinal() - 1), timezone, start, now);
+						defaultTime(slot.ordinal(), personalization), timezone, start, now);
 				schedules.save(schedule);
 			}
 			schedules.flush();
 		}
 		generate(plan.id(), start, start.plusDays(INITIAL_HORIZON_DAYS - 1), now);
+	}
+
+	private void assertCurrentPersonalization(SupportPlanEntity plan) {
+		var current = personalizations.currentSnapshot(plan.userId()).orElse(null);
+		boolean changed = plan.personalizationId() == null
+				? current != null && current.provided()
+				: current == null || !Objects.equals(plan.personalizationId(), current.personalizationId())
+						|| !Objects.equals(plan.personalizationRevision(), current.revision());
+		if (changed) {
+			throw new ApiException(HttpStatus.CONFLICT, "SUPPORT_PLAN_PERSONALIZATION_REVIEW_REQUIRED",
+					"SupportPlan preferences changed after this draft was created; discard and regenerate the draft before activation");
+		}
+	}
+
+	private LocalTime defaultTime(int ordinal,
+			SupportPlanPersonalizationService.PersonalizationSnapshot personalization) {
+		if (personalization == null || personalization.preferredDaypart() == null
+				|| personalization.preferredDaypart() == SupportPlanPersonalizationService.PreferredDaypart.FLEXIBLE) {
+			return DEFAULT_TIMES.get(ordinal - 1);
+		}
+		int baseHour = switch (personalization.preferredDaypart()) {
+			case MORNING -> 8;
+			case AFTERNOON -> 13;
+			case EVENING -> 18;
+			case FLEXIBLE -> throw new IllegalStateException("Flexible daypart uses compatibility defaults");
+		};
+		return LocalTime.of(Math.min(baseHour + ordinal - 1, 21), 0);
 	}
 
 	@Transactional

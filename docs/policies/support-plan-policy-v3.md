@@ -28,6 +28,35 @@ one official current `ACTIVE`/`PAUSED` plan. The user explicitly accepts every
 plan or action change admitted by Care. A proposal, AI output, source-domain
 event, reminder, or Support Guide link never mutates the plan by itself.
 
+## Bounded personalization input
+
+MB-638 adds the versioned `support-plan-personalization-v1` input owned by Care.
+Every field is optional and the user may explicitly skip all fields. The closed
+vocabulary is:
+
+- focus: `ANXIETY`, `MOOD`, `SLEEP`, `MOTIVATION`, or `UNDERSTANDING_EMOTIONS`;
+- pace: `GENTLE`, `BALANCED`, or `ACTIVE`;
+- daily time budget: 5, 10, 15, 20, or 30 approximate minutes;
+- daypart: `MORNING`, `AFTERNOON`, `EVENING`, or `FLEXIBLE`;
+- activity modes: ordered unique choices from `READING`, `GUIDED_PRACTICE`,
+  `JOURNALING`, `EMOTION_CHECK_IN`, and `ROUTINE`; and
+- practical barriers: unique choices from `LOW_ENERGY`, `LIMITED_TIME`, and
+  `DIFFICULT_TO_START`.
+
+These values describe user intent and practical fit. They are not screening
+answers, symptoms, diagnosis, risk, adherence, or clinical evidence. Care may
+use them only to order already admitted choices, create plain-language focus
+copy, and select safe schedule defaults. They cannot add an ineligible action,
+remove professional-support precedence, weaken safety guidance, or override
+source authority.
+
+Each generated plan snapshots the exact immutable preference revision and
+persists the human-readable focus reason. No saved preference produces the
+existing deterministic policy fallback. Replacing preferences never rewrites
+an `ACTIVE` or `PAUSED` plan; the owner receives an explicit review-required
+reference and chooses a governed plan change separately. Schedule adjustment
+commands and full cadence/workload behavior remain governed by MB-640.
+
 ## Canonical aggregate
 
 ```text
