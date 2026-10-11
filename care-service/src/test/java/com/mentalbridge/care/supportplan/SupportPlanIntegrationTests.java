@@ -57,6 +57,8 @@ import com.mentalbridge.care.supportplan.ConsultationResourceProposalHttpClient.
 import com.mentalbridge.care.supportplan.PlanActionEntity.Presentation;
 import com.mentalbridge.care.supportplan.PlanActionSourcePolicy.Provenance;
 import com.mentalbridge.care.supportplan.PlanActionSourcePolicy.SourceReference;
+import com.mentalbridge.care.supportplan.SupportPlanActivityOccurrenceService.AuthoritativeOwnerFact;
+import com.mentalbridge.care.supportplan.SupportPlanActivityOccurrenceService.LinkedActionSource;
 import com.mentalbridge.care.supportplan.SupportPlanActivityOccurrenceService.OwnerFact;
 
 @Import(TestcontainersConfiguration.class)
@@ -92,6 +94,7 @@ class SupportPlanIntegrationTests extends CareTestProperties {
 		var evaluationId = evaluation(userId, "MINIMAL", "MINIMAL", false);
 		var now = Instant.now().minusSeconds(5).truncatedTo(ChronoUnit.MICROS);
 		var today = now.atZone(ZoneId.of("Asia/Ho_Chi_Minh")).toLocalDate();
+		var appointmentId = UUID.randomUUID().toString();
 
 		var plan = SupportPlanEntity.nativeDraft(UUID.randomUUID(), userId, evaluationId,
 				"mb-support-routing-capstone-v2", now, "support-plan-policy-v3",
@@ -104,7 +107,7 @@ class SupportPlanIntegrationTests extends CareTestProperties {
 				1, "Kết nối với hỗ trợ phù hợp", "Thực hiện bước đã chọn.", now));
 		var action = actions.saveAndFlush(new PlanActionEntity(UUID.randomUUID(), plan.id(), focus.id(), userId,
 				1, "PROFESSIONAL_SUPPORT", "ATTEND_BOOKED_SUPPORT", "Giữ kết nối hỗ trợ.",
-				new SourceReference("CONSULTATION", "APPOINTMENT", UUID.randomUUID().toString(), "1",
+				new SourceReference("CONSULTATION", "APPOINTMENT", appointmentId, "1",
 						"consultation-routing-v1", null, null, now),
 				new Provenance("USER_SELECTED", null, null, now),
 				new Presentation("Buổi hỗ trợ đã đặt", "Theo dõi lịch đã xác nhận.", null, null), now));
@@ -126,8 +129,22 @@ class SupportPlanIntegrationTests extends CareTestProperties {
 		var occurrences = objectMapper.readTree(body).path("occurrences");
 		var firstOccurrenceId = UUID.fromString(occurrences.get(0).path("occurrenceId").asText());
 		var secondOccurrenceId = UUID.fromString(occurrences.get(1).path("occurrenceId").asText());
-		var fact = new OwnerFact("CONSULTATION", "APPOINTMENT_FULFILMENT",
+		var boundedFact = new OwnerFact("CONSULTATION", "APPOINTMENT_FULFILMENT",
 				UUID.randomUUID().toString(), "1", now.plusSeconds(1), now.plusSeconds(2));
+		var linkedAppointment = new LinkedActionSource("CONSULTATION", "APPOINTMENT", appointmentId, "1");
+		var fact = new AuthoritativeOwnerFact(userId, linkedAppointment, boundedFact);
+
+		assertThatThrownBy(() -> activityOccurrences.completeFromOwnerFact(userId, firstOccurrenceId,
+				new AuthoritativeOwnerFact(UUID.randomUUID(), linkedAppointment, boundedFact), UUID.randomUUID()))
+				.hasMessageContaining("subject does not own the PlanAction");
+		assertThatThrownBy(() -> activityOccurrences.completeFromOwnerFact(userId, firstOccurrenceId,
+				new AuthoritativeOwnerFact(userId,
+						new LinkedActionSource("CONSULTATION", "APPOINTMENT",
+								UUID.randomUUID().toString(), "1"),
+						boundedFact), UUID.randomUUID()))
+				.hasMessageContaining("not linked to the PlanAction source");
+		assertThat(jdbc.sql("select state from support_plan_activity_occurrence where id=:id")
+				.param("id", firstOccurrenceId).query(String.class).single()).isEqualTo("SCHEDULED");
 
 		var completed = activityOccurrences.completeFromOwnerFact(userId, firstOccurrenceId, fact,
 				UUID.randomUUID());

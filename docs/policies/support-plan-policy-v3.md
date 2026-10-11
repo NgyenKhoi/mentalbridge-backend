@@ -114,11 +114,13 @@ Completion evidence is one of:
   `EMOTION_CHECK_IN`, `PROFESSIONAL_SUPPORT`, or `REASSESSMENT_SCREENING`.
 
 An external evidence reference records only its owner, opaque fact ID, optional
-revision/status code allowed by contract, and occurred-at time. The owner must
-validate subject ownership and authoritative state. Browser-supplied IDs,
-opening a route, dismissing a reminder, draft content, or AI inference are not
-completion evidence. Repeated delivery of the same fact is idempotent; a fact
-cannot satisfy another user's action or an incompatible action type.
+revision/status code allowed by contract, and occurred-at time. Authenticated
+owner intake must resolve the fact's subject and exact linked action source;
+Care verifies both against the locked action before accepting the minimized
+reference. The source owner must validate authoritative state. Browser-supplied
+IDs, opening a route, dismissing a reminder, draft content, or AI inference are
+not completion evidence. Repeated delivery of the same fact is idempotent; a
+fact cannot satisfy another user's action or an incompatible action type.
 
 ## Privacy and interpretation
 

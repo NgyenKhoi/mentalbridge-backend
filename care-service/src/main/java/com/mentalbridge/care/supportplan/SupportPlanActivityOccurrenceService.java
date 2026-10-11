@@ -12,6 +12,7 @@ import java.time.ZonedDateTime;
 import java.time.temporal.ChronoUnit;
 import java.util.ArrayList;
 import java.util.List;
+import java.util.Objects;
 import java.util.UUID;
 
 import org.springframework.dao.DataIntegrityViolationException;
@@ -128,25 +129,36 @@ public class SupportPlanActivityOccurrenceService {
 
 	/**
 	 * Trusted application boundary for an authoritative source-domain fact. The
-	 * caller must have authenticated the source event; this method rechecks the
-	 * Care owner, native action type, fact shape, and one-fact/one-occurrence rule.
+	 * caller must have authenticated the source event and resolved its subject and
+	 * source link; this method rechecks both against the locked Care action plus the
+	 * native action type, fact shape, and one-fact/one-occurrence rule.
 	 */
 	@Transactional
 	public ActionOccurrenceCompletion completeFromOwnerFact(UUID userId, UUID occurrenceId,
-			OwnerFact fact, UUID correlationId) {
-		var occurrence = occurrences.findByIdAndUserIdForUpdate(occurrenceId, userId).orElseThrow(() ->
+			AuthoritativeOwnerFact authoritativeFact, UUID correlationId) {
+		var authorityLink = occurrences.findAuthorityLinkByIdAndUserId(occurrenceId, userId).orElseThrow(() ->
 				new ApiException(HttpStatus.NOT_FOUND, "OCCURRENCE_NOT_FOUND",
 						"SupportPlan occurrence was not found"));
-		var plan = plans.findByIdAndUserIdForUpdate(occurrence.supportPlanId(), userId).orElseThrow(() ->
+		var plan = plans.findByIdAndUserIdForUpdate(authorityLink.getSupportPlanId(), userId).orElseThrow(() ->
 				new ApiException(HttpStatus.NOT_FOUND, "SUPPORT_PLAN_NOT_FOUND", "SupportPlan was not found"));
-		if (plan.modelVersion() != 3 || occurrence.sourceActionId() == null
-				|| occurrence.sourceActionVersion() == null || occurrence.sourceActionType() == null) {
+		if (plan.modelVersion() != 3 || authorityLink.getSourceActionId() == null) {
 			throw new ApiException(HttpStatus.CONFLICT, "SUPPORT_PLAN_MODEL_VERSION_UNSUPPORTED",
 					"Authoritative completion facts apply to native action SupportPlans only");
 		}
-		if (fact == null) {
+		var action = actions.findByIdAndUserIdForUpdate(authorityLink.getSourceActionId(), userId).orElseThrow(() ->
+				new ApiException(HttpStatus.NOT_FOUND, "PLAN_ACTION_NOT_FOUND", "PlanAction was not found"));
+		var occurrence = occurrences.findByIdAndUserIdForUpdate(occurrenceId, userId).orElseThrow(() ->
+				new ApiException(HttpStatus.NOT_FOUND, "OCCURRENCE_NOT_FOUND",
+						"SupportPlan occurrence was not found"));
+		if (occurrence.sourceActionVersion() == null || occurrence.sourceActionType() == null) {
+			throw new ApiException(HttpStatus.CONFLICT, "SUPPORT_PLAN_MODEL_VERSION_UNSUPPORTED",
+					"Authoritative completion facts apply to native action SupportPlans only");
+		}
+		if (authoritativeFact == null || authoritativeFact.fact() == null) {
 			throw invalidCompletionEvidence("Completion evidence is required");
 		}
+		validateFactAuthority(action, authoritativeFact);
+		var fact = authoritativeFact.fact();
 		var evidence = new EvidenceReference(fact.ownerDomain(), fact.kind(), fact.factId(),
 				fact.factRevision(), fact.occurredAt(), fact.verifiedAt());
 		try {
@@ -473,6 +485,23 @@ public class SupportPlanActivityOccurrenceService {
 		return new ApiException(HttpStatus.BAD_REQUEST, "COMPLETION_EVIDENCE_INVALID", message);
 	}
 
+	private void validateFactAuthority(PlanActionEntity action, AuthoritativeOwnerFact authoritativeFact) {
+		if (!action.userId().equals(authoritativeFact.subjectUserId())) {
+			throw invalidCompletionEvidence("Completion evidence subject does not own the PlanAction");
+		}
+		var linkedSource = authoritativeFact.linkedSource();
+		boolean matches = action.sourceId() == null
+				? linkedSource == null
+				: linkedSource != null
+						&& Objects.equals(action.sourceOwner(), linkedSource.ownerDomain())
+						&& Objects.equals(action.sourceKind(), linkedSource.kind())
+						&& Objects.equals(action.sourceId(), linkedSource.sourceId())
+						&& Objects.equals(action.sourceRevision(), linkedSource.sourceRevision());
+		if (!matches) {
+			throw invalidCompletionEvidence("Completion evidence is not linked to the PlanAction source");
+		}
+	}
+
 	private ApiException evidenceAlreadyUsed() {
 		return new ApiException(HttpStatus.CONFLICT, "COMPLETION_EVIDENCE_ALREADY_USED",
 				"The authoritative fact already completes another action occurrence");
@@ -558,6 +587,10 @@ public class SupportPlanActivityOccurrenceService {
 			Instant engagementUpdatedAt, String interpretationCode) { }
 	public record OwnerFact(String ownerDomain, String kind, String factId, String factRevision,
 			Instant occurredAt, Instant verifiedAt) { }
+	public record LinkedActionSource(String ownerDomain, String kind, String sourceId,
+			String sourceRevision) { }
+	public record AuthoritativeOwnerFact(UUID subjectUserId, LinkedActionSource linkedSource,
+			OwnerFact fact) { }
 	public record ActionOccurrenceCompletion(UUID occurrenceId, long version, String state,
 			Instant completedAt, OwnerFact ownerFact) { }
 	public record ActionEndResult(UUID actionId, long actionVersion, String status, Instant endedAt,

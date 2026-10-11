@@ -35,6 +35,15 @@ interface SupportPlanActivityOccurrenceRepository
 	@Query("select occurrence.supportPlanId from SupportPlanActivityOccurrenceEntity occurrence where occurrence.id = :id and occurrence.userId = :userId")
 	Optional<UUID> findSupportPlanIdByIdAndUserId(@Param("id") UUID id, @Param("userId") UUID userId);
 
+	@Query("""
+			select occurrence.supportPlanId as supportPlanId,
+			       occurrence.sourceActionId as sourceActionId
+			from SupportPlanActivityOccurrenceEntity occurrence
+			where occurrence.id = :id and occurrence.userId = :userId
+			""")
+	Optional<OccurrenceAuthorityLink> findAuthorityLinkByIdAndUserId(@Param("id") UUID id,
+			@Param("userId") UUID userId);
+
 	@Lock(LockModeType.PESSIMISTIC_WRITE)
 	@Query("select occurrence from SupportPlanActivityOccurrenceEntity occurrence where occurrence.id = :id and occurrence.userId = :userId")
 	Optional<SupportPlanActivityOccurrenceEntity> findByIdAndUserIdForUpdate(@Param("id") UUID id,
@@ -148,4 +157,9 @@ interface SupportPlanActivityOccurrenceRepository
 			@Param("aggregateId") UUID aggregateId, @Param("aggregateVersion") long aggregateVersion,
 			@Param("correlationId") UUID correlationId, @Param("payload") String payload,
 			@Param("occurredAt") Instant occurredAt);
+
+	interface OccurrenceAuthorityLink {
+		UUID getSupportPlanId();
+		UUID getSourceActionId();
+	}
 }
