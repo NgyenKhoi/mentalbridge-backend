@@ -200,8 +200,12 @@ public class SupportPlanV3Service {
 		}
 		var result = new ArrayList<PlanFocusView>();
 		for (var focus : focuses.findBySupportPlanIdAndUserIdOrderByOrdinal(plan.id(), plan.userId())) {
-			var actionViews = actionByFocus.getOrDefault(focus.id(), List.of()).stream()
-					.map(action -> nativeAction(action, scheduleByAction.getOrDefault(action.id(), List.of())))
+			var focusActions = actionByFocus.getOrDefault(focus.id(), List.of());
+			boolean professionalSupportPrimary = focusActions.stream().anyMatch(action ->
+					"PROFESSIONAL_SUPPORT".equals(action.actionType()) && !"ENDED".equals(action.status()));
+			var actionViews = focusActions.stream()
+					.map(action -> nativeAction(action, scheduleByAction.getOrDefault(action.id(), List.of()),
+							professionalSupportPrimary))
 					.toList();
 			if (!actionViews.isEmpty()) {
 				result.add(new PlanFocusView(focus.id().toString(), focus.title(), focus.rationale(),
@@ -212,7 +216,7 @@ public class SupportPlanV3Service {
 	}
 
 	private PlanActionView nativeAction(PlanActionEntity action,
-			List<SupportPlanActivityScheduleEntity> actionSchedules) {
+			List<SupportPlanActivityScheduleEntity> actionSchedules, boolean professionalSupportPrimary) {
 		ActionSourceReferenceView source = action.sourceOwner() == null ? null : new ActionSourceReferenceView(
 				action.sourceOwner(), action.sourceKind(), action.sourceId(), action.sourceRevision(),
 				action.sourcePolicyVersion(), action.sourcePublicationId(), action.sourceEligibilityPolicyVersion(),
@@ -222,9 +226,16 @@ public class SupportPlanV3Service {
 		var presentation = new ActionPresentationMetadataView(action.presentationTitle(),
 				action.presentationSummary(), action.presentationInstructions(), action.presentationExternalUrl());
 		return new PlanActionView(action.id().toString(), action.actionType(), action.version(), REPRESENTATION_V3,
-				action.status(), nativePathRole(action), action.purposeCode(), action.rationale(), action.ordinal(), source, provenance,
+				action.status(), nativePathRole(action, professionalSupportPrimary), action.purposeCode(),
+				action.rationale(), action.ordinal(), source, provenance,
 				presentation, actionSchedules.stream().map(this::schedule).toList(), action.createdAt(),
 				action.updatedAt(), action.activatedAt(), action.endedAt());
+	}
+
+	private String nativePathRole(PlanActionEntity action, boolean professionalSupportPrimary) {
+		if (!professionalSupportPrimary) return "PRIMARY";
+		if ("PROFESSIONAL_SUPPORT".equals(action.actionType()) && !"ENDED".equals(action.status())) return "PRIMARY";
+		return "ADJUNCT";
 	}
 
 	private ActionScheduleView schedule(SupportPlanActivityScheduleEntity schedule) {
@@ -246,11 +257,6 @@ public class SupportPlanV3Service {
 	private String virtualProfessionalActionId(UUID planId, String targetDomain) {
 		return UUID.nameUUIDFromBytes((REPRESENTATION_V2 + ":" + planId + ":" + targetDomain
 				+ ":PROFESSIONAL_SUPPORT").getBytes(StandardCharsets.UTF_8)).toString();
-	}
-
-	private String nativePathRole(PlanActionEntity action) {
-		if ("PROFESSIONAL_SUPPORT".equals(action.actionType())) return "PRIMARY";
-		return action.purposeCode().contains("ADJUNCT") ? "ADJUNCT" : "PRIMARY";
 	}
 
 	private String focusTitle(String targetDomain) {

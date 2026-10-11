@@ -75,6 +75,12 @@ are `ADJUNCT`. Consultation owns discovery and appointment state. Care exposes
 only the plan path and never books, shares data, or treats an appointment
 transition as authority to change the plan lifecycle.
 
+For native v3 reads, a focus with a non-ended `PROFESSIONAL_SUPPORT` action
+projects that action as `PRIMARY` and its sibling actions as `ADJUNCT`; a focus
+without that context projects its actions as `PRIMARY`. The bounded
+`purposeCode` remains an action intent code and is never parsed to determine
+path precedence.
+
 ## MB-375 reassessment review and replacement
 
 `POST /api/v1/support-plans/{draftId}/replacement-review` is read-only. It

@@ -142,6 +142,46 @@ class SupportPlanV3ServiceTests {
 				}));
 	}
 
+	@Test
+	void derivesNativePathRolesFromProfessionalSupportContextRatherThanPurposeCode() {
+		UUID userId = UUID.randomUUID();
+		UUID planId = UUID.randomUUID();
+		UUID focusId = UUID.randomUUID();
+		var plan = SupportPlanEntity.nativeDraft(planId, userId, UUID.randomUUID(),
+				"mb-support-routing-capstone-v2", NOW, "support-plan-v3-actions-v1", "PLUS", "PAID",
+				"service-entitlement-v1", 3, NOW, "DOMAIN_AWARE_WELLBEING_SUPPORT", "Plan context",
+				"NEGATIVE_SAFETY_SCREEN", "NO_SAFETY_SIGNAL", "safety-v1", "STANDARD_SAFETY_REMINDER",
+				"Safety guidance", 2, NOW);
+		var focus = new SupportPlanFocusEntity(focusId, planId, userId, 1, "Support focus", null, NOW);
+		var professional = new PlanActionEntity(UUID.randomUUID(), planId, focusId, userId, 1,
+				"PROFESSIONAL_SUPPORT", "CONNECT_WITH_PROFESSIONAL", null,
+				new SourceReference("CONSULTATION", "PROFESSIONAL_SUPPORT_PATHWAY", "specialist-discovery", "1",
+						"support-plan-professional-path-v1", null, null, NOW),
+				new Provenance("SYSTEM_POLICY", "routing", "1", NOW),
+				new Presentation("Connect with a specialist", null, null, null), NOW);
+		var resource = new PlanActionEntity(UUID.randomUUID(), planId, focusId, userId, 2,
+				"RESOURCE", "READ_CONTENT", null,
+				new SourceReference("CONTENT", "RESOURCE_VERSION", UUID.randomUUID().toString(), "1", null,
+						UUID.randomUUID(), "content-eligibility-v1", NOW),
+				new Provenance("SYSTEM_POLICY", "routing", "1", NOW),
+				new Presentation("Read reviewed content", null, null, null), NOW);
+
+		when(plans.findByIdAndUserId(planId, userId)).thenReturn(Optional.of(plan));
+		when(focuses.findBySupportPlanIdAndUserIdOrderByOrdinal(planId, userId)).thenReturn(List.of(focus));
+		when(actions.findBySupportPlanIdAndUserIdOrderByPlanFocusIdAscOrdinalAsc(planId, userId))
+				.thenReturn(List.of(professional, resource));
+		when(schedules.findBySupportPlanIdOrderByOrdinal(planId)).thenReturn(List.of());
+
+		var view = service.get(userId, planId);
+
+		assertThat(view.focuses()).singleElement().satisfies(result -> {
+			assertThat(result.actions()).extracting(SupportPlanV3Service.PlanActionView::purposeCode)
+					.containsExactly("CONNECT_WITH_PROFESSIONAL", "READ_CONTENT");
+			assertThat(result.actions()).extracting(SupportPlanV3Service.PlanActionView::pathRole)
+					.containsExactly("PRIMARY", "ADJUNCT");
+		});
+	}
+
 	private SupportPlanEntity legacyPlan(UUID planId, UUID userId) {
 		return new SupportPlanEntity(planId, userId, UUID.randomUUID(), "mb-support-routing-capstone-v2",
 				NOW, "content-eligibility-v1", NOW, "PLUS", "PAID", "service-entitlement-v1", 2,
