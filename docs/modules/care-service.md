@@ -6,7 +6,8 @@ Care owns user profiles, consent decisions, specialist access grants,
 questionnaire definitions, assessment attempts/results, deterministic item-9
 and explicit-user safety triggers, the all-tier one-time Support Guide,
 versioned SupportEvaluations, the single official `PLUS`/`PREMIUM` SupportPlan,
-`PlanChangeRequest` decisions, follow-up, and wellbeing projections. V1
+its versioned focuses/typed actions/schedules/occurrences, `PlanChangeRequest`
+decisions, follow-up, and wellbeing projections. V1
 screening domains remain PHQ-9/`DEPRESSIVE_SYMPTOMS` and
 GAD-7/`ANXIETY_SYMPTOMS`. These paths remain correct without optional AI,
 Kafka, Redis, WebSocket, notification, or directory delivery.
@@ -20,6 +21,7 @@ Kafka, Redis, WebSocket, notification, or directory delivery.
 | Anonymous screening | Fetch current PHQ-9/GAD-7 and submit opaque attempt | Complete 0..3 answers only; deterministic score; short-lived result; no silent account link; guidance in response |
 | Authenticated assessment | Start and idempotently submit immutable versioned attempt | Exact question version; no partial final score; duplicate key returns original; score/result/outbox atomically commit |
 | Safety/Support Guide/SupportPlan | Activate safety from positive item 9 or explicit user action, persist one immutable Guide per screening context for every package, and manage one official paid plan | High/Severe band alone is not a safety trigger; no global severity; the Guide has no automatic time-based expiry or plan lifecycle; `FREE` has no durable plan; specialist input is a request; Care revalidates and user confirms; approved safety guidance is synchronous |
+| SupportPlan v3 actions | Coordinate versioned focuses, typed actions, optional schedules, and occurrences while source owners retain their facts | Known type/owner pairs only; bounded source/evidence references; exact ResourceVersion provenance; generic occurrence generation; no raw cross-domain payload; v2 history exposed only through the marked adapter |
 | Reassessment Summary | Idempotently persist and query screening trend, minimized available-journal context, SupportPlan engagement, and explicit owner-authored current-period experience | V2 current/detail/history reads return immutable source/version/coverage snapshots; activity reflection is separately labelled supporting evidence, missing/deleted self-report is explicit, v1 history remains readable, and no combined improvement score or recovery claim exists |
 | Specialist grant | Grant exact scopes, range/entries, purpose and expiry; authorize reads | Appointment never implies journal access; current grant checked by owner; revoke/read race fails closed and is audited |
 | Follow-up/analytics | Manage milestones/check-ins and compare valid results | Missing differs from zero; source/freshness exposed; no causal/diagnostic claims |
@@ -51,6 +53,12 @@ Kafka, Redis, WebSocket, notification, or directory delivery.
   reassessment self-report and actor-facing reassessment UI are completed by
   MB-559. MB-560 implements the separately governed `PlanChangeRequest`; richer
   history/presentation remains a later slice.
+- ADR 0034 (`MB-SUPPORT-PLAN-V3-ACTIONS-001`) replaces Resource-as-parent
+  composition prospectively with `PlanFocus -> PlanAction -> ActionSchedule ->
+  ActionOccurrence`. MB-639 owns the additive native v3 model, generic
+  scheduling, source/evidence validation, versioned API/events, and explicit
+  `V2_RESOURCE_ADAPTER`. Existing v2 rows, identities, writes, lifecycle, and
+  history are not rewritten or silently dual-written.
 - Care consumes exact Content-owned eligibility through the generated Resource Eligibility v1 OpenFeign boundary with explicit deadlines, bounded retry, circuit breaker and fail-closed `UNAVAILABLE` outcomes. It makes the final future plan decision without cross-database access or a transaction spanning the remote call. Review/publication alone is insufficient.
 - Care combines reassessment dimensions without normalizing them into one score. Journal/AI context remains model-derived evidence limited to available consented entries; Care maps it only to policy-allowed review candidates and requires user confirmation.
 - MB-386 retains compatible explicit 7-31 day analysis composition. MB-559's canonical path issues adjacent 14-day periods from a versioned Care context, validates that the selected PHQ-9/GAD-7 results remain current, resolves a Journal job authoritatively, requires the selected self-report to match the current bounds, and snapshots truthful `UNAVAILABLE` or `INSUFFICIENT_DATA` states. Local engagement/reflection selects only owner-approved reusable occurrences by `scheduled_at`; a source change or deletion after composition cannot rewrite history.
@@ -124,6 +132,7 @@ MB-178 does not implement specialist grants, automatic follow-up, clinical progr
 - [x] CARE-07h Implement MB-381 ConsultationBrief draft, exact approval snapshot, assigned-specialist window, revoke/delete, and minimized audit.
 - [x] CARE-07i Implement MB-560 exact specialist resource proposals, Care-owned review, explicit owner decision, and atomic idempotent replacement.
 - [x] CARE-07j Implement MB-592 appointment-bounded specialist client continuity composition with current display identity, ConsultationBrief access provenance, minimized audit, and fail-closed suspension/revocation/expiry/deletion behavior.
+- [~] CARE-07k Deliver MB-639 native cross-domain PlanActions and the non-destructive v2 resource-plan adapter under ADR 0034.
 - [ ] CARE-08 Add the ADR 0022 explicit reassessment self-report and governed plan-review outcome contract; follow-up, other analytics projections, export and deletion participation remain open.
 - [ ] CARE-09 Verify scoring boundaries, item-9 safety, stale/missing input, concurrency, rollback/outbox, duplicate/reordered events and dependency failures.
 - [ ] CARE-10 Add safe observability/configuration, update README, and pass module/contract/migration gates.

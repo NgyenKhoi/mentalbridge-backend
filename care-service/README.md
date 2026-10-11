@@ -3,7 +3,7 @@
 MB-375 adds the Care-authoritative reassessment review and the single audited,
 idempotent, atomic SupportPlan replacement path described below.
 
-Care owns user profiles, independent `PRIVACY_POLICY` and `AI_PROCESSING` consent decisions, questionnaires, assessment submissions and results, deterministic safety/support policy, SupportEvaluation, persisted Support Guides, the single official SupportPlan, reassessment, and follow-up. Story 1103 exposes immutable coarse v1 evaluation. MB-335 adds `/api/v2/support-evaluations` with exact PHQ-9/GAD-7 provenance, two independent domain contributions, and separate PHQ-9 item-9 safety evidence. MB-372 adds paid deterministic draft creation and current-draft reload. MB-373 adds bounded admitted-choice replacement, exact revalidation, explicit activation idempotency, and authoritative current-plan reload. MB-513 adds deterministic local-time schedules and persisted activity occurrences. MB-374 completes the owner lifecycle with optional coded completion context and immutable terminal history/detail reads. MB-376 adds versioned owner-only completion, skip, reopen, visibility, helpfulness, barrier, private reflection, and deletion semantics on exact occurrences. MB-386 introduced immutable reassessment snapshots; MB-559 completes the canonical fourth dimension with an explicit owner-authored current-period self-report while keeping occurrence helpfulness/reflection separately labelled as supporting activity evidence. Care never creates a global severity, treatment-adherence score, recovery score, specialist-monitoring feed, or AI-controlled state. Safety-critical scoring and evaluation remain local and do not depend on Eureka, Kafka, Redis, AI, or notification availability.
+Care owns user profiles, independent `PRIVACY_POLICY` and `AI_PROCESSING` consent decisions, questionnaires, assessment submissions and results, deterministic safety/support policy, SupportEvaluation, persisted Support Guides, and the single official SupportPlan with its focuses, typed actions, schedules, occurrences, reassessment, and follow-up. Story 1103 exposes immutable coarse v1 evaluation. MB-335 adds `/api/v2/support-evaluations` with exact PHQ-9/GAD-7 provenance, two independent domain contributions, and separate PHQ-9 item-9 safety evidence. MB-372 adds paid deterministic draft creation and current-draft reload. MB-373 adds bounded admitted-choice replacement, exact revalidation, explicit activation idempotency, and authoritative current-plan reload. MB-513 adds deterministic local-time schedules and persisted activity occurrences. MB-374 completes the owner lifecycle with optional coded completion context and immutable terminal history/detail reads. MB-376 adds versioned owner-only completion, skip, reopen, visibility, helpfulness, barrier, private reflection, and deletion semantics on exact occurrences. MB-386 introduced immutable reassessment snapshots; MB-559 completes the canonical fourth dimension with an explicit owner-authored current-period self-report while keeping occurrence helpfulness/reflection separately labelled as supporting activity evidence. MB-639 introduces native cross-domain PlanActions while preserving v2 resource plans through an explicit read adapter. Care never creates a global severity, treatment-adherence score, recovery score, specialist-monitoring feed, or AI-controlled state. Safety-critical scoring and evaluation remain local and do not depend on Eureka, Kafka, Redis, AI, or notification availability.
 
 MB-292 persists `screening_episode` as the Care-authoritative resume and
 grouping context for guided initial checks and reassessments. PHQ-9 and GAD-7
@@ -37,6 +37,36 @@ reflection remains separate supporting evidence. Source replacement or deletion
 never rewrites an already persisted summary snapshot. MB-559 also supplies the
 functional actor journey that renders all four dimensions without an overall
 verdict; later presentation work is history and refinement only.
+
+## MB-639 SupportPlan v3 actions
+
+ADR 0034 makes `SupportPlan -> PlanFocus -> PlanAction -> ActionSchedule ->
+ActionOccurrence` the prospective canonical hierarchy. Native actions use only
+the closed types `RESOURCE`, `JOURNAL`, `EMOTION_CHECK_IN`,
+`ROUTINE_SELF_MANAGEMENT`, `PROFESSIONAL_SUPPORT`,
+`REASSESSMENT_SCREENING`, and `SELF_REPORT_REVIEW`.
+
+Care owns lifecycle, plan revisions, ordering, bounded presentation/provenance,
+generic scheduling, and occurrence orchestration. Content, Journal/AI,
+Consultation, and Care screening remain authoritative for their referenced
+facts. Unknown types, malformed references, incompatible type/owner pairs,
+client-asserted external completion, and cross-owner injection fail closed.
+`RESOURCE` retains its exact ResourceVersion and publication eligibility; other
+source actions retain only bounded opaque references and accepted completion
+facts. Raw journal text, emotion values/notes, assessment answers/raw scores,
+and consultation notes/messages never enter SupportPlan storage or events.
+
+The native model adds `support_plan_focus` and `support_plan_action`. The
+existing `support_plan_activity_schedule` and
+`support_plan_activity_occurrence` tables are extended additively so a row can
+retain either its legacy v2 slot/resource provenance or a native v3 action
+reference. They are not renamed, and legacy rows are not backfilled.
+
+V3 reads translate a v2 slot, selected exact resource, and existing activity
+history into a virtual `RESOURCE` action marked `V2_RESOURCE_ADAPTER`. The
+adapter creates no native action rows and changes no v2 write or history
+semantics. A schedule edit changes only future generation; elapsed time yields
+an overdue read state rather than an automatic failure.
 
 ## MB-375 reassessment review and replacement
 
@@ -107,14 +137,16 @@ The Care Liquibase changelog owns:
 | `consultation_brief_audit` | Content-free allowed/denied draft, approval, revoke, delete, and specialist-read facts |
 | `consultation_brief_ai_draft_job` | Owner-private asynchronous suggestion request with exact saved-brief/source versions and consent, entitlement, routing, provider, model, prompt, and schema provenance; deletion scrubs generated content |
 | `support_plan` | One Care-owned paid proposal/current-plan snapshot with exact source, entitlement, rationale, safety, lifecycle instants, optional coded completion reason, and optimistic version provenance; terminal rows are immutable owner history |
+| `support_plan_focus` | Ordered versioned native v3 focus inside one plan; plain-language intent only, never diagnosis or outcome |
+| `support_plan_action` | Ordered typed native v3 action with bounded presentation, source-owner/reference, provenance, capabilities, and optimistic versioning |
 | `support_plan_template_family` | Ordered immutable domain template families composed into the draft |
 | `support_plan_slot` | Ordered bounded slots; core selection is required while an optional selection may be explicitly removed |
 | `support_plan_slot_alternative` | Server-admitted exact alternatives for a stored slot; not client-authored choices |
 | `support_plan_request` | Per-user idempotency aliases that replay the same current draft |
 | `support_plan_command` | Owner-scoped idempotent activation outcome plus exact revalidation provenance |
 | `support_plan_command_selection` | Ordered exact resource-version intent committed by activation |
-| `support_plan_activity_schedule` | Versioned recurrence and local-time/source snapshot owned by one plan |
-| `support_plan_activity_occurrence` | Deterministic dated activity plus versioned owner engagement/visibility with exact source provenance |
+| `support_plan_activity_schedule` | Additive shared physical schedule for either legacy v2 slot/resource provenance or a native v3 action; versioned recurrence, local time, and timezone without legacy-row backfill |
+| `support_plan_activity_occurrence` | Deterministic dated occurrence for the schedule's legacy source or native action, with exact provenance/evidence and versioned owner engagement/visibility where policy permits |
 | `reassessment_self_report` | Versioned owner-authored current-period response with optional bounded helpful/difficult context and content-clearing deletion tombstones |
 | `reassessment_summary` | Immutable owner-scoped v1/v2 snapshot with request idempotency, exact periods, external Journal/AI provenance, explicit self-report provenance, separately labelled reusable occurrence evidence, and explicit unavailable/insufficient states |
 | `outbox_event` | Minimal integration fact persisted in the aggregate transaction |
@@ -217,6 +249,11 @@ MB-89 implements the deterministic PHQ-9 runtime. MB-178 adds the backend-owned,
   deletion, schedule/version drift, early access, and expiry remain explicit
   fail-closed states; the browser cannot create or extend access.
 - Inbound Support Guide REST: `care-support-guide-v1.yaml` defines authenticated generation, owner-only history/detail, idempotency, immutable provenance, and stable resource-resolution states. It is intentionally separate from SupportPlan lifecycle.
+- Inbound SupportPlan v3 REST: the canonical Care OpenAPI exposes owner-only
+  v3 plan/detail and bounded occurrence reads. `NATIVE_V3` identifies native
+  actions; `V2_RESOURCE_ADAPTER` identifies the non-destructive v2 projection.
+  The response separates Care orchestration from bounded source/evidence facts
+  and never embeds an owner-domain payload.
 - Outbound REST: the consumer-owned OpenFeign Resource Eligibility v1 adapter queries Content with the end-user bearer context, explicit correlation, 500 ms connect and 2 s read deadlines, bounded exponential transient retry with jitter, and a Resilience4j circuit breaker. HTTP 429 is not retried because the provider contract does not define `Retry-After`; timeout, dependency errors, malformed payloads and enum evolution map every candidate to `UNAVAILABLE`. Callers must commit no proposal mutation. No Care transaction spans the call.
 - Outbound reassessment REST: the consumer-owned Journal/AI adapter forwards the verified end-user bearer and correlation ID to the canonical `REASSESSMENT_SUMMARY` projection. It applies a 200 ms connect deadline, 800 ms read deadline, at most one transient retry, and a separate circuit breaker. Startup rejects overrides whose conservative two-attempt budget exceeds 2.5 seconds, preserving time for Care to return the explicit safe fallback before the three-second caller deadline. It validates attribution, exact periods, source counts, coverage sufficiency, directions, and provenance before persistence. No transaction spans the remote call; every safe fallback is snapshotted explicitly.
 - Outbound Support Guide phrasing REST: Care forwards the verified end-user bearer and only the exact approved explanation copy to Journal/AI. The call has bounded connect/read deadlines, no retry, and a fail-fast circuit breaker. Current `AI_PROCESSING` consent and real-provider approval remain Journal/AI responsibilities; any rejection, timeout, open circuit, malformed output, or provider failure persists the exact Care-approved fallback with `AI_UNAVAILABLE_FALLBACK`.

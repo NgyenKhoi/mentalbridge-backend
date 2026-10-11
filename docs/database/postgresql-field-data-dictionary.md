@@ -812,12 +812,12 @@ assessment answers or scores.
 
 ### `public.support_plan`
 
-Care-owned runtime aggregate for MB-372/MB-373/MB-513/MB-374. MB-372 creates `DRAFT`;
-MB-373 permits an explicit revalidated transition to `ACTIVE`; MB-513 adds
-pause/resume, completion, replacement, and discard; MB-374 exposes those
-user-confirmed transitions with immutable terminal history. Separate partial unique
-indexes on `DRAFT` and on `ACTIVE`/`PAUSED` are the final concurrent guards for
-one draft and one official current plan per owner.
+Care-owned runtime aggregate for the supported v2 Resource-slot model and the
+native v3 cross-domain action model. Existing v2 rows and history remain in
+place; v3 is an explicit model branch rather than a backfill or silent rewrite.
+User-confirmed lifecycle transitions retain immutable terminal history. Separate
+partial unique indexes on `DRAFT` and on `ACTIVE`/`PAUSED` are the final
+concurrent guards for one draft and one official current plan per owner.
 
 | Field | Purpose |
 | --- | --- |
@@ -826,19 +826,61 @@ one draft and one official current plan per owner.
 | `support_evaluation_id` | Exact owner-matched immutable SupportEvaluation v2 that seeded composition. |
 | `status` | Care-owned `DRAFT`, `ACTIVE`, `PAUSED`, `COMPLETED`, `SUPERSEDED`, or `DISCARDED` lifecycle state. |
 | `version` | Optimistic-lock counter returned in the ETag; incremented by each accepted choice or activation command. |
+| `model_version` | Explicit persisted model discriminator: `2` for Resource slots or `3` for native focuses/actions. It participates in the v3 child foreign key so a focus cannot attach to a v2 plan. |
+| `plan_policy_version` | Native v3 composition policy reference, required and bounded for model 3; null for v2. |
+| `action_count` | Native v3 action count, constrained to 1..20; fixed to zero for v2. |
 | `evaluation_policy_version` / `evaluated_at` | Exact current-compatible Care evaluation policy and original UTC evaluation instant. |
-| `selection_policy_version` | Deterministic Care composition version, fixed to `mb-support-plan-selection-v1`. |
-| `resource_policy_version` / `resources_resolved_at` | Exact Content eligibility policy and UTC resolution instant used before the Care transaction. |
+| `selection_policy_version` | Deterministic v2 Care composition version, fixed to `mb-support-plan-selection-v1`; null for v3. |
+| `resource_policy_version` / `resources_resolved_at` | Exact v2 Content eligibility policy and UTC resolution instant used before the Care transaction; both null for v3. |
 | `entitlement_package` / `entitlement_source` | Authoritative `PLUS`/`PREMIUM` and `DEMO`/`PAID` provenance returned by Consultation; never inferred from JWT/client state. |
 | `entitlement_policy_version` / `entitlement_version` / `entitlement_decided_at` | Exact Consultation read-model version and UTC decision evidence that admitted creation. |
 | `rationale_code` / `rationale_text` | Stable general-wellbeing explanation snapshot; not diagnosis, treatment, or AI reasoning. |
 | `safety_status` / `safety_reason_code` / `safety_policy_version` | Independent Care-owned PHQ-9 item-9 safety evidence without answers or scores. |
 | `safety_guidance_code` / `safety_guidance` | Approved safety copy stored with the draft so reload never depends on AI or another service. |
-| `selected_resource_count` | Number of persisted selected exact versions, constrained to 1..5. |
+| `selected_resource_count` | Number of persisted selected exact versions for v2, constrained to 1..5; null for v3. |
 | `activated_at` | UTC instant of explicit activation; null while the plan is a draft. |
 | `completion_reason` | Optional bounded user-selected reason code (`USER_DECISION`, `PLAN_NO_LONGER_FITS`, or `OTHER`) stored only for a completed plan; it is not a clinical interpretation. |
 | `completed_at` / `superseded_at` / `discarded_at` | UTC instant for the matching terminal state; lifecycle checks require exactly the applicable timestamp and activation history. |
 | `created_at` / `updated_at` | UTC creation and latest accepted business-command instants. |
+
+### `public.support_plan_focus`
+
+Ordered, versioned, non-diagnostic intent within one native v3 plan. The table
+stores bounded Care orchestration copy only; it never stores assessment,
+journal, emotion, or consultation payloads.
+
+| Field | Purpose |
+| --- | --- |
+| `id` | Immutable focus UUID. |
+| `support_plan_id` / `support_plan_model_version` / `user_id` | Owner-matched parent reference fixed to model 3; composite keys block v2 attachment and cross-owner injection. |
+| `ordinal` | Unique 1-based order within the plan, constrained to 1..10. |
+| `title` / `rationale` | Bounded plain-language focus copy; title is required and rationale is optional, non-blank when present. |
+| `version` | Non-negative optimistic revision. |
+| `created_at` / `updated_at` | UTC creation and latest accepted change instants. |
+
+### `public.support_plan_action`
+
+Versioned typed intention within one focus. Care stores the orchestration
+envelope and bounded source references, not source-domain content. Source
+authority and reference shape are constrained by action type.
+
+| Field | Purpose |
+| --- | --- |
+| `id` | Immutable native action UUID. |
+| `support_plan_id` / `plan_focus_id` / `user_id` | Owner-matched plan and focus references; composite foreign keys prevent cross-plan or cross-owner attachment. |
+| `ordinal` | Unique 1-based order within the focus, constrained to 1..20. |
+| `action_type` | One of `RESOURCE`, `JOURNAL`, `EMOTION_CHECK_IN`, `ROUTINE_SELF_MANAGEMENT`, `PROFESSIONAL_SUPPORT`, `REASSESSMENT_SCREENING`, or `SELF_REPORT_REVIEW`; unknown types fail closed. |
+| `purpose_code` / `rationale` | Required bounded purpose and optional bounded non-diagnostic rationale. |
+| `source_owner` / `source_kind` / `source_id` / `source_revision` / `source_policy_version` | Minimal type-specific source reference: `CONTENT`/`RESOURCE_VERSION`; optional `JOURNAL_AI`/`JOURNAL_TEMPLATE`; optional `JOURNAL_AI`/`EMOTION_CHECK_IN_CAPABILITY`; `CONSULTATION`/`PROFESSIONAL_SUPPORT_PATHWAY` or `APPOINTMENT`; or `CARE`/`QUESTIONNAIRE_DEFINITION`. Routine/review actions carry no source. |
+| `source_publication_id` / `source_eligibility_policy_version` | Exact publication and eligibility evidence required for `RESOURCE`; absent for every other action type. |
+| `source_verified_at` | UTC source-verification instant, required for `RESOURCE`, optional for other referenced sources, and absent when the action carries no source. |
+| `provenance_type` | Required admission origin: `USER_SELECTED`, `SUPPORT_GUIDE`, `SPECIALIST`, or `SYSTEM_POLICY`. |
+| `provenance_reference_id` / `provenance_reference_version` / `provenance_accepted_at` | Bounded optional exact origin pair and required UTC acceptance instant. Reference ID and version are both null or both present. |
+| `presentation_title` / `presentation_summary` / `presentation_instructions` / `presentation_external_url` | Bounded user-facing snapshot sufficient to understand the action without copying raw source-domain content. Title is required; the other fields are optional and non-blank when present. |
+| `status` | `DRAFT`, `ACTIVE`, or `ENDED`, with timestamps constrained to the matching lifecycle shape. |
+| `version` | Non-negative action revision retained by schedule and occurrence source snapshots. |
+| `activated_at` / `ended_at` | UTC lifecycle instants; ending requires prior activation and cannot precede it. |
+| `created_at` / `updated_at` | UTC creation and latest accepted change instants. |
 
 ### `public.support_plan_template_family`
 
@@ -947,18 +989,23 @@ the authoritative state.
 
 ### `public.support_plan_activity_schedule`
 
-Care-owned recurrence snapshot created from one selected SupportPlan resource.
-It keeps time interpretation and source attribution stable even when the profile
-timezone or external content later changes.
+Care-owned schedule snapshot for either one selected v2 Resource slot or one
+native v3 PlanAction. The two source shapes are mutually exclusive. It keeps
+time interpretation and source attribution stable when profile timezone or an
+external source later changes.
 
 | Field | Purpose |
 | --- | --- |
 | `id` | Immutable schedule UUID and parent of its occurrence history. |
 | `support_plan_id` / `user_id` | Owner-matched plan and account; the composite foreign key blocks cross-owner rows. |
-| `ordinal` / `schedule_version` | Stable source-slot order and recurrence revision; unique together within a plan. |
-| `source_plan_version` / `source_slot_key` | Exact plan version and selected slot that authorized the schedule. |
-| `source_resource_id` / `source_content_version` / `source_title` | Exact Content identity/version and reviewed title snapshot. |
-| `recurrence_type` / `recurrence_day_of_week` | `DAILY`, or `WEEKLY` with ISO weekday 1..7. |
+| `ordinal` / `schedule_version` | Stable source order and recurrence revision; unique together within a plan. Ordinal is bounded to 1..5 for v2 or 1..20 for v3. |
+| `source_plan_version` | Exact plan revision that authorized the schedule. |
+| `source_slot_key` / `source_resource_id` / `source_content_version` | Required exact v2 slot and Content-version source; all are null for a native v3 schedule. |
+| `source_action_id` / `source_action_version` / `source_action_type` | Required exact native v3 action snapshot; all are null for a v2 schedule. The immutable ID/plan/owner/type relation is foreign-key enforced, while `source_action_version` deliberately remains the historical revision snapshot so a later optimistic lifecycle update cannot invalidate existing schedules. |
+| `source_title` | Reviewed user-facing title snapshot for either source branch. |
+| `schedule_policy_version` | Required bounded generation policy for v3; null for v2. |
+| `reminder_enabled` | Care-owned reminder preference snapshot, default false; it does not mutate a source-domain fact. |
+| `recurrence_type` / `recurrence_day_of_week` | v3 supports `ONCE`, `DAILY`, or `WEEKLY`; v2 remains `DAILY`/`WEEKLY`. Only weekly schedules carry ISO weekday 1..7. |
 | `local_time` / `timezone` | Intended wall-clock time and snapshotted IANA timezone used for deterministic DST resolution. |
 | `effective_from` / `effective_until` | Inclusive local-date validity; the end remains null while active. |
 | `status` | `ACTIVE`, `PAUSED`, or `ENDED`; Content/Notification never controls it. |
@@ -977,9 +1024,13 @@ generation idempotent.
 | `schedule_version` / `local_date` | Logical uniqueness key with the parent schedule. |
 | `local_time` / `timezone` / `scheduled_at` | Wall-clock intent, IANA zone snapshot, and resolved UTC instant. |
 | `state` | Persisted `SCHEDULED`, `COMPLETED`, `SKIPPED`, or `CANCELLED`; `MISSED` is computed only in reads. |
-| `state_reason` | Null except `PLAN_PAUSED`, `PLAN_COMPLETED`, or `PLAN_REPLACED` on cancelled rows. |
-| `source_plan_version` / `source_slot_key` | Exact Care plan/slot provenance. |
-| `source_resource_id` / `source_content_version` / `source_title` | Exact Content identity/version and reviewed title snapshot. |
+| `state_reason` | Null except `PLAN_PAUSED`, `PLAN_COMPLETED`, `PLAN_REPLACED`, or `ACTION_ENDED` on cancelled rows. |
+| `source_plan_version` | Exact Care plan revision provenance. |
+| `source_slot_key` / `source_resource_id` / `source_content_version` | Required exact v2 slot and Content-version snapshot; all are null for a native v3 occurrence. |
+| `source_action_id` / `source_action_version` / `source_action_type` | Required exact native v3 action snapshot; all are null for v2. One foreign key blocks cross-plan, cross-owner, or type substitution, and a second binds the entire plan/action/version snapshot to the originating schedule; the snapshotted revision remains stable if the current action lifecycle version advances. |
+| `source_title` | Reviewed user-facing title snapshot for either source branch. |
+| `evidence_owner` / `evidence_kind` / `evidence_id` / `evidence_revision` | Minimal native v3 completion reference: Care acknowledgement for Resource/routine, Care review submission, Journal entry/check-in fact, Consultation appointment fulfilment, or Care assessment history. Authority/kind must match the action type; no raw source content is copied. A partial unique index prevents the same authoritative fact revision from satisfying more than one occurrence. |
+| `evidence_occurred_at` / `evidence_verified_at` | UTC source-fact occurrence and Care verification instants, with verification no earlier than occurrence. Evidence is absent unless a native v3 occurrence is `COMPLETED`. |
 | `version` | Optimistic counter required by explicit user state updates. |
 | `created_at` / `updated_at` | UTC insertion and latest accepted transition instants. |
 | `completed_at` / `skipped_at` / `cancelled_at` | Exactly the timestamp matching the persisted terminal state; all null while scheduled. |
