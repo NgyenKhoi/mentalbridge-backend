@@ -100,6 +100,33 @@ class SupportPlanPersonalizationServiceTests {
 	}
 
 	@Test
+	void marksADraftPinnedToAnOlderPreferenceRevisionForExplicitRegeneration() {
+		var profile = mock(UserProfileEntity.class);
+		var previousCommand = new PersonalizationCommand(PreferredFocus.SLEEP, null, null,
+				PreferredDaypart.EVENING, List.of(), List.of());
+		var previous = new SupportPlanPersonalizationEntity(UUID.randomUUID(), USER_ID, 1,
+				previousCommand, NOW.minusSeconds(60));
+		var plan = legacyPlan();
+		plan.snapshotPersonalization(new SupportPlanPersonalizationService.PersonalizationSnapshot(
+				previous.id(), USER_ID, SupportPlanPersonalizationService.SCHEMA_VERSION, 1,
+				PreferredFocus.SLEEP, null, null, PreferredDaypart.EVENING,
+				List.of(), List.of(), NOW.minusSeconds(60)));
+		when(profiles.findByIdForUpdate(USER_ID)).thenReturn(Optional.of(profile));
+		when(personalizations.findFirstByUserIdOrderByRevisionDesc(USER_ID)).thenReturn(Optional.of(previous));
+		when(personalizations.saveAndFlush(any())).thenAnswer(invocation -> invocation.getArgument(0));
+		when(plans.findByUserIdAndStatus(USER_ID, "DRAFT")).thenReturn(Optional.of(plan));
+
+		var result = service.replace(USER_ID, 1,
+				new PersonalizationCommand(PreferredFocus.ANXIETY, null, null,
+						PreferredDaypart.MORNING, List.of(), List.of()));
+
+		assertThat(result.planReview().required()).isTrue();
+		assertThat(result.planReview().supportPlanId()).isEqualTo(plan.id());
+		assertThat(result.planReview().reasonCode())
+				.isEqualTo("PREFERENCES_CHANGED_AFTER_DRAFT_CREATION");
+	}
+
+	@Test
 	void identicalReplacementIsANoOpAtTheCurrentRevision() {
 		var profile = mock(UserProfileEntity.class);
 		var command = new PersonalizationCommand(null, null, null, null, List.of(), List.of());

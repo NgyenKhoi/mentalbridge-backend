@@ -138,12 +138,13 @@ class SupportPlanPolicy {
 		if (!hasPreferences(personalization)) return null;
 		var domains = evaluation.contributingDomains().stream().map(value -> value.domain().name()).toList();
 		PreferredFocus preferredFocus = personalization.preferredFocus();
-		String preferred = preferredFocus == null ? null : switch (preferredFocus) {
+		if (preferredFocus == null) return domains.getFirst();
+		String preferred = switch (preferredFocus) {
 			case ANXIETY -> ANXIETY;
 			case MOOD, MOTIVATION -> DEPRESSION;
 			case SLEEP, UNDERSTANDING_EMOTIONS -> null;
 		};
-		return preferred != null && domains.contains(preferred) ? preferred : domains.getFirst();
+		return preferred != null && domains.contains(preferred) ? preferred : null;
 	}
 
 	private boolean hasPreferences(PersonalizationSnapshot value) {
@@ -155,18 +156,23 @@ class SupportPlanPolicy {
 	private FocusCopy personalizedFocus(String domain, PersonalizationSnapshot personalization) {
 		PreferredFocus preferredFocus = personalization.preferredFocus();
 		String title = preferredFocus == null
-				? (ANXIETY.equals(domain) ? "Hỗ trợ bình tâm" : "Hỗ trợ tâm trạng")
+				? domainFocusTitle(domain)
 				: switch (preferredFocus) {
 			case ANXIETY -> "Làm dịu lo âu";
 			case MOOD -> "Chăm sóc tâm trạng";
-			case SLEEP -> "Xây dựng nhịp ngủ dễ chịu";
 			case MOTIVATION -> "Bắt đầu bằng bước nhỏ";
-			case UNDERSTANDING_EMOTIONS -> "Hiểu cảm xúc của mình";
+			case SLEEP, UNDERSTANDING_EMOTIONS -> domainFocusTitle(domain);
 		};
-		String rationale = personalization.preferredFocus() == null
+		String rationale = preferredFocus == null
+				|| preferredFocus == PreferredFocus.SLEEP
+				|| preferredFocus == PreferredFocus.UNDERSTANDING_EMOTIONS
 				? "Bạn đã chia sẻ điều gì phù hợp với nhịp sống của mình. Care chỉ dùng các lựa chọn này trong những hoạt động đã được chính sách cho phép."
 				: "Bạn đã chọn trọng tâm này. Care chỉ dùng lựa chọn đó để sắp xếp những hoạt động hỗ trợ sức khỏe tổng quát đã được chính sách cho phép.";
 		return new FocusCopy(title, rationale);
+	}
+
+	private String domainFocusTitle(String domain) {
+		return ANXIETY.equals(domain) ? "Hỗ trợ bình tâm" : "Hỗ trợ tâm trạng";
 	}
 
 	RevalidationRequest revalidationRequest(EvaluationView evaluation, List<SelectedResource> selections) {

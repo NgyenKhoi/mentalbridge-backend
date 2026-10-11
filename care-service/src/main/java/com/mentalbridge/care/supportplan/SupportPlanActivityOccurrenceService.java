@@ -63,6 +63,7 @@ public class SupportPlanActivityOccurrenceService {
 
 	@Transactional
 	void activate(SupportPlanEntity plan, Instant now) {
+		assertCurrentPersonalization(plan);
 		String timezone = profiles.findTimezoneByAccountId(plan.userId()).orElseThrow(() -> new ApiException(
 				HttpStatus.NOT_FOUND, "PROFILE_NOT_FOUND", "Care profile was not found"));
 		ZoneId zone = zone(timezone);
@@ -88,6 +89,18 @@ public class SupportPlanActivityOccurrenceService {
 			schedules.flush();
 		}
 		generate(plan.id(), start, start.plusDays(INITIAL_HORIZON_DAYS - 1), now);
+	}
+
+	private void assertCurrentPersonalization(SupportPlanEntity plan) {
+		var current = personalizations.currentSnapshot(plan.userId()).orElse(null);
+		boolean changed = plan.personalizationId() == null
+				? current != null && current.provided()
+				: current == null || !Objects.equals(plan.personalizationId(), current.personalizationId())
+						|| !Objects.equals(plan.personalizationRevision(), current.revision());
+		if (changed) {
+			throw new ApiException(HttpStatus.CONFLICT, "SUPPORT_PLAN_PERSONALIZATION_REVIEW_REQUIRED",
+					"SupportPlan preferences changed after this draft was created; discard and regenerate the draft before activation");
+		}
 	}
 
 	private LocalTime defaultTime(int ordinal,

@@ -1237,7 +1237,9 @@ paths:
         The authenticated user explicitly activates the owned draft. Care
         immediately revalidates current paid entitlement, SupportEvaluation,
         template policy, every selected exact resource version and eligibility
-        role before opening the local transaction. The normal command also
+        role before opening the local transaction. A draft pinned to an older
+        personalization revision must be explicitly discarded and regenerated
+        before activation; Care never rewrites it silently. The normal command also
         applies to safety-positive users and accepts no safety acknowledgement field.
       security:
         - bearerAuth: []
@@ -3689,7 +3691,7 @@ components:
         supportPlanVersion: { type: [integer, 'null'], minimum: 0 }
         reasonCode:
           type: [string, 'null']
-          enum: [PREFERENCES_CHANGED_AFTER_PLAN_ACTIVATION, null]
+          enum: [PREFERENCES_CHANGED_AFTER_DRAFT_CREATION, PREFERENCES_CHANGED_AFTER_PLAN_ACTIVATION, null]
       description: A true value asks the user to explicitly review/change the current plan; it never mutates it.
     FocusPersonalizationProvenance:
       type: object
@@ -4453,7 +4455,7 @@ components:
         application/problem+json:
           schema: { $ref: '#/components/schemas/Problem' }
     SupportPlanActivationConflictProblem:
-      description: The activation command reuses a key differently, targets a non-draft, conflicts with another current plan, or fails current policy or eligibility
+      description: The activation command reuses a key differently, targets a non-draft, conflicts with another current plan, uses a stale personalization revision (SUPPORT_PLAN_PERSONALIZATION_REVIEW_REQUIRED), or fails current policy or eligibility
       content:
         application/problem+json:
           schema: { $ref: '#/components/schemas/Problem' }

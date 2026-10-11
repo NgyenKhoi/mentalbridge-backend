@@ -138,7 +138,7 @@ class SupportPlanIntegrationTests extends CareTestProperties {
 		var userId = insertProfile();
 		var evaluationId = evaluation(userId, "MINIMAL", "MINIMAL", false);
 		String eveningPreference = """
-				{"preferredFocus":"SLEEP","preferredDaypart":"EVENING",
+				{"preferredFocus":"MOTIVATION","preferredDaypart":"EVENING",
 				 "preferredActivityModes":[],"commonBarriers":[]}
 				""";
 		var saved = mvc.perform(put("/api/v2/support-plan-personalization").with(user(userId))
@@ -153,7 +153,7 @@ class SupportPlanIntegrationTests extends CareTestProperties {
 		var planId = UUID.fromString(created.path("supportPlanId").asText());
 		mvc.perform(get("/api/v2/support-plans/{id}", planId).with(user(userId)))
 				.andExpect(status().isOk())
-				.andExpect(jsonPath("$.focuses[0].title").value("Xây dựng nhịp ngủ dễ chịu"))
+				.andExpect(jsonPath("$.focuses[0].title").value("Bắt đầu bằng bước nhỏ"))
 				.andExpect(jsonPath("$.focuses[0].personalizationProvenance.personalizationId")
 						.value(personalizationId.toString()))
 				.andExpect(jsonPath("$.focuses[0].personalizationProvenance.revision").value(1));
@@ -169,7 +169,7 @@ class SupportPlanIntegrationTests extends CareTestProperties {
 				""").param("id", planId).query(String.class).single()).isEqualTo("18:00");
 
 		String morningPreference = """
-				{"preferredFocus":"MOTIVATION","preferredDaypart":"MORNING",
+				{"preferredFocus":"SLEEP","preferredDaypart":"MORNING",
 				 "preferredActivityModes":[],"commonBarriers":["DIFFICULT_TO_START"]}
 				""";
 		mvc.perform(put("/api/v2/support-plan-personalization").with(user(userId))
@@ -192,6 +192,64 @@ class SupportPlanIntegrationTests extends CareTestProperties {
 				.contentType(MediaType.APPLICATION_JSON).content(body(evaluationId)))
 				.andExpect(status().isCreated())
 				.andExpect(jsonPath("$.supportPlanId").value(planId.toString()));
+	}
+
+	@Test
+	void blocksActivationOfAStalePersonalizedDraftUntilItIsDiscardedAndRegenerated() throws Exception {
+		var userId = insertProfile();
+		var evaluationId = evaluation(userId, "MINIMAL", "MINIMAL", false);
+		String eveningPreference = """
+				{"preferredFocus":"MOTIVATION","preferredDaypart":"EVENING",
+				 "preferredActivityModes":[],"commonBarriers":[]}
+				""";
+		mvc.perform(put("/api/v2/support-plan-personalization").with(user(userId))
+				.header("If-Match", "\"0\"").contentType(MediaType.APPLICATION_JSON)
+				.content(eveningPreference))
+				.andExpect(status().isOk());
+		var firstDraft = createPlan(userId, evaluationId, "stale-personalized-draft-create");
+		var firstDraftId = UUID.fromString(firstDraft.path("supportPlanId").asText());
+
+		String morningPreference = """
+				{"preferredFocus":"ANXIETY","preferredDaypart":"MORNING",
+				 "preferredActivityModes":[],"commonBarriers":[]}
+				""";
+		mvc.perform(put("/api/v2/support-plan-personalization").with(user(userId))
+				.header("If-Match", "\"1\"").contentType(MediaType.APPLICATION_JSON)
+				.content(morningPreference))
+				.andExpect(status().isOk())
+				.andExpect(jsonPath("$.planReview.required").value(true))
+				.andExpect(jsonPath("$.planReview.supportPlanId").value(firstDraftId.toString()))
+				.andExpect(jsonPath("$.planReview.reasonCode")
+						.value("PREFERENCES_CHANGED_AFTER_DRAFT_CREATION"));
+
+		mvc.perform(post("/api/v1/support-plans/{id}/activate", firstDraftId).with(user(userId))
+				.header("If-Match", "\"0\"")
+				.header("Idempotency-Key", "stale-personalized-draft-activate"))
+				.andExpect(status().isConflict())
+				.andExpect(jsonPath("$.code").value("SUPPORT_PLAN_PERSONALIZATION_REVIEW_REQUIRED"));
+		assertThat(jdbc.sql("select status from support_plan where id=:id").param("id", firstDraftId)
+				.query(String.class).single()).isEqualTo("DRAFT");
+		assertThat(jdbc.sql("select count(*) from support_plan_activity_schedule where support_plan_id=:id")
+				.param("id", firstDraftId).query(Integer.class).single()).isZero();
+
+		mvc.perform(put("/api/v1/support-plans/{id}/status", firstDraftId).with(user(userId))
+				.header("If-Match", "\"0\"").contentType(MediaType.APPLICATION_JSON)
+				.content("{\"status\":\"DISCARDED\"}"))
+				.andExpect(status().isOk());
+		var regenerated = createPlan(userId, evaluationId, "stale-personalized-draft-regenerate");
+		var regeneratedId = UUID.fromString(regenerated.path("supportPlanId").asText());
+		assertThat(regeneratedId).isNotEqualTo(firstDraftId);
+		assertThat(jdbc.sql("select personalization_revision from support_plan where id=:id")
+				.param("id", regeneratedId).query(Long.class).single()).isEqualTo(2L);
+
+		mvc.perform(post("/api/v1/support-plans/{id}/activate", regeneratedId).with(user(userId))
+				.header("If-Match", "\"0\"")
+				.header("Idempotency-Key", "regenerated-personalized-draft-activate"))
+				.andExpect(status().isOk());
+		assertThat(jdbc.sql("""
+				select to_char(local_time, 'HH24:MI') from support_plan_activity_schedule
+				where support_plan_id=:id and ordinal=1
+				""").param("id", regeneratedId).query(String.class).single()).isEqualTo("08:00");
 	}
 
 	@Test

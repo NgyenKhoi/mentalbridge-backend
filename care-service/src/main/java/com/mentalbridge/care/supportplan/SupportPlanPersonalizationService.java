@@ -113,14 +113,27 @@ public class SupportPlanPersonalizationService {
 	}
 
 	private PlanReviewView planReview(UUID userId, PersonalizationSnapshot snapshot) {
+		var draft = plans.findByUserIdAndStatus(userId, "DRAFT");
+		if (draft.isPresent() && personalizationChanged(draft.orElseThrow(), snapshot)) {
+			var plan = draft.orElseThrow();
+			return new PlanReviewView(true, plan.id(), plan.version(),
+					"PREFERENCES_CHANGED_AFTER_DRAFT_CREATION");
+		}
 		var currentPlan = plans.findByUserIdAndStatusIn(userId, List.of("ACTIVE", "PAUSED"));
-		if (currentPlan.isEmpty()) return new PlanReviewView(false, null, null, null);
-		var plan = currentPlan.orElseThrow();
-		boolean required = snapshot != null && (plan.personalizationId() != null || snapshot.provided())
+		if (currentPlan.isPresent()) {
+			var plan = currentPlan.orElseThrow();
+			boolean required = personalizationChanged(plan, snapshot);
+			return new PlanReviewView(required, plan.id(), plan.version(), required
+					? "PREFERENCES_CHANGED_AFTER_PLAN_ACTIVATION" : null);
+		}
+		return draft.map(plan -> new PlanReviewView(false, plan.id(), plan.version(), null))
+				.orElseGet(() -> new PlanReviewView(false, null, null, null));
+	}
+
+	private boolean personalizationChanged(SupportPlanEntity plan, PersonalizationSnapshot snapshot) {
+		return snapshot != null && (plan.personalizationId() != null || snapshot.provided())
 				&& (!Objects.equals(plan.personalizationId(), snapshot.personalizationId())
 						|| !Objects.equals(plan.personalizationRevision(), snapshot.revision()));
-		return new PlanReviewView(required, plan.id(), plan.version(), required
-				? "PREFERENCES_CHANGED_AFTER_PLAN_ACTIVATION" : null);
 	}
 
 	private boolean same(SupportPlanPersonalizationEntity current, PersonalizationCommand command) {

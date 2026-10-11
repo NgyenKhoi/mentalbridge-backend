@@ -128,6 +128,25 @@ class SupportPlanPolicyTests {
 				assertThat(slot.selectedResource().resourceId().toString()).endsWith("205"));
 	}
 
+	@Test
+	void keepsDomainAwareFocusCopyWhenTheRequestedGoalHasNoAdmittedAlignedContent() {
+		var evaluation = evaluation(ScreeningLevel.MILD, ScreeningLevel.MILD);
+		for (var focus : List.of(PreferredFocus.SLEEP, PreferredFocus.UNDERSTANDING_EMOTIONS)) {
+			var personalization = new PersonalizationSnapshot(UUID.randomUUID(), UUID.randomUUID(),
+					SupportPlanPersonalizationService.SCHEMA_VERSION, 1, focus, null, 10,
+					PreferredDaypart.EVENING, List.of(), List.of(), Instant.EPOCH);
+
+			var request = policy.request(evaluation, personalization);
+			var proposal = policy.compose(request, eligible(request), personalization);
+
+			assertThat(proposal.families()).allSatisfy(family -> {
+				assertThat(family.focusTitle()).isNull();
+				assertThat(family.focusRationale()).isNull();
+				assertThat(family.focusReasonCode()).isNull();
+			});
+		}
+	}
+
 	private EvaluationView evaluation(ScreeningLevel depression, ScreeningLevel anxiety) {
 		return new EvaluationView(UUID.randomUUID(), 2, "mb-support-routing-capstone-v2", Instant.EPOCH,
 				List.of(domain("PHQ9", ScreeningDomain.DEPRESSIVE_SYMPTOMS, depression),
