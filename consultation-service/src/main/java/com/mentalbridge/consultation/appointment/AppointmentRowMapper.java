@@ -21,6 +21,7 @@ final class AppointmentRowMapper {
 				row.getTimestamp("requested_at").toInstant(), row.getTimestamp("decision_deadline_at").toInstant(),
 				row.getObject("service_credit_id", UUID.class), row.getObject("replaces_appointment_id", UUID.class),
 				row.getObject("replaced_by_appointment_id", UUID.class),
+				row.getObject("originating_plan_action_id", UUID.class),
 				decidedAt == null ? null : decidedAt.toInstant(), row.getString("decision_reason"),
 				cancelledAt == null ? null : cancelledAt.toInstant(), row.getString("cancellation_reason"),
 				actorType(row.getString("cancellation_reason")), row.getString("cancellation_credit_outcome"),

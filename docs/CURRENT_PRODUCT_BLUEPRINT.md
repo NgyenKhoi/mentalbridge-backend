@@ -140,6 +140,10 @@ never raw Journal/emotion/assessment/consultation content.
 Existing v2 resource plans remain readable and operable. The v3 read boundary
 may expose a v2 slot as a virtual `RESOURCE` action marked
 `V2_RESOURCE_ADAPTER`; it does not rewrite or backfill v2 rows or identities.
+For a persisted professional-adjunct template family, the adapter additionally
+projects a stable `PROFESSIONAL_SUPPORT` primary action and marks its self-help
+resources as adjunct. Consultation appointment state may be correlated through
+an opaque action reference, but cannot mutate or complete the SupportPlan.
 
 Detailed rules: [SupportPlan policy v3](policies/support-plan-policy-v3.md).
 Historical v2 behavior remains governed by
