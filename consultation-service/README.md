@@ -1,5 +1,11 @@
 # Consultation Service
 
+MB-622 earning materialization and withdrawal reuse the appointment dispute
+gate. OPEN disputes and RELEASE_USER_CREDIT resolutions block payment, including
+failed-payout retries. Ineligible AVAILABLE rows return to PENDING_SETTLEMENT
+without changing amount/version/allocation snapshots; upheld resolutions can
+restore eligibility after the original hold.
+
 Owns specialist approval and deterministic non-clinical discovery, 60-minute
 in-app chat/video availability and appointments, session
 evidence and user-visible summaries, subscription/payment/upgrade,
