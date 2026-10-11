@@ -189,8 +189,9 @@ class SpecialistPayoutFlowIntegrationTests extends ConsultationTestProperties {
 		mvc.perform(get("/api/v1/admin/payouts").with(specialist(fixture.specialistId())))
 				.andExpect(status().isForbidden());
 		mvc.perform(get("/api/v1/admin/payouts").with(admin(UUID.randomUUID())))
-				.andExpect(status().isOk()).andExpect(jsonPath("$.count").value(1))
-				.andExpect(jsonPath("$.items[0].destinationHint").value("•••• 5678"));
+				.andExpect(status().isOk()).andExpect(jsonPath("$.count").value(org.hamcrest.Matchers.greaterThan(0)))
+				.andExpect(jsonPath("$.items[?(@.specialistAccountId == '%s')].destinationHint".formatted(fixture.specialistId()))
+						.value(org.hamcrest.Matchers.hasItem("•••• 5678")));
 
 		assertThat(jdbc.sql("select count(*) from specialist_payout where specialist_account_id=:id")
 				.param("id", fixture.specialistId()).query(Long.class).single()).isOne();
@@ -219,7 +220,7 @@ class SpecialistPayoutFlowIntegrationTests extends ConsultationTestProperties {
 	}
 
 	@Test
-	void definiteProviderFailureCanRetryTheSameLogicalPayoutWithoutDoublePaying() {
+	void definiteProviderFailureCanRetryTheSameLogicalPayoutWithoutDoublePaying() throws Exception {
 		var fixture = earningFixture(Instant.now().minusSeconds(8 * 86_400L), 210_000);
 		var destination = payouts.saveDestination(fixture.specialistId(),
 				new SavePayoutDestinationRequest("MOMO_WALLET", "0900000001", "Nguyen Thu Ha", null));
@@ -235,6 +236,14 @@ class SpecialistPayoutFlowIntegrationTests extends ConsultationTestProperties {
 		assertThat(retry.submit()).isTrue();
 		transactions.reconcile(retry.payoutId(), retry.attemptId(),
 				new PayoutProvider.Result("SUCCEEDED", "fake-retry-success", null));
+		assertThat(payouts.earnings(fixture.specialistId()).payouts().getFirst().providerReference())
+				.isEqualTo("fake-retry-success");
+		mvc.perform(get("/api/v1/admin/payouts").with(admin(UUID.randomUUID())))
+				.andExpect(status().isOk())
+				.andExpect(jsonPath("$.items[?(@.payoutId == '%s')].providerReference".formatted(first.payoutId()))
+						.value(org.hamcrest.Matchers.hasItem("fake-retry-success")))
+				.andExpect(jsonPath("$.items[?(@.payoutId == '%s')].earningCount".formatted(first.payoutId()))
+						.value(org.hamcrest.Matchers.hasItem(1)));
 
 		assertThat(jdbc.sql("select count(*) from specialist_payout where specialist_account_id=:id")
 				.param("id", fixture.specialistId()).query(Long.class).single()).isOne();

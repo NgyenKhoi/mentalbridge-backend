@@ -49,6 +49,28 @@ class SubscriptionBillingIntegrationTests extends ConsultationTestProperties {
 	@Autowired com.mentalbridge.consultation.credits.ServiceCreditService credits;
 
 	@Test
+	void adminReadsCanonicalPaymentFactsWithoutCheckoutOrCustomerSecrets() throws Exception {
+		var userId = UUID.randomUUID();
+		var payment = billing.checkout(userId, PLUS, key("admin-view"));
+		mvc.perform(get("/api/v1/admin/payments")).andExpect(status().isUnauthorized());
+		mvc.perform(get("/api/v1/admin/payments").with(user(userId))).andExpect(status().isForbidden());
+		mvc.perform(get("/api/v1/admin/payments").with(role(UUID.randomUUID(), "ROLE_SPECIALIST")))
+				.andExpect(status().isForbidden());
+		var result = mvc.perform(get("/api/v1/admin/payments").with(role(UUID.randomUUID(), "ROLE_ADMIN")))
+				.andExpect(status().isOk()).andReturn();
+		var items = json.readTree(result.getResponse().getContentAsByteArray()).get("items");
+		var found = java.util.stream.StreamSupport.stream(items.spliterator(), false)
+				.filter(item -> item.get("paymentId").asText().equals(payment.paymentId().toString())).findFirst().orElseThrow();
+		assertThat(found.get("subscriptionId").asText()).isEqualTo(payment.subscriptionId().toString());
+		assertThat(found.get("amountVnd").asLong()).isEqualTo(5_000);
+		assertThat(found.get("pricingPolicyVersion").asText()).isEqualTo("sandbox-full-price-v1");
+		assertThat(found.get("provider").asText()).isEqualTo("FAKE");
+		assertThat(found.get("status").asText()).isEqualTo("PENDING");
+		assertThat(found.has("checkoutUrl")).isFalse();
+		assertThat(found.has("userAccountId")).isFalse();
+	}
+
+	@Test
 	void preservesRetiredHistoricalPricesAndRejectsNewPurchaseOfThoseVersions() {
 		var historical = UUID.fromString("51500000-0000-4000-8000-000000000002");
 		assertThat(jdbc.sql("select price_minor from subscription_plan_version where id=:id")

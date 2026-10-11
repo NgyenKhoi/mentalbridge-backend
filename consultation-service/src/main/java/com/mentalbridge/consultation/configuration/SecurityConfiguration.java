@@ -60,7 +60,7 @@ public class SecurityConfiguration {
 						.requestMatchers("/api/v1/admin/specialist-profiles/**").hasRole("ADMIN")
 						.requestMatchers("/api/v1/admin/appointments/**").hasRole("ADMIN")
 						.requestMatchers("/api/v1/admin/appointment-disputes/**").hasRole("ADMIN")
-						.requestMatchers("/api/v1/admin/payouts").hasRole("ADMIN")
+						.requestMatchers("/api/v1/admin/payouts", "/api/v1/admin/payments").hasRole("ADMIN")
 						.anyRequest().authenticated())
 				.exceptionHandling(errors -> errors.authenticationEntryPoint(securityProblems)
 						.accessDeniedHandler(securityProblems))

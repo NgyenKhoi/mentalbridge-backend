@@ -6,6 +6,12 @@ failed-payout retries. Ineligible AVAILABLE rows return to PENDING_SETTLEMENT
 without changing amount/version/allocation snapshots; upheld resolutions can
 restore eligibility after the original hold.
 
+`GET /api/v1/admin/payments` is an ADMIN-only, read-only view of at most 200
+canonical purchase/upgrade transactions, without checkout URLs or customer
+profile data. Specialist earnings identify the configured payout adapter before
+a destination exists. Both specialist and admin payout reads use the latest
+attempt reference and count each earning once after retries.
+
 Owns specialist approval and deterministic non-clinical discovery, 60-minute
 in-app chat/video availability and appointments, session
 evidence and user-visible summaries, subscription/payment/upgrade,
