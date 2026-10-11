@@ -251,7 +251,6 @@ export class ResourceController {
         safetyNotes: dto.safetyNotes,
         catalogueVisibility: dto.catalogueVisibility,
         contentVersionLabel: dto.contentVersionLabel,
-        sourceReviewStatus: dto.sourceReviewStatus,
         sourceOrganization: dto.sourceOrganization ?? null,
         sourceTitle: dto.sourceTitle ?? null,
         sourceUrl: dto.sourceUrl ?? null,
@@ -388,11 +387,19 @@ export class ResourceController {
       throw new BadRequestException('Valid version query parameter is required');
     }
 
-    const deleted = await this.resourceService.delete(id, version, {
+    const outcome = await this.resourceService.delete(id, version, {
       actorId: user.accountId,
       correlationId: requestCorrelationId(request),
     });
-    if (!deleted) {
+    if (outcome === 'CORRECTION_DRAFT_PRESERVED') {
+      throw new ConflictException({
+        type: 'https://mentalbridge.io/errors/CORRECTION_DRAFT_DISCARD_NOT_SUPPORTED',
+        title: 'Correction drafts cannot be deleted because publication history must be preserved',
+        status: 409,
+        code: 'CORRECTION_DRAFT_DISCARD_NOT_SUPPORTED',
+      });
+    }
+    if (outcome !== 'DELETED') {
       throw new ConflictException({
         type: 'https://mentalbridge.io/errors/INVALID_STATE_TRANSITION',
         title: 'Cannot delete non-DRAFT resource or version mismatch',
@@ -421,15 +428,39 @@ export class ResourceController {
       throw new BadRequestException('Valid version query parameter is required');
     }
 
-    const resource = await this.resourceService.publish(id, version, {
+    const context = {
       actorId: user.accountId,
       correlationId: requestCorrelationId(request),
-    });
-    if (!resource) {
-      await this.resourceService.auditPublishBlocked(id, version, {
-        actorId: user.accountId,
-        correlationId: requestCorrelationId(request),
-      });
+    };
+    const result = await this.resourceService.publish(id, version, context);
+    if (result.outcome !== 'PUBLISHED') {
+      if (result.outcome !== 'RESOURCE_NOT_FOUND') {
+        await this.resourceService.auditPublishBlocked(id, version, context);
+      }
+      if (result.outcome === 'RESOURCE_NOT_FOUND') {
+        throw new NotFoundException({
+          type: 'https://mentalbridge.io/errors/RESOURCE_NOT_FOUND',
+          title: 'Resource not found',
+          status: 404,
+          code: 'RESOURCE_NOT_FOUND',
+        });
+      }
+      if (result.outcome === 'RESOURCE_VERSION_CONFLICT') {
+        throw new ConflictException({
+          type: 'https://mentalbridge.io/errors/RESOURCE_VERSION_CONFLICT',
+          title: 'The requested resource version is stale',
+          status: 409,
+          code: 'RESOURCE_VERSION_CONFLICT',
+        });
+      }
+      if (result.outcome === 'INVALID_STATE_TRANSITION') {
+        throw new ConflictException({
+          type: 'https://mentalbridge.io/errors/INVALID_STATE_TRANSITION',
+          title: 'Only an exact draft version can be published',
+          status: 409,
+          code: 'INVALID_STATE_TRANSITION',
+        });
+      }
       throw new ConflictException({
         type: 'https://mentalbridge.io/errors/REVIEW_APPROVAL_REQUIRED',
         title: 'An approved review decision for this exact draft is required',
@@ -437,7 +468,7 @@ export class ResourceController {
         code: 'REVIEW_APPROVAL_REQUIRED',
       });
     }
-    return resource;
+    return result.resource;
   }
 
   @Post(':id/review')

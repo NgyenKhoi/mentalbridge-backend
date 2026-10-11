@@ -58,6 +58,7 @@ describe('ResourceRepository command consistency', () => {
       '3_add_review_provenance_fields.sql',
       '4_add_idempotency_key.sql',
       '5_add_resource_command_records.sql',
+      '6_add_resource_eligibility_v1.sql',
       '9_add_resource_source_provenance.sql',
       '14_add_resource_experience_model.sql',
       '19_complete_resource_editorial_lifecycle.sql',
@@ -165,7 +166,7 @@ describe('ResourceRepository command consistency', () => {
         actorId: ADMIN_B,
         correlationId: CORRELATION_B,
       }),
-    ).resolves.toBe(false);
+    ).resolves.toBe('INVALID_STATE');
     expect((await repository.findById(created.id))?.title).toBe('Latest title');
   });
 
@@ -179,7 +180,7 @@ describe('ResourceRepository command consistency', () => {
         actorId: ADMIN_A,
         correlationId: CORRELATION_A,
       }),
-    ).resolves.toBeNull();
+    ).resolves.toEqual({ outcome: 'REVIEW_APPROVAL_REQUIRED' });
 
     await repository.review(
       draft.id,
@@ -193,7 +194,10 @@ describe('ResourceRepository command consistency', () => {
       actorId: ADMIN_A,
       correlationId: CORRELATION_A,
     });
-    expect(published).toMatchObject({ status: 'PUBLISHED', version: draft.version });
+    expect(published).toMatchObject({
+      outcome: 'PUBLISHED',
+      resource: { status: 'PUBLISHED', version: draft.version },
+    });
     await expect(
       repository.review(
         draft.id,
@@ -227,6 +231,44 @@ describe('ResourceRepository command consistency', () => {
     ).rejects.toThrow(/append-only/);
   });
 
+  it('keeps rejection immutable and requires a new decision after the draft changes', async () => {
+    const draft = await repository.create(baseCreate, 'rejected-version', {
+      actorId: ADMIN_A,
+      correlationId: CORRELATION_A,
+    });
+    await expect(
+      repository.review(
+        draft.id,
+        draft.version,
+        'REJECTED',
+        'SOURCE_REQUIRES_REVISION',
+        'content-resource-review-authority-v1',
+        { actorId: ADMIN_B, correlationId: CORRELATION_B },
+      ),
+    ).resolves.toMatchObject({ decision: 'REJECTED', contentVersion: '0' });
+    await expect(
+      repository.publish(draft.id, draft.version, {
+        actorId: ADMIN_A,
+        correlationId: CORRELATION_A,
+      }),
+    ).resolves.toEqual({ outcome: 'REVIEW_APPROVAL_REQUIRED' });
+
+    const changed = await repository.update(
+      draft.id,
+      { title: 'Corrected after rejection', version: draft.version },
+      { actorId: ADMIN_A, correlationId: CORRELATION_A },
+    );
+    expect(changed).toMatchObject({
+      version: draft.version + 1,
+      source_review_status: 'REVIEW_REQUIRED',
+      reviewed_by: null,
+    });
+    await expect(repository.findReviewDecision(draft.id, draft.version)).resolves.toMatchObject({
+      decision: 'REJECTED',
+    });
+    await expect(repository.findReviewDecision(draft.id, draft.version + 1)).resolves.toBeNull();
+  });
+
   it('archives without deleting history and opens only the next correction version', async () => {
     const draft = await repository.create(baseCreate, 'correction-version', {
       actorId: ADMIN_A,
@@ -249,6 +291,12 @@ describe('ResourceRepository command consistency', () => {
       correlationId: CORRELATION_A,
     });
     expect(archived?.status).toBe('ARCHIVED');
+    await expect(
+      repository.findPublishedEligibleById(draft.id, 'vi-VN', String(draft.version)),
+    ).resolves.toBeNull();
+    await expect(repository.listPublished({ locale: 'vi-VN', limit: 100 })).resolves.not.toEqual(
+      expect.arrayContaining([expect.objectContaining({ id: draft.id })]),
+    );
 
     const correction = await repository.createVersion(draft.id, draft.version, {
       actorId: ADMIN_A,
@@ -256,6 +304,23 @@ describe('ResourceRepository command consistency', () => {
     });
     expect(correction).toMatchObject({ status: 'DRAFT', version: draft.version + 1 });
     expect(correction?.reviewed_by).toBeNull();
+    await expect(
+      repository.delete(draft.id, draft.version + 1, {
+        actorId: ADMIN_A,
+        correlationId: CORRELATION_A,
+      }),
+    ).resolves.toBe('CORRECTION_DRAFT_PRESERVED');
+    await expect(repository.findById(draft.id)).resolves.toMatchObject({
+      status: 'DRAFT',
+      version: draft.version + 1,
+    });
+    await expect(
+      repository.findPublishedSnapshotById(draft.id, 'vi-VN', String(draft.version)),
+    ).resolves.toMatchObject({
+      title: baseCreate.title,
+      status: 'PUBLISHED',
+      version: draft.version,
+    });
     const history = await migrationPool.query(
       `SELECT 1 FROM resource_publication_snapshot WHERE resource_id = $1 AND content_version = $2
        UNION ALL
@@ -263,6 +328,13 @@ describe('ResourceRepository command consistency', () => {
       [draft.id, draft.version],
     );
     expect(history.rowCount).toBe(2);
+    const eligibility = await migrationPool.query(
+      `SELECT count(*)::text AS count
+       FROM resource_eligibility_publication
+       WHERE resource_id = $1`,
+      [draft.id],
+    );
+    expect(eligibility.rows[0]).toEqual({ count: '0' });
   });
 
   it('writes minimized audit facts for mutations and blocked publish outcomes', async () => {
@@ -270,10 +342,12 @@ describe('ResourceRepository command consistency', () => {
       actorId: ADMIN_A,
       correlationId: CORRELATION_A,
     });
-    await repository.delete(deletedDraft.id, 0, {
-      actorId: ADMIN_A,
-      correlationId: CORRELATION_A,
-    });
+    await expect(
+      repository.delete(deletedDraft.id, 0, {
+        actorId: ADMIN_A,
+        correlationId: CORRELATION_A,
+      }),
+    ).resolves.toBe('DELETED');
     await expect(
       repository.create(baseCreate, 'delete-audit', {
         actorId: ADMIN_A,

@@ -12,6 +12,8 @@ import type {
   CreateResourceData,
   UpdateResourceData,
   ResourceCommandContext,
+  DeleteResourceOutcome,
+  PublishResourceOutcome,
 } from './resource.repository.js';
 import {
   CONFIGURATION_TOKEN,
@@ -81,7 +83,11 @@ export function toResourceSummary(row: ResourceRow): ResourceSummary | null {
   };
 }
 
-function toDetail(row: ResourceRow): ResourceDetail | null {
+function toDetail(
+  row: ResourceRow,
+  reviewDecision: ResourceReviewDecision | null = null,
+  isCorrectionDraft = false,
+): ResourceDetail | null {
   const summary = toResourceSummary(row);
   if (!summary) return null;
 
@@ -102,6 +108,8 @@ function toDetail(row: ResourceRow): ResourceDetail | null {
     contentVersionLabel: row.content_version_label,
     sourceReviewStatus: row.source_review_status,
     reviewedBy: row.reviewed_by ?? null,
+    reviewDecision,
+    isCorrectionDraft,
     effectiveAt: row.effective_at ? new Date(row.effective_at).toISOString() : null,
     expiresAt: row.expires_at ? new Date(row.expires_at).toISOString() : null,
     version: row.version,
@@ -272,7 +280,12 @@ export class ResourceService {
 
   async getAdminById(id: string): Promise<ResourceDetail | null> {
     const row = await this.repository.findById(id);
-    return row ? toDetail(row) : null;
+    if (!row) return null;
+    const [reviewDecision, hasPublicationHistory] = await Promise.all([
+      this.repository.findReviewDecision(id, row.version),
+      this.repository.hasPublicationHistory(id),
+    ]);
+    return toDetail(row, reviewDecision, row.status === 'DRAFT' && hasPublicationHistory);
   }
 
   async getPublishedById(
@@ -280,7 +293,12 @@ export class ResourceService {
     locale: string,
     contentVersion?: string,
   ): Promise<PublicResourceDetail | null> {
-    const row = await this.repository.findPublishedEligibleById(id, locale, contentVersion);
+    const active = await this.repository.findPublishedEligibleById(id, locale, contentVersion);
+    const row =
+      active ??
+      (contentVersion === undefined
+        ? null
+        : await this.repository.findPublishedSnapshotById(id, locale, contentVersion));
     return row ? toPublicDetail(row) : null;
   }
 
@@ -320,10 +338,15 @@ export class ResourceService {
       });
     }
     const row = await this.repository.update(id, data, context);
-    return row ? toDetail(row) : null;
+    if (!row) return null;
+    return toDetail(row, null, await this.repository.hasPublicationHistory(id));
   }
 
-  async delete(id: string, version: number, context: ResourceCommandContext): Promise<boolean> {
+  async delete(
+    id: string,
+    version: number,
+    context: ResourceCommandContext,
+  ): Promise<DeleteResourceOutcome> {
     return this.repository.delete(id, version, context);
   }
 
@@ -392,9 +415,15 @@ export class ResourceService {
     id: string,
     version: number,
     context: ResourceCommandContext,
-  ): Promise<ResourceDetail | null> {
-    const row = await this.repository.publish(id, version, context);
-    return row ? toDetail(row) : null;
+  ): Promise<
+    | { readonly outcome: 'PUBLISHED'; readonly resource: ResourceDetail }
+    | Exclude<PublishResourceOutcome, { readonly outcome: 'PUBLISHED' }>
+  > {
+    const result = await this.repository.publish(id, version, context);
+    if (result.outcome !== 'PUBLISHED') return result;
+    const detail = toDetail(result.resource);
+    if (!detail) throw new Error('Failed to map published resource');
+    return { outcome: 'PUBLISHED', resource: detail };
   }
 
   async createVersion(
@@ -403,7 +432,7 @@ export class ResourceService {
     context: ResourceCommandContext,
   ): Promise<ResourceDetail | null> {
     const row = await this.repository.createVersion(id, version, context);
-    return row ? toDetail(row) : null;
+    return row ? toDetail(row, null, true) : null;
   }
 
   async auditPublishBlocked(

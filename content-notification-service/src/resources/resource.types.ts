@@ -105,6 +105,8 @@ export interface PublicResourceDetail extends ResourceSummary {
 export interface ResourceDetail extends PublicResourceDetail {
   readonly reviewedBy: string | null;
   readonly version: number;
+  readonly reviewDecision: ResourceReviewDecision | null;
+  readonly isCorrectionDraft: boolean;
 }
 
 export interface ResourceReviewDecision {

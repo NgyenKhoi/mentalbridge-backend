@@ -47,13 +47,16 @@ const repository = {
   listPublished: vi.fn(async () => []),
   listAdmin: vi.fn(async () => [resource]),
   findById: vi.fn(async () => resource),
+  findReviewDecision: vi.fn(async () => null),
+  hasPublicationHistory: vi.fn(async () => false),
   findPublishedEligibleById: vi.fn(async () => null),
+  findPublishedSnapshotById: vi.fn(async () => null),
   create: vi.fn(async () => resource),
   update: vi.fn(async () => resource),
-  delete: vi.fn(async () => true),
+  delete: vi.fn(async () => 'DELETED' as const),
   archive: vi.fn(async () => null),
   review: vi.fn(async () => null),
-  publish: vi.fn(async () => null),
+  publish: vi.fn(async () => ({ outcome: 'REVIEW_APPROVAL_REQUIRED' as const })),
   createVersion: vi.fn(async () => null),
   auditPublishBlocked: vi.fn(async () => undefined),
 } as unknown as ResourceRepository;
@@ -164,13 +167,47 @@ describe('resource HTTP and authorization boundary', () => {
       .set('authorization', `Bearer ${adminToken}`)
       .expect(200);
 
-    expect(detail.body).toMatchObject({ id: RESOURCE_ID, status: 'DRAFT', version: 0 });
+    expect(detail.body).toMatchObject({
+      id: RESOURCE_ID,
+      status: 'DRAFT',
+      version: 0,
+      reviewDecision: null,
+      isCorrectionDraft: false,
+    });
     await request(server()).get(`/api/v1/resources/${RESOURCE_ID}?locale=vi-VN`).expect(404);
     expect(repository.findPublishedEligibleById).toHaveBeenCalledWith(
       RESOURCE_ID,
       'vi-VN',
       undefined,
     );
+  });
+
+  it('projects the immutable exact-version review decision only in admin detail', async () => {
+    vi.mocked(repository.findReviewDecision).mockResolvedValueOnce({
+      resourceId: RESOURCE_ID,
+      contentVersion: '0',
+      decision: 'REJECTED',
+      reasonCode: 'SOURCE_REQUIRES_REVISION',
+      authorityVersion: 'content-resource-review-authority-v1',
+      reviewedBy: ADMIN_ID,
+      reviewedAt: '2026-10-09T00:00:00.000Z',
+    });
+    vi.mocked(repository.hasPublicationHistory).mockResolvedValueOnce(true);
+    const adminToken = await token(ADMIN_ID, ['ADMIN']);
+
+    const response = await request(server())
+      .get(`/api/v1/resources/admin/${RESOURCE_ID}`)
+      .set('authorization', `Bearer ${adminToken}`)
+      .expect(200);
+
+    expect(response.body).toMatchObject({
+      reviewDecision: {
+        decision: 'REJECTED',
+        reasonCode: 'SOURCE_REQUIRES_REVISION',
+        contentVersion: '0',
+      },
+      isCorrectionDraft: true,
+    });
   });
 
   it('exposes and verifies the exact public content version without admin provenance', async () => {
@@ -201,6 +238,25 @@ describe('resource HTTP and authorization boundary', () => {
     expect(response.body).not.toHaveProperty('version');
   });
 
+  it('resolves an archived exact version from its immutable publication snapshot', async () => {
+    vi.mocked(repository.findPublishedSnapshotById).mockResolvedValueOnce({
+      ...resource,
+      status: 'PUBLISHED',
+      reviewed_by: ADMIN_ID,
+      reviewed_at: new Date('2026-09-01T01:00:00Z'),
+      source_review_status: 'REVIEWED',
+    });
+
+    const response = await request(server())
+      .get(`/api/v1/resources/${RESOURCE_ID}?locale=vi-VN&contentVersion=0`)
+      .expect(200);
+
+    expect(response.body).toMatchObject({ id: RESOURCE_ID, contentVersion: '0' });
+    expect(repository.findPublishedSnapshotById).toHaveBeenCalledWith(RESOURCE_ID, 'vi-VN', '0');
+    expect(response.body).not.toHaveProperty('reviewDecision');
+    expect(response.body).not.toHaveProperty('reviewedBy');
+  });
+
   it('rejects malformed public content versions', async () => {
     await request(server())
       .get(`/api/v1/resources/${RESOURCE_ID}?locale=vi-VN&contentVersion=latest`)
@@ -227,6 +283,34 @@ describe('resource HTTP and authorization boundary', () => {
     expect(response.body.fieldViolations).toEqual(
       expect.arrayContaining([expect.objectContaining({ field: 'title' })]),
     );
+  });
+
+  it('rejects client attempts to set the server-owned review state', async () => {
+    const adminToken = await token(ADMIN_ID, ['ADMIN']);
+    for (const requestBuilder of [
+      () =>
+        request(server())
+          .post('/api/v1/resources')
+          .set('authorization', `Bearer ${adminToken}`)
+          .set('idempotency-key', 'forged-review-create')
+          .send({
+            category: 'ARTICLE',
+            title: 'Title',
+            summary: 'Summary',
+            contentBody: 'Body',
+            sourceReviewStatus: 'REVIEWED',
+          }),
+      () =>
+        request(server())
+          .patch(`/api/v1/resources/${RESOURCE_ID}?version=0`)
+          .set('authorization', `Bearer ${adminToken}`)
+          .send({ sourceReviewStatus: 'REVIEWED' }),
+    ]) {
+      const response = await requestBuilder().expect(422);
+      expect(response.body).toMatchObject({ code: 'VALIDATION_ERROR' });
+    }
+    expect(repository.create).not.toHaveBeenCalled();
+    expect(repository.update).not.toHaveBeenCalled();
   });
 
   it('requires an idempotency key and forwards actor-scoped command context', async () => {
@@ -317,12 +401,19 @@ describe('resource HTTP and authorization boundary', () => {
       .set('authorization', `Bearer ${adminToken}`)
       .expect(400);
 
-    vi.mocked(repository.delete).mockResolvedValueOnce(false);
+    vi.mocked(repository.delete).mockResolvedValueOnce('INVALID_STATE');
     const stale = await request(server())
       .delete(`/api/v1/resources/${RESOURCE_ID}?version=9`)
       .set('authorization', `Bearer ${adminToken}`)
       .expect(409);
     expect(stale.body.code).toBe('INVALID_STATE_TRANSITION');
+
+    vi.mocked(repository.delete).mockResolvedValueOnce('CORRECTION_DRAFT_PRESERVED');
+    const correction = await request(server())
+      .delete(`/api/v1/resources/${RESOURCE_ID}?version=1`)
+      .set('authorization', `Bearer ${adminToken}`)
+      .expect(409);
+    expect(correction.body.code).toBe('CORRECTION_DRAFT_DISCARD_NOT_SUPPORTED');
   });
 
   it('keeps publish blocked without an exact approved review decision', async () => {
@@ -340,6 +431,43 @@ describe('resource HTTP and authorization boundary', () => {
     });
     expect(repository.update).not.toHaveBeenCalled();
     expect(repository.archive).not.toHaveBeenCalled();
+  });
+
+  it('distinguishes missing, stale, and invalid publication outcomes', async () => {
+    const adminToken = await token(ADMIN_ID, ['ADMIN']);
+    const cases = [
+      ['RESOURCE_NOT_FOUND', 404, 'RESOURCE_NOT_FOUND'],
+      ['RESOURCE_VERSION_CONFLICT', 409, 'RESOURCE_VERSION_CONFLICT'],
+      ['INVALID_STATE_TRANSITION', 409, 'INVALID_STATE_TRANSITION'],
+    ] as const;
+
+    for (const [outcome, status, code] of cases) {
+      vi.mocked(repository.publish).mockResolvedValueOnce({ outcome });
+      const response = await request(server())
+        .post(`/api/v1/resources/${RESOURCE_ID}/publish?version=9`)
+        .set('authorization', `Bearer ${adminToken}`)
+        .expect(status);
+      expect(response.body.code).toBe(code);
+    }
+    expect(repository.auditPublishBlocked).toHaveBeenCalledTimes(2);
+  });
+
+  it('fails every editorial command closed for USER and SPECIALIST roles', async () => {
+    for (const role of ['USER', 'SPECIALIST']) {
+      const accessToken = await token(USER_ID, [role]);
+      const calls = [
+        () => request(server()).post('/api/v1/resources'),
+        () => request(server()).patch(`/api/v1/resources/${RESOURCE_ID}?version=0`),
+        () => request(server()).delete(`/api/v1/resources/${RESOURCE_ID}?version=0`),
+        () => request(server()).post(`/api/v1/resources/${RESOURCE_ID}/review?version=0`),
+        () => request(server()).post(`/api/v1/resources/${RESOURCE_ID}/publish?version=0`),
+        () => request(server()).post(`/api/v1/resources/${RESOURCE_ID}/archive?version=0`),
+        () => request(server()).post(`/api/v1/resources/${RESOURCE_ID}/versions?version=0`),
+      ];
+      for (const buildCall of calls) {
+        await buildCall().set('authorization', `Bearer ${accessToken}`).send({}).expect(403);
+      }
+    }
   });
 
   it('records a configured-authority approval only with complete source provenance', async () => {
@@ -375,6 +503,35 @@ describe('resource HTTP and authorization boundary', () => {
       });
   });
 
+  it('records an explicit configured-authority rejection without claiming approval', async () => {
+    const adminToken = await token(ADMIN_ID, ['ADMIN']);
+    vi.mocked(repository.review).mockResolvedValueOnce({
+      resourceId: RESOURCE_ID,
+      contentVersion: '0',
+      decision: 'REJECTED',
+      reasonCode: 'SOURCE_REQUIRES_REVISION',
+      authorityVersion: 'content-resource-review-authority-v1',
+      reviewedBy: ADMIN_ID,
+      reviewedAt: '2026-10-09T00:00:00.000Z',
+    });
+
+    const response = await request(server())
+      .post(`/api/v1/resources/${RESOURCE_ID}/review?version=0`)
+      .set('authorization', `Bearer ${adminToken}`)
+      .send({ decision: 'REJECTED', reasonCode: 'SOURCE_REQUIRES_REVISION' })
+      .expect(200);
+
+    expect(response.body).toMatchObject({ decision: 'REJECTED', contentVersion: '0' });
+    expect(repository.review).toHaveBeenCalledWith(
+      RESOURCE_ID,
+      0,
+      'REJECTED',
+      'SOURCE_REQUIRES_REVISION',
+      'content-resource-review-authority-v1',
+      expect.objectContaining({ actorId: ADMIN_ID }),
+    );
+  });
+
   it('fails closed for an unconfigured reviewer and incomplete provenance', async () => {
     const unconfiguredAdminToken = await token(USER_ID, ['ADMIN']);
     await request(server())
@@ -402,11 +559,14 @@ describe('resource HTTP and authorization boundary', () => {
   it('publishes the immutable exact version after approval', async () => {
     const adminToken = await token(ADMIN_ID, ['ADMIN']);
     vi.mocked(repository.publish).mockResolvedValueOnce({
-      ...resource,
-      status: 'PUBLISHED',
-      reviewed_by: ADMIN_ID,
-      reviewed_at: new Date('2026-10-09T00:00:00Z'),
-      source_review_status: 'REVIEWED',
+      outcome: 'PUBLISHED',
+      resource: {
+        ...resource,
+        status: 'PUBLISHED',
+        reviewed_by: ADMIN_ID,
+        reviewed_at: new Date('2026-10-09T00:00:00Z'),
+        source_review_status: 'REVIEWED',
+      },
     });
 
     await request(server())

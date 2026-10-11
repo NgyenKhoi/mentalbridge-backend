@@ -55,7 +55,6 @@ const semanticFields = {
   safetyNotes: z.array(z.string().min(1).max(500)).max(12).default([]),
   catalogueVisibility: z.enum(['LISTED', 'DIRECT_ONLY']).default('DIRECT_ONLY'),
   contentVersionLabel: z.string().min(1).max(64).default('draft-v1'),
-  sourceReviewStatus: ResourceSourceReviewStatusSchema.default('NEEDS_SOURCE_REVIEW'),
 };
 
 function categoryDefaults(category: z.infer<typeof ResourceCategorySchema>) {
@@ -168,6 +167,7 @@ export const CreateResourceDtoSchema = z
     effectiveAt: nullableDateTime,
     expiresAt: nullableDateTime,
   })
+  .strict()
   .refine((data) => data.contentBody || data.externalUrl, {
     message: 'Either contentBody or externalUrl must be provided',
     path: ['contentBody'],
@@ -221,6 +221,7 @@ export const UpdateResourceDtoSchema = z
     effectiveAt: nullableDateTime,
     expiresAt: nullableDateTime,
   })
+  .strict()
   .refine(
     (data) => {
       // If both are explicitly set to null, reject

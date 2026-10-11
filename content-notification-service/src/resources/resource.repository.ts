@@ -10,7 +10,6 @@ import type {
   ResourceKind,
   ResourceRepeatability,
   ResourceRow,
-  ResourceSourceReviewStatus,
   ResourceReviewDecision,
 } from './resource.types.js';
 
@@ -51,7 +50,6 @@ export interface CreateResourceData {
   readonly safetyNotes?: readonly string[];
   readonly catalogueVisibility?: 'LISTED' | 'DIRECT_ONLY';
   readonly contentVersionLabel?: string;
-  readonly sourceReviewStatus?: ResourceSourceReviewStatus;
   readonly sourceOrganization?: string | null;
   readonly sourceTitle?: string | null;
   readonly sourceUrl?: string | null;
@@ -80,7 +78,6 @@ type NormalizedCreateResourceData = CreateResourceData &
       | 'safetyNotes'
       | 'catalogueVisibility'
       | 'contentVersionLabel'
-      | 'sourceReviewStatus'
     >
   >;
 
@@ -104,7 +101,6 @@ export interface UpdateResourceData {
   readonly safetyNotes?: readonly string[];
   readonly catalogueVisibility?: 'LISTED' | 'DIRECT_ONLY';
   readonly contentVersionLabel?: string;
-  readonly sourceReviewStatus?: ResourceSourceReviewStatus;
   readonly sourceOrganization?: string | null;
   readonly sourceTitle?: string | null;
   readonly sourceUrl?: string | null;
@@ -130,6 +126,22 @@ type ReviewDecisionDatabaseRow = {
   readonly reviewed_by: string;
   readonly reviewed_at: Date | string;
 };
+
+type PublicationSnapshotDatabaseRow = {
+  readonly snapshot: ResourceDatabaseRow;
+};
+
+export type DeleteResourceOutcome = 'DELETED' | 'INVALID_STATE' | 'CORRECTION_DRAFT_PRESERVED';
+
+export type PublishResourceOutcome =
+  | { readonly outcome: 'PUBLISHED'; readonly resource: ResourceRow }
+  | {
+      readonly outcome:
+        | 'RESOURCE_NOT_FOUND'
+        | 'RESOURCE_VERSION_CONFLICT'
+        | 'INVALID_STATE_TRANSITION'
+        | 'REVIEW_APPROVAL_REQUIRED';
+    };
 
 export type ResourceDatabaseRow = Omit<ResourceRow, 'version'> & {
   readonly version: string | number;
@@ -179,7 +191,6 @@ function fingerprint(data: NormalizedCreateResourceData): string {
         safetyNotes: data.safetyNotes,
         catalogueVisibility: data.catalogueVisibility,
         contentVersionLabel: data.contentVersionLabel,
-        sourceReviewStatus: data.sourceReviewStatus,
         sourceOrganization: data.sourceOrganization ?? null,
         sourceTitle: data.sourceTitle ?? null,
         sourceUrl: data.sourceUrl ?? null,
@@ -266,7 +277,6 @@ function normalizeCreateData(data: CreateResourceData): NormalizedCreateResource
     safetyNotes: data.safetyNotes ?? [],
     catalogueVisibility: data.catalogueVisibility ?? 'DIRECT_ONLY',
     contentVersionLabel: data.contentVersionLabel ?? 'draft-v1',
-    sourceReviewStatus: data.sourceReviewStatus ?? 'NEEDS_SOURCE_REVIEW',
   };
 }
 
@@ -360,6 +370,25 @@ export class ResourceRepository {
     return result.rows[0] ? toResourceRow(result.rows[0]) : null;
   }
 
+  async findReviewDecision(id: string, version: number): Promise<ResourceReviewDecision | null> {
+    const result = await this.db.query<ReviewDecisionDatabaseRow>(
+      `SELECT resource_id, content_version, decision, reason_code, authority_version,
+              reviewed_by, reviewed_at
+       FROM resource_review_decision
+       WHERE resource_id = $1 AND content_version = $2`,
+      [id, version],
+    );
+    return result.rows[0] ? this.toReviewDecision(result.rows[0]) : null;
+  }
+
+  async hasPublicationHistory(id: string): Promise<boolean> {
+    const result = await this.db.query(
+      `SELECT 1 FROM resource_publication_snapshot WHERE resource_id = $1 LIMIT 1`,
+      [id],
+    );
+    return (result.rowCount ?? 0) > 0;
+  }
+
   async findPublishedEligibleById(
     id: string,
     locale: string,
@@ -381,6 +410,22 @@ export class ResourceRepository {
       contentVersion === undefined ? [id, locale] : [id, locale, contentVersion],
     );
     return result.rows[0] ? toResourceRow(result.rows[0]) : null;
+  }
+
+  async findPublishedSnapshotById(
+    id: string,
+    locale: string,
+    contentVersion: string,
+  ): Promise<ResourceRow | null> {
+    const result = await this.db.query<PublicationSnapshotDatabaseRow>(
+      `SELECT snapshot
+       FROM resource_publication_snapshot
+       WHERE resource_id = $1
+         AND content_version::text = $2
+         AND snapshot->>'locale' = $3`,
+      [id, contentVersion, locale],
+    );
+    return result.rows[0] ? toResourceRow(result.rows[0].snapshot) : null;
   }
 
   async create(
@@ -423,7 +468,7 @@ export class ResourceRepository {
            source_review_status, source_retrieved_at, source_content_hash)
          VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, 'DRAFT', $12, $13,
            $14, $15, $16, $17, $18, $19, $20, $21, $22::text[], $23::jsonb,
-           $24::jsonb, $25::text[], $26, $27, $28, $29, $30)
+           $24::jsonb, $25::text[], $26, $27, 'NEEDS_SOURCE_REVIEW', $28, $29)
          RETURNING ${RESOURCE_COLUMNS}`,
         [
           resourceId,
@@ -453,7 +498,6 @@ export class ResourceRepository {
           normalized.safetyNotes,
           normalized.catalogueVisibility,
           normalized.contentVersionLabel,
-          normalized.sourceReviewStatus,
           normalized.sourceRetrievedAt ?? null,
           normalized.sourceContentHash ?? null,
         ],
@@ -517,7 +561,6 @@ export class ResourceRepository {
       ['safety_notes', data.safetyNotes],
       ['catalogue_visibility', data.catalogueVisibility],
       ['content_version_label', data.contentVersionLabel],
-      ['source_review_status', data.sourceReviewStatus],
       ['source_organization', data.sourceOrganization],
       ['source_title', data.sourceTitle],
       ['source_url', data.sourceUrl],
@@ -562,20 +605,31 @@ export class ResourceRepository {
     return result.rows[0] ? toResourceRow(result.rows[0]) : null;
   }
 
-  async delete(id: string, version: number, context: ResourceCommandContext): Promise<boolean> {
-    const result = await this.db.query(
-      `WITH deleted AS (
-         DELETE FROM resource
-         WHERE id = $1 AND version = $2 AND status = 'DRAFT'
-         RETURNING id, version
-       )
-       INSERT INTO resource_audit_event
-         (actor_id, action, resource_id, resource_version, correlation_id)
-       SELECT $3, 'RESOURCE_DELETED', id, version, $4 FROM deleted
-       RETURNING id`,
-      [id, version, context.actorId, context.correlationId],
-    );
-    return (result.rowCount ?? 0) > 0;
+  async delete(
+    id: string,
+    version: number,
+    context: ResourceCommandContext,
+  ): Promise<DeleteResourceOutcome> {
+    return this.db.withTransaction(async (client) => {
+      const current = await client.query<{ status: string; version: string | number }>(
+        `SELECT status, version FROM resource WHERE id = $1 FOR UPDATE`,
+        [id],
+      );
+      if ((current.rowCount ?? 0) === 0) return 'INVALID_STATE';
+      const row = current.rows[0];
+      if (row.status !== 'DRAFT' || Number(row.version) !== version) {
+        return 'INVALID_STATE';
+      }
+      const history = await client.query(
+        `SELECT 1 FROM resource_publication_snapshot WHERE resource_id = $1 LIMIT 1`,
+        [id],
+      );
+      if ((history.rowCount ?? 0) > 0) return 'CORRECTION_DRAFT_PRESERVED';
+
+      await client.query(`DELETE FROM resource WHERE id = $1`, [id]);
+      await this.audit(client, 'RESOURCE_DELETED', id, version, context);
+      return 'DELETED';
+    });
   }
 
   async archive(
@@ -685,7 +739,7 @@ export class ResourceRepository {
     id: string,
     version: number,
     context: ResourceCommandContext,
-  ): Promise<ResourceRow | null> {
+  ): Promise<PublishResourceOutcome> {
     return this.db.withTransaction(async (client) => {
       await client.query('SELECT pg_advisory_xact_lock(hashtextextended($1, 0))', [
         `${id}:PUBLISH:${String(version)}`,
@@ -695,7 +749,9 @@ export class ResourceRepository {
          WHERE id = $1 AND version = $2 AND status = 'PUBLISHED'`,
         [id, version],
       );
-      if (replay.rows[0]) return toResourceRow(replay.rows[0]);
+      if (replay.rows[0]) {
+        return { outcome: 'PUBLISHED', resource: toResourceRow(replay.rows[0]) };
+      }
 
       const published = await client.query<ResourceDatabaseRow & { review_decision_id: string }>(
         `UPDATE resource r
@@ -718,7 +774,21 @@ export class ResourceRepository {
                    d.id AS review_decision_id`,
         [id, version],
       );
-      if (!published.rows[0]) return null;
+      if (!published.rows[0]) {
+        const current = await client.query<{ status: string; version: string | number }>(
+          `SELECT status, version FROM resource WHERE id = $1 FOR UPDATE`,
+          [id],
+        );
+        if ((current.rowCount ?? 0) === 0) return { outcome: 'RESOURCE_NOT_FOUND' };
+        const currentRow = current.rows[0];
+        if (Number(currentRow.version) !== version) {
+          return { outcome: 'RESOURCE_VERSION_CONFLICT' };
+        }
+        if (currentRow.status !== 'DRAFT') {
+          return { outcome: 'INVALID_STATE_TRANSITION' };
+        }
+        return { outcome: 'REVIEW_APPROVAL_REQUIRED' };
+      }
 
       const row = published.rows[0];
       await client.query(
@@ -730,7 +800,7 @@ export class ResourceRepository {
         [id, version, row.review_decision_id, context.actorId],
       );
       await this.audit(client, 'RESOURCE_PUBLISHED', id, version, context);
-      return toResourceRow(row);
+      return { outcome: 'PUBLISHED', resource: toResourceRow(row) };
     });
   }
 
