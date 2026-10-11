@@ -62,8 +62,13 @@ public class SupportPlanActivityOccurrenceService {
 	}
 
 	@Transactional
-	void activate(SupportPlanEntity plan, Instant now) {
+	void activateUserDraft(SupportPlanEntity plan, Instant now) {
 		assertCurrentPersonalization(plan);
+		activate(plan, now);
+	}
+
+	@Transactional
+	void activate(SupportPlanEntity plan, Instant now) {
 		String timezone = profiles.findTimezoneByAccountId(plan.userId()).orElseThrow(() -> new ApiException(
 				HttpStatus.NOT_FOUND, "PROFILE_NOT_FOUND", "Care profile was not found"));
 		ZoneId zone = zone(timezone);

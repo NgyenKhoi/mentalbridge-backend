@@ -67,7 +67,7 @@ class SupportPlanWriter {
 			return stored(existing.orElseThrow());
 		}
 
-		var plan = createDraft(userId, evaluation, entitlement, proposal, personalization, rationaleText,
+		var plan = createDraft(userId, evaluation, entitlement, proposal, personalization, null, rationaleText,
 				safetyGuidanceCode, safetyGuidance, now);
 		plans.insertRequest(userId, idempotencyKey, requestHash, plan.id(), now);
 		return stored(plan);
@@ -101,7 +101,7 @@ class SupportPlanWriter {
 		validateStoredChoices(plan, choices);
 		plan.activate(now);
 		plans.saveAndFlush(plan);
-		activities.activate(plan, now);
+		activities.activateUserDraft(plan, now);
 		persistCommand(userId, idempotencyKey, "ACTIVATE", requestHash, plan, expectedVersion,
 				choices, evidence, null, null, null, null, null, now);
 		plans.insertActivationOutbox(UUID.randomUUID(), plan.id(), plan.version(), correlationId,
@@ -178,7 +178,7 @@ class SupportPlanWriter {
 		plans.saveAndFlush(current);
 		draft.activate(now);
 		plans.saveAndFlush(draft);
-		activities.activate(draft, now);
+		activities.activateUserDraft(draft, now);
 		persistCommand(userId, idempotencyKey, "REPLACE", requestHash, draft, draftVersion,
 				choices, evidence, currentPlanId, currentVersion, reassessmentSummaryId, null, reviewOutcome, now);
 		plans.insertActivationOutbox(UUID.randomUUID(), draft.id(), draft.version(), correlationId,
@@ -206,10 +206,9 @@ class SupportPlanWriter {
 			throw new ApiException(HttpStatus.CONFLICT, "PLAN_CHANGE_REQUEST_STALE",
 					"The SupportPlan reviewed for this proposal is no longer current");
 		}
-		var replacement = createDraft(userId, evaluation, entitlement, proposal, null,
+		var replacement = createDraft(userId, evaluation, entitlement, proposal, null, current,
 				"A user-approved specialist resource proposal was reviewed against current Care policy.",
 				current.safetyGuidanceCode(), current.safetyGuidance(), now);
-		replacement.copyPersonalizationFrom(current);
 		validateStoredChoices(replacement, choices);
 		current.supersede(now);
 		activities.end(current.id(), "PLAN_REPLACED", now);
@@ -399,7 +398,8 @@ class SupportPlanWriter {
 
 	private SupportPlanEntity createDraft(UUID userId, EvaluationView evaluation,
 			CurrentEntitlementResponse entitlement, Proposal proposal,
-			SupportPlanPersonalizationService.PersonalizationSnapshot personalization, String rationaleText,
+			SupportPlanPersonalizationService.PersonalizationSnapshot personalization,
+			SupportPlanEntity personalizationSource, String rationaleText,
 			String safetyGuidanceCode, String safetyGuidance, Instant now) {
 		var safety = evaluation.safetyEvidence();
 		var plan = new SupportPlanEntity(UUID.randomUUID(), userId, evaluation.supportEvaluationId(),
@@ -409,6 +409,7 @@ class SupportPlanWriter {
 				safety.status().name(), safety.reasonCode().name(), safety.policyVersion(), safetyGuidanceCode,
 				safetyGuidance, proposal.slots().size(), now);
 		plan.snapshotPersonalization(personalization);
+		if (personalizationSource != null) plan.copyPersonalizationFrom(personalizationSource);
 		plan = plans.saveAndFlush(plan);
 		for (int index = 0; index < proposal.families().size(); index++) {
 			var family = proposal.families().get(index);

@@ -470,12 +470,27 @@ class SupportPlanIntegrationTests extends CareTestProperties {
 	void userReviewsRejectsOrAtomicallyAcceptsAnExactSpecialistProposal() throws Exception {
 		var userId = insertProfile();
 		var specialistId = UUID.randomUUID();
+		mvc.perform(put("/api/v2/support-plan-personalization").with(user(userId))
+				.header("If-Match", "\"0\"").contentType(MediaType.APPLICATION_JSON)
+				.content("""
+						{"preferredFocus":"MOTIVATION","preferredDaypart":"EVENING",
+						 "preferredActivityModes":[],"commonBarriers":[]}
+						"""))
+				.andExpect(status().isOk()).andExpect(header().string("ETag", "\"1\""));
 		var current = createPlan(userId, evaluation(userId, "MINIMAL", "MINIMAL", false),
 				"plan-change-current-create");
 		var currentId = UUID.fromString(current.path("supportPlanId").asText());
 		mvc.perform(post("/api/v1/support-plans/{id}/activate", currentId).with(user(userId))
 				.header("If-Match", "\"0\"").header("Idempotency-Key", "plan-change-current-activate"))
 				.andExpect(status().isOk());
+		mvc.perform(put("/api/v2/support-plan-personalization").with(user(userId))
+				.header("If-Match", "\"1\"").contentType(MediaType.APPLICATION_JSON)
+				.content("""
+						{"preferredFocus":"ANXIETY","preferredDaypart":"MORNING",
+						 "preferredActivityModes":[],"commonBarriers":[]}
+						"""))
+				.andExpect(status().isOk()).andExpect(header().string("ETag", "\"2\""))
+				.andExpect(jsonPath("$.planReview.required").value(true));
 
 		var firstProposalId = UUID.randomUUID();
 		when(resourceProposals.get(org.mockito.ArgumentMatchers.eq(firstProposalId), anyString(), any()))
@@ -528,6 +543,8 @@ class SupportPlanIntegrationTests extends CareTestProperties {
 				.query(String.class).single()).isEqualTo("SUPERSEDED");
 		assertThat(jdbc.sql("select count(*) from support_plan where user_id=:id and status='ACTIVE'")
 				.param("id", userId).query(Long.class).single()).isEqualTo(1);
+		assertThat(jdbc.sql("select personalization_revision from support_plan where user_id=:id and status='ACTIVE'")
+				.param("id", userId).query(Long.class).single()).isEqualTo(1L);
 		assertThat(jdbc.sql("select count(*) from support_plan_command where plan_change_request_id=:id")
 				.param("id", requestId).query(Long.class).single()).isEqualTo(1);
 	}
