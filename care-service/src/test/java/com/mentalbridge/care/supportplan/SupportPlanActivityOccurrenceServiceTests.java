@@ -25,4 +25,12 @@ class SupportPlanActivityOccurrenceServiceTests {
 		assertThat(service.resolve(LocalDate.parse("2026-11-01"), LocalTime.parse("01:30"),
 				"America/New_York")).isEqualTo(Instant.parse("2026-11-01T05:30:00Z"));
 	}
+
+	@Test
+	void generatesAOneTimeActionOnlyOnItsEffectiveDate() {
+		var effectiveFrom = LocalDate.parse("2026-10-11");
+
+		assertThat(service.occurs("ONCE", null, effectiveFrom, effectiveFrom)).isTrue();
+		assertThat(service.occurs("ONCE", null, effectiveFrom, effectiveFrom.plusDays(1))).isFalse();
+	}
 }

@@ -42,7 +42,8 @@ class CareLiquibaseChangelogTests {
 					"care-022-screening-episode",
 					"care-023-consultation-brief",
 					"care-024-plan-change-request",
-					"care-025-consultation-brief-ai-draft");
+					"care-025-consultation-brief-ai-draft",
+					"care-026-support-plan-actions");
 		}
 	}
 

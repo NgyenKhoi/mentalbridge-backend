@@ -4,6 +4,7 @@ import static org.assertj.core.api.Assertions.assertThat;
 
 import java.nio.file.Path;
 import java.util.HashSet;
+import java.util.List;
 import java.util.Map;
 import java.util.Set;
 
@@ -78,6 +79,9 @@ class CareOpenApiContractTests {
 			"PUT /api/v1/support-plan-occurrences/{occurrenceId}/state",
 			"PUT /api/v1/support-plan-occurrences/{occurrenceId}/engagement",
 			"DELETE /api/v1/support-plan-occurrences/{occurrenceId}/engagement",
+			"GET /api/v2/support-plans/current",
+			"GET /api/v2/support-plans/{supportPlanId}",
+			"GET /api/v2/support-plan-occurrences",
 			"POST /api/v1/anonymous-assessment-sessions",
 			"POST /api/v1/anonymous-assessment-sessions/{sessionId}/assessments",
 			"GET /api/v1/anonymous-assessment-sessions/{sessionId}/assessments/{assessmentId}",
@@ -136,6 +140,9 @@ class CareOpenApiContractTests {
 			"/api/v1/support-plan-occurrences/{occurrenceId}",
 			"/api/v1/support-plan-occurrences/{occurrenceId}/state",
 			"/api/v1/support-plan-occurrences/{occurrenceId}/engagement",
+			"/api/v2/support-plans/current",
+			"/api/v2/support-plans/{supportPlanId}",
+			"/api/v2/support-plan-occurrences",
 			"/api/v1/anonymous-assessment-sessions",
 			"/api/v1/anonymous-assessment-sessions/{sessionId}/assessments",
 			"/api/v1/anonymous-assessment-sessions/{sessionId}/assessments/{assessmentId}",
@@ -196,7 +203,10 @@ class CareOpenApiContractTests {
 			"GET /api/v1/support-plan-occurrences/{occurrenceId}",
 			"PUT /api/v1/support-plan-occurrences/{occurrenceId}/state",
 			"PUT /api/v1/support-plan-occurrences/{occurrenceId}/engagement",
-			"DELETE /api/v1/support-plan-occurrences/{occurrenceId}/engagement");
+			"DELETE /api/v1/support-plan-occurrences/{occurrenceId}/engagement",
+			"GET /api/v2/support-plans/current",
+			"GET /api/v2/support-plans/{supportPlanId}",
+			"GET /api/v2/support-plan-occurrences");
 
 	private static final Set<String> ANONYMOUS_TOKEN_OPERATIONS = Set.of(
 			"POST /api/v1/anonymous-assessment-sessions/{sessionId}/assessments",
@@ -386,11 +396,61 @@ class CareOpenApiContractTests {
 				.doesNotContainKeys("adherence", "clinicalOutcome", "recoveryScore");
 	}
 
+	@Test
+	void supportPlanV3IsAnAdditiveTypedActionReadModelWithBoundedReferences() {
+		var contract = Path.of("..", "contracts", "openapi", "care-service-v1.yaml").toAbsolutePath();
+		var openApi = new OpenAPIV3Parser().readLocation(contract.toUri().toString(), null, null).getOpenAPI();
+		var schemas = openApi.getComponents().getSchemas();
+		var plan = schemas.get("SupportPlanV3");
+		var focus = schemas.get("PlanFocus");
+		var action = schemas.get("PlanAction");
+		var source = schemas.get("ActionSourceReference");
+		var schedule = schemas.get("ActionSchedule");
+		var occurrence = schemas.get("ActionOccurrence");
+		var evidence = schemas.get("CompletionEvidence");
+
+		assertThat(plan.getProperties()).containsKeys("modelVersion", "planPolicyVersion", "representationMode", "focuses")
+				.doesNotContainKeys("slots", "assessmentAnswers", "journalContent", "emotionValue");
+		assertThat(enumValues(property(plan, "representationMode")))
+				.containsExactly("V2_RESOURCE_ADAPTER", "NATIVE_V3");
+		assertThat(focus.getProperties()).containsKeys("focusId", "title", "rationale", "actions")
+				.doesNotContainKeys("diagnosis", "score", "clinicalOutcome");
+		assertThat(enumValues(property(action, "actionType"))).containsExactly(
+				"RESOURCE", "JOURNAL", "EMOTION_CHECK_IN", "ROUTINE_SELF_MANAGEMENT",
+				"PROFESSIONAL_SUPPORT", "REASSESSMENT_SCREENING", "SELF_REPORT_REVIEW");
+		assertThat(action.getProperties()).containsKeys("actionVersion", "status", "source", "provenance",
+				"presentation", "schedules", "createdAt", "updatedAt", "activatedAt", "endedAt")
+				.doesNotContainKeys("journalText", "emotionValue", "assessmentAnswers", "appointmentNotes");
+		assertThat(enumValues(property(source, "ownerDomain")))
+				.containsExactly("CONTENT", "JOURNAL_AI", "CONSULTATION", "CARE");
+		assertThat(enumValues(property(source, "sourceKind"))).containsExactly(
+				"RESOURCE_VERSION", "JOURNAL_TEMPLATE", "EMOTION_CHECK_IN_CAPABILITY",
+				"PROFESSIONAL_SUPPORT_PATHWAY", "APPOINTMENT", "QUESTIONNAIRE_DEFINITION");
+		assertThat(source.getProperties()).containsKeys("sourceId", "sourceRevision", "publicationId",
+				"eligibilityPolicyVersion", "verifiedAt")
+				.doesNotContainKeys("payload", "content", "journalText", "emotionValue", "assessmentAnswers");
+		assertThat(schedule.getProperties()).containsKeys("recurrenceType", "timezone", "effectiveFrom",
+				"effectiveUntil", "reminderEnabled").doesNotContainKey("occurrences");
+		assertThat(occurrence.getProperties()).containsKeys("actionId", "actionType", "actionVersion",
+				"scheduleId", "scheduleVersion", "state", "displayState", "completionEvidence")
+				.doesNotContainKeys("adherence", "recoveryScore", "sourcePayload");
+		assertThat(evidence.getProperties()).containsOnlyKeys("kind", "ownerDomain", "factId", "factRevision",
+				"occurredAt", "verifiedAt");
+	}
+
 	private boolean allowsAdditionalProperties(Schema<?> schema) {
 		var additionalProperties = schema.getAdditionalProperties();
 		return Boolean.TRUE.equals(additionalProperties)
 				|| additionalProperties instanceof Schema<?> additionalSchema
 						&& Boolean.TRUE.equals(additionalSchema.getBooleanSchemaValue());
+	}
+
+	private Schema<?> property(Schema<?> schema, String name) {
+		return (Schema<?>) schema.getProperties().get(name);
+	}
+
+	private List<String> enumValues(Schema<?> schema) {
+		return schema.getEnum().stream().map(String::valueOf).toList();
 	}
 
 	private String supportTier(Object example) {

@@ -5,6 +5,8 @@ import java.time.LocalDate;
 import java.time.LocalTime;
 import java.util.UUID;
 
+import com.mentalbridge.care.supportplan.PlanActionSourcePolicy.EvidenceReference;
+
 import jakarta.persistence.Entity;
 import jakarta.persistence.Id;
 import jakarta.persistence.Table;
@@ -28,8 +30,17 @@ class SupportPlanActivityOccurrenceEntity {
 	private long sourcePlanVersion;
 	private String sourceSlotKey;
 	private UUID sourceResourceId;
-	private long sourceContentVersion;
+	private Long sourceContentVersion;
+	private UUID sourceActionId;
+	private Long sourceActionVersion;
+	private String sourceActionType;
 	private String sourceTitle;
+	private String evidenceOwner;
+	private String evidenceKind;
+	private String evidenceId;
+	private String evidenceRevision;
+	private Instant evidenceOccurredAt;
+	private Instant evidenceVerifiedAt;
 	@Version private long version;
 	private Instant createdAt;
 	private Instant updatedAt;
@@ -59,8 +70,17 @@ class SupportPlanActivityOccurrenceEntity {
 	long sourcePlanVersion() { return sourcePlanVersion; }
 	String sourceSlotKey() { return sourceSlotKey; }
 	UUID sourceResourceId() { return sourceResourceId; }
-	long sourceContentVersion() { return sourceContentVersion; }
+	Long sourceContentVersion() { return sourceContentVersion; }
+	UUID sourceActionId() { return sourceActionId; }
+	Long sourceActionVersion() { return sourceActionVersion; }
+	String sourceActionType() { return sourceActionType; }
 	String sourceTitle() { return sourceTitle; }
+	String evidenceOwner() { return evidenceOwner; }
+	String evidenceKind() { return evidenceKind; }
+	String evidenceId() { return evidenceId; }
+	String evidenceRevision() { return evidenceRevision; }
+	Instant evidenceOccurredAt() { return evidenceOccurredAt; }
+	Instant evidenceVerifiedAt() { return evidenceVerifiedAt; }
 	long version() { return version; }
 	Instant updatedAt() { return updatedAt; }
 	Instant completedAt() { return completedAt; }
@@ -80,6 +100,31 @@ class SupportPlanActivityOccurrenceEntity {
 				&& java.util.Objects.equals(barrierCode, desiredBarrierCode)
 				&& java.util.Objects.equals(reflection, desiredReflection)
 				&& summaryReuseApproved == desiredSummaryReuseApproved;
+	}
+
+	boolean evidenceEquals(EvidenceReference evidence) {
+		return "COMPLETED".equals(state)
+				&& java.util.Objects.equals(evidenceOwner, evidence.owner())
+				&& java.util.Objects.equals(evidenceKind, evidence.kind())
+				&& java.util.Objects.equals(evidenceId, evidence.id())
+				&& java.util.Objects.equals(evidenceRevision, evidence.revision())
+				&& java.util.Objects.equals(evidenceOccurredAt, evidence.occurredAt())
+				&& java.util.Objects.equals(evidenceVerifiedAt, evidence.verifiedAt());
+	}
+
+	void completeWithEvidence(EvidenceReference evidence, Instant now) {
+		this.state = "COMPLETED";
+		this.stateReason = null;
+		this.completedAt = now;
+		this.skippedAt = null;
+		this.cancelledAt = null;
+		this.evidenceOwner = evidence.owner();
+		this.evidenceKind = evidence.kind();
+		this.evidenceId = evidence.id();
+		this.evidenceRevision = evidence.revision();
+		this.evidenceOccurredAt = evidence.occurredAt();
+		this.evidenceVerifiedAt = evidence.verifiedAt();
+		this.updatedAt = now;
 	}
 
 	void replaceEngagement(String desiredState, boolean desiredHidden, String desiredHelpfulness,

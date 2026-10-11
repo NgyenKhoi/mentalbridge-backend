@@ -21,8 +21,13 @@ class SupportPlanActivityScheduleEntity {
 	private long sourcePlanVersion;
 	private String sourceSlotKey;
 	private UUID sourceResourceId;
-	private long sourceContentVersion;
+	private Long sourceContentVersion;
+	private UUID sourceActionId;
+	private Long sourceActionVersion;
+	private String sourceActionType;
 	private String sourceTitle;
+	private String schedulePolicyVersion;
+	private boolean reminderEnabled;
 	private String recurrenceType;
 	private Short recurrenceDayOfWeek;
 	private LocalTime localTime;
@@ -50,6 +55,34 @@ class SupportPlanActivityScheduleEntity {
 		this.sourceResourceId = resource.resourceId();
 		this.sourceContentVersion = resource.contentVersion();
 		this.sourceTitle = resource.title();
+		this.schedulePolicyVersion = null;
+		this.reminderEnabled = false;
+		this.recurrenceType = recurrenceType;
+		this.recurrenceDayOfWeek = recurrenceDayOfWeek;
+		this.localTime = localTime;
+		this.timezone = timezone;
+		this.effectiveFrom = effectiveFrom;
+		this.status = "ACTIVE";
+		this.createdAt = now;
+		this.updatedAt = now;
+	}
+
+	SupportPlanActivityScheduleEntity(UUID id, UUID supportPlanId, UUID userId, int ordinal,
+			long sourcePlanVersion, PlanActionEntity action, String schedulePolicyVersion,
+			String recurrenceType, Short recurrenceDayOfWeek, LocalTime localTime, String timezone,
+			LocalDate effectiveFrom, boolean reminderEnabled, Instant now) {
+		this.id = id;
+		this.supportPlanId = supportPlanId;
+		this.userId = userId;
+		this.ordinal = (short) ordinal;
+		this.scheduleVersion = 1;
+		this.sourcePlanVersion = sourcePlanVersion;
+		this.sourceActionId = action.id();
+		this.sourceActionVersion = action.version();
+		this.sourceActionType = action.actionType();
+		this.sourceTitle = action.presentationTitle();
+		this.schedulePolicyVersion = schedulePolicyVersion;
+		this.reminderEnabled = reminderEnabled;
 		this.recurrenceType = recurrenceType;
 		this.recurrenceDayOfWeek = recurrenceDayOfWeek;
 		this.localTime = localTime;
@@ -68,8 +101,13 @@ class SupportPlanActivityScheduleEntity {
 	long sourcePlanVersion() { return sourcePlanVersion; }
 	String sourceSlotKey() { return sourceSlotKey; }
 	UUID sourceResourceId() { return sourceResourceId; }
-	long sourceContentVersion() { return sourceContentVersion; }
+	Long sourceContentVersion() { return sourceContentVersion; }
+	UUID sourceActionId() { return sourceActionId; }
+	Long sourceActionVersion() { return sourceActionVersion; }
+	String sourceActionType() { return sourceActionType; }
 	String sourceTitle() { return sourceTitle; }
+	String schedulePolicyVersion() { return schedulePolicyVersion; }
+	boolean reminderEnabled() { return reminderEnabled; }
 	String recurrenceType() { return recurrenceType; }
 	Short recurrenceDayOfWeek() { return recurrenceDayOfWeek; }
 	LocalTime localTime() { return localTime; }

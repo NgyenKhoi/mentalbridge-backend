@@ -17,6 +17,9 @@ class SupportPlanEntity {
 	private UUID supportEvaluationId;
 	private String status;
 	@Version private long version;
+	private int modelVersion;
+	private String planPolicyVersion;
+	private short actionCount;
 	private String evaluationPolicyVersion;
 	private Instant evaluatedAt;
 	private String selectionPolicyVersion;
@@ -34,7 +37,7 @@ class SupportPlanEntity {
 	private String safetyPolicyVersion;
 	private String safetyGuidanceCode;
 	private String safetyGuidance;
-	private short selectedResourceCount;
+	private Short selectedResourceCount;
 	private Instant createdAt;
 	private Instant updatedAt;
 	private Instant activatedAt;
@@ -56,6 +59,9 @@ class SupportPlanEntity {
 		this.supportEvaluationId = supportEvaluationId;
 		this.status = "DRAFT";
 		this.version = 0;
+		this.modelVersion = 2;
+		this.planPolicyVersion = null;
+		this.actionCount = 0;
 		this.evaluationPolicyVersion = evaluationPolicyVersion;
 		this.evaluatedAt = evaluatedAt;
 		this.selectionPolicyVersion = SupportPlanService.SELECTION_POLICY_VERSION;
@@ -78,11 +84,52 @@ class SupportPlanEntity {
 		this.updatedAt = createdAt;
 	}
 
+	static SupportPlanEntity nativeDraft(UUID id, UUID userId, UUID supportEvaluationId,
+			String evaluationPolicyVersion, Instant evaluatedAt, String planPolicyVersion,
+			String entitlementPackage, String entitlementSource, String entitlementPolicyVersion,
+			long entitlementVersion, Instant entitlementDecidedAt, String rationaleCode,
+			String rationaleText, String safetyStatus, String safetyReasonCode,
+			String safetyPolicyVersion, String safetyGuidanceCode, String safetyGuidance,
+			int actionCount, Instant createdAt) {
+		if (actionCount < 1 || actionCount > 20) {
+			throw new IllegalArgumentException("PlanAction count must be 1..20");
+		}
+		var plan = new SupportPlanEntity();
+		plan.id = id;
+		plan.userId = userId;
+		plan.supportEvaluationId = supportEvaluationId;
+		plan.status = "DRAFT";
+		plan.version = 0;
+		plan.modelVersion = 3;
+		plan.planPolicyVersion = planPolicyVersion;
+		plan.actionCount = (short) actionCount;
+		plan.evaluationPolicyVersion = evaluationPolicyVersion;
+		plan.evaluatedAt = evaluatedAt;
+		plan.entitlementPackage = entitlementPackage;
+		plan.entitlementSource = entitlementSource;
+		plan.entitlementPolicyVersion = entitlementPolicyVersion;
+		plan.entitlementVersion = entitlementVersion;
+		plan.entitlementDecidedAt = entitlementDecidedAt;
+		plan.rationaleCode = rationaleCode;
+		plan.rationaleText = rationaleText;
+		plan.safetyStatus = safetyStatus;
+		plan.safetyReasonCode = safetyReasonCode;
+		plan.safetyPolicyVersion = safetyPolicyVersion;
+		plan.safetyGuidanceCode = safetyGuidanceCode;
+		plan.safetyGuidance = safetyGuidance;
+		plan.createdAt = createdAt;
+		plan.updatedAt = createdAt;
+		return plan;
+	}
+
 	UUID id() { return id; }
 	UUID userId() { return userId; }
 	UUID supportEvaluationId() { return supportEvaluationId; }
 	String status() { return status; }
 	long version() { return version; }
+	int modelVersion() { return modelVersion; }
+	String planPolicyVersion() { return planPolicyVersion; }
+	short actionCount() { return actionCount; }
 	String evaluationPolicyVersion() { return evaluationPolicyVersion; }
 	Instant evaluatedAt() { return evaluatedAt; }
 	String selectionPolicyVersion() { return selectionPolicyVersion; }
@@ -100,7 +147,7 @@ class SupportPlanEntity {
 	String safetyPolicyVersion() { return safetyPolicyVersion; }
 	String safetyGuidanceCode() { return safetyGuidanceCode; }
 	String safetyGuidance() { return safetyGuidance; }
-	short selectedResourceCount() { return selectedResourceCount; }
+	Short selectedResourceCount() { return selectedResourceCount; }
 	Instant createdAt() { return createdAt; }
 	Instant updatedAt() { return updatedAt; }
 	Instant activatedAt() { return activatedAt; }
@@ -108,6 +155,7 @@ class SupportPlanEntity {
 	String completionReason() { return completionReason; }
 	Instant supersededAt() { return supersededAt; }
 	Instant discardedAt() { return discardedAt; }
+
 
 	void changeChoices(int selectedResourceCount, Instant changedAt) {
 		this.selectedResourceCount = (short) selectedResourceCount;

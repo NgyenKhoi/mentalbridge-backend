@@ -591,6 +591,8 @@ public class SupportPlanService {
 				"Idempotency-Key was already used with a different SupportPlan command");
 	}
 
+	static String disclaimer() { return DISCLAIMER; }
+
 	public record ProposeCommand(UUID sourceSupportEvaluationId) { }
 	public record SlotSelection(String slotId, UUID resourceId, String contentVersion) { }
 	public record ReplaceChoicesCommand(List<SlotSelection> slotSelections) { }

@@ -14,6 +14,7 @@ import java.util.ArrayList;
 import java.util.List;
 import java.util.UUID;
 
+import org.springframework.dao.DataIntegrityViolationException;
 import org.springframework.http.HttpStatus;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
@@ -22,6 +23,7 @@ import com.fasterxml.jackson.core.JsonProcessingException;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import com.mentalbridge.care.profile.UserProfileRepository;
 import com.mentalbridge.care.shared.ApiException;
+import com.mentalbridge.care.supportplan.PlanActionSourcePolicy.EvidenceReference;
 
 @Service
 public class SupportPlanActivityOccurrenceService {
@@ -39,6 +41,7 @@ public class SupportPlanActivityOccurrenceService {
 	private final UserProfileRepository profiles;
 	private final Clock clock;
 	private final ObjectMapper objectMapper;
+	private final PlanActionSourcePolicy actionPolicy = new PlanActionSourcePolicy();
 
 	public SupportPlanActivityOccurrenceService(SupportPlanRepository plans, SupportPlanSlotRepository slots,
 			SupportPlanActivityScheduleRepository schedules,
@@ -82,6 +85,10 @@ public class SupportPlanActivityOccurrenceService {
 		var plan = plans.findByUserIdAndStatusInForUpdate(userId, List.of("ACTIVE", "PAUSED")).orElseThrow(() ->
 				new ApiException(HttpStatus.NOT_FOUND, "SUPPORT_PLAN_CURRENT_NOT_FOUND",
 						"Current SupportPlan was not found"));
+		if (plan.modelVersion() != 2) {
+			throw new ApiException(HttpStatus.CONFLICT, "SUPPORT_PLAN_MODEL_VERSION_UNSUPPORTED",
+					"This endpoint supports resource-slot SupportPlans only");
+		}
 		validateWindow(userId, from, through);
 		Instant now = clock.instant().truncatedTo(ChronoUnit.MICROS);
 		if ("ACTIVE".equals(plan.status())) {
@@ -96,6 +103,83 @@ public class SupportPlanActivityOccurrenceService {
 				.stream().map(value -> view(value, now)).toList();
 		return new OccurrenceListView(plan.id(), plan.status(), SCHEDULE_POLICY_VERSION, from, through,
 				values, "SELF_REPORTED_WELLBEING_ACTIVITY_NOT_TREATMENT_ADHERENCE");
+	}
+
+	@Transactional
+	V3Window loadV3Window(UUID userId, LocalDate from, LocalDate through) {
+		var plan = plans.findByUserIdAndStatusInForUpdate(userId, List.of("ACTIVE", "PAUSED")).orElseThrow(() ->
+				new ApiException(HttpStatus.NOT_FOUND, "SUPPORT_PLAN_CURRENT_NOT_FOUND",
+						"Current SupportPlan was not found"));
+		validateWindow(userId, from, through);
+		Instant now = clock.instant().truncatedTo(ChronoUnit.MICROS);
+		if ("ACTIVE".equals(plan.status())) {
+			if (plan.modelVersion() == 2 && schedules.findBySupportPlanIdOrderByOrdinal(plan.id()).isEmpty()) {
+				activate(plan, now);
+			}
+			generate(plan.id(), from, through, now);
+		}
+		var values = occurrences
+				.findBySupportPlanIdAndUserIdAndLocalDateBetweenOrderByScheduledAtAscIdAsc(plan.id(), userId,
+						from, through);
+		return new V3Window(plan, values);
+	}
+
+	/**
+	 * Trusted application boundary for an authoritative source-domain fact. The
+	 * caller must have authenticated the source event; this method rechecks the
+	 * Care owner, native action type, fact shape, and one-fact/one-occurrence rule.
+	 */
+	@Transactional
+	public ActionOccurrenceCompletion completeFromOwnerFact(UUID userId, UUID occurrenceId,
+			OwnerFact fact, UUID correlationId) {
+		var occurrence = occurrences.findByIdAndUserIdForUpdate(occurrenceId, userId).orElseThrow(() ->
+				new ApiException(HttpStatus.NOT_FOUND, "OCCURRENCE_NOT_FOUND",
+						"SupportPlan occurrence was not found"));
+		var plan = plans.findByIdAndUserIdForUpdate(occurrence.supportPlanId(), userId).orElseThrow(() ->
+				new ApiException(HttpStatus.NOT_FOUND, "SUPPORT_PLAN_NOT_FOUND", "SupportPlan was not found"));
+		if (plan.modelVersion() != 3 || occurrence.sourceActionId() == null
+				|| occurrence.sourceActionVersion() == null || occurrence.sourceActionType() == null) {
+			throw new ApiException(HttpStatus.CONFLICT, "SUPPORT_PLAN_MODEL_VERSION_UNSUPPORTED",
+					"Authoritative completion facts apply to native action SupportPlans only");
+		}
+		if (fact == null) {
+			throw invalidCompletionEvidence("Completion evidence is required");
+		}
+		var evidence = new EvidenceReference(fact.ownerDomain(), fact.kind(), fact.factId(),
+				fact.factRevision(), fact.occurredAt(), fact.verifiedAt());
+		try {
+			actionPolicy.validateCompletionEvidence(occurrence.sourceActionType(), evidence);
+		}
+		catch (IllegalArgumentException exception) {
+			throw invalidCompletionEvidence(exception.getMessage());
+		}
+		Instant now = clock.instant().truncatedTo(ChronoUnit.MICROS);
+		if (occurrence.evidenceEquals(evidence)) {
+			return completion(occurrence);
+		}
+		if (!"SCHEDULED".equals(occurrence.state())) {
+			throw new ApiException(HttpStatus.CONFLICT, "OCCURRENCE_NOT_OPEN",
+					"Only a scheduled native action occurrence accepts completion evidence");
+		}
+		var existingOccurrenceId = occurrences.findOccurrenceIdByEvidence(fact.ownerDomain(), fact.kind(),
+				fact.factId(), fact.factRevision());
+		if (existingOccurrenceId.isPresent() && !existingOccurrenceId.get().equals(occurrenceId)) {
+			throw evidenceAlreadyUsed();
+		}
+		occurrence.completeWithEvidence(evidence, now);
+		try {
+			occurrence = occurrences.saveAndFlush(occurrence);
+		}
+		catch (DataIntegrityViolationException exception) {
+			if (exception.getMostSpecificCause().getMessage() != null
+					&& exception.getMostSpecificCause().getMessage()
+							.contains("ux_support_plan_activity_occurrence_evidence_fact")) {
+				throw evidenceAlreadyUsed();
+			}
+			throw exception;
+		}
+		appendActionOccurrenceEvent(occurrence, correlationId, now);
+		return completion(occurrence);
 	}
 
 	@Transactional(readOnly = true)
@@ -223,18 +307,36 @@ public class SupportPlanActivityOccurrenceService {
 					continue;
 				}
 				String key = schedule.id() + ":" + schedule.scheduleVersion() + ":" + date;
-				occurrences.insertIfAbsent(UUID.nameUUIDFromBytes(key.getBytes(StandardCharsets.UTF_8)),
-						schedule.id(), schedule.supportPlanId(), schedule.userId(), schedule.scheduleVersion(), date,
-						schedule.localTime(), schedule.timezone(), resolve(date, schedule.localTime(), schedule.timezone()),
-						schedule.sourcePlanVersion(), schedule.sourceSlotKey(), schedule.sourceResourceId(),
-						schedule.sourceContentVersion(), schedule.sourceTitle(), now);
+				UUID occurrenceId = UUID.nameUUIDFromBytes(key.getBytes(StandardCharsets.UTF_8));
+				Instant scheduledAt = resolve(date, schedule.localTime(), schedule.timezone());
+				if (schedule.sourceActionId() == null) {
+					occurrences.insertIfAbsent(occurrenceId, schedule.id(), schedule.supportPlanId(),
+							schedule.userId(), schedule.scheduleVersion(), date, schedule.localTime(),
+							schedule.timezone(), scheduledAt, schedule.sourcePlanVersion(), schedule.sourceSlotKey(),
+							schedule.sourceResourceId(), schedule.sourceContentVersion(), schedule.sourceTitle(), now);
+				}
+				else {
+					occurrences.insertNativeIfAbsent(occurrenceId, schedule.id(), schedule.supportPlanId(),
+							schedule.userId(), schedule.scheduleVersion(), date, schedule.localTime(),
+							schedule.timezone(), scheduledAt, schedule.sourcePlanVersion(), schedule.sourceActionId(),
+							schedule.sourceActionVersion(), schedule.sourceActionType(), schedule.sourceTitle(), now);
+				}
 			}
 		}
 	}
 
 	private boolean occurs(SupportPlanActivityScheduleEntity schedule, LocalDate date) {
-		return "DAILY".equals(schedule.recurrenceType())
-				|| date.getDayOfWeek().getValue() == schedule.recurrenceDayOfWeek();
+		return occurs(schedule.recurrenceType(), schedule.recurrenceDayOfWeek(), schedule.effectiveFrom(), date);
+	}
+
+	boolean occurs(String recurrenceType, Short recurrenceDayOfWeek, LocalDate effectiveFrom, LocalDate date) {
+		return switch (recurrenceType) {
+			case "ONCE" -> date.equals(effectiveFrom);
+			case "DAILY" -> true;
+			case "WEEKLY" -> recurrenceDayOfWeek != null
+					&& date.getDayOfWeek().getValue() == recurrenceDayOfWeek;
+			default -> throw new IllegalStateException("Unsupported stored recurrence type");
+		};
 	}
 
 	Instant resolve(LocalDate date, LocalTime time, String timezone) {
@@ -261,8 +363,9 @@ public class SupportPlanActivityOccurrenceService {
 	}
 
 	private SupportPlanActivityOccurrenceEntity required(UUID userId, UUID occurrenceId) {
-		return occurrences.findByIdAndUserId(occurrenceId, userId).orElseThrow(() -> new ApiException(
+		var occurrence = occurrences.findByIdAndUserId(occurrenceId, userId).orElseThrow(() -> new ApiException(
 				HttpStatus.NOT_FOUND, "OCCURRENCE_NOT_FOUND", "SupportPlan occurrence was not found"));
+		return requireLegacyOccurrence(occurrence);
 	}
 
 	private SupportPlanActivityOccurrenceEntity requiredForEngagement(UUID userId, UUID occurrenceId) {
@@ -281,6 +384,15 @@ public class SupportPlanActivityOccurrenceService {
 		if ("CANCELLED".equals(occurrence.state())) {
 			throw new ApiException(HttpStatus.CONFLICT, "OCCURRENCE_NOT_OPEN",
 					"A cancelled occurrence does not accept engagement updates");
+		}
+		return requireLegacyOccurrence(occurrence);
+	}
+
+	private SupportPlanActivityOccurrenceEntity requireLegacyOccurrence(
+			SupportPlanActivityOccurrenceEntity occurrence) {
+		if (occurrence.sourceActionId() != null) {
+			throw new ApiException(HttpStatus.CONFLICT, "SUPPORT_PLAN_MODEL_VERSION_UNSUPPORTED",
+					"This endpoint supports resource-slot SupportPlan occurrences only");
 		}
 		return occurrence;
 	}
@@ -319,6 +431,15 @@ public class SupportPlanActivityOccurrenceService {
 		return new ApiException(HttpStatus.BAD_REQUEST, "OCCURRENCE_ENGAGEMENT_INVALID", message);
 	}
 
+	private ApiException invalidCompletionEvidence(String message) {
+		return new ApiException(HttpStatus.BAD_REQUEST, "COMPLETION_EVIDENCE_INVALID", message);
+	}
+
+	private ApiException evidenceAlreadyUsed() {
+		return new ApiException(HttpStatus.CONFLICT, "COMPLETION_EVIDENCE_ALREADY_USED",
+				"The authoritative fact already completes another action occurrence");
+	}
+
 	private void appendEngagementEvent(SupportPlanActivityOccurrenceEntity occurrence, String changeType,
 			UUID correlationId, Instant now) {
 		try {
@@ -335,6 +456,36 @@ public class SupportPlanActivityOccurrenceService {
 		catch (JsonProcessingException exception) {
 			throw new IllegalStateException("SupportPlan engagement event could not be serialized", exception);
 		}
+	}
+
+	private void appendActionOccurrenceEvent(SupportPlanActivityOccurrenceEntity occurrence,
+			UUID correlationId, Instant now) {
+		try {
+			var fact = new OwnerFact(occurrence.evidenceOwner(), occurrence.evidenceKind(),
+					occurrence.evidenceId(), occurrence.evidenceRevision(), occurrence.evidenceOccurredAt(),
+					occurrence.evidenceVerifiedAt());
+			var orchestration = new ActionOrchestrationEvent(occurrence.state(), occurrence.state(),
+					occurrence.stateReason(), occurrence.completedAt(),
+					"SELF_REPORTED_WELLBEING_ACTIVITY_NOT_TREATMENT_ADHERENCE");
+			var payload = new ActionOccurrenceEventPayload(occurrence.supportPlanId(), occurrence.userId(),
+					occurrence.sourcePlanVersion(), occurrence.sourceActionId().toString(),
+					occurrence.sourceActionType(), occurrence.sourceActionVersion(),
+					occurrence.activityScheduleId(), occurrence.scheduleVersion(), occurrence.id(), "NATIVE_V3",
+					"EVIDENCE_ATTACHED", orchestration, fact);
+			occurrences.insertActionOccurrenceOutbox(UUID.randomUUID(), occurrence.id(), occurrence.version(),
+					correlationId == null ? UUID.randomUUID() : correlationId,
+					objectMapper.writeValueAsString(payload), now);
+		}
+		catch (JsonProcessingException exception) {
+			throw new IllegalStateException("PlanAction occurrence event could not be serialized", exception);
+		}
+	}
+
+	private ActionOccurrenceCompletion completion(SupportPlanActivityOccurrenceEntity occurrence) {
+		return new ActionOccurrenceCompletion(occurrence.id(), occurrence.version(), occurrence.state(),
+				occurrence.completedAt(), new OwnerFact(occurrence.evidenceOwner(), occurrence.evidenceKind(),
+						occurrence.evidenceId(), occurrence.evidenceRevision(), occurrence.evidenceOccurredAt(),
+						occurrence.evidenceVerifiedAt()));
 	}
 
 	private OccurrenceView view(SupportPlanActivityOccurrenceEntity occurrence, Instant now) {
@@ -354,6 +505,7 @@ public class SupportPlanActivityOccurrenceService {
 
 	public record OccurrenceListView(UUID supportPlanId, String supportPlanStatus, String schedulePolicyVersion,
 			LocalDate from, LocalDate through, List<OccurrenceView> occurrences, String interpretationCode) { }
+	record V3Window(SupportPlanEntity plan, List<SupportPlanActivityOccurrenceEntity> occurrences) { }
 	public record OccurrenceSourceView(String type, long supportPlanVersion, String slotId, UUID resourceId,
 			String contentVersion, String title) { }
 	public record OccurrenceView(UUID occurrenceId, UUID supportPlanId, UUID scheduleId, int scheduleVersion,
@@ -366,4 +518,14 @@ public class SupportPlanActivityOccurrenceService {
 			String state, boolean hidden, String helpfulness, String barrierCode, boolean summaryReuseApproved,
 			long sourcePlanVersion, String sourceSlotId, UUID sourceResourceId, String sourceContentVersion,
 			Instant engagementUpdatedAt, String interpretationCode) { }
+	public record OwnerFact(String ownerDomain, String kind, String factId, String factRevision,
+			Instant occurredAt, Instant verifiedAt) { }
+	public record ActionOccurrenceCompletion(UUID occurrenceId, long version, String state,
+			Instant completedAt, OwnerFact ownerFact) { }
+	private record ActionOrchestrationEvent(String state, String displayState, String stateReason,
+			Instant outcomeRecordedAt, String interpretationCode) { }
+	private record ActionOccurrenceEventPayload(UUID supportPlanId, UUID userId, long planVersion,
+			String actionId, String actionType, long actionVersion, UUID scheduleId, int scheduleVersion,
+			UUID occurrenceId, String representationMode, String changeType,
+			ActionOrchestrationEvent orchestration, OwnerFact ownerFact) { }
 }

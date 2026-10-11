@@ -1,6 +1,7 @@
 package com.mentalbridge.care.supportplan;
 
 import static org.assertj.core.api.Assertions.assertThat;
+import static org.assertj.core.api.Assertions.assertThatThrownBy;
 import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.ArgumentMatchers.anyString;
 import static org.mockito.Mockito.doAnswer;
@@ -16,6 +17,9 @@ import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.
 
 import java.time.Instant;
 import java.time.LocalDate;
+import java.time.LocalTime;
+import java.time.ZoneId;
+import java.time.temporal.ChronoUnit;
 import java.sql.Timestamp;
 import java.util.List;
 import java.util.UUID;
@@ -50,6 +54,10 @@ import com.mentalbridge.care.resourceeligibility.generated.ResourceEligibilityCo
 import com.mentalbridge.care.resourceeligibility.generated.ResourceEligibilityContract.ResourceEligibilityReasonCode;
 import com.mentalbridge.care.resourceeligibility.generated.ResourceEligibilityContract.ResourceEligibilityResult;
 import com.mentalbridge.care.supportplan.ConsultationResourceProposalHttpClient.ResourceProposal;
+import com.mentalbridge.care.supportplan.PlanActionEntity.Presentation;
+import com.mentalbridge.care.supportplan.PlanActionSourcePolicy.Provenance;
+import com.mentalbridge.care.supportplan.PlanActionSourcePolicy.SourceReference;
+import com.mentalbridge.care.supportplan.SupportPlanActivityOccurrenceService.OwnerFact;
 
 @Import(TestcontainersConfiguration.class)
 @SpringBootTest
@@ -62,6 +70,11 @@ class SupportPlanIntegrationTests extends CareTestProperties {
 	@Autowired MockMvc mvc;
 	@Autowired JdbcClient jdbc;
 	@Autowired ObjectMapper objectMapper;
+	@Autowired SupportPlanRepository plans;
+	@Autowired SupportPlanFocusRepository focuses;
+	@Autowired PlanActionRepository actions;
+	@Autowired SupportPlanActivityScheduleRepository schedules;
+	@Autowired SupportPlanActivityOccurrenceService activityOccurrences;
 	@MockitoBean EntitlementClient entitlements;
 	@MockitoBean ResourceEligibilityClient eligibility;
 	@MockitoBean ConsultationResourceProposalClient resourceProposals;
@@ -70,6 +83,135 @@ class SupportPlanIntegrationTests extends CareTestProperties {
 	void dependencies() {
 		when(entitlements.current(any(), anyString(), any())).thenAnswer(invocation -> paid(invocation.getArgument(0)));
 		eligible(ResourceEligibilityOutcome.ELIGIBLE, ResourceEligibilityReasonCode.ELIGIBLE_MATCH);
+	}
+
+	@Test
+	void generatesNativeOccurrencesAcceptsOneBoundedOwnerFactAndKeepsActionHistoryStable()
+			throws Exception {
+		var userId = insertProfile();
+		var evaluationId = evaluation(userId, "MINIMAL", "MINIMAL", false);
+		var now = Instant.now().minusSeconds(5).truncatedTo(ChronoUnit.MICROS);
+		var today = now.atZone(ZoneId.of("Asia/Ho_Chi_Minh")).toLocalDate();
+
+		var plan = SupportPlanEntity.nativeDraft(UUID.randomUUID(), userId, evaluationId,
+				"mb-support-routing-capstone-v2", now, "support-plan-policy-v3",
+				"PLUS", "DEMO", "service-entitlement-v1", 1, now,
+				"DOMAIN_AWARE_WELLBEING_SUPPORT", "Kế hoạch hỗ trợ sức khỏe tinh thần tổng quát.",
+				"NEGATIVE_SAFETY_SCREEN", "NO_ITEM9_SIGNAL", "MB-SAFETY-PHQ9-001-v1",
+				"STANDARD_SAFETY_GUIDANCE", "Tìm hỗ trợ khẩn cấp khi cần.", 1, now);
+		plan = plans.saveAndFlush(plan);
+		var focus = focuses.saveAndFlush(new SupportPlanFocusEntity(UUID.randomUUID(), plan.id(), userId,
+				1, "Kết nối với hỗ trợ phù hợp", "Thực hiện bước đã chọn.", now));
+		var action = actions.saveAndFlush(new PlanActionEntity(UUID.randomUUID(), plan.id(), focus.id(), userId,
+				1, "PROFESSIONAL_SUPPORT", "ATTEND_BOOKED_SUPPORT", "Giữ kết nối hỗ trợ.",
+				new SourceReference("CONSULTATION", "APPOINTMENT", UUID.randomUUID().toString(), "1",
+						"consultation-routing-v1", null, null, now),
+				new Provenance("USER_SELECTED", null, null, now),
+				new Presentation("Buổi hỗ trợ đã đặt", "Theo dõi lịch đã xác nhận.", null, null), now));
+		plan.activate(now);
+		plan = plans.saveAndFlush(plan);
+		action.activate(now);
+		action = actions.saveAndFlush(action);
+		var schedule = schedules.saveAndFlush(new SupportPlanActivityScheduleEntity(UUID.randomUUID(),
+				plan.id(), userId, 1, plan.version(), action, "support-plan-schedule-v3",
+				"DAILY", null, LocalTime.of(9, 0), "Asia/Ho_Chi_Minh", today, true, now));
+
+		var body = mvc.perform(get("/api/v2/support-plan-occurrences").with(user(userId))
+				.param("from", today.toString()).param("through", today.plusDays(1).toString()))
+				.andExpect(status().isOk())
+				.andExpect(jsonPath("$.representationMode").value("NATIVE_V3"))
+				.andExpect(jsonPath("$.occurrences.length()").value(2))
+				.andExpect(jsonPath("$.occurrences[0].actionType").value("PROFESSIONAL_SUPPORT"))
+				.andReturn().getResponse().getContentAsString();
+		var occurrences = objectMapper.readTree(body).path("occurrences");
+		var firstOccurrenceId = UUID.fromString(occurrences.get(0).path("occurrenceId").asText());
+		var secondOccurrenceId = UUID.fromString(occurrences.get(1).path("occurrenceId").asText());
+		var fact = new OwnerFact("CONSULTATION", "APPOINTMENT_FULFILMENT",
+				UUID.randomUUID().toString(), "1", now.plusSeconds(1), now.plusSeconds(2));
+
+		var completed = activityOccurrences.completeFromOwnerFact(userId, firstOccurrenceId, fact,
+				UUID.randomUUID());
+		var replayed = activityOccurrences.completeFromOwnerFact(userId, firstOccurrenceId, fact,
+				UUID.randomUUID());
+		assertThat(completed.state()).isEqualTo("COMPLETED");
+		assertThat(replayed.version()).isEqualTo(completed.version());
+		assertThatThrownBy(() -> activityOccurrences.completeFromOwnerFact(userId, secondOccurrenceId,
+				fact, UUID.randomUUID())).hasMessageContaining("already completes another action occurrence");
+		assertThat(jdbc.sql("""
+				select count(*) from outbox_event
+				where aggregate_id=:id
+				  and message_type='care.support-plan.action-occurrence-changed'
+				  and schema_version='2.0'
+				""").param("id", firstOccurrenceId).query(Long.class).single()).isEqualTo(1);
+		var eventPayload = objectMapper.readTree(jdbc.sql("""
+				select payload::text from outbox_event
+				where aggregate_id=:id and message_type='care.support-plan.action-occurrence-changed'
+				""").param("id", firstOccurrenceId).query(String.class).single());
+		assertThat(eventPayload.path("ownerFact").path("ownerDomain").asText()).isEqualTo("CONSULTATION");
+		assertThat(eventPayload.path("ownerFact").path("kind").asText())
+				.isEqualTo("APPOINTMENT_FULFILMENT");
+		assertThat(eventPayload.toString()).doesNotContain("appointmentNote", "journalBody", "rawScore");
+
+		mvc.perform(get("/api/v1/support-plan-occurrences/{id}", firstOccurrenceId).with(user(userId)))
+				.andExpect(status().isConflict())
+				.andExpect(jsonPath("$.code").value("SUPPORT_PLAN_MODEL_VERSION_UNSUPPORTED"));
+
+		action.end(now.plusSeconds(3));
+		action = actions.saveAndFlush(action);
+		assertThat(action.version()).isEqualTo(2);
+		assertThat(jdbc.sql("select source_action_version from support_plan_activity_schedule where id=:id")
+				.param("id", schedule.id()).query(Long.class).single()).isEqualTo(1);
+	}
+
+	@Test
+	void projectsAnExistingV2PlanWithoutCreatingNativeRowsOrLosingExactResourceProvenance()
+			throws Exception {
+		var userId = insertProfile();
+		var draft = createPlan(userId, evaluation(userId, "MINIMAL", "MILD", false),
+				"support-plan-v3-adapter-create");
+		var planId = UUID.fromString(draft.path("supportPlanId").asText());
+		var selectedResource = draft.path("slots").get(0).path("selectedResource");
+		mvc.perform(post("/api/v1/support-plans/{id}/activate", planId).with(user(userId))
+				.header("If-Match", "\"0\"").header("Idempotency-Key", "support-plan-v3-adapter-activate"))
+				.andExpect(status().isOk());
+
+		var first = mvc.perform(get("/api/v2/support-plans/current").with(user(userId)))
+				.andExpect(status().isOk())
+				.andExpect(jsonPath("$.supportPlanId").value(planId.toString()))
+				.andExpect(jsonPath("$.modelVersion").value(3))
+				.andExpect(jsonPath("$.representationMode").value("V2_RESOURCE_ADAPTER"))
+				.andExpect(jsonPath("$.focuses[0].focusId").isString())
+				.andExpect(jsonPath("$.focuses[0].title").isNotEmpty())
+				.andExpect(jsonPath("$.focuses[0].actions[0].actionType").value("RESOURCE"))
+				.andExpect(jsonPath("$.focuses[0].actions[0].source.ownerDomain").value("CONTENT"))
+				.andReturn().getResponse().getContentAsString();
+		var projection = objectMapper.readTree(first);
+		var matchingAction = projection.path("focuses").findValues("actions").stream()
+				.flatMap(node -> java.util.stream.StreamSupport.stream(node.spliterator(), false))
+				.filter(node -> selectedResource.path("resourceId").asText()
+						.equals(node.path("source").path("sourceId").asText()))
+				.findFirst().orElseThrow();
+		assertThat(matchingAction.path("source").path("sourceRevision").asText())
+				.isEqualTo(selectedResource.path("contentVersion").asText());
+		assertThat(matchingAction.path("source").path("publicationId").asText())
+				.isEqualTo(selectedResource.path("publicationId").asText());
+		assertThat(matchingAction.path("source").path("eligibilityPolicyVersion").asText())
+				.isEqualTo("content-eligibility-v1");
+		var replay = mvc.perform(get("/api/v2/support-plans/current").with(user(userId)))
+				.andExpect(status().isOk()).andReturn().getResponse().getContentAsString();
+		assertThat(objectMapper.readTree(replay)).isEqualTo(projection);
+
+		var today = LocalDate.now(ZoneId.of("Asia/Ho_Chi_Minh"));
+		mvc.perform(get("/api/v2/support-plan-occurrences").with(user(userId))
+				.param("from", today.toString()).param("through", today.toString()))
+				.andExpect(status().isOk())
+				.andExpect(jsonPath("$.representationMode").value("V2_RESOURCE_ADAPTER"))
+				.andExpect(jsonPath("$.occurrences[0].actionType").value("RESOURCE"))
+				.andExpect(jsonPath("$.occurrences[0].completionEvidence").doesNotExist());
+		assertThat(jdbc.sql("select count(*) from support_plan_focus where support_plan_id=:id")
+				.param("id", planId).query(Long.class).single()).isZero();
+		assertThat(jdbc.sql("select count(*) from support_plan_action where support_plan_id=:id")
+				.param("id", planId).query(Long.class).single()).isZero();
 	}
 
 	@Test

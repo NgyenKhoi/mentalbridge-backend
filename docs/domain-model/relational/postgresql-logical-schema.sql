@@ -551,11 +551,14 @@ CREATE TABLE care.support_plan (
     support_evaluation_id uuid NOT NULL,
     status varchar(16) NOT NULL,
     version bigint NOT NULL,
+    model_version integer NOT NULL,
+    plan_policy_version varchar(128),
+    action_count smallint NOT NULL,
     evaluation_policy_version varchar(64) NOT NULL,
     evaluated_at timestamptz NOT NULL,
-    selection_policy_version varchar(64) NOT NULL,
-    resource_policy_version varchar(64) NOT NULL,
-    resources_resolved_at timestamptz NOT NULL,
+    selection_policy_version varchar(64),
+    resource_policy_version varchar(64),
+    resources_resolved_at timestamptz,
     entitlement_package varchar(16) NOT NULL,
     entitlement_source varchar(16) NOT NULL,
     entitlement_policy_version varchar(64) NOT NULL,
@@ -568,7 +571,7 @@ CREATE TABLE care.support_plan (
     safety_policy_version varchar(64) NOT NULL,
     safety_guidance_code varchar(64) NOT NULL,
     safety_guidance varchar(2048) NOT NULL,
-    selected_resource_count smallint NOT NULL,
+    selected_resource_count smallint,
     activated_at timestamptz,
     completed_at timestamptz,
     completion_reason varchar(32),
@@ -579,6 +582,65 @@ CREATE TABLE care.support_plan (
     UNIQUE (id, user_id),
     FOREIGN KEY (support_evaluation_id, user_id)
         REFERENCES care.support_evaluation_v2(id, user_id)
+);
+
+CREATE TABLE care.support_plan_focus (
+    id uuid PRIMARY KEY,
+    support_plan_id uuid NOT NULL,
+    support_plan_model_version integer NOT NULL,
+    user_id uuid NOT NULL,
+    ordinal smallint NOT NULL,
+    title varchar(255) NOT NULL,
+    rationale varchar(2048),
+    version bigint NOT NULL,
+    created_at timestamptz NOT NULL,
+    updated_at timestamptz NOT NULL,
+    UNIQUE (id, support_plan_id, user_id),
+    UNIQUE (support_plan_id, ordinal),
+    FOREIGN KEY (support_plan_id, user_id)
+        REFERENCES care.support_plan(id, user_id),
+    FOREIGN KEY (support_plan_id, support_plan_model_version)
+        REFERENCES care.support_plan(id, model_version)
+);
+
+CREATE TABLE care.support_plan_action (
+    id uuid PRIMARY KEY,
+    support_plan_id uuid NOT NULL,
+    plan_focus_id uuid NOT NULL,
+    user_id uuid NOT NULL,
+    ordinal smallint NOT NULL,
+    action_type varchar(32) NOT NULL,
+    purpose_code varchar(64) NOT NULL,
+    rationale varchar(2048),
+    source_owner varchar(32),
+    source_kind varchar(48),
+    source_id varchar(255),
+    source_revision varchar(128),
+    source_policy_version varchar(128),
+    source_publication_id uuid,
+    source_eligibility_policy_version varchar(128),
+    source_verified_at timestamptz,
+    provenance_type varchar(32) NOT NULL,
+    provenance_reference_id varchar(255),
+    provenance_reference_version varchar(128),
+    provenance_accepted_at timestamptz NOT NULL,
+    presentation_title varchar(255) NOT NULL,
+    presentation_summary varchar(4096),
+    presentation_instructions varchar(2048),
+    presentation_external_url varchar(2048),
+    status varchar(16) NOT NULL,
+    version bigint NOT NULL,
+    created_at timestamptz NOT NULL,
+    updated_at timestamptz NOT NULL,
+    activated_at timestamptz,
+    ended_at timestamptz,
+    UNIQUE (id, support_plan_id, user_id),
+    UNIQUE (id, support_plan_id, user_id, action_type),
+    UNIQUE (plan_focus_id, ordinal),
+    FOREIGN KEY (support_plan_id, user_id)
+        REFERENCES care.support_plan(id, user_id),
+    FOREIGN KEY (plan_focus_id, support_plan_id, user_id)
+        REFERENCES care.support_plan_focus(id, support_plan_id, user_id)
 );
 
 CREATE TABLE care.support_plan_template_family (
@@ -726,10 +788,15 @@ CREATE TABLE care.support_plan_activity_schedule (
     ordinal smallint NOT NULL,
     schedule_version integer NOT NULL,
     source_plan_version bigint NOT NULL,
-    source_slot_key varchar(64) NOT NULL,
-    source_resource_id uuid NOT NULL, -- external -> content.resource.id
-    source_content_version bigint NOT NULL,
+    source_slot_key varchar(64),
+    source_resource_id uuid, -- external -> content.resource.id; v2 branch only
+    source_content_version bigint,
+    source_action_id uuid, -- v3 -> care.support_plan_action.id
+    source_action_version bigint,
+    source_action_type varchar(32),
     source_title varchar(255) NOT NULL,
+    schedule_policy_version varchar(128),
+    reminder_enabled boolean NOT NULL DEFAULT false,
     recurrence_type varchar(16) NOT NULL,
     recurrence_day_of_week smallint,
     local_time time NOT NULL,
@@ -740,8 +807,12 @@ CREATE TABLE care.support_plan_activity_schedule (
     created_at timestamptz NOT NULL,
     updated_at timestamptz NOT NULL,
     UNIQUE (id, support_plan_id, user_id),
+    UNIQUE (id, support_plan_id, user_id, schedule_version, source_plan_version,
+        source_action_id, source_action_version, source_action_type),
     FOREIGN KEY (support_plan_id, user_id)
-        REFERENCES care.support_plan(id, user_id)
+        REFERENCES care.support_plan(id, user_id),
+    FOREIGN KEY (source_action_id, support_plan_id, user_id, source_action_type)
+        REFERENCES care.support_plan_action(id, support_plan_id, user_id, action_type)
 );
 
 CREATE TABLE care.support_plan_activity_occurrence (
@@ -757,10 +828,19 @@ CREATE TABLE care.support_plan_activity_occurrence (
     state varchar(16) NOT NULL,
     state_reason varchar(32),
     source_plan_version bigint NOT NULL,
-    source_slot_key varchar(64) NOT NULL,
-    source_resource_id uuid NOT NULL, -- external -> content.resource.id
-    source_content_version bigint NOT NULL,
+    source_slot_key varchar(64),
+    source_resource_id uuid, -- external -> content.resource.id; v2 branch only
+    source_content_version bigint,
+    source_action_id uuid, -- v3 -> care.support_plan_action.id
+    source_action_version bigint,
+    source_action_type varchar(32),
     source_title varchar(255) NOT NULL,
+    evidence_owner varchar(32),
+    evidence_kind varchar(48),
+    evidence_id varchar(255),
+    evidence_revision varchar(128),
+    evidence_occurred_at timestamptz,
+    evidence_verified_at timestamptz,
     version bigint NOT NULL,
     created_at timestamptz NOT NULL,
     updated_at timestamptz NOT NULL,
@@ -789,8 +869,20 @@ CREATE TABLE care.support_plan_activity_occurrence (
     FOREIGN KEY (activity_schedule_id, support_plan_id, user_id)
         REFERENCES care.support_plan_activity_schedule(id, support_plan_id, user_id),
     FOREIGN KEY (support_plan_id, user_id)
-        REFERENCES care.support_plan(id, user_id)
+        REFERENCES care.support_plan(id, user_id),
+    FOREIGN KEY (source_action_id, support_plan_id, user_id, source_action_type)
+        REFERENCES care.support_plan_action(id, support_plan_id, user_id, action_type),
+    FOREIGN KEY (activity_schedule_id, support_plan_id, user_id, schedule_version,
+        source_plan_version, source_action_id, source_action_version, source_action_type)
+        REFERENCES care.support_plan_activity_schedule(id, support_plan_id, user_id, schedule_version,
+            source_plan_version, source_action_id, source_action_version, source_action_type)
 );
+
+CREATE UNIQUE INDEX ux_support_plan_activity_occurrence_evidence_fact
+    ON care.support_plan_activity_occurrence (
+        evidence_owner, evidence_kind, evidence_id, coalesce(evidence_revision, '')
+    )
+    WHERE evidence_owner IS NOT NULL;
 
 CREATE TABLE care.reassessment_self_report (
     id uuid PRIMARY KEY,
