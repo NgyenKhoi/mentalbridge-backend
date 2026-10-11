@@ -12,7 +12,8 @@ import org.junit.jupiter.api.Test;
 class SupportPlanActivityOccurrenceServiceTests {
 
 	private final SupportPlanActivityOccurrenceService service = new SupportPlanActivityOccurrenceService(
-			null, null, null, null, null, Clock.systemUTC(), new com.fasterxml.jackson.databind.ObjectMapper());
+			null, null, null, null, null, null, Clock.systemUTC(),
+			new com.fasterxml.jackson.databind.ObjectMapper());
 
 	@Test
 	void shiftsAClockGapToTheFirstValidLocalInstant() {

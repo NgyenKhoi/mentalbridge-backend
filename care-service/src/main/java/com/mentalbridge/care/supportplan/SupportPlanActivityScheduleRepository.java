@@ -19,4 +19,10 @@ interface SupportPlanActivityScheduleRepository extends JpaRepository<SupportPla
 			+ "where schedule.supportPlanId = :supportPlanId order by schedule.ordinal")
 	List<SupportPlanActivityScheduleEntity> findBySupportPlanIdForUpdate(
 			@Param("supportPlanId") UUID supportPlanId);
+
+	@Lock(LockModeType.PESSIMISTIC_WRITE)
+	@Query("select schedule from SupportPlanActivityScheduleEntity schedule "
+			+ "where schedule.sourceActionId = :actionId and schedule.userId = :userId order by schedule.ordinal")
+	List<SupportPlanActivityScheduleEntity> findBySourceActionIdAndUserIdForUpdate(
+			@Param("actionId") UUID actionId, @Param("userId") UUID userId);
 }

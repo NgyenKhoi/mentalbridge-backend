@@ -36,6 +36,7 @@ public class SupportPlanActivityOccurrenceService {
 
 	private final SupportPlanRepository plans;
 	private final SupportPlanSlotRepository slots;
+	private final PlanActionRepository actions;
 	private final SupportPlanActivityScheduleRepository schedules;
 	private final SupportPlanActivityOccurrenceRepository occurrences;
 	private final UserProfileRepository profiles;
@@ -44,11 +45,12 @@ public class SupportPlanActivityOccurrenceService {
 	private final PlanActionSourcePolicy actionPolicy = new PlanActionSourcePolicy();
 
 	public SupportPlanActivityOccurrenceService(SupportPlanRepository plans, SupportPlanSlotRepository slots,
-			SupportPlanActivityScheduleRepository schedules,
+			PlanActionRepository actions, SupportPlanActivityScheduleRepository schedules,
 			SupportPlanActivityOccurrenceRepository occurrences, UserProfileRepository profiles, Clock clock,
 			ObjectMapper objectMapper) {
 		this.plans = plans;
 		this.slots = slots;
+		this.actions = actions;
 		this.schedules = schedules;
 		this.occurrences = occurrences;
 		this.profiles = profiles;
@@ -180,6 +182,42 @@ public class SupportPlanActivityOccurrenceService {
 		}
 		appendActionOccurrenceEvent(occurrence, correlationId, now);
 		return completion(occurrence);
+	}
+
+	/**
+	 * Authoritative lifecycle boundary for ending one native PlanAction. Ending the
+	 * action, its schedules, and its future open occurrences is one transaction so
+	 * callers cannot leave a partially ended action behind.
+	 */
+	@Transactional
+	public ActionEndResult endAction(UUID userId, UUID actionId) {
+		var action = actions.findByIdAndUserIdForUpdate(actionId, userId).orElseThrow(() ->
+				new ApiException(HttpStatus.NOT_FOUND, "PLAN_ACTION_NOT_FOUND", "PlanAction was not found"));
+		if ("DRAFT".equals(action.status())) {
+			throw new ApiException(HttpStatus.CONFLICT, "PLAN_ACTION_NOT_ACTIVE",
+					"A draft PlanAction cannot be ended");
+		}
+		if (!List.of("ACTIVE", "ENDED").contains(action.status())) {
+			throw new ApiException(HttpStatus.CONFLICT, "PLAN_ACTION_STATE_INVALID",
+					"PlanAction state does not support ending");
+		}
+
+		Instant now = clock.instant().truncatedTo(ChronoUnit.MICROS);
+		if ("ACTIVE".equals(action.status())) {
+			action.end(now);
+		}
+		int endedSchedules = 0;
+		for (var schedule : schedules.findBySourceActionIdAndUserIdForUpdate(actionId, userId)) {
+			if (!"ENDED".equals(schedule.status())) {
+				LocalDate last = now.atZone(zone(schedule.timezone())).toLocalDate().minusDays(1);
+				schedule.end(last, now);
+				endedSchedules++;
+			}
+		}
+		actions.saveAndFlush(action);
+		int cancelledOccurrences = occurrences.cancelFutureForEndedAction(actionId, userId, now);
+		return new ActionEndResult(action.id(), action.version(), action.status(), action.endedAt(),
+				endedSchedules, cancelledOccurrences);
 	}
 
 	@Transactional(readOnly = true)
@@ -522,6 +560,8 @@ public class SupportPlanActivityOccurrenceService {
 			Instant occurredAt, Instant verifiedAt) { }
 	public record ActionOccurrenceCompletion(UUID occurrenceId, long version, String state,
 			Instant completedAt, OwnerFact ownerFact) { }
+	public record ActionEndResult(UUID actionId, long actionVersion, String status, Instant endedAt,
+			int endedScheduleCount, int cancelledOccurrenceCount) { }
 	private record ActionOrchestrationEvent(String state, String displayState, String stateReason,
 			Instant outcomeRecordedAt, String interpretationCode) { }
 	private record ActionOccurrenceEventPayload(UUID supportPlanId, UUID userId, long planVersion,

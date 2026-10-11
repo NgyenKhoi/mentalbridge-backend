@@ -86,7 +86,7 @@ class SupportPlanIntegrationTests extends CareTestProperties {
 	}
 
 	@Test
-	void generatesNativeOccurrencesAcceptsOneBoundedOwnerFactAndKeepsActionHistoryStable()
+	void acceptsBoundedEvidenceAndEndsNativeActionWithoutRewritingOccurrenceHistory()
 			throws Exception {
 		var userId = insertProfile();
 		var evaluationId = evaluation(userId, "MINIMAL", "MINIMAL", false);
@@ -156,11 +156,32 @@ class SupportPlanIntegrationTests extends CareTestProperties {
 				.andExpect(status().isConflict())
 				.andExpect(jsonPath("$.code").value("SUPPORT_PLAN_MODEL_VERSION_UNSUPPORTED"));
 
-		action.end(now.plusSeconds(3));
-		action = actions.saveAndFlush(action);
-		assertThat(action.version()).isEqualTo(2);
-		assertThat(jdbc.sql("select source_action_version from support_plan_activity_schedule where id=:id")
-				.param("id", schedule.id()).query(Long.class).single()).isEqualTo(1);
+		var ended = activityOccurrences.endAction(userId, action.id());
+		assertThat(ended.status()).isEqualTo("ENDED");
+		assertThat(ended.actionVersion()).isEqualTo(2);
+		assertThat(ended.endedScheduleCount()).isEqualTo(1);
+		assertThat(ended.cancelledOccurrenceCount()).isEqualTo(1);
+		assertThat(jdbc.sql("select status || '|' || source_action_version "
+				+ "from support_plan_activity_schedule where id=:id")
+				.param("id", schedule.id()).query(String.class).single()).isEqualTo("ENDED|1");
+		assertThat(jdbc.sql("select state || '|' || coalesce(state_reason, '') || '|' || source_action_version "
+				+ "from support_plan_activity_occurrence where id=:id")
+				.param("id", firstOccurrenceId).query(String.class).single()).isEqualTo("COMPLETED||1");
+		assertThat(jdbc.sql("select state || '|' || state_reason || '|' || source_action_version "
+				+ "from support_plan_activity_occurrence where id=:id")
+				.param("id", secondOccurrenceId).query(String.class).single())
+				.isEqualTo("CANCELLED|ACTION_ENDED|1");
+
+		mvc.perform(get("/api/v2/support-plan-occurrences").with(user(userId))
+				.param("from", today.plusDays(1).toString())
+				.param("through", today.plusDays(2).toString()))
+				.andExpect(status().isOk())
+				.andExpect(jsonPath("$.occurrences.length()").value(1))
+				.andExpect(jsonPath("$.occurrences[0].occurrenceId").value(secondOccurrenceId.toString()))
+				.andExpect(jsonPath("$.occurrences[0].state").value("CANCELLED"))
+				.andExpect(jsonPath("$.occurrences[0].stateReason").value("ACTION_ENDED"));
+		assertThat(jdbc.sql("select count(*) from support_plan_activity_occurrence where source_action_id=:id")
+				.param("id", action.id()).query(Long.class).single()).isEqualTo(2);
 	}
 
 	@Test

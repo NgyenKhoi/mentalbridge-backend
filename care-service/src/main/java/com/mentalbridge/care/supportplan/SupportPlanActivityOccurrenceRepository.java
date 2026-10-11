@@ -107,6 +107,17 @@ interface SupportPlanActivityOccurrenceRepository
 	@Modifying(flushAutomatically = true)
 	@Query(value = """
 			update support_plan_activity_occurrence
+			set state = 'CANCELLED', state_reason = 'ACTION_ENDED', cancelled_at = :now,
+			    updated_at = :now, version = version + 1
+			where source_action_id = :actionId and user_id = :userId and scheduled_at >= :now
+			  and (state = 'SCHEDULED' or (state = 'CANCELLED' and state_reason = 'PLAN_PAUSED'))
+			""", nativeQuery = true)
+	int cancelFutureForEndedAction(@Param("actionId") UUID actionId, @Param("userId") UUID userId,
+			@Param("now") Instant now);
+
+	@Modifying(flushAutomatically = true)
+	@Query(value = """
+			update support_plan_activity_occurrence
 			set state = 'SCHEDULED', state_reason = null, cancelled_at = null,
 			    updated_at = :now, version = version + 1
 			where support_plan_id = :planId and state = 'CANCELLED'

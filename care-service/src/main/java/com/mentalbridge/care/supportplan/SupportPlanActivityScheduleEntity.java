@@ -117,16 +117,19 @@ class SupportPlanActivityScheduleEntity {
 	String status() { return status; }
 
 	void pause(Instant now) {
+		if (!"ACTIVE".equals(status)) return;
 		this.status = "PAUSED";
 		this.updatedAt = now;
 	}
 
 	void resume(Instant now) {
+		if (!"PAUSED".equals(status)) return;
 		this.status = "ACTIVE";
 		this.updatedAt = now;
 	}
 
 	void end(LocalDate lastLocalDate, Instant now) {
+		if ("ENDED".equals(status)) return;
 		this.status = "ENDED";
 		this.effectiveUntil = lastLocalDate.isBefore(effectiveFrom) ? effectiveFrom : lastLocalDate;
 		this.updatedAt = now;
