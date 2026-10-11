@@ -68,6 +68,13 @@ adapter creates no native action rows and changes no v2 write or history
 semantics. A schedule edit changes only future generation; elapsed time yields
 an overdue read state rather than an automatic failure.
 
+When the persisted v2 routing template is a professional-adjunct family, the
+same read boundary also emits one deterministic virtual
+`PROFESSIONAL_SUPPORT` action as `PRIMARY`; the resource actions in that focus
+are `ADJUNCT`. Consultation owns discovery and appointment state. Care exposes
+only the plan path and never books, shares data, or treats an appointment
+transition as authority to change the plan lifecycle.
+
 ## MB-375 reassessment review and replacement
 
 `POST /api/v1/support-plans/{draftId}/replacement-review` is read-only. It

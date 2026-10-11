@@ -26,6 +26,7 @@ public class SupportPlanV3Service {
 	private static final String SCHEDULE_POLICY_V1 = "support-plan-activity-schedule-v1";
 
 	private final SupportPlanRepository plans;
+	private final SupportPlanTemplateFamilyRepository families;
 	private final SupportPlanSlotRepository slots;
 	private final SupportPlanFocusRepository focuses;
 	private final PlanActionRepository actions;
@@ -33,11 +34,13 @@ public class SupportPlanV3Service {
 	private final SupportPlanActivityOccurrenceService activities;
 	private final Clock clock;
 
-	public SupportPlanV3Service(SupportPlanRepository plans, SupportPlanSlotRepository slots,
+	public SupportPlanV3Service(SupportPlanRepository plans, SupportPlanTemplateFamilyRepository families,
+			SupportPlanSlotRepository slots,
 			SupportPlanFocusRepository focuses, PlanActionRepository actions,
 			SupportPlanActivityScheduleRepository schedules,
 			SupportPlanActivityOccurrenceService activities, Clock clock) {
 		this.plans = plans;
+		this.families = families;
 		this.slots = slots;
 		this.focuses = focuses;
 		this.actions = actions;
@@ -107,7 +110,9 @@ public class SupportPlanV3Service {
 			throw invalidModel();
 		}
 		String policyVersion = plan.modelVersion() == 2 ? plan.selectionPolicyVersion() : plan.planPolicyVersion();
-		return new SupportPlanV3View(plan.id(), 3, policyVersion, representation(plan), plan.status(), plan.version(), values,
+		var safety = new SafetyView(plan.safetyStatus(), plan.safetyReasonCode(), plan.safetyPolicyVersion(),
+				plan.safetyGuidanceCode(), plan.safetyGuidance());
+		return new SupportPlanV3View(plan.id(), 3, policyVersion, representation(plan), plan.status(), plan.version(), safety, values,
 				plan.createdAt(), plan.updatedAt(), plan.activatedAt(), plan.completedAt(), plan.completionReason(),
 				plan.supersededAt(), plan.discardedAt(), "WELLBEING_SUPPORT_NOT_TREATMENT",
 				SupportPlanService.disclaimer());
@@ -119,6 +124,13 @@ public class SupportPlanV3Service {
 			scheduleBySlot.computeIfAbsent(schedule.sourceSlotKey(), ignored -> new ArrayList<>()).add(schedule);
 		}
 		var grouped = new LinkedHashMap<String, List<SupportPlanSlotEntity>>();
+		var professionalDomains = new java.util.HashSet<String>();
+		for (var family : families.findBySupportPlanIdOrderByOrdinal(plan.id())) {
+			if (family.family().endsWith("_PROFESSIONAL_ADJUNCT")) {
+				professionalDomains.add(family.targetDomain());
+				grouped.putIfAbsent(family.targetDomain(), new ArrayList<>());
+			}
+		}
 		for (var slot : slots.findBySupportPlanIdOrderByOrdinal(plan.id())) {
 			if (slot.selectedResource() != null) {
 				grouped.computeIfAbsent(slot.targetDomain(), ignored -> new ArrayList<>()).add(slot);
@@ -127,16 +139,23 @@ public class SupportPlanV3Service {
 		var result = new ArrayList<PlanFocusView>();
 		int focusOrdinal = 1;
 		for (var entry : grouped.entrySet()) {
-			var actionViews = entry.getValue().stream().map(slot -> adaptedAction(plan, slot,
-					scheduleBySlot.getOrDefault(slot.slotKey(), List.of()))).toList();
+			var actionViews = new ArrayList<PlanActionView>();
+			if (professionalDomains.contains(entry.getKey())) {
+				actionViews.add(adaptedProfessionalSupport(plan, entry.getKey()));
+			}
+			for (var slot : entry.getValue()) {
+				actionViews.add(adaptedAction(plan, slot,
+						scheduleBySlot.getOrDefault(slot.slotKey(), List.of()),
+						professionalDomains.contains(entry.getKey()), actionViews.size() + 1));
+			}
 			result.add(new PlanFocusView(virtualFocusId(plan.id(), entry.getKey()), focusTitle(entry.getKey()),
-					plan.rationaleText(), focusOrdinal++, actionViews));
+					plan.rationaleText(), focusOrdinal++, List.copyOf(actionViews)));
 		}
 		return result;
 	}
 
 	private PlanActionView adaptedAction(SupportPlanEntity plan, SupportPlanSlotEntity slot,
-			List<SupportPlanActivityScheduleEntity> actionSchedules) {
+			List<SupportPlanActivityScheduleEntity> actionSchedules, boolean adjunct, int ordinal) {
 		var resource = slot.selectedResource();
 		var source = new ActionSourceReferenceView("CONTENT", "RESOURCE_VERSION",
 				resource.resourceId().toString(), Long.toString(resource.contentVersion()), null,
@@ -146,9 +165,26 @@ public class SupportPlanV3Service {
 		var presentation = new ActionPresentationMetadataView(resource.title(), resource.summary(), null,
 				resource.externalUrl());
 		return new PlanActionView(slot.id().toString(), "RESOURCE", plan.version(), REPRESENTATION_V2,
-				actionStatus(plan.status()), slot.purposeCode(), plan.rationaleText(), slot.ordinal(), source,
+				actionStatus(plan.status()), adjunct ? "ADJUNCT" : "PRIMARY", slot.purposeCode(),
+				plan.rationaleText(), ordinal, source,
 				provenance, presentation, actionSchedules.stream().map(this::schedule).toList(), plan.createdAt(),
 				plan.updatedAt(), plan.activatedAt(), actionEndedAt(plan));
+	}
+
+	private PlanActionView adaptedProfessionalSupport(SupportPlanEntity plan, String targetDomain) {
+		var source = new ActionSourceReferenceView("CONSULTATION", "PROFESSIONAL_SUPPORT_PATHWAY",
+				"approved-online-specialist-discovery", "1", "support-plan-professional-path-v1",
+				null, null, null);
+		var provenance = new ActionProvenanceView("SYSTEM_POLICY", plan.supportEvaluationId().toString(),
+				plan.evaluationPolicyVersion(), plan.createdAt());
+		var presentation = new ActionPresentationMetadataView("Kết nối với chuyên gia",
+				"Đây là hướng hỗ trợ chính. Bạn có thể tự xem chuyên gia phù hợp và chỉ đặt lịch khi đã xác nhận.",
+				"Xem hồ sơ và khung giờ trước khi chủ động gửi yêu cầu đặt lịch. Kế hoạch không tự đặt lịch hoặc chia sẻ dữ liệu.",
+				null);
+		return new PlanActionView(virtualProfessionalActionId(plan.id(), targetDomain), "PROFESSIONAL_SUPPORT",
+				plan.version(), REPRESENTATION_V2, actionStatus(plan.status()), "PRIMARY",
+				"CONNECT_WITH_PROFESSIONAL_SUPPORT", plan.rationaleText(), 1, source, provenance, presentation,
+				List.of(), plan.createdAt(), plan.updatedAt(), plan.activatedAt(), actionEndedAt(plan));
 	}
 
 	private List<PlanFocusView> nativeFocuses(SupportPlanEntity plan) {
@@ -186,7 +222,7 @@ public class SupportPlanV3Service {
 		var presentation = new ActionPresentationMetadataView(action.presentationTitle(),
 				action.presentationSummary(), action.presentationInstructions(), action.presentationExternalUrl());
 		return new PlanActionView(action.id().toString(), action.actionType(), action.version(), REPRESENTATION_V3,
-				action.status(), action.purposeCode(), action.rationale(), action.ordinal(), source, provenance,
+				action.status(), nativePathRole(action), action.purposeCode(), action.rationale(), action.ordinal(), source, provenance,
 				presentation, actionSchedules.stream().map(this::schedule).toList(), action.createdAt(),
 				action.updatedAt(), action.activatedAt(), action.endedAt());
 	}
@@ -205,6 +241,16 @@ public class SupportPlanV3Service {
 	private String virtualFocusId(UUID planId, String targetDomain) {
 		return UUID.nameUUIDFromBytes((REPRESENTATION_V2 + ":" + planId + ":" + targetDomain)
 				.getBytes(StandardCharsets.UTF_8)).toString();
+	}
+
+	private String virtualProfessionalActionId(UUID planId, String targetDomain) {
+		return UUID.nameUUIDFromBytes((REPRESENTATION_V2 + ":" + planId + ":" + targetDomain
+				+ ":PROFESSIONAL_SUPPORT").getBytes(StandardCharsets.UTF_8)).toString();
+	}
+
+	private String nativePathRole(PlanActionEntity action) {
+		if ("PROFESSIONAL_SUPPORT".equals(action.actionType())) return "PRIMARY";
+		return action.purposeCode().contains("ADJUNCT") ? "ADJUNCT" : "PRIMARY";
 	}
 
 	private String focusTitle(String targetDomain) {
@@ -229,13 +275,15 @@ public class SupportPlanV3Service {
 	}
 
 	public record SupportPlanV3View(UUID supportPlanId, int modelVersion, String planPolicyVersion, String representationMode,
-			String status, long version, List<PlanFocusView> focuses, Instant createdAt, Instant updatedAt,
+			String status, long version, SafetyView safety, List<PlanFocusView> focuses, Instant createdAt, Instant updatedAt,
 			Instant activatedAt, Instant completedAt, String completionReason, Instant supersededAt,
 			Instant discardedAt, String disclaimerCode, String disclaimer) { }
+	public record SafetyView(String status, String reasonCode, String policyVersion,
+			String guidanceCode, String guidance) { }
 	public record PlanFocusView(String focusId, String title, String rationale, int ordinal,
 			List<PlanActionView> actions) { }
 	public record PlanActionView(String actionId, String actionType, long actionVersion,
-			String representationMode, String status, String purposeCode, String rationale, int ordinal,
+			String representationMode, String status, String pathRole, String purposeCode, String rationale, int ordinal,
 			ActionSourceReferenceView source, ActionProvenanceView provenance,
 			ActionPresentationMetadataView presentation, List<ActionScheduleView> schedules,
 			Instant createdAt, Instant updatedAt, Instant activatedAt, Instant endedAt) { }

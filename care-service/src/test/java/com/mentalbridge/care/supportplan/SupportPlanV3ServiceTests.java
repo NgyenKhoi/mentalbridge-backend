@@ -24,12 +24,13 @@ class SupportPlanV3ServiceTests {
 	private static final Instant NOW = Instant.parse("2026-10-11T08:00:00Z");
 
 	private final SupportPlanRepository plans = mock(SupportPlanRepository.class);
+	private final SupportPlanTemplateFamilyRepository families = mock(SupportPlanTemplateFamilyRepository.class);
 	private final SupportPlanSlotRepository slots = mock(SupportPlanSlotRepository.class);
 	private final SupportPlanFocusRepository focuses = mock(SupportPlanFocusRepository.class);
 	private final PlanActionRepository actions = mock(PlanActionRepository.class);
 	private final SupportPlanActivityScheduleRepository schedules = mock(SupportPlanActivityScheduleRepository.class);
 	private final SupportPlanActivityOccurrenceService activities = mock(SupportPlanActivityOccurrenceService.class);
-	private final SupportPlanV3Service service = new SupportPlanV3Service(plans, slots, focuses, actions,
+	private final SupportPlanV3Service service = new SupportPlanV3Service(plans, families, slots, focuses, actions,
 			schedules, activities, Clock.fixed(NOW.plusSeconds(60), ZoneOffset.UTC));
 
 	@Test
@@ -55,11 +56,13 @@ class SupportPlanV3ServiceTests {
 		assertThat(view.modelVersion()).isEqualTo(3);
 		assertThat(view.planPolicyVersion()).isEqualTo(SupportPlanService.SELECTION_POLICY_VERSION);
 		assertThat(view.representationMode()).isEqualTo("V2_RESOURCE_ADAPTER");
+		assertThat(view.safety().status()).isEqualTo("NEGATIVE_SAFETY_SCREEN");
 		assertThat(view.focuses()).singleElement().satisfies(focus -> {
 			assertThat(focus.title()).isEqualTo("Hỗ trợ tâm trạng");
 			assertThat(focus.actions()).singleElement().satisfies(action -> {
 				assertThat(action.actionId()).isEqualTo(slot.id().toString());
 				assertThat(action.actionType()).isEqualTo("RESOURCE");
+				assertThat(action.pathRole()).isEqualTo("PRIMARY");
 				assertThat(action.representationMode()).isEqualTo("V2_RESOURCE_ADAPTER");
 				assertThat(action.source().ownerDomain()).isEqualTo("CONTENT");
 				assertThat(action.source().sourceId()).isEqualTo(resourceId.toString());
@@ -69,6 +72,36 @@ class SupportPlanV3ServiceTests {
 		});
 		assertThat(focuses.findBySupportPlanIdAndUserIdOrderByOrdinal(planId, userId)).isEmpty();
 		assertThat(actions.findBySupportPlanIdAndUserIdOrderByPlanFocusIdAscOrdinalAsc(planId, userId)).isEmpty();
+	}
+
+	@Test
+	void makesProfessionalSupportPrimaryAndSelfHelpAdjunctForModerateOrHigherRouting() {
+		UUID userId = UUID.randomUUID();
+		UUID planId = UUID.randomUUID();
+		var plan = legacyPlan(planId, userId);
+		var resource = new ResourceDraft(UUID.randomUUID(), 3, UUID.randomUUID(), "ADJUNCT", "ARTICLE",
+				"Nội dung hỗ trợ thêm", "Một lựa chọn tự hỗ trợ đi kèm", null);
+		var slot = new SupportPlanSlotEntity(UUID.randomUUID(), planId, 1,
+				new SlotDraft("depression-adjunct", "OPTIONAL", "DEPRESSIVE_SYMPTOMS",
+						"DEPRESSION_SUPPORT_ADJUNCT", resource, List.of()));
+
+		when(plans.findByIdAndUserId(planId, userId)).thenReturn(Optional.of(plan));
+		when(families.findBySupportPlanIdOrderByOrdinal(planId)).thenReturn(List.of(
+				new SupportPlanTemplateFamilyEntity(UUID.randomUUID(), planId, 1,
+						"DEPRESSIVE_PROFESSIONAL_ADJUNCT", "DEPRESSIVE_SYMPTOMS")));
+		when(slots.findBySupportPlanIdOrderByOrdinal(planId)).thenReturn(List.of(slot));
+		when(schedules.findBySupportPlanIdOrderByOrdinal(planId)).thenReturn(List.of());
+
+		var view = service.get(userId, planId);
+
+		assertThat(view.focuses()).singleElement().satisfies(focus -> {
+			assertThat(focus.actions()).hasSize(2);
+			assertThat(focus.actions().get(0).actionType()).isEqualTo("PROFESSIONAL_SUPPORT");
+			assertThat(focus.actions().get(0).pathRole()).isEqualTo("PRIMARY");
+			assertThat(focus.actions().get(0).source().ownerDomain()).isEqualTo("CONSULTATION");
+			assertThat(focus.actions().get(1).actionType()).isEqualTo("RESOURCE");
+			assertThat(focus.actions().get(1).pathRole()).isEqualTo("ADJUNCT");
+		});
 	}
 
 	@Test
@@ -102,6 +135,7 @@ class SupportPlanV3ServiceTests {
 		assertThat(view.focuses()).singleElement().satisfies(result ->
 				assertThat(result.actions()).singleElement().satisfies(value -> {
 					assertThat(value.actionType()).isEqualTo("JOURNAL");
+					assertThat(value.pathRole()).isEqualTo("PRIMARY");
 					assertThat(value.source().ownerDomain()).isEqualTo("JOURNAL_AI");
 					assertThat(value.source().sourceKind()).isEqualTo("JOURNAL_TEMPLATE");
 					assertThat(value.presentation().title()).isEqualTo("Ghi lại điều đáng nhớ");
