@@ -1067,6 +1067,55 @@ describe('Database Integration', () => {
   });
 
   describe('resource reward read model', () => {
+    it('only awards otherwise eligible practice evidence when it is plan-bound', async () => {
+      const database = {
+        query: (text: string, parameters?: unknown[]) => pool.query(text, parameters),
+      } as unknown as DatabaseService;
+      const repository = new ResourceRewardRepository(database);
+      const owner = '12690000-0000-4000-8000-000000000001';
+      const resourceId = '12690000-0000-4000-8000-000000000002';
+      const supportPlanId = '12690000-0000-4000-8000-000000000003';
+      await pool.query(
+        `INSERT INTO resource
+           (id, category, locale, title, summary, content_body, source_organization,
+            source_title, source_url, source_review_note, status, reviewed_by,
+            reviewed_at, effective_at, source_review_status, resource_kind,
+            interaction_type, repeatability, completion_mode, streak_eligible)
+         VALUES ($1, 'BREATHING', 'vi-VN', 'Plan-bound evidence', 'Summary', 'Body',
+           'Reviewed source', 'Reviewed title', 'https://example.com/source', 'Reviewed note',
+           'PUBLISHED', '12690000-0000-4000-8000-000000000099', now(), now(),
+           'REVIEWED', 'PRACTICE', 'BREATHING_PACER', 'REPEATABLE', 'TIMED', true)`,
+        [resourceId],
+      );
+      await pool.query(
+        `INSERT INTO resource_publication_snapshot
+           (resource_id, content_version, snapshot, published_by, published_at)
+         SELECT id, version, to_jsonb(resource), reviewed_by, reviewed_at
+         FROM resource WHERE id = $1`,
+        [resourceId],
+      );
+      await pool.query(
+        `INSERT INTO resource_practice_session
+           (id, owner_id, resource_id, resource_version, support_plan_id, local_date,
+            completed_at, started_at, duration_seconds)
+         VALUES
+           ('12690000-0000-4000-8000-000000000010', $1, $2, 0, NULL, '2026-10-10',
+            '2026-10-10T04:05:00Z', '2026-10-10T04:00:00Z', 300),
+           ('12690000-0000-4000-8000-000000000011', $1, $2, 0, $3, '2026-10-11',
+            '2026-10-11T05:05:00Z', '2026-10-11T05:00:00Z', 300)`,
+        [owner, resourceId, supportPlanId],
+      );
+
+      const source = await repository.read(owner);
+      expect(source.facts).toHaveLength(1);
+      expect(source.facts[0]).toMatchObject({
+        kind: 'VERIFIED_PRACTICE',
+        resourceId,
+        occurredAt: '2026-10-11T05:05:00.000Z',
+      });
+      expect(calculateResourceRewards(source.facts, owner).totalXp).toBe(5);
+    });
+
     it('derives bounded owner-scoped rewards from exact reviewed evidence and corrections', async () => {
       const database = {
         query: (text: string, parameters?: unknown[]) => pool.query(text, parameters),
@@ -1104,16 +1153,16 @@ describe('Database Integration', () => {
       );
       await pool.query(
         `INSERT INTO resource_practice_session
-           (id, owner_id, resource_id, resource_version, local_date, completed_at,
-            started_at, duration_seconds)
+           (id, owner_id, resource_id, resource_version, support_plan_id, local_date,
+            completed_at, started_at, duration_seconds)
          VALUES
-           ('12700000-0000-4000-8000-000000000010', $1, $2, 0, '2026-10-12',
+           ('12700000-0000-4000-8000-000000000010', $1, $2, 0, $3, '2026-10-12',
             '2026-10-12T04:05:00Z', '2026-10-12T04:00:00Z', 300),
-           ('12700000-0000-4000-8000-000000000011', $1, $2, 0, '2026-10-12',
+           ('12700000-0000-4000-8000-000000000011', $1, $2, 0, $3, '2026-10-12',
             '2026-10-12T05:05:00Z', '2026-10-12T05:00:00Z', 300),
-           ('12700000-0000-4000-8000-000000000012', $1, $2, 0, '2026-10-13',
+           ('12700000-0000-4000-8000-000000000012', $1, $2, 0, $3, '2026-10-13',
             '2026-10-13T05:00:30Z', '2026-10-13T05:00:00Z', 30)`,
-        [owner, resourceId],
+        [owner, resourceId, '12700000-0000-4000-8000-000000000004'],
       );
 
       const source = await repository.read(owner);

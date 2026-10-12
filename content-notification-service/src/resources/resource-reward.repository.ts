@@ -59,6 +59,7 @@ export class ResourceRewardRepository {
              ON publication.resource_id = session.resource_id
             AND publication.content_version = session.resource_version
            WHERE session.owner_id = $1
+             AND session.support_plan_id IS NOT NULL
              AND session.started_at IS NOT NULL
              AND session.duration_seconds BETWEEN 60 AND 7200
            ORDER BY session.resource_id, session.local_date, session.completed_at, session.id
