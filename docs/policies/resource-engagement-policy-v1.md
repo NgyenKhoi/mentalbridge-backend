@@ -35,6 +35,11 @@
    state-changing commands fail closed with `412`.
 7. Missing weeks return `404`; dependency outages return `503`. Clients expose
    retry and do not present local or stale state as current truth.
+8. Legacy board items created before exact versions were stored are bound only
+   to the latest immutable publication snapshot whose `published_at` is no later
+   than the board `created_at`. If no such snapshot exists, the item is removed
+   during migration instead of assigning a mutable or later resource version.
+   The persisted board remains valid and may truthfully contain zero items.
 
 Participation is optional. Skipped and unchecked items have no penalty, and a
 full board has no clinical or treatment meaning.

@@ -26,10 +26,26 @@ ALTER TABLE resource_weekly_bingo_item
   ADD COLUMN resource_version bigint,
   ADD COLUMN self_confirmed_at timestamptz;
 
+-- Boards created before this migration did not retain a content version. Bind
+-- those rows only to the latest publication that existed when the board was
+-- created. The mutable resource row may already point at a later draft or
+-- publication and therefore is not historical evidence.
 UPDATE resource_weekly_bingo_item item
-SET resource_version = resource.version
-FROM resource
-WHERE resource.id = item.resource_id;
+SET resource_version = (
+  SELECT publication.content_version
+  FROM resource_publication_snapshot publication
+  JOIN resource_weekly_bingo board ON board.id = item.board_id
+  WHERE publication.resource_id = item.resource_id
+    AND publication.published_at <= board.created_at
+  ORDER BY publication.published_at DESC, publication.content_version DESC
+  LIMIT 1
+);
+
+-- If no publication snapshot predates the board, provenance is unrecoverable.
+-- Remove that legacy item instead of inventing a version. The board itself is
+-- retained and can truthfully be returned as an empty board.
+DELETE FROM resource_weekly_bingo_item
+WHERE resource_version IS NULL;
 
 ALTER TABLE resource_weekly_bingo_item
   ALTER COLUMN resource_version SET NOT NULL,

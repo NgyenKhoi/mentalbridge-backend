@@ -20,13 +20,13 @@ interface BingoBoardRow {
   readonly time_zone: string;
   readonly version: string | number;
   readonly updated_at: Date;
-  readonly ordinal: number;
-  readonly resource_id: string;
-  readonly resource_version: string | number;
+  readonly ordinal: number | null;
+  readonly resource_id: string | null;
+  readonly resource_version: string | number | null;
   readonly label: string | null;
   readonly self_confirmed_at: Date | null;
   readonly verified_at: Date | null;
-  readonly verification_source: ResourceBingoItemState['verificationSource'];
+  readonly verification_source: ResourceBingoItemState['verificationSource'] | null;
 }
 
 interface BingoLockRow {
@@ -43,8 +43,8 @@ const BINGO_BOARD_QUERY = `SELECT board.week_start::text, board.time_zone, board
     publication.snapshot ->> 'title' AS label, item.self_confirmed_at,
     evidence.occurred_at AS verified_at, evidence.source AS verification_source
   FROM resource_weekly_bingo board
-  JOIN resource_weekly_bingo_item item ON item.board_id = board.id
-  JOIN resource_publication_snapshot publication
+  LEFT JOIN resource_weekly_bingo_item item ON item.board_id = board.id
+  LEFT JOIN resource_publication_snapshot publication
     ON publication.resource_id = item.resource_id
    AND publication.content_version = item.resource_version
   LEFT JOIN LATERAL (
@@ -106,20 +106,27 @@ function board(rows: readonly BingoBoardRow[]): ResourceBingoBoardState | null {
     timeZone: first.time_zone,
     version: String(first.version),
     updatedAt: first.updated_at.toISOString(),
-    items: rows.map((row) => ({
-      position: row.ordinal + 1,
-      resourceId: row.resource_id,
-      contentVersion: String(row.resource_version),
-      label: row.label ?? 'Hoạt động hỗ trợ',
-      evidence: row.verified_at
-        ? 'CONTENT_VERIFIED'
-        : row.self_confirmed_at
-          ? 'SELF_CONFIRMED'
-          : 'NONE',
-      selfConfirmedAt: row.self_confirmed_at?.toISOString() ?? null,
-      verifiedAt: row.verified_at?.toISOString() ?? null,
-      verificationSource: row.verification_source,
-    })),
+    items: rows.flatMap((row) => {
+      if (row.ordinal === null || row.resource_id === null || row.resource_version === null) {
+        return [];
+      }
+      return [
+        {
+          position: row.ordinal + 1,
+          resourceId: row.resource_id,
+          contentVersion: String(row.resource_version),
+          label: row.label ?? 'Hoạt động hỗ trợ',
+          evidence: row.verified_at
+            ? 'CONTENT_VERIFIED'
+            : row.self_confirmed_at
+              ? 'SELF_CONFIRMED'
+              : 'NONE',
+          selfConfirmedAt: row.self_confirmed_at?.toISOString() ?? null,
+          verifiedAt: row.verified_at?.toISOString() ?? null,
+          verificationSource: row.verification_source,
+        } satisfies ResourceBingoItemState,
+      ];
+    }),
   };
 }
 

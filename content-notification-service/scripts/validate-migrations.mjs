@@ -193,6 +193,11 @@ assert.match(
 assert.match(resourceEngagement, /ADD COLUMN version bigint NOT NULL DEFAULT 0/);
 assert.match(resourceEngagement, /ADD COLUMN resource_version bigint/);
 assert.match(resourceEngagement, /ADD COLUMN self_confirmed_at timestamptz/);
+assert.match(resourceEngagement, /publication\.published_at <= board\.created_at/);
+assert.match(
+  resourceEngagement,
+  /DELETE FROM resource_weekly_bingo_item[\s\S]*WHERE resource_version IS NULL/,
+);
 assert.match(appointmentEmailReminders, /email_appointment_reminders_enabled\b/);
 assert.match(appointmentEmailReminders, /CREATE TABLE appointment_email_reminder\b/);
 assert.match(appointmentEmailReminders, /uq_appointment_email_reminder_identity\b/);

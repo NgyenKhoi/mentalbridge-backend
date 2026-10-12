@@ -2082,6 +2082,10 @@ statement. The read model computes verified evidence from exact-version,
 same-plan daily completion or eligible measured practice; it never copies that
 evidence onto the board. Self-confirmation and Content verification remain
 separate, and neither a skipped nor a fully checked board has clinical meaning.
+For boards predating exact-version persistence, migration binds an item only to
+the latest publication snapshot available at the board creation instant. An
+item without recoverable publication provenance is removed rather than guessed;
+the board header remains authoritative and can be returned with `items: []`.
 
 ### `content.notification_preference`
 

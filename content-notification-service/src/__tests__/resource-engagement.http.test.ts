@@ -237,6 +237,27 @@ describe('resource engagement HTTP boundary', () => {
       .expect(412);
   });
 
+  it('returns a persisted empty board and still distinguishes a missing week', async () => {
+    board = { ...board, items: [] };
+    const authorization = `Bearer ${await token()}`;
+    const empty = await request(app.getHttpServer())
+      .get('/api/v1/resource-bingo/2026-10-12')
+      .set('Authorization', authorization)
+      .expect(200)
+      .expect('ETag', '"0"')
+      .expect('Cache-Control', 'private, no-store');
+    expect(empty.body).toMatchObject({
+      weekStart: '2026-10-12',
+      version: '0',
+      items: [],
+    });
+
+    await request(app.getHttpServer())
+      .get('/api/v1/resource-bingo/2026-10-19')
+      .set('Authorization', authorization)
+      .expect(404);
+  });
+
   it('maps dependency failures without leaking details', async () => {
     vi.mocked(repository.listBookmarks).mockRejectedValueOnce(new Error('database secret'));
     const response = await request(app.getHttpServer())

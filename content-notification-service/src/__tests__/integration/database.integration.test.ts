@@ -111,6 +111,65 @@ describe('Database Integration', () => {
              'Legacy safety copy', 'Legacy record must not become active')`,
         );
       }
+      if (migration === '21_persist_resource_engagement.sql') {
+        const reviewer = '66000000-0000-4000-8000-000000000990';
+        for (const [resourceId, title, status] of [
+          ['66000000-0000-4000-8000-000000000201', 'Legacy draft', 'DRAFT'],
+          ['66000000-0000-4000-8000-000000000202', 'Later publication', 'PUBLISHED'],
+          ['66000000-0000-4000-8000-000000000203', 'Unknown provenance', 'DRAFT'],
+        ]) {
+          await pool.query(
+            `INSERT INTO resource (
+               id, category, locale, title, summary, content_body, status, reviewed_by,
+               reviewed_at, effective_at, version, source_organization, source_title,
+               source_url, source_review_note, catalogue_visibility, resource_kind,
+               interaction_type, repeatability, completion_mode, streak_eligible,
+               expected_duration_minutes, cooldown_days, recommended_frequency_per_week,
+               plan_tags, structured_content, interaction_config, safety_notes,
+               content_version_label, source_review_status
+             ) VALUES (
+               $1, 'BREATHING', 'vi-VN', $2, 'Legacy summary', 'Legacy body', $3,
+               $4, '2026-08-31T00:00:00Z', '2026-09-01T00:00:00Z', 1,
+               'MentalBridge fixture', 'Legacy migration fixture',
+               'https://example.com/legacy', 'Migration regression', 'DIRECT_ONLY',
+               'PRACTICE', 'BREATHING_PACER', 'REPEATABLE', 'TIMED', true, 5, 0, 4,
+               ARRAY['ANXIETY_SYMPTOMS'], jsonb_build_object('overview', 'Legacy summary'),
+               '{}'::jsonb, ARRAY['Stop if uncomfortable'], 'legacy-v1', 'REVIEWED'
+             )`,
+            [resourceId, title, status, reviewer],
+          );
+        }
+        await pool.query(
+          `INSERT INTO resource_publication_snapshot
+             (resource_id, content_version, snapshot, published_by, published_at)
+           VALUES
+             ('66000000-0000-4000-8000-000000000201', 0,
+               '{"title":"Legacy draft v0"}'::jsonb, $1, '2026-09-01T00:00:00Z'),
+             ('66000000-0000-4000-8000-000000000202', 0,
+               '{"title":"Later publication v0"}'::jsonb, $1, '2026-09-01T00:00:00Z'),
+             ('66000000-0000-4000-8000-000000000202', 1,
+               '{"title":"Later publication v1"}'::jsonb, $1, '2026-10-10T00:00:00Z')`,
+          [reviewer],
+        );
+        const legacyBoard = await pool.query<{ id: string }>(
+          `INSERT INTO resource_weekly_bingo
+             (owner_id, week_start, time_zone, support_plan_id, support_plan_version,
+              plan_tags, created_at)
+           VALUES (
+             '66000000-0000-4000-8000-000000000299', '2026-10-05',
+             'Asia/Ho_Chi_Minh', '66000000-0000-4000-8000-000000000298', 1,
+             ARRAY['ANXIETY_SYMPTOMS'], '2026-10-05T00:00:00Z')
+           RETURNING id`,
+        );
+        await pool.query(
+          `INSERT INTO resource_weekly_bingo_item (board_id, ordinal, resource_id)
+           VALUES
+             ($1, 0, '66000000-0000-4000-8000-000000000201'),
+             ($1, 1, '66000000-0000-4000-8000-000000000202'),
+             ($1, 2, '66000000-0000-4000-8000-000000000203')`,
+          [legacyBoard.rows[0].id],
+        );
+      }
       const sql = readFileSync(join(__dirname, '../../../migrations', migration), 'utf8');
       await pool.query(sql);
     }
@@ -119,6 +178,39 @@ describe('Database Integration', () => {
   afterAll(async () => {
     if (pool) await pool.end();
     if (container) await container.stop();
+  });
+
+  describe('resource engagement migration', () => {
+    it('binds legacy items to publications available at board creation and drops unknown provenance', async () => {
+      const result = await pool.query<{
+        resource_id: string;
+        resource_version: string;
+      }>(
+        `SELECT item.resource_id::text, item.resource_version::text
+         FROM resource_weekly_bingo board
+         JOIN resource_weekly_bingo_item item ON item.board_id = board.id
+         WHERE board.owner_id = '66000000-0000-4000-8000-000000000299'
+           AND board.week_start = '2026-10-05'
+         ORDER BY item.ordinal`,
+      );
+      expect(result.rows).toEqual([
+        {
+          resource_id: '66000000-0000-4000-8000-000000000201',
+          resource_version: '0',
+        },
+        {
+          resource_id: '66000000-0000-4000-8000-000000000202',
+          resource_version: '0',
+        },
+      ]);
+      const board = await pool.query<{ count: string }>(
+        `SELECT count(*)::text AS count
+         FROM resource_weekly_bingo
+         WHERE owner_id = '66000000-0000-4000-8000-000000000299'
+           AND week_start = '2026-10-05'`,
+      );
+      expect(board.rows[0].count).toBe('1');
+    });
   });
 
   describe('resource table', () => {
@@ -505,6 +597,21 @@ describe('Database Integration', () => {
       const resourceA = '66000000-0000-4000-8000-000000000101';
       const resourceB = '66000000-0000-4000-8000-000000000102';
       const reviewer = '66000000-0000-4000-8000-000000000900';
+
+      await pool.query(
+        `INSERT INTO resource_weekly_bingo
+           (owner_id, week_start, time_zone, support_plan_id, support_plan_version, plan_tags)
+         VALUES ($1, '2026-10-19', 'Asia/Ho_Chi_Minh', $2, 3,
+           ARRAY['ANXIETY_SYMPTOMS'])`,
+        [ownerB, planId],
+      );
+      await expect(repository.readBingo(ownerB, '2026-10-19')).resolves.toMatchObject({
+        weekStart: '2026-10-19',
+        timeZone: 'Asia/Ho_Chi_Minh',
+        version: '0',
+        items: [],
+      });
+      await expect(repository.readBingo(ownerB, '2026-10-26')).resolves.toBeNull();
 
       for (const [resourceId, title] of [
         [resourceA, 'Nhịp thở dịu lại'],
