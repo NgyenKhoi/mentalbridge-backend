@@ -258,6 +258,17 @@ if (
   throw new Error("Daily emotion check-in labels differ from the accepted ADR");
 }
 if (
+  schemas?.EmotionInfluenceFactor?.enum?.join(",") !==
+    "sleep,work,study,family,friends,health,other" ||
+  schemas?.EmotionCheckInValue?.properties?.factors?.maxItems !== 3 ||
+  schemas?.EmotionCheckInValue?.properties?.factors?.uniqueItems !== true ||
+  !checkIn?.required?.includes("factors")
+) {
+  throw new Error(
+    "Optional emotion influence factors differ from the accepted privacy contract",
+  );
+}
+if (
   notificationActivity?.properties?.interpretation?.const !==
     "FACTUAL_ACTIVITY_NOT_ADHERENCE_OR_RECOVERY" ||
   JSON.stringify(notificationActivity).match(
@@ -268,9 +279,13 @@ if (
     "Notification activity must remain factual and exclude sensitive content",
   );
 }
-if (consumerItem?.properties?.note || consumerItem?.properties?.id) {
+if (
+  consumerItem?.properties?.note ||
+  consumerItem?.properties?.factors ||
+  consumerItem?.properties?.id
+) {
   throw new Error(
-    "Consumer context must exclude raw notes and owner identifiers",
+    "Consumer context must exclude raw optional context and owner identifiers",
   );
 }
 if (

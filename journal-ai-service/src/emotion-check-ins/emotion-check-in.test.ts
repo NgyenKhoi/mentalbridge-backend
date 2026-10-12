@@ -14,6 +14,7 @@ import {
   EmotionCheckInCrypto,
   EmotionCheckInService,
   type CheckInCommand,
+  type CheckInValue,
   type CheckInRevision,
   type EmotionCheckInDocument,
   type EmotionCheckInRepository,
@@ -182,6 +183,7 @@ const createBody = {
   timezone: "Asia/Ho_Chi_Minh",
   emotion: "GOOD" as const,
   intensity: 4,
+  factors: ["sleep", "work"] as const,
   note: "A synthetic private note",
 };
 
@@ -218,6 +220,7 @@ const seedCheckIn = (
         payload: crypto.encrypt(ownerId, localDate, 1, {
           emotion,
           intensity: 3,
+          factors: [],
           note: null,
         }),
       },
@@ -236,12 +239,14 @@ void test("creates one encrypted owner-scoped check-in and replays exact retries
   const created = await service.create(request(createBody));
   assert.equal(created.localDate, "2026-09-17");
   assert.equal(created.sourceLabel, "SELF_REPORTED_EMOTION");
+  assert.deepEqual(created.factors, ["sleep", "work"]);
   assert.equal(created.note, createBody.note);
   assert.equal(
     JSON.stringify(repository.documents).includes(createBody.note),
     false,
   );
   assert.equal(JSON.stringify(repository.documents).includes("GOOD"), false);
+  assert.equal(JSON.stringify(repository.documents).includes("sleep"), false);
   assert.deepEqual(await service.create(request(createBody)), created);
   await assert.rejects(
     () =>
@@ -294,12 +299,50 @@ void test("enforces IANA timezone and server-derived local-day boundaries", asyn
     () => service.create(request({ ...createBody, note: "   " })),
     BadRequestException,
   );
+  for (const factors of [
+    ["sleep", "sleep"],
+    ["sleep", "work", "study", "family"],
+    ["sleep", "unsupported"],
+  ])
+    await assert.rejects(
+      () => service.create(request({ ...createBody, factors })),
+      BadRequestException,
+    );
+  await assert.rejects(
+    () => service.create(request({ ...createBody, note: "x".repeat(501) })),
+    BadRequestException,
+  );
+});
+
+void test("reads legacy payloads without factors as empty optional context", async () => {
+  const { repository, service } = subject();
+  seedCheckIn(repository, createBody.localDate);
+  const document = repository.documents[0];
+  assert.ok(document);
+  const firstRevision = document.revisions[0];
+  assert.ok(firstRevision);
+  const crypto = new EmotionCheckInCrypto(configuration);
+  firstRevision.payload = crypto.encrypt(
+    ownerId,
+    createBody.localDate,
+    1,
+    // This deliberately models an encrypted record written before factors existed.
+    { emotion: "GOOD", intensity: 3, note: null } as CheckInValue,
+  );
+
+  const loaded = await service.get(request({}), createBody.localDate);
+  assert.deepEqual(loaded.factors, []);
 });
 
 void test("supports idempotent optimistic updates and rejects concurrent writers", async () => {
   const { service } = subject();
   await service.create(request(createBody));
-  const updateBody = { emotion: "LOW" as const, intensity: 3, note: null };
+  const updateBody = {
+    emotion: "LOW" as const,
+    intensity: 3,
+    factors: [],
+    note: null,
+  };
   const results = await Promise.allSettled([
     service.update(
       request(updateBody, "emotion-update-0001", 1),
@@ -307,7 +350,7 @@ void test("supports idempotent optimistic updates and rejects concurrent writers
     ),
     service.update(
       request(
-        { emotion: "GREAT", intensity: 5, note: null },
+        { emotion: "GREAT", intensity: 5, factors: ["health"], note: null },
         "emotion-update-0002",
         1,
       ),
@@ -326,6 +369,7 @@ void test("supports idempotent optimistic updates and rejects concurrent writers
     createBody.localDate,
   );
   assert.equal(replay.revision, 2);
+  assert.deepEqual(replay.factors, []);
   assert.equal(replay.note, null);
 });
 
@@ -366,6 +410,7 @@ void test("returns note-free context only under current consent", async () => {
   const projection = context.items[0];
   assert.ok(projection);
   assert.equal("note" in projection, false);
+  assert.equal("factors" in projection, false);
   assert.equal("id" in projection, false);
   assert.equal(context.consent.policyVersion, "ai-processing-capstone-v1");
   assert.equal(context.consent.decidedAt, "2026-09-16T09:00:00.000Z");

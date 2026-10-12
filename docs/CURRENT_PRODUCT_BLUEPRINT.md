@@ -31,6 +31,12 @@ dedicated opt-in, quiet-hour deferral/suppression, appointment/version identity,
 lifecycle invalidation, strict before-start cutoff, and minimized in-app-only
 content separately from the wellbeing digest.
 
+Optional private context on the daily emotion check-in is governed by
+[ADR 0035 — Optional emotion influence context](adr/0035-optional-emotion-influence-context.md)
+(`MB-EMOTION-CONTEXT-001`). The stable factor list and private note remain
+skippable, encrypted in the owner record, clearable, and excluded from every
+downstream consumer unless a later approved minimal-data policy authorizes one.
+
 Appointment disputes are governed by
 [ADR 0031 — Appointment dispute and settlement gate](adr/0031-appointment-dispute-settlement-gate.md)
 (`MB-APPOINTMENT-DISPUTE-001`). One assigned participant may open a minimized

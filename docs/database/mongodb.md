@@ -116,10 +116,12 @@ One Journal/AI-owned document per `(ownerAccountId, localDate)`. The IANA
 submitted local date in that zone. `currentRevision` is optimistic concurrency
 state; revisions are capped at 32.
 
-Each revision stores `recordedAt` plus one AES-256-GCM `payload` containing only
-`emotion`, `intensity`, and optional `note`. None of those values is plaintext or
-indexed. Commands retain keyed idempotency hashes/fingerprints and non-content
-response metadata; raw keys and notes are prohibited.
+Each revision stores `recordedAt` plus one AES-256-GCM `payload` containing
+required `emotion` and `intensity`, an optional bounded list of stable influence
+factor codes, and optional `note`. None of those values is plaintext or indexed.
+Legacy payloads without factors are read as an empty list. Commands retain keyed
+idempotency hashes/fingerprints and non-content response metadata; raw keys,
+factors, and notes are prohibited.
 
 Required indexes are the unique owner/day identity, owner/deleted/local-date
 history, unique owner/command hash, and `purgeAfter` TTL. Direct owner deletion
@@ -127,9 +129,12 @@ sets `revisions` to an empty array immediately, leaves a content-free tombstone,
 and sets `purgeAfter` to 30 days. Active records have a null purge time and are
 retained until explicit owner/account deletion. Migration
 `006_daily_emotion_check_ins.cjs` is the executable validator and index source.
+MB-658 changes only the decrypted payload contract inside the existing encrypted
+envelope, so it requires no collection validator change or document rewrite.
 
 Owner responses may decrypt the current or historical revision after current
-authorization. The consent-gated AI projection excludes document ID and note.
+authorization. The consent-gated AI projection excludes document ID, factors,
+and note.
 The MB-567 progress read model scans active owner/local-date identities for
 current and longest streaks, then decrypts only the bounded current 30-day
 window to count self-reported labels. It persists no derived counter and

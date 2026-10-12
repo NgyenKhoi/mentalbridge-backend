@@ -1,8 +1,8 @@
 openapi: 3.1.0
 info:
   title: MentalBridge Journal AI Service API
-  version: 1.8.0
-  description: Private journal CRUD, daily self-reported emotion check-ins with factual progress and a service-authorized note-free notification activity projection, consent-gated analysis, bounded Support Guide phrasing, and quota-governed AI Companion conversations.
+  version: 1.9.0
+  description: Private journal CRUD, daily self-reported emotion check-ins with optional encrypted context and factual progress, a service-authorized content-free notification activity projection, consent-gated analysis, bounded Support Guide phrasing, and quota-governed AI Companion conversations.
 servers:
   - url: http://localhost:3000
 security:
@@ -13,7 +13,7 @@ tags:
   - name: Journals
     description: Private journal entries owned by the authenticated account.
   - name: Notification activity
-    description: Owner-scoped, note-free factual Journal and emotion activity used by Content/Notification policy.
+    description: Owner-scoped, optional-context-free factual Journal and emotion activity used by Content/Notification policy.
   - name: Analysis jobs
     description: Owner-scoped asynchronous analysis of one exact current revision.
   - name: Longitudinal analysis
@@ -214,7 +214,7 @@ paths:
     x-mentalbridge-status: implemented
     get:
       tags: [Emotion check-ins]
-      summary: Return a note-free minimized projection for consented AI reflection.
+      summary: Return a factor- and note-free minimized projection for consented AI reflection.
       description: Reminder composition is deliberately unavailable until a separate reminder consent contract is accepted.
       operationId: getEmotionCheckInConsumerContext
       parameters:
@@ -269,7 +269,7 @@ paths:
       security:
         - reminderServiceToken: []
       summary: Resolve one owner's minimized activity for the Content reminder scheduler.
-      description: Requires the configured Content/Notification service credential. The response is note-free and reuses the authoritative emotion progress calculation.
+      description: Requires the configured Content/Notification service credential. The response excludes optional factors and notes and reuses the authoritative emotion progress calculation.
       operationId: resolveNotificationActivityForScheduler
       parameters:
         - $ref: "#/components/parameters/CorrelationId"
@@ -1096,6 +1096,10 @@ components:
       type: string
       description: Self-selected, non-clinical label shared with Journal authoring.
       enum: [GREAT, GOOD, OKAY, LOW, VERY_LOW]
+    EmotionInfluenceFactor:
+      type: string
+      description: Optional self-selected context retained only in the owner record; it is not a diagnosis or downstream inference input.
+      enum: [sleep, work, study, family, friends, health, other]
     EmotionCheckInValue:
       type: object
       additionalProperties: false
@@ -1108,6 +1112,13 @@ components:
           minimum: 1
           maximum: 5
           description: Strength of the selected feeling, not wellness, severity, diagnosis, or recovery.
+        factors:
+          type: array
+          maxItems: 3
+          uniqueItems: true
+          default: []
+          description: Optional self-selected context; encrypted at rest and excluded from consumer projections, logs, events, analytics, SupportPlan, and automated AI use.
+          items: { $ref: "#/components/schemas/EmotionInfluenceFactor" }
         note:
           type: [string, "null"]
           minLength: 1
@@ -1137,6 +1148,7 @@ components:
           timezone,
           emotion,
           intensity,
+          factors,
           note,
           sourceLabel,
           clinicalUse,
@@ -1151,6 +1163,11 @@ components:
         timezone: { type: string, minLength: 1, maxLength: 64 }
         emotion: { $ref: "#/components/schemas/Emotion" }
         intensity: { type: integer, minimum: 1, maximum: 5 }
+        factors:
+          type: array
+          maxItems: 3
+          uniqueItems: true
+          items: { $ref: "#/components/schemas/EmotionInfluenceFactor" }
         note: { type: [string, "null"], maxLength: 500 }
         sourceLabel: { type: string, const: SELF_REPORTED_EMOTION }
         clinicalUse:
