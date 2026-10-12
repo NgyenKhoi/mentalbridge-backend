@@ -2043,6 +2043,18 @@ CREATE TABLE content.resource_reward_preference (
     updated_at timestamptz NOT NULL
 );
 
+CREATE TABLE content.resource_bookmark (
+    owner_id uuid NOT NULL, -- external -> identity.account.id
+    resource_id uuid NOT NULL,
+    resource_version bigint NOT NULL,
+    version bigint NOT NULL,
+    created_at timestamptz NOT NULL,
+    updated_at timestamptz NOT NULL,
+    PRIMARY KEY (owner_id, resource_id),
+    FOREIGN KEY (resource_id, resource_version)
+        REFERENCES content.resource_publication_snapshot(resource_id, content_version)
+);
+
 CREATE TABLE content.resource_daily_assignment (
     id uuid PRIMARY KEY,
     owner_id uuid NOT NULL, -- external -> identity.account.id
@@ -2073,6 +2085,8 @@ CREATE TABLE content.resource_weekly_bingo (
     support_plan_version bigint NOT NULL,
     plan_tags text[] NOT NULL,
     created_at timestamptz NOT NULL,
+    version bigint NOT NULL,
+    updated_at timestamptz NOT NULL,
     UNIQUE (owner_id, week_start)
 );
 
@@ -2080,8 +2094,12 @@ CREATE TABLE content.resource_weekly_bingo_item (
     board_id uuid NOT NULL REFERENCES content.resource_weekly_bingo(id) ON DELETE CASCADE,
     ordinal smallint NOT NULL,
     resource_id uuid NOT NULL REFERENCES content.resource(id),
+    resource_version bigint NOT NULL,
+    self_confirmed_at timestamptz,
     PRIMARY KEY (board_id, ordinal),
-    UNIQUE (board_id, resource_id)
+    UNIQUE (board_id, resource_id),
+    FOREIGN KEY (resource_id, resource_version)
+        REFERENCES content.resource_publication_snapshot(resource_id, content_version)
 );
 
 CREATE TABLE content.notification_preference (

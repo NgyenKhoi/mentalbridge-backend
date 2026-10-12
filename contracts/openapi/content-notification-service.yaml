@@ -1,7 +1,7 @@
 openapi: 3.1.0
 info:
   title: Content-Notification Service API
-  version: 1.7.0
+  version: 1.8.0
   description: >
     MentalBridge Content/Notification bounded context.
     Manages reviewed self-help resources, reviewed Vietnam safety-directory
@@ -392,6 +392,137 @@ paths:
         "401": { $ref: "#/components/responses/Unauthorized" }
         "404": { $ref: "#/components/responses/NotFound" }
         "422": { $ref: "#/components/responses/ValidationError" }
+        "503": { $ref: "#/components/responses/ServiceUnavailable" }
+
+  /api/v1/resource-bookmarks:
+    x-mentalbridge-status: implemented
+    get:
+      tags: [Resource progress]
+      summary: List the authenticated owner's private resource bookmarks
+      operationId: listResourceBookmarks
+      security:
+        - BearerAuth: []
+      responses:
+        "200":
+          description: Owner-scoped bookmarks ordered by the original saved instant
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ResourceBookmarkList"
+        "401": { $ref: "#/components/responses/Unauthorized" }
+        "503": { $ref: "#/components/responses/ServiceUnavailable" }
+
+  /api/v1/resource-bookmarks/{resourceId}:
+    x-mentalbridge-status: implemented
+    parameters:
+      - name: resourceId
+        in: path
+        required: true
+        schema: { type: string, format: uuid }
+    put:
+      tags: [Resource progress]
+      summary: Save the current exact reviewed version of one resource for the authenticated owner
+      operationId: saveResourceBookmark
+      security:
+        - BearerAuth: []
+      responses:
+        "200":
+          description: Saved bookmark; an identical retry returns the existing fact
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ResourceBookmark"
+        "401": { $ref: "#/components/responses/Unauthorized" }
+        "404": { $ref: "#/components/responses/NotFound" }
+        "422": { $ref: "#/components/responses/ValidationError" }
+        "503": { $ref: "#/components/responses/ServiceUnavailable" }
+    delete:
+      tags: [Resource progress]
+      summary: Remove one private resource bookmark for the authenticated owner
+      operationId: deleteResourceBookmark
+      security:
+        - BearerAuth: []
+      responses:
+        "204": { description: Bookmark absent after this idempotent command }
+        "401": { $ref: "#/components/responses/Unauthorized" }
+        "422": { $ref: "#/components/responses/ValidationError" }
+        "503": { $ref: "#/components/responses/ServiceUnavailable" }
+
+  /api/v1/resource-bingo/{weekStart}:
+    x-mentalbridge-status: implemented
+    get:
+      tags: [Resource progress]
+      summary: Read one persisted weekly resource Bingo board and its exact evidence
+      description: >-
+        Self-confirmed marks are owner statements and remain distinct from Content-verified
+        resource completion or eligible plan-bound practice evidence. Historical boards are
+        retained by their local Monday and original IANA time zone.
+      operationId: getResourceBingo
+      security:
+        - BearerAuth: []
+      parameters:
+        - name: weekStart
+          in: path
+          required: true
+          schema: { type: string, format: date }
+      responses:
+        "200":
+          description: Persisted owner-scoped board
+          headers:
+            ETag:
+              schema: { type: string, pattern: '^"(0|[1-9][0-9]*)"$' }
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ResourceBingoBoard"
+        "401": { $ref: "#/components/responses/Unauthorized" }
+        "404": { $ref: "#/components/responses/NotFound" }
+        "422": { $ref: "#/components/responses/ValidationError" }
+        "503": { $ref: "#/components/responses/ServiceUnavailable" }
+
+  /api/v1/resource-bingo/{weekStart}/items/{position}/self-confirmation:
+    x-mentalbridge-status: implemented
+    put:
+      tags: [Resource progress]
+      summary: Replace one owner self-confirmation on a persisted Bingo item
+      operationId: setResourceBingoSelfConfirmation
+      security:
+        - BearerAuth: []
+      parameters:
+        - name: weekStart
+          in: path
+          required: true
+          schema: { type: string, format: date }
+        - name: position
+          in: path
+          required: true
+          schema: { type: integer, minimum: 1, maximum: 9 }
+        - name: If-Match
+          in: header
+          required: true
+          schema: { type: string, pattern: '^"(0|[1-9][0-9]*)"$' }
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/ResourceBingoSelfConfirmationUpdate"
+      responses:
+        "200":
+          description: Current board after an idempotent, version-checked update
+          headers:
+            ETag:
+              schema: { type: string, pattern: '^"(0|[1-9][0-9]*)"$' }
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ResourceBingoBoard"
+        "400": { $ref: "#/components/responses/RequestRejected" }
+        "401": { $ref: "#/components/responses/Unauthorized" }
+        "404": { $ref: "#/components/responses/NotFound" }
+        "412": { $ref: "#/components/responses/Conflict" }
+        "422": { $ref: "#/components/responses/ValidationError" }
+        "428": { $ref: "#/components/responses/RequestRejected" }
         "503": { $ref: "#/components/responses/ServiceUnavailable" }
 
   /api/v1/resource-rewards:
@@ -1751,6 +1882,87 @@ components:
             minLength: 1
             maxLength: 64
             pattern: "^[A-Za-z0-9:_-]+$"
+
+    ResourceBookmark:
+      type: object
+      additionalProperties: false
+      required: [resourceId, contentVersion, savedAt, version]
+      properties:
+        resourceId: { type: string, format: uuid }
+        contentVersion:
+          type: string
+          pattern: "^(0|[1-9][0-9]*)$"
+          maxLength: 19
+        savedAt: { type: string, format: date-time }
+        version:
+          type: string
+          pattern: "^(0|[1-9][0-9]*)$"
+          maxLength: 19
+
+    ResourceBookmarkList:
+      type: object
+      additionalProperties: false
+      required: [items]
+      properties:
+        items:
+          type: array
+          maxItems: 1000
+          items:
+            $ref: "#/components/schemas/ResourceBookmark"
+
+    ResourceBingoEvidence:
+      type: string
+      enum: [NONE, SELF_CONFIRMED, CONTENT_VERIFIED]
+
+    ResourceBingoVerificationSource:
+      type: string
+      enum: [RESOURCE_COMPLETION, PRACTICE_SESSION]
+
+    ResourceBingoItemState:
+      type: object
+      additionalProperties: false
+      required:
+        [position, resourceId, contentVersion, label, evidence, selfConfirmedAt, verifiedAt, verificationSource]
+      properties:
+        position: { type: integer, minimum: 1, maximum: 9 }
+        resourceId: { type: string, format: uuid }
+        contentVersion:
+          type: string
+          pattern: "^(0|[1-9][0-9]*)$"
+          maxLength: 19
+        label: { type: string, minLength: 1 }
+        evidence: { $ref: "#/components/schemas/ResourceBingoEvidence" }
+        selfConfirmedAt: { type: [string, "null"], format: date-time }
+        verifiedAt: { type: [string, "null"], format: date-time }
+        verificationSource:
+          oneOf:
+            - $ref: "#/components/schemas/ResourceBingoVerificationSource"
+            - type: "null"
+
+    ResourceBingoBoard:
+      type: object
+      additionalProperties: false
+      required: [weekStart, timeZone, version, updatedAt, items]
+      properties:
+        weekStart: { type: string, format: date }
+        timeZone: { type: string, minLength: 1, maxLength: 64 }
+        version:
+          type: string
+          pattern: "^(0|[1-9][0-9]*)$"
+          maxLength: 19
+        updatedAt: { type: string, format: date-time }
+        items:
+          type: array
+          maxItems: 9
+          items:
+            $ref: "#/components/schemas/ResourceBingoItemState"
+
+    ResourceBingoSelfConfirmationUpdate:
+      type: object
+      additionalProperties: false
+      required: [selfConfirmed]
+      properties:
+        selfConfirmed: { type: boolean }
 
     ResourceRewardVisibility:
       type: string
