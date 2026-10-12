@@ -1,7 +1,7 @@
 # MB-384 final video completion contract proposal
 
 Status: **Specialist command and evidence verification APPROVED on 2026-10-12;
-implementation pending. Automatic 24-hour settlement/release NOT APPROVED**.
+implementation under verification. Automatic 24-hour settlement/release NOT APPROVED**.
 Provider/access/privacy/90-day participation retention are already approved by
 the owner. This document records the approved additive command and the explicit
 unapproved settlement boundary. It does not
@@ -47,7 +47,8 @@ completion, with current ETag and no provider credentials:
   "creditState": "HELD",
   "completionFactId": null,
   "acceptedAt": "2026-10-12T13:00:00Z",
-  "manualReviewAt": "2026-10-13T13:00:00Z"
+  "manualReviewAt": "2026-10-13T13:00:00Z",
+  "version": 2
 }
 ```
 

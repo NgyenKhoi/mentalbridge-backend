@@ -107,7 +107,8 @@ the existing local Spring configuration mechanism or injected environment.
 slot publication. `LIVEKIT_TOKEN_TTL=PT2M` is bounded to 30 seconds–5 minutes.
 No secret/token may enter browser configuration, logs, URLs or source control.
 Missing provider configuration fails video operations closed, not unrelated
-appointment/manual brief workflows. See [ADR 0037](../docs/adr/0037-livekit-cloud-video-consultation.md).
+appointment/manual brief workflows. See [ADR 0038](../docs/adr/0038-livekit-cloud-video-consultation.md)
+and the [MB-384 local video runbook](../docs/runbooks/mb-384-livekit-video.md).
 
 | Variable | Required | Purpose | Safe local example |
 | --- | --- | --- | --- |
@@ -120,6 +121,10 @@ appointment/manual brief workflows. See [ADR 0037](../docs/adr/0037-livekit-clou
 | `IDENTITY_JWT_AUDIENCE` | Yes | Required API audience | `mentalbridge-api` |
 | `IDENTITY_JWT_PUBLIC_KEY` | Yes | X.509 PEM public key used to verify tokens | local public key |
 | `CONSULTATION_VIDEO_AVAILABILITY_ENABLED` | No | Enables `IN_APP_VIDEO` slot publication only after the provider contract gate passes | `false` |
+| `CONSULTATION_VIDEO_ENABLED` | No | Enables authorized LiveKit connection issuance; not slot publication | `false` |
+| `LIVEKIT_URL` | Enabled video | Existing Cloud project's secure WebSocket origin; no path/query | `wss://<project-host>.livekit.cloud` |
+| `LIVEKIT_API_KEY` / `LIVEKIT_API_SECRET` | Enabled video | Backend-only credentials for token issuance, room operations and signed webhooks | injected secrets |
+| `LIVEKIT_TOKEN_TTL` | No | New participant-token validity, bounded 30 seconds–5 minutes and clipped to scheduled end | `PT2M` |
 | `CONSULTATION_BILLING_MODE` | No | Subscription checkout mode: safe default `DISABLED`, deterministic local/CI `FAKE`, or explicitly approved `MOMO` | `DISABLED` |
 | `CONSULTATION_BILLING_CHECKOUT_TTL` | No | Maximum lifetime of a pending purchase or upgrade checkout | `PT15M` |
 | `CONSULTATION_BILLING_EXPIRY_INTERVAL` | No | Scheduler interval for expiring abandoned checkouts and releasing upgrade-held credits | `PT1M` |

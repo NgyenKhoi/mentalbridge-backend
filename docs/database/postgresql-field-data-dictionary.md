@@ -1392,10 +1392,10 @@ Implemented MB-378/MB-558 request aggregate with MB-379 decision settlement, MB-
 | `cancelled_at` | Server UTC cancellation instant required only for `CANCELLED`. |
 | `cancelled_by` | Identity actor UUID required only for `CANCELLED`; owner commands record the user and suspension records the administrator. |
 | `cancellation_credit_outcome` | Immutable `RELEASED`, `FORFEITED`, or `TRANSFERRED_TO_REPLACEMENT` result required only for `CANCELLED`. It describes this appointment's settlement even when the shared credit is currently held by its replacement. |
-| `session_outcome` / `session_outcome_reason` | Separate final chat result and stable reason: completion, either/both no-show, insufficient evidence, or timed-out evidence review. Null while the grace/reconciliation window is open. |
-| `session_policy_version` | `chat-session-completion-v1` provenance set when the scheduled channel ends. |
+| `session_outcome` / `session_outcome_reason` | Separate final chat result and stable reason: completion, either/both no-show, insufficient evidence, or timed-out evidence review. Video records only verified COMPLETED; unverified video retains null outcome/reason with HELD credit. |
+| `session_policy_version` | `chat-session-completion-v1` for chat; `livekit-video-completion-v1` for video. Video end alone leaves outcome/fact/settlement null and credit HELD. |
 | `session_ended_at` / `session_settled_at` | Server instants for history-only channel end and later outcome/credit settlement. End alone never consumes a credit. |
-| `evidence_review_started_at` / `evidence_failure_reason` | Minimized technical-reconciliation state. Credit stays held until normal recovery or the end-plus-35-minute fallback. |
+| `evidence_review_started_at` / `evidence_failure_reason` | Minimized technical-reconciliation state. The end-plus-35-minute fallback is historical chat policy only. Video flags unresolved manual review after 24 hours and remains HELD; no automatic release/settlement is approved. |
 | `completion_fact_id` | Opaque unique fact present only for evidence-backed `COMPLETED`; MB-516 uses it as a unique earning input. Timer-only session end still creates no earning. |
 | `created_at` / `updated_at` | UTC insertion and latest authoritative state-change instants. |
 | `version` | Optimistic state-transition counter for later decision commands. |
@@ -1414,6 +1414,69 @@ Append-only transition evidence introduced by MB-360, extended by MB-379 for ide
 | `idempotency_key` | Optional printable command key. MB-379 specialist decisions and deterministic expiry use one key per appointment command; a partial unique index prevents duplicate evidence. |
 | `credit_outcome` | Null for non-cancellation transitions; immutable `RELEASED`, `FORFEITED`, or `TRANSFERRED_TO_REPLACEMENT` for a transition into `CANCELLED`. |
 | `changed_at` | Server UTC instant at which the transition committed. |
+
+### `consultation.appointment_video_room`
+
+MB-384 owner mapping: one opaque provider room per appointment. Never contains
+secrets, media, private consultation content or client-selected authority.
+
+| Field | Purpose |
+| --- | --- |
+| `appointment_id` | Local one-to-one owner reference and primary key; serializes access/closure with the appointment lock. |
+| `room_name` | Unique opaque UUID-based Cloud room, stable across reconnects; no business/person identifiers. |
+| `user_identity` / `specialist_identity` | Distinct random provider identities, mapped server-side to assigned roles. |
+| `state` | PREPARING, OPEN, CLOSING, CLOSED or privacy PURGED tombstone; cannot authorize joining an ended appointment. |
+| `failure_reason` | Bounded technical uncertainty, not clinical content or provider error payload. |
+| `next_close_at` | Durable bounded retry/claim time for revocation and room deletion; never extends the appointment. |
+| `next_verification_at` | Fair bounded reconciliation retry cursor; updates provider-room version, not the Appointment ETag on every unsuccessful poll. |
+| `closed_at` | Server acknowledgement of successful revocation/deletion, not appointment completion. |
+| `created_at` | Server mapping instant. |
+| `retention_hold_reason` | Optional bounded operator legal/dispute/valid retention hold code; no free-text health information. |
+| `version` | Optimistic concurrency counter, in addition to owner appointment locking. |
+
+### `consultation.appointment_video_confirmation`
+
+Immutable business confirmation audit, distinct from expiring participation
+metadata. Never removed by the LiveKit retention job; no video/content is stored.
+
+| Field | Purpose |
+| --- | --- |
+| `appointment_id` / `id` | One intent per owner appointment; confirmation UUID has a composite owner FK from Appointment.video_confirmation_id, preventing cross-appointment provenance. |
+| `confirmed_by` | Assigned currently approved Specialist's authenticated Identity subject, not a request field. |
+| `source_version` | Strong Appointment version observed before the accepted command. |
+| `idempotency_key` | Printable 16–128 character command key, unique per Specialist; replays recover the same intent even with an old If-Match. |
+| `accepted_at` | Server UTC assertion time; may precede scheduled end. |
+| `policy_version` | Immutable livekit-video-completion-v1 provenance, distinct from historical chat. |
+
+`consultation.appointment.video_confirmation_id` is nullable for historical
+chat and non-confirmed video. A video COMPLETED row requires an owner-linked
+confirmation, immutable completion fact, verified outcome, actual end within the
+scheduled interval and settlement not earlier than actual end. Review flags
+remain non-terminal SESSION_ENDED with null settledAt/outcome and credit HELD.
+
+### `consultation.appointment_video_event`
+
+MB-384 minimized signature-verified LiveKit participation metadata, never raw
+webhook bodies, JWTs, recording, audio/video or consultation content. A source
+event ID is globally unique. The owner appointment lock serializes insertion,
+duplicate/conflict handling, verification and retention.
+
+| Field | Purpose |
+| --- | --- |
+| `event_id` | Bounded provider idempotency identity; identical replay does not create new evidence. Conflicting replay flags uncertainty rather than overwriting. |
+| `appointment_id` | Owner-local room/appointment reference; no client-authored assignment. |
+| `event_type` | Only participant_joined, participant_left and room_finished. |
+| `room_sid` | Provider room incarnation; pairing/overlap cannot mix unrelated room incarnations. |
+| `participant_identity` / `participant_sid` | Opaque assigned identity and connection SID; nullable only for room_finished. Reconnect uses separate pairs. |
+| `participant_role` | USER/SPECIALIST derived from the private room mapping, not provider metadata claims; null for room_finished. |
+| `occurred_at` | Signature-verified source UTC occurrence; validity/overlap is bounded by the authoritative appointment window. |
+| `received_at` | Server intake UTC instant; retention never removes a recent delayed delivery. |
+
+Cleanup deletes evidence and replaces room/participant identifiers with privacy
+tombstones after both closure and latest intake are older than 90 days. Any
+appointment dispute or bounded operator retention hold prevents cleanup. Purged
+room callbacks cannot recreate evidence. Appointment, status history, Brief,
+Summary, completion facts and financial rows are not deleted by this job.
 
 ### `consultation.appointment_chat_evidence`
 

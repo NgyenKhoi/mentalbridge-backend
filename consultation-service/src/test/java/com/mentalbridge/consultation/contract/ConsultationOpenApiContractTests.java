@@ -15,6 +15,10 @@ import io.swagger.v3.oas.models.media.Schema;
 class ConsultationOpenApiContractTests {
 
 	private static final Set<String> OPERATIONS = Set.of(
+			"POST /api/v1/specialist/appointments/{appointmentId}/video-completion",
+			"POST /internal/v1/video/livekit/webhook",
+			"GET /api/v1/appointments/{appointmentId}/video-session",
+			"POST /api/v1/appointments/{appointmentId}/video-access",
 			"GET /api/v1/specialist-profile/amendments/current",
 			"POST /api/v1/specialist-profile/amendments",
 			"PUT /api/v1/specialist-profile/amendments/{amendmentId}",
@@ -104,6 +108,9 @@ class ConsultationOpenApiContractTests {
 				}
 				else if (path.contains("notification-eligibility")) {
 					assertThat(operation.getSecurity()).anySatisfy(requirement -> assertThat(requirement).containsKey("serviceToken"));
+				}
+				else if (path.equals("/internal/v1/video/livekit/webhook")) {
+					assertThat(operation.getSecurity()).anySatisfy(requirement -> assertThat(requirement).containsKey("liveKitWebhook"));
 				}
 				else {
 					assertThat(operation.getSecurity()).anySatisfy(requirement -> assertThat(requirement).containsKey("bearerAuth"));

@@ -37,6 +37,7 @@ public class SecurityConfiguration {
 						.requestMatchers("/actuator/health", "/actuator/health/**", "/v3/api-docs/**", "/swagger-ui/**")
 						.permitAll()
 						.requestMatchers("/internal/v1/payouts/momo/ipn", "/internal/v1/payments/momo/ipn").permitAll()
+						.requestMatchers("/internal/v1/video/livekit/webhook").permitAll()
 						.requestMatchers("/internal/v1/appointments/*/notification-eligibility").permitAll()
 						.requestMatchers("/internal/v1/entitlements/current").hasRole("USER")
 						.requestMatchers("/internal/v1/appointments/*/consultation-brief-context",
@@ -52,6 +53,8 @@ public class SecurityConfiguration {
 								"/api/v1/specialist/appointments/**", "/api/v1/specialist/earnings",
 								"/api/v1/specialist/payout-destination", "/api/v1/specialist/payouts")
 						.hasRole("SPECIALIST")
+						.requestMatchers("/api/v1/appointments/*/video-session", "/api/v1/appointments/*/video-access")
+						.hasAnyRole("USER", "SPECIALIST")
 						.requestMatchers("/api/v1/appointments/**", "/api/v1/session-summaries/**",
 								"/api/v1/agreed-next-steps/**", "/api/v1/bookable-slots", "/api/v1/specialists/**")
 						.hasRole("USER")

@@ -76,6 +76,15 @@ pair prevents duplicate generation. Manual and scheduled jobs use one engine.
 
 ## Consultation — PostgreSQL
 
+MB-384 adds ACTIVE `appointment_video_room`, physically one-to-one with
+`appointment`, minimized `appointment_video_event` participation metadata, and
+immutable `appointment_video_confirmation` business audit. Provider-only evidence
+expires after 90 days absent disputes/valid holds; financial/confirmation history
+remains. Timer end leaves HELD credit. Only explicit assigned Specialist intent,
+trusted paired evidence and verified closure reuse the existing completion fact,
+CONSUMED ledger and MB-516 earning invariants. Unverified 24-hour review cannot
+settle or release credit. Historical chat policy remains unchanged.
+
 | Entity | Owner service | Storage | Status | Key relationships |
 | --- | --- | --- | --- | --- |
 | `specialist_profile` | consultation-service | PostgreSQL | ACTIVE | `account_id` and reviewer IDs are logical/external Identity references. |
@@ -87,6 +96,9 @@ pair prevents duplicate generation. Manual and scheduled jobs use one engine.
 | `specialist_profile_status_history` | consultation-service | PostgreSQL | ACTIVE | Physical history child; actor ID is a logical/external Identity reference. |
 | `current_service_entitlement` | consultation-service | PostgreSQL | ACTIVE | Account and establishing actor are logical/external Identity references; current narrow package decision for consumers. |
 | `availability_slot` | consultation-service | PostgreSQL | ACTIVE | Physical many-to-one to `specialist_profile`; active slots cannot overlap for one specialist. |
+| `appointment_video_room` | consultation-service | PostgreSQL | ACTIVE | MB-384 physical one-to-one Appointment mapping with opaque provider/participant identifiers, closure/retry state and explicit retention hold; no media or token. |
+| `appointment_video_event` | consultation-service | PostgreSQL | ACTIVE | Minimized signature-verified provider event linked to the exact room/Appointment; unique provider event identity, paired session evidence, 90-day retention except valid holds/disputes. |
+| `appointment_video_confirmation` | consultation-service | PostgreSQL | ACTIVE | Immutable assigned-Specialist intent, source revision, policy/time and actor-scoped idempotency key; owner-matched Appointment reference; retained independently of provider metadata cleanup. |
 | `service_credit_period`, `service_credit`, `service_credit_ledger` | consultation-service | PostgreSQL | ACTIVE | Current entitlement provisions bounded credits; appointment transitions hold and later release/consume one credit with append-only evidence. |
 | `appointment`, `appointment_status_history`, `appointment_chat_evidence` | consultation-service | PostgreSQL | ACTIVE | MB-378 owns the REQUESTED snapshot, exact online slot and held credit; MB-379 settles assigned specialist acceptance/rejection and deterministic expiry with idempotent history; MB-360 records suspension cancellation outcomes; MB-558 adds package reservation caps and linked atomic replacement; MB-380 records owner cancellation/reschedule audit; MB-383 stores content-free check-in/presence/accepted-message evidence and deterministically settles chat outcome and credit under `chat-session-completion-v1`; MB-643 adds an optional opaque originating Care action reference for presentation correlation only. |
 | `appointment_rating`, `specialist_rating_aggregate` | consultation-service | PostgreSQL | ACTIVE | MB-364 stores one current 1-5 rating per evidence-completed owned appointment and maintains the specialist count/sum aggregate in the same transaction. |

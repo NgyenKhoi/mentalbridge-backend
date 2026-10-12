@@ -1,4 +1,4 @@
-# ADR 0037: LiveKit Cloud video consultation
+# ADR 0038: LiveKit Cloud video consultation
 
 - Status: Accepted provider, privacy, access, retention and Specialist completion command; automatic timeout settlement not approved
 - Date: 2026-10-12
@@ -15,6 +15,10 @@ authority. This decision is not production or paid-plan approval. No alternative
 provider, self-hosted media service or separate business workflow is introduced.
 
 The official server SDK is isolated behind a narrow video-provider boundary.
+The SDK's private Cloud room-management adapter uses HTTPS Twirp requests with
+protobuf payloads, not MentalBridge gRPC or a new inter-service protocol.
+All MentalBridge business endpoints and owner queries remain REST/JSON with
+OpenAPI; signed provider webhooks are JSON. No SDK type crosses the owner API.
 Next.js and React Native consume only appointment-authorized connection data;
 they never receive an API secret. Backend configuration uses `LIVEKIT_URL`,
 `LIVEKIT_API_KEY`, `LIVEKIT_API_SECRET` through Spring configuration, not an
@@ -44,6 +48,9 @@ At end/cancellation the server must revoke both identities with an explicit
 Cloud cutoff and delete the room; failures remain pending verification and
 retryable, never financial proof. A scheduler has bounded operational latency,
 not a claim of exactly-at-the-millisecond media termination during an outage.
+Explicit revocation uses a fresh Unix-seconds cutoff one second beyond issuance
+so tokens created in the same second are rejected too. Servers must have accurate
+time: Cloud requires that cutoff to be within its current-time tolerance.
 
 ## Trusted evidence and completion
 
@@ -62,8 +69,8 @@ webhooks, both participants joining, elapsed time nor disconnect completes an
 appointment. Missing evidence/provider failure keeps `SESSION_ENDED` pending
 verification, without automatic no-show, credit consumption or earning.
 
-Current dev has only evidence-backed chat settlement and its immutable
-`completion_fact_id`; no Specialist video confirmation endpoint exists.
+Before MB-384, dev had only evidence-backed chat settlement and its immutable
+`completion_fact_id`, without a Specialist video confirmation endpoint.
 The owner approved the additive video-confirmation command on 2026-10-12:
 the assigned approved Specialist may confirm when the actual session ends,
 without waiting for grace; complete evidence plus verified closure and no
