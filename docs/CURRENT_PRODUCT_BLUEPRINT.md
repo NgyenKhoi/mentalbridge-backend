@@ -37,6 +37,13 @@ Optional private context on the daily emotion check-in is governed by
 skippable, encrypted in the owner record, clearable, and excluded from every
 downstream consumer unless a later approved minimal-data policy authorizes one.
 
+Optional resource participation rewards are governed by
+[ADR 0036 — Authoritative non-punitive resource rewards](adr/0036-authoritative-resource-rewards.md)
+(`MB-RESOURCE-REWARD-001`) and
+[resource reward policy v1](policies/resource-reward-policy-v1.md). Content derives
+bounded XP only from exact persisted reviewed-resource evidence. Rewards remain
+hideable, non-clinical, penalty-free, and unrelated to access or SupportPlan.
+
 Appointment disputes are governed by
 [ADR 0031 — Appointment dispute and settlement gate](adr/0031-appointment-dispute-settlement-gate.md)
 (`MB-APPOINTMENT-DISPUTE-001`). One assigned participant may open a minimized

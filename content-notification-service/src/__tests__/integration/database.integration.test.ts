@@ -18,6 +18,8 @@ import {
 import { NotificationService } from '../../notifications/notification.service.js';
 import { ResourceProgressRepository } from '../../resources/resource-progress.repository.js';
 import { ResourceJourneyRepository } from '../../resources/resource-journey.repository.js';
+import { ResourceRewardRepository } from '../../resources/resource-reward.repository.js';
+import { calculateResourceRewards } from '../../resources/resource-reward.policy.js';
 import { WellbeingDigestRepository } from '../../wellbeing-digest/wellbeing-digest.repository.js';
 import {
   CommunityNotificationDedupeConflictError,
@@ -81,6 +83,8 @@ describe('Database Integration', () => {
       '16_add_wellbeing_digest_delivery.sql',
       '17_add_appointment_email_reminders.sql',
       '18_add_community_interaction_notifications.sql',
+      '19_complete_resource_editorial_lifecycle.sql',
+      '20_add_resource_reward_visibility.sql',
     ]) {
       if (migration === '10_persist_notification_preferences.sql') {
         await pool.query(
@@ -979,6 +983,14 @@ describe('Database Integration', () => {
         completedAt: completed?.completedAt,
         version: '3',
       });
+      await pool.query(`UPDATE resource SET version = version + 1 WHERE id = $1`, [
+        resource.rows[0].id,
+      ]);
+      const afterResourceEdit = await repository.save(owner, resource.rows[0].id, '2026-09-28', {
+        status: 'IN_PROGRESS',
+        completedActionIds: [],
+      });
+      expect(afterResourceEdit?.contentVersion).toBe(completed?.contentVersion);
       expect(await repository.list(otherOwner, '2026-09-22', '2026-09-28')).toEqual([]);
       expect(await repository.list(owner, '2026-09-22', '2026-09-28')).toHaveLength(1);
     });
@@ -1051,6 +1063,86 @@ describe('Database Integration', () => {
           { status: 'IN_PROGRESS', completedActionIds: [] },
         ),
       ).toBeNull();
+    });
+  });
+
+  describe('resource reward read model', () => {
+    it('derives bounded owner-scoped rewards from exact reviewed evidence and corrections', async () => {
+      const database = {
+        query: (text: string, parameters?: unknown[]) => pool.query(text, parameters),
+      } as unknown as DatabaseService;
+      const repository = new ResourceRewardRepository(database);
+      const owner = '12700000-0000-4000-8000-000000000001';
+      const otherOwner = '12700000-0000-4000-8000-000000000002';
+      const resourceId = '12700000-0000-4000-8000-000000000003';
+      await pool.query(
+        `INSERT INTO resource
+           (id, category, locale, title, summary, content_body, source_organization,
+            source_title, source_url, source_review_note, status, reviewed_by,
+            reviewed_at, effective_at, source_review_status, resource_kind,
+            interaction_type, repeatability, completion_mode, streak_eligible)
+         VALUES ($1, 'BREATHING', 'vi-VN', 'Reward evidence', 'Summary', 'Body',
+           'Reviewed source', 'Reviewed title', 'https://example.com/source', 'Reviewed note',
+           'PUBLISHED', '12700000-0000-4000-8000-000000000099', now(), now(),
+           'REVIEWED', 'PRACTICE', 'BREATHING_PACER', 'REPEATABLE', 'TIMED', true)`,
+        [resourceId],
+      );
+      await pool.query(
+        `INSERT INTO resource_publication_snapshot
+           (resource_id, content_version, snapshot, published_by, published_at)
+         SELECT id, version, to_jsonb(resource), reviewed_by, reviewed_at
+         FROM resource WHERE id = $1`,
+        [resourceId],
+      );
+      await pool.query(
+        `INSERT INTO resource_daily_progress
+           (owner_id, resource_id, local_date, resource_version, status,
+            completed_action_ids, completed_at)
+         VALUES ($1, $2, '2026-10-12', 0, 'COMPLETED', ARRAY['done'],
+           '2026-10-12T04:00:00Z')`,
+        [owner, resourceId],
+      );
+      await pool.query(
+        `INSERT INTO resource_practice_session
+           (id, owner_id, resource_id, resource_version, local_date, completed_at,
+            started_at, duration_seconds)
+         VALUES
+           ('12700000-0000-4000-8000-000000000010', $1, $2, 0, '2026-10-12',
+            '2026-10-12T04:05:00Z', '2026-10-12T04:00:00Z', 300),
+           ('12700000-0000-4000-8000-000000000011', $1, $2, 0, '2026-10-12',
+            '2026-10-12T05:05:00Z', '2026-10-12T05:00:00Z', 300),
+           ('12700000-0000-4000-8000-000000000012', $1, $2, 0, '2026-10-13',
+            '2026-10-13T05:00:30Z', '2026-10-13T05:00:00Z', 30)`,
+        [owner, resourceId],
+      );
+
+      const source = await repository.read(owner);
+      expect(source.facts).toHaveLength(2);
+      expect(calculateResourceRewards(source.facts, owner).totalXp).toBe(15);
+      expect(
+        calculateResourceRewards((await repository.read(otherOwner)).facts, otherOwner).totalXp,
+      ).toBe(0);
+      const concurrentReads = await Promise.all(
+        Array.from({ length: 8 }, async () =>
+          calculateResourceRewards((await repository.read(owner)).facts, owner),
+        ),
+      );
+      expect(new Set(concurrentReads.map((result) => result.totalXp))).toEqual(new Set([15]));
+      expect(new Set(concurrentReads.map((result) => result.grants[0]?.grantId)).size).toBe(1);
+
+      await repository.setVisibility(owner, 'HIDDEN');
+      await repository.setVisibility(owner, 'HIDDEN');
+      expect((await repository.read(owner)).preference).toEqual({
+        visibilityState: 'HIDDEN',
+        version: '0',
+      });
+
+      await pool.query(
+        `DELETE FROM resource_daily_progress
+         WHERE owner_id = $1 AND resource_id = $2 AND local_date = '2026-10-12'`,
+        [owner, resourceId],
+      );
+      expect(calculateResourceRewards((await repository.read(owner)).facts, owner).totalXp).toBe(5);
     });
   });
 

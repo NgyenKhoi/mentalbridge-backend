@@ -2022,6 +2022,17 @@ Durable owner-scoped proof that a one-time learning resource was confirmed once.
 
 Repeatable practice history. `id` is a client-generated idempotency key for one deliberate completion, so retries do not duplicate a session while multiple sessions on the same day remain representable. `support_plan_id` must come from the persisted daily assignment; direct/out-of-plan progress never creates streak evidence. `started_at` and `duration_seconds` retain optional measured session metadata. Only sessions for the current plan and resources with `streak_eligible=true` count toward practice streak.
 
+### `content.resource_reward_preference`
+
+Stores only whether the authenticated owner wants the optional reward presentation visible. XP and grants are a deterministic read model over reviewed Content facts and are not persisted in this table.
+
+| Field | Purpose |
+| --- | --- |
+| `owner_id` | External Identity account UUID from the verified JWT and table primary key. |
+| `visibility_state` | `VISIBLE` or `HIDDEN`; hiding has no effect on resource, safety, Support Guide, SupportPlan, or professional access. |
+| `version` | Monotonic counter incremented only when the preference changes. |
+| `updated_at` | UTC instant of the latest preference change. |
+
 ### `content.resource_daily_assignment` and `content.resource_daily_assignment_item`
 
 Persisted, owner/date-scoped daily challenge derived from an authoritative active SupportPlan snapshot supplied by the trusted BFF. Materialization is allowed only for local Plan Days 1–14. The header stores timezone, plan identity/version, and plan tags; ordered items store exact resource IDs and a non-clinical selection reason. The unique owner/date key keeps reloads stable even if catalogue ordering changes.
