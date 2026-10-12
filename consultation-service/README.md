@@ -100,6 +100,15 @@ outcome or releasing user credit; a terminal credit release appends an explicit
 
 ## Configuration
 
+MB-384 uses the existing LiveKit Cloud `mentalbridge` Free project. Set backend
+`LIVEKIT_URL` (wss Cloud origin), `LIVEKIT_API_KEY`, `LIVEKIT_API_SECRET` through
+the existing local Spring configuration mechanism or injected environment.
+`CONSULTATION_VIDEO_ENABLED=false` is the safe runtime default, independent of
+slot publication. `LIVEKIT_TOKEN_TTL=PT2M` is bounded to 30 seconds–5 minutes.
+No secret/token may enter browser configuration, logs, URLs or source control.
+Missing provider configuration fails video operations closed, not unrelated
+appointment/manual brief workflows. See [ADR 0037](../docs/adr/0037-livekit-cloud-video-consultation.md).
+
 | Variable | Required | Purpose | Safe local example |
 | --- | --- | --- | --- |
 | `EUREKA_DEFAULT_ZONE` | Production | Eureka registry endpoint shared by Spring services | `http://localhost:8761/eureka/` |

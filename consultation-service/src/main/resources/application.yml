@@ -50,6 +50,12 @@ mentalbridge:
       public-key: ${IDENTITY_JWT_PUBLIC_KEY}
     availability:
       video-enabled: ${CONSULTATION_VIDEO_AVAILABILITY_ENABLED:false}
+    video:
+      enabled: ${CONSULTATION_VIDEO_ENABLED:false}
+      url: ${LIVEKIT_URL:}
+      api-key: ${LIVEKIT_API_KEY:}
+      api-secret: ${LIVEKIT_API_SECRET:}
+      token-ttl: ${LIVEKIT_TOKEN_TTL:PT2M}
     account-lifecycle:
       enabled: ${CONSULTATION_ACCOUNT_LIFECYCLE_ENABLED:false}
       topic: ${CONSULTATION_ACCOUNT_LIFECYCLE_TOPIC:mentalbridge.identity.account-lifecycle.v1}
