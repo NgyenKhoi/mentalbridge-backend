@@ -1,7 +1,7 @@
 openapi: 3.1.0
 info:
   title: Content-Notification Service API
-  version: 1.6.0
+  version: 1.8.0
   description: >
     MentalBridge Content/Notification bounded context.
     Manages reviewed self-help resources, reviewed Vietnam safety-directory
@@ -240,6 +240,10 @@ paths:
     get:
       tags: [Resources]
       summary: Get an active reviewed resource for one locale
+      description: >
+        Without contentVersion, resolves only the current active PUBLISHED resource.
+        With contentVersion, may resolve the immutable publication snapshot for an exact
+        historical reference after archive or correction without restoring catalogue visibility.
       operationId: getResource
       parameters:
         - $ref: "#/components/parameters/Locale"
@@ -248,7 +252,7 @@ paths:
           required: false
           description: >
             Exact non-negative content version requested by a persisted consumer reference.
-            When present, a different current version returns 404 rather than substituting content.
+            When present, the exact immutable publication is returned and no newer version is substituted.
           schema:
             type: string
             pattern: "^(0|[1-9][0-9]*)$"
@@ -299,7 +303,7 @@ paths:
 
     delete:
       tags: [Resources]
-      summary: Delete a DRAFT resource (Admin)
+      summary: Delete an initial DRAFT resource with no publication history (Admin)
       operationId: deleteResource
       security:
         - BearerAuth: []
@@ -390,6 +394,181 @@ paths:
         "422": { $ref: "#/components/responses/ValidationError" }
         "503": { $ref: "#/components/responses/ServiceUnavailable" }
 
+  /api/v1/resource-bookmarks:
+    x-mentalbridge-status: implemented
+    get:
+      tags: [Resource progress]
+      summary: List the authenticated owner's private resource bookmarks
+      operationId: listResourceBookmarks
+      security:
+        - BearerAuth: []
+      responses:
+        "200":
+          description: Owner-scoped bookmarks ordered by the original saved instant
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ResourceBookmarkList"
+        "401": { $ref: "#/components/responses/Unauthorized" }
+        "503": { $ref: "#/components/responses/ServiceUnavailable" }
+
+  /api/v1/resource-bookmarks/{resourceId}:
+    x-mentalbridge-status: implemented
+    parameters:
+      - name: resourceId
+        in: path
+        required: true
+        schema: { type: string, format: uuid }
+    put:
+      tags: [Resource progress]
+      summary: Save the current exact reviewed version of one resource for the authenticated owner
+      operationId: saveResourceBookmark
+      security:
+        - BearerAuth: []
+      responses:
+        "200":
+          description: Saved bookmark; an identical retry returns the existing fact
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ResourceBookmark"
+        "401": { $ref: "#/components/responses/Unauthorized" }
+        "404": { $ref: "#/components/responses/NotFound" }
+        "422": { $ref: "#/components/responses/ValidationError" }
+        "503": { $ref: "#/components/responses/ServiceUnavailable" }
+    delete:
+      tags: [Resource progress]
+      summary: Remove one private resource bookmark for the authenticated owner
+      operationId: deleteResourceBookmark
+      security:
+        - BearerAuth: []
+      responses:
+        "204": { description: Bookmark absent after this idempotent command }
+        "401": { $ref: "#/components/responses/Unauthorized" }
+        "422": { $ref: "#/components/responses/ValidationError" }
+        "503": { $ref: "#/components/responses/ServiceUnavailable" }
+
+  /api/v1/resource-bingo/{weekStart}:
+    x-mentalbridge-status: implemented
+    get:
+      tags: [Resource progress]
+      summary: Read one persisted weekly resource Bingo board and its exact evidence
+      description: >-
+        Self-confirmed marks are owner statements and remain distinct from Content-verified
+        resource completion or eligible plan-bound practice evidence. Historical boards are
+        retained by their local Monday and original IANA time zone.
+      operationId: getResourceBingo
+      security:
+        - BearerAuth: []
+      parameters:
+        - name: weekStart
+          in: path
+          required: true
+          schema: { type: string, format: date }
+      responses:
+        "200":
+          description: Persisted owner-scoped board
+          headers:
+            ETag:
+              schema: { type: string, pattern: '^"(0|[1-9][0-9]*)"$' }
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ResourceBingoBoard"
+        "401": { $ref: "#/components/responses/Unauthorized" }
+        "404": { $ref: "#/components/responses/NotFound" }
+        "422": { $ref: "#/components/responses/ValidationError" }
+        "503": { $ref: "#/components/responses/ServiceUnavailable" }
+
+  /api/v1/resource-bingo/{weekStart}/items/{position}/self-confirmation:
+    x-mentalbridge-status: implemented
+    put:
+      tags: [Resource progress]
+      summary: Replace one owner self-confirmation on a persisted Bingo item
+      operationId: setResourceBingoSelfConfirmation
+      security:
+        - BearerAuth: []
+      parameters:
+        - name: weekStart
+          in: path
+          required: true
+          schema: { type: string, format: date }
+        - name: position
+          in: path
+          required: true
+          schema: { type: integer, minimum: 1, maximum: 9 }
+        - name: If-Match
+          in: header
+          required: true
+          schema: { type: string, pattern: '^"(0|[1-9][0-9]*)"$' }
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/ResourceBingoSelfConfirmationUpdate"
+      responses:
+        "200":
+          description: Current board after an idempotent, version-checked update
+          headers:
+            ETag:
+              schema: { type: string, pattern: '^"(0|[1-9][0-9]*)"$' }
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ResourceBingoBoard"
+        "400": { $ref: "#/components/responses/RequestRejected" }
+        "401": { $ref: "#/components/responses/Unauthorized" }
+        "404": { $ref: "#/components/responses/NotFound" }
+        "412": { $ref: "#/components/responses/Conflict" }
+        "422": { $ref: "#/components/responses/ValidationError" }
+        "428": { $ref: "#/components/responses/RequestRejected" }
+        "503": { $ref: "#/components/responses/ServiceUnavailable" }
+
+  /api/v1/resource-rewards:
+    x-mentalbridge-status: implemented
+    get:
+      tags: [Resource progress]
+      summary: Read authoritative participation rewards for the authenticated owner
+      description: >-
+        Calculates bounded XP from persisted reviewed resource completion and verified
+        practice evidence. XP records participation only and is not a treatment,
+        adherence, recovery or mental-health score.
+      operationId: getResourceRewards
+      security:
+        - BearerAuth: []
+      responses:
+        "200":
+          description: Owner-scoped reward read model with source and rule provenance
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ResourceRewardReadModel"
+        "401": { $ref: "#/components/responses/Unauthorized" }
+        "503": { $ref: "#/components/responses/ServiceUnavailable" }
+    put:
+      tags: [Resource progress]
+      summary: Replace the authenticated owner's optional reward visibility preference
+      operationId: setResourceRewardVisibility
+      security:
+        - BearerAuth: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/ResourceRewardVisibilityUpdate"
+      responses:
+        "200":
+          description: Updated preference and freshly calculated reward read model
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ResourceRewardReadModel"
+        "401": { $ref: "#/components/responses/Unauthorized" }
+        "422": { $ref: "#/components/responses/ValidationError" }
+        "503": { $ref: "#/components/responses/ServiceUnavailable" }
+
   /api/v1/resource-journeys/{localDate}:
     x-mentalbridge-status: implemented
     put:
@@ -431,7 +610,7 @@ paths:
     x-mentalbridge-status: implemented
     post:
       tags: [Resources]
-      summary: Publish a reviewed DRAFT resource (blocked pending MB-251 policy approval)
+      summary: Publish an exact approved DRAFT resource version
       operationId: publishResource
       security:
         - BearerAuth: []
@@ -449,10 +628,72 @@ paths:
             type: integer
             minimum: 0
       responses:
+        "200":
+          description: Immutable exact-version publication created
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/ResourceSummary" }
         "400": { $ref: "#/components/responses/RequestRejected" }
         "401": { $ref: "#/components/responses/Unauthorized" }
         "403": { $ref: "#/components/responses/Forbidden" }
-        "409": { $ref: "#/components/responses/ReviewApprovalRequired" }
+        "404": { $ref: "#/components/responses/NotFound" }
+        "409": { $ref: "#/components/responses/Conflict" }
+
+  /api/v1/resources/{id}/review:
+    x-mentalbridge-status: implemented
+    post:
+      tags: [Resources]
+      summary: Record a configured-authority decision for one exact draft
+      operationId: reviewResource
+      security:
+        - BearerAuth: []
+      parameters:
+        - $ref: "#/components/parameters/ResourceId"
+        - name: version
+          in: query
+          required: true
+          schema: { type: integer, minimum: 0 }
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: "#/components/schemas/ResourceReviewRequest" }
+      responses:
+        "200":
+          description: Immutable review decision for the exact draft version
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/ResourceReviewDecision" }
+        "400": { $ref: "#/components/responses/RequestRejected" }
+        "401": { $ref: "#/components/responses/Unauthorized" }
+        "403": { $ref: "#/components/responses/Forbidden" }
+        "409": { $ref: "#/components/responses/Conflict" }
+        "422": { $ref: "#/components/responses/ValidationError" }
+
+  /api/v1/resources/{id}/versions:
+    x-mentalbridge-status: implemented
+    post:
+      tags: [Resources]
+      summary: Start a correction draft after archiving an exact publication
+      operationId: createResourceVersion
+      security:
+        - BearerAuth: []
+      parameters:
+        - $ref: "#/components/parameters/ResourceId"
+        - name: version
+          in: query
+          required: true
+          schema: { type: integer, minimum: 0 }
+      responses:
+        "200":
+          description: New editable content version
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/AdminResourceDetail" }
+        "400": { $ref: "#/components/responses/RequestRejected" }
+        "401": { $ref: "#/components/responses/Unauthorized" }
+        "403": { $ref: "#/components/responses/Forbidden" }
+        "409": { $ref: "#/components/responses/Conflict" }
 
   /api/v1/resources/{id}/archive:
     x-mentalbridge-status: implemented
@@ -1017,7 +1258,7 @@ components:
         application/problem+json:
           schema: { $ref: "#/components/schemas/ProblemDetails" }
     ReviewApprovalRequired:
-      description: Publish is unavailable until an approved MB-251 review decision is recorded
+      description: The exact draft lacks an approved configured-authority review decision
       content:
         application/problem+json:
           schema: { $ref: "#/components/schemas/ProblemDetails" }
@@ -1272,13 +1513,22 @@ components:
     EmailPreferences:
       type: object
       additionalProperties: false
-      required: [cadence, wellbeingDigestEnabled, resourceRemindersEnabled, dailyDigestTime, resourceReminderTime]
+      required:
+        [
+          cadence,
+          wellbeingDigestEnabled,
+          resourceRemindersEnabled,
+          dailyDigestTime,
+          resourceReminderTime,
+        ]
       properties:
         cadence: { $ref: "#/components/schemas/EmailCadence" }
         wellbeingDigestEnabled: { type: boolean }
         resourceRemindersEnabled: { type: boolean }
-        dailyDigestTime: { type: string, pattern: "^([01][0-9]|2[0-3]):[0-5][0-9]$" }
-        resourceReminderTime: { type: string, pattern: "^([01][0-9]|2[0-3]):[0-5][0-9]$" }
+        dailyDigestTime:
+          { type: string, pattern: "^([01][0-9]|2[0-3]):[0-5][0-9]$" }
+        resourceReminderTime:
+          { type: string, pattern: "^([01][0-9]|2[0-3]):[0-5][0-9]$" }
         appointmentRemindersEnabled: { type: boolean }
     EmailPreferencesPatch:
       type: object
@@ -1288,8 +1538,10 @@ components:
         cadence: { $ref: "#/components/schemas/EmailCadence" }
         wellbeingDigestEnabled: { type: boolean }
         resourceRemindersEnabled: { type: boolean }
-        dailyDigestTime: { type: string, pattern: "^([01][0-9]|2[0-3]):[0-5][0-9]$" }
-        resourceReminderTime: { type: string, pattern: "^([01][0-9]|2[0-3]):[0-5][0-9]$" }
+        dailyDigestTime:
+          { type: string, pattern: "^([01][0-9]|2[0-3]):[0-5][0-9]$" }
+        resourceReminderTime:
+          { type: string, pattern: "^([01][0-9]|2[0-3]):[0-5][0-9]$" }
         appointmentRemindersEnabled: { type: boolean }
     WellbeingDigestResourceItem:
       type: object
@@ -1301,11 +1553,22 @@ components:
     WellbeingDigestPreview:
       type: object
       additionalProperties: false
-      required: [localDate, timeZone, scheduledTime, eligibleNow, resourceItems, includeJournalPrompt, includeEmotionPrompt, empty]
+      required:
+        [
+          localDate,
+          timeZone,
+          scheduledTime,
+          eligibleNow,
+          resourceItems,
+          includeJournalPrompt,
+          includeEmotionPrompt,
+          empty,
+        ]
       properties:
         localDate: { type: string, format: date }
         timeZone: { type: string, minLength: 1, maxLength: 64 }
-        scheduledTime: { type: string, pattern: "^([01][0-9]|2[0-3]):[0-5][0-9]$" }
+        scheduledTime:
+          { type: string, pattern: "^([01][0-9]|2[0-3]):[0-5][0-9]$" }
         eligibleNow: { type: boolean }
         resourceItems:
           type: array
@@ -1644,6 +1907,193 @@ components:
             maxLength: 64
             pattern: "^[A-Za-z0-9:_-]+$"
 
+    ResourceBookmark:
+      type: object
+      additionalProperties: false
+      required: [resourceId, contentVersion, savedAt, version]
+      properties:
+        resourceId: { type: string, format: uuid }
+        contentVersion:
+          type: string
+          pattern: "^(0|[1-9][0-9]*)$"
+          maxLength: 19
+        savedAt: { type: string, format: date-time }
+        version:
+          type: string
+          pattern: "^(0|[1-9][0-9]*)$"
+          maxLength: 19
+
+    ResourceBookmarkList:
+      type: object
+      additionalProperties: false
+      required: [items]
+      properties:
+        items:
+          type: array
+          maxItems: 1000
+          items:
+            $ref: "#/components/schemas/ResourceBookmark"
+
+    ResourceBingoEvidence:
+      type: string
+      enum: [NONE, SELF_CONFIRMED, CONTENT_VERIFIED]
+
+    ResourceBingoVerificationSource:
+      type: string
+      enum: [RESOURCE_COMPLETION, PRACTICE_SESSION]
+
+    ResourceBingoItemState:
+      type: object
+      additionalProperties: false
+      required:
+        [position, resourceId, contentVersion, label, evidence, selfConfirmedAt, verifiedAt, verificationSource]
+      properties:
+        position: { type: integer, minimum: 1, maximum: 9 }
+        resourceId: { type: string, format: uuid }
+        contentVersion:
+          type: string
+          pattern: "^(0|[1-9][0-9]*)$"
+          maxLength: 19
+        label: { type: string, minLength: 1 }
+        evidence: { $ref: "#/components/schemas/ResourceBingoEvidence" }
+        selfConfirmedAt: { type: [string, "null"], format: date-time }
+        verifiedAt: { type: [string, "null"], format: date-time }
+        verificationSource:
+          oneOf:
+            - $ref: "#/components/schemas/ResourceBingoVerificationSource"
+            - type: "null"
+
+    ResourceBingoBoard:
+      type: object
+      additionalProperties: false
+      required: [weekStart, timeZone, version, updatedAt, items]
+      properties:
+        weekStart: { type: string, format: date }
+        timeZone: { type: string, minLength: 1, maxLength: 64 }
+        version:
+          type: string
+          pattern: "^(0|[1-9][0-9]*)$"
+          maxLength: 19
+        updatedAt: { type: string, format: date-time }
+        items:
+          type: array
+          maxItems: 9
+          items:
+            $ref: "#/components/schemas/ResourceBingoItemState"
+
+    ResourceBingoSelfConfirmationUpdate:
+      type: object
+      additionalProperties: false
+      required: [selfConfirmed]
+      properties:
+        selfConfirmed: { type: boolean }
+
+    ResourceRewardVisibility:
+      type: string
+      enum: [VISIBLE, HIDDEN]
+
+    ResourceRewardVisibilityUpdate:
+      type: object
+      additionalProperties: false
+      required: [visibilityState]
+      properties:
+        visibilityState:
+          $ref: "#/components/schemas/ResourceRewardVisibility"
+
+    ResourceRewardGrant:
+      type: object
+      additionalProperties: false
+      required:
+        [
+          grantId,
+          kind,
+          xp,
+          resourceId,
+          contentVersion,
+          localDate,
+          grantedAt,
+          sourceReference,
+          ruleVersion,
+        ]
+      properties:
+        grantId:
+          type: string
+          pattern: "^[a-f0-9]{64}$"
+        kind:
+          type: string
+          enum: [RESOURCE_COMPLETION, VERIFIED_PRACTICE]
+        xp:
+          type: integer
+          minimum: 1
+          maximum: 100
+        resourceId:
+          type: string
+          format: uuid
+        contentVersion:
+          type: string
+          pattern: "^(0|[1-9][0-9]*)$"
+          maxLength: 19
+        localDate:
+          type: string
+          format: date
+        grantedAt:
+          type: string
+          format: date-time
+        sourceReference:
+          type: string
+          minLength: 1
+          maxLength: 160
+        ruleVersion:
+          type: string
+          pattern: "^[a-z0-9][a-z0-9-]{2,63}$"
+
+    ResourceRewardReadModel:
+      type: object
+      additionalProperties: false
+      required:
+        [
+          totalXp,
+          level,
+          nextLevelXp,
+          visibilityState,
+          preferenceVersion,
+          policyVersion,
+          sourceAvailability,
+          calculatedAt,
+          recentGrants,
+        ]
+      properties:
+        totalXp:
+          type: integer
+          minimum: 0
+        level:
+          type: integer
+          minimum: 0
+        nextLevelXp:
+          type: integer
+          minimum: 0
+          nullable: true
+        visibilityState:
+          $ref: "#/components/schemas/ResourceRewardVisibility"
+        preferenceVersion:
+          type: string
+          pattern: "^(0|[1-9][0-9]*)$"
+          maxLength: 19
+        policyVersion:
+          type: string
+          pattern: "^[a-z0-9][a-z0-9-]{2,63}$"
+        sourceAvailability:
+          type: string
+          enum: [AVAILABLE]
+        calculatedAt:
+          type: string
+          format: date-time
+        recentGrants:
+          type: array
+          maxItems: 10
+          items:
+            $ref: "#/components/schemas/ResourceRewardGrant"
+
     ResourceKind:
       type: string
       enum: [LEARNING, PRACTICE, HABIT, ACTION, REFLECTION]
@@ -1979,7 +2429,7 @@ components:
       allOf:
         - $ref: "#/components/schemas/PublicResourceDetail"
         - type: object
-          required: [reviewedBy, version]
+          required: [reviewedBy, version, reviewDecision, isCorrectionDraft]
           properties:
             reviewedBy:
               type: string
@@ -1987,6 +2437,14 @@ components:
               nullable: true
             version:
               type: integer
+            reviewDecision:
+              allOf:
+                - $ref: "#/components/schemas/ResourceReviewDecision"
+              nullable: true
+              description: Immutable configured-authority decision for this exact version.
+            isCorrectionDraft:
+              type: boolean
+              description: True when this draft follows preserved publication history and cannot be deleted.
 
     ResourceListResponse:
       type: object
@@ -2014,6 +2472,7 @@ components:
 
     CreateResourceRequest:
       type: object
+      additionalProperties: false
       required:
         - category
         - title
@@ -2087,10 +2546,6 @@ components:
         contentVersionLabel:
           type: string
           default: draft-v1
-        sourceReviewStatus:
-          type: string
-          enum: [REVIEWED, REVIEW_REQUIRED, NEEDS_SOURCE_REVIEW]
-          default: NEEDS_SOURCE_REVIEW
         sourceOrganization:
           type: string
           maxLength: 200
@@ -2126,6 +2581,7 @@ components:
 
     UpdateResourceRequest:
       type: object
+      additionalProperties: false
       properties:
         locale:
           type: string
@@ -2189,9 +2645,6 @@ components:
           enum: [LISTED, DIRECT_ONLY]
         contentVersionLabel:
           type: string
-        sourceReviewStatus:
-          type: string
-          enum: [REVIEWED, REVIEW_REQUIRED, NEEDS_SOURCE_REVIEW]
         sourceOrganization:
           type: string
           maxLength: 200
@@ -2224,6 +2677,40 @@ components:
           type: string
           format: date-time
           nullable: true
+
+    ResourceReviewRequest:
+      type: object
+      additionalProperties: false
+      required: [decision, reasonCode]
+      properties:
+        decision:
+          type: string
+          enum: [APPROVED, REJECTED]
+        reasonCode:
+          type: string
+          pattern: "^[A-Z][A-Z0-9_]{1,63}$"
+
+    ResourceReviewDecision:
+      type: object
+      additionalProperties: false
+      required:
+        [
+          resourceId,
+          contentVersion,
+          decision,
+          reasonCode,
+          authorityVersion,
+          reviewedBy,
+          reviewedAt,
+        ]
+      properties:
+        resourceId: { type: string, format: uuid }
+        contentVersion: { type: string, pattern: "^(0|[1-9][0-9]*)$" }
+        decision: { type: string, enum: [APPROVED, REJECTED] }
+        reasonCode: { type: string }
+        authorityVersion: { type: string }
+        reviewedBy: { type: string, format: uuid }
+        reviewedAt: { type: string, format: date-time }
 
     EligibilityPolicyVersion:
       type: string

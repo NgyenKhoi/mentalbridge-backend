@@ -1,6 +1,7 @@
 package com.mentalbridge.care.supportplan;
 
 import static org.assertj.core.api.Assertions.assertThat;
+import static org.assertj.core.api.Assertions.assertThatThrownBy;
 import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.ArgumentMatchers.anyString;
 import static org.mockito.Mockito.doAnswer;
@@ -16,6 +17,9 @@ import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.
 
 import java.time.Instant;
 import java.time.LocalDate;
+import java.time.LocalTime;
+import java.time.ZoneId;
+import java.time.temporal.ChronoUnit;
 import java.sql.Timestamp;
 import java.util.List;
 import java.util.UUID;
@@ -35,6 +39,7 @@ import org.springframework.security.core.authority.SimpleGrantedAuthority;
 import org.springframework.test.context.bean.override.mockito.MockitoBean;
 import org.springframework.test.web.servlet.MockMvc;
 
+import com.fasterxml.jackson.databind.JsonNode;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import com.mentalbridge.care.CareTestProperties;
 import com.mentalbridge.care.TestcontainersConfiguration;
@@ -49,7 +54,14 @@ import com.mentalbridge.care.resourceeligibility.generated.ResourceEligibilityCo
 import com.mentalbridge.care.resourceeligibility.generated.ResourceEligibilityContract.ResourceEligibilityOutcome;
 import com.mentalbridge.care.resourceeligibility.generated.ResourceEligibilityContract.ResourceEligibilityReasonCode;
 import com.mentalbridge.care.resourceeligibility.generated.ResourceEligibilityContract.ResourceEligibilityResult;
+import com.mentalbridge.care.shared.ApiException;
 import com.mentalbridge.care.supportplan.ConsultationResourceProposalHttpClient.ResourceProposal;
+import com.mentalbridge.care.supportplan.PlanActionEntity.Presentation;
+import com.mentalbridge.care.supportplan.PlanActionSourcePolicy.Provenance;
+import com.mentalbridge.care.supportplan.PlanActionSourcePolicy.SourceReference;
+import com.mentalbridge.care.supportplan.SupportPlanActivityOccurrenceService.AuthoritativeOwnerFact;
+import com.mentalbridge.care.supportplan.SupportPlanActivityOccurrenceService.LinkedActionSource;
+import com.mentalbridge.care.supportplan.SupportPlanActivityOccurrenceService.OwnerFact;
 
 @Import(TestcontainersConfiguration.class)
 @SpringBootTest
@@ -62,6 +74,11 @@ class SupportPlanIntegrationTests extends CareTestProperties {
 	@Autowired MockMvc mvc;
 	@Autowired JdbcClient jdbc;
 	@Autowired ObjectMapper objectMapper;
+	@Autowired SupportPlanRepository plans;
+	@Autowired SupportPlanFocusRepository focuses;
+	@Autowired PlanActionRepository actions;
+	@Autowired SupportPlanActivityScheduleRepository schedules;
+	@Autowired SupportPlanActivityOccurrenceService activityOccurrences;
 	@MockitoBean EntitlementClient entitlements;
 	@MockitoBean ResourceEligibilityClient eligibility;
 	@MockitoBean ConsultationResourceProposalClient resourceProposals;
@@ -73,15 +90,408 @@ class SupportPlanIntegrationTests extends CareTestProperties {
 	}
 
 	@Test
+	void storesVersionedPersonalizationWithoutLeakingItToAnotherActor() throws Exception {
+		var userId = insertProfile();
+		var otherUser = insertProfile();
+
+		mvc.perform(get("/api/v2/support-plan-personalization").with(user(userId)))
+				.andExpect(status().isOk()).andExpect(header().string("ETag", "\"0\""))
+				.andExpect(jsonPath("$.status").value("NOT_PROVIDED"))
+				.andExpect(jsonPath("$.planReview.required").value(false));
+
+		String request = """
+				{"preferredFocus":"SLEEP","desiredPace":"GENTLE","dailyTimeBudgetMinutes":10,
+				 "preferredDaypart":"EVENING","preferredActivityModes":["READING","JOURNALING"],
+				 "commonBarriers":["LOW_ENERGY"]}
+				""";
+		mvc.perform(put("/api/v2/support-plan-personalization").with(user(userId))
+				.header("If-Match", "\"0\"").contentType(MediaType.APPLICATION_JSON).content(request))
+				.andExpect(status().isOk()).andExpect(header().string("ETag", "\"1\""))
+				.andExpect(jsonPath("$.schemaVersion").value("support-plan-personalization-v1"))
+				.andExpect(jsonPath("$.revision").value(1))
+				.andExpect(jsonPath("$.preferredFocus").value("SLEEP"))
+				.andExpect(jsonPath("$.preferredActivityModes[1]").value("JOURNALING"));
+
+		mvc.perform(put("/api/v2/support-plan-personalization").with(user(userId))
+				.header("If-Match", "\"0\"").contentType(MediaType.APPLICATION_JSON).content(request))
+				.andExpect(status().isPreconditionFailed())
+				.andExpect(jsonPath("$.code").value("SUPPORT_PLAN_PERSONALIZATION_VERSION_MISMATCH"));
+		mvc.perform(put("/api/v2/support-plan-personalization").with(user(userId))
+				.header("If-Match", "\"1\"").contentType(MediaType.APPLICATION_JSON)
+				.content("{\"preferredActivityModes\":[null],\"commonBarriers\":[]}"))
+				.andExpect(status().isBadRequest());
+
+		mvc.perform(get("/api/v2/support-plan-personalization").with(user(otherUser)))
+				.andExpect(status().isOk()).andExpect(jsonPath("$.status").value("NOT_PROVIDED"));
+		mvc.perform(get("/api/v2/support-plan-personalization")
+				.with(jwt().jwt(token -> token.subject(userId.toString()))
+						.authorities(new SimpleGrantedAuthority("ROLE_SPECIALIST"))))
+				.andExpect(status().isForbidden());
+
+		assertThat(jdbc.sql("select count(*) from support_plan_personalization where user_id = :userId")
+				.param("userId", userId).query(Integer.class).single()).isEqualTo(1);
+		assertThat(jdbc.sql("select count(*) from support_plan_personalization_activity_mode")
+				.query(Integer.class).single()).isGreaterThanOrEqualTo(2);
+	}
+
+	@Test
+	void snapshotsPartialPreferencesAndRequiresReviewWithoutMutatingTheActivePlan() throws Exception {
+		var userId = insertProfile();
+		var evaluationId = evaluation(userId, "MINIMAL", "MINIMAL", false);
+		String eveningPreference = """
+				{"preferredFocus":"MOTIVATION","preferredDaypart":"EVENING",
+				 "preferredActivityModes":[],"commonBarriers":[]}
+				""";
+		var saved = mvc.perform(put("/api/v2/support-plan-personalization").with(user(userId))
+				.header("If-Match", "\"0\"").contentType(MediaType.APPLICATION_JSON)
+				.content(eveningPreference))
+				.andExpect(status().isOk()).andExpect(header().string("ETag", "\"1\""))
+				.andExpect(jsonPath("$.status").value("PROVIDED"))
+				.andReturn().getResponse().getContentAsString();
+		var personalizationId = UUID.fromString(objectMapper.readTree(saved).path("personalizationId").asText());
+
+		var created = createPlan(userId, evaluationId, "personalized-plan-create");
+		var planId = UUID.fromString(created.path("supportPlanId").asText());
+		mvc.perform(get("/api/v2/support-plans/{id}", planId).with(user(userId)))
+				.andExpect(status().isOk())
+				.andExpect(jsonPath("$.focuses[0].title").value("Bắt đầu bằng bước nhỏ"))
+				.andExpect(jsonPath("$.focuses[0].personalizationProvenance.personalizationId")
+						.value(personalizationId.toString()))
+				.andExpect(jsonPath("$.focuses[0].personalizationProvenance.revision").value(1));
+		assertThat(jdbc.sql("select personalization_revision from support_plan where id=:id")
+				.param("id", planId).query(Long.class).single()).isEqualTo(1L);
+
+		mvc.perform(post("/api/v1/support-plans/{id}/activate", planId).with(user(userId))
+				.header("If-Match", "\"0\"").header("Idempotency-Key", "personalized-plan-activate"))
+				.andExpect(status().isOk());
+		assertThat(jdbc.sql("""
+				select to_char(local_time, 'HH24:MI') from support_plan_activity_schedule
+				where support_plan_id=:id and ordinal=1
+				""").param("id", planId).query(String.class).single()).isEqualTo("19:00");
+
+		String morningPreference = """
+				{"preferredFocus":"SLEEP","preferredDaypart":"MORNING",
+				 "preferredActivityModes":[],"commonBarriers":["DIFFICULT_TO_START"]}
+				""";
+		mvc.perform(put("/api/v2/support-plan-personalization").with(user(userId))
+				.header("If-Match", "\"1\"").contentType(MediaType.APPLICATION_JSON)
+				.content(morningPreference))
+				.andExpect(status().isOk()).andExpect(header().string("ETag", "\"2\""))
+				.andExpect(jsonPath("$.planReview.required").value(true))
+				.andExpect(jsonPath("$.planReview.supportPlanId").value(planId.toString()))
+				.andExpect(jsonPath("$.planReview.reasonCode")
+						.value("PREFERENCES_CHANGED_AFTER_PLAN_ACTIVATION"));
+
+		assertThat(jdbc.sql("select personalization_revision from support_plan where id=:id")
+				.param("id", planId).query(Long.class).single()).isEqualTo(1L);
+		assertThat(jdbc.sql("""
+				select to_char(local_time, 'HH24:MI') from support_plan_activity_schedule
+				where support_plan_id=:id and ordinal=1
+				""").param("id", planId).query(String.class).single()).isEqualTo("19:00");
+		mvc.perform(post("/api/v1/support-plans").with(user(userId))
+				.header("Idempotency-Key", "personalized-plan-create")
+				.contentType(MediaType.APPLICATION_JSON).content(body(evaluationId)))
+				.andExpect(status().isCreated())
+				.andExpect(jsonPath("$.supportPlanId").value(planId.toString()));
+	}
+
+	@Test
+	void blocksActivationOfAStalePersonalizedDraftUntilItIsDiscardedAndRegenerated() throws Exception {
+		var userId = insertProfile();
+		var evaluationId = evaluation(userId, "MINIMAL", "MINIMAL", false);
+		String eveningPreference = """
+				{"preferredFocus":"MOTIVATION","preferredDaypart":"EVENING",
+				 "preferredActivityModes":[],"commonBarriers":[]}
+				""";
+		mvc.perform(put("/api/v2/support-plan-personalization").with(user(userId))
+				.header("If-Match", "\"0\"").contentType(MediaType.APPLICATION_JSON)
+				.content(eveningPreference))
+				.andExpect(status().isOk());
+		var firstDraft = createPlan(userId, evaluationId, "stale-personalized-draft-create");
+		var firstDraftId = UUID.fromString(firstDraft.path("supportPlanId").asText());
+
+		String morningPreference = """
+				{"preferredFocus":"ANXIETY","preferredDaypart":"MORNING",
+				 "preferredActivityModes":[],"commonBarriers":[]}
+				""";
+		mvc.perform(put("/api/v2/support-plan-personalization").with(user(userId))
+				.header("If-Match", "\"1\"").contentType(MediaType.APPLICATION_JSON)
+				.content(morningPreference))
+				.andExpect(status().isOk())
+				.andExpect(jsonPath("$.planReview.required").value(true))
+				.andExpect(jsonPath("$.planReview.supportPlanId").value(firstDraftId.toString()))
+				.andExpect(jsonPath("$.planReview.reasonCode")
+						.value("PREFERENCES_CHANGED_AFTER_DRAFT_CREATION"));
+
+		mvc.perform(post("/api/v1/support-plans/{id}/activate", firstDraftId).with(user(userId))
+				.header("If-Match", "\"0\"")
+				.header("Idempotency-Key", "stale-personalized-draft-activate"))
+				.andExpect(status().isConflict())
+				.andExpect(jsonPath("$.code").value("SUPPORT_PLAN_PERSONALIZATION_REVIEW_REQUIRED"));
+		assertThat(jdbc.sql("select status from support_plan where id=:id").param("id", firstDraftId)
+				.query(String.class).single()).isEqualTo("DRAFT");
+		assertThat(jdbc.sql("select count(*) from support_plan_activity_schedule where support_plan_id=:id")
+				.param("id", firstDraftId).query(Integer.class).single()).isEqualTo(2);
+
+		mvc.perform(put("/api/v1/support-plans/{id}/status", firstDraftId).with(user(userId))
+				.header("If-Match", "\"0\"").contentType(MediaType.APPLICATION_JSON)
+				.content("{\"status\":\"DISCARDED\"}"))
+				.andExpect(status().isOk());
+		var regenerated = createPlan(userId, evaluationId, "stale-personalized-draft-regenerate");
+		var regeneratedId = UUID.fromString(regenerated.path("supportPlanId").asText());
+		assertThat(regeneratedId).isNotEqualTo(firstDraftId);
+		assertThat(jdbc.sql("select personalization_revision from support_plan where id=:id")
+				.param("id", regeneratedId).query(Long.class).single()).isEqualTo(2L);
+
+		mvc.perform(post("/api/v1/support-plans/{id}/activate", regeneratedId).with(user(userId))
+				.header("If-Match", "\"0\"")
+				.header("Idempotency-Key", "regenerated-personalized-draft-activate"))
+				.andExpect(status().isOk());
+		assertThat(jdbc.sql("""
+				select to_char(local_time, 'HH24:MI') from support_plan_activity_schedule
+				where support_plan_id=:id and ordinal=1
+				""").param("id", regeneratedId).query(String.class).single()).isEqualTo("08:00");
+	}
+
+	@Test
+	void acceptsBoundedEvidenceAndEndsNativeActionWithoutRewritingOccurrenceHistory()
+			throws Exception {
+		var userId = insertProfile();
+		var evaluationId = evaluation(userId, "MINIMAL", "MINIMAL", false);
+		var now = Instant.now().minusSeconds(5).truncatedTo(ChronoUnit.MICROS);
+		var today = now.atZone(ZoneId.of("Asia/Ho_Chi_Minh")).toLocalDate();
+		var appointmentId = UUID.randomUUID().toString();
+
+		var plan = SupportPlanEntity.nativeDraft(UUID.randomUUID(), userId, evaluationId,
+				"mb-support-routing-capstone-v2", now, "support-plan-policy-v3",
+				"PLUS", "DEMO", "service-entitlement-v1", 1, now,
+				"DOMAIN_AWARE_WELLBEING_SUPPORT", "Kế hoạch hỗ trợ sức khỏe tinh thần tổng quát.",
+				"NEGATIVE_SAFETY_SCREEN", "NO_ITEM9_SIGNAL", "MB-SAFETY-PHQ9-001-v1",
+				"STANDARD_SAFETY_GUIDANCE", "Tìm hỗ trợ khẩn cấp khi cần.", 2, now);
+		plan = plans.saveAndFlush(plan);
+		var focus = focuses.saveAndFlush(new SupportPlanFocusEntity(UUID.randomUUID(), plan.id(), userId,
+				1, "Kết nối với hỗ trợ phù hợp", "Thực hiện bước đã chọn.", now));
+		var action = actions.saveAndFlush(new PlanActionEntity(UUID.randomUUID(), plan.id(), focus.id(), userId,
+				1, "PROFESSIONAL_SUPPORT", "ATTEND_BOOKED_SUPPORT", "Giữ kết nối hỗ trợ.",
+				new SourceReference("CONSULTATION", "APPOINTMENT", appointmentId, "1",
+						"consultation-routing-v1", null, null, now),
+				new Provenance("USER_SELECTED", null, null, now),
+				new Presentation("Buổi hỗ trợ đã đặt", "Theo dõi lịch đã xác nhận.", null, null), now));
+		var pendingAction = actions.saveAndFlush(new PlanActionEntity(UUID.randomUUID(), plan.id(), focus.id(),
+				userId, 2, "SELF_REPORT_REVIEW", "REVIEW_PLAN", "Review current plan progress.", null,
+				new Provenance("USER_SELECTED", null, null, now),
+				new Presentation("Review plan", "Review the current support plan.", null, null), now));
+		plan.activate(now);
+		plan = plans.saveAndFlush(plan);
+		action.activate(now);
+		action = actions.saveAndFlush(action);
+		pendingAction.activate(now);
+		pendingAction = actions.saveAndFlush(pendingAction);
+		var schedule = schedules.saveAndFlush(new SupportPlanActivityScheduleEntity(UUID.randomUUID(),
+				plan.id(), userId, 1, plan.version(), action, "support-plan-schedule-v3",
+				"DAILY", null, LocalTime.of(9, 0), "Asia/Ho_Chi_Minh", today, true, now));
+
+		var body = mvc.perform(get("/api/v2/support-plan-occurrences").with(user(userId))
+				.param("from", today.toString()).param("through", today.plusDays(1).toString()))
+				.andExpect(status().isOk())
+				.andExpect(jsonPath("$.representationMode").value("NATIVE_V3"))
+				.andExpect(jsonPath("$.occurrences.length()").value(2))
+				.andExpect(jsonPath("$.occurrences[0].actionType").value("PROFESSIONAL_SUPPORT"))
+				.andReturn().getResponse().getContentAsString();
+		var occurrences = objectMapper.readTree(body).path("occurrences");
+		var firstOccurrenceId = UUID.fromString(occurrences.get(0).path("occurrenceId").asText());
+		var secondOccurrenceId = UUID.fromString(occurrences.get(1).path("occurrenceId").asText());
+		var boundedFact = new OwnerFact("CONSULTATION", "APPOINTMENT_FULFILMENT",
+				UUID.randomUUID().toString(), "1", now.plusSeconds(1), now.plusSeconds(2));
+		var linkedAppointment = new LinkedActionSource("CONSULTATION", "APPOINTMENT", appointmentId, "1");
+		var fact = new AuthoritativeOwnerFact(userId, linkedAppointment, boundedFact);
+
+		assertThatThrownBy(() -> activityOccurrences.completeFromOwnerFact(userId, firstOccurrenceId,
+				new AuthoritativeOwnerFact(UUID.randomUUID(), linkedAppointment, boundedFact), UUID.randomUUID()))
+				.hasMessageContaining("subject does not own the PlanAction");
+		assertThatThrownBy(() -> activityOccurrences.completeFromOwnerFact(userId, firstOccurrenceId,
+				new AuthoritativeOwnerFact(userId,
+						new LinkedActionSource("CONSULTATION", "APPOINTMENT",
+								UUID.randomUUID().toString(), "1"),
+						boundedFact), UUID.randomUUID()))
+				.hasMessageContaining("not linked to the PlanAction source");
+		assertThat(jdbc.sql("select state from support_plan_activity_occurrence where id=:id")
+				.param("id", firstOccurrenceId).query(String.class).single()).isEqualTo("SCHEDULED");
+
+		var completed = activityOccurrences.completeFromOwnerFact(userId, firstOccurrenceId, fact,
+				UUID.randomUUID());
+		var replayed = activityOccurrences.completeFromOwnerFact(userId, firstOccurrenceId, fact,
+				UUID.randomUUID());
+		assertThat(completed.state()).isEqualTo("COMPLETED");
+		assertThat(replayed.version()).isEqualTo(completed.version());
+		assertThatThrownBy(() -> activityOccurrences.completeFromOwnerFact(userId, secondOccurrenceId,
+				fact, UUID.randomUUID())).hasMessageContaining("already completes another action occurrence");
+		assertThat(jdbc.sql("""
+				select count(*) from outbox_event
+				where aggregate_id=:id
+				  and message_type='care.support-plan.action-occurrence-changed'
+				  and schema_version='2.0'
+				""").param("id", firstOccurrenceId).query(Long.class).single()).isEqualTo(1);
+		var eventPayload = objectMapper.readTree(jdbc.sql("""
+				select payload::text from outbox_event
+				where aggregate_id=:id and message_type='care.support-plan.action-occurrence-changed'
+				""").param("id", firstOccurrenceId).query(String.class).single());
+		assertThat(eventPayload.path("ownerFact").path("ownerDomain").asText()).isEqualTo("CONSULTATION");
+		assertThat(eventPayload.path("ownerFact").path("kind").asText())
+				.isEqualTo("APPOINTMENT_FULFILMENT");
+		assertThat(eventPayload.toString()).doesNotContain("appointmentNote", "journalBody", "rawScore");
+
+		mvc.perform(get("/api/v1/support-plan-occurrences/{id}", firstOccurrenceId).with(user(userId)))
+				.andExpect(status().isConflict())
+				.andExpect(jsonPath("$.code").value("SUPPORT_PLAN_MODEL_VERSION_UNSUPPORTED"));
+		var beforeActionEnd = mvc.perform(get("/api/v2/support-plans/{id}", plan.id()).with(user(userId)))
+				.andExpect(status().isOk())
+				.andExpect(header().string("ETag", "\"1\""))
+				.andExpect(jsonPath("$.version").value(1))
+				.andExpect(jsonPath("$.focuses[0].actions[0].status").value("ACTIVE"))
+				.andExpect(jsonPath("$.focuses[0].actions[0].schedules[0].status").value("ACTIVE"))
+				.andReturn().getResponse().getContentAsString();
+
+		var ended = activityOccurrences.endAction(userId, action.id());
+		assertThat(ended.status()).isEqualTo("ENDED");
+		assertThat(ended.actionVersion()).isEqualTo(2);
+		assertThat(ended.endedScheduleCount()).isEqualTo(1);
+		assertThat(ended.cancelledOccurrenceCount()).isEqualTo(1);
+		var afterActionEnd = mvc.perform(get("/api/v2/support-plans/{id}", plan.id()).with(user(userId)))
+				.andExpect(status().isOk())
+				.andExpect(header().string("ETag", "\"2\""))
+				.andExpect(jsonPath("$.version").value(2))
+				.andExpect(jsonPath("$.focuses[0].actions[0].status").value("ENDED"))
+				.andExpect(jsonPath("$.focuses[0].actions[0].schedules[0].status").value("ENDED"))
+				.andReturn().getResponse().getContentAsString();
+		assertThat(objectMapper.readTree(afterActionEnd).path("updatedAt"))
+				.isNotEqualTo(objectMapper.readTree(beforeActionEnd).path("updatedAt"));
+		var endedReplay = activityOccurrences.endAction(userId, action.id());
+		assertThat(endedReplay.actionVersion()).isEqualTo(ended.actionVersion());
+		assertThat(endedReplay.endedScheduleCount()).isZero();
+		assertThat(endedReplay.cancelledOccurrenceCount()).isZero();
+		var afterReplay = mvc.perform(get("/api/v2/support-plans/{id}", plan.id()).with(user(userId)))
+				.andExpect(status().isOk())
+				.andExpect(header().string("ETag", "\"2\""))
+				.andReturn().getResponse().getContentAsString();
+		assertThat(objectMapper.readTree(afterReplay)).isEqualTo(objectMapper.readTree(afterActionEnd));
+		mvc.perform(get("/api/v2/support-plans/current").with(user(userId)))
+				.andExpect(status().isOk())
+				.andExpect(header().string("ETag", "\"2\""))
+				.andExpect(jsonPath("$.version").value(2))
+				.andExpect(jsonPath("$.focuses[0].actions[0].status").value("ENDED"));
+		assertThat(jdbc.sql("select status || '|' || source_action_version "
+				+ "from support_plan_activity_schedule where id=:id")
+				.param("id", schedule.id()).query(String.class).single()).isEqualTo("ENDED|1");
+		assertThat(jdbc.sql("select state || '|' || coalesce(state_reason, '') || '|' || source_action_version "
+				+ "from support_plan_activity_occurrence where id=:id")
+				.param("id", firstOccurrenceId).query(String.class).single()).isEqualTo("COMPLETED||1");
+		assertThat(jdbc.sql("select state || '|' || state_reason || '|' || source_action_version "
+				+ "from support_plan_activity_occurrence where id=:id")
+				.param("id", secondOccurrenceId).query(String.class).single())
+				.isEqualTo("CANCELLED|ACTION_ENDED|1");
+
+		mvc.perform(get("/api/v2/support-plan-occurrences").with(user(userId))
+				.param("from", today.plusDays(1).toString())
+				.param("through", today.plusDays(2).toString()))
+				.andExpect(status().isOk())
+				.andExpect(jsonPath("$.occurrences.length()").value(1))
+				.andExpect(jsonPath("$.occurrences[0].occurrenceId").value(secondOccurrenceId.toString()))
+				.andExpect(jsonPath("$.occurrences[0].state").value("CANCELLED"))
+				.andExpect(jsonPath("$.occurrences[0].stateReason").value("ACTION_ENDED"));
+		assertThat(jdbc.sql("select count(*) from support_plan_activity_occurrence where source_action_id=:id")
+				.param("id", action.id()).query(Long.class).single()).isEqualTo(2);
+
+		plan = plans.findByIdAndUserId(plan.id(), userId).orElseThrow();
+		plan.complete("USER_DECISION", Instant.now().truncatedTo(ChronoUnit.MICROS));
+		plans.saveAndFlush(plan);
+		var terminalActionId = pendingAction.id();
+		assertThatThrownBy(() -> activityOccurrences.endAction(userId, terminalActionId))
+				.isInstanceOfSatisfying(ApiException.class, exception ->
+						assertThat(exception.code()).isEqualTo("SUPPORT_PLAN_NOT_MUTABLE"));
+		mvc.perform(get("/api/v2/support-plans/{id}", plan.id()).with(user(userId)))
+				.andExpect(status().isOk())
+				.andExpect(header().string("ETag", "\"3\""))
+				.andExpect(jsonPath("$.status").value("COMPLETED"))
+				.andExpect(jsonPath("$.focuses[0].actions[1].status").value("ACTIVE"));
+	}
+
+	@Test
+	void projectsAnExistingV2PlanWithoutCreatingNativeRowsOrLosingExactResourceProvenance()
+			throws Exception {
+		var userId = insertProfile();
+		var draft = createPlan(userId, evaluation(userId, "MINIMAL", "MILD", false),
+				"support-plan-v3-adapter-create");
+		var planId = UUID.fromString(draft.path("supportPlanId").asText());
+		var selectedResource = draft.path("slots").get(0).path("selectedResource");
+		mvc.perform(post("/api/v1/support-plans/{id}/activate", planId).with(user(userId))
+				.header("If-Match", "\"0\"").header("Idempotency-Key", "support-plan-v3-adapter-activate"))
+				.andExpect(status().isOk());
+
+		var first = mvc.perform(get("/api/v2/support-plans/current").with(user(userId)))
+				.andExpect(status().isOk())
+				.andExpect(jsonPath("$.supportPlanId").value(planId.toString()))
+				.andExpect(jsonPath("$.modelVersion").value(3))
+				.andExpect(jsonPath("$.representationMode").value("V2_RESOURCE_ADAPTER"))
+				.andExpect(jsonPath("$.focuses[0].focusId").isString())
+				.andExpect(jsonPath("$.focuses[0].title").isNotEmpty())
+				.andExpect(jsonPath("$.focuses[0].actions[0].actionType").value("RESOURCE"))
+				.andExpect(jsonPath("$.focuses[0].actions[0].source.ownerDomain").value("CONTENT"))
+				.andReturn().getResponse().getContentAsString();
+		var projection = objectMapper.readTree(first);
+		var matchingAction = projection.path("focuses").findValues("actions").stream()
+				.flatMap(node -> java.util.stream.StreamSupport.stream(node.spliterator(), false))
+				.filter(node -> selectedResource.path("resourceId").asText()
+						.equals(node.path("source").path("sourceId").asText()))
+				.findFirst().orElseThrow();
+		assertThat(matchingAction.path("source").path("sourceRevision").asText())
+				.isEqualTo(selectedResource.path("contentVersion").asText());
+		assertThat(matchingAction.path("source").path("publicationId").asText())
+				.isEqualTo(selectedResource.path("publicationId").asText());
+		assertThat(matchingAction.path("source").path("eligibilityPolicyVersion").asText())
+				.isEqualTo("content-eligibility-v1");
+		var replay = mvc.perform(get("/api/v2/support-plans/current").with(user(userId)))
+				.andExpect(status().isOk()).andReturn().getResponse().getContentAsString();
+		assertThat(objectMapper.readTree(replay)).isEqualTo(projection);
+
+		var today = LocalDate.now(ZoneId.of("Asia/Ho_Chi_Minh"));
+		mvc.perform(get("/api/v2/support-plan-occurrences").with(user(userId))
+				.param("from", today.toString()).param("through", today.toString()))
+				.andExpect(status().isOk())
+				.andExpect(jsonPath("$.representationMode").value("V2_RESOURCE_ADAPTER"))
+				.andExpect(jsonPath("$.occurrences[0].actionType").value("RESOURCE"))
+				.andExpect(jsonPath("$.occurrences[0].completionEvidence").doesNotExist());
+		assertThat(jdbc.sql("select count(*) from support_plan_focus where support_plan_id=:id")
+				.param("id", planId).query(Long.class).single()).isZero();
+		assertThat(jdbc.sql("select count(*) from support_plan_action where support_plan_id=:id")
+				.param("id", planId).query(Long.class).single()).isZero();
+	}
+
+	@Test
 	void userReviewsRejectsOrAtomicallyAcceptsAnExactSpecialistProposal() throws Exception {
 		var userId = insertProfile();
 		var specialistId = UUID.randomUUID();
+		mvc.perform(put("/api/v2/support-plan-personalization").with(user(userId))
+				.header("If-Match", "\"0\"").contentType(MediaType.APPLICATION_JSON)
+				.content("""
+						{"preferredFocus":"MOTIVATION","preferredDaypart":"EVENING",
+						 "preferredActivityModes":[],"commonBarriers":[]}
+						"""))
+				.andExpect(status().isOk()).andExpect(header().string("ETag", "\"1\""));
 		var current = createPlan(userId, evaluation(userId, "MINIMAL", "MINIMAL", false),
 				"plan-change-current-create");
 		var currentId = UUID.fromString(current.path("supportPlanId").asText());
 		mvc.perform(post("/api/v1/support-plans/{id}/activate", currentId).with(user(userId))
 				.header("If-Match", "\"0\"").header("Idempotency-Key", "plan-change-current-activate"))
 				.andExpect(status().isOk());
+		mvc.perform(put("/api/v2/support-plan-personalization").with(user(userId))
+				.header("If-Match", "\"1\"").contentType(MediaType.APPLICATION_JSON)
+				.content("""
+						{"preferredFocus":"ANXIETY","preferredDaypart":"MORNING",
+						 "preferredActivityModes":[],"commonBarriers":[]}
+						"""))
+				.andExpect(status().isOk()).andExpect(header().string("ETag", "\"2\""))
+				.andExpect(jsonPath("$.planReview.required").value(true));
 
 		var firstProposalId = UUID.randomUUID();
 		when(resourceProposals.get(org.mockito.ArgumentMatchers.eq(firstProposalId), anyString(), any()))
@@ -134,6 +544,8 @@ class SupportPlanIntegrationTests extends CareTestProperties {
 				.query(String.class).single()).isEqualTo("SUPERSEDED");
 		assertThat(jdbc.sql("select count(*) from support_plan where user_id=:id and status='ACTIVE'")
 				.param("id", userId).query(Long.class).single()).isEqualTo(1);
+		assertThat(jdbc.sql("select personalization_revision from support_plan where user_id=:id and status='ACTIVE'")
+				.param("id", userId).query(Long.class).single()).isEqualTo(1L);
 		assertThat(jdbc.sql("select count(*) from support_plan_command where plan_change_request_id=:id")
 				.param("id", requestId).query(Long.class).single()).isEqualTo(1);
 	}
@@ -278,6 +690,324 @@ class SupportPlanIntegrationTests extends CareTestProperties {
 				.param("id", userId).query(Long.class).single()).isEqualTo(1);
 		assertThat(jdbc.sql("select count(*) from support_plan_request where user_id = :id")
 				.param("id", userId).query(Long.class).single()).isEqualTo(2);
+	}
+
+	@Test
+	void reviewsDraftCadenceThenVersionEditsAnActiveScheduleWithoutPunitiveState() throws Exception {
+		var userId = insertProfile();
+		var draft = createPlan(userId, evaluation(userId, "MINIMAL", "MINIMAL", false),
+				"support-plan-cadence-create");
+		var planId = UUID.fromString(draft.path("supportPlanId").asText());
+		var timezone = "Asia/Ho_Chi_Minh";
+		var today = LocalDate.now(ZoneId.of(timezone));
+
+		var currentDraft = mvc.perform(get("/api/v2/support-plans/current-draft").with(user(userId)))
+				.andExpect(status().isOk()).andExpect(header().string("ETag", "\"0\""))
+				.andExpect(jsonPath("$.status").value("DRAFT"))
+				.andExpect(jsonPath("$.focuses[0].actions[0].schedules[0].status").value("DRAFT"))
+				.andExpect(jsonPath("$.focuses[0].actions[0].schedules[0].estimatedDurationMinutes")
+						.value(5)).andReturn().getResponse().getContentAsString();
+		var actionId = objectMapper.readTree(currentDraft).path("focuses").get(0).path("actions").get(0)
+				.path("actionId").asText();
+
+		String daily = """
+				{"schedule":{"recurrenceType":"DAILY","daysOfWeek":[],"preferredDaypart":null,
+				 "localTime":"09:30","estimatedDurationMinutes":5,"timezone":"%s",
+				 "effectiveFrom":"%s","effectiveUntil":null,"reminderEnabled":true}}
+				""".formatted(timezone, today);
+		var changedDraft = mvc.perform(put("/api/v2/support-plans/{planId}/actions/{actionId}/schedule",
+				planId, actionId).with(user(userId)).header("If-Match", "\"0\"")
+				.header("Idempotency-Key", "support-plan-cadence-draft-edit")
+				.contentType(MediaType.APPLICATION_JSON).content(daily))
+				.andExpect(status().isOk()).andExpect(header().string("ETag", "\"1\""))
+				.andReturn().getResponse().getContentAsString();
+		var draftSchedule = currentSchedule(objectMapper.readTree(changedDraft), actionId, "DRAFT");
+		assertThat(draftSchedule.path("recurrenceType").asText()).isEqualTo("DAILY");
+		assertThat(draftSchedule.path("estimatedDurationMinutes").asInt()).isEqualTo(5);
+		var replay = mvc.perform(put("/api/v2/support-plans/{planId}/actions/{actionId}/schedule",
+				planId, actionId).with(user(userId)).header("If-Match", "\"0\"")
+				.header("Idempotency-Key", "support-plan-cadence-draft-edit")
+				.contentType(MediaType.APPLICATION_JSON).content(daily))
+				.andExpect(status().isOk()).andExpect(header().string("ETag", "\"1\""))
+				.andReturn().getResponse().getContentAsString();
+		assertThat(objectMapper.readTree(replay)).isEqualTo(objectMapper.readTree(changedDraft));
+		var noOp = mvc.perform(put("/api/v2/support-plans/{planId}/actions/{actionId}/schedule",
+				planId, actionId).with(user(userId)).header("If-Match", "\"1\"")
+				.header("Idempotency-Key", "support-plan-cadence-draft-noop")
+				.contentType(MediaType.APPLICATION_JSON).content(daily))
+				.andExpect(status().isOk()).andExpect(header().string("ETag", "\"1\""))
+				.andReturn().getResponse().getContentAsString();
+		var noOpReplay = mvc.perform(put("/api/v2/support-plans/{planId}/actions/{actionId}/schedule",
+				planId, actionId).with(user(userId)).header("If-Match", "\"1\"")
+				.header("Idempotency-Key", "support-plan-cadence-draft-noop")
+				.contentType(MediaType.APPLICATION_JSON).content(daily))
+				.andExpect(status().isOk()).andExpect(header().string("ETag", "\"1\""))
+				.andReturn().getResponse().getContentAsString();
+		assertThat(objectMapper.readTree(noOpReplay)).isEqualTo(objectMapper.readTree(noOp));
+
+		mvc.perform(post("/api/v1/support-plans/{id}/activate", planId).with(user(userId))
+				.header("If-Match", "\"1\"").header("Idempotency-Key", "support-plan-cadence-activate"))
+				.andExpect(status().isOk()).andExpect(header().string("ETag", "\"2\""));
+
+		var tomorrow = today.plusDays(1);
+		String weekly = """
+				{"schedule":{"recurrenceType":"WEEKLY","daysOfWeek":[%d],"preferredDaypart":"EVENING",
+				 "localTime":"19:00","estimatedDurationMinutes":15,"timezone":"%s",
+				 "effectiveFrom":"%s","effectiveUntil":null,"reminderEnabled":true}}
+				""".formatted(tomorrow.getDayOfWeek().getValue(), timezone, tomorrow);
+		var changedActive = mvc.perform(put("/api/v2/support-plans/{planId}/actions/{actionId}/schedule", planId, actionId)
+				.with(user(userId)).header("If-Match", "\"2\"")
+				.header("Idempotency-Key", "support-plan-cadence-active-edit")
+				.contentType(MediaType.APPLICATION_JSON).content(weekly))
+				.andExpect(status().isOk()).andExpect(header().string("ETag", "\"3\""))
+				.andExpect(jsonPath("$.status").value("ACTIVE"))
+				.andReturn().getResponse().getContentAsString();
+		var activeSchedule = currentSchedule(objectMapper.readTree(changedActive), actionId, "ACTIVE");
+		assertThat(activeSchedule.path("daysOfWeek").get(0).asInt())
+				.isEqualTo(tomorrow.getDayOfWeek().getValue());
+		assertThat(activeSchedule.path("estimatedDurationMinutes").asInt()).isEqualTo(15);
+
+		mvc.perform(put("/api/v2/support-plans/{planId}/actions/{actionId}/schedule", planId, actionId)
+				.with(user(userId)).header("If-Match", "\"2\"")
+				.header("Idempotency-Key", "support-plan-cadence-stale-edit")
+				.contentType(MediaType.APPLICATION_JSON).content(weekly))
+				.andExpect(status().isPreconditionFailed())
+				.andExpect(jsonPath("$.code").value("SUPPORT_PLAN_VERSION_MISMATCH"));
+
+		assertThat(jdbc.sql("""
+				select count(*) from support_plan_activity_schedule
+				where support_plan_id=:id and source_slot_key=(select slot_key from support_plan_slot where id=:actionId)
+				  and status='ENDED'
+				""").param("id", planId).param("actionId", UUID.fromString(actionId))
+				.query(Long.class).single()).isEqualTo(2);
+		assertThat(jdbc.sql("""
+				select count(*) from support_plan_activity_occurrence
+				where support_plan_id=:id and state='CANCELLED' and state_reason='SCHEDULE_CHANGED'
+				""").param("id", planId).query(Long.class).single()).isGreaterThan(0);
+	}
+
+	@Test
+	void keepsThePredecessorCadenceGeneratableUntilADeferredCutover() throws Exception {
+		var userId = insertProfile();
+		var draft = createPlan(userId, evaluation(userId, "MINIMAL", "MINIMAL", false),
+				"support-plan-deferred-cadence-create");
+		var planId = UUID.fromString(draft.path("supportPlanId").asText());
+		var timezone = "Asia/Ho_Chi_Minh";
+		var today = LocalDate.now(ZoneId.of(timezone));
+		var currentDraft = mvc.perform(get("/api/v2/support-plans/current-draft").with(user(userId)))
+				.andExpect(status().isOk()).andReturn().getResponse().getContentAsString();
+		var actionId = objectMapper.readTree(currentDraft).path("focuses").get(0).path("actions").get(0)
+				.path("actionId").asText();
+		String daily = """
+				{"schedule":{"recurrenceType":"DAILY","daysOfWeek":[],"preferredDaypart":null,
+				 "localTime":"09:00","estimatedDurationMinutes":5,"timezone":"%s",
+				 "effectiveFrom":"%s","effectiveUntil":null,"reminderEnabled":true}}
+				""".formatted(timezone, today);
+		mvc.perform(put("/api/v2/support-plans/{planId}/actions/{actionId}/schedule", planId, actionId)
+				.with(user(userId)).header("If-Match", "\"0\"")
+				.header("Idempotency-Key", "support-plan-deferred-cadence-draft")
+				.contentType(MediaType.APPLICATION_JSON).content(daily))
+				.andExpect(status().isOk()).andExpect(header().string("ETag", "\"1\""));
+		mvc.perform(post("/api/v1/support-plans/{id}/activate", planId).with(user(userId))
+				.header("If-Match", "\"1\"")
+				.header("Idempotency-Key", "support-plan-deferred-cadence-activate"))
+				.andExpect(status().isOk()).andExpect(header().string("ETag", "\"2\""));
+
+		var predecessorId = jdbc.sql("""
+				select id from support_plan_activity_schedule
+				where support_plan_id=:planId
+				  and source_slot_key=(select slot_key from support_plan_slot where id=:actionId)
+				  and status='ACTIVE'
+				""").param("planId", planId).param("actionId", UUID.fromString(actionId))
+				.query(UUID.class).single();
+		var completedOccurrenceId = jdbc.sql("""
+				select id from support_plan_activity_occurrence
+				where activity_schedule_id=:scheduleId order by scheduled_at limit 1
+				""").param("scheduleId", predecessorId).query(UUID.class).single();
+		mvc.perform(put("/api/v1/support-plan-occurrences/{id}/state", completedOccurrenceId)
+				.with(user(userId)).header("If-Match", "\"0\"")
+				.contentType(MediaType.APPLICATION_JSON).content("{\"state\":\"COMPLETED\"}"))
+				.andExpect(status().isOk());
+
+		var cutover = today.plusDays(25);
+		String deferred = """
+				{"schedule":{"recurrenceType":"DAILY","daysOfWeek":[],"preferredDaypart":null,
+				 "localTime":"10:00","estimatedDurationMinutes":5,"timezone":"%s",
+				 "effectiveFrom":"%s","effectiveUntil":null,"reminderEnabled":true}}
+				""".formatted(timezone, cutover);
+		mvc.perform(put("/api/v2/support-plans/{planId}/actions/{actionId}/schedule", planId, actionId)
+				.with(user(userId)).header("If-Match", "\"2\"")
+				.header("Idempotency-Key", "support-plan-deferred-cadence-active")
+				.contentType(MediaType.APPLICATION_JSON).content(deferred))
+				.andExpect(status().isOk()).andExpect(header().string("ETag", "\"3\""));
+
+		var beyondInitialHorizon = today.plusDays(14);
+		var beforeCutover = cutover.minusDays(1);
+		mvc.perform(get("/api/v2/support-plan-occurrences").with(user(userId))
+				.param("from", beyondInitialHorizon.toString())
+				.param("through", beforeCutover.toString()))
+				.andExpect(status().isOk());
+
+		assertThat(jdbc.sql("""
+				select count(*) from support_plan_activity_occurrence
+				where activity_schedule_id=:scheduleId and local_date between :from and :through
+				""").param("scheduleId", predecessorId).param("from", beyondInitialHorizon)
+				.param("through", beforeCutover).query(Long.class).single()).isEqualTo(11);
+		assertThat(jdbc.sql("select state from support_plan_activity_occurrence where id=:id")
+				.param("id", completedOccurrenceId).query(String.class).single()).isEqualTo("COMPLETED");
+	}
+
+	@Test
+	void doesNotRegenerateAFutureScheduleAfterItIsRemoved() throws Exception {
+		var userId = insertProfile();
+		var draft = createPlan(userId, evaluation(userId, "MINIMAL", "MINIMAL", false),
+				"support-plan-future-cadence-create");
+		var planId = UUID.fromString(draft.path("supportPlanId").asText());
+		var timezone = "Asia/Ho_Chi_Minh";
+		var today = LocalDate.now(ZoneId.of(timezone));
+		var futureDate = today.plusDays(25);
+		var currentDraft = mvc.perform(get("/api/v2/support-plans/current-draft").with(user(userId)))
+				.andExpect(status().isOk()).andReturn().getResponse().getContentAsString();
+		var actionId = objectMapper.readTree(currentDraft).path("focuses").get(0).path("actions").get(0)
+				.path("actionId").asText();
+		String futureDaily = """
+				{"schedule":{"recurrenceType":"DAILY","daysOfWeek":[],"preferredDaypart":null,
+				 "localTime":"09:00","estimatedDurationMinutes":5,"timezone":"%s",
+				 "effectiveFrom":"%s","effectiveUntil":null,"reminderEnabled":true}}
+				""".formatted(timezone, futureDate);
+		mvc.perform(put("/api/v2/support-plans/{planId}/actions/{actionId}/schedule", planId, actionId)
+				.with(user(userId)).header("If-Match", "\"0\"")
+				.header("Idempotency-Key", "support-plan-future-cadence-draft")
+				.contentType(MediaType.APPLICATION_JSON).content(futureDaily))
+				.andExpect(status().isOk()).andExpect(header().string("ETag", "\"1\""));
+		mvc.perform(post("/api/v1/support-plans/{id}/activate", planId).with(user(userId))
+				.header("If-Match", "\"1\"")
+				.header("Idempotency-Key", "support-plan-future-cadence-activate"))
+				.andExpect(status().isOk()).andExpect(header().string("ETag", "\"2\""));
+
+		var removedScheduleId = jdbc.sql("""
+				select id from support_plan_activity_schedule
+				where support_plan_id=:planId
+				  and source_slot_key=(select slot_key from support_plan_slot where id=:actionId)
+				  and status='ACTIVE'
+				""").param("planId", planId).param("actionId", UUID.fromString(actionId))
+				.query(UUID.class).single();
+		mvc.perform(put("/api/v2/support-plans/{planId}/actions/{actionId}/schedule", planId, actionId)
+				.with(user(userId)).header("If-Match", "\"2\"")
+				.header("Idempotency-Key", "support-plan-future-cadence-remove")
+				.contentType(MediaType.APPLICATION_JSON).content("{\"schedule\":null}"))
+				.andExpect(status().isOk()).andExpect(header().string("ETag", "\"3\""));
+
+		mvc.perform(get("/api/v2/support-plan-occurrences").with(user(userId))
+				.param("from", futureDate.toString()).param("through", futureDate.toString()))
+				.andExpect(status().isOk());
+
+		assertThat(jdbc.sql("select occurrence_generation_until from support_plan_activity_schedule where id=:id")
+				.param("id", removedScheduleId).query(LocalDate.class).single()).isEqualTo(today);
+		assertThat(jdbc.sql("""
+				select count(*) from support_plan_activity_occurrence
+				where activity_schedule_id=:scheduleId and local_date=:localDate and state='SCHEDULED'
+				""").param("scheduleId", removedScheduleId).param("localDate", futureDate)
+				.query(Long.class).single()).isZero();
+	}
+
+	@Test
+	void retainsAnEarlierExplicitEndWhenReplacingAnActiveSchedule() throws Exception {
+		var userId = insertProfile();
+		var draft = createPlan(userId, evaluation(userId, "MINIMAL", "MINIMAL", false),
+				"support-plan-bounded-cadence-create");
+		var planId = UUID.fromString(draft.path("supportPlanId").asText());
+		var timezone = "Asia/Ho_Chi_Minh";
+		var today = LocalDate.now(ZoneId.of(timezone));
+		var explicitEnd = today.plusDays(18);
+		var currentDraft = mvc.perform(get("/api/v2/support-plans/current-draft").with(user(userId)))
+				.andExpect(status().isOk()).andReturn().getResponse().getContentAsString();
+		var actionId = objectMapper.readTree(currentDraft).path("focuses").get(0).path("actions").get(0)
+				.path("actionId").asText();
+		String boundedDaily = """
+				{"schedule":{"recurrenceType":"DAILY","daysOfWeek":[],"preferredDaypart":null,
+				 "localTime":"09:00","estimatedDurationMinutes":5,"timezone":"%s",
+				 "effectiveFrom":"%s","effectiveUntil":"%s","reminderEnabled":true}}
+				""".formatted(timezone, today, explicitEnd);
+		mvc.perform(put("/api/v2/support-plans/{planId}/actions/{actionId}/schedule", planId, actionId)
+				.with(user(userId)).header("If-Match", "\"0\"")
+				.header("Idempotency-Key", "support-plan-bounded-cadence-draft")
+				.contentType(MediaType.APPLICATION_JSON).content(boundedDaily))
+				.andExpect(status().isOk()).andExpect(header().string("ETag", "\"1\""));
+		mvc.perform(post("/api/v1/support-plans/{id}/activate", planId).with(user(userId))
+				.header("If-Match", "\"1\"")
+				.header("Idempotency-Key", "support-plan-bounded-cadence-activate"))
+				.andExpect(status().isOk()).andExpect(header().string("ETag", "\"2\""));
+
+		var predecessorId = jdbc.sql("""
+				select id from support_plan_activity_schedule
+				where support_plan_id=:planId
+				  and source_slot_key=(select slot_key from support_plan_slot where id=:actionId)
+				  and status='ACTIVE'
+				""").param("planId", planId).param("actionId", UUID.fromString(actionId))
+				.query(UUID.class).single();
+		var cutover = today.plusDays(25);
+		String deferred = """
+				{"schedule":{"recurrenceType":"DAILY","daysOfWeek":[],"preferredDaypart":null,
+				 "localTime":"10:00","estimatedDurationMinutes":5,"timezone":"%s",
+				 "effectiveFrom":"%s","effectiveUntil":null,"reminderEnabled":true}}
+				""".formatted(timezone, cutover);
+		mvc.perform(put("/api/v2/support-plans/{planId}/actions/{actionId}/schedule", planId, actionId)
+				.with(user(userId)).header("If-Match", "\"2\"")
+				.header("Idempotency-Key", "support-plan-bounded-cadence-active")
+				.contentType(MediaType.APPLICATION_JSON).content(deferred))
+				.andExpect(status().isOk()).andExpect(header().string("ETag", "\"3\""));
+
+		var afterExplicitEnd = explicitEnd.plusDays(1);
+		mvc.perform(get("/api/v2/support-plan-occurrences").with(user(userId))
+				.param("from", afterExplicitEnd.toString())
+				.param("through", cutover.minusDays(1).toString()))
+				.andExpect(status().isOk());
+
+		assertThat(jdbc.sql("select effective_until from support_plan_activity_schedule where id=:id")
+				.param("id", predecessorId).query(LocalDate.class).single()).isEqualTo(explicitEnd);
+		assertThat(jdbc.sql("select occurrence_generation_until from support_plan_activity_schedule where id=:id")
+				.param("id", predecessorId).query(LocalDate.class).single()).isEqualTo(explicitEnd);
+		assertThat(jdbc.sql("""
+				select count(*) from support_plan_activity_occurrence
+				where activity_schedule_id=:scheduleId and local_date between :from and :through
+				""").param("scheduleId", predecessorId).param("from", afterExplicitEnd)
+				.param("through", cutover.minusDays(1)).query(Long.class).single()).isZero();
+	}
+
+	@Test
+	void spreadsMultiActivityDefaultsWithinTheAggregateDailyBudget() throws Exception {
+		var userId = insertProfile();
+		mvc.perform(put("/api/v2/support-plan-personalization").with(user(userId))
+				.header("If-Match", "\"0\"").contentType(MediaType.APPLICATION_JSON).content("""
+						{"desiredPace":"ACTIVE","dailyTimeBudgetMinutes":10,
+						 "preferredDaypart":"EVENING","preferredActivityModes":[],"commonBarriers":[]}
+						"""))
+				.andExpect(status().isOk());
+		var draft = createPlan(userId, evaluation(userId, "MILD", "MINIMAL", false),
+				"support-plan-workload-defaults-create");
+		var planId = UUID.fromString(draft.path("supportPlanId").asText());
+
+		assertThat(jdbc.sql("select selected_resource_count from support_plan where id=:id")
+				.param("id", planId).query(Integer.class).single()).isEqualTo(3);
+		assertThat(jdbc.sql("""
+				select count(*) from support_plan_activity_schedule
+				where support_plan_id=:id and status='DRAFT' and recurrence_type='WEEKLY'
+				""").param("id", planId).query(Integer.class).single()).isEqualTo(3);
+		assertThat(jdbc.sql("""
+				select coalesce(max(day_total), 0) from (
+				  select recurrence_days_mask, sum(estimated_duration_minutes) as day_total
+				  from support_plan_activity_schedule where support_plan_id=:id and status='DRAFT'
+				  group by recurrence_days_mask
+				) defaults_by_day
+				""").param("id", planId).query(Integer.class).single()).isLessThanOrEqualTo(10);
+		assertThat(jdbc.sql("""
+				select count(*) from (
+				  select recurrence_days_mask, local_time
+				  from support_plan_activity_schedule where support_plan_id=:id and status='DRAFT'
+				  group by recurrence_days_mask, local_time having count(*) > 1
+				) overlapping_defaults
+				""").param("id", planId).query(Integer.class).single()).isZero();
 	}
 
 	@Test
@@ -456,7 +1186,7 @@ class SupportPlanIntegrationTests extends CareTestProperties {
 				row.getObject("from_date", LocalDate.class), row.getObject("through_date", LocalDate.class))).single();
 		String listPath = "/api/v1/support-plan-occurrences?from=" + bounds.get(0) + "&through=" + bounds.get(1);
 		var first = mvc.perform(get(listPath).with(user(userId))).andExpect(status().isOk())
-				.andExpect(jsonPath("$.schedulePolicyVersion").value("support-plan-activity-schedule-v1"))
+				.andExpect(jsonPath("$.schedulePolicyVersion").value("support-plan-activity-schedule-v2"))
 				.andExpect(jsonPath("$.interpretationCode")
 						.value("SELF_REPORTED_WELLBEING_ACTIVITY_NOT_TREATMENT_ADHERENCE"))
 				.andReturn().getResponse().getContentAsString();
@@ -974,7 +1704,11 @@ class SupportPlanIntegrationTests extends CareTestProperties {
 				.andExpect(status().isOk())
 				.andExpect(jsonPath("$.items[0].supportPlanId").value(replacementId.toString()));
 		assertThat(jdbc.sql("select count(*) from support_plan_activity_schedule where support_plan_id = :id")
-				.param("id", disposableId).query(Long.class).single()).isZero();
+				.param("id", disposableId).query(Long.class).single()).isEqualTo(2);
+		assertThat(jdbc.sql("""
+				select count(*) from support_plan_activity_schedule
+				where support_plan_id = :id and status = 'ENDED'
+				""").param("id", disposableId).query(Long.class).single()).isEqualTo(2);
 	}
 
 	@Test
@@ -1331,6 +2065,18 @@ class SupportPlanIntegrationTests extends CareTestProperties {
 
 	private String body(UUID evaluationId) {
 		return "{\"sourceSupportEvaluationId\":\"" + evaluationId + "\"}";
+	}
+
+	private JsonNode currentSchedule(JsonNode plan, String actionId, String status) {
+		for (var focus : plan.path("focuses")) {
+			for (var action : focus.path("actions")) {
+				if (!actionId.equals(action.path("actionId").asText())) continue;
+				for (var schedule : action.path("schedules")) {
+					if (status.equals(schedule.path("status").asText())) return schedule;
+				}
+			}
+		}
+		throw new AssertionError("Expected " + status + " schedule for action " + actionId);
 	}
 
 	private org.springframework.test.web.servlet.request.RequestPostProcessor user(UUID userId) {

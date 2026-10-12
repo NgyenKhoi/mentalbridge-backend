@@ -133,6 +133,7 @@ void test("persists owner-isolated daily emotion check-ins with real MongoDB", a
     timezone: "Asia/Ho_Chi_Minh",
     emotion: "GOOD",
     intensity: 4,
+    factors: ["sleep", "work"],
     note: "synthetic private integration note",
   };
 
@@ -145,9 +146,11 @@ void test("persists owner-isolated daily emotion check-ins with real MongoDB", a
       .expect(201);
     const createdBody = created.body as {
       sourceLabel: string;
+      factors: string[];
       note: string | null;
     };
     assert.equal(createdBody.sourceLabel, "SELF_REPORTED_EMOTION");
+    assert.deepEqual(createdBody.factors, body.factors);
     assert.equal(createdBody.note, body.note);
     assert.equal(
       String(created.headers.location),
@@ -167,8 +170,24 @@ void test("persists owner-isolated daily emotion check-ins with real MongoDB", a
     );
     const raw = await database.collection("emotion_check_ins").findOne({});
     assert.ok(raw);
+    const firstFactor = body.factors[0];
+    assert.ok(firstFactor);
     assert.equal(JSON.stringify(raw).includes(body.note), false);
     assert.equal(JSON.stringify(raw).includes(body.emotion), false);
+    assert.equal(JSON.stringify(raw).includes(firstFactor), false);
+
+    await request(server)
+      .post("/api/v1/emotion-check-ins")
+      .set("Authorization", `Bearer ${otherToken}`)
+      .set("Idempotency-Key", "emotion-invalid-duplicate")
+      .send({ ...body, factors: ["sleep", "sleep"] })
+      .expect(400);
+    await request(server)
+      .post("/api/v1/emotion-check-ins")
+      .set("Authorization", `Bearer ${otherToken}`)
+      .set("Idempotency-Key", "emotion-invalid-oversized")
+      .send({ ...body, factors: ["sleep", "work", "study", "family"] })
+      .expect(400);
 
     await request(server)
       .get("/api/v1/emotion-check-ins/2026-09-17")
@@ -181,13 +200,18 @@ void test("persists owner-isolated daily emotion check-ins with real MongoDB", a
         .set("Authorization", `Bearer ${ownerToken}`)
         .set("Idempotency-Key", "emotion-integration-update-a")
         .set("If-Match-Revision", "1")
-        .send({ emotion: "LOW", intensity: 3, note: null }),
+        .send({ emotion: "LOW", intensity: 3, factors: [], note: null }),
       request(server)
         .patch("/api/v1/emotion-check-ins/2026-09-17")
         .set("Authorization", `Bearer ${ownerToken}`)
         .set("Idempotency-Key", "emotion-integration-update-b")
         .set("If-Match-Revision", "1")
-        .send({ emotion: "GREAT", intensity: 5, note: null }),
+        .send({
+          emotion: "GREAT",
+          intensity: 5,
+          factors: ["health"],
+          note: null,
+        }),
     ]);
     assert.deepEqual(
       updates.map((response) => response.status).sort(),
@@ -254,6 +278,7 @@ void test("persists owner-isolated daily emotion check-ins with real MongoDB", a
     const contextItem = contextBody.items[0];
     assert.ok(contextItem);
     assert.equal("note" in contextItem, false);
+    assert.equal("factors" in contextItem, false);
     assert.equal("id" in contextItem, false);
 
     consent = { authorized: false, reason: "REVOKED" };

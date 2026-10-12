@@ -3,6 +3,7 @@ package com.mentalbridge.consultation;
 import java.security.KeyPair;
 import java.security.KeyPairGenerator;
 import java.util.Base64;
+import java.util.UUID;
 
 import org.springframework.test.context.DynamicPropertyRegistry;
 import org.springframework.test.context.DynamicPropertySource;
@@ -28,6 +29,11 @@ public abstract class ConsultationTestProperties {
 		properties.add("mentalbridge.consultation.payout.encryption-key",
 				() -> Base64.getEncoder().encodeToString("test-payout-key-32-bytes-long!!!".getBytes()));
 		properties.add("mentalbridge.consultation.payout.mode", () -> "FAKE");
+		properties.add("mentalbridge.consultation.billing.mode", () -> "FAKE");
+		properties.add("mentalbridge.consultation.billing.momo-partner-code", () -> "MOMO_TEST_PARTNER");
+		properties.add("mentalbridge.consultation.billing.momo-access-key", () -> "test-payment-access-key");
+		properties.add("mentalbridge.consultation.billing.momo-secret-key", () -> "test-payment-secret-key");
+		properties.add("mentalbridge.consultation.billing.momo-signature-key-version", () -> "test-v1");
 	}
 
 	private static KeyPair keyPair() {
@@ -39,5 +45,18 @@ public abstract class ConsultationTestProperties {
 		catch (Exception exception) {
 			throw new IllegalStateException("Unable to create test JWT key", exception);
 		}
+	}
+
+	protected static String signedTestToken(UUID subject, String role) throws Exception {
+		if (!java.util.Set.of("USER", "SPECIALIST", "ADMIN").contains(role)) throw new IllegalArgumentException("Unknown test role");
+		var encoder = Base64.getUrlEncoder().withoutPadding();
+		var header = encoder.encodeToString("{\"alg\":\"RS256\",\"typ\":\"JWT\"}".getBytes(java.nio.charset.StandardCharsets.UTF_8));
+		var claims = "{\"iss\":\"https://identity.test.mentalbridge\",\"aud\":[\"mentalbridge-test-api\"],\"sub\":\"%s\",\"roles\":[\"%s\"],\"exp\":%d}"
+				.formatted(subject, role, java.time.Instant.now().plusSeconds(40 * 86_400L).getEpochSecond());
+		var payload = header + "." + encoder.encodeToString(claims.getBytes(java.nio.charset.StandardCharsets.UTF_8));
+		var signature = java.security.Signature.getInstance("SHA256withRSA");
+		signature.initSign(JWT_KEY_PAIR.getPrivate());
+		signature.update(payload.getBytes(java.nio.charset.StandardCharsets.US_ASCII));
+		return payload + "." + encoder.encodeToString(signature.sign());
 	}
 }

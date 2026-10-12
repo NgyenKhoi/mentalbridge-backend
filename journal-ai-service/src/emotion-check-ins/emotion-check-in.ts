@@ -50,6 +50,16 @@ const TOMBSTONE_RETENTION_DAYS = 30;
 
 export const EMOTIONS = ["GREAT", "GOOD", "OKAY", "LOW", "VERY_LOW"] as const;
 export type Emotion = (typeof EMOTIONS)[number];
+export const EMOTION_INFLUENCE_FACTORS = [
+  "sleep",
+  "work",
+  "study",
+  "family",
+  "friends",
+  "health",
+  "other",
+] as const;
+export type EmotionInfluenceFactor = (typeof EMOTION_INFLUENCE_FACTORS)[number];
 
 export interface EncryptedCheckInPayload {
   ciphertext: Buffer | Binary;
@@ -63,6 +73,7 @@ export interface EncryptedCheckInPayload {
 export interface CheckInValue {
   emotion: Emotion;
   intensity: number;
+  factors: EmotionInfluenceFactor[];
   note: string | null;
 }
 
@@ -160,16 +171,34 @@ const timezoneSchema = z
       return false;
     }
   });
+const factorOrder = new Map(
+  EMOTION_INFLUENCE_FACTORS.map((factor, index) => [factor, index]),
+);
+const factorsSchema = z
+  .array(z.enum(EMOTION_INFLUENCE_FACTORS))
+  .max(3)
+  .refine((value) => new Set(value).size === value.length)
+  .transform((value) =>
+    [...value].sort(
+      (left, right) =>
+        (factorOrder.get(left) ?? 0) - (factorOrder.get(right) ?? 0),
+    ),
+  )
+  .optional()
+  .default([]);
 const noteSchema = z
   .string()
+  .trim()
+  .min(1)
   .max(500)
-  .refine((value) => value.trim().length > 0, "Note cannot be blank")
   .nullable()
-  .optional();
+  .optional()
+  .default(null);
 const valueSchema = z
   .object({
     emotion: z.enum(EMOTIONS),
     intensity: z.number().int().min(1).max(5),
+    factors: factorsSchema,
     note: noteSchema,
   })
   .strict();
@@ -302,7 +331,7 @@ export class EmotionCheckInCrypto {
             decipher.final(),
           ]).toString("utf8"),
         ),
-      ) as CheckInValue;
+      );
     } catch (error) {
       throw new ServiceUnavailableException({ cause: error });
     }
@@ -561,6 +590,7 @@ export class EmotionCheckInService {
       timezone: document.timezone,
       emotion: value.emotion,
       intensity: value.intensity,
+      factors: value.factors,
       note: value.note,
       sourceLabel: "SELF_REPORTED_EMOTION" as const,
       clinicalUse: "NOT_A_DIAGNOSIS_OR_SAFETY_CLASSIFIER" as const,
@@ -578,7 +608,8 @@ export class EmotionCheckInService {
     const value: CheckInValue = {
       emotion: parsed.data.emotion,
       intensity: parsed.data.intensity,
-      note: parsed.data.note ?? null,
+      factors: parsed.data.factors,
+      note: parsed.data.note,
     };
     const command = this.command(request, "create", parsed.data);
     const previousByCommand = await this.repository.findByCommand(
@@ -757,7 +788,8 @@ export class EmotionCheckInService {
       payload: this.crypto.encrypt(ownerAccountId, localDate, nextRevision, {
         emotion: parsed.data.emotion,
         intensity: parsed.data.intensity,
-        note: parsed.data.note ?? null,
+        factors: parsed.data.factors,
+        note: parsed.data.note,
       }),
     };
     const updated = await this.repository.update(

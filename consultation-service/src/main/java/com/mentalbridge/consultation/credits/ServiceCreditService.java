@@ -169,6 +169,7 @@ public class ServiceCreditService {
 	}
 
 	private CreditPeriod ensurePeriod(CurrentServiceEntitlementService.EntitlementDecision entitlement) {
+		var purchasedPlan = purchasedPlan(entitlement);
 		var periodId = UUID.randomUUID();
 		jdbc.sql("""
 				insert into service_credit_period (
@@ -179,16 +180,16 @@ public class ServiceCreditService {
 				    :periodStart, :periodEnd, :allocatedCount, :creditAllocation, :now, :now
 				) on conflict (account_id, plan_version, period_start, period_end) do nothing
 				""").param("id", periodId).param("accountId", entitlement.accountId())
-				.param("planVersion", entitlement.policyVersion()).param("packageCode", entitlement.packageCode().name())
+				.param("planVersion", purchasedPlan.planVersion()).param("packageCode", entitlement.packageCode().name())
 				.param("creditPolicyVersion", CURRENT_POLICY_VERSION)
 				.param("source", entitlement.source().name()).param("sourceReference", entitlement.sourceReference())
 				.param("periodStart", databaseInstant(entitlement.effectiveFrom()))
 				.param("periodEnd", databaseInstant(entitlement.effectiveUntil()))
 				.param("allocatedCount", allocation(CURRENT_POLICY_VERSION, entitlement.packageCode()))
-				.param("creditAllocation", CURRENT_CREDIT_ALLOCATION_VND)
+				.param("creditAllocation", purchasedPlan.creditAllocation())
 				.param("now", databaseNow()).update();
 
-		var period = findPeriod(entitlement);
+		var period = findPeriod(entitlement, purchasedPlan.planVersion());
 		if (period.source() != entitlement.source() || !period.sourceReference().equals(entitlement.sourceReference())) {
 			throw conflict("CREDIT_PERIOD_PROVENANCE_CONFLICT",
 					"The entitlement period already has different credit provenance");
@@ -204,13 +205,42 @@ public class ServiceCreditService {
 					where id=:id and allocated_count=:previous
 					""").param("packageCode", entitlement.packageCode().name()).param("allocatedCount", target)
 					.param("now", databaseNow()).param("id", period.id()).param("previous", period.allocatedCount()).update();
-			period = findPeriod(entitlement);
+			period = findPeriod(entitlement, purchasedPlan.planVersion());
 		}
 		for (int ordinal = 1; ordinal <= target; ordinal++) provision(period, ordinal);
 		return period;
 	}
 
-	private CreditPeriod findPeriod(CurrentServiceEntitlementService.EntitlementDecision entitlement) {
+	private PurchasedPlan purchasedPlan(CurrentServiceEntitlementService.EntitlementDecision entitlement) {
+		var established = jdbc.sql("""
+				select plan_version, credit_allocation_minor from service_credit_period
+				where account_id=:accountId and source_reference=:source
+				  and period_start=:periodStart and period_end=:periodEnd
+				  and (source <> 'PAID' or package_code=:packageCode)
+				""").param("accountId", entitlement.accountId()).param("source", entitlement.sourceReference())
+				.param("periodStart", databaseInstant(entitlement.effectiveFrom()))
+				.param("periodEnd", databaseInstant(entitlement.effectiveUntil()))
+				.param("packageCode", entitlement.packageCode().name())
+				.query((row, ignored) -> new PurchasedPlan(row.getString("plan_version"),
+						row.getLong("credit_allocation_minor"))).optional();
+		if (established.isPresent()) return established.orElseThrow();
+		return jdbc.sql("""
+				select v.id, v.credit_value_minor from payment_transaction pt
+				join user_subscription s on s.id=pt.subscription_id
+				join subscription_plan_version v on v.id=pt.target_plan_version_id
+				where s.id::text=:source and s.user_id=:accountId
+				  and pt.status='SUCCEEDED' and pt.paid_at=:periodStart and v.plan_code=:packageCode
+				""").param("source", entitlement.sourceReference()).param("accountId", entitlement.accountId())
+				.param("periodStart", databaseInstant(entitlement.effectiveFrom()))
+				.param("packageCode", entitlement.packageCode().name())
+				.query((row, ignored) -> new PurchasedPlan(row.getObject("id", UUID.class).toString(),
+						row.getLong("credit_value_minor"))).optional()
+				.orElse(new PurchasedPlan(entitlement.policyVersion(), CURRENT_CREDIT_ALLOCATION_VND));
+	}
+
+	private record PurchasedPlan(String planVersion, long creditAllocation) { }
+
+	private CreditPeriod findPeriod(CurrentServiceEntitlementService.EntitlementDecision entitlement, String planVersion) {
 		return jdbc.sql("""
 				select id, credit_policy_version, package_code, source, source_reference,
 				       allocated_count, credit_allocation_minor
@@ -218,7 +248,7 @@ public class ServiceCreditService {
 				where account_id=:accountId and plan_version=:planVersion
 				  and period_start=:periodStart and period_end=:periodEnd
 				for update
-				""").param("accountId", entitlement.accountId()).param("planVersion", entitlement.policyVersion())
+				""").param("accountId", entitlement.accountId()).param("planVersion", planVersion)
 				.param("periodStart", databaseInstant(entitlement.effectiveFrom()))
 				.param("periodEnd", databaseInstant(entitlement.effectiveUntil()))
 				.query((row, ignored) -> new CreditPeriod(row.getObject("id", UUID.class), row.getString("credit_policy_version"),
@@ -257,8 +287,10 @@ public class ServiceCreditService {
 				""").param("accountId", accountId).query(Integer.class).single();
 		var history = history(accountId);
 		var balance = new ServiceCreditResponse.Balance(counts.getOrDefault("AVAILABLE", 0),
-				counts.getOrDefault("HELD", 0), counts.getOrDefault("CONSUMED", 0),
-				counts.getOrDefault("FORFEITED", 0), period == null ? 0 : period.allocatedCount(), released);
+				counts.getOrDefault("HELD", 0) + counts.getOrDefault("UPGRADE_HELD", 0),
+				counts.getOrDefault("CONSUMED", 0), counts.getOrDefault("FORFEITED", 0)
+						+ counts.getOrDefault("EXPIRED", 0) + counts.getOrDefault("REVOKED", 0),
+				period == null ? 0 : period.allocatedCount(), released);
 		var activeReservations = activeReservations(accountId);
 		var maximumReservations = reservationLimit(packageCode);
 		var capacity = new ServiceCreditResponse.ReservationCapacity(activeReservations, maximumReservations,

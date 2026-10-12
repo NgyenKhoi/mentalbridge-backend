@@ -141,6 +141,29 @@ The reason is available through authenticated owner/admin reads. This
 synchronous owner-local flow has no independent notification consumer, so it
 does not add Kafka or an outbox.
 
+## Approved-profile amendments (MB-635)
+
+[MB-SPECIALIST-PROFILE-AMENDMENT-001](../adr/0033-reviewed-specialist-profile-amendment.md)
+extends the lifecycle without moving an approved specialist back to PENDING.
+The approved public snapshot remains active while a separate private amendment
+is DRAFT, PENDING_REVIEW or REJECTED. Only ADMIN approval atomically promotes the
+reviewed fields into a new approved content version. Rejection preserves the
+old public snapshot exactly and retains bounded review feedback and the reviewed
+payload for correction/resubmission. Editing a pending amendment withdraws it
+to DRAFT; rejected edits preserve feedback until explicit resubmission.
+
+Initial approval and amendment promotion append immutable approved-version
+history. Operational suspension/restoration do not increment the published
+content version. Suspension blocks amendment commands and review eligibility;
+restoration does not revive appointments/slots. Normal amendment changes never
+cancel, reprice or rewrite existing appointments. Public discovery reads only
+the live approved snapshot and applies its existing authoritative checks.
+
+All mutations require the appropriate profile/amendment If-Match. Role and
+ownership checks protect private edits; stale/concurrent commands cannot publish
+an unreviewed payload or overwrite another decision. See the ADR for transitions,
+baseline migration and overlapping-version deployment limitations.
+
 ## Modes and session boundary
 
 Every slot is exactly 60 minutes. At `scheduledEndAt`, the authoritative

@@ -76,6 +76,18 @@ mentalbridge:
       momo-store-id: ${MOMO_PAYOUT_STORE_ID:}
       momo-public-key: ${MOMO_PAYOUT_PUBLIC_KEY:}
       momo-ipn-url: ${MOMO_PAYOUT_IPN_URL:}
+    billing:
+      mode: ${CONSULTATION_BILLING_MODE:DISABLED}
+      production-approved: ${MOMO_PAYMENT_PRODUCTION_APPROVED:false}
+      checkout-ttl: ${CONSULTATION_BILLING_CHECKOUT_TTL:PT15M}
+      expiry-interval: ${CONSULTATION_BILLING_EXPIRY_INTERVAL:PT1M}
+      momo-partner-code: ${MOMO_PAYMENT_PARTNER_CODE:}
+      momo-access-key: ${MOMO_PAYMENT_ACCESS_KEY:}
+      momo-secret-key: ${MOMO_PAYMENT_SECRET_KEY:}
+      momo-signature-key-version: ${MOMO_PAYMENT_SIGNATURE_KEY_VERSION:v1}
+      momo-base-url: ${MOMO_PAYMENT_BASE_URL:https://test-payment.momo.vn}
+      momo-ipn-url: ${MOMO_PAYMENT_IPN_URL:}
+      momo-redirect-url: ${MOMO_PAYMENT_REDIRECT_URL:}
 
 eureka:
   client:

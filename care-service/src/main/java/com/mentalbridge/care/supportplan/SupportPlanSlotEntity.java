@@ -47,6 +47,7 @@ class SupportPlanSlotEntity {
 	}
 
 	UUID id() { return id; }
+	UUID supportPlanId() { return supportPlanId; }
 	short ordinal() { return ordinal; }
 	String slotKey() { return slotKey; }
 	String slotKind() { return slotKind; }

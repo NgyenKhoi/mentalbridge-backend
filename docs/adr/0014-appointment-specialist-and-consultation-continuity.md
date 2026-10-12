@@ -120,6 +120,18 @@ from runtime-generated ratings.
 
 ## Consequences
 
+### MB-370 amendment: optional AI suggestion
+
+Care owns the asynchronous request record and resolves the exact saved private
+ConsultationBrief version. Journal/AI owns provider routing and may rewrite only
+`currentSituation` and `userGoals` from that draft plus minimized PHQ-9/GAD-7
+levels. The response records consent, entitlement, route, provider, model, prompt,
+and schema versions. It never changes the screening reference, appointment,
+approval, grant, or sharing state. The browser treats the result as unsaved
+editable text and requires the existing save and approval actions. Source change,
+deletion, consent failure, malformed output, timeout, and provider failure leave
+the manual workflow available.
+
 - The former online-only/no-location and in-place reschedule rules in ADR 0005
   are superseded.
 - Consultation needs additive contract and persistence work for locations,

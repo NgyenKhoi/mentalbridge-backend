@@ -108,6 +108,38 @@ The generated context test uses PostgreSQL, Kafka, and Redis Testcontainers and 
 
 ## Runtime contract status
 
+### Recurring aggregate reports (MB-586)
+
+Identity owns ADMIN-only `/api/v1/admin/platform-report-schedules` management
+and the existing versioned ACCOUNT_ACTIVITY job engine. At most 50 nondeleted
+schedules may be created. DAILY, WEEKLY (Monday), and MONTHLY (day 1) schedules
+use an IANA timezone and minute-resolution wall time. Java timezone rules move
+DST gap times forward and select the earlier offset during an overlap.
+
+Each occurrence requests the preceding 1–366 completed UTC days, ending before
+the occurrence's UTC calendar date. A schedule row lock, unique job occurrence
+key, and one local transaction commit the queued job and next run together.
+One due schedule is handled per existing reporting poll; overdue schedules run
+once and advance to the next future occurrence, without replaying an unbounded
+backlog. Update/resume also select the next future occurrence.
+
+The approved recipient group is ADMIN and the only delivery target is
+ADMIN_REPORT_HISTORY. Delivery means publishing the aggregate artifact into the
+existing authenticated report history/download flow; no email, arbitrary URL,
+health content, second report engine, broker, or notification adapter is added.
+Current creator account access is checked before generation; revoked access
+pauses the schedule with ADMIN_ACCESS_UNAVAILABLE. Generation failures retain
+the existing immutable FAILED/STALE job evidence and idempotent retry API.
+Soft deletion stops future occurrences while retaining prior jobs/artifacts.
+Update, pause/resume and delete require the current `expectedVersion`; a stale
+write returns HTTP 412. Existing report artifact retention remains 30 days.
+
+Apply append-only migration `004-report-schedules.sql` before deploying. Old
+applications tolerate the additive table and nullable occurrence columns. Stop
+the schedule-aware runtime before rollback; do not drop audit-linked schedules.
+No new configuration is required; existing platform-reporting polling/enable
+settings control both scheduled enqueue and the shared processor.
+
 The implemented internal endpoint
 `GET /internal/v1/accounts/{accountId}/verified-email` returns an address only
 for an active account with a verified email and requires the dedicated service

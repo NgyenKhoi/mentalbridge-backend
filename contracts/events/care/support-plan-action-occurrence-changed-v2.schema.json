@@ -1,0 +1,280 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://mentalbridge.local/contracts/events/care/support-plan-action-occurrence-changed-v2.schema.json",
+  "title": "Care SupportPlan action occurrence changed v2",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["messageId", "messageType", "occurredAt", "producer", "schemaVersion", "correlationId", "aggregateId", "aggregateVersion", "payload"],
+  "properties": {
+    "messageId": { "type": "string", "format": "uuid" },
+    "messageType": { "const": "care.support-plan.action-occurrence-changed" },
+    "occurredAt": { "type": "string", "format": "date-time" },
+    "producer": { "const": "care-service" },
+    "schemaVersion": { "const": "2.0" },
+    "correlationId": { "type": "string", "format": "uuid" },
+    "aggregateId": { "type": "string", "format": "uuid" },
+    "aggregateVersion": { "type": "integer", "minimum": 1 },
+    "payload": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["supportPlanId", "userId", "planVersion", "actionId", "actionType", "actionVersion", "scheduleId", "scheduleVersion", "occurrenceId", "representationMode", "changeType", "orchestration", "ownerFact"],
+      "properties": {
+        "supportPlanId": { "type": "string", "format": "uuid" },
+        "userId": { "type": "string", "format": "uuid" },
+        "planVersion": { "type": "integer", "minimum": 1 },
+        "actionId": { "type": "string", "minLength": 1, "maxLength": 128 },
+        "actionType": {
+          "enum": ["RESOURCE", "JOURNAL", "EMOTION_CHECK_IN", "ROUTINE_SELF_MANAGEMENT", "PROFESSIONAL_SUPPORT", "REASSESSMENT_SCREENING", "SELF_REPORT_REVIEW"]
+        },
+        "actionVersion": { "type": "integer", "minimum": 0 },
+        "scheduleId": { "type": "string", "format": "uuid" },
+        "scheduleVersion": { "type": "integer", "minimum": 1 },
+        "occurrenceId": { "type": "string", "format": "uuid" },
+        "representationMode": { "enum": ["V2_RESOURCE_ADAPTER", "NATIVE_V3"] },
+        "changeType": { "enum": ["CREATED", "STATE_CHANGED", "EVIDENCE_ATTACHED", "CANCELLED"] },
+        "orchestration": { "$ref": "#/$defs/orchestration" },
+        "ownerFact": {
+          "description": "Bounded reference to an authoritative completion fact. Care owns orchestration state and never copies the source payload.",
+          "oneOf": [
+            { "$ref": "#/$defs/boundedOwnerFact" },
+            { "type": "null" }
+          ]
+        }
+      },
+      "allOf": [
+        {
+          "if": {
+            "properties": { "representationMode": { "const": "V2_RESOURCE_ADAPTER" } },
+            "required": ["representationMode"]
+          },
+          "then": {
+            "properties": {
+              "orchestration": {
+                "properties": { "outcomeRecordedAt": { "type": "null" } }
+              },
+              "ownerFact": { "type": "null" }
+            }
+          }
+        },
+        {
+          "if": {
+            "properties": { "changeType": { "const": "EVIDENCE_ATTACHED" } },
+            "required": ["changeType"]
+          },
+          "then": {
+            "properties": {
+              "representationMode": { "const": "NATIVE_V3" },
+              "orchestration": {
+                "properties": { "state": { "const": "COMPLETED" } }
+              },
+              "ownerFact": { "$ref": "#/$defs/boundedOwnerFact" }
+            }
+          }
+        },
+        {
+          "if": {
+            "properties": {
+              "representationMode": { "const": "NATIVE_V3" },
+              "orchestration": {
+                "properties": { "state": { "const": "COMPLETED" } },
+                "required": ["state"]
+              }
+            },
+            "required": ["representationMode", "orchestration"]
+          },
+          "then": {
+            "properties": {
+              "orchestration": {
+                "properties": { "outcomeRecordedAt": { "type": "string", "format": "date-time" } }
+              },
+              "ownerFact": { "$ref": "#/$defs/boundedOwnerFact" }
+            }
+          }
+        },
+        {
+          "if": {
+            "properties": {
+              "orchestration": {
+                "properties": { "state": { "enum": ["SCHEDULED", "SKIPPED", "CANCELLED"] } },
+                "required": ["state"]
+              }
+            },
+            "required": ["orchestration"]
+          },
+          "then": {
+            "properties": {
+              "orchestration": {
+                "properties": { "outcomeRecordedAt": { "type": "null" } }
+              },
+              "ownerFact": { "type": "null" }
+            }
+          }
+        },
+        {
+          "if": { "properties": { "actionType": { "enum": ["RESOURCE", "ROUTINE_SELF_MANAGEMENT"] } }, "required": ["actionType"] },
+          "then": {
+            "properties": {
+              "ownerFact": {
+                "oneOf": [
+                  { "type": "null" },
+                  {
+                    "allOf": [
+                      { "$ref": "#/$defs/boundedOwnerFact" },
+                      { "properties": { "ownerDomain": { "const": "CARE" }, "kind": { "const": "USER_ACKNOWLEDGEMENT" } } }
+                    ]
+                  }
+                ]
+              }
+            }
+          }
+        },
+        {
+          "if": { "properties": { "actionType": { "const": "SELF_REPORT_REVIEW" } }, "required": ["actionType"] },
+          "then": {
+            "properties": {
+              "ownerFact": {
+                "oneOf": [
+                  { "type": "null" },
+                  {
+                    "allOf": [
+                      { "$ref": "#/$defs/boundedOwnerFact" },
+                      { "properties": { "ownerDomain": { "const": "CARE" }, "kind": { "const": "SELF_REPORT_REVIEW" } } }
+                    ]
+                  }
+                ]
+              }
+            }
+          }
+        },
+        {
+          "if": { "properties": { "actionType": { "const": "JOURNAL" } }, "required": ["actionType"] },
+          "then": {
+            "properties": {
+              "ownerFact": {
+                "oneOf": [
+                  { "type": "null" },
+                  {
+                    "allOf": [
+                      { "$ref": "#/$defs/boundedOwnerFact" },
+                      { "properties": { "ownerDomain": { "const": "JOURNAL_AI" }, "kind": { "const": "JOURNAL_ENTRY" } } }
+                    ]
+                  }
+                ]
+              }
+            }
+          }
+        },
+        {
+          "if": { "properties": { "actionType": { "const": "EMOTION_CHECK_IN" } }, "required": ["actionType"] },
+          "then": {
+            "properties": {
+              "ownerFact": {
+                "oneOf": [
+                  { "type": "null" },
+                  {
+                    "allOf": [
+                      { "$ref": "#/$defs/boundedOwnerFact" },
+                      { "properties": { "ownerDomain": { "const": "JOURNAL_AI" }, "kind": { "const": "EMOTION_CHECK_IN" } } }
+                    ]
+                  }
+                ]
+              }
+            }
+          }
+        },
+        {
+          "if": { "properties": { "actionType": { "const": "PROFESSIONAL_SUPPORT" } }, "required": ["actionType"] },
+          "then": {
+            "properties": {
+              "ownerFact": {
+                "oneOf": [
+                  { "type": "null" },
+                  {
+                    "allOf": [
+                      { "$ref": "#/$defs/boundedOwnerFact" },
+                      { "properties": { "ownerDomain": { "const": "CONSULTATION" }, "kind": { "const": "APPOINTMENT_FULFILMENT" } } }
+                    ]
+                  }
+                ]
+              }
+            }
+          }
+        },
+        {
+          "if": { "properties": { "actionType": { "const": "REASSESSMENT_SCREENING" } }, "required": ["actionType"] },
+          "then": {
+            "properties": {
+              "ownerFact": {
+                "oneOf": [
+                  { "type": "null" },
+                  {
+                    "allOf": [
+                      { "$ref": "#/$defs/boundedOwnerFact" },
+                      { "properties": { "ownerDomain": { "const": "CARE" }, "kind": { "const": "ASSESSMENT_HISTORY" } } }
+                    ]
+                  }
+                ]
+              }
+            }
+          }
+        }
+      ]
+    }
+  },
+  "$defs": {
+    "orchestration": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["state", "displayState", "stateReason", "outcomeRecordedAt", "interpretationCode"],
+      "properties": {
+        "state": { "enum": ["SCHEDULED", "COMPLETED", "SKIPPED", "CANCELLED"] },
+        "displayState": { "enum": ["SCHEDULED", "OVERDUE", "COMPLETED", "SKIPPED", "CANCELLED"] },
+        "stateReason": {
+          "type": ["string", "null"],
+          "enum": ["PLAN_PAUSED", "PLAN_COMPLETED", "PLAN_REPLACED", "ACTION_ENDED", null]
+        },
+        "outcomeRecordedAt": { "type": ["string", "null"], "format": "date-time" },
+        "interpretationCode": { "const": "SELF_REPORTED_WELLBEING_ACTIVITY_NOT_TREATMENT_ADHERENCE" }
+      }
+    },
+    "boundedOwnerFact": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["ownerDomain", "kind", "factId", "factRevision", "occurredAt", "verifiedAt"],
+      "properties": {
+        "ownerDomain": { "enum": ["CARE", "JOURNAL_AI", "CONSULTATION"] },
+        "kind": {
+          "enum": ["USER_ACKNOWLEDGEMENT", "JOURNAL_ENTRY", "EMOTION_CHECK_IN", "APPOINTMENT_FULFILMENT", "ASSESSMENT_HISTORY", "SELF_REPORT_REVIEW"]
+        },
+        "factId": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 255,
+          "description": "Opaque authoritative fact identifier; never a copied source payload."
+        },
+        "factRevision": { "type": ["string", "null"], "minLength": 1, "maxLength": 128 },
+        "occurredAt": { "type": "string", "format": "date-time" },
+        "verifiedAt": { "type": "string", "format": "date-time" }
+      },
+      "allOf": [
+        {
+          "if": { "properties": { "kind": { "enum": ["JOURNAL_ENTRY", "EMOTION_CHECK_IN"] } }, "required": ["kind"] },
+          "then": { "properties": { "ownerDomain": { "const": "JOURNAL_AI" } } }
+        },
+        {
+          "if": { "properties": { "kind": { "const": "APPOINTMENT_FULFILMENT" } }, "required": ["kind"] },
+          "then": { "properties": { "ownerDomain": { "const": "CONSULTATION" } } }
+        },
+        {
+          "if": {
+            "properties": {
+              "kind": { "enum": ["USER_ACKNOWLEDGEMENT", "ASSESSMENT_HISTORY", "SELF_REPORT_REVIEW"] }
+            },
+            "required": ["kind"]
+          },
+          "then": { "properties": { "ownerDomain": { "const": "CARE" } } }
+        }
+      ]
+    }
+  }
+}

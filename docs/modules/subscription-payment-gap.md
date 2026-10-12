@@ -24,10 +24,15 @@ entitlement, credit, earning, or payout balance.
 | `PLUS` | VND 1,390,000 | 4 | 2 | VND 300,000 | VND 210,000 |
 | `PREMIUM` | VND 3,490,000 | 10 | 4 | VND 300,000 each | VND 210,000 each |
 
-These prices are production-planned documentation/design values, not runtime
-prices, and do not enable real-money production. The current integration-test
-runtime catalogue is `FREE=0`, `PLUS=5,000`, and `PREMIUM=10,000` VND. Those
-small values are fixtures only and cannot support profitability conclusions.
+These are production-planned values, not the active test prices. MB-622 offers
+new immutable sandbox versions at PLUS 5,000 and PREMIUM 10,000 VND. The owner
+approved `sandbox-full-price-v1`: upgrade charges the full 10,000 VND with zero
+offset while preserving the nominal held-credit value as audit evidence.
+Allocations/earnings are synthetic values, never cash redeemable from the test
+purchase. See the [ADR 0032 amendment](../adr/0032-payment-and-specialist-payout-baseline.md).
+Production MoMo remains disabled until
+the independent configuration, credential, callback, and operational approval
+gates pass. Tests never call the provider or use a second production method.
 The credit quantities are the approved `consultation-credit-v2` runtime target.
 The MB-377 `consultation-credit-v1` ledger remains `FREE=0`, `PLUS=1`,
 `PREMIUM=3`; existing periods and ledger facts keep that exact provenance and
@@ -84,7 +89,8 @@ purchase. A `PREMIUM` to `PLUS` request returns
 `SUBSCRIPTION_DOWNGRADE_NOT_SUPPORTED`; no user refund endpoint exists.
 
 An immediate upgrade starts a full `PREMIUM` period. A non-withdrawable offset
-is calculated in integer VND minor units from the published plan-version facts:
+under historical/ordinary `upgrade-offset-v1` is calculated in integer VND
+minor units from the published plan-version facts:
 
 ```text
 remainingFeatureValueMinor = floor(
@@ -103,6 +109,14 @@ period, and grants ten new v2 credits atomically. Failed/expired checkout
 releases them to `AVAILABLE` or `EXPIRED`.
 
 Reserved credits are not offset or revoked by an upgrade; their appointments continue under the old snapshot. Consumed, expired, forfeited, and revoked credits have no upgrade value.
+
+For sandbox-full-price-v1 only, the applied offset is zero regardless of nominal
+available credit value. Both versions must use the same pricing policy; mixing
+historical ordinary periods into sandbox pricing is rejected. The pricing policy
+is snapshotted on each upgrade. The existing hold/revoke/release lifecycle is
+unchanged. A new billing-created credit period snapshots the purchased immutable
+plan-version UUID and its per-credit allocation; existing legacy/demo periods
+retain their exact prior provenance, without reprovisioning.
 
 ## Appointment and settlement
 
@@ -129,9 +143,8 @@ Reserved credits are not offset or revoked by an upgrade; their appointments con
 - A logical payout fixes its destination, currency, amount, and earning items. Each provider call is a numbered attempt: a definite `FAILED` attempt may be retried with a new provider idempotency key, while `UNKNOWN` is queried and blocks another transfer attempt. The payout becomes `SUCCEEDED` only after verified provider confirmation/status reconciliation.
 - Real MoMo payment and payout remain disabled until separate production
   approval and credentials are configured. Runtime FX conversion is prohibited.
-- The 5,000 VND test `PLUS` checkout uses One-Time E-Wallet
-  `requestType=captureWallet`; it does not use generic `initiate`, whose minimum
-  amount is 10,000 VND. Local/CI never depends on MoMo availability.
+- Checkout uses One-Time E-Wallet `requestType=captureWallet`. Local/CI uses the
+  deterministic MoMo-shaped fake and never depends on MoMo availability.
 
 ## Required contracts and verification
 

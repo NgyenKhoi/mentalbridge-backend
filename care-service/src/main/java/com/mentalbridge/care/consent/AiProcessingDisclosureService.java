@@ -9,10 +9,10 @@ import com.mentalbridge.care.shared.ApiException;
 public class AiProcessingDisclosureService {
 
 	public static final String CONSENT_TYPE = "AI_PROCESSING";
-	public static final String VERSION = "ai-processing-capstone-v1";
+	public static final String VERSION = "ai-processing-capstone-v2";
 	private static final String LOCALE = "vi-VN";
-	private static final String TITLE = "Đồng ý xử lý nhật ký bằng AI";
-	private static final String CONTENT = "MentalBridge chỉ xử lý bằng AI một phiên bản nhật ký cụ thể khi bạn chủ động yêu cầu, hoặc các phiên bản nhật ký cụ thể trong hai khoảng thời gian giới hạn khi bạn chủ động yêu cầu phân tích theo thời gian. Kết quả chỉ hỗ trợ phản ánh và điều hướng, không phải chẩn đoán, không chấm PHQ-9/GAD-7, không quyết định safety, eligibility hay thay đổi SupportPlan. Sự đồng ý này không bao gồm nghiên cứu, tiếp thị hoặc chia sẻ dữ liệu với chuyên gia. Bạn có thể rút lại sự đồng ý để chặn các lần xử lý hoặc retry mới. Việc rút lại không tự động xóa kết quả đã lưu; xóa dữ liệu là một quy trình riêng.";
+	private static final String TITLE = "Đồng ý xử lý dữ liệu bằng AI";
+	private static final String CONTENT = "MentalBridge chỉ dùng AI khi bạn chủ động yêu cầu. Phạm vi bao gồm nội dung nhật ký cụ thể bạn chọn, các phiên bản nhật ký trong khoảng thời gian giới hạn, hoặc bản tóm tắt trước buổi tư vấn đã lưu cùng mức sàng lọc tối giản. AI chỉ tạo gợi ý để bạn xem lại và chỉnh sửa; không chẩn đoán, không chấm PHQ-9/GAD-7, không quyết định an toàn, quyền lợi hay kế hoạch hỗ trợ, và không tự phê duyệt hoặc chia sẻ với chuyên gia. Nội dung nhật ký, câu trả lời sàng lọc, chat và ghi chú riêng không được dùng cho gợi ý tóm tắt này. Bạn có thể rút lại đồng ý để chặn các yêu cầu hoặc lần thử lại mới.";
 
 	public DisclosureView current(String locale) {
 		if (locale != null && !LOCALE.equalsIgnoreCase(locale)) {
@@ -30,6 +30,5 @@ public class AiProcessingDisclosureService {
 	}
 
 	public record DisclosureView(String consentType, String version, String locale, String title, String content,
-			boolean capstoneOnly) {
-	}
+			boolean capstoneOnly) { }
 }

@@ -31,6 +31,7 @@ public class AdminPayoutController {
 				join specialist_payout_destination d on d.id=p.destination_id
 				join specialist_payout_item i on i.payout_id=p.id
 				left join specialist_payout_attempt a on a.payout_id=p.id
+				 and a.attempt_number=(select max(latest.attempt_number) from specialist_payout_attempt latest where latest.payout_id=p.id)
 				group by p.id, d.display_hint
 				order by p.requested_at desc, p.id desc limit 200
 				""").query((row, ignored) -> new AdminPayoutResponse.Item(row.getObject("id", UUID.class),

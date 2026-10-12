@@ -107,6 +107,22 @@ public class ConsultationBriefService {
 		return decision.view();
 	}
 
+	public AiDraftSource aiDraftSource(UUID userId, String bearerToken, UUID correlationId, UUID appointmentId,
+			long expectedVersion) {
+		var context = appointments.get(appointmentId, bearerToken, correlationId);
+		requireOwnerConfirmed(context, userId);
+		return transactions.execute(status -> {
+			var brief = requiredBriefForUpdate(appointmentId, userId);
+			requireVersion(brief.version(), expectedVersion);
+			if (!brief.status().equals("DRAFT") || activeGrant(brief.id()) != null) {
+				throw new ApiException(HttpStatus.CONFLICT, "CONSULTATION_BRIEF_DRAFT_REQUIRED",
+						"AI suggestions are available only for the current private draft");
+			}
+			return new AiDraftSource(brief.id(), brief.appointmentId(), brief.version(), brief.currentSituation(),
+					brief.supportEvaluationId(), screening(userId, brief.supportEvaluationId()), brief.userGoals());
+		});
+	}
+
 	private BriefView saveDraft(AppointmentContext context, UUID userId, UUID correlationId,
 			Long expectedVersion, SaveDraftCommand command) {
 		var screening = screening(userId, command.supportEvaluationId());
@@ -245,6 +261,11 @@ public class ConsultationBriefService {
 				update consultation_brief_snapshot set current_situation=null,support_evaluation_id=null,
 				 screening_context=null,user_goals=null,deleted_at=:now
 				where brief_id=:briefId and deleted_at is null
+				""").param("now", Timestamp.from(now)).param("briefId", brief.id()).update();
+		jdbc.sql("""
+				update consultation_brief_ai_draft_job set status='FAILED',terminal_reason='SOURCE_DELETED',
+				 suggested_current_situation=null,suggested_user_goals=null,completed_at=:now,updated_at=:now
+				where brief_id=:briefId and status<>'FAILED'
 				""").param("now", Timestamp.from(now)).param("briefId", brief.id()).update();
 		audit(context.appointmentId(), grant == null ? null : grant.id(), userId, "USER", "DELETED", "ALLOWED",
 				"USER_DELETED", correlationId, now);
@@ -495,6 +516,8 @@ public class ConsultationBriefService {
 	public record ScreeningContextChoice(UUID supportEvaluationId, Instant evaluatedAt,
 			List<ScreeningContext> screeningContext) { }
 	public record ScreeningContextList(List<ScreeningContextChoice> items, int count) { }
+	public record AiDraftSource(UUID briefId, UUID appointmentId, long briefVersion, String currentSituation,
+			UUID supportEvaluationId, List<ScreeningContext> screeningContext, List<String> userGoals) { }
 
 	private record BriefRow(UUID id, UUID appointmentId, String status, String currentSituation,
 			UUID supportEvaluationId, List<String> userGoals, long version, Instant updatedAt) { }

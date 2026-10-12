@@ -74,6 +74,10 @@ mentalbridge:
       circuit-failure-rate: ${JOURNAL_AI_SUPPORT_GUIDE_CIRCUIT_FAILURE_RATE:50}
       circuit-open-duration: ${JOURNAL_AI_SUPPORT_GUIDE_CIRCUIT_OPEN_DURATION:PT10S}
       circuit-half-open-calls: ${JOURNAL_AI_SUPPORT_GUIDE_CIRCUIT_HALF_OPEN_CALLS:2}
+    consultation-brief-ai-draft:
+      base-url: ${JOURNAL_AI_CONSULTATION_BRIEF_DRAFT_BASE_URL:}
+      connect-timeout: ${JOURNAL_AI_CONSULTATION_BRIEF_DRAFT_CONNECT_TIMEOUT:PT0.5S}
+      read-timeout: ${JOURNAL_AI_CONSULTATION_BRIEF_DRAFT_READ_TIMEOUT:PT8S}
 eureka:
   client:
     enabled: ${EUREKA_CLIENT_ENABLED:true}

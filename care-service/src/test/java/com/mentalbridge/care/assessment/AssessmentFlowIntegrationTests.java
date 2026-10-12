@@ -104,6 +104,8 @@ class AssessmentFlowIntegrationTests extends CareTestProperties {
 			"POST /api/v1/consultation-briefs/{appointmentId}/approve",
 			"POST /api/v1/consultation-briefs/{appointmentId}/revoke",
 			"DELETE /api/v1/consultation-briefs/{appointmentId}",
+			"POST /api/v1/consultation-briefs/{appointmentId}/ai-draft-jobs",
+			"GET /api/v1/consultation-briefs/{appointmentId}/ai-draft-jobs/{jobId}",
 			"GET /api/v1/specialist/client-continuity",
 			"GET /api/v1/specialist/consultation-briefs/{appointmentId}",
 			"POST /api/v1/anonymous-assessment-sessions/{sessionId}/assessments",

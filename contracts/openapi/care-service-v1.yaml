@@ -33,6 +33,8 @@ tags:
   - name: Consultation brief
   - name: SupportPlan draft
   - name: SupportPlan activity
+  - name: SupportPlan v3
+  - name: SupportPlan personalization
   - name: Anonymous assessment
   - name: Safety directory
 paths:
@@ -775,6 +777,55 @@ paths:
               schema: { $ref: "#/components/schemas/ConsultationBriefScreeningContextList" }
         "401": { $ref: "#/components/responses/UnauthorizedProblem" }
         "403": { $ref: "#/components/responses/ForbiddenProblem" }
+  /api/v1/consultation-briefs/{appointmentId}/ai-draft-jobs:
+    x-mentalbridge-status: implemented
+    post:
+      tags: [Consultation brief]
+      operationId: createConsultationBriefAiDraftJob
+      summary: Request an optional AI suggestion for the exact current private draft
+      description: Care resolves the exact saved draft and minimized screening context. Journal/AI rechecks current AI_PROCESSING consent and the approved provider route. The job cannot save, approve, share, or change the ConsultationBrief.
+      security: [{ bearerAuth: [] }]
+      parameters:
+        - $ref: "#/components/parameters/AppointmentId"
+        - $ref: "#/components/parameters/RequiredIfMatch"
+        - $ref: "#/components/parameters/IdempotencyKey"
+        - $ref: "#/components/parameters/CorrelationId"
+      responses:
+        "202":
+          description: Versioned asynchronous draft job accepted or replayed
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/ConsultationBriefAiDraftJob" }
+        "400": { $ref: "#/components/responses/ValidationProblem" }
+        "401": { $ref: "#/components/responses/UnauthorizedProblem" }
+        "403": { $ref: "#/components/responses/ForbiddenProblem" }
+        "404": { $ref: "#/components/responses/NotFoundProblem" }
+        "409": { $ref: "#/components/responses/ConflictProblem" }
+        "412": { $ref: "#/components/responses/VersionProblem" }
+        "428": { $ref: "#/components/responses/VersionRequiredProblem" }
+  /api/v1/consultation-briefs/{appointmentId}/ai-draft-jobs/{jobId}:
+    x-mentalbridge-status: implemented
+    get:
+      tags: [Consultation brief]
+      operationId: getOwnConsultationBriefAiDraftJob
+      summary: Read one owned AI draft job and its editable suggestion
+      security: [{ bearerAuth: [] }]
+      parameters:
+        - $ref: "#/components/parameters/AppointmentId"
+        - name: jobId
+          in: path
+          required: true
+          schema: { type: string, format: uuid }
+        - $ref: "#/components/parameters/CorrelationId"
+      responses:
+        "200":
+          description: Current private job state
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/ConsultationBriefAiDraftJob" }
+        "401": { $ref: "#/components/responses/UnauthorizedProblem" }
+        "403": { $ref: "#/components/responses/ForbiddenProblem" }
+        "404": { $ref: "#/components/responses/NotFoundProblem" }
   /api/v1/consultation-briefs/{appointmentId}:
     x-mentalbridge-status: implemented
     get:
@@ -1186,7 +1237,9 @@ paths:
         The authenticated user explicitly activates the owned draft. Care
         immediately revalidates current paid entitlement, SupportEvaluation,
         template policy, every selected exact resource version and eligibility
-        role before opening the local transaction. The normal command also
+        role before opening the local transaction. A draft pinned to an older
+        personalization revision must be explicitly discarded and regenerated
+        before activation; Care never rewrites it silently. The normal command also
         applies to safety-positive users and accepts no safety acknowledgement field.
       security:
         - bearerAuth: []
@@ -1440,6 +1493,227 @@ paths:
         '404': { $ref: '#/components/responses/SupportPlanOccurrenceNotFoundProblem' }
         '409': { $ref: '#/components/responses/SupportPlanOccurrenceConflictProblem' }
         '412': { $ref: '#/components/responses/SupportPlanOccurrenceVersionProblem' }
+  /api/v2/support-plans/current:
+    x-mentalbridge-status: implemented
+    get:
+      tags: [SupportPlan v3]
+      operationId: getOwnCurrentSupportPlanV3
+      summary: Read the current SupportPlan through the v3 action model
+      description: |
+        Returns the authenticated user's active or paused plan as Care-owned
+        focuses, typed actions, and schedules. Native v3 rows are marked
+        NATIVE_V3. Existing v2 resource-slot history is translated at read time
+        and marked V2_RESOURCE_ADAPTER; the adapter does not rewrite v2 rows or
+        manufacture native action history. Source-domain payloads are never
+        copied into this representation.
+      security:
+        - bearerAuth: []
+      parameters:
+        - $ref: '#/components/parameters/CorrelationId'
+      responses:
+        '200':
+          description: Current SupportPlan v3 read model
+          headers:
+            ETag:
+              $ref: '#/components/headers/SupportPlanETag'
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/SupportPlanV3' }
+        '401': { $ref: '#/components/responses/UnauthorizedProblem' }
+        '403': { $ref: '#/components/responses/ForbiddenProblem' }
+        '404': { $ref: '#/components/responses/SupportPlanCurrentNotFoundProblem' }
+  /api/v2/support-plans/current-draft:
+    x-mentalbridge-status: implemented
+    get:
+      tags: [SupportPlan v3]
+      operationId: getOwnCurrentDraftSupportPlanV3
+      summary: Read the current draft through the v3 action model
+      description: |
+        Returns the authenticated user's current draft, including reviewable
+        schedule defaults. A default is not activated until the user explicitly
+        activates the draft. Existing v2 resource slots are projected without
+        rewriting their selection history.
+      security:
+        - bearerAuth: []
+      parameters:
+        - $ref: '#/components/parameters/CorrelationId'
+      responses:
+        '200':
+          description: Current draft SupportPlan v3 read model
+          headers:
+            ETag:
+              $ref: '#/components/headers/SupportPlanETag'
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/SupportPlanV3' }
+        '401': { $ref: '#/components/responses/UnauthorizedProblem' }
+        '403': { $ref: '#/components/responses/ForbiddenProblem' }
+        '404': { $ref: '#/components/responses/SupportPlanDraftNotFoundProblem' }
+  /api/v2/support-plans/{supportPlanId}/actions/{actionId}/schedule:
+    x-mentalbridge-status: implemented
+    put:
+      tags: [SupportPlan v3]
+      operationId: replaceOwnPlanActionSchedule
+      summary: Explicitly replace or remove one action schedule
+      description: |
+        Replaces one reviewable draft or active action schedule under strong
+        plan-version and idempotency checks. A null schedule removes future
+        workload. Changes never alter action eligibility and never classify a
+        lower cadence, later time, pause, or removal as failure. For an active
+        plan, the replacement starts no earlier than tomorrow in its requested
+        timezone and deterministically cancels superseded future occurrences.
+      security:
+        - bearerAuth: []
+      parameters:
+        - $ref: '#/components/parameters/SupportPlanId'
+        - $ref: '#/components/parameters/PlanActionId'
+        - $ref: '#/components/parameters/RequiredIfMatch'
+        - $ref: '#/components/parameters/IdempotencyKey'
+        - $ref: '#/components/parameters/CorrelationId'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: '#/components/schemas/UpdateActionScheduleRequest' }
+      responses:
+        '200':
+          description: Updated authoritative SupportPlan v3 read model or identical retry result
+          headers:
+            ETag:
+              $ref: '#/components/headers/SupportPlanETag'
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/SupportPlanV3' }
+        '400': { $ref: '#/components/responses/ValidationProblem' }
+        '401': { $ref: '#/components/responses/UnauthorizedProblem' }
+        '403': { $ref: '#/components/responses/ForbiddenProblem' }
+        '404': { $ref: '#/components/responses/SupportPlanNotFoundProblem' }
+        '409': { $ref: '#/components/responses/SupportPlanScheduleConflictProblem' }
+        '412': { $ref: '#/components/responses/SupportPlanVersionProblem' }
+  /api/v2/support-plans/{supportPlanId}:
+    x-mentalbridge-status: implemented
+    get:
+      tags: [SupportPlan v3]
+      operationId: getOwnSupportPlanV3
+      summary: Read one owned SupportPlan through the v3 action model
+      description: |
+        Returns one immutable owner-scoped plan snapshot in any lifecycle state.
+        V2_RESOURCE_ADAPTER identifies a non-destructive projection of the
+        existing resource-slot model. NATIVE_V3 identifies canonical PlanAction
+        storage. Neither representation transfers ownership of referenced facts
+        from Content, Journal AI, Consultation, or Care screening.
+      security:
+        - bearerAuth: []
+      parameters:
+        - $ref: '#/components/parameters/SupportPlanId'
+        - $ref: '#/components/parameters/CorrelationId'
+      responses:
+        '200':
+          description: Owned SupportPlan v3 read model
+          headers:
+            ETag:
+              $ref: '#/components/headers/SupportPlanETag'
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/SupportPlanV3' }
+        '401': { $ref: '#/components/responses/UnauthorizedProblem' }
+        '403': { $ref: '#/components/responses/ForbiddenProblem' }
+        '404': { $ref: '#/components/responses/SupportPlanNotFoundProblem' }
+  /api/v2/support-plan-occurrences:
+    x-mentalbridge-status: implemented
+    get:
+      tags: [SupportPlan v3]
+      operationId: listOwnPlanActionOccurrences
+      summary: List v3 action occurrences for a bounded local-date window
+      description: |
+        Returns at most 31 local days from the authenticated user's current plan.
+        An occurrence links to its action and schedule without embedding source
+        payloads. Care orchestration state is separate from optional bounded
+        completion evidence owned by Care, Journal AI, or Consultation. An open
+        past occurrence may be displayed as OVERDUE but is never rewritten as a
+        failed or skipped outcome.
+      security:
+        - bearerAuth: []
+      parameters:
+        - name: from
+          in: query
+          required: true
+          schema: { type: string, format: date }
+        - name: through
+          in: query
+          required: true
+          schema: { type: string, format: date }
+        - $ref: '#/components/parameters/CorrelationId'
+      responses:
+        '200':
+          description: Bounded occurrence window for the current SupportPlan
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/ActionOccurrenceList' }
+        '400': { $ref: '#/components/responses/ValidationProblem' }
+        '401': { $ref: '#/components/responses/UnauthorizedProblem' }
+        '404': { $ref: '#/components/responses/SupportPlanCurrentNotFoundProblem' }
+  /api/v2/support-plan-personalization:
+    x-mentalbridge-status: implemented
+    get:
+      tags: [SupportPlan personalization]
+      operationId: getOwnSupportPlanPersonalization
+      summary: Read the authenticated user's current SupportPlan preferences
+      description: |
+        Returns the latest immutable Care-owned preference revision. Existing
+        users without a saved revision receive NOT_PROVIDED at revision zero.
+        The fields describe practical preferences only; they are not symptoms,
+        diagnoses, screening evidence, or permission to bypass Care policy.
+      security:
+        - bearerAuth: []
+      parameters:
+        - $ref: '#/components/parameters/CorrelationId'
+      responses:
+        '200':
+          description: Current preference revision or deterministic not-provided fallback
+          headers:
+            ETag:
+              $ref: '#/components/headers/SupportPlanPersonalizationETag'
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/SupportPlanPersonalization' }
+        '401': { $ref: '#/components/responses/UnauthorizedProblem' }
+        '403': { $ref: '#/components/responses/ForbiddenProblem' }
+        '404': { $ref: '#/components/responses/NotFoundProblem' }
+    put:
+      tags: [SupportPlan personalization]
+      operationId: replaceOwnSupportPlanPersonalization
+      summary: Replace the authenticated user's bounded SupportPlan preferences
+      description: |
+        Writes a new immutable revision only when the replacement differs from
+        the current value. Revision zero creates the first saved value. Empty
+        optional fields explicitly record SKIPPED. Saving preferences never
+        mutates an active or paused plan; planReview identifies the explicit
+        review path when the current plan used another preference revision.
+      security:
+        - bearerAuth: []
+      parameters:
+        - $ref: '#/components/parameters/RequiredIfMatch'
+        - $ref: '#/components/parameters/CorrelationId'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: '#/components/schemas/ReplaceSupportPlanPersonalizationRequest' }
+      responses:
+        '200':
+          description: Persisted current preference revision
+          headers:
+            ETag:
+              $ref: '#/components/headers/SupportPlanPersonalizationETag'
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/SupportPlanPersonalization' }
+        '400': { $ref: '#/components/responses/ValidationProblem' }
+        '401': { $ref: '#/components/responses/UnauthorizedProblem' }
+        '403': { $ref: '#/components/responses/ForbiddenProblem' }
+        '404': { $ref: '#/components/responses/NotFoundProblem' }
+        '412': { $ref: '#/components/responses/SupportPlanPersonalizationVersionProblem' }
   /api/v1/anonymous-assessment-sessions:
     x-mentalbridge-status: implemented
     post:
@@ -1717,6 +1991,9 @@ components:
     SupportPlanETag:
       description: Strong ETag containing the Care-owned draft version
       schema: { type: string, pattern: '^"[0-9]+"$' }
+    SupportPlanPersonalizationETag:
+      description: Strong ETag containing the current preference revision; zero means no saved revision
+      schema: { type: string, pattern: '^"[0-9]+"$' }
   examples:
     ContradictoryReassessmentSummary:
       summary: A lower PHQ-9 score coexists with more-frequent journal stress and a reported barrier
@@ -1949,6 +2226,11 @@ components:
       in: path
       required: true
       schema: { type: string, format: uuid }
+    PlanActionId:
+      name: actionId
+      in: path
+      required: true
+      schema: { type: string, format: uuid }
     OccurrenceId:
       name: occurrenceId
       in: path
@@ -2094,6 +2376,42 @@ components:
           maxItems: 20
           items: { $ref: "#/components/schemas/ConsultationBriefScreeningContextChoice" }
         count: { type: integer, minimum: 0, maximum: 20 }
+    ConsultationBriefAiDraftJob:
+      type: object
+      additionalProperties: false
+      required: [jobId, appointmentId, consultationBriefId, consultationBriefVersion, supportEvaluationId, sourceSetVersion, status, attemptCount, terminalReason, currentSituation, userGoals, consentPolicyVersion, servicePlan, entitlementSource, entitlementPolicyVersion, entitlementVersion, routingPolicyVersion, providerApprovalVersion, provider, model, promptVersion, schemaVersion, createdAt, updatedAt, completedAt]
+      properties:
+        jobId: { type: string, format: uuid }
+        appointmentId: { type: string, format: uuid }
+        consultationBriefId: { type: string, format: uuid }
+        consultationBriefVersion: { type: integer, format: int64, minimum: 0 }
+        supportEvaluationId: { type: string, format: uuid }
+        sourceSetVersion: { type: string, const: consultation-brief-ai-source-v1 }
+        status: { type: string, enum: [RUNNING, SUCCEEDED, FAILED] }
+        attemptCount: { type: integer, minimum: 0, maximum: 2 }
+        terminalReason: { type: [string, "null"], enum: [CONSENT_REQUIRED, AUTHORIZATION_REJECTED, SOURCE_CHANGED, SOURCE_DELETED, PROVIDER_UNAVAILABLE, INVALID_PROVIDER_RESULT, null] }
+        currentSituation: { type: [string, "null"], minLength: 1, maxLength: 1000 }
+        userGoals:
+          oneOf:
+            - type: "null"
+            - type: array
+              minItems: 1
+              maxItems: 5
+              items: { type: string, minLength: 1, maxLength: 200 }
+        consentPolicyVersion: { type: [string, "null"], maxLength: 64 }
+        servicePlan: { type: [string, "null"], enum: [FREE, PLUS, PREMIUM, null] }
+        entitlementSource: { type: [string, "null"], enum: [DEFAULT_FREE, DEMO, PAID, null] }
+        entitlementPolicyVersion: { type: [string, "null"], maxLength: 96 }
+        entitlementVersion: { type: [integer, "null"], format: int64, minimum: 0 }
+        routingPolicyVersion: { type: [string, "null"], maxLength: 96 }
+        providerApprovalVersion: { type: [string, "null"], maxLength: 96 }
+        provider: { type: [string, "null"], enum: [DETERMINISTIC_FAKE, GEMINI, OPENAI, BEDROCK, null] }
+        model: { type: [string, "null"], maxLength: 128 }
+        promptVersion: { type: [string, "null"], enum: [consultation-brief-draft-v1, null] }
+        schemaVersion: { type: [integer, "null"], enum: [1, null] }
+        createdAt: { type: string, format: date-time }
+        updatedAt: { type: string, format: date-time }
+        completedAt: { type: [string, "null"], format: date-time }
     SpecialistConsultationBrief:
       type: object
       additionalProperties: false
@@ -2607,7 +2925,7 @@ components:
       required: [consentType, policyVersion, granted]
       properties:
         consentType: { type: string, const: AI_PROCESSING }
-        policyVersion: { type: string, const: ai-processing-capstone-v1 }
+        policyVersion: { type: string, const: ai-processing-capstone-v2 }
         granted: { type: boolean }
     ConsentDecision:
       type: object
@@ -2661,7 +2979,7 @@ components:
       required: [consentType, version, locale, title, content, capstoneOnly]
       properties:
         consentType: { type: string, const: AI_PROCESSING }
-        version: { type: string, const: ai-processing-capstone-v1 }
+        version: { type: string, const: ai-processing-capstone-v2 }
         locale: { type: string, const: vi-VN }
         title: { type: string, minLength: 1, maxLength: 160 }
         content: { type: string, minLength: 1, maxLength: 4000 }
@@ -3365,6 +3683,594 @@ components:
         title: { type: string, minLength: 1, maxLength: 255 }
         summary: { type: string, minLength: 1, maxLength: 4096 }
         externalUrl: { type: [string, 'null'], format: uri, maxLength: 2048 }
+    ReplaceSupportPlanPersonalizationRequest:
+      type: object
+      additionalProperties: false
+      required: [preferredActivityModes, commonBarriers]
+      properties:
+        preferredFocus:
+          type: [string, 'null']
+          enum: [ANXIETY, MOOD, SLEEP, MOTIVATION, UNDERSTANDING_EMOTIONS, null]
+          description: Optional non-diagnostic area the user wants to work on.
+        desiredPace:
+          type: [string, 'null']
+          enum: [GENTLE, BALANCED, ACTIVE, null]
+        dailyTimeBudgetMinutes:
+          type: [integer, 'null']
+          enum: [5, 10, 15, 20, 30, null]
+        preferredDaypart:
+          type: [string, 'null']
+          enum: [MORNING, AFTERNOON, EVENING, FLEXIBLE, null]
+        preferredActivityModes:
+          type: array
+          maxItems: 5
+          uniqueItems: true
+          items:
+            type: string
+            enum: [READING, GUIDED_PRACTICE, JOURNALING, EMOTION_CHECK_IN, ROUTINE]
+        commonBarriers:
+          type: array
+          maxItems: 3
+          uniqueItems: true
+          items:
+            type: string
+            enum: [LOW_ENERGY, LIMITED_TIME, DIFFICULT_TO_START]
+    SupportPlanPersonalization:
+      type: object
+      additionalProperties: false
+      required: [personalizationId, schemaVersion, revision, status, preferredActivityModes,
+        commonBarriers, submittedAt, planReview]
+      properties:
+        personalizationId: { type: [string, 'null'], format: uuid }
+        schemaVersion: { type: string, const: support-plan-personalization-v1 }
+        revision: { type: integer, minimum: 0 }
+        status: { type: string, enum: [NOT_PROVIDED, PROVIDED, SKIPPED] }
+        preferredFocus:
+          type: [string, 'null']
+          enum: [ANXIETY, MOOD, SLEEP, MOTIVATION, UNDERSTANDING_EMOTIONS, null]
+          description: Optional non-diagnostic area the user wants to work on.
+        desiredPace:
+          type: [string, 'null']
+          enum: [GENTLE, BALANCED, ACTIVE, null]
+        dailyTimeBudgetMinutes:
+          type: [integer, 'null']
+          enum: [5, 10, 15, 20, 30, null]
+        preferredDaypart:
+          type: [string, 'null']
+          enum: [MORNING, AFTERNOON, EVENING, FLEXIBLE, null]
+        preferredActivityModes:
+          type: array
+          maxItems: 5
+          uniqueItems: true
+          items:
+            type: string
+            enum: [READING, GUIDED_PRACTICE, JOURNALING, EMOTION_CHECK_IN, ROUTINE]
+        commonBarriers:
+          type: array
+          maxItems: 3
+          uniqueItems: true
+          items:
+            type: string
+            enum: [LOW_ENERGY, LIMITED_TIME, DIFFICULT_TO_START]
+        submittedAt: { type: [string, 'null'], format: date-time }
+        planReview: { $ref: '#/components/schemas/SupportPlanPersonalizationReview' }
+    SupportPlanPersonalizationReview:
+      type: object
+      additionalProperties: false
+      required: [required, supportPlanId, supportPlanVersion, reasonCode]
+      properties:
+        required: { type: boolean }
+        supportPlanId: { type: [string, 'null'], format: uuid }
+        supportPlanVersion: { type: [integer, 'null'], minimum: 0 }
+        reasonCode:
+          type: [string, 'null']
+          enum: [PREFERENCES_CHANGED_AFTER_DRAFT_CREATION, PREFERENCES_CHANGED_AFTER_PLAN_ACTIVATION, null]
+      description: A true value asks the user to explicitly review/change the current plan; it never mutates it.
+    FocusPersonalizationProvenance:
+      type: object
+      additionalProperties: false
+      required: [personalizationId, revision, schemaVersion, reasonCode]
+      properties:
+        personalizationId: { type: string, format: uuid }
+        revision: { type: integer, minimum: 1 }
+        schemaVersion: { type: string, const: support-plan-personalization-v1 }
+        reasonCode: { type: string, const: USER_PREFERENCE_AND_CARE_POLICY }
+    SupportPlanV3:
+      type: object
+      additionalProperties: false
+      required: [supportPlanId, modelVersion, planPolicyVersion, representationMode, status, version, safety, focuses,
+        createdAt, updatedAt, activatedAt, completedAt, completionReason, supersededAt,
+        discardedAt, disclaimerCode, disclaimer]
+      properties:
+        supportPlanId: { type: string, format: uuid }
+        modelVersion: { type: integer, const: 3 }
+        planPolicyVersion:
+          type: string
+          minLength: 1
+          maxLength: 128
+          description: Native v3 policy version or the exact v2 selection policy exposed by the adapter.
+        representationMode:
+          type: string
+          enum: [V2_RESOURCE_ADAPTER, NATIVE_V3]
+          description: Identifies a non-destructive v2 read projection or canonical v3 storage.
+        status: { type: string, enum: [DRAFT, ACTIVE, PAUSED, COMPLETED, SUPERSEDED, DISCARDED] }
+        version: { type: integer, minimum: 0 }
+        safety: { $ref: '#/components/schemas/SupportPlanSafety' }
+        focuses:
+          type: array
+          minItems: 1
+          maxItems: 20
+          items: { $ref: '#/components/schemas/PlanFocus' }
+        createdAt: { type: string, format: date-time }
+        updatedAt: { type: string, format: date-time }
+        activatedAt: { type: [string, 'null'], format: date-time }
+        completedAt: { type: [string, 'null'], format: date-time }
+        completionReason:
+          type: [string, 'null']
+          enum: [USER_DECISION, PLAN_NO_LONGER_FITS, OTHER, null]
+          description: Optional user-selected plan reason; never evidence of recovery.
+        supersededAt: { type: [string, 'null'], format: date-time }
+        discardedAt: { type: [string, 'null'], format: date-time }
+        disclaimerCode: { type: string, const: WELLBEING_SUPPORT_NOT_TREATMENT }
+        disclaimer: { type: string, minLength: 1, maxLength: 1000 }
+    PlanFocus:
+      type: object
+      additionalProperties: false
+      required: [focusId, title, rationale, personalizationProvenance, ordinal, actions]
+      properties:
+        focusId:
+          type: string
+          minLength: 1
+          maxLength: 128
+          description: Native identity or stable virtual identity when adapted from v2.
+        title: { type: string, minLength: 1, maxLength: 255 }
+        rationale: { type: [string, 'null'], minLength: 1, maxLength: 2048 }
+        personalizationProvenance:
+          description: Exact preference revision that shaped this focus; null for deterministic fallback focuses.
+          oneOf:
+            - { $ref: '#/components/schemas/FocusPersonalizationProvenance' }
+            - { type: 'null' }
+        ordinal: { type: integer, minimum: 1, maximum: 20 }
+        actions:
+          type: array
+          minItems: 1
+          maxItems: 20
+          items: { $ref: '#/components/schemas/PlanAction' }
+    PlanAction:
+      type: object
+      additionalProperties: false
+      required: [actionId, actionType, actionVersion, representationMode, status, pathRole, purposeCode,
+        rationale, ordinal, source, provenance, presentation, schedules, createdAt, updatedAt,
+        activatedAt, endedAt]
+      properties:
+        actionId:
+          type: string
+          minLength: 1
+          maxLength: 128
+          description: Native identity, existing v2 slot identity, or a stable deterministic virtual identity produced by the read adapter.
+        actionType:
+          type: string
+          enum: [RESOURCE, JOURNAL, EMOTION_CHECK_IN, ROUTINE_SELF_MANAGEMENT,
+            PROFESSIONAL_SUPPORT, REASSESSMENT_SCREENING, SELF_REPORT_REVIEW]
+        actionVersion: { type: integer, minimum: 0 }
+        representationMode: { type: string, enum: [V2_RESOURCE_ADAPTER, NATIVE_V3] }
+        status: { type: string, enum: [DRAFT, ACTIVE, ENDED] }
+        pathRole:
+          type: string
+          enum: [PRIMARY, ADJUNCT]
+          description: PRIMARY is the recommended path; ADJUNCT complements it and never replaces professional support. In a native focus, a non-ended PROFESSIONAL_SUPPORT action is primary and its sibling actions are adjunct; without that context actions are primary. purposeCode is never used to classify this role.
+        purposeCode: { type: string, minLength: 1, maxLength: 64 }
+        rationale: { type: [string, 'null'], minLength: 1, maxLength: 2048 }
+        ordinal: { type: integer, minimum: 1, maximum: 20 }
+        source:
+          description: Null only when the Care-owned action has no source-domain object.
+          oneOf:
+            - { $ref: '#/components/schemas/ActionSourceReference' }
+            - { type: 'null' }
+        provenance: { $ref: '#/components/schemas/ActionProvenance' }
+        presentation: { $ref: '#/components/schemas/ActionPresentationMetadata' }
+        schedules:
+          type: array
+          maxItems: 50
+          description: Versioned current and ended rules; occurrence history is read separately.
+          items: { $ref: '#/components/schemas/ActionSchedule' }
+        createdAt: { type: string, format: date-time }
+        updatedAt: { type: string, format: date-time }
+        activatedAt: { type: [string, 'null'], format: date-time }
+        endedAt: { type: [string, 'null'], format: date-time }
+      allOf:
+        - if: { properties: { actionType: { const: RESOURCE } }, required: [actionType] }
+          then:
+            properties:
+              source:
+                allOf:
+                  - { $ref: '#/components/schemas/ActionSourceReference' }
+                  - properties:
+                      ownerDomain: { const: CONTENT }
+                      sourceKind: { const: RESOURCE_VERSION }
+        - if: { properties: { actionType: { const: JOURNAL } }, required: [actionType] }
+          then:
+            properties:
+              source:
+                oneOf:
+                  - { type: 'null' }
+                  - allOf:
+                      - { $ref: '#/components/schemas/ActionSourceReference' }
+                      - properties:
+                          ownerDomain: { const: JOURNAL_AI }
+                          sourceKind: { const: JOURNAL_TEMPLATE }
+        - if: { properties: { actionType: { const: EMOTION_CHECK_IN } }, required: [actionType] }
+          then:
+            properties:
+              source:
+                oneOf:
+                  - { type: 'null' }
+                  - allOf:
+                      - { $ref: '#/components/schemas/ActionSourceReference' }
+                      - properties:
+                          ownerDomain: { const: JOURNAL_AI }
+                          sourceKind: { const: EMOTION_CHECK_IN_CAPABILITY }
+        - if:
+            properties:
+              actionType: { enum: [ROUTINE_SELF_MANAGEMENT, SELF_REPORT_REVIEW] }
+            required: [actionType]
+          then: { properties: { source: { type: 'null' } } }
+        - if: { properties: { actionType: { const: PROFESSIONAL_SUPPORT } }, required: [actionType] }
+          then:
+            properties:
+              source:
+                allOf:
+                  - { $ref: '#/components/schemas/ActionSourceReference' }
+                  - properties:
+                      ownerDomain: { const: CONSULTATION }
+                      sourceKind: { enum: [PROFESSIONAL_SUPPORT_PATHWAY, APPOINTMENT] }
+        - if: { properties: { actionType: { const: REASSESSMENT_SCREENING } }, required: [actionType] }
+          then:
+            properties:
+              source:
+                allOf:
+                  - { $ref: '#/components/schemas/ActionSourceReference' }
+                  - properties:
+                      ownerDomain: { const: CARE }
+                      sourceKind: { const: QUESTIONNAIRE_DEFINITION }
+    ActionSourceReference:
+      type: object
+      additionalProperties: false
+      required: [ownerDomain, sourceKind, sourceId, sourceRevision, sourcePolicyVersion,
+        publicationId, eligibilityPolicyVersion, verifiedAt]
+      properties:
+        ownerDomain: { type: string, enum: [CONTENT, JOURNAL_AI, CONSULTATION, CARE] }
+        sourceKind:
+          type: string
+          enum: [RESOURCE_VERSION, JOURNAL_TEMPLATE, EMOTION_CHECK_IN_CAPABILITY,
+            PROFESSIONAL_SUPPORT_PATHWAY, APPOINTMENT, QUESTIONNAIRE_DEFINITION]
+        sourceId:
+          type: string
+          minLength: 1
+          maxLength: 255
+          description: Opaque owner-domain identifier; it does not contain source payload data.
+        sourceRevision: { type: [string, 'null'], minLength: 1, maxLength: 128 }
+        sourcePolicyVersion: { type: [string, 'null'], minLength: 1, maxLength: 128 }
+        publicationId: { type: [string, 'null'], format: uuid }
+        eligibilityPolicyVersion: { type: [string, 'null'], minLength: 1, maxLength: 128 }
+        verifiedAt: { type: [string, 'null'], format: date-time }
+      allOf:
+        - if:
+            properties:
+              sourceKind: { const: RESOURCE_VERSION }
+            required: [sourceKind]
+          then:
+            properties:
+              ownerDomain: { const: CONTENT }
+              sourceRevision: { type: string, pattern: '^[0-9]+$' }
+              publicationId: { type: string, format: uuid }
+              eligibilityPolicyVersion: { type: string, minLength: 1, maxLength: 128 }
+              verifiedAt: { type: string, format: date-time }
+        - if:
+            properties:
+              sourceKind: { const: JOURNAL_TEMPLATE }
+            required: [sourceKind]
+          then:
+            properties:
+              ownerDomain: { const: JOURNAL_AI }
+        - if:
+            properties:
+              sourceKind: { const: EMOTION_CHECK_IN_CAPABILITY }
+            required: [sourceKind]
+          then:
+            properties:
+              ownerDomain: { const: JOURNAL_AI }
+        - if:
+            properties:
+              sourceKind: { enum: [PROFESSIONAL_SUPPORT_PATHWAY, APPOINTMENT] }
+            required: [sourceKind]
+          then:
+            properties:
+              ownerDomain: { const: CONSULTATION }
+        - if:
+            properties:
+              sourceKind: { const: QUESTIONNAIRE_DEFINITION }
+            required: [sourceKind]
+          then:
+            properties:
+              ownerDomain: { const: CARE }
+    ActionProvenance:
+      type: object
+      additionalProperties: false
+      required: [category, referenceId, referenceVersion, acceptedAt]
+      properties:
+        category: { type: string, enum: [USER_SELECTED, SUPPORT_GUIDE, SPECIALIST, SYSTEM_POLICY] }
+        referenceId: { type: [string, 'null'], minLength: 1, maxLength: 255 }
+        referenceVersion: { type: [string, 'null'], minLength: 1, maxLength: 128 }
+        acceptedAt: { type: string, format: date-time }
+      oneOf:
+        - properties:
+            referenceId: { type: 'null' }
+            referenceVersion: { type: 'null' }
+        - properties:
+            referenceId: { type: string, minLength: 1, maxLength: 255 }
+            referenceVersion: { type: string, minLength: 1, maxLength: 128 }
+    ActionPresentationMetadata:
+      type: object
+      additionalProperties: false
+      required: [title, summary, instructions, externalUrl]
+      properties:
+        title: { type: string, minLength: 1, maxLength: 255 }
+        summary: { type: [string, 'null'], minLength: 1, maxLength: 4096 }
+        instructions: { type: [string, 'null'], minLength: 1, maxLength: 2048 }
+        externalUrl:
+          type: [string, 'null']
+          format: uri
+          maxLength: 2048
+          description: Optional reviewed navigation target; visiting it never proves completion.
+    ActionSchedule:
+      type: object
+      additionalProperties: false
+      required: [scheduleId, version, schedulePolicyVersion, recurrenceType, recurrenceDayOfWeek,
+        daysOfWeek, preferredDaypart, estimatedDurationMinutes, localTime, timezone,
+        effectiveFrom, effectiveUntil, reminderEnabled, status]
+      properties:
+        scheduleId: { type: string, format: uuid }
+        version: { type: integer, minimum: 1 }
+        schedulePolicyVersion: { type: string, minLength: 1, maxLength: 128 }
+        recurrenceType: { type: string, enum: [ONCE, DAILY, WEEKLY] }
+        recurrenceDayOfWeek: { type: [integer, 'null'], minimum: 1, maximum: 7 }
+        daysOfWeek:
+          type: array
+          maxItems: 7
+          uniqueItems: true
+          items: { type: integer, minimum: 1, maximum: 7 }
+        preferredDaypart:
+          type: [string, 'null']
+          enum: [MORNING, AFTERNOON, EVENING, FLEXIBLE, null]
+        estimatedDurationMinutes:
+          type: [integer, 'null']
+          minimum: 5
+          maximum: 180
+          multipleOf: 5
+        localTime: { type: string, format: time }
+        timezone: { type: string, minLength: 1, maxLength: 64 }
+        effectiveFrom: { type: string, format: date }
+        effectiveUntil: { type: [string, 'null'], format: date }
+        reminderEnabled: { type: boolean }
+        status: { type: string, enum: [DRAFT, ACTIVE, PAUSED, ENDED] }
+    UpdateActionScheduleRequest:
+      type: object
+      additionalProperties: false
+      required: [schedule]
+      properties:
+        schedule:
+          description: Null removes future workload without marking non-completion or failure.
+          oneOf:
+            - { $ref: '#/components/schemas/ActionScheduleInput' }
+            - { type: 'null' }
+    ActionScheduleInput:
+      type: object
+      additionalProperties: false
+      required: [recurrenceType, daysOfWeek, preferredDaypart, localTime,
+        estimatedDurationMinutes, timezone, effectiveFrom, effectiveUntil, reminderEnabled]
+      properties:
+        recurrenceType: { type: string, enum: [ONCE, DAILY, WEEKLY] }
+        daysOfWeek:
+          type: array
+          maxItems: 7
+          uniqueItems: true
+          items: { type: integer, minimum: 1, maximum: 7 }
+          description: Required and non-empty for WEEKLY; empty for ONCE and DAILY.
+        preferredDaypart:
+          type: [string, 'null']
+          enum: [MORNING, AFTERNOON, EVENING, FLEXIBLE, null]
+          description: Null means the user chose an exact local time instead of a daypart default.
+        localTime: { type: string, format: time }
+        estimatedDurationMinutes:
+          type: integer
+          minimum: 5
+          maximum: 180
+          multipleOf: 5
+        timezone: { type: string, minLength: 1, maxLength: 64 }
+        effectiveFrom: { type: string, format: date }
+        effectiveUntil: { type: [string, 'null'], format: date }
+        reminderEnabled: { type: boolean }
+    ActionOccurrenceList:
+      type: object
+      additionalProperties: false
+      required: [supportPlanId, supportPlanStatus, representationMode, from, through,
+        occurrences, interpretationCode]
+      properties:
+        supportPlanId: { type: string, format: uuid }
+        supportPlanStatus: { type: string, enum: [ACTIVE, PAUSED] }
+        representationMode: { type: string, enum: [V2_RESOURCE_ADAPTER, NATIVE_V3] }
+        from: { type: string, format: date }
+        through: { type: string, format: date }
+        occurrences:
+          type: array
+          maxItems: 620
+          items: { $ref: '#/components/schemas/ActionOccurrence' }
+        interpretationCode:
+          type: string
+          const: SELF_REPORTED_WELLBEING_ACTIVITY_NOT_TREATMENT_ADHERENCE
+    ActionOccurrence:
+      type: object
+      additionalProperties: false
+      required: [occurrenceId, actionId, actionType, actionVersion, scheduleId, scheduleVersion,
+        representationMode, version, localDate, scheduledAt, state, displayState, stateReason,
+        completionEvidence, outcomeRecordedAt]
+      properties:
+        occurrenceId: { type: string, format: uuid }
+        actionId:
+          type: string
+          minLength: 1
+          maxLength: 128
+          description: Native action identity or existing v2 slot identity from the adapter.
+        actionType:
+          type: string
+          enum: [RESOURCE, JOURNAL, EMOTION_CHECK_IN, ROUTINE_SELF_MANAGEMENT,
+            PROFESSIONAL_SUPPORT, REASSESSMENT_SCREENING, SELF_REPORT_REVIEW]
+        actionVersion: { type: integer, minimum: 0 }
+        scheduleId: { type: string, format: uuid }
+        scheduleVersion: { type: integer, minimum: 1 }
+        representationMode: { type: string, enum: [V2_RESOURCE_ADAPTER, NATIVE_V3] }
+        version: { type: integer, minimum: 0 }
+        localDate: { type: string, format: date }
+        scheduledAt: { type: string, format: date-time }
+        state: { type: string, enum: [SCHEDULED, COMPLETED, SKIPPED, CANCELLED] }
+        displayState: { type: string, enum: [SCHEDULED, OVERDUE, COMPLETED, SKIPPED, CANCELLED] }
+        stateReason:
+          type: [string, 'null']
+          enum: [PLAN_PAUSED, PLAN_COMPLETED, PLAN_REPLACED, ACTION_ENDED, SCHEDULE_CHANGED, null]
+        completionEvidence:
+          description: Null unless completion is backed by a bounded Care or owner-domain fact.
+          oneOf:
+            - { $ref: '#/components/schemas/CompletionEvidence' }
+            - { type: 'null' }
+        outcomeRecordedAt: { type: [string, 'null'], format: date-time }
+      allOf:
+        - if:
+            properties: { representationMode: { const: V2_RESOURCE_ADAPTER } }
+            required: [representationMode]
+          then: { properties: { completionEvidence: { type: 'null' } } }
+        - if:
+            properties:
+              representationMode: { const: NATIVE_V3 }
+              state: { const: COMPLETED }
+            required: [representationMode, state]
+          then:
+            properties:
+              completionEvidence: { $ref: '#/components/schemas/CompletionEvidence' }
+              outcomeRecordedAt: { type: string, format: date-time }
+        - if:
+            properties:
+              representationMode: { const: NATIVE_V3 }
+              state: { enum: [SCHEDULED, SKIPPED, CANCELLED] }
+            required: [representationMode, state]
+          then: { properties: { completionEvidence: { type: 'null' } } }
+        - if: { properties: { actionType: { enum: [RESOURCE, ROUTINE_SELF_MANAGEMENT] } }, required: [actionType] }
+          then:
+            properties:
+              completionEvidence:
+                oneOf:
+                  - { type: 'null' }
+                  - allOf:
+                      - { $ref: '#/components/schemas/CompletionEvidence' }
+                      - properties:
+                          kind: { const: USER_ACKNOWLEDGEMENT }
+                          ownerDomain: { const: CARE }
+        - if: { properties: { actionType: { const: SELF_REPORT_REVIEW } }, required: [actionType] }
+          then:
+            properties:
+              completionEvidence:
+                oneOf:
+                  - { type: 'null' }
+                  - allOf:
+                      - { $ref: '#/components/schemas/CompletionEvidence' }
+                      - properties:
+                          kind: { const: SELF_REPORT_REVIEW }
+                          ownerDomain: { const: CARE }
+        - if: { properties: { actionType: { const: JOURNAL } }, required: [actionType] }
+          then:
+            properties:
+              completionEvidence:
+                oneOf:
+                  - { type: 'null' }
+                  - allOf:
+                      - { $ref: '#/components/schemas/CompletionEvidence' }
+                      - properties:
+                          kind: { const: JOURNAL_ENTRY }
+                          ownerDomain: { const: JOURNAL_AI }
+        - if: { properties: { actionType: { const: EMOTION_CHECK_IN } }, required: [actionType] }
+          then:
+            properties:
+              completionEvidence:
+                oneOf:
+                  - { type: 'null' }
+                  - allOf:
+                      - { $ref: '#/components/schemas/CompletionEvidence' }
+                      - properties:
+                          kind: { const: EMOTION_CHECK_IN }
+                          ownerDomain: { const: JOURNAL_AI }
+        - if: { properties: { actionType: { const: PROFESSIONAL_SUPPORT } }, required: [actionType] }
+          then:
+            properties:
+              completionEvidence:
+                oneOf:
+                  - { type: 'null' }
+                  - allOf:
+                      - { $ref: '#/components/schemas/CompletionEvidence' }
+                      - properties:
+                          kind: { const: APPOINTMENT_FULFILMENT }
+                          ownerDomain: { const: CONSULTATION }
+        - if: { properties: { actionType: { const: REASSESSMENT_SCREENING } }, required: [actionType] }
+          then:
+            properties:
+              completionEvidence:
+                oneOf:
+                  - { type: 'null' }
+                  - allOf:
+                      - { $ref: '#/components/schemas/CompletionEvidence' }
+                      - properties:
+                          kind: { const: ASSESSMENT_HISTORY }
+                          ownerDomain: { const: CARE }
+    CompletionEvidence:
+      type: object
+      additionalProperties: false
+      required: [kind, ownerDomain, factId, factRevision, occurredAt, verifiedAt]
+      properties:
+        kind:
+          type: string
+          enum: [USER_ACKNOWLEDGEMENT, JOURNAL_ENTRY, EMOTION_CHECK_IN,
+            APPOINTMENT_FULFILMENT, ASSESSMENT_HISTORY, SELF_REPORT_REVIEW]
+        ownerDomain: { type: string, enum: [CARE, JOURNAL_AI, CONSULTATION] }
+        factId:
+          type: string
+          minLength: 1
+          maxLength: 255
+          description: Opaque authoritative fact identifier; never a copied source payload.
+        factRevision: { type: [string, 'null'], minLength: 1, maxLength: 128 }
+        occurredAt: { type: string, format: date-time }
+        verifiedAt: { type: string, format: date-time }
+      allOf:
+        - if:
+            properties:
+              kind: { enum: [JOURNAL_ENTRY, EMOTION_CHECK_IN] }
+            required: [kind]
+          then:
+            properties:
+              ownerDomain: { const: JOURNAL_AI }
+        - if:
+            properties:
+              kind: { const: APPOINTMENT_FULFILMENT }
+            required: [kind]
+          then:
+            properties:
+              ownerDomain: { const: CONSULTATION }
+        - if:
+            properties:
+              kind:
+                enum: [USER_ACKNOWLEDGEMENT, ASSESSMENT_HISTORY, SELF_REPORT_REVIEW]
+            required: [kind]
+          then:
+            properties:
+              ownerDomain: { const: CARE }
     ChangeSupportPlanOccurrenceStateRequest:
       type: object
       additionalProperties: false
@@ -3673,7 +4579,7 @@ components:
         application/problem+json:
           schema: { $ref: '#/components/schemas/Problem' }
     SupportPlanActivationConflictProblem:
-      description: The activation command reuses a key differently, targets a non-draft, conflicts with another current plan, or fails current policy or eligibility
+      description: The activation command reuses a key differently, targets a non-draft, conflicts with another current plan, uses a stale personalization revision (SUPPORT_PLAN_PERSONALIZATION_REVIEW_REQUIRED), or fails current policy or eligibility
       content:
         application/problem+json:
           schema: { $ref: '#/components/schemas/Problem' }
@@ -3682,8 +4588,18 @@ components:
       content:
         application/problem+json:
           schema: { $ref: '#/components/schemas/Problem' }
+    SupportPlanPersonalizationVersionProblem:
+      description: If-Match does not equal the current preference revision (SUPPORT_PLAN_PERSONALIZATION_VERSION_MISMATCH)
+      content:
+        application/problem+json:
+          schema: { $ref: '#/components/schemas/Problem' }
     SupportPlanLifecycleConflictProblem:
       description: The requested lifecycle transition is invalid, reassessment is stale or uses different screening evidence, or replacement is unchanged (SUPPORT_PLAN_TRANSITION_INVALID, REASSESSMENT_SUMMARY_STALE, REASSESSMENT_SCREENING_CONTEXT_MISMATCH, or SUPPORT_PLAN_REPLACEMENT_UNCHANGED)
+      content:
+        application/problem+json:
+          schema: { $ref: '#/components/schemas/Problem' }
+    SupportPlanScheduleConflictProblem:
+      description: The command reuses an idempotency key differently, targets a non-mutable plan or action, or requests recurrence for a review-only action (IDEMPOTENCY_KEY_REUSED, SUPPORT_PLAN_SCHEDULE_NOT_MUTABLE, PLAN_ACTION_SCHEDULE_NOT_MUTABLE, or PLAN_ACTION_UNSCHEDULABLE)
       content:
         application/problem+json:
           schema: { $ref: '#/components/schemas/Problem' }

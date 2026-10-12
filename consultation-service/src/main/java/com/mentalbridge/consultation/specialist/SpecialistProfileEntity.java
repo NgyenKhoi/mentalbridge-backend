@@ -40,6 +40,7 @@ class SpecialistProfileEntity {
 	private Instant updatedAt;
 	@Version
 	private long version;
+	private long publishedVersion;
 
 	@ElementCollection(fetch = FetchType.LAZY)
 	@CollectionTable(name = "specialist_profile_support_area",
@@ -77,6 +78,7 @@ class SpecialistProfileEntity {
 	}
 
 	void approve(UUID adminAccountId, Instant now) {
+		this.publishedVersion++;
 		this.approvalStatus = SpecialistApprovalStatus.APPROVED;
 		this.reviewedAt = now;
 		this.reviewedBy = adminAccountId;
@@ -142,6 +144,15 @@ class SpecialistProfileEntity {
 	Instant createdAt() { return createdAt; }
 	Instant updatedAt() { return updatedAt; }
 	long version() { return version; }
+	long publishedVersion() { return publishedVersion; }
+	SpecialistProfileService.ProfileCommand command() {
+		return new SpecialistProfileService.ProfileCommand(displayName, bio, supportAreas(), languages(),
+				yearsOfExperience, timezone);
+	}
+	void promote(SpecialistProfileService.ProfileCommand command, UUID actor, Instant now) {
+		applyDraft(command, now);
+		approve(actor, now);
+	}
 	Set<SupportArea> supportAreas() { return Set.copyOf(supportAreas); }
 	Set<String> languages() { return Set.copyOf(languages); }
 }

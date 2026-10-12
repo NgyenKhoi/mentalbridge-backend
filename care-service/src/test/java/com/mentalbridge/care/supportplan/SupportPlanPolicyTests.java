@@ -25,6 +25,10 @@ import com.mentalbridge.care.support.ScreeningDomain;
 import com.mentalbridge.care.support.SupportEvaluationV2Service.DomainContributionView;
 import com.mentalbridge.care.support.SupportEvaluationV2Service.EvaluationView;
 import com.mentalbridge.care.support.SupportEvaluationV2Service.SafetyEvidenceView;
+import com.mentalbridge.care.supportplan.SupportPlanPersonalizationService.ActivityMode;
+import com.mentalbridge.care.supportplan.SupportPlanPersonalizationService.PersonalizationSnapshot;
+import com.mentalbridge.care.supportplan.SupportPlanPersonalizationService.PreferredDaypart;
+import com.mentalbridge.care.supportplan.SupportPlanPersonalizationService.PreferredFocus;
 
 class SupportPlanPolicyTests {
 
@@ -91,6 +95,56 @@ class SupportPlanPolicyTests {
 						ResourceEligibilityReasonCode.DOMAIN_OR_PATHWAY_NOT_ELIGIBLE)))
 				.isInstanceOfSatisfying(ApiException.class,
 						exception -> assertThat(exception.code()).isEqualTo("SUPPORT_PLAN_CORE_UNAVAILABLE"));
+	}
+
+	@Test
+	void personalizesFocusCopyAndOnlyReordersPolicyAdmittedCandidates() {
+		var evaluation = new EvaluationView(UUID.randomUUID(), 2, "mb-support-routing-capstone-v2", Instant.EPOCH,
+				List.of(domain("PHQ9", ScreeningDomain.DEPRESSIVE_SYMPTOMS, ScreeningLevel.MINIMAL)),
+				new SafetyEvidenceView(UUID.randomUUID(), "PHQ9", "PHQ9_ITEM_9",
+						SafetyStatus.NEGATIVE_SAFETY_SCREEN, "MB-SAFETY-PHQ9-001-v1",
+						SafetyReasonCode.PHQ9_ITEM9_NEGATIVE),
+				"SCREENING_NOT_DIAGNOSIS", "Synthetic disclaimer");
+		var personalization = new PersonalizationSnapshot(UUID.randomUUID(), UUID.randomUUID(),
+				SupportPlanPersonalizationService.SCHEMA_VERSION, 1, PreferredFocus.MOTIVATION, null, 10,
+				PreferredDaypart.MORNING, List.of(ActivityMode.READING), List.of(), Instant.EPOCH);
+		var request = policy.request(evaluation, personalization);
+		var results = request.batch().requests().stream().map(query -> new ResourceEligibilityResult(
+				query.requestId(), query.resourceId(), query.contentVersion(), ResourceEligibilityOutcome.ELIGIBLE,
+				ResourceEligibilityReasonCode.ELIGIBLE_MATCH, EligibilityRole.PRIMARY,
+				UUID.nameUUIDFromBytes(query.requestId().getBytes()).toString(),
+				query.resourceId().endsWith("205") ? ResourceCategory.ARTICLE : ResourceCategory.BREATHING,
+				"Synthetic reviewed resource", "Synthetic general wellbeing content", null)).toList();
+
+		var proposal = policy.compose(request,
+				new ResourceEligibilityBatchResponse("content-eligibility-v1", "2026-10-11T00:00:00Z", results),
+				personalization);
+
+		assertThat(proposal.families()).singleElement().satisfies(family -> {
+			assertThat(family.focusTitle()).isEqualTo("Bắt đầu bằng bước nhỏ");
+			assertThat(family.focusReasonCode()).isEqualTo("USER_PREFERENCE_AND_CARE_POLICY");
+		});
+		assertThat(proposal.slots()).singleElement().satisfies(slot ->
+				assertThat(slot.selectedResource().resourceId().toString()).endsWith("205"));
+	}
+
+	@Test
+	void keepsDomainAwareFocusCopyWhenTheRequestedGoalHasNoAdmittedAlignedContent() {
+		var evaluation = evaluation(ScreeningLevel.MILD, ScreeningLevel.MILD);
+		for (var focus : List.of(PreferredFocus.SLEEP, PreferredFocus.UNDERSTANDING_EMOTIONS)) {
+			var personalization = new PersonalizationSnapshot(UUID.randomUUID(), UUID.randomUUID(),
+					SupportPlanPersonalizationService.SCHEMA_VERSION, 1, focus, null, 10,
+					PreferredDaypart.EVENING, List.of(), List.of(), Instant.EPOCH);
+
+			var request = policy.request(evaluation, personalization);
+			var proposal = policy.compose(request, eligible(request), personalization);
+
+			assertThat(proposal.families()).allSatisfy(family -> {
+				assertThat(family.focusTitle()).isNull();
+				assertThat(family.focusRationale()).isNull();
+				assertThat(family.focusReasonCode()).isNull();
+			});
+		}
 	}
 
 	private EvaluationView evaluation(ScreeningLevel depression, ScreeningLevel anxiety) {

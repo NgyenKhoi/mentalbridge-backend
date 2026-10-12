@@ -44,6 +44,7 @@ interface BingoRow {
 interface BingoItemRow {
   readonly ordinal: number;
   readonly resource_id: string;
+  readonly resource_version: string | number;
 }
 
 interface ResourceIdRow {
@@ -259,15 +260,21 @@ export class ResourceJourneyRepository {
         );
         for (const [ordinal, resourceId] of bingoIds.entries()) {
           await client.query(
-            `INSERT INTO resource_weekly_bingo_item (board_id, ordinal, resource_id)
-             VALUES ($1, $2, $3)`,
+            `INSERT INTO resource_weekly_bingo_item
+               (board_id, ordinal, resource_id, resource_version)
+             SELECT $1, $2, resource.id, resource.version
+             FROM resource
+             JOIN resource_publication_snapshot publication
+               ON publication.resource_id = resource.id
+              AND publication.content_version = resource.version
+             WHERE resource.id = $3`,
             [board.id, ordinal, resourceId],
           );
         }
       }
 
       const bingoItems = await client.query<BingoItemRow>(
-        `SELECT ordinal, resource_id
+        `SELECT ordinal, resource_id, resource_version
          FROM resource_weekly_bingo_item
          WHERE board_id = $1
          ORDER BY ordinal`,
@@ -288,9 +295,9 @@ export class ResourceJourneyRepository {
       );
       const weekEnd = new Date(`${weekStart}T00:00:00Z`);
       weekEnd.setUTCDate(weekEnd.getUTCDate() + 6);
-      const stamped = await client.query<ResourceIdRow>(
-        `SELECT DISTINCT resource_id FROM (
-           SELECT progress.resource_id
+      const stamped = await client.query<ResourceIdRow & { readonly resource_version: string }>(
+        `SELECT DISTINCT resource_id, resource_version FROM (
+           SELECT progress.resource_id, progress.resource_version
            FROM resource_daily_progress progress
            JOIN resource_daily_assignment assignment
              ON assignment.owner_id = progress.owner_id
@@ -302,7 +309,7 @@ export class ResourceJourneyRepository {
            WHERE progress.owner_id = $1 AND progress.status = 'COMPLETED'
              AND progress.local_date BETWEEN $2::date AND $3::date
            UNION ALL
-           SELECT session.resource_id
+           SELECT session.resource_id, session.resource_version
            FROM resource_practice_session session
            WHERE session.owner_id = $1 AND session.support_plan_id = $4
              AND session.local_date BETWEEN $2::date AND $3::date
@@ -320,7 +327,9 @@ export class ResourceJourneyRepository {
       );
 
       const learningCandidates = candidateRows.filter((row) => row.resource_kind === 'LEARNING');
-      const stampedIds = new Set(stamped.rows.map((row) => row.resource_id));
+      const stampedIds = new Set(
+        stamped.rows.map((row) => `${row.resource_id}:${row.resource_version}`),
+      );
       return {
         assignmentId: assignment.id,
         localDate: requestedDate,
@@ -349,7 +358,7 @@ export class ResourceJourneyRepository {
           position: row.ordinal + 1,
           resourceId: row.resource_id,
           label: bingoTitles.get(row.resource_id) ?? 'Hoạt động hỗ trợ',
-          stamped: stampedIds.has(row.resource_id),
+          stamped: stampedIds.has(`${row.resource_id}:${String(row.resource_version)}`),
         })),
       };
     });

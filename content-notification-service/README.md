@@ -31,8 +31,10 @@ a compatibility repair path for accounts created before this consumer existed.
 - `GET /health/live` — liveness without a database dependency
 - `GET /health/ready` — PostgreSQL readiness check
 - `GET /api/v1/resources` — lists active reviewed published self-help resources; returns empty array when none match; returns neutral fallback when service is unreachable; no hotline number or emergency dispatch claim (ADR 0009)
-- `GET /api/v1/resources/{id}` — returns the full reviewed body, exact `contentVersion`, and structured source provenance; an optional `contentVersion` query fails closed when a persisted reference no longer matches
+- `GET /api/v1/resources/{id}` — without `contentVersion`, returns only the current active reviewed publication; an exact `contentVersion` may resolve its immutable publication snapshot after archive/correction without restoring catalogue visibility
 - `GET /api/v1/resource-progress` and `PUT /api/v1/resource-progress/{resourceId}/{localDate}` — persist owner-scoped, non-clinical daily checklist/completion state without changing SupportPlan occurrences; a confirmed completion is terminal while checklist selections remain editable
+- `GET|PUT|DELETE /api/v1/resource-bookmarks` — list, save the current exact reviewed version, or idempotently remove an authenticated owner's private bookmark
+- `GET /api/v1/resource-bingo/{weekStart}` and `PUT /api/v1/resource-bingo/{weekStart}/items/{position}/self-confirmation` — read a retained Monday-based board and replace a reversible personal check under a strong ETag; exact-version Content verification remains a separate recomputed fact
 - `GET /api/v1/notifications` — returns the authenticated owner's durable inbox newest first with bounded opaque cursor pagination and authoritative unread count
 - `PATCH /api/v1/notifications/{id}/read`, `POST /api/v1/notifications/mark-all-read`, and `DELETE /api/v1/notifications/{id}` — persist idempotent read and tombstone lifecycle changes without exposing another owner's records
 - MB-556 Review 1 catalogue — 15 Vietnamese resources with structured source metadata and verified YouTube actions for every `VIDEO`; legacy synthetic resources remain exact-ID compatible but are hidden from catalogue browsing
@@ -40,9 +42,9 @@ a compatibility repair path for accounts created before this consumer existed.
 - Strict startup configuration, safe Problem Details, structured redacted request logs, CORS deny-by-default, and graceful NestJS shutdown
 - `node-pg-migrate` baseline for the service-owned `mentalbridge_content_notification` database
 
-Resource Eligibility v1 independently validates target domain, `PRIMARY`/`ADJUNCT` role, compatible instrument bands, support tier, locale and effective window. Existing public resource reads remain unchanged. The current resource publish endpoint remains blocked by the separate MB-251 review-authority gate; eligibility publication can only target an already reviewed `PUBLISHED` exact version and does not bypass that gate.
+Resource Eligibility v1 independently validates target domain, `PRIMARY`/`ADJUNCT` role, compatible instrument bands, support tier, locale and effective window. MB-589 completes the separate ADMIN editorial gate: only Identity ADMIN accounts listed in `RESOURCE_REVIEWER_ACCOUNT_IDS` may record an exact-version review decision; review state is server-owned and an approved, source-complete decision is required before publication. Publication stores an immutable snapshot, archive stores an append-only withdrawal, and a correction draft may start only after the current publication is archived. Correction drafts cannot be physically deleted because the stable resource root retains immutable publication history. Publishing never creates Resource Eligibility.
 
-Admin write operations (`POST`, `PATCH`, `DELETE`, publish, archive) are explicitly `planned` in `../contracts/openapi/content-notification-service.yaml`. Safety screening and versioned safety guidance remain Care-owned behavior.
+Admin resource create, draft update/delete, exact-version review, publish, archive, and correction-version operations are implemented in `../contracts/openapi/content-notification-service.yaml`. Safety screening and versioned safety guidance remain Care-owned behavior.
 
 MB-562 also implements `GET|PATCH /api/v1/notification-preferences` for the
 authenticated owner. The atomic preference aggregate covers `IN_APP`, `EMAIL`,
@@ -94,6 +96,13 @@ npm run dev
 ```
 
 The application loads `.env` only in development. Test and production environments require real process variables and never depend on a repository `.env` file.
+
+When a local Docker Desktop container can reach the shared PostgreSQL port but
+TLS 1.3 negotiation resets before authentication, set
+`CONTENT_NODE_OPTIONS=--tls-max-v1.2` in the root Compose `.env` and recreate
+only `content-notification`. Leave this option unset when TLS 1.3 works. The
+remote database URL must still require TLS; this setting does not permit a
+plaintext connection.
 
 For live local E2E, set `E2E_TEST_MODE=true` and a random `E2E_TEST_SECRET`.
 The Playwright harness can then toggle the service itself:
@@ -190,6 +199,20 @@ incompatible facts are parked as digest/offset metadata in
 `mentalbridge.content-notification.community-interaction-dead-letter.v1`; raw
 event bodies are never copied to that topic or logs. Persistence failures remain
 retryable and do not acknowledge the source offset.
+
+Migration `19_complete_resource_editorial_lifecycle.sql` adds immutable exact-version
+review decisions and publication snapshots plus append-only withdrawals. Existing
+published and archived rows are backfilled without changing their content version.
+
+Migration `20_add_resource_reward_visibility.sql` stores only the owner's optional
+`VISIBLE` or `HIDDEN` reward presentation choice. MB-659 XP remains a deterministic,
+bounded read model over exact reviewed completion and verified practice evidence;
+source outages return 503 and are never represented as an authoritative zero.
+
+Migration `21_persist_resource_engagement.sql` adds exact-version private
+bookmarks plus versioned weekly Bingo self-confirmation. Verified Bingo evidence
+is not copied into the board: reads reconcile current exact-version progress and
+eligible plan-bound practice, so corrections cannot leave a fabricated mark.
 
 The controlled Review 1 seed, MB-337 eligibility matrix, and visibly synthetic non-dialable safety-directory fixture are owner-module migrations with a separate ledger (`pgmigrations_review1`), so running normal schema migrations cannot accidentally mark controlled data as applied. The seeds reject drift from their reviewed decisions. Machine-readable resource inventory, reviewer rationale, explicit ineligible decisions, and Care requests are kept in `../contracts/fixtures/content/resource-eligibility-v1-controlled-demo.json`. No real safety contact is published by the controlled fixture. For the shared dev/staging database only, run:
 

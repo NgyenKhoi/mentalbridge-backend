@@ -1,4 +1,5 @@
 import SwaggerParser from "@apidevtools/swagger-parser";
+import { createRequire } from "node:module";
 import { fileURLToPath } from "node:url";
 
 const contractPath = fileURLToPath(
@@ -37,6 +38,7 @@ const implementedOperations = new Set([
   "GET /api/v1/longitudinal-analysis-jobs/{jobId}",
   "GET /internal/v1/users/{userId}/longitudinal-analyses/{analysisId}",
   "POST /internal/v1/support-guide-phrasing",
+  "POST /internal/v1/consultation-brief-drafts",
   "POST /api/v1/emotion-check-ins",
   "GET /api/v1/emotion-check-ins",
   "GET /api/v1/emotion-check-ins/{localDate}",
@@ -85,6 +87,10 @@ const implementedResponses = new Map([
   [
     "POST /internal/v1/support-guide-phrasing",
     new Set(["201", "400", "401", "403", "503"]),
+  ],
+  [
+    "POST /internal/v1/consultation-brief-drafts",
+    new Set(["200", "400", "401", "403", "503"]),
   ],
   [
     "POST /api/v1/emotion-check-ins",
@@ -184,6 +190,28 @@ if (
 }
 
 const schemas = contract.components?.schemas;
+const require = createRequire(import.meta.url);
+const {
+  exactResultValidator,
+  longitudinalResultValidator,
+} = require("../migrations/011_bedrock_provider.cjs");
+for (const [schemaName, validator] of [
+  ["NormalizedAnalysisResult", exactResultValidator],
+  ["LongitudinalEvidence", longitudinalResultValidator],
+  ["SupportGuidePhrasingResponse", exactResultValidator],
+  ["ConsultationBriefAiDraftProviderResponse", exactResultValidator],
+]) {
+  if (
+    !setsEqual(
+      new Set(schemas?.[schemaName]?.properties?.provider?.enum ?? []),
+      new Set(validator.$jsonSchema.properties.provider.enum),
+    )
+  ) {
+    throw new Error(
+      `${schemaName} provider enum differs from migrated runtime providers`,
+    );
+  }
+}
 const journalEntry = schemas?.JournalEntry;
 const journalList = schemas?.JournalListResponse;
 const detailContent = journalEntry?.allOf?.[1]?.properties?.content;
@@ -230,6 +258,17 @@ if (
   throw new Error("Daily emotion check-in labels differ from the accepted ADR");
 }
 if (
+  schemas?.EmotionInfluenceFactor?.enum?.join(",") !==
+    "sleep,work,study,family,friends,health,other" ||
+  schemas?.EmotionCheckInValue?.properties?.factors?.maxItems !== 3 ||
+  schemas?.EmotionCheckInValue?.properties?.factors?.uniqueItems !== true ||
+  !checkIn?.required?.includes("factors")
+) {
+  throw new Error(
+    "Optional emotion influence factors differ from the accepted privacy contract",
+  );
+}
+if (
   notificationActivity?.properties?.interpretation?.const !==
     "FACTUAL_ACTIVITY_NOT_ADHERENCE_OR_RECOVERY" ||
   JSON.stringify(notificationActivity).match(
@@ -240,9 +279,13 @@ if (
     "Notification activity must remain factual and exclude sensitive content",
   );
 }
-if (consumerItem?.properties?.note || consumerItem?.properties?.id) {
+if (
+  consumerItem?.properties?.note ||
+  consumerItem?.properties?.factors ||
+  consumerItem?.properties?.id
+) {
   throw new Error(
-    "Consumer context must exclude raw notes and owner identifiers",
+    "Consumer context must exclude raw optional context and owner identifiers",
   );
 }
 if (

@@ -45,6 +45,56 @@ class ConsultationBriefIntegrationTests extends CareTestProperties {
 	@Autowired MockMvc mvc;
 	@Autowired JdbcClient jdbc;
 	@MockitoBean AppointmentContextClient appointments;
+	@MockitoBean JournalConsultationBriefDraftHttpClient aiDrafts;
+
+	@Test
+	void ownerRequestsEditableAiSuggestionWithExactSourceAndDeletionClearsIt() throws Exception {
+		var fixture = fixture(Instant.now().plusSeconds(3_600));
+		grantAi(fixture.userId());
+		doReturn(new ConsultationBriefAiDraftClient.DraftProviderResponse(
+				"Work pressure has made it harder to focus this week",
+				List.of("Discuss one manageable next step"), "consultation-brief-ai-source-v1",
+				"ai-processing-capstone-v2", "PLUS", "DEMO", "service-entitlement-v1", 1L,
+				"exact-revision-routing-v1", "benchmark-approval-v1", "GEMINI", "gemini-approved",
+				"consultation-brief-draft-v1", 1, 12L, 20L, 15L, 1L))
+				.when(aiDrafts).draft(anyString(), anyString(), any());
+
+		mvc.perform(put("/api/v1/consultation-briefs/{id}/draft", fixture.appointmentId())
+				.with(user(fixture.userId())).contentType(MediaType.APPLICATION_JSON)
+				.content(body(fixture.evaluationId()))).andExpect(status().isOk());
+		var accepted = mvc.perform(post("/api/v1/consultation-briefs/{id}/ai-draft-jobs", fixture.appointmentId())
+				.with(user(fixture.userId())).header("If-Match", "\"0\"")
+				.header("Idempotency-Key", "consultation-ai-draft-001"))
+				.andExpect(status().isAccepted())
+				.andExpect(jsonPath("$.sourceSetVersion").value("consultation-brief-ai-source-v1"))
+				.andReturn();
+		var jobId = new com.fasterxml.jackson.databind.ObjectMapper().readTree(
+				accepted.getResponse().getContentAsByteArray()).get("jobId").asText();
+		awaitJob(jobId, "SUCCEEDED");
+
+		mvc.perform(get("/api/v1/consultation-briefs/{id}/ai-draft-jobs/{jobId}",
+				fixture.appointmentId(), jobId).with(user(fixture.userId())))
+				.andExpect(status().isOk()).andExpect(jsonPath("$.status").value("SUCCEEDED"))
+				.andExpect(jsonPath("$.consultationBriefVersion").value(0))
+				.andExpect(jsonPath("$.currentSituation").value("Work pressure has made it harder to focus this week"))
+				.andExpect(jsonPath("$.providerApprovalVersion").value("benchmark-approval-v1"))
+				.andExpect(jsonPath("$.promptVersion").value("consultation-brief-draft-v1"))
+				.andExpect(jsonPath("$.journal").doesNotExist())
+				.andExpect(jsonPath("$.assessmentAnswers").doesNotExist());
+		mvc.perform(get("/api/v1/consultation-briefs/{id}/ai-draft-jobs/{jobId}",
+				fixture.appointmentId(), jobId).with(user(UUID.randomUUID())))
+				.andExpect(status().isNotFound());
+
+		mvc.perform(delete("/api/v1/consultation-briefs/{id}", fixture.appointmentId())
+				.with(user(fixture.userId())).header("If-Match", "\"0\""))
+				.andExpect(status().isNoContent());
+		mvc.perform(get("/api/v1/consultation-briefs/{id}/ai-draft-jobs/{jobId}",
+				fixture.appointmentId(), jobId).with(user(fixture.userId())))
+				.andExpect(status().isOk()).andExpect(jsonPath("$.status").value("FAILED"))
+				.andExpect(jsonPath("$.terminalReason").value("SOURCE_DELETED"))
+				.andExpect(jsonPath("$.currentSituation").isEmpty())
+				.andExpect(jsonPath("$.userGoals").isEmpty());
+	}
 
 	@Test
 	void ownerApprovesExactSnapshotAndRevocationBlocksFutureSpecialistReads() throws Exception {
@@ -311,6 +361,26 @@ class ConsultationBriefIntegrationTests extends CareTestProperties {
 					startAt.plusSeconds(3_600), 1);
 		}).when(appointments).get(any(), anyString(), any());
 		return new Fixture(appointmentId, userId, specialistId, evaluationId, startAt);
+	}
+
+	private void grantAi(UUID userId) {
+		jdbc.sql("""
+				insert into consent_decision
+				 (id,user_id,consent_type,policy_version,granted,idempotency_key,request_hash,decided_at)
+				values (:id,:userId,'AI_PROCESSING','ai-processing-capstone-v2',true,:key,:hash,now())
+				""").param("id", UUID.randomUUID()).param("userId", userId)
+				.param("key", "consultation-ai-consent-" + UUID.randomUUID())
+				.param("hash", "a".repeat(64)).update();
+	}
+
+	private void awaitJob(String jobId, String expected) throws InterruptedException {
+		for (int attempt = 0; attempt < 100; attempt++) {
+			var status = jdbc.sql("select status from consultation_brief_ai_draft_job where id=:id")
+					.param("id", UUID.fromString(jobId)).query(String.class).single();
+			if (status.equals(expected)) return;
+			Thread.sleep(20);
+		}
+		throw new AssertionError("AI draft job did not reach " + expected);
 	}
 
 	private UUID assessment(UUID userId, UUID definitionId) {

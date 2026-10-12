@@ -62,6 +62,71 @@ class AppointmentRequestIntegrationTests extends ConsultationTestProperties {
 	}
 
 	@Test
+	void explicitBookingCanRetainOpaqueOriginatingPlanActionReference() throws Exception {
+		var userId = paidUser("PLUS");
+		var slotId = chatSlot(Instant.now().plusSeconds(86_400));
+		var planActionId = UUID.randomUUID();
+		var body = "{\"slotId\":\"%s\",\"modality\":\"IN_APP_CHAT\",\"originatingPlanActionId\":\"%s\"}"
+				.formatted(slotId, planActionId);
+
+		mvc.perform(post("/api/v1/appointments").with(user(userId))
+				.header("Idempotency-Key", "plan-action-request-0001").contentType(MediaType.APPLICATION_JSON)
+				.content(body)).andExpect(status().isCreated())
+				.andExpect(jsonPath("$.originatingPlanActionId").value(planActionId.toString()));
+
+		assertThat(jdbc.sql("select originating_plan_action_id from appointment where user_account_id=:userId")
+				.param("userId", userId).query(UUID.class).single()).isEqualTo(planActionId);
+	}
+
+	@Test
+	void planActionFilterFindsAnOwnedAppointmentBeyondTheDefaultHistoryLimit() throws Exception {
+		var userId = paidUser("PLUS");
+		var planActionId = UUID.randomUUID();
+		var slotId = chatSlot(Instant.now().plusSeconds(86_400));
+		var created = mvc.perform(post("/api/v1/appointments").with(user(userId))
+				.header("Idempotency-Key", "plan-action-filter-seed")
+				.contentType(MediaType.APPLICATION_JSON)
+				.content("{\"slotId\":\"%s\",\"modality\":\"IN_APP_CHAT\",\"originatingPlanActionId\":\"%s\"}"
+						.formatted(slotId, planActionId)))
+				.andExpect(status().isCreated()).andReturn();
+		var appointmentId = UUID.fromString(json.readTree(created.getResponse().getContentAsByteArray()).get("id").asText());
+
+		jdbc.sql("""
+				insert into appointment (
+				 id, user_account_id, specialist_account_id, availability_slot_id, service_credit_id,
+				 status, modality, scheduled_start_at, scheduled_end_at, display_timezone,
+				 requested_at, decision_deadline_at, idempotency_key, decided_at, decision_reason,
+				 created_at, updated_at, version
+				)
+				select gen_random_uuid(), seed.user_account_id, seed.specialist_account_id,
+				       seed.availability_slot_id, seed.service_credit_id, 'REJECTED', seed.modality,
+				       seed.scheduled_start_at + interval '2 days' + series.number * interval '1 minute',
+				       seed.scheduled_end_at + interval '2 days' + series.number * interval '1 minute',
+				       seed.display_timezone, seed.requested_at,
+				       seed.scheduled_start_at + interval '1 day',
+				       'history-fixture-' || lpad(series.number::text, 3, '0'), now(),
+				       'SPECIALIST_REJECTED', now(), now(), 1
+				from appointment seed cross join generate_series(1, 100) series(number)
+				where seed.id=:appointmentId
+				""").param("appointmentId", appointmentId).update();
+
+		mvc.perform(get("/api/v1/appointments").with(user(userId)))
+				.andExpect(status().isOk())
+				.andExpect(jsonPath("$.count").value(100))
+				.andExpect(jsonPath("$.items[?(@.id == '%s')]".formatted(appointmentId)).isEmpty());
+		mvc.perform(get("/api/v1/appointments").with(user(userId))
+				.param("originatingPlanActionId", planActionId.toString()))
+				.andExpect(status().isOk())
+				.andExpect(jsonPath("$.count").value(1))
+				.andExpect(jsonPath("$.items[0].id").value(appointmentId.toString()))
+				.andExpect(jsonPath("$.items[0].originatingPlanActionId").value(planActionId.toString()));
+		mvc.perform(get("/api/v1/appointments").with(user(UUID.randomUUID()))
+				.param("originatingPlanActionId", planActionId.toString()))
+				.andExpect(status().isOk())
+				.andExpect(jsonPath("$.count").value(0));
+	}
+
+	@Test
 	void freeWrongModeStaleLeadTimeAndUnavailableCreditFailStably() throws Exception {
 		var slotId = chatSlot(Instant.now().plusSeconds(86_400));
 		mvc.perform(post("/api/v1/appointments").with(user(UUID.randomUUID()))
@@ -201,6 +266,54 @@ class AppointmentRequestIntegrationTests extends ConsultationTestProperties {
 				select count(*) from appointment
 				where user_account_id=:userId and status in ('REQUESTED', 'CONFIRMED', 'IN_PROGRESS')
 				""").param("userId", userId).query(Long.class).single()).isEqualTo(2L);
+	}
+
+	@Test
+	void rescheduleInheritsPlanActionOriginReplaysAndRejectsAConflictingOrigin() throws Exception {
+		var userId = paidUser("PLUS");
+		var planActionId = UUID.randomUUID();
+		var originalSlot = chatSlot(Instant.now().plusSeconds(86_400));
+		var original = mvc.perform(post("/api/v1/appointments").with(user(userId))
+				.header("Idempotency-Key", "origin-inherit-original")
+				.contentType(MediaType.APPLICATION_JSON)
+				.content("{\"slotId\":\"%s\",\"modality\":\"IN_APP_CHAT\",\"originatingPlanActionId\":\"%s\"}"
+						.formatted(originalSlot, planActionId)))
+				.andExpect(status().isCreated()).andReturn();
+		var originalId = UUID.fromString(json.readTree(original.getResponse().getContentAsByteArray()).get("id").asText());
+
+		var conflictingSlot = chatSlot(Instant.now().plusSeconds(90_000));
+		mvc.perform(post("/api/v1/appointments").with(user(userId))
+				.header("If-Match", "\"0\"").header("Idempotency-Key", "origin-conflict-replace")
+				.contentType(MediaType.APPLICATION_JSON)
+				.content("{\"slotId\":\"%s\",\"modality\":\"IN_APP_CHAT\",\"replacesAppointmentId\":\"%s\",\"originatingPlanActionId\":\"%s\"}"
+						.formatted(conflictingSlot, originalId, UUID.randomUUID())))
+				.andExpect(status().isConflict())
+				.andExpect(jsonPath("$.code").value("APPOINTMENT_PLAN_ACTION_ORIGIN_CONFLICT"));
+
+		var replacementSlot = chatSlot(Instant.now().plusSeconds(93_600));
+		var requestBody = body(replacementSlot, "IN_APP_CHAT", originalId);
+		var first = mvc.perform(post("/api/v1/appointments").with(user(userId))
+				.header("If-Match", "\"0\"").header("Idempotency-Key", "origin-inherit-replace")
+				.contentType(MediaType.APPLICATION_JSON).content(requestBody))
+				.andExpect(status().isCreated())
+				.andExpect(jsonPath("$.originatingPlanActionId").value(planActionId.toString()))
+				.andReturn();
+		var replacementId = json.readTree(first.getResponse().getContentAsByteArray()).get("id").asText();
+
+		mvc.perform(post("/api/v1/appointments").with(user(userId))
+				.header("If-Match", "\"0\"").header("Idempotency-Key", "origin-inherit-replace")
+				.contentType(MediaType.APPLICATION_JSON).content(requestBody))
+				.andExpect(status().isCreated())
+				.andExpect(jsonPath("$.id").value(replacementId))
+				.andExpect(jsonPath("$.originatingPlanActionId").value(planActionId.toString()));
+
+		mvc.perform(post("/api/v1/appointments").with(user(userId))
+				.header("If-Match", "\"0\"").header("Idempotency-Key", "origin-inherit-replace")
+				.contentType(MediaType.APPLICATION_JSON)
+				.content("{\"slotId\":\"%s\",\"modality\":\"IN_APP_CHAT\",\"replacesAppointmentId\":\"%s\",\"originatingPlanActionId\":\"%s\"}"
+						.formatted(replacementSlot, originalId, UUID.randomUUID())))
+				.andExpect(status().isConflict())
+				.andExpect(jsonPath("$.code").value("IDEMPOTENCY_KEY_REUSED"));
 	}
 
 	@Test

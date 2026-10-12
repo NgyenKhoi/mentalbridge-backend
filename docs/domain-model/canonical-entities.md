@@ -10,6 +10,12 @@ See [README](README.md) for status and relationship semantics.
 
 ## Identity — PostgreSQL
 
+MB-586 adds ACTIVE `platform_report_schedule` (physical ADMIN creator and
+versioned configuration), and nullable occurrence provenance on ACTIVE
+`platform_report_job`. Jobs link physically to the soft-deleted schedule and
+one immutable `platform_report_artifact`; the unique schedule/UTC occurrence
+pair prevents duplicate generation. Manual and scheduled jobs use one engine.
+
 | Entity | Owner service | Storage | Status | Key relationships |
 | --- | --- | --- | --- | --- |
 | `role` | identity-service | PostgreSQL | ACTIVE | Physical one-to-many to `account` through `account.role_code`. |
@@ -51,6 +57,8 @@ See [README](README.md) for status and relationship semantics.
 | `support_guide_resource` | care-service | PostgreSQL | ACTIVE | Physical child of guide; resource/publication IDs are logical/external Content references with persisted display snapshots. |
 | `support_guide_request` | care-service | PostgreSQL | ACTIVE | Physical owner-scoped idempotency alias to guide. |
 | `support_plan` | care-service | PostgreSQL | ACTIVE | Physical owner/evaluation reference with explicit draft/current/terminal lifecycle; entitlement fields snapshot a logical/external Consultation decision. |
+| `support_plan_focus` | care-service | PostgreSQL | ACTIVE | Physical ordered native-v3 child of a plan; stores bounded plain-language focus/purpose and version provenance, never a diagnosis or score. |
+| `support_plan_action` | care-service | PostgreSQL | ACTIVE | Physical ordered native-v3 child of a focus; stores one canonical type, bounded presentation/provenance, capabilities, and logical source-owner/reference without a cross-service FK. |
 | `support_plan_template_family` | care-service | PostgreSQL | ACTIVE | Physical ordered child of `support_plan`. |
 | `support_plan_slot` | care-service | PostgreSQL | ACTIVE | Physical child of plan; exact resource/publication IDs are logical/external Content references. |
 | `support_plan_slot_alternative` | care-service | PostgreSQL | ACTIVE | Physical child of slot with admitted exact Content alternatives. |
@@ -58,8 +66,8 @@ See [README](README.md) for status and relationship semantics.
 | `plan_change_request` | care-service | PostgreSQL | ACTIVE | MB-560 Care-owned review/decision snapshot for one exact Consultation resource proposal; links the reviewed current plan and, only after acceptance, the atomic replacement plan. |
 | `support_plan_command` | care-service | PostgreSQL | ACTIVE | Physical owner/plan reference; idempotent activation outcome with exact revalidation evidence. |
 | `support_plan_command_selection` | care-service | PostgreSQL | ACTIVE | Physical child preserving the ordered exact resource-version intent committed by activation. |
-| `support_plan_activity_schedule` | care-service | PostgreSQL | ACTIVE | Physical child of a plan; snapshots recurrence, local time, IANA timezone, and exact selected-resource provenance. |
-| `support_plan_activity_occurrence` | care-service | PostgreSQL | ACTIVE | Physical child of a schedule and owner-matched plan; deterministic dated state plus versioned owner-only helpfulness/barrier/reflection and visibility, with exact source provenance. |
+| `support_plan_activity_schedule` | care-service | PostgreSQL | ACTIVE | Additive shared physical child of a plan; references either legacy v2 slot/resource provenance or one native v3 action and snapshots recurrence, local time, and IANA timezone without backfilling old rows. |
+| `support_plan_activity_occurrence` | care-service | PostgreSQL | ACTIVE | Physical child of a schedule and owner-matched plan; preserves either legacy v2 provenance or native action/source/evidence provenance with deterministic dated state and policy-bounded engagement. |
 | `reassessment_self_report` | care-service | PostgreSQL | ACTIVE | Versioned owner-authored current-period experience with bounded optional context; deletion clears response content and retains only a minimal tombstone/provenance. |
 | `reassessment_summary` | care-service | PostgreSQL | ACTIVE | Immutable owner-scoped snapshot of separate screening, minimized journal/context, SupportPlan engagement, explicit self-reported experience, and separately labelled supporting activity reflection; never a combined score. |
 | Specialist access grants/scopes | care-service | PostgreSQL | PROPOSED | Approved consent concept; no Care owner migration exists yet. Selected Journal IDs would be logical/external Journal/AI references. |
@@ -71,13 +79,16 @@ See [README](README.md) for status and relationship semantics.
 | Entity | Owner service | Storage | Status | Key relationships |
 | --- | --- | --- | --- | --- |
 | `specialist_profile` | consultation-service | PostgreSQL | ACTIVE | `account_id` and reviewer IDs are logical/external Identity references. |
+| `specialist_profile_approved_version` | consultation-service | PostgreSQL | ACTIVE | MB-635 append-only approved content snapshots; unique owner/published version; optional source amendment FK. |
+| `specialist_profile_amendment` | consultation-service | PostgreSQL | ACTIVE | Private post-approval draft/review state with composite approved-base FK; one open amendment per specialist; never a public discovery source. |
+| `specialist_profile_amendment_history` | consultation-service | PostgreSQL | ACTIVE | Append-only exact amendment revision/review payload and bounded actor/reason/time provenance. |
 | `specialist_profile_support_area` | consultation-service | PostgreSQL | ACTIVE | Physical many-to-one child of `specialist_profile`. |
 | `specialist_profile_language` | consultation-service | PostgreSQL | ACTIVE | Physical many-to-one child of `specialist_profile`. |
 | `specialist_profile_status_history` | consultation-service | PostgreSQL | ACTIVE | Physical history child; actor ID is a logical/external Identity reference. |
 | `current_service_entitlement` | consultation-service | PostgreSQL | ACTIVE | Account and establishing actor are logical/external Identity references; current narrow package decision for consumers. |
 | `availability_slot` | consultation-service | PostgreSQL | ACTIVE | Physical many-to-one to `specialist_profile`; active slots cannot overlap for one specialist. |
 | `service_credit_period`, `service_credit`, `service_credit_ledger` | consultation-service | PostgreSQL | ACTIVE | Current entitlement provisions bounded credits; appointment transitions hold and later release/consume one credit with append-only evidence. |
-| `appointment`, `appointment_status_history`, `appointment_chat_evidence` | consultation-service | PostgreSQL | ACTIVE | MB-378 owns the REQUESTED snapshot, exact online slot and held credit; MB-379 settles assigned specialist acceptance/rejection and deterministic expiry with idempotent history; MB-360 records suspension cancellation outcomes; MB-558 adds package reservation caps and linked atomic replacement; MB-380 records owner cancellation/reschedule audit; MB-383 stores content-free check-in/presence/accepted-message evidence and deterministically settles chat outcome and credit under `chat-session-completion-v1`. |
+| `appointment`, `appointment_status_history`, `appointment_chat_evidence` | consultation-service | PostgreSQL | ACTIVE | MB-378 owns the REQUESTED snapshot, exact online slot and held credit; MB-379 settles assigned specialist acceptance/rejection and deterministic expiry with idempotent history; MB-360 records suspension cancellation outcomes; MB-558 adds package reservation caps and linked atomic replacement; MB-380 records owner cancellation/reschedule audit; MB-383 stores content-free check-in/presence/accepted-message evidence and deterministically settles chat outcome and credit under `chat-session-completion-v1`; MB-643 adds an optional opaque originating Care action reference for presentation correlation only. |
 | `appointment_rating`, `specialist_rating_aggregate` | consultation-service | PostgreSQL | ACTIVE | MB-364 stores one current 1-5 rating per evidence-completed owned appointment and maintains the specialist count/sum aggregate in the same transaction. |
 | `session_summary`, `agreed_next_step`, `agreed_next_step_state`, `session_summary_reuse_consent` | consultation-service | PostgreSQL | ACTIVE | MB-385 appends immutable user-visible summary versions after evidence-backed completion, keeps agreed steps separate from SupportPlan occurrences, lets only the user manage checklist state, and records separate exact-snapshot reuse consent. MB-560 adds a bounded reason code to exact-version `PLATFORM_RESOURCE` steps so Care can authoritatively retrieve proposal provenance. |
 | `appointment_outbox_event` | consultation-service | PostgreSQL | ACTIVE | One minimized asynchronous status fact per appointment/version, atomically committed with appointment state and containing no clinical or message content. |
@@ -113,6 +124,7 @@ See [README](README.md) for status and relationship semantics.
 | `resource_eligibility_declaration` | content-notification-service | PostgreSQL | ACTIVE | Physical child of publication with domain/role/instrument eligibility. |
 | `resource_eligibility_withdrawal` | content-notification-service | PostgreSQL | ACTIVE | Physical one-to-one append-only withdrawal of a publication. |
 | `resource_eligibility_command_record` | content-notification-service | PostgreSQL | ACTIVE | Physical replay reference to publication; actor ID is external. |
+| `resource_reward_preference` | content-notification-service | PostgreSQL | ACTIVE | Owner-scoped optional visibility only; authoritative XP is a deterministic read model over exact progress, practice, and publication evidence. |
 | `notification_preference` | content-notification-service | PostgreSQL | ACTIVE | One atomic aggregate per external Identity owner covering channels, content groups, quiet hours/timezone, and email cadence/opt-ins. |
 | `notification` | content-notification-service | PostgreSQL | ACTIVE | Recipient ID is a logical/external Identity reference. |
 | `appointment_email_reminder` | content-notification-service | PostgreSQL | ACTIVE | One delivery-state row per external recipient, Consultation appointment, and appointment version; no email address or message body is persisted. |

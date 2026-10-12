@@ -19,6 +19,14 @@ const environmentSchema = z
     IDENTITY_JWT_PUBLIC_KEY: z.string().min(1),
     IDENTITY_JWT_KEY_ID: z.string().min(1).optional(),
     IDENTITY_JWT_CLOCK_TOLERANCE_SECONDS: z.coerce.number().int().min(0).default(60),
+    RESOURCE_REVIEWER_ACCOUNT_IDS: z
+      .string()
+      .refine(
+        (value) =>
+          value.trim() === '' ||
+          value.split(',').every((accountId) => z.uuid().safeParse(accountId.trim()).success),
+      )
+      .optional(),
     JOURNAL_AI_SERVICE_URL: z.url().default('http://localhost:3005'),
     JOURNAL_AI_SERVICE_TIMEOUT_MS: z.coerce.number().int().min(100).max(5_000).default(2_000),
     JOURNAL_AI_REMINDER_SERVICE_TOKEN: z.string().min(32).optional(),

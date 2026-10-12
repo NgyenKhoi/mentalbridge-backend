@@ -15,7 +15,22 @@ import io.swagger.v3.oas.models.media.Schema;
 class ConsultationOpenApiContractTests {
 
 	private static final Set<String> OPERATIONS = Set.of(
+			"GET /api/v1/specialist-profile/amendments/current",
+			"POST /api/v1/specialist-profile/amendments",
+			"PUT /api/v1/specialist-profile/amendments/{amendmentId}",
+			"POST /api/v1/specialist-profile/amendments/{amendmentId}/submit",
+			"POST /api/v1/specialist-profile/amendments/{amendmentId}/resubmit",
+			"POST /api/v1/specialist-profile/amendments/{amendmentId}/cancel",
+			"GET /api/v1/admin/specialist-profiles/amendments",
+			"GET /api/v1/admin/specialist-profiles/amendments/{amendmentId}",
+			"POST /api/v1/admin/specialist-profiles/amendments/{amendmentId}/approve",
+			"POST /api/v1/admin/specialist-profiles/amendments/{amendmentId}/reject",
 			"GET /api/v1/service-credits",
+			"GET /api/v1/service-plans",
+			"POST /api/v1/subscriptions/checkout",
+			"GET /api/v1/payments",
+			"GET /api/v1/payments/{paymentId}",
+			"POST /internal/v1/payments/momo/ipn",
 			"GET /internal/v1/entitlements/current",
 			"GET /internal/v1/appointments/{appointmentId}/consultation-brief-context",
 			"GET /internal/v1/appointments/{appointmentId}/reusable-session-summaries/{summaryId}",
@@ -45,6 +60,7 @@ class ConsultationOpenApiContractTests {
 			"GET /api/v1/appointments/{appointmentId}/session-summaries",
 			"PUT /api/v1/session-summaries/{summaryId}/reuse-consent",
 			"PUT /api/v1/agreed-next-steps/{nextStepId}",
+			"GET /api/v1/specialist/analytics",
 			"GET /api/v1/specialist/dashboard",
 			"GET /api/v1/specialist/earnings",
 			"PUT /api/v1/specialist/payout-destination",
@@ -66,6 +82,7 @@ class ConsultationOpenApiContractTests {
 			"POST /api/v1/admin/specialist-profiles/{specialistAccountId}/suspend",
 			"POST /api/v1/admin/specialist-profiles/{specialistAccountId}/restore",
 			"GET /api/v1/admin/payouts",
+			"GET /api/v1/admin/payments",
 			"POST /internal/v1/payouts/momo/ipn");
 
 	@Test
@@ -83,7 +100,7 @@ class ConsultationOpenApiContractTests {
 			assertThat(item.getExtensions()).containsEntry("x-mentalbridge-status", "implemented");
 			item.readOperationsMap().forEach((method, operation) -> {
 				operations.add(method.name() + " " + path);
-				if (path.equals("/internal/v1/payouts/momo/ipn")) {
+				if (path.equals("/internal/v1/payouts/momo/ipn") || path.equals("/internal/v1/payments/momo/ipn")) {
 					assertThat(operation.getSecurity()).isEmpty();
 				}
 				else if (path.contains("notification-eligibility")) {
@@ -135,11 +152,20 @@ class ConsultationOpenApiContractTests {
 		var api = new OpenAPIV3Parser().read(contract);
 		var request = api.getComponents().getSchemas().get("RequestAppointment");
 		var appointment = api.getComponents().getSchemas().get("Appointment");
+		var listParameters = api.getPaths().get("/api/v1/appointments").getGet().getParameters();
 
-		assertThat(request.getProperties()).containsOnlyKeys("slotId", "modality", "replacesAppointmentId");
+		assertThat(request.getProperties()).containsOnlyKeys("slotId", "modality", "replacesAppointmentId",
+				"originatingPlanActionId");
+		assertThat(listParameters).singleElement().satisfies(parameter -> {
+			assertThat(parameter.getName()).isEqualTo("originatingPlanActionId");
+			assertThat(parameter.getIn()).isEqualTo("query");
+			assertThat(parameter.getRequired()).isFalse();
+			assertThat(parameter.getSchema().getFormat()).isEqualTo("uuid");
+		});
 		assertThat(request.getRequired()).containsExactlyInAnyOrder("slotId", "modality");
 		assertThat(appointment.getProperties()).containsKeys("status", "decisionDeadlineAt", "heldCreditId",
-				"replacesAppointmentId", "replacedByAppointmentId", "decidedAt", "decisionReason", "cancelledAt",
+				"replacesAppointmentId", "replacedByAppointmentId", "originatingPlanActionId", "decidedAt",
+				"decisionReason", "cancelledAt",
 				"cancellationReason", "cancellationActor", "cancellationCreditOutcome", "sessionOutcome",
 				"sessionPolicyVersion", "sessionEndedAt", "sessionSettledAt", "completionFactId",
 				"creditState", "history", "version");
@@ -148,6 +174,7 @@ class ConsultationOpenApiContractTests {
 		assertThat(statuses).containsExactly("REQUESTED", "CONFIRMED", "IN_PROGRESS", "SESSION_ENDED",
 				"COMPLETED", "REJECTED", "EXPIRED", "CANCELLED");
 		assertThat(appointment.getRequired()).contains("replacesAppointmentId", "replacedByAppointmentId",
+				"originatingPlanActionId",
 				"cancelledAt", "cancellationReason", "cancellationActor", "cancellationCreditOutcome", "history");
 		assertThat(appointment.getProperties()).doesNotContainKeys("practiceLocationId", "phone", "meetingLink", "url");
 	}
@@ -185,6 +212,25 @@ class ConsultationOpenApiContractTests {
 		assertThat(appointment.getProperties()).doesNotContainKeys("userAccountId", "clientName", "checkIns",
 				"riskScore", "recovery", "adherence", "journal", "assessmentAnswers", "notes");
 		assertThat(((Schema<?>) appointments.getProperties().get("items")).getMaxItems()).isEqualTo(5);
+	}
+
+	@Test
+	void specialistAnalyticsContainsOnlyAggregateOperationalFacts() {
+		var contract = Path.of("..", "contracts", "openapi", "consultation-service-v1.yaml").toString();
+		var api = new OpenAPIV3Parser().read(contract);
+		var analytics = api.getComponents().getSchemas().get("SpecialistOperationalAnalytics");
+		var appointments = api.getComponents().getSchemas().get("SpecialistAppointmentMetrics");
+		var financials = api.getComponents().getSchemas().get("SpecialistFinancialMetrics");
+
+		assertThat(analytics.getProperties()).containsOnlyKeys("source", "generatedAt", "operationalStatus",
+				"period", "availability", "appointments", "rating", "financials");
+		assertThat(appointments.getProperties()).containsOnlyKeys("source", "asOf", "state", "requestedCount",
+				"acceptedCount", "rejectedCount", "expiredCount", "cancelledCount", "rescheduledCount",
+				"completedCount", "userNoShowCount", "specialistNoShowCount", "bothNoShowCount")
+				.doesNotContainKeys("userAccountId", "phq9", "gad7", "journal", "emotionTrend", "recoveryScore",
+						"treatmentAdherence", "clientSegments", "chat", "notes");
+		assertThat(financials.getProperties()).containsOnlyKeys("source", "asOf", "state", "currency",
+				"earnedAmountMinor", "paidAmountMinor");
 	}
 
 	@Test

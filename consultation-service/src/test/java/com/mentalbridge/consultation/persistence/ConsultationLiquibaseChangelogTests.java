@@ -33,7 +33,13 @@ class ConsultationLiquibaseChangelogTests {
 							"consultation-014-specialist-client-continuity",
 							"consultation-015-appointment-rating",
 							"consultation-016-appointment-disputes",
-							"consultation-017-specialist-earning-payout");
+							"consultation-017-specialist-earning-payout",
+							"consultation-018-specialist-profile-amendment",
+							"consultation-019-profile-amendment-cancellation",
+							"consultation-020-subscription-momo-payment",
+							"consultation-021-appointment-plan-action-reference",
+							"consultation-021-sandbox-commercial-policy",
+							"consultation-022-durable-checkout-preparation");
 		}
 	}
 }
