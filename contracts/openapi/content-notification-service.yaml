@@ -1,7 +1,7 @@
 openapi: 3.1.0
 info:
   title: Content-Notification Service API
-  version: 1.6.0
+  version: 1.7.0
   description: >
     MentalBridge Content/Notification bounded context.
     Manages reviewed self-help resources, reviewed Vietnam safety-directory
@@ -391,6 +391,50 @@ paths:
                 $ref: "#/components/schemas/ResourceProgressItem"
         "401": { $ref: "#/components/responses/Unauthorized" }
         "404": { $ref: "#/components/responses/NotFound" }
+        "422": { $ref: "#/components/responses/ValidationError" }
+        "503": { $ref: "#/components/responses/ServiceUnavailable" }
+
+  /api/v1/resource-rewards:
+    x-mentalbridge-status: implemented
+    get:
+      tags: [Resource progress]
+      summary: Read authoritative participation rewards for the authenticated owner
+      description: >-
+        Calculates bounded XP from persisted reviewed resource completion and verified
+        practice evidence. XP records participation only and is not a treatment,
+        adherence, recovery or mental-health score.
+      operationId: getResourceRewards
+      security:
+        - BearerAuth: []
+      responses:
+        "200":
+          description: Owner-scoped reward read model with source and rule provenance
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ResourceRewardReadModel"
+        "401": { $ref: "#/components/responses/Unauthorized" }
+        "503": { $ref: "#/components/responses/ServiceUnavailable" }
+    put:
+      tags: [Resource progress]
+      summary: Replace the authenticated owner's optional reward visibility preference
+      operationId: setResourceRewardVisibility
+      security:
+        - BearerAuth: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/ResourceRewardVisibilityUpdate"
+      responses:
+        "200":
+          description: Updated preference and freshly calculated reward read model
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ResourceRewardReadModel"
+        "401": { $ref: "#/components/responses/Unauthorized" }
         "422": { $ref: "#/components/responses/ValidationError" }
         "503": { $ref: "#/components/responses/ServiceUnavailable" }
 
@@ -1707,6 +1751,112 @@ components:
             minLength: 1
             maxLength: 64
             pattern: "^[A-Za-z0-9:_-]+$"
+
+    ResourceRewardVisibility:
+      type: string
+      enum: [VISIBLE, HIDDEN]
+
+    ResourceRewardVisibilityUpdate:
+      type: object
+      additionalProperties: false
+      required: [visibilityState]
+      properties:
+        visibilityState:
+          $ref: "#/components/schemas/ResourceRewardVisibility"
+
+    ResourceRewardGrant:
+      type: object
+      additionalProperties: false
+      required:
+        [
+          grantId,
+          kind,
+          xp,
+          resourceId,
+          contentVersion,
+          localDate,
+          grantedAt,
+          sourceReference,
+          ruleVersion,
+        ]
+      properties:
+        grantId:
+          type: string
+          pattern: "^[a-f0-9]{64}$"
+        kind:
+          type: string
+          enum: [RESOURCE_COMPLETION, VERIFIED_PRACTICE]
+        xp:
+          type: integer
+          minimum: 1
+          maximum: 100
+        resourceId:
+          type: string
+          format: uuid
+        contentVersion:
+          type: string
+          pattern: "^(0|[1-9][0-9]*)$"
+          maxLength: 19
+        localDate:
+          type: string
+          format: date
+        grantedAt:
+          type: string
+          format: date-time
+        sourceReference:
+          type: string
+          minLength: 1
+          maxLength: 160
+        ruleVersion:
+          type: string
+          pattern: "^[a-z0-9][a-z0-9-]{2,63}$"
+
+    ResourceRewardReadModel:
+      type: object
+      additionalProperties: false
+      required:
+        [
+          totalXp,
+          level,
+          nextLevelXp,
+          visibilityState,
+          preferenceVersion,
+          policyVersion,
+          sourceAvailability,
+          calculatedAt,
+          recentGrants,
+        ]
+      properties:
+        totalXp:
+          type: integer
+          minimum: 0
+        level:
+          type: integer
+          minimum: 0
+        nextLevelXp:
+          type: integer
+          minimum: 0
+          nullable: true
+        visibilityState:
+          $ref: "#/components/schemas/ResourceRewardVisibility"
+        preferenceVersion:
+          type: string
+          pattern: "^(0|[1-9][0-9]*)$"
+          maxLength: 19
+        policyVersion:
+          type: string
+          pattern: "^[a-z0-9][a-z0-9-]{2,63}$"
+        sourceAvailability:
+          type: string
+          enum: [AVAILABLE]
+        calculatedAt:
+          type: string
+          format: date-time
+        recentGrants:
+          type: array
+          maxItems: 10
+          items:
+            $ref: "#/components/schemas/ResourceRewardGrant"
 
     ResourceKind:
       type: string

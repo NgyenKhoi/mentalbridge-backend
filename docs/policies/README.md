@@ -22,6 +22,7 @@ Read [Current Product Blueprint](../CURRENT_PRODUCT_BLUEPRINT.md) first for the 
 | [Care consent and assessment retention](care-consent-and-retention-policy.md) | `1.1-capstone` | Product Owner approved for controlled Capstone use; production security/legal review required | `privacy-capstone-v3` gates PHQ-9/GAD-7; `ai-processing-capstone-v2` gates explicit journal analysis and optional saved-ConsultationBrief suggestions; specialist sharing remains separately scoped |
 | [Daily emotion check-in policy v1](daily-emotion-check-in-policy-v1.md) | `MB-DAILY-EMOTION-CHECK-IN-001` | Historical base policy; extended by `MB-EMOTION-CONTEXT-001` | Governs non-clinical daily values, local-day edits, encrypted note, deletion, and consented note-free AI projection |
 | [Daily emotion check-in policy v2](daily-emotion-check-in-policy-v2.md) | `MB-EMOTION-CONTEXT-001` | Implemented for MB-658 controlled development/demo use | Adds bounded optional encrypted factors, explicit owner-save consent copy, clearing, and strict downstream minimization |
+| [Resource reward policy v1](resource-reward-policy-v1.md) | `resource-reward-v1` / `MB-RESOURCE-REWARD-001` | Implemented for controlled development/demo use | Defines deterministic bounded participation XP, source provenance, levels, optional visibility, and strict non-clinical language |
 
 ## Current cross-feature amendments
 

@@ -1892,7 +1892,7 @@ CREATE TABLE community.community_access_restriction (
 
 /* ========================================================================== */
 /* ACTIVE — content-notification-service / mentalbridge_content_notification  */
-/* Evidence: node-pg-migrate-compatible SQL migrations 1-19.                  */
+/* Evidence: node-pg-migrate-compatible SQL migrations 1-20.                  */
 /* ========================================================================== */
 
 CREATE TABLE content.resource (
@@ -2000,7 +2000,15 @@ CREATE TABLE content.resource_practice_session (
     support_plan_id uuid, -- external -> care.support_plan.id
     local_date date NOT NULL,
     completed_at timestamptz NOT NULL,
-    UNIQUE (owner_id, resource_id, local_date)
+    started_at timestamptz,
+    duration_seconds integer
+);
+
+CREATE TABLE content.resource_reward_preference (
+    owner_id uuid PRIMARY KEY, -- external -> identity.account.id
+    visibility_state varchar(16) NOT NULL,
+    version bigint NOT NULL,
+    updated_at timestamptz NOT NULL
 );
 
 CREATE TABLE content.resource_daily_assignment (

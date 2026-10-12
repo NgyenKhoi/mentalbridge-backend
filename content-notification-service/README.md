@@ -202,6 +202,11 @@ Migration `19_complete_resource_editorial_lifecycle.sql` adds immutable exact-ve
 review decisions and publication snapshots plus append-only withdrawals. Existing
 published and archived rows are backfilled without changing their content version.
 
+Migration `20_add_resource_reward_visibility.sql` stores only the owner's optional
+`VISIBLE` or `HIDDEN` reward presentation choice. MB-659 XP remains a deterministic,
+bounded read model over exact reviewed completion and verified practice evidence;
+source outages return 503 and are never represented as an authoritative zero.
+
 The controlled Review 1 seed, MB-337 eligibility matrix, and visibly synthetic non-dialable safety-directory fixture are owner-module migrations with a separate ledger (`pgmigrations_review1`), so running normal schema migrations cannot accidentally mark controlled data as applied. The seeds reject drift from their reviewed decisions. Machine-readable resource inventory, reviewer rationale, explicit ineligible decisions, and Care requests are kept in `../contracts/fixtures/content/resource-eligibility-v1-controlled-demo.json`. No real safety contact is published by the controlled fixture. For the shared dev/staging database only, run:
 
 ```bash

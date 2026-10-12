@@ -11,6 +11,8 @@ import {
   RESOURCE_PROGRESS_SERVICE_TOKEN,
   RESOURCE_JOURNEY_REPOSITORY_TOKEN,
   RESOURCE_JOURNEY_SERVICE_TOKEN,
+  RESOURCE_REWARD_REPOSITORY_TOKEN,
+  RESOURCE_REWARD_SERVICE_TOKEN,
   E2E_OUTAGE_STATE_TOKEN,
   RESOURCE_ELIGIBILITY_REPOSITORY_TOKEN,
   RESOURCE_ELIGIBILITY_SERVICE_TOKEN,
@@ -48,6 +50,9 @@ import { ResourceProgressService } from './resources/resource-progress.service.j
 import { ResourceJourneyController } from './resources/resource-journey.controller.js';
 import { ResourceJourneyRepository } from './resources/resource-journey.repository.js';
 import { ResourceJourneyService } from './resources/resource-journey.service.js';
+import { ResourceRewardController } from './resources/resource-reward.controller.js';
+import { ResourceRewardRepository } from './resources/resource-reward.repository.js';
+import { ResourceRewardService } from './resources/resource-reward.service.js';
 import { E2eOutageController } from './e2e/e2e-outage.controller.js';
 import { AuthModule } from './auth/auth.module.js';
 import { JwtStrategy } from './auth/jwt.strategy.js';
@@ -108,6 +113,7 @@ export interface ApplicationDependencies {
   readonly resourceRepository?: ResourceRepository;
   readonly resourceProgressRepository?: ResourceProgressRepository;
   readonly resourceJourneyRepository?: ResourceJourneyRepository;
+  readonly resourceRewardRepository?: ResourceRewardRepository;
   readonly outageState?: { enabled: boolean };
   readonly resourceEligibilityRepository?: ResourceEligibilityRepository;
   readonly safetyDirectoryRepository?: SafetyDirectoryRepository;
@@ -154,6 +160,9 @@ export const createAppModule = (
         useValue: dependencies.resourceJourneyRepository,
       }
     : { provide: RESOURCE_JOURNEY_REPOSITORY_TOKEN, useClass: ResourceJourneyRepository };
+  const resourceRewardRepositoryProvider: Provider = dependencies.resourceRewardRepository
+    ? { provide: RESOURCE_REWARD_REPOSITORY_TOKEN, useValue: dependencies.resourceRewardRepository }
+    : { provide: RESOURCE_REWARD_REPOSITORY_TOKEN, useClass: ResourceRewardRepository };
   const eligibilityRepositoryProvider: Provider = dependencies.resourceEligibilityRepository
     ? {
         provide: RESOURCE_ELIGIBILITY_REPOSITORY_TOKEN,
@@ -191,6 +200,7 @@ export const createAppModule = (
       ResourceController,
       ResourceProgressController,
       ResourceJourneyController,
+      ResourceRewardController,
       ResourceEligibilityController,
       E2eOutageController,
       SafetyDirectoryController,
@@ -214,6 +224,8 @@ export const createAppModule = (
       { provide: RESOURCE_PROGRESS_SERVICE_TOKEN, useClass: ResourceProgressService },
       resourceJourneyRepositoryProvider,
       { provide: RESOURCE_JOURNEY_SERVICE_TOKEN, useClass: ResourceJourneyService },
+      resourceRewardRepositoryProvider,
+      { provide: RESOURCE_REWARD_SERVICE_TOKEN, useClass: ResourceRewardService },
       eligibilityRepositoryProvider,
       { provide: RESOURCE_ELIGIBILITY_SERVICE_TOKEN, useClass: ResourceEligibilityService },
       safetyDirectoryRepositoryProvider,
