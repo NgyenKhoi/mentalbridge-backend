@@ -36,7 +36,7 @@ public class SecurityConfiguration {
 				.authorizeHttpRequests(authorize -> authorize
 						.requestMatchers("/actuator/health", "/actuator/health/**", "/v3/api-docs/**", "/swagger-ui/**")
 						.permitAll()
-						.requestMatchers("/internal/v1/payouts/momo/ipn").permitAll()
+						.requestMatchers("/internal/v1/payouts/momo/ipn", "/internal/v1/payments/momo/ipn").permitAll()
 						.requestMatchers("/internal/v1/appointments/*/notification-eligibility").permitAll()
 						.requestMatchers("/internal/v1/entitlements/current").hasRole("USER")
 						.requestMatchers("/internal/v1/appointments/*/consultation-brief-context",
@@ -45,7 +45,9 @@ public class SecurityConfiguration {
 								"/internal/v1/appointments/*/reusable-session-summaries/*")
 						.hasAnyRole("USER", "SPECIALIST")
 						.requestMatchers("/internal/v1/specialist/client-relationships").hasRole("SPECIALIST")
-						.requestMatchers("/api/v1/service-credits").hasRole("USER")
+						.requestMatchers("/api/v1/service-credits", "/api/v1/service-plans",
+								"/api/v1/subscriptions/**", "/api/v1/payments/**", "/api/v1/payments")
+						.hasRole("USER")
 						.requestMatchers("/api/v1/specialist/dashboard", "/api/v1/specialist/analytics",
 								"/api/v1/specialist/appointments/**", "/api/v1/specialist/earnings",
 								"/api/v1/specialist/payout-destination", "/api/v1/specialist/payouts")
@@ -58,7 +60,7 @@ public class SecurityConfiguration {
 						.requestMatchers("/api/v1/admin/specialist-profiles/**").hasRole("ADMIN")
 						.requestMatchers("/api/v1/admin/appointments/**").hasRole("ADMIN")
 						.requestMatchers("/api/v1/admin/appointment-disputes/**").hasRole("ADMIN")
-						.requestMatchers("/api/v1/admin/payouts").hasRole("ADMIN")
+						.requestMatchers("/api/v1/admin/payouts", "/api/v1/admin/payments").hasRole("ADMIN")
 						.anyRequest().authenticated())
 				.exceptionHandling(errors -> errors.authenticationEntryPoint(securityProblems)
 						.accessDeniedHandler(securityProblems))

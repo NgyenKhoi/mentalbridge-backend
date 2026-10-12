@@ -4,6 +4,7 @@ import type { ServiceConfiguration } from "../configuration/configuration.js";
 import type {
   AiProviderId,
   AnalysisRoute,
+  ConsultationBriefDraftRoute,
   LongitudinalAnalysisRoute,
 } from "../model-routing/model-routing.js";
 import {
@@ -22,6 +23,12 @@ import {
   supportGuidePhrasingPrompt,
   type SupportGuidePhrasingPrompt,
 } from "../prompts/support-guide-phrasing.js";
+import {
+  consultationBriefDraftPrompt,
+  normalizedConsultationBriefDraftSchema,
+  type ConsultationBriefDraftPrompt,
+  type ConsultationBriefDraftSource,
+} from "../prompts/consultation-brief-draft.js";
 import {
   bedrockConverseRequest,
   bedrockConverseUrl,
@@ -56,6 +63,13 @@ export interface SupportGuidePhrasingProvider {
   phrase(approvedText: string): Promise<ProviderAnalysis>;
 }
 
+export interface ConsultationBriefDraftProvider {
+  draft(
+    source: ConsultationBriefDraftSource,
+    route: ConsultationBriefDraftRoute,
+  ): Promise<ProviderAnalysis>;
+}
+
 export interface ProviderFailureDiagnostics {
   readonly attemptCount?: number;
   readonly httpStatus?: number;
@@ -82,9 +96,15 @@ interface LlmProvider {
   readonly id: Exclude<AiProviderId, "DETERMINISTIC_FAKE">;
   generate(
     prompt:
-      ExactRevisionPrompt | LongitudinalPrompt | SupportGuidePhrasingPrompt,
+      | ExactRevisionPrompt
+      | LongitudinalPrompt
+      | SupportGuidePhrasingPrompt
+      | ConsultationBriefDraftPrompt,
     route:
-      AnalysisRoute | LongitudinalAnalysisRoute | SupportGuideProviderRoute,
+      | AnalysisRoute
+      | LongitudinalAnalysisRoute
+      | SupportGuideProviderRoute
+      | ConsultationBriefDraftRoute,
   ): Promise<ProviderAnalysis>;
 }
 
@@ -273,13 +293,16 @@ const structuredOutputName = (
   workload:
     | AnalysisRoute["workload"]
     | LongitudinalAnalysisRoute["workload"]
-    | SupportGuideProviderRoute["workload"],
+    | SupportGuideProviderRoute["workload"]
+    | ConsultationBriefDraftRoute["workload"],
 ): string =>
   workload === "LONGITUDINAL"
     ? "mentalbridge_longitudinal"
-    : workload === "SUPPORT_GUIDE_PHRASING"
-      ? "mentalbridge_support_guide_phrasing"
-      : "mentalbridge_exact_revision";
+    : workload === "CONSULTATION_BRIEF_DRAFT"
+      ? "mentalbridge_consultation_brief_draft"
+      : workload === "SUPPORT_GUIDE_PHRASING"
+        ? "mentalbridge_support_guide_phrasing"
+        : "mentalbridge_exact_revision";
 
 abstract class HttpLlmProvider {
   constructor(protected readonly configuration: ServiceConfiguration) {}
@@ -358,9 +381,15 @@ export class GeminiProvider extends HttpLlmProvider implements LlmProvider {
 
   async generate(
     prompt:
-      ExactRevisionPrompt | LongitudinalPrompt | SupportGuidePhrasingPrompt,
+      | ExactRevisionPrompt
+      | LongitudinalPrompt
+      | SupportGuidePhrasingPrompt
+      | ConsultationBriefDraftPrompt,
     route:
-      AnalysisRoute | LongitudinalAnalysisRoute | SupportGuideProviderRoute,
+      | AnalysisRoute
+      | LongitudinalAnalysisRoute
+      | SupportGuideProviderRoute
+      | ConsultationBriefDraftRoute,
   ) {
     if (!this.configuration.GEMINI_API_KEY)
       throw new ProviderFailure("PERMANENT", "UNAVAILABLE");
@@ -434,9 +463,15 @@ export class OpenAiProvider extends HttpLlmProvider implements LlmProvider {
 
   async generate(
     prompt:
-      ExactRevisionPrompt | LongitudinalPrompt | SupportGuidePhrasingPrompt,
+      | ExactRevisionPrompt
+      | LongitudinalPrompt
+      | SupportGuidePhrasingPrompt
+      | ConsultationBriefDraftPrompt,
     route:
-      AnalysisRoute | LongitudinalAnalysisRoute | SupportGuideProviderRoute,
+      | AnalysisRoute
+      | LongitudinalAnalysisRoute
+      | SupportGuideProviderRoute
+      | ConsultationBriefDraftRoute,
   ) {
     if (!this.configuration.OPENAI_API_KEY)
       throw new ProviderFailure("PERMANENT", "UNAVAILABLE");
@@ -456,9 +491,11 @@ export class OpenAiProvider extends HttpLlmProvider implements LlmProvider {
             name:
               route.workload === "LONGITUDINAL"
                 ? "mentalbridge_longitudinal"
-                : route.workload === "SUPPORT_GUIDE_PHRASING"
-                  ? "mentalbridge_support_guide_phrasing"
-                  : "mentalbridge_exact_revision",
+                : route.workload === "CONSULTATION_BRIEF_DRAFT"
+                  ? "mentalbridge_consultation_brief_draft"
+                  : route.workload === "SUPPORT_GUIDE_PHRASING"
+                    ? "mentalbridge_support_guide_phrasing"
+                    : "mentalbridge_exact_revision",
             strict: true,
             schema: prompt.schema,
           },
@@ -510,9 +547,15 @@ export class BedrockProvider extends HttpLlmProvider implements LlmProvider {
 
   async generate(
     prompt:
-      ExactRevisionPrompt | LongitudinalPrompt | SupportGuidePhrasingPrompt,
+      | ExactRevisionPrompt
+      | LongitudinalPrompt
+      | SupportGuidePhrasingPrompt
+      | ConsultationBriefDraftPrompt,
     route:
-      AnalysisRoute | LongitudinalAnalysisRoute | SupportGuideProviderRoute,
+      | AnalysisRoute
+      | LongitudinalAnalysisRoute
+      | SupportGuideProviderRoute
+      | ConsultationBriefDraftRoute,
   ) {
     if (!this.configuration.BEDROCK_API_KEY)
       throw new ProviderFailure("PERMANENT", "UNAVAILABLE");
@@ -711,6 +754,55 @@ export class RoutedSupportGuidePhrasingProvider implements SupportGuidePhrasingP
       },
     );
     const parsed = normalizedSupportGuidePhrasingSchema.safeParse(
+      analysis.output,
+    );
+    if (!parsed.success)
+      throw new ProviderFailure("PERMANENT", "INVALID_RESULT", {
+        schemaIssues: schemaIssues(parsed.error),
+      });
+    return { ...analysis, output: parsed.data };
+  }
+}
+
+export class RoutedConsultationBriefDraftProvider implements ConsultationBriefDraftProvider {
+  private readonly providers: ReadonlyMap<AiProviderId, LlmProvider>;
+
+  constructor(configuration: ServiceConfiguration) {
+    const providers: LlmProvider[] = [
+      new GeminiProvider(configuration),
+      new OpenAiProvider(configuration),
+      new BedrockProvider(configuration),
+    ];
+    this.providers = new Map(
+      providers.map((provider) => [provider.id, provider]),
+    );
+  }
+
+  async draft(
+    source: ConsultationBriefDraftSource,
+    route: ConsultationBriefDraftRoute,
+  ): Promise<ProviderAnalysis> {
+    if (route.provider === "DETERMINISTIC_FAKE") {
+      return {
+        output: {
+          currentSituation: source.currentSituation,
+          userGoals: [...source.userGoals],
+        },
+        latencyMs: 0,
+        usage: {
+          inputTokens: null,
+          outputTokens: null,
+          estimatedCostMicroUsd: null,
+        },
+      };
+    }
+    const provider = this.providers.get(route.provider);
+    if (!provider) throw new ProviderFailure("PERMANENT", "UNAVAILABLE");
+    const analysis = await provider.generate(
+      consultationBriefDraftPrompt(source),
+      route,
+    );
+    const parsed = normalizedConsultationBriefDraftSchema.safeParse(
       analysis.output,
     );
     if (!parsed.success)

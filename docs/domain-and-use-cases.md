@@ -2,7 +2,7 @@
 
 > Current product authority/navigation: [Current Product Blueprint](CURRENT_PRODUCT_BLUEPRINT.md).
 > The integrated description below must follow the latest accepted scope ADR
-> chain, currently ADR 0017 plus ADR 0022.
+> chain, currently ADR 0017 plus ADR 0022 and ADR 0034 for SupportPlan v3.
 
 ## 1. Product boundary
 
@@ -37,7 +37,11 @@ System actors include configured AI providers, the notification provider, object
 - **Support tier**: approved platform support pathway derived from eligible inputs; it is not a suicide-risk label.
 - **Support evaluation**: an immutable, versioned Care decision that retains instrument-specific evidence, contributing domains, independent safety evidence, pathway and reason codes.
 - **Support Guide**: a persisted immutable one-time Care-approved post-screening guidance snapshot available to every package. “One-time” means one result for one screening context; it is not ephemeral and has no plan lifecycle, schedule, or activity tracking.
-- **SupportPlan**: durable Care-owned support data for `PLUS`/`PREMIUM`, with one official current plan, explicit lifecycle and activity tracking; it is not a treatment plan.
+- **SupportPlan**: durable Care-owned support data for `PLUS`/`PREMIUM`, with one official current plan, explicit lifecycle, typed actions, and occurrence history; it is not a treatment plan.
+- **PlanFocus**: a versioned, plain-language area the user chooses to work on and why it matters; it is not a diagnosis, score, or clinical outcome.
+- **PlanAction**: a typed intention within one PlanFocus, with bounded presentation/provenance and an optional owner-domain source reference; it is not a Resource subtype.
+- **ActionSchedule**: an optional timezone-aware future-opportunity or reminder rule for one PlanAction; schedule changes do not rewrite prior occurrences.
+- **ActionOccurrence**: one dated action instance with open/cancelled state or immutable completion/skip evidence; past-due open items are displayed as overdue rather than silently failed.
 - **PlanChangeRequest**: a pending specialist resource proposal governed by Care revalidation and explicit user confirmation; it is not a second SupportPlan.
 - **Journal entry**: user-authored private text. It is not a clinical record.
 - **Analysis**: structured AI output tied to exact journal source revision(s), bounded period where applicable, prompt version, provider, and model.
@@ -161,6 +165,32 @@ the governed atomic `SUPERSEDE`/`ACTIVATE` flow and explicit user confirmation.
 AI may surface contextual signals, recurring themes, preferences, barriers, and
 helpful patterns for a SupportPlan review. Care remains responsible for finding
 allowed alternatives, and the user reviews and confirms any change.
+
+### SupportPlan actions and source authority
+
+The canonical aggregate is `SupportPlan -> PlanFocus -> PlanAction ->
+ActionSchedule -> ActionOccurrence`. Allowed action types are `RESOURCE`,
+`JOURNAL`, `EMOTION_CHECK_IN`, `ROUTINE_SELF_MANAGEMENT`,
+`PROFESSIONAL_SUPPORT`, `REASSESSMENT_SCREENING`, and `SELF_REPORT_REVIEW`.
+Care owns plan orchestration; Content, Journal/AI, Consultation, and Care
+screening retain their source facts and authorization.
+
+Care accepts only known action-type/source-owner pairs and bounded well-formed
+references. External completion must be an owner-authorized minimized fact for
+the same user and compatible action. A browser ID, route visit, reminder
+dismissal, draft content, or AI inference is not authoritative evidence.
+`RESOURCE` retains its exact ResourceVersion and publication eligibility.
+
+Occurrence generation is capability-based for every schedulable action rather
+than Resource-specific. Editing future schedule behavior does not rewrite prior
+occurrences. Skipping records only that occurrence choice and never changes an
+appointment, entry, check-in, assessment, or the overall plan outcome.
+
+Care never copies raw Journal text, emotion values/notes, assessment answers or
+raw scores, consultation notes/messages, or another owner's payload into a
+plan. Existing v2 resource plans remain supported and are exposed to v3 only
+through a read projection marked `V2_RESOURCE_ADAPTER`; no v2 history is
+backfilled or silently dual-written.
 
 ### Consent and access
 
@@ -292,16 +322,21 @@ and produces a persisted immutable Support Guide for every package. The Guide
 remains owner history but has no lifecycle, schedules, activity occurrences, or
 engagement tracking. For an entitled `PLUS`/`PREMIUM` user, Care applies the
 current SupportPlan selection policy, composes the bounded proposal, and owns
-the single official SupportPlan. The user reviews allowed choices; Care
-revalidates evaluation, template, entitlement, and exact resource eligibility
-before activation or change. Specialist suggestions enter as Care-owned
+the single official SupportPlan. Native v3 composition groups typed actions
+under PlanFocus and attaches optional generic schedules; source domains retain
+their facts. The user reviews allowed choices; Care revalidates evaluation,
+entitlement, policy, source authority, and exact resource eligibility before
+activation or change. Specialist suggestions enter as Care-owned
 `PlanChangeRequest`, never a second plan. Content/Notification owns reviewed
-localized resources and eligibility metadata. Safety guidance and
-professional-support calls to action remain outside the plan and precede its
-controls. Once active, Care persists a deterministic bounded schedule and dated
-occurrences with local time and exact source versions. The user may mark an
-occurrence complete or skipped and explicitly pause, resume, complete, replace,
-or discard the applicable plan state.
+localized resources and eligibility metadata. Safety and professional-support
+guidance precede ordinary plan controls; an explicitly accepted professional
+path may become a `PROFESSIONAL_SUPPORT` action without moving appointment
+authority into Care. Once active, Care persists deterministic dated occurrences
+for each schedulable action with local time and exact source provenance. The
+user may complete only Care-owned/manual action types; linked external actions
+are fulfilled by authoritative owner facts. The user may skip an allowed
+occurrence and explicitly pause, resume, complete, replace, or discard the
+applicable plan state.
 
 **Exceptions and acceptance:** missing/stale support inputs yield stable
 fail-closed results and create no plan; AI cannot decide safety. MB-372 reloads
@@ -309,9 +344,13 @@ the same persisted current draft without recomputing remote facts; MB-373
 implements bounded choices and activation; MB-513 implements Care-owned
 schedules/occurrences; MB-374 owns ordinary lifecycle/history; MB-376 owns
 occurrence engagement. Retry/reload cannot duplicate a logical occurrence, and
-passing its scheduled time produces a display-only `MISSED` state rather than
-an adherence judgment. Review/publication alone never makes a resource
+passing its scheduled time produces only the compatible read projection
+(`MISSED` in v2, `OVERDUE` in v3) rather than an adherence judgment.
+Review/publication alone never makes a resource
 plan-eligible, while package entitlement never imposes a resource-count limit.
+Unknown action types, malformed source references, external-fact spoofing, and
+cross-owner injection fail closed. V2 rows and history remain unchanged; v3
+reads mark their virtual resource-action projection `V2_RESOURCE_ADAPTER`.
 Immediate guidance is returned before ordinary plan controls and without
 waiting for optional dependencies. Area-filtered facility results do not claim
 “nearest”; no safety email, automatic call, location sharing, third-party
@@ -347,7 +386,9 @@ health/journal access; sharing requires an approved pre-session brief and grant.
 
 MB-635 extends UC-04 with a private amendment to an approved specialist profile.
 The live approved fields stay public and eligible while the specialist saves,
-submits, corrects or resubmits a proposed change. ADMIN reviews amendments
+submits, corrects, resubmits or cancels a proposed change. Cancellation is
+terminal, keeps the private audit history and allows a new amendment from the
+current public snapshot. ADMIN reviews amendments
 separately from initial submissions; approval atomically promotes a new immutable
 approved content version, while rejection leaves the previous snapshot unchanged.
 Suspension still controls operations, and normal amendments never rewrite
@@ -399,6 +440,14 @@ context, and follow-up charts avoid diagnostic or causal claims.
 **Scope:** bounded dashboard; user/specialist administration; subscription/payment/payout monitoring; reviewed resource CRUD; review/chat moderation; appointment monitoring; dataset/evaluation; reporting; audit; and retention.
 
 **Main flow:** each data owner exposes an authorized admin command/query or publishes a minimized projection. Moderation snapshots only necessary evidence; reporting uses versioned projections instead of runtime distributed joins.
+
+MB-586 adds bounded Identity-owned recurring ACCOUNT_ACTIVITY schedules. The
+owner-confirmed delivery group/target is ADMIN / ADMIN_REPORT_HISTORY. Scheduled
+occurrences enter the same versioned report-job engine as manual requests, with
+atomic schedule advancement and unique occurrence identity. ADMIN can pause,
+resume, replace, and soft-delete schedules using current revisions. Existing
+report history, protected artifact downloads, failure evidence, and idempotent
+retry remain authoritative; no raw health content or external delivery is added.
 
 **Exceptions and acceptance:** admin role does not grant unrestricted raw journal/chat/assessment, payout-destination data, or provider payload access. Changes record stable reasons and append-only audit facts. Aggregates enforce cohort/privacy thresholds and projection freshness. Retention changes remain owner-enforced and do not rewrite historical audit evidence. A payout becomes successful only from a verified provider result/status query.
 
@@ -454,8 +503,9 @@ catalogue without turning either into permission for real-money production.
 
 These remain open for the affected production or optional feature. Under ADR 0010 they do not block a base questionnaire that has passed the controlled Capstone publication gate:
 
-SupportPlan template ownership, core/optional slots, 1-5 resource bounds,
-deterministic composition, safety-positive activation, `PRIMARY`/`ADJUNCT`
+SupportPlan template ownership, historical v2 core/optional slots and 1-5
+resource bounds, deterministic composition, v3 typed-action taxonomy and
+source/evidence authority, safety-positive activation, `PRIMARY`/`ADJUNCT`
 eligibility roles, per-user lifecycle invariants, persisted Support Guide
 semantics, four-dimension reassessment structure, and the `0/4/10` no-rollover
 credit/reservation-cap target are no longer open. They are governed by the

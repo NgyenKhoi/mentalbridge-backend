@@ -11,9 +11,13 @@ import java.time.ZoneOffset;
 import java.time.ZonedDateTime;
 import java.time.temporal.ChronoUnit;
 import java.util.ArrayList;
+import java.util.HashMap;
 import java.util.List;
+import java.util.Map;
+import java.util.Objects;
 import java.util.UUID;
 
+import org.springframework.dao.DataIntegrityViolationException;
 import org.springframework.http.HttpStatus;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
@@ -22,35 +26,46 @@ import com.fasterxml.jackson.core.JsonProcessingException;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import com.mentalbridge.care.profile.UserProfileRepository;
 import com.mentalbridge.care.shared.ApiException;
+import com.mentalbridge.care.supportplan.PlanActionSourcePolicy.EvidenceReference;
 
 @Service
 public class SupportPlanActivityOccurrenceService {
 
 	static final String SCHEDULE_POLICY_VERSION = "support-plan-activity-schedule-v1";
+	static final String SCHEDULE_POLICY_VERSION_V2 = "support-plan-activity-schedule-v2";
 	private static final int INITIAL_HORIZON_DAYS = 14;
 	private static final int MAX_QUERY_DAYS = 31;
-	private static final List<LocalTime> DEFAULT_TIMES = List.of(LocalTime.of(8, 0), LocalTime.of(10, 0),
-			LocalTime.of(14, 0), LocalTime.of(18, 0), LocalTime.of(20, 0));
 
 	private final SupportPlanRepository plans;
 	private final SupportPlanSlotRepository slots;
+	private final PlanActionRepository actions;
 	private final SupportPlanActivityScheduleRepository schedules;
 	private final SupportPlanActivityOccurrenceRepository occurrences;
 	private final UserProfileRepository profiles;
+	private final SupportPlanPersonalizationService personalizations;
 	private final Clock clock;
 	private final ObjectMapper objectMapper;
+	private final PlanActionSourcePolicy actionPolicy = new PlanActionSourcePolicy();
 
 	public SupportPlanActivityOccurrenceService(SupportPlanRepository plans, SupportPlanSlotRepository slots,
-			SupportPlanActivityScheduleRepository schedules,
-			SupportPlanActivityOccurrenceRepository occurrences, UserProfileRepository profiles, Clock clock,
-			ObjectMapper objectMapper) {
+			PlanActionRepository actions, SupportPlanActivityScheduleRepository schedules,
+			SupportPlanActivityOccurrenceRepository occurrences, UserProfileRepository profiles,
+			SupportPlanPersonalizationService personalizations, Clock clock, ObjectMapper objectMapper) {
 		this.plans = plans;
 		this.slots = slots;
+		this.actions = actions;
 		this.schedules = schedules;
 		this.occurrences = occurrences;
 		this.profiles = profiles;
+		this.personalizations = personalizations;
 		this.clock = clock;
 		this.objectMapper = objectMapper;
+	}
+
+	@Transactional
+	void activateUserDraft(SupportPlanEntity plan, Instant now) {
+		assertCurrentPersonalization(plan);
+		activate(plan, now);
 	}
 
 	@Transactional
@@ -62,19 +77,148 @@ public class SupportPlanActivityOccurrenceService {
 		var selectedSlots = slots.findBySupportPlanIdOrderByOrdinal(plan.id()).stream()
 				.filter(slot -> slot.selectedResource() != null).toList();
 		if (schedules.findBySupportPlanIdOrderByOrdinal(plan.id()).isEmpty()) {
-			for (SupportPlanSlotEntity slot : selectedSlots) {
-				var resource = slot.selectedResource();
-				boolean daily = List.of("BREATHING", "MEDITATION", "JOURNALING")
-						.contains(resource.category());
-				var schedule = new SupportPlanActivityScheduleEntity(UUID.randomUUID(), plan.id(), plan.userId(),
-						slot.ordinal(), plan.version(), slot, daily ? "DAILY" : "WEEKLY",
-						daily ? null : (short) start.getDayOfWeek().getValue(),
-						DEFAULT_TIMES.get(slot.ordinal() - 1), timezone, start, now);
-				schedules.save(schedule);
-			}
-			schedules.flush();
+			prepareDraft(plan, now);
 		}
+		Map<String, SupportPlanSlotEntity> slotByKey = new HashMap<>();
+		selectedSlots.forEach(slot -> slotByKey.put(slot.slotKey(), slot));
+		Map<UUID, PlanActionEntity> actionById = new HashMap<>();
+		actions.findBySupportPlanIdAndUserIdOrderByPlanFocusIdAscOrdinalAsc(plan.id(), plan.userId())
+				.forEach(action -> actionById.put(action.id(), action));
+		for (var schedule : schedules.findBySupportPlanIdForUpdate(plan.id())) {
+			if (!"DRAFT".equals(schedule.status())) continue;
+			if (schedule.sourceActionId() == null) {
+				var slot = slotByKey.get(schedule.sourceSlotKey());
+				if (slot == null) {
+					schedule.end(schedule.effectiveFrom(), now);
+				}
+				else {
+					schedule.activate(plan.version(), slot, now);
+				}
+			}
+			else {
+				var action = actionById.get(schedule.sourceActionId());
+				if (action == null || "ENDED".equals(action.status())) {
+					schedule.end(schedule.effectiveFrom(), now);
+				}
+				else {
+					schedule.activate(plan.version(), action, now);
+				}
+			}
+		}
+		schedules.flush();
 		generate(plan.id(), start, start.plusDays(INITIAL_HORIZON_DAYS - 1), now);
+	}
+
+	@Transactional
+	void prepareDraft(SupportPlanEntity plan, Instant now) {
+		if (!"DRAFT".equals(plan.status())) return;
+		String timezone = profiles.findTimezoneByAccountId(plan.userId()).orElseThrow(() -> new ApiException(
+				HttpStatus.NOT_FOUND, "PROFILE_NOT_FOUND", "Care profile was not found"));
+		LocalDate start = now.atZone(zone(timezone)).toLocalDate();
+		var personalization = personalization(plan);
+		String preferredRecurrenceType = personalization != null
+				&& personalization.desiredPace() == SupportPlanPersonalizationService.DesiredPace.ACTIVE
+						? "DAILY" : "WEEKLY";
+		String preferredDaypart = personalization == null || personalization.preferredDaypart() == null
+				? null : personalization.preferredDaypart().name();
+		int dailyBudget = personalization == null || personalization.dailyTimeBudgetMinutes() == null
+				? 10 : personalization.dailyTimeBudgetMinutes();
+		var selectedSlots = slots.findBySupportPlanIdOrderByOrdinal(plan.id()).stream()
+				.filter(slot -> slot.selectedResource() != null).toList();
+		int duration = defaultDuration(dailyBudget, selectedSlots.size());
+		boolean reducedCadence = selectedSlots.size() * 5 > dailyBudget;
+		int activitiesPerDay = Math.max(1, dailyBudget / duration);
+		LocalTime preferredTime = defaultTime(personalization);
+		for (int index = 0; index < selectedSlots.size(); index++) {
+			var slot = selectedSlots.get(index);
+			if (slot.selectedResource() == null || schedules.currentForSlot(plan.id(), slot.slotKey()).isPresent()) {
+				continue;
+			}
+			String recurrenceType = reducedCadence ? "WEEKLY" : preferredRecurrenceType;
+			Short daysMask = "DAILY".equals(recurrenceType) ? null
+					: defaultDaysMask(start, personalization, index, reducedCadence, activitiesPerDay);
+			int timePosition = reducedCadence ? index % activitiesPerDay : index;
+			LocalTime localTime = preferredTime.plusMinutes((long) timePosition * duration);
+			schedules.save(SupportPlanActivityScheduleEntity.draftForSlot(UUID.randomUUID(), plan, slot,
+					SCHEDULE_POLICY_VERSION_V2, recurrenceType, daysMask, preferredDaypart,
+					duration, localTime, timezone, start, now));
+		}
+		schedules.flush();
+	}
+
+	@Transactional
+	void syncDraft(SupportPlanEntity plan, Instant now) {
+		if (!"DRAFT".equals(plan.status())) return;
+		Map<String, SupportPlanSlotEntity> selected = new HashMap<>();
+		slots.findBySupportPlanIdOrderByOrdinal(plan.id()).stream()
+				.filter(slot -> slot.selectedResource() != null)
+				.forEach(slot -> selected.put(slot.slotKey(), slot));
+		for (var schedule : schedules.findBySupportPlanIdForUpdate(plan.id())) {
+			if (schedule.sourceActionId() != null || !"DRAFT".equals(schedule.status())) continue;
+			var slot = selected.remove(schedule.sourceSlotKey());
+			if (slot == null) {
+				schedule.end(schedule.effectiveFrom(), now);
+			}
+			else {
+				schedule.syncDraftSlot(plan.version(), slot, now);
+			}
+		}
+		schedules.flush();
+		prepareDraft(plan, now);
+	}
+
+	private void assertCurrentPersonalization(SupportPlanEntity plan) {
+		var current = personalizations.currentSnapshot(plan.userId()).orElse(null);
+		boolean changed = plan.personalizationId() == null
+				? current != null && current.provided()
+				: current == null || !Objects.equals(plan.personalizationId(), current.personalizationId())
+						|| !Objects.equals(plan.personalizationRevision(), current.revision());
+		if (changed) {
+			throw new ApiException(HttpStatus.CONFLICT, "SUPPORT_PLAN_PERSONALIZATION_REVIEW_REQUIRED",
+					"SupportPlan preferences changed after this draft was created; discard and regenerate the draft before activation");
+		}
+	}
+
+	private SupportPlanPersonalizationService.PersonalizationSnapshot personalization(SupportPlanEntity plan) {
+		return plan.personalizationId() == null ? null
+				: personalizations.snapshot(plan.personalizationId(), plan.userId(), plan.personalizationRevision())
+						.orElseThrow(() -> new ApiException(HttpStatus.CONFLICT,
+								"SUPPORT_PLAN_PERSONALIZATION_INVALID",
+								"SupportPlan personalization provenance is unavailable"));
+	}
+
+	private int defaultDuration(int dailyBudget, int activityCount) {
+		if (activityCount == 0) return 5;
+		return Math.max(5, dailyBudget / activityCount / 5 * 5);
+	}
+
+	private Short defaultDaysMask(LocalDate start,
+			SupportPlanPersonalizationService.PersonalizationSnapshot personalization,
+			int activityIndex, boolean reducedCadence, int activitiesPerDay) {
+		int dayOffset = reducedCadence ? activityIndex / activitiesPerDay : 0;
+		int first = start.plusDays(dayOffset).getDayOfWeek().getValue();
+		int mask = 1 << (first - 1);
+		if (!reducedCadence && personalization != null
+				&& personalization.desiredPace() == SupportPlanPersonalizationService.DesiredPace.BALANCED) {
+			int second = ((first + 2) % 7) + 1;
+			mask |= 1 << (second - 1);
+		}
+		return (short) mask;
+	}
+
+	private LocalTime defaultTime(
+			SupportPlanPersonalizationService.PersonalizationSnapshot personalization) {
+		if (personalization == null || personalization.preferredDaypart() == null
+				|| personalization.preferredDaypart() == SupportPlanPersonalizationService.PreferredDaypart.FLEXIBLE) {
+			return LocalTime.of(18, 0);
+		}
+		int hour = switch (personalization.preferredDaypart()) {
+			case MORNING -> 8;
+			case AFTERNOON -> 14;
+			case EVENING -> 19;
+			case FLEXIBLE -> throw new IllegalStateException("Flexible daypart uses compatibility defaults");
+		};
+		return LocalTime.of(hour, 0);
 	}
 
 	@Transactional
@@ -82,6 +226,10 @@ public class SupportPlanActivityOccurrenceService {
 		var plan = plans.findByUserIdAndStatusInForUpdate(userId, List.of("ACTIVE", "PAUSED")).orElseThrow(() ->
 				new ApiException(HttpStatus.NOT_FOUND, "SUPPORT_PLAN_CURRENT_NOT_FOUND",
 						"Current SupportPlan was not found"));
+		if (plan.modelVersion() != 2) {
+			throw new ApiException(HttpStatus.CONFLICT, "SUPPORT_PLAN_MODEL_VERSION_UNSUPPORTED",
+					"This endpoint supports resource-slot SupportPlans only");
+		}
 		validateWindow(userId, from, through);
 		Instant now = clock.instant().truncatedTo(ChronoUnit.MICROS);
 		if ("ACTIVE".equals(plan.status())) {
@@ -94,8 +242,153 @@ public class SupportPlanActivityOccurrenceService {
 				.findBySupportPlanIdAndUserIdAndLocalDateBetweenOrderByScheduledAtAscIdAsc(plan.id(), userId,
 						from, through)
 				.stream().map(value -> view(value, now)).toList();
-		return new OccurrenceListView(plan.id(), plan.status(), SCHEDULE_POLICY_VERSION, from, through,
+		return new OccurrenceListView(plan.id(), plan.status(), currentSchedulePolicy(plan.id()), from, through,
 				values, "SELF_REPORTED_WELLBEING_ACTIVITY_NOT_TREATMENT_ADHERENCE");
+	}
+
+	private String currentSchedulePolicy(UUID planId) {
+		return schedules.findBySupportPlanIdOrderByOrdinal(planId).stream()
+				.filter(value -> !"ENDED".equals(value.status()))
+				.map(value -> value.schedulePolicyVersion() == null
+						? SCHEDULE_POLICY_VERSION : value.schedulePolicyVersion())
+				.findFirst().orElse(SCHEDULE_POLICY_VERSION);
+	}
+
+	@Transactional
+	V3Window loadV3Window(UUID userId, LocalDate from, LocalDate through) {
+		var plan = plans.findByUserIdAndStatusInForUpdate(userId, List.of("ACTIVE", "PAUSED")).orElseThrow(() ->
+				new ApiException(HttpStatus.NOT_FOUND, "SUPPORT_PLAN_CURRENT_NOT_FOUND",
+						"Current SupportPlan was not found"));
+		validateWindow(userId, from, through);
+		Instant now = clock.instant().truncatedTo(ChronoUnit.MICROS);
+		if ("ACTIVE".equals(plan.status())) {
+			if (plan.modelVersion() == 2 && schedules.findBySupportPlanIdOrderByOrdinal(plan.id()).isEmpty()) {
+				activate(plan, now);
+			}
+			generate(plan.id(), from, through, now);
+		}
+		var values = occurrences
+				.findBySupportPlanIdAndUserIdAndLocalDateBetweenOrderByScheduledAtAscIdAsc(plan.id(), userId,
+						from, through);
+		return new V3Window(plan, values);
+	}
+
+	/**
+	 * Trusted application boundary for an authoritative source-domain fact. The
+	 * caller must have authenticated the source event and resolved its subject and
+	 * source link; this method rechecks both against the locked Care action plus the
+	 * native action type, fact shape, and one-fact/one-occurrence rule.
+	 */
+	@Transactional
+	public ActionOccurrenceCompletion completeFromOwnerFact(UUID userId, UUID occurrenceId,
+			AuthoritativeOwnerFact authoritativeFact, UUID correlationId) {
+		var authorityLink = occurrences.findAuthorityLinkByIdAndUserId(occurrenceId, userId).orElseThrow(() ->
+				new ApiException(HttpStatus.NOT_FOUND, "OCCURRENCE_NOT_FOUND",
+						"SupportPlan occurrence was not found"));
+		var plan = plans.findByIdAndUserIdForUpdate(authorityLink.getSupportPlanId(), userId).orElseThrow(() ->
+				new ApiException(HttpStatus.NOT_FOUND, "SUPPORT_PLAN_NOT_FOUND", "SupportPlan was not found"));
+		if (plan.modelVersion() != 3 || authorityLink.getSourceActionId() == null) {
+			throw new ApiException(HttpStatus.CONFLICT, "SUPPORT_PLAN_MODEL_VERSION_UNSUPPORTED",
+					"Authoritative completion facts apply to native action SupportPlans only");
+		}
+		var action = actions.findByIdAndUserIdForUpdate(authorityLink.getSourceActionId(), userId).orElseThrow(() ->
+				new ApiException(HttpStatus.NOT_FOUND, "PLAN_ACTION_NOT_FOUND", "PlanAction was not found"));
+		var occurrence = occurrences.findByIdAndUserIdForUpdate(occurrenceId, userId).orElseThrow(() ->
+				new ApiException(HttpStatus.NOT_FOUND, "OCCURRENCE_NOT_FOUND",
+						"SupportPlan occurrence was not found"));
+		if (occurrence.sourceActionVersion() == null || occurrence.sourceActionType() == null) {
+			throw new ApiException(HttpStatus.CONFLICT, "SUPPORT_PLAN_MODEL_VERSION_UNSUPPORTED",
+					"Authoritative completion facts apply to native action SupportPlans only");
+		}
+		if (authoritativeFact == null || authoritativeFact.fact() == null) {
+			throw invalidCompletionEvidence("Completion evidence is required");
+		}
+		validateFactAuthority(action, authoritativeFact);
+		var fact = authoritativeFact.fact();
+		var evidence = new EvidenceReference(fact.ownerDomain(), fact.kind(), fact.factId(),
+				fact.factRevision(), fact.occurredAt(), fact.verifiedAt());
+		try {
+			actionPolicy.validateCompletionEvidence(occurrence.sourceActionType(), evidence);
+		}
+		catch (IllegalArgumentException exception) {
+			throw invalidCompletionEvidence(exception.getMessage());
+		}
+		Instant now = clock.instant().truncatedTo(ChronoUnit.MICROS);
+		if (occurrence.evidenceEquals(evidence)) {
+			return completion(occurrence);
+		}
+		if (!"SCHEDULED".equals(occurrence.state())) {
+			throw new ApiException(HttpStatus.CONFLICT, "OCCURRENCE_NOT_OPEN",
+					"Only a scheduled native action occurrence accepts completion evidence");
+		}
+		var existingOccurrenceId = occurrences.findOccurrenceIdByEvidence(fact.ownerDomain(), fact.kind(),
+				fact.factId(), fact.factRevision());
+		if (existingOccurrenceId.isPresent() && !existingOccurrenceId.get().equals(occurrenceId)) {
+			throw evidenceAlreadyUsed();
+		}
+		occurrence.completeWithEvidence(evidence, now);
+		try {
+			occurrence = occurrences.saveAndFlush(occurrence);
+		}
+		catch (DataIntegrityViolationException exception) {
+			if (exception.getMostSpecificCause().getMessage() != null
+					&& exception.getMostSpecificCause().getMessage()
+							.contains("ux_support_plan_activity_occurrence_evidence_fact")) {
+				throw evidenceAlreadyUsed();
+			}
+			throw exception;
+		}
+		appendActionOccurrenceEvent(occurrence, correlationId, now);
+		return completion(occurrence);
+	}
+
+	/**
+	 * Authoritative lifecycle boundary for ending one native PlanAction. Ending the
+	 * action, its schedules, and its future open occurrences is one transaction so
+	 * callers cannot leave a partially ended action behind.
+	 */
+	@Transactional
+	public ActionEndResult endAction(UUID userId, UUID actionId) {
+		var planId = actions.findSupportPlanIdByIdAndUserId(actionId, userId).orElseThrow(() ->
+				new ApiException(HttpStatus.NOT_FOUND, "PLAN_ACTION_NOT_FOUND", "PlanAction was not found"));
+		var plan = plans.findByIdAndUserIdForUpdate(planId, userId).orElseThrow(() ->
+				new ApiException(HttpStatus.NOT_FOUND, "SUPPORT_PLAN_NOT_FOUND", "SupportPlan was not found"));
+		var action = actions.findByIdAndUserIdForUpdate(actionId, userId).orElseThrow(() ->
+				new ApiException(HttpStatus.NOT_FOUND, "PLAN_ACTION_NOT_FOUND", "PlanAction was not found"));
+		if ("DRAFT".equals(action.status())) {
+			throw new ApiException(HttpStatus.CONFLICT, "PLAN_ACTION_NOT_ACTIVE",
+					"A draft PlanAction cannot be ended");
+		}
+		if (!List.of("ACTIVE", "PAUSED").contains(plan.status())) {
+			throw new ApiException(HttpStatus.CONFLICT, "SUPPORT_PLAN_NOT_MUTABLE",
+					"A terminal SupportPlan does not accept action lifecycle changes");
+		}
+		if (!List.of("ACTIVE", "ENDED").contains(action.status())) {
+			throw new ApiException(HttpStatus.CONFLICT, "PLAN_ACTION_STATE_INVALID",
+					"PlanAction state does not support ending");
+		}
+
+		Instant now = clock.instant().truncatedTo(ChronoUnit.MICROS);
+		boolean actionChanged = false;
+		if ("ACTIVE".equals(action.status())) {
+			action.end(now);
+			actionChanged = true;
+		}
+		int endedSchedules = 0;
+		for (var schedule : schedules.findBySourceActionIdAndUserIdForUpdate(actionId, userId)) {
+			if (!"ENDED".equals(schedule.status())) {
+				LocalDate last = now.atZone(zone(schedule.timezone())).toLocalDate().minusDays(1);
+				schedule.end(last, now);
+				endedSchedules++;
+			}
+		}
+		if (actionChanged || endedSchedules > 0) {
+			plan.actionChanged(now);
+			plans.saveAndFlush(plan);
+		}
+		int cancelledOccurrences = occurrences.cancelFutureForEndedAction(actionId, userId, now);
+		return new ActionEndResult(action.id(), action.version(), action.status(), action.endedAt(),
+				endedSchedules, cancelledOccurrences);
 	}
 
 	@Transactional(readOnly = true)
@@ -180,9 +473,7 @@ public class SupportPlanActivityOccurrenceService {
 			schedule.resume(now);
 		}
 		occurrences.restoreFuturePaused(plan.id(), now);
-		ZoneId zone = zone(values.get(0).timezone());
-		LocalDate start = now.atZone(zone).toLocalDate();
-		generate(plan.id(), start, start.plusDays(INITIAL_HORIZON_DAYS - 1), now);
+		generateRollingHorizon(plan.id(), now);
 	}
 
 	@Transactional
@@ -193,6 +484,29 @@ public class SupportPlanActivityOccurrenceService {
 			schedule.end(last, now);
 		}
 		occurrences.cancelFutureForTerminal(planId, reason, now);
+	}
+
+	@Transactional
+	void discardDraft(UUID planId, Instant now) {
+		for (var schedule : schedules.findBySupportPlanIdForUpdate(planId)) {
+			if ("DRAFT".equals(schedule.status())) {
+				schedule.end(schedule.effectiveFrom(), now);
+			}
+		}
+	}
+
+	@Transactional
+	void scheduleChanged(UUID scheduleId, Instant cutover, Instant now) {
+		occurrences.cancelFutureForScheduleChange(scheduleId, cutover, now);
+	}
+
+	@Transactional
+	void generateRollingHorizon(UUID planId, Instant now) {
+		for (var schedule : schedules.findBySupportPlanIdForUpdate(planId)) {
+			LocalDate start = now.atZone(zone(schedule.timezone())).toLocalDate();
+			if (!generatesOccurrences(schedule, start)) continue;
+			generateOne(schedule, start, start.plusDays(INITIAL_HORIZON_DAYS - 1), now);
+		}
 	}
 
 	private void validateWindow(UUID userId, LocalDate from, LocalDate through) {
@@ -212,29 +526,66 @@ public class SupportPlanActivityOccurrenceService {
 
 	private void generate(UUID planId, LocalDate from, LocalDate through, Instant now) {
 		for (var schedule : schedules.findBySupportPlanIdForUpdate(planId)) {
-			if (!"ACTIVE".equals(schedule.status())) {
+			if (!generatesOccurrences(schedule, from)) {
 				continue;
 			}
-			LocalDate start = from.isBefore(schedule.effectiveFrom()) ? schedule.effectiveFrom() : from;
-			LocalDate end = schedule.effectiveUntil() == null || through.isBefore(schedule.effectiveUntil())
-					? through : schedule.effectiveUntil();
-			for (LocalDate date = start; !date.isAfter(end); date = date.plusDays(1)) {
-				if (!occurs(schedule, date)) {
-					continue;
-				}
-				String key = schedule.id() + ":" + schedule.scheduleVersion() + ":" + date;
-				occurrences.insertIfAbsent(UUID.nameUUIDFromBytes(key.getBytes(StandardCharsets.UTF_8)),
-						schedule.id(), schedule.supportPlanId(), schedule.userId(), schedule.scheduleVersion(), date,
-						schedule.localTime(), schedule.timezone(), resolve(date, schedule.localTime(), schedule.timezone()),
-						schedule.sourcePlanVersion(), schedule.sourceSlotKey(), schedule.sourceResourceId(),
-						schedule.sourceContentVersion(), schedule.sourceTitle(), now);
+			generateOne(schedule, from, through, now);
+		}
+	}
+
+	private boolean generatesOccurrences(SupportPlanActivityScheduleEntity schedule, LocalDate from) {
+		LocalDate generationEnd = generationEnd(schedule);
+		return "ACTIVE".equals(schedule.status())
+				|| "ENDED".equals(schedule.status()) && schedule.activatedAt() != null
+						&& generationEnd != null && !generationEnd.isBefore(from);
+	}
+
+	private void generateOne(SupportPlanActivityScheduleEntity schedule,
+			LocalDate from, LocalDate through, Instant now) {
+		LocalDate start = from.isBefore(schedule.effectiveFrom()) ? schedule.effectiveFrom() : from;
+		LocalDate generationEnd = generationEnd(schedule);
+		LocalDate end = generationEnd == null || through.isBefore(generationEnd) ? through : generationEnd;
+		for (LocalDate date = start; !date.isAfter(end); date = date.plusDays(1)) {
+			if (!occurs(schedule, date)) continue;
+			String key = schedule.id() + ":" + schedule.scheduleVersion() + ":" + date;
+			UUID occurrenceId = UUID.nameUUIDFromBytes(key.getBytes(StandardCharsets.UTF_8));
+			Instant scheduledAt = resolve(date, schedule.localTime(), schedule.timezone());
+			if (schedule.sourceActionId() == null) {
+				occurrences.insertIfAbsent(occurrenceId, schedule.id(), schedule.supportPlanId(),
+						schedule.userId(), schedule.scheduleVersion(), date, schedule.localTime(),
+						schedule.timezone(), scheduledAt, schedule.sourcePlanVersion(), schedule.sourceSlotKey(),
+						schedule.sourceResourceId(), schedule.sourceContentVersion(), schedule.sourceTitle(), now);
+			}
+			else {
+				occurrences.insertNativeIfAbsent(occurrenceId, schedule.id(), schedule.supportPlanId(),
+						schedule.userId(), schedule.scheduleVersion(), date, schedule.localTime(),
+						schedule.timezone(), scheduledAt, schedule.sourcePlanVersion(), schedule.sourceActionId(),
+						schedule.sourceActionVersion(), schedule.sourceActionType(), schedule.sourceTitle(), now);
 			}
 		}
 	}
 
+	private LocalDate generationEnd(SupportPlanActivityScheduleEntity schedule) {
+		return "ENDED".equals(schedule.status()) && schedule.occurrenceGenerationUntil() != null
+				? schedule.occurrenceGenerationUntil() : schedule.effectiveUntil();
+	}
+
 	private boolean occurs(SupportPlanActivityScheduleEntity schedule, LocalDate date) {
-		return "DAILY".equals(schedule.recurrenceType())
-				|| date.getDayOfWeek().getValue() == schedule.recurrenceDayOfWeek();
+		if ("WEEKLY".equals(schedule.recurrenceType()) && schedule.recurrenceDaysMask() != null) {
+			int bit = 1 << (date.getDayOfWeek().getValue() - 1);
+			return (schedule.recurrenceDaysMask() & bit) != 0;
+		}
+		return occurs(schedule.recurrenceType(), schedule.recurrenceDayOfWeek(), schedule.effectiveFrom(), date);
+	}
+
+	boolean occurs(String recurrenceType, Short recurrenceDayOfWeek, LocalDate effectiveFrom, LocalDate date) {
+		return switch (recurrenceType) {
+			case "ONCE" -> date.equals(effectiveFrom);
+			case "DAILY" -> true;
+			case "WEEKLY" -> recurrenceDayOfWeek != null
+					&& date.getDayOfWeek().getValue() == recurrenceDayOfWeek;
+			default -> throw new IllegalStateException("Unsupported stored recurrence type");
+		};
 	}
 
 	Instant resolve(LocalDate date, LocalTime time, String timezone) {
@@ -261,8 +612,9 @@ public class SupportPlanActivityOccurrenceService {
 	}
 
 	private SupportPlanActivityOccurrenceEntity required(UUID userId, UUID occurrenceId) {
-		return occurrences.findByIdAndUserId(occurrenceId, userId).orElseThrow(() -> new ApiException(
+		var occurrence = occurrences.findByIdAndUserId(occurrenceId, userId).orElseThrow(() -> new ApiException(
 				HttpStatus.NOT_FOUND, "OCCURRENCE_NOT_FOUND", "SupportPlan occurrence was not found"));
+		return requireLegacyOccurrence(occurrence);
 	}
 
 	private SupportPlanActivityOccurrenceEntity requiredForEngagement(UUID userId, UUID occurrenceId) {
@@ -281,6 +633,15 @@ public class SupportPlanActivityOccurrenceService {
 		if ("CANCELLED".equals(occurrence.state())) {
 			throw new ApiException(HttpStatus.CONFLICT, "OCCURRENCE_NOT_OPEN",
 					"A cancelled occurrence does not accept engagement updates");
+		}
+		return requireLegacyOccurrence(occurrence);
+	}
+
+	private SupportPlanActivityOccurrenceEntity requireLegacyOccurrence(
+			SupportPlanActivityOccurrenceEntity occurrence) {
+		if (occurrence.sourceActionId() != null) {
+			throw new ApiException(HttpStatus.CONFLICT, "SUPPORT_PLAN_MODEL_VERSION_UNSUPPORTED",
+					"This endpoint supports resource-slot SupportPlan occurrences only");
 		}
 		return occurrence;
 	}
@@ -319,6 +680,32 @@ public class SupportPlanActivityOccurrenceService {
 		return new ApiException(HttpStatus.BAD_REQUEST, "OCCURRENCE_ENGAGEMENT_INVALID", message);
 	}
 
+	private ApiException invalidCompletionEvidence(String message) {
+		return new ApiException(HttpStatus.BAD_REQUEST, "COMPLETION_EVIDENCE_INVALID", message);
+	}
+
+	private void validateFactAuthority(PlanActionEntity action, AuthoritativeOwnerFact authoritativeFact) {
+		if (!action.userId().equals(authoritativeFact.subjectUserId())) {
+			throw invalidCompletionEvidence("Completion evidence subject does not own the PlanAction");
+		}
+		var linkedSource = authoritativeFact.linkedSource();
+		boolean matches = action.sourceId() == null
+				? linkedSource == null
+				: linkedSource != null
+						&& Objects.equals(action.sourceOwner(), linkedSource.ownerDomain())
+						&& Objects.equals(action.sourceKind(), linkedSource.kind())
+						&& Objects.equals(action.sourceId(), linkedSource.sourceId())
+						&& Objects.equals(action.sourceRevision(), linkedSource.sourceRevision());
+		if (!matches) {
+			throw invalidCompletionEvidence("Completion evidence is not linked to the PlanAction source");
+		}
+	}
+
+	private ApiException evidenceAlreadyUsed() {
+		return new ApiException(HttpStatus.CONFLICT, "COMPLETION_EVIDENCE_ALREADY_USED",
+				"The authoritative fact already completes another action occurrence");
+	}
+
 	private void appendEngagementEvent(SupportPlanActivityOccurrenceEntity occurrence, String changeType,
 			UUID correlationId, Instant now) {
 		try {
@@ -335,6 +722,36 @@ public class SupportPlanActivityOccurrenceService {
 		catch (JsonProcessingException exception) {
 			throw new IllegalStateException("SupportPlan engagement event could not be serialized", exception);
 		}
+	}
+
+	private void appendActionOccurrenceEvent(SupportPlanActivityOccurrenceEntity occurrence,
+			UUID correlationId, Instant now) {
+		try {
+			var fact = new OwnerFact(occurrence.evidenceOwner(), occurrence.evidenceKind(),
+					occurrence.evidenceId(), occurrence.evidenceRevision(), occurrence.evidenceOccurredAt(),
+					occurrence.evidenceVerifiedAt());
+			var orchestration = new ActionOrchestrationEvent(occurrence.state(), occurrence.state(),
+					occurrence.stateReason(), occurrence.completedAt(),
+					"SELF_REPORTED_WELLBEING_ACTIVITY_NOT_TREATMENT_ADHERENCE");
+			var payload = new ActionOccurrenceEventPayload(occurrence.supportPlanId(), occurrence.userId(),
+					occurrence.sourcePlanVersion(), occurrence.sourceActionId().toString(),
+					occurrence.sourceActionType(), occurrence.sourceActionVersion(),
+					occurrence.activityScheduleId(), occurrence.scheduleVersion(), occurrence.id(), "NATIVE_V3",
+					"EVIDENCE_ATTACHED", orchestration, fact);
+			occurrences.insertActionOccurrenceOutbox(UUID.randomUUID(), occurrence.id(), occurrence.version(),
+					correlationId == null ? UUID.randomUUID() : correlationId,
+					objectMapper.writeValueAsString(payload), now);
+		}
+		catch (JsonProcessingException exception) {
+			throw new IllegalStateException("PlanAction occurrence event could not be serialized", exception);
+		}
+	}
+
+	private ActionOccurrenceCompletion completion(SupportPlanActivityOccurrenceEntity occurrence) {
+		return new ActionOccurrenceCompletion(occurrence.id(), occurrence.version(), occurrence.state(),
+				occurrence.completedAt(), new OwnerFact(occurrence.evidenceOwner(), occurrence.evidenceKind(),
+						occurrence.evidenceId(), occurrence.evidenceRevision(), occurrence.evidenceOccurredAt(),
+						occurrence.evidenceVerifiedAt()));
 	}
 
 	private OccurrenceView view(SupportPlanActivityOccurrenceEntity occurrence, Instant now) {
@@ -354,6 +771,7 @@ public class SupportPlanActivityOccurrenceService {
 
 	public record OccurrenceListView(UUID supportPlanId, String supportPlanStatus, String schedulePolicyVersion,
 			LocalDate from, LocalDate through, List<OccurrenceView> occurrences, String interpretationCode) { }
+	record V3Window(SupportPlanEntity plan, List<SupportPlanActivityOccurrenceEntity> occurrences) { }
 	public record OccurrenceSourceView(String type, long supportPlanVersion, String slotId, UUID resourceId,
 			String contentVersion, String title) { }
 	public record OccurrenceView(UUID occurrenceId, UUID supportPlanId, UUID scheduleId, int scheduleVersion,
@@ -366,4 +784,20 @@ public class SupportPlanActivityOccurrenceService {
 			String state, boolean hidden, String helpfulness, String barrierCode, boolean summaryReuseApproved,
 			long sourcePlanVersion, String sourceSlotId, UUID sourceResourceId, String sourceContentVersion,
 			Instant engagementUpdatedAt, String interpretationCode) { }
+	public record OwnerFact(String ownerDomain, String kind, String factId, String factRevision,
+			Instant occurredAt, Instant verifiedAt) { }
+	public record LinkedActionSource(String ownerDomain, String kind, String sourceId,
+			String sourceRevision) { }
+	public record AuthoritativeOwnerFact(UUID subjectUserId, LinkedActionSource linkedSource,
+			OwnerFact fact) { }
+	public record ActionOccurrenceCompletion(UUID occurrenceId, long version, String state,
+			Instant completedAt, OwnerFact ownerFact) { }
+	public record ActionEndResult(UUID actionId, long actionVersion, String status, Instant endedAt,
+			int endedScheduleCount, int cancelledOccurrenceCount) { }
+	private record ActionOrchestrationEvent(String state, String displayState, String stateReason,
+			Instant outcomeRecordedAt, String interpretationCode) { }
+	private record ActionOccurrenceEventPayload(UUID supportPlanId, UUID userId, long planVersion,
+			String actionId, String actionType, long actionVersion, UUID scheduleId, int scheduleVersion,
+			UUID occurrenceId, String representationMode, String changeType,
+			ActionOrchestrationEvent orchestration, OwnerFact ownerFact) { }
 }

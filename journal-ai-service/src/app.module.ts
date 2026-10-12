@@ -50,6 +50,10 @@ import {
   registerNotificationActivityModule,
   type NotificationActivityDependencies,
 } from "./notification-activity/notification-activity.js";
+import {
+  registerConsultationBriefDraftModule,
+  type ConsultationBriefDraftDependencies,
+} from "./consultation-brief-draft/consultation-brief-draft.js";
 
 export interface ApplicationDependencies {
   readonly readinessProbe?: ReadinessProbe;
@@ -59,6 +63,7 @@ export interface ApplicationDependencies {
   readonly companionChat?: CompanionChatDependencies;
   readonly supportGuidePhrasing?: SupportGuidePhrasingDependencies;
   readonly notificationActivity?: NotificationActivityDependencies;
+  readonly consultationBriefDraft?: ConsultationBriefDraftDependencies;
 }
 
 @Module({})
@@ -98,6 +103,10 @@ export class AppModule implements NestModule {
         registerNotificationActivityModule(
           configuration,
           dependencies.notificationActivity,
+        ),
+        registerConsultationBriefDraftModule(
+          configuration,
+          dependencies.consultationBriefDraft,
         ),
       ],
       controllers: [HealthController, MetricsController],

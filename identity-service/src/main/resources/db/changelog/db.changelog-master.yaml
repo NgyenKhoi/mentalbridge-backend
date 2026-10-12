@@ -6,4 +6,6 @@ databaseChangeLog:
   - include:
       file: db/changelog/changes/003-platform-reporting.sql
   - include:
+      file: db/changelog/changes/004-report-schedules.sql
+  - include:
       file: db/changelog/changes/004-audit-browse-support.sql

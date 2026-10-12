@@ -24,6 +24,7 @@ import type {
   ResourceDetail,
   PublicResourceDetail,
   ResourceSummary,
+  ResourceReviewDecision,
 } from './resource.types.js';
 import { RESOURCE_SERVICE_TOKEN } from '../application.tokens.js';
 import type { ResourceService } from './resource.service.js';
@@ -31,6 +32,7 @@ import { Public } from '../auth/public.decorator.js';
 import {
   CreateResourceDtoSchema,
   UpdateResourceDtoSchema,
+  ReviewResourceDtoSchema,
   ResourceLocaleSchema,
   type CreateResourceDto,
   type UpdateResourceDto,
@@ -258,7 +260,6 @@ export class ResourceController {
         safetyNotes: dto.safetyNotes,
         catalogueVisibility: dto.catalogueVisibility,
         contentVersionLabel: dto.contentVersionLabel,
-        sourceReviewStatus: dto.sourceReviewStatus,
         sourceOrganization: dto.sourceOrganization ?? null,
         sourceTitle: dto.sourceTitle ?? null,
         sourceUrl: dto.sourceUrl ?? null,
@@ -395,11 +396,19 @@ export class ResourceController {
       throw new BadRequestException('Valid version query parameter is required');
     }
 
-    const deleted = await this.resourceService.delete(id, version, {
+    const outcome = await this.resourceService.delete(id, version, {
       actorId: user.accountId,
       correlationId: requestCorrelationId(request),
     });
-    if (!deleted) {
+    if (outcome === 'CORRECTION_DRAFT_PRESERVED') {
+      throw new ConflictException({
+        type: 'https://mentalbridge.io/errors/CORRECTION_DRAFT_DISCARD_NOT_SUPPORTED',
+        title: 'Correction drafts cannot be deleted because publication history must be preserved',
+        status: 409,
+        code: 'CORRECTION_DRAFT_DISCARD_NOT_SUPPORTED',
+      });
+    }
+    if (outcome !== 'DELETED') {
       throw new ConflictException({
         type: 'https://mentalbridge.io/errors/INVALID_STATE_TRANSITION',
         title: 'Cannot delete non-DRAFT resource or version mismatch',
@@ -410,6 +419,7 @@ export class ResourceController {
   }
 
   @Post(':id/publish')
+  @HttpCode(HttpStatus.OK)
   @UseGuards(JwtAuthGuard, RolesGuard)
   @Roles('ADMIN')
   async publishResource(
@@ -417,7 +427,7 @@ export class ResourceController {
     @Query('version') versionParam: string,
     @CurrentUser() user: AuthenticatedUser,
     @Req() request: Request,
-  ): Promise<never> {
+  ): Promise<ResourceSummary> {
     if (!UUID_RE.test(id)) {
       throw new BadRequestException('Invalid resource ID');
     }
@@ -427,17 +437,124 @@ export class ResourceController {
       throw new BadRequestException('Valid version query parameter is required');
     }
 
-    await this.resourceService.auditPublishBlocked(id, version, {
+    const context = {
+      actorId: user.accountId,
+      correlationId: requestCorrelationId(request),
+    };
+    const result = await this.resourceService.publish(id, version, context);
+    if (result.outcome !== 'PUBLISHED') {
+      if (result.outcome !== 'RESOURCE_NOT_FOUND') {
+        await this.resourceService.auditPublishBlocked(id, version, context);
+      }
+      if (result.outcome === 'RESOURCE_NOT_FOUND') {
+        throw new NotFoundException({
+          type: 'https://mentalbridge.io/errors/RESOURCE_NOT_FOUND',
+          title: 'Resource not found',
+          status: 404,
+          code: 'RESOURCE_NOT_FOUND',
+        });
+      }
+      if (result.outcome === 'RESOURCE_VERSION_CONFLICT') {
+        throw new ConflictException({
+          type: 'https://mentalbridge.io/errors/RESOURCE_VERSION_CONFLICT',
+          title: 'The requested resource version is stale',
+          status: 409,
+          code: 'RESOURCE_VERSION_CONFLICT',
+        });
+      }
+      if (result.outcome === 'INVALID_STATE_TRANSITION') {
+        throw new ConflictException({
+          type: 'https://mentalbridge.io/errors/INVALID_STATE_TRANSITION',
+          title: 'Only an exact draft version can be published',
+          status: 409,
+          code: 'INVALID_STATE_TRANSITION',
+        });
+      }
+      throw new ConflictException({
+        type: 'https://mentalbridge.io/errors/REVIEW_APPROVAL_REQUIRED',
+        title: 'An approved review decision for this exact draft is required',
+        status: 409,
+        code: 'REVIEW_APPROVAL_REQUIRED',
+      });
+    }
+    return result.resource;
+  }
+
+  @Post(':id/review')
+  @HttpCode(HttpStatus.OK)
+  @UseGuards(JwtAuthGuard, RolesGuard)
+  @Roles('ADMIN')
+  async reviewResource(
+    @Param('id') id: string,
+    @Query('version') versionParam: string,
+    @Body() body: unknown,
+    @CurrentUser() user: AuthenticatedUser,
+    @Req() request: Request,
+  ): Promise<ResourceReviewDecision> {
+    if (!UUID_RE.test(id)) throw new BadRequestException('Invalid resource ID');
+    const version = parseInt(versionParam, 10);
+    if (isNaN(version) || version < 0) {
+      throw new BadRequestException('Valid version query parameter is required');
+    }
+    const parsed = ReviewResourceDtoSchema.safeParse(body);
+    if (!parsed.success) {
+      throw new UnprocessableEntityException({
+        type: 'https://mentalbridge.io/errors/VALIDATION_ERROR',
+        title: 'Validation failed',
+        status: 422,
+        code: 'VALIDATION_ERROR',
+        fieldViolations: parsed.error.issues.map((issue) => ({
+          field: issue.path.join('.'),
+          message: issue.message,
+        })),
+      });
+    }
+    const decision = await this.resourceService.review(
+      id,
+      version,
+      parsed.data.decision,
+      parsed.data.reasonCode,
+      { actorId: user.accountId, correlationId: requestCorrelationId(request) },
+    );
+    if (!decision) {
+      throw new ConflictException({
+        type: 'https://mentalbridge.io/errors/INVALID_STATE_TRANSITION',
+        title: 'The draft changed or already has a different review decision',
+        status: 409,
+        code: 'INVALID_STATE_TRANSITION',
+      });
+    }
+    return decision;
+  }
+
+  @Post(':id/versions')
+  @HttpCode(HttpStatus.OK)
+  @UseGuards(JwtAuthGuard, RolesGuard)
+  @Roles('ADMIN')
+  async createResourceVersion(
+    @Param('id') id: string,
+    @Query('version') versionParam: string,
+    @CurrentUser() user: AuthenticatedUser,
+    @Req() request: Request,
+  ): Promise<ResourceDetail> {
+    if (!UUID_RE.test(id)) throw new BadRequestException('Invalid resource ID');
+    const version = parseInt(versionParam, 10);
+    if (isNaN(version) || version < 0) {
+      throw new BadRequestException('Valid version query parameter is required');
+    }
+    const resource = await this.resourceService.createVersion(id, version, {
       actorId: user.accountId,
       correlationId: requestCorrelationId(request),
     });
-
-    throw new ConflictException({
-      type: 'https://mentalbridge.io/errors/REVIEW_APPROVAL_REQUIRED',
-      title: 'An approved review decision is required before publication',
-      status: 409,
-      code: 'REVIEW_APPROVAL_REQUIRED',
-    });
+    if (!resource) {
+      throw new ConflictException({
+        type: 'https://mentalbridge.io/errors/INVALID_STATE_TRANSITION',
+        title: 'Only an archived exact version can start a correction draft',
+        status: 409,
+        code: 'INVALID_STATE_TRANSITION',
+      });
+    }
+    return resource;
   }
 
   @Post(':id/archive')

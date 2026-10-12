@@ -11,6 +11,10 @@ import {
   RESOURCE_PROGRESS_SERVICE_TOKEN,
   RESOURCE_JOURNEY_REPOSITORY_TOKEN,
   RESOURCE_JOURNEY_SERVICE_TOKEN,
+  RESOURCE_ENGAGEMENT_REPOSITORY_TOKEN,
+  RESOURCE_ENGAGEMENT_SERVICE_TOKEN,
+  RESOURCE_REWARD_REPOSITORY_TOKEN,
+  RESOURCE_REWARD_SERVICE_TOKEN,
   E2E_OUTAGE_STATE_TOKEN,
   RESOURCE_ELIGIBILITY_REPOSITORY_TOKEN,
   RESOURCE_ELIGIBILITY_SERVICE_TOKEN,
@@ -48,6 +52,15 @@ import { ResourceProgressService } from './resources/resource-progress.service.j
 import { ResourceJourneyController } from './resources/resource-journey.controller.js';
 import { ResourceJourneyRepository } from './resources/resource-journey.repository.js';
 import { ResourceJourneyService } from './resources/resource-journey.service.js';
+import {
+  ResourceBingoController,
+  ResourceBookmarkController,
+} from './resources/resource-engagement.controller.js';
+import { ResourceEngagementRepository } from './resources/resource-engagement.repository.js';
+import { ResourceEngagementService } from './resources/resource-engagement.service.js';
+import { ResourceRewardController } from './resources/resource-reward.controller.js';
+import { ResourceRewardRepository } from './resources/resource-reward.repository.js';
+import { ResourceRewardService } from './resources/resource-reward.service.js';
 import { E2eOutageController } from './e2e/e2e-outage.controller.js';
 import { AuthModule } from './auth/auth.module.js';
 import { JwtStrategy } from './auth/jwt.strategy.js';
@@ -113,6 +126,8 @@ export interface ApplicationDependencies {
   readonly resourceRepository?: ResourceRepository;
   readonly resourceProgressRepository?: ResourceProgressRepository;
   readonly resourceJourneyRepository?: ResourceJourneyRepository;
+  readonly resourceEngagementRepository?: ResourceEngagementRepository;
+  readonly resourceRewardRepository?: ResourceRewardRepository;
   readonly outageState?: { enabled: boolean };
   readonly resourceEligibilityRepository?: ResourceEligibilityRepository;
   readonly safetyDirectoryRepository?: SafetyDirectoryRepository;
@@ -160,6 +175,15 @@ export const createAppModule = (
         useValue: dependencies.resourceJourneyRepository,
       }
     : { provide: RESOURCE_JOURNEY_REPOSITORY_TOKEN, useClass: ResourceJourneyRepository };
+  const resourceEngagementRepositoryProvider: Provider = dependencies.resourceEngagementRepository
+    ? {
+        provide: RESOURCE_ENGAGEMENT_REPOSITORY_TOKEN,
+        useValue: dependencies.resourceEngagementRepository,
+      }
+    : { provide: RESOURCE_ENGAGEMENT_REPOSITORY_TOKEN, useClass: ResourceEngagementRepository };
+  const resourceRewardRepositoryProvider: Provider = dependencies.resourceRewardRepository
+    ? { provide: RESOURCE_REWARD_REPOSITORY_TOKEN, useValue: dependencies.resourceRewardRepository }
+    : { provide: RESOURCE_REWARD_REPOSITORY_TOKEN, useClass: ResourceRewardRepository };
   const eligibilityRepositoryProvider: Provider = dependencies.resourceEligibilityRepository
     ? {
         provide: RESOURCE_ELIGIBILITY_REPOSITORY_TOKEN,
@@ -207,6 +231,9 @@ export const createAppModule = (
       ResourceController,
       ResourceProgressController,
       ResourceJourneyController,
+      ResourceBookmarkController,
+      ResourceBingoController,
+      ResourceRewardController,
       ResourceEligibilityController,
       E2eOutageController,
       SafetyDirectoryController,
@@ -231,6 +258,10 @@ export const createAppModule = (
       { provide: RESOURCE_PROGRESS_SERVICE_TOKEN, useClass: ResourceProgressService },
       resourceJourneyRepositoryProvider,
       { provide: RESOURCE_JOURNEY_SERVICE_TOKEN, useClass: ResourceJourneyService },
+      resourceEngagementRepositoryProvider,
+      { provide: RESOURCE_ENGAGEMENT_SERVICE_TOKEN, useClass: ResourceEngagementService },
+      resourceRewardRepositoryProvider,
+      { provide: RESOURCE_REWARD_SERVICE_TOKEN, useClass: ResourceRewardService },
       eligibilityRepositoryProvider,
       { provide: RESOURCE_ELIGIBILITY_SERVICE_TOKEN, useClass: ResourceEligibilityService },
       safetyDirectoryRepositoryProvider,

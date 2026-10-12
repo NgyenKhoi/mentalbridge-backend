@@ -11,8 +11,27 @@ import org.springframework.web.bind.annotation.RestControllerAdvice;
 import jakarta.servlet.http.HttpServletRequest;
 import jakarta.servlet.http.HttpServletResponse;
 
-@RestControllerAdvice
+@RestControllerAdvice(assignableTypes = {PlatformReportController.class, ReportScheduleController.class})
 class PlatformReportExceptionHandler {
+
+	@ExceptionHandler({jakarta.validation.ConstraintViolationException.class,
+			org.springframework.web.bind.MissingServletRequestParameterException.class})
+	ProblemDetail scheduleValidation(Exception exception, HttpServletRequest request, HttpServletResponse response) {
+		return problem(HttpStatus.BAD_REQUEST, "VALIDATION_FAILED", "Schedule parameters are invalid", request, response);
+	}
+
+	@ExceptionHandler(org.springframework.web.server.ResponseStatusException.class)
+	ProblemDetail scheduleProblem(org.springframework.web.server.ResponseStatusException exception,
+			HttpServletRequest request, HttpServletResponse response) {
+		var status = HttpStatus.valueOf(exception.getStatusCode().value());
+		String code = switch (status) {
+			case PRECONDITION_FAILED -> "VERSION_CONFLICT";
+			case NOT_FOUND -> "NOT_FOUND";
+			case FORBIDDEN -> "FORBIDDEN";
+			default -> "CONFLICT";
+		};
+		return problem(status, code, exception.getReason() == null ? "Request unavailable" : exception.getReason(), request, response);
+	}
 
 	@ExceptionHandler(InvalidPlatformReportRequestException.class)
 	ProblemDetail invalid(InvalidPlatformReportRequestException exception, HttpServletRequest request,

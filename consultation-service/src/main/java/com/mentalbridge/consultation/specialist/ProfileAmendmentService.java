@@ -50,7 +50,7 @@ public class ProfileAmendmentService {
 		var profile = approvedLocked(actor);
 		if (profile.version() != expectedProfileVersion) throw versionMismatch();
 		var current = amendments.findFirstBySpecialistAccountIdOrderByCreatedAtDescIdDesc(actor);
-		if (current.isPresent() && current.orElseThrow().status() != APPROVED) {
+		if (current.isPresent() && current.orElseThrow().status() != APPROVED && current.orElseThrow().status() != CANCELLED) {
 			return ProfileAmendmentResponse.from(current.orElseThrow());
 		}
 		return saved(new ProfileAmendmentEntity(profile, clock.instant()), actor, "SPECIALIST");
@@ -63,7 +63,7 @@ public class ProfileAmendmentService {
 		var amendment = owned(amendmentId, actor);
 		checkVersion(amendment, expectedVersion);
 		checkBase(profile, amendment);
-		if (amendment.status() == APPROVED) throw stateConflict();
+		if (amendment.status() == APPROVED || amendment.status() == CANCELLED) throw stateConflict();
 		profileService.validate(command);
 		var normalized = new SpecialistProfileService.ProfileCommand(command.displayName().strip(), command.bio().strip(),
 				command.supportAreas(), command.languages().stream().map(value -> value.strip().toLowerCase(Locale.ROOT))
@@ -83,6 +83,18 @@ public class ProfileAmendmentService {
 		if (amendment.status() != (resubmit ? REJECTED : DRAFT)) throw stateConflict();
 		profileService.validate(amendment.proposedProfile());
 		amendment.submit(clock.instant());
+		return saved(amendment, actor, "SPECIALIST");
+	}
+
+	@Transactional
+	public ProfileAmendmentResponse cancel(UUID actor, UUID amendmentId, long expectedVersion) {
+		var profile = approvedLocked(actor);
+		var amendment = owned(amendmentId, actor);
+		checkVersion(amendment, expectedVersion);
+		if (amendment.status() == CANCELLED) return ProfileAmendmentResponse.from(amendment);
+		checkBase(profile, amendment);
+		if (amendment.status() == APPROVED) throw stateConflict();
+		amendment.cancel(clock.instant());
 		return saved(amendment, actor, "SPECIALIST");
 	}
 

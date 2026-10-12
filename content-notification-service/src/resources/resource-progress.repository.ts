@@ -97,7 +97,11 @@ export class ResourceProgressRepository {
          VALUES ($1, $2, $3::date, $4, $5::varchar(16), $6::text[],
            CASE WHEN $5::varchar(16) = 'COMPLETED' THEN now() ELSE NULL END)
          ON CONFLICT (owner_id, resource_id, local_date) DO UPDATE
-         SET resource_version = EXCLUDED.resource_version,
+         SET resource_version = CASE
+               WHEN resource_daily_progress.status = 'COMPLETED'
+                 THEN resource_daily_progress.resource_version
+               ELSE EXCLUDED.resource_version
+             END,
              status = CASE
                WHEN resource_daily_progress.status = 'COMPLETED' THEN 'COMPLETED'
                ELSE EXCLUDED.status
@@ -116,7 +120,10 @@ export class ResourceProgressRepository {
                 AND resource_daily_progress.status IS DISTINCT FROM EXCLUDED.status
                )
             OR resource_daily_progress.completed_action_ids IS DISTINCT FROM EXCLUDED.completed_action_ids
-            OR resource_daily_progress.resource_version IS DISTINCT FROM EXCLUDED.resource_version
+            OR (
+              resource_daily_progress.status <> 'COMPLETED'
+              AND resource_daily_progress.resource_version IS DISTINCT FROM EXCLUDED.resource_version
+            )
          RETURNING ${COLUMNS}
        )
        SELECT ${COLUMNS} FROM written

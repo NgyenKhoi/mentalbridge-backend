@@ -22,6 +22,7 @@ Current cross-feature scope is governed by:
 - [ADR 0017 — Product scope v2](adr/0017-product-scope-v2.md)
 - [ADR 0022 — Current product blueprint amendments](adr/0022-current-product-blueprint-amendments.md)
 - [ADR 0027 — Independent Community service boundary](adr/0027-community-service-boundary.md)
+- [ADR 0034 — SupportPlan v3 cross-domain actions](adr/0034-support-plan-v3-cross-domain-actions.md)
 
 The one confirmed-appointment email reminder is governed by
 [ADR 0030 — One appointment email reminder](adr/0030-one-appointment-email-reminder.md)
@@ -29,6 +30,19 @@ The one confirmed-appointment email reminder is governed by
 dedicated opt-in, quiet-hour deferral/suppression, appointment/version identity,
 lifecycle invalidation, strict before-start cutoff, and minimized in-app-only
 content separately from the wellbeing digest.
+
+Optional private context on the daily emotion check-in is governed by
+[ADR 0035 — Optional emotion influence context](adr/0035-optional-emotion-influence-context.md)
+(`MB-EMOTION-CONTEXT-001`). The stable factor list and private note remain
+skippable, encrypted in the owner record, clearable, and excluded from every
+downstream consumer unless a later approved minimal-data policy authorizes one.
+
+Optional resource participation rewards are governed by
+[ADR 0036 — Authoritative non-punitive resource rewards](adr/0036-authoritative-resource-rewards.md)
+(`MB-RESOURCE-REWARD-001`) and
+[resource reward policy v1](policies/resource-reward-policy-v1.md). Content derives
+bounded XP only from exact persisted reviewed-resource evidence. Rewards remain
+hideable, non-clinical, penalty-free, and unrelated to access or SupportPlan.
 
 Appointment disputes are governed by
 [ADR 0031 — Appointment dispute and settlement gate](adr/0031-appointment-dispute-settlement-gate.md)
@@ -75,8 +89,9 @@ FREE stops before paid SupportPlan/consultation booking.
 
 PLUS / PREMIUM
       ├─ persistent SupportPlan
+      │      ├─ focuses / typed actions
       │      ↓
-      │   schedules / occurrences / engagement
+      │   generic schedules / occurrences / engagement
       │      ↓
       │   reassessment
       │      ↓
@@ -126,7 +141,26 @@ The current distinction is mandatory:
 
 Opening a Support Guide resource never turns the Guide into an activity checklist or a free SupportPlan.
 
-Detailed rules: [SupportPlan policy v2](policies/support-plan-policy-v2.md).
+The prospective canonical plan model is
+`SupportPlan -> PlanFocus -> PlanAction -> ActionSchedule -> ActionOccurrence`.
+The allowed action types are `RESOURCE`, `JOURNAL`, `EMOTION_CHECK_IN`,
+`ROUTINE_SELF_MANAGEMENT`, `PROFESSIONAL_SUPPORT`,
+`REASSESSMENT_SCREENING`, and `SELF_REPORT_REVIEW`. Care owns orchestration;
+Content, Journal/AI, Consultation, and Care screening remain authoritative for
+their source facts. Care stores only bounded references and completion evidence,
+never raw Journal/emotion/assessment/consultation content.
+
+Existing v2 resource plans remain readable and operable. The v3 read boundary
+may expose a v2 slot as a virtual `RESOURCE` action marked
+`V2_RESOURCE_ADAPTER`; it does not rewrite or backfill v2 rows or identities.
+For a persisted professional-adjunct template family, the adapter additionally
+projects a stable `PROFESSIONAL_SUPPORT` primary action and marks its self-help
+resources as adjunct. Consultation appointment state may be correlated through
+an opaque action reference, but cannot mutate or complete the SupportPlan.
+
+Detailed rules: [SupportPlan policy v3](policies/support-plan-policy-v3.md).
+Historical v2 behavior remains governed by
+[SupportPlan policy v2](policies/support-plan-policy-v2.md).
 
 ## 5. Reassessment
 
@@ -204,6 +238,12 @@ and a 210,000 VND specialist earning. These are not runtime prices. The current
 integration-test catalogue is only 0/5,000/10,000 VND, and real payment/payout
 remains disabled pending explicit production approval and credentials.
 
+The owner-approved MB-622 sandbox amendment to ADR 0032 makes new test upgrades
+charge the full 10,000 VND PREMIUM price with zero offset under the explicit
+`sandbox-full-price-v1` policy. Existing ordinary offsets and historical facts
+are preserved. Sandbox allocations/earnings are synthetic and cannot be paid
+through a real provider.
+
 Detailed amendment: [ADR 0022](adr/0022-current-product-blueprint-amendments.md).
 
 ## 8. Safety boundary
@@ -228,8 +268,8 @@ Detailed national-contact amendment: [ADR 0024](adr/0024-global-anonymous-crisis
 
 ## 9. Owner boundaries
 
-- **Care**: screening, safety triggers, SupportEvaluation, Support Guide, SupportPlan, reassessment composition, eligibility revalidation, PlanChangeRequest decision, user-confirmed plan mutation.
-- **Content/Notification**: reviewed resource catalogue, exact-version resource eligibility, safety-directory content/provenance, reminder preferences/scheduling/delivery attempts.
+- **Care**: screening, safety triggers, SupportEvaluation, Support Guide, SupportPlan and its focuses/actions/schedules/occurrences, reassessment composition, eligibility revalidation, PlanChangeRequest decision, user-confirmed plan mutation.
+- **Content/Notification**: reviewed resource catalogue, exact-version resource eligibility and progress, owner-scoped resource bookmarks, persisted weekly resource Bingo with separate self-confirmed and verified evidence, safety-directory content/provenance, reminder preferences/scheduling/delivery attempts.
 - **Consultation/Billing**: specialist profile/approval/availability/discovery, service-plan entitlement, consultation-credit ledger, appointments, evidence-backed completion, SessionSummary/AgreedNextSteps persistence, earnings and payout.
 - **Realtime**: in-app chat transport/delivery under Consultation appointment eligibility.
 - **Journal/AI**: private Journal, AI analyses/conversations, model execution and minimized projections; no Care/financial authority.
@@ -257,6 +297,11 @@ As of the ADR 0022 amendment:
   MB-378 handoff; its frontend/BFF consumer now provides list, filter, detail,
   explanation, slot selection, and truthful plan states. The remaining
   session/payment/payout journeys remain gated by their Jira delivery chain.
+
+As of the MB-637 decision gate, `MB-SUPPORT-PLAN-V3-ACTIONS-001` is the accepted
+prospective SupportPlan model. MB-639 owns native v3 persistence/API/event
+delivery and the explicit v2 adapter. Until that runtime is present, v2 remains
+the executable plan contract and must not be silently dual-written or migrated.
 
 ## 11. Historical documents
 

@@ -71,6 +71,17 @@ public class PlatformReportJobEntity {
 	@Column(name = "failure_code", length = 64)
 	private String failureCode;
 
+	@Column(name = "schedule_id", updatable = false)
+	private UUID scheduleId;
+
+	@Column(name = "scheduled_for", updatable = false)
+	private Instant scheduledFor;
+
+	void schedule(UUID scheduleId, Instant scheduledFor) {
+		this.scheduleId = scheduleId;
+		this.scheduledFor = scheduledFor;
+	}
+
 	protected PlatformReportJobEntity() {
 	}
 

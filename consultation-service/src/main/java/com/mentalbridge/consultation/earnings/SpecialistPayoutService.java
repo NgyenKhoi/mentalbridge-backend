@@ -120,7 +120,8 @@ public class SpecialistPayoutService {
 				select p.id, p.destination_id, p.amount_minor, p.payout_provider, p.status,
 				 a.provider_payout_reference, p.last_failure_code, p.requested_at, p.completed_at
 				from specialist_payout p
-				left join specialist_payout_attempt a on a.payout_id=p.id and a.attempt_number=1
+				left join specialist_payout_attempt a on a.payout_id=p.id
+				 and a.attempt_number=(select max(latest.attempt_number) from specialist_payout_attempt latest where latest.payout_id=p.id)
 				where p.specialist_account_id=:specialistId
 				order by p.requested_at desc, p.id desc limit 100
 				""").param("specialistId", specialistId).query((row, ignored) -> new SpecialistEarningsResponse.Payout(
@@ -128,7 +129,7 @@ public class SpecialistPayoutService {
 				row.getString("payout_provider"), row.getString("status"), row.getString("provider_payout_reference"),
 				row.getString("last_failure_code"), row.getTimestamp("requested_at").toInstant(),
 				instant(row, "completed_at"))).list();
-		return new SpecialistEarningsResponse("VND", SpecialistEarningService.POLICY_VERSION,
+		return new SpecialistEarningsResponse("VND", SpecialistEarningService.POLICY_VERSION, properties.getMode(),
 				(int) properties.getSettlementHold().toDays(), properties.getMinimumWithdrawalVnd(), clock.instant(),
 				totals, destination, earnings, payouts);
 	}

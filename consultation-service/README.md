@@ -1,5 +1,17 @@
 # Consultation Service
 
+MB-622 earning materialization and withdrawal reuse the appointment dispute
+gate. OPEN disputes and RELEASE_USER_CREDIT resolutions block payment, including
+failed-payout retries. Ineligible AVAILABLE rows return to PENDING_SETTLEMENT
+without changing amount/version/allocation snapshots; upheld resolutions can
+restore eligibility after the original hold.
+
+`GET /api/v1/admin/payments` is an ADMIN-only, read-only view of at most 200
+canonical purchase/upgrade transactions, without checkout URLs or customer
+profile data. Specialist earnings identify the configured payout adapter before
+a destination exists. Both specialist and admin payout reads use the latest
+attempt reference and count each earning once after retries.
+
 Owns specialist approval and deterministic non-clinical discovery, 60-minute
 in-app chat/video availability and appointments, session
 evidence and user-visible summaries, subscription/payment/upgrade,
@@ -40,6 +52,14 @@ the authenticated currently approved specialist. It contains only assigned
 `CONFIRMED`/in-flight appointments and appointments ending within the last 90
 days, is capped at 200 rows, and never acts as a user directory or carries Care
 content.
+MB-643 lets an explicit user booking request retain an optional opaque
+Care-owned `originatingPlanActionId`. It is a presentation correlation only:
+there is no cross-service foreign key, Consultation never edits or completes a
+SupportPlan, and opening specialist discovery alone creates no appointment or
+data-sharing consent. Reschedule-as-new inherits the owned prior appointment's
+reference when an older client omits it and rejects a conflicting explicit
+reference. The owner appointment list accepts an optional exact action filter
+that is applied before its 100-row bound.
 MB-380 adds optimistic, idempotent owner cancellation and completes
 reschedule-as-new audit. Requested cancellations and confirmations at least 24
 hours before start release the held credit; later confirmed cancellations
@@ -91,6 +111,14 @@ outcome or releasing user credit; a terminal credit release appends an explicit
 | `IDENTITY_JWT_AUDIENCE` | Yes | Required API audience | `mentalbridge-api` |
 | `IDENTITY_JWT_PUBLIC_KEY` | Yes | X.509 PEM public key used to verify tokens | local public key |
 | `CONSULTATION_VIDEO_AVAILABILITY_ENABLED` | No | Enables `IN_APP_VIDEO` slot publication only after the provider contract gate passes | `false` |
+| `CONSULTATION_BILLING_MODE` | No | Subscription checkout mode: safe default `DISABLED`, deterministic local/CI `FAKE`, or explicitly approved `MOMO` | `DISABLED` |
+| `CONSULTATION_BILLING_CHECKOUT_TTL` | No | Maximum lifetime of a pending purchase or upgrade checkout | `PT15M` |
+| `CONSULTATION_BILLING_EXPIRY_INTERVAL` | No | Scheduler interval for expiring abandoned checkouts and releasing upgrade-held credits | `PT1M` |
+| `MOMO_PAYMENT_PRODUCTION_APPROVED` | Real checkout | Explicit operational gate required together with complete credentials and HTTPS URLs | `false` |
+| `MOMO_PAYMENT_PARTNER_CODE` / `MOMO_PAYMENT_ACCESS_KEY` / `MOMO_PAYMENT_SECRET_KEY` | Real checkout | MoMo One-Time Payment credentials used to create and verify signed requests | injected secrets |
+| `MOMO_PAYMENT_SIGNATURE_KEY_VERSION` | Real checkout | Non-secret identifier retained with verified IPN evidence for key rotation | `v1` |
+| `MOMO_PAYMENT_BASE_URL` | Real checkout | Approved MoMo API origin | `https://test-payment.momo.vn` |
+| `MOMO_PAYMENT_IPN_URL` / `MOMO_PAYMENT_REDIRECT_URL` | Real checkout | Public HTTPS callback and browser return URLs | deployment URLs |
 | `APPOINTMENT_REMINDER_SERVICE_TOKEN` | When reminder flow enabled | Shared service credential for the narrow eligibility read | injected secret |
 | `KAFKA_BOOTSTRAP_SERVERS` | When relay enabled | Broker list for appointment status events | `localhost:9092` |
 | `CONSULTATION_APPOINTMENT_OUTBOX_RELAY_ENABLED` | No | Enables bounded appointment outbox relay | `false` |
@@ -152,6 +180,40 @@ MB-364 rating aggregates and never fabricates a score.
 ## Implemented MB-377/MB-558 endpoint
 
 - `GET /api/v1/service-credits`
+
+## Implemented MB-515 endpoints
+
+MB-622 replaces the active test offers with immutable PLUS 5,000/PREMIUM 10,000
+VND sandbox versions. The owner-approved sandbox upgrade charges 10,000 VND
+with zero offset and records `sandbox-full-price-v1` plus the nominal held-credit
+value. Existing held appointment credits and ordinary/historical prices/offsets
+are preserved. Mixed pricing policies fail closed. New paid credit periods
+snapshot the exact purchased plan-version UUID and allocation. Sandbox earning
+amounts are demonstration facts and may use FAKE payout only, never real money.
+Apply migration 021 and drain old billing writers before enabling new offers.
+
+Migration 022 permits a null checkout URL. Roll out the nullable-URL consumer
+before the new checkout writer and drain old writers. Checkout commits its
+canonical payment, quote and held credits before calling the provider outside
+any database transaction. Only the first reservation calls create; same-key
+replay returns the stored payment without re-sending a possible charge. A
+provider timeout leaves an auditable pending record, recoverable by verified
+IPN or existing expiry/reconciliation, never browser-side activation. There is
+no automatic create retry or production payment/payout enablement in MB-622.
+No runtime secret or production approval flag is changed by this story.
+
+- `GET /api/v1/service-plans`
+- `POST /api/v1/subscriptions/checkout`
+- `POST /internal/v1/payments/momo/ipn`
+
+The catalogue returns only currently effective immutable plan versions. Checkout
+accepts the selected version and a user-scoped idempotency key; price, currency,
+credit allocation, reservation limit, AI quota, and SupportPlan entitlement are
+always loaded from Consultation-owned data. A verified, exactly matched MoMo IPN
+activates the purchase or `PLUS`-to-`PREMIUM` upgrade once. Invalid, duplicate,
+late, conflicting, or out-of-order callbacks cannot grant rights. Real checkout
+remains disabled until the production approval flag, credentials, and HTTPS URLs
+are all present. No downgrade or refund command is exposed.
 
 ## Implemented MB-378/MB-558 endpoints
 
@@ -274,6 +336,7 @@ slots withdrawn, appointments cancelled, and credits released.
 - `POST /api/v1/specialist-profile/amendments`: start/reuse a draft with the live profile ETag.
 - `PUT /api/v1/specialist-profile/amendments/{amendmentId}`: save the six proposed fields.
 - `POST /api/v1/specialist-profile/amendments/{amendmentId}/submit|resubmit`: explicit review submission.
+- `POST /api/v1/specialist-profile/amendments/{amendmentId}/cancel`: owner cancellation of an open amendment, retaining audit and public content.
 - `GET /api/v1/admin/specialist-profiles/amendments?limit=50&page=0`: bounded pending-review queue, separate from initial submissions.
 - `GET /api/v1/admin/specialist-profiles/amendments/{amendmentId}`: proposed versus approved values.
 - `POST /api/v1/admin/specialist-profiles/amendments/{amendmentId}/approve|reject`: version-checked ADMIN decision.
@@ -289,6 +352,11 @@ baseline for existing approved/suspended profiles without inventing older conten
 versions. Drain old owner instances before enabling amendment writes. Never run
 the documentation logical schema against a database. See
 [ADR 0033](../docs/adr/0033-reviewed-specialist-profile-amendment.md).
+
+The follow-up cancellation requires migration 019 before the updated owner
+starts and the 1.12.0 consumer to be deployed alongside it. `CANCELLED` is
+terminal; a new edit starts a fresh amendment from the public snapshot. The
+published profile and approved history are not reverted or deleted.
 
 Focused owner verification:
 

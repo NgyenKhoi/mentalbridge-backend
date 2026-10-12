@@ -41,7 +41,13 @@ class CareLiquibaseChangelogTests {
 					"care-021-support-plan-replacement-review",
 					"care-022-screening-episode",
 					"care-023-consultation-brief",
-					"care-024-plan-change-request");
+					"care-024-plan-change-request",
+					"care-025-consultation-brief-ai-draft",
+					"care-026-support-plan-actions",
+					"care-027-support-plan-personalization",
+					"care-028-support-plan-cadence",
+					"care-029-support-plan-schedule-activation",
+					"care-030-support-plan-schedule-generation-cutoff");
 		}
 	}
 

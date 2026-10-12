@@ -4,6 +4,13 @@ NestJS service on Node.js that owns private journal entries and coordinates AI a
 
 ## Current scope
 
+Public OpenAPI v1.8.0 aligns exact-analysis, longitudinal evidence and Support
+Guide phrasing provider enums with the existing approved `BEDROCK` runtime
+route and migration 011. Consumers must accept this provider without relaxing
+other result validation. `contract:check` compares these public enums with the
+migrated result validators. This publication does not activate a provider,
+change routing/approval/consent gates, or change persisted data.
+
 The service provides:
 
 - Node.js 22 or newer runtime
@@ -26,6 +33,10 @@ The service provides:
 - minimized exact-source longitudinal evidence for future Care reassessment composition
 - encrypted AI Companion conversations with persisted owner-controlled context,
   server-side plan quotas, and deletion
+- an internal consent-gated ConsultationBrief suggestion endpoint that accepts only
+  a saved situation, owner goals, and minimized PHQ-9/GAD-7 level provenance;
+  it returns editable text with provider/model/prompt/schema provenance and stores
+  no ConsultationBrief content
 - lint, type-check, test, and build scripts
 - production multi-stage Docker image
 
@@ -273,6 +284,15 @@ explicit selection. Mood values are encrypted in the owning revision and are
 never indexed or logged. Omitting mood during a revision preserves the current
 value. Draft protection is client-owned, explicit-save only, and does not put
 raw journal text in browser persistence.
+
+MB-658 extends the daily emotion owner value with at most three unique optional
+factor codes from `sleep`, `work`, `study`, `family`, `friends`, `health`, and
+`other`. The existing optional note and these factors share the encrypted
+revision payload. Omitting factors remains valid and legacy payloads normalize
+to an empty list. The Mongo validator continues to see only the encrypted
+envelope, so no collection rewrite is needed. Factors and raw notes are absent
+from AI context, notification activity, SupportPlan, reassessment, analytics,
+events, metrics, and logs; delete erases them with the encrypted revisions.
 
 Run `npm run contract:check` and `npm run migration:check` for static validation. `npm run test:integration` builds the service and runs the HTTP CRUD/concurrency suite against the explicitly configured disposable MongoDB database; it covers cursor tie-breakers/index use, exact mutation replay after more than 32 later commands, conflicting key reuse, owner isolation, tombstones, revision concurrency, and bounded dependency failure. The test refuses a non-disposable database name and drops its database in cleanup.
 

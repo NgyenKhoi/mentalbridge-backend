@@ -63,6 +63,13 @@ public class ProfileAmendmentController {
 				RequestIdentity.requiredVersion(ifMatch), true));
 	}
 
+	@PostMapping("/{amendmentId}/cancel")
+	ResponseEntity<ProfileAmendmentResponse> cancel(@AuthenticationPrincipal Jwt jwt, @PathVariable UUID amendmentId,
+			@RequestHeader(name = "If-Match", required = false) String ifMatch) {
+		return response(amendments.cancel(RequestIdentity.subject(jwt), amendmentId,
+				RequestIdentity.requiredVersion(ifMatch)));
+	}
+
 	private ResponseEntity<ProfileAmendmentResponse> response(ProfileAmendmentResponse value) {
 		return ResponseEntity.ok().eTag(Long.toString(value.version())).body(value);
 	}

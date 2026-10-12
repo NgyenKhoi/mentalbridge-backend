@@ -105,6 +105,18 @@ export interface PublicResourceDetail extends ResourceSummary {
 export interface ResourceDetail extends PublicResourceDetail {
   readonly reviewedBy: string | null;
   readonly version: number;
+  readonly reviewDecision: ResourceReviewDecision | null;
+  readonly isCorrectionDraft: boolean;
+}
+
+export interface ResourceReviewDecision {
+  readonly resourceId: string;
+  readonly contentVersion: string;
+  readonly decision: 'APPROVED' | 'REJECTED';
+  readonly reasonCode: string;
+  readonly authorityVersion: string;
+  readonly reviewedBy: string;
+  readonly reviewedAt: string;
 }
 
 export interface ResourceListResponse {

@@ -18,6 +18,12 @@ import {
 import { NotificationService } from '../../notifications/notification.service.js';
 import { ResourceProgressRepository } from '../../resources/resource-progress.repository.js';
 import { ResourceJourneyRepository } from '../../resources/resource-journey.repository.js';
+import {
+  ResourceBingoVersionMismatchError,
+  ResourceEngagementRepository,
+} from '../../resources/resource-engagement.repository.js';
+import { ResourceRewardRepository } from '../../resources/resource-reward.repository.js';
+import { calculateResourceRewards } from '../../resources/resource-reward.policy.js';
 import { WellbeingDigestRepository } from '../../wellbeing-digest/wellbeing-digest.repository.js';
 import {
   CommunityNotificationDedupeConflictError,
@@ -81,6 +87,9 @@ describe('Database Integration', () => {
       '16_add_wellbeing_digest_delivery.sql',
       '17_add_appointment_email_reminders.sql',
       '18_add_community_interaction_notifications.sql',
+      '19_complete_resource_editorial_lifecycle.sql',
+      '20_add_resource_reward_visibility.sql',
+      '21_persist_resource_engagement.sql',
     ]) {
       if (migration === '10_persist_notification_preferences.sql') {
         await pool.query(
@@ -102,6 +111,65 @@ describe('Database Integration', () => {
              'Legacy safety copy', 'Legacy record must not become active')`,
         );
       }
+      if (migration === '21_persist_resource_engagement.sql') {
+        const reviewer = '66000000-0000-4000-8000-000000000990';
+        for (const [resourceId, title, status] of [
+          ['66000000-0000-4000-8000-000000000201', 'Legacy draft', 'DRAFT'],
+          ['66000000-0000-4000-8000-000000000202', 'Later publication', 'PUBLISHED'],
+          ['66000000-0000-4000-8000-000000000203', 'Unknown provenance', 'DRAFT'],
+        ]) {
+          await pool.query(
+            `INSERT INTO resource (
+               id, category, locale, title, summary, content_body, status, reviewed_by,
+               reviewed_at, effective_at, version, source_organization, source_title,
+               source_url, source_review_note, catalogue_visibility, resource_kind,
+               interaction_type, repeatability, completion_mode, streak_eligible,
+               expected_duration_minutes, cooldown_days, recommended_frequency_per_week,
+               plan_tags, structured_content, interaction_config, safety_notes,
+               content_version_label, source_review_status
+             ) VALUES (
+               $1, 'BREATHING', 'vi-VN', $2, 'Legacy summary', 'Legacy body', $3,
+               $4, '2026-08-31T00:00:00Z', '2026-09-01T00:00:00Z', 1,
+               'MentalBridge fixture', 'Legacy migration fixture',
+               'https://example.com/legacy', 'Migration regression', 'DIRECT_ONLY',
+               'PRACTICE', 'BREATHING_PACER', 'REPEATABLE', 'TIMED', true, 5, 0, 4,
+               ARRAY['ANXIETY_SYMPTOMS'], jsonb_build_object('overview', 'Legacy summary'),
+               '{}'::jsonb, ARRAY['Stop if uncomfortable'], 'legacy-v1', 'REVIEWED'
+             )`,
+            [resourceId, title, status, reviewer],
+          );
+        }
+        await pool.query(
+          `INSERT INTO resource_publication_snapshot
+             (resource_id, content_version, snapshot, published_by, published_at)
+           VALUES
+             ('66000000-0000-4000-8000-000000000201', 0,
+               '{"title":"Legacy draft v0"}'::jsonb, $1, '2026-09-01T00:00:00Z'),
+             ('66000000-0000-4000-8000-000000000202', 0,
+               '{"title":"Later publication v0"}'::jsonb, $1, '2026-09-01T00:00:00Z'),
+             ('66000000-0000-4000-8000-000000000202', 1,
+               '{"title":"Later publication v1"}'::jsonb, $1, '2026-10-10T00:00:00Z')`,
+          [reviewer],
+        );
+        const legacyBoard = await pool.query<{ id: string }>(
+          `INSERT INTO resource_weekly_bingo
+             (owner_id, week_start, time_zone, support_plan_id, support_plan_version,
+              plan_tags, created_at)
+           VALUES (
+             '66000000-0000-4000-8000-000000000299', '2026-10-05',
+             'Asia/Ho_Chi_Minh', '66000000-0000-4000-8000-000000000298', 1,
+             ARRAY['ANXIETY_SYMPTOMS'], '2026-10-05T00:00:00Z')
+           RETURNING id`,
+        );
+        await pool.query(
+          `INSERT INTO resource_weekly_bingo_item (board_id, ordinal, resource_id)
+           VALUES
+             ($1, 0, '66000000-0000-4000-8000-000000000201'),
+             ($1, 1, '66000000-0000-4000-8000-000000000202'),
+             ($1, 2, '66000000-0000-4000-8000-000000000203')`,
+          [legacyBoard.rows[0].id],
+        );
+      }
       const sql = readFileSync(join(__dirname, '../../../migrations', migration), 'utf8');
       await pool.query(sql);
     }
@@ -110,6 +178,39 @@ describe('Database Integration', () => {
   afterAll(async () => {
     if (pool) await pool.end();
     if (container) await container.stop();
+  });
+
+  describe('resource engagement migration', () => {
+    it('binds legacy items to publications available at board creation and drops unknown provenance', async () => {
+      const result = await pool.query<{
+        resource_id: string;
+        resource_version: string;
+      }>(
+        `SELECT item.resource_id::text, item.resource_version::text
+         FROM resource_weekly_bingo board
+         JOIN resource_weekly_bingo_item item ON item.board_id = board.id
+         WHERE board.owner_id = '66000000-0000-4000-8000-000000000299'
+           AND board.week_start = '2026-10-05'
+         ORDER BY item.ordinal`,
+      );
+      expect(result.rows).toEqual([
+        {
+          resource_id: '66000000-0000-4000-8000-000000000201',
+          resource_version: '0',
+        },
+        {
+          resource_id: '66000000-0000-4000-8000-000000000202',
+          resource_version: '0',
+        },
+      ]);
+      const board = await pool.query<{ count: string }>(
+        `SELECT count(*)::text AS count
+         FROM resource_weekly_bingo
+         WHERE owner_id = '66000000-0000-4000-8000-000000000299'
+           AND week_start = '2026-10-05'`,
+      );
+      expect(board.rows[0].count).toBe('1');
+    });
   });
 
   describe('resource table', () => {
@@ -469,6 +570,184 @@ describe('Database Integration', () => {
         [owner],
       );
       expect(boardCount.rows[0].count).toBe('1');
+    });
+
+    it('persists owner-scoped bookmarks and reconciles versioned Bingo evidence', async () => {
+      const database = {
+        query: (text: string, parameters?: unknown[]) => pool.query(text, parameters),
+        withTransaction: async <T>(operation: (client: Pool) => Promise<T>) => {
+          const client = await pool.connect();
+          try {
+            await client.query('BEGIN');
+            const result = await operation(client as unknown as Pool);
+            await client.query('COMMIT');
+            return result;
+          } catch (error) {
+            await client.query('ROLLBACK');
+            throw error;
+          } finally {
+            client.release();
+          }
+        },
+      } as unknown as DatabaseService;
+      const repository = new ResourceEngagementRepository(database);
+      const ownerA = '66000000-0000-4000-8000-000000000001';
+      const ownerB = '66000000-0000-4000-8000-000000000002';
+      const planId = '66000000-0000-4000-8000-000000000099';
+      const resourceA = '66000000-0000-4000-8000-000000000101';
+      const resourceB = '66000000-0000-4000-8000-000000000102';
+      const reviewer = '66000000-0000-4000-8000-000000000900';
+
+      await pool.query(
+        `INSERT INTO resource_weekly_bingo
+           (owner_id, week_start, time_zone, support_plan_id, support_plan_version, plan_tags)
+         VALUES ($1, '2026-10-19', 'Asia/Ho_Chi_Minh', $2, 3,
+           ARRAY['ANXIETY_SYMPTOMS'])`,
+        [ownerB, planId],
+      );
+      await expect(repository.readBingo(ownerB, '2026-10-19')).resolves.toMatchObject({
+        weekStart: '2026-10-19',
+        timeZone: 'Asia/Ho_Chi_Minh',
+        version: '0',
+        items: [],
+      });
+      await expect(repository.readBingo(ownerB, '2026-10-26')).resolves.toBeNull();
+
+      for (const [resourceId, title] of [
+        [resourceA, 'Nhịp thở dịu lại'],
+        [resourceB, 'Một phút thả lỏng'],
+      ]) {
+        await pool.query(
+          `INSERT INTO resource (
+             id, category, locale, title, summary, content_body, status, reviewed_by,
+             reviewed_at, effective_at, source_organization, source_title, source_url,
+             source_review_note, catalogue_visibility, resource_kind, interaction_type,
+             repeatability, completion_mode, streak_eligible, expected_duration_minutes,
+             cooldown_days, recommended_frequency_per_week, plan_tags, structured_content,
+             interaction_config, safety_notes, content_version_label, source_review_status
+           ) VALUES (
+             $1, 'BREATHING', 'vi-VN', $2, 'Tóm tắt đã rà soát', 'Nội dung đã rà soát',
+             'PUBLISHED', $3, now(), now() - interval '1 day', 'MentalBridge fixture',
+             'Reviewed fixture', 'https://example.com/resource', 'Integration evidence',
+             'LISTED', 'PRACTICE', 'BREATHING_PACER', 'REPEATABLE', 'TIMED', true,
+             5, 0, 4, ARRAY['ANXIETY_SYMPTOMS'],
+             jsonb_build_object('overview', 'Tóm tắt đã rà soát'), '{}'::jsonb,
+             ARRAY['Dừng lại nếu không thoải mái'], 'mb-660-v0', 'REVIEWED'
+           )`,
+          [resourceId, title, reviewer],
+        );
+        await pool.query(
+          `INSERT INTO resource_publication_snapshot
+             (resource_id, content_version, snapshot, published_by)
+           SELECT id, version, to_jsonb(resource), $2 FROM resource WHERE id = $1`,
+          [resourceId, reviewer],
+        );
+      }
+
+      const boardId = (
+        await pool.query<{ id: string }>(
+          `INSERT INTO resource_weekly_bingo
+             (owner_id, week_start, time_zone, support_plan_id, support_plan_version, plan_tags)
+           VALUES ($1, '2026-10-12', 'Asia/Ho_Chi_Minh', $2, 3,
+             ARRAY['ANXIETY_SYMPTOMS'])
+           RETURNING id`,
+          [ownerA, planId],
+        )
+      ).rows[0].id;
+      await pool.query(
+        `INSERT INTO resource_weekly_bingo_item
+           (board_id, ordinal, resource_id, resource_version)
+         VALUES ($1, 0, $2, 0), ($1, 1, $3, 0)`,
+        [boardId, resourceA, resourceB],
+      );
+
+      const saved = await repository.saveBookmark(ownerA, resourceA);
+      const identicalRetry = await repository.saveBookmark(ownerA, resourceA);
+      expect(saved).toMatchObject({ resourceId: resourceA, contentVersion: '0', version: '0' });
+      expect(identicalRetry).toEqual(saved);
+      expect(await repository.listBookmarks(ownerB)).toEqual([]);
+
+      const concurrent = await Promise.allSettled([
+        repository.setBingoSelfConfirmed(ownerA, '2026-10-12', 1, '0', true),
+        repository.setBingoSelfConfirmed(ownerA, '2026-10-12', 2, '0', true),
+      ]);
+      expect(concurrent.filter(({ status }) => status === 'fulfilled')).toHaveLength(1);
+      const rejected = concurrent.find(({ status }) => status === 'rejected');
+      expect(rejected).toMatchObject({
+        status: 'rejected',
+        reason: expect.any(ResourceBingoVersionMismatchError),
+      });
+
+      let current = await repository.readBingo(ownerA, '2026-10-12');
+      expect(current?.items.filter((item) => item.evidence === 'SELF_CONFIRMED')).toHaveLength(1);
+      expect(current?.version).toBe('1');
+      const confirmedPosition = current?.items.find((item) => item.selfConfirmedAt)?.position;
+      expect(confirmedPosition).toBeDefined();
+      const idempotentRetry = await repository.setBingoSelfConfirmed(
+        ownerA,
+        '2026-10-12',
+        confirmedPosition!,
+        '0',
+        true,
+      );
+      expect(idempotentRetry?.version).toBe('1');
+      current = await repository.setBingoSelfConfirmed(
+        ownerA,
+        '2026-10-12',
+        confirmedPosition!,
+        current!.version,
+        false,
+      );
+      expect(current?.items.every((item) => item.evidence === 'NONE')).toBe(true);
+
+      const assignmentId = (
+        await pool.query<{ id: string }>(
+          `INSERT INTO resource_daily_assignment
+             (owner_id, local_date, time_zone, support_plan_id, support_plan_version, plan_tags)
+           VALUES ($1, '2026-10-12', 'Asia/Ho_Chi_Minh', $2, 3,
+             ARRAY['ANXIETY_SYMPTOMS']) RETURNING id`,
+          [ownerA, planId],
+        )
+      ).rows[0].id;
+      await pool.query(
+        `INSERT INTO resource_daily_assignment_item
+           (assignment_id, ordinal, resource_id, selection_reason)
+         VALUES ($1, 0, $2, 'PLAN_SELECTED')`,
+        [assignmentId, resourceA],
+      );
+      await pool.query(
+        `INSERT INTO resource_daily_progress
+           (owner_id, resource_id, local_date, resource_version, status, completed_at)
+         VALUES ($1, $2, '2026-10-12', 0, 'COMPLETED', now())`,
+        [ownerA, resourceA],
+      );
+      current = await repository.readBingo(ownerA, '2026-10-12');
+      expect(current?.items[0]).toMatchObject({
+        evidence: 'CONTENT_VERIFIED',
+        verificationSource: 'RESOURCE_COMPLETION',
+      });
+
+      await pool.query(
+        `UPDATE resource SET version = 1, content_version_label = 'mb-660-v1' WHERE id = $1`,
+        [resourceA],
+      );
+      await pool.query(
+        `INSERT INTO resource_publication_snapshot
+           (resource_id, content_version, snapshot, published_by)
+         SELECT id, version, to_jsonb(resource), $2 FROM resource WHERE id = $1`,
+        [resourceA, reviewer],
+      );
+      await pool.query(
+        `UPDATE resource_daily_progress SET resource_version = 1 WHERE owner_id = $1 AND resource_id = $2`,
+        [ownerA, resourceA],
+      );
+      current = await repository.readBingo(ownerA, '2026-10-12');
+      expect(current?.items[0].evidence).toBe('NONE');
+
+      const refreshed = await repository.saveBookmark(ownerA, resourceA);
+      expect(refreshed).toMatchObject({ resourceId: resourceA, contentVersion: '1', version: '1' });
+      await repository.deleteBookmark(ownerA, resourceA);
+      expect(await repository.listBookmarks(ownerA)).toEqual([]);
     });
   });
 
@@ -979,6 +1258,14 @@ describe('Database Integration', () => {
         completedAt: completed?.completedAt,
         version: '3',
       });
+      await pool.query(`UPDATE resource SET version = version + 1 WHERE id = $1`, [
+        resource.rows[0].id,
+      ]);
+      const afterResourceEdit = await repository.save(owner, resource.rows[0].id, '2026-09-28', {
+        status: 'IN_PROGRESS',
+        completedActionIds: [],
+      });
+      expect(afterResourceEdit?.contentVersion).toBe(completed?.contentVersion);
       expect(await repository.list(otherOwner, '2026-09-22', '2026-09-28')).toEqual([]);
       expect(await repository.list(owner, '2026-09-22', '2026-09-28')).toHaveLength(1);
     });
@@ -1051,6 +1338,135 @@ describe('Database Integration', () => {
           { status: 'IN_PROGRESS', completedActionIds: [] },
         ),
       ).toBeNull();
+    });
+  });
+
+  describe('resource reward read model', () => {
+    it('only awards otherwise eligible practice evidence when it is plan-bound', async () => {
+      const database = {
+        query: (text: string, parameters?: unknown[]) => pool.query(text, parameters),
+      } as unknown as DatabaseService;
+      const repository = new ResourceRewardRepository(database);
+      const owner = '12690000-0000-4000-8000-000000000001';
+      const resourceId = '12690000-0000-4000-8000-000000000002';
+      const supportPlanId = '12690000-0000-4000-8000-000000000003';
+      await pool.query(
+        `INSERT INTO resource
+           (id, category, locale, title, summary, content_body, source_organization,
+            source_title, source_url, source_review_note, status, reviewed_by,
+            reviewed_at, effective_at, source_review_status, resource_kind,
+            interaction_type, repeatability, completion_mode, streak_eligible)
+         VALUES ($1, 'BREATHING', 'vi-VN', 'Plan-bound evidence', 'Summary', 'Body',
+           'Reviewed source', 'Reviewed title', 'https://example.com/source', 'Reviewed note',
+           'PUBLISHED', '12690000-0000-4000-8000-000000000099', now(), now(),
+           'REVIEWED', 'PRACTICE', 'BREATHING_PACER', 'REPEATABLE', 'TIMED', true)`,
+        [resourceId],
+      );
+      await pool.query(
+        `INSERT INTO resource_publication_snapshot
+           (resource_id, content_version, snapshot, published_by, published_at)
+         SELECT id, version, to_jsonb(resource), reviewed_by, reviewed_at
+         FROM resource WHERE id = $1`,
+        [resourceId],
+      );
+      await pool.query(
+        `INSERT INTO resource_practice_session
+           (id, owner_id, resource_id, resource_version, support_plan_id, local_date,
+            completed_at, started_at, duration_seconds)
+         VALUES
+           ('12690000-0000-4000-8000-000000000010', $1, $2, 0, NULL, '2026-10-10',
+            '2026-10-10T04:05:00Z', '2026-10-10T04:00:00Z', 300),
+           ('12690000-0000-4000-8000-000000000011', $1, $2, 0, $3, '2026-10-11',
+            '2026-10-11T05:05:00Z', '2026-10-11T05:00:00Z', 300)`,
+        [owner, resourceId, supportPlanId],
+      );
+
+      const source = await repository.read(owner);
+      expect(source.facts).toHaveLength(1);
+      expect(source.facts[0]).toMatchObject({
+        kind: 'VERIFIED_PRACTICE',
+        resourceId,
+        occurredAt: '2026-10-11T05:05:00.000Z',
+      });
+      expect(calculateResourceRewards(source.facts, owner).totalXp).toBe(5);
+    });
+
+    it('derives bounded owner-scoped rewards from exact reviewed evidence and corrections', async () => {
+      const database = {
+        query: (text: string, parameters?: unknown[]) => pool.query(text, parameters),
+      } as unknown as DatabaseService;
+      const repository = new ResourceRewardRepository(database);
+      const owner = '12700000-0000-4000-8000-000000000001';
+      const otherOwner = '12700000-0000-4000-8000-000000000002';
+      const resourceId = '12700000-0000-4000-8000-000000000003';
+      await pool.query(
+        `INSERT INTO resource
+           (id, category, locale, title, summary, content_body, source_organization,
+            source_title, source_url, source_review_note, status, reviewed_by,
+            reviewed_at, effective_at, source_review_status, resource_kind,
+            interaction_type, repeatability, completion_mode, streak_eligible)
+         VALUES ($1, 'BREATHING', 'vi-VN', 'Reward evidence', 'Summary', 'Body',
+           'Reviewed source', 'Reviewed title', 'https://example.com/source', 'Reviewed note',
+           'PUBLISHED', '12700000-0000-4000-8000-000000000099', now(), now(),
+           'REVIEWED', 'PRACTICE', 'BREATHING_PACER', 'REPEATABLE', 'TIMED', true)`,
+        [resourceId],
+      );
+      await pool.query(
+        `INSERT INTO resource_publication_snapshot
+           (resource_id, content_version, snapshot, published_by, published_at)
+         SELECT id, version, to_jsonb(resource), reviewed_by, reviewed_at
+         FROM resource WHERE id = $1`,
+        [resourceId],
+      );
+      await pool.query(
+        `INSERT INTO resource_daily_progress
+           (owner_id, resource_id, local_date, resource_version, status,
+            completed_action_ids, completed_at)
+         VALUES ($1, $2, '2026-10-12', 0, 'COMPLETED', ARRAY['done'],
+           '2026-10-12T04:00:00Z')`,
+        [owner, resourceId],
+      );
+      await pool.query(
+        `INSERT INTO resource_practice_session
+           (id, owner_id, resource_id, resource_version, support_plan_id, local_date,
+            completed_at, started_at, duration_seconds)
+         VALUES
+           ('12700000-0000-4000-8000-000000000010', $1, $2, 0, $3, '2026-10-12',
+            '2026-10-12T04:05:00Z', '2026-10-12T04:00:00Z', 300),
+           ('12700000-0000-4000-8000-000000000011', $1, $2, 0, $3, '2026-10-12',
+            '2026-10-12T05:05:00Z', '2026-10-12T05:00:00Z', 300),
+           ('12700000-0000-4000-8000-000000000012', $1, $2, 0, $3, '2026-10-13',
+            '2026-10-13T05:00:30Z', '2026-10-13T05:00:00Z', 30)`,
+        [owner, resourceId, '12700000-0000-4000-8000-000000000004'],
+      );
+
+      const source = await repository.read(owner);
+      expect(source.facts).toHaveLength(2);
+      expect(calculateResourceRewards(source.facts, owner).totalXp).toBe(15);
+      expect(
+        calculateResourceRewards((await repository.read(otherOwner)).facts, otherOwner).totalXp,
+      ).toBe(0);
+      const concurrentReads = await Promise.all(
+        Array.from({ length: 8 }, async () =>
+          calculateResourceRewards((await repository.read(owner)).facts, owner),
+        ),
+      );
+      expect(new Set(concurrentReads.map((result) => result.totalXp))).toEqual(new Set([15]));
+      expect(new Set(concurrentReads.map((result) => result.grants[0]?.grantId)).size).toBe(1);
+
+      await repository.setVisibility(owner, 'HIDDEN');
+      await repository.setVisibility(owner, 'HIDDEN');
+      expect((await repository.read(owner)).preference).toEqual({
+        visibilityState: 'HIDDEN',
+        version: '0',
+      });
+
+      await pool.query(
+        `DELETE FROM resource_daily_progress
+         WHERE owner_id = $1 AND resource_id = $2 AND local_date = '2026-10-12'`,
+        [owner, resourceId],
+      );
+      expect(calculateResourceRewards((await repository.read(owner)).facts, owner).totalXp).toBe(5);
     });
   });
 

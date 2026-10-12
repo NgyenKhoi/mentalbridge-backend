@@ -16,10 +16,19 @@ const expectedImplemented = new Set([
   'GET /api/v1/resources/{id}',
   'GET /api/v1/resource-progress',
   'PUT /api/v1/resource-progress/{resourceId}/{localDate}',
+  'GET /api/v1/resource-rewards',
+  'PUT /api/v1/resource-rewards',
   'PUT /api/v1/resource-journeys/{localDate}',
+  'GET /api/v1/resource-bookmarks',
+  'PUT /api/v1/resource-bookmarks/{resourceId}',
+  'DELETE /api/v1/resource-bookmarks/{resourceId}',
+  'GET /api/v1/resource-bingo/{weekStart}',
+  'PUT /api/v1/resource-bingo/{weekStart}/items/{position}/self-confirmation',
   'PATCH /api/v1/resources/{id}',
   'DELETE /api/v1/resources/{id}',
   'POST /api/v1/resources/{id}/publish',
+  'POST /api/v1/resources/{id}/review',
+  'POST /api/v1/resources/{id}/versions',
   'POST /api/v1/resources/{id}/archive',
   'POST /api/v1/resources/{id}/versions/{contentVersion}/eligibility-publications',
   'POST /api/v1/resources/{id}/versions/{contentVersion}/eligibility-publications/withdrawal',
@@ -52,10 +61,22 @@ const implementedResponses = new Map([
     'PUT /api/v1/resource-progress/{resourceId}/{localDate}',
     new Set(['200', '401', '404', '422', '503']),
   ],
+  ['GET /api/v1/resource-rewards', new Set(['200', '401', '503'])],
+  ['PUT /api/v1/resource-rewards', new Set(['200', '401', '422', '503'])],
   ['PUT /api/v1/resource-journeys/{localDate}', new Set(['200', '401', '404', '422', '503'])],
+  ['GET /api/v1/resource-bookmarks', new Set(['200', '401', '503'])],
+  ['PUT /api/v1/resource-bookmarks/{resourceId}', new Set(['200', '401', '404', '422', '503'])],
+  ['DELETE /api/v1/resource-bookmarks/{resourceId}', new Set(['204', '401', '422', '503'])],
+  ['GET /api/v1/resource-bingo/{weekStart}', new Set(['200', '401', '404', '422', '503'])],
+  [
+    'PUT /api/v1/resource-bingo/{weekStart}/items/{position}/self-confirmation',
+    new Set(['200', '400', '401', '404', '412', '422', '428', '503']),
+  ],
   ['PATCH /api/v1/resources/{id}', new Set(['200', '400', '401', '403', '409', '422'])],
   ['DELETE /api/v1/resources/{id}', new Set(['204', '400', '401', '403', '409'])],
-  ['POST /api/v1/resources/{id}/publish', new Set(['400', '401', '403', '409'])],
+  ['POST /api/v1/resources/{id}/publish', new Set(['200', '400', '401', '403', '404', '409'])],
+  ['POST /api/v1/resources/{id}/review', new Set(['200', '400', '401', '403', '409', '422'])],
+  ['POST /api/v1/resources/{id}/versions', new Set(['200', '400', '401', '403', '409'])],
   ['POST /api/v1/resources/{id}/archive', new Set(['200', '400', '401', '403', '409'])],
   [
     'POST /api/v1/resources/{id}/versions/{contentVersion}/eligibility-publications',
@@ -164,6 +185,23 @@ if (!setsEqual(actualImplemented, expectedImplemented)) {
   throw new Error(
     `Content contract availability differs from implemented controllers. Missing: [${missing.join(', ')}]. Extra: [${extra.join(', ')}]`,
   );
+}
+
+for (const schemaName of ['CreateResourceRequest', 'UpdateResourceRequest']) {
+  const schema = contract.components.schemas[schemaName];
+  if (schema.properties?.sourceReviewStatus) {
+    throw new Error(`${schemaName} must not expose the server-owned sourceReviewStatus field`);
+  }
+  if (schema.additionalProperties !== false) {
+    throw new Error(`${schemaName} must reject unknown editorial input fields`);
+  }
+}
+
+const adminDetailRequired = new Set(
+  contract.components.schemas.AdminResourceDetail.allOf?.[1]?.required ?? [],
+);
+if (!adminDetailRequired.has('reviewDecision') || !adminDetailRequired.has('isCorrectionDraft')) {
+  throw new Error('AdminResourceDetail must project exact review state and correction policy');
 }
 
 const domains = new Set(contract.components.schemas.ScreeningDomain.enum);

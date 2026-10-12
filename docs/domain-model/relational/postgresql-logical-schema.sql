@@ -127,6 +127,24 @@ CREATE TABLE identity.security_audit_event (
     created_at timestamptz NOT NULL
 );
 
+CREATE TABLE identity.platform_report_schedule (
+    id uuid PRIMARY KEY,
+    report_type varchar(64) NOT NULL CHECK (report_type = 'ACCOUNT_ACTIVITY'),
+    cadence varchar(16) NOT NULL CHECK (cadence IN ('DAILY', 'WEEKLY', 'MONTHLY')),
+    timezone varchar(64) NOT NULL,
+    local_time time NOT NULL CHECK (extract(second FROM local_time) = 0),
+    period_days integer NOT NULL CHECK (period_days BETWEEN 1 AND 366),
+    recipient_group varchar(16) NOT NULL CHECK (recipient_group = 'ADMIN'),
+    delivery_target varchar(24) NOT NULL CHECK (delivery_target = 'ADMIN_REPORT_HISTORY'),
+    status varchar(16) NOT NULL CHECK (status IN ('ACTIVE', 'PAUSED', 'DELETED')),
+    created_by uuid NOT NULL REFERENCES identity.account(id),
+    created_at timestamptz NOT NULL,
+    updated_at timestamptz NOT NULL,
+    next_run_at timestamptz NOT NULL,
+    last_failure_code varchar(64),
+    version bigint NOT NULL DEFAULT 0
+);
+
 CREATE TABLE identity.platform_report_job (
     id uuid PRIMARY KEY,
     report_type varchar(64) NOT NULL,
@@ -140,6 +158,10 @@ CREATE TABLE identity.platform_report_job (
     idempotency_key varchar(128) NOT NULL,
     request_hash char(64) NOT NULL,
     retry_of uuid REFERENCES identity.platform_report_job(id),
+    schedule_id uuid REFERENCES identity.platform_report_schedule(id),
+    scheduled_for timestamptz,
+    UNIQUE (schedule_id, scheduled_for),
+    CHECK ((schedule_id IS NULL) = (scheduled_for IS NULL)),
     started_at timestamptz,
     completed_at timestamptz,
     failed_at timestamptz,
@@ -527,17 +549,56 @@ CREATE TABLE care.support_guide_request (
         REFERENCES care.support_guide(id, user_id)
 );
 
+CREATE TABLE care.support_plan_personalization (
+    id uuid PRIMARY KEY,
+    user_id uuid NOT NULL REFERENCES care.user_profile(account_id),
+    revision bigint NOT NULL,
+    schema_version varchar(64) NOT NULL,
+    status varchar(16) NOT NULL,
+    preferred_focus varchar(32),
+    desired_pace varchar(16),
+    daily_time_budget_minutes smallint,
+    preferred_daypart varchar(16),
+    submitted_at timestamptz NOT NULL,
+    UNIQUE (user_id, revision),
+    UNIQUE (id, user_id, revision)
+);
+
+CREATE TABLE care.support_plan_personalization_activity_mode (
+    id uuid PRIMARY KEY,
+    personalization_id uuid NOT NULL REFERENCES care.support_plan_personalization(id),
+    ordinal smallint NOT NULL,
+    activity_mode varchar(32) NOT NULL,
+    UNIQUE (personalization_id, ordinal),
+    UNIQUE (personalization_id, activity_mode)
+);
+
+CREATE TABLE care.support_plan_personalization_barrier (
+    id uuid PRIMARY KEY,
+    personalization_id uuid NOT NULL REFERENCES care.support_plan_personalization(id),
+    ordinal smallint NOT NULL,
+    barrier varchar(32) NOT NULL,
+    UNIQUE (personalization_id, ordinal),
+    UNIQUE (personalization_id, barrier)
+);
+
 CREATE TABLE care.support_plan (
     id uuid PRIMARY KEY,
     user_id uuid NOT NULL REFERENCES care.user_profile(account_id),
     support_evaluation_id uuid NOT NULL,
     status varchar(16) NOT NULL,
     version bigint NOT NULL,
+    model_version integer NOT NULL,
+    plan_policy_version varchar(128),
+    action_count smallint NOT NULL,
     evaluation_policy_version varchar(64) NOT NULL,
     evaluated_at timestamptz NOT NULL,
-    selection_policy_version varchar(64) NOT NULL,
-    resource_policy_version varchar(64) NOT NULL,
-    resources_resolved_at timestamptz NOT NULL,
+    selection_policy_version varchar(64),
+    resource_policy_version varchar(64),
+    resources_resolved_at timestamptz,
+    personalization_id uuid,
+    personalization_revision bigint,
+    personalization_schema_version varchar(64),
     entitlement_package varchar(16) NOT NULL,
     entitlement_source varchar(16) NOT NULL,
     entitlement_policy_version varchar(64) NOT NULL,
@@ -550,7 +611,7 @@ CREATE TABLE care.support_plan (
     safety_policy_version varchar(64) NOT NULL,
     safety_guidance_code varchar(64) NOT NULL,
     safety_guidance varchar(2048) NOT NULL,
-    selected_resource_count smallint NOT NULL,
+    selected_resource_count smallint,
     activated_at timestamptz,
     completed_at timestamptz,
     completion_reason varchar(32),
@@ -560,7 +621,68 @@ CREATE TABLE care.support_plan (
     updated_at timestamptz NOT NULL,
     UNIQUE (id, user_id),
     FOREIGN KEY (support_evaluation_id, user_id)
-        REFERENCES care.support_evaluation_v2(id, user_id)
+        REFERENCES care.support_evaluation_v2(id, user_id),
+    FOREIGN KEY (personalization_id, user_id, personalization_revision)
+        REFERENCES care.support_plan_personalization(id, user_id, revision)
+);
+
+CREATE TABLE care.support_plan_focus (
+    id uuid PRIMARY KEY,
+    support_plan_id uuid NOT NULL,
+    support_plan_model_version integer NOT NULL,
+    user_id uuid NOT NULL,
+    ordinal smallint NOT NULL,
+    title varchar(255) NOT NULL,
+    rationale varchar(2048),
+    version bigint NOT NULL,
+    created_at timestamptz NOT NULL,
+    updated_at timestamptz NOT NULL,
+    UNIQUE (id, support_plan_id, user_id),
+    UNIQUE (support_plan_id, ordinal),
+    FOREIGN KEY (support_plan_id, user_id)
+        REFERENCES care.support_plan(id, user_id),
+    FOREIGN KEY (support_plan_id, support_plan_model_version)
+        REFERENCES care.support_plan(id, model_version)
+);
+
+CREATE TABLE care.support_plan_action (
+    id uuid PRIMARY KEY,
+    support_plan_id uuid NOT NULL,
+    plan_focus_id uuid NOT NULL,
+    user_id uuid NOT NULL,
+    ordinal smallint NOT NULL,
+    action_type varchar(32) NOT NULL,
+    purpose_code varchar(64) NOT NULL,
+    rationale varchar(2048),
+    source_owner varchar(32),
+    source_kind varchar(48),
+    source_id varchar(255),
+    source_revision varchar(128),
+    source_policy_version varchar(128),
+    source_publication_id uuid,
+    source_eligibility_policy_version varchar(128),
+    source_verified_at timestamptz,
+    provenance_type varchar(32) NOT NULL,
+    provenance_reference_id varchar(255),
+    provenance_reference_version varchar(128),
+    provenance_accepted_at timestamptz NOT NULL,
+    presentation_title varchar(255) NOT NULL,
+    presentation_summary varchar(4096),
+    presentation_instructions varchar(2048),
+    presentation_external_url varchar(2048),
+    status varchar(16) NOT NULL,
+    version bigint NOT NULL,
+    created_at timestamptz NOT NULL,
+    updated_at timestamptz NOT NULL,
+    activated_at timestamptz,
+    ended_at timestamptz,
+    UNIQUE (id, support_plan_id, user_id),
+    UNIQUE (id, support_plan_id, user_id, action_type),
+    UNIQUE (plan_focus_id, ordinal),
+    FOREIGN KEY (support_plan_id, user_id)
+        REFERENCES care.support_plan(id, user_id),
+    FOREIGN KEY (plan_focus_id, support_plan_id, user_id)
+        REFERENCES care.support_plan_focus(id, support_plan_id, user_id)
 );
 
 CREATE TABLE care.support_plan_template_family (
@@ -569,7 +691,10 @@ CREATE TABLE care.support_plan_template_family (
     ordinal smallint NOT NULL,
     family varchar(64) NOT NULL,
     template_version integer NOT NULL,
-    target_domain varchar(48) NOT NULL
+    target_domain varchar(48) NOT NULL,
+    focus_title varchar(255),
+    focus_rationale varchar(2048),
+    focus_reason_code varchar(64)
 );
 
 CREATE TABLE care.support_plan_slot (
@@ -708,23 +833,64 @@ CREATE TABLE care.support_plan_activity_schedule (
     ordinal smallint NOT NULL,
     schedule_version integer NOT NULL,
     source_plan_version bigint NOT NULL,
-    source_slot_key varchar(64) NOT NULL,
-    source_resource_id uuid NOT NULL, -- external -> content.resource.id
-    source_content_version bigint NOT NULL,
+    source_slot_key varchar(64),
+    source_resource_id uuid, -- external -> content.resource.id; v2 branch only
+    source_content_version bigint,
+    source_action_id uuid, -- v3 -> care.support_plan_action.id
+    source_action_version bigint,
+    source_action_type varchar(32),
     source_title varchar(255) NOT NULL,
+    schedule_policy_version varchar(128),
+    reminder_enabled boolean NOT NULL DEFAULT false,
     recurrence_type varchar(16) NOT NULL,
     recurrence_day_of_week smallint,
+    recurrence_days_mask smallint,
+    preferred_daypart varchar(16),
+    estimated_duration_minutes smallint,
     local_time time NOT NULL,
     timezone varchar(64) NOT NULL,
     effective_from date NOT NULL,
     effective_until date,
+    occurrence_generation_until date,
     status varchar(16) NOT NULL,
+    activated_at timestamptz,
     created_at timestamptz NOT NULL,
     updated_at timestamptz NOT NULL,
     UNIQUE (id, support_plan_id, user_id),
+    UNIQUE (id, support_plan_id, user_id, schedule_version, source_plan_version,
+        source_action_id, source_action_version, source_action_type),
+    FOREIGN KEY (support_plan_id, user_id)
+        REFERENCES care.support_plan(id, user_id),
+    FOREIGN KEY (source_action_id, support_plan_id, user_id, source_action_type)
+        REFERENCES care.support_plan_action(id, support_plan_id, user_id, action_type)
+);
+
+CREATE UNIQUE INDEX ux_support_plan_activity_schedule_current_slot
+    ON care.support_plan_activity_schedule (support_plan_id, source_slot_key)
+    WHERE source_slot_key IS NOT NULL AND status IN ('DRAFT', 'ACTIVE', 'PAUSED');
+
+CREATE UNIQUE INDEX ux_support_plan_activity_schedule_current_action
+    ON care.support_plan_activity_schedule (support_plan_id, source_action_id)
+    WHERE source_action_id IS NOT NULL AND status IN ('DRAFT', 'ACTIVE', 'PAUSED');
+
+CREATE TABLE care.support_plan_schedule_command (
+    user_id uuid NOT NULL REFERENCES care.user_profile(account_id),
+    idempotency_key varchar(128) NOT NULL,
+    request_hash char(64) NOT NULL,
+    support_plan_id uuid NOT NULL,
+    action_id uuid NOT NULL,
+    expected_plan_version bigint NOT NULL,
+    resulting_plan_version bigint NOT NULL,
+    resulting_schedule_id uuid,
+    resulting_schedule_version integer,
+    created_at timestamptz NOT NULL,
+    PRIMARY KEY (user_id, idempotency_key),
     FOREIGN KEY (support_plan_id, user_id)
         REFERENCES care.support_plan(id, user_id)
 );
+
+CREATE INDEX ix_support_plan_schedule_command_plan
+    ON care.support_plan_schedule_command (support_plan_id, created_at, idempotency_key);
 
 CREATE TABLE care.support_plan_activity_occurrence (
     id uuid PRIMARY KEY,
@@ -737,12 +903,21 @@ CREATE TABLE care.support_plan_activity_occurrence (
     timezone varchar(64) NOT NULL,
     scheduled_at timestamptz NOT NULL,
     state varchar(16) NOT NULL,
-    state_reason varchar(32),
+    state_reason varchar(32), -- cancellation reason includes SCHEDULE_CHANGED
     source_plan_version bigint NOT NULL,
-    source_slot_key varchar(64) NOT NULL,
-    source_resource_id uuid NOT NULL, -- external -> content.resource.id
-    source_content_version bigint NOT NULL,
+    source_slot_key varchar(64),
+    source_resource_id uuid, -- external -> content.resource.id; v2 branch only
+    source_content_version bigint,
+    source_action_id uuid, -- v3 -> care.support_plan_action.id
+    source_action_version bigint,
+    source_action_type varchar(32),
     source_title varchar(255) NOT NULL,
+    evidence_owner varchar(32),
+    evidence_kind varchar(48),
+    evidence_id varchar(255),
+    evidence_revision varchar(128),
+    evidence_occurred_at timestamptz,
+    evidence_verified_at timestamptz,
     version bigint NOT NULL,
     created_at timestamptz NOT NULL,
     updated_at timestamptz NOT NULL,
@@ -771,8 +946,20 @@ CREATE TABLE care.support_plan_activity_occurrence (
     FOREIGN KEY (activity_schedule_id, support_plan_id, user_id)
         REFERENCES care.support_plan_activity_schedule(id, support_plan_id, user_id),
     FOREIGN KEY (support_plan_id, user_id)
-        REFERENCES care.support_plan(id, user_id)
+        REFERENCES care.support_plan(id, user_id),
+    FOREIGN KEY (source_action_id, support_plan_id, user_id, source_action_type)
+        REFERENCES care.support_plan_action(id, support_plan_id, user_id, action_type),
+    FOREIGN KEY (activity_schedule_id, support_plan_id, user_id, schedule_version,
+        source_plan_version, source_action_id, source_action_version, source_action_type)
+        REFERENCES care.support_plan_activity_schedule(id, support_plan_id, user_id, schedule_version,
+            source_plan_version, source_action_id, source_action_version, source_action_type)
 );
+
+CREATE UNIQUE INDEX ux_support_plan_activity_occurrence_evidence_fact
+    ON care.support_plan_activity_occurrence (
+        evidence_owner, evidence_kind, evidence_id, coalesce(evidence_revision, '')
+    )
+    WHERE evidence_owner IS NOT NULL;
 
 CREATE TABLE care.reassessment_self_report (
     id uuid PRIMARY KEY,
@@ -898,6 +1085,38 @@ CREATE TABLE care.consultation_brief_audit (
     occurred_at timestamptz NOT NULL
 );
 
+CREATE TABLE care.consultation_brief_ai_draft_job (
+    id uuid PRIMARY KEY,
+    appointment_id uuid NOT NULL,
+    brief_id uuid NOT NULL REFERENCES care.consultation_brief(id),
+    user_id uuid NOT NULL,
+    brief_version bigint NOT NULL,
+    support_evaluation_id uuid NOT NULL REFERENCES care.support_evaluation_v2(id),
+    idempotency_key varchar(128) NOT NULL,
+    request_fingerprint varchar(64) NOT NULL,
+    source_set_version varchar(64) NOT NULL,
+    status varchar(16) NOT NULL,
+    attempt_count integer NOT NULL,
+    terminal_reason varchar(64),
+    suggested_current_situation varchar(1000),
+    suggested_user_goals jsonb,
+    consent_policy_version varchar(64),
+    service_plan varchar(16),
+    entitlement_source varchar(32),
+    entitlement_policy_version varchar(96),
+    entitlement_version bigint,
+    routing_policy_version varchar(96),
+    provider_approval_version varchar(96),
+    provider varchar(32),
+    model varchar(128),
+    prompt_version varchar(96),
+    schema_version integer,
+    created_at timestamptz NOT NULL,
+    updated_at timestamptz NOT NULL,
+    completed_at timestamptz,
+    UNIQUE (user_id, idempotency_key)
+);
+
 /* ========================================================================== */
 /* ACTIVE — consultation-service / mentalbridge_consultation                  */
 /* Evidence: Consultation Liquibase changesets 001-007.                       */
@@ -957,7 +1176,7 @@ CREATE TABLE consultation.specialist_profile_amendment (
     id uuid PRIMARY KEY,
     specialist_account_id uuid NOT NULL REFERENCES consultation.specialist_profile(account_id),
     base_published_version bigint NOT NULL,
-    status varchar(24) NOT NULL,
+    status varchar(24) NOT NULL CHECK (status IN ('DRAFT', 'PENDING_REVIEW', 'REJECTED', 'APPROVED', 'CANCELLED')),
     proposed_profile jsonb NOT NULL,
     submitted_at timestamptz,
     reviewed_at timestamptz,
@@ -977,13 +1196,159 @@ CREATE TABLE consultation.specialist_profile_amendment_history (
     id uuid PRIMARY KEY,
     amendment_id uuid NOT NULL REFERENCES consultation.specialist_profile_amendment(id),
     amendment_version bigint NOT NULL,
-    status varchar(24) NOT NULL,
+    status varchar(24) NOT NULL CHECK (status IN ('DRAFT', 'PENDING_REVIEW', 'REJECTED', 'APPROVED', 'CANCELLED')),
     proposed_profile jsonb NOT NULL,
     actor_account_id uuid NOT NULL,
     actor_role varchar(16) NOT NULL,
     reason_code varchar(64),
     occurred_at timestamptz NOT NULL,
     UNIQUE (amendment_id, amendment_version)
+);
+
+CREATE TABLE consultation.subscription_plan (
+    code varchar(16) PRIMARY KEY,
+    display_name varchar(64) NOT NULL,
+    sort_order integer NOT NULL UNIQUE
+);
+
+CREATE TABLE consultation.subscription_plan_version (
+    id uuid PRIMARY KEY,
+    plan_code varchar(16) NOT NULL REFERENCES consultation.subscription_plan(code),
+    version varchar(64) NOT NULL,
+    pricing_policy_version varchar(64) NOT NULL DEFAULT 'upgrade-offset-v1',
+    currency char(3) NOT NULL,
+    price_minor bigint NOT NULL,
+    billing_period_months integer NOT NULL,
+    consultation_credits_per_period integer NOT NULL,
+    max_active_reservations integer NOT NULL,
+    non_consultation_value_minor bigint NOT NULL,
+    credit_value_minor bigint NOT NULL,
+    specialist_share_bps integer NOT NULL,
+    ai_quota_code varchar(64) NOT NULL,
+    support_plan_enabled boolean NOT NULL,
+    effective_from timestamptz NOT NULL,
+    retired_at timestamptz,
+    created_at timestamptz NOT NULL,
+    UNIQUE (plan_code, version)
+);
+
+CREATE TABLE consultation.subscription_plan_entitlement (
+    plan_version_id uuid NOT NULL REFERENCES consultation.subscription_plan_version(id),
+    entitlement_code varchar(64) NOT NULL,
+    PRIMARY KEY (plan_version_id, entitlement_code)
+);
+
+CREATE TABLE consultation.user_subscription (
+    id uuid PRIMARY KEY,
+    user_id uuid NOT NULL, -- external -> identity.account.id
+    plan_version_id uuid NOT NULL REFERENCES consultation.subscription_plan_version(id),
+    status varchar(24) NOT NULL,
+    current_period_start timestamptz,
+    current_period_end timestamptz,
+    ended_at timestamptz,
+    idempotency_key varchar(128) NOT NULL,
+    created_at timestamptz NOT NULL,
+    updated_at timestamptz NOT NULL,
+    version bigint NOT NULL,
+    UNIQUE (user_id, idempotency_key)
+);
+
+CREATE TABLE consultation.subscription_status_history (
+    id uuid PRIMARY KEY,
+    subscription_id uuid NOT NULL REFERENCES consultation.user_subscription(id),
+    from_status varchar(24),
+    to_status varchar(24) NOT NULL,
+    reason_code varchar(64) NOT NULL,
+    changed_at timestamptz NOT NULL
+);
+
+CREATE TABLE consultation.payment_transaction (
+    id uuid PRIMARY KEY,
+    subscription_id uuid NOT NULL REFERENCES consultation.user_subscription(id),
+    target_plan_version_id uuid NOT NULL REFERENCES consultation.subscription_plan_version(id),
+    payment_provider varchar(16) NOT NULL,
+    momo_order_id varchar(128) NOT NULL,
+    momo_request_id varchar(128) NOT NULL,
+    momo_trans_id bigint,
+    amount_minor bigint NOT NULL,
+    currency char(3) NOT NULL,
+    status varchar(16) NOT NULL,
+    purpose varchar(16) NOT NULL,
+    momo_result_code integer,
+    momo_pay_type varchar(32),
+    idempotency_key varchar(128) NOT NULL,
+    momo_response_time_epoch_ms bigint,
+    provider_occurred_at timestamptz,
+    paid_at timestamptz,
+    failed_at timestamptz,
+    expires_at timestamptz NOT NULL,
+    checkout_url varchar(2048),
+    qr_code_url varchar(2048),
+    created_at timestamptz NOT NULL,
+    updated_at timestamptz NOT NULL,
+    version bigint NOT NULL,
+    UNIQUE (payment_provider, momo_order_id),
+    UNIQUE (payment_provider, momo_request_id),
+    UNIQUE (payment_provider, momo_trans_id),
+    CHECK (checkout_url IS NOT NULL OR qr_code_url IS NULL),
+    UNIQUE (subscription_id, idempotency_key)
+);
+
+CREATE TABLE consultation.momo_payment_ipn (
+    id uuid PRIMARY KEY,
+    payment_id uuid REFERENCES consultation.payment_transaction(id),
+    contract_version varchar(32) NOT NULL,
+    deduplication_key char(64) NOT NULL UNIQUE,
+    partner_code varchar(64) NOT NULL,
+    order_id varchar(128) NOT NULL,
+    request_id varchar(128) NOT NULL,
+    amount_minor bigint NOT NULL,
+    currency char(3) NOT NULL,
+    order_info_sha256 char(64) NOT NULL,
+    order_type varchar(64) NOT NULL,
+    trans_id bigint NOT NULL,
+    result_code integer NOT NULL,
+    result_message varchar(256) NOT NULL,
+    pay_type varchar(32) NOT NULL,
+    response_time_epoch_ms bigint NOT NULL,
+    extra_data_sha256 char(64) NOT NULL,
+    provider_occurred_at timestamptz NOT NULL,
+    safe_optional_details jsonb NOT NULL,
+    payload_sha256 char(64) NOT NULL,
+    signature_key_version varchar(32) NOT NULL,
+    signature_verified_at timestamptz NOT NULL,
+    processing_status varchar(32) NOT NULL,
+    failure_code varchar(64),
+    received_at timestamptz NOT NULL,
+    processed_at timestamptz,
+    acknowledged_at timestamptz
+);
+
+CREATE TABLE consultation.subscription_upgrade (
+    id uuid PRIMARY KEY,
+    subscription_id uuid NOT NULL REFERENCES consultation.user_subscription(id),
+    from_plan_version_id uuid NOT NULL REFERENCES consultation.subscription_plan_version(id),
+    to_plan_version_id uuid NOT NULL REFERENCES consultation.subscription_plan_version(id),
+    payment_id uuid NOT NULL UNIQUE REFERENCES consultation.payment_transaction(id),
+    pricing_policy_version varchar(64) NOT NULL DEFAULT 'upgrade-offset-v1',
+    old_period_start timestamptz NOT NULL,
+    old_period_end timestamptz NOT NULL,
+    total_period_seconds bigint NOT NULL,
+    remaining_period_seconds bigint NOT NULL,
+    remaining_feature_value_minor bigint NOT NULL,
+    available_credit_value_minor bigint NOT NULL,
+    offset_minor bigint NOT NULL,
+    amount_due_minor bigint NOT NULL,
+    currency char(3) NOT NULL,
+    status varchar(24) NOT NULL,
+    idempotency_key varchar(128) NOT NULL,
+    quoted_at timestamptz NOT NULL,
+    quote_expires_at timestamptz NOT NULL,
+    applied_at timestamptz,
+    created_at timestamptz NOT NULL,
+    updated_at timestamptz NOT NULL,
+    version bigint NOT NULL,
+    UNIQUE (subscription_id, idempotency_key)
 );
 
 CREATE TABLE consultation.current_service_entitlement (
@@ -1029,6 +1394,13 @@ CREATE TABLE consultation.service_credit (
     UNIQUE (period_id, ordinal)
 );
 
+CREATE TABLE consultation.subscription_upgrade_credit (
+    upgrade_id uuid NOT NULL REFERENCES consultation.subscription_upgrade(id),
+    credit_id uuid NOT NULL UNIQUE REFERENCES consultation.service_credit(id),
+    allocated_value_minor bigint NOT NULL,
+    PRIMARY KEY (upgrade_id, credit_id)
+);
+
 CREATE TABLE consultation.service_credit_ledger (
     id uuid PRIMARY KEY,
     credit_id uuid NOT NULL REFERENCES consultation.service_credit(id),
@@ -1071,6 +1443,7 @@ CREATE TABLE consultation.appointment (
     decision_deadline_at timestamptz NOT NULL,
     idempotency_key varchar(128) NOT NULL,
     replaces_appointment_id uuid REFERENCES consultation.appointment(id),
+    originating_plan_action_id uuid, -- opaque external -> care.plan_action/action projection; no FK or lifecycle authority
     decided_at timestamptz,
     decision_reason varchar(64),
     cancellation_reason varchar(64),
@@ -1569,7 +1942,7 @@ CREATE TABLE community.community_access_restriction (
 
 /* ========================================================================== */
 /* ACTIVE — content-notification-service / mentalbridge_content_notification  */
-/* Evidence: node-pg-migrate-compatible SQL migrations 1-16.                  */
+/* Evidence: node-pg-migrate-compatible SQL migrations 1-20.                  */
 /* ========================================================================== */
 
 CREATE TABLE content.resource (
@@ -1612,6 +1985,39 @@ CREATE TABLE content.resource (
     version bigint NOT NULL
 );
 
+CREATE TABLE content.resource_review_decision (
+    id uuid PRIMARY KEY,
+    resource_id uuid NOT NULL REFERENCES content.resource(id),
+    content_version bigint NOT NULL,
+    decision varchar(16) NOT NULL,
+    reason_code varchar(64) NOT NULL,
+    authority_version varchar(64) NOT NULL,
+    reviewed_by uuid NOT NULL, -- external -> identity.account.id
+    reviewed_at timestamptz NOT NULL,
+    UNIQUE (resource_id, content_version)
+);
+
+CREATE TABLE content.resource_publication_snapshot (
+    resource_id uuid NOT NULL REFERENCES content.resource(id),
+    content_version bigint NOT NULL,
+    review_decision_id uuid REFERENCES content.resource_review_decision(id),
+    snapshot jsonb NOT NULL,
+    published_by uuid NOT NULL, -- external -> identity.account.id
+    published_at timestamptz NOT NULL,
+    PRIMARY KEY (resource_id, content_version)
+);
+
+CREATE TABLE content.resource_publication_withdrawal (
+    resource_id uuid NOT NULL,
+    content_version bigint NOT NULL,
+    reason_code varchar(32) NOT NULL,
+    withdrawn_by uuid NOT NULL, -- external -> identity.account.id
+    withdrawn_at timestamptz NOT NULL,
+    PRIMARY KEY (resource_id, content_version),
+    FOREIGN KEY (resource_id, content_version)
+      REFERENCES content.resource_publication_snapshot(resource_id, content_version)
+);
+
 CREATE TABLE content.resource_daily_progress (
     owner_id uuid NOT NULL, -- external -> identity.account.id
     resource_id uuid NOT NULL REFERENCES content.resource(id),
@@ -1644,7 +2050,27 @@ CREATE TABLE content.resource_practice_session (
     support_plan_id uuid, -- external -> care.support_plan.id
     local_date date NOT NULL,
     completed_at timestamptz NOT NULL,
-    UNIQUE (owner_id, resource_id, local_date)
+    started_at timestamptz,
+    duration_seconds integer
+);
+
+CREATE TABLE content.resource_reward_preference (
+    owner_id uuid PRIMARY KEY, -- external -> identity.account.id
+    visibility_state varchar(16) NOT NULL,
+    version bigint NOT NULL,
+    updated_at timestamptz NOT NULL
+);
+
+CREATE TABLE content.resource_bookmark (
+    owner_id uuid NOT NULL, -- external -> identity.account.id
+    resource_id uuid NOT NULL,
+    resource_version bigint NOT NULL,
+    version bigint NOT NULL,
+    created_at timestamptz NOT NULL,
+    updated_at timestamptz NOT NULL,
+    PRIMARY KEY (owner_id, resource_id),
+    FOREIGN KEY (resource_id, resource_version)
+        REFERENCES content.resource_publication_snapshot(resource_id, content_version)
 );
 
 CREATE TABLE content.resource_daily_assignment (
@@ -1677,6 +2103,8 @@ CREATE TABLE content.resource_weekly_bingo (
     support_plan_version bigint NOT NULL,
     plan_tags text[] NOT NULL,
     created_at timestamptz NOT NULL,
+    version bigint NOT NULL,
+    updated_at timestamptz NOT NULL,
     UNIQUE (owner_id, week_start)
 );
 
@@ -1684,8 +2112,12 @@ CREATE TABLE content.resource_weekly_bingo_item (
     board_id uuid NOT NULL REFERENCES content.resource_weekly_bingo(id) ON DELETE CASCADE,
     ordinal smallint NOT NULL,
     resource_id uuid NOT NULL REFERENCES content.resource(id),
+    resource_version bigint NOT NULL,
+    self_confirmed_at timestamptz,
     PRIMARY KEY (board_id, ordinal),
-    UNIQUE (board_id, resource_id)
+    UNIQUE (board_id, resource_id),
+    FOREIGN KEY (resource_id, resource_version)
+        REFERENCES content.resource_publication_snapshot(resource_id, content_version)
 );
 
 CREATE TABLE content.notification_preference (
