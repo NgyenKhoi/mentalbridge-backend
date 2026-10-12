@@ -11,7 +11,9 @@ import java.time.ZoneOffset;
 import java.time.ZonedDateTime;
 import java.time.temporal.ChronoUnit;
 import java.util.ArrayList;
+import java.util.HashMap;
 import java.util.List;
+import java.util.Map;
 import java.util.Objects;
 import java.util.UUID;
 
@@ -30,10 +32,9 @@ import com.mentalbridge.care.supportplan.PlanActionSourcePolicy.EvidenceReferenc
 public class SupportPlanActivityOccurrenceService {
 
 	static final String SCHEDULE_POLICY_VERSION = "support-plan-activity-schedule-v1";
+	static final String SCHEDULE_POLICY_VERSION_V2 = "support-plan-activity-schedule-v2";
 	private static final int INITIAL_HORIZON_DAYS = 14;
 	private static final int MAX_QUERY_DAYS = 31;
-	private static final List<LocalTime> DEFAULT_TIMES = List.of(LocalTime.of(8, 0), LocalTime.of(10, 0),
-			LocalTime.of(14, 0), LocalTime.of(18, 0), LocalTime.of(20, 0));
 
 	private final SupportPlanRepository plans;
 	private final SupportPlanSlotRepository slots;
@@ -75,25 +76,86 @@ public class SupportPlanActivityOccurrenceService {
 		LocalDate start = now.atZone(zone).toLocalDate();
 		var selectedSlots = slots.findBySupportPlanIdOrderByOrdinal(plan.id()).stream()
 				.filter(slot -> slot.selectedResource() != null).toList();
-		var personalization = plan.personalizationId() == null ? null
-				: personalizations.snapshot(plan.personalizationId(), plan.userId(), plan.personalizationRevision())
-						.orElseThrow(() -> new ApiException(HttpStatus.CONFLICT,
-								"SUPPORT_PLAN_PERSONALIZATION_INVALID",
-								"SupportPlan personalization provenance is unavailable"));
 		if (schedules.findBySupportPlanIdOrderByOrdinal(plan.id()).isEmpty()) {
-			for (SupportPlanSlotEntity slot : selectedSlots) {
-				var resource = slot.selectedResource();
-				boolean daily = List.of("BREATHING", "MEDITATION", "JOURNALING")
-						.contains(resource.category());
-				var schedule = new SupportPlanActivityScheduleEntity(UUID.randomUUID(), plan.id(), plan.userId(),
-						slot.ordinal(), plan.version(), slot, daily ? "DAILY" : "WEEKLY",
-						daily ? null : (short) start.getDayOfWeek().getValue(),
-						defaultTime(slot.ordinal(), personalization), timezone, start, now);
-				schedules.save(schedule);
-			}
-			schedules.flush();
+			prepareDraft(plan, now);
 		}
+		Map<String, SupportPlanSlotEntity> slotByKey = new HashMap<>();
+		selectedSlots.forEach(slot -> slotByKey.put(slot.slotKey(), slot));
+		Map<UUID, PlanActionEntity> actionById = new HashMap<>();
+		actions.findBySupportPlanIdAndUserIdOrderByPlanFocusIdAscOrdinalAsc(plan.id(), plan.userId())
+				.forEach(action -> actionById.put(action.id(), action));
+		for (var schedule : schedules.findBySupportPlanIdForUpdate(plan.id())) {
+			if (!"DRAFT".equals(schedule.status())) continue;
+			if (schedule.sourceActionId() == null) {
+				var slot = slotByKey.get(schedule.sourceSlotKey());
+				if (slot == null) {
+					schedule.end(schedule.effectiveFrom(), now);
+				}
+				else {
+					schedule.activate(plan.version(), slot, now);
+				}
+			}
+			else {
+				var action = actionById.get(schedule.sourceActionId());
+				if (action == null || "ENDED".equals(action.status())) {
+					schedule.end(schedule.effectiveFrom(), now);
+				}
+				else {
+					schedule.activate(plan.version(), action, now);
+				}
+			}
+		}
+		schedules.flush();
 		generate(plan.id(), start, start.plusDays(INITIAL_HORIZON_DAYS - 1), now);
+	}
+
+	@Transactional
+	void prepareDraft(SupportPlanEntity plan, Instant now) {
+		if (!"DRAFT".equals(plan.status())) return;
+		String timezone = profiles.findTimezoneByAccountId(plan.userId()).orElseThrow(() -> new ApiException(
+				HttpStatus.NOT_FOUND, "PROFILE_NOT_FOUND", "Care profile was not found"));
+		LocalDate start = now.atZone(zone(timezone)).toLocalDate();
+		var personalization = personalization(plan);
+		String recurrenceType = personalization != null
+				&& personalization.desiredPace() == SupportPlanPersonalizationService.DesiredPace.ACTIVE
+						? "DAILY" : "WEEKLY";
+		Short daysMask = "DAILY".equals(recurrenceType) ? null
+				: defaultDaysMask(start, personalization);
+		String preferredDaypart = personalization == null || personalization.preferredDaypart() == null
+				? null : personalization.preferredDaypart().name();
+		int duration = personalization == null || personalization.dailyTimeBudgetMinutes() == null
+				? 10 : personalization.dailyTimeBudgetMinutes();
+		LocalTime localTime = defaultTime(personalization);
+		for (var slot : slots.findBySupportPlanIdOrderByOrdinal(plan.id())) {
+			if (slot.selectedResource() == null || schedules.currentForSlot(plan.id(), slot.slotKey()).isPresent()) {
+				continue;
+			}
+			schedules.save(SupportPlanActivityScheduleEntity.draftForSlot(UUID.randomUUID(), plan, slot,
+					SCHEDULE_POLICY_VERSION_V2, recurrenceType, daysMask, preferredDaypart,
+					duration, localTime, timezone, start, now));
+		}
+		schedules.flush();
+	}
+
+	@Transactional
+	void syncDraft(SupportPlanEntity plan, Instant now) {
+		if (!"DRAFT".equals(plan.status())) return;
+		Map<String, SupportPlanSlotEntity> selected = new HashMap<>();
+		slots.findBySupportPlanIdOrderByOrdinal(plan.id()).stream()
+				.filter(slot -> slot.selectedResource() != null)
+				.forEach(slot -> selected.put(slot.slotKey(), slot));
+		for (var schedule : schedules.findBySupportPlanIdForUpdate(plan.id())) {
+			if (schedule.sourceActionId() != null || !"DRAFT".equals(schedule.status())) continue;
+			var slot = selected.remove(schedule.sourceSlotKey());
+			if (slot == null) {
+				schedule.end(schedule.effectiveFrom(), now);
+			}
+			else {
+				schedule.syncDraftSlot(plan.version(), slot, now);
+			}
+		}
+		schedules.flush();
+		prepareDraft(plan, now);
 	}
 
 	private void assertCurrentPersonalization(SupportPlanEntity plan) {
@@ -108,19 +170,39 @@ public class SupportPlanActivityOccurrenceService {
 		}
 	}
 
-	private LocalTime defaultTime(int ordinal,
+	private SupportPlanPersonalizationService.PersonalizationSnapshot personalization(SupportPlanEntity plan) {
+		return plan.personalizationId() == null ? null
+				: personalizations.snapshot(plan.personalizationId(), plan.userId(), plan.personalizationRevision())
+						.orElseThrow(() -> new ApiException(HttpStatus.CONFLICT,
+								"SUPPORT_PLAN_PERSONALIZATION_INVALID",
+								"SupportPlan personalization provenance is unavailable"));
+	}
+
+	private Short defaultDaysMask(LocalDate start,
+			SupportPlanPersonalizationService.PersonalizationSnapshot personalization) {
+		int first = start.getDayOfWeek().getValue();
+		int mask = 1 << (first - 1);
+		if (personalization != null
+				&& personalization.desiredPace() == SupportPlanPersonalizationService.DesiredPace.BALANCED) {
+			int second = ((first + 2) % 7) + 1;
+			mask |= 1 << (second - 1);
+		}
+		return (short) mask;
+	}
+
+	private LocalTime defaultTime(
 			SupportPlanPersonalizationService.PersonalizationSnapshot personalization) {
 		if (personalization == null || personalization.preferredDaypart() == null
 				|| personalization.preferredDaypart() == SupportPlanPersonalizationService.PreferredDaypart.FLEXIBLE) {
-			return DEFAULT_TIMES.get(ordinal - 1);
+			return LocalTime.of(18, 0);
 		}
-		int baseHour = switch (personalization.preferredDaypart()) {
+		int hour = switch (personalization.preferredDaypart()) {
 			case MORNING -> 8;
-			case AFTERNOON -> 13;
-			case EVENING -> 18;
+			case AFTERNOON -> 14;
+			case EVENING -> 19;
 			case FLEXIBLE -> throw new IllegalStateException("Flexible daypart uses compatibility defaults");
 		};
-		return LocalTime.of(Math.min(baseHour + ordinal - 1, 21), 0);
+		return LocalTime.of(hour, 0);
 	}
 
 	@Transactional
@@ -144,8 +226,16 @@ public class SupportPlanActivityOccurrenceService {
 				.findBySupportPlanIdAndUserIdAndLocalDateBetweenOrderByScheduledAtAscIdAsc(plan.id(), userId,
 						from, through)
 				.stream().map(value -> view(value, now)).toList();
-		return new OccurrenceListView(plan.id(), plan.status(), SCHEDULE_POLICY_VERSION, from, through,
+		return new OccurrenceListView(plan.id(), plan.status(), currentSchedulePolicy(plan.id()), from, through,
 				values, "SELF_REPORTED_WELLBEING_ACTIVITY_NOT_TREATMENT_ADHERENCE");
+	}
+
+	private String currentSchedulePolicy(UUID planId) {
+		return schedules.findBySupportPlanIdOrderByOrdinal(planId).stream()
+				.filter(value -> !"ENDED".equals(value.status()))
+				.map(value -> value.schedulePolicyVersion() == null
+						? SCHEDULE_POLICY_VERSION : value.schedulePolicyVersion())
+				.findFirst().orElse(SCHEDULE_POLICY_VERSION);
 	}
 
 	@Transactional
@@ -367,9 +457,7 @@ public class SupportPlanActivityOccurrenceService {
 			schedule.resume(now);
 		}
 		occurrences.restoreFuturePaused(plan.id(), now);
-		ZoneId zone = zone(values.get(0).timezone());
-		LocalDate start = now.atZone(zone).toLocalDate();
-		generate(plan.id(), start, start.plusDays(INITIAL_HORIZON_DAYS - 1), now);
+		generateRollingHorizon(plan.id(), now);
 	}
 
 	@Transactional
@@ -380,6 +468,29 @@ public class SupportPlanActivityOccurrenceService {
 			schedule.end(last, now);
 		}
 		occurrences.cancelFutureForTerminal(planId, reason, now);
+	}
+
+	@Transactional
+	void discardDraft(UUID planId, Instant now) {
+		for (var schedule : schedules.findBySupportPlanIdForUpdate(planId)) {
+			if ("DRAFT".equals(schedule.status())) {
+				schedule.end(schedule.effectiveFrom(), now);
+			}
+		}
+	}
+
+	@Transactional
+	void scheduleChanged(UUID scheduleId, Instant cutover, Instant now) {
+		occurrences.cancelFutureForScheduleChange(scheduleId, cutover, now);
+	}
+
+	@Transactional
+	void generateRollingHorizon(UUID planId, Instant now) {
+		for (var schedule : schedules.findBySupportPlanIdForUpdate(planId)) {
+			if (!"ACTIVE".equals(schedule.status())) continue;
+			LocalDate start = now.atZone(zone(schedule.timezone())).toLocalDate();
+			generateOne(schedule, start, start.plusDays(INITIAL_HORIZON_DAYS - 1), now);
+		}
 	}
 
 	private void validateWindow(UUID userId, LocalDate from, LocalDate through) {
@@ -402,33 +513,40 @@ public class SupportPlanActivityOccurrenceService {
 			if (!"ACTIVE".equals(schedule.status())) {
 				continue;
 			}
-			LocalDate start = from.isBefore(schedule.effectiveFrom()) ? schedule.effectiveFrom() : from;
-			LocalDate end = schedule.effectiveUntil() == null || through.isBefore(schedule.effectiveUntil())
-					? through : schedule.effectiveUntil();
-			for (LocalDate date = start; !date.isAfter(end); date = date.plusDays(1)) {
-				if (!occurs(schedule, date)) {
-					continue;
-				}
-				String key = schedule.id() + ":" + schedule.scheduleVersion() + ":" + date;
-				UUID occurrenceId = UUID.nameUUIDFromBytes(key.getBytes(StandardCharsets.UTF_8));
-				Instant scheduledAt = resolve(date, schedule.localTime(), schedule.timezone());
-				if (schedule.sourceActionId() == null) {
-					occurrences.insertIfAbsent(occurrenceId, schedule.id(), schedule.supportPlanId(),
-							schedule.userId(), schedule.scheduleVersion(), date, schedule.localTime(),
-							schedule.timezone(), scheduledAt, schedule.sourcePlanVersion(), schedule.sourceSlotKey(),
-							schedule.sourceResourceId(), schedule.sourceContentVersion(), schedule.sourceTitle(), now);
-				}
-				else {
-					occurrences.insertNativeIfAbsent(occurrenceId, schedule.id(), schedule.supportPlanId(),
-							schedule.userId(), schedule.scheduleVersion(), date, schedule.localTime(),
-							schedule.timezone(), scheduledAt, schedule.sourcePlanVersion(), schedule.sourceActionId(),
-							schedule.sourceActionVersion(), schedule.sourceActionType(), schedule.sourceTitle(), now);
-				}
+			generateOne(schedule, from, through, now);
+		}
+	}
+
+	private void generateOne(SupportPlanActivityScheduleEntity schedule,
+			LocalDate from, LocalDate through, Instant now) {
+		LocalDate start = from.isBefore(schedule.effectiveFrom()) ? schedule.effectiveFrom() : from;
+		LocalDate end = schedule.effectiveUntil() == null || through.isBefore(schedule.effectiveUntil())
+				? through : schedule.effectiveUntil();
+		for (LocalDate date = start; !date.isAfter(end); date = date.plusDays(1)) {
+			if (!occurs(schedule, date)) continue;
+			String key = schedule.id() + ":" + schedule.scheduleVersion() + ":" + date;
+			UUID occurrenceId = UUID.nameUUIDFromBytes(key.getBytes(StandardCharsets.UTF_8));
+			Instant scheduledAt = resolve(date, schedule.localTime(), schedule.timezone());
+			if (schedule.sourceActionId() == null) {
+				occurrences.insertIfAbsent(occurrenceId, schedule.id(), schedule.supportPlanId(),
+						schedule.userId(), schedule.scheduleVersion(), date, schedule.localTime(),
+						schedule.timezone(), scheduledAt, schedule.sourcePlanVersion(), schedule.sourceSlotKey(),
+						schedule.sourceResourceId(), schedule.sourceContentVersion(), schedule.sourceTitle(), now);
+			}
+			else {
+				occurrences.insertNativeIfAbsent(occurrenceId, schedule.id(), schedule.supportPlanId(),
+						schedule.userId(), schedule.scheduleVersion(), date, schedule.localTime(),
+						schedule.timezone(), scheduledAt, schedule.sourcePlanVersion(), schedule.sourceActionId(),
+						schedule.sourceActionVersion(), schedule.sourceActionType(), schedule.sourceTitle(), now);
 			}
 		}
 	}
 
 	private boolean occurs(SupportPlanActivityScheduleEntity schedule, LocalDate date) {
+		if ("WEEKLY".equals(schedule.recurrenceType()) && schedule.recurrenceDaysMask() != null) {
+			int bit = 1 << (date.getDayOfWeek().getValue() - 1);
+			return (schedule.recurrenceDaysMask() & bit) != 0;
+		}
 		return occurs(schedule.recurrenceType(), schedule.recurrenceDayOfWeek(), schedule.effectiveFrom(), date);
 	}
 

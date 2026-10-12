@@ -58,6 +58,14 @@ public class SupportPlanV3Service {
 	}
 
 	@Transactional(readOnly = true)
+	public SupportPlanV3View currentDraft(UUID userId) {
+		var plan = plans.findByUserIdAndStatus(userId, "DRAFT").orElseThrow(() ->
+				new ApiException(HttpStatus.NOT_FOUND, "SUPPORT_PLAN_DRAFT_NOT_FOUND",
+						"Current SupportPlan draft was not found"));
+		return view(plan);
+	}
+
+	@Transactional(readOnly = true)
 	public SupportPlanV3View get(UUID userId, UUID supportPlanId) {
 		var plan = plans.findByIdAndUserId(supportPlanId, userId).orElseThrow(() -> new ApiException(
 				HttpStatus.NOT_FOUND, "SUPPORT_PLAN_NOT_FOUND", "SupportPlan was not found"));
@@ -250,8 +258,23 @@ public class SupportPlanV3Service {
 	private ActionScheduleView schedule(SupportPlanActivityScheduleEntity schedule) {
 		return new ActionScheduleView(schedule.id(), schedule.scheduleVersion(),
 				schedule.schedulePolicyVersion() == null ? SCHEDULE_POLICY_V1 : schedule.schedulePolicyVersion(),
-				schedule.recurrenceType(), schedule.recurrenceDayOfWeek(), schedule.localTime(), schedule.timezone(),
+				schedule.recurrenceType(), schedule.recurrenceDayOfWeek(), days(schedule),
+				schedule.preferredDaypart(), schedule.localTime(), schedule.estimatedDurationMinutes(),
+				schedule.timezone(),
 				schedule.effectiveFrom(), schedule.effectiveUntil(), schedule.reminderEnabled(), schedule.status());
+	}
+
+	private List<Integer> days(SupportPlanActivityScheduleEntity schedule) {
+		if (!"WEEKLY".equals(schedule.recurrenceType())) return List.of();
+		if (schedule.recurrenceDaysMask() == null) {
+			return schedule.recurrenceDayOfWeek() == null ? List.of()
+					: List.of(schedule.recurrenceDayOfWeek().intValue());
+		}
+		var values = new ArrayList<Integer>();
+		for (int day = 1; day <= 7; day++) {
+			if ((schedule.recurrenceDaysMask() & (1 << (day - 1))) != 0) values.add(day);
+		}
+		return List.copyOf(values);
 	}
 
 	private String representation(SupportPlanEntity plan) {
@@ -318,7 +341,8 @@ public class SupportPlanV3Service {
 	public record ActionPresentationMetadataView(String title, String summary, String instructions,
 			String externalUrl) { }
 	public record ActionScheduleView(UUID scheduleId, int version, String schedulePolicyVersion,
-			String recurrenceType, Short recurrenceDayOfWeek, LocalTime localTime, String timezone,
+			String recurrenceType, Short recurrenceDayOfWeek, List<Integer> daysOfWeek,
+			String preferredDaypart, LocalTime localTime, Short estimatedDurationMinutes, String timezone,
 			LocalDate effectiveFrom, LocalDate effectiveUntil, boolean reminderEnabled, String status) { }
 	public record ActionOccurrenceListView(UUID supportPlanId, String supportPlanStatus,
 			String representationMode, LocalDate from, LocalDate through,

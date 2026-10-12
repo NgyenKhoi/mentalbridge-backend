@@ -1522,6 +1522,74 @@ paths:
         '401': { $ref: '#/components/responses/UnauthorizedProblem' }
         '403': { $ref: '#/components/responses/ForbiddenProblem' }
         '404': { $ref: '#/components/responses/SupportPlanCurrentNotFoundProblem' }
+  /api/v2/support-plans/current-draft:
+    x-mentalbridge-status: implemented
+    get:
+      tags: [SupportPlan v3]
+      operationId: getOwnCurrentDraftSupportPlanV3
+      summary: Read the current draft through the v3 action model
+      description: |
+        Returns the authenticated user's current draft, including reviewable
+        schedule defaults. A default is not activated until the user explicitly
+        activates the draft. Existing v2 resource slots are projected without
+        rewriting their selection history.
+      security:
+        - bearerAuth: []
+      parameters:
+        - $ref: '#/components/parameters/CorrelationId'
+      responses:
+        '200':
+          description: Current draft SupportPlan v3 read model
+          headers:
+            ETag:
+              $ref: '#/components/headers/SupportPlanETag'
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/SupportPlanV3' }
+        '401': { $ref: '#/components/responses/UnauthorizedProblem' }
+        '403': { $ref: '#/components/responses/ForbiddenProblem' }
+        '404': { $ref: '#/components/responses/SupportPlanDraftNotFoundProblem' }
+  /api/v2/support-plans/{supportPlanId}/actions/{actionId}/schedule:
+    x-mentalbridge-status: implemented
+    put:
+      tags: [SupportPlan v3]
+      operationId: replaceOwnPlanActionSchedule
+      summary: Explicitly replace or remove one action schedule
+      description: |
+        Replaces one reviewable draft or active action schedule under strong
+        plan-version and idempotency checks. A null schedule removes future
+        workload. Changes never alter action eligibility and never classify a
+        lower cadence, later time, pause, or removal as failure. For an active
+        plan, the replacement starts no earlier than tomorrow in its requested
+        timezone and deterministically cancels superseded future occurrences.
+      security:
+        - bearerAuth: []
+      parameters:
+        - $ref: '#/components/parameters/SupportPlanId'
+        - $ref: '#/components/parameters/PlanActionId'
+        - $ref: '#/components/parameters/RequiredIfMatch'
+        - $ref: '#/components/parameters/IdempotencyKey'
+        - $ref: '#/components/parameters/CorrelationId'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: '#/components/schemas/UpdateActionScheduleRequest' }
+      responses:
+        '200':
+          description: Updated authoritative SupportPlan v3 read model or identical retry result
+          headers:
+            ETag:
+              $ref: '#/components/headers/SupportPlanETag'
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/SupportPlanV3' }
+        '400': { $ref: '#/components/responses/ValidationProblem' }
+        '401': { $ref: '#/components/responses/UnauthorizedProblem' }
+        '403': { $ref: '#/components/responses/ForbiddenProblem' }
+        '404': { $ref: '#/components/responses/SupportPlanNotFoundProblem' }
+        '409': { $ref: '#/components/responses/SupportPlanScheduleConflictProblem' }
+        '412': { $ref: '#/components/responses/SupportPlanVersionProblem' }
   /api/v2/support-plans/{supportPlanId}:
     x-mentalbridge-status: implemented
     get:
@@ -2155,6 +2223,11 @@ components:
       schema: { type: string, format: uuid }
     SupportPlanId:
       name: supportPlanId
+      in: path
+      required: true
+      schema: { type: string, format: uuid }
+    PlanActionId:
+      name: actionId
       in: path
       required: true
       schema: { type: string, format: uuid }
@@ -3954,19 +4027,70 @@ components:
       type: object
       additionalProperties: false
       required: [scheduleId, version, schedulePolicyVersion, recurrenceType, recurrenceDayOfWeek,
-        localTime, timezone, effectiveFrom, effectiveUntil, reminderEnabled, status]
+        daysOfWeek, preferredDaypart, estimatedDurationMinutes, localTime, timezone,
+        effectiveFrom, effectiveUntil, reminderEnabled, status]
       properties:
         scheduleId: { type: string, format: uuid }
         version: { type: integer, minimum: 1 }
         schedulePolicyVersion: { type: string, minLength: 1, maxLength: 128 }
         recurrenceType: { type: string, enum: [ONCE, DAILY, WEEKLY] }
         recurrenceDayOfWeek: { type: [integer, 'null'], minimum: 1, maximum: 7 }
+        daysOfWeek:
+          type: array
+          maxItems: 7
+          uniqueItems: true
+          items: { type: integer, minimum: 1, maximum: 7 }
+        preferredDaypart:
+          type: [string, 'null']
+          enum: [MORNING, AFTERNOON, EVENING, FLEXIBLE, null]
+        estimatedDurationMinutes:
+          type: [integer, 'null']
+          minimum: 5
+          maximum: 180
+          multipleOf: 5
         localTime: { type: string, format: time }
         timezone: { type: string, minLength: 1, maxLength: 64 }
         effectiveFrom: { type: string, format: date }
         effectiveUntil: { type: [string, 'null'], format: date }
         reminderEnabled: { type: boolean }
-        status: { type: string, enum: [ACTIVE, PAUSED, ENDED] }
+        status: { type: string, enum: [DRAFT, ACTIVE, PAUSED, ENDED] }
+    UpdateActionScheduleRequest:
+      type: object
+      additionalProperties: false
+      required: [schedule]
+      properties:
+        schedule:
+          description: Null removes future workload without marking non-completion or failure.
+          oneOf:
+            - { $ref: '#/components/schemas/ActionScheduleInput' }
+            - { type: 'null' }
+    ActionScheduleInput:
+      type: object
+      additionalProperties: false
+      required: [recurrenceType, daysOfWeek, preferredDaypart, localTime,
+        estimatedDurationMinutes, timezone, effectiveFrom, effectiveUntil, reminderEnabled]
+      properties:
+        recurrenceType: { type: string, enum: [ONCE, DAILY, WEEKLY] }
+        daysOfWeek:
+          type: array
+          maxItems: 7
+          uniqueItems: true
+          items: { type: integer, minimum: 1, maximum: 7 }
+          description: Required and non-empty for WEEKLY; empty for ONCE and DAILY.
+        preferredDaypart:
+          type: [string, 'null']
+          enum: [MORNING, AFTERNOON, EVENING, FLEXIBLE, null]
+          description: Null means the user chose an exact local time instead of a daypart default.
+        localTime: { type: string, format: time }
+        estimatedDurationMinutes:
+          type: integer
+          minimum: 5
+          maximum: 180
+          multipleOf: 5
+        timezone: { type: string, minLength: 1, maxLength: 64 }
+        effectiveFrom: { type: string, format: date }
+        effectiveUntil: { type: [string, 'null'], format: date }
+        reminderEnabled: { type: boolean }
     ActionOccurrenceList:
       type: object
       additionalProperties: false
@@ -4013,7 +4137,7 @@ components:
         displayState: { type: string, enum: [SCHEDULED, OVERDUE, COMPLETED, SKIPPED, CANCELLED] }
         stateReason:
           type: [string, 'null']
-          enum: [PLAN_PAUSED, PLAN_COMPLETED, PLAN_REPLACED, ACTION_ENDED, null]
+          enum: [PLAN_PAUSED, PLAN_COMPLETED, PLAN_REPLACED, ACTION_ENDED, SCHEDULE_CHANGED, null]
         completionEvidence:
           description: Null unless completion is backed by a bounded Care or owner-domain fact.
           oneOf:
@@ -4471,6 +4595,11 @@ components:
           schema: { $ref: '#/components/schemas/Problem' }
     SupportPlanLifecycleConflictProblem:
       description: The requested lifecycle transition is invalid, reassessment is stale or uses different screening evidence, or replacement is unchanged (SUPPORT_PLAN_TRANSITION_INVALID, REASSESSMENT_SUMMARY_STALE, REASSESSMENT_SCREENING_CONTEXT_MISMATCH, or SUPPORT_PLAN_REPLACEMENT_UNCHANGED)
+      content:
+        application/problem+json:
+          schema: { $ref: '#/components/schemas/Problem' }
+    SupportPlanScheduleConflictProblem:
+      description: The command reuses an idempotency key differently, targets a non-mutable plan or action, or requests recurrence for a review-only action (IDEMPOTENCY_KEY_REUSED, SUPPORT_PLAN_SCHEDULE_NOT_MUTABLE, PLAN_ACTION_SCHEDULE_NOT_MUTABLE, or PLAN_ACTION_UNSCHEDULABLE)
       content:
         application/problem+json:
           schema: { $ref: '#/components/schemas/Problem' }

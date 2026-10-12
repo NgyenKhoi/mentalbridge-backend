@@ -266,7 +266,8 @@ class CareLiquibaseMb639UpgradeTests {
 	private String legacyScheduleSnapshot() throws SQLException {
 		return scalar("""
 				select (to_jsonb(s) - 'source_action_id' - 'source_action_version' - 'source_action_type'
-				        - 'schedule_policy_version' - 'reminder_enabled')::text
+				        - 'schedule_policy_version' - 'reminder_enabled' - 'recurrence_days_mask'
+				        - 'preferred_daypart' - 'estimated_duration_minutes')::text
 				from support_plan_activity_schedule s where id = '%s'
 				""".formatted(SCHEDULE_ID));
 	}

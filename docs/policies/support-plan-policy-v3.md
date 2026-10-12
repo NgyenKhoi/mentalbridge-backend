@@ -54,8 +54,7 @@ Each generated plan snapshots the exact immutable preference revision and
 persists the human-readable focus reason. No saved preference produces the
 existing deterministic policy fallback. Replacing preferences never rewrites
 an `ACTIVE` or `PAUSED` plan; the owner receives an explicit review-required
-reference and chooses a governed plan change separately. Schedule adjustment
-commands and full cadence/workload behavior remain governed by MB-640.
+reference and chooses a governed plan change separately.
 
 ## Canonical aggregate
 
@@ -90,9 +89,9 @@ a terminal plan accepts no further action lifecycle mutation.
 | `JOURNAL` | Journal entry/capability facts | Schedulable and skippable; a linked entry is completed only by a bounded Journal fact |
 | `EMOTION_CHECK_IN` | Journal/AI emotion check-in facts | Schedulable and skippable; completed only by a bounded check-in fact |
 | `ROUTINE_SELF_MANAGEMENT` | Care-owned approved wording | Schedulable; user completes/skips explicitly |
-| `PROFESSIONAL_SUPPORT` | Consultation service/appointment facts | Reminder is schedulable/skippable; fulfilment comes only from Consultation |
-| `REASSESSMENT_SCREENING` | Care questionnaire/assessment history | Reminder is schedulable/skippable; fulfilment comes only from screening history |
-| `SELF_REPORT_REVIEW` | Care review event | Schedulable; user submits or skips; review-only with no derived outcome score |
+| `PROFESSIONAL_SUPPORT` | Consultation service/appointment facts | Not assigned a recurrence by SupportPlan; fulfilment comes only from Consultation |
+| `REASSESSMENT_SCREENING` | Care questionnaire/assessment history | One-time reminder only; fulfilment comes only from screening history |
+| `SELF_REPORT_REVIEW` | Care review event | Review-only and not assigned a recurrence; user submission never becomes an outcome score |
 
 Unknown action types fail closed. An action/source pair must match the authority
 in this table. Source IDs are opaque, bounded, well-formed references; they do
@@ -120,6 +119,41 @@ and source authority before presenting a user-confirmable action. A specialist
 does not acquire direct plan mutation authority.
 
 ## Generic scheduling and occurrences
+
+MB-640 uses `support-plan-activity-schedule-v2` for reviewable cadence and
+workload. A schedule is optional and, when present, contains:
+
+- `ONCE`, `DAILY`, or `WEEKLY` recurrence, with one through seven unique ISO
+  weekdays required only for `WEEKLY`;
+- an optional preferred daypart plus a resolved local time;
+- a 5 through 180 minute estimated duration in five-minute steps;
+- an IANA timezone, bounded effective start/end dates, and reminder choice.
+
+Draft creation persists deterministic safe defaults before activation. The
+user reviews those defaults and may replace or remove each schedulable action's
+rule. `GENTLE` and absent pace default to one weekly day; `BALANCED` defaults to
+two weekly days; `ACTIVE` defaults to daily. Time budget and daypart influence
+only duration and local-time defaults and never action eligibility. Resource,
+Journal, emotion-check-in, and routine actions support the bounded cadence;
+reassessment supports `ONCE` only. Professional-support and self-report-review
+actions are not forced into recurrence.
+
+A schedule replacement is an explicit owner command on a `DRAFT` or `ACTIVE`
+plan. It requires the strong plan ETag and an idempotency key, advances the plan
+version when state changes, and records identical retries, including no-op
+commands. It does not re-run or alter entitlement, source eligibility, action
+admission, safety, or professional-support precedence. Removing a schedule or
+choosing less work is neutral and never records skip, failure, non-adherence,
+or a negative outcome.
+
+For an active plan, a replacement starts no earlier than the next local day in
+the requested timezone. Care ends the prior schedule revision, cancels only its
+future open occurrences with `SCHEDULE_CHANGED`, preserves completed/skipped
+and elapsed history, creates the next schedule revision, and fills the rolling
+horizon in the same transaction. Occurrence identity is deterministic from the
+schedule revision and local date. Timezone resolution applies zone rules to
+each local date, so daylight-saving gaps/overlaps are deterministic; retries
+and concurrent stale writers cannot duplicate or silently move occurrences.
 
 The occurrence generator operates on schedule capability and policy, not on a
 Resource-specific branch. A schedulable native action produces deterministic,

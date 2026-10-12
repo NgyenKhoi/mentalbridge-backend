@@ -39,6 +39,7 @@ import org.springframework.security.core.authority.SimpleGrantedAuthority;
 import org.springframework.test.context.bean.override.mockito.MockitoBean;
 import org.springframework.test.web.servlet.MockMvc;
 
+import com.fasterxml.jackson.databind.JsonNode;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import com.mentalbridge.care.CareTestProperties;
 import com.mentalbridge.care.TestcontainersConfiguration;
@@ -166,7 +167,7 @@ class SupportPlanIntegrationTests extends CareTestProperties {
 		assertThat(jdbc.sql("""
 				select to_char(local_time, 'HH24:MI') from support_plan_activity_schedule
 				where support_plan_id=:id and ordinal=1
-				""").param("id", planId).query(String.class).single()).isEqualTo("18:00");
+				""").param("id", planId).query(String.class).single()).isEqualTo("19:00");
 
 		String morningPreference = """
 				{"preferredFocus":"SLEEP","preferredDaypart":"MORNING",
@@ -186,7 +187,7 @@ class SupportPlanIntegrationTests extends CareTestProperties {
 		assertThat(jdbc.sql("""
 				select to_char(local_time, 'HH24:MI') from support_plan_activity_schedule
 				where support_plan_id=:id and ordinal=1
-				""").param("id", planId).query(String.class).single()).isEqualTo("18:00");
+				""").param("id", planId).query(String.class).single()).isEqualTo("19:00");
 		mvc.perform(post("/api/v1/support-plans").with(user(userId))
 				.header("Idempotency-Key", "personalized-plan-create")
 				.contentType(MediaType.APPLICATION_JSON).content(body(evaluationId)))
@@ -230,7 +231,7 @@ class SupportPlanIntegrationTests extends CareTestProperties {
 		assertThat(jdbc.sql("select status from support_plan where id=:id").param("id", firstDraftId)
 				.query(String.class).single()).isEqualTo("DRAFT");
 		assertThat(jdbc.sql("select count(*) from support_plan_activity_schedule where support_plan_id=:id")
-				.param("id", firstDraftId).query(Integer.class).single()).isZero();
+				.param("id", firstDraftId).query(Integer.class).single()).isEqualTo(2);
 
 		mvc.perform(put("/api/v1/support-plans/{id}/status", firstDraftId).with(user(userId))
 				.header("If-Match", "\"0\"").contentType(MediaType.APPLICATION_JSON)
@@ -692,6 +693,100 @@ class SupportPlanIntegrationTests extends CareTestProperties {
 	}
 
 	@Test
+	void reviewsDraftCadenceThenVersionEditsAnActiveScheduleWithoutPunitiveState() throws Exception {
+		var userId = insertProfile();
+		var draft = createPlan(userId, evaluation(userId, "MINIMAL", "MINIMAL", false),
+				"support-plan-cadence-create");
+		var planId = UUID.fromString(draft.path("supportPlanId").asText());
+		var timezone = "Asia/Ho_Chi_Minh";
+		var today = LocalDate.now(ZoneId.of(timezone));
+
+		var currentDraft = mvc.perform(get("/api/v2/support-plans/current-draft").with(user(userId)))
+				.andExpect(status().isOk()).andExpect(header().string("ETag", "\"0\""))
+				.andExpect(jsonPath("$.status").value("DRAFT"))
+				.andExpect(jsonPath("$.focuses[0].actions[0].schedules[0].status").value("DRAFT"))
+				.andExpect(jsonPath("$.focuses[0].actions[0].schedules[0].estimatedDurationMinutes")
+						.value(10)).andReturn().getResponse().getContentAsString();
+		var actionId = objectMapper.readTree(currentDraft).path("focuses").get(0).path("actions").get(0)
+				.path("actionId").asText();
+
+		String daily = """
+				{"schedule":{"recurrenceType":"DAILY","daysOfWeek":[],"preferredDaypart":null,
+				 "localTime":"09:30","estimatedDurationMinutes":5,"timezone":"%s",
+				 "effectiveFrom":"%s","effectiveUntil":null,"reminderEnabled":true}}
+				""".formatted(timezone, today);
+		var changedDraft = mvc.perform(put("/api/v2/support-plans/{planId}/actions/{actionId}/schedule",
+				planId, actionId).with(user(userId)).header("If-Match", "\"0\"")
+				.header("Idempotency-Key", "support-plan-cadence-draft-edit")
+				.contentType(MediaType.APPLICATION_JSON).content(daily))
+				.andExpect(status().isOk()).andExpect(header().string("ETag", "\"1\""))
+				.andReturn().getResponse().getContentAsString();
+		var draftSchedule = currentSchedule(objectMapper.readTree(changedDraft), actionId, "DRAFT");
+		assertThat(draftSchedule.path("recurrenceType").asText()).isEqualTo("DAILY");
+		assertThat(draftSchedule.path("estimatedDurationMinutes").asInt()).isEqualTo(5);
+		var replay = mvc.perform(put("/api/v2/support-plans/{planId}/actions/{actionId}/schedule",
+				planId, actionId).with(user(userId)).header("If-Match", "\"0\"")
+				.header("Idempotency-Key", "support-plan-cadence-draft-edit")
+				.contentType(MediaType.APPLICATION_JSON).content(daily))
+				.andExpect(status().isOk()).andExpect(header().string("ETag", "\"1\""))
+				.andReturn().getResponse().getContentAsString();
+		assertThat(objectMapper.readTree(replay)).isEqualTo(objectMapper.readTree(changedDraft));
+		var noOp = mvc.perform(put("/api/v2/support-plans/{planId}/actions/{actionId}/schedule",
+				planId, actionId).with(user(userId)).header("If-Match", "\"1\"")
+				.header("Idempotency-Key", "support-plan-cadence-draft-noop")
+				.contentType(MediaType.APPLICATION_JSON).content(daily))
+				.andExpect(status().isOk()).andExpect(header().string("ETag", "\"1\""))
+				.andReturn().getResponse().getContentAsString();
+		var noOpReplay = mvc.perform(put("/api/v2/support-plans/{planId}/actions/{actionId}/schedule",
+				planId, actionId).with(user(userId)).header("If-Match", "\"1\"")
+				.header("Idempotency-Key", "support-plan-cadence-draft-noop")
+				.contentType(MediaType.APPLICATION_JSON).content(daily))
+				.andExpect(status().isOk()).andExpect(header().string("ETag", "\"1\""))
+				.andReturn().getResponse().getContentAsString();
+		assertThat(objectMapper.readTree(noOpReplay)).isEqualTo(objectMapper.readTree(noOp));
+
+		mvc.perform(post("/api/v1/support-plans/{id}/activate", planId).with(user(userId))
+				.header("If-Match", "\"1\"").header("Idempotency-Key", "support-plan-cadence-activate"))
+				.andExpect(status().isOk()).andExpect(header().string("ETag", "\"2\""));
+
+		var tomorrow = today.plusDays(1);
+		String weekly = """
+				{"schedule":{"recurrenceType":"WEEKLY","daysOfWeek":[%d],"preferredDaypart":"EVENING",
+				 "localTime":"19:00","estimatedDurationMinutes":15,"timezone":"%s",
+				 "effectiveFrom":"%s","effectiveUntil":null,"reminderEnabled":true}}
+				""".formatted(tomorrow.getDayOfWeek().getValue(), timezone, tomorrow);
+		var changedActive = mvc.perform(put("/api/v2/support-plans/{planId}/actions/{actionId}/schedule", planId, actionId)
+				.with(user(userId)).header("If-Match", "\"2\"")
+				.header("Idempotency-Key", "support-plan-cadence-active-edit")
+				.contentType(MediaType.APPLICATION_JSON).content(weekly))
+				.andExpect(status().isOk()).andExpect(header().string("ETag", "\"3\""))
+				.andExpect(jsonPath("$.status").value("ACTIVE"))
+				.andReturn().getResponse().getContentAsString();
+		var activeSchedule = currentSchedule(objectMapper.readTree(changedActive), actionId, "ACTIVE");
+		assertThat(activeSchedule.path("daysOfWeek").get(0).asInt())
+				.isEqualTo(tomorrow.getDayOfWeek().getValue());
+		assertThat(activeSchedule.path("estimatedDurationMinutes").asInt()).isEqualTo(15);
+
+		mvc.perform(put("/api/v2/support-plans/{planId}/actions/{actionId}/schedule", planId, actionId)
+				.with(user(userId)).header("If-Match", "\"2\"")
+				.header("Idempotency-Key", "support-plan-cadence-stale-edit")
+				.contentType(MediaType.APPLICATION_JSON).content(weekly))
+				.andExpect(status().isPreconditionFailed())
+				.andExpect(jsonPath("$.code").value("SUPPORT_PLAN_VERSION_MISMATCH"));
+
+		assertThat(jdbc.sql("""
+				select count(*) from support_plan_activity_schedule
+				where support_plan_id=:id and source_slot_key=(select slot_key from support_plan_slot where id=:actionId)
+				  and status='ENDED'
+				""").param("id", planId).param("actionId", UUID.fromString(actionId))
+				.query(Long.class).single()).isEqualTo(2);
+		assertThat(jdbc.sql("""
+				select count(*) from support_plan_activity_occurrence
+				where support_plan_id=:id and state='CANCELLED' and state_reason='SCHEDULE_CHANGED'
+				""").param("id", planId).query(Long.class).single()).isGreaterThan(0);
+	}
+
+	@Test
 	void swapsOnlyAnAdmittedChoiceAndActivatesThenReloadsTheAuthoritativeCurrentPlan() throws Exception {
 		var userId = insertProfile();
 		var evaluationId = evaluation(userId, "MINIMAL", "MINIMAL", false);
@@ -867,7 +962,7 @@ class SupportPlanIntegrationTests extends CareTestProperties {
 				row.getObject("from_date", LocalDate.class), row.getObject("through_date", LocalDate.class))).single();
 		String listPath = "/api/v1/support-plan-occurrences?from=" + bounds.get(0) + "&through=" + bounds.get(1);
 		var first = mvc.perform(get(listPath).with(user(userId))).andExpect(status().isOk())
-				.andExpect(jsonPath("$.schedulePolicyVersion").value("support-plan-activity-schedule-v1"))
+				.andExpect(jsonPath("$.schedulePolicyVersion").value("support-plan-activity-schedule-v2"))
 				.andExpect(jsonPath("$.interpretationCode")
 						.value("SELF_REPORTED_WELLBEING_ACTIVITY_NOT_TREATMENT_ADHERENCE"))
 				.andReturn().getResponse().getContentAsString();
@@ -1385,7 +1480,11 @@ class SupportPlanIntegrationTests extends CareTestProperties {
 				.andExpect(status().isOk())
 				.andExpect(jsonPath("$.items[0].supportPlanId").value(replacementId.toString()));
 		assertThat(jdbc.sql("select count(*) from support_plan_activity_schedule where support_plan_id = :id")
-				.param("id", disposableId).query(Long.class).single()).isZero();
+				.param("id", disposableId).query(Long.class).single()).isEqualTo(2);
+		assertThat(jdbc.sql("""
+				select count(*) from support_plan_activity_schedule
+				where support_plan_id = :id and status = 'ENDED'
+				""").param("id", disposableId).query(Long.class).single()).isEqualTo(2);
 	}
 
 	@Test
@@ -1742,6 +1841,18 @@ class SupportPlanIntegrationTests extends CareTestProperties {
 
 	private String body(UUID evaluationId) {
 		return "{\"sourceSupportEvaluationId\":\"" + evaluationId + "\"}";
+	}
+
+	private JsonNode currentSchedule(JsonNode plan, String actionId, String status) {
+		for (var focus : plan.path("focuses")) {
+			for (var action : focus.path("actions")) {
+				if (!actionId.equals(action.path("actionId").asText())) continue;
+				for (var schedule : action.path("schedules")) {
+					if (status.equals(schedule.path("status").asText())) return schedule;
+				}
+			}
+		}
+		throw new AssertionError("Expected " + status + " schedule for action " + actionId);
 	}
 
 	private org.springframework.test.web.servlet.request.RequestPostProcessor user(UUID userId) {
