@@ -238,6 +238,12 @@ and a 210,000 VND specialist earning. These are not runtime prices. The current
 integration-test catalogue is only 0/5,000/10,000 VND, and real payment/payout
 remains disabled pending explicit production approval and credentials.
 
+The owner-approved MB-622 sandbox amendment to ADR 0032 makes new test upgrades
+charge the full 10,000 VND PREMIUM price with zero offset under the explicit
+`sandbox-full-price-v1` policy. Existing ordinary offsets and historical facts
+are preserved. Sandbox allocations/earnings are synthetic and cannot be paid
+through a real provider.
+
 Detailed amendment: [ADR 0022](adr/0022-current-product-blueprint-amendments.md).
 
 ## 8. Safety boundary

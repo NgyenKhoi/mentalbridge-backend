@@ -36,8 +36,8 @@ import com.mentalbridge.consultation.shared.ApiException;
 @AutoConfigureMockMvc
 class SubscriptionBillingIntegrationTests extends ConsultationTestProperties {
 
-	private static final UUID PLUS = UUID.fromString("51500000-0000-4000-8000-000000000002");
-	private static final UUID PREMIUM = UUID.fromString("51500000-0000-4000-8000-000000000003");
+	private static final UUID PLUS = UUID.fromString("62200000-0000-4000-8000-000000000002");
+	private static final UUID PREMIUM = UUID.fromString("62200000-0000-4000-8000-000000000003");
 	private static final String PARTNER = "MOMO_TEST_PARTNER";
 	private static final String ACCESS_KEY = "test-payment-access-key";
 	private static final String SECRET_KEY = "test-payment-secret-key";
@@ -46,6 +46,87 @@ class SubscriptionBillingIntegrationTests extends ConsultationTestProperties {
 	@Autowired JdbcClient jdbc;
 	@Autowired ObjectMapper json;
 	@Autowired SubscriptionBillingService billing;
+	@org.springframework.test.context.bean.override.mockito.MockitoSpyBean MomoCheckoutGateway checkoutGateway;
+	@org.springframework.test.context.bean.override.mockito.MockitoSpyBean java.time.Clock clock;
+	@Autowired com.mentalbridge.consultation.credits.ServiceCreditService credits;
+
+	@Test
+	void providerTimeoutLeavesOneCommittedPaymentAndReplayNeverResendsTheCharge() throws Exception {
+		var userId = UUID.randomUUID();
+		var commandKey = key("provider-timeout");
+		org.mockito.Mockito.doAnswer(invocation -> {
+			assertThat(org.springframework.transaction.support.TransactionSynchronizationManager.isActualTransactionActive()).isFalse();
+			assertThat(billing.history(userId).items()).hasSize(1);
+			throw new ApiException(org.springframework.http.HttpStatus.SERVICE_UNAVAILABLE,
+					"MOMO_CHECKOUT_UNAVAILABLE", "MoMo checkout is unavailable");
+		}).when(checkoutGateway).create(org.mockito.ArgumentMatchers.anyString(), org.mockito.ArgumentMatchers.anyString(),
+				org.mockito.ArgumentMatchers.anyLong(), org.mockito.ArgumentMatchers.anyString());
+		assertThatThrownBy(() -> billing.checkout(userId, PLUS, commandKey)).isInstanceOf(ApiException.class);
+		var pending = billing.checkout(userId, PLUS, commandKey);
+		assertThat(pending.status()).isEqualTo("PENDING");
+		assertThat(pending.checkoutUrl()).isNull();
+		assertThat(pending.qrCodeUrl()).isNull();
+		assertThat(billing.history(userId).items()).hasSize(1);
+		org.mockito.Mockito.verify(checkoutGateway).create(org.mockito.ArgumentMatchers.anyString(), org.mockito.ArgumentMatchers.anyString(),
+				org.mockito.ArgumentMatchers.anyLong(), org.mockito.ArgumentMatchers.anyString());
+		var callback = fixture(pending.paymentId(), 0, Instant.now().toEpochMilli(), Math.abs((long) UUID.randomUUID().hashCode()) + 1);
+		sign(callback);
+		postIpn(callback, 204);
+		postIpn(callback, 204);
+		assertThat(billing.payment(userId, pending.paymentId()).status()).isEqualTo("SUCCEEDED");
+		assertThat(credits.current(userId).balance().available()).isEqualTo(4);
+	}
+
+	@Test
+	void adminReadsCanonicalPaymentFactsWithoutCheckoutOrCustomerSecrets() throws Exception {
+		var userId = UUID.randomUUID();
+		var payment = billing.checkout(userId, PLUS, key("admin-view"));
+		mvc.perform(get("/api/v1/admin/payments")).andExpect(status().isUnauthorized());
+		mvc.perform(get("/api/v1/admin/payments").with(user(userId))).andExpect(status().isForbidden());
+		mvc.perform(get("/api/v1/admin/payments").with(role(UUID.randomUUID(), "ROLE_SPECIALIST")))
+				.andExpect(status().isForbidden());
+		var result = mvc.perform(get("/api/v1/admin/payments").with(role(UUID.randomUUID(), "ROLE_ADMIN")))
+				.andExpect(status().isOk()).andReturn();
+		var items = json.readTree(result.getResponse().getContentAsByteArray()).get("items");
+		var found = java.util.stream.StreamSupport.stream(items.spliterator(), false)
+				.filter(item -> item.get("paymentId").asText().equals(payment.paymentId().toString())).findFirst().orElseThrow();
+		assertThat(found.get("subscriptionId").asText()).isEqualTo(payment.subscriptionId().toString());
+		assertThat(found.get("amountVnd").asLong()).isEqualTo(5_000);
+		assertThat(found.get("pricingPolicyVersion").asText()).isEqualTo("sandbox-full-price-v1");
+		assertThat(found.get("provider").asText()).isEqualTo("FAKE");
+		assertThat(found.get("status").asText()).isEqualTo("PENDING");
+		assertThat(found.has("checkoutUrl")).isFalse();
+		assertThat(found.has("userAccountId")).isFalse();
+	}
+
+	@Test
+	void preservesRetiredHistoricalPricesAndRejectsNewPurchaseOfThoseVersions() {
+		var historical = UUID.fromString("51500000-0000-4000-8000-000000000002");
+		assertThat(jdbc.sql("select price_minor from subscription_plan_version where id=:id")
+				.param("id", historical).query(Long.class).single()).isEqualTo(1_390_000);
+		assertThat(jdbc.sql("select pricing_policy_version from subscription_plan_version where id=:id")
+				.param("id", historical).query(String.class).single()).isEqualTo("upgrade-offset-v1");
+		assertThatThrownBy(() -> billing.checkout(UUID.randomUUID(), historical, key("retired")))
+				.isInstanceOfSatisfying(ApiException.class,
+						error -> assertThat(error.code()).isEqualTo("PLAN_VERSION_NOT_AVAILABLE"));
+	}
+
+	@Test
+	void snapshotsPurchasedVersionAndAllocationAndNeverReprovisionsOnReload() throws Exception {
+		var userId = UUID.randomUUID();
+		var payment = billing.checkout(userId, PLUS, key("provenance"));
+		var success = fixture(payment.paymentId(), 0, Instant.now().toEpochMilli(), 850001);
+		sign(success);
+		postIpn(success, 204);
+		credits.current(userId);
+		credits.current(userId);
+		assertThat(jdbc.sql("select plan_version from service_credit_period where account_id=:id")
+				.param("id", userId).query(String.class).single()).isEqualTo(PLUS.toString());
+		assertThat(jdbc.sql("select credit_allocation_minor from service_credit_period where account_id=:id")
+				.param("id", userId).query(Long.class).single()).isEqualTo(300_000);
+		assertThat(jdbc.sql("select count(*) from service_credit_ledger where account_id=:id and event_type='PROVISIONED'")
+				.param("id", userId).query(Long.class).single()).isEqualTo(4);
+	}
 
 	@Test
 	void exposesOnlyTheAuthoritativeVersionedVndCatalogue() throws Exception {
@@ -60,12 +141,13 @@ class SubscriptionBillingIntegrationTests extends ConsultationTestProperties {
 				.andExpect(jsonPath("$.plans[0].consultationCredits").value(0))
 				.andExpect(jsonPath("$.plans[0].maxActiveReservations").value(0))
 				.andExpect(jsonPath("$.plans[1].planCode").value("PLUS"))
-				.andExpect(jsonPath("$.plans[1].priceVnd").value(1_390_000))
+				.andExpect(jsonPath("$.plans[1].priceVnd").value(5_000))
+				.andExpect(jsonPath("$.plans[1].pricingPolicyVersion").value("sandbox-full-price-v1"))
 				.andExpect(jsonPath("$.plans[1].consultationCredits").value(4))
 				.andExpect(jsonPath("$.plans[1].maxActiveReservations").value(2))
 				.andExpect(jsonPath("$.plans[1].creditAllocationVnd").value(300_000))
 				.andExpect(jsonPath("$.plans[1].allowedUpgrades[0]").value("PREMIUM"))
-				.andExpect(jsonPath("$.plans[2].priceVnd").value(3_490_000))
+				.andExpect(jsonPath("$.plans[2].priceVnd").value(10_000))
 				.andExpect(jsonPath("$.plans[2].consultationCredits").value(10))
 				.andExpect(jsonPath("$.plans[2].maxActiveReservations").value(4));
 		mvc.perform(get("/api/v1/service-plans")).andExpect(status().isUnauthorized());
@@ -78,7 +160,8 @@ class SubscriptionBillingIntegrationTests extends ConsultationTestProperties {
 		var userId = UUID.randomUUID();
 		var commandKey = key("purchase");
 		var payment = billing.checkout(userId, PLUS, commandKey);
-		assertThat(payment.amountVnd()).isEqualTo(1_390_000);
+		assertThat(payment.amountVnd()).isEqualTo(5_000);
+		assertThat(payment.pricingPolicyVersion()).isEqualTo("sandbox-full-price-v1");
 		assertThat(payment.provider()).isEqualTo("FAKE");
 		assertThat(payment.checkoutUrl()).startsWith("https://test-payment.momo.vn/");
 		assertThat(billing.checkout(userId, PLUS, commandKey)).isEqualTo(payment);
@@ -179,7 +262,11 @@ class SubscriptionBillingIntegrationTests extends ConsultationTestProperties {
 		postIpn(plusSuccess, 204);
 		var upgrade = billing.checkout(userId, PREMIUM, key("upgrade"));
 		assertThat(upgrade.purpose()).isEqualTo("UPGRADE");
-		assertThat(upgrade.amountVnd()).isBetween(2_100_000L, 2_100_100L);
+		assertThat(upgrade.amountVnd()).isEqualTo(10_000L);
+		assertThat(jdbc.sql("select offset_minor from subscription_upgrade where payment_id=:id")
+				.param("id", upgrade.paymentId()).query(Long.class).single()).isZero();
+		assertThat(jdbc.sql("select available_credit_value_minor from subscription_upgrade where payment_id=:id")
+				.param("id", upgrade.paymentId()).query(Long.class).single()).isEqualTo(1_200_000L);
 		assertThat(jdbc.sql("select count(*) from service_credit where state='UPGRADE_HELD'")
 				.query(Long.class).single()).isEqualTo(4);
 		var premiumSuccess = fixture(upgrade.paymentId(), 0, Instant.now().plusSeconds(2).toEpochMilli(), 830003);
@@ -194,6 +281,27 @@ class SubscriptionBillingIntegrationTests extends ConsultationTestProperties {
 		assertThatThrownBy(() -> billing.checkout(userId, PLUS, key("downgrade")))
 				.isInstanceOfSatisfying(ApiException.class,
 						exception -> assertThat(exception.code()).isEqualTo("SUBSCRIPTION_DOWNGRADE_NOT_SUPPORTED"));
+	}
+
+	@Test
+	void sameInstantSandboxUpgradeCreatesTenNewCreditsWithoutRewritingPlusSnapshots() throws Exception {
+		var now = Instant.now().truncatedTo(java.time.temporal.ChronoUnit.MILLIS);
+		org.mockito.Mockito.doReturn(now).when(clock).instant();
+		var userId = UUID.randomUUID();
+		var plus = billing.checkout(userId, PLUS, key("same-instant-plus"));
+		var purchased = fixture(plus.paymentId(), 0, now.toEpochMilli(), Math.abs((long) UUID.randomUUID().hashCode()) + 1);
+		sign(purchased);
+		postIpn(purchased, 204);
+		var upgrade = billing.checkout(userId, PREMIUM, key("same-instant-premium"));
+		var upgraded = fixture(upgrade.paymentId(), 0, now.toEpochMilli(), Math.abs((long) UUID.randomUUID().hashCode()) + 1);
+		sign(upgraded);
+		postIpn(upgraded, 204);
+		postIpn(upgraded, 204);
+		assertThat(credits.current(userId).balance().available()).isEqualTo(10);
+		assertThat(jdbc.sql("select count(*) from service_credit_period where account_id=:id")
+				.param("id", userId).query(Long.class).single()).isEqualTo(2);
+		assertThat(jdbc.sql("select package_code from service_credit_period where account_id=:id and plan_version=:version")
+				.param("id", userId).param("version", PLUS.toString()).query(String.class).single()).isEqualTo("PLUS");
 	}
 
 	@Test

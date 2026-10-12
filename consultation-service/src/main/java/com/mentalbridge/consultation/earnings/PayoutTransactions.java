@@ -15,6 +15,18 @@ import com.mentalbridge.consultation.shared.ApiException;
 @Service
 class PayoutTransactions {
 
+	private static final String ELIGIBLE_SOURCE = """
+			exists (
+			 select 1 from appointment a join service_credit c on c.id=a.service_credit_id
+			 where a.id=specialist_earning.appointment_id and a.status='COMPLETED'
+			   and a.session_outcome='COMPLETED' and a.session_settled_at is not null
+			   and a.completion_fact_id=specialist_earning.completion_fact_id
+			   and c.id=specialist_earning.consumed_credit_id and c.appointment_id=a.id and c.state='CONSUMED'
+			   and not exists (select 1 from appointment_dispute d where d.appointment_id=a.id
+			     and (d.status='OPEN' or d.resolution_outcome='RELEASE_USER_CREDIT'))
+			)
+			""";
+
 	private final JdbcClient jdbc;
 	private final PayoutProperties properties;
 	private final Clock clock;
@@ -27,6 +39,15 @@ class PayoutTransactions {
 
 	@Transactional
 	PreparedPayout prepare(UUID specialistId, UUID destinationId, String idempotencyKey) {
+		if (!"FAKE".equals(properties.getMode()) && jdbc.sql("""
+				select count(*) from specialist_earning e
+				join subscription_plan_version v on v.id::text=e.plan_version
+				where e.specialist_account_id=:specialistId and e.status in ('AVAILABLE', 'PENDING_SETTLEMENT')
+				  and v.pricing_policy_version='sandbox-full-price-v1'
+				""").param("specialistId", specialistId).query(Long.class).single() > 0) {
+			throw new ApiException(HttpStatus.CONFLICT, "SANDBOX_EARNINGS_REAL_PAYOUT_DISABLED",
+					"Sandbox earnings cannot be transferred by a real provider");
+		}
 		promoteSettledEarnings(specialistId);
 		var replay = jdbc.sql("""
 				select p.id, p.amount_minor, p.currency, p.status
@@ -266,10 +287,21 @@ class PayoutTransactions {
 
 	void promoteSettledEarnings(UUID specialistId) {
 		jdbc.sql("""
+				select a.id from appointment a join specialist_earning e on e.appointment_id=a.id
+				where e.specialist_account_id=:specialistId and e.status in ('PENDING_SETTLEMENT', 'AVAILABLE')
+				order by a.id for update of a
+				""").param("specialistId", specialistId).query(UUID.class).list();
+		jdbc.sql("""
+				update specialist_earning set status='PENDING_SETTLEMENT', updated_at=:now, version=version+1
+				where specialist_account_id=:specialistId and status='AVAILABLE' and not
+				""" + ELIGIBLE_SOURCE).param("specialistId", specialistId)
+				.param("now", databaseInstant(clock.instant())).update();
+		jdbc.sql("""
 				update specialist_earning set status='AVAILABLE', updated_at=:now, version=version+1
 				where specialist_account_id=:specialistId and status='PENDING_SETTLEMENT'
-				  and settlement_available_at <= :now
-				""").param("specialistId", specialistId).param("now", databaseInstant(clock.instant())).update();
+				  and settlement_available_at <= :now and
+				""" + ELIGIBLE_SOURCE).param("specialistId", specialistId)
+				.param("now", databaseInstant(clock.instant())).update();
 	}
 
 	private void insertHistory(UUID payoutId, String from, String to, String reason, java.time.Instant now) {

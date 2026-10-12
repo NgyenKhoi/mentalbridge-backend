@@ -48,6 +48,14 @@ public class BillingProperties {
 		return "FAKE".equals(mode);
 	}
 
+	public boolean sandboxCheckoutAllowed() {
+		if (fake()) return true;
+		if (!momoReady()) return false;
+		var origin = URI.create(momoBaseUrl);
+		return "test-payment.momo.vn".equalsIgnoreCase(origin.getHost())
+				&& (origin.getPort() == -1 || origin.getPort() == 443);
+	}
+
 	public boolean momoReady() {
 		return "MOMO".equals(mode) && productionApproved && present(momoPartnerCode)
 				&& present(momoAccessKey) && present(momoSecretKey) && present(momoSignatureKeyVersion)

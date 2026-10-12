@@ -7,6 +7,9 @@ import java.util.UUID;
 
 import org.springframework.jdbc.core.simple.JdbcClient;
 import org.springframework.stereotype.Service;
+import org.springframework.transaction.annotation.Transactional;
+
+import com.mentalbridge.consultation.dispute.AppointmentSettlementGate;
 
 @Service
 public class SpecialistEarningService {
@@ -18,13 +21,17 @@ public class SpecialistEarningService {
 	private final JdbcClient jdbc;
 	private final PayoutProperties properties;
 	private final Clock clock;
+	private final AppointmentSettlementGate settlementGate;
 
-	public SpecialistEarningService(JdbcClient jdbc, PayoutProperties properties, Clock clock) {
+	public SpecialistEarningService(JdbcClient jdbc, PayoutProperties properties, Clock clock,
+			AppointmentSettlementGate settlementGate) {
 		this.jdbc = jdbc;
 		this.properties = properties;
 		this.clock = clock;
+		this.settlementGate = settlementGate;
 	}
 
+	@Transactional
 	public void createForCompletedAppointment(UUID appointmentId) {
 		var source = jdbc.sql("""
 				select a.id, a.completion_fact_id, a.service_credit_id, a.specialist_account_id,
@@ -41,7 +48,7 @@ public class SpecialistEarningService {
 				row.getObject("service_credit_id", UUID.class), row.getObject("specialist_account_id", UUID.class),
 				row.getTimestamp("session_settled_at").toInstant(), row.getString("plan_version"),
 				row.getLong("credit_allocation_minor"))).optional();
-		if (source.isEmpty()) return;
+		if (source.isEmpty() || !settlementGate.earningEligible(appointmentId)) return;
 		var value = source.orElseThrow();
 		var availableAt = value.earnedAt().plus(properties.getSettlementHold());
 		var now = clock.instant();

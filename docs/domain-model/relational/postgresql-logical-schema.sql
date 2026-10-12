@@ -1179,6 +1179,7 @@ CREATE TABLE consultation.subscription_plan_version (
     id uuid PRIMARY KEY,
     plan_code varchar(16) NOT NULL REFERENCES consultation.subscription_plan(code),
     version varchar(64) NOT NULL,
+    pricing_policy_version varchar(64) NOT NULL DEFAULT 'upgrade-offset-v1',
     currency char(3) NOT NULL,
     price_minor bigint NOT NULL,
     billing_period_months integer NOT NULL,
@@ -1245,7 +1246,7 @@ CREATE TABLE consultation.payment_transaction (
     paid_at timestamptz,
     failed_at timestamptz,
     expires_at timestamptz NOT NULL,
-    checkout_url varchar(2048) NOT NULL,
+    checkout_url varchar(2048),
     qr_code_url varchar(2048),
     created_at timestamptz NOT NULL,
     updated_at timestamptz NOT NULL,
@@ -1253,6 +1254,7 @@ CREATE TABLE consultation.payment_transaction (
     UNIQUE (payment_provider, momo_order_id),
     UNIQUE (payment_provider, momo_request_id),
     UNIQUE (payment_provider, momo_trans_id),
+    CHECK (checkout_url IS NOT NULL OR qr_code_url IS NULL),
     UNIQUE (subscription_id, idempotency_key)
 );
 
@@ -1292,6 +1294,7 @@ CREATE TABLE consultation.subscription_upgrade (
     from_plan_version_id uuid NOT NULL REFERENCES consultation.subscription_plan_version(id),
     to_plan_version_id uuid NOT NULL REFERENCES consultation.subscription_plan_version(id),
     payment_id uuid NOT NULL UNIQUE REFERENCES consultation.payment_transaction(id),
+    pricing_policy_version varchar(64) NOT NULL DEFAULT 'upgrade-offset-v1',
     old_period_start timestamptz NOT NULL,
     old_period_end timestamptz NOT NULL,
     total_period_seconds bigint NOT NULL,
