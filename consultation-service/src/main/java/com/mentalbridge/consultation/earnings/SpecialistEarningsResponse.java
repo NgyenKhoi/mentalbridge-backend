@@ -4,7 +4,7 @@ import java.time.Instant;
 import java.util.List;
 import java.util.UUID;
 
-public record SpecialistEarningsResponse(String currency, String earningPolicyVersion,
+public record SpecialistEarningsResponse(String currency, String earningPolicyVersion, String payoutProvider,
 		int settlementHoldDays, long minimumWithdrawalVnd, Instant generatedAt, Balance balance,
 		Destination destination, List<Earning> earnings, List<Payout> payouts) {
 

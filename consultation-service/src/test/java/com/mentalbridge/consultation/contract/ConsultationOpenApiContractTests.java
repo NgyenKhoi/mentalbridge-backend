@@ -81,6 +81,7 @@ class ConsultationOpenApiContractTests {
 			"POST /api/v1/admin/specialist-profiles/{specialistAccountId}/suspend",
 			"POST /api/v1/admin/specialist-profiles/{specialistAccountId}/restore",
 			"GET /api/v1/admin/payouts",
+			"GET /api/v1/admin/payments",
 			"POST /internal/v1/payouts/momo/ipn");
 
 	@Test

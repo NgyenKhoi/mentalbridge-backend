@@ -1,5 +1,17 @@
 # Consultation Service
 
+MB-622 earning materialization and withdrawal reuse the appointment dispute
+gate. OPEN disputes and RELEASE_USER_CREDIT resolutions block payment, including
+failed-payout retries. Ineligible AVAILABLE rows return to PENDING_SETTLEMENT
+without changing amount/version/allocation snapshots; upheld resolutions can
+restore eligibility after the original hold.
+
+`GET /api/v1/admin/payments` is an ADMIN-only, read-only view of at most 200
+canonical purchase/upgrade transactions, without checkout URLs or customer
+profile data. Specialist earnings identify the configured payout adapter before
+a destination exists. Both specialist and admin payout reads use the latest
+attempt reference and count each earning once after retries.
+
 Owns specialist approval and deterministic non-clinical discovery, 60-minute
 in-app chat/video availability and appointments, session
 evidence and user-visible summaries, subscription/payment/upgrade,
@@ -170,6 +182,25 @@ MB-364 rating aggregates and never fabricates a score.
 - `GET /api/v1/service-credits`
 
 ## Implemented MB-515 endpoints
+
+MB-622 replaces the active test offers with immutable PLUS 5,000/PREMIUM 10,000
+VND sandbox versions. The owner-approved sandbox upgrade charges 10,000 VND
+with zero offset and records `sandbox-full-price-v1` plus the nominal held-credit
+value. Existing held appointment credits and ordinary/historical prices/offsets
+are preserved. Mixed pricing policies fail closed. New paid credit periods
+snapshot the exact purchased plan-version UUID and allocation. Sandbox earning
+amounts are demonstration facts and may use FAKE payout only, never real money.
+Apply migration 021 and drain old billing writers before enabling new offers.
+
+Migration 022 permits a null checkout URL. Roll out the nullable-URL consumer
+before the new checkout writer and drain old writers. Checkout commits its
+canonical payment, quote and held credits before calling the provider outside
+any database transaction. Only the first reservation calls create; same-key
+replay returns the stored payment without re-sending a possible charge. A
+provider timeout leaves an auditable pending record, recoverable by verified
+IPN or existing expiry/reconciliation, never browser-side activation. There is
+no automatic create retry or production payment/payout enablement in MB-622.
+No runtime secret or production approval flag is changed by this story.
 
 - `GET /api/v1/service-plans`
 - `POST /api/v1/subscriptions/checkout`

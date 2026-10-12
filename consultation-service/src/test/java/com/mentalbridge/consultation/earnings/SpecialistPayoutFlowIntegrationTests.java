@@ -27,6 +27,9 @@ import org.springframework.test.web.servlet.MockMvc;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import com.mentalbridge.consultation.ConsultationTestProperties;
 import com.mentalbridge.consultation.TestcontainersConfiguration;
+import com.mentalbridge.consultation.dispute.AppointmentDisputeService;
+import com.mentalbridge.consultation.dispute.OpenAppointmentDisputeRequest;
+import com.mentalbridge.consultation.dispute.ResolveAppointmentDisputeRequest;
 import com.mentalbridge.consultation.shared.ApiException;
 
 @Import(TestcontainersConfiguration.class)
@@ -39,6 +42,104 @@ class SpecialistPayoutFlowIntegrationTests extends ConsultationTestProperties {
 	@Autowired ObjectMapper json;
 	@Autowired SpecialistPayoutService payouts;
 	@Autowired PayoutTransactions transactions;
+	@Autowired PayoutProperties properties;
+	@Autowired AppointmentDisputeService disputes;
+	@Autowired SpecialistEarningService earningService;
+
+	@Test
+	void noEarningIsMaterializedWhileTheDisputeGateIsClosed() {
+		var fixture = disputableEarning();
+		jdbc.sql("delete from specialist_earning where consumed_credit_id=:id").param("id", fixture.creditId()).update();
+		var dispute = openDispute(fixture);
+		earningService.createForCompletedAppointment(dispute.appointmentId());
+		assertThat(jdbc.sql("select count(*) from specialist_earning where appointment_id=:id")
+				.param("id", dispute.appointmentId()).query(Long.class).single()).isZero();
+		disputes.resolve(UUID.randomUUID(), dispute.id(), 0, "materialize-upheld-key-01",
+				new ResolveAppointmentDisputeRequest(ResolveAppointmentDisputeRequest.Outcome.UPHOLD_RECORDED_OUTCOME,
+						ResolveAppointmentDisputeRequest.ReasonCode.EVIDENCE_SUPPORTS_RECORDED_OUTCOME));
+		earningService.createForCompletedAppointment(dispute.appointmentId());
+		earningService.createForCompletedAppointment(dispute.appointmentId());
+		assertThat(jdbc.sql("select count(*) from specialist_earning where appointment_id=:id")
+				.param("id", dispute.appointmentId()).query(Long.class).single()).isOne();
+	}
+
+	@Test
+	void openDisputeBlocksAnAlreadyAvailableEarningAndUpheldResolutionRestoresEligibility() {
+		var fixture = disputableEarning();
+		var destination = payouts.saveDestination(fixture.specialistId(),
+				new SavePayoutDestinationRequest("MOMO_WALLET", "0900000622", "Synthetic specialist", null));
+		assertThat(payouts.earnings(fixture.specialistId()).balance().availableVnd()).isEqualTo(210_000);
+		var dispute = openDispute(fixture);
+		assertThat(payouts.earnings(fixture.specialistId()).balance().availableVnd()).isZero();
+		assertThatThrownBy(() -> transactions.prepare(fixture.specialistId(), destination.id(), "disputed-payout-key-01"))
+				.isInstanceOfSatisfying(ApiException.class,
+						error -> assertThat(error.code()).isEqualTo("PAYOUT_MINIMUM_NOT_REACHED"));
+		disputes.resolve(UUID.randomUUID(), dispute.id(), 0, "uphold-payout-dispute-01",
+				new ResolveAppointmentDisputeRequest(ResolveAppointmentDisputeRequest.Outcome.UPHOLD_RECORDED_OUTCOME,
+						ResolveAppointmentDisputeRequest.ReasonCode.EVIDENCE_SUPPORTS_RECORDED_OUTCOME));
+		assertThat(payouts.earnings(fixture.specialistId()).balance().availableVnd()).isEqualTo(210_000);
+		var paid = payouts.requestPayout(fixture.specialistId(), destination.id(), "upheld-payout-key-01");
+		assertThat(paid.balance().paidVnd()).isEqualTo(210_000);
+	}
+
+	@Test
+	void creditReleaseResolutionBlocksMaterializationAndRetryOfAnExistingFailedPayout() {
+		var fixture = disputableEarning();
+		var destination = payouts.saveDestination(fixture.specialistId(),
+				new SavePayoutDestinationRequest("MOMO_WALLET", "0900000623", "Synthetic specialist", null));
+		var prepared = transactions.prepare(fixture.specialistId(), destination.id(), "release-payout-key-01");
+		transactions.reconcile(prepared.payoutId(), prepared.attemptId(), new PayoutProvider.Result("FAILED", null, "REJECTED"));
+		var dispute = openDispute(fixture);
+		earningService.createForCompletedAppointment(dispute.appointmentId());
+		disputes.resolve(UUID.randomUUID(), dispute.id(), 0, "release-payout-dispute-01",
+				new ResolveAppointmentDisputeRequest(ResolveAppointmentDisputeRequest.Outcome.RELEASE_USER_CREDIT,
+						ResolveAppointmentDisputeRequest.ReasonCode.TECHNICAL_FAILURE_CONFIRMED));
+		earningService.createForCompletedAppointment(dispute.appointmentId());
+		assertThat(payouts.earnings(fixture.specialistId()).balance().availableVnd()).isZero();
+		assertThatThrownBy(() -> transactions.prepare(fixture.specialistId(), destination.id(), "release-payout-key-01"))
+				.isInstanceOfSatisfying(ApiException.class,
+						error -> assertThat(error.code()).isEqualTo("PAYOUT_RETRY_NOT_AVAILABLE"));
+		assertThat(jdbc.sql("select count(*) from specialist_earning where consumed_credit_id=:id")
+				.param("id", fixture.creditId()).query(Long.class).single()).isOne();
+		assertThat(jdbc.sql("select count(*) from specialist_payout_attempt where payout_id=:id")
+				.param("id", prepared.payoutId()).query(Long.class).single()).isOne();
+	}
+
+	private Fixture disputableEarning() {
+		var fixture = earningFixture(Instant.now().minusSeconds(8 * 86_400L), 210_000);
+		jdbc.sql("update appointment set session_settled_at=now() where service_credit_id=:id")
+				.param("id", fixture.creditId()).update();
+		return fixture;
+	}
+
+	private com.mentalbridge.consultation.dispute.AppointmentDisputeResponse openDispute(Fixture fixture) {
+		var appointmentId = jdbc.sql("select id from appointment where service_credit_id=:id")
+				.param("id", fixture.creditId()).query(UUID.class).single();
+		var userId = jdbc.sql("select user_account_id from appointment where id=:id")
+				.param("id", appointmentId).query(UUID.class).single();
+		return disputes.open(userId, "USER", appointmentId, "earning-dispute-" + appointmentId,
+				new OpenAppointmentDisputeRequest(OpenAppointmentDisputeRequest.ReasonCode.OUTCOME_INCORRECT, null, null));
+	}
+
+	@Test
+	void sandboxEarningCannotEnterARealTransferEvenWhenPayoutModeChanges() {
+		var fixture = earningFixture(Instant.now().minusSeconds(8 * 86_400L), 210_000);
+		jdbc.sql("update specialist_earning set plan_version='62200000-0000-4000-8000-000000000002' where consumed_credit_id=:id")
+				.param("id", fixture.creditId()).update();
+		var previousMode = properties.getMode();
+		try {
+			properties.setMode("MOMO");
+			assertThatThrownBy(() -> transactions.prepare(fixture.specialistId(), UUID.randomUUID(),
+					"sandbox-real-transfer-blocked-01"))
+					.isInstanceOfSatisfying(ApiException.class, error -> assertThat(error.code())
+							.isEqualTo("SANDBOX_EARNINGS_REAL_PAYOUT_DISABLED"));
+		}
+		finally {
+			properties.setMode(previousMode);
+		}
+		assertThat(jdbc.sql("select count(*) from specialist_payout where specialist_account_id=:id")
+				.param("id", fixture.specialistId()).query(Long.class).single()).isZero();
+	}
 
 	@Test
 	void earningResponsePreservesTheAllocationSnapshotInsteadOfAssumingOneFixedAmount() throws Exception {
@@ -88,8 +189,9 @@ class SpecialistPayoutFlowIntegrationTests extends ConsultationTestProperties {
 		mvc.perform(get("/api/v1/admin/payouts").with(specialist(fixture.specialistId())))
 				.andExpect(status().isForbidden());
 		mvc.perform(get("/api/v1/admin/payouts").with(admin(UUID.randomUUID())))
-				.andExpect(status().isOk()).andExpect(jsonPath("$.count").value(1))
-				.andExpect(jsonPath("$.items[0].destinationHint").value("•••• 5678"));
+				.andExpect(status().isOk()).andExpect(jsonPath("$.count").value(org.hamcrest.Matchers.greaterThan(0)))
+				.andExpect(jsonPath("$.items[?(@.specialistAccountId == '%s')].destinationHint".formatted(fixture.specialistId()))
+						.value(org.hamcrest.Matchers.hasItem("•••• 5678")));
 
 		assertThat(jdbc.sql("select count(*) from specialist_payout where specialist_account_id=:id")
 				.param("id", fixture.specialistId()).query(Long.class).single()).isOne();
@@ -118,7 +220,7 @@ class SpecialistPayoutFlowIntegrationTests extends ConsultationTestProperties {
 	}
 
 	@Test
-	void definiteProviderFailureCanRetryTheSameLogicalPayoutWithoutDoublePaying() {
+	void definiteProviderFailureCanRetryTheSameLogicalPayoutWithoutDoublePaying() throws Exception {
 		var fixture = earningFixture(Instant.now().minusSeconds(8 * 86_400L), 210_000);
 		var destination = payouts.saveDestination(fixture.specialistId(),
 				new SavePayoutDestinationRequest("MOMO_WALLET", "0900000001", "Nguyen Thu Ha", null));
@@ -134,6 +236,14 @@ class SpecialistPayoutFlowIntegrationTests extends ConsultationTestProperties {
 		assertThat(retry.submit()).isTrue();
 		transactions.reconcile(retry.payoutId(), retry.attemptId(),
 				new PayoutProvider.Result("SUCCEEDED", "fake-retry-success", null));
+		assertThat(payouts.earnings(fixture.specialistId()).payouts().getFirst().providerReference())
+				.isEqualTo("fake-retry-success");
+		mvc.perform(get("/api/v1/admin/payouts").with(admin(UUID.randomUUID())))
+				.andExpect(status().isOk())
+				.andExpect(jsonPath("$.items[?(@.payoutId == '%s')].providerReference".formatted(first.payoutId()))
+						.value(org.hamcrest.Matchers.hasItem("fake-retry-success")))
+				.andExpect(jsonPath("$.items[?(@.payoutId == '%s')].earningCount".formatted(first.payoutId()))
+						.value(org.hamcrest.Matchers.hasItem(1)));
 
 		assertThat(jdbc.sql("select count(*) from specialist_payout where specialist_account_id=:id")
 				.param("id", fixture.specialistId()).query(Long.class).single()).isOne();
@@ -230,6 +340,14 @@ class SpecialistPayoutFlowIntegrationTests extends ConsultationTestProperties {
 				.param("slotId", slotId).param("creditId", creditId).param("startAt", Timestamp.from(start))
 				.param("endAt", Timestamp.from(start.plusSeconds(3600))).param("deadline", Timestamp.from(start.minusSeconds(3600)))
 				.param("key", "payout-appointment-" + appointmentId).update();
+		jdbc.sql("""
+				update appointment set status='COMPLETED', decided_at=:earnedAt, decision_reason='SPECIALIST_ACCEPTED',
+				 session_outcome='COMPLETED',
+				 session_outcome_reason='EVIDENCE_REQUIREMENTS_MET', session_policy_version='chat-session-completion-v1',
+				 session_ended_at=:earnedAt, session_settled_at=:earnedAt, completion_fact_id=:fact where id=:id
+				""").param("id", appointmentId).param("fact", completionFactId)
+				.param("earnedAt", Timestamp.from(earnedAt)).update();
+		jdbc.sql("update service_credit set state='CONSUMED' where id=:id").param("id", creditId).update();
 		jdbc.sql("""
 				insert into specialist_earning (
 				 id, appointment_id, completion_fact_id, consumed_credit_id, specialist_account_id,
