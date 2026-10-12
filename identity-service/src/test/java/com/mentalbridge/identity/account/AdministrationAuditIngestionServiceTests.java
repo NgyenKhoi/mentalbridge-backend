@@ -1019,4 +1019,68 @@ class AdministrationAuditIngestionServiceTests {
         consumer.onMessage(json);
         verify(auditRepository).saveAndFlush(any(SecurityAuditEventEntity.class));
     }
+
+    @Test
+    @DisplayName("Consumer: propagates persistence/runtime exception when ingestion throws")
+    void consumerPropagatesIngestionPersistenceFailure() {
+        AdministrationAuditIngestionService mockIngestion = org.mockito.Mockito.mock(AdministrationAuditIngestionService.class);
+        AdministrationAuditEventConsumer consumerWithMock = new AdministrationAuditEventConsumer(mockIngestion, objectMapper);
+
+        UUID eventId = UUID.randomUUID();
+        UUID correlationId = UUID.randomUUID();
+        String json = """
+                {
+                  "eventId": "%s",
+                  "eventType": "consultation.specialist.approved",
+                  "occurredAt": "%s",
+                  "producer": "consultation-service",
+                  "schemaVersion": "1.0",
+                  "sourceService": "CONSULTATION",
+                  "domain": "SPECIALIST_REVIEW",
+                  "actorType": "SYSTEM",
+                  "action": "SPECIALIST_APPROVED",
+                  "result": "SUCCEEDED",
+                  "correlationId": "%s"
+                }
+                """.formatted(eventId, Instant.now(), correlationId);
+
+        org.springframework.dao.DataAccessResourceFailureException persistenceException =
+                new org.springframework.dao.DataAccessResourceFailureException("DB connection unavailable");
+        when(mockIngestion.ingest(any())).thenThrow(persistenceException);
+
+        org.assertj.core.api.Assertions.assertThatThrownBy(() -> consumerWithMock.onMessage(json))
+                .isSameAs(persistenceException);
+        verify(mockIngestion).ingest(any());
+    }
+
+    @Test
+    @DisplayName("Consumer: propagates runtime exception from real ingestion service when repository save fails")
+    void consumerPropagatesExceptionFromRepositoryFailure() {
+        UUID eventId = UUID.randomUUID();
+        UUID correlationId = UUID.randomUUID();
+        when(auditRepository.existsById(eventId)).thenReturn(false);
+
+        org.springframework.dao.DataAccessResourceFailureException dbException =
+                new org.springframework.dao.DataAccessResourceFailureException("Database unreachable");
+        org.mockito.Mockito.doThrow(dbException).when(auditRepository).saveAndFlush(any());
+
+        String json = """
+                {
+                  "eventId": "%s",
+                  "eventType": "consultation.specialist.approved",
+                  "occurredAt": "%s",
+                  "producer": "consultation-service",
+                  "schemaVersion": "1.0",
+                  "sourceService": "CONSULTATION",
+                  "domain": "SPECIALIST_REVIEW",
+                  "actorType": "SYSTEM",
+                  "action": "SPECIALIST_APPROVED",
+                  "result": "SUCCEEDED",
+                  "correlationId": "%s"
+                }
+                """.formatted(eventId, Instant.now(), correlationId);
+
+        org.assertj.core.api.Assertions.assertThatThrownBy(() -> consumer.onMessage(json))
+                .isSameAs(dbException);
+    }
 }

@@ -49,12 +49,18 @@ public class AdministrationAuditEventConsumer {
             groupId = "${IDENTITY_AUDIT_CONSUMER_GROUP:mentalbridge.identity.audit-consumer}"
     )
     public void onMessage(String message) {
+        JsonNode root;
         try {
-            JsonNode root = objectMapper.readTree(message);
-            if (!root.isObject()) {
-                LOGGER.warn("Audit message is not a JSON object, ignoring");
-                return;
-            }
+            root = objectMapper.readTree(message);
+        } catch (com.fasterxml.jackson.core.JsonProcessingException exception) {
+            LOGGER.warn("Audit message is malformed JSON, ignoring: reason={}", exception.getMessage());
+            return;
+        }
+
+        if (root == null || !root.isObject()) {
+            LOGGER.warn("Audit message is not a JSON object, ignoring");
+            return;
+        }
 
             // Reject unexpected fields fail-closed (additionalProperties: false per schema v1)
             var fieldIterator = root.fieldNames();
@@ -293,8 +299,5 @@ public class AdministrationAuditEventConsumer {
                     );
 
             ingestionService.ingest(command);
-        } catch (Exception exception) {
-            LOGGER.warn("Failed to process administration audit event: reason={}", exception.getMessage());
-        }
     }
 }
