@@ -91,7 +91,8 @@ fields.
 Collection: `emotion_check_ins`
 
 Key fields: owner/local date/timezone, optimistic revision, encrypted bounded
-revisions, idempotent command records, deletion tombstone, and purge time.
+revisions containing required emotion/intensity plus optional factor codes and
+private note, idempotent command records, deletion tombstone, and purge time.
 
 ### Benchmark Dataset — ACTIVE
 
