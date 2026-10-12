@@ -35,6 +35,7 @@ const journalEmotionNotificationKinds = requiredMigration(
 );
 const resourceDailyProgress = requiredMigration('13_add_resource_daily_progress.sql');
 const resourceRewardVisibility = requiredMigration('20_add_resource_reward_visibility.sql');
+const resourceEngagement = requiredMigration('21_persist_resource_engagement.sql');
 const appointmentEmailReminders = requiredMigration('17_add_appointment_email_reminders.sql');
 const communityInteractionNotifications = requiredMigration(
   '18_add_community_interaction_notifications.sql',
@@ -183,6 +184,15 @@ assert.match(resourceDailyProgress, /ix_resource_daily_progress_owner_history\b/
 assert.match(resourceRewardVisibility, /CREATE TABLE resource_reward_preference\b/);
 assert.match(resourceRewardVisibility, /PRIMARY KEY/);
 assert.match(resourceRewardVisibility, /visibility_state IN \('VISIBLE', 'HIDDEN'\)/);
+assert.match(resourceEngagement, /CREATE TABLE resource_bookmark\b/);
+assert.match(resourceEngagement, /PRIMARY KEY \(owner_id, resource_id\)/);
+assert.match(
+  resourceEngagement,
+  /REFERENCES resource_publication_snapshot\(resource_id, content_version\)/,
+);
+assert.match(resourceEngagement, /ADD COLUMN version bigint NOT NULL DEFAULT 0/);
+assert.match(resourceEngagement, /ADD COLUMN resource_version bigint/);
+assert.match(resourceEngagement, /ADD COLUMN self_confirmed_at timestamptz/);
 assert.match(appointmentEmailReminders, /email_appointment_reminders_enabled\b/);
 assert.match(appointmentEmailReminders, /CREATE TABLE appointment_email_reminder\b/);
 assert.match(appointmentEmailReminders, /uq_appointment_email_reminder_identity\b/);

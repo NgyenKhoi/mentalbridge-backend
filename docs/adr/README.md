@@ -22,6 +22,7 @@ Use ADR **filename + Decision ID**, not numeric prefix alone, when a reference c
 | [0034-support-plan-v3-cross-domain-actions.md](0034-support-plan-v3-cross-domain-actions.md) | `MB-SUPPORT-PLAN-V3-ACTIONS-001` | Accepted | Replaces Resource-as-parent composition prospectively with Care-owned focuses, typed actions, generic schedules/occurrences, bounded source/evidence references, and a non-destructive v2 read adapter |
 | [0035-optional-emotion-influence-context.md](0035-optional-emotion-influence-context.md) | `MB-EMOTION-CONTEXT-001` | Accepted | Adds bounded optional encrypted influence factors and private note UX while prohibiting downstream reuse without a separate policy |
 | [0036-authoritative-resource-rewards.md](0036-authoritative-resource-rewards.md) | `MB-RESOURCE-REWARD-001` | Accepted | Derives optional non-punitive XP from exact Content evidence with versioned rules and no second award ledger |
+| [0037-persistent-resource-engagement.md](0037-persistent-resource-engagement.md) | `MB-RESOURCE-ENGAGEMENT-001` | Accepted | Persists exact-version bookmarks and separates reversible Bingo self-confirmation from recomputed Content evidence |
 
 For clauses explicitly amended by ADR 0022, ADR 0024, or ADR 0034, the relevant
 latest amendment is the current prospective authority. Historical records keep

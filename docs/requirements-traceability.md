@@ -83,6 +83,13 @@ owner's in-app and Community-group preferences, and persists a deduplicated
 notification or cancelled outcome. Community publication remains transactional
 outbox work and never waits for this consumer.
 
+MB-660 makes resource bookmarks and weekly Bingo state authoritative in
+Content/Notification. Bookmarks retain the exact reviewed publication version;
+Bingo retains its plan-derived week/timezone and exact resource versions while
+keeping reversible owner self-confirmation separate from recomputed Content
+completion/practice evidence. See ADR `MB-RESOURCE-ENGAGEMENT-001` and policy
+`resource-engagement-v1`.
+
 | WBS functions         | Functional area                                                                                            | Authoritative owner                                                        | Main integration/storage                                                                                                                                                                                                                                        |
 | --------------------- | ---------------------------------------------------------------------------------------------------------- | -------------------------------------------------------------------------- | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
 | 1–5, 7, 111, 113–116  | registration, login/logout, reset, RBAC, admin login and user administration                               | Identity Service (Spring)                                                  | PostgreSQL; REST/JWT; account Kafka events                                                                                                                                                                                                                      |

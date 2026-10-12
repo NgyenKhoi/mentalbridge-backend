@@ -33,6 +33,8 @@ a compatibility repair path for accounts created before this consumer existed.
 - `GET /api/v1/resources` — lists active reviewed published self-help resources; returns empty array when none match; returns neutral fallback when service is unreachable; no hotline number or emergency dispatch claim (ADR 0009)
 - `GET /api/v1/resources/{id}` — without `contentVersion`, returns only the current active reviewed publication; an exact `contentVersion` may resolve its immutable publication snapshot after archive/correction without restoring catalogue visibility
 - `GET /api/v1/resource-progress` and `PUT /api/v1/resource-progress/{resourceId}/{localDate}` — persist owner-scoped, non-clinical daily checklist/completion state without changing SupportPlan occurrences; a confirmed completion is terminal while checklist selections remain editable
+- `GET|PUT|DELETE /api/v1/resource-bookmarks` — list, save the current exact reviewed version, or idempotently remove an authenticated owner's private bookmark
+- `GET /api/v1/resource-bingo/{weekStart}` and `PUT /api/v1/resource-bingo/{weekStart}/items/{position}/self-confirmation` — read a retained Monday-based board and replace a reversible personal check under a strong ETag; exact-version Content verification remains a separate recomputed fact
 - `GET /api/v1/notifications` — returns the authenticated owner's durable inbox newest first with bounded opaque cursor pagination and authoritative unread count
 - `PATCH /api/v1/notifications/{id}/read`, `POST /api/v1/notifications/mark-all-read`, and `DELETE /api/v1/notifications/{id}` — persist idempotent read and tombstone lifecycle changes without exposing another owner's records
 - MB-556 Review 1 catalogue — 15 Vietnamese resources with structured source metadata and verified YouTube actions for every `VIDEO`; legacy synthetic resources remain exact-ID compatible but are hidden from catalogue browsing
@@ -206,6 +208,11 @@ Migration `20_add_resource_reward_visibility.sql` stores only the owner's option
 `VISIBLE` or `HIDDEN` reward presentation choice. MB-659 XP remains a deterministic,
 bounded read model over exact reviewed completion and verified practice evidence;
 source outages return 503 and are never represented as an authoritative zero.
+
+Migration `21_persist_resource_engagement.sql` adds exact-version private
+bookmarks plus versioned weekly Bingo self-confirmation. Verified Bingo evidence
+is not copied into the board: reads reconcile current exact-version progress and
+eligible plan-bound practice, so corrections cannot leave a fabricated mark.
 
 The controlled Review 1 seed, MB-337 eligibility matrix, and visibly synthetic non-dialable safety-directory fixture are owner-module migrations with a separate ledger (`pgmigrations_review1`), so running normal schema migrations cannot accidentally mark controlled data as applied. The seeds reject drift from their reviewed decisions. Machine-readable resource inventory, reviewer rationale, explicit ineligible decisions, and Care requests are kept in `../contracts/fixtures/content/resource-eligibility-v1-controlled-demo.json`. No real safety contact is published by the controlled fixture. For the shared dev/staging database only, run:
 

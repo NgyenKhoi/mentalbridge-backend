@@ -2035,13 +2035,33 @@ Stores only whether the authenticated owner wants the optional reward presentati
 | `version` | Monotonic counter incremented only when the preference changes. |
 | `updated_at` | UTC instant of the latest preference change. |
 
+### `content.resource_bookmark`
+
+Private persistent saved-resource state. The owner is always taken from the
+verified JWT and the saved target is an immutable reviewed publication snapshot.
+
+| Field | Purpose |
+| --- | --- |
+| `owner_id` | External Identity account UUID and first half of the primary key. |
+| `resource_id` / `resource_version` | Exact published, reviewed snapshot saved by the owner. |
+| `version` | Monotonic counter advanced only when a later current publication version replaces the saved version. |
+| `created_at` | Original save instant, retained across exact-version retries and later version refreshes. |
+| `updated_at` | Latest effective bookmark change instant. |
+
 ### `content.resource_daily_assignment` and `content.resource_daily_assignment_item`
 
 Persisted, owner/date-scoped daily challenge derived from an authoritative active SupportPlan snapshot supplied by the trusted BFF. Materialization is allowed only for local Plan Days 1–14. The header stores timezone, plan identity/version, and plan tags; ordered items store exact resource IDs and a non-clinical selection reason. The unique owner/date key keeps reloads stable even if catalogue ordering changes.
 
 ### `content.resource_weekly_bingo` and `content.resource_weekly_bingo_item`
 
-Persisted Monday-based board derived from the same plan snapshot. The unique owner/week key prevents reshuffling during the week. Item completion is derived from durable learning completions or practice sessions; the board itself does not create completion evidence.
+Persisted Monday-based board derived from the same plan snapshot. The unique
+owner/week key prevents reshuffling during the week. The board `version` and
+`updated_at` provide a strong ETag concurrency boundary. Each item retains the
+exact `resource_version` and may store a reversible `self_confirmed_at` owner
+statement. The read model computes verified evidence from exact-version,
+same-plan daily completion or eligible measured practice; it never copies that
+evidence onto the board. Self-confirmation and Content verification remain
+separate, and neither a skipped nor a fully checked board has clinical meaning.
 
 ### `content.notification_preference`
 

@@ -269,7 +269,7 @@ Detailed national-contact amendment: [ADR 0024](adr/0024-global-anonymous-crisis
 ## 9. Owner boundaries
 
 - **Care**: screening, safety triggers, SupportEvaluation, Support Guide, SupportPlan and its focuses/actions/schedules/occurrences, reassessment composition, eligibility revalidation, PlanChangeRequest decision, user-confirmed plan mutation.
-- **Content/Notification**: reviewed resource catalogue, exact-version resource eligibility, safety-directory content/provenance, reminder preferences/scheduling/delivery attempts.
+- **Content/Notification**: reviewed resource catalogue, exact-version resource eligibility and progress, owner-scoped resource bookmarks, persisted weekly resource Bingo with separate self-confirmed and verified evidence, safety-directory content/provenance, reminder preferences/scheduling/delivery attempts.
 - **Consultation/Billing**: specialist profile/approval/availability/discovery, service-plan entitlement, consultation-credit ledger, appointments, evidence-backed completion, SessionSummary/AgreedNextSteps persistence, earnings and payout.
 - **Realtime**: in-app chat transport/delivery under Consultation appointment eligibility.
 - **Journal/AI**: private Journal, AI analyses/conversations, model execution and minimized projections; no Care/financial authority.
