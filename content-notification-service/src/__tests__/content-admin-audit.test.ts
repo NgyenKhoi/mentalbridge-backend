@@ -90,14 +90,32 @@ describe('Content Administration Audit Outbox Architecture', () => {
   describe('ResourceRepository Outbox writes', () => {
     it('archive writes RESOURCE_ARCHIVED outbox row in transaction', async () => {
       const resourceId = randomUUID();
-      const updatedRow = createMockResourceDbRow({ id: resourceId, version: 2 });
+      const publishedRow = createMockResourceDbRow({
+        id: resourceId,
+        version: 1,
+        status: 'PUBLISHED',
+      });
+      const updatedRow = createMockResourceDbRow({
+        id: resourceId,
+        version: 2,
+        status: 'ARCHIVED',
+      });
 
       const executedQueries: { sql: string; params?: any[] }[] = [];
       const client = {
         query: vi.fn().mockImplementation(async (sql: string, params?: any[]) => {
           executedQueries.push({ sql, params });
+          if (sql.includes('SELECT') && sql.includes('FOR UPDATE')) {
+            return { rowCount: 1, rows: [publishedRow] };
+          }
           if (sql.includes('UPDATE resource')) {
             return { rowCount: 1, rows: [updatedRow] };
+          }
+          if (sql.includes('INSERT INTO resource_publication_snapshot')) {
+            return { rowCount: 1, rows: [] };
+          }
+          if (sql.includes('INSERT INTO resource_publication_withdrawal')) {
+            return { rowCount: 1, rows: [] };
           }
           if (sql.includes('INSERT INTO resource_audit_event')) {
             return { rowCount: 1, rows: [] };

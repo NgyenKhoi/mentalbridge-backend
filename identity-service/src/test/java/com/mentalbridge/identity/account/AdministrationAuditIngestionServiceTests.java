@@ -33,6 +33,7 @@ class AdministrationAuditIngestionServiceTests {
 
     @BeforeEach
     void setUp() {
+        org.mockito.Mockito.lenient().when(auditRepository.insertIfAbsent(any(SecurityAuditEventEntity.class))).thenReturn(1);
         ingestionService = new AdministrationAuditIngestionService(auditRepository, accountRepository);
         consumer = new AdministrationAuditEventConsumer(ingestionService, objectMapper);
     }
@@ -71,7 +72,7 @@ class AdministrationAuditIngestionServiceTests {
 
         assertThat(result).isTrue();
         ArgumentCaptor<SecurityAuditEventEntity> captor = ArgumentCaptor.forClass(SecurityAuditEventEntity.class);
-        verify(auditRepository).saveAndFlush(captor.capture());
+        verify(auditRepository).insertIfAbsent(captor.capture());
 
         SecurityAuditEventEntity saved = captor.getValue();
         assertThat(saved.getId()).isEqualTo(eventId);
@@ -114,7 +115,7 @@ class AdministrationAuditIngestionServiceTests {
         boolean result = ingestionService.ingest(command);
 
         assertThat(result).isFalse();
-        verify(auditRepository, never()).saveAndFlush(any());
+        verify(auditRepository, never()).insertIfAbsent(any());
     }
 
     @Test
@@ -144,7 +145,7 @@ class AdministrationAuditIngestionServiceTests {
         boolean result = ingestionService.ingest(command);
 
         assertThat(result).isFalse();
-        verify(auditRepository, never()).saveAndFlush(any());
+        verify(auditRepository, never()).insertIfAbsent(any());
     }
 
     @Test
@@ -172,7 +173,7 @@ class AdministrationAuditIngestionServiceTests {
 
         boolean resultPending = ingestionService.ingest(commandWithPending);
         assertThat(resultPending).isFalse();
-        verify(auditRepository, never()).saveAndFlush(any());
+        verify(auditRepository, never()).insertIfAbsent(any());
 
         AdministrationAuditIngestionService.IngestionCommand commandWithNull =
                 new AdministrationAuditIngestionService.IngestionCommand(
@@ -193,7 +194,7 @@ class AdministrationAuditIngestionServiceTests {
 
         boolean resultNull = ingestionService.ingest(commandWithNull);
         assertThat(resultNull).isFalse();
-        verify(auditRepository, never()).saveAndFlush(any());
+        verify(auditRepository, never()).insertIfAbsent(any());
     }
 
     @Test
@@ -222,7 +223,7 @@ class AdministrationAuditIngestionServiceTests {
         boolean result = ingestionService.ingest(command);
 
         assertThat(result).isFalse();
-        verify(auditRepository, never()).saveAndFlush(any());
+        verify(auditRepository, never()).insertIfAbsent(any());
     }
 
     @Test
@@ -230,7 +231,8 @@ class AdministrationAuditIngestionServiceTests {
     void concurrentDuplicateCaughtByDataIntegrityViolationException() {
         UUID eventId = UUID.randomUUID();
         when(auditRepository.existsById(eventId)).thenReturn(false);
-        when(auditRepository.saveAndFlush(any())).thenThrow(new DataIntegrityViolationException("duplicate key"));
+        when(auditRepository.insertIfAbsent(any())).thenThrow(
+                new DataIntegrityViolationException("duplicate key value violates unique constraint \"security_audit_event_pkey\""));
 
         AdministrationAuditIngestionService.IngestionCommand command =
                 new AdministrationAuditIngestionService.IngestionCommand(
@@ -252,6 +254,95 @@ class AdministrationAuditIngestionServiceTests {
         boolean result = ingestionService.ingest(command);
 
         assertThat(result).isFalse();
+    }
+
+    @Test
+    @DisplayName("Idempotency: insertIfAbsent returning 0 (ON CONFLICT DO NOTHING) is treated as duplicate no-op")
+    void insertIfAbsentZeroReturnsFalse() {
+        UUID eventId = UUID.randomUUID();
+        when(auditRepository.existsById(eventId)).thenReturn(false);
+        when(auditRepository.insertIfAbsent(any())).thenReturn(0);
+
+        AdministrationAuditIngestionService.IngestionCommand command =
+                new AdministrationAuditIngestionService.IngestionCommand(
+                        eventId,
+                        "identity.account.disabled",
+                        Instant.now(),
+                        AdministrationAuditService.AuditSourceService.IDENTITY,
+                        AdministrationAuditService.AuditDomain.ACCOUNT_ADMINISTRATION,
+                        null,
+                        "SYSTEM",
+                        "ACCOUNT_DISABLED",
+                        "SUCCEEDED",
+                        "POLICY_VIOLATION",
+                        UUID.randomUUID(),
+                        null,
+                        null
+                );
+
+        boolean result = ingestionService.ingest(command);
+
+        assertThat(result).isFalse();
+    }
+
+    @Test
+    @DisplayName("Exception classification: non-duplicate check constraint violation propagates out of ingestion and consumer")
+    void nonDuplicateCheckConstraintViolationPropagates() {
+        UUID eventId = UUID.randomUUID();
+        UUID correlationId = UUID.randomUUID();
+        when(auditRepository.existsById(eventId)).thenReturn(false);
+        DataIntegrityViolationException checkViolation =
+                new DataIntegrityViolationException("check constraint ck_security_audit_outcome violated");
+        when(auditRepository.insertIfAbsent(any())).thenThrow(checkViolation);
+
+        String json = """
+                {
+                  "eventId": "%s",
+                  "eventType": "consultation.specialist.approved",
+                  "occurredAt": "%s",
+                  "producer": "consultation-service",
+                  "schemaVersion": "1.0",
+                  "sourceService": "CONSULTATION",
+                  "domain": "SPECIALIST_REVIEW",
+                  "actorType": "SYSTEM",
+                  "action": "SPECIALIST_APPROVED",
+                  "result": "SUCCEEDED",
+                  "correlationId": "%s"
+                }
+                """.formatted(eventId, Instant.now(), correlationId);
+
+        org.assertj.core.api.Assertions.assertThatThrownBy(() -> consumer.onMessage(json))
+                .isSameAs(checkViolation);
+    }
+
+    @Test
+    @DisplayName("Exception classification: non-duplicate foreign key violation propagates out of ingestion and consumer")
+    void nonDuplicateForeignKeyViolationPropagates() {
+        UUID eventId = UUID.randomUUID();
+        UUID correlationId = UUID.randomUUID();
+        when(auditRepository.existsById(eventId)).thenReturn(false);
+        DataIntegrityViolationException fkViolation =
+                new DataIntegrityViolationException("foreign key constraint fk_security_audit_account violated");
+        when(auditRepository.insertIfAbsent(any())).thenThrow(fkViolation);
+
+        String json = """
+                {
+                  "eventId": "%s",
+                  "eventType": "consultation.specialist.approved",
+                  "occurredAt": "%s",
+                  "producer": "consultation-service",
+                  "schemaVersion": "1.0",
+                  "sourceService": "CONSULTATION",
+                  "domain": "SPECIALIST_REVIEW",
+                  "actorType": "SYSTEM",
+                  "action": "SPECIALIST_APPROVED",
+                  "result": "SUCCEEDED",
+                  "correlationId": "%s"
+                }
+                """.formatted(eventId, Instant.now(), correlationId);
+
+        org.assertj.core.api.Assertions.assertThatThrownBy(() -> consumer.onMessage(json))
+                .isSameAs(fkViolation);
     }
 
     @Test
@@ -281,7 +372,7 @@ class AdministrationAuditIngestionServiceTests {
 
         assertThat(result).isTrue();
         ArgumentCaptor<SecurityAuditEventEntity> captor = ArgumentCaptor.forClass(SecurityAuditEventEntity.class);
-        verify(auditRepository).saveAndFlush(captor.capture());
+        verify(auditRepository).insertIfAbsent(captor.capture());
 
         assertThat(captor.getValue().getReasonCode()).isNull();
     }
@@ -312,7 +403,7 @@ class AdministrationAuditIngestionServiceTests {
         boolean result = ingestionService.ingest(command);
 
         assertThat(result).isFalse();
-        verify(auditRepository, never()).saveAndFlush(any());
+        verify(auditRepository, never()).insertIfAbsent(any());
     }
 
     @Test
@@ -343,7 +434,7 @@ class AdministrationAuditIngestionServiceTests {
 
         assertThat(result).isTrue();
         ArgumentCaptor<SecurityAuditEventEntity> captor = ArgumentCaptor.forClass(SecurityAuditEventEntity.class);
-        verify(auditRepository).saveAndFlush(captor.capture());
+        verify(auditRepository).insertIfAbsent(captor.capture());
 
         SecurityAuditEventEntity saved = captor.getValue();
         assertThat(saved.getAccountId()).isNull();
@@ -365,7 +456,7 @@ class AdministrationAuditIngestionServiceTests {
 
         consumer.onMessage(json);
 
-        verify(auditRepository, never()).saveAndFlush(any());
+        verify(auditRepository, never()).insertIfAbsent(any());
     }
 
     @Test
@@ -381,7 +472,7 @@ class AdministrationAuditIngestionServiceTests {
 
         consumer.onMessage(json);
 
-        verify(auditRepository, never()).saveAndFlush(any());
+        verify(auditRepository, never()).insertIfAbsent(any());
     }
 
     @Test
@@ -399,7 +490,7 @@ class AdministrationAuditIngestionServiceTests {
 
         consumer.onMessage(json);
 
-        verify(auditRepository, never()).saveAndFlush(any());
+        verify(auditRepository, never()).insertIfAbsent(any());
     }
 
     @Test
@@ -423,7 +514,7 @@ class AdministrationAuditIngestionServiceTests {
 
         consumer.onMessage(json);
 
-        verify(auditRepository, never()).saveAndFlush(any());
+        verify(auditRepository, never()).insertIfAbsent(any());
     }
 
     @Test
@@ -444,7 +535,7 @@ class AdministrationAuditIngestionServiceTests {
 
         consumer.onMessage(json);
 
-        verify(auditRepository, never()).saveAndFlush(any());
+        verify(auditRepository, never()).insertIfAbsent(any());
     }
 
     @Test
@@ -468,7 +559,7 @@ class AdministrationAuditIngestionServiceTests {
 
         consumer.onMessage(json);
 
-        verify(auditRepository, never()).saveAndFlush(any());
+        verify(auditRepository, never()).insertIfAbsent(any());
     }
 
     @Test
@@ -492,7 +583,7 @@ class AdministrationAuditIngestionServiceTests {
 
         consumer.onMessage(json);
 
-        verify(auditRepository, never()).saveAndFlush(any());
+        verify(auditRepository, never()).insertIfAbsent(any());
     }
 
     @Test
@@ -513,7 +604,7 @@ class AdministrationAuditIngestionServiceTests {
 
         consumer.onMessage(json);
 
-        verify(auditRepository, never()).saveAndFlush(any());
+        verify(auditRepository, never()).insertIfAbsent(any());
     }
 
     @Test
@@ -533,7 +624,7 @@ class AdministrationAuditIngestionServiceTests {
 
         consumer.onMessage(json);
 
-        verify(auditRepository, never()).saveAndFlush(any());
+        verify(auditRepository, never()).insertIfAbsent(any());
     }
 
     @Test
@@ -560,7 +651,7 @@ class AdministrationAuditIngestionServiceTests {
 
         boolean result = ingestionService.ingest(command);
         assertThat(result).isFalse();
-        verify(auditRepository, never()).saveAndFlush(any());
+        verify(auditRepository, never()).insertIfAbsent(any());
     }
 
     @Test
@@ -584,7 +675,7 @@ class AdministrationAuditIngestionServiceTests {
 
         consumer.onMessage(json);
 
-        verify(auditRepository, never()).saveAndFlush(any());
+        verify(auditRepository, never()).insertIfAbsent(any());
     }
 
     @Test
@@ -607,7 +698,7 @@ class AdministrationAuditIngestionServiceTests {
 
         consumer.onMessage(json);
 
-        verify(auditRepository, never()).saveAndFlush(any());
+        verify(auditRepository, never()).insertIfAbsent(any());
     }
 
     @Test
@@ -629,7 +720,7 @@ class AdministrationAuditIngestionServiceTests {
 
         consumer.onMessage(json);
 
-        verify(auditRepository, never()).saveAndFlush(any());
+        verify(auditRepository, never()).insertIfAbsent(any());
     }
 
     @Test
@@ -652,7 +743,7 @@ class AdministrationAuditIngestionServiceTests {
 
         consumer.onMessage(json);
 
-        verify(auditRepository, never()).saveAndFlush(any());
+        verify(auditRepository, never()).insertIfAbsent(any());
     }
 
     @Test
@@ -679,7 +770,7 @@ class AdministrationAuditIngestionServiceTests {
 
         boolean result = ingestionService.ingest(command);
         assertThat(result).isFalse();
-        verify(auditRepository, never()).saveAndFlush(any());
+        verify(auditRepository, never()).insertIfAbsent(any());
     }
 
     @Test
@@ -711,7 +802,7 @@ class AdministrationAuditIngestionServiceTests {
         assertThat(result).isTrue();
 
         ArgumentCaptor<SecurityAuditEventEntity> captor = ArgumentCaptor.forClass(SecurityAuditEventEntity.class);
-        verify(auditRepository).saveAndFlush(captor.capture());
+        verify(auditRepository).insertIfAbsent(captor.capture());
         assertThat(captor.getValue().getCorrelationId()).isEqualTo(correlationId);
     }
 
@@ -735,7 +826,7 @@ class AdministrationAuditIngestionServiceTests {
 
         consumer.onMessage(json);
 
-        verify(auditRepository, never()).saveAndFlush(any());
+        verify(auditRepository, never()).insertIfAbsent(any());
     }
 
     @Test
@@ -758,7 +849,7 @@ class AdministrationAuditIngestionServiceTests {
 
         consumer.onMessage(json);
 
-        verify(auditRepository, never()).saveAndFlush(any());
+        verify(auditRepository, never()).insertIfAbsent(any());
     }
 
     @Test
@@ -780,7 +871,7 @@ class AdministrationAuditIngestionServiceTests {
 
         consumer.onMessage(json);
 
-        verify(auditRepository, never()).saveAndFlush(any());
+        verify(auditRepository, never()).insertIfAbsent(any());
     }
 
     @Test
@@ -816,7 +907,7 @@ class AdministrationAuditIngestionServiceTests {
         assertThat(result).isTrue();
 
         ArgumentCaptor<SecurityAuditEventEntity> captor = ArgumentCaptor.forClass(SecurityAuditEventEntity.class);
-        verify(auditRepository).saveAndFlush(captor.capture());
+        verify(auditRepository).insertIfAbsent(captor.capture());
 
         SecurityAuditEventEntity saved = captor.getValue();
         assertThat(saved.getActorType()).isEqualTo("ADMIN");
@@ -854,7 +945,7 @@ class AdministrationAuditIngestionServiceTests {
         assertThat(result).isTrue();
 
         ArgumentCaptor<SecurityAuditEventEntity> captor = ArgumentCaptor.forClass(SecurityAuditEventEntity.class);
-        verify(auditRepository).saveAndFlush(captor.capture());
+        verify(auditRepository).insertIfAbsent(captor.capture());
 
         SecurityAuditEventEntity saved = captor.getValue();
         assertThat(saved.getAccountId()).isNull();
@@ -880,7 +971,7 @@ class AdministrationAuditIngestionServiceTests {
                 """.formatted(UUID.randomUUID(), Instant.now(), UUID.randomUUID());
 
         consumer.onMessage(json);
-        verify(auditRepository, never()).saveAndFlush(any());
+        verify(auditRepository, never()).insertIfAbsent(any());
     }
 
     @Test
@@ -902,7 +993,7 @@ class AdministrationAuditIngestionServiceTests {
                 """.formatted(UUID.randomUUID(), Instant.now(), UUID.randomUUID());
 
         consumer.onMessage(json);
-        verify(auditRepository, never()).saveAndFlush(any());
+        verify(auditRepository, never()).insertIfAbsent(any());
     }
 
     @Test
@@ -923,7 +1014,7 @@ class AdministrationAuditIngestionServiceTests {
                 """.formatted(UUID.randomUUID(), Instant.now(), UUID.randomUUID());
 
         consumer.onMessage(json);
-        verify(auditRepository, never()).saveAndFlush(any());
+        verify(auditRepository, never()).insertIfAbsent(any());
     }
 
     @Test
@@ -945,7 +1036,7 @@ class AdministrationAuditIngestionServiceTests {
                 """.formatted(UUID.randomUUID(), Instant.now(), UUID.randomUUID());
 
         consumer.onMessage(json);
-        verify(auditRepository, never()).saveAndFlush(any());
+        verify(auditRepository, never()).insertIfAbsent(any());
     }
 
     @Test
@@ -967,7 +1058,7 @@ class AdministrationAuditIngestionServiceTests {
                 """.formatted(UUID.randomUUID(), Instant.now(), UUID.randomUUID());
 
         consumer.onMessage(json);
-        verify(auditRepository, never()).saveAndFlush(any());
+        verify(auditRepository, never()).insertIfAbsent(any());
     }
 
     @Test
@@ -990,7 +1081,7 @@ class AdministrationAuditIngestionServiceTests {
                 """.formatted(UUID.randomUUID(), Instant.now(), UUID.randomUUID());
 
         consumer.onMessage(json);
-        verify(auditRepository, never()).saveAndFlush(any());
+        verify(auditRepository, never()).insertIfAbsent(any());
     }
 
     @Test
@@ -1017,7 +1108,7 @@ class AdministrationAuditIngestionServiceTests {
                 """.formatted(eventId, Instant.now(), correlationId);
 
         consumer.onMessage(json);
-        verify(auditRepository).saveAndFlush(any(SecurityAuditEventEntity.class));
+        verify(auditRepository).insertIfAbsent(any(SecurityAuditEventEntity.class));
     }
 
     @Test
@@ -1062,7 +1153,7 @@ class AdministrationAuditIngestionServiceTests {
 
         org.springframework.dao.DataAccessResourceFailureException dbException =
                 new org.springframework.dao.DataAccessResourceFailureException("Database unreachable");
-        org.mockito.Mockito.doThrow(dbException).when(auditRepository).saveAndFlush(any());
+        org.mockito.Mockito.doThrow(dbException).when(auditRepository).insertIfAbsent(any());
 
         String json = """
                 {

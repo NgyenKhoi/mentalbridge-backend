@@ -298,13 +298,46 @@ public class AdministrationAuditIngestionService {
         );
 
         try {
-            auditRepository.saveAndFlush(entity);
+            int rows = auditRepository.insertIfAbsent(entity);
+            if (rows == 0) {
+                LOGGER.info("Duplicate administration audit event ignored: {}", command.eventId());
+                return false;
+            }
             LOGGER.info("Ingested administration audit event {} for {}/{}", command.eventId(), sourceService, action);
             return true;
         } catch (DataIntegrityViolationException ex) {
-            LOGGER.info("Concurrent duplicate administration audit event caught: {}", command.eventId());
-            return false;
+            if (isDuplicateIdempotencyViolation(ex)) {
+                LOGGER.info("Duplicate administration audit event idempotency conflict caught: {}", command.eventId());
+                return false;
+            }
+            throw ex;
         }
+    }
+
+    static boolean isDuplicateIdempotencyViolation(Throwable ex) {
+        Throwable current = ex;
+        while (current != null) {
+            if (current instanceof java.sql.SQLException sqlEx) {
+                String sqlState = sqlEx.getSQLState();
+                String message = sqlEx.getMessage();
+                if ("23505".equals(sqlState) && message != null
+                        && (message.contains("security_audit_event_pkey") || message.contains("Key (id)="))) {
+                    return true;
+                }
+            }
+            if (current instanceof org.hibernate.exception.ConstraintViolationException cve) {
+                String constraintName = cve.getConstraintName();
+                if (constraintName != null && constraintName.toLowerCase().contains("security_audit_event_pkey")) {
+                    return true;
+                }
+            }
+            String msg = current.getMessage();
+            if (msg != null && (msg.contains("security_audit_event_pkey") || msg.contains("Key (id)="))) {
+                return true;
+            }
+            current = current.getCause();
+        }
+        return false;
     }
 
     public static String sha256Hex(String value) {
