@@ -1030,7 +1030,9 @@ the authoritative state.
 Care-owned schedule snapshot for either one selected v2 Resource slot or one
 native v3 PlanAction. The two source shapes are mutually exclusive. It keeps
 time interpretation and source attribution stable when profile timezone or an
-external source later changes.
+external source later changes. Partial unique indexes admit at most one current
+(`DRAFT`, `ACTIVE`, or `PAUSED`) schedule for each source slot or native action
+within a plan while retaining ended revisions as history.
 
 | Field | Purpose |
 | --- | --- |
@@ -1043,11 +1045,29 @@ external source later changes.
 | `source_title` | Reviewed user-facing title snapshot for either source branch. |
 | `schedule_policy_version` | Required bounded generation policy for v3; null for v2. |
 | `reminder_enabled` | Care-owned reminder preference snapshot, default false; it does not mutate a source-domain fact. |
-| `recurrence_type` / `recurrence_day_of_week` | v3 supports `ONCE`, `DAILY`, or `WEEKLY`; v2 remains `DAILY`/`WEEKLY`. Only weekly schedules carry ISO weekday 1..7. |
+| `recurrence_type` / `recurrence_day_of_week` / `recurrence_days_mask` | v3 supports `ONCE`, `DAILY`, or `WEEKLY`; v2 remains `DAILY`/`WEEKLY`. A weekly schedule carries either the legacy single ISO weekday 1..7 or the v2 schedule-policy bit mask 1..127, never both. |
+| `preferred_daypart` / `estimated_duration_minutes` | Schedule-policy v2 snapshots an optional `MORNING`, `AFTERNOON`, `EVENING`, or `FLEXIBLE` preference and a required 5..180 minute estimate in five-minute increments. Earlier policy rows keep both null. |
 | `local_time` / `timezone` | Intended wall-clock time and snapshotted IANA timezone used for deterministic DST resolution. |
 | `effective_from` / `effective_until` | Inclusive local-date validity; the end remains null while active. |
-| `status` | `ACTIVE`, `PAUSED`, or `ENDED`; Content/Notification never controls it. |
+| `occurrence_generation_until` | Internal inclusive cutoff for an ended revision. It may precede `effective_from` when a future schedule is removed before its first valid day and prevents new occurrences after removal without exposing an invalid effective-date range. |
+| `status` | `DRAFT`, `ACTIVE`, `PAUSED`, or `ENDED`; Content/Notification never controls it. A draft schedule becomes effective only with the plan activation command. |
+| `activated_at` | UTC instant when this schedule revision first became active. It remains null for a draft that was never activated and is retained after end, allowing occurrence generation to distinguish a valid predecessor cadence from discarded draft history. |
 | `created_at` / `updated_at` | UTC creation and latest lifecycle transition instants. |
+
+### `public.support_plan_schedule_command`
+
+Owner-scoped idempotency record for creating, replacing, or removing an action
+schedule. It stores the request fingerprint and exact plan/schedule replay
+outcome so an accepted retry cannot repeat lifecycle effects.
+
+| Field | Purpose |
+| --- | --- |
+| `user_id` / `idempotency_key` | Owner-scoped printable retry namespace and primary key. |
+| `request_hash` | Lowercase SHA-256 fingerprint of the full schedule command, including target action and optimistic plan version. |
+| `support_plan_id` / `action_id` | Owner-matched plan and native action explicitly addressed by the command. |
+| `expected_plan_version` / `resulting_plan_version` | Optimistic input revision and exact replayed plan revision; the result cannot precede the expected version. |
+| `resulting_schedule_id` / `resulting_schedule_version` | Exact resulting schedule pair for create/replace, or both null for removal. |
+| `created_at` | UTC instant the command and its outcome committed. |
 
 ### `public.support_plan_activity_occurrence`
 
@@ -1062,7 +1082,7 @@ generation idempotent.
 | `schedule_version` / `local_date` | Logical uniqueness key with the parent schedule. |
 | `local_time` / `timezone` / `scheduled_at` | Wall-clock intent, IANA zone snapshot, and resolved UTC instant. |
 | `state` | Persisted `SCHEDULED`, `COMPLETED`, `SKIPPED`, or `CANCELLED`; `MISSED` is computed only in reads. |
-| `state_reason` | Null except `PLAN_PAUSED`, `PLAN_COMPLETED`, `PLAN_REPLACED`, or `ACTION_ENDED` on cancelled rows. |
+| `state_reason` | Null except `PLAN_PAUSED`, `PLAN_COMPLETED`, `PLAN_REPLACED`, `ACTION_ENDED`, or `SCHEDULE_CHANGED` on cancelled rows. |
 | `source_plan_version` | Exact Care plan revision provenance. |
 | `source_slot_key` / `source_resource_id` / `source_content_version` | Required exact v2 slot and Content-version snapshot; all are null for a native v3 occurrence. |
 | `source_action_id` / `source_action_version` / `source_action_type` | Required exact native v3 action snapshot; all are null for v2. One foreign key blocks cross-plan, cross-owner, or type substitution, and a second binds the entire plan/action/version snapshot to the originating schedule; the snapshotted revision remains stable if the current action lifecycle version advances. |
