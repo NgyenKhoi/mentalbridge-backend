@@ -38,6 +38,7 @@ class SupportPlanActivityScheduleEntity {
 	private LocalDate effectiveFrom;
 	private LocalDate effectiveUntil;
 	private String status;
+	private Instant activatedAt;
 	private Instant createdAt;
 	private Instant updatedAt;
 
@@ -66,6 +67,7 @@ class SupportPlanActivityScheduleEntity {
 		this.timezone = timezone;
 		this.effectiveFrom = effectiveFrom;
 		this.status = "ACTIVE";
+		this.activatedAt = now;
 		this.createdAt = now;
 		this.updatedAt = now;
 	}
@@ -110,6 +112,7 @@ class SupportPlanActivityScheduleEntity {
 		schedule.effectiveUntil = effectiveUntil;
 		schedule.reminderEnabled = reminderEnabled;
 		schedule.status = status;
+		if ("ACTIVE".equals(status)) schedule.activatedAt = now;
 		return schedule;
 	}
 
@@ -141,6 +144,7 @@ class SupportPlanActivityScheduleEntity {
 		schedule.effectiveFrom = effectiveFrom;
 		schedule.effectiveUntil = effectiveUntil;
 		schedule.status = status;
+		if ("ACTIVE".equals(status)) schedule.activatedAt = now;
 		schedule.createdAt = now;
 		schedule.updatedAt = now;
 		return schedule;
@@ -168,6 +172,7 @@ class SupportPlanActivityScheduleEntity {
 		this.timezone = timezone;
 		this.effectiveFrom = effectiveFrom;
 		this.status = "ACTIVE";
+		this.activatedAt = now;
 		this.createdAt = now;
 		this.updatedAt = now;
 	}
@@ -197,12 +202,14 @@ class SupportPlanActivityScheduleEntity {
 	LocalDate effectiveFrom() { return effectiveFrom; }
 	LocalDate effectiveUntil() { return effectiveUntil; }
 	String status() { return status; }
+	Instant activatedAt() { return activatedAt; }
 
 	void activate(long planVersion, SupportPlanSlotEntity slot, Instant now) {
 		if (!"DRAFT".equals(status)) return;
 		this.sourcePlanVersion = planVersion;
 		copySlot(slot);
 		this.status = "ACTIVE";
+		this.activatedAt = now;
 		this.updatedAt = now;
 	}
 
@@ -213,6 +220,7 @@ class SupportPlanActivityScheduleEntity {
 		this.sourceActionType = action.actionType();
 		this.sourceTitle = action.presentationTitle();
 		this.status = "ACTIVE";
+		this.activatedAt = now;
 		this.updatedAt = now;
 	}
 

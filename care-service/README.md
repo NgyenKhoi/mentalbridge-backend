@@ -65,10 +65,13 @@ daypart/local time, duration, IANA timezone, effective dates, and reminders.
 Active edits begin no earlier than tomorrow in the requested timezone. Care
 versions the schedule and parent plan, cancels only superseded future open
 occurrences with `SCHEDULE_CHANGED`, and regenerates the deterministic rolling
-horizon. Existing v2 resource plans use the same additive schedule revisions
-through the v3 adapter; their plan, slot, resource, and occurrence history is
-not rewritten. Removing or reducing workload is neutral and never changes
-eligibility or records non-completion.
+horizon, including the predecessor cadence through a deferred future cutover.
+Draft defaults share the aggregate daily time budget, stagger local times, and
+use a reduced weekly cadence when the five-minute minimum cannot fit every
+activity on one day. Existing v2 resource plans use the same additive schedule
+revisions through the v3 adapter; their plan, slot, resource, and occurrence
+history is not rewritten. Removing or reducing workload is neutral and never
+changes eligibility or records non-completion.
 
 ## MB-639 SupportPlan v3 actions
 

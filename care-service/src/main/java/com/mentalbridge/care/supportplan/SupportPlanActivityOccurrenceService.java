@@ -116,20 +116,29 @@ public class SupportPlanActivityOccurrenceService {
 				HttpStatus.NOT_FOUND, "PROFILE_NOT_FOUND", "Care profile was not found"));
 		LocalDate start = now.atZone(zone(timezone)).toLocalDate();
 		var personalization = personalization(plan);
-		String recurrenceType = personalization != null
+		String preferredRecurrenceType = personalization != null
 				&& personalization.desiredPace() == SupportPlanPersonalizationService.DesiredPace.ACTIVE
 						? "DAILY" : "WEEKLY";
-		Short daysMask = "DAILY".equals(recurrenceType) ? null
-				: defaultDaysMask(start, personalization);
 		String preferredDaypart = personalization == null || personalization.preferredDaypart() == null
 				? null : personalization.preferredDaypart().name();
-		int duration = personalization == null || personalization.dailyTimeBudgetMinutes() == null
+		int dailyBudget = personalization == null || personalization.dailyTimeBudgetMinutes() == null
 				? 10 : personalization.dailyTimeBudgetMinutes();
-		LocalTime localTime = defaultTime(personalization);
-		for (var slot : slots.findBySupportPlanIdOrderByOrdinal(plan.id())) {
+		var selectedSlots = slots.findBySupportPlanIdOrderByOrdinal(plan.id()).stream()
+				.filter(slot -> slot.selectedResource() != null).toList();
+		int duration = defaultDuration(dailyBudget, selectedSlots.size());
+		boolean reducedCadence = selectedSlots.size() * 5 > dailyBudget;
+		int activitiesPerDay = Math.max(1, dailyBudget / duration);
+		LocalTime preferredTime = defaultTime(personalization);
+		for (int index = 0; index < selectedSlots.size(); index++) {
+			var slot = selectedSlots.get(index);
 			if (slot.selectedResource() == null || schedules.currentForSlot(plan.id(), slot.slotKey()).isPresent()) {
 				continue;
 			}
+			String recurrenceType = reducedCadence ? "WEEKLY" : preferredRecurrenceType;
+			Short daysMask = "DAILY".equals(recurrenceType) ? null
+					: defaultDaysMask(start, personalization, index, reducedCadence, activitiesPerDay);
+			int timePosition = reducedCadence ? index % activitiesPerDay : index;
+			LocalTime localTime = preferredTime.plusMinutes((long) timePosition * duration);
 			schedules.save(SupportPlanActivityScheduleEntity.draftForSlot(UUID.randomUUID(), plan, slot,
 					SCHEDULE_POLICY_VERSION_V2, recurrenceType, daysMask, preferredDaypart,
 					duration, localTime, timezone, start, now));
@@ -178,11 +187,18 @@ public class SupportPlanActivityOccurrenceService {
 								"SupportPlan personalization provenance is unavailable"));
 	}
 
+	private int defaultDuration(int dailyBudget, int activityCount) {
+		if (activityCount == 0) return 5;
+		return Math.max(5, dailyBudget / activityCount / 5 * 5);
+	}
+
 	private Short defaultDaysMask(LocalDate start,
-			SupportPlanPersonalizationService.PersonalizationSnapshot personalization) {
-		int first = start.getDayOfWeek().getValue();
+			SupportPlanPersonalizationService.PersonalizationSnapshot personalization,
+			int activityIndex, boolean reducedCadence, int activitiesPerDay) {
+		int dayOffset = reducedCadence ? activityIndex / activitiesPerDay : 0;
+		int first = start.plusDays(dayOffset).getDayOfWeek().getValue();
 		int mask = 1 << (first - 1);
-		if (personalization != null
+		if (!reducedCadence && personalization != null
 				&& personalization.desiredPace() == SupportPlanPersonalizationService.DesiredPace.BALANCED) {
 			int second = ((first + 2) % 7) + 1;
 			mask |= 1 << (second - 1);
@@ -487,8 +503,8 @@ public class SupportPlanActivityOccurrenceService {
 	@Transactional
 	void generateRollingHorizon(UUID planId, Instant now) {
 		for (var schedule : schedules.findBySupportPlanIdForUpdate(planId)) {
-			if (!"ACTIVE".equals(schedule.status())) continue;
 			LocalDate start = now.atZone(zone(schedule.timezone())).toLocalDate();
+			if (!generatesOccurrences(schedule, start)) continue;
 			generateOne(schedule, start, start.plusDays(INITIAL_HORIZON_DAYS - 1), now);
 		}
 	}
@@ -510,11 +526,18 @@ public class SupportPlanActivityOccurrenceService {
 
 	private void generate(UUID planId, LocalDate from, LocalDate through, Instant now) {
 		for (var schedule : schedules.findBySupportPlanIdForUpdate(planId)) {
-			if (!"ACTIVE".equals(schedule.status())) {
+			if (!generatesOccurrences(schedule, from)) {
 				continue;
 			}
 			generateOne(schedule, from, through, now);
 		}
+	}
+
+	private boolean generatesOccurrences(SupportPlanActivityScheduleEntity schedule, LocalDate from) {
+		return "ACTIVE".equals(schedule.status())
+				|| "ENDED".equals(schedule.status()) && schedule.activatedAt() != null
+						&& schedule.effectiveUntil() != null
+						&& !schedule.effectiveUntil().isBefore(from);
 	}
 
 	private void generateOne(SupportPlanActivityScheduleEntity schedule,

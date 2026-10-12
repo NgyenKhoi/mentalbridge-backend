@@ -45,7 +45,8 @@ class CareLiquibaseChangelogTests {
 					"care-025-consultation-brief-ai-draft",
 					"care-026-support-plan-actions",
 					"care-027-support-plan-personalization",
-					"care-028-support-plan-cadence");
+					"care-028-support-plan-cadence",
+					"care-029-support-plan-schedule-activation");
 		}
 	}
 

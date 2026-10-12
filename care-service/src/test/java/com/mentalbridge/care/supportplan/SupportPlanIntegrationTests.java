@@ -706,7 +706,7 @@ class SupportPlanIntegrationTests extends CareTestProperties {
 				.andExpect(jsonPath("$.status").value("DRAFT"))
 				.andExpect(jsonPath("$.focuses[0].actions[0].schedules[0].status").value("DRAFT"))
 				.andExpect(jsonPath("$.focuses[0].actions[0].schedules[0].estimatedDurationMinutes")
-						.value(10)).andReturn().getResponse().getContentAsString();
+						.value(5)).andReturn().getResponse().getContentAsString();
 		var actionId = objectMapper.readTree(currentDraft).path("focuses").get(0).path("actions").get(0)
 				.path("actionId").asText();
 
@@ -784,6 +784,112 @@ class SupportPlanIntegrationTests extends CareTestProperties {
 				select count(*) from support_plan_activity_occurrence
 				where support_plan_id=:id and state='CANCELLED' and state_reason='SCHEDULE_CHANGED'
 				""").param("id", planId).query(Long.class).single()).isGreaterThan(0);
+	}
+
+	@Test
+	void keepsThePredecessorCadenceGeneratableUntilADeferredCutover() throws Exception {
+		var userId = insertProfile();
+		var draft = createPlan(userId, evaluation(userId, "MINIMAL", "MINIMAL", false),
+				"support-plan-deferred-cadence-create");
+		var planId = UUID.fromString(draft.path("supportPlanId").asText());
+		var timezone = "Asia/Ho_Chi_Minh";
+		var today = LocalDate.now(ZoneId.of(timezone));
+		var currentDraft = mvc.perform(get("/api/v2/support-plans/current-draft").with(user(userId)))
+				.andExpect(status().isOk()).andReturn().getResponse().getContentAsString();
+		var actionId = objectMapper.readTree(currentDraft).path("focuses").get(0).path("actions").get(0)
+				.path("actionId").asText();
+		String daily = """
+				{"schedule":{"recurrenceType":"DAILY","daysOfWeek":[],"preferredDaypart":null,
+				 "localTime":"09:00","estimatedDurationMinutes":5,"timezone":"%s",
+				 "effectiveFrom":"%s","effectiveUntil":null,"reminderEnabled":true}}
+				""".formatted(timezone, today);
+		mvc.perform(put("/api/v2/support-plans/{planId}/actions/{actionId}/schedule", planId, actionId)
+				.with(user(userId)).header("If-Match", "\"0\"")
+				.header("Idempotency-Key", "support-plan-deferred-cadence-draft")
+				.contentType(MediaType.APPLICATION_JSON).content(daily))
+				.andExpect(status().isOk()).andExpect(header().string("ETag", "\"1\""));
+		mvc.perform(post("/api/v1/support-plans/{id}/activate", planId).with(user(userId))
+				.header("If-Match", "\"1\"")
+				.header("Idempotency-Key", "support-plan-deferred-cadence-activate"))
+				.andExpect(status().isOk()).andExpect(header().string("ETag", "\"2\""));
+
+		var predecessorId = jdbc.sql("""
+				select id from support_plan_activity_schedule
+				where support_plan_id=:planId
+				  and source_slot_key=(select slot_key from support_plan_slot where id=:actionId)
+				  and status='ACTIVE'
+				""").param("planId", planId).param("actionId", UUID.fromString(actionId))
+				.query(UUID.class).single();
+		var completedOccurrenceId = jdbc.sql("""
+				select id from support_plan_activity_occurrence
+				where activity_schedule_id=:scheduleId order by scheduled_at limit 1
+				""").param("scheduleId", predecessorId).query(UUID.class).single();
+		mvc.perform(put("/api/v1/support-plan-occurrences/{id}/state", completedOccurrenceId)
+				.with(user(userId)).header("If-Match", "\"0\"")
+				.contentType(MediaType.APPLICATION_JSON).content("{\"state\":\"COMPLETED\"}"))
+				.andExpect(status().isOk());
+
+		var cutover = today.plusDays(25);
+		String deferred = """
+				{"schedule":{"recurrenceType":"DAILY","daysOfWeek":[],"preferredDaypart":null,
+				 "localTime":"10:00","estimatedDurationMinutes":5,"timezone":"%s",
+				 "effectiveFrom":"%s","effectiveUntil":null,"reminderEnabled":true}}
+				""".formatted(timezone, cutover);
+		mvc.perform(put("/api/v2/support-plans/{planId}/actions/{actionId}/schedule", planId, actionId)
+				.with(user(userId)).header("If-Match", "\"2\"")
+				.header("Idempotency-Key", "support-plan-deferred-cadence-active")
+				.contentType(MediaType.APPLICATION_JSON).content(deferred))
+				.andExpect(status().isOk()).andExpect(header().string("ETag", "\"3\""));
+
+		var beyondInitialHorizon = today.plusDays(14);
+		var beforeCutover = cutover.minusDays(1);
+		mvc.perform(get("/api/v2/support-plan-occurrences").with(user(userId))
+				.param("from", beyondInitialHorizon.toString())
+				.param("through", beforeCutover.toString()))
+				.andExpect(status().isOk());
+
+		assertThat(jdbc.sql("""
+				select count(*) from support_plan_activity_occurrence
+				where activity_schedule_id=:scheduleId and local_date between :from and :through
+				""").param("scheduleId", predecessorId).param("from", beyondInitialHorizon)
+				.param("through", beforeCutover).query(Long.class).single()).isEqualTo(11);
+		assertThat(jdbc.sql("select state from support_plan_activity_occurrence where id=:id")
+				.param("id", completedOccurrenceId).query(String.class).single()).isEqualTo("COMPLETED");
+	}
+
+	@Test
+	void spreadsMultiActivityDefaultsWithinTheAggregateDailyBudget() throws Exception {
+		var userId = insertProfile();
+		mvc.perform(put("/api/v2/support-plan-personalization").with(user(userId))
+				.header("If-Match", "\"0\"").contentType(MediaType.APPLICATION_JSON).content("""
+						{"desiredPace":"ACTIVE","dailyTimeBudgetMinutes":10,
+						 "preferredDaypart":"EVENING","preferredActivityModes":[],"commonBarriers":[]}
+						"""))
+				.andExpect(status().isOk());
+		var draft = createPlan(userId, evaluation(userId, "MILD", "MINIMAL", false),
+				"support-plan-workload-defaults-create");
+		var planId = UUID.fromString(draft.path("supportPlanId").asText());
+
+		assertThat(jdbc.sql("select selected_resource_count from support_plan where id=:id")
+				.param("id", planId).query(Integer.class).single()).isEqualTo(3);
+		assertThat(jdbc.sql("""
+				select count(*) from support_plan_activity_schedule
+				where support_plan_id=:id and status='DRAFT' and recurrence_type='WEEKLY'
+				""").param("id", planId).query(Integer.class).single()).isEqualTo(3);
+		assertThat(jdbc.sql("""
+				select coalesce(max(day_total), 0) from (
+				  select recurrence_days_mask, sum(estimated_duration_minutes) as day_total
+				  from support_plan_activity_schedule where support_plan_id=:id and status='DRAFT'
+				  group by recurrence_days_mask
+				) defaults_by_day
+				""").param("id", planId).query(Integer.class).single()).isLessThanOrEqualTo(10);
+		assertThat(jdbc.sql("""
+				select count(*) from (
+				  select recurrence_days_mask, local_time
+				  from support_plan_activity_schedule where support_plan_id=:id and status='DRAFT'
+				  group by recurrence_days_mask, local_time having count(*) > 1
+				) overlapping_defaults
+				""").param("id", planId).query(Integer.class).single()).isZero();
 	}
 
 	@Test

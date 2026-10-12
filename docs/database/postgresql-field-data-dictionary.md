@@ -1050,6 +1050,7 @@ within a plan while retaining ended revisions as history.
 | `local_time` / `timezone` | Intended wall-clock time and snapshotted IANA timezone used for deterministic DST resolution. |
 | `effective_from` / `effective_until` | Inclusive local-date validity; the end remains null while active. |
 | `status` | `DRAFT`, `ACTIVE`, `PAUSED`, or `ENDED`; Content/Notification never controls it. A draft schedule becomes effective only with the plan activation command. |
+| `activated_at` | UTC instant when this schedule revision first became active. It remains null for a draft that was never activated and is retained after end, allowing occurrence generation to distinguish a valid predecessor cadence from discarded draft history. |
 | `created_at` / `updated_at` | UTC creation and latest lifecycle transition instants. |
 
 ### `public.support_plan_schedule_command`

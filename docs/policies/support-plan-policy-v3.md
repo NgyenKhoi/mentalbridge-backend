@@ -132,11 +132,15 @@ workload. A schedule is optional and, when present, contains:
 Draft creation persists deterministic safe defaults before activation. The
 user reviews those defaults and may replace or remove each schedulable action's
 rule. `GENTLE` and absent pace default to one weekly day; `BALANCED` defaults to
-two weekly days; `ACTIVE` defaults to daily. Time budget and daypart influence
-only duration and local-time defaults and never action eligibility. Resource,
-Journal, emotion-check-in, and routine actions support the bounded cadence;
-reassessment supports `ONCE` only. Professional-support and self-report-review
-actions are not forced into recurrence.
+two weekly days; `ACTIVE` defaults to daily when the admitted activities fit
+the saved daily time budget. Default durations share that aggregate budget and
+default local times never overlap. When the five-minute minimum for every
+admitted activity cannot fit on one day, Care uses a reduced weekly cadence
+spread across local days rather than multiplying the budget. These defaults
+never change action eligibility. Resource, Journal, emotion-check-in, and
+routine actions support the bounded cadence; reassessment supports `ONCE` only.
+Professional-support and self-report-review actions are not forced into
+recurrence.
 
 A schedule replacement is an explicit owner command on a `DRAFT` or `ACTIVE`
 plan. It requires the strong plan ETag and an idempotency key, advances the plan

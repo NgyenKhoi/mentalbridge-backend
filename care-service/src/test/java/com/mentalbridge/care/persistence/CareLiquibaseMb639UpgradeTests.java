@@ -56,6 +56,8 @@ class CareLiquibaseMb639UpgradeTests {
 		assertThat(slotSnapshot()).isEqualTo(slotBefore);
 		assertThat(legacyScheduleSnapshot()).isEqualTo(scheduleBefore);
 		assertThat(legacyOccurrenceSnapshot()).isEqualTo(occurrenceBefore);
+		assertThat(scalar("select activated_at = created_at from support_plan_activity_schedule where id = '%s'"
+				.formatted(SCHEDULE_ID))).isEqualTo("t");
 		assertThat(scalar("""
 				select model_version || '|' || coalesce(plan_policy_version, '<null>') || '|' || action_count
 				from support_plan where id = '%s'
@@ -267,7 +269,7 @@ class CareLiquibaseMb639UpgradeTests {
 		return scalar("""
 				select (to_jsonb(s) - 'source_action_id' - 'source_action_version' - 'source_action_type'
 				        - 'schedule_policy_version' - 'reminder_enabled' - 'recurrence_days_mask'
-				        - 'preferred_daypart' - 'estimated_duration_minutes')::text
+				        - 'preferred_daypart' - 'estimated_duration_minutes' - 'activated_at')::text
 				from support_plan_activity_schedule s where id = '%s'
 				""".formatted(SCHEDULE_ID));
 	}

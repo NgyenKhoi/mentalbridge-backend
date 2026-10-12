@@ -848,6 +848,7 @@ CREATE TABLE care.support_plan_activity_schedule (
     effective_from date NOT NULL,
     effective_until date,
     status varchar(16) NOT NULL,
+    activated_at timestamptz,
     created_at timestamptz NOT NULL,
     updated_at timestamptz NOT NULL,
     UNIQUE (id, support_plan_id, user_id),
