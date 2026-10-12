@@ -840,6 +840,9 @@ CREATE TABLE care.support_plan_activity_schedule (
     reminder_enabled boolean NOT NULL DEFAULT false,
     recurrence_type varchar(16) NOT NULL,
     recurrence_day_of_week smallint,
+    recurrence_days_mask smallint,
+    preferred_daypart varchar(16),
+    estimated_duration_minutes smallint,
     local_time time NOT NULL,
     timezone varchar(64) NOT NULL,
     effective_from date NOT NULL,
@@ -856,6 +859,33 @@ CREATE TABLE care.support_plan_activity_schedule (
         REFERENCES care.support_plan_action(id, support_plan_id, user_id, action_type)
 );
 
+CREATE UNIQUE INDEX ux_support_plan_activity_schedule_current_slot
+    ON care.support_plan_activity_schedule (support_plan_id, source_slot_key)
+    WHERE source_slot_key IS NOT NULL AND status IN ('DRAFT', 'ACTIVE', 'PAUSED');
+
+CREATE UNIQUE INDEX ux_support_plan_activity_schedule_current_action
+    ON care.support_plan_activity_schedule (support_plan_id, source_action_id)
+    WHERE source_action_id IS NOT NULL AND status IN ('DRAFT', 'ACTIVE', 'PAUSED');
+
+CREATE TABLE care.support_plan_schedule_command (
+    user_id uuid NOT NULL REFERENCES care.user_profile(account_id),
+    idempotency_key varchar(128) NOT NULL,
+    request_hash char(64) NOT NULL,
+    support_plan_id uuid NOT NULL,
+    action_id uuid NOT NULL,
+    expected_plan_version bigint NOT NULL,
+    resulting_plan_version bigint NOT NULL,
+    resulting_schedule_id uuid,
+    resulting_schedule_version integer,
+    created_at timestamptz NOT NULL,
+    PRIMARY KEY (user_id, idempotency_key),
+    FOREIGN KEY (support_plan_id, user_id)
+        REFERENCES care.support_plan(id, user_id)
+);
+
+CREATE INDEX ix_support_plan_schedule_command_plan
+    ON care.support_plan_schedule_command (support_plan_id, created_at, idempotency_key);
+
 CREATE TABLE care.support_plan_activity_occurrence (
     id uuid PRIMARY KEY,
     activity_schedule_id uuid NOT NULL,
@@ -867,7 +897,7 @@ CREATE TABLE care.support_plan_activity_occurrence (
     timezone varchar(64) NOT NULL,
     scheduled_at timestamptz NOT NULL,
     state varchar(16) NOT NULL,
-    state_reason varchar(32),
+    state_reason varchar(32), -- cancellation reason includes SCHEDULE_CHANGED
     source_plan_version bigint NOT NULL,
     source_slot_key varchar(64),
     source_resource_id uuid, -- external -> content.resource.id; v2 branch only
