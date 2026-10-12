@@ -59,10 +59,21 @@ SupportPlan -> PlanFocus -> PlanAction -> ActionSchedule -> ActionOccurrence
 | `REASSESSMENT_SCREENING` | Complete a policy-appropriate reassessment | Care screening owns questionnaire and assessment history | External Care screening fact; no copied answers or raw score |
 | `SELF_REPORT_REVIEW` | Review the plan and optionally record a reflection or adjustment choice | Care owns the explicit review event | Explicit user submission; review-only and never an outcome score |
 
-All seven types may have future schedule behavior. Professional-support and
-reassessment schedules are reminders only; they do not change the underlying
-appointment or assessment. Linked Journal, emotion, professional-support, and
-screening actions are satisfied only by the authoritative owner fact.
+Resource, Journal, emotion-check-in, and routine actions may use the bounded
+recurrence model. Reassessment accepts a one-time reminder only.
+Professional-support and self-report-review actions are not forced into a
+SupportPlan recurrence. These scheduling limits do not change the underlying
+appointment, assessment, or review authority. Linked Journal, emotion,
+professional-support, and screening actions are satisfied only by the
+authoritative owner fact.
+
+MB-640 adds a versioned schedule command. Drafts persist reviewable safe
+defaults before activation. An active edit cuts over on the next local day,
+ends the old schedule revision, cancels only superseded future open
+occurrences, and preserves terminal history. Strong plan-version checks and an
+idempotency ledger make retries and concurrent writes deterministic. Lowering
+or removing workload is a neutral user choice and never changes eligibility,
+safety, completion evidence, or plan interpretation.
 
 ## Care-owned envelope
 

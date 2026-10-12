@@ -50,8 +50,28 @@ Draft composition snapshots the exact revision, persists human-readable focus
 copy/provenance, and may reorder only resources already admitted by the current
 Care/Content policy. The snapshotted daypart can select the existing schedule
 default time. A later preference revision does not rewrite an active or paused
-plan and instead returns an explicit plan-review reference. MB-640 owns future
-schedule editing and richer cadence/workload controls.
+plan and instead returns an explicit plan-review reference. MB-640 implements
+future schedule editing and richer cadence/workload controls as described below.
+
+## MB-640 adjustable SupportPlan cadence
+
+`GET /api/v2/support-plans/current-draft` exposes persisted schedule defaults
+for review before activation. `PUT
+/api/v2/support-plans/{supportPlanId}/actions/{actionId}/schedule` replaces or
+removes one draft/active action schedule under strong `If-Match` and
+`Idempotency-Key` checks. The bounded request covers recurrence/weekdays,
+daypart/local time, duration, IANA timezone, effective dates, and reminders.
+
+Active edits begin no earlier than tomorrow in the requested timezone. Care
+versions the schedule and parent plan, cancels only superseded future open
+occurrences with `SCHEDULE_CHANGED`, and regenerates the deterministic rolling
+horizon, including the predecessor cadence through a deferred future cutover.
+Draft defaults share the aggregate daily time budget, stagger local times, and
+use a reduced weekly cadence when the five-minute minimum cannot fit every
+activity on one day. Existing v2 resource plans use the same additive schedule
+revisions through the v3 adapter; their plan, slot, resource, and occurrence
+history is not rewritten. Removing or reducing workload is neutral and never
+changes eligibility or records non-completion.
 
 ## MB-639 SupportPlan v3 actions
 

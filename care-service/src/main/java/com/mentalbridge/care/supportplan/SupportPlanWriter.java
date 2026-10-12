@@ -81,6 +81,7 @@ class SupportPlanWriter {
 		applyChoices(plan, choices);
 		plan.changeChoices(choices.size(), now);
 		plans.saveAndFlush(plan);
+		activities.syncDraft(plan, now);
 		return stored(plan);
 	}
 
@@ -142,6 +143,7 @@ class SupportPlanWriter {
 			case "DISCARDED" -> {
 				if (!"DRAFT".equals(plan.status())) throw invalidTransition();
 				plan.discard(now);
+				activities.discardDraft(plan.id(), now);
 			}
 			default -> throw invalidTransition();
 		}
@@ -428,6 +430,7 @@ class SupportPlanWriter {
 			}
 		}
 		alternatives.flush();
+		activities.prepareDraft(plan, now);
 		return plan;
 	}
 

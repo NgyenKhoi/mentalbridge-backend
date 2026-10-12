@@ -167,6 +167,19 @@ The requirements are represented in domain/architecture documentation, but the l
 
 ## Approved scope changes
 
+- 2026-10-12: MB-640 adds reviewable `support-plan-activity-schedule-v2`
+  cadence and workload to draft and active SupportPlans. The owner may choose
+  bounded recurrence/weekdays, daypart/local time, duration, IANA timezone,
+  dates, reminders, or no future schedule. Draft defaults are persisted before
+  activation. Active edits use a versioned, idempotent next-local-day cutover,
+  cancel only superseded future open occurrences, preserve terminal history,
+  and never reclassify eligibility, safety, adherence, or outcome. Existing v2
+  resource plans remain operable through the non-destructive v3 adapter; web
+  and mobile expose equivalent review/edit behavior. See
+  [ADR 0034](adr/0034-support-plan-v3-cross-domain-actions.md) and
+  [SupportPlan policy v3](policies/support-plan-policy-v3.md). Verification is
+  recorded in [MB-640 evidence](story-mb-640-support-plan-cadence-evidence.md).
+
 - 2026-10-11: MB-638 adds Care-owned immutable
   `support-plan-personalization-v1` revisions for optional focus, pace, time,
   daypart, activity-mode, and practical-barrier choices. The exact revision is
