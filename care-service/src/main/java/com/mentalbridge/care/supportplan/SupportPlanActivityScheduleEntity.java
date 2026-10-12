@@ -37,6 +37,7 @@ class SupportPlanActivityScheduleEntity {
 	private String timezone;
 	private LocalDate effectiveFrom;
 	private LocalDate effectiveUntil;
+	private LocalDate occurrenceGenerationUntil;
 	private String status;
 	private Instant activatedAt;
 	private Instant createdAt;
@@ -201,6 +202,7 @@ class SupportPlanActivityScheduleEntity {
 	String timezone() { return timezone; }
 	LocalDate effectiveFrom() { return effectiveFrom; }
 	LocalDate effectiveUntil() { return effectiveUntil; }
+	LocalDate occurrenceGenerationUntil() { return occurrenceGenerationUntil; }
 	String status() { return status; }
 	Instant activatedAt() { return activatedAt; }
 
@@ -246,7 +248,10 @@ class SupportPlanActivityScheduleEntity {
 	void end(LocalDate lastLocalDate, Instant now) {
 		if ("ENDED".equals(status)) return;
 		this.status = "ENDED";
-		this.effectiveUntil = lastLocalDate.isBefore(effectiveFrom) ? effectiveFrom : lastLocalDate;
+		this.occurrenceGenerationUntil = effectiveUntil == null || lastLocalDate.isBefore(effectiveUntil)
+				? lastLocalDate : effectiveUntil;
+		this.effectiveUntil = occurrenceGenerationUntil.isBefore(effectiveFrom)
+				? effectiveFrom : occurrenceGenerationUntil;
 		this.updatedAt = now;
 	}
 

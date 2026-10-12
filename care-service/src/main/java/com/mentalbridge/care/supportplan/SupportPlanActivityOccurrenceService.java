@@ -534,17 +534,17 @@ public class SupportPlanActivityOccurrenceService {
 	}
 
 	private boolean generatesOccurrences(SupportPlanActivityScheduleEntity schedule, LocalDate from) {
+		LocalDate generationEnd = generationEnd(schedule);
 		return "ACTIVE".equals(schedule.status())
 				|| "ENDED".equals(schedule.status()) && schedule.activatedAt() != null
-						&& schedule.effectiveUntil() != null
-						&& !schedule.effectiveUntil().isBefore(from);
+						&& generationEnd != null && !generationEnd.isBefore(from);
 	}
 
 	private void generateOne(SupportPlanActivityScheduleEntity schedule,
 			LocalDate from, LocalDate through, Instant now) {
 		LocalDate start = from.isBefore(schedule.effectiveFrom()) ? schedule.effectiveFrom() : from;
-		LocalDate end = schedule.effectiveUntil() == null || through.isBefore(schedule.effectiveUntil())
-				? through : schedule.effectiveUntil();
+		LocalDate generationEnd = generationEnd(schedule);
+		LocalDate end = generationEnd == null || through.isBefore(generationEnd) ? through : generationEnd;
 		for (LocalDate date = start; !date.isAfter(end); date = date.plusDays(1)) {
 			if (!occurs(schedule, date)) continue;
 			String key = schedule.id() + ":" + schedule.scheduleVersion() + ":" + date;
@@ -563,6 +563,11 @@ public class SupportPlanActivityOccurrenceService {
 						schedule.sourceActionVersion(), schedule.sourceActionType(), schedule.sourceTitle(), now);
 			}
 		}
+	}
+
+	private LocalDate generationEnd(SupportPlanActivityScheduleEntity schedule) {
+		return "ENDED".equals(schedule.status()) && schedule.occurrenceGenerationUntil() != null
+				? schedule.occurrenceGenerationUntil() : schedule.effectiveUntil();
 	}
 
 	private boolean occurs(SupportPlanActivityScheduleEntity schedule, LocalDate date) {

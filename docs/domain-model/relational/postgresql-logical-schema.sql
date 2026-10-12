@@ -847,6 +847,7 @@ CREATE TABLE care.support_plan_activity_schedule (
     timezone varchar(64) NOT NULL,
     effective_from date NOT NULL,
     effective_until date,
+    occurrence_generation_until date,
     status varchar(16) NOT NULL,
     activated_at timestamptz,
     created_at timestamptz NOT NULL,

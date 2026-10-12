@@ -269,7 +269,8 @@ class CareLiquibaseMb639UpgradeTests {
 		return scalar("""
 				select (to_jsonb(s) - 'source_action_id' - 'source_action_version' - 'source_action_type'
 				        - 'schedule_policy_version' - 'reminder_enabled' - 'recurrence_days_mask'
-				        - 'preferred_daypart' - 'estimated_duration_minutes' - 'activated_at')::text
+				        - 'preferred_daypart' - 'estimated_duration_minutes' - 'activated_at'
+				        - 'occurrence_generation_until')::text
 				from support_plan_activity_schedule s where id = '%s'
 				""".formatted(SCHEDULE_ID));
 	}

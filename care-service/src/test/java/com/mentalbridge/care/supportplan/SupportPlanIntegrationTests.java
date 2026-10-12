@@ -858,6 +858,124 @@ class SupportPlanIntegrationTests extends CareTestProperties {
 	}
 
 	@Test
+	void doesNotRegenerateAFutureScheduleAfterItIsRemoved() throws Exception {
+		var userId = insertProfile();
+		var draft = createPlan(userId, evaluation(userId, "MINIMAL", "MINIMAL", false),
+				"support-plan-future-cadence-create");
+		var planId = UUID.fromString(draft.path("supportPlanId").asText());
+		var timezone = "Asia/Ho_Chi_Minh";
+		var today = LocalDate.now(ZoneId.of(timezone));
+		var futureDate = today.plusDays(25);
+		var currentDraft = mvc.perform(get("/api/v2/support-plans/current-draft").with(user(userId)))
+				.andExpect(status().isOk()).andReturn().getResponse().getContentAsString();
+		var actionId = objectMapper.readTree(currentDraft).path("focuses").get(0).path("actions").get(0)
+				.path("actionId").asText();
+		String futureDaily = """
+				{"schedule":{"recurrenceType":"DAILY","daysOfWeek":[],"preferredDaypart":null,
+				 "localTime":"09:00","estimatedDurationMinutes":5,"timezone":"%s",
+				 "effectiveFrom":"%s","effectiveUntil":null,"reminderEnabled":true}}
+				""".formatted(timezone, futureDate);
+		mvc.perform(put("/api/v2/support-plans/{planId}/actions/{actionId}/schedule", planId, actionId)
+				.with(user(userId)).header("If-Match", "\"0\"")
+				.header("Idempotency-Key", "support-plan-future-cadence-draft")
+				.contentType(MediaType.APPLICATION_JSON).content(futureDaily))
+				.andExpect(status().isOk()).andExpect(header().string("ETag", "\"1\""));
+		mvc.perform(post("/api/v1/support-plans/{id}/activate", planId).with(user(userId))
+				.header("If-Match", "\"1\"")
+				.header("Idempotency-Key", "support-plan-future-cadence-activate"))
+				.andExpect(status().isOk()).andExpect(header().string("ETag", "\"2\""));
+
+		var removedScheduleId = jdbc.sql("""
+				select id from support_plan_activity_schedule
+				where support_plan_id=:planId
+				  and source_slot_key=(select slot_key from support_plan_slot where id=:actionId)
+				  and status='ACTIVE'
+				""").param("planId", planId).param("actionId", UUID.fromString(actionId))
+				.query(UUID.class).single();
+		mvc.perform(put("/api/v2/support-plans/{planId}/actions/{actionId}/schedule", planId, actionId)
+				.with(user(userId)).header("If-Match", "\"2\"")
+				.header("Idempotency-Key", "support-plan-future-cadence-remove")
+				.contentType(MediaType.APPLICATION_JSON).content("{\"schedule\":null}"))
+				.andExpect(status().isOk()).andExpect(header().string("ETag", "\"3\""));
+
+		mvc.perform(get("/api/v2/support-plan-occurrences").with(user(userId))
+				.param("from", futureDate.toString()).param("through", futureDate.toString()))
+				.andExpect(status().isOk());
+
+		assertThat(jdbc.sql("select occurrence_generation_until from support_plan_activity_schedule where id=:id")
+				.param("id", removedScheduleId).query(LocalDate.class).single()).isEqualTo(today);
+		assertThat(jdbc.sql("""
+				select count(*) from support_plan_activity_occurrence
+				where activity_schedule_id=:scheduleId and local_date=:localDate and state='SCHEDULED'
+				""").param("scheduleId", removedScheduleId).param("localDate", futureDate)
+				.query(Long.class).single()).isZero();
+	}
+
+	@Test
+	void retainsAnEarlierExplicitEndWhenReplacingAnActiveSchedule() throws Exception {
+		var userId = insertProfile();
+		var draft = createPlan(userId, evaluation(userId, "MINIMAL", "MINIMAL", false),
+				"support-plan-bounded-cadence-create");
+		var planId = UUID.fromString(draft.path("supportPlanId").asText());
+		var timezone = "Asia/Ho_Chi_Minh";
+		var today = LocalDate.now(ZoneId.of(timezone));
+		var explicitEnd = today.plusDays(18);
+		var currentDraft = mvc.perform(get("/api/v2/support-plans/current-draft").with(user(userId)))
+				.andExpect(status().isOk()).andReturn().getResponse().getContentAsString();
+		var actionId = objectMapper.readTree(currentDraft).path("focuses").get(0).path("actions").get(0)
+				.path("actionId").asText();
+		String boundedDaily = """
+				{"schedule":{"recurrenceType":"DAILY","daysOfWeek":[],"preferredDaypart":null,
+				 "localTime":"09:00","estimatedDurationMinutes":5,"timezone":"%s",
+				 "effectiveFrom":"%s","effectiveUntil":"%s","reminderEnabled":true}}
+				""".formatted(timezone, today, explicitEnd);
+		mvc.perform(put("/api/v2/support-plans/{planId}/actions/{actionId}/schedule", planId, actionId)
+				.with(user(userId)).header("If-Match", "\"0\"")
+				.header("Idempotency-Key", "support-plan-bounded-cadence-draft")
+				.contentType(MediaType.APPLICATION_JSON).content(boundedDaily))
+				.andExpect(status().isOk()).andExpect(header().string("ETag", "\"1\""));
+		mvc.perform(post("/api/v1/support-plans/{id}/activate", planId).with(user(userId))
+				.header("If-Match", "\"1\"")
+				.header("Idempotency-Key", "support-plan-bounded-cadence-activate"))
+				.andExpect(status().isOk()).andExpect(header().string("ETag", "\"2\""));
+
+		var predecessorId = jdbc.sql("""
+				select id from support_plan_activity_schedule
+				where support_plan_id=:planId
+				  and source_slot_key=(select slot_key from support_plan_slot where id=:actionId)
+				  and status='ACTIVE'
+				""").param("planId", planId).param("actionId", UUID.fromString(actionId))
+				.query(UUID.class).single();
+		var cutover = today.plusDays(25);
+		String deferred = """
+				{"schedule":{"recurrenceType":"DAILY","daysOfWeek":[],"preferredDaypart":null,
+				 "localTime":"10:00","estimatedDurationMinutes":5,"timezone":"%s",
+				 "effectiveFrom":"%s","effectiveUntil":null,"reminderEnabled":true}}
+				""".formatted(timezone, cutover);
+		mvc.perform(put("/api/v2/support-plans/{planId}/actions/{actionId}/schedule", planId, actionId)
+				.with(user(userId)).header("If-Match", "\"2\"")
+				.header("Idempotency-Key", "support-plan-bounded-cadence-active")
+				.contentType(MediaType.APPLICATION_JSON).content(deferred))
+				.andExpect(status().isOk()).andExpect(header().string("ETag", "\"3\""));
+
+		var afterExplicitEnd = explicitEnd.plusDays(1);
+		mvc.perform(get("/api/v2/support-plan-occurrences").with(user(userId))
+				.param("from", afterExplicitEnd.toString())
+				.param("through", cutover.minusDays(1).toString()))
+				.andExpect(status().isOk());
+
+		assertThat(jdbc.sql("select effective_until from support_plan_activity_schedule where id=:id")
+				.param("id", predecessorId).query(LocalDate.class).single()).isEqualTo(explicitEnd);
+		assertThat(jdbc.sql("select occurrence_generation_until from support_plan_activity_schedule where id=:id")
+				.param("id", predecessorId).query(LocalDate.class).single()).isEqualTo(explicitEnd);
+		assertThat(jdbc.sql("""
+				select count(*) from support_plan_activity_occurrence
+				where activity_schedule_id=:scheduleId and local_date between :from and :through
+				""").param("scheduleId", predecessorId).param("from", afterExplicitEnd)
+				.param("through", cutover.minusDays(1)).query(Long.class).single()).isZero();
+	}
+
+	@Test
 	void spreadsMultiActivityDefaultsWithinTheAggregateDailyBudget() throws Exception {
 		var userId = insertProfile();
 		mvc.perform(put("/api/v2/support-plan-personalization").with(user(userId))

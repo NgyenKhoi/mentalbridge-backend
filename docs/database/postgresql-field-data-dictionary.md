@@ -1049,6 +1049,7 @@ within a plan while retaining ended revisions as history.
 | `preferred_daypart` / `estimated_duration_minutes` | Schedule-policy v2 snapshots an optional `MORNING`, `AFTERNOON`, `EVENING`, or `FLEXIBLE` preference and a required 5..180 minute estimate in five-minute increments. Earlier policy rows keep both null. |
 | `local_time` / `timezone` | Intended wall-clock time and snapshotted IANA timezone used for deterministic DST resolution. |
 | `effective_from` / `effective_until` | Inclusive local-date validity; the end remains null while active. |
+| `occurrence_generation_until` | Internal inclusive cutoff for an ended revision. It may precede `effective_from` when a future schedule is removed before its first valid day and prevents new occurrences after removal without exposing an invalid effective-date range. |
 | `status` | `DRAFT`, `ACTIVE`, `PAUSED`, or `ENDED`; Content/Notification never controls it. A draft schedule becomes effective only with the plan activation command. |
 | `activated_at` | UTC instant when this schedule revision first became active. It remains null for a draft that was never activated and is retained after end, allowing occurrence generation to distinguish a valid predecessor cadence from discarded draft history. |
 | `created_at` / `updated_at` | UTC creation and latest lifecycle transition instants. |

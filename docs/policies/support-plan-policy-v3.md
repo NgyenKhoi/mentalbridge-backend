@@ -154,10 +154,14 @@ For an active plan, a replacement starts no earlier than the next local day in
 the requested timezone. Care ends the prior schedule revision, cancels only its
 future open occurrences with `SCHEDULE_CHANGED`, preserves completed/skipped
 and elapsed history, creates the next schedule revision, and fills the rolling
-horizon in the same transaction. Occurrence identity is deterministic from the
-schedule revision and local date. Timezone resolution applies zone rules to
-each local date, so daylight-saving gaps/overlaps are deterministic; retries
-and concurrent stale writers cannot duplicate or silently move occurrences.
+horizon in the same transaction. The predecessor never extends beyond an
+earlier explicit end date. Removing a future-effective revision before its
+first valid day records a separate occurrence-generation cutoff, so it cannot
+generate new occurrences after removal while its public effective-date range
+remains valid. Occurrence identity is deterministic from the schedule revision
+and local date. Timezone resolution applies zone rules to each local date, so
+daylight-saving gaps/overlaps are deterministic; retries and concurrent stale
+writers cannot duplicate or silently move occurrences.
 
 The occurrence generator operates on schedule capability and policy, not on a
 Resource-specific branch. A schedulable native action produces deterministic,

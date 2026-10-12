@@ -55,3 +55,5 @@ databaseChangeLog:
       file: db/changelog/changes/027-support-plan-cadence.sql
   - include:
       file: db/changelog/changes/028-support-plan-schedule-activation.sql
+  - include:
+      file: db/changelog/changes/029-support-plan-schedule-generation-cutoff.sql
