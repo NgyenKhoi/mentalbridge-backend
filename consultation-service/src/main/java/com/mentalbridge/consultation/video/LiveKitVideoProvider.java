@@ -2,11 +2,13 @@ package com.mentalbridge.consultation.video;
 
 import java.io.IOException;
 import java.time.Instant;
+import java.time.Duration;
 import java.util.Date;
 import java.util.List;
 import java.util.concurrent.TimeUnit;
 
 import org.springframework.http.HttpStatus;
+import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.stereotype.Component;
 
 import com.mentalbridge.consultation.shared.ApiException;
@@ -28,16 +30,28 @@ import io.livekit.server.RoomRecord;
 import io.livekit.server.RoomServiceClient;
 import io.livekit.server.WebhookReceiver;
 import okhttp3.OkHttpClient;
+import io.github.resilience4j.circuitbreaker.CircuitBreaker;
+import io.github.resilience4j.circuitbreaker.CircuitBreakerConfig;
 
 @Component
 public class LiveKitVideoProvider implements VideoProvider {
 
 	private final LiveKitProperties properties;
-	private final OkHttpClient http = new OkHttpClient.Builder().connectTimeout(1, TimeUnit.SECONDS)
-			.readTimeout(3, TimeUnit.SECONDS).callTimeout(4, TimeUnit.SECONDS)
-			.retryOnConnectionFailure(false).build();
+	private final OkHttpClient http;
+	private final CircuitBreaker breaker = CircuitBreaker.of("livekit-room-api", CircuitBreakerConfig.custom()
+			.minimumNumberOfCalls(3).slidingWindowSize(10).failureRateThreshold(50)
+			.waitDurationInOpenState(Duration.ofSeconds(30)).permittedNumberOfCallsInHalfOpenState(1).build());
 
-	public LiveKitVideoProvider(LiveKitProperties properties) { this.properties = properties; }
+	@Autowired
+	public LiveKitVideoProvider(LiveKitProperties properties) {
+		this(properties, new OkHttpClient.Builder().connectTimeout(1, TimeUnit.SECONDS)
+				.readTimeout(3, TimeUnit.SECONDS).callTimeout(4, TimeUnit.SECONDS).retryOnConnectionFailure(false).build());
+	}
+
+	LiveKitVideoProvider(LiveKitProperties properties, OkHttpClient http) {
+		this.properties = properties;
+		this.http = http;
+	}
 
 	@Override
 	public String issueToken(String room, String identity, Instant issuedAt, Instant expiresAt) {
@@ -56,6 +70,10 @@ public class LiveKitVideoProvider implements VideoProvider {
 
 	@Override
 	public void prepareRoom(String room) {
+		remote(() -> prepare(room));
+	}
+
+	private void prepare(String room) {
 		try {
 			var response = client().createRoom(room, 300, 2).execute();
 			if (!response.isSuccessful() || response.body() == null) throw unavailable();
@@ -65,10 +83,15 @@ public class LiveKitVideoProvider implements VideoProvider {
 
 	@Override
 	public void closeRoom(String room, List<String> identities, Instant cutoff) {
+		remote(() -> close(room, identities, cutoff));
+	}
+
+	private void close(String room, List<String> identities, Instant cutoff) {
 		try {
 			var client = client();
 			for (var identity : identities) {
-				var response = client.removeParticipant(room, identity, cutoff.getEpochSecond()).execute();
+				var revocation = Math.max(cutoff.getEpochSecond(), Instant.now().getEpochSecond()) + 1;
+				var response = client.removeParticipant(room, identity, revocation).execute();
 				if (!response.isSuccessful()) throw unavailable();
 			}
 			var response = client.deleteRoom(room).execute();
@@ -96,6 +119,12 @@ public class LiveKitVideoProvider implements VideoProvider {
 		requireConfiguration();
 		return RoomServiceClient.createClient(properties.getUrl(), properties.getApiKey(), properties.getApiSecret(),
 				() -> http, false);
+	}
+
+	private void remote(Runnable command) {
+		requireConfiguration();
+		try { breaker.executeRunnable(command); }
+		catch (RuntimeException exception) { throw unavailable(); }
 	}
 
 	private void requireConfiguration() {

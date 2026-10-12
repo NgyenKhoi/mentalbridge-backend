@@ -79,6 +79,55 @@ class LiveKitVideoProviderTests {
 		assertThat(properties.configured()).isFalse();
 	}
 
+	@Test
+	void remoteRoomCreationAndClosureUseOfficialSdkAndExplicitSecondBasedRevocation() throws Exception {
+		var calls = new java.util.ArrayList<String>();
+		var bodies = new java.util.ArrayList<byte[]>();
+		var http = new okhttp3.OkHttpClient.Builder().addInterceptor(chain -> {
+			var request = chain.request();
+			calls.add(request.url().encodedPath());
+			var buffer = new okio.Buffer();
+			request.body().writeTo(buffer);
+			bodies.add(buffer.readByteArray());
+			var payload = request.url().encodedPath().endsWith("CreateRoom")
+					? livekit.LivekitModels.Room.newBuilder().setSid("RM_SYNTHETIC").setName("opaque-room").build().toByteArray()
+					: new byte[0];
+			return new okhttp3.Response.Builder().request(request).protocol(okhttp3.Protocol.HTTP_1_1).code(200).message("OK")
+					.body(okhttp3.ResponseBody.create(payload, okhttp3.MediaType.get("application/protobuf"))).build();
+		}).build();
+		var provider = new LiveKitVideoProvider(configured(), http);
+		var before = Instant.now().getEpochSecond();
+		provider.prepareRoom("opaque-room");
+		provider.closeRoom("opaque-room", java.util.List.of("user-opaque", "specialist-opaque"), Instant.now());
+		assertThat(calls).hasSize(4);
+		assertThat(calls.getFirst()).endsWith("CreateRoom");
+		assertThat(calls.getLast()).endsWith("DeleteRoom");
+		var created = livekit.LivekitRoom.CreateRoomRequest.parseFrom(bodies.getFirst());
+		assertThat(created.getName()).isEqualTo("opaque-room");
+		assertThat(created.getMaxParticipants()).isEqualTo(2);
+		for (var index : java.util.List.of(1, 2)) {
+			var removed = livekit.LivekitRoom.RoomParticipantIdentity.parseFrom(bodies.get(index));
+			assertThat(removed.getRoom()).isEqualTo("opaque-room");
+			var cutoff = removed.getRevokeTokenTs();
+			assertThat(cutoff).isBetween(before + 1, Instant.now().getEpochSecond() + 1);
+		}
+	}
+
+	@Test
+	void providerHttpFailuresAreSanitizedAndCircuitOpensWithoutAutomaticRetry() {
+		var calls = new java.util.concurrent.atomic.AtomicInteger();
+		var http = new okhttp3.OkHttpClient.Builder().addInterceptor(chain -> {
+			calls.incrementAndGet();
+			throw new java.io.IOException("synthetic-provider-sensitive-error");
+		}).build();
+		var provider = new LiveKitVideoProvider(configured(), http);
+		for (int attempt = 0; attempt < 5; attempt++) {
+			assertThatThrownBy(() -> provider.prepareRoom("opaque-room")).isInstanceOf(ApiException.class)
+					.hasMessage("Video is temporarily unavailable");
+		}
+		assertThat(calls.get()).isEqualTo(3);
+	}
+
 	static LiveKitProperties configured() {
 		var properties = new LiveKitProperties();
 		properties.setUrl("wss://synthetic-project.livekit.cloud");
