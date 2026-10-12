@@ -2327,7 +2327,7 @@ These fields establish reviewed public visibility only. SupportPlan eligibility 
 | `catalogue_visibility` | Browsing scope: `LISTED` appears in the public catalogue; `DIRECT_ONLY` remains retrievable by exact ID for existing SupportPlans. |
 | `status` | Authoritative workflow state controlling visibility: `DRAFT` (editable), `PUBLISHED` (immutable, public), or `ARCHIVED` (immutable, hidden). |
 | `reviewed_by` | Identity UUID carried by a separately approved review decision; required while `PUBLISHED`. ADMIN authentication alone is not review approval. |
-| `reviewed_at` | UTC timestamp carried by a separately approved review decision; required while `PUBLISHED`. New publication remains blocked until MB-251 approves that decision model and authority. |
+| `reviewed_at` | UTC timestamp copied from the immutable exact-version review decision; required while `PUBLISHED`. |
 | `effective_at` | Optional UTC timestamp controlling delayed publication; resource not visible until this instant passes. |
 | `expires_at` | Optional UTC timestamp after which published resource becomes hidden automatically. |
 | `created_at` | Immutable UTC creation instant for audit and chronological ordering. |
@@ -2336,8 +2336,9 @@ These fields establish reviewed public visibility only. SupportPlan eligibility 
 | `idempotency_key` | Legacy branch-local create retry field from migration 4. New writes use the actor/operation-scoped `resource_idempotency_record`; retained only for rolling compatibility. |
 
 **State Transitions:**
-- `DRAFT` → `PUBLISHED`: Blocked until MB-251 approves review authority, decision provenance, and review-version invalidation semantics
+- `DRAFT` → `PUBLISHED`: Requires an exact-version `APPROVED` decision from a configured review authority and complete structured source provenance.
 - `PUBLISHED` → `ARCHIVED`: Preserves review metadata, resource becomes hidden but retrievable
+- `ARCHIVED` → `DRAFT`: Creates the next content version and clears prior review provenance; the immutable prior publication snapshot remains historical evidence.
 - Updates and deletions allowed only in `DRAFT` status
 - The database check requires non-null review provenance while `PUBLISHED`; application transitions preserve provenance after publication. The check does not claim column immutability.
 
@@ -2345,6 +2346,45 @@ These fields establish reviewed public visibility only. SupportPlan eligibility 
 - Only `PUBLISHED` resources returned where `effective_at <= NOW()` and (`expires_at` IS NULL OR `expires_at > NOW()`)
 - All published resources guaranteed to have review provenance
 - `DRAFT` and `ARCHIVED` resources never exposed to public endpoints
+
+### `public.resource_review_decision`
+
+Append-only editorial decision for one exact draft version. ADMIN authorization is
+necessary but not sufficient: `reviewed_by` must also belong to the configured
+resource-review authority set.
+
+| Field | Purpose |
+| --- | --- |
+| `id` | Immutable decision UUID. |
+| `resource_id` / `content_version` | Exact draft identity; unique so a changed decision requires a new edited version. |
+| `decision` | `APPROVED` or `REJECTED`; publication accepts only `APPROVED`. |
+| `reason_code` | Bounded machine-readable rationale without resource body or sensitive text. |
+| `authority_version` | Versioned configuration policy used to authorize the reviewer. |
+| `reviewed_by` / `reviewed_at` | External Identity ADMIN UUID and server UTC decision instant. |
+
+### `public.resource_publication_snapshot`
+
+Immutable JSON snapshot of every exact published resource version. It preserves the
+reviewed fields and source provenance used by historical SupportGuide/SupportPlan
+references without making the version universally eligible.
+
+| Field | Purpose |
+| --- | --- |
+| `resource_id` / `content_version` | Stable exact-version composite key. |
+| `review_decision_id` | Exact approval that opened the publication gate; nullable only for migrated legacy publications. |
+| `snapshot` | Complete immutable reviewed resource row captured atomically at publication. |
+| `published_by` / `published_at` | ADMIN actor and UTC publication instant. |
+
+### `public.resource_publication_withdrawal`
+
+Append-only removal of an exact publication from normal catalogue use; it does not
+delete the snapshot or rewrite downstream historical references.
+
+| Field | Purpose |
+| --- | --- |
+| `resource_id` / `content_version` | Exact publication being withdrawn. |
+| `reason_code` | Bounded `ARCHIVED`, `SUPERSEDED`, or `SOURCE_WITHDRAWN` reason. |
+| `withdrawn_by` / `withdrawn_at` | ADMIN actor and UTC withdrawal instant. |
 
 ### `public.safety_directory_entry`
 

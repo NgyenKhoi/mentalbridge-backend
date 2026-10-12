@@ -40,6 +40,22 @@ describe('configuration', () => {
     expect(configuration.ALLOWED_ORIGINS).toEqual(['https://admin.example', 'https://app.example']);
   });
 
+  it('validates the configured resource review authority identifiers', () => {
+    const configuration = loadConfiguration({
+      ...requiredEnvironment,
+      RESOURCE_REVIEWER_ACCOUNT_IDS:
+        'a13e4567-e89b-42d3-a456-426614174000, b13e4567-e89b-42d3-a456-426614174000',
+    });
+    expect(configuration.RESOURCE_REVIEWER_ACCOUNT_IDS).toContain(',');
+
+    expect(() =>
+      loadConfiguration({
+        ...requiredEnvironment,
+        RESOURCE_REVIEWER_ACCOUNT_IDS: 'not-an-account-id',
+      }),
+    ).toThrow();
+  });
+
   it('rejects a missing DATABASE_URL', () => {
     const environment: NodeJS.ProcessEnv = { ...requiredEnvironment };
     delete environment.DATABASE_URL;

@@ -240,6 +240,10 @@ paths:
     get:
       tags: [Resources]
       summary: Get an active reviewed resource for one locale
+      description: >
+        Without contentVersion, resolves only the current active PUBLISHED resource.
+        With contentVersion, may resolve the immutable publication snapshot for an exact
+        historical reference after archive or correction without restoring catalogue visibility.
       operationId: getResource
       parameters:
         - $ref: "#/components/parameters/Locale"
@@ -248,7 +252,7 @@ paths:
           required: false
           description: >
             Exact non-negative content version requested by a persisted consumer reference.
-            When present, a different current version returns 404 rather than substituting content.
+            When present, the exact immutable publication is returned and no newer version is substituted.
           schema:
             type: string
             pattern: "^(0|[1-9][0-9]*)$"
@@ -299,7 +303,7 @@ paths:
 
     delete:
       tags: [Resources]
-      summary: Delete a DRAFT resource (Admin)
+      summary: Delete an initial DRAFT resource with no publication history (Admin)
       operationId: deleteResource
       security:
         - BearerAuth: []
@@ -431,7 +435,7 @@ paths:
     x-mentalbridge-status: implemented
     post:
       tags: [Resources]
-      summary: Publish a reviewed DRAFT resource (blocked pending MB-251 policy approval)
+      summary: Publish an exact approved DRAFT resource version
       operationId: publishResource
       security:
         - BearerAuth: []
@@ -449,10 +453,72 @@ paths:
             type: integer
             minimum: 0
       responses:
+        "200":
+          description: Immutable exact-version publication created
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/ResourceSummary" }
         "400": { $ref: "#/components/responses/RequestRejected" }
         "401": { $ref: "#/components/responses/Unauthorized" }
         "403": { $ref: "#/components/responses/Forbidden" }
-        "409": { $ref: "#/components/responses/ReviewApprovalRequired" }
+        "404": { $ref: "#/components/responses/NotFound" }
+        "409": { $ref: "#/components/responses/Conflict" }
+
+  /api/v1/resources/{id}/review:
+    x-mentalbridge-status: implemented
+    post:
+      tags: [Resources]
+      summary: Record a configured-authority decision for one exact draft
+      operationId: reviewResource
+      security:
+        - BearerAuth: []
+      parameters:
+        - $ref: "#/components/parameters/ResourceId"
+        - name: version
+          in: query
+          required: true
+          schema: { type: integer, minimum: 0 }
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: "#/components/schemas/ResourceReviewRequest" }
+      responses:
+        "200":
+          description: Immutable review decision for the exact draft version
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/ResourceReviewDecision" }
+        "400": { $ref: "#/components/responses/RequestRejected" }
+        "401": { $ref: "#/components/responses/Unauthorized" }
+        "403": { $ref: "#/components/responses/Forbidden" }
+        "409": { $ref: "#/components/responses/Conflict" }
+        "422": { $ref: "#/components/responses/ValidationError" }
+
+  /api/v1/resources/{id}/versions:
+    x-mentalbridge-status: implemented
+    post:
+      tags: [Resources]
+      summary: Start a correction draft after archiving an exact publication
+      operationId: createResourceVersion
+      security:
+        - BearerAuth: []
+      parameters:
+        - $ref: "#/components/parameters/ResourceId"
+        - name: version
+          in: query
+          required: true
+          schema: { type: integer, minimum: 0 }
+      responses:
+        "200":
+          description: New editable content version
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/AdminResourceDetail" }
+        "400": { $ref: "#/components/responses/RequestRejected" }
+        "401": { $ref: "#/components/responses/Unauthorized" }
+        "403": { $ref: "#/components/responses/Forbidden" }
+        "409": { $ref: "#/components/responses/Conflict" }
 
   /api/v1/resources/{id}/archive:
     x-mentalbridge-status: implemented
@@ -993,7 +1059,7 @@ components:
         application/problem+json:
           schema: { $ref: "#/components/schemas/ProblemDetails" }
     ReviewApprovalRequired:
-      description: Publish is unavailable until an approved MB-251 review decision is recorded
+      description: The exact draft lacks an approved configured-authority review decision
       content:
         application/problem+json:
           schema: { $ref: "#/components/schemas/ProblemDetails" }
@@ -1248,13 +1314,22 @@ components:
     EmailPreferences:
       type: object
       additionalProperties: false
-      required: [cadence, wellbeingDigestEnabled, resourceRemindersEnabled, dailyDigestTime, resourceReminderTime]
+      required:
+        [
+          cadence,
+          wellbeingDigestEnabled,
+          resourceRemindersEnabled,
+          dailyDigestTime,
+          resourceReminderTime,
+        ]
       properties:
         cadence: { $ref: "#/components/schemas/EmailCadence" }
         wellbeingDigestEnabled: { type: boolean }
         resourceRemindersEnabled: { type: boolean }
-        dailyDigestTime: { type: string, pattern: "^([01][0-9]|2[0-3]):[0-5][0-9]$" }
-        resourceReminderTime: { type: string, pattern: "^([01][0-9]|2[0-3]):[0-5][0-9]$" }
+        dailyDigestTime:
+          { type: string, pattern: "^([01][0-9]|2[0-3]):[0-5][0-9]$" }
+        resourceReminderTime:
+          { type: string, pattern: "^([01][0-9]|2[0-3]):[0-5][0-9]$" }
         appointmentRemindersEnabled: { type: boolean }
     EmailPreferencesPatch:
       type: object
@@ -1264,8 +1339,10 @@ components:
         cadence: { $ref: "#/components/schemas/EmailCadence" }
         wellbeingDigestEnabled: { type: boolean }
         resourceRemindersEnabled: { type: boolean }
-        dailyDigestTime: { type: string, pattern: "^([01][0-9]|2[0-3]):[0-5][0-9]$" }
-        resourceReminderTime: { type: string, pattern: "^([01][0-9]|2[0-3]):[0-5][0-9]$" }
+        dailyDigestTime:
+          { type: string, pattern: "^([01][0-9]|2[0-3]):[0-5][0-9]$" }
+        resourceReminderTime:
+          { type: string, pattern: "^([01][0-9]|2[0-3]):[0-5][0-9]$" }
         appointmentRemindersEnabled: { type: boolean }
     WellbeingDigestResourceItem:
       type: object
@@ -1277,11 +1354,22 @@ components:
     WellbeingDigestPreview:
       type: object
       additionalProperties: false
-      required: [localDate, timeZone, scheduledTime, eligibleNow, resourceItems, includeJournalPrompt, includeEmotionPrompt, empty]
+      required:
+        [
+          localDate,
+          timeZone,
+          scheduledTime,
+          eligibleNow,
+          resourceItems,
+          includeJournalPrompt,
+          includeEmotionPrompt,
+          empty,
+        ]
       properties:
         localDate: { type: string, format: date }
         timeZone: { type: string, minLength: 1, maxLength: 64 }
-        scheduledTime: { type: string, pattern: "^([01][0-9]|2[0-3]):[0-5][0-9]$" }
+        scheduledTime:
+          { type: string, pattern: "^([01][0-9]|2[0-3]):[0-5][0-9]$" }
         eligibleNow: { type: boolean }
         resourceItems:
           type: array
@@ -1955,7 +2043,7 @@ components:
       allOf:
         - $ref: "#/components/schemas/PublicResourceDetail"
         - type: object
-          required: [reviewedBy, version]
+          required: [reviewedBy, version, reviewDecision, isCorrectionDraft]
           properties:
             reviewedBy:
               type: string
@@ -1963,6 +2051,14 @@ components:
               nullable: true
             version:
               type: integer
+            reviewDecision:
+              allOf:
+                - $ref: "#/components/schemas/ResourceReviewDecision"
+              nullable: true
+              description: Immutable configured-authority decision for this exact version.
+            isCorrectionDraft:
+              type: boolean
+              description: True when this draft follows preserved publication history and cannot be deleted.
 
     ResourceListResponse:
       type: object
@@ -1990,6 +2086,7 @@ components:
 
     CreateResourceRequest:
       type: object
+      additionalProperties: false
       required:
         - category
         - title
@@ -2063,10 +2160,6 @@ components:
         contentVersionLabel:
           type: string
           default: draft-v1
-        sourceReviewStatus:
-          type: string
-          enum: [REVIEWED, REVIEW_REQUIRED, NEEDS_SOURCE_REVIEW]
-          default: NEEDS_SOURCE_REVIEW
         sourceOrganization:
           type: string
           maxLength: 200
@@ -2102,6 +2195,7 @@ components:
 
     UpdateResourceRequest:
       type: object
+      additionalProperties: false
       properties:
         locale:
           type: string
@@ -2165,9 +2259,6 @@ components:
           enum: [LISTED, DIRECT_ONLY]
         contentVersionLabel:
           type: string
-        sourceReviewStatus:
-          type: string
-          enum: [REVIEWED, REVIEW_REQUIRED, NEEDS_SOURCE_REVIEW]
         sourceOrganization:
           type: string
           maxLength: 200
@@ -2200,6 +2291,40 @@ components:
           type: string
           format: date-time
           nullable: true
+
+    ResourceReviewRequest:
+      type: object
+      additionalProperties: false
+      required: [decision, reasonCode]
+      properties:
+        decision:
+          type: string
+          enum: [APPROVED, REJECTED]
+        reasonCode:
+          type: string
+          pattern: "^[A-Z][A-Z0-9_]{1,63}$"
+
+    ResourceReviewDecision:
+      type: object
+      additionalProperties: false
+      required:
+        [
+          resourceId,
+          contentVersion,
+          decision,
+          reasonCode,
+          authorityVersion,
+          reviewedBy,
+          reviewedAt,
+        ]
+      properties:
+        resourceId: { type: string, format: uuid }
+        contentVersion: { type: string, pattern: "^(0|[1-9][0-9]*)$" }
+        decision: { type: string, enum: [APPROVED, REJECTED] }
+        reasonCode: { type: string }
+        authorityVersion: { type: string }
+        reviewedBy: { type: string, format: uuid }
+        reviewedAt: { type: string, format: date-time }
 
     EligibilityPolicyVersion:
       type: string

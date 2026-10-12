@@ -31,7 +31,7 @@ a compatibility repair path for accounts created before this consumer existed.
 - `GET /health/live` — liveness without a database dependency
 - `GET /health/ready` — PostgreSQL readiness check
 - `GET /api/v1/resources` — lists active reviewed published self-help resources; returns empty array when none match; returns neutral fallback when service is unreachable; no hotline number or emergency dispatch claim (ADR 0009)
-- `GET /api/v1/resources/{id}` — returns the full reviewed body, exact `contentVersion`, and structured source provenance; an optional `contentVersion` query fails closed when a persisted reference no longer matches
+- `GET /api/v1/resources/{id}` — without `contentVersion`, returns only the current active reviewed publication; an exact `contentVersion` may resolve its immutable publication snapshot after archive/correction without restoring catalogue visibility
 - `GET /api/v1/resource-progress` and `PUT /api/v1/resource-progress/{resourceId}/{localDate}` — persist owner-scoped, non-clinical daily checklist/completion state without changing SupportPlan occurrences; a confirmed completion is terminal while checklist selections remain editable
 - `GET /api/v1/notifications` — returns the authenticated owner's durable inbox newest first with bounded opaque cursor pagination and authoritative unread count
 - `PATCH /api/v1/notifications/{id}/read`, `POST /api/v1/notifications/mark-all-read`, and `DELETE /api/v1/notifications/{id}` — persist idempotent read and tombstone lifecycle changes without exposing another owner's records
@@ -40,9 +40,9 @@ a compatibility repair path for accounts created before this consumer existed.
 - Strict startup configuration, safe Problem Details, structured redacted request logs, CORS deny-by-default, and graceful NestJS shutdown
 - `node-pg-migrate` baseline for the service-owned `mentalbridge_content_notification` database
 
-Resource Eligibility v1 independently validates target domain, `PRIMARY`/`ADJUNCT` role, compatible instrument bands, support tier, locale and effective window. Existing public resource reads remain unchanged. The current resource publish endpoint remains blocked by the separate MB-251 review-authority gate; eligibility publication can only target an already reviewed `PUBLISHED` exact version and does not bypass that gate.
+Resource Eligibility v1 independently validates target domain, `PRIMARY`/`ADJUNCT` role, compatible instrument bands, support tier, locale and effective window. MB-589 completes the separate ADMIN editorial gate: only Identity ADMIN accounts listed in `RESOURCE_REVIEWER_ACCOUNT_IDS` may record an exact-version review decision; review state is server-owned and an approved, source-complete decision is required before publication. Publication stores an immutable snapshot, archive stores an append-only withdrawal, and a correction draft may start only after the current publication is archived. Correction drafts cannot be physically deleted because the stable resource root retains immutable publication history. Publishing never creates Resource Eligibility.
 
-Admin write operations (`POST`, `PATCH`, `DELETE`, publish, archive) are explicitly `planned` in `../contracts/openapi/content-notification-service.yaml`. Safety screening and versioned safety guidance remain Care-owned behavior.
+Admin resource create, draft update/delete, exact-version review, publish, archive, and correction-version operations are implemented in `../contracts/openapi/content-notification-service.yaml`. Safety screening and versioned safety guidance remain Care-owned behavior.
 
 MB-562 also implements `GET|PATCH /api/v1/notification-preferences` for the
 authenticated owner. The atomic preference aggregate covers `IN_APP`, `EMAIL`,
@@ -197,6 +197,10 @@ incompatible facts are parked as digest/offset metadata in
 `mentalbridge.content-notification.community-interaction-dead-letter.v1`; raw
 event bodies are never copied to that topic or logs. Persistence failures remain
 retryable and do not acknowledge the source offset.
+
+Migration `19_complete_resource_editorial_lifecycle.sql` adds immutable exact-version
+review decisions and publication snapshots plus append-only withdrawals. Existing
+published and archived rows are backfilled without changing their content version.
 
 The controlled Review 1 seed, MB-337 eligibility matrix, and visibly synthetic non-dialable safety-directory fixture are owner-module migrations with a separate ledger (`pgmigrations_review1`), so running normal schema migrations cannot accidentally mark controlled data as applied. The seeds reject drift from their reviewed decisions. Machine-readable resource inventory, reviewer rationale, explicit ineligible decisions, and Care requests are kept in `../contracts/fixtures/content/resource-eligibility-v1-controlled-demo.json`. No real safety contact is published by the controlled fixture. For the shared dev/staging database only, run:
 
