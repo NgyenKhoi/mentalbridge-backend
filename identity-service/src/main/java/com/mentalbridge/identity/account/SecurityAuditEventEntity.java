@@ -1,5 +1,8 @@
 package com.mentalbridge.identity.account;
 
+import org.hibernate.annotations.JdbcTypeCode;
+import org.hibernate.type.SqlTypes;
+
 import jakarta.persistence.Column;
 import jakarta.persistence.Entity;
 import jakarta.persistence.Id;
@@ -33,6 +36,7 @@ public class SecurityAuditEventEntity {
     @Column(name = "correlation_id", nullable = false)
     private UUID correlationId;
 
+    @JdbcTypeCode(SqlTypes.CHAR)
     @Column(name = "subject_reference_hash", length = 64)
     private String subjectReferenceHash;
 
