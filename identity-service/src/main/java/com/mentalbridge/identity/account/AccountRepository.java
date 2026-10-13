@@ -32,6 +32,14 @@ public interface AccountRepository extends JpaRepository<AccountEntity, UUID>, J
 	@Query("""
 			select account.role, account.status, count(account)
 			from AccountEntity account
+			where account.status <> :deletedStatus
+			group by account.role, account.status
+			""")
+	List<Object[]> aggregateCurrentAccounts(@Param("deletedStatus") AccountStatus deletedStatus);
+
+	@Query("""
+			select account.role, account.status, count(account)
+			from AccountEntity account
 			where account.createdAt >= :periodStart and account.createdAt < :periodEndExclusive
 			group by account.role, account.status
 			order by account.role, account.status

@@ -260,13 +260,12 @@ class AdminAccountServiceTests {
 
 	@Test
 	void getAccountsSummaryExcludesDeletedAccountsAndEnsuresConsistentTotals() {
-		when(accounts.countByStatus(AccountStatus.ACTIVE)).thenReturn(100L);
-		when(accounts.countByStatus(AccountStatus.PENDING_EMAIL_VERIFICATION)).thenReturn(15L);
-		when(accounts.countByStatus(AccountStatus.DISABLED)).thenReturn(5L);
-		when(accounts.countByStatus(AccountStatus.DELETION_PENDING)).thenReturn(0L);
-		when(accounts.countByRoleAndStatusNot(RoleCode.USER, AccountStatus.DELETED)).thenReturn(95L);
-		when(accounts.countByRoleAndStatusNot(RoleCode.SPECIALIST, AccountStatus.DELETED)).thenReturn(20L);
-		when(accounts.countByRoleAndStatusNot(RoleCode.ADMIN, AccountStatus.DELETED)).thenReturn(5L);
+		when(accounts.aggregateCurrentAccounts(AccountStatus.DELETED)).thenReturn(List.of(
+				new Object[] {RoleCode.USER, AccountStatus.ACTIVE, 80L},
+				new Object[] {RoleCode.USER, AccountStatus.PENDING_EMAIL_VERIFICATION, 15L},
+				new Object[] {RoleCode.SPECIALIST, AccountStatus.ACTIVE, 20L},
+				new Object[] {RoleCode.ADMIN, AccountStatus.DISABLED, 5L},
+				new Object[] {RoleCode.USER, AccountStatus.DELETED, 100L}));
 
 		var summary = service.getAccountsSummary();
 
@@ -289,6 +288,9 @@ class AdminAccountServiceTests {
 		// Assert invariant: totalAccounts equals sum of roles
 		long sumOfRoles = summary.byRole().users() + summary.byRole().specialists() + summary.byRole().admins();
 		assertThat(summary.totalAccounts()).isEqualTo(sumOfRoles);
+		verify(accounts).aggregateCurrentAccounts(AccountStatus.DELETED);
+		verify(accounts, never()).countByStatus(any());
+		verify(accounts, never()).countByRoleAndStatusNot(any(), any());
 	}
 
 	private AccountEntity active(RoleCode role) {
