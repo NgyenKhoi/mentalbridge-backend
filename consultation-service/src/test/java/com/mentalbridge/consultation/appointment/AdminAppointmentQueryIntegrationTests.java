@@ -82,7 +82,7 @@ class AdminAppointmentQueryIntegrationTests extends ConsultationTestProperties {
 	}
 
 	@Test
-	void productJourneyCountsIndependentEventsInsideTheHalfOpenWindow() throws Exception {
+	void productJourneyCountsRequestCohortProgressReachedBeforeTheWindowEnds() throws Exception {
 		var specialistId = approvedSpecialist();
 		var first = appointment(UUID.randomUUID(), specialistId, Instant.parse("2001-02-03T10:00:00Z"), "CONFIRMED");
 		appointment(UUID.randomUUID(), specialistId, Instant.parse("2001-02-03T11:00:00Z"), "REQUESTED");
@@ -107,9 +107,9 @@ class AdminAppointmentQueryIntegrationTests extends ConsultationTestProperties {
 		mvc.perform(get("/api/v1/admin/product-journey-metrics").with(admin())
 				.param("from", "2001-02-03T00:00:00Z").param("to", "2001-02-04T00:00:00Z"))
 				.andExpect(status().isOk()).andExpect(jsonPath("$.source").value("CONSULTATION"))
-				.andExpect(jsonPath("$.sourceVersion").value("consultation-product-journey-v2"))
+				.andExpect(jsonPath("$.sourceVersion").value("consultation-product-journey-v3"))
 				.andExpect(jsonPath("$.consultationsRequested").value(3))
-				.andExpect(jsonPath("$.consultationsConfirmed").value(2))
+				.andExpect(jsonPath("$.consultationsConfirmed").value(1))
 				.andExpect(jsonPath("$.consultationsCompleted").value(1))
 				.andExpect(jsonPath("$.userAccountId").doesNotExist())
 				.andExpect(jsonPath("$.chat").doesNotExist());

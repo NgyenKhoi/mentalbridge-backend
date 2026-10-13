@@ -37,16 +37,27 @@ public class ConsultationProductJourneyController {
 		Instant end = instant(to);
 		validate(start, end);
 		Counts counts = jdbc.sql("""
-				select (select count(*) from appointment
-				        where requested_at >= :from and requested_at < :to) as requested,
-				       (select count(distinct appointment_id) from appointment_status_history
-				        where to_status = 'CONFIRMED' and changed_at >= :from and changed_at < :to) as confirmed,
-				       (select count(distinct appointment_id) from appointment_status_history
-				        where to_status = 'COMPLETED' and changed_at >= :from and changed_at < :to) as completed
+				select count(*) as requested,
+				       count(*) filter (where exists (
+				         select 1 from appointment_status_history history
+				         where history.appointment_id = appointment.id
+				           and history.to_status = 'CONFIRMED'
+				           and history.changed_at >= appointment.requested_at
+				           and history.changed_at < :to
+				       )) as confirmed,
+				       count(*) filter (where exists (
+				         select 1 from appointment_status_history history
+				         where history.appointment_id = appointment.id
+				           and history.to_status = 'COMPLETED'
+				           and history.changed_at >= appointment.requested_at
+				           and history.changed_at < :to
+				       )) as completed
+				from appointment
+				where requested_at >= :from and requested_at < :to
 				""").param("from", database(start)).param("to", database(end))
 				.query((result, row) -> new Counts(result.getLong("requested"), result.getLong("confirmed"),
 						result.getLong("completed"))).single();
-		return new Response("CONSULTATION", "consultation-product-journey-v2", clock.instant(),
+		return new Response("CONSULTATION", "consultation-product-journey-v3", clock.instant(),
 				counts.requested(), counts.confirmed(), counts.completed());
 	}
 

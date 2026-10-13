@@ -292,7 +292,7 @@ private-note data is exposed.
 
 - `GET /api/v1/admin/product-journey-metrics?from={instant}&to={instant}`
 
-The ADMIN-only projection counts independent request, confirmation, and completion events whose authoritative timestamps fall in the bounded half-open window. Confirmation and completion come from immutable lifecycle history and are not inferred from current appointment state or a request cohort. It returns counts and source timing/version only, with no participant, brief, summary, chat, clinical, or private-note fields.
+The ADMIN-only projection defines a request cohort from appointments requested in the bounded half-open window. Confirmation and completion count only members of that cohort that reached the corresponding immutable lifecycle-history milestone before the window ended. It returns cohort counts and source timing/version only, with no participant, brief, summary, chat, clinical, or private-note fields.
 
 ## Implemented MB-592 endpoint
 
