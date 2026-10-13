@@ -75,7 +75,8 @@ class CommunityServiceApplicationTests extends CommunityTestProperties {
 				"0007-community-post-author-mode", "0008-community-comments", "0009-community-moderation",
 				"0010-community-interactions", "0011-community-interaction-outbox",
 				"0012-community-topic-governance", "0013-community-resource-attachment",
-				"0014-community-sensitive-content-warning", "0015-community-saved-post-ordering");
+				"0014-community-sensitive-content-warning", "0015-community-saved-post-ordering",
+				"0016-community-profile-avatar");
 		assertThat(businessTables).containsExactly("community_access_restriction", "community_block",
 				"community_comment", "community_comment_revision", "community_content_hide",
 				"community_interaction_outbox", "community_media", "community_moderation_action",
