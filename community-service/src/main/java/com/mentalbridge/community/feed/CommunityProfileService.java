@@ -17,10 +17,12 @@ public class CommunityProfileService {
 	private static final int MAX_DISPLAY_NAME_CODE_POINTS = 80;
 
 	private final CommunityProfileRepository profiles;
+	private final CommunityMediaRepository media;
 	private final Clock clock;
 
-	public CommunityProfileService(CommunityProfileRepository profiles, Clock clock) {
+	public CommunityProfileService(CommunityProfileRepository profiles, CommunityMediaRepository media, Clock clock) {
 		this.profiles = profiles;
+		this.media = media;
 		this.clock = clock;
 	}
 
@@ -62,6 +64,39 @@ public class CommunityProfileService {
 		return new SavedProfile(view(profile), false);
 	}
 
+	@Transactional
+	public ProfileView replaceAvatar(UUID accountSubject, Long expectedVersion, UUID mediaId) {
+		var profile = profiles.findByAccountSubjectForUpdate(accountSubject)
+				.orElseThrow(CommunityApiException::profileNotFound);
+		if (profile.status() != CommunityProfileEntity.Status.ACTIVE) {
+			throw CommunityApiException.communityAccessUnavailable();
+		}
+		if (expectedVersion == null) {
+			throw CommunityApiException.profileVersionRequired();
+		}
+		var currentId = profile.avatarMedia() == null ? null : profile.avatarMedia().id();
+		if (java.util.Objects.equals(currentId, mediaId)) {
+			return view(profile);
+		}
+		if (profile.version() != expectedVersion) {
+			throw CommunityApiException.profileVersionMismatch("Community profile has changed since it was read");
+		}
+		CommunityMediaEntity selected = null;
+		if (mediaId != null) {
+			selected = media.findOwnedByIdForUpdate(mediaId, accountSubject)
+					.orElseThrow(CommunityApiException::mediaNotFound);
+			if (selected.state() != CommunityMediaEntity.State.READY
+					|| selected.mediaType() != CommunityMediaEntity.Type.IMAGE || selected.post() != null
+					|| selected.storageKey() == null || selected.storageKey().isBlank()
+					|| selected.width() == null || selected.height() == null
+					|| selected.width() < 1 || selected.height() < 1) {
+				throw CommunityApiException.mediaNotAttachable();
+			}
+		}
+		profile.replaceAvatar(selected, clock.instant());
+		return view(profiles.saveAndFlush(profile));
+	}
+
 	private String displayName(String value) {
 		if (value == null) {
 			throw CommunityApiException.invalidProfile("displayName is required");
@@ -83,14 +118,15 @@ public class CommunityProfileService {
 
 	private ProfileView view(CommunityProfileEntity profile) {
 		return new ProfileView(profile.id(), profile.displayName(), profile.avatarPreset(), profile.status(),
-				profile.version(), profile.createdAt(), profile.updatedAt());
+				profile.version(), profile.createdAt(), profile.updatedAt(), profile.avatarImage());
 	}
 
 	public record ProfileCommand(String displayName, AvatarPreset avatarPreset) {
 	}
 
 	public record ProfileView(UUID communityProfileId, String displayName, AvatarPreset avatarPreset,
-			CommunityProfileEntity.Status status, long version, Instant createdAt, Instant updatedAt) {
+			CommunityProfileEntity.Status status, long version, Instant createdAt, Instant updatedAt,
+			CommunityResponses.AvatarImage avatarImage) {
 	}
 
 	public record SavedProfile(ProfileView profile, boolean created) {

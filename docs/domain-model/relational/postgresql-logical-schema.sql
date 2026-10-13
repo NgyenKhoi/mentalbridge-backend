@@ -1764,7 +1764,7 @@ CREATE TABLE consultation.appointment_outbox_event (
 
 /* ========================================================================== */
 /* ACTIVE — community-service / mentalbridge_community                        */
-/* Evidence: community-service Liquibase changes 0001-0012.                  */
+/* Evidence: community-service Liquibase changes 0001-0016.                  */
 /* ========================================================================== */
 
 CREATE TABLE community.community_profile (
@@ -1772,6 +1772,7 @@ CREATE TABLE community.community_profile (
     account_subject uuid NOT NULL UNIQUE, -- external -> identity.account.id
     display_name varchar(80) NOT NULL,
     avatar_preset varchar(24),
+    avatar_media_id uuid,
     status varchar(16) NOT NULL,
     created_at timestamptz NOT NULL,
     updated_at timestamptz NOT NULL,
@@ -1861,8 +1862,13 @@ CREATE TABLE community.community_media (
     position smallint NOT NULL,
     created_at timestamptz NOT NULL,
     updated_at timestamptz NOT NULL,
-    version bigint NOT NULL
+    version bigint NOT NULL,
+    UNIQUE (id, owner_profile_id)
 );
+
+ALTER TABLE community.community_profile
+    ADD FOREIGN KEY (avatar_media_id, id)
+      REFERENCES community.community_media(id, owner_profile_id);
 
 CREATE TABLE community.community_block (
     blocker_profile_id uuid NOT NULL REFERENCES community.community_profile(id),

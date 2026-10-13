@@ -30,7 +30,14 @@ public final class CommunityResponses {
 			Instant updatedAt) {
 	}
 
-	public record Author(UUID communityProfileId, String displayName, AvatarPreset avatarPreset, AuthorState state) {
+	public record Author(UUID communityProfileId, String displayName, AvatarPreset avatarPreset, AuthorState state,
+			@JsonInclude(JsonInclude.Include.NON_NULL) AvatarImage avatarImage) {
+		public Author(UUID communityProfileId, String displayName, AvatarPreset avatarPreset, AuthorState state) {
+			this(communityProfileId, displayName, avatarPreset, state, null);
+		}
+	}
+
+	public record AvatarImage(UUID mediaId, String url, Integer width, Integer height) {
 	}
 
 	public enum AuthorState { ACTIVE, DELETED, ANONYMOUS }

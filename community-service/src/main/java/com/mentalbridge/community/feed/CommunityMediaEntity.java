@@ -16,6 +16,7 @@ import jakarta.persistence.Version;
 
 @Entity
 @Table(name = "community_media")
+@org.hibernate.annotations.BatchSize(size = 50)
 class CommunityMediaEntity {
 
 	enum Type { IMAGE, VIDEO }

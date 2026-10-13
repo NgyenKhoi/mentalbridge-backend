@@ -21,7 +21,25 @@
 
 ## Display identity policy
 
-The private Identity JWT subject is retained only as the ownership key and is never returned by a Community API. Public responses expose the opaque `communityProfileId`, chosen display name, and an optional closed avatar preset. Arbitrary avatar URLs are not accepted.
+The private Identity JWT subject is retained only as the ownership key and is never returned by a Community API. Public responses expose the opaque `communityProfileId`, chosen display name, an optional closed avatar preset, and an optional current Community-only uploaded image. Arbitrary avatar URLs are not accepted.
+
+The owner-approved uploaded-avatar extension uses the existing signed media upload
+and server verification path. `PUT /api/v1/community/profile/avatar` requires a
+strong profile `If-Match` and only `{mediaId}`: an owned, unattached READY IMAGE
+with upload provenance and known positive dimensions, or null to remove the
+photo. Legacy URL-only media cannot be selected. Different selections reject
+stale versions; an unchanged retry returns the current profile without changing
+its version. Normal name/preset replacement preserves the photo. This is a
+separate explicit command, not an import from Identity or Care.
+
+The new nullable `avatar_media_id` has an owner-bound composite foreign key.
+Active selection prevents post attachment, direct media deletion and orphan
+cleanup. Cleanup rechecks current attachment after locking a candidate to avoid
+racing a completed selection. Removal/replacement releases the old image to the
+existing unattached-media retention; it does not claim immediate provider erasure.
+Named posts/comments resolve the current signed, metadata-stripped derivative;
+anonymous posts and deleted identities omit the image. Binary content, original
+provider payloads, account identity and health data remain outside responses.
 
 Feed, post, and future comment reads render the author's current active Community display identity. Changing a display identity does not update post content or any immutable moderation evidence snapshot. A deleted Community profile renders the neutral tombstone name and no avatar. External account lifecycle handling remains an independently replayable future adapter; current requests rely on local JWT signature, issuer, audience, expiry, and role verification and never synchronously call Identity or Care.
 
@@ -71,7 +89,7 @@ Do not commit `.env`, credentials, private keys, media signatures, or delivery U
 
 The test suite starts disposable PostgreSQL, applies the Community migrations, boots the application with synthetic JWT/Cloudinary settings, and verifies feed/detail visibility, owner-isolated display profiles, Unicode bounds, optimistic concurrency, authentication, the public health endpoint, and fail-closed application routes without Identity or Care APIs running.
 
-The canonical REST contract is [`contracts/openapi/community-service-v1.yaml`](../contracts/openapi/community-service-v1.yaml). Contract v1.10 marks feed, owner-private newest-saved browsing, governed active topic discovery, bounded multi-topic filtering, post/comment/media/profile lifecycle, optional stable Resource attachment, explicit sensitive-content warning, reports, personal hide/block controls, moderation cases/actions, supportive reactions, and private bookmarks as implemented. Saved results never accept another owner identifier and omit any post that the normal Community visibility policy makes inaccessible. Topic selection is explicit and matches any of at most three selected active labels; it never consults Care, assessment, Journal, emotion, severity, or AI data. Deactivation prevents new selection while preserving historical post membership and moderation provenance. Resource attachment is a logical UUID reference only: Content remains authoritative for current publication and metadata, the frontend resolves it through the existing Content REST/BFF boundary, and an unavailable Content response never causes Community to expose copied fallback content. A warning is only the explicit `SENSITIVE_CONTENT` governance marker selected by the author or an authorized moderator; it does not classify distress, infer diagnosis/severity, or alter post lifecycle. The versioned event schema is [`contracts/events/community/community-interaction-v1.schema.json`](../contracts/events/community/community-interaction-v1.schema.json), published on `mentalbridge.community.interaction.v1`.
+The canonical REST contract is [`contracts/openapi/community-service-v1.yaml`](../contracts/openapi/community-service-v1.yaml). Contract v1.11 adds independent selection/removal of a verified Community-only uploaded avatar to feed, owner-private newest-saved browsing, governed active topic discovery, bounded multi-topic filtering, post/comment/media/profile lifecycle, optional stable Resource attachment, explicit sensitive-content warning, reports, personal hide/block controls, moderation cases/actions, supportive reactions, and private bookmarks. Saved results never accept another owner identifier and omit any post that the normal Community visibility policy makes inaccessible. Topic selection is explicit and matches any of at most three selected active labels; it never consults Care, assessment, Journal, emotion, severity, or AI data. Deactivation prevents new selection while preserving historical post membership and moderation provenance. Resource attachment is a logical UUID reference only: Content remains authoritative for current publication and metadata, the frontend resolves it through the existing Content REST/BFF boundary, and an unavailable Content response never causes Community to expose copied fallback content. A warning is only the explicit `SENSITIVE_CONTENT` governance marker selected by the author or an authorized moderator; it does not classify distress, infer diagnosis/severity, or alter post lifecycle. The versioned event schema is [`contracts/events/community/community-interaction-v1.schema.json`](../contracts/events/community/community-interaction-v1.schema.json), published on `mentalbridge.community.interaction.v1`.
 
 Eligible external root comments route to the post owner, replies route to the parent-comment owner, and the first reaction for an actor/post pair routes to the post owner. Self-interactions, bookmarks, reaction replacement/removal, and repeated logical commands do not create notification facts. Kafka and Notification are never called inside Community commands; an unavailable broker leaves the committed outbox row retryable.
 

@@ -1,8 +1,8 @@
 openapi: 3.1.0
 info:
   title: MentalBridge Community API
-  version: 1.10.0
-  description: Privacy-isolated peer-support Community Contract v1.10. Feed and saved-post ordering never use Care, Journal, emotion, SupportPlan, inferred severity, or AI data. MB-616 adds an owner-private newest-saved query over the bookmark facts delivered by MB-579; inaccessible posts fail closed and bookmark state never becomes a recommendation profile.
+  version: 1.11.0
+  description: Privacy-isolated peer-support Community Contract v1.11. Feed and saved-post ordering never use Care, Journal, emotion, SupportPlan, inferred severity, or AI data. Optional owner-selected uploaded avatars use verified Community media only and never expose anonymous/deleted identity. MB-616 adds an owner-private newest-saved query over the bookmark facts delivered by MB-579; inaccessible posts fail closed and bookmark state never becomes a recommendation profile.
 servers:
   - url: http://localhost:8084
 paths:
@@ -402,6 +402,37 @@ paths:
         "401": { $ref: "#/components/responses/Problem" }
         "403": { $ref: "#/components/responses/Problem" }
         "404": { $ref: "#/components/responses/Problem" }
+  /api/v1/community/profile/avatar:
+    put:
+      x-mentalbridge-status: implemented
+      operationId: replaceCommunityAvatar
+      security: [{ BearerAuth: [] }]
+      description: Explicitly select a READY IMAGE uploaded by this profile, or remove the current photo with null. Post-attached, foreign, expired, deleted and unverified media are rejected. This never reads or copies Identity/Care avatars. Unchanged retries return the current profile even with the preceding ETag; a different selection requires the current ETag. Removed images re-enter the existing unattached-media retention policy.
+      parameters:
+        - name: If-Match
+          in: header
+          required: true
+          schema: { type: string, pattern: '^"(0|[1-9][0-9]*)"$' }
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: "#/components/schemas/PutCommunityAvatarRequest" }
+      responses:
+        "200":
+          description: Current Community profile with the selected photo or preset fallback.
+          headers:
+            ETag:
+              schema: { type: string }
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/CommunityProfile" }
+        "400": { $ref: "#/components/responses/Problem" }
+        "401": { $ref: "#/components/responses/Problem" }
+        "403": { $ref: "#/components/responses/Problem" }
+        "404": { $ref: "#/components/responses/Problem" }
+        "409": { $ref: "#/components/responses/Problem" }
+        "412": { $ref: "#/components/responses/Problem" }
   /api/v1/community/profile:
     get:
       x-mentalbridge-status: implemented
@@ -605,6 +636,8 @@ components:
       additionalProperties: false
       required: [communityProfileId, displayName, avatarPreset, state]
       properties:
+        avatarImage:
+          $ref: "#/components/schemas/CommunityAvatarImage"
         communityProfileId:
           type: [string, "null"]
           format: uuid
@@ -884,6 +917,25 @@ components:
           anyOf:
             - $ref: "#/components/schemas/CommunityAvatarPreset"
             - type: "null"
+    PutCommunityAvatarRequest:
+      type: object
+      additionalProperties: false
+      required: [mediaId]
+      properties:
+        mediaId:
+          type: [string, "null"]
+          format: uuid
+          description: Exact owned, unattached READY IMAGE, or null to remove the photo. Arbitrary URLs are never accepted.
+    CommunityAvatarImage:
+      type: object
+      additionalProperties: false
+      description: Optional current Community-only image. Omitted for absent/unavailable photos, anonymous posts and deleted identities. URL is the metadata-stripped signed Community derivative, not the original.
+      required: [mediaId, url, width, height]
+      properties:
+        mediaId: { type: string, format: uuid }
+        url: { type: string, format: uri, maxLength: 2048 }
+        width: { type: integer, minimum: 1 }
+        height: { type: integer, minimum: 1 }
     CommunityAvatarPreset:
       type: string
       description: Closed, Community-owned visual preset. Arbitrary image URLs and account-profile avatars are never accepted.
@@ -893,6 +945,8 @@ components:
       additionalProperties: false
       required: [communityProfileId, displayName, avatarPreset, status, version, createdAt, updatedAt]
       properties:
+        avatarImage:
+          $ref: "#/components/schemas/CommunityAvatarImage"
         communityProfileId: { type: string, format: uuid }
         displayName: { type: string, minLength: 1, maxLength: 80 }
         avatarPreset:
