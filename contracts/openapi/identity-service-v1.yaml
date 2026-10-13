@@ -434,7 +434,7 @@ paths:
       tags: [Platform reporting]
       operationId: getProductJourneyMetrics
       summary: Read privacy-bounded aggregate product journey facts
-      description: Returns independent event totals whose authoritative timestamps fall inside the same half-open [from,to) window. Identity stages include USER registrations and USER email-verification activations only; SPECIALIST and ADMIN accounts are excluded. It does not represent conversion, clinical effectiveness, recovery, or causation. Unavailable owner capabilities remain explicitly unavailable.
+      description: Returns privacy-bounded stage counts and descriptive cohort progress rates for the same half-open [from,to) window. Identity activation is limited to USER accounts registered in the window and verified before to; consultation progress is limited to appointments requested in the window and reaching the milestone before to. SPECIALIST and ADMIN accounts are excluded. Rates do not represent clinical effectiveness, recovery, or causation. Unavailable owner capabilities remain explicitly unavailable.
       security: [{ bearerAuth: [] }]
       parameters:
         - name: from
@@ -713,7 +713,7 @@ components:
       additionalProperties: false
       required: [projectionVersion, window, asOf, interpretation, sources, stages]
       properties:
-        projectionVersion: { type: string, const: product-journey-metrics-v1 }
+        projectionVersion: { type: string, const: product-journey-metrics-v2 }
         window:
           type: object
           additionalProperties: false
@@ -753,8 +753,13 @@ components:
           enum: [USER_ACCOUNTS_REGISTERED, USER_ACCOUNTS_ACTIVATED, COMPLETED_SCREENING_EPISODES, SUPPORT_GUIDES_GENERATED, SUPPORT_GUIDES_OPENED, PAID_SUPPORT_PLANS_ACTIVATED, CONSULTATIONS_REQUESTED, CONSULTATIONS_CONFIRMED, CONSULTATIONS_COMPLETED]
         source: { type: string, enum: [IDENTITY, CARE, CONSULTATION] }
         status: { type: string, enum: [AVAILABLE, UNAVAILABLE] }
-        count: { type: [integer, 'null'], format: int64, minimum: 0 }
+        count:
+          type: [integer, 'null']
+          format: int64
+          minimum: 0
+          description: Aggregate stage count. For a rate-bearing stage, this is the numerator from the same explicit cohort as denominatorStage.
         rate:
+          description: Descriptive cohort progress percentage. Null when the stage has no approved cohort denominator or the denominator count is zero.
           oneOf:
             - type: 'null'
             - $ref: '#/components/schemas/ProductJourneyRate'
@@ -765,7 +770,11 @@ components:
       required: [denominatorStage, percentage]
       properties:
         denominatorStage: { type: string, enum: [USER_ACCOUNTS_REGISTERED, CONSULTATIONS_REQUESTED] }
-        percentage: { type: number, minimum: 0, maximum: 100 }
+        percentage:
+          type: number
+          minimum: 0
+          maximum: 100
+          description: Numerator count divided by the named denominator-stage count, rounded to one decimal place.
     PlatformReportTypeCode:
       type: string
       enum: [ACCOUNT_ACTIVITY]

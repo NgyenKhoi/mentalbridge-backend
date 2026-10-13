@@ -99,7 +99,7 @@ $env:IDENTITY_DB_PASSWORD='<identity-password>'
 
 ## MB-596 aggregate product journey
 
-`GET /api/v1/admin/product-journey-metrics` composes USER registration and email-verification activation events with bounded Care and Consultation owner aggregates for an explicit half-open window of at most 366 days. SPECIALIST and ADMIN accounts are excluded from the end-user journey. It returns source/projection versions and as-of times, keeps missing dependencies and the unsupported Support Guide open fact explicitly unavailable, and exposes no user-level or clinical data. Independent event totals are descriptive activity and are not presented as conversion rates, clinical effectiveness, or causation.
+`GET /api/v1/admin/product-journey-metrics` composes bounded USER, Care, and Consultation aggregates for an explicit half-open window of at most 366 days. USER activation rates use only accounts registered in the window and verified before its end; consultation confirmation/completion rates use only appointments requested in the window and reaching those milestones before its end. SPECIALIST and ADMIN accounts are excluded. It returns source/projection versions and as-of times, keeps missing dependencies and the unsupported Support Guide open fact explicitly unavailable, and exposes no user-level or clinical data. Rates describe product-journey cohort progress only, never clinical effectiveness, recovery, or causation.
 
 ## Run and test
 

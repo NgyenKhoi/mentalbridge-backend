@@ -19,31 +19,34 @@ class ProductJourneyServiceTests {
 	private static final Instant FROM = Instant.parse("2026-09-09T08:00:00Z");
 
 	@Test
-	void composesOnlyAggregateOwnerEventsInsideTheRequestedWindow() {
+	void composesOnlyAggregateOwnerCohortsAndRatesInsideTheRequestedWindow() {
 		var accounts = mock(AccountRepository.class);
 		var sources = mock(ProductJourneySourceClient.class);
 		when(accounts.countUserRegistrationsBetween(FROM, NOW)).thenReturn(100L);
-		when(accounts.countUserActivationsBetween(FROM, NOW)).thenReturn(80L);
+		when(accounts.countUserRegistrationCohortActivatedBy(FROM, NOW)).thenReturn(80L);
 		when(sources.care(FROM, NOW, "token")).thenReturn(new ProductJourneySourceClient.CareMetrics(
 				"CARE", "care-product-journey-v1", NOW, 70, 60, 20));
 		when(sources.consultation(FROM, NOW, "token")).thenReturn(
 				new ProductJourneySourceClient.ConsultationMetrics("CONSULTATION",
-						"consultation-product-journey-v2", NOW, 10, 12, 6));
+						"consultation-product-journey-v3", NOW, 10, 8, 6));
 
 		var response = new ProductJourneyService(accounts, sources, Clock.fixed(NOW, ZoneOffset.UTC))
 				.metrics(FROM, NOW, "token");
 
-		assertThat(response.projectionVersion()).isEqualTo("product-journey-metrics-v1");
+		assertThat(response.projectionVersion()).isEqualTo("product-journey-metrics-v2");
 		assertThat(response.interpretation()).isEqualTo("DESCRIPTIVE_PRODUCT_ACTIVITY_NOT_CLINICAL_EFFECTIVENESS");
 		assertThat(response.sources()).allMatch(source -> source.status().equals("AVAILABLE"));
 		assertThat(response.stages()).hasSize(9);
 		assertThat(response.stages()).filteredOn(stage -> stage.stage().equals("USER_ACCOUNTS_ACTIVATED"))
 				.singleElement().satisfies(stage -> {
 					assertThat(stage.count()).isEqualTo(80L);
-					assertThat(stage.rate()).isNull();
+					assertThat(stage.rate().denominatorStage()).isEqualTo("USER_ACCOUNTS_REGISTERED");
+					assertThat(stage.rate().percentage().toPlainString()).isEqualTo("80.0");
 				});
-		assertThat(response.stages()).filteredOn(stage -> stage.source().equals("CONSULTATION"))
-				.allMatch(stage -> stage.rate() == null);
+		assertThat(response.stages()).filteredOn(stage -> stage.stage().equals("CONSULTATIONS_CONFIRMED"))
+				.singleElement().extracting(stage -> stage.rate().percentage().toPlainString()).isEqualTo("80.0");
+		assertThat(response.stages()).filteredOn(stage -> stage.stage().equals("CONSULTATIONS_COMPLETED"))
+				.singleElement().extracting(stage -> stage.rate().percentage().toPlainString()).isEqualTo("60.0");
 		assertThat(response.stages()).filteredOn(stage -> stage.stage().equals("SUPPORT_GUIDES_OPENED"))
 				.singleElement().satisfies(stage -> {
 					assertThat(stage.status()).isEqualTo("UNAVAILABLE");
@@ -59,7 +62,7 @@ class ProductJourneyServiceTests {
 		when(sources.care(FROM, NOW, "token")).thenThrow(new IllegalStateException("unavailable"));
 		when(sources.consultation(FROM, NOW, "token")).thenReturn(
 				new ProductJourneySourceClient.ConsultationMetrics("CONSULTATION",
-						"consultation-product-journey-v2", NOW, 10, 8, 6));
+						"consultation-product-journey-v3", NOW, 10, 8, 6));
 
 		var response = new ProductJourneyService(accounts, sources, Clock.fixed(NOW, ZoneOffset.UTC))
 				.metrics(FROM, NOW, "token");
@@ -99,5 +102,26 @@ class ProductJourneyServiceTests {
 				.isInstanceOf(ProductJourneyService.InvalidWindowException.class);
 		assertThatThrownBy(() -> service.metrics(FROM, NOW.plusSeconds(31), "token"))
 				.isInstanceOf(ProductJourneyService.InvalidWindowException.class);
+	}
+
+	@Test
+	void omitsRatesForEmptyCohortsAndRejectsImpossibleOwnerCohortCounts() {
+		var accounts = mock(AccountRepository.class);
+		var sources = mock(ProductJourneySourceClient.class);
+		when(sources.care(FROM, NOW, "token")).thenReturn(new ProductJourneySourceClient.CareMetrics(
+				"CARE", "care-product-journey-v1", NOW, 0, 0, 0));
+		when(sources.consultation(FROM, NOW, "token")).thenReturn(
+				new ProductJourneySourceClient.ConsultationMetrics("CONSULTATION",
+						"consultation-product-journey-v3", NOW, 10, 11, 6));
+
+		var response = new ProductJourneyService(accounts, sources, Clock.fixed(NOW, ZoneOffset.UTC))
+				.metrics(FROM, NOW, "token");
+
+		assertThat(response.stages()).filteredOn(stage -> stage.source().equals("IDENTITY"))
+				.allMatch(stage -> stage.rate() == null);
+		assertThat(response.sources()).filteredOn(source -> source.source().equals("CONSULTATION"))
+				.singleElement().matches(source -> source.status().equals("UNAVAILABLE"));
+		assertThat(response.stages()).filteredOn(stage -> stage.source().equals("CONSULTATION"))
+				.allMatch(stage -> stage.count() == null && stage.rate() == null);
 	}
 }

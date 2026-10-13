@@ -45,6 +45,7 @@ class ProductJourneyEndpointIntegrationTests extends IdentityTestProperties {
 	void adminReceivesOnlyUserEventsAndUnavailableDependenciesRemainNull() throws Exception {
 		insertAccount("journey-user@example.test", RoleCode.USER, FROM, FROM.plusSeconds(60));
 		insertAccount("journey-prior-user@example.test", RoleCode.USER, FROM.minusSeconds(60), FROM.plusSeconds(120));
+		insertAccount("journey-late-activation@example.test", RoleCode.USER, FROM.plusSeconds(120), TO.plusSeconds(60));
 		insertAccount("journey-specialist@example.test", RoleCode.SPECIALIST, FROM, FROM.plusSeconds(60));
 		insertAccount("journey-admin@example.test", RoleCode.ADMIN, FROM, FROM.plusSeconds(60));
 		insertAccount("journey-upper-bound@example.test", RoleCode.USER, TO, TO);
@@ -58,11 +59,14 @@ class ProductJourneyEndpointIntegrationTests extends IdentityTestProperties {
 				.andExpect(status().isOk())
 				.andExpect(jsonPath("$.window.from").value(FROM.toString()))
 				.andExpect(jsonPath("$.window.to").value(TO.toString()))
-				.andExpect(jsonPath("$.sources[0].sourceVersion").value("identity-account-projection-v2"))
+				.andExpect(jsonPath("$.projectionVersion").value("product-journey-metrics-v2"))
+				.andExpect(jsonPath("$.sources[0].sourceVersion").value("identity-account-projection-v3"))
 				.andExpect(jsonPath("$.stages[0].stage").value("USER_ACCOUNTS_REGISTERED"))
-				.andExpect(jsonPath("$.stages[0].count").value(1))
+				.andExpect(jsonPath("$.stages[0].count").value(2))
 				.andExpect(jsonPath("$.stages[1].stage").value("USER_ACCOUNTS_ACTIVATED"))
-				.andExpect(jsonPath("$.stages[1].count").value(2))
+				.andExpect(jsonPath("$.stages[1].count").value(1))
+				.andExpect(jsonPath("$.stages[1].rate.denominatorStage").value("USER_ACCOUNTS_REGISTERED"))
+				.andExpect(jsonPath("$.stages[1].rate.percentage").value(50.0))
 				.andExpect(jsonPath("$.sources[1].status").value("UNAVAILABLE"))
 				.andExpect(jsonPath("$.sources[2].status").value("UNAVAILABLE"))
 				.andExpect(jsonPath("$.stages[2].count").value(nullValue()))
