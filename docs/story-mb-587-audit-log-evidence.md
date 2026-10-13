@@ -21,12 +21,14 @@ In accordance with architectural requirements for durable audit delivery:
    - `AdministrationAuditEventConsumer.onMessage()` propagates all database persistence errors (transient outages, deadlocks, connectivity losses) to the Kafka listener container error handler.
    - Idempotency: Duplicate events are safely absorbed via `SecurityAuditEventRepository.insertIfAbsent()` using native `INSERT ... ON CONFLICT (id) DO NOTHING` and logged at INFO level.
 
-2. **Durable Error Handler Configuration**:
-   - `AdministrationAuditKafkaConfiguration` registers `administrationAuditListenerContainerFactory` configured with `DefaultErrorHandler` using:
-     - `errorHandler.setCommitRecovered(false)`: Under no circumstance is an offset committed when database persistence fails, even if retry attempts are exhausted.
-     - `errorHandler.setAckAfterHandle(false)`: Prevents container acknowledgment of failed records.
-     - `errorHandler.setSeekAfterError(true)`: Seeks consumer partition back to the failed offset, ensuring the record remains at the head of the consumer log.
-   - Configurable backoff via `mentalbridge.identity.audit-ingestion.retry-interval` (default 1000ms) and `mentalbridge.identity.audit-ingestion.max-attempts` (default -1, unlimited attempts).
+2. **Durable Error Handler Configuration & Finite Retry Elimination**:
+   - `AdministrationAuditKafkaConfiguration` registers `administrationAuditListenerContainerFactory` with explicit unlimited retention-and-retry:
+     - `errorHandler.setCommitRecovered(false)`: Prevents offset commit on persistence failure under any circumstances.
+     - `errorHandler.setAckAfterHandle(false)`: Prevents acknowledgment of failed records.
+     - `errorHandler.setSeekAfterError(true)`: Seeks consumer partition back to the failed offset.
+     - Recoverer is guarded fail-closed: if ever invoked, it throws `IllegalStateException` to prevent log-and-discard.
+     - **Unsafe Finite Mode Removal**: Any attempt to configure a finite positive `max-attempts` (e.g. `max-attempts=5` or `0`) is rejected at application startup with `IllegalArgumentException`, failing fast before any records can be consumed.
+     - Configuration requires `mentalbridge.identity.audit-ingestion.max-attempts=-1` (or omitted default).
 
 3. **Observability and Failure Logging**:
    - Consecutive persistence failures are logged with full contextual detail: topic name, partition, offset, and exception message at ERROR level.
@@ -36,11 +38,19 @@ In accordance with architectural requirements for durable audit delivery:
    - When database availability is restored, the consumer seamlessly resumes ingestion from the exact uncommitted offset without requiring administrative intervention or manual partition resets.
    - Restart resilience: If the container or service process restarts during an outage, Kafka retains the uncommitted consumer group offset and re-delivers the pending record immediately upon startup.
 
-5. **Kafka Topic Retention Limits**:
-   - Topic `mentalbridge.admin.audit-event.v1` is configured with broker-level log retention (e.g. `log.retention.hours=168` / 7 days) to provide an ample recovery buffer for prolonged downstream database recovery.
+5. **Kafka Topic Retention Declaration**:
+   - Declared in repository infrastructure [`compose.yml`](file:///d:/DO%20AN/MentalBridge/mentalbridge-backend/compose.yml) under `kafka-init`:
+     - Topic: `mentalbridge.admin.audit-event.v1`
+     - Partitions: 3, Replication Factor: 1
+     - `retention.ms=604800000` (7 days)
+     - `cleanup.policy=delete`
+     - `retention.bytes=-1` (unlimited bytes; default inherited, preventing premature log eviction)
+     - Provisioning is idempotent: combines `--create --if-not-exists` with `kafka-configs.sh --alter ... --add-config retention.ms=604800000,cleanup.policy=delete` to guarantee existing topics are also configured.
+   - Scope of Inspection: Local Compose and Testcontainers environments verified. In non-Compose production environments where external Kafka clusters are deployed, DevOps must ensure the cluster topic configuration applies `retention.ms=604800000`.
 
 ## Verification
 
+- **Configuration Unit Tests**: `AdministrationAuditKafkaConfigurationTests` asserts that finite `max-attempts` (> 0 or 0) and non-positive `retry-interval` fail context startup fast, while default or explicit `-1` unlimited retry succeeds.
 - **Node/Content Audit Checks**: Verified `content-admin-audit.test.ts` (187/187 tests pass).
 - **PostgreSQL & Database Error Classification**: Tested `insertIfAbsent` idempotency and classification of integrity exceptions.
 - **Runtime Durability Integration Tests**: `AdministrationAuditKafkaDurabilityIntegrationTests` verifies end-to-end Kafka delivery, continuous retry behavior exceeding retry budgets during simulated database outages, zero message loss, consumer container restart resilience, and successful exactly-once projection upon database recovery.

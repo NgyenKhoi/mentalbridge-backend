@@ -26,16 +26,28 @@ public class AdministrationAuditKafkaConfiguration {
             @Value("${mentalbridge.identity.audit-ingestion.retry-interval:1000}") long retryInterval,
             @Value("${mentalbridge.identity.audit-ingestion.max-attempts:-1}") long maxAttempts) {
 
+
+        if (maxAttempts != -1 && maxAttempts != FixedBackOff.UNLIMITED_ATTEMPTS) {
+            throw new IllegalArgumentException(
+                    "Finite retry max-attempts (" + maxAttempts + ") is not supported for administration audit ingestion. " +
+                    "Audit events require durable unlimited retain-and-retry (mentalbridge.identity.audit-ingestion.max-attempts must be -1 or omitted) " +
+                    "to prevent silent loss during persistence outages.");
+        }
+
+        if (retryInterval <= 0) {
+            throw new IllegalArgumentException("mentalbridge.identity.audit-ingestion.retry-interval must be positive: " + retryInterval);
+        }
+
         ConcurrentKafkaListenerContainerFactory<Object, Object> factory =
                 new ConcurrentKafkaListenerContainerFactory<>();
         configurer.configure(factory, consumerFactory);
 
-        long attempts = maxAttempts <= 0 ? FixedBackOff.UNLIMITED_ATTEMPTS : maxAttempts;
-        BackOff backOff = new FixedBackOff(retryInterval, attempts);
+        BackOff backOff = new FixedBackOff(retryInterval, FixedBackOff.UNLIMITED_ATTEMPTS);
 
         DefaultErrorHandler errorHandler = new DefaultErrorHandler((record, exception) -> {
-            LOGGER.error("Audit ingestion retain-and-retry failed at topic {} partition {} offset {}. Record will remain uncommitted and retried: {}",
+            LOGGER.error("Audit ingestion retain-and-retry encountered unrecoverable condition at topic {} partition {} offset {}: {}",
                     record.topic(), record.partition(), record.offset(), exception.getMessage());
+            throw new IllegalStateException("Audit ingestion recoverer should not be reached in unlimited-retry mode", exception);
         }, backOff);
 
         // Crucial retain-and-retry durability invariants:
