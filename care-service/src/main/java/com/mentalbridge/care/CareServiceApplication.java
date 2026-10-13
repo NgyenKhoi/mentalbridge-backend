@@ -16,6 +16,7 @@ import com.mentalbridge.care.resourceeligibility.ContentResourceEligibilityHttpC
 import com.mentalbridge.care.safetydirectory.ContentSafetyDirectoryHttpClient;
 import com.mentalbridge.care.supportguide.JournalSupportGuidePhrasingHttpClient;
 import com.mentalbridge.care.supportplan.ConsultationResourceProposalHttpClient;
+import com.mentalbridge.care.supportplan.EmotionCheckInEvidenceHttpClient;
 
 @SpringBootApplication
 @ConfigurationPropertiesScan
@@ -24,7 +25,8 @@ import com.mentalbridge.care.supportplan.ConsultationResourceProposalHttpClient;
 		ConsultationEntitlementHttpClient.class, JournalLongitudinalHttpClient.class,
 		JournalSupportGuidePhrasingHttpClient.class, ConsultationAppointmentHttpClient.class,
 		JournalActivityHttpClient.class, ConsultationActivityHttpClient.class,
-		ConsultationResourceProposalHttpClient.class, JournalConsultationBriefDraftHttpClient.class })
+		ConsultationResourceProposalHttpClient.class, JournalConsultationBriefDraftHttpClient.class,
+		EmotionCheckInEvidenceHttpClient.class })
 public class CareServiceApplication {
 
 	public static void main(String[] args) {

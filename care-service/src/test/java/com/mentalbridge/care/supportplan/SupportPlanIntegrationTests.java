@@ -322,8 +322,16 @@ class SupportPlanIntegrationTests extends CareTestProperties {
 				UUID.randomUUID());
 		var replayed = activityOccurrences.completeFromOwnerFact(userId, firstOccurrenceId, fact,
 				UUID.randomUUID());
+		var reverified = activityOccurrences.completeFromOwnerFact(userId, firstOccurrenceId,
+				new AuthoritativeOwnerFact(userId, linkedAppointment,
+						new OwnerFact(boundedFact.ownerDomain(), boundedFact.kind(), boundedFact.factId(),
+								boundedFact.factRevision(), boundedFact.occurredAt(), now.plusSeconds(3))),
+				UUID.randomUUID());
 		assertThat(completed.state()).isEqualTo("COMPLETED");
 		assertThat(replayed.version()).isEqualTo(completed.version());
+		assertThat(reverified.version()).isEqualTo(completed.version());
+		assertThat(jdbc.sql("select evidence_verified_at from support_plan_activity_occurrence where id=:id")
+				.param("id", firstOccurrenceId).query(Instant.class).single()).isEqualTo(boundedFact.verifiedAt());
 		assertThatThrownBy(() -> activityOccurrences.completeFromOwnerFact(userId, secondOccurrenceId,
 				fact, UUID.randomUUID())).hasMessageContaining("already completes another action occurrence");
 		assertThat(jdbc.sql("""

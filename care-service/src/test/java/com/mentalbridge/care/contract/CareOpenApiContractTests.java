@@ -20,6 +20,14 @@ import io.swagger.v3.parser.core.models.ParseOptions;
 class CareOpenApiContractTests {
 
 	private static final Set<String> ALL_OPERATIONS = Set.of(
+			"POST /api/v2/support-plans",
+			"GET /api/v2/support-plans/history",
+			"POST /api/v2/support-plans/{supportPlanId}/activate",
+			"PUT /api/v2/support-plans/{supportPlanId}/status",
+			"POST /api/v2/support-plans/{supportPlanId}/replacement-review",
+			"POST /api/v2/support-plans/{supportPlanId}/replace",
+			"PUT /api/v2/support-plan-occurrences/{occurrenceId}/state",
+			"POST /api/v2/support-plan-occurrences/{occurrenceId}/emotion-check-in/reconcile",
 			"GET /api/v1/profile",
 			"PUT /api/v1/profile",
 			"GET /api/v1/consents",
@@ -92,6 +100,14 @@ class CareOpenApiContractTests {
 			"POST /api/v1/safety-directory-lookups");
 
 	private static final Set<String> IMPLEMENTED_PATHS = Set.of(
+			"/api/v2/support-plans",
+			"/api/v2/support-plans/history",
+			"/api/v2/support-plans/{supportPlanId}/activate",
+			"/api/v2/support-plans/{supportPlanId}/status",
+			"/api/v2/support-plans/{supportPlanId}/replacement-review",
+			"/api/v2/support-plans/{supportPlanId}/replace",
+			"/api/v2/support-plan-occurrences/{occurrenceId}/state",
+			"/api/v2/support-plan-occurrences/{occurrenceId}/emotion-check-in/reconcile",
 			"/api/v1/profile",
 			"/api/v1/consents",
 			"/api/v1/consents/ai-processing/authorization",
@@ -156,6 +172,14 @@ class CareOpenApiContractTests {
 			"/api/v1/safety-directory-lookups");
 
 	private static final Set<String> BEARER_OPERATIONS = Set.of(
+			"POST /api/v2/support-plans",
+			"GET /api/v2/support-plans/history",
+			"POST /api/v2/support-plans/{supportPlanId}/activate",
+			"PUT /api/v2/support-plans/{supportPlanId}/status",
+			"POST /api/v2/support-plans/{supportPlanId}/replacement-review",
+			"POST /api/v2/support-plans/{supportPlanId}/replace",
+			"PUT /api/v2/support-plan-occurrences/{occurrenceId}/state",
+			"POST /api/v2/support-plan-occurrences/{occurrenceId}/emotion-check-in/reconcile",
 			"GET /api/v1/profile",
 			"PUT /api/v1/profile",
 			"GET /api/v1/consents",
@@ -224,6 +248,9 @@ class CareOpenApiContractTests {
 			"GET /api/v1/anonymous-assessment-sessions/{sessionId}/assessments/{assessmentId}");
 
 	private static final Set<String> IDEMPOTENT_OPERATIONS = Set.of(
+			"POST /api/v2/support-plans",
+			"POST /api/v2/support-plans/{supportPlanId}/activate",
+			"POST /api/v2/support-plans/{supportPlanId}/replace",
 			"POST /api/v1/consent-decisions",
 			"POST /api/v1/assessments",
 			"POST /api/v1/screening-episodes/{episodeId}/assessments/{instrument}",

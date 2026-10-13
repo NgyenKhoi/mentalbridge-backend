@@ -154,6 +154,7 @@ public class SupportPlanService {
 
 	public SupportPlanView changeStatus(UUID userId, UUID planId, long expectedVersion, String targetStatus,
 			String completionReason) {
+		requireLegacy(writer.required(userId, planId).plan());
 		if (!List.of("ACTIVE", "PAUSED", "COMPLETED", "DISCARDED").contains(targetStatus)) {
 			throw new ApiException(HttpStatus.BAD_REQUEST, "SUPPORT_PLAN_STATUS_INVALID",
 					"Target status must be ACTIVE, PAUSED, COMPLETED, or DISCARDED");
@@ -524,6 +525,7 @@ public class SupportPlanService {
 	private SupportPlanView view(StoredPlan stored, Map<String, ResourceDraft> selections, String status,
 			long version, Instant updatedAt, Instant activatedAt) {
 		var plan = stored.plan();
+		requireLegacy(plan);
 		var families = stored.families().stream().map(family -> new TemplateFamilyView(family.family(),
 				family.templateVersion(), family.targetDomain())).toList();
 		var slots = stored.slots().stream().map(storedSlot -> {
@@ -615,6 +617,13 @@ public class SupportPlanService {
 	}
 
 	static String disclaimer() { return DISCLAIMER; }
+
+	private void requireLegacy(SupportPlanEntity plan) {
+		if (plan.modelVersion() != 2) {
+			throw new ApiException(HttpStatus.CONFLICT, "SUPPORT_PLAN_MODEL_VERSION_UNSUPPORTED",
+					"Use the native v3 SupportPlan boundary for this plan");
+		}
+	}
 
 	public record ProposeCommand(UUID sourceSupportEvaluationId) { }
 	public record SlotSelection(String slotId, UUID resourceId, String contentVersion) { }
