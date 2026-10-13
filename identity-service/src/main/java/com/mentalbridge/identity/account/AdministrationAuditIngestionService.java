@@ -213,7 +213,7 @@ public class AdministrationAuditIngestionService {
         String actorReferenceHash = null;
         if ("ADMIN".equals(actorType)) {
             actorReferenceHash = sha256Hex(command.actorId().toString());
-            if (accountRepository.existsById(command.actorId())) {
+            if (accountRepository.existsByIdAndStatusNot(command.actorId(), AccountStatus.DELETED)) {
                 resolvedActorId = command.actorId();
             }
         }
@@ -227,29 +227,30 @@ public class AdministrationAuditIngestionService {
                 try {
                     parsedUuid = UUID.fromString(rawUuid);
                 } catch (IllegalArgumentException e) {
-                    LOGGER.warn("Rejecting audit event {} with malformed account UUID in targetIdentifier: {}",
-                            command.eventId(), target);
+                    LOGGER.warn("Rejecting audit event: eventId={}, correlationId={}, code=INVALID_TARGET_ACCOUNT_UUID",
+                            command.eventId(), command.correlationId());
                     return false;
                 }
                 if (command.targetAccountId() == null || !parsedUuid.equals(command.targetAccountId())) {
-                    LOGGER.warn("Rejecting audit event {} with contradictory targetAccountId and targetIdentifier: targetAccountId={}, targetIdentifier={}",
-                            command.eventId(), command.targetAccountId(), command.targetIdentifier());
+                    LOGGER.warn("Rejecting audit event: eventId={}, correlationId={}, code=CONTRADICTORY_TARGET_ACCOUNT",
+                            command.eventId(), command.correlationId());
                     return false;
                 }
             } else if (target.startsWith("tombstone:")) {
                 String hash = target.substring("tombstone:".length());
                 if (!hash.matches("^[0-9a-f]{64}$")) {
-                    LOGGER.warn("Rejecting audit event {} with invalid tombstone hash in targetIdentifier: {}",
-                            command.eventId(), target);
+                    LOGGER.warn("Rejecting audit event: eventId={}, correlationId={}, code=INVALID_TARGET_TOMBSTONE",
+                            command.eventId(), command.correlationId());
                     return false;
                 }
                 if (command.targetAccountId() != null) {
-                    LOGGER.warn("Rejecting audit event {} with targetAccountId and tombstone targetIdentifier: targetAccountId={}, targetIdentifier={}",
-                            command.eventId(), command.targetAccountId(), command.targetIdentifier());
+                    LOGGER.warn("Rejecting audit event: eventId={}, correlationId={}, code=CONTRADICTORY_TARGET_TOMBSTONE",
+                            command.eventId(), command.correlationId());
                     return false;
                 }
             } else {
-                LOGGER.warn("Rejecting audit event {} with invalid targetIdentifier shape: {}", command.eventId(), target);
+                LOGGER.warn("Rejecting audit event: eventId={}, correlationId={}, code=INVALID_TARGET_SHAPE",
+                        command.eventId(), command.correlationId());
                 return false;
             }
         }
@@ -259,7 +260,7 @@ public class AdministrationAuditIngestionService {
 
         if (command.targetAccountId() != null) {
             subjectReferenceHash = sha256Hex(command.targetAccountId().toString());
-            if (accountRepository.existsById(command.targetAccountId())) {
+            if (accountRepository.existsByIdAndStatusNot(command.targetAccountId(), AccountStatus.DELETED)) {
                 resolvedAccountId = command.targetAccountId();
             }
         } else if (command.targetIdentifier() != null) {

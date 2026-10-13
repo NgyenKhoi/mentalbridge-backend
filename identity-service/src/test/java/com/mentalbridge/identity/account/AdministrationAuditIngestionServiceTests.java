@@ -16,9 +16,12 @@ import org.junit.jupiter.api.extension.ExtendWith;
 import org.mockito.ArgumentCaptor;
 import org.mockito.Mock;
 import org.mockito.junit.jupiter.MockitoExtension;
+import org.springframework.boot.test.system.CapturedOutput;
+import org.springframework.boot.test.system.OutputCaptureExtension;
 import org.springframework.dao.DataIntegrityViolationException;
 
 @ExtendWith(MockitoExtension.class)
+@ExtendWith(OutputCaptureExtension.class)
 class AdministrationAuditIngestionServiceTests {
 
     @Mock
@@ -48,8 +51,8 @@ class AdministrationAuditIngestionServiceTests {
         Instant occurredAt = Instant.now().minusSeconds(10);
 
         when(auditRepository.existsById(eventId)).thenReturn(false);
-        when(accountRepository.existsById(actorId)).thenReturn(true);
-        when(accountRepository.existsById(targetAccountId)).thenReturn(true);
+        when(accountRepository.existsByIdAndStatusNot(actorId, AccountStatus.DELETED)).thenReturn(true);
+        when(accountRepository.existsByIdAndStatusNot(targetAccountId, AccountStatus.DELETED)).thenReturn(true);
 
         AdministrationAuditIngestionService.IngestionCommand command =
                 new AdministrationAuditIngestionService.IngestionCommand(
@@ -86,6 +89,51 @@ class AdministrationAuditIngestionServiceTests {
         assertThat(saved.getSubjectReferenceHash()).isEqualTo(AdministrationAuditIngestionService.sha256Hex(targetAccountId.toString()));
         assertThat(saved.getCorrelationId()).isEqualTo(correlationId);
         assertThat(saved.getOccurredAt()).isEqualTo(occurredAt);
+    }
+
+    @Test
+    void softDeletedActorAndTargetArePersistedAsTombstones() {
+        UUID actorId = UUID.randomUUID();
+        UUID targetId = UUID.randomUUID();
+        var command = new AdministrationAuditIngestionService.IngestionCommand(
+                UUID.randomUUID(), "identity.account.disabled", Instant.now(),
+                AdministrationAuditService.AuditSourceService.IDENTITY,
+                AdministrationAuditService.AuditDomain.ACCOUNT_ADMINISTRATION,
+                actorId, "ADMIN", "ACCOUNT_DISABLED", "SUCCEEDED", null,
+                UUID.randomUUID(), targetId, "account:" + targetId);
+
+        assertThat(ingestionService.ingest(command)).isTrue();
+        ArgumentCaptor<SecurityAuditEventEntity> captor = ArgumentCaptor.forClass(SecurityAuditEventEntity.class);
+        verify(auditRepository).insertIfAbsent(captor.capture());
+        assertThat(captor.getValue().getActorId()).isNull();
+        assertThat(captor.getValue().getAccountId()).isNull();
+        assertThat(captor.getValue().getActorReferenceHash())
+                .isEqualTo(AdministrationAuditIngestionService.sha256Hex(actorId.toString()));
+        assertThat(captor.getValue().getSubjectReferenceHash())
+                .isEqualTo(AdministrationAuditIngestionService.sha256Hex(targetId.toString()));
+    }
+
+    @Test
+    void invalidTargetIdentifierDoesNotLeakIntoConsumerOrIngestionLogs(CapturedOutput output) {
+        String secret = "private-contact@example.com";
+        UUID eventId = UUID.randomUUID();
+        UUID correlationId = UUID.randomUUID();
+        String json = """
+                {"eventId":"%s","eventType":"identity.account.disabled","occurredAt":"%s",
+                 "sourceService":"IDENTITY","domain":"ACCOUNT_ADMINISTRATION","actorType":"SYSTEM",
+                 "action":"ACCOUNT_DISABLED","result":"SUCCEEDED","correlationId":"%s",
+                 "targetIdentifier":"%s"}
+                """.formatted(eventId, Instant.now(), correlationId, secret);
+        consumer.onMessage(json);
+        var command = new AdministrationAuditIngestionService.IngestionCommand(
+                UUID.randomUUID(), "identity.account.disabled", Instant.now(),
+                AdministrationAuditService.AuditSourceService.IDENTITY,
+                AdministrationAuditService.AuditDomain.ACCOUNT_ADMINISTRATION,
+                null, "SYSTEM", "ACCOUNT_DISABLED", "SUCCEEDED", null,
+                UUID.randomUUID(), null, secret);
+        assertThat(ingestionService.ingest(command)).isFalse();
+        assertThat(output.getAll()).contains("INVALID_TARGET_SHAPE").doesNotContain(secret);
+        verify(auditRepository, never()).insertIfAbsent(any());
     }
 
     @Test
@@ -884,7 +932,7 @@ class AdministrationAuditIngestionServiceTests {
 
         when(auditRepository.existsById(eventId)).thenReturn(false);
         // Admin account does not exist in Identity account repository (e.g. deleted or external)
-        when(accountRepository.existsById(adminId)).thenReturn(false);
+        when(accountRepository.existsByIdAndStatusNot(adminId, AccountStatus.DELETED)).thenReturn(false);
 
         AdministrationAuditIngestionService.IngestionCommand command =
                 new AdministrationAuditIngestionService.IngestionCommand(

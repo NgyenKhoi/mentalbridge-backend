@@ -2,6 +2,7 @@ package com.mentalbridge.identity.account;
 
 import java.util.Optional;
 import java.time.Instant;
+import java.util.Collection;
 import java.util.List;
 import java.util.UUID;
 
@@ -22,6 +23,11 @@ public interface AccountRepository extends JpaRepository<AccountEntity, UUID>, J
 	@Lock(LockModeType.PESSIMISTIC_WRITE)
 	@Query("select account from AccountEntity account where account.id = :id")
 	Optional<AccountEntity> findByIdForUpdate(@Param("id") UUID id);
+
+	boolean existsByIdAndStatusNot(UUID id, AccountStatus status);
+
+	@Query("select account.id from AccountEntity account where account.id in :ids and account.status = :status")
+	List<UUID> findIdsByIdInAndStatus(@Param("ids") Collection<UUID> ids, @Param("status") AccountStatus status);
 
 	@Query("""
 			select account.role, account.status, count(account)

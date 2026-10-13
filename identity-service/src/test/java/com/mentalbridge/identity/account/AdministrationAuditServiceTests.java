@@ -3,7 +3,10 @@ package com.mentalbridge.identity.account;
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
 import static org.mockito.ArgumentMatchers.any;
+import static org.mockito.ArgumentMatchers.eq;
 import static org.mockito.Mockito.mock;
+import static org.mockito.Mockito.times;
+import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.when;
 
 import com.mentalbridge.identity.account.AdministrationAuditService.AuditQuery;
@@ -23,12 +26,14 @@ class AdministrationAuditServiceTests {
 
     private static final Instant NOW = Instant.parse("2026-10-05T00:00:00Z");
     private SecurityAuditEventRepository repository;
+    private AccountRepository accounts;
     private AdministrationAuditService service;
 
     @BeforeEach
     void setUp() {
         repository = mock(SecurityAuditEventRepository.class);
-        service = new AdministrationAuditService(repository, Clock.fixed(NOW, ZoneOffset.UTC));
+        accounts = mock(AccountRepository.class);
+        service = new AdministrationAuditService(repository, accounts, Clock.fixed(NOW, ZoneOffset.UTC));
     }
 
     @Test
@@ -64,6 +69,28 @@ class AdministrationAuditServiceTests {
 
         assertThat(page.items().getFirst().targetIdentifier()).isEqualTo("tombstone:" + hash);
         assertThat(page.items().getFirst().actorType()).isEqualTo(AdministrationAuditService.AuditActorType.SYSTEM);
+    }
+
+    @Test
+    void previouslyStoredEventMasksSoftDeletedActorAndTargetInBrowseAndExport() {
+        UUID actorId = UUID.randomUUID();
+        UUID targetId = UUID.randomUUID();
+        var storedBeforeDeletion = event(targetId, actorId, "ACCOUNT_DISABLED", "SUCCEEDED",
+                "SAFETY_CONCERN", NOW.minusSeconds(60));
+        when(repository.findAll(any(Specification.class), any(Pageable.class)))
+                .thenReturn(new PageImpl<>(List.of(storedBeforeDeletion)));
+        when(accounts.findIdsByIdInAndStatus(any(), eq(AccountStatus.DELETED)))
+                .thenReturn(List.of(actorId, targetId));
+
+        var page = service.browse(new AuditQuery(null, null, null, null, null, null, null, null), null, 10);
+        assertThat(page.items().getFirst().actorIdentifier())
+                .isEqualTo("tombstone:" + AdministrationAuditIngestionService.sha256Hex(actorId.toString()));
+        assertThat(page.items().getFirst().targetIdentifier()).isEqualTo("tombstone:" + "b".repeat(64));
+
+        String csv = new String(service.export(new AuditQuery(null, null, null, null, null, null, null, null)).bytes(),
+                java.nio.charset.StandardCharsets.UTF_8);
+        assertThat(csv).contains("tombstone:").doesNotContain("account:" + actorId, "account:" + targetId);
+        verify(accounts, times(2)).findIdsByIdInAndStatus(any(), eq(AccountStatus.DELETED));
     }
 
     @Test

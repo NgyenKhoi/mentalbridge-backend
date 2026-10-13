@@ -55,7 +55,7 @@ public class AdministrationAuditEventConsumer {
         try {
             root = objectMapper.readTree(message);
         } catch (com.fasterxml.jackson.core.JsonProcessingException exception) {
-            LOGGER.warn("Audit message is malformed JSON, ignoring: reason={}", exception.getMessage());
+            LOGGER.warn("Audit message rejected: code=MALFORMED_JSON");
             return;
         }
 
@@ -255,8 +255,8 @@ public class AdministrationAuditEventConsumer {
                     try {
                         parsedUuid = UUID.fromString(rawUuid);
                     } catch (IllegalArgumentException e) {
-                        LOGGER.warn("Audit message has malformed account UUID in targetIdentifier, ignoring: eventType={}, eventId={}, targetIdentifier={}",
-                                eventType, eventId, targetIdentifier);
+                        LOGGER.warn("Audit message rejected: eventId={}, correlationId={}, code=INVALID_TARGET_ACCOUNT_UUID",
+                                eventId, correlationId);
                         return;
                     }
                     if (targetAccountId == null || !parsedUuid.equals(targetAccountId)) {
@@ -267,8 +267,8 @@ public class AdministrationAuditEventConsumer {
                 } else if (targetIdentifier.startsWith("tombstone:")) {
                     String hash = targetIdentifier.substring("tombstone:".length());
                     if (!hash.matches("^[0-9a-f]{64}$")) {
-                        LOGGER.warn("Audit message has invalid tombstone hash in targetIdentifier, ignoring: eventType={}, eventId={}, targetIdentifier={}",
-                                eventType, eventId, targetIdentifier);
+                        LOGGER.warn("Audit message rejected: eventId={}, correlationId={}, code=INVALID_TARGET_TOMBSTONE",
+                                eventId, correlationId);
                         return;
                     }
                     if (targetAccountId != null) {
@@ -277,8 +277,8 @@ public class AdministrationAuditEventConsumer {
                         return;
                     }
                 } else {
-                    LOGGER.warn("Audit message has invalid targetIdentifier prefix, ignoring: eventType={}, eventId={}, targetIdentifier={}",
-                            eventType, eventId, targetIdentifier);
+                    LOGGER.warn("Audit message rejected: eventId={}, correlationId={}, code=INVALID_TARGET_SHAPE",
+                            eventId, correlationId);
                     return;
                 }
             }

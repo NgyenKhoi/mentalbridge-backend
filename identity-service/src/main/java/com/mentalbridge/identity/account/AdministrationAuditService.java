@@ -8,6 +8,7 @@ import java.time.Instant;
 import java.time.format.DateTimeParseException;
 import java.util.ArrayList;
 import java.util.Base64;
+import java.util.HashSet;
 import java.util.List;
 import java.util.Set;
 import java.util.UUID;
@@ -29,10 +30,12 @@ public class AdministrationAuditService {
     static final Duration RETENTION = Duration.ofDays(365);
 
     private final SecurityAuditEventRepository auditEvents;
+    private final AccountRepository accounts;
     private final Clock clock;
 
-    public AdministrationAuditService(SecurityAuditEventRepository auditEvents, Clock clock) {
+    public AdministrationAuditService(SecurityAuditEventRepository auditEvents, AccountRepository accounts, Clock clock) {
         this.auditEvents = auditEvents;
+        this.accounts = accounts;
         this.clock = clock;
     }
 
@@ -48,7 +51,9 @@ public class AdministrationAuditService {
                 Sort.by("occurredAt").descending().and(Sort.by("id").descending()));
         var found = auditEvents.findAll(specification(effective, after), pageable).getContent();
         boolean hasNext = found.size() > limit;
-        var pageItems = found.subList(0, Math.min(limit, found.size())).stream().map(this::response).toList();
+        var visible = found.subList(0, Math.min(limit, found.size()));
+        Set<UUID> deletedIds = deletedAccountIds(visible);
+        var pageItems = visible.stream().map(event -> response(event, deletedIds)).toList();
         String nextCursor = hasNext ? encodeCursor(found.get(limit - 1)) : null;
         return new AuditEventPage(pageItems, nextCursor, effective.from(), effective.to(), effective.retentionCutoff());
     }
@@ -64,7 +69,8 @@ public class AdministrationAuditService {
         }
 
         StringBuilder csv = new StringBuilder("eventId,occurredAt,actorType,actorIdentifier,action,result,reasonCode,correlationId,sourceService,domain,targetIdentifier\r\n");
-        found.stream().map(this::response).forEach(event -> csv.append(csvRow(event)));
+        Set<UUID> deletedIds = deletedAccountIds(found);
+        found.stream().map(event -> response(event, deletedIds)).forEach(event -> csv.append(csvRow(event)));
         byte[] bytes = csv.toString().getBytes(StandardCharsets.UTF_8);
         if (bytes.length > MAX_EXPORT_BYTES) {
             throw new InvalidAdminAccountQueryException("Export exceeds the 5 MiB limit");
@@ -174,14 +180,28 @@ public class AdministrationAuditService {
         throw new InvalidAdminAccountQueryException("Audit target identifier is invalid");
     }
 
-    private AuditEvent response(SecurityAuditEventEntity event) {
+    private Set<UUID> deletedAccountIds(List<SecurityAuditEventEntity> events) {
+        Set<UUID> ids = new HashSet<>();
+        for (SecurityAuditEventEntity event : events) {
+            if (event.getActorId() != null) ids.add(event.getActorId());
+            if (event.getAccountId() != null) ids.add(event.getAccountId());
+        }
+        if (ids.isEmpty()) return Set.of();
+        return Set.copyOf(accounts.findIdsByIdInAndStatus(ids, AccountStatus.DELETED));
+    }
+
+    private AuditEvent response(SecurityAuditEventEntity event, Set<UUID> deletedIds) {
         AuditActorType actorType = "ADMIN".equalsIgnoreCase(event.getActorType())
                 ? AuditActorType.ADMIN
                 : AuditActorType.SYSTEM;
         String actorIdentifier;
         if (actorType == AuditActorType.ADMIN) {
             if (event.getActorId() != null) {
-                actorIdentifier = "account:" + event.getActorId();
+                actorIdentifier = deletedIds.contains(event.getActorId())
+                        ? "tombstone:" + (event.getActorReferenceHash() != null
+                                ? event.getActorReferenceHash()
+                                : AdministrationAuditIngestionService.sha256Hex(event.getActorId().toString()))
+                        : "account:" + event.getActorId();
             } else if (event.getActorReferenceHash() != null) {
                 actorIdentifier = "tombstone:" + event.getActorReferenceHash();
             } else {
@@ -193,7 +213,11 @@ public class AdministrationAuditService {
 
         String targetIdentifier = null;
         if (event.getAccountId() != null) {
-            targetIdentifier = "account:" + event.getAccountId();
+            targetIdentifier = deletedIds.contains(event.getAccountId())
+                    ? "tombstone:" + (event.getSubjectReferenceHash() != null
+                            ? event.getSubjectReferenceHash()
+                            : AdministrationAuditIngestionService.sha256Hex(event.getAccountId().toString()))
+                    : "account:" + event.getAccountId();
         } else if (event.getSubjectReferenceHash() != null) {
             targetIdentifier = "tombstone:" + event.getSubjectReferenceHash();
         }
