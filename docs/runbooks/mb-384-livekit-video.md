@@ -1,6 +1,6 @@
 # MB-384: local LiveKit video consultation
 
-Owner: Consultation. Decision: [ADR 0038](../adr/0038-livekit-cloud-video-consultation.md).
+Owner: Consultation. Decision: [ADR 0039](../adr/0039-livekit-cloud-video-consultation.md).
 Public authority: [Consultation OpenAPI v1](../../contracts/openapi/consultation-service-v1.yaml).
 This runbook is not deployment, production or paid-provider approval.
 

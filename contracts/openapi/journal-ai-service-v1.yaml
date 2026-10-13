@@ -1270,17 +1270,56 @@ components:
       properties:
         ownerAccountId: { type: string, format: uuid }
         timezone: { type: string, minLength: 1, maxLength: 64 }
+    NotificationActivityAchievementMilestone:
+      type: object
+      additionalProperties: false
+      required: [days, reachedAt]
+      properties:
+        days: { type: integer, enum: [3, 7] }
+        reachedAt:
+          oneOf:
+            - { type: string, format: date-time }
+            - { type: "null" }
+    NotificationActivityAchievementFact:
+      type: object
+      additionalProperties: false
+      required: [distinctDays, longestStreak, firstOccurredAt, streakMilestones]
+      properties:
+        distinctDays: { type: integer, minimum: 0 }
+        longestStreak: { type: integer, minimum: 0 }
+        firstOccurredAt:
+          oneOf:
+            - { type: string, format: date-time }
+            - { type: "null" }
+        streakMilestones:
+          type: array
+          minItems: 2
+          maxItems: 2
+          items:
+            $ref: "#/components/schemas/NotificationActivityAchievementMilestone"
+    NotificationActivityAchievementFacts:
+      type: object
+      additionalProperties: false
+      required: [ownerAccountId, journal, emotionCheckIn]
+      properties:
+        ownerAccountId: { type: string, format: uuid }
+        journal:
+          $ref: "#/components/schemas/NotificationActivityAchievementFact"
+        emotionCheckIn:
+          $ref: "#/components/schemas/NotificationActivityAchievementFact"
     NotificationActivity:
       type: object
       additionalProperties: false
       required:
-        [asOfLocalDate, timezone, journal, emotionCheckIn, interpretation]
+        [asOfLocalDate, timezone, journal, emotionCheckIn, achievementFacts, interpretation]
       properties:
         asOfLocalDate: { type: string, format: date }
         timezone: { type: string, minLength: 1, maxLength: 64 }
         journal: { $ref: "#/components/schemas/NotificationActivityStreak" }
         emotionCheckIn:
           { $ref: "#/components/schemas/NotificationActivityStreak" }
+        achievementFacts:
+          { $ref: "#/components/schemas/NotificationActivityAchievementFacts" }
         interpretation:
           { type: string, const: FACTUAL_ACTIVITY_NOT_ADHERENCE_OR_RECOVERY }
     EmotionCheckInTombstone:

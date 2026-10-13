@@ -12,12 +12,52 @@ const StreakSchema = z
   })
   .strict();
 
+const AchievementActivitySchema = z
+  .object({
+    distinctDays: z.number().int().min(0),
+    longestStreak: z.number().int().min(0),
+    firstOccurredAt: z.iso.datetime().nullable(),
+    streakMilestones: z
+      .array(
+        z
+          .object({
+            days: z.number().int().positive(),
+            reachedAt: z.iso.datetime().nullable(),
+          })
+          .strict(),
+      )
+      .max(16),
+  })
+  .strict()
+  .superRefine((value, context) => {
+    const thresholds = value.streakMilestones.map(({ days }) => days);
+    if (
+      thresholds.length !== 2 ||
+      thresholds[0] !== 3 ||
+      thresholds[1] !== 7 ||
+      value.longestStreak > value.distinctDays ||
+      (value.distinctDays === 0) !== (value.firstOccurredAt === null) ||
+      value.streakMilestones.some(
+        ({ days, reachedAt }) => value.longestStreak >= days !== (reachedAt !== null),
+      )
+    ) {
+      context.addIssue({ code: 'custom', message: 'Inconsistent achievement activity facts' });
+    }
+  });
+
 const NotificationActivitySchema = z
   .object({
     asOfLocalDate: z.iso.date(),
     timezone: z.string().min(1).max(64),
     journal: StreakSchema,
     emotionCheckIn: StreakSchema,
+    achievementFacts: z
+      .object({
+        ownerAccountId: z.uuid(),
+        journal: AchievementActivitySchema,
+        emotionCheckIn: AchievementActivitySchema,
+      })
+      .strict(),
     interpretation: z.literal('FACTUAL_ACTIVITY_NOT_ADHERENCE_OR_RECOVERY'),
   })
   .strict();

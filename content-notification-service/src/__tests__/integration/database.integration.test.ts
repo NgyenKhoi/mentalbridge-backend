@@ -24,6 +24,11 @@ import {
 } from '../../resources/resource-engagement.repository.js';
 import { ResourceRewardRepository } from '../../resources/resource-reward.repository.js';
 import { calculateResourceRewards } from '../../resources/resource-reward.policy.js';
+import {
+  AchievementPreferenceVersionMismatchError,
+  AchievementRepository,
+} from '../../achievements/achievement.repository.js';
+import { calculateAchievements } from '../../achievements/achievement.policy.js';
 import { WellbeingDigestRepository } from '../../wellbeing-digest/wellbeing-digest.repository.js';
 import {
   CommunityNotificationDedupeConflictError,
@@ -90,6 +95,7 @@ describe('Database Integration', () => {
       '19_complete_resource_editorial_lifecycle.sql',
       '20_add_resource_reward_visibility.sql',
       '21_persist_resource_engagement.sql',
+      '22_add_private_achievement_preference.sql',
     ]) {
       if (migration === '10_persist_notification_preferences.sql') {
         await pool.query(
@@ -1467,6 +1473,75 @@ describe('Database Integration', () => {
         [owner, resourceId],
       );
       expect(calculateResourceRewards((await repository.read(owner)).facts, owner).totalXp).toBe(5);
+    });
+  });
+
+  describe('private achievement read model', () => {
+    it('keeps resource evidence owner-scoped, reflects deletion, and versions visibility', async () => {
+      const database = {
+        query: (text: string, parameters?: unknown[]) => pool.query(text, parameters),
+      } as unknown as DatabaseService;
+      const repository = new AchievementRepository(database);
+      const owner = '12710000-0000-4000-8000-000000000001';
+      const otherOwner = '12710000-0000-4000-8000-000000000002';
+      const resourceId = '12710000-0000-4000-8000-000000000003';
+      await pool.query(
+        `INSERT INTO resource
+           (id, category, locale, title, summary, content_body, source_organization,
+            source_title, source_url, source_review_note, status, reviewed_by,
+            reviewed_at, effective_at, source_review_status, resource_kind,
+            interaction_type, repeatability, completion_mode, streak_eligible)
+         VALUES ($1, 'BREATHING', 'vi-VN', 'Achievement evidence', 'Summary', 'Body',
+           'Reviewed source', 'Reviewed title', 'https://example.com/source', 'Reviewed note',
+           'PUBLISHED', '12710000-0000-4000-8000-000000000099', now(), now(),
+           'REVIEWED', 'PRACTICE', 'BREATHING_PACER', 'REPEATABLE', 'TIMED', true)`,
+        [resourceId],
+      );
+      await pool.query(
+        `INSERT INTO resource_publication_snapshot
+           (resource_id, content_version, snapshot, published_by, published_at)
+         SELECT id, version, to_jsonb(resource), reviewed_by, reviewed_at
+         FROM resource WHERE id = $1`,
+        [resourceId],
+      );
+      await pool.query(
+        `INSERT INTO resource_daily_progress
+           (owner_id, resource_id, local_date, resource_version, status,
+            completed_action_ids, completed_at)
+         VALUES ($1, $2, '2026-10-12', 0, 'COMPLETED', ARRAY['done'],
+           '2026-10-12T04:00:00Z')`,
+        [owner, resourceId],
+      );
+
+      const source = await repository.read(owner);
+      expect(source.preference).toEqual({ visibilityState: 'VISIBLE', version: '0' });
+      expect(
+        calculateAchievements({ activity: null, resourceFacts: source.facts }).find(
+          ({ definitionId }) => definitionId === 'resource.first-completion',
+        ),
+      ).toMatchObject({ status: 'EARNED', unlockedAt: '2026-10-12T04:00:00.000Z' });
+      expect((await repository.read(otherOwner)).facts).toHaveLength(0);
+
+      await repository.setVisibility(owner, 'HIDDEN', '0');
+      await repository.setVisibility(owner, 'HIDDEN', '1');
+      expect((await repository.read(owner)).preference).toEqual({
+        visibilityState: 'HIDDEN',
+        version: '1',
+      });
+      await expect(repository.setVisibility(owner, 'VISIBLE', '0')).rejects.toBeInstanceOf(
+        AchievementPreferenceVersionMismatchError,
+      );
+
+      await pool.query(
+        `DELETE FROM resource_daily_progress WHERE owner_id = $1 AND resource_id = $2`,
+        [owner, resourceId],
+      );
+      expect(
+        calculateAchievements({
+          activity: null,
+          resourceFacts: (await repository.read(owner)).facts,
+        }).find(({ definitionId }) => definitionId === 'resource.first-completion'),
+      ).toMatchObject({ status: 'UNEARNED', unlockedAt: null });
     });
   });
 

@@ -15,6 +15,8 @@ import {
   RESOURCE_ENGAGEMENT_SERVICE_TOKEN,
   RESOURCE_REWARD_REPOSITORY_TOKEN,
   RESOURCE_REWARD_SERVICE_TOKEN,
+  ACHIEVEMENT_REPOSITORY_TOKEN,
+  ACHIEVEMENT_SERVICE_TOKEN,
   E2E_OUTAGE_STATE_TOKEN,
   RESOURCE_ELIGIBILITY_REPOSITORY_TOKEN,
   RESOURCE_ELIGIBILITY_SERVICE_TOKEN,
@@ -61,6 +63,9 @@ import { ResourceEngagementService } from './resources/resource-engagement.servi
 import { ResourceRewardController } from './resources/resource-reward.controller.js';
 import { ResourceRewardRepository } from './resources/resource-reward.repository.js';
 import { ResourceRewardService } from './resources/resource-reward.service.js';
+import { AchievementController } from './achievements/achievement.controller.js';
+import { AchievementRepository } from './achievements/achievement.repository.js';
+import { AchievementService } from './achievements/achievement.service.js';
 import { E2eOutageController } from './e2e/e2e-outage.controller.js';
 import { AuthModule } from './auth/auth.module.js';
 import { JwtStrategy } from './auth/jwt.strategy.js';
@@ -123,6 +128,7 @@ export interface ApplicationDependencies {
   readonly resourceJourneyRepository?: ResourceJourneyRepository;
   readonly resourceEngagementRepository?: ResourceEngagementRepository;
   readonly resourceRewardRepository?: ResourceRewardRepository;
+  readonly achievementRepository?: AchievementRepository;
   readonly outageState?: { enabled: boolean };
   readonly resourceEligibilityRepository?: ResourceEligibilityRepository;
   readonly safetyDirectoryRepository?: SafetyDirectoryRepository;
@@ -178,6 +184,9 @@ export const createAppModule = (
   const resourceRewardRepositoryProvider: Provider = dependencies.resourceRewardRepository
     ? { provide: RESOURCE_REWARD_REPOSITORY_TOKEN, useValue: dependencies.resourceRewardRepository }
     : { provide: RESOURCE_REWARD_REPOSITORY_TOKEN, useClass: ResourceRewardRepository };
+  const achievementRepositoryProvider: Provider = dependencies.achievementRepository
+    ? { provide: ACHIEVEMENT_REPOSITORY_TOKEN, useValue: dependencies.achievementRepository }
+    : { provide: ACHIEVEMENT_REPOSITORY_TOKEN, useClass: AchievementRepository };
   const eligibilityRepositoryProvider: Provider = dependencies.resourceEligibilityRepository
     ? {
         provide: RESOURCE_ELIGIBILITY_REPOSITORY_TOKEN,
@@ -218,6 +227,7 @@ export const createAppModule = (
       ResourceBookmarkController,
       ResourceBingoController,
       ResourceRewardController,
+      AchievementController,
       ResourceEligibilityController,
       E2eOutageController,
       SafetyDirectoryController,
@@ -245,6 +255,8 @@ export const createAppModule = (
       { provide: RESOURCE_ENGAGEMENT_SERVICE_TOKEN, useClass: ResourceEngagementService },
       resourceRewardRepositoryProvider,
       { provide: RESOURCE_REWARD_SERVICE_TOKEN, useClass: ResourceRewardService },
+      achievementRepositoryProvider,
+      { provide: ACHIEVEMENT_SERVICE_TOKEN, useClass: AchievementService },
       eligibilityRepositoryProvider,
       { provide: RESOURCE_ELIGIBILITY_SERVICE_TOKEN, useClass: ResourceEligibilityService },
       safetyDirectoryRepositoryProvider,

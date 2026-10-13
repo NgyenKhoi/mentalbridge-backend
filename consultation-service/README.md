@@ -107,7 +107,7 @@ the existing local Spring configuration mechanism or injected environment.
 slot publication. `LIVEKIT_TOKEN_TTL=PT2M` is bounded to 30 seconds–5 minutes.
 No secret/token may enter browser configuration, logs, URLs or source control.
 Missing provider configuration fails video operations closed, not unrelated
-appointment/manual brief workflows. See [ADR 0038](../docs/adr/0038-livekit-cloud-video-consultation.md)
+appointment/manual brief workflows. See [ADR 0039](../docs/adr/0039-livekit-cloud-video-consultation.md)
 and the [MB-384 local video runbook](../docs/runbooks/mb-384-livekit-video.md).
 
 | Variable | Required | Purpose | Safe local example |

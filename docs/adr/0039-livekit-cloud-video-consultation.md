@@ -1,4 +1,4 @@
-# ADR 0038: LiveKit Cloud video consultation
+# ADR 0039: LiveKit Cloud video consultation
 
 - Status: Accepted provider, privacy, access, retention and Specialist completion command; automatic timeout settlement not approved
 - Date: 2026-10-12

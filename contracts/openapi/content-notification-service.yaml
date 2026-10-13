@@ -569,6 +569,77 @@ paths:
         "422": { $ref: "#/components/responses/ValidationError" }
         "503": { $ref: "#/components/responses/ServiceUnavailable" }
 
+  /api/v1/achievements:
+    x-mentalbridge-status: implemented
+    get:
+      tags: [Resource progress]
+      summary: Read the authenticated owner's private multi-domain achievement collection
+      description: >-
+        Returns deterministic facts from minimized owner projections. Journal and emotion
+        content, clinical scores, consultation data and inferred recovery states never enter
+        this boundary. A failed domain source is reported explicitly and does not reuse stale facts.
+      operationId: getAchievements
+      security:
+        - BearerAuth: []
+      parameters:
+        - name: timezone
+          in: query
+          required: true
+          schema: { type: string, minLength: 1, maxLength: 64, example: Asia/Ho_Chi_Minh }
+      responses:
+        "200":
+          description: Private owner-scoped collection
+          headers:
+            ETag:
+              schema: { type: string, pattern: '^"(0|[1-9][0-9]*)"$' }
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/AchievementCollection"
+        "401": { $ref: "#/components/responses/Unauthorized" }
+        "422": { $ref: "#/components/responses/ValidationError" }
+        "503": { $ref: "#/components/responses/ServiceUnavailable" }
+
+  /api/v1/achievements/preference:
+    x-mentalbridge-status: implemented
+    put:
+      tags: [Resource progress]
+      summary: Replace the owner's private collection visibility preference
+      operationId: setAchievementVisibility
+      security:
+        - BearerAuth: []
+      parameters:
+        - name: timezone
+          in: query
+          required: true
+          schema: { type: string, minLength: 1, maxLength: 64, example: Asia/Ho_Chi_Minh }
+        - name: If-Match
+          in: header
+          required: true
+          schema: { type: string, pattern: '^"(0|[1-9][0-9]*)"$' }
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/AchievementPreferenceUpdate"
+      responses:
+        "200":
+          description: Updated preference and freshly calculated collection
+          headers:
+            ETag:
+              schema: { type: string, pattern: '^"(0|[1-9][0-9]*)"$' }
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/AchievementCollection"
+        "400": { $ref: "#/components/responses/RequestRejected" }
+        "401": { $ref: "#/components/responses/Unauthorized" }
+        "412": { $ref: "#/components/responses/Conflict" }
+        "422": { $ref: "#/components/responses/ValidationError" }
+        "428": { $ref: "#/components/responses/RequestRejected" }
+        "503": { $ref: "#/components/responses/ServiceUnavailable" }
+
   /api/v1/resource-journeys/{localDate}:
     x-mentalbridge-status: implemented
     put:
@@ -2069,6 +2140,141 @@ components:
           maxItems: 10
           items:
             $ref: "#/components/schemas/ResourceRewardGrant"
+
+    AchievementVisibility:
+      type: string
+      enum: [VISIBLE, HIDDEN]
+
+    AchievementPreferenceUpdate:
+      type: object
+      additionalProperties: false
+      required: [visibilityState]
+      properties:
+        visibilityState:
+          $ref: "#/components/schemas/AchievementVisibility"
+
+    AchievementProgress:
+      type: object
+      additionalProperties: false
+      required: [current, target, unit]
+      properties:
+        current: { type: integer, minimum: 0 }
+        target: { type: integer, minimum: 1, maximum: 100 }
+        unit:
+          type: string
+          enum: [EVENT, CONSECUTIVE_DAY, DISTINCT_RESOURCE, PRACTICE_DAY]
+
+    AchievementItem:
+      type: object
+      additionalProperties: false
+      required:
+        [
+          definitionId,
+          domain,
+          kind,
+          tier,
+          title,
+          description,
+          status,
+          evidenceClass,
+          unlockedAt,
+          ruleVersion,
+          privacy,
+          progress,
+        ]
+      properties:
+        definitionId:
+          type: string
+          pattern: "^[a-z]+[a-z0-9.-]{2,79}$"
+        domain:
+          type: string
+          enum: [JOURNAL, EMOTION_CHECK_IN, RESOURCE, JOURNEY]
+        kind:
+          type: string
+          enum: [MILESTONE, CONSISTENCY, JOURNEY]
+        tier:
+          type: string
+          enum: [FIRST_STEP, STEADY_STEP, DEEPENING_STEP, JOURNEY]
+        title: { type: string, minLength: 1, maxLength: 120 }
+        description: { type: string, minLength: 1, maxLength: 300 }
+        status:
+          type: string
+          enum: [EARNED, UNEARNED, SOURCE_UNAVAILABLE, GRANDFATHERED, DEFERRED]
+        evidenceClass:
+          type: string
+          enum:
+            [
+              OWNER_SOURCE_FACT,
+              OWNER_STREAK_MILESTONE,
+              OWNER_PRACTICE_WINDOW,
+              USER_CONFIRMED_JOURNEY,
+            ]
+        unlockedAt:
+          type: string
+          format: date-time
+          nullable: true
+        ruleVersion:
+          type: string
+          enum: [achievement-rules-v1]
+        privacy:
+          type: string
+          enum: [PRIVATE]
+        progress:
+          allOf:
+            - $ref: "#/components/schemas/AchievementProgress"
+          nullable: true
+
+    AchievementSource:
+      type: object
+      additionalProperties: false
+      required: [domain, availability, asOfLocalDate]
+      properties:
+        domain:
+          type: string
+          enum: [JOURNAL, EMOTION_CHECK_IN, RESOURCE, JOURNEY]
+        availability:
+          type: string
+          enum: [AVAILABLE, UNAVAILABLE, DEFERRED]
+        asOfLocalDate:
+          type: string
+          format: date
+          nullable: true
+
+    AchievementCollection:
+      type: object
+      additionalProperties: false
+      required:
+        [
+          visibilityState,
+          preferenceVersion,
+          policyVersion,
+          calculatedAt,
+          sources,
+          items,
+        ]
+      properties:
+        visibilityState:
+          $ref: "#/components/schemas/AchievementVisibility"
+        preferenceVersion:
+          type: string
+          pattern: "^(0|[1-9][0-9]*)$"
+          maxLength: 19
+        policyVersion:
+          type: string
+          enum: [achievement-rules-v1]
+        calculatedAt: { type: string, format: date-time }
+        sources:
+          type: array
+          minItems: 4
+          maxItems: 4
+          items:
+            $ref: "#/components/schemas/AchievementSource"
+        items:
+          type: array
+          minItems: 11
+          maxItems: 11
+          items:
+            $ref: "#/components/schemas/AchievementItem"
 
     ResourceKind:
       type: string

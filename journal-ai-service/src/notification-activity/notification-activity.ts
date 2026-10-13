@@ -39,13 +39,17 @@ interface JournalActivityRow {
 interface EmotionActivityRow {
   readonly ownerAccountId: string;
   readonly localDate: string;
+  readonly createdAt: Date;
   readonly deleted: boolean;
 }
 
 export interface NotificationActivityRepository {
   snapshot(ownerAccountId: string): Promise<{
     readonly journalOccurredAt: readonly Date[];
-    readonly emotionLocalDates: readonly string[];
+    readonly emotionActivity: readonly {
+      readonly localDate: string;
+      readonly occurredAt: Date;
+    }[];
   }>;
 }
 
@@ -138,6 +142,56 @@ export const factualStreak = (
   };
 };
 
+const ACHIEVEMENT_STREAK_THRESHOLDS = [3, 7] as const;
+
+export const factualAchievementActivity = (
+  activity: readonly {
+    readonly localDate: string;
+    readonly occurredAt: Date;
+  }[],
+  asOfLocalDate: string,
+) => {
+  const earliestByDay = new Map<string, Date>();
+  for (const item of activity) {
+    if (item.localDate > asOfLocalDate) continue;
+    const current = earliestByDay.get(item.localDate);
+    if (!current || item.occurredAt < current)
+      earliestByDay.set(item.localDate, item.occurredAt);
+  }
+  const ordered = [...earliestByDay.entries()].sort(([left], [right]) =>
+    left.localeCompare(right),
+  );
+  const reachedAt = new Map<number, string>();
+  let run = 0;
+  let longestStreak = 0;
+  let previous: number | undefined;
+  for (const [localDate, occurredAt] of ordered) {
+    const dateOrdinal = ordinal(localDate);
+    run = previous !== undefined && dateOrdinal === previous + 1 ? run + 1 : 1;
+    longestStreak = Math.max(longestStreak, run);
+    for (const threshold of ACHIEVEMENT_STREAK_THRESHOLDS) {
+      if (run >= threshold && !reachedAt.has(threshold)) {
+        reachedAt.set(threshold, occurredAt.toISOString());
+      }
+    }
+    previous = dateOrdinal;
+  }
+  return {
+    distinctDays: ordered.length,
+    longestStreak,
+    firstOccurredAt:
+      activity
+        .filter((item) => item.localDate <= asOfLocalDate)
+        .map((item) => item.occurredAt)
+        .sort((left, right) => left.getTime() - right.getTime())[0]
+        ?.toISOString() ?? null,
+    streakMilestones: ACHIEVEMENT_STREAK_THRESHOLDS.map((days) => ({
+      days,
+      reachedAt: reachedAt.get(days) ?? null,
+    })),
+  };
+};
+
 @Injectable()
 export class MongoNotificationActivityRepository
   implements NotificationActivityRepository, OnApplicationShutdown
@@ -167,12 +221,19 @@ export class MongoNotificationActivityRepository
           .toArray(),
         this.emotions
           .find({ ownerAccountId, deleted: false })
-          .project<{ localDate: string }>({ _id: 0, localDate: 1 })
+          .project<{ localDate: string; createdAt: Date }>({
+            _id: 0,
+            localDate: 1,
+            createdAt: 1,
+          })
           .toArray(),
       ]);
       return {
         journalOccurredAt: journals.map((row) => row.occurredAt),
-        emotionLocalDates: emotions.map((row) => row.localDate),
+        emotionActivity: emotions.map((row) => ({
+          localDate: row.localDate,
+          occurredAt: row.createdAt,
+        })),
       };
     } catch (error) {
       throw new ServiceUnavailableException({ cause: error });
@@ -201,14 +262,24 @@ export class NotificationActivityService {
     const journalDates = snapshot.journalOccurredAt.map((occurredAt) =>
       localDateAt(occurredAt, parsedTimezone.data),
     );
+    const journalActivity = snapshot.journalOccurredAt.map((occurredAt) => ({
+      localDate: localDateAt(occurredAt, parsedTimezone.data),
+      occurredAt,
+    }));
+    const emotionDates = snapshot.emotionActivity.map((item) => item.localDate);
     return {
       asOfLocalDate,
       timezone: parsedTimezone.data,
       journal: factualStreak(journalDates, asOfLocalDate),
-      emotionCheckIn: calculateEmotionStreak(
-        snapshot.emotionLocalDates,
-        asOfLocalDate,
-      ),
+      emotionCheckIn: calculateEmotionStreak(emotionDates, asOfLocalDate),
+      achievementFacts: {
+        ownerAccountId,
+        journal: factualAchievementActivity(journalActivity, asOfLocalDate),
+        emotionCheckIn: factualAchievementActivity(
+          snapshot.emotionActivity,
+          asOfLocalDate,
+        ),
+      },
       interpretation: "FACTUAL_ACTIVITY_NOT_ADHERENCE_OR_RECOVERY" as const,
     };
   }

@@ -2118,6 +2118,19 @@ Stores only whether the authenticated owner wants the optional reward presentati
 | `version` | Monotonic counter incremented only when the preference changes. |
 | `updated_at` | UTC instant of the latest preference change. |
 
+### `content.achievement_preference`
+
+Stores only the authenticated owner's reversible presentation choice for the
+private achievement collection. Achievement items are deterministic read-model
+records over authoritative owner facts and are not duplicated in this table.
+
+| Field | Purpose |
+| --- | --- |
+| `owner_id` | External Identity account UUID from the verified JWT and table primary key. |
+| `visibility_state` | `VISIBLE` or `HIDDEN`; it has no effect on source records or product access. |
+| `version` | Monotonic optimistic-concurrency version incremented on an effective preference change. |
+| `updated_at` | UTC instant of the latest effective preference change. |
+
 ### `content.resource_bookmark`
 
 Private persistent saved-resource state. The owner is always taken from the

@@ -214,6 +214,12 @@ bookmarks plus versioned weekly Bingo self-confirmation. Verified Bingo evidence
 is not copied into the board: reads reconcile current exact-version progress and
 eligible plan-bound practice, so corrections cannot leave a fabricated mark.
 
+Migration `22_add_private_achievement_preference.sql` stores only the owner's
+versioned `VISIBLE` or `HIDDEN` gallery preference. `GET /api/v1/achievements`
+calculates `achievement-rules-v1` from exact reviewed Resource facts and the
+owner-bound minimized Journal/AI projection. Journal/AI failure is an explicit
+per-domain unavailable state; it never becomes zero or stale progress.
+
 The controlled Review 1 seed, MB-337 eligibility matrix, and visibly synthetic non-dialable safety-directory fixture are owner-module migrations with a separate ledger (`pgmigrations_review1`), so running normal schema migrations cannot accidentally mark controlled data as applied. The seeds reject drift from their reviewed decisions. Machine-readable resource inventory, reviewer rationale, explicit ineligible decisions, and Care requests are kept in `../contracts/fixtures/content/resource-eligibility-v1-controlled-demo.json`. No real safety contact is published by the controlled fixture. For the shared dev/staging database only, run:
 
 ```bash
