@@ -12,11 +12,14 @@ import java.util.HexFormat;
 import java.util.List;
 import java.util.UUID;
 
+import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.dao.DataIntegrityViolationException;
 import org.springframework.http.HttpStatus;
 import org.springframework.jdbc.core.simple.JdbcClient;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
+
+import com.fasterxml.jackson.databind.ObjectMapper;
 
 import com.mentalbridge.community.moderation.CommunityModerationModels.Action;
 import com.mentalbridge.community.moderation.CommunityModerationModels.ActionRecord;
@@ -41,10 +44,17 @@ class CommunityModerationService {
 
 	private final JdbcClient jdbc;
 	private final Clock clock;
+	private final ObjectMapper objectMapper;
 
 	CommunityModerationService(JdbcClient jdbc, Clock clock) {
+		this(jdbc, clock, new ObjectMapper().findAndRegisterModules());
+	}
+
+	@Autowired
+	public CommunityModerationService(JdbcClient jdbc, Clock clock, ObjectMapper objectMapper) {
 		this.jdbc = jdbc;
 		this.clock = clock;
+		this.objectMapper = objectMapper;
 	}
 
 	@Transactional
@@ -177,8 +187,12 @@ class CommunityModerationService {
 				row.createdAt(), row.updatedAt(), row.version());
 	}
 
-	@Transactional
 	ModerationCase act(UUID actorSubject, UUID caseId, String idempotencyKey, CreateModerationActionRequest request) {
+		return act(actorSubject, caseId, idempotencyKey, request, null);
+	}
+
+	@Transactional
+	ModerationCase act(UUID actorSubject, UUID caseId, String idempotencyKey, CreateModerationActionRequest request, UUID correlationId) {
 		validateKey(idempotencyKey);
 		if (request == null || request.action() == null || request.reasonCode() == null
 				|| !request.reasonCode().matches("[A-Z0-9_]{1,64}")) throw invalid("Moderation action is invalid");
@@ -209,6 +223,72 @@ class CommunityModerationService {
 				.param("key", idempotencyKey).param("fingerprint", fingerprint).param("now", timestamp(now)).update();
 		jdbc.sql("update community_moderation_case set state = 'RESOLVED', updated_at = :now, version = version + 1 where id = :id")
 				.param("now", timestamp(now)).param("id", caseId).update();
+
+		if (correlationId != null) {
+			String eventType;
+			String actionName;
+
+			if (request.action() == Action.REMOVE && target.type() == TargetType.POST) {
+				eventType = "community.post.removed";
+				actionName = "COMMUNITY_POST_REMOVED";
+			} else if (request.action() == Action.RESTRICT_COMMUNITY_ACCESS) {
+				eventType = "community.user.suspended";
+				actionName = "COMMUNITY_USER_SUSPENDED";
+			} else if (request.action() == Action.NO_ACTION) {
+				eventType = "community.moderation.case-resolved";
+				actionName = "MODERATION_CASE_RESOLVED";
+			} else {
+				eventType = "community.moderation.action-applied";
+				actionName = "MODERATION_ACTION_APPLIED";
+			}
+
+			UUID authorAccountSubject = null;
+			if (target.authorId() != null) {
+				authorAccountSubject = jdbc.sql("select account_subject from community_profile where id = :profileId")
+						.param("profileId", target.authorId()).query(UUID.class).optional().orElse(null);
+			}
+
+			UUID targetAccountId = authorAccountSubject;
+			String targetIdentifier = authorAccountSubject != null ? ("account:" + authorAccountSubject) : null;
+
+			var auditEvent = new CommunityAdminAuditEvent(
+					UUID.randomUUID(),
+					eventType,
+					now,
+					"community-service",
+					"1.0",
+					"COMMUNITY",
+					"COMMUNITY_MODERATION",
+					actorSubject,
+					"ADMIN",
+					actionName,
+					"SUCCEEDED",
+					request.reasonCode(),
+					correlationId,
+					targetAccountId,
+					targetIdentifier
+			);
+
+			try {
+				String payloadJson = objectMapper.writeValueAsString(auditEvent);
+				jdbc.sql("""
+						insert into community_interaction_outbox (
+						    id, deduplication_key, target_id, event_payload, occurred_at, created_at
+						) values (
+						    :id, :dedupKey, :targetId, :payload::jsonb, :occurredAt, :createdAt
+						) on conflict (deduplication_key) do nothing
+						""").param("id", auditEvent.eventId())
+						.param("dedupKey", "audit:moderation:" + caseId + ":" + outcome.target().version() + ":" + request.action().name())
+						.param("targetId", targetAccountId != null ? targetAccountId : caseId)
+						.param("payload", payloadJson)
+						.param("occurredAt", timestamp(now))
+						.param("createdAt", timestamp(now))
+						.update();
+			}
+			catch (Exception e) {
+				throw new IllegalStateException("Failed to persist community admin audit outbox event", e);
+			}
+		}
 		return get(caseId);
 	}
 
@@ -391,7 +471,7 @@ class CommunityModerationService {
 		}
 	}
 
-	private String fingerprint(String... values) {
+	String fingerprint(String... values) {
 		try {
 			var digest = MessageDigest.getInstance("SHA-256");
 			for (var value : values) {
@@ -414,19 +494,19 @@ class CommunityModerationService {
 		return new CommunityApiException(HttpStatus.NOT_FOUND, "COMMUNITY_MODERATION_CASE_NOT_FOUND", "Moderation case was not found");
 	}
 
-	private record Snapshot(String content, String state, long version, UUID authorId, String warning) {
+	record Snapshot(String content, String state, long version, UUID authorId, String warning) {
 	}
 
-	private record ActionOutcome(Snapshot target, String priorState, String resultingState) {
+	record ActionOutcome(Snapshot target, String priorState, String resultingState) {
 	}
 
-	private record Target(TargetType type, UUID id, UUID authorId) {
+	record Target(TargetType type, UUID id, UUID authorId) {
 	}
 
-	private record Replay(String fingerprint, UUID caseId) {
+	record Replay(String fingerprint, UUID caseId) {
 	}
 
-	private record CaseRow(UUID id, TargetType targetType, UUID targetId, CaseState state, Priority priority,
+	record CaseRow(UUID id, TargetType targetType, UUID targetId, CaseState state, Priority priority,
 			String evidenceContent, String evidenceState, long evidenceVersion, Instant createdAt, Instant updatedAt,
 			long version) {
 	}

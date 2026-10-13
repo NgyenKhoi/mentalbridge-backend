@@ -39,7 +39,8 @@ class ConsultationLiquibaseChangelogTests {
 							"consultation-020-subscription-momo-payment",
 							"consultation-021-appointment-plan-action-reference",
 							"consultation-021-sandbox-commercial-policy",
-							"consultation-022-durable-checkout-preparation");
+							"consultation-022-durable-checkout-preparation",
+							"consultation-019-consultation-admin-audit-outbox");
 		}
 	}
 }

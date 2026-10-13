@@ -17,7 +17,7 @@ class IdentityLiquibaseChangelogTests {
 			var parser = ChangeLogParserFactory.getInstance().getParser(path, resources);
 			var changelog = parser.parse(path, new ChangeLogParameters(), resources);
 
-			assertThat(changelog.getChangeSets()).hasSize(8);
+			assertThat(changelog.getChangeSets()).hasSize(9);
 			assertThat(changelog.getChangeSets()).extracting(changeSet -> changeSet.getId()).containsExactly(
 					"identity-001-extensions",
 					"identity-003-account-and-roles",
@@ -26,7 +26,8 @@ class IdentityLiquibaseChangelogTests {
 					"identity-006-outbox-and-audit",
 					"identity-007-single-account-role",
 					"identity-008-platform-reporting",
-					"identity-009-report-schedules");
+					"identity-009-report-schedules",
+					"identity-009-audit-browse-support");
 		}
 	}
 

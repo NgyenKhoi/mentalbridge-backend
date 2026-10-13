@@ -517,6 +517,7 @@ paths:
       parameters:
         - $ref: "#/components/parameters/ModerationCaseId"
         - $ref: "#/components/parameters/IdempotencyKey"
+        - $ref: "#/components/parameters/CorrelationId"
       requestBody:
         required: true
         content:
@@ -562,6 +563,12 @@ components:
       in: path
       required: true
       schema: { type: string, format: uuid }
+    CorrelationId:
+      name: X-Correlation-Id
+      in: header
+      required: false
+      schema: { type: string, format: uuid }
+      description: Caller correlation identifier; the server generates one when omitted
     IdempotencyKey:
       name: Idempotency-Key
       in: header

@@ -62,6 +62,7 @@ describe('ResourceRepository command consistency', () => {
       '9_add_resource_source_provenance.sql',
       '14_add_resource_experience_model.sql',
       '19_complete_resource_editorial_lifecycle.sql',
+      '19_add_content_admin_audit_outbox.sql',
     ]) {
       await migrationPool.query(await readFile(join(migrationDirectory, name), 'utf8'));
     }
