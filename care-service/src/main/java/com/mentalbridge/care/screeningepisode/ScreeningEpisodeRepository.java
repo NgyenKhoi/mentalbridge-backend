@@ -3,6 +3,7 @@ package com.mentalbridge.care.screeningepisode;
 import java.util.List;
 import java.util.Optional;
 import java.util.UUID;
+import java.time.Instant;
 
 import org.springframework.data.jpa.repository.JpaRepository;
 import org.springframework.data.jpa.repository.Lock;
@@ -11,7 +12,9 @@ import org.springframework.data.repository.query.Param;
 
 import jakarta.persistence.LockModeType;
 
-interface ScreeningEpisodeRepository extends JpaRepository<ScreeningEpisodeEntity, UUID> {
+public interface ScreeningEpisodeRepository extends JpaRepository<ScreeningEpisodeEntity, UUID> {
+
+	long countByStatusAndCompletedAtGreaterThanEqualAndCompletedAtLessThan(String status, Instant from, Instant to);
 
 	@Lock(LockModeType.PESSIMISTIC_WRITE)
 	@Query("""

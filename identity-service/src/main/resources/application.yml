@@ -62,6 +62,11 @@ mentalbridge:
       enabled: ${IDENTITY_PLATFORM_REPORTING_ENABLED:true}
       poll-interval: ${IDENTITY_PLATFORM_REPORTING_POLL_INTERVAL:PT2S}
       retention-sweep-interval: ${IDENTITY_PLATFORM_REPORTING_RETENTION_SWEEP_INTERVAL:PT1H}
+    product-journey:
+      care-base-url: ${CARE_SERVICE_BASE_URL:http://localhost:8081}
+      consultation-base-url: ${CONSULTATION_SERVICE_BASE_URL:http://localhost:8082}
+      connect-timeout: ${PRODUCT_JOURNEY_CONNECT_TIMEOUT:PT1S}
+      read-timeout: ${PRODUCT_JOURNEY_READ_TIMEOUT:PT2S}
 
 eureka:
   client:
