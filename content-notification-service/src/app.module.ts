@@ -109,6 +109,7 @@ import {
   AppointmentStatusProjector,
 } from './appointment-reminders/appointment-status.consumer.js';
 import { AppointmentReminderScheduler } from './appointment-reminders/appointment-reminder.scheduler.js';
+import { SpecialistAppointmentNotificationRepository } from './appointment-reminders/specialist-appointment-notification.repository.js';
 import {
   CommunityInteractionConsumer,
   CommunityInteractionProjector,
@@ -278,6 +279,7 @@ export const createAppModule = (
       { provide: APPOINTMENT_EMAIL_DELIVERY_TOKEN, useClass: BrevoAppointmentEmailDelivery },
       { provide: APPOINTMENT_REMINDER_SERVICE_TOKEN, useClass: AppointmentReminderService },
       AppointmentStatusProjector,
+      SpecialistAppointmentNotificationRepository,
       AppointmentStatusConsumer,
       AppointmentReminderScheduler,
       CommunityNotificationRepository,

@@ -17,7 +17,10 @@ import { CurrentUser } from '../auth/current-user.decorator.js';
 import { JwtAuthGuard } from '../auth/jwt-auth.guard.js';
 import type { AuthenticatedUser } from '../auth/jwt.strategy.js';
 import { NOTIFICATION_PREFERENCE_SERVICE_TOKEN } from '../application.tokens.js';
-import { NotificationPreferencePatchSchema } from './notification-preference.dto.js';
+import {
+  NotificationPreferencePatchSchema,
+  SpecialistNotificationPreferencePatchSchema,
+} from './notification-preference.dto.js';
 import { NotificationPreferenceVersionMismatchError } from './notification-preference.repository.js';
 import {
   InvalidNotificationPreferenceError,
@@ -36,6 +39,10 @@ function setHeaders(response: Response, preferences: NotificationPreferences): v
   response.setHeader('Cache-Control', 'private, no-store');
 }
 
+function ownerType(user: AuthenticatedUser): 'USER' | 'SPECIALIST' {
+  return user.roles.includes('SPECIALIST') ? 'SPECIALIST' : 'USER';
+}
+
 @Controller('api/v1/notification-preferences')
 @UseGuards(JwtAuthGuard)
 export class NotificationPreferenceController {
@@ -49,7 +56,7 @@ export class NotificationPreferenceController {
     @CurrentUser() user: AuthenticatedUser,
     @Res({ passthrough: true }) response: Response,
   ): Promise<NotificationPreferences> {
-    const preferences = await this.service.get(user.accountId);
+    const preferences = await this.service.get(user.accountId, ownerType(user));
     setHeaders(response, preferences);
     return preferences;
   }
@@ -77,7 +84,11 @@ export class NotificationPreferenceController {
 
     let patch;
     try {
-      patch = NotificationPreferencePatchSchema.parse(body);
+      patch = (
+        ownerType(user) === 'SPECIALIST'
+          ? SpecialistNotificationPreferencePatchSchema
+          : NotificationPreferencePatchSchema
+      ).parse(body);
     } catch (error) {
       if (error instanceof ZodError) {
         throw new UnprocessableEntityException({
@@ -92,7 +103,12 @@ export class NotificationPreferenceController {
     }
 
     try {
-      const preferences = await this.service.update(user.accountId, Number(match[1]), patch);
+      const preferences = await this.service.update(
+        user.accountId,
+        ownerType(user),
+        Number(match[1]),
+        patch,
+      );
       setHeaders(response, preferences);
       return preferences;
     } catch (error) {

@@ -17,6 +17,7 @@ import type { ServiceConfiguration } from '../configuration/configuration.js';
 import type { ReminderClock } from '../reminders/reminder-materialization.service.js';
 import type { AppointmentReminderRepository } from './appointment-reminder.repository.js';
 import type { AppointmentStatusChangedEvent } from './appointment-reminder.types.js';
+import { SpecialistAppointmentNotificationRepository } from './specialist-appointment-notification.repository.js';
 
 export const APPOINTMENT_STATUS_TOPIC = 'mentalbridge.consultation.appointment-status.v1';
 
@@ -34,6 +35,7 @@ const EventSchema = z
       .object({
         appointmentId: z.uuid(),
         ownerAccountId: z.uuid(),
+        specialistAccountId: z.uuid(),
         status: z.enum([
           'REQUESTED',
           'CONFIRMED',
@@ -63,6 +65,7 @@ export class AppointmentStatusProjector {
     @Inject(APPOINTMENT_REMINDER_REPOSITORY_TOKEN)
     private readonly repository: AppointmentReminderRepository,
     @Inject(REMINDER_CLOCK_TOKEN) private readonly clock: ReminderClock,
+    private readonly specialistNotifications: SpecialistAppointmentNotificationRepository,
   ) {}
 
   async project(value: unknown): Promise<void> {
@@ -70,6 +73,7 @@ export class AppointmentStatusProjector {
     if (event.aggregateId !== event.payload.appointmentId)
       throw new Error('Appointment aggregate identity mismatch');
     await this.repository.apply(event, this.clock.now());
+    await this.specialistNotifications.materialize(event);
   }
 }
 

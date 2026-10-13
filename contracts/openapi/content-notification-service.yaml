@@ -1341,6 +1341,7 @@ components:
           OPEN_JOURNAL,
           OPEN_MESSAGES,
           OPEN_APPOINTMENTS,
+          OPEN_SPECIALIST_APPOINTMENTS,
           OPEN_RESOURCES,
           OPEN_ASSESSMENTS,
           OPEN_RESOURCE,

@@ -1,7 +1,9 @@
 export type EmailCadence = 'IMMEDIATE' | 'DAILY_DIGEST' | 'WEEKLY_DIGEST';
+export type NotificationPreferenceOwnerType = 'USER' | 'SPECIALIST';
 
 export interface NotificationPreferenceRow {
   readonly user_id: string;
+  readonly owner_type: NotificationPreferenceOwnerType;
   readonly notifications_enabled: boolean;
   readonly channel_in_app_enabled: boolean;
   readonly channel_email_enabled: boolean;

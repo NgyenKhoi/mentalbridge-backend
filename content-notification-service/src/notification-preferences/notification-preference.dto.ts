@@ -56,3 +56,37 @@ export const NotificationPreferencePatchSchema = z
   .refine((value) => Object.keys(value).length > 0, 'at least one preference is required');
 
 export type NotificationPreferencePatchDto = z.infer<typeof NotificationPreferencePatchSchema>;
+
+export const SpecialistNotificationPreferencePatchSchema = z
+  .object({
+    notificationsEnabled: z.boolean().optional(),
+    channels: ChannelPatchSchema.optional(),
+    contentGroups: z
+      .object({
+        appointmentMessage: z.boolean().optional(),
+        resourceSystem: z.boolean().optional(),
+      })
+      .strict()
+      .refine((value) => Object.keys(value).length > 0, 'at least one content group is required')
+      .optional(),
+    quietHours: z
+      .object({
+        enabled: z.boolean().optional(),
+        start: TimeSchema.optional(),
+        end: TimeSchema.optional(),
+        timeZone: z.string().trim().min(1).max(64).optional(),
+      })
+      .strict()
+      .refine((value) => Object.keys(value).length > 0, 'at least one quiet-hour field is required')
+      .optional(),
+    email: z
+      .object({
+        cadence: z.enum(['IMMEDIATE', 'DAILY_DIGEST', 'WEEKLY_DIGEST']).optional(),
+        appointmentRemindersEnabled: z.boolean().optional(),
+      })
+      .strict()
+      .refine((value) => Object.keys(value).length > 0, 'at least one email field is required')
+      .optional(),
+  })
+  .strict()
+  .refine((value) => Object.keys(value).length > 0, 'at least one preference is required');

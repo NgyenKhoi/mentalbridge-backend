@@ -17,10 +17,11 @@
     "payload": {
       "type": "object",
       "additionalProperties": false,
-      "required": ["appointmentId", "ownerAccountId", "status", "scheduledStartAt", "modality", "replacesAppointmentId"],
+      "required": ["appointmentId", "ownerAccountId", "specialistAccountId", "status", "scheduledStartAt", "modality", "replacesAppointmentId"],
       "properties": {
         "appointmentId": { "type": "string", "format": "uuid" },
         "ownerAccountId": { "type": "string", "format": "uuid" },
+        "specialistAccountId": { "type": "string", "format": "uuid" },
         "status": { "enum": ["REQUESTED", "CONFIRMED", "REJECTED", "EXPIRED", "CANCELLED", "IN_PROGRESS", "SESSION_ENDED", "COMPLETED", "USER_NO_SHOW", "SPECIALIST_NO_SHOW", "DISPUTED"] },
         "scheduledStartAt": { "type": "string", "format": "date-time" },
         "modality": { "enum": ["IN_APP_CHAT", "IN_APP_VIDEO"] },

@@ -25,6 +25,7 @@ export interface AppointmentStatusChangedEvent {
   readonly payload: {
     readonly appointmentId: string;
     readonly ownerAccountId: string;
+    readonly specialistAccountId: string;
     readonly status: AppointmentStatus;
     readonly scheduledStartAt: string;
     readonly modality: AppointmentModality;

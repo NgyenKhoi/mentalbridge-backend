@@ -125,7 +125,7 @@ pair prevents duplicate generation. Manual and scheduled jobs use one engine.
 | `resource_eligibility_withdrawal` | content-notification-service | PostgreSQL | ACTIVE | Physical one-to-one append-only withdrawal of a publication. |
 | `resource_eligibility_command_record` | content-notification-service | PostgreSQL | ACTIVE | Physical replay reference to publication; actor ID is external. |
 | `resource_reward_preference` | content-notification-service | PostgreSQL | ACTIVE | Owner-scoped optional visibility only; authoritative XP is a deterministic read model over exact progress, practice, and publication evidence. |
-| `notification_preference` | content-notification-service | PostgreSQL | ACTIVE | One atomic aggregate per external Identity owner covering channels, content groups, quiet hours/timezone, and email cadence/opt-ins. |
+| `notification_preference` | content-notification-service | PostgreSQL | ACTIVE | One role-scoped atomic aggregate per external Identity owner covering channels, allowed content groups, quiet hours/timezone, and email cadence/opt-ins; specialist scope cannot enable user wellbeing categories. |
 | `notification` | content-notification-service | PostgreSQL | ACTIVE | Recipient ID is a logical/external Identity reference. |
 | `appointment_email_reminder` | content-notification-service | PostgreSQL | ACTIVE | One delivery-state row per external recipient, Consultation appointment, and appointment version; no email address or message body is persisted. |
 | `appointment_reminder_checkpoint` | content-notification-service | PostgreSQL | ACTIVE | Latest consumed version/status per external Consultation appointment for stale and duplicate event rejection. |

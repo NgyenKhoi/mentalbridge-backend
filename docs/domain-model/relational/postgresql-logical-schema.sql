@@ -2104,6 +2104,7 @@ CREATE TABLE content.resource_weekly_bingo_item (
 
 CREATE TABLE content.notification_preference (
     user_id uuid PRIMARY KEY, -- external -> identity.account.id
+    owner_type varchar(16) NOT NULL, -- USER or SPECIALIST role boundary
     notifications_enabled boolean NOT NULL,
     channel_in_app_enabled boolean NOT NULL,
     channel_email_enabled boolean NOT NULL,

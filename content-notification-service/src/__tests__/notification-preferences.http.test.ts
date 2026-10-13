@@ -128,9 +128,9 @@ beforeEach(async () => {
 
 afterEach(async () => app.close());
 
-async function token(subject = OWNER_A): Promise<string> {
+async function token(subject = OWNER_A, role = 'USER'): Promise<string> {
   const now = Math.floor(Date.now() / 1000);
-  return new SignJWT({ roles: ['USER'] })
+  return new SignJWT({ roles: [role] })
     .setProtectedHeader({ alg: 'RS256' })
     .setSubject(subject)
     .setIssuer(ISSUER)
@@ -172,7 +172,7 @@ describe('notification preference HTTP boundary', () => {
       .expect('Cache-Control', 'private, no-store');
 
     expect(response.body).toEqual(defaults());
-    expect(repository.getOrCreate).toHaveBeenCalledWith(OWNER_A);
+    expect(repository.getOrCreate).toHaveBeenCalledWith(OWNER_A, 'USER');
   });
 
   it('persists partial channel, group, quiet-hour, timezone, cadence and opt-in changes', async () => {
@@ -234,7 +234,25 @@ describe('notification preference HTTP boundary', () => {
       .expect(200);
 
     expect(other.body.channels.email).toBe(false);
-    expect(repository.getOrCreate).toHaveBeenLastCalledWith(OWNER_B);
+    expect(repository.getOrCreate).toHaveBeenLastCalledWith(OWNER_B, 'USER');
+  });
+
+  it('allows specialist operational preferences but rejects wellbeing categories', async () => {
+    await request(app.getHttpServer())
+      .patch('/api/v1/notification-preferences')
+      .set('Authorization', `Bearer ${await token(OWNER_A, 'SPECIALIST')}`)
+      .set('If-Match', '"0"')
+      .send({ contentGroups: { journalReminder: true } })
+      .expect(422);
+
+    await request(app.getHttpServer())
+      .patch('/api/v1/notification-preferences')
+      .set('Authorization', `Bearer ${await token(OWNER_A, 'SPECIALIST')}`)
+      .set('If-Match', '"0"')
+      .send({ contentGroups: { appointmentMessage: false, resourceSystem: true } })
+      .expect(200);
+
+    expect(repository.getOrCreate).toHaveBeenLastCalledWith(OWNER_A, 'SPECIALIST');
   });
 
   it.each([
