@@ -39,7 +39,7 @@ In accordance with architectural requirements for durable audit delivery:
    - Restart resilience: If the container or service process restarts during an outage, Kafka retains the uncommitted consumer group offset and re-delivers the pending record immediately upon startup.
 
 5. **Kafka Topic Retention Declaration**:
-   - Declared in repository infrastructure [`compose.yml`](file:///d:/DO%20AN/MentalBridge/mentalbridge-backend/compose.yml) under `kafka-init`:
+   - Declared in repository infrastructure [`compose.yml`](../compose.yml) under `kafka-init`:
      - Topic: `mentalbridge.admin.audit-event.v1`
      - Partitions: 3, Replication Factor: 1
      - `retention.ms=604800000` (7 days)
