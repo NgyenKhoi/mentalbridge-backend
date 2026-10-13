@@ -423,6 +423,13 @@ ActionOccurrence`, with action types `RESOURCE`, `JOURNAL`,
   `reassessment-summary-v2`; failures and unchanged proposals do not mutate
   either plan. Specialist `PlanChangeRequest` must reuse this governed path and
   has no second replacement mutation. See [MB-375 evidence](story-mb-375-support-plan-replacement-evidence.md).
+- 2026-10-13: MB-661 implements the private `achievement-rules-v1` collection.
+  Journal/AI owns note-free Journal/emotion day and streak milestone facts;
+  Content combines them with exact reviewed-resource completion and verified
+  practice. Unavailable sources fail closed per domain, visibility is reversible
+  and owner-only, and `journey.new-chapter` remains deferred until explicit
+  SupportPlan v3 confirmation exists. Native consumption/evidence remains with
+  MB-665/MB-666. See [ADR 0038](adr/0038-private-multi-domain-achievements.md).
 - 2026-10-02: MB-560 implements the governed specialist resource-proposal
   handoff. Consultation exposes only an exact proposal from the latest visible
   summary of an evidence-completed appointment. Care creates a review snapshot

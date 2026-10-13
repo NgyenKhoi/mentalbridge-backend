@@ -72,23 +72,27 @@ void test("recomputes owner-isolated factual activity from real MongoDB", async 
       {
         ownerAccountId: OWNER,
         localDate: "2026-09-22",
+        createdAt: new Date("2026-09-22T01:00:00.000Z"),
         deleted: false,
         encryptedNote: "must-not-be-returned",
       },
       {
         ownerAccountId: OWNER,
         localDate: "2026-09-24",
+        createdAt: new Date("2026-09-24T01:00:00.000Z"),
         deleted: false,
         revisions: [{ revision: 1 }, { revision: 2 }],
       },
       {
         ownerAccountId: OWNER,
         localDate: "2026-09-23",
+        createdAt: new Date("2026-09-23T01:00:00.000Z"),
         deleted: true,
       },
       {
         ownerAccountId: OTHER_OWNER,
         localDate: "2026-09-23",
+        createdAt: new Date("2026-09-23T01:00:00.000Z"),
         deleted: false,
       },
     ]);
@@ -110,6 +114,27 @@ void test("recomputes owner-isolated factual activity from real MongoDB", async 
         completedToday: true,
         currentStreak: 1,
         longestStreak: 1,
+      },
+      achievementFacts: {
+        ownerAccountId: OWNER,
+        journal: {
+          distinctDays: 3,
+          longestStreak: 3,
+          firstOccurredAt: "2026-09-20T18:00:00.000Z",
+          streakMilestones: [
+            { days: 3, reachedAt: "2026-09-22T18:00:00.000Z" },
+            { days: 7, reachedAt: null },
+          ],
+        },
+        emotionCheckIn: {
+          distinctDays: 2,
+          longestStreak: 1,
+          firstOccurredAt: "2026-09-22T01:00:00.000Z",
+          streakMilestones: [
+            { days: 3, reachedAt: null },
+            { days: 7, reachedAt: null },
+          ],
+        },
       },
       interpretation: "FACTUAL_ACTIVITY_NOT_ADHERENCE_OR_RECOVERY",
     });

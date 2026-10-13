@@ -44,6 +44,14 @@ Optional resource participation rewards are governed by
 bounded XP only from exact persisted reviewed-resource evidence. Rewards remain
 hideable, non-clinical, penalty-free, and unrelated to access or SupportPlan.
 
+The private multi-domain achievement collection is governed by
+[ADR 0038 — Private multi-domain achievements](adr/0038-private-multi-domain-achievements.md)
+(`MB-PRIVATE-ACHIEVEMENT-001`) and the
+[private achievement policy v1](policies/private-achievement-policy-v1.md).
+It recognizes only minimized owner facts, keeps Journal, emotion, Resource and
+Journey authority distinct, and defers Journey unlocks until an explicit
+SupportPlan v3 owner-confirmation contract exists.
+
 Appointment disputes are governed by
 [ADR 0031 — Appointment dispute and settlement gate](adr/0031-appointment-dispute-settlement-gate.md)
 (`MB-APPOINTMENT-DISPUTE-001`). One assigned participant may open a minimized

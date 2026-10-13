@@ -36,6 +36,7 @@ const journalEmotionNotificationKinds = requiredMigration(
 const resourceDailyProgress = requiredMigration('13_add_resource_daily_progress.sql');
 const resourceRewardVisibility = requiredMigration('20_add_resource_reward_visibility.sql');
 const resourceEngagement = requiredMigration('21_persist_resource_engagement.sql');
+const achievementPreference = requiredMigration('22_add_private_achievement_preference.sql');
 const appointmentEmailReminders = requiredMigration('17_add_appointment_email_reminders.sql');
 const communityInteractionNotifications = requiredMigration(
   '18_add_community_interaction_notifications.sql',
@@ -184,6 +185,9 @@ assert.match(resourceDailyProgress, /ix_resource_daily_progress_owner_history\b/
 assert.match(resourceRewardVisibility, /CREATE TABLE resource_reward_preference\b/);
 assert.match(resourceRewardVisibility, /PRIMARY KEY/);
 assert.match(resourceRewardVisibility, /visibility_state IN \('VISIBLE', 'HIDDEN'\)/);
+assert.match(achievementPreference, /CREATE TABLE achievement_preference\b/);
+assert.match(achievementPreference, /PRIMARY KEY/);
+assert.match(achievementPreference, /visibility_state IN \('VISIBLE', 'HIDDEN'\)/);
 assert.match(resourceEngagement, /CREATE TABLE resource_bookmark\b/);
 assert.match(resourceEngagement, /PRIMARY KEY \(owner_id, resource_id\)/);
 assert.match(
