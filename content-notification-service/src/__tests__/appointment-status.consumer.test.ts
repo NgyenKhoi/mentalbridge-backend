@@ -10,7 +10,7 @@ const event = {
   messageType: 'consultation.appointment.status-changed',
   occurredAt: '2029-01-01T00:00:00.000Z',
   producer: 'consultation-service',
-  schemaVersion: '1.0',
+  schemaVersion: '2.0',
   correlationId: '25000000-0000-4000-8000-000000000002',
   aggregateId: '25000000-0000-4000-8000-000000000003',
   aggregateVersion: 1,
@@ -41,7 +41,7 @@ function harness() {
 }
 
 describe('appointment status consumer', () => {
-  it('projects a valid confirmed event', async () => {
+  it('projects a valid v2 event to reminder and specialist notification state', async () => {
     const { apply, materialize, consumer } = harness();
     await consumer.handle(Buffer.from(JSON.stringify(event)));
     expect(apply).toHaveBeenCalledOnce();
@@ -49,10 +49,30 @@ describe('appointment status consumer', () => {
     expect(materialize).toHaveBeenCalledWith(event);
   });
 
+  it('accepts historical v1 replay for reminders without creating a specialist notification', async () => {
+    const { specialistAccountId: _specialistAccountId, ...historicalPayload } = event.payload;
+    const historical = { ...event, schemaVersion: '1.0', payload: historicalPayload };
+    const { apply, materialize, consumer } = harness();
+
+    await consumer.handle(Buffer.from(JSON.stringify(historical)));
+
+    expect(apply).toHaveBeenCalledWith(historical, new Date('2029-01-01T00:00:00.000Z'));
+    expect(materialize).not.toHaveBeenCalled();
+  });
+
   it('discards malformed and mismatched events without changing reminder state', async () => {
     const { apply, consumer } = harness();
     await consumer.handle(Buffer.from('{'));
-    await consumer.handle(Buffer.from(JSON.stringify({ ...event, schemaVersion: '2.0' })));
+    await consumer.handle(Buffer.from(JSON.stringify({ ...event, schemaVersion: '3.0' })));
+    await consumer.handle(
+      Buffer.from(
+        JSON.stringify({
+          ...event,
+          schemaVersion: '1.0',
+          payload: event.payload,
+        }),
+      ),
+    );
     await consumer.handle(Buffer.from(JSON.stringify({ ...event, aggregateId: event.messageId })));
     expect(apply).not.toHaveBeenCalled();
   });

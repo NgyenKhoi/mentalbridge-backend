@@ -13,25 +13,37 @@ export type AppointmentStatus =
 
 export type AppointmentModality = 'IN_APP_CHAT' | 'IN_APP_VIDEO';
 
-export interface AppointmentStatusChangedEvent {
+interface AppointmentStatusChangedEventBase {
   readonly messageId: string;
   readonly messageType: 'consultation.appointment.status-changed';
   readonly occurredAt: string;
   readonly producer: 'consultation-service';
-  readonly schemaVersion: '1.0';
   readonly correlationId: string;
   readonly aggregateId: string;
   readonly aggregateVersion: number;
   readonly payload: {
     readonly appointmentId: string;
     readonly ownerAccountId: string;
-    readonly specialistAccountId: string;
     readonly status: AppointmentStatus;
     readonly scheduledStartAt: string;
     readonly modality: AppointmentModality;
     readonly replacesAppointmentId: string | null;
   };
 }
+
+export interface AppointmentStatusChangedEventV1 extends AppointmentStatusChangedEventBase {
+  readonly schemaVersion: '1.0';
+}
+
+export interface AppointmentStatusChangedEventV2 extends AppointmentStatusChangedEventBase {
+  readonly schemaVersion: '2.0';
+  readonly payload: AppointmentStatusChangedEventBase['payload'] & {
+    readonly specialistAccountId: string;
+  };
+}
+
+export type AppointmentStatusChangedEvent =
+  AppointmentStatusChangedEventV1 | AppointmentStatusChangedEventV2;
 
 export interface AppointmentReminderRow {
   readonly id: string;

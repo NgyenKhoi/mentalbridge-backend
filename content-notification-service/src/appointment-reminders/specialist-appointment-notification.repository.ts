@@ -3,11 +3,12 @@ import { Inject, Injectable } from '@nestjs/common';
 
 import { DATABASE_SERVICE_TOKEN } from '../application.tokens.js';
 import type { DatabaseService } from '../database/database.service.js';
-import type { AppointmentStatusChangedEvent } from './appointment-reminder.types.js';
+import type {
+  AppointmentStatus,
+  AppointmentStatusChangedEventV2,
+} from './appointment-reminder.types.js';
 
-const COPY: Readonly<
-  Record<AppointmentStatusChangedEvent['payload']['status'], readonly [string, string]>
-> = {
+const COPY: Readonly<Record<AppointmentStatus, readonly [string, string]>> = {
   REQUESTED: ['Yêu cầu lịch hẹn mới', 'Một yêu cầu lịch hẹn mới đang chờ bạn xem xét.'],
   CONFIRMED: ['Lịch hẹn đã được xác nhận', 'Lịch hẹn trực tuyến đã được xác nhận.'],
   REJECTED: ['Yêu cầu lịch hẹn đã được từ chối', 'Yêu cầu lịch hẹn không còn chờ xử lý.'],
@@ -25,7 +26,7 @@ const COPY: Readonly<
 export class SpecialistAppointmentNotificationRepository {
   constructor(@Inject(DATABASE_SERVICE_TOKEN) private readonly db: DatabaseService) {}
 
-  async materialize(event: AppointmentStatusChangedEvent): Promise<void> {
+  async materialize(event: AppointmentStatusChangedEventV2): Promise<void> {
     const [title, body] = COPY[event.payload.status];
     const sourceIdentity = `${event.payload.appointmentId}:${String(event.aggregateVersion)}`;
     const fingerprint = createHash('sha256')
@@ -59,14 +60,15 @@ export class SpecialistAppointmentNotificationRepository {
         [event.payload.specialistAccountId],
       );
       const deliveryState = preference.rows[0]?.enabled ? 'DELIVERED' : 'CANCELLED';
-      await client.query(
+      const inserted = await client.query<{ request_fingerprint: string }>(
         `INSERT INTO notification (
            recipient_id, category, title, body, action_type, priority,
            expires_at, occurred_at, source, source_identity,
            request_fingerprint, delivery_state
          ) VALUES ($1,'APPOINTMENT',$2,$3,'OPEN_SPECIALIST_APPOINTMENTS','NORMAL',
            now() + interval '90 days',$4,'CONSULTATION_APPOINTMENT_V1',$5,$6,$7)
-         ON CONFLICT (recipient_id, source, source_identity) DO NOTHING`,
+         ON CONFLICT (recipient_id, source, source_identity) DO NOTHING
+         RETURNING request_fingerprint`,
         [
           event.payload.specialistAccountId,
           title,
@@ -77,6 +79,23 @@ export class SpecialistAppointmentNotificationRepository {
           deliveryState,
         ],
       );
+      if (inserted.rows.length) return;
+      const existing = await client.query<{ request_fingerprint: string }>(
+        `SELECT request_fingerprint
+         FROM notification
+         WHERE recipient_id=$1 AND source='CONSULTATION_APPOINTMENT_V1'
+           AND source_identity=$2`,
+        [event.payload.specialistAccountId, sourceIdentity],
+      );
+      if (existing.rows[0]?.request_fingerprint !== fingerprint)
+        throw new SpecialistAppointmentNotificationDedupeConflictError();
     });
+  }
+}
+
+export class SpecialistAppointmentNotificationDedupeConflictError extends Error {
+  constructor() {
+    super('Conflicting specialist appointment notification replay');
+    this.name = 'SpecialistAppointmentNotificationDedupeConflictError';
   }
 }

@@ -6,8 +6,11 @@ import { join, dirname } from 'path';
 import { fileURLToPath } from 'url';
 import type { DatabaseClient, DatabaseService } from '../../database/database.service.js';
 import { AppointmentReminderRepository } from '../../appointment-reminders/appointment-reminder.repository.js';
-import { SpecialistAppointmentNotificationRepository } from '../../appointment-reminders/specialist-appointment-notification.repository.js';
-import type { AppointmentStatusChangedEvent } from '../../appointment-reminders/appointment-reminder.types.js';
+import {
+  SpecialistAppointmentNotificationDedupeConflictError,
+  SpecialistAppointmentNotificationRepository,
+} from '../../appointment-reminders/specialist-appointment-notification.repository.js';
+import type { AppointmentStatusChangedEventV2 } from '../../appointment-reminders/appointment-reminder.types.js';
 import {
   NotificationPreferenceRepository,
   NotificationPreferenceVersionMismatchError,
@@ -1062,15 +1065,15 @@ describe('Database Integration', () => {
     function statusEvent(
       appointmentId: string,
       version: number,
-      status: AppointmentStatusChangedEvent['payload']['status'],
+      status: AppointmentStatusChangedEventV2['payload']['status'],
       replacementId: string | null = null,
-    ): AppointmentStatusChangedEvent {
+    ): AppointmentStatusChangedEventV2 {
       return {
         messageId: '24000000-0000-4000-8000-000000000001',
         messageType: 'consultation.appointment.status-changed',
         occurredAt: '2029-01-01T00:00:00.000Z',
         producer: 'consultation-service',
-        schemaVersion: '1.0',
+        schemaVersion: '2.0',
         correlationId: '24000000-0000-4000-8000-000000000002',
         aggregateId: appointmentId,
         aggregateVersion: version,
@@ -1120,6 +1123,12 @@ describe('Database Integration', () => {
 
       await repository.materialize(first);
       await repository.materialize(first);
+      await expect(
+        repository.materialize({
+          ...first,
+          payload: { ...first.payload, status: 'CANCELLED' },
+        }),
+      ).rejects.toBeInstanceOf(SpecialistAppointmentNotificationDedupeConflictError);
       await pool.query(
         `UPDATE notification_preference
          SET group_appointment_message_enabled=false
