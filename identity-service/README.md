@@ -97,6 +97,10 @@ $env:IDENTITY_DB_PASSWORD='<identity-password>'
 
 `updateSQL` is the review step and does not mutate the database. `update` applies pending owner changesets and records them in `mentalbridge_identity.public.databasechangelog`. Do not point `IDENTITY_DB_URL` at the administrative `postgres` database, and do not place real credentials in Maven arguments, repository files, or shell history.
 
+## MB-596 aggregate product journey
+
+`GET /api/v1/admin/product-journey-metrics` composes Identity registration facts with bounded Care and Consultation owner aggregates for an explicit window of at most 366 days. It returns source/projection versions and as-of times, keeps missing dependencies and the unsupported Support Guide open fact explicitly unavailable, and exposes no user-level or clinical data. Rates are limited to same-cohort lifecycle facts and are descriptive rather than evidence of clinical effectiveness or causation.
+
 ## Run and test
 
 ```powershell

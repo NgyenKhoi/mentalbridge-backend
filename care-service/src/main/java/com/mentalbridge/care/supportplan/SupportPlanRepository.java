@@ -13,7 +13,14 @@ import org.springframework.data.repository.query.Param;
 
 import jakarta.persistence.LockModeType;
 
-interface SupportPlanRepository extends JpaRepository<SupportPlanEntity, UUID> {
+public interface SupportPlanRepository extends JpaRepository<SupportPlanEntity, UUID> {
+
+	@Query("""
+			select count(plan) from SupportPlanEntity plan
+			where plan.activatedAt >= :from and plan.activatedAt < :to
+			  and plan.entitlementPackage in ('PLUS', 'PREMIUM')
+			""")
+	long countPaidActivationsBetween(@Param("from") Instant from, @Param("to") Instant to);
 
 	Optional<SupportPlanEntity> findByUserIdAndStatus(UUID userId, String status);
 

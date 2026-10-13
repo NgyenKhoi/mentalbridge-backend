@@ -103,6 +103,8 @@ services:
       IDENTITY_OUTBOX_RELAY_SEND_TIMEOUT: ${IDENTITY_OUTBOX_RELAY_SEND_TIMEOUT:-PT5S}
       IDENTITY_OUTBOX_RELAY_RETRY_BASE: ${IDENTITY_OUTBOX_RELAY_RETRY_BASE:-PT5S}
       IDENTITY_OUTBOX_RELAY_RETRY_MAXIMUM: ${IDENTITY_OUTBOX_RELAY_RETRY_MAXIMUM:-PT5M}
+      CARE_SERVICE_BASE_URL: http://care:8081
+      CONSULTATION_SERVICE_BASE_URL: http://consultation:8082
     volumes:
       - identity-verification:/var/lib/mentalbridge/identity-verification
     ports:
