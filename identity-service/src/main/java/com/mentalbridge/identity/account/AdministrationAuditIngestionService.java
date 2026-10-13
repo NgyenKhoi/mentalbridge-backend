@@ -143,7 +143,7 @@ public class AdministrationAuditIngestionService {
         EventTypeDescriptor descriptor = null;
         if (command.eventType() != null) {
             if (!ALLOWED_EVENT_TYPES.containsKey(command.eventType())) {
-                LOGGER.warn("Rejecting unallowlisted audit eventType: {}", command.eventType());
+                LOGGER.warn("Rejecting audit event: eventId={}, code=UNALLOWLISTED_EVENT_TYPE", command.eventId());
                 return false;
             }
             descriptor = ALLOWED_EVENT_TYPES.get(command.eventType());
@@ -158,7 +158,7 @@ public class AdministrationAuditIngestionService {
                 }
             }
             if (descriptor == null) {
-                LOGGER.warn("Rejecting audit event with unknown event type or action tuple: action={}", command.action());
+                LOGGER.warn("Rejecting audit event: eventId={}, code=UNKNOWN_ACTION_TUPLE", command.eventId());
                 return false;
             }
         }
@@ -175,8 +175,7 @@ public class AdministrationAuditIngestionService {
             return false;
         }
         if (command.action() == null || !command.action().equals(descriptor.action())) {
-            LOGGER.warn("Rejecting audit event {} due to action mismatch for {}: expected {}, got {}",
-                    command.eventId(), command.eventType(), descriptor.action(), command.action());
+            LOGGER.warn("Rejecting audit event: eventId={}, code=ACTION_MISMATCH", command.eventId());
             return false;
         }
 
@@ -187,7 +186,7 @@ public class AdministrationAuditIngestionService {
         // 3. Outcome validation (fail-closed)
         String outcome = command.result();
         if (outcome == null || (!outcome.equals("SUCCEEDED") && !outcome.equals("DENIED") && !outcome.equals("FAILED"))) {
-            LOGGER.warn("Rejecting audit event {} with invalid outcome/result: {}", command.eventId(), outcome);
+            LOGGER.warn("Rejecting audit event: eventId={}, code=INVALID_RESULT", command.eventId());
             return false;
         }
 
@@ -197,7 +196,7 @@ public class AdministrationAuditIngestionService {
         // 5. Actor resolution (stable actor model, required actorType)
         String actorType = command.actorType();
         if (actorType == null || (!"ADMIN".equals(actorType) && !"SYSTEM".equals(actorType))) {
-            LOGGER.warn("Rejecting audit event {} with missing or invalid actorType: {}", command.eventId(), actorType);
+            LOGGER.warn("Rejecting audit event: eventId={}, code=INVALID_ACTOR_TYPE", command.eventId());
             return false;
         }
         if ("SYSTEM".equals(actorType) && command.actorId() != null) {

@@ -69,8 +69,7 @@ public class AdministrationAuditEventConsumer {
             while (fieldIterator.hasNext()) {
                 String fieldName = fieldIterator.next();
                 if (!ALLOWED_TOP_LEVEL_FIELDS.contains(fieldName)) {
-                    LOGGER.warn("Audit message contains unexpected field '{}', rejecting fail-closed: eventType={}, correlationId={}",
-                            fieldName, root.path("eventType").asText(null), root.path("correlationId").asText(null));
+                    LOGGER.warn("Audit message rejected: code=UNEXPECTED_FIELD");
                     return;
                 }
             }
@@ -87,9 +86,7 @@ public class AdministrationAuditEventConsumer {
                     || !root.has("action") || !root.get("action").isTextual()
                     || !root.has("result") || !root.get("result").isTextual()
                     || !root.has("correlationId") || !root.get("correlationId").isTextual()) {
-                LOGGER.warn("Audit message missing or non-textual required fields, ignoring: eventType={}, correlationId={}",
-                        root.path("eventType").isTextual() ? root.path("eventType").textValue() : null,
-                        root.path("correlationId").isTextual() ? root.path("correlationId").textValue() : null);
+                LOGGER.warn("Audit message rejected: code=INVALID_REQUIRED_FIELDS");
                 return;
             }
 
@@ -103,7 +100,7 @@ public class AdministrationAuditEventConsumer {
             // schemaVersion (strict const "1.0")
             String schemaVersion = root.get("schemaVersion").textValue();
             if (!"1.0".equals(schemaVersion)) {
-                LOGGER.warn("Audit message has unsupported schemaVersion '{}', ignoring", schemaVersion);
+                LOGGER.warn("Audit message rejected: code=INVALID_SCHEMA_VERSION");
                 return;
             }
 
@@ -112,8 +109,7 @@ public class AdministrationAuditEventConsumer {
             try {
                 correlationId = UUID.fromString(root.get("correlationId").textValue());
             } catch (IllegalArgumentException e) {
-                LOGGER.warn("Audit message has invalid correlationId UUID, ignoring: eventType={}",
-                        root.get("eventType").textValue());
+                LOGGER.warn("Audit message rejected: code=INVALID_CORRELATION_ID");
                 return;
             }
 
@@ -129,7 +125,7 @@ public class AdministrationAuditEventConsumer {
             // eventType
             String eventType = root.get("eventType").textValue();
             if (!AdministrationAuditIngestionService.ALLOWED_EVENT_TYPES.containsKey(eventType)) {
-                LOGGER.debug("Ignoring unallowlisted audit eventType: {}", eventType);
+                LOGGER.debug("Audit message rejected: code=UNALLOWLISTED_EVENT_TYPE");
                 return;
             }
 
@@ -152,8 +148,7 @@ public class AdministrationAuditEventConsumer {
             AdministrationAuditService.AuditSourceService sourceService =
                     AdministrationAuditService.safeSourceService(sourceServiceStr);
             if (sourceService == null) {
-                LOGGER.warn("Audit message has invalid sourceService enum '{}', ignoring: eventType={}, eventId={}",
-                        sourceServiceStr, eventType, eventId);
+                LOGGER.warn("Audit message rejected: eventId={}, code=INVALID_SOURCE_SERVICE", eventId);
                 return;
             }
 
@@ -162,8 +157,7 @@ public class AdministrationAuditEventConsumer {
             AdministrationAuditService.AuditDomain domain =
                     AdministrationAuditService.safeDomain(domainStr);
             if (domain == null) {
-                LOGGER.warn("Audit message has invalid domain enum '{}', ignoring: eventType={}, eventId={}",
-                        domainStr, eventType, eventId);
+                LOGGER.warn("Audit message rejected: eventId={}, code=INVALID_DOMAIN", eventId);
                 return;
             }
 
@@ -180,8 +174,7 @@ public class AdministrationAuditEventConsumer {
             // actorId & actorType
             String actorType = root.get("actorType").textValue();
             if (!"ADMIN".equals(actorType) && !"SYSTEM".equals(actorType)) {
-                LOGGER.warn("Audit message has invalid actorType '{}', ignoring: eventType={}, eventId={}",
-                        actorType, eventType, eventId);
+                LOGGER.warn("Audit message rejected: eventId={}, code=INVALID_ACTOR_TYPE", eventId);
                 return;
             }
 

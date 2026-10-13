@@ -137,6 +137,27 @@ class AdministrationAuditIngestionServiceTests {
     }
 
     @Test
+    void rejectedPayloadMetadataNeverLeaksToLogs(CapturedOutput output) {
+        String secret = "SENSITIVE_FAKE_SECRET_123";
+        String valid = """
+                {"eventId":"%s","eventType":"identity.account.disabled","occurredAt":"%s",
+                 "producer":"identity-service","schemaVersion":"1.0","sourceService":"IDENTITY",
+                 "domain":"ACCOUNT_ADMINISTRATION","actorType":"SYSTEM","action":"ACCOUNT_DISABLED",
+                 "result":"SUCCEEDED","correlationId":"%s"}
+                """.formatted(UUID.randomUUID(), Instant.now(), UUID.randomUUID());
+
+        consumer.onMessage(valid.replace("\"eventId\":", "\"" + secret + "\":\"value\",\"eventId\":"));
+        consumer.onMessage(valid.replace("\"sourceService\":\"IDENTITY\"",
+                "\"sourceService\":\"" + secret + "\""));
+        consumer.onMessage(valid.replace("\"action\":\"ACCOUNT_DISABLED\"",
+                "\"action\":\"" + secret + "\""));
+
+        assertThat(output.getAll()).contains("UNEXPECTED_FIELD", "INVALID_SOURCE_SERVICE", "ACTION_MISMATCH")
+                .doesNotContain(secret);
+        verify(auditRepository, never()).insertIfAbsent(any());
+    }
+
+    @Test
     @DisplayName("Security: tuple mismatch between eventType and sourceService/domain/action is rejected")
     void rejectTupleMismatchBetweenEventTypeAndDeclaredFields() {
         UUID eventId = UUID.randomUUID();
