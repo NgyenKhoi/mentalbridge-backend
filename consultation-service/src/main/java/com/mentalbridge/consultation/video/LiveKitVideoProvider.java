@@ -108,9 +108,27 @@ public class LiveKitVideoProvider implements VideoProvider {
 		}
 		try {
 			var event = new WebhookReceiver(properties.getApiKey(), properties.getApiSecret()).receive(body, authorization);
-			return new VerifiedVideoEvent(event.getId(), event.getEvent(), event.getRoom().getName(),
-					event.getRoom().getSid(), event.getParticipant().getIdentity(),
-					event.getParticipant().getSid(), Instant.ofEpochSecond(event.getCreatedAt()));
+			var occurredAt = Instant.ofEpochSecond(event.getCreatedAt());
+			String identity = null;
+			String participantSid = null;
+			switch (event.getEvent()) {
+				case "participant_joined", "participant_left" -> {
+					var participant = event.getParticipant();
+					if (participant == null || participant.getIdentity().isBlank() || participant.getSid().isBlank()) {
+						throw invalidWebhook();
+					}
+					identity = participant.getIdentity();
+					participantSid = participant.getSid();
+				}
+				case "room_started", "room_finished" -> { }
+				default -> {
+					return new VerifiedVideoEvent(event.getId(), event.getEvent(), null, null, null, null, occurredAt);
+				}
+			}
+			var room = event.getRoom();
+			if (room == null || room.getName().isBlank() || room.getSid().isBlank()) throw invalidWebhook();
+			return new VerifiedVideoEvent(event.getId(), event.getEvent(), room.getName(), room.getSid(),
+					identity, participantSid, occurredAt);
 		}
 		catch (RuntimeException exception) { throw invalidWebhook(); }
 	}

@@ -33,6 +33,13 @@ internal APIs or use a staging deployment as a workaround. The official receiver
 verifies the signature and body digest; a MentalBridge bearer token is not its
 authentication mechanism. Unsigned, tampered or expired deliveries are rejected.
 
+The receiver dispatches only after signature and raw-body digest verification.
+Room-only `room_started` callbacks are acknowledged without attendance;
+`room_finished` retains only room evidence, with no participant identity, SID
+or role. Attendance `participant_joined` / `participant_left` callbacks require
+both participant identity and SID. Other verified event types are safely ignored.
+No room callback alone confirms an appointment or settles its held credit.
+
 No recording, egress, transcription, AI Agent or automatic AI participant is
 enabled. Provider room names and identities are opaque. No brief, summary,
 patient name, email or clinical information is sent as media metadata.

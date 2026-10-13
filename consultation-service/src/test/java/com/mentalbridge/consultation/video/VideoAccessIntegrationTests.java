@@ -250,6 +250,62 @@ class VideoAccessIntegrationTests extends ConsultationTestProperties {
 	}
 
 	@Test
+	void signedRoomAndParticipantCallbacksReachOfficialReceiverAndNeverSettleWithoutConfirmation() throws Exception {
+		var fixture = fixture();
+		setSchedule(fixture.id, Instant.now().minusSeconds(120));
+		when(provider.issueToken(anyString(), anyString(), any(), any())).thenReturn("synthetic-access-token");
+		sessions.access(fixture.id, fixture.user, "USER");
+		var room = jdbc.sql("select room_name from appointment_video_room where appointment_id=:id")
+				.param("id", fixture.id).query(String.class).single();
+		var receiver = new LiveKitVideoProvider(properties);
+		when(provider.verifyWebhook(any(), any())).thenAnswer(call -> {
+			assertThat(TransactionSynchronizationManager.isActualTransactionActive()).isFalse();
+			return receiver.verifyWebhook(call.getArgument(0), call.getArgument(1));
+		});
+		var count = 0;
+		for (var type : java.util.List.of("room_started", "participant_joined", "participant_left", "room_finished")) {
+			var payload = json.createObjectNode().put("id", UUID.randomUUID().toString())
+					.put("event", type).put("createdAt", Instant.now().minusSeconds(30).getEpochSecond());
+			payload.putObject("room").put("name", room).put("sid", "room-incarnation");
+			if (type.startsWith("participant_")) {
+				payload.putObject("participant").put("identity", identity(fixture.id, "user_identity"))
+						.put("sid", "user-session");
+			}
+			var body = json.writeValueAsString(payload);
+			var signature = LiveKitVideoProviderTests.signature(properties, body, Instant.now().plusSeconds(120));
+			mvc.perform(post("/internal/v1/video/livekit/webhook").contentType("application/webhook+json")
+					.header("Authorization", signature).content(body)).andExpect(status().isNoContent());
+			if (!type.equals("room_started")) count++;
+			assertThat(events.findByAppointmentId(fixture.id)).hasSize(count);
+			mvc.perform(post("/internal/v1/video/livekit/webhook").contentType("application/webhook+json")
+					.header("Authorization", signature).content(body)).andExpect(status().isNoContent());
+			mvc.perform(post("/internal/v1/video/livekit/webhook").contentType("application/webhook+json")
+					.header("Authorization", "invalid").content(body)).andExpect(status().isUnauthorized())
+					.andExpect(jsonPath("$.code").value("VIDEO_WEBHOOK_INVALID"));
+			mvc.perform(post("/internal/v1/video/livekit/webhook").contentType("application/webhook+json")
+					.header("Authorization", signature).content(body + " ")).andExpect(status().isUnauthorized())
+					.andExpect(jsonPath("$.code").value("VIDEO_WEBHOOK_INVALID"));
+			if (type.startsWith("participant_")) {
+				payload.remove("participant");
+				var malformed = json.writeValueAsString(payload);
+				mvc.perform(post("/internal/v1/video/livekit/webhook").contentType("application/webhook+json")
+						.header("Authorization", LiveKitVideoProviderTests.signature(properties, malformed,
+								Instant.now().plusSeconds(120))).content(malformed))
+						.andExpect(status().isUnauthorized()).andExpect(jsonPath("$.code").value("VIDEO_WEBHOOK_INVALID"));
+			}
+			assertThat(events.findByAppointmentId(fixture.id)).hasSize(count);
+		}
+		var finished = events.findByAppointmentId(fixture.id).stream()
+				.filter(event -> event.type.equals("room_finished")).findFirst().orElseThrow();
+		assertThat(finished.identity).isNull();
+		assertThat(finished.participantSid).isNull();
+		assertThat(finished.role).isNull();
+		assertThat(credit(fixture)).isEqualTo("HELD");
+		assertThat(jdbc.sql("select completion_fact_id from appointment where id=:id").param("id", fixture.id)
+				.query(UUID.class).optional()).isEmpty();
+	}
+
+	@Test
 	void retentionPreservesHoldsAndBusinessHistoryThenPurgesWithoutReplayResurrection() throws Exception {
 		var fixture = fixture();
 		setSchedule(fixture.id, Instant.now().minusSeconds(120));

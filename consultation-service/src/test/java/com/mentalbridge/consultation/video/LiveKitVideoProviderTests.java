@@ -10,6 +10,8 @@ import java.util.Base64;
 import java.util.Date;
 
 import org.junit.jupiter.api.Test;
+import org.junit.jupiter.params.ParameterizedTest;
+import org.junit.jupiter.params.provider.ValueSource;
 
 import com.auth0.jwt.JWT;
 import com.auth0.jwt.algorithms.Algorithm;
@@ -36,18 +38,20 @@ class LiveKitVideoProviderTests {
 		assertThat(jwt.getClaim("metadata").isMissing()).isTrue();
 	}
 
-	@Test
-	void officialReceiverVerifiesSignatureAndRawBodyHash() throws Exception {
+	@ParameterizedTest
+	@ValueSource(strings = { "participant_joined", "participant_left" })
+	void officialReceiverVerifiesSignatureAndRawBodyHash(String type) throws Exception {
 		var properties = configured();
 		var provider = new LiveKitVideoProvider(properties);
 		var body = """
-				{"id":"event-1","event":"participant_joined","createdAt":1700000000,
+				{"id":"event-1","event":"%s","createdAt":1700000000,
 				 "room":{"name":"opaque-room","sid":"RM_1"},
 				 "participant":{"identity":"opaque-participant","sid":"PA_1"}}
-				""";
+				""".formatted(type);
 		var header = signature(properties, body, Instant.now().plusSeconds(120));
 		var event = provider.verifyWebhook(body, header);
-		assertThat(event.type()).isEqualTo("participant_joined");
+		assertThat(event.type()).isEqualTo(type);
+		assertThat(event.identity()).isEqualTo("opaque-participant");
 		assertThat(event.participantSid()).isEqualTo("PA_1");
 		assertThatThrownBy(() -> provider.verifyWebhook(body + " ", header)).isInstanceOf(ApiException.class)
 				.hasMessage("Video webhook authentication failed");
@@ -57,6 +61,56 @@ class LiveKitVideoProviderTests {
 		assertThatThrownBy(() -> provider.verifyWebhook(body, null)).isInstanceOf(ApiException.class);
 		var noExpiry = JWT.create().withIssuer(properties.getApiKey()).sign(Algorithm.HMAC256(properties.getApiSecret()));
 		assertThatThrownBy(() -> provider.verifyWebhook(body, noExpiry)).isInstanceOf(ApiException.class);
+	}
+
+	@ParameterizedTest
+	@ValueSource(strings = { "room_started", "room_finished" })
+	void officialReceiverAcceptsSignedRoomOnlyEventsWithoutParticipant(String type) throws Exception {
+		var properties = configured();
+		var provider = new LiveKitVideoProvider(properties);
+		var body = """
+				{"id":"room-event-1","event":"%s","createdAt":1700000000,
+				 "room":{"name":"opaque-room","sid":"RM_1"}}
+				""".formatted(type);
+		var header = signature(properties, body, Instant.now().plusSeconds(120));
+		assertThat(provider.verifyWebhook(body, header)).isEqualTo(new VideoProvider.VerifiedVideoEvent(
+				"room-event-1", type, "opaque-room", "RM_1", null, null, Instant.ofEpochSecond(1700000000)));
+		assertThatThrownBy(() -> provider.verifyWebhook(body, "invalid")).isInstanceOf(ApiException.class);
+		assertThatThrownBy(() -> provider.verifyWebhook(body + " ", header)).isInstanceOf(ApiException.class);
+	}
+
+	@ParameterizedTest
+	@ValueSource(strings = { "participant_joined", "participant_left" })
+	void officialReceiverRejectsSignedAttendanceEventsWithoutValidParticipant(String type) throws Exception {
+		var properties = configured();
+		var provider = new LiveKitVideoProvider(properties);
+		for (var participant : java.util.List.of("", "\"participant\":null,", "\"participant\":{},",
+				"\"participant\":{\"identity\":\"opaque-participant\"},",
+				"\"participant\":{\"sid\":\"PA_1\"},",
+				"\"participant\":{\"identity\":\" \",\"sid\":\"PA_1\"},",
+				"\"participant\":{\"identity\":\"opaque-participant\",\"sid\":\" \"},")) {
+			var body = """
+					{"id":"event-1","event":"%s","createdAt":1700000000,%s
+					 "room":{"name":"opaque-room","sid":"RM_1"}}
+					""".formatted(type, participant);
+			var header = signature(properties, body, Instant.now().plusSeconds(120));
+			assertThatThrownBy(() -> provider.verifyWebhook(body, header)).isInstanceOf(ApiException.class)
+					.hasMessage("Video webhook authentication failed");
+		}
+	}
+
+	@Test
+	void officialReceiverAuthenticatesUnsupportedEventsWithoutRequiringRoomOrParticipant() throws Exception {
+		var properties = configured();
+		var body = """
+				{"id":"unsupported-event","event":"egress_ended","createdAt":1700000000}
+				""";
+		var provider = new LiveKitVideoProvider(properties);
+		var event = provider.verifyWebhook(body, signature(properties, body, Instant.now().plusSeconds(120)));
+		assertThat(event.type()).isEqualTo("egress_ended");
+		assertThat(event.room()).isNull();
+		assertThat(event.identity()).isNull();
+		assertThatThrownBy(() -> provider.verifyWebhook(body, "invalid")).isInstanceOf(ApiException.class);
 	}
 
 	@Test
