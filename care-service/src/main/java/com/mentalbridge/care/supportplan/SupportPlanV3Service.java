@@ -119,7 +119,7 @@ public class SupportPlanV3Service {
 		}
 		String policyVersion = plan.modelVersion() == 2 ? plan.selectionPolicyVersion() : plan.planPolicyVersion();
 		var safety = new SafetyView(plan.safetyStatus(), plan.safetyReasonCode(), plan.safetyPolicyVersion(),
-				plan.safetyGuidanceCode(), plan.safetyGuidance());
+				plan.safetyGuidanceCode(), SupportPlanService.displaySafetyGuidance(plan));
 		return new SupportPlanV3View(plan.id(), 3, policyVersion, representation(plan), plan.status(), plan.version(), safety, values,
 				plan.createdAt(), plan.updatedAt(), plan.activatedAt(), plan.completedAt(), plan.completionReason(),
 				plan.supersededAt(), plan.discardedAt(), "WELLBEING_SUPPORT_NOT_TREATMENT",
@@ -162,7 +162,7 @@ public class SupportPlanV3Service {
 			String title = family != null && family.focusTitle() != null
 					? family.focusTitle() : focusTitle(entry.getKey());
 			String rationale = family != null && family.focusRationale() != null
-					? family.focusRationale() : plan.rationaleText();
+					? family.focusRationale() : SupportPlanService.displayRationale(plan);
 			var personalization = family != null && family.focusReasonCode() != null
 					? personalization(plan, family.focusReasonCode()) : null;
 			result.add(new PlanFocusView(virtualFocusId(plan.id(), entry.getKey()), title,
@@ -183,7 +183,7 @@ public class SupportPlanV3Service {
 				resource.externalUrl());
 		return new PlanActionView(slot.id().toString(), "RESOURCE", plan.version(), REPRESENTATION_V2,
 				actionStatus(plan.status()), adjunct ? "ADJUNCT" : "PRIMARY", slot.purposeCode(),
-				plan.rationaleText(), ordinal, source,
+				SupportPlanService.displayRationale(plan), ordinal, source,
 				provenance, presentation, actionSchedules.stream().map(this::schedule).toList(), plan.createdAt(),
 				plan.updatedAt(), plan.activatedAt(), actionEndedAt(plan));
 	}
@@ -200,7 +200,7 @@ public class SupportPlanV3Service {
 				null);
 		return new PlanActionView(virtualProfessionalActionId(plan.id(), targetDomain), "PROFESSIONAL_SUPPORT",
 				plan.version(), REPRESENTATION_V2, actionStatus(plan.status()), "PRIMARY",
-				"CONNECT_WITH_PROFESSIONAL_SUPPORT", plan.rationaleText(), 1, source, provenance, presentation,
+				"CONNECT_WITH_PROFESSIONAL_SUPPORT", SupportPlanService.displayRationale(plan), 1, source, provenance, presentation,
 				List.of(), plan.createdAt(), plan.updatedAt(), plan.activatedAt(), actionEndedAt(plan));
 	}
 
