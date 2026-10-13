@@ -53,6 +53,7 @@ public class PlatformReportJobEntity {
 	@Column(name = "idempotency_key", nullable = false, updatable = false, length = 128)
 	private String idempotencyKey;
 
+	@JdbcTypeCode(SqlTypes.CHAR)
 	@Column(name = "request_hash", nullable = false, updatable = false, length = 64)
 	private String requestHash;
 

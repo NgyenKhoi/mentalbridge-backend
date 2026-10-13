@@ -40,9 +40,11 @@ import com.mentalbridge.care.supportplan.SupportPlanWriter.StoredPlan;
 public class SupportPlanService {
 
 	public static final String SELECTION_POLICY_VERSION = "mb-support-plan-selection-v1";
-	private static final String RATIONALE = "MentalBridge Ä‘Ã£ ghÃ©p cÃ¡c lá»±a chá»n há»— trá»£ sá»©c khá»e tá»•ng quÃ¡t theo tá»«ng miá»n sÃ ng lá»c, chÃ­nh sÃ¡ch Care vÃ  phiÃªn báº£n tÃ i nguyÃªn Ä‘Ã£ Ä‘Æ°á»£c duyá»‡t. ÄÃ¢y khÃ´ng pháº£i cháº©n Ä‘oÃ¡n hay káº¿ hoáº¡ch Ä‘iá»u trá»‹.";
-	private static final String STANDARD_SAFETY = "Náº¿u tÃ¬nh tráº¡ng cá»§a báº¡n thay Ä‘á»•i hoáº·c báº¡n cáº£m tháº¥y khÃ´ng an toÃ n, hÃ£y chá»§ Ä‘á»™ng tÃ¬m há»— trá»£ trá»±c tiáº¿p phÃ¹ há»£p táº¡i khu vá»±c báº¡n Ä‘Ã£ chá»n.";
-	private static final String DISCLAIMER = "SupportPlan nÃ y há»— trá»£ sá»©c khá»e tá»•ng quÃ¡t vÃ  tá»± quáº£n lÃ½; khÃ´ng pháº£i cháº©n Ä‘oÃ¡n, Ä‘Æ¡n thuá»‘c hoáº·c káº¿ hoáº¡ch Ä‘iá»u trá»‹, vÃ  khÃ´ng thay tháº¿ há»— trá»£ an toÃ n hay há»— trá»£ chuyÃªn mÃ´n.";
+	private static final String RATIONALE = "MentalBridge đã ghép các lựa chọn hỗ trợ sức khỏe tổng quát theo từng miền sàng lọc, chính sách Care và phiên bản tài nguyên đã được duyệt. Đây không phải chẩn đoán hay kế hoạch điều trị.";
+	private static final String STANDARD_SAFETY = "Nếu tình trạng của bạn thay đổi hoặc bạn cảm thấy không an toàn, hãy chủ động tìm hỗ trợ trực tiếp phù hợp tại khu vực bạn đã chọn.";
+	private static final String DISCLAIMER = "SupportPlan này hỗ trợ sức khỏe tổng quát và tự quản lý; không phải chẩn đoán, đơn thuốc hoặc kế hoạch điều trị, và không thay thế hỗ trợ an toàn hay hỗ trợ chuyên môn.";
+	private static final String LEGACY_RATIONALE = "MentalBridge Ä‘Ã£ ghÃ©p cÃ¡c lá»±a chá»n há»— trá»£ sá»©c khá»e tá»•ng quÃ¡t theo tá»«ng miá»n sÃ ng lá»c, chÃ­nh sÃ¡ch Care vÃ  phiÃªn báº£n tÃ i nguyÃªn Ä‘Ã£ Ä‘Æ°á»£c duyá»‡t. ÄÃ¢y khÃ´ng pháº£i cháº©n Ä‘oÃ¡n hay káº¿ hoáº¡ch Ä‘iá»u trá»‹.";
+	private static final String LEGACY_STANDARD_SAFETY = "Náº¿u tÃ¬nh tráº¡ng cá»§a báº¡n thay Ä‘á»•i hoáº·c báº¡n cáº£m tháº¥y khÃ´ng an toÃ n, hÃ£y chá»§ Ä‘á»™ng tÃ¬m há»— trá»£ trá»±c tiáº¿p phÃ¹ há»£p táº¡i khu vá»±c báº¡n Ä‘Ã£ chá»n.";
 
 	private final EntitlementClient entitlements;
 	private final SupportEvaluationV2Service evaluations;
@@ -543,9 +545,9 @@ public class SupportPlanService {
 						plan.selectionPolicyVersion(), plan.resourcePolicyVersion(), plan.resourcesResolvedAt()),
 				new EntitlementView(plan.entitlementPackage(), plan.entitlementSource(),
 						plan.entitlementPolicyVersion(), plan.entitlementVersion(), plan.entitlementDecidedAt()),
-				new RationaleView(plan.rationaleCode(), plan.rationaleText()),
+				new RationaleView(plan.rationaleCode(), displayRationale(plan)),
 				new SafetyView(plan.safetyStatus(), plan.safetyReasonCode(), plan.safetyPolicyVersion(),
-						plan.safetyGuidanceCode(), plan.safetyGuidance()),
+						plan.safetyGuidanceCode(), displaySafetyGuidance(plan)),
 				families, slots, selections.size(), plan.createdAt(), updatedAt, activatedAt,
 				plan.completedAt(), plan.completionReason(), plan.supersededAt(), plan.discardedAt(),
 				"WELLBEING_SUPPORT_NOT_TREATMENT", DISCLAIMER);
@@ -595,6 +597,21 @@ public class SupportPlanService {
 	private ApiException idempotencyConflict() {
 		return new ApiException(HttpStatus.CONFLICT, "IDEMPOTENCY_KEY_REUSED",
 				"Idempotency-Key was already used with a different SupportPlan command");
+	}
+
+	static String displayRationale(SupportPlanEntity plan) {
+		return legacySystemCopy(plan) && "DOMAIN_AWARE_WELLBEING_SUPPORT".equals(plan.rationaleCode())
+				&& LEGACY_RATIONALE.equals(plan.rationaleText()) ? RATIONALE : plan.rationaleText();
+	}
+
+	static String displaySafetyGuidance(SupportPlanEntity plan) {
+		return legacySystemCopy(plan) && "NEGATIVE_SAFETY_SCREEN".equals(plan.safetyStatus())
+				&& "STANDARD_SAFETY_REMINDER".equals(plan.safetyGuidanceCode())
+				&& LEGACY_STANDARD_SAFETY.equals(plan.safetyGuidance()) ? STANDARD_SAFETY : plan.safetyGuidance();
+	}
+
+	private static boolean legacySystemCopy(SupportPlanEntity plan) {
+		return plan.modelVersion() == 2 && SELECTION_POLICY_VERSION.equals(plan.selectionPolicyVersion());
 	}
 
 	static String disclaimer() { return DISCLAIMER; }
