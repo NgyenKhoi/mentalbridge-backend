@@ -116,6 +116,21 @@ without that context projects its actions as `PRIMARY`. The bounded
 `purposeCode` remains an action intent code and is never parsed to determine
 path precedence.
 
+## SupportPlan system-copy encoding compatibility
+
+New proposals store readable Vietnamese rationale and standard safety copy.
+The non-diagnostic disclaimer is returned with the same meaning and valid
+Vietnamese diacritics. V2 reads and their v3 resource adapter also correct the
+two exact malformed system-generated rationale/standard-reminder literals from
+`mb-support-plan-selection-v1` for presentation only. The rationale code and
+negative-screen standard-reminder code must match; other copy, positive safety
+guidance, personalized focus copy, and native v3 authored copy remain unchanged.
+
+This is a bounded encoding erratum, not recomposition or a history backfill.
+Stored text, plan identity/version, policy/source references, lifecycle instants,
+and safety decisions are not rewritten. No general character-decoding heuristic
+or database repair is applied.
+
 ## MB-375 reassessment review and replacement
 
 `POST /api/v1/support-plans/{draftId}/replacement-review` is read-only. It

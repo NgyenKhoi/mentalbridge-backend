@@ -3,6 +3,9 @@ package com.mentalbridge.identity.reporting;
 import java.time.Instant;
 import java.util.UUID;
 
+import org.hibernate.annotations.JdbcTypeCode;
+import org.hibernate.type.SqlTypes;
+
 import jakarta.persistence.Column;
 import jakarta.persistence.Entity;
 import jakarta.persistence.Id;
@@ -25,6 +28,7 @@ public class PlatformReportArtifactEntity {
 	@Column(nullable = false, updatable = false)
 	private byte[] content;
 
+	@JdbcTypeCode(SqlTypes.CHAR)
 	@Column(name = "content_sha256", nullable = false, updatable = false, length = 64)
 	private String contentSha256;
 
