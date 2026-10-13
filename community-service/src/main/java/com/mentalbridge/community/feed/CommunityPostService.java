@@ -127,6 +127,9 @@ public class CommunityPostService {
 			throw CommunityApiException.mediaNotAttachable();
 		}
 		for (var item : requested) {
+			if (profiles.existsByAvatarMediaId(item.id())) {
+				throw CommunityApiException.mediaNotAttachable();
+			}
 			var alreadyAttachedToPost = item.post() != null && item.post().id().equals(post.id());
 			if (!item.owner().id().equals(owner.id())
 					|| (!alreadyAttachedToPost && (item.state() != CommunityMediaEntity.State.READY || item.post() != null))) {

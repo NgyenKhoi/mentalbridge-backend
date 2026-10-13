@@ -63,6 +63,10 @@ class SupportPlanWriter {
 		}
 		var existing = plans.findByUserIdAndStatus(userId, "DRAFT");
 		if (existing.isPresent()) {
+			if (existing.orElseThrow().modelVersion() != 2) {
+				throw new ApiException(HttpStatus.CONFLICT, "SUPPORT_PLAN_MODEL_VERSION_UNSUPPORTED",
+						"The existing draft uses the native v3 SupportPlan boundary");
+			}
 			plans.insertRequest(userId, idempotencyKey, requestHash, existing.orElseThrow().id(), now);
 			return stored(existing.orElseThrow());
 		}

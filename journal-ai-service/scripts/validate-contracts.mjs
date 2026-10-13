@@ -42,6 +42,7 @@ const implementedOperations = new Set([
   "POST /api/v1/emotion-check-ins",
   "GET /api/v1/emotion-check-ins",
   "GET /api/v1/emotion-check-ins/{localDate}",
+  "GET /api/v1/emotion-check-ins/{localDate}/completion-evidence",
   "PATCH /api/v1/emotion-check-ins/{localDate}",
   "DELETE /api/v1/emotion-check-ins/{localDate}",
   "GET /api/v1/emotion-check-in-progress",
@@ -104,6 +105,10 @@ const implementedResponses = new Map([
   [
     "PATCH /api/v1/emotion-check-ins/{localDate}",
     new Set(["200", "400", "401", "404", "409", "412", "503"]),
+  ],
+  [
+    "GET /api/v1/emotion-check-ins/{localDate}/completion-evidence",
+    new Set(["200", "400", "401", "503"]),
   ],
   [
     "DELETE /api/v1/emotion-check-ins/{localDate}",

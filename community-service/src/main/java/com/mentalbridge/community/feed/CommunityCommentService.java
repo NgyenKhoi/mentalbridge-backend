@@ -199,7 +199,8 @@ class CommunityCommentService {
 	private Author author(CommunityProfileEntity profile) {
 		var deleted = profile.status() == CommunityProfileEntity.Status.DELETED;
 		return new Author(profile.id(), deleted ? DELETED_AUTHOR_NAME : profile.displayName(),
-				deleted ? null : profile.avatarPreset(), deleted ? AuthorState.DELETED : AuthorState.ACTIVE);
+				deleted ? null : profile.avatarPreset(), deleted ? AuthorState.DELETED : AuthorState.ACTIVE,
+				profile.avatarImage());
 	}
 
 	private VersionedComment versioned(CommunityCommentEntity comment) {

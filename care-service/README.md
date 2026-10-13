@@ -75,6 +75,13 @@ changes eligibility or records non-completion.
 
 ## MB-639 SupportPlan v3 actions
 
+Authoritative completion replay compares source owner/kind, fact identity and
+revision, and original occurrence time. A later verification instant does not
+create a different fact: replay preserves the first accepted verification,
+completion time, occurrence version and single outbox event. MB-641 depends on
+this behavior when a fresh Emotion evidence read reconciles an already accepted
+check-in.
+
 ADR 0034 makes `SupportPlan -> PlanFocus -> PlanAction -> ActionSchedule ->
 ActionOccurrence` the prospective canonical hierarchy. Native actions use only
 the closed types `RESOURCE`, `JOURNAL`, `EMOTION_CHECK_IN`,
@@ -115,6 +122,73 @@ projects that action as `PRIMARY` and its sibling actions as `ADJUNCT`; a focus
 without that context projects its actions as `PRIMARY`. The bounded
 `purposeCode` remains an action intent code and is never parsed to determine
 path precedence.
+
+## MB-641 Emotion owner-evidence reconciliation
+
+`POST /api/v2/support-plan-occurrences/{occurrenceId}/emotion-check-in/reconcile`
+is an explicit USER command on an existing native `EMOTION_CHECK_IN` occurrence.
+It accepts no body or browser-supplied source/fact identity. Care derives the
+local day, timezone and source link from the owned occurrence, closes the read
+transaction, then requests Journal/AI's content-free completion projection with
+the verified USER bearer and correlation ID. A separate locked transaction
+rechecks the plan/action/occurrence, exact subject/day/timezone, activation time
+and one-fact/one-occurrence invariant before accepting the owner fact.
+
+`sourceState` is `RECORDED`, `MISSING` or `DELETED`, separate from persisted
+`occurrenceState`. Missing/deleted evidence never creates completion and never
+erases already accepted history. An identical recorded fact preserves the first
+verification/completion time and version; unavailable, malformed, unattributed,
+future or incompatible evidence never becomes a false success/absence. Owner
+failure returns `EMOTION_CHECK_IN_EVIDENCE_UNAVAILABLE` (503). Response caching
+is disabled. No emotion value, intensity, factors, note, analysis or AI consent
+enters this boundary, storage or event payload.
+
+The consumer uses its own bounded connection/read deadlines, at most one safe
+GET retry and a fail-fast circuit breaker. Its conservative maximum call budget
+is 2.5 seconds. This endpoint does not convert v2 plans or invent native actions.
+
+`POST /api/v2/support-plans` now creates a NEW native proposal under
+`support-plan-emotion-actions-v1`. The same paid entitlement, guided screening
+context, deterministic template/resource admission and exact Content checks
+apply. The current immutable personalization revision supplies explicit
+`EMOTION_CHECK_IN` activity-mode intent; no Emotion data chooses actions. The
+proposal retains admitted resources, required professional-support precedence,
+bounded presentation and one optional check-in action. It creates no v2 slots
+or adapter rows. Draft cadence shares the saved daily workload budget and
+spreads actions over local days when their minimum durations cannot fit.
+
+`POST /api/v2/support-plans/{id}/activate` requires strong `If-Match` and an
+idempotency key, freshly revalidates admission outside local locks, then
+activates plan/actions/schedules atomically through the existing command ledger.
+Changed preferences require explicit draft review/regeneration. An existing
+current plan cannot be bypassed: the v2 native `replacement-review` and `replace`
+commands require the latest canonical reassessment with the exact proposed
+screening pair, separately display all four dimensions, and apply only an
+explicit user confirmation. The old plan is superseded with future occurrences
+cancelled; old v2 rows/identities and terminal facts are never converted.
+
+Native lifecycle uses `PUT /api/v2/support-plans/{id}/status` with existing
+versioned lifecycle semantics. `GET /api/v2/support-plans/history` reads bounded
+terminal native and v2-adapter history without recomposition. Legacy APIs retain
+v2 behavior and reject a native plan before mutation with
+`SUPPORT_PLAN_MODEL_VERSION_UNSUPPORTED`, rather than rendering invalid v2 data.
+
+`PUT /api/v2/support-plan-occurrences/{id}/state` keeps native manual actions
+usable under the action taxonomy fixed by ADR 0034. It accepts only explicit
+`SCHEDULED`, `SKIPPED` or `COMPLETED` intent with the strong occurrence validator.
+Only `RESOURCE` and `ROUTINE_SELF_MANAGEMENT` may record a Care-owned
+`USER_ACKNOWLEDGEMENT`; opening a resource is not completion. `EMOTION_CHECK_IN`
+and `JOURNAL` may be skipped or reopened from a user skip, but never manually
+completed. Accepted completion evidence cannot be erased or reopened through
+this command. Inactive/cancelled/future-day targets fail closed, same-state
+retries preserve version, and state changes reuse the minimized native
+occurrence event without copying source content or changing plan lifecycle.
+Native helpfulness/private-reflection replacement is not exposed by this slice;
+the legacy engagement API remains limited to its v2 resource model.
+
+The web/mobile consumers use canonical Emotion navigation, explicit completion
+checks and separate factual owner Emotion coverage. Native device execution
+remains separately gated by MB-666; source/browser checks do not prove it.
 
 ## SupportPlan system-copy encoding compatibility
 
@@ -255,6 +329,16 @@ Assessment answer text must never be copied into outbox payloads, logs, errors, 
 | `JOURNAL_AI_LONGITUDINAL_CIRCUIT_FAILURE_RATE` | No | Percentage of transport/malformed failures that opens the breaker | `50` |
 | `JOURNAL_AI_LONGITUDINAL_CIRCUIT_OPEN_DURATION` | No | Bounded breaker-open interval | `PT10S` |
 | `JOURNAL_AI_LONGITUDINAL_CIRCUIT_HALF_OPEN_CALLS` | No | Permitted half-open probes | `2` |
+| `JOURNAL_AI_EMOTION_EVIDENCE_BASE_URL` | Local/demo | Direct Journal/AI URL for minimized Emotion completion evidence; the Node owner is not registered in Eureka | `http://localhost:3000` |
+| `JOURNAL_AI_EMOTION_EVIDENCE_CONNECT_TIMEOUT` | No | Bounded TCP deadline for the owner check-in fact | `PT0.2S` |
+| `JOURNAL_AI_EMOTION_EVIDENCE_READ_TIMEOUT` | No | Bounded response deadline per evidence GET | `PT0.8S` |
+| `JOURNAL_AI_EMOTION_EVIDENCE_MAX_ATTEMPTS` | No | Total safe GET attempts, one or two | `2` |
+| `JOURNAL_AI_EMOTION_EVIDENCE_RETRY_WAIT` | No | Positive transient retry delay with exponential jitter | `PT0.1S` |
+| `JOURNAL_AI_EMOTION_EVIDENCE_CIRCUIT_WINDOW_SIZE` | No | Count-based evidence circuit window | `10` |
+| `JOURNAL_AI_EMOTION_EVIDENCE_CIRCUIT_MINIMUM_CALLS` | No | Minimum evidence calls before opening | `5` |
+| `JOURNAL_AI_EMOTION_EVIDENCE_CIRCUIT_FAILURE_RATE` | No | Transport/malformed evidence failure percentage | `50` |
+| `JOURNAL_AI_EMOTION_EVIDENCE_CIRCUIT_OPEN_DURATION` | No | Fail-fast open interval | `PT10S` |
+| `JOURNAL_AI_EMOTION_EVIDENCE_CIRCUIT_HALF_OPEN_CALLS` | No | Bounded recovery probes | `2` |
 | `JOURNAL_AI_SUPPORT_GUIDE_BASE_URL` | Local/demo only | Direct Journal/AI URL for optional consent-gated Support Guide phrasing | `http://localhost:3000` |
 | `JOURNAL_AI_SUPPORT_GUIDE_CONNECT_TIMEOUT` | No | Bounded connection deadline for optional Support Guide phrasing | `PT0.5S` |
 | `JOURNAL_AI_SUPPORT_GUIDE_READ_TIMEOUT` | No | Bounded response deadline before Care persists its approved-copy fallback | `PT8S` |
