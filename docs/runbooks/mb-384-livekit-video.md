@@ -118,10 +118,64 @@ Cloud region/subprocessors, retention holds and pending-session resolution.
 ## Automated verification checkpoint
 
 `consultation-service` Maven `verify` ran on this worktree with UTC test time:
-210 discovered tests, 209 passed, 1 existing opt-in commercial cross-stack test
+212 discovered tests, 210 passed, 2 opt-in commercial/Cloud journey tests
 skipped, zero failures/errors. New coverage uses real disposable PostgreSQL and
 fake provider transport: authorization, grants/TTL, signed webhook digest,
 duplicates/order/reconnect, retention/holds, explicit early confirmation,
 pending/late evidence, concurrency, settlement/dispute invariants and sanitized
 SDK failures. No Cloud media connection or Android runtime was executed by
 those tests. Final PRs must record their exact heads and current verification.
+
+## Opt-in real Cloud journey
+
+Run `node scripts/verify-livekit-cloud-config.mjs` from the backend root for a
+read-only credential check. It calls RoomService without creating a room and
+never prints credentials, tokens, room names or provider payloads. This probe
+alone is not a successful-call test.
+
+Build `mentalbridge-frontend/mentalbridge` with `npm run build`, then run from
+this backend root (adjust absolute paths for the local checkout):
+
+```powershell
+mvn -f consultation-service/pom.xml test '-Dtest=LiveKitCloudJourneyTests' '-Dmb384.cloud=true' '-Dmb384.webhook=true' '-Duser.timezone=UTC' '-Dmb384.backend=E:/mentalbridge-repo/mentalbridge-backend' '-Dmb384.frontend=E:/mentalbridge-repo/mentalbridge-frontend/mentalbridge'
+```
+
+The controlled fixture starts real Consultation HTTP and disposable PostgreSQL,
+with synthetic approved Specialist/entitlement prerequisites and a test-only
+Identity JWT/current-account fixture. Actual public BFF contracts perform slot
+creation, booking, acceptance, access and Specialist confirmation. The test
+clock skips only booking lead time; provider attendance uses real wall time.
+Two Chrome contexts use synthetic camera/microphone input, not human patients.
+They connect to the existing Cloud project and require incoming RTP audio/video
+in both directions, >65 seconds common connection, toggles and leave/rejoin.
+Real signed webhook pairs must reconcile to verified completion and exactly
+one credit consumption/MB-516 earning. No attendance/webhook rows are fabricated.
+This is not Identity-login E2E or an Android media-call proof.
+
+For the approved temporary callback, run a free tunnel such as:
+
+```powershell
+cloudflared tunnel --url http://127.0.0.1:3188 --no-autoupdate
+```
+
+Add its temporary HTTPS URL plus `/internal/v1/video/livekit/webhook` in the
+existing Cloud project's webhook settings, using the matching Signing API key.
+Port 3188 is a loopback, path-filtered proxy that opens only while the opt-in
+journey is running; fixture and BFF ports are never exposed. The URL belongs
+to operator configuration, not application logic. Do not rebuild the standalone
+web app while this journey runs. Cloud tests are disabled in ordinary CI and
+never receive secrets from untrusted PRs.
+
+Sanitized screenshots, exact source revisions/clean-state flags, RTP counters
+and manifest are retained locally under frontend
+`mentalbridge/test-results/mb384-livekit-cloud/`; no raw event or token is saved.
+The initial local real Cloud checkpoint on 2026-10-13 passed media, 7 signed
+events, explicit confirmation, persisted completion and exactly-one settlement.
+Final PR verification must name the exact subsequently committed heads.
+
+After testing, stop the tunnel and remove its temporary Cloud webhook. Moving
+to production later requires an approved HTTPS reverse-proxy route to the same
+endpoint, injected production credentials and updated Cloud webhook settings;
+the handler does not need rewriting. Separate dev/prod LiveKit projects and
+credentials are recommended before production; MB-384 creates none and deploys
+neither staging nor production.
