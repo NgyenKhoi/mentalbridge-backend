@@ -50,6 +50,27 @@ const activity = (overrides: Partial<NotificationActivity> = {}): NotificationAc
   timezone: 'Asia/Ho_Chi_Minh',
   journal: { completedToday: false, currentStreak: 2, longestStreak: 4 },
   emotionCheckIn: { completedToday: false, currentStreak: 1, longestStreak: 5 },
+  achievementFacts: {
+    ownerAccountId: OWNER,
+    journal: {
+      distinctDays: 4,
+      longestStreak: 4,
+      firstOccurredAt: '2026-09-20T01:00:00.000Z',
+      streakMilestones: [
+        { days: 3, reachedAt: '2026-09-22T01:00:00.000Z' },
+        { days: 7, reachedAt: null },
+      ],
+    },
+    emotionCheckIn: {
+      distinctDays: 5,
+      longestStreak: 5,
+      firstOccurredAt: '2026-09-18T01:00:00.000Z',
+      streakMilestones: [
+        { days: 3, reachedAt: '2026-09-20T01:00:00.000Z' },
+        { days: 7, reachedAt: null },
+      ],
+    },
+  },
   interpretation: 'FACTUAL_ACTIVITY_NOT_ADHERENCE_OR_RECOVERY',
   ...overrides,
 });

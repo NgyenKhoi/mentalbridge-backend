@@ -2043,6 +2043,13 @@ CREATE TABLE content.resource_reward_preference (
     updated_at timestamptz NOT NULL
 );
 
+CREATE TABLE content.achievement_preference (
+    owner_id uuid PRIMARY KEY, -- external -> identity.account.id
+    visibility_state varchar(16) NOT NULL,
+    version bigint NOT NULL,
+    updated_at timestamptz NOT NULL
+);
+
 CREATE TABLE content.resource_bookmark (
     owner_id uuid NOT NULL, -- external -> identity.account.id
     resource_id uuid NOT NULL,
