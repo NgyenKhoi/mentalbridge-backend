@@ -1,11 +1,123 @@
 openapi: 3.1.0
 info:
   title: MentalBridge Consultation Service API
-  version: 1.16.0
+  version: 1.17.0
   description: Consultation-owned specialist profile lifecycle, approved online discovery, service-plan entitlement and credit lookup, online availability, appointment requests, appointment-scoped chat eligibility and minimized completion evidence, auditable owner cancellation/reschedule/session outcomes, immutable user-visible session summaries and agreed next steps, evidence-backed specialist earnings, fake local payout reconciliation, credit reservation limits, and suspension outcomes.
 servers:
   - url: http://localhost:8082
 paths:
+  /api/v1/specialist/appointments/{appointmentId}/video-completion:
+    x-mentalbridge-status: implemented
+    post:
+      operationId: confirmVideoConsultationFinished
+      description: Explicit assigned approved Specialist assertion of actual consultation end, accepted immediately without waiting for scheduled end or webhook grace. Stable idempotency and strong Appointment If-Match are required. Provider closure and paired trusted evidence are verified separately. Incomplete verification remains SESSION_ENDED with HELD credit, including after 24h; no timeout release, no-show, refund or earning is authorized. Verified completion reuses the existing immutable completion fact, consumed-credit ledger and MB-516 earning contract.
+      security: [{ bearerAuth: [] }]
+      parameters:
+        - $ref: '#/components/parameters/AppointmentId'
+        - name: If-Match
+          in: header
+          required: true
+          schema: { type: string, pattern: '^"[0-9]+"$' }
+        - name: Idempotency-Key
+          in: header
+          required: true
+          schema: { type: string, minLength: 16, maxLength: 128, pattern: '^[!-~]+$' }
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              additionalProperties: false
+              required: [confirmation]
+              properties:
+                confirmation: { type: string, enum: [CONSULTATION_FINISHED] }
+      responses:
+        '200':
+          description: Idempotent replay or authoritative verified completion
+          headers:
+            ETag: { description: Current strong Appointment version, schema: { type: string } }
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/VideoCompletion' }
+        '202':
+          description: Confirmation persisted; verification pending or requiring review, credit HELD
+          headers:
+            ETag: { description: Current strong Appointment version, schema: { type: string } }
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/VideoCompletion' }
+        '400': { $ref: '#/components/responses/ValidationProblem' }
+        '401': { $ref: '#/components/responses/UnauthorizedProblem' }
+        '403': { $ref: '#/components/responses/ForbiddenProblem' }
+        '404': { $ref: '#/components/responses/NotFoundProblem' }
+        '409': { $ref: '#/components/responses/ConflictProblem' }
+        '412': { $ref: '#/components/responses/VersionProblem' }
+        '428': { $ref: '#/components/responses/VersionRequiredProblem' }
+        '503': { $ref: '#/components/responses/UnavailableProblem' }
+  /internal/v1/video/livekit/webhook:
+    x-mentalbridge-status: implemented
+    post:
+      operationId: receiveLiveKitParticipationEvent
+      description: Raw provider body authenticated using LiveKit signature, expiry and SHA256 body verification, not an Identity bearer token. Only minimized assigned-participant metadata is retained for 90 days unless a dispute or valid retention hold applies. Duplicate delivery is idempotent; reordered events are paired by room and participant session SID. Unsupported, unknown or privacy-purged rooms are safely ignored. Media events never create completion facts or settle credits on their own.
+      security: [{ liveKitWebhook: [] }]
+      requestBody:
+        required: true
+        content:
+          application/webhook+json:
+            schema: { type: string, maxLength: 65536 }
+      responses:
+        '204': { description: Authenticated event processed or safely ignored }
+        '400': { $ref: '#/components/responses/ValidationProblem' }
+        '401': { $ref: '#/components/responses/UnauthorizedProblem' }
+        '409': { $ref: '#/components/responses/ConflictProblem' }
+        '503': { $ref: '#/components/responses/UnavailableProblem' }
+  /api/v1/appointments/{appointmentId}/video-session:
+    x-mentalbridge-status: implemented
+    get:
+      operationId: getAppointmentVideoSession
+      description: Assigned USER or SPECIALIST only. Waiting begins five minutes early for local preview, without a provider connection or attendance. Current authorization is authoritative; no media event completes an appointment.
+      security: [{ bearerAuth: [] }]
+      parameters:
+        - $ref: '#/components/parameters/AppointmentId'
+      responses:
+        '200':
+          description: No-store current video eligibility, without credentials or sensitive content
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/AppointmentVideoSession' }
+        '400': { $ref: '#/components/responses/ValidationProblem' }
+        '401': { $ref: '#/components/responses/UnauthorizedProblem' }
+        '403': { $ref: '#/components/responses/ForbiddenProblem' }
+        '404': { $ref: '#/components/responses/NotFoundProblem' }
+  /api/v1/appointments/{appointmentId}/video-access:
+    x-mentalbridge-status: implemented
+    post:
+      operationId: issueAppointmentVideoAccess
+      description: No request body. Rechecks exact assigned actor/role, approved specialist, held credit, video modality, CONFIRMED/IN_PROGRESS and [startsAt,endsAt). Uses the owner room mapping, never a client room/actor. Token is room-scoped, in-memory only, 30–300 seconds maximum and expires no later than endsAt. LiveKit SDK refresh does not extend the appointment; server revocation/closure remains required.
+      security: [{ bearerAuth: [] }]
+      parameters:
+        - $ref: '#/components/parameters/AppointmentId'
+      responses:
+        '200':
+          description: Sensitive no-store connection response; never log or persist its token
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/AppointmentVideoAccess' }
+        '400': { $ref: '#/components/responses/ValidationProblem' }
+        '401': { $ref: '#/components/responses/UnauthorizedProblem' }
+        '403': { $ref: '#/components/responses/ForbiddenProblem' }
+        '404': { $ref: '#/components/responses/NotFoundProblem' }
+        '409':
+          description: VIDEO_JOIN_NOT_ALLOWED for early/late/ended/cancelled/completed/unapproved or otherwise ineligible appointment
+          content:
+            application/problem+json:
+              schema: { $ref: '#/components/schemas/Problem' }
+        '503':
+          description: VIDEO_PROVIDER_UNAVAILABLE or VIDEO_DISABLED. No credentials are issued and no completion/financial fact is created.
+          content:
+            application/problem+json:
+              schema: { $ref: '#/components/schemas/Problem' }
   /api/v1/specialist-profile/amendments/current:
     x-mentalbridge-status: implemented
     get:
@@ -1554,6 +1666,11 @@ paths:
         '428': { $ref: '#/components/responses/VersionRequiredProblem' }
 components:
   securitySchemes:
+    liveKitWebhook:
+      type: apiKey
+      in: header
+      name: Authorization
+      description: LiveKit-signed JWT with raw-body SHA256 binding; no Bearer prefix.
     bearerAuth:
       type: http
       scheme: bearer
@@ -1647,6 +1764,49 @@ components:
       description: Quoted current appointment version for If-Match.
       schema: { type: string, pattern: '^"[0-9]+"$' }
   schemas:
+    VideoCompletion:
+      type: object
+      additionalProperties: false
+      required: [appointmentId, confirmationId, verificationState, appointmentStatus, creditState, completionFactId, acceptedAt, manualReviewAt, version]
+      properties:
+        appointmentId: { type: string, format: uuid }
+        confirmationId: { type: string, format: uuid }
+        verificationState: { type: string, enum: [PENDING_VERIFICATION, VERIFIED, EVIDENCE_REVIEW] }
+        appointmentStatus: { type: string, enum: [SESSION_ENDED, COMPLETED] }
+        creditState: { type: string, enum: [AVAILABLE, HELD, CONSUMED, FORFEITED] }
+        completionFactId: { type: [string, 'null'], format: uuid }
+        acceptedAt: { type: string, format: date-time }
+        manualReviewAt: { type: string, format: date-time }
+        version: { type: integer, minimum: 0 }
+    AppointmentVideoSession:
+      type: object
+      additionalProperties: false
+      required: [appointmentId, phase, previewAllowed, joinAllowed, startsAt, endsAt, serverTime, version, completion]
+      properties:
+        appointmentId: { type: string, format: uuid }
+        phase: { type: string, enum: [TOO_EARLY, WAITING, ACTIVE, ENDED, COMPLETED, NOT_AVAILABLE, UNAVAILABLE] }
+        previewAllowed: { type: boolean }
+        joinAllowed: { type: boolean }
+        startsAt: { type: string, format: date-time }
+        endsAt: { type: string, format: date-time }
+        serverTime: { type: string, format: date-time }
+        version: { type: integer, minimum: 0 }
+        completion:
+          oneOf:
+            - $ref: '#/components/schemas/VideoCompletion'
+            - type: 'null'
+    AppointmentVideoAccess:
+      type: object
+      additionalProperties: false
+      required: [appointmentId, provider, serverUrl, roomName, participantToken, expiresAt, endsAt]
+      properties:
+        appointmentId: { type: string, format: uuid }
+        provider: { type: string, const: LIVEKIT }
+        serverUrl: { type: string, format: uri, pattern: '^wss://[^/]+\.livekit\.cloud/?$' }
+        roomName: { type: string, maxLength: 64 }
+        participantToken: { type: string, description: Sensitive in-memory-only provider JWT; never log or persist }
+        expiresAt: { type: string, format: date-time }
+        endsAt: { type: string, format: date-time }
     ServicePlanCatalogue:
       type: object
       additionalProperties: false
@@ -2682,7 +2842,7 @@ components:
         actorId: { type: [string, 'null'], format: uuid }
         reason:
           type: string
-          enum: [APPOINTMENT_REQUESTED, USER_CANCELLED, USER_RESCHEDULED, SPECIALIST_ACCEPTED, SPECIALIST_REJECTED, DECISION_DEADLINE_EXPIRED, SPECIALIST_SUSPENDED, SESSION_ACTIVITY_OBSERVED, SCHEDULED_WINDOW_ENDED, EVIDENCE_REQUIREMENTS_MET]
+          enum: [APPOINTMENT_REQUESTED, USER_CANCELLED, USER_RESCHEDULED, SPECIALIST_ACCEPTED, SPECIALIST_REJECTED, DECISION_DEADLINE_EXPIRED, SPECIALIST_SUSPENDED, SESSION_ACTIVITY_OBSERVED, SCHEDULED_WINDOW_ENDED, EVIDENCE_REQUIREMENTS_MET, SPECIALIST_VIDEO_END_CONFIRMED, VIDEO_MANUAL_REVIEW_REQUIRED]
         creditOutcome:
           oneOf:
             - { $ref: '#/components/schemas/AppointmentCancellationCreditOutcome' }
@@ -2924,7 +3084,7 @@ components:
           type: [string, 'null']
           enum: [COMPLETED, USER_NO_SHOW, SPECIALIST_NO_SHOW, BOTH_NO_SHOW, INSUFFICIENT_EVIDENCE, EVIDENCE_REVIEW, null]
         sessionOutcomeReason: { type: [string, 'null'], maxLength: 64 }
-        sessionPolicyVersion: { type: [string, 'null'], enum: [chat-session-completion-v1, null] }
+        sessionPolicyVersion: { type: [string, 'null'], enum: [chat-session-completion-v1, livekit-video-completion-v1, null] }
         sessionEndedAt: { type: [string, 'null'], format: date-time }
         sessionSettledAt: { type: [string, 'null'], format: date-time }
         completionFactId: { type: [string, 'null'], format: uuid }

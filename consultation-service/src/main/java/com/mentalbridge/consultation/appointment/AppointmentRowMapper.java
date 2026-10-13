@@ -38,6 +38,7 @@ final class AppointmentRowMapper {
 		if (reason.equals("SPECIALIST_SUSPENDED")) return "ADMIN";
 		if (reason.startsWith("SPECIALIST_")) return "SPECIALIST";
 		if (reason.equals("DECISION_DEADLINE_EXPIRED") || reason.startsWith("SESSION_")
+				|| reason.equals("VIDEO_MANUAL_REVIEW_REQUIRED")
 				|| reason.equals("SCHEDULED_WINDOW_ENDED") || reason.equals("EVIDENCE_REQUIREMENTS_MET")) return "SYSTEM";
 		return "ADMIN";
 	}

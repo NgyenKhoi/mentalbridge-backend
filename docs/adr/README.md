@@ -24,6 +24,7 @@ Use ADR **filename + Decision ID**, not numeric prefix alone, when a reference c
 | [0036-authoritative-resource-rewards.md](0036-authoritative-resource-rewards.md) | `MB-RESOURCE-REWARD-001` | Accepted | Derives optional non-punitive XP from exact Content evidence with versioned rules and no second award ledger |
 | [0037-persistent-resource-engagement.md](0037-persistent-resource-engagement.md) | `MB-RESOURCE-ENGAGEMENT-001` | Accepted | Persists exact-version bookmarks and separates reversible Bingo self-confirmation from recomputed Content evidence |
 | [0038-private-multi-domain-achievements.md](0038-private-multi-domain-achievements.md) | `MB-PRIVATE-ACHIEVEMENT-001` | Accepted | Defines a private deterministic gallery over minimized owner facts with explicit unavailable/deferred states and no inferred journey closure |
+| [0039-livekit-cloud-video-consultation.md](0039-livekit-cloud-video-consultation.md) | `MB-LIVEKIT-VIDEO-001` | Accepted provider/access/privacy/retention/completion command; automatic timeout settlement not approved | LiveKit Cloud transport with appointment-scoped tokens, verified minimized evidence and 90-day hold-aware retention |
 
 For clauses explicitly amended by ADR 0022, ADR 0024, or ADR 0034, the relevant
 latest amendment is the current prospective authority. Historical records keep

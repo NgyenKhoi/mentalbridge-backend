@@ -145,7 +145,7 @@ public class ChatSessionSettlementService {
 		return jdbc.sql("""
 				select id, user_account_id, service_credit_id, status, scheduled_start_at, scheduled_end_at,
 				       session_outcome, evidence_failure_reason
-				from appointment where id=:id for update
+				from appointment where id=:id and modality='IN_APP_CHAT' for update
 				""").param("id", id).query((row, ignored) -> new SettlementTarget(row.getObject("id", UUID.class),
 				row.getObject("user_account_id", UUID.class), row.getObject("service_credit_id", UUID.class),
 				row.getString("status"), row.getTimestamp("scheduled_start_at").toInstant(),

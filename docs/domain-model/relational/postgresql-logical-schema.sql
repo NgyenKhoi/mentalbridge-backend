@@ -1472,6 +1472,49 @@ CREATE TABLE consultation.appointment_status_history (
     changed_at timestamptz NOT NULL
 );
 
+CREATE TABLE consultation.appointment_video_room (
+    appointment_id uuid PRIMARY KEY REFERENCES consultation.appointment(id),
+    room_name varchar(64) NOT NULL UNIQUE,
+    user_identity varchar(64) NOT NULL,
+    specialist_identity varchar(64) NOT NULL,
+    state varchar(16) NOT NULL,
+    failure_reason varchar(64),
+    next_close_at timestamptz,
+    next_verification_at timestamptz,
+    closed_at timestamptz,
+    created_at timestamptz NOT NULL,
+    retention_hold_reason varchar(64),
+    version bigint NOT NULL
+);
+
+CREATE TABLE consultation.appointment_video_confirmation (
+    appointment_id uuid PRIMARY KEY REFERENCES consultation.appointment(id),
+    id uuid NOT NULL UNIQUE,
+    confirmed_by uuid NOT NULL, -- external -> identity.account.id
+    source_version bigint NOT NULL,
+    idempotency_key varchar(128) NOT NULL,
+    accepted_at timestamptz NOT NULL,
+    policy_version varchar(64) NOT NULL,
+    UNIQUE (confirmed_by, idempotency_key),
+    UNIQUE (appointment_id, id)
+);
+
+ALTER TABLE consultation.appointment ADD COLUMN video_confirmation_id uuid;
+ALTER TABLE consultation.appointment ADD FOREIGN KEY(id,video_confirmation_id)
+    REFERENCES consultation.appointment_video_confirmation(appointment_id,id);
+
+CREATE TABLE consultation.appointment_video_event (
+    event_id varchar(128) PRIMARY KEY,
+    appointment_id uuid NOT NULL REFERENCES consultation.appointment_video_room(appointment_id),
+    event_type varchar(32) NOT NULL,
+    room_sid varchar(128) NOT NULL,
+    participant_identity varchar(64),
+    participant_sid varchar(128),
+    participant_role varchar(16),
+    occurred_at timestamptz NOT NULL,
+    received_at timestamptz NOT NULL
+);
+
 CREATE TABLE consultation.appointment_chat_evidence (
     id uuid PRIMARY KEY,
     appointment_id uuid NOT NULL REFERENCES consultation.appointment(id),

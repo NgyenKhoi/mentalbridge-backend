@@ -1,5 +1,15 @@
 # Requirements Traceability
 
+- 2026-10-12: MB-384 implements LiveKit Cloud 1:1 appointment video. Assigned
+  participants receive short-lived room-scoped access; preview stays local until
+  startsAt. Signed, minimized participation events support verification but
+  never complete an appointment alone. An explicit assigned Specialist command
+  plus verified closure/evidence reuses the existing completion fact, exact
+  credit consumption and MB-516 earning. Missing evidence stays pending/HELD;
+  24-hour review never automatically settles. Participation metadata has the
+  approved 90-day retention with dispute/valid-hold exclusions. See
+  [ADR 0039](adr/0039-livekit-cloud-video-consultation.md) and
+  [developer runbook](runbooks/mb-384-livekit-video.md).
 - 2026-10-11: MB-589 completes the Content-owned reviewed-resource editorial
   lifecycle. Configured Identity ADMIN review authorities record immutable
   exact-version decisions; publication requires an approved decision plus
