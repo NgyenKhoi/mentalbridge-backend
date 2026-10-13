@@ -3,6 +3,10 @@ package com.mentalbridge.care.supportplan;
 import java.time.Instant;
 import java.util.UUID;
 
+import org.hibernate.annotations.JdbcTypeCode;
+import org.hibernate.type.SqlTypes;
+
+import jakarta.persistence.Column;
 import jakarta.persistence.Entity;
 import jakarta.persistence.Id;
 import jakarta.persistence.IdClass;
@@ -15,6 +19,8 @@ class SupportPlanScheduleCommandEntity {
 
 	@Id private UUID userId;
 	@Id private String idempotencyKey;
+	@JdbcTypeCode(SqlTypes.CHAR)
+	@Column(length = 64)
 	private String requestHash;
 	private UUID supportPlanId;
 	private UUID actionId;
