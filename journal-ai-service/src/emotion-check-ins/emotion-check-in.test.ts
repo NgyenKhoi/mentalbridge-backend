@@ -189,14 +189,13 @@ const createBody = {
 
 const subject = (consentClient: ConsentClient = grantedConsent) => {
   const repository = new MemoryRepository();
+  const crypto = new EmotionCheckInCrypto(configuration);
   return {
     repository,
-    service: new EmotionCheckInService(
-      repository,
-      new EmotionCheckInCrypto(configuration),
-      consentClient,
-      { now: () => new Date(now) },
-    ),
+    crypto,
+    service: new EmotionCheckInService(repository, crypto, consentClient, {
+      now: () => new Date(now),
+    }),
   };
 };
 
@@ -233,6 +232,152 @@ const seedCheckIn = (
     purgeAfter: null,
   });
 };
+
+void test("completion evidence is a read-only content-free owner fact without decryption or AI consent", async () => {
+  const { repository, crypto, service } = subject({
+    check: () => Promise.reject(new Error("Consent must not be queried")),
+  });
+  const created = await service.create(request(createBody));
+  const before = JSON.stringify(repository.documents);
+  crypto.decrypt = () => {
+    throw new Error("Evidence must not decrypt private content");
+  };
+  const evidence = await service.completionEvidence(
+    request({}),
+    createBody.localDate,
+  );
+  assert.deepEqual(evidence, {
+    schemaVersion: "emotion-check-in-completion-evidence-v1",
+    subjectUserId: ownerId,
+    localDate: createBody.localDate,
+    state: "RECORDED",
+    fact: {
+      ownerDomain: "JOURNAL_AI",
+      kind: "EMOTION_CHECK_IN",
+      factId: created.id,
+      factRevision: "1",
+      occurredAt: created.createdAt,
+      timezone: createBody.timezone,
+    },
+    verifiedAt: now.toISOString(),
+  });
+  assert.equal(JSON.stringify(repository.documents), before);
+  assert.equal(JSON.stringify(evidence).includes(createBody.note), false);
+  for (const field of [
+    "emotion",
+    "intensity",
+    "factors",
+    "note",
+    "payload",
+    "score",
+  ])
+    assert.equal(Object.hasOwn(evidence, field), false);
+});
+
+void test("completion evidence retains the same creation fact after an emotion revision and retry", async () => {
+  const { service } = subject();
+  await service.create(request(createBody));
+  const first = await service.completionEvidence(
+    request({}),
+    createBody.localDate,
+  );
+  await service.update(
+    request(
+      { emotion: "LOW", intensity: 2, factors: [], note: null },
+      "emotion-evidence-edit-0001",
+      1,
+    ),
+    createBody.localDate,
+  );
+  const revised = await service.completionEvidence(
+    request({}),
+    createBody.localDate,
+  );
+  assert.deepEqual(revised, first);
+  assert.deepEqual(
+    await service.completionEvidence(request({}), createBody.localDate),
+    first,
+  );
+});
+
+void test("completion evidence distinguishes owner absence, cross-owner absence and deletion without a fact", async () => {
+  const { service } = subject();
+  const missing = await service.completionEvidence(
+    request({}),
+    createBody.localDate,
+  );
+  assert.equal(missing.state, "MISSING");
+  assert.equal(missing.fact, null);
+  await service.create(request(createBody));
+  const other = await service.completionEvidence(
+    request({}, "unused-key", undefined, otherOwnerId),
+    createBody.localDate,
+  );
+  assert.equal(other.state, "MISSING");
+  assert.equal(other.subjectUserId, otherOwnerId);
+  assert.equal(other.fact, null);
+  await service.remove(
+    request({}, "emotion-evidence-delete-0001"),
+    createBody.localDate,
+  );
+  const deleted = await service.completionEvidence(
+    request({}),
+    createBody.localDate,
+  );
+  assert.equal(deleted.state, "DELETED");
+  assert.equal(deleted.fact, null);
+});
+
+void test("completion evidence validates the date and authenticated owner before querying", async () => {
+  const { repository, service } = subject();
+  let queried = false;
+  repository.find = () => {
+    queried = true;
+    throw new Error("Must not query");
+  };
+  await assert.rejects(
+    service.completionEvidence(request({}), "2026-02-30"),
+    BadRequestException,
+  );
+  await assert.rejects(
+    service.completionEvidence(
+      { ...request({}), principal: { accountId: "invalid", roles: ["USER"] } },
+      createBody.localDate,
+    ),
+    (error: unknown) =>
+      error instanceof HttpException && error.getStatus() === 401,
+  );
+  assert.equal(queried, false);
+});
+
+void test("completion evidence reports store failure as unavailable, never as a missing fact", async () => {
+  const { repository, service } = subject();
+  repository.find = () =>
+    Promise.reject(new Error("synthetic owner store outage"));
+  await assert.rejects(
+    service.completionEvidence(request({}), createBody.localDate),
+    ServiceUnavailableException,
+  );
+});
+
+void test("completion evidence fails closed for inconsistent owner metadata or a future creation time", async () => {
+  const { repository, service } = subject();
+  await service.create(request(createBody));
+  const document = repository.documents[0];
+  assert.ok(document);
+  repository.find = () => Promise.resolve(document);
+  document.ownerAccountId = otherOwnerId;
+  await assert.rejects(
+    service.completionEvidence(request({}), createBody.localDate),
+    ServiceUnavailableException,
+  );
+  document.ownerAccountId = ownerId;
+  document.createdAt = new Date(now.getTime() + 1);
+  await assert.rejects(
+    service.completionEvidence(request({}), createBody.localDate),
+    ServiceUnavailableException,
+  );
+});
 
 void test("creates one encrypted owner-scoped check-in and replays exact retries", async () => {
   const { repository, service } = subject();

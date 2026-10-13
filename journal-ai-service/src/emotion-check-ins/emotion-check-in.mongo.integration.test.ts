@@ -152,6 +152,55 @@ void test("persists owner-isolated daily emotion check-ins with real MongoDB", a
     assert.equal(createdBody.sourceLabel, "SELF_REPORTED_EMOTION");
     assert.deepEqual(createdBody.factors, body.factors);
     assert.equal(createdBody.note, body.note);
+    const evidencePath =
+      "/api/v1/emotion-check-ins/2026-09-17/completion-evidence";
+    await request(server).get(evidencePath).expect(401);
+    await request(server)
+      .get("/api/v1/emotion-check-ins/2026-02-30/completion-evidence")
+      .set("Authorization", `Bearer ${ownerToken}`)
+      .expect(400);
+    const evidence = await request(server)
+      .get(evidencePath)
+      .set("Authorization", `Bearer ${ownerToken}`)
+      .expect(200);
+    const evidenceBody = evidence.body as {
+      state: string;
+      subjectUserId: string;
+      fact: { factId: string; factRevision: string; occurredAt: string };
+    };
+    assert.equal(evidence.headers["cache-control"], "no-store");
+    assert.equal(evidenceBody.state, "RECORDED");
+    assert.equal(evidenceBody.subjectUserId, ownerId);
+    assert.equal(evidenceBody.fact.factRevision, "1");
+    assert.deepEqual(Object.keys(evidenceBody).sort(), [
+      "fact",
+      "localDate",
+      "schemaVersion",
+      "state",
+      "subjectUserId",
+      "verifiedAt",
+    ]);
+    assert.deepEqual(Object.keys(evidenceBody.fact).sort(), [
+      "factId",
+      "factRevision",
+      "kind",
+      "occurredAt",
+      "ownerDomain",
+      "timezone",
+    ]);
+    assert.equal(JSON.stringify(evidenceBody).includes(body.note), false);
+    const otherEvidence = await request(server)
+      .get(evidencePath)
+      .set("Authorization", `Bearer ${otherToken}`)
+      .expect(200);
+    const otherEvidenceBody = otherEvidence.body as {
+      state: string;
+      subjectUserId: string;
+      fact: null;
+    };
+    assert.equal(otherEvidenceBody.state, "MISSING");
+    assert.equal(otherEvidenceBody.subjectUserId, otherOwnerId);
+    assert.equal(otherEvidenceBody.fact, null);
     assert.equal(
       String(created.headers.location),
       "/api/v1/emotion-check-ins/2026-09-17",
@@ -216,6 +265,14 @@ void test("persists owner-isolated daily emotion check-ins with real MongoDB", a
     assert.deepEqual(
       updates.map((response) => response.status).sort(),
       [200, 412],
+    );
+    const revisedEvidence = await request(server)
+      .get(evidencePath)
+      .set("Authorization", `Bearer ${ownerToken}`)
+      .expect(200);
+    assert.deepEqual(
+      (revisedEvidence.body as typeof evidenceBody).fact,
+      evidenceBody.fact,
     );
 
     const history = await request(server)
@@ -299,6 +356,16 @@ void test("persists owner-isolated daily emotion check-ins with real MongoDB", a
       .expect(200);
     const deletedBody = deleted.body as { deleted: boolean };
     assert.equal(deletedBody.deleted, true);
+    const deletedEvidence = await request(server)
+      .get(evidencePath)
+      .set("Authorization", `Bearer ${ownerToken}`)
+      .expect(200);
+    const deletedEvidenceBody = deletedEvidence.body as {
+      state: string;
+      fact: null;
+    };
+    assert.equal(deletedEvidenceBody.state, "DELETED");
+    assert.equal(deletedEvidenceBody.fact, null);
     await request(server)
       .delete("/api/v1/emotion-check-ins/2026-09-17")
       .set("Authorization", `Bearer ${ownerToken}`)

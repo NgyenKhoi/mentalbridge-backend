@@ -4,7 +4,9 @@ NestJS service on Node.js that owns private journal entries and coordinates AI a
 
 ## Current scope
 
-Public OpenAPI v1.8.0 aligns exact-analysis, longitudinal evidence and Support
+Public OpenAPI v1.10.0 adds the MB-641 content-free daily check-in evidence
+provider read. The preceding provider enum amendment aligns exact-analysis,
+longitudinal evidence and Support
 Guide phrasing provider enums with the existing approved `BEDROCK` runtime
 route and migration 011. Consumers must accept this provider without relaxing
 other result validation. `contract:check` compares these public enums with the
@@ -53,6 +55,28 @@ MB-371 adds exact-source
 longitudinal jobs, conservative coverage handling, deletion coupling, and a
 minimized Care read. Frontend reassessment presentation, AI Chat quota, general
 dataset import, and billing lifecycle remain separate.
+
+### MB-641 completion evidence provider
+
+`GET /api/v1/emotion-check-ins/{localDate}/completion-evidence` resolves only
+the authenticated owner's record. It returns `RECORDED`, `MISSING`, or
+`DELETED`, with the subject/local date, verification time and, only when
+recorded, the opaque fact ID, creation revision `1`, creation time and frozen
+timezone. Same-day revisions never produce another completion fact. Deleted
+becomes missing after the existing content-free tombstone expires.
+
+The read never decrypts or returns emotion, intensity, factors, notes, AI
+output, or encrypted payload. It does not require AI-processing consent or
+invoke a provider. Store failures return 503 rather than false absence, and
+responses are `Cache-Control: no-store`. No schema, retention, source record,
+plan selection, or plan lifecycle changes are made.
+
+Care consumes this projection to verify the exact action/date/source link and
+reconcile through its transactional evidence boundary. The web/mobile consumers
+return to the originating action and require an explicit completion check;
+unavailable/deleted source states remain distinct from accepted history. Native
+device execution is separately gated by MB-666. Browser-supplied IDs or a
+successful navigation alone must never complete an occurrence.
 
 ## Requirements
 
@@ -154,6 +178,7 @@ encrypted demo data exists. Do not commit local `.env` files or secrets.
 | `POST`   | `/api/v1/emotion-check-ins`                                       | Create the current local-day self-reported emotion check-in                                                                 |
 | `GET`    | `/api/v1/emotion-check-ins`                                       | List owner-scoped self-reported emotion history                                                                             |
 | `GET`    | `/api/v1/emotion-check-ins/{localDate}`                           | Reload one owned local-day check-in                                                                                         |
+| `GET`    | `/api/v1/emotion-check-ins/{localDate}/completion-evidence`       | Resolve the owner's content-free check-in existence fact for Care reconciliation                                            |
 | `PATCH`  | `/api/v1/emotion-check-ins/{localDate}`                           | Optimistically update the current local-day check-in                                                                        |
 | `DELETE` | `/api/v1/emotion-check-ins/{localDate}`                           | Erase encrypted revisions and retain a bounded tombstone                                                                    |
 | `GET`    | `/api/v1/emotion-check-in-context`                                | Return note-free AI context after current Care consent                                                                      |
