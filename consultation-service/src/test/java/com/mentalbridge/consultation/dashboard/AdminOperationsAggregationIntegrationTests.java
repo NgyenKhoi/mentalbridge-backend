@@ -257,4 +257,3 @@ class AdminOperationsAggregationIntegrationTests extends ConsultationTestPropert
 				.authorities(new SimpleGrantedAuthority("ROLE_ADMIN"));
 	}
 }
-

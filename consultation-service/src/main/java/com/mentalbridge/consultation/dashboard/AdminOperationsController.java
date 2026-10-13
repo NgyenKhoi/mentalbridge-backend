@@ -20,4 +20,3 @@ public class AdminOperationsController {
 		return ResponseEntity.ok(operationsService.getOperationsSummary());
 	}
 }
-

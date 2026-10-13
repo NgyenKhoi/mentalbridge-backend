@@ -91,4 +91,3 @@ class AdminOperationsSecurityIntegrationTests extends ConsultationTestProperties
 				.authorities(new SimpleGrantedAuthority("ROLE_USER"));
 	}
 }
-
