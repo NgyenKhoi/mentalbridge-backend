@@ -136,36 +136,36 @@ encrypted demo data exists. Do not commit local `.env` files or secrets.
 
 ## Operations endpoints
 
-| Method   | Path                                                              | Purpose                                                                            |
-| -------- | ----------------------------------------------------------------- | ---------------------------------------------------------------------------------- |
-| `GET`    | `/health/live`                                                    | Process liveness probe                                                             |
-| `GET`    | `/health/ready`                                                   | Readiness probe that returns success only when owned MongoDB responds              |
-| `GET`    | `/metrics`                                                        | Prometheus metrics scrape endpoint                                                 |
-| `POST`   | `/api/v1/journals`                                                | Create an encrypted journal entry with an idempotency key                          |
-| `GET`    | `/api/v1/journals`                                                | List the authenticated owner's entries by opaque cursor                            |
-| `GET`    | `/api/v1/journals/{journalId}`                                    | Read one owner-scoped entry                                                        |
-| `PATCH`  | `/api/v1/journals/{journalId}`                                    | Append a revision guarded by `If-Match`                                            |
-| `DELETE` | `/api/v1/journals/{journalId}`                                    | Create an idempotent owner-scoped tombstone                                        |
-| `POST`   | `/api/v1/journals/{journalId}/revisions/{revision}/analysis-jobs` | Request one consented exact-revision analysis job                                  |
-| `GET`    | `/api/v1/analysis-jobs/{jobId}`                                   | Read the owner-scoped job state and normalized result                              |
-| `POST`   | `/api/v1/longitudinal-analysis-jobs`                              | Compare exact owned revisions across two bounded periods                           |
-| `GET`    | `/api/v1/longitudinal-analysis-jobs/{jobId}`                      | Read the owner-scoped longitudinal job and safe evidence                           |
-| `GET`    | `/internal/v1/users/{userId}/longitudinal-analyses/{analysisId}`  | Return minimized consented evidence for Care reassessment                          |
-| `POST`   | `/api/v1/emotion-check-ins`                                       | Create the current local-day self-reported emotion check-in                        |
-| `GET`    | `/api/v1/emotion-check-ins`                                       | List owner-scoped self-reported emotion history                                    |
-| `GET`    | `/api/v1/emotion-check-ins/{localDate}`                           | Reload one owned local-day check-in                                                |
-| `PATCH`  | `/api/v1/emotion-check-ins/{localDate}`                           | Optimistically update the current local-day check-in                               |
-| `DELETE` | `/api/v1/emotion-check-ins/{localDate}`                           | Erase encrypted revisions and retain a bounded tombstone                           |
-| `GET`    | `/api/v1/emotion-check-in-context`                                | Return note-free AI context after current Care consent                             |
-| `GET`    | `/api/v1/notification-activity`                                   | Return independent note-free Journal/emotion activity for the authenticated owner  |
-| `POST`   | `/internal/v1/notification-activity`                              | Return minimized owner activity to Content using the scoped reminder service token |
-| `POST`   | `/api/v1/ai-companion/conversations`                              | Start an encrypted owner-scoped conversation                                       |
-| `GET`    | `/api/v1/ai-companion/conversations`                              | List bounded retained conversation summaries without message bodies                |
-| `GET`    | `/api/v1/ai-companion/conversations/{conversationId}`             | Resume one owned conversation                                                      |
-| `PUT`    | `/api/v1/ai-companion/conversations/{conversationId}/context`     | Replace the owned conversation's persisted context-source selection                |
-| `POST`   | `/api/v1/ai-companion/conversations/{conversationId}/messages`    | Deliver one quota-governed normalized assistant response                           |
-| `POST`   | `/internal/v1/support-guide-phrasing`                             | Rephrase exact Care-approved guide copy after current AI consent                   |
-| `DELETE` | `/api/v1/ai-companion/conversations/{conversationId}`             | Hard-delete the conversation and replay snapshots                                  |
+| Method   | Path                                                              | Purpose                                                                                                                     |
+| -------- | ----------------------------------------------------------------- | --------------------------------------------------------------------------------------------------------------------------- |
+| `GET`    | `/health/live`                                                    | Process liveness probe                                                                                                      |
+| `GET`    | `/health/ready`                                                   | Readiness probe that returns success only when owned MongoDB responds                                                       |
+| `GET`    | `/metrics`                                                        | Prometheus metrics scrape endpoint                                                                                          |
+| `POST`   | `/api/v1/journals`                                                | Create an encrypted journal entry with an idempotency key                                                                   |
+| `GET`    | `/api/v1/journals`                                                | List the authenticated owner's entries by opaque cursor                                                                     |
+| `GET`    | `/api/v1/journals/{journalId}`                                    | Read one owner-scoped entry                                                                                                 |
+| `PATCH`  | `/api/v1/journals/{journalId}`                                    | Append a revision guarded by `If-Match`                                                                                     |
+| `DELETE` | `/api/v1/journals/{journalId}`                                    | Create an idempotent owner-scoped tombstone                                                                                 |
+| `POST`   | `/api/v1/journals/{journalId}/revisions/{revision}/analysis-jobs` | Request one consented exact-revision analysis job                                                                           |
+| `GET`    | `/api/v1/analysis-jobs/{jobId}`                                   | Read the owner-scoped job state and normalized result                                                                       |
+| `POST`   | `/api/v1/longitudinal-analysis-jobs`                              | Compare exact owned revisions across two bounded periods                                                                    |
+| `GET`    | `/api/v1/longitudinal-analysis-jobs/{jobId}`                      | Read the owner-scoped longitudinal job and safe evidence                                                                    |
+| `GET`    | `/internal/v1/users/{userId}/longitudinal-analyses/{analysisId}`  | Return minimized consented evidence for Care reassessment                                                                   |
+| `POST`   | `/api/v1/emotion-check-ins`                                       | Create the current local-day self-reported emotion check-in                                                                 |
+| `GET`    | `/api/v1/emotion-check-ins`                                       | List owner-scoped self-reported emotion history                                                                             |
+| `GET`    | `/api/v1/emotion-check-ins/{localDate}`                           | Reload one owned local-day check-in                                                                                         |
+| `PATCH`  | `/api/v1/emotion-check-ins/{localDate}`                           | Optimistically update the current local-day check-in                                                                        |
+| `DELETE` | `/api/v1/emotion-check-ins/{localDate}`                           | Erase encrypted revisions and retain a bounded tombstone                                                                    |
+| `GET`    | `/api/v1/emotion-check-in-context`                                | Return note-free AI context after current Care consent                                                                      |
+| `GET`    | `/api/v1/notification-activity`                                   | Return independent note-free Journal/emotion activity for the authenticated owner                                           |
+| `POST`   | `/internal/v1/notification-activity`                              | Return minimized owner-bound activity and bounded streak milestone facts to Content using the scoped reminder service token |
+| `POST`   | `/api/v1/ai-companion/conversations`                              | Start an encrypted owner-scoped conversation                                                                                |
+| `GET`    | `/api/v1/ai-companion/conversations`                              | List bounded retained conversation summaries without message bodies                                                         |
+| `GET`    | `/api/v1/ai-companion/conversations/{conversationId}`             | Resume one owned conversation                                                                                               |
+| `PUT`    | `/api/v1/ai-companion/conversations/{conversationId}/context`     | Replace the owned conversation's persisted context-source selection                                                         |
+| `POST`   | `/api/v1/ai-companion/conversations/{conversationId}/messages`    | Deliver one quota-governed normalized assistant response                                                                    |
+| `POST`   | `/internal/v1/support-guide-phrasing`                             | Rephrase exact Care-approved guide copy after current AI consent                                                            |
+| `DELETE` | `/api/v1/ai-companion/conversations/{conversationId}`             | Hard-delete the conversation and replay snapshots                                                                           |
 
 Incoming requests echo a valid bounded `x-correlation-id` or receive a generated one. Request logs include the same correlation ID and redact authorization, cookie, and reminder service-token headers. Non-public application routes require an Identity-issued RS256 bearer token; signature, issuer, audience, lifetime, subject, token ID, and roles are validated before a principal is attached to the request. The internal notification activity projection instead requires the dedicated `JOURNAL_AI_REMINDER_SERVICE_TOKEN` and exposes only note-free factual activity.
 

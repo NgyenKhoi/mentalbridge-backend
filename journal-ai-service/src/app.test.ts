@@ -535,7 +535,12 @@ void test("authorizes the scoped notification scheduler service boundary", async
           assert.equal(requestedOwnerId, ownerId);
           return Promise.resolve({
             journalOccurredAt: [new Date("2026-09-27T08:00:00.000Z")],
-            emotionLocalDates: ["2026-09-27"],
+            emotionActivity: [
+              {
+                localDate: "2026-09-27",
+                occurredAt: new Date("2026-09-27T01:00:00.000Z"),
+              },
+            ],
           });
         },
       },
