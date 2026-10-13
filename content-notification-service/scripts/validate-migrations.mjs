@@ -40,6 +40,9 @@ const appointmentEmailReminders = requiredMigration('17_add_appointment_email_re
 const communityInteractionNotifications = requiredMigration(
   '18_add_community_interaction_notifications.sql',
 );
+const specialistNotificationPreferences = requiredMigration(
+  '22_add_specialist_notification_preferences.sql',
+);
 const review1Seed = await readFile(
   new URL('../migrations/review1/1_seed_review1_controlled_resource.sql', import.meta.url),
   'utf8',
@@ -87,6 +90,9 @@ assert.match(legacyIdempotency, /ADD COLUMN idempotency_key\b/);
 assert.match(commandRecords, /CREATE TABLE resource_idempotency_record\b/);
 assert.match(commandRecords, /PRIMARY KEY \(actor_id, operation, idempotency_key\)/);
 assert.match(commandRecords, /CREATE TABLE resource_audit_event\b/);
+assert.match(specialistNotificationPreferences, /ADD COLUMN owner_type\b/);
+assert.match(specialistNotificationPreferences, /ck_specialist_notification_preference_scope\b/);
+assert.match(specialistNotificationPreferences, /OPEN_SPECIALIST_APPOINTMENTS/);
 for (const table of [
   'resource_eligibility_publication',
   'resource_eligibility_declaration',

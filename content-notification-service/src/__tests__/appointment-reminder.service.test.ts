@@ -91,6 +91,7 @@ function harness(
       get: async () => ({
         appointmentId: item.appointmentId,
         ownerAccountId: item.recipientId,
+        specialistAccountId: '25000000-0000-4000-8000-000000000099',
         version: options.truthVersion ?? item.appointmentVersion,
         status: 'CONFIRMED',
         scheduledStartAt: item.scheduledStartAt.toISOString(),
