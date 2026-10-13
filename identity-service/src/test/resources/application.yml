@@ -9,6 +9,7 @@ spring:
   kafka:
     consumer:
       group-id: mentalbridge.identity.audit-consumer
+      auto-offset-reset: earliest
     listener:
       auto-startup: false
 
@@ -33,5 +34,7 @@ mentalbridge:
     audit-ingestion:
       enabled: true
       topic: mentalbridge.admin.audit-event.v1
+      retry-interval: 200
+      max-attempts: -1
     platform-reporting:
       enabled: false

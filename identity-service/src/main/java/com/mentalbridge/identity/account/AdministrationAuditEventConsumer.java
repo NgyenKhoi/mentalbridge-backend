@@ -45,8 +45,10 @@ public class AdministrationAuditEventConsumer {
     );
 
     @KafkaListener(
+            id = "${IDENTITY_AUDIT_CONSUMER_ID:administrationAuditConsumer}",
             topics = "${mentalbridge.identity.audit-ingestion.topic:mentalbridge.admin.audit-event.v1}",
-            groupId = "${IDENTITY_AUDIT_CONSUMER_GROUP:mentalbridge.identity.audit-consumer}"
+            groupId = "${IDENTITY_AUDIT_CONSUMER_GROUP:mentalbridge.identity.audit-consumer}",
+            containerFactory = "administrationAuditListenerContainerFactory"
     )
     public void onMessage(String message) {
         JsonNode root;
