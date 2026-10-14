@@ -1,7 +1,7 @@
 openapi: 3.1.0
 info:
   title: MentalBridge Journal AI Service API
-  version: 1.11.1
+  version: 1.12.0
   description: Private journal CRUD, daily self-reported emotion check-ins with optional encrypted context and factual progress, a service-authorized content-free notification activity projection, consent-gated analysis, bounded Support Guide phrasing, bounded SupportPlan Companion orchestration, and quota-governed AI Companion conversations.
 servers:
   - url: http://localhost:3000
@@ -460,6 +460,43 @@ paths:
           $ref: "#/components/responses/Unauthorized"
         "404":
           $ref: "#/components/responses/NotFound"
+  /api/v1/journals/{journalId}/completion-evidence:
+    x-mentalbridge-status: implemented
+    get:
+      tags: [Journals]
+      summary: Resolve an owned Journal creation fact without private content.
+      operationId: getJournalEntryCompletionEvidence
+      description: >
+        Resolves the authenticated owner's exact entry, not a browser-asserted
+        completion. Missing and other-owner identifiers are indistinguishable.
+        An owned tombstone returns DELETED. The stable creation fact uses server
+        createdAt as occurredAt, never the user-selected Journal occurredAt or
+        mutable revision timestamp. Revising text does not create another fact.
+        No text, preview, tags, mood, encrypted payload, analysis or AI-processing
+        consent crosses this boundary. This factual read does not authorize
+        analysis, sharing or reuse of private reflection. Owner failures are
+        unavailable, never false absence; responses are not cached. Care must
+        independently validate the originating action, occurrence date in its
+        schedule timezone, activation boundary and fact uniqueness. Deletion
+        blocks new completion but never rewrites previously accepted history.
+      parameters:
+        - $ref: "#/components/parameters/JournalId"
+        - $ref: "#/components/parameters/CorrelationId"
+      responses:
+        "200":
+          description: Minimized, owner-attributed current source state.
+          headers:
+            Cache-Control:
+              schema: { type: string, const: no-store }
+            x-correlation-id:
+              $ref: "#/components/headers/CorrelationId"
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/JournalEntryCompletionEvidence"
+        "400": { $ref: "#/components/responses/BadRequest" }
+        "401": { $ref: "#/components/responses/Unauthorized" }
+        "503": { $ref: "#/components/responses/DependencyUnavailable" }
   /api/v1/journals/{journalId}/revisions/{revision}/analysis-jobs:
     x-mentalbridge-status: implemented
     post:
@@ -1277,6 +1314,40 @@ components:
         recordedAt: { type: string, format: date-time }
         createdAt: { type: string, format: date-time }
         updatedAt: { type: string, format: date-time }
+    JournalEntryCompletionEvidence:
+      type: object
+      additionalProperties: false
+      required: [schemaVersion, subjectUserId, journalId, state, fact, verifiedAt]
+      properties:
+        schemaVersion: { type: string, const: journal-entry-completion-evidence-v1 }
+        subjectUserId: { type: string, format: uuid }
+        journalId: { type: string, format: uuid }
+        state: { type: string, enum: [RECORDED, MISSING, DELETED] }
+        verifiedAt: { type: string, format: date-time }
+        fact:
+          oneOf:
+            - type: "null"
+            - $ref: "#/components/schemas/JournalEntryCompletionFact"
+      allOf:
+        - if: { properties: { state: { const: RECORDED } }, required: [state] }
+          then: { properties: { fact: { $ref: "#/components/schemas/JournalEntryCompletionFact" } } }
+          else: { properties: { fact: { type: "null" } } }
+    JournalEntryCompletionFact:
+      type: object
+      additionalProperties: false
+      required: [ownerDomain, kind, factId, factRevision, occurredAt]
+      properties:
+        ownerDomain: { type: string, const: JOURNAL_AI }
+        kind: { type: string, const: JOURNAL_ENTRY }
+        factId: { type: string, format: uuid }
+        factRevision:
+          type: string
+          const: "1"
+          description: Immutable creation-fact revision, not the private content revision.
+        occurredAt:
+          type: string
+          format: date-time
+          description: Owner-generated entry createdAt; user-supplied Journal occurredAt is excluded.
     EmotionCheckInCompletionEvidence:
       type: object
       additionalProperties: false

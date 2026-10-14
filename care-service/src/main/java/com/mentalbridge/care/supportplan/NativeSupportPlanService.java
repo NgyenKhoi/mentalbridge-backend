@@ -237,6 +237,19 @@ public class NativeSupportPlanService {
 				: preferences.snapshot(plan.personalizationId(), userId, plan.personalizationRevision()).orElseThrow(this::stale);
 		boolean selectedEmotion = preference != null && preference.preferredActivityModes().contains(ActivityMode.EMOTION_CHECK_IN);
 		if (emotions != (selectedEmotion ? 1 : 0)) throw stale();
+		var journals = snapshot.actions().stream().filter(action -> "JOURNAL".equals(action.actionType())).toList();
+		boolean selectedJournal = NativeSupportPlanWriter.POLICY.equals(plan.planPolicyVersion())
+				&& preference != null && preference.preferredActivityModes().contains(ActivityMode.JOURNALING);
+		if (journals.size() != (selectedJournal ? 1 : 0)) throw stale();
+		for (var journal : journals) {
+			if (!"JOURNAL_AI".equals(journal.sourceOwner()) || !"JOURNAL_TEMPLATE".equals(journal.sourceKind())
+					|| !NativeSupportPlanWriter.JOURNAL_INTENT.equals(journal.sourceId())
+					|| !"1".equals(journal.sourceRevision())
+					|| !NativeSupportPlanWriter.JOURNAL_INTENT_POLICY.equals(journal.sourcePolicyVersion())
+					|| !"USER_SELECTED".equals(journal.provenanceType())
+					|| !preference.personalizationId().toString().equals(journal.provenanceReferenceId())
+					|| !Long.toString(preference.revision()).equals(journal.provenanceReferenceVersion())) throw stale();
+		}
 		var result = policy.validate(request, eligibility.resolve(request.batch(), bearer, correlation));
 		return new Revalidation(evaluation.policyVersion(), entitlement, result.resourcePolicyVersion(), result.resourcesResolvedAt());
 	}

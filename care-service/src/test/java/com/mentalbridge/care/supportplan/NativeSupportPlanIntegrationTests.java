@@ -98,6 +98,46 @@ class NativeSupportPlanIntegrationTests extends CareTestProperties {
 	}
 
 	@Test
+	void proposesBoundedJournalIntentOnlyWhenSelectedWithBudgetAndProfessionalPrecedence() throws Exception {
+		UUID userId = profile();
+		preferences(userId, "JOURNALING", 5, "ACTIVE", 0);
+		UUID evaluation = evaluation(userId, true);
+		var draft = propose(userId, evaluation, "native-journal-proposal-0001");
+		var journal = action(draft, "JOURNAL");
+		assertThat(journal.path("purposeCode").asText()).isEqualTo("WRITE_SHORT_REFLECTION");
+		assertThat(journal.path("source").path("sourceKind").asText()).isEqualTo("JOURNAL_TEMPLATE");
+		assertThat(journal.path("source").path("sourceId").asText()).isEqualTo(NativeSupportPlanWriter.JOURNAL_INTENT);
+		assertThat(journal.path("provenance").path("category").asText()).isEqualTo("USER_SELECTED");
+		assertThat(journal.path("pathRole").asText()).isEqualTo("ADJUNCT");
+		assertThat(action(draft, "PROFESSIONAL_SUPPORT").path("pathRole").asText()).isEqualTo("PRIMARY");
+		assertThat(actions(draft).stream().filter(value -> "EMOTION_CHECK_IN".equals(value.path("actionType").asText())).count()).isZero();
+		var schedule = journal.path("schedules").get(0);
+		assertThat(schedule.path("recurrenceType").asText()).isEqualTo("WEEKLY");
+		assertThat(schedule.path("estimatedDurationMinutes").asInt()).isEqualTo(5);
+		assertThat(propose(userId, evaluation, "native-journal-proposal-0001")).isEqualTo(draft);
+		assertThat(draft.toString()).doesNotContain("journalText", "mood", "analysis", "content.text");
+		activate(userId, UUID.fromString(draft.path("supportPlanId").asText()), 0, "native-journal-activate-0001");
+	}
+
+	@Test
+	void doesNotInferJournalIntentAndKeepsPreviouslyAdmittedEmotionPolicyUsable() throws Exception {
+		UUID userId = profile();
+		preferences(userId, "EMOTION_CHECK_IN", 15, "BALANCED", 0);
+		var evaluation = evaluation(userId, false);
+		var draft = propose(userId, evaluation, "native-old-policy-proposal-0001");
+		assertThat(actions(draft).stream().filter(value -> "JOURNAL".equals(value.path("actionType").asText())).count()).isZero();
+		UUID id = UUID.fromString(draft.path("supportPlanId").asText());
+		jdbc.sql("update support_plan set plan_policy_version=:policy where id=:id")
+				.param("policy", NativeSupportPlanWriter.EMOTION_POLICY).param("id", id).update();
+		var active = activate(userId, id, 0, "native-old-policy-activate-0001");
+		preferences(userId, "JOURNALING", 15, "BALANCED", 1);
+		active = response(mvc.perform(get("/api/v2/support-plans/{id}", id).with(user(userId)))
+				.andExpect(status().isOk()).andReturn().getResponse().getContentAsString());
+		assertThat(active.path("planPolicyVersion").asText()).isEqualTo(NativeSupportPlanWriter.EMOTION_POLICY);
+		assertThat(actions(active).stream().filter(value -> "JOURNAL".equals(value.path("actionType").asText())).count()).isZero();
+	}
+
+	@Test
 	void activatesActionsAndBudgetedCadenceThenReconcilesActualPersistedOccurrence() throws Exception {
 		UUID userId = profile();
 		preferences(userId, "EMOTION_CHECK_IN", 30, "ACTIVE", 0);
