@@ -1,0 +1,194 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://mentalbridge.local/contracts/proposals/support-plan-companion-intent-v1.schema.json",
+  "title": "SupportPlan Companion intent envelope v1",
+  "description": "Language-neutral proposal for deterministic intent selection and minimized context. This is not a callable API.",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "schemaVersion",
+    "policyVersion",
+    "requestSource",
+    "surface",
+    "intent",
+    "context"
+  ],
+  "properties": {
+    "schemaVersion": {
+      "type": "string",
+      "const": "support-plan-companion-intent-v1"
+    },
+    "policyVersion": {
+      "type": "string",
+      "const": "support-plan-companion-policy-v1"
+    },
+    "requestSource": {
+      "type": "string",
+      "const": "USER_INITIATED"
+    },
+    "surface": {
+      "type": "string",
+      "enum": ["TODAY", "PLAN", "PROGRESS", "ADJUST"]
+    },
+    "intent": {
+      "type": "string",
+      "enum": [
+        "EXPLAIN_ACTION",
+        "EXPLAIN_FOCUS",
+        "SUGGEST_NEXT_STEP",
+        "ENCOURAGE",
+        "SUMMARIZE_PROGRESS",
+        "EXPLAIN_REVIEW_OPTION",
+        "NAVIGATE"
+      ]
+    },
+    "context": {
+      "$ref": "./support-plan-companion-context-v1.schema.json"
+    }
+  },
+  "allOf": [
+    {
+      "if": {
+        "properties": { "surface": { "const": "TODAY" } },
+        "required": ["surface"]
+      },
+      "then": {
+        "properties": {
+          "intent": {
+            "enum": ["EXPLAIN_ACTION", "SUGGEST_NEXT_STEP", "ENCOURAGE", "NAVIGATE"]
+          }
+        }
+      }
+    },
+    {
+      "if": {
+        "properties": { "surface": { "const": "PLAN" } },
+        "required": ["surface"]
+      },
+      "then": {
+        "properties": {
+          "intent": {
+            "enum": ["EXPLAIN_FOCUS", "EXPLAIN_ACTION", "NAVIGATE"]
+          }
+        }
+      }
+    },
+    {
+      "if": {
+        "properties": { "surface": { "const": "PROGRESS" } },
+        "required": ["surface"]
+      },
+      "then": {
+        "properties": {
+          "intent": {
+            "enum": ["SUMMARIZE_PROGRESS", "ENCOURAGE", "NAVIGATE"]
+          }
+        }
+      }
+    },
+    {
+      "if": {
+        "properties": { "surface": { "const": "ADJUST" } },
+        "required": ["surface"]
+      },
+      "then": {
+        "properties": {
+          "intent": {
+            "enum": ["EXPLAIN_REVIEW_OPTION", "EXPLAIN_ACTION", "NAVIGATE"]
+          }
+        }
+      }
+    },
+    {
+      "if": {
+        "properties": { "intent": { "const": "EXPLAIN_ACTION" } },
+        "required": ["intent"]
+      },
+      "then": {
+        "properties": {
+          "context": {
+            "$ref": "./support-plan-companion-context-v1.schema.json#/$defs/actionContext"
+          }
+        }
+      }
+    },
+    {
+      "if": {
+        "properties": { "intent": { "const": "EXPLAIN_FOCUS" } },
+        "required": ["intent"]
+      },
+      "then": {
+        "properties": {
+          "context": {
+            "$ref": "./support-plan-companion-context-v1.schema.json#/$defs/focusContext"
+          }
+        }
+      }
+    },
+    {
+      "if": {
+        "properties": { "intent": { "const": "SUGGEST_NEXT_STEP" } },
+        "required": ["intent"]
+      },
+      "then": {
+        "properties": {
+          "context": {
+            "$ref": "./support-plan-companion-context-v1.schema.json#/$defs/nextStepContext"
+          }
+        }
+      }
+    },
+    {
+      "if": {
+        "properties": { "intent": { "const": "ENCOURAGE" } },
+        "required": ["intent"]
+      },
+      "then": {
+        "properties": {
+          "context": {
+            "$ref": "./support-plan-companion-context-v1.schema.json#/$defs/acknowledgementContext"
+          }
+        }
+      }
+    },
+    {
+      "if": {
+        "properties": { "intent": { "const": "SUMMARIZE_PROGRESS" } },
+        "required": ["intent"]
+      },
+      "then": {
+        "properties": {
+          "context": {
+            "$ref": "./support-plan-companion-context-v1.schema.json#/$defs/progressContext"
+          }
+        }
+      }
+    },
+    {
+      "if": {
+        "properties": { "intent": { "const": "EXPLAIN_REVIEW_OPTION" } },
+        "required": ["intent"]
+      },
+      "then": {
+        "properties": {
+          "context": {
+            "$ref": "./support-plan-companion-context-v1.schema.json#/$defs/reviewContext"
+          }
+        }
+      }
+    },
+    {
+      "if": {
+        "properties": { "intent": { "const": "NAVIGATE" } },
+        "required": ["intent"]
+      },
+      "then": {
+        "properties": {
+          "context": {
+            "$ref": "./support-plan-companion-context-v1.schema.json#/$defs/navigationContext"
+          }
+        }
+      }
+    }
+  ]
+}

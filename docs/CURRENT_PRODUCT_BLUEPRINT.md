@@ -23,6 +23,16 @@ Current cross-feature scope is governed by:
 - [ADR 0022 — Current product blueprint amendments](adr/0022-current-product-blueprint-amendments.md)
 - [ADR 0027 — Independent Community service boundary](adr/0027-community-service-boundary.md)
 - [ADR 0034 — SupportPlan v3 cross-domain actions](adr/0034-support-plan-v3-cross-domain-actions.md)
+- [ADR 0040 — SupportPlan Companion product and interaction contract](adr/0040-support-plan-companion-contract.md)
+
+The optional SupportPlan Companion is governed by `MB-SUPPORT-PLAN-COMPANION-001`
+and [SupportPlan Companion policy v1](policies/support-plan-companion-policy-v1.md).
+It may explain, phrase encouragement from explicit saved facts, and navigate
+within Today, Plan, Progress and Adjust using a closed minimized context. Care
+remains authoritative for plan facts and mutations; the companion never
+diagnoses, infers completion or recovery, selects a review outcome, or acts as
+a therapist. MB-649 through MB-654 own runtime and client delivery after this
+contract is accepted.
 
 The one confirmed-appointment email reminder is governed by
 [ADR 0030 — One appointment email reminder](adr/0030-one-appointment-email-reminder.md)
