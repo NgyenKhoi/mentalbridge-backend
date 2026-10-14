@@ -343,6 +343,11 @@ Assessment answer text must never be copied into outbox payloads, logs, errors, 
 | `JOURNAL_AI_SUPPORT_GUIDE_CONNECT_TIMEOUT` | No | Bounded connection deadline for optional Support Guide phrasing | `PT0.5S` |
 | `JOURNAL_AI_SUPPORT_GUIDE_READ_TIMEOUT` | No | Bounded response deadline before Care persists its approved-copy fallback | `PT8S` |
 | `JOURNAL_AI_SUPPORT_GUIDE_CIRCUIT_*` | No | Circuit-breaker window, threshold, open duration, and half-open probe budget for optional phrasing | See `.env.example` |
+| `JOURNAL_AI_SUPPORT_PLAN_COMPANION_BASE_URL` | Local/demo only | Direct Journal/AI URL for explicit SupportPlan Companion requests | `http://localhost:3000` |
+| `CARE_SUPPORT_PLAN_COMPANION_SERVICE_TOKEN` | Local/demo only | Dedicated Care-to-Journal/AI credential; configure the same value as Journal/AI `JOURNAL_AI_SUPPORT_PLAN_CARE_SERVICE_TOKEN` | none; missing disables provider phrasing and keeps the deterministic template |
+| `JOURNAL_AI_SUPPORT_PLAN_COMPANION_CONNECT_TIMEOUT` | No | Bounded connection deadline for optional Companion phrasing | `PT0.5S` |
+| `JOURNAL_AI_SUPPORT_PLAN_COMPANION_READ_TIMEOUT` | No | Bounded response deadline before Care returns its deterministic template | `PT8S` |
+| `JOURNAL_AI_SUPPORT_PLAN_COMPANION_CIRCUIT_*` | No | Circuit-breaker window, threshold, open duration, and half-open probe budget for Companion phrasing | See `.env.example` |
 | `JOURNAL_AI_CONSULTATION_BRIEF_DRAFT_BASE_URL` | Local/demo only | Direct Journal/AI URL for optional ConsultationBrief suggestions | `http://localhost:3000` |
 | `JOURNAL_AI_CONSULTATION_BRIEF_DRAFT_CONNECT_TIMEOUT` | No | Bounded connection deadline for the asynchronous worker call | `PT0.5S` |
 | `JOURNAL_AI_CONSULTATION_BRIEF_DRAFT_READ_TIMEOUT` | No | Bounded provider response deadline; a timeout leaves the manual draft usable | `PT12S` |

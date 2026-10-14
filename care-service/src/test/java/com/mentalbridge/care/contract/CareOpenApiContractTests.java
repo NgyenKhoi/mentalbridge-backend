@@ -91,6 +91,7 @@ class CareOpenApiContractTests {
 			"GET /api/v2/support-plans/current-draft",
 			"GET /api/v2/support-plans/{supportPlanId}",
 			"PUT /api/v2/support-plans/{supportPlanId}/actions/{actionId}/schedule",
+			"POST /api/v2/support-plans/{supportPlanId}/actions/{actionId}/companion-explanation",
 			"GET /api/v2/support-plan-occurrences",
 			"GET /api/v2/support-plan-personalization",
 			"PUT /api/v2/support-plan-personalization",
@@ -164,6 +165,7 @@ class CareOpenApiContractTests {
 			"/api/v2/support-plans/current-draft",
 			"/api/v2/support-plans/{supportPlanId}",
 			"/api/v2/support-plans/{supportPlanId}/actions/{actionId}/schedule",
+			"/api/v2/support-plans/{supportPlanId}/actions/{actionId}/companion-explanation",
 			"/api/v2/support-plan-occurrences",
 			"/api/v2/support-plan-personalization",
 			"/api/v1/anonymous-assessment-sessions",
@@ -239,6 +241,7 @@ class CareOpenApiContractTests {
 			"GET /api/v2/support-plans/current-draft",
 			"GET /api/v2/support-plans/{supportPlanId}",
 			"PUT /api/v2/support-plans/{supportPlanId}/actions/{actionId}/schedule",
+			"POST /api/v2/support-plans/{supportPlanId}/actions/{actionId}/companion-explanation",
 			"GET /api/v2/support-plan-occurrences",
 			"GET /api/v2/support-plan-personalization",
 			"PUT /api/v2/support-plan-personalization");

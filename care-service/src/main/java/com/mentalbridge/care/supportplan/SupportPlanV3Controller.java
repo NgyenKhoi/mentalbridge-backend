@@ -14,6 +14,7 @@ import org.springframework.validation.annotation.Validated;
 import org.springframework.web.bind.annotation.GetMapping;
 import org.springframework.web.bind.annotation.PathVariable;
 import org.springframework.web.bind.annotation.PutMapping;
+import org.springframework.web.bind.annotation.PostMapping;
 import org.springframework.web.bind.annotation.RequestBody;
 import org.springframework.web.bind.annotation.RequestHeader;
 import org.springframework.web.bind.annotation.RequestMapping;
@@ -39,10 +40,13 @@ public class SupportPlanV3Controller {
 
 	private final SupportPlanV3Service plans;
 	private final SupportPlanScheduleService schedules;
+	private final SupportPlanContextualCompanionService companion;
 
-	public SupportPlanV3Controller(SupportPlanV3Service plans, SupportPlanScheduleService schedules) {
+	public SupportPlanV3Controller(SupportPlanV3Service plans, SupportPlanScheduleService schedules,
+			SupportPlanContextualCompanionService companion) {
 		this.plans = plans;
 		this.schedules = schedules;
+		this.companion = companion;
 	}
 
 	@GetMapping("/support-plans/current")
@@ -68,6 +72,15 @@ public class SupportPlanV3Controller {
 	SupportPlanV3Service.ActionOccurrenceListView occurrences(@AuthenticationPrincipal Jwt jwt,
 			@RequestParam LocalDate from, @RequestParam LocalDate through) {
 		return plans.occurrences(subject(jwt), from, through);
+	}
+
+	@PostMapping("/support-plans/{supportPlanId}/actions/{actionId}/companion-explanation")
+	SupportPlanContextualCompanionService.ContextualCompanionMessage explainAction(@AuthenticationPrincipal Jwt jwt,
+			@PathVariable UUID supportPlanId, @PathVariable UUID actionId,
+			@RequestHeader(value = "X-Correlation-Id", required = false) UUID correlationId,
+			@Valid @RequestBody CompanionExplanationRequest request) {
+		return companion.explain(subject(jwt), supportPlanId, actionId, request.surface(), jwt.getTokenValue(),
+				correlationId == null ? UUID.randomUUID() : correlationId);
 	}
 
 	@PutMapping("/support-plans/{supportPlanId}/actions/{actionId}/schedule")
@@ -104,6 +117,8 @@ public class SupportPlanV3Controller {
 	}
 
 	public record ScheduleUpdateRequest(@Valid ScheduleRequest schedule) { }
+	public record CompanionExplanationRequest(
+			@NotNull @Pattern(regexp = "^(TODAY|PLAN)$") String surface) { }
 	public record ScheduleRequest(
 			@NotNull @Pattern(regexp = "^(ONCE|DAILY|WEEKLY)$") String recurrenceType,
 			@NotNull @Size(max = 7) List<@Min(1) @Max(7) Integer> daysOfWeek,
