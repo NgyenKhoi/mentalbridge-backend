@@ -145,6 +145,9 @@ public class CommunityMediaService {
 			if (current.post() != null) {
 				throw CommunityApiException.mediaNotAttachable();
 			}
+			if (profiles.existsByAvatarMediaId(current.id())) {
+				throw CommunityApiException.mediaNotAttachable();
+			}
 			var reference = new StorageReference(current.id(), current.storageKey(), current.mediaType());
 			current.delete(clock.instant());
 			media.flush();
@@ -158,7 +161,7 @@ public class CommunityMediaService {
 		var references = transactions.execute(status -> {
 			var now = clock.instant();
 			var items = media.findCleanupBatch(now, now.minus(properties.orphanRetention()), 50);
-			return items.stream().map(item -> {
+			return items.stream().filter(item -> !profiles.existsByAvatarMediaId(item.id())).map(item -> {
 				if (item.state() != CommunityMediaEntity.State.DELETED
 						&& item.state() != CommunityMediaEntity.State.EXPIRED) {
 					item.expire(now);

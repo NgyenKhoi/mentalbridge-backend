@@ -16,6 +16,7 @@ Community-owned public display identity kept separate from private Care and Iden
 | `account_subject` | Private unique Identity JWT subject used only for ownership, blocks, abuse controls, moderation, and deletion coordination; never returned by Community APIs. |
 | `display_name` | User-chosen Community name shown on active posts; bounded to 80 characters and replaced by a neutral tombstone label when the profile is deleted. |
 | `avatar_preset` | Optional closed Community visual preset (`LEAF`, `SUNRISE`, `WAVE`, `LOTUS`, `CLOUD`, or `SPROUT`); arbitrary URLs and account-profile avatars are never persisted here. |
+| `avatar_media_id` | Nullable current Community-owned photo selected explicitly through a versioned owner command. Composite foreign key binds the media to this exact profile. Only an unattached verified READY IMAGE is selectable; anonymous/deleted author projections never expose it. Current selection protects the image from orphan cleanup and post attachment. Removal restores the preset/initial fallback and releases the object to the existing unattached-media retention policy; no Identity or Care image is imported. |
 | `status` | Community-local display lifecycle `ACTIVE` or `DELETED`; it is not an Identity account-state copy. |
 | `created_at` | Immutable UTC insertion instant for the Community display identity. |
 | `updated_at` | UTC instant of the latest persisted Community display change. |

@@ -177,6 +177,20 @@ The requirements are represented in domain/architecture documentation, but the l
 
 ## Approved scope changes
 
+- 2026-10-14: MB-647 proposes `MB-SUPPORT-PLAN-COMPANION-001` as the shared
+  product, safety and interaction contract for the optional SupportPlan
+  Companion. Seven deterministic intents consume exactly one closed minimized
+  context variant across Today, Plan, Progress and Adjust. Care/source owners
+  retain fact and mutation authority; the companion cannot diagnose, infer
+  completion/recovery/adherence, choose review outcomes, or ingest raw Journal,
+  emotion, screening, consultation or identity data. V1 model calls are
+  user-initiated; deterministic fallback, interruption, frequency,
+  accessibility and reduced-motion behavior remain equivalent on web/mobile.
+  This proposal creates no callable endpoint; MB-649 owns orchestration and
+  MB-650 through MB-654 own bounded client delivery. See [ADR 0040](adr/0040-support-plan-companion-contract.md),
+  [SupportPlan Companion policy v1](policies/support-plan-companion-policy-v1.md)
+  and [MB-647 evidence](story-mb-647-support-plan-companion-contract-evidence.md).
+
 - 2026-10-12: MB-640 adds reviewable `support-plan-activity-schedule-v2`
   cadence and workload to draft and active SupportPlans. The owner may choose
   bounded recurrence/weekdays, daypart/local time, duration, IANA timezone,

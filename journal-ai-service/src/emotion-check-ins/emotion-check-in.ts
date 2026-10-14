@@ -675,6 +675,47 @@ export class EmotionCheckInService {
     return this.output(document);
   }
 
+  async completionEvidence(request: CheckInRequest, localDate: string) {
+    if (!localDateSchema.safeParse(localDate).success)
+      throw new BadRequestException();
+    const subjectUserId = owner(request);
+    let document: EmotionCheckInDocument | null;
+    try {
+      document = await this.repository.find(subjectUserId, localDate);
+    } catch {
+      throw new ServiceUnavailableException();
+    }
+    const verifiedAt = this.clock.now();
+    if (
+      document &&
+      (document.ownerAccountId !== subjectUserId ||
+        document.localDate !== localDate ||
+        !uuid.safeParse(document._id).success ||
+        !timezoneSchema.safeParse(document.timezone).success ||
+        !Number.isFinite(document.createdAt.getTime()) ||
+        document.createdAt > verifiedAt)
+    )
+      throw new ServiceUnavailableException();
+    return {
+      schemaVersion: "emotion-check-in-completion-evidence-v1" as const,
+      subjectUserId,
+      localDate,
+      state: !document ? "MISSING" : document.deleted ? "DELETED" : "RECORDED",
+      fact:
+        document && !document.deleted
+          ? {
+              ownerDomain: "JOURNAL_AI" as const,
+              kind: "EMOTION_CHECK_IN" as const,
+              factId: document._id,
+              factRevision: "1" as const,
+              occurredAt: document.createdAt.toISOString(),
+              timezone: document.timezone,
+            }
+          : null,
+      verifiedAt: verifiedAt.toISOString(),
+    };
+  }
+
   async list(
     request: CheckInRequest,
     query: Record<string, string | undefined>,
@@ -933,6 +974,17 @@ export class EmotionCheckInController {
     @Param("localDate") localDate: string,
   ) {
     return this.service.update(request, localDate);
+  }
+
+  @Get(":localDate/completion-evidence")
+  completionEvidence(
+    @Req() request: CheckInRequest,
+    @Param("localDate") localDate: string,
+    @Res({ passthrough: true })
+    response: { setHeader(name: string, value: string): void },
+  ) {
+    response.setHeader("Cache-Control", "no-store");
+    return this.service.completionEvidence(request, localDate);
   }
 
   @Delete(":localDate")

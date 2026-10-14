@@ -108,8 +108,7 @@ class SupportPlanActivityOccurrenceEntity {
 				&& java.util.Objects.equals(evidenceKind, evidence.kind())
 				&& java.util.Objects.equals(evidenceId, evidence.id())
 				&& java.util.Objects.equals(evidenceRevision, evidence.revision())
-				&& java.util.Objects.equals(evidenceOccurredAt, evidence.occurredAt())
-				&& java.util.Objects.equals(evidenceVerifiedAt, evidence.verifiedAt());
+				&& java.util.Objects.equals(evidenceOccurredAt, evidence.occurredAt());
 	}
 
 	void completeWithEvidence(EvidenceReference evidence, Instant now) {
@@ -145,5 +144,15 @@ class SupportPlanActivityOccurrenceEntity {
 
 	void deleteEngagement(Instant now) {
 		replaceEngagement("SCHEDULED", false, null, null, null, false, now);
+	}
+
+	void changeOpenNativeUserState(String desiredState, Instant now) {
+		this.state = desiredState;
+		this.stateReason = null;
+		this.completedAt = null;
+		this.skippedAt = "SKIPPED".equals(desiredState) ? now : null;
+		this.cancelledAt = null;
+		this.engagementUpdatedAt = now;
+		this.updatedAt = now;
 	}
 }

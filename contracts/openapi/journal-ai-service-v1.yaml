@@ -1,7 +1,7 @@
 openapi: 3.1.0
 info:
   title: MentalBridge Journal AI Service API
-  version: 1.9.0
+  version: 1.10.0
   description: Private journal CRUD, daily self-reported emotion check-ins with optional encrypted context and factual progress, a service-authorized content-free notification activity projection, consent-gated analysis, bounded Support Guide phrasing, and quota-governed AI Companion conversations.
 servers:
   - url: http://localhost:3000
@@ -185,6 +185,38 @@ paths:
         "400": { $ref: "#/components/responses/BadRequest" }
         "401": { $ref: "#/components/responses/Unauthorized" }
         "404": { $ref: "#/components/responses/NotFound" }
+        "503": { $ref: "#/components/responses/DependencyUnavailable" }
+  /api/v1/emotion-check-ins/{localDate}/completion-evidence:
+    x-mentalbridge-status: implemented
+    get:
+      tags: [Emotion check-ins]
+      summary: Resolve the authenticated owner's content-free daily check-in fact.
+      description: |
+        MB-641 provider boundary for Care reconciliation. Requires the owner's
+        bearer context; no caller-supplied account, action, occurrence or fact ID
+        is accepted. Returns RECORDED, MISSING or DELETED from the owner store.
+        Deleted becomes MISSING after the existing tombstone retention expires.
+        A recorded fact references the creation revision (1) and createdAt;
+        same-day edits never create a second completion fact. No emotion,
+        intensity, factors, note, encrypted payload, score or AI result is read
+        or returned. This read does not mutate or complete a SupportPlan.
+        Dependency uncertainty is 503, never MISSING. Responses are no-store.
+      operationId: getEmotionCheckInCompletionEvidence
+      parameters:
+        - name: localDate
+          in: path
+          required: true
+          schema: { type: string, format: date }
+        - $ref: "#/components/parameters/CorrelationId"
+      responses:
+        "200":
+          description: Minimized authoritative existence or absence evidence.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/EmotionCheckInCompletionEvidence"
+        "400": { $ref: "#/components/responses/BadRequest" }
+        "401": { $ref: "#/components/responses/Unauthorized" }
         "503": { $ref: "#/components/responses/DependencyUnavailable" }
   /api/v1/emotion-check-in-progress:
     x-mentalbridge-status: implemented
@@ -1176,6 +1208,38 @@ components:
         recordedAt: { type: string, format: date-time }
         createdAt: { type: string, format: date-time }
         updatedAt: { type: string, format: date-time }
+    EmotionCheckInCompletionEvidence:
+      type: object
+      additionalProperties: false
+      required: [schemaVersion, subjectUserId, localDate, state, fact, verifiedAt]
+      properties:
+        schemaVersion: { type: string, const: emotion-check-in-completion-evidence-v1 }
+        subjectUserId: { type: string, format: uuid }
+        localDate: { type: string, format: date }
+        state: { type: string, enum: [RECORDED, MISSING, DELETED] }
+        verifiedAt: { type: string, format: date-time }
+        fact:
+          oneOf:
+            - type: "null"
+            - $ref: "#/components/schemas/EmotionCheckInCompletionFact"
+      allOf:
+        - if: { properties: { state: { const: RECORDED } }, required: [state] }
+          then: { properties: { fact: { $ref: "#/components/schemas/EmotionCheckInCompletionFact" } } }
+          else: { properties: { fact: { type: "null" } } }
+    EmotionCheckInCompletionFact:
+      type: object
+      additionalProperties: false
+      required: [ownerDomain, kind, factId, factRevision, occurredAt, timezone]
+      properties:
+        ownerDomain: { type: string, const: JOURNAL_AI }
+        kind: { type: string, const: EMOTION_CHECK_IN }
+        factId: { type: string, format: uuid }
+        factRevision:
+          type: string
+          const: "1"
+          description: Creation-fact revision, not the mutable emotion payload revision.
+        occurredAt: { type: string, format: date-time }
+        timezone: { type: string, minLength: 1, maxLength: 64 }
     EmotionCheckInList:
       type: object
       additionalProperties: false

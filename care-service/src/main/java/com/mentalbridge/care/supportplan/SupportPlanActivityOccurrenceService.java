@@ -112,6 +112,10 @@ public class SupportPlanActivityOccurrenceService {
 	@Transactional
 	void prepareDraft(SupportPlanEntity plan, Instant now) {
 		if (!"DRAFT".equals(plan.status())) return;
+		if (plan.modelVersion() == 3) {
+			prepareNativeDraft(plan, now);
+			return;
+		}
 		String timezone = profiles.findTimezoneByAccountId(plan.userId()).orElseThrow(() -> new ApiException(
 				HttpStatus.NOT_FOUND, "PROFILE_NOT_FOUND", "Care profile was not found"));
 		LocalDate start = now.atZone(zone(timezone)).toLocalDate();
@@ -142,6 +146,42 @@ public class SupportPlanActivityOccurrenceService {
 			schedules.save(SupportPlanActivityScheduleEntity.draftForSlot(UUID.randomUUID(), plan, slot,
 					SCHEDULE_POLICY_VERSION_V2, recurrenceType, daysMask, preferredDaypart,
 					duration, localTime, timezone, start, now));
+		}
+		schedules.flush();
+	}
+
+	private void prepareNativeDraft(SupportPlanEntity plan, Instant now) {
+		String timezone = profiles.findTimezoneByAccountId(plan.userId()).orElseThrow(() -> new ApiException(
+				HttpStatus.NOT_FOUND, "PROFILE_NOT_FOUND", "Care profile was not found"));
+		LocalDate start = now.atZone(zone(timezone)).toLocalDate();
+		var personalization = personalization(plan);
+		var scheduledActions = actions.findBySupportPlanIdAndUserIdOrderByPlanFocusIdAscOrdinalAsc(plan.id(), plan.userId())
+				.stream().filter(action -> List.of("RESOURCE", "EMOTION_CHECK_IN").contains(action.actionType()))
+				.sorted(java.util.Comparator.comparingInt(PlanActionEntity::ordinal))
+				.toList();
+		int budget = personalization == null || personalization.dailyTimeBudgetMinutes() == null
+				? 10 : personalization.dailyTimeBudgetMinutes();
+		int duration = defaultDuration(budget, scheduledActions.size());
+		boolean reduced = scheduledActions.size() * 5 > budget;
+		int activitiesPerDay = Math.max(1, budget / duration);
+		String recurrence = !reduced && personalization != null
+				&& personalization.desiredPace() == SupportPlanPersonalizationService.DesiredPace.ACTIVE
+				? "DAILY" : "WEEKLY";
+		String daypart = personalization == null || personalization.preferredDaypart() == null
+				? null : personalization.preferredDaypart().name();
+		var current = schedules.findBySupportPlanIdOrderByOrdinal(plan.id()).stream()
+				.filter(schedule -> !"ENDED".equals(schedule.status()))
+				.map(SupportPlanActivityScheduleEntity::sourceActionId).collect(java.util.stream.Collectors.toSet());
+		for (int index = 0; index < scheduledActions.size(); index++) {
+			var action = scheduledActions.get(index);
+			if (current.contains(action.id())) continue;
+			Short days = "DAILY".equals(recurrence) ? null
+					: defaultDaysMask(start, personalization, index, reduced, activitiesPerDay);
+			int position = reduced ? index % activitiesPerDay : index;
+			schedules.save(SupportPlanActivityScheduleEntity.revisionForAction(UUID.randomUUID(), plan, action,
+					1, SCHEDULE_POLICY_VERSION_V2, recurrence, days, daypart, duration,
+					defaultTime(personalization).plusMinutes((long) position * duration), timezone,
+					start, null, false, "DRAFT", now));
 		}
 		schedules.flush();
 	}

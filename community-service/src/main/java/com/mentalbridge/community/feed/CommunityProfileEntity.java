@@ -7,7 +7,10 @@ import jakarta.persistence.Column;
 import jakarta.persistence.Entity;
 import jakarta.persistence.EnumType;
 import jakarta.persistence.Enumerated;
+import jakarta.persistence.FetchType;
 import jakarta.persistence.Id;
+import jakarta.persistence.JoinColumn;
+import jakarta.persistence.ManyToOne;
 import jakarta.persistence.Table;
 import jakarta.persistence.Version;
 
@@ -32,6 +35,10 @@ class CommunityProfileEntity {
 	@Enumerated(EnumType.STRING)
 	@Column(name = "avatar_preset", length = 24)
 	private AvatarPreset avatarPreset;
+
+	@ManyToOne(fetch = FetchType.LAZY)
+	@JoinColumn(name = "avatar_media_id")
+	private CommunityMediaEntity avatarMedia;
 
 	@Enumerated(EnumType.STRING)
 	@Column(nullable = false, length = 16)
@@ -79,6 +86,25 @@ class CommunityProfileEntity {
 
 	AvatarPreset avatarPreset() {
 		return avatarPreset;
+	}
+
+	CommunityMediaEntity avatarMedia() {
+		return avatarMedia;
+	}
+
+	void replaceAvatar(CommunityMediaEntity media, Instant now) {
+		this.avatarMedia = media;
+		this.updatedAt = now;
+	}
+
+	CommunityResponses.AvatarImage avatarImage() {
+		if (status != Status.ACTIVE || avatarMedia == null
+				|| avatarMedia.state() != CommunityMediaEntity.State.READY
+				|| avatarMedia.mediaType() != CommunityMediaEntity.Type.IMAGE) {
+			return null;
+		}
+		return new CommunityResponses.AvatarImage(avatarMedia.id(), avatarMedia.deliveryUrl(),
+				avatarMedia.width(), avatarMedia.height());
 	}
 
 	Status status() {

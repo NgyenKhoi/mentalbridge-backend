@@ -37,6 +37,7 @@ class CommunityOpenApiContractTests {
 			"DELETE /api/v1/community/blocks/{communityProfileId}",
 			"GET /api/v1/community/profile",
 			"PUT /api/v1/community/profile",
+			"PUT /api/v1/community/profile/avatar",
 			"GET /api/v1/community/topics",
 			"GET /api/v1/community/admin/moderation-cases",
 			"GET /api/v1/community/admin/moderation-cases/{caseId}",
@@ -67,6 +68,7 @@ class CommunityOpenApiContractTests {
 			"DELETE /api/v1/community/blocks/{communityProfileId}",
 			"GET /api/v1/community/profile",
 			"PUT /api/v1/community/profile",
+			"PUT /api/v1/community/profile/avatar",
 			"GET /api/v1/community/topics",
 			"GET /api/v1/community/admin/moderation-cases",
 			"GET /api/v1/community/admin/moderation-cases/{caseId}",
@@ -104,7 +106,8 @@ class CommunityOpenApiContractTests {
 		var createPost = api.getComponents().getSchemas().get("CreatePostRequest");
 		var feedParameters = api.getPaths().get("/api/v1/community/feed").getGet().getParameters();
 
-		assertThat(author.getProperties()).containsOnlyKeys("communityProfileId", "displayName", "avatarPreset", "state");
+		assertThat(author.getProperties()).containsOnlyKeys("communityProfileId", "displayName", "avatarPreset", "state",
+				"avatarImage");
 		assertThat(post.getProperties()).containsOnlyKeys("postId", "author", "contentPreview", "topics", "media",
 				"mediaAvailability", "resourceAttachment", "sensitiveContentWarning", "counts", "viewerState",
 				"publishedAt", "updatedAt");
@@ -123,7 +126,7 @@ class CommunityOpenApiContractTests {
 	@Test
 	void sensitiveContentWarningContractIsBoundedAndVersioned() {
 		var api = new OpenAPIV3Parser().read(contract().toString());
-		assertThat(api.getInfo().getVersion()).isEqualTo("1.10.0");
+		assertThat(api.getInfo().getVersion()).isEqualTo("1.11.0");
 		assertThat(api.getComponents().getSchemas().get("CommunitySensitiveContentWarning").getEnum())
 				.containsExactly("SENSITIVE_CONTENT");
 		assertThat(api.getComponents().getSchemas().get("ModerationAction").getEnum())
@@ -150,7 +153,11 @@ class CommunityOpenApiContractTests {
 
 		assertThat(request.getProperties()).containsOnlyKeys("displayName", "avatarPreset");
 		assertThat(response.getProperties()).containsOnlyKeys("communityProfileId", "displayName", "avatarPreset",
-				"status", "version", "createdAt", "updatedAt");
+				"status", "version", "createdAt", "updatedAt", "avatarImage");
+		assertThat(api.getComponents().getSchemas().get("PutCommunityAvatarRequest").getProperties())
+				.containsOnlyKeys("mediaId");
+		assertThat(api.getComponents().getSchemas().get("CommunityAvatarImage").getProperties())
+				.containsOnlyKeys("mediaId", "url", "width", "height");
 	}
 
 	@Test

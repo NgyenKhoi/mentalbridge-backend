@@ -18,6 +18,8 @@ interface CommunityProfileRepository extends JpaRepository<CommunityProfileEntit
 
 	Optional<CommunityProfileEntity> findByAccountSubject(UUID accountSubject);
 
+	boolean existsByAvatarMediaId(UUID mediaId);
+
 	@Lock(LockModeType.PESSIMISTIC_WRITE)
 	@Query("select profile from CommunityProfileEntity profile where profile.accountSubject = :subject")
 	Optional<CommunityProfileEntity> findByAccountSubjectForUpdate(@Param("subject") UUID subject);

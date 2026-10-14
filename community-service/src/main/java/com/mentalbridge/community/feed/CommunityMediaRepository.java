@@ -33,13 +33,14 @@ interface CommunityMediaRepository extends JpaRepository<CommunityMediaEntity, U
 	Optional<CommunityMediaEntity> findByOwnerAndIdempotencyKeyForUpdate(@Param("ownerId") UUID ownerId,
 			@Param("key") String key);
 
-	@Query("select count(media) from CommunityMediaEntity media where media.owner.id = :ownerId and media.post is null and media.state in :states")
+	@Query("select count(media) from CommunityMediaEntity media where media.owner.id = :ownerId and media.post is null and media.state in :states and not exists (select profile.id from CommunityProfileEntity profile where profile.avatarMedia.id = media.id)")
 	long countUnattachedByOwnerAndStateIn(@Param("ownerId") UUID ownerId,
 			@Param("states") List<CommunityMediaEntity.State> states);
 
 	@Query(value = """
-			select * from community_media
+			select community_media.* from community_media
 			where post_id is null
+			  and not exists (select 1 from community_profile p where p.avatar_media_id = community_media.id)
 			  and storage_key is not null
 			  and state in ('PENDING', 'PROCESSING', 'READY', 'REJECTED', 'DELETED', 'EXPIRED')
 			  and ((state = 'PENDING' and upload_expires_at < :now)
