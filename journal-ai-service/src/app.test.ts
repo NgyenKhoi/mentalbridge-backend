@@ -525,6 +525,78 @@ void test("serves consent-gated Support Guide phrasing over the internal boundar
   }
 });
 
+void test("serves bounded SupportPlan Companion fallback over the internal boundary", async () => {
+  const app = await createApplication(testConfiguration, {
+    ...readyDependencies,
+    supportPlanCompanion: {
+      consentClient: {
+        check: () =>
+          Promise.reject(new Error("must not run in deterministic mode")),
+      },
+      provider: {
+        phrase: () =>
+          Promise.reject(new Error("must not run in deterministic mode")),
+      },
+      telemetry: { record: () => undefined },
+    },
+  });
+  await app.init();
+
+  try {
+    const now = Math.floor(Date.now() / 1_000);
+    const token = await new SignJWT({ roles: ["USER"] })
+      .setProtectedHeader({ alg: "RS256", kid: "test-key" })
+      .setIssuer(testConfiguration.IDENTITY_JWT_ISSUER)
+      .setAudience(testConfiguration.IDENTITY_JWT_AUDIENCE)
+      .setSubject("11111111-1111-4111-8111-111111111111")
+      .setIssuedAt(now)
+      .setNotBefore(now)
+      .setExpirationTime(now + 60)
+      .setJti("support-plan-companion-token-id")
+      .sign(testPrivateKey);
+
+    await request(app.getHttpServer() as unknown as Server)
+      .post("/internal/v1/support-plan-companion/messages")
+      .set("authorization", `Bearer ${token}`)
+      .set("x-correlation-id", "support-plan-companion-correlation")
+      .send({
+        schemaVersion: "support-plan-companion-intent-v1",
+        policyVersion: "support-plan-companion-policy-v1",
+        requestSource: "USER_INITIATED",
+        surface: "TODAY",
+        intent: "EXPLAIN_ACTION",
+        context: {
+          schemaVersion: "support-plan-companion-context-v1",
+          locale: "vi-VN",
+          contextKind: "ACTION",
+          action: {
+            actionType: "JOURNAL",
+            title: "Viết vài dòng",
+            availability: "AVAILABLE",
+            navigation: { destination: "JOURNAL", label: "Mở nhật ký" },
+          },
+        },
+      })
+      .expect(201)
+      .expect({
+        schemaVersion: "support-plan-companion-message-v1",
+        intent: "EXPLAIN_ACTION",
+        surface: "TODAY",
+        text: "Viết vài dòng là một hoạt động trong kế hoạch của bạn.",
+        delivery: "TEMPLATE",
+        navigation: { destination: "JOURNAL", label: "Mở nhật ký" },
+        policyVersion: "support-plan-companion-policy-v1",
+        promptVersion: "support-plan-companion-prompt-v1",
+        templateVersion: "support-plan-companion-template-v1",
+        provider: "DETERMINISTIC_FAKE",
+        model: "deterministic-support-plan-companion-v1",
+        fallbackReason: "PROVIDER_DISABLED",
+      });
+  } finally {
+    await app.close();
+  }
+});
+
 void test("authorizes the scoped notification scheduler service boundary", async () => {
   const ownerId = "11111111-1111-4111-8111-111111111111";
   const app = await createApplication(testConfiguration, {

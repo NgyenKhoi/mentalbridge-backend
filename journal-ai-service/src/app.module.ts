@@ -47,6 +47,10 @@ import {
   type SupportGuidePhrasingDependencies,
 } from "./support-guide-phrasing/support-guide-phrasing.js";
 import {
+  registerSupportPlanCompanionModule,
+  type SupportPlanCompanionDependencies,
+} from "./support-plan-companion/support-plan-companion.js";
+import {
   registerNotificationActivityModule,
   type NotificationActivityDependencies,
 } from "./notification-activity/notification-activity.js";
@@ -62,6 +66,7 @@ export interface ApplicationDependencies {
   readonly longitudinalAnalysis?: LongitudinalAnalysisDependencies;
   readonly companionChat?: CompanionChatDependencies;
   readonly supportGuidePhrasing?: SupportGuidePhrasingDependencies;
+  readonly supportPlanCompanion?: SupportPlanCompanionDependencies;
   readonly notificationActivity?: NotificationActivityDependencies;
   readonly consultationBriefDraft?: ConsultationBriefDraftDependencies;
 }
@@ -99,6 +104,10 @@ export class AppModule implements NestModule {
         registerSupportGuidePhrasingModule(
           configuration,
           dependencies.supportGuidePhrasing,
+        ),
+        registerSupportPlanCompanionModule(
+          configuration,
+          dependencies.supportPlanCompanion,
         ),
         registerNotificationActivityModule(
           configuration,
