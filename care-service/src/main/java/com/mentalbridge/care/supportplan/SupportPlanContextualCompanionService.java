@@ -22,10 +22,13 @@ public class SupportPlanContextualCompanionService {
 
 	private final SupportPlanV3Service plans;
 	private final SupportPlanCompanionClient companion;
+	private final SupportPlanCompanionAdmissionGuard admission;
 
-	public SupportPlanContextualCompanionService(SupportPlanV3Service plans, SupportPlanCompanionClient companion) {
+	public SupportPlanContextualCompanionService(SupportPlanV3Service plans, SupportPlanCompanionClient companion,
+			SupportPlanCompanionAdmissionGuard admission) {
 		this.plans = plans;
 		this.companion = companion;
+		this.admission = admission;
 	}
 
 	public ContextualCompanionMessage explain(UUID userId, UUID supportPlanId, UUID actionId, String surface,
@@ -52,10 +55,22 @@ public class SupportPlanContextualCompanionService {
 				"USER_INITIATED", surface, "EXPLAIN_ACTION",
 				new CompanionContext("support-plan-companion-context-v1", "vi-VN", "ACTION",
 						new ActionContext(action.actionType(), title, rationale, availability)));
-		var response = companion.message(request, bearerToken, correlationId);
+		var response = message(userId, request, bearerToken, correlationId);
 		return new ContextualCompanionMessage(response.schemaVersion(), supportPlanId, actionId, response.intent(),
 				response.surface(), response.text(), response.delivery(), response.policyVersion(), response.promptVersion(),
 				response.templateVersion(), response.provider(), response.model(), response.fallbackReason());
+	}
+
+	private SupportPlanCompanionClient.CompanionResponse message(UUID userId, CompanionRequest request,
+			String bearerToken, UUID correlationId) {
+		if (!companion.enabled()) return companion.message(request, bearerToken, correlationId);
+		try (var permit = admission.acquire(userId)) {
+			return switch (permit.decision()) {
+				case ADMITTED -> companion.message(request, bearerToken, correlationId);
+				case PENDING, RATE_LIMITED -> companion.fallback(request, "PROVIDER_QUOTA_LIMITED");
+				case UNAVAILABLE -> companion.fallback(request, "PROVIDER_UNAVAILABLE");
+			};
+		}
 	}
 
 	private String bounded(String value, int maximum, boolean required) {

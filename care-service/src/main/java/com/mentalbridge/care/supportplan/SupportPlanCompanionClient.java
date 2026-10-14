@@ -60,6 +60,10 @@ public class SupportPlanCompanionClient {
 		}
 	}
 
+	boolean enabled() {
+		return properties.enabled();
+	}
+
 	private static boolean countsForCircuit(Throwable error) {
 		if (error instanceof InvalidCompanionResponseException) return true;
 		if (error instanceof FeignException exception) return exception.status() < 0 || exception.status() >= 500;
@@ -81,7 +85,7 @@ public class SupportPlanCompanionClient {
 				: response.fallbackReason() != null && FALLBACK_REASONS.contains(response.fallbackReason());
 	}
 
-	private CompanionResponse fallback(CompanionRequest request, String reason) {
+	CompanionResponse fallback(CompanionRequest request, String reason) {
 		String title = request.context().action().title();
 		String text;
 		if (!"AVAILABLE".equals(request.context().action().availability())) {

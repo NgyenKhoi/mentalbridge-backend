@@ -1603,7 +1603,11 @@ paths:
         ACTION context. The client supplies only the Today or Plan surface. The
         request never mutates the SupportPlan, invokes no provider on focus or
         hover, and returns a deterministic template when optional Journal/AI
-        phrasing is unavailable.
+        phrasing is unavailable. A versioned Redis admission policy allows one
+        in-flight provider request per user and at most six admitted requests
+        per one-minute window across Care instances. Pending duplicates, bursts
+        beyond the cap, disabled admission and Redis failure return a bounded
+        deterministic template without invoking the provider.
       security:
         - bearerAuth: []
       parameters:

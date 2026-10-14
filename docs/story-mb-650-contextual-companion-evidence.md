@@ -19,6 +19,15 @@ quota response, provider outage, malformed response or open circuit returns the
 bounded deterministic template and never blocks the original plan action.
 The POST has no retry and creates no Care persistence or migration.
 
+Before a configured provider call, Care applies `companion-admission-v1` in
+shared Redis. One atomic Lua operation admits at most one pending request per
+user and increments a six-request, one-minute user window only for admitted
+calls. The pending lease is released by token after completion and has a
+12-second crash bound. Multiple Care instances use the same hash-tagged user
+keys, so concurrent requests cannot each admit a provider call. Pending or
+rate-limited requests return the approved quota template; disabled/unavailable
+Redis returns the dependency template. Neither path calls Journal/AI.
+
 ## Contract and failure behavior
 
 | Rule | Evidence |
@@ -28,6 +37,7 @@ The POST has no retry and creates no Care persistence or migration.
 | Exact identity | Non-owned plans and actions fail closed; the response repeats `supportPlanId` and `actionId`, which the BFF binds to its exact request. |
 | Approved scope | Only Today/Plan and the four MB-650 action types are admitted. Draft actions are unavailable on Today and ended actions are rejected. |
 | Bounded provider | Connect/read deadlines are 0.5s/8s, a circuit breaker is applied and non-idempotent POST retry is disabled. |
+| Distributed admission | Shared Redis atomically enforces one pending provider call and six admitted calls per minute per user across Care instances; admission failure fails closed to template copy. |
 | Deterministic fallback | Disabled/missing credential and all dependency failures return `support-plan-companion-template-v1` copy with an explicit closed fallback reason. |
 | Safe telemetry | Care logs correlation ID, intent, surface, failure category and HTTP status only; no context or response text is logged. Journal/AI retains its accepted intent/outcome telemetry. |
 
@@ -42,14 +52,18 @@ provider phrasing while preserving deterministic template delivery.
 
 - `SupportPlanContextualCompanionServiceTests`: exact minimized context,
   response identity, cross-action failure, surface/status/type admission and
-  truthful active/draft availability.
+  truthful active/draft availability, including pending and Redis-unavailable
+  template fallback without a provider call.
 - `SupportPlanCompanionClientTests`: credential-disabled template and malformed
   cross-surface dependency response fallback, including the approved
   unavailable-action template.
 - `SupportPlanV3ControllerCompanionTests`: verified subject, bearer, path and
   correlation propagation.
+- `SupportPlanCompanionAdmissionGuardTests`: real Redis verifies one admitted
+  call across two guard instances under ten concurrent requests, the shared
+  per-user burst cap and independent user isolation.
 - Care OpenAPI/contract and full module gates are run on the final exact head.
 
-Local verification on 2026-10-14 passed 19 focused contract/client/service/
-controller tests. The complete `care-service` suite passed 314/314 tests with
-PostgreSQL Testcontainers.
+Local verification on 2026-10-14 passed 23 focused contract/client/service/
+controller/admission tests. The complete `care-service` suite passed 320/320
+tests with PostgreSQL Testcontainers.

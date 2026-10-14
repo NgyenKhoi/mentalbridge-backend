@@ -18,6 +18,13 @@ spring:
     enabled: false
     change-log: classpath:db/changelog/db.changelog-master.yaml
     default-schema: public
+  data:
+    redis:
+      url: ${CARE_REDIS_URL:redis://localhost:6379}
+      connect-timeout: ${CARE_REDIS_CONNECT_TIMEOUT:PT0.5S}
+      timeout: ${CARE_REDIS_COMMAND_TIMEOUT:PT0.5S}
+      repositories:
+        enabled: false
 
 mentalbridge:
   care:
@@ -95,6 +102,13 @@ mentalbridge:
       circuit-failure-rate: ${JOURNAL_AI_SUPPORT_PLAN_COMPANION_CIRCUIT_FAILURE_RATE:50}
       circuit-open-duration: ${JOURNAL_AI_SUPPORT_PLAN_COMPANION_CIRCUIT_OPEN_DURATION:PT10S}
       circuit-half-open-calls: ${JOURNAL_AI_SUPPORT_PLAN_COMPANION_CIRCUIT_HALF_OPEN_CALLS:2}
+    support-plan-companion-admission:
+      enabled: ${CARE_SUPPORT_PLAN_COMPANION_ADMISSION_ENABLED:true}
+      policy-version: ${CARE_SUPPORT_PLAN_COMPANION_ADMISSION_POLICY_VERSION:companion-admission-v1}
+      maximum-requests: ${CARE_SUPPORT_PLAN_COMPANION_MAXIMUM_REQUESTS:6}
+      window: ${CARE_SUPPORT_PLAN_COMPANION_RATE_WINDOW:PT1M}
+      pending-ttl: ${CARE_SUPPORT_PLAN_COMPANION_PENDING_TTL:PT12S}
+      key-prefix: ${CARE_SUPPORT_PLAN_COMPANION_REDIS_KEY_PREFIX:mentalbridge:care:support-plan-companion}
     consultation-brief-ai-draft:
       base-url: ${JOURNAL_AI_CONSULTATION_BRIEF_DRAFT_BASE_URL:}
       connect-timeout: ${JOURNAL_AI_CONSULTATION_BRIEF_DRAFT_CONNECT_TIMEOUT:PT0.5S}
@@ -108,6 +122,11 @@ eureka:
 springdotenv:
   ignoreIfMissing: true
   exportToSystemProperties: false
+
+management:
+  health:
+    redis:
+      enabled: false
 
 logging:
   level:

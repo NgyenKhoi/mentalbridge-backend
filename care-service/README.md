@@ -348,6 +348,12 @@ Assessment answer text must never be copied into outbox payloads, logs, errors, 
 | `JOURNAL_AI_SUPPORT_PLAN_COMPANION_CONNECT_TIMEOUT` | No | Bounded connection deadline for optional Companion phrasing | `PT0.5S` |
 | `JOURNAL_AI_SUPPORT_PLAN_COMPANION_READ_TIMEOUT` | No | Bounded response deadline before Care returns its deterministic template | `PT8S` |
 | `JOURNAL_AI_SUPPORT_PLAN_COMPANION_CIRCUIT_*` | No | Circuit-breaker window, threshold, open duration, and half-open probe budget for Companion phrasing | See `.env.example` |
+| `CARE_REDIS_URL` | When Companion provider phrasing is enabled | Shared Redis URL used only for ephemeral cross-instance pending and rate admission | `redis://localhost:6379` |
+| `CARE_REDIS_CONNECT_TIMEOUT` / `CARE_REDIS_COMMAND_TIMEOUT` | No | Bounded Redis deadlines; an unavailable admission store fails closed to template copy | `PT0.5S` |
+| `CARE_SUPPORT_PLAN_COMPANION_ADMISSION_ENABLED` | No | Enables the required distributed admission policy; disabling it fails closed and never enables unguarded provider calls | `true` |
+| `CARE_SUPPORT_PLAN_COMPANION_ADMISSION_POLICY_VERSION` | No | Version recorded in Redis key scope for safe policy rollout | `companion-admission-v1` |
+| `CARE_SUPPORT_PLAN_COMPANION_MAXIMUM_REQUESTS` / `CARE_SUPPORT_PLAN_COMPANION_RATE_WINDOW` | No | Per-user admitted provider-request cap shared by all Care instances | `6` / `PT1M` |
+| `CARE_SUPPORT_PLAN_COMPANION_PENDING_TTL` | No | Upper bound for one per-user provider request in flight; exceeds the HTTP deadline | `PT12S` |
 | `JOURNAL_AI_CONSULTATION_BRIEF_DRAFT_BASE_URL` | Local/demo only | Direct Journal/AI URL for optional ConsultationBrief suggestions | `http://localhost:3000` |
 | `JOURNAL_AI_CONSULTATION_BRIEF_DRAFT_CONNECT_TIMEOUT` | No | Bounded connection deadline for the asynchronous worker call | `PT0.5S` |
 | `JOURNAL_AI_CONSULTATION_BRIEF_DRAFT_READ_TIMEOUT` | No | Bounded provider response deadline; a timeout leaves the manual draft usable | `PT12S` |
