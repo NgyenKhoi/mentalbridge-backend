@@ -30,6 +30,7 @@ const implementedOperations = new Set([
   "POST /api/v1/journals",
   "GET /api/v1/journals",
   "GET /api/v1/journals/{journalId}",
+  "GET /api/v1/journals/{journalId}/completion-evidence",
   "PATCH /api/v1/journals/{journalId}",
   "DELETE /api/v1/journals/{journalId}",
   "POST /api/v1/journals/{journalId}/revisions/{revision}/analysis-jobs",
@@ -64,6 +65,10 @@ const implementedResponses = new Map([
   ["POST /api/v1/journals", new Set(["201", "400", "401", "409"])],
   ["GET /api/v1/journals", new Set(["200", "400", "401"])],
   ["GET /api/v1/journals/{journalId}", new Set(["200", "401", "404"])],
+  [
+    "GET /api/v1/journals/{journalId}/completion-evidence",
+    new Set(["200", "400", "401", "503"]),
+  ],
   [
     "PATCH /api/v1/journals/{journalId}",
     new Set(["200", "400", "401", "404", "409", "412"]),

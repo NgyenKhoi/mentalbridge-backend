@@ -732,6 +732,44 @@ export class JournalService {
     if (!entry || entry.deleted) throw new NotFoundException();
     return this.output(entry);
   }
+  async completionEvidence(request: Request, id: string) {
+    if (!uuid.safeParse(id).success) throw new BadRequestException();
+    const subjectUserId = owner(request);
+    let entry: Entry | null;
+    try {
+      entry = await this.store.find(subjectUserId, id);
+    } catch {
+      throw new ServiceUnavailableException();
+    }
+    const verifiedAt = new Date();
+    if (
+      entry &&
+      (entry.ownerAccountId !== subjectUserId ||
+        entry._id !== id ||
+        typeof entry.deleted !== "boolean" ||
+        !(entry.createdAt instanceof Date) ||
+        !Number.isFinite(entry.createdAt.getTime()) ||
+        entry.createdAt > verifiedAt)
+    )
+      throw new ServiceUnavailableException();
+    return {
+      schemaVersion: "journal-entry-completion-evidence-v1" as const,
+      subjectUserId,
+      journalId: id,
+      state: !entry ? "MISSING" : entry.deleted ? "DELETED" : "RECORDED",
+      fact:
+        entry && !entry.deleted
+          ? {
+              ownerDomain: "JOURNAL_AI" as const,
+              kind: "JOURNAL_ENTRY" as const,
+              factId: entry._id,
+              factRevision: "1" as const,
+              occurredAt: entry.createdAt.toISOString(),
+            }
+          : null,
+      verifiedAt: verifiedAt.toISOString(),
+    };
+  }
   async list(request: Request, query: Record<string, string | undefined>) {
     const parsed = listSchema.safeParse(query);
     if (!parsed.success) throw new BadRequestException();
@@ -901,6 +939,15 @@ export class JournalController {
     @Param("journalId") id: string,
   ) {
     return this.service.revise(request, id);
+  }
+  @Get(":journalId/completion-evidence") completionEvidence(
+    @Req() request: Request,
+    @Param("journalId") id: string,
+    @Res({ passthrough: true })
+    response: { setHeader(name: string, value: string): void },
+  ) {
+    response.setHeader("Cache-Control", "no-store");
+    return this.service.completionEvidence(request, id);
   }
   @Delete(":journalId") remove(
     @Req() request: Request,
