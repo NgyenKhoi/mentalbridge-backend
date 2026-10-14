@@ -158,6 +158,7 @@ services:
       JOURNAL_AI_LONGITUDINAL_BASE_URL: http://journal-ai:3000
       JOURNAL_AI_SUPPORT_GUIDE_BASE_URL: http://journal-ai:3000
       JOURNAL_AI_EMOTION_EVIDENCE_BASE_URL: http://journal-ai:3000
+      JOURNAL_AI_JOURNAL_EVIDENCE_BASE_URL: http://journal-ai:3000
     ports:
       - "${SERVICE_BIND_ADDRESS:-127.0.0.1}:${CARE_PORT:-8081}:8081"
     depends_on:

@@ -147,8 +147,9 @@ The consumer uses its own bounded connection/read deadlines, at most one safe
 GET retry and a fail-fast circuit breaker. Its conservative maximum call budget
 is 2.5 seconds. This endpoint does not convert v2 plans or invent native actions.
 
-`POST /api/v2/support-plans` now creates a NEW native proposal under
-`support-plan-emotion-actions-v1`. The same paid entitlement, guided screening
+MB-641 introduced NEW native proposals under
+`support-plan-emotion-actions-v1`; those saved plans remain usable under their
+snapshotted policy. The same paid entitlement, guided screening
 context, deterministic template/resource admission and exact Content checks
 apply. The current immutable personalization revision supplies explicit
 `EMOTION_CHECK_IN` activity-mode intent; no Emotion data chooses actions. The
@@ -189,6 +190,46 @@ the legacy engagement API remains limited to its v2 resource model.
 The web/mobile consumers use canonical Emotion navigation, explicit completion
 checks and separate factual owner Emotion coverage. Native device execution
 remains separately gated by MB-666; source/browser checks do not prove it.
+
+## MB-642 Journal intent and owner-evidence reconciliation
+
+New native proposals use `support-plan-journal-actions-v1` and admit one bounded
+`JOURNAL` action only from the saved immutable `JOURNALING` preference. The
+`short-reflection` intention under `journal-writing-intent-v1` is Care-owned
+wording, not copied private content or AI guidance. Existing admitted resources,
+paid entitlement, exact screening/Content checks and professional-support
+precedence remain unchanged. Journal receives the same reviewable generic
+duration/cadence defaults within the aggregate workload budget. New preferences
+never add actions to a saved active plan; existing Emotion-policy and v2 plans
+are not rewritten. Draft/replacement revalidation checks the exact saved
+Journal intent and personalization provenance before user-confirmed activation.
+
+`POST /api/v2/support-plan-occurrences/{id}/journal/reconcile` accepts exactly
+`journalId`, an untrusted candidate reference. Care resolves its own native
+Journal occurrence first, queries Journal's content-free creation projection
+outside a transaction with the verified USER bearer/correlation, then locks and
+rechecks the action/source link, subject, entry, occurrence day in its schedule
+timezone and activation boundary. The fact uses immutable server `createdAt`,
+not the entry's user-selected date or an edit timestamp. One fact satisfies only
+one occurrence. Retry preserves accepted time, version and event; another entry
+cannot replace that historical reference.
+
+Current `MISSING`/`DELETED` source states do not complete an open occurrence or
+erase accepted evidence. `JOURNAL_ENTRY_EVIDENCE_UNAVAILABLE` (503) means owner
+uncertainty, not absence. The client has separate typed deadlines, at most one
+safe GET retry, fail-fast breaker and a maximum 2.5-second conservative budget;
+the response is `no-store`. Private text, preview, mood, tags, AI reflection and
+analysis never enter the Care DTO, tables, event or logs. A completion check
+does not grant AI processing, specialist sharing or reflection reuse.
+
+Reassessment still keeps all four dimensions separate. Future longitudinal
+composition uses its independently consented current source revisions and
+coverage/provenance; deleted source analyses remain unavailable. Neither entry
+revision/deletion nor a completion read rewrites immutable review snapshots.
+This slice reuses the native action/evidence schema in migration 025 and the
+existing minimized occurrence event; it adds no migration, queue or new ledger.
+Web/mobile Journal handoff and its prototype/native evidence are a separate
+consumer slice and are not claimed complete by this backend boundary.
 
 ## SupportPlan system-copy encoding compatibility
 
@@ -339,6 +380,16 @@ Assessment answer text must never be copied into outbox payloads, logs, errors, 
 | `JOURNAL_AI_EMOTION_EVIDENCE_CIRCUIT_FAILURE_RATE` | No | Transport/malformed evidence failure percentage | `50` |
 | `JOURNAL_AI_EMOTION_EVIDENCE_CIRCUIT_OPEN_DURATION` | No | Fail-fast open interval | `PT10S` |
 | `JOURNAL_AI_EMOTION_EVIDENCE_CIRCUIT_HALF_OPEN_CALLS` | No | Bounded recovery probes | `2` |
+| `JOURNAL_AI_JOURNAL_EVIDENCE_BASE_URL` | Local/demo | Direct Journal/AI URL for exact content-free Journal creation evidence | `http://localhost:3000` |
+| `JOURNAL_AI_JOURNAL_EVIDENCE_CONNECT_TIMEOUT` | No | Bounded TCP deadline for the owner entry fact | `PT0.2S` |
+| `JOURNAL_AI_JOURNAL_EVIDENCE_READ_TIMEOUT` | No | Bounded response deadline per evidence GET | `PT0.8S` |
+| `JOURNAL_AI_JOURNAL_EVIDENCE_MAX_ATTEMPTS` | No | Total safe GET attempts, one or two | `2` |
+| `JOURNAL_AI_JOURNAL_EVIDENCE_RETRY_WAIT` | No | Positive transient retry delay with exponential jitter | `PT0.1S` |
+| `JOURNAL_AI_JOURNAL_EVIDENCE_CIRCUIT_WINDOW_SIZE` | No | Count-based Journal evidence circuit window | `10` |
+| `JOURNAL_AI_JOURNAL_EVIDENCE_CIRCUIT_MINIMUM_CALLS` | No | Minimum calls before opening | `5` |
+| `JOURNAL_AI_JOURNAL_EVIDENCE_CIRCUIT_FAILURE_RATE` | No | Transport/malformed evidence failure percentage | `50` |
+| `JOURNAL_AI_JOURNAL_EVIDENCE_CIRCUIT_OPEN_DURATION` | No | Fail-fast open interval | `PT10S` |
+| `JOURNAL_AI_JOURNAL_EVIDENCE_CIRCUIT_HALF_OPEN_CALLS` | No | Bounded recovery probes | `2` |
 | `JOURNAL_AI_SUPPORT_GUIDE_BASE_URL` | Local/demo only | Direct Journal/AI URL for optional consent-gated Support Guide phrasing | `http://localhost:3000` |
 | `JOURNAL_AI_SUPPORT_GUIDE_CONNECT_TIMEOUT` | No | Bounded connection deadline for optional Support Guide phrasing | `PT0.5S` |
 | `JOURNAL_AI_SUPPORT_GUIDE_READ_TIMEOUT` | No | Bounded response deadline before Care persists its approved-copy fallback | `PT8S` |
