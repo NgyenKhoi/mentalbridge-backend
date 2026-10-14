@@ -1,3 +1,5 @@
+import { timingSafeEqual } from "node:crypto";
+
 import {
   BadRequestException,
   Controller,
@@ -41,6 +43,7 @@ export const SUPPORT_PLAN_COMPANION_MESSAGE_VERSION =
   "support-plan-companion-message-v1";
 export const SUPPORT_PLAN_COMPANION_TEMPLATE_VERSION =
   "support-plan-companion-template-v1";
+const MAX_MESSAGE_TEXT_LENGTH = 480;
 
 const surfaces = ["TODAY", "PLAN", "PROGRESS", "ADJUST"] as const;
 const intents = [
@@ -393,15 +396,54 @@ export type SupportPlanCompanionIntent = z.infer<
 type CompanionContext = SupportPlanCompanionIntent["context"];
 type CompanionNavigation = z.infer<typeof navigationSchema>;
 
-export type CompanionFallbackReason =
-  | "CONSENT_REQUIRED"
-  | "CONSENT_UNAVAILABLE"
-  | "PROVIDER_DISABLED"
-  | "PROVIDER_TIMEOUT"
-  | "PROVIDER_QUOTA_LIMITED"
-  | "PROVIDER_UNAVAILABLE"
-  | "MALFORMED_OUTPUT"
-  | "POLICY_REJECTED";
+const companionFallbackReasons = [
+  "CONSENT_REQUIRED",
+  "CONSENT_UNAVAILABLE",
+  "PROVIDER_DISABLED",
+  "PROVIDER_TIMEOUT",
+  "PROVIDER_QUOTA_LIMITED",
+  "PROVIDER_UNAVAILABLE",
+  "MALFORMED_OUTPUT",
+  "POLICY_REJECTED",
+] as const;
+
+export type CompanionFallbackReason = (typeof companionFallbackReasons)[number];
+
+const companionMessageTextSchema = z
+  .string()
+  .trim()
+  .min(1)
+  .max(MAX_MESSAGE_TEXT_LENGTH);
+
+export const supportPlanCompanionMessageSchema = z
+  .object({
+    schemaVersion: z.literal(SUPPORT_PLAN_COMPANION_MESSAGE_VERSION),
+    intent: z.enum(intents),
+    surface: z.enum(surfaces),
+    text: companionMessageTextSchema,
+    delivery: z.enum(["GENERATED", "TEMPLATE"]),
+    navigation: navigationSchema.nullable(),
+    policyVersion: z.literal(SUPPORT_PLAN_COMPANION_POLICY_VERSION),
+    promptVersion: z.literal(SUPPORT_PLAN_COMPANION_PROMPT_VERSION),
+    templateVersion: z.literal(SUPPORT_PLAN_COMPANION_TEMPLATE_VERSION),
+    provider: z
+      .enum(["DETERMINISTIC_FAKE", "GEMINI", "OPENAI", "BEDROCK"])
+      .nullable(),
+    model: z.string().min(1).max(2_048).nullable(),
+    fallbackReason: z.enum(companionFallbackReasons).nullable(),
+  })
+  .strict()
+  .superRefine((message, context) => {
+    if (
+      (message.delivery === "GENERATED" && message.fallbackReason !== null) ||
+      (message.delivery === "TEMPLATE" && message.fallbackReason === null)
+    )
+      context.addIssue({
+        code: "custom",
+        path: ["fallbackReason"],
+        message: "fallback reason must match delivery",
+      });
+  });
 
 export interface CompanionTelemetryEvent {
   readonly correlationId: string;
@@ -435,6 +477,19 @@ interface CompanionRequest extends AuthenticatedRequest {
   readonly body?: unknown;
 }
 
+const matchesServiceToken = (
+  candidate: string | readonly string[] | undefined,
+  expected: string | null,
+): boolean => {
+  if (typeof candidate !== "string" || !expected) return false;
+  const candidateBuffer = Buffer.from(candidate);
+  const expectedBuffer = Buffer.from(expected);
+  return (
+    candidateBuffer.length === expectedBuffer.length &&
+    timingSafeEqual(candidateBuffer, expectedBuffer)
+  );
+};
+
 export interface SupportPlanCompanionDependencies {
   readonly consentClient?: ConsentClient;
   readonly provider?: SupportPlanCompanionProvider;
@@ -456,17 +511,36 @@ const navigationFromContext = (
   return null;
 };
 
+const boundedTemplateText = (primary: string, optional?: string): string => {
+  const combined = optional ? `${primary} ${optional}` : primary;
+  const combinedResult = companionMessageTextSchema.safeParse(combined);
+  if (combinedResult.success) return combinedResult.data;
+  const primaryResult = companionMessageTextSchema.safeParse(primary);
+  if (primaryResult.success) return primaryResult.data;
+  return "Nội dung đồng hành hiện chưa sẵn sàng.";
+};
+
 const fallbackText = (request: SupportPlanCompanionIntent): string => {
   const context = request.context;
   if (context.contextKind === "ACTION") {
     if (context.action.availability !== "AVAILABLE")
-      return `Thông tin cho “${context.action.title}” hiện chưa sẵn sàng. Bạn có thể thử lại sau.`;
-    return `${context.action.title} là một hoạt động trong kế hoạch của bạn.${context.action.rationale ? ` ${context.action.rationale}` : ""}`;
+      return boundedTemplateText(
+        `Thông tin cho “${context.action.title}” hiện chưa sẵn sàng. Bạn có thể thử lại sau.`,
+      );
+    return boundedTemplateText(
+      `${context.action.title} là một hoạt động trong kế hoạch của bạn.`,
+      context.action.rationale,
+    );
   }
   if (context.contextKind === "FOCUS")
-    return `Nhóm này tập trung vào “${context.focus.title}”.${context.focus.rationale ? ` ${context.focus.rationale}` : ""}`;
+    return boundedTemplateText(
+      `Nhóm này tập trung vào “${context.focus.title}”.`,
+      context.focus.rationale,
+    );
   if (context.contextKind === "NEXT_STEP")
-    return `Bước tiếp theo đang có sẵn: ${context.nextStep.label}.`;
+    return boundedTemplateText(
+      `Bước tiếp theo đang có sẵn: ${context.nextStep.label}.`,
+    );
   if (context.contextKind === "ACKNOWLEDGEMENT") {
     const messages = {
       ACTION_SAVED: "Thay đổi của bạn đã được lưu.",
@@ -474,21 +548,29 @@ const fallbackText = (request: SupportPlanCompanionIntent): string => {
       REVIEW_SUBMITTED: "Phản hồi xem lại kế hoạch đã được gửi.",
       PREFERENCE_SAVED: "Lựa chọn của bạn đã được lưu.",
     } as const;
-    return messages[context.acknowledgement.reason];
+    return boundedTemplateText(messages[context.acknowledgement.reason]);
   }
   if (context.contextKind === "PROGRESS") {
     const base = `Tính đến ${context.progress.evidenceAsOf}, bạn đã hoàn thành ${String(context.progress.completedCount)} trong ${String(context.progress.availableCount)} hoạt động có dữ liệu cho khoảng thời gian này.`;
-    return context.progress.partial
-      ? `${base} Một số nguồn hiện chưa có dữ liệu, nên đây là bản tóm tắt chưa đầy đủ.`
-      : base;
+    return boundedTemplateText(
+      base,
+      context.progress.partial
+        ? "Một số nguồn hiện chưa có dữ liệu, nên đây là bản tóm tắt chưa đầy đủ."
+        : undefined,
+    );
   }
   if (context.contextKind === "REVIEW") {
     const base = `Kết quả xem lại hiện có ${String(context.review.options.length)} lựa chọn phù hợp để bạn tự quyết định.`;
-    return context.review.contradictoryEvidence
-      ? `${base} Các nguồn hiện chưa cùng hướng, nên hệ thống giữ riêng từng nguồn để bạn xem xét.`
-      : base;
+    return boundedTemplateText(
+      base,
+      context.review.contradictoryEvidence
+        ? "Các nguồn hiện chưa cùng hướng, nên hệ thống giữ riêng từng nguồn để bạn xem xét."
+        : undefined,
+    );
   }
-  return `Bạn có thể tiếp tục tại “${context.navigation.label}”.`;
+  return boundedTemplateText(
+    `Bạn có thể tiếp tục tại “${context.navigation.label}”.`,
+  );
 };
 
 const normalized = (value: string) =>
@@ -517,15 +599,41 @@ const requiredGrounding = (
   if (context.contextKind === "ACTION") return [context.action.title];
   if (context.contextKind === "FOCUS") return [context.focus.title];
   if (context.contextKind === "NEXT_STEP") return [context.nextStep.label];
-  if (context.contextKind === "PROGRESS")
-    return [
-      String(context.progress.completedCount),
-      String(context.progress.availableCount),
-    ];
+  if (context.contextKind === "PROGRESS") return [];
   if (context.contextKind === "REVIEW")
     return [String(context.review.options.length)];
   if (context.contextKind === "NAVIGATION") return [context.navigation.label];
   return [];
+};
+
+const isGroundedProgressOutput = (
+  request: SupportPlanCompanionIntent,
+  text: string,
+): boolean => {
+  if (request.context.contextKind !== "PROGRESS") return true;
+  const progress = request.context.progress;
+  const output = normalized(text);
+  const relation = new RegExp(
+    `(?:^|\\D)hoàn\\s+thành\\s+${String(progress.completedCount)}\\s+(?:trong|/)\\s+${String(progress.availableCount)}(?!\\d)`,
+    "iu",
+  );
+  if (!relation.test(output)) return false;
+
+  const numericFacts = [...output.matchAll(/\d+/gu)].map(([value]) => value);
+  if (
+    numericFacts.length !== 2 ||
+    numericFacts[0] !== String(progress.completedCount) ||
+    numericFacts[1] !== String(progress.availableCount)
+  )
+    return false;
+
+  const partialEvidence =
+    /chưa (?:có )?dữ liệu|chưa đầy đủ|còn thiếu|thiếu dữ liệu|không đầy đủ/iu;
+  const falseCompleteEvidence =
+    /(?:dữ liệu|nguồn|bằng chứng)\s+(?:đã\s+)?(?:đầy đủ|hoàn chỉnh)|không\s+(?:còn\s+)?thiếu/iu;
+  if (progress.partial)
+    return partialEvidence.test(output) && !falseCompleteEvidence.test(output);
+  return !partialEvidence.test(output);
 };
 
 const isPolicyCompliantOutput = (
@@ -536,6 +644,7 @@ const isPolicyCompliantOutput = (
     return false;
   if (text.split(/[.!?]+/u).filter((sentence) => sentence.trim()).length > 3)
     return false;
+  if (!isGroundedProgressOutput(request, text)) return false;
   const output = normalized(text);
   if (
     requiredGrounding(request).some(
@@ -584,6 +693,13 @@ export class SupportPlanCompanionService {
 
   async message(httpRequest: CompanionRequest) {
     if (!httpRequest.principal?.roles.includes("USER"))
+      throw new UnauthorizedException();
+    if (
+      !matchesServiceToken(
+        httpRequest.headers["x-mentalbridge-service-token"],
+        this.configuration.SUPPORT_PLAN_CARE_SERVICE_TOKEN,
+      )
+    )
       throw new UnauthorizedException();
     const parsed = supportPlanCompanionIntentSchema.safeParse(httpRequest.body);
     if (!parsed.success) throw new BadRequestException();
@@ -636,7 +752,7 @@ export class SupportPlanCompanionService {
         fallbackReason: reason,
         latencyMs: Math.max(0, Math.round(performance.now() - startedAt)),
       });
-      return response;
+      return supportPlanCompanionMessageSchema.parse(response);
     };
 
     if (this.configuration.PROVIDER_MODE === "DETERMINISTIC_FAKE")
@@ -694,7 +810,7 @@ export class SupportPlanCompanionService {
       fallbackReason: null,
       latencyMs: Math.max(0, Math.round(performance.now() - startedAt)),
     });
-    return response;
+    return supportPlanCompanionMessageSchema.parse(response);
   }
 }
 

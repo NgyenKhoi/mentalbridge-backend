@@ -14,10 +14,13 @@ import {
   type CompanionTelemetryEvent,
   SupportPlanCompanionService,
   supportPlanCompanionIntentSchema,
+  supportPlanCompanionMessageSchema,
   type SupportPlanCompanionIntent,
 } from "./support-plan-companion.js";
 
 const configuration = {
+  SUPPORT_PLAN_CARE_SERVICE_TOKEN:
+    "test-care-service-token-at-least-32-characters",
   PROVIDER_MODE: "APPROVED_REAL",
   PROVIDER_APPROVAL_VERSION: "approved-provider-v1",
   FREE_PLUS_ROUTE: {
@@ -28,7 +31,7 @@ const configuration = {
   },
 } as ServiceConfiguration;
 
-const actionRequest: SupportPlanCompanionIntent = {
+const actionRequest = {
   schemaVersion: "support-plan-companion-intent-v1",
   policyVersion: "support-plan-companion-policy-v1",
   requestSource: "USER_INITIATED",
@@ -47,9 +50,9 @@ const actionRequest: SupportPlanCompanionIntent = {
       navigation: { destination: "JOURNAL", label: "Mở nhật ký" },
     },
   },
-};
+} as const satisfies SupportPlanCompanionIntent;
 
-const progressRequest: SupportPlanCompanionIntent = {
+const progressRequest = {
   schemaVersion: "support-plan-companion-intent-v1",
   policyVersion: "support-plan-companion-policy-v1",
   requestSource: "USER_INITIATED",
@@ -68,9 +71,9 @@ const progressRequest: SupportPlanCompanionIntent = {
       unavailableEvidence: ["CONSULTATION_EVIDENCE"],
     },
   },
-};
+} as const satisfies SupportPlanCompanionIntent;
 
-const reviewRequest: SupportPlanCompanionIntent = {
+const reviewRequest = {
   schemaVersion: "support-plan-companion-intent-v1",
   policyVersion: "support-plan-companion-policy-v1",
   requestSource: "USER_INITIATED",
@@ -113,7 +116,7 @@ const reviewRequest: SupportPlanCompanionIntent = {
       contradictoryEvidence: true,
     },
   },
-};
+} as const satisfies SupportPlanCompanionIntent;
 
 const consentGranted: ConsentClient = {
   check: () => Promise.resolve({ authorized: true, reason: "GRANTED" }),
@@ -139,7 +142,11 @@ const invoke = (
 ) =>
   service.message({
     id: "companion-correlation-1",
-    headers: { authorization: "Bearer user-token" },
+    headers: {
+      authorization: "Bearer user-token",
+      "x-mentalbridge-service-token":
+        "test-care-service-token-at-least-32-characters",
+    },
     principal: {
       accountId: "20000000-0000-4000-8000-000000000001",
       roles,
@@ -233,6 +240,50 @@ void test("rejects raw sensitive and unknown context before consent or provider 
   assert.equal(providerCalls, 0);
 });
 
+void test("requires the dedicated Care caller credential before consent or provider execution", async () => {
+  let consentChecks = 0;
+  let providerCalls = 0;
+  const service = serviceWith({
+    consent: {
+      check: () => {
+        consentChecks += 1;
+        return Promise.resolve({ authorized: true, reason: "GRANTED" });
+      },
+    },
+    provider: {
+      phrase: () => {
+        providerCalls += 1;
+        return Promise.reject(new Error("must not execute"));
+      },
+    },
+  });
+  const principal = {
+    accountId: "20000000-0000-4000-8000-000000000001",
+    roles: ["USER"],
+  };
+  await assert.rejects(
+    service.message({
+      headers: { authorization: "Bearer user-token" },
+      principal,
+      body: actionRequest,
+    }),
+    UnauthorizedException,
+  );
+  await assert.rejects(
+    service.message({
+      headers: {
+        authorization: "Bearer user-token",
+        "x-mentalbridge-service-token": "wrong-care-service-token",
+      },
+      principal,
+      body: actionRequest,
+    }),
+    UnauthorizedException,
+  );
+  assert.equal(consentChecks, 0);
+  assert.equal(providerCalls, 0);
+});
+
 void test("returns bounded generated phrasing for action, progress, and review intents", async () => {
   const cases = [
     [
@@ -256,6 +307,107 @@ void test("returns bounded generated phrasing for action, progress, and review i
     assert.equal(result.fallbackReason, null);
     assert.equal("command" in result, false);
   }
+});
+
+void test("enforces the response text boundary for generated and template delivery", async () => {
+  const exactBoundaryText = `${actionRequest.context.action.title}${"x".repeat(480 - actionRequest.context.action.title.length)}`;
+  const generated = await invoke(
+    serviceWith({ provider: providerOutput(exactBoundaryText) }),
+    actionRequest,
+  );
+  assert.equal(generated.delivery, "GENERATED");
+  assert.equal(generated.text.length, 480);
+  assert.equal(
+    supportPlanCompanionMessageSchema.safeParse(generated).success,
+    true,
+  );
+
+  const oversizedGenerated = await invoke(
+    serviceWith({ provider: providerOutput(`${exactBoundaryText}x`) }),
+    actionRequest,
+  );
+  assert.equal(oversizedGenerated.delivery, "TEMPLATE");
+  assert.equal(oversizedGenerated.fallbackReason, "MALFORMED_OUTPUT");
+  assert.ok(oversizedGenerated.text.length <= 480);
+
+  const maximumRequest = {
+    ...actionRequest,
+    context: {
+      ...actionRequest.context,
+      action: {
+        ...actionRequest.context.action,
+        title: "T".repeat(160),
+        rationale: "R".repeat(320),
+      },
+    },
+  } satisfies SupportPlanCompanionIntent;
+  const template = await invoke(
+    serviceWith({
+      provider: providerOutput("must not execute"),
+      configuration: {
+        ...configuration,
+        PROVIDER_MODE: "DETERMINISTIC_FAKE",
+      },
+    }),
+    maximumRequest,
+  );
+  assert.equal(template.delivery, "TEMPLATE");
+  assert.ok(template.text.length <= 480);
+  assert.match(template.text, /^T{160} là một hoạt động/u);
+  assert.doesNotMatch(template.text, /R{320}/u);
+  assert.equal(
+    supportPlanCompanionMessageSchema.safeParse(template).success,
+    true,
+  );
+});
+
+void test("fails closed for inverted, invented, or misrepresented progress facts", async () => {
+  const unsafeOutputs = [
+    "Bạn đã hoàn thành 4 trong 2 hoạt động; một nguồn còn thiếu.",
+    "Bạn đã hoàn thành 2 trong 4 hoạt động trong 5 ngày; một nguồn còn thiếu.",
+    "Bạn đã hoàn thành 2 trong 4 hoạt động. Dữ liệu đã đầy đủ.",
+    "Bạn đã hoàn thành 2 trong 4 hoạt động.",
+  ];
+  for (const text of unsafeOutputs) {
+    const result = await invoke(
+      serviceWith({ provider: providerOutput(text) }),
+      progressRequest,
+    );
+    assert.equal(result.delivery, "TEMPLATE");
+    assert.equal(result.fallbackReason, "POLICY_REJECTED");
+  }
+
+  const completeRequest = {
+    ...progressRequest,
+    context: {
+      ...progressRequest.context,
+      progress: {
+        ...progressRequest.context.progress,
+        partial: false,
+        unavailableEvidence: undefined,
+      },
+    },
+  } satisfies SupportPlanCompanionIntent;
+  const falsePartial = await invoke(
+    serviceWith({
+      provider: providerOutput(
+        "Bạn đã hoàn thành 2 trong 4 hoạt động; dữ liệu còn thiếu.",
+      ),
+    }),
+    completeRequest,
+  );
+  assert.equal(falsePartial.delivery, "TEMPLATE");
+  assert.equal(falsePartial.fallbackReason, "POLICY_REJECTED");
+
+  const valid = await invoke(
+    serviceWith({
+      provider: providerOutput(
+        "Bạn đã hoàn thành 2 trong 4 hoạt động có dữ liệu; một nguồn còn thiếu.",
+      ),
+    }),
+    progressRequest,
+  );
+  assert.equal(valid.delivery, "GENERATED");
 });
 
 void test("treats prompt injection as data and falls back on policy-violating output", async () => {

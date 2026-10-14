@@ -13,6 +13,7 @@ const configuration = {
   CONSULTATION_BASE_URL: "http://consultation.test",
   CONSULTATION_TIMEOUT_MS: 100,
   REMINDER_SERVICE_TOKEN: null,
+  SUPPORT_PLAN_CARE_SERVICE_TOKEN: null,
   PROVIDER_MODE: "APPROVED_REAL",
   ROUTING_POLICY_VERSION: "exact-revision-routing-v1",
   PROVIDER_APPROVAL_VERSION: "benchmark-approval-v1",

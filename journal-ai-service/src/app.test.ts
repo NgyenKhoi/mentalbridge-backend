@@ -42,6 +42,8 @@ const testConfiguration: ServiceConfiguration = {
   CONSULTATION_BASE_URL: "http://localhost:8082",
   CONSULTATION_TIMEOUT_MS: 100,
   REMINDER_SERVICE_TOKEN: "test-reminder-service-token-at-least-32-characters",
+  SUPPORT_PLAN_CARE_SERVICE_TOKEN:
+    "test-care-service-token-at-least-32-characters",
   PROVIDER_MODE: "DETERMINISTIC_FAKE",
   ROUTING_POLICY_VERSION: "exact-revision-routing-v1",
   PROVIDER_APPROVAL_VERSION: null,
@@ -174,9 +176,10 @@ void test("validates configuration", () => {
   assert.equal(configuration.LOG_LEVEL, "debug");
   assert.equal(configuration.JOURNAL_ENCRYPTION_KEY_ID, "single-key");
   assert.equal(configuration.REMINDER_SERVICE_TOKEN, null);
+  assert.equal(configuration.SUPPORT_PLAN_CARE_SERVICE_TOKEN, null);
 });
 
-void test("validates the reminder service token", () => {
+void test("validates scoped internal service tokens", () => {
   const identity = {
     NODE_ENV: "development",
     IDENTITY_JWT_ISSUER: "https://identity.test.mentalbridge",
@@ -191,15 +194,27 @@ void test("validates the reminder service token", () => {
       JOURNAL_AI_REMINDER_SERVICE_TOKEN: "too-short",
     }),
   );
+  assert.throws(() =>
+    loadConfiguration({
+      ...identity,
+      JOURNAL_AI_SUPPORT_PLAN_CARE_SERVICE_TOKEN: "too-short",
+    }),
+  );
 
   const configuration = loadConfiguration({
     ...identity,
     JOURNAL_AI_REMINDER_SERVICE_TOKEN:
       "test-reminder-service-token-at-least-32-characters",
+    JOURNAL_AI_SUPPORT_PLAN_CARE_SERVICE_TOKEN:
+      "test-care-service-token-at-least-32-characters",
   });
   assert.equal(
     configuration.REMINDER_SERVICE_TOKEN,
     "test-reminder-service-token-at-least-32-characters",
+  );
+  assert.equal(
+    configuration.SUPPORT_PLAN_CARE_SERVICE_TOKEN,
+    "test-care-service-token-at-least-32-characters",
   );
 });
 
@@ -554,29 +569,47 @@ void test("serves bounded SupportPlan Companion fallback over the internal bound
       .setExpirationTime(now + 60)
       .setJti("support-plan-companion-token-id")
       .sign(testPrivateKey);
+    const server = app.getHttpServer() as unknown as Server;
+    const body = {
+      schemaVersion: "support-plan-companion-intent-v1",
+      policyVersion: "support-plan-companion-policy-v1",
+      requestSource: "USER_INITIATED",
+      surface: "TODAY",
+      intent: "EXPLAIN_ACTION",
+      context: {
+        schemaVersion: "support-plan-companion-context-v1",
+        locale: "vi-VN",
+        contextKind: "ACTION",
+        action: {
+          actionType: "JOURNAL",
+          title: "Viết vài dòng",
+          availability: "AVAILABLE",
+          navigation: { destination: "JOURNAL", label: "Mở nhật ký" },
+        },
+      },
+    };
 
-    await request(app.getHttpServer() as unknown as Server)
+    await request(server)
       .post("/internal/v1/support-plan-companion/messages")
       .set("authorization", `Bearer ${token}`)
+      .send(body)
+      .expect(401);
+    await request(server)
+      .post("/internal/v1/support-plan-companion/messages")
+      .set("authorization", `Bearer ${token}`)
+      .set("x-mentalbridge-service-token", "wrong-care-service-token")
+      .send(body)
+      .expect(401);
+
+    await request(server)
+      .post("/internal/v1/support-plan-companion/messages")
+      .set("authorization", `Bearer ${token}`)
+      .set(
+        "x-mentalbridge-service-token",
+        testConfiguration.SUPPORT_PLAN_CARE_SERVICE_TOKEN ?? "",
+      )
       .set("x-correlation-id", "support-plan-companion-correlation")
-      .send({
-        schemaVersion: "support-plan-companion-intent-v1",
-        policyVersion: "support-plan-companion-policy-v1",
-        requestSource: "USER_INITIATED",
-        surface: "TODAY",
-        intent: "EXPLAIN_ACTION",
-        context: {
-          schemaVersion: "support-plan-companion-context-v1",
-          locale: "vi-VN",
-          contextKind: "ACTION",
-          action: {
-            actionType: "JOURNAL",
-            title: "Viết vài dòng",
-            availability: "AVAILABLE",
-            navigation: { destination: "JOURNAL", label: "Mở nhật ký" },
-          },
-        },
-      })
+      .send(body)
       .expect(201)
       .expect({
         schemaVersion: "support-plan-companion-message-v1",

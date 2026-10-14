@@ -194,10 +194,13 @@ The requirements are represented in domain/architecture documentation, but the l
 - 2026-10-14: MB-649 promotes the accepted MB-647 intent/context schemas into
   the authenticated internal Journal/AI REST boundary. The orchestrator rejects
   unknown or mismatched context before provider access, verifies current AI
-  consent, uses one approved provider route for text-only phrasing, and returns
-  versioned deterministic copy for consent/provider/timeout/quota/malformed or
-  policy failures. Requests and responses remain ephemeral; telemetry excludes
-  context and generated text, and no SupportPlan/source mutation is reachable.
+  consent, requires Care service authentication alongside the forwarded USER
+  bearer, uses one approved provider route for text-only phrasing, and returns
+  bounded versioned deterministic copy for consent/provider/timeout/quota/
+  malformed or policy failures. Ordered progress counts and partial-evidence
+  meaning are verified before generated delivery. Requests and responses remain
+  ephemeral; telemetry excludes context and generated text, and no
+  SupportPlan/source mutation is reachable.
   See [MB-649 evidence](story-mb-649-support-plan-companion-orchestration-evidence.md).
 
 - 2026-10-12: MB-640 adds reviewable `support-plan-activity-schedule-v2`

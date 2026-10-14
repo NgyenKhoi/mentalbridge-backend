@@ -37,12 +37,14 @@ Support Guide, SupportPlan, eligibility, and confirmation authority.
   assessment answers or change Care-owned safety, resource, eligibility, or
   action decisions; Care retains its exact approved copy on every failure.
 - SupportPlan Companion accepts only the exact ADR 0040 v1 intent envelope,
-  rejects unknown fields and mismatched surface/intent/context variants before
-  consent or provider access, and returns a closed deterministic template for
+  requires both the Care service credential and forwarded USER bearer, rejects
+  unknown fields and mismatched surface/intent/context variants before consent
+  or provider access, and returns a closed bounded deterministic template for
   missing consent, timeout, quota, unavailable provider, malformed output or
-  policy rejection. Provider output contains text only; navigation is copied
-  from the validated deterministic context, and the endpoint exposes no
-  command or persistence boundary.
+  policy rejection. Progress guards preserve ordered counts and partial-data
+  meaning. Provider output contains text only; navigation is copied from the
+  validated deterministic context, and the endpoint exposes no command or
+  persistence boundary.
 - The normalized result follows `MB-AI-COMPANION-001`: optional summary/sentiment, context and emotion indicators, themes, preferences, barriers, `modelConfidence`, one allow-listed `suggestedAction`, and complete provider/model/prompt/schema provenance.
 - Longitudinal results retain exact source revisions, bounded periods, comparison direction, coverage sufficiency, and provenance. Journal/AI supplies this non-standardized evidence to Care; Care composes the four-dimensional Reassessment Summary and owns every SupportPlan decision.
 - ADR 0017 package routing is server-side and versioned. AI may accompany a

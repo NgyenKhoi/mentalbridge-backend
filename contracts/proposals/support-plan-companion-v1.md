@@ -29,15 +29,18 @@ application boundary and never become model instructions.
 ## MB-649 runtime decisions
 
 The callable transport is authenticated REST at
-`POST /internal/v1/support-plan-companion/messages`. Care forwards the verified
-end-user bearer and one deterministic envelope. Journal/AI rejects unknown
-fields and surface/intent/context mismatches before provider access, checks
-current AI consent, invokes only the configured approved provider route, and
-validates a text-only structured result. Provider timeout, quota, unavailability,
-malformed output and policy rejection return `support-plan-companion-template-v1`
-copy. Requests and responses are ephemeral. Telemetry contains only the
-allowlisted versions, intent, surface, outcome, latency, fallback reason and
-correlation/provider identifiers.
+`POST /internal/v1/support-plan-companion/messages`. Care supplies its dedicated
+service credential, forwards the verified end-user bearer, and sends one
+deterministic envelope. A USER bearer alone is rejected before validation,
+consent or provider access. Journal/AI rejects unknown fields and
+surface/intent/context mismatches, checks current AI consent, invokes only the
+configured approved provider route, and validates a bounded text-only result.
+Provider timeout, rate/quota rejection, unavailability, malformed output and
+policy rejection return in-contract `support-plan-companion-template-v1` copy.
+Progress phrasing must preserve the ordered completed/available relation and
+partial-evidence meaning. Requests and responses are ephemeral. Telemetry
+contains only the allowlisted versions, intent, surface, outcome, latency,
+fallback reason and correlation/provider identifiers.
 
 MB-650 through MB-654 must supply implementation evidence for the placements,
 expanded flow, review explanation, release behavior and mobile parity. None of

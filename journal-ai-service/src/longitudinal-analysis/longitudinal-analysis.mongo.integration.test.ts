@@ -58,6 +58,7 @@ void test("runs the bounded longitudinal owner and Care flow against migrated Mo
     CONSULTATION_BASE_URL: "http://localhost:8082",
     CONSULTATION_TIMEOUT_MS: 100,
     REMINDER_SERVICE_TOKEN: null,
+    SUPPORT_PLAN_CARE_SERVICE_TOKEN: null,
     PROVIDER_MODE: "DETERMINISTIC_FAKE",
     ROUTING_POLICY_VERSION: "exact-revision-routing-v1",
     PROVIDER_APPROVAL_VERSION: null,
