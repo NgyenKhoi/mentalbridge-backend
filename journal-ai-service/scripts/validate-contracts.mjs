@@ -38,6 +38,7 @@ const implementedOperations = new Set([
   "GET /api/v1/longitudinal-analysis-jobs/{jobId}",
   "GET /internal/v1/users/{userId}/longitudinal-analyses/{analysisId}",
   "POST /internal/v1/support-guide-phrasing",
+  "POST /internal/v1/support-plan-companion/messages",
   "POST /internal/v1/consultation-brief-drafts",
   "POST /api/v1/emotion-check-ins",
   "GET /api/v1/emotion-check-ins",
@@ -88,6 +89,10 @@ const implementedResponses = new Map([
   [
     "POST /internal/v1/support-guide-phrasing",
     new Set(["201", "400", "401", "403", "503"]),
+  ],
+  [
+    "POST /internal/v1/support-plan-companion/messages",
+    new Set(["201", "400", "401"]),
   ],
   [
     "POST /internal/v1/consultation-brief-drafts",
@@ -254,6 +259,9 @@ const checkIn = schemas?.EmotionCheckIn;
 const consumerItem = schemas?.EmotionCheckInConsumerItem;
 const progress = schemas?.EmotionCheckInProgress;
 const notificationActivity = schemas?.NotificationActivity;
+const supportPlanCompanionMessage = schemas?.SupportPlanCompanionMessage;
+const supportPlanCompanionOperation =
+  contract.paths?.["/internal/v1/support-plan-companion/messages"]?.post;
 if (
   schemas?.Emotion?.enum?.join(",") !== "GREAT,GOOD,OKAY,LOW,VERY_LOW" ||
   checkIn?.properties?.sourceLabel?.const !== "SELF_REPORTED_EMOTION" ||
@@ -301,6 +309,36 @@ if (
 ) {
   throw new Error(
     "Emotion progress must remain factual and expose 7/14/30 windows",
+  );
+}
+if (
+  supportPlanCompanionMessage?.additionalProperties !== false ||
+  supportPlanCompanionMessage?.properties?.schemaVersion?.const !==
+    "support-plan-companion-message-v1" ||
+  supportPlanCompanionMessage?.properties?.delivery?.enum?.join(",") !==
+    "GENERATED,TEMPLATE" ||
+  supportPlanCompanionMessage?.properties?.text?.maxLength !== 480 ||
+  supportPlanCompanionMessage?.properties?.model?.maxLength !== 2_048 ||
+  supportPlanCompanionMessage?.properties?.command ||
+  supportPlanCompanionMessage?.properties?.mutation
+) {
+  throw new Error(
+    "SupportPlan Companion response must remain closed, versioned, and mutation-free",
+  );
+}
+if (
+  !supportPlanCompanionOperation?.security?.some(
+    (requirement) =>
+      Object.hasOwn(requirement, "bearerAuth") &&
+      Object.hasOwn(requirement, "supportPlanCareServiceToken"),
+  ) ||
+  contract.components?.securitySchemes?.supportPlanCareServiceToken?.in !==
+    "header" ||
+  contract.components?.securitySchemes?.supportPlanCareServiceToken?.name !==
+    "x-mentalbridge-service-token"
+) {
+  throw new Error(
+    "SupportPlan Companion must require both end-user bearer and the dedicated Care service token",
   );
 }
 

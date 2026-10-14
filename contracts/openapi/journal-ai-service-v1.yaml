@@ -1,8 +1,8 @@
 openapi: 3.1.0
 info:
   title: MentalBridge Journal AI Service API
-  version: 1.10.0
-  description: Private journal CRUD, daily self-reported emotion check-ins with optional encrypted context and factual progress, a service-authorized content-free notification activity projection, consent-gated analysis, bounded Support Guide phrasing, and quota-governed AI Companion conversations.
+  version: 1.11.1
+  description: Private journal CRUD, daily self-reported emotion check-ins with optional encrypted context and factual progress, a service-authorized content-free notification activity projection, consent-gated analysis, bounded Support Guide phrasing, bounded SupportPlan Companion orchestration, and quota-governed AI Companion conversations.
 servers:
   - url: http://localhost:3000
 security:
@@ -22,6 +22,8 @@ tags:
     description: Owner-scoped encrypted conversations with consent, entitlement, and server-side quota enforcement.
   - name: Support Guide phrasing
     description: Consent-gated rephrasing of exact Care-approved Support Guide copy without decision authority.
+  - name: SupportPlan Companion
+    description: User-initiated phrasing for one deterministic intent and one exact minimized Care-approved context, with local fallback and no mutation authority.
   - name: Operations
     description: Service health and metrics endpoints.
 paths:
@@ -741,6 +743,33 @@ paths:
         "401": { $ref: "#/components/responses/Unauthorized" }
         "403": { $ref: "#/components/responses/Forbidden" }
         "503": { $ref: "#/components/responses/DependencyUnavailable" }
+  /internal/v1/support-plan-companion/messages:
+    x-mentalbridge-status: implemented
+    post:
+      tags: [SupportPlan Companion]
+      summary: Phrase one policy-selected SupportPlan Companion intent.
+      description: Care authenticates with its dedicated service credential and forwards the verified end-user bearer plus one exact v1 intent envelope containing only the approved minimized context. Journal/AI validates both caller boundaries, surface, intent and context before checking current AI consent or calling one configured provider. Missing consent, provider rate/quota limit, timeout, provider failure, malformed output and policy rejection return deterministic template copy. The operation cannot create or mutate a plan, action, schedule, review, consent, booking or source-domain record.
+      operationId: createSupportPlanCompanionMessage
+      security:
+        - bearerAuth: []
+          supportPlanCareServiceToken: []
+      parameters:
+        - $ref: "#/components/parameters/CorrelationId"
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "../proposals/support-plan-companion-intent-v1.schema.json"
+      responses:
+        "201":
+          description: Bounded generated phrasing or deterministic template copy was returned without mutation authority.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/SupportPlanCompanionMessage"
+        "400": { $ref: "#/components/responses/BadRequest" }
+        "401": { $ref: "#/components/responses/Unauthorized" }
   /internal/v1/consultation-brief-drafts:
     x-mentalbridge-status: implemented
     post:
@@ -775,6 +804,11 @@ components:
       type: apiKey
       in: header
       name: x-mentalbridge-service-token
+    supportPlanCareServiceToken:
+      type: apiKey
+      in: header
+      name: x-mentalbridge-service-token
+      description: Dedicated Care-to-Journal/AI credential required together with the forwarded end-user bearer.
   parameters:
     LocalDate:
       name: localDate
@@ -1005,6 +1039,41 @@ components:
         model: { type: string, minLength: 1, maxLength: 128 }
         promptVersion: { type: string, const: support-guide-phrasing-v1 }
         schemaVersion: { type: integer, const: 1 }
+    SupportPlanCompanionNavigation:
+      type: object
+      additionalProperties: false
+      required: [destination, label]
+      properties:
+        destination:
+          type: string
+          enum: [TODAY, PLAN, PROGRESS, ADJUST, ACTION_DETAIL, RESOURCE, JOURNAL, EMOTION_CHECK_IN, SPECIALIST_DISCOVERY, REASSESSMENT]
+        label: { type: string, minLength: 1, maxLength: 160 }
+    SupportPlanCompanionMessage:
+      type: object
+      additionalProperties: false
+      required: [schemaVersion, intent, surface, text, delivery, navigation, policyVersion, promptVersion, templateVersion, provider, model, fallbackReason]
+      properties:
+        schemaVersion: { type: string, const: support-plan-companion-message-v1 }
+        intent:
+          type: string
+          enum: [EXPLAIN_ACTION, EXPLAIN_FOCUS, SUGGEST_NEXT_STEP, ENCOURAGE, SUMMARIZE_PROGRESS, EXPLAIN_REVIEW_OPTION, NAVIGATE]
+        surface: { type: string, enum: [TODAY, PLAN, PROGRESS, ADJUST] }
+        text: { type: string, minLength: 1, maxLength: 480 }
+        delivery: { type: string, enum: [GENERATED, TEMPLATE] }
+        navigation:
+          oneOf:
+            - $ref: "#/components/schemas/SupportPlanCompanionNavigation"
+            - type: "null"
+        policyVersion: { type: string, const: support-plan-companion-policy-v1 }
+        promptVersion: { type: string, const: support-plan-companion-prompt-v1 }
+        templateVersion: { type: string, const: support-plan-companion-template-v1 }
+        provider:
+          type: [string, "null"]
+          enum: [DETERMINISTIC_FAKE, GEMINI, OPENAI, BEDROCK, null]
+        model: { type: [string, "null"], minLength: 1, maxLength: 2048 }
+        fallbackReason:
+          type: [string, "null"]
+          enum: [CONSENT_REQUIRED, CONSENT_UNAVAILABLE, PROVIDER_DISABLED, PROVIDER_TIMEOUT, PROVIDER_QUOTA_LIMITED, PROVIDER_UNAVAILABLE, MALFORMED_OUTPUT, POLICY_REJECTED, null]
     CreateAiConversationRequest:
       type: object
       additionalProperties: false

@@ -42,6 +42,8 @@ const testConfiguration: ServiceConfiguration = {
   CONSULTATION_BASE_URL: "http://localhost:8082",
   CONSULTATION_TIMEOUT_MS: 100,
   REMINDER_SERVICE_TOKEN: "test-reminder-service-token-at-least-32-characters",
+  SUPPORT_PLAN_CARE_SERVICE_TOKEN:
+    "test-care-service-token-at-least-32-characters",
   PROVIDER_MODE: "DETERMINISTIC_FAKE",
   ROUTING_POLICY_VERSION: "exact-revision-routing-v1",
   PROVIDER_APPROVAL_VERSION: null,
@@ -174,9 +176,10 @@ void test("validates configuration", () => {
   assert.equal(configuration.LOG_LEVEL, "debug");
   assert.equal(configuration.JOURNAL_ENCRYPTION_KEY_ID, "single-key");
   assert.equal(configuration.REMINDER_SERVICE_TOKEN, null);
+  assert.equal(configuration.SUPPORT_PLAN_CARE_SERVICE_TOKEN, null);
 });
 
-void test("validates the reminder service token", () => {
+void test("validates scoped internal service tokens", () => {
   const identity = {
     NODE_ENV: "development",
     IDENTITY_JWT_ISSUER: "https://identity.test.mentalbridge",
@@ -191,15 +194,27 @@ void test("validates the reminder service token", () => {
       JOURNAL_AI_REMINDER_SERVICE_TOKEN: "too-short",
     }),
   );
+  assert.throws(() =>
+    loadConfiguration({
+      ...identity,
+      JOURNAL_AI_SUPPORT_PLAN_CARE_SERVICE_TOKEN: "too-short",
+    }),
+  );
 
   const configuration = loadConfiguration({
     ...identity,
     JOURNAL_AI_REMINDER_SERVICE_TOKEN:
       "test-reminder-service-token-at-least-32-characters",
+    JOURNAL_AI_SUPPORT_PLAN_CARE_SERVICE_TOKEN:
+      "test-care-service-token-at-least-32-characters",
   });
   assert.equal(
     configuration.REMINDER_SERVICE_TOKEN,
     "test-reminder-service-token-at-least-32-characters",
+  );
+  assert.equal(
+    configuration.SUPPORT_PLAN_CARE_SERVICE_TOKEN,
+    "test-care-service-token-at-least-32-characters",
   );
 });
 
@@ -519,6 +534,96 @@ void test("serves consent-gated Support Guide phrasing over the internal boundar
         model: "deterministic-support-guide-phrasing-v1",
         promptVersion: "support-guide-phrasing-v1",
         schemaVersion: 1,
+      });
+  } finally {
+    await app.close();
+  }
+});
+
+void test("serves bounded SupportPlan Companion fallback over the internal boundary", async () => {
+  const app = await createApplication(testConfiguration, {
+    ...readyDependencies,
+    supportPlanCompanion: {
+      consentClient: {
+        check: () =>
+          Promise.reject(new Error("must not run in deterministic mode")),
+      },
+      provider: {
+        phrase: () =>
+          Promise.reject(new Error("must not run in deterministic mode")),
+      },
+      telemetry: { record: () => undefined },
+    },
+  });
+  await app.init();
+
+  try {
+    const now = Math.floor(Date.now() / 1_000);
+    const token = await new SignJWT({ roles: ["USER"] })
+      .setProtectedHeader({ alg: "RS256", kid: "test-key" })
+      .setIssuer(testConfiguration.IDENTITY_JWT_ISSUER)
+      .setAudience(testConfiguration.IDENTITY_JWT_AUDIENCE)
+      .setSubject("11111111-1111-4111-8111-111111111111")
+      .setIssuedAt(now)
+      .setNotBefore(now)
+      .setExpirationTime(now + 60)
+      .setJti("support-plan-companion-token-id")
+      .sign(testPrivateKey);
+    const server = app.getHttpServer() as unknown as Server;
+    const body = {
+      schemaVersion: "support-plan-companion-intent-v1",
+      policyVersion: "support-plan-companion-policy-v1",
+      requestSource: "USER_INITIATED",
+      surface: "TODAY",
+      intent: "EXPLAIN_ACTION",
+      context: {
+        schemaVersion: "support-plan-companion-context-v1",
+        locale: "vi-VN",
+        contextKind: "ACTION",
+        action: {
+          actionType: "JOURNAL",
+          title: "Viết vài dòng",
+          availability: "AVAILABLE",
+          navigation: { destination: "JOURNAL", label: "Mở nhật ký" },
+        },
+      },
+    };
+
+    await request(server)
+      .post("/internal/v1/support-plan-companion/messages")
+      .set("authorization", `Bearer ${token}`)
+      .send(body)
+      .expect(401);
+    await request(server)
+      .post("/internal/v1/support-plan-companion/messages")
+      .set("authorization", `Bearer ${token}`)
+      .set("x-mentalbridge-service-token", "wrong-care-service-token")
+      .send(body)
+      .expect(401);
+
+    await request(server)
+      .post("/internal/v1/support-plan-companion/messages")
+      .set("authorization", `Bearer ${token}`)
+      .set(
+        "x-mentalbridge-service-token",
+        testConfiguration.SUPPORT_PLAN_CARE_SERVICE_TOKEN ?? "",
+      )
+      .set("x-correlation-id", "support-plan-companion-correlation")
+      .send(body)
+      .expect(201)
+      .expect({
+        schemaVersion: "support-plan-companion-message-v1",
+        intent: "EXPLAIN_ACTION",
+        surface: "TODAY",
+        text: "Viết vài dòng là một hoạt động trong kế hoạch của bạn.",
+        delivery: "TEMPLATE",
+        navigation: { destination: "JOURNAL", label: "Mở nhật ký" },
+        policyVersion: "support-plan-companion-policy-v1",
+        promptVersion: "support-plan-companion-prompt-v1",
+        templateVersion: "support-plan-companion-template-v1",
+        provider: "DETERMINISTIC_FAKE",
+        model: "deterministic-support-plan-companion-v1",
+        fallbackReason: "PROVIDER_DISABLED",
       });
   } finally {
     await app.close();
