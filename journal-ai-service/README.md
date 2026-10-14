@@ -190,6 +190,7 @@ encrypted demo data exists. Do not commit local `.env` files or secrets.
 | `PUT`    | `/api/v1/ai-companion/conversations/{conversationId}/context`     | Replace the owned conversation's persisted context-source selection                                                         |
 | `POST`   | `/api/v1/ai-companion/conversations/{conversationId}/messages`    | Deliver one quota-governed normalized assistant response                                                                    |
 | `POST`   | `/internal/v1/support-guide-phrasing`                             | Rephrase exact Care-approved guide copy after current AI consent                                                            |
+| `POST`   | `/internal/v1/support-plan-companion/messages`                    | Phrase one policy-selected SupportPlan intent from exact minimized context, with deterministic fallback                     |
 | `DELETE` | `/api/v1/ai-companion/conversations/{conversationId}`             | Hard-delete the conversation and replay snapshots                                                                           |
 
 Incoming requests echo a valid bounded `x-correlation-id` or receive a generated one. Request logs include the same correlation ID and redact authorization, cookie, and reminder service-token headers. Non-public application routes require an Identity-issued RS256 bearer token; signature, issuer, audience, lifetime, subject, token ID, and roles are validated before a principal is attached to the request. The internal notification activity projection instead requires the dedicated `JOURNAL_AI_REMINDER_SERVICE_TOKEN` and exposes only note-free factual activity.
@@ -287,7 +288,7 @@ After the AWS account has Bedrock model access and sufficient quota:
    explicitly enable `JOURNAL_AI_BENCHMARK_ENABLED` only for the paid run.
 3. Run `npm run bedrock:warm-structured-outputs` immediately before the
    controlled traffic window. It sends one paid Converse request for each of
-   the exact-revision, longitudinal, Support Guide phrasing, and Companion Chat
+   the exact-revision, longitudinal, Support Guide phrasing, SupportPlan Companion, and Companion Chat
    schemas to every distinct configured Bedrock route model. The command uses
    only `JOURNAL_AI_BEDROCK_SCHEMA_WARMUP_TIMEOUT_MS`; ordinary runtime calls
    retain the bounded provider timeout. Repeat after a model/schema change and

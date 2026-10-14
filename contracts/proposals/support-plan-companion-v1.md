@@ -20,20 +20,29 @@
   binds policy version, user-initiated source, surface, intent and matching
   context variant.
 
-These language-neutral schemas are not an HTTP, Kafka or WebSocket contract.
-They deliberately contain no plan/action/account identifier because
+MB-649 reuses these language-neutral schemas unchanged as the request body of
+the callable Journal/AI REST contract. They deliberately contain no
+plan/action/account identifier because
 authorization, correlation and navigation identity stay in the deterministic
 application boundary and never become model instructions.
 
-## Open delivery decisions
+## MB-649 runtime decisions
 
-MB-649 must review and freeze the callable transport, authorization, quota,
-timeout, prompt/template revision, normalized response schema, output
-validation, deterministic fallback selection, observability and retention
-mechanics. MB-650 through MB-654 must supply implementation evidence for the
-placements, expanded flow, review explanation, release behavior and mobile
-parity. None of those stories may broaden the v1 persona, intent set, context
-allowlist, authority or interruption rules without a reviewed contract version.
+The callable transport is authenticated REST at
+`POST /internal/v1/support-plan-companion/messages`. Care forwards the verified
+end-user bearer and one deterministic envelope. Journal/AI rejects unknown
+fields and surface/intent/context mismatches before provider access, checks
+current AI consent, invokes only the configured approved provider route, and
+validates a text-only structured result. Provider timeout, quota, unavailability,
+malformed output and policy rejection return `support-plan-companion-template-v1`
+copy. Requests and responses are ephemeral. Telemetry contains only the
+allowlisted versions, intent, surface, outcome, latency, fallback reason and
+correlation/provider identifiers.
+
+MB-650 through MB-654 must supply implementation evidence for the placements,
+expanded flow, review explanation, release behavior and mobile parity. None of
+those stories may broaden the v1 persona, intent set, context allowlist,
+authority or interruption rules without a reviewed contract version.
 
 ## Compatibility
 
