@@ -1,5 +1,14 @@
 # Requirements Traceability
 
+MB-623: the online consultation closure uses
+[consultation-journey-v1](policies/consultation-journey-state-map-v1.md) as the
+single consolidated state/settlement interpretation. The real HTTP/PostgreSQL
+owner suite and opt-in production Web/BFF run cover golden-path persistence,
+cancel/no-show/dispute/technical-review and dependency/capability truth. Evidence
+classification and commands are in the
+[verification runbook](runbooks/mb-623-consultation-journey.md); controlled
+evidence is not live chat/video or deployed-stack certification.
+
 - 2026-10-12: MB-384 implements LiveKit Cloud 1:1 appointment video. Assigned
   participants receive short-lived room-scoped access; preview stays local until
   startsAt. Signed, minimized participation events support verification but
