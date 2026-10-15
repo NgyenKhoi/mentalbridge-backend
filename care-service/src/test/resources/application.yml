@@ -8,6 +8,15 @@ spring:
     enabled: true
   jpa:
     open-in-view: false
+  data:
+    redis:
+      repositories:
+        enabled: false
+
+management:
+  health:
+    redis:
+      enabled: false
 
 eureka:
   client:
