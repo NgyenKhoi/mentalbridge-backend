@@ -1,7 +1,7 @@
 openapi: 3.1.0
 info:
   title: MentalBridge Care API
-  version: 1.4.0
+  version: 1.5.0
   description: |
     V1 contracts for the Care-owned profile, platform consent, and PHQ-9 foundation.
     Profile, consent, questionnaire, and assessment paths are implemented. Assessment
@@ -423,6 +423,44 @@ paths:
         "401": { $ref: "#/components/responses/UnauthorizedProblem" }
         "403": { $ref: "#/components/responses/ForbiddenProblem" }
         "404": { $ref: "#/components/responses/NotFoundProblem" }
+  /api/v1/screening-episodes/history:
+    x-mentalbridge-status: implemented
+    get:
+      tags: [Assessment, Support evaluation]
+      operationId: listOwnScreeningEpisodeHistory
+      summary: List exact saved PHQ-9/GAD-7 screening episodes
+      description: |
+        Returns one newest-first row per authoritative guided screening episode,
+        ordered by immutable episode start time. Resumable IN_PROGRESS and READY rows
+        expose only the exact evidence already attached to that episode and use
+        meaningState INCOMPLETE; missing instruments never borrow a standalone result.
+        Each available row contains the combined meaning for that episode's exact
+        persisted presentation evaluation and an optional already-persisted matching
+        Support Guide identifier. The read never pairs standalone latest assessments,
+        generates a Guide, or mutates current journey state. Older incompatible rows
+        remain visible with meaningState UNAVAILABLE.
+      security:
+        - bearerAuth: []
+      parameters:
+        - name: limit
+          in: query
+          schema: { type: integer, minimum: 1, maximum: 50, default: 10 }
+        - name: cursor
+          in: query
+          schema: { type: string, minLength: 1, maxLength: 256 }
+        - $ref: "#/components/parameters/CorrelationId"
+      responses:
+        "200":
+          description: Owner-scoped saved screening episode history
+          headers:
+            Cache-Control:
+              schema: { type: string, const: no-store }
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/ScreeningEpisodeHistoryPage" }
+        "400": { $ref: "#/components/responses/ValidationProblem" }
+        "401": { $ref: "#/components/responses/UnauthorizedProblem" }
+        "403": { $ref: "#/components/responses/ForbiddenProblem" }
   /api/v1/screening-episodes/{episodeId}/assessments/{instrument}:
     x-mentalbridge-status: implemented
     post:
@@ -1047,6 +1085,43 @@ paths:
         '401': { $ref: '#/components/responses/UnauthorizedProblem' }
         '403': { $ref: '#/components/responses/ForbiddenProblem' }
         '404': { $ref: '#/components/responses/NotFoundProblem' }
+  /api/v1/support-evaluations/{supportEvaluationId}/combined-meaning:
+    x-mentalbridge-status: implemented
+    get:
+      tags: [Support evaluation]
+      operationId: getOwnCombinedScreeningMeaning
+      summary: Read a versioned presentation of one exact saved screening pair
+      description: |
+        MB-667 worktree draft for content review; not approved for deployment.
+        Care uses only this owned v1 evaluation's exact compatible PHQ-9/GAD-7
+        pair, source policy and stored support tier. It does not select newer
+        assessments or mutate evaluation, Guide, plan, history or events.
+        The twenty base meanings are neutral draft presentation copy, not
+        diagnoses, combined severity or new routing decisions. A positive
+        independent PHQ-9 safety result takes presentation precedence while
+        both instrument levels remain unchanged. Historical source facts are
+        labelled with their original evaluation time and source policy; the
+        draft presentation version is separate, never claimed as original copy.
+        Existing v1 and v2 response shapes remain unchanged for older clients.
+      security:
+        - bearerAuth: []
+      parameters:
+        - $ref: '#/components/parameters/SupportEvaluationId'
+        - $ref: '#/components/parameters/CorrelationId'
+      responses:
+        '200':
+          description: Draft combined meaning with exact saved provenance and existing next step
+          headers:
+            Cache-Control:
+              schema: { type: string, const: no-store }
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/CombinedScreeningMeaning' }
+        '400': { $ref: '#/components/responses/ValidationProblem' }
+        '401': { $ref: '#/components/responses/UnauthorizedProblem' }
+        '403': { $ref: '#/components/responses/ForbiddenProblem' }
+        '404': { $ref: '#/components/responses/NotFoundProblem' }
+        '503': { $ref: '#/components/responses/CombinedScreeningMeaningUnavailableProblem' }
   /api/v1/support-plans:
     x-mentalbridge-status: implemented
     post:
@@ -3524,6 +3599,69 @@ components:
       properties:
         episode: { $ref: "#/components/schemas/ScreeningEpisode" }
         presentationEvaluation: { $ref: "#/components/schemas/SupportEvaluation" }
+    ScreeningEpisodeHistoryEvidence:
+      type: object
+      additionalProperties: false
+      required: [instrument, state, assessmentId, totalScore, screeningLevel, safetyStatus]
+      properties:
+        instrument: { $ref: "#/components/schemas/Instrument" }
+        state:
+          type: string
+          description: AVAILABLE is exact saved evidence; MISSING means the instrument was not attached; UNAVAILABLE means the attached historical record cannot be read safely.
+          enum: [AVAILABLE, MISSING, UNAVAILABLE]
+        assessmentId: { type: [string, "null"], format: uuid }
+        totalScore: { type: [integer, "null"], minimum: 0, maximum: 27 }
+        screeningLevel:
+          oneOf:
+            - $ref: "#/components/schemas/ScreeningLevel"
+            - type: "null"
+        safetyStatus:
+          oneOf:
+            - $ref: "#/components/schemas/SafetyStatus"
+            - type: "null"
+    ScreeningEpisodeHistoryItem:
+      type: object
+      additionalProperties: false
+      required: [episodeId, purpose, status, startedAt, updatedAt, completedAt, presentationEvaluationId, meaningState, evidence, meaning]
+      properties:
+        episodeId: { type: string, format: uuid }
+        purpose: { $ref: "#/components/schemas/ScreeningEpisodePurpose" }
+        status: { $ref: "#/components/schemas/ScreeningEpisodeStatus" }
+        startedAt: { type: string, format: date-time }
+        updatedAt: { type: string, format: date-time }
+        completedAt: { type: [string, "null"], format: date-time }
+        presentationEvaluationId: { type: [string, "null"], format: uuid }
+        meaningState: { type: string, enum: [AVAILABLE, INCOMPLETE, UNAVAILABLE] }
+        evidence:
+          type: array
+          minItems: 2
+          maxItems: 2
+          prefixItems:
+            - allOf:
+                - $ref: "#/components/schemas/ScreeningEpisodeHistoryEvidence"
+                - type: object
+                  properties:
+                    instrument: { type: string, const: PHQ9 }
+            - allOf:
+                - $ref: "#/components/schemas/ScreeningEpisodeHistoryEvidence"
+                - type: object
+                  properties:
+                    instrument: { type: string, const: GAD7 }
+        meaning:
+          oneOf:
+            - $ref: "#/components/schemas/CombinedScreeningMeaning"
+            - type: "null"
+    ScreeningEpisodeHistoryPage:
+      type: object
+      additionalProperties: false
+      required: [items, nextCursor, hasMore]
+      properties:
+        items:
+          type: array
+          maxItems: 50
+          items: { $ref: "#/components/schemas/ScreeningEpisodeHistoryItem" }
+        nextCursor: { type: [string, "null"], minLength: 1, maxLength: 256 }
+        hasMore: { type: boolean }
     AssessmentAnswer:
       type: object
       additionalProperties: false
@@ -3744,6 +3882,78 @@ components:
         disclaimer:
           type: string
           const: Đây là kết quả sàng lọc triệu chứng, không phải chẩn đoán y khoa. MentalBridge không cung cấp dịch vụ ứng cứu khẩn cấp, không giám sát con người 24/7 và không tự động liên hệ bên thứ ba.
+    CombinedScreeningMeaning:
+      type: object
+      additionalProperties: false
+      description: Versioned draft presentation of saved facts, not an original evaluation snapshot or a global health classification.
+      required: [supportEvaluationId, sourcePolicyVersion, evaluatedAt, presentationPolicyVersion, contentVersion, referencePeriodDays, episodeId, episodePurpose, episodeCompletedAt, domainSupportEvaluationId, supportGuideId, evidence, supportTier, baseMeaning, presentationPriority, nextStep, safetyGuidance, disclaimerCode, disclaimer]
+      properties:
+        supportEvaluationId: { type: string, format: uuid }
+        sourcePolicyVersion: { type: string, const: mb-support-routing-capstone-v1 }
+        evaluatedAt: { type: string, format: date-time }
+        presentationPolicyVersion: { type: string, const: mb-combined-screening-meaning-v1 }
+        contentVersion: { type: string, const: mb-combined-screening-meaning-vi-vn-v1-draft.2 }
+        referencePeriodDays: { type: integer, const: 14 }
+        episodeId: { type: [string, 'null'], format: uuid }
+        episodePurpose:
+          oneOf:
+            - $ref: '#/components/schemas/ScreeningEpisodePurpose'
+            - type: 'null'
+        episodeCompletedAt: { type: [string, 'null'], format: date-time }
+        domainSupportEvaluationId: { type: [string, 'null'], format: uuid }
+        supportGuideId:
+          type: [string, 'null']
+          format: uuid
+          description: Existing immutable Guide for this exact episode, if already persisted; this read never creates one.
+        evidence:
+          type: array
+          minItems: 2
+          maxItems: 2
+          description: PHQ9 then GAD7; exact original pair, never current standalone history.
+          items: { $ref: '#/components/schemas/CombinedScreeningMeaningEvidence' }
+        supportTier: { $ref: '#/components/schemas/SupportTier' }
+        baseMeaning: { $ref: '#/components/schemas/CombinedScreeningBaseMeaning' }
+        presentationPriority:
+          type: string
+          description: Safety precedes ordinary meaning and CTA; this never changes an instrument level.
+          enum: [SAFETY, PROFESSIONAL_SUPPORT, SELF_GUIDED]
+        nextStep: { $ref: '#/components/schemas/SupportNextStep' }
+        safetyGuidance:
+          type: [string, 'null']
+          minLength: 1
+          maxLength: 1000
+          description: Existing reviewed safety guidance for the stored safety tier; null otherwise.
+        disclaimerCode: { type: string, const: SCREENING_NOT_DIAGNOSIS }
+        disclaimer:
+          type: string
+          const: Đây là kết quả sàng lọc triệu chứng, không phải chẩn đoán y khoa. MentalBridge không cung cấp dịch vụ ứng cứu khẩn cấp, không giám sát con người 24/7 và không tự động liên hệ bên thứ ba.
+    CombinedScreeningMeaningEvidence:
+      type: object
+      additionalProperties: false
+      required: [assessmentId, instrument, questionnaireVersion, scoringVersion, totalScore, screeningLevel, safetyStatus]
+      properties:
+        assessmentId: { type: string, format: uuid }
+        instrument: { $ref: '#/components/schemas/Instrument' }
+        questionnaireVersion: { type: string, minLength: 1, maxLength: 32 }
+        scoringVersion: { type: string, minLength: 1, maxLength: 32 }
+        totalScore: { type: integer, minimum: 0, maximum: 27 }
+        screeningLevel: { $ref: '#/components/schemas/ScreeningLevel' }
+        safetyStatus: { $ref: '#/components/schemas/SafetyStatus' }
+    CombinedScreeningBaseMeaning:
+      type: object
+      additionalProperties: false
+      required: [code, text, rationale, supportTier]
+      properties:
+        code:
+          type: string
+          maxLength: 64
+          pattern: '^PHQ9_(MINIMAL|MILD|MODERATE|MODERATELY_SEVERE|SEVERE)_GAD7_(MINIMAL|MILD|MODERATE|SEVERE)$'
+        text: { type: string, minLength: 1, maxLength: 1000 }
+        rationale: { type: string, minLength: 1, maxLength: 1000 }
+        supportTier:
+          type: string
+          description: Existing routing for this pair before the separate safety override; never a global severity.
+          enum: [SELF_GUIDED_SUPPORT, PROFESSIONAL_SUPPORT_RECOMMENDED]
     SupportEvaluationHistoryPage:
       type: object
       additionalProperties: false
@@ -5091,6 +5301,11 @@ components:
             correlationId: 8fb5720a-53ab-40db-9cf4-f5cfabbdaf65
     ConflictProblem:
       description: Request conflicts with stored state (IDEMPOTENCY_KEY_REUSED, QUESTIONNAIRE_VERSION_UNAVAILABLE, or SUPPORT_EVIDENCE_INCOMPATIBLE)
+      content:
+        application/problem+json:
+          schema: { $ref: '#/components/schemas/Problem' }
+    CombinedScreeningMeaningUnavailableProblem:
+      description: COMBINED_SCREENING_MEANING_UNAVAILABLE; the owned source policy, exact pair, stored tier or bounded presentation copy could not be trusted. No latest-pair substitution, false absence or history mutation occurs.
       content:
         application/problem+json:
           schema: { $ref: '#/components/schemas/Problem' }
