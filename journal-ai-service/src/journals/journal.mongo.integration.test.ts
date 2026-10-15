@@ -232,8 +232,50 @@ void test("persists encrypted owner-isolated CRUD with real MongoDB", async () =
       id: string;
       currentRevision: number;
       mood: string;
+      createdAt: string;
     };
     assert.equal(created.mood, "GOOD");
+
+    const evidencePath = `/api/v1/journals/${created.id}/completion-evidence`;
+    await request(server).get(evidencePath).expect(401);
+    await request(server)
+      .get("/api/v1/journals/invalid/completion-evidence")
+      .set("Authorization", `Bearer ${ownerToken}`)
+      .expect(400);
+    const initialEvidence = await request(server)
+      .get(evidencePath)
+      .set("Authorization", `Bearer ${ownerToken}`)
+      .set("X-Correlation-Id", "mb642-journal-evidence")
+      .expect("Cache-Control", "no-store")
+      .expect("X-Correlation-Id", "mb642-journal-evidence")
+      .expect(200);
+    const initialEvidenceBody = initialEvidence.body as {
+      subjectUserId: string;
+      journalId: string;
+      state: string;
+      fact: { occurredAt: string; factRevision: string };
+    };
+    assert.equal(initialEvidenceBody.subjectUserId, ownerId);
+    assert.equal(initialEvidenceBody.journalId, created.id);
+    assert.equal(initialEvidenceBody.state, "RECORDED");
+    assert.equal(initialEvidenceBody.fact.occurredAt, created.createdAt);
+    assert.notEqual(initialEvidenceBody.fact.occurredAt, createBody.occurredAt);
+    assert.equal(initialEvidenceBody.fact.factRevision, "1");
+    for (const privateValue of [
+      createBody.content.text,
+      createBody.mood,
+      "private",
+    ])
+      assert.equal(
+        JSON.stringify(initialEvidence.body).includes(privateValue),
+        false,
+      );
+    const otherEvidence = await request(server)
+      .get(evidencePath)
+      .set("Authorization", `Bearer ${otherToken}`)
+      .expect(200);
+    assert.equal((otherEvidence.body as { state: string }).state, "MISSING");
+    assert.equal((otherEvidence.body as { fact: unknown }).fact, null);
 
     const replay = await request(server)
       .post("/api/v1/journals")
@@ -317,6 +359,15 @@ void test("persists encrypted owner-isolated CRUD with real MongoDB", async () =
       .expect(200);
     assert.equal((preservedMood.body as { mood?: unknown }).mood, "LOW");
 
+    const revisedEvidence = await request(server)
+      .get(evidencePath)
+      .set("Authorization", `Bearer ${ownerToken}`)
+      .expect(200);
+    assert.deepEqual(
+      (revisedEvidence.body as { fact: unknown }).fact,
+      initialEvidenceBody.fact,
+    );
+
     const revisions = await Promise.all([
       request(server)
         .patch(`/api/v1/journals/${created.id}`)
@@ -389,6 +440,13 @@ void test("persists encrypted owner-isolated CRUD with real MongoDB", async () =
       .expect(200);
     const deleted = deletedResponse.body as { deleted?: unknown };
     assert.equal(deleted.deleted, true);
+    const deletedEvidence = await request(server)
+      .get(evidencePath)
+      .set("Authorization", `Bearer ${ownerToken}`)
+      .expect("Cache-Control", "no-store")
+      .expect(200);
+    assert.equal((deletedEvidence.body as { state: string }).state, "DELETED");
+    assert.equal((deletedEvidence.body as { fact: unknown }).fact, null);
     const replayedDelete = await request(server)
       .delete(`/api/v1/journals/${created.id}`)
       .set("Authorization", `Bearer ${ownerToken}`)
@@ -423,6 +481,11 @@ void test("persists encrypted owner-isolated CRUD with real MongoDB", async () =
       await request(unavailableApp.getHttpServer() as unknown as Server)
         .get("/api/v1/journals")
         .set("Authorization", `Bearer ${ownerToken}`)
+        .expect(503);
+      await request(unavailableApp.getHttpServer() as unknown as Server)
+        .get(evidencePath)
+        .set("Authorization", `Bearer ${ownerToken}`)
+        .expect("Cache-Control", "no-store")
         .expect(503);
       assert.ok(Date.now() - unavailableStartedAt < 2_000);
     } finally {

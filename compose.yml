@@ -161,6 +161,7 @@ services:
       JOURNAL_AI_SUPPORT_PLAN_COMPANION_BASE_URL: http://journal-ai:3000
       CARE_SUPPORT_PLAN_COMPANION_SERVICE_TOKEN: ${CARE_SUPPORT_PLAN_COMPANION_SERVICE_TOKEN:?Set the Care-to-Journal Companion service token in .env}
       CARE_REDIS_URL: ${CARE_REDIS_URL:?Set the authenticated Care Redis URL in .env}
+      JOURNAL_AI_JOURNAL_EVIDENCE_BASE_URL: http://journal-ai:3000
     ports:
       - "${SERVICE_BIND_ADDRESS:-127.0.0.1}:${CARE_PORT:-8081}:8081"
     depends_on:

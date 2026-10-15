@@ -4,8 +4,9 @@ NestJS service on Node.js that owns private journal entries and coordinates AI a
 
 ## Current scope
 
-Public OpenAPI v1.10.0 adds the MB-641 content-free daily check-in evidence
-provider read. The preceding provider enum amendment aligns exact-analysis,
+Public OpenAPI v1.12.0 adds the MB-642 content-free exact Journal creation
+evidence read alongside MB-641 daily check-in evidence and retains MB-649
+bounded SupportPlan Companion orchestration. The preceding provider enum amendment aligns exact-analysis,
 longitudinal evidence and Support
 Guide phrasing provider enums with the existing approved `BEDROCK` runtime
 route and migration 011. Consumers must accept this provider without relaxing
@@ -77,6 +78,31 @@ return to the originating action and require an explicit completion check;
 unavailable/deleted source states remain distinct from accepted history. Native
 device execution is separately gated by MB-666. Browser-supplied IDs or a
 successful navigation alone must never complete an occurrence.
+
+### MB-642 Journal creation evidence provider
+
+`GET /api/v1/journals/{journalId}/completion-evidence` returns only the
+authenticated owner's exact entry existence and stable creation fact. Missing
+and other-owner IDs are indistinguishable; an owned tombstone is `DELETED`.
+`occurredAt` in this fact is the immutable, server-generated entry `createdAt`,
+not the user-selected date describing the Journal entry. The creation-fact
+revision remains `1` after private content edits; editing an old entry never
+counts as a newly completed writing session.
+
+The read never decrypts content or mood, invokes AI, checks processing consent,
+or returns tags, preview, revision text, analysis or encrypted envelopes. A
+factual completion check does not authorize reflection reuse or specialist
+sharing. Store/malformed-source failures return 503 rather than false absence;
+responses are `Cache-Control: no-store`. No migration, retention or source
+mutation is introduced.
+
+Care must verify subject, exact selected entry, occurrence local day in the
+schedule timezone, plan activation and one-fact/one-occurrence before accepting
+this reference. Deletion blocks future acceptance; already accepted completion
+and immutable review snapshots are historical facts and are not rewritten.
+Longitudinal analysis continues selecting exact current source revisions under
+its separate explicit AI-processing consent and coverage/provenance contract;
+completion facts are not Journal context or treatment success.
 
 ## Requirements
 
@@ -169,6 +195,7 @@ encrypted demo data exists. Do not commit local `.env` files or secrets.
 | `POST`   | `/api/v1/journals`                                                | Create an encrypted journal entry with an idempotency key                                                                   |
 | `GET`    | `/api/v1/journals`                                                | List the authenticated owner's entries by opaque cursor                                                                     |
 | `GET`    | `/api/v1/journals/{journalId}`                                    | Read one owner-scoped entry                                                                                                 |
+| `GET`    | `/api/v1/journals/{journalId}/completion-evidence`                | Resolve a content-free immutable creation fact for exact owned Journal reconciliation                                       |
 | `PATCH`  | `/api/v1/journals/{journalId}`                                    | Append a revision guarded by `If-Match`                                                                                     |
 | `DELETE` | `/api/v1/journals/{journalId}`                                    | Create an idempotent owner-scoped tombstone                                                                                 |
 | `POST`   | `/api/v1/journals/{journalId}/revisions/{revision}/analysis-jobs` | Request one consented exact-revision analysis job                                                                           |

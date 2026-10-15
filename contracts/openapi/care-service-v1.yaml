@@ -1668,9 +1668,12 @@ paths:
       description: |
         Uses the exact owned guided screening evaluation, current paid entitlement,
         approved resource admission and immutable personalization revision. Saved
-        EMOTION_CHECK_IN activity-mode intent admits one optional native Emotion
-        action with a clear purpose and reviewable schedule defaults. Emotion values
-        never select actions. Required professional-support paths remain primary.
+        EMOTION_CHECK_IN and JOURNALING activity-mode intents admit one optional
+        action of each corresponding type under support-plan-journal-actions-v1.
+        Actions have bounded purposes and reviewable budget-sharing schedule
+        defaults. Private Journal content and Emotion values never select actions.
+        Previously saved Emotion-policy plans retain their original action intent.
+        Required professional-support paths remain primary.
         No existing v2 plan is converted, backfilled or mutated. An existing current
         plan requires the separate reassessment-backed replacement command; the
         draft alone never changes it. An incompatible existing draft must be
@@ -1748,7 +1751,7 @@ paths:
       summary: Explicitly activate one native draft after fresh Care admission checks
       description: |
         Revalidates paid entitlement, exact screening context, policy, admitted
-        resource versions and snapshotted explicit Emotion intent outside local
+        resource versions and snapshotted explicit Journal/Emotion intent outside local
         locks. The owner transaction rechecks the draft version and preferences,
         activates the plan/actions and cadence atomically, and records retry
         identity in the existing command ledger. No second current plan is allowed.
@@ -1780,7 +1783,7 @@ paths:
       operationId: changeNativeSupportPlanStatus
       summary: Explicitly pause, resume, complete or discard one native plan
       description: |
-        Same Care-owned lifecycle rules as v2 history. No Emotion evidence changes
+        Same Care-owned lifecycle rules as v2 history. No Journal/Emotion evidence changes
         plan lifecycle. Natural identical-state retries preserve version. Completing
         or pausing cancels only governed future open occurrences, preserving facts.
         DISCARDED is draft-only; ACTIVE resumes a PAUSED plan, not draft activation.
@@ -1817,7 +1820,7 @@ paths:
         Read-only review with fresh paid entitlement, current screening compatibility
         and exact Content admission. Requires the latest owned canonical reassessment
         with the same PHQ-9/GAD-7 pair as the proposed native draft. Existing current
-        v2 state is projected without conversion. A new explicit Emotion intent is an
+        v2 state is projected without conversion. A new explicit Journal/Emotion intent is an
         admitted alternative, not a better clinical outcome. Four reassessment
         dimensions remain separate; no automatic plan change occurs.
       security: [{ bearerAuth: [] }]
@@ -2004,6 +2007,65 @@ paths:
               schema: { $ref: '#/components/schemas/Problem' }
         '503':
           description: Emotion evidence owner unavailable or its projection invalid; no completion is recorded
+          content:
+            application/problem+json:
+              schema: { $ref: '#/components/schemas/Problem' }
+  /api/v2/support-plan-occurrences/{occurrenceId}/journal/reconcile:
+    x-mentalbridge-status: implemented
+    post:
+      tags: [SupportPlan v3]
+      operationId: reconcileOwnJournalOccurrence
+      summary: Reconcile a Journal writing action with an exact owned saved entry
+      description: |
+        Explicit USER command. journalId selects a candidate, never asserts completion.
+        Care resolves the owned native JOURNAL action and occurrence, closes the
+        read transaction, then reads Journal/AI's content-free creation fact with
+        the verified owner bearer. Locked acceptance checks subject, exact entry,
+        action/source link, occurrence local date in its schedule timezone, and
+        creation at or after plan/action activation. Completion uses the server
+        creation instant, not the user-selected Journal date or an edit timestamp.
+        One entry creation fact may satisfy only one occurrence; repeats preserve
+        accepted evidence, completion time, version and the one minimized event.
+        MISSING and DELETED never create completion or erase accepted history.
+        Once completed, another entry cannot replace the accepted reference.
+        Dependency uncertainty returns 503 rather than absence or success.
+        No text, preview, tags, mood, AI reflection or analysis enters Care.
+        This does not grant AI-processing, specialist sharing or reflection reuse,
+        change plan lifecycle, or describe writing as recovery/treatment adherence.
+      security:
+        - bearerAuth: []
+      parameters:
+        - $ref: '#/components/parameters/OccurrenceId'
+        - $ref: '#/components/parameters/CorrelationId'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              additionalProperties: false
+              required: [journalId]
+              properties:
+                journalId: { type: string, format: uuid }
+      responses:
+        '200':
+          description: Current Journal source state and persisted occurrence outcome
+          headers:
+            Cache-Control: { schema: { type: string, const: no-store } }
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/JournalOccurrenceReconciliation' }
+        '400': { $ref: '#/components/responses/ValidationProblem' }
+        '401': { $ref: '#/components/responses/UnauthorizedProblem' }
+        '403': { $ref: '#/components/responses/ForbiddenProblem' }
+        '404': { $ref: '#/components/responses/NotFoundProblem' }
+        '409':
+          description: Unsupported/inactive action, non-open/future occurrence, writing date/activation mismatch, stale link or conflicting/used evidence
+          content:
+            application/problem+json:
+              schema: { $ref: '#/components/schemas/Problem' }
+        '503':
+          description: Journal evidence owner unavailable or invalid; no completion recorded
           content:
             application/problem+json:
               schema: { $ref: '#/components/schemas/Problem' }
@@ -4539,6 +4601,40 @@ components:
                 - { $ref: '#/components/schemas/CompletionEvidence' }
                 - properties:
                     kind: { const: EMOTION_CHECK_IN }
+                    ownerDomain: { const: JOURNAL_AI }
+      allOf:
+        - if: { properties: { occurrenceState: { const: COMPLETED } }, required: [occurrenceState] }
+          then:
+            properties:
+              completedAt: { type: string, format: date-time }
+              completionEvidence: { $ref: '#/components/schemas/CompletionEvidence' }
+        - if: { properties: { occurrenceState: { const: SCHEDULED } }, required: [occurrenceState] }
+          then:
+            properties:
+              completedAt: { type: 'null' }
+              completionEvidence: { type: 'null' }
+    JournalOccurrenceReconciliation:
+      type: object
+      additionalProperties: false
+      required: [schemaVersion, occurrenceId, actionId, localDate, journalId,
+        sourceState, occurrenceState, version, completedAt, completionEvidence]
+      properties:
+        schemaVersion: { type: string, const: journal-entry-occurrence-reconciliation-v1 }
+        occurrenceId: { type: string, format: uuid }
+        actionId: { type: string, format: uuid }
+        localDate: { type: string, format: date }
+        journalId: { type: string, format: uuid }
+        sourceState: { type: string, enum: [RECORDED, MISSING, DELETED] }
+        occurrenceState: { type: string, enum: [SCHEDULED, COMPLETED] }
+        version: { type: integer, minimum: 0 }
+        completedAt: { type: [string, 'null'], format: date-time }
+        completionEvidence:
+          oneOf:
+            - { type: 'null' }
+            - allOf:
+                - { $ref: '#/components/schemas/CompletionEvidence' }
+                - properties:
+                    kind: { const: JOURNAL_ENTRY }
                     ownerDomain: { const: JOURNAL_AI }
       allOf:
         - if: { properties: { occurrenceState: { const: COMPLETED } }, required: [occurrenceState] }
