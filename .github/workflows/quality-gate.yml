@@ -43,6 +43,9 @@ jobs:
         run: ./scripts/verify-repository.ps1 -BaseSha $env:BASE_SHA
       - name: Validate Review 1 Compose profiles
         run: docker compose --env-file .env.compose.example --profile demo --profile full-test config --quiet
+      - name: Verify Compose service credential boundaries
+        shell: pwsh
+        run: ./scripts/verify-compose-service-boundaries.ps1
 
   java:
     name: Java / ${{ matrix.service }}

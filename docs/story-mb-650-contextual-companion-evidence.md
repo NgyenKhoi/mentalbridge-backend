@@ -45,8 +45,11 @@ Redis returns the dependency template. Neither path calls Journal/AI.
 
 `CARE_SUPPORT_PLAN_COMPANION_SERVICE_TOKEN` is a Care-to-Journal/AI secret and
 must equal Journal/AI `JOURNAL_AI_SUPPORT_PLAN_CARE_SERVICE_TOKEN`. It stays on
-the server. Leaving the token or direct base URL unset deliberately disables
-provider phrasing while preserving deterministic template delivery.
+the server. Compose injects that shared value only into Care and Journal/AI;
+Content/Notification does not receive it. Leaving the token or direct base URL
+unset deliberately disables provider phrasing while preserving deterministic
+template delivery. Enabling provider phrasing requires the matching credentials
+and the shared Redis admission store.
 
 ## Verification
 
@@ -62,8 +65,15 @@ provider phrasing while preserving deterministic template delivery.
 - `SupportPlanCompanionAdmissionGuardTests`: real Redis verifies one admitted
   call across two guard instances under ten concurrent requests, the shared
   per-user burst cap and independent user isolation.
+- `scripts/verify-compose-service-boundaries.ps1`: resolves Compose with a
+  synthetic placeholder and verifies only Care and Journal/AI receive the shared
+  Companion credential under their service-specific environment names.
 - Care OpenAPI/contract and full module gates are run on the final exact head.
 
 Local verification on 2026-10-14 passed 23 focused contract/client/service/
 controller/admission tests. The complete `care-service` suite passed 320/320
 tests with PostgreSQL Testcontainers.
+
+Compose verification on 2026-10-15 passed the demo/full-test profile render,
+the synthetic credential-boundary regression and repository paired-change
+policy. No real credential was read or printed.
