@@ -3,10 +3,13 @@ package com.mentalbridge.consultation.appointment;
 import static org.assertj.core.api.Assertions.assertThat;
 
 import java.net.URI;
+import java.net.InetSocketAddress;
 import java.net.http.HttpClient;
 import java.net.http.HttpRequest;
 import java.net.http.HttpResponse;
 import java.sql.Timestamp;
+import java.nio.file.Files;
+import java.nio.file.Path;
 import java.time.Clock;
 import java.time.Duration;
 import java.time.Instant;
@@ -19,6 +22,7 @@ import java.util.UUID;
 import java.util.concurrent.CompletableFuture;
 import java.util.concurrent.CountDownLatch;
 import java.util.concurrent.Executors;
+import java.util.concurrent.TimeUnit;
 import java.util.concurrent.atomic.AtomicReference;
 
 import com.fasterxml.jackson.databind.JsonNode;
@@ -27,6 +31,7 @@ import com.mentalbridge.consultation.ConsultationTestProperties;
 import com.mentalbridge.consultation.TestcontainersConfiguration;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
+import org.junit.jupiter.api.condition.EnabledIfSystemProperty;
 import org.junit.jupiter.params.ParameterizedTest;
 import org.junit.jupiter.params.provider.CsvSource;
 import org.springframework.beans.factory.annotation.Autowired;
@@ -37,6 +42,8 @@ import org.springframework.context.annotation.Bean;
 import org.springframework.context.annotation.Import;
 import org.springframework.context.annotation.Primary;
 import org.springframework.jdbc.core.simple.JdbcClient;
+import com.sun.net.httpserver.HttpExchange;
+import com.sun.net.httpserver.HttpServer;
 
 @Import({TestcontainersConfiguration.class, ConsultationJourneyIntegrationTests.TimeFixture.class})
 @SpringBootTest(webEnvironment = SpringBootTest.WebEnvironment.RANDOM_PORT, properties = {
@@ -272,6 +279,96 @@ class ConsultationJourneyIntegrationTests extends ConsultationTestProperties {
 						"timezone", "Asia/Ho_Chi_Minh", "modality", "IN_APP_VIDEO"), 409, command("mb623-disabled-video", null))
 				.path("code").asText()).isEqualTo("VIDEO_AVAILABILITY_DISABLED");
 		assertThat(eventCount(id, "HELD")).isOne();
+	}
+
+	@Test
+	@EnabledIfSystemProperty(named = "mb623.frontend", matches = ".+")
+	void productionBrowserBffAndRealConsultationPreserveTheWholeJourney() throws Exception {
+		var frontend = Path.of(System.getProperty("mb623.frontend")).toAbsolutePath().normalize();
+		assertThat(Files.isRegularFile(frontend.resolve("scripts/run-consultation-journey.mjs"))).isTrue();
+		var fixture = fixture();
+		var actors = Map.of("USER", fixture.user(), "SPECIALIST", fixture.specialist(), "ADMIN", fixture.admin(), "OUTSIDER", actor("USER"));
+		var control = HttpServer.create(new InetSocketAddress("127.0.0.1", 0), 0);
+		var key = UUID.randomUUID().toString();
+		var failure = new AtomicReference<Throwable>();
+		control.createContext("/api/v1/account", exchange -> {
+			var authorization = exchange.getRequestHeaders().getFirst("Authorization");
+			var actor = actors.values().stream().filter(candidate -> ("Bearer " + candidate.token()).equals(authorization)).findFirst().orElse(null);
+			if (actor == null) { respond(exchange, 401, Map.of("code", "UNAUTHENTICATED")); return; }
+			respond(exchange, 200, Map.of("accountId", actor.id(), "email", actor.role().toLowerCase() + "@journey.test",
+					"roles", List.of(actor.role()), "status", "ACTIVE", "emailVerified", true, "version", 0,
+					"createdAt", clock.instant().toString(), "updatedAt", clock.instant().toString()));
+		});
+		control.createContext("/fixture/", exchange -> {
+			if (!exchange.getRequestMethod().equals("POST") || !key.equals(exchange.getRequestHeaders().getFirst("X-Fixture-Key"))) {
+				respond(exchange, 403, Map.of()); return;
+			}
+			try {
+				var bytes = exchange.getRequestBody().readNBytes(4097);
+				if (bytes.length > 4096) { respond(exchange, 413, Map.of()); return; }
+				var input = json.readTree(bytes);
+				if (exchange.getRequestURI().getPath().equals("/fixture/bootstrap")) {
+					respond(exchange, 200, Map.of("tokens", actors.entrySet().stream().collect(java.util.stream.Collectors.toMap(Map.Entry::getKey, entry -> entry.getValue().token())),
+							"specialistId", fixture.specialist().id(), "specialistDisplayName", "Chuyên gia MB-623 " + fixture.specialist().id().toString().substring(0, 8),
+							"start", fixture.start().toString()));
+					return;
+				}
+				var id = UUID.fromString(input.path("appointmentId").asText());
+				var owned = appointment(fixture.user(), id);
+				var start = Instant.parse(owned.path("scheduledStartAt").asText());
+				var output = switch (exchange.getRequestURI().getPath()) {
+					case "/fixture/participate", "/fixture/user-only" -> {
+						clock.now.set(start.plusSeconds(31 * 60));
+						participate(fixture.user(), id, start, 30);
+						if (exchange.getRequestURI().getPath().endsWith("/participate")) participate(fixture.specialist(), id, start, 30);
+						yield Map.of("syntheticTrustedEvidenceAccepted", true);
+					}
+					case "/fixture/end" -> { clock.now.set(start.plusSeconds(3600)); settlements.end(id); yield Map.of("ended", true); }
+					case "/fixture/settle" -> {
+						clock.now.set(start.plusSeconds(3901)); settlements.settle(id); settlements.settle(id);
+						yield Map.of("settled", true);
+					}
+					case "/fixture/snapshot" -> Map.of("status", owned.path("status").asText(), "outcome", owned.path("sessionOutcome").asText(),
+							"creditState", owned.path("creditState").asText(), "earningCount", earningCount(id),
+							"consumptions", eventCount(id, "CONSUMED"), "releases", eventCount(id, "RELEASED"),
+							"adjustments", eventCount(id, "ADJUSTED_RELEASED"), "completionFactPresent", owned.path("completionFactId").isTextual());
+					default -> throw new IllegalArgumentException("Unsupported controlled journey action");
+				};
+				respond(exchange, 200, output);
+			} catch (Throwable problem) {
+				failure.compareAndSet(null, problem);
+				respond(exchange, 500, Map.of("code", "CONSULTATION_JOURNEY_FIXTURE_FAILED"));
+			}
+		});
+		control.createContext("/", exchange -> respond(exchange, 503,
+				Map.of("type", "/problems/dependency-unavailable", "title", "Controlled dependency unavailable", "status", 503,
+						"code", "DEPENDENCY_UNAVAILABLE", "correlationId", UUID.randomUUID().toString())));
+		control.start();
+		Process browser = null;
+		try {
+			var output = Path.of("target", "mb623-browser.log");
+			browser = new ProcessBuilder("node", "scripts/run-consultation-journey.mjs").directory(frontend.toFile())
+					.redirectErrorStream(true).redirectOutput(output.toFile()).start();
+			try (var input = browser.getOutputStream()) {
+				input.write(json.writeValueAsBytes(Map.of("consultation", "http://127.0.0.1:" + port,
+						"fixture", "http://127.0.0.1:" + control.getAddress().getPort(), "key", key,
+						"backend", Path.of(System.getProperty("mb623.backend", "..")).toAbsolutePath().normalize().toString())));
+			}
+			assertThat(browser.waitFor(240, TimeUnit.SECONDS)).as("Controlled MB-623 browser deadline").isTrue();
+			if (failure.get() != null) throw new AssertionError("Controlled MB-623 fixture failed", failure.get());
+			assertThat(browser.exitValue()).as(Files.readString(output)).isZero();
+		} finally {
+			if (browser != null && browser.isAlive()) { browser.descendants().forEach(ProcessHandle::destroyForcibly); browser.destroyForcibly(); }
+			control.stop(0);
+		}
+	}
+
+	private void respond(HttpExchange exchange, int status, Object body) throws java.io.IOException {
+		var bytes = json.writeValueAsBytes(body);
+		exchange.getResponseHeaders().set("Content-Type", "application/json");
+		exchange.getResponseHeaders().set("Cache-Control", "no-store");
+		exchange.sendResponseHeaders(status, bytes.length);
+		try (var output = exchange.getResponseBody()) { output.write(bytes); }
 	}
 
 	private Fixture fixture() throws Exception {
