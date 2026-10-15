@@ -247,10 +247,16 @@ Appointment transitions:
 
 ```text
 REQUESTED -> CONFIRMED | REJECTED | EXPIRED | CANCELLED
-CONFIRMED -> IN_PROGRESS | CANCELLED
-IN_PROGRESS -> SESSION_ENDED | USER_NO_SHOW | SPECIALIST_NO_SHOW
-SESSION_ENDED -> COMPLETED | DISPUTED | other approved non-payable settlement outcome
+CONFIRMED -> IN_PROGRESS | SESSION_ENDED | CANCELLED
+IN_PROGRESS -> SESSION_ENDED
+SESSION_ENDED -> COMPLETED only after the applicable evidence policy passes
 ```
+
+The existing runtime stores no-show/insufficient-evidence/review in
+`sessionOutcome`, not appointment status. Disputes are a separate bounded
+OPEN/RESOLVED workflow. See the single versioned
+[state/settlement map](policies/consultation-journey-state-map-v1.md)
+(`consultation-journey-v1`, MB-623) for exact credit and earning effects.
 
 - V2 modes are only `IN_APP_CHAT` and `IN_APP_VIDEO`; new `IN_PERSON`, phone,
   and external meeting-link appointments are disabled. Historical in-person
