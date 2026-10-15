@@ -2,6 +2,7 @@ package com.mentalbridge.consultation.specialist;
 
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.hamcrest.Matchers.hasItem;
+import static org.mockito.Mockito.when;
 import static org.springframework.security.test.web.servlet.request.SecurityMockMvcRequestPostProcessors.jwt;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.get;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.post;
@@ -10,9 +11,14 @@ import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.jsonPath;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.status;
 
+import java.time.Clock;
+import java.time.Instant;
 import java.time.OffsetDateTime;
+import java.time.ZoneOffset;
 import java.util.UUID;
+import java.util.concurrent.atomic.AtomicReference;
 
+import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.boot.test.context.SpringBootTest;
@@ -23,6 +29,7 @@ import org.springframework.jdbc.core.simple.JdbcClient;
 import org.springframework.security.core.authority.SimpleGrantedAuthority;
 import org.springframework.test.web.servlet.MockMvc;
 import org.springframework.test.web.servlet.request.RequestPostProcessor;
+import org.springframework.test.context.bean.override.mockito.MockitoBean;
 
 import com.mentalbridge.consultation.ConsultationTestProperties;
 import com.mentalbridge.consultation.TestcontainersConfiguration;
@@ -34,6 +41,14 @@ class SpecialistProfileFlowIntegrationTests extends ConsultationTestProperties {
 
 	@Autowired MockMvc mvc;
 	@Autowired JdbcClient jdbc;
+	@MockitoBean Clock clock;
+
+	@BeforeEach
+	void orderProfileCommandsWithDistinctAuditInstants() {
+		var now = new AtomicReference<>(Instant.now());
+		when(clock.instant()).thenAnswer(ignored -> now.getAndUpdate(value -> value.plusMillis(1)));
+		when(clock.getZone()).thenReturn(ZoneOffset.UTC);
+	}
 
 	@Test
 	void specialistSavesSubmitsAndAdminApprovesTheRealProfile() throws Exception {
