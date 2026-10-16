@@ -22,6 +22,11 @@ interface Definition {
   readonly unit: NonNullable<AchievementItem['progress']>['unit'];
 }
 
+type PublicDefinition = Pick<
+  AchievementItem,
+  'definitionId' | 'domain' | 'kind' | 'tier' | 'title' | 'description' | 'evidenceClass'
+>;
+
 export const ACHIEVEMENT_DEFINITIONS: readonly Definition[] = [
   {
     definitionId: 'journal.first-entry',
@@ -136,9 +141,21 @@ export const ACHIEVEMENT_DEFINITIONS: readonly Definition[] = [
   },
 ] as const;
 
+function publicDefinition(definition: Definition): PublicDefinition {
+  return {
+    definitionId: definition.definitionId,
+    domain: definition.domain,
+    kind: definition.kind,
+    tier: definition.tier,
+    title: definition.title,
+    description: definition.description,
+    evidenceClass: definition.evidenceClass,
+  };
+}
+
 function unavailable(definition: Definition): AchievementItem {
   return {
-    ...definition,
+    ...publicDefinition(definition),
     status: 'SOURCE_UNAVAILABLE',
     unlockedAt: null,
     ruleVersion: ACHIEVEMENT_POLICY_VERSION,
@@ -156,7 +173,7 @@ function activityItem(definition: Definition, fact: AchievementActivityFact): Ac
       ? Math.min(fact.distinctDays, 1)
       : Math.min(fact.longestStreak, definition.target);
   return {
-    ...definition,
+    ...publicDefinition(definition),
     status: unlockedAt ? 'EARNED' : 'UNEARNED',
     unlockedAt,
     ruleVersion: ACHIEVEMENT_POLICY_VERSION,
@@ -202,7 +219,7 @@ export function calculateAchievements(input: {
     const values = definition.unit === 'PRACTICE_DAY' ? practices : completions;
     const unlockedAt = nthOccurredAt(values, definition.target);
     return {
-      ...definition,
+      ...publicDefinition(definition),
       status: unlockedAt ? 'EARNED' : 'UNEARNED',
       unlockedAt,
       ruleVersion: ACHIEVEMENT_POLICY_VERSION,
