@@ -13,6 +13,30 @@ requires an episode-backed v2 SupportEvaluation, and replacement rejects a
 ReassessmentSummary whose current assessment pair differs from the draft's
 evaluation with `REASSESSMENT_SCREENING_CONTEXT_MISMATCH`.
 
+## MB-667 draft combined screening meaning
+
+The separate owner-only `GET
+/api/v1/support-evaluations/{supportEvaluationId}/combined-meaning` supports the
+owner-supplied MB-667 Stitch flow and its shared current/historical result
+composition. Its twenty neutral copy variants and exact
+`mb-combined-screening-meaning-vi-vn-v1-draft.3` wording were approved by the
+product owner on 2026-10-16. Clinical/domain review remains pending; this is not
+production-deployment approval. Design approval is not health-copy approval.
+See the [reviewable draft catalogue](../docs/policies/combined-screening-meaning-draft-v1.md).
+
+The read uses the exact owned saved v1 pair and stored tier, keeps independent
+levels and safety evidence, prioritizes approved safety guidance, and returns
+an explicit unavailable response rather than substituting current history.
+It introduces no writes, migrations, events, external calls or AI dependency.
+Original v1/v2 response shapes, immutable routing/history and existing Guide
+and SupportPlan behavior remain unchanged. Source policy/evaluation time and
+the later draft presentation/content versions are distinct provenance.
+
+Screening episode history is ordered by completion time, or immutable start
+time for unfinished episodes, then by episode ID descending. The opaque keyset
+cursor uses that same ordering so late completion and tied timestamps do not
+skip or repeat rows when paging an unchanged history. Reads remain owner-scoped.
+
 ## MB-88 foundation
 
 The canonical [`care-service-v1.yaml`](../contracts/openapi/care-service-v1.yaml) contract marks profile, independent privacy/AI-processing disclosure and consent, questionnaire retrieval, assessment history, and authenticated/anonymous screening paths as `implemented`. MB-370 uses the existing `AI_PROCESSING` decision/UI at current policy v2 for optional ConsultationBrief suggestions; production-provider approval remains separately gated.
