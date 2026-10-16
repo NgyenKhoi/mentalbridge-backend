@@ -1,7 +1,7 @@
 openapi: 3.1.0
 info:
   title: MentalBridge Care Support Guide API
-  version: 1.0.0
+  version: 1.1.0
   description: Immutable, non-diagnostic post-screening guidance for every registered user.
 servers:
   - url: http://localhost:8082
@@ -10,6 +10,11 @@ paths:
     x-mentalbridge-status: implemented
     post:
       operationId: generateSupportGuide
+      deprecated: true
+      description: |
+        Retained only for already-installed clients. New clients use
+        POST /api/v1/screening-episodes/{episodeId}/support-guide, which takes no
+        client-selected assessment identifiers.
       security: [{ BearerAuth: [] }]
       parameters:
         - $ref: "#/components/parameters/IdempotencyKey"
@@ -67,6 +72,45 @@ paths:
         "401": { $ref: "#/components/responses/Problem" }
         "403": { $ref: "#/components/responses/Problem" }
         "404": { $ref: "#/components/responses/Problem" }
+  /api/v1/screening-episodes/{episodeId}/support-guide:
+    x-mentalbridge-status: implemented
+    post:
+      operationId: ensureScreeningEpisodeSupportGuide
+      summary: Ensure the one immutable Guide for a completed guided screening episode
+      description: |
+        Naturally idempotent. Care resolves the exact SupportEvaluation persisted on the
+        owner's completed episode and returns its existing Guide without contacting Content
+        or AI. Only when no Guide exists does Care materialize one from that exact evaluation.
+        Retry, reload, multiple tabs and concurrent calls return the same Guide. The client
+        supplies no assessment identifiers, so a historical or independently newest pair
+        can never be substituted. Only the owner's latest COMPLETED INITIAL_CHECK episode
+        may prepare a Guide: an open episode returns 409 SCREENING_EPISODE_INCOMPLETE and an
+        older initial check or a reassessment returns 409 SCREENING_EPISODE_NOT_CURRENT; a
+        foreign or unknown episode returns 404 SCREENING_EPISODE_NOT_FOUND.
+      security: [{ BearerAuth: [] }]
+      parameters:
+        - name: episodeId
+          in: path
+          required: true
+          schema: { type: string, format: uuid }
+        - name: X-Correlation-Id
+          in: header
+          required: false
+          schema: { type: string, format: uuid }
+      responses:
+        "200":
+          description: Existing or newly materialized Guide for the exact episode evaluation.
+          headers:
+            Cache-Control:
+              schema: { type: string, const: no-store }
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/SupportGuide" }
+        "400": { $ref: "#/components/responses/Problem" }
+        "401": { $ref: "#/components/responses/Problem" }
+        "403": { $ref: "#/components/responses/Problem" }
+        "404": { $ref: "#/components/responses/Problem" }
+        "409": { $ref: "#/components/responses/Problem" }
 components:
   securitySchemes:
     BearerAuth: { type: http, scheme: bearer, bearerFormat: JWT }

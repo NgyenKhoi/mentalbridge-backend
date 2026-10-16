@@ -70,6 +70,18 @@ class SupportGuideWriter {
 	}
 
 	@Transactional(readOnly = true)
+	StoredGuide forEvaluation(UUID userId, UUID supportEvaluationId) {
+		return guides.findByUserIdAndSupportEvaluationIdAndGuidePolicyVersion(userId, supportEvaluationId,
+				SupportGuideService.GUIDE_POLICY_VERSION).map(this::stored).orElse(null);
+	}
+
+	@Transactional(readOnly = true)
+	UUID guideIdForEvaluation(UUID userId, UUID supportEvaluationId) {
+		return guides.findByUserIdAndSupportEvaluationIdAndGuidePolicyVersion(userId, supportEvaluationId,
+				SupportGuideService.GUIDE_POLICY_VERSION).map(SupportGuideEntity::id).orElse(null);
+	}
+
+	@Transactional(readOnly = true)
 	SupportGuideRepository.RequestRow request(UUID userId, String key) {
 		return guides.findRequest(userId, key).orElse(null);
 	}

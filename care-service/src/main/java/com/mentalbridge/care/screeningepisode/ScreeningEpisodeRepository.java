@@ -36,6 +36,13 @@ interface ScreeningEpisodeRepository extends JpaRepository<ScreeningEpisodeEntit
 	Optional<ScreeningEpisodeEntity> findFirstByUserIdAndPurposeOrderByCreatedAtDescIdDesc(UUID userId,
 			String purpose);
 
+	Optional<ScreeningEpisodeEntity> findFirstByUserIdAndPurposeAndStatusOrderByCreatedAtDescIdDesc(UUID userId,
+			String purpose, String status);
+
+	boolean existsByUserIdAndPurposeAndStatusIn(UUID userId, String purpose, List<String> statuses);
+
+	Optional<ScreeningEpisodeEntity> findByIdAndUserId(UUID id, UUID userId);
+
 	Optional<ScreeningEpisodeEntity> findByUserIdAndSupportEvaluationId(UUID userId, UUID supportEvaluationId);
 
 	@Query("""

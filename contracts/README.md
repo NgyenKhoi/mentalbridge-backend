@@ -39,7 +39,10 @@ variants remain pending Care/content-owner review and are not approved for
 deployment. It adds no combined score, new routing policy or v2 top-level tier.
 `care-support-guide-v1.yaml` is the additive implemented owner contract for the
 all-tier one-time guide at `/api/v1/support-guides`; it is not a SupportPlan
-lifecycle contract. `content-notification-service.yaml` supplies the exact
+lifecycle contract. MB-668 adds its episode-scoped ensure operation
+`/api/v1/screening-episodes/{episodeId}/support-guide` (1.1.0) and the
+read-only `/api/v1/guided-journey/current` pointer in `care-service-v1.yaml`
+(1.6.0); clients send no assessment identifiers to either. `content-notification-service.yaml` supplies the exact
 eligible resource's immutable reviewed display snapshot alongside publication
 provenance so Care can persist stable history.
 `care-service-v1.yaml` also exposes the implemented MB-372/MB-373/MB-513/MB-376

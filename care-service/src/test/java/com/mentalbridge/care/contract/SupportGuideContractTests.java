@@ -17,7 +17,8 @@ class SupportGuideContractTests {
 
 		assertThat(result.getMessages()).isEmpty();
 		assertThat(result.getOpenAPI().getPaths().keySet()).containsExactlyInAnyOrder(
-				"/api/v1/support-guides", "/api/v1/support-guides/{supportGuideId}");
+				"/api/v1/support-guides", "/api/v1/support-guides/{supportGuideId}",
+				"/api/v1/screening-episodes/{episodeId}/support-guide");
 		var guide = result.getOpenAPI().getComponents().getSchemas().get("SupportGuide");
 		assertThat(guide.getProperties()).containsKeys("guideType", "explanation", "safety", "resourceResolution",
 				"resources", "provenance", "phrasing")
@@ -28,5 +29,13 @@ class SupportGuideContractTests {
 				.contains("#/components/parameters/IdempotencyKey");
 		assertThat(result.getOpenAPI().getComponents().getParameters().get("IdempotencyKey").getName())
 				.isEqualTo("Idempotency-Key");
+		var ensure = result.getOpenAPI().getPaths().get("/api/v1/screening-episodes/{episodeId}/support-guide")
+				.getPost();
+		assertThat(ensure.getSecurity()).isNotEmpty();
+		assertThat(ensure.getRequestBody()).isNull();
+		assertThat(ensure.getParameters()).extracting(parameter -> parameter.getName())
+				.containsExactly("episodeId", "X-Correlation-Id");
+		assertThat(ensure.getResponses().get("200").getContent().get("application/json").getSchema().get$ref())
+				.isEqualTo("#/components/schemas/SupportGuide");
 	}
 }

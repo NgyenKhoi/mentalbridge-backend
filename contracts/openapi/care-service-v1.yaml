@@ -1,7 +1,7 @@
 openapi: 3.1.0
 info:
   title: MentalBridge Care API
-  version: 1.5.0
+  version: 1.6.0
   description: |
     V1 contracts for the Care-owned profile, platform consent, and PHQ-9 foundation.
     Profile, consent, questionnaire, and assessment paths are implemented. Assessment
@@ -423,6 +423,44 @@ paths:
         "401": { $ref: "#/components/responses/UnauthorizedProblem" }
         "403": { $ref: "#/components/responses/ForbiddenProblem" }
         "404": { $ref: "#/components/responses/NotFoundProblem" }
+  /api/v1/guided-journey/current:
+    x-mentalbridge-status: implemented
+    get:
+      tags: [Assessment, Support evaluation]
+      operationId: getCurrentGuidedJourney
+      summary: Resume the owner's current initial-check journey and its next authorized action
+      description: |
+        Read-only, owner-scoped pointer derived from persisted Care facts: the latest
+        COMPLETED INITIAL_CHECK screening episode with its exact PHQ-9/GAD-7 pair, the
+        persisted Support Guide for that episode's exact SupportEvaluation, and the
+        current ACTIVE/PAUSED or DRAFT SupportPlan. It never pairs independently newest
+        assessments, creates a Guide or plan, or reads historical episodes.
+        nextAction is Care's ordered decision for the step after the Guide: positive
+        PHQ-9 item-9 safety evidence first, then a stored professional-support pathway,
+        then an existing current plan or draft, then PLUS/PREMIUM plan proposal while the
+        episode evaluation is still current-policy compatible, otherwise the Guide's
+        reviewed resources. Entitlement is checked only when needed; when it
+        cannot be verified the response fails closed to the always-available resource step
+        with entitlementStatus UNAVAILABLE. A missing published support policy is not
+        hidden: it returns 503 SUPPORT_POLICY_UNAVAILABLE so clients offer retry. Responses carry Cache-Control no-store and no
+        answers, scores, journal or emotion data.
+      security:
+        - bearerAuth: []
+      parameters:
+        - $ref: "#/components/parameters/CorrelationId"
+      responses:
+        "200":
+          description: Current journey pointer returned, including the no-completed-episode state
+          headers:
+            Cache-Control:
+              schema: { type: string, const: no-store }
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/GuidedJourney" }
+        "400": { $ref: "#/components/responses/ValidationProblem" }
+        "401": { $ref: "#/components/responses/UnauthorizedProblem" }
+        "403": { $ref: "#/components/responses/ForbiddenProblem" }
+        "503": { $ref: "#/components/responses/DependencyProblem" }
   /api/v1/screening-episodes/history:
     x-mentalbridge-status: implemented
     get:
@@ -3594,6 +3632,40 @@ components:
         updatedAt: { type: string, format: date-time }
         completedAt: { type: [string, "null"], format: date-time }
         version: { type: integer, format: int64, minimum: 0 }
+    GuidedJourney:
+      type: object
+      additionalProperties: false
+      required:
+        [journeyPolicyVersion, stage, assessmentInProgress, episodeId, episodeCompletedAt,
+         presentationEvaluationId, supportGuideId, nextAction, currentSupportPlanId, entitlementStatus]
+      properties:
+        journeyPolicyVersion: { type: string, const: mb-guided-journey-v1 }
+        stage:
+          type: string
+          description: ASSESSMENT_REQUIRED has no completed initial check; GUIDE_REQUIRED has a completed episode whose Guide is not yet persisted; GUIDE_READY has the persisted Guide.
+          enum: [ASSESSMENT_REQUIRED, GUIDE_REQUIRED, GUIDE_READY]
+        assessmentInProgress:
+          type: boolean
+          description: An IN_PROGRESS or READY initial-check episode exists; it never replaces the completed episode context below.
+        episodeId: { type: [string, "null"], format: uuid }
+        episodeCompletedAt: { type: [string, "null"], format: date-time }
+        presentationEvaluationId: { type: [string, "null"], format: uuid }
+        supportGuideId: { type: [string, "null"], format: uuid }
+        nextAction:
+          description: Null only for ASSESSMENT_REQUIRED.
+          oneOf:
+            - type: string
+              enum:
+                [REVIEW_SAFETY_SUPPORT, FIND_SPECIALIST, OPEN_CURRENT_PLAN, REVIEW_PLAN_DRAFT,
+                 START_PLAN_PROPOSAL, EXPLORE_GUIDE_RESOURCES]
+            - type: "null"
+        currentSupportPlanId:
+          type: [string, "null"]
+          format: uuid
+          description: Current ACTIVE/PAUSED plan, otherwise the current DRAFT; never created by this read.
+        entitlementStatus:
+          type: string
+          enum: [NOT_REQUIRED, VERIFIED, UNAVAILABLE]
     ScreeningEpisodeEvaluationOutcome:
       type: object
       additionalProperties: false
