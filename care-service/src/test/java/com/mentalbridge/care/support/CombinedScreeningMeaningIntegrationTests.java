@@ -7,6 +7,8 @@ import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.jsonPath;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.status;
 
+import java.time.OffsetDateTime;
+import java.util.ArrayList;
 import java.util.UUID;
 
 import org.junit.jupiter.api.Test;
@@ -35,6 +37,47 @@ class CombinedScreeningMeaningIntegrationTests extends CareTestProperties {
 	@Autowired ObjectMapper mapper;
 	@Autowired SupportEvaluationService v1;
 	@Autowired SupportEvaluationV2Service v2;
+
+	@Test
+	void historyPagesByCompletionWithCrossedStartOrderTiesAndUnfinishedFallback() throws Exception {
+		var userId = profile();
+		var lateCompletion = UUID.fromString("70000000-0000-4000-8000-000000000103");
+		var tiedCompletion = UUID.fromString("70000000-0000-4000-8000-000000000101");
+		var earlierCompletion = UUID.fromString("70000000-0000-4000-8000-000000000102");
+		var unfinished = UUID.fromString("70000000-0000-4000-8000-000000000104");
+		historyEpisode(userId, lateCompletion, "2026-10-01T08:00:00Z", "2026-10-15T09:00:00Z");
+		historyEpisode(userId, earlierCompletion, "2026-10-12T08:00:00Z", "2026-10-12T10:00:00Z");
+		historyEpisode(userId, tiedCompletion, "2026-10-10T08:00:00Z", "2026-10-15T09:00:00Z");
+		historyEpisode(userId, unfinished, "2026-10-14T08:00:00Z", null);
+		historyEpisode(profile(), UUID.randomUUID(), "2026-10-16T08:00:00Z", null);
+
+		var fullResponse = mvc.perform(get("/api/v1/screening-episodes/history").param("limit", "10").with(user(userId)))
+				.andExpect(status().isOk()).andReturn().getResponse();
+		var fullOrder = new ArrayList<UUID>();
+		mapper.readTree(fullResponse.getContentAsString()).path("items")
+				.forEach(item -> fullOrder.add(UUID.fromString(item.path("episodeId").asText())));
+		assertThat(fullOrder).containsExactly(lateCompletion, tiedCompletion, unfinished, earlierCompletion);
+
+		var seen = new ArrayList<UUID>();
+		String cursor = null;
+		for (int index = 0; index < 4; index++) {
+			var request = get("/api/v1/screening-episodes/history").param("limit", "1").with(user(userId));
+			if (cursor != null) request.param("cursor", cursor);
+			var response = mvc.perform(request).andExpect(status().isOk()).andReturn().getResponse();
+			var page = mapper.readTree(response.getContentAsString());
+			assertThat(page.path("items").size()).isEqualTo(1);
+			var item = page.path("items").get(0);
+			seen.add(UUID.fromString(item.path("episodeId").asText()));
+			assertThat(item.path("meaningState").asText()).isEqualTo(index == 2 ? "INCOMPLETE" : "AVAILABLE");
+			assertThat(page.path("hasMore").asBoolean()).isEqualTo(index < 3);
+			if (index < 3) {
+				cursor = page.path("nextCursor").asText();
+				assertThat(cursor).isNotBlank();
+			}
+			else assertThat(page.path("nextCursor").isNull()).isTrue();
+		}
+		assertThat(seen).containsExactly(lateCompletion, tiedCompletion, unfinished, earlierCompletion);
+	}
 
 	@Test
 	void readsEveryDraftBasePairWithoutMutationsAndPreservesOldResponseShapes() throws Exception {
@@ -123,6 +166,28 @@ class CombinedScreeningMeaningIntegrationTests extends CareTestProperties {
 				.andExpect(status().isServiceUnavailable()).andExpect(jsonPath("$.code").value("COMBINED_SCREENING_MEANING_UNAVAILABLE"));
 		assertThat(jdbc.sql("select gad7_assessment_id from support_evaluation where id=:id")
 				.param("id", source.supportEvaluationId()).query(UUID.class).single()).isEqualTo(gadId);
+	}
+
+	private void historyEpisode(UUID userId, UUID id, String startedAt, String completedAt) {
+		if (completedAt == null) {
+			jdbc.sql("""
+					insert into screening_episode (id,user_id,purpose,status,created_at,updated_at)
+					values (:id,:userId,'INITIAL_CHECK','IN_PROGRESS',:startedAt,:startedAt)
+					""").param("id", id).param("userId", userId).param("startedAt", OffsetDateTime.parse(startedAt)).update();
+			return;
+		}
+		var phq9 = assessment(userId, PHQ9_DEFINITION, "MILD", false);
+		var gad7 = assessment(userId, GAD7_DEFINITION, "MINIMAL", false);
+		var presentation = evaluate(userId, phq9, gad7);
+		var domain = v2.evaluate(userId, "history-order-" + UUID.randomUUID(), UUID.randomUUID(),
+				new SupportEvaluationV2Service.EvaluationCommand(phq9, gad7));
+		jdbc.sql("""
+				insert into screening_episode (id,user_id,purpose,status,phq9_assessment_id,gad7_assessment_id,
+				    support_evaluation_id,presentation_evaluation_id,created_at,updated_at,completed_at)
+				values (:id,:userId,'INITIAL_CHECK','COMPLETED',:phq9,:gad7,:domain,:presentation,:startedAt,:completedAt,:completedAt)
+				""").param("id", id).param("userId", userId).param("phq9", phq9).param("gad7", gad7)
+				.param("domain", domain.supportEvaluationId()).param("presentation", presentation.supportEvaluationId())
+				.param("startedAt", OffsetDateTime.parse(startedAt)).param("completedAt", OffsetDateTime.parse(completedAt)).update();
 	}
 
 	private SupportEvaluationService.EvaluationView evaluate(UUID userId, UUID phq9, UUID gad7) {

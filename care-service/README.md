@@ -32,6 +32,11 @@ Original v1/v2 response shapes, immutable routing/history and existing Guide
 and SupportPlan behavior remain unchanged. Source policy/evaluation time and
 the later draft presentation/content versions are distinct provenance.
 
+Screening episode history is ordered by completion time, or immutable start
+time for unfinished episodes, then by episode ID descending. The opaque keyset
+cursor uses that same ordering so late completion and tied timestamps do not
+skip or repeat rows when paging an unchanged history. Reads remain owner-scoped.
+
 ## MB-88 foundation
 
 The canonical [`care-service-v1.yaml`](../contracts/openapi/care-service-v1.yaml) contract marks profile, independent privacy/AI-processing disclosure and consent, questionnaire retrieval, assessment history, and authenticated/anonymous screening paths as `implemented`. MB-370 uses the existing `AI_PROCESSING` decision/UI at current policy v2 for optional ConsultationBrief suggestions; production-provider approval remains separately gated.

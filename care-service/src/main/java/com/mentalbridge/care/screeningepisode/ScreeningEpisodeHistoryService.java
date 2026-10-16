@@ -36,7 +36,7 @@ public class ScreeningEpisodeHistoryService {
 		var page = PageRequest.of(0, limit + 1);
 		var rows = decoded == null
 				? episodes.findHistory(userId, page)
-				: episodes.findHistoryAfter(userId, decoded.startedAt(), decoded.id(), page);
+				: episodes.findHistoryAfter(userId, decoded.historyAt(), decoded.id(), page);
 		boolean hasMore = rows.size() > limit;
 		var visibleRows = rows.stream().limit(limit).toList();
 		var evidenceIds = visibleRows.stream()
@@ -50,7 +50,7 @@ public class ScreeningEpisodeHistoryService {
 				: episodes.findHistoryEvidence(userId, evidenceIds).stream().collect(Collectors.toMap(
 						ScreeningEpisodeRepository.HistoryEvidenceRow::getAssessmentId, Function.identity()));
 		var items = visibleRows.stream().map(episode -> item(userId, episode, evidence)).toList();
-		String nextCursor = hasMore ? encode(visibleRows.getLast().createdAt(), visibleRows.getLast().id()) : null;
+		String nextCursor = hasMore ? encode(historyAt(visibleRows.getLast()), visibleRows.getLast().id()) : null;
 		return new HistoryPage(items, nextCursor, hasMore);
 	}
 
@@ -140,12 +140,16 @@ public class ScreeningEpisodeHistoryService {
 		}
 	}
 
-	private String encode(Instant startedAt, UUID id) {
-		return Base64.getUrlEncoder().withoutPadding().encodeToString(
-				(startedAt + "|" + id).getBytes(StandardCharsets.UTF_8));
+	private Instant historyAt(ScreeningEpisodeEntity episode) {
+		return episode.completedAt() == null ? episode.createdAt() : episode.completedAt();
 	}
 
-	private record Cursor(Instant startedAt, UUID id) { }
+	private String encode(Instant historyAt, UUID id) {
+		return Base64.getUrlEncoder().withoutPadding().encodeToString(
+				(historyAt + "|" + id).getBytes(StandardCharsets.UTF_8));
+	}
+
+	private record Cursor(Instant historyAt, UUID id) { }
 
 	public record HistoryEvidence(String instrument, String state, UUID assessmentId, Integer totalScore,
 			String screeningLevel, String safetyStatus) { }

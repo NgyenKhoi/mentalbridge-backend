@@ -42,7 +42,7 @@ interface ScreeningEpisodeRepository extends JpaRepository<ScreeningEpisodeEntit
 			select episode from ScreeningEpisodeEntity episode
 			where episode.userId = :userId
 			  and episode.status in ('IN_PROGRESS','READY','COMPLETED')
-			order by episode.createdAt desc, episode.id desc
+			order by coalesce(episode.completedAt, episode.createdAt) desc, episode.id desc
 			""")
 	List<ScreeningEpisodeEntity> findHistory(
 			@Param("userId") UUID userId,
@@ -52,13 +52,13 @@ interface ScreeningEpisodeRepository extends JpaRepository<ScreeningEpisodeEntit
 			select episode from ScreeningEpisodeEntity episode
 			where episode.userId = :userId
 			  and episode.status in ('IN_PROGRESS','READY','COMPLETED')
-			  and (episode.createdAt < :cursorStartedAt
-			       or (episode.createdAt = :cursorStartedAt and episode.id < :cursorId))
-			order by episode.createdAt desc, episode.id desc
+			  and (coalesce(episode.completedAt, episode.createdAt) < :cursorHistoryAt
+			       or (coalesce(episode.completedAt, episode.createdAt) = :cursorHistoryAt and episode.id < :cursorId))
+			order by coalesce(episode.completedAt, episode.createdAt) desc, episode.id desc
 			""")
 	List<ScreeningEpisodeEntity> findHistoryAfter(
 			@Param("userId") UUID userId,
-			@Param("cursorStartedAt") Instant cursorStartedAt,
+			@Param("cursorHistoryAt") Instant cursorHistoryAt,
 			@Param("cursorId") UUID cursorId,
 			Pageable pageable);
 

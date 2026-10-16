@@ -56,11 +56,28 @@ class ScreeningEpisodeHistoryServiceTests {
 					.containsExactly("AVAILABLE", "AVAILABLE");
 		});
 
-		when(episodes.findHistoryAfter(eq(userId), eq(second.createdAt()), eq(second.id()), any(Pageable.class)))
+		when(episodes.findHistoryAfter(eq(userId), eq(second.completedAt()), eq(second.id()), any(Pageable.class)))
 				.thenReturn(List.of());
 		var next = service.history(userId, 2, page.nextCursor());
 		assertThat(next.items()).isEmpty();
-		verify(episodes).findHistoryAfter(eq(userId), eq(second.createdAt()), eq(second.id()), any(Pageable.class));
+		verify(episodes).findHistoryAfter(eq(userId), eq(second.completedAt()), eq(second.id()), any(Pageable.class));
+	}
+
+	@Test
+	void unfinishedEpisodeCursorFallsBackToItsImmutableStartTime() {
+		var userId = UUID.randomUUID();
+		var startedAt = Instant.parse("2026-10-15T08:00:00Z");
+		var episode = new ScreeningEpisodeEntity(UUID.randomUUID(), userId, "INITIAL_CHECK", startedAt);
+		var lookahead = completed(userId, "REASSESSMENT", startedAt.minusSeconds(60));
+		when(episodes.findHistory(eq(userId), any())).thenReturn(List.of(episode, lookahead));
+
+		var page = service.history(userId, 1, null);
+		when(episodes.findHistoryAfter(eq(userId), eq(startedAt), eq(episode.id()), any(Pageable.class)))
+				.thenReturn(List.of());
+		service.history(userId, 1, page.nextCursor());
+
+		verify(episodes).findHistoryAfter(eq(userId), eq(startedAt), eq(episode.id()), any(Pageable.class));
+		verifyNoInteractions(meanings);
 	}
 
 	@Test

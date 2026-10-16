@@ -431,7 +431,9 @@ paths:
       summary: List exact saved PHQ-9/GAD-7 screening episodes
       description: |
         Returns one newest-first row per authoritative guided screening episode,
-        ordered by immutable episode start time. Resumable IN_PROGRESS and READY rows
+        ordered by completion time descending, falling back to immutable start time
+        for unfinished episodes, with episode ID descending as the unique tie-breaker.
+        Resumable IN_PROGRESS and READY rows
         expose only the exact evidence already attached to that episode and use
         meaningState INCOMPLETE; missing instruments never borrow a standalone result.
         Each available row contains the combined meaning for that episode's exact
