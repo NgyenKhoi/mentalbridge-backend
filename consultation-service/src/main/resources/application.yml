@@ -52,6 +52,7 @@ mentalbridge:
       video-enabled: ${CONSULTATION_VIDEO_AVAILABILITY_ENABLED:false}
     video:
       enabled: ${CONSULTATION_VIDEO_ENABLED:false}
+      demo-immediate-access-enabled: ${CONSULTATION_DEMO_IMMEDIATE_VIDEO_ENABLED:false}
       url: ${LIVEKIT_URL:}
       api-key: ${LIVEKIT_API_KEY:}
       api-secret: ${LIVEKIT_API_SECRET:}

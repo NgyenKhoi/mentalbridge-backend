@@ -20,6 +20,7 @@ import com.mentalbridge.consultation.credits.ServiceCreditService;
 import com.mentalbridge.consultation.entitlement.ServicePackage;
 import com.mentalbridge.consultation.shared.ApiException;
 import com.mentalbridge.consultation.specialist.SpecialistProfileService;
+import com.mentalbridge.consultation.video.DemoVideoPolicy;
 
 @Service
 public class AppointmentService {
@@ -41,15 +42,17 @@ public class AppointmentService {
 	private final AvailabilityProperties availability;
 	private final Clock clock;
 	private final AppointmentStatusOutbox outbox;
+	private final DemoVideoPolicy demoVideo;
 
 	public AppointmentService(JdbcClient jdbc, ServiceCreditService credits, SpecialistProfileService profiles,
-			AvailabilityProperties availability, Clock clock, AppointmentStatusOutbox outbox) {
+			AvailabilityProperties availability, Clock clock, AppointmentStatusOutbox outbox, DemoVideoPolicy demoVideo) {
 		this.jdbc = jdbc;
 		this.credits = credits;
 		this.profiles = profiles;
 		this.availability = availability;
 		this.clock = clock;
 		this.outbox = outbox;
+		this.demoVideo = demoVideo;
 	}
 
 	@Transactional
@@ -100,7 +103,12 @@ public class AppointmentService {
 		if (requestedModality == AppointmentModality.IN_APP_VIDEO && !availability.videoEnabled()) {
 			throw conflict("APPOINTMENT_VIDEO_DISABLED", "In-app video appointments are not enabled");
 		}
-		if (slot.startAt().isBefore(now.plus(MINIMUM_LEAD_TIME))) {
+		var immediateDemoVideo = requestedModality == AppointmentModality.IN_APP_VIDEO
+				&& demoVideo.allowsSource(creditAccount.source());
+		if (immediateDemoVideo && !slot.startAt().isAfter(now)) {
+			throw conflict("APPOINTMENT_SLOT_STALE", "The selected video slot has already started");
+		}
+		if (!immediateDemoVideo && slot.startAt().isBefore(now.plus(MINIMUM_LEAD_TIME))) {
 			throw conflict("APPOINTMENT_LEAD_TIME_INVALID", "Appointments require at least four hours lead time");
 		}
 		if (activeAppointmentExists(slotId)) throw conflict("APPOINTMENT_SLOT_UNAVAILABLE", "The slot is already held");
@@ -112,7 +120,8 @@ public class AppointmentService {
 			throw conflict("APPOINTMENT_CREDIT_UNAVAILABLE", "The replacement credit does not cover this appointment");
 		}
 		var appointmentId = UUID.randomUUID();
-		var deadline = earlier(now.plus(DECISION_WINDOW), slot.startAt().minus(DECISION_BUFFER));
+		var deadline = earlier(now.plus(DECISION_WINDOW), immediateDemoVideo
+				? slot.startAt() : slot.startAt().minus(DECISION_BUFFER));
 		try {
 			if (replacement != null) {
 				cancelForReplacement(userId, replacement, appointmentId, replacementOutcome, now);
@@ -211,10 +220,12 @@ public class AppointmentService {
 	}
 
 	@Transactional(readOnly = true)
-	public AppointmentResponse.BookableSlotList bookableSlots(Instant from, Instant to) {
+	public AppointmentResponse.BookableSlotList bookableSlots(UUID userId, Instant from, Instant to) {
 		var now = clock.instant();
 		var minimumStart = now.plus(MINIMUM_LEAD_TIME);
-		var lower = from == null || from.isBefore(minimumStart) ? minimumStart : from;
+		var immediateDemoVideo = demoVideo.allowsUser(userId);
+		var earliestStart = immediateDemoVideo ? now : minimumStart;
+		var lower = from == null || from.isBefore(earliestStart) ? earliestStart : from;
 		var upper = to == null ? now.plus(Duration.ofDays(90)) : to;
 		if (!upper.isAfter(lower) || Duration.between(lower, upper).compareTo(Duration.ofDays(90)) > 0) {
 			throw new ApiException(HttpStatus.BAD_REQUEST, "INVALID_BOOKABLE_SLOT_RANGE", "Slot range must be positive and no longer than 90 days");
@@ -224,10 +235,12 @@ public class AppointmentService {
 				from availability_slot s join specialist_profile p on p.account_id=s.specialist_account_id
 				where s.status='ACTIVE' and p.approval_status='APPROVED'
 				and s.start_at>=:from and s.start_at<:to
+				and (s.start_at>=:minimumStart or (s.modality='IN_APP_VIDEO' and :immediateDemoVideo))
 				and not exists (select 1 from appointment a where a.availability_slot_id=s.id and a.status in ('REQUESTED','CONFIRMED','IN_PROGRESS'))
 				and (s.modality<>'IN_APP_VIDEO' or :videoEnabled)
 				order by s.start_at, s.id limit 200
 				""").param("from", database(lower)).param("to", database(upper))
+				.param("minimumStart", database(minimumStart)).param("immediateDemoVideo", immediateDemoVideo)
 				.param("videoEnabled", availability.videoEnabled())
 				.query((row, ignored) -> new AppointmentResponse.BookableSlot(row.getObject("id", UUID.class),
 						row.getObject("specialist_account_id", UUID.class), row.getString("display_name"),

@@ -46,6 +46,28 @@ patient name, email or clinical information is sent as media metadata.
 
 ## Exercise a real consultation
 
+### Opt-in immediate product demo
+
+The owner-approved local exception uses
+`CONSULTATION_DEMO_IMMEDIATE_VIDEO_ENABLED=true` with `SPRING_PROFILES_ACTIVE=dev`
+or `local`. The ordinary rules below remain the default and apply to PAID/FREE,
+chat and staging/production. Only current PLUS/PREMIUM DEMO entitlement and held
+DEMO credit qualify; no account role, approval or payment is synthesized by it.
+
+1. The approved Specialist publishes an exact future 60-minute IN_APP_VIDEO slot.
+2. The DEMO User requests that slot, including one starting in less than four hours.
+3. The assigned Specialist accepts before the slot begins. REQUESTED cannot join.
+4. Both actors open appointment detail and explicitly join immediately. They need
+   not wait for scheduled start; each token still requires current authorization.
+5. Leave the test call and have the Specialist explicitly end it. The scheduled
+   end cutoff is not extended. An early demo is transport verification only;
+   early evidence remains out of the booked attendance window, so confirmation
+   stays pending with HELD credit and cannot create earning/completion facts.
+
+Disable the flag and recreate only Consultation to restore normal scheduling.
+Do not alter persisted histories or reuse this exception for real appointments.
+No new protected environment, staging deployment or LiveKit credentials is needed.
+
 Use disposable synthetic USER and currently approved SPECIALIST accounts, a
 valid paid test entitlement/credit and an accepted `IN_APP_VIDEO` appointment.
 Use existing availability, booking and decision contracts; do not bypass them

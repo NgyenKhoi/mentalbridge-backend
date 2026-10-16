@@ -35,9 +35,9 @@ public class AppointmentController {
 	public AppointmentController(AppointmentService appointments) { this.appointments = appointments; }
 
 	@GetMapping("/api/v1/bookable-slots")
-	AppointmentResponse.BookableSlotList bookableSlots(@RequestParam(required = false) String from,
+	AppointmentResponse.BookableSlotList bookableSlots(@AuthenticationPrincipal Jwt jwt, @RequestParam(required = false) String from,
 			@RequestParam(required = false) String to) {
-		return appointments.bookableSlots(parse(from), parse(to));
+		return appointments.bookableSlots(RequestIdentity.subject(jwt), parse(from), parse(to));
 	}
 
 	@GetMapping("/api/v1/appointments")

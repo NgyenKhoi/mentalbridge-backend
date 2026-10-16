@@ -105,6 +105,14 @@ MB-384 uses the existing LiveKit Cloud `mentalbridge` Free project. Set backend
 the existing local Spring configuration mechanism or injected environment.
 `CONSULTATION_VIDEO_ENABLED=false` is the safe runtime default, independent of
 slot publication. `LIVEKIT_TOKEN_TTL=PT2M` is bounded to 30 seconds–5 minutes.
+For the approved local product demo, `CONSULTATION_DEMO_IMMEDIATE_VIDEO_ENABLED`
+defaults false. An explicit local/dev/test profile and effective DEMO entitlement
+plus held DEMO credit are required; enabled staging/production fails startup.
+Eligible video booking can use a future slot without four-hour lead time and
+both assigned actors may join immediately after Specialist acceptance. PAID,
+FREE, chat, cancellation, completion and scheduled-end gates are unchanged.
+Early media is not completion evidence: explicitly ending a pre-start demo
+keeps verification pending and credit HELD, without earning or automatic release.
 No secret/token may enter browser configuration, logs, URLs or source control.
 Missing provider configuration fails video operations closed, not unrelated
 appointment/manual brief workflows. See [ADR 0039](../docs/adr/0039-livekit-cloud-video-consultation.md)
@@ -122,6 +130,7 @@ and the [MB-384 local video runbook](../docs/runbooks/mb-384-livekit-video.md).
 | `IDENTITY_JWT_PUBLIC_KEY` | Yes | X.509 PEM public key used to verify tokens | local public key |
 | `CONSULTATION_VIDEO_AVAILABILITY_ENABLED` | No | Enables `IN_APP_VIDEO` slot publication only after the provider contract gate passes | `false` |
 | `CONSULTATION_VIDEO_ENABLED` | No | Enables authorized LiveKit connection issuance; not slot publication | `false` |
+| `CONSULTATION_DEMO_IMMEDIATE_VIDEO_ENABLED` | Local demo only | Source-scoped early video booking/join after confirmation; prohibited in staging/production | `false` |
 | `LIVEKIT_URL` | Enabled video | Existing Cloud project's secure WebSocket origin; no path/query | `wss://<project-host>.livekit.cloud` |
 | `LIVEKIT_API_KEY` / `LIVEKIT_API_SECRET` | Enabled video | Backend-only credentials for token issuance, room operations and signed webhooks | injected secrets |
 | `LIVEKIT_TOKEN_TTL` | No | New participant-token validity, bounded 30 seconds–5 minutes and clipped to scheduled end | `PT2M` |

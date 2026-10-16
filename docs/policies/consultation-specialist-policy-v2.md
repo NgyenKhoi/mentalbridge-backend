@@ -166,6 +166,15 @@ baseline migration and overlapping-version deployment limitations.
 
 ## Modes and session boundary
 
+The owner-approved 2026-10-14 local/dev DEMO video exception is documented in
+[ADR 0039](../adr/0039-livekit-cloud-video-consultation.md#approved-local-demo-amendment-2026-10-14).
+It defaults disabled, never auto-accepts, and applies only to effective DEMO
+entitlement/held DEMO credit. It permits near-future video booking and immediate
+assigned-participant access after Specialist confirmation. PAID/FREE, chat,
+staging/production, booked timestamps/end cutoff and financial verification
+remain unchanged. Early demo media cannot prove completion; explicit ending
+keeps pending verification and credit HELD without earning/refund/release.
+
 Every slot is exactly 60 minutes. At `scheduledEndAt`, the authoritative
 appointment becomes `SESSION_ENDED` and interactive chat/video access closes.
 The channel end is a time boundary, not proof of service delivery.
