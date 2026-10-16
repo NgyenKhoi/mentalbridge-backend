@@ -484,6 +484,14 @@ ActionOccurrence`, with action types `RESOURCE`, `JOURNAL`,
   while rejection, stale evidence, withdrawn content, dependency uncertainty,
   and retries cannot create a second plan. See [MB-560 evidence](story-mb-560-plan-change-request-evidence.md).
 
+- 2026-10-16: MB-668 makes Meaning → Guide → next action a Care-orchestrated
+  resumable path. Care ensures the one immutable Guide for a completed
+  episode's exact persisted evaluation without client evidence, and
+  `GET /api/v1/guided-journey/current` derives the resume pointer and ordered
+  next action (safety, professional support, existing plan, paid proposal,
+  reviewed resources) from persisted facts with fail-closed entitlement. No
+  table, migration, event or plan mutation is added; historical reopening stays
+  MB-667. Native Maestro execution remains deferred to MB-666.
 - 2026-09-25: MB-292 corrective delivery persists Care-owned
   `screening_episode` grouping for guided initial checks and reassessments.
   Frontend session cookies and latest-history lookup are no longer evidence

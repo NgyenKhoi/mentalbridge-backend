@@ -37,6 +37,51 @@ time for unfinished episodes, then by episode ID descending. The opaque keyset
 cursor uses that same ordering so late completion and tied timestamps do not
 skip or repeat rows when paging an unchanged history. Reads remain owner-scoped.
 
+## MB-668 guided journey continuation
+
+`POST /api/v1/screening-episodes/{episodeId}/support-guide` is the Care-owned
+ensure step after a completed guided episode. It takes no client evidence: Care
+resolves the exact v2 SupportEvaluation persisted on the owner's COMPLETED
+episode and returns its existing Guide without calling Content or AI. Only a
+missing Guide is materialized from that exact evaluation, under the
+deterministic request key `episode guide {episodeId}` (outside the client
+`Idempotency-Key` alphabet), so retry, reload, multiple tabs and concurrent
+calls converge on the one `(user, evaluation, guide policy)` row. The older
+pair-based `POST /api/v1/support-guides` converges on the same row only while
+the support policy that produced the episode evaluation is still current. Only
+the latest COMPLETED `INITIAL_CHECK` episode may prepare a Guide: a foreign or
+unknown episode is `SCREENING_EPISODE_NOT_FOUND`, an open one
+`SCREENING_EPISODE_INCOMPLETE`, and an older initial check or a reassessment
+`SCREENING_EPISODE_NOT_CURRENT`, so browsing history never creates a Guide.
+Later policy changes never re-pair or re-evaluate an older episode.
+
+`GET /api/v1/guided-journey/current` (`mb-guided-journey-v1`, `no-store`) is
+the minimized resume pointer. It is derived from persisted Care facts rather
+than a new table: the latest COMPLETED `INITIAL_CHECK` episode, whether a newer
+open initial check exists, the Guide for that exact episode evaluation, and
+the current ACTIVE/PAUSED or DRAFT plan. A newer open check never replaces the
+completed context. `nextAction` is Care's ordered decision for the step after
+the Guide:
+
+1. `REVIEW_SAFETY_SUPPORT` when the stored PHQ-9 item-9 evidence is positive;
+2. `FIND_SPECIALIST` when a stored domain pathway is professional support;
+3. `OPEN_CURRENT_PLAN` / `REVIEW_PLAN_DRAFT` when a plan already exists, so a
+   revisit never proposes a second plan;
+4. `START_PLAN_PROPOSAL` for verified `PLUS`/`PREMIUM` when the episode
+   evaluation is still current-policy compatible;
+5. `EXPLORE_GUIDE_RESOURCES` for `FREE`, for a stale evaluation that plan
+   proposal would reject, or with `entitlementStatus: UNAVAILABLE` when
+   Consultation cannot verify the package (fail closed).
+
+Entitlement is called only when steps 1–3 and the compatibility check do not
+decide. A missing published support policy is returned as 503
+`SUPPORT_POLICY_UNAVAILABLE` rather than downgraded, so clients offer retry.
+Episode completion and open-check facts are read in one repeatable-read
+snapshot, and the current plan or draft in one query. The read contains no
+answers, scores, journal or emotion data and never creates a Guide or plan.
+Plan proposal itself still requires the user's explicit action in the plan
+journey. Historical episodes (MB-667) never use either endpoint.
+
 ## MB-88 foundation
 
 The canonical [`care-service-v1.yaml`](../contracts/openapi/care-service-v1.yaml) contract marks profile, independent privacy/AI-processing disclosure and consent, questionnaire retrieval, assessment history, and authenticated/anonymous screening paths as `implemented`. MB-370 uses the existing `AI_PROCESSING` decision/UI at current policy v2 for optional ConsultationBrief suggestions; production-provider approval remains separately gated.
