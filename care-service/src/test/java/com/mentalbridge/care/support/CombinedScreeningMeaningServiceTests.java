@@ -41,7 +41,7 @@ class CombinedScreeningMeaningServiceTests {
 		assertThat(result.supportEvaluationId()).isEqualTo(evaluationId);
 		assertThat(result.sourcePolicyVersion()).isEqualTo(SOURCE_POLICY);
 		assertThat(result.evaluatedAt()).isEqualTo(evaluatedAt);
-		assertThat(result.contentVersion()).isEqualTo("mb-combined-screening-meaning-vi-vn-v1-draft.2");
+		assertThat(result.contentVersion()).isEqualTo("mb-combined-screening-meaning-vi-vn-v1-draft.3");
 		assertThat(result.presentationPolicyVersion()).isEqualTo("mb-combined-screening-meaning-v1");
 		assertThat(result.evidence()).extracting(CombinedScreeningMeaningService.EvidenceView::assessmentId)
 				.containsExactly(phq9Id, gad7Id);

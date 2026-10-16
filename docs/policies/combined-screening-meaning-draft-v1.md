@@ -1,12 +1,14 @@
 # MB-667 combined screening meaning — draft content review
 
-Status: **DRAFT — pending owner content review. Not Care-reviewed or approved for deployment.**
+Status: **DRAFT — owner approved the draft.3 wording on 2026-10-16. Not clinically or domain reviewed and not approved for production deployment.**
 The user requested twenty neutral variants for review and supplied the shared
-screen flow in the MB-667 Stitch prototype. This catalogue remains a content
-draft even though implementation and design verification can proceed locally.
+screen flow in the MB-667 Stitch prototype. Draft.3 names both results with the
+score-card terms (`dấu hiệu trầm cảm`, `lo âu`), states the highest-level action
+in the visible meaning for professional pathways, and uses the rationale to
+explain which result triggers the existing routing rule.
 
 - Presentation policy: `mb-combined-screening-meaning-v1`.
-- Draft content version: `mb-combined-screening-meaning-vi-vn-v1-draft.2`.
+- Draft content version: `mb-combined-screening-meaning-vi-vn-v1-draft.3`.
 - Supported source policy: `mb-support-routing-capstone-v1`.
 - Owner: Care. Source authority remains the saved exact compatible PHQ-9/GAD-7
   pair and the existing stored support tier.
@@ -53,31 +55,46 @@ Stitch prototype before publishing any branch, PR or deployed runtime.
 
 | Base meaning code | PHQ-9 level | GAD-7 level | Draft meaning | Draft rationale | Base support pathway |
 | --- | --- | --- | --- | --- | --- |
-| PHQ9_MINIMAL_GAD7_MINIMAL | MINIMAL | MINIMAL | Hai nhóm dấu hiệu được hỏi đến đều xuất hiện rất ít trong lần sàng lọc này. | Bạn có thể duy trì nhịp nghỉ ngơi, ăn uống và vận động; đồng thời thử các tài nguyên tự hỗ trợ phù hợp. | SELF_GUIDED_SUPPORT |
-| PHQ9_MINIMAL_GAD7_MILD | MINIMAL | MILD | Các dấu hiệu lo âu ở mức nhẹ, còn nhóm PHQ-9 được ghi nhận rất ít. | Bạn có thể bắt đầu với một hoạt động thư giãn ngắn và quan sát những lúc cảm giác lo âu xuất hiện. | SELF_GUIDED_SUPPORT |
-| PHQ9_MINIMAL_GAD7_MODERATE | MINIMAL | MODERATE | Kết quả lo âu cần được chú ý, dù PHQ-9 ghi nhận rất ít dấu hiệu. | Lo âu là nội dung nên ưu tiên trao đổi với chuyên gia; bạn vẫn có thể thử một hoạt động tự hỗ trợ nhẹ nhàng. | PROFESSIONAL_SUPPORT_RECOMMENDED |
-| PHQ9_MINIMAL_GAD7_SEVERE | MINIMAL | SEVERE | Dấu hiệu lo âu ở mức nặng, trong khi PHQ-9 ghi nhận rất ít dấu hiệu. | Kết quả lo âu gợi ý ưu tiên trao đổi với chuyên gia để nhận hỗ trợ phù hợp. | PROFESSIONAL_SUPPORT_RECOMMENDED |
-| PHQ9_MILD_GAD7_MINIMAL | MILD | MINIMAL | Nhóm dấu hiệu PHQ-9 ở mức nhẹ, còn lo âu được ghi nhận rất ít. | Bạn có thể bắt đầu bằng nghỉ ngơi, ăn uống đều đặn và một hoạt động nhỏ giúp nâng đỡ tâm trạng. | SELF_GUIDED_SUPPORT |
-| PHQ9_MILD_GAD7_MILD | MILD | MILD | Cả hai nhóm dấu hiệu đều ở mức nhẹ, có thể bắt đầu bằng những hoạt động vừa sức. | Bạn có thể chọn một hoạt động từ kho tài nguyên và theo dõi điều gì giúp mình dễ chịu hơn. | SELF_GUIDED_SUPPORT |
-| PHQ9_MILD_GAD7_MODERATE | MILD | MODERATE | Lo âu là nội dung nên ưu tiên trao đổi; nhóm PHQ-9 ở mức nhẹ. | Bạn nên trao đổi về lo âu với chuyên gia; các hoạt động nhẹ nhàng có thể hỗ trợ trong lúc chờ. | PROFESSIONAL_SUPPORT_RECOMMENDED |
-| PHQ9_MILD_GAD7_SEVERE | MILD | SEVERE | Dấu hiệu lo âu ở mức nặng cần được chú ý; nhóm PHQ-9 ở mức nhẹ. | Kết quả lo âu gợi ý ưu tiên gặp chuyên gia để được lắng nghe và định hướng phù hợp. | PROFESSIONAL_SUPPORT_RECOMMENDED |
-| PHQ9_MODERATE_GAD7_MINIMAL | MODERATE | MINIMAL | Các dấu hiệu PHQ-9 cần được quan tâm, dù lo âu được ghi nhận rất ít. | Kết quả PHQ-9 gợi ý trao đổi với chuyên gia về những thay đổi bạn đang nhận thấy. | PROFESSIONAL_SUPPORT_RECOMMENDED |
-| PHQ9_MODERATE_GAD7_MILD | MODERATE | MILD | Nhóm dấu hiệu PHQ-9 cần được quan tâm; lo âu cũng xuất hiện ở mức nhẹ. | Bạn nên trao đổi với chuyên gia về thay đổi tâm trạng và chia sẻ thêm những lúc lo âu xuất hiện. | PROFESSIONAL_SUPPORT_RECOMMENDED |
-| PHQ9_MODERATE_GAD7_MODERATE | MODERATE | MODERATE | Cả hai nhóm dấu hiệu đều đáng chú ý và nên được trao đổi cùng nhau. | Hai nhóm khó khăn nên được trao đổi cùng chuyên gia để không bỏ sót phần nào. | PROFESSIONAL_SUPPORT_RECOMMENDED |
-| PHQ9_MODERATE_GAD7_SEVERE | MODERATE | SEVERE | Cả hai nhóm cần được quan tâm, đặc biệt là kết quả lo âu ở mức nặng. | Bạn nên ưu tiên trao đổi với chuyên gia về lo âu và trình bày cả những thay đổi thuộc nhóm PHQ-9. | PROFESSIONAL_SUPPORT_RECOMMENDED |
-| PHQ9_MODERATELY_SEVERE_GAD7_MINIMAL | MODERATELY_SEVERE | MINIMAL | Nhóm dấu hiệu PHQ-9 cần được chú ý, dù lo âu được ghi nhận rất ít. | Nhóm dấu hiệu PHQ-9 là nội dung nên được trao đổi sớm với chuyên gia. | PROFESSIONAL_SUPPORT_RECOMMENDED |
-| PHQ9_MODERATELY_SEVERE_GAD7_MILD | MODERATELY_SEVERE | MILD | Nhóm PHQ-9 ở mức khá nặng, đồng thời có dấu hiệu lo âu nhẹ. | Bạn nên sớm trao đổi với chuyên gia và chia sẻ cả những lúc cảm giác lo âu xuất hiện. | PROFESSIONAL_SUPPORT_RECOMMENDED |
-| PHQ9_MODERATELY_SEVERE_GAD7_MODERATE | MODERATELY_SEVERE | MODERATE | Cả hai nhóm đáng chú ý, với PHQ-9 ở mức khá nặng và lo âu mức trung bình. | Cả tâm trạng và lo âu nên được đưa vào một cuộc trao đổi đầy đủ với chuyên gia. | PROFESSIONAL_SUPPORT_RECOMMENDED |
-| PHQ9_MODERATELY_SEVERE_GAD7_SEVERE | MODERATELY_SEVERE | SEVERE | Cả hai nhóm dấu hiệu đều đáng chú ý và nên được chuyên gia xem xét cùng nhau. | Bạn nên ưu tiên gặp chuyên gia để trao đổi riêng về từng nhóm khó khăn được ghi nhận. | PROFESSIONAL_SUPPORT_RECOMMENDED |
-| PHQ9_SEVERE_GAD7_MINIMAL | SEVERE | MINIMAL | Kết quả PHQ-9 ở mức nặng cần được ưu tiên trao đổi, dù lo âu ít xuất hiện. | Bạn nên ưu tiên gặp chuyên gia để trao đổi về nhóm dấu hiệu PHQ-9. | PROFESSIONAL_SUPPORT_RECOMMENDED |
-| PHQ9_SEVERE_GAD7_MILD | SEVERE | MILD | Nhóm PHQ-9 ở mức nặng cần ưu tiên hỗ trợ, đồng thời lưu ý lo âu nhẹ. | Bạn nên ưu tiên gặp chuyên gia và chia sẻ cả những lúc cảm giác lo âu xuất hiện. | PROFESSIONAL_SUPPORT_RECOMMENDED |
-| PHQ9_SEVERE_GAD7_MODERATE | SEVERE | MODERATE | Cả hai nhóm đáng chú ý, với PHQ-9 mức nặng và lo âu mức trung bình. | Bạn nên ưu tiên gặp chuyên gia để trao đổi đầy đủ về cả tâm trạng và lo âu. | PROFESSIONAL_SUPPORT_RECOMMENDED |
-| PHQ9_SEVERE_GAD7_SEVERE | SEVERE | SEVERE | Cả hai nhóm dấu hiệu đều ở mức nặng và cần được xem xét riêng trong hỗ trợ chuyên môn. | Bạn nên ưu tiên gặp chuyên gia để từng nhóm khó khăn được lắng nghe và xem xét riêng. | PROFESSIONAL_SUPPORT_RECOMMENDED |
+| PHQ9_MINIMAL_GAD7_MINIMAL | MINIMAL | MINIMAL | Dấu hiệu trầm cảm và lo âu đều rất ít. | Cả hai kết quả đều ở mức tối thiểu, nên duy trì những thói quen đang giúp bạn ổn định là bước phù hợp. Bạn có thể làm lại bài sàng lọc khi cảm nhận của mình thay đổi. | SELF_GUIDED_SUPPORT |
+| PHQ9_MINIMAL_GAD7_MILD | MINIMAL | MILD | Lo âu ở mức nhẹ, dấu hiệu trầm cảm rất ít. | Cả hai kết quả đều chưa vượt mức nhẹ, nên bạn có thể bắt đầu bằng các hoạt động tự chăm sóc, như một bài thư giãn ngắn, và để ý những lúc lo âu xuất hiện. | SELF_GUIDED_SUPPORT |
+| PHQ9_MINIMAL_GAD7_MODERATE | MINIMAL | MODERATE | Lo âu ở mức trung bình, dấu hiệu trầm cảm rất ít. Bạn nên trao đổi thêm với chuyên gia. | Lo âu từ mức trung bình trở lên là lý do MentalBridge gợi ý trao đổi với chuyên gia, để bạn hiểu rõ hơn điều đang diễn ra. Trong lúc chờ, các hoạt động tự chăm sóc nhẹ nhàng vẫn có thể giúp bạn. | PROFESSIONAL_SUPPORT_RECOMMENDED |
+| PHQ9_MINIMAL_GAD7_SEVERE | MINIMAL | SEVERE | Lo âu ở mức nặng, dấu hiệu trầm cảm rất ít. Bạn nên ưu tiên trao đổi sớm với chuyên gia. | Kết quả lo âu nằm ở mức cao nhất của thang đo, nên việc trao đổi với chuyên gia nên được đặt lên trước, không cần chờ thêm. Chuyên gia có thể cùng bạn tìm cách hỗ trợ phù hợp. | PROFESSIONAL_SUPPORT_RECOMMENDED |
+| PHQ9_MILD_GAD7_MINIMAL | MILD | MINIMAL | Dấu hiệu trầm cảm ở mức nhẹ, lo âu rất ít. | Cả hai kết quả đều chưa vượt mức nhẹ, nên bạn có thể bắt đầu bằng nghỉ ngơi, ăn uống đều đặn và một hoạt động nhỏ giúp nâng đỡ tâm trạng. | SELF_GUIDED_SUPPORT |
+| PHQ9_MILD_GAD7_MILD | MILD | MILD | Dấu hiệu trầm cảm và lo âu đều ở mức nhẹ. | Cả hai kết quả đều ở mức nhẹ, nên các hoạt động tự chăm sóc vừa sức là bước phù hợp để bắt đầu. Bạn có thể để ý điều gì giúp mình dễ chịu hơn và làm lại bài sàng lọc nếu tình trạng nặng thêm. | SELF_GUIDED_SUPPORT |
+| PHQ9_MILD_GAD7_MODERATE | MILD | MODERATE | Lo âu ở mức trung bình, dấu hiệu trầm cảm ở mức nhẹ. Bạn nên trao đổi thêm với chuyên gia. | Lo âu từ mức trung bình trở lên là lý do MentalBridge gợi ý trao đổi với chuyên gia. Khi trao đổi, bạn có thể kể cả những thay đổi về tâm trạng để chuyên gia có bức tranh đầy đủ. | PROFESSIONAL_SUPPORT_RECOMMENDED |
+| PHQ9_MILD_GAD7_SEVERE | MILD | SEVERE | Lo âu ở mức nặng, dấu hiệu trầm cảm ở mức nhẹ. Bạn nên ưu tiên trao đổi sớm với chuyên gia. | Kết quả lo âu nằm ở mức cao nhất của thang đo, nên việc trao đổi với chuyên gia nên được đặt lên trước, không cần chờ thêm. Bạn có thể kể cả những thay đổi về tâm trạng khi trao đổi. | PROFESSIONAL_SUPPORT_RECOMMENDED |
+| PHQ9_MODERATE_GAD7_MINIMAL | MODERATE | MINIMAL | Dấu hiệu trầm cảm ở mức trung bình, lo âu rất ít. Bạn nên trao đổi thêm với chuyên gia. | Dấu hiệu trầm cảm từ mức trung bình trở lên là lý do MentalBridge gợi ý trao đổi với chuyên gia, để bạn hiểu rõ hơn những thay đổi về tâm trạng, giấc ngủ hay năng lượng. | PROFESSIONAL_SUPPORT_RECOMMENDED |
+| PHQ9_MODERATE_GAD7_MILD | MODERATE | MILD | Dấu hiệu trầm cảm ở mức trung bình, lo âu ở mức nhẹ. Bạn nên trao đổi thêm với chuyên gia. | Dấu hiệu trầm cảm từ mức trung bình trở lên là lý do MentalBridge gợi ý trao đổi với chuyên gia. Khi trao đổi, bạn có thể kể cả những lúc lo âu xuất hiện. | PROFESSIONAL_SUPPORT_RECOMMENDED |
+| PHQ9_MODERATE_GAD7_MODERATE | MODERATE | MODERATE | Dấu hiệu trầm cảm và lo âu đều ở mức trung bình. Bạn nên trao đổi thêm với chuyên gia. | Cả hai kết quả đều từ mức trung bình trở lên, nên MentalBridge gợi ý trao đổi với chuyên gia về cả tâm trạng lẫn lo âu trong cùng một lần để không bỏ sót phần nào. | PROFESSIONAL_SUPPORT_RECOMMENDED |
+| PHQ9_MODERATE_GAD7_SEVERE | MODERATE | SEVERE | Lo âu ở mức nặng, dấu hiệu trầm cảm ở mức trung bình. Bạn nên ưu tiên trao đổi sớm với chuyên gia. | Kết quả lo âu nằm ở mức cao nhất của thang đo và dấu hiệu trầm cảm ở mức trung bình, nên việc trao đổi với chuyên gia nên được đặt lên trước. Hãy kể cả hai điều này khi trao đổi. | PROFESSIONAL_SUPPORT_RECOMMENDED |
+| PHQ9_MODERATELY_SEVERE_GAD7_MINIMAL | MODERATELY_SEVERE | MINIMAL | Dấu hiệu trầm cảm ở mức khá nặng, lo âu rất ít. Bạn nên sớm trao đổi với chuyên gia. | Dấu hiệu trầm cảm ở mức khá nặng, nên việc trao đổi với chuyên gia nên diễn ra sớm thay vì chờ xem có tự cải thiện hay không. | PROFESSIONAL_SUPPORT_RECOMMENDED |
+| PHQ9_MODERATELY_SEVERE_GAD7_MILD | MODERATELY_SEVERE | MILD | Dấu hiệu trầm cảm ở mức khá nặng, lo âu ở mức nhẹ. Bạn nên sớm trao đổi với chuyên gia. | Dấu hiệu trầm cảm ở mức khá nặng, nên việc trao đổi với chuyên gia nên diễn ra sớm. Khi trao đổi, bạn có thể kể cả những lúc lo âu xuất hiện. | PROFESSIONAL_SUPPORT_RECOMMENDED |
+| PHQ9_MODERATELY_SEVERE_GAD7_MODERATE | MODERATELY_SEVERE | MODERATE | Dấu hiệu trầm cảm ở mức khá nặng, lo âu ở mức trung bình. Bạn nên sớm trao đổi với chuyên gia. | Dấu hiệu trầm cảm ở mức khá nặng và lo âu ở mức trung bình, nên việc trao đổi với chuyên gia nên diễn ra sớm và bao gồm cả tâm trạng lẫn lo âu. | PROFESSIONAL_SUPPORT_RECOMMENDED |
+| PHQ9_MODERATELY_SEVERE_GAD7_SEVERE | MODERATELY_SEVERE | SEVERE | Lo âu ở mức nặng, dấu hiệu trầm cảm ở mức khá nặng. Bạn nên ưu tiên trao đổi sớm với chuyên gia. | Lo âu nằm ở mức cao nhất của thang đo và dấu hiệu trầm cảm ở mức khá nặng, nên việc trao đổi với chuyên gia nên được đặt lên trước, không cần chờ thêm. Mỗi kết quả cần được chuyên gia xem xét riêng. | PROFESSIONAL_SUPPORT_RECOMMENDED |
+| PHQ9_SEVERE_GAD7_MINIMAL | SEVERE | MINIMAL | Dấu hiệu trầm cảm ở mức nặng, lo âu rất ít. Bạn nên ưu tiên trao đổi sớm với chuyên gia. | Dấu hiệu trầm cảm nằm ở mức cao nhất của thang đo, nên việc trao đổi với chuyên gia nên được đặt lên trước, không cần chờ thêm. | PROFESSIONAL_SUPPORT_RECOMMENDED |
+| PHQ9_SEVERE_GAD7_MILD | SEVERE | MILD | Dấu hiệu trầm cảm ở mức nặng, lo âu ở mức nhẹ. Bạn nên ưu tiên trao đổi sớm với chuyên gia. | Dấu hiệu trầm cảm nằm ở mức cao nhất của thang đo, nên việc trao đổi với chuyên gia nên được đặt lên trước. Bạn có thể kể cả những lúc lo âu xuất hiện. | PROFESSIONAL_SUPPORT_RECOMMENDED |
+| PHQ9_SEVERE_GAD7_MODERATE | SEVERE | MODERATE | Dấu hiệu trầm cảm ở mức nặng, lo âu ở mức trung bình. Bạn nên ưu tiên trao đổi sớm với chuyên gia. | Dấu hiệu trầm cảm nằm ở mức cao nhất của thang đo và lo âu ở mức trung bình, nên việc trao đổi với chuyên gia nên được đặt lên trước và bao gồm cả hai điều này. | PROFESSIONAL_SUPPORT_RECOMMENDED |
+| PHQ9_SEVERE_GAD7_SEVERE | SEVERE | SEVERE | Dấu hiệu trầm cảm và lo âu đều ở mức nặng. Bạn nên ưu tiên trao đổi sớm với chuyên gia. | Cả hai kết quả đều nằm ở mức cao nhất của thang đo, nên việc trao đổi với chuyên gia nên được đặt lên trước, không cần chờ thêm. Mỗi kết quả cần được chuyên gia xem xét riêng. | PROFESSIONAL_SUPPORT_RECOMMENDED |
+
+## Presentation decisions for draft.3 (2026-10-16)
+
+- The web result card keeps one static professional heading per highest band:
+  `Nên sớm trao đổi với chuyên gia` when either result is Moderately severe or
+  Severe, otherwise `Trao đổi với chuyên gia khi bạn sẵn sàng`. It reads only the
+  exact saved levels and adds no new classification.
+- The approved v1 next-step copy (`mb-support-next-step-vi-vn-v1`, including
+  "nếu mong muốn") stays unchanged. It is versioned, shared by every v1
+  consumer, and can change only through a new next-step content version and
+  migration, which is outside MB-667. The draft.3 meaning carries the
+  band-specific urgency.
+- Severe rows add no crisis pointer. Bands alone never introduce a safety
+  signal; independent PHQ-9 item-9 evidence keeps `presentationPriority=SAFETY`,
+  and the global crisis-support entry remains available on every page.
 
 ## Remaining gates
 
-- Owner reviews and explicitly approves the twenty exact copy variants or asks
-  for changes. A draft version is not clinical or production approval.
+- Owner approved the draft.3 copy variants on 2026-10-16. A draft version is
+  not clinical or production approval; domain review remains required.
 - Frontend implementation remains traceable to the owner-supplied Stitch
   prototype while preserving the existing authenticated shell.
 - Focused tests prove catalogue coverage, source ownership, safety precedence,

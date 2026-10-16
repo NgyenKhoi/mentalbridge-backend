@@ -37,7 +37,7 @@ class DraftCombinedScreeningMeaningCatalogTests {
 					.doesNotContain("\uFFFD", "Ã", "Ä", "cháº", "tổng điểm", "mắc bệnh", "nguy cơ cao");
 			assertThat(Normalizer.isNormalized(copy, Normalizer.Form.NFC)).isTrue();
 		}
-		assertThat(meaning.text().trim().split("\\s+").length).isBetween(9, 22);
+		assertThat(meaning.text().trim().split("\\s+").length).isBetween(9, 23);
 		assertThat(meaning.text()).doesNotContain("Trong 14 ngày qua", "trong 14 ngày qua");
 		if (meaning.supportTier() == SupportTier.SELF_GUIDED_SUPPORT) {
 			assertThat(meaning.rationale()).contains("có thể");
@@ -65,7 +65,7 @@ class DraftCombinedScreeningMeaningCatalogTests {
 		assertThat(codes).hasSize(20);
 		assertThat(texts).hasSize(20);
 		assertThat(rationales).hasSize(20);
-		assertThat(DraftCombinedScreeningMeaningCatalog.CONTENT_VERSION).endsWith("-draft.2");
+		assertThat(DraftCombinedScreeningMeaningCatalog.CONTENT_VERSION).endsWith("-draft.3");
 	}
 
 	@Test

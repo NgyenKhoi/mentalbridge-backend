@@ -19,9 +19,10 @@ The separate owner-only `GET
 /api/v1/support-evaluations/{supportEvaluationId}/combined-meaning` supports the
 owner-supplied MB-667 Stitch flow and its shared current/historical result
 composition. Its twenty neutral copy variants and exact
-`mb-combined-screening-meaning-vi-vn-v1-draft.2` version remain pending explicit
-Care/content-owner approval and are not deployment-approved. Design approval is
-not health-copy approval. See the [reviewable draft catalogue](../docs/policies/combined-screening-meaning-draft-v1.md).
+`mb-combined-screening-meaning-vi-vn-v1-draft.3` wording were approved by the
+product owner on 2026-10-16. Clinical/domain review remains pending; this is not
+production-deployment approval. Design approval is not health-copy approval.
+See the [reviewable draft catalogue](../docs/policies/combined-screening-meaning-draft-v1.md).
 
 The read uses the exact owned saved v1 pair and stored tier, keeps independent
 levels and safety evidence, prioritizes approved safety guidance, and returns

@@ -3892,7 +3892,7 @@ components:
         sourcePolicyVersion: { type: string, const: mb-support-routing-capstone-v1 }
         evaluatedAt: { type: string, format: date-time }
         presentationPolicyVersion: { type: string, const: mb-combined-screening-meaning-v1 }
-        contentVersion: { type: string, const: mb-combined-screening-meaning-vi-vn-v1-draft.2 }
+        contentVersion: { type: string, const: mb-combined-screening-meaning-vi-vn-v1-draft.3 }
         referencePeriodDays: { type: integer, const: 14 }
         episodeId: { type: [string, 'null'], format: uuid }
         episodePurpose:

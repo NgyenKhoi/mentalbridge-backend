@@ -33,7 +33,7 @@ class CombinedScreeningMeaningContractTests {
 				"contentVersion", "evidence", "supportTier", "baseMeaning", "presentationPriority", "nextStep", "safetyGuidance")
 				.doesNotContainKeys("totalScore", "compositeScore", "overallSeverity", "mentalHealthLevel", "answers", "aiOutput");
 		assertThat(((Schema<?>) schema.getProperties().get("contentVersion")).getConst())
-				.isEqualTo("mb-combined-screening-meaning-vi-vn-v1-draft.2");
+				.isEqualTo("mb-combined-screening-meaning-vi-vn-v1-draft.3");
 		assertThat(api.getComponents().getSchemas().get("SupportEvaluation").getProperties())
 				.doesNotContainKeys("combinedMeaning", "baseMeaning", "presentationPriority", "presentationPolicyVersion");
 		var v2 = new OpenAPIV3Parser().readLocation(Path.of("..", "contracts", "openapi",
