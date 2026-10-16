@@ -1,5 +1,14 @@
 # Requirements Traceability
 
+MB-623: the online consultation closure uses
+[consultation-journey-v1](policies/consultation-journey-state-map-v1.md) as the
+single consolidated state/settlement interpretation. The real HTTP/PostgreSQL
+owner suite and opt-in production Web/BFF run cover golden-path persistence,
+cancel/no-show/dispute/technical-review and dependency/capability truth. Evidence
+classification and commands are in the
+[verification runbook](runbooks/mb-623-consultation-journey.md); controlled
+evidence is not live chat/video or deployed-stack certification.
+
 - 2026-10-12: MB-384 implements LiveKit Cloud 1:1 appointment video. Assigned
   participants receive short-lived room-scoped access; preview stays local until
   startsAt. Signed, minimized participation events support verification but
@@ -190,6 +199,18 @@ The requirements are represented in domain/architecture documentation, but the l
   MB-650 through MB-654 own bounded client delivery. See [ADR 0040](adr/0040-support-plan-companion-contract.md),
   [SupportPlan Companion policy v1](policies/support-plan-companion-policy-v1.md)
   and [MB-647 evidence](story-mb-647-support-plan-companion-contract-evidence.md).
+
+- 2026-10-14: MB-649 promotes the accepted MB-647 intent/context schemas into
+  the authenticated internal Journal/AI REST boundary. The orchestrator rejects
+  unknown or mismatched context before provider access, verifies current AI
+  consent, requires Care service authentication alongside the forwarded USER
+  bearer, uses one approved provider route for text-only phrasing, and returns
+  bounded versioned deterministic copy for consent/provider/timeout/quota/
+  malformed or policy failures. Ordered progress counts and partial-evidence
+  meaning are verified before generated delivery. Requests and responses remain
+  ephemeral; telemetry excludes context and generated text, and no
+  SupportPlan/source mutation is reachable.
+  See [MB-649 evidence](story-mb-649-support-plan-companion-orchestration-evidence.md).
 
 - 2026-10-12: MB-640 adds reviewable `support-plan-activity-schedule-v2`
   cadence and workload to draft and active SupportPlans. The owner may choose

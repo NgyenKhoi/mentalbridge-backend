@@ -156,7 +156,7 @@ public class SupportPlanActivityOccurrenceService {
 		LocalDate start = now.atZone(zone(timezone)).toLocalDate();
 		var personalization = personalization(plan);
 		var scheduledActions = actions.findBySupportPlanIdAndUserIdOrderByPlanFocusIdAscOrdinalAsc(plan.id(), plan.userId())
-				.stream().filter(action -> List.of("RESOURCE", "EMOTION_CHECK_IN").contains(action.actionType()))
+				.stream().filter(action -> List.of("RESOURCE", "EMOTION_CHECK_IN", "JOURNAL").contains(action.actionType()))
 				.sorted(java.util.Comparator.comparingInt(PlanActionEntity::ordinal))
 				.toList();
 		int budget = personalization == null || personalization.dailyTimeBudgetMinutes() == null

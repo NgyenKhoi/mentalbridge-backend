@@ -96,6 +96,7 @@ const environmentSchema = z
       .max(5_000)
       .default(2_000),
     JOURNAL_AI_REMINDER_SERVICE_TOKEN: z.string().min(32).optional(),
+    JOURNAL_AI_SUPPORT_PLAN_CARE_SERVICE_TOKEN: z.string().min(32).optional(),
     JOURNAL_AI_PROVIDER_MODE: z
       .enum(providerModes)
       .default("DETERMINISTIC_FAKE"),
@@ -435,6 +436,8 @@ const environmentSchema = z
     CONSULTATION_TIMEOUT_MS: environment.JOURNAL_AI_CONSULTATION_TIMEOUT_MS,
     REMINDER_SERVICE_TOKEN:
       environment.JOURNAL_AI_REMINDER_SERVICE_TOKEN ?? null,
+    SUPPORT_PLAN_CARE_SERVICE_TOKEN:
+      environment.JOURNAL_AI_SUPPORT_PLAN_CARE_SERVICE_TOKEN ?? null,
     PROVIDER_MODE: environment.JOURNAL_AI_PROVIDER_MODE,
     ROUTING_POLICY_VERSION: environment.JOURNAL_AI_ROUTING_POLICY_VERSION,
     PROVIDER_APPROVAL_VERSION:

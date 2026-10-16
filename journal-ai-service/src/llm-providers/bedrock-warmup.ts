@@ -6,6 +6,7 @@ import {
 import { exactRevisionOutputJsonSchema } from "../prompts/exact-revision.js";
 import { longitudinalOutputJsonSchema } from "../prompts/longitudinal.js";
 import { supportGuidePhrasingOutputJsonSchema } from "../prompts/support-guide-phrasing.js";
+import { supportPlanCompanionOutputJsonSchema } from "../prompts/support-plan-companion.js";
 import { bedrockConverseRequest, bedrockConverseUrl } from "./bedrock.js";
 
 const warmupSchemas = [
@@ -25,6 +26,12 @@ const warmupSchemas = [
     workload: "SUPPORT_GUIDE_PHRASING",
     name: "mentalbridge_support_guide_phrasing",
     schema: supportGuidePhrasingOutputJsonSchema,
+    maxTokens: 1_200,
+  },
+  {
+    workload: "SUPPORT_PLAN_COMPANION",
+    name: "mentalbridge_support_plan_companion",
+    schema: supportPlanCompanionOutputJsonSchema,
     maxTokens: 1_200,
   },
   {

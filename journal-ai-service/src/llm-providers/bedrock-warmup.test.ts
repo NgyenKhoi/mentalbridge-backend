@@ -29,7 +29,7 @@ const baseEnvironment = {
   AWS_BEARER_TOKEN_BEDROCK: "test-bedrock-token",
 } satisfies NodeJS.ProcessEnv;
 
-void test("warms all four schemas for each distinct configured Bedrock model", async () => {
+void test("warms all five schemas for each distinct configured Bedrock model", async () => {
   const configuration = loadConfiguration(baseEnvironment);
   assert.equal(configuration.BEDROCK_SCHEMA_WARMUP_TIMEOUT_MS, 240_000);
   const requests: {
@@ -64,10 +64,10 @@ void test("warms all four schemas for each distinct configured Bedrock model", a
   ]);
   assert.deepEqual(result, {
     models: 2,
-    schemasPerModel: 4,
-    completedRequests: 8,
+    schemasPerModel: 5,
+    completedRequests: 10,
   });
-  assert.equal(requests.length, 8);
+  assert.equal(requests.length, 10);
   assert.ok(
     requests.every(
       (request) => request.authorization === "Bearer test-bedrock-token",
@@ -90,6 +90,7 @@ void test("warms all four schemas for each distinct configured Bedrock model", a
       "mentalbridge_exact_revision",
       "mentalbridge_longitudinal",
       "mentalbridge_support_guide_phrasing",
+      "mentalbridge_support_plan_companion",
       "mentalbridge_companion_reply",
     ]),
   );

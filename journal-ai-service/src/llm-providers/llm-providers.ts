@@ -24,6 +24,12 @@ import {
   type SupportGuidePhrasingPrompt,
 } from "../prompts/support-guide-phrasing.js";
 import {
+  normalizedSupportPlanCompanionOutputSchema,
+  supportPlanCompanionPrompt,
+  type SupportPlanCompanionPrompt,
+  type SupportPlanCompanionPromptSource,
+} from "../prompts/support-plan-companion.js";
+import {
   consultationBriefDraftPrompt,
   normalizedConsultationBriefDraftSchema,
   type ConsultationBriefDraftPrompt,
@@ -63,6 +69,10 @@ export interface SupportGuidePhrasingProvider {
   phrase(approvedText: string): Promise<ProviderAnalysis>;
 }
 
+export interface SupportPlanCompanionProvider {
+  phrase(source: SupportPlanCompanionPromptSource): Promise<ProviderAnalysis>;
+}
+
 export interface ConsultationBriefDraftProvider {
   draft(
     source: ConsultationBriefDraftSource,
@@ -99,17 +109,27 @@ interface LlmProvider {
       | ExactRevisionPrompt
       | LongitudinalPrompt
       | SupportGuidePhrasingPrompt
+      | SupportPlanCompanionPrompt
       | ConsultationBriefDraftPrompt,
     route:
       | AnalysisRoute
       | LongitudinalAnalysisRoute
       | SupportGuideProviderRoute
+      | SupportPlanCompanionProviderRoute
       | ConsultationBriefDraftRoute,
   ): Promise<ProviderAnalysis>;
 }
 
 interface SupportGuideProviderRoute {
   readonly workload: "SUPPORT_GUIDE_PHRASING";
+  readonly provider: AiProviderId;
+  readonly model: string;
+  readonly inputCostMicroUsdPerMillionTokens: number;
+  readonly outputCostMicroUsdPerMillionTokens: number;
+}
+
+interface SupportPlanCompanionProviderRoute {
+  readonly workload: "SUPPORT_PLAN_COMPANION";
   readonly provider: AiProviderId;
   readonly model: string;
   readonly inputCostMicroUsdPerMillionTokens: number;
@@ -294,15 +314,18 @@ const structuredOutputName = (
     | AnalysisRoute["workload"]
     | LongitudinalAnalysisRoute["workload"]
     | SupportGuideProviderRoute["workload"]
+    | SupportPlanCompanionProviderRoute["workload"]
     | ConsultationBriefDraftRoute["workload"],
 ): string =>
   workload === "LONGITUDINAL"
     ? "mentalbridge_longitudinal"
     : workload === "CONSULTATION_BRIEF_DRAFT"
       ? "mentalbridge_consultation_brief_draft"
-      : workload === "SUPPORT_GUIDE_PHRASING"
-        ? "mentalbridge_support_guide_phrasing"
-        : "mentalbridge_exact_revision";
+      : workload === "SUPPORT_PLAN_COMPANION"
+        ? "mentalbridge_support_plan_companion"
+        : workload === "SUPPORT_GUIDE_PHRASING"
+          ? "mentalbridge_support_guide_phrasing"
+          : "mentalbridge_exact_revision";
 
 abstract class HttpLlmProvider {
   constructor(protected readonly configuration: ServiceConfiguration) {}
@@ -384,11 +407,13 @@ export class GeminiProvider extends HttpLlmProvider implements LlmProvider {
       | ExactRevisionPrompt
       | LongitudinalPrompt
       | SupportGuidePhrasingPrompt
+      | SupportPlanCompanionPrompt
       | ConsultationBriefDraftPrompt,
     route:
       | AnalysisRoute
       | LongitudinalAnalysisRoute
       | SupportGuideProviderRoute
+      | SupportPlanCompanionProviderRoute
       | ConsultationBriefDraftRoute,
   ) {
     if (!this.configuration.GEMINI_API_KEY)
@@ -466,11 +491,13 @@ export class OpenAiProvider extends HttpLlmProvider implements LlmProvider {
       | ExactRevisionPrompt
       | LongitudinalPrompt
       | SupportGuidePhrasingPrompt
+      | SupportPlanCompanionPrompt
       | ConsultationBriefDraftPrompt,
     route:
       | AnalysisRoute
       | LongitudinalAnalysisRoute
       | SupportGuideProviderRoute
+      | SupportPlanCompanionProviderRoute
       | ConsultationBriefDraftRoute,
   ) {
     if (!this.configuration.OPENAI_API_KEY)
@@ -550,11 +577,13 @@ export class BedrockProvider extends HttpLlmProvider implements LlmProvider {
       | ExactRevisionPrompt
       | LongitudinalPrompt
       | SupportGuidePhrasingPrompt
+      | SupportPlanCompanionPrompt
       | ConsultationBriefDraftPrompt,
     route:
       | AnalysisRoute
       | LongitudinalAnalysisRoute
       | SupportGuideProviderRoute
+      | SupportPlanCompanionProviderRoute
       | ConsultationBriefDraftRoute,
   ) {
     if (!this.configuration.BEDROCK_API_KEY)
@@ -754,6 +783,57 @@ export class RoutedSupportGuidePhrasingProvider implements SupportGuidePhrasingP
       },
     );
     const parsed = normalizedSupportGuidePhrasingSchema.safeParse(
+      analysis.output,
+    );
+    if (!parsed.success)
+      throw new ProviderFailure("PERMANENT", "INVALID_RESULT", {
+        schemaIssues: schemaIssues(parsed.error),
+      });
+    return { ...analysis, output: parsed.data };
+  }
+}
+
+export class RoutedSupportPlanCompanionProvider implements SupportPlanCompanionProvider {
+  private readonly providers: ReadonlyMap<AiProviderId, LlmProvider>;
+
+  constructor(private readonly configuration: ServiceConfiguration) {
+    const providers: LlmProvider[] = [
+      new GeminiProvider(configuration),
+      new OpenAiProvider(configuration),
+      new BedrockProvider(configuration),
+    ];
+    this.providers = new Map(
+      providers.map((provider) => [provider.id, provider]),
+    );
+  }
+
+  async phrase(
+    source: SupportPlanCompanionPromptSource,
+  ): Promise<ProviderAnalysis> {
+    if (this.configuration.PROVIDER_MODE === "DETERMINISTIC_FAKE")
+      throw new ProviderFailure("PERMANENT", "UNAVAILABLE");
+    const configured = this.configuration.FREE_PLUS_ROUTE;
+    if (!configured || !this.configuration.PROVIDER_APPROVAL_VERSION)
+      throw new ProviderFailure("PERMANENT", "UNAVAILABLE");
+    const provider = this.providers.get(configured.provider);
+    if (!provider) throw new ProviderFailure("PERMANENT", "UNAVAILABLE");
+    const analysis = await provider.generate(
+      supportPlanCompanionPrompt({
+        surface: source.surface,
+        intent: source.intent,
+        context: source.context,
+      }),
+      {
+        workload: "SUPPORT_PLAN_COMPANION",
+        provider: configured.provider,
+        model: configured.model,
+        inputCostMicroUsdPerMillionTokens:
+          configured.inputCostMicroUsdPerMillionTokens,
+        outputCostMicroUsdPerMillionTokens:
+          configured.outputCostMicroUsdPerMillionTokens,
+      },
+    );
+    const parsed = normalizedSupportPlanCompanionOutputSchema.safeParse(
       analysis.output,
     );
     if (!parsed.success)

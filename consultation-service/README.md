@@ -1,5 +1,12 @@
 # Consultation Service
 
+MB-623 consolidates the existing online journey in the versioned
+[state/settlement map](../docs/policies/consultation-journey-state-map-v1.md).
+Its [verification runbook](../docs/runbooks/mb-623-consultation-journey.md)
+distinguishes real owner/PostgreSQL tests, controlled production Web/BFF
+verification and unverified live dependencies. No aggregate, migration, booking
+rule, financial transition or provider enablement is added by this closure.
+
 MB-622 earning materialization and withdrawal reuse the appointment dispute
 gate. OPEN disputes and RELEASE_USER_CREDIT resolutions block payment, including
 failed-payout retries. Ineligible AVAILABLE rows return to PENDING_SETTLEMENT

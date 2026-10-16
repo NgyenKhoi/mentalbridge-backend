@@ -30,6 +30,13 @@ same-state commands emit no duplicate fact.
 SupportEvaluation behavior. `care-support-evaluation-v2.yaml` is the additive
 source for `/api/v2/support-evaluations`; consumers select the API version by
 path and must not interpret a v1 support tier as a v2 domain contribution.
+MB-667 adds the separate read-only v1
+`/support-evaluations/{supportEvaluationId}/combined-meaning` subresource so
+older strict clients keep receiving their original evaluation shape. Its exact
+pair and source policy remain separate from the versioned draft presentation;
+the owner-supplied Stitch prototype is available, while twenty neutral copy
+variants remain pending Care/content-owner review and are not approved for
+deployment. It adds no combined score, new routing policy or v2 top-level tier.
 `care-support-guide-v1.yaml` is the additive implemented owner contract for the
 all-tier one-time guide at `/api/v1/support-guides`; it is not a SupportPlan
 lifecycle contract. `content-notification-service.yaml` supplies the exact

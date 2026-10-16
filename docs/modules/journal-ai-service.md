@@ -16,6 +16,7 @@ Support Guide, SupportPlan, eligibility, and confirmation authority.
 | AI Companion analysis  | On explicit user request, check current consent, create one job for an exact journal revision, invoke one provider, and normalize the result | `202` asynchronous job; idempotent duplicate; one bounded retry only for 429/5xx/transport; no cross-provider fallback; journal remains readable on failure                                             |
 | AI chat and quota      | Route server-authorized package/model/quota policy and return assistant responses                                                            | `FREE` defaults to five delivered responses/day; `PLUS` has higher quota and may share its model; `PREMIUM` may use a stronger model with no displayed daily cap but retains token/rate/fair-use limits |
 | Longitudinal context   | Compare exact consented journal revisions across bounded periods and return contextual/emotional changes plus data coverage                  | Only available-entry claims; sparse/imbalanced evidence returns `INSUFFICIENT_DATA`; no clinical improvement conclusion or combined score                                                               |
+| SupportPlan Companion  | Validate one user-initiated v1 intent and exact minimized Care-approved context, then return bounded phrasing or deterministic copy          | Closed allowlist; current AI consent before provider use; timeout/quota/malformed/policy failures fall back locally; no storage or Care/source mutation                                                  |
 | Governed accompaniment | Explain approved content, guide an approved activity, surface reassessment context, and phrase an approved reminder                          | AI cannot score, diagnose, decide safety/eligibility, schedule reminders, own state, mutate a SupportPlan, or prescribe; Care decides and the user confirms                                             |
 | Specialist read        | Return only entries/indicators allowed by a current Care decision                                                                            | Exact subject/scope/range/entry authorization; fail closed; minimized audited response                                                                                                                  |
 | Dataset governance     | Import licensed de-identified datasets and immutable versions                                                                                | Production journals excluded by default; private assets; validation rejects label/schema/leakage violations                                                                                             |
@@ -35,6 +36,15 @@ Support Guide, SupportPlan, eligibility, and confirmation authority.
   structured provider/model/prompt provenance. It cannot receive raw
   assessment answers or change Care-owned safety, resource, eligibility, or
   action decisions; Care retains its exact approved copy on every failure.
+- SupportPlan Companion accepts only the exact ADR 0040 v1 intent envelope,
+  requires both the Care service credential and forwarded USER bearer, rejects
+  unknown fields and mismatched surface/intent/context variants before consent
+  or provider access, and returns a closed bounded deterministic template for
+  missing consent, timeout, quota, unavailable provider, malformed output or
+  policy rejection. Progress guards preserve ordered counts and partial-data
+  meaning. Provider output contains text only; navigation is copied from the
+  validated deterministic context, and the endpoint exposes no command or
+  persistence boundary.
 - The normalized result follows `MB-AI-COMPANION-001`: optional summary/sentiment, context and emotion indicators, themes, preferences, barriers, `modelConfidence`, one allow-listed `suggestedAction`, and complete provider/model/prompt/schema provenance.
 - Longitudinal results retain exact source revisions, bounded periods, comparison direction, coverage sufficiency, and provenance. Journal/AI supplies this non-standardized evidence to Care; Care composes the four-dimensional Reassessment Summary and owns every SupportPlan decision.
 - ADR 0017 package routing is server-side and versioned. AI may accompany a
@@ -59,6 +69,7 @@ Support Guide, SupportPlan, eligibility, and confirmation authority.
 - [ ] JAI-03 Define journal/AI Companion analysis/dataset/benchmark OpenAPI and the ADR 0015 normalized provider-result schema. The exact-revision request/status/result slice is complete; dataset and benchmark contracts remain deferred.
 - [ ] JAI-04 Define analysis command/result schemas and Care consent/structured-indicator contracts. Exact-revision, longitudinal, and `AI_PROCESSING` contracts are complete; specialist-sharing remains deferred.
 - [x] MB-370 provides an internal ConsultationBrief suggestion boundary with exact minimized sources, current consent/entitlement/provider checks, strict editable output, and no persistence or specialist delivery.
+- [x] MB-649 implements bounded SupportPlan Companion message orchestration, deterministic fallback, provider output guards, safe telemetry, and the callable v1 REST contract without persistence or mutation authority.
 - [ ] JAI-05 Add `migrate-mongo` validators/indexes for journal, job, result, dataset, and benchmark collections plus data documentation. Journal, exact-revision and longitudinal job/result, and MB-369 synthetic benchmark metadata collections are complete; general dataset import remains deferred.
 - [x] JAI-06 Implement encrypted journal revisions, authorization, pagination and deletion.
 - [ ] JAI-07 Implement consent-gated idempotent analysis orchestration, adapters, bounded retry and reconciliation. MB-367 completes the exact-revision job runtime; MB-369 adds gated Gemini/OpenAI adapters and entitlement routing; MB-568 adds Bedrock Converse behind the same single-provider boundary. An accepted real route and broader reconciliation remain deferred until benchmark approval.

@@ -200,6 +200,32 @@ fact cannot satisfy another user's action or an incompatible action type.
 
 ## Privacy and interpretation
 
+### Journal writing facts (MB-642)
+
+The bounded `short-reflection` Journal intention is admitted prospectively from
+the owner's explicitly saved `JOURNALING` preference. It uses the generic
+duration/recurrence model and aggregate workload budget; private entry text,
+mood, tags or AI output do not select its admission or schedule.
+
+Completion is the owner-confirmed creation of one active saved entry. Its
+immutable creation-fact revision is `1`, and its occurrence instant is the
+Journal server's `createdAt`, not the user-selected date describing the entry
+or a later private-content edit. Care resolves a candidate entry ID through
+Journal, checks the same subject, action/source context, local occurrence day
+in the schedule timezone and plan/action activation boundary, and accepts the
+fact at most once across occurrences. A candidate ID or successful save alone
+does not prove acceptance by Care.
+
+Revision preserves this creation fact and cannot complete another writing
+session. Deletion makes the source unavailable for new acceptance but does not
+erase accepted occurrence evidence or rewrite immutable historical reviews.
+Future longitudinal analysis still selects exact current owned revisions with
+its separate processing consent, coverage and provenance; a writing completion
+never substitutes for Journal context or explicit reassessment self-report.
+No completion check grants reflection reuse, specialist access or AI processing.
+
+### Private source content
+
 Care stores orchestration, not source-domain content. It must not copy:
 
 - journal body, AI reflection, tags, or mood;

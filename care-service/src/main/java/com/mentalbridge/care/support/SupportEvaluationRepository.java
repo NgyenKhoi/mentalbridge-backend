@@ -19,7 +19,8 @@ interface SupportEvaluationRepository extends JpaRepository<SupportEvaluationEnt
 	@Query(value = """
 			select s.id as "assessmentId", s.definition_id as "definitionId", s.voided_at as "voidedAt",
 			       d.instrument as "instrument", d.version as "questionnaireVersion",
-			       r.screening_level as "screeningLevel", r.scoring_version as "scoringVersion",
+			       r.total_score as "totalScore", r.screening_level as "screeningLevel",
+			       r.scoring_version as "scoringVersion",
 			       r.safety_status as "safetyStatus", r.safety_policy_version as "safetyPolicyVersion"
 			from assessment_submission s
 			join questionnaire_definition d on d.id = s.definition_id
@@ -31,10 +32,30 @@ interface SupportEvaluationRepository extends JpaRepository<SupportEvaluationEnt
 	default Optional<Evidence> findEvidence(UUID userId, UUID assessmentId) {
 		return findEvidenceRow(userId, assessmentId).map(row -> new Evidence(row.getAssessmentId(),
 				row.getDefinitionId(), row.getVoidedAt(), row.getInstrument(), row.getQuestionnaireVersion(),
-				row.getScreeningLevel() == null ? null : ScreeningLevel.valueOf(row.getScreeningLevel()),
+				row.getTotalScore(), row.getScreeningLevel() == null ? null : ScreeningLevel.valueOf(row.getScreeningLevel()),
 				row.getScoringVersion(), row.getSafetyStatus() == null ? null : SafetyStatus.valueOf(row.getSafetyStatus()),
 				row.getSafetyPolicyVersion()));
 	}
+
+	@Query(value = """
+			select episode.id as "episodeId", episode.purpose as "purpose",
+			       episode.completed_at as "completedAt",
+			       episode.support_evaluation_id as "supportEvaluationId",
+			       guide.id as "supportGuideId"
+			from screening_episode episode
+			left join support_guide guide
+			  on guide.user_id = episode.user_id
+			 and guide.support_evaluation_id = episode.support_evaluation_id
+			 and guide.guide_policy_version = 'mb-support-guide-capstone-v1'
+			where episode.user_id = :userId
+			  and episode.presentation_evaluation_id = :presentationEvaluationId
+			  and episode.status = 'COMPLETED'
+			order by guide.generated_at desc nulls last, guide.id desc nulls last
+			limit 1
+			""", nativeQuery = true)
+	Optional<CombinedMeaningEpisodeRow> findCombinedMeaningEpisode(
+			@Param("userId") UUID userId,
+			@Param("presentationEvaluationId") UUID presentationEvaluationId);
 
 	@Query(value = """
 			select version from support_policy_definition
@@ -145,10 +166,19 @@ interface SupportEvaluationRepository extends JpaRepository<SupportEvaluationEnt
 		Instant getVoidedAt();
 		String getInstrument();
 		String getQuestionnaireVersion();
+		Integer getTotalScore();
 		String getScreeningLevel();
 		String getScoringVersion();
 		String getSafetyStatus();
 		String getSafetyPolicyVersion();
+	}
+
+	interface CombinedMeaningEpisodeRow {
+		UUID getEpisodeId();
+		String getPurpose();
+		Instant getCompletedAt();
+		UUID getSupportEvaluationId();
+		UUID getSupportGuideId();
 	}
 
 	interface EvaluationRequestRow {
@@ -173,7 +203,7 @@ interface SupportEvaluationRepository extends JpaRepository<SupportEvaluationEnt
 	}
 
 	record Evidence(UUID assessmentId, UUID definitionId, Instant voidedAt, String instrument,
-			String questionnaireVersion, ScreeningLevel screeningLevel, String scoringVersion,
+			String questionnaireVersion, Integer totalScore, ScreeningLevel screeningLevel, String scoringVersion,
 			SafetyStatus safetyStatus, String safetyPolicyVersion) { }
 
 	record Meaning(String code, String contentVersion, int referencePeriodDays, String text, String limitation) { }

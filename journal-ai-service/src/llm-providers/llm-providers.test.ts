@@ -11,6 +11,7 @@ import {
   RoutedExactRevisionProvider,
   RoutedLongitudinalProvider,
   RoutedSupportGuidePhrasingProvider,
+  RoutedSupportPlanCompanionProvider,
 } from "./llm-providers.js";
 import { toBedrockStructuredOutputSchema } from "./bedrock.js";
 
@@ -486,7 +487,7 @@ void test("Bedrock rejects malformed output as a permanent invalid result", asyn
   }
 });
 
-void test("Bedrock serves longitudinal and Support Guide prompts through the shared adapter", async () => {
+void test("Bedrock serves longitudinal, Support Guide, and SupportPlan Companion prompts through the shared adapter", async () => {
   const originalFetch = globalThis.fetch;
   const schemaNames: string[] = [];
   let call = 0;
@@ -553,9 +554,27 @@ void test("Bedrock serves longitudinal and Support Guide prompts through the sha
     assert.deepEqual(phrasing.output, {
       text: "Nội dung đã được diễn đạt rõ ràng.",
     });
+    const companion = await new RoutedSupportPlanCompanionProvider(
+      phrasingConfiguration,
+    ).phrase({
+      surface: "TODAY",
+      intent: "EXPLAIN_ACTION",
+      context: {
+        schemaVersion: "support-plan-companion-context-v1",
+        locale: "vi-VN",
+        contextKind: "ACTION",
+        action: {
+          actionType: "JOURNAL",
+          title: "Viết vài dòng",
+          availability: "AVAILABLE",
+        },
+      },
+    });
+    assert.deepEqual(companion.output, phrasing.output);
     assert.deepEqual(schemaNames, [
       "mentalbridge_longitudinal",
       "mentalbridge_support_guide_phrasing",
+      "mentalbridge_support_plan_companion",
     ]);
   } finally {
     globalThis.fetch = originalFetch;

@@ -34,10 +34,10 @@ class SupportEvaluationServiceTests {
 				SupportTier.SAFETY_FOLLOW_UP_RECOMMENDED, SupportReasonCode.PHQ9_SAFETY_SCREEN_POSITIVE, null,
 				evaluatedAt);
 		var phq9 = new Evidence(phq9Id, UUID.randomUUID(), null, "PHQ9", "phq9-vi-vn-capstone-v2",
-				ScreeningLevel.MILD, "phq9-standard-bands-v1", SafetyStatus.POSITIVE_SAFETY_SCREEN,
+				8, ScreeningLevel.MILD, "phq9-standard-bands-v1", SafetyStatus.POSITIVE_SAFETY_SCREEN,
 				"MB-SAFETY-PHQ9-001/1.0-capstone");
 		var gad7 = new Evidence(gad7Id, UUID.randomUUID(), null, "GAD7", "gad7-vi-vn-adult-v1",
-				ScreeningLevel.MINIMAL, "gad7-standard-bands-v1", SafetyStatus.NOT_APPLICABLE, null);
+				4, ScreeningLevel.MINIMAL, "gad7-standard-bands-v1", SafetyStatus.NOT_APPLICABLE, null);
 
 		when(repository.findByIdAndUserId(evaluationId, userId)).thenReturn(Optional.of(evaluation));
 		when(repository.findEvidence(userId, phq9Id)).thenReturn(Optional.of(phq9));

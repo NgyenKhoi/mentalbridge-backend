@@ -181,10 +181,16 @@ The channel end is a time boundary, not proof of service delivery.
 
 ```text
 REQUESTED -> CONFIRMED | REJECTED | EXPIRED | CANCELLED
-CONFIRMED -> IN_PROGRESS | CANCELLED
-IN_PROGRESS -> SESSION_ENDED | USER_NO_SHOW | SPECIALIST_NO_SHOW
-SESSION_ENDED -> COMPLETED | DISPUTED | other approved non-payable settlement outcome
+CONFIRMED -> IN_PROGRESS | SESSION_ENDED | CANCELLED
+IN_PROGRESS -> SESSION_ENDED
+SESSION_ENDED -> COMPLETED only after the applicable evidence policy passes
 ```
+
+No-show/insufficient-evidence/review values are `sessionOutcome` values while
+status remains `SESSION_ENDED`; disputes have their own OPEN/RESOLVED status.
+The consolidated executable interpretation and exact credit effects are in
+[consultation-journey-v1](consultation-journey-state-map-v1.md). This clarifies
+existing runtime dimensions, not a new settlement policy.
 
 The exact transition into `COMPLETED` requires a versioned evidence policy.
 Chat evidence is server-observed. Video evidence is server/provider-observed
@@ -291,11 +297,12 @@ suppression, retry, or safety-triggered delivery.
 
 ## Video runtime gate
 
-`IN_APP_VIDEO` remains unavailable until versioned contracts define signaling
-or provider selection, participant authorization, presence and duration
-evidence, reconnection and provider-failure behavior, recording prohibition,
-privacy/log exclusions, and session shutdown. An external meeting link is not
-a fallback.
+MB-384 supplies the approved LiveKit Cloud contract, signed participation
+evidence and explicit Specialist completion command in
+[ADR 0039](../adr/0039-livekit-cloud-video-consultation.md). Enablement remains
+an explicit provider/configuration gate, not an inference from slot existence.
+Default-disabled environments expose no selectable video or external-link
+fallback. MB-623 verifies this disabled capability truthfully, not a mock call.
 
 MB-362 may publish a video availability slot only when the typed capability
 gate is enabled after that provider contract is accepted. With the gate off,

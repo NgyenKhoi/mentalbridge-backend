@@ -158,12 +158,18 @@ services:
       JOURNAL_AI_LONGITUDINAL_BASE_URL: http://journal-ai:3000
       JOURNAL_AI_SUPPORT_GUIDE_BASE_URL: http://journal-ai:3000
       JOURNAL_AI_EMOTION_EVIDENCE_BASE_URL: http://journal-ai:3000
+      JOURNAL_AI_SUPPORT_PLAN_COMPANION_BASE_URL: http://journal-ai:3000
+      CARE_SUPPORT_PLAN_COMPANION_SERVICE_TOKEN: ${CARE_SUPPORT_PLAN_COMPANION_SERVICE_TOKEN:?Set the Care-to-Journal Companion service token in .env}
+      CARE_REDIS_URL: ${CARE_REDIS_URL:?Set the authenticated Care Redis URL in .env}
+      JOURNAL_AI_JOURNAL_EVIDENCE_BASE_URL: http://journal-ai:3000
     ports:
       - "${SERVICE_BIND_ADDRESS:-127.0.0.1}:${CARE_PORT:-8081}:8081"
     depends_on:
       care-migrate:
         condition: service_completed_successfully
       consultation:
+        condition: service_healthy
+      redis:
         condition: service_healthy
     healthcheck:
       test: ["CMD", "wget", "-q", "-O", "/dev/null", "http://localhost:8081/actuator/health"]
@@ -395,6 +401,7 @@ services:
       JOURNAL_AI_CONTENT_BASE_URL: http://content-notification:3003
       JOURNAL_AI_CONSULTATION_BASE_URL: http://consultation:8082
       JOURNAL_AI_REMINDER_SERVICE_TOKEN: ${JOURNAL_AI_REMINDER_SERVICE_TOKEN:?Set a shared reminder service token of at least 32 characters in .env}
+      JOURNAL_AI_SUPPORT_PLAN_CARE_SERVICE_TOKEN: ${CARE_SUPPORT_PLAN_COMPANION_SERVICE_TOKEN:?Set the Care-to-Journal Companion service token in .env}
       JOURNAL_AI_ANALYSIS_ENABLED: ${JOURNAL_AI_ANALYSIS_ENABLED:-true}
       JOURNAL_AI_PROVIDER_MODE: ${JOURNAL_AI_PROVIDER_MODE:-DETERMINISTIC_FAKE}
     ports:
