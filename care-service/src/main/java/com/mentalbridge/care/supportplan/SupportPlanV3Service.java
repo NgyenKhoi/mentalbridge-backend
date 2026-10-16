@@ -6,9 +6,11 @@ import java.time.Instant;
 import java.time.LocalDate;
 import java.time.LocalTime;
 import java.util.ArrayList;
+import java.util.Comparator;
 import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
+import java.util.Optional;
 import java.util.UUID;
 
 import org.springframework.http.HttpStatus;
@@ -63,6 +65,13 @@ public class SupportPlanV3Service {
 				new ApiException(HttpStatus.NOT_FOUND, "SUPPORT_PLAN_DRAFT_NOT_FOUND",
 						"Current SupportPlan draft was not found"));
 		return view(plan);
+	}
+
+	@Transactional(readOnly = true)
+	public Optional<PlanStatusView> currentOrDraftStatus(UUID userId) {
+		return plans.findAllByUserIdAndStatusIn(userId, List.of("ACTIVE", "PAUSED", "DRAFT")).stream()
+				.min(Comparator.comparing(plan -> "DRAFT".equals(plan.status())))
+				.map(plan -> new PlanStatusView(plan.id(), plan.status()));
 	}
 
 	@Transactional(readOnly = true)
@@ -317,6 +326,7 @@ public class SupportPlanV3Service {
 				"SupportPlan action model is incomplete or inconsistent");
 	}
 
+	public record PlanStatusView(UUID supportPlanId, String status) { }
 	public record SupportPlanV3View(UUID supportPlanId, int modelVersion, String planPolicyVersion, String representationMode,
 			String status, long version, SafetyView safety, List<PlanFocusView> focuses, Instant createdAt, Instant updatedAt,
 			Instant activatedAt, Instant completedAt, String completionReason, Instant supersededAt,

@@ -9,6 +9,7 @@ import java.util.ArrayList;
 import java.util.Base64;
 import java.util.HexFormat;
 import java.util.List;
+import java.util.Optional;
 import java.util.UUID;
 
 import org.springframework.http.HttpStatus;
@@ -74,6 +75,26 @@ public class SupportGuideService {
 
 		EvaluationView evaluation = evaluations.evaluate(userId, "support-guide-evaluation:" + requestHash,
 				correlationId, new EvaluationCommand(command.phq9AssessmentId(), command.gad7AssessmentId()));
+		return materialize(userId, bearerToken, idempotencyKey, requestHash, correlationId, evaluation);
+	}
+
+	public SupportGuideView ensureForEpisode(UUID userId, String bearerToken, UUID correlationId, UUID episodeId,
+			UUID supportEvaluationId) {
+		var existing = writer.forEvaluation(userId, supportEvaluationId);
+		if (existing != null) {
+			return view(userId, existing);
+		}
+		return materialize(userId, bearerToken, "episode guide " + episodeId,
+				hash("episode=" + episodeId + "\nevaluation=" + supportEvaluationId), correlationId,
+				evaluations.get(userId, supportEvaluationId));
+	}
+
+	public Optional<UUID> guideIdForEvaluation(UUID userId, UUID supportEvaluationId) {
+		return Optional.ofNullable(writer.guideIdForEvaluation(userId, supportEvaluationId));
+	}
+
+	private SupportGuideView materialize(UUID userId, String bearerToken, String idempotencyKey, String requestHash,
+			UUID correlationId, EvaluationView evaluation) {
 		var batch = request(evaluation);
 		var resolved = eligibility.resolve(batch, bearerToken, correlationId);
 		var selected = selected(batch, resolved.results());
@@ -172,8 +193,11 @@ public class SupportGuideService {
 	}
 
 	private String hash(GenerateCommand command) {
+		return hash("phq9=" + command.phq9AssessmentId() + "\ngad7=" + command.gad7AssessmentId());
+	}
+
+	private String hash(String canonical) {
 		try {
-			String canonical = "phq9=" + command.phq9AssessmentId() + "\ngad7=" + command.gad7AssessmentId();
 			return HexFormat.of().formatHex(MessageDigest.getInstance("SHA-256").digest(canonical.getBytes(StandardCharsets.UTF_8)));
 		}
 		catch (Exception exception) {

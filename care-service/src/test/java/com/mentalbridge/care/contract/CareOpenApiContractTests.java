@@ -46,6 +46,7 @@ class CareOpenApiContractTests {
 			"POST /api/v1/screening-episodes",
 			"GET /api/v1/screening-episodes/current",
 			"GET /api/v1/screening-episodes/history",
+			"GET /api/v1/guided-journey/current",
 			"POST /api/v1/screening-episodes/{episodeId}/assessments/{instrument}",
 			"POST /api/v1/screening-episodes/{episodeId}/support-evaluation",
 			"POST /api/v1/reassessment-self-reports",
@@ -128,6 +129,7 @@ class CareOpenApiContractTests {
 			"/api/v1/screening-episodes",
 			"/api/v1/screening-episodes/current",
 			"/api/v1/screening-episodes/history",
+			"/api/v1/guided-journey/current",
 			"/api/v1/screening-episodes/{episodeId}/assessments/{instrument}",
 			"/api/v1/screening-episodes/{episodeId}/support-evaluation",
 			"/api/v1/reassessment-self-reports",
@@ -202,6 +204,7 @@ class CareOpenApiContractTests {
 			"POST /api/v1/screening-episodes",
 			"GET /api/v1/screening-episodes/current",
 			"GET /api/v1/screening-episodes/history",
+			"GET /api/v1/guided-journey/current",
 			"POST /api/v1/screening-episodes/{episodeId}/assessments/{instrument}",
 			"POST /api/v1/screening-episodes/{episodeId}/support-evaluation",
 			"POST /api/v1/reassessment-self-reports",
@@ -445,6 +448,27 @@ class CareOpenApiContractTests {
 				.doesNotContainKeys("adherence", "clinicalOutcome", "recoveryScore", "specialistObserved");
 		assertThat(occurrence.getProperties()).containsKeys("source", "version", "engagementUpdatedAt")
 				.doesNotContainKeys("adherence", "clinicalOutcome", "recoveryScore");
+	}
+
+	@Test
+	void guidedJourneyIsAMinimizedRequiredPointerMatchingTheRuntimeView() {
+		var contract = Path.of("..", "contracts", "openapi", "care-service-v1.yaml").toAbsolutePath();
+		var openApi = new OpenAPIV3Parser().readLocation(contract.toUri().toString(), null, null).getOpenAPI();
+		var journey = openApi.getComponents().getSchemas().get("GuidedJourney");
+		var runtimeFields = java.util.Arrays.stream(
+				com.mentalbridge.care.guidedjourney.GuidedJourneyService.JourneyView.class.getRecordComponents())
+				.map(java.lang.reflect.RecordComponent::getName).toList();
+
+		assertThat(journey.getRequired()).containsExactlyInAnyOrderElementsOf(runtimeFields);
+		assertThat(journey.getProperties().keySet()).containsExactlyInAnyOrderElementsOf(runtimeFields);
+		assertThat(journey.getProperties()).doesNotContainKeys("answers", "totalScore", "journal", "emotion");
+		assertThat(enumValues(property(journey, "stage"))).containsExactly("ASSESSMENT_REQUIRED", "GUIDE_REQUIRED",
+				"GUIDE_READY");
+		assertThat(enumValues(property(journey, "entitlementStatus"))).containsExactly("NOT_REQUIRED", "VERIFIED",
+				"UNAVAILABLE");
+		assertThat(enumValues(property(journey, "nextAction").getOneOf().getFirst())).containsExactlyElementsOf(
+				java.util.Arrays.stream(com.mentalbridge.care.guidedjourney.GuidedJourneyService.NextAction.values())
+						.map(Enum::name).toList());
 	}
 
 	@Test

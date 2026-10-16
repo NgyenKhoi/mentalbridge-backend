@@ -5,6 +5,9 @@ import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.ArgumentMatchers.anyString;
 import static org.mockito.ArgumentMatchers.eq;
 import static org.mockito.Mockito.mock;
+import static org.mockito.Mockito.never;
+import static org.mockito.Mockito.verify;
+import static org.mockito.Mockito.verifyNoInteractions;
 import static org.mockito.Mockito.when;
 
 import java.time.Clock;
@@ -84,6 +87,49 @@ class SupportGuideServiceTests {
 				.isEqualTo("STALE");
 	}
 
+	@Test
+	void ensureReturnsTheExistingEpisodeGuideWithoutContactingContentAiOrReevaluating() {
+		var evaluations = mock(SupportEvaluationV2Service.class);
+		var eligibility = mock(ResourceEligibilityClient.class);
+		var phrasing = mock(SupportGuidePhrasingClient.class);
+		var writer = mock(SupportGuideWriter.class);
+		var guide = new SupportGuideEntity(UUID.randomUUID(), USER_ID, EVALUATION_ID,
+				SupportGuideService.GUIDE_POLICY_VERSION, NOW, "STANDARD_POST_SCREENING_GUIDANCE", "Approved copy.",
+				"NEGATIVE_SAFETY_SCREEN", "PHQ9_ITEM9_NEGATIVE", "MB-SAFETY-PHQ9-001-v1", "STANDARD_SAFETY_REMINDER",
+				"Standard safety.", "AVAILABLE", "content-eligibility-v1", NOW, "AI_UNAVAILABLE_FALLBACK");
+		when(writer.forEvaluation(USER_ID, EVALUATION_ID)).thenReturn(new StoredGuide(guide, List.of()));
+		when(evaluations.get(USER_ID, EVALUATION_ID)).thenReturn(evaluation(false));
+		var service = new SupportGuideService(evaluations, eligibility, phrasing, writer,
+				Clock.fixed(NOW, ZoneOffset.UTC));
+
+		var view = service.ensureForEpisode(USER_ID, "user-token", UUID.randomUUID(), UUID.randomUUID(),
+				EVALUATION_ID);
+
+		assertThat(view.supportGuideId()).isEqualTo(guide.id());
+		verifyNoInteractions(eligibility, phrasing);
+		verify(evaluations, never()).evaluate(any(), anyString(), any(), any());
+		verify(writer, never()).persist(any(), anyString(), anyString(), any());
+	}
+
+	@Test
+	void ensureMaterializesFromTheEpisodeExactEvaluationWithADeterministicEpisodeKey() {
+		var episodeId = UUID.fromString("50000000-0000-4000-8000-000000000668");
+		var evaluations = mock(SupportEvaluationV2Service.class);
+		var eligibility = mock(ResourceEligibilityClient.class);
+		var phrasing = mock(SupportGuidePhrasingClient.class);
+		var writer = mock(SupportGuideWriter.class);
+		when(evaluations.get(USER_ID, EVALUATION_ID)).thenReturn(evaluation(false));
+		stubCollaborators(eligibility, phrasing, writer, ResourceEligibilityOutcome.ELIGIBLE, false);
+		var service = new SupportGuideService(evaluations, eligibility, phrasing, writer,
+				Clock.fixed(NOW, ZoneOffset.UTC));
+
+		var view = service.ensureForEpisode(USER_ID, "user-token", UUID.randomUUID(), episodeId, EVALUATION_ID);
+
+		assertThat(view.supportEvaluationId()).isEqualTo(EVALUATION_ID);
+		verify(writer).persist(eq(USER_ID), eq("episode guide " + episodeId), anyString(), any());
+		verify(evaluations, never()).evaluate(any(), anyString(), any(), any());
+	}
+
 	private SupportGuideService.SupportGuideView generate(ResourceEligibilityOutcome outcome, boolean positive) {
 		return generate(outcome, positive, false);
 	}
@@ -96,6 +142,16 @@ class SupportGuideServiceTests {
 		var writer = mock(SupportGuideWriter.class);
 		var evaluation = evaluation(positive);
 		when(evaluations.evaluate(eq(USER_ID), anyString(), any(), any())).thenReturn(evaluation);
+		stubCollaborators(eligibility, phrasing, writer, outcome, aiAvailable);
+
+		var service = new SupportGuideService(evaluations, eligibility, phrasing, writer,
+				Clock.fixed(NOW, ZoneOffset.UTC));
+		return service.generate(USER_ID, "user-token", "support-guide-unit-0001", UUID.randomUUID(),
+				new SupportGuideService.GenerateCommand(PHQ9_ID, GAD7_ID));
+	}
+
+	private void stubCollaborators(ResourceEligibilityClient eligibility, SupportGuidePhrasingClient phrasing,
+			SupportGuideWriter writer, ResourceEligibilityOutcome outcome, boolean aiAvailable) {
 		when(eligibility.resolve(any(), eq("user-token"), any())).thenAnswer(invocation -> {
 			var request = (com.mentalbridge.care.resourceeligibility.generated.ResourceEligibilityContract.ResourceEligibilityBatchRequest) invocation.getArgument(0);
 			var results = request.requests().stream().map(query -> result(query.requestId(), query.resourceId(), outcome))
@@ -119,11 +175,6 @@ class SupportGuideServiceTests {
 					resource.externalUrl())).toList();
 			return new StoredGuide(guide, resources);
 		});
-
-		var service = new SupportGuideService(evaluations, eligibility, phrasing, writer,
-				Clock.fixed(NOW, ZoneOffset.UTC));
-		return service.generate(USER_ID, "user-token", "support-guide-unit-0001", UUID.randomUUID(),
-				new SupportGuideService.GenerateCommand(PHQ9_ID, GAD7_ID));
 	}
 
 	private EvaluationView evaluation(boolean positive) {
