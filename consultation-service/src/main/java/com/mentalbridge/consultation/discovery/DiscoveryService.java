@@ -47,7 +47,7 @@ public class DiscoveryService {
 	private static final Duration MINIMUM_LEAD_TIME = Duration.ofHours(4);
 	private static final Duration MAXIMUM_WINDOW = Duration.ofDays(90);
 	private static final int MAXIMUM_SLOTS_PER_SPECIALIST = 20;
-	private static final Set<String> LANGUAGES = Set.of("vi", "en");
+	private static final Set<String> LANGUAGES = Set.of("vi", "en", "zh", "fr");
 
 	private final JdbcClient jdbc;
 	private final ScreeningContextResolver screeningContexts;

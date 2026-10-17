@@ -76,7 +76,7 @@ public class SpecialistProfileController {
 			@NotBlank @Size(max = 120) String displayName,
 			@NotBlank @Size(max = 2000) String bio,
 			@NotEmpty @Size(max = 2) Set<@NotNull SupportArea> supportAreas,
-			@NotEmpty @Size(max = 2) Set<@Pattern(regexp = "^(vi|en)$") String> languages,
+			@NotEmpty @Size(max = 4) Set<@Pattern(regexp = "^(vi|en|zh|fr)$") String> languages,
 			@Min(0) @Max(80) int yearsOfExperience,
 			@NotBlank @Size(max = 64) String timezone) {
 

@@ -225,6 +225,12 @@ Approved-profile edits use the separate reviewed amendment direction in
 the live approved profile; only ADMIN approval promotes new public content.
 Existing appointments and availability are not rewritten by normal amendments.
 
+Specialist credential files follow [ADR 0041](adr/0041-specialist-credential-review.md)
+(`MB-SPECIALIST-CREDENTIAL-001`): originals remain private, ADMIN verifies,
+and only a verified, specialist-enabled badge may be public. The reviewed
+language list now includes `vi`, `en`, `zh`, and `fr`. Appointment duration and
+online-only modes are unchanged.
+
 ## 7. Service plans and consultation credits
 
 Current target entitlement for new `consultation-credit-v2` plan periods:

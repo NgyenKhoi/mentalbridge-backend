@@ -61,8 +61,12 @@ is specialist account ID; historical v1 cursors are stale under v2.
 The response exposes stable explanation codes and policy version but never a
 clinical-suitability claim or hidden weighted score. Public discovery fields
 exclude PracticeLocation, address, phone, external links, prices, free-intro
-claims, credentials, licenses, certificates, unsupported titles/specialties,
+claims, unverified credentials, unsupported titles/specialties,
 and sensitive Care/Journal/chat content.
+
+The specialist credential amendment in [ADR 0041](../adr/0041-specialist-credential-review.md)
+permits only ADMIN-verified, specialist-enabled badge titles in public profile
+surfaces. Originals and serial numbers remain private to the owner and ADMIN.
 
 A booking request may be created only when all are true:
 

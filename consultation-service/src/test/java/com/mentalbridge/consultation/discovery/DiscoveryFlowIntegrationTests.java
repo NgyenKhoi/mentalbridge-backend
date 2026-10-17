@@ -223,7 +223,7 @@ class DiscoveryFlowIntegrationTests extends ConsultationTestProperties {
 	void emptyAndInvalidRequestsReturnStableNonSensitiveResponses() throws Exception {
 		discover(UUID.randomUUID()).andExpect(status().isOk()).andExpect(jsonPath("$.items").isEmpty())
 				.andExpect(jsonPath("$.count").value(0));
-		mvc.perform(get("/api/v1/specialists").with(user(UUID.randomUUID())).param("language", "fr"))
+		mvc.perform(get("/api/v1/specialists").with(user(UUID.randomUUID())).param("language", "de"))
 				.andExpect(status().isBadRequest()).andExpect(jsonPath("$.code").value("VALIDATION_FAILED"));
 		mvc.perform(get("/api/v1/specialists").with(user(UUID.randomUUID())).param("timezone", "Mars/Olympus"))
 				.andExpect(status().isBadRequest()).andExpect(jsonPath("$.code").value("VALIDATION_FAILED"));

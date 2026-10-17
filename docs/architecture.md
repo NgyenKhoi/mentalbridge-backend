@@ -82,7 +82,7 @@ Use REST/JSON for authentication, CRUD, service-to-service queries, assessment s
 
 Only Realtime Service accepts WebSocket connections. It owns chat delivery, presence, receipts, and delivery of safe in-app notification payloads. Other services communicate with Realtime through REST or Kafka, never service-to-service WebSocket. Redis stores bounded ephemeral coordination state and coordinates low-latency cross-instance socket fan-out; it does not cache database queries or durable messages. MongoDB remains authoritative for durable conversations/messages.
 
-Cloudinary is the file/object-storage provider. Sensitive evaluation assets and chat attachments use private/authenticated delivery with signed, time-limited access; each business service remains the owner of its file metadata and authorization decisions. Specialist-document upload is not in scope. Brevo is the outbound transactional-email provider, while MentalBridge services retain authoritative notification and OTP state.
+Cloudinary is the file/object-storage provider. Sensitive evaluation assets, chat attachments, and specialist credentials use private/authenticated delivery with signed, time-limited access; each business service remains the owner of its file metadata and authorization decisions. Consultation owns specialist credential review under [ADR 0041](adr/0041-specialist-credential-review.md). Brevo is the outbound transactional-email provider, while MentalBridge services retain authoritative notification and OTP state.
 
 ### Kafka commands and events
 

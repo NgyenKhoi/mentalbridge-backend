@@ -18,7 +18,7 @@ import com.mentalbridge.consultation.shared.ApiException;
 @Service
 public class SpecialistProfileService {
 
-	private static final Set<String> SUPPORTED_LANGUAGES = Set.of("vi", "en");
+	private static final Set<String> SUPPORTED_LANGUAGES = Set.of("vi", "en", "zh", "fr");
 
 	private final SpecialistProfileRepository profiles;
 	private final SpecialistProfileStatusHistoryRepository history;
@@ -247,7 +247,7 @@ public class SpecialistProfileService {
 			throw validation("timezone", "INVALID_TIMEZONE", "Timezone must be a valid IANA identifier");
 		}
 		if (!SUPPORTED_LANGUAGES.containsAll(command.languages())) {
-			throw validation("languages", "UNSUPPORTED_LANGUAGE", "Supported languages are vi and en");
+			throw validation("languages", "UNSUPPORTED_LANGUAGE", "Supported languages are vi, en, zh and fr");
 		}
 	}
 

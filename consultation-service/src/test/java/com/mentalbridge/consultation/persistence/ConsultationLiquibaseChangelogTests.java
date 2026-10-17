@@ -42,7 +42,8 @@ class ConsultationLiquibaseChangelogTests {
 							"consultation-022-durable-checkout-preparation",
 							"consultation-023-livekit-video-room",
 							"consultation-024-livekit-participation-evidence",
-							"consultation-025-livekit-video-completion");
+							"consultation-025-livekit-video-completion",
+							"consultation-026-specialist-language-and-credentials");
 		}
 	}
 }
