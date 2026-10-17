@@ -47,7 +47,7 @@ class DiscoveryFlowIntegrationTests extends ConsultationTestProperties {
 		var approved = profile("APPROVED", "Approved specialist", "Asia/Ho_Chi_Minh",
 				SupportArea.ANXIETY_SYMPTOMS, "vi");
 		var selectable = slot(approved, Instant.now().plusSeconds(86_400), "IN_APP_CHAT", "ACTIVE");
-		slot(approved, Instant.now().plusSeconds(3_600), "IN_APP_CHAT", "ACTIVE");
+		slot(approved, Instant.now().minusSeconds(7_200), "IN_APP_CHAT", "ACTIVE");
 		slot(approved, Instant.now().plusSeconds(90_000), "IN_APP_CHAT", "WITHDRAWN");
 		slot(approved, Instant.now().plusSeconds(93_600), "IN_APP_VIDEO", "ACTIVE");
 		var pending = profile("PENDING", "Pending specialist", "Asia/Ho_Chi_Minh",

@@ -56,8 +56,9 @@ dispute adjustment; readers must preserve its completion fact and provenance.
 ## Timing, evidence and modality
 
 - Every selectable slot is exactly 60 minutes, UTC plus an IANA display
-  timezone. Normal booking lead time remains four hours. The MB-623 test clock
-  skips waiting only inside disposable fixtures; runtime booking is unchanged.
+  timezone. The owner amendment of 2026-10-18 removes advance booking lead time:
+  an unexpired active slot is selectable even after its start. Specialist
+  confirmation remains required, and interactive access closes at scheduled end.
 - Chat waiting begins ten minutes before start. Waiting may permit check-in,
   never sending. Active send permission comes from current owner eligibility.
 - `chat-session-completion-v1`: both check-ins, an accepted message for each

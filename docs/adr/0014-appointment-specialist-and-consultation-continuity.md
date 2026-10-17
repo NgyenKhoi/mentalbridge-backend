@@ -1,5 +1,10 @@
 # ADR 0014: Appointment, specialist, and consultation continuity v1
 
+> Timing amendment: the owner's 2026-10-18 MB-384 decision, recorded in
+> `docs/policies/consultation-specialist-policy-v2.md`, supersedes the historical
+> four-hour advance-booking rule below. Unexpired active windows are immediately
+> selectable; assigned-specialist confirmation and the scheduled end remain authoritative.
+
 - Status: Accepted
 - Date: 2026-09-13
 - Decision ID: `MB-CONSULTATION-FLOW-001`
