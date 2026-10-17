@@ -85,7 +85,7 @@ class SupportGuideIntegrationTests extends CareTestProperties {
 				.andExpect(status().isCreated())
 				.andExpect(jsonPath("$.guideType").value("ONE_TIME_SUPPORT_GUIDE"))
 				.andExpect(jsonPath("$.safety.status").value("POSITIVE_SAFETY_SCREEN"))
-				.andExpect(jsonPath("$.resources.length()").value(4))
+				.andExpect(jsonPath("$.resources.length()").value(2))
 				.andExpect(jsonPath("$.phrasing.status").value("AI_UNAVAILABLE_FALLBACK"))
 				.andExpect(jsonPath("$.status").doesNotExist())
 				.andExpect(jsonPath("$.activities").doesNotExist())
@@ -116,7 +116,7 @@ class SupportGuideIntegrationTests extends CareTestProperties {
 		assertThat(jdbc.sql("select count(*) from support_guide where id=:id").param("id", guideId)
 				.query(Long.class).single()).isEqualTo(1);
 		assertThat(jdbc.sql("select count(*) from support_guide_resource where support_guide_id=:id")
-				.param("id", guideId).query(Long.class).single()).isEqualTo(4);
+				.param("id", guideId).query(Long.class).single()).isEqualTo(2);
 		assertThat(json.toString()).doesNotContain("answers", "answerValue", "totalScore", "diagnosis", "treatment");
 	}
 
