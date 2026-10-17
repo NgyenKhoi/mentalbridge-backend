@@ -10,6 +10,14 @@ $repositoryRoot = Split-Path -Parent $PSScriptRoot
 $placeholder = 'mb650-compose-boundary-placeholder-never-a-real-secret'
 $variableName = 'CARE_SUPPORT_PLAN_COMPANION_SERVICE_TOKEN'
 $previousValue = [Environment]::GetEnvironmentVariable($variableName, 'Process')
+$liveKitEnvironment = [ordered]@{
+    'CONSULTATION_VIDEO_ENABLED' = 'true'
+    'LIVEKIT_URL' = 'wss://mb384-boundary.livekit.cloud'
+    'LIVEKIT_API_KEY' = 'mb384-boundary-key'
+    'LIVEKIT_API_SECRET' = 'mb384-boundary-secret'
+    'LIVEKIT_TOKEN_TTL' = 'PT2M'
+}
+$previousLiveKitEnvironment = @{}
 $failures = [System.Collections.Generic.List[string]]::new()
 
 function Add-Failure([string]$Message) {
@@ -23,6 +31,10 @@ function Has-Property($Object, [string]$Name) {
 Push-Location $repositoryRoot
 try {
     [Environment]::SetEnvironmentVariable($variableName, $placeholder, 'Process')
+    foreach ($entry in $liveKitEnvironment.GetEnumerator()) {
+        $previousLiveKitEnvironment[$entry.Key] = [Environment]::GetEnvironmentVariable($entry.Key, 'Process')
+        [Environment]::SetEnvironmentVariable($entry.Key, $entry.Value, 'Process')
+    }
     $jsonLines = @(& docker compose --file $ComposeFile --env-file $EnvironmentFile --profile demo --profile full-test config --format json --no-env-resolution)
     if ($LASTEXITCODE -ne 0) {
         throw 'docker compose config failed'
@@ -80,13 +92,48 @@ try {
         }
     }
 
+    if (-not (Has-Property $configuration.services 'consultation')) {
+        Add-Failure "Missing Compose service 'consultation'"
+    }
+    else {
+        $consultation = $configuration.services.consultation
+        if (-not (Has-Property $consultation 'environment')) {
+            Add-Failure "Service 'consultation' has no environment configuration"
+        }
+        else {
+            foreach ($entry in $liveKitEnvironment.GetEnumerator()) {
+                if (-not (Has-Property $consultation.environment $entry.Key)) {
+                    Add-Failure "Service 'consultation' is missing '$($entry.Key)'"
+                    continue
+                }
+                if ([string]$consultation.environment.PSObject.Properties[$entry.Key].Value -ne $entry.Value) {
+                    Add-Failure "Service 'consultation' does not receive '$($entry.Key)' from deployment configuration"
+                }
+            }
+        }
+    }
+
+    foreach ($serviceProperty in $configuration.services.PSObject.Properties) {
+        if ($serviceProperty.Name -eq 'consultation' -or -not (Has-Property $serviceProperty.Value 'environment')) {
+            continue
+        }
+        foreach ($entry in $liveKitEnvironment.GetEnumerator()) {
+            if (Has-Property $serviceProperty.Value.environment $entry.Key) {
+                Add-Failure "Service '$($serviceProperty.Name)' must not receive '$($entry.Key)'"
+            }
+        }
+    }
+
     if ($failures.Count -gt 0) {
         $failures | ForEach-Object { Write-Error $_ }
         throw "Compose credential boundary verification failed with $($failures.Count) error(s)"
     }
-    Write-Output 'Compose Companion credential boundary verified for Care and Journal/AI only.'
+    Write-Output 'Compose credential boundaries verified for Companion and Consultation LiveKit configuration.'
 }
 finally {
     [Environment]::SetEnvironmentVariable($variableName, $previousValue, 'Process')
+    foreach ($entry in $previousLiveKitEnvironment.GetEnumerator()) {
+        [Environment]::SetEnvironmentVariable($entry.Key, $entry.Value, 'Process')
+    }
     Pop-Location
 }
