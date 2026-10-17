@@ -55,10 +55,12 @@ export interface Revision {
   revision: number;
   createdAt: Date;
   content: EncryptedContent;
+  mood?: EncryptedContent;
   contentByteLength: number;
   contentHash: string;
   analysisInvalidatedAt: Date | null;
 }
+export type JournalMood = "GREAT" | "GOOD" | "OKAY" | "LOW" | "VERY_LOW";
 export interface MutationCommand {
   keyHash: string;
   fingerprint: string;
@@ -121,9 +123,16 @@ export interface JournalStore {
     deletedAt: Date,
     command: MutationCommand,
   ): Promise<Entry | null>;
+  deleteAnalyses(owner: string, id: string): Promise<void>;
 }
 
 const uuid = z.uuid();
+const moodSchema = z.enum(["GREAT", "GOOD", "OKAY", "LOW", "VERY_LOW"]);
+const journalTextSchema = z
+  .string()
+  .min(1)
+  .max(12_000)
+  .refine((text) => text.trim().length > 0, "Journal text cannot be blank");
 const tagsSchema = z
   .array(z.string().trim().min(1).max(40))
   .max(20)
@@ -132,13 +141,15 @@ const createSchema = z
   .object({
     clientEntryId: uuid,
     occurredAt: z.iso.datetime({ offset: true }),
-    content: z.object({ text: z.string().min(1).max(12_000) }).strict(),
+    content: z.object({ text: journalTextSchema }).strict(),
+    mood: moodSchema.optional(),
     tags: tagsSchema.default([]),
   })
   .strict();
 const reviseSchema = z
   .object({
-    content: z.object({ text: z.string().min(1).max(12_000) }).strict(),
+    content: z.object({ text: journalTextSchema }).strict(),
+    mood: moodSchema.optional(),
     tags: tagsSchema.optional(),
   })
   .strict();
@@ -235,8 +246,6 @@ export class JournalEncryption {
     };
   }
   decrypt(ownerAccountId: string, entryId: string, revision: Revision): string {
-    if (revision.content.keyId !== this.configuration.JOURNAL_ENCRYPTION_KEY_ID)
-      throw new InternalServerErrorException();
     try {
       const decipher = createDecipheriv(
         "aes-256-gcm",
@@ -253,6 +262,63 @@ export class JournalEncryption {
         decipher.update(binaryBuffer(revision.content.ciphertext)),
         decipher.final(),
       ]).toString("utf8");
+    } catch {
+      throw new InternalServerErrorException();
+    }
+  }
+  encryptMood(
+    ownerAccountId: string,
+    entryId: string,
+    revision: number,
+    mood: JournalMood,
+  ): EncryptedContent {
+    const iv = randomBytes(12);
+    const encryptedAt = new Date();
+    const cipher = createCipheriv(
+      "aes-256-gcm",
+      this.configuration.JOURNAL_ENCRYPTION_KEY,
+      iv,
+    );
+    cipher.setAAD(
+      Buffer.from(`${ownerAccountId}:${entryId}:${String(revision)}:mood`),
+    );
+    const ciphertext = Buffer.concat([
+      cipher.update(mood, "utf8"),
+      cipher.final(),
+    ]);
+    return {
+      ciphertext,
+      iv,
+      tag: cipher.getAuthTag(),
+      algorithm: "AES-256-GCM",
+      keyId: this.configuration.JOURNAL_ENCRYPTION_KEY_ID,
+      encryptedAt,
+    };
+  }
+  decryptMood(
+    ownerAccountId: string,
+    entryId: string,
+    revision: Revision,
+  ): JournalMood | null {
+    if (!revision.mood) return null;
+    try {
+      const decipher = createDecipheriv(
+        "aes-256-gcm",
+        this.configuration.JOURNAL_ENCRYPTION_KEY,
+        binaryBuffer(revision.mood.iv),
+      );
+      decipher.setAAD(
+        Buffer.from(
+          `${ownerAccountId}:${entryId}:${String(revision.revision)}:mood`,
+        ),
+      );
+      decipher.setAuthTag(binaryBuffer(revision.mood.tag));
+      return moodSchema.parse(
+        Buffer.concat([
+          decipher.update(binaryBuffer(revision.mood.ciphertext)),
+          decipher.final(),
+        ]).toString("utf8"),
+      );
     } catch {
       throw new InternalServerErrorException();
     }
@@ -278,14 +344,43 @@ export class JournalEncryption {
 export class MongoJournalStore implements JournalStore, OnApplicationShutdown {
   private readonly client: MongoClient;
   private readonly collection: Collection<Entry>;
+  private readonly analysisJobs: Collection<{
+    _id: string;
+    ownerAccountId: string;
+    journalId: string;
+  }>;
+  private readonly analysisResults: Collection<{ jobId: string }>;
+  private readonly longitudinalAnalysisJobs: Collection<{
+    _id: string;
+    ownerAccountId: string;
+    sourceJournalRevisions: { journalId: string }[];
+  }>;
+  private readonly longitudinalAnalysisResults: Collection<{
+    jobId: string;
+    userId: string;
+    sourceJournalRevisions: { journalId: string }[];
+  }>;
   constructor(configuration: Configuration = loadConfiguration()) {
     this.client = new MongoClient(configuration.MONGODB_URI, {
       connectTimeoutMS: configuration.MONGODB_CONNECTION_TIMEOUT_MS,
       serverSelectionTimeoutMS: configuration.MONGODB_CONNECTION_TIMEOUT_MS,
     });
-    this.collection = this.client
-      .db(configuration.MONGODB_DATABASE)
-      .collection<Entry>("journal_entries");
+    const database = this.client.db(configuration.MONGODB_DATABASE);
+    this.collection = database.collection<Entry>("journal_entries");
+    this.analysisJobs = database.collection<{
+      _id: string;
+      ownerAccountId: string;
+      journalId: string;
+    }>("analysis_jobs");
+    this.analysisResults = database.collection<{ jobId: string }>(
+      "journal_analysis_results",
+    );
+    this.longitudinalAnalysisJobs = database.collection(
+      "longitudinal_analysis_jobs",
+    );
+    this.longitudinalAnalysisResults = database.collection(
+      "journal_longitudinal_analysis_results",
+    );
   }
   private async entries() {
     try {
@@ -413,6 +508,39 @@ export class MongoJournalStore implements JournalStore, OnApplicationShutdown {
       { returnDocument: "after" },
     );
   }
+  async deleteAnalyses(ownerAccountId: string, id: string) {
+    await this.entries();
+    const jobs = await this.analysisJobs
+      .find({ ownerAccountId, journalId: id })
+      .project<{ _id: string }>({ _id: 1 })
+      .toArray();
+    if (jobs.length > 0)
+      await this.analysisResults.deleteMany({
+        jobId: { $in: jobs.map((job) => job._id) },
+      });
+    await this.analysisJobs.deleteMany({ ownerAccountId, journalId: id });
+    const longitudinalJobs = await this.longitudinalAnalysisJobs
+      .find({
+        ownerAccountId,
+        "sourceJournalRevisions.journalId": id,
+      })
+      .project<{ _id: string }>({ _id: 1 })
+      .toArray();
+    const longitudinalJobIds = longitudinalJobs.map((job) => job._id);
+    await this.longitudinalAnalysisResults.deleteMany({
+      userId: ownerAccountId,
+      $or: [
+        { "sourceJournalRevisions.journalId": id },
+        ...(longitudinalJobIds.length === 0
+          ? []
+          : [{ jobId: { $in: longitudinalJobIds } }]),
+      ],
+    });
+    await this.longitudinalAnalysisJobs.deleteMany({
+      ownerAccountId,
+      "sourceJournalRevisions.journalId": id,
+    });
+  }
 }
 
 @Injectable()
@@ -471,6 +599,11 @@ export class JournalService {
       entry._id,
       revision,
     );
+    const mood = this.encryption.decryptMood(
+      entry.ownerAccountId,
+      entry._id,
+      revision,
+    );
     return {
       id: entry._id,
       ownerAccountId: entry.ownerAccountId,
@@ -480,6 +613,7 @@ export class JournalService {
       updatedAt: (updatedAt ?? entry.updatedAt).toISOString(),
       deleted: false,
       tags,
+      mood,
       encryption: {
         algorithm: revision.content.algorithm,
         keyId: revision.content.keyId,
@@ -533,6 +667,16 @@ export class JournalService {
       revision: 1,
       createdAt: now,
       content: this.encryption.encrypt(ownerAccountId, id, 1, text),
+      ...(parsed.data.mood
+        ? {
+            mood: this.encryption.encryptMood(
+              ownerAccountId,
+              id,
+              1,
+              parsed.data.mood,
+            ),
+          }
+        : {}),
       contentByteLength: Buffer.byteLength(text, "utf8"),
       contentHash: this.encryption.contentHash(text),
       analysisInvalidatedAt: null,
@@ -588,6 +732,44 @@ export class JournalService {
     if (!entry || entry.deleted) throw new NotFoundException();
     return this.output(entry);
   }
+  async completionEvidence(request: Request, id: string) {
+    if (!uuid.safeParse(id).success) throw new BadRequestException();
+    const subjectUserId = owner(request);
+    let entry: Entry | null;
+    try {
+      entry = await this.store.find(subjectUserId, id);
+    } catch {
+      throw new ServiceUnavailableException();
+    }
+    const verifiedAt = new Date();
+    if (
+      entry &&
+      (entry.ownerAccountId !== subjectUserId ||
+        entry._id !== id ||
+        typeof entry.deleted !== "boolean" ||
+        !(entry.createdAt instanceof Date) ||
+        !Number.isFinite(entry.createdAt.getTime()) ||
+        entry.createdAt > verifiedAt)
+    )
+      throw new ServiceUnavailableException();
+    return {
+      schemaVersion: "journal-entry-completion-evidence-v1" as const,
+      subjectUserId,
+      journalId: id,
+      state: !entry ? "MISSING" : entry.deleted ? "DELETED" : "RECORDED",
+      fact:
+        entry && !entry.deleted
+          ? {
+              ownerDomain: "JOURNAL_AI" as const,
+              kind: "JOURNAL_ENTRY" as const,
+              factId: entry._id,
+              factRevision: "1" as const,
+              occurredAt: entry.createdAt.toISOString(),
+            }
+          : null,
+      verifiedAt: verifiedAt.toISOString(),
+    };
+  }
   async list(request: Request, query: Record<string, string | undefined>) {
     const parsed = listSchema.safeParse(query);
     if (!parsed.success) throw new BadRequestException();
@@ -641,10 +823,27 @@ export class JournalService {
     const nextRevision = expectedRevision + 1;
     const text = parsed.data.content.text;
     const tags = parsed.data.tags ?? entry.tags;
+    const mood =
+      parsed.data.mood ??
+      this.encryption.decryptMood(
+        entry.ownerAccountId,
+        entry._id,
+        this.revision(entry),
+      );
     const revision: Revision = {
       revision: nextRevision,
       createdAt: now,
       content: this.encryption.encrypt(ownerAccountId, id, nextRevision, text),
+      ...(mood
+        ? {
+            mood: this.encryption.encryptMood(
+              ownerAccountId,
+              id,
+              nextRevision,
+              mood,
+            ),
+          }
+        : {}),
       contentByteLength: Buffer.byteLength(text, "utf8"),
       contentHash: this.encryption.contentHash(text),
       analysisInvalidatedAt: now,
@@ -679,7 +878,10 @@ export class JournalService {
     const entry = await this.store.find(ownerAccountId, id);
     if (!entry) throw new NotFoundException();
     const replay = this.replay(entry, command);
-    if (replay) return this.replayTombstone(entry, replay);
+    if (replay) {
+      await this.store.deleteAnalyses(ownerAccountId, id);
+      return this.replayTombstone(entry, replay);
+    }
     if (entry.deleted) throw new NotFoundException();
     const updated = await this.store.tombstone(
       ownerAccountId,
@@ -690,9 +892,13 @@ export class JournalService {
     if (!updated) {
       const raced = await this.store.find(ownerAccountId, id);
       const racedReplay = raced ? this.replay(raced, command) : undefined;
-      if (raced && racedReplay) return this.replayTombstone(raced, racedReplay);
+      if (raced && racedReplay) {
+        await this.store.deleteAnalyses(ownerAccountId, id);
+        return this.replayTombstone(raced, racedReplay);
+      }
       throw new NotFoundException();
     }
+    await this.store.deleteAnalyses(ownerAccountId, id);
     return this.replayTombstone(updated, {
       ...command,
       response: { kind: "tombstone" },
@@ -733,6 +939,15 @@ export class JournalController {
     @Param("journalId") id: string,
   ) {
     return this.service.revise(request, id);
+  }
+  @Get(":journalId/completion-evidence") completionEvidence(
+    @Req() request: Request,
+    @Param("journalId") id: string,
+    @Res({ passthrough: true })
+    response: { setHeader(name: string, value: string): void },
+  ) {
+    response.setHeader("Cache-Control", "no-store");
+    return this.service.completionEvidence(request, id);
   }
   @Delete(":journalId") remove(
     @Req() request: Request,

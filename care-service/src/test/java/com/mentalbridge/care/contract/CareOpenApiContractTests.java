@@ -4,70 +4,281 @@ import static org.assertj.core.api.Assertions.assertThat;
 
 import java.nio.file.Path;
 import java.util.HashSet;
+import java.util.List;
+import java.util.Map;
 import java.util.Set;
 
 import org.junit.jupiter.api.Test;
 
+import com.fasterxml.jackson.databind.JsonNode;
+
 import io.swagger.v3.oas.models.Operation;
+import io.swagger.v3.oas.models.media.Schema;
 import io.swagger.v3.parser.OpenAPIV3Parser;
 import io.swagger.v3.parser.core.models.ParseOptions;
 
 class CareOpenApiContractTests {
 
 	private static final Set<String> ALL_OPERATIONS = Set.of(
+			"POST /api/v2/support-plans",
+			"GET /api/v2/support-plans/history",
+			"POST /api/v2/support-plans/{supportPlanId}/activate",
+			"PUT /api/v2/support-plans/{supportPlanId}/status",
+			"POST /api/v2/support-plans/{supportPlanId}/replacement-review",
+			"POST /api/v2/support-plans/{supportPlanId}/replace",
+			"PUT /api/v2/support-plan-occurrences/{occurrenceId}/state",
+			"POST /api/v2/support-plan-occurrences/{occurrenceId}/emotion-check-in/reconcile",
+			"POST /api/v2/support-plan-occurrences/{occurrenceId}/journal/reconcile",
 			"GET /api/v1/profile",
 			"PUT /api/v1/profile",
 			"GET /api/v1/consents",
+			"GET /api/v1/consents/ai-processing/authorization",
 			"POST /api/v1/consent-decisions",
 			"GET /api/v1/privacy-disclosures/current",
+			"GET /api/v1/ai-processing-disclosures/current",
 			"GET /api/v1/questionnaires/{instrument}/current",
 			"GET /api/v1/questionnaires/definitions/{definitionId}",
 			"GET /api/v1/assessments",
 			"POST /api/v1/assessments",
 			"GET /api/v1/assessments/{assessmentId}",
 			"GET /api/v1/assessments/{assessmentId}/progress",
+			"GET /api/v1/activity-dashboard",
+			"POST /api/v1/screening-episodes",
+			"GET /api/v1/screening-episodes/current",
+			"GET /api/v1/screening-episodes/history",
+			"GET /api/v1/guided-journey/current",
+			"POST /api/v1/screening-episodes/{episodeId}/assessments/{instrument}",
+			"POST /api/v1/screening-episodes/{episodeId}/support-evaluation",
+			"POST /api/v1/reassessment-self-reports",
+			"GET /api/v1/reassessment-self-reports/current",
+			"PUT /api/v1/reassessment-self-reports/{selfReportId}",
+			"DELETE /api/v1/reassessment-self-reports/{selfReportId}",
+			"GET /api/v1/reassessment-summaries",
+			"POST /api/v1/reassessment-summaries",
+			"GET /api/v1/reassessment-summaries/context",
+			"GET /api/v1/reassessment-summaries/current",
+			"GET /api/v1/reassessment-summaries/{summaryId}",
+			"GET /api/v1/support-evaluations",
 			"POST /api/v1/support-evaluations",
 			"GET /api/v1/support-evaluations/{supportEvaluationId}",
+			"GET /api/v1/support-evaluations/{supportEvaluationId}/combined-meaning",
+			"PUT /api/v1/consultation-briefs/{appointmentId}/draft",
+			"GET /api/v1/consultation-briefs/{appointmentId}",
+			"DELETE /api/v1/consultation-briefs/{appointmentId}",
+			"POST /api/v1/consultation-briefs/{appointmentId}/approve",
+			"POST /api/v1/consultation-briefs/{appointmentId}/revoke",
+			"POST /api/v1/consultation-briefs/{appointmentId}/ai-draft-jobs",
+			"GET /api/v1/consultation-briefs/{appointmentId}/ai-draft-jobs/{jobId}",
+			"GET /api/v1/specialist/consultation-briefs/{appointmentId}",
+			"GET /api/v1/specialist/client-continuity",
+			"GET /api/v1/consultation-briefs/screening-contexts",
+			"POST /api/v1/plan-change-requests",
+			"GET /api/v1/plan-change-requests/by-proposal/{proposalId}",
+			"GET /api/v1/specialist/plan-change-requests/by-proposal/{proposalId}",
+			"PUT /api/v1/plan-change-requests/{requestId}/decision",
+			"POST /api/v1/support-plans",
+			"GET /api/v1/support-plans/current-draft",
+			"GET /api/v1/support-plans/current",
+			"GET /api/v1/support-plans/history",
+			"GET /api/v1/support-plans/{supportPlanId}",
+			"PUT /api/v1/support-plans/{supportPlanId}/choices",
+			"POST /api/v1/support-plans/{supportPlanId}/activate",
+			"PUT /api/v1/support-plans/{supportPlanId}/status",
+			"POST /api/v1/support-plans/{supportPlanId}/replace",
+			"POST /api/v1/support-plans/{supportPlanId}/replacement-review",
+			"GET /api/v1/support-plan-occurrences",
+			"GET /api/v1/support-plan-occurrences/{occurrenceId}",
+			"PUT /api/v1/support-plan-occurrences/{occurrenceId}/state",
+			"PUT /api/v1/support-plan-occurrences/{occurrenceId}/engagement",
+			"DELETE /api/v1/support-plan-occurrences/{occurrenceId}/engagement",
+			"GET /api/v2/support-plans/current",
+			"GET /api/v2/support-plans/current-draft",
+			"GET /api/v2/support-plans/{supportPlanId}",
+			"PUT /api/v2/support-plans/{supportPlanId}/actions/{actionId}/schedule",
+			"POST /api/v2/support-plans/{supportPlanId}/actions/{actionId}/companion-explanation",
+			"GET /api/v2/support-plan-occurrences",
+			"GET /api/v2/support-plan-personalization",
+			"PUT /api/v2/support-plan-personalization",
 			"POST /api/v1/anonymous-assessment-sessions",
 			"POST /api/v1/anonymous-assessment-sessions/{sessionId}/assessments",
-			"GET /api/v1/anonymous-assessment-sessions/{sessionId}/assessments/{assessmentId}");
+			"GET /api/v1/anonymous-assessment-sessions/{sessionId}/assessments/{assessmentId}",
+			"POST /api/v1/safety-directory-lookups");
 
 	private static final Set<String> IMPLEMENTED_PATHS = Set.of(
+			"/api/v2/support-plans",
+			"/api/v2/support-plans/history",
+			"/api/v2/support-plans/{supportPlanId}/activate",
+			"/api/v2/support-plans/{supportPlanId}/status",
+			"/api/v2/support-plans/{supportPlanId}/replacement-review",
+			"/api/v2/support-plans/{supportPlanId}/replace",
+			"/api/v2/support-plan-occurrences/{occurrenceId}/state",
+			"/api/v2/support-plan-occurrences/{occurrenceId}/emotion-check-in/reconcile",
+			"/api/v2/support-plan-occurrences/{occurrenceId}/journal/reconcile",
 			"/api/v1/profile",
 			"/api/v1/consents",
+			"/api/v1/consents/ai-processing/authorization",
 			"/api/v1/consent-decisions",
 			"/api/v1/privacy-disclosures/current",
+			"/api/v1/ai-processing-disclosures/current",
 			"/api/v1/questionnaires/{instrument}/current",
 			"/api/v1/questionnaires/definitions/{definitionId}",
 			"/api/v1/assessments",
 			"/api/v1/assessments/{assessmentId}",
 			"/api/v1/assessments/{assessmentId}/progress",
+			"/api/v1/activity-dashboard",
+			"/api/v1/screening-episodes",
+			"/api/v1/screening-episodes/current",
+			"/api/v1/screening-episodes/history",
+			"/api/v1/guided-journey/current",
+			"/api/v1/screening-episodes/{episodeId}/assessments/{instrument}",
+			"/api/v1/screening-episodes/{episodeId}/support-evaluation",
+			"/api/v1/reassessment-self-reports",
+			"/api/v1/reassessment-self-reports/current",
+			"/api/v1/reassessment-self-reports/{selfReportId}",
+			"/api/v1/reassessment-summaries",
+			"/api/v1/reassessment-summaries/context",
+			"/api/v1/reassessment-summaries/current",
+			"/api/v1/reassessment-summaries/{summaryId}",
 			"/api/v1/support-evaluations",
 			"/api/v1/support-evaluations/{supportEvaluationId}",
+			"/api/v1/support-evaluations/{supportEvaluationId}/combined-meaning",
+			"/api/v1/consultation-briefs/{appointmentId}/draft",
+			"/api/v1/consultation-briefs/{appointmentId}",
+			"/api/v1/consultation-briefs/{appointmentId}/approve",
+			"/api/v1/consultation-briefs/{appointmentId}/revoke",
+			"/api/v1/consultation-briefs/{appointmentId}/ai-draft-jobs",
+			"/api/v1/consultation-briefs/{appointmentId}/ai-draft-jobs/{jobId}",
+			"/api/v1/specialist/consultation-briefs/{appointmentId}",
+			"/api/v1/specialist/client-continuity",
+			"/api/v1/consultation-briefs/screening-contexts",
+			"/api/v1/plan-change-requests",
+			"/api/v1/plan-change-requests/by-proposal/{proposalId}",
+			"/api/v1/specialist/plan-change-requests/by-proposal/{proposalId}",
+			"/api/v1/plan-change-requests/{requestId}/decision",
+			"/api/v1/support-plans",
+			"/api/v1/support-plans/current-draft",
+			"/api/v1/support-plans/current",
+			"/api/v1/support-plans/history",
+			"/api/v1/support-plans/{supportPlanId}",
+			"/api/v1/support-plans/{supportPlanId}/choices",
+			"/api/v1/support-plans/{supportPlanId}/activate",
+			"/api/v1/support-plans/{supportPlanId}/status",
+			"/api/v1/support-plans/{supportPlanId}/replace",
+			"/api/v1/support-plans/{supportPlanId}/replacement-review",
+			"/api/v1/support-plan-occurrences",
+			"/api/v1/support-plan-occurrences/{occurrenceId}",
+			"/api/v1/support-plan-occurrences/{occurrenceId}/state",
+			"/api/v1/support-plan-occurrences/{occurrenceId}/engagement",
+			"/api/v2/support-plans/current",
+			"/api/v2/support-plans/current-draft",
+			"/api/v2/support-plans/{supportPlanId}",
+			"/api/v2/support-plans/{supportPlanId}/actions/{actionId}/schedule",
+			"/api/v2/support-plans/{supportPlanId}/actions/{actionId}/companion-explanation",
+			"/api/v2/support-plan-occurrences",
+			"/api/v2/support-plan-personalization",
 			"/api/v1/anonymous-assessment-sessions",
 			"/api/v1/anonymous-assessment-sessions/{sessionId}/assessments",
-			"/api/v1/anonymous-assessment-sessions/{sessionId}/assessments/{assessmentId}");
+			"/api/v1/anonymous-assessment-sessions/{sessionId}/assessments/{assessmentId}",
+			"/api/v1/safety-directory-lookups");
 
 	private static final Set<String> BEARER_OPERATIONS = Set.of(
+			"POST /api/v2/support-plans",
+			"GET /api/v2/support-plans/history",
+			"POST /api/v2/support-plans/{supportPlanId}/activate",
+			"PUT /api/v2/support-plans/{supportPlanId}/status",
+			"POST /api/v2/support-plans/{supportPlanId}/replacement-review",
+			"POST /api/v2/support-plans/{supportPlanId}/replace",
+			"PUT /api/v2/support-plan-occurrences/{occurrenceId}/state",
+			"POST /api/v2/support-plan-occurrences/{occurrenceId}/emotion-check-in/reconcile",
+			"POST /api/v2/support-plan-occurrences/{occurrenceId}/journal/reconcile",
 			"GET /api/v1/profile",
 			"PUT /api/v1/profile",
 			"GET /api/v1/consents",
+			"GET /api/v1/consents/ai-processing/authorization",
 			"POST /api/v1/consent-decisions",
 			"GET /api/v1/assessments",
 			"POST /api/v1/assessments",
 			"GET /api/v1/assessments/{assessmentId}",
 			"GET /api/v1/assessments/{assessmentId}/progress",
+			"GET /api/v1/activity-dashboard",
+			"POST /api/v1/screening-episodes",
+			"GET /api/v1/screening-episodes/current",
+			"GET /api/v1/screening-episodes/history",
+			"GET /api/v1/guided-journey/current",
+			"POST /api/v1/screening-episodes/{episodeId}/assessments/{instrument}",
+			"POST /api/v1/screening-episodes/{episodeId}/support-evaluation",
+			"POST /api/v1/reassessment-self-reports",
+			"GET /api/v1/reassessment-self-reports/current",
+			"PUT /api/v1/reassessment-self-reports/{selfReportId}",
+			"DELETE /api/v1/reassessment-self-reports/{selfReportId}",
+			"GET /api/v1/reassessment-summaries",
+			"POST /api/v1/reassessment-summaries",
+			"GET /api/v1/reassessment-summaries/context",
+			"GET /api/v1/reassessment-summaries/current",
+			"GET /api/v1/reassessment-summaries/{summaryId}",
+			"GET /api/v1/support-evaluations",
 			"POST /api/v1/support-evaluations",
-			"GET /api/v1/support-evaluations/{supportEvaluationId}");
+			"GET /api/v1/support-evaluations/{supportEvaluationId}",
+			"GET /api/v1/support-evaluations/{supportEvaluationId}/combined-meaning",
+			"PUT /api/v1/consultation-briefs/{appointmentId}/draft",
+			"GET /api/v1/consultation-briefs/{appointmentId}",
+			"DELETE /api/v1/consultation-briefs/{appointmentId}",
+			"POST /api/v1/consultation-briefs/{appointmentId}/approve",
+			"POST /api/v1/consultation-briefs/{appointmentId}/revoke",
+			"POST /api/v1/consultation-briefs/{appointmentId}/ai-draft-jobs",
+			"GET /api/v1/consultation-briefs/{appointmentId}/ai-draft-jobs/{jobId}",
+			"GET /api/v1/specialist/consultation-briefs/{appointmentId}",
+			"GET /api/v1/specialist/client-continuity",
+			"GET /api/v1/consultation-briefs/screening-contexts",
+			"POST /api/v1/plan-change-requests",
+			"GET /api/v1/plan-change-requests/by-proposal/{proposalId}",
+			"GET /api/v1/specialist/plan-change-requests/by-proposal/{proposalId}",
+			"PUT /api/v1/plan-change-requests/{requestId}/decision",
+			"POST /api/v1/support-plans",
+			"GET /api/v1/support-plans/current-draft",
+			"GET /api/v1/support-plans/current",
+			"GET /api/v1/support-plans/history",
+			"GET /api/v1/support-plans/{supportPlanId}",
+			"PUT /api/v1/support-plans/{supportPlanId}/choices",
+			"POST /api/v1/support-plans/{supportPlanId}/activate",
+			"PUT /api/v1/support-plans/{supportPlanId}/status",
+			"POST /api/v1/support-plans/{supportPlanId}/replace",
+			"POST /api/v1/support-plans/{supportPlanId}/replacement-review",
+			"GET /api/v1/support-plan-occurrences",
+			"GET /api/v1/support-plan-occurrences/{occurrenceId}",
+			"PUT /api/v1/support-plan-occurrences/{occurrenceId}/state",
+			"PUT /api/v1/support-plan-occurrences/{occurrenceId}/engagement",
+			"DELETE /api/v1/support-plan-occurrences/{occurrenceId}/engagement",
+			"GET /api/v2/support-plans/current",
+			"GET /api/v2/support-plans/current-draft",
+			"GET /api/v2/support-plans/{supportPlanId}",
+			"PUT /api/v2/support-plans/{supportPlanId}/actions/{actionId}/schedule",
+			"POST /api/v2/support-plans/{supportPlanId}/actions/{actionId}/companion-explanation",
+			"GET /api/v2/support-plan-occurrences",
+			"GET /api/v2/support-plan-personalization",
+			"PUT /api/v2/support-plan-personalization");
 
 	private static final Set<String> ANONYMOUS_TOKEN_OPERATIONS = Set.of(
 			"POST /api/v1/anonymous-assessment-sessions/{sessionId}/assessments",
 			"GET /api/v1/anonymous-assessment-sessions/{sessionId}/assessments/{assessmentId}");
 
 	private static final Set<String> IDEMPOTENT_OPERATIONS = Set.of(
+			"POST /api/v2/support-plans",
+			"POST /api/v2/support-plans/{supportPlanId}/activate",
+			"POST /api/v2/support-plans/{supportPlanId}/replace",
 			"POST /api/v1/consent-decisions",
 			"POST /api/v1/assessments",
+			"POST /api/v1/screening-episodes/{episodeId}/assessments/{instrument}",
+			"POST /api/v1/reassessment-self-reports",
+			"POST /api/v1/reassessment-summaries",
+			"POST /api/v1/consultation-briefs/{appointmentId}/ai-draft-jobs",
 			"POST /api/v1/support-evaluations",
+			"POST /api/v1/support-plans",
+			"POST /api/v1/support-plans/{supportPlanId}/activate",
+			"POST /api/v1/support-plans/{supportPlanId}/replace",
+			"PUT /api/v2/support-plans/{supportPlanId}/actions/{actionId}/schedule",
+			"POST /api/v1/plan-change-requests",
+			"PUT /api/v1/plan-change-requests/{requestId}/decision",
 			"POST /api/v1/anonymous-assessment-sessions/{sessionId}/assessments");
 
 	@Test
@@ -103,7 +314,7 @@ class CareOpenApiContractTests {
 	@Test
 	void assessmentRequestAcceptsAnswersButNoClientOwnedResult() {
 		var contract = Path.of("..", "contracts", "openapi", "care-service-v1.yaml").toAbsolutePath();
-		var openApi = new OpenAPIV3Parser().read(contract.toString());
+		var openApi = new OpenAPIV3Parser().readLocation(contract.toUri().toString(), null, null).getOpenAPI();
 		var request = openApi.getComponents().getSchemas().get("AssessmentSubmissionRequest");
 		var result = openApi.getComponents().getSchemas().get("AssessmentResult");
 
@@ -123,15 +334,15 @@ class CareOpenApiContractTests {
 	@Test
 	void progressResponseIsAdditiveMinimizedAndDocumentsEnumFallback() {
 		var contract = Path.of("..", "contracts", "openapi", "care-service-v1.yaml").toAbsolutePath();
-		var openApi = new OpenAPIV3Parser().read(contract.toString());
+		var openApi = new OpenAPIV3Parser().readLocation(contract.toUri().toString(), null, null).getOpenAPI();
 		var progress = openApi.getComponents().getSchemas().get("AssessmentProgress");
 		var point = openApi.getComponents().getSchemas().get("AssessmentProgressPoint");
 		var transition = openApi.getComponents().getSchemas().get("BandTransition");
 		var direction = openApi.getComponents().getSchemas().get("ScoreDirection");
 
-		assertThat(progress.getAdditionalProperties()).isEqualTo(Boolean.TRUE);
-		assertThat(point.getAdditionalProperties()).isEqualTo(Boolean.TRUE);
-		assertThat(transition.getAdditionalProperties()).isEqualTo(Boolean.TRUE);
+		assertThat(allowsAdditionalProperties(progress)).isTrue();
+		assertThat(allowsAdditionalProperties(point)).isTrue();
+		assertThat(allowsAdditionalProperties(transition)).isTrue();
 		assertThat(progress.getProperties()).containsKeys("instrument", "scoringVersion", "previous", "current",
 				"rawDelta", "scoreDirection", "bandTransition", "elapsedDuration")
 				.doesNotContainKeys("answers", "safetyStatus", "consent", "profile");
@@ -141,7 +352,7 @@ class CareOpenApiContractTests {
 	@Test
 	void supportContractProvidesReviewedExamplesForEveryTierWithoutACompositeScore() {
 		var contract = Path.of("..", "contracts", "openapi", "care-service-v1.yaml").toAbsolutePath();
-		var openApi = new OpenAPIV3Parser().read(contract.toString());
+		var openApi = new OpenAPIV3Parser().readLocation(contract.toUri().toString(), null, null).getOpenAPI();
 		var response = openApi.getComponents().getSchemas().get("SupportEvaluation");
 		var examples = openApi.getComponents().getExamples();
 
@@ -149,10 +360,207 @@ class CareOpenApiContractTests {
 				"safetyGuidance", "disclaimer").doesNotContainKeys("totalScore", "compositeScore", "overallSeverity");
 		assertThat(examples).containsKeys("SelfGuidedSupportEvaluation", "ProfessionalSupportEvaluation",
 				"SafetyFollowUpSupportEvaluation");
-		assertThat(examples.values()).extracting(
-				example -> String.valueOf(((java.util.Map<?, ?>) example.getValue()).get("supportTier")))
+		assertThat(Set.of("SelfGuidedSupportEvaluation", "ProfessionalSupportEvaluation",
+				"SafetyFollowUpSupportEvaluation").stream().map(examples::get))
+				.extracting(example -> supportTier(example.getValue()))
 				.containsExactlyInAnyOrder("SELF_GUIDED_SUPPORT", "PROFESSIONAL_SUPPORT_RECOMMENDED",
 						"SAFETY_FOLLOW_UP_RECOMMENDED");
+	}
+
+	@Test
+	void reassessmentContractKeepsFourSourcedDimensionsAndAContradictoryExample() {
+		var contract = Path.of("..", "contracts", "openapi", "care-service-v1.yaml").toAbsolutePath();
+		var openApi = new OpenAPIV3Parser().readLocation(contract.toUri().toString(), null, null).getOpenAPI();
+		var request = openApi.getComponents().getSchemas().get("ReassessmentSummaryCreateRequest");
+		var response = openApi.getComponents().getSchemas().get("ReassessmentSummary");
+		var journal = openApi.getComponents().getSchemas().get("ReassessmentJournalDimension");
+		var example = openApi.getComponents().getExamples().get("ContradictoryReassessmentSummary");
+
+		assertThat(request.getRequired()).containsExactlyInAnyOrder("phq9AssessmentId", "gad7AssessmentId",
+				"previousPeriod", "currentPeriod");
+		assertThat(request.getOneOf()).hasSize(2);
+		assertThat(request.getProperties()).containsKeys("journalAnalysisId", "journalJobId", "selfReportId");
+		assertThat(response.getProperties()).containsKeys("screening", "journalContext", "supportPlanEngagement",
+				"selfReportedExperience", "activityReflection", "userReflection", "disclaimerCode")
+				.doesNotContainKeys("combinedScore", "improvementScore",
+						"recoveryPercentage", "overallDirection");
+		assertThat(journal.getProperties()).containsKeys("state", "unavailableReason", "jobId", "analysisId", "dataCoverage",
+				"sourceJournalRevisions", "provenance").doesNotContainKeys("journalText", "rawResponse");
+		assertThat(String.valueOf(example.getValue())).contains("DECREASED", "MORE_FREQUENT", "MORE_DIFFICULT",
+				"FOUR_DIMENSIONS_NOT_COMBINED");
+	}
+
+	@Test
+	void supportPlanDraftAcceptsOnlyEvaluationReferenceAndReturnsPersistedGovernedEvidence() {
+		var contract = Path.of("..", "contracts", "openapi", "care-service-v1.yaml").toAbsolutePath();
+		var openApi = new OpenAPIV3Parser().readLocation(contract.toUri().toString(), null, null).getOpenAPI();
+		var request = openApi.getComponents().getSchemas().get("ProposeSupportPlanDraftRequest");
+		var draft = openApi.getComponents().getSchemas().get("SupportPlan");
+
+		assertThat(request.getProperties()).containsOnlyKeys("sourceSupportEvaluationId")
+				.doesNotContainKeys("packageCode", "resourceIds", "templateFamily", "safetyStatus", "aiOutput");
+		assertThat(draft.getProperties()).containsKeys("source", "entitlement", "rationale", "safety",
+				"templateFamilies", "slots", "selectedResourceCount", "disclaimer")
+				.doesNotContainKeys("assessmentAnswers", "journalContent", "diagnosis", "treatment");
+	}
+
+	@Test
+	void consultationBriefAcceptsOnlyMinimizedUserAuthoredFieldsAndExactCareEvidence() {
+		var contract = Path.of("..", "contracts", "openapi", "care-service-v1.yaml").toAbsolutePath();
+		var openApi = new OpenAPIV3Parser().readLocation(contract.toUri().toString(), null, null).getOpenAPI();
+		var request = openApi.getComponents().getSchemas().get("ConsultationBriefDraftRequest");
+		var brief = openApi.getComponents().getSchemas().get("ConsultationBrief");
+		var specialist = openApi.getComponents().getSchemas().get("SpecialistConsultationBrief");
+
+		assertThat(request.getProperties()).containsOnlyKeys("currentSituation", "supportEvaluationId", "userGoals")
+				.doesNotContainKeys("assessmentAnswers", "journalContent", "chat", "diagnosis", "privateNotes");
+		assertThat(brief.getProperties()).containsKeys("approvedSnapshotId", "sharingStatus", "accessStartAt",
+				"accessEndAt", "version").doesNotContainKeys("assessmentAnswers", "journalContent", "chat", "diagnosis");
+		assertThat(specialist.getProperties()).containsOnlyKeys("snapshotId", "appointmentId", "currentSituation",
+				"supportEvaluationId", "screeningContext", "userGoals", "snapshotVersion", "approvedAt",
+				"accessStartAt", "accessEndAt", "sourceType");
+	}
+
+	@Test
+	void specialistClientContinuityContainsOnlyIdentityAppointmentAndAccessProvenance() {
+		var contract = Path.of("..", "contracts", "openapi", "care-service-v1.yaml").toAbsolutePath();
+		var openApi = new OpenAPIV3Parser().readLocation(contract.toUri().toString(), null, null).getOpenAPI();
+		var item = openApi.getComponents().getSchemas().get("SpecialistClientContinuityItem");
+
+		assertThat(item.getProperties()).containsOnlyKeys("appointmentId", "userAccountId", "userDisplayName",
+				"status", "modality", "scheduledStartAt", "scheduledEndAt", "appointmentVersion",
+				"briefAccessState", "briefSnapshotVersion", "briefAccessStartAt", "briefAccessEndAt")
+				.doesNotContainKeys("journal", "assessmentAnswers", "assessmentScore", "aiAnalysis", "supportPlan",
+						"chat", "privateNotes", "diagnosis");
+	}
+
+	@Test
+	void supportPlanEngagementIsAnExactReplacementWithoutClinicalClaims() {
+		var contract = Path.of("..", "contracts", "openapi", "care-service-v1.yaml").toAbsolutePath();
+		var openApi = new OpenAPIV3Parser().readLocation(contract.toUri().toString(), null, null).getOpenAPI();
+		var request = openApi.getComponents().getSchemas().get("ReplaceSupportPlanOccurrenceEngagementRequest");
+		var occurrence = openApi.getComponents().getSchemas().get("SupportPlanOccurrence");
+
+		assertThat(request.getRequired()).containsExactlyInAnyOrder(
+				"state", "hidden", "helpfulness", "barrierCode", "reflection", "summaryReuseApproved");
+		assertThat(request.getProperties()).containsOnlyKeys(
+				"state", "hidden", "helpfulness", "barrierCode", "reflection", "summaryReuseApproved")
+				.doesNotContainKeys("adherence", "clinicalOutcome", "recoveryScore", "specialistObserved");
+		assertThat(occurrence.getProperties()).containsKeys("source", "version", "engagementUpdatedAt")
+				.doesNotContainKeys("adherence", "clinicalOutcome", "recoveryScore");
+	}
+
+	@Test
+	void guidedJourneyIsAMinimizedRequiredPointerMatchingTheRuntimeView() {
+		var contract = Path.of("..", "contracts", "openapi", "care-service-v1.yaml").toAbsolutePath();
+		var openApi = new OpenAPIV3Parser().readLocation(contract.toUri().toString(), null, null).getOpenAPI();
+		var journey = openApi.getComponents().getSchemas().get("GuidedJourney");
+		var runtimeFields = java.util.Arrays.stream(
+				com.mentalbridge.care.guidedjourney.GuidedJourneyService.JourneyView.class.getRecordComponents())
+				.map(java.lang.reflect.RecordComponent::getName).toList();
+
+		assertThat(journey.getRequired()).containsExactlyInAnyOrderElementsOf(runtimeFields);
+		assertThat(journey.getProperties().keySet()).containsExactlyInAnyOrderElementsOf(runtimeFields);
+		assertThat(journey.getProperties()).doesNotContainKeys("answers", "totalScore", "journal", "emotion");
+		assertThat(enumValues(property(journey, "stage"))).containsExactly("ASSESSMENT_REQUIRED", "GUIDE_REQUIRED",
+				"GUIDE_READY");
+		assertThat(enumValues(property(journey, "entitlementStatus"))).containsExactly("NOT_REQUIRED", "VERIFIED",
+				"UNAVAILABLE");
+		assertThat(enumValues(property(journey, "nextAction").getOneOf().getFirst())).containsExactlyElementsOf(
+				java.util.Arrays.stream(com.mentalbridge.care.guidedjourney.GuidedJourneyService.NextAction.values())
+						.map(Enum::name).toList());
+	}
+
+	@Test
+	void supportPlanV3IsAnAdditiveTypedActionReadModelWithBoundedReferences() {
+		var contract = Path.of("..", "contracts", "openapi", "care-service-v1.yaml").toAbsolutePath();
+		var openApi = new OpenAPIV3Parser().readLocation(contract.toUri().toString(), null, null).getOpenAPI();
+		var schemas = openApi.getComponents().getSchemas();
+		var plan = schemas.get("SupportPlanV3");
+		var focus = schemas.get("PlanFocus");
+		var action = schemas.get("PlanAction");
+		var source = schemas.get("ActionSourceReference");
+		var schedule = schemas.get("ActionSchedule");
+		var occurrence = schemas.get("ActionOccurrence");
+		var evidence = schemas.get("CompletionEvidence");
+
+		assertThat(plan.getProperties()).containsKeys("modelVersion", "planPolicyVersion", "representationMode", "focuses")
+				.doesNotContainKeys("slots", "assessmentAnswers", "journalContent", "emotionValue");
+		assertThat(enumValues(property(plan, "representationMode")))
+				.containsExactly("V2_RESOURCE_ADAPTER", "NATIVE_V3");
+		assertThat(focus.getProperties()).containsKeys("focusId", "title", "rationale",
+				"personalizationProvenance", "actions")
+				.doesNotContainKeys("diagnosis", "score", "clinicalOutcome");
+		assertThat(enumValues(property(action, "actionType"))).containsExactly(
+				"RESOURCE", "JOURNAL", "EMOTION_CHECK_IN", "ROUTINE_SELF_MANAGEMENT",
+				"PROFESSIONAL_SUPPORT", "REASSESSMENT_SCREENING", "SELF_REPORT_REVIEW");
+		assertThat(action.getProperties()).containsKeys("actionVersion", "status", "source", "provenance",
+				"presentation", "schedules", "createdAt", "updatedAt", "activatedAt", "endedAt")
+				.doesNotContainKeys("journalText", "emotionValue", "assessmentAnswers", "appointmentNotes");
+		assertThat(enumValues(property(source, "ownerDomain")))
+				.containsExactly("CONTENT", "JOURNAL_AI", "CONSULTATION", "CARE");
+		assertThat(enumValues(property(source, "sourceKind"))).containsExactly(
+				"RESOURCE_VERSION", "JOURNAL_TEMPLATE", "EMOTION_CHECK_IN_CAPABILITY",
+				"PROFESSIONAL_SUPPORT_PATHWAY", "APPOINTMENT", "QUESTIONNAIRE_DEFINITION");
+		assertThat(source.getProperties()).containsKeys("sourceId", "sourceRevision", "publicationId",
+				"eligibilityPolicyVersion", "verifiedAt")
+				.doesNotContainKeys("payload", "content", "journalText", "emotionValue", "assessmentAnswers");
+		assertThat(schedule.getProperties()).containsKeys("recurrenceType", "timezone", "effectiveFrom",
+				"effectiveUntil", "reminderEnabled").doesNotContainKey("occurrences");
+		assertThat(occurrence.getProperties()).containsKeys("actionId", "actionType", "actionVersion",
+				"scheduleId", "scheduleVersion", "state", "displayState", "completionEvidence")
+				.doesNotContainKeys("adherence", "recoveryScore", "sourcePayload");
+		assertThat(evidence.getProperties()).containsOnlyKeys("kind", "ownerDomain", "factId", "factRevision",
+				"occurredAt", "verifiedAt");
+	}
+
+	@Test
+	void supportPlanPersonalizationIsBoundedVersionedAndNonDiagnostic() {
+		var contract = Path.of("..", "contracts", "openapi", "care-service-v1.yaml").toAbsolutePath();
+		var openApi = new OpenAPIV3Parser().readLocation(contract.toUri().toString(), null, null).getOpenAPI();
+		var path = openApi.getPaths().get("/api/v2/support-plan-personalization");
+		var request = openApi.getComponents().getSchemas().get("ReplaceSupportPlanPersonalizationRequest");
+		var response = openApi.getComponents().getSchemas().get("SupportPlanPersonalization");
+		var provenance = openApi.getComponents().getSchemas().get("FocusPersonalizationProvenance");
+
+		assertThat(path.getGet()).isNotNull();
+		assertThat(path.getPut()).isNotNull();
+		assertThat(request.getProperties()).containsOnlyKeys("preferredFocus", "desiredPace",
+				"dailyTimeBudgetMinutes", "preferredDaypart", "preferredActivityModes", "commonBarriers")
+				.doesNotContainKeys("diagnosis", "assessmentAnswers", "screeningScore", "journalText");
+		assertThat(enumValues(property(request, "preferredFocus"))).containsExactly(
+				"ANXIETY", "MOOD", "SLEEP", "MOTIVATION", "UNDERSTANDING_EMOTIONS", "null");
+		assertThat(response.getAllOf()).isNull();
+		assertThat(allowsAdditionalProperties(response)).isFalse();
+		assertThat(response.getProperties()).containsKeys("personalizationId", "schemaVersion", "revision",
+				"status", "preferredFocus", "preferredActivityModes", "commonBarriers", "planReview");
+		assertThat(provenance.getProperties()).containsOnlyKeys("personalizationId", "revision",
+				"schemaVersion", "reasonCode");
+	}
+
+	private boolean allowsAdditionalProperties(Schema<?> schema) {
+		var additionalProperties = schema.getAdditionalProperties();
+		return Boolean.TRUE.equals(additionalProperties)
+				|| additionalProperties instanceof Schema<?> additionalSchema
+						&& Boolean.TRUE.equals(additionalSchema.getBooleanSchemaValue());
+	}
+
+	private Schema<?> property(Schema<?> schema, String name) {
+		return (Schema<?>) schema.getProperties().get(name);
+	}
+
+	private List<String> enumValues(Schema<?> schema) {
+		return schema.getEnum().stream().map(String::valueOf).toList();
+	}
+
+	private String supportTier(Object example) {
+		if (example instanceof Map<?, ?> map) {
+			return String.valueOf(map.get("supportTier"));
+		}
+		if (example instanceof JsonNode node) {
+			return node.path("supportTier").asText();
+		}
+		throw new IllegalArgumentException("Unsupported OpenAPI example representation");
 	}
 
 	private void assertSecurity(String key, Operation operation) {

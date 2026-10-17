@@ -1,13 +1,18 @@
 {
   "$schema": "https://json-schema.org/draft/2020-12/schema",
   "$id": "https://mentalbridge.dev/contracts/websocket/realtime/handshake-v1.schema.json",
-  "title": "Realtime authenticated handshake v1",
+  "title": "Realtime one-use socket credential handshake v1",
   "type": "object",
   "additionalProperties": false,
   "required": ["schemaVersion", "accessToken"],
   "properties": {
     "schemaVersion": { "const": 1 },
-    "accessToken": { "type": "string", "minLength": 1, "maxLength": 8192 },
+    "accessToken": {
+      "type": "string",
+      "minLength": 32,
+      "maxLength": 128,
+      "description": "One-use, short-lived Realtime socket credential issued through the authenticated same-origin BFF; never a general Identity bearer token."
+    },
     "correlationId": {
       "type": "string",
       "minLength": 1,

@@ -7,11 +7,56 @@ x-demo-profiles: &demo-profiles
 x-java-service-environment: &java-service-environment
   SPRINGDOTENV_ENABLED: "false"
   EUREKA_CLIENT_ENABLED: "false"
+  SPRING_DATASOURCE_HIKARI_MAXIMUM_POOL_SIZE: ${JAVA_DB_POOL_MAX:-3}
+  SPRING_DATASOURCE_HIKARI_MINIMUM_IDLE: ${JAVA_DB_POOL_MIN_IDLE:-1}
   IDENTITY_JWT_ISSUER: ${IDENTITY_JWT_ISSUER:?Set IDENTITY_JWT_ISSUER in .env}
   IDENTITY_JWT_AUDIENCE: ${IDENTITY_JWT_AUDIENCE:?Set IDENTITY_JWT_AUDIENCE in .env}
   IDENTITY_JWT_PUBLIC_KEY: ${IDENTITY_JWT_PUBLIC_KEY:?Generate local Identity keys and set IDENTITY_JWT_PUBLIC_KEY in .env}
 
 services:
+  kafka:
+    image: apache/kafka:3.9.1
+    profiles: *demo-profiles
+    restart: unless-stopped
+    environment:
+      KAFKA_NODE_ID: 1
+      KAFKA_PROCESS_ROLES: broker,controller
+      KAFKA_LISTENERS: PLAINTEXT://:9092,CONTROLLER://:9093
+      KAFKA_ADVERTISED_LISTENERS: PLAINTEXT://kafka:9092
+      KAFKA_LISTENER_SECURITY_PROTOCOL_MAP: CONTROLLER:PLAINTEXT,PLAINTEXT:PLAINTEXT
+      KAFKA_CONTROLLER_LISTENER_NAMES: CONTROLLER
+      KAFKA_CONTROLLER_QUORUM_VOTERS: 1@kafka:9093
+      KAFKA_OFFSETS_TOPIC_REPLICATION_FACTOR: 1
+      KAFKA_TRANSACTION_STATE_LOG_REPLICATION_FACTOR: 1
+      KAFKA_TRANSACTION_STATE_LOG_MIN_ISR: 1
+      KAFKA_GROUP_INITIAL_REBALANCE_DELAY_MS: 0
+    healthcheck:
+      test: ["CMD-SHELL", "/opt/kafka/bin/kafka-topics.sh --bootstrap-server localhost:9092 --list >/dev/null 2>&1"]
+      interval: 5s
+      timeout: 5s
+      retries: 20
+      start_period: 10s
+    networks:
+      - review1
+
+  kafka-init:
+    image: apache/kafka:3.9.1
+    profiles: *demo-profiles
+    restart: "no"
+    command:
+      - /bin/sh
+      - -ec
+      - |
+        /opt/kafka/bin/kafka-topics.sh --bootstrap-server kafka:9092 --create --if-not-exists --topic mentalbridge.identity.account-lifecycle.v1 --partitions 3 --replication-factor 1
+        /opt/kafka/bin/kafka-topics.sh --bootstrap-server kafka:9092 --create --if-not-exists --topic mentalbridge.community.interaction.v1 --partitions 3 --replication-factor 1
+        /opt/kafka/bin/kafka-topics.sh --bootstrap-server kafka:9092 --create --if-not-exists --topic mentalbridge.content-notification.account-preference-dead-letter.v1 --partitions 1 --replication-factor 1
+        /opt/kafka/bin/kafka-topics.sh --bootstrap-server kafka:9092 --create --if-not-exists --topic mentalbridge.content-notification.community-interaction-dead-letter.v1 --partitions 1 --replication-factor 1
+    depends_on:
+      kafka:
+        condition: service_healthy
+    networks:
+      - review1
+
   identity-migrate:
     build:
       context: ./identity-service
@@ -48,14 +93,24 @@ services:
       IDENTITY_BREVO_API_KEY: ${IDENTITY_BREVO_API_KEY:-}
       IDENTITY_BREVO_SENDER_EMAIL: ${IDENTITY_BREVO_SENDER_EMAIL:-}
       IDENTITY_BREVO_SENDER_NAME: ${IDENTITY_BREVO_SENDER_NAME:-MentalBridge}
+      IDENTITY_NOTIFICATION_SERVICE_TOKEN: ${IDENTITY_NOTIFICATION_SERVICE_TOKEN:?Set a shared notification service token of at least 32 characters in .env}
       IDENTITY_VERIFICATION_URL: ${IDENTITY_VERIFICATION_URL:-http://localhost:3000/verify-email}
       IDENTITY_LOCAL_VERIFICATION_DIRECTORY: /var/lib/mentalbridge/identity-verification
+      KAFKA_BOOTSTRAP_SERVERS: kafka:9092
+      IDENTITY_OUTBOX_RELAY_ENABLED: ${IDENTITY_OUTBOX_RELAY_ENABLED:-true}
+      IDENTITY_OUTBOX_RELAY_BATCH_SIZE: ${IDENTITY_OUTBOX_RELAY_BATCH_SIZE:-100}
+      IDENTITY_OUTBOX_RELAY_INTERVAL: ${IDENTITY_OUTBOX_RELAY_INTERVAL:-PT5S}
+      IDENTITY_OUTBOX_RELAY_SEND_TIMEOUT: ${IDENTITY_OUTBOX_RELAY_SEND_TIMEOUT:-PT5S}
+      IDENTITY_OUTBOX_RELAY_RETRY_BASE: ${IDENTITY_OUTBOX_RELAY_RETRY_BASE:-PT5S}
+      IDENTITY_OUTBOX_RELAY_RETRY_MAXIMUM: ${IDENTITY_OUTBOX_RELAY_RETRY_MAXIMUM:-PT5M}
     volumes:
       - identity-verification:/var/lib/mentalbridge/identity-verification
     ports:
       - "${SERVICE_BIND_ADDRESS:-127.0.0.1}:${IDENTITY_PORT:-8080}:8080"
     depends_on:
       identity-migrate:
+        condition: service_completed_successfully
+      kafka-init:
         condition: service_completed_successfully
     healthcheck:
       test: ["CMD", "wget", "-q", "-O", "/dev/null", "http://localhost:8080/actuator/health"]
@@ -95,13 +150,149 @@ services:
       CARE_ANONYMOUS_SESSION_MAXIMUM_LIFETIME: ${CARE_ANONYMOUS_SESSION_MAXIMUM_LIFETIME:-PT2H}
       CARE_PHQ9_SAFETY_POLICY_VERSION: ${CARE_PHQ9_SAFETY_POLICY_VERSION:-MB-SAFETY-PHQ9-001/1.0-capstone}
       CARE_IDEMPOTENCY_HMAC_KEY: ${CARE_IDEMPOTENCY_HMAC_KEY:?Set a random CARE_IDEMPOTENCY_HMAC_KEY of at least 32 characters in .env}
+      CONTENT_RESOURCE_ELIGIBILITY_BASE_URL: http://content-notification:3003
+      CONTENT_SAFETY_DIRECTORY_BASE_URL: http://content-notification:3003
+      CONSULTATION_ENTITLEMENT_BASE_URL: http://consultation:8082
+      CONSULTATION_ACTIVITY_DASHBOARD_BASE_URL: http://consultation:8082
+      JOURNAL_AI_ACTIVITY_DASHBOARD_BASE_URL: http://journal-ai:3000
+      JOURNAL_AI_LONGITUDINAL_BASE_URL: http://journal-ai:3000
+      JOURNAL_AI_SUPPORT_GUIDE_BASE_URL: http://journal-ai:3000
+      JOURNAL_AI_EMOTION_EVIDENCE_BASE_URL: http://journal-ai:3000
+      JOURNAL_AI_SUPPORT_PLAN_COMPANION_BASE_URL: http://journal-ai:3000
+      CARE_SUPPORT_PLAN_COMPANION_SERVICE_TOKEN: ${CARE_SUPPORT_PLAN_COMPANION_SERVICE_TOKEN:?Set the Care-to-Journal Companion service token in .env}
+      CARE_REDIS_URL: ${CARE_REDIS_URL:?Set the authenticated Care Redis URL in .env}
+      JOURNAL_AI_JOURNAL_EVIDENCE_BASE_URL: http://journal-ai:3000
     ports:
       - "${SERVICE_BIND_ADDRESS:-127.0.0.1}:${CARE_PORT:-8081}:8081"
     depends_on:
       care-migrate:
         condition: service_completed_successfully
+      consultation:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
     healthcheck:
       test: ["CMD", "wget", "-q", "-O", "/dev/null", "http://localhost:8081/actuator/health"]
+      interval: 10s
+      timeout: 5s
+      retries: 12
+      start_period: 30s
+    networks:
+      - review1
+
+  consultation-migrate:
+    build:
+      context: ./consultation-service
+      target: migration
+    profiles: *demo-profiles
+    restart: "no"
+    environment:
+      CONSULTATION_DB_URL: ${CONSULTATION_DB_URL:?Set the shared dev/staging Consultation database URL in .env}
+      CONSULTATION_DB_USERNAME: ${CONSULTATION_DB_USERNAME:?Set the shared dev/staging Consultation database username in .env}
+      CONSULTATION_DB_PASSWORD: ${CONSULTATION_DB_PASSWORD:?Set CONSULTATION_DB_PASSWORD in .env}
+    networks:
+      - review1
+
+  consultation:
+    build:
+      context: ./consultation-service
+      target: runtime
+    profiles: *demo-profiles
+    restart: unless-stopped
+    environment:
+      <<: *java-service-environment
+      SERVER_PORT: 8082
+      CONSULTATION_DB_URL: ${CONSULTATION_DB_URL:?Set the shared dev/staging Consultation database URL in .env}
+      CONSULTATION_DB_USERNAME: ${CONSULTATION_DB_USERNAME:?Set the shared dev/staging Consultation database username in .env}
+      CONSULTATION_DB_PASSWORD: ${CONSULTATION_DB_PASSWORD:?Set CONSULTATION_DB_PASSWORD in .env}
+      CONSULTATION_LIQUIBASE_ENABLED: "false"
+      CONSULTATION_VIDEO_ENABLED: ${CONSULTATION_VIDEO_ENABLED:-false}
+      CONSULTATION_VIDEO_AVAILABILITY_ENABLED: ${CONSULTATION_VIDEO_AVAILABILITY_ENABLED:-false}
+      LIVEKIT_URL: ${LIVEKIT_URL:-}
+      LIVEKIT_API_KEY: ${LIVEKIT_API_KEY:-}
+      LIVEKIT_API_SECRET: ${LIVEKIT_API_SECRET:-}
+      LIVEKIT_TOKEN_TTL: ${LIVEKIT_TOKEN_TTL:-PT2M}
+      CONSULTATION_CREDENTIAL_STORAGE_ENABLED: ${CONSULTATION_CREDENTIAL_STORAGE_ENABLED:-false}
+      CONSULTATION_CLOUDINARY_CLOUD_NAME: ${CONSULTATION_CLOUDINARY_CLOUD_NAME:-}
+      CONSULTATION_CLOUDINARY_API_KEY: ${CONSULTATION_CLOUDINARY_API_KEY:-}
+      CONSULTATION_CLOUDINARY_API_SECRET: ${CONSULTATION_CLOUDINARY_API_SECRET:-}
+      CONSULTATION_CLOUDINARY_TIMEOUT_SECONDS: ${CONSULTATION_CLOUDINARY_TIMEOUT_SECONDS:-5}
+      CONSULTATION_EVIDENCE_SERVICE_TOKEN: ${CONSULTATION_EVIDENCE_SERVICE_TOKEN:?Set a shared Consultation evidence service token of at least 32 characters in .env}
+      KAFKA_BOOTSTRAP_SERVERS: kafka:9092
+      CONSULTATION_KAFKA_LISTENER_AUTO_STARTUP: ${CONSULTATION_KAFKA_LISTENER_AUTO_STARTUP:-true}
+      CONSULTATION_ACCOUNT_LIFECYCLE_ENABLED: "true"
+      CONSULTATION_PAYOUT_MODE: ${CONSULTATION_PAYOUT_MODE:-FAKE}
+      CONSULTATION_PAYOUT_SETTLEMENT_HOLD: ${CONSULTATION_PAYOUT_SETTLEMENT_HOLD:-P7D}
+      CONSULTATION_PAYOUT_MINIMUM_WITHDRAWAL_VND: ${CONSULTATION_PAYOUT_MINIMUM_WITHDRAWAL_VND:-100000}
+      CONSULTATION_PAYOUT_ENCRYPTION_KEY: ${CONSULTATION_PAYOUT_ENCRYPTION_KEY:?Set a base64-encoded 32-byte payout destination encryption key in .env}
+      CONSULTATION_PAYOUT_ENCRYPTION_KEY_VERSION: ${CONSULTATION_PAYOUT_ENCRYPTION_KEY_VERSION:-v1}
+      MOMO_PAYOUT_PARTNER_CODE: ${MOMO_PAYOUT_PARTNER_CODE:-}
+      MOMO_PAYOUT_ACCESS_KEY: ${MOMO_PAYOUT_ACCESS_KEY:-}
+      MOMO_PAYOUT_SECRET_KEY: ${MOMO_PAYOUT_SECRET_KEY:-}
+      MOMO_PAYOUT_PRODUCTION_APPROVED: ${MOMO_PAYOUT_PRODUCTION_APPROVED:-false}
+      MOMO_PAYOUT_BASE_URL: ${MOMO_PAYOUT_BASE_URL:-https://test-payment.momo.vn}
+      MOMO_PAYOUT_STORE_ID: ${MOMO_PAYOUT_STORE_ID:-}
+      MOMO_PAYOUT_PUBLIC_KEY: ${MOMO_PAYOUT_PUBLIC_KEY:-}
+      MOMO_PAYOUT_IPN_URL: ${MOMO_PAYOUT_IPN_URL:-}
+    ports:
+      - "${SERVICE_BIND_ADDRESS:-127.0.0.1}:${CONSULTATION_PORT:-8082}:8082"
+    depends_on:
+      consultation-migrate:
+        condition: service_completed_successfully
+    healthcheck:
+      test: ["CMD", "wget", "-q", "-O", "/dev/null", "http://localhost:8082/actuator/health"]
+      interval: 10s
+      timeout: 5s
+      retries: 12
+      start_period: 30s
+    networks:
+      - review1
+
+  community-migrate:
+    build:
+      context: ./community-service
+      target: migration
+    profiles: *demo-profiles
+    restart: "no"
+    environment:
+      COMMUNITY_DB_URL: ${COMMUNITY_DB_URL:?Set the shared dev/staging Community database URL in .env}
+      COMMUNITY_DB_USERNAME: ${COMMUNITY_DB_USERNAME:?Set the shared dev/staging Community database username in .env}
+      COMMUNITY_DB_PASSWORD: ${COMMUNITY_DB_PASSWORD:?Set COMMUNITY_DB_PASSWORD in .env}
+    networks:
+      - review1
+
+  community:
+    build:
+      context: ./community-service
+      target: runtime
+    profiles: *demo-profiles
+    restart: unless-stopped
+    environment:
+      <<: *java-service-environment
+      SERVER_PORT: 8084
+      COMMUNITY_DB_URL: ${COMMUNITY_DB_URL:?Set the shared dev/staging Community database URL in .env}
+      COMMUNITY_DB_USERNAME: ${COMMUNITY_DB_USERNAME:?Set the shared dev/staging Community database username in .env}
+      COMMUNITY_DB_PASSWORD: ${COMMUNITY_DB_PASSWORD:?Set COMMUNITY_DB_PASSWORD in .env}
+      COMMUNITY_LIQUIBASE_ENABLED: "false"
+      CLOUDINARY_CLOUD_NAME: ${CLOUDINARY_CLOUD_NAME:?Set CLOUDINARY_CLOUD_NAME in .env}
+      CLOUDINARY_API_KEY: ${CLOUDINARY_API_KEY:?Set CLOUDINARY_API_KEY in .env}
+      CLOUDINARY_API_SECRET: ${CLOUDINARY_API_SECRET:?Set CLOUDINARY_API_SECRET in .env}
+      KAFKA_BOOTSTRAP_SERVERS: kafka:9092
+      COMMUNITY_INTERACTION_RELAY_ENABLED: ${COMMUNITY_INTERACTION_RELAY_ENABLED:-true}
+      COMMUNITY_INTERACTION_RELAY_BATCH_SIZE: ${COMMUNITY_INTERACTION_RELAY_BATCH_SIZE:-100}
+      COMMUNITY_INTERACTION_RELAY_INTERVAL: ${COMMUNITY_INTERACTION_RELAY_INTERVAL:-PT5S}
+      COMMUNITY_INTERACTION_RELAY_SEND_TIMEOUT: ${COMMUNITY_INTERACTION_RELAY_SEND_TIMEOUT:-PT5S}
+      COMMUNITY_INTERACTION_RELAY_RETRY_BASE: ${COMMUNITY_INTERACTION_RELAY_RETRY_BASE:-PT5S}
+      COMMUNITY_INTERACTION_RELAY_RETRY_MAXIMUM: ${COMMUNITY_INTERACTION_RELAY_RETRY_MAXIMUM:-PT5M}
+    ports:
+      - "${SERVICE_BIND_ADDRESS:-127.0.0.1}:${COMMUNITY_PORT:-8084}:8084"
+    depends_on:
+      community-migrate:
+        condition: service_completed_successfully
+      kafka-init:
+        condition: service_completed_successfully
+    healthcheck:
+      test: ["CMD", "wget", "-q", "-O", "/dev/null", "http://localhost:8084/actuator/health"]
       interval: 10s
       timeout: 5s
       retries: 12
@@ -130,9 +321,10 @@ services:
     restart: unless-stopped
     environment:
       NODE_ENV: production
+      NODE_OPTIONS: ${CONTENT_NODE_OPTIONS:-}
       PORT: 3003
       DATABASE_URL: ${CONTENT_DATABASE_URL:?Set the shared dev/staging Content database URL in .env}
-      DB_POOL_MAX: ${CONTENT_DB_POOL_MAX:-10}
+      DB_POOL_MAX: ${CONTENT_DB_POOL_MAX:-3}
       DB_IDLE_TIMEOUT_MS: ${CONTENT_DB_IDLE_TIMEOUT_MS:-30000}
       DB_CONNECT_TIMEOUT_MS: ${CONTENT_DB_CONNECT_TIMEOUT_MS:-2000}
       LOG_LEVEL: ${CONTENT_LOG_LEVEL:-info}
@@ -142,11 +334,100 @@ services:
       IDENTITY_JWT_KEY_ID: ${IDENTITY_JWT_KEY_ID:-review1-demo-key}
       IDENTITY_JWT_PUBLIC_KEY: ${IDENTITY_JWT_PUBLIC_KEY:?Generate local Identity keys and set IDENTITY_JWT_PUBLIC_KEY in .env}
       IDENTITY_JWT_CLOCK_TOLERANCE_SECONDS: ${IDENTITY_JWT_CLOCK_TOLERANCE_SECONDS:-60}
+      RESOURCE_REVIEWER_ACCOUNT_IDS: ${CONTENT_RESOURCE_REVIEWER_ACCOUNT_IDS:-}
+      CONSULTATION_BASE_URL: ${CONSULTATION_BASE_URL:-http://consultation:8082}
+      CONSULTATION_TIMEOUT_MS: ${CONSULTATION_TIMEOUT_MS:-2000}
+      JOURNAL_AI_SERVICE_URL: http://journal-ai:3000
+      JOURNAL_AI_SERVICE_TIMEOUT_MS: ${CONTENT_JOURNAL_AI_SERVICE_TIMEOUT_MS:-2000}
+      JOURNAL_AI_REMINDER_SERVICE_TOKEN: ${JOURNAL_AI_REMINDER_SERVICE_TOKEN:?Set a shared reminder service token of at least 32 characters in .env}
+      REMINDER_SCHEDULER_ENABLED: ${CONTENT_REMINDER_SCHEDULER_ENABLED:-true}
+      REMINDER_SCHEDULER_INTERVAL_MS: ${CONTENT_REMINDER_SCHEDULER_INTERVAL_MS:-60000}
+      REMINDER_SCHEDULER_BATCH_SIZE: ${CONTENT_REMINDER_SCHEDULER_BATCH_SIZE:-100}
+      WELLBEING_DIGEST_SCHEDULER_ENABLED: ${CONTENT_WELLBEING_DIGEST_SCHEDULER_ENABLED:-true}
+      WELLBEING_DIGEST_SCHEDULER_INTERVAL_MS: ${CONTENT_WELLBEING_DIGEST_SCHEDULER_INTERVAL_MS:-60000}
+      WELLBEING_DIGEST_BATCH_SIZE: ${CONTENT_WELLBEING_DIGEST_BATCH_SIZE:-100}
+      IDENTITY_SERVICE_URL: http://identity:8080
+      IDENTITY_NOTIFICATION_SERVICE_TOKEN: ${IDENTITY_NOTIFICATION_SERVICE_TOKEN:?Set a shared notification service token of at least 32 characters in .env}
+      BREVO_BASE_URL: ${IDENTITY_BREVO_BASE_URL:-https://api.brevo.com}
+      BREVO_API_KEY: ${IDENTITY_BREVO_API_KEY:-}
+      BREVO_SENDER_EMAIL: ${IDENTITY_BREVO_SENDER_EMAIL:-}
+      BREVO_SENDER_NAME: ${IDENTITY_BREVO_SENDER_NAME:-MentalBridge}
+      KAFKA_BOOTSTRAP_SERVERS: kafka:9092
+      CONTENT_ACCOUNT_LIFECYCLE_CONSUMER_ENABLED: ${CONTENT_ACCOUNT_LIFECYCLE_CONSUMER_ENABLED:-true}
+      CONTENT_COMMUNITY_INTERACTION_CONSUMER_ENABLED: ${CONTENT_COMMUNITY_INTERACTION_CONSUMER_ENABLED:-true}
     ports:
       - "${SERVICE_BIND_ADDRESS:-127.0.0.1}:${CONTENT_PORT:-3003}:3003"
     depends_on:
       content-migrate:
         condition: service_completed_successfully
+      journal-ai:
+        condition: service_healthy
+      identity:
+        condition: service_healthy
+      kafka-init:
+        condition: service_completed_successfully
+    networks:
+      - review1
+
+  journal-ai-migrate:
+    build:
+      context: ./journal-ai-service
+      target: runtime
+    profiles: *demo-profiles
+    restart: "no"
+    command: ["npm", "run", "migrate:up"]
+    env_file:
+      - path: ./journal-ai-service/.env
+        required: false
+    environment:
+      NODE_ENV: production
+      JOURNAL_AI_MONGODB_URI: ${REALTIME_MONGODB_URI:?Set the shared dev/staging MongoDB URI in .env}
+      JOURNAL_AI_MONGODB_DATABASE: ${JOURNAL_AI_MONGODB_DATABASE:-mentalbridge_journal_ai}
+      JOURNAL_AI_IDEMPOTENCY_HMAC_KEY: ${JOURNAL_AI_IDEMPOTENCY_HMAC_KEY:?Set a base64-encoded 32-byte JOURNAL_AI_IDEMPOTENCY_HMAC_KEY in .env}
+    networks:
+      - review1
+
+  journal-ai:
+    build:
+      context: ./journal-ai-service
+      target: runtime
+    profiles: *demo-profiles
+    restart: unless-stopped
+    env_file:
+      - path: ./journal-ai-service/.env
+        required: false
+    environment:
+      JOURNAL_AI_PORT: 3000
+      JOURNAL_AI_MONGODB_URI: ${REALTIME_MONGODB_URI:?Set the shared dev/staging MongoDB URI in .env}
+      JOURNAL_AI_MONGODB_DATABASE: ${JOURNAL_AI_MONGODB_DATABASE:-mentalbridge_journal_ai}
+      JOURNAL_AI_ENCRYPTION_KEY: ${JOURNAL_AI_ENCRYPTION_KEY:?Set the stable Journal AI encryption key in .env}
+      JOURNAL_AI_IDEMPOTENCY_HMAC_KEY: ${JOURNAL_AI_IDEMPOTENCY_HMAC_KEY:?Set a base64-encoded 32-byte JOURNAL_AI_IDEMPOTENCY_HMAC_KEY in .env}
+      IDENTITY_JWT_ISSUER: ${IDENTITY_JWT_ISSUER:?Set IDENTITY_JWT_ISSUER in .env}
+      IDENTITY_JWT_AUDIENCE: ${IDENTITY_JWT_AUDIENCE:?Set IDENTITY_JWT_AUDIENCE in .env}
+      IDENTITY_JWT_KEY_ID: ${IDENTITY_JWT_KEY_ID:-review1-demo-key}
+      IDENTITY_JWT_PUBLIC_KEY: ${IDENTITY_JWT_PUBLIC_KEY:?Generate local Identity keys and set IDENTITY_JWT_PUBLIC_KEY in .env}
+      JOURNAL_AI_CARE_BASE_URL: http://care:8081
+      JOURNAL_AI_CONTENT_BASE_URL: http://content-notification:3003
+      JOURNAL_AI_CONSULTATION_BASE_URL: http://consultation:8082
+      JOURNAL_AI_REMINDER_SERVICE_TOKEN: ${JOURNAL_AI_REMINDER_SERVICE_TOKEN:?Set a shared reminder service token of at least 32 characters in .env}
+      JOURNAL_AI_SUPPORT_PLAN_CARE_SERVICE_TOKEN: ${CARE_SUPPORT_PLAN_COMPANION_SERVICE_TOKEN:?Set the Care-to-Journal Companion service token in .env}
+      JOURNAL_AI_ANALYSIS_ENABLED: ${JOURNAL_AI_ANALYSIS_ENABLED:-true}
+      JOURNAL_AI_PROVIDER_MODE: ${JOURNAL_AI_PROVIDER_MODE:-DETERMINISTIC_FAKE}
+    ports:
+      - "${SERVICE_BIND_ADDRESS:-127.0.0.1}:${JOURNAL_AI_PORT:-3005}:3000"
+    depends_on:
+      journal-ai-migrate:
+        condition: service_completed_successfully
+      care:
+        condition: service_healthy
+      consultation:
+        condition: service_healthy
+    healthcheck:
+      test: ["CMD", "node", "-e", "fetch('http://localhost:3000/health/ready').then(r=>process.exit(r.ok?0:1)).catch(()=>process.exit(1))"]
+      interval: 10s
+      timeout: 5s
+      retries: 12
+      start_period: 15s
     networks:
       - review1
 
@@ -162,10 +443,19 @@ services:
       IDENTITY_API_BASE_URL: http://identity:8080
       IDENTITY_API_TIMEOUT_MS: ${IDENTITY_API_TIMEOUT_MS:-2000}
       CARE_API_BASE_URL: http://care:8081
-      CARE_API_TIMEOUT_MS: ${CARE_API_TIMEOUT_MS:-3000}
+      CARE_API_TIMEOUT_MS: ${CARE_API_TIMEOUT_MS:-15000}
       CARE_QUESTIONNAIRE_LOCALE: vi-VN
       CONTENT_SERVICE_URL: http://content-notification:3003
       CONTENT_SERVICE_TIMEOUT_MS: ${CONTENT_SERVICE_TIMEOUT_MS:-5000}
+      JOURNAL_AI_SERVICE_URL: http://journal-ai:3000
+      JOURNAL_AI_SERVICE_TIMEOUT_MS: ${JOURNAL_AI_SERVICE_TIMEOUT_MS:-15000}
+      CONSULTATION_SERVICE_URL: http://consultation:8082
+      CONSULTATION_SERVICE_TIMEOUT_MS: ${CONSULTATION_SERVICE_TIMEOUT_MS:-15000}
+      REALTIME_SERVICE_URL: http://realtime:3004
+      REALTIME_PUBLIC_URL: ${PUBLIC_REALTIME_ORIGIN:-http://localhost:3004}
+      REALTIME_SERVICE_TIMEOUT_MS: ${REALTIME_SERVICE_TIMEOUT_MS:-3000}
+      COMMUNITY_SERVICE_URL: http://community:8084
+      COMMUNITY_SERVICE_TIMEOUT_MS: ${COMMUNITY_SERVICE_TIMEOUT_MS:-15000}
     ports:
       - "${FRONTEND_BIND_ADDRESS:-0.0.0.0}:${FRONTEND_PORT:-3000}:3000"
     depends_on:
@@ -175,13 +465,20 @@ services:
         condition: service_healthy
       content-notification:
         condition: service_healthy
+      journal-ai:
+        condition: service_healthy
+      consultation:
+        condition: service_healthy
+      realtime:
+        condition: service_healthy
+      community:
+        condition: service_healthy
     networks:
       - review1
 
   redis:
     image: redis:7.4-alpine
-    profiles:
-      - full-test
+    profiles: *demo-profiles
     restart: unless-stopped
     environment:
       REDIS_PASSWORD: ${REDIS_PASSWORD:?Set REDIS_PASSWORD in .env}
@@ -201,8 +498,7 @@ services:
     build:
       context: ./realtime-service
       target: runtime
-    profiles:
-      - full-test
+    profiles: *demo-profiles
     restart: "no"
     command: ["npm", "run", "migrate:up"]
     environment:
@@ -216,8 +512,7 @@ services:
     build:
       context: ./realtime-service
       target: runtime
-    profiles:
-      - full-test
+    profiles: *demo-profiles
     restart: unless-stopped
     environment:
       NODE_ENV: production
@@ -239,11 +534,14 @@ services:
       REALTIME_MESSAGE_ENCRYPTION_KEY: ${REALTIME_MESSAGE_ENCRYPTION_KEY:?Set a base64-encoded 32-byte key in .env}
       REALTIME_MESSAGE_ENCRYPTION_KEY_VERSION: ${REALTIME_MESSAGE_ENCRYPTION_KEY_VERSION:-review1-demo-v1}
       REALTIME_MESSAGE_DECRYPTION_KEYS: ${REALTIME_MESSAGE_DECRYPTION_KEYS:?Set a JSON object in .env, normally empty JSON}
+      CONSULTATION_BASE_URL: ${CONSULTATION_BASE_URL:-http://consultation:8082}
+      CONSULTATION_TIMEOUT_MS: ${CONSULTATION_TIMEOUT_MS:-2000}
       IDENTITY_JWT_ISSUER: ${IDENTITY_JWT_ISSUER:?Set IDENTITY_JWT_ISSUER in .env}
       IDENTITY_JWT_AUDIENCE: ${IDENTITY_JWT_AUDIENCE:?Set IDENTITY_JWT_AUDIENCE in .env}
       IDENTITY_JWT_KEY_ID: ${IDENTITY_JWT_KEY_ID:-review1-demo-key}
       IDENTITY_JWT_PUBLIC_KEY: ${IDENTITY_JWT_PUBLIC_KEY:?Generate local Identity keys and set IDENTITY_JWT_PUBLIC_KEY in .env}
       IDENTITY_JWT_CLOCK_TOLERANCE_SECONDS: ${IDENTITY_JWT_CLOCK_TOLERANCE_SECONDS:-60}
+      CONSULTATION_EVIDENCE_SERVICE_TOKEN: ${CONSULTATION_EVIDENCE_SERVICE_TOKEN:?Set a shared Consultation evidence service token of at least 32 characters in .env}
     ports:
       - "${SERVICE_BIND_ADDRESS:-127.0.0.1}:${REALTIME_PORT:-3004}:3004"
     depends_on:

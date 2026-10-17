@@ -14,10 +14,40 @@ const expectedImplemented = new Set([
   'GET /api/v1/resources/admin/list',
   'GET /api/v1/resources/admin/{id}',
   'GET /api/v1/resources/{id}',
+  'GET /api/v1/resource-progress',
+  'PUT /api/v1/resource-progress/{resourceId}/{localDate}',
+  'GET /api/v1/resource-rewards',
+  'PUT /api/v1/resource-rewards',
+  'GET /api/v1/achievements',
+  'PUT /api/v1/achievements/preference',
+  'PUT /api/v1/resource-journeys/{localDate}',
+  'GET /api/v1/resource-bookmarks',
+  'PUT /api/v1/resource-bookmarks/{resourceId}',
+  'DELETE /api/v1/resource-bookmarks/{resourceId}',
+  'GET /api/v1/resource-bingo/{weekStart}',
+  'PUT /api/v1/resource-bingo/{weekStart}/items/{position}/self-confirmation',
   'PATCH /api/v1/resources/{id}',
   'DELETE /api/v1/resources/{id}',
   'POST /api/v1/resources/{id}/publish',
+  'POST /api/v1/resources/{id}/review',
+  'POST /api/v1/resources/{id}/versions',
   'POST /api/v1/resources/{id}/archive',
+  'POST /api/v1/resources/{id}/versions/{contentVersion}/eligibility-publications',
+  'POST /api/v1/resources/{id}/versions/{contentVersion}/eligibility-publications/withdrawal',
+  'POST /internal/v1/resource-eligibility:resolve',
+  'GET /api/v1/safety-directory/admin/entries',
+  'POST /api/v1/safety-directory/admin/entries',
+  'PATCH /api/v1/safety-directory/admin/entries/{entryId}',
+  'POST /api/v1/safety-directory/admin/entries/{entryId}/review',
+  'POST /api/v1/safety-directory/admin/entries/{entryId}/deactivate',
+  'POST /api/v1/safety-directory:lookup',
+  'GET /api/v1/notification-preferences',
+  'PATCH /api/v1/notification-preferences',
+  'GET /api/v1/wellbeing-digest/preview',
+  'GET /api/v1/notifications',
+  'PATCH /api/v1/notifications/{notificationId}/read',
+  'POST /api/v1/notifications/mark-all-read',
+  'DELETE /api/v1/notifications/{notificationId}',
 ]);
 
 const implementedResponses = new Map([
@@ -28,10 +58,76 @@ const implementedResponses = new Map([
   ['GET /api/v1/resources/admin/list', new Set(['200', '400', '401', '403', '503'])],
   ['GET /api/v1/resources/admin/{id}', new Set(['200', '400', '401', '403', '404'])],
   ['GET /api/v1/resources/{id}', new Set(['200', '400', '404'])],
-  ['PATCH /api/v1/resources/{id}', new Set(['200', '400', '401', '403', '409'])],
+  ['GET /api/v1/resource-progress', new Set(['200', '401', '422', '503'])],
+  [
+    'PUT /api/v1/resource-progress/{resourceId}/{localDate}',
+    new Set(['200', '401', '404', '422', '503']),
+  ],
+  ['GET /api/v1/resource-rewards', new Set(['200', '401', '503'])],
+  ['PUT /api/v1/resource-rewards', new Set(['200', '401', '422', '503'])],
+  ['GET /api/v1/achievements', new Set(['200', '401', '422', '503'])],
+  [
+    'PUT /api/v1/achievements/preference',
+    new Set(['200', '400', '401', '412', '422', '428', '503']),
+  ],
+  ['PUT /api/v1/resource-journeys/{localDate}', new Set(['200', '401', '404', '422', '503'])],
+  ['GET /api/v1/resource-bookmarks', new Set(['200', '401', '503'])],
+  ['PUT /api/v1/resource-bookmarks/{resourceId}', new Set(['200', '401', '404', '422', '503'])],
+  ['DELETE /api/v1/resource-bookmarks/{resourceId}', new Set(['204', '401', '422', '503'])],
+  ['GET /api/v1/resource-bingo/{weekStart}', new Set(['200', '401', '404', '422', '503'])],
+  [
+    'PUT /api/v1/resource-bingo/{weekStart}/items/{position}/self-confirmation',
+    new Set(['200', '400', '401', '404', '412', '422', '428', '503']),
+  ],
+  ['PATCH /api/v1/resources/{id}', new Set(['200', '400', '401', '403', '409', '422'])],
   ['DELETE /api/v1/resources/{id}', new Set(['204', '400', '401', '403', '409'])],
-  ['POST /api/v1/resources/{id}/publish', new Set(['400', '401', '403', '409'])],
+  ['POST /api/v1/resources/{id}/publish', new Set(['200', '400', '401', '403', '404', '409'])],
+  ['POST /api/v1/resources/{id}/review', new Set(['200', '400', '401', '403', '409', '422'])],
+  ['POST /api/v1/resources/{id}/versions', new Set(['200', '400', '401', '403', '409'])],
   ['POST /api/v1/resources/{id}/archive', new Set(['200', '400', '401', '403', '409'])],
+  [
+    'POST /api/v1/resources/{id}/versions/{contentVersion}/eligibility-publications',
+    new Set(['201', '400', '401', '403', '404', '409', '422', '503']),
+  ],
+  [
+    'POST /api/v1/resources/{id}/versions/{contentVersion}/eligibility-publications/withdrawal',
+    new Set(['200', '400', '401', '403', '404', '409', '422', '503']),
+  ],
+  [
+    'POST /internal/v1/resource-eligibility:resolve',
+    new Set(['200', '400', '401', '403', '422', '503']),
+  ],
+  ['GET /api/v1/safety-directory/admin/entries', new Set(['200', '401', '403', '503'])],
+  [
+    'POST /api/v1/safety-directory/admin/entries',
+    new Set(['201', '400', '401', '403', '409', '422', '503']),
+  ],
+  [
+    'PATCH /api/v1/safety-directory/admin/entries/{entryId}',
+    new Set(['200', '400', '401', '403', '409', '422', '503']),
+  ],
+  [
+    'POST /api/v1/safety-directory/admin/entries/{entryId}/review',
+    new Set(['200', '400', '401', '403', '409', '503']),
+  ],
+  [
+    'POST /api/v1/safety-directory/admin/entries/{entryId}/deactivate',
+    new Set(['200', '400', '401', '403', '409', '503']),
+  ],
+  ['POST /api/v1/safety-directory:lookup', new Set(['200', '422', '503'])],
+  ['GET /api/v1/notification-preferences', new Set(['200', '401', '503'])],
+  ['GET /api/v1/wellbeing-digest/preview', new Set(['200', '401', '503'])],
+  [
+    'PATCH /api/v1/notification-preferences',
+    new Set(['200', '400', '401', '412', '422', '428', '503']),
+  ],
+  ['GET /api/v1/notifications', new Set(['200', '401', '422', '503'])],
+  [
+    'PATCH /api/v1/notifications/{notificationId}/read',
+    new Set(['200', '401', '404', '410', '422', '503']),
+  ],
+  ['POST /api/v1/notifications/mark-all-read', new Set(['200', '401', '503'])],
+  ['DELETE /api/v1/notifications/{notificationId}', new Set(['204', '401', '404', '422', '503'])],
 ]);
 
 const implementedMustBePublic = new Set([
@@ -39,6 +135,7 @@ const implementedMustBePublic = new Set([
   'GET /health/ready',
   'GET /api/v1/resources',
   'GET /api/v1/resources/{id}',
+  'POST /api/v1/safety-directory:lookup',
 ]);
 const implementedMustBeProtected = new Set(
   [...expectedImplemented].filter((operation) => !implementedMustBePublic.has(operation)),
@@ -95,6 +192,38 @@ if (!setsEqual(actualImplemented, expectedImplemented)) {
   throw new Error(
     `Content contract availability differs from implemented controllers. Missing: [${missing.join(', ')}]. Extra: [${extra.join(', ')}]`,
   );
+}
+
+for (const schemaName of ['CreateResourceRequest', 'UpdateResourceRequest']) {
+  const schema = contract.components.schemas[schemaName];
+  if (schema.properties?.sourceReviewStatus) {
+    throw new Error(`${schemaName} must not expose the server-owned sourceReviewStatus field`);
+  }
+  if (schema.additionalProperties !== false) {
+    throw new Error(`${schemaName} must reject unknown editorial input fields`);
+  }
+}
+
+const adminDetailRequired = new Set(
+  contract.components.schemas.AdminResourceDetail.allOf?.[1]?.required ?? [],
+);
+if (!adminDetailRequired.has('reviewDecision') || !adminDetailRequired.has('isCorrectionDraft')) {
+  throw new Error('AdminResourceDetail must project exact review state and correction policy');
+}
+
+const domains = new Set(contract.components.schemas.ScreeningDomain.enum);
+if (domains.has('GENERAL_WELLBEING') || domains.has('BOTH_SCREENED_DOMAINS')) {
+  throw new Error('Pseudo-domains cannot enter Resource Eligibility v1');
+}
+
+const outcomes = new Set(contract.components.schemas.ResourceEligibilityOutcome.enum);
+if (
+  !setsEqual(
+    outcomes,
+    new Set(['ELIGIBLE', 'INELIGIBLE', 'STALE', 'WITHDRAWN', 'NOT_FOUND', 'UNAVAILABLE']),
+  )
+) {
+  throw new Error('Resource eligibility outcomes differ from the frozen v1 boundary');
 }
 
 console.log('Validated OpenAPI contract: ../contracts/openapi/content-notification-service.yaml');

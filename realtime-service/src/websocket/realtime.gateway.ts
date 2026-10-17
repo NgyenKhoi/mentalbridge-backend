@@ -18,16 +18,18 @@ import { MessageService } from '../messages/message.service.js';
 import { normalizeCorrelationId } from '../observability/correlation-id.js';
 import type { RealtimeMetrics } from '../observability/metrics.js';
 import { PresenceService } from '../presence/presence.service.js';
-import { IdentityJwtVerifier } from '../security/identity-jwt-verifier.js';
 import type { AuthenticatedPrincipal } from '../security/principal.js';
+import { SocketCredentialService } from '../security/socket-credential.service.js';
 import { CONFIGURATION_TOKEN, METRICS_TOKEN } from '../shared/tokens.js';
 import { commandSchema, type RealtimeCommand } from './command.schema.js';
 
 interface SocketData {
   principal?: AuthenticatedPrincipal;
+  bearerToken?: string;
   correlationId?: string;
   countedActive?: boolean;
   expiryTimer?: NodeJS.Timeout;
+  checkedInConversations?: Map<string, number>;
 }
 
 interface ServerToClientEvents {
@@ -45,7 +47,7 @@ type RealtimeSocket = Socket<
 const handshakeSchema = z
   .object({
     schemaVersion: z.literal(1),
-    accessToken: z.string().min(1).max(8192),
+    accessToken: z.string().min(32).max(128),
     correlationId: z
       .string()
       .regex(/^[A-Za-z0-9._:-]{1,128}$/)
@@ -74,7 +76,7 @@ export class RealtimeGateway implements OnGatewayInit, OnGatewayConnection, OnGa
   private readonly rateWindows = new Map<string, { startedAt: number; count: number }>();
 
   constructor(
-    private readonly verifier: IdentityJwtVerifier,
+    private readonly credentials: SocketCredentialService,
     private readonly presence: PresenceService,
     private readonly messages: MessageService,
     @Inject(CONFIGURATION_TOKEN) private readonly configuration: ServiceConfiguration,
@@ -193,7 +195,9 @@ export class RealtimeGateway implements OnGatewayInit, OnGatewayConnection, OnGa
 
   private async authenticate(socket: RealtimeSocket): Promise<void> {
     const handshake = handshakeSchema.parse(socket.handshake.auth);
-    socket.data.principal = await this.verifier.verify(handshake.accessToken);
+    const authenticated = await this.credentials.consume(handshake.accessToken);
+    socket.data.principal = authenticated.principal;
+    socket.data.bearerToken = authenticated.bearerToken;
     socket.data.correlationId = normalizeCorrelationId(handshake.correlationId);
   }
 
@@ -204,6 +208,9 @@ export class RealtimeGateway implements OnGatewayInit, OnGatewayConnection, OnGa
   ): Promise<SocketAcknowledgement> {
     if (command.commandType === 'presence.heartbeat') {
       const result = await this.presence.heartbeat(principal.accountId, socket.id);
+      if (result === 'connected') {
+        await this.recordConversationPresence(socket, command.commandId, command.correlationId);
+      }
       return this.accept(
         command,
         false,
@@ -212,11 +219,32 @@ export class RealtimeGateway implements OnGatewayInit, OnGatewayConnection, OnGa
       );
     }
     if (command.commandType === 'conversation.subscribe') {
-      await this.messages.subscribe(principal.accountId, command.payload.conversationId);
+      const bearerToken = this.bearerToken(socket);
+      const decision = await this.messages.subscribe(
+        bearerToken,
+        principal.accountId,
+        command.payload.conversationId,
+        command.correlationId,
+      );
+      if (decision.participantCheckedIn) {
+        this.checkedInConversations(socket).set(command.payload.conversationId, Date.now());
+      }
       await socket.join(this.room(command.payload.conversationId));
       return this.accept(command, false, undefined, 'not_applicable');
     }
-    const result = await this.messages.send({
+    if (command.commandType === 'conversation.check-in') {
+      await this.messages.checkIn(
+        this.bearerToken(socket),
+        principal.accountId,
+        command.payload.conversationId,
+        command.commandId,
+        command.correlationId,
+      );
+      this.checkedInConversations(socket).set(command.payload.conversationId, Date.now());
+      await socket.join(this.room(command.payload.conversationId));
+      return this.accept(command, false, undefined, 'not_applicable');
+    }
+    const result = await this.messages.send(this.bearerToken(socket), command.correlationId, {
       senderId: principal.accountId,
       ...command.payload,
     });
@@ -282,6 +310,15 @@ export class RealtimeGateway implements OnGatewayInit, OnGatewayConnection, OnGa
       RATE_LIMITED: 'Command rate limit was exceeded',
       ACCESS_DENIED: 'Conversation access is denied',
       CHAT_ELIGIBILITY_UNAVAILABLE: 'Conversation eligibility is unavailable',
+      CHAT_EVIDENCE_UNAVAILABLE: 'Conversation attendance could not be recorded',
+      EVIDENCE_WINDOW_CLOSED: 'The attendance window is closed',
+      EVIDENCE_OCCURRED_OUTSIDE_WINDOW: 'Attendance was outside the appointment window',
+      APPOINTMENT_NOT_CONFIRMED: 'The appointment is not confirmed for chat',
+      CHAT_NOT_STARTED: 'The appointment chat has not started',
+      CHAT_ENDED: 'The appointment chat has ended',
+      CHAT_CANCELLED: 'The appointment was cancelled',
+      CHAT_RESCHEDULED: 'The appointment was rescheduled',
+      CONVERSATION_BINDING_CONFLICT: 'Conversation binding conflicts with the appointment',
       IDEMPOTENCY_CONFLICT: 'Client message ID conflicts with an earlier command',
       DEPENDENCY_UNAVAILABLE: 'A required dependency is unavailable',
     };
@@ -324,6 +361,36 @@ export class RealtimeGateway implements OnGatewayInit, OnGatewayConnection, OnGa
     return `conversation:${conversationId}`;
   }
 
+  private checkedInConversations(socket: RealtimeSocket): Map<string, number> {
+    socket.data.checkedInConversations ??= new Map<string, number>();
+    return socket.data.checkedInConversations;
+  }
+
+  private async recordConversationPresence(
+    socket: RealtimeSocket,
+    evidenceId: string,
+    correlationId: string,
+  ): Promise<void> {
+    const now = Date.now();
+    for (const [conversationId, previous] of this.checkedInConversations(socket)) {
+      const intervalStart = Math.max(
+        previous,
+        now - this.configuration.PRESENCE_TTL_SECONDS * 1000,
+      );
+      if (intervalStart < now) {
+        await this.messages.recordPresence(
+          this.bearerToken(socket),
+          conversationId,
+          evidenceId,
+          new Date(intervalStart),
+          new Date(now),
+          correlationId,
+        );
+      }
+      this.checkedInConversations(socket).set(conversationId, now);
+    }
+  }
+
   private isExpired(principal: AuthenticatedPrincipal): boolean {
     return Date.now() >= principal.expiresAtEpochSeconds * 1000;
   }
@@ -356,5 +423,13 @@ export class RealtimeGateway implements OnGatewayInit, OnGatewayConnection, OnGa
       ),
     );
     socket.disconnect(true);
+  }
+
+  private bearerToken(socket: RealtimeSocket): string {
+    const bearerToken = socket.data.bearerToken;
+    if (!bearerToken) {
+      throw new ApplicationException(401, 'AUTHENTICATION_REQUIRED', 'Authentication is required');
+    }
+    return bearerToken;
   }
 }

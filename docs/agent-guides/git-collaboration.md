@@ -21,20 +21,26 @@ git rev-list --left-right --count origin/dev...HEAD
 
 The first count is commits present only on `origin/dev`; a value greater than zero means the feature is behind. Integrate the current base before coding: rebase a branch owned by one developer, or merge `origin/dev` into a branch shared by multiple developers. Resolve conflicts deliberately and run the smallest baseline gates before adding new changes. Do not knowingly build a feature on a stale architectural, contract, migration, or security baseline.
 
-Branch names use lowercase kebab-case:
+Branch names use lowercase kebab-case for type, scope, and description, followed
+by the real uppercase task key in parentheses:
 
 ```text
-<type>/<scope>-<short-description>
+<type>/<scope>-<short-description>-(<TASK-KEY>)
 ```
 
 Allowed types mirror the PR template: `feat`, `fix`, `refactor`, `chore`, `docs`, `test`. Preferred scopes are module/domain names such as `identity`, `care`, `consultation`, `journal-ai`, `realtime`, `content-notification`, `phobert`, `database`, `platform`, `ci`, or `docs`.
 
+The task key is mandatory and must match the tracked task exactly; do not invent
+one. Quote the complete branch name in shell commands because unescaped
+parentheses have special meaning in some shells. If no tracked task exists,
+obtain one before creating the branch.
+
 Examples:
 
 ```text
-feat/realtime-message-receipts
-fix/consultation-double-booking
-docs/platform-agent-workflow
+feat/realtime-message-receipts-(MB-412)
+fix/consultation-double-booking-(MB-287)
+docs/platform-agent-workflow-(MB-519)
 ```
 
 ## Issues
@@ -52,7 +58,7 @@ Feature issue titles follow the template: `feat(<scope>): <lowercase short descr
 
 Plan commit slices before substantial implementation whenever a task spans multiple concerns. Each slice identifies one reviewable reason to change, its owning module or boundary, the expected artifacts, and the focused check that must pass. Commit a completed slice after that check passes instead of accumulating the entire task for one final commit. If the person or agent performing the work is not authorized to commit, keep the slice file groups distinct and hand off the proposed commit sequence.
 
-Keep behavior with its tests, a migration with its data dictionary and mapping tests, and generated output with its source contract. Every commit must build or validate independently and must not depend on a later commit to repair a known broken state. Separate different service owners, behavior changes, refactors, formatting, dependency upgrades, contracts, migrations, and operational configuration unless they are one indivisible compatibility change. Cross-service evolution normally uses separate compatible commits: additive provider contract, consumer adoption, then provider cleanup.
+Keep behavior with its tests, a material persistence migration with its canonical logical model, data dictionary, and mapping tests, and generated output with its source contract. Every commit must build or validate independently and must not depend on a later commit to repair a known broken state. Separate different service owners, behavior changes, refactors, formatting, dependency upgrades, contracts, migrations, and operational configuration unless they are one indivisible compatibility change. Cross-service evolution normally uses separate compatible commits: additive provider contract, consumer adoption, then provider cleanup.
 
 Stage only reviewed files belonging to one slice. Inspect `git diff --cached --stat`, `git diff --cached`, and the remaining unstaged/untracked state before committing. Re-slice if the staged change has more than one independently reversible reason, mixes unrelated scopes, needs `and` to describe its subject, or cannot be reviewed without understanding a later commit. A commit must not accidentally include unrelated binary/source documents, generated artifacts, credentials, or teammate work. Before publishing requirement binaries, review them for personal contact information and confirm the target repository has the intended visibility.
 

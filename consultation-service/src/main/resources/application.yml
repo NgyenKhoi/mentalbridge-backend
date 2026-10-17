@@ -1,12 +1,118 @@
 spring:
   application:
     name: consultation-service
+  servlet:
+    multipart:
+      max-file-size: 10MB
+      max-request-size: 11MB
+  datasource:
+    url: ${CONSULTATION_DB_URL}
+    username: ${CONSULTATION_DB_USERNAME}
+    password: ${CONSULTATION_DB_PASSWORD}
+  jpa:
+    hibernate:
+      ddl-auto: validate
+    open-in-view: false
+    properties:
+      hibernate:
+        default_schema: public
+        jdbc:
+          time_zone: UTC
+  kafka:
+    bootstrap-servers: ${KAFKA_BOOTSTRAP_SERVERS:localhost:9092}
+    producer:
+      acks: all
+      properties:
+        enable.idempotence: true
+    consumer:
+      group-id: ${CONSULTATION_ACCOUNT_LIFECYCLE_GROUP:consultation-account-lifecycle-v1}
+      auto-offset-reset: earliest
+      key-deserializer: org.apache.kafka.common.serialization.StringDeserializer
+      value-deserializer: org.apache.kafka.common.serialization.StringDeserializer
+    listener:
+      auto-startup: ${CONSULTATION_KAFKA_LISTENER_AUTO_STARTUP:false}
+  liquibase:
+    enabled: ${CONSULTATION_LIQUIBASE_ENABLED:false}
+    change-log: classpath:db/changelog/db.changelog-master.yaml
+    default-schema: public
   cloud:
     openfeign:
       circuitbreaker:
         enabled: true
+      client:
+        config:
+          careSupportEvaluationClient:
+            connect-timeout: 500
+            read-timeout: 2000
+
+mentalbridge:
+  consultation:
+    credentials:
+      cloudinary:
+        enabled: ${CONSULTATION_CREDENTIAL_STORAGE_ENABLED:false}
+        cloud-name: ${CONSULTATION_CLOUDINARY_CLOUD_NAME:}
+        api-key: ${CONSULTATION_CLOUDINARY_API_KEY:}
+        api-secret: ${CONSULTATION_CLOUDINARY_API_SECRET:}
+        timeout-seconds: ${CONSULTATION_CLOUDINARY_TIMEOUT_SECONDS:5}
+    evidence-service-token: ${CONSULTATION_EVIDENCE_SERVICE_TOKEN}
+    jwt:
+      issuer: ${IDENTITY_JWT_ISSUER}
+      audience: ${IDENTITY_JWT_AUDIENCE}
+      public-key: ${IDENTITY_JWT_PUBLIC_KEY}
+    availability:
+      video-enabled: ${CONSULTATION_VIDEO_AVAILABILITY_ENABLED:false}
+    video:
+      enabled: ${CONSULTATION_VIDEO_ENABLED:false}
+      url: ${LIVEKIT_URL:}
+      api-key: ${LIVEKIT_API_KEY:}
+      api-secret: ${LIVEKIT_API_SECRET:}
+      token-ttl: ${LIVEKIT_TOKEN_TTL:PT2M}
+    account-lifecycle:
+      enabled: ${CONSULTATION_ACCOUNT_LIFECYCLE_ENABLED:false}
+      topic: ${CONSULTATION_ACCOUNT_LIFECYCLE_TOPIC:mentalbridge.identity.account-lifecycle.v1}
+    appointment-notifications:
+      service-token: ${APPOINTMENT_REMINDER_SERVICE_TOKEN:}
+      relay-enabled: ${CONSULTATION_APPOINTMENT_OUTBOX_RELAY_ENABLED:false}
+      topic: mentalbridge.consultation.appointment-status.v1
+      batch-size: ${CONSULTATION_APPOINTMENT_OUTBOX_BATCH_SIZE:100}
+      relay-interval: ${CONSULTATION_APPOINTMENT_OUTBOX_INTERVAL:PT5S}
+      send-timeout: ${CONSULTATION_APPOINTMENT_OUTBOX_SEND_TIMEOUT:PT5S}
+      retry-base: ${CONSULTATION_APPOINTMENT_OUTBOX_RETRY_BASE:PT5S}
+      retry-maximum: ${CONSULTATION_APPOINTMENT_OUTBOX_RETRY_MAXIMUM:PT5M}
+    payout:
+      mode: ${CONSULTATION_PAYOUT_MODE:FAKE}
+      settlement-hold: ${CONSULTATION_PAYOUT_SETTLEMENT_HOLD:P7D}
+      minimum-withdrawal-vnd: ${CONSULTATION_PAYOUT_MINIMUM_WITHDRAWAL_VND:100000}
+      encryption-key: ${CONSULTATION_PAYOUT_ENCRYPTION_KEY:}
+      encryption-key-version: ${CONSULTATION_PAYOUT_ENCRYPTION_KEY_VERSION:v1}
+      momo-partner-code: ${MOMO_PAYOUT_PARTNER_CODE:}
+      momo-access-key: ${MOMO_PAYOUT_ACCESS_KEY:}
+      momo-secret-key: ${MOMO_PAYOUT_SECRET_KEY:}
+      production-approved: ${MOMO_PAYOUT_PRODUCTION_APPROVED:false}
+      momo-base-url: ${MOMO_PAYOUT_BASE_URL:https://test-payment.momo.vn}
+      momo-store-id: ${MOMO_PAYOUT_STORE_ID:}
+      momo-public-key: ${MOMO_PAYOUT_PUBLIC_KEY:}
+      momo-ipn-url: ${MOMO_PAYOUT_IPN_URL:}
+    billing:
+      mode: ${CONSULTATION_BILLING_MODE:DISABLED}
+      production-approved: ${MOMO_PAYMENT_PRODUCTION_APPROVED:false}
+      checkout-ttl: ${CONSULTATION_BILLING_CHECKOUT_TTL:PT15M}
+      expiry-interval: ${CONSULTATION_BILLING_EXPIRY_INTERVAL:PT1M}
+      momo-partner-code: ${MOMO_PAYMENT_PARTNER_CODE:}
+      momo-access-key: ${MOMO_PAYMENT_ACCESS_KEY:}
+      momo-secret-key: ${MOMO_PAYMENT_SECRET_KEY:}
+      momo-signature-key-version: ${MOMO_PAYMENT_SIGNATURE_KEY_VERSION:v1}
+      momo-base-url: ${MOMO_PAYMENT_BASE_URL:https://test-payment.momo.vn}
+      momo-ipn-url: ${MOMO_PAYMENT_IPN_URL:}
+      momo-redirect-url: ${MOMO_PAYMENT_REDIRECT_URL:}
 
 eureka:
   client:
+    enabled: ${EUREKA_CLIENT_ENABLED:true}
     service-url:
       defaultZone: ${EUREKA_DEFAULT_ZONE:http://localhost:8761/eureka/}
+
+logging:
+  level:
+    org.springframework.web: INFO
+    org.hibernate.SQL: INFO

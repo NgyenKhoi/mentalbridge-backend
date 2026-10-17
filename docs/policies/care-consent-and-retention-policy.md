@@ -19,12 +19,41 @@ MentalBridge must not combine these purposes into one broad toggle:
 | Purpose | Required treatment |
 | --- | --- |
 | Deterministic assessment processing | The user must view and grant the backend-owned `privacy-capstone-v3` consent; this is a processing gate, not a clinical-eligibility rule, and no AI processing is implied |
-| AI processing | Deferred; `AI_PROCESSING` is not exposed by the Sprint 2 UI/runtime consent flow |
-| Specialist sharing | Separate revocable grant scoped to subject, specialist, data type, purpose, time range, and selected entries where applicable |
+| AI processing | Backend consent type `AI_PROCESSING` at `ai-processing-capstone-v2`; covers explicit exact-source journal analysis and optional suggestions from one saved private ConsultationBrief plus minimized screening levels |
+| Specialist sharing | Product semantics approved by `MB-CONSULTATION-FLOW-001`; separate revocable grant scopes subject, specialist, appointment, approved snapshot, purpose, and time window |
 | Research use | Deferred; `RESEARCH_DATA` is not exposed and production data is excluded by default |
 | Marketing notification | Deferred; `MARKETING_NOTIFICATION` is not exposed until a corresponding feature exists |
 
-The current Care consent table reserves privacy, AI, research, and marketing decision types for compatible future evolution. Sprint 2 accepts and exposes only `PRIVACY_POLICY`. Care publishes the exact Vietnamese disclosure and version; clients must not maintain an independent copy. A registered grant or withdrawal is an append-only decision. A withdrawal takes effect for new processing immediately but neither deletes historical assessments nor rewrites audit evidence. Deletion is a separate future workflow.
+Care accepts and exposes `PRIVACY_POLICY` and `AI_PROCESSING` as independent append-only decision streams. Care publishes each exact Vietnamese disclosure and version; clients must not maintain independent copies. `AI_PROCESSING` does not authorize research, marketing, specialist sharing, or safety decisions. A registered withdrawal takes effect for new processing immediately but neither deletes historical assessments or analysis results nor rewrites audit evidence. Deletion is a separate workflow. `RESEARCH_DATA` and `MARKETING_NOTIFICATION` remain reserved and unavailable.
+
+Journal/AI checks the current `AI_PROCESSING` decision through the narrow Care
+REST authorization endpoint when accepting an analysis request and again
+immediately before every provider attempt. It forwards the already verified
+end-user bearer JWT received through the gateway. The token is not persisted in
+the analysis job or logged. Care unavailability, an expired token, a missing
+decision, or a withdrawal all fail closed. Revocation prevents a new provider
+attempt and retry but does not erase a previously normalized result.
+
+### Immutable AI-processing disclosure text
+
+`ai-processing-capstone-v2` is current. It covers the existing explicit journal
+analysis purposes and an explicit request to create an editable suggestion from
+one saved private ConsultationBrief plus minimized PHQ-9/GAD-7 levels. The
+ConsultationBrief purpose excludes raw Journal content, screening answers, chat,
+diagnoses, private notes, automatic saving, approval, sharing, access grants, and
+appointment changes. The backend publishes this Vietnamese title and content:
+
+> **Đồng ý xử lý dữ liệu bằng AI**
+>
+> MentalBridge chỉ dùng AI khi bạn chủ động yêu cầu. Phạm vi bao gồm nội dung nhật ký cụ thể bạn chọn, các phiên bản nhật ký trong khoảng thời gian giới hạn, hoặc bản tóm tắt trước buổi tư vấn đã lưu cùng mức sàng lọc tối giản. AI chỉ tạo gợi ý để bạn xem lại và chỉnh sửa; không chẩn đoán, không chấm PHQ-9/GAD-7, không quyết định an toàn, quyền lợi hay kế hoạch hỗ trợ, và không tự phê duyệt hoặc chia sẻ với chuyên gia. Nội dung nhật ký, câu trả lời sàng lọc, chat và ghi chú riêng không được dùng cho gợi ý tóm tắt này. Bạn có thể rút lại đồng ý để chặn các yêu cầu hoặc lần thử lại mới.
+
+`ai-processing-capstone-v1` remains an immutable historical decision value for
+exact-revision and bounded longitudinal journal analysis and published this title
+and content:
+
+> **Đồng ý xử lý nhật ký bằng AI**
+>
+> MentalBridge chỉ xử lý bằng AI một phiên bản nhật ký cụ thể khi bạn chủ động yêu cầu, hoặc các phiên bản nhật ký cụ thể trong hai khoảng thời gian giới hạn khi bạn chủ động yêu cầu phân tích theo thời gian. Kết quả chỉ hỗ trợ phản ánh và điều hướng, không phải chẩn đoán, không chấm PHQ-9/GAD-7, không quyết định safety, eligibility hay thay đổi SupportPlan. Sự đồng ý này không bao gồm nghiên cứu, tiếp thị hoặc chia sẻ dữ liệu với chuyên gia. Bạn có thể rút lại sự đồng ý để chặn các lần xử lý hoặc retry mới. Việc rút lại không tự động xóa kết quả đã lưu; xóa dữ liệu là một quy trình riêng.
 
 The current controlled-Capstone disclosure version is `privacy-capstone-v3`. Versions `privacy-capstone-v1` and `privacy-capstone-v2` remain immutable historical decision values and are never backfilled onto or away from historical assessments. Version 3 covers deterministic PHQ-9 and GAD-7 processing, distinguishes authenticated history from session-scoped anonymous processing, and uses explicit consent and withdrawal terminology. Public real-user deployment still requires a separately reviewed production privacy, retention, security, and legal policy.
 
@@ -54,9 +83,9 @@ The current controlled-Capstone disclosure version is `privacy-capstone-v3`. Ver
 
 ## MB-179 specialist-sharing boundary
 
-The Capstone blueprint permits definition and contract planning but does not authorize runtime specialist access. A future specialist handoff is registered-user-only, voluntary and user-initiated. It requires a separate revocable grant naming the subject, specialist, purpose, `ASSESSMENTS` scope, selected assessment identifiers or bounded time range, expiry and grant version.
+The Capstone permits definition and contract planning but does not yet authorize runtime specialist access. Specialist handoff is registered-user-only, voluntary and user-initiated. Under ADR 0014 it requires a separate revocable `SPECIALIST_SHARING` grant naming the subject, specialist, appointment, purpose, approved `ConsultationBrief` snapshot, expiry and grant version. The default appointment-scoped window is `startsAt - 24h` through `startsAt + 24h`; another appointment requires a new brief and grant.
 
-The minimum proposed projection contains instrument/version, completion time, total score, screening level and PHQ-9 safety status where applicable. Raw answers, all past/future assessments, journal entries and emotion trends are excluded by default. An appointment or paid plan never creates consent. Every read must re-check the current grant in the data owner and record minimized audit evidence.
+The approved snapshot may contain bounded screening, SupportEvaluation, active SupportPlan, trends, user goals/preferences/barriers, consented journal-derived context, and a previous user-approved `SessionSummary`, with exact source-version references. Raw answers, raw journals, full AI-analysis history and unrelated data are excluded. An appointment or paid plan never creates consent. Every read re-checks the current grant in the data owner and records minimized audit evidence.
 
 This boundary is definition-complete for MB-179. Runtime sharing remains unavailable until the grant contract, concurrency-safe authorization, audit behavior and required security/privacy review pass. Public real-user collection and sharing remain production-blocked; Sprint 2 validation uses synthetic/test data.
 
@@ -99,8 +128,9 @@ The existing null registered-retention deadline means only that the controlled d
 
 - [x] Product Owner approved synthetic/test-data-only Sprint 2 validation and the non-executable MB-179 sharing boundary.
 - [x] Product Owner approved the versioned assessment-processing disclosure and its separation from clinical eligibility.
-- [x] Product Owner approved backend ownership of immutable versioned privacy disclosure text; `privacy-capstone-v3` is current for PHQ-9/GAD-7 while v1/v2 remain historical, and AI, research, marketing, and specialist-sharing consent remain deferred.
+- [x] Product Owner approved backend ownership of immutable versioned disclosure text; `privacy-capstone-v3` is current for PHQ-9/GAD-7 while v1/v2 remain historical, and MB-370 makes `ai-processing-capstone-v2` current for explicit journal analysis and optional saved-ConsultationBrief suggestions. Specialist sharing remains a separate explicit grant; research and marketing remain deferred.
 - [x] Product Owner approved a 30-minute sliding inactivity deadline, two-hour absolute lifetime, and persisted idempotent completion semantics.
 - [x] Product Owner approved registered history only for controlled synthetic/test/demo use without a production retention claim.
-- [ ] Specialist grant policy approved before specialist reads are implemented.
+- [x] Product Owner approved the appointment-scoped `SPECIALIST_SHARING` grant and user-approved `ConsultationBrief` boundary under ADR 0014.
+- [ ] Specialist grant contract, concurrency-safe authorization, audit behavior, runtime UI and security/privacy review pass before specialist reads are enabled.
 - [ ] Security and legal/privacy reviewers approve a future public real-user production policy.

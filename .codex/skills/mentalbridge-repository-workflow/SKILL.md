@@ -10,10 +10,10 @@ Treat repository sources as active requirements, not background reading.
 1. Read every applicable `AGENTS.md` or override from repository root to the working directory.
 2. Read `docs/agent-guides/README.md`, then all linked guides in its declared order before implementing or reviewing a module.
 3. Identify the approved requirement, owning module, source of truth, affected callers/consumers, transaction boundary, and acceptable consistency before editing.
-4. Read the owner README, relevant feature code/tests, contracts, migrations, database descriptions, domain rules, architecture, traceability, and accepted ADRs.
+4. Read the owner README, relevant feature code/tests, contracts, owner migrations, `docs/domain-model/README.md`, database descriptions, domain rules, architecture, traceability, and accepted ADRs.
 5. Follow decision precedence: approved product/safety policy; accepted ADR; versioned contract and executable migration; domain/architecture docs; module implementation.
 6. Stop and surface ambiguity involving risk, safety, consent, authorization, privacy, retention, or data ownership. Do not guess silently.
-7. Update every affected artifact together: contract, migration/data description, implementation, configuration example, tests, and documentation.
+7. Update every affected artifact together: contract, migration, canonical logical model, detailed data description, implementation, configuration example, tests, and documentation. A material persisted-model change is incomplete while `docs/domain-model/` is stale; never use its logical SQL to provision or migrate a runtime database.
 8. Before editing a task that spans multiple concerns, define ordered commit slices. Each slice has one reviewable reason to change, its affected boundary/files, and the smallest checks that must pass; revise the slices when evidence changes.
 9. Implement a vertical slice: boundary validation, application use case, domain behavior, persistence/provider adapters, observability, then tests. Finish and verify each planned commit slice instead of accumulating the whole task for one final commit.
 10. Preserve unrelated work and avoid speculative abstractions, empty layers, explanatory production comments, or cross-service model/storage sharing.

@@ -26,9 +26,49 @@ import {
 import { IdentityJwtVerifier } from "./security/identity-jwt-verifier.js";
 import { JwtAuthenticationGuard } from "./security/jwt-authentication.guard.js";
 import { registerJournalModule } from "./journals/journal.js";
+import {
+  registerAnalysisModule,
+  type AnalysisDependencies,
+} from "./analysis/analysis.js";
+import {
+  registerEmotionCheckInModule,
+  type EmotionCheckInDependencies,
+} from "./emotion-check-ins/emotion-check-in.js";
+import {
+  registerLongitudinalAnalysisModule,
+  type LongitudinalAnalysisDependencies,
+} from "./longitudinal-analysis/longitudinal-analysis.js";
+import {
+  registerCompanionChatModule,
+  type CompanionChatDependencies,
+} from "./companion-chat/companion-chat.js";
+import {
+  registerSupportGuidePhrasingModule,
+  type SupportGuidePhrasingDependencies,
+} from "./support-guide-phrasing/support-guide-phrasing.js";
+import {
+  registerSupportPlanCompanionModule,
+  type SupportPlanCompanionDependencies,
+} from "./support-plan-companion/support-plan-companion.js";
+import {
+  registerNotificationActivityModule,
+  type NotificationActivityDependencies,
+} from "./notification-activity/notification-activity.js";
+import {
+  registerConsultationBriefDraftModule,
+  type ConsultationBriefDraftDependencies,
+} from "./consultation-brief-draft/consultation-brief-draft.js";
 
 export interface ApplicationDependencies {
   readonly readinessProbe?: ReadinessProbe;
+  readonly analysis?: AnalysisDependencies;
+  readonly emotionCheckIns?: EmotionCheckInDependencies;
+  readonly longitudinalAnalysis?: LongitudinalAnalysisDependencies;
+  readonly companionChat?: CompanionChatDependencies;
+  readonly supportGuidePhrasing?: SupportGuidePhrasingDependencies;
+  readonly supportPlanCompanion?: SupportPlanCompanionDependencies;
+  readonly notificationActivity?: NotificationActivityDependencies;
+  readonly consultationBriefDraft?: ConsultationBriefDraftDependencies;
 }
 
 @Module({})
@@ -49,7 +89,35 @@ export class AppModule implements NestModule {
 
     return {
       module: AppModule,
-      imports: [registerJournalModule(configuration)],
+      imports: [
+        registerJournalModule(configuration),
+        registerAnalysisModule(configuration, dependencies.analysis),
+        registerEmotionCheckInModule(
+          configuration,
+          dependencies.emotionCheckIns,
+        ),
+        registerLongitudinalAnalysisModule(
+          configuration,
+          dependencies.longitudinalAnalysis,
+        ),
+        registerCompanionChatModule(configuration, dependencies.companionChat),
+        registerSupportGuidePhrasingModule(
+          configuration,
+          dependencies.supportGuidePhrasing,
+        ),
+        registerSupportPlanCompanionModule(
+          configuration,
+          dependencies.supportPlanCompanion,
+        ),
+        registerNotificationActivityModule(
+          configuration,
+          dependencies.notificationActivity,
+        ),
+        registerConsultationBriefDraftModule(
+          configuration,
+          dependencies.consultationBriefDraft,
+        ),
+      ],
       controllers: [HealthController, MetricsController],
       providers: [
         RequestLoggingMiddleware,

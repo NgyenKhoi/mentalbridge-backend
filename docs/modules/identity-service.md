@@ -33,7 +33,7 @@ Identity owns accounts, credentials, roles, email ownership, refresh sessions, a
 - [x] ID-05 Implement registration/verification and safe delivery request integration.
 - [x] ID-06 Implement login, refresh rotation/replay detection and logout.
 - [x] ID-07 Implement email-verification resend and password recovery/change.
-- [ ] ID-07B Implement non-admin account-state administration.
+- [x] ID-07B Implement non-admin account-state administration with bounded search, optimistic concurrency, session revocation, minimized audit/outbox facts, and dedicated-admin protection (MB-365).
 - [ ] ID-08 Implement deletion coordinator, idempotent task projection and retained-audit minimization.
 - [ ] ID-09 Verify validation, authorization, rate limit, concurrency, replay, outbox rollback, consumer duplicates and dependency failures.
 - [ ] ID-10 Add metrics/readiness/configuration, update module README, and pass module/contract/migration build gates.

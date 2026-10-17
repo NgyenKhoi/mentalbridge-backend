@@ -8,7 +8,7 @@ PostgreSQL persistence uses Hibernate and Spring Data JPA types inside the ownin
 
 - Inbound REST: [`identity-service-v1.yaml`](../contracts/openapi/identity-service-v1.yaml) defines public authentication and bounded account-administration APIs.
 - Outbound REST: none in the initial architecture, so this service does not include OpenFeign.
-- Async: account lifecycle, deletion, and safe audit events will use Kafka with a transactional outbox.
+- Async: account lifecycle events use Kafka with a transactional outbox; deletion and safe audit events retain the same approved boundary for their delivery slices.
 - Discovery: registers as `identity-service` in Eureka. Eureka supplies location metadata only.
 
 ## Configuration
@@ -17,6 +17,13 @@ PostgreSQL persistence uses Hibernate and Spring Data JPA types inside the ownin
 | --- | --- | --- | --- |
 | `EUREKA_DEFAULT_ZONE` | Production | Eureka registry endpoint shared by Spring services | `http://localhost:8761/eureka/` |
 | `EUREKA_CLIENT_ENABLED` | No | Enables Eureka registration; disable it when running Identity by itself locally | `false` |
+| `KAFKA_BOOTSTRAP_SERVERS` | When relay enabled | Comma-separated Kafka brokers used only by the transactional outbox relay | `localhost:9092` |
+| `IDENTITY_OUTBOX_RELAY_ENABLED` | No | Publishes due Identity outbox lifecycle events; keep disabled unless versioned topics exist | `false` |
+| `IDENTITY_OUTBOX_RELAY_BATCH_SIZE` | No | Maximum rows claimed per relay run | `100` |
+| `IDENTITY_OUTBOX_RELAY_INTERVAL` | No | Delay between bounded relay runs | `PT5S` |
+| `IDENTITY_OUTBOX_RELAY_SEND_TIMEOUT` | No | Maximum Kafka acknowledgement wait per event | `PT5S` |
+| `IDENTITY_OUTBOX_RELAY_RETRY_BASE` | No | Initial retry delay after a failed publish | `PT5S` |
+| `IDENTITY_OUTBOX_RELAY_RETRY_MAXIMUM` | No | Maximum retry delay for a still-unpublished row | `PT5M` |
 | `IDENTITY_DB_URL` | Yes | PostgreSQL JDBC URL; use `sslmode=require` for an RDS connection | `jdbc:postgresql://localhost:5432/mentalbridge_identity` |
 | `IDENTITY_DB_USERNAME` | Yes | Identity-owned PostgreSQL login | `mentalbridge_identity` |
 | `IDENTITY_DB_PASSWORD` | Yes | Identity PostgreSQL password injected outside source control | `replace-with-a-local-secret` |
@@ -37,8 +44,9 @@ PostgreSQL persistence uses Hibernate and Spring Data JPA types inside the ownin
 | `IDENTITY_E2E_USER_A_EMAIL` | When seeded | User A address; must end in `@synthetic.invalid` | `e2e-user-a@synthetic.invalid` |
 | `IDENTITY_E2E_USER_B_EMAIL` | When seeded | User B address; must end in `@synthetic.invalid` | `e2e-user-b@synthetic.invalid` |
 | `IDENTITY_E2E_PASSWORD` | When seeded | Shared local-only password for the two synthetic accounts | injected secret |
+| `APPOINTMENT_REMINDER_SERVICE_TOKEN` | When reminder flow enabled | Shared credential for the narrow verified-delivery-address read | injected secret |
 
-Production must override the local Eureka URL. Kafka and Redis variables will be documented when those runtime adapters are introduced.
+Production must override the local Eureka URL. The outbox relay is disabled by default and is enabled only when the version-controlled lifecycle topic has been provisioned. Redis variables will be documented when that runtime adapter is introduced.
 Registration persists the account with exactly one immutable `USER` or `SPECIALIST` role, hashed challenge, idempotent outcome, and outbox event in one transaction. The configured delivery adapter runs only after that transaction commits and never logs the recipient or challenge. Automated tests keep delivery isolated and never use live Brevo credentials.
 
 To prepare a new local checkout from the repository root, copy the committed template and generate development-only signing and encryption material:
@@ -99,6 +107,43 @@ $env:IDENTITY_DB_PASSWORD='<identity-password>'
 The generated context test uses PostgreSQL, Kafka, and Redis Testcontainers and disables live Eureka registration.
 
 ## Runtime contract status
+
+### Recurring aggregate reports (MB-586)
+
+Identity owns ADMIN-only `/api/v1/admin/platform-report-schedules` management
+and the existing versioned ACCOUNT_ACTIVITY job engine. At most 50 nondeleted
+schedules may be created. DAILY, WEEKLY (Monday), and MONTHLY (day 1) schedules
+use an IANA timezone and minute-resolution wall time. Java timezone rules move
+DST gap times forward and select the earlier offset during an overlap.
+
+Each occurrence requests the preceding 1–366 completed UTC days, ending before
+the occurrence's UTC calendar date. A schedule row lock, unique job occurrence
+key, and one local transaction commit the queued job and next run together.
+One due schedule is handled per existing reporting poll; overdue schedules run
+once and advance to the next future occurrence, without replaying an unbounded
+backlog. Update/resume also select the next future occurrence.
+
+The approved recipient group is ADMIN and the only delivery target is
+ADMIN_REPORT_HISTORY. Delivery means publishing the aggregate artifact into the
+existing authenticated report history/download flow; no email, arbitrary URL,
+health content, second report engine, broker, or notification adapter is added.
+Current creator account access is checked before generation; revoked access
+pauses the schedule with ADMIN_ACCESS_UNAVAILABLE. Generation failures retain
+the existing immutable FAILED/STALE job evidence and idempotent retry API.
+Soft deletion stops future occurrences while retaining prior jobs/artifacts.
+Update, pause/resume and delete require the current `expectedVersion`; a stale
+write returns HTTP 412. Existing report artifact retention remains 30 days.
+
+Apply append-only migration `004-report-schedules.sql` before deploying. Old
+applications tolerate the additive table and nullable occurrence columns. Stop
+the schedule-aware runtime before rollback; do not drop audit-linked schedules.
+No new configuration is required; existing platform-reporting polling/enable
+settings control both scheduled enqueue and the shared processor.
+
+The implemented internal endpoint
+`GET /internal/v1/accounts/{accountId}/verified-email` returns an address only
+for an active account with a verified email and requires the dedicated service
+token. It is not a general account/profile read.
 
 Only OpenAPI paths marked `x-mentalbridge-status: implemented` have runtime handlers. They currently cover registration, email verification/resend, login, refresh, logout/logout-all, password recovery/reset/change, and current-account retrieval. Contract and provider tests compare this exact set with the Spring request mappings so an unavailable operation cannot silently become a frontend-facing 404.
 

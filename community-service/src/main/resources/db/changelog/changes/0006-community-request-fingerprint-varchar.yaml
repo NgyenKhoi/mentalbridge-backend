@@ -1,0 +1,16 @@
+databaseChangeLog:
+  - changeSet:
+      id: 0006-community-request-fingerprint-varchar
+      author: mentalbridge
+      comment: Align Community request fingerprints with the JPA varchar mapping.
+      changes:
+        - sql:
+            splitStatements: false
+            sql: |
+              ALTER TABLE community_post
+                  ALTER COLUMN request_fingerprint TYPE varchar(64)
+                  USING request_fingerprint::varchar(64);
+
+              ALTER TABLE community_media
+                  ALTER COLUMN request_fingerprint TYPE varchar(64)
+                  USING request_fingerprint::varchar(64);

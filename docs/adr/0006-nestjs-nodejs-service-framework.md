@@ -23,7 +23,7 @@ Keep these supporting decisions:
 - MongoDB services use the official driver and append-only `migrate-mongo` migrations rather than sharing Mongoose domain models.
 - Node-owned PostgreSQL services use `pg` and repository-standard Liquibase execution rather than schema auto-creation.
 - Realtime client delivery uses Socket.IO through NestJS gateways; service-to-service queries remain REST and durable asynchronous work remains Kafka.
-- Pino, OpenTelemetry, Prometheus, Vitest, Supertest, and Testcontainers remain the standard observability and verification tools.
+- Pino, Prometheus, Vitest, Supertest, and applicable Testcontainers remain the baseline observability and verification tools. OpenTelemetry is available only when a feature meets ADR 0016's distributed-trace justification; it is not installed by default.
 
 Organize code by feature module. Controllers/gateways stay thin, application providers coordinate use cases, domain code remains framework-independent where domain behavior warrants it, and database/provider clients stay in infrastructure providers. A global/shared module contains only stable technical primitives and never shared business DTOs, persistence models, or authorization decisions.
 

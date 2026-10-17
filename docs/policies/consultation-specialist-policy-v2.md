@@ -1,0 +1,320 @@
+# Consultation and specialist policy v2
+
+## Policy metadata
+
+| Field | Value |
+| --- | --- |
+| Scope decisions | `MB-SCOPE-V2-001`, amended by `MB-SCOPE-V2-002` |
+| Status | `PRODUCT POLICY APPROVED; MB-360 LIFECYCLE, MB-362 AVAILABILITY, MB-363 DISCOVERY OWNER, MB-378 APPOINTMENT REQUEST, MB-379 DECISION/EXPIRY, MB-380 APPOINTMENT CHANGE, AND MB-558 CREDIT V2/CAP RUNTIMES IMPLEMENTED; MB-363 CONSUMER AND VIDEO SESSION RUNTIMES DELIVERY-GATED` |
+| Effective decision date | 2026-09-24 for ADR 0022 amendments |
+| Appointment, specialist, evidence, and billing owner | Consultation |
+| Brief and SupportPlan-change decision owner | Care |
+| Chat owner | Realtime |
+| Base decision | [ADR 0017](../adr/0017-product-scope-v2.md) |
+| Current amendment | [ADR 0022](../adr/0022-current-product-blueprint-amendments.md) |
+| Discovery decision | [ADR 0027](../adr/0027-approved-online-specialist-discovery.md) (`MB-SPECIALIST-DISCOVERY-001`) |
+| Appointment email reminder decision | [ADR 0030](../adr/0030-one-appointment-email-reminder.md) (`MB-APPOINTMENT-EMAIL-REMINDER-001`) |
+| Historical credit implementation | [ADR 0020 consultation-credit v1](../adr/0020-service-plan-consultation-credits.md) |
+| Amends | [Consultation and specialist policy v1](consultation-specialist-policy-v1.md) |
+
+The v1 specialist approval, deterministic non-clinical discovery, atomic
+booking/credit hold, cancellation/no-show outcomes, consent boundaries, and
+idempotency rules remain in force unless amended here or by ADR 0022.
+
+## Specialist discovery and booking boundary
+
+Only approved, active specialists may appear in current discovery. New v2
+appointments use only `IN_APP_CHAT` and `IN_APP_VIDEO`; physical
+`PracticeLocation`, phone consultation, and external meeting links are not
+current booking modes.
+
+`FREE` may browse approved specialists and currently selectable online slots
+but cannot book. Booking authority is server-side Consultation entitlement and
+credit policy.
+
+Discovery follows `MB-SPECIALIST-DISCOVERY-001`. It rechecks the current
+Consultation-owned profile and availability state on every request. Only
+`APPROVED` profiles may appear, and only active, unheld, future, exact
+60-minute `IN_APP_CHAT` or enabled `IN_APP_VIDEO` slots may be returned. An
+approved profile appears only while at least one such selectable slot remains.
+A suspension, withdrawal, started slot, active appointment hold, or disabled
+video capability must fail closed rather than be hidden behind stale cached
+eligibility.
+
+When an exact owned SupportEvaluation is supplied, Consultation may use only
+Care's versioned domain, instrument-specific screening level, and domain-local
+support pathway in memory. No raw answers, scores, safety evidence, Journal,
+or chat content is persisted, logged, or returned. Missing or unavailable Care
+context removes personalized compatibility and produces a neutral explained
+rank; it never authorizes a stale or guessed health context.
+
+The `specialist-discovery-v2` comparison order is domain/pathway compatibility,
+requested language, current availability, and timezone. Only after those four
+factors tie may an authoritative rating aggregate break a tie for a current
+`PREMIUM` user. Rating is neutral for `FREE` and `PLUS`, is never a primary or
+sole recommendation factor. MB-364 supplies this aggregate from one current
+1-5 rating per evidence-backed completed appointment. `FREE` and `PLUS` may
+see the truthful average/count but do not rank by it. Years of experience
+remains informational and is not a v2 rank factor. The final stable tie-breaker
+is specialist account ID; historical v1 cursors are stale under v2.
+
+The response exposes stable explanation codes and policy version but never a
+clinical-suitability claim or hidden weighted score. Public discovery fields
+exclude PracticeLocation, address, phone, external links, prices, free-intro
+claims, unverified credentials, unsupported titles/specialties,
+and sensitive Care/Journal/chat content.
+
+The specialist credential amendment in [ADR 0041](../adr/0041-specialist-credential-review.md)
+permits only ADMIN-verified, specialist-enabled badge titles in public profile
+surfaces. Originals and serial numbers remain private to the owner and ADMIN.
+
+A booking request may be created only when all are true:
+
+1. the account has a package allowed to book;
+2. at least one `AVAILABLE` consultation credit exists for the active period;
+3. the account is below its package's concurrent active-reservation limit; and
+4. the exact specialist slot is still selectable.
+
+Credit exhaustion and reservation-cap exhaustion are separate stable outcomes.
+The client never derives either mutable fact from package name.
+
+## Consultation-credit policy v2
+
+For new plan periods governed by `consultation-credit-v2`:
+
+| Package | Credits / active paid period | Rollover | Max active appointment reservations |
+| --- | ---: | --- | ---: |
+| `FREE` | 0 | none | 0 |
+| `PLUS` | 4 | no rollover | 2 |
+| `PREMIUM` | 10 | no rollover | 4 |
+
+Historical periods created under `consultation-credit-v1` remain `FREE=0`,
+`PLUS=1`, `PREMIUM=3`. They remain queryable with their original policy and are
+never rewritten to look like v2 periods.
+
+Unused v2 credits expire with their billing period and do not roll into the
+next period. The next period provisions a fresh versioned set from the exact
+plan version and credit policy.
+
+Reservation capacity prevents one account from holding excessive specialist
+availability at once; it does not reduce the total credits included in the
+period. `REQUESTED`, `CONFIRMED`, and `IN_PROGRESS` (or exact equivalent
+reserving states) count. `SESSION_ENDED` no longer reserves future specialist
+capacity even while evidence settlement is pending. Rejected, expired,
+cancelled, completed, no-show, and other terminal/non-reserving states do not
+count.
+
+Reschedule-as-new is one logical reservation replacement. A user already at
+the reservation cap must still be able to replace the reservation being
+rescheduled through one atomic/reconciled operation without temporarily
+counting both old and replacement reservations as independent capacity.
+
+MB-558 implements `consultation-credit-v2` for newly created periods and keeps
+existing MB-377 `consultation-credit-v1` periods immutable. The owner response
+and booking command expose/enforce reservation capacity separately from credit
+balance.
+
+## Specialist exception lifecycle
+
+MB-360 implements the same-profile lifecycle below. Every decision appends an
+audit record with the actor, resulting state, stable reason where required, and
+time. A rejected specialist may edit the six public fields and explicitly
+resubmit the same profile; resubmission clears the current rejection reason and
+returns the profile to `PENDING`. It never creates a replacement identity or
+profile.
+
+```text
+PENDING -> APPROVED | REJECTED
+REJECTED -> PENDING
+APPROVED -> SUSPENDED
+SUSPENDED -> APPROVED
+```
+
+Rejection reasons are `PROFILE_INFORMATION_INCOMPLETE`,
+`PROFILE_CONTENT_NOT_APPROVED`, and `OUTSIDE_SUPPORTED_SCOPE`. Suspension
+reasons are `POLICY_VIOLATION`, `QUALITY_REVIEW_REQUIRED`, and
+`ACCOUNT_REVIEW_REQUIRED`. Other values fail closed.
+
+Suspension is one owner-local transaction: lock the profile, record the stable
+reason, withdraw every future active slot, cancel every future not-started
+`REQUESTED` or `CONFIRMED` appointment, and release exactly its held credit
+with append-only credit and appointment histories. Any credit inconsistency
+rolls the transaction back. Restoration returns the profile to `APPROVED`; it
+does not revive withdrawn slots, cancelled appointments, or released holds.
+The reason is available through authenticated owner/admin reads. This
+synchronous owner-local flow has no independent notification consumer, so it
+does not add Kafka or an outbox.
+
+## Approved-profile amendments (MB-635)
+
+[MB-SPECIALIST-PROFILE-AMENDMENT-001](../adr/0033-reviewed-specialist-profile-amendment.md)
+extends the lifecycle without moving an approved specialist back to PENDING.
+The approved public snapshot remains active while a separate private amendment
+is DRAFT, PENDING_REVIEW or REJECTED. Only ADMIN approval atomically promotes the
+reviewed fields into a new approved content version. Rejection preserves the
+old public snapshot exactly and retains bounded review feedback and the reviewed
+payload for correction/resubmission. Editing a pending amendment withdraws it
+to DRAFT; rejected edits preserve feedback until explicit resubmission.
+
+Initial approval and amendment promotion append immutable approved-version
+history. Operational suspension/restoration do not increment the published
+content version. Suspension blocks amendment commands and review eligibility;
+restoration does not revive appointments/slots. Normal amendment changes never
+cancel, reprice or rewrite existing appointments. Public discovery reads only
+the live approved snapshot and applies its existing authoritative checks.
+
+All mutations require the appropriate profile/amendment If-Match. Role and
+ownership checks protect private edits; stale/concurrent commands cannot publish
+an unreviewed payload or overwrite another decision. See the ADR for transitions,
+baseline migration and overlapping-version deployment limitations.
+
+## Modes and session boundary
+
+Every slot is exactly 60 minutes. At `scheduledEndAt`, the authoritative
+appointment becomes `SESSION_ENDED` and interactive chat/video access closes.
+The channel end is a time boundary, not proof of service delivery.
+
+```text
+REQUESTED -> CONFIRMED | REJECTED | EXPIRED | CANCELLED
+CONFIRMED -> IN_PROGRESS | SESSION_ENDED | CANCELLED
+IN_PROGRESS -> SESSION_ENDED
+SESSION_ENDED -> COMPLETED only after the applicable evidence policy passes
+```
+
+No-show/insufficient-evidence/review values are `sessionOutcome` values while
+status remains `SESSION_ENDED`; disputes have their own OPEN/RESOLVED status.
+The consolidated executable interpretation and exact credit effects are in
+[consultation-journey-v1](consultation-journey-state-map-v1.md). This clarifies
+existing runtime dimensions, not a new settlement policy.
+
+The exact transition into `COMPLETED` requires a versioned evidence policy.
+Chat evidence is server-observed. Video evidence is server/provider-observed
+and must remain attributable to the appointment and both participants. A clock
+job, specialist assertion, UI state, or elapsed 60 minutes alone is
+insufficient.
+
+Only evidence-backed `COMPLETED` consumes one held credit. Specialist earning
+creation belongs to the approved settlement boundary and uses the consumed
+credit fact; timer-only `SESSION_ENDED` never creates an earning or payout.
+
+No earning is created for cancellation, rejection, expiry, insufficient
+evidence, either no-show, provider failure, or unresolved dispute unless a
+future explicit settlement decision amends that outcome.
+
+Under `MB-APPOINTMENT-DISPUTE-001`, either assigned participant may open the
+single appointment dispute during the 24 hours after an eligible settled
+outcome. The dispute carries only stable operational reason/provenance and
+optional bounded evidence type/time. While it is `OPEN`, specialist earning and
+payout materialization fail closed. Admin resolution may uphold the recorded
+outcome or release user credit; a terminal credit correction appends an
+`ADJUSTED_RELEASED` ledger fact and leaves every prior appointment, outcome,
+credit, and settlement fact auditable.
+
+## Appointment request, decision, and change
+
+A request snapshots the exact 60-minute interval, specialist, mode, applicable
+timezone/provenance, held slot, and held credit. Duplicate or concurrent
+requests must not double-book a slot or double-hold one credit.
+
+The assigned specialist may accept or reject only while the request remains
+eligible. The decision deadline is `min(requestedAt + 24h, startsAt - 2h)`
+unless a later accepted policy changes it. Acceptance moves to `CONFIRMED` and
+keeps the credit `HELD`; rejection or deterministic expiry releases slot and
+credit exactly once.
+
+Cancellation and reschedule preserve immutable appointment history. Reschedule
+creates a linked replacement request and never mutates the original interval or
+mode snapshot. Failure to create the replacement must not fabricate success or
+double-settle credit/slot state.
+
+MB-380 allows the appointment owner to cancel only a future `REQUESTED` or
+`CONFIRMED` appointment. `REQUESTED` cancellation releases the held credit.
+`CONFIRMED` cancellation releases it when the command occurs at least 24 hours
+before the snapshotted start and forfeits it otherwise. Reschedule applies the
+same boundary: an eligible released hold transfers to the linked replacement;
+a late confirmed replacement forfeits the old hold and must atomically acquire
+another eligible credit. Actor, stable reason, server time, relation, and exact
+credit outcome are immutable audit facts. Optimistic version and idempotency
+prevent repeated commands or races from settling twice.
+
+## Brief, summary, next steps, and plan proposals
+
+`ConsultationBrief` exists before the session. Care exposes it to the specialist
+only after the user reviews and explicitly approves the appointment-scoped
+snapshot under current sharing consent.
+
+MB-381 implements that boundary for controlled local/test/demo use. Consultation
+returns only authoritative appointment identity, assignment, status, timing, and
+version to the authenticated owner or assigned specialist. Care owns the editable
+draft, immutable approved snapshot, appointment-purpose grant, immediate
+revocation, content-clearing deletion, and content-free audit. Specialist reads
+serialize with revocation and are allowed only for the assigned `CONFIRMED` or
+`IN_PROGRESS` appointment from 24 hours before through 24 hours after its
+snapshotted start. Assignment or schedule changes invalidate the approved grant
+until the user reviews and approves a new exact snapshot. Early, expired,
+revoked, deleted, wrong-actor, wrong-appointment, changed-appointment, or
+dependency-unavailable reads fail closed.
+
+The snapshot contains only bounded current situation, the exact approved
+SupportEvaluation v2 domain/level/version provenance, and bounded user goals. It
+never contains raw assessment answers, raw journals, chat, private notes,
+diagnosis, or an unapproved generated summary. MB-385 remains the owner of
+`SessionSummary`; until that exact-version source exists, prior-summary reuse is
+unavailable rather than accepting client-authored continuity text. When added,
+reuse requires a separate approval tied to the exact summary snapshot/version and
+must never inherit this appointment-preparation grant.
+
+After an eligible completed session, the specialist may create a user-visible
+`SessionSummary` and `AgreedNextSteps`. These are not a second SupportPlan and
+do not mutate the Care-owned plan. Reuse in a later brief, SupportPlan review,
+reassessment, or AI context requires explicit user approval.
+
+A specialist may propose an approved platform resource by exact
+`ResourceVersion` with bounded appointment/summary provenance. Consultation
+records/emits that proposal. The governed `PlanChangeRequest` decision is
+Care-owned: Care freshly revalidates entitlement, current plan/version, exact
+resource eligibility/publication state, and plan constraints; the user confirms
+any applied change. Consultation and the specialist never write SupportPlan
+state directly.
+
+## Appointment reminder
+
+An appointment reminder is separate from the wellbeing digest. Under
+`MB-APPOINTMENT-EMAIL-REMINDER-001`, Content/Notification may send the owning
+user once for one exact confirmed appointment/version at the 60-minute target.
+Current preference and quiet hours may defer it only until the quiet window ends
+strictly before start or suppress it. Rejection, expiry, cancellation,
+reschedule, a newer/non-confirmed version, or terminal/end state invalidates the
+stale intent. No email is sent at or after start. The minimized template contains
+only local appointment time/timezone, in-app modality, and the authenticated
+in-app appointment entry link. AI does not decide recipient, timing,
+suppression, retry, or safety-triggered delivery.
+
+## Video runtime gate
+
+MB-384 supplies the approved LiveKit Cloud contract, signed participation
+evidence and explicit Specialist completion command in
+[ADR 0039](../adr/0039-livekit-cloud-video-consultation.md). Enablement remains
+an explicit provider/configuration gate, not an inference from slot existence.
+Default-disabled environments expose no selectable video or external-link
+fallback. MB-623 verifies this disabled capability truthfully, not a mock call.
+
+MB-362 may publish a video availability slot only when the typed capability
+gate is enabled after that provider contract is accepted. With the gate off,
+publication is rejected and existing video slots are reported as disabled.
+Publishing a slot never issues room credentials or proves that video-session
+runtime is enabled.
+
+## Financial boundary
+
+Each paid credit snapshots a fixed VND `creditAllocation`. An evidence-backed
+completed appointment creates a specialist earning equal to 70% of that
+allocation, not 70% of the package price.
+
+Changing period quantities from historical `1/3` to target `4/10` changes
+commercial capacity and liability but does not change the per-credit earning
+formula.
+
+Real payment and payout are VND + MoMo only and remain disabled until approved
+plan prices, `creditAllocation`, provider contracts, reconciliation rules, and
+credentials are configured and verified.

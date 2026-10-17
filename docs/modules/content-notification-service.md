@@ -2,35 +2,54 @@
 
 ## Business boundary
 
-Content/Notification owns reviewed self-help resource definitions, their versioned domain/band/pathway eligibility metadata, notification preferences, durable in-app notifications, templates, provider delivery attempts, and delivery outcomes. Review/publication permits public display but does not by itself make a resource SupportPlan-eligible. Care owns SupportEvaluation, proposal policy and the final plan-eligibility decision. Content/Notification never scores assessments, evaluates safety/support policy, or guarantees emergency response. PostgreSQL is authoritative; Brevo/push are replaceable adapters. ADR 0009 removes hotline catalogue ownership; ADR 0012 defines the forward eligibility boundary.
+Content/Notification owns reviewed self-help resources and eligibility,
+reviewed area-directory entries, notification preferences, deterministic
+scheduler execution, durable notifications, templates, delivery attempts, and
+outcomes. Care owns safety, Support Guide, SupportEvaluation, the official
+SupportPlan, and final `PlanChangeRequest` decisions. Content/Notification never
+infers safety, proximity, or emergency response; ADR 0017 requires provenance
+and area wording for the directory and forbids automatic safety email.
 
 ## Use cases and acceptance
 
 | Capability | Main behavior | Acceptance |
 | --- | --- | --- |
 | Resources | Admin versions, publishes, retires and reviews localized self-help content and separately governed eligibility | Only reviewed active versions served; locale/effective/review dates explicit; future plan use also requires explicit domain/instrument-band/pathway eligibility; unavailable content has an explicit fallback status |
+| Resource journey | Materialize an owner/date daily challenge and Monday-based bingo from the active SupportPlan snapshot supplied by the trusted BFF | Stable persisted assignment; completed one-time learning excluded; repeatable practice remains reusable; daily completion, learning completion, and practice streak remain distinct |
+| Resource engagement | Persist private exact-version bookmarks and reversible weekly Bingo self-confirmation | JWT owner scope; save/remove retries are idempotent; Bingo uses strong ETags; personal checks remain distinct from recomputed exact-version Content evidence; outages never become empty or stale success |
+| Area directory | Publish sourced, reviewed and verified entries for user-selected province/district/area | Source/provenance, `reviewedAt`, `verifiedAt`, address, phone, coverage and active state required; never claim nearest without coordinates/distance |
 | Preferences | User manages channel/category choices | Mandatory safety/security categories follow approved policy; owner authorization and optimistic locking enforced |
+| Reminder scheduling | Create at most one default wellbeing digest/day, explicit opt-in resource reminders, and one dedicated-opt-in appointment email targeting exactly 60 minutes before start | Appointment/version deduplication, quiet-hour deferral/suppression, lifecycle invalidation, strict before-start cutoff; AI does not choose recipient/timing; no automatic safety email |
 | Notification history | Persist list/detail/read/delete state | Bounded cursor pagination; user sees own records only; read/delete idempotent; retention semantics explicit |
 | Domain notification | Consume minimized facts, select versioned template and create notification | Duplicate message creates one logical notification; replay policy prevents repeated external sends |
+| Community interaction notification | Consume `mentalbridge.community.interaction.v1` and create generic owner-scoped inbox copy | Strict v1 validation; per-event dedupe; in-app and Community-group preference enforcement; removed targets resolve through Community's safe unavailable state; no post/comment body or display identity crosses the boundary |
 | Provider delivery | Send through bounded adapter and track every attempt | Domain outcome independent; transient retry honors provider signals; terminal failure visible; no secrets/sensitive body in logs |
 | Live delivery | Publish `NotificationCreated` for Realtime | Durable record/outbox atomic; payload minimal; reconnect relies on REST history, not guaranteed socket delivery |
 
 ## Implementation design
 
-- Feature slices: `resources`, `preferences`, `notifications`, `templates`, `provider-delivery`.
+- Feature slices: `resources`, `area-directory`, `preferences`, `scheduling`,
+  `notifications`, `templates`, `provider-delivery`.
 - Runtime: Node.js 22 or newer, strict TypeScript, NestJS 11, Zod, `pg`, `node-pg-migrate`, KafkaJS, Pino, OpenTelemetry, Vitest, and Testcontainers as defined in `docs/nodejs-service-stack.md`.
 - Define public/admin OpenAPI and versioned consumed/published events first. PostgreSQL migrations include template/delivery-attempt aggregates and outbox/inbox deduplication.
 - Template rendering and provider APIs sit behind application ports. Optional delivery never becomes safety truth and cannot claim a human or emergency service was notified.
-- Existing resource contracts and rows remain valid for reviewed public reads. Issue #50 owns additive eligibility contract/migration work; no service infers universal plan eligibility from current data.
+- Existing resource contracts and rows remain valid for reviewed public reads. Resource Eligibility v1 adds immutable exact-version publications, explicit declarations, withdrawal and a bounded Care batch resolver under #50; no service infers universal plan eligibility from current data.
+- MB-603 adds semantic `resourceKind`/`interactionType` metadata and `PUT /api/v1/resource-journeys/{localDate}`. The browser supplies only date/timezone to the BFF; the BFF reads Care's active SupportPlan and forwards its authoritative identity, version, domains, and selected resource IDs. Content persists the resulting assignment and completion/session evidence.
+- MB-660 adds owner-scoped bookmark and Bingo APIs. Bookmarks bind to immutable publication snapshots. Bingo item reads expose separate self-confirmed and Content-verified state; only the former is stored on the board, and state-changing writes require `If-Match`.
+- Runtime never scrapes or translates third-party sources. Offline/admin ingestion records source URL, retrieval instant, SHA-256 content hash, version label, and explicit review status before reviewed Vietnamese content is published.
+- MB-617 consumes only MB-580's minimized, versioned Community interaction fact. The consumer transaction persists either a delivered inbox row or a cancelled preference outcome keyed by the source `eventId`; malformed facts are parked as digest-only DLQ metadata, while transient persistence failures leave the Kafka offset retryable. Community commands never call this service synchronously.
 
 ## Ordered tasks
 
 - [x] CN-01 Scaffold the NestJS/TypeScript service with feature modules, typed configuration, health/readiness, lint, test, and build commands.
-- [ ] CN-02 Resolve resource locale/review and domain-aware plan-eligibility policy (#50), plus notification template, mandatory-category, delivery retry and retention policies.
+- [ ] CN-02 Implement exact-version domain/band/pathway eligibility with approved `PRIMARY`/`ADJUNCT` roles (#50), plus notification template, mandatory-category, delivery retry and retention policies.
+  - [x] Exact-version eligibility provider, Care consumer, and initial controlled-demo item matrix are implemented; the notification-policy remainder stays open.
 - [ ] CN-03 Define resource/preference/notification OpenAPI and notification event schemas.
+  - [x] MB-562 defines the owner preference OpenAPI; notification history and event schemas remain open.
 - [x] CN-04 Add owner `node-pg-migrate` migrations, constraints/indexes and field dictionary entries.
 - [ ] CN-05 Implement reviewed content administration and safe current-resource reads.
 - [ ] CN-06 Implement preferences and durable notification history/state.
+  - [x] MB-562 implements persisted owner preferences; notification history/state remains open.
 - [ ] CN-07 Implement idempotent event consumption, versioned rendering, provider attempts and outbox to Realtime.
 - [ ] CN-08 Verify authorization, stale content, duplicate/replay, rate limit, provider timeout/429/5xx, dead letter and outbox rollback.
 - [ ] CN-09 Add observability/readiness/configuration, README, and pass Node/contract/PostgreSQL/Kafka gates.

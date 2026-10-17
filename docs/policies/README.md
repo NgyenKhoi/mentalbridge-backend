@@ -2,18 +2,56 @@
 
 This directory contains versioned product, safety, privacy, and support policies that constrain executable behavior. A policy marked `DRAFT` is not production configuration and must not be treated as approved merely because its structure or cited scoring method is complete.
 
-| Policy | Version | Status | Runtime use |
+Read [Current Product Blueprint](../CURRENT_PRODUCT_BLUEPRINT.md) first for the current authority map. Current cross-feature scope is based on `MB-SCOPE-V2-001` and amended by `MB-SCOPE-V2-002`. Historical policy versions remain for provenance and must not override a later explicit amendment.
+
+| Policy | Version / decision | Status | Runtime use |
 | --- | --- | --- | --- |
 | [Capstone questionnaire evidence and publication](capstone-questionnaire-publication-policy.md) | `1.0` | Effective for controlled Capstone local/demo use | Defines the bounded research-verification gate; does not approve production deployment |
 | [PHQ-9 screening and item-9 safety](phq9-screening-and-safety-policy.md) | `1.0-capstone` | Capstone published | Executable in controlled local/demo use; production review remains separate |
 | [GAD-7 screening](gad7-screening-policy.md) | `1.0-capstone` | Capstone published | Executable in controlled local/demo use; production review remains separate |
-| [Care support routing and SupportPlan](care-support-and-intervention-policy.md) | `1.1-domain-scope-correction` | Controlled Capstone v1 routing published; domain-aware plan selection not approved | `mb-support-routing-capstone-v1` remains immutable coarse routing; compatible domain-aware evaluation, eligibility and system-proposed SupportPlan work are gated by #48–#50 |
-| [Care consent and assessment retention](care-consent-and-retention-policy.md) | `1.1-capstone` | Product Owner approved for controlled Capstone use; production security/legal review required | `privacy-capstone-v3` gates new PHQ-9/GAD-7 processing; specialist sharing and unapproved retention values remain unavailable |
+| [Care support routing and SupportPlan](care-support-and-intervention-policy.md) | `1.4-scope-v2` | Controlled Capstone v1/v2 evaluation, Support Guide, and paid SupportPlan foundations implemented | Keeps deterministic screening/safety and domain-aware evaluation while deferring to current SupportPlan policy for lifecycle/reassessment amendments |
+| [SupportEvaluation policy v2](support-evaluation-policy-v2.md) | `mb-support-routing-capstone-v2` | Controlled Capstone implementation; production domain review pending | Preserves two domain-local evidence snapshots and independent PHQ-9 item-9 safety without global severity |
+| [Combined screening meaning draft](combined-screening-meaning-draft-v1.md) | `mb-combined-screening-meaning-vi-vn-v1-draft.3` | DRAFT; owner approved draft.3 wording; domain review pending; Stitch prototype published | MB-667 presentation of the exact saved pair and existing tier; not Care-reviewed or approved for deployment |
+| [Support Guide resource map v1](support-guide-resource-map-v1.md) | `mb-support-guide-resource-map-v1` | Implemented for MB-646 controlled development/demo use; domain review pending | Deterministic 20-row map from the saved band pair to at most two exact reviewed PRIMARY resources for new Guides; saved Guides are never re-selected |
+| [SupportPlan policy v1](support-plan-policy-v1.md) | `mb-support-plan-selection-v1` | Historical policy; amended by ADR 0017/0022 | Retains the original template, composition, eligibility, lifecycle, and safety rationale |
+| [SupportPlan policy v2](support-plan-policy-v2.md) | `MB-SCOPE-V2-001` + `MB-SCOPE-V2-002` | Support Guide, draft, activation, lifecycle/history, scheduling, engagement and MB-386 baseline implemented; explicit self-report and governed review amendment delivery-gated | Distinguishes persisted all-tier Support Guide from paid durable SupportPlan and defines four-dimension reassessment with explicit user self-report as the canonical fourth dimension |
+| [SupportPlan policy v3](support-plan-policy-v3.md) | `MB-SUPPORT-PLAN-V3-ACTIONS-001` | Product policy approved; native v3 runtime delivery governed by MB-639 | Defines Care-owned focuses and typed actions, bounded cross-domain source/evidence references, generic scheduling, and the non-destructive v2 resource-plan adapter |
+| [SupportPlan Companion policy v1](support-plan-companion-policy-v1.md) | `MB-SUPPORT-PLAN-COMPANION-001` | Proposed for MB-647 review | Freezes the optional non-clinical persona, seven intents, minimized context, placements, interaction states, interruption/frequency rules, fallback and cross-client accessibility contract |
+| [Consultation and specialist policy v1](consultation-specialist-policy-v1.md) | `MB-CONSULTATION-FLOW-001` | Historical policy; amended by ADR 0017/0022 | Retains original consultation rationale and historical behavior |
+| [Consultation and specialist policy v2](consultation-specialist-policy-v2.md) | `MB-SCOPE-V2-001` + `MB-SCOPE-V2-002` | Product policy approved; availability runtime implemented; discovery/appointment/credit-v2/session/payment/payout remain delivery-gated | Online-only chat/video, evidence-backed completion, `consultation-credit-v2` target `0/4/10`, no rollover, reservation caps `0/2/4`, and governed specialist-to-plan handoff |
+| [Chat session completion policy v1](chat-session-completion-policy-v1.md) | `chat-session-completion-v1` / `MB-CHAT-SESSION-COMPLETION-001` | Product Owner approved; implemented by MB-383 | Freezes minimized evidence, 30-minute common-presence completion, 15-minute no-show witness, grace/reconciliation, and deterministic credit outcomes |
+| [Consultation journey state and settlement map](consultation-journey-state-map-v1.md) | `consultation-journey-v1` / MB-623 | Verification consolidation, not a new business-policy approval | Separates appointment/outcome/dispute dimensions and maps existing credit, completion, privacy and modality boundaries |
+| [AI Companion policy v1](ai-companion-policy-v1.md) | `MB-AI-COMPANION-001` | Historical policy; amended by ADR 0017 | Retains exact-source analysis, longitudinal evidence, provider execution, and AI/Care authority rationale |
+| [AI Companion policy v2](ai-companion-policy-v2.md) | `MB-SCOPE-V2-001` + `MB-SCOPE-V2-002` | Chat/quota and exact-revision runtimes implemented; real provider route approval-gated | Adds package quotas/model routing and bounded SupportPlan/reassessment/reminder accompaniment; AI never supplies the explicit reassessment self-report |
+| [Care consent and assessment retention](care-consent-and-retention-policy.md) | `1.1-capstone` | Product Owner approved for controlled Capstone use; production security/legal review required | `privacy-capstone-v3` gates PHQ-9/GAD-7; `ai-processing-capstone-v2` gates explicit journal analysis and optional saved-ConsultationBrief suggestions; specialist sharing remains separately scoped |
+| [Daily emotion check-in policy v1](daily-emotion-check-in-policy-v1.md) | `MB-DAILY-EMOTION-CHECK-IN-001` | Historical base policy; extended by `MB-EMOTION-CONTEXT-001` | Governs non-clinical daily values, local-day edits, encrypted note, deletion, and consented note-free AI projection |
+| [Daily emotion check-in policy v2](daily-emotion-check-in-policy-v2.md) | `MB-EMOTION-CONTEXT-001` | Implemented for MB-658 controlled development/demo use | Adds bounded optional encrypted factors, explicit owner-save consent copy, clearing, and strict downstream minimization |
+| [Resource reward policy v1](resource-reward-policy-v1.md) | `resource-reward-v1` / `MB-RESOURCE-REWARD-001` | Implemented for controlled development/demo use | Defines deterministic bounded participation XP, source provenance, levels, optional visibility, and strict non-clinical language |
+
+## Current cross-feature amendments
+
+`MB-SCOPE-V2-002` fixes the following target rules prospectively:
+
+- Support Guide is a persisted immutable historical guidance snapshot, not an ephemeral result and not a lifecycle-tracked SupportPlan.
+- Reassessment dimensions are Screening change, Journal context, Plan engagement, and explicit Self-reported experience. Activity helpfulness/reflection can support but cannot replace the explicit self-report.
+- Reassessment never mutates SupportPlan automatically; Care freshly revalidates before continue/keep/replace options are presented.
+- Specialist resource proposals enter a Care-owned `PlanChangeRequest`; Consultation/specialist never mutate SupportPlan directly.
+- New `consultation-credit-v2` periods target `FREE=0`, `PLUS=4`, `PREMIUM=10`, with no rollover and concurrent active-reservation caps `0/2/4`.
+- Historical `consultation-credit-v1` `0/1/3` periods and existing MB-386 snapshots remain immutable under their original provenance.
+
+See [ADR 0022](../adr/0022-current-product-blueprint-amendments.md).
 
 ## Approval rule
 
 A questionnaire may be published for controlled Capstone local/demo use when the evidence checklist in `MB-CAPSTONE-SCREENING-PUBLICATION-001` passes and the Product Owner records the publication decision. This gate does not require unrelated support, intervention, specialist, or commercial features to be complete.
 
-Production deployment and each optional support capability retain their own approval gates. A policy becomes executable for its stated environment only when its required evidence, decision owner, effective date, exact content, configuration values, and acceptance examples are complete. A new decision creates an immutable version; it does not edit historical assessment results.
+Production deployment and each optional support capability retain their own approval gates. A policy becomes executable for its stated environment only when its required evidence, decision owner, effective date, exact content, configuration values, and acceptance examples are complete. A new decision creates an immutable version; it does not edit historical assessment, credit, plan, or reassessment records.
 
-Every assessment result must retain its exact instrument domain, `questionnaireVersion` and `scoringVersion`. PHQ-9 also retains its exact `safetyPolicyVersion`; GAD-7 deliberately stores null with `safetyStatus = NOT_APPLICABLE` because no questionnaire safety policy is evaluated. No result or output may claim global mental-health severity. Existing support output retains its approved `supportPolicyVersion`; future SupportPlans also require exact eligible `contentVersion` provenance under ADR 0012.
+Every assessment result must retain its exact instrument domain,
+`questionnaireVersion` and `scoringVersion`. PHQ-9 also retains its exact
+`safetyPolicyVersion`; GAD-7 deliberately stores null with
+`safetyStatus = NOT_APPLICABLE` because no questionnaire safety policy is
+evaluated. No result may claim global mental-health severity. Support Guide and
+SupportPlan output retain policy/content provenance; current SupportPlans also
+retain entitlement and `PlanChangeRequest` confirmation provenance under the
+accepted scope ADR chain.

@@ -23,6 +23,11 @@ const replaySnapshots =
   require("../../migrations/003_journal_replay_snapshots_and_cursor_index.cjs") as {
     up(db: unknown): Promise<void>;
   };
+const journalMood =
+  require("../../migrations/004_journal_revision_mood.cjs") as {
+    up(db: unknown): Promise<void>;
+    down(db: unknown): Promise<void>;
+  };
 
 void test("persists encrypted owner-isolated CRUD with real MongoDB", async () => {
   const externalUri = process.env.JOURNAL_INTEGRATION_MONGODB_URI;
@@ -42,6 +47,7 @@ void test("persists encrypted owner-isolated CRUD with real MongoDB", async () =
   await baseline.up(database);
   await commands.up(database);
   await replaySnapshots.up(database);
+  await journalMood.up(database);
 
   const { privateKey, publicKey } = await generateKeyPair("RS256", {
     extractable: true,
@@ -55,12 +61,50 @@ void test("persists encrypted owner-isolated CRUD with real MongoDB", async () =
     MONGODB_DATABASE: databaseName,
     MONGODB_CONNECTION_TIMEOUT_MS: 2_000,
     JOURNAL_ENCRYPTION_KEY: Buffer.alloc(32, 11),
-    JOURNAL_ENCRYPTION_KEY_ID: "integration-v1",
+    JOURNAL_ENCRYPTION_KEY_ID: "single-key",
     JOURNAL_IDEMPOTENCY_HMAC_KEY: Buffer.alloc(32, 12),
     IDENTITY_JWT_ISSUER: "https://identity.test.mentalbridge",
     IDENTITY_JWT_AUDIENCE: "mentalbridge-api",
     IDENTITY_JWT_KEY_ID: "integration-key",
     IDENTITY_JWT_PUBLIC_KEY: await exportSPKI(publicKey),
+    CARE_BASE_URL: "http://localhost:8081",
+    CONTENT_BASE_URL: "http://localhost:3003",
+    CONTENT_TIMEOUT_MS: 2_000,
+    CARE_TIMEOUT_MS: 100,
+    CONSULTATION_BASE_URL: "http://localhost:8082",
+    CONSULTATION_TIMEOUT_MS: 100,
+    REMINDER_SERVICE_TOKEN: null,
+    SUPPORT_PLAN_CARE_SERVICE_TOKEN: null,
+    PROVIDER_MODE: "DETERMINISTIC_FAKE",
+    ROUTING_POLICY_VERSION: "exact-revision-routing-v1",
+    PROVIDER_APPROVAL_VERSION: null,
+    FREE_PLUS_ROUTE: null,
+    PREMIUM_ROUTE: null,
+    GEMINI_BASE_URL: "https://generativelanguage.googleapis.com",
+    GEMINI_API_KEY: null,
+    OPENAI_BASE_URL: "https://api.openai.com",
+    OPENAI_API_KEY: null,
+    BEDROCK_REGION: "ap-southeast-1",
+    BEDROCK_API_KEY: null,
+    PROVIDER_TIMEOUT_MS: 30_000,
+    BEDROCK_SCHEMA_WARMUP_TIMEOUT_MS: 300_000,
+    BENCHMARK_ENABLED: false,
+    BENCHMARK_DATASET_PATH:
+      "benchmarks/datasets/exact-revision-synthetic-v1.json",
+    BENCHMARK_GEMINI_ROUTE: null,
+    BENCHMARK_OPENAI_ROUTE: null,
+    BENCHMARK_BEDROCK_ROUTE: null,
+    ANALYSIS_ENABLED: false,
+    ANALYSIS_POLL_INTERVAL_MS: 250,
+    ANALYSIS_LEASE_MS: 35_000,
+    CHAT_RETENTION_DAYS: 90,
+    CHAT_FREE_DAILY_ANSWERS: 5,
+    CHAT_PLUS_DAILY_ANSWERS: 30,
+    CHAT_PREMIUM_FAIR_USE_DAILY_ANSWERS: 200,
+    CHAT_RATE_LIMIT_PER_MINUTE: 10,
+    CHAT_DAILY_TOKEN_BUDGET: 100_000,
+    CHAT_DEFAULT_TIMEZONE: "Asia/Ho_Chi_Minh",
+    CHAT_ROUTING_POLICY_VERSION: "companion-chat-routing-v1",
   };
   const tokenFor = (accountId: string) =>
     new SignJWT({ roles: ["USER"] })
@@ -163,6 +207,7 @@ void test("persists encrypted owner-isolated CRUD with real MongoDB", async () =
       clientEntryId: "33333333-3333-4333-8333-333333333333",
       occurredAt: "2026-09-10T09:00:00.000Z",
       content: { text: "plaintext must never be stored" },
+      mood: "GOOD",
       tags: ["private"],
     };
     const createdResponse = await request(server)
@@ -186,7 +231,51 @@ void test("persists encrypted owner-isolated CRUD with real MongoDB", async () =
     const created = createdResponse.body as {
       id: string;
       currentRevision: number;
+      mood: string;
+      createdAt: string;
     };
+    assert.equal(created.mood, "GOOD");
+
+    const evidencePath = `/api/v1/journals/${created.id}/completion-evidence`;
+    await request(server).get(evidencePath).expect(401);
+    await request(server)
+      .get("/api/v1/journals/invalid/completion-evidence")
+      .set("Authorization", `Bearer ${ownerToken}`)
+      .expect(400);
+    const initialEvidence = await request(server)
+      .get(evidencePath)
+      .set("Authorization", `Bearer ${ownerToken}`)
+      .set("X-Correlation-Id", "mb642-journal-evidence")
+      .expect("Cache-Control", "no-store")
+      .expect("X-Correlation-Id", "mb642-journal-evidence")
+      .expect(200);
+    const initialEvidenceBody = initialEvidence.body as {
+      subjectUserId: string;
+      journalId: string;
+      state: string;
+      fact: { occurredAt: string; factRevision: string };
+    };
+    assert.equal(initialEvidenceBody.subjectUserId, ownerId);
+    assert.equal(initialEvidenceBody.journalId, created.id);
+    assert.equal(initialEvidenceBody.state, "RECORDED");
+    assert.equal(initialEvidenceBody.fact.occurredAt, created.createdAt);
+    assert.notEqual(initialEvidenceBody.fact.occurredAt, createBody.occurredAt);
+    assert.equal(initialEvidenceBody.fact.factRevision, "1");
+    for (const privateValue of [
+      createBody.content.text,
+      createBody.mood,
+      "private",
+    ])
+      assert.equal(
+        JSON.stringify(initialEvidence.body).includes(privateValue),
+        false,
+      );
+    const otherEvidence = await request(server)
+      .get(evidencePath)
+      .set("Authorization", `Bearer ${otherToken}`)
+      .expect(200);
+    assert.equal((otherEvidence.body as { state: string }).state, "MISSING");
+    assert.equal((otherEvidence.body as { fact: unknown }).fact, null);
 
     const replay = await request(server)
       .post("/api/v1/journals")
@@ -200,6 +289,25 @@ void test("persists encrypted owner-isolated CRUD with real MongoDB", async () =
       await database.collection("journal_entries").countDocuments(),
       4,
     );
+    const legacyResponse = await request(server)
+      .post("/api/v1/journals")
+      .set("Authorization", `Bearer ${ownerToken}`)
+      .set("Idempotency-Key", "integration-create-legacy")
+      .send({
+        ...createBody,
+        clientEntryId: "44444444-4444-4444-8444-444444444444",
+        mood: undefined,
+      })
+      .expect(201);
+    const legacy = legacyResponse.body as { id: string; mood?: unknown };
+    assert.equal(legacy.mood, null);
+    const legacyDocument = await database
+      .collection<{ _id: string; revisions: { mood?: unknown }[] }>(
+        "journal_entries",
+      )
+      .findOne({ _id: legacy.id });
+    assert.ok(legacyDocument);
+    assert.equal(legacyDocument.revisions[0]?.mood, undefined);
     await request(server)
       .post("/api/v1/journals")
       .set("Authorization", `Bearer ${ownerToken}`)
@@ -211,12 +319,15 @@ void test("persists encrypted owner-isolated CRUD with real MongoDB", async () =
         _id: string;
         revisions: {
           content: { ciphertext: { _bsontype?: string } };
+          mood?: { ciphertext: { _bsontype?: string } };
         }[];
       }>("journal_entries")
       .findOne({ _id: created.id });
     assert.ok(raw);
     assert.equal(JSON.stringify(raw).includes(createBody.content.text), false);
+    assert.equal(JSON.stringify(raw).includes(createBody.mood), false);
     assert.equal(raw.revisions[0]?.content.ciphertext._bsontype, "Binary");
+    assert.equal(raw.revisions[0].mood?.ciphertext._bsontype, "Binary");
 
     await request(server)
       .get(`/api/v1/journals/${created.id}`)
@@ -225,6 +336,7 @@ void test("persists encrypted owner-isolated CRUD with real MongoDB", async () =
 
     const originalRevisionBody = {
       content: { text: "first revision wins" },
+      mood: "LOW",
       tags: ["first"],
     };
     const originalRevision = await request(server)
@@ -241,6 +353,20 @@ void test("persists encrypted owner-isolated CRUD with real MongoDB", async () =
       .set("If-Match-Revision", "2")
       .send({ content: { text: "later revision" }, tags: ["later"] })
       .expect(200);
+    const preservedMood = await request(server)
+      .get(`/api/v1/journals/${created.id}`)
+      .set("Authorization", `Bearer ${ownerToken}`)
+      .expect(200);
+    assert.equal((preservedMood.body as { mood?: unknown }).mood, "LOW");
+
+    const revisedEvidence = await request(server)
+      .get(evidencePath)
+      .set("Authorization", `Bearer ${ownerToken}`)
+      .expect(200);
+    assert.deepEqual(
+      (revisedEvidence.body as { fact: unknown }).fact,
+      initialEvidenceBody.fact,
+    );
 
     const revisions = await Promise.all([
       request(server)
@@ -314,6 +440,13 @@ void test("persists encrypted owner-isolated CRUD with real MongoDB", async () =
       .expect(200);
     const deleted = deletedResponse.body as { deleted?: unknown };
     assert.equal(deleted.deleted, true);
+    const deletedEvidence = await request(server)
+      .get(evidencePath)
+      .set("Authorization", `Bearer ${ownerToken}`)
+      .expect("Cache-Control", "no-store")
+      .expect(200);
+    assert.equal((deletedEvidence.body as { state: string }).state, "DELETED");
+    assert.equal((deletedEvidence.body as { fact: unknown }).fact, null);
     const replayedDelete = await request(server)
       .delete(`/api/v1/journals/${created.id}`)
       .set("Authorization", `Bearer ${ownerToken}`)
@@ -328,6 +461,10 @@ void test("persists encrypted owner-isolated CRUD with real MongoDB", async () =
       .get("/api/v1/journals?includeDeleted=true")
       .set("Authorization", `Bearer ${ownerToken}`)
       .expect(400);
+    await assert.rejects(
+      () => journalMood.down(database),
+      /Cannot remove encrypted journal mood/,
+    );
 
     const unavailableApp = await createApplication(
       {
@@ -344,6 +481,11 @@ void test("persists encrypted owner-isolated CRUD with real MongoDB", async () =
       await request(unavailableApp.getHttpServer() as unknown as Server)
         .get("/api/v1/journals")
         .set("Authorization", `Bearer ${ownerToken}`)
+        .expect(503);
+      await request(unavailableApp.getHttpServer() as unknown as Server)
+        .get(evidencePath)
+        .set("Authorization", `Bearer ${ownerToken}`)
+        .expect("Cache-Control", "no-store")
         .expect(503);
       assert.ok(Date.now() - unavailableStartedAt < 2_000);
     } finally {

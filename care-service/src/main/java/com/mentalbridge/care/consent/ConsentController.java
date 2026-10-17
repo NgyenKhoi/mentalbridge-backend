@@ -36,6 +36,11 @@ public class ConsentController {
 		return new ConsentCollection(consents.current(subject(jwt)).stream().map(ConsentDecisionResponse::from).toList());
 	}
 
+	@GetMapping("/consents/ai-processing/authorization")
+	AiProcessingAuthorization authorizeAiProcessing(@AuthenticationPrincipal Jwt jwt) {
+		return AiProcessingAuthorization.from(consents.authorizeAiProcessing(subject(jwt)));
+	}
+
 	@PostMapping("/consent-decisions")
 	ResponseEntity<ConsentDecisionResponse> record(@AuthenticationPrincipal Jwt jwt,
 			@RequestHeader("Idempotency-Key") @Size(min = 16, max = 128) @Pattern(regexp = "^[!-~]+$") String idempotencyKey,
@@ -69,5 +74,13 @@ public class ConsentController {
 	}
 
 	public record ConsentCollection(List<ConsentDecisionResponse> decisions) {
+	}
+
+	public record AiProcessingAuthorization(boolean authorized, String reason, String consentType,
+			String policyVersion, java.time.Instant decidedAt) {
+		static AiProcessingAuthorization from(ConsentService.AiAuthorizationView value) {
+			return new AiProcessingAuthorization(value.authorized(), value.reason(), value.consentType(),
+					value.policyVersion(), value.decidedAt());
+		}
 	}
 }

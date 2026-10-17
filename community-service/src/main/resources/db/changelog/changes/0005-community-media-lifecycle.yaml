@@ -1,0 +1,42 @@
+databaseChangeLog:
+  - changeSet:
+      id: 0005-community-media-lifecycle
+      author: mentalbridge
+      comment: Persist bounded owner-scoped Community media upload lifecycle for MB-576.
+      changes:
+        - sql:
+            splitStatements: false
+            sql: |
+              ALTER TABLE community_media
+                  ADD COLUMN storage_provider varchar(24),
+                  ADD COLUMN storage_key varchar(512),
+                  ADD COLUMN expected_mime_type varchar(120),
+                  ADD COLUMN expected_size_bytes bigint,
+                  ADD COLUMN upload_expires_at timestamptz,
+                  ADD COLUMN idempotency_key varchar(128),
+                  ADD COLUMN request_fingerprint char(64),
+                  ADD COLUMN rejection_reason varchar(64),
+                  ADD CONSTRAINT ck_community_media_expected_size CHECK (expected_size_bytes IS NULL OR expected_size_bytes > 0),
+                  ADD CONSTRAINT ck_community_media_upload_provenance CHECK (
+                      (storage_provider IS NULL AND storage_key IS NULL)
+                      OR (storage_provider = 'CLOUDINARY' AND storage_key IS NOT NULL)
+                  ),
+                  ADD CONSTRAINT ck_community_media_intent_identity CHECK (
+                      (idempotency_key IS NULL AND request_fingerprint IS NULL)
+                      OR (idempotency_key IS NOT NULL AND request_fingerprint IS NOT NULL)
+                  ),
+                  ADD CONSTRAINT ck_community_media_rejection_reason CHECK (
+                      (state = 'REJECTED' AND rejection_reason IS NOT NULL)
+                      OR (state <> 'REJECTED' AND rejection_reason IS NULL)
+                  );
+
+              CREATE UNIQUE INDEX uq_community_media_storage_key
+                  ON community_media (storage_provider, storage_key)
+                  WHERE storage_key IS NOT NULL;
+              CREATE UNIQUE INDEX uq_community_media_owner_idempotency
+                  ON community_media (owner_profile_id, idempotency_key)
+                  WHERE idempotency_key IS NOT NULL;
+              CREATE INDEX ix_community_media_cleanup
+                  ON community_media (state, updated_at, id)
+                  WHERE post_id IS NULL AND storage_key IS NOT NULL
+                    AND state IN ('PENDING', 'PROCESSING', 'READY', 'REJECTED', 'DELETED', 'EXPIRED');

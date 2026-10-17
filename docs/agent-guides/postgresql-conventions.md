@@ -2,7 +2,14 @@
 
 ## Ownership and consistency
 
-Each service owns a separate database and database user, even when services share one PostgreSQL server locally. Service tables use the owned database's default `public` schema. Cross-schema foreign keys in the original logical baseline document relationships only; service migrations replace them with external UUIDs. No runtime query or ORM relationship may cross a service boundary.
+Each service owns a separate database and database user, even when services share one PostgreSQL server locally. Service tables use the owned database's default `public` schema. Owner migrations are executable runtime truth. The read-only [`postgresql-logical-schema.sql`](../domain-model/relational/postgresql-logical-schema.sql) groups tables into visual owner namespaces for documentation only; its cross-owner identifiers are logical/external relationships, never physical foreign keys. No runtime query or ORM relationship may cross a service boundary.
+
+Before adding or changing persisted data, inspect both the owner migration
+history and the canonical model. A migration PR that adds, removes, renames, or
+materially changes domain persistence is incomplete until the canonical model
+and the field data dictionary are updated. Non-unique performance-index tuning,
+migration metadata, and constraint name-only changes do not require a logical
+model update.
 
 Use database constraints as the final guard for local invariants: `NOT NULL`, `CHECK`, `UNIQUE`, foreign keys within one owner, exclusion constraints, and appropriate locking. Application validation improves errors but does not replace integrity constraints.
 
@@ -51,6 +58,7 @@ Do not use descriptions that merely repeat the name, such as â€œappointment ID.â
 ## Migration and query review
 
 - Migrations are append-only after merge and owned per service. Use expand/migrate/contract for rolling compatibility.
+- Never execute the canonical logical schema or wire it into provisioning, migration, startup, Compose, tests, or deployment tooling.
 - Store instants as `timestamptz`; keep an IANA timezone separately for human schedules. UUIDs cross REST/message boundaries as strings.
 - Index from real access paths. For every index, identify the query, filter/order, cardinality, and write/storage tradeoff.
 - Pagination is deterministic and bounded. Use cursor/keyset pagination for growing histories and include a unique tie-breaker.

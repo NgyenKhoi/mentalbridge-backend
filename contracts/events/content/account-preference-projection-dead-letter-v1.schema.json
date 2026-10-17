@@ -1,0 +1,27 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://mentalbridge.local/contracts/events/content/account-preference-projection-dead-letter-v1.schema.json",
+  "title": "Account preference projection dead letter",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "schemaVersion",
+    "failedAt",
+    "sourceTopic",
+    "sourcePartition",
+    "sourceOffset",
+    "sourceMessageDigest",
+    "errorCode"
+  ],
+  "properties": {
+    "schemaVersion": { "const": "1.0" },
+    "failedAt": { "type": "string", "format": "date-time" },
+    "sourceTopic": { "const": "mentalbridge.identity.account-lifecycle.v1" },
+    "sourcePartition": { "type": "integer", "minimum": 0 },
+    "sourceOffset": { "type": "string", "pattern": "^(0|[1-9][0-9]*)$" },
+    "sourceMessageDigest": { "type": "string", "pattern": "^[0-9a-f]{64}$" },
+    "errorCode": {
+      "enum": ["INVALID_JSON", "INVALID_EVENT", "PREFERENCE_PROJECTION_FAILED"]
+    }
+  }
+}

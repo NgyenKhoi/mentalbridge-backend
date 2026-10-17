@@ -2,9 +2,39 @@ import { config as loadDotenv } from "dotenv";
 import { z } from "zod";
 
 const nodeEnvironments = ["development", "test", "production"] as const;
-const keyIdPattern = /^[A-Za-z0-9._-]{1,64}$/;
+const providerModes = ["DETERMINISTIC_FAKE", "APPROVED_REAL"] as const;
+const realProviders = ["GEMINI", "OPENAI", "BEDROCK"] as const;
+const versionPattern = /^[A-Za-z0-9._-]{1,96}$/;
+const modelPattern = /^[A-Za-z0-9._:/-]{1,128}$/;
+const bedrockModelIdPattern =
+  /^(?:arn:aws(?:-[A-Za-z0-9-]+)?:bedrock:[a-z0-9-]{1,20}:(?::|[0-9]{12}:)[A-Za-z0-9._:/-]+|arn:aws:sagemaker:[a-z0-9-]+:[0-9]{12}:endpoint\/[A-Za-z0-9-]+|[A-Za-z0-9][A-Za-z0-9._:-]{0,2047})$/;
+const modelSchema = z.string().regex(modelPattern);
+const bedrockModelIdSchema = z
+  .string()
+  .min(1)
+  .max(2_048)
+  .regex(bedrockModelIdPattern);
+const routedModelSchema = z.string().min(1).max(2_048);
 const localEncryptionKey = Buffer.alloc(32, 7).toString("base64");
 const localIdempotencyKey = Buffer.alloc(32, 8).toString("base64");
+
+const configuredRoute = <TProvider extends string>(
+  provider: TProvider | undefined,
+  model: string | undefined,
+  inputCost: number | undefined,
+  outputCost: number | undefined,
+) =>
+  provider !== undefined &&
+  model !== undefined &&
+  inputCost !== undefined &&
+  outputCost !== undefined
+    ? {
+        provider,
+        model,
+        inputCostMicroUsdPerMillionTokens: inputCost,
+        outputCostMicroUsdPerMillionTokens: outputCost,
+      }
+    : null;
 
 const encryptionKeySchema = z.string().transform((value, context) => {
   const decoded = Buffer.from(value, "base64");
@@ -22,6 +52,7 @@ const encryptionKeySchema = z.string().transform((value, context) => {
 const environmentSchema = z
   .object({
     NODE_ENV: z.enum(nodeEnvironments).default("development"),
+    CI: z.enum(["true", "false"]).default("false"),
     JOURNAL_AI_PORT: z.coerce.number().int().min(1).max(65_535).default(3000),
     JOURNAL_AI_LOG_LEVEL: z
       .enum(["fatal", "error", "warn", "info", "debug", "trace", "silent"])
@@ -35,10 +66,6 @@ const environmentSchema = z
       .max(30_000)
       .default(2_000),
     JOURNAL_AI_ENCRYPTION_KEY: encryptionKeySchema,
-    JOURNAL_AI_ENCRYPTION_KEY_ID: z
-      .string()
-      .regex(keyIdPattern)
-      .default("local-v1"),
     JOURNAL_AI_IDEMPOTENCY_HMAC_KEY: encryptionKeySchema,
     IDENTITY_JWT_ISSUER: z.url(),
     IDENTITY_JWT_AUDIENCE: z.string().min(1),
@@ -47,8 +74,196 @@ const environmentSchema = z
       .string()
       .min(1)
       .transform((value) => value.replaceAll("\\n", "\n")),
+    JOURNAL_AI_CARE_BASE_URL: z.url(),
+    JOURNAL_AI_CARE_TIMEOUT_MS: z.coerce
+      .number()
+      .int()
+      .min(100)
+      .max(5_000)
+      .default(2_000),
+    JOURNAL_AI_CONTENT_BASE_URL: z.url(),
+    JOURNAL_AI_CONTENT_TIMEOUT_MS: z.coerce
+      .number()
+      .int()
+      .min(100)
+      .max(5_000)
+      .default(2_000),
+    JOURNAL_AI_CONSULTATION_BASE_URL: z.url(),
+    JOURNAL_AI_CONSULTATION_TIMEOUT_MS: z.coerce
+      .number()
+      .int()
+      .min(100)
+      .max(5_000)
+      .default(2_000),
+    JOURNAL_AI_REMINDER_SERVICE_TOKEN: z.string().min(32).optional(),
+    JOURNAL_AI_SUPPORT_PLAN_CARE_SERVICE_TOKEN: z.string().min(32).optional(),
+    JOURNAL_AI_PROVIDER_MODE: z
+      .enum(providerModes)
+      .default("DETERMINISTIC_FAKE"),
+    JOURNAL_AI_ROUTING_POLICY_VERSION: z
+      .string()
+      .regex(versionPattern)
+      .default("exact-revision-routing-v1"),
+    JOURNAL_AI_PROVIDER_APPROVAL_VERSION: z
+      .string()
+      .regex(versionPattern)
+      .optional(),
+    JOURNAL_AI_FREE_PLUS_PROVIDER: z.enum(realProviders).optional(),
+    JOURNAL_AI_FREE_PLUS_MODEL: routedModelSchema.optional(),
+    JOURNAL_AI_FREE_PLUS_INPUT_COST_MICRO_USD_PER_MILLION_TOKENS: z.coerce
+      .number()
+      .int()
+      .min(0)
+      .max(1_000_000_000)
+      .optional(),
+    JOURNAL_AI_FREE_PLUS_OUTPUT_COST_MICRO_USD_PER_MILLION_TOKENS: z.coerce
+      .number()
+      .int()
+      .min(0)
+      .max(1_000_000_000)
+      .optional(),
+    JOURNAL_AI_PREMIUM_PROVIDER: z.enum(realProviders).optional(),
+    JOURNAL_AI_PREMIUM_MODEL: routedModelSchema.optional(),
+    JOURNAL_AI_PREMIUM_INPUT_COST_MICRO_USD_PER_MILLION_TOKENS: z.coerce
+      .number()
+      .int()
+      .min(0)
+      .max(1_000_000_000)
+      .optional(),
+    JOURNAL_AI_PREMIUM_OUTPUT_COST_MICRO_USD_PER_MILLION_TOKENS: z.coerce
+      .number()
+      .int()
+      .min(0)
+      .max(1_000_000_000)
+      .optional(),
+    JOURNAL_AI_GEMINI_BASE_URL: z
+      .url()
+      .default("https://generativelanguage.googleapis.com"),
+    JOURNAL_AI_GEMINI_API_KEY: z.string().min(1).optional(),
+    JOURNAL_AI_OPENAI_BASE_URL: z.url().default("https://api.openai.com"),
+    JOURNAL_AI_OPENAI_API_KEY: z.string().min(1).optional(),
+    JOURNAL_AI_BEDROCK_REGION: z
+      .string()
+      .regex(/^[a-z0-9-]{3,32}$/)
+      .default("ap-southeast-1"),
+    AWS_BEARER_TOKEN_BEDROCK: z.string().min(1).optional(),
+    JOURNAL_AI_PROVIDER_TIMEOUT_MS: z.coerce
+      .number()
+      .int()
+      .min(1_000)
+      .max(30_000)
+      .default(30_000),
+    JOURNAL_AI_BEDROCK_SCHEMA_WARMUP_TIMEOUT_MS: z.coerce
+      .number()
+      .int()
+      .min(30_000)
+      .max(600_000)
+      .default(300_000),
+    JOURNAL_AI_BENCHMARK_ENABLED: z.enum(["true", "false"]).default("false"),
+    JOURNAL_AI_BENCHMARK_DATASET_PATH: z
+      .string()
+      .min(1)
+      .default("benchmarks/datasets/exact-revision-synthetic-v1.json"),
+    JOURNAL_AI_BENCHMARK_GEMINI_MODEL: modelSchema.optional(),
+    JOURNAL_AI_BENCHMARK_GEMINI_INPUT_COST_MICRO_USD_PER_MILLION_TOKENS:
+      z.coerce.number().int().min(0).max(1_000_000_000).optional(),
+    JOURNAL_AI_BENCHMARK_GEMINI_OUTPUT_COST_MICRO_USD_PER_MILLION_TOKENS:
+      z.coerce.number().int().min(0).max(1_000_000_000).optional(),
+    JOURNAL_AI_BENCHMARK_OPENAI_MODEL: modelSchema.optional(),
+    JOURNAL_AI_BENCHMARK_OPENAI_INPUT_COST_MICRO_USD_PER_MILLION_TOKENS:
+      z.coerce.number().int().min(0).max(1_000_000_000).optional(),
+    JOURNAL_AI_BENCHMARK_OPENAI_OUTPUT_COST_MICRO_USD_PER_MILLION_TOKENS:
+      z.coerce.number().int().min(0).max(1_000_000_000).optional(),
+    JOURNAL_AI_BENCHMARK_BEDROCK_MODEL: bedrockModelIdSchema.optional(),
+    JOURNAL_AI_BENCHMARK_BEDROCK_INPUT_COST_MICRO_USD_PER_MILLION_TOKENS:
+      z.coerce.number().int().min(0).max(1_000_000_000).optional(),
+    JOURNAL_AI_BENCHMARK_BEDROCK_OUTPUT_COST_MICRO_USD_PER_MILLION_TOKENS:
+      z.coerce.number().int().min(0).max(1_000_000_000).optional(),
+    JOURNAL_AI_ANALYSIS_ENABLED: z.enum(["true", "false"]).optional(),
+    JOURNAL_AI_ANALYSIS_POLL_INTERVAL_MS: z.coerce
+      .number()
+      .int()
+      .min(25)
+      .max(10_000)
+      .default(250),
+    JOURNAL_AI_ANALYSIS_LEASE_MS: z.coerce
+      .number()
+      .int()
+      .min(31_000)
+      .max(120_000)
+      .default(35_000),
+    JOURNAL_AI_CHAT_RETENTION_DAYS: z.coerce
+      .number()
+      .int()
+      .min(1)
+      .max(365)
+      .default(90),
+    JOURNAL_AI_CHAT_FREE_DAILY_ANSWERS: z.coerce
+      .number()
+      .int()
+      .min(1)
+      .max(100)
+      .default(5),
+    JOURNAL_AI_CHAT_PLUS_DAILY_ANSWERS: z.coerce
+      .number()
+      .int()
+      .min(1)
+      .max(500)
+      .default(30),
+    JOURNAL_AI_CHAT_PREMIUM_FAIR_USE_DAILY_ANSWERS: z.coerce
+      .number()
+      .int()
+      .min(1)
+      .max(2_000)
+      .default(200),
+    JOURNAL_AI_CHAT_RATE_LIMIT_PER_MINUTE: z.coerce
+      .number()
+      .int()
+      .min(1)
+      .max(60)
+      .default(10),
+    JOURNAL_AI_CHAT_DAILY_TOKEN_BUDGET: z.coerce
+      .number()
+      .int()
+      .min(1_000)
+      .max(10_000_000)
+      .default(100_000),
+    JOURNAL_AI_CHAT_DEFAULT_TIMEZONE: z
+      .string()
+      .min(1)
+      .max(64)
+      .default("Asia/Ho_Chi_Minh"),
+    JOURNAL_AI_CHAT_ROUTING_POLICY_VERSION: z
+      .string()
+      .regex(versionPattern)
+      .default("companion-chat-routing-v1"),
   })
   .superRefine((environment, context) => {
+    for (const route of [
+      {
+        provider: environment.JOURNAL_AI_FREE_PLUS_PROVIDER,
+        model: environment.JOURNAL_AI_FREE_PLUS_MODEL,
+        path: "JOURNAL_AI_FREE_PLUS_MODEL",
+      },
+      {
+        provider: environment.JOURNAL_AI_PREMIUM_PROVIDER,
+        model: environment.JOURNAL_AI_PREMIUM_MODEL,
+        path: "JOURNAL_AI_PREMIUM_MODEL",
+      },
+    ] as const) {
+      if (route.model === undefined) continue;
+      const schema =
+        route.provider === "BEDROCK" ? bedrockModelIdSchema : modelSchema;
+      if (!schema.safeParse(route.model).success)
+        context.addIssue({
+          code: "custom",
+          path: [route.path],
+          message:
+            route.provider === "BEDROCK"
+              ? `${route.path} must be a valid Bedrock Converse model or inference-profile identifier`
+              : `${route.path} must be a valid provider model identifier of at most 128 characters`,
+        });
+    }
     if (
       environment.NODE_ENV === "production" &&
       environment.JOURNAL_AI_ENCRYPTION_KEY.equals(
@@ -61,6 +276,141 @@ const environmentSchema = z
         message:
           "Production journal encryption and idempotency HMAC keys must be different",
       });
+    if (
+      (environment.NODE_ENV === "test" || environment.CI === "true") &&
+      environment.JOURNAL_AI_PROVIDER_MODE !== "DETERMINISTIC_FAKE"
+    )
+      context.addIssue({
+        code: "custom",
+        path: ["JOURNAL_AI_PROVIDER_MODE"],
+        message: "Test and CI must use the deterministic fake provider",
+      });
+    if (environment.JOURNAL_AI_PROVIDER_MODE === "APPROVED_REAL") {
+      const required = [
+        "JOURNAL_AI_PROVIDER_APPROVAL_VERSION",
+        "JOURNAL_AI_FREE_PLUS_PROVIDER",
+        "JOURNAL_AI_FREE_PLUS_MODEL",
+        "JOURNAL_AI_FREE_PLUS_INPUT_COST_MICRO_USD_PER_MILLION_TOKENS",
+        "JOURNAL_AI_FREE_PLUS_OUTPUT_COST_MICRO_USD_PER_MILLION_TOKENS",
+        "JOURNAL_AI_PREMIUM_PROVIDER",
+        "JOURNAL_AI_PREMIUM_MODEL",
+        "JOURNAL_AI_PREMIUM_INPUT_COST_MICRO_USD_PER_MILLION_TOKENS",
+        "JOURNAL_AI_PREMIUM_OUTPUT_COST_MICRO_USD_PER_MILLION_TOKENS",
+      ] as const;
+      for (const key of required) {
+        if (environment[key] === undefined)
+          context.addIssue({
+            code: "custom",
+            path: [key],
+            message: `${key} is required for approved real-provider routing`,
+          });
+      }
+      const selected = new Set([
+        environment.JOURNAL_AI_FREE_PLUS_PROVIDER,
+        environment.JOURNAL_AI_PREMIUM_PROVIDER,
+      ]);
+      if (selected.has("GEMINI") && !environment.JOURNAL_AI_GEMINI_API_KEY)
+        context.addIssue({
+          code: "custom",
+          path: ["JOURNAL_AI_GEMINI_API_KEY"],
+          message: "Gemini credentials are required by the approved route",
+        });
+      if (selected.has("OPENAI") && !environment.JOURNAL_AI_OPENAI_API_KEY)
+        context.addIssue({
+          code: "custom",
+          path: ["JOURNAL_AI_OPENAI_API_KEY"],
+          message: "OpenAI credentials are required by the approved route",
+        });
+      if (selected.has("BEDROCK") && !environment.AWS_BEARER_TOKEN_BEDROCK)
+        context.addIssue({
+          code: "custom",
+          path: ["AWS_BEARER_TOKEN_BEDROCK"],
+          message: "Bedrock credentials are required by the approved route",
+        });
+    }
+    if (environment.JOURNAL_AI_BENCHMARK_ENABLED === "true") {
+      if (environment.NODE_ENV === "test" || environment.CI === "true")
+        context.addIssue({
+          code: "custom",
+          path: ["JOURNAL_AI_BENCHMARK_ENABLED"],
+          message: "Paid benchmark calls are disabled in test and CI",
+        });
+
+      const benchmarkCandidates = [
+        {
+          name: "Gemini",
+          credential: "JOURNAL_AI_GEMINI_API_KEY",
+          routeKeys: [
+            "JOURNAL_AI_BENCHMARK_GEMINI_MODEL",
+            "JOURNAL_AI_BENCHMARK_GEMINI_INPUT_COST_MICRO_USD_PER_MILLION_TOKENS",
+            "JOURNAL_AI_BENCHMARK_GEMINI_OUTPUT_COST_MICRO_USD_PER_MILLION_TOKENS",
+          ],
+        },
+        {
+          name: "OpenAI",
+          credential: "JOURNAL_AI_OPENAI_API_KEY",
+          routeKeys: [
+            "JOURNAL_AI_BENCHMARK_OPENAI_MODEL",
+            "JOURNAL_AI_BENCHMARK_OPENAI_INPUT_COST_MICRO_USD_PER_MILLION_TOKENS",
+            "JOURNAL_AI_BENCHMARK_OPENAI_OUTPUT_COST_MICRO_USD_PER_MILLION_TOKENS",
+          ],
+        },
+        {
+          name: "Bedrock",
+          credential: "AWS_BEARER_TOKEN_BEDROCK",
+          routeKeys: [
+            "JOURNAL_AI_BENCHMARK_BEDROCK_MODEL",
+            "JOURNAL_AI_BENCHMARK_BEDROCK_INPUT_COST_MICRO_USD_PER_MILLION_TOKENS",
+            "JOURNAL_AI_BENCHMARK_BEDROCK_OUTPUT_COST_MICRO_USD_PER_MILLION_TOKENS",
+          ],
+        },
+      ] as const;
+
+      let completeCandidateCount = 0;
+
+      for (const candidate of benchmarkCandidates) {
+        const routeConfigured = candidate.routeKeys.every(
+          (key) => environment[key] !== undefined,
+        );
+
+        const routePartiallyConfigured = candidate.routeKeys.some(
+          (key) => environment[key] !== undefined,
+        );
+
+        if (routePartiallyConfigured && !routeConfigured) {
+          for (const key of candidate.routeKeys) {
+            if (environment[key] === undefined) {
+              context.addIssue({
+                code: "custom",
+                path: [key],
+                message: `${key} is required when the ${candidate.name} benchmark candidate is configured`,
+              });
+            }
+          }
+        }
+
+        if (routeConfigured) {
+          if (!environment[candidate.credential]) {
+            context.addIssue({
+              code: "custom",
+              path: [candidate.credential],
+              message: `${candidate.name} credentials are required for the configured benchmark candidate`,
+            });
+          } else {
+            completeCandidateCount += 1;
+          }
+        }
+      }
+
+      if (completeCandidateCount === 0) {
+        context.addIssue({
+          code: "custom",
+          path: ["JOURNAL_AI_BENCHMARK_ENABLED"],
+          message:
+            "At least one complete Gemini, OpenAI, or Bedrock benchmark candidate is required",
+        });
+      }
+    }
   })
   .transform((environment) => ({
     NODE_ENV: environment.NODE_ENV,
@@ -72,12 +422,84 @@ const environmentSchema = z
     MONGODB_CONNECTION_TIMEOUT_MS:
       environment.JOURNAL_AI_MONGODB_CONNECTION_TIMEOUT_MS,
     JOURNAL_ENCRYPTION_KEY: environment.JOURNAL_AI_ENCRYPTION_KEY,
-    JOURNAL_ENCRYPTION_KEY_ID: environment.JOURNAL_AI_ENCRYPTION_KEY_ID,
+    JOURNAL_ENCRYPTION_KEY_ID: "single-key" as const,
     JOURNAL_IDEMPOTENCY_HMAC_KEY: environment.JOURNAL_AI_IDEMPOTENCY_HMAC_KEY,
     IDENTITY_JWT_ISSUER: environment.IDENTITY_JWT_ISSUER,
     IDENTITY_JWT_AUDIENCE: environment.IDENTITY_JWT_AUDIENCE,
     IDENTITY_JWT_KEY_ID: environment.IDENTITY_JWT_KEY_ID,
     IDENTITY_JWT_PUBLIC_KEY: environment.IDENTITY_JWT_PUBLIC_KEY,
+    CARE_BASE_URL: environment.JOURNAL_AI_CARE_BASE_URL,
+    CARE_TIMEOUT_MS: environment.JOURNAL_AI_CARE_TIMEOUT_MS,
+    CONTENT_BASE_URL: environment.JOURNAL_AI_CONTENT_BASE_URL,
+    CONTENT_TIMEOUT_MS: environment.JOURNAL_AI_CONTENT_TIMEOUT_MS,
+    CONSULTATION_BASE_URL: environment.JOURNAL_AI_CONSULTATION_BASE_URL,
+    CONSULTATION_TIMEOUT_MS: environment.JOURNAL_AI_CONSULTATION_TIMEOUT_MS,
+    REMINDER_SERVICE_TOKEN:
+      environment.JOURNAL_AI_REMINDER_SERVICE_TOKEN ?? null,
+    SUPPORT_PLAN_CARE_SERVICE_TOKEN:
+      environment.JOURNAL_AI_SUPPORT_PLAN_CARE_SERVICE_TOKEN ?? null,
+    PROVIDER_MODE: environment.JOURNAL_AI_PROVIDER_MODE,
+    ROUTING_POLICY_VERSION: environment.JOURNAL_AI_ROUTING_POLICY_VERSION,
+    PROVIDER_APPROVAL_VERSION:
+      environment.JOURNAL_AI_PROVIDER_APPROVAL_VERSION ?? null,
+    FREE_PLUS_ROUTE: configuredRoute(
+      environment.JOURNAL_AI_FREE_PLUS_PROVIDER,
+      environment.JOURNAL_AI_FREE_PLUS_MODEL,
+      environment.JOURNAL_AI_FREE_PLUS_INPUT_COST_MICRO_USD_PER_MILLION_TOKENS,
+      environment.JOURNAL_AI_FREE_PLUS_OUTPUT_COST_MICRO_USD_PER_MILLION_TOKENS,
+    ),
+    PREMIUM_ROUTE: configuredRoute(
+      environment.JOURNAL_AI_PREMIUM_PROVIDER,
+      environment.JOURNAL_AI_PREMIUM_MODEL,
+      environment.JOURNAL_AI_PREMIUM_INPUT_COST_MICRO_USD_PER_MILLION_TOKENS,
+      environment.JOURNAL_AI_PREMIUM_OUTPUT_COST_MICRO_USD_PER_MILLION_TOKENS,
+    ),
+    GEMINI_BASE_URL: environment.JOURNAL_AI_GEMINI_BASE_URL,
+    GEMINI_API_KEY: environment.JOURNAL_AI_GEMINI_API_KEY ?? null,
+    OPENAI_BASE_URL: environment.JOURNAL_AI_OPENAI_BASE_URL,
+    OPENAI_API_KEY: environment.JOURNAL_AI_OPENAI_API_KEY ?? null,
+    BEDROCK_REGION: environment.JOURNAL_AI_BEDROCK_REGION,
+    BEDROCK_API_KEY: environment.AWS_BEARER_TOKEN_BEDROCK ?? null,
+    PROVIDER_TIMEOUT_MS: environment.JOURNAL_AI_PROVIDER_TIMEOUT_MS,
+    BEDROCK_SCHEMA_WARMUP_TIMEOUT_MS:
+      environment.JOURNAL_AI_BEDROCK_SCHEMA_WARMUP_TIMEOUT_MS,
+    BENCHMARK_ENABLED: environment.JOURNAL_AI_BENCHMARK_ENABLED === "true",
+    BENCHMARK_DATASET_PATH: environment.JOURNAL_AI_BENCHMARK_DATASET_PATH,
+    BENCHMARK_GEMINI_ROUTE: configuredRoute(
+      "GEMINI",
+      environment.JOURNAL_AI_BENCHMARK_GEMINI_MODEL,
+      environment.JOURNAL_AI_BENCHMARK_GEMINI_INPUT_COST_MICRO_USD_PER_MILLION_TOKENS,
+      environment.JOURNAL_AI_BENCHMARK_GEMINI_OUTPUT_COST_MICRO_USD_PER_MILLION_TOKENS,
+    ),
+    BENCHMARK_OPENAI_ROUTE: configuredRoute(
+      "OPENAI",
+      environment.JOURNAL_AI_BENCHMARK_OPENAI_MODEL,
+      environment.JOURNAL_AI_BENCHMARK_OPENAI_INPUT_COST_MICRO_USD_PER_MILLION_TOKENS,
+      environment.JOURNAL_AI_BENCHMARK_OPENAI_OUTPUT_COST_MICRO_USD_PER_MILLION_TOKENS,
+    ),
+    BENCHMARK_BEDROCK_ROUTE: configuredRoute(
+      "BEDROCK",
+      environment.JOURNAL_AI_BENCHMARK_BEDROCK_MODEL,
+      environment.JOURNAL_AI_BENCHMARK_BEDROCK_INPUT_COST_MICRO_USD_PER_MILLION_TOKENS,
+      environment.JOURNAL_AI_BENCHMARK_BEDROCK_OUTPUT_COST_MICRO_USD_PER_MILLION_TOKENS,
+    ),
+    ANALYSIS_ENABLED:
+      environment.JOURNAL_AI_ANALYSIS_ENABLED !== undefined
+        ? environment.JOURNAL_AI_ANALYSIS_ENABLED === "true"
+        : environment.NODE_ENV !== "production",
+    ANALYSIS_POLL_INTERVAL_MS: environment.JOURNAL_AI_ANALYSIS_POLL_INTERVAL_MS,
+    ANALYSIS_LEASE_MS: environment.JOURNAL_AI_ANALYSIS_LEASE_MS,
+    CHAT_RETENTION_DAYS: environment.JOURNAL_AI_CHAT_RETENTION_DAYS,
+    CHAT_FREE_DAILY_ANSWERS: environment.JOURNAL_AI_CHAT_FREE_DAILY_ANSWERS,
+    CHAT_PLUS_DAILY_ANSWERS: environment.JOURNAL_AI_CHAT_PLUS_DAILY_ANSWERS,
+    CHAT_PREMIUM_FAIR_USE_DAILY_ANSWERS:
+      environment.JOURNAL_AI_CHAT_PREMIUM_FAIR_USE_DAILY_ANSWERS,
+    CHAT_RATE_LIMIT_PER_MINUTE:
+      environment.JOURNAL_AI_CHAT_RATE_LIMIT_PER_MINUTE,
+    CHAT_DAILY_TOKEN_BUDGET: environment.JOURNAL_AI_CHAT_DAILY_TOKEN_BUDGET,
+    CHAT_DEFAULT_TIMEZONE: environment.JOURNAL_AI_CHAT_DEFAULT_TIMEZONE,
+    CHAT_ROUTING_POLICY_VERSION:
+      environment.JOURNAL_AI_CHAT_ROUTING_POLICY_VERSION,
   }));
 
 export type ServiceConfiguration = z.infer<typeof environmentSchema>;
@@ -105,6 +527,13 @@ export const loadConfiguration = (
             environment.JOURNAL_AI_ENCRYPTION_KEY ?? localEncryptionKey,
           JOURNAL_AI_IDEMPOTENCY_HMAC_KEY:
             environment.JOURNAL_AI_IDEMPOTENCY_HMAC_KEY ?? localIdempotencyKey,
+          JOURNAL_AI_CARE_BASE_URL:
+            environment.JOURNAL_AI_CARE_BASE_URL ?? "http://localhost:8081",
+          JOURNAL_AI_CONTENT_BASE_URL:
+            environment.JOURNAL_AI_CONTENT_BASE_URL ?? "http://localhost:3003",
+          JOURNAL_AI_CONSULTATION_BASE_URL:
+            environment.JOURNAL_AI_CONSULTATION_BASE_URL ??
+            "http://localhost:8082",
         }),
   };
 

@@ -27,7 +27,27 @@ class CareLiquibaseChangelogTests {
 					"care-010-assessment-disclosure-provenance",
 					"care-007-profile-preference-defaults",
 					"care-008-gad7-and-phq9-v2-reference-data",
-					"care-009-combined-support-routing");
+					"care-009-combined-support-routing",
+					"care-011-domain-aware-support-evaluation-v2",
+					"care-012-support-guide",
+					"care-013-support-plan-draft",
+					"care-014-support-plan-choice-activation",
+					"care-015-support-plan-activity-occurrences",
+					"care-016-support-plan-lifecycle-history",
+					"care-017-support-plan-engagement",
+					"care-018-screening-meaning-copy",
+					"care-019-reassessment-summary",
+					"care-020-reassessment-self-report",
+					"care-021-support-plan-replacement-review",
+					"care-022-screening-episode",
+					"care-023-consultation-brief",
+					"care-024-plan-change-request",
+					"care-025-consultation-brief-ai-draft",
+					"care-026-support-plan-actions",
+					"care-027-support-plan-personalization",
+					"care-028-support-plan-cadence",
+					"care-029-support-plan-schedule-activation",
+					"care-030-support-plan-schedule-generation-cutoff");
 		}
 	}
 

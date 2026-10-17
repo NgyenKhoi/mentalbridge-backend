@@ -1,0 +1,31 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://mentalbridge.local/contracts/events/consultation/appointment-status-changed-v1.schema.json",
+  "title": "Consultation appointment status changed",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["messageId", "messageType", "occurredAt", "producer", "schemaVersion", "correlationId", "aggregateId", "aggregateVersion", "payload"],
+  "properties": {
+    "messageId": { "type": "string", "format": "uuid" },
+    "messageType": { "const": "consultation.appointment.status-changed" },
+    "occurredAt": { "type": "string", "format": "date-time" },
+    "producer": { "const": "consultation-service" },
+    "schemaVersion": { "const": "1.0" },
+    "correlationId": { "type": "string", "format": "uuid" },
+    "aggregateId": { "type": "string", "format": "uuid" },
+    "aggregateVersion": { "type": "integer", "minimum": 0 },
+    "payload": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["appointmentId", "ownerAccountId", "status", "scheduledStartAt", "modality", "replacesAppointmentId"],
+      "properties": {
+        "appointmentId": { "type": "string", "format": "uuid" },
+        "ownerAccountId": { "type": "string", "format": "uuid" },
+        "status": { "enum": ["REQUESTED", "CONFIRMED", "REJECTED", "EXPIRED", "CANCELLED", "IN_PROGRESS", "SESSION_ENDED", "COMPLETED", "USER_NO_SHOW", "SPECIALIST_NO_SHOW", "DISPUTED"] },
+        "scheduledStartAt": { "type": "string", "format": "date-time" },
+        "modality": { "enum": ["IN_APP_CHAT", "IN_APP_VIDEO"] },
+        "replacesAppointmentId": { "type": ["string", "null"], "format": "uuid" }
+      }
+    }
+  }
+}

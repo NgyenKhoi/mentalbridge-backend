@@ -8,10 +8,14 @@ import { MongoClient, ObjectId } from 'mongodb';
 import { io, type Socket } from 'socket.io-client';
 import request from 'supertest';
 import { GenericContainer, type StartedTestContainer, Wait } from 'testcontainers';
-import { afterAll, beforeAll, describe, expect, it } from 'vitest';
+import { afterAll, beforeAll, beforeEach, describe, expect, it } from 'vitest';
 
 import { createApplication } from '../../src/application.js';
 import type { ConversationEligibility } from '../../src/conversations/conversation-eligibility.js';
+import type {
+  ConversationEvidence,
+  ConversationEvidenceInput,
+} from '../../src/conversations/conversation-evidence.js';
 import type { ServiceConfiguration } from '../../src/configuration/configuration.js';
 import { RedisService } from '../../src/database/redis.service.js';
 import { MessageEncryptionService } from '../../src/messages/message-encryption.service.js';
@@ -26,7 +30,35 @@ const migration = require('../../migrations/001_realtime_message_foundation.cjs'
 
 const accountId = '11111111-1111-4111-8111-111111111111';
 const conversationId = '22222222-2222-4222-8222-222222222222';
-const eligibility: ConversationEligibility = { assertEligible: () => Promise.resolve() };
+const specialistId = '44444444-4444-4444-8444-444444444444';
+const eligibility: ConversationEligibility = {
+  check: (_bearer, _account, requestedConversationId) =>
+    Promise.resolve({
+      conversationId: requestedConversationId,
+      appointmentId: requestedConversationId,
+      userAccountId: accountId,
+      specialistAccountId: specialistId,
+      phase: 'ACTIVE',
+      reasonCode: 'APPOINTMENT_ACTIVE',
+      subscribeAllowed: true,
+      sendAllowed: true,
+      historyAllowed: true,
+      checkInAllowed: true,
+      participantCheckedIn: false,
+      sessionOutcome: null,
+      creditState: 'HELD',
+      scheduledStartAt: new Date(Date.now() - 60_000).toISOString(),
+      scheduledEndAt: new Date(Date.now() + 3_540_000).toISOString(),
+      serverTime: new Date().toISOString(),
+    }),
+};
+const evidenceRecords: ConversationEvidenceInput[] = [];
+const evidence: ConversationEvidence = {
+  record: (_bearer, _appointment, input) => {
+    evidenceRecords.push(input);
+    return Promise.resolve();
+  },
+};
 
 describe('Realtime MongoDB, Redis and Socket.IO integration', { concurrent: false }, () => {
   let mongoContainer: StartedTestContainer;
@@ -38,6 +70,8 @@ describe('Realtime MongoDB, Redis and Socket.IO integration', { concurrent: fals
   let identityPrivateKey: Parameters<typeof issueToken>[0];
   let baseUrl: string;
   let redisStopped = false;
+
+  beforeEach(() => evidenceRecords.splice(0));
 
   beforeAll(async () => {
     [mongoContainer, redisContainer] = await Promise.all([
@@ -69,7 +103,7 @@ describe('Realtime MongoDB, Redis and Socket.IO integration', { concurrent: fals
     await mongoClient.connect();
     await migration.up(mongoClient.db(databaseName));
 
-    app = await createApplication(configuration, { eligibility });
+    app = await createApplication(configuration, { eligibility, evidence });
     await app.listen(0);
     const httpServer = app.getHttpServer() as unknown as {
       address(): AddressInfo | string | null;
@@ -107,7 +141,7 @@ describe('Realtime MongoDB, Redis and Socket.IO integration', { concurrent: fals
       participants: [
         { accountId, role: 'USER', joinedAt: createdAt },
         {
-          accountId: '44444444-4444-4444-8444-444444444444',
+          accountId: specialistId,
           role: 'SPECIALIST',
           joinedAt: createdAt,
         },
@@ -185,26 +219,41 @@ describe('Realtime MongoDB, Redis and Socket.IO integration', { concurrent: fals
     );
   });
 
-  it('rejects a missing Socket.IO JWT', async () => {
+  it('rejects a missing Socket.IO credential', async () => {
     expect(await connectionError({ schemaVersion: 1 })).toMatchObject({
       message: 'Authentication failed',
     });
   });
 
-  it('rejects an invalid Socket.IO JWT', async () => {
+  it('rejects an invalid Socket.IO credential', async () => {
     expect(await connectionError({ schemaVersion: 1, accessToken: 'invalid' })).toMatchObject({
       message: 'Authentication failed',
     });
   });
 
-  it('rejects an already expired Socket.IO JWT', async () => {
+  it('rejects an already expired Identity bearer during credential exchange', async () => {
     const expiredToken = await issueToken(identityPrivateKey, configuration, accountId, {
       expiresInSeconds: -1,
       tokenId: 'expired-handshake',
     });
-    expect(await connectionError({ schemaVersion: 1, accessToken: expiredToken })).toMatchObject({
-      message: 'Authentication failed',
-    });
+    await request(baseUrl)
+      .post('/internal/v1/socket-credentials')
+      .set('authorization', `Bearer ${expiredToken}`)
+      .expect(401);
+  });
+
+  it('consumes a socket credential exactly once', async () => {
+    const credential = await socketCredential(token);
+    const socket = await connectWithCredential(credential);
+    socket.close();
+
+    expect(
+      await connectionError({
+        schemaVersion: 1,
+        accessToken: credential,
+        correlationId: randomUUID(),
+      }),
+    ).toMatchObject({ message: 'Authentication failed' });
   });
 
   it('disconnects a connected session when its JWT expires', async () => {
@@ -230,10 +279,14 @@ describe('Realtime MongoDB, Redis and Socket.IO integration', { concurrent: fals
   });
 
   it('refreshes the actual Redis presence TTL on heartbeat', async () => {
-    const socket = await connectClient();
+    const heartbeatAccountId = randomUUID();
+    const heartbeatToken = await issueToken(identityPrivateKey, configuration, heartbeatAccountId, {
+      tokenId: `heartbeat-${heartbeatAccountId}`,
+    });
+    const socket = await connectClient(heartbeatToken);
     try {
       const presence = app.get(PresenceService);
-      expect(await presence.status(accountId)).toBe('online');
+      expect(await presence.status(heartbeatAccountId)).toBe('online');
       const redis = app.get(RedisService);
       const socketId = socket.id;
       if (!socketId) throw new Error('Connected socket ID is unavailable');
@@ -246,8 +299,26 @@ describe('Realtime MongoDB, Redis and Socket.IO integration', { concurrent: fals
         client.pTTL(`realtime:v1:socket:${socketId}`),
       );
       expect(afterHeartbeat).toBeGreaterThan(beforeHeartbeat + 500);
-      await new Promise((resolve) => setTimeout(resolve, 2200));
-      expect(await presence.status(accountId)).toBe('offline');
+      await eventually(async () => (await presence.status(heartbeatAccountId)) === 'offline');
+    } finally {
+      socket.close();
+    }
+  });
+
+  it('records explicit check-in then server-derived presence without chat content', async () => {
+    const socket = await connectClient();
+    try {
+      expect(await command(socket, 'conversation.check-in', { conversationId })).toMatchObject({
+        status: 'accepted',
+      });
+      await new Promise((resolve) => setTimeout(resolve, 25));
+      expect(await command(socket, 'presence.heartbeat', {})).toMatchObject({ status: 'accepted' });
+
+      expect(evidenceRecords[0]).toMatchObject({ type: 'CHECK_IN' });
+      expect(evidenceRecords[1]?.type).toBe('PRESENCE_INTERVAL');
+      expect(typeof evidenceRecords[1]?.intervalStartedAt).toBe('string');
+      expect(typeof evidenceRecords[1]?.occurredAt).toBe('string');
+      expect(evidenceRecords.every((record) => !Object.hasOwn(record, 'content'))).toBe(true);
     } finally {
       socket.close();
     }
@@ -276,9 +347,10 @@ describe('Realtime MongoDB, Redis and Socket.IO integration', { concurrent: fals
       for (let index = 0; index < configuration.MAX_CONNECTIONS_PER_ACCOUNT; index += 1) {
         sockets.push(await connectClient(boundedToken));
       }
+      const rejectedCredential = await socketCredential(boundedToken);
       const rejected = io(`${baseUrl}/realtime`, {
         transports: ['websocket'],
-        auth: { schemaVersion: 1, accessToken: boundedToken },
+        auth: { schemaVersion: 1, accessToken: rejectedCredential },
         reconnection: false,
       });
       sockets.push(rejected);
@@ -495,6 +567,47 @@ describe('Realtime MongoDB, Redis and Socket.IO integration', { concurrent: fals
     }
   });
 
+  it('does not persist a message when the bound conversation is already closed', async () => {
+    const socket = await connectClient();
+    const closedConversationId = randomUUID();
+    try {
+      await command(socket, 'conversation.subscribe', {
+        conversationId: closedConversationId,
+      });
+      await mongoClient
+        .db(configuration.MONGODB_DATABASE)
+        .collection('conversations')
+        .updateOne(
+          { conversationId: closedConversationId },
+          {
+            $set: {
+              status: 'CLOSED',
+              closedAt: new Date(),
+              updatedAt: new Date(),
+            },
+          },
+        );
+
+      const clientMessageId = randomUUID();
+      const acknowledgement = await command(socket, 'message.send', {
+        conversationId: closedConversationId,
+        clientMessageId,
+        type: 'TEXT',
+        content: 'must not persist after close',
+      });
+
+      expect(acknowledgement.code).toBe('ACCESS_DENIED');
+      expect(
+        await mongoClient.db(configuration.MONGODB_DATABASE).collection('messages').countDocuments({
+          conversationId: closedConversationId,
+          clientMessageId,
+        }),
+      ).toBe(0);
+    } finally {
+      socket.close();
+    }
+  });
+
   it('does not claim live delivery when the sender has not joined a room', async () => {
     const socket = await connectClient();
     try {
@@ -611,9 +724,14 @@ describe('Realtime MongoDB, Redis and Socket.IO integration', { concurrent: fals
   });
 
   async function connectClient(accessToken = token): Promise<Socket> {
+    const credential = await socketCredential(accessToken);
+    return connectWithCredential(credential);
+  }
+
+  async function connectWithCredential(credential: string): Promise<Socket> {
     const socket = io(`${baseUrl}/realtime`, {
       transports: ['websocket'],
-      auth: { schemaVersion: 1, accessToken, correlationId: randomUUID() },
+      auth: { schemaVersion: 1, accessToken: credential, correlationId: randomUUID() },
       reconnection: false,
       autoConnect: false,
     });
@@ -626,6 +744,14 @@ describe('Realtime MongoDB, Redis and Socket.IO integration', { concurrent: fals
     socket.connect();
     await connected;
     return socket;
+  }
+
+  async function socketCredential(accessToken: string): Promise<string> {
+    const response = await request(baseUrl)
+      .post('/internal/v1/socket-credentials')
+      .set('authorization', `Bearer ${accessToken}`)
+      .expect(201);
+    return (response.body as { accessToken: string }).accessToken;
   }
 
   async function connectionError(auth: Record<string, unknown>): Promise<Error> {

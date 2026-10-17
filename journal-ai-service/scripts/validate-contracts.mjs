@@ -1,4 +1,5 @@
 import SwaggerParser from "@apidevtools/swagger-parser";
+import { createRequire } from "node:module";
 import { fileURLToPath } from "node:url";
 
 const contractPath = fileURLToPath(
@@ -29,8 +30,33 @@ const implementedOperations = new Set([
   "POST /api/v1/journals",
   "GET /api/v1/journals",
   "GET /api/v1/journals/{journalId}",
+  "GET /api/v1/journals/{journalId}/completion-evidence",
   "PATCH /api/v1/journals/{journalId}",
   "DELETE /api/v1/journals/{journalId}",
+  "POST /api/v1/journals/{journalId}/revisions/{revision}/analysis-jobs",
+  "GET /api/v1/analysis-jobs/{jobId}",
+  "POST /api/v1/longitudinal-analysis-jobs",
+  "GET /api/v1/longitudinal-analysis-jobs/{jobId}",
+  "GET /internal/v1/users/{userId}/longitudinal-analyses/{analysisId}",
+  "POST /internal/v1/support-guide-phrasing",
+  "POST /internal/v1/support-plan-companion/messages",
+  "POST /internal/v1/consultation-brief-drafts",
+  "POST /api/v1/emotion-check-ins",
+  "GET /api/v1/emotion-check-ins",
+  "GET /api/v1/emotion-check-ins/{localDate}",
+  "GET /api/v1/emotion-check-ins/{localDate}/completion-evidence",
+  "PATCH /api/v1/emotion-check-ins/{localDate}",
+  "DELETE /api/v1/emotion-check-ins/{localDate}",
+  "GET /api/v1/emotion-check-in-progress",
+  "GET /api/v1/emotion-check-in-context",
+  "GET /api/v1/notification-activity",
+  "POST /internal/v1/notification-activity",
+  "POST /api/v1/ai-companion/conversations",
+  "GET /api/v1/ai-companion/conversations",
+  "GET /api/v1/ai-companion/conversations/{conversationId}",
+  "DELETE /api/v1/ai-companion/conversations/{conversationId}",
+  "POST /api/v1/ai-companion/conversations/{conversationId}/messages",
+  "PUT /api/v1/ai-companion/conversations/{conversationId}/context",
 ]);
 const implementedResponses = new Map([
   ["GET /health/live", new Set(["200"])],
@@ -40,10 +66,95 @@ const implementedResponses = new Map([
   ["GET /api/v1/journals", new Set(["200", "400", "401"])],
   ["GET /api/v1/journals/{journalId}", new Set(["200", "401", "404"])],
   [
+    "GET /api/v1/journals/{journalId}/completion-evidence",
+    new Set(["200", "400", "401", "503"]),
+  ],
+  [
     "PATCH /api/v1/journals/{journalId}",
     new Set(["200", "400", "401", "404", "409", "412"]),
   ],
   ["DELETE /api/v1/journals/{journalId}", new Set(["200", "401", "404"])],
+  [
+    "POST /api/v1/journals/{journalId}/revisions/{revision}/analysis-jobs",
+    new Set(["202", "400", "401", "404", "409", "503"]),
+  ],
+  ["GET /api/v1/analysis-jobs/{jobId}", new Set(["200", "400", "401", "404"])],
+  [
+    "POST /api/v1/longitudinal-analysis-jobs",
+    new Set(["202", "400", "401", "409", "503"]),
+  ],
+  [
+    "GET /api/v1/longitudinal-analysis-jobs/{jobId}",
+    new Set(["200", "400", "401", "404"]),
+  ],
+  [
+    "GET /internal/v1/users/{userId}/longitudinal-analyses/{analysisId}",
+    new Set(["200", "400", "401", "403", "404", "503"]),
+  ],
+  [
+    "POST /internal/v1/support-guide-phrasing",
+    new Set(["201", "400", "401", "403", "503"]),
+  ],
+  [
+    "POST /internal/v1/support-plan-companion/messages",
+    new Set(["201", "400", "401"]),
+  ],
+  [
+    "POST /internal/v1/consultation-brief-drafts",
+    new Set(["200", "400", "401", "403", "503"]),
+  ],
+  [
+    "POST /api/v1/emotion-check-ins",
+    new Set(["201", "400", "401", "409", "503"]),
+  ],
+  ["GET /api/v1/emotion-check-ins", new Set(["200", "400", "401", "503"])],
+  [
+    "GET /api/v1/emotion-check-ins/{localDate}",
+    new Set(["200", "400", "401", "404", "503"]),
+  ],
+  [
+    "PATCH /api/v1/emotion-check-ins/{localDate}",
+    new Set(["200", "400", "401", "404", "409", "412", "503"]),
+  ],
+  [
+    "GET /api/v1/emotion-check-ins/{localDate}/completion-evidence",
+    new Set(["200", "400", "401", "503"]),
+  ],
+  [
+    "DELETE /api/v1/emotion-check-ins/{localDate}",
+    new Set(["200", "400", "401", "404", "503"]),
+  ],
+  [
+    "GET /api/v1/emotion-check-in-progress",
+    new Set(["200", "400", "401", "503"]),
+  ],
+  [
+    "GET /api/v1/emotion-check-in-context",
+    new Set(["200", "400", "401", "403", "503"]),
+  ],
+  ["GET /api/v1/notification-activity", new Set(["200", "400", "401", "503"])],
+  [
+    "POST /internal/v1/notification-activity",
+    new Set(["200", "400", "401", "503"]),
+  ],
+  ["POST /api/v1/ai-companion/conversations", new Set(["201", "400", "401"])],
+  ["GET /api/v1/ai-companion/conversations", new Set(["200", "401"])],
+  [
+    "GET /api/v1/ai-companion/conversations/{conversationId}",
+    new Set(["200", "400", "401", "404"]),
+  ],
+  [
+    "DELETE /api/v1/ai-companion/conversations/{conversationId}",
+    new Set(["204", "400", "401", "404"]),
+  ],
+  [
+    "POST /api/v1/ai-companion/conversations/{conversationId}/messages",
+    new Set(["201", "400", "401", "403", "404", "409", "429", "503"]),
+  ],
+  [
+    "PUT /api/v1/ai-companion/conversations/{conversationId}/context",
+    new Set(["200", "400", "401", "404"]),
+  ],
 ]);
 const plannedOperations = new Set();
 const actualImplemented = new Set();
@@ -94,11 +205,35 @@ if (
 }
 
 const schemas = contract.components?.schemas;
+const require = createRequire(import.meta.url);
+const {
+  exactResultValidator,
+  longitudinalResultValidator,
+} = require("../migrations/011_bedrock_provider.cjs");
+for (const [schemaName, validator] of [
+  ["NormalizedAnalysisResult", exactResultValidator],
+  ["LongitudinalEvidence", longitudinalResultValidator],
+  ["SupportGuidePhrasingResponse", exactResultValidator],
+  ["ConsultationBriefAiDraftProviderResponse", exactResultValidator],
+]) {
+  if (
+    !setsEqual(
+      new Set(schemas?.[schemaName]?.properties?.provider?.enum ?? []),
+      new Set(validator.$jsonSchema.properties.provider.enum),
+    )
+  ) {
+    throw new Error(
+      `${schemaName} provider enum differs from migrated runtime providers`,
+    );
+  }
+}
 const journalEntry = schemas?.JournalEntry;
 const journalList = schemas?.JournalListResponse;
 const detailContent = journalEntry?.allOf?.[1]?.properties?.content;
 const listContent =
   journalList?.properties?.items?.items?.allOf?.[1]?.properties?.content;
+const moods = schemas?.JournalMood?.enum;
+const journalText = schemas?.JournalContentInput?.properties?.text;
 
 if (!detailContent?.required?.includes("text")) {
   throw new Error(
@@ -111,6 +246,105 @@ if (
   listContent.required.includes("text")
 ) {
   throw new Error("Journal list responses must use minimized summaries");
+}
+
+if (
+  !Array.isArray(moods) ||
+  moods.join(",") !== "GREAT,GOOD,OKAY,LOW,VERY_LOW" ||
+  !schemas?.JournalEntryMetadata?.required?.includes("mood")
+) {
+  throw new Error("Journal mood contract differs from Story 6201");
+}
+
+if (journalText?.pattern !== ".*\\S.*") {
+  throw new Error("Journal text must reject whitespace-only writes");
+}
+
+const checkIn = schemas?.EmotionCheckIn;
+const consumerItem = schemas?.EmotionCheckInConsumerItem;
+const progress = schemas?.EmotionCheckInProgress;
+const notificationActivity = schemas?.NotificationActivity;
+const supportPlanCompanionMessage = schemas?.SupportPlanCompanionMessage;
+const supportPlanCompanionOperation =
+  contract.paths?.["/internal/v1/support-plan-companion/messages"]?.post;
+if (
+  schemas?.Emotion?.enum?.join(",") !== "GREAT,GOOD,OKAY,LOW,VERY_LOW" ||
+  checkIn?.properties?.sourceLabel?.const !== "SELF_REPORTED_EMOTION" ||
+  checkIn?.properties?.clinicalUse?.const !==
+    "NOT_A_DIAGNOSIS_OR_SAFETY_CLASSIFIER"
+) {
+  throw new Error("Daily emotion check-in labels differ from the accepted ADR");
+}
+if (
+  schemas?.EmotionInfluenceFactor?.enum?.join(",") !==
+    "sleep,work,study,family,friends,health,other" ||
+  schemas?.EmotionCheckInValue?.properties?.factors?.maxItems !== 3 ||
+  schemas?.EmotionCheckInValue?.properties?.factors?.uniqueItems !== true ||
+  !checkIn?.required?.includes("factors")
+) {
+  throw new Error(
+    "Optional emotion influence factors differ from the accepted privacy contract",
+  );
+}
+if (
+  notificationActivity?.properties?.interpretation?.const !==
+    "FACTUAL_ACTIVITY_NOT_ADHERENCE_OR_RECOVERY" ||
+  JSON.stringify(notificationActivity).match(
+    /journalText|emotionNote|content|intensity/i,
+  )
+) {
+  throw new Error(
+    "Notification activity must remain factual and exclude sensitive content",
+  );
+}
+if (
+  consumerItem?.properties?.note ||
+  consumerItem?.properties?.factors ||
+  consumerItem?.properties?.id
+) {
+  throw new Error(
+    "Consumer context must exclude raw optional context and owner identifiers",
+  );
+}
+if (
+  progress?.properties?.interpretation?.const !==
+    "FACTUAL_COUNTS_NOT_DIAGNOSIS_OR_RECOVERY" ||
+  progress?.properties?.windows?.minItems !== 3 ||
+  progress?.properties?.windows?.maxItems !== 3
+) {
+  throw new Error(
+    "Emotion progress must remain factual and expose 7/14/30 windows",
+  );
+}
+if (
+  supportPlanCompanionMessage?.additionalProperties !== false ||
+  supportPlanCompanionMessage?.properties?.schemaVersion?.const !==
+    "support-plan-companion-message-v1" ||
+  supportPlanCompanionMessage?.properties?.delivery?.enum?.join(",") !==
+    "GENERATED,TEMPLATE" ||
+  supportPlanCompanionMessage?.properties?.text?.maxLength !== 480 ||
+  supportPlanCompanionMessage?.properties?.model?.maxLength !== 2_048 ||
+  supportPlanCompanionMessage?.properties?.command ||
+  supportPlanCompanionMessage?.properties?.mutation
+) {
+  throw new Error(
+    "SupportPlan Companion response must remain closed, versioned, and mutation-free",
+  );
+}
+if (
+  !supportPlanCompanionOperation?.security?.some(
+    (requirement) =>
+      Object.hasOwn(requirement, "bearerAuth") &&
+      Object.hasOwn(requirement, "supportPlanCareServiceToken"),
+  ) ||
+  contract.components?.securitySchemes?.supportPlanCareServiceToken?.in !==
+    "header" ||
+  contract.components?.securitySchemes?.supportPlanCareServiceToken?.name !==
+    "x-mentalbridge-service-token"
+) {
+  throw new Error(
+    "SupportPlan Companion must require both end-user bearer and the dedicated Care service token",
+  );
 }
 
 console.log(

@@ -13,3 +13,17 @@ eureka:
 
 springdotenv:
   enabled: false
+
+mentalbridge:
+  identity:
+    notification-service-token: test-notification-service-token-at-least-32-characters
+    outbox-relay:
+      enabled: false
+      topic: mentalbridge.identity.account-lifecycle.v1
+      batch-size: 100
+      interval: PT5S
+      send-timeout: PT5S
+      retry-base: PT5S
+      retry-maximum: PT5M
+    platform-reporting:
+      enabled: false

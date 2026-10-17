@@ -25,6 +25,13 @@ export const commandSchema = z.discriminatedUnion('commandType', [
   z
     .object({
       ...envelope,
+      commandType: z.literal('conversation.check-in'),
+      payload: z.object({ conversationId: z.uuid() }).strict(),
+    })
+    .strict(),
+  z
+    .object({
+      ...envelope,
       commandType: z.literal('message.send'),
       payload: z
         .object({

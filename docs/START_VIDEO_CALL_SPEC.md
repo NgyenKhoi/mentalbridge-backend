@@ -20,7 +20,12 @@ The function is triggered when an authenticated User or approved Specialist sele
   - Request a short-lived, appointment-scoped room authorization only after server-side eligibility succeeds.
   - Transfer control to the separately defined live video-session function; do not expose provider secrets, reusable room credentials, external meeting links, or another appointment's room information.
 
-**Current implementation note:** The supplied pre-call screen is a target reference, not an implemented frontend flow. The current project explicitly reserves `IN_APP_VIDEO` as future intent and keeps it disabled until a later contract/ADR defines signalling, provider choice, room credentials, participant presence, recording policy, failure fallback, and completion evidence.
+**Current implementation note:** The supplied pre-call screen is a target
+reference, not an implemented frontend flow. ADR 0017 approves `IN_APP_VIDEO`
+as one of the two v2 appointment modes, but runtime remains disabled until a
+versioned contract defines signalling, provider choice, room credentials,
+participant presence, recording prohibition, failure behavior, shutdown at 60
+minutes, and completion evidence.
 
 ## Screen Layout
 
@@ -74,7 +79,7 @@ The supplied reference screenshot defines the target pre-call workspace:
 | BR-23 | Mock appointment, device, and video-room data must not appear in production as real state. |
 | BR-24 | Plan/feature entitlement must be checked on the server rather than trusted from `localStorage`. |
 | BR-25 | Effective roles and permissions must come from trusted server-side authorization data. |
-| BR-46 | `IN_APP_VIDEO` remains disabled until its contract/ADR is accepted; afterward only authorized participants of a confirmed video appointment may request room entry during the permitted window. |
+| BR-46 | ADR 0017 approves `IN_APP_VIDEO` for v2, but it remains disabled until its detailed contract and runtime gates pass; afterward only authorized participants of a confirmed video appointment may request room entry during the permitted window. |
 
 ### Validation
 
@@ -120,7 +125,7 @@ The supplied reference screenshot defines the target pre-call workspace:
 5. No camera/microphone permission request, device enumeration, local preview, network-readiness check, room-authorization request, signalling connection, or video provider integration exists.
 6. No authenticated session guard, participant ownership check, Specialist approval check, entitlement check, appointment status/channel/window validation, cancellation/reschedule refresh, or server-time decision is implemented on the page.
 7. The Specialist workspace displays **“Vào phòng tư vấn”** as demonstration dashboard copy but does not implement a production video-room transition.
-8. Approved project documents explicitly keep `IN_APP_VIDEO` disabled; no accepted video contract, room/signalling implementation, provider choice, recording policy, failure fallback, or completion-evidence flow exists.
+8. ADR 0017 approves video as a v2 mode but does not supply the detailed room/signalling contract, provider choice, recording prohibition, failure behavior, or completion-evidence implementation, so runtime remains disabled.
 
 ### Abnormal Cases
 

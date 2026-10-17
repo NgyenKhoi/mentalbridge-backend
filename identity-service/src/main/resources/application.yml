@@ -18,9 +18,20 @@ spring:
     enabled: false
     change-log: classpath:db/changelog/db.changelog-master.yaml
     default-schema: public
+  kafka:
+    bootstrap-servers: ${KAFKA_BOOTSTRAP_SERVERS:localhost:9092}
+    producer:
+      acks: all
+      retries: 3
+      properties:
+        enable.idempotence: true
+        max.in.flight.requests.per.connection: 5
+      key-serializer: org.apache.kafka.common.serialization.StringSerializer
+      value-serializer: org.apache.kafka.common.serialization.StringSerializer
 
 mentalbridge:
   identity:
+    notification-service-token: ${IDENTITY_NOTIFICATION_SERVICE_TOKEN:}
     jwt:
       issuer: ${IDENTITY_JWT_ISSUER}
       audience: ${IDENTITY_JWT_AUDIENCE}
@@ -37,6 +48,20 @@ mentalbridge:
       sender-name: ${IDENTITY_BREVO_SENDER_NAME:MentalBridge}
       verification-url: ${IDENTITY_VERIFICATION_URL:http://localhost:3000/verify-email}
       password-recovery-url: ${IDENTITY_PASSWORD_RECOVERY_URL:http://localhost:3000/reset-password}
+    outbox-relay:
+      enabled: ${IDENTITY_OUTBOX_RELAY_ENABLED:false}
+      topic: mentalbridge.identity.account-lifecycle.v1
+      batch-size: ${IDENTITY_OUTBOX_RELAY_BATCH_SIZE:100}
+      interval: ${IDENTITY_OUTBOX_RELAY_INTERVAL:PT5S}
+      send-timeout: ${IDENTITY_OUTBOX_RELAY_SEND_TIMEOUT:PT5S}
+      retry-base: ${IDENTITY_OUTBOX_RELAY_RETRY_BASE:PT5S}
+      retry-maximum: ${IDENTITY_OUTBOX_RELAY_RETRY_MAXIMUM:PT5M}
+    delivery-address:
+      service-token: ${APPOINTMENT_REMINDER_SERVICE_TOKEN:}
+    platform-reporting:
+      enabled: ${IDENTITY_PLATFORM_REPORTING_ENABLED:true}
+      poll-interval: ${IDENTITY_PLATFORM_REPORTING_POLL_INTERVAL:PT2S}
+      retention-sweep-interval: ${IDENTITY_PLATFORM_REPORTING_RETENTION_SWEEP_INTERVAL:PT1H}
 
 eureka:
   client:

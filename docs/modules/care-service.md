@@ -2,37 +2,119 @@
 
 ## Business boundary
 
-Care owns user profiles, consent decisions, specialist access grants, questionnaire definitions, assessment attempts/results, deterministic safety status, versioned SupportEvaluations, system-proposed SupportPlan selection/lifecycle, follow-up, and wellbeing projections. V1 screening and post-screening support are limited to PHQ-9/`DEPRESSIVE_SYMPTOMS` and GAD-7/`ANXIETY_SYMPTOMS`. Care is the authority for current consent, safety and final plan-eligibility decisions. These paths remain correct without AI, Kafka, Redis, WebSocket, or notification delivery.
+Care owns user profiles, consent decisions, specialist access grants,
+questionnaire definitions, assessment attempts/results, deterministic item-9
+and explicit-user safety triggers, the all-tier one-time Support Guide,
+versioned SupportEvaluations, the single official `PLUS`/`PREMIUM` SupportPlan,
+its versioned focuses/typed actions/schedules/occurrences, `PlanChangeRequest`
+decisions, follow-up, and wellbeing projections. V1
+screening domains remain PHQ-9/`DEPRESSIVE_SYMPTOMS` and
+GAD-7/`ANXIETY_SYMPTOMS`. These paths remain correct without optional AI,
+Kafka, Redis, WebSocket, notification, or directory delivery.
 
 ## Use cases and acceptance
 
 | Capability | Main behavior | Acceptance |
 | --- | --- | --- |
-| Profile/privacy | Update profile and independent consent decisions | Versioned consent evidence; unsupported/null fields rejected; revoked consent blocks new reads immediately |
+| Profile/privacy | Update profile and independent privacy/AI-processing consent decisions | Versioned consent evidence; unsupported/null fields rejected; revoked `AI_PROCESSING` blocks new provider attempts immediately |
+| ConsultationBrief AI suggestion | Create/read owner-private asynchronous jobs for one exact saved draft and minimized screening context | AI can suggest only situation/goals; exact provenance is persisted; stale/deleted sources fail closed; no approval or specialist access mutation |
 | Anonymous screening | Fetch current PHQ-9/GAD-7 and submit opaque attempt | Complete 0..3 answers only; deterministic score; short-lived result; no silent account link; guidance in response |
 | Authenticated assessment | Start and idempotently submit immutable versioned attempt | Exact question version; no partial final score; duplicate key returns original; score/result/outbox atomically commit |
-| Safety/support/SupportPlan | Evaluate instrument/domain-specific evidence and independent safety, then propose and manage a bounded plan | Item-9 status never changes a band; no global severity; missing/stale input gives insufficient data; v1 tier alone cannot select a plan; user cannot submit an arbitrary initial resource set; AI cannot determine eligibility; approved safety guidance is synchronous |
+| Safety/Support Guide/SupportPlan | Activate safety from positive item 9 or explicit user action, persist one immutable Guide per screening context for every package, and manage one official paid plan | High/Severe band alone is not a safety trigger; no global severity; the Guide has no automatic time-based expiry or plan lifecycle; `FREE` has no durable plan; specialist input is a request; Care revalidates and user confirms; approved safety guidance is synchronous |
+| SupportPlan v3 actions | Coordinate versioned focuses, typed actions, optional schedules, and occurrences while source owners retain their facts | Known type/owner pairs only; bounded source/evidence references; exact ResourceVersion provenance; generic occurrence generation; no raw cross-domain payload; v2 history exposed only through the marked adapter |
+| Reassessment Summary | Idempotently persist and query screening trend, minimized available-journal context, SupportPlan engagement, and explicit owner-authored current-period experience | V2 current/detail/history reads return immutable source/version/coverage snapshots; activity reflection is separately labelled supporting evidence, missing/deleted self-report is explicit, v1 history remains readable, and no combined improvement score or recovery claim exists |
 | Specialist grant | Grant exact scopes, range/entries, purpose and expiry; authorize reads | Appointment never implies journal access; current grant checked by owner; revoke/read race fails closed and is audited |
 | Follow-up/analytics | Manage milestones/check-ins and compare valid results | Missing differs from zero; source/freshness exposed; no causal/diagnostic claims |
 | Export/deletion | Export owned data and participate in deletion workflow | Scope and retention policy explicit; retries idempotent; evidence contains no deleted content |
 
 ## Implementation design
 
-- Feature slices: `profile`, `consent`, `assessment`, `progress`, `support`, `intervention`, `followup`, `analytics`, `data-rights`.
-- OpenAPI defines public assessment/profile APIs and future minimal internal consent-authorization decisions. Kafka schemas carry minimized assessment/support/consent/follow-up facts.
+- Feature slices: `profile`, `consent`, `assessment`, `progress`, `reassessment-summary`, `support`, `intervention`, `followup`, `analytics`, `data-rights`.
+- OpenAPI defines public assessment/profile APIs plus the implemented minimal current-user `AI_PROCESSING` authorization decision consumed with forwarded bearer context. Kafka schemas carry minimized assessment/support/consent/follow-up facts only for separately accepted publication needs.
 - PostgreSQL and Liquibase own scoring inputs/results, policy provenance, grants and outbox. Constraints enforce immutable published questionnaires and unique submissions.
-- Safety calculation and reviewed fallback are pure local domain behavior. Structured journal indicators arrive asynchronously and never include raw journal text.
-- Active `mb-support-routing-capstone-v1` remains immutable coarse history. Compatible domain-bearing SupportEvaluation work belongs to #48; system-proposed SupportPlan decisions/contracts belong to #49.
-- Care consumes exact Content-owned resource definitions/eligibility through a versioned contract and makes the final plan decision without cross-database access. Review/publication alone is insufficient.
+- Safety calculation and reviewed fallback are pure local domain behavior. Reassessment reads minimized structured journal indicators synchronously through the canonical internal REST projection and never receives raw journal text.
+- Active `mb-support-routing-capstone-v1` remains immutable coarse history.
+  Additive `mb-support-routing-capstone-v2` snapshots both approved domains and
+  independent item-9 safety through owner-scoped `/api/v2` resources without a
+  global tier or severity.
+  MB-511 implements the one-time all-tier Support Guide on the v2 evaluation
+  boundary using exact eligibility. Care may ask Journal/AI to rephrase only
+  the exact approved explanation after Journal/AI rechecks current
+  `AI_PROCESSING` consent; provider, consent, or transport failure preserves
+  the approved Care copy and records `AI_UNAVAILABLE_FALLBACK`. MB-668 adds the
+  episode-scoped naturally idempotent Guide ensure and the read-only
+  `mb-guided-journey-v1` pointer whose ordered next action keeps safety,
+  professional support and an existing plan ahead of plan proposal; see the
+  Care README. MB-372 adds the bounded initial
+  `PLUS`/`PREMIUM` draft and exact persisted reload. MB-373 adds admitted-choice
+  mutation, exact revalidation, explicit activation, one-current-plan
+  enforcement, and authoritative current reload. MB-374 adds the explicit
+  owner lifecycle/history while MB-513 adds deterministic activity schedules
+  and occurrences. MB-376 adds owner-only
+  occurrence engagement with minimized event provenance. MB-386 adds immutable
+  compatibility Reassessment Summary composition and owner-only current/detail/
+  history queries without rewriting source evidence. The canonical explicit
+  reassessment self-report and actor-facing reassessment UI are completed by
+  MB-559. MB-560 implements the separately governed `PlanChangeRequest`; richer
+  history/presentation remains a later slice.
+- ADR 0034 (`MB-SUPPORT-PLAN-V3-ACTIONS-001`) replaces Resource-as-parent
+  composition prospectively with `PlanFocus -> PlanAction -> ActionSchedule ->
+  ActionOccurrence`. MB-639 owns the additive native v3 model, generic
+  scheduling, source/evidence validation, versioned API/events, and explicit
+  `V2_RESOURCE_ADAPTER`. Existing v2 rows, identities, writes, lifecycle, and
+  history are not rewritten or silently dual-written.
+- Care consumes exact Content-owned eligibility through the generated Resource Eligibility v1 OpenFeign boundary with explicit deadlines, bounded retry, circuit breaker and fail-closed `UNAVAILABLE` outcomes. It makes the final future plan decision without cross-database access or a transaction spanning the remote call. Review/publication alone is insufficient.
+- Care combines reassessment dimensions without normalizing them into one score. Journal/AI context remains model-derived evidence limited to available consented entries; Care maps it only to policy-allowed review candidates and requires user confirmation.
+- MB-386 retains compatible explicit 7-31 day analysis composition. MB-559's canonical path issues adjacent 14-day periods from a versioned Care context, validates that the selected PHQ-9/GAD-7 results remain current, resolves a Journal job authoritatively, requires the selected self-report to match the current bounds, and snapshots truthful `UNAVAILABLE` or `INSUFFICIENT_DATA` states. Local engagement/reflection selects only owner-approved reusable occurrences by `scheduled_at`; a source change or deletion after composition cannot rewrite history.
 - Exceptional Identity lookups use a consumer-owned Feign port outside transactions with timeout/breaker and safe failure semantics.
+- MB-381 adds `consultationbrief`: a minimized owner draft, immutable approved snapshot, appointment-purpose specialist grant, content-clearing deletion, and content-free access audit. Appointment authority is fetched from Consultation before local writes; read/revoke serialize on the grant row. This does not create broad journal, assessment-answer, chat, or dashboard access, and later SessionSummary reuse still requires MB-385 plus separate exact-version approval.
 
 ## MB-88 delivered foundation
 
-MB-88 defines the profile, platform-consent, and PHQ-9 contract/persistence foundation. MB-89 implements public questionnaire retrieval plus authenticated and anonymous PHQ-9 submission/read handlers with JWT or hashed session-token authorization, server-owned scoring, item-9 safety status, owner-scoped idempotency, and an atomic minimized outbox fact. MB-178 implements own-profile optimistic concurrency, backend-owned versioned privacy disclosure, append-only `PRIVACY_POLICY` decisions, consent-gated authenticated submission, disclosure-gated anonymous submission, stable owned history pagination, immutable result reopening, and user-initiated reassessment. Story 1102 makes `privacy-capstone-v3` current for new PHQ-9/GAD-7 submissions while preserving v1/v2 historical policy references without backfill. MB-205 implements owner-only descriptive progress by selecting the immediately preceding non-voided same-instrument result with an identical scoring version and returning only score/band/elapsed comparison data. The executable Liquibase history contains profile and append-only consent evidence, isolated anonymous sessions, versioned questionnaire reference data, score bands, immutable assessment submission/answer/result shapes, disclosure provenance, and a transactional outbox table.
+MB-88 defines the profile, platform-consent, and PHQ-9 contract/persistence foundation. MB-89 implements public questionnaire retrieval plus authenticated and anonymous PHQ-9 submission/read handlers with JWT or hashed session-token authorization, server-owned scoring, item-9 safety status, owner-scoped idempotency, and an atomic minimized outbox fact. MB-178 implements own-profile optimistic concurrency, backend-owned versioned privacy disclosure, append-only `PRIVACY_POLICY` decisions, consent-gated authenticated submission, disclosure-gated anonymous submission, stable owned history pagination, immutable result reopening, and user-initiated reassessment. Story 1102 makes `privacy-capstone-v3` current for new PHQ-9/GAD-7 submissions while preserving v1/v2 historical policy references without backfill. MB-367 activates `AI_PROCESSING` with immutable v1 disclosure and append-only decisions; MB-370 makes `ai-processing-capstone-v2` current and adds the explicit saved-ConsultationBrief suggestion scope while preserving v1 history. MB-205 implements owner-only descriptive progress by selecting the immediately preceding non-voided same-instrument result with an identical scoring version and returning only score/band/elapsed comparison data. The executable Liquibase history contains profile and append-only consent evidence, isolated anonymous sessions, versioned questionnaire reference data, score bands, immutable assessment submission/answer/result shapes, disclosure provenance, and a transactional outbox table.
 
 MB-205 is contained in `com.mentalbridge.care.progress` (controller, read-only service, owner-scoped JDBC repository and arithmetic direction). It reuses `ix_assessment_submission_user_history`; measured integration behavior needs no new migration or data-dictionary field.
 
-The original English PHQ-9 definition, retired immutable `phq9-vi-vn-capstone-v1`, current corrected `phq9-vi-vn-capstone-v2`, and published `gad7-vi-vn-adult-v1` are seeded. Story 1102 adds instrument-aware scoring, GAD-7 non-applicable safety semantics, immutable definition lookup, and version-2 assessment events while preserving event v1. ADR 0009 fixes the PHQ-9 item-9 boundary, non-paywall rule, AI boundary, and removal of the hotline catalogue. ADR 0010 separates controlled Capstone questionnaire publication from production governance and optional support features. ADR 0012 fixes the two-domain and system-proposed SupportPlan direction without changing current contracts or runtime. SupportPlan and production consent/retention remain separate gates in `docs/policies/`.
+The reassessment feature is contained in `com.mentalbridge.care.reassessment`. Controllers expose versioned owner self-report commands plus idempotent composition and owner-only current/detail/history reads; the service coordinates local evidence and a transaction-free Journal/AI query. Liquibase changeset 018 adds immutable snapshots and changeset 019 adds the mutable versioned self-report source plus content-clearing deletion tombstones. Snapshots exclude assessment answers, raw journal text, provider responses, and any combined direction.
+
+The original English PHQ-9 definition, retired immutable
+`phq9-vi-vn-capstone-v1`, current corrected `phq9-vi-vn-capstone-v2`, and
+published `gad7-vi-vn-adult-v1` are seeded. Existing item-9 runtime remains
+unchanged. ADR 0017 approves the additional explicit-help trigger and reviewed
+area directory as target behavior without claiming they are implemented.
+Specialist plan changes, directory expansion, and production consent/retention
+remain separate runtime gates in `docs/policies/`. MB-511 adds owner-scoped Support Guide
+generation/history under `/api/v1/support-guides` with immutable provenance,
+local safety, stable dependency outcomes, optional consent-gated AI phrasing
+of approved copy, and no plan lifecycle fields. AI never selects safety,
+resources, eligibility, or a next action.
+MB-372 adds owner-scoped create/current-draft routes under
+`/api/v1/support-plans`. Care obtains current entitlement from Consultation
+with the forwarded bearer, revalidates an owned current-policy
+SupportEvaluation v2, resolves exact Content eligibility before the local
+transaction, and stores one reproducible draft snapshot. `FREE`, stale facts,
+or dependency uncertainty create no plan; AI is not called.
+
+MB-373 adds owner-scoped `PUT /api/v1/support-plans/{id}/choices`,
+`POST /api/v1/support-plans/{id}/activate`, and
+`GET /api/v1/support-plans/current`. Only candidates persisted in the draft may
+be kept/swapped; optional slots may be removed and core slots may not. Every
+accepted command rechecks authoritative paid entitlement, current-compatible
+SupportEvaluation/template facts, and exact resource versions immediately
+before activation. Choice replacement is a naturally idempotent PUT guarded by
+`If-Match`; activation keeps explicit request idempotency. Owner locks and
+partial unique indexes yield exactly one official current plan under retries
+and concurrency. Activation emits one minimized atomic outbox fact.
+
+MB-560 adds owner-scoped `PlanChangeRequest` review and decision endpoints.
+Care retrieves one authoritative exact-version proposal from Consultation,
+revalidates current paid entitlement, current official plan, compatible
+evaluation/template, exact Content publication, and a compatible slot before
+persisting a review snapshot. Only the user may accept or reject. Rejection
+leaves the plan unchanged; acceptance repeats those checks and atomically
+supersedes the old plan, activates its replacement, and records the exact
+request in the SupportPlan command audit. The specialist receives status only
+and never obtains plan-mutation authority.
 
 MB-178 does not implement specialist grants, automatic follow-up, clinical progress interpretation, export/deletion, or production retention. Support/intervention, analytics, Kafka event delivery, and these deferred workflows must not be inferred from the implemented profile/consent/history slice.
 
@@ -42,10 +124,19 @@ MB-178 does not implement specialist grants, automatic follow-up, clinical progr
 - [ ] CARE-02 Extend the MB-88 profile, platform-consent and PHQ-9 OpenAPI foundation with consent authorization, safety/support, intervention, follow-up and analytics contracts.
 - [ ] CARE-03 Define assessment/support/consent/follow-up event schemas and journal-indicator consumer contract.
 - [ ] CARE-04 Extend the MB-88 Liquibase/reference-data foundation with approved grants, safety/support, intervention and follow-up persistence.
-- [ ] CARE-05 Profile and general privacy decisions are implemented by MB-178; specialist scoped grants and their concurrent revoke/read protection remain deferred.
+- [~] CARE-05 Profile and general privacy decisions are implemented by MB-178; MB-381 implements only the appointment-scoped ConsultationBrief grant and concurrent revoke/read protection, while broader specialist scopes remain deferred.
 - [x] CARE-06 Implement anonymous and authenticated assessment, validation, scoring and idempotency for published PHQ-9 and GAD-7 reference data while retaining retired definitions for history.
 - [x] CARE-07a Publish deterministic cross-cutting safety, coarse `mb-support-routing-capstone-v1`, synchronous fallback and provenance through Story 1103.
-- [ ] CARE-07b Preserve v1 history; implement compatible domain-aware SupportEvaluation (#48) only after policy/contract approval, then system-proposed SupportPlans (#49) using exact eligible resources (#50).
-- [ ] CARE-08 Descriptive assessment comparison is implemented by MB-205; follow-up, other analytics projections, export and deletion participation remain open.
+- [x] CARE-07b Preserve v1 history and implement compatible domain-aware SupportEvaluation (#48) plus exact eligible resources (#50).
+- [x] CARE-07c Implement the MB-372 deterministic initial paid SupportPlan draft and persisted owner-only reload.
+- [x] CARE-07d Implement MB-373 bounded admitted choices with natural PUT behavior, exact revalidation, idempotent explicit activation, one-current-plan enforcement, activation audit, and owner-only current reload; keep later lifecycle unavailable.
+- [x] CARE-07e Implement MB-374 owner lifecycle and immutable terminal history, MB-513 deterministic schedules/occurrences, and MB-376 owner engagement without adherence or specialist-monitoring semantics.
+- [x] CARE-07f Implement the MB-386 compatibility Reassessment Summary composition with safe Journal/AI fallback and owner current/history queries.
+- [x] CARE-07g Implement MB-559 explicit reassessment self-report, deletion semantics, and canonical v2 composition.
+- [x] CARE-07h Implement MB-381 ConsultationBrief draft, exact approval snapshot, assigned-specialist window, revoke/delete, and minimized audit.
+- [x] CARE-07i Implement MB-560 exact specialist resource proposals, Care-owned review, explicit owner decision, and atomic idempotent replacement.
+- [x] CARE-07j Implement MB-592 appointment-bounded specialist client continuity composition with current display identity, ConsultationBrief access provenance, minimized audit, and fail-closed suspension/revocation/expiry/deletion behavior.
+- [~] CARE-07k Deliver MB-639 native cross-domain PlanActions and the non-destructive v2 resource-plan adapter under ADR 0034.
+- [ ] CARE-08 Add the ADR 0022 explicit reassessment self-report and governed plan-review outcome contract; follow-up, other analytics projections, export and deletion participation remain open.
 - [ ] CARE-09 Verify scoring boundaries, item-9 safety, stale/missing input, concurrency, rollback/outbox, duplicate/reordered events and dependency failures.
 - [ ] CARE-10 Add safe observability/configuration, update README, and pass module/contract/migration gates.

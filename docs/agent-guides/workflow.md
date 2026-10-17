@@ -6,9 +6,10 @@ Before editing:
 
 1. Identify one owning service for every changed business rule and field.
 2. Read its README, feature package, tests, migrations, outbound REST clients, and consumed/published messages.
-3. Search for existing contracts and names before creating new DTOs, events, errors, or shared utilities.
-4. Record which invariants require a local transaction and which results may be eventually consistent.
-5. List affected callers and consumers. A provider change is incomplete until compatibility is checked.
+3. For persisted data, inspect the current owner migration and the canonical model under `docs/domain-model/` before designing a change.
+4. Search for existing contracts and names before creating new DTOs, events, errors, or shared utilities.
+5. Record which invariants require a local transaction and which results may be eventually consistent.
+6. List affected callers and consumers. A provider change is incomplete until compatibility is checked.
 
 Stop and resolve the design first if a change requires direct cross-service database access, a distributed transaction, raw sensitive text in a message, or a synchronous query through Kafka.
 
@@ -33,8 +34,9 @@ For a database change:
 
 1. Add an append-only migration in the owning service.
 2. Update `docs/database/postgresql-field-data-dictionary.md` with the purpose and necessity of every changed field.
-3. Update the data dictionary/module documentation and mapping tests.
-4. Use expand/migrate/contract when old and new application versions may overlap.
+3. Update `docs/domain-model/relational/postgresql-logical-schema.sql` when the migration materially changes persisted domain structure or relationships.
+4. Update the data dictionary/module documentation and mapping tests.
+5. Use expand/migrate/contract when old and new application versions may overlap.
 
 ## 3. Implementation order
 

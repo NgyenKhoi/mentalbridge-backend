@@ -1,0 +1,263 @@
+openapi: 3.1.0
+info:
+  title: MentalBridge Care SupportEvaluation API v2
+  version: 2.0.0
+  description: |
+    Additive owner-scoped SupportEvaluation v2 API. It preserves immutable
+    instrument/domain evidence and independent PHQ-9 item-9 safety evidence.
+    It does not replace or reinterpret the v1 API, rows, or events.
+servers:
+  - url: https://api.mentalbridge.example
+paths:
+  /api/v2/support-evaluations:
+    x-mentalbridge-status: implemented
+    post:
+      operationId: createOwnSupportEvaluationV2
+      summary: Create an immutable domain-aware support evaluation
+      description: |
+        Care evaluates one explicit owned compatible PHQ-9 result and one
+        explicit owned compatible GAD-7 result locally. The result contains no
+        global severity. Replaying the same Idempotency-Key with the same body
+        returns the original result; reusing it with different evidence returns
+        IDEMPOTENCY_KEY_REUSED. Content, AI, Kafka, Redis, and other services are
+        not synchronous dependencies.
+      security:
+        - bearerAuth: []
+      parameters:
+        - $ref: '#/components/parameters/IdempotencyKey'
+        - $ref: '#/components/parameters/CorrelationId'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: '#/components/schemas/SupportEvaluationV2Request' }
+            example:
+              phq9AssessmentId: 10000000-0000-4000-8000-000000000101
+              gad7AssessmentId: 10000000-0000-4000-8000-000000000102
+      responses:
+        '201':
+          description: Domain-aware evaluation created or replayed
+          headers:
+            Location:
+              schema: { type: string }
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/SupportEvaluationV2' }
+              example:
+                supportEvaluationId: 20000000-0000-4000-8000-000000000201
+                evaluationVersion: 2
+                policyVersion: mb-support-routing-capstone-v2
+                evaluatedAt: '2026-09-16T08:30:00Z'
+                contributingDomains:
+                  - assessmentId: 10000000-0000-4000-8000-000000000101
+                    questionnaireDefinitionId: 10000000-0000-0000-0000-000000000004
+                    instrument: PHQ9
+                    domain: DEPRESSIVE_SYMPTOMS
+                    questionnaireVersion: phq9-vi-vn-capstone-v2
+                    scoringVersion: phq9-standard-bands-v1
+                    screeningLevel: MILD
+                    supportPathway: SELF_GUIDED_SUPPORT
+                    reasonCodes: [PHQ9_LEVEL_MILD]
+                  - assessmentId: 10000000-0000-4000-8000-000000000102
+                    questionnaireDefinitionId: 10000000-0000-0000-0000-000000000003
+                    instrument: GAD7
+                    domain: ANXIETY_SYMPTOMS
+                    questionnaireVersion: gad7-vi-vn-adult-v1
+                    scoringVersion: gad7-standard-bands-v1
+                    screeningLevel: MODERATE
+                    supportPathway: PROFESSIONAL_SUPPORT_RECOMMENDED
+                    reasonCodes: [GAD7_LEVEL_MODERATE]
+                safetyEvidence:
+                  sourceAssessmentId: 10000000-0000-4000-8000-000000000101
+                  instrument: PHQ9
+                  trigger: PHQ9_ITEM_9
+                  status: POSITIVE_SAFETY_SCREEN
+                  policyVersion: MB-SAFETY-PHQ9-001-v1
+                  reasonCode: PHQ9_ITEM9_POSITIVE
+                disclaimerCode: SCREENING_NOT_DIAGNOSIS
+                disclaimer: This screening result is not a medical diagnosis.
+        '400': { $ref: '#/components/responses/ValidationProblem' }
+        '401': { $ref: '#/components/responses/UnauthorizedProblem' }
+        '403': { $ref: '#/components/responses/ForbiddenProblem' }
+        '404': { $ref: '#/components/responses/NotFoundProblem' }
+        '409': { $ref: '#/components/responses/ConflictProblem' }
+        '503': { $ref: '#/components/responses/UnavailableProblem' }
+  /api/v2/support-evaluations/{supportEvaluationId}:
+    x-mentalbridge-status: implemented
+    get:
+      operationId: getOwnSupportEvaluationV2
+      summary: Read one immutable owned domain-aware evaluation
+      description: Other owners receive SUPPORT_EVALUATION_NOT_FOUND; v1 identifiers remain readable only through the unchanged v1 endpoint.
+      security:
+        - bearerAuth: []
+      parameters:
+        - $ref: '#/components/parameters/SupportEvaluationId'
+        - $ref: '#/components/parameters/CorrelationId'
+      responses:
+        '200':
+          description: Immutable evaluation snapshot
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/SupportEvaluationV2' }
+        '401': { $ref: '#/components/responses/UnauthorizedProblem' }
+        '403': { $ref: '#/components/responses/ForbiddenProblem' }
+        '404': { $ref: '#/components/responses/NotFoundProblem' }
+components:
+  securitySchemes:
+    bearerAuth:
+      type: http
+      scheme: bearer
+      bearerFormat: JWT
+  parameters:
+    IdempotencyKey:
+      name: Idempotency-Key
+      in: header
+      required: true
+      schema: { type: string, minLength: 16, maxLength: 128, pattern: '^[!-~]+$' }
+    CorrelationId:
+      name: X-Correlation-Id
+      in: header
+      required: false
+      schema: { type: string, format: uuid }
+    SupportEvaluationId:
+      name: supportEvaluationId
+      in: path
+      required: true
+      schema: { type: string, format: uuid }
+  schemas:
+    SupportEvaluationV2Request:
+      type: object
+      additionalProperties: false
+      required: [phq9AssessmentId, gad7AssessmentId]
+      properties:
+        phq9AssessmentId: { type: string, format: uuid }
+        gad7AssessmentId: { type: string, format: uuid }
+    SupportEvaluationV2:
+      type: object
+      additionalProperties: false
+      required: [supportEvaluationId, evaluationVersion, policyVersion, evaluatedAt, contributingDomains, safetyEvidence, disclaimerCode, disclaimer]
+      properties:
+        supportEvaluationId: { type: string, format: uuid }
+        evaluationVersion: { type: integer, const: 2 }
+        policyVersion: { type: string, const: mb-support-routing-capstone-v2 }
+        evaluatedAt: { type: string, format: date-time }
+        contributingDomains:
+          type: array
+          minItems: 2
+          maxItems: 2
+          items: { $ref: '#/components/schemas/DomainContribution' }
+        safetyEvidence: { $ref: '#/components/schemas/SafetyEvidence' }
+        disclaimerCode: { type: string, const: SCREENING_NOT_DIAGNOSIS }
+        disclaimer: { type: string, minLength: 1, maxLength: 1000 }
+    DomainContribution:
+      type: object
+      additionalProperties: false
+      required: [assessmentId, questionnaireDefinitionId, instrument, domain, questionnaireVersion, scoringVersion, screeningLevel, supportPathway, reasonCodes]
+      properties:
+        assessmentId: { type: string, format: uuid }
+        questionnaireDefinitionId: { type: string, format: uuid }
+        instrument: { $ref: '#/components/schemas/Instrument' }
+        domain: { $ref: '#/components/schemas/ScreeningDomain' }
+        questionnaireVersion: { type: string, minLength: 1, maxLength: 32 }
+        scoringVersion: { type: string, minLength: 1, maxLength: 32 }
+        screeningLevel: { $ref: '#/components/schemas/ScreeningLevel' }
+        supportPathway: { $ref: '#/components/schemas/DomainSupportPathway' }
+        reasonCodes:
+          type: array
+          minItems: 1
+          maxItems: 1
+          uniqueItems: true
+          items: { $ref: '#/components/schemas/DomainReasonCode' }
+    SafetyEvidence:
+      type: object
+      additionalProperties: false
+      required: [sourceAssessmentId, instrument, trigger, status, policyVersion, reasonCode]
+      properties:
+        sourceAssessmentId: { type: string, format: uuid }
+        instrument: { type: string, const: PHQ9 }
+        trigger: { type: string, const: PHQ9_ITEM_9 }
+        status:
+          type: string
+          enum: [NEGATIVE_SAFETY_SCREEN, POSITIVE_SAFETY_SCREEN]
+        policyVersion: { type: string, minLength: 1, maxLength: 64 }
+        reasonCode:
+          type: string
+          enum: [PHQ9_ITEM9_NEGATIVE, PHQ9_ITEM9_POSITIVE]
+    Instrument:
+      type: string
+      enum: [PHQ9, GAD7]
+    ScreeningDomain:
+      type: string
+      enum: [DEPRESSIVE_SYMPTOMS, ANXIETY_SYMPTOMS]
+    ScreeningLevel:
+      type: string
+      description: Instrument-specific level; never a global severity.
+      enum: [MINIMAL, MILD, MODERATE, MODERATELY_SEVERE, SEVERE]
+    DomainSupportPathway:
+      type: string
+      description: Domain-local support pathway; safety remains a separate cross-cutting object.
+      enum: [SELF_GUIDED_SUPPORT, PROFESSIONAL_SUPPORT_RECOMMENDED]
+    DomainReasonCode:
+      type: string
+      enum:
+        - PHQ9_LEVEL_MINIMAL
+        - PHQ9_LEVEL_MILD
+        - PHQ9_LEVEL_MODERATE
+        - PHQ9_LEVEL_MODERATELY_SEVERE
+        - PHQ9_LEVEL_SEVERE
+        - GAD7_LEVEL_MINIMAL
+        - GAD7_LEVEL_MILD
+        - GAD7_LEVEL_MODERATE
+        - GAD7_LEVEL_SEVERE
+    Problem:
+      type: object
+      additionalProperties: true
+      required: [type, title, status, code, correlationId]
+      properties:
+        type: { type: string, format: uri-reference }
+        title: { type: string }
+        status: { type: integer, minimum: 400, maximum: 599 }
+        detail: { type: string }
+        code: { type: string, pattern: '^[A-Z0-9_]+$' }
+        correlationId: { type: string, format: uuid }
+        violations:
+          type: array
+          items:
+            type: object
+            additionalProperties: false
+            required: [field, code]
+            properties:
+              field: { type: string }
+              code: { type: string }
+              message: { type: string }
+  responses:
+    ValidationProblem:
+      description: VALIDATION_FAILED; no aggregate or outbox row is committed.
+      content:
+        application/problem+json:
+          schema: { $ref: '#/components/schemas/Problem' }
+    UnauthorizedProblem:
+      description: UNAUTHENTICATED
+      content:
+        application/problem+json:
+          schema: { $ref: '#/components/schemas/Problem' }
+    ForbiddenProblem:
+      description: CARE_USER_REQUIRED
+      content:
+        application/problem+json:
+          schema: { $ref: '#/components/schemas/Problem' }
+    NotFoundProblem:
+      description: PROFILE_NOT_FOUND, ASSESSMENT_NOT_FOUND, or SUPPORT_EVALUATION_NOT_FOUND
+      content:
+        application/problem+json:
+          schema: { $ref: '#/components/schemas/Problem' }
+    ConflictProblem:
+      description: SUPPORT_EVIDENCE_INCOMPATIBLE or IDEMPOTENCY_KEY_REUSED
+      content:
+        application/problem+json:
+          schema: { $ref: '#/components/schemas/Problem' }
+    UnavailableProblem:
+      description: SUPPORT_POLICY_UNAVAILABLE
+      content:
+        application/problem+json:
+          schema: { $ref: '#/components/schemas/Problem' }

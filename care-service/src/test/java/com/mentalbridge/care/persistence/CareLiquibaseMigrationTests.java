@@ -52,7 +52,44 @@ class CareLiquibaseMigrationTests extends CareTestProperties {
 				"PHQ9|phq9-vi-vn-capstone-v1|phq9-standard-bands-v1",
 				"PHQ9|phq9-vi-vn-capstone-v2|phq9-standard-bands-v1");
 		assertThat(jdbc.sql("select count(*) from screening_band_meaning").query(Long.class).single()).isEqualTo(9);
+		assertThat(jdbc.sql("""
+				select count(*) from screening_band_meaning
+				where content_version='mb-screening-meaning-vi-vn-v2'
+				  and length(meaning_text) > 180 and length(limitation_text) > 180
+				""").query(Long.class).single()).isEqualTo(9);
 		assertThat(safety).isEqualTo(SupportEvaluationService.SAFETY_FALLBACK);
+	}
+
+	@Test
+	void migrationAddsDomainAwareV2WithoutChangingThePublishedV1Policy() {
+		var v1Policy = jdbc.sql("""
+				select version || '|' || locale || '|' || status
+				from support_policy_definition where status='PUBLISHED'
+				""").query(String.class).single();
+		var v2Policy = jdbc.sql("""
+				select version || '|' || locale || '|' || status
+				from support_evaluation_v2_policy_definition where status='PUBLISHED'
+				""").query(String.class).single();
+		var v2Eligibility = jdbc.sql("""
+				select instrument || '|' || domain || '|' || questionnaire_version || '|' || scoring_version
+				from support_evaluation_v2_eligible_definition order by instrument,questionnaire_version
+				""").query(String.class).list();
+		var tables = jdbc.sql("""
+				select table_name from information_schema.tables
+				where table_schema='public' and table_name like 'support_evaluation_v2%'
+				order by table_name
+				""").query(String.class).list();
+
+		assertThat(v1Policy).isEqualTo("mb-support-routing-capstone-v1|vi-VN|PUBLISHED");
+		assertThat(v2Policy).isEqualTo("mb-support-routing-capstone-v2|vi-VN|PUBLISHED");
+		assertThat(v2Eligibility).containsExactly(
+				"GAD7|ANXIETY_SYMPTOMS|gad7-vi-vn-adult-v1|gad7-standard-bands-v1",
+				"PHQ9|DEPRESSIVE_SYMPTOMS|phq9-vi-vn-capstone-v1|phq9-standard-bands-v1",
+				"PHQ9|DEPRESSIVE_SYMPTOMS|phq9-vi-vn-capstone-v2|phq9-standard-bands-v1");
+		assertThat(tables).containsExactly(
+				"support_evaluation_v2", "support_evaluation_v2_domain",
+				"support_evaluation_v2_eligible_definition", "support_evaluation_v2_policy_definition",
+				"support_evaluation_v2_request", "support_evaluation_v2_safety");
 	}
 
 	@Test
@@ -90,7 +127,15 @@ class CareLiquibaseMigrationTests extends CareTestProperties {
 				"questionnaire_definition", "questionnaire_question", "questionnaire_score_band",
 				"assessment_submission", "assessment_answer", "assessment_result", "outbox_event",
 				"support_policy_definition", "support_policy_eligible_definition", "screening_band_meaning",
-				"support_tier_guidance", "support_evaluation", "support_evaluation_request");
+				"support_tier_guidance", "support_evaluation", "support_evaluation_request",
+				"support_evaluation_v2_policy_definition", "support_evaluation_v2_eligible_definition",
+				"support_evaluation_v2", "support_evaluation_v2_domain",
+				"support_evaluation_v2_safety", "support_evaluation_v2_request",
+				"support_plan", "support_plan_template_family", "support_plan_slot",
+				"support_plan_slot_alternative", "support_plan_request",
+				"support_plan_command", "support_plan_command_selection",
+				"consultation_brief", "consultation_brief_snapshot", "consultation_brief_grant",
+				"consultation_brief_audit", "consultation_brief_ai_draft_job");
 		assertThat(careSchemaCount).isZero();
 		assertThat(itemNumbers).containsExactly(1, 2, 3, 4, 5, 6, 7, 8, 9);
 		assertThat(safetyItems).containsExactly(9);

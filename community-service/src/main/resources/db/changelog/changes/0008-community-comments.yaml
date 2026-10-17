@@ -1,0 +1,66 @@
+databaseChangeLog:
+  - changeSet:
+      id: 0008-community-comments
+      author: mentalbridge
+      comment: Persist one-level Community comments, owner command replay, and auditable revisions for MB-577.
+      changes:
+        - sql:
+            splitStatements: false
+            sql: |
+              CREATE TABLE community_comment (
+                  id uuid PRIMARY KEY,
+                  post_id uuid NOT NULL REFERENCES community_post(id),
+                  parent_comment_id uuid,
+                  author_profile_id uuid NOT NULL REFERENCES community_profile(id),
+                  content varchar(2000) NOT NULL,
+                  state varchar(24) NOT NULL,
+                  idempotency_key varchar(128) NOT NULL,
+                  request_fingerprint varchar(64) NOT NULL,
+                  created_at timestamptz NOT NULL,
+                  updated_at timestamptz NOT NULL,
+                  version bigint NOT NULL DEFAULT 0,
+                  CONSTRAINT uq_community_comment_id_post UNIQUE (id, post_id),
+                  CONSTRAINT fk_community_comment_parent_post
+                      FOREIGN KEY (parent_comment_id, post_id)
+                      REFERENCES community_comment(id, post_id),
+                  CONSTRAINT ck_community_comment_not_self_parent
+                      CHECK (parent_comment_id IS NULL OR parent_comment_id <> id),
+                  CONSTRAINT ck_community_comment_content
+                      CHECK (char_length(btrim(content)) BETWEEN 1 AND 2000),
+                  CONSTRAINT ck_community_comment_state
+                      CHECK (state IN ('ACTIVE', 'OWNER_DELETED', 'MODERATION_HIDDEN', 'MODERATION_REMOVED')),
+                  CONSTRAINT ck_community_comment_idempotency_key
+                      CHECK (char_length(idempotency_key) BETWEEN 16 AND 128
+                          AND idempotency_key ~ '^[!-~]+$'),
+                  CONSTRAINT ck_community_comment_request_fingerprint
+                      CHECK (request_fingerprint ~ '^[0-9a-f]{64}$'),
+                  CONSTRAINT ck_community_comment_version CHECK (version >= 0),
+                  CONSTRAINT ux_community_comment_owner_idempotency
+                      UNIQUE (author_profile_id, idempotency_key)
+              );
+
+              CREATE TABLE community_comment_revision (
+                  id uuid PRIMARY KEY,
+                  comment_id uuid NOT NULL REFERENCES community_comment(id),
+                  changed_by_profile_id uuid NOT NULL REFERENCES community_profile(id),
+                  change_type varchar(16) NOT NULL,
+                  content_snapshot varchar(2000) NOT NULL,
+                  state_snapshot varchar(24) NOT NULL,
+                  comment_version bigint NOT NULL,
+                  changed_at timestamptz NOT NULL,
+                  CONSTRAINT ck_community_comment_revision_change_type
+                      CHECK (change_type IN ('CREATED', 'EDITED', 'OWNER_DELETED', 'MODERATED')),
+                  CONSTRAINT ck_community_comment_revision_state
+                      CHECK (state_snapshot IN ('ACTIVE', 'OWNER_DELETED', 'MODERATION_HIDDEN', 'MODERATION_REMOVED')),
+                  CONSTRAINT ck_community_comment_revision_version CHECK (comment_version >= 0),
+                  CONSTRAINT ux_community_comment_revision_version UNIQUE (comment_id, comment_version)
+              );
+
+              CREATE INDEX ix_community_comment_post_order
+                  ON community_comment (post_id, created_at, id)
+                  WHERE state IN ('ACTIVE', 'OWNER_DELETED');
+              CREATE INDEX ix_community_comment_parent
+                  ON community_comment (parent_comment_id, created_at, id)
+                  WHERE parent_comment_id IS NOT NULL;
+              CREATE INDEX ix_community_comment_revision_audit
+                  ON community_comment_revision (comment_id, comment_version);

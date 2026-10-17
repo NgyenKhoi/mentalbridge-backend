@@ -28,9 +28,9 @@ This document is the source of truth for the three Node.js services. ADR 0006 re
 | WebSocket | NestJS gateways, Socket.IO 4 and `@socket.io/redis-adapter` | Only Realtime exposes client sockets; durable state is persisted before acknowledgement. |
 | Security boundary | NestJS guards/pipes/filters plus `helmet`, explicit CORS and rate limiting | Defaults are deny-by-default and configuration is environment-specific. |
 | Logging | Pino | Structured logs with correlation/trace IDs; redact tokens and sensitive content. |
-| Metrics/tracing | `prom-client`, OpenTelemetry Node SDK | Expose liveness, readiness, metrics, and trace propagation without sensitive payloads. |
-| Testing | Vitest, Supertest, Testcontainers for Node.js | Unit, HTTP contract, repository, MongoDB/PostgreSQL, Kafka, Redis, and WebSocket tests as applicable. |
-| Code quality | ESLint flat config and Prettier | Run lint, typecheck, tests, contract/migration checks and build locally; the same basic gates move into CI after the documented `dev` transition. |
+| Metrics/tracing | `prom-client`; OpenTelemetry Node SDK only when ADR 0016 criteria are met | Expose liveness, readiness, and focused metrics by default. Add trace propagation only for a demonstrated distributed diagnostic need and never include sensitive payloads. |
+| Testing | Vitest, Supertest, Testcontainers for Node.js | Unit, HTTP contract, and only the MongoDB/PostgreSQL/Kafka/Redis/WebSocket integration tests applicable to dependencies the feature actually uses. |
+| Code quality | ESLint flat config and Prettier | Run lint, typecheck, tests, contract/migration checks and build locally; the repository gate enforces them on `dev` and `staging`. |
 
 Use NestJS dependency injection deliberately. Feature modules expose only the providers required by another feature. Do not create a global module that becomes a service locator, share business DTOs between deployables, or place business rules in controllers, guards, interceptors, filters, or persistence models.
 
@@ -96,9 +96,9 @@ The tree below is the maximum expected shape for a feature with real boundary co
 Initial feature packages: `journals`, `analysis-jobs`, `analysis-results`, `llm-providers`, `datasets`, `benchmarks`, and `consented-access`.
 
 - MongoDB owns journal revisions and structured analysis documents.
-- PostgreSQL owns durable analysis job, dataset/run metadata, inbox/outbox, and reconciliation state.
-- Provider adapters use official OpenAI and Google GenAI SDKs behind application ports.
-- Sprint 1 implements service scaffolding and private journal CRUD only. AI calls, Kafka analysis jobs, benchmarks, and provider billing are deferred.
+- MongoDB owns durable analysis jobs, normalized results, longitudinal analyses, dataset/run metadata, and future recoverable-publication state.
+- MB-367 uses a deterministic fake provider behind the application port. Official OpenAI and Google GenAI adapters remain gated by provider-selection work.
+- Sprint 1 implements service scaffolding and private journal CRUD only. MB-367 later adds a local Mongo-leased job runtime without Kafka; real AI calls, benchmarks, and provider billing remain deferred.
 
 ### `realtime-service`
 
@@ -126,7 +126,12 @@ Required keys are service-scoped, documented in `.env.example`, and bound once a
 
 GitHub Actions is maintained as one repository-level flow by the repository owner and is not split into service-member tasks in the Sprint 1 Jira import.
 
-`.github/workflows/quality-gate.yml` runs install, formatting, lint, typecheck, unit/HTTP tests, contract/migration validation and build for current Node.js modules on pull requests targeting `dev`. Content/Notification's PostgreSQL Testcontainers suite also runs there. The stable branch-protection check is the final `quality-gate` job; enable it after the workflow is merged and has completed successfully on `dev`.
+`.github/workflows/quality-gate.yml` runs install, formatting, lint, typecheck,
+unit/HTTP tests, contract/migration validation, infrastructure integration, and
+build for current Node.js modules on pull requests and pushes targeting `dev`
+or `staging`. Staging pull requests accept only `dev` as their source branch.
+The stable branch-protection check is the final `quality-gate` job; require it
+on both pre-production branches after the workflow has completed successfully.
 
 A missing, skipped, cancelled, unavailable, or red CI status is not evidence that a pull request passed. Reviewers still record local verification and report environment-only blockers explicitly.
 

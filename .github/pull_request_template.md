@@ -10,7 +10,7 @@
 - Issue/TODO liên quan: `Closes #...` | `Refs #...` | `Không có issue`
 - Contract active/proposal:
 - ADR/domain rule liên quan:
-- Migration và data dictionary:
+- Migration, canonical logical model và data dictionary:
 - Thư mục được phép thay đổi:
 - Ngoài phạm vi:
 - Ví dụ acceptance/edge case:
@@ -43,7 +43,7 @@ Nêu rõ command không chạy được, lỗi đầu tiên, nguyên nhân và �
 - [ ] Owner, source of truth, contract status và out-of-scope đã rõ.
 - [ ] Controller/gateway thay đổi cùng OpenAPI và provider boundary tests.
 - [ ] Event/WebSocket thay đổi cùng versioned schema và producer/consumer tests.
-- [ ] Migration thay đổi cùng data dictionary và constraint/mapping tests.
+- [ ] Migration thay đổi cùng canonical logical model khi persisted domain model thay đổi, data dictionary và constraint/mapping tests.
 - [ ] Configuration thay đổi cùng `.env.example`, README và configuration tests khi semantics thay đổi.
 - [ ] Đã kiểm tra validation, authorization, conflict/concurrency, duplicate/retry và dependency failure phù hợp phạm vi.
 - [ ] Không log/event/error token, password, raw journal/chat, assessment answer, private URL hoặc provider payload nhạy cảm.

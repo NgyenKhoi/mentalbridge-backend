@@ -1,0 +1,220 @@
+package com.mentalbridge.community;
+
+import static org.assertj.core.api.Assertions.assertThat;
+import static org.assertj.core.api.Assertions.assertThatThrownBy;
+import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.get;
+import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.jsonPath;
+import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.status;
+
+import java.security.interfaces.RSAPrivateKey;
+import java.security.interfaces.RSAPublicKey;
+import java.time.Instant;
+import java.util.List;
+
+import com.cloudinary.Cloudinary;
+import com.mentalbridge.community.configuration.CloudinaryProperties;
+import com.nimbusds.jose.jwk.JWKSet;
+import com.nimbusds.jose.jwk.RSAKey;
+import com.nimbusds.jose.jwk.source.ImmutableJWKSet;
+import org.junit.jupiter.api.Test;
+import org.springframework.beans.factory.annotation.Autowired;
+import org.springframework.boot.test.context.SpringBootTest;
+import org.springframework.boot.webmvc.test.autoconfigure.AutoConfigureMockMvc;
+import org.springframework.context.annotation.Import;
+import org.springframework.jdbc.core.simple.JdbcClient;
+import org.springframework.security.oauth2.jose.jws.SignatureAlgorithm;
+import org.springframework.security.oauth2.jwt.JwsHeader;
+import org.springframework.security.oauth2.jwt.JwtClaimsSet;
+import org.springframework.security.oauth2.jwt.JwtDecoder;
+import org.springframework.security.oauth2.jwt.JwtEncoderParameters;
+import org.springframework.security.oauth2.jwt.JwtValidationException;
+import org.springframework.security.oauth2.jwt.NimbusJwtEncoder;
+import org.springframework.test.web.servlet.MockMvc;
+
+@Import(TestcontainersConfiguration.class)
+@SpringBootTest
+@AutoConfigureMockMvc
+class CommunityServiceApplicationTests extends CommunityTestProperties {
+
+	@Autowired
+	private JdbcClient jdbc;
+
+	@Autowired
+	private MockMvc mvc;
+
+	@Autowired
+	private Cloudinary cloudinary;
+
+	@Autowired
+	private CloudinaryProperties cloudinaryProperties;
+
+	@Autowired
+	private JwtDecoder jwtDecoder;
+
+	@Test
+	void contextLoadsWithTypedCloudinaryConfiguration() {
+		assertThat(cloudinary).isNotNull();
+		assertThat(cloudinaryProperties.cloudName()).isEqualTo("test-cloud");
+	}
+
+	@Test
+	void communityMigrationsApplyAllRuntimeModels() {
+		var changeSets = jdbc.sql("select id from databasechangelog order by orderexecuted")
+				.query(String.class).list();
+		var businessTables = jdbc.sql("""
+				select table_name
+				from information_schema.tables
+				where table_schema = 'public'
+				  and table_name not in ('databasechangelog', 'databasechangeloglock')
+				order by table_name
+				""").query(String.class).list();
+
+		assertThat(changeSets).containsExactly("0001-community-foundation", "0002-community-feed",
+				"0003-community-post-lifecycle", "0004-community-display-identity",
+				"0005-community-media-lifecycle", "0006-community-request-fingerprint-varchar",
+				"0007-community-post-author-mode", "0008-community-comments", "0009-community-moderation",
+				"0010-community-interactions", "0011-community-interaction-outbox",
+				"0012-community-topic-governance", "0013-community-resource-attachment",
+				"0014-community-sensitive-content-warning", "0015-community-saved-post-ordering",
+				"0016-community-profile-avatar");
+		assertThat(businessTables).containsExactly("community_access_restriction", "community_block",
+				"community_comment", "community_comment_revision", "community_content_hide",
+				"community_interaction_outbox", "community_media", "community_moderation_action",
+				"community_moderation_case", "community_post",
+				"community_post_bookmark", "community_post_reaction", "community_post_topic", "community_profile",
+				"community_report", "community_topic");
+	}
+
+	@Test
+	void savedPostOrderingHasAnOwnerFirstCursorIndex() {
+		var columns = jdbc.sql("""
+				select a.attname
+				from pg_class table_class
+				join pg_namespace namespace on namespace.oid = table_class.relnamespace
+				join pg_index index_metadata on index_metadata.indrelid = table_class.oid
+				join pg_class index_class on index_class.oid = index_metadata.indexrelid
+				join unnest(index_metadata.indkey) with ordinality keys(attnum, position) on true
+				join pg_attribute a on a.attrelid = table_class.oid and a.attnum = keys.attnum
+				where namespace.nspname = 'public'
+				  and table_class.relname = 'community_post_bookmark'
+				  and index_class.relname = 'ix_community_post_bookmark_saved_order'
+				order by keys.position
+				""").query(String.class).list();
+
+		assertThat(columns).containsExactly("profile_id", "created_at", "post_id");
+	}
+
+	@Test
+	void resourceAttachmentIsAFrameworkMappedNullableUuidWithoutACrossDatabaseForeignKey() {
+		var column = jdbc.sql("""
+				select data_type, is_nullable
+				from information_schema.columns
+				where table_schema = 'public'
+				  and table_name = 'community_post'
+				  and column_name = 'resource_id'
+				""").query().singleRow();
+		var foreignKeys = jdbc.sql("""
+				select count(*)
+				from information_schema.key_column_usage
+				where table_schema = 'public'
+				  and table_name = 'community_post'
+				  and column_name = 'resource_id'
+				  and position_in_unique_constraint is not null
+				""").query(Long.class).single();
+
+		assertThat(column).containsEntry("data_type", "uuid").containsEntry("is_nullable", "YES");
+		assertThat(foreignKeys).isZero();
+	}
+
+	@Test
+	void sensitiveContentWarningIsNullableAndDatabaseBounded() {
+		var column = jdbc.sql("""
+				select data_type, character_maximum_length, is_nullable
+				from information_schema.columns
+				where table_schema = 'public'
+				  and table_name = 'community_post'
+				  and column_name = 'sensitive_content_warning'
+				""").query().singleRow();
+		var checkClause = jdbc.sql("""
+				select check_clause
+				from information_schema.check_constraints
+				where constraint_schema = 'public'
+				  and constraint_name = 'ck_community_post_sensitive_warning'
+				""").query(String.class).single();
+
+		assertThat(column).containsEntry("data_type", "character varying")
+				.containsEntry("character_maximum_length", 32)
+				.containsEntry("is_nullable", "YES");
+		assertThat(checkClause).contains("SENSITIVE_CONTENT").contains("IS NULL");
+	}
+
+	@Test
+	void requestFingerprintsUseTheJpaCompatibleVarcharType() {
+		var fingerprintColumns = jdbc.sql("""
+				select table_name, data_type, character_maximum_length
+				from information_schema.columns
+				where table_schema = 'public'
+				  and table_name in ('community_post', 'community_media', 'community_comment')
+				  and column_name = 'request_fingerprint'
+				order by table_name
+				""").query((resultSet, rowNumber) -> List.of(
+					resultSet.getString("table_name"),
+					resultSet.getString("data_type"),
+					resultSet.getString("character_maximum_length")))
+				.list();
+
+		assertThat(fingerprintColumns).containsExactly(
+				List.of("community_comment", "character varying", "64"),
+				List.of("community_media", "character varying", "64"),
+				List.of("community_post", "character varying", "64"));
+	}
+
+	@Test
+	void healthEndpointIsPublicAndReportsUp() throws Exception {
+		mvc.perform(get("/actuator/health"))
+				.andExpect(status().isOk())
+				.andExpect(jsonPath("$.status").value("UP"));
+	}
+
+	@Test
+	void unknownApplicationRoutesRequireAuthentication() throws Exception {
+		mvc.perform(get("/api/v1/community/not-implemented"))
+				.andExpect(status().isUnauthorized());
+	}
+
+	@Test
+	void identityJwtIsVerifiedLocallyWithIssuerAndAudience() {
+		var token = signedToken(List.of("mentalbridge-test-api"));
+
+		var decoded = jwtDecoder.decode(token);
+
+		assertThat(decoded.getSubject()).isEqualTo("00000000-0000-0000-0000-000000000001");
+		assertThat(decoded.getClaimAsStringList("roles")).containsExactly("USER");
+	}
+
+	@Test
+	void identityJwtWithWrongAudienceIsRejected() {
+		var token = signedToken(List.of("another-service"));
+
+		assertThatThrownBy(() -> jwtDecoder.decode(token)).isInstanceOf(JwtValidationException.class);
+	}
+
+	private String signedToken(List<String> audience) {
+		var keyPair = CommunityTestProperties.jwtKeyPair();
+		var jwk = new RSAKey.Builder((RSAPublicKey) keyPair.getPublic())
+				.privateKey((RSAPrivateKey) keyPair.getPrivate()).keyID("community-test-key").build();
+		var encoder = new NimbusJwtEncoder(new ImmutableJWKSet<>(new JWKSet(jwk)));
+		var now = Instant.now();
+		var claims = JwtClaimsSet.builder()
+				.issuer("https://identity.test.mentalbridge")
+				.subject("00000000-0000-0000-0000-000000000001")
+				.audience(audience)
+				.issuedAt(now)
+				.expiresAt(now.plusSeconds(60))
+				.claim("roles", List.of("USER"))
+				.build();
+		var header = JwsHeader.with(SignatureAlgorithm.RS256).keyId("community-test-key").build();
+		return encoder.encode(JwtEncoderParameters.from(header, claims)).getTokenValue();
+	}
+
+}

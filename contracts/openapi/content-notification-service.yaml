@@ -1,11 +1,13 @@
 openapi: 3.1.0
 info:
   title: Content-Notification Service API
-  version: 1.0.0
+  version: 1.8.0
   description: >
     MentalBridge Content/Notification bounded context.
-    Manages reviewed self-help resources, in-app notifications, and delivery
-    preferences. Hotline catalogue operations are not part of this service.
+    Manages reviewed self-help resources, reviewed Vietnam safety-directory
+    records, in-app notifications, and delivery preferences. The removed legacy
+    hotline table is not restored; directory records use the ADR 0018 review,
+    provenance, coverage, and 90-day verification model.
 
 servers:
   - url: http://localhost:3003
@@ -16,6 +18,14 @@ tags:
     description: Liveness and readiness probes
   - name: Resources
     description: Self-help content management with reviewed admin lifecycle and public eligibility boundaries
+  - name: Resource progress
+    description: Owner-scoped lightweight daily participation progress for reviewed resources
+  - name: Safety directory
+    description: Reviewed Vietnam area-directory administration and current area lookup
+  - name: Notification preferences
+    description: Owner-scoped persisted notification delivery choices
+  - name: Notification inbox
+    description: Owner-scoped durable in-app notification history and read lifecycle
 
 paths:
   /health/live:
@@ -230,9 +240,23 @@ paths:
     get:
       tags: [Resources]
       summary: Get an active reviewed resource for one locale
+      description: >
+        Without contentVersion, resolves only the current active PUBLISHED resource.
+        With contentVersion, may resolve the immutable publication snapshot for an exact
+        historical reference after archive or correction without restoring catalogue visibility.
       operationId: getResource
       parameters:
         - $ref: "#/components/parameters/Locale"
+        - name: contentVersion
+          in: query
+          required: false
+          description: >
+            Exact non-negative content version requested by a persisted consumer reference.
+            When present, the exact immutable publication is returned and no newer version is substituted.
+          schema:
+            type: string
+            pattern: "^(0|[1-9][0-9]*)$"
+            maxLength: 19
       responses:
         "200":
           description: Resource detail
@@ -274,10 +298,12 @@ paths:
         "403": { $ref: "#/components/responses/Forbidden" }
         "409":
           $ref: "#/components/responses/Conflict"
+        "422":
+          $ref: "#/components/responses/ValidationError"
 
     delete:
       tags: [Resources]
-      summary: Delete a DRAFT resource (Admin)
+      summary: Delete an initial DRAFT resource with no publication history (Admin)
       operationId: deleteResource
       security:
         - BearerAuth: []
@@ -297,11 +323,365 @@ paths:
         "409":
           $ref: "#/components/responses/Conflict"
 
+  /api/v1/resource-progress:
+    x-mentalbridge-status: implemented
+    get:
+      tags: [Resource progress]
+      summary: List the authenticated owner's resource progress for a bounded local-date range
+      operationId: listResourceProgress
+      security:
+        - BearerAuth: []
+      parameters:
+        - name: from
+          in: query
+          required: true
+          schema:
+            type: string
+            format: date
+        - name: to
+          in: query
+          required: true
+          schema:
+            type: string
+            format: date
+      responses:
+        "200":
+          description: Owner-scoped progress ordered by local date and recent activity
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ResourceProgressList"
+        "401": { $ref: "#/components/responses/Unauthorized" }
+        "422": { $ref: "#/components/responses/ValidationError" }
+        "503": { $ref: "#/components/responses/ServiceUnavailable" }
+
+  /api/v1/resource-progress/{resourceId}/{localDate}:
+    x-mentalbridge-status: implemented
+    put:
+      tags: [Resource progress]
+      summary: Replace one daily progress item for the authenticated owner
+      operationId: saveResourceProgress
+      security:
+        - BearerAuth: []
+      parameters:
+        - name: resourceId
+          in: path
+          required: true
+          schema:
+            type: string
+            format: uuid
+        - name: localDate
+          in: path
+          required: true
+          schema:
+            type: string
+            format: date
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/ResourceProgressUpdate"
+      responses:
+        "200":
+          description: Persisted daily progress
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ResourceProgressItem"
+        "401": { $ref: "#/components/responses/Unauthorized" }
+        "404": { $ref: "#/components/responses/NotFound" }
+        "422": { $ref: "#/components/responses/ValidationError" }
+        "503": { $ref: "#/components/responses/ServiceUnavailable" }
+
+  /api/v1/resource-bookmarks:
+    x-mentalbridge-status: implemented
+    get:
+      tags: [Resource progress]
+      summary: List the authenticated owner's private resource bookmarks
+      operationId: listResourceBookmarks
+      security:
+        - BearerAuth: []
+      responses:
+        "200":
+          description: Owner-scoped bookmarks ordered by the original saved instant
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ResourceBookmarkList"
+        "401": { $ref: "#/components/responses/Unauthorized" }
+        "503": { $ref: "#/components/responses/ServiceUnavailable" }
+
+  /api/v1/resource-bookmarks/{resourceId}:
+    x-mentalbridge-status: implemented
+    parameters:
+      - name: resourceId
+        in: path
+        required: true
+        schema: { type: string, format: uuid }
+    put:
+      tags: [Resource progress]
+      summary: Save the current exact reviewed version of one resource for the authenticated owner
+      operationId: saveResourceBookmark
+      security:
+        - BearerAuth: []
+      responses:
+        "200":
+          description: Saved bookmark; an identical retry returns the existing fact
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ResourceBookmark"
+        "401": { $ref: "#/components/responses/Unauthorized" }
+        "404": { $ref: "#/components/responses/NotFound" }
+        "422": { $ref: "#/components/responses/ValidationError" }
+        "503": { $ref: "#/components/responses/ServiceUnavailable" }
+    delete:
+      tags: [Resource progress]
+      summary: Remove one private resource bookmark for the authenticated owner
+      operationId: deleteResourceBookmark
+      security:
+        - BearerAuth: []
+      responses:
+        "204": { description: Bookmark absent after this idempotent command }
+        "401": { $ref: "#/components/responses/Unauthorized" }
+        "422": { $ref: "#/components/responses/ValidationError" }
+        "503": { $ref: "#/components/responses/ServiceUnavailable" }
+
+  /api/v1/resource-bingo/{weekStart}:
+    x-mentalbridge-status: implemented
+    get:
+      tags: [Resource progress]
+      summary: Read one persisted weekly resource Bingo board and its exact evidence
+      description: >-
+        Self-confirmed marks are owner statements and remain distinct from Content-verified
+        resource completion or eligible plan-bound practice evidence. Historical boards are
+        retained by their local Monday and original IANA time zone.
+      operationId: getResourceBingo
+      security:
+        - BearerAuth: []
+      parameters:
+        - name: weekStart
+          in: path
+          required: true
+          schema: { type: string, format: date }
+      responses:
+        "200":
+          description: Persisted owner-scoped board
+          headers:
+            ETag:
+              schema: { type: string, pattern: '^"(0|[1-9][0-9]*)"$' }
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ResourceBingoBoard"
+        "401": { $ref: "#/components/responses/Unauthorized" }
+        "404": { $ref: "#/components/responses/NotFound" }
+        "422": { $ref: "#/components/responses/ValidationError" }
+        "503": { $ref: "#/components/responses/ServiceUnavailable" }
+
+  /api/v1/resource-bingo/{weekStart}/items/{position}/self-confirmation:
+    x-mentalbridge-status: implemented
+    put:
+      tags: [Resource progress]
+      summary: Replace one owner self-confirmation on a persisted Bingo item
+      operationId: setResourceBingoSelfConfirmation
+      security:
+        - BearerAuth: []
+      parameters:
+        - name: weekStart
+          in: path
+          required: true
+          schema: { type: string, format: date }
+        - name: position
+          in: path
+          required: true
+          schema: { type: integer, minimum: 1, maximum: 9 }
+        - name: If-Match
+          in: header
+          required: true
+          schema: { type: string, pattern: '^"(0|[1-9][0-9]*)"$' }
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/ResourceBingoSelfConfirmationUpdate"
+      responses:
+        "200":
+          description: Current board after an idempotent, version-checked update
+          headers:
+            ETag:
+              schema: { type: string, pattern: '^"(0|[1-9][0-9]*)"$' }
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ResourceBingoBoard"
+        "400": { $ref: "#/components/responses/RequestRejected" }
+        "401": { $ref: "#/components/responses/Unauthorized" }
+        "404": { $ref: "#/components/responses/NotFound" }
+        "412": { $ref: "#/components/responses/Conflict" }
+        "422": { $ref: "#/components/responses/ValidationError" }
+        "428": { $ref: "#/components/responses/RequestRejected" }
+        "503": { $ref: "#/components/responses/ServiceUnavailable" }
+
+  /api/v1/resource-rewards:
+    x-mentalbridge-status: implemented
+    get:
+      tags: [Resource progress]
+      summary: Read authoritative participation rewards for the authenticated owner
+      description: >-
+        Calculates bounded XP from persisted reviewed resource completion and verified
+        practice evidence. XP records participation only and is not a treatment,
+        adherence, recovery or mental-health score.
+      operationId: getResourceRewards
+      security:
+        - BearerAuth: []
+      responses:
+        "200":
+          description: Owner-scoped reward read model with source and rule provenance
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ResourceRewardReadModel"
+        "401": { $ref: "#/components/responses/Unauthorized" }
+        "503": { $ref: "#/components/responses/ServiceUnavailable" }
+    put:
+      tags: [Resource progress]
+      summary: Replace the authenticated owner's optional reward visibility preference
+      operationId: setResourceRewardVisibility
+      security:
+        - BearerAuth: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/ResourceRewardVisibilityUpdate"
+      responses:
+        "200":
+          description: Updated preference and freshly calculated reward read model
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ResourceRewardReadModel"
+        "401": { $ref: "#/components/responses/Unauthorized" }
+        "422": { $ref: "#/components/responses/ValidationError" }
+        "503": { $ref: "#/components/responses/ServiceUnavailable" }
+
+  /api/v1/achievements:
+    x-mentalbridge-status: implemented
+    get:
+      tags: [Resource progress]
+      summary: Read the authenticated owner's private multi-domain achievement collection
+      description: >-
+        Returns deterministic facts from minimized owner projections. Journal and emotion
+        content, clinical scores, consultation data and inferred recovery states never enter
+        this boundary. A failed domain source is reported explicitly and does not reuse stale facts.
+      operationId: getAchievements
+      security:
+        - BearerAuth: []
+      parameters:
+        - name: timezone
+          in: query
+          required: true
+          schema: { type: string, minLength: 1, maxLength: 64, example: Asia/Ho_Chi_Minh }
+      responses:
+        "200":
+          description: Private owner-scoped collection
+          headers:
+            ETag:
+              schema: { type: string, pattern: '^"(0|[1-9][0-9]*)"$' }
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/AchievementCollection"
+        "401": { $ref: "#/components/responses/Unauthorized" }
+        "422": { $ref: "#/components/responses/ValidationError" }
+        "503": { $ref: "#/components/responses/ServiceUnavailable" }
+
+  /api/v1/achievements/preference:
+    x-mentalbridge-status: implemented
+    put:
+      tags: [Resource progress]
+      summary: Replace the owner's private collection visibility preference
+      operationId: setAchievementVisibility
+      security:
+        - BearerAuth: []
+      parameters:
+        - name: timezone
+          in: query
+          required: true
+          schema: { type: string, minLength: 1, maxLength: 64, example: Asia/Ho_Chi_Minh }
+        - name: If-Match
+          in: header
+          required: true
+          schema: { type: string, pattern: '^"(0|[1-9][0-9]*)"$' }
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/AchievementPreferenceUpdate"
+      responses:
+        "200":
+          description: Updated preference and freshly calculated collection
+          headers:
+            ETag:
+              schema: { type: string, pattern: '^"(0|[1-9][0-9]*)"$' }
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/AchievementCollection"
+        "400": { $ref: "#/components/responses/RequestRejected" }
+        "401": { $ref: "#/components/responses/Unauthorized" }
+        "412": { $ref: "#/components/responses/Conflict" }
+        "422": { $ref: "#/components/responses/ValidationError" }
+        "428": { $ref: "#/components/responses/RequestRejected" }
+        "503": { $ref: "#/components/responses/ServiceUnavailable" }
+
+  /api/v1/resource-journeys/{localDate}:
+    x-mentalbridge-status: implemented
+    put:
+      tags: [Resource progress]
+      summary: Materialize and return a stable plan-aligned daily resource journey
+      description: >-
+        The trusted BFF supplies the authenticated owner's current ACTIVE support-plan
+        snapshot. Repeating this request for the same owner, date and plan version returns
+        the same persisted assignment and weekly bingo board.
+      operationId: materializeResourceJourney
+      security:
+        - BearerAuth: []
+      parameters:
+        - name: localDate
+          in: path
+          required: true
+          schema:
+            type: string
+            format: date
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/ResourceJourneyRequest"
+      responses:
+        "200":
+          description: Stable daily assignment, progress dimensions and weekly bingo
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ResourceJourney"
+        "401": { $ref: "#/components/responses/Unauthorized" }
+        "404": { $ref: "#/components/responses/NotFound" }
+        "422": { $ref: "#/components/responses/ValidationError" }
+        "503": { $ref: "#/components/responses/ServiceUnavailable" }
+
   /api/v1/resources/{id}/publish:
     x-mentalbridge-status: implemented
     post:
       tags: [Resources]
-      summary: Publish a reviewed DRAFT resource (blocked pending MB-251 policy approval)
+      summary: Publish an exact approved DRAFT resource version
       operationId: publishResource
       security:
         - BearerAuth: []
@@ -319,10 +699,72 @@ paths:
             type: integer
             minimum: 0
       responses:
+        "200":
+          description: Immutable exact-version publication created
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/ResourceSummary" }
         "400": { $ref: "#/components/responses/RequestRejected" }
         "401": { $ref: "#/components/responses/Unauthorized" }
         "403": { $ref: "#/components/responses/Forbidden" }
-        "409": { $ref: "#/components/responses/ReviewApprovalRequired" }
+        "404": { $ref: "#/components/responses/NotFound" }
+        "409": { $ref: "#/components/responses/Conflict" }
+
+  /api/v1/resources/{id}/review:
+    x-mentalbridge-status: implemented
+    post:
+      tags: [Resources]
+      summary: Record a configured-authority decision for one exact draft
+      operationId: reviewResource
+      security:
+        - BearerAuth: []
+      parameters:
+        - $ref: "#/components/parameters/ResourceId"
+        - name: version
+          in: query
+          required: true
+          schema: { type: integer, minimum: 0 }
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: "#/components/schemas/ResourceReviewRequest" }
+      responses:
+        "200":
+          description: Immutable review decision for the exact draft version
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/ResourceReviewDecision" }
+        "400": { $ref: "#/components/responses/RequestRejected" }
+        "401": { $ref: "#/components/responses/Unauthorized" }
+        "403": { $ref: "#/components/responses/Forbidden" }
+        "409": { $ref: "#/components/responses/Conflict" }
+        "422": { $ref: "#/components/responses/ValidationError" }
+
+  /api/v1/resources/{id}/versions:
+    x-mentalbridge-status: implemented
+    post:
+      tags: [Resources]
+      summary: Start a correction draft after archiving an exact publication
+      operationId: createResourceVersion
+      security:
+        - BearerAuth: []
+      parameters:
+        - $ref: "#/components/parameters/ResourceId"
+        - name: version
+          in: query
+          required: true
+          schema: { type: integer, minimum: 0 }
+      responses:
+        "200":
+          description: New editable content version
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/AdminResourceDetail" }
+        "400": { $ref: "#/components/responses/RequestRejected" }
+        "401": { $ref: "#/components/responses/Unauthorized" }
+        "403": { $ref: "#/components/responses/Forbidden" }
+        "409": { $ref: "#/components/responses/Conflict" }
 
   /api/v1/resources/{id}/archive:
     x-mentalbridge-status: implemented
@@ -357,6 +799,410 @@ paths:
         "403": { $ref: "#/components/responses/Forbidden" }
         "409":
           $ref: "#/components/responses/Conflict"
+
+  /api/v1/resources/{id}/versions/{contentVersion}/eligibility-publications:
+    x-mentalbridge-status: implemented
+    post:
+      tags: [Resources]
+      summary: Publish immutable exact-version SupportPlan eligibility (Admin)
+      operationId: publishResourceEligibility
+      security:
+        - BearerAuth: []
+      parameters:
+        - $ref: "#/components/parameters/ResourceId"
+        - $ref: "#/components/parameters/ContentVersion"
+        - $ref: "#/components/parameters/IdempotencyKey"
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/PublishResourceEligibilityRequest"
+      responses:
+        "201":
+          description: Immutable eligibility publication created
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ResourceEligibilityPublication"
+        "400": { $ref: "#/components/responses/RequestRejected" }
+        "401": { $ref: "#/components/responses/Unauthorized" }
+        "403": { $ref: "#/components/responses/Forbidden" }
+        "404": { $ref: "#/components/responses/NotFound" }
+        "409": { $ref: "#/components/responses/Conflict" }
+        "422": { $ref: "#/components/responses/ValidationError" }
+        "503": { $ref: "#/components/responses/ServiceUnavailable" }
+
+  /api/v1/resources/{id}/versions/{contentVersion}/eligibility-publications/withdrawal:
+    x-mentalbridge-status: implemented
+    post:
+      tags: [Resources]
+      summary: Withdraw an exact-version eligibility publication (Admin)
+      operationId: withdrawResourceEligibility
+      security:
+        - BearerAuth: []
+      parameters:
+        - $ref: "#/components/parameters/ResourceId"
+        - $ref: "#/components/parameters/ContentVersion"
+        - $ref: "#/components/parameters/IdempotencyKey"
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/WithdrawResourceEligibilityRequest"
+      responses:
+        "200":
+          description: Eligibility publication withdrawn or an identical command replayed
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ResourceEligibilityPublication"
+        "400": { $ref: "#/components/responses/RequestRejected" }
+        "401": { $ref: "#/components/responses/Unauthorized" }
+        "403": { $ref: "#/components/responses/Forbidden" }
+        "404": { $ref: "#/components/responses/NotFound" }
+        "409": { $ref: "#/components/responses/Conflict" }
+        "422": { $ref: "#/components/responses/ValidationError" }
+        "503": { $ref: "#/components/responses/ServiceUnavailable" }
+
+  /internal/v1/resource-eligibility:resolve:
+    x-mentalbridge-status: implemented
+    post:
+      tags: [Resources]
+      summary: Resolve exact-version resource eligibility for Care in one bounded batch
+      description: >
+        Care forwards the authenticated USER bearer credential and correlation ID.
+        Results preserve request order. A successful provider response never infers
+        eligibility from resource type, review, or publication alone. Dependency
+        uncertainty is represented by HTTP 503; Care maps it to UNAVAILABLE and
+        commits no proposal mutation.
+      operationId: resolveResourceEligibility
+      security:
+        - BearerAuth: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/ResourceEligibilityBatchRequest"
+      responses:
+        "200":
+          description: Deterministic exact-version eligibility outcomes
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ResourceEligibilityBatchResponse"
+        "400": { $ref: "#/components/responses/RequestRejected" }
+        "401": { $ref: "#/components/responses/Unauthorized" }
+        "403": { $ref: "#/components/responses/Forbidden" }
+        "422": { $ref: "#/components/responses/ValidationError" }
+        "503": { $ref: "#/components/responses/ServiceUnavailable" }
+
+  /api/v1/safety-directory/admin/entries:
+    x-mentalbridge-status: implemented
+    get:
+      tags: [Safety directory]
+      summary: List directory records for administration
+      operationId: listSafetyDirectoryEntriesForAdmin
+      security:
+        - BearerAuth: []
+      responses:
+        "200":
+          description: All current administrative records, including inactive and stale entries
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  { $ref: "#/components/schemas/SafetyDirectoryAdminEntry" }
+        "401": { $ref: "#/components/responses/Unauthorized" }
+        "403": { $ref: "#/components/responses/Forbidden" }
+        "503": { $ref: "#/components/responses/ServiceUnavailable" }
+    post:
+      tags: [Safety directory]
+      summary: Create an inactive unreviewed directory record
+      operationId: createSafetyDirectoryEntry
+      security:
+        - BearerAuth: []
+      parameters:
+        - $ref: "#/components/parameters/IdempotencyKey"
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: "#/components/schemas/SafetyDirectoryEntryWrite" }
+      responses:
+        "201":
+          description: Inactive unreviewed record created or identical command replayed
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/SafetyDirectoryAdminEntry" }
+        "400": { $ref: "#/components/responses/RequestRejected" }
+        "401": { $ref: "#/components/responses/Unauthorized" }
+        "403": { $ref: "#/components/responses/Forbidden" }
+        "409": { $ref: "#/components/responses/IdempotencyConflict" }
+        "422": { $ref: "#/components/responses/ValidationError" }
+        "503": { $ref: "#/components/responses/ServiceUnavailable" }
+
+  /api/v1/safety-directory/admin/entries/{entryId}:
+    x-mentalbridge-status: implemented
+    patch:
+      tags: [Safety directory]
+      summary: Replace reviewed fields and invalidate prior review
+      operationId: updateSafetyDirectoryEntry
+      security:
+        - BearerAuth: []
+      parameters:
+        - $ref: "#/components/parameters/DirectoryEntryId"
+        - $ref: "#/components/parameters/DirectoryVersion"
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: "#/components/schemas/SafetyDirectoryEntryWrite" }
+      responses:
+        "200":
+          description: Record updated, deactivated, and returned to unreviewed state
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/SafetyDirectoryAdminEntry" }
+        "400": { $ref: "#/components/responses/RequestRejected" }
+        "401": { $ref: "#/components/responses/Unauthorized" }
+        "403": { $ref: "#/components/responses/Forbidden" }
+        "409": { $ref: "#/components/responses/Conflict" }
+        "422": { $ref: "#/components/responses/ValidationError" }
+        "503": { $ref: "#/components/responses/ServiceUnavailable" }
+
+  /api/v1/safety-directory/admin/entries/{entryId}/review:
+    x-mentalbridge-status: implemented
+    post:
+      tags: [Safety directory]
+      summary: Review, verify, and activate the exact directory version
+      operationId: reviewSafetyDirectoryEntry
+      security:
+        - BearerAuth: []
+      parameters:
+        - $ref: "#/components/parameters/DirectoryEntryId"
+        - $ref: "#/components/parameters/DirectoryVersion"
+      responses:
+        "200":
+          description: Exact record version reviewed, verified with server time, and activated
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/SafetyDirectoryAdminEntry" }
+        "400": { $ref: "#/components/responses/RequestRejected" }
+        "401": { $ref: "#/components/responses/Unauthorized" }
+        "403": { $ref: "#/components/responses/Forbidden" }
+        "409": { $ref: "#/components/responses/Conflict" }
+        "503": { $ref: "#/components/responses/ServiceUnavailable" }
+
+  /api/v1/safety-directory/admin/entries/{entryId}/deactivate:
+    x-mentalbridge-status: implemented
+    post:
+      tags: [Safety directory]
+      summary: Deactivate a directory record without deleting review history
+      operationId: deactivateSafetyDirectoryEntry
+      security:
+        - BearerAuth: []
+      parameters:
+        - $ref: "#/components/parameters/DirectoryEntryId"
+        - $ref: "#/components/parameters/DirectoryVersion"
+      responses:
+        "200":
+          description: Record is inactive; repeating against the current inactive version is safe
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/SafetyDirectoryAdminEntry" }
+        "400": { $ref: "#/components/responses/RequestRejected" }
+        "401": { $ref: "#/components/responses/Unauthorized" }
+        "403": { $ref: "#/components/responses/Forbidden" }
+        "409": { $ref: "#/components/responses/Conflict" }
+        "503": { $ref: "#/components/responses/ServiceUnavailable" }
+
+  /api/v1/safety-directory:lookup:
+    x-mentalbridge-status: implemented
+    post:
+      tags: [Safety directory]
+      summary: Resolve active reviewed current records for one deliberate coarse area
+      operationId: lookupSafetyDirectory
+      description: >
+        Public read-only owner lookup used by Care. Manual text is matched only
+        against reviewed area labels; no geocoding, proximity, or location sharing occurs.
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              { $ref: "#/components/schemas/SafetyDirectoryLookupRequest" }
+      responses:
+        "200":
+          description: Current records or an explicit empty/invalid-area outcome
+          headers:
+            Cache-Control:
+              schema: { type: string, const: no-store }
+          content:
+            application/json:
+              schema:
+                { $ref: "#/components/schemas/SafetyDirectoryLookupResponse" }
+        "422": { $ref: "#/components/responses/ValidationError" }
+        "503": { $ref: "#/components/responses/ServiceUnavailable" }
+
+  /api/v1/notification-preferences:
+    x-mentalbridge-status: implemented
+    get:
+      x-mentalbridge-operation-status: implemented
+      tags: [Notification preferences]
+      summary: Get the authenticated user's persisted notification preferences
+      operationId: getNotificationPreferences
+      security: [{ BearerAuth: [] }]
+      responses:
+        "200":
+          description: Current preferences, creating the stable defaults when first accessed
+          headers:
+            ETag: { $ref: "#/components/headers/NotificationPreferenceETag" }
+            Cache-Control:
+              schema: { type: string, const: "private, no-store" }
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/NotificationPreferences" }
+        "401": { $ref: "#/components/responses/Unauthorized" }
+        "503": { $ref: "#/components/responses/ServiceUnavailable" }
+    patch:
+      x-mentalbridge-operation-status: implemented
+      tags: [Notification preferences]
+      summary: Partially update the authenticated user's notification preferences
+      operationId: updateNotificationPreferences
+      security: [{ BearerAuth: [] }]
+      parameters:
+        - $ref: "#/components/parameters/NotificationPreferenceIfMatch"
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: "#/components/schemas/NotificationPreferencePatch" }
+      responses:
+        "200":
+          description: Persisted preferences
+          headers:
+            ETag: { $ref: "#/components/headers/NotificationPreferenceETag" }
+            Cache-Control:
+              schema: { type: string, const: "private, no-store" }
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/NotificationPreferences" }
+        "400": { $ref: "#/components/responses/RequestRejected" }
+        "401": { $ref: "#/components/responses/Unauthorized" }
+        "412": { $ref: "#/components/responses/PreferenceVersionMismatch" }
+        "422": { $ref: "#/components/responses/ValidationError" }
+        "428": { $ref: "#/components/responses/PreferenceVersionRequired" }
+        "503": { $ref: "#/components/responses/ServiceUnavailable" }
+
+  /api/v1/notifications:
+    x-mentalbridge-status: implemented
+    get:
+      x-mentalbridge-operation-status: implemented
+      tags: [Notification inbox]
+      summary: List the authenticated user's active inbox newest first
+      operationId: listNotifications
+      security: [{ BearerAuth: [] }]
+      parameters:
+        - name: limit
+          in: query
+          schema: { type: integer, minimum: 1, maximum: 50, default: 20 }
+        - name: cursor
+          in: query
+          description: Opaque continuation token returned by the previous page.
+          schema: { type: string, minLength: 1, maxLength: 256 }
+      responses:
+        "200":
+          description: Active, non-expired notifications owned by the authenticated user
+          headers:
+            Cache-Control:
+              schema: { type: string, const: "private, no-store" }
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/NotificationPage" }
+        "401": { $ref: "#/components/responses/Unauthorized" }
+        "422": { $ref: "#/components/responses/ValidationError" }
+        "503": { $ref: "#/components/responses/ServiceUnavailable" }
+
+  /api/v1/wellbeing-digest/preview:
+    x-mentalbridge-status: implemented
+    get:
+      x-mentalbridge-operation-status: implemented
+      tags: [Notification preferences]
+      summary: Preview today's privacy-safe wellbeing email digest
+      operationId: previewWellbeingDigest
+      security: [{ BearerAuth: [] }]
+      responses:
+        "200":
+          description: Current local-day digest preview built from real pending items
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/WellbeingDigestPreview" }
+        "401": { $ref: "#/components/responses/Unauthorized" }
+        "503": { $ref: "#/components/responses/ServiceUnavailable" }
+
+  /api/v1/notifications/{notificationId}/read:
+    x-mentalbridge-status: implemented
+    patch:
+      x-mentalbridge-operation-status: implemented
+      tags: [Notification inbox]
+      summary: Mark one owned notification read idempotently
+      operationId: markNotificationRead
+      security: [{ BearerAuth: [] }]
+      parameters:
+        - $ref: "#/components/parameters/NotificationId"
+      responses:
+        "200":
+          description: Current notification with the original or newly assigned read time
+          headers:
+            Cache-Control:
+              schema: { type: string, const: "private, no-store" }
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/Notification" }
+        "401": { $ref: "#/components/responses/Unauthorized" }
+        "404": { $ref: "#/components/responses/NotificationNotFound" }
+        "410": { $ref: "#/components/responses/NotificationGone" }
+        "422": { $ref: "#/components/responses/ValidationError" }
+        "503": { $ref: "#/components/responses/ServiceUnavailable" }
+
+  /api/v1/notifications/mark-all-read:
+    x-mentalbridge-status: implemented
+    post:
+      x-mentalbridge-operation-status: implemented
+      tags: [Notification inbox]
+      summary: Mark every active unread notification owned by the user read
+      operationId: markAllNotificationsRead
+      security: [{ BearerAuth: [] }]
+      responses:
+        "200":
+          description: Number of notifications changed by this idempotent operation
+          content:
+            application/json:
+              schema:
+                { $ref: "#/components/schemas/NotificationBulkReadResult" }
+        "401": { $ref: "#/components/responses/Unauthorized" }
+        "503": { $ref: "#/components/responses/ServiceUnavailable" }
+
+  /api/v1/notifications/{notificationId}:
+    x-mentalbridge-status: implemented
+    delete:
+      x-mentalbridge-operation-status: implemented
+      tags: [Notification inbox]
+      summary: Tombstone one notification owned by the authenticated user
+      operationId: deleteNotification
+      security: [{ BearerAuth: [] }]
+      parameters:
+        - $ref: "#/components/parameters/NotificationId"
+      responses:
+        "204": { description: Notification is deleted or was already deleted }
+        "401": { $ref: "#/components/responses/Unauthorized" }
+        "404": { $ref: "#/components/responses/NotificationNotFound" }
+        "422": { $ref: "#/components/responses/ValidationError" }
+        "503": { $ref: "#/components/responses/ServiceUnavailable" }
 
 components:
   parameters:
@@ -394,6 +1240,40 @@ components:
       name: cursor
       in: query
       schema: { type: string, format: uuid }
+    ContentVersion:
+      name: contentVersion
+      in: path
+      required: true
+      description: Exact non-negative 64-bit content version encoded as a JSON-safe decimal string.
+      schema:
+        type: string
+        pattern: "^(0|[1-9][0-9]*)$"
+        maxLength: 19
+    DirectoryEntryId:
+      name: entryId
+      in: path
+      required: true
+      schema: { type: string, format: uuid }
+    DirectoryVersion:
+      name: version
+      in: query
+      required: true
+      schema: { type: integer, format: int64, minimum: 0 }
+    NotificationPreferenceIfMatch:
+      name: If-Match
+      in: header
+      required: true
+      description: Strong ETag from the last owner preference read.
+      schema: { type: string, pattern: '^"(0|[1-9][0-9]*)"$' }
+    NotificationId:
+      name: notificationId
+      in: path
+      required: true
+      schema: { type: string, format: uuid }
+  headers:
+    NotificationPreferenceETag:
+      description: Strong ETag containing the current preference version.
+      schema: { type: string, pattern: '^"(0|[1-9][0-9]*)"$' }
   securitySchemes:
     BearerAuth:
       type: http
@@ -425,7 +1305,7 @@ components:
         application/problem+json:
           schema: { $ref: "#/components/schemas/ProblemDetails" }
     ReviewApprovalRequired:
-      description: Publish is unavailable until an approved MB-251 review decision is recorded
+      description: The exact draft lacks an approved configured-authority review decision
       content:
         application/problem+json:
           schema: { $ref: "#/components/schemas/ProblemDetails" }
@@ -482,8 +1362,435 @@ components:
             status: 400
             code: REQUEST_REJECTED
             correlationId: 123e4567-e89b-12d3-a456-426614174000
+    PreferenceVersionMismatch:
+      description: If-Match does not equal the current owner preference version
+      content:
+        application/problem+json:
+          schema: { $ref: "#/components/schemas/ProblemDetails" }
+    PreferenceVersionRequired:
+      description: If-Match is required for a preference update
+      content:
+        application/problem+json:
+          schema: { $ref: "#/components/schemas/ProblemDetails" }
+    NotificationNotFound:
+      description: The notification does not exist for the authenticated owner
+      content:
+        application/problem+json:
+          schema: { $ref: "#/components/schemas/ProblemDetails" }
+    NotificationGone:
+      description: The owned notification was deleted or expired before the read command
+      content:
+        application/problem+json:
+          schema: { $ref: "#/components/schemas/ProblemDetails" }
 
   schemas:
+    NotificationKind:
+      type: string
+      enum:
+        [
+          REMINDER,
+          MESSAGE,
+          APPOINTMENT,
+          SYSTEM_RESOURCE,
+          ASSESSMENT_REASSESSMENT,
+          STREAK_MILESTONE,
+          JOURNAL_REMINDER,
+          EMOTION_CHECKIN_REMINDER,
+          JOURNAL_STREAK_MILESTONE,
+          EMOTION_STREAK_MILESTONE,
+          COMMUNITY_COMMENT,
+          COMMUNITY_REPLY,
+          COMMUNITY_REACTION,
+        ]
+    NotificationPriority:
+      type: string
+      enum: [LOW, NORMAL, HIGH]
+    NotificationActionType:
+      type: string
+      enum:
+        [
+          OPEN_JOURNAL,
+          OPEN_MESSAGES,
+          OPEN_APPOINTMENTS,
+          OPEN_RESOURCES,
+          OPEN_ASSESSMENTS,
+          OPEN_RESOURCE,
+          OPEN_COMMUNITY_POST,
+        ]
+    NotificationAction:
+      type: object
+      additionalProperties: false
+      required: [type, targetId, href]
+      properties:
+        type: { $ref: "#/components/schemas/NotificationActionType" }
+        targetId: { type: [string, "null"], format: uuid }
+        href:
+          type: string
+          description: Server-derived relative route from the approved action type; never a producer URL.
+          pattern: "^/"
+          maxLength: 256
+    Notification:
+      type: object
+      additionalProperties: false
+      required:
+        [
+          id,
+          kind,
+          title,
+          body,
+          priority,
+          occurredAt,
+          createdAt,
+          read,
+          readAt,
+          action,
+          lifecycleState,
+          expiresAt,
+        ]
+      properties:
+        id: { type: string, format: uuid }
+        kind: { $ref: "#/components/schemas/NotificationKind" }
+        title: { type: string, minLength: 1, maxLength: 255 }
+        body: { type: string, minLength: 1, maxLength: 1000 }
+        priority: { $ref: "#/components/schemas/NotificationPriority" }
+        occurredAt: { type: string, format: date-time }
+        createdAt: { type: string, format: date-time }
+        read: { type: boolean }
+        readAt: { type: [string, "null"], format: date-time }
+        action:
+          oneOf:
+            - $ref: "#/components/schemas/NotificationAction"
+            - type: "null"
+        lifecycleState: { type: string, const: ACTIVE }
+        expiresAt: { type: string, format: date-time }
+    NotificationPage:
+      type: object
+      additionalProperties: false
+      required: [items, nextCursor, hasMore, unreadCount]
+      properties:
+        items:
+          type: array
+          maxItems: 50
+          items: { $ref: "#/components/schemas/Notification" }
+        nextCursor: { type: [string, "null"], maxLength: 256 }
+        hasMore: { type: boolean }
+        unreadCount: { type: integer, minimum: 0 }
+    NotificationBulkReadResult:
+      type: object
+      additionalProperties: false
+      required: [updatedCount]
+      properties:
+        updatedCount: { type: integer, minimum: 0 }
+    NotificationChannels:
+      type: object
+      additionalProperties: false
+      required: [inApp, email, push]
+      properties:
+        inApp: { type: boolean }
+        email: { type: boolean }
+        push:
+          type: boolean
+          description: Persisted preference only; push delivery remains deferred until mobile device registration.
+    NotificationChannelsPatch:
+      type: object
+      additionalProperties: false
+      minProperties: 1
+      properties:
+        inApp: { type: boolean }
+        email: { type: boolean }
+        push: { type: boolean }
+    NotificationContentGroups:
+      type: object
+      additionalProperties: false
+      required:
+        [
+          journalReminder,
+          emotionCheckIn,
+          streakMilestone,
+          screeningReassessment,
+          appointmentMessage,
+          resourceSystem,
+          communityInteraction,
+        ]
+      properties:
+        journalReminder: { type: boolean }
+        emotionCheckIn: { type: boolean }
+        streakMilestone: { type: boolean }
+        screeningReassessment: { type: boolean }
+        appointmentMessage: { type: boolean }
+        resourceSystem: { type: boolean }
+        communityInteraction: { type: boolean }
+    NotificationContentGroupsPatch:
+      type: object
+      additionalProperties: false
+      minProperties: 1
+      properties:
+        journalReminder: { type: boolean }
+        emotionCheckIn: { type: boolean }
+        streakMilestone: { type: boolean }
+        screeningReassessment: { type: boolean }
+        appointmentMessage: { type: boolean }
+        resourceSystem: { type: boolean }
+        communityInteraction: { type: boolean }
+    QuietHours:
+      type: object
+      additionalProperties: false
+      required: [enabled, start, end, timeZone]
+      properties:
+        enabled: { type: boolean }
+        start: { type: string, pattern: "^([01][0-9]|2[0-3]):[0-5][0-9]$" }
+        end: { type: string, pattern: "^([01][0-9]|2[0-3]):[0-5][0-9]$" }
+        timeZone:
+          type: string
+          minLength: 1
+          maxLength: 64
+          description: IANA time zone used to evaluate the local-day quiet window, including windows crossing midnight.
+    QuietHoursPatch:
+      type: object
+      additionalProperties: false
+      minProperties: 1
+      properties:
+        enabled: { type: boolean }
+        start: { type: string, pattern: "^([01][0-9]|2[0-3]):[0-5][0-9]$" }
+        end: { type: string, pattern: "^([01][0-9]|2[0-3]):[0-5][0-9]$" }
+        timeZone: { type: string, minLength: 1, maxLength: 64 }
+    EmailCadence:
+      type: string
+      enum: [IMMEDIATE, DAILY_DIGEST, WEEKLY_DIGEST]
+    EmailPreferences:
+      type: object
+      additionalProperties: false
+      required:
+        [
+          cadence,
+          wellbeingDigestEnabled,
+          resourceRemindersEnabled,
+          dailyDigestTime,
+          resourceReminderTime,
+        ]
+      properties:
+        cadence: { $ref: "#/components/schemas/EmailCadence" }
+        wellbeingDigestEnabled: { type: boolean }
+        resourceRemindersEnabled: { type: boolean }
+        dailyDigestTime:
+          { type: string, pattern: "^([01][0-9]|2[0-3]):[0-5][0-9]$" }
+        resourceReminderTime:
+          { type: string, pattern: "^([01][0-9]|2[0-3]):[0-5][0-9]$" }
+        appointmentRemindersEnabled: { type: boolean }
+    EmailPreferencesPatch:
+      type: object
+      additionalProperties: false
+      minProperties: 1
+      properties:
+        cadence: { $ref: "#/components/schemas/EmailCadence" }
+        wellbeingDigestEnabled: { type: boolean }
+        resourceRemindersEnabled: { type: boolean }
+        dailyDigestTime:
+          { type: string, pattern: "^([01][0-9]|2[0-3]):[0-5][0-9]$" }
+        resourceReminderTime:
+          { type: string, pattern: "^([01][0-9]|2[0-3]):[0-5][0-9]$" }
+        appointmentRemindersEnabled: { type: boolean }
+    WellbeingDigestResourceItem:
+      type: object
+      additionalProperties: false
+      required: [id, title]
+      properties:
+        id: { type: string, format: uuid }
+        title: { type: string, minLength: 1, maxLength: 240 }
+    WellbeingDigestPreview:
+      type: object
+      additionalProperties: false
+      required:
+        [
+          localDate,
+          timeZone,
+          scheduledTime,
+          eligibleNow,
+          resourceItems,
+          includeJournalPrompt,
+          includeEmotionPrompt,
+          empty,
+        ]
+      properties:
+        localDate: { type: string, format: date }
+        timeZone: { type: string, minLength: 1, maxLength: 64 }
+        scheduledTime:
+          { type: string, pattern: "^([01][0-9]|2[0-3]):[0-5][0-9]$" }
+        eligibleNow: { type: boolean }
+        resourceItems:
+          type: array
+          maxItems: 8
+          items: { $ref: "#/components/schemas/WellbeingDigestResourceItem" }
+        includeJournalPrompt: { type: boolean }
+        includeEmotionPrompt: { type: boolean }
+        empty: { type: boolean }
+    NotificationPreferences:
+      type: object
+      additionalProperties: false
+      required:
+        [
+          notificationsEnabled,
+          channels,
+          contentGroups,
+          quietHours,
+          email,
+          version,
+          updatedAt,
+        ]
+      properties:
+        notificationsEnabled: { type: boolean }
+        channels: { $ref: "#/components/schemas/NotificationChannels" }
+        contentGroups:
+          { $ref: "#/components/schemas/NotificationContentGroups" }
+        quietHours: { $ref: "#/components/schemas/QuietHours" }
+        email: { $ref: "#/components/schemas/EmailPreferences" }
+        version: { type: integer, format: int64, minimum: 0 }
+        updatedAt: { type: string, format: date-time }
+    NotificationPreferencePatch:
+      type: object
+      additionalProperties: false
+      minProperties: 1
+      properties:
+        notificationsEnabled: { type: boolean }
+        channels: { $ref: "#/components/schemas/NotificationChannelsPatch" }
+        contentGroups:
+          { $ref: "#/components/schemas/NotificationContentGroupsPatch" }
+        quietHours: { $ref: "#/components/schemas/QuietHoursPatch" }
+        email: { $ref: "#/components/schemas/EmailPreferencesPatch" }
+    SafetyDirectoryEntryType:
+      type: string
+      enum: [FACILITY, HOTLINE]
+    SafetyDirectoryCoverageLevel:
+      type: string
+      enum: [NATIONWIDE, PROVINCE, DISTRICT]
+    SafetyDirectoryCoverage:
+      type: object
+      additionalProperties: false
+      required: [level, provinceCode, provinceName, districtCode, districtName]
+      properties:
+        level: { $ref: "#/components/schemas/SafetyDirectoryCoverageLevel" }
+        provinceCode: { type: [string, "null"], minLength: 1, maxLength: 32 }
+        provinceName: { type: [string, "null"], minLength: 1, maxLength: 120 }
+        districtCode: { type: [string, "null"], minLength: 1, maxLength: 32 }
+        districtName: { type: [string, "null"], minLength: 1, maxLength: 120 }
+    SafetyDirectoryEntryWrite:
+      type: object
+      additionalProperties: false
+      required:
+        [
+          name,
+          type,
+          phone,
+          address,
+          coverage,
+          sourceName,
+          sourceReference,
+          sourceRetrievedAt,
+        ]
+      properties:
+        name: { type: string, minLength: 1, maxLength: 200 }
+        type: { $ref: "#/components/schemas/SafetyDirectoryEntryType" }
+        phone: { type: string, minLength: 1, maxLength: 64 }
+        address: { type: [string, "null"], maxLength: 500 }
+        coverage:
+          type: array
+          minItems: 1
+          maxItems: 100
+          items: { $ref: "#/components/schemas/SafetyDirectoryCoverage" }
+        sourceName: { type: string, minLength: 1, maxLength: 200 }
+        sourceReference: { type: string, minLength: 1, maxLength: 2000 }
+        sourceRetrievedAt: { type: string, format: date-time }
+        sourceChecksum: { type: [string, "null"], pattern: "^[0-9a-f]{64}$" }
+    SafetyDirectoryReviewState:
+      type: string
+      enum: [UNREVIEWED, CURRENT, STALE, INACTIVE]
+    SafetyDirectoryPublicEntry:
+      type: object
+      additionalProperties: false
+      required:
+        [
+          directoryEntryId,
+          name,
+          type,
+          phone,
+          address,
+          coverage,
+          sourceName,
+          sourceReference,
+          reviewedAt,
+          verifiedAt,
+        ]
+      properties:
+        directoryEntryId: { type: string, format: uuid }
+        name: { type: string }
+        type: { $ref: "#/components/schemas/SafetyDirectoryEntryType" }
+        phone: { type: string }
+        address: { type: [string, "null"] }
+        coverage:
+          type: array
+          items: { $ref: "#/components/schemas/SafetyDirectoryCoverage" }
+        sourceName: { type: string }
+        sourceReference: { type: string }
+        reviewedAt: { type: string, format: date-time }
+        verifiedAt: { type: string, format: date-time }
+    SafetyDirectoryAdminEntry:
+      allOf:
+        - $ref: "#/components/schemas/SafetyDirectoryPublicEntry"
+        - type: object
+          additionalProperties: true
+          required:
+            [
+              recordVersion,
+              active,
+              reviewState,
+              reviewedBy,
+              verifiedBy,
+              sourceRetrievedAt,
+              sourceChecksum,
+              seedKey,
+              createdAt,
+              updatedAt,
+            ]
+          properties:
+            recordVersion: { type: integer, format: int64, minimum: 0 }
+            active: { type: boolean }
+            reviewState:
+              { $ref: "#/components/schemas/SafetyDirectoryReviewState" }
+            reviewedBy: { type: [string, "null"], format: uuid }
+            verifiedBy: { type: [string, "null"], format: uuid }
+            sourceRetrievedAt: { type: string, format: date-time }
+            sourceChecksum:
+              { type: [string, "null"], pattern: "^[0-9a-f]{64}$" }
+            seedKey: { type: [string, "null"], maxLength: 128, readOnly: true }
+            createdAt: { type: string, format: date-time }
+            updatedAt: { type: string, format: date-time }
+    SafetyDirectoryLookupRequest:
+      type: object
+      additionalProperties: false
+      properties:
+        provinceCode: { type: string, minLength: 1, maxLength: 32 }
+        districtCode: { type: string, minLength: 1, maxLength: 32 }
+        manualLocation: { type: string, minLength: 1, maxLength: 120 }
+      oneOf:
+        - required: [provinceCode]
+        - required: [manualLocation]
+    SafetyDirectoryLookupState:
+      type: string
+      enum: [RESULTS, EMPTY, INVALID_AREA]
+    SafetyDirectoryLookupResponse:
+      type: object
+      additionalProperties: true
+      required:
+        [state, wording, resolvedProvinceCode, resolvedDistrictCode, entries]
+      properties:
+        state: { $ref: "#/components/schemas/SafetyDirectoryLookupState" }
+        wording: { type: string, const: Cơ sở trong khu vực đã chọn }
+        resolvedProvinceCode: { type: [string, "null"] }
+        resolvedDistrictCode: { type: [string, "null"] }
+        entries:
+          type: array
+          maxItems: 100
+          items: { $ref: "#/components/schemas/SafetyDirectoryPublicEntry" }
     LiveResponse:
       type: object
       required: [status]
@@ -546,15 +1853,666 @@ components:
       type: string
       enum: [DRAFT, PUBLISHED, ARCHIVED]
 
+    ResourceProgressStatus:
+      type: string
+      enum: [IN_PROGRESS, COMPLETED]
+      description: >-
+        Daily participation state. COMPLETED is terminal for a resource and
+        local date; later checklist edits cannot return it to IN_PROGRESS.
+
+    ResourceProgressItem:
+      type: object
+      required:
+        [
+          resourceId,
+          localDate,
+          contentVersion,
+          status,
+          completedActionIds,
+          completedAt,
+          updatedAt,
+          version,
+        ]
+      properties:
+        resourceId:
+          type: string
+          format: uuid
+        localDate:
+          type: string
+          format: date
+        contentVersion:
+          type: string
+          pattern: "^(0|[1-9][0-9]*)$"
+          maxLength: 19
+        status:
+          $ref: "#/components/schemas/ResourceProgressStatus"
+        completedActionIds:
+          type: array
+          description: >-
+            Current user-managed checklist selections. These selections remain
+            editable after COMPLETED without reversing the recorded completion.
+          maxItems: 32
+          uniqueItems: true
+          items:
+            type: string
+            minLength: 1
+            maxLength: 64
+            pattern: "^[A-Za-z0-9:_-]+$"
+        practiceSessionId:
+          type: string
+          format: uuid
+          description: >-
+            Client-generated idempotency key for one completed repeatable practice
+            session. Omit for ordinary checklist edits and one-time learning resources.
+        practiceStartedAt:
+          type: string
+          format: date-time
+          description: Optional start instant for the practice session.
+        practiceDurationSeconds:
+          type: integer
+          minimum: 1
+          maximum: 7200
+          description: Optional measured duration for the practice session.
+        completedAt:
+          type: string
+          format: date-time
+          nullable: true
+        updatedAt:
+          type: string
+          format: date-time
+        version:
+          type: string
+          pattern: "^(0|[1-9][0-9]*)$"
+          maxLength: 19
+
+    ResourceProgressList:
+      type: object
+      required: [items]
+      properties:
+        items:
+          type: array
+          items:
+            $ref: "#/components/schemas/ResourceProgressItem"
+
+    ResourceProgressUpdate:
+      type: object
+      additionalProperties: false
+      required: [status, completedActionIds]
+      properties:
+        status:
+          $ref: "#/components/schemas/ResourceProgressStatus"
+        completedActionIds:
+          type: array
+          description: >-
+            Current user-managed checklist selections. These selections remain
+            editable after COMPLETED without reversing the recorded completion.
+          maxItems: 32
+          uniqueItems: true
+          items:
+            type: string
+            minLength: 1
+            maxLength: 64
+            pattern: "^[A-Za-z0-9:_-]+$"
+
+    ResourceBookmark:
+      type: object
+      additionalProperties: false
+      required: [resourceId, contentVersion, savedAt, version]
+      properties:
+        resourceId: { type: string, format: uuid }
+        contentVersion:
+          type: string
+          pattern: "^(0|[1-9][0-9]*)$"
+          maxLength: 19
+        savedAt: { type: string, format: date-time }
+        version:
+          type: string
+          pattern: "^(0|[1-9][0-9]*)$"
+          maxLength: 19
+
+    ResourceBookmarkList:
+      type: object
+      additionalProperties: false
+      required: [items]
+      properties:
+        items:
+          type: array
+          maxItems: 1000
+          items:
+            $ref: "#/components/schemas/ResourceBookmark"
+
+    ResourceBingoEvidence:
+      type: string
+      enum: [NONE, SELF_CONFIRMED, CONTENT_VERIFIED]
+
+    ResourceBingoVerificationSource:
+      type: string
+      enum: [RESOURCE_COMPLETION, PRACTICE_SESSION]
+
+    ResourceBingoItemState:
+      type: object
+      additionalProperties: false
+      required:
+        [position, resourceId, contentVersion, label, evidence, selfConfirmedAt, verifiedAt, verificationSource]
+      properties:
+        position: { type: integer, minimum: 1, maximum: 9 }
+        resourceId: { type: string, format: uuid }
+        contentVersion:
+          type: string
+          pattern: "^(0|[1-9][0-9]*)$"
+          maxLength: 19
+        label: { type: string, minLength: 1 }
+        evidence: { $ref: "#/components/schemas/ResourceBingoEvidence" }
+        selfConfirmedAt: { type: [string, "null"], format: date-time }
+        verifiedAt: { type: [string, "null"], format: date-time }
+        verificationSource:
+          oneOf:
+            - $ref: "#/components/schemas/ResourceBingoVerificationSource"
+            - type: "null"
+
+    ResourceBingoBoard:
+      type: object
+      additionalProperties: false
+      required: [weekStart, timeZone, version, updatedAt, items]
+      properties:
+        weekStart: { type: string, format: date }
+        timeZone: { type: string, minLength: 1, maxLength: 64 }
+        version:
+          type: string
+          pattern: "^(0|[1-9][0-9]*)$"
+          maxLength: 19
+        updatedAt: { type: string, format: date-time }
+        items:
+          type: array
+          maxItems: 9
+          items:
+            $ref: "#/components/schemas/ResourceBingoItemState"
+
+    ResourceBingoSelfConfirmationUpdate:
+      type: object
+      additionalProperties: false
+      required: [selfConfirmed]
+      properties:
+        selfConfirmed: { type: boolean }
+
+    ResourceRewardVisibility:
+      type: string
+      enum: [VISIBLE, HIDDEN]
+
+    ResourceRewardVisibilityUpdate:
+      type: object
+      additionalProperties: false
+      required: [visibilityState]
+      properties:
+        visibilityState:
+          $ref: "#/components/schemas/ResourceRewardVisibility"
+
+    ResourceRewardGrant:
+      type: object
+      additionalProperties: false
+      required:
+        [
+          grantId,
+          kind,
+          xp,
+          resourceId,
+          contentVersion,
+          localDate,
+          grantedAt,
+          sourceReference,
+          ruleVersion,
+        ]
+      properties:
+        grantId:
+          type: string
+          pattern: "^[a-f0-9]{64}$"
+        kind:
+          type: string
+          enum: [RESOURCE_COMPLETION, VERIFIED_PRACTICE]
+        xp:
+          type: integer
+          minimum: 1
+          maximum: 100
+        resourceId:
+          type: string
+          format: uuid
+        contentVersion:
+          type: string
+          pattern: "^(0|[1-9][0-9]*)$"
+          maxLength: 19
+        localDate:
+          type: string
+          format: date
+        grantedAt:
+          type: string
+          format: date-time
+        sourceReference:
+          type: string
+          minLength: 1
+          maxLength: 160
+        ruleVersion:
+          type: string
+          pattern: "^[a-z0-9][a-z0-9-]{2,63}$"
+
+    ResourceRewardReadModel:
+      type: object
+      additionalProperties: false
+      required:
+        [
+          totalXp,
+          level,
+          nextLevelXp,
+          visibilityState,
+          preferenceVersion,
+          policyVersion,
+          sourceAvailability,
+          calculatedAt,
+          recentGrants,
+        ]
+      properties:
+        totalXp:
+          type: integer
+          minimum: 0
+        level:
+          type: integer
+          minimum: 0
+        nextLevelXp:
+          type: integer
+          minimum: 0
+          nullable: true
+        visibilityState:
+          $ref: "#/components/schemas/ResourceRewardVisibility"
+        preferenceVersion:
+          type: string
+          pattern: "^(0|[1-9][0-9]*)$"
+          maxLength: 19
+        policyVersion:
+          type: string
+          pattern: "^[a-z0-9][a-z0-9-]{2,63}$"
+        sourceAvailability:
+          type: string
+          enum: [AVAILABLE]
+        calculatedAt:
+          type: string
+          format: date-time
+        recentGrants:
+          type: array
+          maxItems: 10
+          items:
+            $ref: "#/components/schemas/ResourceRewardGrant"
+
+    AchievementVisibility:
+      type: string
+      enum: [VISIBLE, HIDDEN]
+
+    AchievementPreferenceUpdate:
+      type: object
+      additionalProperties: false
+      required: [visibilityState]
+      properties:
+        visibilityState:
+          $ref: "#/components/schemas/AchievementVisibility"
+
+    AchievementProgress:
+      type: object
+      additionalProperties: false
+      required: [current, target, unit]
+      properties:
+        current: { type: integer, minimum: 0 }
+        target: { type: integer, minimum: 1, maximum: 100 }
+        unit:
+          type: string
+          enum: [EVENT, CONSECUTIVE_DAY, DISTINCT_RESOURCE, PRACTICE_DAY]
+
+    AchievementItem:
+      type: object
+      additionalProperties: false
+      required:
+        [
+          definitionId,
+          domain,
+          kind,
+          tier,
+          title,
+          description,
+          status,
+          evidenceClass,
+          unlockedAt,
+          ruleVersion,
+          privacy,
+          progress,
+        ]
+      properties:
+        definitionId:
+          type: string
+          pattern: "^[a-z]+[a-z0-9.-]{2,79}$"
+        domain:
+          type: string
+          enum: [JOURNAL, EMOTION_CHECK_IN, RESOURCE, JOURNEY]
+        kind:
+          type: string
+          enum: [MILESTONE, CONSISTENCY, JOURNEY]
+        tier:
+          type: string
+          enum: [FIRST_STEP, STEADY_STEP, DEEPENING_STEP, JOURNEY]
+        title: { type: string, minLength: 1, maxLength: 120 }
+        description: { type: string, minLength: 1, maxLength: 300 }
+        status:
+          type: string
+          enum: [EARNED, UNEARNED, SOURCE_UNAVAILABLE, GRANDFATHERED, DEFERRED]
+        evidenceClass:
+          type: string
+          enum:
+            [
+              OWNER_SOURCE_FACT,
+              OWNER_STREAK_MILESTONE,
+              OWNER_PRACTICE_WINDOW,
+              USER_CONFIRMED_JOURNEY,
+            ]
+        unlockedAt:
+          type: string
+          format: date-time
+          nullable: true
+        ruleVersion:
+          type: string
+          enum: [achievement-rules-v1]
+        privacy:
+          type: string
+          enum: [PRIVATE]
+        progress:
+          allOf:
+            - $ref: "#/components/schemas/AchievementProgress"
+          nullable: true
+
+    AchievementSource:
+      type: object
+      additionalProperties: false
+      required: [domain, availability, asOfLocalDate]
+      properties:
+        domain:
+          type: string
+          enum: [JOURNAL, EMOTION_CHECK_IN, RESOURCE, JOURNEY]
+        availability:
+          type: string
+          enum: [AVAILABLE, UNAVAILABLE, DEFERRED]
+        asOfLocalDate:
+          type: string
+          format: date
+          nullable: true
+
+    AchievementCollection:
+      type: object
+      additionalProperties: false
+      required:
+        [
+          visibilityState,
+          preferenceVersion,
+          policyVersion,
+          calculatedAt,
+          sources,
+          items,
+        ]
+      properties:
+        visibilityState:
+          $ref: "#/components/schemas/AchievementVisibility"
+        preferenceVersion:
+          type: string
+          pattern: "^(0|[1-9][0-9]*)$"
+          maxLength: 19
+        policyVersion:
+          type: string
+          enum: [achievement-rules-v1]
+        calculatedAt: { type: string, format: date-time }
+        sources:
+          type: array
+          minItems: 4
+          maxItems: 4
+          items:
+            $ref: "#/components/schemas/AchievementSource"
+        items:
+          type: array
+          minItems: 11
+          maxItems: 11
+          items:
+            $ref: "#/components/schemas/AchievementItem"
+
+    ResourceKind:
+      type: string
+      enum: [LEARNING, PRACTICE, HABIT, ACTION, REFLECTION]
+
+    ResourceInteractionType:
+      type: string
+      enum:
+        - STRUCTURED_READER
+        - VIDEO_TRANSCRIPT
+        - BREATHING_PACER
+        - GROUNDING_GUIDE
+        - PROGRESSIVE_RELAXATION
+        - WALK_TIMER
+        - STRETCH_SEQUENCE
+        - PROBLEM_SOLVING_WORKSHEET
+        - BEHAVIORAL_ACTIVATION_PLANNER
+        - SELF_COMPASSION_PROMPTS
+        - UNHOOKING_PROMPTS
+        - PREPARE_FOR_SPECIALIST_CHECKLIST
+        - REFLECTION
+
+    ResourceRepeatability:
+      type: string
+      enum: [ONE_TIME, REPEATABLE]
+
+    ResourceCompletionMode:
+      type: string
+      enum: [EXPLICIT, STEPS, TIMED, VIDEO_CONFIRMATION]
+
+    ResourceJourneyRequest:
+      type: object
+      additionalProperties: false
+      required: [timeZone, supportPlan]
+      properties:
+        timeZone:
+          type: string
+          minLength: 1
+          maxLength: 64
+          example: Asia/Ho_Chi_Minh
+        supportPlan:
+          type: object
+          additionalProperties: false
+          required:
+            [
+              supportPlanId,
+              version,
+              status,
+              activatedAt,
+              domains,
+              selectedResourceIds,
+            ]
+          properties:
+            supportPlanId:
+              type: string
+              format: uuid
+            version:
+              type: integer
+              minimum: 1
+            status:
+              type: string
+              enum: [ACTIVE]
+            activatedAt:
+              type: string
+              format: date-time
+            domains:
+              type: array
+              minItems: 1
+              uniqueItems: true
+              items:
+                type: string
+                enum: [DEPRESSIVE_SYMPTOMS, ANXIETY_SYMPTOMS]
+            selectedResourceIds:
+              type: array
+              maxItems: 12
+              uniqueItems: true
+              items:
+                type: string
+                format: uuid
+
+    ResourceJourneyAssignmentItem:
+      type: object
+      required: [position, resource, reason]
+      properties:
+        position:
+          type: integer
+          minimum: 1
+          maximum: 4
+        resource:
+          $ref: "#/components/schemas/ResourceSummary"
+        reason:
+          type: string
+          enum: [PLAN_SELECTED, PLAN_DOMAIN, CONTINUITY, BALANCE]
+
+    ResourceJourneyProgress:
+      type: object
+      required:
+        [
+          dailyCompleted,
+          dailyTotal,
+          learningCompleted,
+          learningTotal,
+          practiceStreakDays,
+        ]
+      properties:
+        dailyCompleted:
+          type: integer
+          minimum: 0
+        dailyTotal:
+          type: integer
+          minimum: 0
+          maximum: 4
+        learningCompleted:
+          type: integer
+          minimum: 0
+        learningTotal:
+          type: integer
+          minimum: 0
+        practiceStreakDays:
+          type: integer
+          minimum: 0
+
+    ResourceJourneyBingoItem:
+      type: object
+      required: [position, resourceId, label, stamped]
+      properties:
+        position:
+          type: integer
+          minimum: 1
+          maximum: 9
+        resourceId:
+          type: string
+          format: uuid
+        label:
+          type: string
+        stamped:
+          type: boolean
+
+    ResourceJourney:
+      type: object
+      required:
+        [
+          assignmentId,
+          localDate,
+          planId,
+          planVersion,
+          planDay,
+          planStage,
+          items,
+          progress,
+          weekStart,
+          bingo,
+        ]
+      properties:
+        assignmentId:
+          type: string
+          format: uuid
+        localDate:
+          type: string
+          format: date
+        planId:
+          type: string
+          format: uuid
+        planVersion:
+          type: integer
+          minimum: 1
+        planDay:
+          type: integer
+          minimum: 1
+          maximum: 14
+        planStage:
+          type: string
+          enum: [ORIENTATION, CORE_PRACTICE, REINFORCEMENT, MAINTENANCE, REVIEW]
+        items:
+          type: array
+          maxItems: 4
+          items:
+            $ref: "#/components/schemas/ResourceJourneyAssignmentItem"
+        progress:
+          $ref: "#/components/schemas/ResourceJourneyProgress"
+        weekStart:
+          type: string
+          format: date
+        bingo:
+          type: array
+          maxItems: 9
+          items:
+            $ref: "#/components/schemas/ResourceJourneyBingoItem"
+
     ResourceSummary:
       type: object
-      required: [id, category, locale, title, summary, status, createdAt]
+      required:
+        - id
+        - category
+        - resourceKind
+        - interactionType
+        - repeatability
+        - completionMode
+        - streakEligible
+        - expectedDurationMinutes
+        - cooldownDays
+        - recommendedFrequencyPerWeek
+        - planTags
+        - locale
+        - title
+        - summary
+        - status
+        - createdAt
       properties:
         id:
           type: string
           format: uuid
         category:
           $ref: "#/components/schemas/ResourceCategory"
+        resourceKind:
+          $ref: "#/components/schemas/ResourceKind"
+        interactionType:
+          $ref: "#/components/schemas/ResourceInteractionType"
+        repeatability:
+          $ref: "#/components/schemas/ResourceRepeatability"
+        completionMode:
+          $ref: "#/components/schemas/ResourceCompletionMode"
+        streakEligible:
+          type: boolean
+        expectedDurationMinutes:
+          type: integer
+          minimum: 1
+        cooldownDays:
+          type: integer
+          minimum: 0
+        recommendedFrequencyPerWeek:
+          type: integer
+          minimum: 1
+        planTags:
+          type: array
+          uniqueItems: true
+          items:
+            type: string
         locale:
           type: string
         title:
@@ -564,6 +2522,10 @@ components:
         externalUrl:
           type: string
           nullable: true
+        sourceOrganization:
+          type: string
+          nullable: true
+          description: Simple accountable source label for catalogue cards.
         status:
           $ref: "#/components/schemas/ResourceStatus"
         reviewedAt:
@@ -581,11 +2543,61 @@ components:
       allOf:
         - $ref: "#/components/schemas/ResourceSummary"
         - type: object
-          required: [contentBody, effectiveAt, expiresAt]
+          required:
+            - contentVersion
+            - contentBody
+            - effectiveAt
+            - expiresAt
+            - structuredContent
+            - interactionConfig
+            - safetyNotes
+            - sourceRetrievedAt
+            - sourceContentHash
+            - contentVersionLabel
+            - sourceReviewStatus
           properties:
+            contentVersion:
+              type: string
+              pattern: "^(0|[1-9][0-9]*)$"
+              maxLength: 19
+              description: Exact immutable resource version represented by this detail response.
             contentBody:
               type: string
               nullable: true
+            sourceTitle:
+              type: string
+              nullable: true
+            sourceUrl:
+              type: string
+              format: uri
+              pattern: "^https?://"
+              nullable: true
+            sourceReviewNote:
+              type: string
+              nullable: true
+            structuredContent:
+              type: object
+              additionalProperties: true
+            interactionConfig:
+              type: object
+              additionalProperties: true
+            safetyNotes:
+              type: array
+              items:
+                type: string
+            sourceRetrievedAt:
+              type: string
+              format: date-time
+              nullable: true
+            sourceContentHash:
+              type: string
+              pattern: "^[a-f0-9]{64}$"
+              nullable: true
+            contentVersionLabel:
+              type: string
+            sourceReviewStatus:
+              type: string
+              enum: [REVIEWED, REVIEW_REQUIRED, NEEDS_SOURCE_REVIEW]
             effectiveAt:
               type: string
               format: date-time
@@ -599,7 +2611,7 @@ components:
       allOf:
         - $ref: "#/components/schemas/PublicResourceDetail"
         - type: object
-          required: [reviewedBy, version]
+          required: [reviewedBy, version, reviewDecision, isCorrectionDraft]
           properties:
             reviewedBy:
               type: string
@@ -607,6 +2619,14 @@ components:
               nullable: true
             version:
               type: integer
+            reviewDecision:
+              allOf:
+                - $ref: "#/components/schemas/ResourceReviewDecision"
+              nullable: true
+              description: Immutable configured-authority decision for this exact version.
+            isCorrectionDraft:
+              type: boolean
+              description: True when this draft follows preserved publication history and cannot be deleted.
 
     ResourceListResponse:
       type: object
@@ -634,7 +2654,11 @@ components:
 
     CreateResourceRequest:
       type: object
-      required: [category, title, summary]
+      additionalProperties: false
+      required:
+        - category
+        - title
+        - summary
       properties:
         category:
           $ref: "#/components/schemas/ResourceCategory"
@@ -654,6 +2678,80 @@ components:
           format: uri
           pattern: "^https?://"
           nullable: true
+          description: VIDEO resources require a verified HTTPS YouTube URL.
+        resourceKind:
+          $ref: "#/components/schemas/ResourceKind"
+        interactionType:
+          $ref: "#/components/schemas/ResourceInteractionType"
+        repeatability:
+          $ref: "#/components/schemas/ResourceRepeatability"
+        completionMode:
+          $ref: "#/components/schemas/ResourceCompletionMode"
+        streakEligible:
+          type: boolean
+        expectedDurationMinutes:
+          type: integer
+          minimum: 1
+          maximum: 120
+        cooldownDays:
+          type: integer
+          minimum: 0
+          maximum: 30
+        recommendedFrequencyPerWeek:
+          type: integer
+          minimum: 1
+          maximum: 7
+        planTags:
+          type: array
+          minItems: 1
+          maxItems: 12
+          uniqueItems: true
+          items:
+            type: string
+        structuredContent:
+          type: object
+          additionalProperties: true
+          default: {}
+        interactionConfig:
+          type: object
+          additionalProperties: true
+          default: {}
+        safetyNotes:
+          type: array
+          maxItems: 12
+          items:
+            type: string
+        catalogueVisibility:
+          type: string
+          enum: [LISTED, DIRECT_ONLY]
+          default: DIRECT_ONLY
+        contentVersionLabel:
+          type: string
+          default: draft-v1
+        sourceOrganization:
+          type: string
+          maxLength: 200
+          nullable: true
+        sourceTitle:
+          type: string
+          maxLength: 500
+          nullable: true
+        sourceUrl:
+          type: string
+          format: uri
+          pattern: "^https?://"
+          nullable: true
+        sourceReviewNote:
+          type: string
+          nullable: true
+        sourceRetrievedAt:
+          type: string
+          format: date-time
+          nullable: true
+        sourceContentHash:
+          type: string
+          pattern: "^[a-f0-9]{64}$"
+          nullable: true
         effectiveAt:
           type: string
           format: date-time
@@ -665,6 +2763,7 @@ components:
 
     UpdateResourceRequest:
       type: object
+      additionalProperties: false
       properties:
         locale:
           type: string
@@ -682,6 +2781,76 @@ components:
           format: uri
           pattern: "^https?://"
           nullable: true
+          description: VIDEO resources require a verified HTTPS YouTube URL.
+        resourceKind:
+          $ref: "#/components/schemas/ResourceKind"
+        interactionType:
+          $ref: "#/components/schemas/ResourceInteractionType"
+        repeatability:
+          $ref: "#/components/schemas/ResourceRepeatability"
+        completionMode:
+          $ref: "#/components/schemas/ResourceCompletionMode"
+        streakEligible:
+          type: boolean
+        expectedDurationMinutes:
+          type: integer
+          minimum: 1
+          maximum: 120
+        cooldownDays:
+          type: integer
+          minimum: 0
+          maximum: 30
+        recommendedFrequencyPerWeek:
+          type: integer
+          minimum: 1
+          maximum: 7
+        planTags:
+          type: array
+          minItems: 1
+          maxItems: 12
+          uniqueItems: true
+          items:
+            type: string
+        structuredContent:
+          type: object
+          additionalProperties: true
+        interactionConfig:
+          type: object
+          additionalProperties: true
+        safetyNotes:
+          type: array
+          maxItems: 12
+          items:
+            type: string
+        catalogueVisibility:
+          type: string
+          enum: [LISTED, DIRECT_ONLY]
+        contentVersionLabel:
+          type: string
+        sourceOrganization:
+          type: string
+          maxLength: 200
+          nullable: true
+        sourceTitle:
+          type: string
+          maxLength: 500
+          nullable: true
+        sourceUrl:
+          type: string
+          format: uri
+          pattern: "^https?://"
+          nullable: true
+        sourceReviewNote:
+          type: string
+          nullable: true
+        sourceRetrievedAt:
+          type: string
+          format: date-time
+          nullable: true
+        sourceContentHash:
+          type: string
+          pattern: "^[a-f0-9]{64}$"
+          nullable: true
         effectiveAt:
           type: string
           format: date-time
@@ -690,3 +2859,322 @@ components:
           type: string
           format: date-time
           nullable: true
+
+    ResourceReviewRequest:
+      type: object
+      additionalProperties: false
+      required: [decision, reasonCode]
+      properties:
+        decision:
+          type: string
+          enum: [APPROVED, REJECTED]
+        reasonCode:
+          type: string
+          pattern: "^[A-Z][A-Z0-9_]{1,63}$"
+
+    ResourceReviewDecision:
+      type: object
+      additionalProperties: false
+      required:
+        [
+          resourceId,
+          contentVersion,
+          decision,
+          reasonCode,
+          authorityVersion,
+          reviewedBy,
+          reviewedAt,
+        ]
+      properties:
+        resourceId: { type: string, format: uuid }
+        contentVersion: { type: string, pattern: "^(0|[1-9][0-9]*)$" }
+        decision: { type: string, enum: [APPROVED, REJECTED] }
+        reasonCode: { type: string }
+        authorityVersion: { type: string }
+        reviewedBy: { type: string, format: uuid }
+        reviewedAt: { type: string, format: date-time }
+
+    EligibilityPolicyVersion:
+      type: string
+      enum: [content-eligibility-v1]
+
+    ScreeningDomain:
+      type: string
+      description: V1 screening domains only; GENERAL_WELLBEING and BOTH_SCREENED_DOMAINS are invalid.
+      enum: [DEPRESSIVE_SYMPTOMS, ANXIETY_SYMPTOMS]
+
+    EligibilityRole:
+      type: string
+      enum: [PRIMARY, ADJUNCT]
+
+    RequiredEligibilityRole:
+      type: string
+      description: PRIMARY_OR_ADJUNCT is valid only for an optional SupportPlan slot.
+      enum: [PRIMARY, PRIMARY_OR_ADJUNCT]
+
+    ScreeningInstrument:
+      type: string
+      enum: [PHQ_9, GAD_7]
+
+    ScreeningLevel:
+      type: string
+      enum: [MINIMAL, MILD, MODERATE, MODERATELY_SEVERE, SEVERE]
+
+    SupportTier:
+      type: string
+      enum:
+        [
+          SELF_GUIDED_SUPPORT,
+          PROFESSIONAL_SUPPORT_RECOMMENDED,
+          SAFETY_FOLLOW_UP_RECOMMENDED,
+        ]
+
+    EligibilityPublicationState:
+      type: string
+      enum: [PUBLISHED, WITHDRAWN]
+
+    EligibilityDeclaration:
+      type: object
+      additionalProperties: false
+      required: [targetDomain, role, instrument, screeningLevels, supportTiers]
+      properties:
+        targetDomain:
+          $ref: "#/components/schemas/ScreeningDomain"
+        role:
+          $ref: "#/components/schemas/EligibilityRole"
+        instrument:
+          $ref: "#/components/schemas/ScreeningInstrument"
+        screeningLevels:
+          type: array
+          minItems: 1
+          uniqueItems: true
+          items:
+            $ref: "#/components/schemas/ScreeningLevel"
+        supportTiers:
+          type: array
+          minItems: 1
+          uniqueItems: true
+          items:
+            $ref: "#/components/schemas/SupportTier"
+
+    PublishResourceEligibilityRequest:
+      type: object
+      additionalProperties: false
+      required: [policyVersion, locale, effectiveAt, declarations]
+      properties:
+        policyVersion:
+          $ref: "#/components/schemas/EligibilityPolicyVersion"
+        locale:
+          type: string
+          pattern: "^[A-Za-z]{2,3}(?:-[A-Za-z0-9]{2,8})*$"
+        effectiveAt:
+          type: string
+          format: date-time
+        expiresAt:
+          type: string
+          format: date-time
+          nullable: true
+        declarations:
+          type: array
+          minItems: 1
+          maxItems: 8
+          items:
+            $ref: "#/components/schemas/EligibilityDeclaration"
+
+    WithdrawResourceEligibilityRequest:
+      type: object
+      additionalProperties: false
+      required: [policyVersion, reasonCode]
+      properties:
+        policyVersion:
+          $ref: "#/components/schemas/EligibilityPolicyVersion"
+        reasonCode:
+          type: string
+          enum: [CONTENT_WITHDRAWN, POLICY_WITHDRAWN, SUPERSEDED]
+
+    ResourceEligibilityPublication:
+      type: object
+      additionalProperties: true
+      required:
+        [
+          publicationId,
+          resourceId,
+          contentVersion,
+          policyVersion,
+          locale,
+          state,
+          effectiveAt,
+          declarations,
+          publishedAt,
+        ]
+      properties:
+        publicationId:
+          type: string
+          format: uuid
+        resourceId:
+          type: string
+          format: uuid
+        contentVersion:
+          type: string
+          pattern: "^(0|[1-9][0-9]*)$"
+        policyVersion:
+          $ref: "#/components/schemas/EligibilityPolicyVersion"
+        locale:
+          type: string
+        state:
+          $ref: "#/components/schemas/EligibilityPublicationState"
+        effectiveAt:
+          type: string
+          format: date-time
+        expiresAt:
+          type: string
+          format: date-time
+          nullable: true
+        declarations:
+          type: array
+          items:
+            $ref: "#/components/schemas/EligibilityDeclaration"
+        publishedAt:
+          type: string
+          format: date-time
+        withdrawnAt:
+          type: string
+          format: date-time
+          nullable: true
+        withdrawalReasonCode:
+          type: string
+          nullable: true
+          enum: [CONTENT_WITHDRAWN, POLICY_WITHDRAWN, SUPERSEDED]
+
+    ResourceEligibilityQuery:
+      type: object
+      additionalProperties: false
+      required:
+        [
+          requestId,
+          resourceId,
+          contentVersion,
+          targetDomain,
+          requiredRole,
+          instrument,
+          screeningLevel,
+          supportTier,
+          locale,
+        ]
+      properties:
+        requestId:
+          type: string
+          format: uuid
+        resourceId:
+          type: string
+          format: uuid
+        contentVersion:
+          type: string
+          pattern: "^(0|[1-9][0-9]*)$"
+          maxLength: 19
+        targetDomain:
+          $ref: "#/components/schemas/ScreeningDomain"
+        requiredRole:
+          $ref: "#/components/schemas/RequiredEligibilityRole"
+        instrument:
+          $ref: "#/components/schemas/ScreeningInstrument"
+        screeningLevel:
+          $ref: "#/components/schemas/ScreeningLevel"
+        supportTier:
+          $ref: "#/components/schemas/SupportTier"
+        locale:
+          type: string
+          pattern: "^[A-Za-z]{2,3}(?:-[A-Za-z0-9]{2,8})*$"
+
+    ResourceEligibilityBatchRequest:
+      type: object
+      additionalProperties: false
+      required: [requests]
+      properties:
+        requests:
+          type: array
+          minItems: 1
+          maxItems: 50
+          items:
+            $ref: "#/components/schemas/ResourceEligibilityQuery"
+
+    ResourceEligibilityOutcome:
+      type: string
+      description: UNAVAILABLE is a Care fail-closed fallback and is never emitted in a provider HTTP 200 response.
+      enum: [ELIGIBLE, INELIGIBLE, STALE, WITHDRAWN, NOT_FOUND, UNAVAILABLE]
+
+    ResourceEligibilityReasonCode:
+      type: string
+      enum:
+        - ELIGIBLE_MATCH
+        - RESOURCE_NOT_FOUND
+        - CONTENT_VERSION_STALE
+        - NO_ELIGIBILITY_PUBLICATION
+        - DOMAIN_OR_PATHWAY_NOT_ELIGIBLE
+        - PRIMARY_REQUIRED
+        - NOT_YET_EFFECTIVE
+        - EFFECTIVE_WINDOW_ENDED
+        - RESOURCE_ARCHIVED
+        - RESOURCE_NOT_PUBLISHED
+        - LOCALE_MISMATCH
+        - ELIGIBILITY_WITHDRAWN
+        - DEPENDENCY_UNAVAILABLE
+
+    ResourceEligibilityResult:
+      type: object
+      additionalProperties: true
+      required: [requestId, resourceId, contentVersion, outcome, reasonCode]
+      properties:
+        requestId:
+          type: string
+          format: uuid
+        resourceId:
+          type: string
+          format: uuid
+        contentVersion:
+          type: string
+        outcome:
+          $ref: "#/components/schemas/ResourceEligibilityOutcome"
+        reasonCode:
+          $ref: "#/components/schemas/ResourceEligibilityReasonCode"
+        role:
+          allOf:
+            - $ref: "#/components/schemas/EligibilityRole"
+          nullable: true
+        publicationId:
+          type: string
+          format: uuid
+          nullable: true
+        category:
+          allOf:
+            - $ref: "#/components/schemas/ResourceCategory"
+          nullable: true
+          description: Present only for an eligible exact version so Care can persist the approved display snapshot.
+        title:
+          type: string
+          nullable: true
+          maxLength: 255
+        summary:
+          type: string
+          nullable: true
+        externalUrl:
+          type: string
+          format: uri
+          nullable: true
+          maxLength: 2048
+          pattern: "^https?://"
+
+    ResourceEligibilityBatchResponse:
+      type: object
+      additionalProperties: true
+      required: [policyVersion, resolvedAt, results]
+      properties:
+        policyVersion:
+          $ref: "#/components/schemas/EligibilityPolicyVersion"
+        resolvedAt:
+          type: string
+          format: date-time
+        results:
+          type: array
+          items:
+            $ref: "#/components/schemas/ResourceEligibilityResult"

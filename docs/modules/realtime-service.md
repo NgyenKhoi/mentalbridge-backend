@@ -12,6 +12,7 @@ Realtime owns conversations, encrypted messages, attachments metadata, tombstone
 | Messaging | Persist message then acknowledge/fan out with client idempotency | Same sender/clientMessageId returns original; server assigns sender/context; Redis/Kafka failure cannot lose durable message |
 | History/reconnect | Cursor list and resynchronize missed state | Stable ordering/tie-breaker; reconnect recovers through REST; back-pressure and size limits explicit |
 | Receipts/presence | Maintain high-water delivered/read marks and TTL presence | Stale receipt cannot move backward; presence may become unknown on Redis failure; no durable content in Redis |
+| Completion evidence | Forward explicit check-in, bounded server-observed presence, and accepted-message metadata to Consultation | Subscribe alone never counts; no raw message content crosses; evidence failure is retryable and cannot fabricate completion |
 | Tombstone/moderation | Delete display content and process scoped report/action | Retention policy decides ciphertext removal; report grants no broad conversation access; evidence/action audited |
 | Live notification | Consume safe `NotificationCreated` and emit to existing session | Durable notification remains owned elsewhere; duplicate event does not duplicate side effect beyond defined delivery semantics |
 
@@ -21,7 +22,10 @@ Realtime owns conversations, encrypted messages, attachments metadata, tombstone
 - Runtime: Node.js 22 or newer, strict TypeScript, NestJS 11, Socket.IO 4 through NestJS gateways, official MongoDB and Redis clients, `migrate-mongo`, KafkaJS, Pino, OpenTelemetry, Vitest, and Testcontainers as defined in `docs/nodejs-service-stack.md`.
 - OpenAPI owns history/recovery; versioned WebSocket schemas own commands/acks/errors; Kafka schemas own minimized integration facts.
 - Conversation history may remain read-only after a slot under retention policy, but join/send never becomes 24/7 specialist messaging. Subscription cancellation closes future conversations immediately; an already-started confirmed session remains writable only until its scheduled end.
-- `IN_APP_VIDEO` is future intent only. Realtime does not implement signalling, rooms, provider credentials, presence evidence, recording, or fallback until a separate contract/ADR assigns those responsibilities.
+- ADR 0017 approves `IN_APP_VIDEO` as the second v2 mode, but Realtime does not
+  implement signaling, rooms, credentials, presence evidence, recording
+  prohibition, channel shutdown, or failure behavior until the detailed
+  versioned contract assigns them. External meeting links are not a fallback.
 - Mongo migrations enforce validators/indexes. Persist before ack, then Redis fan-out and recoverable Kafka publication. Attachments use private object storage, not Mongo blobs.
 - Define heartbeat, reconnect, ordering, payload/back-pressure/rate limits and cross-instance failure semantics before gateway implementation.
 
@@ -31,9 +35,9 @@ Realtime owns conversations, encrypted messages, attachments metadata, tombstone
 - [ ] RT-02 Resolve appointment join grace, read-only history, attachment, tombstone/retention and moderation policies; define video separately before enabling that channel.
 - [ ] RT-03 Define conversation/history OpenAPI, WebSocket schemas and Kafka event contracts.
 - [x] RT-04 Add migrate-mongo validators/indexes and encrypted-content/data documentation.
-- [ ] RT-05 Implement owner-authorized conversation lifecycle and REST history.
-- [ ] RT-06 Implement authenticated WebSocket subscribe/send, idempotent persist-before-ack and Redis fan-out.
-- [ ] RT-07 Implement receipts, presence, reconnect/resync and live notification delivery.
+- [x] RT-05 Implement owner-authorized appointment conversation lifecycle and REST history.
+- [~] RT-06 Implement one-use credential authenticated WebSocket subscribe/send and idempotent persist-before-ack; cross-instance Redis fan-out remains.
+- [~] RT-07 Implement presence and client reconnect/resync; receipts and live notification delivery remain.
 - [ ] RT-08 Implement tombstone, scoped reporting and message moderation.
 - [ ] RT-09 Verify unauthorized subscription, duplicate send, ordering, reconnect, Redis loss, Kafka retry, dependency timeout and rate/back-pressure limits.
 - [ ] RT-10 Add observability/configuration, README, and pass Node/contract/Mongo/Redis/Kafka gates.
@@ -44,4 +48,10 @@ Sprint 1 covers RT-01, the foundational contract and migration parts of RT-03/RT
 
 The current foundation publishes Realtime REST and WebSocket v1 contracts, validates Identity-issued RS256 access tokens through the connected session's expiry boundary, maintains bounded TTL presence, and encrypts and idempotently persists messages before acknowledgement. Duplicate retries do not emit a second live event, and acknowledgements report live delivery as not applicable until fan-out or receipts can prove it.
 
-Cursor history primitives exist behind an eligibility port, but the OpenAPI operation is `planned`. The production eligibility adapter deliberately fails closed with `503` until Consultation publishes the current appointment authorization contract; integration tests supply only synthetic authorization and disposable MongoDB/Redis infrastructure. Encryption rotation retains prior key versions in a configured decryption keyring so stored messages remain readable during a controlled rotation.
+MB-382 implements cursor history and the production Consultation eligibility adapter. Subscribe, send and history are reauthorized against the participant-bound appointment and server clock; dependency uncertainty fails closed. A one-use Redis ticket keeps the reusable Identity bearer out of browser JavaScript. Encryption rotation retains prior key versions in a configured decryption keyring so stored messages remain readable during a controlled rotation.
+
+MB-383 adds the explicit `conversation.check-in` command. Only checked-in
+appointment conversations accumulate presence from successful server heartbeat
+processing. Reconnect subscription can resume future presence after Consultation
+confirms the prior explicit check-in, but that subscription itself remains
+non-evidence. Accepted messages send only their IDs/timestamps to Consultation.

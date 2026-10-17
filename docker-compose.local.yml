@@ -49,6 +49,22 @@ services:
       timeout: 5s
       retries: 10
 
+  community-postgres:
+    image: postgres:16-alpine
+    environment:
+      POSTGRES_DB: mentalbridge_community
+      POSTGRES_USER: mentalbridge_community
+      POSTGRES_PASSWORD: local-only-community-password
+    ports:
+      - "5436:5432"
+    volumes:
+      - community-postgres-data:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U mentalbridge_community -d mentalbridge_community"]
+      interval: 5s
+      timeout: 5s
+      retries: 10
+
   mongodb:
     image: mongo:8
     ports:
@@ -97,6 +113,7 @@ volumes:
   identity-postgres-data:
   care-postgres-data:
   content-postgres-data:
+  community-postgres-data:
   mongodb-data:
   redis-data:
   kafka-data:

@@ -1,0 +1,100 @@
+databaseChangeLog:
+  - changeSet:
+      id: 0009-community-moderation
+      author: mentalbridge
+      comment: Persist Community reports, personal hides, moderation cases/actions, and access restrictions for MB-578.
+      changes:
+        - sql:
+            splitStatements: false
+            sql: |
+              CREATE TABLE community_report (
+                  id uuid PRIMARY KEY,
+                  reporter_profile_id uuid NOT NULL REFERENCES community_profile(id),
+                  target_type varchar(16) NOT NULL,
+                  target_id uuid NOT NULL,
+                  reason varchar(40) NOT NULL,
+                  details varchar(1000),
+                  idempotency_key varchar(128) NOT NULL,
+                  request_fingerprint varchar(64) NOT NULL,
+                  created_at timestamptz NOT NULL,
+                  CONSTRAINT ck_community_report_target_type CHECK (target_type IN ('POST', 'COMMENT')),
+                  CONSTRAINT ck_community_report_reason CHECK (reason IN ('HARASSMENT', 'PRIVACY_OR_DOXXING', 'MEDICAL_MISINFORMATION', 'SELF_HARM_OR_CRISIS_CONCERN', 'SPAM', 'SEXUAL_OR_VIOLENT_CONTENT', 'OTHER')),
+                  CONSTRAINT ck_community_report_details CHECK (details IS NULL OR char_length(btrim(details)) BETWEEN 1 AND 1000),
+                  CONSTRAINT ck_community_report_key CHECK (char_length(idempotency_key) BETWEEN 16 AND 128 AND idempotency_key ~ '^[!-~]+$'),
+                  CONSTRAINT ck_community_report_fingerprint CHECK (request_fingerprint ~ '^[0-9a-f]{64}$'),
+                  CONSTRAINT ux_community_report_owner_key UNIQUE (reporter_profile_id, idempotency_key),
+                  CONSTRAINT ux_community_report_owner_target UNIQUE (reporter_profile_id, target_type, target_id)
+              );
+
+              CREATE TABLE community_content_hide (
+                  hider_profile_id uuid NOT NULL REFERENCES community_profile(id),
+                  target_type varchar(16) NOT NULL,
+                  target_id uuid NOT NULL,
+                  created_at timestamptz NOT NULL,
+                  PRIMARY KEY (hider_profile_id, target_type, target_id),
+                  CONSTRAINT ck_community_content_hide_target_type CHECK (target_type IN ('POST', 'COMMENT'))
+              );
+
+              CREATE TABLE community_moderation_case (
+                  id uuid PRIMARY KEY,
+                  target_type varchar(24) NOT NULL,
+                  target_id uuid NOT NULL,
+                  target_author_profile_id uuid NOT NULL REFERENCES community_profile(id),
+                  state varchar(16) NOT NULL,
+                  priority varchar(16) NOT NULL,
+                  evidence_content varchar(5000) NOT NULL,
+                  evidence_state varchar(24) NOT NULL,
+                  evidence_version bigint NOT NULL,
+                  created_at timestamptz NOT NULL,
+                  updated_at timestamptz NOT NULL,
+                  version bigint NOT NULL DEFAULT 0,
+                  CONSTRAINT ck_community_moderation_case_target_type CHECK (target_type IN ('POST', 'COMMENT')),
+                  CONSTRAINT ck_community_moderation_case_state CHECK (state IN ('OPEN', 'IN_REVIEW', 'RESOLVED')),
+                  CONSTRAINT ck_community_moderation_case_priority CHECK (priority IN ('NORMAL', 'HIGH')),
+                  CONSTRAINT ck_community_moderation_case_version CHECK (version >= 0 AND evidence_version >= 0),
+                  CONSTRAINT ux_community_moderation_case_target UNIQUE (target_type, target_id)
+              );
+
+              CREATE TABLE community_moderation_action (
+                  id uuid PRIMARY KEY,
+                  case_id uuid NOT NULL REFERENCES community_moderation_case(id),
+                  actor_subject uuid NOT NULL,
+                  action varchar(32) NOT NULL,
+                  reason_code varchar(64) NOT NULL,
+                  prior_state varchar(32) NOT NULL,
+                  resulting_state varchar(32) NOT NULL,
+                  target_version bigint NOT NULL,
+                  idempotency_key varchar(128) NOT NULL,
+                  request_fingerprint varchar(64) NOT NULL,
+                  created_at timestamptz NOT NULL,
+                  CONSTRAINT ck_community_moderation_action_action CHECK (action IN ('NO_ACTION', 'HIDE', 'REMOVE', 'RESTORE', 'RESTRICT_COMMUNITY_ACCESS')),
+                  CONSTRAINT ck_community_moderation_action_reason CHECK (char_length(btrim(reason_code)) BETWEEN 1 AND 64 AND reason_code ~ '^[A-Z0-9_]+$'),
+                  CONSTRAINT ck_community_moderation_action_state CHECK (char_length(prior_state) BETWEEN 1 AND 32 AND char_length(resulting_state) BETWEEN 1 AND 32),
+                  CONSTRAINT ck_community_moderation_action_target_version CHECK (target_version >= 0),
+                  CONSTRAINT ck_community_moderation_action_key CHECK (char_length(idempotency_key) BETWEEN 16 AND 128 AND idempotency_key ~ '^[!-~]+$'),
+                  CONSTRAINT ck_community_moderation_action_fingerprint CHECK (request_fingerprint ~ '^[0-9a-f]{64}$'),
+                  CONSTRAINT ux_community_moderation_action_actor_key UNIQUE (actor_subject, idempotency_key)
+              );
+
+              CREATE TABLE community_access_restriction (
+                  profile_id uuid PRIMARY KEY REFERENCES community_profile(id),
+                  case_id uuid NOT NULL REFERENCES community_moderation_case(id),
+                  reason_code varchar(64) NOT NULL,
+                  restricted_by_subject uuid NOT NULL,
+                  restricted_at timestamptz NOT NULL,
+                  lifted_by_subject uuid,
+                  lifted_at timestamptz,
+                  CONSTRAINT ck_community_access_restriction_lifecycle CHECK ((lifted_at IS NULL AND lifted_by_subject IS NULL) OR (lifted_at IS NOT NULL AND lifted_by_subject IS NOT NULL))
+              );
+
+              ALTER TABLE community_comment_revision ALTER COLUMN changed_by_profile_id DROP NOT NULL;
+              ALTER TABLE community_comment_revision ADD COLUMN changed_by_subject uuid;
+              ALTER TABLE community_comment_revision ADD CONSTRAINT ck_community_comment_revision_actor
+                  CHECK ((changed_by_profile_id IS NOT NULL AND changed_by_subject IS NULL)
+                      OR (changed_by_profile_id IS NULL AND changed_by_subject IS NOT NULL));
+
+              CREATE INDEX ix_community_report_case ON community_report (target_type, target_id, created_at);
+              CREATE INDEX ix_community_hide_target ON community_content_hide (target_type, target_id);
+              CREATE INDEX ix_community_moderation_queue ON community_moderation_case (state, priority DESC, created_at, id);
+              CREATE INDEX ix_community_moderation_action_case ON community_moderation_action (case_id, created_at, id);
+              CREATE INDEX ix_community_access_restriction_active ON community_access_restriction (profile_id) WHERE lifted_at IS NULL;

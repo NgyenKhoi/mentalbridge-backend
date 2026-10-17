@@ -1,15 +1,29 @@
 openapi: 3.1.0
 info:
   title: MentalBridge Journal AI Service API
-  version: 1.0.0
-  description: Private journal CRUD contract for Sprint 1. AI analysis endpoints are intentionally deferred.
+  version: 1.12.0
+  description: Private journal CRUD, daily self-reported emotion check-ins with optional encrypted context and factual progress, a service-authorized content-free notification activity projection, consent-gated analysis, bounded Support Guide phrasing, bounded SupportPlan Companion orchestration, and quota-governed AI Companion conversations.
 servers:
   - url: http://localhost:3000
 security:
   - bearerAuth: []
 tags:
+  - name: Emotion check-ins
+    description: Owner-scoped, non-clinical daily self-reported emotion records.
   - name: Journals
     description: Private journal entries owned by the authenticated account.
+  - name: Notification activity
+    description: Owner-scoped, optional-context-free factual Journal and emotion activity used by Content/Notification policy.
+  - name: Analysis jobs
+    description: Owner-scoped asynchronous analysis of one exact current revision.
+  - name: Longitudinal analysis
+    description: Owner-scoped comparison of exact journal revisions across two bounded periods.
+  - name: AI Companion
+    description: Owner-scoped encrypted conversations with consent, entitlement, and server-side quota enforcement.
+  - name: Support Guide phrasing
+    description: Consent-gated rephrasing of exact Care-approved Support Guide copy without decision authority.
+  - name: SupportPlan Companion
+    description: User-initiated phrasing for one deterministic intent and one exact minimized Care-approved context, with local fallback and no mutation authority.
   - name: Operations
     description: Service health and metrics endpoints.
 paths:
@@ -58,6 +72,257 @@ paths:
             text/plain:
               schema:
                 type: string
+  /api/v1/emotion-check-ins:
+    x-mentalbridge-status: implemented
+    post:
+      tags: [Emotion check-ins]
+      summary: Record the authenticated user's check-in for the current local day.
+      operationId: createEmotionCheckIn
+      parameters:
+        - $ref: "#/components/parameters/IdempotencyKey"
+        - $ref: "#/components/parameters/CorrelationId"
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/CreateEmotionCheckInRequest"
+      responses:
+        "201":
+          description: Check-in created, or an exact create retry replayed.
+          headers:
+            Location:
+              schema: { type: string }
+            x-correlation-id:
+              $ref: "#/components/headers/CorrelationId"
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/EmotionCheckIn"
+        "400": { $ref: "#/components/responses/BadRequest" }
+        "401": { $ref: "#/components/responses/Unauthorized" }
+        "409": { $ref: "#/components/responses/Conflict" }
+        "503": { $ref: "#/components/responses/DependencyUnavailable" }
+    get:
+      tags: [Emotion check-ins]
+      summary: List the authenticated user's self-reported emotion history.
+      operationId: listEmotionCheckIns
+      parameters:
+        - $ref: "#/components/parameters/EmotionLimit"
+        - $ref: "#/components/parameters/BeforeLocalDate"
+        - $ref: "#/components/parameters/CorrelationId"
+      responses:
+        "200":
+          description: A bounded, newest-first history page.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/EmotionCheckInList"
+        "400": { $ref: "#/components/responses/BadRequest" }
+        "401": { $ref: "#/components/responses/Unauthorized" }
+        "503": { $ref: "#/components/responses/DependencyUnavailable" }
+  /api/v1/emotion-check-ins/{localDate}:
+    x-mentalbridge-status: implemented
+    get:
+      tags: [Emotion check-ins]
+      summary: Reload one owned check-in by its recorded local day.
+      operationId: getEmotionCheckIn
+      parameters:
+        - $ref: "#/components/parameters/LocalDate"
+        - $ref: "#/components/parameters/CorrelationId"
+      responses:
+        "200":
+          description: The owned active check-in.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/EmotionCheckIn"
+        "400": { $ref: "#/components/responses/BadRequest" }
+        "401": { $ref: "#/components/responses/Unauthorized" }
+        "404": { $ref: "#/components/responses/NotFound" }
+        "503": { $ref: "#/components/responses/DependencyUnavailable" }
+    patch:
+      tags: [Emotion check-ins]
+      summary: Update the owned check-in while its stored local day is current.
+      operationId: updateEmotionCheckIn
+      parameters:
+        - $ref: "#/components/parameters/LocalDate"
+        - $ref: "#/components/parameters/IdempotencyKey"
+        - $ref: "#/components/parameters/IfMatchRevision"
+        - $ref: "#/components/parameters/CorrelationId"
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/EmotionCheckInValue"
+      responses:
+        "200":
+          description: Check-in updated, or an exact update retry replayed.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/EmotionCheckIn"
+        "400": { $ref: "#/components/responses/BadRequest" }
+        "401": { $ref: "#/components/responses/Unauthorized" }
+        "404": { $ref: "#/components/responses/NotFound" }
+        "409": { $ref: "#/components/responses/Conflict" }
+        "412": { $ref: "#/components/responses/PreconditionFailed" }
+        "503": { $ref: "#/components/responses/DependencyUnavailable" }
+    delete:
+      tags: [Emotion check-ins]
+      summary: Delete the encrypted emotion payload and tombstone the local day.
+      operationId: deleteEmotionCheckIn
+      parameters:
+        - $ref: "#/components/parameters/LocalDate"
+        - $ref: "#/components/parameters/IdempotencyKey"
+        - $ref: "#/components/parameters/CorrelationId"
+      responses:
+        "200":
+          description: The encrypted payload was removed.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/EmotionCheckInTombstone"
+        "400": { $ref: "#/components/responses/BadRequest" }
+        "401": { $ref: "#/components/responses/Unauthorized" }
+        "404": { $ref: "#/components/responses/NotFound" }
+        "503": { $ref: "#/components/responses/DependencyUnavailable" }
+  /api/v1/emotion-check-ins/{localDate}/completion-evidence:
+    x-mentalbridge-status: implemented
+    get:
+      tags: [Emotion check-ins]
+      summary: Resolve the authenticated owner's content-free daily check-in fact.
+      description: |
+        MB-641 provider boundary for Care reconciliation. Requires the owner's
+        bearer context; no caller-supplied account, action, occurrence or fact ID
+        is accepted. Returns RECORDED, MISSING or DELETED from the owner store.
+        Deleted becomes MISSING after the existing tombstone retention expires.
+        A recorded fact references the creation revision (1) and createdAt;
+        same-day edits never create a second completion fact. No emotion,
+        intensity, factors, note, encrypted payload, score or AI result is read
+        or returned. This read does not mutate or complete a SupportPlan.
+        Dependency uncertainty is 503, never MISSING. Responses are no-store.
+      operationId: getEmotionCheckInCompletionEvidence
+      parameters:
+        - name: localDate
+          in: path
+          required: true
+          schema: { type: string, format: date }
+        - $ref: "#/components/parameters/CorrelationId"
+      responses:
+        "200":
+          description: Minimized authoritative existence or absence evidence.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/EmotionCheckInCompletionEvidence"
+        "400": { $ref: "#/components/responses/BadRequest" }
+        "401": { $ref: "#/components/responses/Unauthorized" }
+        "503": { $ref: "#/components/responses/DependencyUnavailable" }
+  /api/v1/emotion-check-in-progress:
+    x-mentalbridge-status: implemented
+    get:
+      tags: [Emotion check-ins]
+      summary: Read authoritative factual emotion check-in streaks and rolling coverage.
+      description: Counts active owner check-in local dates only. Same-day revisions remain one checked-in day; deleted or missing completed days do not count, while an open current day does not break a streak ending yesterday. The result is self-tracking evidence, not a clinical, adherence, improvement, or recovery claim.
+      operationId: getEmotionCheckInProgress
+      parameters:
+        - name: timezone
+          in: query
+          required: true
+          description: Current valid IANA timezone used to derive the as-of local date and rolling windows. Each stored aggregate keeps its immutable creation timezone.
+          schema: { type: string, minLength: 1, maxLength: 64 }
+        - $ref: "#/components/parameters/CorrelationId"
+      responses:
+        "200":
+          description: Authoritative current/longest streak and 7/14/30-day factual counts.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/EmotionCheckInProgress"
+        "400": { $ref: "#/components/responses/BadRequest" }
+        "401": { $ref: "#/components/responses/Unauthorized" }
+        "503": { $ref: "#/components/responses/DependencyUnavailable" }
+  /api/v1/emotion-check-in-context:
+    x-mentalbridge-status: implemented
+    get:
+      tags: [Emotion check-ins]
+      summary: Return a factor- and note-free minimized projection for consented AI reflection.
+      description: Reminder composition is deliberately unavailable until a separate reminder consent contract is accepted.
+      operationId: getEmotionCheckInConsumerContext
+      parameters:
+        - name: purpose
+          in: query
+          required: true
+          schema: { type: string, const: AI_REFLECTION }
+        - name: limit
+          in: query
+          required: false
+          schema: { type: integer, minimum: 1, maximum: 30, default: 14 }
+        - $ref: "#/components/parameters/CorrelationId"
+      responses:
+        "200":
+          description: Current Care consent was verified and only minimized fields are returned.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/EmotionCheckInConsumerContext"
+        "400": { $ref: "#/components/responses/BadRequest" }
+        "401": { $ref: "#/components/responses/Unauthorized" }
+        "403": { $ref: "#/components/responses/Forbidden" }
+        "503": { $ref: "#/components/responses/DependencyUnavailable" }
+  /api/v1/notification-activity:
+    x-mentalbridge-status: implemented
+    get:
+      tags: [Notification activity]
+      summary: Read minimized authoritative Journal and emotion activity for notification policy.
+      description: Returns dates-derived factual completion and streak values only. It never returns Journal text, emotion note text, a clinical interpretation, an adherence score, or a recovery claim.
+      operationId: getNotificationActivity
+      parameters:
+        - name: timezone
+          in: query
+          required: true
+          description: Current persisted IANA timezone used to derive Journal local dates and the as-of local day. Emotion activity retains its frozen creation local date.
+          schema: { type: string, minLength: 1, maxLength: 64 }
+        - $ref: "#/components/parameters/CorrelationId"
+      responses:
+        "200":
+          description: Independent factual Journal and emotion activity.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/NotificationActivity"
+        "400": { $ref: "#/components/responses/BadRequest" }
+        "401": { $ref: "#/components/responses/Unauthorized" }
+        "503": { $ref: "#/components/responses/DependencyUnavailable" }
+  /internal/v1/notification-activity:
+    x-mentalbridge-status: implemented
+    post:
+      tags: [Notification activity]
+      security:
+        - reminderServiceToken: []
+      summary: Resolve one owner's minimized activity for the Content reminder scheduler.
+      description: Requires the configured Content/Notification service credential. The response excludes optional factors and notes and reuses the authoritative emotion progress calculation.
+      operationId: resolveNotificationActivityForScheduler
+      parameters:
+        - $ref: "#/components/parameters/CorrelationId"
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/NotificationActivityRequest"
+      responses:
+        "200":
+          description: Independent factual Journal and emotion activity.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/NotificationActivity"
+        "400": { $ref: "#/components/responses/BadRequest" }
+        "401": { $ref: "#/components/responses/Unauthorized" }
+        "503": { $ref: "#/components/responses/DependencyUnavailable" }
   /api/v1/journals:
     x-mentalbridge-status: implemented
     post:
@@ -195,15 +460,448 @@ paths:
           $ref: "#/components/responses/Unauthorized"
         "404":
           $ref: "#/components/responses/NotFound"
+  /api/v1/journals/{journalId}/completion-evidence:
+    x-mentalbridge-status: implemented
+    get:
+      tags: [Journals]
+      summary: Resolve an owned Journal creation fact without private content.
+      operationId: getJournalEntryCompletionEvidence
+      description: >
+        Resolves the authenticated owner's exact entry, not a browser-asserted
+        completion. Missing and other-owner identifiers are indistinguishable.
+        An owned tombstone returns DELETED. The stable creation fact uses server
+        createdAt as occurredAt, never the user-selected Journal occurredAt or
+        mutable revision timestamp. Revising text does not create another fact.
+        No text, preview, tags, mood, encrypted payload, analysis or AI-processing
+        consent crosses this boundary. This factual read does not authorize
+        analysis, sharing or reuse of private reflection. Owner failures are
+        unavailable, never false absence; responses are not cached. Care must
+        independently validate the originating action, occurrence date in its
+        schedule timezone, activation boundary and fact uniqueness. Deletion
+        blocks new completion but never rewrites previously accepted history.
+      parameters:
+        - $ref: "#/components/parameters/JournalId"
+        - $ref: "#/components/parameters/CorrelationId"
+      responses:
+        "200":
+          description: Minimized, owner-attributed current source state.
+          headers:
+            Cache-Control:
+              schema: { type: string, const: no-store }
+            x-correlation-id:
+              $ref: "#/components/headers/CorrelationId"
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/JournalEntryCompletionEvidence"
+        "400": { $ref: "#/components/responses/BadRequest" }
+        "401": { $ref: "#/components/responses/Unauthorized" }
+        "503": { $ref: "#/components/responses/DependencyUnavailable" }
+  /api/v1/journals/{journalId}/revisions/{revision}/analysis-jobs:
+    x-mentalbridge-status: implemented
+    post:
+      tags: [Analysis jobs]
+      summary: Request analysis of one exact owned journal revision.
+      operationId: createExactRevisionAnalysisJob
+      parameters:
+        - $ref: "#/components/parameters/JournalId"
+        - $ref: "#/components/parameters/JournalRevision"
+        - $ref: "#/components/parameters/IdempotencyKey"
+        - $ref: "#/components/parameters/CorrelationId"
+      responses:
+        "202":
+          description: The idempotent asynchronous job was accepted.
+          headers:
+            Location:
+              schema: { type: string }
+            x-correlation-id:
+              $ref: "#/components/headers/CorrelationId"
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/AnalysisJob"
+        "400":
+          $ref: "#/components/responses/BadRequest"
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "404":
+          $ref: "#/components/responses/NotFound"
+        "409":
+          $ref: "#/components/responses/Conflict"
+        "503":
+          $ref: "#/components/responses/DependencyUnavailable"
+  /api/v1/analysis-jobs/{jobId}:
+    x-mentalbridge-status: implemented
+    get:
+      tags: [Analysis jobs]
+      summary: Read an owned analysis job and its normalized result.
+      operationId: getOwnAnalysisJob
+      parameters:
+        - $ref: "#/components/parameters/AnalysisJobId"
+        - $ref: "#/components/parameters/CorrelationId"
+      responses:
+        "200":
+          description: Job state returned.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/AnalysisJob"
+        "400":
+          $ref: "#/components/responses/BadRequest"
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "404":
+          $ref: "#/components/responses/NotFound"
+  /api/v1/ai-companion/conversations:
+    x-mentalbridge-status: implemented
+    post:
+      tags: [AI Companion]
+      operationId: createAiCompanionConversation
+      summary: Start an encrypted owner-scoped AI Companion conversation.
+      parameters:
+        - $ref: "#/components/parameters/CorrelationId"
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: "#/components/schemas/CreateAiConversationRequest" }
+      responses:
+        "201":
+          description: Conversation created.
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/AiConversation" }
+        "400": { $ref: "#/components/responses/BadRequest" }
+        "401": { $ref: "#/components/responses/Unauthorized" }
+    get:
+      tags: [AI Companion]
+      operationId: listAiCompanionConversations
+      summary: List the authenticated owner's retained conversations.
+      parameters:
+        - $ref: "#/components/parameters/CorrelationId"
+      responses:
+        "200":
+          description: Newest-first owner-scoped conversation history.
+          content:
+            application/json:
+              schema:
+                type: object
+                additionalProperties: false
+                required: [items]
+                properties:
+                  items:
+                    type: array
+                    maxItems: 50
+                    items: { $ref: "#/components/schemas/AiConversationSummary" }
+        "401": { $ref: "#/components/responses/Unauthorized" }
+  /api/v1/ai-companion/conversations/{conversationId}:
+    x-mentalbridge-status: implemented
+    parameters:
+      - $ref: "#/components/parameters/ConversationId"
+      - $ref: "#/components/parameters/CorrelationId"
+    get:
+      tags: [AI Companion]
+      operationId: getAiCompanionConversation
+      summary: Resume one owned retained conversation.
+      responses:
+        "200":
+          description: Decrypted conversation for its authenticated owner.
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/AiConversation" }
+        "400": { $ref: "#/components/responses/BadRequest" }
+        "401": { $ref: "#/components/responses/Unauthorized" }
+        "404": { $ref: "#/components/responses/NotFound" }
+    delete:
+      tags: [AI Companion]
+      operationId: deleteAiCompanionConversation
+      summary: Permanently erase one owned conversation and its encrypted messages.
+      responses:
+        "204": { description: Conversation content and replay records were deleted. }
+        "400": { $ref: "#/components/responses/BadRequest" }
+        "401": { $ref: "#/components/responses/Unauthorized" }
+        "404": { $ref: "#/components/responses/NotFound" }
+  /api/v1/ai-companion/conversations/{conversationId}/messages:
+    x-mentalbridge-status: implemented
+    post:
+      tags: [AI Companion]
+      operationId: sendAiCompanionMessage
+      summary: Deliver one bounded response using only owner-verified minimized context.
+      parameters:
+        - $ref: "#/components/parameters/ConversationId"
+        - $ref: "#/components/parameters/IdempotencyKey"
+        - $ref: "#/components/parameters/CorrelationId"
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: "#/components/schemas/SendAiMessageRequest" }
+      responses:
+        "201":
+          description: User message and successfully delivered assistant response persisted exactly once.
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/SendAiMessageResponse" }
+        "400": { $ref: "#/components/responses/BadRequest" }
+        "401": { $ref: "#/components/responses/Unauthorized" }
+        "403": { $ref: "#/components/responses/Forbidden" }
+        "404": { $ref: "#/components/responses/NotFound" }
+        "409": { $ref: "#/components/responses/Conflict" }
+        "429":
+          description: Daily answer, rate, token, or fair-use control blocked the request.
+          content:
+            application/problem+json:
+              schema: { $ref: "#/components/schemas/Problem" }
+        "503": { $ref: "#/components/responses/DependencyUnavailable" }
+  /api/v1/ai-companion/conversations/{conversationId}/context:
+    x-mentalbridge-status: implemented
+    put:
+      tags: [AI Companion]
+      operationId: replaceAiCompanionConversationContext
+      summary: Replace the owner-scoped sources used by one conversation.
+      description: Message sends read this persisted configuration; client-supplied source lists are never authoritative.
+      parameters:
+        - $ref: "#/components/parameters/ConversationId"
+        - $ref: "#/components/parameters/CorrelationId"
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: "#/components/schemas/AiConversationContextInput" }
+      responses:
+        "200":
+          description: Conversation context replaced.
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/AiConversation" }
+        "400": { $ref: "#/components/responses/BadRequest" }
+        "401": { $ref: "#/components/responses/Unauthorized" }
+        "404": { $ref: "#/components/responses/NotFound" }
+  /api/v1/longitudinal-analysis-jobs:
+    x-mentalbridge-status: implemented
+    post:
+      tags: [Longitudinal analysis]
+      summary: Request a consented comparison of owned journals across two bounded periods.
+      operationId: createLongitudinalAnalysisJob
+      parameters:
+        - $ref: "#/components/parameters/IdempotencyKey"
+        - $ref: "#/components/parameters/CorrelationId"
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/CreateLongitudinalAnalysisRequest"
+      responses:
+        "202":
+          description: The idempotent asynchronous comparison job was accepted.
+          headers:
+            Location:
+              schema: { type: string }
+            x-correlation-id:
+              $ref: "#/components/headers/CorrelationId"
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/LongitudinalAnalysisJob"
+        "400": { $ref: "#/components/responses/BadRequest" }
+        "401": { $ref: "#/components/responses/Unauthorized" }
+        "409": { $ref: "#/components/responses/Conflict" }
+        "503": { $ref: "#/components/responses/DependencyUnavailable" }
+  /api/v1/longitudinal-analysis-jobs/{jobId}:
+    x-mentalbridge-status: implemented
+    get:
+      tags: [Longitudinal analysis]
+      summary: Read an owned longitudinal analysis job and normalized evidence.
+      operationId: getOwnLongitudinalAnalysisJob
+      parameters:
+        - $ref: "#/components/parameters/AnalysisJobId"
+        - $ref: "#/components/parameters/CorrelationId"
+      responses:
+        "200":
+          description: Job state returned without raw journal text.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/LongitudinalAnalysisJob"
+        "400": { $ref: "#/components/responses/BadRequest" }
+        "401": { $ref: "#/components/responses/Unauthorized" }
+        "404": { $ref: "#/components/responses/NotFound" }
+  /internal/v1/users/{userId}/longitudinal-analyses/{analysisId}:
+    x-mentalbridge-status: implemented
+    get:
+      tags: [Longitudinal analysis]
+      summary: Return minimized longitudinal evidence for Care reassessment composition.
+      description: Requires the verified end-user bearer context forwarded by Care, a matching user ID, current AI_PROCESSING consent, and purpose REASSESSMENT_SUMMARY. The response never contains raw journal text or a clinical improvement conclusion.
+      operationId: getLongitudinalEvidenceForCare
+      parameters:
+        - $ref: "#/components/parameters/UserId"
+        - $ref: "#/components/parameters/LongitudinalAnalysisId"
+        - name: purpose
+          in: query
+          required: true
+          schema: { type: string, const: REASSESSMENT_SUMMARY }
+        - $ref: "#/components/parameters/CorrelationId"
+      responses:
+        "200":
+          description: Current consent was verified and minimized non-standardized evidence was returned.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/LongitudinalEvidence"
+        "400": { $ref: "#/components/responses/BadRequest" }
+        "401": { $ref: "#/components/responses/Unauthorized" }
+        "403": { $ref: "#/components/responses/Forbidden" }
+        "404": { $ref: "#/components/responses/NotFound" }
+        "503": { $ref: "#/components/responses/DependencyUnavailable" }
+  /internal/v1/support-guide-phrasing:
+    x-mentalbridge-status: implemented
+    post:
+      tags: [Support Guide phrasing]
+      summary: Rephrase exact Care-approved Support Guide copy.
+      description: Care forwards the verified end-user bearer. Journal/AI verifies current AI_PROCESSING consent and may only rephrase the supplied approved text; it cannot add resources, decide safety or eligibility, or mutate Care state.
+      operationId: phraseSupportGuideCopy
+      parameters:
+        - $ref: "#/components/parameters/CorrelationId"
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/SupportGuidePhrasingRequest"
+      responses:
+        "201":
+          description: A bounded rephrasing and provider provenance were returned.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/SupportGuidePhrasingResponse"
+        "400": { $ref: "#/components/responses/BadRequest" }
+        "401": { $ref: "#/components/responses/Unauthorized" }
+        "403": { $ref: "#/components/responses/Forbidden" }
+        "503": { $ref: "#/components/responses/DependencyUnavailable" }
+  /internal/v1/support-plan-companion/messages:
+    x-mentalbridge-status: implemented
+    post:
+      tags: [SupportPlan Companion]
+      summary: Phrase one policy-selected SupportPlan Companion intent.
+      description: Care authenticates with its dedicated service credential and forwards the verified end-user bearer plus one exact v1 intent envelope containing only the approved minimized context. Journal/AI validates both caller boundaries, surface, intent and context before checking current AI consent or calling one configured provider. Missing consent, provider rate/quota limit, timeout, provider failure, malformed output and policy rejection return deterministic template copy. The operation cannot create or mutate a plan, action, schedule, review, consent, booking or source-domain record.
+      operationId: createSupportPlanCompanionMessage
+      security:
+        - bearerAuth: []
+          supportPlanCareServiceToken: []
+      parameters:
+        - $ref: "#/components/parameters/CorrelationId"
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "../proposals/support-plan-companion-intent-v1.schema.json"
+      responses:
+        "201":
+          description: Bounded generated phrasing or deterministic template copy was returned without mutation authority.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/SupportPlanCompanionMessage"
+        "400": { $ref: "#/components/responses/BadRequest" }
+        "401": { $ref: "#/components/responses/Unauthorized" }
+  /internal/v1/consultation-brief-drafts:
+    x-mentalbridge-status: implemented
+    post:
+      tags: [Consultation brief draft]
+      summary: Generate an editable suggestion from one exact minimized Care-owned draft source
+      description: Requires the forwarded verified end-user bearer and current AI_PROCESSING consent. It may rewrite only currentSituation and userGoals. It cannot change the screening source, save or approve a brief, grant specialist access, or consume Journal, chat, raw assessment answers, or private specialist notes.
+      operationId: generateConsultationBriefDraftSuggestion
+      parameters:
+        - $ref: "#/components/parameters/CorrelationId"
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: "#/components/schemas/ConsultationBriefAiDraftProviderRequest" }
+      responses:
+        "200":
+          description: Bounded editable suggestion with provider and source provenance
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/ConsultationBriefAiDraftProviderResponse" }
+        "400": { $ref: "#/components/responses/BadRequest" }
+        "401": { $ref: "#/components/responses/Unauthorized" }
+        "403": { $ref: "#/components/responses/Forbidden" }
+        "503": { $ref: "#/components/responses/DependencyUnavailable" }
 components:
   securitySchemes:
     bearerAuth:
       type: http
       scheme: bearer
       bearerFormat: JWT
+    reminderServiceToken:
+      type: apiKey
+      in: header
+      name: x-mentalbridge-service-token
+    supportPlanCareServiceToken:
+      type: apiKey
+      in: header
+      name: x-mentalbridge-service-token
+      description: Dedicated Care-to-Journal/AI credential required together with the forwarded end-user bearer.
   parameters:
+    LocalDate:
+      name: localDate
+      in: path
+      required: true
+      schema: { type: string, format: date }
+      description: Calendar day computed in the IANA timezone stored at creation.
+    EmotionLimit:
+      name: limit
+      in: query
+      required: false
+      schema: { type: integer, minimum: 1, maximum: 90, default: 30 }
+    BeforeLocalDate:
+      name: before
+      in: query
+      required: false
+      schema: { type: string, format: date }
+      description: Exclusive newest-first history cursor.
     JournalId:
       name: journalId
+      in: path
+      required: true
+      schema:
+        type: string
+        format: uuid
+    JournalRevision:
+      name: revision
+      in: path
+      required: true
+      schema:
+        type: integer
+        minimum: 1
+        maximum: 200
+    AnalysisJobId:
+      name: jobId
+      in: path
+      required: true
+      schema:
+        type: string
+        format: uuid
+    UserId:
+      name: userId
+      in: path
+      required: true
+      schema:
+        type: string
+        format: uuid
+    LongitudinalAnalysisId:
+      name: analysisId
+      in: path
+      required: true
+      schema:
+        type: string
+        format: uuid
+    ConversationId:
+      name: conversationId
       in: path
       required: true
       schema:
@@ -270,14 +968,20 @@ components:
         application/problem+json:
           schema:
             $ref: "#/components/schemas/Problem"
+    Forbidden:
+      description: Current consent does not authorize this minimized consumer projection.
+      content:
+        application/problem+json:
+          schema:
+            $ref: "#/components/schemas/Problem"
     NotFound:
-      description: Journal entry was not found for the authenticated owner.
+      description: Requested resource was not found for the authenticated owner.
       content:
         application/problem+json:
           schema:
             $ref: "#/components/schemas/Problem"
     Conflict:
-      description: Idempotency conflict, duplicate mutation, or journal revision limit reached.
+      description: Idempotency conflict, duplicate mutation, or revision/history limit reached.
       content:
         application/problem+json:
           schema:
@@ -288,7 +992,587 @@ components:
         application/problem+json:
           schema:
             $ref: "#/components/schemas/Problem"
+    DependencyUnavailable:
+      description: A required dependency was unavailable and the request failed closed.
+      content:
+        application/problem+json:
+          schema:
+            $ref: "#/components/schemas/Problem"
   schemas:
+    ConsultationBriefAiDraftScreeningContext:
+      type: object
+      additionalProperties: false
+      required: [instrument, domain, screeningLevel, questionnaireVersion, scoringVersion, evaluatedAt, policyVersion]
+      properties:
+        instrument: { type: string, enum: [PHQ9, GAD7] }
+        domain: { type: string, enum: [DEPRESSIVE_SYMPTOMS, ANXIETY_SYMPTOMS] }
+        screeningLevel: { type: string, enum: [MINIMAL, MILD, MODERATE, MODERATELY_SEVERE, SEVERE] }
+        questionnaireVersion: { type: string, minLength: 1, maxLength: 32 }
+        scoringVersion: { type: string, minLength: 1, maxLength: 32 }
+        evaluatedAt: { type: string, format: date-time }
+        policyVersion: { type: string, minLength: 1, maxLength: 64 }
+    ConsultationBriefAiDraftProviderRequest:
+      type: object
+      additionalProperties: false
+      required: [appointmentId, consultationBriefId, consultationBriefVersion, supportEvaluationId, currentSituation, userGoals, screeningContext, sourceSetVersion]
+      properties:
+        appointmentId: { type: string, format: uuid }
+        consultationBriefId: { type: string, format: uuid }
+        consultationBriefVersion: { type: integer, format: int64, minimum: 0 }
+        supportEvaluationId: { type: string, format: uuid }
+        currentSituation: { type: string, minLength: 1, maxLength: 1000 }
+        userGoals:
+          type: array
+          minItems: 1
+          maxItems: 5
+          items: { type: string, minLength: 1, maxLength: 200 }
+        screeningContext:
+          type: array
+          minItems: 2
+          maxItems: 2
+          items: { $ref: "#/components/schemas/ConsultationBriefAiDraftScreeningContext" }
+        sourceSetVersion: { type: string, const: consultation-brief-ai-source-v1 }
+    ConsultationBriefAiDraftProviderResponse:
+      type: object
+      additionalProperties: false
+      required: [currentSituation, userGoals, sourceSetVersion, consentPolicyVersion, servicePlan, entitlementSource, entitlementPolicyVersion, entitlementVersion, routingPolicyVersion, providerApprovalVersion, provider, model, promptVersion, schemaVersion, latencyMs, inputTokens, outputTokens, estimatedCostMicroUsd]
+      properties:
+        currentSituation: { type: string, minLength: 1, maxLength: 1000 }
+        userGoals:
+          type: array
+          minItems: 1
+          maxItems: 5
+          items: { type: string, minLength: 1, maxLength: 200 }
+        sourceSetVersion: { type: string, const: consultation-brief-ai-source-v1 }
+        consentPolicyVersion: { type: string, minLength: 1, maxLength: 64 }
+        servicePlan: { type: string, enum: [FREE, PLUS, PREMIUM] }
+        entitlementSource: { type: string, enum: [DEFAULT_FREE, DEMO, PAID] }
+        entitlementPolicyVersion: { type: string, minLength: 1, maxLength: 96 }
+        entitlementVersion: { type: integer, format: int64, minimum: 0 }
+        routingPolicyVersion: { type: string, minLength: 1, maxLength: 96 }
+        providerApprovalVersion: { type: string, minLength: 1, maxLength: 96 }
+        provider: { type: string, enum: [DETERMINISTIC_FAKE, GEMINI, OPENAI, BEDROCK] }
+        model: { type: string, minLength: 1, maxLength: 128 }
+        promptVersion: { type: string, const: consultation-brief-draft-v1 }
+        schemaVersion: { type: integer, const: 1 }
+        latencyMs: { type: integer, format: int64, minimum: 0 }
+        inputTokens: { type: [integer, "null"], format: int64, minimum: 0 }
+        outputTokens: { type: [integer, "null"], format: int64, minimum: 0 }
+        estimatedCostMicroUsd: { type: [integer, "null"], format: int64, minimum: 0 }
+    SupportGuidePhrasingRequest:
+      type: object
+      additionalProperties: false
+      required: [approvedText, locale]
+      properties:
+        approvedText: { type: string, minLength: 1, maxLength: 1600 }
+        locale: { type: string, const: vi-VN }
+    SupportGuidePhrasingResponse:
+      type: object
+      additionalProperties: false
+      required: [text, provider, model, promptVersion, schemaVersion]
+      properties:
+        text: { type: string, minLength: 1, maxLength: 1600 }
+        provider: { type: string, enum: [DETERMINISTIC_FAKE, GEMINI, OPENAI, BEDROCK] }
+        model: { type: string, minLength: 1, maxLength: 128 }
+        promptVersion: { type: string, const: support-guide-phrasing-v1 }
+        schemaVersion: { type: integer, const: 1 }
+    SupportPlanCompanionNavigation:
+      type: object
+      additionalProperties: false
+      required: [destination, label]
+      properties:
+        destination:
+          type: string
+          enum: [TODAY, PLAN, PROGRESS, ADJUST, ACTION_DETAIL, RESOURCE, JOURNAL, EMOTION_CHECK_IN, SPECIALIST_DISCOVERY, REASSESSMENT]
+        label: { type: string, minLength: 1, maxLength: 160 }
+    SupportPlanCompanionMessage:
+      type: object
+      additionalProperties: false
+      required: [schemaVersion, intent, surface, text, delivery, navigation, policyVersion, promptVersion, templateVersion, provider, model, fallbackReason]
+      properties:
+        schemaVersion: { type: string, const: support-plan-companion-message-v1 }
+        intent:
+          type: string
+          enum: [EXPLAIN_ACTION, EXPLAIN_FOCUS, SUGGEST_NEXT_STEP, ENCOURAGE, SUMMARIZE_PROGRESS, EXPLAIN_REVIEW_OPTION, NAVIGATE]
+        surface: { type: string, enum: [TODAY, PLAN, PROGRESS, ADJUST] }
+        text: { type: string, minLength: 1, maxLength: 480 }
+        delivery: { type: string, enum: [GENERATED, TEMPLATE] }
+        navigation:
+          oneOf:
+            - $ref: "#/components/schemas/SupportPlanCompanionNavigation"
+            - type: "null"
+        policyVersion: { type: string, const: support-plan-companion-policy-v1 }
+        promptVersion: { type: string, const: support-plan-companion-prompt-v1 }
+        templateVersion: { type: string, const: support-plan-companion-template-v1 }
+        provider:
+          type: [string, "null"]
+          enum: [DETERMINISTIC_FAKE, GEMINI, OPENAI, BEDROCK, null]
+        model: { type: [string, "null"], minLength: 1, maxLength: 2048 }
+        fallbackReason:
+          type: [string, "null"]
+          enum: [CONSENT_REQUIRED, CONSENT_UNAVAILABLE, PROVIDER_DISABLED, PROVIDER_TIMEOUT, PROVIDER_QUOTA_LIMITED, PROVIDER_UNAVAILABLE, MALFORMED_OUTPUT, POLICY_REJECTED, null]
+    CreateAiConversationRequest:
+      type: object
+      additionalProperties: false
+      properties:
+        title: { type: string, minLength: 1, maxLength: 80 }
+    AiContextSources:
+      type: object
+      additionalProperties: false
+      required: [plan, diary, screening, resourceIds]
+      properties:
+        plan: { type: boolean }
+        diary: { type: boolean }
+        screening: { type: boolean }
+        resourceIds:
+          type: array
+          maxItems: 20
+          uniqueItems: true
+          items: { type: string, format: uuid }
+    AiConversationContextInput:
+      type: object
+      additionalProperties: false
+      required: [sources]
+      properties:
+        sources: { $ref: "#/components/schemas/AiContextSources" }
+    AiConversationContext:
+      type: object
+      additionalProperties: false
+      required: [sources, updatedAt]
+      properties:
+        sources: { $ref: "#/components/schemas/AiContextSources" }
+        updatedAt: { type: string, format: date-time }
+    SendAiMessageRequest:
+      type: object
+      additionalProperties: false
+      required: [message]
+      properties:
+        message:
+          type: string
+          minLength: 1
+          maxLength: 2000
+          pattern: '.*\S.*'
+    AiContextKind:
+      type: string
+      enum: [JOURNAL, SUPPORT_PLAN, REASSESSMENT, RESOURCE]
+    AiMessage:
+      type: object
+      additionalProperties: false
+      required: [messageId, role, content, createdAt, contextKinds]
+      properties:
+        messageId: { type: string, format: uuid }
+        role: { type: string, enum: [USER, ASSISTANT] }
+        content: { type: string, minLength: 1, maxLength: 2000 }
+        createdAt: { type: string, format: date-time }
+        contextKinds:
+          type: array
+          maxItems: 4
+          uniqueItems: true
+          items: { $ref: "#/components/schemas/AiContextKind" }
+    AiConversation:
+      type: object
+      additionalProperties: false
+      required: [conversationId, title, context, messages, createdAt, updatedAt, expiresAt]
+      properties:
+        conversationId: { type: string, format: uuid }
+        title: { type: string, minLength: 1, maxLength: 80 }
+        context: { $ref: "#/components/schemas/AiConversationContext" }
+        messages:
+          type: array
+          maxItems: 400
+          items: { $ref: "#/components/schemas/AiMessage" }
+        createdAt: { type: string, format: date-time }
+        updatedAt: { type: string, format: date-time }
+        expiresAt: { type: string, format: date-time }
+    AiConversationSummary:
+      type: object
+      additionalProperties: false
+      required: [conversationId, title, createdAt, updatedAt, expiresAt]
+      properties:
+        conversationId: { type: string, format: uuid }
+        title: { type: string, minLength: 1, maxLength: 80 }
+        createdAt: { type: string, format: date-time }
+        updatedAt: { type: string, format: date-time }
+        expiresAt: { type: string, format: date-time }
+    AiQuota:
+      type: object
+      additionalProperties: false
+      required: [plan, policyVersion, remaining, resetAt, limitDisplayed]
+      properties:
+        plan: { type: string, enum: [FREE, PLUS, PREMIUM] }
+        policyVersion: { type: string, const: companion-quota-v1 }
+        remaining: { type: [integer, "null"], minimum: 0 }
+        resetAt: { type: string, format: date-time }
+        limitDisplayed: { type: boolean }
+      description: PREMIUM returns null remaining and no displayed daily cap, while hidden server token/rate/fair-use controls still apply.
+    SendAiMessageResponse:
+      type: object
+      additionalProperties: false
+      required:
+        [
+          conversationId,
+          userMessageId,
+          assistantMessageId,
+          assistant,
+          createdAt,
+          contextKinds,
+          quota,
+        ]
+      properties:
+        conversationId: { type: string, format: uuid }
+        userMessageId: { type: string, format: uuid }
+        assistantMessageId: { type: string, format: uuid }
+        assistant: { type: string, minLength: 1, maxLength: 500 }
+        createdAt: { type: string, format: date-time }
+        contextKinds:
+          type: array
+          maxItems: 4
+          uniqueItems: true
+          items: { $ref: "#/components/schemas/AiContextKind" }
+        quota: { $ref: "#/components/schemas/AiQuota" }
+    Emotion:
+      type: string
+      description: Self-selected, non-clinical label shared with Journal authoring.
+      enum: [GREAT, GOOD, OKAY, LOW, VERY_LOW]
+    EmotionInfluenceFactor:
+      type: string
+      description: Optional self-selected context retained only in the owner record; it is not a diagnosis or downstream inference input.
+      enum: [sleep, work, study, family, friends, health, other]
+    EmotionCheckInValue:
+      type: object
+      additionalProperties: false
+      required: [emotion, intensity]
+      properties:
+        emotion:
+          $ref: "#/components/schemas/Emotion"
+        intensity:
+          type: integer
+          minimum: 1
+          maximum: 5
+          description: Strength of the selected feeling, not wellness, severity, diagnosis, or recovery.
+        factors:
+          type: array
+          maxItems: 3
+          uniqueItems: true
+          default: []
+          description: Optional self-selected context; encrypted at rest and excluded from consumer projections, logs, events, analytics, SupportPlan, and automated AI use.
+          items: { $ref: "#/components/schemas/EmotionInfluenceFactor" }
+        note:
+          type: [string, "null"]
+          minLength: 1
+          maxLength: 500
+          pattern: '.*\S.*'
+          description: Optional private free text; encrypted at rest and excluded from consumer projections, logs, and events.
+    CreateEmotionCheckInRequest:
+      allOf:
+        - $ref: "#/components/schemas/EmotionCheckInValue"
+        - type: object
+          required: [localDate, timezone]
+          properties:
+            localDate: { type: string, format: date }
+            timezone:
+              type: string
+              minLength: 1
+              maxLength: 64
+              description: IANA timezone; localDate must equal the server acceptance time in this zone.
+      unevaluatedProperties: false
+    EmotionCheckIn:
+      type: object
+      additionalProperties: false
+      required:
+        [
+          id,
+          localDate,
+          timezone,
+          emotion,
+          intensity,
+          factors,
+          note,
+          sourceLabel,
+          clinicalUse,
+          revision,
+          recordedAt,
+          createdAt,
+          updatedAt,
+        ]
+      properties:
+        id: { type: string, format: uuid }
+        localDate: { type: string, format: date }
+        timezone: { type: string, minLength: 1, maxLength: 64 }
+        emotion: { $ref: "#/components/schemas/Emotion" }
+        intensity: { type: integer, minimum: 1, maximum: 5 }
+        factors:
+          type: array
+          maxItems: 3
+          uniqueItems: true
+          items: { $ref: "#/components/schemas/EmotionInfluenceFactor" }
+        note: { type: [string, "null"], maxLength: 500 }
+        sourceLabel: { type: string, const: SELF_REPORTED_EMOTION }
+        clinicalUse:
+          { type: string, const: NOT_A_DIAGNOSIS_OR_SAFETY_CLASSIFIER }
+        revision: { type: integer, minimum: 1, maximum: 32 }
+        recordedAt: { type: string, format: date-time }
+        createdAt: { type: string, format: date-time }
+        updatedAt: { type: string, format: date-time }
+    JournalEntryCompletionEvidence:
+      type: object
+      additionalProperties: false
+      required: [schemaVersion, subjectUserId, journalId, state, fact, verifiedAt]
+      properties:
+        schemaVersion: { type: string, const: journal-entry-completion-evidence-v1 }
+        subjectUserId: { type: string, format: uuid }
+        journalId: { type: string, format: uuid }
+        state: { type: string, enum: [RECORDED, MISSING, DELETED] }
+        verifiedAt: { type: string, format: date-time }
+        fact:
+          oneOf:
+            - type: "null"
+            - $ref: "#/components/schemas/JournalEntryCompletionFact"
+      allOf:
+        - if: { properties: { state: { const: RECORDED } }, required: [state] }
+          then: { properties: { fact: { $ref: "#/components/schemas/JournalEntryCompletionFact" } } }
+          else: { properties: { fact: { type: "null" } } }
+    JournalEntryCompletionFact:
+      type: object
+      additionalProperties: false
+      required: [ownerDomain, kind, factId, factRevision, occurredAt]
+      properties:
+        ownerDomain: { type: string, const: JOURNAL_AI }
+        kind: { type: string, const: JOURNAL_ENTRY }
+        factId: { type: string, format: uuid }
+        factRevision:
+          type: string
+          const: "1"
+          description: Immutable creation-fact revision, not the private content revision.
+        occurredAt:
+          type: string
+          format: date-time
+          description: Owner-generated entry createdAt; user-supplied Journal occurredAt is excluded.
+    EmotionCheckInCompletionEvidence:
+      type: object
+      additionalProperties: false
+      required: [schemaVersion, subjectUserId, localDate, state, fact, verifiedAt]
+      properties:
+        schemaVersion: { type: string, const: emotion-check-in-completion-evidence-v1 }
+        subjectUserId: { type: string, format: uuid }
+        localDate: { type: string, format: date }
+        state: { type: string, enum: [RECORDED, MISSING, DELETED] }
+        verifiedAt: { type: string, format: date-time }
+        fact:
+          oneOf:
+            - type: "null"
+            - $ref: "#/components/schemas/EmotionCheckInCompletionFact"
+      allOf:
+        - if: { properties: { state: { const: RECORDED } }, required: [state] }
+          then: { properties: { fact: { $ref: "#/components/schemas/EmotionCheckInCompletionFact" } } }
+          else: { properties: { fact: { type: "null" } } }
+    EmotionCheckInCompletionFact:
+      type: object
+      additionalProperties: false
+      required: [ownerDomain, kind, factId, factRevision, occurredAt, timezone]
+      properties:
+        ownerDomain: { type: string, const: JOURNAL_AI }
+        kind: { type: string, const: EMOTION_CHECK_IN }
+        factId: { type: string, format: uuid }
+        factRevision:
+          type: string
+          const: "1"
+          description: Creation-fact revision, not the mutable emotion payload revision.
+        occurredAt: { type: string, format: date-time }
+        timezone: { type: string, minLength: 1, maxLength: 64 }
+    EmotionCheckInList:
+      type: object
+      additionalProperties: false
+      required: [items, page, label, interpretation]
+      properties:
+        items:
+          type: array
+          maxItems: 90
+          items: { $ref: "#/components/schemas/EmotionCheckIn" }
+        page:
+          type: object
+          additionalProperties: false
+          required: [limit, hasMore]
+          properties:
+            limit: { type: integer, minimum: 1, maximum: 90 }
+            hasMore: { type: boolean }
+            nextBefore: { type: string, format: date }
+        label: { type: string, const: SELF_REPORTED_EMOTION }
+        interpretation: { type: string, const: NOT_DIAGNOSIS_OR_RECOVERY }
+    EmotionDistribution:
+      type: object
+      additionalProperties: false
+      required: [GREAT, GOOD, OKAY, LOW, VERY_LOW]
+      properties:
+        GREAT: { type: integer, minimum: 0 }
+        GOOD: { type: integer, minimum: 0 }
+        OKAY: { type: integer, minimum: 0 }
+        LOW: { type: integer, minimum: 0 }
+        VERY_LOW: { type: integer, minimum: 0 }
+    EmotionProgressWindow:
+      type: object
+      additionalProperties: false
+      required:
+        [
+          days,
+          startLocalDate,
+          endLocalDate,
+          checkedInDays,
+          totalDays,
+          distribution,
+        ]
+      properties:
+        days: { type: integer, enum: [7, 14, 30] }
+        startLocalDate: { type: string, format: date }
+        endLocalDate: { type: string, format: date }
+        checkedInDays: { type: integer, minimum: 0, maximum: 30 }
+        totalDays: { type: integer, enum: [7, 14, 30] }
+        distribution: { $ref: "#/components/schemas/EmotionDistribution" }
+    EmotionCheckInProgress:
+      type: object
+      additionalProperties: false
+      required:
+        [
+          asOfLocalDate,
+          timezone,
+          currentEmotion,
+          currentStreak,
+          longestStreak,
+          windows,
+          label,
+          interpretation,
+        ]
+      properties:
+        asOfLocalDate: { type: string, format: date }
+        timezone: { type: string, minLength: 1, maxLength: 64 }
+        currentEmotion:
+          oneOf:
+            - $ref: "#/components/schemas/Emotion"
+            - type: "null"
+        currentStreak: { type: integer, minimum: 0 }
+        longestStreak: { type: integer, minimum: 0 }
+        windows:
+          type: array
+          minItems: 3
+          maxItems: 3
+          items: { $ref: "#/components/schemas/EmotionProgressWindow" }
+        label: { type: string, const: SELF_REPORTED_EMOTION }
+        interpretation:
+          { type: string, const: FACTUAL_COUNTS_NOT_DIAGNOSIS_OR_RECOVERY }
+    NotificationActivityStreak:
+      type: object
+      additionalProperties: false
+      required: [completedToday, currentStreak, longestStreak]
+      properties:
+        completedToday: { type: boolean }
+        currentStreak: { type: integer, minimum: 0 }
+        longestStreak: { type: integer, minimum: 0 }
+    NotificationActivityRequest:
+      type: object
+      additionalProperties: false
+      required: [ownerAccountId, timezone]
+      properties:
+        ownerAccountId: { type: string, format: uuid }
+        timezone: { type: string, minLength: 1, maxLength: 64 }
+    NotificationActivityAchievementMilestone:
+      type: object
+      additionalProperties: false
+      required: [days, reachedAt]
+      properties:
+        days: { type: integer, enum: [3, 7] }
+        reachedAt:
+          oneOf:
+            - { type: string, format: date-time }
+            - { type: "null" }
+    NotificationActivityAchievementFact:
+      type: object
+      additionalProperties: false
+      required: [distinctDays, longestStreak, firstOccurredAt, streakMilestones]
+      properties:
+        distinctDays: { type: integer, minimum: 0 }
+        longestStreak: { type: integer, minimum: 0 }
+        firstOccurredAt:
+          oneOf:
+            - { type: string, format: date-time }
+            - { type: "null" }
+        streakMilestones:
+          type: array
+          minItems: 2
+          maxItems: 2
+          items:
+            $ref: "#/components/schemas/NotificationActivityAchievementMilestone"
+    NotificationActivityAchievementFacts:
+      type: object
+      additionalProperties: false
+      required: [ownerAccountId, journal, emotionCheckIn]
+      properties:
+        ownerAccountId: { type: string, format: uuid }
+        journal:
+          $ref: "#/components/schemas/NotificationActivityAchievementFact"
+        emotionCheckIn:
+          $ref: "#/components/schemas/NotificationActivityAchievementFact"
+    NotificationActivity:
+      type: object
+      additionalProperties: false
+      required:
+        [asOfLocalDate, timezone, journal, emotionCheckIn, achievementFacts, interpretation]
+      properties:
+        asOfLocalDate: { type: string, format: date }
+        timezone: { type: string, minLength: 1, maxLength: 64 }
+        journal: { $ref: "#/components/schemas/NotificationActivityStreak" }
+        emotionCheckIn:
+          { $ref: "#/components/schemas/NotificationActivityStreak" }
+        achievementFacts:
+          { $ref: "#/components/schemas/NotificationActivityAchievementFacts" }
+        interpretation:
+          { type: string, const: FACTUAL_ACTIVITY_NOT_ADHERENCE_OR_RECOVERY }
+    EmotionCheckInTombstone:
+      type: object
+      additionalProperties: false
+      required: [localDate, deleted, deletedAt]
+      properties:
+        localDate: { type: string, format: date }
+        deleted: { type: boolean, const: true }
+        deletedAt: { type: string, format: date-time }
+    EmotionCheckInConsumerItem:
+      type: object
+      additionalProperties: false
+      required:
+        [
+          localDate,
+          timezone,
+          emotion,
+          intensity,
+          sourceLabel,
+          revision,
+          recordedAt,
+        ]
+      properties:
+        localDate: { type: string, format: date }
+        timezone: { type: string }
+        emotion: { $ref: "#/components/schemas/Emotion" }
+        intensity: { type: integer, minimum: 1, maximum: 5 }
+        sourceLabel: { type: string, const: SELF_REPORTED_EMOTION }
+        revision: { type: integer, minimum: 1, maximum: 32 }
+        recordedAt: { type: string, format: date-time }
+    EmotionCheckInConsumerContext:
+      type: object
+      additionalProperties: false
+      required: [purpose, consent, items]
+      properties:
+        purpose: { type: string, const: AI_REFLECTION }
+        consent:
+          type: object
+          additionalProperties: false
+          required: [type, policyVersion, decidedAt]
+          properties:
+            type: { type: string, const: AI_PROCESSING }
+            policyVersion: { type: [string, "null"], maxLength: 64 }
+            decidedAt: { type: [string, "null"], format: date-time }
+        items:
+          type: array
+          maxItems: 30
+          items: { $ref: "#/components/schemas/EmotionCheckInConsumerItem" }
     HealthResponse:
       type: object
       additionalProperties: false
@@ -316,6 +1600,9 @@ components:
           format: date-time
         content:
           $ref: "#/components/schemas/JournalContentInput"
+        mood:
+          $ref: "#/components/schemas/JournalMood"
+          description: Optional during the compatibility window; new MentalBridge editors require an explicit user selection.
         tags:
           type: array
           maxItems: 20
@@ -330,6 +1617,9 @@ components:
       properties:
         content:
           $ref: "#/components/schemas/JournalContentInput"
+        mood:
+          $ref: "#/components/schemas/JournalMood"
+          description: When omitted by an older client, the current revision mood is preserved.
         tags:
           type: array
           maxItems: 20
@@ -346,7 +1636,12 @@ components:
           type: string
           minLength: 1
           maxLength: 12000
-          description: Plaintext is accepted only at the API boundary and must not be logged or indexed.
+          pattern: '.*\S.*'
+          description: Non-blank plaintext is accepted only at the API boundary and must not be logged or indexed.
+    JournalMood:
+      type: string
+      description: User-selected reflection label; it is not a clinical score and the emoji presentation is client-owned.
+      enum: [GREAT, GOOD, OKAY, LOW, VERY_LOW]
     JournalEntryMetadata:
       type: object
       required:
@@ -358,6 +1653,7 @@ components:
         - updatedAt
         - deleted
         - tags
+        - mood
         - encryption
         - analysisState
       properties:
@@ -385,6 +1681,11 @@ components:
           type: array
           items:
             type: string
+        mood:
+          description: Mood stored with the current encrypted revision; null only for entries written by compatible legacy clients.
+          anyOf:
+            - $ref: "#/components/schemas/JournalMood"
+            - type: "null"
         encryption:
           $ref: "#/components/schemas/EncryptionMetadata"
         analysisState:
@@ -444,6 +1745,7 @@ components:
         keyId:
           type: string
           minLength: 1
+          description: Fixed compatibility marker for the single application encryption key; it is not a rotation selector.
         encryptedAt:
           type: string
           format: date-time
@@ -487,6 +1789,313 @@ components:
               type: string
             hasMore:
               type: boolean
+    AnalysisJob:
+      type: object
+      additionalProperties: false
+      required:
+        - jobId
+        - journalId
+        - journalRevision
+        - status
+        - attemptCount
+        - createdAt
+        - updatedAt
+      properties:
+        jobId: { type: string, format: uuid }
+        journalId: { type: string, format: uuid }
+        journalRevision: { type: integer, minimum: 1, maximum: 200 }
+        status:
+          type: string
+          enum: [RUNNING, SUCCEEDED, FAILED]
+        attemptCount: { type: integer, minimum: 0, maximum: 2 }
+        terminalReason:
+          oneOf:
+            - $ref: "#/components/schemas/AnalysisTerminalReason"
+            - type: "null"
+        result:
+          oneOf:
+            - $ref: "#/components/schemas/NormalizedAnalysisResult"
+            - type: "null"
+        createdAt: { type: string, format: date-time }
+        updatedAt: { type: string, format: date-time }
+        completedAt: { type: [string, "null"], format: date-time }
+    AnalysisTerminalReason:
+      type: string
+      enum:
+        - CONSENT_REQUIRED
+        - CONSENT_REVOKED
+        - CONSENT_UNAVAILABLE
+        - ENTITLEMENT_UNAVAILABLE
+        - ENTITLEMENT_CHANGED
+        - AUTHORIZATION_CONTEXT_LOST
+        - REVISION_STALE
+        - JOURNAL_DELETED
+        - PROVIDER_TIMEOUT
+        - PROVIDER_UNAVAILABLE
+        - INVALID_PROVIDER_RESULT
+        - INTERNAL_ERROR
+    NormalizedAnalysisResult:
+      type: object
+      additionalProperties: false
+      required:
+        - contextSignals
+        - emotionIndicators
+        - themes
+        - preferenceSignals
+        - barrierSignals
+        - suggestedAction
+        - provider
+        - model
+        - promptVersion
+        - schemaVersion
+        - createdAt
+      properties:
+        summary: { type: string, minLength: 1, maxLength: 800 }
+        contextSignals:
+          type: array
+          maxItems: 12
+          items: { type: string, minLength: 1, maxLength: 64 }
+        emotionIndicators:
+          type: array
+          maxItems: 12
+          items: { type: string, minLength: 1, maxLength: 64 }
+        themes:
+          type: array
+          maxItems: 12
+          items: { type: string, minLength: 1, maxLength: 64 }
+        preferenceSignals:
+          type: array
+          maxItems: 12
+          items: { type: string, minLength: 1, maxLength: 64 }
+        barrierSignals:
+          type: array
+          maxItems: 12
+          items: { type: string, minLength: 1, maxLength: 64 }
+        sentiment: { type: string, minLength: 1, maxLength: 32 }
+        modelConfidence: { type: number, minimum: 0, maximum: 1 }
+        suggestedAction:
+          type: string
+          enum:
+            - NONE
+            - OFFER_RESOURCE_EXPLANATION
+            - GUIDE_APPROVED_ACTIVITY
+            - REQUEST_ALLOWED_ALTERNATIVE
+            - REQUEST_PLAN_REVIEW
+            - OPEN_PROFESSIONAL_SUPPORT
+            - OPEN_SAFETY_GUIDANCE
+        workload: { type: string, const: EXACT_REVISION }
+        servicePlan:
+          type: string
+          enum: [FREE, PLUS, PREMIUM]
+        entitlementSource:
+          type: string
+          enum: [DEFAULT_FREE, DEMO, PAID]
+        entitlementPolicyVersion: { type: string, minLength: 1, maxLength: 96 }
+        entitlementVersion: { type: integer, format: int64, minimum: 0 }
+        routingPolicyVersion: { type: string, minLength: 1, maxLength: 96 }
+        providerApprovalVersion: { type: string, minLength: 1, maxLength: 96 }
+        provider:
+          type: string
+          enum: [DETERMINISTIC_FAKE, GEMINI, OPENAI, BEDROCK]
+        model: { type: string, minLength: 1, maxLength: 128 }
+        promptVersion: { type: string, minLength: 1, maxLength: 96 }
+        schemaVersion: { type: integer, const: 1 }
+        latencyMs: { type: integer, minimum: 0 }
+        inputTokens: { type: [integer, "null"], minimum: 0 }
+        outputTokens: { type: [integer, "null"], minimum: 0 }
+        estimatedCostMicroUsd:
+          type: [integer, "null"]
+          minimum: 0
+          description: Estimated provider cost in millionths of one USD using the versioned configured benchmark rate.
+        createdAt: { type: string, format: date-time }
+    LongitudinalPeriod:
+      type: object
+      additionalProperties: false
+      required: [startAt, endAt]
+      properties:
+        startAt:
+          type: string
+          format: date-time
+          description: Inclusive UTC instant.
+        endAt:
+          type: string
+          format: date-time
+          description: Exclusive UTC instant.
+    CreateLongitudinalAnalysisRequest:
+      type: object
+      additionalProperties: false
+      required: [previousPeriod, currentPeriod]
+      properties:
+        previousPeriod:
+          $ref: "#/components/schemas/LongitudinalPeriod"
+        currentPeriod:
+          $ref: "#/components/schemas/LongitudinalPeriod"
+        excludedJournalIds:
+          type: array
+          uniqueItems: true
+          maxItems: 100
+          default: []
+          description: Owned journals intentionally excluded before exact current revisions are selected.
+          items: { type: string, format: uuid }
+      description: Periods are half-open, non-overlapping, equal in duration, and each must span 7 through 31 days. The current period cannot end in the future.
+    LongitudinalSourceRevision:
+      type: object
+      additionalProperties: false
+      required: [journalId, journalRevision, period]
+      properties:
+        journalId: { type: string, format: uuid }
+        journalRevision: { type: integer, minimum: 1, maximum: 200 }
+        period:
+          type: string
+          enum: [PREVIOUS, CURRENT]
+    LongitudinalDirection:
+      type: string
+      enum: [MORE_FREQUENT, LESS_FREQUENT, SIMILAR, INSUFFICIENT_DATA]
+    LongitudinalChange:
+      type: object
+      additionalProperties: false
+      required: [signal, direction]
+      properties:
+        signal: { type: string, minLength: 1, maxLength: 64 }
+        direction:
+          $ref: "#/components/schemas/LongitudinalDirection"
+    LongitudinalDataCoverage:
+      type: object
+      additionalProperties: false
+      required:
+        [
+          previousPeriodJournalEntryCount,
+          currentPeriodJournalEntryCount,
+          sufficientForComparison,
+        ]
+      properties:
+        previousPeriodJournalEntryCount:
+          { type: integer, minimum: 0, maximum: 100 }
+        currentPeriodJournalEntryCount:
+          { type: integer, minimum: 0, maximum: 100 }
+        sufficientForComparison: { type: boolean }
+      description: Sufficient requires at least three entries in each period and no greater than a 2:1 count imbalance.
+    LongitudinalEvidence:
+      type: object
+      additionalProperties: false
+      required:
+        - analysisId
+        - previousPeriod
+        - currentPeriod
+        - sourceJournalRevisions
+        - contextSignals
+        - emotionIndicators
+        - recurringThemes
+        - changesComparedWithPreviousPeriod
+        - preferences
+        - barriers
+        - helpfulPatterns
+        - dataCoverage
+        - provider
+        - model
+        - promptVersion
+        - schemaVersion
+        - createdAt
+      properties:
+        analysisId: { type: string, format: uuid }
+        previousPeriod: { $ref: "#/components/schemas/LongitudinalPeriod" }
+        currentPeriod: { $ref: "#/components/schemas/LongitudinalPeriod" }
+        sourceJournalRevisions:
+          type: array
+          maxItems: 100
+          items: { $ref: "#/components/schemas/LongitudinalSourceRevision" }
+        contextSignals:
+          type: array
+          maxItems: 12
+          items: { type: string, minLength: 1, maxLength: 64 }
+        emotionIndicators:
+          type: array
+          maxItems: 12
+          items: { type: string, minLength: 1, maxLength: 64 }
+        recurringThemes:
+          type: array
+          maxItems: 12
+          items: { type: string, minLength: 1, maxLength: 64 }
+        changesComparedWithPreviousPeriod:
+          type: array
+          maxItems: 24
+          items: { $ref: "#/components/schemas/LongitudinalChange" }
+        preferences:
+          type: array
+          maxItems: 12
+          items: { type: string, minLength: 1, maxLength: 64 }
+        barriers:
+          type: array
+          maxItems: 12
+          items: { type: string, minLength: 1, maxLength: 64 }
+        helpfulPatterns:
+          type: array
+          maxItems: 12
+          items: { type: string, minLength: 1, maxLength: 64 }
+        dataCoverage: { $ref: "#/components/schemas/LongitudinalDataCoverage" }
+        provider:
+          type: string
+          enum: [DETERMINISTIC_FAKE, GEMINI, OPENAI, BEDROCK]
+        model: { type: string, minLength: 1, maxLength: 128 }
+        promptVersion: { type: string, const: longitudinal-v1 }
+        schemaVersion: { type: integer, const: 1 }
+        createdAt: { type: string, format: date-time }
+      description: Non-standardized observations limited to the available entries; never a diagnosis, combined score, recovery verdict, or clinical improvement conclusion.
+    LongitudinalAnalysisJob:
+      type: object
+      additionalProperties: false
+      required:
+        - jobId
+        - previousPeriod
+        - currentPeriod
+        - sourceJournalRevisions
+        - dataCoverage
+        - status
+        - attemptCount
+        - result
+        - createdAt
+        - updatedAt
+        - completedAt
+      properties:
+        jobId: { type: string, format: uuid }
+        previousPeriod: { $ref: "#/components/schemas/LongitudinalPeriod" }
+        currentPeriod: { $ref: "#/components/schemas/LongitudinalPeriod" }
+        sourceJournalRevisions:
+          type: array
+          maxItems: 100
+          items: { $ref: "#/components/schemas/LongitudinalSourceRevision" }
+        dataCoverage:
+          $ref: "#/components/schemas/LongitudinalDataCoverage"
+        status:
+          type: string
+          enum: [RUNNING, SUCCEEDED, FAILED]
+        attemptCount: { type: integer, minimum: 0, maximum: 2 }
+        terminalReason:
+          oneOf:
+            - $ref: "#/components/schemas/LongitudinalTerminalReason"
+            - type: "null"
+        result:
+          oneOf:
+            - $ref: "#/components/schemas/LongitudinalEvidence"
+            - type: "null"
+        createdAt: { type: string, format: date-time }
+        updatedAt: { type: string, format: date-time }
+        completedAt: { type: [string, "null"], format: date-time }
+    LongitudinalTerminalReason:
+      type: string
+      enum:
+        - CONSENT_REQUIRED
+        - CONSENT_REVOKED
+        - CONSENT_UNAVAILABLE
+        - ENTITLEMENT_UNAVAILABLE
+        - ENTITLEMENT_CHANGED
+        - AUTHORIZATION_CONTEXT_LOST
+        - SOURCE_REVISION_CHANGED
+        - SOURCE_DELETED
+        - PROVIDER_TIMEOUT
+        - PROVIDER_UNAVAILABLE
+        - INVALID_PROVIDER_RESULT
+        - INTERNAL_ERROR
     Problem:
       type: object
       additionalProperties: true

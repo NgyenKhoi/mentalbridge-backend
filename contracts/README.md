@@ -11,7 +11,7 @@ All language-neutral integration contracts live under this directory. Service-lo
 
 ## OpenAPI lifecycle
 
-Every OpenAPI path item declares `x-mentalbridge-status`:
+Every OpenAPI path item declares `x-mentalbridge-status` when all methods share one state. A mixed path declares it on each operation instead:
 
 - `implemented`: the owning service has a production handler and tests for the documented method, authorization, success response, and stable errors;
 - `planned`: the shape is design input only and must not be advertised as an available runtime endpoint.
@@ -19,6 +19,57 @@ Every OpenAPI path item declares `x-mentalbridge-status`:
 New future APIs should start in `contracts/proposals/`. Existing forward-looking paths may remain in an OpenAPI file only when explicitly marked `planned`. Promoting a path to `implemented` is an atomic change containing the handler, boundary tests, and contract compatibility check.
 
 Framework DTOs, controllers, generated types, database entities, and provider payloads are never the cross-service source of truth.
+
+`events/identity/account-state-changed-v1.schema.json` is the implemented MB-365
+fact emitted atomically when Identity suspends or restores a non-admin account.
+It carries only the account identifier, current status, immutable actor role,
+closed reason code, correlation metadata, and aggregate version. Repeated
+same-state commands emit no duplicate fact.
+
+`care-service-v1.yaml` remains the unchanged v1 source for coarse historical
+SupportEvaluation behavior. `care-support-evaluation-v2.yaml` is the additive
+source for `/api/v2/support-evaluations`; consumers select the API version by
+path and must not interpret a v1 support tier as a v2 domain contribution.
+MB-667 adds the separate read-only v1
+`/support-evaluations/{supportEvaluationId}/combined-meaning` subresource so
+older strict clients keep receiving their original evaluation shape. Its exact
+pair and source policy remain separate from the versioned draft presentation;
+the owner-supplied Stitch prototype is available, while twenty neutral copy
+variants remain pending Care/content-owner review and are not approved for
+deployment. It adds no combined score, new routing policy or v2 top-level tier.
+`care-support-guide-v1.yaml` is the additive implemented owner contract for the
+all-tier one-time guide at `/api/v1/support-guides`; it is not a SupportPlan
+lifecycle contract. MB-668 adds its episode-scoped ensure operation
+`/api/v1/screening-episodes/{episodeId}/support-guide` (1.1.0) and the
+read-only `/api/v1/guided-journey/current` pointer in `care-service-v1.yaml`
+(1.6.0); clients send no assessment identifiers to either. `content-notification-service.yaml` supplies the exact
+eligible resource's immutable reviewed display snapshot alongside publication
+provenance so Care can persist stable history.
+`care-service-v1.yaml` also exposes the implemented MB-372/MB-373/MB-513/MB-376
+SupportPlan surface. It accepts only an owned SupportEvaluation v2 reference,
+returns persisted Care-owned plan snapshots, supports admitted choices and
+explicit activation/lifecycle commands, and exposes owner-only bounded activity
+occurrences with local-time and exact source provenance. Owner engagement uses
+versioned replacement/deletion; its minimized event excludes private reflection
+and does not create a specialist observation feed. The contract never accepts
+arbitrary resources, a client package, an adherence score, a recovery score, or
+AI-selected state.
+The same contract exposes MB-559 explicit reassessment self-report
+create/current/replace/delete operations plus Reassessment Summary composition
+and owner-only current/detail/history reads. `reassessment-summary-v2` keeps
+local PHQ-9/GAD-7 trends, minimized Journal/AI evidence, SupportPlan engagement,
+and explicit self-reported experience separate. Occurrence
+helpfulness/reflection is separately labelled supporting activity evidence and
+never substitutes for the self-report. Historical `reassessment-summary-v1`
+snapshots remain readable without rewrite. Neither version has a combined score
+or overall direction.
+
+The same Care contract exposes MB-638 `GET/PUT
+/api/v2/support-plan-personalization`. It returns a revision-zero deterministic
+fallback for an existing user without saved input, persists only a bounded
+non-diagnostic vocabulary, and uses strong ETag replacement. `PlanFocus`
+includes optional exact personalization provenance; updating preferences
+returns a review-required reference instead of silently mutating an active plan.
 
 ## Required paired changes
 

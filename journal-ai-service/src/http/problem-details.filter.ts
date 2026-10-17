@@ -24,6 +24,12 @@ interface ProblemDetails {
   readonly correlationId: string;
 }
 
+interface SafeHttpProblem {
+  readonly code?: unknown;
+  readonly title?: unknown;
+  readonly type?: unknown;
+}
+
 interface ProblemDefinition {
   readonly type: string;
   readonly title: string;
@@ -84,7 +90,27 @@ export class ProblemDetailsFilter implements ExceptionFilter {
       exception instanceof HttpException
         ? exception.getStatus()
         : HttpStatus.INTERNAL_SERVER_ERROR;
-    const definition = definitions[status] ?? internalError;
+    const fallback = definitions[status] ?? internalError;
+    const supplied =
+      exception instanceof HttpException &&
+      typeof exception.getResponse() === "object"
+        ? (exception.getResponse() as SafeHttpProblem)
+        : {};
+    const definition = {
+      type:
+        typeof supplied.type === "string" && supplied.type.length <= 200
+          ? supplied.type
+          : fallback.type,
+      title:
+        typeof supplied.title === "string" && supplied.title.length <= 160
+          ? supplied.title
+          : fallback.title,
+      code:
+        typeof supplied.code === "string" &&
+        /^[A-Z0-9_]{1,96}$/.test(supplied.code)
+          ? supplied.code
+          : fallback.code,
+    };
 
     response.setHeader("Content-Type", "application/problem+json");
     response.status(status).json({

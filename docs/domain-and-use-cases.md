@@ -1,19 +1,30 @@
 # Domain and Use Cases
 
+> Current product authority/navigation: [Current Product Blueprint](CURRENT_PRODUCT_BLUEPRINT.md).
+> The integrated description below must follow the latest accepted scope ADR
+> chain, currently ADR 0017 plus ADR 0022 and ADR 0034 for SupportPlan v3.
+
 ## 1. Product boundary
 
 MentalBridge provides self-screening, emotional self-tracking, educational support, referral assistance, and follow-up. It does not diagnose, prescribe, provide psychotherapy, dispatch emergency responders, or guarantee continuous human monitoring.
 
 V1 supports exactly two screening and post-screening support domains for the primary Capstone cohort of adults aged 18 through 30 residing in Vietnam: `DEPRESSIVE_SYMPTOMS` through PHQ-9 and `ANXIETY_SYMPTOMS` through GAD-7, focused on generalized anxiety symptoms. It does not claim specialized screening for OCD, trauma/PTSD, panic disorder, social anxiety, bipolar/mania, psychosis, eating disorders, substance use, ADHD, insomnia as an independent domain, personality disorders, or another unapproved concern. An additional domain requires a separately governed product vertical.
 
+ADR 0017 defines the base product-wide scope v2 package, Support Guide,
+SupportPlan, reminder, appointment, financial, AI, and safety amendments. ADR
+0022 prospectively amends consultation-credit quantities/reservation capacity,
+clarifies persisted Support Guide semantics, and requires explicit user-authored
+self-report as the fourth reassessment dimension. The two-domain screening
+boundary remains unchanged.
+
 The product has four actors:
 
-| Actor | Goal | Important constraint |
-| --- | --- | --- |
-| Guest | Complete a PHQ-9/GAD-7 screening privately | No account history; collect only what is required |
-| User | Track wellbeing and obtain appropriate support | Owns and controls access to sensitive data |
+| Actor      | Goal                                             | Important constraint                                       |
+| ---------- | ------------------------------------------------ | ---------------------------------------------------------- |
+| Guest      | Complete a PHQ-9/GAD-7 screening privately       | No account history; collect only what is required          |
+| User       | Track wellbeing and obtain appropriate support   | Owns and controls access to sensitive data                 |
 | Specialist | Manage availability and support consenting users | Sees only scopes granted by the user and required for care |
-| Admin | Operate and govern the platform | Does not receive unrestricted journal access by default |
+| Admin      | Operate and govern the platform                  | Does not receive unrestricted journal access by default    |
 
 System actors include configured AI providers, the notification provider, object storage, scheduler, and audit pipeline. A PhoBERT worker is an optional future benchmark actor under ADR 0011, not a current runtime dependency.
 
@@ -22,17 +33,28 @@ System actors include configured AI providers, the notification provider, object
 - **Assessment**: one completed PHQ-9 or GAD-7 questionnaire and its immutable scored result.
 - **Screening domain**: the bounded symptom concern measured by an approved instrument; V1 has `DEPRESSIVE_SYMPTOMS` and `ANXIETY_SYMPTOMS` only.
 - **Screening level**: the band derived only from one published questionnaire's scoring policy; it is not a global mental-health severity.
-- **Safety status**: deterministic PHQ-9 item-9 screen stored independently from the questionnaire band.
+- **Safety signal**: either a positive deterministic PHQ-9 item-9 result or the user's explicit “Tôi cần hỗ trợ ngay” action, stored independently from questionnaire bands.
 - **Support tier**: approved platform support pathway derived from eligible inputs; it is not a suicide-risk label.
 - **Support evaluation**: an immutable, versioned Care decision that retains instrument-specific evidence, contributing domains, independent safety evidence, pathway and reason codes.
-- **SupportPlan**: a versioned, system-proposed set of approved platform actions which the user may activate after reviewing allowed choices; it is not a treatment plan.
+- **Support Guide**: a persisted immutable one-time Care-approved post-screening guidance snapshot available to every package. “One-time” means one result for one screening context; it is not ephemeral and has no plan lifecycle, schedule, or activity tracking.
+- **SupportPlan**: durable Care-owned support data for `PLUS`/`PREMIUM`, with one official current plan, explicit lifecycle, typed actions, and occurrence history; it is not a treatment plan.
+- **PlanFocus**: a versioned, plain-language area the user chooses to work on and why it matters; it is not a diagnosis, score, or clinical outcome.
+- **PlanAction**: a typed intention within one PlanFocus, with bounded presentation/provenance and an optional owner-domain source reference; it is not a Resource subtype.
+- **ActionSchedule**: an optional timezone-aware future-opportunity or reminder rule for one PlanAction; schedule changes do not rewrite prior occurrences.
+- **ActionOccurrence**: one dated action instance with open/cancelled state or immutable completion/skip evidence; past-due open items are displayed as overdue rather than silently failed.
+- **PlanChangeRequest**: a pending specialist resource proposal governed by Care revalidation and explicit user confirmation; it is not a second SupportPlan.
 - **Journal entry**: user-authored private text. It is not a clinical record.
-- **Analysis**: structured AI output tied to the exact journal revision, prompt version, provider, and model.
+- **Analysis**: structured AI output tied to exact journal source revision(s), bounded period where applicable, prompt version, provider, and model.
+- **Reassessment Summary**: Care-owned presentation of four separate dimensions—Screening change, Journal context, Plan engagement, and explicit Self-reported experience—without a combined improvement score. Activity helpfulness/reflection may support the fourth dimension but cannot replace the explicit reassessment self-report.
+- **Screening Episode**: Care-owned persisted grouping for the exact PHQ-9 and GAD-7 submitted in one guided `INITIAL_CHECK` or `REASSESSMENT`. It is the resume context across sessions and the provenance boundary for downstream SupportEvaluation; standalone screening history is never inferred into it.
 - **Consent grant**: explicit, scoped, revocable permission from one user to one specialist.
 - **Referral**: recommendation to seek human support and its operational status.
 - **Subscription period**: one paid, time-bounded activation of an immutable plan version.
-- **Consultation credit**: one indivisible right to one standard specialist appointment; booking reserves it and completion consumes it.
+- **Consultation credit**: one indivisible right to one standard specialist appointment; booking reserves it and evidence-backed completion consumes it.
+- **Active appointment reservation**: a `REQUESTED`, `CONFIRMED`, or `IN_PROGRESS` appointment (or exact equivalent reserving state) that counts against package reservation capacity. `SESSION_ENDED` and terminal/non-reserving states do not count.
 - **Appointment**: the authoritative scheduled consultation unit linking one user, specialist, slot, credit, channel-eligibility window, completion, review, and earning.
+- **AgreedNextSteps**: specialist-authored post-session actions visible to the user; they do not mutate the SupportPlan.
+- **Wellbeing digest**: the default at-most-once-daily reminder combining eligible unfinished resources, Journal, and emotion check-in prompts.
 - **Follow-up plan**: reminders and check-ins after an intervention/referral/appointment.
 
 Do not use "diagnosis", "patient", "treatment", or "clinical conclusion" in API/domain names unless future licensed clinical governance explicitly changes the product boundary.
@@ -51,7 +73,14 @@ Do not use "diagnosis", "patient", "treatment", or "clinical conclusion" in API/
 
 ### Safety status and support tier
 
-Care calculates safety status synchronously from the approved questionnaire-specific rule. Story 1103 publishes `mb-support-routing-capstone-v1` for bounded authenticated controlled-Capstone routing from one explicit compatible PHQ-9/GAD-7 pair. AI is not an input to this routing version and can never define or override standardized scoring or safety.
+Care calculates questionnaire safety status synchronously from the approved
+questionnaire-specific rule and also owns the explicit “Tôi cần hỗ trợ ngay”
+action. Either positive PHQ-9 item 9 or that explicit action activates the
+safety flow; a `High` or `Severe` band alone does not. Story 1103 publishes
+`mb-support-routing-capstone-v1` for bounded authenticated controlled-Capstone
+routing from one explicit compatible PHQ-9/GAD-7 pair. AI is not an input to
+this routing version and can never define or override standardized scoring or
+safety.
 
 Controlled-Capstone routing inputs:
 
@@ -79,6 +108,90 @@ Rules:
 - Care revalidates exact versioned eligibility before explicit activation, and a new evaluation never silently changes an existing plan;
 - user-facing wording always includes the non-diagnostic disclaimer.
 
+When safety guidance includes a facility directory, the user manually enters
+or selects province, district, or another supported area. Every presented entry
+has source/provenance, `reviewedAt`, `verifiedAt`, address, phone, coverage, and
+active status. Without coordinates and a distance calculation, copy says “cơ
+sở trong khu vực đã chọn”, never “gần nhất”. MentalBridge does not
+automatically call, share location, email a safety alert, notify a third party,
+auto-book a specialist, or claim guaranteed response.
+
+### Reassessment and longitudinal context
+
+Reassessment never asks one signal to decide whether the user “improved.” Care
+presents four separate dimensions:
+
+1. **Screening change**: deterministic, versioned PHQ-9/GAD-7 score and band comparison, kept instrument-specific;
+2. **Journal context**: AI-derived contextual/emotional evidence limited to consented journal entries in bounded periods, with explicit coverage;
+3. **Plan engagement**: factual SupportPlan occurrence evidence such as completion/skip and coded barriers;
+4. **Self-reported experience**: an explicit reassessment input authored by the user about how the period has been going.
+
+Activity helpfulness and bounded occurrence reflection may support dimension 4
+when reuse is approved, but they do not substitute for the explicit
+reassessment self-report. AI or Care must not infer the user's self-report from
+Journal context or occurrence behavior alone.
+
+The first dimension is the standardized symptom-measure comparison. The second
+is non-standardized, model-derived, context-dependent evidence and must expose
+data coverage. Sparse or imbalanced journal periods produce
+`INSUFFICIENT_DATA`; absence of a journal mention never proves that a difficulty
+resolved. The dimensions may contradict one another and cannot be collapsed
+into a recovery percentage, clinical improvement verdict, adherence score, or
+global score.
+
+For MB-371, each comparison period is a half-open 7-31 day range and the two
+ranges are equal in duration and non-overlapping. Journal/AI selects exact
+current owned revisions by `occurredAt`, supports explicit exclusions, and
+caps selection at 50 entries per period. Directional comparison requires at
+least three entries in each period and no greater than a 2:1 count imbalance.
+Care consumes only the minimized exact-source evidence under current
+`AI_PROCESSING` consent.
+
+MB-386 implements the first Care composition baseline as an immutable owner
+snapshot. MB-559 adds a versioned explicit current-period self-report and
+canonical v2 composition while keeping historical v1 snapshots readable. The
+selected current PHQ-9/GAD-7 results are compared locally with their immediately
+preceding compatible results. Journal/AI evidence must match the requested
+periods and degrades to an explicit `UNAVAILABLE` state without hiding local
+dimensions. Activity helpfulness/reflection remains separately labelled
+supporting evidence rather than the fourth dimension itself.
+
+Reassessment never mutates a SupportPlan. Care freshly revalidates the current
+plan and alternatives. If the current plan remains valid, the user may continue
+or keep it according to the available alternatives. If the current plan is no
+longer admissible, it is not offered as a normal keep choice. Replacement uses
+the governed atomic `SUPERSEDE`/`ACTIVATE` flow and explicit user confirmation.
+
+AI may surface contextual signals, recurring themes, preferences, barriers, and
+helpful patterns for a SupportPlan review. Care remains responsible for finding
+allowed alternatives, and the user reviews and confirms any change.
+
+### SupportPlan actions and source authority
+
+The canonical aggregate is `SupportPlan -> PlanFocus -> PlanAction ->
+ActionSchedule -> ActionOccurrence`. Allowed action types are `RESOURCE`,
+`JOURNAL`, `EMOTION_CHECK_IN`, `ROUTINE_SELF_MANAGEMENT`,
+`PROFESSIONAL_SUPPORT`, `REASSESSMENT_SCREENING`, and `SELF_REPORT_REVIEW`.
+Care owns plan orchestration; Content, Journal/AI, Consultation, and Care
+screening retain their source facts and authorization.
+
+Care accepts only known action-type/source-owner pairs and bounded well-formed
+references. External completion must be an owner-authorized minimized fact for
+the same user and compatible action. A browser ID, route visit, reminder
+dismissal, draft content, or AI inference is not authoritative evidence.
+`RESOURCE` retains its exact ResourceVersion and publication eligibility.
+
+Occurrence generation is capability-based for every schedulable action rather
+than Resource-specific. Editing future schedule behavior does not rewrite prior
+occurrences. Skipping records only that occurrence choice and never changes an
+appointment, entry, check-in, assessment, or the overall plan outcome.
+
+Care never copies raw Journal text, emotion values/notes, assessment answers or
+raw scores, consultation notes/messages, or another owner's payload into a
+plan. Existing v2 resource plans remain supported and are exposed to v3 only
+through a read projection marked `V2_RESOURCE_ADAPTER`; no v2 history is
+backfilled or silently dual-written.
+
 ### Consent and access
 
 1. General privacy acceptance, AI-processing consent, research-data consent, and specialist access are separate decisions.
@@ -90,40 +203,85 @@ Rules:
 
 ### Subscription, upgrade, and credits
 
-| Plan | Monthly price | Consultation credits | Main access |
-| --- | ---: | ---: | --- |
-| Free | USD 0.00 | 0 | Assessment/history, journal/AI analysis with separate consent, basic dashboard/resources, specialist discovery and basic approved-catalogue support; no specialist consultation |
-| Premium Care | USD 9.99 | 1 | Free features plus appointment, appointment-scoped specialist chat, deeper longitudinal non-safety personalization, advanced analytics/follow-up and priority recommendation |
-| Premium Plus | USD 19.99 | 3 | Care features plus priority booking/matching and enhanced follow-up |
+For new target periods governed by `consultation-credit-v2`:
 
-- Free is the default when no paid subscription is active. Scoring, disclaimer, safety status, reviewed safety guidance, and access to owned assessment data are never paywalled.
-- A successful payment or renewal grants credits exactly once. Available credits expire at the billing-period end and do not roll over.
-- Care to Plus is the only in-period upgrade. Free to paid is a purchase; Plus to Care is unsupported. A user may separately cancel Plus, lose paid access immediately without refund, and later buy Care as a new purchase; this is not a downgrade.
-- Upgrade starts a new full Plus period. The non-withdrawable offset is the sum of available-credit allocation plus the old plan's remaining non-consultation value, prorated by actual remaining seconds and rounded down to a minor unit. Consumed/expired/forfeited/revoked credits have no value; reserved credits remain attached to their appointment and are not offset.
-- Upgrade checkout moves included available credits to `UPGRADE_HELD`; verified payment revokes them and grants three Plus credits. Failure or quote expiry releases them. Booking and upgrade cannot use the same credit concurrently.
-- User cancellation stops paid entitlements immediately and does not refund money. Future appointments are cancelled and their credits revoked. One confirmed session already inside its scheduled window may finish at `scheduledEndAt`; the subscription then completes cancellation. Returning a credit for an appointment-level eligible cancellation is not a payment refund.
-- Current plan versions allocate USD 5.00 to each credit and snapshot a 70% specialist share, USD 3.50, only when a consultation completes. A price/allocation/share change requires a new immutable plan version.
-- “Longer consultation” is not a current Plus benefit. One credit purchases one standard slot; any duration-specific tier requires a new plan version and compensation rule.
+| Package   |        V2 price/paid period | Consultation credits | Max active reservations | Main access |
+| --------- | --------------------------: | -------------------: | ----------------------: | ----------- |
+| `FREE`    |                       VND 0 |                    0 |                       0 | Standard persisted Support Guide, Journal, emotion check-in, reviewed resources, default five delivered AI responses/day, specialist browse only |
+| `PLUS`    | VND 5,000 test fixture |                    4 |                       2 | Higher AI quota, persistent SupportPlan/lifecycle tracking, four credits per paid period |
+| `PREMIUM` | VND 10,000 test fixture |                   10 |                       4 | No displayed daily AI-response limit, server fair-use/token/rate limits, optional stronger model, advanced recommendations, ten credits per paid period |
 
-### Appointments and in-app consultation chat
+- `FREE` is the default. Scoring, disclaimer, safety flow, Support Guide,
+  reviewed safety guidance, reviewed-resource count, specialist browse, and
+  access to owned data are never paywalled. `FREE` cannot book a consultation.
+- Historical `consultation-credit-v1` periods remain `0/1/3` under their exact
+  policy/version and are never rewritten to `0/4/10`.
+- Successful paid-package purchase or period provisioning grants credits
+  exactly once. Unused credits expire at period end and do not roll over.
+- Credit balance and reservation capacity are separate server-authoritative
+  checks. `PLUS` may hold at most two active appointment reservations and
+  `PREMIUM` at most four.
+- `REQUESTED`, `CONFIRMED`, and `IN_PROGRESS` count toward reservation capacity.
+  `SESSION_ENDED` and terminal/non-reserving states do not.
+- Reschedule-as-new replaces one logical reservation and must not be rejected
+  merely because the reservation being replaced currently occupies the user's
+  own cap.
+- `FREE` to a paid package is a purchase. `PLUS` to `PREMIUM` is the only
+  upgrade. Downgrade and user-initiated refund APIs are unsupported.
+- Each credit snapshots a fixed VND `creditAllocation`; a completed appointment
+  creates a 70% specialist share of that allocation. It is never 70% of the
+  package price.
+- The production-planned prices are 1,390,000 VND for `PLUS` and 3,490,000 VND
+  for `PREMIUM`; both allocate 300,000 VND per consumed credit and therefore
+  create a 210,000 VND specialist earning. Planned values are documentation and
+  design only; runtime continues to use the explicit 5,000/10,000 VND fixtures.
+- Real payment and payout use MoMo only and remain disabled until exact VND
+  prices, fixed `creditAllocation` values, provider/reconciliation contracts,
+  and credentials are approved.
+- Resources have no package-specific count limit. AI token/request quota,
+  capability entitlement, credits, and reservation capacity are the commercial controls.
+
+### Appointments and bounded consultation
 
 Appointment transitions:
 
 ```text
-REQUESTED -> CONFIRMED -> COMPLETED
-     |           |
-     +-> REJECTED+-> CANCELLED
-     +-> CANCELLED
-CONFIRMED -> RESCHEDULE_REQUESTED -> CONFIRMED or CANCELLED
+REQUESTED -> CONFIRMED | REJECTED | EXPIRED | CANCELLED
+CONFIRMED -> IN_PROGRESS | SESSION_ENDED | CANCELLED
+IN_PROGRESS -> SESSION_ENDED
+SESSION_ENDED -> COMPLETED only after the applicable evidence policy passes
 ```
 
-- The first enabled channel is `IN_APP_CHAT`; `IN_APP_VIDEO` is a planned channel that remains disabled until its call contract/provider/safety policy is defined. Neither uses a physical location, phone number, or external meeting link.
+The existing runtime stores no-show/insufficient-evidence/review in
+`sessionOutcome`, not appointment status. Disputes are a separate bounded
+OPEN/RESOLVED workflow. See the single versioned
+[state/settlement map](policies/consultation-journey-state-map-v1.md)
+(`consultation-journey-v1`, MB-623) for exact credit and earning effects.
+
+- V2 modes are only `IN_APP_CHAT` and `IN_APP_VIDEO`; new `IN_PERSON`, phone,
+  and external meeting-link appointments are disabled. Historical in-person
+  appointments remain readable under their snapshotted v1 policy.
 - A slot can belong to at most one active appointment and a credit to at most one active appointment; enforce both transactionally.
-- A specialist publishes discrete bookable slots from their working schedule in an IANA timezone; the server stores UTC and, once approved, validates the standard duration. The user chooses one slot and booking snapshots its start, end, timezone, and channel on the appointment.
-- Booking reserves one available credit; it does not consume the credit. Rejection, specialist cancellation/no-show, platform failure, or eligible user cancellation releases it. Completion consumes it and creates one earning. User late cancellation/no-show forfeits it without creating an earning.
-- Chat send/join is available only during the confirmed appointment's scheduled window through its one conversation. History may remain readable afterward, but direct or 24/7 friend-style specialist messaging is not a consultation path.
+- Every slot is 60 minutes. A specialist publishes discrete bookable slots from their working schedule in an IANA timezone; the server stores UTC. The user chooses one slot and booking snapshots its start, end, timezone, and mode on the appointment.
+- A request must be made at least four hours before start. Booking requires an available credit, reservation capacity under the current package, and a still-selectable slot; it atomically holds one credit and slot and does not consume the credit.
+- The specialist responds by `min(requestedAt + 24h, startsAt - 2h)`, otherwise the request expires and both holds release.
+- Eligible cancellation, rejection, expiry, specialist suspension before start, specialist/system cancellation, or specialist no-show releases the appointment credit. User cancellation inside 24 hours of a confirmed start or user no-show forfeits it under the applicable versioned policy. Only evidence-backed completion consumes it and creates one earning; this is a credit outcome, never a cash refund.
+- Rescheduling preserves old history and creates a linked new request. It never mutates the old slot snapshot and must handle the concurrent-reservation cap as one logical replacement.
+- Participants may enter waiting ten minutes before start. At `endsAt`, the
+  appointment becomes `SESSION_ENDED` and chat/video interaction closes.
+  Elapsed time never creates `COMPLETED`. Completion requires accepted
+  server-observed chat evidence or server/provider-observed video evidence; an
+  unresolved issue may enter an approved dispute/review outcome.
+- A specialist cannot finalize a session or consume a credit unilaterally. Direct or 24/7 friend-style specialist messaging is not a consultation path.
 - Deleting a message is a tombstone operation; moderation/audit retention follows policy.
 - Only a user from a completed appointment may create one review for that appointment.
+- Continuity uses repeated appointments, a user-reviewed pre-session
+  `ConsultationBrief`, and post-session `SessionSummary` plus
+  `AgreedNextSteps`. Reuse requires user approval. A specialist-proposed exact
+  resource becomes a Care-owned `PlanChangeRequest`; Care revalidates
+  eligibility/current plan state and the user confirms it. Appointment
+  existence never grants raw journal, raw answer, full AI-history, ongoing
+  specialist access, or authority to create another SupportPlan.
 
 ### Deletion and retention
 
@@ -152,39 +310,127 @@ The project-tracking workbook currently groups the 162 functions into seven deli
 
 **Scope:** journal CRUD, PHQ-9/GAD-7 submission/result/history/deletion, LLM emotion analysis and re-run, benchmark execution/results, screening/safety/support display, and personal emotional analytics.
 
-**Main flow:** Care serves an immutable questionnaire version, validates complete answers, scores deterministically and returns screening guidance synchronously. Journal/AI stores encrypted revisions and runs consent-gated asynchronous analysis. Governed benchmark runs compare the same licensed/de-identified split through versioned provider configurations, initially OpenAI and Gemini; PhoBERT is an optional future third baseline.
+**Main flow:** Care serves an immutable questionnaire version, validates complete answers, scores deterministically and returns screening guidance synchronously. On an explicit user request for one exact current journal revision, Journal/AI forwards the verified user bearer to check current `AI_PROCESSING` consent, creates an idempotent MongoDB job, atomically claims it with a lease, and re-checks consent immediately before each attempt. It also obtains the current server-authoritative package from Consultation and snapshots one versioned `EXACT_REVISION` route before invoking the selected adapter. `FREE`/`PLUS` share the baseline route and `PREMIUM` may use a stronger approved route; retries never change provider/model. The bearer is never persisted. Real Gemini/OpenAI execution remains disabled until its exact provider/model configuration has approved synthetic benchmark evidence; CI uses the deterministic fake and PhoBERT remains deferred.
 
-**Exceptions and acceptance:** incomplete/invalid answers do not persist a final score; duplicate submission/analysis is idempotent; stale questionnaire requires restart; AI/provider failure never makes the journal or assessment unavailable. Raw journal content and chain-of-thought do not enter events or logs. AI cannot calculate PHQ/GAD scores or downgrade a safety path. Analytics distinguish missing data from zero and expose source freshness.
+**Exceptions and acceptance:** incomplete/invalid answers do not persist a final score; duplicate submission/analysis is idempotent; stale questionnaire requires restart; AI/provider failure never makes the journal or assessment unavailable. Consent or entitlement uncertainty fails closed before a provider call. A run has a 30-second timeout per attempt and at most one retry for HTTP 429, provider 5xx, or transport failure, with no automatic cross-provider fallback. Raw journal content, bearer tokens, raw provider output, and chain-of-thought do not enter persistence, events, or logs. AI cannot calculate PHQ/GAD scores, downgrade a safety path, determine entitlement/resource eligibility, provide the user's explicit reassessment self-report, or mutate a SupportPlan. Analytics distinguish missing data from zero and expose source freshness.
 
 ### UC-03 Intervention & Support
 
 **Actors:** User, Admin, System
 
-**Scope:** deterministic safety status, domain-aware SupportEvaluation, system-proposed SupportPlans, entitlement-aware personalized support, reviewed safety guidance, self-help resources, and support-appropriate notification/follow-up triggers.
+**Scope:** deterministic and explicit-user safety signals, all-tier Support
+Guide, domain-aware SupportEvaluation, paid SupportPlan, entitlement-aware
+personalized support, reviewed safety guidance and directory, self-help
+resources, and governed notification/follow-up triggers.
 
-**Main flow:** Care evaluates versioned local scoring, domain and safety rules. Once the domain-aware policy and contracts are approved, Care resolves a support pathway, selects a bounded proposal from exact eligible content versions, and creates a system-proposed `DRAFT` SupportPlan. The user reviews only the choices allowed by that proposal; Care revalidates eligibility before explicit activation. Content/Notification owns reviewed localized resources and their versioned eligibility metadata, while Care owns final plan eligibility and lifecycle.
+**Main flow:** Care evaluates versioned local scoring, domain and safety rules
+and produces a persisted immutable Support Guide for every package. The Guide
+remains owner history but has no lifecycle, schedules, activity occurrences, or
+engagement tracking. After a guided initial check completes, Care ensures that
+Guide for the episode's exact evaluation and exposes a read-only resume pointer
+whose ordered next action is safety support, professional support, the existing
+plan or draft, paid plan proposal, then reviewed resources (MB-668). For an entitled `PLUS`/`PREMIUM` user, Care applies the
+current SupportPlan selection policy, composes the bounded proposal, and owns
+the single official SupportPlan. Native v3 composition groups typed actions
+under PlanFocus and attaches optional generic schedules; source domains retain
+their facts. The user reviews allowed choices; Care revalidates evaluation,
+entitlement, policy, source authority, and exact resource eligibility before
+activation or change. Specialist suggestions enter as Care-owned
+`PlanChangeRequest`, never a second plan. Content/Notification owns reviewed
+localized resources and eligibility metadata. Safety and professional-support
+guidance precede ordinary plan controls; an explicitly accepted professional
+path may become a `PROFESSIONAL_SUPPORT` action without moving appointment
+authority into Care. Once active, Care persists deterministic dated occurrences
+for each schedulable action with local time and exact source provenance. The
+user may complete only Care-owned/manual action types; linked external actions
+are fulfilled by authoritative owner facts. The user may skip an allowed
+occurrence and explicitly pause, resume, complete, replace, or discard the
+applicable plan state.
 
-**Exceptions and acceptance:** missing/stale support inputs yield `INSUFFICIENT_DATA`; safety status cannot be downgraded by positive AI sentiment. Review/publication alone never makes a resource universally plan-eligible. Immediate guidance is returned before ordinary plan controls and without waiting for Kafka, Redis, WebSocket, email or push. Provider failure affects delivery status only and never claims guaranteed emergency response or that a human was notified.
+**Exceptions and acceptance:** missing/stale support inputs yield stable
+fail-closed results and create no plan; AI cannot decide safety. MB-372 reloads
+the same persisted current draft without recomputing remote facts; MB-373
+implements bounded choices and activation; MB-513 implements Care-owned
+schedules/occurrences; MB-374 owns ordinary lifecycle/history; MB-376 owns
+occurrence engagement. Retry/reload cannot duplicate a logical occurrence, and
+passing its scheduled time produces only the compatible read projection
+(`MISSED` in v2, `OVERDUE` in v3) rather than an adherence judgment.
+Review/publication alone never makes a resource
+plan-eligible, while package entitlement never imposes a resource-count limit.
+Unknown action types, malformed source references, external-fact spoofing, and
+cross-owner injection fail closed. V2 rows and history remain unchanged; v3
+reads mark their virtual resource-action projection `V2_RESOURCE_ADAPTER`.
+Immediate guidance is returned before ordinary plan controls and without
+waiting for optional dependencies. Area-filtered facility results do not claim
+“nearest”; no safety email, automatic call, location sharing, third-party
+notification, auto-booking, or guaranteed response occurs.
 
 ### UC-04 Specialist Discovery & Appointment
 
 **Actors:** User, Specialist, Admin
 
-**Scope:** specialist discovery/recommendation, plan/payment/subscription/upgrade/consultation credits, specialist profile approval, availability, booking/transitions, earnings, reviews, and related administration.
+**Scope:** specialist discovery/recommendation, service-plan entitlement and consultation credits, specialist profile approval, availability, booking/transitions, earnings, reviews, and related administration. Real plan purchase/upgrade and payout are Consultation/Billing commercial capabilities but remain separately delivery-gated.
 
-**Main flow:** an approved specialist publishes non-overlapping availability for an enabled in-app channel. A user with an authoritative available consultation credit requests a slot; Consultation atomically snapshots its scheduled interval/channel, reserves the slot and credit, and records every transition. Confirmation enables the appointment-scoped channel only within that interval. Completion consumes the credit, creates one earning snapshot, and may make one review eligible.
+**Main flow:** an approved specialist publishes non-overlapping 60-minute
+in-app chat or in-app video availability. `FREE` may browse but cannot book. An
+entitled paid user with an available credit and remaining reservation capacity
+requests a slot; Consultation atomically snapshots interval, timezone, and mode
+and holds the slot and credit. `PLUS` target periods provide four credits and a
+maximum of two active reservations; `PREMIUM` target periods provide ten and a
+maximum of four. At the scheduled end, the server closes the channel and
+records `SESSION_ENDED`. Accepted server/provider evidence is still required
+for `COMPLETED`; only then does Consultation consume one credit and produce the
+completion fact used by settlement to create one earning equal to 70% of its
+fixed `creditAllocation`.
 
-**Exceptions and acceptance:** concurrent booking or upgrade against the last credit yields one winner; mutations/webhooks are idempotent; rejection/cancellation/reschedule/no-show/completion applies the approved credit rule exactly once. Care-to-Plus upgrade uses the ADR 0005 time-and-unused-credit offset; downgrade and refund are unsupported. Search/matching is transparent and versioned. A completed appointment does not itself grant health/journal access.
+**Exceptions and acceptance:** concurrent booking or upgrade against scarce
+credit/slot/reservation capacity yields one consistent winner; mutations and
+provider callbacks are idempotent; request expiry, rejection, cancellation,
+replacement-request reschedule, no-show, dispute, and completion apply the
+approved credit rule exactly once. Unused period credits do not roll over.
+`PLUS` to `PREMIUM` is the only upgrade; downgrade and user refund APIs are
+unsupported. No earning is created for timer-only `SESSION_ENDED`, cancellation,
+no-show, or unresolved dispute. Appointment existence never grants
+health/journal access; sharing requires an approved pre-session brief and grant.
+
+MB-635 extends UC-04 with a private amendment to an approved specialist profile.
+The live approved fields stay public and eligible while the specialist saves,
+submits, corrects, resubmits or cancels a proposed change. Cancellation is
+terminal, keeps the private audit history and allows a new amendment from the
+current public snapshot. ADMIN reviews amendments
+separately from initial submissions; approval atomically promotes a new immutable
+approved content version, while rejection leaves the previous snapshot unchanged.
+Suspension still controls operations, and normal amendments never rewrite
+appointments, credits or availability. See
+[ADR 0033](adr/0033-reviewed-specialist-profile-amendment.md).
 
 ### UC-05 Communication & Follow-up
 
 **Actors:** User, Specialist, Admin, System
 
-**Scope:** eligible consultation conversations, realtime messages/receipts/tombstones/reports, follow-up plans/check-ins/reassessment, notifications, and progress comparison.
+**Scope:** eligible consultation conversations, realtime
+messages/receipts/tombstones/reports, follow-up/check-ins/reassessment,
+wellbeing digest, opt-in resource reminders, one-time appointment reminders,
+and progress comparison.
 
-**Main flow:** Realtime authorizes an eligible relationship, persists a message before acknowledgement and uses Redis only for ephemeral fan-out. Care records milestones/check-ins and repeated assessments; Content/Notification persists reminders and delivery attempts.
+**Main flow:** Realtime authorizes an eligible relationship, persists a message
+before acknowledgement and uses Redis only for ephemeral fan-out. Care records
+milestones/check-ins and repeated assessments. Reassessment combines four
+separate dimensions and includes an explicit user-authored Self-reported
+experience input; it never computes one recovery verdict. Content/Notification
+schedules and persists at most one default wellbeing digest per user/day,
+separately opted-in resource reminders, and one dedicated-opt-in appointment
+email targeting exactly 60 minutes before start under
+`MB-APPOINTMENT-EMAIL-REMINDER-001`. Appointment/version deduplication,
+quiet-hour deferral or suppression, lifecycle invalidation, and a strict
+before-start cutoff govern its delivery attempts. AI may phrase approved facts
+but cannot decide recipient or scheduling.
 
-**Exceptions and acceptance:** reconnect restores missed state through cursor-based REST history; duplicate `clientMessageId` returns the original message; Redis/Kafka/provider failure cannot lose durable chat/domain state. Reports expose only minimal moderation context. Follow-up charts avoid diagnostic or causal claims.
+**Exceptions and acceptance:** reconnect restores missed state through
+cursor-based REST history; duplicate `clientMessageId` returns the original
+message; Redis/Kafka/provider failure cannot lose durable chat/domain state.
+No automatic safety email is created. Reports expose only minimal moderation
+context, and follow-up charts avoid diagnostic or causal claims.
 
 ### UC-06 Specialist Portal
 
@@ -192,9 +438,9 @@ The project-tracking workbook currently groups the 162 functions into seven deli
 
 **Scope:** workload/dashboard, appointments and unread chats, consenting-user list/details, scoped assessment/emotion/journal views, earnings, payout history, and pending payout.
 
-**Main flow:** Consultation composes its own workload and authoritative earnings/provider-payout views, and requests the minimum authorized health projection from Care or Journal/AI.
+**Main flow:** Consultation composes its own workload and authoritative earnings/provider-payout views, and requests the minimum authorized health projection from Care or Journal/AI. The client continuity list is derived only from the currently approved specialist's confirmed, in-flight, or recent appointment relationships; Care adds a display name and current access provenance without turning the view into a user directory.
 
-**Exceptions and acceptance:** each sensitive read checks the current exact grant and fails closed on timeout/revocation. Journal access is selected-entry/range scoped, not all past/future by default. Dashboard projections expose freshness and never become authorization truth. Other services cannot calculate financial balances independently from Consultation/Billing.
+**Exceptions and acceptance:** each sensitive read checks the current exact grant and fails closed on timeout, suspension, revocation, deletion, schedule drift, or expiry. Journal access is selected-entry/range scoped, not all past/future by default. The continuity list excludes raw journals, answers, AI output, SupportPlan state, private chat, and other-specialist notes. Dashboard projections expose freshness and never become authorization truth. Other services cannot calculate financial balances independently from Consultation/Billing.
 
 ### UC-07 Administration
 
@@ -204,7 +450,25 @@ The project-tracking workbook currently groups the 162 functions into seven deli
 
 **Main flow:** each data owner exposes an authorized admin command/query or publishes a minimized projection. Moderation snapshots only necessary evidence; reporting uses versioned projections instead of runtime distributed joins.
 
+MB-586 adds bounded Identity-owned recurring ACCOUNT_ACTIVITY schedules. The
+owner-confirmed delivery group/target is ADMIN / ADMIN_REPORT_HISTORY. Scheduled
+occurrences enter the same versioned report-job engine as manual requests, with
+atomic schedule advancement and unique occurrence identity. ADMIN can pause,
+resume, replace, and soft-delete schedules using current revisions. Existing
+report history, protected artifact downloads, failure evidence, and idempotent
+retry remain authoritative; no raw health content or external delivery is added.
+
 **Exceptions and acceptance:** admin role does not grant unrestricted raw journal/chat/assessment, payout-destination data, or provider payload access. Changes record stable reasons and append-only audit facts. Aggregates enforce cohort/privacy thresholds and projection freshness. Retention changes remain owner-enforced and do not rewrite historical audit evidence. A payout becomes successful only from a verified provider result/status query.
+
+### UC-08 Community peer support
+
+**Actor:** User
+
+**Scope:** pseudonymous personal-story publication, chronological comments and one-level replies, supportive interaction, and governed visibility inside the independent Community context.
+
+**Main flow:** an authenticated user reads active visible posts, publishes under a per-post Community or anonymous identity, optionally marks their post with the bounded non-clinical `SENSITIVE_CONTENT` presentation warning, and may add an idempotent comment or reply to one active top-level comment. The user may browse their own bookmarks newest-saved first, open a still-visible saved post, and remove its bookmark. The author may add or remove the warning with exact-version concurrency; an authorized moderator may do the same through an audited action without changing post lifecycle. The comment author may edit or tombstone their own text with exact-version concurrency; Community updates the active post count and retains immutable local revision history.
+
+**Exceptions and acceptance:** hidden/removed posts and comments plus either direction of a Community block fail closed, including in the private saved collection. Saved membership cannot be selected for another owner and is not used for ranking, profiling, or health inference. Community text is not emitted or reused as Care, Journal/AI, screening, SupportPlan, specialist, or diagnostic evidence. Negative sentiment or distress never automatically adds a warning, removes content, infers diagnosis/severity, books care, or contacts another party. V1 comment ordering is deterministic `(created_at, id)` ascending, saved ordering is deterministic `(bookmark.created_at, post_id)` descending, and reply nesting is limited to one level.
 
 ## 5. Suggested MVP and deferrals
 
@@ -220,11 +484,11 @@ The project-tracking workbook currently groups the 162 functions into seven deli
 
 ### Human-support release (iteration 3)
 
-- specialist approval/profile/search without verification-document upload;
-- premium subscription/payment/upgrade and consultation-credit workflow defined by ADR 0005;
-- availability and race-safe appointment booking;
-- scoped consent grants and specialist view;
-- consultation chat, reminders, reviews, follow-up.
+- specialist approval/profile/search without verification-document upload, using the approved non-clinical ranking order;
+- `PLUS`/`PREMIUM` VND purchase/upgrade and `consultation-credit-v2` workflow defined by ADR 0022;
+- in-app chat/video availability plus race-safe 60-minute appointment booking with reservation-cap enforcement;
+- appointment-scoped `ConsultationBrief` consent and specialist view;
+- evidence-based consultation completion, user-approved reuse of `SessionSummary`/`AgreedNextSteps`, Care-owned `PlanChangeRequest`, chat, reminders, reviews, and follow-up.
 
 ### Research/governance release (iteration 4)
 
@@ -232,23 +496,40 @@ The project-tracking workbook currently groups the 162 functions into seven deli
 - aggregate reporting and retention configuration;
 - isolated provider-neutral benchmark dataset pipeline, with PhoBERT comparison optional after its activation gate passes.
 
-In-app video is intended but its call/signaling/provider/security contract is deferred; phone/in-person consultation, social/community feeds, organization tenancy, automatic emergency dispatch, custom model training, automated refunds, and Kubernetes remain out of scope unless formally added. Subscription/payment ownership, credit accounting, upgrade, earnings, and payout workflow are fixed by ADR 0005; real provider credentials/signatures, VND plan pricing or explicit FX policy, settlement delay, retention, and chargeback reconciliation still require approval.
+In-app video is the second approved v2 mode but remains unavailable until its
+call/signaling/provider/security/evidence contract passes. ADR 0027 formally
+adds only the governed Community Contract v1 peer-support context; broader
+social networking and mental-health-profiled ranking remain out of scope. New
+in-person, phone, external meeting links, room management, organization
+tenancy, automatic emergency dispatch, custom model training, automated cash
+refunds, and Kubernetes are out of scope unless formally added. Real MoMo
+payment/payout remains disabled until explicit production approval, credentials,
+retention, and operational reconciliation readiness exist. ADR 0032 fixes the
+planned VND design values and the current 0/5,000/10,000 VND integration-test
+catalogue without turning either into permission for real-money production.
 
 ## 6. Open product decisions
 
 These remain open for the affected production or optional feature. Under ADR 0010 they do not block a base questionnaire that has passed the controlled Capstone publication gate:
 
-1. The current `mb-support-routing-capstone-v1` runtime remains immutable historical coarse routing. Compatible domain-bearing SupportEvaluation evolution, any automatic latest-result freshness window, and downstream plan use are tracked by issue #48. PHQ-9 item-9 core behavior is already executable through `MB-SAFETY-PHQ9-001`.
-2. Who qualifies as a specialist/mentor and which profile facts administrators review without collecting credential documents.
-3. Exact Vietnamese production safety/disclaimer wording and whether a specific emergency number may appear as versioned safety content. A Product Owner may select bounded non-diagnostic and capability wording for controlled Capstone use; no hotline/facility catalogue is planned.
-4. Whether specialists can author notes; if yes, ownership, visibility, amendment, and retention rules.
+SupportPlan template ownership, historical v2 core/optional slots and 1-5
+resource bounds, deterministic composition, v3 typed-action taxonomy and
+source/evidence authority, safety-positive activation, `PRIMARY`/`ADJUNCT`
+eligibility roles, per-user lifecycle invariants, persisted Support Guide
+semantics, four-dimension reassessment structure, and the `0/4/10` no-rollover
+credit/reservation-cap target are no longer open. They are governed by the
+accepted ADR chain and current policies. Runtime/provider delivery gates remain
+open where explicitly stated.
+
+1. The current `mb-support-routing-capstone-v1` runtime remains immutable historical coarse routing. Additive `mb-support-routing-capstone-v2` implements explicit domain-bearing evidence and independent item-9 safety under issue #48. Any automatic latest-result freshness window and downstream plan runtime remain separately gated. PHQ-9 item-9 core behavior is executable through `MB-SAFETY-PHQ9-001`.
+2. Specialist profile/approval/discovery policy is fixed by ADR 0014 and amended by ADR 0017/0022. Compatible v2 APIs, persistence, seeded-demo data, and frontend implementation remain delivery work.
+3. Exact Vietnamese production safety/disclaimer wording, directory source governance, and whether a specific emergency number may appear as versioned safety content. Directory entries must already meet current provenance and verification requirements.
+4. Retention duration for user-visible `SessionSummary` and `AgreedNextSteps`; MB-385 fixes amendments as append-only versions, while user approval before reuse and Care ownership of any `PlanChangeRequest` remain fixed.
 5. Minimum user age and guardian/consent behavior if expansion includes users under 18.
 6. Consent text/versioning, retention periods, deletion SLA, export scope, and applicable Vietnamese regulation review before public real-user data collection. Synthetic controlled demos do not require these values to publish a questionnaire.
-7. Exact standard appointment duration, join grace, late-cancellation cutoff, and later in-app-video signaling/provider/recording/fallback policy.
+7. Chat/video duration and the separation of `SESSION_ENDED` from completion are fixed. Video signaling/provider, presence evidence, recording prohibition, reconnect/failure behavior, and exact completion evidence remain open contract work.
 8. Dataset licenses, label mapping, train/test leakage controls, and research ethics approval. PhoBERT additionally requires an approved narrow classification task, deterministic preprocessing, and a compatible versioned fine-tuned checkpoint before implementation.
-9. Exact MoMo request type/payment methods, credential/key rotation, settlement delay, payout onboarding, VND plan prices or versioned FX policy, chargeback reconciliation, and financial retention. Downgrade and refund remain unsupported; no second production payment provider is planned.
+9. Exact MoMo request type/payment methods, credential/key rotation, settlement delay, payout onboarding, VND `PLUS`/`PREMIUM` prices, fixed `creditAllocation`, chargeback reconciliation, and financial retention. Runtime FX, downgrade, user refund, and credit rollover remain unsupported.
 10. Whether WBS 28-29 are end-user/research benchmark views distinct from admin WBS 155-156, or duplicate functions that should share one admin-only workflow.
-11. Before SupportPlan contract work resumes, issue #49 must decide whether templates are persisted, required versus optional proposed resources, minimum/maximum choices, rule-versus-mapping ownership, and whether safety-positive activation needs an additional reviewed acknowledgement.
-12. Issue #50 must approve versioned resource-eligibility semantics, including primary-domain versus cross-domain adjunct content; review/publication alone is not eligibility.
 
-The governing correction and repository impact are recorded in [ADR 0012](adr/0012-two-domain-screening-and-system-proposed-support-plans.md).
+The domain correction is recorded in [ADR 0012](adr/0012-two-domain-screening-and-system-proposed-support-plans.md); current cross-feature scope is governed by [ADR 0017](adr/0017-product-scope-v2.md) as amended by [ADR 0022](adr/0022-current-product-blueprint-amendments.md).

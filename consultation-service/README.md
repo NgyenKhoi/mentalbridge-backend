@@ -1,21 +1,408 @@
 # Consultation Service
 
-Owns specialist approval and discovery, matching, subscription/payment/upgrade, consultation credits, channel-specific availability and scheduled appointments, specialist earnings/provider payout reconciliation, and reviews. Billing and booking invariants stay transactionally local in its PostgreSQL data. It does not collect specialist verification documents.
+MB-623 consolidates the existing online journey in the versioned
+[state/settlement map](../docs/policies/consultation-journey-state-map-v1.md).
+Its [verification runbook](../docs/runbooks/mb-623-consultation-journey.md)
+distinguishes real owner/PostgreSQL tests, controlled production Web/BFF
+verification and unverified live dependencies. No aggregate, migration, booking
+rule, financial transition or provider enablement is added by this closure.
+
+MB-622 earning materialization and withdrawal reuse the appointment dispute
+gate. OPEN disputes and RELEASE_USER_CREDIT resolutions block payment, including
+failed-payout retries. Ineligible AVAILABLE rows return to PENDING_SETTLEMENT
+without changing amount/version/allocation snapshots; upheld resolutions can
+restore eligibility after the original hold.
+
+`GET /api/v1/admin/payments` is an ADMIN-only, read-only view of at most 200
+canonical purchase/upgrade transactions, without checkout URLs or customer
+profile data. Specialist earnings identify the configured payout adapter before
+a destination exists. Both specialist and admin payout reads use the latest
+attempt reference and count each earning once after retries.
+
+Owns specialist approval and deterministic non-clinical discovery, 60-minute
+in-app chat/video availability and appointments, session
+evidence and user-visible summaries, subscription/payment/upgrade,
+consultation credits, specialist earnings/provider payout reconciliation, and
+reviews. Billing and booking invariants stay transactionally local in its
+PostgreSQL data. Specialist verification documents are private Consultation-owned
+records. The specialist uploads a file, an administrator reviews it, and only a
+verified credential title selected by the specialist can appear publicly.
+
+Story 6101 implements the first profile vertical slice: a specialist can save the six
+approved public fields, submit the profile, and an administrator can inspect
+and approve it. The approval history is audited. That initial slice did not accept
+credential, license, or verification-document claims; the later credential review
+flow is described below. MB-360 completes rejection,
+same-profile resubmission, suspension, and restoration with closed reasons and
+audited transitions. Suspension atomically withdraws future availability,
+cancels future not-started appointments, and releases their exact held credits;
+restoration never revives those records. MB-363 adds approved-only discovery,
+public profile detail, deterministic explanations, and current exact-slot
+handoff. Billing purchase and cross-service brief/chat integrations remain
+later stories. MB-362 adds approved-specialist publication, owner listing, and
+tombstone withdrawal of exact online slots; it does not create appointments.
+MB-377 adds Consultation-owned plan-period credit rows, an append-only
+transition ledger, and an authenticated owner balance. Provisioning is
+idempotent and keeps `DEMO` distinct from `PAID`; it does not infer payment.
+MB-378 adds the appointment request slice. A paid user selects one exact
+online slot and Consultation atomically creates a `REQUESTED` snapshot while
+holding one eligible credit. Slot/credit concurrency and command replay are
+enforced locally. MB-379 lets only the assigned specialist accept or reject an
+eligible request with optimistic concurrency and idempotent history. Acceptance
+keeps the credit held; rejection and server-scheduled deadline expiry release
+the exact credit once in the same local transaction.
+MB-558 adds `consultation-credit-v2` for new periods (`FREE=0`, `PLUS=4`,
+`PREMIUM=10`), preserves existing v1 periods as `0/1/3`, and exposes/enforces
+separate active-reservation limits `0/2/4`. Replacement requests retain the old
+appointment snapshot while moving its credit and reservation atomically.
+Appointment existence alone does not grant sensitive data access;
+Care owns the user-approved appointment-scoped `ConsultationBrief` and sharing
+decision. MB-592 exposes a separate internal, audited continuity projection for
+the authenticated currently approved specialist. It contains only assigned
+`CONFIRMED`/in-flight appointments and appointments ending within the last 90
+days, is capped at 200 rows, and never acts as a user directory or carries Care
+content.
+MB-643 lets an explicit user booking request retain an optional opaque
+Care-owned `originatingPlanActionId`. It is a presentation correlation only:
+there is no cross-service foreign key, Consultation never edits or completes a
+SupportPlan, and opening specialist discovery alone creates no appointment or
+data-sharing consent. Reschedule-as-new inherits the owned prior appointment's
+reference when an older client omits it and rejects a conflicting explicit
+reference. The owner appointment list accepts an optional exact action filter
+that is applied before its 100-row bound.
+MB-380 adds optimistic, idempotent owner cancellation and completes
+reschedule-as-new audit. Requested cancellations and confirmations at least 24
+hours before start release the held credit; later confirmed cancellations
+forfeit it. Every cancellation records actor, stable reason, instant, exact
+credit outcome, and append-only history. Replacement creation and old
+appointment settlement remain one transaction.
+MB-364 lets the appointment owner create and later edit one 1-5 rating only
+after evidence-backed completion. The current rating and specialist count/sum
+aggregate commit together; public discovery discloses average/count and uses
+the aggregate only as the final `PREMIUM` tie-breaker.
+MB-588 adds an ADMIN-only, read-only appointment operations projection with
+bounded time/status/modality/account filters and cursor pagination. Consultation
+remains the lifecycle authority; the projection carries operational timestamps,
+reason codes, and credit settlement state but no brief, summary, journal,
+assessment, chat, or private-note content. It grants no appointment mutation or
+clinical authority.
+
+MB-619 lets either assigned participant open one minimized dispute within 24
+hours of an eligible settled session outcome. An open dispute blocks future
+earning eligibility. Admin resolution is bounded to upholding the recorded
+outcome or releasing user credit; a terminal credit release appends an explicit
+`ADJUSTED_RELEASED` ledger fact and preserves prior settlement history.
 
 ## Integration
 
-- Inbound REST: Consultation APIs will be defined in OpenAPI before implementation.
-- Outbound REST: calls Care for current consent and authorization decisions through a consumer-owned OpenFeign adapter and Resilience4j; uncertainty fails closed.
-- Async: subscription, appointment, earning, review, and moderation events will use Kafka with a transactional outbox.
+- Inbound REST: implemented specialist/admin APIs are defined in `../contracts/openapi/consultation-service-v1.yaml`.
+- Outbound REST: discovery optionally calls Care for one exact owned
+  SupportEvaluation through a narrow OpenFeign adapter. It reduces the response
+  to domain/pathway priorities in memory; unavailable or malformed context
+  produces explained neutral ranking and never exposes raw assessment data.
+  Other consent/authorization integrations remain separately gated.
+- Async: appointment lifecycle changes are written to the Consultation-owned
+  transactional outbox and relayed to
+  `mentalbridge.consultation.appointment-status.v1`. The minimized event carries
+  appointment/version, owner, status, start, and modality only; it contains no
+  health, Journal, assessment, brief, or chat content.
 - Discovery: registers as `consultation-service` and resolves Spring providers through Eureka. Registry data does not grant authorization.
 
 ## Configuration
 
+MB-384 uses the existing LiveKit Cloud `mentalbridge` Free project. Set backend
+`LIVEKIT_URL` (wss Cloud origin), `LIVEKIT_API_KEY`, `LIVEKIT_API_SECRET` through
+the existing local Spring configuration mechanism or injected environment.
+`CONSULTATION_VIDEO_ENABLED=false` is the safe runtime default, independent of
+slot publication. `LIVEKIT_TOKEN_TTL=PT2M` is bounded to 30 seconds–5 minutes.
+No secret/token may enter browser configuration, logs, URLs or source control.
+Missing provider configuration fails video operations closed, not unrelated
+appointment/manual brief workflows. See [ADR 0039](../docs/adr/0039-livekit-cloud-video-consultation.md)
+and the [MB-384 local video runbook](../docs/runbooks/mb-384-livekit-video.md).
+
 | Variable | Required | Purpose | Safe local example |
 | --- | --- | --- | --- |
 | `EUREKA_DEFAULT_ZONE` | Production | Eureka registry endpoint shared by Spring services | `http://localhost:8761/eureka/` |
+| `CONSULTATION_DB_URL` | Yes | JDBC URL for Consultation-owned PostgreSQL | `jdbc:postgresql://localhost:5432/mentalbridge_consultation` |
+| `CONSULTATION_DB_USERNAME` | Yes | Consultation database role | `mentalbridge_consultation` |
+| `CONSULTATION_DB_PASSWORD` | Yes | Consultation database credential | local secret |
+| `CONSULTATION_LIQUIBASE_ENABLED` | Deployment | Enables schema migration for the migration job/owner | `true` |
+| `IDENTITY_JWT_ISSUER` | Yes | Accepted Identity token issuer | `https://identity.local.mentalbridge` |
+| `IDENTITY_JWT_AUDIENCE` | Yes | Required API audience | `mentalbridge-api` |
+| `IDENTITY_JWT_PUBLIC_KEY` | Yes | X.509 PEM public key used to verify tokens | local public key |
+| `CONSULTATION_VIDEO_AVAILABILITY_ENABLED` | No | Enables `IN_APP_VIDEO` slot publication only after the provider contract gate passes | `false` |
+| `CONSULTATION_VIDEO_ENABLED` | No | Enables authorized LiveKit connection issuance; not slot publication | `false` |
+| `LIVEKIT_URL` | Enabled video | Existing Cloud project's secure WebSocket origin; no path/query | `wss://<project-host>.livekit.cloud` |
+| `LIVEKIT_API_KEY` / `LIVEKIT_API_SECRET` | Enabled video | Backend-only credentials for token issuance, room operations and signed webhooks | injected secrets |
+| `LIVEKIT_TOKEN_TTL` | No | New participant-token validity, bounded 30 seconds–5 minutes and clipped to scheduled end | `PT2M` |
+| `CONSULTATION_BILLING_MODE` | No | Subscription checkout mode: safe default `DISABLED`, deterministic local/CI `FAKE`, or explicitly approved `MOMO` | `DISABLED` |
+| `CONSULTATION_BILLING_CHECKOUT_TTL` | No | Maximum lifetime of a pending purchase or upgrade checkout | `PT15M` |
+| `CONSULTATION_BILLING_EXPIRY_INTERVAL` | No | Scheduler interval for expiring abandoned checkouts and releasing upgrade-held credits | `PT1M` |
+| `MOMO_PAYMENT_PRODUCTION_APPROVED` | Real checkout | Explicit operational gate required together with complete credentials and HTTPS URLs | `false` |
+| `MOMO_PAYMENT_PARTNER_CODE` / `MOMO_PAYMENT_ACCESS_KEY` / `MOMO_PAYMENT_SECRET_KEY` | Real checkout | MoMo One-Time Payment credentials used to create and verify signed requests | injected secrets |
+| `MOMO_PAYMENT_SIGNATURE_KEY_VERSION` | Real checkout | Non-secret identifier retained with verified IPN evidence for key rotation | `v1` |
+| `MOMO_PAYMENT_BASE_URL` | Real checkout | Approved MoMo API origin | `https://test-payment.momo.vn` |
+| `MOMO_PAYMENT_IPN_URL` / `MOMO_PAYMENT_REDIRECT_URL` | Real checkout | Public HTTPS callback and browser return URLs | deployment URLs |
+| `APPOINTMENT_REMINDER_SERVICE_TOKEN` | When reminder flow enabled | Shared service credential for the narrow eligibility read | injected secret |
+| `KAFKA_BOOTSTRAP_SERVERS` | When relay enabled | Broker list for appointment status events | `localhost:9092` |
+| `CONSULTATION_APPOINTMENT_OUTBOX_RELAY_ENABLED` | No | Enables bounded appointment outbox relay | `false` |
+| `CONSULTATION_PAYOUT_MODE` | No | `FAKE` for deterministic local/CI payout; real MoMo payout is not enabled by this story | `FAKE` |
+| `CONSULTATION_PAYOUT_SETTLEMENT_HOLD` | No | Evidence-backed earning settlement/dispute hold | `P7D` |
+| `CONSULTATION_PAYOUT_MINIMUM_WITHDRAWAL_VND` | No | Minimum server-authoritative withdrawal | `100000` |
+| `CONSULTATION_PAYOUT_ENCRYPTION_KEY` | Destination setup | Base64-encoded 32-byte AES key protecting payout destination data | local secret |
+| `CONSULTATION_PAYOUT_ENCRYPTION_KEY_VERSION` | No | Key identifier retained with ciphertext for controlled rotation | `v1` |
+| `MOMO_PAYOUT_PARTNER_CODE` / `MOMO_PAYOUT_ACCESS_KEY` / `MOMO_PAYOUT_SECRET_KEY` | Signed sandbox callback only | MoMo sandbox callback verification credentials; do not enable real payout | injected sandbox secrets |
 
-Production must override the local Eureka URL. Database, Kafka, MoMo IPN signing, payout, encryption, and downstream timeout variables will be documented when their typed configuration is introduced. No refund adapter is planned. Local/CI uses MoMo-shaped fakes; real MoMo payment/payout remains disabled until credentials and compatible VND pricing or an approved FX policy exist.
+Production must override local URLs and secrets. Real payment and payout remain
+off until a separate production approval and credentials. No refund adapter is
+planned.
+
+For container-based local/demo startup, copy `.env.example` to an untracked
+`.env` and replace the database placeholder values. The root Compose profile
+runs `consultation-migrate` first with Liquibase enabled, then starts the
+`consultation` application container with runtime migrations disabled:
+
+```powershell
+docker compose --profile demo up consultation-migrate consultation
+```
+
+The committed Docker image contains the Maven-built service only. Database
+provisioning remains an operator prerequisite; Compose never creates, resets,
+or owns the shared dev/staging Consultation database.
+
+## Implemented specialist lifecycle endpoints
+
+- `GET|PUT /api/v1/specialist-profile`
+- `POST /api/v1/specialist-profile/submit`
+- `POST /api/v1/specialist-profile/resubmit`
+- `GET /api/v1/admin/specialist-profiles?status=PENDING|APPROVED|REJECTED|SUSPENDED`
+- `GET /api/v1/admin/specialist-profiles/{specialistAccountId}`
+- `POST /api/v1/admin/specialist-profiles/{specialistAccountId}/approve`
+- `POST /api/v1/admin/specialist-profiles/{specialistAccountId}/reject`
+- `POST /api/v1/admin/specialist-profiles/{specialistAccountId}/suspend`
+- `POST /api/v1/admin/specialist-profiles/{specialistAccountId}/restore`
+
+## Implemented MB-362 endpoints
+
+- `GET|POST /api/v1/availability-slots`
+- `DELETE /api/v1/availability-slots/{slotId}`
+
+## Implemented MB-363 owner endpoints
+
+- `GET /api/v1/specialists`
+- `GET /api/v1/specialists/{specialistAccountId}`
+
+Discovery uses the existing profile, language/support-area, availability,
+appointment-hold, and current-entitlement tables in one owner database; MB-363
+requires no new persistence or migration. Every request rechecks current
+`APPROVED` state and selectable slots. `FREE` receives `BROWSE_ONLY`, while
+`PLUS`/`PREMIUM` receive an exact slot identity with
+`BOOKING_POLICY_CHECK_REQUIRED`; MB-378 remains the booking authority and
+revalidates all mutable state. Discovery policy v2 displays only authoritative
+MB-364 rating aggregates and never fabricates a score.
+
+## Implemented MB-377/MB-558 endpoint
+
+- `GET /api/v1/service-credits`
+
+## Implemented MB-515 endpoints
+
+MB-622 replaces the active test offers with immutable PLUS 5,000/PREMIUM 10,000
+VND sandbox versions. The owner-approved sandbox upgrade charges 10,000 VND
+with zero offset and records `sandbox-full-price-v1` plus the nominal held-credit
+value. Existing held appointment credits and ordinary/historical prices/offsets
+are preserved. Mixed pricing policies fail closed. New paid credit periods
+snapshot the exact purchased plan-version UUID and allocation. Sandbox earning
+amounts are demonstration facts and may use FAKE payout only, never real money.
+Apply migration 021 and drain old billing writers before enabling new offers.
+
+Migration 022 permits a null checkout URL. Roll out the nullable-URL consumer
+before the new checkout writer and drain old writers. Checkout commits its
+canonical payment, quote and held credits before calling the provider outside
+any database transaction. Only the first reservation calls create; same-key
+replay returns the stored payment without re-sending a possible charge. A
+provider timeout leaves an auditable pending record, recoverable by verified
+IPN or existing expiry/reconciliation, never browser-side activation. There is
+no automatic create retry or production payment/payout enablement in MB-622.
+No runtime secret or production approval flag is changed by this story.
+
+- `GET /api/v1/service-plans`
+- `POST /api/v1/subscriptions/checkout`
+- `POST /internal/v1/payments/momo/ipn`
+
+The catalogue returns only currently effective immutable plan versions. Checkout
+accepts the selected version and a user-scoped idempotency key; price, currency,
+credit allocation, reservation limit, AI quota, and SupportPlan entitlement are
+always loaded from Consultation-owned data. A verified, exactly matched MoMo IPN
+activates the purchase or `PLUS`-to-`PREMIUM` upgrade once. Invalid, duplicate,
+late, conflicting, or out-of-order callbacks cannot grant rights. Real checkout
+remains disabled until the production approval flag, credentials, and HTTPS URLs
+are all present. No downgrade or refund command is exposed.
+
+## Implemented MB-378/MB-558 endpoints
+
+- `GET /api/v1/bookable-slots`
+- `GET|POST /api/v1/appointments`
+
+## Implemented MB-380 endpoint
+
+- `POST /api/v1/appointments/{appointmentId}/cancel`
+
+## Implemented MB-364 endpoint
+
+- `GET|PUT /api/v1/appointments/{appointmentId}/rating`
+
+## Implemented MB-619 endpoints
+
+- `GET|POST /api/v1/appointments/{appointmentId}/dispute`
+- `GET|POST /api/v1/specialist/appointments/{appointmentId}/dispute`
+- `GET /api/v1/admin/appointment-disputes?status=OPEN|RESOLVED`
+- `POST /api/v1/admin/appointment-disputes/{disputeId}/resolve`
+
+## Implemented MB-548 internal endpoint
+
+- `GET /internal/v1/appointments/{appointmentId}/notification-eligibility?appointmentVersion={version}`
+
+## Implemented MB-379 endpoints
+
+- `GET /api/v1/specialist/appointments`
+- `POST /api/v1/specialist/appointments/{appointmentId}/accept`
+- `POST /api/v1/specialist/appointments/{appointmentId}/reject`
+- `GET /internal/v1/appointments/{conversationId}/chat-eligibility` for participant-bound Realtime subscribe/send/history authorization
+
+## Implemented MB-591 endpoint
+
+- `GET /api/v1/specialist/dashboard`
+
+The dashboard is a bounded, read-only projection of Consultation-owned
+specialist profile, appointment, and availability facts. Counts retain exact
+totals while item previews are capped at five. Every section and item includes
+its source and server as-of time. Missing, pending, rejected, or suspended
+profiles fail closed with blocked workload sections. The projection contains
+no client identity, check-in, clinical risk, recovery/adherence, journal,
+assessment-answer, chat-content, or private-note fields, and it performs no
+cross-service database query.
+
+## Implemented MB-588 endpoint
+
+- `GET /api/v1/admin/appointments`
+
+The query requires an explicit range of at most 180 days, caps pages at 100,
+and may filter by appointment status, modality, user account, or specialist
+account. Responses identify Consultation as the authoritative source and mark
+the data state explicitly. The operation is available only to `ADMIN` and is
+not a substitute for any owner or specialist command endpoint.
+
+## Implemented MB-593 endpoint
+
+- `GET /api/v1/specialist/analytics?from={instant}&to={instant}`
+
+The authenticated specialist receives Consultation-owned operational facts for
+an explicit half-open period, defaulting to the previous 30 days and capped at
+366 days. A requested end up to 30 seconds ahead is clamped to Consultation's
+server time to tolerate cross-service clock skew; materially future ends remain
+invalid. Appointment lifecycle totals come from append-only transition facts,
+so a later cancellation or reschedule does not erase an earlier request or
+acceptance. Slot utilization uses slots scheduled in the period and preserves
+whether a slot was ever accepted. Current MB-364 rating aggregates are marked
+with their own as-of time. MB-516 earning and successful payout facts are
+summed within the same period without demo amounts. Suspended specialists retain
+their own historical analytics with an explicit `SUSPENDED` operational state;
+profiles that were never approved receive blocked sections. No user identity,
+health outcome, Journal, emotion, assessment, adherence, recovery, chat, or
+private-note data is exposed.
+
+## Implemented MB-592 endpoint
+
+- `GET /internal/v1/specialist/client-relationships`
+
+## Implemented MB-516 endpoints
+
+- `GET /api/v1/specialist/earnings`
+- `PUT /api/v1/specialist/payout-destination`
+- `POST /api/v1/specialist/payouts`
+- `GET /api/v1/admin/payouts`
+- `POST /internal/v1/payouts/momo/ipn`
+
+Evidence-backed `COMPLETED` and exact credit `CONSUMED` create one immutable
+210,000 VND earning snapshot from the fixed 300,000 VND allocation. Earnings
+remain pending for seven days. Local/CI payout is deterministic and fake;
+destinations are encrypted, withdrawal amount is always server-derived, the
+minimum is 100,000 VND, and one specialist may request at most one payout per
+day. The MoMo route verifies signed sandbox callbacks only; it does not enable
+real transfer submission.
+
+The endpoint returns appointment/user identifiers, status, modality, exact
+schedule, appointment version, projection time/window, and policy version only.
+Suspended, rejected, pending, or missing specialist profiles fail closed and
+every list attempt records a content-free audit fact.
+
+Availability accepts only exact future 60-minute `IN_APP_CHAT` and gated
+`IN_APP_VIDEO` slots. It stores UTC instants and an IANA display timezone,
+rejects active overlap transactionally, and retains withdrawn slots as
+tombstones. Practice locations, phone calls, external meeting links,
+recurrence, time off, booking, and video-room authorization are not part of
+this flow.
+
+Updates and decisions use the returned `ETag` in `If-Match`. Editing a
+submitted pending profile withdraws it from the review queue until the
+specialist explicitly submits it again. Rejected profiles retain their reason
+while being edited and require explicit resubmission. Approved and suspended
+profiles cannot be directly edited. MB-635 permits approved specialists to use a
+separate reviewed amendment without changing the current public profile.
+Rejection and suspension accept only their documented
+stable reason sets. A suspension response reports the exact number of future
+slots withdrawn, appointments cancelled, and credits released.
+
+## Private specialist credential review
+
+Credential documents are a separate Consultation-owned review flow: specialists
+list and upload private PDF/JPEG/PNG files through `/api/v1/specialist-profile/documents`,
+open originals through five-minute signed links, and enable a public badge only
+after ADMIN verification. ADMIN uses `/api/v1/admin/specialist-profiles/documents`
+to list pending documents, inspect an original, and verify or reject with an
+ETag. Originals and Cloudinary keys never appear in discovery. Set
+`CONSULTATION_CREDENTIAL_STORAGE_ENABLED=true` and the four
+`CONSULTATION_CLOUDINARY_*` values to enable upload and original-file access;
+reads and profile edits remain available when storage is disabled.
+Apply Consultation migration `026-specialist-language-and-credentials.sql`
+before enabling the feature. The Compose application container has Liquibase
+disabled, so its database migration must run through the deployment migration
+step before that container is restarted.
+
+## MB-635 reviewed profile amendments
+
+- `GET /api/v1/specialist-profile/amendments/current`: live profile plus latest private amendment.
+- `POST /api/v1/specialist-profile/amendments`: start/reuse a draft with the live profile ETag.
+- `PUT /api/v1/specialist-profile/amendments/{amendmentId}`: save the six proposed fields.
+- `POST /api/v1/specialist-profile/amendments/{amendmentId}/submit|resubmit`: explicit review submission.
+- `POST /api/v1/specialist-profile/amendments/{amendmentId}/cancel`: owner cancellation of an open amendment, retaining audit and public content.
+- `GET /api/v1/admin/specialist-profiles/amendments?limit=50&page=0`: bounded pending-review queue, separate from initial submissions.
+- `GET /api/v1/admin/specialist-profiles/amendments/{amendmentId}`: proposed versus approved values.
+- `POST /api/v1/admin/specialist-profiles/amendments/{amendmentId}/approve|reject`: version-checked ADMIN decision.
+
+Commands other than start use the amendment ETag. Approval and the immutable
+approved snapshot/history commit together. Rejection and draft operations never
+change the live profile, appointments or availability. Suspension is serialized
+with these commands and blocks them. Review provenance includes each exact
+proposed payload; no unrestricted review notes or verification documents are stored.
+
+Apply migration 018 before owner rollout. It backfills one approved-content
+baseline for existing approved/suspended profiles without inventing older content
+versions. Drain old owner instances before enabling amendment writes. Never run
+the documentation logical schema against a database. See
+[ADR 0033](../docs/adr/0033-reviewed-specialist-profile-amendment.md).
+
+The follow-up cancellation requires migration 019 before the updated owner
+starts and the 1.12.0 consumer to be deployed alongside it. `CANCELLED` is
+terminal; a new edit starts a fresh amendment from the public snapshot. The
+published profile and approved history are not reverted or deleted.
+
+Focused owner verification:
+
+```powershell
+.\mvnw.cmd '-Dtest=ProfileAmendmentIntegrationTests,SpecialistProfileFlowIntegrationTests,ConsultationOpenApiContractTests,AccountLifecycleConsumerTests' test
+```
 
 ## Run and test
 
@@ -24,4 +411,6 @@ Production must override the local Eureka URL. Database, Kafka, MoMo IPN signing
 .\mvnw.cmd test
 ```
 
-The generated context test uses PostgreSQL and Kafka Testcontainers and disables live Eureka registration.
+The generated context test uses PostgreSQL and Kafka Testcontainers and disables
+live Eureka registration. The appointment relay remains disabled unless its
+versioned topic has been provisioned.

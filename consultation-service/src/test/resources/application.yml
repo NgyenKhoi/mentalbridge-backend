@@ -4,7 +4,22 @@ spring:
   cloud:
     discovery:
       enabled: false
+  liquibase:
+    enabled: true
+  jpa:
+    open-in-view: false
+  kafka:
+    listener:
+      auto-startup: false
 
 eureka:
   client:
     enabled: false
+
+mentalbridge:
+  consultation:
+    credentials:
+      cloudinary:
+        timeout-seconds: 5
+    account-lifecycle:
+      enabled: false

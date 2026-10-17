@@ -1,0 +1,624 @@
+package com.mentalbridge.consultation.appointment;
+
+import static org.assertj.core.api.Assertions.assertThat;
+import static org.springframework.security.test.web.servlet.request.SecurityMockMvcRequestPostProcessors.jwt;
+import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.get;
+import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.post;
+import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.jsonPath;
+import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.status;
+
+import java.sql.Timestamp;
+import java.time.Instant;
+import java.util.List;
+import java.util.UUID;
+import java.util.concurrent.CountDownLatch;
+import java.util.concurrent.Executors;
+
+import org.junit.jupiter.api.Test;
+import org.springframework.beans.factory.annotation.Autowired;
+import org.springframework.boot.test.context.SpringBootTest;
+import org.springframework.boot.webmvc.test.autoconfigure.AutoConfigureMockMvc;
+import org.springframework.context.annotation.Import;
+import org.springframework.http.MediaType;
+import org.springframework.jdbc.core.simple.JdbcClient;
+import org.springframework.security.core.authority.SimpleGrantedAuthority;
+import org.springframework.test.web.servlet.MockMvc;
+import org.springframework.test.web.servlet.MvcResult;
+
+import com.fasterxml.jackson.databind.ObjectMapper;
+import com.mentalbridge.consultation.ConsultationTestProperties;
+import com.mentalbridge.consultation.TestcontainersConfiguration;
+
+@Import(TestcontainersConfiguration.class)
+@SpringBootTest
+@AutoConfigureMockMvc
+class AppointmentRequestIntegrationTests extends ConsultationTestProperties {
+
+	@Autowired MockMvc mvc;
+	@Autowired JdbcClient jdbc;
+	@Autowired ObjectMapper json;
+
+	@Test
+	void paidUserRequestsExactChatSlotAndReloadsHeldCreditSnapshot() throws Exception {
+		var userId = paidUser("PLUS");
+		var slotId = chatSlot(Instant.now().plusSeconds(86_400));
+		var first = mvc.perform(post("/api/v1/appointments").with(user(userId))
+				.header("Idempotency-Key", "appointment-request-0001").contentType(MediaType.APPLICATION_JSON)
+				.content(body(slotId, "IN_APP_CHAT"))).andExpect(status().isCreated())
+				.andExpect(jsonPath("$.status").value("REQUESTED"))
+				.andExpect(jsonPath("$.slotId").value(slotId.toString()))
+				.andExpect(jsonPath("$.heldCreditId").isNotEmpty()).andReturn();
+		var appointmentId = json.readTree(first.getResponse().getContentAsByteArray()).get("id").asText();
+
+		mvc.perform(post("/api/v1/appointments").with(user(userId))
+				.header("Idempotency-Key", "appointment-request-0001").contentType(MediaType.APPLICATION_JSON)
+				.content(body(slotId, "IN_APP_CHAT"))).andExpect(status().isCreated())
+				.andExpect(jsonPath("$.id").value(appointmentId));
+		mvc.perform(get("/api/v1/appointments").with(user(userId))).andExpect(status().isOk())
+				.andExpect(jsonPath("$.count").value(1))
+				.andExpect(jsonPath("$.items[0].decisionDeadlineAt").isNotEmpty());
+		assertThat(jdbc.sql("select state from service_credit where appointment_id=:id")
+				.param("id", UUID.fromString(appointmentId)).query(String.class).single()).isEqualTo("HELD");
+	}
+
+	@Test
+	void explicitBookingCanRetainOpaqueOriginatingPlanActionReference() throws Exception {
+		var userId = paidUser("PLUS");
+		var slotId = chatSlot(Instant.now().plusSeconds(86_400));
+		var planActionId = UUID.randomUUID();
+		var body = "{\"slotId\":\"%s\",\"modality\":\"IN_APP_CHAT\",\"originatingPlanActionId\":\"%s\"}"
+				.formatted(slotId, planActionId);
+
+		mvc.perform(post("/api/v1/appointments").with(user(userId))
+				.header("Idempotency-Key", "plan-action-request-0001").contentType(MediaType.APPLICATION_JSON)
+				.content(body)).andExpect(status().isCreated())
+				.andExpect(jsonPath("$.originatingPlanActionId").value(planActionId.toString()));
+
+		assertThat(jdbc.sql("select originating_plan_action_id from appointment where user_account_id=:userId")
+				.param("userId", userId).query(UUID.class).single()).isEqualTo(planActionId);
+	}
+
+	@Test
+	void planActionFilterFindsAnOwnedAppointmentBeyondTheDefaultHistoryLimit() throws Exception {
+		var userId = paidUser("PLUS");
+		var planActionId = UUID.randomUUID();
+		var slotId = chatSlot(Instant.now().plusSeconds(86_400));
+		var created = mvc.perform(post("/api/v1/appointments").with(user(userId))
+				.header("Idempotency-Key", "plan-action-filter-seed")
+				.contentType(MediaType.APPLICATION_JSON)
+				.content("{\"slotId\":\"%s\",\"modality\":\"IN_APP_CHAT\",\"originatingPlanActionId\":\"%s\"}"
+						.formatted(slotId, planActionId)))
+				.andExpect(status().isCreated()).andReturn();
+		var appointmentId = UUID.fromString(json.readTree(created.getResponse().getContentAsByteArray()).get("id").asText());
+
+		jdbc.sql("""
+				insert into appointment (
+				 id, user_account_id, specialist_account_id, availability_slot_id, service_credit_id,
+				 status, modality, scheduled_start_at, scheduled_end_at, display_timezone,
+				 requested_at, decision_deadline_at, idempotency_key, decided_at, decision_reason,
+				 created_at, updated_at, version
+				)
+				select gen_random_uuid(), seed.user_account_id, seed.specialist_account_id,
+				       seed.availability_slot_id, seed.service_credit_id, 'REJECTED', seed.modality,
+				       seed.scheduled_start_at + interval '2 days' + series.number * interval '1 minute',
+				       seed.scheduled_end_at + interval '2 days' + series.number * interval '1 minute',
+				       seed.display_timezone, seed.requested_at,
+				       seed.scheduled_start_at + interval '1 day',
+				       'history-fixture-' || lpad(series.number::text, 3, '0'), now(),
+				       'SPECIALIST_REJECTED', now(), now(), 1
+				from appointment seed cross join generate_series(1, 100) series(number)
+				where seed.id=:appointmentId
+				""").param("appointmentId", appointmentId).update();
+
+		mvc.perform(get("/api/v1/appointments").with(user(userId)))
+				.andExpect(status().isOk())
+				.andExpect(jsonPath("$.count").value(100))
+				.andExpect(jsonPath("$.items[?(@.id == '%s')]".formatted(appointmentId)).isEmpty());
+		mvc.perform(get("/api/v1/appointments").with(user(userId))
+				.param("originatingPlanActionId", planActionId.toString()))
+				.andExpect(status().isOk())
+				.andExpect(jsonPath("$.count").value(1))
+				.andExpect(jsonPath("$.items[0].id").value(appointmentId.toString()))
+				.andExpect(jsonPath("$.items[0].originatingPlanActionId").value(planActionId.toString()));
+		mvc.perform(get("/api/v1/appointments").with(user(UUID.randomUUID()))
+				.param("originatingPlanActionId", planActionId.toString()))
+				.andExpect(status().isOk())
+				.andExpect(jsonPath("$.count").value(0));
+	}
+
+	@Test
+	void freeWrongModeStaleLeadTimeAndUnavailableCreditFailStably() throws Exception {
+		var slotId = chatSlot(Instant.now().plusSeconds(86_400));
+		mvc.perform(post("/api/v1/appointments").with(user(UUID.randomUUID()))
+				.header("Idempotency-Key", "free-request-key-0001").contentType(MediaType.APPLICATION_JSON)
+				.content(body(slotId, "IN_APP_CHAT"))).andExpect(status().isForbidden())
+				.andExpect(jsonPath("$.code").value("PAID_PLAN_REQUIRED"));
+
+		var paid = paidUser("PLUS");
+		mvc.perform(post("/api/v1/appointments").with(user(paid))
+				.header("Idempotency-Key", "wrong-mode-key-00001").contentType(MediaType.APPLICATION_JSON)
+				.content(body(slotId, "IN_APP_VIDEO"))).andExpect(status().isConflict())
+				.andExpect(jsonPath("$.code").value("APPOINTMENT_MODALITY_MISMATCH"));
+
+		var soon = chatSlot(Instant.now().plusSeconds(3_600));
+		mvc.perform(post("/api/v1/appointments").with(user(paid))
+				.header("Idempotency-Key", "short-lead-key-00001").contentType(MediaType.APPLICATION_JSON)
+				.content(body(soon, "IN_APP_CHAT"))).andExpect(status().isConflict())
+				.andExpect(jsonPath("$.code").value("APPOINTMENT_LEAD_TIME_INVALID"));
+	}
+
+	@Test
+	void bookableSlotsClampRequestedFromToMinimumLeadTime() throws Exception {
+		var now = Instant.now();
+		var tooSoon = chatSlot(now.plusSeconds(10_800));
+		var bookable = chatSlot(now.plusSeconds(18_000));
+
+		mvc.perform(get("/api/v1/bookable-slots").with(user(UUID.randomUUID()))
+				.param("from", now.toString()).param("to", now.plusSeconds(86_400).toString()))
+				.andExpect(status().isOk())
+				.andExpect(jsonPath("$.items[?(@.id == '%s')]".formatted(tooSoon)).isEmpty())
+				.andExpect(jsonPath("$.items[?(@.id == '%s')]".formatted(bookable)).isNotEmpty());
+	}
+
+	@Test
+	void concurrentUsersCannotDoubleHoldOneSlot() throws Exception {
+		var first = paidUser("PLUS");
+		var second = paidUser("PLUS");
+		var slotId = chatSlot(Instant.now().plusSeconds(172_800));
+		var ready = new CountDownLatch(2);
+		var go = new CountDownLatch(1);
+		try (var executor = Executors.newFixedThreadPool(2)) {
+			var users = List.of(first, second);
+			var futures = users.stream().map(userId -> executor.submit(() -> {
+				ready.countDown();
+				go.await();
+				return mvc.perform(post("/api/v1/appointments").with(user(userId))
+						.header("Idempotency-Key", "concurrent-request-" + userId)
+						.contentType(MediaType.APPLICATION_JSON).content(body(slotId, "IN_APP_CHAT")))
+						.andReturn().getResponse().getStatus();
+			})).toList();
+			ready.await();
+			go.countDown();
+			assertThat(futures.stream().map(future -> {
+				try { return future.get(); }
+				catch (Exception exception) { throw new IllegalStateException(exception); }
+			}).toList()).containsExactlyInAnyOrder(201, 409);
+		}
+	}
+
+	@Test
+	void plusReservationCapIsDistinctFromRemainingCreditsAndTerminalStateFreesCapacity() throws Exception {
+		var userId = paidUser("PLUS");
+		var first = request(userId, chatSlot(Instant.now().plusSeconds(86_400)), "cap-request-first-0001", null);
+		request(userId, chatSlot(Instant.now().plusSeconds(90_000)), "cap-request-second-001", null);
+
+		mvc.perform(post("/api/v1/appointments").with(user(userId))
+				.header("Idempotency-Key", "cap-request-third-0001").contentType(MediaType.APPLICATION_JSON)
+				.content(body(chatSlot(Instant.now().plusSeconds(93_600)), "IN_APP_CHAT")))
+				.andExpect(status().isConflict())
+				.andExpect(jsonPath("$.code").value("APPOINTMENT_RESERVATION_LIMIT_REACHED"));
+		mvc.perform(get("/api/v1/service-credits").with(user(userId))).andExpect(status().isOk())
+				.andExpect(jsonPath("$.balance.available").value(2))
+				.andExpect(jsonPath("$.reservationCapacity.active").value(2))
+				.andExpect(jsonPath("$.reservationCapacity.maximum").value(2))
+				.andExpect(jsonPath("$.reservationCapacity.remaining").value(0));
+
+		var firstId = UUID.fromString(json.readTree(first.getResponse().getContentAsByteArray()).get("id").asText());
+		mvc.perform(post("/api/v1/appointments/{id}/cancel", firstId).with(user(userId))
+				.header("If-Match", "\"0\"").header("Idempotency-Key", "terminal-release-command-0001"))
+				.andExpect(status().isOk())
+				.andExpect(jsonPath("$.cancellationCreditOutcome").value("RELEASED"));
+
+		mvc.perform(post("/api/v1/appointments").with(user(userId))
+				.header("Idempotency-Key", "cap-request-after-terminal").contentType(MediaType.APPLICATION_JSON)
+				.content(body(chatSlot(Instant.now().plusSeconds(97_200)), "IN_APP_CHAT")))
+				.andExpect(status().isCreated());
+	}
+
+	@Test
+	void inProgressAppointmentCountsTowardThePlusReservationCap() throws Exception {
+		var userId = paidUser("PLUS");
+		var inProgress = request(userId, chatSlot(Instant.now().plusSeconds(86_400)),
+				"in-progress-first-0001", null);
+		var inProgressId = UUID.fromString(json.readTree(inProgress.getResponse().getContentAsByteArray()).get("id").asText());
+		jdbc.sql("""
+				update appointment set status='IN_PROGRESS', decided_at=now(),
+				decision_reason='SPECIALIST_ACCEPTED', updated_at=now() where id=:id
+				""")
+				.param("id", inProgressId).update();
+		request(userId, chatSlot(Instant.now().plusSeconds(90_000)), "in-progress-second-001", null);
+
+		mvc.perform(get("/api/v1/service-credits").with(user(userId))).andExpect(status().isOk())
+				.andExpect(jsonPath("$.reservationCapacity.active").value(2))
+				.andExpect(jsonPath("$.reservationCapacity.maximum").value(2))
+				.andExpect(jsonPath("$.reservationCapacity.remaining").value(0));
+		mvc.perform(post("/api/v1/appointments").with(user(userId))
+				.header("Idempotency-Key", "in-progress-third-0001").contentType(MediaType.APPLICATION_JSON)
+				.content(body(chatSlot(Instant.now().plusSeconds(93_600)), "IN_APP_CHAT")))
+				.andExpect(status().isConflict())
+				.andExpect(jsonPath("$.code").value("APPOINTMENT_RESERVATION_LIMIT_REACHED"));
+	}
+
+	@Test
+	void rescheduleAtCapAtomicallyReusesTheHeldCreditAndPreservesTheOldSnapshot() throws Exception {
+		var userId = paidUser("PLUS");
+		var first = request(userId, chatSlot(Instant.now().plusSeconds(86_400)), "reschedule-first-00001", null);
+		request(userId, chatSlot(Instant.now().plusSeconds(90_000)), "reschedule-second-0001", null);
+		var firstJson = json.readTree(first.getResponse().getContentAsByteArray());
+		var firstId = UUID.fromString(firstJson.get("id").asText());
+		var firstCredit = firstJson.get("heldCreditId").asText();
+
+		var replacement = request(userId, chatSlot(Instant.now().plusSeconds(93_600)),
+				"reschedule-replace-001", firstId);
+		var replacementJson = json.readTree(replacement.getResponse().getContentAsByteArray());
+
+		assertThat(replacementJson.get("replacesAppointmentId").asText()).isEqualTo(firstId.toString());
+		assertThat(replacementJson.get("heldCreditId").asText()).isEqualTo(firstCredit);
+		mvc.perform(get("/api/v1/appointments").with(user(userId))).andExpect(status().isOk())
+				.andExpect(jsonPath("$.items[?(@.id == '%s')].status".formatted(firstId)).value("CANCELLED"))
+				.andExpect(jsonPath("$.items[?(@.id == '%s')].replacedByAppointmentId".formatted(firstId))
+						.value(replacementJson.get("id").asText()))
+				.andExpect(jsonPath("$.items[?(@.id == '%s')].cancellationReason".formatted(firstId))
+						.value("USER_RESCHEDULED"))
+				.andExpect(jsonPath("$.items[?(@.id == '%s')].cancellationCreditOutcome".formatted(firstId))
+						.value("TRANSFERRED_TO_REPLACEMENT"));
+		assertThat(jdbc.sql("""
+				select count(*) from appointment
+				where user_account_id=:userId and status in ('REQUESTED', 'CONFIRMED', 'IN_PROGRESS')
+				""").param("userId", userId).query(Long.class).single()).isEqualTo(2L);
+	}
+
+	@Test
+	void rescheduleInheritsPlanActionOriginReplaysAndRejectsAConflictingOrigin() throws Exception {
+		var userId = paidUser("PLUS");
+		var planActionId = UUID.randomUUID();
+		var originalSlot = chatSlot(Instant.now().plusSeconds(86_400));
+		var original = mvc.perform(post("/api/v1/appointments").with(user(userId))
+				.header("Idempotency-Key", "origin-inherit-original")
+				.contentType(MediaType.APPLICATION_JSON)
+				.content("{\"slotId\":\"%s\",\"modality\":\"IN_APP_CHAT\",\"originatingPlanActionId\":\"%s\"}"
+						.formatted(originalSlot, planActionId)))
+				.andExpect(status().isCreated()).andReturn();
+		var originalId = UUID.fromString(json.readTree(original.getResponse().getContentAsByteArray()).get("id").asText());
+
+		var conflictingSlot = chatSlot(Instant.now().plusSeconds(90_000));
+		mvc.perform(post("/api/v1/appointments").with(user(userId))
+				.header("If-Match", "\"0\"").header("Idempotency-Key", "origin-conflict-replace")
+				.contentType(MediaType.APPLICATION_JSON)
+				.content("{\"slotId\":\"%s\",\"modality\":\"IN_APP_CHAT\",\"replacesAppointmentId\":\"%s\",\"originatingPlanActionId\":\"%s\"}"
+						.formatted(conflictingSlot, originalId, UUID.randomUUID())))
+				.andExpect(status().isConflict())
+				.andExpect(jsonPath("$.code").value("APPOINTMENT_PLAN_ACTION_ORIGIN_CONFLICT"));
+
+		var replacementSlot = chatSlot(Instant.now().plusSeconds(93_600));
+		var requestBody = body(replacementSlot, "IN_APP_CHAT", originalId);
+		var first = mvc.perform(post("/api/v1/appointments").with(user(userId))
+				.header("If-Match", "\"0\"").header("Idempotency-Key", "origin-inherit-replace")
+				.contentType(MediaType.APPLICATION_JSON).content(requestBody))
+				.andExpect(status().isCreated())
+				.andExpect(jsonPath("$.originatingPlanActionId").value(planActionId.toString()))
+				.andReturn();
+		var replacementId = json.readTree(first.getResponse().getContentAsByteArray()).get("id").asText();
+
+		mvc.perform(post("/api/v1/appointments").with(user(userId))
+				.header("If-Match", "\"0\"").header("Idempotency-Key", "origin-inherit-replace")
+				.contentType(MediaType.APPLICATION_JSON).content(requestBody))
+				.andExpect(status().isCreated())
+				.andExpect(jsonPath("$.id").value(replacementId))
+				.andExpect(jsonPath("$.originatingPlanActionId").value(planActionId.toString()));
+
+		mvc.perform(post("/api/v1/appointments").with(user(userId))
+				.header("If-Match", "\"0\"").header("Idempotency-Key", "origin-inherit-replace")
+				.contentType(MediaType.APPLICATION_JSON)
+				.content("{\"slotId\":\"%s\",\"modality\":\"IN_APP_CHAT\",\"replacesAppointmentId\":\"%s\",\"originatingPlanActionId\":\"%s\"}"
+						.formatted(replacementSlot, originalId, UUID.randomUUID())))
+				.andExpect(status().isConflict())
+				.andExpect(jsonPath("$.code").value("IDEMPOTENCY_KEY_REUSED"));
+	}
+
+	@Test
+	void requestedCancellationReleasesCreditOnceAndReplaysItsAuditResult() throws Exception {
+		var userId = paidUser("PLUS");
+		var created = request(userId, chatSlot(Instant.now().plusSeconds(86_400)), "cancel-requested-create", null);
+		var appointmentId = UUID.fromString(json.readTree(created.getResponse().getContentAsByteArray()).get("id").asText());
+		mvc.perform(post("/api/v1/appointments/{id}/cancel", appointmentId).with(user(userId))
+				.header("Idempotency-Key", "cancel-version-required"))
+				.andExpect(status().isPreconditionRequired())
+				.andExpect(jsonPath("$.code").value("APPOINTMENT_VERSION_REQUIRED"));
+		mvc.perform(post("/api/v1/appointments/{id}/cancel", appointmentId).with(user(userId))
+				.header("If-Match", "\"999999999999999999999999999999\"")
+				.header("Idempotency-Key", "cancel-version-overflow"))
+				.andExpect(status().isPreconditionRequired())
+				.andExpect(jsonPath("$.code").value("APPOINTMENT_VERSION_REQUIRED"));
+
+		for (int replay = 0; replay < 2; replay++) {
+			mvc.perform(post("/api/v1/appointments/{id}/cancel", appointmentId).with(user(userId))
+					.header("If-Match", "\"0\"").header("Idempotency-Key", "cancel-requested-command"))
+					.andExpect(status().isOk())
+					.andExpect(jsonPath("$.status").value("CANCELLED"))
+					.andExpect(jsonPath("$.cancellationActor").value("USER"))
+					.andExpect(jsonPath("$.cancellationReason").value("USER_CANCELLED"))
+					.andExpect(jsonPath("$.cancellationCreditOutcome").value("RELEASED"))
+					.andExpect(jsonPath("$.history.length()").value(2));
+		}
+
+		assertThat(jdbc.sql("""
+				select count(*) from appointment_status_history
+				where appointment_id=:id and reason='USER_CANCELLED'
+				""").param("id", appointmentId).query(Long.class).single()).isOne();
+		assertThat(jdbc.sql("""
+				select count(*) from service_credit_ledger
+				where appointment_id=:id and event_type='RELEASED'
+				""").param("id", appointmentId).query(Long.class).single()).isOne();
+	}
+
+	@Test
+	void lateConfirmedCancellationForfeitsCreditAndRejectsStaleOrRepeatedCommands() throws Exception {
+		var userId = paidUser("PLUS");
+		var created = request(userId, chatSlot(Instant.now().plusSeconds(21_600)), "cancel-late-create-001", null);
+		var appointmentId = UUID.fromString(json.readTree(created.getResponse().getContentAsByteArray()).get("id").asText());
+		jdbc.sql("""
+				update appointment set status='CONFIRMED', decided_at=now(), decision_reason='SPECIALIST_ACCEPTED',
+				updated_at=now(), version=version+1 where id=:id
+				""").param("id", appointmentId).update();
+
+		mvc.perform(post("/api/v1/appointments/{id}/cancel", appointmentId).with(user(userId))
+				.header("If-Match", "\"0\"").header("Idempotency-Key", "cancel-late-stale-001"))
+				.andExpect(status().isPreconditionFailed())
+				.andExpect(jsonPath("$.code").value("APPOINTMENT_VERSION_MISMATCH"));
+		mvc.perform(post("/api/v1/appointments/{id}/cancel", appointmentId).with(user(userId))
+				.header("If-Match", "\"1\"").header("Idempotency-Key", "cancel-late-command-01"))
+				.andExpect(status().isOk())
+				.andExpect(jsonPath("$.cancellationCreditOutcome").value("FORFEITED"))
+				.andExpect(jsonPath("$.creditState").value("FORFEITED"));
+		mvc.perform(post("/api/v1/appointments/{id}/cancel", appointmentId).with(user(userId))
+				.header("If-Match", "\"2\"").header("Idempotency-Key", "cancel-late-different"))
+				.andExpect(status().isConflict())
+				.andExpect(jsonPath("$.code").value("APPOINTMENT_NOT_CANCELLATION_ELIGIBLE"));
+		mvc.perform(post("/api/v1/appointments/{id}/cancel", appointmentId).with(user(UUID.randomUUID()))
+				.header("If-Match", "\"2\"").header("Idempotency-Key", "cancel-wrong-owner-001"))
+				.andExpect(status().isNotFound());
+	}
+
+	@Test
+	void earlyConfirmedCancellationReleasesTheHeldCredit() throws Exception {
+		var userId = paidUser("PLUS");
+		var created = request(userId, chatSlot(Instant.now().plusSeconds(90_000)), "cancel-early-create-01", null);
+		var appointmentId = UUID.fromString(json.readTree(created.getResponse().getContentAsByteArray()).get("id").asText());
+		jdbc.sql("""
+				update appointment set status='CONFIRMED', decided_at=now(), decision_reason='SPECIALIST_ACCEPTED',
+				updated_at=now(), version=version+1 where id=:id
+				""").param("id", appointmentId).update();
+
+		mvc.perform(post("/api/v1/appointments/{id}/cancel", appointmentId).with(user(userId))
+				.header("If-Match", "\"1\"").header("Idempotency-Key", "cancel-early-command-01"))
+				.andExpect(status().isOk())
+				.andExpect(jsonPath("$.cancellationCreditOutcome").value("RELEASED"))
+				.andExpect(jsonPath("$.creditState").value("AVAILABLE"));
+	}
+
+	@Test
+	void lateConfirmedRescheduleAtCapForfeitsOldCreditAndAtomicallyUsesAnother() throws Exception {
+		var userId = paidUser("PLUS");
+		var original = request(userId, chatSlot(Instant.now().plusSeconds(21_600)),
+				"late-reschedule-original", null);
+		request(userId, chatSlot(Instant.now().plusSeconds(86_400)), "late-reschedule-second-1", null);
+		var originalJson = json.readTree(original.getResponse().getContentAsByteArray());
+		var originalId = UUID.fromString(originalJson.get("id").asText());
+		var originalCreditId = UUID.fromString(originalJson.get("heldCreditId").asText());
+		jdbc.sql("""
+				update appointment set status='CONFIRMED', decided_at=now(), decision_reason='SPECIALIST_ACCEPTED',
+				updated_at=now(), version=version+1 where id=:id
+				""").param("id", originalId).update();
+
+		var replacementSlot = chatSlot(Instant.now().plusSeconds(93_600));
+		var result = mvc.perform(post("/api/v1/appointments").with(user(userId))
+				.header("If-Match", "\"1\"").header("Idempotency-Key", "late-reschedule-replace")
+				.contentType(MediaType.APPLICATION_JSON)
+				.content(body(replacementSlot, "IN_APP_CHAT", originalId)))
+				.andExpect(status().isCreated())
+				.andExpect(jsonPath("$.replacesAppointmentId").value(originalId.toString()))
+				.andReturn();
+		var replacementJson = json.readTree(result.getResponse().getContentAsByteArray());
+
+		assertThat(UUID.fromString(replacementJson.get("heldCreditId").asText())).isNotEqualTo(originalCreditId);
+		assertThat(jdbc.sql("select state from service_credit where id=:id").param("id", originalCreditId)
+				.query(String.class).single()).isEqualTo("FORFEITED");
+		assertThat(jdbc.sql("select cancellation_credit_outcome from appointment where id=:id")
+				.param("id", originalId).query(String.class).single()).isEqualTo("FORFEITED");
+		assertThat(jdbc.sql("""
+				select count(*) from appointment
+				where user_account_id=:userId and status in ('REQUESTED', 'CONFIRMED', 'IN_PROGRESS')
+				""").param("userId", userId).query(Long.class).single()).isEqualTo(2L);
+	}
+
+	@Test
+	void replacementFailureOrStaleVersionLeavesOriginalAppointmentAndCreditUntouched() throws Exception {
+		var userId = paidUser("PLUS");
+		var original = request(userId, chatSlot(Instant.now().plusSeconds(86_400)), "replace-safe-original", null);
+		var originalJson = json.readTree(original.getResponse().getContentAsByteArray());
+		var originalId = UUID.fromString(originalJson.get("id").asText());
+		var occupiedSlot = chatSlot(Instant.now().plusSeconds(90_000));
+		request(paidUser("PLUS"), occupiedSlot, "replace-safe-occupier", null);
+
+		mvc.perform(post("/api/v1/appointments").with(user(userId))
+				.header("Idempotency-Key", "replace-safe-stale-001").header("If-Match", "\"9\"")
+				.contentType(MediaType.APPLICATION_JSON).content(body(occupiedSlot, "IN_APP_CHAT", originalId)))
+				.andExpect(status().isPreconditionFailed());
+		mvc.perform(post("/api/v1/appointments").with(user(userId))
+				.header("Idempotency-Key", "replace-safe-conflict-1").header("If-Match", "\"0\"")
+				.contentType(MediaType.APPLICATION_JSON).content(body(occupiedSlot, "IN_APP_CHAT", originalId)))
+				.andExpect(status().isConflict())
+				.andExpect(jsonPath("$.code").value("APPOINTMENT_SLOT_UNAVAILABLE"));
+
+		assertThat(jdbc.sql("select status from appointment where id=:id").param("id", originalId)
+				.query(String.class).single()).isEqualTo("REQUESTED");
+		assertThat(jdbc.sql("select state from service_credit where id=:id")
+				.param("id", UUID.fromString(originalJson.get("heldCreditId").asText()))
+				.query(String.class).single()).isEqualTo("HELD");
+		assertThat(jdbc.sql("select count(*) from appointment_status_history where appointment_id=:id")
+				.param("id", originalId).query(Long.class).single()).isOne();
+	}
+
+	@Test
+	void concurrentCancellationSettlesOneCreditAndOneImmutableHistoryEvent() throws Exception {
+		var userId = paidUser("PLUS");
+		var created = request(userId, chatSlot(Instant.now().plusSeconds(172_800)), "cancel-race-create-01", null);
+		var appointmentId = UUID.fromString(json.readTree(created.getResponse().getContentAsByteArray()).get("id").asText());
+		var ready = new CountDownLatch(2);
+		var go = new CountDownLatch(1);
+		try (var executor = Executors.newFixedThreadPool(2)) {
+			var keys = List.of("cancel-race-command-a", "cancel-race-command-b");
+			var futures = keys.stream().map(key -> executor.submit(() -> {
+				ready.countDown();
+				go.await();
+				return mvc.perform(post("/api/v1/appointments/{id}/cancel", appointmentId).with(user(userId))
+						.header("If-Match", "\"0\"").header("Idempotency-Key", key))
+						.andReturn().getResponse().getStatus();
+			})).toList();
+			ready.await();
+			go.countDown();
+			assertThat(futures.stream().map(future -> {
+				try { return future.get(); }
+				catch (Exception exception) { throw new IllegalStateException(exception); }
+			}).toList()).containsExactlyInAnyOrder(200, 412);
+		}
+		assertThat(jdbc.sql("""
+				select count(*) from appointment_status_history
+				where appointment_id=:id and reason='USER_CANCELLED'
+				""").param("id", appointmentId).query(Long.class).single()).isOne();
+		assertThat(jdbc.sql("""
+				select count(*) from service_credit_ledger
+				where appointment_id=:id and event_type='RELEASED'
+				""").param("id", appointmentId).query(Long.class).single()).isOne();
+	}
+
+	@Test
+	void concurrentRequestsForOnePlusAccountCannotExceedReservationCap() throws Exception {
+		var userId = paidUser("PLUS");
+		request(userId, chatSlot(Instant.now().plusSeconds(86_400)), "race-cap-existing-0001", null);
+		var slots = List.of(chatSlot(Instant.now().plusSeconds(90_000)), chatSlot(Instant.now().plusSeconds(93_600)));
+		var ready = new CountDownLatch(2);
+		var go = new CountDownLatch(1);
+		try (var executor = Executors.newFixedThreadPool(2)) {
+			var futures = slots.stream().map(slotId -> executor.submit(() -> {
+				ready.countDown();
+				go.await();
+				return mvc.perform(post("/api/v1/appointments").with(user(userId))
+						.header("Idempotency-Key", "race-cap-request-" + slotId)
+						.contentType(MediaType.APPLICATION_JSON).content(body(slotId, "IN_APP_CHAT")))
+						.andReturn().getResponse().getStatus();
+			})).toList();
+			ready.await();
+			go.countDown();
+			assertThat(futures.stream().map(future -> {
+				try { return future.get(); }
+				catch (Exception exception) { throw new IllegalStateException(exception); }
+			}).toList()).containsExactlyInAnyOrder(201, 409);
+		}
+		assertThat(jdbc.sql("""
+				select count(*) from appointment
+				where user_account_id=:userId and status in ('REQUESTED', 'CONFIRMED', 'IN_PROGRESS')
+				""").param("userId", userId).query(Long.class).single()).isEqualTo(2L);
+	}
+
+	@Test
+	void concurrentSuspensionEitherRejectsOrCancelsRequestWithoutLeavingHeldCredit() throws Exception {
+		var userId = paidUser("PLUS");
+		var slotId = chatSlot(Instant.now().plusSeconds(172_800));
+		var specialistId = jdbc.sql("select specialist_account_id from availability_slot where id=:id")
+				.param("id", slotId).query(UUID.class).single();
+		var ready = new CountDownLatch(2);
+		var go = new CountDownLatch(1);
+		try (var executor = Executors.newFixedThreadPool(2)) {
+			var request = executor.submit(() -> {
+				ready.countDown();
+				go.await();
+				return mvc.perform(post("/api/v1/appointments").with(user(userId))
+						.header("Idempotency-Key", "suspension-race-request")
+						.contentType(MediaType.APPLICATION_JSON).content(body(slotId, "IN_APP_CHAT")))
+						.andReturn().getResponse().getStatus();
+			});
+			var suspension = executor.submit(() -> {
+				ready.countDown();
+				go.await();
+				return mvc.perform(post("/api/v1/admin/specialist-profiles/{id}/suspend", specialistId)
+						.with(admin(UUID.randomUUID())).header("If-Match", "\"0\"")
+						.contentType(MediaType.APPLICATION_JSON)
+						.content("{\"reasonCode\":\"QUALITY_REVIEW_REQUIRED\"}"))
+						.andReturn().getResponse().getStatus();
+			});
+			ready.await();
+			go.countDown();
+			assertThat(suspension.get()).isEqualTo(200);
+			assertThat(request.get()).isIn(201, 409);
+		}
+
+		assertThat(jdbc.sql("select approval_status from specialist_profile where account_id=:id")
+				.param("id", specialistId).query(String.class).single()).isEqualTo("SUSPENDED");
+		assertThat(jdbc.sql("select count(*) from appointment where availability_slot_id=:id and status in ('REQUESTED','CONFIRMED')")
+				.param("id", slotId).query(Long.class).single()).isZero();
+		assertThat(jdbc.sql("""
+				select count(*) from service_credit credit
+				join service_credit_period period on period.id=credit.period_id
+				where period.account_id=:userId and credit.appointment_id is not null and credit.state='HELD'
+				""").param("userId", userId).query(Long.class).single()).isZero();
+	}
+
+	private UUID paidUser(String packageCode) {
+		var id = UUID.randomUUID();
+		var now = Instant.now();
+		jdbc.sql("""
+				insert into current_service_entitlement (
+				 account_id, package_code, source, source_reference, effective_from, effective_until, policy_version
+				) values (:id, :package, 'PAID', :reference, :from, :until, 'service-entitlement-v1')
+				""").param("id", id).param("package", packageCode).param("reference", "paid-" + id)
+				.param("from", Timestamp.from(now.minusSeconds(60))).param("until", Timestamp.from(now.plusSeconds(2_592_000))).update();
+		return id;
+	}
+
+	private UUID chatSlot(Instant start) {
+		var specialist = UUID.randomUUID();
+		jdbc.sql("""
+				insert into specialist_profile (
+				 account_id, display_name, biography, years_experience, timezone, approval_status,
+				 submitted_at, reviewed_at, reviewed_by
+				) values (:id, 'Online specialist', 'Appointment integration profile', 5, 'Asia/Ho_Chi_Minh',
+				 'APPROVED', now(), now(), :admin)
+				""").param("id", specialist).param("admin", UUID.randomUUID()).update();
+		var slot = UUID.randomUUID();
+		jdbc.sql("""
+				insert into availability_slot (
+				 id, specialist_account_id, start_at, end_at, timezone, modality, idempotency_key, created_at, updated_at
+				) values (:id, :specialist, :start, :end, 'Asia/Ho_Chi_Minh', 'IN_APP_CHAT', :key, now(), now())
+				""").param("id", slot).param("specialist", specialist).param("start", Timestamp.from(start))
+				.param("end", Timestamp.from(start.plusSeconds(3_600))).param("key", "slot-key-" + slot).update();
+		return slot;
+	}
+
+	private org.springframework.test.web.servlet.request.RequestPostProcessor user(UUID id) {
+		return jwt().jwt(token -> token.subject(id.toString())).authorities(new SimpleGrantedAuthority("ROLE_USER"));
+	}
+
+	private org.springframework.test.web.servlet.request.RequestPostProcessor admin(UUID id) {
+		return jwt().jwt(token -> token.subject(id.toString())).authorities(new SimpleGrantedAuthority("ROLE_ADMIN"));
+	}
+
+	private String body(UUID slotId, String modality) {
+		return "{\"slotId\":\"%s\",\"modality\":\"%s\"}".formatted(slotId, modality);
+	}
+
+	private String body(UUID slotId, String modality, UUID replacesAppointmentId) {
+		return "{\"slotId\":\"%s\",\"modality\":\"%s\",\"replacesAppointmentId\":\"%s\"}"
+				.formatted(slotId, modality, replacesAppointmentId);
+	}
+
+	private MvcResult request(UUID userId, UUID slotId, String key, UUID replacesAppointmentId) throws Exception {
+		var request = post("/api/v1/appointments").with(user(userId))
+				.header("Idempotency-Key", key).contentType(MediaType.APPLICATION_JSON)
+				.content(replacesAppointmentId == null ? body(slotId, "IN_APP_CHAT")
+						: body(slotId, "IN_APP_CHAT", replacesAppointmentId));
+		if (replacesAppointmentId != null) request.header("If-Match", "\"0\"");
+		return mvc.perform(request).andExpect(status().isCreated()).andReturn();
+	}
+}

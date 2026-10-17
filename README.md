@@ -10,10 +10,10 @@ The root [`compose.yml`](compose.yml) is intentionally scoped to executable Revi
 
 | Profile | Services |
 | --- | --- |
-| `demo` | Frontend, Identity, Care, Content/Notification, and explicit migrations against the shared dev/staging PostgreSQL databases |
+| `demo` | Frontend, Identity, Care, Consultation, Community, Journal/AI, Content/Notification, Realtime, Redis, and explicit migrations against the shared dev/staging databases |
 | `full-test` | Everything in `demo`, plus Realtime, its migration against the shared dev/staging MongoDB deployment, and local ephemeral Redis |
 
-Consultation, Journal/AI, Eureka, and Kafka remain outside this stack until they participate in an executable Review 1 journey. PhoBERT is an optional deferred benchmark baseline under ADR 0011 and is not a Review 1 or initial AI runtime dependency. Realtime is available for foundation testing but is not part of the critical mentor-demo path.
+Consultation, Journal/AI and Realtime are included because entitlement-aware SupportPlan, journal-reflection and appointment-chat journeys call them directly. Eureka remains outside this stack because the current demo uses explicit container URLs. PhoBERT is an optional deferred benchmark baseline under ADR 0011 and is not a Review 1 or initial AI runtime dependency.
 
 Keep the backend and frontend repositories as sibling directories. From this backend repository, prepare the ignored Compose environment file and local Identity keys:
 
@@ -22,6 +22,14 @@ Keep the backend and frontend repositories as sibling directories. From this bac
 ```
 
 The helper generates the ignored `.env`, Identity key material, and application-only secrets without printing secret values or replacing an existing file. It deliberately does not generate or copy database credentials. Populate every cloud connection placeholder from the deployment secret source before starting Compose. To configure it manually instead, copy `.env.compose.example` to `.env`, run `scripts/generate-local-jwt-keys.ps1`, and replace every `replace-*` value. `CONTENT_DATABASE_URL`, `REALTIME_MONGODB_URI`, and `REALTIME_REDIS_URL` must contain URL-encoded passwords when a password includes reserved URL characters.
+
+Consultation reads its service-owned database settings from the ignored root `.env` used by Compose. Journal/AI reads its shared MongoDB and encryption/HMAC settings from that root file and keeps any explicitly approved provider route in the ignored `journal-ai-service/.env` file. Compose overrides only container-internal service URLs and the container port.
+
+To configure an approved Journal/AI provider route, copy its service example and replace the route placeholders without committing the resulting file:
+
+```powershell
+Copy-Item journal-ai-service/.env.example journal-ai-service/.env
+```
 
 Dev and staging intentionally share the current service-owned AWS RDS databases and MongoDB Atlas deployment. Compose does not create, reset, expose, or remove those durable stores. Production will use separate database endpoints and credentials when it is provisioned. Because both pre-production environments share migration history, every migration must remain forward-compatible with both running application versions.
 
@@ -42,6 +50,7 @@ Then open `http://localhost:3000` and demonstrate:
 
 ```text
 Register/Login -> Profile -> Consent -> PHQ-9 vi-VN -> Result -> History -> Reassessment -> Progress
+Register/Login -> Journal -> Open an entry -> Request AI reflection -> View summary and signals
 ```
 
 The deterministic evidence cases use the same total score with different safety-item answers:
@@ -80,14 +89,17 @@ The recommended starting point is a **small microservice landscape**, not one se
 | Identity Service | Spring Boot 4.x | Accounts, roles, sessions, password reset | PostgreSQL |
 | Care Service | Spring Boot 4.x | Profiles, consent grants, assessments, safety/support policy, interventions, follow-up | PostgreSQL |
 | Consultation Service | Spring Boot 4.x | Specialist approval/discovery, subscription/payment/upgrade, credits, scheduled consultations, earnings/provider payouts, reviews | PostgreSQL |
-| Journal & AI Service | Node.js 22+, TypeScript, NestJS | Journals, LLM orchestration, analysis jobs/results, benchmark coordination | MongoDB + PostgreSQL metadata |
+| Community Service | Spring Boot 4.x | Community display identity and future peer-support publication, interaction, moderation, block, and media metadata | PostgreSQL |
+| Journal & AI Service | Node.js 22+, TypeScript, NestJS | Journals, LLM orchestration, analysis jobs/results, benchmark coordination | MongoDB |
 | Realtime Service | Node.js 22+, TypeScript, NestJS, Socket.IO | REST message APIs, WebSocket chat/notification delivery, presence, receipts | MongoDB + Redis |
 | Content & Notification Service | Node.js 22+, TypeScript, NestJS | Self-help resources, preferences, notification/provider delivery | PostgreSQL |
 | PhoBERT Worker (optional/deferred) | Python | Future experimental Vietnamese NLP benchmark inference only | No authoritative business store |
 
 ADR 0005 assigns the workbook's financial bounded context to a cohesive `billing` feature inside Consultation Service without adding another core deployable. It owns paid subscriptions, Care-to-Plus upgrades, consultation credits, specialist earnings, and payout reconciliation. Downgrade and user-initiated refund are unsupported; MoMo is the sole production payment/payout provider, while local/CI uses MoMo-shaped fakes.
 
-Use REST/JSON DTOs for synchronous business APIs and service-to-service queries. Spring services register with Eureka and Java consumers use OpenFeign only as a REST client adapter; discovery does not change ownership, authorization, or OpenAPI contracts. WebSocket terminates only at Realtime Service for live client chat, presence, receipts, and in-app notifications. Kafka carries durable asynchronous commands/events for analysis, notification, audit, reporting, and deletion workflows. Redis carries only ephemeral presence, connection routing, fan-out, rate-limit, delivery/idempotency, and expiring hashed OTP state; it is not a database-query cache or business source of truth.
+ADR 0027 adds Community as an independent Spring Boot/PostgreSQL bounded context. MB-574 provides the authenticated, privacy-isolated feed and post-detail read slice; MB-576 owns bounded media upload, and MB-609 adds a versioned per-post `PROFILE`/`ANONYMOUS` author mode whose public anonymous projection cannot be linked to the Community profile. MB-575 through MB-581 deliver the remaining publication, interaction, reporting, moderation, notification-fact, and display-identity capabilities. MB-582 adds the governed active topic catalogue plus explicit bounded multi-topic discovery without mental-health profiling.
+
+Use REST/JSON DTOs for synchronous business APIs and service-to-service queries. Spring services register with Eureka and Java consumers use OpenFeign only as a REST client adapter; discovery does not change ownership, authorization, or OpenAPI contracts. WebSocket terminates only at Realtime Service for live client chat, presence, receipts, and in-app notifications. Kafka carries durable asynchronous commands/events only for accepted features that require independent consumers, fan-out, or replay; MB-367 analysis jobs remain local MongoDB work. Redis carries only ephemeral presence, connection routing, fan-out, rate-limit, delivery/idempotency, and expiring hashed OTP state; it is not a database-query cache or business source of truth.
 
 ## Core flow
 
@@ -99,19 +111,32 @@ Eligible exact content -> system-proposed DRAFT SupportPlan
 User-controlled choice -> revalidation -> explicit ACTIVE SupportPlan
 Active paid plan -------> entitlementPlan
 
+Reassessment:
+screening comparison ----------> standardized symptom trend
+consented journal revisions ---> AI contextual/emotional trend + data coverage
+SupportPlan facts -------------> engagement/barriers
+user input --------------------> helpfulness/reflection
+four separate dimensions ------> Care-owned ReassessmentSummary
+allowed alternatives ----------> user-reviewed SupportPlanReview
+
 AI supplies supporting indicators; it must not override validated questionnaire
-scoring, change safety status, invent a diagnosis, choose plan eligibility, or
-create a SupportPlan.
+scoring, change safety status, invent a diagnosis, decide clinical improvement,
+choose plan eligibility, or create/change a SupportPlan. The four reassessment
+dimensions are never collapsed into a combined mental-health improvement score.
 ```
 
-The SupportPlan lines describe the approved forward business flow. The current executable v1 remains coarse SupportEvaluation history and does not yet create a plan.
+The SupportPlan lines are executable through deterministic paid draft creation,
+bounded admitted-choice replacement, explicit activation, and authoritative
+current-plan reload. Pause/resume, completion, replacement, activity tracking,
+and specialist-proposed changes remain separately gated.
 
-Safety handling must be deterministic, immediate, auditable, non-paywalled, and usable even if optional AI or messaging dependencies are unavailable. MentalBridge has no hotline catalogue and must not hard-code unverified emergency numbers or facility claims in prompts or application code. See [ADR 0009](docs/adr/0009-care-screening-safety-and-support-boundaries.md), its [two-domain SupportPlan amendment](docs/adr/0012-two-domain-screening-and-system-proposed-support-plans.md), and the [policy register](docs/policies/README.md).
+Safety handling must be deterministic, immediate, auditable, non-paywalled, and usable even if optional AI or messaging dependencies are unavailable. MentalBridge has no hotline catalogue and must not hard-code unverified emergency numbers or facility claims in prompts or application code. See [ADR 0009](docs/adr/0009-care-screening-safety-and-support-boundaries.md), its [two-domain SupportPlan amendment](docs/adr/0012-two-domain-screening-and-system-proposed-support-plans.md), the [SupportPlan policy freeze](docs/adr/0013-freeze-support-plan-policy-v1.md), and the [policy register](docs/policies/README.md).
 
 ## Repository documentation
 
 - [Domain and use cases](docs/domain-and-use-cases.md)
 - [Two-domain screening and system-proposed SupportPlan decision](docs/adr/0012-two-domain-screening-and-system-proposed-support-plans.md)
+- [Frozen SupportPlan policy v1](docs/policies/support-plan-policy-v1.md)
 - [Requirements traceability to the capstone registration and 162-function WBS](docs/requirements-traceability.md)
 - [Per-module business, use-case, implementation and task specifications](docs/modules/README.md)
 - [Architecture](docs/architecture.md)
@@ -124,9 +149,12 @@ Safety handling must be deterministic, immediate, auditable, non-paywalled, and 
 - [Engineering rules](docs/engineering-rules.md)
 - [Mandatory agent workflow and review guide](docs/agent-guides/README.md)
 - [Sprint 2 integrated journey and release evidence](docs/sprint-2-integrated-release-evidence.md)
+- [MB-379 appointment decisions and expiry evidence](docs/mb-379-appointment-decisions-evidence.md)
 - [PostgreSQL data model](docs/database/postgresql.md)
 - [MongoDB collections](docs/database/mongodb.md)
-- [Non-executable whole-system PostgreSQL model](database/postgresql/001_initial_schema.sql) — owner namespaces are visual only; each module deploys to its own database/default `public` schema
+- [Canonical domain model — start here for entities and diagrams](docs/domain-model/README.md)
+- [Canonical non-executable PostgreSQL logical schema](docs/domain-model/relational/postgresql-logical-schema.sql) — owner namespaces are visual only; each module deploys to its own database/default `public` schema
+- [Canonical MongoDB logical model](docs/domain-model/document/mongodb-logical-model.md)
 - [PostgreSQL field data dictionary](docs/database/postgresql-field-data-dictionary.md)
 
 ## Delivery roadmap
@@ -168,8 +196,8 @@ development and service integration tests:
 ```
 
 Start Docker Desktop first and wait until `docker info` succeeds. The compose
-file exposes separate PostgreSQL databases for Identity, Care, and
-Content/Notification, plus MongoDB, Redis, and single-node Kafka. The passwords
+file exposes separate PostgreSQL databases for Identity, Care,
+Content/Notification, and Community, plus MongoDB, Redis, and single-node Kafka. The passwords
 are local-only development values and must never be reused outside this stack.
 
 Spring integration tests use Testcontainers and start isolated temporary
