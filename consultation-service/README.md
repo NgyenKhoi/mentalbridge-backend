@@ -51,6 +51,12 @@ enforced locally. MB-379 lets only the assigned specialist accept or reject an
 eligible request with optimistic concurrency and idempotent history. Acceptance
 keeps the credit held; rejection and server-scheduled deadline expiry release
 the exact credit once in the same local transaction.
+The owner's 2026-10-18 MB-384 timing amendment removes advance booking delay:
+current unexpired sixty-minute slots can be published, discovered and booked
+immediately. For a short-notice request whose old decision buffer has passed,
+the assigned specialist may confirm until slot end. Migration 027 expands only
+the deadline upper bound to scheduled end; existing rows and older writers stay
+valid. Session, approval, credit and financial checks remain authoritative.
 MB-558 adds `consultation-credit-v2` for new periods (`FREE=0`, `PLUS=4`,
 `PREMIUM=10`), preserves existing v1 periods as `0/1/3`, and exposes/enforces
 separate active-reservation limits `0/2/4`. Replacement requests retain the old

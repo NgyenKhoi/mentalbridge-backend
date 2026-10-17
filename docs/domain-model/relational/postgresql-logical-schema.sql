@@ -1478,7 +1478,10 @@ CREATE TABLE consultation.appointment (
     created_at timestamptz NOT NULL,
     updated_at timestamptz NOT NULL,
     version bigint NOT NULL,
-    UNIQUE (user_account_id, idempotency_key)
+    UNIQUE (user_account_id, idempotency_key),
+    CONSTRAINT ck_appointment_deadline CHECK (
+        decision_deadline_at > requested_at AND decision_deadline_at <= scheduled_end_at
+    )
 );
 
 CREATE TABLE consultation.appointment_status_history (

@@ -53,3 +53,5 @@ databaseChangeLog:
       file: db/changelog/changes/025-livekit-video-completion.sql
   - include:
       file: db/changelog/changes/026-specialist-language-and-credentials.sql
+  - include:
+      file: db/changelog/changes/027-immediate-appointment-booking.sql
