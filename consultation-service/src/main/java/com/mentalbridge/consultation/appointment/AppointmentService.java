@@ -24,7 +24,6 @@ import com.mentalbridge.consultation.specialist.SpecialistProfileService;
 @Service
 public class AppointmentService {
 
-	private static final Duration MINIMUM_LEAD_TIME = Duration.ofHours(4);
 	private static final Duration DECISION_WINDOW = Duration.ofHours(24);
 	private static final Duration DECISION_BUFFER = Duration.ofHours(2);
 	private static final Duration EARLY_CANCELLATION_WINDOW = Duration.ofHours(24);
@@ -100,8 +99,8 @@ public class AppointmentService {
 		if (requestedModality == AppointmentModality.IN_APP_VIDEO && !availability.videoEnabled()) {
 			throw conflict("APPOINTMENT_VIDEO_DISABLED", "In-app video appointments are not enabled");
 		}
-		if (slot.startAt().isBefore(now.plus(MINIMUM_LEAD_TIME))) {
-			throw conflict("APPOINTMENT_LEAD_TIME_INVALID", "Appointments require at least four hours lead time");
+		if (!slot.endAt().isAfter(now)) {
+			throw conflict("APPOINTMENT_SLOT_STALE", "The appointment slot has ended");
 		}
 		if (activeAppointmentExists(slotId)) throw conflict("APPOINTMENT_SLOT_UNAVAILABLE", "The slot is already held");
 		var replacementOutcome = replacement == null ? null : replacementOutcome(replacement, now);
@@ -113,6 +112,7 @@ public class AppointmentService {
 		}
 		var appointmentId = UUID.randomUUID();
 		var deadline = earlier(now.plus(DECISION_WINDOW), slot.startAt().minus(DECISION_BUFFER));
+		if (!deadline.isAfter(now)) deadline = slot.endAt();
 		try {
 			if (replacement != null) {
 				cancelForReplacement(userId, replacement, appointmentId, replacementOutcome, now);
@@ -213,8 +213,7 @@ public class AppointmentService {
 	@Transactional(readOnly = true)
 	public AppointmentResponse.BookableSlotList bookableSlots(Instant from, Instant to) {
 		var now = clock.instant();
-		var minimumStart = now.plus(MINIMUM_LEAD_TIME);
-		var lower = from == null || from.isBefore(minimumStart) ? minimumStart : from;
+		var lower = from == null || from.isBefore(now) ? now : from;
 		var upper = to == null ? now.plus(Duration.ofDays(90)) : to;
 		if (!upper.isAfter(lower) || Duration.between(lower, upper).compareTo(Duration.ofDays(90)) > 0) {
 			throw new ApiException(HttpStatus.BAD_REQUEST, "INVALID_BOOKABLE_SLOT_RANGE", "Slot range must be positive and no longer than 90 days");
@@ -223,7 +222,7 @@ public class AppointmentService {
 				select s.id, s.specialist_account_id, p.display_name, s.start_at, s.end_at, s.timezone, s.modality
 				from availability_slot s join specialist_profile p on p.account_id=s.specialist_account_id
 				where s.status='ACTIVE' and p.approval_status='APPROVED'
-				and s.start_at>=:from and s.start_at<:to
+				and s.end_at>:from and s.start_at<:to
 				and not exists (select 1 from appointment a where a.availability_slot_id=s.id and a.status in ('REQUESTED','CONFIRMED','IN_PROGRESS'))
 				and (s.modality<>'IN_APP_VIDEO' or :videoEnabled)
 				order by s.start_at, s.id limit 200
@@ -312,7 +311,7 @@ public class AppointmentService {
 		return jdbc.sql("""
 				select c.id from service_credit c join service_credit_period p on p.id=c.period_id
 				where p.account_id=:userId and c.state='AVAILABLE'
-				and p.period_start<=:now and p.period_end>:appointmentStart
+				and p.period_start<=:now and p.period_end>:now and p.period_end>:appointmentStart
 				order by p.period_end, c.ordinal for update of c skip locked limit 1
 				""").param("userId", userId).param("now", database(now))
 				.param("appointmentStart", database(appointmentStart)).query(UUID.class).optional()
