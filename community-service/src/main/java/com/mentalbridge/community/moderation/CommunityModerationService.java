@@ -21,6 +21,7 @@ import org.springframework.transaction.annotation.Transactional;
 import com.mentalbridge.community.moderation.CommunityModerationModels.Action;
 import com.mentalbridge.community.moderation.CommunityModerationModels.ActionRecord;
 import com.mentalbridge.community.moderation.CommunityModerationModels.CaseState;
+import com.mentalbridge.community.moderation.CommunityModerationModels.CommunityOperationsSummary;
 import com.mentalbridge.community.moderation.CommunityModerationModels.CreateModerationActionRequest;
 import com.mentalbridge.community.moderation.CommunityModerationModels.CreateReportRequest;
 import com.mentalbridge.community.moderation.CommunityModerationModels.Evidence;
@@ -146,6 +147,15 @@ class CommunityModerationService {
 		if (targetType != null) statement = statement.param("type", targetType.name());
 		if (priority != null) statement = statement.param("priority", priority.name());
 		return statement.query(UUID.class).list().stream().map(this::get).toList();
+	}
+
+	@Transactional(readOnly = true)
+	CommunityOperationsSummary operationsSummary() {
+		var openCount = jdbc.sql("select count(*) from community_moderation_case where state = 'OPEN'")
+				.query(Long.class).single();
+		var totalCount = jdbc.sql("select count(*) from community_moderation_case")
+				.query(Long.class).single();
+		return new CommunityOperationsSummary("COMMUNITY", clock.instant(), openCount, totalCount);
 	}
 
 	@Transactional(readOnly = true)

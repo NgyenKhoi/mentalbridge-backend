@@ -222,6 +222,28 @@ class CommunityModerationIntegrationTests extends CommunityTestProperties {
 				.param("id", caseId).query(Long.class).single()).isZero();
 	}
 
+	@Test
+	void operationsSummaryRequiresAdminAndReturnsAuthoritativeAggregateFacts() throws Exception {
+		mvc.perform(get("/api/v1/community/admin/operations/summary"))
+				.andExpect(status().isUnauthorized());
+
+		mvc.perform(get("/api/v1/community/admin/operations/summary").with(user(REPORTER)))
+				.andExpect(status().isForbidden());
+
+		var postId = createPost();
+		report(postId, "HARASSMENT", "summary-report-001");
+
+		mvc.perform(get("/api/v1/community/admin/operations/summary").with(admin()))
+				.andExpect(status().isOk())
+				.andExpect(jsonPath("$.source").value("COMMUNITY"))
+				.andExpect(jsonPath("$.asOf").exists())
+				.andExpect(jsonPath("$.openModerationCases").value(1))
+				.andExpect(jsonPath("$.totalModerationCases").value(1))
+				.andExpect(jsonPath("$.content").doesNotExist())
+				.andExpect(jsonPath("$.authorSubject").doesNotExist())
+				.andExpect(jsonPath("$.details").doesNotExist());
+	}
+
 	private UUID createPost() throws Exception {
 		var response = mvc.perform(post("/api/v1/community/posts").with(user(AUTHOR))
 				.header("Idempotency-Key", "moderation-post-create-0001")

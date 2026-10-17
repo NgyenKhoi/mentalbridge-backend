@@ -76,6 +76,7 @@ class ConsultationOpenApiContractTests {
 			"POST /api/v1/specialist/appointments/{appointmentId}/session-summaries",
 			"POST /api/v1/specialist/appointments/{appointmentId}/accept",
 			"POST /api/v1/specialist/appointments/{appointmentId}/reject",
+			"GET /api/v1/admin/operations/summary",
 			"GET /api/v1/admin/specialist-profiles",
 			"GET /api/v1/admin/appointment-disputes",
 			"POST /api/v1/admin/appointment-disputes/{disputeId}/resolve",

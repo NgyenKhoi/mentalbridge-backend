@@ -19,6 +19,7 @@ import org.springframework.web.bind.annotation.RequestParam;
 import org.springframework.web.bind.annotation.RestController;
 
 import com.mentalbridge.community.moderation.CommunityModerationModels.CaseState;
+import com.mentalbridge.community.moderation.CommunityModerationModels.CommunityOperationsSummary;
 import com.mentalbridge.community.moderation.CommunityModerationModels.CreateModerationActionRequest;
 import com.mentalbridge.community.moderation.CommunityModerationModels.CreateReportRequest;
 import com.mentalbridge.community.moderation.CommunityModerationModels.ModerationCase;
@@ -67,6 +68,11 @@ class CommunityModerationController {
 	ResponseEntity<Void> unblock(@AuthenticationPrincipal Jwt jwt, @PathVariable UUID communityProfileId) {
 		moderation.unblock(subject(jwt), communityProfileId);
 		return ResponseEntity.noContent().build();
+	}
+
+	@GetMapping("/admin/operations/summary")
+	CommunityOperationsSummary operationsSummary() {
+		return moderation.operationsSummary();
 	}
 
 	@GetMapping("/admin/moderation-cases")

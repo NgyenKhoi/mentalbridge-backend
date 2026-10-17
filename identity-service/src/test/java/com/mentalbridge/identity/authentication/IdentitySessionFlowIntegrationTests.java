@@ -57,6 +57,7 @@ class IdentitySessionFlowIntegrationTests extends IdentityTestProperties {
 			"PUT /api/v1/account/password",
 			"GET /api/v1/account",
 			"GET /api/v1/admin/accounts",
+			"GET /api/v1/admin/accounts/summary",
 			"GET /api/v1/admin/accounts/{accountId}",
 			"PUT /api/v1/admin/accounts/{accountId}/state",
 			"GET /api/v1/admin/platform-reports/catalogue",
