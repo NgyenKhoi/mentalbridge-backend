@@ -1147,6 +1147,27 @@ CREATE TABLE consultation.specialist_profile_language (
     PRIMARY KEY (specialist_account_id, language_tag)
 );
 
+CREATE TABLE consultation.specialist_credential_document (
+    id uuid PRIMARY KEY,
+    specialist_account_id uuid NOT NULL REFERENCES consultation.specialist_profile(account_id) ON DELETE CASCADE,
+    title varchar(160) NOT NULL,
+    issuer varchar(160) NOT NULL,
+    issue_year smallint NOT NULL,
+    credential_type varchar(24) NOT NULL,
+    file_name varchar(180) NOT NULL,
+    media_type varchar(24) NOT NULL,
+    file_bytes bigint NOT NULL,
+    storage_key varchar(180) NOT NULL UNIQUE,
+    storage_format varchar(8) NOT NULL,
+    verification_status varchar(16) NOT NULL,
+    badge_visible boolean NOT NULL,
+    reviewed_by uuid,
+    reviewed_at timestamptz,
+    created_at timestamptz NOT NULL,
+    updated_at timestamptz NOT NULL,
+    version bigint NOT NULL
+);
+
 CREATE TABLE consultation.specialist_profile_status_history (
     id uuid PRIMARY KEY,
     specialist_account_id uuid NOT NULL REFERENCES consultation.specialist_profile(account_id),

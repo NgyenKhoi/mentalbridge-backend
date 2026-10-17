@@ -26,6 +26,7 @@ Use ADR **filename + Decision ID**, not numeric prefix alone, when a reference c
 | [0038-private-multi-domain-achievements.md](0038-private-multi-domain-achievements.md) | `MB-PRIVATE-ACHIEVEMENT-001` | Accepted | Defines a private deterministic gallery over minimized owner facts with explicit unavailable/deferred states and no inferred journey closure |
 | [0039-livekit-cloud-video-consultation.md](0039-livekit-cloud-video-consultation.md) | `MB-LIVEKIT-VIDEO-001` | Accepted provider/access/privacy/retention/completion command; automatic timeout settlement not approved | LiveKit Cloud transport with appointment-scoped tokens, verified minimized evidence and 90-day hold-aware retention |
 | [0040-support-plan-companion-contract.md](0040-support-plan-companion-contract.md) | `MB-SUPPORT-PLAN-COMPANION-001` | Proposed for MB-647 review | Freezes the optional SupportPlan Companion role, intent/context boundary, interaction states, interruption rules, deterministic fallback and cross-client UX contract |
+| [0041-specialist-credential-review.md](0041-specialist-credential-review.md) | `MB-SPECIALIST-CREDENTIAL-001` | Accepted direction | Adds private specialist credentials, ADMIN verification, owner-controlled badges, and `zh`/`fr` profile languages |
 
 For clauses explicitly amended by ADR 0022, ADR 0024, or ADR 0034, the relevant
 latest amendment is the current prospective authority. Historical records keep
