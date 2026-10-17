@@ -7,6 +7,7 @@ import java.time.Instant;
 import java.time.OffsetDateTime;
 import java.util.ArrayList;
 import java.util.Base64;
+import java.util.HashSet;
 import java.util.HexFormat;
 import java.util.List;
 import java.util.Optional;
@@ -16,6 +17,7 @@ import org.springframework.http.HttpStatus;
 import org.springframework.stereotype.Service;
 
 import com.mentalbridge.care.assessment.SafetyStatus;
+import com.mentalbridge.care.assessment.ScreeningLevel;
 import com.mentalbridge.care.resourceeligibility.ResourceEligibilityClient;
 import com.mentalbridge.care.resourceeligibility.generated.ResourceEligibilityContract.RequiredEligibilityRole;
 import com.mentalbridge.care.resourceeligibility.generated.ResourceEligibilityContract.ResourceEligibilityBatchRequest;
@@ -25,11 +27,13 @@ import com.mentalbridge.care.resourceeligibility.generated.ResourceEligibilityCo
 import com.mentalbridge.care.resourceeligibility.generated.ResourceEligibilityContract.ScreeningInstrument;
 import com.mentalbridge.care.resourceeligibility.generated.ResourceEligibilityContract.SupportTier;
 import com.mentalbridge.care.shared.ApiException;
+import com.mentalbridge.care.support.DomainSupportPathway;
 import com.mentalbridge.care.support.SupportEvaluationService;
 import com.mentalbridge.care.support.SupportEvaluationV2Service;
 import com.mentalbridge.care.support.SupportEvaluationV2Service.DomainContributionView;
 import com.mentalbridge.care.support.SupportEvaluationV2Service.EvaluationCommand;
 import com.mentalbridge.care.support.SupportEvaluationV2Service.EvaluationView;
+import com.mentalbridge.care.supportguide.SupportGuideResourceMap.Candidate;
 import com.mentalbridge.care.supportguide.SupportGuideWriter.Draft;
 import com.mentalbridge.care.supportguide.SupportGuideWriter.ResourceDraft;
 import com.mentalbridge.care.supportguide.SupportGuideWriter.StoredGuide;
@@ -40,11 +44,6 @@ public class SupportGuideService {
 	static final String GUIDE_POLICY_VERSION = "mb-support-guide-capstone-v1";
 	private static final String EXPLANATION = "Hướng dẫn này tóm tắt kết quả sàng lọc đã lưu và gợi ý tài nguyên tự hỗ trợ đã được rà soát. Đây không phải chẩn đoán hoặc kế hoạch điều trị.";
 	private static final String STANDARD_SAFETY = "Nếu tình trạng của bạn thay đổi hoặc bạn cảm thấy không an toàn, hãy chủ động tìm hỗ trợ trực tiếp phù hợp tại khu vực của bạn.";
-	private static final List<Candidate> CANDIDATES = List.of(
-			new Candidate("00000000-0000-4000-8000-000000000205", "0", "DEPRESSIVE_SYMPTOMS"),
-			new Candidate("00000000-0000-4000-8000-000000000208", "0", "DEPRESSIVE_SYMPTOMS"),
-			new Candidate("00000000-0000-4000-8000-000000000206", "0", "ANXIETY_SYMPTOMS"),
-			new Candidate("00000000-0000-4000-8000-000000000201", "0", "ANXIETY_SYMPTOMS"));
 
 	private final SupportEvaluationV2Service evaluations;
 	private final ResourceEligibilityClient eligibility;
@@ -101,7 +100,8 @@ public class SupportGuideService {
 		String resourceStatus = resourceStatus(selected.size(), resolved.results());
 		var safety = evaluation.safetyEvidence();
 		boolean positive = safety.status() == SafetyStatus.POSITIVE_SAFETY_SCREEN;
-		var expressed = phrasing.phrase(approvedExplanation(selected), bearerToken, correlationId);
+		var expressed = phrasing.phrase(approvedExplanation(selected, professional(evaluation)), bearerToken,
+				correlationId);
 		var stored = writer.persist(userId, idempotencyKey, requestHash,
 				new Draft(evaluation.supportEvaluationId(), clock.instant(), "STANDARD_POST_SCREENING_GUIDANCE",
 						expressed.text(), safety.status().name(), safety.reasonCode().name(), safety.policyVersion(),
@@ -127,11 +127,12 @@ public class SupportGuideService {
 
 	private ResourceEligibilityBatchRequest request(EvaluationView evaluation) {
 		var requests = new ArrayList<ResourceEligibilityQuery>();
-		for (Candidate candidate : CANDIDATES) {
+		for (Candidate candidate : SupportGuideResourceMap.candidates(level(evaluation, "PHQ9"), level(evaluation, "GAD7"))) {
 			DomainContributionView domain = evaluation.contributingDomains().stream()
 					.filter(value -> value.domain().name().equals(candidate.domain())).findFirst().orElseThrow();
 			requests.add(new ResourceEligibilityQuery(
-					UUID.nameUUIDFromBytes((evaluation.supportEvaluationId() + candidate.resourceId()).getBytes(StandardCharsets.UTF_8)).toString(),
+					UUID.nameUUIDFromBytes((evaluation.supportEvaluationId() + candidate.resourceId() + candidate.domain())
+							.getBytes(StandardCharsets.UTF_8)).toString(),
 					candidate.resourceId(), candidate.contentVersion(),
 					com.mentalbridge.care.resourceeligibility.generated.ResourceEligibilityContract.ScreeningDomain.valueOf(candidate.domain()),
 					RequiredEligibilityRole.PRIMARY,
@@ -144,9 +145,11 @@ public class SupportGuideService {
 
 	private List<ResourceDraft> selected(ResourceEligibilityBatchRequest request, List<ResourceEligibilityResult> results) {
 		var selected = new ArrayList<ResourceDraft>();
-		for (int index = 0; index < results.size() && selected.size() < 4; index++) {
+		var identities = new HashSet<String>();
+		for (int index = 0; index < results.size() && selected.size() < SupportGuideResourceMap.MAX_RESOURCES; index++) {
 			var result = results.get(index);
-			if (result.outcome() != ResourceEligibilityOutcome.ELIGIBLE) continue;
+			if (result.outcome() != ResourceEligibilityOutcome.ELIGIBLE
+					|| !identities.add(result.resourceId() + ":" + result.contentVersion())) continue;
 			var query = request.requests().get(index);
 			selected.add(new ResourceDraft(UUID.fromString(result.resourceId()), Long.parseLong(result.contentVersion()),
 					UUID.fromString(result.publicationId()), query.targetDomain().name(), result.role().name(),
@@ -159,15 +162,26 @@ public class SupportGuideService {
 		boolean unavailable = results.stream().anyMatch(value -> value.outcome() == ResourceEligibilityOutcome.UNAVAILABLE);
 		boolean stale = results.stream().anyMatch(value -> value.outcome() == ResourceEligibilityOutcome.STALE
 				|| value.outcome() == ResourceEligibilityOutcome.WITHDRAWN);
+		if (selected == SupportGuideResourceMap.MAX_RESOURCES) return "AVAILABLE";
 		if (selected > 0) return unavailable || stale ? "PARTIAL" : "AVAILABLE";
 		if (unavailable) return "UNAVAILABLE";
 		if (stale) return "STALE";
 		return "EMPTY";
 	}
 
-	private String approvedExplanation(List<ResourceDraft> resources) {
-		if (resources.isEmpty()) return EXPLANATION;
+	private String approvedExplanation(List<ResourceDraft> resources, boolean professional) {
+		if (resources.isEmpty() || professional) return EXPLANATION;
 		return EXPLANATION + " Bạn có thể bắt đầu bằng cách chọn một tài nguyên phù hợp bên dưới, thử một bước nhỏ và xem điều gì hữu ích với mình.";
+	}
+
+	private boolean professional(EvaluationView evaluation) {
+		return evaluation.contributingDomains().stream()
+				.anyMatch(domain -> domain.supportPathway() == DomainSupportPathway.PROFESSIONAL_SUPPORT_RECOMMENDED);
+	}
+
+	private ScreeningLevel level(EvaluationView evaluation, String instrument) {
+		return evaluation.contributingDomains().stream().filter(domain -> instrument.equals(domain.instrument()))
+				.findFirst().orElseThrow().screeningLevel();
 	}
 
 	private SupportGuideView view(UUID userId, StoredGuide stored) {
@@ -220,7 +234,6 @@ public class SupportGuideService {
 		return Base64.getUrlEncoder().withoutPadding().encodeToString((time + "|" + id).getBytes(StandardCharsets.UTF_8));
 	}
 
-	private record Candidate(String resourceId, String contentVersion, String domain) { }
 	private record Cursor(Instant time, UUID id) { }
 	public record GenerateCommand(UUID phq9AssessmentId, UUID gad7AssessmentId) { }
 	public record ExplanationView(String code, String text) { }
