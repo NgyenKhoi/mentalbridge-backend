@@ -18,5 +18,8 @@ eureka:
 
 mentalbridge:
   consultation:
+    credentials:
+      cloudinary:
+        timeout-seconds: 5
     account-lifecycle:
       enabled: false

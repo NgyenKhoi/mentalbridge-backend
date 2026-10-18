@@ -140,23 +140,25 @@ class AppointmentRequestIntegrationTests extends ConsultationTestProperties {
 				.content(body(slotId, "IN_APP_VIDEO"))).andExpect(status().isConflict())
 				.andExpect(jsonPath("$.code").value("APPOINTMENT_MODALITY_MISMATCH"));
 
-		var soon = chatSlot(Instant.now().plusSeconds(3_600));
+		var soon = chatSlot(Instant.now().minusSeconds(7_200));
 		mvc.perform(post("/api/v1/appointments").with(user(paid))
 				.header("Idempotency-Key", "short-lead-key-00001").contentType(MediaType.APPLICATION_JSON)
 				.content(body(soon, "IN_APP_CHAT"))).andExpect(status().isConflict())
-				.andExpect(jsonPath("$.code").value("APPOINTMENT_LEAD_TIME_INVALID"));
+				.andExpect(jsonPath("$.code").value("APPOINTMENT_SLOT_STALE"));
 	}
 
 	@Test
-	void bookableSlotsClampRequestedFromToMinimumLeadTime() throws Exception {
+	void bookableSlotsIncludeUnexpiredWindowsWithoutAdvanceNotice() throws Exception {
 		var now = Instant.now();
-		var tooSoon = chatSlot(now.plusSeconds(10_800));
+		var active = chatSlot(now.minusSeconds(30));
+		var ended = chatSlot(now.minusSeconds(7_200));
 		var bookable = chatSlot(now.plusSeconds(18_000));
 
 		mvc.perform(get("/api/v1/bookable-slots").with(user(UUID.randomUUID()))
 				.param("from", now.toString()).param("to", now.plusSeconds(86_400).toString()))
 				.andExpect(status().isOk())
-				.andExpect(jsonPath("$.items[?(@.id == '%s')]".formatted(tooSoon)).isEmpty())
+				.andExpect(jsonPath("$.items[?(@.id == '%s')]".formatted(active)).isNotEmpty())
+				.andExpect(jsonPath("$.items[?(@.id == '%s')]".formatted(ended)).isEmpty())
 				.andExpect(jsonPath("$.items[?(@.id == '%s')]".formatted(bookable)).isNotEmpty());
 	}
 

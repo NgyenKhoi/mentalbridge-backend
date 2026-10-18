@@ -106,8 +106,8 @@ public class AvailabilityService {
 		if (!Duration.between(startAt, endAt).equals(SLOT_DURATION)) {
 			throw validation("endAt", "INVALID_SLOT_DURATION", "Availability must last exactly 60 minutes");
 		}
-		if (!startAt.isAfter(clock.instant())) {
-			throw validation("startAt", "AVAILABILITY_MUST_BE_FUTURE", "Availability must start in the future");
+		if (!endAt.isAfter(clock.instant())) {
+			throw validation("endAt", "AVAILABILITY_MUST_BE_FUTURE", "Availability must end in the future");
 		}
 		var timezone = command.timezone() == null ? "" : command.timezone().strip();
 		try {

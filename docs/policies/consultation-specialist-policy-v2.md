@@ -61,8 +61,12 @@ is specialist account ID; historical v1 cursors are stale under v2.
 The response exposes stable explanation codes and policy version but never a
 clinical-suitability claim or hidden weighted score. Public discovery fields
 exclude PracticeLocation, address, phone, external links, prices, free-intro
-claims, credentials, licenses, certificates, unsupported titles/specialties,
+claims, unverified credentials, unsupported titles/specialties,
 and sensitive Care/Journal/chat content.
+
+The specialist credential amendment in [ADR 0041](../adr/0041-specialist-credential-review.md)
+permits only ADMIN-verified, specialist-enabled badge titles in public profile
+surfaces. Originals and serial numbers remain private to the owner and ADMIN.
 
 A booking request may be created only when all are true:
 
@@ -212,9 +216,19 @@ A request snapshots the exact 60-minute interval, specialist, mode, applicable
 timezone/provenance, held slot, and held credit. Duplicate or concurrent
 requests must not double-book a slot or double-hold one credit.
 
+Owner runtime amendment (2026-10-18, MB-384): there is no minimum advance
+booking interval. An approved specialist may publish a current sixty-minute
+window while its end remains future. Discovery and booking include these
+unexpired active slots immediately, including an already-started window.
+Withdrawn, ended and actively reserved slots remain unavailable. An assigned
+specialist must still confirm the request before interactive session access;
+access ends at the unchanged scheduled end.
+
 The assigned specialist may accept or reject only while the request remains
 eligible. The decision deadline is `min(requestedAt + 24h, startsAt - 2h)`
-unless a later accepted policy changes it. Acceptance moves to `CONFIRMED` and
+when that cutoff is after the request; otherwise it is the unexpired slot end.
+It must always follow the request and never exceed scheduled end. This amends
+the former four-hour lead-time boundary in ADR 0014. Acceptance moves to `CONFIRMED` and
 keeps the credit `HELD`; rejection or deterministic expiry releases slot and
 credit exactly once.
 

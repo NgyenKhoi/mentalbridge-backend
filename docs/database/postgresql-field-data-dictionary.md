@@ -1181,7 +1181,7 @@ draft creation and reload under [SupportPlan policy v2](../policies/support-plan
 
 ### `consultation.specialist_profile`
 
-Consultation-owned professional profile and authoritative administrator approval state. The product does not collect specialist verification documents.
+Consultation-owned professional profile and authoritative administrator approval state. Private credential documents are stored separately and reviewed independently.
 
 Database checks require a submitted timestamp once review starts, reviewer identity/time for terminal approval decisions, and a stable reason for rejection or suspension.
 
@@ -1214,13 +1214,30 @@ accepts only `DEPRESSIVE_SYMPTOMS` and `ANXIETY_SYMPTOMS`.
 
 ### `consultation.specialist_profile_language`
 
-V1 languages declared for user-facing support. Story 6101 limits values to
-lowercase `vi` and `en`.
+Reviewed languages declared for user-facing support. Values are lowercase
+`vi`, `en`, `zh`, and `fr`.
 
 | Field | Purpose |
 | --- | --- |
 | `specialist_account_id` | Owning specialist profile and first half of the composite primary key. |
 | `language_tag` | Supported language tag and second half of the composite primary key. |
+
+### `consultation.specialist_credential_document`
+
+Consultation-owned private credential metadata. Originals live in authenticated Cloudinary storage. Only a specialist owner or ADMIN can request a short-lived original-file link; only ADMIN can verify. Badge visibility never grants access to the original.
+
+| Field | Purpose |
+| --- | --- |
+| `id` | Stable credential identifier for owner/admin review and optimistic commands. |
+| `specialist_account_id` | Owning specialist profile; cascading deletion removes the metadata with the profile. |
+| `title` / `issuer` / `issue_year` / `credential_type` | Specialist-supplied professional claim and ADMIN review context; public badge text is eligible only after verification. |
+| `file_name` / `media_type` / `file_bytes` | Bounded original-file display and safety metadata, without storing the binary. |
+| `storage_key` / `storage_format` | Private Cloudinary locator and format used only inside Consultation to issue an expiring URL. The key is unique and never public. |
+| `verification_status` | `PENDING`, `VERIFIED`, or `REJECTED`; upload always begins pending. |
+| `badge_visible` | Specialist choice; database permits true only for verified documents. |
+| `reviewed_by` / `reviewed_at` | External ADMIN identity and UTC time of a terminal review decision; both null while pending. |
+| `created_at` / `updated_at` | UTC creation and last review/visibility change. |
+| `version` | Optimistic counter for review and badge commands. |
 
 ### `consultation.specialist_profile_status_history`
 
@@ -1387,8 +1404,8 @@ Implemented MB-378/MB-558 request aggregate with MB-379 decision settlement, MB-
 | `modality` | `IN_APP_CHAT` or `IN_APP_VIDEO`; physical, phone, and external-link modes are not accepted. |
 | `scheduled_start_at` / `scheduled_end_at` | Immutable exact UTC interval copied from availability and constrained to 60 minutes. |
 | `display_timezone` | IANA timezone copied from the slot for stable user display. |
-| `requested_at` | Server UTC command instant used for lead-time and deadline calculation. |
-| `decision_deadline_at` | Earlier of 24 hours after request or two hours before start; the decision/expiry owner consumes this handoff. |
+| `requested_at` | Server UTC command instant used for unexpired-window validation and deadline calculation. |
+| `decision_deadline_at` | Earlier of 24 hours after request or two hours before start when that cutoff is still future; otherwise the unexpired slot end. Always after the request and no later than scheduled end. The decision/expiry owner consumes this handoff. |
 | `idempotency_key` | Printable user-scoped request key; exact retry returns this row and conflicting reuse fails. |
 | `replaces_appointment_id` | Optional self-reference to the eligible future appointment replaced by this request. The old immutable schedule is retained as `CANCELLED`; its reservation capacity and, when policy permits, exact held credit move to the replacement atomically. One old appointment may be replaced only once. |
 | `originating_plan_action_id` | Optional opaque Care `PROFESSIONAL_SUPPORT` action reference supplied only by an explicit owner booking flow. A replacement inherits the owned prior appointment's value when the request omits it and rejects a conflicting explicit value. It has no cross-service foreign key, grants no data access, never authorizes Consultation to mutate SupportPlan lifecycle, and supports the owner-and-action appointment-history query. |

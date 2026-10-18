@@ -23,6 +23,9 @@ Enable `CONSULTATION_VIDEO_ENABLED=true` for connection issuance, and separately
 default false. `LIVEKIT_TOKEN_TTL=PT2M` is a short join-token lifetime, not a
 session-duration enforcement mechanism. Missing/invalid configuration fails
 closed. Existing manual appointment, brief and summary operations remain usable.
+The repository Compose deployment passes these flags and the four `LIVEKIT_*`
+settings only to the Consultation container. Keep both feature flags false until
+the credential probe and the public webhook route below are ready.
 
 Configure a provider webhook destination reaching Consultation's
 `POST /internal/v1/video/livekit/webhook`, with its signed Authorization header
@@ -43,6 +46,29 @@ No room callback alone confirms an appointment or settles its held credit.
 No recording, egress, transcription, AI Agent or automatic AI participant is
 enabled. Provider room names and identities are opaque. No brief, summary,
 patient name, email or clinical information is sent as media metadata.
+
+For the current single-host Nginx deployment, expose only the exact webhook path
+to Consultation and leave every other `/internal/` path closed. Preserve the
+provider Authorization header and request body:
+
+```nginx
+location = /internal/v1/video/livekit/webhook {
+    proxy_pass http://127.0.0.1:8082/internal/v1/video/livekit/webhook;
+    proxy_set_header Host $host;
+    proxy_set_header X-Forwarded-Proto $scheme;
+    proxy_set_header Authorization $http_authorization;
+}
+
+location ^~ /internal/ {
+    return 404;
+}
+```
+
+After `nginx -t` and reload, an unsigned empty POST to the exact public path must
+reach Consultation and be rejected by signature validation rather than return
+the frontend 404. Configure the same HTTPS URL in the LiveKit Cloud project with
+the API key that signs webhook deliveries. Never proxy the Consultation actuator,
+OpenAPI endpoint or another internal route publicly.
 
 ## Exercise a real consultation
 

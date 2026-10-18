@@ -93,6 +93,7 @@ settle or release credit. Historical chat policy remains unchanged.
 | `specialist_profile_amendment_history` | consultation-service | PostgreSQL | ACTIVE | Append-only exact amendment revision/review payload and bounded actor/reason/time provenance. |
 | `specialist_profile_support_area` | consultation-service | PostgreSQL | ACTIVE | Physical many-to-one child of `specialist_profile`. |
 | `specialist_profile_language` | consultation-service | PostgreSQL | ACTIVE | Physical many-to-one child of `specialist_profile`. |
+| `specialist_credential_document` | consultation-service | PostgreSQL | ACTIVE | Private credential metadata owned by one specialist profile; ADMIN verification and owner-controlled public badge visibility, with authenticated original storage outside PostgreSQL. |
 | `specialist_profile_status_history` | consultation-service | PostgreSQL | ACTIVE | Physical history child; actor ID is a logical/external Identity reference. |
 | `current_service_entitlement` | consultation-service | PostgreSQL | ACTIVE | Account and establishing actor are logical/external Identity references; current narrow package decision for consumers. |
 | `availability_slot` | consultation-service | PostgreSQL | ACTIVE | Physical many-to-one to `specialist_profile`; active slots cannot overlap for one specialist. |

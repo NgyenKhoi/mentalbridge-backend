@@ -24,12 +24,15 @@ in-app chat/video availability and appointments, session
 evidence and user-visible summaries, subscription/payment/upgrade,
 consultation credits, specialist earnings/provider payout reconciliation, and
 reviews. Billing and booking invariants stay transactionally local in its
-PostgreSQL data. It does not collect specialist verification documents.
+PostgreSQL data. Specialist verification documents are private Consultation-owned
+records. The specialist uploads a file, an administrator reviews it, and only a
+verified credential title selected by the specialist can appear publicly.
 
 Story 6101 implements the first profile vertical slice: a specialist can save the six
 approved public fields, submit the profile, and an administrator can inspect
-and approve it. The approval history is audited and no credential, license, or
-verification-document claim is accepted. MB-360 completes rejection,
+and approve it. The approval history is audited. That initial slice did not accept
+credential, license, or verification-document claims; the later credential review
+flow is described below. MB-360 completes rejection,
 same-profile resubmission, suspension, and restoration with closed reasons and
 audited transitions. Suspension atomically withdraws future availability,
 cancels future not-started appointments, and releases their exact held credits;
@@ -48,6 +51,12 @@ enforced locally. MB-379 lets only the assigned specialist accept or reject an
 eligible request with optimistic concurrency and idempotent history. Acceptance
 keeps the credit held; rejection and server-scheduled deadline expiry release
 the exact credit once in the same local transaction.
+The owner's 2026-10-18 MB-384 timing amendment removes advance booking delay:
+current unexpired sixty-minute slots can be published, discovered and booked
+immediately. For a short-notice request whose old decision buffer has passed,
+the assigned specialist may confirm until slot end. Migration 027 expands only
+the deadline upper bound to scheduled end; existing rows and older writers stay
+valid. Session, approval, credit and financial checks remain authoritative.
 MB-558 adds `consultation-credit-v2` for new periods (`FREE=0`, `PLUS=4`,
 `PREMIUM=10`), preserves existing v1 periods as `0/1/3`, and exposes/enforces
 separate active-reservation limits `0/2/4`. Replacement requests retain the old
@@ -350,6 +359,22 @@ separate reviewed amendment without changing the current public profile.
 Rejection and suspension accept only their documented
 stable reason sets. A suspension response reports the exact number of future
 slots withdrawn, appointments cancelled, and credits released.
+
+## Private specialist credential review
+
+Credential documents are a separate Consultation-owned review flow: specialists
+list and upload private PDF/JPEG/PNG files through `/api/v1/specialist-profile/documents`,
+open originals through five-minute signed links, and enable a public badge only
+after ADMIN verification. ADMIN uses `/api/v1/admin/specialist-profiles/documents`
+to list pending documents, inspect an original, and verify or reject with an
+ETag. Originals and Cloudinary keys never appear in discovery. Set
+`CONSULTATION_CREDENTIAL_STORAGE_ENABLED=true` and the four
+`CONSULTATION_CLOUDINARY_*` values to enable upload and original-file access;
+reads and profile edits remain available when storage is disabled.
+Apply Consultation migration `026-specialist-language-and-credentials.sql`
+before enabling the feature. The Compose application container has Liquibase
+disabled, so its database migration must run through the deployment migration
+step before that container is restarted.
 
 ## MB-635 reviewed profile amendments
 

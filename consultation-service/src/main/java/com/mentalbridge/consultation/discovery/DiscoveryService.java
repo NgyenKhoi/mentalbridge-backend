@@ -44,10 +44,9 @@ import com.mentalbridge.consultation.specialist.SupportArea;
 public class DiscoveryService {
 
 	static final String POLICY_VERSION = "specialist-discovery-v2";
-	private static final Duration MINIMUM_LEAD_TIME = Duration.ofHours(4);
 	private static final Duration MAXIMUM_WINDOW = Duration.ofDays(90);
 	private static final int MAXIMUM_SLOTS_PER_SPECIALIST = 20;
-	private static final Set<String> LANGUAGES = Set.of("vi", "en");
+	private static final Set<String> LANGUAGES = Set.of("vi", "en", "zh", "fr");
 
 	private final JdbcClient jdbc;
 	private final ScreeningContextResolver screeningContexts;
@@ -112,8 +111,7 @@ public class DiscoveryService {
 				throw new ApiException(HttpStatus.BAD_REQUEST, "VALIDATION_FAILED", "timezone must be an IANA timezone");
 			}
 		}
-		var minimum = now.plus(MINIMUM_LEAD_TIME);
-		var from = criteria.from() == null || criteria.from().isBefore(minimum) ? minimum : criteria.from();
+		var from = criteria.from() == null || criteria.from().isBefore(now) ? now : criteria.from();
 		var to = criteria.to() == null ? now.plus(MAXIMUM_WINDOW) : criteria.to();
 		if (!to.isAfter(from) || Duration.between(from, to).compareTo(MAXIMUM_WINDOW) > 0) {
 			throw new ApiException(HttpStatus.BAD_REQUEST, "INVALID_DISCOVERY_RANGE",
@@ -146,7 +144,7 @@ public class DiscoveryService {
 				 select s.id, s.start_at, s.end_at, s.timezone, s.modality, s.version
 				 from availability_slot s
 				 where s.specialist_account_id=p.account_id and s.status='ACTIVE'
-				 and s.start_at>=:from and s.start_at<:to
+				 and s.end_at>:from and s.start_at<:to
 				 and (:modalityFiltered=false or s.modality=:modality)
 				 and (s.modality<>'IN_APP_VIDEO' or :videoEnabled)
 				 and not exists (

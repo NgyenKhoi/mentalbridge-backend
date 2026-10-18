@@ -28,6 +28,7 @@
 	</scm>
 	<properties>
 		<java.version>21</java.version>
+		<cloudinary.version>2.3.2</cloudinary.version>
 		<spring-cloud.version>2025.1.2</spring-cloud.version>
 		<swagger-parser.version>2.1.45</swagger-parser.version>
 		<liquibase.version>5.0.3</liquibase.version>
@@ -37,6 +38,11 @@
 			<groupId>io.livekit</groupId>
 			<artifactId>livekit-server</artifactId>
 			<version>0.16.0</version>
+		</dependency>
+		<dependency>
+			<groupId>com.cloudinary</groupId>
+			<artifactId>cloudinary-http5</artifactId>
+			<version>${cloudinary.version}</version>
 		</dependency>
 		<dependency>
 			<groupId>org.springframework.boot</groupId>
