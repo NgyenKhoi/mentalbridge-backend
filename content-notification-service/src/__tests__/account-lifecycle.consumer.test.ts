@@ -29,15 +29,21 @@ describe('AccountLifecycleProjector', () => {
     await expect(projector.project(event('USER'))).resolves.toBeUndefined();
 
     expect(initializeForAccount).toHaveBeenCalledOnce();
-    expect(initializeForAccount).toHaveBeenCalledWith('33333333-3333-4333-8333-333333333333');
+    expect(initializeForAccount).toHaveBeenCalledWith(
+      '33333333-3333-4333-8333-333333333333',
+      'USER',
+    );
   });
 
-  it('does not create user notification preferences for specialist accounts', async () => {
+  it('initializes bounded notification preferences for specialist accounts', async () => {
     const initializeForAccount = vi.fn().mockResolvedValue(undefined);
     const projector = new AccountLifecycleProjector({ initializeForAccount } as never);
 
     await expect(projector.project(event('SPECIALIST'))).resolves.toBeUndefined();
 
-    expect(initializeForAccount).not.toHaveBeenCalled();
+    expect(initializeForAccount).toHaveBeenCalledWith(
+      '33333333-3333-4333-8333-333333333333',
+      'SPECIALIST',
+    );
   });
 });

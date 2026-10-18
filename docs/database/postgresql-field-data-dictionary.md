@@ -1624,7 +1624,7 @@ transition and excludes email addresses and consultation content.
 | `id` | Stable Kafka `messageId` reused across relay attempts. |
 | `appointment_id`, `appointment_version` | Unique aggregate/version identity preserving per-appointment order and dedupe. |
 | `correlation_id` | Safe request/job correlation UUID. |
-| `payload` | Minimized owner ID, status, UTC start, modality, and replacement link only. |
+| `payload` | Minimized user/specialist owner IDs, status, UTC start, modality, and replacement link only. It excludes Journal, assessment, consultation brief, session summary, and chat bodies. |
 | `occurred_at` | Authoritative transition instant. |
 | `published_at` | Kafka acknowledgement instant; null while pending. |
 | `attempt_count`, `next_attempt_at` | Bounded observable relay retry/lease state. |
@@ -2219,6 +2219,7 @@ and email choices cannot drift across web, email, inbox, or future mobile consum
 | Field | Purpose |
 | --- | --- |
 | `user_id` | External Identity account UUID and aggregate owner; it comes only from the verified JWT. |
+| `owner_type` | Authoritative `USER` or `SPECIALIST` preference scope. SPECIALIST rows are database-constrained to keep Journal, emotion, screening, streak, Community, wellbeing-digest, and resource-reminder controls disabled. |
 | `notifications_enabled` | Top-level user switch for optional notification delivery. |
 | `channel_in_app_enabled` | Whether optional in-app delivery is enabled. |
 | `channel_email_enabled` | Whether email delivery is enabled; email delivery still requires an applicable behavior and opt-in. |
@@ -2259,7 +2260,7 @@ Durable in-app notification and safe delivery payload owned by Content/Notificat
 | `category` | Stable kind used for preference, priority, and presentation rules. MB-564 adds separate Journal/emotion kinds; MB-617 adds `COMMUNITY_COMMENT`, `COMMUNITY_REPLY`, and `COMMUNITY_REACTION` while retaining historical generic kinds. |
 | `title` | Reviewed/minimized user-visible title safe for the selected channel. |
 | `body` | Reviewed/minimized user-visible body that excludes raw sensitive source content. |
-| `action_type` | Optional approved internal action enum used to derive a relative client route; arbitrary producer URLs are never stored. |
+| `action_type` | Optional approved internal action enum used to derive a relative client route; `OPEN_SPECIALIST_APPOINTMENTS` resolves only to the specialist appointment workspace and arbitrary producer URLs are never stored. |
 | `action_target_id` | Optional opaque target UUID required for `OPEN_RESOURCE` or `OPEN_COMMUNITY_POST`; Community stores only the approved post deep-link ID, and the authorized Community read supplies the same safe unavailable state for removed, hidden, blocked, or unknown content. |
 | `priority` | Delivery/presentation priority, not a clinical severity decision. |
 | `read_at` | UTC instant the recipient marked the in-app notification read; null while unread. |
@@ -2268,7 +2269,7 @@ Durable in-app notification and safe delivery payload owned by Content/Notificat
 | `created_at` | Immutable UTC creation instant used for cursor ordering. |
 | `deleted_at` | UTC user/policy tombstone instant; null while visible in history. |
 | `source` | Stable bounded producer namespace such as `CONTENT`, `REALTIME`, or `COMMUNITY_INTERACTION_V1`; it carries no provider payload or user-authored text. |
-| `source_identity` | Stable producer-owned event identity used with `recipient_id` and `source` to collapse retries for one recipient while allowing legitimate fan-out of the same source event to other recipients. Journal/emotion notifications use `<kind>:<local-date>`; Community notifications use the v1 fact `eventId`. |
+| `source_identity` | Stable producer-owned event identity used with `recipient_id` and `source` to collapse retries for one recipient while allowing legitimate fan-out of the same source event to other recipients. Journal/emotion notifications use `<kind>:<local-date>`; Community notifications use the v1 fact `eventId`; specialist appointment notifications use `<appointment-id>:<aggregate-version>`. |
 | `request_fingerprint` | SHA-256 of the validated minimized create command or Community v1 fact; changed reuse of a dedupe identity is rejected instead of overwriting the original notification. |
 | `delivery_state` | Durable delivery lifecycle (`PENDING`, `DELIVERED`, `FAILED`, or `CANCELLED`); only `DELIVERED` records appear in the inbox. |
 | `version` | Monotonic mutation counter incremented for the first read or tombstone transition. |

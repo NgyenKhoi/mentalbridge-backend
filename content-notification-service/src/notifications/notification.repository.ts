@@ -48,6 +48,7 @@ function action(row: NotificationRow): NotificationItem['action'] {
     OPEN_APPOINTMENTS: '/appointments',
     OPEN_RESOURCES: '/resources',
     OPEN_ASSESSMENTS: '/assessments',
+    OPEN_SPECIALIST_APPOINTMENTS: '/specialist/appointments',
   };
   return {
     type: row.action_type,
