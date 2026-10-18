@@ -10,6 +10,16 @@ runtime source of truth. Exact field purposes are documented in the
 
 ## Ownership
 
+MB-669 adds nullable cycle state only for `support-plan-proposal-v1` native plans,
+under `030-support-plan-proposal-cycle.sql` (`care-031`). The stored IANA timezone,
+cycle number, local start date and pause intervals derive a 14-day review date;
+passing that date performs no lifecycle write. Explicit review-due continuation
+uses the existing owner-scoped idempotent command table and creates a new ONCE
+reassessment schedule/occurrence. Resume ends the previous review schedule and
+cancels only its open/pause-cancelled occurrence before creating the shifted one;
+completed and skipped evidence stays unchanged. Existing-policy and v2 rows are
+not backfilled.
+
 | Service database | Owner | Main aggregates |
 | --- | --- | --- |
 | `mentalbridge_identity` | Identity Service | account, role, refresh session, verification/reset token |

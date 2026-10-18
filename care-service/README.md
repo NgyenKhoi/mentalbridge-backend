@@ -253,8 +253,29 @@ completed. Accepted completion evidence cannot be erased or reopened through
 this command. Inactive/cancelled/future-day targets fail closed, same-state
 retries preserve version, and state changes reuse the minimized native
 occurrence event without copying source content or changing plan lifecycle.
-Native helpfulness/private-reflection replacement is not exposed by this slice;
-the legacy engagement API remains limited to its v2 resource model.
+MB-644 adds native occurrence engagement through
+`PUT` / `DELETE /api/v2/support-plan-occurrences/{occurrenceId}/engagement`.
+The PUT reuses the existing engagement request shape and requires the stored
+occurrence state; it cannot complete, reopen, or revoke an owner-confirmed
+outcome. DELETE clears only engagement metadata and retains that outcome and
+its evidence. Both commands require `If-Match`, scope writes to the owner and
+current active action, and return `ActionOccurrence` with `ETag`. The legacy
+engagement API remains limited to its v2 resource model. Native events contain
+coded engagement and bounded evidence references, never private reflection.
+The six new occurrence engagement fields are emitted only when native metadata
+exists or in native engagement command replies. A historical state-only timestamp
+does not add fields; adapter and earlier occurrence reads retain their wire shape.
+
+MB-669 new native drafts use `support-plan-proposal-v1` through the existing
+`POST /api/v2/support-plans` command. The plan read model exposes a 14-day local
+cycle; paused days defer its review date. `REVIEW_DUE` keeps the plan active.
+Only the explicit
+`POST /api/v2/support-plans/{supportPlanId}/cycle-continuation` command starts
+the next cycle, with `If-Match` and `Idempotency-Key`. Composition, cycle and
+continuation rules are defined in
+[`support-plan-proposal-v1`](../docs/policies/support-plan-proposal-v1.md).
+The additive `cycle` field is emitted only for this proposal policy. Earlier
+native policies and the v2 adapter omit it for strict-client compatibility.
 
 The web/mobile consumers use canonical Emotion navigation, explicit completion
 checks and separate factual owner Emotion coverage. Native device execution

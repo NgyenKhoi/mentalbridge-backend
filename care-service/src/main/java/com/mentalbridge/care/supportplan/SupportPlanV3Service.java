@@ -17,6 +17,7 @@ import org.springframework.http.HttpStatus;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
+import com.fasterxml.jackson.annotation.JsonInclude;
 import com.mentalbridge.care.shared.ApiException;
 
 @Service
@@ -95,6 +96,7 @@ public class SupportPlanV3Service {
 		Instant now = clock.instant();
 		var values = window.occurrences().stream().map(value -> {
 			boolean nativeAction = value.sourceActionId() != null;
+			boolean hasEngagement = nativeAction && value.hasEngagement();
 			UUID actionId = nativeAction ? value.sourceActionId() : legacyActions.get(value.sourceSlotKey());
 			if (actionId == null) {
 				throw invalidModel();
@@ -115,7 +117,10 @@ public class SupportPlanV3Service {
 					nativeAction ? value.sourceActionVersion() : value.sourcePlanVersion(),
 					value.activityScheduleId(), value.scheduleVersion(), representation, value.version(),
 					value.localDate(), value.scheduledAt(), value.state(), displayState, value.stateReason(),
-					evidence, outcomeRecordedAt);
+					evidence, outcomeRecordedAt, hasEngagement ? value.hidden() : null,
+					hasEngagement ? value.helpfulness() : null, hasEngagement ? value.barrierCode() : null,
+					hasEngagement ? value.reflection() : null, hasEngagement ? value.summaryReuseApproved() : null,
+					hasEngagement ? value.engagementUpdatedAt() : null);
 		}).toList();
 		return new ActionOccurrenceListView(plan.id(), plan.status(), representation, from, through, values,
 				INTERPRETATION);
@@ -132,7 +137,7 @@ public class SupportPlanV3Service {
 		return new SupportPlanV3View(plan.id(), 3, policyVersion, representation(plan), plan.status(), plan.version(), safety, values,
 				plan.createdAt(), plan.updatedAt(), plan.activatedAt(), plan.completedAt(), plan.completionReason(),
 				plan.supersededAt(), plan.discardedAt(), "WELLBEING_SUPPORT_NOT_TREATMENT",
-				SupportPlanService.disclaimer());
+				SupportPlanService.disclaimer(), SupportPlanCycle.view(plan, clock.instant()));
 	}
 
 	private List<PlanFocusView> adaptedFocuses(SupportPlanEntity plan) {
@@ -330,7 +335,8 @@ public class SupportPlanV3Service {
 	public record SupportPlanV3View(UUID supportPlanId, int modelVersion, String planPolicyVersion, String representationMode,
 			String status, long version, SafetyView safety, List<PlanFocusView> focuses, Instant createdAt, Instant updatedAt,
 			Instant activatedAt, Instant completedAt, String completionReason, Instant supersededAt,
-			Instant discardedAt, String disclaimerCode, String disclaimer) { }
+			Instant discardedAt, String disclaimerCode, String disclaimer,
+			@JsonInclude(JsonInclude.Include.NON_NULL) SupportPlanCycle.View cycle) { }
 	public record SafetyView(String status, String reasonCode, String policyVersion,
 			String guidanceCode, String guidance) { }
 	public record PlanFocusView(String focusId, String title, String rationale,
@@ -360,7 +366,13 @@ public class SupportPlanV3Service {
 	public record ActionOccurrenceView(UUID occurrenceId, String actionId, String actionType,
 			long actionVersion, UUID scheduleId, int scheduleVersion, String representationMode,
 			long version, LocalDate localDate, Instant scheduledAt, String state, String displayState,
-			String stateReason, CompletionEvidenceView completionEvidence, Instant outcomeRecordedAt) { }
+			String stateReason, CompletionEvidenceView completionEvidence, Instant outcomeRecordedAt,
+			@JsonInclude(JsonInclude.Include.NON_NULL) Boolean hidden,
+			@JsonInclude(JsonInclude.Include.NON_NULL) String helpfulness,
+			@JsonInclude(JsonInclude.Include.NON_NULL) String barrierCode,
+			@JsonInclude(JsonInclude.Include.NON_NULL) String reflection,
+			@JsonInclude(JsonInclude.Include.NON_NULL) Boolean summaryReuseApproved,
+			@JsonInclude(JsonInclude.Include.NON_NULL) Instant engagementUpdatedAt) { }
 	public record CompletionEvidenceView(String kind, String ownerDomain, String factId,
 			String factRevision, Instant occurredAt, Instant verifiedAt) { }
 }

@@ -864,6 +864,11 @@ concurrent guards for one draft and one official current plan per owner.
 | `version` | Optimistic-lock counter returned in the ETag; incremented by each accepted choice or activation command. |
 | `model_version` | Explicit persisted model discriminator: `2` for Resource slots or `3` for native focuses/actions. It participates in the v3 child foreign key so a focus cannot attach to a v2 plan. |
 | `plan_policy_version` | Native v3 composition policy reference, required and bounded for model 3; null for v2. |
+| `cycle_timezone` | Nullable IANA timezone snapshotted from proposal-v1 draft schedules. It stays fixed through activation, pauses and continuation; all older-policy/v2 plans keep null. |
+| `cycle_number` | Nullable positive proposal cycle number, initially 1. Only explicit review-due `CYCLE_CONTINUE` increments it atomically with the plan version and new reassessment schedule. |
+| `cycle_started_on` | Nullable activation local date for the current proposal cycle. Null in a draft; explicit continuation replaces it with today's local date without changing plan activation history. |
+| `cycle_paused_days` | Nullable nonnegative accumulated whole local-date pause intervals for the current proposal cycle. Resume or terminal closure accumulates the current interval; continuation resets it to zero. |
+| `cycle_paused_on` | Nullable local start date of an ongoing pause. Read-time cycle math adds elapsed local days without writing; resume/terminal closure clears it. No health text is stored. |
 | `action_count` | Native v3 action count, constrained to 1..20; fixed to zero for v2. |
 | `evaluation_policy_version` / `evaluated_at` | Exact current-compatible Care evaluation policy and original UTC evaluation instant. |
 | `selection_policy_version` | Deterministic v2 Care composition version, fixed to `mb-support-plan-selection-v1`; null for v3. |

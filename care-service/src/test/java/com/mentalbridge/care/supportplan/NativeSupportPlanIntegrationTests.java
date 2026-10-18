@@ -78,17 +78,21 @@ class NativeSupportPlanIntegrationTests extends CareTestProperties {
 	@Test
 	void createsANewNativeProposalOnlyFromAdmittedResourcesAndExplicitEmotionIntent() throws Exception {
 		UUID userId = profile();
-		preferences(userId, "EMOTION_CHECK_IN", 5, "ACTIVE", 0);
+		preferences(userId, "EMOTION_CHECK_IN", 10, "ACTIVE", 0);
 		UUID evaluation = evaluation(userId, true);
 		var draft = propose(userId, evaluation, "native-emotion-propose-0001");
 		UUID id = UUID.fromString(draft.path("supportPlanId").asText());
 		assertThat(draft.path("representationMode").asText()).isEqualTo("NATIVE_V3");
-		assertThat(draft.path("planPolicyVersion").asText()).isEqualTo(NativeSupportPlanWriter.POLICY);
+		assertThat(draft.path("planPolicyVersion").asText()).isEqualTo(NativeSupportPlanWriter.PROPOSAL_POLICY);
+		assertThat(draft.path("version").asLong()).isZero();
 		var emotion = action(draft, "EMOTION_CHECK_IN");
 		assertThat(emotion.path("purposeCode").asText()).isEqualTo("NOTICE_SELF_REPORTED_EMOTIONS");
 		assertThat(emotion.path("source").path("ownerDomain").asText()).isEqualTo("JOURNAL_AI");
 		assertThat(emotion.path("provenance").path("category").asText()).isEqualTo("USER_SELECTED");
 		assertThat(emotion.path("schedules").get(0).path("status").asText()).isEqualTo("DRAFT");
+		assertThat(emotion.path("schedules").get(0).path("recurrenceType").asText()).isEqualTo("DAILY");
+		assertThat(action(draft, "REASSESSMENT_SCREENING").path("schedules").get(0).path("recurrenceType").asText())
+				.isEqualTo("ONCE");
 		assertThat(action(draft, "PROFESSIONAL_SUPPORT").path("pathRole").asText()).isEqualTo("PRIMARY");
 		assertThat(action(draft, "RESOURCE").path("pathRole").asText()).isEqualTo("ADJUNCT");
 		assertThat(rows("support_plan_slot", id)).isZero();
@@ -127,14 +131,24 @@ class NativeSupportPlanIntegrationTests extends CareTestProperties {
 		var draft = propose(userId, evaluation, "native-old-policy-proposal-0001");
 		assertThat(actions(draft).stream().filter(value -> "JOURNAL".equals(value.path("actionType").asText())).count()).isZero();
 		UUID id = UUID.fromString(draft.path("supportPlanId").asText());
-		jdbc.sql("update support_plan set plan_policy_version=:policy where id=:id")
+		jdbc.sql("delete from support_plan_activity_schedule where support_plan_id=:id and source_action_type='REASSESSMENT_SCREENING'")
+				.param("id", id).update();
+		jdbc.sql("delete from support_plan_action where support_plan_id=:id and action_type='REASSESSMENT_SCREENING'")
+				.param("id", id).update();
+		jdbc.sql("""
+				update support_plan set plan_policy_version=:policy,action_count=action_count-1,
+				cycle_timezone=null,cycle_number=null,cycle_started_on=null,cycle_paused_days=null,cycle_paused_on=null
+				where id=:id
+				""")
 				.param("policy", NativeSupportPlanWriter.EMOTION_POLICY).param("id", id).update();
 		var active = activate(userId, id, 0, "native-old-policy-activate-0001");
 		preferences(userId, "JOURNALING", 15, "BALANCED", 1);
 		active = response(mvc.perform(get("/api/v2/support-plans/{id}", id).with(user(userId)))
 				.andExpect(status().isOk()).andReturn().getResponse().getContentAsString());
 		assertThat(active.path("planPolicyVersion").asText()).isEqualTo(NativeSupportPlanWriter.EMOTION_POLICY);
+		assertThat(active.has("cycle")).isFalse();
 		assertThat(actions(active).stream().filter(value -> "JOURNAL".equals(value.path("actionType").asText())).count()).isZero();
+		assertThat(actions(active).stream().filter(value -> "REASSESSMENT_SCREENING".equals(value.path("actionType").asText())).count()).isZero();
 	}
 
 	@Test
@@ -177,17 +191,35 @@ class NativeSupportPlanIntegrationTests extends CareTestProperties {
 	}
 
 	@Test
-	void absentEmotionPreferenceDoesNotCreateAnEmotionActionAndFreeCannotPropose() throws Exception {
+	void absentPreferencesUseTheDailyEmotionDefaultAndFreeCannotPropose() throws Exception {
 		UUID userId = profile();
 		UUID evaluationId = evaluation(userId, false);
 		var draft = propose(userId, evaluationId, "native-resource-only-0001");
-		assertThat(actions(draft).stream().map(value -> value.path("actionType").asText())).doesNotContain("EMOTION_CHECK_IN");
+		var emotion = action(draft, "EMOTION_CHECK_IN");
+		assertThat(emotion.path("provenance").path("category").asText()).isEqualTo("SYSTEM_POLICY");
+		assertThat(emotion.path("schedules").get(0).path("recurrenceType").asText()).isEqualTo("DAILY");
 		UUID free = profile();
 		doAnswer(call -> paid(call.getArgument(0), ServicePackage.FREE)).when(entitlements).current(any(), anyString(), any());
 		mvc.perform(post("/api/v2/support-plans").with(user(free)).header("Idempotency-Key", "native-free-proposal-0001")
 				.contentType(MediaType.APPLICATION_JSON).content("{\"sourceSupportEvaluationId\":\"" + evaluation(free, false) + "\"}"))
 				.andExpect(status().isForbidden()).andExpect(jsonPath("$.code").value("SUPPORT_PLAN_ENTITLEMENT_REQUIRED"));
 		assertThat(jdbc.sql("select count(*) from support_plan where user_id=:user").param("user", free).query(Long.class).single()).isZero();
+	}
+
+	@Test
+	void fiveMinuteBudgetWithDailyEmotionFailsWithoutPersistingTheProposal() throws Exception {
+		UUID userId = profile();
+		preferences(userId, "EMOTION_CHECK_IN", 5, "ACTIVE", 0);
+		UUID evaluationId = evaluation(userId, false);
+
+		mvc.perform(post("/api/v2/support-plans").with(user(userId))
+				.header("Idempotency-Key", "native-emotion-budget-conflict-0001").contentType(MediaType.APPLICATION_JSON)
+				.content("{\"sourceSupportEvaluationId\":\"" + evaluationId + "\"}"))
+				.andExpect(status().isConflict()).andExpect(jsonPath("$.code").value("SUPPORT_PLAN_TIME_BUDGET_INCOMPATIBLE"));
+
+		assertThat(jdbc.sql("select count(*) from support_plan where user_id=:user").param("user", userId).query(Long.class).single()).isZero();
+		assertThat(jdbc.sql("select count(*) from support_plan_action where user_id=:user").param("user", userId).query(Long.class).single()).isZero();
+		assertThat(jdbc.sql("select count(*) from support_plan_request where user_id=:user").param("user", userId).query(Long.class).single()).isZero();
 	}
 
 	@Test

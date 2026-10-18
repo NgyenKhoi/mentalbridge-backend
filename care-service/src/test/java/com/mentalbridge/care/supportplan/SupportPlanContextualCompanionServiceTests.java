@@ -159,6 +159,6 @@ class SupportPlanContextualCompanionServiceTests {
 		return new SupportPlanV3View(planId, 3, "support-plan-policy-v3", "NATIVE_V3", status, 1,
 				new SafetyView("ROUTINE", null, "safety-v1", null, null),
 				List.of(new PlanFocusView(UUID.randomUUID().toString(), "Tập trung", null, null, 1, List.of(action))),
-				now, now, now, null, null, null, null, "WELLBEING_SUPPORT_NOT_TREATMENT", "Ranh giới.");
+				now, now, now, null, null, null, null, "WELLBEING_SUPPORT_NOT_TREATMENT", "Ranh giới.", null);
 	}
 }

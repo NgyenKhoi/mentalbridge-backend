@@ -1,6 +1,7 @@
 package com.mentalbridge.care.supportplan;
 
 import java.time.Instant;
+import java.time.LocalDate;
 import java.util.UUID;
 
 import jakarta.persistence.Entity;
@@ -48,6 +49,11 @@ class SupportPlanEntity {
 	private String completionReason;
 	private Instant supersededAt;
 	private Instant discardedAt;
+	private String cycleTimezone;
+	private Integer cycleNumber;
+	private LocalDate cycleStartedOn;
+	private Integer cyclePausedDays;
+	private LocalDate cyclePausedOn;
 
 	protected SupportPlanEntity() { }
 
@@ -161,6 +167,32 @@ class SupportPlanEntity {
 	String completionReason() { return completionReason; }
 	Instant supersededAt() { return supersededAt; }
 	Instant discardedAt() { return discardedAt; }
+	String cycleTimezone() { return cycleTimezone; }
+	Integer cycleNumber() { return cycleNumber; }
+	LocalDate cycleStartedOn() { return cycleStartedOn; }
+	Integer cyclePausedDays() { return cyclePausedDays; }
+	LocalDate cyclePausedOn() { return cyclePausedOn; }
+
+	void initializeCycle(String timezone) {
+		if (!SupportPlanCycle.applies(this) || cycleTimezone != null) return;
+		cycleTimezone = timezone;
+		cycleNumber = 1;
+		cyclePausedDays = 0;
+	}
+
+	void continueCycle(Instant now) {
+		cycleNumber++;
+		cycleStartedOn = SupportPlanCycle.localDate(now, cycleTimezone);
+		cyclePausedDays = 0;
+		cyclePausedOn = null;
+		actionChanged(now);
+	}
+
+	private void finishCyclePause(Instant now) {
+		if (cyclePausedOn == null) return;
+		cyclePausedDays = SupportPlanCycle.pausedDays(this, SupportPlanCycle.localDate(now, cycleTimezone));
+		cyclePausedOn = null;
+	}
 
 	void snapshotPersonalization(SupportPlanPersonalizationService.PersonalizationSnapshot personalization) {
 		if (personalization == null) return;
@@ -182,17 +214,23 @@ class SupportPlanEntity {
 	}
 
 	void activate(Instant activatedAt) {
+		if (SupportPlanCycle.applies(this)) {
+			initializeCycle(SupportPlanCycle.DEFAULT_TIMEZONE);
+			cycleStartedOn = SupportPlanCycle.localDate(activatedAt, cycleTimezone);
+		}
 		this.status = "ACTIVE";
 		this.activatedAt = activatedAt;
 		this.updatedAt = activatedAt;
 	}
 
 	void pause(Instant changedAt) {
+		if (SupportPlanCycle.applies(this)) cyclePausedOn = SupportPlanCycle.localDate(changedAt, cycleTimezone);
 		this.status = "PAUSED";
 		this.updatedAt = changedAt;
 	}
 
 	void resume(Instant changedAt) {
+		finishCyclePause(changedAt);
 		this.status = "ACTIVE";
 		this.updatedAt = changedAt;
 	}
@@ -202,6 +240,7 @@ class SupportPlanEntity {
 	}
 
 	void complete(String completionReason, Instant changedAt) {
+		finishCyclePause(changedAt);
 		this.status = "COMPLETED";
 		this.completedAt = changedAt;
 		this.completionReason = completionReason;
@@ -209,6 +248,7 @@ class SupportPlanEntity {
 	}
 
 	void supersede(Instant changedAt) {
+		finishCyclePause(changedAt);
 		this.status = "SUPERSEDED";
 		this.supersededAt = changedAt;
 		this.updatedAt = changedAt;
