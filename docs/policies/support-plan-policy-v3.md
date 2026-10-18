@@ -16,6 +16,11 @@ This policy retains the v2 single-official-plan, explicit user confirmation,
 lifecycle/history, entitlement, safety-priority, reassessment, and Care-owner
 rules except where it replaces Resource-slot composition with typed actions.
 
+[SupportPlan proposal policy v1](support-plan-proposal-v1.md) prospectively
+governs new native MB-669 proposals: deterministic multi-domain composition,
+safe optional-preference defaults, activation revalidation and the explicit
+14-day review/continuation cycle. Earlier policy snapshots retain their rules.
+
 ## Guide and plan boundary
 
 A Support Guide remains an immutable answer to “what should I do next?” for one

@@ -56,7 +56,7 @@ pair prevents duplicate generation. Manual and scheduled jobs use one engine.
 | `support_guide` | care-service | PostgreSQL | ACTIVE | Physical owner/evaluation reference; immutable all-tier guide snapshot. |
 | `support_guide_resource` | care-service | PostgreSQL | ACTIVE | Physical child of guide; resource/publication IDs are logical/external Content references with persisted display snapshots. |
 | `support_guide_request` | care-service | PostgreSQL | ACTIVE | Physical owner-scoped idempotency alias to guide. |
-| `support_plan` | care-service | PostgreSQL | ACTIVE | Physical owner/evaluation reference with explicit draft/current/terminal lifecycle; entitlement fields snapshot a logical/external Consultation decision. |
+| `support_plan` | care-service | PostgreSQL | ACTIVE | Physical owner/evaluation reference with explicit draft/current/terminal lifecycle; entitlement fields snapshot a logical/external Consultation decision. Proposal-v1 alone snapshots the cycle timezone, number, activation local date, accumulated paused local days and current pause date; explicit review-due continuation starts the next cycle. |
 | `support_plan_focus` | care-service | PostgreSQL | ACTIVE | Physical ordered native-v3 child of a plan; stores bounded plain-language focus/purpose and version provenance, never a diagnosis or score. |
 | `support_plan_action` | care-service | PostgreSQL | ACTIVE | Physical ordered native-v3 child of a focus; stores one canonical type, bounded presentation/provenance, capabilities, and logical source-owner/reference without a cross-service FK. |
 | `support_plan_template_family` | care-service | PostgreSQL | ACTIVE | Physical ordered child of `support_plan`. |

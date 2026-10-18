@@ -7,7 +7,6 @@ import org.springframework.http.HttpStatus;
 import org.springframework.http.ResponseEntity;
 import org.springframework.security.core.annotation.AuthenticationPrincipal;
 import org.springframework.security.oauth2.jwt.Jwt;
-import org.springframework.validation.annotation.Validated;
 import org.springframework.web.bind.annotation.PathVariable;
 import org.springframework.web.bind.annotation.GetMapping;
 import org.springframework.web.bind.annotation.PostMapping;
@@ -29,7 +28,6 @@ import jakarta.validation.constraints.Size;
 
 @RestController
 @RequestMapping("/api/v2/support-plans")
-@Validated
 public class NativeSupportPlanController {
 	private final NativeSupportPlanService plans;
 
@@ -60,6 +58,16 @@ public class NativeSupportPlanController {
 			@RequestHeader("Idempotency-Key") @Size(min = 16, max = 128) @Pattern(regexp = "^[!-~]+$") String key,
 			@RequestHeader(value = "X-Correlation-Id", required = false) UUID correlation) {
 		return response(HttpStatus.OK, plans.activate(subject(jwt), supportPlanId, version(ifMatch),
+				jwt.getTokenValue(), key, correlation(correlation)));
+	}
+
+	@PostMapping("/{supportPlanId}/cycle-continuation")
+	ResponseEntity<SupportPlanV3Service.SupportPlanV3View> continueCycle(@AuthenticationPrincipal Jwt jwt,
+			@PathVariable UUID supportPlanId,
+			@RequestHeader("If-Match") @Pattern(regexp = "^\"[0-9]+\"$") String ifMatch,
+			@RequestHeader("Idempotency-Key") @Size(min = 16, max = 128) @Pattern(regexp = "^[!-~]+$") String key,
+			@RequestHeader(value = "X-Correlation-Id", required = false) UUID correlation) {
+		return response(HttpStatus.OK, plans.continueCycle(subject(jwt), supportPlanId, version(ifMatch),
 				jwt.getTokenValue(), key, correlation(correlation)));
 	}
 
@@ -102,7 +110,14 @@ public class NativeSupportPlanController {
 		return ResponseEntity.status(status).header(HttpHeaders.ETAG, '"' + Long.toString(view.version()) + '"').body(view);
 	}
 	private UUID correlation(UUID value) { return value == null ? UUID.randomUUID() : value; }
-	private long version(String match) { return Long.parseLong(match.substring(1, match.length() - 1)); }
+	private long version(String match) {
+		if (match == null || !match.matches("^\"[0-9]+\"$")) throw invalidVersion();
+		try { return Long.parseLong(match.substring(1, match.length() - 1)); }
+		catch (NumberFormatException exception) { throw invalidVersion(); }
+	}
+	private ApiException invalidVersion() {
+		return new ApiException(HttpStatus.BAD_REQUEST, "VALIDATION_FAILED", "If-Match must contain a valid plan version");
+	}
 	private UUID subject(Jwt jwt) {
 		try { return UUID.fromString(jwt.getSubject()); }
 		catch (IllegalArgumentException exception) { throw new ApiException(HttpStatus.UNAUTHORIZED, "UNAUTHENTICATED", "Authenticated account identifier is invalid"); }
