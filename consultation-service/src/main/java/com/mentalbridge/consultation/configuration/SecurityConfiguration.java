@@ -40,6 +40,7 @@ public class SecurityConfiguration {
 						.requestMatchers("/internal/v1/video/livekit/webhook").permitAll()
 						.requestMatchers("/internal/v1/appointments/*/notification-eligibility").permitAll()
 						.requestMatchers("/internal/v1/entitlements/current").hasRole("USER")
+						.requestMatchers("/api/v1/admin/**").hasRole("ADMIN")
 						.requestMatchers("/internal/v1/appointments/*/consultation-brief-context",
 								"/internal/v1/appointments/*/chat-eligibility",
 								"/internal/v1/appointments/*/chat-evidence",

@@ -102,6 +102,10 @@ $env:IDENTITY_DB_PASSWORD='<identity-password>'
 
 `updateSQL` is the review step and does not mutate the database. `update` applies pending owner changesets and records them in `mentalbridge_identity.public.databasechangelog`. Do not point `IDENTITY_DB_URL` at the administrative `postgres` database, and do not place real credentials in Maven arguments, repository files, or shell history.
 
+## MB-596 aggregate product journey
+
+`GET /api/v1/admin/product-journey-metrics` composes bounded USER, Care, and Consultation aggregates for an explicit half-open window of at most 366 days. USER activation rates use only accounts registered in the window and verified before its end; consultation confirmation/completion rates use only appointments requested in the window and reaching those milestones before its end. SPECIALIST and ADMIN accounts are excluded. It returns source/projection versions and as-of times, keeps missing dependencies and the unsupported Support Guide open fact explicitly unavailable, and exposes no user-level or clinical data. Rates describe product-journey cohort progress only, never clinical effectiveness, recovery, or causation.
+
 ## Run and test
 
 ```powershell

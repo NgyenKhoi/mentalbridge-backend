@@ -11,7 +11,9 @@ import org.springframework.data.jpa.repository.Modifying;
 import org.springframework.data.jpa.repository.Query;
 import org.springframework.data.repository.query.Param;
 
-interface SupportGuideRepository extends JpaRepository<SupportGuideEntity, UUID> {
+public interface SupportGuideRepository extends JpaRepository<SupportGuideEntity, UUID> {
+
+	long countByGeneratedAtGreaterThanEqualAndGeneratedAtLessThan(Instant from, Instant to);
 
 	Optional<SupportGuideEntity> findByIdAndUserId(UUID id, UUID userId);
 
