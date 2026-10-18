@@ -38,7 +38,7 @@ public class ApiExceptionHandler {
 
 	@ExceptionHandler({ HandlerMethodValidationException.class, MissingRequestHeaderException.class,
 			HttpMessageNotReadableException.class, MethodArgumentTypeMismatchException.class,
-			InvalidAdminAccountQueryException.class })
+			InvalidAdminAccountQueryException.class, jakarta.validation.ConstraintViolationException.class })
 	ProblemDetail requestValidation(Exception exception, HttpServletRequest request,
 			HttpServletResponse response) {
 		return problem(HttpStatus.BAD_REQUEST, "VALIDATION_FAILED", "Request validation failed", request, response);

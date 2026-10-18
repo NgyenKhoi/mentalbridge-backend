@@ -120,6 +120,11 @@ import {
   KafkaCommunityInteractionDeadLetterPublisher,
 } from './community-notifications/community-interaction.consumer.js';
 import { CommunityNotificationRepository } from './community-notifications/community-notification.repository.js';
+import {
+  CONTENT_ADMIN_AUDIT_PUBLISHER_TOKEN,
+  KafkaContentAdminAuditPublisher,
+  type ContentAdminAuditPublisher,
+} from './audit/content-admin-audit.publisher.js';
 
 export interface ApplicationDependencies {
   readonly readinessProbe?: ReadinessProbe;
@@ -137,6 +142,7 @@ export interface ApplicationDependencies {
   readonly reminderActivityClient?: ReminderActivityClient;
   readonly reminderClock?: ReminderClock;
   readonly wellbeingDigestService?: WellbeingDigestService;
+  readonly contentAdminAuditPublisher?: ContentAdminAuditPublisher;
 }
 
 @Module({})
@@ -216,6 +222,16 @@ export const createAppModule = (
     ? { provide: REMINDER_ACTIVITY_CLIENT_TOKEN, useValue: dependencies.reminderActivityClient }
     : { provide: REMINDER_ACTIVITY_CLIENT_TOKEN, useClass: JournalAiReminderActivityClient };
 
+  const adminAuditPublisherProvider: Provider = dependencies.contentAdminAuditPublisher
+    ? {
+        provide: CONTENT_ADMIN_AUDIT_PUBLISHER_TOKEN,
+        useValue: dependencies.contentAdminAuditPublisher,
+      }
+    : {
+        provide: CONTENT_ADMIN_AUDIT_PUBLISHER_TOKEN,
+        useClass: KafkaContentAdminAuditPublisher,
+      };
+
   return {
     module: ContentNotificationModule,
     imports: [AuthModule],
@@ -247,6 +263,7 @@ export const createAppModule = (
       dbServiceProvider,
       repositoryProvider,
       serviceProvider,
+      adminAuditPublisherProvider,
       resourceProgressRepositoryProvider,
       { provide: RESOURCE_PROGRESS_SERVICE_TOKEN, useClass: ResourceProgressService },
       resourceJourneyRepositoryProvider,

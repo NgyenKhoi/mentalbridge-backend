@@ -165,7 +165,7 @@ class AdminAccountServiceTests {
 		assertThat(audit.getReasonCode()).isEqualTo("POLICY_VIOLATION");
 		assertThat(audit.getCorrelationId()).isEqualTo(correlationId);
 		assertThat(audit.getOccurredAt()).isEqualTo(NOW);
-		assertThat(audit.getSubjectReferenceHash()).isNull();
+		assertThat(audit.getSubjectReferenceHash()).matches("^[0-9a-f]{64}$");
 
 		assertThat(admin.status()).isEqualTo(AccountStatus.ACTIVE);
 		assertThat(admin.version()).isEqualTo(0L);

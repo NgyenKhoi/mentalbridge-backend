@@ -1,6 +1,8 @@
 package com.mentalbridge.identity.account;
 
 import java.nio.charset.StandardCharsets;
+import java.security.MessageDigest;
+import java.security.NoSuchAlgorithmException;
 import java.time.Clock;
 import java.time.Instant;
 import java.time.format.DateTimeParseException;
@@ -99,7 +101,7 @@ public class AdminAccountService {
 					? request.reasonCode().name()
 					: "DEDICATED_ADMIN_PROTECTED";
 			auditEvents.save(new SecurityAuditEventEntity(UUID.randomUUID(), account.id(), actorId, action, "DENIED",
-					reason, correlationId, null, now, now));
+					reason, correlationId, subjectReference(account.id()), now, now));
 			throw new DedicatedAdminProtectionException(accountId);
 		}
 		if (account.version() != expectedVersion) {
@@ -126,7 +128,7 @@ public class AdminAccountService {
 		}
 		accounts.saveAndFlush(account);
 		auditEvents.save(new SecurityAuditEventEntity(UUID.randomUUID(), account.id(), actorId, action, "SUCCEEDED",
-				request.reasonCode().name(), correlationId, null, now, now));
+				request.reasonCode().name(), correlationId, subjectReference(account.id()), now, now));
 		outboxEvents.save(new OutboxEventEntity("identity.account.state-changed", account.id(), account.version(),
 				correlationId, Map.of("accountId", account.id().toString(), "status", account.status().name(), "role", account.role().name(),
 						"reasonCode", request.reasonCode().name()), now));
@@ -155,6 +157,17 @@ public class AdminAccountService {
 	private AccountController.AccountResponse response(AccountEntity account) {
 		return new AccountController.AccountResponse(account.id(), account.email(), account.status(), List.of(account.role()),
 				account.emailVerifiedAt() != null, account.createdAt(), account.updatedAt(), account.version());
+	}
+
+	private String subjectReference(UUID accountId) {
+		try {
+			byte[] digest = MessageDigest.getInstance("SHA-256")
+					.digest(accountId.toString().getBytes(StandardCharsets.UTF_8));
+			return java.util.HexFormat.of().formatHex(digest);
+		}
+		catch (NoSuchAlgorithmException exception) {
+			throw new IllegalStateException("SHA-256 is unavailable", exception);
+		}
 	}
 
 	private String encodeCursor(AccountEntity account) {
