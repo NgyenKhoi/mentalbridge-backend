@@ -29,6 +29,20 @@ public interface AccountRepository extends JpaRepository<AccountEntity, UUID>, J
 	@Query("select account.id from AccountEntity account where account.id in :ids and account.status = :status")
 	List<UUID> findIdsByIdInAndStatus(@Param("ids") Collection<UUID> ids, @Param("status") AccountStatus status);
 
+	long countByStatus(AccountStatus status);
+
+	long countByRole(RoleCode role);
+
+	long countByRoleAndStatusNot(RoleCode role, AccountStatus status);
+
+	@Query("""
+			select account.role, account.status, count(account)
+			from AccountEntity account
+			where account.status <> :deletedStatus
+			group by account.role, account.status
+			""")
+	List<Object[]> aggregateCurrentAccounts(@Param("deletedStatus") AccountStatus deletedStatus);
+
 	@Query("""
 			select account.role, account.status, count(account)
 			from AccountEntity account
@@ -38,5 +52,4 @@ public interface AccountRepository extends JpaRepository<AccountEntity, UUID>, J
 			""")
 	List<Object[]> aggregateCreatedAccounts(@Param("periodStart") Instant periodStart,
 			@Param("periodEndExclusive") Instant periodEndExclusive);
-
 }

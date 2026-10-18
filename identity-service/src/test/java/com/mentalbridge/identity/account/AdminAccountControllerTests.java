@@ -191,4 +191,23 @@ class AdminAccountControllerTests {
                         .content("{\"status\":\"DELETION_PENDING\",\"reasonCode\":\"SAFETY_CONCERN\"}"))
                 .andExpect(status().isBadRequest());
     }
+
+    @Test
+    void getAccountsSummaryReturns200() throws Exception {
+        when(service.getAccountsSummary()).thenReturn(new AdminAccountService.AccountsSummary(
+                "IDENTITY",
+                Instant.parse("2026-10-05T14:00:00Z"),
+                10,
+                8,
+                1,
+                1,
+                0,
+                new AdminAccountService.AccountsSummary.RoleBreakdown(8, 1, 1)
+        ));
+
+        mockMvc.perform(get("/api/v1/admin/accounts/summary")
+                        .header("X-Correlation-Id", UUID.randomUUID().toString()))
+                .andExpect(status().isOk())
+                .andExpect(header().exists("X-Correlation-Id"));
+    }
 }
