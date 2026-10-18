@@ -52,6 +52,20 @@ public class AdminAccountController {
                 .body(page);
     }
 
+    @GetMapping("/summary")
+    public ResponseEntity<AdminAccountService.AccountsSummary> getAccountsSummary(
+            @RequestHeader(name = "X-Correlation-Id", required = false) UUID correlationId,
+            HttpServletRequest servletRequest) {
+        UUID effectiveCorrelationId = correlationId == null ? UUID.randomUUID() : correlationId;
+        if (servletRequest != null) {
+            servletRequest.setAttribute("correlationId", effectiveCorrelationId);
+        }
+        var summary = service.getAccountsSummary();
+        return ResponseEntity.ok()
+                .header("X-Correlation-Id", effectiveCorrelationId.toString())
+                .body(summary);
+    }
+
     @GetMapping("/{accountId}")
     public ResponseEntity<AccountController.AccountResponse> getAccountDetail(
             @PathVariable UUID accountId,

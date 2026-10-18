@@ -16,7 +16,7 @@ import {
   NotificationDedupeConflictError,
   type NotificationRepository,
 } from './notification.repository.js';
-import type { NotificationItem } from './notification.types.js';
+import type { NotificationItem, NotificationOperationsSummary } from './notification.types.js';
 
 function problem(status: number, code: string, title: string): Record<string, unknown> {
   return { type: `https://mentalbridge.io/errors/${code}`, title, status, code };
@@ -120,6 +120,14 @@ export class NotificationService {
     }
     if (outcome === 'NOT_FOUND') {
       throw new NotFoundException(problem(404, 'NOTIFICATION_NOT_FOUND', 'Notification not found'));
+    }
+  }
+
+  async getOperationsSummary(): Promise<NotificationOperationsSummary> {
+    try {
+      return await this.repository.getOperationsSummary();
+    } catch {
+      throw new ServiceUnavailableException();
     }
   }
 }

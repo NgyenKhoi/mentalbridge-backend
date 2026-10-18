@@ -258,6 +258,41 @@ class AdminAccountServiceTests {
 				user.version(), UUID.randomUUID())).isInstanceOf(InvalidStateTransitionException.class);
 	}
 
+	@Test
+	void getAccountsSummaryExcludesDeletedAccountsAndEnsuresConsistentTotals() {
+		when(accounts.aggregateCurrentAccounts(AccountStatus.DELETED)).thenReturn(List.of(
+				new Object[] {RoleCode.USER, AccountStatus.ACTIVE, 80L},
+				new Object[] {RoleCode.USER, AccountStatus.PENDING_EMAIL_VERIFICATION, 15L},
+				new Object[] {RoleCode.SPECIALIST, AccountStatus.ACTIVE, 20L},
+				new Object[] {RoleCode.ADMIN, AccountStatus.DISABLED, 5L},
+				new Object[] {RoleCode.USER, AccountStatus.DELETED, 100L}));
+
+		var summary = service.getAccountsSummary();
+
+		assertThat(summary.source()).isEqualTo("IDENTITY");
+		assertThat(summary.asOf()).isEqualTo(NOW);
+		assertThat(summary.totalAccounts()).isEqualTo(120L);
+		assertThat(summary.activeAccounts()).isEqualTo(100L);
+		assertThat(summary.pendingVerificationAccounts()).isEqualTo(15L);
+		assertThat(summary.disabledAccounts()).isEqualTo(5L);
+		assertThat(summary.deletionPendingAccounts()).isEqualTo(0L);
+		assertThat(summary.byRole().users()).isEqualTo(95L);
+		assertThat(summary.byRole().specialists()).isEqualTo(20L);
+		assertThat(summary.byRole().admins()).isEqualTo(5L);
+
+		// Assert invariant: totalAccounts equals sum of active/manageable status counts
+		long sumOfStatuses = summary.activeAccounts() + summary.pendingVerificationAccounts()
+				+ summary.disabledAccounts() + summary.deletionPendingAccounts();
+		assertThat(summary.totalAccounts()).isEqualTo(sumOfStatuses);
+
+		// Assert invariant: totalAccounts equals sum of roles
+		long sumOfRoles = summary.byRole().users() + summary.byRole().specialists() + summary.byRole().admins();
+		assertThat(summary.totalAccounts()).isEqualTo(sumOfRoles);
+		verify(accounts).aggregateCurrentAccounts(AccountStatus.DELETED);
+		verify(accounts, never()).countByStatus(any());
+		verify(accounts, never()).countByRoleAndStatusNot(any(), any());
+	}
+
 	private AccountEntity active(RoleCode role) {
 		AccountEntity account = AccountEntity.pending("user@example.com", "hash", role, NOW.minusSeconds(3600));
 		account.activate(NOW.minusSeconds(1800));

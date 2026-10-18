@@ -41,7 +41,8 @@ class CommunityOpenApiContractTests {
 			"GET /api/v1/community/topics",
 			"GET /api/v1/community/admin/moderation-cases",
 			"GET /api/v1/community/admin/moderation-cases/{caseId}",
-			"POST /api/v1/community/admin/moderation-cases/{caseId}/actions");
+			"POST /api/v1/community/admin/moderation-cases/{caseId}/actions",
+			"GET /api/v1/community/admin/operations/summary");
 
 	private static final Set<String> ALL_OPERATIONS = Set.of(
 			"GET /api/v1/community/feed",
@@ -72,7 +73,8 @@ class CommunityOpenApiContractTests {
 			"GET /api/v1/community/topics",
 			"GET /api/v1/community/admin/moderation-cases",
 			"GET /api/v1/community/admin/moderation-cases/{caseId}",
-			"POST /api/v1/community/admin/moderation-cases/{caseId}/actions");
+			"POST /api/v1/community/admin/moderation-cases/{caseId}/actions",
+			"GET /api/v1/community/admin/operations/summary");
 
 	@Test
 	void frozenV1ContractIsValidAndMarksDeliveredOperationsImplemented() {

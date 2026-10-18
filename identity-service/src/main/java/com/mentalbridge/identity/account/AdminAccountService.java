@@ -8,6 +8,7 @@ import java.time.Instant;
 import java.time.format.DateTimeParseException;
 import java.util.ArrayList;
 import java.util.Base64;
+import java.util.EnumMap;
 import java.util.List;
 import java.util.Locale;
 import java.util.Map;
@@ -190,6 +191,54 @@ public class AdminAccountService {
 	public record AccountPage(List<AccountController.AccountResponse> items, String nextCursor) {
 		public AccountPage {
 			items = List.copyOf(items);
+		}
+	}
+
+	@Transactional(readOnly = true)
+	public AccountsSummary getAccountsSummary() {
+		Instant now = clock.instant();
+		var byStatus = new EnumMap<AccountStatus, Long>(AccountStatus.class);
+		var byRole = new EnumMap<RoleCode, Long>(RoleCode.class);
+		for (Object[] row : accounts.aggregateCurrentAccounts(AccountStatus.DELETED)) {
+			AccountStatus status = (AccountStatus) row[1];
+			if (status == AccountStatus.DELETED) continue;
+			long count = ((Number) row[2]).longValue();
+			byStatus.merge(status, count, Long::sum);
+			byRole.merge((RoleCode) row[0], count, Long::sum);
+		}
+		long active = byStatus.getOrDefault(AccountStatus.ACTIVE, 0L);
+		long pendingVerification = byStatus.getOrDefault(AccountStatus.PENDING_EMAIL_VERIFICATION, 0L);
+		long disabled = byStatus.getOrDefault(AccountStatus.DISABLED, 0L);
+		long deletionPending = byStatus.getOrDefault(AccountStatus.DELETION_PENDING, 0L);
+		// Authoritative operational semantics: Exclude soft-deleted (purged) accounts from active operational total
+		// and role breakdown, ensuring total strictly matches status sum and role sum (consistent with admin account search).
+		long total = active + pendingVerification + disabled + deletionPending;
+		long users = byRole.getOrDefault(RoleCode.USER, 0L);
+		long specialists = byRole.getOrDefault(RoleCode.SPECIALIST, 0L);
+		long admins = byRole.getOrDefault(RoleCode.ADMIN, 0L);
+
+		return new AccountsSummary(
+				"IDENTITY",
+				now,
+				total,
+				active,
+				pendingVerification,
+				disabled,
+				deletionPending,
+				new AccountsSummary.RoleBreakdown(users, specialists, admins));
+	}
+
+	public record AccountsSummary(
+			String source,
+			Instant asOf,
+			long totalAccounts,
+			long activeAccounts,
+			long pendingVerificationAccounts,
+			long disabledAccounts,
+			long deletionPendingAccounts,
+			RoleBreakdown byRole) {
+
+		public record RoleBreakdown(long users, long specialists, long admins) {
 		}
 	}
 
