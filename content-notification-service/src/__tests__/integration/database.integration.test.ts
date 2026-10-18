@@ -6,7 +6,11 @@ import { join, dirname } from 'path';
 import { fileURLToPath } from 'url';
 import type { DatabaseClient, DatabaseService } from '../../database/database.service.js';
 import { AppointmentReminderRepository } from '../../appointment-reminders/appointment-reminder.repository.js';
-import type { AppointmentStatusChangedEvent } from '../../appointment-reminders/appointment-reminder.types.js';
+import {
+  SpecialistAppointmentNotificationDedupeConflictError,
+  SpecialistAppointmentNotificationRepository,
+} from '../../appointment-reminders/specialist-appointment-notification.repository.js';
+import type { AppointmentStatusChangedEventV2 } from '../../appointment-reminders/appointment-reminder.types.js';
 import {
   NotificationPreferenceRepository,
   NotificationPreferenceVersionMismatchError,
@@ -96,6 +100,7 @@ describe('Database Integration', () => {
       '20_add_resource_reward_visibility.sql',
       '21_persist_resource_engagement.sql',
       '22_add_private_achievement_preference.sql',
+      '24_add_specialist_notification_preferences.sql',
     ]) {
       if (migration === '10_persist_notification_preferences.sql') {
         await pool.query(
@@ -820,8 +825,8 @@ describe('Database Integration', () => {
       const repository = new NotificationPreferenceRepository(database);
       const owner = 'a1eebc99-9c0b-4ef8-bb6d-6bb9bd380a11';
 
-      await repository.createDefaults(owner);
-      await repository.createDefaults(owner);
+      await repository.createDefaults(owner, 'USER');
+      await repository.createDefaults(owner, 'USER');
 
       const { rows } = await pool.query(
         `SELECT count(*)::int AS aggregate_count,
@@ -831,6 +836,35 @@ describe('Database Integration', () => {
         [owner],
       );
       expect(rows[0]).toEqual({ aggregate_count: 1, defaults_enabled: true });
+    });
+
+    it('initializes specialist defaults without user wellbeing categories', async () => {
+      const database = {
+        query: (text: string, parameters?: unknown[]) => pool.query(text, parameters),
+      } as unknown as DatabaseService;
+      const repository = new NotificationPreferenceRepository(database);
+      const owner = 'a2eebc99-9c0b-4ef8-bb6d-6bb9bd380a11';
+
+      await repository.createDefaults(owner, 'SPECIALIST');
+      const { rows } = await pool.query(
+        `SELECT owner_type, group_journal_reminder_enabled,
+                group_emotion_check_in_enabled, group_appointment_message_enabled
+         FROM notification_preference WHERE user_id=$1`,
+        [owner],
+      );
+      expect(rows[0]).toEqual({
+        owner_type: 'SPECIALIST',
+        group_journal_reminder_enabled: false,
+        group_emotion_check_in_enabled: false,
+        group_appointment_message_enabled: true,
+      });
+      await expect(
+        pool.query(
+          `UPDATE notification_preference
+           SET group_journal_reminder_enabled=true WHERE user_id=$1`,
+          [owner],
+        ),
+      ).rejects.toThrow(/ck_specialist_notification_preference_scope/);
     });
 
     it('rejects invalid quiet windows and email cadence', async () => {
@@ -870,7 +904,7 @@ describe('Database Integration', () => {
       const secondDevice = new NotificationPreferenceRepository(database);
       const owner = 'e0eebc99-9c0b-4ef8-bb6d-6bb9bd380a11';
 
-      const initial = await firstDevice.getOrCreate(owner);
+      const initial = await firstDevice.getOrCreate(owner, 'USER');
       const saved = await firstDevice.update(owner, initial.version, {
         ...initial,
         channels: { inApp: true, email: true, push: true },
@@ -895,12 +929,15 @@ describe('Database Integration', () => {
         },
       });
 
-      const reloaded = await secondDevice.getOrCreate(owner);
+      const reloaded = await secondDevice.getOrCreate(owner, 'USER');
       expect(reloaded).toEqual(saved);
       expect(reloaded.version).toBe(1);
       expect(reloaded.quietHours.timeZone).toBe('America/New_York');
 
-      const otherOwner = await secondDevice.getOrCreate('f0eebc99-9c0b-4ef8-bb6d-6bb9bd380a11');
+      const otherOwner = await secondDevice.getOrCreate(
+        'f0eebc99-9c0b-4ef8-bb6d-6bb9bd380a11',
+        'USER',
+      );
       expect(otherOwner.channels.email).toBe(false);
       expect(otherOwner.contentGroups.appointmentMessage).toBe(true);
 
@@ -1034,21 +1071,22 @@ describe('Database Integration', () => {
     function statusEvent(
       appointmentId: string,
       version: number,
-      status: AppointmentStatusChangedEvent['payload']['status'],
+      status: AppointmentStatusChangedEventV2['payload']['status'],
       replacementId: string | null = null,
-    ): AppointmentStatusChangedEvent {
+    ): AppointmentStatusChangedEventV2 {
       return {
         messageId: '24000000-0000-4000-8000-000000000001',
         messageType: 'consultation.appointment.status-changed',
         occurredAt: '2029-01-01T00:00:00.000Z',
         producer: 'consultation-service',
-        schemaVersion: '1.0',
+        schemaVersion: '2.0',
         correlationId: '24000000-0000-4000-8000-000000000002',
         aggregateId: appointmentId,
         aggregateVersion: version,
         payload: {
           appointmentId,
           ownerAccountId: '24000000-0000-4000-8000-000000000003',
+          specialistAccountId: '24000000-0000-4000-8000-000000000004',
           status,
           scheduledStartAt: '2030-01-02T03:00:00.000Z',
           modality: 'IN_APP_CHAT',
@@ -1077,6 +1115,51 @@ describe('Database Integration', () => {
         [appointmentId],
       );
       expect(reminders.rows.every((row) => row.delivery_state === 'INVALIDATED')).toBe(true);
+    });
+
+    it('deduplicates minimized specialist appointment notifications and honors preferences', async () => {
+      const database = {
+        query: (sql: string, parameters?: unknown[]) => pool.query(sql, parameters),
+        withTransaction: async <T>(operation: (client: DatabaseClient) => Promise<T>) =>
+          operation(pool as unknown as DatabaseClient),
+      } as unknown as DatabaseService;
+      const repository = new SpecialistAppointmentNotificationRepository(database);
+      const appointmentId = '24000000-0000-4000-8000-000000000020';
+      const first = statusEvent(appointmentId, 1, 'REQUESTED');
+
+      await repository.materialize(first);
+      await repository.materialize(first);
+      await expect(
+        repository.materialize({
+          ...first,
+          payload: { ...first.payload, status: 'CANCELLED' },
+        }),
+      ).rejects.toBeInstanceOf(SpecialistAppointmentNotificationDedupeConflictError);
+      await pool.query(
+        `UPDATE notification_preference
+         SET group_appointment_message_enabled=false
+         WHERE user_id=$1`,
+        [first.payload.specialistAccountId],
+      );
+      await repository.materialize(statusEvent(appointmentId, 2, 'CONFIRMED'));
+
+      const { rows } = await pool.query(
+        `SELECT category, body, action_type, delivery_state
+         FROM notification
+         WHERE recipient_id=$1 AND source='CONSULTATION_APPOINTMENT_V1'
+         ORDER BY source_identity`,
+        [first.payload.specialistAccountId],
+      );
+      expect(rows).toEqual([
+        {
+          category: 'APPOINTMENT',
+          body: 'Một yêu cầu lịch hẹn mới đang chờ bạn xem xét.',
+          action_type: 'OPEN_SPECIALIST_APPOINTMENTS',
+          delivery_state: 'DELIVERED',
+        },
+        expect.objectContaining({ delivery_state: 'CANCELLED' }),
+      ]);
+      expect(JSON.stringify(rows)).not.toMatch(/journal|assessment|brief|chat body/i);
     });
 
     it('creates one replacement intent and claims a due version only once across workers', async () => {

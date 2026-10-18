@@ -107,6 +107,7 @@ class AppointmentDecisionIntegrationTests extends ConsultationTestProperties {
 		assertThat(outbox.get(0).get(1).toString()).contains("REQUESTED");
 		assertThat(outbox.get(1).get(1).toString()).contains("CONFIRMED");
 		assertThat(outbox.get(2).get(1).toString()).contains("CANCELLED");
+		assertThat(outbox.get(0).get(1).toString()).contains(fixture.specialistId().toString());
 		assertThat(outbox.toString()).doesNotContainIgnoringCase("journal", "assessment", "brief", "chat content");
 	}
 

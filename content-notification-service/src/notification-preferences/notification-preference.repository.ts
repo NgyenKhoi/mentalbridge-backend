@@ -4,10 +4,11 @@ import type { DatabaseService } from '../database/database.service.js';
 import type {
   NotificationPreferenceRow,
   NotificationPreferences,
+  NotificationPreferenceOwnerType,
   ReminderCandidate,
 } from './notification-preference.types.js';
 
-const COLUMNS = `user_id, notifications_enabled,
+const COLUMNS = `user_id, owner_type, notifications_enabled,
   channel_in_app_enabled, channel_email_enabled, channel_push_enabled,
   group_journal_reminder_enabled, group_emotion_check_in_enabled,
   group_streak_milestone_enabled, group_screening_reassessment_enabled,
@@ -73,17 +74,34 @@ export class NotificationPreferenceRepository {
     private readonly db: DatabaseService,
   ) {}
 
-  async createDefaults(userId: string): Promise<void> {
+  async createDefaults(userId: string, ownerType: NotificationPreferenceOwnerType): Promise<void> {
     await this.db.query(
-      `INSERT INTO notification_preference (user_id)
-       VALUES ($1)
-       ON CONFLICT (user_id) DO NOTHING`,
-      [userId],
+      `INSERT INTO notification_preference (
+         user_id, owner_type,
+         group_journal_reminder_enabled, group_emotion_check_in_enabled,
+         group_streak_milestone_enabled, group_screening_reassessment_enabled,
+         group_community_interaction_enabled,
+         email_wellbeing_digest_enabled, email_resource_reminders_enabled
+       ) VALUES ($1,$2,$3,$3,$3,$3,$3,$3,$3)
+       ON CONFLICT (user_id) DO UPDATE SET
+         owner_type = EXCLUDED.owner_type,
+         group_journal_reminder_enabled = CASE WHEN EXCLUDED.owner_type='SPECIALIST' THEN false ELSE notification_preference.group_journal_reminder_enabled END,
+         group_emotion_check_in_enabled = CASE WHEN EXCLUDED.owner_type='SPECIALIST' THEN false ELSE notification_preference.group_emotion_check_in_enabled END,
+         group_streak_milestone_enabled = CASE WHEN EXCLUDED.owner_type='SPECIALIST' THEN false ELSE notification_preference.group_streak_milestone_enabled END,
+         group_screening_reassessment_enabled = CASE WHEN EXCLUDED.owner_type='SPECIALIST' THEN false ELSE notification_preference.group_screening_reassessment_enabled END,
+         group_community_interaction_enabled = CASE WHEN EXCLUDED.owner_type='SPECIALIST' THEN false ELSE notification_preference.group_community_interaction_enabled END,
+         email_wellbeing_digest_enabled = CASE WHEN EXCLUDED.owner_type='SPECIALIST' THEN false ELSE notification_preference.email_wellbeing_digest_enabled END,
+         email_resource_reminders_enabled = CASE WHEN EXCLUDED.owner_type='SPECIALIST' THEN false ELSE notification_preference.email_resource_reminders_enabled END
+       WHERE notification_preference.owner_type <> EXCLUDED.owner_type`,
+      [userId, ownerType, ownerType === 'USER'],
     );
   }
 
-  async getOrCreate(userId: string): Promise<NotificationPreferences> {
-    await this.createDefaults(userId);
+  async getOrCreate(
+    userId: string,
+    ownerType: NotificationPreferenceOwnerType,
+  ): Promise<NotificationPreferences> {
+    await this.createDefaults(userId, ownerType);
     const result = await this.db.query<NotificationPreferenceRow>(
       `SELECT ${COLUMNS} FROM notification_preference WHERE user_id = $1`,
       [userId],
@@ -160,7 +178,8 @@ export class NotificationPreferenceRepository {
     const result = await this.db.query<NotificationPreferenceRow>(
       `SELECT ${COLUMNS}
        FROM notification_preference
-       WHERE notifications_enabled = true
+       WHERE owner_type = 'USER'
+         AND notifications_enabled = true
          AND channel_in_app_enabled = true
          AND (
            group_journal_reminder_enabled = true
@@ -185,7 +204,8 @@ export class NotificationPreferenceRepository {
     const result = await this.db.query<NotificationPreferenceRow>(
       `SELECT ${COLUMNS}
        FROM notification_preference
-       WHERE notifications_enabled = true
+       WHERE owner_type = 'USER'
+         AND notifications_enabled = true
          AND channel_email_enabled = true
          AND (email_wellbeing_digest_enabled = true OR email_resource_reminders_enabled = true)
          AND ($1::uuid IS NULL OR user_id > $1::uuid)
