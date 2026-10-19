@@ -1,6 +1,7 @@
 package com.mentalbridge.identity.registration;
 
 import java.time.Instant;
+import java.time.temporal.ChronoUnit;
 import java.util.Map;
 import java.util.Optional;
 import java.util.UUID;
@@ -58,9 +59,10 @@ public class RegistrationPersistence {
 		outbox.save(new OutboxEventEntity("identity.account.email-verified", account.id(), account.version(), correlationId,
 				Map.of("accountId", account.id().toString(), "status", account.status().name()), verifiedAt));
 		if (account.role() == RoleCode.USER) {
+			var availableAt = verifiedAt.truncatedTo(ChronoUnit.MICROS);
 			outbox.save(new OutboxEventEntity("identity.user-notification.fact", account.id(), account.version(),
 					correlationId, Map.of("recipientId", account.id().toString(), "actorType", account.role().name(),
-							"factType", "ACCOUNT_ACTIVATED", "availableAt", verifiedAt.toString()), verifiedAt));
+							"factType", "ACCOUNT_ACTIVATED", "availableAt", availableAt.toString()), availableAt));
 		}
 	}
 

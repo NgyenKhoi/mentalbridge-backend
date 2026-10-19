@@ -49,6 +49,23 @@ consumer.
 
 ## Verification
 
+### Review regression: PostgreSQL timestamp precision
+
+Both producers truncate source instants to microseconds before writing their
+JSON availability time and the outbox timestamp. Content retains exact text
+equality and target/recipient/version binding. Source nanoseconds never round
+into a different microsecond or the next second during PostgreSQL persistence.
+
+`UserNotificationPrecisionCrossServiceIT` in each Java owner exercises the
+real producer, migrated PostgreSQL outbox, persisted relay reload, Kafka,
+Content's production Zod schema and PostgreSQL inbox repository. Assessment,
+SupportGuide, activation and restoration each cover `.123456789`, `.123456999`
+and `.999999999` source fractions. Every resulting fact creates exactly one
+delivered inbox item, including replay with a new transport envelope; a
+materially different envelope timestamp is still rejected. The Content-owned
+test worker is `scripts/verify-user-notification-precision.mjs`; the required
+cross-service CI lane builds Content before running both owner tests.
+
 The final branch is verified with each affected module's complete gate plus
 focused contract, outbox, integration, replay, preference, and browser parsing
 regressions. Exact commands and counts are recorded in the pull requests and

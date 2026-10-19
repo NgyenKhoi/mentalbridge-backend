@@ -336,7 +336,7 @@ Identity-owned transactional outbox. An account/session mutation and its integra
 | `aggregate_version` | Authoritative nonnegative aggregate version used for ordering and stale-event rejection. |
 | `correlation_id` | Request/workflow UUID propagated for tracing; it is not a business key. |
 | `payload` | Minimal JSON object conforming to the published event schema; it excludes tokens, passwords, and email content. |
-| `occurred_at` | UTC instant the business fact occurred. |
+| `occurred_at` | UTC instant the business fact occurred. For `identity.user-notification.fact`, truncate to microseconds before saving both this column and JSON `availableAt`; the reloaded relay timestamp must exactly match the payload without PostgreSQL rounding. |
 | `published_at` | UTC instant Kafka acknowledged publication; null while pending. |
 | `attempt_count` | Nonnegative count of bounded relay attempts. |
 | `next_attempt_at` | UTC instant after which a failed relay may retry; null when no delay is scheduled. |
@@ -573,7 +573,7 @@ Care-owned transactional outbox row inserted in the same local transaction as an
 | `aggregate_version` | Non-negative owner version used to distinguish aggregate changes and reject duplicate event creation. |
 | `correlation_id` | Required workflow trace UUID propagated without sensitive payload data. |
 | `payload` | Minimized JSON object conforming to the future event contract; assessment answer content is prohibited. |
-| `occurred_at` | UTC instant the domain fact occurred. |
+| `occurred_at` | UTC instant the domain fact occurred. For `care.user-notification.fact`, truncate to microseconds before saving both this column and JSON `availableAt`; the reloaded relay timestamp must exactly match the payload without PostgreSQL rounding. |
 | `published_at` | UTC broker-acknowledged publication instant; null while pending. |
 | `attempt_count` | Non-negative relay attempt count used for bounded retry observability. |
 | `next_attempt_at` | Optional UTC instant before which the relay must not retry. |

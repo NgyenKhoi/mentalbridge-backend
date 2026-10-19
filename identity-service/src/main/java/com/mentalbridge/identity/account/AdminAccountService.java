@@ -5,6 +5,7 @@ import java.security.MessageDigest;
 import java.security.NoSuchAlgorithmException;
 import java.time.Clock;
 import java.time.Instant;
+import java.time.temporal.ChronoUnit;
 import java.time.format.DateTimeParseException;
 import java.util.ArrayList;
 import java.util.Base64;
@@ -134,9 +135,10 @@ public class AdminAccountService {
 				correlationId, Map.of("accountId", account.id().toString(), "status", account.status().name(), "role", account.role().name(),
 						"reasonCode", request.reasonCode().name()), now));
 		if (account.status() == AccountStatus.ACTIVE && account.role() == RoleCode.USER) {
+			var availableAt = now.truncatedTo(ChronoUnit.MICROS);
 			outboxEvents.save(new OutboxEventEntity("identity.user-notification.fact", account.id(), account.version(),
 					correlationId, Map.of("recipientId", account.id().toString(), "actorType", account.role().name(),
-							"factType", "ACCOUNT_RESTORED", "availableAt", now.toString()), now));
+							"factType", "ACCOUNT_RESTORED", "availableAt", availableAt.toString()), availableAt));
 		}
 		return response(account);
 	}

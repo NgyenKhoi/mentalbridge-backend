@@ -2,6 +2,7 @@
   "$schema": "https://json-schema.org/draft/2020-12/schema",
   "$id": "https://mentalbridge.local/contracts/events/identity/user-notification-fact-v1.schema.json",
   "title": "Identity user notification fact v1",
+  "description": "Producers truncate the source Instant to microseconds before writing both payload.availableAt and the outbox occurred_at. Both wire timestamps use the identical UTC ISO-8601 representation after PostgreSQL reload (at most six fractional digits, never rounded). Envelope occurredAt must exactly equal payload.availableAt; aggregateId must match recipientId.",
   "type": "object",
   "additionalProperties": false,
   "required": ["messageId", "messageType", "occurredAt", "producer", "schemaVersion", "correlationId", "aggregateId", "aggregateVersion", "payload"],

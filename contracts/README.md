@@ -45,6 +45,13 @@ assessment answers/scores, safety flags, resource copy, email addresses, and
 provider payloads. Content/Notification owns rendering, preference enforcement,
 durable delivery state, and logical replay deduplication.
 
+For these two MB-565 v1 facts, producers truncate source instants to UTC
+microseconds before writing both JSON `payload.availableAt` and the outbox
+`occurred_at`. Truncation never rounds into the next microsecond or second.
+The relay emits the same ISO-8601 text (at most six fractional digits) after
+PostgreSQL reload. Content requires exact timestamp equality in addition to
+the existing kind, recipient, aggregate identity and version bindings.
+
 `care-service-v1.yaml` remains the unchanged v1 source for coarse historical
 SupportEvaluation behavior. `care-support-evaluation-v2.yaml` is the additive
 source for `/api/v2/support-evaluations`; consumers select the API version by
