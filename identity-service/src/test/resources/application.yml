@@ -6,6 +6,10 @@ spring:
       enabled: false
   liquibase:
     enabled: true
+  jpa:
+    hibernate:
+      # Same as main: entity mappings must match the Liquibase schema.
+      ddl-auto: validate
   kafka:
     consumer:
       group-id: mentalbridge.identity.audit-consumer
