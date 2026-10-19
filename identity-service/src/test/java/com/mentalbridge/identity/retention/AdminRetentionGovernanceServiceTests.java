@@ -100,7 +100,7 @@ class AdminRetentionGovernanceServiceTests {
 		assertThat(result.itemsEvaluated()).isEqualTo(50);
 		assertThat(result.recordsPurged()).isEqualTo(5);
 		verify(executionRecords).save(any(RetentionExecutionRecordEntity.class));
-		verify(auditLogger).record(any(SecurityAuditEventEntity.class));
+		verify(auditLogger).recordSuccess(any(SecurityAuditEventEntity.class));
 	}
 
 	@Test
@@ -112,7 +112,22 @@ class AdminRetentionGovernanceServiceTests {
 				.isInstanceOf(UnsupportedRetentionCapabilityException.class)
 				.hasMessageContaining("không hỗ trợ thực thi tự động");
 
-		verify(auditLogger).record(any(SecurityAuditEventEntity.class));
+		verify(auditLogger).recordDenied(any(SecurityAuditEventEntity.class));
+	}
+
+	@Test
+	void triggerRetentionSweepRecordsFailedExecutionWhenProcessorThrows() {
+		UUID actorId = UUID.randomUUID();
+		UUID correlationId = UUID.randomUUID();
+		when(reportProcessor.purgeExpiredArtifactsWithMetrics())
+				.thenThrow(new RuntimeException("Database timeout"));
+
+		assertThatThrownBy(() -> service.triggerRetentionSweep("MB-IDENTITY-REPORTING-001", actorId, correlationId))
+				.isInstanceOf(ResponseStatusException.class)
+				.hasMessageContaining("Thực thi dọn dẹp thất bại");
+
+		verify(executionRecords).save(any(RetentionExecutionRecordEntity.class));
+		verify(auditLogger).recordDenied(any(SecurityAuditEventEntity.class));
 	}
 
 	@Test
@@ -144,6 +159,28 @@ class AdminRetentionGovernanceServiceTests {
 	}
 
 	@Test
+	void getDeletionRequestsWithPaginationSupportsPageNumberAndNextCursor() {
+		UUID accountId = UUID.randomUUID();
+		var request1 = new DeletionRequestEntity(
+				UUID.randomUUID(), accountId, "p1".repeat(32), DeletionRequestStatus.PENDING,
+				DeletionHoldType.NONE, null, 0, 3, DeletionEscalationState.NONE, null,
+				NOW, NOW, null, null, NOW, NOW
+		);
+		var pageableCaptor = org.mockito.ArgumentCaptor.forClass(Pageable.class);
+		when(deletionRequests.findAll(any(Specification.class), pageableCaptor.capture()))
+				.thenReturn(new PageImpl<>(List.of(request1), org.springframework.data.domain.PageRequest.of(0, 1), 5));
+		when(accounts.findById(accountId)).thenReturn(Optional.of(AccountEntity.pending("user@example.com", "hash", RoleCode.USER, NOW)));
+
+		var page = service.getDeletionRequests(null, null, 1, 0);
+
+		assertThat(page.items()).hasSize(1);
+		assertThat(page.total()).isEqualTo(5);
+		assertThat(page.nextCursor()).isEqualTo("1");
+		assertThat(pageableCaptor.getValue().getPageNumber()).isEqualTo(0);
+		assertThat(pageableCaptor.getValue().getPageSize()).isEqualTo(1);
+	}
+
+	@Test
 	void retryDeletionFailsWhenHoldIsActiveAndAuditsDenied() {
 		UUID requestId = UUID.randomUUID();
 		UUID actorId = UUID.randomUUID();
@@ -158,7 +195,7 @@ class AdminRetentionGovernanceServiceTests {
 				.isInstanceOf(DeletionHoldActiveException.class)
 				.hasMessageContaining("LEGAL_HOLD");
 
-		verify(auditLogger).record(any(SecurityAuditEventEntity.class));
+		verify(auditLogger).recordDenied(any(SecurityAuditEventEntity.class));
 	}
 
 	@Test
@@ -177,7 +214,7 @@ class AdminRetentionGovernanceServiceTests {
 				.isInstanceOf(ResponseStatusException.class)
 				.hasMessageContaining("Chưa đến thời điểm thực thi được phê duyệt");
 
-		verify(auditLogger).record(any(SecurityAuditEventEntity.class));
+		verify(auditLogger).recordDenied(any(SecurityAuditEventEntity.class));
 	}
 
 	@Test
@@ -195,7 +232,7 @@ class AdminRetentionGovernanceServiceTests {
 				.isInstanceOf(ResponseStatusException.class)
 				.hasMessageContaining("đã hoàn tất");
 
-		verify(auditLogger).record(any(SecurityAuditEventEntity.class));
+		verify(auditLogger).recordDenied(any(SecurityAuditEventEntity.class));
 	}
 
 	@Test
@@ -213,7 +250,7 @@ class AdminRetentionGovernanceServiceTests {
 				.isInstanceOf(DeletionRetryExhaustedException.class)
 				.hasMessageContaining("giới hạn tối đa");
 
-		verify(auditLogger).record(any(SecurityAuditEventEntity.class));
+		verify(auditLogger).recordDenied(any(SecurityAuditEventEntity.class));
 	}
 
 	@Test
@@ -259,7 +296,117 @@ class AdminRetentionGovernanceServiceTests {
 		assertThat(response.status()).isEqualTo(DeletionRequestStatus.IN_PROGRESS);
 		assertThat(account.status()).isEqualTo(AccountStatus.DELETED);
 		verify(authentication).revokeAll(eq(account.id()), eq("ACCOUNT_DELETED"), any(Instant.class));
-		verify(auditLogger).record(any(SecurityAuditEventEntity.class));
+		verify(auditLogger).recordSuccess(any(SecurityAuditEventEntity.class));
+	}
+
+	@Test
+	void retryDeletionDoesNotMarkCompletedWhenOwnerFactsIsEmpty() {
+		UUID requestId = UUID.randomUUID();
+		UUID accountId = UUID.randomUUID();
+		UUID actorId = UUID.randomUUID();
+		var account = AccountEntity.pending("user@example.com", "hash", RoleCode.USER, NOW);
+		account.activate(NOW);
+
+		var request = new DeletionRequestEntity(
+				requestId, accountId, "emptyfacts".repeat(6), DeletionRequestStatus.PENDING,
+				DeletionHoldType.NONE, null, 0, 3,
+				DeletionEscalationState.NONE, null, NOW, NOW, null, null, NOW, NOW
+		);
+		// request has empty ownerFacts
+
+		when(deletionRequests.findById(requestId)).thenReturn(Optional.of(request));
+		when(accounts.findById(accountId)).thenReturn(Optional.of(account));
+
+		var response = service.retryDeletion(requestId, actorId, UUID.randomUUID());
+
+		// Critical check: vacuous truth (allMatch on empty) MUST NOT mark COMPLETED
+		assertThat(response.status()).isEqualTo(DeletionRequestStatus.IN_PROGRESS);
+		verify(auditLogger).recordSuccess(any(SecurityAuditEventEntity.class));
+	}
+
+	@Test
+	void retryDeletionMarksIdentityFactFailedWhenAccountNotFound() {
+		UUID requestId = UUID.randomUUID();
+		UUID missingAccountId = UUID.randomUUID();
+		UUID actorId = UUID.randomUUID();
+
+		var request = new DeletionRequestEntity(
+				requestId, missingAccountId, "missing".repeat(8), DeletionRequestStatus.PENDING,
+				DeletionHoldType.NONE, null, 0, 3,
+				DeletionEscalationState.NONE, null, NOW, NOW, null, null, NOW, NOW
+		);
+		var identityFact = new DeletionOwnerFactEntity(
+				UUID.randomUUID(), request, RetentionOwnerService.IDENTITY, DeletionFactStatus.PENDING,
+				null, null, null, NOW
+		);
+		request.addOwnerFact(identityFact);
+
+		when(deletionRequests.findById(requestId)).thenReturn(Optional.of(request));
+		when(accounts.findById(missingAccountId)).thenReturn(Optional.empty());
+
+		var response = service.retryDeletion(requestId, actorId, UUID.randomUUID());
+
+		assertThat(response.status()).isEqualTo(DeletionRequestStatus.IN_PROGRESS);
+		var updatedFact = response.ownerFacts().getFirst();
+		assertThat(updatedFact.status()).isEqualTo(DeletionFactStatus.FAILED);
+		assertThat(updatedFact.failureReason()).isEqualTo("ACCOUNT_NOT_FOUND");
+	}
+
+	@Test
+	void retryDeletionClearsEscalationStateWhenCompletedSuccessfully() {
+		UUID requestId = UUID.randomUUID();
+		UUID accountId = UUID.randomUUID();
+		UUID actorId = UUID.randomUUID();
+		var account = AccountEntity.pending("user@example.com", "hash", RoleCode.USER, NOW);
+		account.activate(NOW);
+
+		var request = new DeletionRequestEntity(
+				requestId, accountId, "success".repeat(8), DeletionRequestStatus.FAILED,
+				DeletionHoldType.NONE, null, 2, 3,
+				DeletionEscalationState.MANUAL_ESCALATION_REQUIRED, "PREVIOUS_TIMEOUT", NOW, NOW, null, null, NOW, NOW
+		);
+		var identityFact = new DeletionOwnerFactEntity(
+				UUID.randomUUID(), request, RetentionOwnerService.IDENTITY, DeletionFactStatus.PENDING,
+				null, null, null, NOW
+		);
+		request.addOwnerFact(identityFact);
+
+		when(deletionRequests.findById(requestId)).thenReturn(Optional.of(request));
+		when(accounts.findById(accountId)).thenReturn(Optional.of(account));
+
+		var response = service.retryDeletion(requestId, actorId, UUID.randomUUID());
+
+		assertThat(response.status()).isEqualTo(DeletionRequestStatus.COMPLETED);
+		assertThat(response.escalationState()).isEqualTo(DeletionEscalationState.NONE);
+		verify(auditLogger).recordSuccess(any(SecurityAuditEventEntity.class));
+	}
+
+	@Test
+	void holdsDoNotMutateOwnerFacts() {
+		UUID requestId = UUID.randomUUID();
+		UUID actorId = UUID.randomUUID();
+		var request = new DeletionRequestEntity(
+				requestId, UUID.randomUUID(), "holds".repeat(10), DeletionRequestStatus.PENDING,
+				DeletionHoldType.NONE, null, 0, 3,
+				DeletionEscalationState.NONE, null, NOW, NOW, null, null, NOW, NOW
+		);
+		var careFact = new DeletionOwnerFactEntity(
+				UUID.randomUUID(), request, RetentionOwnerService.CARE, DeletionFactStatus.PENDING,
+				null, null, null, NOW
+		);
+		request.addOwnerFact(careFact);
+
+		when(deletionRequests.findById(requestId)).thenReturn(Optional.of(request));
+
+		// Apply Hold: Coordinator hold must not fabricate owner HELD status
+		var heldResponse = service.applyHold(requestId, DeletionHoldType.LEGAL_HOLD, "STATUTORY_INQUIRY", actorId, UUID.randomUUID());
+		assertThat(heldResponse.status()).isEqualTo(DeletionRequestStatus.HELD);
+		assertThat(careFact.status()).isEqualTo(DeletionFactStatus.PENDING);
+
+		// Release Hold: Coordinator hold release must not alter owner facts
+		var releasedResponse = service.releaseHold(requestId, actorId, UUID.randomUUID());
+		assertThat(releasedResponse.status()).isEqualTo(DeletionRequestStatus.PENDING);
+		assertThat(careFact.status()).isEqualTo(DeletionFactStatus.PENDING);
 	}
 
 	@Test
@@ -284,7 +431,7 @@ class AdminRetentionGovernanceServiceTests {
 		assertThat(response.status()).isEqualTo(DeletionRequestStatus.HELD);
 		assertThat(response.holdType()).isEqualTo(DeletionHoldType.LEGAL_HOLD);
 		assertThat(response.holdReason()).isEqualTo("STATUTORY_INQUIRY");
-		verify(auditLogger).record(any(SecurityAuditEventEntity.class));
+		verify(auditLogger).recordSuccess(any(SecurityAuditEventEntity.class));
 	}
 
 	@Test
@@ -302,6 +449,6 @@ class AdminRetentionGovernanceServiceTests {
 
 		assertThat(response.status()).isEqualTo(DeletionRequestStatus.PENDING);
 		assertThat(response.holdType()).isEqualTo(DeletionHoldType.NONE);
-		verify(auditLogger).record(any(SecurityAuditEventEntity.class));
+		verify(auditLogger).recordSuccess(any(SecurityAuditEventEntity.class));
 	}
 }

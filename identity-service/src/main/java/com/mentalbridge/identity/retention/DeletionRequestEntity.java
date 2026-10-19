@@ -156,21 +156,22 @@ public class DeletionRequestEntity {
 		this.retryCount++;
 		this.lastAttemptAt = now;
 		this.updatedAt = now;
-		if (this.retryCount >= this.maxRetries) {
-			this.escalationState = DeletionEscalationState.MANUAL_ESCALATION_REQUIRED;
-		}
 	}
 
 	public void complete(Instant now) {
 		this.status = DeletionRequestStatus.COMPLETED;
 		this.completedAt = now;
 		this.failureCode = null;
+		this.escalationState = DeletionEscalationState.NONE;
 		this.updatedAt = now;
 	}
 
 	public void fail(String failureCode, Instant now) {
 		this.status = DeletionRequestStatus.FAILED;
 		this.failureCode = failureCode;
+		if (this.retryCount >= this.maxRetries && this.maxRetries > 0) {
+			this.escalationState = DeletionEscalationState.MANUAL_ESCALATION_REQUIRED;
+		}
 		this.updatedAt = now;
 	}
 }

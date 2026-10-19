@@ -92,10 +92,12 @@ class AdminRetentionGovernanceControllerTests {
 				DeletionRequestStatus.PENDING, DeletionHoldType.NONE, null, 0, 3,
 				DeletionEscalationState.NONE, null, Instant.now(), Instant.now(), null, null, List.of()
 		);
-		when(service.getDeletionRequests(any(), any(), any()))
+		when(service.getDeletionRequests(any(), any(), any(), any()))
 				.thenReturn(new AdminRetentionGovernanceService.DeletionRequestPage(List.of(item), 1, null));
 
-		mockMvc.perform(get("/api/v1/admin/retention/deletions"))
+		mockMvc.perform(get("/api/v1/admin/retention/deletions")
+				.param("page", "0")
+				.param("limit", "10"))
 				.andExpect(status().isOk())
 				.andExpect(header().exists("X-Correlation-Id"))
 				.andExpect(jsonPath("$.items.length()").value(1))

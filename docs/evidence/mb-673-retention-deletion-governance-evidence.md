@@ -11,7 +11,7 @@ Under the MB-583 architecture, `Identity Service` coordinates deletion workflows
 
 | Policy ID | Policy Name | Owner Service | Version | Retention Period | Sweep Capability | Manual Hold Supported | Safe Aggregate Outcome |
 | :--- | :--- | :--- | :--- | :--- | :--- | :--- | :--- |
-| `MB-IDENTITY-REPORTING-001` | Chính sách bảo lưu báo cáo phân tích tổng hợp | `IDENTITY` | 1.0 | 90 ngày | **ACTIVE** (Automated & Admin sweep supported via authoritative metrics) | Không áp dụng | Số lượng tệp trích xuất báo cáo phân tích hết hạn đã dọn dẹp |
+| `MB-IDENTITY-REPORTING-001` | Chính sách bảo lưu báo cáo phân tích tổng hợp | `IDENTITY` | 1.0 | 30 ngày | **ACTIVE** (Automated & Admin sweep supported via authoritative metrics) | Không áp dụng | Số lượng tệp trích xuất báo cáo phân tích hết hạn đã dọn dẹp |
 | `MB-IDENTITY-AUDIT-001` | Chính sách bảo lưu sự kiện kiểm toán danh tính | `IDENTITY` | 1.0 | 365 ngày | **ACTIVE** (Partitioned auto-retention) | **Có hỗ trợ** | Nhật ký kiểm toán danh tính tối thiểu hóa |
 | `MB-PRIVACY-CARE-001` | Chính sách bảo lưu hồ sơ lâm sàng và phiên chăm sóc | `CARE` | 1.0 | 730 ngày | **PARTIALLY_SUPPORTED** (Care domain-managed only) | **Có hỗ trợ** | Bản ghi đánh giá tâm lý lâm sàng và hồ sơ phiên chăm sóc |
 | `consultation-journey-v1` | Chính sách bảo lưu hành trình tư vấn chuyên gia | `CONSULTATION` | 1.0 | 365 ngày | **PARTIALLY_SUPPORTED** (Consultation lifecycle service) | **Có hỗ trợ** | Lịch sử cuộc hẹn và ghi chú tư vấn hoàn tất |
@@ -21,13 +21,13 @@ Under the MB-583 architecture, `Identity Service` coordinates deletion workflows
 
 ### Authority & Architectural Rules
 1. **Coordination vs Enforcement**: Identity coordinates deletion requests and orchestrates asynchronous owner facts. Each owner service processes its own deletion facts and emits audit evidence.
-2. **No Fabricated Facts (P0-A)**: Identity only confirms completion of its own internal fact (`IDENTITY`). External facts (`CARE`, `CONSULTATION`, `JOURNAL_AI`, `COMMUNITY`, `CONTENT`) remain `PENDING` or `UNAVAILABLE` until authoritative cross-service contracts or events report completion. Identity never fabricates fake evidence references or marks external facts completed.
+2. **No Fabricated Facts (P0-A)**: Identity only confirms completion of its own internal fact (`IDENTITY`). External facts (`CARE`, `CONSULTATION`, `JOURNAL_AI`, `COMMUNITY`, `CONTENT`) remain `PENDING` or `UNAVAILABLE` until authoritative cross-service contracts or events report completion. Identity never fabricates fake evidence references or marks external facts completed. Empty owner facts collection strictly rejects completion (`!request.ownerFacts().isEmpty()` and identity fact presence are enforced). Missing accounts mark Identity fact as `FAILED` (`ACCOUNT_NOT_FOUND`).
 3. **Authoritative Sweep Metrics (P0-B)**: Retention sweeps query authoritative database metrics directly (via `PlatformReportProcessor.purgeExpiredArtifactsWithMetrics()`), eliminating all fabricated or hardcoded offsets.
-4. **Safe Deletion Retry (P0-C)**: Retry validates lifecycle state, blocks requests scheduled in the future (`scheduledExecutionAt.isAfter(now)`), active holds, or exhausted retry limits. Retries are strictly bounded (`maxRetries = 3`).
+4. **Safe Deletion Retry (P0-C)**: Retry validates lifecycle state, blocks requests scheduled in the future (`scheduledExecutionAt.isAfter(now)`), active holds, or exhausted retry limits. Retries are strictly bounded (`maxRetries = 3`). Completed requests or successfully retried final attempts clear escalation state to `NONE`.
 5. **Fail-Closed Capabilities (AC 5)**: Capabilities not supported by owner services (e.g. direct sweep invocation on Care records or Content notifications) are explicitly declared `UNAVAILABLE` / `PARTIALLY_SUPPORTED` and fail closed (HTTP 422 `CAPABILITY_UNSUPPORTED`) rather than simulating success.
 6. **Strict Privacy Bounds (AC 2)**: Under no circumstances are raw Journal texts, assessment responses, chat transcripts, audio/video streams, or system credentials returned or displayed in retention views.
-7. **Safe Hold Reason Codes (P1-D)**: Hold reasons are strictly restricted to a whitelist of safe reason codes (`STATUTORY_INQUIRY`, `PENDING_DISPUTE`, `ACTIVE_SAFETY_REVIEW`, `SCHEDULED_APPOINTMENT_ACTIVE`, `USER_CONTESTED`, `AUDIT_COMPLIANCE_HOLD`) preventing free-text PII leakage. Hold cannot be applied to `COMPLETED` requests. Releasing a hold restores the request to its legitimate lifecycle state (`FAILED` if retry exhausted, `IN_PROGRESS` if retry > 0, `PENDING` if retry == 0).
-8. **Audit Transaction Isolation (P1-E)**: Denied audit events are committed using `RetentionAuditLogger` with `@Transactional(propagation = Propagation.REQUIRES_NEW)`, ensuring denied audit records persist even when the caller transaction rolls back due to a business exception.
+7. **Safe Hold Reason Codes (P1-D)**: Hold reasons are strictly restricted to a whitelist of safe reason codes (`STATUTORY_INQUIRY`, `PENDING_DISPUTE`, `ACTIVE_SAFETY_REVIEW`, `SCHEDULED_APPOINTMENT_ACTIVE`, `USER_CONTESTED`, `AUDIT_COMPLIANCE_HOLD`) preventing free-text PII leakage. Hold cannot be applied to `COMPLETED` requests. Applying or releasing holds strictly targets coordinator deletion request state and does NOT mutate or falsify external owner fact states.
+8. **Audit Transaction Isolation (P1-E)**: Audit logging enforces exact transactional boundaries: `RetentionAuditLogger.recordDenied` uses `REQUIRES_NEW` (ensuring denied audit records persist even when the caller transaction rolls back), while `recordSuccess` uses `REQUIRED` (ensuring success audit records roll back if the business transaction fails).
 9. **Deletion Evidence Preservation (P1-I)**: Foreign key `account_id` on `deletion_request` does NOT cascade delete on account removal, ensuring immutable audit evidence and traceability are permanently preserved.
 
 ---
@@ -81,21 +81,24 @@ Under the MB-583 architecture, `Identity Service` coordinates deletion workflows
 
 ### 3.1 Backend Test Results (`mvnw.cmd test`)
 Executed test suites:
-- `AdminRetentionGovernanceServiceTests` (11 tests)
+- `AdminRetentionGovernanceServiceTests` (17 tests)
 - `AdminRetentionGovernanceControllerTests` (11 tests)
 - `AdminRetentionGovernanceSecuritySliceTests` (5 tests)
+- `RetentionAuditLoggerTransactionTests` (3 tests)
 
 ```text
 [INFO] Running com.mentalbridge.identity.retention.AdminRetentionGovernanceControllerTests
-[INFO] Tests run: 11, Failures: 0, Errors: 0, Skipped: 0, Time elapsed: 2.958 s -- in com.mentalbridge.identity.retention.AdminRetentionGovernanceControllerTests
+[INFO] Tests run: 11, Failures: 0, Errors: 0, Skipped: 0, Time elapsed: 2.875 s -- in com.mentalbridge.identity.retention.AdminRetentionGovernanceControllerTests
 [INFO] Running com.mentalbridge.identity.retention.AdminRetentionGovernanceSecuritySliceTests
-[INFO] Tests run: 5, Failures: 0, Errors: 0, Skipped: 0, Time elapsed: 4.953 s -- in com.mentalbridge.identity.retention.AdminRetentionGovernanceSecuritySliceTests
+[INFO] Tests run: 5, Failures: 0, Errors: 0, Skipped: 0, Time elapsed: 5.160 s -- in com.mentalbridge.identity.retention.AdminRetentionGovernanceSecuritySliceTests
 [INFO] Running com.mentalbridge.identity.retention.AdminRetentionGovernanceServiceTests
-[INFO] Tests run: 11, Failures: 0, Errors: 0, Skipped: 0, Time elapsed: 0.459 s -- in com.mentalbridge.identity.retention.AdminRetentionGovernanceServiceTests
+[INFO] Tests run: 17, Failures: 0, Errors: 0, Skipped: 0, Time elapsed: 0.445 s -- in com.mentalbridge.identity.retention.AdminRetentionGovernanceServiceTests
+[INFO] Running com.mentalbridge.identity.retention.RetentionAuditLoggerTransactionTests
+[INFO] Tests run: 3, Failures: 0, Errors: 0, Skipped: 0, Time elapsed: 0.109 s -- in com.mentalbridge.identity.retention.RetentionAuditLoggerTransactionTests
 [INFO] 
 [INFO] Results:
 [INFO] 
-[INFO] Tests run: 27, Failures: 0, Errors: 0, Skipped: 0
+[INFO] Tests run: 36, Failures: 0, Errors: 0, Skipped: 0
 [INFO] BUILD SUCCESS
 ```
 

@@ -64,12 +64,13 @@ public class AdminRetentionGovernanceController {
 			@RequestParam(required = false) DeletionRequestStatus status,
 			@RequestParam(required = false) DeletionHoldType holdType,
 			@RequestParam(required = false) @Min(1) @Max(100) Integer limit,
+			@RequestParam(required = false) @Min(0) Integer page,
 			@RequestHeader(name = "X-Correlation-Id", required = false) UUID correlationId,
 			HttpServletRequest request) {
 		UUID effectiveCorrelation = correlation(request, correlationId);
 		return ResponseEntity.ok()
 				.header("X-Correlation-Id", effectiveCorrelation.toString())
-				.body(service.getDeletionRequests(status, holdType, limit));
+				.body(service.getDeletionRequests(status, holdType, limit, page));
 	}
 
 	@PostMapping("/deletions/{requestId}/retry")

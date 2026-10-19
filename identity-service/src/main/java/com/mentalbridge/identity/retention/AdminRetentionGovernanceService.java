@@ -211,7 +211,7 @@ public class AdminRetentionGovernanceService {
 		UUID effectiveCorrelation = correlationId != null ? correlationId : UUID.randomUUID();
 
 		if (!meta.automatedExecutionSupported()) {
-			auditLogger.record(new SecurityAuditEventEntity(
+			auditLogger.recordDenied(new SecurityAuditEventEntity(
 					UUID.randomUUID(), null, actorId, "RETENTION_SWEEP_TRIGGERED", "DENIED",
 					"CAPABILITY_UNAVAILABLE", effectiveCorrelation, null,
 					meta.ownerService().name(), "DATA_RETENTION", now, now
@@ -221,43 +221,79 @@ public class AdminRetentionGovernanceService {
 
 		int evaluated = 0;
 		int purged = 0;
-		if (reportProcessor != null && "MB-IDENTITY-REPORTING-001".equals(policyId)) {
-			var purgeMetrics = reportProcessor.purgeExpiredArtifactsWithMetrics();
-			evaluated = (int) purgeMetrics.itemsEvaluated();
-			purged = (int) purgeMetrics.recordsPurged();
+		RetentionExecutionRecordEntity record;
+		try {
+			if (reportProcessor != null && "MB-IDENTITY-REPORTING-001".equals(policyId)) {
+				var purgeMetrics = reportProcessor.purgeExpiredArtifactsWithMetrics();
+				evaluated = (int) purgeMetrics.itemsEvaluated();
+				purged = (int) purgeMetrics.recordsPurged();
+			}
+
+			record = new RetentionExecutionRecordEntity(
+					UUID.randomUUID(),
+					policyId,
+					meta.ownerService().name(),
+					meta.jobName(),
+					"SUCCEEDED",
+					now,
+					clock.instant(),
+					evaluated,
+					purged,
+					0,
+					0,
+					null,
+					now
+			);
+			executionRecords.save(record);
+
+			auditLogger.recordSuccess(new SecurityAuditEventEntity(
+					UUID.randomUUID(), null, actorId, "RETENTION_SWEEP_TRIGGERED", "SUCCEEDED",
+					"PURGE_COMPLETED", effectiveCorrelation, null,
+					meta.ownerService().name(), "DATA_RETENTION", now, now
+			));
+		} catch (Exception ex) {
+			record = new RetentionExecutionRecordEntity(
+					UUID.randomUUID(),
+					policyId,
+					meta.ownerService().name(),
+					meta.jobName(),
+					"FAILED",
+					now,
+					clock.instant(),
+					evaluated,
+					purged,
+					0,
+					0,
+					"SWEEP_EXECUTION_FAILED",
+					now
+			);
+			executionRecords.save(record);
+
+			auditLogger.recordDenied(new SecurityAuditEventEntity(
+					UUID.randomUUID(), null, actorId, "RETENTION_SWEEP_TRIGGERED", "FAILED",
+					"SWEEP_EXECUTION_FAILED", effectiveCorrelation, null,
+					meta.ownerService().name(), "DATA_RETENTION", now, now
+			));
+			throw new ResponseStatusException(HttpStatus.INTERNAL_SERVER_ERROR, "Thực thi dọn dẹp thất bại: " + ex.getMessage(), ex);
 		}
-
-		RetentionExecutionRecordEntity record = new RetentionExecutionRecordEntity(
-				UUID.randomUUID(),
-				policyId,
-				meta.ownerService().name(),
-				meta.jobName(),
-				"SUCCEEDED",
-				now,
-				now,
-				evaluated,
-				purged,
-				0,
-				0,
-				null,
-				now
-		);
-		executionRecords.save(record);
-
-		auditLogger.record(new SecurityAuditEventEntity(
-				UUID.randomUUID(), null, actorId, "RETENTION_SWEEP_TRIGGERED", "SUCCEEDED",
-				"PURGE_COMPLETED", effectiveCorrelation, null,
-				meta.ownerService().name(), "DATA_RETENTION", now, now
-		));
 
 		return toExecutionResponse(record);
 	}
 
 	@Transactional(readOnly = true)
 	public DeletionRequestPage getDeletionRequests(DeletionRequestStatus status, DeletionHoldType holdType, Integer requestedLimit) {
+		return getDeletionRequests(status, holdType, requestedLimit, 0);
+	}
+
+	@Transactional(readOnly = true)
+	public DeletionRequestPage getDeletionRequests(DeletionRequestStatus status, DeletionHoldType holdType, Integer requestedLimit, Integer requestedPage) {
 		int limit = requestedLimit == null ? DEFAULT_LIMIT : requestedLimit;
 		if (limit < 1 || limit > MAX_LIMIT) {
 			throw new ResponseStatusException(HttpStatus.BAD_REQUEST, "Limit phải từ 1 đến 100");
+		}
+		int pageNumber = requestedPage == null ? 0 : requestedPage;
+		if (pageNumber < 0) {
+			throw new ResponseStatusException(HttpStatus.BAD_REQUEST, "Page không được âm");
 		}
 
 		Specification<DeletionRequestEntity> spec = (root, query, cb) -> {
@@ -271,9 +307,10 @@ public class AdminRetentionGovernanceService {
 			return cb.and(predicates.toArray(new jakarta.persistence.criteria.Predicate[0]));
 		};
 
-		Page<DeletionRequestEntity> page = deletionRequests.findAll(spec, PageRequest.of(0, limit, Sort.by(Sort.Direction.DESC, "requestedAt")));
+		Page<DeletionRequestEntity> page = deletionRequests.findAll(spec, PageRequest.of(pageNumber, limit, Sort.by(Sort.Direction.DESC, "requestedAt")));
 		List<DeletionRequestResponse> items = page.getContent().stream().map(this::toDeletionResponse).toList();
-		return new DeletionRequestPage(items, page.getTotalElements(), null);
+		String nextCursor = page.hasNext() ? String.valueOf(pageNumber + 1) : null;
+		return new DeletionRequestPage(items, page.getTotalElements(), nextCursor);
 	}
 
 	@Transactional
@@ -285,7 +322,7 @@ public class AdminRetentionGovernanceService {
 		UUID effectiveCorrelation = correlationId != null ? correlationId : UUID.randomUUID();
 
 		if (request.status() == DeletionRequestStatus.COMPLETED) {
-			auditLogger.record(new SecurityAuditEventEntity(
+			auditLogger.recordDenied(new SecurityAuditEventEntity(
 					UUID.randomUUID(), request.accountId(), actorId, "DATA_DELETION_RETRY_REQUESTED", "DENIED",
 					"ALREADY_COMPLETED", effectiveCorrelation, request.subjectReferenceHash(),
 					"IDENTITY", "DATA_RETENTION", now, now
@@ -294,7 +331,7 @@ public class AdminRetentionGovernanceService {
 		}
 
 		if (request.holdType() != DeletionHoldType.NONE) {
-			auditLogger.record(new SecurityAuditEventEntity(
+			auditLogger.recordDenied(new SecurityAuditEventEntity(
 					UUID.randomUUID(), request.accountId(), actorId, "DATA_DELETION_RETRY_REQUESTED", "DENIED",
 					"HOLD_ACTIVE", effectiveCorrelation, request.subjectReferenceHash(),
 					"IDENTITY", "DATA_RETENTION", now, now
@@ -303,7 +340,7 @@ public class AdminRetentionGovernanceService {
 		}
 
 		if (request.retryCount() >= request.maxRetries()) {
-			auditLogger.record(new SecurityAuditEventEntity(
+			auditLogger.recordDenied(new SecurityAuditEventEntity(
 					UUID.randomUUID(), request.accountId(), actorId, "DATA_DELETION_RETRY_REQUESTED", "DENIED",
 					"RETRY_EXHAUSTED", effectiveCorrelation, request.subjectReferenceHash(),
 					"IDENTITY", "DATA_RETENTION", now, now
@@ -312,7 +349,7 @@ public class AdminRetentionGovernanceService {
 		}
 
 		if (request.scheduledExecutionAt() != null && now.isBefore(request.scheduledExecutionAt())) {
-			auditLogger.record(new SecurityAuditEventEntity(
+			auditLogger.recordDenied(new SecurityAuditEventEntity(
 					UUID.randomUUID(), request.accountId(), actorId, "DATA_DELETION_RETRY_REQUESTED", "DENIED",
 					"EXECUTION_SCHEDULE_NOT_REACHED", effectiveCorrelation, request.subjectReferenceHash(),
 					"IDENTITY", "DATA_RETENTION", now, now
@@ -323,19 +360,35 @@ public class AdminRetentionGovernanceService {
 		request.recordAttempt(now);
 
 		AccountEntity account = accounts.findById(request.accountId()).orElse(null);
-		if (account != null && account.status() != AccountStatus.DELETED) {
-			account.markDeleted(now);
-			authentication.revokeAll(account.id(), "ACCOUNT_DELETED", now);
-			accounts.save(account);
+		boolean identityActionSucceeded = false;
+		if (account != null) {
+			if (account.status() != AccountStatus.DELETED) {
+				account.markDeleted(now);
+				authentication.revokeAll(account.id(), "ACCOUNT_DELETED", now);
+				accounts.save(account);
+			}
+			identityActionSucceeded = true;
 		}
 
 		for (DeletionOwnerFactEntity fact : request.ownerFacts()) {
 			if (fact.ownerService() == RetentionOwnerService.IDENTITY) {
-				fact.markCompleted(now, "audit:identity:account-deleted:" + request.id());
+				if (identityActionSucceeded) {
+					fact.markCompleted(now, "audit:identity:account-deleted:" + request.id());
+				} else {
+					fact.markFailed(now, "ACCOUNT_NOT_FOUND");
+				}
 			}
+			// External owners are not modified: Identity coordinator does not fabricate external completion
 		}
 
-		boolean allCompleted = request.ownerFacts().stream().allMatch(f -> f.status() == DeletionFactStatus.COMPLETED);
+		boolean hasFacts = !request.ownerFacts().isEmpty();
+		boolean identityFactCompleted = request.ownerFacts().stream()
+				.anyMatch(f -> f.ownerService() == RetentionOwnerService.IDENTITY && f.status() == DeletionFactStatus.COMPLETED);
+		boolean allCompleted = hasFacts && identityFactCompleted && request.ownerFacts().stream()
+				.allMatch(f -> f.status() == DeletionFactStatus.COMPLETED
+						&& f.evidenceReference() != null
+						&& !f.evidenceReference().isBlank());
+
 		if (allCompleted) {
 			request.complete(now);
 		} else {
@@ -347,7 +400,7 @@ public class AdminRetentionGovernanceService {
 		}
 		deletionRequests.save(request);
 
-		auditLogger.record(new SecurityAuditEventEntity(
+		auditLogger.recordSuccess(new SecurityAuditEventEntity(
 				UUID.randomUUID(), request.accountId(), actorId, "DATA_DELETION_RETRY_REQUESTED", "SUCCEEDED",
 				allCompleted ? "DELETION_COMPLETED" : "DELETION_ATTEMPTED_IN_PROGRESS", effectiveCorrelation,
 				request.subjectReferenceHash(), "IDENTITY", "DATA_RETENTION", now, now
@@ -376,14 +429,9 @@ public class AdminRetentionGovernanceService {
 		UUID effectiveCorrelation = correlationId != null ? correlationId : UUID.randomUUID();
 
 		request.applyHold(holdType, holdReason, now);
-		for (DeletionOwnerFactEntity fact : request.ownerFacts()) {
-			if (fact.status() != DeletionFactStatus.COMPLETED) {
-				fact.markHeld(now, holdType.name() + ": " + holdReason);
-			}
-		}
 		deletionRequests.save(request);
 
-		auditLogger.record(new SecurityAuditEventEntity(
+		auditLogger.recordSuccess(new SecurityAuditEventEntity(
 				UUID.randomUUID(), request.accountId(), actorId, "LEGAL_HOLD_APPLIED", "SUCCEEDED",
 				holdReason, effectiveCorrelation,
 				request.subjectReferenceHash(), "IDENTITY", "DATA_RETENTION", now, now
@@ -405,14 +453,9 @@ public class AdminRetentionGovernanceService {
 		UUID effectiveCorrelation = correlationId != null ? correlationId : UUID.randomUUID();
 
 		request.releaseHold(now);
-		for (DeletionOwnerFactEntity fact : request.ownerFacts()) {
-			if (fact.status() == DeletionFactStatus.HELD) {
-				fact.markFailed(now, "HOLD_RELEASED_PENDING_RETRY");
-			}
-		}
 		deletionRequests.save(request);
 
-		auditLogger.record(new SecurityAuditEventEntity(
+		auditLogger.recordSuccess(new SecurityAuditEventEntity(
 				UUID.randomUUID(), request.accountId(), actorId, "LEGAL_HOLD_RELEASED", "SUCCEEDED",
 				"HOLD_RELEASED", effectiveCorrelation, request.subjectReferenceHash(),
 				"IDENTITY", "DATA_RETENTION", now, now

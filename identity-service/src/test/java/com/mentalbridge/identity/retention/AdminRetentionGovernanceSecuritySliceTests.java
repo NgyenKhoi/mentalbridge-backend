@@ -59,22 +59,35 @@ class AdminRetentionGovernanceSecuritySliceTests {
 	}
 
 	@Test
-	void auditLoggerUsesRequiresNewPropagationToSurviveRollbacks() throws Exception {
-		Method recordMethod = RetentionAuditLogger.class.getMethod("record", SecurityAuditEventEntity.class);
-		Transactional tx = recordMethod.getAnnotation(Transactional.class);
-		assertThat(tx).isNotNull();
-		assertThat(tx.propagation()).isEqualTo(Propagation.REQUIRES_NEW);
+	void auditLoggerUsesAppropriatePropagation() throws Exception {
+		Method deniedMethod = RetentionAuditLogger.class.getMethod("recordDenied", SecurityAuditEventEntity.class);
+		Transactional deniedTx = deniedMethod.getAnnotation(Transactional.class);
+		assertThat(deniedTx).isNotNull();
+		assertThat(deniedTx.propagation()).isEqualTo(Propagation.REQUIRES_NEW);
+
+		Method successMethod = RetentionAuditLogger.class.getMethod("recordSuccess", SecurityAuditEventEntity.class);
+		Transactional successTx = successMethod.getAnnotation(Transactional.class);
+		assertThat(successTx).isNotNull();
+		assertThat(successTx.propagation()).isEqualTo(Propagation.REQUIRED);
 
 		// Verify execution saves to repository
 		SecurityAuditEventRepository repo = mock(SecurityAuditEventRepository.class);
 		RetentionAuditLogger logger = new RetentionAuditLogger(repo);
-		SecurityAuditEventEntity event = new SecurityAuditEventEntity(
+		SecurityAuditEventEntity deniedEvent = new SecurityAuditEventEntity(
 				UUID.randomUUID(), null, null, "TEST", "DENIED", "REASON",
 				UUID.randomUUID(), null, "IDENTITY", "DATA_RETENTION",
 				java.time.Instant.now(), java.time.Instant.now()
 		);
-		logger.record(event);
-		verify(repo).save(event);
+		logger.recordDenied(deniedEvent);
+		verify(repo).save(deniedEvent);
+
+		SecurityAuditEventEntity successEvent = new SecurityAuditEventEntity(
+				UUID.randomUUID(), null, null, "TEST", "SUCCEEDED", "REASON",
+				UUID.randomUUID(), null, "IDENTITY", "DATA_RETENTION",
+				java.time.Instant.now(), java.time.Instant.now()
+		);
+		logger.recordSuccess(successEvent);
+		verify(repo).save(successEvent);
 	}
 
 	@Test
