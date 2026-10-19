@@ -3,7 +3,7 @@
 --changeset mentalbridge:identity-006-retention-and-deletion-governance runInTransaction:true
 CREATE TABLE deletion_request (
     id uuid PRIMARY KEY DEFAULT gen_random_uuid(),
-    account_id uuid NOT NULL REFERENCES account(id) ON DELETE CASCADE,
+    account_id uuid NOT NULL,
     subject_reference_hash char(64) NOT NULL,
     status varchar(32) NOT NULL DEFAULT 'PENDING',
     hold_type varchar(32) NOT NULL DEFAULT 'NONE',

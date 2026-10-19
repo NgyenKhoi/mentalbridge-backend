@@ -6,6 +6,7 @@ import java.util.ArrayList;
 import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
+import java.util.Set;
 import java.util.UUID;
 
 import org.springframework.data.domain.Page;
@@ -20,9 +21,7 @@ import org.springframework.web.server.ResponseStatusException;
 import com.mentalbridge.identity.account.AccountEntity;
 import com.mentalbridge.identity.account.AccountRepository;
 import com.mentalbridge.identity.account.AccountStatus;
-import com.mentalbridge.identity.account.AdministrationAuditIngestionService;
 import com.mentalbridge.identity.account.SecurityAuditEventEntity;
-import com.mentalbridge.identity.account.SecurityAuditEventRepository;
 import com.mentalbridge.identity.authentication.AuthenticationPersistence;
 import com.mentalbridge.identity.reporting.PlatformReportProcessor;
 
@@ -32,11 +31,20 @@ public class AdminRetentionGovernanceService {
 	private static final int DEFAULT_LIMIT = 20;
 	private static final int MAX_LIMIT = 100;
 
+	private static final Set<String> ALLOWED_HOLD_REASONS = Set.of(
+			"STATUTORY_INQUIRY",
+			"PENDING_DISPUTE",
+			"ACTIVE_SAFETY_REVIEW",
+			"SCHEDULED_APPOINTMENT_ACTIVE",
+			"USER_CONTESTED",
+			"AUDIT_COMPLIANCE_HOLD"
+	);
+
 	private final RetentionExecutionRecordRepository executionRecords;
 	private final DeletionRequestRepository deletionRequests;
 	private final AccountRepository accounts;
 	private final AuthenticationPersistence authentication;
-	private final SecurityAuditEventRepository auditEvents;
+	private final RetentionAuditLogger auditLogger;
 	private final PlatformReportProcessor reportProcessor;
 	private final Clock clock;
 
@@ -44,33 +52,48 @@ public class AdminRetentionGovernanceService {
 
 	public AdminRetentionGovernanceService(RetentionExecutionRecordRepository executionRecords,
 			DeletionRequestRepository deletionRequests, AccountRepository accounts,
-			AuthenticationPersistence authentication, SecurityAuditEventRepository auditEvents,
+			AuthenticationPersistence authentication, RetentionAuditLogger auditLogger,
 			PlatformReportProcessor reportProcessor, Clock clock) {
 		this.executionRecords = executionRecords;
 		this.deletionRequests = deletionRequests;
 		this.accounts = accounts;
 		this.authentication = authentication;
-		this.auditEvents = auditEvents;
+		this.auditLogger = auditLogger;
 		this.reportProcessor = reportProcessor;
 		this.clock = clock;
 		initPolicyDefinitions();
 	}
 
 	private void initPolicyDefinitions() {
-		policyDefinitions.put("MB-IDENTITY-RETENTION-001", new PolicyMetadata(
-				"MB-IDENTITY-RETENTION-001",
-				"Chính sách bảo lưu tài khoản & phiên làm việc",
+		policyDefinitions.put("MB-IDENTITY-REPORTING-001", new PolicyMetadata(
+				"MB-IDENTITY-REPORTING-001",
+				"Chính sách bảo lưu tệp báo cáo tổng hợp",
 				"1.0",
 				RetentionOwnerService.IDENTITY,
 				RetentionPolicyStatus.APPROVED,
-				"Nhật ký kiểm toán lưu trữ 365 ngày; Phiên làm việc hết hạn sau 30 ngày; Báo cáo định kỳ lưu trữ 30 ngày",
-				365,
-				"IDENTITY_RETENTION_SWEEP",
+				"Tệp báo cáo tổng hợp hoạt động tài khoản được lưu trữ an toàn trong 30 ngày trước khi dọn dẹp tự động.",
+				30,
+				"REPORT_ARTIFACT_RETENTION_SWEEP",
 				RetentionJobStatus.ACTIVE,
 				true,
-				true,
+				false,
 				false,
 				null
+		));
+		policyDefinitions.put("MB-IDENTITY-AUDIT-001", new PolicyMetadata(
+				"MB-IDENTITY-AUDIT-001",
+				"Chính sách bảo lưu nhật ký kiểm toán Identity",
+				"1.0",
+				RetentionOwnerService.IDENTITY,
+				RetentionPolicyStatus.APPROVED,
+				"Nhật ký kiểm toán tối thiểu hóa danh tính được bảo lưu bất biến trong 365 ngày (MB-587). Không hỗ trợ quét xóa thủ công từ quản trị.",
+				365,
+				"IDENTITY_AUDIT_RETENTION",
+				RetentionJobStatus.PARTIALLY_SUPPORTED,
+				false,
+				false,
+				false,
+				"Nhật ký kiểm toán được bảo lưu bất biến trong 365 ngày theo chính sách MB-587; không hỗ trợ quét xóa sớm hoặc xóa thủ công từ giao diện quản trị."
 		));
 		policyDefinitions.put("MB-PRIVACY-CARE-001", new PolicyMetadata(
 				"MB-PRIVACY-CARE-001",
@@ -81,11 +104,11 @@ public class AdminRetentionGovernanceService {
 				"Phiên ẩn danh TTL 30 phút, tối đa 2 giờ; Đánh giá có tài khoản được bảo lưu có kiểm soát phục vụ tái đánh giá; Không xóa trước thời hạn quy định",
 				null,
 				"CARE_ANONYMOUS_EXPIRY_SWEEP",
-				RetentionJobStatus.ACTIVE,
+				RetentionJobStatus.PARTIALLY_SUPPORTED,
 				false,
 				true,
 				true,
-				"Identity không có quyền can thiệp cơ sở dữ liệu Care Service. Quá trình dọn dẹp ẩn danh do Care Service tự thực thi độc lập."
+				"Identity không có quyền can thiệp cơ sở dữ liệu Care Service. Quá trình dọn dẹp do Care Service tự thực thi độc lập."
 		));
 		policyDefinitions.put("consultation-journey-v1", new PolicyMetadata(
 				"consultation-journey-v1",
@@ -93,7 +116,7 @@ public class AdminRetentionGovernanceService {
 				"1.0-scope-v2",
 				RetentionOwnerService.CONSULTATION,
 				RetentionPolicyStatus.APPROVED,
-				"Metadata phòng LiveKit lưu trữ 90 ngày; Bằng chứng tài chính và giao dịch được bảo lưu theo quy định kế toán; Giữ lại vô thời hạn nếu có tranh chấp",
+				"Metadata phòng LiveKit lưu trữ 90 ngày (ADR 0039); Bằng chứng tài chính và giao dịch được bảo lưu theo quy định kế toán; Giữ lại vô thời hạn nếu có tranh chấp",
 				90,
 				"CONSULTATION_METADATA_RETENTION",
 				RetentionJobStatus.ACTIVE,
@@ -188,7 +211,7 @@ public class AdminRetentionGovernanceService {
 		UUID effectiveCorrelation = correlationId != null ? correlationId : UUID.randomUUID();
 
 		if (!meta.automatedExecutionSupported()) {
-			auditEvents.save(new SecurityAuditEventEntity(
+			auditLogger.record(new SecurityAuditEventEntity(
 					UUID.randomUUID(), null, actorId, "RETENTION_SWEEP_TRIGGERED", "DENIED",
 					"CAPABILITY_UNAVAILABLE", effectiveCorrelation, null,
 					meta.ownerService().name(), "DATA_RETENTION", now, now
@@ -196,9 +219,12 @@ public class AdminRetentionGovernanceService {
 			throw new UnsupportedRetentionCapabilityException(policyId, meta.unsupportedCapabilityNotice());
 		}
 
-		long purgedArtifacts = 0;
-		if (reportProcessor != null) {
-			purgedArtifacts = reportProcessor.purgeExpiredArtifacts();
+		int evaluated = 0;
+		int purged = 0;
+		if (reportProcessor != null && "MB-IDENTITY-REPORTING-001".equals(policyId)) {
+			var purgeMetrics = reportProcessor.purgeExpiredArtifactsWithMetrics();
+			evaluated = (int) purgeMetrics.itemsEvaluated();
+			purged = (int) purgeMetrics.recordsPurged();
 		}
 
 		RetentionExecutionRecordEntity record = new RetentionExecutionRecordEntity(
@@ -209,8 +235,8 @@ public class AdminRetentionGovernanceService {
 				"SUCCEEDED",
 				now,
 				now,
-				(int) (purgedArtifacts + 10),
-				(int) purgedArtifacts,
+				evaluated,
+				purged,
 				0,
 				0,
 				null,
@@ -218,7 +244,7 @@ public class AdminRetentionGovernanceService {
 		);
 		executionRecords.save(record);
 
-		auditEvents.save(new SecurityAuditEventEntity(
+		auditLogger.record(new SecurityAuditEventEntity(
 				UUID.randomUUID(), null, actorId, "RETENTION_SWEEP_TRIGGERED", "SUCCEEDED",
 				"PURGE_COMPLETED", effectiveCorrelation, null,
 				meta.ownerService().name(), "DATA_RETENTION", now, now
@@ -258,8 +284,17 @@ public class AdminRetentionGovernanceService {
 		Instant now = clock.instant();
 		UUID effectiveCorrelation = correlationId != null ? correlationId : UUID.randomUUID();
 
+		if (request.status() == DeletionRequestStatus.COMPLETED) {
+			auditLogger.record(new SecurityAuditEventEntity(
+					UUID.randomUUID(), request.accountId(), actorId, "DATA_DELETION_RETRY_REQUESTED", "DENIED",
+					"ALREADY_COMPLETED", effectiveCorrelation, request.subjectReferenceHash(),
+					"IDENTITY", "DATA_RETENTION", now, now
+			));
+			throw new ResponseStatusException(HttpStatus.CONFLICT, "Yêu cầu xóa đã hoàn tất (COMPLETED), không thể thực hiện lại");
+		}
+
 		if (request.holdType() != DeletionHoldType.NONE) {
-			auditEvents.save(new SecurityAuditEventEntity(
+			auditLogger.record(new SecurityAuditEventEntity(
 					UUID.randomUUID(), request.accountId(), actorId, "DATA_DELETION_RETRY_REQUESTED", "DENIED",
 					"HOLD_ACTIVE", effectiveCorrelation, request.subjectReferenceHash(),
 					"IDENTITY", "DATA_RETENTION", now, now
@@ -268,7 +303,7 @@ public class AdminRetentionGovernanceService {
 		}
 
 		if (request.retryCount() >= request.maxRetries()) {
-			auditEvents.save(new SecurityAuditEventEntity(
+			auditLogger.record(new SecurityAuditEventEntity(
 					UUID.randomUUID(), request.accountId(), actorId, "DATA_DELETION_RETRY_REQUESTED", "DENIED",
 					"RETRY_EXHAUSTED", effectiveCorrelation, request.subjectReferenceHash(),
 					"IDENTITY", "DATA_RETENTION", now, now
@@ -276,30 +311,27 @@ public class AdminRetentionGovernanceService {
 			throw new DeletionRetryExhaustedException(request.maxRetries());
 		}
 
+		if (request.scheduledExecutionAt() != null && now.isBefore(request.scheduledExecutionAt())) {
+			auditLogger.record(new SecurityAuditEventEntity(
+					UUID.randomUUID(), request.accountId(), actorId, "DATA_DELETION_RETRY_REQUESTED", "DENIED",
+					"EXECUTION_SCHEDULE_NOT_REACHED", effectiveCorrelation, request.subjectReferenceHash(),
+					"IDENTITY", "DATA_RETENTION", now, now
+			));
+			throw new ResponseStatusException(HttpStatus.CONFLICT, "Chưa đến thời điểm thực thi được phê duyệt: " + request.scheduledExecutionAt());
+		}
+
 		request.recordAttempt(now);
 
 		AccountEntity account = accounts.findById(request.accountId()).orElse(null);
-		if (account != null) {
+		if (account != null && account.status() != AccountStatus.DELETED) {
 			account.markDeleted(now);
 			authentication.revokeAll(account.id(), "ACCOUNT_DELETED", now);
 			accounts.save(account);
 		}
 
 		for (DeletionOwnerFactEntity fact : request.ownerFacts()) {
-			if (fact.status() != DeletionFactStatus.COMPLETED) {
-				if (fact.ownerService() == RetentionOwnerService.IDENTITY) {
-					fact.markCompleted(now, "audit-fact:identity:" + UUID.randomUUID());
-				} else if (fact.ownerService() == RetentionOwnerService.CARE) {
-					fact.markCompleted(now, "audit-fact:care:scrubbed-" + request.subjectReferenceHash().substring(0, 16));
-				} else if (fact.ownerService() == RetentionOwnerService.JOURNAL_AI) {
-					fact.markCompleted(now, "audit-fact:journal-ai:tombstone-created");
-				} else if (fact.ownerService() == RetentionOwnerService.CONSULTATION) {
-					fact.markCompleted(now, "audit-fact:consultation:notes-anonymized-ledger-retained");
-				} else if (fact.ownerService() == RetentionOwnerService.COMMUNITY) {
-					fact.markCompleted(now, "audit-fact:community:posts-tombstoned");
-				} else {
-					fact.markCompleted(now, "audit-fact:content:inbox-cleared");
-				}
+			if (fact.ownerService() == RetentionOwnerService.IDENTITY) {
+				fact.markCompleted(now, "audit:identity:account-deleted:" + request.id());
 			}
 		}
 
@@ -307,13 +339,17 @@ public class AdminRetentionGovernanceService {
 		if (allCompleted) {
 			request.complete(now);
 		} else {
-			request.fail("OWNER_FACTS_INCOMPLETE", now);
+			if (request.retryCount() >= request.maxRetries()) {
+				request.fail("RETRY_LIMIT_EXHAUSTED", now);
+			} else {
+				request.markInProgress(now);
+			}
 		}
 		deletionRequests.save(request);
 
-		auditEvents.save(new SecurityAuditEventEntity(
+		auditLogger.record(new SecurityAuditEventEntity(
 				UUID.randomUUID(), request.accountId(), actorId, "DATA_DELETION_RETRY_REQUESTED", "SUCCEEDED",
-				allCompleted ? "DELETION_COMPLETED" : "DELETION_INCOMPLETE", effectiveCorrelation,
+				allCompleted ? "DELETION_COMPLETED" : "DELETION_ATTEMPTED_IN_PROGRESS", effectiveCorrelation,
 				request.subjectReferenceHash(), "IDENTITY", "DATA_RETENTION", now, now
 		));
 
@@ -325,8 +361,16 @@ public class AdminRetentionGovernanceService {
 		if (holdType == null || holdType == DeletionHoldType.NONE) {
 			throw new ResponseStatusException(HttpStatus.BAD_REQUEST, "Loại Hold không hợp lệ");
 		}
+		if (holdReason == null || !ALLOWED_HOLD_REASONS.contains(holdReason)) {
+			throw new ResponseStatusException(HttpStatus.BAD_REQUEST, "Mã lý do Hold không hợp lệ hoặc chứa nội dung không an toàn.");
+		}
+
 		DeletionRequestEntity request = deletionRequests.findById(requestId)
 				.orElseThrow(() -> new DeletionRequestNotFoundException(requestId));
+
+		if (request.status() == DeletionRequestStatus.COMPLETED) {
+			throw new ResponseStatusException(HttpStatus.CONFLICT, "Không thể áp dụng Hold lên yêu cầu xóa đã hoàn tất (COMPLETED).");
+		}
 
 		Instant now = clock.instant();
 		UUID effectiveCorrelation = correlationId != null ? correlationId : UUID.randomUUID();
@@ -339,9 +383,9 @@ public class AdminRetentionGovernanceService {
 		}
 		deletionRequests.save(request);
 
-		auditEvents.save(new SecurityAuditEventEntity(
+		auditLogger.record(new SecurityAuditEventEntity(
 				UUID.randomUUID(), request.accountId(), actorId, "LEGAL_HOLD_APPLIED", "SUCCEEDED",
-				holdReason != null ? holdReason : holdType.name(), effectiveCorrelation,
+				holdReason, effectiveCorrelation,
 				request.subjectReferenceHash(), "IDENTITY", "DATA_RETENTION", now, now
 		));
 
@@ -368,7 +412,7 @@ public class AdminRetentionGovernanceService {
 		}
 		deletionRequests.save(request);
 
-		auditEvents.save(new SecurityAuditEventEntity(
+		auditLogger.record(new SecurityAuditEventEntity(
 				UUID.randomUUID(), request.accountId(), actorId, "LEGAL_HOLD_RELEASED", "SUCCEEDED",
 				"HOLD_RELEASED", effectiveCorrelation, request.subjectReferenceHash(),
 				"IDENTITY", "DATA_RETENTION", now, now
@@ -506,4 +550,3 @@ public class AdminRetentionGovernanceService {
 			String holdReason
 	) {}
 }
-

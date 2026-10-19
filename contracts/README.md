@@ -71,8 +71,6 @@ The relay emits the same ISO-8601 text (at most six fractional digits) after
 PostgreSQL reload. Content requires exact timestamp equality in addition to
 the existing kind, recipient, aggregate identity and version bindings.
 
-`openapi/identity-service-v1.yaml` exposes the implemented MB-673 ADMIN-only retention and deletion governance operations (`/api/v1/admin/retention/policies`, `/policies/{policyId}/sweep`, `/deletions`, `/deletions/{requestId}/retry`, `/deletions/{requestId}/holds`). Deletion requests use minimized identifiers (`tombstone:<sha256>`), bounded retry/escalation states (max 3 retries, fail-closed escalation), hold enforcement (LEGAL_HOLD/OPERATIONAL_HOLD/DISPUTE_HOLD blocks deletion), and per-owner completion facts. Unsupported owner purge capabilities fail closed with 422 rather than simulated success. Cross-owner direct DB access is forbidden.
-
 `care-service-v1.yaml` remains the unchanged v1 source for coarse historical
 SupportEvaluation behavior. `care-support-evaluation-v2.yaml` is the additive
 source for `/api/v2/support-evaluations`; consumers select the API version by

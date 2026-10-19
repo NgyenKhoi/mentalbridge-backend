@@ -137,7 +137,18 @@ public class DeletionRequestEntity {
 	public void releaseHold(Instant now) {
 		this.holdType = DeletionHoldType.NONE;
 		this.holdReason = null;
-		this.status = DeletionRequestStatus.PENDING;
+		if (this.retryCount >= this.maxRetries && this.maxRetries > 0) {
+			this.status = DeletionRequestStatus.FAILED;
+		} else if (this.retryCount > 0) {
+			this.status = DeletionRequestStatus.IN_PROGRESS;
+		} else {
+			this.status = DeletionRequestStatus.PENDING;
+		}
+		this.updatedAt = now;
+	}
+
+	public void markInProgress(Instant now) {
+		this.status = DeletionRequestStatus.IN_PROGRESS;
 		this.updatedAt = now;
 	}
 
