@@ -401,13 +401,19 @@ Privacy-minimized local security record for authentication, recovery, replay, an
 | `id` | Immutable UUID identifying the audit fact. |
 | `account_id` | Affected account when known; nullable for enumeration-safe failures and retained as null after account deletion. |
 | `actor_id` | Authenticated actor responsible for an administrative action; nullable for guests/system actions and after actor deletion. |
+| `actor_type` | Restricted actor category (`ADMIN`, `SYSTEM`). |
+| `actor_reference_hash` | Privacy-minimized 64-character SHA-256 reference for an administrative actor account UUID, retained after account deletion so reads return a safe tombstone identifier rather than leaking deleted account details or misattributing to SYSTEM. |
 | `action` | Stable security action code such as login, password recovery, or account-state change. |
 | `outcome` | Restricted result `SUCCEEDED`, `DENIED`, or `FAILED`. |
 | `reason_code` | Optional stable machine-readable explanation without sensitive free text. |
 | `correlation_id` | Request/workflow UUID used to join safe operational evidence. |
-| `subject_reference_hash` | Optional keyed privacy-minimized 64-character hash used to correlate bounded unknown-account abuse without storing the supplied identifier. |
+| `subject_reference_hash` | Privacy-minimized 64-character SHA-256 reference for a known target UUID, or a bounded hash supplied by an enumeration-safe flow. It remains after account deletion so administration audit reads return a tombstone instead of historical profile data. |
+| `source_service` | Platform service that produced the audit fact (`IDENTITY`, `CONSULTATION`, `CONTENT`, `COMMUNITY`). |
+| `domain` | Administrative bounded domain (`ACCOUNT_ADMINISTRATION`, `SPECIALIST_REVIEW`, `RESOURCE_MANAGEMENT`, `COMMUNITY_MODERATION`). |
 | `occurred_at` | UTC instant the security decision occurred. |
 | `created_at` | Immutable UTC insertion instant. |
+
+Indexes `ix_security_audit_filter`, `ix_security_audit_subject_reference`, `ix_security_audit_service_domain`, `ix_security_audit_actor_reference`, and `ix_security_audit_actor_type` support bounded action/result/time, tombstone-target, multi-service/domain, and actor queries. The administration API applies a 365-day read-retention boundary and a maximum 90-day query window; physical archival or deletion remains an operational retention job outside request processing.
 
 ## Owner `care` (`mentalbridge_care.public`)
 
@@ -864,6 +870,11 @@ concurrent guards for one draft and one official current plan per owner.
 | `version` | Optimistic-lock counter returned in the ETag; incremented by each accepted choice or activation command. |
 | `model_version` | Explicit persisted model discriminator: `2` for Resource slots or `3` for native focuses/actions. It participates in the v3 child foreign key so a focus cannot attach to a v2 plan. |
 | `plan_policy_version` | Native v3 composition policy reference, required and bounded for model 3; null for v2. |
+| `cycle_timezone` | Nullable IANA timezone snapshotted from proposal-v1 draft schedules. It stays fixed through activation, pauses and continuation; all older-policy/v2 plans keep null. |
+| `cycle_number` | Nullable positive proposal cycle number, initially 1. Only explicit review-due `CYCLE_CONTINUE` increments it atomically with the plan version and new reassessment schedule. |
+| `cycle_started_on` | Nullable activation local date for the current proposal cycle. Null in a draft; explicit continuation replaces it with today's local date without changing plan activation history. |
+| `cycle_paused_days` | Nullable nonnegative accumulated whole local-date pause intervals for the current proposal cycle. Resume or terminal closure accumulates the current interval; continuation resets it to zero. |
+| `cycle_paused_on` | Nullable local start date of an ongoing pause. Read-time cycle math adds elapsed local days without writing; resume/terminal closure clears it. No health text is stored. |
 | `action_count` | Native v3 action count, constrained to 1..20; fixed to zero for v2. |
 | `evaluation_policy_version` / `evaluated_at` | Exact current-compatible Care evaluation policy and original UTC evaluation instant. |
 | `selection_policy_version` | Deterministic v2 Care composition version, fixed to `mb-support-plan-selection-v1`; null for v3. |
@@ -1176,7 +1187,7 @@ draft creation and reload under [SupportPlan policy v2](../policies/support-plan
 
 ### `consultation.specialist_profile`
 
-Consultation-owned professional profile and authoritative administrator approval state. The product does not collect specialist verification documents.
+Consultation-owned professional profile and authoritative administrator approval state. Private credential documents are stored separately and reviewed independently.
 
 Database checks require a submitted timestamp once review starts, reviewer identity/time for terminal approval decisions, and a stable reason for rejection or suspension.
 
@@ -1209,13 +1220,30 @@ accepts only `DEPRESSIVE_SYMPTOMS` and `ANXIETY_SYMPTOMS`.
 
 ### `consultation.specialist_profile_language`
 
-V1 languages declared for user-facing support. Story 6101 limits values to
-lowercase `vi` and `en`.
+Reviewed languages declared for user-facing support. Values are lowercase
+`vi`, `en`, `zh`, and `fr`.
 
 | Field | Purpose |
 | --- | --- |
 | `specialist_account_id` | Owning specialist profile and first half of the composite primary key. |
 | `language_tag` | Supported language tag and second half of the composite primary key. |
+
+### `consultation.specialist_credential_document`
+
+Consultation-owned private credential metadata. Originals live in authenticated Cloudinary storage. Only a specialist owner or ADMIN can request a short-lived original-file link; only ADMIN can verify. Badge visibility never grants access to the original.
+
+| Field | Purpose |
+| --- | --- |
+| `id` | Stable credential identifier for owner/admin review and optimistic commands. |
+| `specialist_account_id` | Owning specialist profile; cascading deletion removes the metadata with the profile. |
+| `title` / `issuer` / `issue_year` / `credential_type` | Specialist-supplied professional claim and ADMIN review context; public badge text is eligible only after verification. |
+| `file_name` / `media_type` / `file_bytes` | Bounded original-file display and safety metadata, without storing the binary. |
+| `storage_key` / `storage_format` | Private Cloudinary locator and format used only inside Consultation to issue an expiring URL. The key is unique and never public. |
+| `verification_status` | `PENDING`, `VERIFIED`, or `REJECTED`; upload always begins pending. |
+| `badge_visible` | Specialist choice; database permits true only for verified documents. |
+| `reviewed_by` / `reviewed_at` | External ADMIN identity and UTC time of a terminal review decision; both null while pending. |
+| `created_at` / `updated_at` | UTC creation and last review/visibility change. |
+| `version` | Optimistic counter for review and badge commands. |
 
 ### `consultation.specialist_profile_status_history`
 
@@ -1382,8 +1410,8 @@ Implemented MB-378/MB-558 request aggregate with MB-379 decision settlement, MB-
 | `modality` | `IN_APP_CHAT` or `IN_APP_VIDEO`; physical, phone, and external-link modes are not accepted. |
 | `scheduled_start_at` / `scheduled_end_at` | Immutable exact UTC interval copied from availability and constrained to 60 minutes. |
 | `display_timezone` | IANA timezone copied from the slot for stable user display. |
-| `requested_at` | Server UTC command instant used for lead-time and deadline calculation. |
-| `decision_deadline_at` | Normally the earlier of 24 hours after request or two hours before start. Only an opted-in local/dev effective-DEMO video request uses slot start instead of the two-hour buffer (ADR 0039); it still requires explicit Specialist acceptance before this persisted deadline. The decision/expiry owner consumes this immutable handoff; historical deadlines are never recalculated. |
+| `requested_at` | Server UTC command instant used for unexpired-window validation and deadline calculation. |
+| `decision_deadline_at` | Earlier of 24 hours after request or two hours before start when that cutoff is still future; otherwise the unexpired slot end. Always after the request and no later than scheduled end. The decision/expiry owner consumes this handoff. |
 | `idempotency_key` | Printable user-scoped request key; exact retry returns this row and conflicting reuse fails. |
 | `replaces_appointment_id` | Optional self-reference to the eligible future appointment replaced by this request. The old immutable schedule is retained as `CANCELLED`; its reservation capacity and, when policy permits, exact held credit move to the replacement atomically. One old appointment may be replaced only once. |
 | `originating_plan_action_id` | Optional opaque Care `PROFESSIONAL_SUPPORT` action reference supplied only by an explicit owner booking flow. A replacement inherits the owned prior appointment's value when the request omits it and rejects a conflicting explicit value. It has no cross-service foreign key, grants no data access, never authorizes Consultation to mutate SupportPlan lifecycle, and supports the owner-and-action appointment-history query. |
@@ -1596,11 +1624,29 @@ transition and excludes email addresses and consultation content.
 | `id` | Stable Kafka `messageId` reused across relay attempts. |
 | `appointment_id`, `appointment_version` | Unique aggregate/version identity preserving per-appointment order and dedupe. |
 | `correlation_id` | Safe request/job correlation UUID. |
-| `payload` | Minimized owner ID, status, UTC start, modality, and replacement link only. |
+| `payload` | Minimized user/specialist owner IDs, status, UTC start, modality, and replacement link only. It excludes Journal, assessment, consultation brief, session summary, and chat bodies. |
 | `occurred_at` | Authoritative transition instant. |
 | `published_at` | Kafka acknowledgement instant; null while pending. |
 | `attempt_count`, `next_attempt_at` | Bounded observable relay retry/lease state. |
 | `created_at` | Immutable insertion instant. |
+
+### `consultation.consultation_admin_audit_outbox`
+
+Consultation-owned durable transactional outbox for administrator actions (specialist profile approve, reject, suspend, restore). The row commits in the same local transaction as the profile and status history update, and is relayed to Kafka topic `mentalbridge.admin.audit-event.v1`.
+
+| Field | Purpose |
+| --- | --- |
+| `id` | Immutable event UUID matching the `eventId` in the audit event fact. |
+| `deduplication_key` | Stable unique command idempotency key preventing duplicate outbox entries on retried actions. |
+| `event_type` | Stable language-neutral event type (e.g. `consultation.specialist.approved`). |
+| `correlation_id` | End-to-end trace correlation UUID passed from caller ingress. |
+| `target_account_id` | Nullable specialist account UUID subject of the administrative action. |
+| `payload` | Strict minimized `administration-audit-event-v1` JSON object; excludes clinical notes and sensitive credentials. |
+| `occurred_at` | Authoritative UTC timestamp of the administrative decision. |
+| `published_at` | Nullable UTC instant when published and acknowledged by Kafka; null while pending. |
+| `attempt_count` | Non-negative relay retry counter for observable bounded backoff. |
+| `next_attempt_at` | Scheduled UTC instant for the next retry attempt when relay fails. |
+| `created_at` | Immutable row creation timestamp. |
 
 ### `consultation.subscription_plan_version`
 
@@ -2173,6 +2219,7 @@ and email choices cannot drift across web, email, inbox, or future mobile consum
 | Field | Purpose |
 | --- | --- |
 | `user_id` | External Identity account UUID and aggregate owner; it comes only from the verified JWT. |
+| `owner_type` | Authoritative `USER` or `SPECIALIST` preference scope. SPECIALIST rows are database-constrained to keep Journal, emotion, screening, streak, Community, wellbeing-digest, and resource-reminder controls disabled. |
 | `notifications_enabled` | Top-level user switch for optional notification delivery. |
 | `channel_in_app_enabled` | Whether optional in-app delivery is enabled. |
 | `channel_email_enabled` | Whether email delivery is enabled; email delivery still requires an applicable behavior and opt-in. |
@@ -2213,7 +2260,7 @@ Durable in-app notification and safe delivery payload owned by Content/Notificat
 | `category` | Stable kind used for preference, priority, and presentation rules. MB-564 adds separate Journal/emotion kinds; MB-617 adds `COMMUNITY_COMMENT`, `COMMUNITY_REPLY`, and `COMMUNITY_REACTION` while retaining historical generic kinds. |
 | `title` | Reviewed/minimized user-visible title safe for the selected channel. |
 | `body` | Reviewed/minimized user-visible body that excludes raw sensitive source content. |
-| `action_type` | Optional approved internal action enum used to derive a relative client route; arbitrary producer URLs are never stored. |
+| `action_type` | Optional approved internal action enum used to derive a relative client route; `OPEN_SPECIALIST_APPOINTMENTS` resolves only to the specialist appointment workspace and arbitrary producer URLs are never stored. |
 | `action_target_id` | Optional opaque target UUID required for `OPEN_RESOURCE` or `OPEN_COMMUNITY_POST`; Community stores only the approved post deep-link ID, and the authorized Community read supplies the same safe unavailable state for removed, hidden, blocked, or unknown content. |
 | `priority` | Delivery/presentation priority, not a clinical severity decision. |
 | `read_at` | UTC instant the recipient marked the in-app notification read; null while unread. |
@@ -2222,7 +2269,7 @@ Durable in-app notification and safe delivery payload owned by Content/Notificat
 | `created_at` | Immutable UTC creation instant used for cursor ordering. |
 | `deleted_at` | UTC user/policy tombstone instant; null while visible in history. |
 | `source` | Stable bounded producer namespace such as `CONTENT`, `REALTIME`, or `COMMUNITY_INTERACTION_V1`; it carries no provider payload or user-authored text. |
-| `source_identity` | Stable producer-owned event identity used with `recipient_id` and `source` to collapse retries for one recipient while allowing legitimate fan-out of the same source event to other recipients. Journal/emotion notifications use `<kind>:<local-date>`; Community notifications use the v1 fact `eventId`. |
+| `source_identity` | Stable producer-owned event identity used with `recipient_id` and `source` to collapse retries for one recipient while allowing legitimate fan-out of the same source event to other recipients. Journal/emotion notifications use `<kind>:<local-date>`; Community notifications use the v1 fact `eventId`; specialist appointment notifications use `<appointment-id>:<aggregate-version>`. |
 | `request_fingerprint` | SHA-256 of the validated minimized create command or Community v1 fact; changed reuse of a dedupe identity is rejected instead of overwriting the original notification. |
 | `delivery_state` | Durable delivery lifecycle (`PENDING`, `DELIVERED`, `FAILED`, or `CANCELLED`); only `DELIVERED` records appear in the inbox. |
 | `version` | Monotonic mutation counter incremented for the first read or tombstone transition. |
@@ -2601,6 +2648,23 @@ Reviewed, deterministic vocabulary for resolving deliberately entered manual are
 | `canonical` | Marks the preferred reviewed label for the area pair without changing lookup eligibility. |
 | `seed_key` | Optional unique controlled-release identifier used only by owner migrations. |
 | `created_at` | Immutable database UTC insertion instant. |
+
+### `public.content_admin_audit_outbox`
+
+Content-owned durable transactional outbox for administrator actions (resource archive, safety directory review, deactivate). The row commits in the same local database transaction as the aggregate mutation and is relayed to Kafka topic `mentalbridge.admin.audit-event.v1`.
+
+| Field | Purpose |
+| --- | --- |
+| `id` | Immutable event UUID matching the `eventId` in the audit event fact. |
+| `deduplication_key` | Stable unique deduplication key preventing duplicate outbox entries on retried actions. |
+| `event_type` | Stable language-neutral event type (e.g. `content.resource.archived`). |
+| `correlation_id` | End-to-end trace correlation UUID established at controller ingress. |
+| `payload` | Strict minimized `administration-audit-event-v1` JSON object; excludes sensitive directory secrets or raw content. |
+| `occurred_at` | Authoritative UTC timestamp of the administrative decision. |
+| `published_at` | Nullable UTC instant when published and acknowledged by Kafka; null while pending. |
+| `attempt_count` | Non-negative relay retry counter for observable bounded backoff. |
+| `next_attempt_at` | Scheduled UTC instant for next retry attempt when relay fails. |
+| `created_at` | Immutable row creation timestamp. |
 
 ### `public.consultation_brief`
 

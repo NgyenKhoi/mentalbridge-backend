@@ -206,6 +206,13 @@ class SupportPlanActivityScheduleEntity {
 	String status() { return status; }
 	Instant activatedAt() { return activatedAt; }
 
+	void moveDraftOnce(LocalDate dueOn, Instant now) {
+		if (!"DRAFT".equals(status) || !"ONCE".equals(recurrenceType)) return;
+		this.effectiveFrom = dueOn;
+		this.effectiveUntil = dueOn;
+		this.updatedAt = now;
+	}
+
 	void activate(long planVersion, SupportPlanSlotEntity slot, Instant now) {
 		if (!"DRAFT".equals(status)) return;
 		this.sourcePlanVersion = planVersion;

@@ -3,10 +3,12 @@ package com.mentalbridge.care.screeningepisode;
 import java.time.Clock;
 import java.time.Instant;
 import java.util.List;
+import java.util.Optional;
 import java.util.UUID;
 
 import org.springframework.http.HttpStatus;
 import org.springframework.stereotype.Service;
+import org.springframework.transaction.annotation.Isolation;
 import org.springframework.transaction.annotation.Transactional;
 
 import com.mentalbridge.care.assessment.AssessmentService;
@@ -123,6 +125,32 @@ public class ScreeningEpisodeService {
 	}
 
 	@Transactional(readOnly = true)
+	public Optional<EpisodeView> latestCompleted(UUID userId, String purpose) {
+		validatePurpose(purpose);
+		return episodes.findFirstByUserIdAndPurposeAndStatusOrderByCreatedAtDescIdDesc(userId, purpose, "COMPLETED")
+				.map(this::view);
+	}
+
+	@Transactional(readOnly = true, isolation = Isolation.REPEATABLE_READ)
+	public JourneyContext journeyContext(UUID userId, String purpose) {
+		validatePurpose(purpose);
+		return new JourneyContext(
+				episodes.findFirstByUserIdAndPurposeAndStatusOrderByCreatedAtDescIdDesc(userId, purpose, "COMPLETED")
+						.map(this::view),
+				episodes.existsByUserIdAndPurposeAndStatusIn(userId, purpose, List.of("IN_PROGRESS", "READY")));
+	}
+
+	@Transactional(readOnly = true)
+	public EpisodeView requiredCompletedEpisode(UUID userId, UUID episodeId) {
+		var episode = episodes.findByIdAndUserId(episodeId, userId).map(this::view).orElseThrow(this::notFound);
+		if (!"COMPLETED".equals(episode.status())) {
+			throw new ApiException(HttpStatus.CONFLICT, "SCREENING_EPISODE_INCOMPLETE",
+					"The guided screening episode is incomplete");
+		}
+		return episode;
+	}
+
+	@Transactional(readOnly = true)
 	public EpisodeView requiredEvaluationContext(UUID userId, UUID supportEvaluationId) {
 		return episodes.findByUserIdAndSupportEvaluationId(userId, supportEvaluationId)
 				.filter(episode -> "COMPLETED".equals(episode.status()))
@@ -167,6 +195,8 @@ public class ScreeningEpisodeService {
 	public record EpisodeView(UUID episodeId, String purpose, String status, UUID phq9AssessmentId,
 			UUID gad7AssessmentId, UUID supportEvaluationId, UUID presentationEvaluationId,
 			Instant createdAt, Instant updatedAt, Instant completedAt, long version) { }
+
+	public record JourneyContext(Optional<EpisodeView> latestCompleted, boolean hasOpen) { }
 
 	public record EvaluationOutcome(EpisodeView episode,
 			SupportEvaluationService.EvaluationView presentationEvaluation) { }

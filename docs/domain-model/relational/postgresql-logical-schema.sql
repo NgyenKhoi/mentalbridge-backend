@@ -114,11 +114,15 @@ CREATE TABLE identity.security_audit_event (
     id uuid PRIMARY KEY,
     account_id uuid REFERENCES identity.account(id),
     actor_id uuid REFERENCES identity.account(id),
+    actor_type varchar(16) NOT NULL DEFAULT 'ADMIN',
+    actor_reference_hash char(64), -- retained safe actor tombstone after account deletion
     action varchar(96) NOT NULL,
     outcome varchar(32) NOT NULL,
     reason_code varchar(64),
     correlation_id uuid NOT NULL,
-    subject_reference_hash char(64),
+    subject_reference_hash char(64), -- retained safe target tombstone after account deletion
+    source_service varchar(32) NOT NULL DEFAULT 'IDENTITY',
+    domain varchar(64) NOT NULL DEFAULT 'ACCOUNT_ADMINISTRATION',
     occurred_at timestamptz NOT NULL,
     created_at timestamptz NOT NULL
 );
@@ -613,6 +617,11 @@ CREATE TABLE care.support_plan (
     completion_reason varchar(32),
     superseded_at timestamptz,
     discarded_at timestamptz,
+    cycle_timezone varchar(64),
+    cycle_number integer,
+    cycle_started_on date,
+    cycle_paused_days integer,
+    cycle_paused_on date,
     created_at timestamptz NOT NULL,
     updated_at timestamptz NOT NULL,
     UNIQUE (id, user_id),
@@ -782,7 +791,7 @@ CREATE TABLE care.plan_change_request (
 CREATE TABLE care.support_plan_command (
     user_id uuid NOT NULL,
     idempotency_key varchar(128) NOT NULL,
-    command_type varchar(16) NOT NULL CHECK (command_type IN ('ACTIVATE','REPLACE')),
+    command_type varchar(16) NOT NULL CHECK (command_type IN ('ACTIVATE','REPLACE','CYCLE_CONTINUE')),
     request_hash varchar(64) NOT NULL,
     support_plan_id uuid NOT NULL,
     expected_version bigint NOT NULL,
@@ -1147,6 +1156,27 @@ CREATE TABLE consultation.specialist_profile_language (
     PRIMARY KEY (specialist_account_id, language_tag)
 );
 
+CREATE TABLE consultation.specialist_credential_document (
+    id uuid PRIMARY KEY,
+    specialist_account_id uuid NOT NULL REFERENCES consultation.specialist_profile(account_id) ON DELETE CASCADE,
+    title varchar(160) NOT NULL,
+    issuer varchar(160) NOT NULL,
+    issue_year smallint NOT NULL,
+    credential_type varchar(24) NOT NULL,
+    file_name varchar(180) NOT NULL,
+    media_type varchar(24) NOT NULL,
+    file_bytes bigint NOT NULL,
+    storage_key varchar(180) NOT NULL UNIQUE,
+    storage_format varchar(8) NOT NULL,
+    verification_status varchar(16) NOT NULL,
+    badge_visible boolean NOT NULL,
+    reviewed_by uuid,
+    reviewed_at timestamptz,
+    created_at timestamptz NOT NULL,
+    updated_at timestamptz NOT NULL,
+    version bigint NOT NULL
+);
+
 CREATE TABLE consultation.specialist_profile_status_history (
     id uuid PRIMARY KEY,
     specialist_account_id uuid NOT NULL REFERENCES consultation.specialist_profile(account_id),
@@ -1457,7 +1487,10 @@ CREATE TABLE consultation.appointment (
     created_at timestamptz NOT NULL,
     updated_at timestamptz NOT NULL,
     version bigint NOT NULL,
-    UNIQUE (user_account_id, idempotency_key)
+    UNIQUE (user_account_id, idempotency_key),
+    CONSTRAINT ck_appointment_deadline CHECK (
+        decision_deadline_at > requested_at AND decision_deadline_at <= scheduled_end_at
+    )
 );
 
 CREATE TABLE consultation.appointment_status_history (
@@ -1760,6 +1793,20 @@ CREATE TABLE consultation.appointment_outbox_event (
     next_attempt_at timestamptz,
     created_at timestamptz NOT NULL,
     UNIQUE (appointment_id, appointment_version)
+);
+
+CREATE TABLE consultation.consultation_admin_audit_outbox (
+    id uuid PRIMARY KEY,
+    deduplication_key varchar(200) NOT NULL UNIQUE,
+    event_type varchar(120) NOT NULL,
+    correlation_id uuid NOT NULL,
+    target_account_id uuid,
+    payload jsonb NOT NULL,
+    occurred_at timestamptz NOT NULL,
+    published_at timestamptz,
+    attempt_count integer NOT NULL DEFAULT 0,
+    next_attempt_at timestamptz,
+    created_at timestamptz NOT NULL
 );
 
 /* ========================================================================== */
@@ -2160,6 +2207,7 @@ CREATE TABLE content.resource_weekly_bingo_item (
 
 CREATE TABLE content.notification_preference (
     user_id uuid PRIMARY KEY, -- external -> identity.account.id
+    owner_type varchar(16) NOT NULL, -- USER or SPECIALIST role boundary
     notifications_enabled boolean NOT NULL,
     channel_in_app_enabled boolean NOT NULL,
     channel_email_enabled boolean NOT NULL,
@@ -2381,6 +2429,19 @@ CREATE TABLE content.safety_directory_area_alias (
     canonical boolean NOT NULL,
     seed_key varchar(128) UNIQUE,
     created_at timestamptz NOT NULL
+);
+
+CREATE TABLE content.content_admin_audit_outbox (
+    id uuid PRIMARY KEY,
+    deduplication_key varchar(200) NOT NULL UNIQUE,
+    event_type varchar(120) NOT NULL,
+    correlation_id uuid NOT NULL,
+    payload jsonb NOT NULL,
+    occurred_at timestamptz NOT NULL,
+    published_at timestamptz,
+    attempt_count integer NOT NULL DEFAULT 0,
+    next_attempt_at timestamptz,
+    created_at timestamptz NOT NULL DEFAULT now()
 );
 
 /*

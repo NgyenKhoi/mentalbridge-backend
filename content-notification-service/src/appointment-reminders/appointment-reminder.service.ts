@@ -110,7 +110,7 @@ export class AppointmentReminderService {
     }
     let preference: NotificationPreferences;
     try {
-      preference = await this.preferences.get(reminder.recipientId);
+      preference = await this.preferences.get(reminder.recipientId, 'USER');
     } catch {
       await this.retryDependency(reminder, now, 'PREFERENCE_UNAVAILABLE');
       return false;

@@ -41,7 +41,11 @@ Kafka, Redis, WebSocket, notification, or directory delivery.
   boundary using exact eligibility. Care may ask Journal/AI to rephrase only
   the exact approved explanation after Journal/AI rechecks current
   `AI_PROCESSING` consent; provider, consent, or transport failure preserves
-  the approved Care copy and records `AI_UNAVAILABLE_FALLBACK`. MB-372 adds the bounded initial
+  the approved Care copy and records `AI_UNAVAILABLE_FALLBACK`. MB-668 adds the
+  episode-scoped naturally idempotent Guide ensure and the read-only
+  `mb-guided-journey-v1` pointer whose ordered next action keeps safety,
+  professional support and an existing plan ahead of plan proposal; see the
+  Care README. MB-372 adds the bounded initial
   `PLUS`/`PREMIUM` draft and exact persisted reload. MB-373 adds admitted-choice
   mutation, exact revalidation, explicit activation, one-current-plan
   enforcement, and authoritative current reload. MB-374 adds the explicit

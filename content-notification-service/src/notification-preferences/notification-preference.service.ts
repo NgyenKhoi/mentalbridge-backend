@@ -4,6 +4,7 @@ import type { NotificationPreferenceRepository } from './notification-preference
 import { NotificationPreferenceVersionMismatchError } from './notification-preference.repository.js';
 import type {
   NotificationPreferences,
+  NotificationPreferenceOwnerType,
   NotificationPreferenceUpdate,
   ReminderCandidate,
 } from './notification-preference.types.js';
@@ -34,17 +35,23 @@ export class NotificationPreferenceService {
     private readonly repository: NotificationPreferenceRepository,
   ) {}
 
-  async initializeForAccount(userId: string): Promise<void> {
+  async initializeForAccount(
+    userId: string,
+    ownerType: NotificationPreferenceOwnerType,
+  ): Promise<void> {
     try {
-      await this.repository.createDefaults(userId);
+      await this.repository.createDefaults(userId, ownerType);
     } catch {
       throw new ServiceUnavailableException();
     }
   }
 
-  async get(userId: string): Promise<NotificationPreferences> {
+  async get(
+    userId: string,
+    ownerType: NotificationPreferenceOwnerType,
+  ): Promise<NotificationPreferences> {
     try {
-      return await this.repository.getOrCreate(userId);
+      return await this.repository.getOrCreate(userId, ownerType);
     } catch {
       throw new ServiceUnavailableException();
     }
@@ -52,12 +59,13 @@ export class NotificationPreferenceService {
 
   async update(
     userId: string,
+    ownerType: NotificationPreferenceOwnerType,
     expectedVersion: number,
     patch: NotificationPreferenceUpdate,
   ): Promise<NotificationPreferences> {
     let current: NotificationPreferences;
     try {
-      current = await this.repository.getOrCreate(userId);
+      current = await this.repository.getOrCreate(userId, ownerType);
     } catch {
       throw new ServiceUnavailableException();
     }

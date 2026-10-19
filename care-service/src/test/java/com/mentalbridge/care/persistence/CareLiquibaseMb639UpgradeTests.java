@@ -62,6 +62,11 @@ class CareLiquibaseMb639UpgradeTests {
 				select model_version || '|' || coalesce(plan_policy_version, '<null>') || '|' || action_count
 				from support_plan where id = '%s'
 				""".formatted(PLAN_ID))).isEqualTo("2|<null>|0");
+		// MB-669 cycle columns are additive and stay empty on upgraded v2 history.
+		assertThat(scalar("""
+				select num_nulls(cycle_number, cycle_timezone, cycle_started_on, cycle_paused_days, cycle_paused_on)
+				from support_plan where id = '%s'
+				""".formatted(PLAN_ID))).isEqualTo("5");
 		assertThat(scalar("""
 				select (source_action_id is null) || '|' || (source_action_version is null) || '|'
 				       || (source_action_type is null) || '|' || (schedule_policy_version is null) || '|'
@@ -256,7 +261,8 @@ class CareLiquibaseMb639UpgradeTests {
 		return scalar("""
 				select (to_jsonb(sp) - 'model_version' - 'plan_policy_version' - 'action_count'
 				        - 'personalization_id' - 'personalization_revision'
-				        - 'personalization_schema_version')::text
+				        - 'personalization_schema_version' - 'cycle_number' - 'cycle_timezone'
+				        - 'cycle_started_on' - 'cycle_paused_days' - 'cycle_paused_on')::text
 				from support_plan sp where id = '%s'
 				""".formatted(PLAN_ID));
 	}

@@ -28,6 +28,11 @@ spring:
         max.in.flight.requests.per.connection: 5
       key-serializer: org.apache.kafka.common.serialization.StringSerializer
       value-serializer: org.apache.kafka.common.serialization.StringSerializer
+    consumer:
+      group-id: ${IDENTITY_AUDIT_CONSUMER_GROUP:mentalbridge.identity.audit-consumer}
+      auto-offset-reset: earliest
+      key-deserializer: org.apache.kafka.common.serialization.StringDeserializer
+      value-deserializer: org.apache.kafka.common.serialization.StringDeserializer
 
 mentalbridge:
   identity:
@@ -58,10 +63,21 @@ mentalbridge:
       retry-maximum: ${IDENTITY_OUTBOX_RELAY_RETRY_MAXIMUM:PT5M}
     delivery-address:
       service-token: ${APPOINTMENT_REMINDER_SERVICE_TOKEN:}
+    audit-ingestion:
+      enabled: ${IDENTITY_AUDIT_INGESTION_ENABLED:true}
+      topic: ${IDENTITY_AUDIT_INGESTION_TOPIC:mentalbridge.admin.audit-event.v1}
+      retry-interval: ${IDENTITY_AUDIT_INGESTION_RETRY_INTERVAL:1000}
+      # Audit events require durable unlimited retain-and-retry. Must be -1 (unlimited). Finite positive values are rejected at startup.
+      max-attempts: ${IDENTITY_AUDIT_INGESTION_MAX_ATTEMPTS:-1}
     platform-reporting:
       enabled: ${IDENTITY_PLATFORM_REPORTING_ENABLED:true}
       poll-interval: ${IDENTITY_PLATFORM_REPORTING_POLL_INTERVAL:PT2S}
       retention-sweep-interval: ${IDENTITY_PLATFORM_REPORTING_RETENTION_SWEEP_INTERVAL:PT1H}
+    product-journey:
+      care-base-url: ${CARE_SERVICE_BASE_URL:http://localhost:8081}
+      consultation-base-url: ${CONSULTATION_SERVICE_BASE_URL:http://localhost:8082}
+      connect-timeout: ${PRODUCT_JOURNEY_CONNECT_TIMEOUT:PT1S}
+      read-timeout: ${PRODUCT_JOURNEY_READ_TIMEOUT:PT2S}
 
 eureka:
   client:

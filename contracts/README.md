@@ -20,6 +20,15 @@ New future APIs should start in `contracts/proposals/`. Existing forward-looking
 
 Framework DTOs, controllers, generated types, database entities, and provider payloads are never the cross-service source of truth.
 
+`openapi/identity-service-v1.yaml` exposes the implemented MB-587 ADMIN-only administration-audit browse and CSV export operations. Both use the same bounded filters, ordering, 365-day read-retention boundary, and privacy-minimized projection fields. Cross-service sources ingest through the versioned `events/identity/administration-audit-event-v1.schema.json` fact into Identity's minimized projection; the query API never reads another owner's database.
+
+`events/identity/administration-audit-event-v1.schema.json` is the implemented MB-587
+fact for cross-service administration audit events ingested from Consultation, Content,
+Community, and Identity. It carries only bounded operational metadata (sourceService, domain,
+actor, action, result, safe reasonCode, correlationId, safe target/tombstone, occurredAt).
+Raw payloads, journal text, assessment answers, chat body, credentials, tokens, and provider
+payloads are strictly excluded by schema and consumer allowlisting.
+
 `events/identity/account-state-changed-v1.schema.json` is the implemented MB-365
 fact emitted atomically when Identity suspends or restores a non-admin account.
 It carries only the account identifier, current status, immutable actor role,
@@ -39,7 +48,10 @@ variants remain pending Care/content-owner review and are not approved for
 deployment. It adds no combined score, new routing policy or v2 top-level tier.
 `care-support-guide-v1.yaml` is the additive implemented owner contract for the
 all-tier one-time guide at `/api/v1/support-guides`; it is not a SupportPlan
-lifecycle contract. `content-notification-service.yaml` supplies the exact
+lifecycle contract. MB-668 adds its episode-scoped ensure operation
+`/api/v1/screening-episodes/{episodeId}/support-guide` (1.1.0) and the
+read-only `/api/v1/guided-journey/current` pointer in `care-service-v1.yaml`
+(1.6.0); clients send no assessment identifiers to either. `content-notification-service.yaml` supplies the exact
 eligible resource's immutable reviewed display snapshot alongside publication
 provenance so Care can persist stable history.
 `care-service-v1.yaml` also exposes the implemented MB-372/MB-373/MB-513/MB-376

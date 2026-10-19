@@ -23,12 +23,16 @@ class CareOpenApiContractTests {
 			"POST /api/v2/support-plans",
 			"GET /api/v2/support-plans/history",
 			"POST /api/v2/support-plans/{supportPlanId}/activate",
+            "POST /api/v2/support-plans/{supportPlanId}/cycle-continuation",
 			"PUT /api/v2/support-plans/{supportPlanId}/status",
 			"POST /api/v2/support-plans/{supportPlanId}/replacement-review",
 			"POST /api/v2/support-plans/{supportPlanId}/replace",
 			"PUT /api/v2/support-plan-occurrences/{occurrenceId}/state",
+            "PUT /api/v2/support-plan-occurrences/{occurrenceId}/engagement",
+            "DELETE /api/v2/support-plan-occurrences/{occurrenceId}/engagement",
 			"POST /api/v2/support-plan-occurrences/{occurrenceId}/emotion-check-in/reconcile",
 			"POST /api/v2/support-plan-occurrences/{occurrenceId}/journal/reconcile",
+			"GET /api/v1/admin/product-journey-metrics",
 			"GET /api/v1/profile",
 			"PUT /api/v1/profile",
 			"GET /api/v1/consents",
@@ -46,6 +50,7 @@ class CareOpenApiContractTests {
 			"POST /api/v1/screening-episodes",
 			"GET /api/v1/screening-episodes/current",
 			"GET /api/v1/screening-episodes/history",
+			"GET /api/v1/guided-journey/current",
 			"POST /api/v1/screening-episodes/{episodeId}/assessments/{instrument}",
 			"POST /api/v1/screening-episodes/{episodeId}/support-evaluation",
 			"POST /api/v1/reassessment-self-reports",
@@ -107,12 +112,15 @@ class CareOpenApiContractTests {
 			"/api/v2/support-plans",
 			"/api/v2/support-plans/history",
 			"/api/v2/support-plans/{supportPlanId}/activate",
+            "/api/v2/support-plans/{supportPlanId}/cycle-continuation",
 			"/api/v2/support-plans/{supportPlanId}/status",
 			"/api/v2/support-plans/{supportPlanId}/replacement-review",
 			"/api/v2/support-plans/{supportPlanId}/replace",
 			"/api/v2/support-plan-occurrences/{occurrenceId}/state",
+            "/api/v2/support-plan-occurrences/{occurrenceId}/engagement",
 			"/api/v2/support-plan-occurrences/{occurrenceId}/emotion-check-in/reconcile",
 			"/api/v2/support-plan-occurrences/{occurrenceId}/journal/reconcile",
+			"/api/v1/admin/product-journey-metrics",
 			"/api/v1/profile",
 			"/api/v1/consents",
 			"/api/v1/consents/ai-processing/authorization",
@@ -128,6 +136,7 @@ class CareOpenApiContractTests {
 			"/api/v1/screening-episodes",
 			"/api/v1/screening-episodes/current",
 			"/api/v1/screening-episodes/history",
+			"/api/v1/guided-journey/current",
 			"/api/v1/screening-episodes/{episodeId}/assessments/{instrument}",
 			"/api/v1/screening-episodes/{episodeId}/support-evaluation",
 			"/api/v1/reassessment-self-reports",
@@ -183,12 +192,16 @@ class CareOpenApiContractTests {
 			"POST /api/v2/support-plans",
 			"GET /api/v2/support-plans/history",
 			"POST /api/v2/support-plans/{supportPlanId}/activate",
+            "POST /api/v2/support-plans/{supportPlanId}/cycle-continuation",
 			"PUT /api/v2/support-plans/{supportPlanId}/status",
 			"POST /api/v2/support-plans/{supportPlanId}/replacement-review",
 			"POST /api/v2/support-plans/{supportPlanId}/replace",
 			"PUT /api/v2/support-plan-occurrences/{occurrenceId}/state",
+            "PUT /api/v2/support-plan-occurrences/{occurrenceId}/engagement",
+            "DELETE /api/v2/support-plan-occurrences/{occurrenceId}/engagement",
 			"POST /api/v2/support-plan-occurrences/{occurrenceId}/emotion-check-in/reconcile",
 			"POST /api/v2/support-plan-occurrences/{occurrenceId}/journal/reconcile",
+			"GET /api/v1/admin/product-journey-metrics",
 			"GET /api/v1/profile",
 			"PUT /api/v1/profile",
 			"GET /api/v1/consents",
@@ -202,6 +215,7 @@ class CareOpenApiContractTests {
 			"POST /api/v1/screening-episodes",
 			"GET /api/v1/screening-episodes/current",
 			"GET /api/v1/screening-episodes/history",
+			"GET /api/v1/guided-journey/current",
 			"POST /api/v1/screening-episodes/{episodeId}/assessments/{instrument}",
 			"POST /api/v1/screening-episodes/{episodeId}/support-evaluation",
 			"POST /api/v1/reassessment-self-reports",
@@ -262,6 +276,7 @@ class CareOpenApiContractTests {
 	private static final Set<String> IDEMPOTENT_OPERATIONS = Set.of(
 			"POST /api/v2/support-plans",
 			"POST /api/v2/support-plans/{supportPlanId}/activate",
+            "POST /api/v2/support-plans/{supportPlanId}/cycle-continuation",
 			"POST /api/v2/support-plans/{supportPlanId}/replace",
 			"POST /api/v1/consent-decisions",
 			"POST /api/v1/assessments",
@@ -445,6 +460,27 @@ class CareOpenApiContractTests {
 				.doesNotContainKeys("adherence", "clinicalOutcome", "recoveryScore", "specialistObserved");
 		assertThat(occurrence.getProperties()).containsKeys("source", "version", "engagementUpdatedAt")
 				.doesNotContainKeys("adherence", "clinicalOutcome", "recoveryScore");
+	}
+
+	@Test
+	void guidedJourneyIsAMinimizedRequiredPointerMatchingTheRuntimeView() {
+		var contract = Path.of("..", "contracts", "openapi", "care-service-v1.yaml").toAbsolutePath();
+		var openApi = new OpenAPIV3Parser().readLocation(contract.toUri().toString(), null, null).getOpenAPI();
+		var journey = openApi.getComponents().getSchemas().get("GuidedJourney");
+		var runtimeFields = java.util.Arrays.stream(
+				com.mentalbridge.care.guidedjourney.GuidedJourneyService.JourneyView.class.getRecordComponents())
+				.map(java.lang.reflect.RecordComponent::getName).toList();
+
+		assertThat(journey.getRequired()).containsExactlyInAnyOrderElementsOf(runtimeFields);
+		assertThat(journey.getProperties().keySet()).containsExactlyInAnyOrderElementsOf(runtimeFields);
+		assertThat(journey.getProperties()).doesNotContainKeys("answers", "totalScore", "journal", "emotion");
+		assertThat(enumValues(property(journey, "stage"))).containsExactly("ASSESSMENT_REQUIRED", "GUIDE_REQUIRED",
+				"GUIDE_READY");
+		assertThat(enumValues(property(journey, "entitlementStatus"))).containsExactly("NOT_REQUIRED", "VERIFIED",
+				"UNAVAILABLE");
+		assertThat(enumValues(property(journey, "nextAction").getOneOf().getFirst())).containsExactlyElementsOf(
+				java.util.Arrays.stream(com.mentalbridge.care.guidedjourney.GuidedJourneyService.NextAction.values())
+						.map(Enum::name).toList());
 	}
 
 	@Test

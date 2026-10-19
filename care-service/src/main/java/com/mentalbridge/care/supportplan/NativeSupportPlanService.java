@@ -24,7 +24,6 @@ import com.mentalbridge.care.reassessment.ReassessmentSummaryView;
 import com.mentalbridge.care.resourceeligibility.ResourceEligibilityClient;
 import com.mentalbridge.care.screeningepisode.ScreeningEpisodeService;
 import com.mentalbridge.care.shared.ApiException;
-import com.mentalbridge.care.support.SupportEvaluationService;
 import com.mentalbridge.care.support.SupportEvaluationV2Service;
 import com.mentalbridge.care.supportplan.NativeSupportPlanWriter.Snapshot;
 import com.mentalbridge.care.supportplan.SupportPlanPersonalizationService.ActivityMode;
@@ -78,13 +77,12 @@ public class NativeSupportPlanService {
 		var entitlement = paid(userId, bearer, correlationId);
 		var evaluation = evaluations.getCurrentCompatible(userId, evaluationId);
 		episodes.requiredEvaluationContext(userId, evaluationId);
+		requireSafeProposal(evaluation);
 		var request = policy.request(evaluation, personalization);
 		var proposal = policy.compose(request, eligibility.resolve(request.batch(), bearer, correlationId), personalization);
-		boolean positive = evaluation.safetyEvidence().status() == SafetyStatus.POSITIVE_SAFETY_SCREEN;
 		UUID id = writer.propose(userId, key, hash, evaluation, entitlement, proposal, personalization,
-				positive ? "REVIEW_SAFETY_GUIDANCE" : "STANDARD_SAFETY_REMINDER",
-				positive ? SupportEvaluationService.SAFETY_FALLBACK
-						: "Nếu bạn cảm thấy không an toàn, hãy chủ động tìm hỗ trợ trực tiếp phù hợp tại khu vực bạn đã chọn.",
+				"STANDARD_SAFETY_REMINDER",
+				"Nếu bạn cảm thấy không an toàn, hãy chủ động tìm hỗ trợ trực tiếp phù hợp tại khu vực bạn đã chọn.",
 				clock.instant());
 		return views.get(userId, id);
 	}
@@ -130,6 +128,17 @@ public class NativeSupportPlanService {
 		writer.required(userId, planId);
 		legacy.transition(userId, planId, version, state, completionReason, clock.instant());
 		return views.get(userId, planId);
+	}
+
+	public SupportPlanV3Service.SupportPlanV3View continueCycle(UUID userId, UUID planId, long version,
+			String bearer, String key, UUID correlationId) {
+		String hash = hash("NATIVE_CYCLE_CONTINUE\n" + planId + "\n" + version);
+		var replay = writer.replay(userId, key, hash, "CYCLE_CONTINUE");
+		if (replay != null) return views.get(userId, replay);
+		// A new 14-day commitment needs a current Plus/Premium decision, like activation (policy v2).
+		var entitlement = paid(userId, bearer, correlationId);
+		UUID continued = writer.continueCycle(userId, planId, version, key, hash, entitlement, clock.instant());
+		return views.get(userId, continued);
 	}
 
 	public History history(UUID userId, int limit, String cursor) {
@@ -215,6 +224,8 @@ public class NativeSupportPlanService {
 		var plan = snapshot.plan();
 		var evaluation = evaluations.getCurrentCompatible(userId, plan.supportEvaluationId());
 		episodes.requiredEvaluationContext(userId, plan.supportEvaluationId());
+		boolean governedProposal = NativeSupportPlanWriter.PROPOSAL_POLICY.equals(plan.planPolicyVersion());
+		if (governedProposal) requireSafeProposal(evaluation);
 		var selections = new ArrayList<SelectedResource>();
 		for (var action : snapshot.actions()) {
 			if (!"RESOURCE".equals(action.actionType())) continue;
@@ -236,9 +247,10 @@ public class NativeSupportPlanService {
 		var preference = plan.personalizationId() == null ? null
 				: preferences.snapshot(plan.personalizationId(), userId, plan.personalizationRevision()).orElseThrow(this::stale);
 		boolean selectedEmotion = preference != null && preference.preferredActivityModes().contains(ActivityMode.EMOTION_CHECK_IN);
-		if (emotions != (selectedEmotion ? 1 : 0)) throw stale();
+		boolean expectedEmotion = selectedEmotion || governedProposal && (preference == null || !preference.provided());
+		if (emotions != (expectedEmotion ? 1 : 0)) throw stale();
 		var journals = snapshot.actions().stream().filter(action -> "JOURNAL".equals(action.actionType())).toList();
-		boolean selectedJournal = NativeSupportPlanWriter.POLICY.equals(plan.planPolicyVersion())
+		boolean selectedJournal = (NativeSupportPlanWriter.POLICY.equals(plan.planPolicyVersion()) || governedProposal)
 				&& preference != null && preference.preferredActivityModes().contains(ActivityMode.JOURNALING);
 		if (journals.size() != (selectedJournal ? 1 : 0)) throw stale();
 		for (var journal : journals) {
@@ -249,6 +261,48 @@ public class NativeSupportPlanService {
 					|| !"USER_SELECTED".equals(journal.provenanceType())
 					|| !preference.personalizationId().toString().equals(journal.provenanceReferenceId())
 					|| !Long.toString(preference.revision()).equals(journal.provenanceReferenceVersion())) throw stale();
+		}
+		if (governedProposal) {
+			var professionalFamilies = new HashSet<String>();
+			for (var action : snapshot.actions()) {
+				if (!List.of("RESOURCE", "PROFESSIONAL_SUPPORT", "EMOTION_CHECK_IN", "JOURNAL", "REASSESSMENT_SCREENING")
+						.contains(action.actionType())) throw stale();
+				if ("PROFESSIONAL_SUPPORT".equals(action.actionType())) {
+					if (!"specialist-discovery".equals(action.sourceId()) || !"1".equals(action.sourceRevision())
+							|| !NativeSupportPlanWriter.PROPOSAL_POLICY.equals(action.sourcePolicyVersion())
+							|| !"SYSTEM_POLICY".equals(action.provenanceType())
+							|| !NativeSupportPlanWriter.PROPOSAL_POLICY.equals(action.provenanceReferenceVersion())
+							|| !professionalFamilies.add(action.provenanceReferenceId())
+							|| request.families().stream().noneMatch(family -> family.family().endsWith("_PROFESSIONAL_ADJUNCT")
+									&& family.family().equals(action.provenanceReferenceId()))
+							|| snapshot.actions().stream().anyMatch(resource -> "RESOURCE".equals(resource.actionType())
+									&& resource.planFocusId().equals(action.planFocusId()) && resource.ordinal() < action.ordinal())) throw stale();
+				}
+				if (!"EMOTION_CHECK_IN".equals(action.actionType())) continue;
+				if (!"JOURNAL_AI".equals(action.sourceOwner()) || !"EMOTION_CHECK_IN_CAPABILITY".equals(action.sourceKind())
+						|| !"daily-emotion-check-in".equals(action.sourceId()) || !"1".equals(action.sourceRevision())
+						|| !"daily-emotion-check-in-v1".equals(action.sourcePolicyVersion())) throw stale();
+				if (selectedEmotion) {
+					if (!"USER_SELECTED".equals(action.provenanceType())
+							|| !preference.personalizationId().toString().equals(action.provenanceReferenceId())
+							|| !Long.toString(preference.revision()).equals(action.provenanceReferenceVersion())) throw stale();
+				}
+				else if (!"SYSTEM_POLICY".equals(action.provenanceType())
+						|| !NativeSupportPlanWriter.PROPOSAL_POLICY.equals(action.provenanceReferenceId())
+						|| !NativeSupportPlanWriter.PROPOSAL_POLICY.equals(action.provenanceReferenceVersion())) throw stale();
+			}
+			var reassessments = snapshot.actions().stream().filter(action -> "REASSESSMENT_SCREENING".equals(action.actionType())).toList();
+			if (reassessments.size() != 1) throw stale();
+			var source = evaluation.contributingDomains().stream().filter(domain -> "PHQ9".equals(domain.instrument()))
+					.findFirst().orElseGet(() -> evaluation.contributingDomains().getFirst());
+			var action = reassessments.getFirst();
+			if (!"CARE".equals(action.sourceOwner()) || !"QUESTIONNAIRE_DEFINITION".equals(action.sourceKind())
+					|| !source.questionnaireDefinitionId().toString().equals(action.sourceId())
+					|| !source.questionnaireVersion().equals(action.sourceRevision())
+					|| !NativeSupportPlanWriter.PROPOSAL_POLICY.equals(action.sourcePolicyVersion())
+					|| !"SYSTEM_POLICY".equals(action.provenanceType())
+					|| !"support-plan-cycle-v1".equals(action.provenanceReferenceId())
+					|| !NativeSupportPlanWriter.PROPOSAL_POLICY.equals(action.provenanceReferenceVersion())) throw stale();
 		}
 		var result = policy.validate(request, eligibility.resolve(request.batch(), bearer, correlation));
 		return new Revalidation(evaluation.policyVersion(), entitlement, result.resourcePolicyVersion(), result.resourcesResolvedAt());
@@ -278,6 +332,12 @@ public class NativeSupportPlanService {
 		if (value.packageCode() == ServicePackage.FREE) throw new ApiException(HttpStatus.FORBIDDEN,
 				"SUPPORT_PLAN_ENTITLEMENT_REQUIRED", "A current Plus or Premium entitlement is required");
 		return value;
+	}
+
+	private void requireSafeProposal(SupportEvaluationV2Service.EvaluationView evaluation) {
+		if (evaluation.safetyEvidence().status() == SafetyStatus.POSITIVE_SAFETY_SCREEN) {
+			throw conflict("SUPPORT_PLAN_SAFETY_REVIEW_REQUIRED", "Review current safety support before proposing a plan");
+		}
 	}
 
 	private String hash(String value) {

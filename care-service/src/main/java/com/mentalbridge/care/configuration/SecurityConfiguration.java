@@ -35,13 +35,14 @@ public class SecurityConfiguration {
 				.sessionManagement(session -> session.sessionCreationPolicy(SessionCreationPolicy.STATELESS))
 				.authorizeHttpRequests(authorize -> authorize
 						.requestMatchers("/actuator/health", "/actuator/health/**", "/v3/api-docs/**", "/swagger-ui/**").permitAll()
+						.requestMatchers("/api/v1/admin/**").hasRole("ADMIN")
 						.requestMatchers("/api/v1/questionnaires/**", "/api/v1/privacy-disclosures/**",
 								"/api/v1/ai-processing-disclosures/**",
 								"/api/v1/anonymous-assessment-sessions/**", "/api/v1/safety-directory-lookups")
 						.permitAll()
 						.requestMatchers("/api/v1/profile/**", "/api/v1/consents/**",
 								"/api/v1/consent-decisions/**", "/api/v1/assessments/**",
-								"/api/v1/screening-episodes/**",
+								"/api/v1/screening-episodes/**", "/api/v1/guided-journey/**",
 								"/api/v1/support-evaluations/**", "/api/v2/support-evaluations/**",
 								"/api/v1/support-guides/**", "/api/v1/support-plans/**",
 								"/api/v2/support-plans/**", "/api/v2/support-plan-occurrences/**",

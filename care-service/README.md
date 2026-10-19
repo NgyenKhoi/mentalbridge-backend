@@ -37,6 +37,51 @@ time for unfinished episodes, then by episode ID descending. The opaque keyset
 cursor uses that same ordering so late completion and tied timestamps do not
 skip or repeat rows when paging an unchanged history. Reads remain owner-scoped.
 
+## MB-668 guided journey continuation
+
+`POST /api/v1/screening-episodes/{episodeId}/support-guide` is the Care-owned
+ensure step after a completed guided episode. It takes no client evidence: Care
+resolves the exact v2 SupportEvaluation persisted on the owner's COMPLETED
+episode and returns its existing Guide without calling Content or AI. Only a
+missing Guide is materialized from that exact evaluation, under the
+deterministic request key `episode guide {episodeId}` (outside the client
+`Idempotency-Key` alphabet), so retry, reload, multiple tabs and concurrent
+calls converge on the one `(user, evaluation, guide policy)` row. The older
+pair-based `POST /api/v1/support-guides` converges on the same row only while
+the support policy that produced the episode evaluation is still current. Only
+the latest COMPLETED `INITIAL_CHECK` episode may prepare a Guide: a foreign or
+unknown episode is `SCREENING_EPISODE_NOT_FOUND`, an open one
+`SCREENING_EPISODE_INCOMPLETE`, and an older initial check or a reassessment
+`SCREENING_EPISODE_NOT_CURRENT`, so browsing history never creates a Guide.
+Later policy changes never re-pair or re-evaluate an older episode.
+
+`GET /api/v1/guided-journey/current` (`mb-guided-journey-v1`, `no-store`) is
+the minimized resume pointer. It is derived from persisted Care facts rather
+than a new table: the latest COMPLETED `INITIAL_CHECK` episode, whether a newer
+open initial check exists, the Guide for that exact episode evaluation, and
+the current ACTIVE/PAUSED or DRAFT plan. A newer open check never replaces the
+completed context. `nextAction` is Care's ordered decision for the step after
+the Guide:
+
+1. `REVIEW_SAFETY_SUPPORT` when the stored PHQ-9 item-9 evidence is positive;
+2. `FIND_SPECIALIST` when a stored domain pathway is professional support;
+3. `OPEN_CURRENT_PLAN` / `REVIEW_PLAN_DRAFT` when a plan already exists, so a
+   revisit never proposes a second plan;
+4. `START_PLAN_PROPOSAL` for verified `PLUS`/`PREMIUM` when the episode
+   evaluation is still current-policy compatible;
+5. `EXPLORE_GUIDE_RESOURCES` for `FREE`, for a stale evaluation that plan
+   proposal would reject, or with `entitlementStatus: UNAVAILABLE` when
+   Consultation cannot verify the package (fail closed).
+
+Entitlement is called only when steps 1–3 and the compatibility check do not
+decide. A missing published support policy is returned as 503
+`SUPPORT_POLICY_UNAVAILABLE` rather than downgraded, so clients offer retry.
+Episode completion and open-check facts are read in one repeatable-read
+snapshot, and the current plan or draft in one query. The read contains no
+answers, scores, journal or emotion data and never creates a Guide or plan.
+Plan proposal itself still requires the user's explicit action in the plan
+journey. Historical episodes (MB-667) never use either endpoint.
+
 ## MB-88 foundation
 
 The canonical [`care-service-v1.yaml`](../contracts/openapi/care-service-v1.yaml) contract marks profile, independent privacy/AI-processing disclosure and consent, questionnaire retrieval, assessment history, and authenticated/anonymous screening paths as `implemented`. MB-370 uses the existing `AI_PROCESSING` decision/UI at current policy v2 for optional ConsultationBrief suggestions; production-provider approval remains separately gated.
@@ -208,8 +253,29 @@ completed. Accepted completion evidence cannot be erased or reopened through
 this command. Inactive/cancelled/future-day targets fail closed, same-state
 retries preserve version, and state changes reuse the minimized native
 occurrence event without copying source content or changing plan lifecycle.
-Native helpfulness/private-reflection replacement is not exposed by this slice;
-the legacy engagement API remains limited to its v2 resource model.
+MB-644 adds native occurrence engagement through
+`PUT` / `DELETE /api/v2/support-plan-occurrences/{occurrenceId}/engagement`.
+The PUT reuses the existing engagement request shape and requires the stored
+occurrence state; it cannot complete, reopen, or revoke an owner-confirmed
+outcome. DELETE clears only engagement metadata and retains that outcome and
+its evidence. Both commands require `If-Match`, scope writes to the owner and
+current active action, and return `ActionOccurrence` with `ETag`. The legacy
+engagement API remains limited to its v2 resource model. Native events contain
+coded engagement and bounded evidence references, never private reflection.
+The six new occurrence engagement fields are emitted only when native metadata
+exists or in native engagement command replies. A historical state-only timestamp
+does not add fields; adapter and earlier occurrence reads retain their wire shape.
+
+MB-669 new native drafts use `support-plan-proposal-v1` through the existing
+`POST /api/v2/support-plans` command. The plan read model exposes a 14-day local
+cycle; paused days defer its review date. `REVIEW_DUE` keeps the plan active.
+Only the explicit
+`POST /api/v2/support-plans/{supportPlanId}/cycle-continuation` command starts
+the next cycle, with `If-Match` and `Idempotency-Key`. Composition, cycle and
+continuation rules are defined in
+[`support-plan-proposal-v1`](../docs/policies/support-plan-proposal-v1.md).
+The additive `cycle` field is emitted only for this proposal policy. Earlier
+native policies and the v2 adapter omit it for strict-client compatibility.
 
 The web/mobile consumers use canonical Emotion navigation, explicit completion
 checks and separate factual owner Emotion coverage. Native device execution
@@ -476,6 +542,7 @@ MB-89 implements the deterministic PHQ-9 runtime. MB-178 adds the backend-owned,
 ## Integration
 
 - Inbound REST: the canonical Care OpenAPI file is the source of truth.
+- Inbound ADMIN product journey REST: MB-596 exposes only platform-wide counts of completed screening episodes, generated Support Guides, and paid SupportPlan activations for a bounded window. It does not expose scores, bands, answers, Journal/emotion data, AI output, user identity, or recovery outcomes; Support Guide opens remain unavailable because Care owns no authoritative open fact.
 - Inbound specialist continuity REST: MB-592 exposes
   `GET /api/v1/specialist/client-continuity`. Care composes the bounded
   Consultation relationship authority with only its own display name and

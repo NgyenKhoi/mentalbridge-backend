@@ -1,6 +1,10 @@
 spring:
   application:
     name: consultation-service
+  servlet:
+    multipart:
+      max-file-size: 10MB
+      max-request-size: 11MB
   datasource:
     url: ${CONSULTATION_DB_URL}
     username: ${CONSULTATION_DB_USERNAME}
@@ -43,6 +47,13 @@ spring:
 
 mentalbridge:
   consultation:
+    credentials:
+      cloudinary:
+        enabled: ${CONSULTATION_CREDENTIAL_STORAGE_ENABLED:false}
+        cloud-name: ${CONSULTATION_CLOUDINARY_CLOUD_NAME:}
+        api-key: ${CONSULTATION_CLOUDINARY_API_KEY:}
+        api-secret: ${CONSULTATION_CLOUDINARY_API_SECRET:}
+        timeout-seconds: ${CONSULTATION_CLOUDINARY_TIMEOUT_SECONDS:5}
     evidence-service-token: ${CONSULTATION_EVIDENCE_SERVICE_TOKEN}
     jwt:
       issuer: ${IDENTITY_JWT_ISSUER}

@@ -23,6 +23,9 @@ Enable `CONSULTATION_VIDEO_ENABLED=true` for connection issuance, and separately
 default false. `LIVEKIT_TOKEN_TTL=PT2M` is a short join-token lifetime, not a
 session-duration enforcement mechanism. Missing/invalid configuration fails
 closed. Existing manual appointment, brief and summary operations remain usable.
+The repository Compose deployment passes these flags and the four `LIVEKIT_*`
+settings only to the Consultation container. Keep both feature flags false until
+the credential probe and the public webhook route below are ready.
 
 Configure a provider webhook destination reaching Consultation's
 `POST /internal/v1/video/livekit/webhook`, with its signed Authorization header
@@ -44,6 +47,29 @@ No recording, egress, transcription, AI Agent or automatic AI participant is
 enabled. Provider room names and identities are opaque. No brief, summary,
 patient name, email or clinical information is sent as media metadata.
 
+For the current single-host Nginx deployment, expose only the exact webhook path
+to Consultation and leave every other `/internal/` path closed. Preserve the
+provider Authorization header and request body:
+
+```nginx
+location = /internal/v1/video/livekit/webhook {
+    proxy_pass http://127.0.0.1:8082/internal/v1/video/livekit/webhook;
+    proxy_set_header Host $host;
+    proxy_set_header X-Forwarded-Proto $scheme;
+    proxy_set_header Authorization $http_authorization;
+}
+
+location ^~ /internal/ {
+    return 404;
+}
+```
+
+After `nginx -t` and reload, an unsigned empty POST to the exact public path must
+reach Consultation and be rejected by signature validation rather than return
+the frontend 404. Configure the same HTTPS URL in the LiveKit Cloud project with
+the API key that signs webhook deliveries. Never proxy the Consultation actuator,
+OpenAPI endpoint or another internal route publicly.
+
 ## Exercise a real consultation
 
 ### Opt-in immediate product demo
@@ -55,16 +81,16 @@ chat and staging/production. Only current PLUS/PREMIUM DEMO entitlement and held
 DEMO credit qualify; no account role, approval or payment is synthesized by it.
 
 1. The approved Specialist publishes an exact future 60-minute IN_APP_VIDEO slot.
-2. The DEMO User requests that slot, including one starting in less than four hours.
-3. The assigned Specialist accepts before the slot begins. REQUESTED cannot join.
-4. Both actors open appointment detail and explicitly join immediately. They need
+2. The DEMO User requests that slot through the current no-advance-delay booking contract.
+3. The assigned Specialist accepts before its authoritative decision deadline. REQUESTED cannot join.
+4. Both actors open appointment detail, choose “Mở phòng tư vấn” and explicitly join. They need
    not wait for scheduled start; each token still requires current authorization.
 5. Leave the test call and have the Specialist explicitly end it. The scheduled
    end cutoff is not extended. An early demo is transport verification only;
    early evidence remains out of the booked attendance window, so confirmation
    stays pending with HELD credit and cannot create earning/completion facts.
 
-Disable the flag and recreate only Consultation to restore normal scheduling.
+Disable the flag and recreate only Consultation to restore the scheduled join window.
 Do not alter persisted histories or reuse this exception for real appointments.
 No new protected environment, staging deployment or LiveKit credentials is needed.
 

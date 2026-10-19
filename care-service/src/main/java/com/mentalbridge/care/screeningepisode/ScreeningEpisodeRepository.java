@@ -4,6 +4,7 @@ import java.time.Instant;
 import java.util.List;
 import java.util.Optional;
 import java.util.UUID;
+import java.time.Instant;
 
 import org.springframework.data.domain.Pageable;
 import org.springframework.data.jpa.repository.JpaRepository;
@@ -13,7 +14,9 @@ import org.springframework.data.repository.query.Param;
 
 import jakarta.persistence.LockModeType;
 
-interface ScreeningEpisodeRepository extends JpaRepository<ScreeningEpisodeEntity, UUID> {
+public interface ScreeningEpisodeRepository extends JpaRepository<ScreeningEpisodeEntity, UUID> {
+
+	long countByStatusAndCompletedAtGreaterThanEqualAndCompletedAtLessThan(String status, Instant from, Instant to);
 
 	@Lock(LockModeType.PESSIMISTIC_WRITE)
 	@Query("""
@@ -35,6 +38,13 @@ interface ScreeningEpisodeRepository extends JpaRepository<ScreeningEpisodeEntit
 
 	Optional<ScreeningEpisodeEntity> findFirstByUserIdAndPurposeOrderByCreatedAtDescIdDesc(UUID userId,
 			String purpose);
+
+	Optional<ScreeningEpisodeEntity> findFirstByUserIdAndPurposeAndStatusOrderByCreatedAtDescIdDesc(UUID userId,
+			String purpose, String status);
+
+	boolean existsByUserIdAndPurposeAndStatusIn(UUID userId, String purpose, List<String> statuses);
+
+	Optional<ScreeningEpisodeEntity> findByIdAndUserId(UUID id, UUID userId);
 
 	Optional<ScreeningEpisodeEntity> findByUserIdAndSupportEvaluationId(UUID userId, UUID supportEvaluationId);
 

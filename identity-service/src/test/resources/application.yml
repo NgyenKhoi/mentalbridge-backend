@@ -6,6 +6,16 @@ spring:
       enabled: false
   liquibase:
     enabled: true
+  jpa:
+    hibernate:
+      # Same as main: entity mappings must match the Liquibase schema.
+      ddl-auto: validate
+  kafka:
+    consumer:
+      group-id: mentalbridge.identity.audit-consumer
+      auto-offset-reset: earliest
+    listener:
+      auto-startup: false
 
 eureka:
   client:
@@ -25,5 +35,10 @@ mentalbridge:
       send-timeout: PT5S
       retry-base: PT5S
       retry-maximum: PT5M
+    audit-ingestion:
+      enabled: true
+      topic: mentalbridge.admin.audit-event.v1
+      retry-interval: 200
+      max-attempts: -1
     platform-reporting:
       enabled: false

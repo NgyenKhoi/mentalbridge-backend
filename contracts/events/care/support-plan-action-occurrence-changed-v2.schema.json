@@ -31,8 +31,9 @@
         "scheduleVersion": { "type": "integer", "minimum": 1 },
         "occurrenceId": { "type": "string", "format": "uuid" },
         "representationMode": { "enum": ["V2_RESOURCE_ADAPTER", "NATIVE_V3"] },
-        "changeType": { "enum": ["CREATED", "STATE_CHANGED", "EVIDENCE_ATTACHED", "CANCELLED"] },
+        "changeType": { "enum": ["CREATED", "STATE_CHANGED", "EVIDENCE_ATTACHED", "CANCELLED", "ENGAGEMENT_CHANGED"] },
         "orchestration": { "$ref": "#/$defs/orchestration" },
+        "engagement": { "$ref": "#/$defs/boundedEngagement" },
         "ownerFact": {
           "description": "Bounded reference to an authoritative completion fact. Care owns orchestration state and never copies the source payload.",
           "oneOf": [
@@ -42,6 +43,13 @@
         }
       },
       "allOf": [
+        {
+          "if": { "properties": { "changeType": { "const": "ENGAGEMENT_CHANGED" } }, "required": ["changeType"] },
+          "then": {
+            "required": ["engagement"],
+            "properties": { "representationMode": { "const": "NATIVE_V3" } }
+          }
+        },
         {
           "if": {
             "properties": { "representationMode": { "const": "V2_RESOURCE_ADAPTER" } },
@@ -222,6 +230,18 @@
     }
   },
   "$defs": {
+    "boundedEngagement": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["hidden", "helpfulness", "barrierCode", "summaryReuseApproved", "updatedAt"],
+      "properties": {
+        "hidden": { "type": "boolean" },
+        "helpfulness": { "enum": ["NOT_HELPFUL", "A_LITTLE_HELPFUL", "HELPFUL", "VERY_HELPFUL", null] },
+        "barrierCode": { "enum": ["LOW_ENERGY", "NOT_ENOUGH_TIME", "DIFFICULT_TO_START", "NOT_A_GOOD_FIT", "OTHER", null] },
+        "summaryReuseApproved": { "type": "boolean" },
+        "updatedAt": { "type": "string", "format": "date-time" }
+      }
+    },
     "orchestration": {
       "type": "object",
       "additionalProperties": false,

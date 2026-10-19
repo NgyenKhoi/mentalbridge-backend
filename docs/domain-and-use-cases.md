@@ -263,9 +263,9 @@ OPEN/RESOLVED workflow. See the single versioned
   appointments remain readable under their snapshotted v1 policy.
 - A slot can belong to at most one active appointment and a credit to at most one active appointment; enforce both transactionally.
 - Every slot is 60 minutes. A specialist publishes discrete bookable slots from their working schedule in an IANA timezone; the server stores UTC. The user chooses one slot and booking snapshots its start, end, timezone, and mode on the appointment.
-- A request must be made at least four hours before start. Booking requires an available credit, reservation capacity under the current package, and a still-selectable slot; it atomically holds one credit and slot and does not consume the credit.
+- A request may target an unexpired slot without an advance-booking delay, including an active window. Booking requires an available credit, reservation capacity under the current package, and a still-selectable slot; it atomically holds one credit and slot and does not consume the credit. The assigned Specialist must explicitly accept before interactive access.
 - The specialist responds by `min(requestedAt + 24h, startsAt - 2h)`, otherwise the request expires and both holds release.
-- The owner-approved local/dev DEMO video exception in [ADR 0039](adr/0039-livekit-cloud-video-consultation.md#approved-local-demo-amendment-2026-10-14) is opt-in and defaults disabled. It permits future video booking without four-hour lead time, uses `min(requestedAt + 24h, startsAt)` for the decision deadline, and allows both assigned actors to join immediately after explicit Specialist acceptance. Booked snapshots/end cutoff and completion/credit/earning invariants do not change; early demo transport remains unverified with credit HELD. PAID/FREE, chat, staging and production keep the normal rule.
+- The owner-approved local/dev DEMO video exception in [ADR 0039](adr/0039-livekit-cloud-video-consultation.md#approved-local-demo-amendment-2026-10-14) is opt-in and defaults disabled. It allows both assigned actors to join a qualifying DEMO appointment immediately after explicit Specialist acceptance, even before its scheduled start. Booking/discovery/deadline rules remain the current public contract. Booked snapshots/end cutoff and completion/credit/earning invariants do not change; early demo transport remains unverified with credit HELD. PAID/FREE, chat, staging and production keep the scheduled connection rule.
 - Eligible cancellation, rejection, expiry, specialist suspension before start, specialist/system cancellation, or specialist no-show releases the appointment credit. User cancellation inside 24 hours of a confirmed start or user no-show forfeits it under the applicable versioned policy. Only evidence-backed completion consumes it and creates one earning; this is a credit outcome, never a cash refund.
 - Rescheduling preserves old history and creates a linked new request. It never mutates the old slot snapshot and must handle the concurrent-reservation cap as one logical replacement.
 - Participants may enter waiting ten minutes before start. At `endsAt`, the
@@ -327,7 +327,10 @@ resources, and governed notification/follow-up triggers.
 **Main flow:** Care evaluates versioned local scoring, domain and safety rules
 and produces a persisted immutable Support Guide for every package. The Guide
 remains owner history but has no lifecycle, schedules, activity occurrences, or
-engagement tracking. For an entitled `PLUS`/`PREMIUM` user, Care applies the
+engagement tracking. After a guided initial check completes, Care ensures that
+Guide for the episode's exact evaluation and exposes a read-only resume pointer
+whose ordered next action is safety support, professional support, the existing
+plan or draft, paid plan proposal, then reviewed resources (MB-668). For an entitled `PLUS`/`PREMIUM` user, Care applies the
 current SupportPlan selection policy, composes the bounded proposal, and owns
 the single official SupportPlan. Native v3 composition groups typed actions
 under PlanFocus and attaches optional generic schedules; source domains retain

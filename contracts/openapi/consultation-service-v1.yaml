@@ -118,6 +118,216 @@ paths:
           content:
             application/problem+json:
               schema: { $ref: '#/components/schemas/Problem' }
+  /api/v1/specialist-profile/documents:
+    x-mentalbridge-status: implemented
+    get:
+      operationId: listOwnCredentialDocuments
+      description: Only the authenticated specialist reads original credential metadata. No file URL is returned by this list.
+      security: [{ bearerAuth: [] }]
+      responses:
+        '200':
+          description: Own credential documents, newest first
+          content:
+            application/json:
+              schema:
+                type: array
+                items: { $ref: '#/components/schemas/SpecialistCredentialDocument' }
+        '401': { $ref: '#/components/responses/UnauthorizedProblem' }
+        '403': { $ref: '#/components/responses/ForbiddenProblem' }
+        '404': { $ref: '#/components/responses/NotFoundProblem' }
+    post:
+      operationId: uploadOwnCredentialDocument
+      description: Stores a PDF, JPEG or PNG in authenticated private storage, then creates a pending credential. Upload never verifies a credential.
+      security: [{ bearerAuth: [] }]
+      requestBody:
+        required: true
+        content:
+          multipart/form-data:
+            schema:
+              type: object
+              required: [title, issuer, issueYear, credentialType, file]
+              properties:
+                title: { type: string, minLength: 1, maxLength: 160 }
+                issuer: { type: string, minLength: 1, maxLength: 160 }
+                issueYear: { type: integer, minimum: 1900, maximum: 2100 }
+                credentialType: { type: string, enum: [DEGREE, LICENSE, CERTIFICATE] }
+                file: { type: string, format: binary, description: PDF, JPEG or PNG; at most 10 MiB. }
+      responses:
+        '201':
+          description: Pending credential
+          headers:
+            ETag: { $ref: '#/components/headers/ProfileETag' }
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/SpecialistCredentialDocument' }
+        '400': { $ref: '#/components/responses/ValidationProblem' }
+        '401': { $ref: '#/components/responses/UnauthorizedProblem' }
+        '403': { $ref: '#/components/responses/ForbiddenProblem' }
+        '404': { $ref: '#/components/responses/NotFoundProblem' }
+        '503': { $ref: '#/components/responses/UnavailableProblem' }
+  /api/v1/specialist-profile/documents/{documentId}/file:
+    x-mentalbridge-status: implemented
+    get:
+      operationId: viewOwnCredentialDocumentFile
+      description: Returns a five-minute signed link after owner authorization; never cache or log the link.
+      security: [{ bearerAuth: [] }]
+      parameters:
+        - $ref: '#/components/parameters/CredentialDocumentId'
+        - { name: download, in: query, schema: { type: boolean, default: false } }
+      responses:
+        '200':
+          description: Expiring original-file link
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/CredentialDocumentLink' }
+        '401': { $ref: '#/components/responses/UnauthorizedProblem' }
+        '403': { $ref: '#/components/responses/ForbiddenProblem' }
+        '404': { $ref: '#/components/responses/NotFoundProblem' }
+        '503': { $ref: '#/components/responses/UnavailableProblem' }
+  /api/v1/specialist-profile/documents/{documentId}/badge:
+    x-mentalbridge-status: implemented
+    put:
+      operationId: updateOwnCredentialBadge
+      description: The specialist may display only a previously ADMIN-verified badge.
+      security: [{ bearerAuth: [] }]
+      parameters:
+        - $ref: '#/components/parameters/CredentialDocumentId'
+        - $ref: '#/components/parameters/RequiredIfMatch'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: '#/components/schemas/CredentialBadgeRequest' }
+      responses:
+        '200':
+          description: Updated credential
+          headers:
+            ETag: { $ref: '#/components/headers/ProfileETag' }
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/SpecialistCredentialDocument' }
+        '401': { $ref: '#/components/responses/UnauthorizedProblem' }
+        '403': { $ref: '#/components/responses/ForbiddenProblem' }
+        '404': { $ref: '#/components/responses/NotFoundProblem' }
+        '409': { $ref: '#/components/responses/ConflictProblem' }
+        '412': { $ref: '#/components/responses/VersionProblem' }
+        '428': { $ref: '#/components/responses/VersionRequiredProblem' }
+  /api/v1/admin/specialist-profiles/documents/pending:
+    x-mentalbridge-status: implemented
+    get:
+      operationId: listPendingCredentialDocumentsForAdmin
+      description: ADMIN review queue; original files require a separate authorized request.
+      security: [{ bearerAuth: [] }]
+      responses:
+        '200':
+          description: Pending credentials
+          content:
+            application/json:
+              schema: { type: array, maxItems: 100, items: { $ref: '#/components/schemas/SpecialistCredentialDocument' } }
+        '401': { $ref: '#/components/responses/UnauthorizedProblem' }
+        '403': { $ref: '#/components/responses/ForbiddenProblem' }
+  /api/v1/admin/specialist-profiles/documents/specialists/{specialistId}:
+    x-mentalbridge-status: implemented
+    get:
+      operationId: listSpecialistCredentialDocumentsForAdmin
+      security: [{ bearerAuth: [] }]
+      parameters:
+        - { name: specialistId, in: path, required: true, schema: { type: string, format: uuid } }
+      responses:
+        '200':
+          description: Specialist credential review history
+          content:
+            application/json:
+              schema: { type: array, items: { $ref: '#/components/schemas/SpecialistCredentialDocument' } }
+        '401': { $ref: '#/components/responses/UnauthorizedProblem' }
+        '403': { $ref: '#/components/responses/ForbiddenProblem' }
+  /api/v1/admin/specialist-profiles/documents/{documentId}/file:
+    x-mentalbridge-status: implemented
+    get:
+      operationId: viewCredentialDocumentFileForAdmin
+      security: [{ bearerAuth: [] }]
+      parameters:
+        - $ref: '#/components/parameters/CredentialDocumentId'
+        - { name: download, in: query, schema: { type: boolean, default: false } }
+      responses:
+        '200':
+          description: Five-minute signed original-file link
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/CredentialDocumentLink' }
+        '401': { $ref: '#/components/responses/UnauthorizedProblem' }
+        '403': { $ref: '#/components/responses/ForbiddenProblem' }
+        '404': { $ref: '#/components/responses/NotFoundProblem' }
+        '503': { $ref: '#/components/responses/UnavailableProblem' }
+  /api/v1/admin/specialist-profiles/documents/{documentId}/{decision}:
+    x-mentalbridge-status: implemented
+    post:
+      operationId: reviewCredentialDocumentForAdmin
+      description: Only ADMIN verifies or rejects a pending credential. Review does not automatically publish a badge.
+      security: [{ bearerAuth: [] }]
+      parameters:
+        - $ref: '#/components/parameters/CredentialDocumentId'
+        - { name: decision, in: path, required: true, schema: { type: string, enum: [verify, reject] } }
+        - $ref: '#/components/parameters/RequiredIfMatch'
+      responses:
+        '200':
+          description: Reviewed credential
+          headers:
+            ETag: { $ref: '#/components/headers/ProfileETag' }
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/SpecialistCredentialDocument' }
+        '401': { $ref: '#/components/responses/UnauthorizedProblem' }
+        '403': { $ref: '#/components/responses/ForbiddenProblem' }
+        '404': { $ref: '#/components/responses/NotFoundProblem' }
+        '409': { $ref: '#/components/responses/ConflictProblem' }
+        '412': { $ref: '#/components/responses/VersionProblem' }
+        '428': { $ref: '#/components/responses/VersionRequiredProblem' }
+  /api/v1/specialists/{specialistId}/credential-badges:
+    x-mentalbridge-status: implemented
+    get:
+      operationId: getPublicSpecialistCredentialBadges
+      description: Returns only approved, verified credentials that the specialist opted to show. Original files and identifiers are never returned.
+      security: [{ bearerAuth: [] }]
+      parameters:
+        - name: specialistId
+          in: path
+          required: true
+          schema: { type: string, format: uuid }
+      responses:
+        '200':
+          description: Visible credential badges
+          content:
+            application/json:
+              schema: { type: array, items: { $ref: '#/components/schemas/VerifiedCredentialBadge' } }
+        '401': { $ref: '#/components/responses/UnauthorizedProblem' }
+        '403': { $ref: '#/components/responses/ForbiddenProblem' }
+        '404': { $ref: '#/components/responses/NotFoundProblem' }
+  /api/v1/admin/product-journey-metrics:
+    x-mentalbridge-status: implemented
+    get:
+      operationId: getConsultationProductJourneyMetrics
+      summary: Read privacy-bounded appointment journey aggregates
+      description: Counts the appointment cohort requested inside the explicit half-open window and the members of that cohort that reached confirmation or completion before the window ended. No participant, brief, summary, chat, clinical, or private-note data is returned.
+      security: [{ bearerAuth: [] }]
+      parameters:
+        - name: from
+          in: query
+          required: true
+          schema: { type: string, format: date-time }
+        - name: to
+          in: query
+          required: true
+          schema: { type: string, format: date-time }
+      responses:
+        '200':
+          description: Aggregate request-cohort lifecycle progress observed by the end of the requested window
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/ConsultationProductJourneyMetrics' }
+        '400': { $ref: '#/components/responses/ValidationProblem' }
+        '401': { $ref: '#/components/responses/UnauthorizedProblem' }
+        '403': { $ref: '#/components/responses/ForbiddenProblem' }
   /api/v1/specialist-profile/amendments/current:
     x-mentalbridge-status: implemented
     get:
@@ -788,7 +998,7 @@ paths:
         '403': { $ref: '#/components/responses/ForbiddenProblem' }
     post:
       operationId: publishOwnAvailabilitySlot
-      description: Publishes one exact future 60-minute online slot. Replaying the same Idempotency-Key with the same command returns the same slot identity and current state.
+      description: Publishes one exact 60-minute online slot whose end is still future, including the current active window. There is no advance booking delay. Replaying the same Idempotency-Key with the same command returns the same slot identity and current state.
       security: [{ bearerAuth: [] }]
       parameters:
         - $ref: '#/components/parameters/IdempotencyKey'
@@ -839,7 +1049,7 @@ paths:
     x-mentalbridge-status: implemented
     get:
       operationId: listBookableSlots
-      description: Lists approved specialists' currently selectable exact 60-minute online slots. Four-hour minimum lead time is the default. Only opt-in local/dev/test users with effective DEMO entitlement may list future video slots with shorter lead time; chat and PAID/FREE behavior are unchanged. Disabled video slots and slots already held by an active appointment are excluded.
+      description: Lists approved specialists' unexpired selectable exact 60-minute online slots, including currently active windows without advance booking delay. Disabled video slots and slots already held by an active appointment are excluded.
       security: [{ bearerAuth: [] }]
       parameters:
         - name: from
@@ -861,7 +1071,7 @@ paths:
     x-mentalbridge-status: implemented
     get:
       operationId: discoverApprovedSpecialists
-      description: Returns only current APPROVED profiles and their current selectable exact 60-minute online slots. FREE, PLUS, and PREMIUM may browse. Optional personalization reads one exact owned Care SupportEvaluation server-to-server; its health content is never returned or persisted, and unavailable context degrades to a neutral explained rank.
+      description: Returns only current APPROVED profiles and their unexpired selectable exact 60-minute online slots, including currently active windows without advance booking delay. FREE, PLUS, and PREMIUM may browse. Optional personalization reads one exact owned Care SupportEvaluation server-to-server; its health content is never returned or persisted, and unavailable context degrades to a neutral explained rank.
       security: [{ bearerAuth: [] }]
       parameters:
         - { name: supportEvaluationId, in: query, schema: { type: string, format: uuid } }
@@ -973,7 +1183,7 @@ paths:
         '403': { $ref: '#/components/responses/EntitlementForbiddenProblem' }
     post:
       operationId: requestAppointment
-      description: Atomically creates a REQUESTED appointment for one exact slot after enforcing both available-credit and concurrent-reservation limits. Four-hour booking lead time is the default. Only the opt-in explicit local/dev/test effective-DEMO video exception accepts a future video slot with shorter lead time and gives the assigned Specialist until the earlier of slot start or 24 hours to decide; it never auto-accepts. Chat and PAID/FREE rules are unchanged. When replacesAppointmentId is supplied, If-Match must carry that appointment's current version; the eligible future appointment is cancelled with an auditable credit outcome and linked to the replacement without temporarily consuming another reservation. A replacement inherits an omitted originatingPlanActionId from the owned appointment and rejects a conflicting explicit value. Exact command replays return the original appointment.
+      description: Atomically creates a REQUESTED appointment for one exact unexpired slot, including an already-started active window, after enforcing available-credit and concurrent-reservation limits. No minimum advance booking interval applies. The assigned specialist must confirm before interactive access. When the ordinary decision buffer has elapsed, the decision cutoff is slot end. When replacesAppointmentId is supplied, If-Match must carry that appointment's current version; the eligible future appointment is cancelled with an auditable credit outcome and linked to the replacement without temporarily consuming another reservation. A replacement inherits an omitted originatingPlanActionId from the owned appointment and rejects a conflicting explicit value. Exact command replays return the original appointment.
       security: [{ bearerAuth: [] }]
       parameters:
         - $ref: '#/components/parameters/IdempotencyKey'
@@ -1429,6 +1639,20 @@ paths:
         '409': { $ref: '#/components/responses/AppointmentDecisionConflictProblem' }
         '412': { $ref: '#/components/responses/AppointmentVersionProblem' }
         '428': { $ref: '#/components/responses/AppointmentVersionRequiredProblem' }
+  /api/v1/admin/operations/summary:
+    x-mentalbridge-status: implemented
+    get:
+      operationId: getAdminOperationsSummary
+      description: Returns authoritative aggregate consultation operations metrics for the admin operations dashboard including specialist profiles and appointment lifecycle status counts.
+      security: [{ bearerAuth: [] }]
+      responses:
+        '200':
+          description: Authoritative consultation operations summary
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/ConsultationOperationsSummary' }
+        '401': { $ref: '#/components/responses/UnauthorizedProblem' }
+        '403': { $ref: '#/components/responses/ForbiddenProblem' }
   /api/v1/specialist/appointments/{appointmentId}/dispute:
     x-mentalbridge-status: implemented
     parameters:
@@ -1566,6 +1790,7 @@ paths:
       security: [{ bearerAuth: [] }]
       parameters:
         - $ref: '#/components/parameters/RequiredIfMatch'
+        - $ref: '#/components/parameters/CorrelationId'
       responses:
         '200':
           description: Approved profile
@@ -1590,6 +1815,7 @@ paths:
       security: [{ bearerAuth: [] }]
       parameters:
         - $ref: '#/components/parameters/RequiredIfMatch'
+        - $ref: '#/components/parameters/CorrelationId'
       requestBody:
         required: true
         content:
@@ -1620,6 +1846,7 @@ paths:
       security: [{ bearerAuth: [] }]
       parameters:
         - $ref: '#/components/parameters/RequiredIfMatch'
+        - $ref: '#/components/parameters/CorrelationId'
       requestBody:
         required: true
         content:
@@ -1650,6 +1877,7 @@ paths:
       security: [{ bearerAuth: [] }]
       parameters:
         - $ref: '#/components/parameters/RequiredIfMatch'
+        - $ref: '#/components/parameters/CorrelationId'
       responses:
         '200':
           description: Restored approved profile
@@ -1680,6 +1908,17 @@ components:
       in: header
       name: X-MentalBridge-Service-Token
   parameters:
+    CredentialDocumentId:
+      name: documentId
+      in: path
+      required: true
+      schema: { type: string, format: uuid }
+    CorrelationId:
+      name: X-Correlation-Id
+      in: header
+      required: false
+      schema: { type: string, format: uuid }
+      description: Caller correlation identifier; the server generates one when omitted
     SpecialistAccountId:
       name: specialistAccountId
       in: path
@@ -1807,6 +2046,44 @@ components:
         participantToken: { type: string, description: Sensitive in-memory-only provider JWT; never log or persist }
         expiresAt: { type: string, format: date-time }
         endsAt: { type: string, format: date-time }
+    VerifiedCredentialBadge:
+      type: object
+      additionalProperties: false
+      required: [title, credentialType]
+      properties:
+        title: { type: string, minLength: 1, maxLength: 160 }
+        credentialType: { type: string, enum: [DEGREE, LICENSE, CERTIFICATE] }
+    SpecialistCredentialDocument:
+      type: object
+      additionalProperties: false
+      required: [id, specialistAccountId, title, issuer, issueYear, credentialType, fileName, mediaType, fileBytes, verificationStatus, badgeVisible, reviewedAt, createdAt, version]
+      properties:
+        id: { type: string, format: uuid }
+        specialistAccountId: { type: string, format: uuid }
+        title: { type: string, minLength: 1, maxLength: 160 }
+        issuer: { type: string, minLength: 1, maxLength: 160 }
+        issueYear: { type: integer, minimum: 1900, maximum: 2100 }
+        credentialType: { type: string, enum: [DEGREE, LICENSE, CERTIFICATE] }
+        fileName: { type: string, minLength: 1, maxLength: 180 }
+        mediaType: { type: string, enum: [application/pdf, image/jpeg, image/png] }
+        fileBytes: { type: integer, format: int64, minimum: 1, maximum: 10485760 }
+        verificationStatus: { type: string, enum: [PENDING, VERIFIED, REJECTED] }
+        badgeVisible: { type: boolean }
+        reviewedAt: { type: [string, 'null'], format: date-time }
+        createdAt: { type: string, format: date-time }
+        version: { type: integer, format: int64, minimum: 0 }
+    CredentialDocumentLink:
+      type: object
+      additionalProperties: false
+      required: [url]
+      properties:
+        url: { type: string, format: uri, description: Signed original-file URL valid for five minutes. }
+    CredentialBadgeRequest:
+      type: object
+      additionalProperties: false
+      required: [visible]
+      properties:
+        visible: { type: boolean }
     ServicePlanCatalogue:
       type: object
       additionalProperties: false
@@ -1916,6 +2193,29 @@ components:
         paymentOption: { type: string }
         userFee: { type: integer, format: int64 }
         promotionInfo: {}
+    ConsultationProductJourneyMetrics:
+      type: object
+      additionalProperties: false
+      required: [source, sourceVersion, asOf, consultationsRequested, consultationsConfirmed, consultationsCompleted]
+      properties:
+        source: { type: string, const: CONSULTATION }
+        sourceVersion: { type: string, const: consultation-product-journey-v3 }
+        asOf: { type: string, format: date-time }
+        consultationsRequested:
+          type: integer
+          format: int64
+          minimum: 0
+          description: Appointments requested inside [from,to).
+        consultationsConfirmed:
+          type: integer
+          format: int64
+          minimum: 0
+          description: Requested cohort members that reached CONFIRMED before to.
+        consultationsCompleted:
+          type: integer
+          format: int64
+          minimum: 0
+          description: Requested cohort members that reached COMPLETED before to.
     AppointmentNotificationEligibility:
       type: object
       additionalProperties: false
@@ -2038,7 +2338,7 @@ components:
       enum: [POLICY_VIOLATION, QUALITY_REVIEW_REQUIRED, ACCOUNT_REVIEW_REQUIRED]
     LanguageTag:
       type: string
-      enum: [vi, en]
+      enum: [vi, en, zh, fr]
     ProfileAmendment:
       type: object
       additionalProperties: false
@@ -2096,7 +2396,7 @@ components:
         languages:
           type: array
           minItems: 1
-          maxItems: 2
+          maxItems: 4
           uniqueItems: true
           items: { $ref: '#/components/schemas/LanguageTag' }
         yearsOfExperience: { type: integer, minimum: 0, maximum: 80 }
@@ -2123,7 +2423,7 @@ components:
         languages:
           type: array
           minItems: 1
-          maxItems: 2
+          maxItems: 4
           uniqueItems: true
           items: { $ref: '#/components/schemas/LanguageTag' }
         yearsOfExperience: { type: integer, minimum: 0, maximum: 80 }
@@ -2370,6 +2670,42 @@ components:
           type: array
           maxItems: 2
           items: { $ref: '#/components/schemas/SpecialistDashboardActionItem' }
+    AdminSpecialistOperationsSummary:
+      type: object
+      additionalProperties: false
+      required: [total, pendingReview, active, rejected, suspended]
+      properties:
+        total: { type: integer, minimum: 0 }
+        pendingReview: { type: integer, minimum: 0 }
+        active: { type: integer, minimum: 0 }
+        rejected: { type: integer, minimum: 0 }
+        suspended: { type: integer, minimum: 0 }
+    AdminAppointmentOperationsSummary:
+      type: object
+      additionalProperties: false
+      required: [total, requested, confirmed, inProgress, sessionEnded, completed, cancelled, rejected, expired, userNoShow, specialistNoShow, bothNoShow]
+      properties:
+        total: { type: integer, minimum: 0 }
+        requested: { type: integer, minimum: 0 }
+        confirmed: { type: integer, minimum: 0 }
+        inProgress: { type: integer, minimum: 0 }
+        sessionEnded: { type: integer, minimum: 0 }
+        completed: { type: integer, minimum: 0 }
+        cancelled: { type: integer, minimum: 0 }
+        rejected: { type: integer, minimum: 0 }
+        expired: { type: integer, minimum: 0 }
+        userNoShow: { type: integer, minimum: 0 }
+        specialistNoShow: { type: integer, minimum: 0 }
+        bothNoShow: { type: integer, minimum: 0 }
+    ConsultationOperationsSummary:
+      type: object
+      additionalProperties: false
+      required: [source, asOf, specialists, appointments]
+      properties:
+        source: { type: string, const: CONSULTATION }
+        asOf: { type: string, format: date-time }
+        specialists: { $ref: '#/components/schemas/AdminSpecialistOperationsSummary' }
+        appointments: { $ref: '#/components/schemas/AdminAppointmentOperationsSummary' }
     SpecialistAnalyticsDataState:
       type: string
       enum: [AVAILABLE, EMPTY, BLOCKED, UNAVAILABLE, STALE]
@@ -2985,7 +3321,7 @@ components:
         languages:
           type: array
           minItems: 1
-          maxItems: 2
+          maxItems: 4
           uniqueItems: true
           items: { $ref: '#/components/schemas/LanguageTag' }
         yearsOfExperience: { type: integer, minimum: 0, maximum: 80 }

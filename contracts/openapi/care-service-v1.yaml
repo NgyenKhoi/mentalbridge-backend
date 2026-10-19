@@ -1,7 +1,7 @@
 openapi: 3.1.0
 info:
   title: MentalBridge Care API
-  version: 1.5.0
+  version: 1.7.0
   description: |
     V1 contracts for the Care-owned profile, platform consent, and PHQ-9 foundation.
     Profile, consent, questionnaire, and assessment paths are implemented. Assessment
@@ -38,6 +38,31 @@ tags:
   - name: Anonymous assessment
   - name: Safety directory
 paths:
+  /api/v1/admin/product-journey-metrics:
+    x-mentalbridge-status: implemented
+    get:
+      tags: [Activity dashboard]
+      operationId: getCareProductJourneyMetrics
+      summary: Read privacy-bounded Care product journey aggregates
+      security: [{ bearerAuth: [] }]
+      parameters:
+        - name: from
+          in: query
+          required: true
+          schema: { type: string, format: date-time }
+        - name: to
+          in: query
+          required: true
+          schema: { type: string, format: date-time }
+      responses:
+        '200':
+          description: Counts only; no score, band, answer, Journal, emotion, AI, or user-level outcome is returned
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/CareProductJourneyMetrics' }
+        '400': { $ref: '#/components/responses/ValidationProblem' }
+        '401': { $ref: '#/components/responses/UnauthorizedProblem' }
+        '403': { $ref: '#/components/responses/ForbiddenProblem' }
   /api/v1/profile:
     x-mentalbridge-status: implemented
     get:
@@ -423,6 +448,44 @@ paths:
         "401": { $ref: "#/components/responses/UnauthorizedProblem" }
         "403": { $ref: "#/components/responses/ForbiddenProblem" }
         "404": { $ref: "#/components/responses/NotFoundProblem" }
+  /api/v1/guided-journey/current:
+    x-mentalbridge-status: implemented
+    get:
+      tags: [Assessment, Support evaluation]
+      operationId: getCurrentGuidedJourney
+      summary: Resume the owner's current initial-check journey and its next authorized action
+      description: |
+        Read-only, owner-scoped pointer derived from persisted Care facts: the latest
+        COMPLETED INITIAL_CHECK screening episode with its exact PHQ-9/GAD-7 pair, the
+        persisted Support Guide for that episode's exact SupportEvaluation, and the
+        current ACTIVE/PAUSED or DRAFT SupportPlan. It never pairs independently newest
+        assessments, creates a Guide or plan, or reads historical episodes.
+        nextAction is Care's ordered decision for the step after the Guide: positive
+        PHQ-9 item-9 safety evidence first, then a stored professional-support pathway,
+        then an existing current plan or draft, then PLUS/PREMIUM plan proposal while the
+        episode evaluation is still current-policy compatible, otherwise the Guide's
+        reviewed resources. Entitlement is checked only when needed; when it
+        cannot be verified the response fails closed to the always-available resource step
+        with entitlementStatus UNAVAILABLE. A missing published support policy is not
+        hidden: it returns 503 SUPPORT_POLICY_UNAVAILABLE so clients offer retry. Responses carry Cache-Control no-store and no
+        answers, scores, journal or emotion data.
+      security:
+        - bearerAuth: []
+      parameters:
+        - $ref: "#/components/parameters/CorrelationId"
+      responses:
+        "200":
+          description: Current journey pointer returned, including the no-completed-episode state
+          headers:
+            Cache-Control:
+              schema: { type: string, const: no-store }
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/GuidedJourney" }
+        "400": { $ref: "#/components/responses/ValidationProblem" }
+        "401": { $ref: "#/components/responses/UnauthorizedProblem" }
+        "403": { $ref: "#/components/responses/ForbiddenProblem" }
+        "503": { $ref: "#/components/responses/DependencyProblem" }
   /api/v1/screening-episodes/history:
     x-mentalbridge-status: implemented
     get:
@@ -1828,7 +1891,7 @@ paths:
       summary: Explicitly activate one native draft after fresh Care admission checks
       description: |
         Revalidates paid entitlement, exact screening context, policy, admitted
-        resource versions and snapshotted explicit Journal/Emotion intent outside local
+        resource versions and snapshotted policy-specific Journal/Emotion intent outside local
         locks. The owner transaction rechecks the draft version and preferences,
         activates the plan/actions and cadence atomically, and records retry
         identity in the existing command ledger. No second current plan is allowed.
@@ -1853,6 +1916,40 @@ paths:
         '409': { $ref: '#/components/responses/SupportPlanActivationConflictProblem' }
         '412': { $ref: '#/components/responses/SupportPlanVersionProblem' }
         '503': { $ref: '#/components/responses/SupportPlanDependencyProblem' }
+  /api/v2/support-plans/{supportPlanId}/cycle-continuation:
+    x-mentalbridge-status: implemented
+    post:
+      tags: [SupportPlan v3]
+      operationId: continueNativeSupportPlanCycle
+      summary: Explicitly keep a review-due proposal plan for another 14-day cycle
+      description: |
+        Owner-only command for an ACTIVE support-plan-proposal-v1 plan whose
+        cycle is REVIEW_DUE. Requires the strong plan If-Match and a durable
+        Idempotency-Key. Starts cycleNumber + 1 on today's local date in the
+        cycle timezone, resets pausedDays and schedules a new one-time
+        reassessment occurrence on day 14. Preserves prior occurrence history,
+        action intent and plan status. No automatic renewal, completion,
+        entitlement change, appointment or consent mutation occurs.
+        An identical replay returns the plan without starting another cycle.
+      security: [{ bearerAuth: [] }]
+      parameters:
+        - $ref: '#/components/parameters/SupportPlanId'
+        - $ref: '#/components/parameters/RequiredIfMatch'
+        - $ref: '#/components/parameters/IdempotencyKey'
+      responses:
+        '200':
+          description: Plan with the explicitly continued cycle or unchanged command replay
+          headers:
+            ETag: { $ref: '#/components/headers/SupportPlanETag' }
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/SupportPlanV3' }
+        '400': { $ref: '#/components/responses/ValidationProblem' }
+        '401': { $ref: '#/components/responses/UnauthorizedProblem' }
+        '403': { $ref: '#/components/responses/ForbiddenProblem' }
+        '404': { $ref: '#/components/responses/SupportPlanNotFoundProblem' }
+        '409': { $ref: '#/components/responses/SupportPlanCycleConflictProblem' }
+        '412': { $ref: '#/components/responses/SupportPlanVersionProblem' }
   /api/v2/support-plans/{supportPlanId}/status:
     x-mentalbridge-status: implemented
     put:
@@ -2030,6 +2127,66 @@ paths:
       responses:
         '200':
           description: Authoritative native action occurrence after explicit state command or unchanged retry
+          headers:
+            ETag: { $ref: '#/components/headers/SupportPlanETag' }
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/ActionOccurrence' }
+        '400': { $ref: '#/components/responses/ValidationProblem' }
+        '401': { $ref: '#/components/responses/UnauthorizedProblem' }
+        '403': { $ref: '#/components/responses/ForbiddenProblem' }
+        '404': { $ref: '#/components/responses/SupportPlanOccurrenceNotFoundProblem' }
+        '409': { $ref: '#/components/responses/SupportPlanOccurrenceConflictProblem' }
+        '412': { $ref: '#/components/responses/SupportPlanOccurrenceVersionProblem' }
+  /api/v2/support-plan-occurrences/{occurrenceId}/engagement:
+    x-mentalbridge-status: implemented
+    put:
+      tags: [SupportPlan v3]
+      operationId: replaceOwnNativeActionOccurrenceEngagement
+      summary: Replace helpfulness and private engagement metadata on an owned native occurrence
+      description: |
+        Uses the v1 engagement request shape, but state must match the persisted
+        native occurrence state. This command cannot create or erase completion
+        evidence. Helpfulness requires COMPLETED; a barrier requires SKIPPED.
+        Reflection is private and excluded from integration events. Requires an
+        active plan/action and a non-cancelled occurrence. Exact no-op retries
+        preserve version and accepted evidence. V2 adapters keep the v1 command.
+      security: [{ bearerAuth: [] }]
+      parameters:
+        - $ref: '#/components/parameters/OccurrenceId'
+        - $ref: '#/components/parameters/RequiredIfMatch'
+        - $ref: '#/components/parameters/CorrelationId'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: '#/components/schemas/ReplaceSupportPlanOccurrenceEngagementRequest' }
+      responses:
+        '200':
+          description: Native occurrence with its authoritative evidence and replaced engagement metadata
+          headers:
+            ETag: { $ref: '#/components/headers/SupportPlanETag' }
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/ActionOccurrence' }
+        '400': { $ref: '#/components/responses/ValidationProblem' }
+        '401': { $ref: '#/components/responses/UnauthorizedProblem' }
+        '403': { $ref: '#/components/responses/ForbiddenProblem' }
+        '404': { $ref: '#/components/responses/SupportPlanOccurrenceNotFoundProblem' }
+        '409': { $ref: '#/components/responses/SupportPlanOccurrenceConflictProblem' }
+        '412': { $ref: '#/components/responses/SupportPlanOccurrenceVersionProblem' }
+    delete:
+      tags: [SupportPlan v3]
+      operationId: deleteOwnNativeActionOccurrenceEngagement
+      summary: Clear owned native engagement metadata while retaining occurrence state and evidence
+      security: [{ bearerAuth: [] }]
+      parameters:
+        - $ref: '#/components/parameters/OccurrenceId'
+        - $ref: '#/components/parameters/RequiredIfMatch'
+        - $ref: '#/components/parameters/CorrelationId'
+      responses:
+        '200':
+          description: Native occurrence with cleared engagement metadata and unchanged completion evidence
           headers:
             ETag: { $ref: '#/components/headers/SupportPlanETag' }
           content:
@@ -2797,6 +2954,17 @@ components:
       required: false
       schema: { type: integer, minimum: 1, maximum: 50, default: 20 }
   schemas:
+    CareProductJourneyMetrics:
+      type: object
+      additionalProperties: false
+      required: [source, sourceVersion, asOf, completedScreeningEpisodes, supportGuidesGenerated, paidSupportPlansActivated]
+      properties:
+        source: { type: string, const: CARE }
+        sourceVersion: { type: string, const: care-product-journey-v1 }
+        asOf: { type: string, format: date-time }
+        completedScreeningEpisodes: { type: integer, format: int64, minimum: 0 }
+        supportGuidesGenerated: { type: integer, format: int64, minimum: 0 }
+        paidSupportPlansActivated: { type: integer, format: int64, minimum: 0 }
     ConsultationBriefDraftRequest:
       type: object
       additionalProperties: false
@@ -3594,6 +3762,40 @@ components:
         updatedAt: { type: string, format: date-time }
         completedAt: { type: [string, "null"], format: date-time }
         version: { type: integer, format: int64, minimum: 0 }
+    GuidedJourney:
+      type: object
+      additionalProperties: false
+      required:
+        [journeyPolicyVersion, stage, assessmentInProgress, episodeId, episodeCompletedAt,
+         presentationEvaluationId, supportGuideId, nextAction, currentSupportPlanId, entitlementStatus]
+      properties:
+        journeyPolicyVersion: { type: string, const: mb-guided-journey-v1 }
+        stage:
+          type: string
+          description: ASSESSMENT_REQUIRED has no completed initial check; GUIDE_REQUIRED has a completed episode whose Guide is not yet persisted; GUIDE_READY has the persisted Guide.
+          enum: [ASSESSMENT_REQUIRED, GUIDE_REQUIRED, GUIDE_READY]
+        assessmentInProgress:
+          type: boolean
+          description: An IN_PROGRESS or READY initial-check episode exists; it never replaces the completed episode context below.
+        episodeId: { type: [string, "null"], format: uuid }
+        episodeCompletedAt: { type: [string, "null"], format: date-time }
+        presentationEvaluationId: { type: [string, "null"], format: uuid }
+        supportGuideId: { type: [string, "null"], format: uuid }
+        nextAction:
+          description: Null only for ASSESSMENT_REQUIRED.
+          oneOf:
+            - type: string
+              enum:
+                [REVIEW_SAFETY_SUPPORT, FIND_SPECIALIST, OPEN_CURRENT_PLAN, REVIEW_PLAN_DRAFT,
+                 START_PLAN_PROPOSAL, EXPLORE_GUIDE_RESOURCES]
+            - type: "null"
+        currentSupportPlanId:
+          type: [string, "null"]
+          format: uuid
+          description: Current ACTIVE/PAUSED plan, otherwise the current DRAFT; never created by this read.
+        entitlementStatus:
+          type: string
+          enum: [NOT_REQUIRED, VERIFIED, UNAVAILABLE]
     ScreeningEpisodeEvaluationOutcome:
       type: object
       additionalProperties: false
@@ -4471,7 +4673,7 @@ components:
           type: string
           minLength: 1
           maxLength: 128
-          description: Native v3 policy version or the exact v2 selection policy exposed by the adapter.
+          description: Native v3 policy version (support-plan-proposal-v1 for new proposals) or the exact v2 selection policy exposed by the adapter.
         representationMode:
           type: string
           enum: [V2_RESOURCE_ADAPTER, NATIVE_V3]
@@ -4479,6 +4681,11 @@ components:
         status: { type: string, enum: [DRAFT, ACTIVE, PAUSED, COMPLETED, SUPERSEDED, DISCARDED] }
         version: { type: integer, minimum: 0 }
         safety: { $ref: '#/components/schemas/SupportPlanSafety' }
+        cycle:
+          description: Additive optional bounded review cycle, present only on support-plan-proposal-v1 plans and omitted otherwise so existing strict clients keep reading earlier plans unchanged. Clients also accept null.
+          oneOf:
+            - { $ref: '#/components/schemas/SupportPlanCycle' }
+            - { type: 'null' }
         focuses:
           type: array
           minItems: 1
@@ -4496,6 +4703,30 @@ components:
         discardedAt: { type: [string, 'null'], format: date-time }
         disclaimerCode: { type: string, const: WELLBEING_SUPPORT_NOT_TREATMENT }
         disclaimer: { type: string, minLength: 1, maxLength: 1000 }
+    SupportPlanCycle:
+      type: object
+      additionalProperties: false
+      description: |
+        support-plan-cycle-v1 applies only to support-plan-proposal-v1 plans.
+        Day 1 is the activation or explicit continuation local date. Paused days
+        are calendar days from the pause date up to but excluding the resume
+        date, in the cycle timezone; an ongoing pause uses today's local date
+        as the exclusive end. These days do not advance the cycle. A pause
+        beginning on or after the review date does not move it or add paused days.
+        reviewDueOn is startedOn + 13 days + pausedDays. REVIEW_DUE changes no
+        lifecycle state and remains until an explicit owner keep/change command.
+        NOT_STARTED is a DRAFT; CLOSED is COMPLETED, SUPERSEDED or DISCARDED.
+      required: [policyVersion, lengthDays, timezone, cycleNumber, startedOn, reviewDueOn, currentDay, pausedDays, state]
+      properties:
+        policyVersion: { type: string, const: support-plan-cycle-v1 }
+        lengthDays: { type: integer, const: 14 }
+        timezone: { type: string, minLength: 1, maxLength: 64 }
+        cycleNumber: { type: integer, minimum: 1 }
+        startedOn: { type: [string, 'null'], format: date }
+        reviewDueOn: { type: [string, 'null'], format: date }
+        currentDay: { type: [integer, 'null'], minimum: 1 }
+        pausedDays: { type: integer, minimum: 0 }
+        state: { type: string, enum: [NOT_STARTED, IN_PROGRESS, PAUSED, REVIEW_DUE, CLOSED] }
     PlanFocus:
       type: object
       additionalProperties: false
@@ -4883,6 +5114,13 @@ components:
       required: [occurrenceId, actionId, actionType, actionVersion, scheduleId, scheduleVersion,
         representationMode, version, localDate, scheduledAt, state, displayState, stateReason,
         completionEvidence, outcomeRecordedAt]
+      description: |
+        The six engagement fields (hidden, helpfulness, barrierCode, reflection,
+        summaryReuseApproved, engagementUpdatedAt) are additive and optional: they
+        are emitted only on native occurrences with engagement metadata or on
+        the native engagement command responses. Existing occurrence reads and
+        state commands without metadata keep their original wire shape, including
+        older state-only engagement timestamps.
       properties:
         occurrenceId: { type: string, format: uuid }
         actionId:
@@ -4912,6 +5150,16 @@ components:
             - { $ref: '#/components/schemas/CompletionEvidence' }
             - { type: 'null' }
         outcomeRecordedAt: { type: [string, 'null'], format: date-time }
+        hidden: { type: boolean }
+        helpfulness:
+          type: [string, 'null']
+          enum: [NOT_HELPFUL, A_LITTLE_HELPFUL, HELPFUL, VERY_HELPFUL, null]
+        barrierCode:
+          type: [string, 'null']
+          enum: [LOW_ENERGY, NOT_ENOUGH_TIME, DIFFICULT_TO_START, NOT_A_GOOD_FIT, OTHER, null]
+        reflection: { type: [string, 'null'], minLength: 1, maxLength: 500 }
+        summaryReuseApproved: { type: boolean }
+        engagementUpdatedAt: { type: [string, 'null'], format: date-time }
       allOf:
         - if:
             properties: { representationMode: { const: V2_RESOURCE_ADAPTER } }
@@ -5317,7 +5565,7 @@ components:
         application/problem+json:
           schema: { $ref: '#/components/schemas/Problem' }
     SupportPlanEligibilityProblem:
-      description: Current source facts cannot produce a bounded draft (SUPPORT_EVALUATION_STALE, SUPPORT_PLAN_CORE_UNAVAILABLE, or RESOURCE_VERSION_STALE); no draft was created
+      description: Current source facts cannot produce a bounded draft (SUPPORT_EVALUATION_STALE, SUPPORT_PLAN_CORE_UNAVAILABLE, RESOURCE_VERSION_STALE, SUPPORT_PLAN_SAFETY_REVIEW_REQUIRED, SUPPORT_PLAN_TIME_BUDGET_INCOMPATIBLE, or SUPPORT_PLAN_DRAFT_EXISTS); no draft was created
       content:
         application/problem+json:
           schema: { $ref: '#/components/schemas/Problem' }
@@ -5371,6 +5619,11 @@ components:
       content:
         application/problem+json:
           schema: { $ref: '#/components/schemas/Problem' }
+    SupportPlanCycleConflictProblem:
+      description: The plan has no proposal cycle, is not ACTIVE and REVIEW_DUE, or reuses a key differently (SUPPORT_PLAN_MODEL_VERSION_UNSUPPORTED, SUPPORT_PLAN_CYCLE_NOT_REVIEW_DUE, or IDEMPOTENCY_KEY_REUSED); no cycle was started
+      content:
+        application/problem+json:
+          schema: { $ref: '#/components/schemas/Problem' }
     SupportPlanScheduleConflictProblem:
       description: The command reuses an idempotency key differently, targets a non-mutable plan or action, or requests recurrence for a review-only action (IDEMPOTENCY_KEY_REUSED, SUPPORT_PLAN_SCHEDULE_NOT_MUTABLE, PLAN_ACTION_SCHEDULE_NOT_MUTABLE, or PLAN_ACTION_UNSCHEDULABLE)
       content:
@@ -5382,7 +5635,7 @@ components:
         application/problem+json:
           schema: { $ref: '#/components/schemas/Problem' }
     SupportPlanOccurrenceConflictProblem:
-      description: The occurrence is cancelled, already has another terminal input, or its source plan is no longer current (OCCURRENCE_NOT_OPEN or SUPPORT_PLAN_NOT_CURRENT)
+      description: The occurrence is cancelled, has a conflicting state, its plan/action is inactive, its model cannot take this command, or a native engagement command tries to change authoritative state (OCCURRENCE_NOT_OPEN, SUPPORT_PLAN_NOT_CURRENT, SUPPORT_PLAN_NOT_ACTIVE, SUPPORT_PLAN_MODEL_VERSION_UNSUPPORTED, or AUTHORITATIVE_COMPLETION_REQUIRED)
       content:
         application/problem+json:
           schema: { $ref: '#/components/schemas/Problem' }

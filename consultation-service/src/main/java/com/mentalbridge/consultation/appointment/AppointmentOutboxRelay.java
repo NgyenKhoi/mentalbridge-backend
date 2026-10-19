@@ -70,9 +70,7 @@ public class AppointmentOutboxRelay {
 
 	private void publish(PendingEvent event) {
 		try {
-			var value = mapper.writeValueAsString(new Envelope(event.id(), "consultation.appointment.status-changed",
-					event.occurredAt(), "consultation-service", "1.0", event.correlationId(), event.appointmentId(),
-					event.version(), mapper.readTree(event.payload())));
+			var value = serialize(event);
 			kafka.send(properties.topic(), event.appointmentId().toString(), value)
 					.get(properties.sendTimeout().toMillis(), TimeUnit.MILLISECONDS);
 			jdbc.sql("update appointment_outbox_event set published_at=:now, next_attempt_at=null where id=:id and published_at is null")
@@ -84,6 +82,12 @@ public class AppointmentOutboxRelay {
 					.param("next", database(clock.instant().plus(delay))).param("id", event.id()).update();
 			LOGGER.warn("Appointment outbox publish failed messageId={} attempt={}", event.id(), event.attempt());
 		}
+	}
+
+	String serialize(PendingEvent event) throws Exception {
+		return mapper.writeValueAsString(new Envelope(event.id(), "consultation.appointment.status-changed",
+				event.occurredAt(), "consultation-service", "2.0", event.correlationId(), event.appointmentId(),
+				event.version(), mapper.readTree(event.payload())));
 	}
 
 	private Duration retryDelay(int attempt) {

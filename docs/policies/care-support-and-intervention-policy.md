@@ -138,7 +138,10 @@ Guide, and owned assessment access are never paid features.
 
 MB-511 activates only the all-tier one-time Support Guide. It persists approved
 copy, synchronous safety, exact assessment/evaluation provenance, and up to four
-exact reviewed resource snapshots under `mb-support-guide-capstone-v1`.
+exact reviewed resource snapshots under `mb-support-guide-capstone-v1`. Since
+MB-646, new Guides save at most two, chosen by the
+[Support Guide resource map v1](support-guide-resource-map-v1.md). Saved Guides
+keep their original snapshots.
 Unavailable optional phrasing uses the Care-approved standard copy. No guide
 field is a diagnosis, treatment, SupportPlan status, activity, adherence fact,
 or entitlement decision.

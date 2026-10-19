@@ -39,16 +39,14 @@ import com.mentalbridge.consultation.entitlement.CurrentServiceEntitlementServic
 import com.mentalbridge.consultation.entitlement.ServicePackage;
 import com.mentalbridge.consultation.shared.ApiException;
 import com.mentalbridge.consultation.specialist.SupportArea;
-import com.mentalbridge.consultation.video.DemoVideoPolicy;
 
 @Service
 public class DiscoveryService {
 
 	static final String POLICY_VERSION = "specialist-discovery-v2";
-	private static final Duration MINIMUM_LEAD_TIME = Duration.ofHours(4);
 	private static final Duration MAXIMUM_WINDOW = Duration.ofDays(90);
 	private static final int MAXIMUM_SLOTS_PER_SPECIALIST = 20;
-	private static final Set<String> LANGUAGES = Set.of("vi", "en");
+	private static final Set<String> LANGUAGES = Set.of("vi", "en", "zh", "fr");
 
 	private final JdbcClient jdbc;
 	private final ScreeningContextResolver screeningContexts;
@@ -56,29 +54,26 @@ public class DiscoveryService {
 	private final AvailabilityProperties availability;
 	private final ObjectMapper json;
 	private final Clock clock;
-	private final DemoVideoPolicy demoVideo;
 
 	public DiscoveryService(JdbcClient jdbc, ScreeningContextResolver screeningContexts,
 			CurrentServiceEntitlementService entitlements, AvailabilityProperties availability,
-			ObjectMapper json, Clock clock, DemoVideoPolicy demoVideo) {
+			ObjectMapper json, Clock clock) {
 		this.jdbc = jdbc;
 		this.screeningContexts = screeningContexts;
 		this.entitlements = entitlements;
 		this.availability = availability;
 		this.json = json;
 		this.clock = clock;
-		this.demoVideo = demoVideo;
 	}
 
 	@Transactional(readOnly = true)
 	public DiscoveryResponse.Page discover(UUID userId, String bearerToken, Criteria suppliedCriteria,
 			int limit, String encodedCursor) {
 		var now = clock.instant();
-		var immediateDemoVideo = demoVideo.allowsUser(userId);
-		var criteria = validate(suppliedCriteria, now, immediateDemoVideo);
+		var criteria = validate(suppliedCriteria, now);
 		var context = context(criteria.supportEvaluationId(), bearerToken);
 		var entitlement = entitlements.current(userId);
-		var ranked = rank(load(criteria, null, now, immediateDemoVideo), criteria, context, entitlement.packageCode(), now);
+		var ranked = rank(load(criteria, null, now), criteria, context, entitlement.packageCode(), now);
 		var criteriaHash = criteriaHash(suppliedCriteria, entitlement.packageCode());
 		var cursor = encodedCursor == null ? null : decodeCursor(encodedCursor, criteriaHash);
 		if (cursor != null) ranked = ranked.stream()
@@ -94,18 +89,17 @@ public class DiscoveryService {
 	public DiscoveryResponse.Item detail(UUID userId, String bearerToken, UUID specialistAccountId,
 			Criteria suppliedCriteria) {
 		var now = clock.instant();
-		var immediateDemoVideo = demoVideo.allowsUser(userId);
-		var criteria = validate(suppliedCriteria, now, immediateDemoVideo);
+		var criteria = validate(suppliedCriteria, now);
 		var context = context(criteria.supportEvaluationId(), bearerToken);
 		var entitlement = entitlements.current(userId);
-		return rank(load(criteria, specialistAccountId, now, immediateDemoVideo), criteria, context, entitlement.packageCode(), now)
+		return rank(load(criteria, specialistAccountId, now), criteria, context, entitlement.packageCode(), now)
 				.stream().findFirst()
 				.map(RankedProfile::item)
 				.orElseThrow(() -> new ApiException(HttpStatus.NOT_FOUND, "SPECIALIST_NOT_DISCOVERABLE",
 						"The specialist is not currently discoverable"));
 	}
 
-	private Criteria validate(Criteria criteria, Instant now, boolean immediateDemoVideo) {
+	private Criteria validate(Criteria criteria, Instant now) {
 		var language = criteria.language() == null ? null : criteria.language().strip().toLowerCase(Locale.ROOT);
 		if (language != null && !LANGUAGES.contains(language)) {
 			throw new ApiException(HttpStatus.BAD_REQUEST, "VALIDATION_FAILED", "language is not supported");
@@ -117,9 +111,7 @@ public class DiscoveryService {
 				throw new ApiException(HttpStatus.BAD_REQUEST, "VALIDATION_FAILED", "timezone must be an IANA timezone");
 			}
 		}
-		var minimum = immediateDemoVideo && criteria.modality() != AppointmentModality.IN_APP_CHAT
-				? now : now.plus(MINIMUM_LEAD_TIME);
-		var from = criteria.from() == null || criteria.from().isBefore(minimum) ? minimum : criteria.from();
+		var from = criteria.from() == null || criteria.from().isBefore(now) ? now : criteria.from();
 		var to = criteria.to() == null ? now.plus(MAXIMUM_WINDOW) : criteria.to();
 		if (!to.isAfter(from) || Duration.between(from, to).compareTo(MAXIMUM_WINDOW) > 0) {
 			throw new ApiException(HttpStatus.BAD_REQUEST, "INVALID_DISCOVERY_RANGE",
@@ -136,7 +128,7 @@ public class DiscoveryService {
 				.orElseGet(() -> new Context(ContextState.UNAVAILABLE, null));
 	}
 
-	private List<Profile> load(Criteria criteria, UUID specialistAccountId, Instant now, boolean immediateDemoVideo) {
+	private List<Profile> load(Criteria criteria, UUID specialistAccountId, Instant now) {
 		var rows = jdbc.sql("""
 				select p.account_id, p.display_name, p.biography, p.years_experience, p.timezone,
 				 (select string_agg(sa.support_area, ',' order by sa.support_area)
@@ -152,8 +144,7 @@ public class DiscoveryService {
 				 select s.id, s.start_at, s.end_at, s.timezone, s.modality, s.version
 				 from availability_slot s
 				 where s.specialist_account_id=p.account_id and s.status='ACTIVE'
-				 and s.start_at>=:from and s.start_at<:to
-				 and (s.start_at>=:minimumStart or (s.modality='IN_APP_VIDEO' and :immediateDemoVideo))
+				 and s.end_at>:from and s.start_at<:to
 				 and (:modalityFiltered=false or s.modality=:modality)
 				 and (s.modality<>'IN_APP_VIDEO' or :videoEnabled)
 				 and not exists (
@@ -170,7 +161,6 @@ public class DiscoveryService {
 				))
 				order by p.account_id, slot.start_at, slot.id
 				""").param("from", database(criteria.from())).param("to", database(criteria.to()))
-				.param("minimumStart", database(now.plus(MINIMUM_LEAD_TIME))).param("immediateDemoVideo", immediateDemoVideo)
 				.param("modalityFiltered", criteria.modality() != null)
 				.param("modality", criteria.modality() == null ? AppointmentModality.IN_APP_CHAT.name() : criteria.modality().name())
 				.param("videoEnabled", availability.videoEnabled()).param("slotLimit", MAXIMUM_SLOTS_PER_SPECIALIST)

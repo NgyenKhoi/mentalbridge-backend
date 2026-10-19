@@ -70,7 +70,8 @@ public class SupportPlanActivityOccurrenceService {
 
 	@Transactional
 	void activate(SupportPlanEntity plan, Instant now) {
-		String timezone = profiles.findTimezoneByAccountId(plan.userId()).orElseThrow(() -> new ApiException(
+		String timezone = SupportPlanCycle.applies(plan) && plan.cycleTimezone() != null ? plan.cycleTimezone()
+				: profiles.findTimezoneByAccountId(plan.userId()).orElseThrow(() -> new ApiException(
 				HttpStatus.NOT_FOUND, "PROFILE_NOT_FOUND", "Care profile was not found"));
 		ZoneId zone = zone(timezone);
 		LocalDate start = now.atZone(zone).toLocalDate();
@@ -86,6 +87,9 @@ public class SupportPlanActivityOccurrenceService {
 				.forEach(action -> actionById.put(action.id(), action));
 		for (var schedule : schedules.findBySupportPlanIdForUpdate(plan.id())) {
 			if (!"DRAFT".equals(schedule.status())) continue;
+			if (SupportPlanCycle.applies(plan) && "REASSESSMENT_SCREENING".equals(schedule.sourceActionType())) {
+				schedule.moveDraftOnce(SupportPlanCycle.view(plan, now).reviewDueOn(), now);
+			}
 			if (schedule.sourceActionId() == null) {
 				var slot = slotByKey.get(schedule.sourceSlotKey());
 				if (slot == null) {
@@ -151,6 +155,10 @@ public class SupportPlanActivityOccurrenceService {
 	}
 
 	private void prepareNativeDraft(SupportPlanEntity plan, Instant now) {
+		if (SupportPlanCycle.applies(plan)) {
+			prepareProposalDraft(plan, now);
+			return;
+		}
 		String timezone = profiles.findTimezoneByAccountId(plan.userId()).orElseThrow(() -> new ApiException(
 				HttpStatus.NOT_FOUND, "PROFILE_NOT_FOUND", "Care profile was not found"));
 		LocalDate start = now.atZone(zone(timezone)).toLocalDate();
@@ -182,6 +190,52 @@ public class SupportPlanActivityOccurrenceService {
 					1, SCHEDULE_POLICY_VERSION_V2, recurrence, days, daypart, duration,
 					defaultTime(personalization).plusMinutes((long) position * duration), timezone,
 					start, null, false, "DRAFT", now));
+		}
+		schedules.flush();
+	}
+
+	private void prepareProposalDraft(SupportPlanEntity plan, Instant now) {
+		String timezone = profiles.findTimezoneByAccountId(plan.userId()).orElseThrow(() -> new ApiException(
+				HttpStatus.NOT_FOUND, "PROFILE_NOT_FOUND", "Care profile was not found"));
+		plan.initializeCycle(timezone);
+		LocalDate start = now.atZone(zone(timezone)).toLocalDate();
+		var preferences = personalization(plan);
+		var values = actions.findBySupportPlanIdAndUserIdOrderByPlanFocusIdAscOrdinalAsc(plan.id(), plan.userId())
+				.stream().filter(action -> List.of("RESOURCE", "EMOTION_CHECK_IN", "JOURNAL", "REASSESSMENT_SCREENING")
+						.contains(action.actionType())).sorted(java.util.Comparator.comparingInt(PlanActionEntity::ordinal)).toList();
+		int budget = preferences == null || preferences.dailyTimeBudgetMinutes() == null
+				? 10 : preferences.dailyTimeBudgetMinutes();
+		boolean emotion = values.stream().anyMatch(action -> "EMOTION_CHECK_IN".equals(action.actionType()));
+		int recurringCount = (int) values.stream().filter(action -> List.of("RESOURCE", "JOURNAL").contains(action.actionType())).count();
+		int remainingBudget = budget - (emotion ? 5 : 0);
+		if (recurringCount > 0 && remainingBudget < 5) {
+			throw new ApiException(HttpStatus.CONFLICT, "SUPPORT_PLAN_TIME_BUDGET_INCOMPATIBLE",
+					"The daily emotion check-in leaves no time for the required resource activity");
+		}
+		int duration = defaultDuration(Math.max(5, remainingBudget), recurringCount);
+		boolean reduced = recurringCount * 5 > remainingBudget;
+		int perDay = Math.max(1, remainingBudget / duration);
+		String recurrence = !reduced && preferences != null
+				&& preferences.desiredPace() == SupportPlanPersonalizationService.DesiredPace.ACTIVE ? "DAILY" : "WEEKLY";
+		String daypart = preferences == null || preferences.preferredDaypart() == null ? null : preferences.preferredDaypart().name();
+		var existing = schedules.findBySupportPlanIdOrderByOrdinal(plan.id()).stream()
+				.filter(schedule -> !"ENDED".equals(schedule.status())).map(SupportPlanActivityScheduleEntity::sourceActionId)
+				.collect(java.util.stream.Collectors.toSet());
+		int recurringIndex = 0;
+		for (var action : values) {
+			if (existing.contains(action.id())) continue;
+			boolean checkIn = "EMOTION_CHECK_IN".equals(action.actionType());
+			boolean review = "REASSESSMENT_SCREENING".equals(action.actionType());
+			String cadence = review ? "ONCE" : checkIn ? "DAILY" : recurrence;
+			Short days = "WEEKLY".equals(cadence) ? defaultDaysMask(start, preferences, recurringIndex, reduced, perDay) : null;
+			int minutes = checkIn || review ? 5 : duration;
+			int position = reduced ? recurringIndex % perDay : recurringIndex;
+			LocalTime time = defaultTime(preferences).plusMinutes(checkIn ? 0 : (emotion ? 5 : 0) + (long) position * duration);
+			LocalDate due = review ? start.plusDays(SupportPlanCycle.LENGTH_DAYS - 1) : start;
+			schedules.save(SupportPlanActivityScheduleEntity.revisionForAction(UUID.randomUUID(), plan, action, 1,
+					SCHEDULE_POLICY_VERSION_V2, cadence, days, daypart, minutes, time, timezone, due,
+					review ? due : null, false, "DRAFT", now));
+			if (!checkIn && !review) recurringIndex++;
 		}
 		schedules.flush();
 	}
@@ -512,8 +566,38 @@ public class SupportPlanActivityOccurrenceService {
 		for (var schedule : values) {
 			schedule.resume(now);
 		}
+		if (SupportPlanCycle.applies(plan)) rescheduleCycleReview(plan, now, false);
 		occurrences.restoreFuturePaused(plan.id(), now);
 		generateRollingHorizon(plan.id(), now);
+	}
+
+	@Transactional
+	void continueCycle(SupportPlanEntity plan, Instant now) {
+		rescheduleCycleReview(plan, now, true);
+	}
+
+	private void rescheduleCycleReview(SupportPlanEntity plan, Instant now, boolean continuation) {
+		var action = actions.findBySupportPlanIdAndUserIdOrderByPlanFocusIdAscOrdinalAsc(plan.id(), plan.userId()).stream()
+				.filter(value -> "REASSESSMENT_SCREENING".equals(value.actionType()) && "ACTIVE".equals(value.status()))
+				.findFirst().orElseThrow(() -> new ApiException(HttpStatus.CONFLICT, "SUPPORT_PLAN_POLICY_STALE",
+						"The proposal reassessment action is unavailable"));
+		var history = schedules.findBySupportPlanIdAndSourceActionIdOrderByScheduleVersionDesc(plan.id(), action.id());
+		var previous = history.stream().filter(value -> !"ENDED".equals(value.status())).findFirst().orElse(null);
+		LocalDate due = SupportPlanCycle.view(plan, now).reviewDueOn();
+		if (!continuation && previous != null && due.equals(previous.effectiveFrom())) return;
+		if (previous != null) {
+			previous.end(previous.effectiveFrom().minusDays(1), now);
+			schedules.flush();
+			occurrences.cancelOpenCycleReview(previous.id(), now);
+		}
+		int version = history.stream().mapToInt(SupportPlanActivityScheduleEntity::scheduleVersion).max().orElse(0) + 1;
+		// Keep the user's own MB-640 choices for the review reminder; only the date moves.
+		var schedule = schedules.saveAndFlush(SupportPlanActivityScheduleEntity.revisionForAction(UUID.randomUUID(), plan,
+				action, version, SCHEDULE_POLICY_VERSION_V2, "ONCE", null,
+				previous == null ? null : previous.preferredDaypart(), 5,
+				previous == null ? LocalTime.of(18, 0) : previous.localTime(), plan.cycleTimezone(), due, due,
+				previous != null && previous.reminderEnabled(), "ACTIVE", now));
+		generateOne(schedule, due, due, now);
 	}
 
 	@Transactional
@@ -686,7 +770,7 @@ public class SupportPlanActivityOccurrenceService {
 		return occurrence;
 	}
 
-	private void validateEngagement(String state, String helpfulness, String barrierCode, String reflection,
+	static void validateEngagement(String state, String helpfulness, String barrierCode, String reflection,
 			boolean summaryReuseApproved) {
 		if (!List.of("SCHEDULED", "COMPLETED", "SKIPPED").contains(state)) {
 			throw invalidEngagement("Engagement state must be SCHEDULED, COMPLETED, or SKIPPED");
@@ -716,7 +800,7 @@ public class SupportPlanActivityOccurrenceService {
 		}
 	}
 
-	private ApiException invalidEngagement(String message) {
+	private static ApiException invalidEngagement(String message) {
 		return new ApiException(HttpStatus.BAD_REQUEST, "OCCURRENCE_ENGAGEMENT_INVALID", message);
 	}
 

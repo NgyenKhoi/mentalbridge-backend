@@ -60,14 +60,14 @@ opt-in exception, not a production scheduling change. With
 or isolated `test` profile, only an effective PLUS/PREMIUM entitlement and held
 credit with `DEMO` provenance qualify. Enabling this option in staging/production
 or without an explicit development profile fails startup. PAID/FREE accounts,
-chat slots and the disabled-by-default baseline retain the four-hour booking
-lead time and scheduled connection window.
+chat slots and the disabled-by-default baseline retain the scheduled connection
+window. The current booking contract independently permits unexpired slots
+without advance booking delay; this option does not change that booking rule.
 
-Eligible DEMO users may book a future exact video slot without four hours' lead
-time; its decision deadline is the earlier of 24 hours and slot start rather
-than two hours before start. Specialist approval/explicit acceptance remains
-required: REQUESTED alone cannot connect. Discovery and slot listing apply the
-same source-scoped eligibility. Once CONFIRMED, both assigned actors may connect
+Booking, discovery and decision deadlines follow the current public appointment
+contract, including its slot-end cutoff when the ordinary decision buffer has
+elapsed. Specialist approval/explicit acceptance remains required: REQUESTED
+alone cannot connect. Once CONFIRMED, both assigned actors may connect
 immediately, including before scheduled start. Cancelled, ended, completed,
 expired-entitlement and cross-appointment access remain forbidden. Scheduled
 timestamps, the 60-minute booked interval and the existing end cutoff are not

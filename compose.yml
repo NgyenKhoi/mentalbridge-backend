@@ -51,6 +51,8 @@ services:
         /opt/kafka/bin/kafka-topics.sh --bootstrap-server kafka:9092 --create --if-not-exists --topic mentalbridge.community.interaction.v1 --partitions 3 --replication-factor 1
         /opt/kafka/bin/kafka-topics.sh --bootstrap-server kafka:9092 --create --if-not-exists --topic mentalbridge.content-notification.account-preference-dead-letter.v1 --partitions 1 --replication-factor 1
         /opt/kafka/bin/kafka-topics.sh --bootstrap-server kafka:9092 --create --if-not-exists --topic mentalbridge.content-notification.community-interaction-dead-letter.v1 --partitions 1 --replication-factor 1
+        /opt/kafka/bin/kafka-topics.sh --bootstrap-server kafka:9092 --create --if-not-exists --topic mentalbridge.admin.audit-event.v1 --partitions 3 --replication-factor 1 --config retention.ms=604800000 --config cleanup.policy=delete
+        /opt/kafka/bin/kafka-configs.sh --bootstrap-server kafka:9092 --alter --entity-type topics --entity-name mentalbridge.admin.audit-event.v1 --add-config retention.ms=604800000,cleanup.policy=delete
     depends_on:
       kafka:
         condition: service_healthy
@@ -103,6 +105,8 @@ services:
       IDENTITY_OUTBOX_RELAY_SEND_TIMEOUT: ${IDENTITY_OUTBOX_RELAY_SEND_TIMEOUT:-PT5S}
       IDENTITY_OUTBOX_RELAY_RETRY_BASE: ${IDENTITY_OUTBOX_RELAY_RETRY_BASE:-PT5S}
       IDENTITY_OUTBOX_RELAY_RETRY_MAXIMUM: ${IDENTITY_OUTBOX_RELAY_RETRY_MAXIMUM:-PT5M}
+      CARE_SERVICE_BASE_URL: http://care:8081
+      CONSULTATION_SERVICE_BASE_URL: http://consultation:8082
     volumes:
       - identity-verification:/var/lib/mentalbridge/identity-verification
     ports:
@@ -206,8 +210,18 @@ services:
       CONSULTATION_DB_USERNAME: ${CONSULTATION_DB_USERNAME:?Set the shared dev/staging Consultation database username in .env}
       CONSULTATION_DB_PASSWORD: ${CONSULTATION_DB_PASSWORD:?Set CONSULTATION_DB_PASSWORD in .env}
       CONSULTATION_LIQUIBASE_ENABLED: "false"
+      CONSULTATION_VIDEO_ENABLED: ${CONSULTATION_VIDEO_ENABLED:-false}
       CONSULTATION_VIDEO_AVAILABILITY_ENABLED: ${CONSULTATION_VIDEO_AVAILABILITY_ENABLED:-false}
       CONSULTATION_DEMO_IMMEDIATE_VIDEO_ENABLED: ${CONSULTATION_DEMO_IMMEDIATE_VIDEO_ENABLED:-false}
+      LIVEKIT_URL: ${LIVEKIT_URL:-}
+      LIVEKIT_API_KEY: ${LIVEKIT_API_KEY:-}
+      LIVEKIT_API_SECRET: ${LIVEKIT_API_SECRET:-}
+      LIVEKIT_TOKEN_TTL: ${LIVEKIT_TOKEN_TTL:-PT2M}
+      CONSULTATION_CREDENTIAL_STORAGE_ENABLED: ${CONSULTATION_CREDENTIAL_STORAGE_ENABLED:-false}
+      CONSULTATION_CLOUDINARY_CLOUD_NAME: ${CONSULTATION_CLOUDINARY_CLOUD_NAME:-}
+      CONSULTATION_CLOUDINARY_API_KEY: ${CONSULTATION_CLOUDINARY_API_KEY:-}
+      CONSULTATION_CLOUDINARY_API_SECRET: ${CONSULTATION_CLOUDINARY_API_SECRET:-}
+      CONSULTATION_CLOUDINARY_TIMEOUT_SECONDS: ${CONSULTATION_CLOUDINARY_TIMEOUT_SECONDS:-5}
       CONSULTATION_EVIDENCE_SERVICE_TOKEN: ${CONSULTATION_EVIDENCE_SERVICE_TOKEN:?Set a shared Consultation evidence service token of at least 32 characters in .env}
       KAFKA_BOOTSTRAP_SERVERS: kafka:9092
       CONSULTATION_KAFKA_LISTENER_AUTO_STARTUP: ${CONSULTATION_KAFKA_LISTENER_AUTO_STARTUP:-true}
@@ -391,7 +405,7 @@ services:
       JOURNAL_AI_PORT: 3000
       JOURNAL_AI_MONGODB_URI: ${REALTIME_MONGODB_URI:?Set the shared dev/staging MongoDB URI in .env}
       JOURNAL_AI_MONGODB_DATABASE: ${JOURNAL_AI_MONGODB_DATABASE:-mentalbridge_journal_ai}
-      JOURNAL_AI_ENCRYPTION_KEY: ${REALTIME_MESSAGE_ENCRYPTION_KEY:?Set the shared dev/staging encryption key in .env}
+      JOURNAL_AI_ENCRYPTION_KEY: ${JOURNAL_AI_ENCRYPTION_KEY:?Set the stable Journal AI encryption key in .env}
       JOURNAL_AI_IDEMPOTENCY_HMAC_KEY: ${JOURNAL_AI_IDEMPOTENCY_HMAC_KEY:?Set a base64-encoded 32-byte JOURNAL_AI_IDEMPOTENCY_HMAC_KEY in .env}
       IDENTITY_JWT_ISSUER: ${IDENTITY_JWT_ISSUER:?Set IDENTITY_JWT_ISSUER in .env}
       IDENTITY_JWT_AUDIENCE: ${IDENTITY_JWT_AUDIENCE:?Set IDENTITY_JWT_AUDIENCE in .env}

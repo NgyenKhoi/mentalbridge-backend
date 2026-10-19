@@ -92,6 +92,9 @@ class SupportPlanActivityOccurrenceEntity {
 	String reflection() { return reflection; }
 	boolean summaryReuseApproved() { return summaryReuseApproved; }
 	Instant engagementUpdatedAt() { return engagementUpdatedAt; }
+	boolean hasEngagement() {
+		return hidden || helpfulness != null || barrierCode != null || reflection != null || summaryReuseApproved;
+	}
 
 	boolean engagementEquals(String desiredState, boolean desiredHidden, String desiredHelpfulness,
 			String desiredBarrierCode, String desiredReflection, boolean desiredSummaryReuseApproved) {
@@ -146,13 +149,28 @@ class SupportPlanActivityOccurrenceEntity {
 		replaceEngagement("SCHEDULED", false, null, null, null, false, now);
 	}
 
+	void replaceNativeEngagement(boolean desiredHidden, String desiredHelpfulness,
+			String desiredBarrierCode, String desiredReflection, boolean desiredSummaryReuseApproved, Instant now) {
+		this.hidden = desiredHidden;
+		this.helpfulness = desiredHelpfulness;
+		this.barrierCode = desiredBarrierCode;
+		this.reflection = desiredReflection;
+		this.summaryReuseApproved = desiredSummaryReuseApproved;
+		this.engagementUpdatedAt = now;
+		this.updatedAt = now;
+	}
+
 	void changeOpenNativeUserState(String desiredState, Instant now) {
 		this.state = desiredState;
 		this.stateReason = null;
 		this.completedAt = null;
 		this.skippedAt = "SKIPPED".equals(desiredState) ? now : null;
 		this.cancelledAt = null;
-		this.engagementUpdatedAt = now;
+		this.helpfulness = null;
+		this.barrierCode = null;
+		this.reflection = null;
+		this.summaryReuseApproved = false;
+		if (engagementUpdatedAt != null) this.engagementUpdatedAt = now;
 		this.updatedAt = now;
 	}
 }

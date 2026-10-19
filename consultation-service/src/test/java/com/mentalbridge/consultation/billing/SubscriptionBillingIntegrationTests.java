@@ -248,8 +248,7 @@ class SubscriptionBillingIntegrationTests extends ConsultationTestProperties {
 	void expiredSuccessFailsSafelyAndPlusCanUpgradeOnlyToPremium() throws Exception {
 		var expiredUser = UUID.randomUUID();
 		var expired = billing.checkout(expiredUser, PLUS, key("expired"));
-		jdbc.sql("update payment_transaction set created_at=now()-interval '20 minutes', expires_at=now()-interval '1 second' where id=:id")
-				.param("id", expired.paymentId()).update();
+		expire(expired.paymentId());
 		var expiredSuccess = fixture(expired.paymentId(), 0, Instant.now().toEpochMilli(), 830001);
 		sign(expiredSuccess);
 		postIpn(expiredSuccess, 204);
@@ -376,10 +375,13 @@ class SubscriptionBillingIntegrationTests extends ConsultationTestProperties {
 	}
 
 	private void expire(UUID paymentId) {
+		var now = clock.instant();
 		jdbc.sql("""
-				update payment_transaction set created_at=now()-interval '20 minutes',
-				 expires_at=now()-interval '1 second' where id=:id
+				update payment_transaction set created_at=:createdAt,
+				 expires_at=:expiresAt where id=:id
 				""")
+				.param("createdAt", java.sql.Timestamp.from(now.minusSeconds(1200)))
+				.param("expiresAt", java.sql.Timestamp.from(now.minusSeconds(1)))
 				.param("id", paymentId).update();
 	}
 

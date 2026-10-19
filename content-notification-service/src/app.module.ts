@@ -83,6 +83,7 @@ import { NotificationPreferenceController } from './notification-preferences/not
 import { NotificationPreferenceRepository } from './notification-preferences/notification-preference.repository.js';
 import { NotificationPreferenceService } from './notification-preferences/notification-preference.service.js';
 import { NotificationController } from './notifications/notification.controller.js';
+import { NotificationAdminController } from './notifications/notification-admin.controller.js';
 import { NotificationRepository } from './notifications/notification.repository.js';
 import { NotificationService } from './notifications/notification.service.js';
 import { JournalAiReminderActivityClient } from './reminders/reminder-activity.client.js';
@@ -114,12 +115,18 @@ import {
   AppointmentStatusProjector,
 } from './appointment-reminders/appointment-status.consumer.js';
 import { AppointmentReminderScheduler } from './appointment-reminders/appointment-reminder.scheduler.js';
+import { SpecialistAppointmentNotificationRepository } from './appointment-reminders/specialist-appointment-notification.repository.js';
 import {
   CommunityInteractionConsumer,
   CommunityInteractionProjector,
   KafkaCommunityInteractionDeadLetterPublisher,
 } from './community-notifications/community-interaction.consumer.js';
 import { CommunityNotificationRepository } from './community-notifications/community-notification.repository.js';
+import {
+  CONTENT_ADMIN_AUDIT_PUBLISHER_TOKEN,
+  KafkaContentAdminAuditPublisher,
+  type ContentAdminAuditPublisher,
+} from './audit/content-admin-audit.publisher.js';
 
 export interface ApplicationDependencies {
   readonly readinessProbe?: ReadinessProbe;
@@ -137,6 +144,7 @@ export interface ApplicationDependencies {
   readonly reminderActivityClient?: ReminderActivityClient;
   readonly reminderClock?: ReminderClock;
   readonly wellbeingDigestService?: WellbeingDigestService;
+  readonly contentAdminAuditPublisher?: ContentAdminAuditPublisher;
 }
 
 @Module({})
@@ -216,6 +224,16 @@ export const createAppModule = (
     ? { provide: REMINDER_ACTIVITY_CLIENT_TOKEN, useValue: dependencies.reminderActivityClient }
     : { provide: REMINDER_ACTIVITY_CLIENT_TOKEN, useClass: JournalAiReminderActivityClient };
 
+  const adminAuditPublisherProvider: Provider = dependencies.contentAdminAuditPublisher
+    ? {
+        provide: CONTENT_ADMIN_AUDIT_PUBLISHER_TOKEN,
+        useValue: dependencies.contentAdminAuditPublisher,
+      }
+    : {
+        provide: CONTENT_ADMIN_AUDIT_PUBLISHER_TOKEN,
+        useClass: KafkaContentAdminAuditPublisher,
+      };
+
   return {
     module: ContentNotificationModule,
     imports: [AuthModule],
@@ -234,6 +252,7 @@ export const createAppModule = (
       SafetyDirectoryLookupController,
       NotificationPreferenceController,
       NotificationController,
+      NotificationAdminController,
       WellbeingDigestController,
     ],
     providers: [
@@ -247,6 +266,7 @@ export const createAppModule = (
       dbServiceProvider,
       repositoryProvider,
       serviceProvider,
+      adminAuditPublisherProvider,
       resourceProgressRepositoryProvider,
       { provide: RESOURCE_PROGRESS_SERVICE_TOKEN, useClass: ResourceProgressService },
       resourceJourneyRepositoryProvider,
@@ -290,6 +310,7 @@ export const createAppModule = (
       { provide: APPOINTMENT_EMAIL_DELIVERY_TOKEN, useClass: BrevoAppointmentEmailDelivery },
       { provide: APPOINTMENT_REMINDER_SERVICE_TOKEN, useClass: AppointmentReminderService },
       AppointmentStatusProjector,
+      SpecialistAppointmentNotificationRepository,
       AppointmentStatusConsumer,
       AppointmentReminderScheduler,
       CommunityNotificationRepository,

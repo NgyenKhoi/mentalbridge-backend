@@ -133,6 +133,37 @@ async function token(subject = OWNER_A): Promise<string> {
 }
 
 describe('achievement HTTP boundary', () => {
+  it('serializes every item with exactly the public achievement contract fields', async () => {
+    const response = await request(app.getHttpServer())
+      .get('/api/v1/achievements?timezone=UTC')
+      .set('Authorization', `Bearer ${await token()}`)
+      .expect(200);
+
+    const itemKeys = [
+      'definitionId',
+      'description',
+      'domain',
+      'evidenceClass',
+      'kind',
+      'privacy',
+      'progress',
+      'ruleVersion',
+      'status',
+      'tier',
+      'title',
+      'unlockedAt',
+    ];
+    const progressKeys = ['current', 'target', 'unit'];
+
+    expect(response.body.items).toHaveLength(11);
+    for (const item of response.body.items) {
+      expect(Object.keys(item).sort()).toEqual(itemKeys);
+      if (item.progress !== null) {
+        expect(Object.keys(item.progress).sort()).toEqual(progressKeys);
+      }
+    }
+  });
+
   it('requires authentication and keeps facts owner-bound', async () => {
     await request(app.getHttpServer()).get('/api/v1/achievements?timezone=UTC').expect(401);
     const owner = await request(app.getHttpServer())
