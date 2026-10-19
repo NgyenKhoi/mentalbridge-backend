@@ -47,13 +47,15 @@ public class AdminRetentionGovernanceService {
 	private final RetentionAuditLogger auditLogger;
 	private final PlatformReportProcessor reportProcessor;
 	private final Clock clock;
+	private final RetentionExecutionRecorder executionRecorder;
 
 	private final Map<String, PolicyMetadata> policyDefinitions = new LinkedHashMap<>();
 
 	public AdminRetentionGovernanceService(RetentionExecutionRecordRepository executionRecords,
 			DeletionRequestRepository deletionRequests, AccountRepository accounts,
 			AuthenticationPersistence authentication, RetentionAuditLogger auditLogger,
-			PlatformReportProcessor reportProcessor, Clock clock) {
+			PlatformReportProcessor reportProcessor, Clock clock,
+			RetentionExecutionRecorder executionRecorder) {
 		this.executionRecords = executionRecords;
 		this.deletionRequests = deletionRequests;
 		this.accounts = accounts;
@@ -61,6 +63,7 @@ public class AdminRetentionGovernanceService {
 		this.auditLogger = auditLogger;
 		this.reportProcessor = reportProcessor;
 		this.clock = clock;
+		this.executionRecorder = executionRecorder;
 		initPolicyDefinitions();
 	}
 
@@ -244,7 +247,7 @@ public class AdminRetentionGovernanceService {
 					null,
 					now
 			);
-			executionRecords.save(record);
+			executionRecorder.recordSuccess(record);
 
 			auditLogger.recordSuccess(new SecurityAuditEventEntity(
 					UUID.randomUUID(), null, actorId, "RETENTION_SWEEP_TRIGGERED", "SUCCEEDED",
@@ -267,14 +270,14 @@ public class AdminRetentionGovernanceService {
 					"SWEEP_EXECUTION_FAILED",
 					now
 			);
-			executionRecords.save(record);
+			executionRecorder.recordFailure(record);
 
 			auditLogger.recordDenied(new SecurityAuditEventEntity(
 					UUID.randomUUID(), null, actorId, "RETENTION_SWEEP_TRIGGERED", "FAILED",
 					"SWEEP_EXECUTION_FAILED", effectiveCorrelation, null,
 					meta.ownerService().name(), "DATA_RETENTION", now, now
 			));
-			throw new ResponseStatusException(HttpStatus.INTERNAL_SERVER_ERROR, "Thực thi dọn dẹp thất bại: " + ex.getMessage(), ex);
+			throw new ResponseStatusException(HttpStatus.INTERNAL_SERVER_ERROR, "Thực thi dọn dẹp thất bại do lỗi hệ thống nội bộ.", ex);
 		}
 
 		return toExecutionResponse(record);
@@ -357,28 +360,56 @@ public class AdminRetentionGovernanceService {
 			throw new ResponseStatusException(HttpStatus.CONFLICT, "Chưa đến thời điểm thực thi được phê duyệt: " + request.scheduledExecutionAt());
 		}
 
+		if (request.ownerFacts().isEmpty()) {
+			auditLogger.recordDenied(new SecurityAuditEventEntity(
+					UUID.randomUUID(), request.accountId(), actorId, "DATA_DELETION_RETRY_REQUESTED", "DENIED",
+					"MISSING_OWNER_FACTS", effectiveCorrelation, request.subjectReferenceHash(),
+					"IDENTITY", "DATA_RETENTION", now, now
+			));
+			throw new ResponseStatusException(HttpStatus.UNPROCESSABLE_ENTITY, "Yêu cầu xóa không có danh sách owner facts hợp lệ");
+		}
+
+		DeletionOwnerFactEntity identityFact = request.ownerFacts().stream()
+				.filter(f -> f.ownerService() == RetentionOwnerService.IDENTITY)
+				.findFirst()
+				.orElse(null);
+
+		if (identityFact == null) {
+			auditLogger.recordDenied(new SecurityAuditEventEntity(
+					UUID.randomUUID(), request.accountId(), actorId, "DATA_DELETION_RETRY_REQUESTED", "DENIED",
+					"MISSING_IDENTITY_FACT", effectiveCorrelation, request.subjectReferenceHash(),
+					"IDENTITY", "DATA_RETENTION", now, now
+			));
+			throw new ResponseStatusException(HttpStatus.UNPROCESSABLE_ENTITY, "Yêu cầu xóa thiếu owner fact của dịch vụ IDENTITY");
+		}
+
+		if (identityFact.status() == DeletionFactStatus.COMPLETED) {
+			List<RetentionOwnerService> pendingOthers = request.ownerFacts().stream()
+					.filter(f -> f.ownerService() != RetentionOwnerService.IDENTITY && f.status() != DeletionFactStatus.COMPLETED)
+					.map(DeletionOwnerFactEntity::ownerService)
+					.toList();
+			auditLogger.recordDenied(new SecurityAuditEventEntity(
+					UUID.randomUUID(), request.accountId(), actorId, "DATA_DELETION_RETRY_REQUESTED", "DENIED",
+					"EXTERNAL_OWNER_RETRY_UNSUPPORTED", effectiveCorrelation, request.subjectReferenceHash(),
+					"IDENTITY", "DATA_RETENTION", now, now
+			));
+			throw new ResponseStatusException(HttpStatus.UNPROCESSABLE_ENTITY,
+					"Dịch vụ Identity đã hoàn tất xóa dữ liệu. Các dịch vụ khác (" + pendingOthers + ") chưa hỗ trợ retry tự động từ Identity coordinator.");
+		}
+
+		// Only consume retry attempt if actual work is dispatched/processed
 		request.recordAttempt(now);
 
 		AccountEntity account = accounts.findById(request.accountId()).orElse(null);
-		boolean identityActionSucceeded = false;
 		if (account != null) {
 			if (account.status() != AccountStatus.DELETED) {
 				account.markDeleted(now);
 				authentication.revokeAll(account.id(), "ACCOUNT_DELETED", now);
 				accounts.save(account);
 			}
-			identityActionSucceeded = true;
-		}
-
-		for (DeletionOwnerFactEntity fact : request.ownerFacts()) {
-			if (fact.ownerService() == RetentionOwnerService.IDENTITY) {
-				if (identityActionSucceeded) {
-					fact.markCompleted(now, "audit:identity:account-deleted:" + request.id());
-				} else {
-					fact.markFailed(now, "ACCOUNT_NOT_FOUND");
-				}
-			}
-			// External owners are not modified: Identity coordinator does not fabricate external completion
+			identityFact.markCompleted(now, "audit:identity:account-deleted:" + request.id());
+		} else {
+			identityFact.markFailed(now, "ACCOUNT_NOT_FOUND");
 		}
 
 		boolean hasFacts = !request.ownerFacts().isEmpty();
@@ -483,7 +514,7 @@ public class AdminRetentionGovernanceService {
 
 	private DeletionRequestResponse toDeletionResponse(DeletionRequestEntity entity) {
 		AccountEntity account = accounts.findById(entity.accountId()).orElse(null);
-		AccountStatus accStatus = account != null ? account.status() : AccountStatus.DELETED;
+		AccountStatus accStatus = account != null ? account.status() : null;
 
 		List<DeletionOwnerFactResponse> factResponses = entity.ownerFacts().stream().map(f ->
 				new DeletionOwnerFactResponse(f.ownerService(), f.status(), f.completedAt(), f.evidenceReference(), f.failureReason())

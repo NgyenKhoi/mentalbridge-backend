@@ -833,6 +833,9 @@ paths:
         - name: limit
           in: query
           schema: { type: integer, minimum: 1, maximum: 100, default: 20 }
+        - name: page
+          in: query
+          schema: { type: integer, minimum: 0, default: 0 }
         - $ref: '#/components/parameters/CorrelationId'
       responses:
         '200':
@@ -869,6 +872,11 @@ paths:
         '403': { $ref: '#/components/responses/ForbiddenProblem' }
         '404': { $ref: '#/components/responses/NotFoundProblem' }
         '409': { $ref: '#/components/responses/ConflictProblem' }
+        '422':
+          description: Retry unsupported for external owners or invalid facts state
+          content:
+            application/problem+json:
+              schema: { $ref: '#/components/schemas/Problem' }
   /api/v1/admin/retention/deletions/{requestId}/holds:
     x-mentalbridge-status: implemented
     post:
@@ -1468,11 +1476,14 @@ components:
     DeletionRequest:
       type: object
       additionalProperties: false
-      required: [requestId, subjectReference, accountStatus, status, holdType, retryCount, maxRetries, escalationState, requestedAt, scheduledExecutionAt, ownerFacts]
+      required: [requestId, subjectReference, status, holdType, retryCount, maxRetries, escalationState, requestedAt, scheduledExecutionAt, ownerFacts]
       properties:
         requestId: { type: string, format: uuid }
         subjectReference: { type: string, pattern: '^tombstone:[0-9a-f]{64}$' }
-        accountStatus: { $ref: '#/components/schemas/AccountStatus' }
+        accountStatus:
+          anyOf:
+            - $ref: '#/components/schemas/AccountStatus'
+            - type: 'null'
         status: { type: string, enum: [PENDING, IN_PROGRESS, HELD, COMPLETED, FAILED] }
         holdType: { type: string, enum: [NONE, LEGAL_HOLD, OPERATIONAL_HOLD, DISPUTE_HOLD] }
         holdReason: { type: [string, 'null'] }

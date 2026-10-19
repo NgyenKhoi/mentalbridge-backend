@@ -40,6 +40,7 @@ class AdminRetentionGovernanceServiceTests {
 	private AuthenticationPersistence authentication;
 	private RetentionAuditLogger auditLogger;
 	private PlatformReportProcessor reportProcessor;
+	private RetentionExecutionRecorder executionRecorder;
 	private AdminRetentionGovernanceService service;
 
 	@BeforeEach
@@ -50,8 +51,9 @@ class AdminRetentionGovernanceServiceTests {
 		authentication = mock(AuthenticationPersistence.class);
 		auditLogger = mock(RetentionAuditLogger.class);
 		reportProcessor = mock(PlatformReportProcessor.class);
+		executionRecorder = mock(RetentionExecutionRecorder.class);
 		service = new AdminRetentionGovernanceService(executionRecords, deletionRequests, accounts, authentication,
-				auditLogger, reportProcessor, Clock.fixed(NOW, ZoneOffset.UTC));
+				auditLogger, reportProcessor, Clock.fixed(NOW, ZoneOffset.UTC), executionRecorder);
 	}
 
 	@Test
@@ -99,7 +101,7 @@ class AdminRetentionGovernanceServiceTests {
 		assertThat(result.jobStatus()).isEqualTo("SUCCEEDED");
 		assertThat(result.itemsEvaluated()).isEqualTo(50);
 		assertThat(result.recordsPurged()).isEqualTo(5);
-		verify(executionRecords).save(any(RetentionExecutionRecordEntity.class));
+		verify(executionRecorder).recordSuccess(any(RetentionExecutionRecordEntity.class));
 		verify(auditLogger).recordSuccess(any(SecurityAuditEventEntity.class));
 	}
 
@@ -126,7 +128,7 @@ class AdminRetentionGovernanceServiceTests {
 				.isInstanceOf(ResponseStatusException.class)
 				.hasMessageContaining("Thực thi dọn dẹp thất bại");
 
-		verify(executionRecords).save(any(RetentionExecutionRecordEntity.class));
+		verify(executionRecorder).recordFailure(any(RetentionExecutionRecordEntity.class));
 		verify(auditLogger).recordDenied(any(SecurityAuditEventEntity.class));
 	}
 
@@ -300,7 +302,7 @@ class AdminRetentionGovernanceServiceTests {
 	}
 
 	@Test
-	void retryDeletionDoesNotMarkCompletedWhenOwnerFactsIsEmpty() {
+	void retryDeletionRejectsWhenOwnerFactsIsEmptyAndAuditsDenied() {
 		UUID requestId = UUID.randomUUID();
 		UUID accountId = UUID.randomUUID();
 		UUID actorId = UUID.randomUUID();
@@ -312,16 +314,81 @@ class AdminRetentionGovernanceServiceTests {
 				DeletionHoldType.NONE, null, 0, 3,
 				DeletionEscalationState.NONE, null, NOW, NOW, null, null, NOW, NOW
 		);
-		// request has empty ownerFacts
 
 		when(deletionRequests.findById(requestId)).thenReturn(Optional.of(request));
-		when(accounts.findById(accountId)).thenReturn(Optional.of(account));
 
-		var response = service.retryDeletion(requestId, actorId, UUID.randomUUID());
+		assertThatThrownBy(() -> service.retryDeletion(requestId, actorId, UUID.randomUUID()))
+				.isInstanceOf(ResponseStatusException.class)
+				.hasMessageContaining("không có danh sách owner facts hợp lệ");
 
-		// Critical check: vacuous truth (allMatch on empty) MUST NOT mark COMPLETED
-		assertThat(response.status()).isEqualTo(DeletionRequestStatus.IN_PROGRESS);
-		verify(auditLogger).recordSuccess(any(SecurityAuditEventEntity.class));
+		// Account status was NOT modified
+		assertThat(account.status()).isEqualTo(AccountStatus.ACTIVE);
+		// Attempt was NOT recorded
+		assertThat(request.retryCount()).isEqualTo(0);
+		// Audit was recorded as DENIED
+		verify(auditLogger).recordDenied(any(SecurityAuditEventEntity.class));
+	}
+
+	@Test
+	void retryDeletionRejectsWhenIdentityFactMissingAndAuditsDenied() {
+		UUID requestId = UUID.randomUUID();
+		UUID accountId = UUID.randomUUID();
+		UUID actorId = UUID.randomUUID();
+		var account = AccountEntity.pending("user@example.com", "hash", RoleCode.USER, NOW);
+		account.activate(NOW);
+
+		var request = new DeletionRequestEntity(
+				requestId, accountId, "noidentity".repeat(6), DeletionRequestStatus.PENDING,
+				DeletionHoldType.NONE, null, 0, 3,
+				DeletionEscalationState.NONE, null, NOW, NOW, null, null, NOW, NOW
+		);
+		request.addOwnerFact(new DeletionOwnerFactEntity(
+				UUID.randomUUID(), request, RetentionOwnerService.CARE, DeletionFactStatus.PENDING,
+				null, null, null, NOW
+		));
+
+		when(deletionRequests.findById(requestId)).thenReturn(Optional.of(request));
+
+		assertThatThrownBy(() -> service.retryDeletion(requestId, actorId, UUID.randomUUID()))
+				.isInstanceOf(ResponseStatusException.class)
+				.hasMessageContaining("thiếu owner fact của dịch vụ IDENTITY");
+
+		assertThat(account.status()).isEqualTo(AccountStatus.ACTIVE);
+		assertThat(request.retryCount()).isEqualTo(0);
+		verify(auditLogger).recordDenied(any(SecurityAuditEventEntity.class));
+	}
+
+	@Test
+	void retryDeletionRejectsWithoutConsumingAttemptWhenIdentityAlreadyCompleted() {
+		UUID requestId = UUID.randomUUID();
+		UUID accountId = UUID.randomUUID();
+		UUID actorId = UUID.randomUUID();
+
+		var request = new DeletionRequestEntity(
+				requestId, accountId, "idcompleted".repeat(5), DeletionRequestStatus.IN_PROGRESS,
+				DeletionHoldType.NONE, null, 1, 3,
+				DeletionEscalationState.NONE, null, NOW, NOW, null, null, NOW, NOW
+		);
+		var idFact = new DeletionOwnerFactEntity(
+				UUID.randomUUID(), request, RetentionOwnerService.IDENTITY, DeletionFactStatus.COMPLETED,
+				NOW, "audit:id:001", null, NOW
+		);
+		var careFact = new DeletionOwnerFactEntity(
+				UUID.randomUUID(), request, RetentionOwnerService.CARE, DeletionFactStatus.PENDING,
+				null, null, null, NOW
+		);
+		request.addOwnerFact(idFact);
+		request.addOwnerFact(careFact);
+
+		when(deletionRequests.findById(requestId)).thenReturn(Optional.of(request));
+
+		assertThatThrownBy(() -> service.retryDeletion(requestId, actorId, UUID.randomUUID()))
+				.isInstanceOf(ResponseStatusException.class)
+				.hasMessageContaining("chưa hỗ trợ retry tự động");
+
+		// Attempt was NOT consumed
+		assertThat(request.retryCount()).isEqualTo(1);
+		verify(auditLogger).recordDenied(any(SecurityAuditEventEntity.class));
 	}
 
 	@Test
@@ -347,6 +414,7 @@ class AdminRetentionGovernanceServiceTests {
 		var response = service.retryDeletion(requestId, actorId, UUID.randomUUID());
 
 		assertThat(response.status()).isEqualTo(DeletionRequestStatus.IN_PROGRESS);
+		assertThat(response.accountStatus()).isNull();
 		var updatedFact = response.ownerFacts().getFirst();
 		assertThat(updatedFact.status()).isEqualTo(DeletionFactStatus.FAILED);
 		assertThat(updatedFact.failureReason()).isEqualTo("ACCOUNT_NOT_FOUND");

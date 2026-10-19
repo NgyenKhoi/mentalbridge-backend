@@ -11,24 +11,26 @@ Under the MB-583 architecture, `Identity Service` coordinates deletion workflows
 
 | Policy ID | Policy Name | Owner Service | Version | Retention Period | Sweep Capability | Manual Hold Supported | Safe Aggregate Outcome |
 | :--- | :--- | :--- | :--- | :--- | :--- | :--- | :--- |
-| `MB-IDENTITY-REPORTING-001` | Chính sách bảo lưu báo cáo phân tích tổng hợp | `IDENTITY` | 1.0 | 30 ngày | **ACTIVE** (Automated & Admin sweep supported via authoritative metrics) | Không áp dụng | Số lượng tệp trích xuất báo cáo phân tích hết hạn đã dọn dẹp |
-| `MB-IDENTITY-AUDIT-001` | Chính sách bảo lưu sự kiện kiểm toán danh tính | `IDENTITY` | 1.0 | 365 ngày | **ACTIVE** (Partitioned auto-retention) | **Có hỗ trợ** | Nhật ký kiểm toán danh tính tối thiểu hóa |
-| `MB-PRIVACY-CARE-001` | Chính sách bảo lưu hồ sơ lâm sàng và phiên chăm sóc | `CARE` | 1.0 | 730 ngày | **PARTIALLY_SUPPORTED** (Care domain-managed only) | **Có hỗ trợ** | Bản ghi đánh giá tâm lý lâm sàng và hồ sơ phiên chăm sóc |
-| `consultation-journey-v1` | Chính sách bảo lưu hành trình tư vấn chuyên gia | `CONSULTATION` | 1.0 | 365 ngày | **PARTIALLY_SUPPORTED** (Consultation lifecycle service) | **Có hỗ trợ** | Lịch sử cuộc hẹn và ghi chú tư vấn hoàn tất |
-| `MB-DAILY-EMOTION-CHECK-IN-001` | Chính sách bảo lưu điểm danh cảm xúc hàng ngày | `JOURNAL_AI` | 1.0 | 180 ngày | **PARTIALLY_SUPPORTED** (Journal AI auto-expiration) | Không áp dụng | Nhật ký cảm xúc định kỳ và vector suy luận AI |
-| `MB-COMMUNITY-RETENTION-001` | Chính sách bảo lưu phương tiện bài đăng cộng đồng | `COMMUNITY` | 1.0 | 7 ngày | **PARTIALLY_SUPPORTED** (Community media sweep) | Không áp dụng | Tệp đính kèm tạm thời bài đăng cộng đồng |
+| `MB-IDENTITY-REPORTING-001` | Chính sách bảo lưu tệp báo cáo tổng hợp | `IDENTITY` | 1.0 | 30 ngày | **ACTIVE** (Automated & Admin sweep supported via authoritative metrics) | Không áp dụng | Số lượng tệp trích xuất báo cáo phân tích hết hạn đã dọn dẹp |
+| `MB-IDENTITY-AUDIT-001` | Chính sách bảo lưu nhật ký kiểm toán Identity | `IDENTITY` | 1.0 | 365 ngày | **PARTIALLY_SUPPORTED** (Bảo lưu bất biến MB-587; không hỗ trợ xóa sớm/thủ công) | Không áp dụng | Nhật ký kiểm toán danh tính tối thiểu hóa |
+| `MB-PRIVACY-CARE-001` | Chính sách bảo lưu sàng lọc & đồng ý chăm sóc | `CARE` | 1.1-capstone | Quản lý theo vòng đời Care (TTL 30p-2h ẩn danh, có tài khoản bảo lưu kiểm soát) | **PARTIALLY_SUPPORTED** (Care domain-managed only) | **Có hỗ trợ** | Bản ghi đánh giá tâm lý lâm sàng và hồ sơ phiên chăm sóc |
+| `consultation-journey-v1` | Chính sách bảo lưu phiên tư vấn & đối soát giao dịch | `CONSULTATION` | 1.0-scope-v2 | 90 ngày (LiveKit metadata, tài chính kế toán theo luật) | **ACTIVE** (Consultation metadata sweep) | **Có hỗ trợ** | Lịch sử cuộc hẹn và ghi chú tư vấn hoàn tất |
+| `MB-DAILY-EMOTION-CHECK-IN-001` | Chính sách bảo lưu & xóa nhật ký cảm xúc | `JOURNAL_AI` | 1.0 | Quản lý mã hóa Journal AI (xóa ciphertext, tombstone có giới hạn) | **ACTIVE** (Journal AI tombstone purge) | **Có hỗ trợ** | Nhật ký cảm xúc định kỳ và vector suy luận AI |
+| `MB-COMMUNITY-RETENTION-001` | Chính sách bảo lưu nội dung cộng đồng | `COMMUNITY` | 1.0 | 7 ngày (phương tiện chưa liên kết) | **PARTIALLY_SUPPORTED** (Community media sweep) | Không áp dụng | Tệp đính kèm tạm thời bài đăng cộng đồng |
 | `MB-CONTENT-NOTIFICATION-RETENTION-001` | Chính sách bảo lưu hộp thư thông báo | `CONTENT` | 1.0 | 90 ngày | **UNAVAILABLE** (Explicitly Unavailable) | Không áp dụng | Hộp thư thông báo nội dung không quan trọng |
 
 ### Authority & Architectural Rules
 1. **Coordination vs Enforcement**: Identity coordinates deletion requests and orchestrates asynchronous owner facts. Each owner service processes its own deletion facts and emits audit evidence.
-2. **No Fabricated Facts (P0-A)**: Identity only confirms completion of its own internal fact (`IDENTITY`). External facts (`CARE`, `CONSULTATION`, `JOURNAL_AI`, `COMMUNITY`, `CONTENT`) remain `PENDING` or `UNAVAILABLE` until authoritative cross-service contracts or events report completion. Identity never fabricates fake evidence references or marks external facts completed. Empty owner facts collection strictly rejects completion (`!request.ownerFacts().isEmpty()` and identity fact presence are enforced). Missing accounts mark Identity fact as `FAILED` (`ACCOUNT_NOT_FOUND`).
+2. **No Fabricated Facts (P0-A)**: Identity only confirms completion of its own internal fact (`IDENTITY`). External facts (`CARE`, `CONSULTATION`, `JOURNAL_AI`, `COMMUNITY`, `CONTENT`) remain `PENDING` or `UNAVAILABLE` until authoritative cross-service contracts or events report completion. Identity never fabricates fake evidence references or marks external facts completed. Empty owner facts collection strictly rejects completion (`!request.ownerFacts().isEmpty()` and identity fact presence are enforced). Missing accounts mark Identity fact as `FAILED` (`ACCOUNT_NOT_FOUND`) and do not infer account as `DELETED`.
 3. **Authoritative Sweep Metrics (P0-B)**: Retention sweeps query authoritative database metrics directly (via `PlatformReportProcessor.purgeExpiredArtifactsWithMetrics()`), eliminating all fabricated or hardcoded offsets.
-4. **Safe Deletion Retry (P0-C)**: Retry validates lifecycle state, blocks requests scheduled in the future (`scheduledExecutionAt.isAfter(now)`), active holds, or exhausted retry limits. Retries are strictly bounded (`maxRetries = 3`). Completed requests or successfully retried final attempts clear escalation state to `NONE`.
-5. **Fail-Closed Capabilities (AC 5)**: Capabilities not supported by owner services (e.g. direct sweep invocation on Care records or Content notifications) are explicitly declared `UNAVAILABLE` / `PARTIALLY_SUPPORTED` and fail closed (HTTP 422 `CAPABILITY_UNSUPPORTED`) rather than simulating success.
-6. **Strict Privacy Bounds (AC 2)**: Under no circumstances are raw Journal texts, assessment responses, chat transcripts, audio/video streams, or system credentials returned or displayed in retention views.
-7. **Safe Hold Reason Codes (P1-D)**: Hold reasons are strictly restricted to a whitelist of safe reason codes (`STATUTORY_INQUIRY`, `PENDING_DISPUTE`, `ACTIVE_SAFETY_REVIEW`, `SCHEDULED_APPOINTMENT_ACTIVE`, `USER_CONTESTED`, `AUDIT_COMPLIANCE_HOLD`) preventing free-text PII leakage. Hold cannot be applied to `COMPLETED` requests. Applying or releasing holds strictly targets coordinator deletion request state and does NOT mutate or falsify external owner fact states.
-8. **Audit Transaction Isolation (P1-E)**: Audit logging enforces exact transactional boundaries: `RetentionAuditLogger.recordDenied` uses `REQUIRES_NEW` (ensuring denied audit records persist even when the caller transaction rolls back), while `recordSuccess` uses `REQUIRED` (ensuring success audit records roll back if the business transaction fails).
-9. **Deletion Evidence Preservation (P1-I)**: Foreign key `account_id` on `deletion_request` does NOT cascade delete on account removal, ensuring immutable audit evidence and traceability are permanently preserved.
+4. **Failure Execution Persistence (P0)**: Failure execution records are persisted in isolated transactions (`REQUIRES_NEW`) via `RetentionExecutionRecorder.recordFailure`, guaranteeing audit evidence commit even when business exceptions roll back HTTP transactions, with safe non-leaking generic error responses.
+5. **Safe Deletion Retry & Attempt Gating (P0-C / P1)**: Retry validates lifecycle state, blocks requests scheduled in the future (`scheduledExecutionAt.isAfter(now)`), active holds, or exhausted retry limits. Retries are strictly bounded (`maxRetries = 3`). Completed requests or successfully retried final attempts clear escalation state to `NONE`. Retries where Identity has already completed fail closed (HTTP 422 `EXTERNAL_OWNER_RETRY_UNSUPPORTED`) without consuming bounded retry attempts.
+6. **Fail-Closed Capabilities (AC 5)**: Capabilities not supported by owner services (e.g. direct sweep invocation on Care records or Content notifications) are explicitly declared `UNAVAILABLE` / `PARTIALLY_SUPPORTED` and fail closed (HTTP 422 `CAPABILITY_UNSUPPORTED`) rather than simulating success.
+7. **Strict Privacy Bounds (AC 2)**: Under no circumstances are raw Journal texts, assessment responses, chat transcripts, audio/video streams, or system credentials returned or displayed in retention views.
+8. **Safe Hold Reason Codes (P1-D)**: Hold reasons are strictly restricted to a whitelist of safe reason codes (`STATUTORY_INQUIRY`, `PENDING_DISPUTE`, `ACTIVE_SAFETY_REVIEW`, `SCHEDULED_APPOINTMENT_ACTIVE`, `USER_CONTESTED`, `AUDIT_COMPLIANCE_HOLD`) preventing free-text PII leakage. Hold cannot be applied to `COMPLETED` requests. Applying or releasing holds strictly targets coordinator deletion request state and does NOT mutate or falsify external owner fact states.
+9. **Audit Transaction Isolation (P1-E)**: Audit logging enforces exact transactional boundaries: `RetentionAuditLogger.recordDenied` uses `REQUIRES_NEW` (ensuring denied audit records persist even when the caller transaction rolls back), while `recordSuccess` uses `REQUIRED` (ensuring success audit records roll back if the business transaction fails).
+10. **Deletion Evidence Preservation (P1-I)**: Foreign key `account_id` on `deletion_request` does NOT cascade delete on account removal, ensuring immutable audit evidence and traceability are permanently preserved.
+11. **Pagination Integration (P1)**: Authoritative pagination via `page` and `nextCursor` integrated seamlessly across OpenAPI, BFF, identity-client, and frontend UI pagination controls.
 
 ---
 
@@ -81,10 +83,12 @@ Under the MB-583 architecture, `Identity Service` coordinates deletion workflows
 
 ### 3.1 Backend Test Results (`mvnw.cmd test`)
 Executed test suites:
-- `AdminRetentionGovernanceServiceTests` (17 tests)
+- `AdminRetentionGovernanceServiceTests` (19 tests)
 - `AdminRetentionGovernanceControllerTests` (11 tests)
 - `AdminRetentionGovernanceSecuritySliceTests` (5 tests)
 - `RetentionAuditLoggerTransactionTests` (3 tests)
+- `RetentionExecutionRecorderTransactionTests` (3 tests)
+- `IdentityOpenApiContractTests` (1 test)
 
 ```text
 [INFO] Running com.mentalbridge.identity.retention.AdminRetentionGovernanceControllerTests
@@ -92,13 +96,17 @@ Executed test suites:
 [INFO] Running com.mentalbridge.identity.retention.AdminRetentionGovernanceSecuritySliceTests
 [INFO] Tests run: 5, Failures: 0, Errors: 0, Skipped: 0, Time elapsed: 5.160 s -- in com.mentalbridge.identity.retention.AdminRetentionGovernanceSecuritySliceTests
 [INFO] Running com.mentalbridge.identity.retention.AdminRetentionGovernanceServiceTests
-[INFO] Tests run: 17, Failures: 0, Errors: 0, Skipped: 0, Time elapsed: 0.445 s -- in com.mentalbridge.identity.retention.AdminRetentionGovernanceServiceTests
+[INFO] Tests run: 19, Failures: 0, Errors: 0, Skipped: 0, Time elapsed: 0.445 s -- in com.mentalbridge.identity.retention.AdminRetentionGovernanceServiceTests
 [INFO] Running com.mentalbridge.identity.retention.RetentionAuditLoggerTransactionTests
 [INFO] Tests run: 3, Failures: 0, Errors: 0, Skipped: 0, Time elapsed: 0.109 s -- in com.mentalbridge.identity.retention.RetentionAuditLoggerTransactionTests
+[INFO] Running com.mentalbridge.identity.retention.RetentionExecutionRecorderTransactionTests
+[INFO] Tests run: 3, Failures: 0, Errors: 0, Skipped: 0, Time elapsed: 0.098 s -- in com.mentalbridge.identity.retention.RetentionExecutionRecorderTransactionTests
+[INFO] Running com.mentalbridge.identity.contract.IdentityOpenApiContractTests
+[INFO] Tests run: 1, Failures: 0, Errors: 0, Skipped: 0, Time elapsed: 0.280 s -- in com.mentalbridge.identity.contract.IdentityOpenApiContractTests
 [INFO] 
 [INFO] Results:
 [INFO] 
-[INFO] Tests run: 36, Failures: 0, Errors: 0, Skipped: 0
+[INFO] Tests run: 42, Failures: 0, Errors: 0, Skipped: 0
 [INFO] BUILD SUCCESS
 ```
 
@@ -111,19 +119,22 @@ Key verified test assertions:
 - Non-fabrication: Identity only marks its own fact completed; CARE/CONSULTATION/JOURNAL_AI/COMMUNITY/CONTENT facts remain PENDING. Overall request remains IN_PROGRESS until all facts complete.
 - Holds cannot be applied to COMPLETED requests; invalid/free-text hold reasons are rejected with HTTP 400.
 - `RetentionAuditLogger.record` uses `@Transactional(propagation = Propagation.REQUIRES_NEW)` to ensure denied audit records survive rollbacks.
+- `RetentionExecutionRecorder.recordFailure` uses `Propagation.REQUIRES_NEW` to ensure failure execution records persist even when the sweep transaction rolls back.
+- Internal exception details are sanitized upon sweep failure to prevent leaking database internals over HTTP.
+- `retryDeletion` strictly validates owner facts: fails closed on empty facts or missing Identity fact (HTTP 422), and rejects retry if Identity is already completed without consuming bounded retry attempts.
 - Controller enforces `@PreAuthorize("hasRole('ADMIN')")`, rejecting anonymous callers (4xx) and non-admin roles (403 Forbidden).
 
 ### 3.2 Frontend Unit Tests (`vitest`)
 Executed test suites:
-- `features/retention/components/AdminRetentionGovernance.test.tsx` (8 tests)
+- `features/retention/components/AdminRetentionGovernance.test.tsx` (10 tests)
 - `features/auth/components/AdminWorkspace.test.tsx` (1 test)
 
 ```text
- ✓ features/retention/components/AdminRetentionGovernance.test.tsx (8 tests) 749ms
+ ✓ features/retention/components/AdminRetentionGovernance.test.tsx (10 tests) 780ms
  ✓ features/auth/components/AdminWorkspace.test.tsx (1 test) 145ms
 
  Test Files  2 passed (2)
-      Tests  9 passed (9)
+      Tests  11 passed (11)
 ```
 
 Verified UI behaviors:
