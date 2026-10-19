@@ -13,6 +13,11 @@ public class RetentionExecutionRecorder {
 		this.executionRecords = executionRecords;
 	}
 
+	@Transactional(propagation = Propagation.REQUIRES_NEW)
+	public RetentionExecutionRecordEntity recordStart(RetentionExecutionRecordEntity record) {
+		return executionRecords.save(record);
+	}
+
 	/**
 	 * Records a FAILED execution record in an isolated new transaction (REQUIRES_NEW).
 	 * This guarantees that the failure record is committed and survives the outer business
@@ -20,6 +25,11 @@ public class RetentionExecutionRecorder {
 	 */
 	@Transactional(propagation = Propagation.REQUIRES_NEW)
 	public RetentionExecutionRecordEntity recordFailure(RetentionExecutionRecordEntity record) {
+		return executionRecords.save(record);
+	}
+
+	@Transactional(propagation = Propagation.REQUIRES_NEW)
+	public RetentionExecutionRecordEntity recordStale(RetentionExecutionRecordEntity record) {
 		return executionRecords.save(record);
 	}
 

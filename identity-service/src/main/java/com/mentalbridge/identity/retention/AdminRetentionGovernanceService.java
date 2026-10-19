@@ -183,6 +183,45 @@ public class AdminRetentionGovernanceService {
 					.findFirstByPolicyIdOrderByStartedAtDesc(meta.policyId())
 					.map(this::toExecutionResponse)
 					.orElse(null);
+
+			if (lastExec != null && "RUNNING".equals(lastExec.jobStatus())) {
+				boolean hasActiveLock = false;
+				try {
+					hasActiveLock = !executionRecords.tryAcquirePolicyExecutionLock(meta.policyId());
+				} catch (Exception ignored) {
+				}
+				if (!hasActiveLock) {
+					lastExec = new RetentionExecutionResponse(
+							lastExec.executionId(),
+							lastExec.policyId(),
+							lastExec.ownerService(),
+							lastExec.jobName(),
+							"STALE",
+							lastExec.startedAt(),
+							lastExec.completedAt(),
+							lastExec.itemsEvaluated(),
+							lastExec.recordsPurged(),
+							lastExec.tombstonesCreated(),
+							lastExec.holdsHonored(),
+							"PRIOR_EXECUTION_STALE"
+					);
+				}
+			}
+
+			RetentionJobStatus effectiveJobStatus = meta.jobStatus();
+			if (meta.automatedExecutionSupported() && lastExec != null) {
+				if ("STALE".equals(lastExec.jobStatus())) {
+					effectiveJobStatus = RetentionJobStatus.STALE;
+				} else if ("RUNNING".equals(lastExec.jobStatus())) {
+					effectiveJobStatus = RetentionJobStatus.RUNNING;
+				} else if ("FAILED".equals(lastExec.jobStatus())) {
+					List<RetentionExecutionRecordEntity> recent = executionRecords.findTop3ByPolicyIdOrderByStartedAtDesc(meta.policyId());
+					if (recent.size() >= 3 && recent.stream().allMatch(r -> "FAILED".equals(r.jobStatus()) || "STALE".equals(r.jobStatus()))) {
+						effectiveJobStatus = RetentionJobStatus.FAILED;
+					}
+				}
+			}
+
 			result.add(new RetentionPolicyResponse(
 					meta.policyId(),
 					meta.name(),
@@ -192,7 +231,7 @@ public class AdminRetentionGovernanceService {
 					meta.description(),
 					meta.retentionDays(),
 					meta.jobName(),
-					meta.jobStatus(),
+					effectiveJobStatus,
 					meta.automatedExecutionSupported(),
 					meta.manualHoldSupported(),
 					meta.requiresManualReview(),
@@ -221,6 +260,52 @@ public class AdminRetentionGovernanceService {
 			));
 			throw new UnsupportedRetentionCapabilityException(policyId, meta.unsupportedCapabilityNotice());
 		}
+
+		List<RetentionExecutionRecordEntity> recentExecutions = executionRecords.findTop3ByPolicyIdOrderByStartedAtDesc(policyId);
+		if (recentExecutions.size() >= 3 && recentExecutions.stream().allMatch(r -> "FAILED".equals(r.jobStatus()) || "STALE".equals(r.jobStatus()))) {
+			auditLogger.recordDenied(new SecurityAuditEventEntity(
+					UUID.randomUUID(), null, actorId, "RETENTION_SWEEP_TRIGGERED", "DENIED",
+					"RETRY_EXHAUSTED", effectiveCorrelation, null,
+					meta.ownerService().name(), "DATA_RETENTION", now, now
+			));
+			throw new ResponseStatusException(HttpStatus.CONFLICT,
+					"Tiến trình dọn dẹp đã thất bại liên tiếp 3 lần. Cần can thiệp thủ công (MANUAL_ESCALATION_REQUIRED) trước khi thực thi lại.");
+		}
+
+		boolean lockAcquired;
+		try {
+			lockAcquired = executionRecords.tryAcquirePolicyExecutionLock(policyId);
+		} catch (Exception ex) {
+			lockAcquired = true;
+		}
+
+		if (!lockAcquired) {
+			auditLogger.recordDenied(new SecurityAuditEventEntity(
+					UUID.randomUUID(), null, actorId, "RETENTION_SWEEP_TRIGGERED", "DENIED",
+					"CONCURRENT_SWEEP_RUNNING", effectiveCorrelation, null,
+					meta.ownerService().name(), "DATA_RETENTION", now, now
+			));
+			throw new ResponseStatusException(HttpStatus.CONFLICT, "Tiến trình dọn dẹp cho chính sách " + policyId + " đang được thực thi (RUNNING).");
+		}
+
+		executionRecords.findFirstByPolicyIdAndJobStatusOrderByStartedAtDesc(policyId, "RUNNING").ifPresent(priorRunning -> {
+			RetentionExecutionRecordEntity staleRecord = new RetentionExecutionRecordEntity(
+					priorRunning.id(),
+					priorRunning.policyId(),
+					priorRunning.ownerService(),
+					priorRunning.jobName(),
+					"STALE",
+					priorRunning.startedAt(),
+					now,
+					priorRunning.itemsEvaluated(),
+					priorRunning.recordsPurged(),
+					priorRunning.tombstonesCreated(),
+					priorRunning.holdsHonored(),
+					"PRIOR_EXECUTION_STALE",
+					priorRunning.createdAt()
+			);
+			executionRecorder.recordFailure(staleRecord);
+		});
 
 		int evaluated = 0;
 		int purged = 0;

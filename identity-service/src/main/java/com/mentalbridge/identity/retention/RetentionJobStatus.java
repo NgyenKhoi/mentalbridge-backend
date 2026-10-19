@@ -7,6 +7,7 @@ public enum RetentionJobStatus {
 	UNAVAILABLE,
 	SUCCEEDED,
 	FAILED,
-	RUNNING
+	RUNNING,
+	STALE
 }
 

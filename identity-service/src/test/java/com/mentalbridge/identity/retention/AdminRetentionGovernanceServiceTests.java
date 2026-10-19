@@ -3,6 +3,7 @@ package com.mentalbridge.identity.retention;
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
 import static org.mockito.ArgumentMatchers.any;
+import static org.mockito.ArgumentMatchers.argThat;
 import static org.mockito.ArgumentMatchers.eq;
 import static org.mockito.Mockito.mock;
 import static org.mockito.Mockito.verify;
@@ -54,6 +55,7 @@ class AdminRetentionGovernanceServiceTests {
 		executionRecorder = mock(RetentionExecutionRecorder.class);
 		service = new AdminRetentionGovernanceService(executionRecords, deletionRequests, accounts, authentication,
 				auditLogger, reportProcessor, Clock.fixed(NOW, ZoneOffset.UTC), executionRecorder);
+		when(executionRecords.tryAcquirePolicyExecutionLock(any())).thenReturn(true);
 	}
 
 	@Test
@@ -130,6 +132,88 @@ class AdminRetentionGovernanceServiceTests {
 
 		verify(executionRecorder).recordFailure(any(RetentionExecutionRecordEntity.class));
 		verify(auditLogger).recordDenied(any(SecurityAuditEventEntity.class));
+	}
+
+	@Test
+	void triggerRetentionSweepBlocksWhenRecentThreeExecutionsFailedOrStaleWithConflict() {
+		UUID actorId = UUID.randomUUID();
+		UUID correlationId = UUID.randomUUID();
+		var f1 = new RetentionExecutionRecordEntity(UUID.randomUUID(), "MB-IDENTITY-REPORTING-001", "IDENTITY",
+				"REPORT_ARTIFACT_RETENTION_SWEEP", "FAILED", NOW.minusSeconds(300), NOW.minusSeconds(290),
+				10, 0, 0, 0, "TIMEOUT", NOW.minusSeconds(300));
+		var f2 = new RetentionExecutionRecordEntity(UUID.randomUUID(), "MB-IDENTITY-REPORTING-001", "IDENTITY",
+				"REPORT_ARTIFACT_RETENTION_SWEEP", "FAILED", NOW.minusSeconds(200), NOW.minusSeconds(190),
+				10, 0, 0, 0, "TIMEOUT", NOW.minusSeconds(200));
+		var f3 = new RetentionExecutionRecordEntity(UUID.randomUUID(), "MB-IDENTITY-REPORTING-001", "IDENTITY",
+				"REPORT_ARTIFACT_RETENTION_SWEEP", "STALE", NOW.minusSeconds(100), NOW.minusSeconds(90),
+				10, 0, 0, 0, "PRIOR_EXECUTION_STALE", NOW.minusSeconds(100));
+
+		when(executionRecords.findTop3ByPolicyIdOrderByStartedAtDesc("MB-IDENTITY-REPORTING-001"))
+				.thenReturn(List.of(f3, f2, f1));
+
+		assertThatThrownBy(() -> service.triggerRetentionSweep("MB-IDENTITY-REPORTING-001", actorId, correlationId))
+				.isInstanceOf(ResponseStatusException.class)
+				.hasMessageContaining("thất bại liên tiếp 3 lần");
+
+		verify(auditLogger).recordDenied(argThat(event -> "RETRY_EXHAUSTED".equals(event.getReasonCode())));
+	}
+
+	@Test
+	void triggerRetentionSweepDetectsOrphanedRunningRecordAsStaleWhenLockAcquired() {
+		UUID actorId = UUID.randomUUID();
+		UUID correlationId = UUID.randomUUID();
+		var running = new RetentionExecutionRecordEntity(UUID.randomUUID(), "MB-IDENTITY-REPORTING-001", "IDENTITY",
+				"REPORT_ARTIFACT_RETENTION_SWEEP", "RUNNING", NOW.minusSeconds(100), null,
+				0, 0, 0, 0, null, NOW.minusSeconds(100));
+
+		when(executionRecords.tryAcquirePolicyExecutionLock("MB-IDENTITY-REPORTING-001")).thenReturn(true);
+		when(executionRecords.findFirstByPolicyIdAndJobStatusOrderByStartedAtDesc("MB-IDENTITY-REPORTING-001", "RUNNING"))
+				.thenReturn(Optional.of(running));
+		when(reportProcessor.purgeExpiredArtifactsWithMetrics())
+				.thenReturn(new PlatformReportProcessor.PurgeResult(20, 2));
+
+		var result = service.triggerRetentionSweep("MB-IDENTITY-REPORTING-001", actorId, correlationId);
+
+		assertThat(result.jobStatus()).isEqualTo("SUCCEEDED");
+		verify(executionRecorder).recordFailure(argThat(record ->
+				"STALE".equals(record.jobStatus()) && "PRIOR_EXECUTION_STALE".equals(record.failureCode())));
+		verify(executionRecorder).recordSuccess(any(RetentionExecutionRecordEntity.class));
+	}
+
+	@Test
+	void triggerRetentionSweepBlocksConcurrentExecutionWhenLockCannotBeAcquired() {
+		UUID actorId = UUID.randomUUID();
+		UUID correlationId = UUID.randomUUID();
+
+		when(executionRecords.tryAcquirePolicyExecutionLock("MB-IDENTITY-REPORTING-001")).thenReturn(false);
+
+		assertThatThrownBy(() -> service.triggerRetentionSweep("MB-IDENTITY-REPORTING-001", actorId, correlationId))
+				.isInstanceOf(ResponseStatusException.class)
+				.hasMessageContaining("đang được thực thi (RUNNING)");
+
+		verify(auditLogger).recordDenied(argThat(event -> "CONCURRENT_SWEEP_RUNNING".equals(event.getReasonCode())));
+	}
+
+	@Test
+	void getRetentionPoliciesReflectsStaleOrFailedJobStatus() {
+		var staleExec = new RetentionExecutionRecordEntity(UUID.randomUUID(), "MB-IDENTITY-REPORTING-001", "IDENTITY",
+				"REPORT_ARTIFACT_RETENTION_SWEEP", "RUNNING", NOW.minusSeconds(200), null,
+				0, 0, 0, 0, null, NOW.minusSeconds(200));
+
+		when(executionRecords.findFirstByPolicyIdOrderByStartedAtDesc("MB-IDENTITY-REPORTING-001"))
+				.thenReturn(Optional.of(staleExec));
+		when(executionRecords.tryAcquirePolicyExecutionLock("MB-IDENTITY-REPORTING-001")).thenReturn(true);
+
+		var policies = service.getRetentionPolicies();
+
+		var reportingPolicy = policies.stream()
+				.filter(p -> "MB-IDENTITY-REPORTING-001".equals(p.policyId()))
+				.findFirst()
+				.orElseThrow();
+
+		assertThat(reportingPolicy.jobStatus()).isEqualTo(RetentionJobStatus.STALE);
+		assertThat(reportingPolicy.lastExecution()).isNotNull();
+		assertThat(reportingPolicy.lastExecution().jobStatus()).isEqualTo("STALE");
 	}
 
 	@Test

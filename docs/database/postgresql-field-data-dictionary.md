@@ -431,6 +431,55 @@ Privacy-minimized local security record for authentication, recovery, replay, an
 
 Indexes `ix_security_audit_filter`, `ix_security_audit_subject_reference`, `ix_security_audit_service_domain`, `ix_security_audit_actor_reference`, and `ix_security_audit_actor_type` support bounded action/result/time, tombstone-target, multi-service/domain, and actor queries. The administration API applies a 365-day read-retention boundary and a maximum 90-day query window; physical archival or deletion remains an operational retention job outside request processing.
 
+### `public.deletion_request`
+
+Identity-owned coordinator state for a deletion request. The table and ADMIN governance surface are active, but no production request-intake or cross-owner fan-out path currently populates it.
+
+| Field | Purpose |
+| --- | --- |
+| `id` | Immutable coordinator UUID exposed through the ADMIN retention API. |
+| `account_id` | Identity account reference retained without a cascading foreign key so minimized workflow evidence survives account removal. |
+| `subject_reference_hash` | One-way 64-character SHA-256 subject tombstone used in ADMIN responses instead of personal identifiers. |
+| `status` | Coordinator state `PENDING`, `IN_PROGRESS`, `HELD`, `COMPLETED`, or `FAILED`; completion requires all recorded owner facts to carry completion evidence. |
+| `hold_type`, `hold_reason` | Closed hold category and safe allow-listed reason code; neither stores free text. |
+| `retry_count`, `max_retries` | Attempts consumed by actual Identity-owned deletion work and the positive retry ceiling. |
+| `escalation_state` | Safe operator state `NONE`, `RETRY_EXHAUSTED`, or `MANUAL_ESCALATION_REQUIRED`. |
+| `failure_code` | Nullable stable coordinator failure category without deleted content. |
+| `requested_at`, `scheduled_execution_at` | UTC acceptance instant and earliest policy-approved execution instant. |
+| `completed_at`, `last_attempt_at` | Nullable UTC terminal completion and latest consumed attempt instants. |
+| `version` | Optimistic-lock revision protecting concurrent coordinator changes. |
+| `created_at`, `updated_at` | Immutable insertion instant and latest persisted coordinator change, both UTC. |
+
+### `public.deletion_owner_fact`
+
+One minimized status slot per declared data owner and deletion request. External values are not authoritative until a future approved owner contract supplies them; MB-673 does not synthesize those values.
+
+| Field | Purpose |
+| --- | --- |
+| `id` | Immutable owner-fact UUID. |
+| `deletion_request_id` | Parent coordinator request; cascade applies only when that coordinator row is deliberately removed. |
+| `owner_service` | Closed owner identifier `IDENTITY`, `CARE`, `CONSULTATION`, `JOURNAL_AI`, `COMMUNITY`, or `CONTENT`. |
+| `status` | Owner-scoped progress state; it is not aggregate completion on its own. |
+| `completed_at` | Nullable UTC instant attached only to an authoritative completed owner fact. |
+| `evidence_reference` | Nullable bounded audit reference; never raw deleted content. |
+| `failure_reason` | Nullable stable reason code without sensitive payloads. |
+| `updated_at` | UTC instant of the last authoritative change to this owner slot. |
+
+### `public.retention_execution_record`
+
+Durable audit-safe execution evidence for a supported Identity-owned retention sweep.
+
+| Field | Purpose |
+| --- | --- |
+| `id` | Immutable execution UUID reused as the row moves from `RUNNING` to one terminal outcome. |
+| `policy_id` | Approved retention policy identifier whose owner operation was invoked. |
+| `owner_service`, `job_name` | Closed owner and stable operation identity used for safe operator diagnostics. |
+| `job_status` | `RUNNING`, `SUCCEEDED`, `FAILED`, `STALE`, or `UNAVAILABLE`; `STALE` means a prior committed start had no active PostgreSQL advisory lock, not that a guessed time SLA elapsed. |
+| `started_at`, `completed_at` | UTC start and nullable terminal transition instants. |
+| `items_evaluated`, `records_purged`, `tombstones_created`, `holds_honored` | Non-sensitive aggregate counts from the authoritative owner operation. |
+| `failure_code` | Nullable safe failure or manual-escalation category without exception details. |
+| `created_at` | Immutable UTC insertion instant for the execution evidence. |
+
 ## Owner `care` (`mentalbridge_care.public`)
 
 The MB-88 assessment/profile tables and MB-271 support-routing tables below are executable Liquibase-owned structures in the Care database's default `public` schema. Later intervention, grant, and follow-up entries in this section remain conceptual until their owner migrations are added.

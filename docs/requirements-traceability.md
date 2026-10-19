@@ -36,13 +36,13 @@ and frontend route integration remains in its own lane. The Realtime/MongoDB own
 remains the unchanged appointment baseline. See the
 [MB-685 evidence](story-mb-685-direct-chat-evidence.md).
 
-MB-673 (2026-10-19) delivers ADMIN data retention and deletion execution
-governance with audit-safe evidence. Identity coordinates deletion requests and
-enforces account/audit DB retention, while each owner service governs its own
-domain data. No cross-service direct DB access or universal hard-delete button
-is implemented. Features include bounded retries, fail-closed hold enforcement,
-minimized tombstone hashes, explicit unavailability for unsupported
-capabilities, and no raw journals, assessments, chat, or secrets. Evidence:
+MB-673 (2026-10-20) delivers the ADMIN retention policy view, an authoritative
+30-day Identity report-artifact sweep, bounded failed/stale execution recovery,
+and fail-closed governance over any existing minimized deletion rows. Identity
+does not query owner databases or fabricate completion. Production deletion
+request intake/fan-out and authoritative completion facts from Care,
+Consultation, Journal AI, Community, and Content remain deferred because no
+approved runtime contracts or producers/consumers exist. Evidence:
 [MB-673 evidence](evidence/mb-673-retention-deletion-governance-evidence.md).
 
 MB-623: the online consultation closure uses

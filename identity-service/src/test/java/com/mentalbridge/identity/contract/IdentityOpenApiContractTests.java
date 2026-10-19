@@ -115,7 +115,7 @@ class IdentityOpenApiContractTests {
 			Map.entry("PUT /api/v1/admin/platform-report-schedules/{scheduleId}", Set.of("200", "400", "401", "403", "404", "412")),
 			Map.entry("DELETE /api/v1/admin/platform-report-schedules/{scheduleId}", Set.of("204", "400", "401", "403", "404", "412")),
 			Map.entry("GET /api/v1/admin/retention/policies", Set.of("200", "401", "403")),
-			Map.entry("POST /api/v1/admin/retention/policies/{policyId}/sweep", Set.of("200", "401", "403", "404", "422")),
+			Map.entry("POST /api/v1/admin/retention/policies/{policyId}/sweep", Set.of("200", "401", "403", "404", "409", "422")),
 			Map.entry("GET /api/v1/admin/retention/deletions", Set.of("200", "401", "403")),
 			Map.entry("POST /api/v1/admin/retention/deletions/{requestId}/retry", Set.of("200", "401", "403", "404", "409", "422")),
 			Map.entry("POST /api/v1/admin/retention/deletions/{requestId}/holds", Set.of("200", "400", "401", "403", "404")),

@@ -83,7 +83,7 @@ Under the MB-583 architecture, `Identity Service` coordinates deletion workflows
 
 ### 3.1 Backend Test Results (`mvnw.cmd test`)
 Executed test suites:
-- `AdminRetentionGovernanceServiceTests` (19 tests)
+- `AdminRetentionGovernanceServiceTests` (23 tests)
 - `AdminRetentionGovernanceControllerTests` (11 tests)
 - `AdminRetentionGovernanceSecuritySliceTests` (5 tests)
 - `RetentionAuditLoggerTransactionTests` (3 tests)
@@ -91,22 +91,22 @@ Executed test suites:
 - `IdentityOpenApiContractTests` (1 test)
 
 ```text
-[INFO] Running com.mentalbridge.identity.retention.AdminRetentionGovernanceControllerTests
-[INFO] Tests run: 11, Failures: 0, Errors: 0, Skipped: 0, Time elapsed: 2.875 s -- in com.mentalbridge.identity.retention.AdminRetentionGovernanceControllerTests
-[INFO] Running com.mentalbridge.identity.retention.AdminRetentionGovernanceSecuritySliceTests
-[INFO] Tests run: 5, Failures: 0, Errors: 0, Skipped: 0, Time elapsed: 5.160 s -- in com.mentalbridge.identity.retention.AdminRetentionGovernanceSecuritySliceTests
-[INFO] Running com.mentalbridge.identity.retention.AdminRetentionGovernanceServiceTests
-[INFO] Tests run: 19, Failures: 0, Errors: 0, Skipped: 0, Time elapsed: 0.445 s -- in com.mentalbridge.identity.retention.AdminRetentionGovernanceServiceTests
-[INFO] Running com.mentalbridge.identity.retention.RetentionAuditLoggerTransactionTests
-[INFO] Tests run: 3, Failures: 0, Errors: 0, Skipped: 0, Time elapsed: 0.109 s -- in com.mentalbridge.identity.retention.RetentionAuditLoggerTransactionTests
-[INFO] Running com.mentalbridge.identity.retention.RetentionExecutionRecorderTransactionTests
-[INFO] Tests run: 3, Failures: 0, Errors: 0, Skipped: 0, Time elapsed: 0.098 s -- in com.mentalbridge.identity.retention.RetentionExecutionRecorderTransactionTests
 [INFO] Running com.mentalbridge.identity.contract.IdentityOpenApiContractTests
 [INFO] Tests run: 1, Failures: 0, Errors: 0, Skipped: 0, Time elapsed: 0.280 s -- in com.mentalbridge.identity.contract.IdentityOpenApiContractTests
+[INFO] Running com.mentalbridge.identity.retention.AdminRetentionGovernanceControllerTests
+[INFO] Tests run: 11, Failures: 0, Errors: 0, Skipped: 0, Time elapsed: 2.601 s -- in com.mentalbridge.identity.retention.AdminRetentionGovernanceControllerTests
+[INFO] Running com.mentalbridge.identity.retention.AdminRetentionGovernanceSecuritySliceTests
+[INFO] Tests run: 5, Failures: 0, Errors: 0, Skipped: 0, Time elapsed: 4.727 s -- in com.mentalbridge.identity.retention.AdminRetentionGovernanceSecuritySliceTests
+[INFO] Running com.mentalbridge.identity.retention.AdminRetentionGovernanceServiceTests
+[INFO] Tests run: 23, Failures: 0, Errors: 0, Skipped: 0, Time elapsed: 0.530 s -- in com.mentalbridge.identity.retention.AdminRetentionGovernanceServiceTests
+[INFO] Running com.mentalbridge.identity.retention.RetentionAuditLoggerTransactionTests
+[INFO] Tests run: 3, Failures: 0, Errors: 0, Skipped: 0, Time elapsed: 0.102 s -- in com.mentalbridge.identity.retention.RetentionAuditLoggerTransactionTests
+[INFO] Running com.mentalbridge.identity.retention.RetentionExecutionRecorderTransactionTests
+[INFO] Tests run: 3, Failures: 0, Errors: 0, Skipped: 0, Time elapsed: 0.067 s -- in com.mentalbridge.identity.retention.RetentionExecutionRecorderTransactionTests
 [INFO] 
 [INFO] Results:
 [INFO] 
-[INFO] Tests run: 42, Failures: 0, Errors: 0, Skipped: 0
+[INFO] Tests run: 46, Failures: 0, Errors: 0, Skipped: 0
 [INFO] BUILD SUCCESS
 ```
 
@@ -122,19 +122,22 @@ Key verified test assertions:
 - `RetentionExecutionRecorder.recordFailure` uses `Propagation.REQUIRES_NEW` to ensure failure execution records persist even when the sweep transaction rolls back.
 - Internal exception details are sanitized upon sweep failure to prevent leaking database internals over HTTP.
 - `retryDeletion` strictly validates owner facts: fails closed on empty facts or missing Identity fact (HTTP 422), and rejects retry if Identity is already completed without consuming bounded retry attempts.
+- Retention sweep enforces bounded retries: 3 consecutive failed or stale executions block further automated sweep with HTTP 409 (`RETRY_EXHAUSTED` / `MANUAL_ESCALATION_REQUIRED`).
+- Stale detection via PostgreSQL advisory lock: prior committed `RUNNING` executions without an active transaction advisory lock transition to `STALE` with failure code `PRIOR_EXECUTION_STALE`.
+- Concurrent sweep executions are blocked with HTTP 409 Conflict (`CONCURRENT_SWEEP_RUNNING`).
 - Controller enforces `@PreAuthorize("hasRole('ADMIN')")`, rejecting anonymous callers (4xx) and non-admin roles (403 Forbidden).
 
 ### 3.2 Frontend Unit Tests (`vitest`)
 Executed test suites:
-- `features/retention/components/AdminRetentionGovernance.test.tsx` (10 tests)
+- `features/retention/components/AdminRetentionGovernance.test.tsx` (11 tests)
 - `features/auth/components/AdminWorkspace.test.tsx` (1 test)
 
 ```text
- ✓ features/retention/components/AdminRetentionGovernance.test.tsx (10 tests) 780ms
- ✓ features/auth/components/AdminWorkspace.test.tsx (1 test) 145ms
+ ✓ features/retention/components/AdminRetentionGovernance.test.tsx (11 tests) 999ms
+ ✓ features/auth/components/AdminWorkspace.test.tsx (1 test) 216ms
 
  Test Files  2 passed (2)
-      Tests  11 passed (11)
+      Tests  12 passed (12)
 ```
 
 Verified UI behaviors:

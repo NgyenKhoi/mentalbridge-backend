@@ -809,6 +809,7 @@ paths:
         '401': { $ref: '#/components/responses/UnauthorizedProblem' }
         '403': { $ref: '#/components/responses/ForbiddenProblem' }
         '404': { $ref: '#/components/responses/NotFoundProblem' }
+        '409': { $ref: '#/components/responses/ConflictProblem' }
         '422':
           description: Capability unsupported by owner
           content:
@@ -1437,7 +1438,7 @@ components:
         description: { type: string }
         retentionDays: { type: [integer, 'null'] }
         jobName: { type: string }
-        jobStatus: { type: string, enum: [ACTIVE, IDLE, PARTIALLY_SUPPORTED, UNAVAILABLE, SUCCEEDED, FAILED, RUNNING] }
+        jobStatus: { type: string, enum: [ACTIVE, IDLE, PARTIALLY_SUPPORTED, UNAVAILABLE, SUCCEEDED, FAILED, RUNNING, STALE] }
         automatedExecutionSupported: { type: boolean }
         manualHoldSupported: { type: boolean }
         requiresManualReview: { type: boolean }
