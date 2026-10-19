@@ -19,6 +19,7 @@ import java.time.Instant;
 import java.util.UUID;
 
 import org.junit.jupiter.api.Test;
+import org.junit.jupiter.api.AfterEach;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.boot.test.context.SpringBootTest;
 import org.springframework.boot.webmvc.test.autoconfigure.AutoConfigureMockMvc;
@@ -28,6 +29,7 @@ import org.springframework.http.MediaType;
 import org.springframework.jdbc.core.simple.JdbcClient;
 import org.springframework.security.core.authority.SimpleGrantedAuthority;
 import org.springframework.test.context.bean.override.mockito.MockitoBean;
+import org.springframework.test.context.ActiveProfiles;
 import org.springframework.test.web.servlet.MockMvc;
 import org.springframework.test.web.servlet.request.RequestPostProcessor;
 import org.springframework.transaction.support.TransactionSynchronizationManager;
@@ -47,6 +49,7 @@ import com.mentalbridge.consultation.shared.ApiException;
 		"mentalbridge.consultation.video.api-secret=synthetic-test-secret"
 })
 @AutoConfigureMockMvc
+@ActiveProfiles("test")
 class VideoAccessIntegrationTests extends ConsultationTestProperties {
 
 	@Autowired MockMvc mvc;
@@ -62,6 +65,82 @@ class VideoAccessIntegrationTests extends ConsultationTestProperties {
 	@Autowired com.mentalbridge.consultation.appointment.ChatSessionSettlementService chatSettlement;
 	@Autowired VideoCompletionService completionService;
 	@MockitoBean VideoProvider provider;
+
+	@AfterEach
+	void resetDemoOptIn() { properties.setDemoImmediateAccessEnabled(false); }
+
+	@Test
+	void demoSourceAloneRetainsScheduledJoinUntilOperatorExplicitlyOptsIn() throws Exception {
+		var fixture = fixture(Instant.now().plusSeconds(86400), true, true);
+		mvc.perform(get("/api/v1/appointments/{id}/video-session", fixture.id).with(actor(fixture.user, "USER")))
+				.andExpect(status().isOk()).andExpect(jsonPath("$.phase").value("TOO_EARLY"));
+		mvc.perform(post("/api/v1/appointments/{id}/video-access", fixture.id).with(actor(fixture.user, "USER")))
+				.andExpect(status().isConflict());
+		verifyNoInteractions(provider);
+	}
+
+	@Test
+	void optedInDemoUserBooksNearFutureVideoAndBothAssignedActorsJoinImmediately() throws Exception {
+		properties.setDemoImmediateAccessEnabled(true);
+		var fixture = fixture(Instant.now().plusSeconds(1800), true, true);
+		when(provider.issueToken(anyString(), anyString(), any(), any())).thenReturn("synthetic-access-token");
+		for (var actor : java.util.List.of(actor(fixture.user, "USER"), actor(fixture.specialist, "SPECIALIST"))) {
+			mvc.perform(get("/api/v1/appointments/{id}/video-session", fixture.id).with(actor))
+					.andExpect(status().isOk()).andExpect(jsonPath("$.phase").value("ACTIVE"))
+					.andExpect(jsonPath("$.joinAllowed").value(true));
+			mvc.perform(post("/api/v1/appointments/{id}/video-access", fixture.id).with(actor))
+					.andExpect(status().isOk()).andExpect(jsonPath("$.provider").value("LIVEKIT"));
+		}
+		assertThat(rooms(fixture.id)).isOne();
+		assertThat(credit(fixture)).isEqualTo("HELD");
+		mvc.perform(post("/api/v1/appointments/{id}/video-access", fixture.id).with(actor(UUID.randomUUID(), "USER")))
+				.andExpect(status().isNotFound());
+	}
+
+	@Test
+	void enabledDemoDoesNotGrantPaidOrUnconfirmedAppointmentsEarlyAccess() throws Exception {
+		properties.setDemoImmediateAccessEnabled(true);
+		var paid = fixture();
+		mvc.perform(get("/api/v1/appointments/{id}/video-session", paid.id).with(actor(paid.user, "USER")))
+				.andExpect(status().isOk()).andExpect(jsonPath("$.phase").value("TOO_EARLY"));
+		mvc.perform(post("/api/v1/appointments/{id}/video-access", paid.id).with(actor(paid.user, "USER")))
+				.andExpect(status().isConflict());
+		var requested = fixture(Instant.now().plusSeconds(1800), true, false);
+		mvc.perform(post("/api/v1/appointments/{id}/video-access", requested.id).with(actor(requested.user, "USER")))
+				.andExpect(status().isConflict());
+		assertThat(rooms(requested.id)).isZero();
+		verifyNoInteractions(provider);
+	}
+
+	@Test
+	void demoOptInCannotExtendScheduledEndOrReviveExpiredDemoEntitlement() throws Exception {
+		properties.setDemoImmediateAccessEnabled(true);
+		var fixture = fixture(Instant.now().plusSeconds(1800), true, true);
+		jdbc.sql("update current_service_entitlement set effective_until=now()-interval '1 second',effective_from=now()-interval '1 day' where account_id=:user")
+				.param("user", fixture.user).update();
+		mvc.perform(post("/api/v1/appointments/{id}/video-access", fixture.id).with(actor(fixture.user, "USER")))
+				.andExpect(status().isConflict());
+		setSchedule(fixture.id, Instant.now().minusSeconds(3601));
+		mvc.perform(post("/api/v1/appointments/{id}/video-access", fixture.id).with(actor(fixture.user, "USER")))
+				.andExpect(status().isConflict());
+		verifyNoInteractions(provider);
+	}
+
+	@Test
+	void explicitEarlyDemoEndKeepsFinancialVerificationPendingAndNeverInfersCompletion() throws Exception {
+		properties.setDemoImmediateAccessEnabled(true);
+		var fixture = fixture(Instant.now().plusSeconds(1800), true, true);
+		when(provider.issueToken(anyString(), anyString(), any(), any())).thenReturn("synthetic-access-token");
+		sessions.access(fixture.id, fixture.user, "USER");
+		var response = completionService.confirm(fixture.id, fixture.specialist, "SPECIALIST", 1,
+				"demo-video-end-" + UUID.randomUUID()).response();
+		assertThat(response.appointmentStatus()).isEqualTo("SESSION_ENDED");
+		assertThat(response.verificationState()).isEqualTo("PENDING_VERIFICATION");
+		assertThat(response.completionFactId()).isNull();
+		assertThat(credit(fixture)).isEqualTo("HELD");
+		assertThat(jdbc.sql("select count(*) from specialist_earning where appointment_id=:id").param("id", fixture.id)
+				.query(Long.class).single()).isZero();
+	}
 
 	@Test
 	void bothAssignedRolesUseTheSameOpaqueRoomAndRestrictedProviderBoundary() throws Exception {
@@ -498,24 +577,38 @@ class VideoAccessIntegrationTests extends ConsultationTestProperties {
 	}
 
 	Fixture fixture() throws Exception {
+		return fixture(Instant.now().plusSeconds(86400), false, true);
+	}
+
+	Fixture fixture(Instant start, boolean demo, boolean accept) throws Exception {
 		var user = UUID.randomUUID();
 		var specialist = UUID.randomUUID();
 		var slot = UUID.randomUUID();
-		var start = Instant.now().plusSeconds(86400);
-		jdbc.sql("insert into current_service_entitlement(account_id,package_code,source,source_reference,effective_from,effective_until,policy_version) values(:id,'PLUS','PAID',:ref,now()-interval '1 minute',now()+interval '30 days','service-entitlement-v1')")
-				.param("id", user).param("ref", "video-fixture-" + user).update();
+		jdbc.sql("insert into current_service_entitlement(account_id,package_code,source,source_reference,established_by,effective_from,effective_until,policy_version) values(:id,'PLUS',:source,:ref,:admin,now()-interval '1 minute',now()+interval '30 days','service-entitlement-v1')")
+				.param("id", user).param("source", demo ? "DEMO" : "PAID").param("admin", demo ? UUID.randomUUID() : null)
+				.param("ref", "video-fixture-" + user).update();
 		jdbc.sql("insert into specialist_profile(account_id,display_name,biography,years_experience,timezone,approval_status,submitted_at,reviewed_at,reviewed_by) values(:id,'Synthetic Specialist','Video fixture',5,'UTC','APPROVED',now(),now(),:admin)")
 				.param("id", specialist).param("admin", UUID.randomUUID()).update();
+		jdbc.sql("insert into specialist_profile_support_area(specialist_account_id,support_area) values(:id,'ANXIETY_SYMPTOMS')")
+				.param("id", specialist).update();
+		jdbc.sql("insert into specialist_profile_language(specialist_account_id,language_tag) values(:id,'vi')")
+				.param("id", specialist).update();
 		jdbc.sql("insert into availability_slot(id,specialist_account_id,start_at,end_at,timezone,modality,idempotency_key,created_at,updated_at) values(:id,:specialist,:start,:end,'UTC','IN_APP_VIDEO',:key,now(),now())")
 				.param("id", slot).param("specialist", specialist).param("start", Timestamp.from(start))
 				.param("end", Timestamp.from(start.plusSeconds(3600))).param("key", "video-slot-" + slot).update();
+		if (demo) {
+			mvc.perform(get("/api/v1/bookable-slots").with(actor(user, "USER")))
+					.andExpect(status().isOk()).andExpect(jsonPath("$.items[?(@.id=='" + slot + "')]").isNotEmpty());
+			mvc.perform(get("/api/v1/specialists/{id}", specialist).with(actor(user, "USER")))
+					.andExpect(status().isOk()).andExpect(jsonPath("$.selectableSlots[?(@.id=='" + slot + "')]").isNotEmpty());
+		}
 		var result = mvc.perform(post("/api/v1/appointments").with(actor(user, "USER"))
 				.header("Idempotency-Key", "video-appointment-" + UUID.randomUUID())
 				.contentType(MediaType.APPLICATION_JSON).content("{\"slotId\":\"%s\",\"modality\":\"IN_APP_VIDEO\"}".formatted(slot)))
 				.andExpect(status().isCreated()).andReturn();
 		var body = json.readTree(result.getResponse().getContentAsByteArray());
 		var id = UUID.fromString(body.get("id").asText());
-		decisions.accept(specialist, id, 0, "accept-video-" + UUID.randomUUID());
+		if (accept) decisions.accept(specialist, id, 0, "accept-video-" + UUID.randomUUID());
 		return new Fixture(id, user, specialist, UUID.fromString(body.get("heldCreditId").asText()));
 	}
 

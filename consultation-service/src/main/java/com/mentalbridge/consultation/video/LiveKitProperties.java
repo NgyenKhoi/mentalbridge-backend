@@ -11,6 +11,7 @@ import org.springframework.boot.context.properties.ConfigurationProperties;
 public class LiveKitProperties {
 
 	private boolean enabled;
+	private boolean demoImmediateAccessEnabled;
 	private String url = "";
 	private String apiKey = "";
 	private String apiSecret = "";
@@ -18,6 +19,8 @@ public class LiveKitProperties {
 
 	public boolean isEnabled() { return enabled; }
 	public void setEnabled(boolean enabled) { this.enabled = enabled; }
+	public boolean isDemoImmediateAccessEnabled() { return demoImmediateAccessEnabled; }
+	public void setDemoImmediateAccessEnabled(boolean enabled) { this.demoImmediateAccessEnabled = enabled; }
 	public String getUrl() { return url; }
 	public void setUrl(String url) { this.url = url; }
 	public String getApiKey() { return apiKey; }
