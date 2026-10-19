@@ -12,6 +12,7 @@ import {
 } from '../dist/user-notifications/user-notification.types.js';
 import { CareUserNotificationProjector } from '../dist/user-notifications/care-user-notification.consumer.js';
 import { AccountLifecycleProjector } from '../dist/notification-preferences/account-lifecycle.consumer.js';
+import { verifyAccountLifecycleRecovery } from './verify-account-lifecycle-recovery.mjs';
 
 const [owner, broker, expectedCount] = process.argv.slice(2);
 const expected = Number(expectedCount);
@@ -28,7 +29,7 @@ const container = await new GenericContainer('postgres:17-alpine')
   .withWaitStrategy(Wait.forLogMessage(/database system is ready to accept connections/, 2))
   .start();
 const databaseUrl = `postgresql://postgres:test-only@${container.getHost()}:${container.getMappedPort(5432)}/notification_precision`;
-const pool = new Pool({ connectionString: databaseUrl });
+const pool = new Pool({ connectionString: databaseUrl, idleTimeoutMillis: 1000 });
 const database = new DatabaseService({
   DATABASE_URL: databaseUrl,
   DB_POOL_MAX: 3,
@@ -103,6 +104,8 @@ try {
       'ACCOUNT_ACTIVATED',
       'ACCOUNT_RESTORED',
     ]);
+    await consumer.disconnect();
+    await verifyAccountLifecycleRecovery(kafka, broker, databaseUrl, database, pool, facts[0]);
   }
   console.log(
     `Verified ${owner}: PostgreSQL outbox → relay → Kafka → strict Content validation → ${expected} durable inbox items, replay dedupe and timestamp rejection`,

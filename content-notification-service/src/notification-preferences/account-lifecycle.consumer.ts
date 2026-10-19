@@ -15,7 +15,10 @@ import {
 } from '../application.tokens.js';
 import type { ServiceConfiguration } from '../configuration/configuration.js';
 import type { NotificationPreferenceService } from './notification-preference.service.js';
-import { UserNotificationRepository } from '../user-notifications/user-notification.repository.js';
+import {
+  UserNotificationDedupeConflictError,
+  UserNotificationRepository,
+} from '../user-notifications/user-notification.repository.js';
 import {
   IdentityUserNotificationFactSchema,
   type IdentityUserNotificationFact,
@@ -28,6 +31,15 @@ export const ACCOUNT_PREFERENCE_DEAD_LETTER_TOPIC =
 
 const ACCOUNT_LIFECYCLE_GROUP = 'content-notification-account-preferences-v1';
 const MAX_HANDLER_ATTEMPTS = 3;
+
+class AccountLifecyclePersistenceUnavailableError extends Error {
+  readonly retriable = true;
+
+  constructor() {
+    super('Account lifecycle persistence is unavailable');
+    this.name = 'AccountLifecyclePersistenceUnavailableError';
+  }
+}
 
 const AccountRegisteredEventSchema = z
   .object({
@@ -125,7 +137,10 @@ export class AccountLifecycleConsumer implements OnModuleInit, OnApplicationShut
         .filter(Boolean),
       logLevel: logLevel.NOTHING,
     });
-    this.consumer = kafka.consumer({ groupId: ACCOUNT_LIFECYCLE_GROUP });
+    this.consumer = kafka.consumer({
+      groupId: ACCOUNT_LIFECYCLE_GROUP,
+      retry: { initialRetryTime: 1000, maxRetryTime: 30_000, retries: 5 },
+    });
     this.deadLetters = kafka.producer({ allowAutoTopicCreation: false, idempotent: true });
     await Promise.all([this.consumer.connect(), this.deadLetters.connect()]);
     await this.consumer.subscribe({ topic: ACCOUNT_LIFECYCLE_TOPIC, fromBeginning: true });
@@ -181,21 +196,18 @@ export class AccountLifecycleConsumer implements OnModuleInit, OnApplicationShut
       try {
         await this.projector.project(validated.data);
         return;
-      } catch {
+      } catch (error) {
+        if (error instanceof UserNotificationDedupeConflictError) {
+          await this.deadLetter(topic, partition, offset, key, value, 'INVALID_EVENT');
+          return;
+        }
         if (attempt < MAX_HANDLER_ATTEMPTS) {
           await wait(100 * 2 ** (attempt - 1));
           continue;
         }
       }
     }
-    await this.deadLetter(
-      topic,
-      partition,
-      offset,
-      key,
-      Buffer.from(JSON.stringify(validated.data)),
-      'PREFERENCE_PROJECTION_FAILED',
-    );
+    throw new AccountLifecyclePersistenceUnavailableError();
   }
 
   private async deadLetter(
@@ -204,7 +216,7 @@ export class AccountLifecycleConsumer implements OnModuleInit, OnApplicationShut
     offset: string,
     key: Buffer | null,
     value: Buffer | null,
-    errorCode: string,
+    errorCode: 'INVALID_JSON' | 'INVALID_EVENT',
   ): Promise<void> {
     if (!this.deadLetters) throw new Error('Account lifecycle dead-letter producer is unavailable');
     const digest = createHash('sha256')

@@ -158,7 +158,7 @@ jobs:
           ./mvnw -B -Dtest=CommunityNotificationRecoveryCrossServiceIT test
 
   user-notification-precision:
-    name: Cross-service / User notification precision
+    name: Cross-service / User notification reliability
     runs-on: ubuntu-24.04
     steps:
       - uses: actions/checkout@v4
@@ -176,7 +176,7 @@ jobs:
       - name: Install and build Content/Notification
         working-directory: content-notification-service
         run: npm ci && npm run build
-      - name: Verify Care and Identity timestamp delivery
+      - name: Verify timestamp delivery and Identity database recovery
         env:
           SPRINGDOTENV_ENABLED: 'false'
         run: |

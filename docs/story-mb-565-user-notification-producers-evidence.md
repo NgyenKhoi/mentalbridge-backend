@@ -66,6 +66,27 @@ materially different envelope timestamp is still rejected. The Content-owned
 test worker is `scripts/verify-user-notification-precision.mjs`; the required
 cross-service CI lane builds Content before running both owner tests.
 
+### Review regression: Identity persistence outage
+
+The lifecycle consumer parks only invalid JSON/schema records and conflicting
+logical identities. A valid fact that fails persistence after three local
+attempts throws a sanitized retryable error. KafkaJS retries/restarts with a
+1s initial delay, exponential backoff capped at 30s and five attempts per
+cycle; it cannot advance the failed offset before the transaction succeeds.
+Preference initialization for registered USER/SPECIALIST accounts follows the
+same recovery rule. No raw fact is copied into diagnostics or a second store.
+
+`verify-account-lifecycle-recovery.mjs`, invoked by Identity's required
+cross-service test, denies new connections to the disposable Content database
+after the initial replay commits. It observes more than three actual database
+failures, asserts the Kafka group offset is unchanged and the DLQ empty, then
+restores database access and waits for exactly one durable notification.
+It sends a new-envelope replay through Kafka, verifies SPECIALIST exclusion
+and the existing cancelled preference outcome, then verifies a malformed fact
+advances only after digest-only parking. Focused consumer unit tests also
+cover repeated storage failure, preference initialization, recovery, malformed
+payload privacy and poison identity conflict classification.
+
 The final branch is verified with each affected module's complete gate plus
 focused contract, outbox, integration, replay, preference, and browser parsing
 regressions. Exact commands and counts are recorded in the pull requests and

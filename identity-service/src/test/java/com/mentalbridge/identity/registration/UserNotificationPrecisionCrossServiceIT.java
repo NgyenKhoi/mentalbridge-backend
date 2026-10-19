@@ -109,7 +109,7 @@ class UserNotificationPrecisionCrossServiceIT extends IdentityTestProperties {
 				owner, broker, Integer.toString(expected)).directory(directory.toFile())
 				.redirectErrorStream(true).redirectOutput(log.toFile()).start();
 		try {
-			assertThat(process.waitFor(120, TimeUnit.SECONDS)).as("Content verification timeout").isTrue();
+			assertThat(process.waitFor(180, TimeUnit.SECONDS)).as("Content verification timeout").isTrue();
 			assertThat(process.exitValue()).withFailMessage(Files.readString(log)).isZero();
 		}
 		finally {

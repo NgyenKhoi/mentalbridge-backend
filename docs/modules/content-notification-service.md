@@ -39,6 +39,7 @@ and area wording for the directory and forbids automatic safety email.
 - MB-660 adds owner-scoped bookmark and Bingo APIs. Bookmarks bind to immutable publication snapshots. Bingo item reads expose separate self-confirmed and Content-verified state; only the former is stored on the board, and state-changing writes require `If-Match`.
 - Runtime never scrapes or translates third-party sources. Offline/admin ingestion records source URL, retrieval instant, SHA-256 content hash, version label, and explicit review status before reviewed Vietnamese content is published.
 - MB-617 consumes only MB-580's minimized, versioned Community interaction fact. The consumer transaction persists either a delivered inbox row or a cancelled preference outcome keyed by the source `eventId`; malformed facts are parked as digest-only DLQ metadata, while transient persistence failures leave the Kafka offset retryable. Community commands never call this service synchronously.
+- MB-565 Identity notification and account-preference projections keep their Kafka offset uncommitted during storage outages. Three local attempts are followed by a sanitized retryable KafkaJS failure with bounded exponential backoff and consumer restart. Only malformed facts or conflicting logical identities go to the digest-only DLQ. Recovery materializes the original fact once; changed transport IDs never bypass logical deduplication or preferences.
 
 ## Ordered tasks
 
