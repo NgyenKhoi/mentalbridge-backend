@@ -133,6 +133,11 @@ public class AdminAccountService {
 		outboxEvents.save(new OutboxEventEntity("identity.account.state-changed", account.id(), account.version(),
 				correlationId, Map.of("accountId", account.id().toString(), "status", account.status().name(), "role", account.role().name(),
 						"reasonCode", request.reasonCode().name()), now));
+		if (account.status() == AccountStatus.ACTIVE && account.role() == RoleCode.USER) {
+			outboxEvents.save(new OutboxEventEntity("identity.user-notification.fact", account.id(), account.version(),
+					correlationId, Map.of("recipientId", account.id().toString(), "actorType", account.role().name(),
+							"factType", "ACCOUNT_RESTORED", "availableAt", now.toString()), now));
+		}
 		return response(account);
 	}
 
