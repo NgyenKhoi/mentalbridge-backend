@@ -78,11 +78,11 @@ describe('Realtime MongoDB, Redis and Socket.IO integration', { concurrent: fals
       new GenericContainer('mongo:8.0')
         .withCommand(['--setParameter', 'enableTestCommands=1'])
         .withExposedPorts(27017)
-        .withWaitStrategy(Wait.forLogMessage(/Waiting for connections/))
+        .withWaitStrategy(Wait.forListeningPorts())
         .start(),
       new GenericContainer('redis:7.4-alpine')
         .withExposedPorts(6379)
-        .withWaitStrategy(Wait.forLogMessage(/Ready to accept connections/))
+        .withWaitStrategy(Wait.forListeningPorts())
         .start(),
     ]);
 
