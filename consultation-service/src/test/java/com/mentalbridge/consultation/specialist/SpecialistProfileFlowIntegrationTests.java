@@ -2,7 +2,6 @@ package com.mentalbridge.consultation.specialist;
 
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.hamcrest.Matchers.hasItem;
-import static org.mockito.Mockito.when;
 import static org.springframework.security.test.web.servlet.request.SecurityMockMvcRequestPostProcessors.jwt;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.get;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.post;
@@ -14,6 +13,7 @@ import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.
 import java.time.Clock;
 import java.time.Instant;
 import java.time.OffsetDateTime;
+import java.time.ZoneId;
 import java.time.ZoneOffset;
 import java.util.UUID;
 import java.util.concurrent.atomic.AtomicReference;
@@ -22,32 +22,42 @@ import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.boot.test.context.SpringBootTest;
+import org.springframework.boot.test.context.TestConfiguration;
 import org.springframework.boot.webmvc.test.autoconfigure.AutoConfigureMockMvc;
 import org.springframework.context.annotation.Import;
+import org.springframework.context.annotation.Bean;
+import org.springframework.context.annotation.Primary;
 import org.springframework.http.MediaType;
 import org.springframework.jdbc.core.simple.JdbcClient;
 import org.springframework.security.core.authority.SimpleGrantedAuthority;
 import org.springframework.test.web.servlet.MockMvc;
 import org.springframework.test.web.servlet.request.RequestPostProcessor;
-import org.springframework.test.context.bean.override.mockito.MockitoBean;
 
 import com.mentalbridge.consultation.ConsultationTestProperties;
 import com.mentalbridge.consultation.TestcontainersConfiguration;
 
-@Import(TestcontainersConfiguration.class)
+@Import({ TestcontainersConfiguration.class, SpecialistProfileFlowIntegrationTests.AuditClockConfiguration.class })
 @SpringBootTest
 @AutoConfigureMockMvc
 class SpecialistProfileFlowIntegrationTests extends ConsultationTestProperties {
 
 	@Autowired MockMvc mvc;
 	@Autowired JdbcClient jdbc;
-	@MockitoBean Clock clock;
+	@Autowired AuditClock clock;
 
 	@BeforeEach
 	void orderProfileCommandsWithDistinctAuditInstants() {
-		var now = new AtomicReference<>(Instant.now());
-		when(clock.instant()).thenAnswer(ignored -> now.getAndUpdate(value -> value.plusMillis(1)));
-		when(clock.getZone()).thenReturn(ZoneOffset.UTC);
+		clock.reset(Instant.now());
+	}
+
+	@Test
+	void auditClockSuppliesDistinctInstantsToConcurrentSchedulerAndRequestReaders() {
+		var instants = java.util.stream.IntStream.range(0, 1000).parallel()
+				.mapToObj(ignored -> clock.instant()).collect(java.util.stream.Collectors.toSet());
+		assertThat(instants).hasSize(1000);
+		assertThat(clock.getZone()).isEqualTo(ZoneOffset.UTC);
+		assertThat(clock.withZone(ZoneId.of("Asia/Ho_Chi_Minh")).getZone())
+				.isEqualTo(ZoneId.of("Asia/Ho_Chi_Minh"));
 	}
 
 	@Test
@@ -359,5 +369,24 @@ class SpecialistProfileFlowIntegrationTests extends ConsultationTestProperties {
 				"supportAreas":["DEPRESSIVE_SYMPTOMS","ANXIETY_SYMPTOMS"],\
 				"languages":["vi","en"],"yearsOfExperience":5,"timezone":"Asia/Ho_Chi_Minh"}
 				""".formatted(displayName);
+	}
+
+	@TestConfiguration(proxyBeanMethods = false)
+	static class AuditClockConfiguration {
+		@Bean
+		@Primary
+		AuditClock profileAuditTestClock() { return new AuditClock(); }
+	}
+
+	static final class AuditClock extends Clock {
+		private final AtomicReference<Instant> now;
+		private final ZoneId zone;
+
+		AuditClock() { this(new AtomicReference<>(Instant.now()), ZoneOffset.UTC); }
+		private AuditClock(AtomicReference<Instant> now, ZoneId zone) { this.now = now; this.zone = zone; }
+		void reset(Instant instant) { now.set(instant); }
+		@Override public ZoneId getZone() { return zone; }
+		@Override public Clock withZone(ZoneId zone) { return new AuditClock(now, zone); }
+		@Override public Instant instant() { return now.getAndUpdate(value -> value.plusMillis(1)); }
 	}
 }
