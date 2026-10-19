@@ -88,8 +88,9 @@ jobs:
           - service: realtime-service
             node-version: '24'
             integration: true
-            # Ubuntu 26.04/Docker 29 intermittently stops MongoDB 8 during
-            # Testcontainers startup while ubuntu-latest is being migrated.
+            # Pin during the ubuntu-latest migration; see
+            # https://github.com/actions/runner-images/issues/14748.
+            # Ubuntu 26.04/Docker 29 stops MongoDB 8 during Testcontainers startup.
             runner: ubuntu-24.04
     steps:
       - uses: actions/checkout@v4
