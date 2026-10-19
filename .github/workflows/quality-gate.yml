@@ -72,7 +72,7 @@ jobs:
 
   node:
     name: Node / ${{ matrix.service }}
-    runs-on: ubuntu-latest
+    runs-on: ${{ matrix.runner }}
     strategy:
       fail-fast: false
       matrix:
@@ -80,12 +80,17 @@ jobs:
           - service: journal-ai-service
             node-version: '22'
             integration: true
+            runner: ubuntu-latest
           - service: content-notification-service
             node-version: '22'
             integration: true
+            runner: ubuntu-latest
           - service: realtime-service
             node-version: '24'
             integration: true
+            # Ubuntu 26.04/Docker 29 intermittently stops MongoDB 8 during
+            # Testcontainers startup while ubuntu-latest is being migrated.
+            runner: ubuntu-24.04
     steps:
       - uses: actions/checkout@v4
       - uses: actions/setup-node@v4
