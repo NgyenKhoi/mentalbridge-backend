@@ -27,6 +27,7 @@ describe('configuration', () => {
     expect(configuration.APPOINTMENT_REMINDER_ENABLED).toBe(false);
     expect(configuration.CONTENT_APPOINTMENT_CONSUMER_ENABLED).toBe(false);
     expect(configuration.CONTENT_COMMUNITY_INTERACTION_CONSUMER_ENABLED).toBe(false);
+    expect(configuration.CONTENT_CARE_USER_NOTIFICATION_CONSUMER_ENABLED).toBe(false);
     expect(configuration.CONSULTATION_SERVICE_URL).toBe('http://localhost:8082');
     expect(configuration.IDENTITY_SERVICE_URL).toBe('http://localhost:8080');
   });

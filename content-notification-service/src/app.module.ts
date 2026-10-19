@@ -41,6 +41,7 @@ import {
   APPOINTMENT_TRUTH_CLIENT_TOKEN,
   DELIVERY_ADDRESS_CLIENT_TOKEN,
   COMMUNITY_INTERACTION_DEAD_LETTER_PUBLISHER_TOKEN,
+  CARE_USER_NOTIFICATION_DEAD_LETTER_PUBLISHER_TOKEN,
 } from './application.tokens.js';
 import type { ServiceConfiguration } from './configuration/configuration.js';
 import { DatabaseService, type ReadinessProbe } from './database/database.service.js';
@@ -122,6 +123,12 @@ import {
   KafkaCommunityInteractionDeadLetterPublisher,
 } from './community-notifications/community-interaction.consumer.js';
 import { CommunityNotificationRepository } from './community-notifications/community-notification.repository.js';
+import {
+  CareUserNotificationConsumer,
+  CareUserNotificationProjector,
+  KafkaCareUserNotificationDeadLetterPublisher,
+} from './user-notifications/care-user-notification.consumer.js';
+import { UserNotificationRepository } from './user-notifications/user-notification.repository.js';
 import {
   CONTENT_ADMIN_AUDIT_PUBLISHER_TOKEN,
   KafkaContentAdminAuditPublisher,
@@ -320,6 +327,13 @@ export const createAppModule = (
         useClass: KafkaCommunityInteractionDeadLetterPublisher,
       },
       CommunityInteractionConsumer,
+      UserNotificationRepository,
+      CareUserNotificationProjector,
+      {
+        provide: CARE_USER_NOTIFICATION_DEAD_LETTER_PUBLISHER_TOKEN,
+        useClass: KafkaCareUserNotificationDeadLetterPublisher,
+      },
+      CareUserNotificationConsumer,
       JwtStrategy,
       {
         provide: RolesGuard,

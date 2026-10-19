@@ -1433,6 +1433,9 @@ components:
           COMMUNITY_COMMENT,
           COMMUNITY_REPLY,
           COMMUNITY_REACTION,
+          ASSESSMENT_RESULT_AVAILABLE,
+          SUPPORT_GUIDE_AVAILABLE,
+          ACCOUNT_STATUS,
         ]
     NotificationPriority:
       type: string
@@ -1449,6 +1452,7 @@ components:
           OPEN_ASSESSMENTS,
           OPEN_RESOURCE,
           OPEN_COMMUNITY_POST,
+          OPEN_SUPPORT_GUIDE,
         ]
     NotificationAction:
       type: object

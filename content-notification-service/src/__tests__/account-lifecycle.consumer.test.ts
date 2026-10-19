@@ -24,7 +24,10 @@ const event = (actorType: 'USER' | 'SPECIALIST'): AccountRegisteredEvent => ({
 describe('AccountLifecycleProjector', () => {
   it('initializes the default preference aggregate for a registered user', async () => {
     const initializeForAccount = vi.fn().mockResolvedValue(undefined);
-    const projector = new AccountLifecycleProjector({ initializeForAccount } as never);
+    const projector = new AccountLifecycleProjector(
+      { initializeForAccount } as never,
+      { materialize: vi.fn() } as never,
+    );
 
     await expect(projector.project(event('USER'))).resolves.toBeUndefined();
 
@@ -37,7 +40,10 @@ describe('AccountLifecycleProjector', () => {
 
   it('initializes bounded notification preferences for specialist accounts', async () => {
     const initializeForAccount = vi.fn().mockResolvedValue(undefined);
-    const projector = new AccountLifecycleProjector({ initializeForAccount } as never);
+    const projector = new AccountLifecycleProjector(
+      { initializeForAccount } as never,
+      { materialize: vi.fn() } as never,
+    );
 
     await expect(projector.project(event('SPECIALIST'))).resolves.toBeUndefined();
 

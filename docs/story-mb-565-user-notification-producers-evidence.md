@@ -1,0 +1,55 @@
+# MB-565 assessment, resource, and system notification producer evidence
+
+## Delivered boundary
+
+MB-565 connects three bounded USER notification sources to the existing
+Content/Notification inbox without moving source authority:
+
+| Owner fact | Versioned message | Content kind | Preference group | Approved action |
+| --- | --- | --- | --- | --- |
+| Authenticated assessment result committed | `care.user-notification.fact` / `ASSESSMENT_RESULT_AVAILABLE` | `ASSESSMENT_RESULT_AVAILABLE` | `screeningReassessment` | `OPEN_ASSESSMENTS` → `/assessments` |
+| First SupportGuide committed | `care.user-notification.fact` / `SUPPORT_GUIDE_AVAILABLE` | `SUPPORT_GUIDE_AVAILABLE` | `resourceSystem` | `OPEN_SUPPORT_GUIDE` → `/support-guides/{supportGuideId}` |
+| USER email verification committed | `identity.user-notification.fact` / `ACCOUNT_ACTIVATED` | `ACCOUNT_STATUS` | `resourceSystem` | none |
+| USER account restoration committed | `identity.user-notification.fact` / `ACCOUNT_RESTORED` | `ACCOUNT_STATUS` | `resourceSystem` | none |
+
+Care inserts its facts into `outbox_event` in the same transaction as the
+assessment or SupportGuide. Its relay waits for Kafka acknowledgement before
+marking a fact published and leaves failed sends retryable. Identity reuses its
+existing transactional lifecycle outbox and relay. Anonymous assessments and
+SPECIALIST account lifecycle changes do not produce these USER notifications.
+
+The schemas contain only recipient, closed fact type, exact aggregate identity
+and version, correlation metadata, and UTC availability time. They exclude
+assessment answers, scores, bands, safety state, resource text, account email,
+admin reason text, credentials, care data, and provider payloads.
+
+Content validates envelope-to-payload identity and date bindings before any
+write. It owns user-facing copy, preference evaluation, safe deep links,
+delivery state, retention, and deduplication. The logical identity
+`<fact-type>:<aggregate-id>:<aggregate-version>` and a semantic fingerprint
+exclude transport message and correlation IDs, so replaying the same fact in a
+new Kafka envelope cannot create another inbox item. A conflicting payload for
+the same logical identity fails closed. Disabled preferences create only a
+`CANCELLED` dedupe record and never become visible through the inbox.
+
+## Contract and persistence artifacts
+
+- `contracts/events/care/user-notification-fact-v1.schema.json`
+- `contracts/events/identity/user-notification-fact-v1.schema.json`
+- `contracts/openapi/content-notification-service.yaml`
+- `content-notification-service/migrations/25_add_general_user_notification_producers.sql`
+- `docs/domain-model/canonical-entities.md`
+- `docs/database/postgresql-field-data-dictionary.md`
+
+The migration is forward-only and expands the existing notification category
+and action constraints. It adds no cross-service foreign key or producer-owned
+copy. Older application versions continue to read existing rows; deployment
+must apply the Content migration before enabling the new Care relay and Content
+consumer.
+
+## Verification
+
+The final branch is verified with each affected module's complete gate plus
+focused contract, outbox, integration, replay, preference, and browser parsing
+regressions. Exact commands and counts are recorded in the pull requests and
+their required exact-head CI runs.

@@ -35,6 +35,16 @@ It carries only the account identifier, current status, immutable actor role,
 closed reason code, correlation metadata, and aggregate version. Repeated
 same-state commands emit no duplicate fact.
 
+MB-565 adds the implemented `events/care/user-notification-fact-v1.schema.json`
+and `events/identity/user-notification-fact-v1.schema.json` contracts. Care
+publishes only authenticated assessment-result and newly persisted SupportGuide
+availability facts on `mentalbridge.care.user-notification.v1`; Identity
+publishes only USER activation/restoration facts on its existing account
+lifecycle topic. Both contracts are closed, identity-bound, and exclude
+assessment answers/scores, safety flags, resource copy, email addresses, and
+provider payloads. Content/Notification owns rendering, preference enforcement,
+durable delivery state, and logical replay deduplication.
+
 `care-service-v1.yaml` remains the unchanged v1 source for coarse historical
 SupportEvaluation behavior. `care-support-evaluation-v2.yaml` is the additive
 source for `/api/v2/support-evaluations`; consumers select the API version by

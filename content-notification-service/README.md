@@ -7,6 +7,19 @@ MB-617 adds an asynchronous consumer for the minimized
 reply, and first-reaction inbox entries without reading Community content or
 introducing any synchronous Community-to-Notification dependency.
 
+MB-565 wires bounded assessment, SupportGuide, and account facts into the same
+durable USER notification center. Care emits authenticated result availability
+and newly persisted guide availability through its transactional outbox;
+Identity emits USER activation/restoration through its existing outbox topic.
+Content strictly validates the versioned contracts, owns generic Vietnamese
+copy and safe internal actions, applies `screeningReassessment` or
+`resourceSystem` preferences, and persists either `DELIVERED` or `CANCELLED`.
+Logical `<fact-type>:<aggregate-id>:<aggregate-version>` identities collapse
+retries even when a transport envelope is replayed with a different message ID.
+Malformed Care facts are parked as digest-only metadata. Enable the Care path
+with `CONTENT_CARE_USER_NOTIFICATION_CONSUMER_ENABLED=true`; Kafka remains
+disabled by default for local development.
+
 ## Current capability
 
 MB-564 materializes owner-visible Journal and emotion reminders plus factual

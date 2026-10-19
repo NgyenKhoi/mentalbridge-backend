@@ -23,6 +23,7 @@ and area wording for the directory and forbids automatic safety email.
 | Notification history | Persist list/detail/read/delete state | Bounded cursor pagination; user sees own records only; read/delete idempotent; retention semantics explicit |
 | Domain notification | Consume minimized facts, select versioned template and create notification | Duplicate message creates one logical notification; replay policy prevents repeated external sends |
 | Community interaction notification | Consume `mentalbridge.community.interaction.v1` and create generic owner-scoped inbox copy | Strict v1 validation; per-event dedupe; in-app and Community-group preference enforcement; removed targets resolve through Community's safe unavailable state; no post/comment body or display identity crosses the boundary |
+| Assessment, SupportGuide, and account notification | Consume the closed Care/Identity MB-565 facts and create generic USER inbox copy | Content owns copy, safe action mapping, preference enforcement, delivery state, and logical source/version dedupe; producer payloads exclude answers, scores, safety flags, resource copy, email, and provider data |
 | Provider delivery | Send through bounded adapter and track every attempt | Domain outcome independent; transient retry honors provider signals; terminal failure visible; no secrets/sensitive body in logs |
 | Live delivery | Publish `NotificationCreated` for Realtime | Durable record/outbox atomic; payload minimal; reconnect relies on REST history, not guaranteed socket delivery |
 

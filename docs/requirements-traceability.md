@@ -517,3 +517,11 @@ ActionOccurrence`, with action types `RESOURCE`, `JOURNAL`,
   during the snapshotted slot. ADR 0017 approves `IN_APP_VIDEO` as the only
   second v2 mode, still gated by its contract and implementation evidence.
 - 2026-08-22: supersede the Express-only ADR 0003 choice with NestJS 11 for all three Node.js services through ADR 0006.
+- 2026-10-19: MB-565 connects bounded Care and Identity lifecycle facts to the
+  existing USER notification center. Care publishes authenticated assessment
+  result and first-persisted SupportGuide availability through a transactional
+  outbox; Identity publishes USER activation and restoration through its
+  existing lifecycle outbox. Content validates the versioned minimized facts,
+  applies the existing preference groups, owns safe Vietnamese copy and exact
+  internal actions, and deduplicates by producer fact identity/version. See
+  [MB-565 evidence](story-mb-565-user-notification-producers-evidence.md).
