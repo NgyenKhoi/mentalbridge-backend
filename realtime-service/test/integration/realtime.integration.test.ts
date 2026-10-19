@@ -74,17 +74,15 @@ describe('Realtime MongoDB, Redis and Socket.IO integration', { concurrent: fals
   beforeEach(() => evidenceRecords.splice(0));
 
   beforeAll(async () => {
-    [mongoContainer, redisContainer] = await Promise.all([
-      new GenericContainer('mongo:8.0')
-        .withCommand(['--setParameter', 'enableTestCommands=1'])
-        .withExposedPorts(27017)
-        .withWaitStrategy(Wait.forListeningPorts())
-        .start(),
-      new GenericContainer('redis:7.4-alpine')
-        .withExposedPorts(6379)
-        .withWaitStrategy(Wait.forListeningPorts())
-        .start(),
-    ]);
+    mongoContainer = await new GenericContainer('mongo:8.0')
+      .withCommand(['--setParameter', 'enableTestCommands=1'])
+      .withExposedPorts(27017)
+      .withWaitStrategy(Wait.forListeningPorts())
+      .start();
+    redisContainer = await new GenericContainer('redis:7.4-alpine')
+      .withExposedPorts(6379)
+      .withWaitStrategy(Wait.forListeningPorts())
+      .start();
 
     const mongoUri = `mongodb://${mongoContainer.getHost()}:${String(mongoContainer.getMappedPort(27017))}`;
     const redisUrl = `redis://${redisContainer.getHost()}:${String(redisContainer.getMappedPort(6379))}`;
