@@ -49,6 +49,7 @@ public class SecurityAuditEventEntity {
     @Column(name = "actor_type", nullable = false, length = 16)
     private String actorType;
 
+    @JdbcTypeCode(SqlTypes.CHAR)
     @Column(name = "actor_reference_hash", length = 64)
     private String actorReferenceHash;
 
