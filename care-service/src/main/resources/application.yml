@@ -25,6 +25,16 @@ spring:
       timeout: ${CARE_REDIS_COMMAND_TIMEOUT:PT0.5S}
       repositories:
         enabled: false
+  kafka:
+    bootstrap-servers: ${KAFKA_BOOTSTRAP_SERVERS:localhost:9092}
+    producer:
+      acks: all
+      retries: 3
+      properties:
+        enable.idempotence: true
+        max.in.flight.requests.per.connection: 5
+      key-serializer: org.apache.kafka.common.serialization.StringSerializer
+      value-serializer: org.apache.kafka.common.serialization.StringSerializer
 
 mentalbridge:
   care:
@@ -37,6 +47,14 @@ mentalbridge:
       anonymous-session-maximum-lifetime: ${CARE_ANONYMOUS_SESSION_MAXIMUM_LIFETIME}
       phq9-safety-policy-version: ${CARE_PHQ9_SAFETY_POLICY_VERSION}
       idempotency-hmac-key: ${CARE_IDEMPOTENCY_HMAC_KEY}
+    user-notification-relay:
+      enabled: ${CARE_USER_NOTIFICATION_RELAY_ENABLED:false}
+      topic: ${CARE_USER_NOTIFICATION_TOPIC:mentalbridge.care.user-notification.v1}
+      batch-size: ${CARE_USER_NOTIFICATION_RELAY_BATCH_SIZE:100}
+      interval: ${CARE_USER_NOTIFICATION_RELAY_INTERVAL:PT5S}
+      send-timeout: ${CARE_USER_NOTIFICATION_RELAY_SEND_TIMEOUT:PT5S}
+      retry-base: ${CARE_USER_NOTIFICATION_RELAY_RETRY_BASE:PT5S}
+      retry-maximum: ${CARE_USER_NOTIFICATION_RELAY_RETRY_MAXIMUM:PT5M}
     resource-eligibility:
       base-url: ${CONTENT_RESOURCE_ELIGIBILITY_BASE_URL:}
       connect-timeout: ${CONTENT_RESOURCE_ELIGIBILITY_CONNECT_TIMEOUT:PT0.5S}

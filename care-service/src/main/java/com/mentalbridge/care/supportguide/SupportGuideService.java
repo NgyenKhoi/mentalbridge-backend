@@ -103,7 +103,7 @@ public class SupportGuideService {
 		var expressed = phrasing.phrase(approvedExplanation(selected, professional(evaluation)), bearerToken,
 				correlationId);
 		var stored = writer.persist(userId, idempotencyKey, requestHash,
-				new Draft(evaluation.supportEvaluationId(), clock.instant(), "STANDARD_POST_SCREENING_GUIDANCE",
+				new Draft(evaluation.supportEvaluationId(), correlationId, clock.instant(), "STANDARD_POST_SCREENING_GUIDANCE",
 						expressed.text(), safety.status().name(), safety.reasonCode().name(), safety.policyVersion(),
 						positive ? "REVIEW_SAFETY_GUIDANCE" : "STANDARD_SAFETY_REMINDER",
 						positive ? SupportEvaluationService.SAFETY_FALLBACK : STANDARD_SAFETY,

@@ -116,6 +116,15 @@ supersedes the old plan, activates its replacement, and records the exact
 request in the SupportPlan command audit. The specialist receives status only
 and never obtains plan-mutation authority.
 
+MB-565 adds a separate minimized notification-fact outbox path. An authenticated
+assessment save emits `ASSESSMENT_RESULT_AVAILABLE`; the first persisted
+SupportGuide generation emits `SUPPORT_GUIDE_AVAILABLE`. The fact contains only
+recipient, closed fact type, exact target/version, and UTC availability time.
+Answers, scores, safety state, guide/resource copy, and provider data stay in
+Care. A leased relay publishes the closed v1 envelope to
+`mentalbridge.care.user-notification.v1` and marks the row complete only after
+Kafka acknowledgement.
+
 MB-178 does not implement specialist grants, automatic follow-up, clinical progress interpretation, export/deletion, or production retention. Support/intervention, analytics, Kafka event delivery, and these deferred workflows must not be inferred from the implemented profile/consent/history slice.
 
 ## Ordered tasks

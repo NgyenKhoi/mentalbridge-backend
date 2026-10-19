@@ -15,6 +15,23 @@ class CareEventContractTests {
 	private final ObjectMapper objectMapper = new ObjectMapper();
 
 	@Test
+	void userNotificationFactIsStrictVersionedAndExcludesSensitiveAssessmentAndGuideData() throws Exception {
+		var path = Path.of("..", "contracts", "events", "care", "user-notification-fact-v1.schema.json")
+				.toAbsolutePath();
+		var schema = objectMapper.readTree(Files.readString(path));
+		var payload = schema.at("/properties/payload");
+
+		assertThat(schema.at("/properties/messageType/const").asText())
+				.isEqualTo("care.user-notification.fact");
+		assertThat(schema.at("/properties/schemaVersion/const").asText()).isEqualTo("1.0");
+		assertThat(payload.get("additionalProperties").asBoolean()).isFalse();
+		assertThat(payload.get("properties").fieldNames()).toIterable()
+				.containsExactlyInAnyOrder("recipientId", "factType", "targetId", "targetVersion", "availableAt")
+				.doesNotContain("answers", "totalScore", "screeningLevel", "safetyStatus", "explanationText",
+						"resourceTitles", "providerPayload");
+	}
+
+	@Test
 	void assessmentSubmittedSchemaIsStrictAndExcludesRawAnswers() throws Exception {
 		var path = Path.of("..", "contracts", "events", "care", "assessment-submitted-v2.schema.json")
 				.toAbsolutePath();

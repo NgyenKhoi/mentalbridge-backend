@@ -117,6 +117,10 @@ class SupportGuideIntegrationTests extends CareTestProperties {
 				.query(Long.class).single()).isEqualTo(1);
 		assertThat(jdbc.sql("select count(*) from support_guide_resource where support_guide_id=:id")
 				.param("id", guideId).query(Long.class).single()).isEqualTo(2);
+		var notificationPayload = jdbc.sql("select payload::text from outbox_event where aggregate_id=:id and message_type='care.user-notification.fact'")
+				.param("id", guideId).query(String.class).single();
+		assertThat(notificationPayload).contains("SUPPORT_GUIDE_AVAILABLE", owner.toString())
+				.doesNotContain("explanationText", "safetyStatus", "resource", "totalScore");
 		assertThat(json.toString()).doesNotContain("answers", "answerValue", "totalScore", "diagnosis", "treatment");
 	}
 
