@@ -17,7 +17,7 @@ const TargetlessActionSchema = z
   .strict();
 const TargetedActionSchema = z
   .object({
-    type: z.literal('OPEN_RESOURCE'),
+    type: z.enum(['OPEN_RESOURCE', 'OPEN_SUPPORT_GUIDE']),
     targetId: UUID,
   })
   .strict();

@@ -190,14 +190,18 @@ class AssessmentFlowIntegrationTests extends CareTestProperties {
 		assertThat(jdbc.sql("select count(*) from assessment_answer where submission_id = :id")
 				.param("id", UUID.fromString(assessmentId)).query(Long.class).single()).isEqualTo(9);
 		assertThat(jdbc.sql("select count(*) from outbox_event where aggregate_id = :id")
-				.param("id", UUID.fromString(assessmentId)).query(Long.class).single()).isEqualTo(1);
+				.param("id", UUID.fromString(assessmentId)).query(Long.class).single()).isEqualTo(2);
 		var requestHash = jdbc.sql("select request_hash from assessment_submission where id = :id")
 				.param("id", UUID.fromString(assessmentId)).query(String.class).single();
 		assertThat(requestHash).hasSize(64).isNotEqualTo(unkeyedRequestHash(1));
-		var payload = jdbc.sql("select payload::text from outbox_event where aggregate_id = :id")
+		var payload = jdbc.sql("select payload::text from outbox_event where aggregate_id = :id and message_type = 'care.assessment.submitted'")
 				.param("id", UUID.fromString(assessmentId)).query(String.class).single();
 		assertThat(payload).contains("POSITIVE_SAFETY_SCREEN", userId.toString())
 				.doesNotContain("questionId", "answerValue", "answers");
+		var notificationPayload = jdbc.sql("select payload::text from outbox_event where aggregate_id = :id and message_type = 'care.user-notification.fact'")
+				.param("id", UUID.fromString(assessmentId)).query(String.class).single();
+		assertThat(notificationPayload).contains("ASSESSMENT_RESULT_AVAILABLE", userId.toString())
+				.doesNotContain("totalScore", "screeningLevel", "safetyStatus", "questionId", "answerValue");
 
 		mvc.perform(get("/api/v1/assessments/{assessmentId}", assessmentId)
 				.with(jwt().jwt(token -> token.subject(userId.toString()))
@@ -256,6 +260,11 @@ class AssessmentFlowIntegrationTests extends CareTestProperties {
 				.andExpect(jsonPath("$.result.safetyStatus").value("POSITIVE_SAFETY_SCREEN"))
 				.andReturn();
 		var assessmentId = json(assessmentResult).get("assessmentId").asText();
+		assertThat(jdbc.sql("""
+				select count(*) from outbox_event
+				where aggregate_id = cast(:assessmentId as uuid)
+				  and message_type = 'care.user-notification.fact'
+				""").param("assessmentId", assessmentId).query(Long.class).single()).isZero();
 
 		mvc.perform(get("/api/v1/anonymous-assessment-sessions/{sessionId}/assessments/{assessmentId}",
 				sessionId, assessmentId))

@@ -22,6 +22,7 @@ Identity owns accounts, credentials, roles, email ownership, refresh sessions, a
 - Define Identity OpenAPI first, including RFC 9457 errors and idempotency. Publish versioned account/deletion/audit schemas.
 - Split identity/platform baseline tables into owner Liquibase changelogs and update the field dictionary. Use constraints for unique email and token/session invariants.
 - Keep external providers such as Brevo behind narrow ports. Keep JWT signing, hashing, persistence locking, and idempotency in focused owner components without one-to-one wrapper interfaces. Identity has no outbound business REST dependency.
+- MB-565 emits a closed `identity.user-notification.fact` beside the existing lifecycle fact only when a USER becomes active after email verification or is restored by an administrator. The minimized payload contains account ID, USER actor type, fact type, and UTC availability time; it excludes email, reason text, credentials, and audit details. Content/Notification owns user-facing copy and delivery preference decisions.
 - Test cryptographic boundaries with deterministic fixtures, not production secrets; use real PostgreSQL/Kafka/Redis containers for integration behavior.
 
 ## Ordered tasks

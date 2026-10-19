@@ -23,6 +23,7 @@ and area wording for the directory and forbids automatic safety email.
 | Notification history | Persist list/detail/read/delete state | Bounded cursor pagination; user sees own records only; read/delete idempotent; retention semantics explicit |
 | Domain notification | Consume minimized facts, select versioned template and create notification | Duplicate message creates one logical notification; replay policy prevents repeated external sends |
 | Community interaction notification | Consume `mentalbridge.community.interaction.v1` and create generic owner-scoped inbox copy | Strict v1 validation; per-event dedupe; in-app and Community-group preference enforcement; removed targets resolve through Community's safe unavailable state; no post/comment body or display identity crosses the boundary |
+| Assessment, SupportGuide, and account notification | Consume the closed Care/Identity MB-565 facts and create generic USER inbox copy | Content owns copy, safe action mapping, preference enforcement, delivery state, and logical source/version dedupe; producer payloads exclude answers, scores, safety flags, resource copy, email, and provider data |
 | Provider delivery | Send through bounded adapter and track every attempt | Domain outcome independent; transient retry honors provider signals; terminal failure visible; no secrets/sensitive body in logs |
 | Live delivery | Publish `NotificationCreated` for Realtime | Durable record/outbox atomic; payload minimal; reconnect relies on REST history, not guaranteed socket delivery |
 
@@ -38,6 +39,7 @@ and area wording for the directory and forbids automatic safety email.
 - MB-660 adds owner-scoped bookmark and Bingo APIs. Bookmarks bind to immutable publication snapshots. Bingo item reads expose separate self-confirmed and Content-verified state; only the former is stored on the board, and state-changing writes require `If-Match`.
 - Runtime never scrapes or translates third-party sources. Offline/admin ingestion records source URL, retrieval instant, SHA-256 content hash, version label, and explicit review status before reviewed Vietnamese content is published.
 - MB-617 consumes only MB-580's minimized, versioned Community interaction fact. The consumer transaction persists either a delivered inbox row or a cancelled preference outcome keyed by the source `eventId`; malformed facts are parked as digest-only DLQ metadata, while transient persistence failures leave the Kafka offset retryable. Community commands never call this service synchronously.
+- MB-565 Identity notification and account-preference projections keep their Kafka offset uncommitted during storage outages. Three local attempts are followed by a sanitized retryable KafkaJS failure with bounded exponential backoff and consumer restart. Only malformed facts or conflicting logical identities go to the digest-only DLQ. Recovery materializes the original fact once; changed transport IDs never bypass logical deduplication or preferences.
 
 ## Ordered tasks
 

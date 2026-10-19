@@ -336,7 +336,7 @@ Identity-owned transactional outbox. An account/session mutation and its integra
 | `aggregate_version` | Authoritative nonnegative aggregate version used for ordering and stale-event rejection. |
 | `correlation_id` | Request/workflow UUID propagated for tracing; it is not a business key. |
 | `payload` | Minimal JSON object conforming to the published event schema; it excludes tokens, passwords, and email content. |
-| `occurred_at` | UTC instant the business fact occurred. |
+| `occurred_at` | UTC instant the business fact occurred. For `identity.user-notification.fact`, truncate to microseconds before saving both this column and JSON `availableAt`; the reloaded relay timestamp must exactly match the payload without PostgreSQL rounding. |
 | `published_at` | UTC instant Kafka acknowledged publication; null while pending. |
 | `attempt_count` | Nonnegative count of bounded relay attempts. |
 | `next_attempt_at` | UTC instant after which a failed relay may retry; null when no delay is scheduled. |
@@ -573,7 +573,7 @@ Care-owned transactional outbox row inserted in the same local transaction as an
 | `aggregate_version` | Non-negative owner version used to distinguish aggregate changes and reject duplicate event creation. |
 | `correlation_id` | Required workflow trace UUID propagated without sensitive payload data. |
 | `payload` | Minimized JSON object conforming to the future event contract; assessment answer content is prohibited. |
-| `occurred_at` | UTC instant the domain fact occurred. |
+| `occurred_at` | UTC instant the domain fact occurred. For `care.user-notification.fact`, truncate to microseconds before saving both this column and JSON `availableAt`; the reloaded relay timestamp must exactly match the payload without PostgreSQL rounding. |
 | `published_at` | UTC broker-acknowledged publication instant; null while pending. |
 | `attempt_count` | Non-negative relay attempt count used for bounded retry observability. |
 | `next_attempt_at` | Optional UTC instant before which the relay must not retry. |
@@ -2257,10 +2257,10 @@ Durable in-app notification and safe delivery payload owned by Content/Notificat
 | --- | --- |
 | `id` | Immutable UUID used for REST history, Kafka delivery, and read idempotency. |
 | `recipient_id` | External Identity account UUID of the intended recipient. |
-| `category` | Stable kind used for preference, priority, and presentation rules. MB-564 adds separate Journal/emotion kinds; MB-617 adds `COMMUNITY_COMMENT`, `COMMUNITY_REPLY`, and `COMMUNITY_REACTION` while retaining historical generic kinds. |
+| `category` | Stable kind used for preference, priority, and presentation rules. MB-564 adds separate Journal/emotion kinds; MB-617 adds Community kinds; MB-565 adds `ASSESSMENT_RESULT_AVAILABLE`, `SUPPORT_GUIDE_AVAILABLE`, and `ACCOUNT_STATUS` while retaining historical generic kinds. |
 | `title` | Reviewed/minimized user-visible title safe for the selected channel. |
 | `body` | Reviewed/minimized user-visible body that excludes raw sensitive source content. |
-| `action_type` | Optional approved internal action enum used to derive a relative client route; `OPEN_SPECIALIST_APPOINTMENTS` resolves only to the specialist appointment workspace and arbitrary producer URLs are never stored. |
+| `action_type` | Optional approved internal action enum used to derive a relative client route; MB-565 adds `OPEN_SUPPORT_GUIDE` bound to its exact UUID target, while account status has no action. `OPEN_SPECIALIST_APPOINTMENTS` resolves only to the specialist appointment workspace and arbitrary producer URLs are never stored. |
 | `action_target_id` | Optional opaque target UUID required for `OPEN_RESOURCE` or `OPEN_COMMUNITY_POST`; Community stores only the approved post deep-link ID, and the authorized Community read supplies the same safe unavailable state for removed, hidden, blocked, or unknown content. |
 | `priority` | Delivery/presentation priority, not a clinical severity decision. |
 | `read_at` | UTC instant the recipient marked the in-app notification read; null while unread. |
@@ -2269,7 +2269,7 @@ Durable in-app notification and safe delivery payload owned by Content/Notificat
 | `created_at` | Immutable UTC creation instant used for cursor ordering. |
 | `deleted_at` | UTC user/policy tombstone instant; null while visible in history. |
 | `source` | Stable bounded producer namespace such as `CONTENT`, `REALTIME`, or `COMMUNITY_INTERACTION_V1`; it carries no provider payload or user-authored text. |
-| `source_identity` | Stable producer-owned event identity used with `recipient_id` and `source` to collapse retries for one recipient while allowing legitimate fan-out of the same source event to other recipients. Journal/emotion notifications use `<kind>:<local-date>`; Community notifications use the v1 fact `eventId`; specialist appointment notifications use `<appointment-id>:<aggregate-version>`. |
+| `source_identity` | Stable producer-owned logical identity used with `recipient_id` and `source` to collapse retries/replays for one recipient while allowing legitimate fan-out. Journal/emotion notifications use `<kind>:<local-date>`; Community notifications use the v1 fact `eventId`; specialist appointment notifications use `<appointment-id>:<aggregate-version>`; MB-565 Care/Identity facts use `<fact-type>:<aggregate-id>:<aggregate-version>` so a transport-envelope replay cannot duplicate the inbox item. |
 | `request_fingerprint` | SHA-256 of the validated minimized create command or Community v1 fact; changed reuse of a dedupe identity is rejected instead of overwriting the original notification. |
 | `delivery_state` | Durable delivery lifecycle (`PENDING`, `DELIVERED`, `FAILED`, or `CANCELLED`); only `DELIVERED` records appear in the inbox. |
 | `version` | Monotonic mutation counter incremented for the first read or tombstone transition. |

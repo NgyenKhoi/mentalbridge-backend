@@ -2,6 +2,7 @@
   "$schema": "https://json-schema.org/draft/2020-12/schema",
   "$id": "https://mentalbridge.local/contracts/events/content/account-preference-projection-dead-letter-v1.schema.json",
   "title": "Account preference projection dead letter",
+  "description": "Digest-only diagnostics for malformed or permanently unprocessable identity lifecycle records. Valid facts with transient persistence failure retain their original Kafka offset and are retried, never parked. PREFERENCE_PROJECTION_FAILED is retained only for historical v1 records; current producers emit only INVALID_JSON or INVALID_EVENT.",
   "type": "object",
   "additionalProperties": false,
   "required": [

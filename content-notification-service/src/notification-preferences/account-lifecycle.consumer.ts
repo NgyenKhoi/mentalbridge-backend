@@ -15,6 +15,15 @@ import {
 } from '../application.tokens.js';
 import type { ServiceConfiguration } from '../configuration/configuration.js';
 import type { NotificationPreferenceService } from './notification-preference.service.js';
+import {
+  UserNotificationDedupeConflictError,
+  UserNotificationRepository,
+} from '../user-notifications/user-notification.repository.js';
+import {
+  IdentityUserNotificationFactSchema,
+  type IdentityUserNotificationFact,
+  type UserNotificationProjection,
+} from '../user-notifications/user-notification.types.js';
 
 export const ACCOUNT_LIFECYCLE_TOPIC = 'mentalbridge.identity.account-lifecycle.v1';
 export const ACCOUNT_PREFERENCE_DEAD_LETTER_TOPIC =
@@ -22,6 +31,15 @@ export const ACCOUNT_PREFERENCE_DEAD_LETTER_TOPIC =
 
 const ACCOUNT_LIFECYCLE_GROUP = 'content-notification-account-preferences-v1';
 const MAX_HANDLER_ATTEMPTS = 3;
+
+class AccountLifecyclePersistenceUnavailableError extends Error {
+  readonly retriable = true;
+
+  constructor() {
+    super('Account lifecycle persistence is unavailable');
+    this.name = 'AccountLifecyclePersistenceUnavailableError';
+  }
+}
 
 const AccountRegisteredEventSchema = z
   .object({
@@ -44,6 +62,7 @@ const AccountRegisteredEventSchema = z
   .strict();
 
 export type AccountRegisteredEvent = z.infer<typeof AccountRegisteredEventSchema>;
+type AccountLifecycleEvent = AccountRegisteredEvent | IdentityUserNotificationFact;
 
 const wait = (milliseconds: number): Promise<void> =>
   new Promise((resolve) => setTimeout(resolve, milliseconds));
@@ -53,10 +72,42 @@ export class AccountLifecycleProjector {
   constructor(
     @Inject(NOTIFICATION_PREFERENCE_SERVICE_TOKEN)
     private readonly preferences: NotificationPreferenceService,
+    private readonly notifications: UserNotificationRepository,
   ) {}
 
-  async project(event: AccountRegisteredEvent): Promise<void> {
-    await this.preferences.initializeForAccount(event.payload.accountId, event.payload.actorType);
+  async project(event: AccountLifecycleEvent): Promise<void> {
+    if (event.messageType === 'identity.account.registered') {
+      await this.preferences.initializeForAccount(event.payload.accountId, event.payload.actorType);
+      return;
+    }
+    if (event.payload.actorType !== 'USER') return;
+    const activated = event.payload.factType === 'ACCOUNT_ACTIVATED';
+    const projection: UserNotificationProjection = {
+      sourceIdentity: `${event.payload.factType}:${event.aggregateId}:${String(event.aggregateVersion)}`,
+      ownerId: event.payload.recipientId,
+      kind: 'ACCOUNT_STATUS',
+      title: activated ? 'Tài khoản đã sẵn sàng' : 'Tài khoản đã được khôi phục',
+      body: activated
+        ? 'Tài khoản MentalBridge của bạn đã được kích hoạt.'
+        : 'Bạn có thể tiếp tục sử dụng tài khoản MentalBridge.',
+      occurredAt: event.payload.availableAt,
+      preferenceGroup: 'RESOURCE_SYSTEM',
+      source: 'IDENTITY_USER_NOTIFICATION_V1',
+      actionType: null,
+      actionTargetId: null,
+    };
+    const fingerprint = createHash('sha256')
+      .update(
+        JSON.stringify({
+          recipientId: event.payload.recipientId,
+          actorType: event.payload.actorType,
+          factType: event.payload.factType,
+          aggregateVersion: event.aggregateVersion,
+          availableAt: event.payload.availableAt,
+        }),
+      )
+      .digest('hex');
+    await this.notifications.materialize(projection, fingerprint);
   }
 }
 
@@ -86,7 +137,10 @@ export class AccountLifecycleConsumer implements OnModuleInit, OnApplicationShut
         .filter(Boolean),
       logLevel: logLevel.NOTHING,
     });
-    this.consumer = kafka.consumer({ groupId: ACCOUNT_LIFECYCLE_GROUP });
+    this.consumer = kafka.consumer({
+      groupId: ACCOUNT_LIFECYCLE_GROUP,
+      retry: { initialRetryTime: 1000, maxRetryTime: 30_000, retries: 5 },
+    });
     this.deadLetters = kafka.producer({ allowAutoTopicCreation: false, idempotent: true });
     await Promise.all([this.consumer.connect(), this.deadLetters.connect()]);
     await this.consumer.subscribe({ topic: ACCOUNT_LIFECYCLE_TOPIC, fromBeginning: true });
@@ -120,16 +174,19 @@ export class AccountLifecycleConsumer implements OnModuleInit, OnApplicationShut
       return;
     }
 
-    if (
-      !parsed ||
-      typeof parsed !== 'object' ||
-      !('messageType' in parsed) ||
-      parsed.messageType !== 'identity.account.registered'
-    ) {
+    if (!parsed || typeof parsed !== 'object' || !('messageType' in parsed)) {
       return;
     }
+    if (
+      parsed.messageType !== 'identity.account.registered' &&
+      parsed.messageType !== 'identity.user-notification.fact'
+    )
+      return;
 
-    const validated = AccountRegisteredEventSchema.safeParse(parsed);
+    const validated =
+      parsed.messageType === 'identity.account.registered'
+        ? AccountRegisteredEventSchema.safeParse(parsed)
+        : IdentityUserNotificationFactSchema.safeParse(parsed);
     if (!validated.success) {
       await this.deadLetter(topic, partition, offset, key, value, 'INVALID_EVENT');
       return;
@@ -139,21 +196,18 @@ export class AccountLifecycleConsumer implements OnModuleInit, OnApplicationShut
       try {
         await this.projector.project(validated.data);
         return;
-      } catch {
+      } catch (error) {
+        if (error instanceof UserNotificationDedupeConflictError) {
+          await this.deadLetter(topic, partition, offset, key, value, 'INVALID_EVENT');
+          return;
+        }
         if (attempt < MAX_HANDLER_ATTEMPTS) {
           await wait(100 * 2 ** (attempt - 1));
           continue;
         }
       }
     }
-    await this.deadLetter(
-      topic,
-      partition,
-      offset,
-      key,
-      Buffer.from(JSON.stringify(validated.data)),
-      'PREFERENCE_PROJECTION_FAILED',
-    );
+    throw new AccountLifecyclePersistenceUnavailableError();
   }
 
   private async deadLetter(
@@ -162,7 +216,7 @@ export class AccountLifecycleConsumer implements OnModuleInit, OnApplicationShut
     offset: string,
     key: Buffer | null,
     value: Buffer | null,
-    errorCode: string,
+    errorCode: 'INVALID_JSON' | 'INVALID_EVENT',
   ): Promise<void> {
     if (!this.deadLetters) throw new Error('Account lifecycle dead-letter producer is unavailable');
     const digest = createHash('sha256')

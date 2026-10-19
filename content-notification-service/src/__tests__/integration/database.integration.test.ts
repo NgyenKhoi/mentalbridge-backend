@@ -38,6 +38,10 @@ import {
   CommunityNotificationDedupeConflictError,
   CommunityNotificationRepository,
 } from '../../community-notifications/community-notification.repository.js';
+import {
+  UserNotificationDedupeConflictError,
+  UserNotificationRepository,
+} from '../../user-notifications/user-notification.repository.js';
 
 const __dirname = dirname(fileURLToPath(import.meta.url));
 
@@ -101,6 +105,7 @@ describe('Database Integration', () => {
       '21_persist_resource_engagement.sql',
       '22_add_private_achievement_preference.sql',
       '24_add_specialist_notification_preferences.sql',
+      '25_add_general_user_notification_producers.sql',
     ]) {
       if (migration === '10_persist_notification_preferences.sql') {
         await pool.query(
@@ -1817,6 +1822,89 @@ describe('Database Integration', () => {
         source_identity: enabled.eventId,
         delivery_state: 'DELIVERED',
       });
+    });
+
+    it('materializes MB-565 facts once and preserves preference decisions across replay', async () => {
+      const database = {
+        query: (text: string, parameters?: unknown[]) => pool.query(text, parameters),
+        withTransaction: async <T>(operation: (client: DatabaseClient) => Promise<T>) => {
+          const client = await pool.connect();
+          try {
+            await client.query('BEGIN');
+            const result = await operation(client);
+            await client.query('COMMIT');
+            return result;
+          } catch (error) {
+            await client.query('ROLLBACK');
+            throw error;
+          } finally {
+            client.release();
+          }
+        },
+      } as unknown as DatabaseService;
+      const facts = new UserNotificationRepository(database);
+      const inbox = new NotificationRepository(database);
+      const owner = '11600000-0000-4000-8000-000000000001';
+      const guideId = '11600000-0000-4000-8000-000000000002';
+      const projection = {
+        sourceIdentity: `SUPPORT_GUIDE_AVAILABLE:${guideId}:1`,
+        ownerId: owner,
+        kind: 'SUPPORT_GUIDE_AVAILABLE' as const,
+        title: 'Hướng dẫn hỗ trợ đã sẵn sàng',
+        body: 'Hướng dẫn đã được lưu để bạn xem lại khi thuận tiện.',
+        occurredAt: '2026-10-19T08:00:00.000Z',
+        preferenceGroup: 'RESOURCE_SYSTEM' as const,
+        source: 'CARE_USER_NOTIFICATION_V1' as const,
+        actionType: 'OPEN_SUPPORT_GUIDE' as const,
+        actionTargetId: guideId,
+      };
+
+      await facts.materialize(projection, 'd'.repeat(64));
+      await facts.materialize(projection, 'd'.repeat(64));
+      const page = await inbox.list(owner, 20, null);
+      expect(page.items).toHaveLength(1);
+      expect(page.items[0]).toMatchObject({
+        kind: 'SUPPORT_GUIDE_AVAILABLE',
+        action: {
+          type: 'OPEN_SUPPORT_GUIDE',
+          targetId: guideId,
+          href: `/support-guides/${guideId}`,
+        },
+      });
+      await expect(
+        facts.materialize({ ...projection, title: 'Changed replay' }, 'e'.repeat(64)),
+      ).rejects.toBeInstanceOf(UserNotificationDedupeConflictError);
+
+      const disabledOwner = '11600000-0000-4000-8000-000000000003';
+      await pool.query(
+        `INSERT INTO notification_preference
+           (user_id, group_screening_reassessment_enabled)
+         VALUES ($1, false)`,
+        [disabledOwner],
+      );
+      const disabledProjection = {
+        ...projection,
+        sourceIdentity: 'ASSESSMENT_RESULT_AVAILABLE:11600000-0000-4000-8000-000000000004:0',
+        ownerId: disabledOwner,
+        kind: 'ASSESSMENT_RESULT_AVAILABLE' as const,
+        preferenceGroup: 'SCREENING_REASSESSMENT' as const,
+        actionType: 'OPEN_ASSESSMENTS' as const,
+        actionTargetId: null,
+      };
+      await facts.materialize(disabledProjection, 'f'.repeat(64));
+      await pool.query(
+        `UPDATE notification_preference
+         SET group_screening_reassessment_enabled = true WHERE user_id = $1`,
+        [disabledOwner],
+      );
+      await facts.materialize(disabledProjection, 'f'.repeat(64));
+      expect((await inbox.list(disabledOwner, 20, null)).items).toEqual([]);
+      const cancelled = await pool.query<{ count: string; delivery_state: string }>(
+        `SELECT count(*)::text AS count, min(delivery_state) AS delivery_state
+         FROM notification WHERE recipient_id = $1 AND source_identity = $2`,
+        [disabledOwner, disabledProjection.sourceIdentity],
+      );
+      expect(cancelled.rows[0]).toEqual({ count: '1', delivery_state: 'CANCELLED' });
     });
 
     it('paginates newest first with an opaque cursor and isolates owners', async () => {

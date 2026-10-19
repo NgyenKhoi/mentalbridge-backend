@@ -65,6 +65,7 @@ const environmentSchema = z
       .default(2_000),
     CONTENT_APPOINTMENT_CONSUMER_ENABLED: z.enum(['true', 'false']).default('false'),
     CONTENT_COMMUNITY_INTERACTION_CONSUMER_ENABLED: z.enum(['true', 'false']).default('false'),
+    CONTENT_CARE_USER_NOTIFICATION_CONSUMER_ENABLED: z.enum(['true', 'false']).default('false'),
     APPOINTMENT_REMINDER_APP_URL: z.url().default('http://localhost:3000/appointments'),
     E2E_TEST_MODE: z.coerce.boolean().default(false),
     E2E_TEST_SECRET: z.string().min(16).optional(),
@@ -136,6 +137,16 @@ const environmentSchema = z
         message: 'is required when the Community interaction consumer is enabled',
       });
     }
+    if (
+      environment.CONTENT_CARE_USER_NOTIFICATION_CONSUMER_ENABLED === 'true' &&
+      !environment.KAFKA_BOOTSTRAP_SERVERS
+    ) {
+      context.addIssue({
+        code: 'custom',
+        path: ['KAFKA_BOOTSTRAP_SERVERS'],
+        message: 'is required when the Care user notification consumer is enabled',
+      });
+    }
   })
   .transform((environment) => ({
     ...environment,
@@ -147,6 +158,8 @@ const environmentSchema = z
       environment.CONTENT_APPOINTMENT_CONSUMER_ENABLED === 'true',
     CONTENT_COMMUNITY_INTERACTION_CONSUMER_ENABLED:
       environment.CONTENT_COMMUNITY_INTERACTION_CONSUMER_ENABLED === 'true',
+    CONTENT_CARE_USER_NOTIFICATION_CONSUMER_ENABLED:
+      environment.CONTENT_CARE_USER_NOTIFICATION_CONSUMER_ENABLED === 'true',
     ALLOWED_ORIGINS: environment.CORS_ORIGINS.split(',')
       .map((origin) => origin.trim())
       .filter(Boolean),

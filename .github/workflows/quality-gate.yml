@@ -72,7 +72,7 @@ jobs:
 
   node:
     name: Node / ${{ matrix.service }}
-    runs-on: ubuntu-latest
+    runs-on: ${{ matrix.runner }}
     strategy:
       fail-fast: false
       matrix:
@@ -80,12 +80,18 @@ jobs:
           - service: journal-ai-service
             node-version: '22'
             integration: true
+            runner: ubuntu-latest
           - service: content-notification-service
             node-version: '22'
             integration: true
+            runner: ubuntu-latest
           - service: realtime-service
             node-version: '24'
             integration: true
+            # Pin during the ubuntu-latest migration; see
+            # https://github.com/actions/runner-images/issues/14748.
+            # Ubuntu 26.04/Docker 29 stops MongoDB 8 during Testcontainers startup.
+            runner: ubuntu-24.04
     steps:
       - uses: actions/checkout@v4
       - uses: actions/setup-node@v4
@@ -151,14 +157,41 @@ jobs:
           chmod +x mvnw
           ./mvnw -B -Dtest=CommunityNotificationRecoveryCrossServiceIT test
 
+  user-notification-precision:
+    name: Cross-service / User notification reliability
+    runs-on: ubuntu-24.04
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: '21'
+          cache: maven
+          cache-dependency-path: |
+            care-service/pom.xml
+            identity-service/pom.xml
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+      - name: Install and build Content/Notification
+        working-directory: content-notification-service
+        run: npm ci && npm run build
+      - name: Verify timestamp delivery and Identity database recovery
+        env:
+          SPRINGDOTENV_ENABLED: 'false'
+        run: |
+          for service in care-service identity-service; do
+            (cd "$service" && chmod +x mvnw && ./mvnw -B -Dtest=UserNotificationPrecisionCrossServiceIT test)
+          done
+
   quality-gate:
     name: quality-gate
     if: always()
-    needs: [promotion-policy, repository-policy, java, node, community-notification-recovery]
+    needs: [promotion-policy, repository-policy, java, node, community-notification-recovery, user-notification-precision]
     runs-on: ubuntu-latest
     steps:
       - name: Require every quality job
-        if: needs.promotion-policy.result != 'success' || needs.repository-policy.result != 'success' || needs.java.result != 'success' || needs.node.result != 'success' || needs.community-notification-recovery.result != 'success'
+        if: needs.promotion-policy.result != 'success' || needs.repository-policy.result != 'success' || needs.java.result != 'success' || needs.node.result != 'success' || needs.community-notification-recovery.result != 'success' || needs.user-notification-precision.result != 'success'
         run: exit 1
       - name: Confirm quality gate
         run: echo "All required backend quality jobs passed."

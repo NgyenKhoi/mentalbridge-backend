@@ -7,6 +7,19 @@ MB-617 adds an asynchronous consumer for the minimized
 reply, and first-reaction inbox entries without reading Community content or
 introducing any synchronous Community-to-Notification dependency.
 
+MB-565 wires bounded assessment, SupportGuide, and account facts into the same
+durable USER notification center. Care emits authenticated result availability
+and newly persisted guide availability through its transactional outbox;
+Identity emits USER activation/restoration through its existing outbox topic.
+Content strictly validates the versioned contracts, owns generic Vietnamese
+copy and safe internal actions, applies `screeningReassessment` or
+`resourceSystem` preferences, and persists either `DELIVERED` or `CANCELLED`.
+Logical `<fact-type>:<aggregate-id>:<aggregate-version>` identities collapse
+retries even when a transport envelope is replayed with a different message ID.
+Malformed Care facts are parked as digest-only metadata. Enable the Care path
+with `CONTENT_CARE_USER_NOTIFICATION_CONSUMER_ENABLED=true`; Kafka remains
+disabled by default for local development.
+
 ## Current capability
 
 MB-564 materializes owner-visible Journal and emotion reminders plus factual
@@ -171,9 +184,16 @@ the bounded `JOURNAL_AI_SERVICE_TIMEOUT_MS`, and the shared
 by `REMINDER_SCHEDULER_INTERVAL_MS` and `REMINDER_SCHEDULER_BATCH_SIZE`.
 `CONTENT_ACCOUNT_LIFECYCLE_CONSUMER_ENABLED=true` consumes
 `mentalbridge.identity.account-lifecycle.v1` from `KAFKA_BOOTSTRAP_SERVERS`.
-After three bounded projection attempts, a safe metadata-only record is written
-to `mentalbridge.content-notification.account-preference-dead-letter.v1`; raw
-invalid event bodies are never copied into diagnostics.
+Invalid JSON/schema facts and conflicting logical identities are parked as
+digest-only metadata in
+`mentalbridge.content-notification.account-preference-dead-letter.v1` before
+their offsets advance. Valid account facts and preference initialization retry
+storage up to three times locally (100ms/200ms delay). A continuing database
+failure throws a sanitized retriable error and leaves the Kafka offset
+uncommitted; KafkaJS uses exponential backoff (1s initial, 30s cap, five
+attempts per cycle) and restarts the consumer. Recovery replays the original
+record and commits only after the Content transaction succeeds. There is no
+digest-only conversion of valid facts and no raw event body in diagnostics.
 
 Migration `13_add_resource_daily_progress.sql` adds MB-603's owner-scoped daily
 resource progress. It stores only resource/version references, a bounded action

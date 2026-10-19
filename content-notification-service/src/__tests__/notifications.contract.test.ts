@@ -57,6 +57,9 @@ describe('notification inbox contract', () => {
       'COMMUNITY_COMMENT',
       'COMMUNITY_REPLY',
       'COMMUNITY_REACTION',
+      'ASSESSMENT_RESULT_AVAILABLE',
+      'SUPPORT_GUIDE_AVAILABLE',
+      'ACCOUNT_STATUS',
     ]);
     expect(notification.required).toEqual(
       expect.arrayContaining(['occurredAt', 'readAt', 'action', 'lifecycleState', 'expiresAt']),

@@ -35,6 +35,23 @@ It carries only the account identifier, current status, immutable actor role,
 closed reason code, correlation metadata, and aggregate version. Repeated
 same-state commands emit no duplicate fact.
 
+MB-565 adds the implemented `events/care/user-notification-fact-v1.schema.json`
+and `events/identity/user-notification-fact-v1.schema.json` contracts. Care
+publishes only authenticated assessment-result and newly persisted SupportGuide
+availability facts on `mentalbridge.care.user-notification.v1`; Identity
+publishes only USER activation/restoration facts on its existing account
+lifecycle topic. Both contracts are closed, identity-bound, and exclude
+assessment answers/scores, safety flags, resource copy, email addresses, and
+provider payloads. Content/Notification owns rendering, preference enforcement,
+durable delivery state, and logical replay deduplication.
+
+For these two MB-565 v1 facts, producers truncate source instants to UTC
+microseconds before writing both JSON `payload.availableAt` and the outbox
+`occurred_at`. Truncation never rounds into the next microsecond or second.
+The relay emits the same ISO-8601 text (at most six fractional digits) after
+PostgreSQL reload. Content requires exact timestamp equality in addition to
+the existing kind, recipient, aggregate identity and version bindings.
+
 `care-service-v1.yaml` remains the unchanged v1 source for coarse historical
 SupportEvaluation behavior. `care-support-evaluation-v2.yaml` is the additive
 source for `/api/v2/support-evaluations`; consumers select the API version by
