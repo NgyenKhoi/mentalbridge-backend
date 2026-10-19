@@ -9,3 +9,5 @@ databaseChangeLog:
       file: db/changelog/changes/004-report-schedules.sql
   - include:
       file: db/changelog/changes/005-audit-browse-support.sql
+  - include:
+      file: db/changelog/changes/006-retention-and-deletion-governance.sql
