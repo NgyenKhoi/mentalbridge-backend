@@ -668,8 +668,47 @@ export class ResourceRepository {
          RETURNING ${RESOURCE_COLUMNS}`,
         [id, version],
       );
+      if ((updated.rowCount ?? 0) === 0 || !updated.rows[0]) {
+        return null;
+      }
+      const row = updated.rows[0];
+
       await this.audit(client, 'RESOURCE_ARCHIVED', id, version, context);
-      return updated.rows[0] ? toResourceRow(updated.rows[0]) : null;
+
+      const auditEvent = {
+        eventId: randomUUID(),
+        eventType: 'content.resource.archived',
+        occurredAt: new Date().toISOString(),
+        producer: 'content-notification-service',
+        schemaVersion: '1.0',
+        sourceService: 'CONTENT',
+        domain: 'RESOURCE_MANAGEMENT',
+        actorId: context.actorId,
+        actorType: 'ADMIN',
+        action: 'RESOURCE_ARCHIVED',
+        result: 'SUCCEEDED',
+        reasonCode: null,
+        correlationId: context.correlationId,
+        targetAccountId: null,
+        targetIdentifier: null,
+      };
+
+      await client.query(
+        `INSERT INTO content_admin_audit_outbox
+          (id, deduplication_key, event_type, correlation_id, payload, occurred_at)
+         VALUES ($1, $2, $3, $4, $5, $6)
+         ON CONFLICT (deduplication_key) DO NOTHING`,
+        [
+          auditEvent.eventId,
+          `audit:content:resource-archived:${id}:${String(row.version)}`,
+          auditEvent.eventType,
+          auditEvent.correlationId,
+          JSON.stringify(auditEvent),
+          auditEvent.occurredAt,
+        ],
+      );
+
+      return toResourceRow(row);
     });
   }
 

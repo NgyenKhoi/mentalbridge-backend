@@ -56,7 +56,7 @@ pair prevents duplicate generation. Manual and scheduled jobs use one engine.
 | `support_guide` | care-service | PostgreSQL | ACTIVE | Physical owner/evaluation reference; immutable all-tier guide snapshot. |
 | `support_guide_resource` | care-service | PostgreSQL | ACTIVE | Physical child of guide; resource/publication IDs are logical/external Content references with persisted display snapshots. |
 | `support_guide_request` | care-service | PostgreSQL | ACTIVE | Physical owner-scoped idempotency alias to guide. |
-| `support_plan` | care-service | PostgreSQL | ACTIVE | Physical owner/evaluation reference with explicit draft/current/terminal lifecycle; entitlement fields snapshot a logical/external Consultation decision. |
+| `support_plan` | care-service | PostgreSQL | ACTIVE | Physical owner/evaluation reference with explicit draft/current/terminal lifecycle; entitlement fields snapshot a logical/external Consultation decision. Proposal-v1 alone snapshots the cycle timezone, number, activation local date, accumulated paused local days and current pause date; explicit review-due continuation starts the next cycle. |
 | `support_plan_focus` | care-service | PostgreSQL | ACTIVE | Physical ordered native-v3 child of a plan; stores bounded plain-language focus/purpose and version provenance, never a diagnosis or score. |
 | `support_plan_action` | care-service | PostgreSQL | ACTIVE | Physical ordered native-v3 child of a focus; stores one canonical type, bounded presentation/provenance, capabilities, and logical source-owner/reference without a cross-service FK. |
 | `support_plan_template_family` | care-service | PostgreSQL | ACTIVE | Physical ordered child of `support_plan`. |
@@ -139,7 +139,7 @@ settle or release credit. Historical chat policy remains unchanged.
 | `resource_eligibility_command_record` | content-notification-service | PostgreSQL | ACTIVE | Physical replay reference to publication; actor ID is external. |
 | `resource_reward_preference` | content-notification-service | PostgreSQL | ACTIVE | Owner-scoped optional visibility only; authoritative XP is a deterministic read model over exact progress, practice, and publication evidence. |
 | `achievement_preference` | content-notification-service | PostgreSQL | ACTIVE | Owner-scoped private-gallery visibility only; achievement status is a deterministic read model over minimized source-owner facts. |
-| `notification_preference` | content-notification-service | PostgreSQL | ACTIVE | One atomic aggregate per external Identity owner covering channels, content groups, quiet hours/timezone, and email cadence/opt-ins. |
+| `notification_preference` | content-notification-service | PostgreSQL | ACTIVE | One role-scoped atomic aggregate per external Identity owner covering channels, allowed content groups, quiet hours/timezone, and email cadence/opt-ins; specialist scope cannot enable user wellbeing categories. |
 | `notification` | content-notification-service | PostgreSQL | ACTIVE | Recipient ID is a logical/external Identity reference. |
 | `appointment_email_reminder` | content-notification-service | PostgreSQL | ACTIVE | One delivery-state row per external recipient, Consultation appointment, and appointment version; no email address or message body is persisted. |
 | `appointment_reminder_checkpoint` | content-notification-service | PostgreSQL | ACTIVE | Latest consumed version/status per external Consultation appointment for stale and duplicate event rejection. |

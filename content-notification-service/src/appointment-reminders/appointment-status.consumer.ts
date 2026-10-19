@@ -17,43 +17,53 @@ import type { ServiceConfiguration } from '../configuration/configuration.js';
 import type { ReminderClock } from '../reminders/reminder-materialization.service.js';
 import type { AppointmentReminderRepository } from './appointment-reminder.repository.js';
 import type { AppointmentStatusChangedEvent } from './appointment-reminder.types.js';
+import { SpecialistAppointmentNotificationRepository } from './specialist-appointment-notification.repository.js';
 
 export const APPOINTMENT_STATUS_TOPIC = 'mentalbridge.consultation.appointment-status.v1';
 
-const EventSchema = z
+const PayloadV1Schema = z
   .object({
-    messageId: z.uuid(),
-    messageType: z.literal('consultation.appointment.status-changed'),
-    occurredAt: z.iso.datetime({ offset: true }),
-    producer: z.literal('consultation-service'),
-    schemaVersion: z.literal('1.0'),
-    correlationId: z.uuid(),
-    aggregateId: z.uuid(),
-    aggregateVersion: z.number().int().nonnegative(),
-    payload: z
-      .object({
-        appointmentId: z.uuid(),
-        ownerAccountId: z.uuid(),
-        status: z.enum([
-          'REQUESTED',
-          'CONFIRMED',
-          'REJECTED',
-          'EXPIRED',
-          'CANCELLED',
-          'IN_PROGRESS',
-          'SESSION_ENDED',
-          'COMPLETED',
-          'USER_NO_SHOW',
-          'SPECIALIST_NO_SHOW',
-          'DISPUTED',
-        ]),
-        scheduledStartAt: z.iso.datetime({ offset: true }),
-        modality: z.enum(['IN_APP_CHAT', 'IN_APP_VIDEO']),
-        replacesAppointmentId: z.uuid().nullable(),
-      })
-      .strict(),
+    appointmentId: z.uuid(),
+    ownerAccountId: z.uuid(),
+    status: z.enum([
+      'REQUESTED',
+      'CONFIRMED',
+      'REJECTED',
+      'EXPIRED',
+      'CANCELLED',
+      'IN_PROGRESS',
+      'SESSION_ENDED',
+      'COMPLETED',
+      'USER_NO_SHOW',
+      'SPECIALIST_NO_SHOW',
+      'DISPUTED',
+    ]),
+    scheduledStartAt: z.iso.datetime({ offset: true }),
+    modality: z.enum(['IN_APP_CHAT', 'IN_APP_VIDEO']),
+    replacesAppointmentId: z.uuid().nullable(),
   })
   .strict();
+
+const EnvelopeSchema = z.object({
+  messageId: z.uuid(),
+  messageType: z.literal('consultation.appointment.status-changed'),
+  occurredAt: z.iso.datetime({ offset: true }),
+  producer: z.literal('consultation-service'),
+  correlationId: z.uuid(),
+  aggregateId: z.uuid(),
+  aggregateVersion: z.number().int().nonnegative(),
+});
+
+const EventSchema = z.discriminatedUnion('schemaVersion', [
+  EnvelopeSchema.extend({
+    schemaVersion: z.literal('1.0'),
+    payload: PayloadV1Schema,
+  }).strict(),
+  EnvelopeSchema.extend({
+    schemaVersion: z.literal('2.0'),
+    payload: PayloadV1Schema.extend({ specialistAccountId: z.uuid() }).strict(),
+  }).strict(),
+]);
 
 const EventEnvelopeSchema = z.object({ messageType: z.string() });
 
@@ -63,6 +73,7 @@ export class AppointmentStatusProjector {
     @Inject(APPOINTMENT_REMINDER_REPOSITORY_TOKEN)
     private readonly repository: AppointmentReminderRepository,
     @Inject(REMINDER_CLOCK_TOKEN) private readonly clock: ReminderClock,
+    private readonly specialistNotifications: SpecialistAppointmentNotificationRepository,
   ) {}
 
   async project(value: unknown): Promise<void> {
@@ -70,6 +81,7 @@ export class AppointmentStatusProjector {
     if (event.aggregateId !== event.payload.appointmentId)
       throw new Error('Appointment aggregate identity mismatch');
     await this.repository.apply(event, this.clock.now());
+    if (event.schemaVersion === '2.0') await this.specialistNotifications.materialize(event);
   }
 }
 

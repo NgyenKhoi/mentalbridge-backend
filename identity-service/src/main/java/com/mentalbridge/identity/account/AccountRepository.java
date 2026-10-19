@@ -2,6 +2,7 @@ package com.mentalbridge.identity.account;
 
 import java.util.Optional;
 import java.time.Instant;
+import java.util.Collection;
 import java.util.List;
 import java.util.UUID;
 
@@ -23,6 +24,25 @@ public interface AccountRepository extends JpaRepository<AccountEntity, UUID>, J
 	@Query("select account from AccountEntity account where account.id = :id")
 	Optional<AccountEntity> findByIdForUpdate(@Param("id") UUID id);
 
+	boolean existsByIdAndStatusNot(UUID id, AccountStatus status);
+
+	@Query("select account.id from AccountEntity account where account.id in :ids and account.status = :status")
+	List<UUID> findIdsByIdInAndStatus(@Param("ids") Collection<UUID> ids, @Param("status") AccountStatus status);
+
+	long countByStatus(AccountStatus status);
+
+	long countByRole(RoleCode role);
+
+	long countByRoleAndStatusNot(RoleCode role, AccountStatus status);
+
+	@Query("""
+			select account.role, account.status, count(account)
+			from AccountEntity account
+			where account.status <> :deletedStatus
+			group by account.role, account.status
+			""")
+	List<Object[]> aggregateCurrentAccounts(@Param("deletedStatus") AccountStatus deletedStatus);
+
 	@Query("""
 			select account.role, account.status, count(account)
 			from AccountEntity account
@@ -32,5 +52,20 @@ public interface AccountRepository extends JpaRepository<AccountEntity, UUID>, J
 			""")
 	List<Object[]> aggregateCreatedAccounts(@Param("periodStart") Instant periodStart,
 			@Param("periodEndExclusive") Instant periodEndExclusive);
+
+	@Query("""
+			select count(account) from AccountEntity account
+			where account.role = com.mentalbridge.identity.account.RoleCode.USER
+			  and account.createdAt >= :from and account.createdAt < :to
+			""")
+	long countUserRegistrationsBetween(@Param("from") Instant from, @Param("to") Instant to);
+
+	@Query("""
+			select count(account) from AccountEntity account
+			where account.role = com.mentalbridge.identity.account.RoleCode.USER
+			  and account.createdAt >= :from and account.createdAt < :to
+			  and account.emailVerifiedAt is not null and account.emailVerifiedAt < :to
+			""")
+	long countUserRegistrationCohortActivatedBy(@Param("from") Instant from, @Param("to") Instant to);
 
 }

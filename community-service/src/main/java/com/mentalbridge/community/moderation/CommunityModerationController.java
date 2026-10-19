@@ -19,6 +19,7 @@ import org.springframework.web.bind.annotation.RequestParam;
 import org.springframework.web.bind.annotation.RestController;
 
 import com.mentalbridge.community.moderation.CommunityModerationModels.CaseState;
+import com.mentalbridge.community.moderation.CommunityModerationModels.CommunityOperationsSummary;
 import com.mentalbridge.community.moderation.CommunityModerationModels.CreateModerationActionRequest;
 import com.mentalbridge.community.moderation.CommunityModerationModels.CreateReportRequest;
 import com.mentalbridge.community.moderation.CommunityModerationModels.ModerationCase;
@@ -69,6 +70,11 @@ class CommunityModerationController {
 		return ResponseEntity.noContent().build();
 	}
 
+	@GetMapping("/admin/operations/summary")
+	CommunityOperationsSummary operationsSummary() {
+		return moderation.operationsSummary();
+	}
+
 	@GetMapping("/admin/moderation-cases")
 	List<ModerationCase> list(@RequestParam(required = false) CaseState state,
 			@RequestParam(required = false) TargetType targetType,
@@ -84,9 +90,11 @@ class CommunityModerationController {
 	@PostMapping("/admin/moderation-cases/{caseId}/actions")
 	ResponseEntity<ModerationCase> act(@AuthenticationPrincipal Jwt jwt, @PathVariable UUID caseId,
 			@RequestHeader("Idempotency-Key") String idempotencyKey,
+			@RequestHeader(name = "X-Correlation-Id", required = false) UUID correlationId,
 			@RequestBody CreateModerationActionRequest request) {
+		UUID effectiveCorrelationId = correlationId != null ? correlationId : UUID.randomUUID();
 		return ResponseEntity.status(HttpStatus.CREATED)
-				.body(moderation.act(subject(jwt), caseId, idempotencyKey, request));
+				.body(moderation.act(subject(jwt), caseId, idempotencyKey, request, effectiveCorrelationId));
 	}
 
 	private UUID subject(Jwt jwt) {

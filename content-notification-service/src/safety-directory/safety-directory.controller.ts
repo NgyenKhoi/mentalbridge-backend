@@ -16,6 +16,7 @@ import {
   UnprocessableEntityException,
   UseGuards,
 } from '@nestjs/common';
+import { randomUUID } from 'node:crypto';
 import type { Response } from 'express';
 import { ZodError } from 'zod';
 
@@ -61,11 +62,15 @@ export class SafetyDirectoryController {
     @Body() body: unknown,
     @Headers('idempotency-key') idempotencyKey: string | undefined,
     @CurrentUser() user: AuthenticatedUser,
+    @Headers('x-correlation-id') correlationId?: string,
   ): Promise<SafetyDirectoryAdminEntry> {
     if (!idempotencyKey || !/^[A-Za-z0-9_-]{1,128}$/.test(idempotencyKey)) {
       throw new BadRequestException('Idempotency-Key header is required');
     }
-    return this.service.create(this.parseWrite(body), idempotencyKey, { actorId: user.accountId });
+    return this.service.create(this.parseWrite(body), idempotencyKey, {
+      actorId: user.accountId,
+      correlationId: this.effectiveCorrelationId(correlationId),
+    });
   }
 
   @Patch('admin/entries/:entryId')
@@ -91,9 +96,12 @@ export class SafetyDirectoryController {
     @Param('entryId') entryId: string,
     @Query('version') versionValue: string | undefined,
     @CurrentUser() user: AuthenticatedUser,
+    @Headers('x-correlation-id') correlationId?: string,
   ): Promise<SafetyDirectoryAdminEntry> {
+    const effectiveCorrelationId = this.effectiveCorrelationId(correlationId);
     const result = await this.service.review(this.entryId(entryId), this.version(versionValue), {
       actorId: user.accountId,
+      correlationId: effectiveCorrelationId,
     });
     return this.requireMutation(result);
   }
@@ -105,15 +113,29 @@ export class SafetyDirectoryController {
     @Param('entryId') entryId: string,
     @Query('version') versionValue: string | undefined,
     @CurrentUser() user: AuthenticatedUser,
+    @Headers('x-correlation-id') correlationId?: string,
   ): Promise<SafetyDirectoryAdminEntry> {
+    const effectiveCorrelationId = this.effectiveCorrelationId(correlationId);
     const result = await this.service.deactivate(
       this.entryId(entryId),
       this.version(versionValue),
       {
         actorId: user.accountId,
+        correlationId: effectiveCorrelationId,
       },
     );
     return this.requireMutation(result);
+  }
+
+  private effectiveCorrelationId(supplied?: string): string {
+    if (supplied === undefined || supplied === '') {
+      return randomUUID();
+    }
+    const trimmed = supplied.trim();
+    if (!UUID_RE.test(trimmed)) {
+      throw new BadRequestException('Invalid X-Correlation-Id header');
+    }
+    return trimmed;
   }
 
   private parseWrite(body: unknown): SafetyDirectoryEntryWrite {

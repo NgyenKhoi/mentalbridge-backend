@@ -32,6 +32,7 @@
 		<liquibase.version>5.0.3</liquibase.version>
 		<spring-dotenv.version>5.1.0</spring-dotenv.version>
 		<swagger-parser.version>2.1.45</swagger-parser.version>
+		<json-schema-validator.version>2.0.4</json-schema-validator.version>
 	</properties>
 	<dependencies>
 		<dependency>
@@ -162,6 +163,12 @@
 		<dependency>
 			<groupId>io.github.openfeign</groupId>
 			<artifactId>feign-jackson</artifactId>
+			<scope>test</scope>
+		</dependency>
+		<dependency>
+			<groupId>com.networknt</groupId>
+			<artifactId>json-schema-validator</artifactId>
+			<version>${json-schema-validator.version}</version>
 			<scope>test</scope>
 		</dependency>
 	</dependencies>

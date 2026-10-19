@@ -44,7 +44,8 @@ class ConsultationLiquibaseChangelogTests {
 							"consultation-024-livekit-participation-evidence",
 							"consultation-025-livekit-video-completion",
 							"consultation-026-specialist-language-and-credentials",
-							"consultation-027-immediate-appointment-booking");
+							"consultation-027-immediate-appointment-booking",
+							"consultation-028-consultation-admin-audit-outbox");
 		}
 	}
 }

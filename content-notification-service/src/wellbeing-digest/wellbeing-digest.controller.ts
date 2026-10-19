@@ -26,7 +26,7 @@ export class WellbeingDigestController {
     @CurrentUser() user: AuthenticatedUser,
     @Res({ passthrough: true }) response: Response,
   ): Promise<WellbeingDigestPreview> {
-    const preferences = await this.preferences.get(user.accountId);
+    const preferences = await this.preferences.get(user.accountId, 'USER');
     response.setHeader('Cache-Control', 'private, no-store');
     return this.digest.preview(user.accountId, preferences, randomUUID());
   }

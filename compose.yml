@@ -51,6 +51,8 @@ services:
         /opt/kafka/bin/kafka-topics.sh --bootstrap-server kafka:9092 --create --if-not-exists --topic mentalbridge.community.interaction.v1 --partitions 3 --replication-factor 1
         /opt/kafka/bin/kafka-topics.sh --bootstrap-server kafka:9092 --create --if-not-exists --topic mentalbridge.content-notification.account-preference-dead-letter.v1 --partitions 1 --replication-factor 1
         /opt/kafka/bin/kafka-topics.sh --bootstrap-server kafka:9092 --create --if-not-exists --topic mentalbridge.content-notification.community-interaction-dead-letter.v1 --partitions 1 --replication-factor 1
+        /opt/kafka/bin/kafka-topics.sh --bootstrap-server kafka:9092 --create --if-not-exists --topic mentalbridge.admin.audit-event.v1 --partitions 3 --replication-factor 1 --config retention.ms=604800000 --config cleanup.policy=delete
+        /opt/kafka/bin/kafka-configs.sh --bootstrap-server kafka:9092 --alter --entity-type topics --entity-name mentalbridge.admin.audit-event.v1 --add-config retention.ms=604800000,cleanup.policy=delete
     depends_on:
       kafka:
         condition: service_healthy
@@ -103,6 +105,8 @@ services:
       IDENTITY_OUTBOX_RELAY_SEND_TIMEOUT: ${IDENTITY_OUTBOX_RELAY_SEND_TIMEOUT:-PT5S}
       IDENTITY_OUTBOX_RELAY_RETRY_BASE: ${IDENTITY_OUTBOX_RELAY_RETRY_BASE:-PT5S}
       IDENTITY_OUTBOX_RELAY_RETRY_MAXIMUM: ${IDENTITY_OUTBOX_RELAY_RETRY_MAXIMUM:-PT5M}
+      CARE_SERVICE_BASE_URL: http://care:8081
+      CONSULTATION_SERVICE_BASE_URL: http://consultation:8082
     volumes:
       - identity-verification:/var/lib/mentalbridge/identity-verification
     ports:

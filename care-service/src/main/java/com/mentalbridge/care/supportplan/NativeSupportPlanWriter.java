@@ -28,6 +28,7 @@ import com.mentalbridge.care.supportplan.SupportPlanWriter.Revalidation;
 class NativeSupportPlanWriter {
 	static final String EMOTION_POLICY = "support-plan-emotion-actions-v1";
 	static final String POLICY = "support-plan-journal-actions-v1";
+	static final String PROPOSAL_POLICY = "support-plan-proposal-v1";
 	static final String JOURNAL_INTENT = "short-reflection";
 	static final String JOURNAL_INTENT_POLICY = "journal-writing-intent-v1";
 	private final SupportPlanRepository plans;
@@ -53,7 +54,7 @@ class NativeSupportPlanWriter {
 	@Transactional(readOnly = true)
 	Snapshot required(UUID userId, UUID planId) {
 		var plan = plans.findByIdAndUserId(planId, userId).orElseThrow(this::notFound);
-		if (plan.modelVersion() != 3 || !List.of(POLICY, EMOTION_POLICY).contains(plan.planPolicyVersion())) {
+		if (plan.modelVersion() != 3 || !List.of(POLICY, EMOTION_POLICY, PROPOSAL_POLICY).contains(plan.planPolicyVersion())) {
 			throw conflict("SUPPORT_PLAN_MODEL_VERSION_UNSUPPORTED", "This command requires an admitted native plan");
 		}
 		return new Snapshot(plan, families.findBySupportPlanIdOrderByOrdinal(planId),
@@ -75,18 +76,21 @@ class NativeSupportPlanWriter {
 		if (existing != null) {
 			throw conflict("SUPPORT_PLAN_DRAFT_EXISTS", "Review or explicitly discard the existing draft before a new native proposal");
 		}
-		boolean emotion = preferences != null && preferences.preferredActivityModes().contains(ActivityMode.EMOTION_CHECK_IN);
+		boolean emotion = preferences == null || !preferences.provided()
+				|| preferences.preferredActivityModes().contains(ActivityMode.EMOTION_CHECK_IN);
 		boolean journal = preferences != null && preferences.preferredActivityModes().contains(ActivityMode.JOURNALING);
 		int professionalCount = (int) proposal.families().stream()
 				.filter(family -> family.family().endsWith("_PROFESSIONAL_ADJUNCT")).count();
 		var safety = evaluation.safetyEvidence();
 		var plan = SupportPlanEntity.nativeDraft(UUID.randomUUID(), userId, evaluation.supportEvaluationId(),
-				evaluation.policyVersion(), evaluation.evaluatedAt(), POLICY, entitlement.packageCode().name(),
+				evaluation.policyVersion(), evaluation.evaluatedAt(), PROPOSAL_POLICY, entitlement.packageCode().name(),
 				entitlement.source().name(), entitlement.policyVersion(), entitlement.version(), entitlement.decidedAt(),
 				"DOMAIN_AWARE_WELLBEING_SUPPORT", "Các hoạt động được MentalBridge kiểm tra theo bối cảnh sàng lọc và lựa chọn của bạn.",
 				safety.status().name(), safety.reasonCode().name(), safety.policyVersion(), safetyCode, safetyCopy,
-				proposal.slots().size() + professionalCount + (emotion ? 1 : 0) + (journal ? 1 : 0), now);
+				proposal.slots().size() + professionalCount + (emotion ? 1 : 0) + (journal ? 1 : 0) + 1, now);
 		plan.snapshotPersonalization(preferences);
+		plan.initializeCycle(profiles.findTimezoneByAccountId(userId).orElseThrow(() -> new ApiException(
+				HttpStatus.NOT_FOUND, "PROFILE_NOT_FOUND", "Care profile was not found")));
 		plan = plans.saveAndFlush(plan);
 		var focusByDomain = new HashMap<String, UUID>();
 		int ordinal = 1;
@@ -102,7 +106,7 @@ class NativeSupportPlanWriter {
 				actions.save(new PlanActionEntity(UUID.randomUUID(), plan.id(), focus.id(), userId, ordinal++,
 						"PROFESSIONAL_SUPPORT", "CONNECT_WITH_PROFESSIONAL", null,
 						new SourceReference("CONSULTATION", "PROFESSIONAL_SUPPORT_PATHWAY", "specialist-discovery", "1",
-								POLICY, null, null, now), new Provenance("SYSTEM_POLICY", family.family(), POLICY, now),
+								PROPOSAL_POLICY, null, null, now), new Provenance("SYSTEM_POLICY", family.family(), PROPOSAL_POLICY, now),
 						new Presentation("Kết nối với chuyên gia", "Hỗ trợ chuyên môn là hướng chính; hoạt động tự hỗ trợ chỉ bổ trợ.",
 								null, null), now));
 			}
@@ -120,16 +124,20 @@ class NativeSupportPlanWriter {
 		if (emotion) {
 			UUID focusId = focusByDomain.get(proposal.families().get(0).targetDomain());
 			actions.save(new PlanActionEntity(UUID.randomUUID(), plan.id(), focusId, userId, ordinal++, "EMOTION_CHECK_IN",
-					"NOTICE_SELF_REPORTED_EMOTIONS", "Bạn đã chọn check-in cảm xúc trong hoạt động ưu tiên.",
+					"NOTICE_SELF_REPORTED_EMOTIONS", preferences != null && preferences.provided()
+							? "Bạn đã chọn check-in cảm xúc trong hoạt động ưu tiên."
+							: "Ghi nhận ngắn cảm xúc mỗi ngày để nhìn lại cảm nhận của bạn.",
 					new SourceReference("JOURNAL_AI", "EMOTION_CHECK_IN_CAPABILITY", "daily-emotion-check-in", "1",
 							"daily-emotion-check-in-v1", null, null, now),
-					new Provenance("USER_SELECTED", preferences.personalizationId().toString(), Long.toString(preferences.revision()), now),
-					new Presentation("Check-in cảm xúc", "Ghi nhận cảm xúc của bạn theo nhịp đã chọn; không phải đánh giá chẩn đoán.",
+					emotionProvenance(preferences, now),
+					new Presentation("Check-in cảm xúc", preferences != null && preferences.provided()
+							? "Ghi nhận cảm xúc của bạn theo nhịp đã chọn; không phải đánh giá chẩn đoán."
+							: "Ghi nhận cảm xúc của bạn mỗi ngày; không phải đánh giá chẩn đoán.",
 							"Mở check-in cảm xúc, lưu lựa chọn rồi quay lại kế hoạch để kiểm tra lần thực hiện này.", null), now));
 		}
 		if (journal) {
 			UUID focusId = focusByDomain.get(proposal.families().get(0).targetDomain());
-			actions.save(new PlanActionEntity(UUID.randomUUID(), plan.id(), focusId, userId, ordinal, "JOURNAL",
+			actions.save(new PlanActionEntity(UUID.randomUUID(), plan.id(), focusId, userId, ordinal++, "JOURNAL",
 					"WRITE_SHORT_REFLECTION", "Bạn đã chọn viết nhật ký trong hoạt động ưu tiên.",
 					new SourceReference("JOURNAL_AI", "JOURNAL_TEMPLATE", JOURNAL_INTENT, "1",
 							JOURNAL_INTENT_POLICY, null, null, now),
@@ -137,10 +145,54 @@ class NativeSupportPlanWriter {
 					new Presentation("Viết vài dòng nhật ký", "Dành một khoảng thời gian ngắn để viết về điều bạn muốn ghi lại.",
 							"Mở nhật ký, viết và lưu bài mới rồi quay lại kế hoạch để kiểm tra lần viết này. Nội dung bài viết vẫn riêng tư.", null), now));
 		}
+		var questionnaire = evaluation.contributingDomains().stream()
+				.filter(domain -> "PHQ9".equals(domain.instrument())).findFirst()
+				.orElse(evaluation.contributingDomains().get(0));
+		actions.save(new PlanActionEntity(UUID.randomUUID(), plan.id(),
+				focusByDomain.get(proposal.families().get(0).targetDomain()), userId, ordinal,
+				"REASSESSMENT_SCREENING", "REVIEW_SUPPORT_AFTER_CYCLE", null,
+				new SourceReference("CARE", "QUESTIONNAIRE_DEFINITION", questionnaire.questionnaireDefinitionId().toString(),
+						questionnaire.questionnaireVersion(), PROPOSAL_POLICY, null, null, now),
+				new Provenance("SYSTEM_POLICY", SupportPlanCycle.POLICY, PROPOSAL_POLICY, now),
+				new Presentation("Kiểm tra lại sau 14 ngày", "Nhìn lại cảm nhận và chọn bước tiếp theo cho kế hoạch.", null, null), now));
 		families.flush();
 		actions.flush();
 		activities.prepareDraft(plan, now);
 		plans.insertRequest(userId, key, hash, plan.id(), now);
+		return plan.id();
+	}
+
+	private Provenance emotionProvenance(PersonalizationSnapshot preferences, Instant now) {
+		return preferences != null && preferences.provided()
+				? new Provenance("USER_SELECTED", preferences.personalizationId().toString(), Long.toString(preferences.revision()), now)
+				: new Provenance("SYSTEM_POLICY", PROPOSAL_POLICY, PROPOSAL_POLICY, now);
+	}
+
+	@Transactional
+	UUID continueCycle(UUID userId, UUID planId, long expectedVersion, String key, String hash,
+			CurrentEntitlementResponse entitlement, Instant now) {
+		now = now.truncatedTo(ChronoUnit.MICROS);
+		lockOwner(userId);
+		var replay = replay(userId, key, hash, "CYCLE_CONTINUE");
+		if (replay != null) return replay;
+		var plan = plans.findByIdAndUserIdForUpdate(planId, userId).orElseThrow(this::notFound);
+		if (plan.version() != expectedVersion) throw versionConflict();
+		var cycle = SupportPlanCycle.view(plan, now);
+		if (cycle == null || !"REVIEW_DUE".equals(cycle.state())) {
+			throw conflict("SUPPORT_PLAN_CYCLE_NOT_REVIEW_DUE", "Only a review-due proposal cycle can continue");
+		}
+		plan.continueCycle(now);
+		plans.saveAndFlush(plan);
+		activities.continueCycle(plan, now);
+		var resource = actions.findBySupportPlanIdAndUserIdOrderByPlanFocusIdAscOrdinalAsc(plan.id(), userId)
+				.stream().filter(action -> "RESOURCE".equals(action.actionType())).findFirst().orElseThrow(() ->
+						conflict("SUPPORT_PLAN_POLICY_STALE", "The proposal resource provenance is missing"));
+		// The ledger records the entitlement decided for this command, as ACTIVATE/REPLACE do.
+		plans.insertCommand(userId, key, "CYCLE_CONTINUE", hash, plan.id(), expectedVersion, plan.version(),
+				plan.status(), plan.updatedAt(), plan.evaluationPolicyVersion(), entitlement.packageCode().name(),
+				entitlement.source().name(), entitlement.policyVersion(), entitlement.version(),
+				entitlement.decidedAt(), resource.sourceEligibilityPolicyVersion(), resource.sourceVerifiedAt(), now,
+				null, null, null, null, null);
 		return plan.id();
 	}
 
@@ -228,7 +280,7 @@ class NativeSupportPlanWriter {
 
 	private SupportPlanEntity lockedDraft(UUID userId, UUID planId, long version) {
 		var plan = plans.findByIdAndUserIdForUpdate(planId, userId).orElseThrow(this::notFound);
-		if (plan.modelVersion() != 3 || !List.of(POLICY, EMOTION_POLICY).contains(plan.planPolicyVersion()) || !"DRAFT".equals(plan.status())) {
+		if (plan.modelVersion() != 3 || !List.of(POLICY, EMOTION_POLICY, PROPOSAL_POLICY).contains(plan.planPolicyVersion()) || !"DRAFT".equals(plan.status())) {
 			throw conflict("SUPPORT_PLAN_NOT_DRAFT", "An admitted native draft is required");
 		}
 		if (plan.version() != version) throw versionConflict();

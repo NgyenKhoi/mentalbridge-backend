@@ -56,8 +56,7 @@ export class AccountLifecycleProjector {
   ) {}
 
   async project(event: AccountRegisteredEvent): Promise<void> {
-    if (event.payload.actorType !== 'USER') return;
-    await this.preferences.initializeForAccount(event.payload.accountId);
+    await this.preferences.initializeForAccount(event.payload.accountId, event.payload.actorType);
   }
 }
 

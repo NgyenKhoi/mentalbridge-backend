@@ -40,6 +40,7 @@ public class SecurityConfiguration {
 						.requestMatchers("/internal/v1/video/livekit/webhook").permitAll()
 						.requestMatchers("/internal/v1/appointments/*/notification-eligibility").permitAll()
 						.requestMatchers("/internal/v1/entitlements/current").hasRole("USER")
+						.requestMatchers("/api/v1/admin/**").hasRole("ADMIN")
 						.requestMatchers("/internal/v1/appointments/*/consultation-brief-context",
 								"/internal/v1/appointments/*/chat-eligibility",
 								"/internal/v1/appointments/*/chat-evidence",
@@ -64,6 +65,7 @@ public class SecurityConfiguration {
 						.requestMatchers("/api/v1/admin/appointments/**").hasRole("ADMIN")
 						.requestMatchers("/api/v1/admin/appointment-disputes/**").hasRole("ADMIN")
 						.requestMatchers("/api/v1/admin/payouts", "/api/v1/admin/payments").hasRole("ADMIN")
+						.requestMatchers("/api/v1/admin/operations/**").hasRole("ADMIN")
 						.anyRequest().authenticated())
 				.exceptionHandling(errors -> errors.authenticationEntryPoint(securityProblems)
 						.accessDeniedHandler(securityProblems))

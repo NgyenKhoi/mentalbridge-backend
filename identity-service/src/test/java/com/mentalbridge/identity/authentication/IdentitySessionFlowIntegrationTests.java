@@ -45,6 +45,7 @@ import com.mentalbridge.identity.credential.CredentialDeliveryRequested;
 class IdentitySessionFlowIntegrationTests extends IdentityTestProperties {
 
 	private static final Set<String> IMPLEMENTED_OPERATIONS = Set.of(
+			"GET /api/v1/admin/product-journey-metrics",
 			"POST /api/v1/auth/registrations",
 			"POST /api/v1/auth/email-verifications",
 			"POST /api/v1/auth/email-verification-requests",
@@ -57,8 +58,11 @@ class IdentitySessionFlowIntegrationTests extends IdentityTestProperties {
 			"PUT /api/v1/account/password",
 			"GET /api/v1/account",
 			"GET /api/v1/admin/accounts",
+			"GET /api/v1/admin/accounts/summary",
 			"GET /api/v1/admin/accounts/{accountId}",
 			"PUT /api/v1/admin/accounts/{accountId}/state",
+			"GET /api/v1/admin/audit-events",
+			"GET /api/v1/admin/audit-events/export",
 			"GET /api/v1/admin/platform-reports/catalogue",
 			"GET /api/v1/admin/platform-reports",
 			"POST /api/v1/admin/platform-reports",
