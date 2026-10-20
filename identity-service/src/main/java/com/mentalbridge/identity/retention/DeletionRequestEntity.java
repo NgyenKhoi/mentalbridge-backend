@@ -14,7 +14,6 @@ import jakarta.persistence.FetchType;
 import jakarta.persistence.Id;
 import jakarta.persistence.OneToMany;
 import jakarta.persistence.Table;
-import jakarta.persistence.Transient;
 import jakarta.persistence.Version;
 
 @Entity
@@ -79,7 +78,8 @@ public class DeletionRequestEntity {
 	@OneToMany(mappedBy = "deletionRequest", cascade = CascadeType.ALL, orphanRemoval = true, fetch = FetchType.EAGER)
 	private List<DeletionOwnerFactEntity> ownerFacts = new ArrayList<>();
 
-	@Transient
+	@Enumerated(EnumType.STRING)
+	@Column(name = "previous_status", length = 32)
 	private DeletionRequestStatus previousStatus;
 
 	protected DeletionRequestEntity() {

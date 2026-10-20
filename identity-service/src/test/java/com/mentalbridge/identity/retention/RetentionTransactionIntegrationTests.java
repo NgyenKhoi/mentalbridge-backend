@@ -4,6 +4,7 @@ import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
 
 import java.time.Instant;
+import java.util.List;
 import java.util.UUID;
 
 import org.junit.jupiter.api.AfterEach;
@@ -30,6 +31,9 @@ class RetentionTransactionIntegrationTests extends IdentityTestProperties {
 	private RetentionAuditLogger auditLogger;
 
 	@Autowired
+	private DeletionRequestRepository deletionRequests;
+
+	@Autowired
 	private TransactionTemplate transactionTemplate;
 
 	@Autowired
@@ -37,6 +41,7 @@ class RetentionTransactionIntegrationTests extends IdentityTestProperties {
 
 	private UUID executionId;
 	private UUID auditId;
+	private UUID deletionRequestId;
 
 	@AfterEach
 	void cleanUp() {
@@ -49,6 +54,41 @@ class RetentionTransactionIntegrationTests extends IdentityTestProperties {
 			jdbc.sql("delete from security_audit_event where id = :id")
 					.param("id", auditId)
 					.update();
+		}
+		if (deletionRequestId != null) {
+			jdbc.sql("delete from deletion_request where id = :id")
+					.param("id", deletionRequestId)
+					.update();
+		}
+	}
+
+	@Test
+	void holdRestoresExactPreviousStatusAfterCommitAndReload() {
+		for (DeletionRequestStatus previous : List.of(
+				DeletionRequestStatus.FAILED, DeletionRequestStatus.PENDING, DeletionRequestStatus.IN_PROGRESS)) {
+			deletionRequestId = UUID.randomUUID();
+			UUID id = deletionRequestId;
+			int retryCount = previous == DeletionRequestStatus.PENDING ? 1 : 0;
+			Instant now = Instant.now();
+			var request = new DeletionRequestEntity(id, UUID.randomUUID(), "a".repeat(64), previous,
+					DeletionHoldType.NONE, null, retryCount, 3, DeletionEscalationState.NONE, null,
+					now, now, null, null, now, now);
+			transactionTemplate.executeWithoutResult(tx -> deletionRequests.save(request));
+			transactionTemplate.executeWithoutResult(tx ->
+					deletionRequests.findById(id).orElseThrow().applyHold(
+							DeletionHoldType.LEGAL_HOLD, "STATUTORY_INQUIRY", Instant.now()));
+
+			assertThat(jdbc.sql("select previous_status from deletion_request where id = :id")
+					.param("id", id).query(String.class).single()).isEqualTo(previous.name());
+			transactionTemplate.executeWithoutResult(tx -> {
+				var reloaded = deletionRequests.findById(id).orElseThrow();
+				assertThat(reloaded.status()).isEqualTo(DeletionRequestStatus.HELD);
+				reloaded.releaseHold(Instant.now());
+			});
+			assertThat(jdbc.sql("select status from deletion_request where id = :id")
+					.param("id", id).query(String.class).single()).isEqualTo(previous.name());
+			jdbc.sql("delete from deletion_request where id = :id").param("id", id).update();
+			deletionRequestId = null;
 		}
 	}
 

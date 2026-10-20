@@ -185,6 +185,7 @@ CREATE TABLE identity.deletion_request (
     account_id uuid NOT NULL, -- retained coordinator reference; no cascading account FK
     subject_reference_hash char(64) NOT NULL,
     status varchar(32) NOT NULL,
+    previous_status varchar(32) CHECK (previous_status IS NULL OR previous_status IN ('PENDING', 'IN_PROGRESS', 'FAILED')),
     hold_type varchar(32) NOT NULL,
     hold_reason varchar(64),
     retry_count integer NOT NULL,

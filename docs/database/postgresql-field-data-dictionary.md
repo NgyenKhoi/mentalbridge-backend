@@ -441,6 +441,7 @@ Identity-owned coordinator state for a deletion request. The table and ADMIN gov
 | `account_id` | Identity account reference retained without a cascading foreign key so minimized workflow evidence survives account removal. |
 | `subject_reference_hash` | One-way 64-character SHA-256 subject tombstone used in ADMIN responses instead of personal identifiers. |
 | `status` | Coordinator state `PENDING`, `IN_PROGRESS`, `HELD`, `COMPLETED`, or `FAILED`; completion requires all recorded owner facts to carry completion evidence. |
+| `previous_status` | Nullable Identity-owned coordinator state captured when a hold starts (`PENDING`, `IN_PROGRESS`, or `FAILED`) so release restores the exact prior state after transaction reload; null outside a hold and for pre-migration held rows. |
 | `hold_type`, `hold_reason` | Closed hold category and safe allow-listed reason code; neither stores free text. |
 | `retry_count`, `max_retries` | Attempts consumed by actual Identity-owned deletion work and the positive retry ceiling. |
 | `escalation_state` | Safe operator state `NONE`, `RETRY_EXHAUSTED`, or `MANUAL_ESCALATION_REQUIRED`. |
