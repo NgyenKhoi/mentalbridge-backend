@@ -46,16 +46,15 @@ class CommunityModerationService {
 	private final JdbcClient jdbc;
 	private final Clock clock;
 	private final ObjectMapper objectMapper;
-
-	CommunityModerationService(JdbcClient jdbc, Clock clock) {
-		this(jdbc, clock, new ObjectMapper().findAndRegisterModules());
-	}
+	private final com.mentalbridge.community.chat.CommunityChatVisibility chatVisibility;
 
 	@Autowired
-	public CommunityModerationService(JdbcClient jdbc, Clock clock, ObjectMapper objectMapper) {
+	public CommunityModerationService(JdbcClient jdbc, Clock clock, ObjectMapper objectMapper,
+			com.mentalbridge.community.chat.CommunityChatVisibility chatVisibility) {
 		this.jdbc = jdbc;
 		this.clock = clock;
 		this.objectMapper = objectMapper;
+		this.chatVisibility = chatVisibility;
 	}
 
 	@Transactional
@@ -131,18 +130,14 @@ class CommunityModerationService {
 	void block(UUID subject, UUID blockedProfileId) {
 		var blockerId = ensureProfile(subject);
 		if (blockerId.equals(blockedProfileId) || !activeProfileExists(blockedProfileId)) throw CommunityApiException.profileNotFound();
-		jdbc.sql("""
-				insert into community_block (blocker_profile_id, blocked_profile_id, created_at)
-				values (:blocker, :blocked, :now) on conflict do nothing
-				""").param("blocker", blockerId).param("blocked", blockedProfileId).param("now", timestamp(clock.instant())).update();
+		chatVisibility.changeBlock(blockerId, blockedProfileId, true, UUID.randomUUID());
 	}
 
 	@Transactional
 	void unblock(UUID subject, UUID blockedProfileId) {
 		var blockerId = ensureProfile(subject);
 		if (!activeProfileExists(blockedProfileId)) throw CommunityApiException.profileNotFound();
-		jdbc.sql("delete from community_block where blocker_profile_id = :blocker and blocked_profile_id = :blocked")
-				.param("blocker", blockerId).param("blocked", blockedProfileId).update();
+		chatVisibility.changeBlock(blockerId, blockedProfileId, false, UUID.randomUUID());
 	}
 
 	@Transactional(readOnly = true)
@@ -367,6 +362,7 @@ class CommunityModerationService {
 			return applySensitiveWarning(target, prior, request.action());
 		}
 		if (request.action() == Action.RESTRICT_COMMUNITY_ACCESS) {
+			chatVisibility.restrict(target.authorId(), UUID.randomUUID());
 			jdbc.sql("""
 					insert into community_access_restriction
 					(profile_id, case_id, reason_code, restricted_by_subject, restricted_at)

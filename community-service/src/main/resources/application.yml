@@ -35,6 +35,15 @@ spring:
 
 mentalbridge:
   community:
+    chat:
+      enabled: ${COMMUNITY_CHAT_ENABLED:false}
+      identity-base-url: ${COMMUNITY_CHAT_IDENTITY_BASE_URL:}
+      identity-service-token: ${IDENTITY_COMMUNITY_CHAT_SERVICE_TOKEN:}
+      connect-timeout: ${COMMUNITY_CHAT_IDENTITY_CONNECT_TIMEOUT:PT0.5S}
+      read-timeout: ${COMMUNITY_CHAT_IDENTITY_READ_TIMEOUT:PT1.5S}
+      encryption-key: ${COMMUNITY_CHAT_ENCRYPTION_KEY:}
+      encryption-key-version: ${COMMUNITY_CHAT_ENCRYPTION_KEY_VERSION:v1}
+      decryption-keys: ${COMMUNITY_CHAT_DECRYPTION_KEYS:{}}
     jwt:
       issuer: ${IDENTITY_JWT_ISSUER}
       audience: ${IDENTITY_JWT_AUDIENCE}

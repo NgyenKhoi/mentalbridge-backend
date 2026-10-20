@@ -152,3 +152,7 @@ At capstone scale, do not partition by default. Consider owner-local partitionin
 4. Seed questionnaire definitions and reviewed resources through versioned reference-data migrations; introduce any future template entity only with an approved owner migration and canonical-model update.
 5. Use synthetic development data only.
 6. Every table and column has a useful entry in `postgresql-field-data-dictionary.md`. The same change that materially changes persisted domain structure must also update `docs/domain-model/relational/postgresql-logical-schema.sql` while preserving migrations as runtime truth.
+
+## Community direct chat (MB-685)
+
+ADR 0042 is the explicit scoped exception to the appointment/MongoDB chat baseline above: Community owns peer direct conversations, text-free requests, privacy, retry identities and minimized outbox records in its own PostgreSQL. Existing appointment chat remains Realtime/MongoDB-owned. Liquibase 0017 and the canonical Community model define the unique ordered pair, one pending request, explicit acceptance, suppression and separate public-management/private-message revisions. Identity current-state reads precede local transactions; local blocks/restrictions serialize on sorted Community profile locks. No remote call is made while holding those transactions.

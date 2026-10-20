@@ -2471,3 +2471,66 @@ CREATE TABLE content.content_admin_audit_outbox (
  * runtime persistence. MongoDB-owned aggregates are documented separately in
  * ../document/mongodb-logical-model.md and are never represented as SQL tables.
  */
+
+CREATE TABLE community.community_chat_privacy (
+  profile_id uuid PRIMARY KEY REFERENCES community.community_profile(id) ON DELETE CASCADE,
+  direct_message_policy varchar(24) NOT NULL DEFAULT 'APPROVAL_REQUIRED',
+  presence_visible boolean NOT NULL DEFAULT false,
+  invisible boolean NOT NULL DEFAULT false,
+  typing_visible boolean NOT NULL DEFAULT false,
+  read_receipts_visible boolean NOT NULL DEFAULT false,
+  version bigint NOT NULL DEFAULT 0 CHECK (version >= 0),
+  visibility_epoch bigint NOT NULL DEFAULT 0 CHECK (visibility_epoch >= 0),
+  CHECK (direct_message_policy IN ('APPROVAL_REQUIRED', 'ANYONE'))
+);
+CREATE TABLE community.community_chat_conversation (
+  id uuid PRIMARY KEY,
+  first_profile_id uuid NOT NULL REFERENCES community.community_profile(id),
+  second_profile_id uuid NOT NULL REFERENCES community.community_profile(id),
+  state varchar(16) NOT NULL CHECK (state IN ('DORMANT', 'ACTIVE')),
+  management_version bigint NOT NULL DEFAULT 0 CHECK (management_version >= 0),
+  event_version bigint NOT NULL DEFAULT 0 CHECK (event_version >= 0),
+  last_sequence bigint NOT NULL DEFAULT 0 CHECK (last_sequence >= 0),
+  created_at timestamptz NOT NULL,
+  activated_at timestamptz,
+  UNIQUE (first_profile_id, second_profile_id),
+  CHECK (first_profile_id < second_profile_id),
+  CHECK ((state = 'ACTIVE') = (activated_at IS NOT NULL))
+);
+CREATE TABLE community.community_chat_request (
+  id uuid PRIMARY KEY,
+  conversation_id uuid NOT NULL REFERENCES community.community_chat_conversation(id) ON DELETE CASCADE,
+  requester_profile_id uuid NOT NULL REFERENCES community.community_profile(id),
+  recipient_profile_id uuid NOT NULL REFERENCES community.community_profile(id),
+  state varchar(16) NOT NULL CHECK (state IN ('PENDING', 'ACCEPTED', 'DECLINED', 'BLOCKED', 'EXPIRED')),
+  version bigint NOT NULL DEFAULT 0 CHECK (version >= 0),
+  created_at timestamptz NOT NULL,
+  expires_at timestamptz NOT NULL,
+  decided_at timestamptz,
+  decided_by_profile_id uuid REFERENCES community.community_profile(id),
+  CHECK (requester_profile_id <> recipient_profile_id),
+  CHECK (expires_at > created_at),
+  CHECK ((state = 'PENDING') = (decided_at IS NULL))
+);
+CREATE UNIQUE INDEX ux_chat_request_pending ON community.community_chat_request(conversation_id) WHERE state = 'PENDING';
+CREATE TABLE community.community_chat_command (
+  id uuid PRIMARY KEY,
+  actor_profile_id uuid NOT NULL REFERENCES community.community_profile(id),
+  operation varchar(24) NOT NULL CHECK (operation IN ('START_DIRECT', 'SEND_MESSAGE')),
+  idempotency_key uuid NOT NULL,
+  request_fingerprint varchar(100) NOT NULL,
+  result_kind varchar(16) NOT NULL CHECK (result_kind IN ('ACTIVE', 'PENDING', 'MESSAGE')),
+  target_id uuid NOT NULL,
+  created_at timestamptz NOT NULL,
+  UNIQUE (actor_profile_id, operation, idempotency_key)
+);
+CREATE TABLE community.community_chat_outbox (
+  id uuid PRIMARY KEY,
+  conversation_id uuid NOT NULL REFERENCES community.community_chat_conversation(id) ON DELETE CASCADE,
+  deduplication_key varchar(255) NOT NULL UNIQUE,
+  event_payload jsonb NOT NULL,
+  occurred_at timestamptz NOT NULL,
+  published_at timestamptz,
+  attempt_count integer NOT NULL DEFAULT 0 CHECK (attempt_count >= 0),
+  next_attempt_at timestamptz
+);

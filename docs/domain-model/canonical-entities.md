@@ -182,3 +182,13 @@ shared platform database. These capabilities remain owner-local projections or
 future owner-specific persistence and are `PROPOSED`, not active centralized
 tables. A future migration must identify the actual owner before adding them to
 the active model.
+
+## MB-685 active Community chat entities
+
+| Entity | Owner | Storage | Status | Invariant |
+| --- | --- | --- | --- | --- |
+| `community_chat_privacy` | community-service | PostgreSQL | ACTIVE | Owner migration 0017; exact fields in the Community data dictionary; no cross-owner foreign keys. |
+| `community_chat_conversation` | community-service | PostgreSQL | ACTIVE | Owner migration 0017; exact fields in the Community data dictionary; no cross-owner foreign keys. |
+| `community_chat_request` | community-service | PostgreSQL | ACTIVE | Owner migration 0017; exact fields in the Community data dictionary; no cross-owner foreign keys. |
+| `community_chat_command` | community-service | PostgreSQL | ACTIVE | Owner migration 0017; exact fields in the Community data dictionary; no cross-owner foreign keys. |
+| `community_chat_outbox` | community-service | PostgreSQL | ACTIVE | Owner migration 0017; exact fields in the Community data dictionary; no cross-owner foreign keys. |

@@ -1,6 +1,6 @@
 # ADR 0042: Privacy-first Community conversation contract
 
-- Status: Proposed for MB-684 owner/security review; accepted only when this decision PR is approved and merged
+- Status: Accepted by MB-684 PR #206, approved and merged at `318248c732008512d110935b9576516f9d4ca084`; runtime promotion remains story-scoped
 - Date: 2026-10-20
 - Decision ID: `MB-COMMUNITY-CHAT-001`
 - Product baseline: [MB-683](https://vunguyenkhoi47.atlassian.net/browse/MB-683)

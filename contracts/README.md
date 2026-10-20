@@ -113,3 +113,7 @@ returns a review-required reference instead of silently mutating an active plan.
 - Runtime configuration changes together with `.env.example`, the module README, and configuration tests.
 
 Run `pwsh ./scripts/verify-repository.ps1` before opening a pull request. CI applies the same repository and changed-file policy checks.
+
+## MB-685 active direct-chat subset
+
+[`openapi/community-chat-v1.json`](openapi/community-chat-v1.json) is the runtime provider contract for delivered direct-chat operations. The accepted MB-684 artifact in proposals remains the frozen design baseline for downstream groups/transport/moderation. Only the delivered paths are registered in the active subset; its schemas must remain compatible with that baseline. Do not infer group/socket capability from a schema variant.

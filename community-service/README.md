@@ -4,12 +4,13 @@
 
 ## Runtime
 
-MB-684 adds the proposed [Community chat contract](../docs/adr/0042-community-chat-contract.md)
-and [privacy policy](../docs/policies/community-chat-policy-v1.md), not runtime
-DM/groups. On acceptance Community owns peer messages, membership and permissions
-in its own PostgreSQL; Realtime supplies authorized transport/presence only.
-The new OpenAPI remains in proposals with all operations planned. MB-685/687
-must deliver owner migrations/provider tests before those APIs become callable.
+MB-684 accepted the [Community chat contract](../docs/adr/0042-community-chat-contract.md)
+and [privacy policy](../docs/policies/community-chat-policy-v1.md). MB-685 delivers
+the direct-chat provider subset in Community PostgreSQL, including fresh Identity
+eligibility checks. Groups and authorized Realtime transport/presence remain
+downstream stories. Only delivered operations are registered by the canonical
+Community OpenAPI through its direct-chat fragment; the proposal is the frozen
+baseline for future delivery rather than a capability advertisement.
 
 - Java 21 and Spring Boot 4
 - service-owned PostgreSQL database with Liquibase migrations
@@ -101,3 +102,20 @@ The canonical REST contract is [`contracts/openapi/community-service-v1.yaml`](.
 Eligible external root comments route to the post owner, replies route to the parent-comment owner, and the first reaction for an actor/post pair routes to the post owner. Self-interactions, bookmarks, reaction replacement/removal, and repeated logical commands do not create notification facts. Kafka and Notification are never called inside Community commands; an unavailable broker leaves the committed outbox row retryable.
 
 MB-579 uses a compatibility-first rollout: deploy the frontend that accepts both v1.5 responses without `viewerState` and v1.6 responses with it before deploying Community v1.6. The frontend treats the presence of valid `viewerState` as the capability signal and does not render or call reaction/bookmark controls against v1.5. Do not deploy this backend ahead of that compatibility consumer.
+
+## MB-685 direct-chat provider
+
+Community owns the direct-chat provider subset in [`community-chat-v1.json`](../contracts/openapi/community-chat-v1.json). `COMMUNITY_CHAT_ENABLED` defaults false until the operator supplies the dedicated Identity credential and a versioned 32-byte AES key. No success or cached current history is returned while unavailable. No Community message is stored in Realtime or transmitted through Kafka/Redis. MB-686 owns clients; groups and socket/presence delivery remain downstream stories.
+
+| Variable | Meaning |
+| --- | --- |
+| `COMMUNITY_CHAT_ENABLED` | Enables delivered provider APIs after required credentials/keys are installed. |
+| `COMMUNITY_CHAT_IDENTITY_BASE_URL` | Optional explicit trusted Identity REST URL; empty uses Eureka service ID. |
+| `IDENTITY_COMMUNITY_CHAT_SERVICE_TOKEN` | Dedicated 32–512 character service credential shared only with Identity eligibility endpoint. |
+| `COMMUNITY_CHAT_IDENTITY_CONNECT_TIMEOUT` | Positive connect deadline, default PT0.5S. |
+| `COMMUNITY_CHAT_IDENTITY_READ_TIMEOUT` | Positive read deadline, default PT1.5S; connect + read cannot exceed 2 seconds. |
+| `COMMUNITY_CHAT_ENCRYPTION_KEY` | Required base64 32-byte AES-GCM/HMAC secret when enabled; supplied externally. |
+| `COMMUNITY_CHAT_ENCRYPTION_KEY_VERSION` | Stable non-secret key identifier, default v1; never reuse a version with another key. |
+| `COMMUNITY_CHAT_DECRYPTION_KEYS` | JSON object of retained version→base64 keys for ciphertext/cursor/retry rotation, default {} (at most ten prior versions). |
+
+Cursor tokens are AES-GCM authenticated ciphertext, bound to actor, surface and visibility epoch. They expose neither numeric message gaps nor private identities. Public version is for management only. Reads/sends use a fresh bounded, fail-closed Identity eligibility read outside the Community transaction, then lock current profiles in UUID order before checking local restrictions/blocks and mutating. No cross-service transaction or cached positive grant is claimed.

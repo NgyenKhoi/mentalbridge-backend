@@ -31,3 +31,5 @@ databaseChangeLog:
       file: db/changelog/changes/0015-community-saved-post-ordering.yaml
   - include:
       file: db/changelog/changes/0016-community-profile-avatar.yaml
+  - include:
+      file: db/changelog/changes/0017-community-direct-chat.yaml
