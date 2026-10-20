@@ -1786,6 +1786,68 @@
           }
         }
       }
+    },
+    "/internal/v1/community/chat/presence-projections": {
+      "x-mentalbridge-status": "implemented",
+      "x-mentalbridge-owner": "community-service",
+      "post": {
+        "operationId": "projectCommunityPresence",
+        "summary": "Project currently authorized Community presence peers",
+        "description": "Read-only, conversation-bound community:presence:project delegation. Community checks current USER eligibility, accepted direct relationship or current group membership, bilateral blocks/restrictions, subject presence opt-in and invisible mode before returning only eligible other current peers. Hidden subjects produce no row or denial reason. subjectRoutingReference is private Realtime-only routing, never a client field, cached grant, last-seen or durable presence fact. Reauthorize every fanout, including after Redis reads; no stale permission fallback. Wrong actor/scope is 403, signed target mismatch or inaccessible conversation 404, dependency uncertainty 503. Unknown body identity selectors are 400. No Idempotency-Key.",
+        "x-mentalbridge-role": "SERVICE",
+        "security": [
+          {
+            "RealtimeDelegation": []
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/PresenceProjectionQuery"
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Current authorized other peers only; no-store. Empty peers reveals no hidden subject identity.",
+            "headers": {
+              "Cache-Control": {
+                "schema": {
+                  "const": "no-store"
+                }
+              }
+            },
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/PresenceProjection"
+                }
+              }
+            }
+          },
+          "400": {
+            "$ref": "#/components/responses/InvalidRequest"
+          },
+          "401": {
+            "$ref": "#/components/responses/Unauthenticated"
+          },
+          "403": {
+            "$ref": "#/components/responses/Forbidden"
+          },
+          "404": {
+            "$ref": "#/components/responses/TargetUnavailable"
+          },
+          "429": {
+            "$ref": "#/components/responses/RateLimited"
+          },
+          "503": {
+            "$ref": "#/components/responses/DependencyUnavailable"
+          }
+        }
+      }
     }
   },
   "components": {
@@ -3038,6 +3100,51 @@
           },
           "readState": {
             "$ref": "#/components/schemas/ReadResult"
+          }
+        }
+      },
+      "PresenceProjectionQuery": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": [
+          "conversationId"
+        ],
+        "properties": {
+          "conversationId": {
+            "type": "string",
+            "format": "uuid"
+          }
+        }
+      },
+      "PresenceProjection": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": [
+          "peers"
+        ],
+        "properties": {
+          "peers": {
+            "type": "array",
+            "maxItems": 30,
+            "uniqueItems": true,
+            "items": {
+              "type": "object",
+              "additionalProperties": false,
+              "required": [
+                "communityProfileId",
+                "subjectRoutingReference"
+              ],
+              "properties": {
+                "communityProfileId": {
+                  "type": "string",
+                  "format": "uuid"
+                },
+                "subjectRoutingReference": {
+                  "type": "string",
+                  "format": "uuid"
+                }
+              }
+            }
           }
         }
       }

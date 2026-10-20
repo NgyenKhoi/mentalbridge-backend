@@ -13,6 +13,7 @@ import org.junit.jupiter.api.Test;
 class CommunityOpenApiContractTests {
 
 	private static final Set<String> IMPLEMENTED = Set.of(
+			"POST /internal/v1/community/chat/presence-projections",
 			"POST /internal/v1/community/chat/session-authorizations", "POST /internal/v1/community/chat/realtime-authorizations",
 			"POST /internal/v1/community/chat/message-projections", "POST /internal/v1/community/chat/replay-projections",
 			"POST /api/v1/community/chat/reports",
@@ -64,6 +65,7 @@ class CommunityOpenApiContractTests {
 			"GET /api/v1/community/admin/operations/summary");
 
 	private static final Set<String> ALL_OPERATIONS = Set.of(
+			"POST /internal/v1/community/chat/presence-projections",
 			"POST /internal/v1/community/chat/session-authorizations", "POST /internal/v1/community/chat/realtime-authorizations",
 			"POST /internal/v1/community/chat/message-projections", "POST /internal/v1/community/chat/replay-projections",
 			"POST /api/v1/community/chat/reports",
