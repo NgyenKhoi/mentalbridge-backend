@@ -199,6 +199,7 @@ class DiscoveryFlowIntegrationTests extends ConsultationTestProperties {
 				SupportArea.ANXIETY_SYMPTOMS, "vi");
 		slot(available, Instant.now().plusSeconds(172_800), "IN_APP_CHAT", "ACTIVE");
 		var paid = paidUser("PLUS");
+		establishPaidEntitlement(jdbc, paid);
 		mvc.perform(post("/api/v1/appointments").with(user(paid))
 				.header("Idempotency-Key", "discovery-held-slot-request")
 				.contentType(MediaType.APPLICATION_JSON)

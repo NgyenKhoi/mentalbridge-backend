@@ -67,6 +67,7 @@ class SubscriptionBillingIntegrationTests extends ConsultationTestProperties {
 		assertThat(pending.checkoutUrl()).isNull();
 		assertThat(pending.qrCodeUrl()).isNull();
 		assertThat(billing.history(userId).items()).hasSize(1);
+		assertServiceCreditAccess(userId, "FREE", "DEFAULT_FREE", false);
 		org.mockito.Mockito.verify(checkoutGateway).create(org.mockito.ArgumentMatchers.anyString(), org.mockito.ArgumentMatchers.anyString(),
 				org.mockito.ArgumentMatchers.anyLong(), org.mockito.ArgumentMatchers.anyString());
 		var callback = fixture(pending.paymentId(), 0, Instant.now().toEpochMilli(), Math.abs((long) UUID.randomUUID().hashCode()) + 1);
@@ -74,6 +75,7 @@ class SubscriptionBillingIntegrationTests extends ConsultationTestProperties {
 		postIpn(callback, 204);
 		postIpn(callback, 204);
 		assertThat(billing.payment(userId, pending.paymentId()).status()).isEqualTo("SUCCEEDED");
+		assertServiceCreditAccess(userId, "PLUS", "ACTIVE", true);
 		assertThat(credits.current(userId).balance().available()).isEqualTo(4);
 	}
 
@@ -165,12 +167,14 @@ class SubscriptionBillingIntegrationTests extends ConsultationTestProperties {
 		assertThat(payment.provider()).isEqualTo("FAKE");
 		assertThat(payment.checkoutUrl()).startsWith("https://test-payment.momo.vn/");
 		assertThat(billing.checkout(userId, PLUS, commandKey)).isEqualTo(payment);
+		assertServiceCreditAccess(userId, "FREE", "DEFAULT_FREE", false);
 
 		var invalid = fixture(payment.paymentId(), 0, Instant.now().toEpochMilli(), 800001);
 		invalid.put("signature", "0".repeat(64));
 		mvc.perform(post("/internal/v1/payments/momo/ipn").contentType("application/json")
 				.content(json.writeValueAsBytes(invalid))).andExpect(status().isUnauthorized());
 		assertThat(receiptCount(payment.paymentId())).isZero();
+		assertServiceCreditAccess(userId, "FREE", "DEFAULT_FREE", false);
 
 		var success = fixture(payment.paymentId(), 0, Instant.now().plusSeconds(1).toEpochMilli(), 800002);
 		success.put("paymentOption", "momo");
@@ -181,6 +185,7 @@ class SubscriptionBillingIntegrationTests extends ConsultationTestProperties {
 		postIpn(success, 204);
 
 		assertThat(billing.payment(userId, payment.paymentId()).status()).isEqualTo("SUCCEEDED");
+		assertServiceCreditAccess(userId, "PLUS", "ACTIVE", true);
 		assertThat(receiptCount(payment.paymentId())).isOne();
 		assertThat(jdbc.sql("select status from user_subscription where id=:id")
 				.param("id", payment.subscriptionId()).query(String.class).single()).isEqualTo("ACTIVE");
@@ -199,16 +204,19 @@ class SubscriptionBillingIntegrationTests extends ConsultationTestProperties {
 		sign(pending);
 		postIpn(pending, 204);
 		assertThat(billing.payment(userId, payment.paymentId()).status()).isEqualTo("PENDING");
+		assertServiceCreditAccess(userId, "FREE", "DEFAULT_FREE", false);
 
 		var failed = fixture(payment.paymentId(), 1006, base + 1, 810002);
 		sign(failed);
 		postIpn(failed, 204);
 		assertThat(billing.payment(userId, payment.paymentId()).status()).isEqualTo("FAILED");
+		assertServiceCreditAccess(userId, "FREE", "DEFAULT_FREE", false);
 
 		var lateSuccess = fixture(payment.paymentId(), 0, base + 2, 810003);
 		sign(lateSuccess);
 		postIpn(lateSuccess, 204);
 		assertThat(billing.payment(userId, payment.paymentId()).status()).isEqualTo("FAILED");
+		assertServiceCreditAccess(userId, "FREE", "DEFAULT_FREE", false);
 		assertThat(jdbc.sql("select failure_code from momo_payment_ipn where trans_id=810003")
 				.query(String.class).single()).isEqualTo("PAYMENT_ALREADY_FINAL");
 	}
@@ -253,6 +261,7 @@ class SubscriptionBillingIntegrationTests extends ConsultationTestProperties {
 		sign(expiredSuccess);
 		postIpn(expiredSuccess, 204);
 		assertThat(billing.payment(expiredUser, expired.paymentId()).status()).isEqualTo("FAILED");
+		assertServiceCreditAccess(expiredUser, "FREE", "DEFAULT_FREE", false);
 
 		var userId = UUID.randomUUID();
 		var plus = billing.checkout(userId, PLUS, key("plus"));
@@ -262,6 +271,8 @@ class SubscriptionBillingIntegrationTests extends ConsultationTestProperties {
 		var upgrade = billing.checkout(userId, PREMIUM, key("upgrade"));
 		assertThat(upgrade.purpose()).isEqualTo("UPGRADE");
 		assertThat(upgrade.amountVnd()).isEqualTo(10_000L);
+		assertThat(billing.payment(userId, upgrade.paymentId()).status()).isEqualTo("PENDING");
+		assertServiceCreditAccess(userId, "PLUS", "ACTIVE", true);
 		assertThat(jdbc.sql("select offset_minor from subscription_upgrade where payment_id=:id")
 				.param("id", upgrade.paymentId()).query(Long.class).single()).isZero();
 		assertThat(jdbc.sql("select available_credit_value_minor from subscription_upgrade where payment_id=:id")
@@ -271,6 +282,7 @@ class SubscriptionBillingIntegrationTests extends ConsultationTestProperties {
 		var premiumSuccess = fixture(upgrade.paymentId(), 0, Instant.now().plusSeconds(2).toEpochMilli(), 830003);
 		sign(premiumSuccess);
 		postIpn(premiumSuccess, 204);
+		assertServiceCreditAccess(userId, "PREMIUM", "ACTIVE", true);
 		assertThat(jdbc.sql("select package_code from current_service_entitlement where account_id=:id")
 				.param("id", userId).query(String.class).single()).isEqualTo("PREMIUM");
 		assertThat(jdbc.sql("select count(*) from service_credit c join service_credit_period p on p.id=c.period_id where p.account_id=:id and c.state='AVAILABLE'")
@@ -307,9 +319,11 @@ class SubscriptionBillingIntegrationTests extends ConsultationTestProperties {
 	void expiresAbandonedPurchasesAndReleasesUpgradeCreditsWithoutAnIpn() throws Exception {
 		var abandonedUser = UUID.randomUUID();
 		var abandoned = billing.checkout(abandonedUser, PLUS, key("abandoned"));
+		assertServiceCreditAccess(abandonedUser, "FREE", "DEFAULT_FREE", false);
 		expire(abandoned.paymentId());
 		billing.expirePendingCheckouts();
 		assertThat(billing.payment(abandonedUser, abandoned.paymentId()).status()).isEqualTo("FAILED");
+		assertServiceCreditAccess(abandonedUser, "FREE", "DEFAULT_FREE", false);
 		assertThat(jdbc.sql("select status from user_subscription where id=:id")
 				.param("id", abandoned.subscriptionId()).query(String.class).single()).isEqualTo("ENDED");
 
@@ -319,16 +333,27 @@ class SubscriptionBillingIntegrationTests extends ConsultationTestProperties {
 		sign(success);
 		postIpn(success, 204);
 		var upgrade = billing.checkout(upgradingUser, PREMIUM, key("abandoned-upgrade"));
+		assertServiceCreditAccess(upgradingUser, "PLUS", "ACTIVE", true);
 		expire(upgrade.paymentId());
 		billing.expirePendingCheckouts();
 
 		assertThat(billing.payment(upgradingUser, upgrade.paymentId()).status()).isEqualTo("FAILED");
+		assertServiceCreditAccess(upgradingUser, "PLUS", "ACTIVE", true);
 		assertThat(jdbc.sql("select status from subscription_upgrade where payment_id=:id")
 				.param("id", upgrade.paymentId()).query(String.class).single()).isEqualTo("EXPIRED");
 		assertThat(jdbc.sql("""
 				select count(*) from service_credit c join service_credit_period p on p.id=c.period_id
 				where p.account_id=:id and c.state='AVAILABLE'
 				""").param("id", upgradingUser).query(Long.class).single()).isEqualTo(4);
+	}
+
+	private void assertServiceCreditAccess(UUID userId, String packageCode, String entitlementState,
+			boolean supportPlanEnabled) throws Exception {
+		mvc.perform(get("/api/v1/service-credits").with(user(userId)))
+				.andExpect(status().isOk())
+				.andExpect(jsonPath("$.packageCode").value(packageCode))
+				.andExpect(jsonPath("$.entitlementState").value(entitlementState))
+				.andExpect(jsonPath("$.supportPlanEnabled").value(supportPlanEnabled));
 	}
 
 	private ObjectNode fixture(UUID paymentId, int resultCode, long responseTime, long transId) {

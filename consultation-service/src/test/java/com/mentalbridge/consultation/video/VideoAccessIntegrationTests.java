@@ -587,6 +587,7 @@ class VideoAccessIntegrationTests extends ConsultationTestProperties {
 		jdbc.sql("insert into current_service_entitlement(account_id,package_code,source,source_reference,established_by,effective_from,effective_until,policy_version) values(:id,'PLUS',:source,:ref,:admin,now()-interval '1 minute',now()+interval '30 days','service-entitlement-v1')")
 				.param("id", user).param("source", demo ? "DEMO" : "PAID").param("admin", demo ? UUID.randomUUID() : null)
 				.param("ref", "video-fixture-" + user).update();
+		if (!demo) establishPaidEntitlement(jdbc, user);
 		jdbc.sql("insert into specialist_profile(account_id,display_name,biography,years_experience,timezone,approval_status,submitted_at,reviewed_at,reviewed_by) values(:id,'Synthetic Specialist','Video fixture',5,'UTC','APPROVED',now(),now(),:admin)")
 				.param("id", specialist).param("admin", UUID.randomUUID()).update();
 		jdbc.sql("insert into specialist_profile_support_area(specialist_account_id,support_area) values(:id,'ANXIETY_SYMPTOMS')")
