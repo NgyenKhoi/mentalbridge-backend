@@ -1,15 +1,19 @@
 # Requirements Traceability
 
-MB-684 (2026-10-20) supplies the proposed
+MB-684 (2026-10-20) supplies the accepted
 [Community peer-chat decision](adr/0042-community-chat-contract.md),
 [privacy/permission policy](policies/community-chat-policy-v1.md),
 [planned OpenAPI](../contracts/proposals/community-chat-v1.openapi.json),
 closed socket/Kafka schemas, synthetic examples and executable contract tests.
 [Evidence](story-mb-684-community-chat-contract-evidence.md) distinguishes owner
-approval from runtime tests still required in MB-685–693. No existing chat,
-Community, notification or persistence runtime is changed. The Realtime/MongoDB
-ownership below remains the appointment baseline; prospective Community peer
-messages belong to Community PostgreSQL only after the new decision is accepted.
+approval from runtime work in MB-685–693. MB-685 delivers direct conversations,
+recipient-owned text-free requests, explicit privacy, encrypted idempotent text
+saves, private read/history/unread, retention and minimized outbox relay in
+Community PostgreSQL. Identity exposes only current eligible USER IDs through a
+dedicated internal credential. Client, group, delegated transport/notification
+checks and consumers remain downstream. The Realtime/MongoDB ownership below
+remains the unchanged appointment baseline. See the
+[MB-685 evidence](story-mb-685-direct-chat-evidence.md).
 
 MB-623: the online consultation closure uses
 [consultation-journey-v1](policies/consultation-journey-state-map-v1.md) as the
