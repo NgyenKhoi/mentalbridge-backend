@@ -132,3 +132,9 @@ provisioning, frontend contract generation or UI change is needed. Merge accepte
 contract first; then provider implementations; then compatible consumers; then
 explicit Docker acceptance and bounded `ui-ready` handoff. This PR does not mark
 the Jira story Done or any downstream capability live.
+
+## Review correction P1-A
+
+The planned internal message-projections operation returns the exact authorized Message under signed Realtime service + end-viewer delegation, with current owner authorization and content in one consistent read. Boolean decisions never grant subsequent reads. Public history stays USER-only; no body actor/recipient selectors; no-store; uniform target-unavailable errors.
+
+Synthetic delegatedReads cover direct/group success, wrong audience/action, target mismatch, blocked/revoked/outsider/prior-epoch/inactive viewer and owner outage. Contract tests pin schemas and response obligations, not real JWT verification or database authorization. MB-685/689 must test actual current rights and revoke-before-fanout races.

@@ -1553,7 +1553,7 @@
       "post": {
         "operationId": "authorizeCommunityRealtime",
         "summary": "authorize Community Realtime",
-        "description": "Community verifies service identity and short-lived signed user delegation (audience community-service, bound subject and action). Raw X-User/actor body headers are not trusted. Fresh authorization for subscribe, history and every fanout; service call failure denies access.",
+        "description": "Community verifies authenticated service and signed short-lived USER delegation with exact audience/subject/action. Raw X-User/actor headers are not trusted. This boolean decision supports current subscribe/ephemeral visibility checks only; it is never a reusable permission grant or a way to fetch message content. Message fanout must use readCommunityMessageProjection for the exact message and viewer.",
         "x-mentalbridge-role": "SERVICE",
         "security": [
           {
@@ -1713,6 +1713,116 @@
           }
         }
       }
+    },
+    "/internal/v1/community/chat/message-projections": {
+      "x-mentalbridge-status": "planned",
+      "x-mentalbridge-owner": "community-service",
+      "post": {
+        "operationId": "readCommunityMessageProjection",
+        "summary": "Read one currently authorized message for an exact delegated viewer",
+        "description": "One read-only projection per exact conversation/message/viewer under RealtimeMessageReadDelegation. In the same consistent owner read, validate trusted service signature, audience/scope/expiry and target binding, resolve the signed USER subject, check current account/relationship/block/membership epoch/revocation and message visibility, then return only that Message. Never authorize separately then fetch content with a reusable boolean grant. Repeat the read for every recipient and replay; Realtime must discard queued projections on revocation, reauthorize immediately before fanout and must not retain a positive grant or raw content cache. Any known revocation wins over a queued send. A guessed/wrong-conversation/inaccessible message, blocked viewer, removed member, outsider or prior-epoch target is uniformly 404 TARGET_UNAVAILABLE. Invalid signed identity/audience is 401; wrong service/scope is 403; claims/body target mismatch is 404; unknown body identity selectors are 400. Owner dependency failure is 503 and never returns stale content. No Idempotency-Key on this read.",
+        "x-mentalbridge-role": "SERVICE",
+        "security": [
+          {
+            "RealtimeMessageReadDelegation": []
+          }
+        ],
+        "parameters": [],
+        "responses": {
+          "200": {
+            "description": "Fresh current-viewer Message only; no independent permission grant. Never cache.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Message"
+                }
+              }
+            },
+            "headers": {
+              "Cache-Control": {
+                "schema": {
+                  "const": "no-store"
+                },
+                "description": "Private projection must not be cached."
+              }
+            }
+          },
+          "400": {
+            "$ref": "#/components/responses/InvalidRequest"
+          },
+          "401": {
+            "$ref": "#/components/responses/Unauthenticated"
+          },
+          "403": {
+            "$ref": "#/components/responses/Forbidden"
+          },
+          "404": {
+            "$ref": "#/components/responses/TargetUnavailable"
+          },
+          "429": {
+            "$ref": "#/components/responses/RateLimited"
+          },
+          "503": {
+            "$ref": "#/components/responses/DependencyUnavailable"
+          }
+        },
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/MessageProjectionRequest"
+              }
+            }
+          }
+        },
+        "x-mentalbridge-denials": {
+          "WRONG_AUDIENCE": {
+            "status": 401,
+            "code": "UNAUTHENTICATED"
+          },
+          "WRONG_SCOPE": {
+            "status": 403,
+            "code": "FORBIDDEN"
+          },
+          "CONVERSATION_MISMATCH": {
+            "status": 404,
+            "code": "TARGET_UNAVAILABLE"
+          },
+          "MESSAGE_MISMATCH": {
+            "status": 404,
+            "code": "TARGET_UNAVAILABLE"
+          },
+          "BLOCKED_VIEWER": {
+            "status": 404,
+            "code": "TARGET_UNAVAILABLE"
+          },
+          "REVOKED_MEMBER": {
+            "status": 404,
+            "code": "TARGET_UNAVAILABLE"
+          },
+          "OUTSIDER": {
+            "status": 404,
+            "code": "TARGET_UNAVAILABLE"
+          },
+          "PRIOR_MEMBERSHIP_EPOCH": {
+            "status": 404,
+            "code": "TARGET_UNAVAILABLE"
+          },
+          "INACTIVE_VIEWER": {
+            "status": 404,
+            "code": "TARGET_UNAVAILABLE"
+          },
+          "OWNER_UNAVAILABLE": {
+            "status": 503,
+            "code": "DEPENDENCY_UNAVAILABLE"
+          },
+          "MESSAGE_NOT_IN_CONVERSATION": {
+            "status": 404,
+            "code": "TARGET_UNAVAILABLE"
+          }
+        }
+      }
     }
   },
   "components": {
@@ -1734,6 +1844,13 @@
         "scheme": "bearer",
         "bearerFormat": "JWT",
         "description": "Content service credential scoped only to notification authorization."
+      },
+      "RealtimeMessageReadDelegation": {
+        "type": "http",
+        "scheme": "bearer",
+        "bearerFormat": "JWT",
+        "description": "Realtime-only signed service + end-viewer delegation; MessageReadDelegationClaims is normative. audience community-service, scope community:message:project, exact conversationId/messageId, maximum 30s lifetime. USER BearerAuth and generic service credentials are insufficient. No cached authorization result is a grant.",
+        "x-mentalbridge-claims-schema": "#/components/schemas/MessageReadDelegationClaims"
       }
     },
     "schemas": {
@@ -2529,8 +2646,7 @@
               "action": {
                 "type": "string",
                 "enum": [
-                  "SUBSCRIBE",
-                  "MESSAGE_READ"
+                  "SUBSCRIBE"
                 ]
               }
             }
@@ -2830,6 +2946,88 @@
             "maxLength": 1024
           }
         }
+      },
+      "MessageProjectionRequest": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": [
+          "conversationId",
+          "messageId"
+        ],
+        "properties": {
+          "conversationId": {
+            "type": "string",
+            "format": "uuid"
+          },
+          "messageId": {
+            "type": "string",
+            "format": "uuid"
+          }
+        }
+      },
+      "MessageReadDelegationClaims": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": [
+          "iss",
+          "aud",
+          "sub",
+          "act",
+          "scope",
+          "conversationId",
+          "messageId",
+          "jti",
+          "iat",
+          "exp"
+        ],
+        "properties": {
+          "iss": {
+            "const": "realtime-service"
+          },
+          "aud": {
+            "const": "community-service"
+          },
+          "sub": {
+            "type": "string",
+            "format": "uuid"
+          },
+          "act": {
+            "type": "object",
+            "additionalProperties": false,
+            "required": [
+              "sub"
+            ],
+            "properties": {
+              "sub": {
+                "const": "realtime-service"
+              }
+            }
+          },
+          "scope": {
+            "const": "community:message:project"
+          },
+          "conversationId": {
+            "type": "string",
+            "format": "uuid"
+          },
+          "messageId": {
+            "type": "string",
+            "format": "uuid"
+          },
+          "jti": {
+            "type": "string",
+            "format": "uuid"
+          },
+          "iat": {
+            "type": "integer",
+            "minimum": 0
+          },
+          "exp": {
+            "type": "integer",
+            "minimum": 0
+          }
+        },
+        "description": "Decoded signed JWT claims, never a JSON request body. Community verifies a trusted Realtime signature/algorithm/key, issuer, actor service, exact audience/scope, active USER subject, 0 < exp-iat <= 30 seconds and iat <= now < exp. Exact target claims must match the request and owned message. No unsigned identity headers or client-minted delegation. Shape validation alone is not authentication."
       }
     },
     "responses": {

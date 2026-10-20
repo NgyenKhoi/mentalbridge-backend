@@ -21,7 +21,9 @@ Server authorization is checked for every REST read/write, subscribe, reconnect,
 fanout, typing/presence/receipt projection and notification delivery. On owner
 failure deny access with a bounded 503; a stale positive grant is never a fallback.
 Internal presence/typing/receipt checks bind both conversation and exact subject
-profile; subscribe/history checks bind the conversation without a subject selector.
+profile; subscribe checks bind the conversation without a subject selector.
+Message projection binds the exact conversation/message and signed end-viewer;
+no request body/header may select another actor or recipient.
 Notification checks require exact recipient, kind, target ID and conversation ID.
 The provider compares them to its owned records; a schema-valid mismatch still denies.
 Invalid/inaccessible object identifiers share `TARGET_UNAVAILABLE`/404 without
@@ -191,8 +193,29 @@ A pending direct request may reserve a private conversation routing UUID; that
 identifier and its fact do not grant either participant message/history access.
 Only an accepted relationship activates the conversation's message capability.
 
-Realtime consumes pointers and reads authorized results from Community REST
-under its signed user delegation. It never looks up Community tables or caches
+Realtime consumes pointers and calls the read-only POST
+`/internal/v1/community/chat/message-projections` separately for each exact message
+and recipient. This route returns Message, not a boolean authorization grant.
+`MessageReadDelegationClaims` binds a trusted Realtime signature, issuer/actor
+service, audience community-service, scope community:message:project, USER subject,
+conversationId/messageId and a maximum 30-second lifetime. Community checks
+0 < exp-iat <= 30 and iat <= now < exp; wrong audience/signature/expiry is 401,
+wrong service/scope 403. Claims/body target mismatch and inaccessible targets are
+uniform TARGET_UNAVAILABLE/404. No viewer/actor/recipient selector exists in the
+body. The public listMessages BearerAuth remains Identity USER-only.
+
+The owner resolves the signed viewer and verifies current account state,
+accepted relationship, bilateral blocks, membership/revocation and current-epoch
+message visibility in the same consistent read that returns the content. A
+schema-valid cross-conversation pointer still denies. A generic authorization
+boolean/decisionVersion cannot be reused to read some other content. Realtime
+must re-read under fresh delegation on replay and immediately before each fanout;
+discard queued projections on revocation, never retain a grant or raw-content
+cache. Any known revocation wins over a queued send; an owner outage yields 503,
+never cached text. Downstream tests must exercise revocation between consumption
+and delivery, including delayed/lost invalidation.
+
+Realtime never looks up Community tables or caches
 raw content in Redis. Per-conversation sequence orders delivered results, not
 Kafka arrival across partitions. Version gaps/reconnect emit resync.required;
 clients recover through REST and dedupe by message ID. Permission changes must

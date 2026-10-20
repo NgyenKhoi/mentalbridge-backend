@@ -19,6 +19,15 @@ const examplesShape = z.object({
   commands: z.array(record),
   events: z.array(record),
   facts: z.array(record),
+  delegatedReads: z.array(
+    z.object({
+      condition: z.string(),
+      claims: record,
+      request: record,
+      status: z.number(),
+      response: record,
+    }),
+  ),
 });
 const loadJson = async (name: string): Promise<unknown> =>
   JSON.parse(await readFile(new URL(name, directory), 'utf8')) as unknown;
@@ -87,7 +96,7 @@ describe('MB-684 Community contract candidate', () => {
         operations.push(`${method} ${path}`);
       }
     }
-    expect(operations).toHaveLength(26);
+    expect(operations).toHaveLength(27);
   });
 
   it('requires concurrency and idempotency at irreversible management boundaries', () => {
@@ -275,6 +284,7 @@ describe('MB-684 Community contract candidate', () => {
   it('binds service authorization to the exact conversation and visibility subject', () => {
     const authorize = component('RealtimeAuthorization');
     expect(authorize({ conversationId: uuid, action: 'SUBSCRIBE' })).toBe(true);
+    expect(authorize({ conversationId: uuid, action: 'MESSAGE_READ' })).toBe(false);
     expect(
       authorize({ conversationId: uuid, action: 'PRESENCE', targetCommunityProfileId: uuid }),
     ).toBe(true);
@@ -297,5 +307,97 @@ describe('MB-684 Community contract candidate', () => {
         component('NotificationAuthorization')({ ...notification, [missing]: undefined }),
       ).toBe(false);
     }
+  });
+  it('provides a delegated content read without widening USER-only history authentication', () => {
+    const projection = record.parse(
+      api.paths['/internal/v1/community/chat/message-projections']?.post,
+    );
+    expect(projection.security).toEqual([{ RealtimeMessageReadDelegation: [] }]);
+    expect(
+      record.parse(api.paths['/api/v1/community/chat/conversations/{conversationId}/messages']?.get)
+        .security,
+    ).toEqual([{ BearerAuth: [] }]);
+    const request = record.parse(projection.requestBody);
+    const input = record.parse(record.parse(request.content)['application/json']);
+    expect(input.schema).toEqual(api.components.schemas.MessageProjectionRequest);
+    const success = record.parse(record.parse(projection.responses)['200']);
+    expect(record.parse(record.parse(success.content)['application/json']).schema).toEqual(
+      api.components.schemas.Message,
+    );
+    expect(record.parse(success.headers)['Cache-Control']).toEqual(
+      expect.objectContaining({ schema: { const: 'no-store' } }),
+    );
+    expect(z.array(record).parse(projection.parameters)).not.toContainEqual(
+      expect.objectContaining({ name: 'Idempotency-Key' }),
+    );
+    const target = { conversationId: uuid, messageId: uuid };
+    for (const selector of ['actorId', 'viewerId', 'recipientId', 'recipientRoutingReference']) {
+      expect(component('MessageProjectionRequest')({ ...target, [selector]: uuid })).toBe(false);
+    }
+    expect(component('MessageProjectionRequest')({ conversationId: uuid })).toBe(false);
+    expect(examples.delegatedReads.map((item) => item.condition)).toEqual(
+      expect.arrayContaining([
+        'ACCEPTED_DIRECT',
+        'CURRENT_GROUP_EPOCH',
+        'WRONG_AUDIENCE',
+        'WRONG_SCOPE',
+        'CONVERSATION_MISMATCH',
+        'MESSAGE_MISMATCH',
+        'MESSAGE_NOT_IN_CONVERSATION',
+        'BLOCKED_VIEWER',
+        'REVOKED_MEMBER',
+        'OUTSIDER',
+        'PRIOR_MEMBERSHIP_EPOCH',
+        'INACTIVE_VIEWER',
+        'OWNER_UNAVAILABLE',
+      ]),
+    );
+  });
+
+  it.each(examples.delegatedReads)(
+    'pins the delegated-read $condition provider obligation and safe response shape',
+    ({ condition, claims, request, status, response }) => {
+      expect(component('MessageProjectionRequest')(request)).toBe(true);
+      expect(component('MessageReadDelegationClaims')(claims)).toBe(
+        !['WRONG_AUDIENCE', 'WRONG_SCOPE'].includes(condition),
+      );
+      if (status === 200) {
+        expect(component('Message')(response)).toBe(true);
+        expect(response.conversationId).toBe(request.conversationId);
+        expect(response.messageId).toBe(request.messageId);
+        expect(claims.conversationId).toBe(request.conversationId);
+        expect(claims.messageId).toBe(request.messageId);
+      } else {
+        const operation = record.parse(
+          api.paths['/internal/v1/community/chat/message-projections']?.post,
+        );
+        expect(record.parse(operation['x-mentalbridge-denials'])[condition]).toEqual({
+          status,
+          code: response.code,
+        });
+        expect(component('Problem')(response)).toBe(true);
+        expect(component('Message')(response)).toBe(false);
+        expect(response.status).toBe(status);
+        for (const key of ['content', 'sender', 'blocked', 'membership', 'sequence']) {
+          expect(component('Problem')({ ...response, [key]: 'private' })).toBe(false);
+        }
+      }
+      for (const key of ['conversationId', 'messageId']) {
+        expect(claims[key] === request[key]).toBe(
+          condition !== (key === 'conversationId' ? 'CONVERSATION_MISMATCH' : 'MESSAGE_MISMATCH'),
+        );
+      }
+    },
+  );
+
+  it('rejects missing or forged service/subject claims even with a valid target', () => {
+    const claims = examples.delegatedReads[0]?.claims;
+    const validate = component('MessageReadDelegationClaims');
+    for (const missing of ['iss', 'aud', 'sub', 'act', 'scope', 'jti', 'iat', 'exp']) {
+      expect(validate({ ...claims, [missing]: undefined })).toBe(false);
+    }
+    expect(validate({ ...claims, iss: 'browser' })).toBe(false);
+    expect(validate({ ...claims, act: { sub: 'content-notification-service' } })).toBe(false);
+    expect(validate({ ...claims, sub: 'not-a-subject-uuid' })).toBe(false);
   });
 });

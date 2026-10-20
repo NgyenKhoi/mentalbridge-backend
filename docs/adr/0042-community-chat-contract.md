@@ -67,6 +67,13 @@ sequence, visibility, unread count, delivery and completion are server facts.
 Validation of shape is necessary but cannot establish authorization: runtime
 providers must also enforce the semantic bindings listed in the policy.
 
+Realtime's exact-message read is the planned internal message-projections REST
+operation under a signed service plus end-viewer delegation, with target-bound
+claims and current authorization checked alongside content. The boolean
+realtime-authorizations response never grants a subsequent content read. USER
+history authentication is unchanged. Wrong audience/action and inaccessible
+message/membership targets fail closed; no actor selector is accepted in a body.
+
 ## Alternatives rejected
 
 - Friends, follows, public groups and directory search: outside the product scope.
