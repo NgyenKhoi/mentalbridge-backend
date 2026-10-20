@@ -2522,10 +2522,10 @@ CREATE UNIQUE INDEX ux_chat_request_pending ON community.community_chat_request(
 CREATE TABLE community.community_chat_command (
   id uuid PRIMARY KEY,
   actor_profile_id uuid NOT NULL REFERENCES community.community_profile(id),
-  operation varchar(24) NOT NULL CHECK (operation IN ('START_DIRECT', 'SEND_MESSAGE', 'CREATE_GROUP', 'INVITE_GROUP')),
+  operation varchar(24) NOT NULL CHECK (operation IN ('START_DIRECT', 'SEND_MESSAGE', 'CREATE_GROUP', 'INVITE_GROUP', 'REPORT_MESSAGE')),
   idempotency_key uuid NOT NULL,
   request_fingerprint varchar(100) NOT NULL,
-  result_kind varchar(16) NOT NULL CHECK (result_kind IN ('ACTIVE', 'PENDING', 'MESSAGE', 'GROUP', 'INVITATION')),
+  result_kind varchar(16) NOT NULL CHECK (result_kind IN ('ACTIVE', 'PENDING', 'MESSAGE', 'GROUP', 'INVITATION', 'REPORT')),
   target_id uuid NOT NULL,
   conversation_id uuid NOT NULL REFERENCES community.community_chat_conversation(id) ON DELETE CASCADE,
   created_at timestamptz NOT NULL,
@@ -2597,3 +2597,18 @@ CREATE UNIQUE INDEX ux_chat_invite_pending ON community.community_chat_invitatio
 CREATE INDEX ix_chat_invite_inbox ON community.community_chat_invitation(invitee_profile_id, created_at DESC, id DESC);
 CREATE INDEX ix_chat_invite_rate ON community.community_chat_invitation(inviter_profile_id, created_at DESC);
 CREATE INDEX ix_chat_invite_suppression ON community.community_chat_invitation(conversation_id, invitee_profile_id, state);
+
+CREATE TABLE community.community_chat_report_case (
+  id uuid PRIMARY KEY,
+  conversation_id uuid NOT NULL,
+  message_id uuid NOT NULL,
+  reporter_profile_id uuid NOT NULL REFERENCES community.community_profile(id),
+  reason_code varchar(32) NOT NULL CHECK (reason_code IN ('HARASSMENT','SPAM','PRIVACY_CONCERN','SELF_HARM_OR_CRISIS_CONCERN','OTHER')),
+  priority varchar(8) NOT NULL CHECK (priority IN ('NORMAL','HIGH')),
+  state varchar(8) NOT NULL DEFAULT 'OPEN' CHECK (state = 'OPEN'),
+  evidence_ciphertext text NOT NULL,
+  details_ciphertext text NOT NULL,
+  created_at timestamptz NOT NULL,
+  review_due_at timestamptz NOT NULL CHECK (review_due_at > created_at),
+  UNIQUE (reporter_profile_id, message_id)
+);

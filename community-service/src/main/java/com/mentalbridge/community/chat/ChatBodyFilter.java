@@ -57,7 +57,11 @@ class ChatBodyFilter extends OncePerRequestFilter {
     }
     private void validate(String path, JsonNode body) {
         if (body == null || !body.isObject()) throw ChatException.invalid();
-        if (path.equals("/api/v1/community/chat/groups")) {
+        if (path.equals("/api/v1/community/chat/reports")) {
+            var fields = body.has("details") ? Set.of("messageId", "reasonCode", "details") : Set.of("messageId", "reasonCode");
+            exact(body, fields); uuid(body, "messageId");
+            if (!body.get("reasonCode").isTextual() || (body.has("details") && !body.get("details").isTextual())) throw ChatException.invalid();
+        } else if (path.equals("/api/v1/community/chat/groups")) {
             exact(body, Set.of("name")); if (!body.get("name").isTextual()) throw ChatException.invalid();
         } else if (path.matches("/api/v1/community/chat/groups/[^/]+/invitations")) {
             exact(body, Set.of("inviteeCommunityProfileId")); uuid(body, "inviteeCommunityProfileId");

@@ -208,3 +208,5 @@ the active model.
 - `community_chat_command`: additive group-create/invite retry identities; no raw name or invitation text.
 
 All physical relationships remain inside Community PostgreSQL. Migration 0019 is runtime truth; logical SQL is never executed.
+
+- MB-687 `community_chat_report_case` — ACTIVE: exact actor/message OPEN intake, encrypted isolated message/details snapshot, safe reason/priority and bounded unresolved-review deadline. No ADMIN transcript access or resolution workflow is activated. Owner migration 0020; REPORT_MESSAGE command identities reuse the Community command table.

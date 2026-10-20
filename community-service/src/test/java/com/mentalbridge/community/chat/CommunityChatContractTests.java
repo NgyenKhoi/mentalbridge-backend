@@ -22,6 +22,7 @@ class CommunityChatContractTests {
         var delivered = mapper.readTree(Files.readString(active));
         assertThat(delivered.path("components")).isEqualTo(source.path("components"));
         assertThat(parsed.getOpenAPI().getPaths().keySet()).containsExactlyInAnyOrder(
+                "/api/v1/community/chat/reports",
                 "/api/v1/community/chat/privacy", "/api/v1/community/chat/direct-conversations",
                 "/api/v1/community/chat/requests", "/api/v1/community/chat/requests/{requestId}/decision",
                 "/api/v1/community/chat/conversations", "/api/v1/community/chat/conversations/{conversationId}",

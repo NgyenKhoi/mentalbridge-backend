@@ -2922,3 +2922,23 @@ Command operations also support CREATE_GROUP/INVITE_GROUP; result kinds GROUP/IN
 | `expires_at` | Seven-day UTC deadline; late accept/replay cannot create membership. |
 | `decided_at` | UTC terminal transition instant, null exactly while pending. |
 | `accepted_membership_id` | Exact created epoch for ACCEPTED only; replay cannot recreate an epoch after departure. |
+
+### `public.community_chat_report_case` (MB-687, migration 0020)
+
+Exact readable-message intake is isolated from feed reports and general chat reads. No report provider notification or ADMIN browse endpoint is enabled.
+
+| Field | Purpose |
+| --- | --- |
+| `id` | Opaque case reference returned only to the reporter; no transcript browse right. |
+| `conversation_id` | Logical source UUID, deliberately not a foreign key: deleting source history cannot block or erase isolated purpose-bound report evidence. Not a read grant. |
+| `message_id` | Logical exact source UUID without a source-content foreign key; one immutable evidence snapshot survives source purge/deletion. |
+| `reporter_profile_id` | JWT-resolved Community reporter; exact actor/message report is naturally unique. |
+| `reason_code` | Closed author-selected reason, never inferred diagnosis or distress. |
+| `priority` | HIGH only for explicit SELF_HARM_OR_CRISIS_CONCERN; otherwise NORMAL; no monitoring/intervention promise. |
+| `state` | OPEN intake only in MB-687. Resolution, auditable ADMIN evidence access and legal-hold handling remain separately delivered. |
+| `evidence_ciphertext` | Versioned AES-GCM snapshot of only exact message, sender Community ID and creation time, bound to case UUID; no surrounding transcript. |
+| `details_ciphertext` | Optional reporter-authored details encrypted with distinct case purpose; never events/logs. |
+| `created_at` | Immutable UTC intake time, rate-limit authority. |
+| `review_due_at` | UTC bounded unresolved-review deadline, 30 days after intake; not a deletion/clinical-response SLA. |
+
+Commands additionally support REPORT_MESSAGE/REPORT result, actor-scoped normalized-payload fingerprint and exact case pointer. New-key duplicates return the original actor/message case without copying or replacing evidence.

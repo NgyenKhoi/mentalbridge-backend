@@ -638,6 +638,10 @@ paths:
     x-mentalbridge-status: implemented
     $ref: './community-chat-v1.json#/paths/~1api~1v1~1community~1chat~1groups~1%7BconversationId%7D~1ownership'
 
+  /api/v1/community/chat/reports:
+    x-mentalbridge-status: implemented
+    $ref: './community-chat-v1.json#/paths/~1api~1v1~1community~1chat~1reports'
+
 components:
   securitySchemes:
     BearerAuth: { type: http, scheme: bearer, bearerFormat: JWT }

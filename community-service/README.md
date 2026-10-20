@@ -150,6 +150,26 @@ Sends emit one minimized fact per current eligible non-self recipient; public
 management versions never advance for message/read traffic. No raw name/text is
 stored in Kafka or a second service. Existing relay ACK/replay semantics apply.
 
+### Exact-message report hook
+
+`POST /api/v1/community/chat/reports` is the twentieth active chat operation in
+v1.13. Only a current participant allowed to read the exact retained message may
+report it, including on retries. It captures one immutable encrypted snapshot
+and separately encrypted bounded details, with closed reason/priority and a
+30-day unresolved review deadline. No surrounding transcript, group name or
+personal account attributes are copied. The source conversation/message UUIDs
+are logical references: deleting source history cannot erase or block isolated
+report evidence. Reporter/message uniqueness collapses new-key duplicates;
+same-key changed input conflicts. Ten new reports/actor/day are enforced.
+
+This intake returns RECEIVED and grants no ADMIN read/management permission.
+Case resolution, authorized evidence review, resolved-evidence retention and
+account deletion are separately delivered workflows; no unrestricted case
+listing, transcript access or provider notification is enabled here. Explicit
+crisis-concern reason marks HIGH priority only, without monitoring/intervention
+promises. Migrate 0020 before using intake. Disabling the existing chat flag
+rolls back capability while preserving purpose-bound evidence and encryption keys.
+
 | Variable | Meaning |
 | --- | --- |
 | `COMMUNITY_CHAT_ENABLED` | Enables delivered provider APIs after required credentials/keys are installed. |
