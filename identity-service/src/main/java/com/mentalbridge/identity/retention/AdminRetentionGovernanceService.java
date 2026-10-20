@@ -184,36 +184,45 @@ public class AdminRetentionGovernanceService {
 					.map(this::toExecutionResponse)
 					.orElse(null);
 
-			if (lastExec != null && "RUNNING".equals(lastExec.jobStatus())) {
-				boolean lockLookupSuccessful = false;
-				boolean lockAcquired = false;
+			List<RetentionExecutionRecordEntity> recent = meta.automatedExecutionSupported()
+					? executionRecords.findTop3ByPolicyIdOrderByStartedAtDesc(meta.policyId())
+					: List.of();
+
+			boolean hasRunning = (lastExec != null && "RUNNING".equals(lastExec.jobStatus()))
+					|| recent.stream().anyMatch(r -> "RUNNING".equals(r.jobStatus()));
+
+			boolean lockLookupSuccessful = false;
+			boolean lockAcquired = false;
+			if (hasRunning) {
 				try {
 					lockAcquired = executionRecords.tryAcquirePolicyExecutionLock(meta.policyId());
 					lockLookupSuccessful = true;
 				} catch (Exception ignored) {
 				}
-				if (lockLookupSuccessful && lockAcquired) {
-					lastExec = new RetentionExecutionResponse(
-							lastExec.executionId(),
-							lastExec.policyId(),
-							lastExec.ownerService(),
-							lastExec.jobName(),
-							"STALE",
-							lastExec.startedAt(),
-							lastExec.completedAt(),
-							lastExec.itemsEvaluated(),
-							lastExec.recordsPurged(),
-							lastExec.tombstonesCreated(),
-							lastExec.holdsHonored(),
-							"PRIOR_EXECUTION_STALE"
-					);
-				}
+			}
+
+			boolean orphanedRunningDetected = lockLookupSuccessful && lockAcquired;
+
+			if (orphanedRunningDetected && lastExec != null && "RUNNING".equals(lastExec.jobStatus())) {
+				lastExec = new RetentionExecutionResponse(
+						lastExec.executionId(),
+						lastExec.policyId(),
+						lastExec.ownerService(),
+						lastExec.jobName(),
+						"STALE",
+						lastExec.startedAt(),
+						lastExec.completedAt(),
+						lastExec.itemsEvaluated(),
+						lastExec.recordsPurged(),
+						lastExec.tombstonesCreated(),
+						lastExec.holdsHonored(),
+						"PRIOR_EXECUTION_STALE"
+				);
 			}
 
 			RetentionJobStatus effectiveJobStatus = meta.jobStatus();
 			if (meta.automatedExecutionSupported() && lastExec != null) {
-				List<RetentionExecutionRecordEntity> recent = executionRecords.findTop3ByPolicyIdOrderByStartedAtDesc(meta.policyId());
-				if (recent.size() >= 3 && recent.stream().allMatch(r -> "FAILED".equals(r.jobStatus()) || "STALE".equals(r.jobStatus()))) {
+				if (retryExhausted(recent, orphanedRunningDetected)) {
 					effectiveJobStatus = RetentionJobStatus.FAILED;
 				} else if ("STALE".equals(lastExec.jobStatus())) {
 					effectiveJobStatus = RetentionJobStatus.STALE;
@@ -283,7 +292,6 @@ public class AdminRetentionGovernanceService {
 			throw new ResponseStatusException(HttpStatus.CONFLICT, "Tiến trình dọn dẹp cho chính sách " + policyId + " đang được thực thi (RUNNING).");
 		}
 
-		UUID staleExecutionId = null;
 		var priorRunningResult = executionRecords.findFirstByPolicyIdAndJobStatusOrderByStartedAtDesc(policyId, "RUNNING");
 		if (priorRunningResult.isPresent()) {
 			var priorRunning = priorRunningResult.get();
@@ -303,14 +311,10 @@ public class AdminRetentionGovernanceService {
 					priorRunning.createdAt()
 			);
 			executionRecorder.recordStale(staleRecord);
-			staleExecutionId = priorRunning.id();
 		}
 
-		UUID confirmedStaleExecutionId = staleExecutionId;
 		List<RetentionExecutionRecordEntity> recentExecutions = executionRecords.findTop3ByPolicyIdOrderByStartedAtDesc(policyId);
-		if (recentExecutions.size() >= 3 && recentExecutions.stream().allMatch(r ->
-				"FAILED".equals(r.jobStatus()) || "STALE".equals(r.jobStatus())
-						|| (r.id().equals(confirmedStaleExecutionId) && "RUNNING".equals(r.jobStatus())))) {
+		if (retryExhausted(recentExecutions, true)) {
 			auditLogger.recordDenied(new SecurityAuditEventEntity(
 					UUID.randomUUID(), null, actorId, "RETENTION_SWEEP_TRIGGERED", "DENIED",
 					"RETRY_EXHAUSTED", effectiveCorrelation, null,
@@ -609,6 +613,12 @@ public class AdminRetentionGovernanceService {
 		));
 
 		return toDeletionResponse(request);
+	}
+
+	private boolean retryExhausted(List<RetentionExecutionRecordEntity> recentExecutions, boolean orphanedRunningDetected) {
+		return recentExecutions.size() >= 3 && recentExecutions.stream().allMatch(record ->
+				"FAILED".equals(record.jobStatus()) || "STALE".equals(record.jobStatus())
+						|| (orphanedRunningDetected && "RUNNING".equals(record.jobStatus())));
 	}
 
 	private RetentionExecutionResponse toExecutionResponse(RetentionExecutionRecordEntity record) {

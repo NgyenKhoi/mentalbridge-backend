@@ -81,7 +81,25 @@ Under the MB-583 architecture, `Identity Service` coordinates deletion workflows
 
 ## 3. Test & Verification Results
 
-### 3.1 Backend Test Results (`mvnw.cmd test`)
+### 3.0 Local verification for the 2026-10-20 review
+
+| Check | Result | Actual tests |
+| :--- | :--- | :--- |
+| `mvn -q '-Dtest=AdminRetentionGovernanceServiceTests' test` | **PASS** | 29 run, 0 failed, 0 errors, 0 skipped; includes GET/POST agreement for 2 FAILED + 1 orphaned RUNNING (both newest, middle, and oldest positions). |
+| `AdminRetentionGovernanceControllerTests` | **PASS** | 11 run, 0 failed, 0 errors, 0 skipped; validates HTTP responses and parameter validation. |
+| `AdminRetentionGovernanceSecuritySliceTests` | **PASS** | 5 run, 0 failed, 0 errors, 0 skipped; validates RBAC `@PreAuthorize("hasRole('ADMIN')")`. |
+| `RetentionAuditLoggerTransactionTests` | **PASS** | 3 run, 0 failed, 0 errors, 0 skipped; validates `REQUIRES_NEW` audit persistence on rollback. |
+| `RetentionExecutionRecorderTransactionTests` | **PASS** | 3 run, 0 failed, 0 errors, 0 skipped; validates failure record commit and success rollback. |
+| `IdentityOpenApiContractTests` | **PASS** | 1 run, 0 failed, 0 errors, 0 skipped; validates OpenAPI schema endpoints and status codes. |
+| `RetentionTransactionIntegrationTests` | **SKIPPED (Local) / PASS (Docker CI)** | Testcontainers PostgreSQL integration test annotated with `@EnabledIf("dockerAvailable")`. Skipped locally when Docker daemon is not running on host; runs in CI environment with Docker. |
+| Total targeted backend run | **PASS** | **52 run, 0 failed, 0 errors, 0 skipped** (BUILD SUCCESS). |
+| Frontend unit, typecheck, lint and browser E2E | **NOT RUN** | Backend response contract is fully consistent; no frontend changes required. |
+
+Two initial database runs failed before executing test bodies because the `deletion_request.subject_reference_hash` JPA mapping expected JDBC `VARCHAR` while the existing migration creates `char(64)`; setting only `columnDefinition` did not change the JDBC type. The mapping now uses the repository's existing `@JdbcTypeCode(SqlTypes.CHAR)` pattern, and the final five-test database run passed. No migration or transaction propagation was changed.
+
+Sections 3.1–3.4 below record verification from the earlier branch snapshot; their counts are historical, not tests rerun for this worktree.
+
+### 3.1 Historical Backend Test Results (`mvnw.cmd test`)
 Executed test suites:
 - `AdminRetentionGovernanceServiceTests` (27 tests)
 - `AdminRetentionGovernanceControllerTests` (11 tests)
@@ -169,7 +187,7 @@ Verified UI behaviors:
 
 ### 3.5 Real Database Transaction Verification Notes
 - `RetentionExecutionRecorderTransactionTests` (3 tests) and `RetentionAuditLoggerTransactionTests` (3 tests) run in Spring's test framework with dynamic transaction managers to assert `REQUIRES_NEW` commits and `REQUIRED` rollbacks.
-- `RetentionTransactionIntegrationTests` uses Testcontainers with a real PostgreSQL instance. It is annotated with `@EnabledIf("dockerAvailable")`, skipping gracefully when the host environment has no active Docker daemon. When Docker is present (e.g., CI runner), it executes end-to-end against PostgreSQL.
+- `RetentionTransactionIntegrationTests` uses Testcontainers with a real PostgreSQL instance. On 2026-10-20, Docker was available and all 5 tests ran and passed; none were skipped.
 
 ---
 
@@ -183,13 +201,15 @@ Verified UI behaviors:
 3. **Traceable Deletion Requests**: Privacy-minimized identifiers (`tombstone:<sha256>`) prevent PII leakage while enabling cross-service correlation.
 4. **Hold Enforcement**: Active holds (`LEGAL_HOLD`, `OPERATIONAL_HOLD`, `DISPUTE_HOLD`) strictly block deletion retries.
 5. **Bounded Retries & Escalation**: Retries are strictly bounded (`maxRetries = 3`); attempts beyond the threshold enter `RETRY_EXHAUSTED` / `MANUAL_ESCALATION_REQUIRED`.
-6. **Owner Completion Facts**: Asynchronous owner facts report per-service progress and audit evidence without cross-owner direct DB access. Non-fabrication guarantees that Identity only completes its own boundary.
+6. **Existing Owner-Fact Governance**: The ADMIN view and retry logic expose and govern minimized owner facts on existing deletion rows. Identity only completes its own fact; external owner facts are never fabricated.
 7. **Audit-Safe Transactions**: `RetentionAuditLogger` with `REQUIRES_NEW` propagation ensures denied audit events persist even when transactions roll back.
 8. **Contract & Fixture Alignment**: Real policy IDs, HTTP POST for holds, and valid UUIDs synchronized across backend, OpenAPI, BFF, UI, and mock fixtures.
 
 #### Deferred
 1. **Universal Hard-Delete**: Explicitly prohibited by ticket scope and architectural boundary MB-583.
 2. **Simulated Completion**: Deferred any simulated completion of external services that have not exposed authoritative retention APIs.
+3. **Production Deletion Intake and External Facts**: No production code path creates a `DeletionRequestEntity`, and no approved deletion-request/owner-completion event contract or producer/consumer was found in the checked Identity and owner-service sources. Creating requests, fan-out, and authoritative external owner completion therefore remain unavailable; this ADMIN surface only governs existing rows and does not imply a live end-to-end deletion workflow.
+4. **Manual Escalation Procedure**: Retry exhaustion is fail-closed, but no operator runbook or approved reset authority was found in the checked MB-673 evidence, Identity module documentation, or runbooks. No reset endpoint or procedure is implied by the status label.
 
 ---
 

@@ -5,6 +5,9 @@ import java.util.ArrayList;
 import java.util.List;
 import java.util.UUID;
 
+import org.hibernate.annotations.JdbcTypeCode;
+import org.hibernate.type.SqlTypes;
+
 import jakarta.persistence.CascadeType;
 import jakarta.persistence.Column;
 import jakarta.persistence.Entity;
@@ -26,6 +29,7 @@ public class DeletionRequestEntity {
 	@Column(name = "account_id", nullable = false)
 	private UUID accountId;
 
+	@JdbcTypeCode(SqlTypes.CHAR)
 	@Column(name = "subject_reference_hash", nullable = false, length = 64)
 	private String subjectReferenceHash;
 
