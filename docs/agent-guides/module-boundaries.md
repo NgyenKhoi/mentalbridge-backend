@@ -2,19 +2,21 @@
 
 ## Ownership map
 
-The MB-684 [Community peer-chat proposal](../adr/0042-community-chat-contract.md)
-is a prospective scoped extension: Community owns peer messages/permissions in
-its PostgreSQL; Realtime owns transport and ephemeral presence. It introduces
-no runtime path and does not move existing appointment chat out of MongoDB.
+The accepted MB-684 [Community peer-chat contract](../adr/0042-community-chat-contract.md)
+assigns peer messages/permissions to Community PostgreSQL; Realtime owns transport
+and ephemeral presence. MB-685 delivers the direct provider, current Identity
+eligibility read and minimized fact relay. Groups, delegated internal reads,
+socket/presence and notification consumers remain downstream. Existing appointment
+chat remains in Realtime MongoDB.
 
 | Module | Recommended runtime | Owns | May query synchronously | Publishes/consumes asynchronously |
 | --- | --- | --- | --- | --- |
 | `identity-service` | Spring Boot | account, credentials, roles, sessions, deletion coordination, minimized audit/security projection | no profile health data | account lifecycle, deletion and safe audit events |
 | `care-service` | Spring Boot | profile, consent, two-domain assessment, both safety triggers, Support Guide, SupportEvaluation, the one official SupportPlan and `PlanChangeRequest` decisions, follow-up | Identity for exceptional current account facts; Content for exact eligible resource/directory versions | assessment, support, consent and follow-up events |
 | `consultation-service` | Spring Boot | specialist approval/discovery/matching, `FREE`/`PLUS`/`PREMIUM` plan versions, VND/MoMo payment/upgrade, consultation credits, chat/video slots, appointments/evidence, summaries/next steps, earnings, provider payouts, reviews | Care authorization/consent and SupportPlan-change decisions when current truth is required | subscription, appointment, earning, payout, review and moderation events |
-| `community-service` | Spring Boot | Community display identity and future peer-support posts, comments, reactions, moderation, reports, blocks, and media metadata | no Care or Journal/AI data; Identity JWTs are verified locally | future minimized Community publication/moderation facts only when an accepted story requires them |
+| `community-service` | Spring Boot | Community display identity, posts/comments/reactions, moderation/reports/blocks, media and direct peer-chat messages/requests/privacy | Identity current USER eligibility for peer chat only; no Care or Journal/AI data; JWTs verified locally | minimized interaction and accepted Community chat facts |
 | `journal-ai-service` | Node.js/TypeScript | journal metadata/content access, analysis jobs/results | Care for current AI-processing consent | analysis commands/results |
-| `realtime-service` | Node.js/TypeScript | conversations, messages, WebSocket sessions, presence, receipts | Consultation/Care for current authorization when connecting or sending | chat facts and notification delivery events |
+| `realtime-service` | Node.js/TypeScript | appointment conversations/messages, WebSocket sessions, presence, receipts; Community peer transport remains downstream | Consultation/Care for appointment authorization; future Community delegated owner checks for peer transport | appointment chat facts and notification delivery events; future Community pointer consumption |
 | `content-notification-service` | Node.js/TypeScript | reviewed self-help resources and eligibility, verified area-directory content, preferences, digest/resource/appointment scheduling, notification creation/provider delivery | provider APIs only when executing delivery | consumes domain events and emits notification/delivery outcomes |
 | `phobert-worker` (optional/deferred) | Python | inference execution only after its activation gate passes | no business data query | future versioned inference command/result only |
 

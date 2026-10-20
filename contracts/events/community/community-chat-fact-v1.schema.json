@@ -1,0 +1,379 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://mentalbridge.dev/contracts/events/community/community-chat-fact-v1.schema.json",
+  "title": "community-chat-fact-v1.schema.json",
+  "description": "Accepted Community chat fact v1. MB-685 implements direct-request and authorization-change producers, with message producers delivered in the same story; group invitations remain MB-687. No raw message content crosses this boundary.",
+  "oneOf": [
+    {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "messageId",
+        "messageType",
+        "schemaVersion",
+        "producer",
+        "occurredAt",
+        "correlationId",
+        "aggregateId",
+        "aggregateVersion",
+        "payload"
+      ],
+      "properties": {
+        "messageId": {
+          "type": "string",
+          "format": "uuid"
+        },
+        "messageType": {
+          "const": "community.chat.fact"
+        },
+        "schemaVersion": {
+          "const": "1.0"
+        },
+        "producer": {
+          "const": "community-service"
+        },
+        "occurredAt": {
+          "type": "string",
+          "format": "date-time"
+        },
+        "correlationId": {
+          "type": "string",
+          "format": "uuid"
+        },
+        "aggregateId": {
+          "type": "string",
+          "format": "uuid"
+        },
+        "aggregateVersion": {
+          "type": "string",
+          "pattern": "^(0|[1-9][0-9]{0,18})$"
+        },
+        "payload": {
+          "type": "object",
+          "additionalProperties": false,
+          "required": [
+            "kind",
+            "conversationId",
+            "targetId",
+            "sequence"
+          ],
+          "properties": {
+            "kind": {
+              "const": "MESSAGE_SAVED"
+            },
+            "conversationId": {
+              "type": "string",
+              "format": "uuid"
+            },
+            "targetId": {
+              "type": "string",
+              "format": "uuid"
+            },
+            "sequence": {
+              "type": "string",
+              "pattern": "^(0|[1-9][0-9]{0,18})$"
+            }
+          }
+        }
+      }
+    },
+    {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "messageId",
+        "messageType",
+        "schemaVersion",
+        "producer",
+        "occurredAt",
+        "correlationId",
+        "aggregateId",
+        "aggregateVersion",
+        "payload"
+      ],
+      "properties": {
+        "messageId": {
+          "type": "string",
+          "format": "uuid"
+        },
+        "messageType": {
+          "const": "community.chat.fact"
+        },
+        "schemaVersion": {
+          "const": "1.0"
+        },
+        "producer": {
+          "const": "community-service"
+        },
+        "occurredAt": {
+          "type": "string",
+          "format": "date-time"
+        },
+        "correlationId": {
+          "type": "string",
+          "format": "uuid"
+        },
+        "aggregateId": {
+          "type": "string",
+          "format": "uuid"
+        },
+        "aggregateVersion": {
+          "type": "string",
+          "pattern": "^(0|[1-9][0-9]{0,18})$"
+        },
+        "payload": {
+          "type": "object",
+          "additionalProperties": false,
+          "required": [
+            "kind",
+            "conversationId"
+          ],
+          "properties": {
+            "kind": {
+              "const": "AUTHORIZATION_CHANGED"
+            },
+            "conversationId": {
+              "type": "string",
+              "format": "uuid"
+            }
+          }
+        }
+      }
+    },
+    {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "messageId",
+        "messageType",
+        "schemaVersion",
+        "producer",
+        "occurredAt",
+        "correlationId",
+        "aggregateId",
+        "aggregateVersion",
+        "payload"
+      ],
+      "properties": {
+        "messageId": {
+          "type": "string",
+          "format": "uuid"
+        },
+        "messageType": {
+          "const": "community.chat.fact"
+        },
+        "schemaVersion": {
+          "const": "1.0"
+        },
+        "producer": {
+          "const": "community-service"
+        },
+        "occurredAt": {
+          "type": "string",
+          "format": "date-time"
+        },
+        "correlationId": {
+          "type": "string",
+          "format": "uuid"
+        },
+        "aggregateId": {
+          "type": "string",
+          "format": "uuid"
+        },
+        "aggregateVersion": {
+          "type": "string",
+          "pattern": "^(0|[1-9][0-9]{0,18})$"
+        },
+        "payload": {
+          "type": "object",
+          "additionalProperties": false,
+          "required": [
+            "kind",
+            "conversationId",
+            "targetId",
+            "actorCommunityProfileId",
+            "recipientRoutingReference"
+          ],
+          "properties": {
+            "kind": {
+              "const": "MESSAGE_RECEIVED"
+            },
+            "conversationId": {
+              "type": "string",
+              "format": "uuid"
+            },
+            "targetId": {
+              "type": "string",
+              "format": "uuid"
+            },
+            "actorCommunityProfileId": {
+              "type": "string",
+              "format": "uuid"
+            },
+            "recipientRoutingReference": {
+              "type": "string",
+              "format": "uuid"
+            }
+          }
+        }
+      }
+    },
+    {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "messageId",
+        "messageType",
+        "schemaVersion",
+        "producer",
+        "occurredAt",
+        "correlationId",
+        "aggregateId",
+        "aggregateVersion",
+        "payload"
+      ],
+      "properties": {
+        "messageId": {
+          "type": "string",
+          "format": "uuid"
+        },
+        "messageType": {
+          "const": "community.chat.fact"
+        },
+        "schemaVersion": {
+          "const": "1.0"
+        },
+        "producer": {
+          "const": "community-service"
+        },
+        "occurredAt": {
+          "type": "string",
+          "format": "date-time"
+        },
+        "correlationId": {
+          "type": "string",
+          "format": "uuid"
+        },
+        "aggregateId": {
+          "type": "string",
+          "format": "uuid"
+        },
+        "aggregateVersion": {
+          "type": "string",
+          "pattern": "^(0|[1-9][0-9]{0,18})$"
+        },
+        "payload": {
+          "type": "object",
+          "additionalProperties": false,
+          "required": [
+            "kind",
+            "conversationId",
+            "targetId",
+            "actorCommunityProfileId",
+            "recipientRoutingReference"
+          ],
+          "properties": {
+            "kind": {
+              "const": "DIRECT_REQUESTED"
+            },
+            "conversationId": {
+              "type": "string",
+              "format": "uuid"
+            },
+            "targetId": {
+              "type": "string",
+              "format": "uuid"
+            },
+            "actorCommunityProfileId": {
+              "type": "string",
+              "format": "uuid"
+            },
+            "recipientRoutingReference": {
+              "type": "string",
+              "format": "uuid"
+            }
+          }
+        }
+      }
+    },
+    {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "messageId",
+        "messageType",
+        "schemaVersion",
+        "producer",
+        "occurredAt",
+        "correlationId",
+        "aggregateId",
+        "aggregateVersion",
+        "payload"
+      ],
+      "properties": {
+        "messageId": {
+          "type": "string",
+          "format": "uuid"
+        },
+        "messageType": {
+          "const": "community.chat.fact"
+        },
+        "schemaVersion": {
+          "const": "1.0"
+        },
+        "producer": {
+          "const": "community-service"
+        },
+        "occurredAt": {
+          "type": "string",
+          "format": "date-time"
+        },
+        "correlationId": {
+          "type": "string",
+          "format": "uuid"
+        },
+        "aggregateId": {
+          "type": "string",
+          "format": "uuid"
+        },
+        "aggregateVersion": {
+          "type": "string",
+          "pattern": "^(0|[1-9][0-9]{0,18})$"
+        },
+        "payload": {
+          "type": "object",
+          "additionalProperties": false,
+          "required": [
+            "kind",
+            "conversationId",
+            "targetId",
+            "actorCommunityProfileId",
+            "recipientRoutingReference"
+          ],
+          "properties": {
+            "kind": {
+              "const": "GROUP_INVITED"
+            },
+            "conversationId": {
+              "type": "string",
+              "format": "uuid"
+            },
+            "targetId": {
+              "type": "string",
+              "format": "uuid"
+            },
+            "actorCommunityProfileId": {
+              "type": "string",
+              "format": "uuid"
+            },
+            "recipientRoutingReference": {
+              "type": "string",
+              "format": "uuid"
+            }
+          }
+        }
+      }
+    }
+  ],
+  "$defs": {}
+}

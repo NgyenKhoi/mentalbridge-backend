@@ -182,3 +182,20 @@ shared platform database. These capabilities remain owner-local projections or
 future owner-specific persistence and are `PROPOSED`, not active centralized
 tables. A future migration must identify the actual owner before adding them to
 the active model.
+
+## MB-685 active Community chat entities
+
+| Entity | Owner | Storage | Status | Invariant |
+| --- | --- | --- | --- | --- |
+| `community_chat_privacy` | community-service | PostgreSQL | ACTIVE | Owner migration 0017; exact fields in the Community data dictionary; no cross-owner foreign keys. |
+| `community_chat_conversation` | community-service | PostgreSQL | ACTIVE | Owner migration 0017; exact fields in the Community data dictionary; no cross-owner foreign keys. |
+| `community_chat_request` | community-service | PostgreSQL | ACTIVE | Owner migration 0017; exact fields in the Community data dictionary; no cross-owner foreign keys. |
+| `community_chat_command` | community-service | PostgreSQL | ACTIVE | Owner migration 0017; exact fields in the Community data dictionary; no cross-owner foreign keys. |
+| `community_chat_outbox` | community-service | PostgreSQL | ACTIVE | Owner migration 0017; exact fields in the Community data dictionary; no cross-owner foreign keys. |
+
+## MB-685 message and read authorities
+
+| Entity | Owner | Storage | Status | Invariant |
+| --- | --- | --- | --- | --- |
+| `community_chat_message` | community-service | PostgreSQL | ACTIVE | Migration 0018; encrypted text, unique sender/conversation/client identity and private sequence; 90-day content expiry, content-free retry tombstone. |
+| `community_chat_read_state` | community-service | PostgreSQL | ACTIVE | Migration 0018; one private monotonic read cursor per current reader/conversation; no shared-receipt opt-in implied. |

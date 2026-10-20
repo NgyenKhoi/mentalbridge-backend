@@ -11,12 +11,14 @@ All language-neutral integration contracts live under this directory. Service-lo
 
 ## OpenAPI lifecycle
 
-MB-684's [Community chat candidate](proposals/community-chat-v1.openapi.json)
-remains in proposals with all operations planned. Its closed
+MB-684's accepted [Community chat baseline](proposals/community-chat-v1.openapi.json)
+remains frozen in proposals with its original planned markers. Its closed
 [commands](proposals/community-chat-command-v1.schema.json),
 [socket events](proposals/community-chat-realtime-v1.schema.json) and
-[durable facts](proposals/community-chat-fact-v1.schema.json) are review inputs,
-not active registrations. See [ADR 0042](../docs/adr/0042-community-chat-contract.md).
+[durable facts](proposals/community-chat-fact-v1.schema.json) define the accepted target.
+MB-685 registers only the delivered direct-provider subset and promotes the
+unchanged fact shape under `events/community/`; group, socket and internal
+delegation operations remain future runtime work. See [ADR 0042](../docs/adr/0042-community-chat-contract.md).
 Existing appointment and Community interaction schemas are unchanged.
 
 Every OpenAPI path item declares `x-mentalbridge-status` when all methods share one state. A mixed path declares it on each operation instead:
@@ -113,3 +115,7 @@ returns a review-required reference instead of silently mutating an active plan.
 - Runtime configuration changes together with `.env.example`, the module README, and configuration tests.
 
 Run `pwsh ./scripts/verify-repository.ps1` before opening a pull request. CI applies the same repository and changed-file policy checks.
+
+## MB-685 active direct-chat subset
+
+[`openapi/community-chat-v1.json`](openapi/community-chat-v1.json) is the runtime provider contract for delivered direct-chat operations. The accepted MB-684 artifact in proposals remains the frozen design baseline for downstream groups/transport/moderation. Only the delivered paths are registered in the active subset; its schemas must remain compatible with that baseline. Do not infer group/socket capability from a schema variant.

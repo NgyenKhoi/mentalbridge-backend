@@ -4,12 +4,14 @@ This file is the **navigation and authority map** for current MentalBridge produ
 
 ## 1. Source-of-truth order
 
-Community peer messaging has a separate **proposed target** in
+Community peer messaging has a separate **accepted target** in
 [ADR 0042 / MB-COMMUNITY-CHAT-001](adr/0042-community-chat-contract.md) and
 [Community chat policy v1](policies/community-chat-policy-v1.md). MB-684 supplies
 privacy/permission/API/event contracts only. Approval and merge accept the target;
-MB-685 through MB-693 supply runtime/client and acceptance evidence. No DM/group
-or new presence capability is made available by the contract task.
+MB-685 delivers the opt-in direct provider in Community PostgreSQL, current
+Identity eligibility and minimized Kafka facts. MB-686 through MB-693 supply
+clients, groups, delegated internal checks, transport/presence, notifications and
+acceptance evidence. No group or new presence capability is available from MB-685.
 
 For product/business behavior, use this order:
 

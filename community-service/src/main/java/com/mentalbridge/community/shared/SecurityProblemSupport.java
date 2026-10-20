@@ -32,7 +32,8 @@ public class SecurityProblemSupport implements AuthenticationEntryPoint, AccessD
 	@Override
 	public void handle(HttpServletRequest request, HttpServletResponse response,
 			org.springframework.security.access.AccessDeniedException accessDeniedException) throws IOException {
-		write(response, request, 403, "COMMUNITY_USER_REQUIRED", "A USER account is required");
+		write(response, request, 403, request.getRequestURI().startsWith("/api/v1/community/chat/")
+				? "FORBIDDEN" : "COMMUNITY_USER_REQUIRED", "A USER account is required");
 	}
 
 	private void write(HttpServletResponse response, HttpServletRequest request, int status, String code, String title)

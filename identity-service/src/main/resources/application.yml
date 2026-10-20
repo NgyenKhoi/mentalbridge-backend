@@ -36,6 +36,8 @@ spring:
 
 mentalbridge:
   identity:
+    community-chat:
+      service-token: ${IDENTITY_COMMUNITY_CHAT_SERVICE_TOKEN:}
     notification-service-token: ${IDENTITY_NOTIFICATION_SERVICE_TOKEN:}
     jwt:
       issuer: ${IDENTITY_JWT_ISSUER}

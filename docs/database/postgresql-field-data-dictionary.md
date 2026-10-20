@@ -2779,3 +2779,102 @@ Durable actor-and-operation-scoped idempotency evidence for publish and withdraw
 | `publication_id` | Immutable publication that received the original command outcome. |
 | `response_snapshot` | Original non-sensitive contract response retained for exact replay; excludes content, review notes and provider/storage details. |
 | `created_at` | Immutable database UTC instant when the command result was recorded. |
+
+## MB-685 direct Community chat — public tables
+
+These tables belong only to `mentalbridge_community`. Liquibase `0017-community-direct-chat` is runtime authority. The canonical logical model is documentation only.
+
+### `public.community_chat_privacy`
+
+| Field | Purpose |
+| --- | --- |
+| `profile_id` | Community-owned profile key; one preference aggregate per viewer, removed with that profile. |
+| `direct_message_policy` | Explicit ANYONE or default APPROVAL_REQUIRED; never auto-accepts a pending request or revokes an accepted conversation. |
+| `presence_visible` | Explicit technical-presence opt-in; defaults false, does not assert availability or willingness. |
+| `invisible` | Viewer-selected override that suppresses presence even when opted in; defaults false. |
+| `typing_visible` | Explicit typing projection opt-in, false until selected. |
+| `read_receipts_visible` | Explicit shared-receipt opt-in, independent of private unread state; defaults false. |
+| `version` | Public preference replacement revision used by strong If-Match; messages and blocks do not advance it. |
+| `visibility_epoch` | Private cursor/revocation epoch advanced on preference/block/restriction changes; never exposed as a counter. |
+
+### `public.community_chat_conversation`
+
+| Field | Purpose |
+| --- | --- |
+| `id` | Random opaque conversation UUID; a dormant routing UUID grants no public transcript capability. |
+| `first_profile_id` | First member of the lexicographically ordered pair; physical Community profile reference. |
+| `second_profile_id` | Second distinct member of the ordered pair; the pair is unique even across crossed/concurrent starts. |
+| `state` | DORMANT until explicit acceptance or eligible ANYONE initiation; ACTIVE relationships survive later privacy changes while current blocks/restrictions override access. |
+| `management_version` | Public relationship-management revision, separate from message activity and private event sequence. |
+| `event_version` | Private monotonically increasing outbox aggregate revision, shared by facts of one committed owner mutation; never a public ETag. |
+| `last_sequence` | Private server message ordering/watermark allocator; never serialized in public conversations or message DTOs. |
+| `created_at` | Immutable UTC microsecond insertion instant for the pair identity. |
+| `activated_at` | Nullable UTC instant of the first accepted relationship; present exactly when ACTIVE and used as initial list ordering before any messages. |
+
+### `public.community_chat_request`
+
+| Field | Purpose |
+| --- | --- |
+| `id` | Stable opaque request UUID; separately retained so terminal decisions can be safely reconciled. |
+| `conversation_id` | Physical owner-local pair/routing reference; request creation alone grants neither participant history. |
+| `requester_profile_id` | Exact original Community requester, used by recipient projections, per-actor rate limits and permanent decline/block suppression. |
+| `recipient_profile_id` | Only this profile may accept, decline or block; no requester-selected actor. |
+| `state` | PENDING, ACCEPTED, DECLINED, BLOCKED or EXPIRED; same terminal decision is a no-op, conflicting decisions fail. |
+| `version` | Request-specific exact decision revision, independent of conversation or privacy revisions. |
+| `created_at` | Immutable UTC request creation; counts genuine new requests against the rolling 24-hour actor limit. |
+| `expires_at` | UTC server expiry seven days after creation; elapsed requests cannot be accepted, regardless of stored state. |
+| `decided_at` | Nullable terminal transition instant; populated exactly when the request leaves PENDING. Content-free terminal rows preserve anti-spam and retry truth. |
+| `decided_by_profile_id` | Nullable exact recipient who explicitly decided; absent for expiry or block/restriction invalidation, so an invalidated request cannot masquerade as a replay of that recipient's command. |
+
+### `public.community_chat_command`
+
+| Field | Purpose |
+| --- | --- |
+| `id` | Internal random command record UUID, never a user-visible engagement metric. |
+| `actor_profile_id` | Verified Community actor; command identity is isolated across owners. |
+| `operation` | Closed owner command namespace START_DIRECT or SEND_MESSAGE; prevents cross-operation key reuse. |
+| `idempotency_key` | Client UUID unique with actor and operation; uncertain outcomes reconcile without duplicate effects. |
+| `request_fingerprint` | Versioned keyed HMAC of normalized command input, never raw message text; old key versions remain available for safe replay. |
+| `result_kind` | Bounded ACTIVE/PENDING/MESSAGE pointer discriminator; replay reauthorizes rather than returning a cached transcript. |
+| `target_id` | Opaque owner result reference; content-free tombstone prevents an expired/deleted message being recreated by a late retry. |
+| `created_at` | Immutable UTC command acceptance; retained while its conversation exists, with deletion handled by owner cleanup. |
+
+### `public.community_chat_outbox`
+
+| Field | Purpose |
+| --- | --- |
+| `id` | Stable envelope message UUID reused by every relay attempt. |
+| `conversation_id` | Owner-local aggregate pointer and Kafka partition key; cascading aggregate erasure removes queued content-free facts. |
+| `deduplication_key` | Unique aggregate revision/kind/target/recipient identity, preventing repeated logical facts on retry. |
+| `event_payload` | Closed minimized Community chat fact only; excludes text, group name, email, clinical data and credentials. |
+| `occurred_at` | Owner occurrence instant truncated to UTC microseconds before persistence/serialization. |
+| `published_at` | Nullable Kafka acknowledgement instant; only an acknowledged publish marks completion. |
+| `attempt_count` | Persisted bounded-backoff attempt number; no volatile offset or process-local retry authority. |
+| `next_attempt_at` | Nullable lease/backoff instant for safe concurrent SKIP LOCKED claims and replay after a crashed publisher. |
+
+### `public.community_chat_message`
+
+Community's encrypted text-message authority under Liquibase 0018. No raw message is placed in Kafka, Redis, a notification or another owner's database.
+
+| Field | Purpose |
+| --- | --- |
+| `id` | Random immutable message UUID; no global sequence/time encoding is exposed to clients. |
+| `conversation_id` | Physical owner-local conversation reference; aggregate erasure cascades message records. |
+| `sender_profile_id` | Server-derived Community sender, never selected by the browser or a socket command. |
+| `client_message_id` | Caller UUID unique with sender/conversation; duplicate content reconciles one message even across transport retries. |
+| `server_sequence` | Private positive per-conversation order allocated in the same transaction as content/facts; never returned in REST/socket DTOs or public versions. |
+| `content_ciphertext` | Nullable versioned AES-256-GCM ciphertext with random nonce and exact conversation/message/sender associated data. Null only after retention purge; never plaintext. |
+| `content_fingerprint` | Versioned keyed HMAC of normalized target/client/content used only for retry consistency; retains no recoverable message text. |
+| `created_at` | Immutable UTC microsecond save instant; orders eligible activity and enforces cross-device rolling send limits. |
+| `expires_at` | Immutable save-time retention cutoff (90 days under accepted policy v1). Content becomes unreadable at this instant, independently of sweep timing. |
+| `purged_at` | Nullable UTC physical ciphertext-erasure checkpoint; present exactly when ciphertext is null. The content-free identity tombstone prevents expired-content recreation. |
+
+### `public.community_chat_read_state`
+
+| Field | Purpose |
+| --- | --- |
+| `conversation_id` | Physical owner-local conversation key, removed when the conversation is erased. |
+| `profile_id` | Exact Community reader; composite primary key isolates devices' shared private unread truth per owner/conversation. |
+| `last_read_sequence` | Private monotonic max of authorized exact-message acknowledgements. Not a delivery proof, shared-receipt preference or public counter; retention/visibility changes never decrease it. |
+
+Migration 0018 also adds `community_chat_command.conversation_id`, a required physical aggregate reference. Existing ACTIVE/PENDING pointers are backfilled inside the owner database; erasing a conversation cascades its retry identities, preventing dangling owner identifiers. It never references another service's table.

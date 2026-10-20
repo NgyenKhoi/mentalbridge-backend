@@ -2,7 +2,7 @@
 
 - Policy ID: `community-chat-policy-v1`
 - Decision: [MB-COMMUNITY-CHAT-001](../adr/0042-community-chat-contract.md)
-- Status: Proposed for owner/security approval with MB-684; not runtime configuration
+- Status: Accepted by MB-684 PR #206 (merge `318248c7`); runtime configuration is delivered by implementation stories
 - Scope: authenticated active Community `USER` accounts; all package tiers
 
 ## Identity and authority

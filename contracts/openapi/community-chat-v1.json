@@ -1,0 +1,2044 @@
+{
+  "openapi": "3.1.0",
+  "info": {
+    "title": "MentalBridge Community direct chat API",
+    "version": "1.0.0",
+    "description": "Implemented MB-685 provider subset of accepted ADR 0042 / MB-684. Feature enablement requires versioned encryption and current Identity authorization. Groups, service projections and socket delivery remain downstream capabilities."
+  },
+  "x-mentalbridge-decision": "MB-COMMUNITY-CHAT-001",
+  "servers": [
+    {
+      "url": "https://staging.mentalbridge.online",
+      "description": "Target gateway only; planned operations are not deployed."
+    }
+  ],
+  "paths": {
+    "/api/v1/community/chat/privacy": {
+      "x-mentalbridge-status": "implemented",
+      "x-mentalbridge-owner": "community-service",
+      "get": {
+        "operationId": "getChatPrivacy",
+        "summary": "get Chat Privacy",
+        "description": "Missing preferences return APPROVAL_REQUIRED, all visibility flags false and invisible false, version 0. No implicit opt-in.",
+        "x-mentalbridge-role": "USER",
+        "security": [
+          {
+            "BearerAuth": []
+          }
+        ],
+        "parameters": [],
+        "responses": {
+          "200": {
+            "description": "Authoritative owner result; no optimistic success.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/PrivacyView"
+                }
+              }
+            }
+          },
+          "400": {
+            "$ref": "#/components/responses/InvalidRequest"
+          },
+          "401": {
+            "$ref": "#/components/responses/Unauthenticated"
+          },
+          "403": {
+            "$ref": "#/components/responses/Forbidden"
+          },
+          "404": {
+            "$ref": "#/components/responses/TargetUnavailable"
+          },
+          "409": {
+            "$ref": "#/components/responses/Conflict"
+          },
+          "429": {
+            "$ref": "#/components/responses/RateLimited"
+          },
+          "503": {
+            "$ref": "#/components/responses/DependencyUnavailable"
+          }
+        }
+      },
+      "put": {
+        "operationId": "replaceChatPrivacy",
+        "summary": "replace Chat Privacy",
+        "description": "Complete replacement. Existing accepted conversations stay active; pending requests do not auto-accept. Revoke visibility immediately.",
+        "x-mentalbridge-role": "USER",
+        "security": [
+          {
+            "BearerAuth": []
+          }
+        ],
+        "parameters": [
+          {
+            "name": "If-Match",
+            "in": "header",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "pattern": "^\"[0-9]+\"$"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Authoritative owner result; no optimistic success.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/PrivacyView"
+                }
+              }
+            },
+            "headers": {
+              "ETag": {
+                "description": "Strong current version",
+                "schema": {
+                  "type": "string"
+                }
+              }
+            }
+          },
+          "400": {
+            "$ref": "#/components/responses/InvalidRequest"
+          },
+          "401": {
+            "$ref": "#/components/responses/Unauthenticated"
+          },
+          "403": {
+            "$ref": "#/components/responses/Forbidden"
+          },
+          "404": {
+            "$ref": "#/components/responses/TargetUnavailable"
+          },
+          "409": {
+            "$ref": "#/components/responses/Conflict"
+          },
+          "429": {
+            "$ref": "#/components/responses/RateLimited"
+          },
+          "503": {
+            "$ref": "#/components/responses/DependencyUnavailable"
+          }
+        },
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/Privacy"
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/v1/community/chat/direct-conversations": {
+      "x-mentalbridge-status": "implemented",
+      "x-mentalbridge-owner": "community-service",
+      "post": {
+        "operationId": "startDirectConversation",
+        "summary": "start Direct Conversation",
+        "description": "Reuses the unique unordered profile pair. ANYONE creates an ACTIVE conversation; APPROVAL_REQUIRED creates a text-free request. Decline/block tombstones prevent repeated solicitation. No account-id or anonymous-author lookup.",
+        "x-mentalbridge-role": "USER",
+        "security": [
+          {
+            "BearerAuth": []
+          }
+        ],
+        "parameters": [
+          {
+            "name": "Idempotency-Key",
+            "in": "header",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid"
+            }
+          }
+        ],
+        "responses": {
+          "201": {
+            "description": "Authoritative owner result; no optimistic success.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/DirectResult"
+                }
+              }
+            }
+          },
+          "400": {
+            "$ref": "#/components/responses/InvalidRequest"
+          },
+          "401": {
+            "$ref": "#/components/responses/Unauthenticated"
+          },
+          "403": {
+            "$ref": "#/components/responses/Forbidden"
+          },
+          "404": {
+            "$ref": "#/components/responses/TargetUnavailable"
+          },
+          "409": {
+            "$ref": "#/components/responses/Conflict"
+          },
+          "429": {
+            "$ref": "#/components/responses/RateLimited"
+          },
+          "503": {
+            "$ref": "#/components/responses/DependencyUnavailable"
+          }
+        },
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/StartDirect"
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/v1/community/chat/requests": {
+      "x-mentalbridge-status": "implemented",
+      "x-mentalbridge-owner": "community-service",
+      "get": {
+        "operationId": "listIncomingRequests",
+        "summary": "list Incoming Requests",
+        "description": "",
+        "x-mentalbridge-role": "USER",
+        "security": [
+          {
+            "BearerAuth": []
+          }
+        ],
+        "parameters": [
+          {
+            "name": "cursor",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "string",
+              "minLength": 1,
+              "maxLength": 1024
+            }
+          },
+          {
+            "name": "limit",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "integer",
+              "minimum": 1,
+              "maximum": 50,
+              "default": 20
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Authoritative owner result; no optimistic success.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/RequestPage"
+                }
+              }
+            }
+          },
+          "400": {
+            "$ref": "#/components/responses/InvalidRequest"
+          },
+          "401": {
+            "$ref": "#/components/responses/Unauthenticated"
+          },
+          "403": {
+            "$ref": "#/components/responses/Forbidden"
+          },
+          "404": {
+            "$ref": "#/components/responses/TargetUnavailable"
+          },
+          "409": {
+            "$ref": "#/components/responses/Conflict"
+          },
+          "429": {
+            "$ref": "#/components/responses/RateLimited"
+          },
+          "503": {
+            "$ref": "#/components/responses/DependencyUnavailable"
+          }
+        }
+      }
+    },
+    "/api/v1/community/chat/requests/{requestId}/decision": {
+      "x-mentalbridge-status": "implemented",
+      "x-mentalbridge-owner": "community-service",
+      "post": {
+        "operationId": "decideDirectRequest",
+        "summary": "decide Direct Request",
+        "description": "Recipient only. ACCEPT returns ACTIVE; DECLINE/BLOCK returns 204, never a conversation. Repeated same terminal decision is a no-op; conflicting terminal decision is 409.",
+        "x-mentalbridge-role": "USER",
+        "security": [
+          {
+            "BearerAuth": []
+          }
+        ],
+        "parameters": [
+          {
+            "name": "requestId",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid"
+            }
+          },
+          {
+            "name": "If-Match",
+            "in": "header",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "pattern": "^\"[0-9]+\"$"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Authoritative owner result; no optimistic success.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/AcceptedDirect"
+                }
+              }
+            },
+            "headers": {
+              "ETag": {
+                "description": "Strong current version",
+                "schema": {
+                  "type": "string"
+                }
+              }
+            }
+          },
+          "204": {
+            "description": "Request declined or blocked; no content or conversation disclosed."
+          },
+          "400": {
+            "$ref": "#/components/responses/InvalidRequest"
+          },
+          "401": {
+            "$ref": "#/components/responses/Unauthenticated"
+          },
+          "403": {
+            "$ref": "#/components/responses/Forbidden"
+          },
+          "404": {
+            "$ref": "#/components/responses/TargetUnavailable"
+          },
+          "409": {
+            "$ref": "#/components/responses/Conflict"
+          },
+          "429": {
+            "$ref": "#/components/responses/RateLimited"
+          },
+          "503": {
+            "$ref": "#/components/responses/DependencyUnavailable"
+          }
+        },
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/RequestDecision"
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/v1/community/chat/conversations": {
+      "x-mentalbridge-status": "implemented",
+      "x-mentalbridge-owner": "community-service",
+      "get": {
+        "operationId": "listConversations",
+        "summary": "list Conversations",
+        "description": "Viewer-safe conversations only. Sort by latest eligible message (or eligible relationship creation), never global hidden activity; no global message count, timestamp or sequence-derived watermark. Management version changes only for authorized relationship/group management, not messages/read cursors.",
+        "x-mentalbridge-role": "USER",
+        "security": [
+          {
+            "BearerAuth": []
+          }
+        ],
+        "parameters": [
+          {
+            "name": "cursor",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "string",
+              "minLength": 1,
+              "maxLength": 1024
+            }
+          },
+          {
+            "name": "limit",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "integer",
+              "minimum": 1,
+              "maximum": 50,
+              "default": 20
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Authoritative owner result; no optimistic success.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ConversationPage"
+                }
+              }
+            }
+          },
+          "400": {
+            "$ref": "#/components/responses/InvalidRequest"
+          },
+          "401": {
+            "$ref": "#/components/responses/Unauthenticated"
+          },
+          "403": {
+            "$ref": "#/components/responses/Forbidden"
+          },
+          "404": {
+            "$ref": "#/components/responses/TargetUnavailable"
+          },
+          "409": {
+            "$ref": "#/components/responses/Conflict"
+          },
+          "429": {
+            "$ref": "#/components/responses/RateLimited"
+          },
+          "503": {
+            "$ref": "#/components/responses/DependencyUnavailable"
+          }
+        }
+      }
+    },
+    "/api/v1/community/chat/conversations/{conversationId}": {
+      "x-mentalbridge-status": "implemented",
+      "x-mentalbridge-owner": "community-service",
+      "get": {
+        "operationId": "getConversation",
+        "summary": "get Conversation",
+        "description": "Current viewer-safe conversation and its relationship/group management version. Not a message sequence or outbox revision. Use this read before another group command after a 204; self-leavers/removed viewers receive TARGET_UNAVAILABLE.",
+        "x-mentalbridge-role": "USER",
+        "security": [
+          {
+            "BearerAuth": []
+          }
+        ],
+        "parameters": [
+          {
+            "name": "conversationId",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Authoritative owner result; no optimistic success.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Conversation"
+                }
+              }
+            }
+          },
+          "400": {
+            "$ref": "#/components/responses/InvalidRequest"
+          },
+          "401": {
+            "$ref": "#/components/responses/Unauthenticated"
+          },
+          "403": {
+            "$ref": "#/components/responses/Forbidden"
+          },
+          "404": {
+            "$ref": "#/components/responses/TargetUnavailable"
+          },
+          "409": {
+            "$ref": "#/components/responses/Conflict"
+          },
+          "429": {
+            "$ref": "#/components/responses/RateLimited"
+          },
+          "503": {
+            "$ref": "#/components/responses/DependencyUnavailable"
+          }
+        }
+      }
+    },
+    "/api/v1/community/chat/conversations/{conversationId}/messages": {
+      "x-mentalbridge-status": "implemented",
+      "x-mentalbridge-owner": "community-service",
+      "get": {
+        "operationId": "listMessages",
+        "summary": "list Messages",
+        "description": "Only current eligible participants; current-epoch group history only. Filter blocked/ineligible messages before pagination/counting. Return items in ascending private server sequence; never expose that sequence or gaps. nextCursor is an authenticated opaque, non-sequence-encoded continuation bound to actor, conversation, direction, membership and visibility epoch. Hidden traffic cannot alter visible items, continuation availability/meaning or reveal remaining counts; token bytes may vary due to nonce/signing. A stale visibility cursor is rejected generically as TARGET_UNAVAILABLE; restart an authorized read. No new eligible results means no nextCursor. Never disclose messages before join or prior rejoin epochs.",
+        "x-mentalbridge-role": "USER",
+        "security": [
+          {
+            "BearerAuth": []
+          }
+        ],
+        "parameters": [
+          {
+            "name": "conversationId",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid"
+            }
+          },
+          {
+            "name": "cursor",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "string",
+              "minLength": 1,
+              "maxLength": 1024
+            }
+          },
+          {
+            "name": "limit",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "integer",
+              "minimum": 1,
+              "maximum": 50,
+              "default": 20
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Authoritative owner result; no optimistic success.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/MessagePage"
+                }
+              }
+            }
+          },
+          "400": {
+            "$ref": "#/components/responses/InvalidRequest"
+          },
+          "401": {
+            "$ref": "#/components/responses/Unauthenticated"
+          },
+          "403": {
+            "$ref": "#/components/responses/Forbidden"
+          },
+          "404": {
+            "$ref": "#/components/responses/TargetUnavailable"
+          },
+          "409": {
+            "$ref": "#/components/responses/Conflict"
+          },
+          "429": {
+            "$ref": "#/components/responses/RateLimited"
+          },
+          "503": {
+            "$ref": "#/components/responses/DependencyUnavailable"
+          }
+        }
+      },
+      "post": {
+        "operationId": "sendMessage",
+        "summary": "send Message",
+        "description": "Community transaction commits before 201. Dedupe (sender, conversationId, clientMessageId); retry same content returns same message, changed content is 409. Never implies recipient delivery/read/online.",
+        "x-mentalbridge-role": "USER",
+        "security": [
+          {
+            "BearerAuth": []
+          }
+        ],
+        "parameters": [
+          {
+            "name": "conversationId",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid"
+            }
+          },
+          {
+            "name": "Idempotency-Key",
+            "in": "header",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid"
+            }
+          }
+        ],
+        "responses": {
+          "201": {
+            "description": "Authoritative owner result; no optimistic success.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/SendResult"
+                }
+              }
+            }
+          },
+          "400": {
+            "$ref": "#/components/responses/InvalidRequest"
+          },
+          "401": {
+            "$ref": "#/components/responses/Unauthenticated"
+          },
+          "403": {
+            "$ref": "#/components/responses/Forbidden"
+          },
+          "404": {
+            "$ref": "#/components/responses/TargetUnavailable"
+          },
+          "409": {
+            "$ref": "#/components/responses/Conflict"
+          },
+          "429": {
+            "$ref": "#/components/responses/RateLimited"
+          },
+          "503": {
+            "$ref": "#/components/responses/DependencyUnavailable"
+          }
+        },
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/SendMessage"
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/v1/community/chat/conversations/{conversationId}/read-cursor": {
+      "x-mentalbridge-status": "implemented",
+      "x-mentalbridge-owner": "community-service",
+      "put": {
+        "operationId": "advanceReadCursor",
+        "summary": "advance Read Cursor",
+        "description": "Resolve lastReadMessageId only if currently visible to this actor in this conversation and membership epoch. Atomically advance the private server sequence watermark by max(previous, resolved), never beyond eligible history; duplicate/out-of-order acknowledgements cannot decrease it or add unread. Return a currently eligible message reference or null, not a numeric counter. Unknown/cross-conversation/blocked/prior-epoch targets uniformly TARGET_UNAVAILABLE. Private unread persists with shared receipts off.",
+        "x-mentalbridge-role": "USER",
+        "security": [
+          {
+            "BearerAuth": []
+          }
+        ],
+        "parameters": [
+          {
+            "name": "conversationId",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Authoritative owner result; no optimistic success.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ReadResult"
+                }
+              }
+            }
+          },
+          "400": {
+            "$ref": "#/components/responses/InvalidRequest"
+          },
+          "401": {
+            "$ref": "#/components/responses/Unauthenticated"
+          },
+          "403": {
+            "$ref": "#/components/responses/Forbidden"
+          },
+          "404": {
+            "$ref": "#/components/responses/TargetUnavailable"
+          },
+          "409": {
+            "$ref": "#/components/responses/Conflict"
+          },
+          "429": {
+            "$ref": "#/components/responses/RateLimited"
+          },
+          "503": {
+            "$ref": "#/components/responses/DependencyUnavailable"
+          }
+        },
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/ReadCursor"
+              }
+            }
+          }
+        }
+      }
+    }
+  },
+  "components": {
+    "securitySchemes": {
+      "BearerAuth": {
+        "type": "http",
+        "scheme": "bearer",
+        "bearerFormat": "JWT",
+        "description": "Identity-issued USER token; server derives Community identity."
+      },
+      "RealtimeDelegation": {
+        "type": "http",
+        "scheme": "bearer",
+        "bearerFormat": "JWT",
+        "description": "Authenticated service plus signed short-lived end-user delegation with exact audience/subject/scope; never browser-supplied routing identity."
+      },
+      "NotificationServiceAuth": {
+        "type": "http",
+        "scheme": "bearer",
+        "bearerFormat": "JWT",
+        "description": "Content service credential scoped only to notification authorization."
+      },
+      "RealtimeMessageReadDelegation": {
+        "type": "http",
+        "scheme": "bearer",
+        "bearerFormat": "JWT",
+        "description": "Realtime-only signed service + end-viewer delegation; MessageReadDelegationClaims is normative. audience community-service, scope community:message:project, exact conversationId/messageId, maximum 30s lifetime. USER BearerAuth and generic service credentials are insufficient. No cached authorization result is a grant.",
+        "x-mentalbridge-claims-schema": "#/components/schemas/MessageReadDelegationClaims"
+      }
+    },
+    "schemas": {
+      "Privacy": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": [
+          "directMessagePolicy",
+          "presenceVisible",
+          "invisible",
+          "typingVisible",
+          "readReceiptsVisible"
+        ],
+        "properties": {
+          "directMessagePolicy": {
+            "type": "string",
+            "enum": [
+              "ANYONE",
+              "APPROVAL_REQUIRED"
+            ]
+          },
+          "presenceVisible": {
+            "type": "boolean"
+          },
+          "invisible": {
+            "type": "boolean"
+          },
+          "typingVisible": {
+            "type": "boolean"
+          },
+          "readReceiptsVisible": {
+            "type": "boolean"
+          }
+        }
+      },
+      "PrivacyView": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": [
+          "version",
+          "preferences"
+        ],
+        "properties": {
+          "version": {
+            "type": "string",
+            "pattern": "^(0|[1-9][0-9]{0,18})$"
+          },
+          "preferences": {
+            "$ref": "#/components/schemas/Privacy"
+          }
+        }
+      },
+      "Peer": {
+        "oneOf": [
+          {
+            "type": "object",
+            "additionalProperties": false,
+            "required": [
+              "state",
+              "communityProfileId",
+              "displayName"
+            ],
+            "properties": {
+              "state": {
+                "const": "AVAILABLE"
+              },
+              "communityProfileId": {
+                "type": "string",
+                "format": "uuid"
+              },
+              "displayName": {
+                "type": "string",
+                "minLength": 1,
+                "maxLength": 80
+              }
+            }
+          },
+          {
+            "type": "object",
+            "additionalProperties": false,
+            "required": [
+              "state"
+            ],
+            "properties": {
+              "state": {
+                "const": "UNAVAILABLE"
+              }
+            }
+          }
+        ]
+      },
+      "StartDirect": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": [
+          "recipientCommunityProfileId"
+        ],
+        "properties": {
+          "recipientCommunityProfileId": {
+            "type": "string",
+            "format": "uuid"
+          }
+        }
+      },
+      "DirectResult": {
+        "oneOf": [
+          {
+            "type": "object",
+            "additionalProperties": false,
+            "required": [
+              "state",
+              "conversationId"
+            ],
+            "properties": {
+              "state": {
+                "const": "ACTIVE"
+              },
+              "conversationId": {
+                "type": "string",
+                "format": "uuid"
+              }
+            }
+          },
+          {
+            "type": "object",
+            "additionalProperties": false,
+            "required": [
+              "state",
+              "requestId"
+            ],
+            "properties": {
+              "state": {
+                "const": "PENDING"
+              },
+              "requestId": {
+                "type": "string",
+                "format": "uuid"
+              }
+            }
+          }
+        ]
+      },
+      "AcceptedDirect": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": [
+          "state",
+          "conversationId"
+        ],
+        "properties": {
+          "state": {
+            "const": "ACTIVE"
+          },
+          "conversationId": {
+            "type": "string",
+            "format": "uuid"
+          }
+        }
+      },
+      "Request": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": [
+          "requestId",
+          "requester",
+          "state",
+          "createdAt",
+          "expiresAt",
+          "version"
+        ],
+        "properties": {
+          "requestId": {
+            "type": "string",
+            "format": "uuid"
+          },
+          "requester": {
+            "$ref": "#/components/schemas/Peer"
+          },
+          "state": {
+            "type": "string",
+            "enum": [
+              "PENDING",
+              "ACCEPTED",
+              "DECLINED",
+              "BLOCKED",
+              "EXPIRED"
+            ]
+          },
+          "createdAt": {
+            "type": "string",
+            "format": "date-time"
+          },
+          "expiresAt": {
+            "type": "string",
+            "format": "date-time"
+          },
+          "version": {
+            "type": "string",
+            "pattern": "^(0|[1-9][0-9]{0,18})$"
+          }
+        }
+      },
+      "RequestDecision": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": [
+          "decision"
+        ],
+        "properties": {
+          "decision": {
+            "type": "string",
+            "enum": [
+              "ACCEPT",
+              "DECLINE",
+              "BLOCK"
+            ]
+          }
+        }
+      },
+      "CreateGroup": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": [
+          "name"
+        ],
+        "properties": {
+          "name": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 80
+          }
+        }
+      },
+      "Group": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": [
+          "conversationId",
+          "kind",
+          "name",
+          "state",
+          "memberLimit",
+          "version"
+        ],
+        "properties": {
+          "conversationId": {
+            "type": "string",
+            "format": "uuid"
+          },
+          "kind": {
+            "const": "GROUP"
+          },
+          "name": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 80
+          },
+          "state": {
+            "type": "string",
+            "enum": [
+              "ACTIVE",
+              "ARCHIVED"
+            ]
+          },
+          "memberLimit": {
+            "type": "integer",
+            "minimum": 20,
+            "maximum": 30
+          },
+          "version": {
+            "type": "string",
+            "pattern": "^(0|[1-9][0-9]{0,18})$",
+            "description": "Group management revision, distinct from private message ordering/outbox revision. Used by group If-Match."
+          }
+        }
+      },
+      "Invite": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": [
+          "inviteeCommunityProfileId"
+        ],
+        "properties": {
+          "inviteeCommunityProfileId": {
+            "type": "string",
+            "format": "uuid"
+          }
+        }
+      },
+      "Invitation": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": [
+          "invitationId",
+          "conversationId",
+          "groupName",
+          "inviter",
+          "state",
+          "expiresAt",
+          "version"
+        ],
+        "properties": {
+          "invitationId": {
+            "type": "string",
+            "format": "uuid"
+          },
+          "conversationId": {
+            "type": "string",
+            "format": "uuid"
+          },
+          "groupName": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 80
+          },
+          "inviter": {
+            "$ref": "#/components/schemas/Peer"
+          },
+          "state": {
+            "type": "string",
+            "enum": [
+              "PENDING",
+              "ACCEPTED",
+              "DECLINED",
+              "REVOKED",
+              "EXPIRED"
+            ]
+          },
+          "expiresAt": {
+            "type": "string",
+            "format": "date-time"
+          },
+          "version": {
+            "type": "string",
+            "pattern": "^(0|[1-9][0-9]{0,18})$"
+          }
+        }
+      },
+      "InviteDecision": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": [
+          "decision"
+        ],
+        "properties": {
+          "decision": {
+            "type": "string",
+            "enum": [
+              "ACCEPT",
+              "DECLINE"
+            ]
+          }
+        }
+      },
+      "Member": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": [
+          "peer",
+          "role",
+          "joinedAt"
+        ],
+        "properties": {
+          "peer": {
+            "$ref": "#/components/schemas/Peer"
+          },
+          "role": {
+            "type": "string",
+            "enum": [
+              "OWNER",
+              "ADMIN",
+              "MEMBER"
+            ]
+          },
+          "joinedAt": {
+            "type": "string",
+            "format": "date-time"
+          }
+        }
+      },
+      "SetRole": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": [
+          "role"
+        ],
+        "properties": {
+          "role": {
+            "type": "string",
+            "enum": [
+              "ADMIN",
+              "MEMBER"
+            ]
+          }
+        }
+      },
+      "TransferOwner": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": [
+          "newOwnerCommunityProfileId"
+        ],
+        "properties": {
+          "newOwnerCommunityProfileId": {
+            "type": "string",
+            "format": "uuid"
+          }
+        }
+      },
+      "Conversation": {
+        "oneOf": [
+          {
+            "type": "object",
+            "additionalProperties": false,
+            "required": [
+              "conversationId",
+              "kind",
+              "state",
+              "peers",
+              "unreadCount",
+              "version"
+            ],
+            "properties": {
+              "conversationId": {
+                "type": "string",
+                "format": "uuid"
+              },
+              "kind": {
+                "const": "DIRECT"
+              },
+              "state": {
+                "type": "string",
+                "enum": [
+                  "ACTIVE",
+                  "READ_ONLY"
+                ]
+              },
+              "peers": {
+                "type": "array",
+                "items": {
+                  "$ref": "#/components/schemas/Peer"
+                },
+                "maxItems": 2
+              },
+              "unreadCount": {
+                "type": "integer",
+                "minimum": 0
+              },
+              "version": {
+                "type": "string",
+                "pattern": "^(0|[1-9][0-9]{0,18})$",
+                "description": "Public relationship/group management revision only; never the private message sequence or outbox aggregateVersion. Sending/reading messages, including hidden traffic, does not advance this revision."
+              }
+            }
+          },
+          {
+            "type": "object",
+            "additionalProperties": false,
+            "required": [
+              "conversationId",
+              "kind",
+              "state",
+              "groupName",
+              "viewerRole",
+              "peers",
+              "unreadCount",
+              "version"
+            ],
+            "properties": {
+              "conversationId": {
+                "type": "string",
+                "format": "uuid"
+              },
+              "kind": {
+                "const": "GROUP"
+              },
+              "state": {
+                "type": "string",
+                "enum": [
+                  "ACTIVE",
+                  "ARCHIVED"
+                ]
+              },
+              "groupName": {
+                "type": "string",
+                "minLength": 1,
+                "maxLength": 80
+              },
+              "viewerRole": {
+                "type": "string",
+                "enum": [
+                  "OWNER",
+                  "ADMIN",
+                  "MEMBER"
+                ]
+              },
+              "peers": {
+                "type": "array",
+                "items": {
+                  "$ref": "#/components/schemas/Peer"
+                },
+                "maxItems": 30
+              },
+              "unreadCount": {
+                "type": "integer",
+                "minimum": 0
+              },
+              "version": {
+                "type": "string",
+                "pattern": "^(0|[1-9][0-9]{0,18})$",
+                "description": "Public relationship/group management revision only; never the private message sequence or outbox aggregateVersion. Sending/reading messages, including hidden traffic, does not advance this revision."
+              }
+            }
+          }
+        ],
+        "description": "Viewer-authorized projection. No global or last-visible sequence watermark. unreadCount counts only eligible non-self messages in the current membership/visibility epoch; hidden traffic cannot change this DTO or its list position."
+      },
+      "Message": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": [
+          "messageId",
+          "conversationId",
+          "clientMessageId",
+          "sender",
+          "content",
+          "createdAt"
+        ],
+        "properties": {
+          "messageId": {
+            "type": "string",
+            "format": "uuid"
+          },
+          "conversationId": {
+            "type": "string",
+            "format": "uuid"
+          },
+          "clientMessageId": {
+            "type": "string",
+            "format": "uuid"
+          },
+          "sender": {
+            "$ref": "#/components/schemas/Peer"
+          },
+          "content": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 4000
+          },
+          "createdAt": {
+            "type": "string",
+            "format": "date-time"
+          }
+        },
+        "description": "Authorized message identity/content only. Conversation-global ordering remains private; IDs are random opaque UUIDs, never sequence-encoded IDs. REST page order is authoritative; a socket event alone does not define transcript order."
+      },
+      "SendMessage": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": [
+          "clientMessageId",
+          "content"
+        ],
+        "properties": {
+          "clientMessageId": {
+            "type": "string",
+            "format": "uuid"
+          },
+          "content": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 4000,
+            "pattern": "\\S"
+          }
+        }
+      },
+      "SendResult": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": [
+          "message",
+          "persistence",
+          "delivery"
+        ],
+        "properties": {
+          "message": {
+            "$ref": "#/components/schemas/Message"
+          },
+          "persistence": {
+            "const": "SAVED"
+          },
+          "delivery": {
+            "const": "UNCONFIRMED"
+          }
+        }
+      },
+      "ReadCursor": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": [
+          "lastReadMessageId"
+        ],
+        "properties": {
+          "lastReadMessageId": {
+            "type": "string",
+            "format": "uuid"
+          }
+        },
+        "description": "Exact currently visible message in this conversation/current membership epoch. Community resolves its private sequence and atomically advances max(previous, resolved); no client-supplied sequence. Ineligible target is TARGET_UNAVAILABLE."
+      },
+      "ReadResult": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": [
+          "lastReadMessageId",
+          "unreadCount"
+        ],
+        "properties": {
+          "lastReadMessageId": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "format": "uuid"
+          },
+          "unreadCount": {
+            "type": "integer",
+            "minimum": 0
+          }
+        },
+        "description": "Last currently eligible read message reference, or null when none is visible. Private monotonic watermark is not disclosed; visibility changes may alter this safe reference without decreasing private state."
+      },
+      "Report": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": [
+          "messageId",
+          "reasonCode"
+        ],
+        "properties": {
+          "messageId": {
+            "type": "string",
+            "format": "uuid"
+          },
+          "reasonCode": {
+            "type": "string",
+            "enum": [
+              "HARASSMENT",
+              "SPAM",
+              "PRIVACY_CONCERN",
+              "SELF_HARM_OR_CRISIS_CONCERN",
+              "OTHER"
+            ]
+          },
+          "details": {
+            "type": "string",
+            "minLength": 0,
+            "maxLength": 1000
+          }
+        }
+      },
+      "ReportResult": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": [
+          "caseId",
+          "state"
+        ],
+        "properties": {
+          "caseId": {
+            "type": "string",
+            "format": "uuid"
+          },
+          "state": {
+            "const": "RECEIVED"
+          }
+        }
+      },
+      "CaseSummary": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": [
+          "caseId",
+          "state",
+          "reasonCode",
+          "createdAt",
+          "version"
+        ],
+        "properties": {
+          "caseId": {
+            "type": "string",
+            "format": "uuid"
+          },
+          "state": {
+            "type": "string",
+            "enum": [
+              "OPEN",
+              "RESOLVED"
+            ]
+          },
+          "reasonCode": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 64
+          },
+          "createdAt": {
+            "type": "string",
+            "format": "date-time"
+          },
+          "version": {
+            "type": "string",
+            "pattern": "^(0|[1-9][0-9]{0,18})$"
+          }
+        }
+      },
+      "CaseEvidence": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": [
+          "caseId",
+          "messageId",
+          "reportedContent",
+          "capturedAt",
+          "version"
+        ],
+        "properties": {
+          "caseId": {
+            "type": "string",
+            "format": "uuid"
+          },
+          "messageId": {
+            "type": "string",
+            "format": "uuid"
+          },
+          "reportedContent": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 4000
+          },
+          "capturedAt": {
+            "type": "string",
+            "format": "date-time"
+          },
+          "version": {
+            "type": "string",
+            "pattern": "^(0|[1-9][0-9]{0,18})$"
+          }
+        }
+      },
+      "ModerateCase": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": [
+          "action",
+          "reasonCode"
+        ],
+        "properties": {
+          "action": {
+            "type": "string",
+            "enum": [
+              "REMOVE_REPORTED_MESSAGE",
+              "RESTRICT_REPORTED_ACCOUNT"
+            ]
+          },
+          "reasonCode": {
+            "type": "string",
+            "enum": [
+              "POLICY_VIOLATION",
+              "ABUSE_PREVENTION"
+            ]
+          }
+        }
+      },
+      "RealtimeAuthorization": {
+        "oneOf": [
+          {
+            "type": "object",
+            "additionalProperties": false,
+            "required": [
+              "conversationId",
+              "action"
+            ],
+            "properties": {
+              "conversationId": {
+                "type": "string",
+                "format": "uuid"
+              },
+              "action": {
+                "type": "string",
+                "enum": [
+                  "SUBSCRIBE"
+                ]
+              }
+            }
+          },
+          {
+            "type": "object",
+            "additionalProperties": false,
+            "required": [
+              "conversationId",
+              "action",
+              "targetCommunityProfileId"
+            ],
+            "properties": {
+              "conversationId": {
+                "type": "string",
+                "format": "uuid"
+              },
+              "action": {
+                "type": "string",
+                "enum": [
+                  "PRESENCE",
+                  "TYPING",
+                  "READ_RECEIPT"
+                ]
+              },
+              "targetCommunityProfileId": {
+                "type": "string",
+                "format": "uuid"
+              }
+            }
+          }
+        ]
+      },
+      "AuthorizationResult": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": [
+          "allowed",
+          "decisionVersion"
+        ],
+        "properties": {
+          "allowed": {
+            "type": "boolean"
+          },
+          "decisionVersion": {
+            "type": "string",
+            "pattern": "^(0|[1-9][0-9]{0,18})$"
+          }
+        }
+      },
+      "NotificationAuthorization": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": [
+          "recipientRoutingReference",
+          "kind",
+          "targetId",
+          "conversationId"
+        ],
+        "properties": {
+          "recipientRoutingReference": {
+            "type": "string",
+            "format": "uuid"
+          },
+          "kind": {
+            "type": "string",
+            "enum": [
+              "MESSAGE_RECEIVED",
+              "DIRECT_REQUESTED",
+              "GROUP_INVITED"
+            ]
+          },
+          "targetId": {
+            "type": "string",
+            "format": "uuid"
+          },
+          "conversationId": {
+            "type": "string",
+            "format": "uuid"
+          }
+        }
+      },
+      "SocketCredential": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": [
+          "schemaVersion",
+          "credential",
+          "namespace",
+          "expiresAt"
+        ],
+        "properties": {
+          "schemaVersion": {
+            "const": 1
+          },
+          "credential": {
+            "type": "string",
+            "minLength": 32,
+            "maxLength": 512
+          },
+          "namespace": {
+            "const": "/community"
+          },
+          "expiresAt": {
+            "type": "string",
+            "format": "date-time"
+          }
+        }
+      },
+      "Problem": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": [
+          "type",
+          "title",
+          "status",
+          "code",
+          "correlationId"
+        ],
+        "properties": {
+          "type": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 256
+          },
+          "title": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 160
+          },
+          "status": {
+            "type": "integer",
+            "minimum": 400,
+            "maximum": 599
+          },
+          "code": {
+            "type": "string",
+            "enum": [
+              "INVALID_REQUEST",
+              "UNAUTHENTICATED",
+              "FORBIDDEN",
+              "TARGET_UNAVAILABLE",
+              "VERSION_CONFLICT",
+              "IDEMPOTENCY_CONFLICT",
+              "REQUEST_NOT_ALLOWED",
+              "MEMBER_LIMIT_REACHED",
+              "RATE_LIMITED",
+              "DEPENDENCY_UNAVAILABLE"
+            ]
+          },
+          "correlationId": {
+            "type": "string",
+            "format": "uuid"
+          }
+        }
+      },
+      "ConversationPage": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": [
+          "items",
+          "nextCursor"
+        ],
+        "properties": {
+          "items": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/Conversation"
+            },
+            "maxItems": 50
+          },
+          "nextCursor": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "maxLength": 1024
+          }
+        }
+      },
+      "MessagePage": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": [
+          "items",
+          "nextCursor"
+        ],
+        "properties": {
+          "items": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/Message"
+            },
+            "maxItems": 50
+          },
+          "nextCursor": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "maxLength": 1024
+          }
+        }
+      },
+      "RequestPage": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": [
+          "items",
+          "nextCursor"
+        ],
+        "properties": {
+          "items": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/Request"
+            },
+            "maxItems": 50
+          },
+          "nextCursor": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "maxLength": 1024
+          }
+        }
+      },
+      "InvitationPage": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": [
+          "items",
+          "nextCursor"
+        ],
+        "properties": {
+          "items": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/Invitation"
+            },
+            "maxItems": 50
+          },
+          "nextCursor": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "maxLength": 1024
+          }
+        }
+      },
+      "MemberPage": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": [
+          "items",
+          "nextCursor"
+        ],
+        "properties": {
+          "items": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/Member"
+            },
+            "maxItems": 50
+          },
+          "nextCursor": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "maxLength": 1024
+          }
+        }
+      },
+      "CaseSummaryPage": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": [
+          "items",
+          "nextCursor"
+        ],
+        "properties": {
+          "items": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/CaseSummary"
+            },
+            "maxItems": 50
+          },
+          "nextCursor": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "maxLength": 1024
+          }
+        }
+      },
+      "MessageProjectionRequest": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": [
+          "conversationId",
+          "messageId"
+        ],
+        "properties": {
+          "conversationId": {
+            "type": "string",
+            "format": "uuid"
+          },
+          "messageId": {
+            "type": "string",
+            "format": "uuid"
+          }
+        }
+      },
+      "MessageReadDelegationClaims": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": [
+          "iss",
+          "aud",
+          "sub",
+          "act",
+          "scope",
+          "conversationId",
+          "messageId",
+          "jti",
+          "iat",
+          "exp"
+        ],
+        "properties": {
+          "iss": {
+            "const": "realtime-service"
+          },
+          "aud": {
+            "const": "community-service"
+          },
+          "sub": {
+            "type": "string",
+            "format": "uuid"
+          },
+          "act": {
+            "type": "object",
+            "additionalProperties": false,
+            "required": [
+              "sub"
+            ],
+            "properties": {
+              "sub": {
+                "const": "realtime-service"
+              }
+            }
+          },
+          "scope": {
+            "const": "community:message:project"
+          },
+          "conversationId": {
+            "type": "string",
+            "format": "uuid"
+          },
+          "messageId": {
+            "type": "string",
+            "format": "uuid"
+          },
+          "jti": {
+            "type": "string",
+            "format": "uuid"
+          },
+          "iat": {
+            "type": "integer",
+            "minimum": 0
+          },
+          "exp": {
+            "type": "integer",
+            "minimum": 0
+          }
+        },
+        "description": "Decoded signed JWT claims, never a JSON request body. Community verifies a trusted Realtime signature/algorithm/key, issuer, actor service, exact audience/scope, active USER subject, 0 < exp-iat <= 30 seconds and iat <= now < exp. Exact target claims must match the request and owned message. No unsigned identity headers or client-minted delegation. Shape validation alone is not authentication."
+      }
+    },
+    "responses": {
+      "InvalidRequest": {
+        "description": "Invalid closed request.",
+        "content": {
+          "application/problem+json": {
+            "schema": {
+              "$ref": "#/components/schemas/Problem"
+            }
+          }
+        }
+      },
+      "Unauthenticated": {
+        "description": "Missing or expired authentication.",
+        "content": {
+          "application/problem+json": {
+            "schema": {
+              "$ref": "#/components/schemas/Problem"
+            }
+          }
+        }
+      },
+      "Forbidden": {
+        "description": "Role or service scope denied.",
+        "content": {
+          "application/problem+json": {
+            "schema": {
+              "$ref": "#/components/schemas/Problem"
+            }
+          }
+        }
+      },
+      "TargetUnavailable": {
+        "description": "Unknown and inaccessible targets are indistinguishable.",
+        "content": {
+          "application/problem+json": {
+            "schema": {
+              "$ref": "#/components/schemas/Problem"
+            }
+          }
+        }
+      },
+      "Conflict": {
+        "description": "Version, idempotency, lifecycle or member-cap conflict.",
+        "content": {
+          "application/problem+json": {
+            "schema": {
+              "$ref": "#/components/schemas/Problem"
+            }
+          }
+        }
+      },
+      "RateLimited": {
+        "description": "Bounded rate limit; retry only after Retry-After.",
+        "content": {
+          "application/problem+json": {
+            "schema": {
+              "$ref": "#/components/schemas/Problem"
+            }
+          }
+        },
+        "headers": {
+          "Retry-After": {
+            "schema": {
+              "type": "integer",
+              "minimum": 1
+            },
+            "description": "Seconds until a retry may be attempted."
+          }
+        }
+      },
+      "DependencyUnavailable": {
+        "description": "Authoritative dependency unavailable; no allowed/success fallback.",
+        "content": {
+          "application/problem+json": {
+            "schema": {
+              "$ref": "#/components/schemas/Problem"
+            }
+          }
+        }
+      }
+    },
+    "parameters": {
+      "IdempotencyKey": {
+        "name": "Idempotency-Key",
+        "in": "header",
+        "required": true,
+        "schema": {
+          "type": "string",
+          "format": "uuid"
+        }
+      },
+      "IfMatch": {
+        "name": "If-Match",
+        "in": "header",
+        "required": true,
+        "schema": {
+          "type": "string",
+          "pattern": "^\"[0-9]+\"$"
+        }
+      },
+      "Cursor": {
+        "name": "cursor",
+        "in": "query",
+        "required": false,
+        "schema": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 1024
+        }
+      },
+      "Limit": {
+        "name": "limit",
+        "in": "query",
+        "required": false,
+        "schema": {
+          "type": "integer",
+          "minimum": 1,
+          "maximum": 50,
+          "default": 20
+        }
+      }
+    }
+  }
+}

@@ -23,6 +23,7 @@ class CommunityAccessInterceptor implements HandlerInterceptor {
 
 	@Override
 	public boolean preHandle(HttpServletRequest request, HttpServletResponse response, Object handler) {
+		if (request.getRequestURI().startsWith("/api/v1/community/chat/")) return true;
 		if (request.getRequestURI().startsWith("/api/v1/community/admin/")) return true;
 		if (request.getUserPrincipal() instanceof Authentication authentication
 				&& authentication.getPrincipal() instanceof Jwt jwt) {

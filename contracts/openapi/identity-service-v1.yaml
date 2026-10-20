@@ -19,6 +19,56 @@ tags:
   - name: Account administration
   - name: Platform reporting
 paths:
+  /internal/v1/community-chat/account-authorizations:
+    x-mentalbridge-status: implemented
+    post:
+      tags: [Account]
+      operationId: authorizeCommunityChatAccounts
+      summary: Resolve current active USER eligibility for Community chat
+      description: >-
+        Community-only read using its dedicated service credential, separate from
+        notification/reminder credentials. At most 100 exact private account IDs.
+        Returns only requested IDs currently ACTIVE with verified email and USER
+        role; unknown, disabled, deleting, deleted, unverified and other roles are
+        omitted identically. No email, name, role or status projection. No cached
+        positive fallback or Idempotency-Key. This current read is not a durable
+        authorization grant; Community must recheck each operation and enforce its
+        local blocks/restrictions transactionally. Internal network/TLS only.
+      security: [{ communityChatServiceToken: [] }]
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              additionalProperties: false
+              required: [accountIds]
+              properties:
+                accountIds:
+                  type: array
+                  minItems: 1
+                  maxItems: 100
+                  items: { type: string, format: uuid }
+      responses:
+        '200':
+          description: Current eligibility subset; unknown IDs reveal no account metadata
+          headers:
+            Cache-Control:
+              schema: { type: string, const: no-store }
+          content:
+            application/json:
+              schema:
+                type: object
+                additionalProperties: false
+                required: [activeUserAccountIds]
+                properties:
+                  activeUserAccountIds:
+                    type: array
+                    maxItems: 100
+                    uniqueItems: true
+                    items: { type: string, format: uuid }
+        '400': { $ref: '#/components/responses/ValidationProblem' }
+        '401': { $ref: '#/components/responses/UnauthorizedProblem' }
   /internal/v1/accounts/{accountId}/verified-email:
     x-mentalbridge-status: implemented
     get:
@@ -714,6 +764,11 @@ paths:
         '403': { $ref: '#/components/responses/ForbiddenProblem' }
 components:
   securitySchemes:
+    communityChatServiceToken:
+      type: apiKey
+      in: header
+      name: X-MentalBridge-Service-Token
+      description: Dedicated Community chat service credential; no browser or Notification reuse.
     bearerAuth:
       type: http
       scheme: bearer
