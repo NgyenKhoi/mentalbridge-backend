@@ -39,15 +39,40 @@ export const replaySchema = z
   })
   .strict()
   .refine((value) => new Set(value.messageIds).size === value.messageIds.length);
-export const commandSchema = z
+const commandHeader = {
+  schemaVersion: z.literal(1),
+  commandId: uuid,
+  correlationId: uuid,
+};
+export const commandSchema = z.discriminatedUnion('commandType', [
+  z
+    .object({
+      ...commandHeader,
+      commandType: z.literal('community.conversation.subscribe'),
+      payload: z.object({ conversationId: uuid }).strict(),
+    })
+    .strict(),
+  z
+    .object({
+      ...commandHeader,
+      commandType: z.literal('community.presence.heartbeat'),
+      payload: z.object({ foreground: z.boolean() }).strict(),
+    })
+    .strict(),
+]);
+export const presencePeersSchema = z
   .object({
-    schemaVersion: z.literal(1),
-    commandId: uuid,
-    correlationId: uuid,
-    commandType: z.literal('community.conversation.subscribe'),
-    payload: z.object({ conversationId: uuid }).strict(),
+    peers: z
+      .array(z.object({ communityProfileId: uuid, subjectRoutingReference: uuid }).strict())
+      .max(30),
   })
-  .strict();
+  .strict()
+  .refine(
+    ({ peers }) =>
+      new Set(peers.map((peer) => peer.communityProfileId)).size === peers.length &&
+      new Set(peers.map((peer) => peer.subjectRoutingReference)).size === peers.length,
+  );
+export type PresencePeer = z.infer<typeof presencePeersSchema>['peers'][number];
 export const handshakeSchema = z
   .object({ schemaVersion: z.literal(1), credential: z.string().min(32).max(512) })
   .strict();

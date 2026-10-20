@@ -2,6 +2,7 @@ import { Inject, Injectable, type OnApplicationShutdown, type OnModuleInit } fro
 import { Kafka, logLevel, type Consumer, type Producer } from 'kafkajs';
 import { createClient } from 'redis';
 import type { Logger } from 'pino';
+import { z } from 'zod';
 import type { ServiceConfiguration } from '../configuration/configuration.js';
 import { RedisService } from '../database/redis.service.js';
 import type { RealtimeMetrics } from '../observability/metrics.js';
@@ -11,12 +12,16 @@ import { factSchema, type CommunityFact } from './community-schema.js';
 export const COMMUNITY_TOPIC = 'mentalbridge.community.chat.v1';
 export const COMMUNITY_DEAD_LETTER_TOPIC = 'mentalbridge.community.chat.realtime-dead-letter.v1';
 type FactListener = (fact: CommunityFact) => void;
+const presenceSignal = z
+  .object({ schemaVersion: z.literal(1), subjectRoutingReference: z.uuid() })
+  .strict();
 @Injectable()
 export class CommunityFanout implements OnModuleInit, OnApplicationShutdown {
   private readonly subscriber: ReturnType<typeof createClient>;
   private readonly consumer: Consumer;
   private readonly producer: Producer;
   private readonly listeners = new Set<FactListener>();
+  private readonly presenceListeners = new Set<(subject: string) => void>();
   private readonly failures = new Set<() => void>();
   private timer?: NodeJS.Timeout;
   private starting = false;
@@ -84,6 +89,17 @@ export class CommunityFanout implements OnModuleInit, OnApplicationShutdown {
   onFact(listener: FactListener): void {
     this.listeners.add(listener);
   }
+  onPresence(listener: (subject: string) => void): void {
+    this.presenceListeners.add(listener);
+  }
+  async publishPresence(subject: string): Promise<void> {
+    await this.redis.execute((client) =>
+      client.publish(
+        this.configuration.COMMUNITY.channel + ':presence',
+        JSON.stringify({ schemaVersion: 1, subjectRoutingReference: subject }),
+      ),
+    );
+  }
   onFailure(listener: () => void): void {
     this.failures.add(listener);
   }
@@ -111,6 +127,20 @@ export class CommunityFanout implements OnModuleInit, OnApplicationShutdown {
         await this.subscriber.subscribe(this.configuration.COMMUNITY.channel, (wire) => {
           this.receive(wire);
         });
+        await this.subscriber.subscribe(
+          this.configuration.COMMUNITY.channel + ':presence',
+          (wire) => {
+            if (Buffer.byteLength(wire) > 1024) return;
+            try {
+              const parsed = presenceSignal.safeParse(JSON.parse(wire));
+              if (parsed.success)
+                for (const listener of this.presenceListeners)
+                  listener(parsed.data.subjectRoutingReference);
+            } catch {
+              this.metrics.commands.inc({ command: 'community.presence', result: 'invalid' });
+            }
+          },
+        );
         this.redisReady = true;
       }
       if (!this.kafkaReady) {

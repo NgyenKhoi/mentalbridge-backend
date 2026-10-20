@@ -30,6 +30,9 @@ export class CommunityOwnerFixture {
   readonly hidden = new Set<string>();
   readonly epochs = new Map<string, number>();
   readonly reads = new Map<string, number>();
+  readonly presenceOptIn = new Set<string>();
+  readonly presenceInvisible = new Set<string>();
+  readonly presenceHidden = new Set<string>();
   readonly calls: { subject: string; scope: string; conversation?: string; message?: string }[] =
     [];
   unavailable = false;
@@ -75,6 +78,7 @@ export class CommunityOwnerFixture {
             'realtime-authorizations': 'community:subscribe',
             'message-projections': 'community:message:project',
             'replay-projections': 'community:replay:project',
+            'presence-projections': 'community:presence:project',
           }[path ?? ''];
           if (
             payload.scope !== expected ||
@@ -103,6 +107,29 @@ export class CommunityOwnerFixture {
           }
           response.setHeader('Cache-Control', 'no-store');
           response.setHeader('Content-Type', 'application/json');
+          if (path === 'presence-projections') {
+            const peers = [communityAlice, communityBob, communityPeer].filter(
+              (peer) =>
+                peer !== subject &&
+                this.presenceOptIn.has(peer) &&
+                !this.presenceInvisible.has(peer) &&
+                !this.denied.has(peer) &&
+                !this.presenceHidden.has(subject + ':' + peer),
+            );
+            response.end(
+              JSON.stringify(
+                this.malformed
+                  ? { peers: [{ actorId: subject }] }
+                  : {
+                      peers: peers.map((peer) => ({
+                        communityProfileId: peer,
+                        subjectRoutingReference: peer,
+                      })),
+                    },
+              ),
+            );
+            return;
+          }
           if (path === 'session-authorizations' || path === 'realtime-authorizations') {
             response.end(JSON.stringify({ allowed: true, decisionVersion: '0' }));
             return;
@@ -232,6 +259,9 @@ export class CommunityOwnerFixture {
     this.hidden.clear();
     this.epochs.clear();
     this.reads.clear();
+    this.presenceOptIn.clear();
+    this.presenceInvisible.clear();
+    this.presenceHidden.clear();
     this.calls.splice(0);
     this.cursors.clear();
     this.unavailable = false;

@@ -12,7 +12,9 @@ groups/current membership epochs and isolated exact-message report intake.
 MB-689 adds signed current-viewer authorization/projections and `/community`
 Socket.IO delivery through minimized Kafka-to-Redis fanout. Private ordered
 delivery cursors and absolute read-state projections retain Community authority.
-Presence/typing, case administration and notification consumption remain downstream.
+MB-690 adds foreground multi-device presence in Redis and fresh Community-owned
+viewer/subject projections. Typing/shared receipts, case administration and
+notification consumption remain downstream; presence never enters Kafka/history.
 
 > Current product authority/navigation: [Current Product Blueprint](CURRENT_PRODUCT_BLUEPRINT.md).
 > The architecture follows ADR 0017 as prospectively amended by ADR 0022 and

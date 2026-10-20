@@ -9,6 +9,8 @@ import {
   CommunityError,
   messageSchema,
   replaySchema,
+  presencePeersSchema,
+  type PresencePeer,
   type CommunityMessage,
   type ReplayProjection,
 } from './community-schema.js';
@@ -31,7 +33,7 @@ export class CommunityOwnerClient implements OnModuleInit, OnApplicationShutdown
   async onApplicationShutdown(): Promise<void> {
     await this.dispatcher.close();
   }
-  async session(subject: string, correlationId = randomUUID()): Promise<void> {
+  async session(subject: string, correlationId: string = randomUUID()): Promise<void> {
     await this.authorize(
       'session-authorizations',
       'community:session:authorize',
@@ -70,6 +72,27 @@ export class CommunityOwnerClient implements OnModuleInit, OnApplicationShutdown
     )
       throw new CommunityError('DEPENDENCY_UNAVAILABLE');
     return parsed.data;
+  }
+  async presence(
+    subject: string,
+    conversationId: string,
+    correlationId: string,
+  ): Promise<PresencePeer[]> {
+    const parsed = presencePeersSchema.safeParse(
+      await this.request(
+        'presence-projections',
+        'community:presence:project',
+        subject,
+        { conversationId },
+        correlationId,
+      ),
+    );
+    if (
+      !parsed.success ||
+      parsed.data.peers.some((peer) => peer.subjectRoutingReference === subject)
+    )
+      throw new CommunityError('DEPENDENCY_UNAVAILABLE');
+    return parsed.data.peers;
   }
   async replay(
     subject: string,

@@ -25,6 +25,7 @@ import {
 } from '../../src/community/community-schema.js';
 import type { ServiceConfiguration } from '../../src/configuration/configuration.js';
 import { RedisService } from '../../src/database/redis.service.js';
+import { CommunityPresence } from '../../src/community/community-presence.js';
 import type { MongoDatabaseService } from '../../src/database/mongo-database.service.js';
 import {
   CommunityOwnerFixture,
@@ -251,6 +252,28 @@ describe('Community two-replica Kafka, Redis and Socket.IO delivery', { concurre
       payload: { conversationId: communityConversation },
     });
     return envelope.parse(value);
+  }
+  async function heartbeat(client: { socket: Socket }, foreground: boolean): Promise<Event> {
+    const value: unknown = await client.socket.timeout(10_000).emitWithAck('community.command', {
+      schemaVersion: 1,
+      commandId: randomUUID(),
+      correlationId: randomUUID(),
+      commandType: 'community.presence.heartbeat',
+      payload: { foreground },
+    });
+    return envelope.parse(value);
+  }
+  function badge(client: { events: Event[] }, profile = communityAlice): unknown {
+    let state: unknown;
+    for (const event of client.events) {
+      if (event.eventType === 'community.conversation.invalidated') state = undefined;
+      if (
+        event.eventType === 'community.presence.changed' &&
+        event.payload.communityProfileId === profile
+      )
+        state = event.payload.state;
+    }
+    return state;
   }
   const delivered = (client: { events: Event[] }): CommunityMessage[] =>
     client.events
@@ -535,6 +558,120 @@ describe('Community two-replica Kafka, Redis and Socket.IO delivery', { concurre
       .poll(() => delivered(bob).map((value) => value.messageId), { timeout: 30_000 })
       .toEqual([message.messageId]);
   });
+  it('keeps ONLINE across two replicas until the last foreground device backgrounds or disconnects', async () => {
+    owner.presenceOptIn.add(communityAlice);
+    const bob = await connect(0);
+    const first = await connect(0, communityAlice);
+    const second = await connect(1, communityAlice);
+    await subscribe(bob);
+    await expect.poll(() => badge(bob)).toBe('OFFLINE');
+    expect((await heartbeat(first, true)).eventType).toBe('community.command.ack');
+    expect((await heartbeat(second, true)).eventType).toBe('community.command.ack');
+    await expect.poll(() => badge(bob)).toBe('ONLINE');
+    expect((await heartbeat(first, false)).eventType).toBe('community.command.ack');
+    expect(badge(bob)).toBe('ONLINE');
+    second.socket.disconnect();
+    await expect.poll(() => badge(bob)).toBe('OFFLINE');
+    expect(first.socket.connected).toBe(true);
+  });
+
+  it('does not infer ONLINE from a live routing socket and repairs expiry/reconnect with a fresh lease', async () => {
+    owner.presenceOptIn.add(communityAlice);
+    const bob = await connect(1);
+    let alice = await connect(0, communityAlice);
+    await subscribe(bob);
+    await expect.poll(() => badge(bob)).toBe('OFFLINE');
+    await heartbeat(alice, true);
+    await expect.poll(() => badge(bob)).toBe('ONLINE');
+    const app = apps[0];
+    if (!app || !alice.socket.id) throw new Error('Fixture unavailable');
+    await app.get(RedisService).execute((client) =>
+      client.zAdd('community:v1:presence:' + communityAlice, {
+        score: Date.now() + 100,
+        value: alice.socket.id ?? '',
+      }),
+    );
+    await expect.poll(() => badge(bob), { timeout: 10_000 }).toBe('OFFLINE');
+    expect(alice.socket.connected).toBe(true);
+    alice.socket.disconnect();
+    alice = await connect(1, communityAlice);
+    await heartbeat(alice, true);
+    await expect.poll(() => badge(bob)).toBe('ONLINE');
+  });
+
+  it('suppresses opt-out and invisible subjects and clears badges by identity-free invalidation', async () => {
+    const bob = await connect();
+    const alice = await connect(1, communityAlice);
+    await heartbeat(alice, true);
+    await subscribe(bob);
+    expect(badge(bob)).toBeUndefined();
+    owner.presenceOptIn.add(communityAlice);
+    await publish(owner.fact());
+    await expect.poll(() => badge(bob)).toBe('ONLINE');
+    const before = bob.events.length;
+    owner.presenceOptIn.delete(communityAlice);
+    await publish(owner.fact());
+    await expect.poll(() => badge(bob)).toBeUndefined();
+    const invalidations = bob.events
+      .slice(before)
+      .filter((event) => event.eventType === 'community.conversation.invalidated');
+    expect(invalidations.length).toBeGreaterThan(0);
+    expect(invalidations[0]?.payload).toEqual({ conversationId: communityConversation });
+    expect(
+      bob.events.slice(before).filter((event) => event.eventType === 'community.presence.changed'),
+    ).toEqual([]);
+    owner.presenceOptIn.add(communityAlice);
+    owner.presenceInvisible.add(communityAlice);
+    await publish(owner.fact());
+    await expect
+      .poll(() => owner.calls.filter((call) => call.scope === 'community:presence:project').length)
+      .toBeGreaterThan(6);
+    expect(badge(bob)).toBeUndefined();
+  });
+
+  it('removes a revoked pair even when authorization invalidation was lost without affecting other peers', async () => {
+    owner.presenceOptIn.add(communityAlice);
+    const bob = await connect(0);
+    const peer = await connect(1, communityPeer);
+    const alice = await connect(1, communityAlice);
+    await heartbeat(alice, true);
+    await subscribe(bob);
+    await subscribe(peer);
+    await expect.poll(() => badge(bob)).toBe('ONLINE');
+    await expect.poll(() => badge(peer)).toBe('ONLINE');
+    owner.presenceHidden.add(communityBob + ':' + communityAlice);
+    await expect.poll(() => badge(bob), { timeout: 10_000 }).toBeUndefined();
+    expect(badge(peer)).toBe('ONLINE');
+  });
+
+  it('lets background supersede an in-flight foreground heartbeat without restoring ONLINE', async () => {
+    owner.presenceOptIn.add(communityAlice);
+    const bob = await connect();
+    const alice = await connect(1, communityAlice);
+    await subscribe(bob);
+    let release: () => void = () => undefined;
+    owner.requestGate = new Promise<void>((resolve) => {
+      release = resolve;
+    });
+    const previous = owner.calls.length;
+    const pending = heartbeat(alice, true);
+    try {
+      await expect.poll(() => owner.calls.length).toBeGreaterThan(previous);
+      expect((await heartbeat(alice, false)).eventType).toBe('community.command.ack');
+    } finally {
+      delete owner.requestGate;
+      release();
+    }
+    expect((await pending).eventType).toBe('community.command.ack');
+    const app = apps[0];
+    if (!app) throw new Error('Fixture unavailable');
+    expect((await app.get(CommunityPresence).states([communityAlice]))[0]?.state).toBe('OFFLINE');
+    expect(badge(bob)).toBe('OFFLINE');
+    const repeated = await heartbeat(alice, true);
+    expect(repeated.eventType).toBe('community.command.error');
+    expect(repeated.payload.code).toBe('RATE_LIMITED');
+  });
+
   it('disconnects on owner and Redis failures while preserving owner history for REST repair', async () => {
     const bob = await connect();
     await subscribe(bob);
