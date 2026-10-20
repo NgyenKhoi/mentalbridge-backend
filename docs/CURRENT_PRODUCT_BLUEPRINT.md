@@ -9,9 +9,10 @@ Community peer messaging has a separate **accepted target** in
 [Community chat policy v1](policies/community-chat-policy-v1.md). MB-684 supplies
 privacy/permission/API/event contracts only. Approval and merge accept the target;
 MB-685 delivers the opt-in direct provider in Community PostgreSQL, current
-Identity eligibility and minimized Kafka facts. MB-686 through MB-693 supply
-clients, groups, delegated internal checks, transport/presence, notifications and
-acceptance evidence. No group or new presence capability is available from MB-685.
+Identity eligibility and minimized Kafka facts. MB-687 adds private invite-only
+groups, membership lifecycle/epochs and isolated exact-message report intake.
+MB-686/688 and later delivery stories supply clients, delegated internal checks,
+transport/presence, notification consumers, case administration and epic acceptance.
 
 For product/business behavior, use this order:
 

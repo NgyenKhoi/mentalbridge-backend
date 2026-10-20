@@ -10,8 +10,10 @@ approval from runtime work in MB-685–693. MB-685 delivers direct conversations
 recipient-owned text-free requests, explicit privacy, encrypted idempotent text
 saves, private read/history/unread, retention and minimized outbox relay in
 Community PostgreSQL. Identity exposes only current eligible USER IDs through a
-dedicated internal credential. Client, group, delegated transport/notification
-checks and consumers remain downstream. The Realtime/MongoDB ownership below
+dedicated internal credential. MB-687 adds private group roles/invitations,
+epoch-bounded history/read/unread and isolated exact-message report intake;
+see [MB-687 evidence](story-mb-687-private-groups-evidence.md). Clients, delegated
+transport/notification checks, case administration and consumers remain downstream. The Realtime/MongoDB ownership below
 remains the unchanged appointment baseline. See the
 [MB-685 evidence](story-mb-685-direct-chat-evidence.md).
 

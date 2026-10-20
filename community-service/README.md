@@ -7,8 +7,9 @@
 MB-684 accepted the [Community chat contract](../docs/adr/0042-community-chat-contract.md)
 and [privacy policy](../docs/policies/community-chat-policy-v1.md). MB-685 delivers
 the direct-chat provider subset in Community PostgreSQL, including fresh Identity
-eligibility checks. Groups and authorized Realtime transport/presence remain
-downstream stories. Only delivered operations are registered by the canonical
+eligibility checks. MB-687 adds private groups, membership epochs and exact-message
+report intake. Authorized Realtime transport/presence remain downstream stories.
+Only delivered operations are registered by the canonical
 Community OpenAPI through its direct-chat fragment; the proposal is the frozen
 baseline for future delivery rather than a capability advertisement.
 
@@ -105,7 +106,7 @@ MB-579 uses a compatibility-first rollout: deploy the frontend that accepts both
 
 ## MB-685 direct-chat provider
 
-Community owns the ten-operation direct-chat provider subset in [`community-chat-v1.json`](../contracts/openapi/community-chat-v1.json), registered by canonical OpenAPI v1.12. `COMMUNITY_CHAT_ENABLED` defaults false until the operator supplies the dedicated Identity credential and a versioned 32-byte AES key. No success or cached current history is returned while unavailable. Community message bodies remain encrypted in the Community owner store; Kafka contains minimized pointers only. MB-686 owns clients; groups, internal delegated projection/authorization endpoints, socket/presence and notification consumers remain downstream stories. Their accepted proposal shapes do not advertise runtime support here.
+MB-685 introduced the ten-operation direct-chat subset in [`community-chat-v1.json`](../contracts/openapi/community-chat-v1.json). MB-687 extends it to twenty operations in canonical OpenAPI v1.13. `COMMUNITY_CHAT_ENABLED` defaults false until the operator supplies the dedicated Identity credential and a versioned 32-byte AES key. No success or cached current history is returned while unavailable. Community message bodies remain encrypted in the Community owner store; Kafka contains minimized pointers only. MB-686/688 own clients; internal delegated projection/authorization endpoints, socket/presence, case resolution and notification consumers remain downstream stories. Their accepted proposal shapes do not advertise runtime support here.
 
 ## MB-687 private-group lifecycle
 

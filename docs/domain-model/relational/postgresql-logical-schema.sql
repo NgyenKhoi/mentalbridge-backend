@@ -2576,7 +2576,6 @@ CREATE TABLE community.community_chat_membership (
   CHECK (departed_at IS NULL OR departed_at >= joined_at)
 );
 CREATE UNIQUE INDEX ux_chat_member_current ON community.community_chat_membership(conversation_id, profile_id) WHERE departed_at IS NULL;
-CREATE INDEX ix_chat_member_viewer ON community.community_chat_membership(profile_id, conversation_id) WHERE departed_at IS NULL;
 CREATE TABLE community.community_chat_invitation (
   id uuid PRIMARY KEY,
   conversation_id uuid NOT NULL REFERENCES community.community_chat_conversation(id) ON DELETE CASCADE,
@@ -2594,9 +2593,6 @@ CREATE TABLE community.community_chat_invitation (
   CHECK ((state = 'ACCEPTED') = (accepted_membership_id IS NOT NULL))
 );
 CREATE UNIQUE INDEX ux_chat_invite_pending ON community.community_chat_invitation(conversation_id, invitee_profile_id) WHERE state = 'PENDING';
-CREATE INDEX ix_chat_invite_inbox ON community.community_chat_invitation(invitee_profile_id, created_at DESC, id DESC);
-CREATE INDEX ix_chat_invite_rate ON community.community_chat_invitation(inviter_profile_id, created_at DESC);
-CREATE INDEX ix_chat_invite_suppression ON community.community_chat_invitation(conversation_id, invitee_profile_id, state);
 
 CREATE TABLE community.community_chat_report_case (
   id uuid PRIMARY KEY,

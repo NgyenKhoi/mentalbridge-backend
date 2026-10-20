@@ -7,9 +7,10 @@ Realtime owns transport/ephemeral presence without a duplicate message store.
 The Realtime/MongoDB durable-chat statements below describe existing appointment
 chat and do not authorize reusing it for unrestricted peer messaging. MB-684
 contains contracts only. MB-685 delivers the opt-in direct Community provider,
-fresh Identity eligibility and minimized outbox publishing. Group, delegated
-internal authorization/projection, socket/presence and notification consumption
-remain downstream; the direct APIs do not claim those capabilities.
+fresh Identity eligibility and minimized outbox publishing. MB-687 adds private
+groups/current membership epochs and isolated exact-message report intake.
+Delegated internal authorization/projection, socket/presence, case administration
+and notification consumption remain downstream.
 
 > Current product authority/navigation: [Current Product Blueprint](CURRENT_PRODUCT_BLUEPRINT.md).
 > The architecture follows ADR 0017 as prospectively amended by ADR 0022 and
