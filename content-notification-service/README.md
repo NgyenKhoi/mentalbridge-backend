@@ -1,5 +1,12 @@
 # Content and Notification Service
 
+MB-684's proposed [Community chat policy](../docs/policies/community-chat-policy-v1.md)
+adds minimized message/request/invitation fact candidates for MB-691. It does
+not change this runtime, current inbox enums/preferences or MB-580/617 producers.
+Content remains the future delivery authority, must revalidate exact Community
+recipient/target authorization, and never receives chat bodies/group names in
+Kafka or provider payloads. No new topic, consumer or provider is enabled here.
+
 NestJS service that owns reviewed self-help resource definitions, immutable exact-version Resource Eligibility v1 provenance, notification preferences, and durable notification delivery state. ADR 0009 removes the hotline catalogue from product scope. ADR 0012 keeps final SupportPlan admission in Care and clarifies that review/publication does not make a resource universally plan-eligible.
 
 MB-617 adds an asynchronous consumer for the minimized

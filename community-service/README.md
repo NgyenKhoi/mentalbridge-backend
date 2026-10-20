@@ -4,6 +4,13 @@
 
 ## Runtime
 
+MB-684 adds the proposed [Community chat contract](../docs/adr/0042-community-chat-contract.md)
+and [privacy policy](../docs/policies/community-chat-policy-v1.md), not runtime
+DM/groups. On acceptance Community owns peer messages, membership and permissions
+in its own PostgreSQL; Realtime supplies authorized transport/presence only.
+The new OpenAPI remains in proposals with all operations planned. MB-685/687
+must deliver owner migrations/provider tests before those APIs become callable.
+
 - Java 21 and Spring Boot 4
 - service-owned PostgreSQL database with Liquibase migrations
 - local verification of Identity-issued RS256 JWTs; no synchronous Identity lookup

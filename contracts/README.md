@@ -11,6 +11,14 @@ All language-neutral integration contracts live under this directory. Service-lo
 
 ## OpenAPI lifecycle
 
+MB-684's [Community chat candidate](proposals/community-chat-v1.openapi.json)
+remains in proposals with all operations planned. Its closed
+[commands](proposals/community-chat-command-v1.schema.json),
+[socket events](proposals/community-chat-realtime-v1.schema.json) and
+[durable facts](proposals/community-chat-fact-v1.schema.json) are review inputs,
+not active registrations. See [ADR 0042](../docs/adr/0042-community-chat-contract.md).
+Existing appointment and Community interaction schemas are unchanged.
+
 Every OpenAPI path item declares `x-mentalbridge-status` when all methods share one state. A mixed path declares it on each operation instead:
 
 - `implemented`: the owning service has a production handler and tests for the documented method, authorization, success response, and stable errors;

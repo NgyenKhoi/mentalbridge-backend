@@ -1,0 +1,498 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://mentalbridge.dev/contracts/proposals/community-chat-realtime-v1.schema.json",
+  "title": "community-chat-realtime-v1.schema.json",
+  "description": "Proposed MB-684 contract. No runtime adapter is activated by this schema.",
+  "oneOf": [
+    {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "schemaVersion",
+        "eventId",
+        "correlationId",
+        "occurredAt",
+        "eventType",
+        "payload"
+      ],
+      "properties": {
+        "schemaVersion": {
+          "const": 1
+        },
+        "eventId": {
+          "type": "string",
+          "format": "uuid"
+        },
+        "correlationId": {
+          "type": "string",
+          "format": "uuid"
+        },
+        "occurredAt": {
+          "type": "string",
+          "format": "date-time"
+        },
+        "eventType": {
+          "const": "community.message.created"
+        },
+        "payload": {
+          "type": "object",
+          "additionalProperties": false,
+          "required": [
+            "message"
+          ],
+          "properties": {
+            "message": {
+              "$ref": "#/$defs/message"
+            }
+          }
+        }
+      }
+    },
+    {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "schemaVersion",
+        "eventId",
+        "correlationId",
+        "occurredAt",
+        "eventType",
+        "payload"
+      ],
+      "properties": {
+        "schemaVersion": {
+          "const": 1
+        },
+        "eventId": {
+          "type": "string",
+          "format": "uuid"
+        },
+        "correlationId": {
+          "type": "string",
+          "format": "uuid"
+        },
+        "occurredAt": {
+          "type": "string",
+          "format": "date-time"
+        },
+        "eventType": {
+          "const": "community.conversation.invalidated"
+        },
+        "payload": {
+          "type": "object",
+          "additionalProperties": false,
+          "required": [
+            "conversationId"
+          ],
+          "properties": {
+            "conversationId": {
+              "type": "string",
+              "format": "uuid"
+            }
+          }
+        }
+      }
+    },
+    {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "schemaVersion",
+        "eventId",
+        "correlationId",
+        "occurredAt",
+        "eventType",
+        "payload"
+      ],
+      "properties": {
+        "schemaVersion": {
+          "const": 1
+        },
+        "eventId": {
+          "type": "string",
+          "format": "uuid"
+        },
+        "correlationId": {
+          "type": "string",
+          "format": "uuid"
+        },
+        "occurredAt": {
+          "type": "string",
+          "format": "date-time"
+        },
+        "eventType": {
+          "const": "community.presence.changed"
+        },
+        "payload": {
+          "type": "object",
+          "additionalProperties": false,
+          "required": [
+            "communityProfileId",
+            "state"
+          ],
+          "properties": {
+            "communityProfileId": {
+              "type": "string",
+              "format": "uuid"
+            },
+            "state": {
+              "type": "string",
+              "enum": [
+                "ONLINE",
+                "OFFLINE",
+                "UNKNOWN"
+              ]
+            }
+          }
+        }
+      }
+    },
+    {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "schemaVersion",
+        "eventId",
+        "correlationId",
+        "occurredAt",
+        "eventType",
+        "payload"
+      ],
+      "properties": {
+        "schemaVersion": {
+          "const": 1
+        },
+        "eventId": {
+          "type": "string",
+          "format": "uuid"
+        },
+        "correlationId": {
+          "type": "string",
+          "format": "uuid"
+        },
+        "occurredAt": {
+          "type": "string",
+          "format": "date-time"
+        },
+        "eventType": {
+          "const": "community.typing.changed"
+        },
+        "payload": {
+          "type": "object",
+          "additionalProperties": false,
+          "required": [
+            "conversationId",
+            "communityProfileId",
+            "typing"
+          ],
+          "properties": {
+            "conversationId": {
+              "type": "string",
+              "format": "uuid"
+            },
+            "communityProfileId": {
+              "type": "string",
+              "format": "uuid"
+            },
+            "typing": {
+              "type": "boolean"
+            }
+          }
+        }
+      }
+    },
+    {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "schemaVersion",
+        "eventId",
+        "correlationId",
+        "occurredAt",
+        "eventType",
+        "payload"
+      ],
+      "properties": {
+        "schemaVersion": {
+          "const": 1
+        },
+        "eventId": {
+          "type": "string",
+          "format": "uuid"
+        },
+        "correlationId": {
+          "type": "string",
+          "format": "uuid"
+        },
+        "occurredAt": {
+          "type": "string",
+          "format": "date-time"
+        },
+        "eventType": {
+          "const": "community.receipt.changed"
+        },
+        "payload": {
+          "type": "object",
+          "additionalProperties": false,
+          "required": [
+            "conversationId",
+            "communityProfileId",
+            "lastReadSequence"
+          ],
+          "properties": {
+            "conversationId": {
+              "type": "string",
+              "format": "uuid"
+            },
+            "communityProfileId": {
+              "type": "string",
+              "format": "uuid"
+            },
+            "lastReadSequence": {
+              "type": "string",
+              "pattern": "^(0|[1-9][0-9]{0,18})$"
+            }
+          }
+        }
+      }
+    },
+    {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "schemaVersion",
+        "eventId",
+        "correlationId",
+        "occurredAt",
+        "eventType",
+        "payload"
+      ],
+      "properties": {
+        "schemaVersion": {
+          "const": 1
+        },
+        "eventId": {
+          "type": "string",
+          "format": "uuid"
+        },
+        "correlationId": {
+          "type": "string",
+          "format": "uuid"
+        },
+        "occurredAt": {
+          "type": "string",
+          "format": "date-time"
+        },
+        "eventType": {
+          "const": "community.resync.required"
+        },
+        "payload": {
+          "type": "object",
+          "additionalProperties": false,
+          "required": [
+            "conversationId"
+          ],
+          "properties": {
+            "conversationId": {
+              "type": "string",
+              "format": "uuid"
+            }
+          }
+        }
+      }
+    },
+    {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "schemaVersion",
+        "eventId",
+        "correlationId",
+        "occurredAt",
+        "eventType",
+        "payload"
+      ],
+      "properties": {
+        "schemaVersion": {
+          "const": 1
+        },
+        "eventId": {
+          "type": "string",
+          "format": "uuid"
+        },
+        "correlationId": {
+          "type": "string",
+          "format": "uuid"
+        },
+        "occurredAt": {
+          "type": "string",
+          "format": "date-time"
+        },
+        "eventType": {
+          "const": "community.command.ack"
+        },
+        "payload": {
+          "type": "object",
+          "additionalProperties": false,
+          "required": [
+            "commandId",
+            "status"
+          ],
+          "properties": {
+            "commandId": {
+              "type": "string",
+              "format": "uuid"
+            },
+            "status": {
+              "const": "ACCEPTED"
+            }
+          }
+        }
+      }
+    },
+    {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "schemaVersion",
+        "eventId",
+        "correlationId",
+        "occurredAt",
+        "eventType",
+        "payload"
+      ],
+      "properties": {
+        "schemaVersion": {
+          "const": 1
+        },
+        "eventId": {
+          "type": "string",
+          "format": "uuid"
+        },
+        "correlationId": {
+          "type": "string",
+          "format": "uuid"
+        },
+        "occurredAt": {
+          "type": "string",
+          "format": "date-time"
+        },
+        "eventType": {
+          "const": "community.command.error"
+        },
+        "payload": {
+          "type": "object",
+          "additionalProperties": false,
+          "required": [
+            "commandId",
+            "code",
+            "retryable"
+          ],
+          "properties": {
+            "commandId": {
+              "type": "string",
+              "format": "uuid"
+            },
+            "code": {
+              "type": "string",
+              "enum": [
+                "INVALID_COMMAND",
+                "UNAUTHENTICATED",
+                "TARGET_UNAVAILABLE",
+                "RATE_LIMITED",
+                "DEPENDENCY_UNAVAILABLE"
+              ]
+            },
+            "retryable": {
+              "type": "boolean"
+            }
+          }
+        }
+      }
+    }
+  ],
+  "$defs": {
+    "message": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "messageId",
+        "conversationId",
+        "clientMessageId",
+        "sender",
+        "sequence",
+        "content",
+        "createdAt"
+      ],
+      "properties": {
+        "messageId": {
+          "type": "string",
+          "format": "uuid"
+        },
+        "conversationId": {
+          "type": "string",
+          "format": "uuid"
+        },
+        "clientMessageId": {
+          "type": "string",
+          "format": "uuid"
+        },
+        "sender": {
+          "$ref": "#/$defs/peer"
+        },
+        "sequence": {
+          "type": "string",
+          "pattern": "^(0|[1-9][0-9]{0,18})$"
+        },
+        "content": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 4000
+        },
+        "createdAt": {
+          "type": "string",
+          "format": "date-time"
+        }
+      }
+    },
+    "peer": {
+      "oneOf": [
+        {
+          "type": "object",
+          "additionalProperties": false,
+          "required": [
+            "state",
+            "communityProfileId",
+            "displayName"
+          ],
+          "properties": {
+            "state": {
+              "const": "AVAILABLE"
+            },
+            "communityProfileId": {
+              "type": "string",
+              "format": "uuid"
+            },
+            "displayName": {
+              "type": "string",
+              "minLength": 1,
+              "maxLength": 80
+            }
+          }
+        },
+        {
+          "type": "object",
+          "additionalProperties": false,
+          "required": [
+            "state"
+          ],
+          "properties": {
+            "state": {
+              "const": "UNAVAILABLE"
+            }
+          }
+        }
+      ]
+    }
+  }
+}

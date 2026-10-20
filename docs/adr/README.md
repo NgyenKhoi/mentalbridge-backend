@@ -4,6 +4,12 @@ Use ADR **filename + Decision ID**, not numeric prefix alone, when a reference c
 
 ## Current product-scope chain
 
+MB-684 proposes [0042-community-chat-contract.md](0042-community-chat-contract.md)
+(`MB-COMMUNITY-CHAT-001`) for owner/security approval. It scopes Community-owned
+private peer conversations separately from existing appointment chat and freezes
+privacy/permission/API/event contracts. Runtime operations remain planned;
+accepted status is not claimed before approval and merge.
+
 | File | Decision ID | Status | Role |
 | --- | --- | --- | --- |
 | [0017-product-scope-v2.md](0017-product-scope-v2.md) | `MB-SCOPE-V2-001` | Accepted | Base cross-feature v2 scope |
