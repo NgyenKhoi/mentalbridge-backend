@@ -13,6 +13,16 @@ import org.junit.jupiter.api.Test;
 class CommunityOpenApiContractTests {
 
 	private static final Set<String> IMPLEMENTED = Set.of(
+			"POST /api/v1/community/chat/reports",
+			"POST /api/v1/community/chat/groups",
+			"DELETE /api/v1/community/chat/groups/{conversationId}",
+			"GET /api/v1/community/chat/groups/{conversationId}/members",
+			"POST /api/v1/community/chat/groups/{conversationId}/invitations",
+			"GET /api/v1/community/chat/invitations",
+			"POST /api/v1/community/chat/invitations/{invitationId}/decision",
+			"PUT /api/v1/community/chat/groups/{conversationId}/members/{communityProfileId}/role",
+			"DELETE /api/v1/community/chat/groups/{conversationId}/members/{communityProfileId}",
+			"POST /api/v1/community/chat/groups/{conversationId}/ownership",
 			"GET /api/v1/community/chat/conversations/{conversationId}/messages",
 			"POST /api/v1/community/chat/conversations/{conversationId}/messages",
 			"PUT /api/v1/community/chat/conversations/{conversationId}/read-cursor",
@@ -52,6 +62,16 @@ class CommunityOpenApiContractTests {
 			"GET /api/v1/community/admin/operations/summary");
 
 	private static final Set<String> ALL_OPERATIONS = Set.of(
+			"POST /api/v1/community/chat/reports",
+			"POST /api/v1/community/chat/groups",
+			"DELETE /api/v1/community/chat/groups/{conversationId}",
+			"GET /api/v1/community/chat/groups/{conversationId}/members",
+			"POST /api/v1/community/chat/groups/{conversationId}/invitations",
+			"GET /api/v1/community/chat/invitations",
+			"POST /api/v1/community/chat/invitations/{invitationId}/decision",
+			"PUT /api/v1/community/chat/groups/{conversationId}/members/{communityProfileId}/role",
+			"DELETE /api/v1/community/chat/groups/{conversationId}/members/{communityProfileId}",
+			"POST /api/v1/community/chat/groups/{conversationId}/ownership",
 			"GET /api/v1/community/chat/conversations/{conversationId}/messages",
 			"POST /api/v1/community/chat/conversations/{conversationId}/messages",
 			"PUT /api/v1/community/chat/conversations/{conversationId}/read-cursor",
@@ -142,7 +162,7 @@ class CommunityOpenApiContractTests {
 	@Test
 	void sensitiveContentWarningContractIsBoundedAndVersioned() {
 		var api = new OpenAPIV3Parser().read(contract().toString());
-		assertThat(api.getInfo().getVersion()).isEqualTo("1.12.0");
+		assertThat(api.getInfo().getVersion()).isEqualTo("1.13.0");
 		assertThat(api.getComponents().getSchemas().get("CommunitySensitiveContentWarning").getEnum())
 				.containsExactly("SENSITIVE_CONTENT");
 		assertThat(api.getComponents().getSchemas().get("ModerationAction").getEnum())

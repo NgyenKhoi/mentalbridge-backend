@@ -2485,17 +2485,23 @@ CREATE TABLE community.community_chat_privacy (
 );
 CREATE TABLE community.community_chat_conversation (
   id uuid PRIMARY KEY,
-  first_profile_id uuid NOT NULL REFERENCES community.community_profile(id),
-  second_profile_id uuid NOT NULL REFERENCES community.community_profile(id),
-  state varchar(16) NOT NULL CHECK (state IN ('DORMANT', 'ACTIVE')),
+  first_profile_id uuid REFERENCES community.community_profile(id),
+  second_profile_id uuid REFERENCES community.community_profile(id),
+  kind varchar(8) NOT NULL DEFAULT 'DIRECT',
+  name_ciphertext text,
+  member_limit integer,
+  state varchar(16) NOT NULL,
   management_version bigint NOT NULL DEFAULT 0 CHECK (management_version >= 0),
   event_version bigint NOT NULL DEFAULT 0 CHECK (event_version >= 0),
   last_sequence bigint NOT NULL DEFAULT 0 CHECK (last_sequence >= 0),
   created_at timestamptz NOT NULL,
   activated_at timestamptz,
   UNIQUE (first_profile_id, second_profile_id),
-  CHECK (first_profile_id < second_profile_id),
-  CHECK ((state = 'ACTIVE') = (activated_at IS NOT NULL))
+  CHECK ((kind = 'DIRECT' AND first_profile_id IS NOT NULL AND second_profile_id IS NOT NULL
+    AND first_profile_id < second_profile_id AND state IN ('DORMANT','ACTIVE')
+    AND ((state = 'ACTIVE') = (activated_at IS NOT NULL)) AND name_ciphertext IS NULL AND member_limit IS NULL)
+    OR (kind = 'GROUP' AND first_profile_id IS NULL AND second_profile_id IS NULL
+    AND state IN ('ACTIVE','ARCHIVED') AND activated_at IS NOT NULL AND name_ciphertext IS NOT NULL AND member_limit IS NOT NULL AND member_limit BETWEEN 20 AND 30))
 );
 CREATE TABLE community.community_chat_request (
   id uuid PRIMARY KEY,
@@ -2516,10 +2522,10 @@ CREATE UNIQUE INDEX ux_chat_request_pending ON community.community_chat_request(
 CREATE TABLE community.community_chat_command (
   id uuid PRIMARY KEY,
   actor_profile_id uuid NOT NULL REFERENCES community.community_profile(id),
-  operation varchar(24) NOT NULL CHECK (operation IN ('START_DIRECT', 'SEND_MESSAGE')),
+  operation varchar(24) NOT NULL CHECK (operation IN ('START_DIRECT', 'SEND_MESSAGE', 'CREATE_GROUP', 'INVITE_GROUP', 'REPORT_MESSAGE')),
   idempotency_key uuid NOT NULL,
   request_fingerprint varchar(100) NOT NULL,
-  result_kind varchar(16) NOT NULL CHECK (result_kind IN ('ACTIVE', 'PENDING', 'MESSAGE')),
+  result_kind varchar(16) NOT NULL CHECK (result_kind IN ('ACTIVE', 'PENDING', 'MESSAGE', 'GROUP', 'INVITATION', 'REPORT')),
   target_id uuid NOT NULL,
   conversation_id uuid NOT NULL REFERENCES community.community_chat_conversation(id) ON DELETE CASCADE,
   created_at timestamptz NOT NULL,
@@ -2540,6 +2546,7 @@ CREATE TABLE community.community_chat_message (
   id uuid PRIMARY KEY,
   conversation_id uuid NOT NULL REFERENCES community.community_chat_conversation(id) ON DELETE CASCADE,
   sender_profile_id uuid NOT NULL REFERENCES community.community_profile(id),
+  sender_membership_id uuid,
   client_message_id uuid NOT NULL,
   server_sequence bigint NOT NULL CHECK (server_sequence > 0),
   content_ciphertext text,
@@ -2557,4 +2564,49 @@ CREATE TABLE community.community_chat_read_state (
   profile_id uuid NOT NULL REFERENCES community.community_profile(id),
   last_read_sequence bigint NOT NULL DEFAULT 0 CHECK (last_read_sequence >= 0),
   PRIMARY KEY (conversation_id, profile_id)
+);
+
+CREATE TABLE community.community_chat_membership (
+  id uuid PRIMARY KEY,
+  conversation_id uuid NOT NULL REFERENCES community.community_chat_conversation(id) ON DELETE CASCADE,
+  profile_id uuid NOT NULL REFERENCES community.community_profile(id),
+  role varchar(8) NOT NULL CHECK (role IN ('OWNER','ADMIN','MEMBER')),
+  joined_at timestamptz NOT NULL,
+  joined_after_sequence bigint NOT NULL CHECK (joined_after_sequence >= 0),
+  departed_at timestamptz,
+  CHECK (departed_at IS NULL OR departed_at >= joined_at)
+);
+CREATE UNIQUE INDEX ux_chat_member_current ON community.community_chat_membership(conversation_id, profile_id) WHERE departed_at IS NULL;
+ALTER TABLE community.community_chat_message ADD FOREIGN KEY (sender_membership_id) REFERENCES community.community_chat_membership(id);
+CREATE TABLE community.community_chat_invitation (
+  id uuid PRIMARY KEY,
+  conversation_id uuid NOT NULL REFERENCES community.community_chat_conversation(id) ON DELETE CASCADE,
+  inviter_membership_id uuid NOT NULL REFERENCES community.community_chat_membership(id),
+  inviter_profile_id uuid NOT NULL REFERENCES community.community_profile(id),
+  invitee_profile_id uuid NOT NULL REFERENCES community.community_profile(id),
+  state varchar(12) NOT NULL CHECK (state IN ('PENDING','ACCEPTED','DECLINED','REVOKED','EXPIRED')),
+  version bigint NOT NULL DEFAULT 0 CHECK (version >= 0),
+  created_at timestamptz NOT NULL,
+  expires_at timestamptz NOT NULL CHECK (expires_at > created_at),
+  decided_at timestamptz,
+  accepted_membership_id uuid REFERENCES community.community_chat_membership(id),
+  CHECK (inviter_profile_id <> invitee_profile_id),
+  CHECK ((state = 'PENDING') = (decided_at IS NULL)),
+  CHECK ((state = 'ACCEPTED') = (accepted_membership_id IS NOT NULL))
+);
+CREATE UNIQUE INDEX ux_chat_invite_pending ON community.community_chat_invitation(conversation_id, invitee_profile_id) WHERE state = 'PENDING';
+
+CREATE TABLE community.community_chat_report_case (
+  id uuid PRIMARY KEY,
+  conversation_id uuid NOT NULL,
+  message_id uuid NOT NULL,
+  reporter_profile_id uuid NOT NULL REFERENCES community.community_profile(id),
+  reason_code varchar(32) NOT NULL CHECK (reason_code IN ('HARASSMENT','SPAM','PRIVACY_CONCERN','SELF_HARM_OR_CRISIS_CONCERN','OTHER')),
+  priority varchar(8) NOT NULL CHECK (priority IN ('NORMAL','HIGH')),
+  state varchar(8) NOT NULL DEFAULT 'OPEN' CHECK (state = 'OPEN'),
+  evidence_ciphertext text NOT NULL,
+  details_ciphertext text NOT NULL,
+  created_at timestamptz NOT NULL,
+  review_due_at timestamptz NOT NULL CHECK (review_due_at > created_at),
+  UNIQUE (reporter_profile_id, message_id)
 );

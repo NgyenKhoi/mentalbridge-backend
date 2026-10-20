@@ -30,12 +30,14 @@ final class ChatModels {
         static DirectResult active(UUID id) { return new DirectResult("ACTIVE", id, null); }
         static DirectResult pending(UUID id) { return new DirectResult("PENDING", null, id); }
     }
+    @JsonInclude(JsonInclude.Include.NON_NULL)
     record Peer(String state, UUID communityProfileId, String displayName) { @Override public String toString() { return "ChatPeer[REDACTED]"; } }
     record Request(UUID requestId, Peer requester, String state, Instant createdAt, Instant expiresAt, String version) {
         @Override public String toString() { return "ChatRequest[REDACTED]"; }
     }
     record Page<T>(List<T> items, String nextCursor) { @Override public String toString() { return "ChatPage[REDACTED]"; } }
-    record Conversation(UUID conversationId, String kind, String state, List<Peer> peers, int unreadCount, String version) {
+    sealed interface ConversationView permits Conversation, ChatGroupModels.Conversation {}
+    record Conversation(UUID conversationId, String kind, String state, List<Peer> peers, int unreadCount, String version) implements ConversationView {
         @Override public String toString() { return "ChatConversation[REDACTED]"; }
     }
     record SendMessage(UUID clientMessageId, String content) {

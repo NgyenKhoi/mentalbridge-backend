@@ -35,3 +35,7 @@ databaseChangeLog:
       file: db/changelog/changes/0017-community-direct-chat.yaml
   - include:
       file: db/changelog/changes/0018-community-chat-messages.yaml
+  - include:
+      file: db/changelog/changes/0019-community-private-groups.yaml
+  - include:
+      file: db/changelog/changes/0020-community-chat-report-intake.yaml

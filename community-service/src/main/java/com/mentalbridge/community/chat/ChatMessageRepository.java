@@ -10,6 +10,40 @@ import org.springframework.data.jpa.repository.Modifying;
 import org.springframework.data.repository.query.Param;
 
 interface ChatMessageRepository extends JpaRepository<ChatMessageEntity, UUID> {
+    @Query("select distinct m.senderProfileId from ChatMessageEntity m where m.conversationId = :group and m.senderMembershipId is not null and m.contentCiphertext is not null and m.expiresAt > :now")
+    List<UUID> retainedGroupSenders(@Param("group") UUID group, @Param("now") Instant now);
+    @Query(value = """
+            select max(m.created_at) from community_chat_message m join community_chat_membership s on s.conversation_id = m.conversation_id
+            and s.id = m.sender_membership_id and s.profile_id = m.sender_profile_id and m.server_sequence > s.joined_after_sequence
+            where m.conversation_id = :group and m.sender_profile_id in (:visible) and m.server_sequence > :floor
+            and m.content_ciphertext is not null and m.expires_at > :now
+            """, nativeQuery = true)
+    Optional<Instant> groupActivity(@Param("group") UUID group, @Param("visible") List<UUID> visible, @Param("floor") long floor, @Param("now") Instant now);
+    @Query("select max(m.createdAt) from ChatMessageEntity m where m.conversationId = :id and m.contentCiphertext is not null and m.expiresAt > :now")
+    Optional<Instant> directActivity(@Param("id") UUID id, @Param("now") Instant now);
+    @Query(value = """
+            select m.* from community_chat_message m join community_chat_membership s on s.conversation_id = m.conversation_id
+            and s.id = m.sender_membership_id and s.profile_id = m.sender_profile_id and m.server_sequence > s.joined_after_sequence
+            where m.conversation_id = :group and m.sender_profile_id in (:visible) and m.server_sequence > :after and m.server_sequence <= :through
+            and m.content_ciphertext is not null and m.expires_at > :now order by m.server_sequence limit :batch
+            """, nativeQuery = true)
+    List<ChatMessageEntity> groupHistory(@Param("group") UUID group, @Param("visible") List<UUID> visible,
+            @Param("after") long after, @Param("through") long through, @Param("now") Instant now, @Param("batch") int batch);
+    @Query(value = """
+            select count(*) from community_chat_message m join community_chat_membership s on s.conversation_id = m.conversation_id
+            and s.id = m.sender_membership_id and s.profile_id = m.sender_profile_id and m.server_sequence > s.joined_after_sequence
+            where m.conversation_id = :group and m.sender_profile_id in (:visible) and m.sender_profile_id <> :viewer
+            and m.server_sequence > :after and m.content_ciphertext is not null and m.expires_at > :now
+            """, nativeQuery = true)
+    long groupUnread(@Param("group") UUID group, @Param("viewer") UUID viewer, @Param("visible") List<UUID> visible, @Param("after") long after, @Param("now") Instant now);
+    @Query(value = """
+            select m.* from community_chat_message m join community_chat_membership s on s.conversation_id = m.conversation_id
+            and s.id = m.sender_membership_id and s.profile_id = m.sender_profile_id and m.server_sequence > s.joined_after_sequence
+            where m.conversation_id = :group and m.sender_profile_id in (:visible) and m.server_sequence > :floor and m.server_sequence <= :read
+            and m.content_ciphertext is not null and m.expires_at > :now order by m.server_sequence desc limit 1
+            """, nativeQuery = true)
+    Optional<ChatMessageEntity> groupLastRead(@Param("group") UUID group, @Param("visible") List<UUID> visible,
+            @Param("floor") long floor, @Param("read") long read, @Param("now") Instant now);
     Optional<ChatMessageEntity> findByConversationIdAndSenderProfileIdAndClientMessageId(UUID conversation, UUID sender, UUID clientId);
     long countBySenderProfileIdAndCreatedAtAfter(UUID sender, Instant after);
     @Query(value = """

@@ -22,11 +22,17 @@ class CommunityChatContractTests {
         var delivered = mapper.readTree(Files.readString(active));
         assertThat(delivered.path("components")).isEqualTo(source.path("components"));
         assertThat(parsed.getOpenAPI().getPaths().keySet()).containsExactlyInAnyOrder(
+                "/api/v1/community/chat/reports",
                 "/api/v1/community/chat/privacy", "/api/v1/community/chat/direct-conversations",
                 "/api/v1/community/chat/requests", "/api/v1/community/chat/requests/{requestId}/decision",
                 "/api/v1/community/chat/conversations", "/api/v1/community/chat/conversations/{conversationId}",
                 "/api/v1/community/chat/conversations/{conversationId}/messages",
-                "/api/v1/community/chat/conversations/{conversationId}/read-cursor");
+                "/api/v1/community/chat/conversations/{conversationId}/read-cursor",
+                "/api/v1/community/chat/groups", "/api/v1/community/chat/groups/{conversationId}",
+                "/api/v1/community/chat/groups/{conversationId}/members", "/api/v1/community/chat/groups/{conversationId}/invitations",
+                "/api/v1/community/chat/invitations", "/api/v1/community/chat/invitations/{invitationId}/decision",
+                "/api/v1/community/chat/groups/{conversationId}/members/{communityProfileId}/role",
+                "/api/v1/community/chat/groups/{conversationId}/members/{communityProfileId}", "/api/v1/community/chat/groups/{conversationId}/ownership");
         parsed.getOpenAPI().getPaths().forEach((path, item) -> {
             assertThat(item.getExtensions().get("x-mentalbridge-status")).isEqualTo("implemented");
             item.readOperationsMap().forEach((method, operation) -> {

@@ -10,6 +10,14 @@ import org.springframework.data.repository.query.Param;
 import org.springframework.data.domain.Pageable;
 
 interface ChatConversationRepository extends JpaRepository<ChatConversationEntity, UUID> {
+    @Query("""
+            select c from ChatConversationEntity c where c.firstProfileId = :viewer or c.secondProfileId = :viewer
+            or exists (select m.id from ChatMembershipEntity m where m.conversationId = c.id and m.profileId = :viewer and m.departedAt is null)
+            """)
+    List<ChatConversationEntity> visibleTo(@Param("viewer") UUID viewer);
+    @org.springframework.data.jpa.repository.Lock(jakarta.persistence.LockModeType.PESSIMISTIC_WRITE)
+    @Query("select c from ChatConversationEntity c where c.id = :id")
+    Optional<ChatConversationEntity> lock(@Param("id") UUID id);
     @Query(value = """
             select c.id as id, case when a.id = :viewer then b.id else a.id end as "peerId",
             case when a.id = :viewer then b.account_subject else a.account_subject end as "peerSubject",
@@ -39,6 +47,7 @@ interface ChatConversationRepository extends JpaRepository<ChatConversationEntit
     @Query("""
             select conversation from ChatConversationEntity conversation
             where conversation.firstProfileId = :viewer or conversation.secondProfileId = :viewer
+            or exists (select m.id from ChatMembershipEntity m where m.conversationId = conversation.id and m.profileId = :viewer and m.departedAt is null)
             order by conversation.id
             """)
     List<ChatConversationEntity> relationships(@Param("viewer") UUID viewer);

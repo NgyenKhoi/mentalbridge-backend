@@ -8,8 +8,11 @@ import jakarta.persistence.*;
 @Table(name = "community_chat_conversation")
 class ChatConversationEntity {
     @Id UUID id;
-    @Column(name = "first_profile_id", nullable = false) UUID firstProfileId;
-    @Column(name = "second_profile_id", nullable = false) UUID secondProfileId;
+    @Column(name = "first_profile_id") UUID firstProfileId;
+    @Column(name = "second_profile_id") UUID secondProfileId;
+    @Column(nullable = false) String kind = "DIRECT";
+    @Column(name = "name_ciphertext") String nameCiphertext;
+    @Column(name = "member_limit") Integer memberLimit;
     @Column(nullable = false) String state = "DORMANT";
     @Column(name = "management_version", nullable = false) long managementVersion;
     @Column(name = "event_version", nullable = false) long eventVersion;
@@ -24,6 +27,7 @@ class ChatConversationEntity {
         if (!state.equals("ACTIVE")) { state = "ACTIVE"; managementVersion++; activatedAt = now; }
     }
     UUID other(UUID viewer) {
+        if (!kind.equals("DIRECT")) throw ChatException.target();
         if (firstProfileId.equals(viewer)) return secondProfileId;
         if (secondProfileId.equals(viewer)) return firstProfileId;
         throw ChatException.target();

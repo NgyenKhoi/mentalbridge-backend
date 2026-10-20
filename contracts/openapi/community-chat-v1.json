@@ -2,7 +2,7 @@
   "openapi": "3.1.0",
   "info": {
     "title": "MentalBridge Community direct chat API",
-    "version": "1.0.0",
+    "version": "1.1.0",
     "description": "Implemented MB-685 provider subset of accepted ADR 0042 / MB-684. Feature enablement requires versioned encryption and current Identity authorization. Groups, service projections and socket delivery remain downstream capabilities."
   },
   "x-mentalbridge-decision": "MB-COMMUNITY-CHAT-001",
@@ -711,6 +711,793 @@
             "application/json": {
               "schema": {
                 "$ref": "#/components/schemas/ReadCursor"
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/v1/community/chat/groups": {
+      "x-mentalbridge-status": "implemented",
+      "x-mentalbridge-owner": "community-service",
+      "post": {
+        "operationId": "createPrivateGroup",
+        "summary": "create Private Group",
+        "description": "",
+        "x-mentalbridge-role": "USER",
+        "security": [
+          {
+            "BearerAuth": []
+          }
+        ],
+        "parameters": [
+          {
+            "name": "Idempotency-Key",
+            "in": "header",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid"
+            }
+          }
+        ],
+        "responses": {
+          "201": {
+            "description": "Authoritative owner result; no optimistic success.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Group"
+                }
+              }
+            }
+          },
+          "400": {
+            "$ref": "#/components/responses/InvalidRequest"
+          },
+          "401": {
+            "$ref": "#/components/responses/Unauthenticated"
+          },
+          "403": {
+            "$ref": "#/components/responses/Forbidden"
+          },
+          "404": {
+            "$ref": "#/components/responses/TargetUnavailable"
+          },
+          "409": {
+            "$ref": "#/components/responses/Conflict"
+          },
+          "429": {
+            "$ref": "#/components/responses/RateLimited"
+          },
+          "503": {
+            "$ref": "#/components/responses/DependencyUnavailable"
+          }
+        },
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/CreateGroup"
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/v1/community/chat/groups/{conversationId}": {
+      "x-mentalbridge-status": "implemented",
+      "x-mentalbridge-owner": "community-service",
+      "delete": {
+        "operationId": "archivePrivateGroup",
+        "summary": "archive Private Group",
+        "description": "OWNER only. Archive stops new sends/invites and revokes pending invitations; current members may read retained eligible history.",
+        "x-mentalbridge-role": "USER",
+        "security": [
+          {
+            "BearerAuth": []
+          }
+        ],
+        "parameters": [
+          {
+            "name": "conversationId",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid"
+            }
+          },
+          {
+            "name": "If-Match",
+            "in": "header",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "pattern": "^\"[0-9]+\"$"
+            }
+          }
+        ],
+        "responses": {
+          "204": {
+            "description": "Committed; no body and no ETag. Do not reuse or increment the previous group version. A still-authorized member must GET getConversation for the fresh group management version before another versioned command; a self-leaver/removed actor has no further read or management entitlement."
+          },
+          "400": {
+            "$ref": "#/components/responses/InvalidRequest"
+          },
+          "401": {
+            "$ref": "#/components/responses/Unauthenticated"
+          },
+          "403": {
+            "$ref": "#/components/responses/Forbidden"
+          },
+          "404": {
+            "$ref": "#/components/responses/TargetUnavailable"
+          },
+          "409": {
+            "$ref": "#/components/responses/Conflict"
+          },
+          "429": {
+            "$ref": "#/components/responses/RateLimited"
+          },
+          "503": {
+            "$ref": "#/components/responses/DependencyUnavailable"
+          }
+        },
+        "x-mentalbridge-version-after-204": "REREAD_CONVERSATION_IF_AUTHORIZED"
+      }
+    },
+    "/api/v1/community/chat/groups/{conversationId}/members": {
+      "x-mentalbridge-status": "implemented",
+      "x-mentalbridge-owner": "community-service",
+      "get": {
+        "operationId": "listGroupMembers",
+        "summary": "list Group Members",
+        "description": "",
+        "x-mentalbridge-role": "USER",
+        "security": [
+          {
+            "BearerAuth": []
+          }
+        ],
+        "parameters": [
+          {
+            "name": "conversationId",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid"
+            }
+          },
+          {
+            "name": "cursor",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "string",
+              "minLength": 1,
+              "maxLength": 1024
+            }
+          },
+          {
+            "name": "limit",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "integer",
+              "minimum": 1,
+              "maximum": 50,
+              "default": 20
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Authoritative owner result; no optimistic success.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/MemberPage"
+                }
+              }
+            }
+          },
+          "400": {
+            "$ref": "#/components/responses/InvalidRequest"
+          },
+          "401": {
+            "$ref": "#/components/responses/Unauthenticated"
+          },
+          "403": {
+            "$ref": "#/components/responses/Forbidden"
+          },
+          "404": {
+            "$ref": "#/components/responses/TargetUnavailable"
+          },
+          "409": {
+            "$ref": "#/components/responses/Conflict"
+          },
+          "429": {
+            "$ref": "#/components/responses/RateLimited"
+          },
+          "503": {
+            "$ref": "#/components/responses/DependencyUnavailable"
+          }
+        }
+      }
+    },
+    "/api/v1/community/chat/groups/{conversationId}/invitations": {
+      "x-mentalbridge-status": "implemented",
+      "x-mentalbridge-owner": "community-service",
+      "post": {
+        "operationId": "inviteGroupMember",
+        "summary": "invite Group Member",
+        "description": "If-Match binds the current group management revision, not an invitation revision. The success ETag is the current group management revision; Invitation.version is the separate invitation revision used only for its decision.",
+        "x-mentalbridge-role": "USER",
+        "security": [
+          {
+            "BearerAuth": []
+          }
+        ],
+        "parameters": [
+          {
+            "name": "conversationId",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid"
+            }
+          },
+          {
+            "name": "Idempotency-Key",
+            "in": "header",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid"
+            }
+          },
+          {
+            "name": "If-Match",
+            "in": "header",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "pattern": "^\"[0-9]+\"$"
+            }
+          }
+        ],
+        "responses": {
+          "201": {
+            "description": "Authoritative owner result; no optimistic success.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Invitation"
+                }
+              }
+            },
+            "headers": {
+              "ETag": {
+                "description": "Strong current version",
+                "schema": {
+                  "type": "string"
+                }
+              }
+            }
+          },
+          "400": {
+            "$ref": "#/components/responses/InvalidRequest"
+          },
+          "401": {
+            "$ref": "#/components/responses/Unauthenticated"
+          },
+          "403": {
+            "$ref": "#/components/responses/Forbidden"
+          },
+          "404": {
+            "$ref": "#/components/responses/TargetUnavailable"
+          },
+          "409": {
+            "$ref": "#/components/responses/Conflict"
+          },
+          "429": {
+            "$ref": "#/components/responses/RateLimited"
+          },
+          "503": {
+            "$ref": "#/components/responses/DependencyUnavailable"
+          }
+        },
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/Invite"
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/v1/community/chat/invitations": {
+      "x-mentalbridge-status": "implemented",
+      "x-mentalbridge-owner": "community-service",
+      "get": {
+        "operationId": "listOwnGroupInvitations",
+        "summary": "list Own Group Invitations",
+        "description": "",
+        "x-mentalbridge-role": "USER",
+        "security": [
+          {
+            "BearerAuth": []
+          }
+        ],
+        "parameters": [
+          {
+            "name": "cursor",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "string",
+              "minLength": 1,
+              "maxLength": 1024
+            }
+          },
+          {
+            "name": "limit",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "integer",
+              "minimum": 1,
+              "maximum": 50,
+              "default": 20
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Authoritative owner result; no optimistic success.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/InvitationPage"
+                }
+              }
+            }
+          },
+          "400": {
+            "$ref": "#/components/responses/InvalidRequest"
+          },
+          "401": {
+            "$ref": "#/components/responses/Unauthenticated"
+          },
+          "403": {
+            "$ref": "#/components/responses/Forbidden"
+          },
+          "404": {
+            "$ref": "#/components/responses/TargetUnavailable"
+          },
+          "409": {
+            "$ref": "#/components/responses/Conflict"
+          },
+          "429": {
+            "$ref": "#/components/responses/RateLimited"
+          },
+          "503": {
+            "$ref": "#/components/responses/DependencyUnavailable"
+          }
+        }
+      }
+    },
+    "/api/v1/community/chat/invitations/{invitationId}/decision": {
+      "x-mentalbridge-status": "implemented",
+      "x-mentalbridge-owner": "community-service",
+      "post": {
+        "operationId": "decideGroupInvitation",
+        "summary": "decide Group Invitation",
+        "description": "Invitee only. ACCEPT atomically revalidates inviter role, membership cap, blocks, suspension and group ACTIVE state before joining. DECLINE is 204. Invitation alone grants no history/member list/presence. If-Match is the invitation revision, not the group revision. ACCEPT returns the current Group management version/ETag; DECLINE 204 has no body/ETag and grants no group read. Never reuse the invitation version for group commands.",
+        "x-mentalbridge-role": "USER",
+        "security": [
+          {
+            "BearerAuth": []
+          }
+        ],
+        "parameters": [
+          {
+            "name": "invitationId",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid"
+            }
+          },
+          {
+            "name": "If-Match",
+            "in": "header",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "pattern": "^\"[0-9]+\"$"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Authoritative owner result; no optimistic success.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Group"
+                }
+              }
+            },
+            "headers": {
+              "ETag": {
+                "description": "Strong current version",
+                "schema": {
+                  "type": "string"
+                }
+              }
+            }
+          },
+          "204": {
+            "description": "Invitation declined; no membership created."
+          },
+          "400": {
+            "$ref": "#/components/responses/InvalidRequest"
+          },
+          "401": {
+            "$ref": "#/components/responses/Unauthenticated"
+          },
+          "403": {
+            "$ref": "#/components/responses/Forbidden"
+          },
+          "404": {
+            "$ref": "#/components/responses/TargetUnavailable"
+          },
+          "409": {
+            "$ref": "#/components/responses/Conflict"
+          },
+          "429": {
+            "$ref": "#/components/responses/RateLimited"
+          },
+          "503": {
+            "$ref": "#/components/responses/DependencyUnavailable"
+          }
+        },
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/InviteDecision"
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/v1/community/chat/groups/{conversationId}/members/{communityProfileId}/role": {
+      "x-mentalbridge-status": "implemented",
+      "x-mentalbridge-owner": "community-service",
+      "put": {
+        "operationId": "setGroupMemberRole",
+        "summary": "set Group Member Role",
+        "description": "OWNER only; ADMIN/MEMBER transition for current non-owner member. No client-created owner role.",
+        "x-mentalbridge-role": "USER",
+        "security": [
+          {
+            "BearerAuth": []
+          }
+        ],
+        "parameters": [
+          {
+            "name": "conversationId",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid"
+            }
+          },
+          {
+            "name": "communityProfileId",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid"
+            }
+          },
+          {
+            "name": "If-Match",
+            "in": "header",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "pattern": "^\"[0-9]+\"$"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Authoritative owner result; no optimistic success.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Member"
+                }
+              }
+            },
+            "headers": {
+              "ETag": {
+                "description": "Strong current version",
+                "schema": {
+                  "type": "string"
+                }
+              }
+            }
+          },
+          "400": {
+            "$ref": "#/components/responses/InvalidRequest"
+          },
+          "401": {
+            "$ref": "#/components/responses/Unauthenticated"
+          },
+          "403": {
+            "$ref": "#/components/responses/Forbidden"
+          },
+          "404": {
+            "$ref": "#/components/responses/TargetUnavailable"
+          },
+          "409": {
+            "$ref": "#/components/responses/Conflict"
+          },
+          "429": {
+            "$ref": "#/components/responses/RateLimited"
+          },
+          "503": {
+            "$ref": "#/components/responses/DependencyUnavailable"
+          }
+        },
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/SetRole"
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/v1/community/chat/groups/{conversationId}/members/{communityProfileId}": {
+      "x-mentalbridge-status": "implemented",
+      "x-mentalbridge-owner": "community-service",
+      "delete": {
+        "operationId": "removeGroupMember",
+        "summary": "remove Group Member",
+        "description": "OWNER may remove any non-owner; ADMIN may remove MEMBER only. Self-leave uses this path with own profile; OWNER must transfer ownership or archive first. Removal/leave revokes history, socket, unread, presence and receipt access immediately.",
+        "x-mentalbridge-role": "USER",
+        "security": [
+          {
+            "BearerAuth": []
+          }
+        ],
+        "parameters": [
+          {
+            "name": "conversationId",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid"
+            }
+          },
+          {
+            "name": "communityProfileId",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid"
+            }
+          },
+          {
+            "name": "If-Match",
+            "in": "header",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "pattern": "^\"[0-9]+\"$"
+            }
+          }
+        ],
+        "responses": {
+          "204": {
+            "description": "Committed; no body and no ETag. Do not reuse or increment the previous group version. A still-authorized member must GET getConversation for the fresh group management version before another versioned command; a self-leaver/removed actor has no further read or management entitlement."
+          },
+          "400": {
+            "$ref": "#/components/responses/InvalidRequest"
+          },
+          "401": {
+            "$ref": "#/components/responses/Unauthenticated"
+          },
+          "403": {
+            "$ref": "#/components/responses/Forbidden"
+          },
+          "404": {
+            "$ref": "#/components/responses/TargetUnavailable"
+          },
+          "409": {
+            "$ref": "#/components/responses/Conflict"
+          },
+          "429": {
+            "$ref": "#/components/responses/RateLimited"
+          },
+          "503": {
+            "$ref": "#/components/responses/DependencyUnavailable"
+          }
+        },
+        "x-mentalbridge-version-after-204": "REREAD_CONVERSATION_IF_AUTHORIZED"
+      }
+    },
+    "/api/v1/community/chat/groups/{conversationId}/ownership": {
+      "x-mentalbridge-status": "implemented",
+      "x-mentalbridge-owner": "community-service",
+      "post": {
+        "operationId": "transferGroupOwnership",
+        "summary": "transfer Group Ownership",
+        "description": "OWNER only; transfer atomically to active current ADMIN; former owner becomes ADMIN. Exactly one owner; concurrent transfer/leave fails 409.",
+        "x-mentalbridge-role": "USER",
+        "security": [
+          {
+            "BearerAuth": []
+          }
+        ],
+        "parameters": [
+          {
+            "name": "conversationId",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid"
+            }
+          },
+          {
+            "name": "If-Match",
+            "in": "header",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "pattern": "^\"[0-9]+\"$"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Authoritative owner result; no optimistic success.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Group"
+                }
+              }
+            },
+            "headers": {
+              "ETag": {
+                "description": "Strong current version",
+                "schema": {
+                  "type": "string"
+                }
+              }
+            }
+          },
+          "400": {
+            "$ref": "#/components/responses/InvalidRequest"
+          },
+          "401": {
+            "$ref": "#/components/responses/Unauthenticated"
+          },
+          "403": {
+            "$ref": "#/components/responses/Forbidden"
+          },
+          "404": {
+            "$ref": "#/components/responses/TargetUnavailable"
+          },
+          "409": {
+            "$ref": "#/components/responses/Conflict"
+          },
+          "429": {
+            "$ref": "#/components/responses/RateLimited"
+          },
+          "503": {
+            "$ref": "#/components/responses/DependencyUnavailable"
+          }
+        },
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/TransferOwner"
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/v1/community/chat/reports": {
+      "x-mentalbridge-status": "implemented",
+      "x-mentalbridge-owner": "community-service",
+      "post": {
+        "operationId": "reportVisibleMessage",
+        "summary": "report Visible Message",
+        "description": "Reporter must currently be allowed to read exact message. Capture only reported message; no full transcript, unrelated people or automatic crisis intervention.",
+        "x-mentalbridge-role": "USER",
+        "security": [
+          {
+            "BearerAuth": []
+          }
+        ],
+        "parameters": [
+          {
+            "name": "Idempotency-Key",
+            "in": "header",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid"
+            }
+          }
+        ],
+        "responses": {
+          "201": {
+            "description": "Authoritative owner result; no optimistic success.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ReportResult"
+                }
+              }
+            }
+          },
+          "400": {
+            "$ref": "#/components/responses/InvalidRequest"
+          },
+          "401": {
+            "$ref": "#/components/responses/Unauthenticated"
+          },
+          "403": {
+            "$ref": "#/components/responses/Forbidden"
+          },
+          "404": {
+            "$ref": "#/components/responses/TargetUnavailable"
+          },
+          "409": {
+            "$ref": "#/components/responses/Conflict"
+          },
+          "429": {
+            "$ref": "#/components/responses/RateLimited"
+          },
+          "503": {
+            "$ref": "#/components/responses/DependencyUnavailable"
+          }
+        },
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/Report"
               }
             }
           }

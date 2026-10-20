@@ -7,8 +7,9 @@
 MB-684 accepted the [Community chat contract](../docs/adr/0042-community-chat-contract.md)
 and [privacy policy](../docs/policies/community-chat-policy-v1.md). MB-685 delivers
 the direct-chat provider subset in Community PostgreSQL, including fresh Identity
-eligibility checks. Groups and authorized Realtime transport/presence remain
-downstream stories. Only delivered operations are registered by the canonical
+eligibility checks. MB-687 adds private groups, membership epochs and exact-message
+report intake. Authorized Realtime transport/presence remain downstream stories.
+Only delivered operations are registered by the canonical
 Community OpenAPI through its direct-chat fragment; the proposal is the frozen
 baseline for future delivery rather than a capability advertisement.
 
@@ -105,7 +106,75 @@ MB-579 uses a compatibility-first rollout: deploy the frontend that accepts both
 
 ## MB-685 direct-chat provider
 
-Community owns the ten-operation direct-chat provider subset in [`community-chat-v1.json`](../contracts/openapi/community-chat-v1.json), registered by canonical OpenAPI v1.12. `COMMUNITY_CHAT_ENABLED` defaults false until the operator supplies the dedicated Identity credential and a versioned 32-byte AES key. No success or cached current history is returned while unavailable. Community message bodies remain encrypted in the Community owner store; Kafka contains minimized pointers only. MB-686 owns clients; groups, internal delegated projection/authorization endpoints, socket/presence and notification consumers remain downstream stories. Their accepted proposal shapes do not advertise runtime support here.
+MB-685 introduced the ten-operation direct-chat subset in [`community-chat-v1.json`](../contracts/openapi/community-chat-v1.json). MB-687 extends it to twenty operations in canonical OpenAPI v1.13. `COMMUNITY_CHAT_ENABLED` defaults false until the operator supplies the dedicated Identity credential and a versioned 32-byte AES key. No success or cached current history is returned while unavailable. Community message bodies remain encrypted in the Community owner store; Kafka contains minimized pointers only. MB-686/688 own clients; internal delegated projection/authorization endpoints, socket/presence, case resolution and notification consumers remain downstream stories. Their accepted proposal shapes do not advertise runtime support here.
+
+## MB-687 private-group lifecycle
+
+Canonical OpenAPI v1.13 additionally registers nine group lifecycle operations
+from the accepted ADR 0042 baseline: create/archive, current member list,
+invite/inbox/decision, role replacement, remove/self-leave and ownership transfer.
+`COMMUNITY_CHAT_GROUP_MEMBER_LIMIT` defaults 30 and accepts only 20–30; each
+group captures its cap at creation. The existing chat feature flag/keys gate
+these APIs. Group names are AES-GCM encrypted with exact conversation binding.
+Migrate Liquibase 0019 before using these paths; rollback disables the existing
+feature flag and preserves additive group/member/invitation records and keys.
+
+Creator alone is OWNER; invites reserve no seat. Invitation acceptance creates
+a fresh membership epoch only after current inviter/recipient eligibility,
+role, block, expiry and cap checks. Five new groups and twenty new invitations
+per actor per rolling day are enforced across devices. CREATE_GROUP/INVITE_GROUP
+commands bind UUID retry keys to normalized names/exact group-recipient inputs.
+Decline permanently suppresses that group/person; demotion, leave, restriction,
+block and archive revoke relevant pending invitations. Public management ETags
+remain separate from invitation decision versions and private message revisions.
+Archive/remove return 204 with no ETag; still-authorized clients reread
+getConversation before the next management command. Database constraints and
+owner locks protect one active-group OWNER, current epoch uniqueness and the cap.
+
+The existing conversation/message/read-cursor routes now resolve DIRECT or
+GROUP through current owner authorization. Shared-group reads filter current
+membership epochs, account eligibility, bilateral blocks and retention before
+selecting pages/counts. Group list order uses only viewer-eligible activity
+(or the viewer's current join time); hidden messages never reorder it. Current
+conversation metadata is gathered owner-locally, eligibility is batch-read in
+chunks of 100 outside the transaction, then current local visibility is locked
+and projected before list pagination. This costs work proportional to the viewer's
+related conversations and keeps remote authority out of local transactions.
+
+Memberships retain immutable epoch rows; rejoin captures a new exclusive private
+sequence floor. Each group message stores its immutable author membership epoch
+at send time. Leaving/removal does not erase that author's retained messages for
+other current viewers, including unread, read references, activity and exact-message
+report eligibility. Current account eligibility and bilateral blocks still apply
+to retained authors, fetched in batches of at most 100 before owner transactions.
+The roster remains current members only. Prior-epoch send retries cannot re-create or acknowledge earlier
+content. Leave/removal, suspension and restriction revoke reads/unread immediately
+on current owner checks. Shared blocks preserve the group's other participants;
+blocked/ineligible member projections contain only `UNAVAILABLE`, and old message
+cursors are never widened by unblock. Private read watermarks stay monotonic.
+Sends emit one minimized fact per current eligible non-self recipient; public
+management versions never advance for message/read traffic. No raw name/text is
+stored in Kafka or a second service. Existing relay ACK/replay semantics apply.
+
+### Exact-message report hook
+
+`POST /api/v1/community/chat/reports` is the twentieth active chat operation in
+v1.13. Only a current participant allowed to read the exact retained message may
+report it, including on retries. It captures one immutable encrypted snapshot
+and separately encrypted bounded details, with closed reason/priority and a
+30-day unresolved review deadline. No surrounding transcript, group name or
+personal account attributes are copied. The source conversation/message UUIDs
+are logical references: deleting source history cannot erase or block isolated
+report evidence. Reporter/message uniqueness collapses new-key duplicates;
+same-key changed input conflicts. Ten new reports/actor/day are enforced.
+
+This intake returns RECEIVED and grants no ADMIN read/management permission.
+Case resolution, authorized evidence review, resolved-evidence retention and
+account deletion are separately delivered workflows; no unrestricted case
+listing, transcript access or provider notification is enabled here. Explicit
+crisis-concern reason marks HIGH priority only, without monitoring/intervention
+promises. Migrate 0020 before using intake. Disabling the existing chat flag
+rolls back capability while preserving purpose-bound evidence and encryption keys.
 
 | Variable | Meaning |
 | --- | --- |
