@@ -1,5 +1,15 @@
 # Identity Service
 
+MB-685 adds `POST /internal/v1/community-chat/account-authorizations`, a read-only
+Community-only account eligibility query. Set `IDENTITY_COMMUNITY_CHAT_SERVICE_TOKEN`
+to a dedicated 32–512 character service credential in Identity and Community;
+an empty key disables authorization. Never reuse Notification/reminder tokens.
+The bounded request accepts at most 100 exact private account IDs and returns
+only the subset that are currently active, verified USER accounts. No address,
+name, role or status is returned. Results use `Cache-Control: no-store`; Community
+must fail closed on dependency failure and may not cache positive grants. This
+adds no persisted model and does not change existing token validation or routes.
+
 Owns accounts, credentials, roles, sessions, account lifecycle, deletion coordination, and a minimized security/audit projection. It owns PostgreSQL identity data and may use Redis only for expiring hashed OTP challenges and bounded security state.
 
 PostgreSQL persistence uses Hibernate and Spring Data JPA types inside the owning feature. Concrete persistence coordinators are used only where locking or multi-repository work is non-trivial. Liquibase remains the schema source of truth and Hibernate runs with schema validation only.
