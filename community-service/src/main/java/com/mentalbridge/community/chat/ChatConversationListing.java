@@ -34,7 +34,10 @@ class ChatConversationListing {
         var ids = new HashSet<UUID>(); ids.add(actor.id());
         for (var value : values) {
             if (value.kind.equals("DIRECT")) { ids.add(value.firstProfileId); ids.add(value.secondProfileId); }
-            else memberships.findByConversationIdAndDepartedAtIsNullOrderById(value.id).forEach(m -> ids.add(m.profileId));
+            else {
+                memberships.findByConversationIdAndDepartedAtIsNullOrderById(value.id).forEach(m -> ids.add(m.profileId));
+                ids.addAll(messages.retainedGroupSenders(value.id, clock.instant()));
+            }
         }
         return new Snapshot(actor.id(), values.stream().map(v -> v.id).toList(), profiles.byIds(ids));
     }

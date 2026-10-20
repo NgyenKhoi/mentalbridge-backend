@@ -10,9 +10,11 @@ import org.springframework.data.jpa.repository.Modifying;
 import org.springframework.data.repository.query.Param;
 
 interface ChatMessageRepository extends JpaRepository<ChatMessageEntity, UUID> {
+    @Query("select distinct m.senderProfileId from ChatMessageEntity m where m.conversationId = :group and m.senderMembershipId is not null and m.contentCiphertext is not null and m.expiresAt > :now")
+    List<UUID> retainedGroupSenders(@Param("group") UUID group, @Param("now") Instant now);
     @Query(value = """
             select max(m.created_at) from community_chat_message m join community_chat_membership s on s.conversation_id = m.conversation_id
-            and s.profile_id = m.sender_profile_id and s.departed_at is null and m.server_sequence > s.joined_after_sequence
+            and s.id = m.sender_membership_id and s.profile_id = m.sender_profile_id and m.server_sequence > s.joined_after_sequence
             where m.conversation_id = :group and m.sender_profile_id in (:visible) and m.server_sequence > :floor
             and m.content_ciphertext is not null and m.expires_at > :now
             """, nativeQuery = true)
@@ -21,7 +23,7 @@ interface ChatMessageRepository extends JpaRepository<ChatMessageEntity, UUID> {
     Optional<Instant> directActivity(@Param("id") UUID id, @Param("now") Instant now);
     @Query(value = """
             select m.* from community_chat_message m join community_chat_membership s on s.conversation_id = m.conversation_id
-            and s.profile_id = m.sender_profile_id and s.departed_at is null and m.server_sequence > s.joined_after_sequence
+            and s.id = m.sender_membership_id and s.profile_id = m.sender_profile_id and m.server_sequence > s.joined_after_sequence
             where m.conversation_id = :group and m.sender_profile_id in (:visible) and m.server_sequence > :after and m.server_sequence <= :through
             and m.content_ciphertext is not null and m.expires_at > :now order by m.server_sequence limit :batch
             """, nativeQuery = true)
@@ -29,14 +31,14 @@ interface ChatMessageRepository extends JpaRepository<ChatMessageEntity, UUID> {
             @Param("after") long after, @Param("through") long through, @Param("now") Instant now, @Param("batch") int batch);
     @Query(value = """
             select count(*) from community_chat_message m join community_chat_membership s on s.conversation_id = m.conversation_id
-            and s.profile_id = m.sender_profile_id and s.departed_at is null and m.server_sequence > s.joined_after_sequence
+            and s.id = m.sender_membership_id and s.profile_id = m.sender_profile_id and m.server_sequence > s.joined_after_sequence
             where m.conversation_id = :group and m.sender_profile_id in (:visible) and m.sender_profile_id <> :viewer
             and m.server_sequence > :after and m.content_ciphertext is not null and m.expires_at > :now
             """, nativeQuery = true)
     long groupUnread(@Param("group") UUID group, @Param("viewer") UUID viewer, @Param("visible") List<UUID> visible, @Param("after") long after, @Param("now") Instant now);
     @Query(value = """
             select m.* from community_chat_message m join community_chat_membership s on s.conversation_id = m.conversation_id
-            and s.profile_id = m.sender_profile_id and s.departed_at is null and m.server_sequence > s.joined_after_sequence
+            and s.id = m.sender_membership_id and s.profile_id = m.sender_profile_id and m.server_sequence > s.joined_after_sequence
             where m.conversation_id = :group and m.sender_profile_id in (:visible) and m.server_sequence > :floor and m.server_sequence <= :read
             and m.content_ciphertext is not null and m.expires_at > :now order by m.server_sequence desc limit 1
             """, nativeQuery = true)

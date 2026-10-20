@@ -142,7 +142,12 @@ and projected before list pagination. This costs work proportional to the viewer
 related conversations and keeps remote authority out of local transactions.
 
 Memberships retain immutable epoch rows; rejoin captures a new exclusive private
-sequence floor. Prior-epoch send retries cannot re-create or acknowledge earlier
+sequence floor. Each group message stores its immutable author membership epoch
+at send time. Leaving/removal does not erase that author's retained messages for
+other current viewers, including unread, read references, activity and exact-message
+report eligibility. Current account eligibility and bilateral blocks still apply
+to retained authors, fetched in batches of at most 100 before owner transactions.
+The roster remains current members only. Prior-epoch send retries cannot re-create or acknowledge earlier
 content. Leave/removal, suspension and restriction revoke reads/unread immediately
 on current owner checks. Shared blocks preserve the group's other participants;
 blocked/ineligible member projections contain only `UNAVAILABLE`, and old message

@@ -7,6 +7,8 @@ import java.time.Duration;
 import java.util.*;
 import java.util.concurrent.*;
 import org.junit.jupiter.api.Test;
+import org.junit.jupiter.params.ParameterizedTest;
+import org.junit.jupiter.params.provider.ValueSource;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.http.MediaType;
 import org.springframework.test.web.servlet.ResultActions;
@@ -91,6 +93,104 @@ class CommunityGroupMessageIntegrationTests extends ChatGroupIntegrationSupport 
         assertThat(json(conversation(b, group).andExpect(status().isOk())).path("unreadCount").asInt()).isOne();
         assertThat(jdbc.sql("select count(*) from community_chat_outbox where event_payload->'payload'->>'kind' = 'MESSAGE_RECEIVED' and event_payload->'payload'->>'targetId' = :id")
                 .param("id", hidden.toString()).query(Long.class).single()).isOne();
+    }
+    @ParameterizedTest
+    @ValueSource(booleans = {false, true})
+    void departedAuthorsRemainInOtherMembersHistoryAcrossRemovalRejoinAndBlocking(boolean removed) throws Exception {
+        var group = group(); join(b, group, bp); join(outsider, group, profile(outsider));
+        var first = saved(b, group);
+        clock.advance(Duration.ofSeconds(1)); var other = group(); saved(a, other);
+        clock.advance(Duration.ofSeconds(1)); var second = saved(b, group);
+        var before = json(read(a, group, first).andExpect(status().isOk()));
+        assertThat(before.path("lastReadMessageId").asText()).isEqualTo(first.toString());
+        assertThat(before.path("unreadCount").asInt()).isOne();
+        var page = json(history(a, group, null, 1).andExpect(status().isOk()));
+        var cursor = page.path("nextCursor").asText();
+        var list = json(mvc.perform(get(ROOT + "/conversations").with(user(a)).param("limit", "1")).andExpect(status().isOk()));
+        assertThat(list.path("items").get(0).path("conversationId").asText()).isEqualTo(group.toString());
+        var listCursor = list.path("nextCursor").asText();
+        remove(removed ? a : b, group, bp).andExpect(status().isNoContent());
+        var retained = json(history(a, group, null, 20).andExpect(status().isOk())).path("items");
+        assertThat(retained.findValuesAsText("messageId")).containsExactly(first.toString(), second.toString());
+        assertThat(json(history(a, group, cursor, 1).andExpect(status().isOk())).path("items").get(0).path("messageId").asText()).isEqualTo(second.toString());
+        assertThat(json(read(a, group, first).andExpect(status().isOk()))).isEqualTo(before);
+        assertThat(json(conversation(outsider, group).andExpect(status().isOk())).path("unreadCount").asInt()).isEqualTo(2);
+        assertThat(json(mvc.perform(get(ROOT + "/conversations").with(user(a)).param("limit", "1")).andExpect(status().isOk()))
+                .path("items").get(0).path("conversationId").asText()).isEqualTo(group.toString());
+        assertThat(json(mvc.perform(get(ROOT + "/conversations").with(user(a)).param("cursor", listCursor)).andExpect(status().isOk()))
+                .path("items").get(0).path("conversationId").asText()).isEqualTo(other.toString());
+        history(b, group, null, 20).andExpect(status().isNotFound()); read(b, group, first).andExpect(status().isNotFound());
+        mvc.perform(put("/api/v1/community/blocks/{id}", bp).with(user(a))).andExpect(status().isNoContent());
+        assertThat(json(history(a, group, null, 1).andExpect(status().isOk())).path("items").size()).isZero();
+        assertThat(json(conversation(a, group).andExpect(status().isOk())).path("unreadCount").asInt()).isZero();
+        mvc.perform(delete("/api/v1/community/blocks/{id}", bp).with(user(a))).andExpect(status().isNoContent());
+        assertThat(json(history(a, group, null, 20).andExpect(status().isOk())).path("items")).isEqualTo(retained);
+        denied.add(b);
+        assertThat(json(history(a, group, null, 20).andExpect(status().isOk())).path("items").size()).isZero();
+        denied.clear();
+        cursor = json(history(a, group, null, 1).andExpect(status().isOk())).path("nextCursor").asText();
+        join(b, group, bp);
+        assertThat(json(history(b, group, null, 20).andExpect(status().isOk())).path("items").size()).isZero();
+        read(b, group, second).andExpect(status().isNotFound());
+        assertThat(json(history(a, group, null, 20).andExpect(status().isOk())).path("items")).isEqualTo(retained);
+        var fresh = saved(b, group);
+        assertThat(json(history(a, group, cursor, 20).andExpect(status().isOk())).path("items").findValuesAsText("messageId")).containsExactly(second.toString());
+        assertThat(json(history(b, group, null, 20).andExpect(status().isOk())).path("items").findValuesAsText("messageId")).containsExactly(fresh.toString());
+        assertThat(json(read(a, group, second).andExpect(status().isOk())).path("unreadCount").asInt()).isOne();
+        mvc.perform(put("/api/v1/community/blocks/{id}", bp).with(user(a))).andExpect(status().isNoContent());
+        var hidden = json(history(a, group, null, 1).andExpect(status().isOk()));
+        assertThat(hidden.path("items").size()).isZero(); assertThat(hidden.path("nextCursor").isNull()).isTrue();
+        read(a, group, second).andExpect(status().isNotFound());
+        assertThat(json(conversation(a, group).andExpect(status().isOk())).path("unreadCount").asInt()).isZero();
+        mvc.perform(delete("/api/v1/community/blocks/{id}", bp).with(user(a))).andExpect(status().isNoContent());
+        assertThat(json(history(a, group, null, 20).andExpect(status().isOk())).path("items").findValuesAsText("messageId"))
+                .containsExactly(first.toString(), second.toString(), fresh.toString());
+        denied.add(b);
+        assertThat(json(history(a, group, null, 20).andExpect(status().isOk())).path("items").size()).isZero();
+    }
+    @Test
+    void groupMessageAuthorEpochCannotBeMissingForgedOrReboundAfterDeparture() throws Exception {
+        var group = group(); join(b, group, bp); var message = saved(b, group);
+        var epoch = jdbc.sql("select sender_membership_id from community_chat_message where id = :id").param("id", message).query(UUID.class).single();
+        var ownerEpoch = jdbc.sql("select id from community_chat_membership where conversation_id = :id and profile_id = :owner")
+                .param("id", group).param("owner", ap).query(UUID.class).single();
+        assertThatThrownBy(() -> jdbc.sql("update community_chat_message set sender_membership_id = :epoch where id = :id")
+                .param("epoch", ownerEpoch).param("id", message).update()).isInstanceOf(org.springframework.dao.DataIntegrityViolationException.class);
+        for (var author : Arrays.asList(null, ownerEpoch)) {
+            assertThatThrownBy(() -> insertGroupMessage(group, bp, author, 2)).isInstanceOf(org.springframework.dao.DataIntegrityViolationException.class);
+        }
+        remove(b, group, bp).andExpect(status().isNoContent()); join(b, group, bp);
+        assertThatThrownBy(() -> insertGroupMessage(group, bp, epoch, 2)).isInstanceOf(org.springframework.dao.DataIntegrityViolationException.class);
+        var fresh = saved(b, group);
+        var newEpoch = jdbc.sql("select sender_membership_id from community_chat_message where id = :id").param("id", fresh).query(UUID.class).single();
+        assertThat(newEpoch).isNotEqualTo(epoch);
+        var other = group();
+        assertThatThrownBy(() -> insertGroupMessage(other, bp, newEpoch, 1)).isInstanceOf(org.springframework.dao.DataIntegrityViolationException.class);
+    }
+    @Test
+    void retainedDepartedAuthorsUseBoundedFreshAccountBatchesBeyondTheCurrentRosterCap() throws Exception {
+        var group = group();
+        for (int index = 0; index < 101; index++) {
+            var peer = profile(UUID.randomUUID()); fixtureMember(group, peer);
+            var epoch = jdbc.sql("select id from community_chat_membership where conversation_id = :group and profile_id = :peer")
+                    .param("group", group).param("peer", peer).query(UUID.class).single();
+            insertGroupMessage(group, peer, epoch, index + 1);
+            jdbc.sql("update community_chat_membership set departed_at = joined_at where id = :id").param("id", epoch).update();
+        }
+        jdbc.sql("update community_chat_conversation set last_sequence = 101 where id = :id").param("id", group).update();
+        org.mockito.Mockito.clearInvocations(identity);
+        assertThat(json(conversation(a, group).andExpect(status().isOk())).path("unreadCount").asInt()).isEqualTo(101);
+        var requests = org.mockito.ArgumentCaptor.forClass(ChatIdentityHttpClient.Query.class);
+        org.mockito.Mockito.verify(identity, org.mockito.Mockito.times(2)).authorize(org.mockito.ArgumentMatchers.anyString(), org.mockito.ArgumentMatchers.anyString(), requests.capture());
+        assertThat(requests.getAllValues()).allSatisfy(request -> assertThat(request.accountIds()).hasSizeBetween(1, 100));
+    }
+    void insertGroupMessage(UUID group, UUID sender, UUID epoch, long sequence) {
+        var id = UUID.randomUUID();
+        jdbc.sql("insert into community_chat_message(id,conversation_id,sender_profile_id,sender_membership_id,client_message_id,server_sequence,content_ciphertext,content_fingerprint,created_at,expires_at) "
+                + "values(:id,:group,:sender,:epoch,:client,:sequence,'synthetic-ciphertext','synthetic-fingerprint',:now,:expiry)")
+                .param("id", id).param("group", group).param("sender", sender).param("epoch", epoch, java.sql.Types.OTHER)
+                .param("client", UUID.randomUUID()).param("sequence", sequence).param("now", java.sql.Timestamp.from(clock.instant()))
+                .param("expiry", java.sql.Timestamp.from(clock.instant().plus(Duration.ofDays(90)))).update();
     }
     @Test
     void hiddenMessagesDoNotReorderConversationListAndVisibilityCursorIsBoundToCurrentActor() throws Exception {

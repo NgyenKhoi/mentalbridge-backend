@@ -29,14 +29,14 @@ class ChatGroupMessageTransactions {
         if (command.isPresent()) {
             var previous = command.orElseThrow();
             var message = messages.findById(previous.targetId).filter(m -> m.conversationId.equals(conversation) && m.senderProfileId.equals(auth.actor())
-                    && m.serverSequence > context.member().joinedAfterSequence && m.readable(clock.instant())).orElseThrow(ChatException::conflict);
+                    && context.member().id.equals(m.senderMembershipId) && m.readable(clock.instant())).orElseThrow(ChatException::conflict);
             if (!crypto.matches(previous.requestFingerprint, "SEND_MESSAGE", normalized)) throw ChatException.conflict();
             return saved(message, context);
         }
         var existing = messages.findByConversationIdAndSenderProfileIdAndClientMessageId(conversation, auth.actor(), input.clientMessageId());
         if (existing.isPresent()) {
             var message = existing.orElseThrow();
-            if (!message.readable(clock.instant()) || message.serverSequence <= context.member().joinedAfterSequence
+            if (!message.readable(clock.instant()) || !context.member().id.equals(message.senderMembershipId)
                     || !crypto.matches(message.contentFingerprint, "SEND_MESSAGE", normalized)) throw ChatException.conflict();
             commands.save(new ChatCommandEntity(auth.actor(), "SEND_MESSAGE", key, message.contentFingerprint, "MESSAGE", message.id, conversation, clock.instant()));
             return saved(message, context);
@@ -46,7 +46,7 @@ class ChatGroupMessageTransactions {
                 || messages.countBySenderProfileIdAndCreatedAtAfter(auth.actor(), now.minusSeconds(5)) >= 10) throw ChatException.limited();
         var id = UUID.randomUUID(); context.group().lastSequence++;
         var digest = crypto.fingerprint("SEND_MESSAGE", normalized);
-        var message = messages.saveAndFlush(new ChatMessageEntity(id, conversation, auth.actor(), input.clientMessageId(), context.group().lastSequence,
+        var message = messages.saveAndFlush(new ChatMessageEntity(id, conversation, auth.actor(), context.member().id, input.clientMessageId(), context.group().lastSequence,
                 crypto.seal(purpose(conversation, id, auth.actor()), input.content()), digest, now));
         commands.save(new ChatCommandEntity(auth.actor(), "SEND_MESSAGE", key, digest, "MESSAGE", id, conversation, now));
         context.group().eventVersion++;
@@ -78,9 +78,7 @@ class ChatGroupMessageTransactions {
     @Transactional
     ChatModels.ReadResult read(UUID conversation, ChatGroupAccess.Authorization auth, UUID id) {
         var context = access.lock(conversation, auth, true);
-        var message = messages.findById(id).filter(m -> m.conversationId.equals(conversation) && m.readable(clock.instant())
-                && m.serverSequence > context.member().joinedAfterSequence && visible(context).contains(m.senderProfileId)
-                && context.member(m.senderProfileId).joinedAfterSequence < m.serverSequence).orElseThrow(ChatException::target);
+        var message = messages.findById(id).filter(m -> m.readable(clock.instant()) && access.messageVisible(context, m)).orElseThrow(ChatException::target);
         var read = reads.findById(new ChatReadStateEntity.ReadId(conversation, auth.actor())).orElseGet(() -> new ChatReadStateEntity(conversation, auth.actor()));
         read.lastReadSequence = Math.max(read.lastReadSequence, message.serverSequence); reads.saveAndFlush(read);
         return result(context);
@@ -103,7 +101,7 @@ class ChatGroupMessageTransactions {
                 context.members().stream().map(m -> access.peer(context, m.profileId)).toList(), result(context).unreadCount(), Long.toString(context.group().managementVersion));
     }
     List<UUID> visible(ChatGroupAccess.Context context) {
-        return context.members().stream().map(m -> m.profileId).filter(id -> access.visible(context, id)).toList();
+        return context.eligible().keySet().stream().filter(id -> access.visible(context, id)).toList();
     }
     private ChatModels.SendResult saved(ChatMessageEntity message, ChatGroupAccess.Context context) {
         return new ChatModels.SendResult(message(message, context), "SAVED", "UNCONFIRMED");

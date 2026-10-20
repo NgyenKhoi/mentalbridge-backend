@@ -2546,6 +2546,7 @@ CREATE TABLE community.community_chat_message (
   id uuid PRIMARY KEY,
   conversation_id uuid NOT NULL REFERENCES community.community_chat_conversation(id) ON DELETE CASCADE,
   sender_profile_id uuid NOT NULL REFERENCES community.community_profile(id),
+  sender_membership_id uuid,
   client_message_id uuid NOT NULL,
   server_sequence bigint NOT NULL CHECK (server_sequence > 0),
   content_ciphertext text,
@@ -2576,6 +2577,7 @@ CREATE TABLE community.community_chat_membership (
   CHECK (departed_at IS NULL OR departed_at >= joined_at)
 );
 CREATE UNIQUE INDEX ux_chat_member_current ON community.community_chat_membership(conversation_id, profile_id) WHERE departed_at IS NULL;
+ALTER TABLE community.community_chat_message ADD FOREIGN KEY (sender_membership_id) REFERENCES community.community_chat_membership(id);
 CREATE TABLE community.community_chat_invitation (
   id uuid PRIMARY KEY,
   conversation_id uuid NOT NULL REFERENCES community.community_chat_conversation(id) ON DELETE CASCADE,

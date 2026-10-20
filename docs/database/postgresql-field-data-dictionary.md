@@ -2861,6 +2861,7 @@ Community's encrypted text-message authority under Liquibase 0018. No raw messag
 | `id` | Random immutable message UUID; no global sequence/time encoding is exposed to clients. |
 | `conversation_id` | Physical owner-local conversation reference; aggregate erasure cascades message records. |
 | `sender_profile_id` | Server-derived Community sender, never selected by the browser or a socket command. |
+| `sender_membership_id` | Immutable Community membership epoch at send time for GROUP messages; null for DIRECT. Owner migration 0019 validates conversation/profile/current membership and exclusive sequence floor when inserting. Retained after departure so other current viewers retain eligible history; not a present-day access grant to the author. |
 | `client_message_id` | Caller UUID unique with sender/conversation; duplicate content reconciles one message even across transport retries. |
 | `server_sequence` | Private positive per-conversation order allocated in the same transaction as content/facts; never returned in REST/socket DTOs or public versions. |
 | `content_ciphertext` | Nullable versioned AES-256-GCM ciphertext with random nonce and exact conversation/message/sender associated data. Null only after retention purge; never plaintext. |

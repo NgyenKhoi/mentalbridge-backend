@@ -1,6 +1,7 @@
 package com.mentalbridge.community.chat;
 
 import java.util.*;
+import java.time.Clock;
 import java.util.stream.Collectors;
 import com.mentalbridge.community.feed.CommunityChatProfiles;
 import com.mentalbridge.community.feed.CommunityChatProfiles.Profile;
@@ -18,17 +19,26 @@ class ChatGroupAccess {
     private final ChatAccountAuthorizer accounts;
     private final ChatCrypto crypto;
     private final EntityManager entityManager;
+    private final ChatMessageRepository messages;
+    private final Clock clock;
     ChatGroupAccess(CommunityChatProfiles profiles, ChatMembershipRepository members, ChatConversationRepository conversations,
-            ChatPrivacyRepository privacy, ChatAccountAuthorizer accounts, ChatCrypto crypto, EntityManager entityManager) {
+            ChatPrivacyRepository privacy, ChatAccountAuthorizer accounts, ChatCrypto crypto, EntityManager entityManager,
+            ChatMessageRepository messages, Clock clock) {
         this.profiles = profiles; this.members = members; this.conversations = conversations; this.privacy = privacy;
         this.accounts = accounts; this.crypto = crypto; this.entityManager = entityManager;
+        this.messages = messages; this.clock = clock;
     }
     Authorization authorize(UUID subject, UUID conversation, UUID extra, UUID correlation) {
         var actor = profiles.bySubject(subject).orElseThrow(ChatException::target);
         var ids = new HashSet<UUID>(); ids.add(actor.id()); if (extra != null) ids.add(extra);
         members.findByConversationIdAndDepartedAtIsNullOrderById(conversation).forEach(value -> ids.add(value.profileId));
-        var known = ids.stream().map(profiles::byId).flatMap(Optional::stream).toList();
-        var active = accounts.active(known.stream().map(Profile::subject).toList(), correlation);
+        ids.addAll(messages.retainedGroupSenders(conversation, clock.instant()));
+        var known = profiles.byIds(ids);
+        var subjects = known.stream().map(Profile::subject).toList();
+        var active = new HashSet<UUID>();
+        for (int start = 0; start < subjects.size(); start += 100) {
+            active.addAll(accounts.active(subjects.subList(start, Math.min(start + 100, subjects.size())), correlation));
+        }
         if (!active.contains(subject)) throw ChatException.target();
         return new Authorization(actor.id(), known.stream().map(Profile::id).toList(),
                 known.stream().filter(p -> active.contains(p.subject())).map(Profile::id).collect(Collectors.toSet()));
@@ -49,6 +59,12 @@ class ChatGroupAccess {
     }
     boolean visible(Context context, UUID peer) {
         return context.eligible().containsKey(peer) && !privacy.blocked(context.actor().id(), peer);
+    }
+    boolean messageVisible(Context context, ChatMessageEntity message) {
+        return message.conversationId.equals(context.group().id) && message.serverSequence > context.member().joinedAfterSequence
+                && visible(context, message.senderProfileId) && message.senderMembershipId != null
+                && members.findById(message.senderMembershipId).filter(m -> m.conversationId.equals(message.conversationId)
+                        && m.profileId.equals(message.senderProfileId) && m.joinedAfterSequence < message.serverSequence).isPresent();
     }
     ChatModels.Peer peer(Context context, UUID profile) {
         if (!visible(context, profile)) return new ChatModels.Peer("UNAVAILABLE", null, null);

@@ -74,6 +74,23 @@ class CommunityChatReportIntegrationTests extends ChatGroupIntegrationSupport {
         denied.add(a); report(b, message, "OTHER", "", UUID.randomUUID()).andExpect(status().isNotFound());
     }
     @Test
+    void retainedMessagesRemainReportableAfterAuthorDepartureWithoutGrantingPriorEpochAccess() throws Exception {
+        var group = group(); join(b, group, bp);
+        var message = saved(b, group, "Tin tổng hợp trước khi rời nhóm");
+        remove(b, group, bp).andExpect(status().isNoContent());
+        var key = UUID.randomUUID();
+        var result = json(report(a, message, "SPAM", "", key).andExpect(status().isCreated()));
+        report(b, message, "SPAM", "", UUID.randomUUID()).andExpect(status().isNotFound());
+        mvc.perform(put("/api/v1/community/blocks/{id}", bp).with(user(a))).andExpect(status().isNoContent());
+        report(a, message, "SPAM", "", key).andExpect(status().isNotFound());
+        mvc.perform(delete("/api/v1/community/blocks/{id}", bp).with(user(a))).andExpect(status().isNoContent());
+        join(b, group, bp);
+        report(b, message, "SPAM", "", UUID.randomUUID()).andExpect(status().isNotFound());
+        assertThat(json(report(a, message, "SPAM", "", key).andExpect(status().isCreated()))).isEqualTo(result);
+        clock.advance(Duration.ofDays(90));
+        report(a, message, "SPAM", "", key).andExpect(status().isNotFound());
+    }
+    @Test
     void sourceDeletionRemovesPrivateHistoryAndRetryIdentityWithoutErasingIsolatedReportEvidence() throws Exception {
         var group = group(); join(b, group, bp); var message = saved(a, group, "Tin nguồn tổng hợp");
         var result = json(report(b, message, "PRIVACY_CONCERN", "", UUID.randomUUID()).andExpect(status().isCreated()));

@@ -161,4 +161,10 @@ MB-685 migration 0018 adds Community-owned encrypted messages and private per-re
 
 MB-687 adds Community Liquibase 0019: private group discriminator/name/cap, explicit invitation lifecycle, current membership epochs and deferred exactly-one-owner/cap guards. Existing direct pair identity and encrypted message storage remain Community-owned.
 
+Group messages bind an immutable `sender_membership_id` to the exact membership
+epoch validated at send time. Departure does not invalidate retained messages
+for remaining viewers. Reads independently enforce the viewer's current epoch,
+current account eligibility and bilateral blocks; authors cannot recover their
+own previous epoch on rejoin. Direct messages keep a null membership reference.
+
 MB-687 migration 0020 adds isolated encrypted exact-message report intake with actor/message uniqueness and rate/review indexes. No general ADMIN private-history permission is introduced.

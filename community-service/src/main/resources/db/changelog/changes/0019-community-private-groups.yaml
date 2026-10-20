@@ -37,6 +37,28 @@ databaseChangeLog:
               );
               CREATE UNIQUE INDEX ux_chat_member_current ON community_chat_membership(conversation_id, profile_id) WHERE departed_at IS NULL;
               CREATE INDEX ix_chat_member_viewer ON community_chat_membership(profile_id, conversation_id) WHERE departed_at IS NULL;
+              ALTER TABLE community_chat_message ADD COLUMN sender_membership_id uuid REFERENCES community_chat_membership(id);
+              CREATE FUNCTION validate_community_chat_message_sender() RETURNS trigger LANGUAGE plpgsql AS $$
+              DECLARE conversation_kind varchar;
+              BEGIN
+                IF TG_OP = 'UPDATE' THEN
+                  IF NEW.conversation_id IS DISTINCT FROM OLD.conversation_id OR NEW.sender_profile_id IS DISTINCT FROM OLD.sender_profile_id
+                    OR NEW.sender_membership_id IS DISTINCT FROM OLD.sender_membership_id OR NEW.server_sequence IS DISTINCT FROM OLD.server_sequence THEN
+                    RAISE EXCEPTION 'Community message sender is immutable' USING ERRCODE = '23514';
+                  END IF;
+                  RETURN NEW;
+                END IF;
+                SELECT kind INTO conversation_kind FROM community_chat_conversation WHERE id = NEW.conversation_id;
+                IF (conversation_kind = 'DIRECT' AND NEW.sender_membership_id IS NOT NULL) OR (conversation_kind = 'GROUP' AND NOT EXISTS (
+                  SELECT 1 FROM community_chat_membership WHERE id = NEW.sender_membership_id AND conversation_id = NEW.conversation_id
+                    AND profile_id = NEW.sender_profile_id AND departed_at IS NULL AND joined_after_sequence < NEW.server_sequence
+                )) THEN
+                  RAISE EXCEPTION 'Community message sender epoch invariant' USING ERRCODE = '23514';
+                END IF;
+                RETURN NEW;
+              END $$;
+              CREATE TRIGGER ck_chat_message_sender BEFORE INSERT OR UPDATE OF conversation_id, sender_profile_id, sender_membership_id, server_sequence
+                ON community_chat_message FOR EACH ROW EXECUTE FUNCTION validate_community_chat_message_sender();
               CREATE TABLE community_chat_invitation (
                 id uuid PRIMARY KEY,
                 conversation_id uuid NOT NULL REFERENCES community_chat_conversation(id) ON DELETE CASCADE,

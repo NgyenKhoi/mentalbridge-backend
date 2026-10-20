@@ -27,9 +27,7 @@ class ChatReportTransactions {
         var message = messages.findById(input.messageId()).orElseThrow(ChatException::target);
         if (auth != null) {
             var context = groups.lock(conversation, auth, true);
-            if (!message.conversationId.equals(conversation) || message.serverSequence <= context.member().joinedAfterSequence
-                    || !groups.visible(context, message.senderProfileId)
-                    || context.member(message.senderProfileId).joinedAfterSequence >= message.serverSequence) throw ChatException.target();
+            if (!groups.messageVisible(context, message)) throw ChatException.target();
         } else {
             direct.pair(actor, peer);
             var current = conversations.lock(conversation).orElseThrow(ChatException::target);
