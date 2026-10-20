@@ -244,6 +244,43 @@ class AdminRetentionGovernanceServiceTests {
 	}
 
 	@Test
+	void getRetentionPoliciesTreatsUnresolvedRunningAsRunningWhenLockLookupFails() {
+		String policyId = "MB-IDENTITY-REPORTING-001";
+		UUID actorId = UUID.randomUUID();
+		UUID correlationId = UUID.randomUUID();
+		var failedOlder = new RetentionExecutionRecordEntity(UUID.randomUUID(), policyId, "IDENTITY",
+				"REPORT_ARTIFACT_RETENTION_SWEEP", "FAILED", NOW.minusSeconds(300), NOW.minusSeconds(290),
+				0, 0, 0, 0, "SWEEP_EXECUTION_FAILED", NOW.minusSeconds(300));
+		var runningPrior = new RetentionExecutionRecordEntity(UUID.randomUUID(), policyId, "IDENTITY",
+				"REPORT_ARTIFACT_RETENTION_SWEEP", "RUNNING", NOW.minusSeconds(200), null,
+				0, 0, 0, 0, null, NOW.minusSeconds(200));
+		var failedNewer = new RetentionExecutionRecordEntity(UUID.randomUUID(), policyId, "IDENTITY",
+				"REPORT_ARTIFACT_RETENTION_SWEEP", "FAILED", NOW.minusSeconds(100), NOW.minusSeconds(90),
+				0, 0, 0, 0, "SWEEP_EXECUTION_FAILED", NOW.minusSeconds(100));
+
+		when(executionRecords.findFirstByPolicyIdOrderByStartedAtDesc(policyId))
+				.thenReturn(Optional.of(failedNewer));
+		when(executionRecords.findTop3ByPolicyIdOrderByStartedAtDesc(policyId))
+				.thenReturn(List.of(failedNewer, runningPrior, failedOlder));
+		when(executionRecords.tryAcquirePolicyExecutionLock(policyId))
+				.thenThrow(new RuntimeException("PostgreSQL advisory lock lookup failed"));
+
+		var policy = service.getRetentionPolicies().stream()
+				.filter(candidate -> policyId.equals(candidate.policyId())).findFirst().orElseThrow();
+
+		assertThat(policy.jobStatus()).isEqualTo(RetentionJobStatus.RUNNING);
+		assertThat(policy.lastExecution()).isNotNull();
+		assertThat(policy.lastExecution().jobStatus()).isEqualTo("FAILED");
+
+		assertThatThrownBy(() -> service.triggerRetentionSweep(policyId, actorId, correlationId))
+				.isInstanceOf(ResponseStatusException.class)
+				.hasMessageContaining("Không thể xác thực khóa thực thi độc quyền");
+
+		verify(auditLogger).recordDenied(argThat(event -> "LOCK_ACQUISITION_FAILED".equals(event.getReasonCode())
+				&& correlationId.equals(event.getCorrelationId())));
+	}
+
+	@Test
 	void triggerRetentionSweepDetectsOrphanedRunningRecordAsStaleWhenLockAcquired() {
 		UUID actorId = UUID.randomUUID();
 		UUID correlationId = UUID.randomUUID();

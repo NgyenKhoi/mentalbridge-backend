@@ -222,12 +222,16 @@ public class AdminRetentionGovernanceService {
 
 			RetentionJobStatus effectiveJobStatus = meta.jobStatus();
 			if (meta.automatedExecutionSupported() && lastExec != null) {
+				boolean hasUnresolvedRunning = !orphanedRunningDetected
+						&& ((lastExec != null && "RUNNING".equals(lastExec.jobStatus()))
+								|| recent.stream().anyMatch(r -> "RUNNING".equals(r.jobStatus())));
+
 				if (retryExhausted(recent, orphanedRunningDetected)) {
 					effectiveJobStatus = RetentionJobStatus.FAILED;
+				} else if (hasUnresolvedRunning) {
+					effectiveJobStatus = RetentionJobStatus.RUNNING;
 				} else if ("STALE".equals(lastExec.jobStatus())) {
 					effectiveJobStatus = RetentionJobStatus.STALE;
-				} else if ("RUNNING".equals(lastExec.jobStatus())) {
-					effectiveJobStatus = RetentionJobStatus.RUNNING;
 				}
 			}
 

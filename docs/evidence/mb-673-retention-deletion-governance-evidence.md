@@ -85,15 +85,16 @@ Under the MB-583 architecture, `Identity Service` coordinates deletion workflows
 
 | Check | Result | Actual tests |
 | :--- | :--- | :--- |
-| `mvn -q '-Dtest=AdminRetentionGovernanceServiceTests' test` | **PASS** | 29 run, 0 failed, 0 errors, 0 skipped; includes GET/POST agreement for 2 FAILED + 1 orphaned RUNNING (both newest, middle, and oldest positions). |
+| `AdminRetentionGovernanceServiceTests` | **PASS** | 30 run, 0 failed, 0 errors, 0 skipped; includes GET/POST agreement for 2 FAILED + 1 orphaned RUNNING (all positions) and unresolved RUNNING treatment when lock check fails. |
 | `AdminRetentionGovernanceControllerTests` | **PASS** | 11 run, 0 failed, 0 errors, 0 skipped; validates HTTP responses and parameter validation. |
 | `AdminRetentionGovernanceSecuritySliceTests` | **PASS** | 5 run, 0 failed, 0 errors, 0 skipped; validates RBAC `@PreAuthorize("hasRole('ADMIN')")`. |
 | `RetentionAuditLoggerTransactionTests` | **PASS** | 3 run, 0 failed, 0 errors, 0 skipped; validates `REQUIRES_NEW` audit persistence on rollback. |
 | `RetentionExecutionRecorderTransactionTests` | **PASS** | 3 run, 0 failed, 0 errors, 0 skipped; validates failure record commit and success rollback. |
 | `IdentityOpenApiContractTests` | **PASS** | 1 run, 0 failed, 0 errors, 0 skipped; validates OpenAPI schema endpoints and status codes. |
-| `RetentionTransactionIntegrationTests` | **SKIPPED (Local) / PASS (Docker CI)** | Testcontainers PostgreSQL integration test annotated with `@EnabledIf("dockerAvailable")`. Skipped locally when Docker daemon is not running on host; runs in CI environment with Docker. |
-| Total targeted backend run | **PASS** | **52 run, 0 failed, 0 errors, 0 skipped** (BUILD SUCCESS). |
-| Frontend unit, typecheck, lint and browser E2E | **NOT RUN** | Backend response contract is fully consistent; no frontend changes required. |
+| `RetentionTransactionIntegrationTests` | **PASS** | 5 run, 0 failed, 0 errors, 0 skipped on real PostgreSQL Testcontainers; validates hold state across commit/reload and transaction behavior. |
+| Total targeted backend run | **PASS** | **58 run, 0 failed, 0 errors, 0 skipped** (BUILD SUCCESS). |
+| `AdminRetentionGovernance.test.tsx` + `AdminWorkspace.test.tsx` | **PASS** | **14 run, 0 failed, 0 errors, 0 skipped** (100% pass via vitest). |
+| Full backend quality gate and live cross-service E2E | **NOT RUN** | Required before merge; these focused runs do not replace them. |
 
 Two initial database runs failed before executing test bodies because the `deletion_request.subject_reference_hash` JPA mapping expected JDBC `VARCHAR` while the existing migration creates `char(64)`; setting only `columnDefinition` did not change the JDBC type. The mapping now uses the repository's existing `@JdbcTypeCode(SqlTypes.CHAR)` pattern, and the final five-test database run passed. No migration or transaction propagation was changed.
 
