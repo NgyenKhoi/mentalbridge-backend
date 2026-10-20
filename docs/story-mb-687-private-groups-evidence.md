@@ -13,7 +13,7 @@ backend work; MB-688 owns clients. No new policy or UI-ready approval is inferre
 | Accept | Current inviter authority, active account/group, no bilateral block and a free seat; atomically allocate current epoch. |
 | Decline/expire/revoke | No membership; decline suppresses reinvitation; seven-day expiry; role loss/archive/block/restriction invalidates pending. |
 | Role/ownership | OWNER changes ADMIN/MEMBER; transfer to current active ADMIN leaves exactly one OWNER, former owner ADMIN. |
-| Leave/remove | Immediate loss of history/unread; active OWNER must transfer/archive; ADMIN removes MEMBER only. |
+| Leave/remove | Departed actor immediately loses history/unread; remaining viewers retain eligible messages authored during that actor's valid send epoch. Active OWNER must transfer/archive; ADMIN removes MEMBER only. |
 | Rejoin | New epoch, no earlier history/read reference, no unread inherited from prior epoch. |
 | Block in shared group | Group stays usable; pair's content/unread/projections filtered before pagination; no hidden counters/order changes. |
 | Archive | No sends/invites/management writes; current members retain eligible history and may self-leave. |
@@ -41,10 +41,10 @@ rather than changing implemented/planned assertions.
 | --- | --- |
 | Group lifecycle/roles | 12 `CommunityGroupLifecycleIntegrationTests`: explicit recipient acceptance, minimal invite projection, declined/expired/revoked outcomes, role loss/re-promotion, ownership transfer, self-leave/archive and exact management ETags. |
 | Cap/consistency | Two acceptances race for one final seat; exactly one succeeds. Concurrent ownership transfer uses one management revision and leaves one owner. Real DB rejects ownerless/multi-owner groups, null/invalid caps. Deferred invariant checks serialize through the conversation row. |
-| Message authority | 10 `CommunityGroupMessageIntegrationTests`: pending cannot send/read/list; current membership only; concurrent retries create one message/unread/logical fact; retention and current account gates inherited from direct storage. |
+| Message authority | 14 `CommunityGroupMessageIntegrationTests`: pending cannot send/read/list; current viewer membership only; concurrent retries create one message/unread/logical fact; retained author-at-send epoch, database identity guards and bounded eligibility batches. |
 | Epoch/block privacy | Leave/rejoin cannot restore old history, read references, retries or cursors. Bilateral blocks filter before page/count and return unavailable member projections; hidden messages do not alter public management version/list order. Read max survives reordered devices. |
 | Mutation race/failure | A committed removal wins over send after its Identity lookup while waiting for owner locks. Forced recipient-outbox failure rolls back message, sequence and command; retry commits one result. |
-| Report intake | 5 `CommunityChatReportIntegrationTests`: exact currently readable target, isolated encrypted immutable snapshot, safe priority, duplicate/new-key retry, strict body/rate/outsider/block/expiry/epoch denial, source-deletion isolation and no raw content/details in captured diagnostics/facts. |
+| Report intake | 6 `CommunityChatReportIntegrationTests`: exact currently readable target, isolated encrypted immutable snapshot, safe priority, duplicate/new-key retry, strict body/rate/outsider/block/expiry/epoch denial, retained author-after-departure eligibility, source-deletion isolation and no raw content/details in captured diagnostics/facts. |
 | Broker/contract | Real Kafka publishes GROUP_INVITED and exact recipient MESSAGE_RECEIVED on existing conversation-keyed topic; actual envelopes satisfy unchanged accepted fact schema and exclude name/text. Existing ACK/lease/crash/outage replay tests still pass. |
 | Current dependency | Existing real Identity HTTP timeout/failure/identity-binding suites remain green. Reads use fresh batched eligibility outside DB transactions, then current profile/group locks; no cached positive fallback or distributed atomic Identity-revocation claim. |
 
@@ -52,7 +52,36 @@ The current Identity eligibility lookup protects reads/sends while an account is
 inactive. Durable asynchronous account-deletion/restriction orchestration remains
 its separate owner workflow; no historical Identity suspension timeline is inferred.
 
-## Verification — 2026-10-20
+## Review correction — retained author epochs
+
+Review of head `01ada8f0` found that sender-current-membership joins incorrectly
+removed retained messages from remaining viewers after an author left. The new
+leave/remove regression failed twice against that implementation before the fix.
+
+Group saves now bind `sender_membership_id` to the exact current author epoch.
+The provider joins that immutable epoch instead of requiring the sender to remain
+a member. History, unread, last-read projection, conversation activity and exact-message
+report intake use the same separation between author-at-send eligibility and the
+viewer's current membership floor. Current account eligibility, local restrictions,
+bilateral blocks and 90-day retention still apply. Retained authors are authorized
+in batches of at most 100 outside owner transactions, and are not added to the
+current roster. No raw content or new public/event field is introduced.
+
+Focused real-PostgreSQL checks: **32 passed**, including both self-leave and removal,
+unchanged remaining-viewer history/read/unread/activity, stable history/list pages,
+immediate departed-viewer denial, rejoin without old content (including own messages),
+block/unblock and inactive-author filtering, retained-message reports and expiry,
+immutable/correct-conversation author-epoch constraints, and 101 retained departed
+authors crossing the current roster cap without exceeding Identity's 100-ID bound.
+The expanded test initially reused a cursor across block/unblock; it now requests
+a fresh snapshot as required by the unchanged visibility-epoch contract.
+
+The sender reference/guards are part of this PR's still-unmerged migration 0019;
+`origin/dev` ends at Community migration 0018. No merged migration was rewritten,
+no existing group data was migrated by guesswork, and only disposable containers
+were changed. The canonical model and dictionary include the new reference.
+
+## Verification — review correction, 2026-10-21
 
 Local Windows + Java 21 + Docker Desktop, `SPRINGDOTENV_ENABLED=false`; all
 PostgreSQL/Kafka dependencies are disposable containers with synthetic identities,
@@ -60,7 +89,8 @@ names, text, JWTs and keys. No shared data plane, paid provider or frontend touc
 
 | Command | Result |
 | --- | --- |
-| Community `./mvnw.cmd -B verify` | **171 passed**, zero failure/error/skip; executable JAR built. Final run includes all existing direct/feed/moderation tests and new group/report/Kafka regressions. |
+| Community `./mvnw.cmd -B verify` | **176 passed**, zero failure/error/skip; executable JAR built. Final run includes all existing direct/feed/moderation tests and new group/report/Kafka regressions. |
+| Review correction `./mvnw.cmd -Dtest=CommunityGroupMessageIntegrationTests,CommunityChatReportIntegrationTests,CommunityGroupLifecycleIntegrationTests test` | **32 passed** after author-epoch fix and current `dev` rebase. |
 | Focused lifecycle/configuration/provider/migration checkpoint | 30 passed. |
 | Focused group/direct message checkpoint | 47 passed, before final additional rollback/read/race checks. |
 | Focused final group/report/Kafka/provider/migration checkpoint | 49 passed, before final inbox batching/removal-race check; full final gate covers those changes. |
@@ -68,6 +98,7 @@ names, text, JWTs and keys. No shared data plane, paid provider or frontend touc
 | Root `docker compose --env-file .env.compose.example --profile demo --profile full-test config --quiet` | Passed; configuration validation only. |
 | Root `powershell -File scripts/verify-compose-service-boundaries.ps1` | Passed; credentials/keys remain with the same owners. |
 | Added Markdown relative-link audit and `git diff --check origin/dev` | Passed before publishing. |
+| Root `node scripts/pr-overlap.mjs` | Passed; no changed-file overlap with another open PR into dev. Existing PR has 62 files (including promoted contract); advisory size warning remains. Review fix is limited to 14 implementation/model/test files plus this evidence. |
 
 The first expanded contract checkpoint retained an old implemented-operation
 inventory; it was updated to require the delivered group operations. The first
