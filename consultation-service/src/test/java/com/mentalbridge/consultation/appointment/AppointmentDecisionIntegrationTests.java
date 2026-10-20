@@ -704,6 +704,7 @@ class AppointmentDecisionIntegrationTests extends ConsultationTestProperties {
 				""").param("id", id).param("reference", "paid-" + id)
 				.param("from", Timestamp.from(now.minusSeconds(60)))
 				.param("until", Timestamp.from(now.plusSeconds(2_592_000))).update();
+		establishPaidEntitlement(jdbc, id);
 		return id;
 	}
 

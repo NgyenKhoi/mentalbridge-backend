@@ -5,6 +5,7 @@ import java.security.KeyPairGenerator;
 import java.util.Base64;
 import java.util.UUID;
 
+import org.springframework.jdbc.core.simple.JdbcClient;
 import org.springframework.test.context.DynamicPropertyRegistry;
 import org.springframework.test.context.DynamicPropertySource;
 
@@ -59,5 +60,32 @@ public abstract class ConsultationTestProperties {
 		signature.initSign(JWT_KEY_PAIR.getPrivate());
 		signature.update(payload.getBytes(java.nio.charset.StandardCharsets.US_ASCII));
 		return payload + "." + encoder.encodeToString(signature.sign());
+	}
+
+	protected void establishPaidEntitlement(JdbcClient jdbc, UUID accountId) {
+		var subscriptionId = UUID.randomUUID();
+		var paymentId = UUID.randomUUID();
+		jdbc.sql("""
+				insert into user_subscription(id,user_id,plan_version_id,status,current_period_start,current_period_end,
+				 idempotency_key,created_at,updated_at)
+				select :id,e.account_id,v.id,'ACTIVE',e.effective_from,e.effective_until,:key,e.effective_from,e.effective_from
+				from current_service_entitlement e join subscription_plan_version v
+				 on v.plan_code=e.package_code and v.retired_at is null
+				where e.account_id=:accountId and e.source='PAID'
+				""").param("id", subscriptionId).param("accountId", accountId)
+				.param("key", "paid-fixture-" + subscriptionId).update();
+		jdbc.sql("""
+				insert into payment_transaction(id,subscription_id,target_plan_version_id,payment_provider,momo_order_id,
+				 momo_request_id,amount_minor,currency,status,purpose,idempotency_key,paid_at,expires_at,checkout_url,
+				 created_at,updated_at)
+				select :id,s.id,v.id,'FAKE',:orderId,:requestId,v.price_minor,'VND','SUCCEEDED','PURCHASE',:key,
+				 s.current_period_start,s.current_period_start+interval '20 minutes','https://test-payment.momo.vn/paid-fixture',
+				 s.current_period_start,s.current_period_start
+				from user_subscription s join subscription_plan_version v on v.id=s.plan_version_id where s.id=:subscriptionId
+				""").param("id", paymentId).param("subscriptionId", subscriptionId)
+				.param("orderId", "paid-fixture-order-" + paymentId).param("requestId", "paid-fixture-request-" + paymentId)
+				.param("key", "paid-fixture-" + paymentId).update();
+		jdbc.sql("update current_service_entitlement set source_reference=:source where account_id=:accountId")
+				.param("source", subscriptionId.toString()).param("accountId", accountId).update();
 	}
 }
