@@ -57,7 +57,17 @@ class ChatBodyFilter extends OncePerRequestFilter {
     }
     private void validate(String path, JsonNode body) {
         if (body == null || !body.isObject()) throw ChatException.invalid();
-        if (path.equals("/api/v1/community/chat/privacy")) {
+        if (path.equals("/api/v1/community/chat/groups")) {
+            exact(body, Set.of("name")); if (!body.get("name").isTextual()) throw ChatException.invalid();
+        } else if (path.matches("/api/v1/community/chat/groups/[^/]+/invitations")) {
+            exact(body, Set.of("inviteeCommunityProfileId")); uuid(body, "inviteeCommunityProfileId");
+        } else if (path.matches("/api/v1/community/chat/invitations/[^/]+/decision")) {
+            exact(body, Set.of("decision")); if (!body.get("decision").isTextual()) throw ChatException.invalid();
+        } else if (path.matches("/api/v1/community/chat/groups/[^/]+/members/[^/]+/role")) {
+            exact(body, Set.of("role")); if (!body.get("role").isTextual()) throw ChatException.invalid();
+        } else if (path.matches("/api/v1/community/chat/groups/[^/]+/ownership")) {
+            exact(body, Set.of("newOwnerCommunityProfileId")); uuid(body, "newOwnerCommunityProfileId");
+        } else if (path.equals("/api/v1/community/chat/privacy")) {
             exact(body, Set.of("directMessagePolicy", "presenceVisible", "invisible", "typingVisible", "readReceiptsVisible"));
             if (!body.get("directMessagePolicy").isTextual()) throw ChatException.invalid();
             for (var name : Set.of("presenceVisible", "invisible", "typingVisible", "readReceiptsVisible"))

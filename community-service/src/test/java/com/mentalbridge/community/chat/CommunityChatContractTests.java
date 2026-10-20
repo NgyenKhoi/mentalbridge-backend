@@ -26,7 +26,12 @@ class CommunityChatContractTests {
                 "/api/v1/community/chat/requests", "/api/v1/community/chat/requests/{requestId}/decision",
                 "/api/v1/community/chat/conversations", "/api/v1/community/chat/conversations/{conversationId}",
                 "/api/v1/community/chat/conversations/{conversationId}/messages",
-                "/api/v1/community/chat/conversations/{conversationId}/read-cursor");
+                "/api/v1/community/chat/conversations/{conversationId}/read-cursor",
+                "/api/v1/community/chat/groups", "/api/v1/community/chat/groups/{conversationId}",
+                "/api/v1/community/chat/groups/{conversationId}/members", "/api/v1/community/chat/groups/{conversationId}/invitations",
+                "/api/v1/community/chat/invitations", "/api/v1/community/chat/invitations/{invitationId}/decision",
+                "/api/v1/community/chat/groups/{conversationId}/members/{communityProfileId}/role",
+                "/api/v1/community/chat/groups/{conversationId}/members/{communityProfileId}", "/api/v1/community/chat/groups/{conversationId}/ownership");
         parsed.getOpenAPI().getPaths().forEach((path, item) -> {
             assertThat(item.getExtensions().get("x-mentalbridge-status")).isEqualTo("implemented");
             item.readOperationsMap().forEach((method, operation) -> {

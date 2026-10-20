@@ -199,3 +199,12 @@ the active model.
 | --- | --- | --- | --- | --- |
 | `community_chat_message` | community-service | PostgreSQL | ACTIVE | Migration 0018; encrypted text, unique sender/conversation/client identity and private sequence; 90-day content expiry, content-free retry tombstone. |
 | `community_chat_read_state` | community-service | PostgreSQL | ACTIVE | Migration 0018; one private monotonic read cursor per current reader/conversation; no shared-receipt opt-in implied. |
+
+### MB-687 private group extension — ACTIVE
+
+- `community_chat_conversation`: DIRECT ordered pair or GROUP private encrypted name/cap; GROUP ACTIVE/ARCHIVED.
+- `community_chat_membership`: current role and immutable join message floor; leave/rejoin uses a new epoch. Deferred commit constraints protect one OWNER for active groups and configured cap.
+- `community_chat_invitation`: exact inviter epoch/invitee, seven-day decision lifecycle, accepted epoch link and permanent decline suppression.
+- `community_chat_command`: additive group-create/invite retry identities; no raw name or invitation text.
+
+All physical relationships remain inside Community PostgreSQL. Migration 0019 is runtime truth; logical SQL is never executed.

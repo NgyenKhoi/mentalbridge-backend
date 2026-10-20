@@ -30,6 +30,7 @@ final class ChatModels {
         static DirectResult active(UUID id) { return new DirectResult("ACTIVE", id, null); }
         static DirectResult pending(UUID id) { return new DirectResult("PENDING", null, id); }
     }
+    @JsonInclude(JsonInclude.Include.NON_NULL)
     record Peer(String state, UUID communityProfileId, String displayName) { @Override public String toString() { return "ChatPeer[REDACTED]"; } }
     record Request(UUID requestId, Peer requester, String state, Instant createdAt, Instant expiresAt, String version) {
         @Override public String toString() { return "ChatRequest[REDACTED]"; }

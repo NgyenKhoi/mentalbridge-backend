@@ -2878,3 +2878,47 @@ Community's encrypted text-message authority under Liquibase 0018. No raw messag
 | `last_read_sequence` | Private monotonic max of authorized exact-message acknowledgements. Not a delivery proof, shared-receipt preference or public counter; retention/visibility changes never decrease it. |
 
 Migration 0018 also adds `community_chat_command.conversation_id`, a required physical aggregate reference. Existing ACTIVE/PENDING pointers are backfilled inside the owner database; erasing a conversation cascades its retry identities, preventing dangling owner identifiers. It never references another service's table.
+
+## MB-687 private groups (Community, migration 0019)
+
+Conversation now distinguishes DIRECT/GROUP. Nullable pair columns exist only on DIRECT; GROUP carries encrypted private name and a frozen cap. Deferred owner/cap constraints plus owner row locks ensure exactly one active-group OWNER and no over-cap membership.
+
+### `public.community_chat_conversation` — group extension
+
+| Field | Purpose |
+| --- | --- |
+| `kind` | DIRECT retains ordered pair uniqueness; GROUP is private and membership-authorized. |
+| `name_ciphertext` | GROUP-only private name sealed with versioned AES-GCM and exact conversation AAD; never in facts/logs. |
+| `member_limit` | GROUP-only 20–30 cap, captured at creation from validated setting; pending invitations reserve no seat. |
+| `first_profile_id`, `second_profile_id` | Null only for GROUP; direct profile pair remains required/ordered. |
+| `state` | GROUP ACTIVE/ARCHIVED; archived history remains membership/visibility restricted. DIRECT DORMANT/ACTIVE unchanged. |
+
+Command operations also support CREATE_GROUP/INVITE_GROUP; result kinds GROUP/INVITATION. Actor/operation/key fingerprints bind normalized name or exact group/invitee. Group creation command tombstones retain original creator rate/retry identity even after ownership transfer.
+
+### `public.community_chat_membership`
+
+| Field | Purpose |
+| --- | --- |
+| `id` | Random immutable membership-epoch UUID; a rejoin always creates a new row. |
+| `conversation_id` | Community-owned GROUP foreign key, deleted with the conversation. |
+| `profile_id` | Owner-local Community identity; one current epoch per group/profile. |
+| `role` | OWNER/ADMIN/MEMBER; exactly one OWNER while group is ACTIVE, enforced at commit. |
+| `joined_at` | UTC start of explicit accepted membership; used for deterministic member pagination. |
+| `joined_after_sequence` | Private exclusive message floor captured on join; prior epochs/history/read references cannot be recovered. |
+| `departed_at` | Nullable UTC leave/removal instant; nonnull immediately revokes current rights. |
+
+### `public.community_chat_invitation`
+
+| Field | Purpose |
+| --- | --- |
+| `id` | Random invitation UUID, public only to invitee/current authorized manager. |
+| `conversation_id` | Exact private group foreign key; invitation alone is not membership. |
+| `inviter_membership_id` | Exact inviting management epoch; loss of that role/epoch invalidates outstanding invitations. |
+| `inviter_profile_id` | Owner-local inviter identity for current role/block checks and per-actor rate limit. |
+| `invitee_profile_id` | Exact recipient identity; never selected through a browser actor field. |
+| `state` | PENDING/ACCEPTED/DECLINED/REVOKED/EXPIRED; decline permanently suppresses same group/person reinvitation. |
+| `version` | Private invitation decision revision; separate from group management If-Match/ETag. |
+| `created_at` | Immutable UTC issue instant, owner-clock rate/pagination authority. |
+| `expires_at` | Seven-day UTC deadline; late accept/replay cannot create membership. |
+| `decided_at` | UTC terminal transition instant, null exactly while pending. |
+| `accepted_membership_id` | Exact created epoch for ACCEPTED only; replay cannot recreate an epoch after departure. |

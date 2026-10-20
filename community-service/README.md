@@ -107,6 +107,29 @@ MB-579 uses a compatibility-first rollout: deploy the frontend that accepts both
 
 Community owns the ten-operation direct-chat provider subset in [`community-chat-v1.json`](../contracts/openapi/community-chat-v1.json), registered by canonical OpenAPI v1.12. `COMMUNITY_CHAT_ENABLED` defaults false until the operator supplies the dedicated Identity credential and a versioned 32-byte AES key. No success or cached current history is returned while unavailable. Community message bodies remain encrypted in the Community owner store; Kafka contains minimized pointers only. MB-686 owns clients; groups, internal delegated projection/authorization endpoints, socket/presence and notification consumers remain downstream stories. Their accepted proposal shapes do not advertise runtime support here.
 
+## MB-687 private-group lifecycle
+
+Canonical OpenAPI v1.13 additionally registers nine group lifecycle operations
+from the accepted ADR 0042 baseline: create/archive, current member list,
+invite/inbox/decision, role replacement, remove/self-leave and ownership transfer.
+`COMMUNITY_CHAT_GROUP_MEMBER_LIMIT` defaults 30 and accepts only 20–30; each
+group captures its cap at creation. The existing chat feature flag/keys gate
+these APIs. Group names are AES-GCM encrypted with exact conversation binding.
+Migrate Liquibase 0019 before using these paths; rollback disables the existing
+feature flag and preserves additive group/member/invitation records and keys.
+
+Creator alone is OWNER; invites reserve no seat. Invitation acceptance creates
+a fresh membership epoch only after current inviter/recipient eligibility,
+role, block, expiry and cap checks. Five new groups and twenty new invitations
+per actor per rolling day are enforced across devices. CREATE_GROUP/INVITE_GROUP
+commands bind UUID retry keys to normalized names/exact group-recipient inputs.
+Decline permanently suppresses that group/person; demotion, leave, restriction,
+block and archive revoke relevant pending invitations. Public management ETags
+remain separate from invitation decision versions and private message revisions.
+Archive/remove return 204 with no ETag; still-authorized clients reread
+getConversation before the next management command. Database constraints and
+owner locks protect one active-group OWNER, current epoch uniqueness and the cap.
+
 | Variable | Meaning |
 | --- | --- |
 | `COMMUNITY_CHAT_ENABLED` | Enables delivered provider APIs after required credentials/keys are installed. |

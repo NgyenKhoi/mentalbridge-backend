@@ -35,6 +35,8 @@ spring:
 
 mentalbridge:
   community:
+    chat-group:
+      member-limit: ${COMMUNITY_CHAT_GROUP_MEMBER_LIMIT:30}
     chat-relay:
       enabled: ${COMMUNITY_CHAT_RELAY_ENABLED:false}
       batch-size: ${COMMUNITY_CHAT_RELAY_BATCH_SIZE:100}
