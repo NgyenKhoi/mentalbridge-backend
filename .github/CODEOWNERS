@@ -1,6 +1,13 @@
+# MB-706: integrator-controlled shared files. Change them only in a narrow
+# prerequisite PR or with integrator approval; feature PRs keep to feature paths.
+# scripts/pr-overlap.mjs reads this file: keep patterns rooted with "/" (dir/, file or simple globs).
+
 /AGENTS.md @NgyenKhoi
 /.codex/skills/ @NgyenKhoi
 /.github/ @NgyenKhoi
+/scripts/pr-overlap.mjs @NgyenKhoi
+/docs/domain-model/ @NgyenKhoi
+/docs/requirements-traceability.md @NgyenKhoi
 /contracts/ @NgyenKhoi
 /docs/adr/ @NgyenKhoi
 /docs/database/ @NgyenKhoi
