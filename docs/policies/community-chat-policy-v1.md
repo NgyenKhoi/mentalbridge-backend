@@ -85,7 +85,14 @@ commands use the public relationship/group **management** revision, including
 member-role updates and invites. This is distinct from the private message
 sequence and outbox aggregate revision: messages/read acknowledgements do not
 advance it, so hidden traffic cannot leak through public versions or ETags.
-Responses return the current strong ETag; clients obtain the version from the authoritative owner read and never guess or reuse another resource's version. A matching version never substitutes for permission.
+Body-bearing management successes return the current management ETag, even when
+the body is a Member or Invitation; Invitation.version remains the invitation's
+own decision revision. Invitation decision If-Match never uses a group revision.
+Archive and remove/leave return 204 with neither body nor ETag. A still-authorized
+member must call getConversation for its management version before another
+versioned command; never increment/reuse the pre-command version. Self-leavers
+and removed actors cannot reread/manage the group. Invitation DECLINE 204 grants
+no group access or ETag. A matching version never substitutes for permission.
 
 New members see messages only from their current membership epoch onward.
 Leave/removal immediately revokes history, socket, presence, typing, receipts and

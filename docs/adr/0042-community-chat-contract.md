@@ -79,7 +79,9 @@ omit lastSequence; messages/receipts/read acknowledgements use opaque message
 IDs, with ordered REST history and opaque epoch-bound pagination. Public version
 is a separate management revision that does not advance for hidden messages.
 Private unread/read watermarks remain monotonic; visibility projections never
-expose gaps from blocks or pre-join history.
+expose gaps from blocks or pre-join history. Archive/remove 204 responses require
+an authorized getConversation refresh before another versioned group command;
+invitation decision revisions remain distinct from group management revisions.
 
 ## Alternatives rejected
 

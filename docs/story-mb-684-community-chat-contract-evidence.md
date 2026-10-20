@@ -91,6 +91,7 @@ owner storage/Redis/Kafka as applicable:
 | Shared-group blocked pair | MB-687/689: filtered history, unread, member projection and socket delivery, other peers unaffected |
 | Delegated message content read | MB-685/689: exact trusted service/viewer/target, wrong audience/action/expiry, spoofed identity, message/conversation mismatch, block/revocation between pointer consumption and fanout; 404 without text/target disclosure |
 | First join, rejoin, block/unblock, hidden gaps | MB-687/689/693: new epoch excludes old history; no global sequence/ETag/list-order leak, no extra empty page or hidden-only resync; private read max remains monotonic and unread is eligibility-filtered |
+| Archive/remove 204 then another management command | MB-687/688: refresh current getConversation management version; stale If-Match conflicts, self-leaver reread denied; invitation revision cannot authorize a group command |
 | Two devices, crash TTL, background, invisible and Redis outage | MB-690: lease aggregation, TTL expiry, no false online, no stranger events |
 | Opt-in changes and delayed receipt/typing/presence events | MB-689/690: immediate visible-state invalidation, current recipient authorization |
 | Duplicate/reordered Kafka, DB outage/restart | MB-689/691: durable replay and offset-after-commit; no phantom message/duplicate unread/inbox/provider delivery |
@@ -106,6 +107,7 @@ owner storage/Redis/Kafka as applicable:
 | --- | --- | --- |
 | P1-A: no authorized content-read API for Realtime | Planned read-only internal message-projections operation returns the exact Message under target-bound signed service + USER delegation; current owner authorization and content share one consistent read. Boolean authorization cannot grant a later read; no body actor/recipient, no-store, fail closed. Public history remains USER BearerAuth only. | Strict request/claims schemas, positive and denial examples, authentication separation/closed actor-selector tests. Real signatures, current account/block/epoch lookup and revoke-before-fanout race remain MB-685/689 provider evidence. |
 | P1-B: public global sequence leaks hidden/pre-join activity | Remove Conversation.lastSequence and public Message/receipt/read sequences; read acknowledgements use random message IDs. Private sequence and outbox version stay service-only; public version is a separate management revision. Freeze epoch, block/unblock, filtered pagination/unread and eligible-only resync behavior. | Both Conversation variants, Message, socket message/receipt and ReadResult reject injected watermarks; private Kafka sequence still accepts lossless decimal strings. Membership/block/pagination semantics require the runtime scenarios above. |
+| P2: 204 cannot supply the promised new ETag | Archive/remove 204 explicitly has no body/ETag; an authorized member rereads getConversation before the next versioned command. Leavers gain no read right. Invitation If-Match/Invitation.version is distinct from group-management ETag. | 204 schema/refresh-rule checks and invitation revision separation. Real optimistic concurrency is MB-687/688. |
 
 Local verification:
 
@@ -113,7 +115,7 @@ Local verification:
 | --- | --- |
 | Realtime `npm run format:check`, `lint`, `typecheck`, `test`, `contract:check`, `migration:check`, `build` | Passed; full unit/HTTP lane 79 tests before final contract-only regressions |
 | Original targeted Community + appointment WebSocket contract tests | Passed: 43 tests before review corrections |
-| Review-fix `npm run test -- --run test/contract/community-chat-contract.test.ts test/contract/websocket-contract.test.ts` | Passed: 67 tests (59 Community, 8 existing appointment); delegated reads, public watermark rejection and opaque read acknowledgements |
+| Review-fix `npm run test -- --run test/contract/community-chat-contract.test.ts test/contract/websocket-contract.test.ts` | Passed: 68 tests (60 Community, 8 existing appointment); delegated reads, public watermark rejection and 204 version refresh |
 | Review-fix Realtime `format:check`, `lint`, `typecheck`, `contract:check`, `migration:check`, `build` | Passed; final test-only edits rechecked with targeted Prettier/ESLint, contract tests and typecheck |
 | Final targeted Prettier/ESLint and Realtime typecheck | Passed |
 | Realtime `npm run test:integration` | Passed 18/18 with original fixture; passed 18/18 again with the final per-thread allocator fixture |

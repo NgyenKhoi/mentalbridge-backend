@@ -435,4 +435,27 @@ describe('MB-684 Community contract candidate', () => {
       false,
     );
   });
+
+  it('makes management 204 version refresh explicit without conflating invitation and group revisions', () => {
+    for (const suffix of [
+      '/groups/{conversationId}',
+      '/groups/{conversationId}/members/{communityProfileId}',
+    ]) {
+      const operation = record.parse(api.paths[`/api/v1/community/chat${suffix}`]?.delete);
+      const response = record.parse(record.parse(operation.responses)['204']);
+      expect(response).not.toHaveProperty('content');
+      expect(response).not.toHaveProperty('headers');
+      expect(operation['x-mentalbridge-version-after-204']).toBe(
+        'REREAD_CONVERSATION_IF_AUTHORIZED',
+      );
+    }
+    const read = record.parse(
+      api.paths['/api/v1/community/chat/conversations/{conversationId}']?.get,
+    );
+    expect(read.description).toContain('relationship/group management version');
+    const invitation = record.parse(
+      api.paths['/api/v1/community/chat/invitations/{invitationId}/decision']?.post,
+    );
+    expect(invitation.description).toContain('If-Match is the invitation revision');
+  });
 });
