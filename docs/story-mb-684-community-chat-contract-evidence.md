@@ -98,7 +98,8 @@ Local verification:
 | Realtime `npm run format:check`, `lint`, `typecheck`, `test`, `contract:check`, `migration:check`, `build` | Passed; full unit/HTTP lane 79 tests before final contract-only regressions |
 | Final targeted Community + appointment WebSocket contract tests | Passed: 43 tests, including final handshake/component and exact internal-authorization target regressions |
 | Final targeted Prettier/ESLint and Realtime typecheck | Passed |
-| `scripts/verify-repository.ps1 -BaseSha origin/dev` | Passed; 24 changed files; no runtime changes |
+| Realtime `npm run test:integration` | Passed 18/18 with original fixture; passed 18/18 again with the final per-thread allocator fixture |
+| `scripts/verify-repository.ps1 -BaseSha origin/dev` | Passed; final change set 25 files; no runtime changes |
 | Relative links introduced by MB-684 | Passed: 45 links at verification checkpoint |
 | `git diff --check` | Passed |
 
@@ -109,6 +110,15 @@ baseline content change is included. Windows script policy required process-only
 `-ExecutionPolicy Bypass` for the checked-in repository verifier.
 
 Exact-head CI is recorded in the PR after push.
+The first two CI heads reached 82 passing unit/HTTP tests but the existing MongoDB
+fixture stopped before all 18 integration assertions. The failing runner image
+`20261018.339.1` changed its kernel from 6.17 to 7.0; the prior green runner was
+`20261012.334.1`. This matches MongoDB's documented TCMalloc/rseq incompatibility.
+The sole test-fixture change keeps glibc rseq enabled so MongoDB uses per-thread
+allocation. Production code, readiness and all assertions remain unchanged.
+The Realtime README links the primary runner/MongoDB sources. No workflow or
+runtime environment change is included.
+
 Required local scope: new contract tests, existing appointment WebSocket contract
 tests, Realtime format/lint/typecheck/contract/migration/build checks, repository
 policy and relative-link audit. The full backend matrix runs in required CI.

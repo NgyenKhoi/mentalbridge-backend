@@ -37,6 +37,18 @@ MongoDB is durable truth. Redis contains only expiring socket routing and presen
 
 ## Commands
 
+The disposable MongoDB integration fixture sets
+`GLIBC_TUNABLES=glibc.pthread.rseq=1` so glibc retains rseq registration and MongoDB
+uses its supported per-thread allocator path. The GitHub Ubuntu 24.04 image
+[`20261018.339.1`](https://github.com/actions/runner-images/releases/tag/ubuntu24%2F20261018.339)
+moved to kernel `7.0.0-1017-azure`; MongoDB documents a
+[TCMalloc incompatibility on kernels 6.19–7.0.13](https://www.mongodb.com/docs/manual/release-notes/8.0/).
+See [MongoDB's allocator explanation](https://www.mongodb.com/docs/manual/administration/tcmalloc-performance/)
+and the [official image issue](https://github.com/docker-library/mongo/issues/765).
+This setting affects only the disposable test container. It does not bypass
+MongoDB's startup guard, change production configuration, remove readiness
+checks or weaken the real MongoDB/Redis/Socket.IO integration assertions.
+
 ```powershell
 npm ci
 npm run dev
