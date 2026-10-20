@@ -185,12 +185,14 @@ public class AdminRetentionGovernanceService {
 					.orElse(null);
 
 			if (lastExec != null && "RUNNING".equals(lastExec.jobStatus())) {
-				boolean hasActiveLock = false;
+				boolean lockLookupSuccessful = false;
+				boolean lockAcquired = false;
 				try {
-					hasActiveLock = !executionRecords.tryAcquirePolicyExecutionLock(meta.policyId());
+					lockAcquired = executionRecords.tryAcquirePolicyExecutionLock(meta.policyId());
+					lockLookupSuccessful = true;
 				} catch (Exception ignored) {
 				}
-				if (!hasActiveLock) {
+				if (lockLookupSuccessful && lockAcquired) {
 					lastExec = new RetentionExecutionResponse(
 							lastExec.executionId(),
 							lastExec.policyId(),
@@ -210,15 +212,13 @@ public class AdminRetentionGovernanceService {
 
 			RetentionJobStatus effectiveJobStatus = meta.jobStatus();
 			if (meta.automatedExecutionSupported() && lastExec != null) {
-				if ("STALE".equals(lastExec.jobStatus())) {
+				List<RetentionExecutionRecordEntity> recent = executionRecords.findTop3ByPolicyIdOrderByStartedAtDesc(meta.policyId());
+				if (recent.size() >= 3 && recent.stream().allMatch(r -> "FAILED".equals(r.jobStatus()) || "STALE".equals(r.jobStatus()))) {
+					effectiveJobStatus = RetentionJobStatus.FAILED;
+				} else if ("STALE".equals(lastExec.jobStatus())) {
 					effectiveJobStatus = RetentionJobStatus.STALE;
 				} else if ("RUNNING".equals(lastExec.jobStatus())) {
 					effectiveJobStatus = RetentionJobStatus.RUNNING;
-				} else if ("FAILED".equals(lastExec.jobStatus())) {
-					List<RetentionExecutionRecordEntity> recent = executionRecords.findTop3ByPolicyIdOrderByStartedAtDesc(meta.policyId());
-					if (recent.size() >= 3 && recent.stream().allMatch(r -> "FAILED".equals(r.jobStatus()) || "STALE".equals(r.jobStatus()))) {
-						effectiveJobStatus = RetentionJobStatus.FAILED;
-					}
 				}
 			}
 
@@ -276,7 +276,13 @@ public class AdminRetentionGovernanceService {
 		try {
 			lockAcquired = executionRecords.tryAcquirePolicyExecutionLock(policyId);
 		} catch (Exception ex) {
-			lockAcquired = true;
+			auditLogger.recordDenied(new SecurityAuditEventEntity(
+					UUID.randomUUID(), null, actorId, "RETENTION_SWEEP_TRIGGERED", "DENIED",
+					"LOCK_ACQUISITION_FAILED", effectiveCorrelation, null,
+					meta.ownerService().name(), "DATA_RETENTION", now, now
+			));
+			throw new ResponseStatusException(HttpStatus.CONFLICT,
+					"Không thể xác thực khóa thực thi độc quyền cho chính sách " + policyId + ". Vui lòng thử lại sau.", ex);
 		}
 
 		if (!lockAcquired) {
@@ -304,8 +310,26 @@ public class AdminRetentionGovernanceService {
 					"PRIOR_EXECUTION_STALE",
 					priorRunning.createdAt()
 			);
-			executionRecorder.recordFailure(staleRecord);
+			executionRecorder.recordStale(staleRecord);
 		});
+
+		UUID executionId = UUID.randomUUID();
+		RetentionExecutionRecordEntity runningRecord = new RetentionExecutionRecordEntity(
+				executionId,
+				policyId,
+				meta.ownerService().name(),
+				meta.jobName(),
+				"RUNNING",
+				now,
+				null,
+				0,
+				0,
+				0,
+				0,
+				null,
+				now
+		);
+		executionRecorder.recordStart(runningRecord);
 
 		int evaluated = 0;
 		int purged = 0;
@@ -318,7 +342,7 @@ public class AdminRetentionGovernanceService {
 			}
 
 			record = new RetentionExecutionRecordEntity(
-					UUID.randomUUID(),
+					executionId,
 					policyId,
 					meta.ownerService().name(),
 					meta.jobName(),
@@ -341,7 +365,7 @@ public class AdminRetentionGovernanceService {
 			));
 		} catch (Exception ex) {
 			record = new RetentionExecutionRecordEntity(
-					UUID.randomUUID(),
+					executionId,
 					policyId,
 					meta.ownerService().name(),
 					meta.jobName(),

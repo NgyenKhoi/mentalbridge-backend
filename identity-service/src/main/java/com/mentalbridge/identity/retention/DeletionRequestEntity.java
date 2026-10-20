@@ -14,6 +14,7 @@ import jakarta.persistence.FetchType;
 import jakarta.persistence.Id;
 import jakarta.persistence.OneToMany;
 import jakarta.persistence.Table;
+import jakarta.persistence.Transient;
 import jakarta.persistence.Version;
 
 @Entity
@@ -78,6 +79,9 @@ public class DeletionRequestEntity {
 	@OneToMany(mappedBy = "deletionRequest", cascade = CascadeType.ALL, orphanRemoval = true, fetch = FetchType.EAGER)
 	private List<DeletionOwnerFactEntity> ownerFacts = new ArrayList<>();
 
+	@Transient
+	private DeletionRequestStatus previousStatus;
+
 	protected DeletionRequestEntity() {
 	}
 
@@ -130,6 +134,9 @@ public class DeletionRequestEntity {
 	public void applyHold(DeletionHoldType holdType, String holdReason, Instant now) {
 		this.holdType = holdType;
 		this.holdReason = holdReason;
+		if (this.status != DeletionRequestStatus.HELD) {
+			this.previousStatus = this.status;
+		}
 		this.status = DeletionRequestStatus.HELD;
 		this.updatedAt = now;
 	}
@@ -137,13 +144,16 @@ public class DeletionRequestEntity {
 	public void releaseHold(Instant now) {
 		this.holdType = DeletionHoldType.NONE;
 		this.holdReason = null;
-		if (this.retryCount >= this.maxRetries && this.maxRetries > 0) {
+		if (this.previousStatus != null) {
+			this.status = this.previousStatus;
+		} else if (this.failureCode != null || (this.retryCount >= this.maxRetries && this.maxRetries > 0)) {
 			this.status = DeletionRequestStatus.FAILED;
 		} else if (this.retryCount > 0) {
 			this.status = DeletionRequestStatus.IN_PROGRESS;
 		} else {
 			this.status = DeletionRequestStatus.PENDING;
 		}
+		this.previousStatus = null;
 		this.updatedAt = now;
 	}
 

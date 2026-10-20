@@ -83,7 +83,7 @@ Under the MB-583 architecture, `Identity Service` coordinates deletion workflows
 
 ### 3.1 Backend Test Results (`mvnw.cmd test`)
 Executed test suites:
-- `AdminRetentionGovernanceServiceTests` (23 tests)
+- `AdminRetentionGovernanceServiceTests` (27 tests)
 - `AdminRetentionGovernanceControllerTests` (11 tests)
 - `AdminRetentionGovernanceSecuritySliceTests` (5 tests)
 - `RetentionAuditLoggerTransactionTests` (3 tests)
@@ -92,26 +92,30 @@ Executed test suites:
 
 ```text
 [INFO] Running com.mentalbridge.identity.contract.IdentityOpenApiContractTests
-[INFO] Tests run: 1, Failures: 0, Errors: 0, Skipped: 0, Time elapsed: 0.280 s -- in com.mentalbridge.identity.contract.IdentityOpenApiContractTests
+[INFO] Tests run: 1, Failures: 0, Errors: 0, Skipped: 0, Time elapsed: 4.350 s -- in com.mentalbridge.identity.contract.IdentityOpenApiContractTests
 [INFO] Running com.mentalbridge.identity.retention.AdminRetentionGovernanceControllerTests
-[INFO] Tests run: 11, Failures: 0, Errors: 0, Skipped: 0, Time elapsed: 2.601 s -- in com.mentalbridge.identity.retention.AdminRetentionGovernanceControllerTests
+[INFO] Tests run: 11, Failures: 0, Errors: 0, Skipped: 0, Time elapsed: 2.875 s -- in com.mentalbridge.identity.retention.AdminRetentionGovernanceControllerTests
 [INFO] Running com.mentalbridge.identity.retention.AdminRetentionGovernanceSecuritySliceTests
-[INFO] Tests run: 5, Failures: 0, Errors: 0, Skipped: 0, Time elapsed: 4.727 s -- in com.mentalbridge.identity.retention.AdminRetentionGovernanceSecuritySliceTests
+[INFO] Tests run: 5, Failures: 0, Errors: 0, Skipped: 0, Time elapsed: 5.625 s -- in com.mentalbridge.identity.retention.AdminRetentionGovernanceSecuritySliceTests
 [INFO] Running com.mentalbridge.identity.retention.AdminRetentionGovernanceServiceTests
-[INFO] Tests run: 23, Failures: 0, Errors: 0, Skipped: 0, Time elapsed: 0.530 s -- in com.mentalbridge.identity.retention.AdminRetentionGovernanceServiceTests
+[INFO] Tests run: 27, Failures: 0, Errors: 0, Skipped: 0, Time elapsed: 0.620 s -- in com.mentalbridge.identity.retention.AdminRetentionGovernanceServiceTests
 [INFO] Running com.mentalbridge.identity.retention.RetentionAuditLoggerTransactionTests
-[INFO] Tests run: 3, Failures: 0, Errors: 0, Skipped: 0, Time elapsed: 0.102 s -- in com.mentalbridge.identity.retention.RetentionAuditLoggerTransactionTests
+[INFO] Tests run: 3, Failures: 0, Errors: 0, Skipped: 0, Time elapsed: 0.130 s -- in com.mentalbridge.identity.retention.RetentionAuditLoggerTransactionTests
 [INFO] Running com.mentalbridge.identity.retention.RetentionExecutionRecorderTransactionTests
-[INFO] Tests run: 3, Failures: 0, Errors: 0, Skipped: 0, Time elapsed: 0.067 s -- in com.mentalbridge.identity.retention.RetentionExecutionRecorderTransactionTests
+[INFO] Tests run: 3, Failures: 0, Errors: 0, Skipped: 0, Time elapsed: 0.054 s -- in com.mentalbridge.identity.retention.RetentionExecutionRecorderTransactionTests
 [INFO] 
 [INFO] Results:
 [INFO] 
-[INFO] Tests run: 46, Failures: 0, Errors: 0, Skipped: 0
+[INFO] Tests run: 50, Failures: 0, Errors: 0, Skipped: 0
 [INFO] BUILD SUCCESS
 ```
 
 Key verified test assertions:
 - Service returns all 7 approved policies with authoritative metadata matching documented repository contracts.
+- Fail-closed on advisory lock exception: `triggerRetentionSweep` rejects with HTTP 409 Conflict (`LOCK_ACQUISITION_FAILED`) without purging data if lock cannot be acquired or throws an exception.
+- `getRetentionPolicies` does not falsely infer `STALE` status if advisory lock lookup throws an exception.
+- Full RUNNING -> SUCCEEDED / FAILED / STALE lifecycle: `recordStart` commits `RUNNING` state before sweep execution; `recordSuccess` updates the same record to `SUCCEEDED` within transaction; `recordFailure` updates it to `FAILED` with `REQUIRES_NEW` on error.
+- Hold lifecycle preservation: `applyHold` and `releaseHold` strictly preserve prior `FAILED` or `PENDING` states, never turning `FAILED` into `IN_PROGRESS` based solely on `retryCount`.
 - Triggering sweep for unsupported capability (`MB-PRIVACY-CARE-001`, `MB-CONTENT-NOTIFICATION-RETENTION-001`) throws `UnsupportedRetentionCapabilityException` (HTTP 422) and logs DENIED audit.
 - Authoritative reporting sweep metrics evaluated directly from database (`PlatformReportProcessor.purgeExpiredArtifactsWithMetrics()`).
 - Applying `LEGAL_HOLD` / `OPERATIONAL_HOLD` blocks retries with `DeletionHoldActiveException` (HTTP 409) and logs DENIED audit.
@@ -129,18 +133,20 @@ Key verified test assertions:
 
 ### 3.2 Frontend Unit Tests (`vitest`)
 Executed test suites:
-- `features/retention/components/AdminRetentionGovernance.test.tsx` (11 tests)
+- `features/retention/components/AdminRetentionGovernance.test.tsx` (13 tests)
 - `features/auth/components/AdminWorkspace.test.tsx` (1 test)
 
 ```text
- ✓ features/retention/components/AdminRetentionGovernance.test.tsx (11 tests) 999ms
- ✓ features/auth/components/AdminWorkspace.test.tsx (1 test) 216ms
+ ✓ features/retention/components/AdminRetentionGovernance.test.tsx (13 tests) 1387ms
+ ✓ features/auth/components/AdminWorkspace.test.tsx (1 test) 124ms
 
  Test Files  2 passed (2)
-      Tests  12 passed (12)
+      Tests  14 passed (14)
 ```
 
 Verified UI behaviors:
+- Sweep action disabled when job status is `RUNNING`, explaining execution in progress.
+- Sweep action disabled when job status is `FAILED` (3 consecutive failed/stale executions), explaining `MANUAL_ESCALATION_REQUIRED`.
 - Renders audit-safe guarantee banner and policy information without exposing secrets or PII.
 - Explicitly renders unsupported capabilities as unavailable with disabled button (`MB-CONTENT-NOTIFICATION-RETENTION-001`).
 - Allows triggering sweep for supported policies (`MB-IDENTITY-REPORTING-001`) and displays aggregate feedback.
@@ -155,9 +161,15 @@ Verified UI behaviors:
 - `npx eslint features/retention app/api/admin/retention tests/e2e/admin-retention-governance.spec.ts scripts/identity-e2e-server.mjs`: **0 errors, 0 warnings**.
 
 ### 3.4 Browser E2E Test (`tests/e2e/admin-retention-governance.spec.ts`)
+- Executed: `npx playwright test tests/e2e/admin-retention-governance.spec.ts`
+- Result: **2 passed (6.1s)**.
 - Fixture: `scripts/identity-e2e-server.mjs` synchronized with synthetic retention policies (`MB-IDENTITY-REPORTING-001`, `MB-CONTENT-NOTIFICATION-RETENTION-001`), valid RFC 4122 UUID identifiers, and POST hold handling.
 - Flow 1: Admin logs in -> Navigates to `/admin/retention` -> Verifies audit-safe banner -> Verifies policies & unavailable capability notice -> Triggers supported sweep -> Verifies aggregate feedback.
 - Flow 2: Switches to Deletions tab -> Verifies tombstone identifiers -> Verifies hold badge and disabled retry on held request -> Verifies retry-exhausted badge and disabled retry on failed request -> Expands owner completion facts table -> Applies `OPERATIONAL_HOLD` via modal and confirms retry is blocked.
+
+### 3.5 Real Database Transaction Verification Notes
+- `RetentionExecutionRecorderTransactionTests` (3 tests) and `RetentionAuditLoggerTransactionTests` (3 tests) run in Spring's test framework with dynamic transaction managers to assert `REQUIRES_NEW` commits and `REQUIRED` rollbacks.
+- `RetentionTransactionIntegrationTests` uses Testcontainers with a real PostgreSQL instance. It is annotated with `@EnabledIf("dockerAvailable")`, skipping gracefully when the host environment has no active Docker daemon. When Docker is present (e.g., CI runner), it executes end-to-end against PostgreSQL.
 
 ---
 

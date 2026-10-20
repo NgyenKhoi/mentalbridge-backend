@@ -6,6 +6,7 @@ import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.ArgumentMatchers.argThat;
 import static org.mockito.ArgumentMatchers.eq;
 import static org.mockito.Mockito.mock;
+import static org.mockito.Mockito.never;
 import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.when;
 
@@ -103,6 +104,7 @@ class AdminRetentionGovernanceServiceTests {
 		assertThat(result.jobStatus()).isEqualTo("SUCCEEDED");
 		assertThat(result.itemsEvaluated()).isEqualTo(50);
 		assertThat(result.recordsPurged()).isEqualTo(5);
+		verify(executionRecorder).recordStart(any(RetentionExecutionRecordEntity.class));
 		verify(executionRecorder).recordSuccess(any(RetentionExecutionRecordEntity.class));
 		verify(auditLogger).recordSuccess(any(SecurityAuditEventEntity.class));
 	}
@@ -175,9 +177,49 @@ class AdminRetentionGovernanceServiceTests {
 		var result = service.triggerRetentionSweep("MB-IDENTITY-REPORTING-001", actorId, correlationId);
 
 		assertThat(result.jobStatus()).isEqualTo("SUCCEEDED");
-		verify(executionRecorder).recordFailure(argThat(record ->
+		verify(executionRecorder).recordStale(argThat(record ->
 				"STALE".equals(record.jobStatus()) && "PRIOR_EXECUTION_STALE".equals(record.failureCode())));
+		verify(executionRecorder).recordStart(any(RetentionExecutionRecordEntity.class));
 		verify(executionRecorder).recordSuccess(any(RetentionExecutionRecordEntity.class));
+	}
+
+	@Test
+	void triggerRetentionSweepFailClosedWhenLockThrowsException() {
+		UUID actorId = UUID.randomUUID();
+		UUID correlationId = UUID.randomUUID();
+		when(executionRecords.tryAcquirePolicyExecutionLock("MB-IDENTITY-REPORTING-001"))
+				.thenThrow(new RuntimeException("PostgreSQL advisory lock lookup error"));
+
+		assertThatThrownBy(() -> service.triggerRetentionSweep("MB-IDENTITY-REPORTING-001", actorId, correlationId))
+				.isInstanceOf(ResponseStatusException.class)
+				.hasMessageContaining("Không thể xác thực khóa thực thi độc quyền");
+
+		verify(auditLogger).recordDenied(argThat(event -> "LOCK_ACQUISITION_FAILED".equals(event.getReasonCode())));
+		verify(reportProcessor, never()).purgeExpiredArtifactsWithMetrics();
+		verify(executionRecorder, never()).recordSuccess(any(RetentionExecutionRecordEntity.class));
+	}
+
+	@Test
+	void getRetentionPoliciesDoesNotInferStaleWhenLockLookupFails() {
+		var runningExec = new RetentionExecutionRecordEntity(UUID.randomUUID(), "MB-IDENTITY-REPORTING-001", "IDENTITY",
+				"REPORT_ARTIFACT_RETENTION_SWEEP", "RUNNING", NOW.minusSeconds(200), null,
+				0, 0, 0, 0, null, NOW.minusSeconds(200));
+
+		when(executionRecords.findFirstByPolicyIdOrderByStartedAtDesc("MB-IDENTITY-REPORTING-001"))
+				.thenReturn(Optional.of(runningExec));
+		when(executionRecords.tryAcquirePolicyExecutionLock("MB-IDENTITY-REPORTING-001"))
+				.thenThrow(new RuntimeException("Connection error"));
+
+		var policies = service.getRetentionPolicies();
+
+		var reportingPolicy = policies.stream()
+				.filter(p -> "MB-IDENTITY-REPORTING-001".equals(p.policyId()))
+				.findFirst()
+				.orElseThrow();
+
+		assertThat(reportingPolicy.jobStatus()).isEqualTo(RetentionJobStatus.RUNNING);
+		assertThat(reportingPolicy.lastExecution()).isNotNull();
+		assertThat(reportingPolicy.lastExecution().jobStatus()).isEqualTo("RUNNING");
 	}
 
 	@Test
@@ -602,5 +644,43 @@ class AdminRetentionGovernanceServiceTests {
 		assertThat(response.status()).isEqualTo(DeletionRequestStatus.PENDING);
 		assertThat(response.holdType()).isEqualTo(DeletionHoldType.NONE);
 		verify(auditLogger).recordSuccess(any(SecurityAuditEventEntity.class));
+	}
+
+	@Test
+	void holdLifecycleFailedHeldReleasePreservesFailedStatus() {
+		UUID requestId = UUID.randomUUID();
+		UUID accountId = UUID.randomUUID();
+		UUID actorId = UUID.randomUUID();
+		var request = new DeletionRequestEntity(
+				requestId, accountId, "d".repeat(64), DeletionRequestStatus.FAILED,
+				DeletionHoldType.NONE, null, 1, 3,
+				DeletionEscalationState.NONE, "EXTERNAL_TIMEOUT", NOW, NOW, null, null, NOW, NOW
+		);
+		when(deletionRequests.findById(requestId)).thenReturn(Optional.of(request));
+
+		var held = service.applyHold(requestId, DeletionHoldType.LEGAL_HOLD, "STATUTORY_INQUIRY", actorId, UUID.randomUUID());
+		assertThat(held.status()).isEqualTo(DeletionRequestStatus.HELD);
+		assertThat(held.holdType()).isEqualTo(DeletionHoldType.LEGAL_HOLD);
+
+		var released = service.releaseHold(requestId, actorId, UUID.randomUUID());
+		assertThat(released.status()).isEqualTo(DeletionRequestStatus.FAILED);
+		assertThat(released.holdType()).isEqualTo(DeletionHoldType.NONE);
+	}
+
+	@Test
+	void releaseHoldRestoresFailedWhenPreviousStatusNullAndFailureCodePresent() {
+		UUID requestId = UUID.randomUUID();
+		UUID accountId = UUID.randomUUID();
+		UUID actorId = UUID.randomUUID();
+		var request = new DeletionRequestEntity(
+				requestId, accountId, "e".repeat(64), DeletionRequestStatus.HELD,
+				DeletionHoldType.DISPUTE_HOLD, "USER_DISPUTE", 1, 3,
+				DeletionEscalationState.NONE, "TIMEOUT_FAILURE", NOW, NOW, null, null, NOW, NOW
+		);
+		when(deletionRequests.findById(requestId)).thenReturn(Optional.of(request));
+
+		var released = service.releaseHold(requestId, actorId, UUID.randomUUID());
+		assertThat(released.status()).isEqualTo(DeletionRequestStatus.FAILED);
+		assertThat(released.holdType()).isEqualTo(DeletionHoldType.NONE);
 	}
 }
