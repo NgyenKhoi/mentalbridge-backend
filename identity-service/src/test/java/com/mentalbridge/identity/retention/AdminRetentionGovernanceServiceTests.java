@@ -748,7 +748,7 @@ class AdminRetentionGovernanceServiceTests {
 		when(deletionRequests.findById(requestId)).thenReturn(Optional.of(request));
 
 		// Apply Hold: Coordinator hold must not fabricate owner HELD status
-		var heldResponse = service.applyHold(requestId, DeletionHoldType.LEGAL_HOLD, "STATUTORY_INQUIRY", actorId, UUID.randomUUID());
+		var heldResponse = service.applyHold(requestId, DeletionHoldType.LEGAL_HOLD, DeletionHoldReason.STATUTORY_INQUIRY, actorId, UUID.randomUUID());
 		assertThat(heldResponse.status()).isEqualTo(DeletionRequestStatus.HELD);
 		assertThat(careFact.status()).isEqualTo(DeletionFactStatus.PENDING);
 
@@ -759,7 +759,7 @@ class AdminRetentionGovernanceServiceTests {
 	}
 
 	@Test
-	void applyHoldBlocksDeletionAndRejectsUnsafeReason() {
+	void applyHoldUsesGenericAuditActionWithSafeTypeAndReason() {
 		UUID requestId = UUID.randomUUID();
 		UUID actorId = UUID.randomUUID();
 		var request = new DeletionRequestEntity(
@@ -769,18 +769,19 @@ class AdminRetentionGovernanceServiceTests {
 		);
 		when(deletionRequests.findById(requestId)).thenReturn(Optional.of(request));
 
-		// Rejects free-text / unsafe reason
-		assertThatThrownBy(() -> service.applyHold(requestId, DeletionHoldType.LEGAL_HOLD, "FREE_TEXT_LEAK", actorId, UUID.randomUUID()))
+		assertThatThrownBy(() -> service.applyHold(requestId, DeletionHoldType.OPERATIONAL_HOLD, null, actorId, UUID.randomUUID()))
 				.isInstanceOf(ResponseStatusException.class)
 				.hasMessageContaining("không hợp lệ");
 
-		// Accepts approved safe reason code
-		var response = service.applyHold(requestId, DeletionHoldType.LEGAL_HOLD, "STATUTORY_INQUIRY", actorId, UUID.randomUUID());
+		var response = service.applyHold(requestId, DeletionHoldType.OPERATIONAL_HOLD,
+				DeletionHoldReason.ACTIVE_SAFETY_REVIEW, actorId, UUID.randomUUID());
 
 		assertThat(response.status()).isEqualTo(DeletionRequestStatus.HELD);
-		assertThat(response.holdType()).isEqualTo(DeletionHoldType.LEGAL_HOLD);
-		assertThat(response.holdReason()).isEqualTo("STATUTORY_INQUIRY");
-		verify(auditLogger).recordSuccess(any(SecurityAuditEventEntity.class));
+		assertThat(response.holdType()).isEqualTo(DeletionHoldType.OPERATIONAL_HOLD);
+		assertThat(response.holdReason()).isEqualTo("ACTIVE_SAFETY_REVIEW");
+		verify(auditLogger).recordSuccess(argThat(event ->
+				"DELETION_HOLD_APPLIED".equals(event.getAction())
+						&& "OPERATIONAL_HOLD_ACTIVE_SAFETY_REVIEW".equals(event.getReasonCode())));
 	}
 
 	@Test
@@ -798,7 +799,9 @@ class AdminRetentionGovernanceServiceTests {
 
 		assertThat(response.status()).isEqualTo(DeletionRequestStatus.PENDING);
 		assertThat(response.holdType()).isEqualTo(DeletionHoldType.NONE);
-		verify(auditLogger).recordSuccess(any(SecurityAuditEventEntity.class));
+		verify(auditLogger).recordSuccess(argThat(event ->
+				"DELETION_HOLD_RELEASED".equals(event.getAction())
+						&& "OPERATIONAL_HOLD_ACTIVE_SAFETY_REVIEW".equals(event.getReasonCode())));
 	}
 
 	@Test
@@ -813,7 +816,7 @@ class AdminRetentionGovernanceServiceTests {
 		);
 		when(deletionRequests.findById(requestId)).thenReturn(Optional.of(request));
 
-		var held = service.applyHold(requestId, DeletionHoldType.LEGAL_HOLD, "STATUTORY_INQUIRY", actorId, UUID.randomUUID());
+		var held = service.applyHold(requestId, DeletionHoldType.LEGAL_HOLD, DeletionHoldReason.STATUTORY_INQUIRY, actorId, UUID.randomUUID());
 		assertThat(held.status()).isEqualTo(DeletionRequestStatus.HELD);
 		assertThat(held.holdType()).isEqualTo(DeletionHoldType.LEGAL_HOLD);
 
@@ -850,7 +853,7 @@ class AdminRetentionGovernanceServiceTests {
 		);
 		when(deletionRequests.findById(requestId)).thenReturn(Optional.of(request));
 
-		assertThatThrownBy(() -> service.applyHold(requestId, DeletionHoldType.LEGAL_HOLD, "STATUTORY_INQUIRY", actorId, UUID.randomUUID()))
+		assertThatThrownBy(() -> service.applyHold(requestId, DeletionHoldType.LEGAL_HOLD, DeletionHoldReason.STATUTORY_INQUIRY, actorId, UUID.randomUUID()))
 				.isInstanceOf(ResponseStatusException.class)
 				.satisfies(ex -> assertThat(((ResponseStatusException) ex).getStatusCode().value()).isEqualTo(409));
 	}

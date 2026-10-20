@@ -1474,6 +1474,15 @@ components:
         completedAt: { type: [string, 'null'], format: date-time }
         evidenceReference: { type: [string, 'null'] }
         failureReason: { type: [string, 'null'] }
+    DeletionHoldReason:
+      type: string
+      enum:
+        - STATUTORY_INQUIRY
+        - PENDING_DISPUTE
+        - ACTIVE_SAFETY_REVIEW
+        - SCHEDULED_APPOINTMENT_ACTIVE
+        - USER_CONTESTED
+        - AUDIT_COMPLIANCE_HOLD
     DeletionRequest:
       type: object
       additionalProperties: false
@@ -1487,7 +1496,10 @@ components:
             - type: 'null'
         status: { type: string, enum: [PENDING, IN_PROGRESS, HELD, COMPLETED, FAILED] }
         holdType: { type: string, enum: [NONE, LEGAL_HOLD, OPERATIONAL_HOLD, DISPUTE_HOLD] }
-        holdReason: { type: [string, 'null'] }
+        holdReason:
+          anyOf:
+            - $ref: '#/components/schemas/DeletionHoldReason'
+            - type: 'null'
         retryCount: { type: integer, minimum: 0 }
         maxRetries: { type: integer, minimum: 1 }
         escalationState: { type: string, enum: [NONE, RETRY_EXHAUSTED, MANUAL_ESCALATION_REQUIRED] }
@@ -1515,7 +1527,7 @@ components:
       required: [holdType, holdReason]
       properties:
         holdType: { type: string, enum: [LEGAL_HOLD, OPERATIONAL_HOLD, DISPUTE_HOLD] }
-        holdReason: { type: string, minLength: 1, maxLength: 64 }
+        holdReason: { $ref: '#/components/schemas/DeletionHoldReason' }
   responses:
     GenericAccepted:
       description: Request accepted whether or not an eligible account exists

@@ -148,7 +148,7 @@ class AdminRetentionGovernanceControllerTests {
 				DeletionRequestStatus.HELD, DeletionHoldType.LEGAL_HOLD, "COURT_ORDER", 0, 3,
 				DeletionEscalationState.NONE, null, Instant.now(), Instant.now(), null, null, List.of()
 		);
-		when(service.applyHold(eq(requestId), eq(DeletionHoldType.LEGAL_HOLD), eq("STATUTORY_INQUIRY"), any(), any()))
+		when(service.applyHold(eq(requestId), eq(DeletionHoldType.LEGAL_HOLD), eq(DeletionHoldReason.STATUTORY_INQUIRY), any(), any()))
 				.thenReturn(item);
 
 		mockMvc.perform(post("/api/v1/admin/retention/deletions/" + requestId + "/holds")
@@ -163,7 +163,7 @@ class AdminRetentionGovernanceControllerTests {
 	@Test
 	void applyHoldReturns409WhenRequestAlreadyCompleted() throws Exception {
 		UUID requestId = UUID.randomUUID();
-		when(service.applyHold(eq(requestId), eq(DeletionHoldType.LEGAL_HOLD), eq("STATUTORY_INQUIRY"), any(), any()))
+		when(service.applyHold(eq(requestId), eq(DeletionHoldType.LEGAL_HOLD), eq(DeletionHoldReason.STATUTORY_INQUIRY), any(), any()))
 				.thenThrow(new org.springframework.web.server.ResponseStatusException(
 						org.springframework.http.HttpStatus.CONFLICT, "Không thể áp dụng Hold lên yêu cầu xóa đã hoàn tất (COMPLETED)."));
 
@@ -176,10 +176,6 @@ class AdminRetentionGovernanceControllerTests {
 	@Test
 	void applyHoldReturns400WhenHoldReasonInvalid() throws Exception {
 		UUID requestId = UUID.randomUUID();
-		when(service.applyHold(eq(requestId), eq(DeletionHoldType.LEGAL_HOLD), eq("UNSAFE_FREE_TEXT_REASON"), any(), any()))
-				.thenThrow(new org.springframework.web.server.ResponseStatusException(
-						org.springframework.http.HttpStatus.BAD_REQUEST, "Mã lý do Hold không hợp lệ hoặc chứa nội dung không an toàn."));
-
 		mockMvc.perform(post("/api/v1/admin/retention/deletions/" + requestId + "/holds")
 				.contentType(MediaType.APPLICATION_JSON)
 				.content("{\"holdType\":\"LEGAL_HOLD\",\"holdReason\":\"UNSAFE_FREE_TEXT_REASON\"}"))

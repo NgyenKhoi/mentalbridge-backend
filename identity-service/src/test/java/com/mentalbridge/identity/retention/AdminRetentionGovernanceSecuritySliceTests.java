@@ -111,7 +111,7 @@ class AdminRetentionGovernanceSecuritySliceTests {
 	@Test
 	void userRoleIsForbiddenOnMutatingEndpoints() throws Exception {
 		UUID randomId = UUID.randomUUID();
-		mvc.perform(post("/api/v1/admin/retention/policies/MB-IDENTITY-REPORTING-001/trigger")
+		mvc.perform(post("/api/v1/admin/retention/policies/MB-IDENTITY-REPORTING-001/sweep")
 				.with(user("regular-user").roles("USER")))
 				.andExpect(status().isForbidden());
 
@@ -137,6 +137,29 @@ class AdminRetentionGovernanceSecuritySliceTests {
 				.andExpect(status().isOk());
 
 		mvc.perform(get("/api/v1/admin/retention/deletions")
+				.with(user("admin-user").roles("ADMIN")))
+				.andExpect(status().isOk());
+	}
+
+	@Test
+	void adminRoleIsAuthorizedOnActualMutatingEndpoints() throws Exception {
+		UUID requestId = UUID.randomUUID();
+
+		mvc.perform(post("/api/v1/admin/retention/policies/MB-IDENTITY-REPORTING-001/sweep")
+				.with(user("admin-user").roles("ADMIN")))
+				.andExpect(status().isOk());
+
+		mvc.perform(post("/api/v1/admin/retention/deletions/" + requestId + "/retry")
+				.with(user("admin-user").roles("ADMIN")))
+				.andExpect(status().isOk());
+
+		mvc.perform(post("/api/v1/admin/retention/deletions/" + requestId + "/holds")
+				.contentType("application/json")
+				.content("{\"holdType\":\"OPERATIONAL_HOLD\",\"holdReason\":\"AUDIT_COMPLIANCE_HOLD\"}")
+				.with(user("admin-user").roles("ADMIN")))
+				.andExpect(status().isOk());
+
+		mvc.perform(delete("/api/v1/admin/retention/deletions/" + requestId + "/holds")
 				.with(user("admin-user").roles("ADMIN")))
 				.andExpect(status().isOk());
 	}

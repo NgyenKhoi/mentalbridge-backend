@@ -166,9 +166,17 @@ class IdentityOpenApiContractTests {
 				.getProperties().get("roles");
 		var registrationActor = (Schema<?>) result.getOpenAPI().getComponents().getSchemas().get("RegistrationRequest")
 				.getProperties().get("actorType");
+		var deletionHoldReason = (Schema<?>) result.getOpenAPI().getComponents().getSchemas().get("DeletionHoldReason");
 		assertThat(summaryRoles.getMaxItems()).isEqualTo(1);
 		assertThat(detailRoles.getMaxItems()).isEqualTo(1);
 		assertThat(registrationActor.getEnum()).extracting(Object::toString).containsExactly("USER", "SPECIALIST");
+		assertThat(deletionHoldReason.getEnum()).extracting(Object::toString).containsExactly(
+				"STATUTORY_INQUIRY",
+				"PENDING_DISPUTE",
+				"ACTIVE_SAFETY_REVIEW",
+				"SCHEDULED_APPOINTMENT_ACTIVE",
+				"USER_CONTESTED",
+				"AUDIT_COMPLIANCE_HOLD");
 	}
 
 }

@@ -87,15 +87,17 @@ Under the MB-583 architecture, `Identity Service` coordinates deletion workflows
 | :--- | :--- | :--- |
 | `AdminRetentionGovernanceServiceTests` | **PASS** | **33 run, 0 failed, 0 errors, 0 skipped**; validates P0 retry consistency when account is missing (`FAILED` status, `ACCOUNT_NOT_FOUND`, audit DENIED), retry exhaustion escalation, hold lifecycle, and GET/POST agreement for orphaned runs. |
 | `AdminRetentionGovernanceControllerTests` | **PASS** | **11 run, 0 failed, 0 errors, 0 skipped**; validates HTTP endpoints, correlation headers, and parameter validation. |
-| `AdminRetentionGovernanceSecuritySliceTests` | **PASS** | **6 run, 0 failed, 0 errors, 0 skipped**; validates RBAC `@PreAuthorize("hasRole('ADMIN')")` across all GET, POST, and DELETE mutating endpoints. |
+| `AdminRetentionGovernanceSecuritySliceTests` | **PASS** | **7 run, 0 failed, 0 errors, 0 skipped**; validates RBAC `@PreAuthorize("hasRole('ADMIN')")` across all GET, POST, and DELETE mutating endpoints. |
 | `RetentionAuditLoggerTransactionTests` | **PASS** | **3 run, 0 failed, 0 errors, 0 skipped**; validates `REQUIRES_NEW` audit persistence on rollback. |
 | `RetentionExecutionRecorderTransactionTests` | **PASS** | **3 run, 0 failed, 0 errors, 0 skipped**; validates failure record commit and success rollback. |
 | `IdentityOpenApiContractTests` | **PASS** | **1 run, 0 failed, 0 errors, 0 skipped**; validates OpenAPI schema endpoints and status codes. |
 | `RetentionTransactionIntegrationTests` | **SKIPPED** | 5 skipped gracefully via `@EnabledIf("dockerAvailable")` when Docker Desktop engine is not running on host; previously verified PASS (5/5) with active Docker Testcontainers. |
-| Total targeted backend run | **PASS** | **57 run, 0 failed, 0 errors, 0 skipped** (BUILD SUCCESS). |
-| `AdminRetentionGovernance.test.tsx` + `AdminWorkspace.test.tsx` | **PASS** | **14 run, 0 failed, 0 errors, 0 skipped** (100% pass via vitest). |
+| Total targeted backend run | **PASS** | **58 run, 0 failed, 0 errors, 0 skipped** (BUILD SUCCESS). |
+| `AdminRetentionGovernance.test.tsx` + `AdminWorkspace.test.tsx` + `identity-validation.test.ts` | **PASS** | **20 run, 0 failed, 0 errors, 0 skipped** (100% pass via vitest). |
 | Full frontend test suite (`npm run test:unit`) | **PASS** | **268 test files passed, 1658 tests passed, 0 failed** (100% pass via vitest). |
 | Frontend typecheck (`npm run typecheck`) | **PASS** | Next.js typegen and `tsc --noEmit` clean with 0 errors. |
+| Frontend lint (`npm run lint`) | **PASS** | `eslint --max-warnings=0` clean with 0 warnings. |
+| Playwright Synthetic E2E (`run-e2e.mjs`) | **PASS** | **2 run, 2 passed, 0 failed** (100% pass in `admin-retention-governance.spec.ts`). |
 | Full backend quality gate and live cross-service E2E | **NOT RUN** | Required before merge; these focused runs do not replace them. |
 
 Two initial database runs failed before executing test bodies because the `deletion_request.subject_reference_hash` JPA mapping expected JDBC `VARCHAR` while the existing migration creates `char(64)`; setting only `columnDefinition` did not change the JDBC type. The mapping now uses the repository's existing `@JdbcTypeCode(SqlTypes.CHAR)` pattern, and the final five-test database run passed. No migration or transaction propagation was changed.

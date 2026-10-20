@@ -6,7 +6,6 @@ import java.util.ArrayList;
 import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
-import java.util.Set;
 import java.util.UUID;
 
 import org.springframework.data.domain.Page;
@@ -30,15 +29,6 @@ public class AdminRetentionGovernanceService {
 
 	private static final int DEFAULT_LIMIT = 20;
 	private static final int MAX_LIMIT = 100;
-
-	private static final Set<String> ALLOWED_HOLD_REASONS = Set.of(
-			"STATUTORY_INQUIRY",
-			"PENDING_DISPUTE",
-			"ACTIVE_SAFETY_REVIEW",
-			"SCHEDULED_APPOINTMENT_ACTIVE",
-			"USER_CONTESTED",
-			"AUDIT_COMPLIANCE_HOLD"
-	);
 
 	private final RetentionExecutionRecordRepository executionRecords;
 	private final DeletionRequestRepository deletionRequests;
@@ -573,11 +563,11 @@ public class AdminRetentionGovernanceService {
 	}
 
 	@Transactional
-	public DeletionRequestResponse applyHold(UUID requestId, DeletionHoldType holdType, String holdReason, UUID actorId, UUID correlationId) {
+	public DeletionRequestResponse applyHold(UUID requestId, DeletionHoldType holdType, DeletionHoldReason holdReason, UUID actorId, UUID correlationId) {
 		if (holdType == null || holdType == DeletionHoldType.NONE) {
 			throw new ResponseStatusException(HttpStatus.BAD_REQUEST, "Loại Hold không hợp lệ");
 		}
-		if (holdReason == null || !ALLOWED_HOLD_REASONS.contains(holdReason)) {
+		if (holdReason == null) {
 			throw new ResponseStatusException(HttpStatus.BAD_REQUEST, "Mã lý do Hold không hợp lệ hoặc chứa nội dung không an toàn.");
 		}
 
@@ -591,12 +581,12 @@ public class AdminRetentionGovernanceService {
 		Instant now = clock.instant();
 		UUID effectiveCorrelation = correlationId != null ? correlationId : UUID.randomUUID();
 
-		request.applyHold(holdType, holdReason, now);
+		request.applyHold(holdType, holdReason.name(), now);
 		deletionRequests.save(request);
 
 		auditLogger.recordSuccess(new SecurityAuditEventEntity(
-				UUID.randomUUID(), request.accountId(), actorId, "LEGAL_HOLD_APPLIED", "SUCCEEDED",
-				holdReason, effectiveCorrelation,
+				UUID.randomUUID(), request.accountId(), actorId, "DELETION_HOLD_APPLIED", "SUCCEEDED",
+				holdType.name() + "_" + holdReason.name(), effectiveCorrelation,
 				request.subjectReferenceHash(), "IDENTITY", "DATA_RETENTION", now, now
 		));
 
@@ -615,16 +605,36 @@ public class AdminRetentionGovernanceService {
 		Instant now = clock.instant();
 		UUID effectiveCorrelation = correlationId != null ? correlationId : UUID.randomUUID();
 
+		String auditReason = holdAuditReason(request.holdType(), request.holdReason());
 		request.releaseHold(now);
 		deletionRequests.save(request);
 
 		auditLogger.recordSuccess(new SecurityAuditEventEntity(
-				UUID.randomUUID(), request.accountId(), actorId, "LEGAL_HOLD_RELEASED", "SUCCEEDED",
-				"HOLD_RELEASED", effectiveCorrelation, request.subjectReferenceHash(),
+				UUID.randomUUID(), request.accountId(), actorId, "DELETION_HOLD_RELEASED", "SUCCEEDED",
+				auditReason, effectiveCorrelation, request.subjectReferenceHash(),
 				"IDENTITY", "DATA_RETENTION", now, now
 		));
 
 		return toDeletionResponse(request);
+	}
+
+	private String holdAuditReason(DeletionHoldType holdType, String holdReason) {
+		try {
+			return holdType.name() + "_" + DeletionHoldReason.valueOf(holdReason).name();
+		} catch (IllegalArgumentException | NullPointerException ignored) {
+			return holdType.name() + "_UNRECOGNIZED_REASON";
+		}
+	}
+
+	private String safeHoldReason(String holdReason) {
+		if (holdReason == null) {
+			return null;
+		}
+		try {
+			return DeletionHoldReason.valueOf(holdReason).name();
+		} catch (IllegalArgumentException ignored) {
+			return null;
+		}
 	}
 
 	private boolean retryExhausted(List<RetentionExecutionRecordEntity> recentExecutions, boolean orphanedRunningDetected) {
@@ -664,7 +674,7 @@ public class AdminRetentionGovernanceService {
 				accStatus,
 				entity.status(),
 				entity.holdType(),
-				entity.holdReason(),
+				safeHoldReason(entity.holdReason()),
 				entity.retryCount(),
 				entity.maxRetries(),
 				entity.escalationState(),
@@ -759,6 +769,6 @@ public class AdminRetentionGovernanceService {
 
 	public record ApplyHoldRequest(
 			DeletionHoldType holdType,
-			String holdReason
+			DeletionHoldReason holdReason
 	) {}
 }
