@@ -17,6 +17,6 @@ final class ChatGroupModels {
             String state, Instant expiresAt, String version) { @Override public String toString() { return "ChatInvitation[REDACTED]"; } }
     record Member(ChatModels.Peer peer, String role, Instant joinedAt) { @Override public String toString() { return "ChatMember[REDACTED]"; } }
     record Conversation(UUID conversationId, String kind, String state, String groupName, String viewerRole,
-            List<ChatModels.Peer> peers, int unreadCount, String version) { @Override public String toString() { return "ChatGroupConversation[REDACTED]"; } }
+            List<ChatModels.Peer> peers, int unreadCount, String version) implements ChatModels.ConversationView { @Override public String toString() { return "ChatGroupConversation[REDACTED]"; } }
     record Versioned<T>(T body, long version) {}
 }

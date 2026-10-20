@@ -36,7 +36,8 @@ final class ChatModels {
         @Override public String toString() { return "ChatRequest[REDACTED]"; }
     }
     record Page<T>(List<T> items, String nextCursor) { @Override public String toString() { return "ChatPage[REDACTED]"; } }
-    record Conversation(UUID conversationId, String kind, String state, List<Peer> peers, int unreadCount, String version) {
+    sealed interface ConversationView permits Conversation, ChatGroupModels.Conversation {}
+    record Conversation(UUID conversationId, String kind, String state, List<Peer> peers, int unreadCount, String version) implements ConversationView {
         @Override public String toString() { return "ChatConversation[REDACTED]"; }
     }
     record SendMessage(UUID clientMessageId, String content) {

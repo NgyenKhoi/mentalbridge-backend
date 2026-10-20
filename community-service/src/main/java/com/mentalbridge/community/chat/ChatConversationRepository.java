@@ -18,8 +18,6 @@ interface ChatConversationRepository extends JpaRepository<ChatConversationEntit
     @org.springframework.data.jpa.repository.Lock(jakarta.persistence.LockModeType.PESSIMISTIC_WRITE)
     @Query("select c from ChatConversationEntity c where c.id = :id")
     Optional<ChatConversationEntity> lock(@Param("id") UUID id);
-    @Query("select count(c) from ChatConversationEntity c, ChatMembershipEntity m where m.conversationId = c.id and m.profileId = :actor and m.role = 'OWNER' and c.createdAt > :after")
-    long createdGroups(@Param("actor") UUID actor, @Param("after") Instant after);
     @Query(value = """
             select c.id as id, case when a.id = :viewer then b.id else a.id end as "peerId",
             case when a.id = :viewer then b.account_subject else a.account_subject end as "peerSubject",

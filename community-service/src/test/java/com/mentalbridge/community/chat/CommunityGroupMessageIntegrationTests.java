@@ -7,10 +7,14 @@ import java.time.Duration;
 import java.util.*;
 import java.util.concurrent.*;
 import org.junit.jupiter.api.Test;
+import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.http.MediaType;
 import org.springframework.test.web.servlet.ResultActions;
 
 class CommunityGroupMessageIntegrationTests extends ChatGroupIntegrationSupport {
+    @Autowired ChatGroupTransactions groupTransactions;
+    @Autowired ChatGroupAccess groupAccess;
+    @Autowired org.springframework.transaction.PlatformTransactionManager transactionManager;
     @Test
     void invitationAloneCannotReadSendOrAcknowledgeAndOnlyCurrentMemberListsTheGroup() throws Exception {
         var group = group(); var invite = invite(a, group, bp);
@@ -116,6 +120,58 @@ class CommunityGroupMessageIntegrationTests extends ChatGroupIntegrationSupport 
         assertThat(json(history(b, group, null, 20).andExpect(status().isOk())).path("items").size()).isZero();
         assertThat(json(conversation(b, group).andExpect(status().isOk())).path("unreadCount").asInt()).isZero();
         send(a, group, client, key, "Mẫu").andExpect(status().isNotFound());
+    }
+    @Test
+    void failedGroupRecipientFactRollsBackMessageCommandSequenceAndUnread() throws Exception {
+        var group = group(); join(b, group, bp); var key = UUID.randomUUID(); var client = UUID.randomUUID();
+        jdbc.sql("alter table community_chat_outbox add constraint test_group_atomicity check (event_payload->'payload'->>'kind' <> 'MESSAGE_RECEIVED')").update();
+        try {
+            send(a, group, client, key, "Ghi thất bại tổng hợp").andExpect(status().isServiceUnavailable());
+            assertThat(count("community_chat_message")).isZero();
+            assertThat(jdbc.sql("select last_sequence from community_chat_conversation where id = :id").param("id", group).query(Long.class).single()).isZero();
+            assertThat(jdbc.sql("select count(*) from community_chat_command where operation = 'SEND_MESSAGE'").query(Long.class).single()).isZero();
+        } finally { jdbc.sql("alter table community_chat_outbox drop constraint test_group_atomicity").update(); }
+        send(a, group, client, key, "Ghi thất bại tổng hợp").andExpect(status().isCreated());
+        assertThat(json(conversation(b, group).andExpect(status().isOk())).path("unreadCount").asInt()).isOne();
+    }
+    @Test
+    void groupReadMaxIsMonotonicAcrossReorderedDevicesAndRejectsForeignCursorAndMessage() throws Exception {
+        var group = group(); join(b, group, bp); var first = saved(a, group); var second = saved(a, group);
+        var cursor = json(history(b, group, null, 1).andExpect(status().isOk())).path("nextCursor").asText();
+        try (var executor = Executors.newFixedThreadPool(2)) {
+            var tasks = List.<Callable<Integer>>of(() -> read(b, group, first).andReturn().getResponse().getStatus(),
+                    () -> read(b, group, second).andReturn().getResponse().getStatus());
+            for (var result : executor.invokeAll(tasks)) assertThat(result.get()).isEqualTo(200);
+        }
+        var result = json(read(b, group, first).andExpect(status().isOk()));
+        assertThat(result.path("lastReadMessageId").asText()).isEqualTo(second.toString()); assertThat(result.path("unreadCount").asInt()).isZero();
+        history(a, group, cursor, 1).andExpect(status().isNotFound());
+        var other = group(); join(b, other, bp); var foreign = saved(a, other);
+        read(b, group, foreign).andExpect(status().isNotFound()); history(b, other, cursor, 1).andExpect(status().isNotFound());
+    }
+    @Test
+    void committedRemovalWinsOverSendThatAlreadyCompletedItsIdentityLookup() throws Exception {
+        var group = group(); join(b, group, bp);
+        var auth = groupAccess.authorize(a, group, bp, UUID.randomUUID()); var expected = version(group);
+        var locked = new CountDownLatch(1); var release = new CountDownLatch(1); var accountChecked = new CountDownLatch(1);
+        org.mockito.Mockito.doAnswer(call -> {
+            var query = call.getArgument(2, ChatIdentityHttpClient.Query.class); accountChecked.countDown();
+            return new ChatIdentityHttpClient.Result(query.accountIds());
+        }).when(identity).authorize(org.mockito.ArgumentMatchers.anyString(), org.mockito.ArgumentMatchers.anyString(), org.mockito.ArgumentMatchers.any());
+        try (var executor = Executors.newFixedThreadPool(2)) {
+            var removal = executor.submit(() -> new org.springframework.transaction.support.TransactionTemplate(transactionManager).execute(status -> {
+                groupTransactions.remove(group, auth, bp, expected, UUID.randomUUID()); locked.countDown();
+                try { if (!release.await(10, TimeUnit.SECONDS)) throw new AssertionError("Removal fixture timeout"); }
+                catch (InterruptedException exception) { Thread.currentThread().interrupt(); throw new AssertionError(exception); }
+                return true;
+            }));
+            assertThat(locked.await(10, TimeUnit.SECONDS)).isTrue();
+            var sending = executor.submit(() -> send(b, group, UUID.randomUUID(), UUID.randomUUID(), "Không ghi sau remove").andReturn().getResponse().getStatus());
+            try { assertThat(accountChecked.await(10, TimeUnit.SECONDS)).isTrue(); }
+            finally { release.countDown(); }
+            assertThat(removal.get(10, TimeUnit.SECONDS)).isTrue(); assertThat(sending.get(10, TimeUnit.SECONDS)).isEqualTo(404);
+        } finally { release.countDown(); }
+        assertThat(count("community_chat_message")).isZero();
     }
     UUID saved(UUID actor, UUID group) throws Exception { return UUID.fromString(json(send(actor, group, UUID.randomUUID(), UUID.randomUUID(), "Tin nhắn mẫu").andExpect(status().isCreated())).path("message").path("messageId").asText()); }
     ResultActions send(UUID actor, UUID group, UUID client, UUID key, String content) throws Exception {

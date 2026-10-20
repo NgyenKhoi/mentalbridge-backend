@@ -28,6 +28,8 @@ class ChatKafkaRelayIntegrationTests extends ChatIntegrationSupport {
     @Container static final KafkaContainer KAFKA = new KafkaContainer(DockerImageName.parse("apache/kafka-native:3.9.1"));
     @Autowired ChatKafkaSink sink;
     @Autowired ChatRelayPersistence persistence;
+    @Autowired CommunityGroupService groups;
+    @Autowired CommunityChatMessageService messages;
     @MockitoBean ChatOutboxRelay scheduledRelay;
 
     @DynamicPropertySource
@@ -59,6 +61,22 @@ class ChatKafkaRelayIntegrationTests extends ChatIntegrationSupport {
         assertThat(records.getFirst().key()).isEqualTo(fact.conversationId().toString());
         assertThat(ChatWireContracts.validFact(records.getFirst().value())).isTrue();
         assertThat(mapper.readTree(records.getFirst().value())).isEqualTo(fact.payload());
+    }
+    @Test
+    void groupInvitationAndRecipientMessageFactsUseSameMinimizedBrokerContract() throws Exception {
+        var group = groups.create(a, "Nhóm tổng hợp không vào Kafka", UUID.randomUUID(), UUID.randomUUID());
+        var invite = groups.invite(a, group.conversationId(), bp, 1, UUID.randomUUID(), UUID.randomUUID());
+        groups.decide(b, invite.body().invitationId(), "ACCEPT", 0, UUID.randomUUID());
+        messages.send(a, group.conversationId(), UUID.randomUUID(), new ChatModels.SendMessage(UUID.randomUUID(), "Tin nhóm không vào Kafka"), UUID.randomUUID());
+        var ids = jdbc.sql("select id from community_chat_outbox where event_payload->'payload'->>'kind' in ('GROUP_INVITED','MESSAGE_RECEIVED')").query(UUID.class).list();
+        assertThat(ids).hasSize(2);
+        new ChatOutboxRelay(persistence, sink, new ChatRelayProperties(true, 100, Duration.ofSeconds(5))).publishDue();
+        for (var id : ids) {
+            var records = received(id, 1); assertThat(records).hasSize(1);
+            assertThat(ChatWireContracts.validFact(records.getFirst().value())).isTrue();
+            assertThat(records.getFirst().key()).isEqualTo(group.conversationId().toString());
+            assertThat(records.getFirst().value()).doesNotContain("Nhóm tổng hợp không vào Kafka").doesNotContain("Tin nhóm không vào Kafka");
+        }
     }
 
     @Test

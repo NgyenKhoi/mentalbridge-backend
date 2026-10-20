@@ -3,14 +3,12 @@ package com.mentalbridge.community.chat;
 import java.time.Clock;
 import java.time.Duration;
 import java.util.*;
-import com.mentalbridge.community.feed.CommunityChatProfiles;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
 @Service
 class ChatGroupTransactions {
     private final ChatGroupAccess access;
-    private final CommunityChatProfiles profiles;
     private final ChatAccess directAccess;
     private final ChatConversationRepository conversations;
     private final ChatMembershipRepository members;
@@ -20,10 +18,11 @@ class ChatGroupTransactions {
     private final ChatFacts facts;
     private final ChatGroupProperties properties;
     private final Clock clock;
-    ChatGroupTransactions(ChatGroupAccess access, CommunityChatProfiles profiles, ChatAccess directAccess,
+    private final ChatPrivacyRepository privacy;
+    ChatGroupTransactions(ChatGroupAccess access, ChatAccess directAccess,
             ChatConversationRepository conversations, ChatMembershipRepository members, ChatInvitationRepository invitations,
             ChatCommandRepository commands, ChatCrypto crypto, ChatFacts facts, ChatGroupProperties properties, Clock clock, ChatPrivacyRepository privacy) {
-        this.access = access; this.profiles = profiles; this.directAccess = directAccess; this.conversations = conversations;
+        this.access = access; this.directAccess = directAccess; this.conversations = conversations;
         this.members = members; this.invitations = invitations; this.commands = commands; this.crypto = crypto;
         this.facts = facts; this.properties = properties; this.clock = clock; this.privacy = privacy;
     }
@@ -139,10 +138,8 @@ class ChatGroupTransactions {
         return invite.state.equals("PENDING") && invite.expiresAt.isAfter(clock.instant()) && context.group().state.equals("ACTIVE")
                 && context.members().stream().anyMatch(m -> m.id.equals(invite.inviterMembershipId) && m.manager())
                 && context.eligible().containsKey(invite.inviterProfileId) && context.eligible().containsKey(invite.inviteeProfileId)
-                && !directAccessBlocked(invite.inviterProfileId, invite.inviteeProfileId);
+                && !privacy.blocked(invite.inviterProfileId, invite.inviteeProfileId);
     }
-    private boolean directAccessBlocked(UUID a, UUID b) { return privacy.blocked(a, b); }
-    private final ChatPrivacyRepository privacy;
     ChatGroupModels.Invitation invitation(ChatInvitationEntity invite, ChatGroupAccess.Context context) {
         var inviter = context.eligible().get(invite.inviterProfileId);
         return new ChatGroupModels.Invitation(invite.id, invite.conversationId, access.name(context.group()),

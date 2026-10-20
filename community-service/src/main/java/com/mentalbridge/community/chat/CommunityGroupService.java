@@ -66,8 +66,13 @@ class CommunityGroupService {
         while (selected.size() <= limit) {
             var batch = invitations.incoming(actor.id(), clock.instant(), before.time(), before.id());
             if (batch.isEmpty()) break;
+            var profileIds = new HashSet<UUID>(); profileIds.add(actor.id()); batch.forEach(i -> profileIds.add(i.inviterProfileId));
+            var known = profiles.byIds(profileIds);
+            var active = accounts.active(known.stream().map(p -> p.subject()).toList(), correlation);
+            if (!active.contains(subject)) throw ChatException.target();
+            var eligible = known.stream().filter(p -> active.contains(p.subject())).map(p -> p.id()).collect(java.util.stream.Collectors.toSet());
             for (var invite : batch) {
-                var auth = access.authorize(subject, invite.conversationId, invite.inviterProfileId, correlation);
+                var auth = new ChatGroupAccess.Authorization(actor.id(), List.of(actor.id(), invite.inviterProfileId), eligible);
                 reads.invitation(invite.id, invite.conversationId, auth).ifPresent(value -> { selected.add(value); positions.put(value.invitationId(), invite); });
             }
             var last = batch.getLast(); before = new ChatCursors.Position(last.createdAt, last.id);

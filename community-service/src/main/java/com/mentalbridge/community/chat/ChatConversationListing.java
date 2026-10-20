@@ -39,7 +39,7 @@ class ChatConversationListing {
         return new Snapshot(actor.id(), values.stream().map(v -> v.id).toList(), profiles.byIds(ids));
     }
     @Transactional
-    ChatModels.Page<Object> list(Snapshot snapshot, Set<UUID> active, String cursor, int limit) {
+    ChatModels.Page<ChatModels.ConversationView> list(Snapshot snapshot, Set<UUID> active, String cursor, int limit) {
         if (snapshot.actor() == null) { if (cursor != null) throw ChatException.target(); return new ChatModels.Page<>(List.of(), null); }
         var current = profiles.lock(snapshot.profiles().stream().map(Profile::id).toList()).stream().collect(Collectors.toMap(Profile::id, p -> p));
         var actor = current.get(snapshot.actor());
@@ -51,7 +51,7 @@ class ChatConversationListing {
         var selected = new ArrayList<Row>();
         for (var id : snapshot.conversations().stream().sorted(Comparator.comparing(UUID::toString)).toList()) {
             var conversation = conversations.lock(id).orElse(null); if (conversation == null) continue;
-            Object view; Instant activity;
+            ChatModels.ConversationView view; Instant activity;
             if (conversation.kind.equals("GROUP")) {
                 if (memberships.findByConversationIdAndProfileIdAndDepartedAtIsNull(id, actor.id()).isEmpty()) continue;
                 var context = groups.lock(id, authorized, true);
@@ -73,5 +73,5 @@ class ChatConversationListing {
         return new ChatModels.Page<>(page.stream().map(Row::view).toList(), selected.size() > limit ? cursors.encode(actor.id(), "conversations", epoch, last.time(), last.id()) : null);
     }
     record Snapshot(UUID actor, List<UUID> conversations, List<Profile> profiles) {}
-    private record Row(UUID id, Instant time, Object view) {}
+    private record Row(UUID id, Instant time, ChatModels.ConversationView view) {}
 }

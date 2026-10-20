@@ -62,7 +62,7 @@ databaseChangeLog:
               BEGIN
                 IF TG_TABLE_NAME = 'community_chat_conversation' THEN target := COALESCE(NEW.id, OLD.id);
                 ELSE target := COALESCE(NEW.conversation_id, OLD.conversation_id); END IF;
-                SELECT kind, state, member_limit INTO group_kind, group_state, cap FROM community_chat_conversation WHERE id = target;
+                SELECT kind, state, member_limit INTO group_kind, group_state, cap FROM community_chat_conversation WHERE id = target FOR NO KEY UPDATE;
                 IF NOT FOUND THEN RETURN NULL; END IF;
                 SELECT count(*), count(*) FILTER (WHERE role = 'OWNER') INTO members, owners
                   FROM community_chat_membership WHERE conversation_id = target AND departed_at IS NULL;

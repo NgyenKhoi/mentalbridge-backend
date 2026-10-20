@@ -47,7 +47,7 @@ class CommunityDirectChatService {
         var result = direct.decide(subject, requestId, request.requesterProfileId, expected, decision, correlation);
         return new DecisionOutcome(result, Long.toString(requests.findById(requestId).orElseThrow(ChatException::target).version));
     }
-    Object conversation(UUID subject, UUID id, UUID correlation) {
+    ChatModels.ConversationView conversation(UUID subject, UUID id, UUID correlation) {
         if (conversations.findById(id).orElseThrow(ChatException::target).kind.equals("GROUP"))
             return groupMessages.conversation(id, groups.authorize(subject, id, null, correlation));
         var actor = profiles.bySubject(subject).orElseThrow(ChatException::target);
@@ -77,7 +77,7 @@ class CommunityDirectChatService {
         var last = items.isEmpty() ? null : items.getLast();
         return new ChatModels.Page<>(items, more ? cursors.encode(anchor.viewer(), "requests", anchor.epoch(), last.createdAt(), last.requestId()) : null);
     }
-    ChatModels.Page<Object> conversations(UUID subject, String cursor, int limit, UUID correlation) {
+    ChatModels.Page<ChatModels.ConversationView> conversations(UUID subject, String cursor, int limit, UUID correlation) {
         ChatModels.limit(limit); accounts.require(List.of(subject), correlation);
         var snapshot = listing.snapshot(subject); var subjects = snapshot.profiles().stream().map(p -> p.subject()).distinct().toList();
         var active = new java.util.HashSet<UUID>();
