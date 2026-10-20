@@ -81,10 +81,11 @@ for management commands.
 
 Strong If-Match refers to the privacy revision, request revision, invitation
 revision or moderation-case revision for those operations. All group management
-commands use the conversation/group revision, including member-role updates and
-invites. Responses return its current strong ETag; clients obtain the numeric
-version from the authoritative owner read and never guess or reuse another
-resource's version. A matching version never substitutes for permission.
+commands use the public relationship/group **management** revision, including
+member-role updates and invites. This is distinct from the private message
+sequence and outbox aggregate revision: messages/read acknowledgements do not
+advance it, so hidden traffic cannot leak through public versions or ETags.
+Responses return the current strong ETag; clients obtain the version from the authoritative owner read and never guess or reuse another resource's version. A matching version never substitutes for permission.
 
 New members see messages only from their current membership epoch onward.
 Leave/removal immediately revokes history, socket, presence, typing, receipts and
@@ -104,8 +105,22 @@ Shared groups remain usable for other members. The blocked pair cannot see or
 receive each other's messages, unread increments, presence, typing or receipts.
 Their member projections use `UNAVAILABLE` without profile/name fields. Group
 role-management authorization does not grant message visibility. The provider
-filters before pagination/counting; sequence gaps do not prove a missing message.
-Existing retained records are not broadcast again after unblocking.
+filters before pagination/counting. No public lastSequence, per-message sequence,
+read-sequence watermark or global activity timestamp is returned. Hidden traffic
+does not change visible unread, public management version, conversation ordering,
+pagination availability or emit a receipt/resync solely for that traffic.
+Existing retained records are not broadcast again after unblocking. A fresh
+authorized REST read may recover newly eligible retained history from the current
+membership epoch; old visibility cursors are invalidated, never widened in place.
+
+| Visibility transition | History, unread and recovery contract |
+| --- | --- |
+| First join / rejoin | New membership epoch; no earlier messages/read references; unread starts at zero and counts only subsequent eligible non-self messages. Rejoin cannot restore a prior epoch. |
+| Block | Direct unavailable; shared-group pair filtered before page/count/receipt projection. Private read watermark is retained; its public reference becomes null if no eligible read message remains. |
+| Hidden group traffic | No public counter, list reorder, extra empty page, receipt or resync revealing that traffic. Other eligible members retain their own authorized stream. |
+| Unblock | Fresh owner authorization; current-epoch retained history may become eligible on REST read, with unread recomputed from eligible non-self messages above the retained private read watermark. No old-message rebroadcast. |
+| Leave / removal / restriction | All history, read references, unread, socket and ephemeral access revoked; uniformly TARGET_UNAVAILABLE. Queued content must be discarded. |
+| Pagination / replay gap | Server resolves private sequence gaps and filters first; only missed eligible content may cause client resync. Reconnect may request a fresh authorized snapshot without disclosing a gap count. |
 
 ## Messages, retry and unread truth
 
@@ -126,19 +141,34 @@ Deleting the conversation removes its content and identity records; future
 commands against that old conversation ID return TARGET_UNAVAILABLE, never create
 it again. Account deletion removes actor identifiers under its deletion policy.
 
-Sequences/versions are decimal strings, not JavaScript-unsafe numeric IDs.
+Private sequences/outbox versions and public management versions are decimal
+strings, not JavaScript-unsafe numeric IDs. Private global sequences never leave
+the owner/service fact boundary. Public message IDs are random UUIDs without
+sequence/time encoding; no counter can be reconstructed from those IDs.
 REST 201/SAVED means durable acceptance only, delivery UNCONFIRMED. Socket ACK
 means command acceptance only. Neither proves delivery, reading, availability,
 engagement, clinical progress or completion. Message writes never use the
 appointment WebSocket `message.send` command.
 
-History is cursor-paginated by server sequence, bounded to 50 records. Cursor is
-opaque and bound to actor, conversation, direction and membership epoch. It
-cannot select an owner. The private read cursor advances monotonically to a
-visible sequence not beyond current eligible history. Unread counts exclude
-self and blocked/removed/ineligible messages. Duplicate/out-of-order delivery
-cannot create another message or another unread increment. Shared read receipts
-are a separate explicit opt-in; turning them off never resets private unread state.
+History is cursor-paginated in ascending private server sequence, bounded to 50
+eligible records. Opaque authenticated cursors bind actor, conversation, direction,
+membership and visibility epoch; neither raw nor reversibly encoded counters
+are public cursors. Filter before selecting items/continuations; hidden gaps
+cannot generate an empty intermediate page or reveal remaining counts. A stale
+visibility cursor is TARGET_UNAVAILABLE; restart an authorized read. Continuation
+availability/meaning must not change solely because of hidden traffic (token
+bytes may vary due to nonce/signing). No eligible remainder means nextCursor=null.
+
+ReadCursor accepts lastReadMessageId, not a sequence. Community resolves the
+currently visible exact-conversation/current-epoch message to its private sequence
+and atomically advances max(previous, resolved). Cross-conversation, blocked or
+prior-epoch IDs return TARGET_UNAVAILABLE. ReadResult contains the last currently
+eligible read message ID or null; changing visibility may change this reference
+without decreasing the private monotonic watermark. Unread counts exclude self
+and blocked/removed/ineligible messages. Duplicate/out-of-order acknowledgements
+cannot decrease private state or add unread. Shared receipts use a message ID
+visible to both subject and observer; suppress an ineligible reference entirely.
+Receipts are a separate explicit opt-in; disabling them never resets private unread.
 
 ## Presence, typing and receipts
 
@@ -179,7 +209,8 @@ ordinary client headers cannot impersonate a delegated subject.
 
 Community Kafka topic candidate `mentalbridge.community.chat.v1` is keyed by
 conversationId. `aggregateId == payload.conversationId`; aggregateVersion is
-the committed conversation revision. MESSAGE_SAVED carries only the message
+the private committed outbox revision, distinct from public management versions.
+MESSAGE_SAVED carries only the message
 pointer/sequence for Realtime. AUTHORIZATION_CHANGED invalidates recipients; it
 is not a durable permission grant. Recipient-specific MESSAGE_RECEIVED,
 DIRECT_REQUESTED and GROUP_INVITED carry targetId and private routing reference.
@@ -215,11 +246,15 @@ cache. Any known revocation wins over a queued send; an owner outage yields 503,
 never cached text. Downstream tests must exercise revocation between consumption
 and delivery, including delayed/lost invalidation.
 
-Realtime never looks up Community tables or caches
-raw content in Redis. Per-conversation sequence orders delivered results, not
-Kafka arrival across partitions. Version gaps/reconnect emit resync.required;
-clients recover through REST and dedupe by message ID. Permission changes must
-be rechecked at delivery even if invalidation is delayed or lost.
+Realtime never looks up Community tables or caches raw content in Redis. Private
+sequence orders owner results; Kafka arrival across partitions and socket arrival
+are not transcript order. Server-side gaps are reconciled against current eligible
+history before emitting resync.required; a hidden-only gap emits nothing. No
+global sequence/version/gap count is sent to the viewer. Clients dedupe by message
+ID, use socket delivery as a refresh signal and reconcile order from ascending
+REST history (including after reconnect/resync), rather than append in arrival
+order or invent a missing-message counter. Permission changes must be rechecked
+at delivery even if invalidation is delayed or lost.
 
 Consumers commit offsets only after durable side effects. Transient storage or
 authorization-service failures retain a replayable offset/retry with bounded

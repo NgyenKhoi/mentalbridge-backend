@@ -237,7 +237,7 @@
           "required": [
             "conversationId",
             "communityProfileId",
-            "lastReadSequence"
+            "lastReadMessageId"
           ],
           "properties": {
             "conversationId": {
@@ -248,11 +248,12 @@
               "type": "string",
               "format": "uuid"
             },
-            "lastReadSequence": {
+            "lastReadMessageId": {
               "type": "string",
-              "pattern": "^(0|[1-9][0-9]{0,18})$"
+              "format": "uuid"
             }
-          }
+          },
+          "description": "Emit only when the opted-in subject and exact acknowledged message are currently visible to the observer. No global sequence or event for hidden activity."
         }
       }
     },
@@ -420,7 +421,6 @@
         "conversationId",
         "clientMessageId",
         "sender",
-        "sequence",
         "content",
         "createdAt"
       ],
@@ -439,10 +439,6 @@
         },
         "sender": {
           "$ref": "#/$defs/peer"
-        },
-        "sequence": {
-          "type": "string",
-          "pattern": "^(0|[1-9][0-9]{0,18})$"
         },
         "content": {
           "type": "string",

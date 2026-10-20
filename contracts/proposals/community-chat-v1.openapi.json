@@ -337,7 +337,7 @@
       "get": {
         "operationId": "listConversations",
         "summary": "list Conversations",
-        "description": "",
+        "description": "Viewer-safe conversations only. Sort by latest eligible message (or eligible relationship creation), never global hidden activity; no global message count, timestamp or sequence-derived watermark. Management version changes only for authorized relationship/group management, not messages/read cursors.",
         "x-mentalbridge-role": "USER",
         "security": [
           {
@@ -393,7 +393,7 @@
       "get": {
         "operationId": "getConversation",
         "summary": "get Conversation",
-        "description": "",
+        "description": "Current viewer-safe conversation and its relationship/group management version, never a private message sequence or outbox revision.",
         "x-mentalbridge-role": "USER",
         "security": [
           {
@@ -452,7 +452,7 @@
       "get": {
         "operationId": "listMessages",
         "summary": "list Messages",
-        "description": "Only current active participants; group history begins at joinedAt/firstVisibleSequence. Skip blocked-pair messages and removed content. Cursor is opaque, direction-bound and owner/conversation-bound; ascending server sequence.",
+        "description": "Only current eligible participants; current-epoch group history only. Filter blocked/ineligible messages before pagination/counting. Return items in ascending private server sequence; never expose that sequence or gaps. nextCursor is an authenticated opaque, non-sequence-encoded continuation bound to actor, conversation, direction, membership and visibility epoch. Hidden traffic cannot alter visible items, continuation availability/meaning or reveal remaining counts; token bytes may vary due to nonce/signing. A stale visibility cursor is rejected generically as TARGET_UNAVAILABLE; restart an authorized read. No new eligible results means no nextCursor. Never disclose messages before join or prior rejoin epochs.",
         "x-mentalbridge-role": "USER",
         "security": [
           {
@@ -585,7 +585,7 @@
       "put": {
         "operationId": "advanceReadCursor",
         "summary": "advance Read Cursor",
-        "description": "Monotonic max of prior and acknowledged visible sequence, never beyond current last visible sequence. Persists private unread state even with shared receipts off. No duplicate unread on replay.",
+        "description": "Resolve lastReadMessageId only if currently visible to this actor in this conversation and membership epoch. Atomically advance the private server sequence watermark by max(previous, resolved), never beyond eligible history; duplicate/out-of-order acknowledgements cannot decrease it or add unread. Return a currently eligible message reference or null, not a numeric counter. Unknown/cross-conversation/blocked/prior-epoch targets uniformly TARGET_UNAVAILABLE. Private unread persists with shared receipts off.",
         "x-mentalbridge-role": "USER",
         "security": [
           {
@@ -2122,7 +2122,8 @@
           },
           "version": {
             "type": "string",
-            "pattern": "^(0|[1-9][0-9]{0,18})$"
+            "pattern": "^(0|[1-9][0-9]{0,18})$",
+            "description": "Group management revision, distinct from private message ordering/outbox revision. Used by group If-Match."
           }
         }
       },
@@ -2270,7 +2271,6 @@
               "state",
               "peers",
               "unreadCount",
-              "lastSequence",
               "version"
             ],
             "properties": {
@@ -2299,13 +2299,10 @@
                 "type": "integer",
                 "minimum": 0
               },
-              "lastSequence": {
-                "type": "string",
-                "pattern": "^(0|[1-9][0-9]{0,18})$"
-              },
               "version": {
                 "type": "string",
-                "pattern": "^(0|[1-9][0-9]{0,18})$"
+                "pattern": "^(0|[1-9][0-9]{0,18})$",
+                "description": "Public relationship/group management revision only; never the private message sequence or outbox aggregateVersion. Sending/reading messages, including hidden traffic, does not advance this revision."
               }
             }
           },
@@ -2320,7 +2317,6 @@
               "viewerRole",
               "peers",
               "unreadCount",
-              "lastSequence",
               "version"
             ],
             "properties": {
@@ -2362,17 +2358,15 @@
                 "type": "integer",
                 "minimum": 0
               },
-              "lastSequence": {
-                "type": "string",
-                "pattern": "^(0|[1-9][0-9]{0,18})$"
-              },
               "version": {
                 "type": "string",
-                "pattern": "^(0|[1-9][0-9]{0,18})$"
+                "pattern": "^(0|[1-9][0-9]{0,18})$",
+                "description": "Public relationship/group management revision only; never the private message sequence or outbox aggregateVersion. Sending/reading messages, including hidden traffic, does not advance this revision."
               }
             }
           }
-        ]
+        ],
+        "description": "Viewer-authorized projection. No global or last-visible sequence watermark. unreadCount counts only eligible non-self messages in the current membership/visibility epoch; hidden traffic cannot change this DTO or its list position."
       },
       "Message": {
         "type": "object",
@@ -2382,7 +2376,6 @@
           "conversationId",
           "clientMessageId",
           "sender",
-          "sequence",
           "content",
           "createdAt"
         ],
@@ -2402,10 +2395,6 @@
           "sender": {
             "$ref": "#/components/schemas/Peer"
           },
-          "sequence": {
-            "type": "string",
-            "pattern": "^(0|[1-9][0-9]{0,18})$"
-          },
           "content": {
             "type": "string",
             "minLength": 1,
@@ -2415,7 +2404,8 @@
             "type": "string",
             "format": "date-time"
           }
-        }
+        },
+        "description": "Authorized message identity/content only. Conversation-global ordering remains private; IDs are random opaque UUIDs, never sequence-encoded IDs. REST page order is authoritative; a socket event alone does not define transcript order."
       },
       "SendMessage": {
         "type": "object",
@@ -2461,32 +2451,37 @@
         "type": "object",
         "additionalProperties": false,
         "required": [
-          "lastReadSequence"
+          "lastReadMessageId"
         ],
         "properties": {
-          "lastReadSequence": {
+          "lastReadMessageId": {
             "type": "string",
-            "pattern": "^(0|[1-9][0-9]{0,18})$"
+            "format": "uuid"
           }
-        }
+        },
+        "description": "Exact currently visible message in this conversation/current membership epoch. Community resolves its private sequence and atomically advances max(previous, resolved); no client-supplied sequence. Ineligible target is TARGET_UNAVAILABLE."
       },
       "ReadResult": {
         "type": "object",
         "additionalProperties": false,
         "required": [
-          "lastReadSequence",
+          "lastReadMessageId",
           "unreadCount"
         ],
         "properties": {
-          "lastReadSequence": {
-            "type": "string",
-            "pattern": "^(0|[1-9][0-9]{0,18})$"
+          "lastReadMessageId": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "format": "uuid"
           },
           "unreadCount": {
             "type": "integer",
             "minimum": 0
           }
-        }
+        },
+        "description": "Last currently eligible read message reference, or null when none is visible. Private monotonic watermark is not disclosed; visibility changes may alter this safe reference without decreasing private state."
       },
       "Report": {
         "type": "object",

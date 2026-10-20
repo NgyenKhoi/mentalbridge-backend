@@ -74,6 +74,13 @@ realtime-authorizations response never grants a subsequent content read. USER
 history authentication is unchanged. Wrong audience/action and inaccessible
 message/membership targets fail closed; no actor selector is accepted in a body.
 
+Global message sequences and outbox revisions remain private. Public conversations
+omit lastSequence; messages/receipts/read acknowledgements use opaque message
+IDs, with ordered REST history and opaque epoch-bound pagination. Public version
+is a separate management revision that does not advance for hidden messages.
+Private unread/read watermarks remain monotonic; visibility projections never
+expose gaps from blocks or pre-join history.
+
 ## Alternatives rejected
 
 - Friends, follows, public groups and directory search: outside the product scope.

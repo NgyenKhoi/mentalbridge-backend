@@ -39,7 +39,7 @@ confirmation must precede runtime UI coding; screenshots are not applicable here
 | Hidden/invisible/offline presence | No badge for unauthorized/hidden subject; authorized snapshot only | Exact last-seen, willingness/availability inference | Policy: Presence |
 | Redis/owner unavailable | UNKNOWN or explicit unavailable/retry | Cached ONLINE or stale authorization as current truth | Policy: Presence; Realtime |
 | Pending send / timeout | Pending or unknown outcome, retry with original IDs | Fabricated persisted/delivered/read message | Policy: Messages |
-| Reconnect / sequence gap | Refreshing/recovery through authoritative history | Duplicate message/unread or invisible missing-content claims | Policy: Realtime |
+| Reconnect / eligible recovery | Refreshing/recovery through ordered authoritative history | Global sequence/gap counts, duplicate unread or hidden-traffic resync | Policy: Realtime |
 | Moderator case | Exact reported-message evidence and bounded case actions | Arbitrary transcript, member/presence browse or auto-intervention promise | Policy: Abuse |
 
 ## Permission matrix
@@ -66,11 +66,18 @@ included in existing Vitest CI. It parses/resolves the proposed OpenAPI and
 strict-compiles the JSON schemas using the existing Ajv2020/format dependencies.
 It checks valid synthetic REST/WS/Kafka examples, malformed payloads, identity
 forgery, unknown enums/versions, privacy defaults, maximum lengths, numeric
-sequence safety, disjoint event variants, and forbidden notification content.
+private sequence safety, public watermark exclusion, disjoint event variants,
+delegated message-read shape/target binding and forbidden notification content.
 It also verifies that the proposal does not relabel existing runtime APIs.
 
 These are executable **contract tests**, not provider/infrastructure integration
 tests. No invented in-memory policy engine is used as proof of authorization.
+The `delegatedReads` examples are normative provider obligations: positive direct
+and current-group reads; wrong audience/scope; claims/body target mismatches;
+message not in conversation; blocked, revoked, outsider, prior-epoch and inactive
+viewers; owner outage. Tests validate their request/claim/error shapes and pin
+the operation's denial mapping. They do **not** verify a JWT signature, execute
+membership queries or certify runtime block/revocation races.
 Downstream runtime acceptance must execute the following scenarios with real
 owner storage/Redis/Kafka as applicable:
 
@@ -82,6 +89,8 @@ owner storage/Redis/Kafka as applicable:
 | Last group seat; owner transfer vs remove/leave | MB-687: real transactional cap and exactly-one-owner invariants |
 | Invite vs role revocation/archive/expiry; rejoin history | MB-687: no implicit membership, stale accept denied, new epoch excludes old messages |
 | Shared-group blocked pair | MB-687/689: filtered history, unread, member projection and socket delivery, other peers unaffected |
+| Delegated message content read | MB-685/689: exact trusted service/viewer/target, wrong audience/action/expiry, spoofed identity, message/conversation mismatch, block/revocation between pointer consumption and fanout; 404 without text/target disclosure |
+| First join, rejoin, block/unblock, hidden gaps | MB-687/689/693: new epoch excludes old history; no global sequence/ETag/list-order leak, no extra empty page or hidden-only resync; private read max remains monotonic and unread is eligibility-filtered |
 | Two devices, crash TTL, background, invisible and Redis outage | MB-690: lease aggregation, TTL expiry, no false online, no stranger events |
 | Opt-in changes and delayed receipt/typing/presence events | MB-689/690: immediate visible-state invalidation, current recipient authorization |
 | Duplicate/reordered Kafka, DB outage/restart | MB-689/691: durable replay and offset-after-commit; no phantom message/duplicate unread/inbox/provider delivery |
@@ -91,12 +100,21 @@ owner storage/Redis/Kafka as applicable:
 
 ## Verification and release notes
 
+### Review corrections against e45cba2d
+
+| Finding | Contract resolution | Regression / runtime handoff |
+| --- | --- | --- |
+| P1-A: no authorized content-read API for Realtime | Planned read-only internal message-projections operation returns the exact Message under target-bound signed service + USER delegation; current owner authorization and content share one consistent read. Boolean authorization cannot grant a later read; no body actor/recipient, no-store, fail closed. Public history remains USER BearerAuth only. | Strict request/claims schemas, positive and denial examples, authentication separation/closed actor-selector tests. Real signatures, current account/block/epoch lookup and revoke-before-fanout race remain MB-685/689 provider evidence. |
+| P1-B: public global sequence leaks hidden/pre-join activity | Remove Conversation.lastSequence and public Message/receipt/read sequences; read acknowledgements use random message IDs. Private sequence and outbox version stay service-only; public version is a separate management revision. Freeze epoch, block/unblock, filtered pagination/unread and eligible-only resync behavior. | Both Conversation variants, Message, socket message/receipt and ReadResult reject injected watermarks; private Kafka sequence still accepts lossless decimal strings. Membership/block/pagination semantics require the runtime scenarios above. |
+
 Local verification:
 
 | Command/check | Result |
 | --- | --- |
 | Realtime `npm run format:check`, `lint`, `typecheck`, `test`, `contract:check`, `migration:check`, `build` | Passed; full unit/HTTP lane 79 tests before final contract-only regressions |
-| Final targeted Community + appointment WebSocket contract tests | Passed: 43 tests, including final handshake/component and exact internal-authorization target regressions |
+| Original targeted Community + appointment WebSocket contract tests | Passed: 43 tests before review corrections |
+| Review-fix `npm run test -- --run test/contract/community-chat-contract.test.ts test/contract/websocket-contract.test.ts` | Passed: 67 tests (59 Community, 8 existing appointment); delegated reads, public watermark rejection and opaque read acknowledgements |
+| Review-fix Realtime `format:check`, `lint`, `typecheck`, `contract:check`, `migration:check`, `build` | Passed; final test-only edits rechecked with targeted Prettier/ESLint, contract tests and typecheck |
 | Final targeted Prettier/ESLint and Realtime typecheck | Passed |
 | Realtime `npm run test:integration` | Passed 18/18 with original fixture; passed 18/18 again with the final per-thread allocator fixture |
 | `scripts/verify-repository.ps1 -BaseSha origin/dev` | Passed; final change set 25 files; no runtime changes |
@@ -132,9 +150,3 @@ provisioning, frontend contract generation or UI change is needed. Merge accepte
 contract first; then provider implementations; then compatible consumers; then
 explicit Docker acceptance and bounded `ui-ready` handoff. This PR does not mark
 the Jira story Done or any downstream capability live.
-
-## Review correction P1-A
-
-The planned internal message-projections operation returns the exact authorized Message under signed Realtime service + end-viewer delegation, with current owner authorization and content in one consistent read. Boolean decisions never grant subsequent reads. Public history stays USER-only; no body actor/recipient selectors; no-store; uniform target-unavailable errors.
-
-Synthetic delegatedReads cover direct/group success, wrong audience/action, target mismatch, blocked/revoked/outsider/prior-epoch/inactive viewer and owner outage. Contract tests pin schemas and response obligations, not real JWT verification or database authorization. MB-685/689 must test actual current rights and revoke-before-fanout races.

@@ -80,6 +80,68 @@
       }
     },
     {
+      "schema": "Message",
+      "value": {
+        "messageId": "11111111-1111-4111-8111-111111111111",
+        "conversationId": "22222222-2222-4222-8222-222222222222",
+        "clientMessageId": "33333333-3333-4333-8333-333333333333",
+        "sender": {
+          "state": "AVAILABLE",
+          "communityProfileId": "44444444-4444-4444-8444-444444444444",
+          "displayName": "Người dùng mẫu"
+        },
+        "content": "Tin nhắn tổng hợp.",
+        "createdAt": "2026-10-20T06:00:00Z"
+      }
+    },
+    {
+      "schema": "Conversation",
+      "value": {
+        "conversationId": "22222222-2222-4222-8222-222222222222",
+        "kind": "GROUP",
+        "state": "ACTIVE",
+        "groupName": "Nhóm mẫu",
+        "viewerRole": "MEMBER",
+        "peers": [
+          {
+            "state": "UNAVAILABLE"
+          }
+        ],
+        "unreadCount": 0,
+        "version": "2"
+      }
+    },
+    {
+      "schema": "Conversation",
+      "value": {
+        "conversationId": "22222222-2222-4222-8222-222222222222",
+        "kind": "DIRECT",
+        "state": "ACTIVE",
+        "peers": [
+          {
+            "state": "AVAILABLE",
+            "communityProfileId": "44444444-4444-4444-8444-444444444444",
+            "displayName": "Người dùng mẫu"
+          }
+        ],
+        "unreadCount": 0,
+        "version": "1"
+      }
+    },
+    {
+      "schema": "ReadCursor",
+      "value": {
+        "lastReadMessageId": "11111111-1111-4111-8111-111111111111"
+      }
+    },
+    {
+      "schema": "ReadResult",
+      "value": {
+        "lastReadMessageId": null,
+        "unreadCount": 0
+      }
+    },
+    {
       "schema": "MessageProjectionRequest",
       "value": {
         "conversationId": "22222222-2222-4222-8222-222222222222",
@@ -151,7 +213,6 @@
             "communityProfileId": "44444444-4444-4444-8444-444444444444",
             "displayName": "Người dùng mẫu"
           },
-          "sequence": "1",
           "content": "Tin nhắn tổng hợp.",
           "createdAt": "2026-10-20T06:00:00Z"
         }
@@ -188,6 +249,18 @@
       "payload": {
         "communityProfileId": "33333333-3333-4333-8333-333333333333",
         "state": "UNKNOWN"
+      }
+    },
+    {
+      "schemaVersion": 1,
+      "eventId": "11111111-1111-4111-8111-111111111111",
+      "correlationId": "11111111-1111-4111-8111-111111111111",
+      "occurredAt": "2026-10-20T06:00:00Z",
+      "eventType": "community.receipt.changed",
+      "payload": {
+        "conversationId": "22222222-2222-4222-8222-222222222222",
+        "communityProfileId": "44444444-4444-4444-8444-444444444444",
+        "lastReadMessageId": "11111111-1111-4111-8111-111111111111"
       }
     }
   ],
@@ -306,8 +379,7 @@
           "displayName": "Người dùng mẫu"
         },
         "content": "Tin nhắn tổng hợp.",
-        "createdAt": "2026-10-20T06:00:00Z",
-        "sequence": "1"
+        "createdAt": "2026-10-20T06:00:00Z"
       }
     },
     {
@@ -341,8 +413,7 @@
           "displayName": "Người dùng mẫu"
         },
         "content": "Tin nhắn tổng hợp.",
-        "createdAt": "2026-10-20T06:00:00Z",
-        "sequence": "1"
+        "createdAt": "2026-10-20T06:00:00Z"
       }
     },
     {

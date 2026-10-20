@@ -161,16 +161,17 @@ describe('MB-684 Community contract candidate', () => {
     expect(component('Peer')({ state: 'UNAVAILABLE', communityProfileId: uuid })).toBe(false);
   });
 
-  it('bounds plain text, pages, roles and safe sequence representation', () => {
+  it('bounds plain text, pages, roles and opaque read acknowledgements', () => {
     const validate = component('SendMessage');
     expect(validate({ clientMessageId: uuid, content: 'a'.repeat(4000) })).toBe(true);
     expect(validate({ clientMessageId: uuid, content: '' })).toBe(false);
     expect(validate({ clientMessageId: uuid, content: ' \n\t ' })).toBe(false);
     expect(validate({ clientMessageId: uuid, content: 'a'.repeat(4001) })).toBe(false);
     expect(validate({ clientMessageId: uuid, content: 'x', attachments: [] })).toBe(false);
-    expect(component('ReadCursor')({ lastReadSequence: '9007199254740993' })).toBe(true);
+    expect(component('ReadCursor')({ lastReadMessageId: uuid })).toBe(true);
+    expect(component('ReadCursor')({ lastReadSequence: '9007199254740993' })).toBe(false);
     expect(component('ReadCursor')({ lastReadSequence: 9007199254740992 })).toBe(false);
-    expect(component('ReadCursor')({ lastReadSequence: '-1' })).toBe(false);
+    expect(component('ReadCursor')({ lastReadMessageId: '9007199254740993' })).toBe(false);
     expect(component('AcceptedDirect')({ state: 'PENDING', requestId: uuid })).toBe(false);
     expect(component('MessagePage')({ items: [], nextCursor: null })).toBe(true);
     expect(component('MessagePage')({ items: [], nextCursor: 'x'.repeat(1025) })).toBe(false);
@@ -308,6 +309,7 @@ describe('MB-684 Community contract candidate', () => {
       ).toBe(false);
     }
   });
+
   it('provides a delegated content read without widening USER-only history authentication', () => {
     const projection = record.parse(
       api.paths['/internal/v1/community/chat/message-projections']?.post,
@@ -399,5 +401,38 @@ describe('MB-684 Community contract candidate', () => {
     expect(validate({ ...claims, iss: 'browser' })).toBe(false);
     expect(validate({ ...claims, act: { sub: 'content-notification-service' } })).toBe(false);
     expect(validate({ ...claims, sub: 'not-a-subject-uuid' })).toBe(false);
+  });
+
+  it('excludes global watermarks from both conversation kinds, messages, receipts and read results', () => {
+    for (const { schema, value } of examples.rest.filter((item) =>
+      ['Conversation', 'Message', 'ReadResult'].includes(item.schema),
+    )) {
+      for (const key of ['lastSequence', 'sequence', 'lastReadSequence', 'aggregateVersion']) {
+        expect(component(schema)({ ...value, [key]: '9007199254740993' })).toBe(false);
+      }
+    }
+    const messageEvent = example('events');
+    expect(
+      event({
+        ...messageEvent,
+        payload: {
+          message: { ...record.parse(payload(messageEvent).message), sequence: '100' },
+        },
+      }),
+    ).toBe(false);
+    const receiptEvent = examples.events.find(
+      (item) => item.eventType === 'community.receipt.changed',
+    );
+    if (!receiptEvent) throw new Error('Missing receipt fixture');
+    expect(
+      event({ ...receiptEvent, payload: { ...payload(receiptEvent), lastReadSequence: '100' } }),
+    ).toBe(false);
+    const pointer = example('facts');
+    expect(
+      fact({ ...pointer, payload: { ...payload(pointer), sequence: '9007199254740993' } }),
+    ).toBe(true);
+    expect(fact({ ...pointer, payload: { ...payload(pointer), sequence: 9007199254740992 } })).toBe(
+      false,
+    );
   });
 });
