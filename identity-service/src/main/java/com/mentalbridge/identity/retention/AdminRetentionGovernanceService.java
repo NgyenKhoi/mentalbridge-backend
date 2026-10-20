@@ -660,12 +660,35 @@ public class AdminRetentionGovernanceService {
 		);
 	}
 
+	private static final java.util.regex.Pattern SAFE_FAILURE_REASON_PATTERN = java.util.regex.Pattern.compile("^[A-Z0-9_]{1,64}$");
+	private static final java.util.regex.Pattern SAFE_EVIDENCE_REFERENCE_PATTERN = java.util.regex.Pattern.compile("^[a-zA-Z0-9_.:-]{1,128}$");
+
+	private String safeFailureReason(String reason) {
+		if (reason != null && SAFE_FAILURE_REASON_PATTERN.matcher(reason.trim()).matches()) {
+			return reason.trim();
+		}
+		return null;
+	}
+
+	private String safeEvidenceReference(String ref) {
+		if (ref != null && SAFE_EVIDENCE_REFERENCE_PATTERN.matcher(ref.trim()).matches()) {
+			return ref.trim();
+		}
+		return null;
+	}
+
 	private DeletionRequestResponse toDeletionResponse(DeletionRequestEntity entity) {
 		AccountEntity account = accounts.findById(entity.accountId()).orElse(null);
 		AccountStatus accStatus = account != null ? account.status() : null;
 
 		List<DeletionOwnerFactResponse> factResponses = entity.ownerFacts().stream().map(f ->
-				new DeletionOwnerFactResponse(f.ownerService(), f.status(), f.completedAt(), f.evidenceReference(), f.failureReason())
+				new DeletionOwnerFactResponse(
+						f.ownerService(),
+						f.status(),
+						f.completedAt(),
+						safeEvidenceReference(f.evidenceReference()),
+						safeFailureReason(f.failureReason())
+				)
 		).toList();
 
 		return new DeletionRequestResponse(

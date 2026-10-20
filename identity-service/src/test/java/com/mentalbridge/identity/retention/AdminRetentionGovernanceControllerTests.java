@@ -145,7 +145,7 @@ class AdminRetentionGovernanceControllerTests {
 		UUID requestId = UUID.randomUUID();
 		var item = new AdminRetentionGovernanceService.DeletionRequestResponse(
 				requestId, "tombstone:" + "c".repeat(64), AccountStatus.DELETION_PENDING,
-				DeletionRequestStatus.HELD, DeletionHoldType.LEGAL_HOLD, "COURT_ORDER", 0, 3,
+				DeletionRequestStatus.HELD, DeletionHoldType.LEGAL_HOLD, "STATUTORY_INQUIRY", 0, 3,
 				DeletionEscalationState.NONE, null, Instant.now(), Instant.now(), null, null, List.of()
 		);
 		when(service.applyHold(eq(requestId), eq(DeletionHoldType.LEGAL_HOLD), eq(DeletionHoldReason.STATUTORY_INQUIRY), any(), any()))
@@ -157,7 +157,8 @@ class AdminRetentionGovernanceControllerTests {
 				.andExpect(status().isOk())
 				.andExpect(header().exists("X-Correlation-Id"))
 				.andExpect(jsonPath("$.status").value("HELD"))
-				.andExpect(jsonPath("$.holdType").value("LEGAL_HOLD"));
+				.andExpect(jsonPath("$.holdType").value("LEGAL_HOLD"))
+				.andExpect(jsonPath("$.holdReason").value("STATUTORY_INQUIRY"));
 	}
 
 	@Test

@@ -873,4 +873,65 @@ class AdminRetentionGovernanceServiceTests {
 				.isInstanceOf(ResponseStatusException.class)
 				.satisfies(ex -> assertThat(((ResponseStatusException) ex).getStatusCode().value()).isEqualTo(400));
 	}
+
+	@Test
+	void toDeletionResponseSanitizesRawEmailJournalChatAndSecretToNull() {
+		UUID requestId = UUID.randomUUID();
+		UUID accountId = UUID.randomUUID();
+		var request = new DeletionRequestEntity(
+				requestId, accountId, "a".repeat(64), DeletionRequestStatus.IN_PROGRESS,
+				DeletionHoldType.NONE, null, 1, 3,
+				DeletionEscalationState.NONE, null, NOW, NOW, null, null, NOW, NOW
+		);
+
+		// Fact 1: Raw email leak in evidenceReference and failureReason
+		request.addOwnerFact(new DeletionOwnerFactEntity(
+				UUID.randomUUID(), request, RetentionOwnerService.CARE, DeletionFactStatus.FAILED,
+				NOW, "leak.user@example.com", "user@example.com not found", NOW
+		));
+
+		// Fact 2: Raw journal text leak
+		request.addOwnerFact(new DeletionOwnerFactEntity(
+				UUID.randomUUID(), request, RetentionOwnerService.JOURNAL_AI, DeletionFactStatus.FAILED,
+				NOW, "Hôm nay tôi cảm thấy rất buồn và tuyệt vọng", "Lỗi mã hóa bài viết tâm sự", NOW
+		));
+
+		// Fact 3: Raw chat / secret token leak
+		request.addOwnerFact(new DeletionOwnerFactEntity(
+				UUID.randomUUID(), request, RetentionOwnerService.CONSULTATION, DeletionFactStatus.FAILED,
+				NOW, "Bearer eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.supersecret", "secret_key=12345 leaked", NOW
+		));
+
+		// Fact 4: Valid opaque audit reference and approved safe failure code
+		request.addOwnerFact(new DeletionOwnerFactEntity(
+				UUID.randomUUID(), request, RetentionOwnerService.IDENTITY, DeletionFactStatus.COMPLETED,
+				NOW, "audit:identity:account-deleted:123", "ACCOUNT_NOT_FOUND", NOW
+		));
+
+		when(deletionRequests.findAll(any(Specification.class), any(Pageable.class)))
+				.thenReturn(new PageImpl<>(List.of(request)));
+
+		var page = service.getDeletionRequests(null, null, 20, 0);
+		var facts = page.items().getFirst().ownerFacts();
+
+		// Fact 1: email sanitized to null
+		var careFact = facts.stream().filter(f -> f.ownerService() == RetentionOwnerService.CARE).findFirst().orElseThrow();
+		assertThat(careFact.evidenceReference()).isNull();
+		assertThat(careFact.failureReason()).isNull();
+
+		// Fact 2: journal text sanitized to null
+		var journalFact = facts.stream().filter(f -> f.ownerService() == RetentionOwnerService.JOURNAL_AI).findFirst().orElseThrow();
+		assertThat(journalFact.evidenceReference()).isNull();
+		assertThat(journalFact.failureReason()).isNull();
+
+		// Fact 3: chat secret sanitized to null
+		var consultFact = facts.stream().filter(f -> f.ownerService() == RetentionOwnerService.CONSULTATION).findFirst().orElseThrow();
+		assertThat(consultFact.evidenceReference()).isNull();
+		assertThat(consultFact.failureReason()).isNull();
+
+		// Fact 4: valid audit reference and safe code preserved
+		var idFact = facts.stream().filter(f -> f.ownerService() == RetentionOwnerService.IDENTITY).findFirst().orElseThrow();
+		assertThat(idFact.evidenceReference()).isEqualTo("audit:identity:account-deleted:123");
+		assertThat(idFact.failureReason()).isEqualTo("ACCOUNT_NOT_FOUND");
+	}
 }

@@ -790,7 +790,7 @@ paths:
       tags: [Retention governance]
       operationId: triggerRetentionSweep
       summary: Trigger authoritative retention sweep for a supported owner policy
-      description: Purges expired artifacts and tokens for supported owners (e.g. Identity). Fails closed for unsupported owners.
+      description: Purges expired artifacts (e.g. platform report export files) for supported owners (e.g. Identity). Fails closed for unsupported owners.
       security:
         - bearerAuth: []
       parameters:
@@ -883,8 +883,8 @@ paths:
     post:
       tags: [Retention governance]
       operationId: applyDeletionHold
-      summary: Apply legal or operational hold to a deletion request
-      description: Blocks deletion execution until released by admin.
+      summary: Apply legal, operational, or dispute hold to a deletion request
+      description: Applies an Identity coordinator hold (LEGAL_HOLD, OPERATIONAL_HOLD, or DISPUTE_HOLD) blocking deletion coordination and retry attempts within Identity until released by admin. Does not assert or claim enforcement in external owner databases unless an authoritative cross-service contract exists.
       security:
         - bearerAuth: []
       parameters:
@@ -913,8 +913,8 @@ paths:
     delete:
       tags: [Retention governance]
       operationId: releaseDeletionHold
-      summary: Release legal or operational hold from a deletion request
-      description: Releases hold, permitting deletion coordination to resume.
+      summary: Release legal, operational, or dispute hold from a deletion request
+      description: Releases the Identity coordinator hold, permitting deletion coordination and retry attempts within Identity to resume. Does not mutate external owner facts or assert external enforcement.
       security:
         - bearerAuth: []
       parameters:
@@ -1472,8 +1472,8 @@ components:
         ownerService: { type: string, enum: [IDENTITY, CARE, CONSULTATION, JOURNAL_AI, COMMUNITY, CONTENT] }
         status: { type: string, enum: [PENDING, COMPLETED, HELD, FAILED, UNAVAILABLE] }
         completedAt: { type: [string, 'null'], format: date-time }
-        evidenceReference: { type: [string, 'null'] }
-        failureReason: { type: [string, 'null'] }
+        evidenceReference: { type: [string, 'null'], maxLength: 128, pattern: '^[a-zA-Z0-9_.:-]{1,128}$' }
+        failureReason: { type: [string, 'null'], maxLength: 64, pattern: '^[A-Z0-9_]{1,64}$' }
     DeletionHoldReason:
       type: string
       enum:
