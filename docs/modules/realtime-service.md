@@ -1,5 +1,11 @@
 # Realtime Service specification
 
+Current durable message ownership below describes appointment chat. The
+[Community chat proposal / MB-COMMUNITY-CHAT-001](../adr/0042-community-chat-contract.md)
+keeps peer messages in Community-owned PostgreSQL and limits Realtime to
+authorized transport and ephemeral presence. It is not implemented by MB-684
+and cannot reuse appointment tickets, rooms, eligibility or message storage.
+
 ## Business boundary
 
 Realtime owns conversations, encrypted messages, attachments metadata, tombstones, receipts, client WebSocket sessions, presence, and owner-specific message moderation. MongoDB is durable truth; Redis holds only expiring presence/routing/fan-out/rate/idempotency state. Consultation/Care remain authorization authorities.

@@ -2,6 +2,11 @@
 
 ## Ownership map
 
+The MB-684 [Community peer-chat proposal](../adr/0042-community-chat-contract.md)
+is a prospective scoped extension: Community owns peer messages/permissions in
+its PostgreSQL; Realtime owns transport and ephemeral presence. It introduces
+no runtime path and does not move existing appointment chat out of MongoDB.
+
 | Module | Recommended runtime | Owns | May query synchronously | Publishes/consumes asynchronously |
 | --- | --- | --- | --- | --- |
 | `identity-service` | Spring Boot | account, credentials, roles, sessions, deletion coordination, minimized audit/security projection | no profile health data | account lifecycle, deletion and safe audit events |

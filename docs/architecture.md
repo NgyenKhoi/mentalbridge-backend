@@ -1,5 +1,13 @@
 # Architecture
 
+Community peer chat is a proposed scoped extension in
+[ADR 0042 / MB-COMMUNITY-CHAT-001](adr/0042-community-chat-contract.md).
+On acceptance, Community owns its peer messages/membership in its own PostgreSQL;
+Realtime owns transport/ephemeral presence without a duplicate message store.
+The Realtime/MongoDB durable-chat statements below describe existing appointment
+chat and do not authorize reusing it for unrestricted peer messaging. MB-684
+contains contracts only; no runtime storage or endpoint moves.
+
 > Current product authority/navigation: [Current Product Blueprint](CURRENT_PRODUCT_BLUEPRINT.md).
 > The architecture follows ADR 0017 as prospectively amended by ADR 0022 and
 > distinguishes approved targets from implemented runtime.

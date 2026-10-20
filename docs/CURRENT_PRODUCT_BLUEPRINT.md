@@ -4,6 +4,13 @@ This file is the **navigation and authority map** for current MentalBridge produ
 
 ## 1. Source-of-truth order
 
+Community peer messaging has a separate **proposed target** in
+[ADR 0042 / MB-COMMUNITY-CHAT-001](adr/0042-community-chat-contract.md) and
+[Community chat policy v1](policies/community-chat-policy-v1.md). MB-684 supplies
+privacy/permission/API/event contracts only. Approval and merge accept the target;
+MB-685 through MB-693 supply runtime/client and acceptance evidence. No DM/group
+or new presence capability is made available by the contract task.
+
 For product/business behavior, use this order:
 
 1. the latest accepted product-scope ADR or explicit amendment that covers the rule;

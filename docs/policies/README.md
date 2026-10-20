@@ -1,5 +1,11 @@
 # MentalBridge policy register
 
+[Community chat policy v1](community-chat-policy-v1.md) is the MB-684 candidate
+under [MB-COMMUNITY-CHAT-001](../adr/0042-community-chat-contract.md).
+It is proposed for owner/security approval, including numeric defaults and
+retention, and is not runtime configuration. Its acceptance/permission tables
+precede downstream implementation. Appointment policy is unchanged.
+
 This directory contains versioned product, safety, privacy, and support policies that constrain executable behavior. A policy marked `DRAFT` is not production configuration and must not be treated as approved merely because its structure or cited scoring method is complete.
 
 Read [Current Product Blueprint](../CURRENT_PRODUCT_BLUEPRINT.md) first for the current authority map. Current cross-feature scope is based on `MB-SCOPE-V2-001` and amended by `MB-SCOPE-V2-002`. Historical policy versions remain for provenance and must not override a later explicit amendment.

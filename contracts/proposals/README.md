@@ -6,6 +6,18 @@ A proposal is not a callable API. Move an accepted REST contract into `contracts
 
 ## Active proposals
 
+MB-684 adds the [Community chat OpenAPI candidate](community-chat-v1.openapi.json),
+[client commands](community-chat-command-v1.schema.json),
+[namespace handshake](community-chat-handshake-v1.schema.json),
+[private socket events](community-chat-realtime-v1.schema.json),
+[minimized durable facts](community-chat-fact-v1.schema.json) and
+[synthetic examples](community-chat-v1.examples.json).
+[ADR 0042 / MB-COMMUNITY-CHAT-001](../../docs/adr/0042-community-chat-contract.md)
+requires owner/security approval before downstream runtime work. Every route
+is planned. Acceptance states, permission matrix, approval items and runtime
+verification obligations are in the
+[MB-684 evidence](../../docs/story-mb-684-community-chat-contract-evidence.md).
+
 | Proposal | Owner | Decision | Review state |
 | --- | --- | --- | --- |
 | [`care-support-plan-v1.yaml`](care-support-plan-v1.yaml) | Care | ADR 0013 / `mb-support-plan-selection-v1` | Policy-frozen server-proposal design; Care, Content, and Frontend contract review required |

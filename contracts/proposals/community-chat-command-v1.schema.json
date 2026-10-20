@@ -1,0 +1,132 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://mentalbridge.dev/contracts/proposals/community-chat-command-v1.schema.json",
+  "title": "community-chat-command-v1.schema.json",
+  "description": "Proposed MB-684 contract. No runtime adapter is activated by this schema.",
+  "oneOf": [
+    {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "schemaVersion",
+        "commandId",
+        "correlationId",
+        "commandType",
+        "payload"
+      ],
+      "properties": {
+        "schemaVersion": {
+          "const": 1
+        },
+        "commandId": {
+          "type": "string",
+          "format": "uuid"
+        },
+        "correlationId": {
+          "type": "string",
+          "format": "uuid"
+        },
+        "commandType": {
+          "const": "community.conversation.subscribe"
+        },
+        "payload": {
+          "type": "object",
+          "additionalProperties": false,
+          "required": [
+            "conversationId"
+          ],
+          "properties": {
+            "conversationId": {
+              "type": "string",
+              "format": "uuid"
+            }
+          }
+        }
+      }
+    },
+    {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "schemaVersion",
+        "commandId",
+        "correlationId",
+        "commandType",
+        "payload"
+      ],
+      "properties": {
+        "schemaVersion": {
+          "const": 1
+        },
+        "commandId": {
+          "type": "string",
+          "format": "uuid"
+        },
+        "correlationId": {
+          "type": "string",
+          "format": "uuid"
+        },
+        "commandType": {
+          "const": "community.presence.heartbeat"
+        },
+        "payload": {
+          "type": "object",
+          "additionalProperties": false,
+          "required": [
+            "foreground"
+          ],
+          "properties": {
+            "foreground": {
+              "type": "boolean"
+            }
+          }
+        }
+      }
+    },
+    {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "schemaVersion",
+        "commandId",
+        "correlationId",
+        "commandType",
+        "payload"
+      ],
+      "properties": {
+        "schemaVersion": {
+          "const": 1
+        },
+        "commandId": {
+          "type": "string",
+          "format": "uuid"
+        },
+        "correlationId": {
+          "type": "string",
+          "format": "uuid"
+        },
+        "commandType": {
+          "const": "community.typing.set"
+        },
+        "payload": {
+          "type": "object",
+          "additionalProperties": false,
+          "required": [
+            "conversationId",
+            "typing"
+          ],
+          "properties": {
+            "conversationId": {
+              "type": "string",
+              "format": "uuid"
+            },
+            "typing": {
+              "type": "boolean"
+            }
+          }
+        }
+      }
+    }
+  ],
+  "$defs": {}
+}

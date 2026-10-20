@@ -4,6 +4,14 @@ NestJS 11 service on Node.js 24 that owns MentalBridge conversations, encrypted 
 
 ## Current scope
 
+The runtime described here is appointment chat. MB-684's proposed
+[Community chat ADR](../docs/adr/0042-community-chat-contract.md) isolates
+`/community` transport/presence from `/realtime`: Community would own durable
+peer messages/authorization, and Realtime would fetch current authorized results
+through REST without copying them to MongoDB or Redis. No new namespace or
+handler is implemented by MB-684. Its contract tests run in the existing Vitest
+contract lane and do not claim provider authorization/infrastructure coverage.
+
 - Socket.IO `/realtime` namespace with one-use, 30-second browser credentials bound to Identity-issued RS256 JWTs
 - strict versioned command, acknowledgement, error and server-event envelopes
 - Redis TTL presence and bounded per-account connection routing
@@ -28,6 +36,18 @@ Message acknowledgements use `liveDelivery: not_applicable` because this baselin
 MongoDB is durable truth. Redis contains only expiring socket routing and presence metadata. Message bodies are encrypted with AES-256-GCM and are never written to logs, metrics, Redis or cross-service events.
 
 ## Commands
+
+The disposable MongoDB integration fixture sets
+`GLIBC_TUNABLES=glibc.pthread.rseq=1` so glibc retains rseq registration and MongoDB
+uses its supported per-thread allocator path. The GitHub Ubuntu 24.04 image
+[`20261018.339.1`](https://github.com/actions/runner-images/releases/tag/ubuntu24%2F20261018.339)
+moved to kernel `7.0.0-1017-azure`; MongoDB documents a
+[TCMalloc incompatibility on kernels 6.19–7.0.13](https://www.mongodb.com/docs/manual/release-notes/8.0/).
+See [MongoDB's allocator explanation](https://www.mongodb.com/docs/manual/administration/tcmalloc-performance/)
+and the [official image issue](https://github.com/docker-library/mongo/issues/765).
+This setting affects only the disposable test container. It does not bypass
+MongoDB's startup guard, change production configuration, remove readiness
+checks or weaken the real MongoDB/Redis/Socket.IO integration assertions.
 
 ```powershell
 npm ci
