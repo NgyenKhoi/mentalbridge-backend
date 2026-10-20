@@ -41,6 +41,11 @@ describe('Community MB-689 runtime contracts', () => {
         '/internal/v1/community/chat/session-authorizations',
         'authorizeCommunitySession',
       ],
+      [
+        'community-service-v1.yaml',
+        '/internal/v1/community/chat/presence-projections',
+        'projectCommunityPresence',
+      ],
     ] as const) {
       const api = await SwaggerParser.validate(
         fileURLToPath(new URL('../../../contracts/openapi/' + contract, import.meta.url)),
@@ -67,6 +72,13 @@ describe('Community MB-689 runtime contracts', () => {
       payload: { conversationId: communityConversation },
     };
     expect(command(value)).toBe(true);
+    const heartbeat = {
+      ...value,
+      commandType: 'community.presence.heartbeat',
+      payload: { foreground: true },
+    };
+    expect(command(heartbeat)).toBe(true);
+    expect(command({ ...heartbeat, payload: { foreground: true, ttl: 60000 } })).toBe(false);
     expect(command({ ...value, payload: { ...value.payload, actor: communityBob } })).toBe(false);
     const event = await compile('websocket/community/event-v1.schema.json');
     const header = {
@@ -82,6 +94,16 @@ describe('Community MB-689 runtime contracts', () => {
     };
     expect(event(state)).toBe(true);
     expect(event({ ...state, payload: { ...state.payload, sequence: '10' } })).toBe(false);
+    const presence = {
+      ...header,
+      eventType: 'community.presence.changed',
+      payload: { communityProfileId: communityBob, state: 'ONLINE' },
+    };
+    expect(event(presence)).toBe(true);
+    for (const field of ['subjectRoutingReference', 'lastSeen', 'expiresAt', 'invisible'])
+      expect(event({ ...presence, payload: { ...presence.payload, [field]: communityBob } })).toBe(
+        false,
+      );
     expect(
       event({
         ...header,
