@@ -18,6 +18,12 @@ $liveKitEnvironment = [ordered]@{
     'LIVEKIT_TOKEN_TTL' = 'PT2M'
 }
 $previousLiveKitEnvironment = @{}
+$chatEnvironment = [ordered]@{
+    'IDENTITY_COMMUNITY_CHAT_SERVICE_TOKEN' = 'synthetic-mb685-dedicated-owner-credential'
+    'COMMUNITY_CHAT_ENCRYPTION_KEY' = 'synthetic-mb685-key-not-shared-with-other-services'
+    'COMMUNITY_CHAT_DECRYPTION_KEYS' = '{}'
+}
+$previousChatEnvironment = @{}
 $failures = [System.Collections.Generic.List[string]]::new()
 
 function Add-Failure([string]$Message) {
@@ -33,6 +39,10 @@ try {
     [Environment]::SetEnvironmentVariable($variableName, $placeholder, 'Process')
     foreach ($entry in $liveKitEnvironment.GetEnumerator()) {
         $previousLiveKitEnvironment[$entry.Key] = [Environment]::GetEnvironmentVariable($entry.Key, 'Process')
+        [Environment]::SetEnvironmentVariable($entry.Key, $entry.Value, 'Process')
+    }
+    foreach ($entry in $chatEnvironment.GetEnumerator()) {
+        $previousChatEnvironment[$entry.Key] = [Environment]::GetEnvironmentVariable($entry.Key, 'Process')
         [Environment]::SetEnvironmentVariable($entry.Key, $entry.Value, 'Process')
     }
     $jsonLines = @(& docker compose --file $ComposeFile --env-file $EnvironmentFile --profile demo --profile full-test config --format json --no-env-resolution)
@@ -124,15 +134,36 @@ try {
         }
     }
 
+    foreach ($entry in $chatEnvironment.GetEnumerator()) {
+        $allowed = if ($entry.Key -eq 'IDENTITY_COMMUNITY_CHAT_SERVICE_TOKEN') { @('identity', 'community') } else { @('community') }
+        foreach ($serviceName in $allowed) {
+            $service = $configuration.services.PSObject.Properties[$serviceName].Value
+            if (-not (Has-Property $service.environment $entry.Key) -or [string]$service.environment.PSObject.Properties[$entry.Key].Value -ne $entry.Value) {
+                Add-Failure "Service '$serviceName' does not receive exact Community chat configuration '$($entry.Key)'"
+            }
+        }
+        foreach ($serviceProperty in $configuration.services.PSObject.Properties) {
+            if ($allowed -contains $serviceProperty.Name -or -not (Has-Property $serviceProperty.Value 'environment')) { continue }
+            foreach ($property in $serviceProperty.Value.environment.PSObject.Properties) {
+                if ($property.Name -eq $entry.Key -or ($entry.Key -ne 'COMMUNITY_CHAT_DECRYPTION_KEYS' -and [string]$property.Value -eq $entry.Value)) {
+                    Add-Failure "Service '$($serviceProperty.Name)' must not receive Community chat secret '$($entry.Key)'"
+                }
+            }
+        }
+    }
+
     if ($failures.Count -gt 0) {
         $failures | ForEach-Object { Write-Error $_ }
         throw "Compose credential boundary verification failed with $($failures.Count) error(s)"
     }
-    Write-Output 'Compose credential boundaries verified for Companion and Consultation LiveKit configuration.'
+    Write-Output 'Compose credential boundaries verified for Companion, Consultation LiveKit and Community chat configuration.'
 }
 finally {
     [Environment]::SetEnvironmentVariable($variableName, $previousValue, 'Process')
     foreach ($entry in $previousLiveKitEnvironment.GetEnumerator()) {
+        [Environment]::SetEnvironmentVariable($entry.Key, $entry.Value, 'Process')
+    }
+    foreach ($entry in $previousChatEnvironment.GetEnumerator()) {
         [Environment]::SetEnvironmentVariable($entry.Key, $entry.Value, 'Process')
     }
     Pop-Location

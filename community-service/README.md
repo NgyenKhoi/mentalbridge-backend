@@ -14,12 +14,12 @@ baseline for future delivery rather than a capability advertisement.
 
 - Java 21 and Spring Boot 4
 - service-owned PostgreSQL database with Liquibase migrations
-- local verification of Identity-issued RS256 JWTs; no synchronous Identity lookup
+- local verification of Identity-issued RS256 JWTs; direct chat additionally checks current eligibility through bounded Identity REST
 - Cloudinary Java SDK configuration seam for later media workflows
 - Actuator health/readiness and Prometheus metrics
 - opaque cursor pagination with explicit OR filtering across at most three active governed topics
 - fail-closed post visibility for moderation and bilateral Community blocks
-- Community-owned display identity resolved from the locally verified JWT subject, without synchronous Identity or Care calls
+- Community-owned display identity resolved from the locally verified JWT subject; feed/profile flows make no synchronous Identity or Care calls
 - short-lived signed Cloudinary uploads with server-side format, size, duration, and ownership verification
 - authenticated originals, signed metadata-stripped delivery transformations, and scheduled orphan cleanup
 - naturally idempotent supportive reactions and private bookmarks with transactionally consistent reaction counts
@@ -76,7 +76,7 @@ Copy `.env.example` to `.env` for local development. Real environment variables 
 | `COMMUNITY_MEDIA_UPLOAD_INTENT_TTL` | no | Signed upload window as a Spring duration; defaults to `10m` |
 | `COMMUNITY_MEDIA_ORPHAN_RETENTION` | no | Retention before unattached finalized media expires; defaults to `24h` |
 | `COMMUNITY_MEDIA_CLEANUP_INTERVAL` | no | Scheduled cleanup cadence; defaults to `1h` |
-| `KAFKA_BOOTSTRAP_SERVERS` | when relay enabled | Comma-separated brokers used only by the Community interaction relay |
+| `KAFKA_BOOTSTRAP_SERVERS` | when a relay is enabled | Comma-separated brokers for the independent interaction/chat relays |
 | `COMMUNITY_INTERACTION_RELAY_ENABLED` | no | Publishes due interaction facts; defaults to `false` unless the topic is provisioned |
 | `COMMUNITY_INTERACTION_RELAY_BATCH_SIZE` | no | Maximum outbox rows claimed per relay run; defaults to `100` |
 | `COMMUNITY_INTERACTION_RELAY_INTERVAL` | no | Delay between relay runs; defaults to `PT5S` |
@@ -105,7 +105,7 @@ MB-579 uses a compatibility-first rollout: deploy the frontend that accepts both
 
 ## MB-685 direct-chat provider
 
-Community owns the direct-chat provider subset in [`community-chat-v1.json`](../contracts/openapi/community-chat-v1.json). `COMMUNITY_CHAT_ENABLED` defaults false until the operator supplies the dedicated Identity credential and a versioned 32-byte AES key. No success or cached current history is returned while unavailable. No Community message is stored in Realtime or transmitted through Kafka/Redis. MB-686 owns clients; groups and socket/presence delivery remain downstream stories.
+Community owns the ten-operation direct-chat provider subset in [`community-chat-v1.json`](../contracts/openapi/community-chat-v1.json), registered by canonical OpenAPI v1.12. `COMMUNITY_CHAT_ENABLED` defaults false until the operator supplies the dedicated Identity credential and a versioned 32-byte AES key. No success or cached current history is returned while unavailable. Community message bodies remain encrypted in the Community owner store; Kafka contains minimized pointers only. MB-686 owns clients; groups, internal delegated projection/authorization endpoints, socket/presence and notification consumers remain downstream stories. Their accepted proposal shapes do not advertise runtime support here.
 
 | Variable | Meaning |
 | --- | --- |
@@ -117,6 +117,9 @@ Community owns the direct-chat provider subset in [`community-chat-v1.json`](../
 | `COMMUNITY_CHAT_ENCRYPTION_KEY` | Required base64 32-byte AES-GCM/HMAC secret when enabled; supplied externally. |
 | `COMMUNITY_CHAT_ENCRYPTION_KEY_VERSION` | Stable non-secret key identifier, default v1; never reuse a version with another key. |
 | `COMMUNITY_CHAT_DECRYPTION_KEYS` | JSON object of retained version→base64 keys for ciphertext/cursor/retry rotation, default {} (at most ten prior versions). |
+| `COMMUNITY_CHAT_RELAY_ENABLED` | Independent opt-in publisher, default false; requires chat enabled and the provisioned topic. |
+| `COMMUNITY_CHAT_RELAY_BATCH_SIZE` | Maximum sequential claims per run, default 100, valid 1–500. |
+| `COMMUNITY_CHAT_RELAY_INTERVAL` | Fixed delay, default PT5S, valid 100 ms–1 hour. |
 
 Cursor tokens are AES-GCM authenticated ciphertext, bound to actor, surface and visibility epoch. They expose neither numeric message gaps nor private identities. Public version is for management only. Reads/sends use a fresh bounded, fail-closed Identity eligibility read outside the Community transaction, then lock current profiles in UUID order before checking local restrictions/blocks and mutating. No cross-service transaction or cached positive grant is claimed.
 
@@ -129,3 +132,11 @@ History is ordered by a private server sequence with an authenticated encrypted 
 Read acknowledgement accepts only a currently readable message UUID in that exact conversation. Private read state advances monotonically even when shared receipts are disabled. Counts exclude self and expired/purged content; block/restriction/inactive-account checks override history, unread, send and retry access. Existing accepted relationships remain accepted across privacy changes; unblock restores eligible retained history without replaying notifications or accepting a pending request.
 
 AES-GCM binds each ciphertext to its exact message/conversation/sender. Retain old key versions while messages or retry identities need them; never change key material under the same version. Ciphertext is excluded immediately at its stored 90-day expiry. A bounded sweep runs every minute, erasing ciphertext in independent batches of 500 (up to ten batches per sweep); it preserves content-free message/command identity and private read max. This is owner retention cleanup, not account-deletion orchestration or a promise of realtime delivery. No existing appointment chat is rewritten.
+
+### Minimized fact relay and rollout
+
+`mentalbridge.community.chat.v1` is provisioned explicitly by Compose with three partitions and seven-day delete retention. Production provisioning must match the accepted schema and conversation UUID key before enabling `COMMUNITY_CHAT_RELAY_ENABLED`; broker auto-creation is not a rollout strategy. The relay claims one due row at a time with `SKIP LOCKED`, a ten-second lease and stale-attempt protection. Kafka calls run outside the database transaction, with `acks=all`, producer idempotence, 500 ms metadata blocking, one-second broker request timeout, three-second delivery timeout and four-second ACK wait. Failed attempts back off from one to thirty seconds. A broker outage never changes a successful owner save into a delivery claim.
+
+Publishing is at-least-once: a crash or timeout around ACK can replay the same envelope ID. Consumers must dedupe stable/logical identities and reauthorize each current recipient rather than treating a fact as a permission grant. No consumer, socket delivery, presence projection or notification materialization is installed by this story. Existing interaction publishing uses its own producer configuration. The chat producer disables payload-printing error listeners and logs only safe event ID/attempt metadata.
+
+Apply owner Liquibase migrations 0017/0018 before enabling the feature; canonical SQL is documentation only. Deploy Identity's dedicated eligibility provider first, provision the topic and install externally managed keys/credentials, then opt in the Community API and relay. Compose passes the eligibility credential only to Identity and Community, and encryption keys only to Community. Use TLS or a trusted private service network for the credential-bearing Identity call. A rollback disables API/relay flags and retains additive tables, ciphertext and key versions; do not drop durable messages or rewrite applied migrations. This change does not deploy to shared environments or invoke paid/external providers.

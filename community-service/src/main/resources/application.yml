@@ -35,6 +35,10 @@ spring:
 
 mentalbridge:
   community:
+    chat-relay:
+      enabled: ${COMMUNITY_CHAT_RELAY_ENABLED:false}
+      batch-size: ${COMMUNITY_CHAT_RELAY_BATCH_SIZE:100}
+      interval: ${COMMUNITY_CHAT_RELAY_INTERVAL:PT5S}
     chat:
       enabled: ${COMMUNITY_CHAT_ENABLED:false}
       identity-base-url: ${COMMUNITY_CHAT_IDENTITY_BASE_URL:}

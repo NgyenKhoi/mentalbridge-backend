@@ -50,6 +50,7 @@ services:
         /opt/kafka/bin/kafka-topics.sh --bootstrap-server kafka:9092 --create --if-not-exists --topic mentalbridge.identity.account-lifecycle.v1 --partitions 3 --replication-factor 1
         /opt/kafka/bin/kafka-topics.sh --bootstrap-server kafka:9092 --create --if-not-exists --topic mentalbridge.care.user-notification.v1 --partitions 3 --replication-factor 1
         /opt/kafka/bin/kafka-topics.sh --bootstrap-server kafka:9092 --create --if-not-exists --topic mentalbridge.community.interaction.v1 --partitions 3 --replication-factor 1
+        /opt/kafka/bin/kafka-topics.sh --bootstrap-server kafka:9092 --create --if-not-exists --topic mentalbridge.community.chat.v1 --partitions 3 --replication-factor 1 --config retention.ms=604800000 --config cleanup.policy=delete
         /opt/kafka/bin/kafka-topics.sh --bootstrap-server kafka:9092 --create --if-not-exists --topic mentalbridge.content-notification.account-preference-dead-letter.v1 --partitions 1 --replication-factor 1
         /opt/kafka/bin/kafka-topics.sh --bootstrap-server kafka:9092 --create --if-not-exists --topic mentalbridge.content-notification.community-interaction-dead-letter.v1 --partitions 1 --replication-factor 1
         /opt/kafka/bin/kafka-topics.sh --bootstrap-server kafka:9092 --create --if-not-exists --topic mentalbridge.content-notification.care-user-notification-dead-letter.v1 --partitions 1 --replication-factor 1
@@ -98,6 +99,7 @@ services:
       IDENTITY_BREVO_SENDER_EMAIL: ${IDENTITY_BREVO_SENDER_EMAIL:-}
       IDENTITY_BREVO_SENDER_NAME: ${IDENTITY_BREVO_SENDER_NAME:-MentalBridge}
       IDENTITY_NOTIFICATION_SERVICE_TOKEN: ${IDENTITY_NOTIFICATION_SERVICE_TOKEN:?Set a shared notification service token of at least 32 characters in .env}
+      IDENTITY_COMMUNITY_CHAT_SERVICE_TOKEN: ${IDENTITY_COMMUNITY_CHAT_SERVICE_TOKEN:-}
       IDENTITY_VERIFICATION_URL: ${IDENTITY_VERIFICATION_URL:-http://localhost:3000/verify-email}
       IDENTITY_LOCAL_VERIFICATION_DIRECTORY: /var/lib/mentalbridge/identity-verification
       KAFKA_BOOTSTRAP_SERVERS: kafka:9092
@@ -285,6 +287,17 @@ services:
       COMMUNITY_DB_USERNAME: ${COMMUNITY_DB_USERNAME:?Set the shared dev/staging Community database username in .env}
       COMMUNITY_DB_PASSWORD: ${COMMUNITY_DB_PASSWORD:?Set COMMUNITY_DB_PASSWORD in .env}
       COMMUNITY_LIQUIBASE_ENABLED: "false"
+      COMMUNITY_CHAT_ENABLED: ${COMMUNITY_CHAT_ENABLED:-false}
+      IDENTITY_COMMUNITY_CHAT_SERVICE_TOKEN: ${IDENTITY_COMMUNITY_CHAT_SERVICE_TOKEN:-}
+      COMMUNITY_CHAT_IDENTITY_BASE_URL: ${COMMUNITY_CHAT_IDENTITY_BASE_URL:-http://identity:8080}
+      COMMUNITY_CHAT_IDENTITY_CONNECT_TIMEOUT: ${COMMUNITY_CHAT_IDENTITY_CONNECT_TIMEOUT:-PT0.5S}
+      COMMUNITY_CHAT_IDENTITY_READ_TIMEOUT: ${COMMUNITY_CHAT_IDENTITY_READ_TIMEOUT:-PT1.5S}
+      COMMUNITY_CHAT_ENCRYPTION_KEY: ${COMMUNITY_CHAT_ENCRYPTION_KEY:-}
+      COMMUNITY_CHAT_ENCRYPTION_KEY_VERSION: ${COMMUNITY_CHAT_ENCRYPTION_KEY_VERSION:-v1}
+      COMMUNITY_CHAT_DECRYPTION_KEYS: ${COMMUNITY_CHAT_DECRYPTION_KEYS:-{}}
+      COMMUNITY_CHAT_RELAY_ENABLED: ${COMMUNITY_CHAT_RELAY_ENABLED:-false}
+      COMMUNITY_CHAT_RELAY_BATCH_SIZE: ${COMMUNITY_CHAT_RELAY_BATCH_SIZE:-100}
+      COMMUNITY_CHAT_RELAY_INTERVAL: ${COMMUNITY_CHAT_RELAY_INTERVAL:-PT5S}
       CLOUDINARY_CLOUD_NAME: ${CLOUDINARY_CLOUD_NAME:?Set CLOUDINARY_CLOUD_NAME in .env}
       CLOUDINARY_API_KEY: ${CLOUDINARY_API_KEY:?Set CLOUDINARY_API_KEY in .env}
       CLOUDINARY_API_SECRET: ${CLOUDINARY_API_SECRET:?Set CLOUDINARY_API_SECRET in .env}
