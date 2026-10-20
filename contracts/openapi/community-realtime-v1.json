@@ -1,0 +1,218 @@
+{
+  "openapi": "3.1.0",
+  "info": {
+    "title": "Community realtime credential API",
+    "version": "1.0.0"
+  },
+  "paths": {
+    "/internal/v1/community/socket-credentials": {
+      "x-mentalbridge-status": "implemented",
+      "x-mentalbridge-owner": "realtime-service",
+      "post": {
+        "operationId": "createCommunitySocketCredential",
+        "summary": "createCommunitySocketCredential",
+        "description": "BFF-signed RS256 delegation: iss/act.sub community-bff, aud realtime-service, scope community:socket:issue, UUID sub/jti, iat <= now < exp, 0 < exp-iat <= 30, identityExpiresAt > now. identityExpiresAt is the original verified Identity expiry; BFF must never extend it. One-use 30-second namespace-isolated ticket, socket lifetime bounded to identityExpiresAt. Current Community session gate is checked at issue and consume. No raw Identity bearer is placed in Redis.",
+        "x-mentalbridge-role": "SERVICE",
+        "security": [
+          {
+            "RealtimeDelegation": []
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Current authorized owner projection; never cache.",
+            "headers": {
+              "Cache-Control": {
+                "schema": {
+                  "const": "no-store"
+                }
+              }
+            },
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/SocketCredential"
+                }
+              }
+            }
+          },
+          "400": {
+            "$ref": "#/components/responses/InvalidRequest"
+          },
+          "401": {
+            "$ref": "#/components/responses/Unauthenticated"
+          },
+          "403": {
+            "$ref": "#/components/responses/Forbidden"
+          },
+          "404": {
+            "$ref": "#/components/responses/TargetUnavailable"
+          },
+          "429": {
+            "$ref": "#/components/responses/RateLimited"
+          },
+          "503": {
+            "$ref": "#/components/responses/DependencyUnavailable"
+          }
+        }
+      }
+    }
+  },
+  "components": {
+    "securitySchemes": {
+      "RealtimeDelegation": {
+        "type": "http",
+        "scheme": "bearer",
+        "bearerFormat": "JWT",
+        "description": "Authenticated service plus signed short-lived end-user delegation with exact audience/subject/scope; never browser-supplied routing identity."
+      }
+    },
+    "schemas": {
+      "SocketCredential": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": [
+          "schemaVersion",
+          "credential",
+          "namespace",
+          "expiresAt"
+        ],
+        "properties": {
+          "schemaVersion": {
+            "const": 1
+          },
+          "credential": {
+            "type": "string",
+            "minLength": 32,
+            "maxLength": 512
+          },
+          "namespace": {
+            "const": "/community"
+          },
+          "expiresAt": {
+            "type": "string",
+            "format": "date-time"
+          }
+        }
+      },
+      "Problem": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": [
+          "type",
+          "title",
+          "status",
+          "code",
+          "correlationId"
+        ],
+        "properties": {
+          "type": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 256
+          },
+          "title": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 160
+          },
+          "status": {
+            "type": "integer",
+            "minimum": 400,
+            "maximum": 599
+          },
+          "code": {
+            "type": "string",
+            "enum": [
+              "INVALID_REQUEST",
+              "UNAUTHENTICATED",
+              "FORBIDDEN",
+              "TARGET_UNAVAILABLE",
+              "VERSION_CONFLICT",
+              "IDEMPOTENCY_CONFLICT",
+              "REQUEST_NOT_ALLOWED",
+              "MEMBER_LIMIT_REACHED",
+              "RATE_LIMITED",
+              "DEPENDENCY_UNAVAILABLE"
+            ]
+          },
+          "correlationId": {
+            "type": "string",
+            "format": "uuid"
+          }
+        }
+      }
+    },
+    "responses": {
+      "InvalidRequest": {
+        "description": "Invalid closed request.",
+        "content": {
+          "application/problem+json": {
+            "schema": {
+              "$ref": "#/components/schemas/Problem"
+            }
+          }
+        }
+      },
+      "Unauthenticated": {
+        "description": "Missing or expired authentication.",
+        "content": {
+          "application/problem+json": {
+            "schema": {
+              "$ref": "#/components/schemas/Problem"
+            }
+          }
+        }
+      },
+      "Forbidden": {
+        "description": "Role or service scope denied.",
+        "content": {
+          "application/problem+json": {
+            "schema": {
+              "$ref": "#/components/schemas/Problem"
+            }
+          }
+        }
+      },
+      "TargetUnavailable": {
+        "description": "Unknown and inaccessible targets are indistinguishable.",
+        "content": {
+          "application/problem+json": {
+            "schema": {
+              "$ref": "#/components/schemas/Problem"
+            }
+          }
+        }
+      },
+      "RateLimited": {
+        "description": "Bounded rate limit; retry only after Retry-After.",
+        "content": {
+          "application/problem+json": {
+            "schema": {
+              "$ref": "#/components/schemas/Problem"
+            }
+          }
+        },
+        "headers": {
+          "Retry-After": {
+            "schema": {
+              "type": "integer",
+              "minimum": 1
+            },
+            "description": "Seconds until a retry may be attempted."
+          }
+        }
+      },
+      "DependencyUnavailable": {
+        "description": "Authoritative dependency unavailable; no allowed/success fallback.",
+        "content": {
+          "application/problem+json": {
+            "schema": {
+              "$ref": "#/components/schemas/Problem"
+            }
+          }
+        }
+      }
+    }
+  }
+}

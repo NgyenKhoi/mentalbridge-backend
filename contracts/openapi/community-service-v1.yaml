@@ -656,6 +656,10 @@ paths:
 
 components:
   securitySchemes:
+    RealtimeDelegation:
+      $ref: './community-chat-v1.json#/components/securitySchemes/RealtimeDelegation'
+    RealtimeMessageReadDelegation:
+      $ref: './community-chat-v1.json#/components/securitySchemes/RealtimeMessageReadDelegation'
     BearerAuth: { type: http, scheme: bearer, bearerFormat: JWT }
   parameters:
     PostId:

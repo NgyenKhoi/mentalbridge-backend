@@ -51,6 +51,7 @@ services:
         /opt/kafka/bin/kafka-topics.sh --bootstrap-server kafka:9092 --create --if-not-exists --topic mentalbridge.care.user-notification.v1 --partitions 3 --replication-factor 1
         /opt/kafka/bin/kafka-topics.sh --bootstrap-server kafka:9092 --create --if-not-exists --topic mentalbridge.community.interaction.v1 --partitions 3 --replication-factor 1
         /opt/kafka/bin/kafka-topics.sh --bootstrap-server kafka:9092 --create --if-not-exists --topic mentalbridge.community.chat.v1 --partitions 3 --replication-factor 1 --config retention.ms=604800000 --config cleanup.policy=delete
+        /opt/kafka/bin/kafka-topics.sh --bootstrap-server kafka:9092 --create --if-not-exists --topic mentalbridge.community.chat.realtime-dead-letter.v1 --partitions 1 --replication-factor 1 --config retention.ms=604800000 --config cleanup.policy=delete
         /opt/kafka/bin/kafka-topics.sh --bootstrap-server kafka:9092 --create --if-not-exists --topic mentalbridge.content-notification.account-preference-dead-letter.v1 --partitions 1 --replication-factor 1
         /opt/kafka/bin/kafka-topics.sh --bootstrap-server kafka:9092 --create --if-not-exists --topic mentalbridge.content-notification.community-interaction-dead-letter.v1 --partitions 1 --replication-factor 1
         /opt/kafka/bin/kafka-topics.sh --bootstrap-server kafka:9092 --create --if-not-exists --topic mentalbridge.content-notification.care-user-notification-dead-letter.v1 --partitions 1 --replication-factor 1
@@ -289,6 +290,9 @@ services:
       COMMUNITY_LIQUIBASE_ENABLED: "false"
       COMMUNITY_CHAT_GROUP_MEMBER_LIMIT: ${COMMUNITY_CHAT_GROUP_MEMBER_LIMIT:-30}
       COMMUNITY_CHAT_ENABLED: ${COMMUNITY_CHAT_ENABLED:-false}
+      COMMUNITY_CHAT_REALTIME_ENABLED: ${COMMUNITY_CHAT_REALTIME_ENABLED:-false}
+      REALTIME_COMMUNITY_DELEGATION_PUBLIC_KEY: ${REALTIME_COMMUNITY_DELEGATION_PUBLIC_KEY:-}
+      REALTIME_COMMUNITY_DELEGATION_KEY_ID: ${REALTIME_COMMUNITY_DELEGATION_KEY_ID:-}
       IDENTITY_COMMUNITY_CHAT_SERVICE_TOKEN: ${IDENTITY_COMMUNITY_CHAT_SERVICE_TOKEN:-}
       COMMUNITY_CHAT_IDENTITY_BASE_URL: ${COMMUNITY_CHAT_IDENTITY_BASE_URL:-http://identity:8080}
       COMMUNITY_CHAT_IDENTITY_CONNECT_TIMEOUT: ${COMMUNITY_CHAT_IDENTITY_CONNECT_TIMEOUT:-PT0.5S}
@@ -543,6 +547,15 @@ services:
     environment:
       NODE_ENV: production
       REALTIME_PORT: 3004
+      REALTIME_COMMUNITY_ENABLED: ${REALTIME_COMMUNITY_ENABLED:-false}
+      REALTIME_COMMUNITY_BASE_URL: ${REALTIME_COMMUNITY_BASE_URL:-http://community:8084}
+      REALTIME_COMMUNITY_DELEGATION_PRIVATE_KEY: ${REALTIME_COMMUNITY_DELEGATION_PRIVATE_KEY:-}
+      REALTIME_COMMUNITY_DELEGATION_KEY_ID: ${REALTIME_COMMUNITY_DELEGATION_KEY_ID:-}
+      REALTIME_COMMUNITY_BFF_PUBLIC_KEY: ${REALTIME_COMMUNITY_BFF_PUBLIC_KEY:-}
+      REALTIME_COMMUNITY_BFF_KEY_ID: ${REALTIME_COMMUNITY_BFF_KEY_ID:-}
+      REALTIME_COMMUNITY_KAFKA_GROUP: ${REALTIME_COMMUNITY_KAFKA_GROUP:-realtime-community-v1}
+      REALTIME_COMMUNITY_REDIS_CHANNEL: ${REALTIME_COMMUNITY_REDIS_CHANNEL:-mentalbridge:community:preprod:v1:fanout}
+      KAFKA_BOOTSTRAP_SERVERS: kafka:9092
       REALTIME_LOG_LEVEL: ${REALTIME_LOG_LEVEL:-info}
       REALTIME_CORS_ORIGINS: ${PUBLIC_APP_ORIGIN:-http://localhost:3000}
       REALTIME_MONGODB_URI: ${REALTIME_MONGODB_URI:?Set the shared dev/staging MongoDB URI in .env}

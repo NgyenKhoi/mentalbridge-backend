@@ -8,6 +8,9 @@ const openApiPath = fileURLToPath(
   new URL('../../contracts/openapi/realtime-service-v1.yaml', import.meta.url),
 );
 const openApi = await SwaggerParser.validate(openApiPath);
+await SwaggerParser.validate(
+  fileURLToPath(new URL('../../contracts/openapi/community-realtime-v1.json', import.meta.url)),
+);
 if (openApi.openapi !== '3.1.0') throw new Error('Realtime OpenAPI must use version 3.1.0');
 
 const expectedAvailability = new Map([
@@ -15,6 +18,7 @@ const expectedAvailability = new Map([
   ['GET /health/ready', 'implemented'],
   ['GET /metrics', 'implemented'],
   ['POST /internal/v1/socket-credentials', 'implemented'],
+  ['POST /internal/v1/community/socket-credentials', 'implemented'],
   ['GET /api/v1/conversations/{conversationId}/messages', 'implemented'],
 ]);
 const actualAvailability = new Map();
@@ -51,3 +55,13 @@ for (const name of [
 }
 
 console.log('Validated Realtime OpenAPI and WebSocket v1 contracts');
+for (const name of ['handshake-v1.schema.json', 'command-v1.schema.json', 'event-v1.schema.json']) {
+  ajv.compile(
+    JSON.parse(
+      await readFile(
+        new URL('../../contracts/websocket/community/' + name, import.meta.url),
+        'utf8',
+      ),
+    ),
+  );
+}
