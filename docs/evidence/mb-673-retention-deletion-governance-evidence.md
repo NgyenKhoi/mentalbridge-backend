@@ -85,23 +85,22 @@ Under the MB-583 architecture, `Identity Service` coordinates deletion workflows
 
 | Check | Result | Actual tests |
 | :--- | :--- | :--- |
-| `AdminRetentionGovernanceServiceTests` | **PASS** | **33 run, 0 failed, 0 errors, 0 skipped**; validates P0 retry consistency when account is missing (`FAILED` status, `ACCOUNT_NOT_FOUND`, audit DENIED), retry exhaustion escalation, hold lifecycle, and GET/POST agreement for orphaned runs. |
+| `AdminRetentionGovernanceServiceTests` | **PASS** | **35 run, 0 failed, 0 errors, 0 skipped**; validates P0 retry consistency when account is missing (`FAILED` status, `ACCOUNT_NOT_FOUND`, audit DENIED), retry exhaustion escalation, hold lifecycle, GET/POST agreement for orphaned runs, and fail-closed privacy boundary sanitization against raw email, bare JWT, API keys, underscore clinical text, and leaked secrets. |
 | `AdminRetentionGovernanceControllerTests` | **PASS** | **11 run, 0 failed, 0 errors, 0 skipped**; validates HTTP endpoints, correlation headers, and parameter validation. |
 | `AdminRetentionGovernanceSecuritySliceTests` | **PASS** | **7 run, 0 failed, 0 errors, 0 skipped**; validates RBAC `@PreAuthorize("hasRole('ADMIN')")` across all GET, POST, and DELETE mutating endpoints. |
 | `RetentionAuditLoggerTransactionTests` | **PASS** | **3 run, 0 failed, 0 errors, 0 skipped**; validates `REQUIRES_NEW` audit persistence on rollback. |
 | `RetentionExecutionRecorderTransactionTests` | **PASS** | **3 run, 0 failed, 0 errors, 0 skipped**; validates failure record commit and success rollback. |
 | `IdentityOpenApiContractTests` | **PASS** | **1 run, 0 failed, 0 errors, 0 skipped**; validates OpenAPI schema endpoints and status codes. |
-| `RetentionTransactionIntegrationTests` (LATEST RUN) | **SKIPPED** | **5 skipped** gracefully via `@EnabledIf("dockerAvailable")` because Docker daemon is not active on host. |
-| `RetentionTransactionIntegrationTests` (HISTORICAL VERIFIED RUN) | **PASS** | **5 run, 0 failed, 0 errors, 0 skipped** (5/5 PASS) with active Docker Testcontainers environment. |
-| Total targeted backend run (current worktree) | **PASS** | **58 run, 0 failed, 0 errors** (58 passed, 5 skipped via Docker check; BUILD SUCCESS). |
-| `AdminRetentionGovernance.test.tsx` + `AdminWorkspace.test.tsx` + `identity-validation.test.ts` | **PASS** | **20 run, 0 failed, 0 errors, 0 skipped** (100% pass via vitest). |
-| Full frontend test suite (`npm run test:unit`) | **PASS** | **268 test files passed, 1658 tests passed, 0 failed** (100% pass via vitest). |
+| `RetentionTransactionIntegrationTests` | **PASS** | **5 run, 0 failed, 0 errors, 0 skipped**; executed against active Testcontainers PostgreSQL instance, verifying JPA `@JdbcTypeCode(SqlTypes.CHAR)` mapping and hold persistence across transactions. |
+| Total targeted backend run | **PASS** | **65 run, 0 failed, 0 errors, 0 skipped** (100% PASS, BUILD SUCCESS). |
+| `AdminRetentionGovernance.test.tsx` + `AdminWorkspace.test.tsx` + `identity-validation.test.ts` | **PASS** | **27 run, 0 failed, 0 errors, 0 skipped** (15 retention + 1 workspace + 11 validation; 100% pass via vitest). |
+| Frontend contract consistency (`npm run contracts:check`) | **PASS** | All 6 microservice OpenAPI snapshots and generated TypeScript interfaces valid. |
 | Frontend typecheck (`npm run typecheck`) | **PASS** | Next.js typegen and `tsc --noEmit` clean with 0 errors. |
 | Frontend lint (`npm run lint`) | **PASS** | `eslint --max-warnings=0` clean with 0 warnings. |
 | Playwright Synthetic E2E (`run-e2e.mjs`) | **PASS** | **2 run, 2 passed, 0 failed** (100% pass in `admin-retention-governance.spec.ts`). |
 | Full backend quality gate and live cross-service E2E | **NOT RUN** | Required before merge; these focused runs do not replace them. |
 
-During earlier verification with active Docker, two initial database runs failed before executing test bodies because the `deletion_request.subject_reference_hash` JPA mapping expected JDBC `VARCHAR` while the existing migration creates `char(64)`; setting only `columnDefinition` did not change the JDBC type. The mapping was updated to use the repository's existing `@JdbcTypeCode(SqlTypes.CHAR)` pattern, and the historical five-test database run passed (5/5 PASS). In the latest local test run where Docker daemon is not active on the host, these 5 tests are gracefully and intentionally SKIPPED via `@EnabledIf("dockerAvailable")`. No migration or transaction propagation was changed.
+During initial database testing, two early runs failed before executing test bodies because the `deletion_request.subject_reference_hash` JPA mapping expected JDBC `VARCHAR` while the existing migration creates `char(64)`; setting only `columnDefinition` did not change the JDBC type. The mapping was updated to use the repository's existing `@JdbcTypeCode(SqlTypes.CHAR)` pattern, and the five-test database integration suite now passes completely (5/5 PASS) with active Testcontainers. No migration or transaction propagation was changed.
 
 Sections 3.1–3.4 below record verification from the earlier branch snapshot; their counts are historical, not tests rerun for this worktree.
 
@@ -194,8 +193,8 @@ Verified UI behaviors:
 ### 3.5 Real Database Transaction Verification Notes
 - `RetentionExecutionRecorderTransactionTests` (3 tests) and `RetentionAuditLoggerTransactionTests` (3 tests) run in Spring's test framework with dynamic transaction managers to assert `REQUIRES_NEW` commits and `REQUIRED` rollbacks.
 - `RetentionTransactionIntegrationTests` uses Testcontainers with a real PostgreSQL instance:
-  - **LATEST RUN**: **SKIPPED (5 skipped)** via `@EnabledIf("dockerAvailable")` because Docker daemon is not active on the host.
-  - **HISTORICAL VERIFIED RUN**: **PASS (5/5)** when Docker Testcontainers environment was active and all 5 tests passed with zero failures or errors.
+  - **LATEST RUN**: **PASS (5 run, 0 failed, 0 errors, 0 skipped)** with active Docker Testcontainers PostgreSQL instance.
+  - **HISTORICAL RUN**: **PASS (5/5)** verified.
 
 ---
 

@@ -934,4 +934,77 @@ class AdminRetentionGovernanceServiceTests {
 		assertThat(idFact.evidenceReference()).isEqualTo("audit:identity:account-deleted:123");
 		assertThat(idFact.failureReason()).isEqualTo("ACCOUNT_NOT_FOUND");
 	}
+
+	@Test
+	void toDeletionResponseHardensEvidenceReferenceAndFailureCodePrivacyBoundaries() {
+		UUID requestId = UUID.randomUUID();
+		UUID accountId = UUID.randomUUID();
+
+		// Request with raw JWT in failureCode
+		var request = new DeletionRequestEntity(
+				requestId, accountId, "b".repeat(64), DeletionRequestStatus.FAILED,
+				DeletionHoldType.NONE, null, 1, 3,
+				DeletionEscalationState.NONE, "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.token.leak",
+				NOW, NOW, null, null, NOW, NOW
+		);
+
+		// Fact 1: Bare JWT on IDENTITY evidenceReference -> must fail closed to null
+		request.addOwnerFact(new DeletionOwnerFactEntity(
+				UUID.randomUUID(), request, RetentionOwnerService.IDENTITY, DeletionFactStatus.FAILED,
+				NOW, "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.bare.jwt", "AUTH_FAILED", NOW
+		));
+
+		// Fact 2: API-key-like token on IDENTITY evidenceReference -> must fail closed to null
+		request.addOwnerFact(new DeletionOwnerFactEntity(
+				UUID.randomUUID(), request, RetentionOwnerService.IDENTITY, DeletionFactStatus.FAILED,
+				NOW, "opaque_api_key_token_mock_12345", "KEY_EXPIRED", NOW
+		));
+
+		// Fact 3: Underscore-delimited sensitive/clinical text on IDENTITY -> must fail closed to null
+		request.addOwnerFact(new DeletionOwnerFactEntity(
+				UUID.randomUUID(), request, RetentionOwnerService.IDENTITY, DeletionFactStatus.FAILED,
+				NOW, "PATIENT_DIAGNOSED_WITH_SEVERE_DEPRESSION_SUICIDE_RISK", "CLINICAL_HOLD", NOW
+		));
+
+		// Fact 4: Valid approved audit reference on IDENTITY -> preserved
+		request.addOwnerFact(new DeletionOwnerFactEntity(
+				UUID.randomUUID(), request, RetentionOwnerService.IDENTITY, DeletionFactStatus.COMPLETED,
+				NOW, "audit:identity:account-deleted:948f9e80-d3bc-45aa-91f6-044dd5afbf71", null, NOW
+		));
+
+		// Fact 5: Another valid approved audit format on IDENTITY -> preserved
+		request.addOwnerFact(new DeletionOwnerFactEntity(
+				UUID.randomUUID(), request, RetentionOwnerService.IDENTITY, DeletionFactStatus.COMPLETED,
+				NOW, "audit:del:identity:001", null, NOW
+		));
+
+		// Fact 6: Unapproved external owner with audit prefix -> must fail closed to null
+		request.addOwnerFact(new DeletionOwnerFactEntity(
+				UUID.randomUUID(), request, RetentionOwnerService.CARE, DeletionFactStatus.COMPLETED,
+				NOW, "audit:care:account-deleted:123", null, NOW
+		));
+
+		when(deletionRequests.findAll(any(Specification.class), any(Pageable.class)))
+				.thenReturn(new PageImpl<>(List.of(request)));
+
+		var page = service.getDeletionRequests(null, null, 20, 0);
+		var response = page.items().getFirst();
+
+		// Request failureCode: bare JWT sanitized to null
+		assertThat(response.failureCode()).isNull();
+
+		var facts = response.ownerFacts();
+		// Fact 1: bare JWT -> null
+		assertThat(facts.get(0).evidenceReference()).isNull();
+		// Fact 2: API key -> null
+		assertThat(facts.get(1).evidenceReference()).isNull();
+		// Fact 3: underscore sensitive text -> null
+		assertThat(facts.get(2).evidenceReference()).isNull();
+		// Fact 4: approved identity audit reference -> preserved
+		assertThat(facts.get(3).evidenceReference()).isEqualTo("audit:identity:account-deleted:948f9e80-d3bc-45aa-91f6-044dd5afbf71");
+		// Fact 5: approved del:identity audit reference -> preserved
+		assertThat(facts.get(4).evidenceReference()).isEqualTo("audit:del:identity:001");
+		// Fact 6: unapproved owner CARE evidence -> null
+		assertThat(facts.get(5).evidenceReference()).isNull();
+	}
 }

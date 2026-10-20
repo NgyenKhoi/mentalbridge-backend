@@ -1463,7 +1463,7 @@ components:
         recordsPurged: { type: integer, minimum: 0 }
         tombstonesCreated: { type: integer, minimum: 0 }
         holdsHonored: { type: integer, minimum: 0 }
-        failureCode: { type: [string, 'null'] }
+        failureCode: { type: [string, 'null'], maxLength: 64, pattern: '^[A-Z0-9_]{1,64}$' }
     DeletionOwnerFact:
       type: object
       additionalProperties: false
@@ -1472,7 +1472,7 @@ components:
         ownerService: { type: string, enum: [IDENTITY, CARE, CONSULTATION, JOURNAL_AI, COMMUNITY, CONTENT] }
         status: { type: string, enum: [PENDING, COMPLETED, HELD, FAILED, UNAVAILABLE] }
         completedAt: { type: [string, 'null'], format: date-time }
-        evidenceReference: { type: [string, 'null'], maxLength: 128, pattern: '^[a-zA-Z0-9_.:-]{1,128}$' }
+        evidenceReference: { type: [string, 'null'], maxLength: 128, pattern: '^audit:(identity:account-deleted:[0-9a-fA-F-]{1,64}|del:identity:[a-zA-Z0-9.-]{1,64})$' }
         failureReason: { type: [string, 'null'], maxLength: 64, pattern: '^[A-Z0-9_]{1,64}$' }
     DeletionHoldReason:
       type: string
@@ -1503,7 +1503,7 @@ components:
         retryCount: { type: integer, minimum: 0 }
         maxRetries: { type: integer, minimum: 1 }
         escalationState: { type: string, enum: [NONE, RETRY_EXHAUSTED, MANUAL_ESCALATION_REQUIRED] }
-        failureCode: { type: [string, 'null'] }
+        failureCode: { type: [string, 'null'], maxLength: 64, pattern: '^[A-Z0-9_]{1,64}$' }
         requestedAt: { type: string, format: date-time }
         scheduledExecutionAt: { type: string, format: date-time }
         completedAt: { type: [string, 'null'], format: date-time }

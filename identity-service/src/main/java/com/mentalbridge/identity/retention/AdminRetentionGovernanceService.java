@@ -656,12 +656,21 @@ public class AdminRetentionGovernanceService {
 				record.recordsPurged(),
 				record.tombstonesCreated(),
 				record.holdsHonored(),
-				record.failureCode()
+				safeFailureCode(record.failureCode())
 		);
 	}
 
+	private static final java.util.regex.Pattern SAFE_FAILURE_CODE_PATTERN = java.util.regex.Pattern.compile("^[A-Z0-9_]{1,64}$");
 	private static final java.util.regex.Pattern SAFE_FAILURE_REASON_PATTERN = java.util.regex.Pattern.compile("^[A-Z0-9_]{1,64}$");
-	private static final java.util.regex.Pattern SAFE_EVIDENCE_REFERENCE_PATTERN = java.util.regex.Pattern.compile("^[a-zA-Z0-9_.:-]{1,128}$");
+	private static final java.util.regex.Pattern APPROVED_IDENTITY_EVIDENCE_PATTERN =
+			java.util.regex.Pattern.compile("^audit:(identity:account-deleted:[0-9a-fA-F-]{1,64}|del:identity:[a-zA-Z0-9.-]{1,64})$");
+
+	private String safeFailureCode(String code) {
+		if (code != null && SAFE_FAILURE_CODE_PATTERN.matcher(code.trim()).matches()) {
+			return code.trim();
+		}
+		return null;
+	}
 
 	private String safeFailureReason(String reason) {
 		if (reason != null && SAFE_FAILURE_REASON_PATTERN.matcher(reason.trim()).matches()) {
@@ -670,9 +679,12 @@ public class AdminRetentionGovernanceService {
 		return null;
 	}
 
-	private String safeEvidenceReference(String ref) {
-		if (ref != null && SAFE_EVIDENCE_REFERENCE_PATTERN.matcher(ref.trim()).matches()) {
-			return ref.trim();
+	private String safeEvidenceReference(RetentionOwnerService ownerService, String ref) {
+		if (ownerService == RetentionOwnerService.IDENTITY && ref != null) {
+			String trimmed = ref.trim();
+			if (APPROVED_IDENTITY_EVIDENCE_PATTERN.matcher(trimmed).matches()) {
+				return trimmed;
+			}
 		}
 		return null;
 	}
@@ -686,7 +698,7 @@ public class AdminRetentionGovernanceService {
 						f.ownerService(),
 						f.status(),
 						f.completedAt(),
-						safeEvidenceReference(f.evidenceReference()),
+						safeEvidenceReference(f.ownerService(), f.evidenceReference()),
 						safeFailureReason(f.failureReason())
 				)
 		).toList();
@@ -701,7 +713,7 @@ public class AdminRetentionGovernanceService {
 				entity.retryCount(),
 				entity.maxRetries(),
 				entity.escalationState(),
-				entity.failureCode(),
+				safeFailureCode(entity.failureCode()),
 				entity.requestedAt(),
 				entity.scheduledExecutionAt(),
 				entity.completedAt(),
