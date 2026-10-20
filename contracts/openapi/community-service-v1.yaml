@@ -6,6 +6,18 @@ info:
 servers:
   - url: http://localhost:8084
 paths:
+  /internal/v1/community/chat/session-authorizations:
+    x-mentalbridge-status: implemented
+    $ref: './community-chat-v1.json#/paths/~1internal~1v1~1community~1chat~1session-authorizations'
+  /internal/v1/community/chat/realtime-authorizations:
+    x-mentalbridge-status: implemented
+    $ref: './community-chat-v1.json#/paths/~1internal~1v1~1community~1chat~1realtime-authorizations'
+  /internal/v1/community/chat/message-projections:
+    x-mentalbridge-status: implemented
+    $ref: './community-chat-v1.json#/paths/~1internal~1v1~1community~1chat~1message-projections'
+  /internal/v1/community/chat/replay-projections:
+    x-mentalbridge-status: implemented
+    $ref: './community-chat-v1.json#/paths/~1internal~1v1~1community~1chat~1replay-projections'
   /api/v1/community/chat/privacy:
     x-mentalbridge-status: implemented
     $ref: './community-chat-v1.json#/paths/~1api~1v1~1community~1chat~1privacy'

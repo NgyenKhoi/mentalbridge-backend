@@ -22,11 +22,15 @@ class ChatBodyFilter extends OncePerRequestFilter {
     private final ObjectMapper mapper;
     ChatBodyFilter(ObjectMapper mapper) { this.mapper = mapper; }
     @Override protected boolean shouldNotFilter(HttpServletRequest request) {
-        return !request.getRequestURI().startsWith("/api/v1/community/chat/");
+        return !request.getRequestURI().startsWith("/api/v1/community/chat/")
+                && !request.getRequestURI().startsWith("/internal/v1/community/chat/");
     }
     @Override protected void doFilterInternal(HttpServletRequest request, HttpServletResponse response, FilterChain chain)
             throws IOException, ServletException {
         response.setHeader("Cache-Control", "no-store");
+        if (request.getRequestURI().equals("/internal/v1/community/chat/session-authorizations")) {
+            chain.doFilter(request, response); return;
+        }
         if (!Set.of("POST", "PUT").contains(request.getMethod())) { chain.doFilter(request, response); return; }
         var body = request.getInputStream().readNBytes(32769);
         try {
@@ -57,7 +61,16 @@ class ChatBodyFilter extends OncePerRequestFilter {
     }
     private void validate(String path, JsonNode body) {
         if (body == null || !body.isObject()) throw ChatException.invalid();
-        if (path.equals("/api/v1/community/chat/reports")) {
+        if (path.equals("/internal/v1/community/chat/message-projections")) {
+            exact(body, Set.of("conversationId", "messageId")); uuid(body, "conversationId"); uuid(body, "messageId");
+        } else if (path.equals("/internal/v1/community/chat/realtime-authorizations")) {
+            exact(body, Set.of("conversationId", "action")); uuid(body, "conversationId");
+            if (!body.get("action").isTextual()) throw ChatException.invalid();
+        } else if (path.equals("/internal/v1/community/chat/replay-projections")) {
+            exact(body, Set.of("conversationId", "cursor")); uuid(body, "conversationId");
+            if (!body.get("cursor").isNull() && (!body.get("cursor").isTextual()
+                    || body.get("cursor").textValue().isBlank() || body.get("cursor").textValue().length() > 1024)) throw ChatException.invalid();
+        } else if (path.equals("/api/v1/community/chat/reports")) {
             var fields = body.has("details") ? Set.of("messageId", "reasonCode", "details") : Set.of("messageId", "reasonCode");
             exact(body, fields); uuid(body, "messageId");
             if (!body.get("reasonCode").isTextual() || (body.has("details") && !body.get("details").isTextual())) throw ChatException.invalid();

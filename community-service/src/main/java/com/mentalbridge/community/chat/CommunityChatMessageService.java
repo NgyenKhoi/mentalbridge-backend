@@ -37,9 +37,17 @@ class CommunityChatMessageService {
     }
     ChatModels.ReadResult read(UUID subject, UUID conversationId, UUID messageId, UUID correlation) {
         if (messageId == null) throw ChatException.invalid();
-        if (group(conversationId)) return groupMessages.read(conversationId, groups.authorize(subject, conversationId, null, correlation), messageId);
+        if (group(conversationId)) return groupMessages.read(conversationId, groups.authorize(subject, conversationId, null, correlation), messageId, correlation);
         var peer = peer(subject, conversationId, correlation);
-        return transactions.read(subject, conversationId, peer.id(), messageId);
+        return transactions.read(subject, conversationId, peer.id(), messageId, correlation);
+    }
+    ChatModels.Message projection(UUID subject, UUID conversation, UUID id, UUID correlation) {
+        if (group(conversation)) return groupMessages.projection(conversation, groups.authorize(subject, conversation, null, correlation), id);
+        return transactions.projection(subject, conversation, peer(subject, conversation, correlation).id(), id);
+    }
+    ChatDeliveryCursor.Projection replay(UUID subject, UUID conversation, String cursor, UUID correlation) {
+        if (group(conversation)) return groupMessages.replay(conversation, groups.authorize(subject, conversation, null, correlation), cursor);
+        return transactions.replay(subject, conversation, peer(subject, conversation, correlation).id(), cursor);
     }
     private boolean group(UUID id) { return conversations.findById(id).orElseThrow(ChatException::target).kind.equals("GROUP"); }
     private CommunityChatProfiles.Profile peer(UUID subject, UUID conversationId, UUID correlation) {
