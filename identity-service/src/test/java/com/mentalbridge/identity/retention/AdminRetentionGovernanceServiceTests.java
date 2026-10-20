@@ -659,11 +659,46 @@ class AdminRetentionGovernanceServiceTests {
 
 		var response = service.retryDeletion(requestId, actorId, UUID.randomUUID());
 
-		assertThat(response.status()).isEqualTo(DeletionRequestStatus.IN_PROGRESS);
+		assertThat(response.status()).isEqualTo(DeletionRequestStatus.FAILED);
+		assertThat(response.failureCode()).isEqualTo("ACCOUNT_NOT_FOUND");
 		assertThat(response.accountStatus()).isNull();
 		var updatedFact = response.ownerFacts().getFirst();
 		assertThat(updatedFact.status()).isEqualTo(DeletionFactStatus.FAILED);
 		assertThat(updatedFact.failureReason()).isEqualTo("ACCOUNT_NOT_FOUND");
+		verify(auditLogger).recordDenied(argThat(event ->
+				"FAILED".equals(event.getOutcome()) && "ACCOUNT_NOT_FOUND".equals(event.getReasonCode())
+		));
+	}
+
+	@Test
+	void retryDeletionMissingAccountWhenRetryLimitExhaustedSetsManualEscalation() {
+		UUID requestId = UUID.randomUUID();
+		UUID missingAccountId = UUID.randomUUID();
+		UUID actorId = UUID.randomUUID();
+
+		var request = new DeletionRequestEntity(
+				requestId, missingAccountId, "missinglimit".repeat(5), DeletionRequestStatus.FAILED,
+				DeletionHoldType.NONE, null, 2, 3,
+				DeletionEscalationState.NONE, "PREVIOUS_ERROR", NOW, NOW, null, null, NOW, NOW
+		);
+		var identityFact = new DeletionOwnerFactEntity(
+				UUID.randomUUID(), request, RetentionOwnerService.IDENTITY, DeletionFactStatus.PENDING,
+				null, null, null, NOW
+		);
+		request.addOwnerFact(identityFact);
+
+		when(deletionRequests.findById(requestId)).thenReturn(Optional.of(request));
+		when(accounts.findById(missingAccountId)).thenReturn(Optional.empty());
+
+		var response = service.retryDeletion(requestId, actorId, UUID.randomUUID());
+
+		assertThat(response.status()).isEqualTo(DeletionRequestStatus.FAILED);
+		assertThat(response.failureCode()).isEqualTo("ACCOUNT_NOT_FOUND");
+		assertThat(response.retryCount()).isEqualTo(3);
+		assertThat(response.escalationState()).isEqualTo(DeletionEscalationState.MANUAL_ESCALATION_REQUIRED);
+		verify(auditLogger).recordDenied(argThat(event ->
+				"FAILED".equals(event.getOutcome()) && "ACCOUNT_NOT_FOUND".equals(event.getReasonCode())
+		));
 	}
 
 	@Test
@@ -802,5 +837,37 @@ class AdminRetentionGovernanceServiceTests {
 		var released = service.releaseHold(requestId, actorId, UUID.randomUUID());
 		assertThat(released.status()).isEqualTo(DeletionRequestStatus.FAILED);
 		assertThat(released.holdType()).isEqualTo(DeletionHoldType.NONE);
+	}
+
+	@Test
+	void applyHoldRejectsCompletedRequestWithConflict() {
+		UUID requestId = UUID.randomUUID();
+		UUID actorId = UUID.randomUUID();
+		var request = new DeletionRequestEntity(
+				requestId, UUID.randomUUID(), "c".repeat(64), DeletionRequestStatus.COMPLETED,
+				DeletionHoldType.NONE, null, 1, 3,
+				DeletionEscalationState.NONE, null, NOW, NOW, NOW, null, NOW, NOW
+		);
+		when(deletionRequests.findById(requestId)).thenReturn(Optional.of(request));
+
+		assertThatThrownBy(() -> service.applyHold(requestId, DeletionHoldType.LEGAL_HOLD, "STATUTORY_INQUIRY", actorId, UUID.randomUUID()))
+				.isInstanceOf(ResponseStatusException.class)
+				.satisfies(ex -> assertThat(((ResponseStatusException) ex).getStatusCode().value()).isEqualTo(409));
+	}
+
+	@Test
+	void releaseHoldRejectsWhenHoldTypeIsNoneWithBadRequest() {
+		UUID requestId = UUID.randomUUID();
+		UUID actorId = UUID.randomUUID();
+		var request = new DeletionRequestEntity(
+				requestId, UUID.randomUUID(), "n".repeat(64), DeletionRequestStatus.PENDING,
+				DeletionHoldType.NONE, null, 0, 3,
+				DeletionEscalationState.NONE, null, NOW, NOW, null, null, NOW, NOW
+		);
+		when(deletionRequests.findById(requestId)).thenReturn(Optional.of(request));
+
+		assertThatThrownBy(() -> service.releaseHold(requestId, actorId, UUID.randomUUID()))
+				.isInstanceOf(ResponseStatusException.class)
+				.satisfies(ex -> assertThat(((ResponseStatusException) ex).getStatusCode().value()).isEqualTo(400));
 	}
 }

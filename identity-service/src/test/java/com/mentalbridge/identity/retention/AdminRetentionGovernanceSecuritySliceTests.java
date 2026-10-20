@@ -5,6 +5,7 @@ import static org.mockito.Mockito.mock;
 import static org.mockito.Mockito.verify;
 import static org.springframework.security.test.web.servlet.request.SecurityMockMvcRequestPostProcessors.anonymous;
 import static org.springframework.security.test.web.servlet.request.SecurityMockMvcRequestPostProcessors.user;
+import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.delete;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.get;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.post;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.status;
@@ -103,6 +104,28 @@ class AdminRetentionGovernanceSecuritySliceTests {
 				.andExpect(status().isForbidden());
 
 		mvc.perform(get("/api/v1/admin/retention/deletions")
+				.with(user("regular-user").roles("USER")))
+				.andExpect(status().isForbidden());
+	}
+
+	@Test
+	void userRoleIsForbiddenOnMutatingEndpoints() throws Exception {
+		UUID randomId = UUID.randomUUID();
+		mvc.perform(post("/api/v1/admin/retention/policies/MB-IDENTITY-REPORTING-001/trigger")
+				.with(user("regular-user").roles("USER")))
+				.andExpect(status().isForbidden());
+
+		mvc.perform(post("/api/v1/admin/retention/deletions/" + randomId + "/retry")
+				.with(user("regular-user").roles("USER")))
+				.andExpect(status().isForbidden());
+
+		mvc.perform(post("/api/v1/admin/retention/deletions/" + randomId + "/holds")
+				.contentType("application/json")
+				.content("{\"holdType\":\"LEGAL_HOLD\",\"holdReason\":\"STATUTORY_INQUIRY\"}")
+				.with(user("regular-user").roles("USER")))
+				.andExpect(status().isForbidden());
+
+		mvc.perform(delete("/api/v1/admin/retention/deletions/" + randomId + "/holds")
 				.with(user("regular-user").roles("USER")))
 				.andExpect(status().isForbidden());
 	}

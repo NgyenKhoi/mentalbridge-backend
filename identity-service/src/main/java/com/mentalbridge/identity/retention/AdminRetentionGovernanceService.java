@@ -532,34 +532,42 @@ public class AdminRetentionGovernanceService {
 				accounts.save(account);
 			}
 			identityFact.markCompleted(now, "audit:identity:account-deleted:" + request.id());
+
+			boolean hasFacts = !request.ownerFacts().isEmpty();
+			boolean identityFactCompleted = request.ownerFacts().stream()
+					.anyMatch(f -> f.ownerService() == RetentionOwnerService.IDENTITY && f.status() == DeletionFactStatus.COMPLETED);
+			boolean allCompleted = hasFacts && identityFactCompleted && request.ownerFacts().stream()
+					.allMatch(f -> f.status() == DeletionFactStatus.COMPLETED
+							&& f.evidenceReference() != null
+							&& !f.evidenceReference().isBlank());
+
+			if (allCompleted) {
+				request.complete(now);
+			} else {
+				if (request.retryCount() >= request.maxRetries()) {
+					request.fail("RETRY_LIMIT_EXHAUSTED", now);
+				} else {
+					request.markInProgress(now);
+				}
+			}
+			deletionRequests.save(request);
+
+			auditLogger.recordSuccess(new SecurityAuditEventEntity(
+					UUID.randomUUID(), request.accountId(), actorId, "DATA_DELETION_RETRY_REQUESTED", "SUCCEEDED",
+					allCompleted ? "DELETION_COMPLETED" : "DELETION_ATTEMPTED_IN_PROGRESS", effectiveCorrelation,
+					request.subjectReferenceHash(), "IDENTITY", "DATA_RETENTION", now, now
+			));
 		} else {
 			identityFact.markFailed(now, "ACCOUNT_NOT_FOUND");
+			request.fail("ACCOUNT_NOT_FOUND", now);
+			deletionRequests.save(request);
+
+			auditLogger.recordDenied(new SecurityAuditEventEntity(
+					UUID.randomUUID(), request.accountId(), actorId, "DATA_DELETION_RETRY_REQUESTED", "FAILED",
+					"ACCOUNT_NOT_FOUND", effectiveCorrelation, request.subjectReferenceHash(),
+					"IDENTITY", "DATA_RETENTION", now, now
+			));
 		}
-
-		boolean hasFacts = !request.ownerFacts().isEmpty();
-		boolean identityFactCompleted = request.ownerFacts().stream()
-				.anyMatch(f -> f.ownerService() == RetentionOwnerService.IDENTITY && f.status() == DeletionFactStatus.COMPLETED);
-		boolean allCompleted = hasFacts && identityFactCompleted && request.ownerFacts().stream()
-				.allMatch(f -> f.status() == DeletionFactStatus.COMPLETED
-						&& f.evidenceReference() != null
-						&& !f.evidenceReference().isBlank());
-
-		if (allCompleted) {
-			request.complete(now);
-		} else {
-			if (request.retryCount() >= request.maxRetries()) {
-				request.fail("RETRY_LIMIT_EXHAUSTED", now);
-			} else {
-				request.markInProgress(now);
-			}
-		}
-		deletionRequests.save(request);
-
-		auditLogger.recordSuccess(new SecurityAuditEventEntity(
-				UUID.randomUUID(), request.accountId(), actorId, "DATA_DELETION_RETRY_REQUESTED", "SUCCEEDED",
-				allCompleted ? "DELETION_COMPLETED" : "DELETION_ATTEMPTED_IN_PROGRESS", effectiveCorrelation,
-				request.subjectReferenceHash(), "IDENTITY", "DATA_RETENTION", now, now
-		));
 
 		return toDeletionResponse(request);
 	}
