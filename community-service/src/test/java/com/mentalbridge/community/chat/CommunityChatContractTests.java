@@ -20,8 +20,11 @@ class CommunityChatContractTests {
         assertThat(parsed.getMessages()).isEmpty();
         var source = mapper.readTree(Files.readString(baseline));
         var delivered = mapper.readTree(Files.readString(active));
-        assertThat(delivered.path("components")).isEqualTo(source.path("components"));
+        source.path("components").fields().forEachRemaining(section -> section.getValue().fields().forEachRemaining(component ->
+                assertThat(delivered.path("components").path(section.getKey()).path(component.getKey())).isEqualTo(component.getValue())));
         assertThat(parsed.getOpenAPI().getPaths().keySet()).containsExactlyInAnyOrder(
+                "/internal/v1/community/chat/session-authorizations", "/internal/v1/community/chat/realtime-authorizations",
+                "/internal/v1/community/chat/message-projections", "/internal/v1/community/chat/replay-projections",
                 "/api/v1/community/chat/reports",
                 "/api/v1/community/chat/privacy", "/api/v1/community/chat/direct-conversations",
                 "/api/v1/community/chat/requests", "/api/v1/community/chat/requests/{requestId}/decision",
@@ -36,6 +39,12 @@ class CommunityChatContractTests {
         parsed.getOpenAPI().getPaths().forEach((path, item) -> {
             assertThat(item.getExtensions().get("x-mentalbridge-status")).isEqualTo("implemented");
             item.readOperationsMap().forEach((method, operation) -> {
+                if (path.startsWith("/internal/")) {
+                    assertThat(operation.getSecurity()).noneSatisfy(auth -> assertThat(auth).containsKey("BearerAuth"));
+                    assertThat(operation.getSecurity()).isNotEmpty();
+                    assertThat(operation.getResponses().keySet()).contains("200", "401", "403", "404", "503");
+                    return;
+                }
                 assertThat(operation.getSecurity()).anySatisfy(auth -> assertThat(auth).containsKey("BearerAuth"));
                 var expected = source.path("paths").path(path).path(method.name().toLowerCase()).deepCopy();
                 var parameters = mapper.createArrayNode();
@@ -64,7 +73,9 @@ class CommunityChatContractTests {
     void promotedFactsPreserveTheAcceptedClosedContract() throws Exception {
         var baseline = mapper.readTree(Files.readString(Path.of("..", "contracts", "proposals", "community-chat-fact-v1.schema.json")));
         var active = mapper.readTree(Files.readString(Path.of("..", "contracts", "events", "community", "community-chat-fact-v1.schema.json")));
-        assertThat(active.path("oneOf")).isEqualTo(baseline.path("oneOf"));
+        assertThat(active.path("oneOf").size()).isEqualTo(baseline.path("oneOf").size() + 1);
+        for (int index = 0; index < baseline.path("oneOf").size(); index++)
+            assertThat(active.path("oneOf").get(index)).isEqualTo(baseline.path("oneOf").get(index));
         var examples = mapper.readTree(Files.readString(Path.of("..", "contracts", "proposals", "community-chat-v1.examples.json")));
         for (var fact : examples.path("facts")) {
             assertThat(ChatWireContracts.validFact(fact.toString())).isTrue();

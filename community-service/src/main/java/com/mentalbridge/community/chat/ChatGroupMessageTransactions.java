@@ -16,10 +16,12 @@ class ChatGroupMessageTransactions {
     private final ChatFacts facts;
     private final ChatPrivacyRepository privacy;
     private final Clock clock;
+    private final ChatDeliveryCursor delivery;
     ChatGroupMessageTransactions(ChatGroupAccess access, ChatMessageRepository messages, ChatCommandRepository commands,
-            ChatReadStateRepository reads, ChatCrypto crypto, ChatFacts facts, ChatPrivacyRepository privacy, Clock clock) {
+            ChatReadStateRepository reads, ChatCrypto crypto, ChatFacts facts, ChatPrivacyRepository privacy, Clock clock, ChatDeliveryCursor delivery) {
         this.access = access; this.messages = messages; this.commands = commands; this.reads = reads;
         this.crypto = crypto; this.facts = facts; this.privacy = privacy; this.clock = clock;
+        this.delivery = delivery;
     }
     @Transactional
     ChatModels.SendResult send(UUID conversation, ChatGroupAccess.Authorization auth, UUID key, ChatModels.SendMessage input, UUID correlation) {
@@ -76,12 +78,32 @@ class ChatGroupMessageTransactions {
                 ? crypto.seal(purpose, page.getLast().serverSequence + "/" + through) : null);
     }
     @Transactional
-    ChatModels.ReadResult read(UUID conversation, ChatGroupAccess.Authorization auth, UUID id) {
+    ChatModels.ReadResult read(UUID conversation, ChatGroupAccess.Authorization auth, UUID id, UUID correlation) {
         var context = access.lock(conversation, auth, true);
         var message = messages.findById(id).filter(m -> m.readable(clock.instant()) && access.messageVisible(context, m)).orElseThrow(ChatException::target);
         var read = reads.findById(new ChatReadStateEntity.ReadId(conversation, auth.actor())).orElseGet(() -> new ChatReadStateEntity(conversation, auth.actor()));
+        boolean advanced = read.lastReadSequence < message.serverSequence;
         read.lastReadSequence = Math.max(read.lastReadSequence, message.serverSequence); reads.saveAndFlush(read);
+        if (advanced) {
+            context.group().eventVersion++;
+            facts.publish(context.group(), "READ_STATE_CHANGED", null, null, context.actor().subject(), correlation, null);
+        }
         return result(context);
+    }
+    @Transactional
+    ChatModels.Message projection(UUID conversation, ChatGroupAccess.Authorization auth, UUID id) {
+        var context = access.lock(conversation, auth, true);
+        return message(messages.findById(id).filter(value -> value.readable(clock.instant())
+                && access.messageVisible(context, value)).orElseThrow(ChatException::target), context);
+    }
+    @Transactional
+    ChatDeliveryCursor.Projection replay(UUID conversation, ChatGroupAccess.Authorization auth, String cursor) {
+        var context = access.lock(conversation, auth, true);
+        var purpose = cursorPurpose(context) + ":delivery";
+        long after = delivery.after(purpose, cursor, context.member().joinedAfterSequence, context.group().lastSequence);
+        var eligible = cursor == null ? List.<ChatMessageEntity>of()
+                : messages.groupHistory(conversation, visible(context), after, context.group().lastSequence, clock.instant(), 51);
+        return delivery.page(purpose, after, eligible, result(context));
     }
     ChatModels.ReadResult result(ChatGroupAccess.Context context) {
         long mark = Math.max(context.member().joinedAfterSequence, reads.findById(new ChatReadStateEntity.ReadId(context.group().id, context.actor().id()))

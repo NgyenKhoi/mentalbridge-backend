@@ -5,6 +5,7 @@ final class ChatException extends RuntimeException {
     final String code;
     private ChatException(int status, String code) { super(code); this.status = status; this.code = code; }
     static ChatException invalid() { return new ChatException(400, "INVALID_REQUEST"); }
+    static ChatException forbidden() { return new ChatException(403, "FORBIDDEN"); }
     static ChatException target() { return new ChatException(404, "TARGET_UNAVAILABLE"); }
     static ChatException version() { return new ChatException(409, "VERSION_CONFLICT"); }
     static ChatException conflict() { return new ChatException(409, "IDEMPOTENCY_CONFLICT"); }

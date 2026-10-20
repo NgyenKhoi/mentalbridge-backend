@@ -35,6 +35,10 @@ spring:
 
 mentalbridge:
   community:
+    chat-realtime:
+      enabled: ${COMMUNITY_CHAT_REALTIME_ENABLED:false}
+      public-key: ${REALTIME_COMMUNITY_DELEGATION_PUBLIC_KEY:}
+      key-id: ${REALTIME_COMMUNITY_DELEGATION_KEY_ID:}
     chat-group:
       member-limit: ${COMMUNITY_CHAT_GROUP_MEMBER_LIMIT:30}
     chat-relay:

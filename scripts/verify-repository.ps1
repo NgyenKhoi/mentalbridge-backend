@@ -241,11 +241,14 @@ try {
             'community-service' = 'contracts/openapi/community-service-v1.yaml'
         }
 
-        $realtimeGatewayChanged = Has-Changed $changedFiles '^realtime-service/.+gateway\.ts$'
-        if ($realtimeGatewayChanged -and -not (Has-Changed $changedFiles '^contracts/websocket/realtime/.+\.schema\.json$')) {
-            Add-Failure 'realtime-service gateway changed without its canonical WebSocket schema'
+        $realtimeGateways = @($changedFiles | Where-Object { $_ -match '^realtime-service/.+gateway\.ts$' })
+        foreach ($gateway in $realtimeGateways) {
+            $websocketNamespace = if ($gateway -eq 'realtime-service/src/community/community.gateway.ts') { 'community' } else { 'realtime' }
+            if (-not (Has-Changed $changedFiles "^contracts/websocket/$websocketNamespace/.+\.schema\.json$")) {
+                Add-Failure "$gateway changed without its canonical $websocketNamespace WebSocket schema"
+            }
         }
-        if ($realtimeGatewayChanged -and -not (Has-Changed $changedFiles '^realtime-service/.*(test/|\.test\.ts$|\.spec\.ts$|/__tests__/)')) {
+        if ($realtimeGateways.Count -gt 0 -and -not (Has-Changed $changedFiles '^realtime-service/.*(test/|\.test\.ts$|\.spec\.ts$|/__tests__/)')) {
             Add-Failure 'realtime-service gateway changed without WebSocket boundary tests'
         }
 

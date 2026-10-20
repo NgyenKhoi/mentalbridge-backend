@@ -1,16 +1,14 @@
 # Realtime Service
 
-NestJS 11 service on Node.js 24 that owns MentalBridge conversations, encrypted messages, WebSocket sessions and ephemeral presence.
+NestJS 11 service on Node.js 24 that owns appointment conversations/encrypted messages and authenticated WebSocket delivery. Community peer messages remain exclusively in Community PostgreSQL.
 
 ## Current scope
 
-The runtime described here is appointment chat. MB-684's proposed
-[Community chat ADR](../docs/adr/0042-community-chat-contract.md) isolates
-`/community` transport/presence from `/realtime`: Community would own durable
-peer messages/authorization, and Realtime would fetch current authorized results
-through REST without copying them to MongoDB or Redis. No new namespace or
-handler is implemented by MB-684. Its contract tests run in the existing Vitest
-contract lane and do not claim provider authorization/infrastructure coverage.
+MB-689 implements the opt-in `/community` namespace under the accepted
+[Community chat ADR](../docs/adr/0042-community-chat-contract.md). It fetches
+current authorized owner projections without copying content to MongoDB, Kafka
+or Redis. The appointment baseline below remains independent; Community setup,
+protocol and recovery are documented in [COMMUNITY.md](COMMUNITY.md).
 
 - Socket.IO `/realtime` namespace with one-use, 30-second browser credentials bound to Identity-issued RS256 JWTs
 - strict versioned command, acknowledgement, error and server-event envelopes

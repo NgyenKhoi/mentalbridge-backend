@@ -227,6 +227,14 @@ Use UTC microsecond truncation before outbox persistence. event/message ID is
 stable across relay retries. Logical recipient/kind/target identity dedupes a
 new envelope ID. No text, group name, health, identity email or provider data.
 
+MB-689 adds a private `READ_STATE_CHANGED` transport fact when the existing
+read watermark advances, carrying only conversation and recipient-self routing
+references. It grants no shared receipt opt-in and contains no read reference
+or counter. Realtime fetches the recipient's current absolute private read state.
+The owner also issues encrypted viewer/visibility/membership-bound delivery
+cursors over ordered eligible message IDs. A fresh subscription starts at the
+current tail and signals REST history repair; retained history is not rebroadcast.
+
 A pending direct request may reserve a private conversation routing UUID; that
 identifier and its fact do not grant either participant message/history access.
 Only an accepted relationship activates the conversation's message capability.

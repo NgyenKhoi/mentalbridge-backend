@@ -9,8 +9,10 @@ chat and do not authorize reusing it for unrestricted peer messaging. MB-684
 contains contracts only. MB-685 delivers the opt-in direct Community provider,
 fresh Identity eligibility and minimized outbox publishing. MB-687 adds private
 groups/current membership epochs and isolated exact-message report intake.
-Delegated internal authorization/projection, socket/presence, case administration
-and notification consumption remain downstream.
+MB-689 adds signed current-viewer authorization/projections and `/community`
+Socket.IO delivery through minimized Kafka-to-Redis fanout. Private ordered
+delivery cursors and absolute read-state projections retain Community authority.
+Presence/typing, case administration and notification consumption remain downstream.
 
 > Current product authority/navigation: [Current Product Blueprint](CURRENT_PRODUCT_BLUEPRINT.md).
 > The architecture follows ADR 0017 as prospectively amended by ADR 0022 and

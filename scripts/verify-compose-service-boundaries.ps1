@@ -22,6 +22,9 @@ $chatEnvironment = [ordered]@{
     'IDENTITY_COMMUNITY_CHAT_SERVICE_TOKEN' = 'synthetic-mb685-dedicated-owner-credential'
     'COMMUNITY_CHAT_ENCRYPTION_KEY' = 'synthetic-mb685-key-not-shared-with-other-services'
     'COMMUNITY_CHAT_DECRYPTION_KEYS' = '{}'
+    'REALTIME_COMMUNITY_DELEGATION_PRIVATE_KEY' = 'synthetic-mb689-realtime-private-key'
+    'REALTIME_COMMUNITY_DELEGATION_PUBLIC_KEY' = 'synthetic-mb689-realtime-public-key'
+    'REALTIME_COMMUNITY_BFF_PUBLIC_KEY' = 'synthetic-mb689-bff-public-key'
 }
 $previousChatEnvironment = @{}
 $failures = [System.Collections.Generic.List[string]]::new()
@@ -135,7 +138,9 @@ try {
     }
 
     foreach ($entry in $chatEnvironment.GetEnumerator()) {
-        $allowed = if ($entry.Key -eq 'IDENTITY_COMMUNITY_CHAT_SERVICE_TOKEN') { @('identity', 'community') } else { @('community') }
+        $allowed = if ($entry.Key -eq 'IDENTITY_COMMUNITY_CHAT_SERVICE_TOKEN') { @('identity', 'community') }
+            elseif ($entry.Key -in @('REALTIME_COMMUNITY_DELEGATION_PRIVATE_KEY', 'REALTIME_COMMUNITY_BFF_PUBLIC_KEY')) { @('realtime') }
+            else { @('community') }
         foreach ($serviceName in $allowed) {
             $service = $configuration.services.PSObject.Properties[$serviceName].Value
             if (-not (Has-Property $service.environment $entry.Key) -or [string]$service.environment.PSObject.Properties[$entry.Key].Value -ne $entry.Value) {

@@ -32,7 +32,7 @@ export class AppModule implements NestModule {
       module: AppModule,
       imports: [
         PlatformModule.register(configuration, dependencies),
-        OperationsModule,
+        OperationsModule.register(configuration.COMMUNITY.enabled),
         WebsocketModule.register(dependencies.eligibility, dependencies.evidence),
       ],
     };

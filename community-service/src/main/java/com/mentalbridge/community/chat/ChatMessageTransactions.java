@@ -22,11 +22,13 @@ class ChatMessageTransactions {
     private final ChatFacts facts;
     private final ChatUnread unread;
     private final Clock clock;
+    private final ChatDeliveryCursor delivery;
     ChatMessageTransactions(CommunityChatProfiles profiles, ChatAccess access, ChatConversationRepository conversations,
             ChatMessageRepository messages, ChatCommandRepository commands, ChatReadStateRepository reads,
-            ChatCrypto crypto, ChatFacts facts, ChatUnread unread, Clock clock) {
+            ChatCrypto crypto, ChatFacts facts, ChatUnread unread, Clock clock, ChatDeliveryCursor delivery) {
         this.profiles = profiles; this.access = access; this.conversations = conversations; this.messages = messages;
         this.commands = commands; this.reads = reads; this.crypto = crypto; this.facts = facts; this.unread = unread; this.clock = clock;
+        this.delivery = delivery;
     }
     @Transactional
     ChatModels.SendResult send(UUID subject, UUID conversationId, UUID peerId, UUID key, ChatModels.SendMessage input, UUID correlation) {
@@ -86,15 +88,35 @@ class ChatMessageTransactions {
         return new ChatModels.Page<>(result, next);
     }
     @Transactional
-    ChatModels.ReadResult read(UUID subject, UUID conversationId, UUID peerId, UUID messageId) {
+    ChatModels.ReadResult read(UUID subject, UUID conversationId, UUID peerId, UUID messageId, UUID correlation) {
         var context = context(subject, conversationId, peerId);
         var message = messages.findById(messageId).filter(value -> value.conversationId.equals(conversationId) && value.readable(clock.instant()))
                 .orElseThrow(ChatException::target);
         var state = reads.findById(new ChatReadStateEntity.ReadId(conversationId, context.actor().id()))
                 .orElseGet(() -> new ChatReadStateEntity(conversationId, context.actor().id()));
+        boolean advanced = state.lastReadSequence < message.serverSequence;
         state.lastReadSequence = Math.max(state.lastReadSequence, message.serverSequence);
         reads.saveAndFlush(state);
+        if (advanced) {
+            context.conversation().eventVersion++;
+            facts.publish(context.conversation(), "READ_STATE_CHANGED", null, null, subject, correlation, null);
+        }
         return unread.result(conversationId, context.actor().id());
+    }
+    @Transactional
+    ChatModels.Message projection(UUID subject, UUID conversation, UUID peer, UUID id) {
+        var context = context(subject, conversation, peer);
+        return message(messages.findById(id).filter(value -> value.conversationId.equals(conversation)
+                && value.readable(clock.instant())).orElseThrow(ChatException::target), context);
+    }
+    @Transactional
+    ChatDeliveryCursor.Projection replay(UUID subject, UUID conversation, UUID peer, String cursor) {
+        var context = context(subject, conversation, peer);
+        var purpose = historyPurpose(context) + ":delivery";
+        long after = delivery.after(purpose, cursor, 0, context.conversation().lastSequence);
+        var eligible = cursor == null ? List.<ChatMessageEntity>of()
+                : messages.history(conversation, after, context.conversation().lastSequence, clock.instant(), 51);
+        return delivery.page(purpose, after, eligible, unread.result(conversation, context.actor().id()));
     }
     private Context context(UUID subject, UUID conversationId, UUID peerId) {
         var actor = profiles.bySubject(subject).orElseThrow(ChatException::target);
