@@ -8,7 +8,10 @@ MB-689 implements the opt-in `/community` namespace under the accepted
 [Community chat ADR](../docs/adr/0042-community-chat-contract.md). It fetches
 current authorized owner projections without copying content to MongoDB, Kafka
 or Redis. The appointment baseline below remains independent; Community setup,
-protocol and recovery are documented in [COMMUNITY.md](COMMUNITY.md).
+protocol and recovery are documented in [COMMUNITY.md](COMMUNITY.md). MB-690
+adds opt-in foreground presence with Community-owned viewer authorization,
+Redis multi-device leases and cross-replica delivery. Its lease is distinct
+from both appointment presence below and the Community socket routing lease.
 
 - Socket.IO `/realtime` namespace with one-use, 30-second browser credentials bound to Identity-issued RS256 JWTs
 - strict versioned command, acknowledgement, error and server-event envelopes

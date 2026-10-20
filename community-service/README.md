@@ -9,7 +9,8 @@ and [privacy policy](../docs/policies/community-chat-policy-v1.md). MB-685 deliv
 the direct-chat provider subset in Community PostgreSQL, including fresh Identity
 eligibility checks. MB-687 adds private groups, membership epochs and exact-message
 report intake. MB-689 adds current signed Realtime projections and private
-read-state facts; presence/typing remain downstream stories.
+read-state facts. MB-690 adds current presence-peer projections; typing and
+shared receipts remain deferred.
 Only delivered operations are registered by the canonical
 Community OpenAPI through its direct-chat fragment; the proposal is the frozen
 baseline for future delivery rather than a capability advertisement.
@@ -30,6 +31,18 @@ Realtime. Disabled is the default; existing public chat APIs retain their normal
 Identity USER authentication. There is no new database migration: the existing
 read watermark transaction adds a recipient-self `READ_STATE_CHANGED` outbox
 fact only on a real advance. Retry/out-of-order read acknowledgements add no fact.
+
+MB-690 adds `POST /internal/v1/community/chat/presence-projections` under the
+conversation-bound `community:presence:project` scope. Its closed body contains
+only `conversationId`; the viewer comes exclusively from signed delegation.
+Current Identity eligibility is checked before the local permission transaction.
+The no-store response contains at most 30 other eligible current peers, each
+with `communityProfileId` and private `subjectRoutingReference`. Opt-out,
+invisible, blocked, restricted, inactive and departed peers produce no row.
+The routing reference is for Realtime only and never a client profile selector
+or durable permission grant. Realtime rechecks before emission. No new database
+table, field, migration or durable presence fact is introduced. See
+[MB-690 evidence](../docs/story-mb-690-community-presence-evidence.md).
 
 - Java 21 and Spring Boot 4
 - service-owned PostgreSQL database with Liquibase migrations

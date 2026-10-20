@@ -1,4 +1,4 @@
-# Community realtime (MB-689)
+# Community realtime (MB-689 / MB-690)
 
 Community owns messages, membership, blocks, read watermarks, unread and retention.
 This module is an authenticated delivery edge. It never writes a Community
@@ -98,7 +98,7 @@ Connect Socket.IO over WebSocket to `/community` with handshake
 }
 ```
 
-Only subscribe is activated by MB-689. There are at most 30 conversations and
+MB-689 activates subscribe; MB-690 also activates foreground heartbeat. There are at most 30 conversations and
 30 subscribe attempts per socket/minute. A successful ACK is a versioned
 `community.command.ack` event with `status: ACCEPTED`; it grants no delivery/read
 claim. Errors use the closed `community.command.error` variant. Message sends
@@ -150,7 +150,57 @@ proposal artifacts and appointment WebSocket schemas stay unchanged. The only
 persisted extension is a minimized fact from the existing watermark transaction;
 no new table, field or migration is needed. See
 [MB-689 evidence](../docs/story-mb-689-realtime-community-evidence.md) for exact
-verification, load/reconnect coverage and consumer handoff. MB-690 owns presence,
-typing and shared receipt behavior; MB-691 owns durable notifications. Frontend,
+verification, load/reconnect coverage and consumer handoff. MB-690 delivers
+presence only; typing and shared receipts are deferred, with their future owner
+to be assigned separately. MB-691 owns durable notifications. Frontend,
 BFF key provisioning, shared-environment activation and epic acceptance remain
 their owning delivery lanes, and no `ui-ready` claim is made here.
+
+## Foreground presence (MB-690)
+
+Use the same versioned command envelope with
+`commandType: "community.presence.heartbeat"` and `payload: {foreground: true}`.
+Send the first foreground heartbeat when the authenticated app is active and
+then every 20 seconds. A connection or server-renewed routing lease alone does
+not establish ONLINE. On background send `{foreground: false}` immediately;
+this clears only the calling socket's foreground lease. Foreground renewals
+are limited to once per ten seconds per socket. Background clearing remains
+available during that window and can supersede an in-flight foreground read.
+An ACK means command acceptance, not visibility, availability or willingness
+to talk. No actor, online claim, duration or client timestamp is accepted.
+
+Redis keeps an atomic sorted set per Community subject, with one member per
+authenticated socket and a 60-second server-time expiry, bounded by original
+Identity expiry. ONLINE requires at least one unexpired foreground lease.
+Disconnect removes only that socket; crashes expire without a disconnect hook.
+The accepted five-connection limit still comes from existing routing admission.
+Redis state is not appointment presence and uses separate Community keys.
+
+Subscribe emits fresh presence projections only for currently authorized,
+opted-in, non-invisible other peers. The event is
+`community.presence.changed` with exactly `{communityProfileId, state}` where
+state is `ONLINE`, `OFFLINE` or `UNKNOWN`. There is no exact last-seen,
+account-routing reference, lease expiry or hidden-subject marker. Clients must
+clear old badges on disconnect, reconnect and generic conversation invalidation.
+Repeated subscribe also refreshes the authorized snapshot.
+
+Presence changes use the environment's existing Redis channel suffixed with
+`:presence`, carrying only a closed private subject-routing trigger. Heartbeats
+and presence states never enter Kafka or durable history. Each device's bounded
+conversation queue rereads current owner eligibility before and after Redis
+sampling. Known authorization changes cancel queued projections and invalidate
+badges without a blocked-person ID. Dropped invalidations are repaired by fresh
+owner snapshots at most five seconds apart while the dependencies respond;
+lease-expiry checks are scheduled sooner when needed, on a 500ms timer. Owner
+deadlines and queue backpressure still apply; this is bounded reconciliation,
+not an instantaneous cross-service revocation SLA.
+
+Redis uncertainty can yield UNKNOWN only after fresh owner authorization.
+Owner uncertainty never uses a cached positive grant; the socket disconnects
+and clears its view. Pub/sub loss also disconnects sockets. Hidden subjects
+produce no event, including no OFFLINE/UNKNOWN event exposing their opt-out.
+
+Existing feature flags, signing keys and Redis configuration are reused. No
+new environment key, Kafka topic, database migration or frontend screen is
+introduced. See [MB-690 evidence](../docs/story-mb-690-community-presence-evidence.md)
+for the acceptance states and exact verification results.
