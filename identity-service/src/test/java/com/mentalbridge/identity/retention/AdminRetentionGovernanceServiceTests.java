@@ -6,6 +6,7 @@ import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.ArgumentMatchers.argThat;
 import static org.mockito.ArgumentMatchers.eq;
 import static org.mockito.Mockito.mock;
+import static org.mockito.Mockito.inOrder;
 import static org.mockito.Mockito.never;
 import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.when;
@@ -19,6 +20,7 @@ import java.util.UUID;
 
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
+import org.mockito.InOrder;
 import org.springframework.data.domain.PageImpl;
 import org.springframework.data.domain.Pageable;
 import org.springframework.data.jpa.domain.Specification;
@@ -158,6 +160,41 @@ class AdminRetentionGovernanceServiceTests {
 				.hasMessageContaining("thất bại liên tiếp 3 lần");
 
 		verify(auditLogger).recordDenied(argThat(event -> "RETRY_EXHAUSTED".equals(event.getReasonCode())));
+	}
+
+	@Test
+	void triggerRetentionSweepMarksOrphanedRunningStaleBeforeRetryExhaustion() {
+		String policyId = "MB-IDENTITY-REPORTING-001";
+		UUID actorId = UUID.randomUUID();
+		UUID correlationId = UUID.randomUUID();
+		var failedOlder = new RetentionExecutionRecordEntity(UUID.randomUUID(), policyId, "IDENTITY",
+				"REPORT_ARTIFACT_RETENTION_SWEEP", "FAILED", NOW.minusSeconds(300), NOW.minusSeconds(290),
+				0, 0, 0, 0, "SWEEP_EXECUTION_FAILED", NOW.minusSeconds(300));
+		var failedNewer = new RetentionExecutionRecordEntity(UUID.randomUUID(), policyId, "IDENTITY",
+				"REPORT_ARTIFACT_RETENTION_SWEEP", "FAILED", NOW.minusSeconds(200), NOW.minusSeconds(190),
+				0, 0, 0, 0, "SWEEP_EXECUTION_FAILED", NOW.minusSeconds(200));
+		var orphaned = new RetentionExecutionRecordEntity(UUID.randomUUID(), policyId, "IDENTITY",
+				"REPORT_ARTIFACT_RETENTION_SWEEP", "RUNNING", NOW.minusSeconds(100), null,
+				0, 0, 0, 0, null, NOW.minusSeconds(100));
+		when(executionRecords.findFirstByPolicyIdAndJobStatusOrderByStartedAtDesc(policyId, "RUNNING"))
+				.thenReturn(Optional.of(orphaned));
+		when(executionRecords.findTop3ByPolicyIdOrderByStartedAtDesc(policyId))
+				.thenReturn(List.of(orphaned, failedNewer, failedOlder));
+
+		assertThatThrownBy(() -> service.triggerRetentionSweep(policyId, actorId, correlationId))
+				.isInstanceOf(ResponseStatusException.class)
+				.hasMessageContaining("thất bại liên tiếp 3 lần");
+
+		InOrder order = inOrder(executionRecords, executionRecorder);
+		order.verify(executionRecords).tryAcquirePolicyExecutionLock(policyId);
+		order.verify(executionRecords).findFirstByPolicyIdAndJobStatusOrderByStartedAtDesc(policyId, "RUNNING");
+		order.verify(executionRecorder).recordStale(argThat(record -> orphaned.id().equals(record.id())
+				&& "STALE".equals(record.jobStatus()) && "PRIOR_EXECUTION_STALE".equals(record.failureCode())));
+		order.verify(executionRecords).findTop3ByPolicyIdOrderByStartedAtDesc(policyId);
+		verify(auditLogger).recordDenied(argThat(event -> "RETRY_EXHAUSTED".equals(event.getReasonCode())
+				&& correlationId.equals(event.getCorrelationId())));
+		verify(executionRecorder, never()).recordStart(any());
+		verify(reportProcessor, never()).purgeExpiredArtifactsWithMetrics();
 	}
 
 	@Test

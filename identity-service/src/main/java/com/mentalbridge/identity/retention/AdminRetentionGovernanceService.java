@@ -261,17 +261,6 @@ public class AdminRetentionGovernanceService {
 			throw new UnsupportedRetentionCapabilityException(policyId, meta.unsupportedCapabilityNotice());
 		}
 
-		List<RetentionExecutionRecordEntity> recentExecutions = executionRecords.findTop3ByPolicyIdOrderByStartedAtDesc(policyId);
-		if (recentExecutions.size() >= 3 && recentExecutions.stream().allMatch(r -> "FAILED".equals(r.jobStatus()) || "STALE".equals(r.jobStatus()))) {
-			auditLogger.recordDenied(new SecurityAuditEventEntity(
-					UUID.randomUUID(), null, actorId, "RETENTION_SWEEP_TRIGGERED", "DENIED",
-					"RETRY_EXHAUSTED", effectiveCorrelation, null,
-					meta.ownerService().name(), "DATA_RETENTION", now, now
-			));
-			throw new ResponseStatusException(HttpStatus.CONFLICT,
-					"Tiến trình dọn dẹp đã thất bại liên tiếp 3 lần. Cần can thiệp thủ công (MANUAL_ESCALATION_REQUIRED) trước khi thực thi lại.");
-		}
-
 		boolean lockAcquired;
 		try {
 			lockAcquired = executionRecords.tryAcquirePolicyExecutionLock(policyId);
@@ -294,7 +283,10 @@ public class AdminRetentionGovernanceService {
 			throw new ResponseStatusException(HttpStatus.CONFLICT, "Tiến trình dọn dẹp cho chính sách " + policyId + " đang được thực thi (RUNNING).");
 		}
 
-		executionRecords.findFirstByPolicyIdAndJobStatusOrderByStartedAtDesc(policyId, "RUNNING").ifPresent(priorRunning -> {
+		UUID staleExecutionId = null;
+		var priorRunningResult = executionRecords.findFirstByPolicyIdAndJobStatusOrderByStartedAtDesc(policyId, "RUNNING");
+		if (priorRunningResult.isPresent()) {
+			var priorRunning = priorRunningResult.get();
 			RetentionExecutionRecordEntity staleRecord = new RetentionExecutionRecordEntity(
 					priorRunning.id(),
 					priorRunning.policyId(),
@@ -311,7 +303,22 @@ public class AdminRetentionGovernanceService {
 					priorRunning.createdAt()
 			);
 			executionRecorder.recordStale(staleRecord);
-		});
+			staleExecutionId = priorRunning.id();
+		}
+
+		UUID confirmedStaleExecutionId = staleExecutionId;
+		List<RetentionExecutionRecordEntity> recentExecutions = executionRecords.findTop3ByPolicyIdOrderByStartedAtDesc(policyId);
+		if (recentExecutions.size() >= 3 && recentExecutions.stream().allMatch(r ->
+				"FAILED".equals(r.jobStatus()) || "STALE".equals(r.jobStatus())
+						|| (r.id().equals(confirmedStaleExecutionId) && "RUNNING".equals(r.jobStatus())))) {
+			auditLogger.recordDenied(new SecurityAuditEventEntity(
+					UUID.randomUUID(), null, actorId, "RETENTION_SWEEP_TRIGGERED", "DENIED",
+					"RETRY_EXHAUSTED", effectiveCorrelation, null,
+					meta.ownerService().name(), "DATA_RETENTION", now, now
+			));
+			throw new ResponseStatusException(HttpStatus.CONFLICT,
+					"Tiến trình dọn dẹp đã thất bại liên tiếp 3 lần. Cần can thiệp thủ công (MANUAL_ESCALATION_REQUIRED) trước khi thực thi lại.");
+		}
 
 		UUID executionId = UUID.randomUUID();
 		RetentionExecutionRecordEntity runningRecord = new RetentionExecutionRecordEntity(
