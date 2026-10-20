@@ -10,7 +10,7 @@ import org.junit.jupiter.api.Test;
 import org.springframework.http.MediaType;
 import org.springframework.test.web.servlet.ResultActions;
 
-class CommunityGroupLifecycleIntegrationTests extends ChatIntegrationSupport {
+class CommunityGroupLifecycleIntegrationTests extends ChatGroupIntegrationSupport {
     @Test
     void createsPrivateEncryptedGroupWithOneOwnerAndStableRetryIdentity() throws Exception {
         var key = UUID.randomUUID(); var name = "Nhóm riêng tổng hợp";
@@ -144,34 +144,33 @@ class CommunityGroupLifecycleIntegrationTests extends ChatIntegrationSupport {
         create(a, " ", UUID.randomUUID()).andExpect(status().isBadRequest());
         create(a, "x".repeat(81), UUID.randomUUID()).andExpect(status().isBadRequest());
     }
-    UUID group() throws Exception { return UUID.fromString(json(create(a, "Nhóm riêng kiểm thử", UUID.randomUUID()).andExpect(status().isCreated())).path("conversationId").asText()); }
-    ResultActions create(UUID actor, String name, UUID key) throws Exception {
-        return mvc.perform(post(ROOT + "/groups").with(user(actor)).header("Idempotency-Key", key).contentType(MediaType.APPLICATION_JSON).content(mapper.writeValueAsString(Map.of("name", name))));
+    @Test
+    void databaseRejectsOwnerlessActiveGroupMultipleOwnersAndNullOrOverflowingCap() throws Exception {
+        var group = group();
+        assertThatThrownBy(() -> jdbc.sql("delete from community_chat_membership where conversation_id = :id").param("id", group).update()).isInstanceOf(org.springframework.dao.DataAccessException.class);
+        assertThatThrownBy(() -> jdbc.sql("update community_chat_conversation set member_limit = null where id = :id").param("id", group).update()).isInstanceOf(org.springframework.dao.DataAccessException.class);
+        assertThatThrownBy(() -> jdbc.sql("update community_chat_conversation set member_limit = 31 where id = :id").param("id", group).update()).isInstanceOf(org.springframework.dao.DataAccessException.class);
+        join(b, group, bp);
+        assertThatThrownBy(() -> jdbc.sql("update community_chat_membership set role = 'OWNER' where profile_id = :id").param("id", bp).update()).isInstanceOf(org.springframework.dao.DataAccessException.class);
+        assertThat(count("community_chat_membership")).isEqualTo(2);
     }
-    UUID invite(UUID actor, UUID group, UUID peer) throws Exception { return UUID.fromString(json(invitation(actor, group, peer, UUID.randomUUID(), version(group)).andExpect(status().isCreated())).path("invitationId").asText()); }
-    void join(UUID subject, UUID group, UUID peer) throws Exception { decide(subject, invite(a, group, peer), "ACCEPT", 0).andExpect(status().isOk()); }
-    ResultActions invitation(UUID actor, UUID group, UUID peer, UUID key, long version) throws Exception {
-        return mvc.perform(post(ROOT + "/groups/{id}/invitations", group).with(user(actor)).header("Idempotency-Key", key).header("If-Match", quoted(version))
-                .contentType(MediaType.APPLICATION_JSON).content(mapper.writeValueAsString(Map.of("inviteeCommunityProfileId", peer))));
+    @Test
+    void concurrentOwnershipTransfersUseOneManagementRevisionAndLeaveOneOwner() throws Exception {
+        var group = group(); join(b, group, bp); join(outsider, group, profile(outsider));
+        role(a, group, bp, "ADMIN").andExpect(status().isOk()); role(a, group, profile(outsider), "ADMIN").andExpect(status().isOk());
+        var expected = version(group);
+        try (var executor = Executors.newFixedThreadPool(2)) {
+            var barrier = new CyclicBarrier(2);
+            var work = List.<Callable<Integer>>of(
+                    () -> { barrier.await(); return transferAt(a, group, bp, expected).andReturn().getResponse().getStatus(); },
+                    () -> { barrier.await(); return transferAt(a, group, profile(outsider), expected).andReturn().getResponse().getStatus(); });
+            var results = executor.invokeAll(work);
+            assertThat(List.of(results.get(0).get(), results.get(1).get())).containsExactlyInAnyOrder(200, 409);
+        }
+        assertThat(jdbc.sql("select count(*) from community_chat_membership where role = 'OWNER' and departed_at is null").query(Long.class).single()).isOne();
     }
-    ResultActions decide(UUID actor, UUID invitation, String decision, long version) throws Exception {
-        return mvc.perform(post(ROOT + "/invitations/{id}/decision", invitation).with(user(actor)).header("If-Match", quoted(version))
-                .contentType(MediaType.APPLICATION_JSON).content(mapper.writeValueAsString(Map.of("decision", decision))));
-    }
-    ResultActions members(UUID actor, UUID group) throws Exception { return mvc.perform(get(ROOT + "/groups/{id}/members", group).with(user(actor))); }
-    ResultActions role(UUID actor, UUID group, UUID target, String role) throws Exception {
-        return mvc.perform(put(ROOT + "/groups/{id}/members/{target}/role", group, target).with(user(actor)).header("If-Match", quoted(version(group)))
-                .contentType(MediaType.APPLICATION_JSON).content(mapper.writeValueAsString(Map.of("role", role))));
-    }
-    ResultActions transfer(UUID actor, UUID group, UUID target) throws Exception {
-        return mvc.perform(post(ROOT + "/groups/{id}/ownership", group).with(user(actor)).header("If-Match", quoted(version(group)))
-                .contentType(MediaType.APPLICATION_JSON).content(mapper.writeValueAsString(Map.of("newOwnerCommunityProfileId", target))));
-    }
-    ResultActions remove(UUID actor, UUID group, UUID target) throws Exception { return mvc.perform(delete(ROOT + "/groups/{id}/members/{target}", group, target).with(user(actor)).header("If-Match", quoted(version(group)))); }
-    long version(UUID group) { return jdbc.sql("select management_version from community_chat_conversation where id = :id").param("id", group).query(Long.class).single(); }
-    static String quoted(long version) { return "\"" + version + "\""; }
-    void fixtureMember(UUID group, UUID peer) {
-        jdbc.sql("insert into community_chat_membership(id,conversation_id,profile_id,role,joined_at,joined_after_sequence) values(:id,:group,:peer,'MEMBER',:now,0)")
-                .param("id", UUID.randomUUID()).param("group", group).param("peer", peer).param("now", java.sql.Timestamp.from(clock.instant())).update();
+    ResultActions transferAt(UUID actor, UUID group, UUID peer, long version) throws Exception {
+        return mvc.perform(post(ROOT + "/groups/{id}/ownership", group).with(user(actor)).header("If-Match", quoted(version))
+                .contentType(MediaType.APPLICATION_JSON).content(mapper.writeValueAsString(Map.of("newOwnerCommunityProfileId", peer))));
     }
 }

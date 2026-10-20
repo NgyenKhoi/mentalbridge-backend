@@ -130,6 +130,26 @@ Archive/remove return 204 with no ETag; still-authorized clients reread
 getConversation before the next management command. Database constraints and
 owner locks protect one active-group OWNER, current epoch uniqueness and the cap.
 
+The existing conversation/message/read-cursor routes now resolve DIRECT or
+GROUP through current owner authorization. Shared-group reads filter current
+membership epochs, account eligibility, bilateral blocks and retention before
+selecting pages/counts. Group list order uses only viewer-eligible activity
+(or the viewer's current join time); hidden messages never reorder it. Current
+conversation metadata is gathered owner-locally, eligibility is batch-read in
+chunks of 100 outside the transaction, then current local visibility is locked
+and projected before list pagination. This costs work proportional to the viewer's
+related conversations and keeps remote authority out of local transactions.
+
+Memberships retain immutable epoch rows; rejoin captures a new exclusive private
+sequence floor. Prior-epoch send retries cannot re-create or acknowledge earlier
+content. Leave/removal, suspension and restriction revoke reads/unread immediately
+on current owner checks. Shared blocks preserve the group's other participants;
+blocked/ineligible member projections contain only `UNAVAILABLE`, and old message
+cursors are never widened by unblock. Private read watermarks stay monotonic.
+Sends emit one minimized fact per current eligible non-self recipient; public
+management versions never advance for message/read traffic. No raw name/text is
+stored in Kafka or a second service. Existing relay ACK/replay semantics apply.
+
 | Variable | Meaning |
 | --- | --- |
 | `COMMUNITY_CHAT_ENABLED` | Enables delivered provider APIs after required credentials/keys are installed. |

@@ -2501,7 +2501,7 @@ CREATE TABLE community.community_chat_conversation (
     AND first_profile_id < second_profile_id AND state IN ('DORMANT','ACTIVE')
     AND ((state = 'ACTIVE') = (activated_at IS NOT NULL)) AND name_ciphertext IS NULL AND member_limit IS NULL)
     OR (kind = 'GROUP' AND first_profile_id IS NULL AND second_profile_id IS NULL
-    AND state IN ('ACTIVE','ARCHIVED') AND activated_at IS NOT NULL AND name_ciphertext IS NOT NULL AND member_limit BETWEEN 20 AND 30))
+    AND state IN ('ACTIVE','ARCHIVED') AND activated_at IS NOT NULL AND name_ciphertext IS NOT NULL AND member_limit IS NOT NULL AND member_limit BETWEEN 20 AND 30))
 );
 CREATE TABLE community.community_chat_request (
   id uuid PRIMARY KEY,

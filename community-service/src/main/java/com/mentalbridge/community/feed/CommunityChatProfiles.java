@@ -30,6 +30,8 @@ public class CommunityChatProfiles {
     public Optional<Profile> bySubject(UUID subject) {
         return profiles.findByAccountSubject(subject).map(this::view);
     }
+    @Transactional(readOnly = true)
+    public List<Profile> byIds(Collection<UUID> ids) { return profiles.findAllById(ids).stream().map(this::view).toList(); }
 
     @Transactional(propagation = Propagation.MANDATORY)
     public Profile ensure(UUID subject) {

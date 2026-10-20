@@ -47,13 +47,13 @@ class CommunityChatController {
                 .eTag(result.version()).body(result.body());
     }
     @GetMapping("/conversations")
-    ChatModels.Page<ChatModels.Conversation> conversations(@AuthenticationPrincipal Jwt jwt,
+    ChatModels.Page<Object> conversations(@AuthenticationPrincipal Jwt jwt,
             @RequestParam(required = false) String cursor, @RequestParam(defaultValue = "20") int limit,
             @RequestHeader(value = "X-Correlation-Id", required = false) String correlation) {
         return chat.conversations(subject(jwt), cursor, limit, correlation(correlation));
     }
     @GetMapping("/conversations/{conversationId}")
-    ChatModels.Conversation conversation(@AuthenticationPrincipal Jwt jwt, @PathVariable String conversationId,
+    Object conversation(@AuthenticationPrincipal Jwt jwt, @PathVariable String conversationId,
             @RequestHeader(value = "X-Correlation-Id", required = false) String correlation) {
         return chat.conversation(subject(jwt), ChatModels.uuid(conversationId), correlation(correlation));
     }

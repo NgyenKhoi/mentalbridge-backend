@@ -100,7 +100,7 @@ class ChatGroupTransactions {
     }
     @Transactional
     ChatGroupModels.Versioned<ChatGroupModels.Member> role(UUID conversation, ChatGroupAccess.Authorization authorization, UUID target, String role, long expected, UUID correlation) {
-        var context = access.lock(conversation, authorization, true); access.active(context); access.owner(context); access.version(context, expected);
+        var context = access.lock(conversation, authorization, true); access.active(context); access.version(context, expected); access.owner(context);
         var member = context.member(target);
         if (!context.eligible().containsKey(target)) throw ChatException.target();
         if (member.role.equals("OWNER")) throw ChatException.notAllowed();
@@ -112,7 +112,7 @@ class ChatGroupTransactions {
     }
     @Transactional
     ChatGroupModels.Group transfer(UUID conversation, ChatGroupAccess.Authorization authorization, UUID target, long expected, UUID correlation) {
-        var context = access.lock(conversation, authorization, true); access.active(context); access.owner(context); access.version(context, expected);
+        var context = access.lock(conversation, authorization, true); access.active(context); access.version(context, expected); access.owner(context);
         var member = context.member(target);
         if (!member.role.equals("ADMIN") || !context.eligible().containsKey(target)) throw ChatException.target();
         context.member().role = "ADMIN"; member.role = "OWNER"; changed(context, correlation);
