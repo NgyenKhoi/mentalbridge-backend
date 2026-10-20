@@ -92,6 +92,8 @@ class CommunityChatAccountAuthorizationIntegrationTests extends IdentityTestProp
                 .content(mapper.writeValueAsString(Map.of("accountIds", List.of(active.id(), active.id())))))
                 .andExpect(status().isOk()).andExpect(jsonPath("$.activeUserAccountIds.length()").value(1));
         assertThat(new CommunityChatAuthorizationProperties(TOKEN).toString()).doesNotContain(TOKEN);
+        assertThat(new CommunityChatAccountAuthorizationController.AuthorizationRequest(List.of(active.id())).toString()).doesNotContain(active.id().toString());
+        assertThat(new CommunityChatAccountAuthorizationController.AuthorizationResult(List.of(active.id())).toString()).doesNotContain(active.id().toString());
     }
 
     private AccountEntity account(RoleCode role, boolean verified) {

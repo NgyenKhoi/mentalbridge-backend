@@ -45,6 +45,7 @@ class CommunityChatAccountAuthorizationController {
     }
 
     record AuthorizationRequest(@NotEmpty @Size(max = 100) List<@NotNull UUID> accountIds) {
+        @Override public String toString() { return "CommunityChatAuthorizationRequest[REDACTED]"; }
         @JsonAnySetter
         public void rejectUnknown(String name, Object value) {
             throw new ResponseStatusException(HttpStatus.BAD_REQUEST);
@@ -52,5 +53,6 @@ class CommunityChatAccountAuthorizationController {
     }
 
     record AuthorizationResult(List<UUID> activeUserAccountIds) {
+        @Override public String toString() { return "CommunityChatAuthorizationResult[REDACTED]"; }
     }
 }
