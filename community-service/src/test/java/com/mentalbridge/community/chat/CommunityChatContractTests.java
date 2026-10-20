@@ -24,7 +24,9 @@ class CommunityChatContractTests {
         assertThat(parsed.getOpenAPI().getPaths().keySet()).containsExactlyInAnyOrder(
                 "/api/v1/community/chat/privacy", "/api/v1/community/chat/direct-conversations",
                 "/api/v1/community/chat/requests", "/api/v1/community/chat/requests/{requestId}/decision",
-                "/api/v1/community/chat/conversations", "/api/v1/community/chat/conversations/{conversationId}");
+                "/api/v1/community/chat/conversations", "/api/v1/community/chat/conversations/{conversationId}",
+                "/api/v1/community/chat/conversations/{conversationId}/messages",
+                "/api/v1/community/chat/conversations/{conversationId}/read-cursor");
         parsed.getOpenAPI().getPaths().forEach((path, item) -> {
             assertThat(item.getExtensions().get("x-mentalbridge-status")).isEqualTo("implemented");
             item.readOperationsMap().forEach((method, operation) -> {
@@ -51,5 +53,18 @@ class CommunityChatContractTests {
         assertThat(pending.size()).isEqualTo(2);
         assertThat(pending.has("requestId")).isTrue();
         assertThat(pending.has("conversationId")).isFalse();
+    }
+    @Test
+    void promotedFactsPreserveTheAcceptedClosedContract() throws Exception {
+        var baseline = mapper.readTree(Files.readString(Path.of("..", "contracts", "proposals", "community-chat-fact-v1.schema.json")));
+        var active = mapper.readTree(Files.readString(Path.of("..", "contracts", "events", "community", "community-chat-fact-v1.schema.json")));
+        assertThat(active.path("oneOf")).isEqualTo(baseline.path("oneOf"));
+        var examples = mapper.readTree(Files.readString(Path.of("..", "contracts", "proposals", "community-chat-v1.examples.json")));
+        for (var fact : examples.path("facts")) {
+            assertThat(ChatWireContracts.validFact(fact.toString())).isTrue();
+            var forged = fact.deepCopy();
+            ((com.fasterxml.jackson.databind.node.ObjectNode) forged.path("payload")).put("content", "private synthetic text");
+            assertThat(ChatWireContracts.validFact(forged.toString())).isFalse();
+        }
     }
 }

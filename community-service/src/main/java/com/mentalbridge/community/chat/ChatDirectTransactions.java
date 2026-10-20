@@ -63,7 +63,7 @@ class ChatDirectTransactions {
         }
         if (replay.isEmpty()) commands.save(new ChatCommandEntity(actor.id(), "START_DIRECT", key,
                 crypto.fingerprint("START_DIRECT", targetId.toString()), result.state(),
-                result.conversationId() == null ? result.requestId() : result.conversationId(), clock.instant()));
+                result.conversationId() == null ? result.requestId() : result.conversationId(), conversation.id, clock.instant()));
         return result;
     }
 

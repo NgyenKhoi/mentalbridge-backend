@@ -15,8 +15,10 @@ and MB-691 notification consumption. No UI-ready or live-provider claim.
    transactional blocks, opaque cursors and request facts. Focused Community
    PostgreSQL/HTTP, consumer failure and contract tests.
 3. Durable text messages/history/read acknowledgement: encryption/retention,
-   idempotency, private sequence/unread, minimized outbox/relay, real concurrency,
-   outage and contract tests. Final affected module checks and exact-head CI.
+   idempotency, private sequence/unread, minimized outbox, real concurrency,
+   rollback and contract tests.
+4. Kafka relay adapter: bounded owner outbox replay, topic provisioning and real
+   Kafka outage/recovery evidence. Final affected module checks and exact-head CI.
 
 ## Acceptance states before provider implementation
 
@@ -42,6 +44,21 @@ moderation audit tests: 6 passed. Active/frozen contract compatibility and
 consumer deadline/fail-closed tests: 11 passed. Strict duplicate/trailing JSON
 and the 32 KiB request-body limit are covered. Message/history delivery and
 final exact-head CI are still in progress; no completion claim yet.
+
+Checkpoint 3: 26 message/direct provider PostgreSQL regressions passed with
+exercised JSON responses and real persisted outbox facts validated against the
+active JSON schemas. The earlier combined provider/canonical-contract checkpoint
+passed 34 tests. HTTP consumer, encryption rotation and fact-contract checks
+passed 21 tests. Additional visibility/concurrent-preference regressions and
+the Kafka adapter are pending final verification.
+
+Concurrent preference changes additionally lock affected conversation rows in
+UUID order before allocating private authorization-event revisions. Profile
+locks alone would not serialize two different members changing their own
+preferences. Message/command/fact writes share a local transaction; a forced
+outbox constraint failure is verified to roll back all three and the private
+sequence allocation. Current Identity reads precede local transactions and
+never use a cached positive authorization on failure.
 
 The initial workflow test run found a Mockito re-stubbing error in the timeout
 test (NPE before the request); `doThrow` corrected that test setup. The first

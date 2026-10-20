@@ -2521,6 +2521,7 @@ CREATE TABLE community.community_chat_command (
   request_fingerprint varchar(100) NOT NULL,
   result_kind varchar(16) NOT NULL CHECK (result_kind IN ('ACTIVE', 'PENDING', 'MESSAGE')),
   target_id uuid NOT NULL,
+  conversation_id uuid NOT NULL REFERENCES community.community_chat_conversation(id) ON DELETE CASCADE,
   created_at timestamptz NOT NULL,
   UNIQUE (actor_profile_id, operation, idempotency_key)
 );
@@ -2533,4 +2534,27 @@ CREATE TABLE community.community_chat_outbox (
   published_at timestamptz,
   attempt_count integer NOT NULL DEFAULT 0 CHECK (attempt_count >= 0),
   next_attempt_at timestamptz
+);
+
+CREATE TABLE community.community_chat_message (
+  id uuid PRIMARY KEY,
+  conversation_id uuid NOT NULL REFERENCES community.community_chat_conversation(id) ON DELETE CASCADE,
+  sender_profile_id uuid NOT NULL REFERENCES community.community_profile(id),
+  client_message_id uuid NOT NULL,
+  server_sequence bigint NOT NULL CHECK (server_sequence > 0),
+  content_ciphertext text,
+  content_fingerprint varchar(100) NOT NULL,
+  created_at timestamptz NOT NULL,
+  expires_at timestamptz NOT NULL,
+  purged_at timestamptz,
+  UNIQUE (conversation_id, sender_profile_id, client_message_id),
+  UNIQUE (conversation_id, server_sequence),
+  CHECK (expires_at > created_at),
+  CHECK ((content_ciphertext IS NULL) = (purged_at IS NOT NULL))
+);
+CREATE TABLE community.community_chat_read_state (
+  conversation_id uuid NOT NULL REFERENCES community.community_chat_conversation(id) ON DELETE CASCADE,
+  profile_id uuid NOT NULL REFERENCES community.community_profile(id),
+  last_read_sequence bigint NOT NULL DEFAULT 0 CHECK (last_read_sequence >= 0),
+  PRIMARY KEY (conversation_id, profile_id)
 );

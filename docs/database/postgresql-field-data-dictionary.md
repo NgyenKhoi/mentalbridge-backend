@@ -2851,3 +2851,30 @@ These tables belong only to `mentalbridge_community`. Liquibase `0017-community-
 | `published_at` | Nullable Kafka acknowledgement instant; only an acknowledged publish marks completion. |
 | `attempt_count` | Persisted bounded-backoff attempt number; no volatile offset or process-local retry authority. |
 | `next_attempt_at` | Nullable lease/backoff instant for safe concurrent SKIP LOCKED claims and replay after a crashed publisher. |
+
+### `public.community_chat_message`
+
+Community's encrypted text-message authority under Liquibase 0018. No raw message is placed in Kafka, Redis, a notification or another owner's database.
+
+| Field | Purpose |
+| --- | --- |
+| `id` | Random immutable message UUID; no global sequence/time encoding is exposed to clients. |
+| `conversation_id` | Physical owner-local conversation reference; aggregate erasure cascades message records. |
+| `sender_profile_id` | Server-derived Community sender, never selected by the browser or a socket command. |
+| `client_message_id` | Caller UUID unique with sender/conversation; duplicate content reconciles one message even across transport retries. |
+| `server_sequence` | Private positive per-conversation order allocated in the same transaction as content/facts; never returned in REST/socket DTOs or public versions. |
+| `content_ciphertext` | Nullable versioned AES-256-GCM ciphertext with random nonce and exact conversation/message/sender associated data. Null only after retention purge; never plaintext. |
+| `content_fingerprint` | Versioned keyed HMAC of normalized target/client/content used only for retry consistency; retains no recoverable message text. |
+| `created_at` | Immutable UTC microsecond save instant; orders eligible activity and enforces cross-device rolling send limits. |
+| `expires_at` | Immutable save-time retention cutoff (90 days under accepted policy v1). Content becomes unreadable at this instant, independently of sweep timing. |
+| `purged_at` | Nullable UTC physical ciphertext-erasure checkpoint; present exactly when ciphertext is null. The content-free identity tombstone prevents expired-content recreation. |
+
+### `public.community_chat_read_state`
+
+| Field | Purpose |
+| --- | --- |
+| `conversation_id` | Physical owner-local conversation key, removed when the conversation is erased. |
+| `profile_id` | Exact Community reader; composite primary key isolates devices' shared private unread truth per owner/conversation. |
+| `last_read_sequence` | Private monotonic max of authorized exact-message acknowledgements. Not a delivery proof, shared-receipt preference or public counter; retention/visibility changes never decrease it. |
+
+Migration 0018 also adds `community_chat_command.conversation_id`, a required physical aggregate reference. Existing ACTIVE/PENDING pointers are backfilled inside the owner database; erasing a conversation cascades its retry identities, preventing dangling owner identifiers. It never references another service's table.

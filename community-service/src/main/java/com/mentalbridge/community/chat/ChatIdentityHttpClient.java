@@ -16,6 +16,7 @@ interface ChatIdentityHttpClient {
     record Query(List<UUID> accountIds) {
         @Override public String toString() { return "ChatAccountQuery[REDACTED]"; }
     }
+    @com.fasterxml.jackson.annotation.JsonIgnoreProperties(ignoreUnknown = true)
     record Result(List<UUID> activeUserAccountIds) {
         @Override public String toString() { return "ChatAccountResult[REDACTED]"; }
     }

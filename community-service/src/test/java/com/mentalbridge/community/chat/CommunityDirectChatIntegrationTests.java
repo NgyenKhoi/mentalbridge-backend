@@ -28,39 +28,7 @@ import org.springframework.test.web.servlet.MockMvc;
 import org.springframework.test.web.servlet.ResultActions;
 import org.springframework.test.web.servlet.request.RequestPostProcessor;
 
-@Import(TestcontainersConfiguration.class)
-@SpringBootTest(properties = {
-    "mentalbridge.community.chat.enabled=true",
-    "mentalbridge.community.chat.identity-service-token=synthetic-community-chat-token-at-least-32",
-    "mentalbridge.community.chat.encryption-key=MDEyMzQ1Njc4OWFiY2RlZjAxMjM0NTY3ODlhYmNkZWY=",
-    "mentalbridge.community.chat.encryption-key-version=test-v1",
-    "mentalbridge.community.chat.identity-base-url=http://127.0.0.1:1"
-})
-@AutoConfigureMockMvc
-class CommunityDirectChatIntegrationTests extends CommunityTestProperties {
-    static final String ROOT = "/api/v1/community/chat";
-    @Autowired MockMvc mvc;
-    @Autowired JdbcClient jdbc;
-    @Autowired ObjectMapper mapper;
-    @Autowired ChatAccountAuthorizer accounts;
-    @MockitoBean ChatIdentityHttpClient identity;
-    final Set<UUID> denied = ConcurrentHashMap.newKeySet();
-    UUID a, b, outsider, ap, bp;
-
-    @BeforeEach
-    void setup() {
-        jdbc.sql("truncate table community_profile cascade").update();
-        denied.clear();
-        ((io.github.resilience4j.circuitbreaker.CircuitBreaker) org.springframework.test.util.ReflectionTestUtils.getField(accounts, "breaker")).reset();
-        when(identity.authorize(anyString(), anyString(), any())).thenAnswer(call -> {
-            assertThat(org.springframework.transaction.support.TransactionSynchronizationManager.isActualTransactionActive()).isFalse();
-            var query = call.getArgument(2, ChatIdentityHttpClient.Query.class);
-            return new ChatIdentityHttpClient.Result(query.accountIds().stream().filter(id -> !denied.contains(id)).toList());
-        });
-        a = UUID.randomUUID(); b = UUID.randomUUID(); outsider = UUID.randomUUID();
-        ap = profile(a); bp = profile(b); profile(outsider);
-    }
-
+class CommunityDirectChatIntegrationTests extends ChatIntegrationSupport {
     @Test
     void privacyDefaultsAreExplicitAndReplacementUsesAnExactRevision() throws Exception {
         mvc.perform(get(ROOT + "/privacy").with(user(a))).andExpect(status().isOk())
@@ -103,6 +71,7 @@ class CommunityDirectChatIntegrationTests extends CommunityTestProperties {
         assertThat(count("community_chat_request")).isOne();
         assertThat(count("community_chat_outbox")).isEqualTo(2);
         for (var wire : jdbc.sql("select event_payload::text from community_chat_outbox").query(String.class).list()) {
+            assertThat(ChatWireContracts.validFact(wire)).isTrue();
             var fact = mapper.readTree(wire);
             assertThat(fact.path("occurredAt").isTextual()).isTrue();
             assertThat(Instant.parse(fact.path("occurredAt").asText()).getNano() % 1000).isZero();
@@ -268,35 +237,4 @@ class CommunityDirectChatIntegrationTests extends CommunityTestProperties {
                 .andExpect(jsonPath("$.items.length()").value(2)).andExpect(jsonPath("$.nextCursor").isEmpty());
     }
 
-    UUID pending(UUID actor, UUID target) throws Exception {
-        var result = json(start(actor, target, UUID.randomUUID()).andExpect(status().isCreated()));
-        assertThat(result.path("state").asText()).isEqualTo("PENDING");
-        return UUID.fromString(result.path("requestId").asText());
-    }
-    ResultActions start(UUID actor, UUID target, UUID key) throws Exception {
-        return mvc.perform(post(ROOT + "/direct-conversations").with(user(actor)).header("Idempotency-Key", key)
-                .contentType(MediaType.APPLICATION_JSON).content(mapper.writeValueAsString(Map.of("recipientCommunityProfileId", target))));
-    }
-    ResultActions decision(UUID actor, UUID id, String value, String version) throws Exception {
-        return mvc.perform(post(ROOT + "/requests/{id}/decision", id).with(user(actor)).header("If-Match", "\"" + version + "\"")
-                .contentType(MediaType.APPLICATION_JSON).content(mapper.writeValueAsString(Map.of("decision", value))));
-    }
-    ResultActions preference(UUID actor, String value, String version) throws Exception {
-        return mvc.perform(put(ROOT + "/privacy").with(user(actor)).header("If-Match", "\"" + version + "\"")
-                .contentType(MediaType.APPLICATION_JSON).content(privacyBody(value)));
-    }
-    static String privacyBody(String mode) {
-        return "{\"directMessagePolicy\":\"" + mode + "\",\"presenceVisible\":false,\"invisible\":false,\"typingVisible\":false,\"readReceiptsVisible\":false}";
-    }
-    UUID profile(UUID subject) {
-        var existing = jdbc.sql("select id from community_profile where account_subject = :subject").param("subject", subject).query(UUID.class).optional();
-        if (existing.isPresent()) return existing.orElseThrow();
-        var id = UUID.randomUUID();
-        jdbc.sql("insert into community_profile(id, account_subject, display_name, status, created_at, updated_at, version) values(:id,:subject,'Tên cộng đồng mẫu','ACTIVE',now(),now(),0)")
-                .param("id", id).param("subject", subject).update();
-        return id;
-    }
-    long count(String table) { return jdbc.sql("select count(*) from " + table).query(Long.class).single(); }
-    JsonNode json(ResultActions result) throws Exception { return mapper.readTree(result.andReturn().getResponse().getContentAsString(java.nio.charset.StandardCharsets.UTF_8)); }
-    static RequestPostProcessor user(UUID actor) { return jwt().jwt(j -> j.subject(actor.toString())).authorities(new SimpleGrantedAuthority("ROLE_USER")); }
 }

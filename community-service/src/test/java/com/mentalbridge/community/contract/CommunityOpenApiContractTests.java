@@ -13,6 +13,9 @@ import org.junit.jupiter.api.Test;
 class CommunityOpenApiContractTests {
 
 	private static final Set<String> IMPLEMENTED = Set.of(
+			"GET /api/v1/community/chat/conversations/{conversationId}/messages",
+			"POST /api/v1/community/chat/conversations/{conversationId}/messages",
+			"PUT /api/v1/community/chat/conversations/{conversationId}/read-cursor",
 			"GET /api/v1/community/chat/privacy", "PUT /api/v1/community/chat/privacy",
 			"POST /api/v1/community/chat/direct-conversations", "GET /api/v1/community/chat/requests",
 			"POST /api/v1/community/chat/requests/{requestId}/decision",
@@ -49,6 +52,9 @@ class CommunityOpenApiContractTests {
 			"GET /api/v1/community/admin/operations/summary");
 
 	private static final Set<String> ALL_OPERATIONS = Set.of(
+			"GET /api/v1/community/chat/conversations/{conversationId}/messages",
+			"POST /api/v1/community/chat/conversations/{conversationId}/messages",
+			"PUT /api/v1/community/chat/conversations/{conversationId}/read-cursor",
 			"GET /api/v1/community/chat/privacy", "PUT /api/v1/community/chat/privacy",
 			"POST /api/v1/community/chat/direct-conversations", "GET /api/v1/community/chat/requests",
 			"POST /api/v1/community/chat/requests/{requestId}/decision",

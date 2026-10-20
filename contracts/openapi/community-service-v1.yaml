@@ -24,6 +24,12 @@ paths:
   /api/v1/community/chat/conversations/{conversationId}:
     x-mentalbridge-status: implemented
     $ref: './community-chat-v1.json#/paths/~1api~1v1~1community~1chat~1conversations~1%7BconversationId%7D'
+  /api/v1/community/chat/conversations/{conversationId}/messages:
+    x-mentalbridge-status: implemented
+    $ref: './community-chat-v1.json#/paths/~1api~1v1~1community~1chat~1conversations~1%7BconversationId%7D~1messages'
+  /api/v1/community/chat/conversations/{conversationId}/read-cursor:
+    x-mentalbridge-status: implemented
+    $ref: './community-chat-v1.json#/paths/~1api~1v1~1community~1chat~1conversations~1%7BconversationId%7D~1read-cursor'
   /api/v1/community/feed:
     x-mentalbridge-status: implemented
     get:

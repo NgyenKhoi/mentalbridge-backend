@@ -11,7 +11,8 @@ import org.springframework.web.bind.annotation.*;
 @RequestMapping("/api/v1/community/chat")
 class CommunityChatController {
     private final CommunityDirectChatService chat;
-    CommunityChatController(CommunityDirectChatService chat) { this.chat = chat; }
+    private final CommunityChatMessageService messages;
+    CommunityChatController(CommunityDirectChatService chat, CommunityChatMessageService messages) { this.chat = chat; this.messages = messages; }
     @GetMapping("/privacy")
     ResponseEntity<ChatModels.PrivacyView> privacy(@AuthenticationPrincipal Jwt jwt,
             @RequestHeader(value = "X-Correlation-Id", required = false) String correlation) {
@@ -55,6 +56,25 @@ class CommunityChatController {
     ChatModels.Conversation conversation(@AuthenticationPrincipal Jwt jwt, @PathVariable String conversationId,
             @RequestHeader(value = "X-Correlation-Id", required = false) String correlation) {
         return chat.conversation(subject(jwt), ChatModels.uuid(conversationId), correlation(correlation));
+    }
+    @PostMapping("/conversations/{conversationId}/messages")
+    ResponseEntity<ChatModels.SendResult> send(@AuthenticationPrincipal Jwt jwt, @PathVariable String conversationId,
+            @RequestHeader(value = "Idempotency-Key", required = false) String key, @RequestBody ChatModels.SendMessage request,
+            @RequestHeader(value = "X-Correlation-Id", required = false) String correlation) {
+        return ResponseEntity.status(201).cacheControl(CacheControl.noStore()).body(messages.send(subject(jwt),
+                ChatModels.uuid(conversationId), ChatModels.uuid(key), request, correlation(correlation)));
+    }
+    @GetMapping("/conversations/{conversationId}/messages")
+    ChatModels.Page<ChatModels.Message> history(@AuthenticationPrincipal Jwt jwt, @PathVariable String conversationId,
+            @RequestParam(required = false) String cursor, @RequestParam(defaultValue = "20") int limit,
+            @RequestHeader(value = "X-Correlation-Id", required = false) String correlation) {
+        return messages.history(subject(jwt), ChatModels.uuid(conversationId), cursor, limit, correlation(correlation));
+    }
+    @PutMapping("/conversations/{conversationId}/read-cursor")
+    ChatModels.ReadResult read(@AuthenticationPrincipal Jwt jwt, @PathVariable String conversationId,
+            @RequestBody ChatModels.ReadCursor request,
+            @RequestHeader(value = "X-Correlation-Id", required = false) String correlation) {
+        return messages.read(subject(jwt), ChatModels.uuid(conversationId), request.lastReadMessageId(), correlation(correlation));
     }
     static UUID subject(Jwt jwt) {
         if (jwt == null) throw ChatException.target();

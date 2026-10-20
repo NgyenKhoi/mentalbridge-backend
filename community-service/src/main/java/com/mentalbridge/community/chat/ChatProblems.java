@@ -25,6 +25,10 @@ class ChatProblems {
     ResponseEntity<Map<String, Object>> malformed(Exception exception, HttpServletRequest request) {
         return domain(ChatException.invalid(), request);
     }
+    @ExceptionHandler({org.springframework.dao.DataAccessException.class, org.springframework.transaction.TransactionSystemException.class})
+    ResponseEntity<Map<String, Object>> persistence(Exception exception, HttpServletRequest request) {
+        return domain(ChatException.unavailable(), request);
+    }
     static Map<String, Object> body(int status, String code, UUID correlation) {
         return Map.of("type", "about:blank", "title", "Community chat request could not be completed",
                 "status", status, "code", code, "correlationId", correlation);

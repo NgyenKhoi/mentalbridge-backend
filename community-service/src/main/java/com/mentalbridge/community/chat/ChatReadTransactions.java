@@ -22,10 +22,12 @@ class ChatReadTransactions {
     private final ChatPrivacyRepository privacy;
     private final ChatCursors cursors;
     private final Clock clock;
+    private final ChatUnread unread;
     ChatReadTransactions(CommunityChatProfiles profiles, ChatAccess access, ChatConversationRepository conversations,
-            ChatRequestRepository requests, ChatPrivacyRepository privacy, ChatCursors cursors, Clock clock) {
+            ChatRequestRepository requests, ChatPrivacyRepository privacy, ChatCursors cursors, Clock clock, ChatUnread unread) {
         this.profiles = profiles; this.access = access; this.conversations = conversations;
         this.requests = requests; this.privacy = privacy; this.cursors = cursors; this.clock = clock;
+        this.unread = unread;
     }
     @Transactional
     Anchor anchor(UUID subject, String scope, String cursor) {
@@ -45,8 +47,9 @@ class ChatReadTransactions {
     }
     @Transactional(readOnly = true)
     List<Candidate> conversationCandidates(Anchor anchor, ChatCursors.Position before) {
-        return conversations.candidates(anchor.viewer(), before.time(), before.id(), 50).stream()
-                .map(conversation -> candidate(conversation.id, conversation.other(anchor.viewer()), conversation.activatedAt)).toList();
+        return conversations.candidates(anchor.viewer(), before.time(), before.id(), 50, clock.instant()).stream()
+                .map(value -> new Candidate(value.getId(), value.getPeerId(), value.getPeerSubject(),
+                        new ChatCursors.Position(value.getActivityAt(), value.getId()))).toList();
     }
     private Candidate candidate(UUID id, UUID peerId, java.time.Instant time) {
         var peer = profiles.byId(peerId).orElseThrow(ChatException::target);
@@ -93,7 +96,7 @@ class ChatReadTransactions {
     }
     private ChatModels.Conversation view(ChatConversationEntity value, Profile actor, Profile peer) {
         return new ChatModels.Conversation(value.id, "DIRECT", "ACTIVE", List.of(access.peer(actor), access.peer(peer)),
-                0, Long.toString(value.managementVersion));
+                unread.count(value.id, actor.id()), Long.toString(value.managementVersion));
     }
     private Map<UUID, Profile> locked(UUID actor, List<Candidate> candidates) {
         var ids = new ArrayList<UUID>(); ids.add(actor);

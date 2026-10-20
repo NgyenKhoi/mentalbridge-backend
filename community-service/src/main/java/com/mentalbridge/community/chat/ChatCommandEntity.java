@@ -14,10 +14,11 @@ class ChatCommandEntity {
     @Column(name = "request_fingerprint", nullable = false) String requestFingerprint;
     @Column(name = "result_kind", nullable = false) String resultKind;
     @Column(name = "target_id", nullable = false) UUID targetId;
+    @Column(name = "conversation_id", nullable = false) UUID conversationId;
     @Column(name = "created_at", nullable = false) Instant createdAt;
     protected ChatCommandEntity() {}
-    ChatCommandEntity(UUID actor, String operation, UUID key, String fingerprint, String kind, UUID target, Instant now) {
+    ChatCommandEntity(UUID actor, String operation, UUID key, String fingerprint, String kind, UUID target, UUID conversation, Instant now) {
         id = UUID.randomUUID(); actorProfileId = actor; this.operation = operation; idempotencyKey = key;
-        requestFingerprint = fingerprint; resultKind = kind; targetId = target; createdAt = now;
+        requestFingerprint = fingerprint; resultKind = kind; targetId = target; conversationId = conversation; createdAt = now;
     }
 }
