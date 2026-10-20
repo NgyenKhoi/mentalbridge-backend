@@ -20,6 +20,10 @@ authentication is not evidence of immediate suspension/revocation support.
 Server authorization is checked for every REST read/write, subscribe, reconnect,
 fanout, typing/presence/receipt projection and notification delivery. On owner
 failure deny access with a bounded 503; a stale positive grant is never a fallback.
+Internal presence/typing/receipt checks bind both conversation and exact subject
+profile; subscribe/history checks bind the conversation without a subject selector.
+Notification checks require exact recipient, kind, target ID and conversation ID.
+The provider compares them to its owned records; a schema-valid mismatch still denies.
 Invalid/inaccessible object identifiers share `TARGET_UNAVAILABLE`/404 without
 confirming block, membership, private group or report existence.
 
@@ -72,6 +76,13 @@ role replacement never accepts OWNER. No concurrent command may remove the last
 owner in an active group or exceed the cap. Archived groups may retain a departed
 owner tombstone and allow self-leave but no new management writes. Use aggregate version conflict
 for management commands.
+
+Strong If-Match refers to the privacy revision, request revision, invitation
+revision or moderation-case revision for those operations. All group management
+commands use the conversation/group revision, including member-role updates and
+invites. Responses return its current strong ETag; clients obtain the numeric
+version from the authoritative owner read and never guess or reuse another
+resource's version. A matching version never substitutes for permission.
 
 New members see messages only from their current membership epoch onward.
 Leave/removal immediately revokes history, socket, presence, typing, receipts and
@@ -141,6 +152,7 @@ least one eligible foreground unexpired lease. Background/disconnect removes onl
 that lease; another active device keeps ONLINE. Crash expires at TTL; reconnect
 creates a new lease. No client duration or claimed online flag is authoritative.
 Redis failure returns UNKNOWN for otherwise authorized peers, never cached ONLINE.
+Do not publish UNKNOWN events to hidden subjects' unauthorized viewers.
 Privacy/block/removal changes revoke subscriptions and clear visible badges
 immediately; a generic conversation invalidation carries no blocked-person ID.
 Clients clear stale badges on disconnect/reconnect pending a fresh authorization
@@ -175,6 +187,10 @@ Use UTC microsecond truncation before outbox persistence. event/message ID is
 stable across relay retries. Logical recipient/kind/target identity dedupes a
 new envelope ID. No text, group name, health, identity email or provider data.
 
+A pending direct request may reserve a private conversation routing UUID; that
+identifier and its fact do not grant either participant message/history access.
+Only an accepted relationship activates the conversation's message capability.
+
 Realtime consumes pointers and reads authorized results from Community REST
 under its signed user delegation. It never looks up Community tables or caches
 raw content in Redis. Per-conversation sequence orders delivered results, not
@@ -197,6 +213,11 @@ audits comment-reaction gaps and reaction aggregation; this contract adds only
 chat/request/invitation facts. Self-events are suppressed. A group message emits
 one logical recipient fact per currently eligible member excluding sender and
 blocked pairs. No broadcast recipient list is placed in a fact.
+
+V1 chat/request/invitation notices use the existing
+`contentGroups.communityInteraction` preference together with the master/channel
+switches. They are not mandatory service/security alerts that bypass opt-out.
+Quiet-hour policy remains Content-owned and is rechecked at deferred delivery.
 
 Content checks current exact target/recipient authorization through the proposed
 Community internal API before materialization/provider delivery. A 503 retries;
@@ -249,6 +270,7 @@ Enforce server-side across devices; report Retry-After without exposing other us
 | Group creation | 5 per actor per rolling 24h |
 | Reports | 10 per actor per rolling 24h; duplicate exact actor/message report is idempotent |
 | Socket connections | 5 per account; reject excess without evicting unrelated devices |
+| REST body / WebSocket frame | 32 KiB UTF-8; reject oversize before parsing, without logging the body |
 | Subscribe | 30 per socket per minute; at most 30 active conversations |
 | Typing | 1 update per second per actor/conversation; 5s expiry |
 | Heartbeat | no faster than 1 per 10s per socket; expected interval 20s, TTL 60s |

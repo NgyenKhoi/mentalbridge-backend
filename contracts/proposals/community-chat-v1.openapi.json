@@ -2513,32 +2513,56 @@
         }
       },
       "RealtimeAuthorization": {
-        "type": "object",
-        "additionalProperties": false,
-        "required": [
-          "conversationId",
-          "action"
-        ],
-        "properties": {
-          "conversationId": {
-            "type": "string",
-            "format": "uuid"
+        "oneOf": [
+          {
+            "type": "object",
+            "additionalProperties": false,
+            "required": [
+              "conversationId",
+              "action"
+            ],
+            "properties": {
+              "conversationId": {
+                "type": "string",
+                "format": "uuid"
+              },
+              "action": {
+                "type": "string",
+                "enum": [
+                  "SUBSCRIBE",
+                  "MESSAGE_READ"
+                ]
+              }
+            }
           },
-          "action": {
-            "type": "string",
-            "enum": [
-              "SUBSCRIBE",
-              "MESSAGE_READ",
-              "PRESENCE",
-              "TYPING",
-              "READ_RECEIPT"
-            ]
-          },
-          "targetCommunityProfileId": {
-            "type": "string",
-            "format": "uuid"
+          {
+            "type": "object",
+            "additionalProperties": false,
+            "required": [
+              "conversationId",
+              "action",
+              "targetCommunityProfileId"
+            ],
+            "properties": {
+              "conversationId": {
+                "type": "string",
+                "format": "uuid"
+              },
+              "action": {
+                "type": "string",
+                "enum": [
+                  "PRESENCE",
+                  "TYPING",
+                  "READ_RECEIPT"
+                ]
+              },
+              "targetCommunityProfileId": {
+                "type": "string",
+                "format": "uuid"
+              }
+            }
           }
-        }
+        ]
       },
       "AuthorizationResult": {
         "type": "object",
@@ -2563,7 +2587,8 @@
         "required": [
           "recipientRoutingReference",
           "kind",
-          "targetId"
+          "targetId",
+          "conversationId"
         ],
         "properties": {
           "recipientRoutingReference": {

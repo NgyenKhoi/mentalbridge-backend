@@ -271,4 +271,31 @@ describe('MB-684 Community contract candidate', () => {
       }),
     ).toBe(false);
   });
+
+  it('binds service authorization to the exact conversation and visibility subject', () => {
+    const authorize = component('RealtimeAuthorization');
+    expect(authorize({ conversationId: uuid, action: 'SUBSCRIBE' })).toBe(true);
+    expect(
+      authorize({ conversationId: uuid, action: 'PRESENCE', targetCommunityProfileId: uuid }),
+    ).toBe(true);
+    for (const action of ['PRESENCE', 'TYPING', 'READ_RECEIPT']) {
+      expect(authorize({ conversationId: uuid, action })).toBe(false);
+    }
+    expect(
+      authorize({ conversationId: uuid, action: 'SUBSCRIBE', targetCommunityProfileId: uuid }),
+    ).toBe(false);
+    expect(authorize({ conversationId: uuid, action: 'SUBSCRIBE', actorId: uuid })).toBe(false);
+    const notification = {
+      recipientRoutingReference: uuid,
+      kind: 'MESSAGE_RECEIVED',
+      targetId: uuid,
+      conversationId: uuid,
+    };
+    expect(component('NotificationAuthorization')(notification)).toBe(true);
+    for (const missing of Object.keys(notification)) {
+      expect(
+        component('NotificationAuthorization')({ ...notification, [missing]: undefined }),
+      ).toBe(false);
+    }
+  });
 });

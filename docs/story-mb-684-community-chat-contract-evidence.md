@@ -95,8 +95,8 @@ Local verification:
 
 | Command/check | Result |
 | --- | --- |
-| Realtime `npm run format:check`, `lint`, `typecheck`, `test`, `contract:check`, `migration:check`, `build` | Passed; full unit/HTTP lane 79 tests before two final contract-only regressions |
-| Final targeted Community + appointment WebSocket contract tests | Passed: 42 tests, including the two added handshake/component regressions |
+| Realtime `npm run format:check`, `lint`, `typecheck`, `test`, `contract:check`, `migration:check`, `build` | Passed; full unit/HTTP lane 79 tests before final contract-only regressions |
+| Final targeted Community + appointment WebSocket contract tests | Passed: 43 tests, including final handshake/component and exact internal-authorization target regressions |
 | Final targeted Prettier/ESLint and Realtime typecheck | Passed |
 | `scripts/verify-repository.ps1 -BaseSha origin/dev` | Passed; 24 changed files; no runtime changes |
 | Relative links introduced by MB-684 | Passed: 45 links at verification checkpoint |
