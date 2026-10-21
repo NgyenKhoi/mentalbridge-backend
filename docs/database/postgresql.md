@@ -25,7 +25,8 @@ not backfilled.
 | `mentalbridge_identity` | Identity Service | account, role, refresh session, verification/reset token |
 | `mentalbridge_care` | Care Service | user profile, consent, anonymous session, questionnaire, assessment result, safety, SupportEvaluation, Support Guide, SupportPlan lifecycle/activity occurrences |
 | `mentalbridge_consultation` | Consultation Service | specialist approval, current service entitlement, online availability, appointments, service-credit periods/ledger, and appointment status outbox |
-| `mentalbridge_content_notification` | Content/Notification Service | reviewed resource definitions, exact-version eligibility provenance, notification preferences/inbox, and appointment email reminder delivery state |
+| `mentalbridge_community` | Community Service | posts/comments/supportive reactions, blocks/moderation, private peer messages, requests/invitations/membership and owner outboxes |
+| `mentalbridge_content_notification` | Content/Notification Service | reviewed resource definitions, exact-version eligibility provenance, notification preferences/inbox, Community notice jobs/receipts, and appointment email reminder delivery state |
 | owner-local tables | each producer; Governance reads safe events | implemented owner outbox/audit tables only; deletion/retention projections remain proposed |
 
 ADR 0005 assigns billing to Consultation; ADR 0017 amends the v2 catalogue to
@@ -39,6 +40,13 @@ is enabled; runtime FX is prohibited.
 
 Cross-owner identifiers in the canonical logical model make relationships visible but are not physical foreign keys. Executable service migrations store immutable external UUIDs and validate through APIs/events. Do not emulate distributed joins on request paths.
 
+MB-691 adds Community migration `0021-community-comment-reactions.yaml` and
+Content migration `26_add_community_notice_delivery.sql`. Community keeps one
+supportive reaction per comment/actor; Content stores minimized durable notice
+jobs, terminal receipts and nullable inbox grouping metadata. Exact chat target
+authorization is an owner REST read before the local Content transaction.
+See [MB-691 evidence](../story-mb-691-community-notification-evidence.md).
+
 ## Shared column policy
 
 - UUID primary keys are generated server-side using `gen_random_uuid()`.
@@ -46,7 +54,7 @@ Cross-owner identifiers in the canonical logical model make relationships visibl
 - `version` supports optimistic locking on concurrently edited aggregates.
 - Status fields use `varchar` plus `CHECK`, allowing controlled migrations without PostgreSQL enum coupling.
 - Email uses `citext` for case-insensitive uniqueness.
-- Sensitive free text is absent from relational tables unless required for querying. Journal and chat bodies live in MongoDB; documents live in private object storage.
+- Sensitive free text is absent unless the owner use case requires it. Journal and appointment chat bodies live in MongoDB; Community peer chat uses owner-encrypted PostgreSQL content; documents live in private object storage.
 - Foreign keys use restrictive deletion by default. User deletion is orchestrated explicitly rather than cascaded accidentally.
 
 ## Key integrity decisions

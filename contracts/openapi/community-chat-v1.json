@@ -3,7 +3,7 @@
   "info": {
     "title": "MentalBridge Community direct chat API",
     "version": "1.2.0",
-    "description": "Community direct/group chat and MB-689 current signed realtime projections. Community remains authoritative for content and unread; no notification/presence implementation is claimed."
+    "description": "Implemented Community direct/group chat, current signed Realtime projections, presence peers and scoped notification authorization. Community owns all content and permission truth."
   },
   "x-mentalbridge-decision": "MB-COMMUNITY-CHAT-001",
   "servers": [
@@ -1848,6 +1848,72 @@
           }
         }
       }
+    },
+    "/internal/v1/community/chat/notification-authorizations": {
+      "x-mentalbridge-status": "implemented",
+      "x-mentalbridge-owner": "community-service",
+      "post": {
+        "operationId": "authorizeChatNotification",
+        "summary": "authorize Chat Notification",
+        "description": "Read-only Content service scope community:notification:authorize. RS256 service JWT: issuer/subject content-notification-service, audience community-service, dedicated kid, jti UUID, iat <= now < exp <= iat + 30s. Exact stored target, actor, recipient, kind and conversation are verified against current Identity eligibility and local blocks, membership epoch and lifecycle. Request/invitation authorization does not grant transcript access. No content returned or cached permission grant. Target mismatch, denied, revoked and expired are uniform 404; dependency uncertainty is retryable 503. No Idempotency-Key.",
+        "x-mentalbridge-role": "SERVICE",
+        "security": [
+          {
+            "NotificationServiceAuth": []
+          }
+        ],
+        "parameters": [],
+        "responses": {
+          "200": {
+            "description": "Authoritative owner result; no optimistic success.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/AuthorizationResult"
+                }
+              }
+            },
+            "headers": {
+              "Cache-Control": {
+                "schema": {
+                  "const": "no-store"
+                }
+              }
+            }
+          },
+          "400": {
+            "$ref": "#/components/responses/InvalidRequest"
+          },
+          "401": {
+            "$ref": "#/components/responses/Unauthenticated"
+          },
+          "403": {
+            "$ref": "#/components/responses/Forbidden"
+          },
+          "404": {
+            "$ref": "#/components/responses/TargetUnavailable"
+          },
+          "409": {
+            "$ref": "#/components/responses/Conflict"
+          },
+          "429": {
+            "$ref": "#/components/responses/RateLimited"
+          },
+          "503": {
+            "$ref": "#/components/responses/DependencyUnavailable"
+          }
+        },
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/NotificationAuthorizationQuery"
+              }
+            }
+          }
+        }
+      }
     }
   },
   "components": {
@@ -3145,6 +3211,43 @@
                 }
               }
             }
+          }
+        }
+      },
+      "NotificationAuthorizationQuery": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": [
+          "recipientRoutingReference",
+          "kind",
+          "targetId",
+          "conversationId",
+          "actorCommunityProfileId"
+        ],
+        "properties": {
+          "recipientRoutingReference": {
+            "type": "string",
+            "format": "uuid"
+          },
+          "kind": {
+            "type": "string",
+            "enum": [
+              "MESSAGE_RECEIVED",
+              "DIRECT_REQUESTED",
+              "GROUP_INVITED"
+            ]
+          },
+          "targetId": {
+            "type": "string",
+            "format": "uuid"
+          },
+          "conversationId": {
+            "type": "string",
+            "format": "uuid"
+          },
+          "actorCommunityProfileId": {
+            "type": "string",
+            "format": "uuid"
           }
         }
       }

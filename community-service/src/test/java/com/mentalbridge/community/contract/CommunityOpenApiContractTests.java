@@ -13,6 +13,8 @@ import org.junit.jupiter.api.Test;
 class CommunityOpenApiContractTests {
 
 	private static final Set<String> IMPLEMENTED = Set.of(
+			"GET /api/v1/community/comments/{commentId}/reaction", "PUT /api/v1/community/comments/{commentId}/reaction", "DELETE /api/v1/community/comments/{commentId}/reaction",
+			"POST /internal/v1/community/chat/notification-authorizations",
 			"POST /internal/v1/community/chat/presence-projections",
 			"POST /internal/v1/community/chat/session-authorizations", "POST /internal/v1/community/chat/realtime-authorizations",
 			"POST /internal/v1/community/chat/message-projections", "POST /internal/v1/community/chat/replay-projections",
@@ -65,6 +67,8 @@ class CommunityOpenApiContractTests {
 			"GET /api/v1/community/admin/operations/summary");
 
 	private static final Set<String> ALL_OPERATIONS = Set.of(
+			"GET /api/v1/community/comments/{commentId}/reaction", "PUT /api/v1/community/comments/{commentId}/reaction", "DELETE /api/v1/community/comments/{commentId}/reaction",
+			"POST /internal/v1/community/chat/notification-authorizations",
 			"POST /internal/v1/community/chat/presence-projections",
 			"POST /internal/v1/community/chat/session-authorizations", "POST /internal/v1/community/chat/realtime-authorizations",
 			"POST /internal/v1/community/chat/message-projections", "POST /internal/v1/community/chat/replay-projections",
@@ -135,7 +139,8 @@ class CommunityOpenApiContractTests {
 			assertThat(operationStatus == null ? pathStatus : operationStatus)
 					.isEqualTo(IMPLEMENTED.contains(key) ? "implemented" : "planned");
 			assertThat(operation.getSecurity()).anySatisfy(requirement -> assertThat(requirement).containsKey(
-                    path.startsWith("/internal/") ? (path.endsWith("message-projections") ? "RealtimeMessageReadDelegation" : "RealtimeDelegation") : "BearerAuth"));
+                    path.endsWith("notification-authorizations") ? "NotificationServiceAuth"
+                            : path.startsWith("/internal/") ? (path.endsWith("message-projections") ? "RealtimeMessageReadDelegation" : "RealtimeDelegation") : "BearerAuth"));
 		}));
 
 		assertThat(operations).isEqualTo(ALL_OPERATIONS);

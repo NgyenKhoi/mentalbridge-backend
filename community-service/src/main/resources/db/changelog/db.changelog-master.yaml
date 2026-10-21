@@ -39,3 +39,5 @@ databaseChangeLog:
       file: db/changelog/changes/0019-community-private-groups.yaml
   - include:
       file: db/changelog/changes/0020-community-chat-report-intake.yaml
+  - include:
+      file: db/changelog/changes/0021-community-comment-reactions.yaml

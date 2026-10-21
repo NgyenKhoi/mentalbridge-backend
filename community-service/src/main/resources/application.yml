@@ -35,6 +35,10 @@ spring:
 
 mentalbridge:
   community:
+    chat-notification:
+      enabled: ${COMMUNITY_CHAT_NOTIFICATION_ENABLED:false}
+      public-key: ${CONTENT_COMMUNITY_NOTIFICATION_PUBLIC_KEY:}
+      key-id: ${CONTENT_COMMUNITY_NOTIFICATION_KEY_ID:}
     chat-realtime:
       enabled: ${COMMUNITY_CHAT_REALTIME_ENABLED:false}
       public-key: ${REALTIME_COMMUNITY_DELEGATION_PUBLIC_KEY:}

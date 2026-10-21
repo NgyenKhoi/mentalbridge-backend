@@ -12,6 +12,26 @@ const requiredEnvironment = {
 } satisfies NodeJS.ProcessEnv;
 
 describe('configuration', () => {
+  it('requires dedicated signing configuration and Kafka only when Community notice intake is enabled', () => {
+    expect(loadConfiguration(requiredEnvironment).CONTENT_COMMUNITY_NOTICE_CONSUMER_ENABLED).toBe(
+      false,
+    );
+    expect(() =>
+      loadConfiguration({
+        ...requiredEnvironment,
+        CONTENT_COMMUNITY_NOTICE_CONSUMER_ENABLED: 'true',
+      }),
+    ).toThrow();
+    expect(
+      loadConfiguration({
+        ...requiredEnvironment,
+        CONTENT_COMMUNITY_NOTICE_CONSUMER_ENABLED: 'true',
+        KAFKA_BOOTSTRAP_SERVERS: 'localhost:9092',
+        CONTENT_COMMUNITY_NOTIFICATION_PRIVATE_KEY: 'synthetic-key-validated-at-client-startup',
+        CONTENT_COMMUNITY_NOTIFICATION_KEY_ID: 'content-test',
+      }).CONTENT_COMMUNITY_NOTICE_CONSUMER_ENABLED,
+    ).toBe(true);
+  });
   it('loads required values and defaults', () => {
     const configuration = loadConfiguration(requiredEnvironment);
 

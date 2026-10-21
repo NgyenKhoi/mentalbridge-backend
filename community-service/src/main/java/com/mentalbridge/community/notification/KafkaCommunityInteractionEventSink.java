@@ -28,6 +28,10 @@ class KafkaCommunityInteractionEventSink implements CommunityInteractionEventSin
 	@Override
 	public void publish(UUID targetId, JsonNode eventPayload) throws Exception {
 		String topic = properties.topic();
+
+        if ("COMMENT".equals(eventPayload.path("targetType").asText())
+                && java.util.Set.of("SUPPORT", "RELATE", "THANK_YOU").contains(eventPayload.path("interactionKind").asText()))
+            topic = "mentalbridge.community.comment-reaction.v1";
 		if (isAuditEvent(eventPayload)) {
 			topic = System.getProperty("mentalbridge.admin.audit.topic", "mentalbridge.admin.audit-event.v1");
 		}

@@ -12,7 +12,7 @@ import org.springframework.http.converter.HttpMessageNotReadableException;
 import org.springframework.web.method.annotation.MethodArgumentTypeMismatchException;
 
 @Order(Ordered.HIGHEST_PRECEDENCE)
-@RestControllerAdvice(assignableTypes = {CommunityChatController.class, CommunityGroupController.class, CommunityChatReportController.class, CommunityChatRealtimeController.class})
+@RestControllerAdvice(assignableTypes = {CommunityChatController.class, CommunityGroupController.class, CommunityChatReportController.class, CommunityChatRealtimeController.class, ChatNotificationController.class})
 class ChatProblems {
     @ExceptionHandler(ChatException.class)
     ResponseEntity<Map<String, Object>> domain(ChatException exception, HttpServletRequest request) {
