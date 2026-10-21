@@ -21,7 +21,12 @@ unchanged fact shape under `events/community/`. MB-687 adds nine private-group
 lifecycle operations and exact-message report intake. MB-689 promotes signed
 internal projections and isolated socket delivery; MB-690 adds presence-only
 foreground heartbeat, presence events and current authorized peer projections.
-Typing/shared receipts and ADMIN case operations remain future runtime work.
+MB-691 adds scoped chat notification authorization, the comment-reaction provider
+fragment and separate `community-comment-reaction-v1.schema.json` fact. Existing
+interaction-v1 producers and schemas remain compatible. The new generic
+`community-push-v1.schema.json` defines a payload only; actual PUSH provider/device
+delivery remains MB-675/679. Typing/shared receipts and ADMIN case operations
+remain future runtime work.
 See [ADR 0042](../docs/adr/0042-community-chat-contract.md).
 Existing appointment and Community interaction schemas are unchanged.
 
