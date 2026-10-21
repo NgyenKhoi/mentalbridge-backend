@@ -9,16 +9,22 @@ import java.util.Optional;
 import java.util.UUID;
 
 import org.springframework.jdbc.core.simple.JdbcClient;
+import org.springframework.http.HttpStatus;
 import org.springframework.stereotype.Repository;
 import org.springframework.transaction.annotation.Transactional;
+
+import com.mentalbridge.care.profile.UserProfileRepository;
+import com.mentalbridge.care.shared.ApiException;
 
 @Repository
 class ReassessmentSelfReportStore {
 
 	private final JdbcClient jdbc;
+	private final UserProfileRepository profiles;
 
-	ReassessmentSelfReportStore(JdbcClient jdbc) {
+	ReassessmentSelfReportStore(JdbcClient jdbc, UserProfileRepository profiles) {
 		this.jdbc = jdbc;
+		this.profiles = profiles;
 	}
 
 	Optional<StoredSelfReport> findByRequest(UUID userId, String idempotencyKey) {
@@ -46,10 +52,21 @@ class ReassessmentSelfReportStore {
 				""").param("userId", userId).query(this::stored).optional();
 	}
 
+	Optional<StoredSelfReport> currentForPeriod(UUID userId, ReassessmentSummaryView.Period period) {
+		return jdbc.sql("""
+				select * from reassessment_self_report
+				where user_id=:userId and current_period_start=:startAt and current_period_end=:endAt
+				order by updated_at desc, id desc
+				limit 1
+				""").param("userId", userId).param("startAt", at(period.startAt()))
+				.param("endAt", at(period.endAt())).query(this::stored).optional();
+	}
+
 	@Transactional
 	StoredSelfReport persist(UUID id, UUID userId, String idempotencyKey, String requestHash,
 			ReassessmentSummaryView.Period period, String currentExperience, String helpfulContext,
 			String difficultContext, Instant now) {
+		lockOwner(userId);
 		int inserted = jdbc.sql("""
 				insert into reassessment_self_report
 					(id,user_id,idempotency_key,request_hash,source_version,current_period_start,
@@ -69,6 +86,7 @@ class ReassessmentSelfReportStore {
 	@Transactional
 	Optional<StoredSelfReport> replace(UUID userId, UUID id, long expectedVersion, String currentExperience,
 			String helpfulContext, String difficultContext, Instant now) {
+		lockOwner(userId);
 		int updated = jdbc.sql("""
 				update reassessment_self_report
 				set current_experience=:experience, helpful_context=:helpful,
@@ -82,6 +100,7 @@ class ReassessmentSelfReportStore {
 
 	@Transactional
 	boolean delete(UUID userId, UUID id, long expectedVersion, Instant now) {
+		lockOwner(userId);
 		return jdbc.sql("""
 				update reassessment_self_report
 				set current_experience=null, helpful_context=null, difficult_context=null,
@@ -102,6 +121,11 @@ class ReassessmentSelfReportStore {
 
 	private OffsetDateTime at(Instant value) {
 		return OffsetDateTime.ofInstant(value, ZoneOffset.UTC);
+	}
+
+	private void lockOwner(UUID userId) {
+		profiles.findByIdForUpdate(userId).orElseThrow(() -> new ApiException(HttpStatus.NOT_FOUND,
+				"PROFILE_NOT_FOUND", "Care profile was not found"));
 	}
 
 	private Instant nullableInstant(ResultSet row, String column) throws SQLException {

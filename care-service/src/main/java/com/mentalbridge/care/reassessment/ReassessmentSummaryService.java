@@ -130,14 +130,7 @@ public class ReassessmentSummaryService {
 		Instant end = clock.instant().truncatedTo(ChronoUnit.DAYS);
 		var current = new Period(end.minus(COMPARISON_PERIOD), end);
 		var previous = new Period(current.startAt().minus(COMPARISON_PERIOD), current.startAt());
-		ScreeningEpisodeService.EpisodeView episode;
-		try {
-			episode = screeningEpisodes.current(userId, "REASSESSMENT");
-		}
-		catch (ApiException exception) {
-			if (!"SCREENING_EPISODE_NOT_FOUND".equals(exception.code())) throw exception;
-			episode = null;
-		}
+		var episode = screeningEpisodes.findCurrent(userId, "REASSESSMENT").orElse(null);
 		var phq9 = episode == null || episode.phq9AssessmentId() == null
 				? java.util.Optional.<AssessmentEvidence>empty()
 				: evidence.findAssessment(userId, episode.phq9AssessmentId()).filter(AssessmentEvidence::usable);

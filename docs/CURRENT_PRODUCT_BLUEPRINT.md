@@ -215,6 +215,13 @@ Reassessment never changes a SupportPlan automatically. After fresh Care revalid
 
 Historical MB-386 v1 snapshots remain a compatibility baseline. MB-559 implements the explicit owner-authored self-report and canonical v2 composition without rewriting those records.
 
+[Adaptive SupportPlan review policy v1](policies/support-plan-review-v1.md),
+accepted 2026-10-21 for MB-645, governs early/partial and due review, separate
+sourced evidence, repeat thresholds, bounded practical options and explicit
+confirmation. The existing 14-local-day/pause cycle and adjacent 14-day UTC
+comparison periods remain distinct; review never expires or changes a plan
+automatically. Its runtime and consumer delivery remain subject to MB-645 gates.
+
 ## 6. Specialist and consultation boundary
 
 Specialist discovery exposes only approved/active specialists and selectable `IN_APP_CHAT` / `IN_APP_VIDEO` slots. Physical PracticeLocation, phone consultation, and external meeting links are not current scope.

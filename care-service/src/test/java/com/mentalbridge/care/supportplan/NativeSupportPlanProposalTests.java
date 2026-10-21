@@ -83,6 +83,7 @@ class NativeSupportPlanProposalTests {
 	private final ResourceEligibilityClient eligibility = mock(ResourceEligibilityClient.class);
 	private final SupportPlanV3Service views = mock(SupportPlanV3Service.class);
 	private final List<SupportPlanTemplateFamilyEntity> storedFamilies = new ArrayList<>();
+	private final List<SupportPlanFocusEntity> storedFocuses = new ArrayList<>();
 	private final List<PlanActionEntity> storedActions = new ArrayList<>();
 	private NativeSupportPlanWriter writer;
 	private NativeSupportPlanService service;
@@ -93,6 +94,7 @@ class NativeSupportPlanProposalTests {
 	@BeforeEach
 	void setup() {
 		writer = new NativeSupportPlanWriter(plans, families, focuses, actions, profiles, activities,
+				mock(SupportPlanScheduleCommandRepository.class), mock(SupportPlanScheduleService.class),
 				new ObjectMapper().findAndRegisterModules());
 		service = new NativeSupportPlanService(writer, mock(SupportPlanWriter.class), plans, views, entitlements,
 				evaluations, episodes, preferences, new SupportPlanPolicy(), eligibility,
@@ -113,7 +115,11 @@ class NativeSupportPlanProposalTests {
 			return value;
 		});
 		when(families.findBySupportPlanIdOrderByOrdinal(any())).thenAnswer(call -> List.copyOf(storedFamilies));
-		when(focuses.saveAndFlush(any())).thenAnswer(call -> call.getArgument(0));
+		when(focuses.saveAndFlush(any())).thenAnswer(call -> {
+			SupportPlanFocusEntity value = call.getArgument(0);
+			storedFocuses.add(value);
+			return value;
+		});
 		when(actions.save(any())).thenAnswer(call -> {
 			PlanActionEntity value = call.getArgument(0);
 			storedActions.add(value);
@@ -457,6 +463,29 @@ class NativeSupportPlanProposalTests {
 
 		verify(views).get(userId, planId);
 		verifyNoInteractions(entitlements, evaluations, episodes, preferences, eligibility);
+	}
+
+	@Test
+	void reviewedFocusOrderSurvivesActivationAndLaterAdmission() {
+		var policy = new SupportPlanPolicy();
+		var request = policy.request(evaluation);
+		var proposal = policy.compose(request, eligibility.resolve(request.batch(), "bearer", correlationId));
+		var reversed = new ArrayList<>(proposal.families());
+		java.util.Collections.reverse(reversed);
+		writer.propose(userId, "reviewed-focus", "reviewed-hash", evaluation, entitlement(ServicePackage.PLUS),
+				new SupportPlanPolicy.Proposal(List.copyOf(reversed), proposal.slots(), proposal.resourcePolicyVersion(),
+						proposal.resourcesResolvedAt()), null, "REMINDER", "Reminder", NOW);
+
+		activate();
+		service.revalidateCurrent(userId, storedPlan.id(), "bearer", correlationId);
+
+		assertThat(storedPlan.status()).isEqualTo("ACTIVE");
+		assertThat(storedFamilies.stream().map(SupportPlanTemplateFamilyEntity::targetDomain).toList())
+				.containsExactly("DEPRESSIVE_SYMPTOMS", "ANXIETY_SYMPTOMS");
+		assertThat(storedFocuses).extracting(SupportPlanFocusEntity::ordinal).containsExactly((short) 1, (short) 2);
+		assertThat(storedActions.stream().filter(action -> "RESOURCE".equals(action.actionType())
+				&& storedFocuses.getFirst().id().equals(action.planFocusId())).map(PlanActionEntity::purposeCode))
+				.containsExactly("ANXIETY_PSYCHOEDUCATION", "ANXIETY_SUPPORT_ACTIVITY");
 	}
 
 	@Test

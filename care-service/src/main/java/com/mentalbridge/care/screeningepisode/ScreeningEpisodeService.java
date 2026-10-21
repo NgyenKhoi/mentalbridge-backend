@@ -59,6 +59,12 @@ public class ScreeningEpisodeService {
 				.map(this::view).orElseThrow(this::notFound);
 	}
 
+	@Transactional(readOnly = true)
+	public Optional<EpisodeView> findCurrent(UUID userId, String purpose) {
+		validatePurpose(purpose);
+		return episodes.findFirstByUserIdAndPurposeOrderByCreatedAtDescIdDesc(userId, purpose).map(this::view);
+	}
+
 	@Transactional
 	public AssessmentService.AssessmentView submitAssessment(UUID userId, UUID episodeId, String instrument,
 			String idempotencyKey, UUID correlationId, AssessmentService.SubmissionCommand command) {

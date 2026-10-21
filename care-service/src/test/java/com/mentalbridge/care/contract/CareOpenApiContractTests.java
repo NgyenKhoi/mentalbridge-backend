@@ -27,6 +27,8 @@ class CareOpenApiContractTests {
 			"PUT /api/v2/support-plans/{supportPlanId}/status",
 			"POST /api/v2/support-plans/{supportPlanId}/replacement-review",
 			"POST /api/v2/support-plans/{supportPlanId}/replace",
+			"GET /api/v2/support-plans/{supportPlanId}/adaptive-review",
+			"POST /api/v2/support-plans/{supportPlanId}/adaptive-review/confirm",
 			"PUT /api/v2/support-plan-occurrences/{occurrenceId}/state",
             "PUT /api/v2/support-plan-occurrences/{occurrenceId}/engagement",
             "DELETE /api/v2/support-plan-occurrences/{occurrenceId}/engagement",
@@ -109,6 +111,8 @@ class CareOpenApiContractTests {
 			"POST /api/v1/safety-directory-lookups");
 
 	private static final Set<String> IMPLEMENTED_PATHS = Set.of(
+			"/api/v2/support-plans/{supportPlanId}/adaptive-review",
+			"/api/v2/support-plans/{supportPlanId}/adaptive-review/confirm",
 			"/api/v2/support-plans",
 			"/api/v2/support-plans/history",
 			"/api/v2/support-plans/{supportPlanId}/activate",
@@ -195,6 +199,8 @@ class CareOpenApiContractTests {
             "POST /api/v2/support-plans/{supportPlanId}/cycle-continuation",
 			"PUT /api/v2/support-plans/{supportPlanId}/status",
 			"POST /api/v2/support-plans/{supportPlanId}/replacement-review",
+			"GET /api/v2/support-plans/{supportPlanId}/adaptive-review",
+			"POST /api/v2/support-plans/{supportPlanId}/adaptive-review/confirm",
 			"POST /api/v2/support-plans/{supportPlanId}/replace",
 			"PUT /api/v2/support-plan-occurrences/{occurrenceId}/state",
             "PUT /api/v2/support-plan-occurrences/{occurrenceId}/engagement",
@@ -278,6 +284,7 @@ class CareOpenApiContractTests {
 			"POST /api/v2/support-plans/{supportPlanId}/activate",
             "POST /api/v2/support-plans/{supportPlanId}/cycle-continuation",
 			"POST /api/v2/support-plans/{supportPlanId}/replace",
+			"POST /api/v2/support-plans/{supportPlanId}/adaptive-review/confirm",
 			"POST /api/v1/consent-decisions",
 			"POST /api/v1/assessments",
 			"POST /api/v1/screening-episodes/{episodeId}/assessments/{instrument}",

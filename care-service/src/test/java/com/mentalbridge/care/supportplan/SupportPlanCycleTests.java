@@ -41,7 +41,8 @@ class SupportPlanCycleTests {
 	@BeforeEach
 	void writer() {
 		writer = new NativeSupportPlanWriter(plans, mock(SupportPlanTemplateFamilyRepository.class),
-				mock(SupportPlanFocusRepository.class), actions, profiles, activities, new ObjectMapper());
+				mock(SupportPlanFocusRepository.class), actions, profiles, activities,
+				mock(SupportPlanScheduleCommandRepository.class), mock(SupportPlanScheduleService.class), new ObjectMapper());
 		when(profiles.findByIdForUpdate(userId)).thenReturn(Optional.of(mock(UserProfileEntity.class)));
 	}
 
