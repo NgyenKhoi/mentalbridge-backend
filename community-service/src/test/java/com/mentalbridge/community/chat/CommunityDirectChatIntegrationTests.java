@@ -146,7 +146,10 @@ class CommunityDirectChatIntegrationTests extends ChatIntegrationSupport {
     void expiredRequestCannotBeAcceptedOrRecreatedByAnUncertainRetry() throws Exception {
         var key = UUID.randomUUID();
         var request = UUID.fromString(json(start(a, bp, key).andExpect(status().isCreated())).path("requestId").asText());
-        jdbc.sql("update community_chat_request set created_at = now() - interval '8 days', expires_at = now() - interval '1 day'").update();
+        jdbc.sql("update community_chat_request set created_at = cast(:created as timestamptz), expires_at = cast(:expires as timestamptz)")
+                .param("created", clock.now.minus(Duration.ofDays(8)).toString())
+                .param("expires", clock.now.minus(Duration.ofDays(1)).toString())
+                .update();
         decision(b, request, "ACCEPT", "0").andExpect(status().isConflict());
         start(a, bp, key).andExpect(status().isConflict());
         var replacement = json(start(a, bp, UUID.randomUUID()).andExpect(status().isCreated()));
