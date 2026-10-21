@@ -21,6 +21,11 @@ governs new native MB-669 proposals: deterministic multi-domain composition,
 safe optional-preference defaults, activation revalidation and the explicit
 14-day review/continuation cycle. Earlier policy snapshots retain their rules.
 
+[Adaptive SupportPlan review policy v1](support-plan-review-v1.md), accepted
+2026-10-21 for MB-645, governs separate sourced review evidence, bounded
+practical alternatives and explicit keep/change confirmation. It preserves
+existing cycle arithmetic and earlier plan/summary history.
+
 ## Guide and plan boundary
 
 A Support Guide remains an immutable answer to “what should I do next?” for one

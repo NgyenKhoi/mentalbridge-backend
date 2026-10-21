@@ -401,6 +401,349 @@ class NativeSupportPlanIntegrationTests extends CareTestProperties {
 		return mvc.perform(post("/api/v2/support-plans/{id}/activate", plan).with(user(user)).header("If-Match", "\"0\"")
 				.header("Idempotency-Key", key)).andReturn().getResponse().getStatus();
 	}
+
+	@Test
+	void adaptiveSparseEarlyReviewKeepsWithoutCreatingASummaryOrChangingThePlan() throws Exception {
+		UUID user = profile();
+		var plan = activeAdaptivePlan(user);
+		var review = adaptiveReview(user, plan);
+		assertThat(review.path("reviewState").asText()).isEqualTo("EARLY");
+		assertThat(review.path("reassessment").path("state").asText()).isEqualTo("NOT_STARTED");
+		assertThat(review.path("programPeriod").path("fullCycleElapsed").asBoolean()).isFalse();
+		var kept = confirmAdaptive(user, plan, review, "KEEP_CURRENT", "adaptive-early-keep-0001");
+		assertThat(kept.path("result").asText()).isEqualTo("KEPT");
+		assertThat(kept.path("plan").path("version").asLong()).isEqualTo(plan.path("version").asLong());
+		assertThat(jdbc.sql("select count(*) from reassessment_summary where user_id=:user").param("user", user).query(Long.class).single()).isZero();
+	}
+
+	@Test
+	void adaptiveEarlyKeepSurvivesEntitlementOutageWithoutRecordingAMutation() throws Exception {
+		UUID user = profile();
+		var plan = activeAdaptivePlan(user);
+		doAnswer(call -> {
+			assertThat(TransactionSynchronizationManager.isActualTransactionActive()).isFalse();
+			throw new com.mentalbridge.care.shared.ApiException(org.springframework.http.HttpStatus.SERVICE_UNAVAILABLE,
+					"ENTITLEMENT_UNAVAILABLE", "Current entitlement is unavailable");
+		}).when(entitlements).current(any(), anyString(), any());
+
+		var review = adaptiveReview(user, plan);
+		assertThat(review.path("currentAdmission").asText()).isEqualTo("ADMISSIBLE");
+		assertThat(adaptiveOption(review, "KEEP_CURRENT").path("executionKind").asText()).isEqualTo("NO_CHANGE");
+		var kept = confirmAdaptive(user, plan, review, "KEEP_CURRENT", "adaptive-early-outage-keep-0001");
+		assertThat(kept.path("result").asText()).isEqualTo("KEPT");
+		assertThat(kept.path("plan")).isEqualTo(plan);
+		assertThat(jdbc.sql("""
+				select (select count(*) from support_plan_request where user_id=:user and idempotency_key=:key)
+				+ (select count(*) from support_plan_command where user_id=:user and idempotency_key=:key)
+				+ (select count(*) from support_plan_schedule_command where user_id=:user and idempotency_key=:key)
+				""").param("user", user).param("key", "adaptive-early-outage-keep-0001").query(Long.class).single()).isZero();
+	}
+
+	@Test
+	void adaptiveReadSurvivesFreeAccessAndAdmissionOutageWithoutInventingInvalidity() throws Exception {
+		UUID user = profile();
+		var plan = activeAdaptivePlan(user);
+		doAnswer(call -> paid(user, ServicePackage.FREE)).when(entitlements).current(any(), anyString(), any());
+		var free = adaptiveReview(user, plan);
+		assertThat(free.path("currentAdmission").asText()).isEqualTo("ADMISSIBLE");
+		assertThat(java.util.stream.StreamSupport.stream(free.path("options").spliterator(), false))
+				.allSatisfy(option -> assertThat(option.path("executionKind").asText()).isIn("NO_CHANGE", "NAVIGATE_PROFESSIONAL_SUPPORT"));
+		eligible(ResourceEligibilityOutcome.UNAVAILABLE, ResourceEligibilityReasonCode.RESOURCE_NOT_FOUND);
+		var outage = adaptiveReview(user, plan);
+		assertThat(outage.path("currentAdmission").asText()).isEqualTo("UNAVAILABLE");
+		assertThat(outage.path("outcome").isNull()).isTrue();
+		mvc.perform(post("/api/v2/support-plans/{id}/adaptive-review/confirm", plan.path("supportPlanId").asText())
+				.with(user(user)).header("If-Match", "\"1\"").header("Idempotency-Key", "adaptive-outage-keep-0001")
+				.contentType(MediaType.APPLICATION_JSON).content(mapper.writeValueAsString(java.util.Map.of(
+						"reviewFingerprint", free.path("reviewFingerprint").asText(), "optionId", adaptiveOption(free, "KEEP_CURRENT").path("optionId").asText()))))
+				.andExpect(status().isServiceUnavailable());
+	}
+
+	@Test
+	void adaptiveDueKeepFreshlyAdmitsContinuesOnceAndReplaysAfterProviderFailure() throws Exception {
+		UUID user = profile();
+		var plan = activeAdaptivePlan(user);
+		UUID id = UUID.fromString(plan.path("supportPlanId").asText());
+		jdbc.sql("update support_plan set cycle_started_on=current_date-13 where id=:id").param("id", id).update();
+		var review = adaptiveReview(user, plan);
+		assertThat(review.path("reviewState").asText()).isEqualTo("REVIEW_DUE");
+		var kept = confirmAdaptive(user, plan, review, "KEEP_CURRENT", "adaptive-due-keep-0001");
+		assertThat(kept.path("result").asText()).isEqualTo("CYCLE_CONTINUED");
+		assertThat(kept.path("plan").path("cycle").path("cycleNumber").asInt()).isEqualTo(2);
+		eligible(ResourceEligibilityOutcome.UNAVAILABLE, ResourceEligibilityReasonCode.RESOURCE_NOT_FOUND);
+		assertThat(confirmAdaptive(user, plan, review, "KEEP_CURRENT", "adaptive-due-keep-0001")).isEqualTo(kept);
+		assertThat(jdbc.sql("select count(*) from support_plan_command where user_id=:user and command_type='CYCLE_CONTINUE'")
+				.param("user", user).query(Long.class).single()).isEqualTo(1);
+	}
+
+	@Test
+	void adaptiveDefiniteInadmissibilityOmitsKeepAndForeignAndStaleVersionsFailSafely() throws Exception {
+		UUID user = profile();
+		var plan = activeAdaptivePlan(user);
+		eligible(ResourceEligibilityOutcome.WITHDRAWN, ResourceEligibilityReasonCode.RESOURCE_NOT_FOUND);
+		var review = adaptiveReview(user, plan);
+		assertThat(review.path("currentAdmission").asText()).isEqualTo("INADMISSIBLE");
+		assertThat(review.path("options").findValuesAsText("kind")).doesNotContain("KEEP_CURRENT");
+		mvc.perform(get("/api/v2/support-plans/{id}/adaptive-review", plan.path("supportPlanId").asText()).with(user(profile())))
+				.andExpect(status().isNotFound());
+		mvc.perform(get("/api/v2/support-plans/{id}/adaptive-review", plan.path("supportPlanId").asText()).with(user(user)).header("If-Match", "\"0\""))
+				.andExpect(status().isPreconditionFailed());
+		mvc.perform(get("/api/v2/support-plans/{id}/adaptive-review", plan.path("supportPlanId").asText()).with(jwt().authorities(new SimpleGrantedAuthority("ROLE_ADMIN"))))
+				.andExpect(status().isForbidden());
+	}
+
+	@Test
+	void adaptiveRepeatedNativeBarrierHasExactApprovedIdentitiesAndScheduleChangeLeavesReviewDue() throws Exception {
+		UUID user = profile();
+		preferences(user, "EMOTION_CHECK_IN", 30, "ACTIVE", 0);
+		var plan = activeAdaptivePlan(user);
+		UUID id = UUID.fromString(plan.path("supportPlanId").asText());
+		UUID actionId = UUID.fromString(action(plan, "RESOURCE").path("actionId").asText());
+		jdbc.sql("update support_plan set cycle_started_on=current_date-13 where id=:id").param("id", id).update();
+		var sources = adaptiveFeedback(user, id, actionId, "LOW_ENERGY", true);
+		var review = adaptiveReview(user, plan);
+		assertThat(review.path("patterns").get(0).path("count").asInt()).isEqualTo(2);
+		assertThat(review.path("patterns").get(0).path("occurrenceIds").findValuesAsText("ignored")).isEmpty();
+		assertThat(review.path("patterns").get(0).path("occurrenceIds").toString()).contains(sources.get(0).toString(), sources.get(1).toString());
+		var liveSources = review.path("evidenceContext").path("engagementSources");
+		assertThat(liveSources).hasSize(2);
+		assertThat(liveSources.get(0).path("actionId").asText()).isEqualTo(actionId.toString());
+		assertThat(liveSources.get(0).path("actionVersion").isIntegralNumber()).isTrue();
+		assertThat(liveSources.get(0).path("occurrenceVersion").isIntegralNumber()).isTrue();
+		var result = confirmAdaptive(user, plan, review, "LOWER_WORKLOAD", "adaptive-workload-0001");
+		assertThat(result.path("result").asText()).isEqualTo("SCHEDULE_UPDATED");
+		assertThat(result.path("plan").path("cycle").path("state").asText()).isEqualTo("REVIEW_DUE");
+		assertThat(confirmAdaptive(user, plan, review, "LOWER_WORKLOAD", "adaptive-workload-0001")).isEqualTo(result);
+	}
+
+	@Test
+	void adaptiveWithdrawnFeedbackInvalidatesSelectionAndUnapprovedRowsDoNotProducePatterns() throws Exception {
+		UUID user = profile();
+		preferences(user, "EMOTION_CHECK_IN", 30, "ACTIVE", 0);
+		var plan = activeAdaptivePlan(user);
+		UUID id = UUID.fromString(plan.path("supportPlanId").asText());
+		var sources = adaptiveFeedback(user, id, UUID.fromString(action(plan, "RESOURCE").path("actionId").asText()), "NOT_ENOUGH_TIME", true);
+		var review = adaptiveReview(user, plan);
+		jdbc.sql("update support_plan_activity_occurrence set summary_reuse_approved=false,version=version+1 where id=:id").param("id", sources.get(0)).update();
+		var option = adaptiveOption(review, "LOWER_WORKLOAD");
+		mvc.perform(post("/api/v2/support-plans/{id}/adaptive-review/confirm", id).with(user(user))
+				.header("If-Match", "\"1\"").header("Idempotency-Key", "adaptive-withdrawn-0001").contentType(MediaType.APPLICATION_JSON)
+				.content(mapper.writeValueAsString(java.util.Map.of("reviewFingerprint", review.path("reviewFingerprint").asText(), "optionId", option.path("optionId").asText()))))
+				.andExpect(status().isConflict()).andExpect(jsonPath("$.code").value("ADAPTIVE_REVIEW_STALE"));
+		assertThat(adaptiveReview(user, plan).path("patterns")).isEmpty();
+	}
+
+	@Test
+	void adaptivePausedReviewKeepsPausedAndDoesNotOfferScheduleCommands() throws Exception {
+		UUID user = profile();
+		var plan = activeAdaptivePlan(user);
+		var paused = response(mvc.perform(put("/api/v2/support-plans/{id}/status", plan.path("supportPlanId").asText()).with(user(user))
+				.header("If-Match", "\"1\"").contentType(MediaType.APPLICATION_JSON).content("{\"status\":\"PAUSED\"}"))
+				.andExpect(status().isOk()).andReturn().getResponse().getContentAsString());
+		var review = adaptiveReview(user, paused);
+		assertThat(review.path("reviewState").asText()).isEqualTo("PAUSED");
+		assertThat(review.path("options").findValuesAsText("executionKind")).doesNotContain("UPDATE_SCHEDULE", "CONTINUE_CYCLE");
+		assertThat(confirmAdaptive(user, paused, review, "KEEP_CURRENT", "adaptive-paused-0001").path("plan").path("status").asText()).isEqualTo("PAUSED");
+	}
+
+	@Test
+	void adaptiveFocusDraftDoesNotInvalidateFingerprintAndRequiresExplicitExactReplacement() throws Exception {
+		UUID user = profile();
+		var plan = activeAdaptivePlan(user);
+		adaptiveContext(user, UUID.fromString(plan.path("supportPlanId").asText()));
+		mvc.perform(put("/api/v2/support-plan-personalization").with(user(user)).header("If-Match", "\"0\"")
+				.contentType(MediaType.APPLICATION_JSON).content("{\"preferredFocus\":\"ANXIETY\",\"preferredActivityModes\":[],\"commonBarriers\":[]}"))
+				.andExpect(status().isOk());
+		var review = adaptiveReview(user, plan);
+		var draftResult = confirmAdaptive(user, plan, review, "DIFFERENT_FOCUS", "adaptive-focus-prepare-0001");
+		assertThat(draftResult.path("result").asText()).isEqualTo("DRAFT_PREPARED");
+		var nextReview = adaptiveReview(user, plan);
+		assertThat(nextReview.path("reviewFingerprint").asText()).isEqualTo(review.path("reviewFingerprint").asText());
+		var draft = draftResult.path("draft");
+		UUID draftId = UUID.fromString(draft.path("supportPlanId").asText());
+		assertThat(jdbc.sql("select target_domain from support_plan_template_family where support_plan_id=:id order by ordinal")
+				.param("id", draftId).query(String.class).list())
+				.containsExactly("DEPRESSIVE_SYMPTOMS", "ANXIETY_SYMPTOMS");
+		assertThat(draft.path("focuses").get(0).path("actions").findValuesAsText("purposeCode"))
+				.contains("ANXIETY_MAINTENANCE");
+		var body = mapper.createObjectNode().put("reviewFingerprint", review.path("reviewFingerprint").asText())
+				.put("optionId", adaptiveOption(review, "DIFFERENT_FOCUS").path("optionId").asText())
+				.put("reassessmentSummaryId", review.path("reassessment").path("summary").path("summaryId").asText())
+				.put("proposedPlanId", draft.path("supportPlanId").asText()).put("proposedVersion", draft.path("version").asLong());
+		var replaced = response(mvc.perform(post("/api/v2/support-plans/{id}/adaptive-review/confirm", plan.path("supportPlanId").asText())
+				.with(user(user)).header("If-Match", "\"1\"").header("Idempotency-Key", "adaptive-focus-replace-0001")
+				.contentType(MediaType.APPLICATION_JSON).content(body.toString())).andExpect(status().isOk())
+				.andReturn().getResponse().getContentAsString());
+		assertThat(replaced.path("result").asText()).isEqualTo("REPLACED");
+		assertThat(jdbc.sql("select target_domain from support_plan_template_family where support_plan_id=:id order by ordinal")
+				.param("id", draftId).query(String.class).list())
+				.containsExactly("DEPRESSIVE_SYMPTOMS", "ANXIETY_SYMPTOMS");
+		assertThat(replaced.path("plan").path("focuses").get(0).path("actions").findValuesAsText("purposeCode"))
+				.contains("ANXIETY_MAINTENANCE");
+		var fresh = adaptiveReview(user, replaced.path("plan"));
+		assertThat(fresh.path("currentAdmission").asText()).isEqualTo("ADMISSIBLE");
+	}
+
+	private JsonNode activeAdaptivePlan(UUID user) throws Exception {
+		var draft = propose(user, evaluation(user, false), "adaptive-propose-" + UUID.randomUUID());
+		return activate(user, UUID.fromString(draft.path("supportPlanId").asText()), 0, "adaptive-activate-" + UUID.randomUUID());
+	}
+
+	@Test
+	void adaptiveConfirmRequiresStrongVersionValidRetryKeyAndPairedDraftFields() throws Exception {
+		UUID user = profile();
+		var plan = activeAdaptivePlan(user);
+		var review = adaptiveReview(user, plan);
+		var body = mapper.createObjectNode().put("reviewFingerprint", review.path("reviewFingerprint").asText())
+				.put("optionId", adaptiveOption(review, "KEEP_CURRENT").path("optionId").asText());
+		String path = "/api/v2/support-plans/" + plan.path("supportPlanId").asText() + "/adaptive-review/confirm";
+		for (String match : List.of("1", "W/\"1\"", "\"9223372036854775808\"")) {
+			mvc.perform(post(path).with(user(user)).header("If-Match", match).header("Idempotency-Key", "adaptive-validation-0001")
+					.contentType(MediaType.APPLICATION_JSON).content(body.toString())).andExpect(status().isBadRequest());
+		}
+		mvc.perform(post(path).with(user(user)).header("If-Match", "\"1\"")
+				.contentType(MediaType.APPLICATION_JSON).content(body.toString())).andExpect(status().isBadRequest());
+		mvc.perform(post(path).with(user(user)).header("If-Match", "\"1\"").header("Idempotency-Key", "short")
+				.contentType(MediaType.APPLICATION_JSON).content(body.toString())).andExpect(status().isBadRequest());
+		body.put("proposedPlanId", UUID.randomUUID().toString());
+		mvc.perform(post(path).with(user(user)).header("If-Match", "\"1\"").header("Idempotency-Key", "adaptive-validation-0001")
+				.contentType(MediaType.APPLICATION_JSON).content(body.toString())).andExpect(status().isBadRequest());
+	}
+
+	@Test
+	void adaptiveConcurrentDueKeepAndScheduleEditApplyExactlyOneCommand() throws Exception {
+		UUID user = profile();
+		preferences(user, "EMOTION_CHECK_IN", 30, "ACTIVE", 0);
+		var plan = activeAdaptivePlan(user);
+		UUID id = UUID.fromString(plan.path("supportPlanId").asText());
+		jdbc.sql("update support_plan set cycle_started_on=current_date-13 where id=:id").param("id", id).update();
+		adaptiveFeedback(user, id, UUID.fromString(action(plan, "RESOURCE").path("actionId").asText()), "LOW_ENERGY", true);
+		var review = adaptiveReview(user, plan);
+		var start = new CountDownLatch(1);
+		try (var executor = Executors.newFixedThreadPool(2)) {
+			var keep = executor.submit(() -> adaptiveAfter(start, user, id, review, "KEEP_CURRENT", "adaptive-race-keep-0001"));
+			var edit = executor.submit(() -> adaptiveAfter(start, user, id, review, "LOWER_WORKLOAD", "adaptive-race-edit-0001"));
+			start.countDown();
+			assertThat(List.of(keep.get(20, TimeUnit.SECONDS), edit.get(20, TimeUnit.SECONDS))).containsExactlyInAnyOrder(200, 412);
+		}
+		long writes = jdbc.sql("""
+				select (select count(*) from support_plan_command where user_id=:user and idempotency_key='adaptive-race-keep-0001')
+				+ (select count(*) from support_plan_schedule_command where user_id=:user and idempotency_key='adaptive-race-edit-0001')
+				""").param("user", user).query(Long.class).single();
+		assertThat(writes).isEqualTo(1);
+		assertThat(jdbc.sql("select version from support_plan where id=:id").param("id", id).query(Long.class).single()).isEqualTo(2);
+	}
+
+	@Test
+	void adaptiveSameKeyDifferentPayloadConflictsAndNewScreeningAloneRetainsCurrentAdmission() throws Exception {
+		UUID user = profile();
+		var plan = activeAdaptivePlan(user);
+		UUID id = UUID.fromString(plan.path("supportPlanId").asText());
+		evaluation(user, false);
+		assertThat(adaptiveReview(user, plan).path("currentAdmission").asText()).isEqualTo("ADMISSIBLE");
+		jdbc.sql("update support_plan set cycle_started_on=current_date-13 where id=:id").param("id", id).update();
+		var review = adaptiveReview(user, plan);
+		confirmAdaptive(user, plan, review, "KEEP_CURRENT", "adaptive-key-reused-0001");
+		var body = mapper.createObjectNode().put("reviewFingerprint", "f".repeat(64))
+				.put("optionId", adaptiveOption(review, "KEEP_CURRENT").path("optionId").asText());
+		mvc.perform(post("/api/v2/support-plans/{id}/adaptive-review/confirm", id).with(user(user))
+				.header("If-Match", "\"1\"").header("Idempotency-Key", "adaptive-key-reused-0001")
+				.contentType(MediaType.APPLICATION_JSON).content(body.toString()))
+				.andExpect(status().isConflict()).andExpect(jsonPath("$.code").value("IDEMPOTENCY_KEY_REUSED"));
+	}
+
+	private int adaptiveAfter(CountDownLatch start, UUID user, UUID planId, JsonNode review, String kind, String key) throws Exception {
+		start.await(5, TimeUnit.SECONDS);
+		var body = mapper.createObjectNode().put("reviewFingerprint", review.path("reviewFingerprint").asText())
+				.put("optionId", adaptiveOption(review, kind).path("optionId").asText());
+		return mvc.perform(post("/api/v2/support-plans/{id}/adaptive-review/confirm", planId).with(user(user))
+				.header("If-Match", "\"1\"").header("Idempotency-Key", key).contentType(MediaType.APPLICATION_JSON).content(body.toString()))
+				.andReturn().getResponse().getStatus();
+	}
+
+	@Test
+	void adaptiveOffersAllSixBoundedKindsAndMaterializesOnlyTheSelectedAlternative() throws Exception {
+		UUID user = profile();
+		mvc.perform(put("/api/v2/support-plan-personalization").with(user(user)).header("If-Match", "\"0\"")
+				.contentType(MediaType.APPLICATION_JSON).content("{\"preferredDaypart\":\"EVENING\",\"preferredActivityModes\":[\"EMOTION_CHECK_IN\"],\"commonBarriers\":[],\"dailyTimeBudgetMinutes\":30,\"desiredPace\":\"ACTIVE\"}"))
+				.andExpect(status().isOk());
+		var draft = propose(user, evaluation(user, true), "adaptive-six-propose-0001");
+		UUID id = UUID.fromString(draft.path("supportPlanId").asText());
+		var plan = activate(user, id, 0, "adaptive-six-activate-0001");
+		adaptiveContext(user, id);
+		UUID action = UUID.fromString(action(plan, "RESOURCE").path("actionId").asText());
+		adaptiveFeedback(user, id, action, "LOW_ENERGY", true);
+		adaptiveFeedback(user, id, action, "NOT_A_GOOD_FIT", true);
+		mvc.perform(put("/api/v2/support-plan-personalization").with(user(user)).header("If-Match", "\"1\"")
+				.contentType(MediaType.APPLICATION_JSON).content("{\"preferredFocus\":\"ANXIETY\",\"preferredDaypart\":\"MORNING\",\"preferredActivityModes\":[\"EMOTION_CHECK_IN\"],\"commonBarriers\":[],\"dailyTimeBudgetMinutes\":30,\"desiredPace\":\"ACTIVE\"}"))
+				.andExpect(status().isOk());
+		var review = adaptiveReview(user, plan);
+		assertThat(review.path("options").findValuesAsText("kind")).containsExactlyInAnyOrder(
+				"KEEP_CURRENT", "LOWER_WORKLOAD", "DIFFERENT_TIME", "ALTERNATIVE_ACTION", "DIFFERENT_FOCUS", "PROFESSIONAL_SUPPORT_NEXT_STEP");
+		var result = confirmAdaptive(user, plan, review, "ALTERNATIVE_ACTION", "adaptive-six-prepare-0001");
+		var prepared = result.path("draft");
+		assertThat(prepared.path("focuses").get(0).path("title")).isEqualTo(plan.path("focuses").get(0).path("title"));
+		assertThat(action(prepared, "RESOURCE").path("source").path("sourceId").asText())
+				.isNotEqualTo(action(plan, "RESOURCE").path("source").path("sourceId").asText());
+		assertThat(action(prepared, "RESOURCE").path("schedules").get(0).path("localTime"))
+				.isEqualTo(action(plan, "RESOURCE").path("schedules").get(0).path("localTime"));
+		assertThat(adaptiveReview(user, plan).path("reviewFingerprint")).isEqualTo(review.path("reviewFingerprint"));
+	}
+	private JsonNode adaptiveReview(UUID user, JsonNode plan) throws Exception {
+		var value = response(mvc.perform(get("/api/v2/support-plans/{id}/adaptive-review", plan.path("supportPlanId").asText()).with(user(user)))
+				.andExpect(status().isOk()).andExpect(header().string("Cache-Control", "no-store"))
+				.andReturn().getResponse().getContentAsString());
+		assertCareSchema(value, "AdaptiveSupportPlanReview");
+		return value;
+	}
+	private JsonNode adaptiveOption(JsonNode review, String kind) {
+		return java.util.stream.StreamSupport.stream(review.path("options").spliterator(), false)
+				.filter(option -> kind.equals(option.path("kind").asText())).findFirst().orElseThrow(() -> new AssertionError(review.toPrettyString()));
+	}
+	private JsonNode confirmAdaptive(UUID user, JsonNode plan, JsonNode review, String kind, String key) throws Exception {
+		var body = mapper.createObjectNode().put("reviewFingerprint", review.path("reviewFingerprint").asText())
+				.put("optionId", adaptiveOption(review, kind).path("optionId").asText());
+		if (!review.path("reassessment").path("summary").isNull()) {
+			body.put("reassessmentSummaryId", review.path("reassessment").path("summary").path("summaryId").asText());
+		}
+		var value = response(mvc.perform(post("/api/v2/support-plans/{id}/adaptive-review/confirm", plan.path("supportPlanId").asText()).with(user(user))
+				.header("If-Match", '"' + plan.path("version").asText() + '"').header("Idempotency-Key", key)
+				.contentType(MediaType.APPLICATION_JSON).content(body.toString())).andExpect(status().isOk()).andReturn().getResponse().getContentAsString());
+		assertCareSchema(value, "AdaptiveReviewConfirmation");
+		return value;
+	}
+	private void assertCareSchema(JsonNode value, String schemaName) throws Exception {
+		var yaml = new ObjectMapper(new com.fasterxml.jackson.dataformat.yaml.YAMLFactory());
+		var contract = yaml.readTree(java.nio.file.Path.of("..", "contracts", "openapi", "care-service-v1.yaml").toFile());
+		var schema = mapper.createObjectNode().put("$ref", "#/components/schemas/" + schemaName);
+		schema.set("components", contract.path("components"));
+		var validator = com.networknt.schema.SchemaRegistry.withDialect(com.networknt.schema.dialect.Dialects.getDraft202012())
+				.getSchema(schema.toString(), com.networknt.schema.InputFormat.JSON);
+		assertThat(validator.validate(value, context -> context.executionConfig(config -> config.formatAssertionsEnabled(true))))
+				.as("%s response", schemaName).isEmpty();
+	}
+	private void adaptiveContext(UUID user, UUID plan) throws Exception {
+		jdbc.sql("update screening_episode set purpose='REASSESSMENT' where user_id=:user").param("user", user).update();
+		summary(user, plan);
+	}
+	private List<UUID> adaptiveFeedback(UUID user, UUID plan, UUID action, String barrier, boolean approved) {
+		var ids = List.of(UUID.randomUUID(), UUID.randomUUID());
+		for (int index = 0; index < ids.size(); index++) {
+			jdbc.sql("""
+					insert into support_plan_activity_occurrence
+					(id,activity_schedule_id,support_plan_id,user_id,schedule_version,local_date,local_time,timezone,scheduled_at,state,
+					source_plan_version,source_action_id,source_action_version,source_action_type,source_title,version,created_at,updated_at,
+					barrier_code,summary_reuse_approved,engagement_updated_at,skipped_at)
+					select :id,schedule.id,:plan,:user,schedule.schedule_version,current_date-:days,schedule.local_time,schedule.timezone,
+					now()-make_interval(days=>:days),'SKIPPED',1,:action,action.version,action.action_type,action.presentation_title,1,now(),now(),
+					:barrier,:approved,now(),now() from support_plan_activity_schedule schedule
+					join support_plan_action action on action.id=schedule.source_action_id
+					where schedule.source_action_id=:action and schedule.status='ACTIVE' limit 1
+					""").param("id", ids.get(index)).param("plan", plan).param("user", user).param("action", action)
+					.param("days", index + ("NOT_A_GOOD_FIT".equals(barrier) ? 6 : 2)).param("barrier", barrier).param("approved", approved).update();
+		}
+		return ids;
+	}
 	private JsonNode activate(UUID user, UUID plan, long version, String key) throws Exception {
 		return response(mvc.perform(post("/api/v2/support-plans/{id}/activate", plan).with(user(user)).header("If-Match", '"' + Long.toString(version) + '"')
 				.header("Idempotency-Key", key)).andExpect(status().isOk()).andReturn().getResponse().getContentAsString());

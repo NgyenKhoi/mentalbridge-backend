@@ -85,7 +85,7 @@ class ReassessmentEvidenceRepository {
 		return jdbc.sql("""
 				select id, support_plan_id, source_plan_version, source_slot_key, source_resource_id,
 				       source_content_version, scheduled_at, state, helpfulness, barrier_code,
-				       reflection, engagement_updated_at
+				       reflection, engagement_updated_at, source_action_id, source_action_version, version
 				from support_plan_activity_occurrence
 				where user_id = :userId
 				  and summary_reuse_approved = true
@@ -111,10 +111,11 @@ class ReassessmentEvidenceRepository {
 	private EngagementEvidence engagement(ResultSet row, int rowNumber) throws SQLException {
 		return new EngagementEvidence(row.getObject("id", UUID.class), row.getObject("support_plan_id", UUID.class),
 				row.getLong("source_plan_version"), row.getString("source_slot_key"),
-				row.getObject("source_resource_id", UUID.class), row.getLong("source_content_version"),
+				row.getObject("source_resource_id", UUID.class), row.getObject("source_content_version", Long.class),
 				row.getTimestamp("scheduled_at").toInstant(), row.getString("state"), row.getString("helpfulness"),
 				row.getString("barrier_code"), row.getString("reflection"),
-				row.getTimestamp("engagement_updated_at").toInstant());
+				row.getTimestamp("engagement_updated_at").toInstant(), row.getObject("source_action_id", UUID.class),
+				row.getObject("source_action_version", Long.class), row.getLong("version"));
 	}
 
 	private Integer nullableInteger(ResultSet row, String column) throws SQLException {
@@ -136,6 +137,7 @@ class ReassessmentEvidenceRepository {
 	}
 
 	record EngagementEvidence(UUID occurrenceId, UUID supportPlanId, long sourcePlanVersion, String sourceSlotId,
-			UUID sourceResourceId, long sourceContentVersion, Instant scheduledAt, String state, String helpfulness,
-			String barrierCode, String reflection, Instant engagementUpdatedAt) { }
+			UUID sourceResourceId, Long sourceContentVersion, Instant scheduledAt, String state, String helpfulness,
+			String barrierCode, String reflection, Instant engagementUpdatedAt, UUID actionId, Long actionVersion,
+			long occurrenceVersion) { }
 }

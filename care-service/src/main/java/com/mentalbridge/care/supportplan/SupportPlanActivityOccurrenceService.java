@@ -69,6 +69,12 @@ public class SupportPlanActivityOccurrenceService {
 	}
 
 	@Transactional
+	void activateReviewedDraft(SupportPlanEntity plan, Instant now) {
+		personalization(plan);
+		activate(plan, now);
+	}
+
+	@Transactional
 	void activate(SupportPlanEntity plan, Instant now) {
 		String timezone = SupportPlanCycle.applies(plan) && plan.cycleTimezone() != null ? plan.cycleTimezone()
 				: profiles.findTimezoneByAccountId(plan.userId()).orElseThrow(() -> new ApiException(
