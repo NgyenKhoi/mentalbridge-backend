@@ -4,6 +4,20 @@
 
 ## Runtime
 
+MB-691 adds the read-only `POST /internal/v1/community/chat/notification-authorizations`.
+Enable `COMMUNITY_CHAT_NOTIFICATION_ENABLED` only with a dedicated
+`CONTENT_COMMUNITY_NOTIFICATION_PUBLIC_KEY` RSA X.509 PEM and
+`CONTENT_COMMUNITY_NOTIFICATION_KEY_ID`. Content signs a maximum 30-second RS256
+service JWT with issuer/subject `content-notification-service`, audience
+`community-service`, UUID jti and scope `community:notification:authorize`.
+The closed query binds recipient routing reference, kind, target, conversation
+and actor profile. Current Identity eligibility precedes local permission locks;
+message membership epochs, pending request/invitation lifecycle and bilateral
+blocks are rechecked without decrypting content. A no-store positive result is
+not a reusable grant. Denied/mismatched/expired targets return uniform 404;
+owner uncertainty returns 503. This scope cannot read transcripts or use the
+Realtime routes. The flag defaults false and no shared environment is enabled.
+
 MB-684 accepted the [Community chat contract](../docs/adr/0042-community-chat-contract.md)
 and [privacy policy](../docs/policies/community-chat-policy-v1.md). MB-685 delivers
 the direct-chat provider subset in Community PostgreSQL, including fresh Identity

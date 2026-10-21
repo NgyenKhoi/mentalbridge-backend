@@ -25,6 +25,7 @@ class CommunityChatContractTests {
         assertThat(parsed.getOpenAPI().getPaths().keySet()).containsExactlyInAnyOrder(
                 "/internal/v1/community/chat/session-authorizations", "/internal/v1/community/chat/realtime-authorizations",
                 "/internal/v1/community/chat/message-projections", "/internal/v1/community/chat/replay-projections",
+                "/internal/v1/community/chat/notification-authorizations",
                 "/internal/v1/community/chat/presence-projections",
                 "/api/v1/community/chat/reports",
                 "/api/v1/community/chat/privacy", "/api/v1/community/chat/direct-conversations",

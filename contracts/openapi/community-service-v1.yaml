@@ -18,6 +18,9 @@ paths:
   /internal/v1/community/chat/replay-projections:
     x-mentalbridge-status: implemented
     $ref: './community-chat-v1.json#/paths/~1internal~1v1~1community~1chat~1replay-projections'
+  /internal/v1/community/chat/notification-authorizations:
+    x-mentalbridge-status: implemented
+    $ref: './community-chat-v1.json#/paths/~1internal~1v1~1community~1chat~1notification-authorizations'
   /internal/v1/community/chat/presence-projections:
     x-mentalbridge-status: implemented
     $ref: './community-chat-v1.json#/paths/~1internal~1v1~1community~1chat~1presence-projections'
