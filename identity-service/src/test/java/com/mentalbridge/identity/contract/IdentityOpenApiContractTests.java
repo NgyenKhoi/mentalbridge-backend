@@ -182,6 +182,15 @@ class IdentityOpenApiContractTests {
 		assertThat(deletionEvidenceReference.getPattern()).isEqualTo(
 				"^audit:identity:account-deleted:[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$");
 		assertThat(deletionEvidenceReference.getMaxLength()).isEqualTo(67);
+		var retentionFailureCode = (Schema<?>) result.getOpenAPI().getComponents().getSchemas().get("RetentionFailureCode");
+		assertThat(retentionFailureCode.getEnum()).extracting(Object::toString).contains(
+				"PRIOR_EXECUTION_STALE", "SWEEP_EXECUTION_FAILED", "RETRY_EXHAUSTED");
+		var deletionFailureReason = (Schema<?>) result.getOpenAPI().getComponents().getSchemas().get("DeletionFailureReason");
+		assertThat(deletionFailureReason.getEnum()).extracting(Object::toString).contains(
+				"ACCOUNT_NOT_FOUND", "COMMUNITY_TIMEOUT", "LEGAL_HOLD_ACTIVE", "AUTH_FAILED");
+		var deletionFailureCode = (Schema<?>) result.getOpenAPI().getComponents().getSchemas().get("DeletionFailureCode");
+		assertThat(deletionFailureCode.getEnum()).extracting(Object::toString).contains(
+				"ACCOUNT_NOT_FOUND", "RETRY_LIMIT_EXHAUSTED", "RETRY_EXHAUSTED");
 	}
 
 }

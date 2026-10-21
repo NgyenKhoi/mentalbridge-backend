@@ -990,6 +990,12 @@ class AdminRetentionGovernanceServiceTests {
 				NOW, "audit:identity:account-deleted:948f9e80-d3bc-45aa-91f6-044dd5afbf71", null, NOW
 		));
 
+		// Fact 8: Unapproved uppercase underscore sensitive string in failureReason -> must fail closed to null
+		request.addOwnerFact(new DeletionOwnerFactEntity(
+				UUID.randomUUID(), request, RetentionOwnerService.CARE, DeletionFactStatus.FAILED,
+				NOW, null, "PATIENT_DIAGNOSED_WITH_SEVERE_DEPRESSION", NOW
+		));
+
 		when(deletionRequests.findAll(any(Specification.class), any(Pageable.class)))
 				.thenReturn(new PageImpl<>(List.of(request)));
 
@@ -1014,5 +1020,35 @@ class AdminRetentionGovernanceServiceTests {
 		assertThat(facts.get(5).evidenceReference()).isNull();
 		// Fact 7: external owner evidence without an approved contract -> null
 		assertThat(facts.get(6).evidenceReference()).isNull();
+		// Fact 8: unapproved uppercase underscore text in failureReason -> null
+		assertThat(facts.get(7).failureReason()).isNull();
+	}
+
+	@Test
+	void unapprovedUppercaseCodesFailClosedToNull() {
+		UUID requestId = UUID.randomUUID();
+		UUID accountId = UUID.randomUUID();
+
+		// Deletion request with unapproved uppercase code in failureCode
+		var request = new DeletionRequestEntity(
+				requestId, accountId, "c".repeat(64), DeletionRequestStatus.FAILED,
+				DeletionHoldType.NONE, null, 1, 3,
+				DeletionEscalationState.NONE, "PATIENT_DIAGNOSED_WITH_SEVERE_DEPRESSION",
+				NOW, NOW, null, null, NOW, NOW
+		);
+
+		request.addOwnerFact(new DeletionOwnerFactEntity(
+				UUID.randomUUID(), request, RetentionOwnerService.IDENTITY, DeletionFactStatus.FAILED,
+				NOW, null, "USER_CHAT_TRANSCRIPT_LEAK_SECRET", NOW
+		));
+
+		when(deletionRequests.findAll(any(Specification.class), any(Pageable.class)))
+				.thenReturn(new PageImpl<>(List.of(request)));
+
+		var page = service.getDeletionRequests(null, null, 20, 0);
+		var response = page.items().getFirst();
+
+		assertThat(response.failureCode()).isNull();
+		assertThat(response.ownerFacts().getFirst().failureReason()).isNull();
 	}
 }

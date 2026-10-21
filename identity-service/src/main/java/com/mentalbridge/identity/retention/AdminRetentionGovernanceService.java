@@ -6,6 +6,7 @@ import java.util.ArrayList;
 import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
+import java.util.Set;
 import java.util.UUID;
 
 import org.springframework.data.domain.Page;
@@ -660,21 +661,57 @@ public class AdminRetentionGovernanceService {
 		);
 	}
 
-	private static final java.util.regex.Pattern SAFE_FAILURE_CODE_PATTERN = java.util.regex.Pattern.compile("^[A-Z0-9_]{1,64}$");
-	private static final java.util.regex.Pattern SAFE_FAILURE_REASON_PATTERN = java.util.regex.Pattern.compile("^[A-Z0-9_]{1,64}$");
+	public static final Set<String> APPROVED_FAILURE_CODES = Set.of(
+			"ACCOUNT_NOT_FOUND",
+			"RETRY_LIMIT_EXHAUSTED",
+			"RETRY_EXHAUSTED",
+			"PRIOR_EXECUTION_STALE",
+			"SWEEP_EXECUTION_FAILED",
+			"LOCK_ACQUISITION_FAILED",
+			"CONCURRENT_SWEEP_RUNNING",
+			"CAPABILITY_UNAVAILABLE",
+			"ALREADY_COMPLETED",
+			"HOLD_ACTIVE",
+			"EXECUTION_SCHEDULE_NOT_REACHED",
+			"MISSING_OWNER_FACTS",
+			"MISSING_IDENTITY_FACT",
+			"EXTERNAL_OWNER_RETRY_UNSUPPORTED"
+	);
+
+	public static final Set<String> APPROVED_FAILURE_REASONS = Set.of(
+			"ACCOUNT_NOT_FOUND",
+			"COMMUNITY_TIMEOUT",
+			"LEGAL_HOLD_ACTIVE",
+			"AUTH_FAILED",
+			"KEY_EXPIRED",
+			"INVALID_REFERENCE",
+			"STATUTORY_INQUIRY",
+			"PENDING_DISPUTE",
+			"ACTIVE_SAFETY_REVIEW",
+			"SCHEDULED_APPOINTMENT_ACTIVE",
+			"USER_CONTESTED",
+			"AUDIT_COMPLIANCE_HOLD"
+	);
+
 	private static final java.util.regex.Pattern APPROVED_IDENTITY_EVIDENCE_PATTERN =
 			java.util.regex.Pattern.compile("^audit:identity:account-deleted:[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$", java.util.regex.Pattern.CASE_INSENSITIVE);
 
 	private String safeFailureCode(String code) {
-		if (code != null && SAFE_FAILURE_CODE_PATTERN.matcher(code.trim()).matches()) {
-			return code.trim();
+		if (code != null) {
+			String trimmed = code.trim();
+			if (APPROVED_FAILURE_CODES.contains(trimmed)) {
+				return trimmed;
+			}
 		}
 		return null;
 	}
 
 	private String safeFailureReason(String reason) {
-		if (reason != null && SAFE_FAILURE_REASON_PATTERN.matcher(reason.trim()).matches()) {
-			return reason.trim();
+		if (reason != null) {
+			String trimmed = reason.trim();
+			if (APPROVED_FAILURE_REASONS.contains(trimmed)) {
+				return trimmed;
+			}
 		}
 		return null;
 	}
