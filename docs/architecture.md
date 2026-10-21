@@ -13,8 +13,12 @@ MB-689 adds signed current-viewer authorization/projections and `/community`
 Socket.IO delivery through minimized Kafka-to-Redis fanout. Private ordered
 delivery cursors and absolute read-state projections retain Community authority.
 MB-690 adds foreground multi-device presence in Redis and fresh Community-owned
-viewer/subject projections. Typing/shared receipts, case administration and
-notification consumption remain downstream; presence never enters Kafka/history.
+viewer/subject projections; presence never enters Kafka/history. MB-691 adds
+Content-owned durable Community notice work/inbox delivery, unread reaction
+grouping, quiet-hour deferral and generic chat/request/invitation notices under
+fresh exact-target Community authorization. Comment reactions use a separate
+compatible fact topic. Typing/shared receipts, case administration and real
+PUSH provider/device delivery remain downstream.
 
 > Current product authority/navigation: [Current Product Blueprint](CURRENT_PRODUCT_BLUEPRINT.md).
 > The architecture follows ADR 0017 as prospectively amended by ADR 0022 and

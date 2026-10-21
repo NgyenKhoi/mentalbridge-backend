@@ -67,12 +67,30 @@ const environmentSchema = z
       .default(2_000),
     CONTENT_APPOINTMENT_CONSUMER_ENABLED: z.enum(['true', 'false']).default('false'),
     CONTENT_COMMUNITY_INTERACTION_CONSUMER_ENABLED: z.enum(['true', 'false']).default('false'),
+    CONTENT_COMMUNITY_NOTICE_CONSUMER_ENABLED: z.enum(['true', 'false']).default('false'),
+    COMMUNITY_SERVICE_URL: z.url().default('http://localhost:8084'),
+    CONTENT_COMMUNITY_NOTIFICATION_PRIVATE_KEY: z.string().optional(),
+    CONTENT_COMMUNITY_NOTIFICATION_KEY_ID: z.string().optional(),
     CONTENT_CARE_USER_NOTIFICATION_CONSUMER_ENABLED: z.enum(['true', 'false']).default('false'),
     APPOINTMENT_REMINDER_APP_URL: z.url().default('http://localhost:3000/appointments'),
     E2E_TEST_MODE: z.coerce.boolean().default(false),
     E2E_TEST_SECRET: z.string().min(16).optional(),
   })
   .superRefine((environment, context) => {
+    if (environment.CONTENT_COMMUNITY_NOTICE_CONSUMER_ENABLED === 'true') {
+      for (const key of [
+        'KAFKA_BOOTSTRAP_SERVERS',
+        'CONTENT_COMMUNITY_NOTIFICATION_PRIVATE_KEY',
+        'CONTENT_COMMUNITY_NOTIFICATION_KEY_ID',
+      ] as const) {
+        if (!environment[key]?.trim())
+          context.addIssue({
+            code: 'custom',
+            path: [key],
+            message: 'is required when Community notice delivery is enabled',
+          });
+      }
+    }
     if (
       environment.REMINDER_SCHEDULER_ENABLED === 'true' &&
       !environment.JOURNAL_AI_REMINDER_SERVICE_TOKEN
@@ -160,6 +178,8 @@ const environmentSchema = z
       environment.CONTENT_APPOINTMENT_CONSUMER_ENABLED === 'true',
     CONTENT_COMMUNITY_INTERACTION_CONSUMER_ENABLED:
       environment.CONTENT_COMMUNITY_INTERACTION_CONSUMER_ENABLED === 'true',
+    CONTENT_COMMUNITY_NOTICE_CONSUMER_ENABLED:
+      environment.CONTENT_COMMUNITY_NOTICE_CONSUMER_ENABLED === 'true',
     CONTENT_CARE_USER_NOTIFICATION_CONSUMER_ENABLED:
       environment.CONTENT_CARE_USER_NOTIFICATION_CONSUMER_ENABLED === 'true',
     ALLOWED_ORIGINS: environment.CORS_ORIGINS.split(',')

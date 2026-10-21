@@ -1,5 +1,12 @@
 # Requirements Traceability
 
+MB-749 supplies the additive Identity-authenticated native Community socket
+credential exchange required by MB-692. Current Community issue/consume checks,
+one-use tickets and original Identity expiry preserve the accepted privacy
+boundary; existing BFF/appointment ingress remains unchanged. See
+[ADR 0043](adr/0043-native-community-credential-exchange.md) and
+[provider evidence](story-mb-749-native-community-credentials-evidence.md).
+
 MB-684 (2026-10-20) supplies the accepted
 [Community peer-chat decision](adr/0042-community-chat-contract.md),
 [privacy/permission policy](policies/community-chat-policy-v1.md),
@@ -12,15 +19,20 @@ saves, private read/history/unread, retention and minimized outbox relay in
 Community PostgreSQL. Identity exposes only current eligible USER IDs through a
 dedicated internal credential. MB-687 adds private group roles/invitations,
 epoch-bounded history/read/unread and isolated exact-message report intake;
-see [MB-687 evidence](story-mb-687-private-groups-evidence.md). Clients, delegated
-notification checks, case administration and consumers remain downstream. MB-689
+see [MB-687 evidence](story-mb-687-private-groups-evidence.md). Clients and case
+administration remain downstream. MB-689
 adds signed owner authorization/exact-message projections, namespace-isolated
 credentials, ordered fanout and cross-device unread repair; see
 [MB-689 evidence](story-mb-689-realtime-community-evidence.md). MB-690 adds
 presence-only foreground TTL leases, multi-device aggregation, current
 opt-in/invisible/block/membership projections and generic badge invalidation;
 see [MB-690 evidence](story-mb-690-community-presence-evidence.md). Its runtime
-does not include typing/shared receipts or UI. The Realtime/MongoDB ownership below
+does not include typing/shared receipts or UI. MB-691 completes the backend
+Community notice consumer, exact-target chat authorization, comment reactions,
+unread reaction grouping and quiet-hour deferral; see
+[MB-691 evidence](story-mb-691-community-notification-evidence.md). Its PUSH payload
+contract does not activate device registration/provider delivery (MB-675/679),
+and frontend route integration remains in its own lane. The Realtime/MongoDB ownership below
 remains the unchanged appointment baseline. See the
 [MB-685 evidence](story-mb-685-direct-chat-evidence.md).
 

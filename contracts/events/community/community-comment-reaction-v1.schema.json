@@ -1,0 +1,70 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://mentalbridge.dev/contracts/events/community/community-comment-reaction-v1.schema.json",
+  "title": "Community comment reaction fact v1",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "eventId",
+    "schemaVersion",
+    "actorCommunityProfileId",
+    "targetOwnerRoutingReference",
+    "targetType",
+    "targetId",
+    "interactionKind",
+    "occurredAt",
+    "deepLink"
+  ],
+  "properties": {
+    "eventId": {
+      "type": "string",
+      "format": "uuid"
+    },
+    "schemaVersion": {
+      "const": "1.0"
+    },
+    "actorCommunityProfileId": {
+      "type": "string",
+      "format": "uuid"
+    },
+    "targetOwnerRoutingReference": {
+      "type": "string",
+      "format": "uuid"
+    },
+    "targetType": {
+      "const": "COMMENT"
+    },
+    "targetId": {
+      "type": "string",
+      "format": "uuid"
+    },
+    "interactionKind": {
+      "enum": [
+        "SUPPORT",
+        "RELATE",
+        "THANK_YOU"
+      ]
+    },
+    "occurredAt": {
+      "type": "string",
+      "format": "date-time"
+    },
+    "deepLink": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "kind",
+        "postId"
+      ],
+      "properties": {
+        "kind": {
+          "const": "COMMUNITY_POST"
+        },
+        "postId": {
+          "type": "string",
+          "format": "uuid"
+        }
+      }
+    }
+  }
+}

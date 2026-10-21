@@ -12,6 +12,10 @@ protocol and recovery are documented in [COMMUNITY.md](COMMUNITY.md). MB-690
 adds opt-in foreground presence with Community-owned viewer authorization,
 Redis multi-device leases and cross-replica delivery. Its lease is distinct
 from both appointment presence below and the Community socket routing lease.
+MB-749 adds the Identity-authenticated native Community ticket exchange at
+`POST /api/v1/community/socket-credentials`; the existing BFF exchange remains
+unchanged. See [ADR 0043](../docs/adr/0043-native-community-credential-exchange.md)
+and the native handoff in [COMMUNITY.md](COMMUNITY.md#native-mobile-exchange-mb-749).
 
 - Socket.IO `/realtime` namespace with one-use, 30-second browser credentials bound to Identity-issued RS256 JWTs
 - strict versioned command, acknowledgement, error and server-event envelopes

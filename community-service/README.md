@@ -4,6 +4,34 @@
 
 ## Runtime
 
+MB-691 also adds `GET|PUT|DELETE /api/v1/community/comments/{commentId}/reaction`
+for supportive `SUPPORT`, `RELATE`, `THANK_YOU` reactions on visible active root
+comments and replies. The response contains the caller's reaction and current
+reaction count. PUT replaces one actor/comment value naturally; DELETE is
+idempotent. Neither changes the comment authoring ETag. Deleted/hidden/blocked
+targets are unavailable, and self-reaction creates no notification fact.
+Migration `0021-community-comment-reactions` adds the owner table. Its first
+logical non-self reaction uses the existing interaction outbox and a separate
+`mentalbridge.community.comment-reaction.v1` topic, keyed by comment ID, preserving
+the existing interaction-v1 consumer contract. Provision the topic before
+deploying this producer; Compose's Kafka initializer declares it. Replacement,
+removal/re-add and relay retry do not repeat notification. Deploy the compatible
+Content notice consumer before enabling delivery. No frontend screen is added.
+
+MB-691 adds the read-only `POST /internal/v1/community/chat/notification-authorizations`.
+Enable `COMMUNITY_CHAT_NOTIFICATION_ENABLED` only with a dedicated
+`CONTENT_COMMUNITY_NOTIFICATION_PUBLIC_KEY` RSA X.509 PEM and
+`CONTENT_COMMUNITY_NOTIFICATION_KEY_ID`. Content signs a maximum 30-second RS256
+service JWT with issuer/subject `content-notification-service`, audience
+`community-service`, UUID jti and scope `community:notification:authorize`.
+The closed query binds recipient routing reference, kind, target, conversation
+and actor profile. Current Identity eligibility precedes local permission locks;
+message membership epochs, pending request/invitation lifecycle and bilateral
+blocks are rechecked without decrypting content. A no-store positive result is
+not a reusable grant. Denied/mismatched/expired targets return uniform 404;
+owner uncertainty returns 503. This scope cannot read transcripts or use the
+Realtime routes. The flag defaults false and no shared environment is enabled.
+
 MB-684 accepted the [Community chat contract](../docs/adr/0042-community-chat-contract.md)
 and [privacy policy](../docs/policies/community-chat-policy-v1.md). MB-685 delivers
 the direct-chat provider subset in Community PostgreSQL, including fresh Identity

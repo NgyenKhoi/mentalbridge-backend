@@ -125,6 +125,10 @@ import {
   KafkaCommunityInteractionDeadLetterPublisher,
 } from './community-notifications/community-interaction.consumer.js';
 import { CommunityNotificationRepository } from './community-notifications/community-notification.repository.js';
+import { CommunityNotificationJobs } from './community-notifications/community-notification.jobs.js';
+import { CommunityNotificationClient } from './community-notifications/community-notification.client.js';
+import { CommunityNotificationWorker } from './community-notifications/community-notification.worker.js';
+import { CommunityNoticeConsumer } from './community-notifications/community-notice.consumer.js';
 import {
   CareUserNotificationConsumer,
   CareUserNotificationProjector,
@@ -328,6 +332,10 @@ export const createAppModule = (
       AppointmentStatusConsumer,
       AppointmentReminderScheduler,
       CommunityNotificationRepository,
+      CommunityNotificationJobs,
+      CommunityNotificationClient,
+      CommunityNotificationWorker,
+      CommunityNoticeConsumer,
       CommunityInteractionProjector,
       {
         provide: COMMUNITY_INTERACTION_DEAD_LETTER_PUBLISHER_TOKEN,

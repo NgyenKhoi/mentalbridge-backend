@@ -72,7 +72,10 @@ export const localDayStart = (localDate: string, timezone: string): string => {
   return new Date(instant).toISOString();
 };
 
-export const isQuietHour = (preferences: NotificationPreferences, instant: Date): boolean => {
+export const isQuietHour = (
+  preferences: Pick<NotificationPreferences, 'quietHours'>,
+  instant: Date,
+): boolean => {
   if (!preferences.quietHours.enabled) return false;
   const current = localParts(instant, preferences.quietHours.timeZone).minutes;
   const start = timeMinutes(preferences.quietHours.start);

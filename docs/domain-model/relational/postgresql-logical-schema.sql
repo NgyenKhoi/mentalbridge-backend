@@ -2003,6 +2003,15 @@ CREATE TABLE community.community_comment_revision (
     UNIQUE (comment_id, comment_version)
 );
 
+CREATE TABLE community.community_comment_reaction (
+    comment_id uuid NOT NULL REFERENCES community.community_comment(id) ON DELETE CASCADE,
+    profile_id uuid NOT NULL REFERENCES community.community_profile(id) ON DELETE CASCADE,
+    reaction varchar(16) NOT NULL CHECK (reaction IN ('SUPPORT', 'RELATE', 'THANK_YOU')),
+    created_at timestamptz NOT NULL,
+    updated_at timestamptz NOT NULL,
+    PRIMARY KEY (comment_id, profile_id)
+);
+
 CREATE TABLE community.community_report (
     id uuid PRIMARY KEY,
     reporter_profile_id uuid NOT NULL REFERENCES community.community_profile(id),
@@ -2315,7 +2324,7 @@ CREATE TABLE content.notification (
         'ASSESSMENT_REASSESSMENT', 'STREAK_MILESTONE', 'JOURNAL_REMINDER',
         'EMOTION_CHECKIN_REMINDER', 'JOURNAL_STREAK_MILESTONE',
         'EMOTION_STREAK_MILESTONE', 'COMMUNITY_COMMENT', 'COMMUNITY_REPLY',
-        'COMMUNITY_REACTION', 'ASSESSMENT_RESULT_AVAILABLE',
+        'COMMUNITY_REACTION', 'COMMUNITY_MESSAGE', 'COMMUNITY_REQUEST', 'COMMUNITY_INVITATION', 'ASSESSMENT_RESULT_AVAILABLE',
         'SUPPORT_GUIDE_AVAILABLE', 'ACCOUNT_STATUS', 'ASSESSMENT', 'CHAT',
         'FOLLOW_UP', 'SAFETY', 'SYSTEM'
     )),
@@ -2323,6 +2332,7 @@ CREATE TABLE content.notification (
     body varchar(1000) NOT NULL,
     action_type varchar(40),
     action_target_id uuid,
+    grouping_key varchar(160),
     priority varchar(16) NOT NULL,
     read_at timestamptz,
     expires_at timestamptz NOT NULL,
@@ -2342,9 +2352,30 @@ CREATE TABLE content.notification (
             'OPEN_RESOURCES', 'OPEN_ASSESSMENTS', 'OPEN_SPECIALIST_APPOINTMENTS'
         ) AND action_target_id IS NULL)
         OR (action_type IN (
-            'OPEN_RESOURCE', 'OPEN_COMMUNITY_POST', 'OPEN_SUPPORT_GUIDE'
+            'OPEN_RESOURCE', 'OPEN_COMMUNITY_POST', 'OPEN_SUPPORT_GUIDE',
+            'OPEN_COMMUNITY_CONVERSATION', 'OPEN_COMMUNITY_REQUEST', 'OPEN_COMMUNITY_INVITATION'
         ) AND action_target_id IS NOT NULL)
     )
+);
+
+CREATE TABLE content.community_notification_job (
+    id uuid PRIMARY KEY,
+    recipient_id uuid NOT NULL,
+    source varchar(64) NOT NULL CHECK (source IN ('COMMUNITY_INTERACTION_V1', 'COMMUNITY_COMMENT_REACTION_V1', 'COMMUNITY_CHAT_V1')),
+    source_identity varchar(160) NOT NULL,
+    request_fingerprint char(64) NOT NULL,
+    projection jsonb NOT NULL,
+    state varchar(16) NOT NULL CHECK (state IN ('PENDING', 'DELIVERED', 'CANCELLED')),
+    available_at timestamptz NOT NULL,
+    claim_token uuid,
+    claim_until timestamptz,
+    attempts integer NOT NULL,
+    notification_id uuid REFERENCES content.notification(id),
+    expires_at timestamptz NOT NULL,
+    created_at timestamptz NOT NULL,
+    UNIQUE (recipient_id, source, source_identity),
+    CHECK ((claim_token IS NULL) = (claim_until IS NULL)),
+    CHECK (state <> 'DELIVERED' OR notification_id IS NOT NULL)
 );
 
 CREATE TABLE content.appointment_email_reminder (

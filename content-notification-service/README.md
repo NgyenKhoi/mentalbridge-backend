@@ -1,11 +1,71 @@
 # Content and Notification Service
 
-MB-684's proposed [Community chat policy](../docs/policies/community-chat-policy-v1.md)
-adds minimized message/request/invitation fact candidates for MB-691. It does
-not change this runtime, current inbox enums/preferences or MB-580/617 producers.
-Content remains the future delivery authority, must revalidate exact Community
-recipient/target authorization, and never receives chat bodies/group names in
-Kafka or provider payloads. No new topic, consumer or provider is enabled here.
+MB-691 implements the accepted [Community chat policy](../docs/policies/community-chat-policy-v1.md)
+through recipient-specific `MESSAGE_RECEIVED`, `DIRECT_REQUESTED`, `GROUP_INVITED`
+facts and separate comment-reaction facts. Content owns durable notice jobs and
+inbox state; Community retains exact target/lifecycle authorization. Existing
+MB-580/617 post/comment producers remain unchanged. No chat body, sender/group
+name or health data enters Kafka, jobs, logs or provider payloads.
+
+## Community notification delivery (MB-691)
+
+`CONTENT_COMMUNITY_NOTICE_CONSUMER_ENABLED=true` requires Kafka and a dedicated
+Content-owned PKCS#8 `CONTENT_COMMUNITY_NOTIFICATION_PRIVATE_KEY` plus
+`CONTENT_COMMUNITY_NOTIFICATION_KEY_ID`. Community receives only its matching
+X.509 public key and opt-in `COMMUNITY_CHAT_NOTIFICATION_ENABLED` flag. Set
+`COMMUNITY_SERVICE_URL` to the Community owner. Ordinary Identity or Realtime
+credentials cannot authorize this boundary. Both new flags default false.
+
+The new consumer group `content-notification-community-notices-v1` reads the
+existing chat topic and `mentalbridge.community.comment-reaction.v1`; provision
+the latter using the versioned Compose Kafka initializer before rollout. It
+ignores message-save/read-state/authorization transport facts, strictly checks
+aggregate/target/key bindings, and parks poison diagnostics as digests in the
+existing Community dead-letter topic. Transient intake storage/DLQ failures
+retain the offset with 1–30-second backoff and heartbeats. Kafka is acknowledged
+only after the minimized job or its terminal cancellation is committed.
+
+Migration `26_add_community_notice_delivery.sql` adds jobs/receipts and nullable
+inbox `grouping_key`. The existing interaction-v1 consumer also feeds this queue.
+A bounded one-second worker tick claims at most 20 jobs, one at a time, under
+30-second expiring fencing tokens. Claims survive process loss. Remote owner
+reads finish before the local transaction; inbox insertion/grouping and terminal
+job outcome commit together. Denied/expired/revoked targets cancel; owner
+uncertainty retries without a cached grant. Quiet-hour work is scheduled for a
+new check after 60 seconds, subject to bounded queue/HTTP delays; preference and
+target authorization are checked again.
+Opt-out at intake or delivery records a terminal outcome, preventing stale
+replay after opt-in. Expired receipts are removed in bounded batches; old source
+occurrences remain expired and cannot recreate a notice.
+
+Supportive reactions join one active unread notice per recipient/target, with no
+public actor list or inferred engagement count. Reading ends that group; another
+new actor can start a new one. Duplicates never bump unread or resurrect a soft
+deleted item. Chat source identity is kind + exact target per recipient, so a
+new transport message ID does not repeat the logical notice. Existing v1 event
+identities and historical inbox items remain compatible; no history backfill or
+regrouping is performed.
+
+New closed actions are `OPEN_COMMUNITY_CONVERSATION`, `OPEN_COMMUNITY_REQUEST`,
+`OPEN_COMMUNITY_INVITATION` with their respective opaque target UUID. Their
+canonical hrefs are `/community/chat/conversations/{id}`, `/community/chat/requests/{id}`,
+`/community/chat/invitations/{id}`. These are backend consumer contracts: the
+current frontend baseline does not implement these routes. Device-2 must map
+the descriptors, implement those routes and reauthorize in Community before
+enabling the end-user journey. A pending request/invitation never grants history.
+This slice makes no browser/mobile `ui-ready` claim.
+
+`community-push-v1.schema.json` and `communityPushPayload` define only the generic
+Vietnamese body plus opaque notification ID. PUSH remains preference/contract
+only; this delivery does not register devices or send to a provider. Backend
+device registration/provider delivery belongs to MB-675, with device permission,
+token and safe-link handling in MB-679. Appointment chat, message retraction and
+per-user conversation deletion remain independent.
+
+Roll out migrations, the authorization provider, then compatible consumers;
+enable opt-in flags only after credentials/topics and frontend handoff are ready.
+Rollback consumers before providers. Retain additive migrations and terminal
+receipts; do not drop delivery state to roll back a binary.
 
 NestJS service that owns reviewed self-help resource definitions, immutable exact-version Resource Eligibility v1 provenance, notification preferences, and durable notification delivery state. ADR 0009 removes the hotline catalogue from product scope. ADR 0012 keeps final SupportPlan admission in Care and clarifies that review/publication does not make a resource universally plan-eligible.
 
@@ -181,7 +241,7 @@ Identity Service must be configured with the corresponding private key (`IDENTIT
 
 ## Migrations
 
-Migration `26_plan_scoped_resource_bingo.sql` makes boards unique per owner,
+Migration `27_plan_scoped_resource_bingo.sql` makes boards unique per owner,
 local week and SupportPlan, persists latest-sync ordering, and adds nullable
 action identity/version and retirement time to retained items. Existing boards
 are preserved; their first plan-sync binds matching resources and retires

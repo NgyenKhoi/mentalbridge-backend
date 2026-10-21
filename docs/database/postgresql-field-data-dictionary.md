@@ -66,6 +66,22 @@ Community-owned governed discovery vocabulary. This catalogue is deliberately se
 | `created_at` | Immutable UTC instant when the governed catalogue row was seeded. |
 | `updated_at` | UTC instant of the latest governance change to label, description, order, or active state. |
 
+### `public.community_comment_reaction`
+
+MB-691 Community-owned supportive reaction to a currently visible active comment
+or reply. One composite key serializes the actor/comment outcome without changing
+the comment editing version. The same transaction writes the first non-self
+`COMMENT_REACTION:<comment-id>:<actor-profile-id>` outbox identity; replacement,
+removal and re-add never repeat that logical notification.
+
+| Field | Meaning and necessity |
+| --- | --- |
+| `comment_id` | Physical comment FK and first composite-key component; cascades on physical comment purge, not soft deletion. |
+| `profile_id` | Physical Community profile FK identifying the reacting actor; one reaction per actor/comment and cascade on profile purge. |
+| `reaction` | Current supportive value, closed to `SUPPORT`, `RELATE`, `THANK_YOU`; no negative/voting or clinical meaning. |
+| `created_at` | UTC insertion time of the current reaction row; a remove/re-add gets a new row but retains first-action outbox dedupe. |
+| `updated_at` | UTC last replacement time; duplicate PUT is a no-op and never changes the comment authoring ETag. |
+
 ### `public.community_post_reaction`
 
 One owner-scoped supportive reaction per post. This interaction is a Community peer-support fact and is never used as clinical, screening, Journal, SupportPlan, or ranking evidence.
@@ -2279,6 +2295,17 @@ MB-514's auditable email-delivery ledger. The unique owner/local-date/kind key g
 
 ### `content.notification`
 
+MB-691 extends Community notice delivery with three generic chat/request/invite
+categories and closed `OPEN_COMMUNITY_CONVERSATION`, `OPEN_COMMUNITY_REQUEST`,
+`OPEN_COMMUNITY_INVITATION` actions. Their opaque target belongs to Community and
+never grants access; opening it requires current owner authorization.
+`grouping_key` is nullable Content-owned `POST:<id>` or `COMMENT:<id>` metadata
+used only to join new reaction notices to an existing active unread item. A read,
+tombstone or expiry ends that group; it is not a reaction count or permission.
+Chat source identity is `<kind>:<target-id>` per recipient, independent of the
+transport message ID. Comment-reaction source identity is `<comment-id>:<actor-profile-id>`.
+Existing interaction-v1 event identities remain unchanged for replay compatibility.
+
 Durable in-app notification and safe delivery payload owned by Content/Notification Service.
 
 | Field | Purpose |
@@ -2289,7 +2316,8 @@ Durable in-app notification and safe delivery payload owned by Content/Notificat
 | `title` | Reviewed/minimized user-visible title safe for the selected channel. |
 | `body` | Reviewed/minimized user-visible body that excludes raw sensitive source content. |
 | `action_type` | Optional approved internal action enum used to derive a relative client route; MB-565 adds `OPEN_SUPPORT_GUIDE` bound to its exact UUID target, while account status has no action. `OPEN_SPECIALIST_APPOINTMENTS` resolves only to the specialist appointment workspace and arbitrary producer URLs are never stored. |
-| `action_target_id` | Optional opaque target UUID required for `OPEN_RESOURCE` or `OPEN_COMMUNITY_POST`; Community stores only the approved post deep-link ID, and the authorized Community read supplies the same safe unavailable state for removed, hidden, blocked, or unknown content. |
+| `action_target_id` | Optional opaque target UUID for the closed action enum, including exact resource, SupportGuide, Community post, conversation, request or invitation. This pointer never grants access; the owner read handles unavailable targets safely. |
+| `grouping_key` | Nullable `POST:<id>` or `COMMENT:<id>` reaction target key; new jobs may join one active unread unexpired item under the recipient preference lock. Reading/deleting ends the group. |
 | `priority` | Delivery/presentation priority, not a clinical severity decision. |
 | `read_at` | UTC instant the recipient marked the in-app notification read; null while unread. |
 | `expires_at` | Required UTC inbox-retention deadline, no later than 90 days after creation; expired rows are tombstoned and no longer returned. |
@@ -2297,10 +2325,35 @@ Durable in-app notification and safe delivery payload owned by Content/Notificat
 | `created_at` | Immutable UTC creation instant used for cursor ordering. |
 | `deleted_at` | UTC user/policy tombstone instant; null while visible in history. |
 | `source` | Stable bounded producer namespace such as `CONTENT`, `REALTIME`, or `COMMUNITY_INTERACTION_V1`; it carries no provider payload or user-authored text. |
-| `source_identity` | Stable producer-owned logical identity used with `recipient_id` and `source` to collapse retries/replays for one recipient while allowing legitimate fan-out. Journal/emotion notifications use `<kind>:<local-date>`; Community notifications use the v1 fact `eventId`; specialist appointment notifications use `<appointment-id>:<aggregate-version>`; MB-565 Care/Identity facts use `<fact-type>:<aggregate-id>:<aggregate-version>` so a transport-envelope replay cannot duplicate the inbox item. |
+| `source_identity` | Stable identity used with recipient/source to collapse replay. Journal/emotion uses `<kind>:<local-date>`; legacy Community interaction v1 retains `eventId`; chat uses `<kind>:<target-id>`; comment reaction uses `<comment-id>:<actor-profile-id>`. Appointment uses `<appointment-id>:<aggregate-version>`; Care/Identity uses `<fact-type>:<aggregate-id>:<aggregate-version>`. |
 | `request_fingerprint` | SHA-256 of the validated minimized create command or Community v1 fact; changed reuse of a dedupe identity is rejected instead of overwriting the original notification. |
 | `delivery_state` | Durable delivery lifecycle (`PENDING`, `DELIVERED`, `FAILED`, or `CANCELLED`); only `DELIVERED` records appear in the inbox. |
 | `version` | Monotonic mutation counter incremented for the first read or tombstone transition. |
+
+### `content.community_notification_job`
+
+MB-691 Content-owned durable work and receipt ledger. Validated generic copy and
+minimal routing/target pointers survive consumer/worker restarts and quiet-hour
+deferral. No message body, group/sender name, credential, health field or cached
+authorization grant is stored. Inbox insertion/grouping and terminal job outcome
+commit together. Exact chat authorization is read remotely before that transaction.
+
+| Field | Meaning and necessity |
+| --- | --- |
+| `id` | Immutable internal UUID for claiming one delivery job; not exposed as a notification or target ID. |
+| `recipient_id` | External Identity recipient reference used for owner-scoped dedupe; never proof of eligibility. |
+| `source` | Closed namespace for interaction v1, comment reaction v1 or chat v1, separating their logical identities. |
+| `source_identity` | Stable logical action identity, unique with source/recipient, so a new transport envelope cannot repeat the action. |
+| `request_fingerprint` | SHA-256 of validated minimized semantic input; changed identity reuse is parked instead of overwriting the original work. |
+| `projection` | Generic reviewed copy and closed target/authorization descriptors only; these are pointers, not owner permission decisions. |
+| `state` | `PENDING` remains recoverable; `DELIVERED` links to an inbox item, including a grouped item; `CANCELLED` prevents opt-out/revocation replay. |
+| `available_at` | UTC earliest next processing time for quiet-hour deferral or bounded dependency retry. |
+| `claim_token` | Nullable random worker fencing token; a stale worker cannot complete a job claimed by another instance. |
+| `claim_until` | UTC expiry of the 30-second claim; paired with the token and permits crash recovery without a remote call inside a DB transaction. |
+| `attempts` | Persisted claim count for capped 1–30-second retry backoff; not a user-visible delivery count. |
+| `notification_id` | Nullable physical reference to the one resulting inbox item; multiple reaction jobs may reference one unread grouped notification. |
+| `expires_at` | Source occurrence plus 90 days; expired work is not delivered and bounded cleanup removes receipts. Old replay remains expired. |
+| `created_at` | Immutable UTC intake instant, separate from authoritative source occurrence and inbox insertion time. |
 
 ### `content.appointment_email_reminder`
 

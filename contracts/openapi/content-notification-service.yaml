@@ -1635,6 +1635,9 @@ components:
           COMMUNITY_COMMENT,
           COMMUNITY_REPLY,
           COMMUNITY_REACTION,
+          COMMUNITY_MESSAGE,
+          COMMUNITY_REQUEST,
+          COMMUNITY_INVITATION,
           ASSESSMENT_RESULT_AVAILABLE,
           SUPPORT_GUIDE_AVAILABLE,
           ACCOUNT_STATUS,
@@ -1654,6 +1657,9 @@ components:
           OPEN_ASSESSMENTS,
           OPEN_RESOURCE,
           OPEN_COMMUNITY_POST,
+          OPEN_COMMUNITY_CONVERSATION,
+          OPEN_COMMUNITY_REQUEST,
+          OPEN_COMMUNITY_INVITATION,
           OPEN_SUPPORT_GUIDE,
         ]
     NotificationAction:

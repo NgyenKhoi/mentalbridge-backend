@@ -6,7 +6,7 @@ import {
   CommunityInteractionConsumer,
   CommunityInteractionProjector,
 } from '../community-notifications/community-interaction.consumer.js';
-import type { CommunityNotificationRepository } from '../community-notifications/community-notification.repository.js';
+import type { CommunityNotificationJobs } from '../community-notifications/community-notification.jobs.js';
 import {
   COMMUNITY_INTERACTION_TOPIC,
   CommunityInteractionEventSchema,
@@ -70,8 +70,8 @@ describe('Community interaction notification consumer', () => {
       replayed: false,
     });
     const projector = new CommunityInteractionProjector({
-      materialize,
-    } as unknown as CommunityNotificationRepository);
+      enqueue: materialize,
+    } as unknown as CommunityNotificationJobs);
 
     await projector.project(event);
 

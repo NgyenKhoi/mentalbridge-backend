@@ -124,6 +124,7 @@ settle or release credit. Historical chat policy remains unchanged.
 | `community_block` | community-service | PostgreSQL | ACTIVE | Physical profile-to-profile visibility rule applied symmetrically to feed and detail reads. |
 | `community_comment` | community-service | PostgreSQL | ACTIVE | Physical post, optional same-post root parent, and author profile references implement chronological comments and one-level replies with owner-scoped command replay. |
 | `community_comment_revision` | community-service | PostgreSQL | ACTIVE | Physical comment and acting-profile references retain immutable create/edit/delete snapshots for moderation-compatible audit. |
+| `community_comment_reaction` | community-service | PostgreSQL | ACTIVE | One supportive reaction per profile/comment; local foreign keys and first-action outbox identity prevent concurrent duplicates and repeat notifications. |
 | Reactions, bookmarks, reports, moderation cases/actions, and their command replay | community-service | PostgreSQL | ACTIVE | Community Liquibase changes `0009` and `0010` own reports/moderation, one supportive reaction per profile/post, and private bookmarks. |
 
 ## Content/Notification — PostgreSQL
@@ -144,6 +145,7 @@ settle or release credit. Historical chat policy remains unchanged.
 | `achievement_preference` | content-notification-service | PostgreSQL | ACTIVE | Owner-scoped private-gallery visibility only; achievement status is a deterministic read model over minimized source-owner facts. |
 | `notification_preference` | content-notification-service | PostgreSQL | ACTIVE | One role-scoped atomic aggregate per external Identity owner covering channels, allowed content groups, quiet hours/timezone, and email cadence/opt-ins; specialist scope cannot enable user wellbeing categories. |
 | `notification` | content-notification-service | PostgreSQL | ACTIVE | Recipient ID is a logical/external Identity reference. Content owns durable delivery state and deduplicates producer facts by recipient, source, and versioned logical identity; MB-565 adds bounded assessment-result, SupportGuide, and USER account-status categories plus exact internal SupportGuide actions. |
+| `community_notification_job` | content-notification-service | PostgreSQL | ACTIVE | Durable minimized Community notice work/receipts with recipient/source/action uniqueness, leased worker claims, quiet-hour/retry scheduling and an optional physical notification reference for atomic unread reaction grouping. |
 | `appointment_email_reminder` | content-notification-service | PostgreSQL | ACTIVE | One delivery-state row per external recipient, Consultation appointment, and appointment version; no email address or message body is persisted. |
 | `appointment_reminder_checkpoint` | content-notification-service | PostgreSQL | ACTIVE | Latest consumed version/status per external Consultation appointment for stale and duplicate event rejection. |
 | Area directory | content-notification-service | PostgreSQL | PROPOSED | ADR 0017 requires provenance-bearing area entries, but no current migration defines the entity. |

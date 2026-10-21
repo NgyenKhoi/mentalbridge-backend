@@ -1,5 +1,5 @@
 -- Up Migration
--- Migration: 26_plan_scoped_resource_bingo
+-- Migration: 27_plan_scoped_resource_bingo
 -- Service: content-notification-service
 -- Story: MB-670
 

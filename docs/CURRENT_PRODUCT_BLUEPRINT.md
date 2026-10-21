@@ -14,8 +14,11 @@ groups, membership lifecycle/epochs and isolated exact-message report intake.
 MB-689 adds signed current-viewer projections, isolated `/community` delivery,
 ordered private delivery cursors and self read-state synchronization. MB-690
 adds privacy-aware foreground presence with multi-device Redis leases and
-current owner projections. MB-686/688 and later stories supply clients,
-typing/shared receipts, notification consumers, case
+current owner projections. MB-691 adds exact-target chat notification checks,
+durable inbox delivery, unread reaction grouping, quiet-hour deferral and backend
+comment reactions. Generic PUSH payloads are contracts only; MB-675/679 own real
+device/provider delivery. MB-686/688 and later stories supply clients,
+typing/shared receipts, case
 administration and epic acceptance.
 
 For product/business behavior, use this order:

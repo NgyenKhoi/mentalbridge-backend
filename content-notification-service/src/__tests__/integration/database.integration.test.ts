@@ -109,7 +109,8 @@ describe('Database Integration', () => {
       '22_add_private_achievement_preference.sql',
       '24_add_specialist_notification_preferences.sql',
       '25_add_general_user_notification_producers.sql',
-      '26_plan_scoped_resource_bingo.sql',
+      '26_add_community_notice_delivery.sql',
+      '27_plan_scoped_resource_bingo.sql',
     ]) {
       if (migration === '10_persist_notification_preferences.sql') {
         await pool.query(

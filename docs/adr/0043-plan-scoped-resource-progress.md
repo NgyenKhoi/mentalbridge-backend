@@ -138,7 +138,7 @@ two Content fact kinds while preserving the one-fact-one-occurrence index and
 every existing authority/action constraint. The index also includes `user_id`:
 the specified daily completion ID is resource/date within its owner, so a
 global key would incorrectly collide across different users. Content migration
-`26` changes board uniqueness and adds nullable external action references and
+`27_plan_scoped_resource_bingo.sql` changes board uniqueness and adds nullable external action references and
 retirement state.
 Legacy boards retain their publication provenance and are reconciled on the
 first current-week plan sync. Existing exact-version fact columns are reused.

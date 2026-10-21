@@ -1,4 +1,4 @@
-# Community realtime (MB-689 / MB-690)
+# Community realtime (MB-689 / MB-690 / MB-749)
 
 Community owns messages, membership, blocks, read watermarks, unread and retention.
 This module is an authenticated delivery edge. It never writes a Community
@@ -84,6 +84,35 @@ exposes no private message/outbox revision. Owner HTTP uses a 500ms connect limi
 authorization or content fallback and no mutation retry.
 
 ## Client protocol and recovery
+
+### Native mobile exchange (MB-749)
+
+Mobile uses the existing Identity bearer injection seam to call
+`POST /api/v1/community/socket-credentials`, with no body or `{}`. Only verified
+USER sessions are accepted; actor, role, expiry or other body fields are 400.
+The returned `{schemaVersion:1, namespace:"/community", credential, expiresAt}`
+is `no-store`; retain it in memory and pass it only in the socket auth object.
+The credential is one-use and expires at the earlier of 30 seconds or the
+verified original Identity expiry. The minimized Redis record and current
+Community authorization on issue/consume are shared with existing BFF issuance.
+No native private signing key or extra public runtime URL is needed.
+
+Configure the public edge with an exact route for
+`/api/v1/community/socket-credentials` to Realtime **before** a broad
+`/api/v1/community/*` rule to Community. The existing WebSocket path reaches
+Realtime and selects namespace `/community`. This repository has no deployed
+edge routing configuration; release operators must verify that mapping before
+enabling MB-692. Do not route the mobile client to a private service address.
+
+401 is invalid/expired authentication, 403 unsupported role, 404 current target
+unavailable, and 503 owner/Redis uncertainty. These outcomes create no durable
+business state. Do not automatically retry issuance; each explicit new connection
+attempt requests a fresh ticket, reauthorizes and repairs history through REST.
+An unused ticket from an uncertain request expires. The existing Community flag
+controls route registration, with no new environment key or database migration.
+Disable the native consumer first on rollback; preserve BFF/appointment routes.
+
+### Shared namespace protocol
 
 Connect Socket.IO over WebSocket to `/community` with handshake
 `{schemaVersion:1, credential}`. Use `community.command` and an ACK callback:
