@@ -6,6 +6,9 @@ info:
 servers:
   - url: http://localhost:8084
 paths:
+  /api/v1/community/comments/{commentId}/reaction:
+    x-mentalbridge-status: implemented
+    $ref: './community-comment-reaction-v1.json#/paths/~1api~1v1~1community~1comments~1%7BcommentId%7D~1reaction'
   /internal/v1/community/chat/session-authorizations:
     x-mentalbridge-status: implemented
     $ref: './community-chat-v1.json#/paths/~1internal~1v1~1community~1chat~1session-authorizations'

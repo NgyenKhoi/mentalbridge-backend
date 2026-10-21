@@ -1955,6 +1955,15 @@ CREATE TABLE community.community_comment_revision (
     UNIQUE (comment_id, comment_version)
 );
 
+CREATE TABLE community.community_comment_reaction (
+    comment_id uuid NOT NULL REFERENCES community.community_comment(id) ON DELETE CASCADE,
+    profile_id uuid NOT NULL REFERENCES community.community_profile(id) ON DELETE CASCADE,
+    reaction varchar(16) NOT NULL CHECK (reaction IN ('SUPPORT', 'RELATE', 'THANK_YOU')),
+    created_at timestamptz NOT NULL,
+    updated_at timestamptz NOT NULL,
+    PRIMARY KEY (comment_id, profile_id)
+);
+
 CREATE TABLE community.community_report (
     id uuid PRIMARY KEY,
     reporter_profile_id uuid NOT NULL REFERENCES community.community_profile(id),

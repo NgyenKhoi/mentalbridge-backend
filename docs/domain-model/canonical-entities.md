@@ -124,6 +124,7 @@ settle or release credit. Historical chat policy remains unchanged.
 | `community_block` | community-service | PostgreSQL | ACTIVE | Physical profile-to-profile visibility rule applied symmetrically to feed and detail reads. |
 | `community_comment` | community-service | PostgreSQL | ACTIVE | Physical post, optional same-post root parent, and author profile references implement chronological comments and one-level replies with owner-scoped command replay. |
 | `community_comment_revision` | community-service | PostgreSQL | ACTIVE | Physical comment and acting-profile references retain immutable create/edit/delete snapshots for moderation-compatible audit. |
+| `community_comment_reaction` | community-service | PostgreSQL | ACTIVE | One supportive reaction per profile/comment; local foreign keys and first-action outbox identity prevent concurrent duplicates and repeat notifications. |
 | Reactions, bookmarks, reports, moderation cases/actions, and their command replay | community-service | PostgreSQL | ACTIVE | Community Liquibase changes `0009` and `0010` own reports/moderation, one supportive reaction per profile/post, and private bookmarks. |
 
 ## Content/Notification — PostgreSQL

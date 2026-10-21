@@ -66,6 +66,22 @@ Community-owned governed discovery vocabulary. This catalogue is deliberately se
 | `created_at` | Immutable UTC instant when the governed catalogue row was seeded. |
 | `updated_at` | UTC instant of the latest governance change to label, description, order, or active state. |
 
+### `public.community_comment_reaction`
+
+MB-691 Community-owned supportive reaction to a currently visible active comment
+or reply. One composite key serializes the actor/comment outcome without changing
+the comment editing version. The same transaction writes the first non-self
+`COMMENT_REACTION:<comment-id>:<actor-profile-id>` outbox identity; replacement,
+removal and re-add never repeat that logical notification.
+
+| Field | Meaning and necessity |
+| --- | --- |
+| `comment_id` | Physical comment FK and first composite-key component; cascades on physical comment purge, not soft deletion. |
+| `profile_id` | Physical Community profile FK identifying the reacting actor; one reaction per actor/comment and cascade on profile purge. |
+| `reaction` | Current supportive value, closed to `SUPPORT`, `RELATE`, `THANK_YOU`; no negative/voting or clinical meaning. |
+| `created_at` | UTC insertion time of the current reaction row; a remove/re-add gets a new row but retains first-action outbox dedupe. |
+| `updated_at` | UTC last replacement time; duplicate PUT is a no-op and never changes the comment authoring ETag. |
+
 ### `public.community_post_reaction`
 
 One owner-scoped supportive reaction per post. This interaction is a Community peer-support fact and is never used as clinical, screening, Journal, SupportPlan, or ranking evidence.

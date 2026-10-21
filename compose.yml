@@ -50,6 +50,7 @@ services:
         /opt/kafka/bin/kafka-topics.sh --bootstrap-server kafka:9092 --create --if-not-exists --topic mentalbridge.identity.account-lifecycle.v1 --partitions 3 --replication-factor 1
         /opt/kafka/bin/kafka-topics.sh --bootstrap-server kafka:9092 --create --if-not-exists --topic mentalbridge.care.user-notification.v1 --partitions 3 --replication-factor 1
         /opt/kafka/bin/kafka-topics.sh --bootstrap-server kafka:9092 --create --if-not-exists --topic mentalbridge.community.interaction.v1 --partitions 3 --replication-factor 1
+        /opt/kafka/bin/kafka-topics.sh --bootstrap-server kafka:9092 --create --if-not-exists --topic mentalbridge.community.comment-reaction.v1 --partitions 3 --replication-factor 1 --config retention.ms=604800000 --config cleanup.policy=delete
         /opt/kafka/bin/kafka-topics.sh --bootstrap-server kafka:9092 --create --if-not-exists --topic mentalbridge.community.chat.v1 --partitions 3 --replication-factor 1 --config retention.ms=604800000 --config cleanup.policy=delete
         /opt/kafka/bin/kafka-topics.sh --bootstrap-server kafka:9092 --create --if-not-exists --topic mentalbridge.community.chat.realtime-dead-letter.v1 --partitions 1 --replication-factor 1 --config retention.ms=604800000 --config cleanup.policy=delete
         /opt/kafka/bin/kafka-topics.sh --bootstrap-server kafka:9092 --create --if-not-exists --topic mentalbridge.content-notification.account-preference-dead-letter.v1 --partitions 1 --replication-factor 1

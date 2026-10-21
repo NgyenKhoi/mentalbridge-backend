@@ -39,4 +39,12 @@ class CommunityInteractionEventPolicy {
 				post.author().accountSubject(), TargetType.POST, post.id(), InteractionKind.valueOf(reaction.name()),
 				post.id(), occurredAt));
 	}
+
+    void commentReactionCreated(CommunityCommentEntity comment, CommunityProfileEntity actor,
+            CommunityPostReactionEntity.Reaction reaction, Instant occurredAt) {
+        if (comment.author().id().equals(actor.id())) return;
+        publisher.publish("COMMENT_REACTION:" + comment.id() + ":" + actor.id(), CommunityInteractionFact.create(actor.id(),
+                comment.author().accountSubject(), TargetType.COMMENT, comment.id(), InteractionKind.valueOf(reaction.name()),
+                comment.post().id(), occurredAt));
+    }
 }
