@@ -25,6 +25,8 @@ const expectedImplemented = new Set([
   'PUT /api/v1/resource-bookmarks/{resourceId}',
   'DELETE /api/v1/resource-bookmarks/{resourceId}',
   'GET /api/v1/resource-bingo/{weekStart}',
+  'PUT /api/v1/resource-bingo/{weekStart}/plan-sync',
+  'GET /api/v1/resource-completion-evidence',
   'PUT /api/v1/resource-bingo/{weekStart}/items/{position}/self-confirmation',
   'PATCH /api/v1/resources/{id}',
   'DELETE /api/v1/resources/{id}',
@@ -62,7 +64,7 @@ const implementedResponses = new Map([
   ['GET /api/v1/resource-progress', new Set(['200', '401', '422', '503'])],
   [
     'PUT /api/v1/resource-progress/{resourceId}/{localDate}',
-    new Set(['200', '401', '404', '422', '503']),
+    new Set(['200', '401', '404', '409', '422', '503']),
   ],
   ['GET /api/v1/resource-rewards', new Set(['200', '401', '503'])],
   ['PUT /api/v1/resource-rewards', new Set(['200', '401', '422', '503'])],
@@ -77,8 +79,13 @@ const implementedResponses = new Map([
   ['DELETE /api/v1/resource-bookmarks/{resourceId}', new Set(['204', '401', '422', '503'])],
   ['GET /api/v1/resource-bingo/{weekStart}', new Set(['200', '401', '404', '422', '503'])],
   [
+    'PUT /api/v1/resource-bingo/{weekStart}/plan-sync',
+    new Set(['200', '401', '409', '422', '503']),
+  ],
+  ['GET /api/v1/resource-completion-evidence', new Set(['200', '401', '404', '422', '503'])],
+  [
     'PUT /api/v1/resource-bingo/{weekStart}/items/{position}/self-confirmation',
-    new Set(['200', '400', '401', '404', '412', '422', '428', '503']),
+    new Set(['200', '400', '401', '404', '409', '412', '422', '428', '503']),
   ],
   ['PATCH /api/v1/resources/{id}', new Set(['200', '400', '401', '403', '409', '422'])],
   ['DELETE /api/v1/resources/{id}', new Set(['204', '400', '401', '403', '409'])],

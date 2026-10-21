@@ -99,6 +99,23 @@ Production enablement also requires Brevo per-contact tracking consent to be
 enabled with unknown-contact tracking disabled; the adapter sends
 `contactPixelTrackingConsent=false` for every reminder recipient.
 
+MB-670 adds `PUT /api/v1/resource-bingo/{weekStart}/plan-sync` for the current
+local week. Content forwards the owner's bearer and correlation ID to Care's
+current RESOURCE-actions read, then retains at most nine plan tiles without
+catalogue padding. Removed actions become retired items; a plan switch retains
+a separate board. Journey reads return the latest board without changing it.
+`GET /api/v1/resource-completion-evidence` returns the newest exact-version
+completion or measured-practice fact for the owner's requested date, derived
+from its server instant in the requested timezone. No fact returns 404;
+provider/storage unavailability returns 503. Progress PUT accepts an optional
+`resourceVersion` to pin a listed publication snapshot, with 409 for an
+unavailable version. These Content facts do not directly mutate Care state.
+
+Configure the Care query with `CONTENT_CARE_BASE_URL` (default
+`http://localhost:8081`) and `CONTENT_CARE_TIMEOUT_MS` (default 2000 ms, allowed
+100–5000 ms). The forwarded owner JWT authorizes the read; this query has no
+service credential. Care errors leave the stored board unchanged.
+
 ## Stack
 
 - Node.js 22 or newer, strict TypeScript, NestJS 11
@@ -163,6 +180,13 @@ IDENTITY_JWT_CLOCK_TOLERANCE_SECONDS=60
 Identity Service must be configured with the corresponding private key (`IDENTITY_JWT_PRIVATE_KEY`).
 
 ## Migrations
+
+Migration `26_plan_scoped_resource_bingo.sql` makes boards unique per owner,
+local week and SupportPlan, persists latest-sync ordering, and adds nullable
+action identity/version and retirement time to retained items. Existing boards
+are preserved; their first plan-sync binds matching resources and retires
+catalogue padding. Exact resource versions already exist on progress and
+practice facts, so this migration does not rewrite those histories.
 
 The application pool and `node-pg-migrate` share `DATABASE_URL`. Set `sslmode=require` or a stricter verified mode for remote PostgreSQL, then run:
 

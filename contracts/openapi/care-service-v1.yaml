@@ -1,7 +1,7 @@
 openapi: 3.1.0
 info:
   title: MentalBridge Care API
-  version: 1.7.0
+  version: 1.8.0
   description: |
     V1 contracts for the Care-owned profile, platform consent, and PHQ-9 foundation.
     Profile, consent, questionnaire, and assessment paths are implemented. Assessment
@@ -2287,6 +2287,166 @@ paths:
         '404': { $ref: '#/components/responses/SupportPlanOccurrenceNotFoundProblem' }
         '409': { $ref: '#/components/responses/SupportPlanOccurrenceConflictProblem' }
         '412': { $ref: '#/components/responses/SupportPlanOccurrenceVersionProblem' }
+  /api/v2/support-plans/current/resource-actions:
+    x-mentalbridge-status: implemented
+    get:
+      tags: [SupportPlan v3]
+      operationId: getOwnCurrentPlanResourceActions
+      summary: Read the current plan's minimized resource actions in plan order
+      description: |
+        Owner-only USER read for web, mobile and Content. Returns ACTIVE resource
+        actions of the current ACTIVE or PAUSED plan without rationale, why text,
+        screening data or entitlement inference. No current plan returns 200 with
+        planState NONE and an empty actions array. V2_RESOURCE_ADAPTER actions are
+        included with today null and cannot use native resource reconciliation.
+        localDate selects the occurrence projection; it never proves completion.
+      security: [{ bearerAuth: [] }]
+      parameters:
+        - name: localDate
+          in: query
+          required: true
+          schema: { type: string, format: date }
+        - $ref: '#/components/parameters/CorrelationId'
+      responses:
+        '200':
+          description: Current plan resource projection, including an explicit NONE state
+          headers:
+            Cache-Control: { schema: { type: string, const: no-store } }
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/PlanResourceActionsV1' }
+              example:
+                planState: ACTIVE
+                supportPlanId: 71000000-0000-4000-8000-000000000001
+                supportPlanVersion: 3
+                representationMode: NATIVE_V3
+                timeZone: Asia/Ho_Chi_Minh
+                localDate: '2026-10-21'
+                actions:
+                  - actionId: 72000000-0000-4000-8000-000000000001
+                    actionVersion: 1
+                    title: Slow breathing practice
+                    resource:
+                      resourceId: 73000000-0000-4000-8000-000000000001
+                      resourceVersion: '2'
+                      publicationId: 74000000-0000-4000-8000-000000000001
+                    schedule:
+                      scheduleId: 75000000-0000-4000-8000-000000000001
+                      version: 1
+                      schedulePolicyVersion: support-plan-schedule-v3
+                      recurrenceType: DAILY
+                      recurrenceDayOfWeek: null
+                      daysOfWeek: []
+                      preferredDaypart: EVENING
+                      estimatedDurationMinutes: 5
+                      localTime: '19:00:00'
+                      timezone: Asia/Ho_Chi_Minh
+                      effectiveFrom: '2026-10-19'
+                      effectiveUntil: null
+                      reminderEnabled: false
+                      status: ACTIVE
+                    today:
+                      occurrenceId: 76000000-0000-4000-8000-000000000001
+                      timeZone: Asia/Ho_Chi_Minh
+                      occurrenceVersion: 0
+                      displayState: SCHEDULED
+                      completionEvidence: null
+        '400': { $ref: '#/components/responses/ValidationProblem' }
+        '401': { $ref: '#/components/responses/UnauthorizedProblem' }
+        '403': { $ref: '#/components/responses/ForbiddenProblem' }
+  /api/v2/support-plan-occurrences/{occurrenceId}/resource/reconcile:
+    x-mentalbridge-status: implemented
+    post:
+      tags: [SupportPlan v3]
+      operationId: reconcileOwnResourceOccurrence
+      summary: Reconcile one resource occurrence with exact Content-owned evidence
+      description: |
+        Explicit USER command with no request body or client-supplied fact identity.
+        Requires an owned native RESOURCE occurrence of an ACTIVE plan. Care reads
+        Content outside a transaction using the action's exact resource identity
+        and revision and the occurrence date in the plan time zone. A qualifying
+        server occurredAt must fall on that date. One Content fact may complete
+        only one occurrence. An identical accepted retry returns the persisted
+        occurrence without changing its evidence, completion instant or version.
+        A missing fact or dependency failure leaves the occurrence unchanged.
+        Self-confirmation, opening content and resource_learning_completion are
+        never evidence. A completed occurrence cannot be reopened by state PUT.
+      security: [{ bearerAuth: [] }]
+      parameters:
+        - $ref: '#/components/parameters/OccurrenceId'
+        - $ref: '#/components/parameters/RequiredIfMatch'
+        - $ref: '#/components/parameters/CorrelationId'
+      responses:
+        '200':
+          description: Persisted occurrence completed with Content evidence, including identical retries
+          headers:
+            ETag: { $ref: '#/components/headers/SupportPlanETag' }
+            Cache-Control: { schema: { type: string, const: no-store } }
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/ActionOccurrence' }
+              example:
+                occurrenceId: 76000000-0000-4000-8000-000000000001
+                actionId: 72000000-0000-4000-8000-000000000001
+                actionType: RESOURCE
+                actionVersion: 1
+                scheduleId: 75000000-0000-4000-8000-000000000001
+                scheduleVersion: 1
+                representationMode: NATIVE_V3
+                version: 1
+                localDate: '2026-10-21'
+                scheduledAt: '2026-10-21T12:00:00Z'
+                state: COMPLETED
+                displayState: COMPLETED
+                stateReason: null
+                completionEvidence:
+                  kind: RESOURCE_PRACTICE_SESSION
+                  ownerDomain: CONTENT
+                  factId: 77000000-0000-4000-8000-000000000001
+                  factRevision: '2'
+                  occurredAt: '2026-10-21T12:00:00Z'
+                  verifiedAt: '2026-10-21T12:02:00Z'
+                outcomeRecordedAt: '2026-10-21T12:00:00Z'
+        '400': { $ref: '#/components/responses/ValidationProblem' }
+        '401': { $ref: '#/components/responses/UnauthorizedProblem' }
+        '403': { $ref: '#/components/responses/ForbiddenProblem' }
+        '404': { $ref: '#/components/responses/SupportPlanOccurrenceNotFoundProblem' }
+        '409':
+          description: RESOURCE_EVIDENCE_NOT_FOUND, RESOURCE_EVIDENCE_ALREADY_USED, SUPPORT_PLAN_NOT_ACTIVE, OCCURRENCE_NOT_OPEN or RESOURCE_ACTION_REQUIRED; occurrence unchanged
+          content:
+            application/problem+json:
+              schema: { $ref: '#/components/schemas/Problem' }
+              example:
+                type: https://mentalbridge.io/errors/RESOURCE_EVIDENCE_NOT_FOUND
+                title: Resource completion evidence not found
+                status: 409
+                detail: No exact-version Content fact belongs to this occurrence date.
+                code: RESOURCE_EVIDENCE_NOT_FOUND
+                correlationId: 78000000-0000-4000-8000-000000000001
+        '412':
+          description: OCCURRENCE_VERSION_MISMATCH; reload the occurrence and its ETag
+          content:
+            application/problem+json:
+              schema: { $ref: '#/components/schemas/Problem' }
+              example:
+                type: https://mentalbridge.io/errors/OCCURRENCE_VERSION_MISMATCH
+                title: Occurrence version mismatch
+                status: 412
+                detail: The occurrence changed since it was read.
+                code: OCCURRENCE_VERSION_MISMATCH
+                correlationId: 78000000-0000-4000-8000-000000000001
+        '503':
+          description: RESOURCE_EVIDENCE_UNAVAILABLE; Content evidence could not be verified and occurrence is unchanged
+          content:
+            application/problem+json:
+              schema: { $ref: '#/components/schemas/Problem' }
+              example:
+                type: https://mentalbridge.io/errors/RESOURCE_EVIDENCE_UNAVAILABLE
+                title: Resource evidence unavailable
+                status: 503
+                detail: Content evidence could not be verified. Retry later.
+                code: RESOURCE_EVIDENCE_UNAVAILABLE
+                correlationId: 78000000-0000-4000-8000-000000000001
   /api/v2/support-plan-occurrences/{occurrenceId}/emotion-check-in/reconcile:
     x-mentalbridge-status: implemented
     post:
@@ -5518,6 +5678,78 @@ components:
           oneOf:
             - { $ref: '#/components/schemas/SupportPlanV3' }
             - { type: 'null' }
+    PlanResourceActionsV1:
+      type: object
+      additionalProperties: false
+      required: [planState, localDate, actions]
+      properties:
+        planState: { type: string, enum: [ACTIVE, PAUSED, NONE] }
+        supportPlanId: { type: string, format: uuid }
+        supportPlanVersion: { type: integer, minimum: 0 }
+        representationMode: { type: string, enum: [NATIVE_V3, V2_RESOURCE_ADAPTER] }
+        timeZone:
+          type: string
+          minLength: 1
+          maxLength: 64
+          description: Plan time zone used for weekly board boundaries.
+        localDate: { type: string, format: date }
+        actions:
+          type: array
+          description: ACTIVE RESOURCE actions in plan order, without rationale or treatment meaning.
+          items: { $ref: '#/components/schemas/PlanResourceAction' }
+      allOf:
+        - if: { properties: { planState: { enum: [ACTIVE, PAUSED] } }, required: [planState] }
+          then:
+            required: [supportPlanId, supportPlanVersion, representationMode, timeZone]
+        - if: { properties: { planState: { const: NONE } }, required: [planState] }
+          then:
+            properties:
+              actions: { maxItems: 0 }
+    PlanResourceAction:
+      type: object
+      additionalProperties: false
+      required: [actionId, actionVersion, title, resource, schedule, today]
+      properties:
+        actionId:
+          type: string
+          minLength: 1
+          maxLength: 128
+          description: Native action UUID or v2 adapter slot identity.
+        actionVersion: { type: integer, minimum: 0 }
+        title: { type: string, minLength: 1, maxLength: 255 }
+        resource:
+          type: object
+          additionalProperties: false
+          required: [resourceId, resourceVersion, publicationId]
+          properties:
+            resourceId: { type: string, format: uuid }
+            resourceVersion: { type: string, pattern: '^(0|[1-9][0-9]*)$', maxLength: 19 }
+            publicationId: { type: string, format: uuid }
+        schedule:
+          description: Current action schedule, or null when no schedule applies.
+          oneOf:
+            - { $ref: '#/components/schemas/ActionSchedule' }
+            - { type: 'null' }
+        today:
+          description: Occurrence for localDate, or null for an unscheduled date or V2_RESOURCE_ADAPTER.
+          oneOf:
+            - type: 'null'
+            - type: object
+              additionalProperties: false
+              required: [occurrenceId, occurrenceVersion, displayState, completionEvidence]
+              properties:
+                occurrenceId: { type: string, format: uuid }
+                occurrenceVersion: { type: integer, minimum: 0 }
+                timeZone:
+                  type: string
+                  minLength: 1
+                  maxLength: 64
+                  description: Pinned occurrence IANA time zone used to determine its local today and reconcile evidence.
+                displayState: { type: string, enum: [SCHEDULED, OVERDUE, COMPLETED, SKIPPED, CANCELLED] }
+                completionEvidence:
+                  oneOf:
+                    - { $ref: '#/components/schemas/CompletionEvidence' }
+                    - { type: 'null' }
     EmotionCheckInOccurrenceReconciliation:
       type: object
       additionalProperties: false
@@ -5675,7 +5907,17 @@ components:
               state: { enum: [SCHEDULED, SKIPPED, CANCELLED] }
             required: [representationMode, state]
           then: { properties: { completionEvidence: { type: 'null' } } }
-        - if: { properties: { actionType: { enum: [RESOURCE, ROUTINE_SELF_MANAGEMENT] } }, required: [actionType] }
+        - if: { properties: { actionType: { const: RESOURCE } }, required: [actionType] }
+          then:
+            properties:
+              completionEvidence:
+                oneOf:
+                  - { type: 'null' }
+                  - allOf:
+                      - { $ref: '#/components/schemas/CompletionEvidence' }
+                      - properties:
+                          kind: { enum: [USER_ACKNOWLEDGEMENT, RESOURCE_PRACTICE_SESSION, RESOURCE_COMPLETION] }
+        - if: { properties: { actionType: { const: ROUTINE_SELF_MANAGEMENT } }, required: [actionType] }
           then:
             properties:
               completionEvidence:
@@ -5749,8 +5991,9 @@ components:
         kind:
           type: string
           enum: [USER_ACKNOWLEDGEMENT, JOURNAL_ENTRY, EMOTION_CHECK_IN,
-            APPOINTMENT_FULFILMENT, ASSESSMENT_HISTORY, SELF_REPORT_REVIEW]
-        ownerDomain: { type: string, enum: [CARE, JOURNAL_AI, CONSULTATION] }
+            APPOINTMENT_FULFILMENT, ASSESSMENT_HISTORY, SELF_REPORT_REVIEW,
+            RESOURCE_PRACTICE_SESSION, RESOURCE_COMPLETION]
+        ownerDomain: { type: string, enum: [CARE, JOURNAL_AI, CONSULTATION, CONTENT] }
         factId:
           type: string
           minLength: 1
@@ -5760,6 +6003,14 @@ components:
         occurredAt: { type: string, format: date-time }
         verifiedAt: { type: string, format: date-time }
       allOf:
+        - if:
+            properties:
+              kind: { enum: [RESOURCE_PRACTICE_SESSION, RESOURCE_COMPLETION] }
+            required: [kind]
+          then:
+            properties:
+              ownerDomain: { const: CONTENT }
+              factRevision: { type: string, pattern: '^(0|[1-9][0-9]*)$', maxLength: 19 }
         - if:
             properties:
               kind: { enum: [JOURNAL_ENTRY, EMOTION_CHECK_IN] }

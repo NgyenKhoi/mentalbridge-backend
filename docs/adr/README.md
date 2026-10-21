@@ -33,8 +33,9 @@ accepted status is not claimed before approval and merge.
 | [0039-livekit-cloud-video-consultation.md](0039-livekit-cloud-video-consultation.md) | `MB-LIVEKIT-VIDEO-001` | Accepted provider/access/privacy/retention/completion command; automatic timeout settlement not approved | LiveKit Cloud transport with appointment-scoped tokens, verified minimized evidence and 90-day hold-aware retention |
 | [0040-support-plan-companion-contract.md](0040-support-plan-companion-contract.md) | `MB-SUPPORT-PLAN-COMPANION-001` | Proposed for MB-647 review | Freezes the optional SupportPlan Companion role, intent/context boundary, interaction states, interruption rules, deterministic fallback and cross-client UX contract |
 | [0041-specialist-credential-review.md](0041-specialist-credential-review.md) | `MB-SPECIALIST-CREDENTIAL-001` | Accepted direction | Adds private specialist credentials, ADMIN verification, owner-controlled badges, and `zh`/`fr` profile languages |
+| [0043-plan-scoped-resource-progress.md](0043-plan-scoped-resource-progress.md) | `MB-PLAN-RESOURCE-PROGRESS-001` | Accepted for MB-670 implementation | Care-owned minimized plan resources, Content-owned plan-scoped Bingo and exact-version completion facts, and bounded Care occurrence reconciliation |
 
-For clauses explicitly amended by ADR 0022, ADR 0024, or ADR 0034, the relevant
+For clauses explicitly amended by ADR 0022, ADR 0024, ADR 0034, or ADR 0043, the relevant
 latest amendment is the current prospective authority. Historical records keep
 their original policy/version.
 

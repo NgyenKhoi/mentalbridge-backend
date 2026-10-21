@@ -62,6 +62,15 @@ public class SupportPlanActivityOccurrenceService {
 		this.objectMapper = objectMapper;
 	}
 
+	String planTimezone(SupportPlanEntity plan) {
+		if (plan.cycleTimezone() != null) return plan.cycleTimezone();
+		return schedules.findBySupportPlanIdOrderByOrdinal(plan.id()).stream()
+				.filter(value -> List.of("ACTIVE", "PAUSED").contains(value.status()))
+				.map(SupportPlanActivityScheduleEntity::timezone).findFirst()
+				.orElseGet(() -> profiles.findTimezoneByAccountId(plan.userId()).orElseThrow(() ->
+						new ApiException(HttpStatus.NOT_FOUND, "PROFILE_NOT_FOUND", "Care profile was not found")));
+	}
+
 	@Transactional
 	void activateUserDraft(SupportPlanEntity plan, Instant now) {
 		assertCurrentPersonalization(plan);
@@ -421,7 +430,7 @@ public class SupportPlanActivityOccurrenceService {
 			throw new ApiException(HttpStatus.CONFLICT, "OCCURRENCE_NOT_OPEN",
 					"Only a scheduled native action occurrence accepts completion evidence");
 		}
-		var existingOccurrenceId = occurrences.findOccurrenceIdByEvidence(fact.ownerDomain(), fact.kind(),
+		var existingOccurrenceId = occurrences.findOccurrenceIdByEvidence(userId, fact.ownerDomain(), fact.kind(),
 				fact.factId(), fact.factRevision());
 		if (existingOccurrenceId.isPresent() && !existingOccurrenceId.get().equals(occurrenceId)) {
 			throw evidenceAlreadyUsed();

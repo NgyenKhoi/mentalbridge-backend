@@ -1099,8 +1099,8 @@ generation idempotent.
 | `source_slot_key` / `source_resource_id` / `source_content_version` | Required exact v2 slot and Content-version snapshot; all are null for a native v3 occurrence. |
 | `source_action_id` / `source_action_version` / `source_action_type` | Required exact native v3 action snapshot; all are null for v2. One foreign key blocks cross-plan, cross-owner, or type substitution, and a second binds the entire plan/action/version snapshot to the originating schedule; the snapshotted revision remains stable if the current action lifecycle version advances. |
 | `source_title` | Reviewed user-facing title snapshot for either source branch. |
-| `evidence_owner` / `evidence_kind` / `evidence_id` / `evidence_revision` | Minimal native v3 completion reference: Care acknowledgement for Resource/routine, Care review submission, Journal entry/check-in fact, Consultation appointment fulfilment, or Care assessment history. Authority/kind must match the action type; no raw source content is copied. Journal `JOURNAL_ENTRY` and emotion facts use immutable creation revision `1`, not a mutable private-content revision. A partial unique index prevents the same authoritative fact revision from satisfying more than one occurrence. |
-| `evidence_occurred_at` / `evidence_verified_at` | UTC source-fact occurrence and Care verification instants, with verification no earlier than occurrence. Journal writing facts use server-generated entry `createdAt`, not the private entry's user-selected `occurredAt` or revision timestamp; the instant must fall on the occurrence day in its schedule timezone and after activation. Accepted historical evidence survives source revision/deletion. Evidence is absent unless a native v3 occurrence is `COMPLETED`. |
+| `evidence_owner` / `evidence_kind` / `evidence_id` / `evidence_revision` | Minimal native v3 completion reference: Care acknowledgement for Resource/routine, Content `RESOURCE_PRACTICE_SESSION` or `RESOURCE_COMPLETION` for Resource, Care review submission, Journal entry/check-in fact, Consultation appointment fulfilment, or Care assessment history. Authority/kind must match the action type; no raw source content is copied. Content revision is the exact resource version; practice ID is the session UUID, completion ID is `<resourceId>:<localDate>` of the owner's completed daily row. Journal `JOURNAL_ENTRY` and emotion facts use immutable creation revision `1`. The partial unique index includes `user_id`, preventing the same owner fact revision from satisfying multiple occurrences without colliding across owners' resource/date completion IDs. |
+| `evidence_occurred_at` / `evidence_verified_at` | UTC source-fact occurrence and verification instants, with verification no earlier than occurrence. Journal writing facts use server-generated entry `createdAt`; the instant must fall on the occurrence day in its schedule timezone and after activation. Content uses progress `completed_at` or practice server `completed_at - duration_seconds`, including historical sessions with client-supplied `started_at`; its fact instant must fall on the occurrence day in the occurrence's pinned timezone, never merely match a client-selected local date. Accepted historical evidence survives source revision/deletion. Evidence is absent unless a native v3 occurrence is `COMPLETED`. |
 | `version` | Optimistic counter required by explicit user state updates. |
 | `created_at` / `updated_at` | UTC insertion and latest accepted transition instants. |
 | `completed_at` / `skipped_at` / `cancelled_at` | Exactly the timestamp matching the persisted terminal state; all null while scheduled. |
@@ -2129,17 +2129,17 @@ The fixed UUID `00000000-0000-4000-8000-000000000101` identifies a visibly label
 
 ### `content.resource_daily_progress`
 
-Owner-scoped, non-clinical participation state for one reviewed resource on one local calendar day. It supports consistent checklist/progress presentation and never changes SupportPlan occurrence history, screening results, or clinical decisions.
+Owner-scoped, non-clinical participation state for one reviewed resource on one local calendar day. It supports consistent checklist/progress presentation. An exact-version completed row can supply a bounded Content fact to Care's explicit reconcile command; the save itself does not mutate a SupportPlan occurrence, screening result, or clinical decision.
 
 | Field                  | Purpose                                                                                                                                                                                                |
 | ---------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ |
 | `owner_id`             | External Identity account UUID from the verified JWT; it scopes every read and write and is not copied from request content.                                                                           |
 | `resource_id`          | Content-owned resource UUID whose reviewed activity the owner followed. The local foreign key prevents progress for an unknown resource.                                                               |
 | `local_date`           | User-selected calendar date in `YYYY-MM-DD` form used to group the gentle daily experience; it is not an adherence deadline.                                                                           |
-| `resource_version`     | Exact resource version visible when the progress was last saved, retained so later catalogue edits cannot be presented as the content originally followed.                                             |
+| `resource_version`     | Exact immutable listed publication version actually used. An optional pinned version is validated on save; supplying a different version for an already completed daily row returns `409` before changing it. Omission retains current-version input behavior and preserves the recorded completed version. Completion evidence matches the recorded version exactly. |
 | `status`               | Lightweight participation state: `IN_PROGRESS` or terminal `COMPLETED`; once confirmed for the resource and local date, later checklist edits cannot downgrade it. Absence of a row means not started. |
 | `completed_action_ids` | Bounded identifiers of the user's current interactive-step selections for that resource version; they remain editable after completion and contain no journal, reflection, or other free text.         |
-| `completed_at`         | UTC instant when the item first reached `COMPLETED`; null while in progress and preserved permanently after confirmation, including across later checklist edits.                                      |
+| `completed_at`         | Server UTC instant when the item first reached `COMPLETED`; null while in progress and preserved after confirmation. This instant converted to the requested IANA zone establishes an evidence date; the row's client-selected `local_date` does not prove when completion occurred. |
 | `created_at`           | Immutable UTC insertion instant for the daily progress row.                                                                                                                                            |
 | `updated_at`           | UTC instant of the latest changed progress state or action set.                                                                                                                                        |
 | `version`              | Monotonic mutation counter for diagnosing multi-surface synchronization; identical replacement writes are no-ops.                                                                                      |
@@ -2153,6 +2153,15 @@ Durable owner-scoped proof that a one-time learning resource was confirmed once.
 ### `content.resource_practice_session`
 
 Repeatable practice history. `id` is a client-generated idempotency key for one deliberate completion, so retries do not duplicate a session while multiple sessions on the same day remain representable. `support_plan_id` must come from the persisted daily assignment; direct/out-of-plan progress never creates streak evidence. `started_at` and `duration_seconds` retain optional measured session metadata. Only sessions for the current plan and resources with `streak_eligible=true` count toward practice streak.
+
+For MB-670, action-bound Bingo and Care evidence do not require a Journey
+assignment. They require the same owner, exact used `resource_version`, a
+server start instant derived at read time from `completed_at` minus measured
+`duration_seconds` from 60 through 7200 seconds, including historical sessions.
+Deprecated request `practiceStartedAt` and stored historical client `started_at`
+never supply evidence; a client-supplied calendar date is not proof either.
+The session UUID identifies `RESOURCE_PRACTICE_SESSION`; its exact resource
+version is the fact revision. Learning-completion rows are not this evidence.
 
 ### `content.resource_reward_preference`
 
@@ -2197,14 +2206,33 @@ Persisted, owner/date-scoped daily challenge derived from an authoritative activ
 
 ### `content.resource_weekly_bingo` and `content.resource_weekly_bingo_item`
 
-Persisted Monday-based board derived from the same plan snapshot. The unique
-owner/week key prevents reshuffling during the week. The board `version` and
-`updated_at` provide a strong ETag concurrency boundary. Each item retains the
-exact `resource_version` and may store a reversible `self_confirmed_at` owner
-statement. The read model computes verified evidence from exact-version,
-same-plan daily completion or eligible measured practice; it never copies that
-evidence onto the board. Self-confirmation and Content verification remain
-separate, and neither a skipped nor a fully checked board has clinical meaning.
+Persisted Monday-based board materialized only by current-week plan-sync from
+Care's minimized owner projection. The unique owner/week/SupportPlan key
+preserves prior plan boards as history. Journey reads the latest board and
+never writes it. The board `version` and `updated_at` provide a strong ETag
+boundary; identical syncs preserve both. Every retained row, including retired
+rows, counts toward the nine-item limit. Only plan resources create new items.
+
+| Field | Purpose |
+| --- | --- |
+| Board `id` / `owner_id` | Content board UUID and verified external Identity owner. Every lookup and advisory lock is owner-scoped. |
+| Board `week_start` / `time_zone` | Local Monday and IANA zone used to interpret server fact instants; past weeks cannot be resynced. |
+| Board `support_plan_id` / `support_plan_version` | External Care identity and last observed projection revision; no cross-owner foreign key. Plan version alone does not replace item identity or reset owner checks. |
+| Board `plan_tags` | Legacy bounded plan metadata; the minimized MB-670 projection supplies no diagnosis, rationale, or treatment data. |
+| Board `created_at` / `updated_at` / `version` | Insertion instant, effective board-change instant and ETag counter. Effective changes allocate the next unused version across the owner's boards for that week under the advisory lock, preventing stale cross-plan ETag collisions. No-op syncs preserve the existing version. |
+| Board `last_synced_at` | Server UTC instant used to select the most recently synced board when an owner revisits an existing plan in the same week. Independent of effective state changes and ETag version; migration initializes legacy boards. |
+| Item `board_id` / `ordinal` | Physical board child and retained position, with at most nine rows. Retirement never frees an ordinal or deletes personal history. |
+| Item `resource_id` / `resource_version` | Exact immutable local publication reference. The unique resource-per-board rule collapses multiple plan actions for one resource onto a single tile. |
+| Item `support_plan_action_id` / `support_plan_action_version` | Nullable paired external Care action identity and last observed revision; both null for legacy rows. Version must be non-negative when present. Identity ignores action-version bumps so v2 adapter revisions do not churn tiles. |
+| Item `retired_at` | Nullable server UTC instant of retirement when an action leaves the plan or Care reports `NONE`. Retired rows retain ordinal and owner check, remain readable, count toward capacity and reject self-confirmation. Rebinding a returning resource clears retirement. |
+| Item `self_confirmed_at` | Nullable reversible owner-statement instant. A resource-version rebind clears it; removal/retirement preserves it. It never supplies a completion fact. |
+
+The read model computes exact-version Content evidence rather than copying it
+onto a board. Action-bound items use completed progress or eligible measured
+practice whose server instant falls inside the board week in its zone; legacy
+items additionally retain same-plan assignment binding. Self-confirmation and
+Content verification remain separate, and neither skipped nor fully checked
+boards have clinical meaning.
 For boards predating exact-version persistence, migration binds an item only to
 the latest publication snapshot available at the board creation instant. An
 item without recoverable publication provenance is removed rather than guessed;
