@@ -19,6 +19,7 @@ const expectedAvailability = new Map([
   ['GET /metrics', 'implemented'],
   ['POST /internal/v1/socket-credentials', 'implemented'],
   ['POST /internal/v1/community/socket-credentials', 'implemented'],
+  ['POST /api/v1/community/socket-credentials', 'planned'],
   ['GET /api/v1/conversations/{conversationId}/messages', 'implemented'],
 ]);
 const actualAvailability = new Map();
