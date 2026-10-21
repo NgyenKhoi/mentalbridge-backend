@@ -18,8 +18,11 @@ remains frozen in proposals with its original planned markers. Its closed
 [durable facts](proposals/community-chat-fact-v1.schema.json) define the accepted target.
 MB-685 registers only the delivered direct-provider subset and promotes the
 unchanged fact shape under `events/community/`. MB-687 adds nine private-group
-lifecycle operations and exact-message report intake; socket, internal delegation
-and ADMIN case operations remain future runtime work. See [ADR 0042](../docs/adr/0042-community-chat-contract.md).
+lifecycle operations and exact-message report intake. MB-689 promotes signed
+internal projections and isolated socket delivery; MB-690 adds presence-only
+foreground heartbeat, presence events and current authorized peer projections.
+Typing/shared receipts and ADMIN case operations remain future runtime work.
+See [ADR 0042](../docs/adr/0042-community-chat-contract.md).
 Existing appointment and Community interaction schemas are unchanged.
 
 Every OpenAPI path item declares `x-mentalbridge-status` when all methods share one state. A mixed path declares it on each operation instead:

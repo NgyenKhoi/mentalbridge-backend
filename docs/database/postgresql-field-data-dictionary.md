@@ -2846,7 +2846,7 @@ These tables belong only to `mentalbridge_community`. Liquibase `0017-community-
 | `id` | Stable envelope message UUID reused by every relay attempt. |
 | `conversation_id` | Owner-local aggregate pointer and Kafka partition key; cascading aggregate erasure removes queued content-free facts. |
 | `deduplication_key` | Unique aggregate revision/kind/target/recipient identity, preventing repeated logical facts on retry. |
-| `event_payload` | Closed minimized Community chat fact only; excludes text, group name, email, clinical data and credentials. |
+| `event_payload` | Closed minimized Community chat fact only; excludes text, group name, email, clinical data and credentials. MB-689 adds recipient-self `READ_STATE_CHANGED` with only conversation and routing references when the existing private watermark advances. It carries neither unread count nor read-message ID; Realtime obtains fresh owner state. No new domain column or migration is introduced. |
 | `occurred_at` | Owner occurrence instant truncated to UTC microseconds before persistence/serialization. |
 | `published_at` | Nullable Kafka acknowledgement instant; only an acknowledged publish marks completion. |
 | `attempt_count` | Persisted bounded-backoff attempt number; no volatile offset or process-local retry authority. |

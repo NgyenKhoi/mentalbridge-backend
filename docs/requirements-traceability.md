@@ -13,7 +13,14 @@ Community PostgreSQL. Identity exposes only current eligible USER IDs through a
 dedicated internal credential. MB-687 adds private group roles/invitations,
 epoch-bounded history/read/unread and isolated exact-message report intake;
 see [MB-687 evidence](story-mb-687-private-groups-evidence.md). Clients, delegated
-transport/notification checks, case administration and consumers remain downstream. The Realtime/MongoDB ownership below
+notification checks, case administration and consumers remain downstream. MB-689
+adds signed owner authorization/exact-message projections, namespace-isolated
+credentials, ordered fanout and cross-device unread repair; see
+[MB-689 evidence](story-mb-689-realtime-community-evidence.md). MB-690 adds
+presence-only foreground TTL leases, multi-device aggregation, current
+opt-in/invisible/block/membership projections and generic badge invalidation;
+see [MB-690 evidence](story-mb-690-community-presence-evidence.md). Its runtime
+does not include typing/shared receipts or UI. The Realtime/MongoDB ownership below
 remains the unchanged appointment baseline. See the
 [MB-685 evidence](story-mb-685-direct-chat-evidence.md).
 

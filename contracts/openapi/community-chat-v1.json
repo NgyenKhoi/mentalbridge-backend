@@ -2,8 +2,8 @@
   "openapi": "3.1.0",
   "info": {
     "title": "MentalBridge Community direct chat API",
-    "version": "1.1.0",
-    "description": "Implemented MB-685 provider subset of accepted ADR 0042 / MB-684. Feature enablement requires versioned encryption and current Identity authorization. Groups, service projections and socket delivery remain downstream capabilities."
+    "version": "1.2.0",
+    "description": "Community direct/group chat and MB-689 current signed realtime projections. Community remains authoritative for content and unread; no notification/presence implementation is claimed."
   },
   "x-mentalbridge-decision": "MB-COMMUNITY-CHAT-001",
   "servers": [
@@ -1503,6 +1503,351 @@
           }
         }
       }
+    },
+    "/internal/v1/community/chat/realtime-authorizations": {
+      "x-mentalbridge-status": "implemented",
+      "x-mentalbridge-owner": "community-service",
+      "post": {
+        "operationId": "authorizeCommunityRealtime",
+        "summary": "authorize Community Realtime",
+        "description": "Community verifies authenticated service and signed short-lived USER delegation with exact audience/subject/action. Raw X-User/actor headers are not trusted. This boolean decision supports current subscribe/ephemeral visibility checks only; it is never a reusable permission grant or a way to fetch message content. Message fanout must use readCommunityMessageProjection for the exact message and viewer. MB-689 implements SUBSCRIBE only; ephemeral actions remain MB-690 and are rejected.",
+        "x-mentalbridge-role": "SERVICE",
+        "security": [
+          {
+            "RealtimeDelegation": []
+          }
+        ],
+        "parameters": [],
+        "responses": {
+          "200": {
+            "description": "Authoritative owner result; no optimistic success.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/AuthorizationResult"
+                }
+              }
+            }
+          },
+          "400": {
+            "$ref": "#/components/responses/InvalidRequest"
+          },
+          "401": {
+            "$ref": "#/components/responses/Unauthenticated"
+          },
+          "403": {
+            "$ref": "#/components/responses/Forbidden"
+          },
+          "404": {
+            "$ref": "#/components/responses/TargetUnavailable"
+          },
+          "409": {
+            "$ref": "#/components/responses/Conflict"
+          },
+          "429": {
+            "$ref": "#/components/responses/RateLimited"
+          },
+          "503": {
+            "$ref": "#/components/responses/DependencyUnavailable"
+          }
+        },
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/RealtimeAuthorization"
+              }
+            }
+          }
+        }
+      }
+    },
+    "/internal/v1/community/chat/message-projections": {
+      "x-mentalbridge-status": "implemented",
+      "x-mentalbridge-owner": "community-service",
+      "post": {
+        "operationId": "readCommunityMessageProjection",
+        "summary": "Read one currently authorized message for an exact delegated viewer",
+        "description": "One read-only projection per exact conversation/message/viewer under RealtimeMessageReadDelegation. In the same consistent owner read, validate trusted service signature, audience/scope/expiry and target binding, resolve the signed USER subject, check current account/relationship/block/membership epoch/revocation and message visibility, then return only that Message. Never authorize separately then fetch content with a reusable boolean grant. Repeat the read for every recipient and replay; Realtime must discard queued projections on revocation, reauthorize immediately before fanout and must not retain a positive grant or raw content cache. Any known revocation wins over a queued send. A guessed/wrong-conversation/inaccessible message, blocked viewer, removed member, outsider or prior-epoch target is uniformly 404 TARGET_UNAVAILABLE. Invalid signed identity/audience is 401; wrong service/scope is 403; claims/body target mismatch is 404; unknown body identity selectors are 400. Owner dependency failure is 503 and never returns stale content. No Idempotency-Key on this read.",
+        "x-mentalbridge-role": "SERVICE",
+        "security": [
+          {
+            "RealtimeMessageReadDelegation": []
+          }
+        ],
+        "parameters": [],
+        "responses": {
+          "200": {
+            "description": "Fresh current-viewer Message only; no independent permission grant. Never cache.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Message"
+                }
+              }
+            },
+            "headers": {
+              "Cache-Control": {
+                "schema": {
+                  "const": "no-store"
+                },
+                "description": "Private projection must not be cached."
+              }
+            }
+          },
+          "400": {
+            "$ref": "#/components/responses/InvalidRequest"
+          },
+          "401": {
+            "$ref": "#/components/responses/Unauthenticated"
+          },
+          "403": {
+            "$ref": "#/components/responses/Forbidden"
+          },
+          "404": {
+            "$ref": "#/components/responses/TargetUnavailable"
+          },
+          "429": {
+            "$ref": "#/components/responses/RateLimited"
+          },
+          "503": {
+            "$ref": "#/components/responses/DependencyUnavailable"
+          }
+        },
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/MessageProjectionRequest"
+              }
+            }
+          }
+        },
+        "x-mentalbridge-denials": {
+          "WRONG_AUDIENCE": {
+            "status": 401,
+            "code": "UNAUTHENTICATED"
+          },
+          "WRONG_SCOPE": {
+            "status": 403,
+            "code": "FORBIDDEN"
+          },
+          "CONVERSATION_MISMATCH": {
+            "status": 404,
+            "code": "TARGET_UNAVAILABLE"
+          },
+          "MESSAGE_MISMATCH": {
+            "status": 404,
+            "code": "TARGET_UNAVAILABLE"
+          },
+          "BLOCKED_VIEWER": {
+            "status": 404,
+            "code": "TARGET_UNAVAILABLE"
+          },
+          "REVOKED_MEMBER": {
+            "status": 404,
+            "code": "TARGET_UNAVAILABLE"
+          },
+          "OUTSIDER": {
+            "status": 404,
+            "code": "TARGET_UNAVAILABLE"
+          },
+          "PRIOR_MEMBERSHIP_EPOCH": {
+            "status": 404,
+            "code": "TARGET_UNAVAILABLE"
+          },
+          "INACTIVE_VIEWER": {
+            "status": 404,
+            "code": "TARGET_UNAVAILABLE"
+          },
+          "OWNER_UNAVAILABLE": {
+            "status": 503,
+            "code": "DEPENDENCY_UNAVAILABLE"
+          },
+          "MESSAGE_NOT_IN_CONVERSATION": {
+            "status": 404,
+            "code": "TARGET_UNAVAILABLE"
+          }
+        }
+      }
+    },
+    "/internal/v1/community/chat/session-authorizations": {
+      "x-mentalbridge-status": "implemented",
+      "x-mentalbridge-owner": "community-service",
+      "post": {
+        "operationId": "authorizeCommunitySession",
+        "summary": "authorizeCommunitySession",
+        "description": "Signed realtime-service delegation with audience community-service and scope community:session:authorize, lifetime at most 30s. Resolve current active USER and unrestricted Community profile; no unsigned actor selectors.",
+        "x-mentalbridge-role": "SERVICE",
+        "security": [
+          {
+            "RealtimeDelegation": []
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Current authorized owner projection; never cache.",
+            "headers": {
+              "Cache-Control": {
+                "schema": {
+                  "const": "no-store"
+                }
+              }
+            },
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/AuthorizationResult"
+                }
+              }
+            }
+          },
+          "400": {
+            "$ref": "#/components/responses/InvalidRequest"
+          },
+          "401": {
+            "$ref": "#/components/responses/Unauthenticated"
+          },
+          "403": {
+            "$ref": "#/components/responses/Forbidden"
+          },
+          "404": {
+            "$ref": "#/components/responses/TargetUnavailable"
+          },
+          "429": {
+            "$ref": "#/components/responses/RateLimited"
+          },
+          "503": {
+            "$ref": "#/components/responses/DependencyUnavailable"
+          }
+        }
+      }
+    },
+    "/internal/v1/community/chat/replay-projections": {
+      "x-mentalbridge-status": "implemented",
+      "x-mentalbridge-owner": "community-service",
+      "post": {
+        "operationId": "readCommunityReplayProjection",
+        "summary": "readCommunityReplayProjection",
+        "description": "Signed scope community:replay:project bound to the exact conversation and viewer. cursor=null establishes the current tail and returns no message IDs. Otherwise return up to 50 currently eligible message IDs in private ascending order, an opaque authenticated viewer/membership/visibility cursor, hasMore and absolute private ReadResult. Filter before pagination. The cursor never advances because of hidden traffic. It is an ephemeral live-delivery watermark, not a permission grant. Exact message content must be fetched separately for every recipient immediately before emit. Stale epochs return TARGET_UNAVAILABLE; establish a fresh tail and repair via public REST history without rebroadcasting old messages. No sequence is public.",
+        "x-mentalbridge-role": "SERVICE",
+        "security": [
+          {
+            "RealtimeDelegation": []
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/ReplayProjectionRequest"
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Current authorized owner projection; never cache.",
+            "headers": {
+              "Cache-Control": {
+                "schema": {
+                  "const": "no-store"
+                }
+              }
+            },
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ReplayProjection"
+                }
+              }
+            }
+          },
+          "400": {
+            "$ref": "#/components/responses/InvalidRequest"
+          },
+          "401": {
+            "$ref": "#/components/responses/Unauthenticated"
+          },
+          "403": {
+            "$ref": "#/components/responses/Forbidden"
+          },
+          "404": {
+            "$ref": "#/components/responses/TargetUnavailable"
+          },
+          "429": {
+            "$ref": "#/components/responses/RateLimited"
+          },
+          "503": {
+            "$ref": "#/components/responses/DependencyUnavailable"
+          }
+        }
+      }
+    },
+    "/internal/v1/community/chat/presence-projections": {
+      "x-mentalbridge-status": "implemented",
+      "x-mentalbridge-owner": "community-service",
+      "post": {
+        "operationId": "projectCommunityPresence",
+        "summary": "Project currently authorized Community presence peers",
+        "description": "Read-only, conversation-bound community:presence:project delegation. Community checks current USER eligibility, accepted direct relationship or current group membership, bilateral blocks/restrictions, subject presence opt-in and invisible mode before returning only eligible other current peers. Hidden subjects produce no row or denial reason. subjectRoutingReference is private Realtime-only routing, never a client field, cached grant, last-seen or durable presence fact. Reauthorize every fanout, including after Redis reads; no stale permission fallback. Wrong actor/scope is 403, signed target mismatch or inaccessible conversation 404, dependency uncertainty 503. Unknown body identity selectors are 400. No Idempotency-Key.",
+        "x-mentalbridge-role": "SERVICE",
+        "security": [
+          {
+            "RealtimeDelegation": []
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/PresenceProjectionQuery"
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Current authorized other peers only; no-store. Empty peers reveals no hidden subject identity.",
+            "headers": {
+              "Cache-Control": {
+                "schema": {
+                  "const": "no-store"
+                }
+              }
+            },
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/PresenceProjection"
+                }
+              }
+            }
+          },
+          "400": {
+            "$ref": "#/components/responses/InvalidRequest"
+          },
+          "401": {
+            "$ref": "#/components/responses/Unauthenticated"
+          },
+          "403": {
+            "$ref": "#/components/responses/Forbidden"
+          },
+          "404": {
+            "$ref": "#/components/responses/TargetUnavailable"
+          },
+          "429": {
+            "$ref": "#/components/responses/RateLimited"
+          },
+          "503": {
+            "$ref": "#/components/responses/DependencyUnavailable"
+          }
+        }
+      }
     }
   },
   "components": {
@@ -2703,6 +3048,105 @@
           }
         },
         "description": "Decoded signed JWT claims, never a JSON request body. Community verifies a trusted Realtime signature/algorithm/key, issuer, actor service, exact audience/scope, active USER subject, 0 < exp-iat <= 30 seconds and iat <= now < exp. Exact target claims must match the request and owned message. No unsigned identity headers or client-minted delegation. Shape validation alone is not authentication."
+      },
+      "ReplayProjectionRequest": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": [
+          "conversationId",
+          "cursor"
+        ],
+        "properties": {
+          "conversationId": {
+            "type": "string",
+            "format": "uuid"
+          },
+          "cursor": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "minLength": 1,
+            "maxLength": 1024
+          }
+        }
+      },
+      "ReplayProjection": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": [
+          "messageIds",
+          "cursor",
+          "hasMore",
+          "readState"
+        ],
+        "properties": {
+          "messageIds": {
+            "type": "array",
+            "maxItems": 50,
+            "uniqueItems": true,
+            "items": {
+              "type": "string",
+              "format": "uuid"
+            }
+          },
+          "cursor": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 1024
+          },
+          "hasMore": {
+            "type": "boolean"
+          },
+          "readState": {
+            "$ref": "#/components/schemas/ReadResult"
+          }
+        }
+      },
+      "PresenceProjectionQuery": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": [
+          "conversationId"
+        ],
+        "properties": {
+          "conversationId": {
+            "type": "string",
+            "format": "uuid"
+          }
+        }
+      },
+      "PresenceProjection": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": [
+          "peers"
+        ],
+        "properties": {
+          "peers": {
+            "type": "array",
+            "maxItems": 30,
+            "uniqueItems": true,
+            "items": {
+              "type": "object",
+              "additionalProperties": false,
+              "required": [
+                "communityProfileId",
+                "subjectRoutingReference"
+              ],
+              "properties": {
+                "communityProfileId": {
+                  "type": "string",
+                  "format": "uuid"
+                },
+                "subjectRoutingReference": {
+                  "type": "string",
+                  "format": "uuid"
+                }
+              }
+            }
+          }
+        }
       }
     },
     "responses": {

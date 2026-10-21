@@ -4,9 +4,11 @@ info:
   version: 1.0.0
   description: |
     REST recovery and operational contract for Realtime Service. Socket.IO
-    messages use the versioned JSON Schemas under contracts/websocket/realtime.
-    Conversation eligibility is enforced through Consultation's authoritative
-    appointment contract. Browser sockets use one-use credentials exchanged by
+    messages use the versioned JSON Schemas under contracts/websocket/realtime
+    and contracts/websocket/community for their isolated namespaces.
+    Appointment eligibility is enforced through Consultation's authoritative
+    contract; Community eligibility and content remain authoritative in Community.
+    Browser sockets use one-use credentials exchanged by
     an authenticated same-origin BFF; general Identity bearer tokens are never
     exposed to browser JavaScript.
 servers:
@@ -16,6 +18,9 @@ tags:
   - name: Socket credentials
   - name: Message history
 paths:
+  /internal/v1/community/socket-credentials:
+    x-mentalbridge-status: implemented
+    $ref: './community-realtime-v1.json#/paths/~1internal~1v1~1community~1socket-credentials'
   /internal/v1/socket-credentials:
     x-mentalbridge-status: implemented
     post:
@@ -110,6 +115,8 @@ paths:
         "503": { $ref: "#/components/responses/DependencyUnavailable" }
 components:
   securitySchemes:
+    RealtimeDelegation:
+      $ref: './community-realtime-v1.json#/components/securitySchemes/RealtimeDelegation'
     bearerAuth:
       type: http
       scheme: bearer
@@ -146,6 +153,7 @@ components:
         service: { const: realtime-service }
         mongodb: { const: connected }
         redis: { type: string, enum: [connected, degraded] }
+        community: { type: string, enum: [connected, degraded], description: Present only when Community realtime is enabled; includes Kafka and Redis fanout readiness. }
     SocketCredential:
       type: object
       additionalProperties: false

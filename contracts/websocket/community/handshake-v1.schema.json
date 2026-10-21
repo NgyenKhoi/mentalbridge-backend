@@ -1,0 +1,22 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://mentalbridge.dev/contracts/websocket/community/handshake-v1.schema.json",
+  "title": "Community namespace handshake candidate v1",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "schemaVersion",
+    "credential"
+  ],
+  "properties": {
+    "schemaVersion": {
+      "const": 1
+    },
+    "credential": {
+      "type": "string",
+      "minLength": 32,
+      "maxLength": 512
+    }
+  },
+  "description": "MB-689 runtime subset. Presence/typing/receipt variants remain planned for MB-690. community.command uses command envelopes; community.event emits these private event envelopes."
+}

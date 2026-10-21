@@ -11,8 +11,12 @@ privacy/permission/API/event contracts only. Approval and merge accept the targe
 MB-685 delivers the opt-in direct provider in Community PostgreSQL, current
 Identity eligibility and minimized Kafka facts. MB-687 adds private invite-only
 groups, membership lifecycle/epochs and isolated exact-message report intake.
-MB-686/688 and later delivery stories supply clients, delegated internal checks,
-transport/presence, notification consumers, case administration and epic acceptance.
+MB-689 adds signed current-viewer projections, isolated `/community` delivery,
+ordered private delivery cursors and self read-state synchronization. MB-690
+adds privacy-aware foreground presence with multi-device Redis leases and
+current owner projections. MB-686/688 and later stories supply clients,
+typing/shared receipts, notification consumers, case
+administration and epic acceptance.
 
 For product/business behavior, use this order:
 
