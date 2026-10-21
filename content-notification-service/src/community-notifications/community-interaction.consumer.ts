@@ -13,7 +13,10 @@ import {
   CONFIGURATION_TOKEN,
 } from '../application.tokens.js';
 import type { ServiceConfiguration } from '../configuration/configuration.js';
-import { CommunityNotificationRepository } from './community-notification.repository.js';
+import {
+  CommunityNotificationJobs,
+  CommunityNoticeIdentityConflict,
+} from './community-notification.jobs.js';
 import {
   COMMUNITY_INTERACTION_DEAD_LETTER_TOPIC,
   COMMUNITY_INTERACTION_TOPIC,
@@ -76,6 +79,7 @@ function projection(event: CommunityInteractionEvent): CommunityNotificationProj
     eventId: event.eventId,
     ownerId: event.targetOwnerRoutingReference,
     kind: 'COMMUNITY_REACTION',
+    groupingKey: 'POST:' + event.targetId,
     title: 'Bài viết của bạn nhận được sự đồng cảm',
     body:
       event.interactionKind === 'THANK_YOU'
@@ -90,10 +94,12 @@ function projection(event: CommunityInteractionEvent): CommunityNotificationProj
 
 @Injectable()
 export class CommunityInteractionProjector {
-  constructor(private readonly repository: CommunityNotificationRepository) {}
+  constructor(
+    @Inject(CommunityNotificationJobs) private readonly repository: CommunityNotificationJobs,
+  ) {}
 
   async project(event: CommunityInteractionEvent): Promise<void> {
-    await this.repository.materialize(projection(event), eventFingerprint(event));
+    await this.repository.enqueue(projection(event), eventFingerprint(event));
   }
 }
 
@@ -109,7 +115,11 @@ export class KafkaCommunityInteractionDeadLetterPublisher
   ) {}
 
   async onModuleInit(): Promise<void> {
-    if (!this.configuration.CONTENT_COMMUNITY_INTERACTION_CONSUMER_ENABLED) return;
+    if (
+      !this.configuration.CONTENT_COMMUNITY_INTERACTION_CONSUMER_ENABLED &&
+      !this.configuration.CONTENT_COMMUNITY_NOTICE_CONSUMER_ENABLED
+    )
+      return;
     const bootstrapServers = this.configuration.KAFKA_BOOTSTRAP_SERVERS;
     if (!bootstrapServers) throw new Error('Kafka bootstrap servers are required');
     const kafka = new Kafka({
@@ -203,6 +213,10 @@ export class CommunityInteractionConsumer implements OnModuleInit, OnApplication
         await this.projector.project(event.data);
         return;
       } catch (error) {
+        if (error instanceof CommunityNoticeIdentityConflict) {
+          await this.park(sourceTopic, partition, offset, value, 'INVALID_EVENT');
+          return;
+        }
         if (attempt === MAX_PROJECTION_ATTEMPTS) throw error;
         await wait(100 * 2 ** (attempt - 1));
       }

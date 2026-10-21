@@ -292,8 +292,20 @@ V1 chat/request/invitation notices use the existing
 switches. They are not mandatory service/security alerts that bypass opt-out.
 Quiet-hour policy remains Content-owned and is rechecked at deferred delivery.
 
-Content checks current exact target/recipient authorization through the proposed
-Community internal API before materialization/provider delivery. A 503 retries;
+MB-691 owner clarification, accepted on 2026-10-21, applies prospectively to new
+Community notices: defer new inbox publication while the recipient is in quiet
+hours; existing inbox history remains readable. Recheck current preference and
+exact target eligibility at deferred delivery. Group supportive post/comment
+reactions by recipient and exact target into one active unread notification;
+after reading, a new actor may start another group. Retry, replacement and
+remove/re-add by an already recorded actor do not repeat the logical notice.
+Tombstones win over replay. MB-691 includes backend comment reactions and the
+generic PUSH payload contract. Device registration and actual PUSH delivery are
+tracked by MB-675 (backend) and MB-679 (device permissions, token lifecycle and
+safe links), explicitly outside this slice.
+
+Content checks current exact chat target/recipient authorization through the
+MB-691 Community internal API before inbox materialization. A 503 retries;
 a definitive denied/expired/revoked result cancels. Preferences/quiet hours are
 Content-owned; deferred delivery revalidates before sending. Opening a deep link
 always reauthorizes in Community. Links are closed route descriptors built by

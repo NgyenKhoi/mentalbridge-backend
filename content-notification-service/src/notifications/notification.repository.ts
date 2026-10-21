@@ -60,7 +60,13 @@ function action(row: NotificationRow): NotificationItem['action'] {
           ? `/support-guides/${encodeURIComponent(targetId)}`
           : row.action_type === 'OPEN_COMMUNITY_POST' && targetId
             ? `/community/${encodeURIComponent(targetId)}`
-            : href[row.action_type],
+            : row.action_type === 'OPEN_COMMUNITY_CONVERSATION' && targetId
+              ? `/community/chat/conversations/${encodeURIComponent(targetId)}`
+              : row.action_type === 'OPEN_COMMUNITY_REQUEST' && targetId
+                ? `/community/chat/requests/${encodeURIComponent(targetId)}`
+                : row.action_type === 'OPEN_COMMUNITY_INVITATION' && targetId
+                  ? `/community/chat/invitations/${encodeURIComponent(targetId)}`
+                  : href[row.action_type],
   };
 }
 
