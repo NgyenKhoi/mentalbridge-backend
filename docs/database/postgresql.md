@@ -10,6 +10,15 @@ runtime source of truth. Exact field purposes are documented in the
 
 ## Ownership
 
+MB-670 Care migration `031` permits bounded Content practice/completion evidence
+for native RESOURCE occurrences. The one-fact-one-occurrence unique index is
+owner-scoped because a daily completion ID is resource/date within its owner.
+Content migration `27_plan_scoped_resource_bingo.sql` makes boards unique per owner/week/plan and adds nullable
+external action references plus retirement; existing exact fact-version columns
+are reused. `last_synced_at` selects a week's latest synced board independently
+of its concurrency version. No migration rewrites legacy v2 occurrences or
+deletes historical board checks. See [ADR 0043](../adr/0043-plan-scoped-resource-progress.md).
+
 MB-669 adds nullable cycle state only for `support-plan-proposal-v1` native plans,
 under `030-support-plan-proposal-cycle.sql` (`care-031`). The stored IANA timezone,
 cycle number, local start date and pause intervals derive a 14-day review date;

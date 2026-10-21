@@ -957,12 +957,60 @@ CREATE TABLE care.support_plan_activity_occurrence (
     FOREIGN KEY (activity_schedule_id, support_plan_id, user_id, schedule_version,
         source_plan_version, source_action_id, source_action_version, source_action_type)
         REFERENCES care.support_plan_activity_schedule(id, support_plan_id, user_id, schedule_version,
-            source_plan_version, source_action_id, source_action_version, source_action_type)
+            source_plan_version, source_action_id, source_action_version, source_action_type),
+    CHECK ((
+        (source_action_id IS NULL
+            AND evidence_owner IS NULL AND evidence_kind IS NULL AND evidence_id IS NULL
+            AND evidence_revision IS NULL AND evidence_occurred_at IS NULL
+            AND evidence_verified_at IS NULL)
+        OR (source_action_id IS NOT NULL AND state <> 'COMPLETED'
+            AND evidence_owner IS NULL AND evidence_kind IS NULL AND evidence_id IS NULL
+            AND evidence_revision IS NULL AND evidence_occurred_at IS NULL
+            AND evidence_verified_at IS NULL)
+        OR (source_action_id IS NOT NULL AND state = 'COMPLETED' AND (
+            (source_action_type IN ('RESOURCE', 'ROUTINE_SELF_MANAGEMENT')
+                AND evidence_owner = 'CARE' AND evidence_kind = 'USER_ACKNOWLEDGEMENT'
+                AND evidence_id IS NOT NULL AND length(btrim(evidence_id)) BETWEEN 1 AND 255
+                AND (evidence_revision IS NULL OR length(btrim(evidence_revision)) BETWEEN 1 AND 128)
+                AND evidence_occurred_at IS NOT NULL AND evidence_verified_at IS NOT NULL)
+            OR (source_action_type = 'RESOURCE' AND evidence_owner = 'CONTENT'
+                AND evidence_kind IN ('RESOURCE_PRACTICE_SESSION', 'RESOURCE_COMPLETION')
+                AND evidence_id IS NOT NULL AND length(btrim(evidence_id)) BETWEEN 1 AND 255
+                AND evidence_revision IS NOT NULL AND length(btrim(evidence_revision)) BETWEEN 1 AND 128
+                AND evidence_occurred_at IS NOT NULL AND evidence_verified_at IS NOT NULL)
+            OR (source_action_type = 'SELF_REPORT_REVIEW'
+                AND evidence_owner = 'CARE' AND evidence_kind = 'SELF_REPORT_REVIEW'
+                AND evidence_id IS NOT NULL AND length(btrim(evidence_id)) BETWEEN 1 AND 255
+                AND (evidence_revision IS NULL OR length(btrim(evidence_revision)) BETWEEN 1 AND 128)
+                AND evidence_occurred_at IS NOT NULL AND evidence_verified_at IS NOT NULL)
+            OR (source_action_type = 'JOURNAL' AND evidence_owner = 'JOURNAL_AI'
+                AND evidence_kind = 'JOURNAL_ENTRY' AND evidence_id IS NOT NULL
+                AND length(btrim(evidence_id)) BETWEEN 1 AND 255
+                AND (evidence_revision IS NULL OR length(btrim(evidence_revision)) BETWEEN 1 AND 128)
+                AND evidence_occurred_at IS NOT NULL AND evidence_verified_at IS NOT NULL)
+            OR (source_action_type = 'EMOTION_CHECK_IN' AND evidence_owner = 'JOURNAL_AI'
+                AND evidence_kind = 'EMOTION_CHECK_IN' AND evidence_id IS NOT NULL
+                AND length(btrim(evidence_id)) BETWEEN 1 AND 255
+                AND (evidence_revision IS NULL OR length(btrim(evidence_revision)) BETWEEN 1 AND 128)
+                AND evidence_occurred_at IS NOT NULL AND evidence_verified_at IS NOT NULL)
+            OR (source_action_type = 'PROFESSIONAL_SUPPORT' AND evidence_owner = 'CONSULTATION'
+                AND evidence_kind = 'APPOINTMENT_FULFILMENT' AND evidence_id IS NOT NULL
+                AND length(btrim(evidence_id)) BETWEEN 1 AND 255
+                AND (evidence_revision IS NULL OR length(btrim(evidence_revision)) BETWEEN 1 AND 128)
+                AND evidence_occurred_at IS NOT NULL AND evidence_verified_at IS NOT NULL)
+            OR (source_action_type = 'REASSESSMENT_SCREENING' AND evidence_owner = 'CARE'
+                AND evidence_kind = 'ASSESSMENT_HISTORY' AND evidence_id IS NOT NULL
+                AND length(btrim(evidence_id)) BETWEEN 1 AND 255
+                AND (evidence_revision IS NULL OR length(btrim(evidence_revision)) BETWEEN 1 AND 128)
+                AND evidence_occurred_at IS NOT NULL AND evidence_verified_at IS NOT NULL)
+        ))) IS TRUE
+        AND (evidence_verified_at IS NULL OR evidence_verified_at >= evidence_occurred_at)
+    )
 );
 
 CREATE UNIQUE INDEX ux_support_plan_activity_occurrence_evidence_fact
     ON care.support_plan_activity_occurrence (
-        evidence_owner, evidence_kind, evidence_id, coalesce(evidence_revision, '')
+        user_id, evidence_owner, evidence_kind, evidence_id, coalesce(evidence_revision, '')
     )
     WHERE evidence_owner IS NOT NULL;
 
@@ -2199,7 +2247,8 @@ CREATE TABLE content.resource_weekly_bingo (
     created_at timestamptz NOT NULL,
     version bigint NOT NULL,
     updated_at timestamptz NOT NULL,
-    UNIQUE (owner_id, week_start)
+    last_synced_at timestamptz NOT NULL,
+    UNIQUE (owner_id, week_start, support_plan_id)
 );
 
 CREATE TABLE content.resource_weekly_bingo_item (
@@ -2208,6 +2257,11 @@ CREATE TABLE content.resource_weekly_bingo_item (
     resource_id uuid NOT NULL REFERENCES content.resource(id),
     resource_version bigint NOT NULL,
     self_confirmed_at timestamptz,
+    support_plan_action_id varchar(128),
+    support_plan_action_version bigint,
+    retired_at timestamptz,
+    CHECK ((support_plan_action_id IS NULL) = (support_plan_action_version IS NULL)),
+    CHECK (support_plan_action_version IS NULL OR support_plan_action_version >= 0),
     PRIMARY KEY (board_id, ordinal),
     UNIQUE (board_id, resource_id),
     FOREIGN KEY (resource_id, resource_version)

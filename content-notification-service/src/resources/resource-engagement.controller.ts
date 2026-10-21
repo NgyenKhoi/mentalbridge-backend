@@ -11,6 +11,7 @@ import {
   NotFoundException,
   Param,
   Put,
+  Query,
   Res,
   UnprocessableEntityException,
   UseGuards,
@@ -26,13 +27,20 @@ import {
   ResourceBingoPositionSchema,
   ResourceBingoSelfConfirmationSchema,
   ResourceBingoWeekSchema,
+  ResourceBingoPlanSyncSchema,
+  ResourceCompletionEvidenceQuerySchema,
 } from './resource-engagement.dto.js';
-import { ResourceBingoVersionMismatchError } from './resource-engagement.repository.js';
+import {
+  ResourceBingoItemRetiredError,
+  ResourceBingoVersionMismatchError,
+} from './resource-engagement.repository.js';
 import type { ResourceEngagementService } from './resource-engagement.service.js';
 import type {
   ResourceBingoBoardState,
   ResourceBookmark,
   ResourceBookmarkList,
+  ResourceBingoPlanSync,
+  ResourceCompletionEvidence,
 } from './resource-engagement.types.js';
 import { ResourceIdSchema } from './resource.dto.js';
 
@@ -110,6 +118,31 @@ export class ResourceBingoController {
     private readonly service: ResourceEngagementService,
   ) {}
 
+  @Put(':weekStart/plan-sync')
+  async syncPlan(
+    @CurrentUser() user: AuthenticatedUser,
+    @Param('weekStart') weekStartValue: string,
+    @Headers('authorization') authorization: string,
+    @Headers('x-correlation-id') correlationId: string | undefined,
+    @Body() bodyValue: unknown,
+    @Res({ passthrough: true }) response: Response,
+  ): Promise<ResourceBingoPlanSync> {
+    const weekStart = ResourceBingoWeekSchema.safeParse(weekStartValue);
+    const body = ResourceBingoPlanSyncSchema.safeParse(bodyValue);
+    if (!weekStart.success) throw invalid(weekStart.error);
+    if (!body.success) throw invalid(body.error);
+    const result = await this.service.syncPlanBingo(
+      user.accountId,
+      weekStart.data,
+      body.data.timeZone,
+      authorization,
+      correlationId,
+    );
+    response.setHeader('ETag', `"${result.version}"`);
+    noStore(response);
+    return result;
+  }
+
   @Get(':weekStart')
   async get(
     @CurrentUser() user: AuthenticatedUser,
@@ -171,6 +204,12 @@ export class ResourceBingoController {
       noStore(response);
       return result;
     } catch (error) {
+      if (error instanceof ResourceBingoItemRetiredError) {
+        throw new HttpException(
+          problem(409, 'RESOURCE_BINGO_ITEM_RETIRED', 'Resource bingo item is retired'),
+          HttpStatus.CONFLICT,
+        );
+      }
       if (error instanceof ResourceBingoVersionMismatchError) {
         throw new HttpException(
           problem(412, 'RESOURCE_BINGO_VERSION_MISMATCH', 'Resource bingo changed elsewhere'),
@@ -179,5 +218,38 @@ export class ResourceBingoController {
       }
       throw error;
     }
+  }
+}
+
+@Controller('api/v1/resource-completion-evidence')
+@UseGuards(JwtAuthGuard)
+export class ResourceCompletionEvidenceController {
+  constructor(
+    @Inject(RESOURCE_ENGAGEMENT_SERVICE_TOKEN) private readonly service: ResourceEngagementService,
+  ) {}
+
+  @Get()
+  async get(
+    @CurrentUser() user: AuthenticatedUser,
+    @Query() query: unknown,
+    @Res({ passthrough: true }) response: Response,
+  ): Promise<ResourceCompletionEvidence> {
+    const parsed = ResourceCompletionEvidenceQuerySchema.safeParse(query);
+    if (!parsed.success) throw invalid(parsed.error);
+    const { resourceId, resourceVersion, localDate, timeZone, excludedFactIds } = parsed.data;
+    const evidence = await this.service.completionEvidence(
+      user.accountId,
+      resourceId,
+      resourceVersion,
+      localDate,
+      timeZone,
+      excludedFactIds,
+    );
+    if (!evidence)
+      throw new NotFoundException(
+        problem(404, 'RESOURCE_EVIDENCE_NOT_FOUND', 'Resource completion evidence not found'),
+      );
+    noStore(response);
+    return evidence;
   }
 }

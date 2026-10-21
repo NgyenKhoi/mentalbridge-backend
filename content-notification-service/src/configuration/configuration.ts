@@ -28,6 +28,8 @@ const environmentSchema = z
       )
       .optional(),
     JOURNAL_AI_SERVICE_URL: z.url().default('http://localhost:3005'),
+    CONTENT_CARE_BASE_URL: z.url().optional(),
+    CONTENT_CARE_TIMEOUT_MS: z.coerce.number().int().min(100).max(5_000).optional(),
     JOURNAL_AI_SERVICE_TIMEOUT_MS: z.coerce.number().int().min(100).max(5_000).default(2_000),
     JOURNAL_AI_REMINDER_SERVICE_TOKEN: z.string().min(32).optional(),
     REMINDER_SCHEDULER_ENABLED: z.enum(['true', 'false']).default('false'),

@@ -35,11 +35,12 @@ describe('Community notice durable delivery on PostgreSQL and Kafka', () => {
   let worker: CommunityNotificationWorker;
   let inbox: NotificationRepository;
   let instant: Date | undefined;
+  let databaseClockOffsetMs = 0;
   let allow = true;
   let outage = false;
   let authorizations = 0;
   const owner = randomUUID();
-  const clock = { now: () => instant ?? new Date(Date.now() + 1000) };
+  const clock = { now: () => instant ?? new Date(Date.now() + databaseClockOffsetMs + 1000) };
   const digest = (value: CommunityNotificationProjection) =>
     createHash('sha256').update(JSON.stringify(value)).digest('hex');
   function projection(): CommunityNotificationProjection {
@@ -120,6 +121,8 @@ describe('Community notice durable delivery on PostgreSQL and Kafka', () => {
       KAFKA_BOOTSTRAP_SERVERS: broker.getHost() + ':' + String(broker.getMappedPort(9093)),
     });
     db = new DatabaseService(configuration);
+    const databaseClock = await db.query<{ now: Date }>('SELECT clock_timestamp() AS now');
+    databaseClockOffsetMs = databaseClock.rows[0]!.now.getTime() - Date.now();
     const migrations = (await readdir(new URL('../../../migrations/', import.meta.url)))
       .filter((name) => /^\d+_.+\.sql$/.test(name))
       .sort((a, b) => parseInt(a) - parseInt(b));
@@ -248,7 +251,7 @@ describe('Community notice durable delivery on PostgreSQL and Kafka', () => {
     await worker.runDue();
     expect((await inbox.list(owner, 20, null)).items).toEqual([]);
     outage = false;
-    instant = new Date(Date.now() + 5000);
+    instant = new Date(clock.now().getTime() + 5000);
     await worker.runDue();
     expect((await inbox.list(owner, 20, null)).items).toHaveLength(1);
     await expect(jobs.enqueue({ ...event, body: 'Changed' }, 'f'.repeat(64))).rejects.toThrow(
@@ -260,7 +263,7 @@ describe('Community notice durable delivery on PostgreSQL and Kafka', () => {
     await jobs.enqueue(event, digest(event));
     const abandoned = await jobs.claim(clock.now());
     if (!abandoned) throw new Error('Missing claim');
-    instant = new Date(Date.now() + 32_000);
+    instant = new Date(clock.now().getTime() + 32_000);
     const current = await jobs.claim(clock.now());
     if (!current) throw new Error('Missing replacement claim');
     await repository.materialize(event, digest(event), abandoned, clock.now());

@@ -8,10 +8,10 @@ import {
   type ResourceDatabaseRow,
 } from './resource.repository.js';
 import { toResourceSummary } from './resource.service.js';
+import { readResourceBingoBoard } from './resource-engagement.repository.js';
 import {
   localDateInTimeZone,
   mondayOf,
-  planBingoResources,
   planDailyResources,
   practiceStreak,
   supportPlanDay,
@@ -34,17 +34,6 @@ interface AssignmentItemRow {
   readonly ordinal: number;
   readonly resource_id: string;
   readonly selection_reason: AssignmentReason;
-}
-
-interface BingoRow {
-  readonly id: string;
-  readonly support_plan_id: string;
-}
-
-interface BingoItemRow {
-  readonly ordinal: number;
-  readonly resource_id: string;
-  readonly resource_version: string | number;
 }
 
 interface ResourceIdRow {
@@ -225,66 +214,7 @@ export class ResourceJourneyRepository {
           .map((summary) => [summary.id, summary]),
       );
 
-      await client.query('SELECT pg_advisory_xact_lock(hashtextextended($1, 0))', [
-        `${ownerId}:RESOURCE_BINGO:${weekStart}`,
-      ]);
-      let board = (
-        await client.query<BingoRow>(
-          `SELECT id, support_plan_id FROM resource_weekly_bingo
-           WHERE owner_id = $1 AND week_start = $2::date`,
-          [ownerId, weekStart],
-        )
-      ).rows.at(0);
-      if (!board) {
-        board = (
-          await client.query<BingoRow>(
-            `INSERT INTO resource_weekly_bingo
-               (owner_id, week_start, time_zone, support_plan_id, support_plan_version, plan_tags)
-             VALUES ($1, $2::date, $3, $4, $5, $6::text[])
-             RETURNING id, support_plan_id`,
-            [
-              ownerId,
-              weekStart,
-              input.timeZone,
-              input.supportPlan.supportPlanId,
-              input.supportPlan.version,
-              [...input.supportPlan.domains],
-            ],
-          )
-        ).rows.at(0);
-        if (!board) return null;
-        const bingoIds = planBingoResources(
-          candidateRows.map(plannerResource),
-          selectedIds,
-          weekStart,
-        );
-        for (const [ordinal, resourceId] of bingoIds.entries()) {
-          await client.query(
-            `INSERT INTO resource_weekly_bingo_item
-               (board_id, ordinal, resource_id, resource_version)
-             SELECT $1, $2, resource.id, resource.version
-             FROM resource
-             JOIN resource_publication_snapshot publication
-               ON publication.resource_id = resource.id
-              AND publication.content_version = resource.version
-             WHERE resource.id = $3`,
-            [board.id, ordinal, resourceId],
-          );
-        }
-      }
-
-      const bingoItems = await client.query<BingoItemRow>(
-        `SELECT ordinal, resource_id, resource_version
-         FROM resource_weekly_bingo_item
-         WHERE board_id = $1
-         ORDER BY ordinal`,
-        [board.id],
-      );
-      const bingoResources = await selectResources(
-        client,
-        bingoItems.rows.map((row) => row.resource_id),
-      );
-      const bingoTitles = new Map(bingoResources.map((resource) => [resource.id, resource.title]));
+      const bingoBoard = await readResourceBingoBoard(client, ownerId, weekStart);
 
       const dailyCompleted = await client.query<ResourceIdRow>(
         `SELECT resource_id
@@ -292,29 +222,6 @@ export class ResourceJourneyRepository {
          WHERE owner_id = $1 AND local_date = $2::date AND status = 'COMPLETED'
            AND resource_id = ANY($3::uuid[])`,
         [ownerId, requestedDate, assignmentItems.rows.map((row) => row.resource_id)],
-      );
-      const weekEnd = new Date(`${weekStart}T00:00:00Z`);
-      weekEnd.setUTCDate(weekEnd.getUTCDate() + 6);
-      const stamped = await client.query<ResourceIdRow & { readonly resource_version: string }>(
-        `SELECT DISTINCT resource_id, resource_version FROM (
-           SELECT progress.resource_id, progress.resource_version
-           FROM resource_daily_progress progress
-           JOIN resource_daily_assignment assignment
-             ON assignment.owner_id = progress.owner_id
-            AND assignment.local_date = progress.local_date
-            AND assignment.support_plan_id = $4
-           JOIN resource_daily_assignment_item item
-             ON item.assignment_id = assignment.id
-            AND item.resource_id = progress.resource_id
-           WHERE progress.owner_id = $1 AND progress.status = 'COMPLETED'
-             AND progress.local_date BETWEEN $2::date AND $3::date
-           UNION ALL
-           SELECT session.resource_id, session.resource_version
-           FROM resource_practice_session session
-           WHERE session.owner_id = $1 AND session.support_plan_id = $4
-             AND session.local_date BETWEEN $2::date AND $3::date
-         ) completed`,
-        [ownerId, weekStart, weekEnd.toISOString().slice(0, 10), board.support_plan_id],
       );
       const streakDates = await client.query<DateRow>(
         `SELECT DISTINCT s.local_date
@@ -327,9 +234,6 @@ export class ResourceJourneyRepository {
       );
 
       const learningCandidates = candidateRows.filter((row) => row.resource_kind === 'LEARNING');
-      const stampedIds = new Set(
-        stamped.rows.map((row) => `${row.resource_id}:${row.resource_version}`),
-      );
       return {
         assignmentId: assignment.id,
         localDate: requestedDate,
@@ -354,12 +258,13 @@ export class ResourceJourneyRepository {
           ),
         },
         weekStart,
-        bingo: bingoItems.rows.map((row) => ({
-          position: row.ordinal + 1,
-          resourceId: row.resource_id,
-          label: bingoTitles.get(row.resource_id) ?? 'Hoạt động hỗ trợ',
-          stamped: stampedIds.has(`${row.resource_id}:${String(row.resource_version)}`),
-        })),
+        bingo:
+          bingoBoard?.items.map((item) => ({
+            position: item.position,
+            resourceId: item.resourceId,
+            label: item.label,
+            stamped: item.evidence === 'CONTENT_VERIFIED',
+          })) ?? [],
       };
     });
   }

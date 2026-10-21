@@ -480,6 +480,16 @@ Assessment answer text must never be copied into outbox payloads, logs, errors, 
 | `JOURNAL_AI_JOURNAL_EVIDENCE_CIRCUIT_FAILURE_RATE` | No | Transport/malformed evidence failure percentage | `50` |
 | `JOURNAL_AI_JOURNAL_EVIDENCE_CIRCUIT_OPEN_DURATION` | No | Fail-fast open interval | `PT10S` |
 | `JOURNAL_AI_JOURNAL_EVIDENCE_CIRCUIT_HALF_OPEN_CALLS` | No | Bounded recovery probes | `2` |
+| `CONTENT_RESOURCE_EVIDENCE_BASE_URL` | Local/demo | Content owner endpoint for exact resource completion evidence | `http://localhost:3003` |
+| `CONTENT_RESOURCE_EVIDENCE_CONNECT_TIMEOUT` | No | Bounded owner TCP deadline | `PT0.2S` |
+| `CONTENT_RESOURCE_EVIDENCE_READ_TIMEOUT` | No | Bounded evidence GET response deadline | `PT0.8S` |
+| `CONTENT_RESOURCE_EVIDENCE_MAX_ATTEMPTS` | No | Safe read attempts, one or two | `2` |
+| `CONTENT_RESOURCE_EVIDENCE_RETRY_WAIT` | No | Positive retry delay with exponential jitter | `PT0.1S` |
+| `CONTENT_RESOURCE_EVIDENCE_CIRCUIT_WINDOW_SIZE` | No | Count-based evidence breaker window | `10` |
+| `CONTENT_RESOURCE_EVIDENCE_CIRCUIT_MINIMUM_CALLS` | No | Minimum calls before opening | `5` |
+| `CONTENT_RESOURCE_EVIDENCE_CIRCUIT_FAILURE_RATE` | No | Transport or malformed evidence failure percentage | `50` |
+| `CONTENT_RESOURCE_EVIDENCE_CIRCUIT_OPEN_DURATION` | No | Fail-fast open interval | `PT10S` |
+| `CONTENT_RESOURCE_EVIDENCE_CIRCUIT_HALF_OPEN_CALLS` | No | Bounded recovery probes | `2` |
 | `JOURNAL_AI_SUPPORT_GUIDE_BASE_URL` | Local/demo only | Direct Journal/AI URL for optional consent-gated Support Guide phrasing | `http://localhost:3000` |
 | `JOURNAL_AI_SUPPORT_GUIDE_CONNECT_TIMEOUT` | No | Bounded connection deadline for optional Support Guide phrasing | `PT0.5S` |
 | `JOURNAL_AI_SUPPORT_GUIDE_READ_TIMEOUT` | No | Bounded response deadline before Care persists its approved-copy fallback | `PT8S` |
@@ -571,3 +581,23 @@ MB-89 implements the deterministic PHQ-9 runtime. MB-178 adds the backend-owned,
 ```
 
 The PostgreSQL integration suite applies Liquibase to a disposable real PostgreSQL database and validates owner isolation, profile optimistic concurrency, append-only consent history/idempotency/revocation, disclosure enforcement, stable history pagination, deterministic compatible progress selection, support-routing evidence validation and concurrency/idempotency, Support Guide safety/resource failure/history/ownership behavior, immutable Reassessment Summary creation/replay/current/history behavior and source-change independence, policy lookup serialization and fallback behavior, seed data, authenticated-versus-anonymous ownership, scoring boundaries, item-9 independence, token isolation/expiry, answer/result ranges, questionnaire version uniqueness, and minimized outbox payloads. Resource eligibility and Journal/AI consumer tests cover auth/correlation propagation, documented failures, deadlines, bounded retry, breaker opening, malformed data, response attribution, source deletion, consent denial, and safe fallback. Live Eureka registration is disabled in tests. The versioned assessment and support-tier event contracts exist, while a Kafka relay remains a separate delivery slice; scoring, progress, support routing, Support Guide safety, and local reassessment dimensions never wait for a broker.
+
+## MB-670 plan resources and Content evidence
+
+`GET /api/v2/support-plans/current/resource-actions?localDate=YYYY-MM-DD` returns
+only active resource actions in plan order, pinned Content publication references,
+current schedules, and minimized occurrence state. `NONE` is a successful empty
+projection. Paused plans and v2 adapters remain readable; v2 `today` is null.
+The projection omits plan/action rationale and resource summaries.
+
+`POST /api/v2/support-plan-occurrences/{occurrenceId}/resource/reconcile` accepts
+numeric strong occurrence `If-Match`. Care resolves the owner's native Resource
+source and local date, releases its read transaction, then queries Content using
+the forwarded bearer and correlation. A second transaction locks plan, action,
+and occurrence and rechecks the context before accepting exact-version evidence.
+Only the server fact instant in the plan timezone proves the occurrence date.
+Missing evidence returns 409, stale context 412, and unavailable Content 503;
+none writes completion. Accepted retries return the persisted completion without
+another dependency call. Content facts cannot reopen an accepted occurrence.
+Migration 031 expands the Resource evidence CHECK and scopes the fact uniqueness
+by owner so deterministic daily-progress fact IDs cannot collide across users.

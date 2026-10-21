@@ -58,7 +58,9 @@ import { ResourceJourneyService } from './resources/resource-journey.service.js'
 import {
   ResourceBingoController,
   ResourceBookmarkController,
+  ResourceCompletionEvidenceController,
 } from './resources/resource-engagement.controller.js';
+import { CareResourceActionsClient } from './resources/care-resource-actions.client.js';
 import { ResourceEngagementRepository } from './resources/resource-engagement.repository.js';
 import { ResourceEngagementService } from './resources/resource-engagement.service.js';
 import { ResourceRewardController } from './resources/resource-reward.controller.js';
@@ -145,6 +147,7 @@ export interface ApplicationDependencies {
   readonly resourceProgressRepository?: ResourceProgressRepository;
   readonly resourceJourneyRepository?: ResourceJourneyRepository;
   readonly resourceEngagementRepository?: ResourceEngagementRepository;
+  readonly careResourceActionsClient?: CareResourceActionsClient;
   readonly resourceRewardRepository?: ResourceRewardRepository;
   readonly achievementRepository?: AchievementRepository;
   readonly outageState?: { enabled: boolean };
@@ -255,6 +258,7 @@ export const createAppModule = (
       ResourceJourneyController,
       ResourceBookmarkController,
       ResourceBingoController,
+      ResourceCompletionEvidenceController,
       ResourceRewardController,
       AchievementController,
       ResourceEligibilityController,
@@ -283,6 +287,9 @@ export const createAppModule = (
       resourceJourneyRepositoryProvider,
       { provide: RESOURCE_JOURNEY_SERVICE_TOKEN, useClass: ResourceJourneyService },
       resourceEngagementRepositoryProvider,
+      dependencies.careResourceActionsClient
+        ? { provide: CareResourceActionsClient, useValue: dependencies.careResourceActionsClient }
+        : CareResourceActionsClient,
       { provide: RESOURCE_ENGAGEMENT_SERVICE_TOKEN, useClass: ResourceEngagementService },
       resourceRewardRepositoryProvider,
       { provide: RESOURCE_REWARD_SERVICE_TOKEN, useClass: ResourceRewardService },

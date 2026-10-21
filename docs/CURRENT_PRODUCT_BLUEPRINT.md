@@ -318,6 +318,7 @@ Detailed national-contact amendment: [ADR 0024](adr/0024-global-anonymous-crisis
 
 - **Care**: screening, safety triggers, SupportEvaluation, Support Guide, SupportPlan and its focuses/actions/schedules/occurrences, reassessment composition, eligibility revalidation, PlanChangeRequest decision, user-confirmed plan mutation.
 - **Content/Notification**: reviewed resource catalogue, exact-version resource eligibility and progress, owner-scoped resource bookmarks, persisted weekly resource Bingo with separate self-confirmed and verified evidence, safety-directory content/provenance, reminder preferences/scheduling/delivery attempts.
+- MB-670 ([ADR 0043](adr/0043-plan-scoped-resource-progress.md)): Care supplies current plan RESOURCE actions; Content syncs plan-scoped Bingo and exact-version facts; Care alone reconciles those facts into occurrence completion.
 - **Consultation/Billing**: specialist profile/approval/availability/discovery, service-plan entitlement, consultation-credit ledger, appointments, evidence-backed completion, SessionSummary/AgreedNextSteps persistence, earnings and payout.
 - **Realtime**: in-app chat transport/delivery under Consultation appointment eligibility.
 - **Journal/AI**: private Journal, AI analyses/conversations, model execution and minimized projections; no Care/financial authority.

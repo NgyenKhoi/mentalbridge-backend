@@ -19,6 +19,7 @@ import com.mentalbridge.care.supportplan.ConsultationResourceProposalHttpClient;
 import com.mentalbridge.care.supportplan.EmotionCheckInEvidenceHttpClient;
 import com.mentalbridge.care.supportplan.JournalSupportPlanCompanionHttpClient;
 import com.mentalbridge.care.supportplan.JournalEntryEvidenceHttpClient;
+import com.mentalbridge.care.supportplan.ResourceEvidenceHttpClient;
 
 @SpringBootApplication
 @ConfigurationPropertiesScan
@@ -29,7 +30,7 @@ import com.mentalbridge.care.supportplan.JournalEntryEvidenceHttpClient;
 		JournalActivityHttpClient.class, ConsultationActivityHttpClient.class,
 		ConsultationResourceProposalHttpClient.class, JournalConsultationBriefDraftHttpClient.class,
 		EmotionCheckInEvidenceHttpClient.class, JournalSupportPlanCompanionHttpClient.class,
-		JournalEntryEvidenceHttpClient.class })
+		JournalEntryEvidenceHttpClient.class, ResourceEvidenceHttpClient.class })
 public class CareServiceApplication {
 
 	public static void main(String[] args) {
