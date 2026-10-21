@@ -85,15 +85,15 @@ Under the MB-583 architecture, `Identity Service` coordinates deletion workflows
 
 | Check | Result | Actual tests |
 | :--- | :--- | :--- |
-| `AdminRetentionGovernanceServiceTests` | **PASS** | **35 run, 0 failed, 0 errors, 0 skipped**; validates P0 retry consistency when account is missing (`FAILED` status, `ACCOUNT_NOT_FOUND`, audit DENIED), retry exhaustion escalation, hold lifecycle, GET/POST agreement for orphaned runs, and fail-closed privacy boundary sanitization against raw email, bare JWT, API keys, malformed UUIDs, disguised secrets under `audit:*`, and unapproved external owner evidence. |
+| `AdminRetentionGovernanceServiceTests` | **PASS** | **36 run, 0 failed, 0 errors, 0 skipped**; validates P0 retry consistency when account is missing (`FAILED` status, `ACCOUNT_NOT_FOUND`, audit DENIED), retry exhaustion escalation, hold lifecycle, GET/POST agreement for orphaned runs, fail-closed privacy boundary sanitization against raw email, bare JWT, API keys, malformed UUIDs, disguised secrets under `audit:*`, unapproved external owner evidence, and unapproved failure codes/reasons failing closed to null. |
 | `AdminRetentionGovernanceControllerTests` | **PASS** | **11 run, 0 failed, 0 errors, 0 skipped**; validates HTTP endpoints, correlation headers, and parameter validation. |
 | `AdminRetentionGovernanceSecuritySliceTests` | **PASS** | **7 run, 0 failed, 0 errors, 0 skipped**; validates RBAC `@PreAuthorize("hasRole('ADMIN')")` across all GET, POST, and DELETE mutating endpoints. |
 | `RetentionAuditLoggerTransactionTests` | **PASS** | **3 run, 0 failed, 0 errors, 0 skipped**; validates `REQUIRES_NEW` audit persistence on rollback. |
 | `RetentionExecutionRecorderTransactionTests` | **PASS** | **3 run, 0 failed, 0 errors, 0 skipped**; validates failure record commit and success rollback. |
 | `IdentityOpenApiContractTests` | **PASS** | **1 run, 0 failed, 0 errors, 0 skipped**; validates OpenAPI schema endpoints, status codes, and `evidenceReference` pattern/maxLength constraints. |
 | `RetentionTransactionIntegrationTests` | **PASS** | **5 run, 0 failed, 0 errors, 0 skipped**; executed against active Testcontainers PostgreSQL instance, verifying JPA `@JdbcTypeCode(SqlTypes.CHAR)` mapping and hold persistence across transactions. |
-| Total targeted backend run | **PASS** | **65 run, 0 failed, 0 errors, 0 skipped** (100% PASS, BUILD SUCCESS). |
-| `AdminRetentionGovernance.test.tsx` + `AdminWorkspace.test.tsx` + `identity-validation.test.ts` | **PASS** | **27 run, 0 failed, 0 errors, 0 skipped** (15 retention + 1 workspace + 11 validation; 100% pass via vitest). |
+| Total targeted backend run | **PASS** | **66 run, 0 failed, 0 errors, 0 skipped** (100% PASS, BUILD SUCCESS). |
+| `AdminRetentionGovernance.test.tsx` + `AdminWorkspace.test.tsx` + `identity-validation.test.ts` | **PASS** | **28 run, 0 failed, 0 errors, 0 skipped** (15 retention + 1 workspace + 12 validation; 100% pass via vitest). |
 | Frontend contract consistency (`npm run contracts:check`) | **PASS** | All 6 microservice OpenAPI snapshots and generated TypeScript interfaces valid. |
 | Frontend typecheck (`npm run typecheck`) | **PASS** | Next.js typegen and `tsc --noEmit` clean with 0 errors. |
 | Frontend lint (`npm run lint`) | **PASS** | `eslint --max-warnings=0` clean with 0 warnings. |

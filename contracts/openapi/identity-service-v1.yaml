@@ -1483,52 +1483,19 @@ components:
     RetentionFailureCode:
       type: string
       enum:
-        - ACCOUNT_NOT_FOUND
-        - RETRY_LIMIT_EXHAUSTED
-        - RETRY_EXHAUSTED
         - PRIOR_EXECUTION_STALE
         - SWEEP_EXECUTION_FAILED
-        - LOCK_ACQUISITION_FAILED
-        - CONCURRENT_SWEEP_RUNNING
-        - CAPABILITY_UNAVAILABLE
-        - ALREADY_COMPLETED
-        - HOLD_ACTIVE
-        - EXECUTION_SCHEDULE_NOT_REACHED
-        - MISSING_OWNER_FACTS
-        - MISSING_IDENTITY_FACT
-        - EXTERNAL_OWNER_RETRY_UNSUPPORTED
     DeletionFailureReason:
       type: string
       enum:
         - ACCOUNT_NOT_FOUND
         - COMMUNITY_TIMEOUT
         - LEGAL_HOLD_ACTIVE
-        - AUTH_FAILED
-        - KEY_EXPIRED
-        - INVALID_REFERENCE
-        - STATUTORY_INQUIRY
-        - PENDING_DISPUTE
-        - ACTIVE_SAFETY_REVIEW
-        - SCHEDULED_APPOINTMENT_ACTIVE
-        - USER_CONTESTED
-        - AUDIT_COMPLIANCE_HOLD
     DeletionFailureCode:
       type: string
       enum:
         - ACCOUNT_NOT_FOUND
         - RETRY_LIMIT_EXHAUSTED
-        - RETRY_EXHAUSTED
-        - PRIOR_EXECUTION_STALE
-        - SWEEP_EXECUTION_FAILED
-        - LOCK_ACQUISITION_FAILED
-        - CONCURRENT_SWEEP_RUNNING
-        - CAPABILITY_UNAVAILABLE
-        - ALREADY_COMPLETED
-        - HOLD_ACTIVE
-        - EXECUTION_SCHEDULE_NOT_REACHED
-        - MISSING_OWNER_FACTS
-        - MISSING_IDENTITY_FACT
-        - EXTERNAL_OWNER_RETRY_UNSUPPORTED
     DeletionHoldReason:
       type: string
       enum:

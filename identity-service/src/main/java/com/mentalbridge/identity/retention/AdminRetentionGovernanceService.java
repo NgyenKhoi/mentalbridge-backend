@@ -657,59 +657,60 @@ public class AdminRetentionGovernanceService {
 				record.recordsPurged(),
 				record.tombstonesCreated(),
 				record.holdsHonored(),
-				safeFailureCode(record.failureCode())
+				safeExecutionFailureCode(record.failureCode())
 		);
 	}
 
-	public static final Set<String> APPROVED_FAILURE_CODES = Set.of(
-			"ACCOUNT_NOT_FOUND",
-			"RETRY_LIMIT_EXHAUSTED",
-			"RETRY_EXHAUSTED",
+	public static final Set<String> APPROVED_RETENTION_FAILURE_CODES = Set.of(
 			"PRIOR_EXECUTION_STALE",
-			"SWEEP_EXECUTION_FAILED",
-			"LOCK_ACQUISITION_FAILED",
-			"CONCURRENT_SWEEP_RUNNING",
-			"CAPABILITY_UNAVAILABLE",
-			"ALREADY_COMPLETED",
-			"HOLD_ACTIVE",
-			"EXECUTION_SCHEDULE_NOT_REACHED",
-			"MISSING_OWNER_FACTS",
-			"MISSING_IDENTITY_FACT",
-			"EXTERNAL_OWNER_RETRY_UNSUPPORTED"
+			"SWEEP_EXECUTION_FAILED"
 	);
 
-	public static final Set<String> APPROVED_FAILURE_REASONS = Set.of(
+	public static final Set<String> APPROVED_DELETION_FAILURE_CODES = Set.of(
+			"ACCOUNT_NOT_FOUND",
+			"RETRY_LIMIT_EXHAUSTED"
+	);
+
+	public static final Set<String> APPROVED_DELETION_FAILURE_REASONS = Set.of(
 			"ACCOUNT_NOT_FOUND",
 			"COMMUNITY_TIMEOUT",
-			"LEGAL_HOLD_ACTIVE",
-			"AUTH_FAILED",
-			"KEY_EXPIRED",
-			"INVALID_REFERENCE",
-			"STATUTORY_INQUIRY",
-			"PENDING_DISPUTE",
-			"ACTIVE_SAFETY_REVIEW",
-			"SCHEDULED_APPOINTMENT_ACTIVE",
-			"USER_CONTESTED",
-			"AUDIT_COMPLIANCE_HOLD"
+			"LEGAL_HOLD_ACTIVE"
 	);
+
+	public static final Set<String> APPROVED_FAILURE_CODES = APPROVED_DELETION_FAILURE_CODES;
+	public static final Set<String> APPROVED_FAILURE_REASONS = APPROVED_DELETION_FAILURE_REASONS;
 
 	private static final java.util.regex.Pattern APPROVED_IDENTITY_EVIDENCE_PATTERN =
 			java.util.regex.Pattern.compile("^audit:identity:account-deleted:[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$", java.util.regex.Pattern.CASE_INSENSITIVE);
 
-	private String safeFailureCode(String code) {
+	private String safeExecutionFailureCode(String code) {
 		if (code != null) {
 			String trimmed = code.trim();
-			if (APPROVED_FAILURE_CODES.contains(trimmed)) {
+			if (APPROVED_RETENTION_FAILURE_CODES.contains(trimmed)) {
 				return trimmed;
 			}
 		}
 		return null;
 	}
 
+	private String safeDeletionFailureCode(String code) {
+		if (code != null) {
+			String trimmed = code.trim();
+			if (APPROVED_DELETION_FAILURE_CODES.contains(trimmed)) {
+				return trimmed;
+			}
+		}
+		return null;
+	}
+
+	private String safeFailureCode(String code) {
+		return safeExecutionFailureCode(code);
+	}
+
 	private String safeFailureReason(String reason) {
 		if (reason != null) {
 			String trimmed = reason.trim();
-			if (APPROVED_FAILURE_REASONS.contains(trimmed)) {
+			if (APPROVED_DELETION_FAILURE_REASONS.contains(trimmed)) {
 				return trimmed;
 			}
 		}
@@ -750,7 +751,7 @@ public class AdminRetentionGovernanceService {
 				entity.retryCount(),
 				entity.maxRetries(),
 				entity.escalationState(),
-				safeFailureCode(entity.failureCode()),
+				safeDeletionFailureCode(entity.failureCode()),
 				entity.requestedAt(),
 				entity.scheduledExecutionAt(),
 				entity.completedAt(),
