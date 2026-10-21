@@ -5,9 +5,12 @@ import { CommunityFanout } from './community-fanout.js';
 import { CommunityGateway } from './community.gateway.js';
 import { CommunityPresence } from './community-presence.js';
 import { CommunityPresenceProjection } from './community-presence-projection.js';
+import { CommunityNativeCredentialController } from './community-native-credential.controller.js';
+import { SecurityModule } from '../security/security.module.js';
 
 @Module({
-  controllers: [CommunityCredentialController],
+  imports: [SecurityModule],
+  controllers: [CommunityCredentialController, CommunityNativeCredentialController],
   providers: [
     CommunityOwnerClient,
     CommunityCredentials,

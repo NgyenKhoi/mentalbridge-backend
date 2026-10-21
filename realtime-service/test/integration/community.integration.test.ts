@@ -35,6 +35,7 @@ import {
   communityPeer,
 } from '../fixtures/community-owner.js';
 import { testConfiguration } from '../fixtures/test-configuration.js';
+import { issueToken } from '../fixtures/token.js';
 
 const envelope = z
   .object({
@@ -62,6 +63,7 @@ describe('Community two-replica Kafka, Redis and Socket.IO delivery', { concurre
   let kafka: Kafka;
   let owner: CommunityOwnerFixture;
   let bffKey: CryptoKey;
+  let identityKey: CryptoKey;
   let configuration: ServiceConfiguration;
   const apps: INestApplication[] = [];
   const urls: string[] = [];
@@ -111,10 +113,12 @@ describe('Community two-replica Kafka, Redis and Socket.IO delivery', { concurre
     await producer.connect();
     const realtime = await generateKeyPair('RS256', { extractable: true });
     const bff = await generateKeyPair('RS256', { extractable: true });
+    const identity = await generateKeyPair('RS256', { extractable: true });
     bffKey = bff.privateKey;
+    identityKey = identity.privateKey;
     owner = new CommunityOwnerFixture(realtime.publicKey);
     await owner.start();
-    const base = testConfiguration(await exportSPKI(bff.publicKey));
+    const base = testConfiguration(await exportSPKI(identity.publicKey));
     configuration = {
       ...base,
       LOG_LEVEL: 'warn',
@@ -288,6 +292,26 @@ describe('Community two-replica Kafka, Redis and Socket.IO delivery', { concurre
       messages: facts.map((fact) => ({ key: fact.aggregateId, value: JSON.stringify(fact) })),
     });
   }
+  it('connects the native USER exchange to the existing namespace across replicas without accepting replay', async () => {
+    const response = await request(url())
+      .post('/api/v1/community/socket-credentials')
+      .set(
+        'Authorization',
+        'Bearer ' + (await issueToken(identityKey, configuration, communityBob)),
+      )
+      .send({})
+      .expect('Cache-Control', 'no-store')
+      .expect(200);
+    const credential = credentialSchema.parse(response.body as unknown).credential;
+    const native = await connect(1, communityBob, 300, credential);
+    expect((await subscribe(native)).eventType).toBe('community.command.ack');
+    await expect(connect(0, communityBob, 300, credential)).rejects.toThrow();
+    const message = owner.save();
+    await publish(owner.fact(message));
+    await expect
+      .poll(() => delivered(native).map((item) => item.messageId), { timeout: 20_000 })
+      .toEqual([message.messageId]);
+  });
   it('fans ordered persisted messages to every device despite duplicate and reordered facts', async () => {
     await request(url())
       .get('/health/ready')

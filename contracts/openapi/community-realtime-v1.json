@@ -2,7 +2,7 @@
   "openapi": "3.1.0",
   "info": {
     "title": "Community realtime credential API",
-    "version": "1.0.0"
+    "version": "1.1.0"
   },
   "paths": {
     "/internal/v1/community/socket-credentials": {
@@ -56,6 +56,67 @@
           }
         }
       }
+    },
+    "/api/v1/community/socket-credentials": {
+      "x-mentalbridge-status": "implemented",
+      "x-mentalbridge-owner": "realtime-service",
+      "post": {
+        "operationId": "createNativeCommunitySocketCredential",
+        "summary": "Exchange a verified USER Identity session for a Community socket ticket",
+        "description": "MB-749 native prerequisite for MB-692. Only the verified Identity subject and original expiry select the actor/session. Current Community eligibility is checked at issue and one-use consume. No BFF signing key, raw bearer persistence or actor selector. New explicit connection attempts obtain a new ticket; do not automatically retry this POST. No Idempotency-Key is required for ephemeral ticket issuance. Existing BFF issuance and appointment tickets remain isolated.",
+        "x-mentalbridge-role": "USER",
+        "security": [
+          {
+            "IdentityBearerAuth": []
+          }
+        ],
+        "requestBody": {
+          "required": false,
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "additionalProperties": false,
+                "maxProperties": 0
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Current authorized owner projection; never cache.",
+            "headers": {
+              "Cache-Control": {
+                "schema": {
+                  "const": "no-store"
+                }
+              }
+            },
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/SocketCredential"
+                }
+              }
+            }
+          },
+          "400": {
+            "$ref": "#/components/responses/InvalidRequest"
+          },
+          "401": {
+            "$ref": "#/components/responses/Unauthenticated"
+          },
+          "403": {
+            "$ref": "#/components/responses/Forbidden"
+          },
+          "404": {
+            "$ref": "#/components/responses/TargetUnavailable"
+          },
+          "503": {
+            "$ref": "#/components/responses/DependencyUnavailable"
+          }
+        }
+      }
     }
   },
   "components": {
@@ -65,6 +126,12 @@
         "scheme": "bearer",
         "bearerFormat": "JWT",
         "description": "Authenticated service plus signed short-lived end-user delegation with exact audience/subject/scope; never browser-supplied routing identity."
+      },
+      "IdentityBearerAuth": {
+        "type": "http",
+        "scheme": "bearer",
+        "bearerFormat": "JWT",
+        "description": "Verified Identity RS256 USER access token with exact issuer, audience, key ID, required claims and original expiry. Only for native public exchange; never a trusted BFF/service delegation."
       }
     },
     "schemas": {
@@ -125,6 +192,7 @@
             "type": "string",
             "enum": [
               "INVALID_REQUEST",
+              "VALIDATION_FAILED",
               "UNAUTHENTICATED",
               "FORBIDDEN",
               "TARGET_UNAVAILABLE",

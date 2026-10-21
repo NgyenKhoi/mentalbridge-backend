@@ -1,5 +1,12 @@
 # Requirements Traceability
 
+MB-749 supplies the additive Identity-authenticated native Community socket
+credential exchange required by MB-692. Current Community issue/consume checks,
+one-use tickets and original Identity expiry preserve the accepted privacy
+boundary; existing BFF/appointment ingress remains unchanged. See
+[ADR 0043](adr/0043-native-community-credential-exchange.md) and
+[provider evidence](story-mb-749-native-community-credentials-evidence.md).
+
 MB-684 (2026-10-20) supplies the accepted
 [Community peer-chat decision](adr/0042-community-chat-contract.md),
 [privacy/permission policy](policies/community-chat-policy-v1.md),

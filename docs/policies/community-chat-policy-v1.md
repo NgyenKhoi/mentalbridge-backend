@@ -206,6 +206,13 @@ current eligibility. Never emit an event solely to disclose that opt-in is off.
 
 ## Realtime and durable event contract
 
+MB-749/ADR 0043 adds a native-only public ticket exchange at
+`POST /api/v1/community/socket-credentials`. The verified Identity USER subject
+and original expiry select the session; no client actor/expiry selector or BFF
+signing key is accepted. Current Community eligibility is checked at issue and
+consume. It reuses the opaque one-use namespace ticket and no-store response;
+native ingress does not replace or relax the trusted BFF operation below.
+
 Socket.IO namespace `/community` is separate from `/realtime`. Realtime issues a
 one-use 30s credential through authenticated BFF delegation and consumes it
 atomically; it is bound to namespace, subject and JWT expiry. Never put a bearer

@@ -21,6 +21,24 @@ const compile = async (path: string) => {
   return ajv.compile(schema);
 };
 describe('Community MB-689 runtime contracts', () => {
+  it('defines an isolated closed native USER exchange without changing BFF authentication', async () => {
+    const api = await SwaggerParser.validate(
+      fileURLToPath(
+        new URL('../../../contracts/openapi/realtime-service-v1.yaml', import.meta.url),
+      ),
+    );
+    const path = '/api/v1/community/socket-credentials';
+    expect(api).toHaveProperty(['paths', path, 'x-mentalbridge-status'], 'implemented');
+    expect(api).toHaveProperty(['paths', path, 'post', 'security'], [{ IdentityBearerAuth: [] }]);
+    expect(api).toHaveProperty(
+      ['paths', path, 'post', 'requestBody', 'content', 'application/json', 'schema'],
+      { type: 'object', additionalProperties: false, maxProperties: 0 },
+    );
+    expect(api).toHaveProperty(
+      ['paths', '/internal/v1/community/socket-credentials', 'post', 'security'],
+      [{ RealtimeDelegation: [] }],
+    );
+  });
   it('validates the additive owner and credential APIs', async () => {
     for (const path of ['community-chat-v1.json', 'community-realtime-v1.json']) {
       const api = await SwaggerParser.validate(

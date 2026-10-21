@@ -15,6 +15,7 @@ import { z } from 'zod';
 import type { ServiceConfiguration } from '../configuration/configuration.js';
 import { RedisService } from '../database/redis.service.js';
 import { ApplicationException } from '../http/application.exception.js';
+import type { AuthenticatedPrincipal } from '../security/principal.js';
 import { CONFIGURATION_TOKEN } from '../shared/tokens.js';
 import { CommunityOwnerClient } from './community-owner.client.js';
 import { CommunityError } from './community-schema.js';
@@ -72,9 +73,24 @@ export class CommunityCredentials implements OnModuleInit {
     } catch {
       throw new ApplicationException(401, 'UNAUTHENTICATED', 'Authentication is required');
     }
+    return this.issueSession(session);
+  }
+  async issueNative(principal: AuthenticatedPrincipal) {
+    if (principal.role !== 'USER')
+      throw new ApplicationException(403, 'FORBIDDEN', 'Community access is denied');
+    return this.issueSession({
+      subject: principal.accountId,
+      identityExpiresAt: principal.expiresAtEpochSeconds,
+    });
+  }
+  private async issueSession(session: CommunitySession) {
+    if (session.identityExpiresAt <= Math.floor(Date.now() / 1000))
+      throw new ApplicationException(401, 'UNAUTHENTICATED', 'Authentication has expired');
     await this.owner.session(session.subject);
     const credential = randomBytes(32).toString('base64url');
-    const ttl = Math.min(30, session.identityExpiresAt - Math.floor(Date.now() / 1000));
+    const now = Math.floor(Date.now() / 1000);
+    const expiresAt = Math.min(now + 30, session.identityExpiresAt);
+    const ttl = expiresAt - now;
     if (ttl <= 0)
       throw new ApplicationException(401, 'UNAUTHENTICATED', 'Authentication has expired');
     const stored = await this.redis.execute((client) =>
@@ -82,10 +98,10 @@ export class CommunityCredentials implements OnModuleInit {
     );
     if (stored !== 'OK') throw new CommunityError('DEPENDENCY_UNAVAILABLE');
     return {
-      schemaVersion: 1,
-      namespace: '/community',
+      schemaVersion: 1 as const,
+      namespace: '/community' as const,
       credential,
-      expiresAt: new Date((Math.floor(Date.now() / 1000) + ttl) * 1000).toISOString(),
+      expiresAt: new Date(expiresAt * 1000).toISOString(),
     };
   }
   async consume(credential: string): Promise<CommunitySession> {
