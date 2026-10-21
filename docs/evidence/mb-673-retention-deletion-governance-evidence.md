@@ -201,7 +201,17 @@ Verified UI behaviors:
 
 ## 4. Completion Notes
 
-### Delivered vs Deferred Capabilities
+### 4.0 Jira Acceptance Criteria Evaluation
+
+| Acceptance Criteria | Status | Evaluation Summary |
+| :--- | :--- | :--- |
+| **AC 1: Retention Policy Inventory & Sweep Execution** | **PASS** | Complete catalog of approved policies, versions, owners, status, last execution, and authoritative sweep execution for Identity report-artifacts with aggregate metrics; unsupported capabilities explicitly unavailable. |
+| **AC 2: Audit-Safe Fact Tracking & Privacy Guarantees** | **PASS** | Bounded tombstone hashes (`tombstone:<sha256>`), strict UUID evidence format (`audit:identity:account-deleted:<uuid>`), authoritative failure reason (`ACCOUNT_NOT_FOUND`), fail-closed to null for unapproved codes/external reasons, zero leakage of clinical journals, assessments, or chat logs. |
+| **AC 3: Gated Deletion Execution & Bounded Retries** | **PARTIAL / DEFERRED BY ARCHITECTURE** | **Delivered (Identity coordinator)**: Bounded retries (`maxRetries = 3`), schedule gating (`scheduledExecutionAt`), escalation states (`RETRY_EXHAUSTED` / `MANUAL_ESCALATION_REQUIRED`), hold blocking, retry rejected when Identity completed.<br>**Deferred by architecture**: Production deletion intake and cross-service deletion execution across external data owners (`Care`, `Consultation`, `Journal AI`, `Community`, `Content`) remain deferred because no authoritative cross-service deletion contracts or events exist. Identity does not synthesize completion. |
+| **AC 4: Fail-Closed Retention Holds** | **PASS** | Coordinator-level hold enforcement (`LEGAL_HOLD`, `OPERATIONAL_HOLD`, `DISPUTE_HOLD`) blocking Identity coordination and retries; safe hold reasons enum (`STATUTORY_INQUIRY`, `PENDING_DISPUTE`, etc.); hold applied/released via dedicated endpoints. |
+| **AC 5: Explicit Unavailability for Unsupported Capabilities** | **PASS** | Policies and capabilities without authoritative execution endpoints return HTTP 422 with clear notice; frontend renders disabled buttons with descriptive hints. |
+
+### 4.1 Delivered vs Deferred Capabilities
 
 #### Delivered
 1. **Approved Retention Policy View**: Complete matrix of approved policies, versions, owners, job status, last execution, and safe aggregate metrics (`MB-IDENTITY-REPORTING-001`, `MB-IDENTITY-AUDIT-001`, `MB-PRIVACY-CARE-001`, `consultation-journey-v1`, `MB-DAILY-EMOTION-CHECK-IN-001`, `MB-COMMUNITY-RETENTION-001`, `MB-CONTENT-NOTIFICATION-RETENTION-001`).
