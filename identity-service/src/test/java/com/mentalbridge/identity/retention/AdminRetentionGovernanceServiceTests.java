@@ -1051,4 +1051,53 @@ class AdminRetentionGovernanceServiceTests {
 		assertThat(response.failureCode()).isNull();
 		assertThat(response.ownerFacts().getFirst().failureReason()).isNull();
 	}
+
+	@Test
+	void ownerFactFailureReasonStrictlyRestrictedToAuthoritativeAccountNotFound() {
+		UUID requestId = UUID.randomUUID();
+		UUID accountId = UUID.randomUUID();
+
+		var request = new DeletionRequestEntity(
+				requestId, accountId, "d".repeat(64), DeletionRequestStatus.FAILED,
+				DeletionHoldType.NONE, null, 1, 3,
+				DeletionEscalationState.NONE, null,
+				NOW, NOW, null, null, NOW, NOW
+		);
+
+		// Fact 1: Authoritative ACCOUNT_NOT_FOUND -> preserved
+		request.addOwnerFact(new DeletionOwnerFactEntity(
+				UUID.randomUUID(), request, RetentionOwnerService.IDENTITY, DeletionFactStatus.FAILED,
+				NOW, null, "ACCOUNT_NOT_FOUND", NOW
+		));
+
+		// Fact 2: COMMUNITY_TIMEOUT without authoritative contract -> null
+		request.addOwnerFact(new DeletionOwnerFactEntity(
+				UUID.randomUUID(), request, RetentionOwnerService.COMMUNITY, DeletionFactStatus.FAILED,
+				NOW, null, "COMMUNITY_TIMEOUT", NOW
+		));
+
+		// Fact 3: LEGAL_HOLD_ACTIVE reused on owner fact -> null (hold belongs to holdType/holdReason)
+		request.addOwnerFact(new DeletionOwnerFactEntity(
+				UUID.randomUUID(), request, RetentionOwnerService.IDENTITY, DeletionFactStatus.HELD,
+				NOW, null, "LEGAL_HOLD_ACTIVE", NOW
+		));
+
+		// Fact 4: Arbitrary uppercase sensitive text -> null
+		request.addOwnerFact(new DeletionOwnerFactEntity(
+				UUID.randomUUID(), request, RetentionOwnerService.CARE, DeletionFactStatus.FAILED,
+				NOW, null, "PATIENT_EVALUATION_HIGH_SUICIDE_RISK", NOW
+		));
+
+		when(deletionRequests.findAll(any(Specification.class), any(Pageable.class)))
+				.thenReturn(new PageImpl<>(List.of(request)));
+
+		var page = service.getDeletionRequests(null, null, 20, 0);
+		var response = page.items().getFirst();
+		var facts = response.ownerFacts();
+
+		assertThat(facts.get(0).failureReason()).isEqualTo("ACCOUNT_NOT_FOUND");
+		assertThat(facts.get(1).failureReason()).isNull();
+		assertThat(facts.get(2).failureReason()).isNull();
+		assertThat(facts.get(3).failureReason()).isNull();
+	}
 }

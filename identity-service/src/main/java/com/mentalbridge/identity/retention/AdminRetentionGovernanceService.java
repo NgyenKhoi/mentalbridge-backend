@@ -672,9 +672,7 @@ public class AdminRetentionGovernanceService {
 	);
 
 	public static final Set<String> APPROVED_DELETION_FAILURE_REASONS = Set.of(
-			"ACCOUNT_NOT_FOUND",
-			"COMMUNITY_TIMEOUT",
-			"LEGAL_HOLD_ACTIVE"
+			"ACCOUNT_NOT_FOUND"
 	);
 
 	public static final Set<String> APPROVED_FAILURE_CODES = APPROVED_DELETION_FAILURE_CODES;

@@ -187,7 +187,7 @@ class IdentityOpenApiContractTests {
 				"PRIOR_EXECUTION_STALE", "SWEEP_EXECUTION_FAILED");
 		var deletionFailureReason = (Schema<?>) result.getOpenAPI().getComponents().getSchemas().get("DeletionFailureReason");
 		assertThat(deletionFailureReason.getEnum()).extracting(Object::toString).containsExactly(
-				"ACCOUNT_NOT_FOUND", "COMMUNITY_TIMEOUT", "LEGAL_HOLD_ACTIVE");
+				"ACCOUNT_NOT_FOUND");
 		var deletionFailureCode = (Schema<?>) result.getOpenAPI().getComponents().getSchemas().get("DeletionFailureCode");
 		assertThat(deletionFailureCode.getEnum()).extracting(Object::toString).containsExactly(
 				"ACCOUNT_NOT_FOUND", "RETRY_LIMIT_EXHAUSTED");

@@ -1489,8 +1489,6 @@ components:
       type: string
       enum:
         - ACCOUNT_NOT_FOUND
-        - COMMUNITY_TIMEOUT
-        - LEGAL_HOLD_ACTIVE
     DeletionFailureCode:
       type: string
       enum:
