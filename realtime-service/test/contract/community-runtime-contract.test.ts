@@ -28,7 +28,7 @@ describe('Community MB-689 runtime contracts', () => {
       ),
     );
     const path = '/api/v1/community/socket-credentials';
-    expect(api).toHaveProperty(['paths', path, 'x-mentalbridge-status'], 'planned');
+    expect(api).toHaveProperty(['paths', path, 'x-mentalbridge-status'], 'implemented');
     expect(api).toHaveProperty(['paths', path, 'post', 'security'], [{ IdentityBearerAuth: [] }]);
     expect(api).toHaveProperty(
       ['paths', path, 'post', 'requestBody', 'content', 'application/json', 'schema'],

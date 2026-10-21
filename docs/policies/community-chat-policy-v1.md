@@ -206,7 +206,7 @@ current eligibility. Never emit an event solely to disclose that opt-in is off.
 
 ## Realtime and durable event contract
 
-MB-749/ADR 0043 adds a planned native-only public ticket exchange at
+MB-749/ADR 0043 adds a native-only public ticket exchange at
 `POST /api/v1/community/socket-credentials`. The verified Identity USER subject
 and original expiry select the session; no client actor/expiry selector or BFF
 signing key is accepted. Current Community eligibility is checked at issue and

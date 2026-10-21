@@ -35,7 +35,7 @@ still planned. Native-only credential ingress is the scoped
 | [0040-support-plan-companion-contract.md](0040-support-plan-companion-contract.md) | `MB-SUPPORT-PLAN-COMPANION-001` | Proposed for MB-647 review | Freezes the optional SupportPlan Companion role, intent/context boundary, interaction states, interruption rules, deterministic fallback and cross-client UX contract |
 | [0041-specialist-credential-review.md](0041-specialist-credential-review.md) | `MB-SPECIALIST-CREDENTIAL-001` | Accepted direction | Adds private specialist credentials, ADMIN verification, owner-controlled badges, and `zh`/`fr` profile languages |
 | [0042-community-chat-contract.md](0042-community-chat-contract.md) | `MB-COMMUNITY-CHAT-001` | Accepted | Community-owned private peer conversations and isolated Realtime transport |
-| [0043-native-community-credential-exchange.md](0043-native-community-credential-exchange.md) | `MB-COMMUNITY-NATIVE-CREDENTIAL-001` | Owner accepted separate prerequisite; runtime planned MB-749 | Identity-authenticated native exchange preserving Community owner authorization and existing BFF tickets |
+| [0043-native-community-credential-exchange.md](0043-native-community-credential-exchange.md) | `MB-COMMUNITY-NATIVE-CREDENTIAL-001` | Owner accepted; provider implemented MB-749 | Identity-authenticated native exchange preserving Community owner authorization and existing BFF tickets |
 
 For clauses explicitly amended by ADR 0022, ADR 0024, or ADR 0034, the relevant
 latest amendment is the current prospective authority. Historical records keep

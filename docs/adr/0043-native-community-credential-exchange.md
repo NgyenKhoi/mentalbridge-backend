@@ -2,7 +2,7 @@
 
 - Decision ID: `MB-COMMUNITY-NATIVE-CREDENTIAL-001`
 - Date: 2026-10-21
-- Status: Owner accepted a separate backend prerequisite for implementation; runtime planned in MB-749
+- Status: Owner accepted a separate backend prerequisite; provider implemented in MB-749, deployment/consumer rollout separate
 - Delivery: [MB-749](https://vunguyenkhoi47.atlassian.net/browse/MB-749), consumed by MB-692
 - Amends only native ticket ingress of [ADR 0042](0042-community-chat-contract.md)
 

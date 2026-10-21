@@ -19,7 +19,7 @@ tags:
   - name: Message history
 paths:
   /api/v1/community/socket-credentials:
-    x-mentalbridge-status: planned
+    x-mentalbridge-status: implemented
     $ref: './community-realtime-v1.json#/paths/~1api~1v1~1community~1socket-credentials'
   /internal/v1/community/socket-credentials:
     x-mentalbridge-status: implemented

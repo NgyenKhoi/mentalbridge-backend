@@ -58,7 +58,7 @@
       }
     },
     "/api/v1/community/socket-credentials": {
-      "x-mentalbridge-status": "planned",
+      "x-mentalbridge-status": "implemented",
       "x-mentalbridge-owner": "realtime-service",
       "post": {
         "operationId": "createNativeCommunitySocketCredential",
@@ -192,6 +192,7 @@
             "type": "string",
             "enum": [
               "INVALID_REQUEST",
+              "VALIDATION_FAILED",
               "UNAUTHENTICATED",
               "FORBIDDEN",
               "TARGET_UNAVAILABLE",
