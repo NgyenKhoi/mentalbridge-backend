@@ -98,7 +98,8 @@ Under the MB-583 architecture, `Identity Service` coordinates deletion workflows
 | Frontend typecheck (`npm run typecheck`) | **PASS** | Next.js typegen and `tsc --noEmit` clean with 0 errors. |
 | Frontend lint (`npm run lint`) | **PASS** | `eslint --max-warnings=0` clean with 0 warnings. |
 | Playwright Synthetic E2E (`run-e2e.mjs`) | **PASS** | **2 run, 2 passed, 0 failed** (100% pass in `admin-retention-governance.spec.ts`). |
-| Full backend quality gate and live cross-service E2E | **NOT RUN** | Required before merge; these focused runs do not replace them. |
+| Backend repository quality gate (`scripts/verify-repository.ps1`) | **PASS** | Repository policy passed (1686 tracked files checked, paired-change policy passed for changed files since origin/dev). |
+| Live cross-service E2E (`npm run test:e2e:live`) | **NOT RUN** | Requires deployed multi-service live environment. |
 
 During initial database testing, two early runs failed before executing test bodies because the `deletion_request.subject_reference_hash` JPA mapping expected JDBC `VARCHAR` while the existing migration creates `char(64)`; setting only `columnDefinition` did not change the JDBC type. The mapping was updated to use the repository's existing `@JdbcTypeCode(SqlTypes.CHAR)` pattern, and the five-test database integration suite now passes completely (5/5 PASS) with active Testcontainers PostgreSQL. No migration or transaction propagation was changed.
 
