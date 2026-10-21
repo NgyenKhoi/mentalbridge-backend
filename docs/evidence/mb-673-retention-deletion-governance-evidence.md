@@ -93,7 +93,9 @@ Under the MB-583 architecture, `Identity Service` coordinates deletion workflows
 | `IdentityOpenApiContractTests` | **PASS** | **1 run, 0 failed, 0 errors, 0 skipped**; validates OpenAPI schema endpoints, status codes, and `evidenceReference` pattern/maxLength constraints. |
 | `RetentionTransactionIntegrationTests` | **PASS** | **5 run, 0 failed, 0 errors, 0 skipped**; executed against active Testcontainers PostgreSQL instance, verifying JPA `@JdbcTypeCode(SqlTypes.CHAR)` mapping and hold persistence across transactions. |
 | Total targeted backend run | **PASS** | **67 run, 0 failed, 0 errors, 0 skipped** (100% PASS, BUILD SUCCESS). |
+| Full `identity-service` suite (`./mvnw -B test`) | **PASS** | **225 run, 0 failed, 0 errors, 0 skipped**; validates all 33 runtime OpenAPI operations in `IdentitySessionFlowIntegrationTests`. |
 | `AdminRetentionGovernance.test.tsx` + `AdminWorkspace.test.tsx` + `identity-validation.test.ts` | **PASS** | **28 run, 0 failed, 0 errors, 0 skipped** (15 retention + 1 workspace + 12 validation; 100% pass via vitest). |
+| Frontend code formatting (`npm run format:check`) | **PASS** | Prettier code style verified across all matched files with 0 warnings. |
 | Frontend contract consistency (`npm run contracts:check`) | **PASS** | All 6 microservice OpenAPI snapshots and generated TypeScript interfaces valid. |
 | Frontend typecheck (`npm run typecheck`) | **PASS** | Next.js typegen and `tsc --noEmit` clean with 0 errors. |
 | Frontend lint (`npm run lint`) | **PASS** | `eslint --max-warnings=0` clean with 0 warnings. |
