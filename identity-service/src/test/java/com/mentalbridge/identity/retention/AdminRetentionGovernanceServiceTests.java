@@ -532,7 +532,7 @@ class AdminRetentionGovernanceServiceTests {
 		var identityFact = response.ownerFacts().stream()
 				.filter(f -> f.ownerService() == RetentionOwnerService.IDENTITY).findFirst().orElseThrow();
 		assertThat(identityFact.status()).isEqualTo(DeletionFactStatus.COMPLETED);
-		assertThat(identityFact.evidenceReference()).startsWith("audit:identity:account-deleted:");
+		assertThat(identityFact.evidenceReference()).isEqualTo("audit:identity:account-deleted:" + requestId);
 
 		// CARE fact MUST NOT be fabricated - remains PENDING!
 		var careFact = response.ownerFacts().stream()
@@ -905,7 +905,7 @@ class AdminRetentionGovernanceServiceTests {
 		// Fact 4: Valid opaque audit reference and approved safe failure code
 		request.addOwnerFact(new DeletionOwnerFactEntity(
 				UUID.randomUUID(), request, RetentionOwnerService.IDENTITY, DeletionFactStatus.COMPLETED,
-				NOW, "audit:identity:account-deleted:123", "ACCOUNT_NOT_FOUND", NOW
+				NOW, "audit:identity:account-deleted:948f9e80-d3bc-45aa-91f6-044dd5afbf71", "ACCOUNT_NOT_FOUND", NOW
 		));
 
 		when(deletionRequests.findAll(any(Specification.class), any(Pageable.class)))
@@ -931,7 +931,7 @@ class AdminRetentionGovernanceServiceTests {
 
 		// Fact 4: valid audit reference and safe code preserved
 		var idFact = facts.stream().filter(f -> f.ownerService() == RetentionOwnerService.IDENTITY).findFirst().orElseThrow();
-		assertThat(idFact.evidenceReference()).isEqualTo("audit:identity:account-deleted:123");
+		assertThat(idFact.evidenceReference()).isEqualTo("audit:identity:account-deleted:948f9e80-d3bc-45aa-91f6-044dd5afbf71");
 		assertThat(idFact.failureReason()).isEqualTo("ACCOUNT_NOT_FOUND");
 	}
 
@@ -954,34 +954,40 @@ class AdminRetentionGovernanceServiceTests {
 				NOW, "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.bare.jwt", "AUTH_FAILED", NOW
 		));
 
-		// Fact 2: API-key-like token on IDENTITY evidenceReference -> must fail closed to null
+		// Fact 2: Bare token on IDENTITY evidenceReference -> must fail closed to null
 		request.addOwnerFact(new DeletionOwnerFactEntity(
 				UUID.randomUUID(), request, RetentionOwnerService.IDENTITY, DeletionFactStatus.FAILED,
 				NOW, "opaque_api_key_token_mock_12345", "KEY_EXPIRED", NOW
 		));
 
-		// Fact 3: Underscore-delimited sensitive/clinical text on IDENTITY -> must fail closed to null
+		// Fact 3: Malformed UUID under the authoritative prefix -> must fail closed to null
 		request.addOwnerFact(new DeletionOwnerFactEntity(
 				UUID.randomUUID(), request, RetentionOwnerService.IDENTITY, DeletionFactStatus.FAILED,
-				NOW, "PATIENT_DIAGNOSED_WITH_SEVERE_DEPRESSION_SUICIDE_RISK", "CLINICAL_HOLD", NOW
+				NOW, "audit:identity:account-deleted:not-a-uuid", "INVALID_REFERENCE", NOW
 		));
 
-		// Fact 4: Valid approved audit reference on IDENTITY -> preserved
+		// Fact 4: Secret disguised under the authoritative prefix -> must fail closed to null
+		request.addOwnerFact(new DeletionOwnerFactEntity(
+				UUID.randomUUID(), request, RetentionOwnerService.IDENTITY, DeletionFactStatus.FAILED,
+				NOW, "audit:identity:account-deleted:opaque_secret_key_12345", "INVALID_REFERENCE", NOW
+		));
+
+		// Fact 5: Valid producer-backed Identity UUID reference -> preserved
 		request.addOwnerFact(new DeletionOwnerFactEntity(
 				UUID.randomUUID(), request, RetentionOwnerService.IDENTITY, DeletionFactStatus.COMPLETED,
 				NOW, "audit:identity:account-deleted:948f9e80-d3bc-45aa-91f6-044dd5afbf71", null, NOW
 		));
 
-		// Fact 5: Another valid approved audit format on IDENTITY -> preserved
+		// Fact 6: Legacy format without a production producer -> must fail closed to null
 		request.addOwnerFact(new DeletionOwnerFactEntity(
 				UUID.randomUUID(), request, RetentionOwnerService.IDENTITY, DeletionFactStatus.COMPLETED,
 				NOW, "audit:del:identity:001", null, NOW
 		));
 
-		// Fact 6: Unapproved external owner with audit prefix -> must fail closed to null
+		// Fact 7: External owner without an approved evidence contract -> must fail closed to null
 		request.addOwnerFact(new DeletionOwnerFactEntity(
 				UUID.randomUUID(), request, RetentionOwnerService.CARE, DeletionFactStatus.COMPLETED,
-				NOW, "audit:care:account-deleted:123", null, NOW
+				NOW, "audit:identity:account-deleted:948f9e80-d3bc-45aa-91f6-044dd5afbf71", null, NOW
 		));
 
 		when(deletionRequests.findAll(any(Specification.class), any(Pageable.class)))
@@ -998,13 +1004,15 @@ class AdminRetentionGovernanceServiceTests {
 		assertThat(facts.get(0).evidenceReference()).isNull();
 		// Fact 2: API key -> null
 		assertThat(facts.get(1).evidenceReference()).isNull();
-		// Fact 3: underscore sensitive text -> null
+		// Fact 3: malformed UUID -> null
 		assertThat(facts.get(2).evidenceReference()).isNull();
-		// Fact 4: approved identity audit reference -> preserved
-		assertThat(facts.get(3).evidenceReference()).isEqualTo("audit:identity:account-deleted:948f9e80-d3bc-45aa-91f6-044dd5afbf71");
-		// Fact 5: approved del:identity audit reference -> preserved
-		assertThat(facts.get(4).evidenceReference()).isEqualTo("audit:del:identity:001");
-		// Fact 6: unapproved owner CARE evidence -> null
+		// Fact 4: secret hidden behind an audit prefix -> null
+		assertThat(facts.get(3).evidenceReference()).isNull();
+		// Fact 5: producer-backed Identity UUID reference -> preserved
+		assertThat(facts.get(4).evidenceReference()).isEqualTo("audit:identity:account-deleted:948f9e80-d3bc-45aa-91f6-044dd5afbf71");
+		// Fact 6: legacy format with no production producer -> null
 		assertThat(facts.get(5).evidenceReference()).isNull();
+		// Fact 7: external owner evidence without an approved contract -> null
+		assertThat(facts.get(6).evidenceReference()).isNull();
 	}
 }

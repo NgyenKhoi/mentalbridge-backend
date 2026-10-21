@@ -167,6 +167,8 @@ class IdentityOpenApiContractTests {
 		var registrationActor = (Schema<?>) result.getOpenAPI().getComponents().getSchemas().get("RegistrationRequest")
 				.getProperties().get("actorType");
 		var deletionHoldReason = (Schema<?>) result.getOpenAPI().getComponents().getSchemas().get("DeletionHoldReason");
+		var deletionEvidenceReference = (Schema<?>) result.getOpenAPI().getComponents().getSchemas().get("DeletionOwnerFact")
+				.getProperties().get("evidenceReference");
 		assertThat(summaryRoles.getMaxItems()).isEqualTo(1);
 		assertThat(detailRoles.getMaxItems()).isEqualTo(1);
 		assertThat(registrationActor.getEnum()).extracting(Object::toString).containsExactly("USER", "SPECIALIST");
@@ -177,6 +179,9 @@ class IdentityOpenApiContractTests {
 				"SCHEDULED_APPOINTMENT_ACTIVE",
 				"USER_CONTESTED",
 				"AUDIT_COMPLIANCE_HOLD");
+		assertThat(deletionEvidenceReference.getPattern()).isEqualTo(
+				"^audit:identity:account-deleted:[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$");
+		assertThat(deletionEvidenceReference.getMaxLength()).isEqualTo(67);
 	}
 
 }

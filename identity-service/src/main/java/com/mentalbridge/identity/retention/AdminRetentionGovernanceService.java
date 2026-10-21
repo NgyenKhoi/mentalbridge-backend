@@ -663,7 +663,7 @@ public class AdminRetentionGovernanceService {
 	private static final java.util.regex.Pattern SAFE_FAILURE_CODE_PATTERN = java.util.regex.Pattern.compile("^[A-Z0-9_]{1,64}$");
 	private static final java.util.regex.Pattern SAFE_FAILURE_REASON_PATTERN = java.util.regex.Pattern.compile("^[A-Z0-9_]{1,64}$");
 	private static final java.util.regex.Pattern APPROVED_IDENTITY_EVIDENCE_PATTERN =
-			java.util.regex.Pattern.compile("^audit:(identity:account-deleted:[0-9a-fA-F-]{1,64}|del:identity:[a-zA-Z0-9.-]{1,64})$");
+			java.util.regex.Pattern.compile("^audit:identity:account-deleted:[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$", java.util.regex.Pattern.CASE_INSENSITIVE);
 
 	private String safeFailureCode(String code) {
 		if (code != null && SAFE_FAILURE_CODE_PATTERN.matcher(code.trim()).matches()) {

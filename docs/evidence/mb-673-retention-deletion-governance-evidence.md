@@ -85,12 +85,12 @@ Under the MB-583 architecture, `Identity Service` coordinates deletion workflows
 
 | Check | Result | Actual tests |
 | :--- | :--- | :--- |
-| `AdminRetentionGovernanceServiceTests` | **PASS** | **35 run, 0 failed, 0 errors, 0 skipped**; validates P0 retry consistency when account is missing (`FAILED` status, `ACCOUNT_NOT_FOUND`, audit DENIED), retry exhaustion escalation, hold lifecycle, GET/POST agreement for orphaned runs, and fail-closed privacy boundary sanitization against raw email, bare JWT, API keys, underscore clinical text, and leaked secrets. |
+| `AdminRetentionGovernanceServiceTests` | **PASS** | **35 run, 0 failed, 0 errors, 0 skipped**; validates P0 retry consistency when account is missing (`FAILED` status, `ACCOUNT_NOT_FOUND`, audit DENIED), retry exhaustion escalation, hold lifecycle, GET/POST agreement for orphaned runs, and fail-closed privacy boundary sanitization against raw email, bare JWT, API keys, malformed UUIDs, disguised secrets under `audit:*`, and unapproved external owner evidence. |
 | `AdminRetentionGovernanceControllerTests` | **PASS** | **11 run, 0 failed, 0 errors, 0 skipped**; validates HTTP endpoints, correlation headers, and parameter validation. |
 | `AdminRetentionGovernanceSecuritySliceTests` | **PASS** | **7 run, 0 failed, 0 errors, 0 skipped**; validates RBAC `@PreAuthorize("hasRole('ADMIN')")` across all GET, POST, and DELETE mutating endpoints. |
 | `RetentionAuditLoggerTransactionTests` | **PASS** | **3 run, 0 failed, 0 errors, 0 skipped**; validates `REQUIRES_NEW` audit persistence on rollback. |
 | `RetentionExecutionRecorderTransactionTests` | **PASS** | **3 run, 0 failed, 0 errors, 0 skipped**; validates failure record commit and success rollback. |
-| `IdentityOpenApiContractTests` | **PASS** | **1 run, 0 failed, 0 errors, 0 skipped**; validates OpenAPI schema endpoints and status codes. |
+| `IdentityOpenApiContractTests` | **PASS** | **1 run, 0 failed, 0 errors, 0 skipped**; validates OpenAPI schema endpoints, status codes, and `evidenceReference` pattern/maxLength constraints. |
 | `RetentionTransactionIntegrationTests` | **PASS** | **5 run, 0 failed, 0 errors, 0 skipped**; executed against active Testcontainers PostgreSQL instance, verifying JPA `@JdbcTypeCode(SqlTypes.CHAR)` mapping and hold persistence across transactions. |
 | Total targeted backend run | **PASS** | **65 run, 0 failed, 0 errors, 0 skipped** (100% PASS, BUILD SUCCESS). |
 | `AdminRetentionGovernance.test.tsx` + `AdminWorkspace.test.tsx` + `identity-validation.test.ts` | **PASS** | **27 run, 0 failed, 0 errors, 0 skipped** (15 retention + 1 workspace + 11 validation; 100% pass via vitest). |
@@ -100,7 +100,7 @@ Under the MB-583 architecture, `Identity Service` coordinates deletion workflows
 | Playwright Synthetic E2E (`run-e2e.mjs`) | **PASS** | **2 run, 2 passed, 0 failed** (100% pass in `admin-retention-governance.spec.ts`). |
 | Full backend quality gate and live cross-service E2E | **NOT RUN** | Required before merge; these focused runs do not replace them. |
 
-During initial database testing, two early runs failed before executing test bodies because the `deletion_request.subject_reference_hash` JPA mapping expected JDBC `VARCHAR` while the existing migration creates `char(64)`; setting only `columnDefinition` did not change the JDBC type. The mapping was updated to use the repository's existing `@JdbcTypeCode(SqlTypes.CHAR)` pattern, and the five-test database integration suite now passes completely (5/5 PASS) with active Testcontainers. No migration or transaction propagation was changed.
+During initial database testing, two early runs failed before executing test bodies because the `deletion_request.subject_reference_hash` JPA mapping expected JDBC `VARCHAR` while the existing migration creates `char(64)`; setting only `columnDefinition` did not change the JDBC type. The mapping was updated to use the repository's existing `@JdbcTypeCode(SqlTypes.CHAR)` pattern, and the five-test database integration suite now passes completely (5/5 PASS) with active Testcontainers PostgreSQL. No migration or transaction propagation was changed.
 
 Sections 3.1–3.4 below record verification from the earlier branch snapshot; their counts are historical, not tests rerun for this worktree.
 
