@@ -316,15 +316,7 @@ public class AdminCommercialReconciliationController {
 							from subscription_upgrade_credit uc
 							join subscription_upgrade u on u.id = uc.upgrade_id
 							where u.payment_id = :paymentId
-							union
-							select c.id
-							from service_credit c
-							join service_credit_period p on p.id = c.period_id
-							join subscription_upgrade u on u.payment_id = :paymentId
-							where p.source = 'PAID'
-							  and p.source_reference = cast(u.subscription_id as text)
-							  and u.applied_at is not null
-							  and c.created_at >= u.applied_at
+							order by uc.credit_id
 							limit %d
 							""".formatted(FETCH_LIMIT + 1))
 							.param("paymentId", paymentId)
@@ -338,10 +330,10 @@ public class AdminCommercialReconciliationController {
 								where p.source = 'PAID'
 								  and p.source_reference = :subIdText
 								  and not exists (
-								      select 1 from subscription_upgrade u
-								      where u.subscription_id = :subId
-								        and u.applied_at is not null
-								        and c.created_at >= u.applied_at
+								      select 1 from subscription_upgrade_credit uc
+								      join subscription_upgrade u on u.id = uc.upgrade_id
+								      where uc.credit_id = c.id
+								        and u.subscription_id = :subId
 								  )
 								order by c.created_at, c.id
 								limit %d

@@ -1104,13 +1104,14 @@ class AdminCommercialReconciliationIntegrationTests extends ConsultationTestProp
 		jdbc.sql("""
 				insert into payment_transaction (
 				 id, subscription_id, target_plan_version_id, payment_provider, momo_order_id, momo_request_id,
-				 amount_minor, currency, status, purpose, idempotency_key, expires_at, created_at, updated_at
+				 amount_minor, currency, status, purpose, idempotency_key, expires_at, checkout_url, created_at, updated_at
 				) values (
 				 :id, :subId, :planId, 'MOMO', :orderId, :reqId,
-				 150000, 'VND', 'PENDING', 'UPGRADE', :key, now() + interval '1 hour', now(), now()
+				 150000, 'VND', 'PENDING', 'UPGRADE', :key, now() + interval '1 hour', :checkoutUrl, now(), now()
 				)
 				""").param("id", p2).param("subId", subId).param("planId", premiumPlanVersionId)
-				.param("orderId", "order-" + p2).param("reqId", "req-" + p2).param("key", "idem-" + p2).update();
+				.param("orderId", "order-" + p2).param("reqId", "req-" + p2).param("key", "idem-" + p2)
+				.param("checkoutUrl", "https://test.momo.vn/checkout/" + p2).update();
 
 		jdbc.sql("""
 				insert into subscription_upgrade (
@@ -1329,6 +1330,118 @@ class AdminCommercialReconciliationIntegrationTests extends ConsultationTestProp
 				.andExpect(jsonPath("$.earnings[0].earningId").value(earningId.toString()))
 				.andExpect(jsonPath("$.payouts.length()").value(1))
 				.andExpect(jsonPath("$.payouts[0].payoutId").value(payoutId.toString()));
+	}
+
+	@Test
+	void upgradeCreditAttributionUsesExplicitRelationshipNotTimestampOrdering() throws Exception {
+		var specialistId = UUID.randomUUID();
+		var adminId = UUID.randomUUID();
+		jdbc.sql("""
+				insert into specialist_profile (
+				 account_id, display_name, biography, years_experience, timezone, approval_status,
+				 submitted_at, reviewed_at, reviewed_by
+				) values (:id, 'Spec Upgrade Credit', 'Bio', 5, 'Asia/Ho_Chi_Minh', 'APPROVED', now(), now(), :admin)
+				""").param("id", specialistId).param("admin", adminId).update();
+
+		var userId = UUID.randomUUID();
+		var purchaseCheckout = billing.checkout(userId, PLUS, "upgrade-attr-purchase-" + UUID.randomUUID());
+		var p1 = purchaseCheckout.paymentId();
+		var subId = purchaseCheckout.subscriptionId();
+
+		jdbc.sql("update payment_transaction set status='SUCCEEDED', paid_at=now() - interval '5 days' where id=:id").param("id", p1).update();
+		jdbc.sql("update user_subscription set status='ACTIVE', current_period_start=now() - interval '5 days', current_period_end=now() + interval '25 days' where id=:id").param("id", subId).update();
+
+		var period1 = UUID.randomUUID();
+		var c1 = UUID.randomUUID();
+		jdbc.sql("""
+				insert into service_credit_period (
+				 id, account_id, plan_version, credit_policy_version, package_code, source, source_reference,
+				 period_start, period_end, allocated_count, credit_allocation_minor, created_at, updated_at
+				) values (:id, :userId, 'v1', 'consultation-credit-v1', 'PLUS', 'PAID', :ref, now() - interval '5 days', now() + interval '25 days', 1, 200000, now() - interval '5 days', now() - interval '5 days')
+				""").param("id", period1).param("userId", userId).param("ref", subId.toString()).update();
+		jdbc.sql("insert into service_credit (id, period_id, ordinal, state, created_at, updated_at) values (:id, :periodId, 1, 'AVAILABLE', now() - interval '5 days', now() - interval '5 days')")
+				.param("id", c1).param("periodId", period1).update();
+
+		var upgradeId = UUID.randomUUID();
+		var p2 = UUID.randomUUID();
+		var premiumPlanVersionId = UUID.fromString("62200000-0000-4000-8000-000000000003");
+		jdbc.sql("""
+				insert into payment_transaction (
+				 id, subscription_id, target_plan_version_id, payment_provider, momo_order_id, momo_request_id,
+				 amount_minor, currency, status, purpose, idempotency_key, expires_at, checkout_url, paid_at, created_at, updated_at
+				) values (
+				 :id, :subId, :planId, 'MOMO', :orderId, :reqId,
+				 150000, 'VND', 'SUCCEEDED', 'UPGRADE', :key, now() - interval '2 days', :checkoutUrl, now() - interval '3 days', now() - interval '3 days', now() - interval '3 days'
+				)
+				""").param("id", p2).param("subId", subId).param("planId", premiumPlanVersionId)
+				.param("orderId", "order-" + p2).param("reqId", "req-" + p2).param("key", "idem-upgrade-" + p2)
+				.param("checkoutUrl", "https://test.momo.vn/checkout/" + p2).update();
+
+		jdbc.sql("""
+				insert into subscription_upgrade (
+				 id, subscription_id, from_plan_version_id, to_plan_version_id, payment_id,
+				 old_period_start, old_period_end, total_period_seconds, remaining_period_seconds,
+				 remaining_feature_value_minor, available_credit_value_minor, offset_minor, amount_due_minor,
+				 currency, status, idempotency_key, quoted_at, quote_expires_at, applied_at, created_at, updated_at
+				) values (
+				 :id, :subId, :fromPlan, :toPlan, :paymentId,
+				 now() - interval '5 days', now() + interval '25 days', 2592000, 2160000,
+				 50000, 0, 50000, 150000,
+				 'VND', 'APPLIED', :key, now() - interval '3 days 1 hour', now() - interval '3 days', now() - interval '3 days', now() - interval '3 days', now() - interval '3 days'
+				)
+				""").param("id", upgradeId).param("subId", subId)
+				.param("fromPlan", PLUS).param("toPlan", premiumPlanVersionId)
+				.param("paymentId", p2).param("key", "upg-idem-" + upgradeId).update();
+
+		var c2 = UUID.randomUUID();
+		var period2 = UUID.randomUUID();
+		jdbc.sql("""
+				insert into service_credit_period (
+				 id, account_id, plan_version, credit_policy_version, package_code, source, source_reference,
+				 period_start, period_end, allocated_count, credit_allocation_minor, created_at, updated_at
+				) values (:id, :userId, 'v1', 'consultation-credit-v1', 'PLUS', 'PAID', :ref, now() - interval '3 days', now() + interval '27 days', 1, 200000, now() - interval '3 days', now() - interval '3 days')
+				""").param("id", period2).param("userId", userId).param("ref", subId.toString()).update();
+		jdbc.sql("insert into service_credit (id, period_id, ordinal, state, created_at, updated_at) values (:id, :periodId, 1, 'AVAILABLE', now() - interval '3 days', now() - interval '3 days')")
+				.param("id", c2).param("periodId", period2).update();
+
+		jdbc.sql("insert into subscription_upgrade_credit (upgrade_id, credit_id, allocated_value_minor) values (:upgradeId, :creditId, 200000)")
+				.param("upgradeId", upgradeId).param("creditId", c2).update();
+
+		var c3 = UUID.randomUUID();
+		var period3 = UUID.randomUUID();
+		jdbc.sql("""
+				insert into service_credit_period (
+				 id, account_id, plan_version, credit_policy_version, package_code, source, source_reference,
+				 period_start, period_end, allocated_count, credit_allocation_minor, created_at, updated_at
+				) values (:id, :userId, 'v1', 'consultation-credit-v1', 'PLUS', 'PAID', :ref, now() - interval '1 day', now() + interval '29 days', 1, 200000, now() - interval '1 day', now() - interval '1 day')
+				""").param("id", period3).param("userId", userId).param("ref", subId.toString()).update();
+		jdbc.sql("insert into service_credit (id, period_id, ordinal, state, created_at, updated_at) values (:id, :periodId, 1, 'AVAILABLE', now() - interval '1 day', now() - interval '1 day')")
+				.param("id", c3).param("periodId", period3).update();
+
+		mvc.perform(get("/api/v1/admin/commercial/provenance")
+				.param("paymentId", p1.toString())
+				.with(role(UUID.randomUUID(), "ROLE_ADMIN")))
+				.andExpect(status().isOk())
+				.andExpect(jsonPath("$.found").value(true))
+				.andExpect(jsonPath("$.credits.length()").value(2))
+				.andExpect(jsonPath("$.credits[?(@.creditId == '" + c1.toString() + "')]").exists())
+				.andExpect(jsonPath("$.credits[?(@.creditId == '" + c3.toString() + "')]").exists());
+
+		mvc.perform(get("/api/v1/admin/commercial/provenance")
+				.param("paymentId", p2.toString())
+				.with(role(UUID.randomUUID(), "ROLE_ADMIN")))
+				.andExpect(status().isOk())
+				.andExpect(jsonPath("$.found").value(true))
+				.andExpect(jsonPath("$.credits.length()").value(1))
+				.andExpect(jsonPath("$.credits[0].creditId").value(c2.toString()));
+
+		mvc.perform(get("/api/v1/admin/commercial/provenance")
+				.param("subscriptionId", subId.toString())
+				.with(role(UUID.randomUUID(), "ROLE_ADMIN")))
+				.andExpect(status().isOk())
+				.andExpect(jsonPath("$.found").value(true))
+				.andExpect(jsonPath("$.payments.length()").value(2))
+				.andExpect(jsonPath("$.credits.length()").value(3));
 	}
 
 	private org.springframework.test.web.servlet.request.RequestPostProcessor role(UUID id, String authority) {
