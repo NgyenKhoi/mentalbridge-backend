@@ -201,6 +201,7 @@ try {
     }
 
     $changedFiles = @()
+    $materialPostgresServices = @()
     if (-not [string]::IsNullOrWhiteSpace($BaseSha)) {
         & git cat-file -e "$BaseSha^{commit}" 2>$null
         if ($LASTEXITCODE -eq 0) {
@@ -266,15 +267,12 @@ try {
 
         $postgresMigrationPattern = '^((identity|care|consultation|community)-service/src/main/resources/db/changelog/|content-notification-service/migrations/).+\.(sql|ya?ml|xml|js|cjs|mjs|ts)$'
         $postgresMigrationFiles = @($changedFiles | Where-Object { $_ -match $postgresMigrationPattern })
-        $migrationChanged = $postgresMigrationFiles.Count -gt 0
-        if ($migrationChanged -and $changedFiles -notcontains 'docs/database/postgresql-field-data-dictionary.md') {
-            Add-Failure 'PostgreSQL migration changed without the field data dictionary'
-        }
-
         $postgresMaterialPattern = '(?i)(create\s+table|drop\s+table|add\s+column|drop\s+column|rename\s+column|alter\s+column.+(?:set|drop)\s+not\s+null|add\s+constraint.+(?:primary\s+key|foreign\s+key|unique|check)|drop\s+constraint|create\s+unique\s+index|references\s+\w+|status.+\bin\s*\()'
-        $postgresModelChanged = Has-MaterialMigrationChange $BaseSha $postgresMigrationFiles $untrackedFiles $postgresMaterialPattern
-        if ($postgresModelChanged -and $changedFiles -notcontains $canonicalRelationalModel) {
-            Add-Failure 'Material PostgreSQL migration changed without the canonical relational model'
+        foreach ($postgresService in @('identity-service', 'care-service', 'consultation-service', 'community-service', 'content-notification-service')) {
+            $ownerMigrations = @($postgresMigrationFiles | Where-Object { $_ -match "^$([regex]::Escape($postgresService))/" })
+            if (Has-MaterialMigrationChange $BaseSha $ownerMigrations $untrackedFiles $postgresMaterialPattern) {
+                $materialPostgresServices += $postgresService
+            }
         }
 
         $mongoMigrationPattern = '^(journal-ai-service|realtime-service)/migrations/.+\.(js|cjs|mjs|ts)$'
@@ -310,6 +308,24 @@ try {
                 Add-Failure "$service .env.example changed without README.md"
             }
         }
+    }
+
+    & node --test --test-reporter=dot (Join-Path $PSScriptRoot 'documentation-policy.test.mjs') (Join-Path $PSScriptRoot 'verify-documentation-preservation.test.mjs')
+    if ($LASTEXITCODE -ne 0) {
+        throw 'Documentation policy regression tests failed'
+    }
+
+    $documentationInput = @{
+        changedFiles = @($changedFiles)
+        materialPostgresServices = @($materialPostgresServices)
+    } | ConvertTo-Json -Depth 4 -Compress
+    $documentationOutput = $documentationInput | & node (Join-Path $PSScriptRoot 'documentation-policy.mjs') --json
+    if ($LASTEXITCODE -ne 0) {
+        throw 'Documentation policy could not run'
+    }
+    $documentationResult = $documentationOutput | ConvertFrom-Json
+    foreach ($failure in $documentationResult.failures) {
+        Add-Failure $failure
     }
 
     if ($failures.Count -gt 0) {
