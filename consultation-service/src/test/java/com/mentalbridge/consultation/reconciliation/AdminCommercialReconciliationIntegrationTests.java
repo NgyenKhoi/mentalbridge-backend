@@ -859,6 +859,68 @@ class AdminCommercialReconciliationIntegrationTests extends ConsultationTestProp
 				.andExpect(jsonPath("$.count").value(1));
 	}
 
+	@Test
+	void truncation_intermediateQuery_detectsTruncation() throws Exception {
+		// This test verifies that intermediate query truncation is properly detected
+		// We'll use the CREDIT path which has intermediate queries for appointments
+		var userId = UUID.randomUUID();
+		var checkout = billing.checkout(userId, PLUS, "intermediate-trunc-" + UUID.randomUUID());
+		
+		// Get the credit ID from the checkout
+		var credits = jdbc.sql("select id from service_credit where period_id in (select id from service_credit_period where source_reference = :ref)")
+				.param("ref", checkout.subscriptionId().toString())
+				.query(UUID.class).list();
+		
+		if (credits.isEmpty()) return; // Skip if billing didn't create credits
+		
+		var creditId = credits.get(0);
+		
+		// Create a specialist
+		var specialistId = UUID.randomUUID();
+		var adminId = UUID.randomUUID();
+		jdbc.sql("""
+				insert into specialist_profile (
+				 account_id, display_name, biography, years_experience, timezone, approval_status,
+				 submitted_at, reviewed_at, reviewed_by
+				) values (:id, 'Test Spec', 'Bio', 5, 'Asia/Ho_Chi_Minh', 'APPROVED', now(), now(), :admin)
+				""").param("id", specialistId).param("admin", adminId).update();
+		
+		// Create 101 appointments linked to this credit to trigger intermediate truncation
+		// This simulates a credit with extensive appointment history
+		for (int i = 0; i < 101; i++) {
+			var apptId = UUID.randomUUID();
+			var slotId = UUID.randomUUID();
+			
+			// Create availability slot
+			jdbc.sql("""
+					insert into specialist_availability_slot (
+					 id, specialist_account_id, starts_at, ends_at, status, created_at, updated_at
+					) values (:id, :specId, now() + interval '1 hour' * :offset, now() + interval '2 hours' * :offset, 'BOOKED', now(), now())
+					""").param("id", slotId).param("specId", specialistId).param("offset", i).update();
+			
+			// Create appointment
+			jdbc.sql("""
+					insert into appointment (
+					 id, user_account_id, specialist_account_id, service_credit_id, availability_slot_id,
+					 modality, status, scheduled_start_at, scheduled_end_at, decision_deadline_at,
+					 created_at, updated_at
+					) values (:id, :userId, :specId, :creditId, :slotId, 'ONLINE_VIDEO', 'REQUESTED',
+					 now() + interval '1 hour' * :offset, now() + interval '2 hours' * :offset, now() + interval '30 minutes' * :offset,
+					 now(), now())
+					""").param("id", apptId).param("userId", userId).param("specId", specialistId)
+					.param("creditId", creditId).param("slotId", slotId).param("offset", i).update();
+		}
+		
+		// Query by creditId - should detect intermediate truncation even if final lists are small
+		mvc.perform(get("/api/v1/admin/commercial/provenance")
+				.param("creditId", creditId.toString())
+				.with(role(UUID.randomUUID(), "ROLE_ADMIN")))
+				.andExpect(status().isOk())
+				.andExpect(jsonPath("$.found").value(true))
+				.andExpect(jsonPath("$.truncated").value(true))  // MUST be true due to 101 appointments
+				.andExpect(jsonPath("$.appointments.length()").value(100)); // Trimmed to 100
+	}
+
 	private org.springframework.test.web.servlet.request.RequestPostProcessor role(UUID id, String authority) {
 		return jwt().jwt(token -> token.subject(id.toString())).authorities(new SimpleGrantedAuthority(authority));
 	}

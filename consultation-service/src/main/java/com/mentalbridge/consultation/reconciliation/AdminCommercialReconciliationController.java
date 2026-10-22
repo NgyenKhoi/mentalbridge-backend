@@ -217,6 +217,9 @@ public class AdminCommercialReconciliationController {
 		Set<UUID> creditIds = new LinkedHashSet<>();
 		if (creditId != null) creditIds.add(creditId);
 
+		// Track truncation from intermediate relationship queries
+		boolean intermediateTruncated = false;
+
 		if ("PAYOUT".equals(queryType)) {
 			payoutIds.add(payoutId);
 			var relEarnings = jdbc.sql("select earning_id from specialist_payout_item where payout_id = :payoutId")
@@ -235,8 +238,8 @@ public class AdminCommercialReconciliationController {
 				}
 			}
 
-			resolveOriginatingSubscriptions(creditIds, subscriptionIds);
-			resolveSubscriptionPayments(subscriptionIds, paymentIds);
+			if (resolveOriginatingSubscriptions(creditIds, subscriptionIds)) intermediateTruncated = true;
+			if (resolveSubscriptionPayments(subscriptionIds, paymentIds)) intermediateTruncated = true;
 
 		} else if ("EARNING".equals(queryType)) {
 			earningIds.add(earningId);
@@ -254,8 +257,8 @@ public class AdminCommercialReconciliationController {
 				if (row.second != null) creditIds.add(row.second);
 			}
 
-			resolveOriginatingSubscriptions(creditIds, subscriptionIds);
-			resolveSubscriptionPayments(subscriptionIds, paymentIds);
+			if (resolveOriginatingSubscriptions(creditIds, subscriptionIds)) intermediateTruncated = true;
+			if (resolveSubscriptionPayments(subscriptionIds, paymentIds)) intermediateTruncated = true;
 
 		} else if ("APPOINTMENT".equals(queryType)) {
 			appointmentIds.add(appointmentId);
@@ -263,8 +266,8 @@ public class AdminCommercialReconciliationController {
 					.param("appointmentId", appointmentId).query(UUID.class).optional().orElse(null);
 			if (cId != null) creditIds.add(cId);
 
-			resolveOriginatingSubscriptions(creditIds, subscriptionIds);
-			resolveSubscriptionPayments(subscriptionIds, paymentIds);
+			if (resolveOriginatingSubscriptions(creditIds, subscriptionIds)) intermediateTruncated = true;
+			if (resolveSubscriptionPayments(subscriptionIds, paymentIds)) intermediateTruncated = true;
 
 			var apptEarnings = jdbc.sql("select id from specialist_earning where appointment_id = :appointmentId")
 					.param("appointmentId", appointmentId).query(UUID.class).list();
@@ -279,13 +282,14 @@ public class AdminCommercialReconciliationController {
 
 		} else if ("CREDIT".equals(queryType)) {
 			creditIds.add(creditId);
-			resolveOriginatingSubscriptions(creditIds, subscriptionIds);
-			resolveSubscriptionPayments(subscriptionIds, paymentIds);
+			if (resolveOriginatingSubscriptions(creditIds, subscriptionIds)) intermediateTruncated = true;
+			if (resolveSubscriptionPayments(subscriptionIds, paymentIds)) intermediateTruncated = true;
 
 			final int FETCH_LIMIT = 100;
 			var creditAppointments = jdbc.sql("select id from appointment where service_credit_id = :creditId order by scheduled_start_at asc limit " + (FETCH_LIMIT + 1))
 					.param("creditId", creditId).query(UUID.class).list();
 			if (creditAppointments.size() > FETCH_LIMIT) {
+				intermediateTruncated = true;
 				appointmentIds.addAll(creditAppointments.subList(0, FETCH_LIMIT));
 			} else {
 				appointmentIds.addAll(creditAppointments);
@@ -295,6 +299,7 @@ public class AdminCommercialReconciliationController {
 				var apptEarnings = jdbc.sql("select id from specialist_earning where appointment_id in (" + inClause + ") limit " + (FETCH_LIMIT + 1))
 						.query(UUID.class).list();
 				if (apptEarnings.size() > FETCH_LIMIT) {
+					intermediateTruncated = true;
 					earningIds.addAll(apptEarnings.subList(0, FETCH_LIMIT));
 				} else {
 					earningIds.addAll(apptEarnings);
@@ -304,6 +309,7 @@ public class AdminCommercialReconciliationController {
 					var pIds = jdbc.sql("select payout_id from specialist_payout_item where earning_id in (" + earnInClause + ") limit " + (FETCH_LIMIT + 1))
 							.query(UUID.class).list();
 					if (pIds.size() > FETCH_LIMIT) {
+						intermediateTruncated = true;
 						payoutIds.addAll(pIds.subList(0, FETCH_LIMIT));
 					} else {
 						payoutIds.addAll(pIds);
@@ -321,7 +327,7 @@ public class AdminCommercialReconciliationController {
 				subscriptionIds.add(subscriptionId);
 			}
 
-			resolveSubscriptionPayments(subscriptionIds, paymentIds);
+			if (resolveSubscriptionPayments(subscriptionIds, paymentIds)) intermediateTruncated = true;
 
 			final int FETCH_LIMIT = 100;
 			if (!subscriptionIds.isEmpty()) {
@@ -342,6 +348,7 @@ public class AdminCommercialReconciliationController {
 
 				int subCreditsSize = subCredits.size();
 				if (subCreditsSize > FETCH_LIMIT) {
+					intermediateTruncated = true;
 					subCredits = subCredits.subList(0, FETCH_LIMIT);
 				}
 
@@ -356,6 +363,7 @@ public class AdminCommercialReconciliationController {
 				var apptEarnings = jdbc.sql("select id from specialist_earning where appointment_id in (" + inClause + ") limit " + (FETCH_LIMIT + 1))
 						.query(UUID.class).list();
 				if (apptEarnings.size() > FETCH_LIMIT) {
+					intermediateTruncated = true;
 					earningIds.addAll(apptEarnings.subList(0, FETCH_LIMIT));
 				} else {
 					earningIds.addAll(apptEarnings);
@@ -367,6 +375,7 @@ public class AdminCommercialReconciliationController {
 				var pIds = jdbc.sql("select payout_id from specialist_payout_item where earning_id in (" + inClause + ") limit " + (FETCH_LIMIT + 1))
 						.query(UUID.class).list();
 				if (pIds.size() > FETCH_LIMIT) {
+					intermediateTruncated = true;
 					payoutIds.addAll(pIds.subList(0, FETCH_LIMIT));
 				} else {
 					payoutIds.addAll(pIds);
@@ -561,7 +570,8 @@ public class AdminCommercialReconciliationController {
 					.list();
 		}
 
-		boolean anyTruncated = subscriptions.size() > FETCH_LIMIT
+		boolean anyTruncated = intermediateTruncated
+				|| subscriptions.size() > FETCH_LIMIT
 				|| payments.size() > FETCH_LIMIT
 				|| credits.size() > FETCH_LIMIT
 				|| appointments.size() > FETCH_LIMIT
@@ -599,8 +609,8 @@ public class AdminCommercialReconciliationController {
 				payouts);
 	}
 
-	private void resolveOriginatingSubscriptions(Set<UUID> creditIds, Set<UUID> subscriptionIds) {
-		if (creditIds.isEmpty()) return;
+	private boolean resolveOriginatingSubscriptions(Set<UUID> creditIds, Set<UUID> subscriptionIds) {
+		if (creditIds.isEmpty()) return false;
 		final int FETCH_LIMIT = 100;
 		var inClause = inClause(creditIds);
 		var creditRows = jdbc.sql("""
@@ -614,6 +624,7 @@ public class AdminCommercialReconciliationController {
 						row.getString("source_reference")))
 				.list();
 
+		boolean wasTruncated = creditRows.size() > FETCH_LIMIT;
 		int limitedSize = Math.min(creditRows.size(), FETCH_LIMIT);
 		for (int i = 0; i < limitedSize; i++) {
 			var cr = creditRows.get(i);
@@ -630,18 +641,22 @@ public class AdminCommercialReconciliationController {
 				join subscription_upgrade u on u.id=uc.upgrade_id
 				where uc.credit_id in (""" + inClause + ") limit " + (FETCH_LIMIT + 1))
 				.query(UUID.class).list();
+		if (upgradeSubs.size() > FETCH_LIMIT) wasTruncated = true;
 		limitedSize = Math.min(upgradeSubs.size(), FETCH_LIMIT);
 		subscriptionIds.addAll(upgradeSubs.subList(0, limitedSize));
+		return wasTruncated;
 	}
 
-	private void resolveSubscriptionPayments(Set<UUID> subscriptionIds, Set<UUID> paymentIds) {
-		if (subscriptionIds.isEmpty()) return;
+	private boolean resolveSubscriptionPayments(Set<UUID> subscriptionIds, Set<UUID> paymentIds) {
+		if (subscriptionIds.isEmpty()) return false;
 		final int FETCH_LIMIT = 100;
 		var inClause = inClause(subscriptionIds);
 		var subPaymentIds = jdbc.sql("select id from payment_transaction where subscription_id in (" + inClause + ") limit " + (FETCH_LIMIT + 1))
 				.query(UUID.class).list();
+		boolean wasTruncated = subPaymentIds.size() > FETCH_LIMIT;
 		int limitedSize = Math.min(subPaymentIds.size(), FETCH_LIMIT);
 		paymentIds.addAll(subPaymentIds.subList(0, limitedSize));
+		return wasTruncated;
 	}
 
 	private static String inClause(Collection<UUID> ids) {
