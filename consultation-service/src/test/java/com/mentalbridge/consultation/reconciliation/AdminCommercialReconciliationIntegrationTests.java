@@ -8,6 +8,8 @@ import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.
 
 import java.sql.Timestamp;
 import java.time.Instant;
+import java.util.HashSet;
+import java.util.Set;
 import java.util.UUID;
 
 import org.junit.jupiter.api.Test;
@@ -860,22 +862,75 @@ class AdminCommercialReconciliationIntegrationTests extends ConsultationTestProp
 	}
 
 	@Test
-	void truncation_intermediateQuery_detectsTruncation() throws Exception {
-		// This test verifies that intermediate query truncation is properly detected
-		// We'll use the CREDIT path which has intermediate queries for appointments
+	void creditProvenanceWith99AppointmentsReturnsAllWithoutTruncation() throws Exception {
+		assertCreditAppointmentBoundary(99, 99, false);
+	}
+
+	@Test
+	void creditProvenanceWith100AppointmentsReturnsAllWithoutTruncation() throws Exception {
+		assertCreditAppointmentBoundary(100, 100, false);
+	}
+
+	@Test
+	void creditProvenanceWith101AppointmentsReturnsBoundedResultWithTruncation() throws Exception {
+		assertCreditAppointmentBoundary(101, 100, true);
+	}
+
+	@Test
+	void subscriptionProvenanceWith101CreditsPropagatesIntermediateTruncation() throws Exception {
 		var userId = UUID.randomUUID();
-		var checkout = billing.checkout(userId, PLUS, "intermediate-trunc-" + UUID.randomUUID());
-		
-		// Get the credit ID from the checkout
-		var credits = jdbc.sql("select id from service_credit where period_id in (select id from service_credit_period where source_reference = :ref)")
-				.param("ref", checkout.subscriptionId().toString())
-				.query(UUID.class).list();
-		
-		if (credits.isEmpty()) return; // Skip if billing didn't create credits
-		
-		var creditId = credits.get(0);
-		
-		// Create a specialist
+		var checkout = billing.checkout(userId, PLUS, "subscription-credit-trunc-" + UUID.randomUUID());
+		var creditIds = new HashSet<UUID>();
+		var base = Instant.parse("2025-01-01T00:00:00Z");
+
+		for (int i = 0; i < 101; i++) {
+			var periodId = UUID.randomUUID();
+			var creditId = UUID.randomUUID();
+			var periodStart = base.plusSeconds(i * 86400L);
+			jdbc.sql("""
+					insert into service_credit_period (
+					 id, account_id, plan_version, credit_policy_version, package_code, source, source_reference,
+					 period_start, period_end, allocated_count, credit_allocation_minor, created_at, updated_at
+					) values (:id, :userId, 'v1', 'consultation-credit-v1', 'PLUS', 'PAID', :ref,
+					 :periodStart, :periodEnd, 1, 100000, :createdAt, :createdAt)
+					""").param("id", periodId).param("userId", userId)
+					.param("ref", checkout.subscriptionId().toString())
+					.param("periodStart", Timestamp.from(periodStart))
+					.param("periodEnd", Timestamp.from(periodStart.plusSeconds(86400)))
+					.param("createdAt", Timestamp.from(periodStart)).update();
+			jdbc.sql("""
+					insert into service_credit (id, period_id, ordinal, state, created_at, updated_at)
+					values (:id, :periodId, 1, 'AVAILABLE', :createdAt, :createdAt)
+					""").param("id", creditId).param("periodId", periodId)
+					.param("createdAt", Timestamp.from(periodStart)).update();
+			creditIds.add(creditId);
+		}
+
+		var fixtureCount = jdbc.sql("""
+				select count(*) from service_credit c
+				join service_credit_period p on p.id=c.period_id
+				where p.source='PAID' and p.source_reference=:subscriptionId
+				""").param("subscriptionId", checkout.subscriptionId().toString()).query(Integer.class).single();
+		assertThat(fixtureCount).isEqualTo(101);
+
+		var result = mvc.perform(get("/api/v1/admin/commercial/provenance")
+				.param("subscriptionId", checkout.subscriptionId().toString())
+				.with(role(UUID.randomUUID(), "ROLE_ADMIN")))
+				.andExpect(status().isOk())
+				.andExpect(jsonPath("$.found").value(true))
+				.andExpect(jsonPath("$.credits.length()").value(100))
+				.andExpect(jsonPath("$.truncated").value(true))
+				.andReturn();
+
+		var body = json.readTree(result.getResponse().getContentAsByteArray());
+		var returnedCreditIds = new HashSet<String>();
+		body.path("credits").forEach(node -> returnedCreditIds.add(node.path("creditId").asText()));
+		assertThat(returnedCreditIds).hasSize(100);
+		assertThat(returnedCreditIds).allMatch(id -> creditIds.contains(UUID.fromString(id)));
+	}
+
+	private void assertCreditAppointmentBoundary(int fixtureSize, int expectedReturned, boolean expectedTruncated)
+			throws Exception {
 		var specialistId = UUID.randomUUID();
 		var adminId = UUID.randomUUID();
 		jdbc.sql("""
@@ -884,41 +939,87 @@ class AdminCommercialReconciliationIntegrationTests extends ConsultationTestProp
 				 submitted_at, reviewed_at, reviewed_by
 				) values (:id, 'Test Spec', 'Bio', 5, 'Asia/Ho_Chi_Minh', 'APPROVED', now(), now(), :admin)
 				""").param("id", specialistId).param("admin", adminId).update();
-		
-		// Create 101 appointments linked to this credit to trigger intermediate truncation
-		// This simulates a credit with extensive appointment history
-		for (int i = 0; i < 101; i++) {
+
+		var userId = UUID.randomUUID();
+		var checkout = billing.checkout(userId, PLUS, "credit-history-" + UUID.randomUUID());
+		var periodId = UUID.randomUUID();
+		var creditId = UUID.randomUUID();
+		var base = Instant.parse("2025-01-01T00:00:00Z");
+		jdbc.sql("""
+				insert into service_credit_period (
+				 id, account_id, plan_version, credit_policy_version, package_code, source, source_reference,
+				 period_start, period_end, allocated_count, credit_allocation_minor, created_at, updated_at
+				) values (:id, :userId, 'v1', 'consultation-credit-v1', 'PLUS', 'PAID', :ref,
+				 :periodStart, :periodEnd, 1, 100000, :createdAt, :createdAt)
+				""").param("id", periodId).param("userId", userId)
+				.param("ref", checkout.subscriptionId().toString())
+				.param("periodStart", Timestamp.from(base.minusSeconds(86400)))
+				.param("periodEnd", Timestamp.from(base.plusSeconds(365 * 86400L)))
+				.param("createdAt", Timestamp.from(base.minusSeconds(86400))).update();
+		jdbc.sql("""
+				insert into service_credit (id, period_id, ordinal, state, created_at, updated_at)
+				values (:id, :periodId, 1, 'AVAILABLE', :createdAt, :createdAt)
+				""").param("id", creditId).param("periodId", periodId)
+				.param("createdAt", Timestamp.from(base)).update();
+
+		Set<UUID> appointmentIds = new HashSet<>();
+		for (int i = 0; i < fixtureSize; i++) {
 			var apptId = UUID.randomUUID();
 			var slotId = UUID.randomUUID();
-			
-			// Create availability slot
+			var start = base.plusSeconds(i * 7200L);
+
 			jdbc.sql("""
-					insert into specialist_availability_slot (
-					 id, specialist_account_id, starts_at, ends_at, status, created_at, updated_at
-					) values (:id, :specId, now() + interval '1 hour' * :offset, now() + interval '2 hours' * :offset, 'BOOKED', now(), now())
-					""").param("id", slotId).param("specId", specialistId).param("offset", i).update();
-			
-			// Create appointment
+					insert into availability_slot (
+					 id, specialist_account_id, start_at, end_at, timezone, modality,
+					 idempotency_key, created_at, updated_at
+					) values (:id, :specId, :startAt, :endAt, 'Asia/Ho_Chi_Minh', 'IN_APP_CHAT',
+					 :key, :createdAt, :createdAt)
+					""").param("id", slotId).param("specId", specialistId)
+					.param("startAt", Timestamp.from(start)).param("endAt", Timestamp.from(start.plusSeconds(3600)))
+					.param("key", "slot-history-" + slotId).param("createdAt", Timestamp.from(base)).update();
+
 			jdbc.sql("""
 					insert into appointment (
-					 id, user_account_id, specialist_account_id, service_credit_id, availability_slot_id,
-					 modality, status, scheduled_start_at, scheduled_end_at, decision_deadline_at,
+					 id, user_account_id, specialist_account_id, availability_slot_id, service_credit_id,
+					 status, modality, scheduled_start_at, scheduled_end_at, display_timezone,
+					 requested_at, decision_deadline_at, idempotency_key, decided_at, decision_reason,
 					 created_at, updated_at
-					) values (:id, :userId, :specId, :creditId, :slotId, 'ONLINE_VIDEO', 'REQUESTED',
-					 now() + interval '1 hour' * :offset, now() + interval '2 hours' * :offset, now() + interval '30 minutes' * :offset,
-					 now(), now())
+					) values (:id, :userId, :specId, :slotId, :creditId,
+					 'REJECTED', 'IN_APP_CHAT', :startAt, :endAt, 'Asia/Ho_Chi_Minh',
+					 :requestedAt, :deadlineAt, :key, :decidedAt, 'SPECIALIST_REJECTED',
+					 :createdAt, :createdAt)
 					""").param("id", apptId).param("userId", userId).param("specId", specialistId)
-					.param("creditId", creditId).param("slotId", slotId).param("offset", i).update();
+					.param("creditId", creditId).param("slotId", slotId)
+					.param("startAt", Timestamp.from(start)).param("endAt", Timestamp.from(start.plusSeconds(3600)))
+					.param("requestedAt", Timestamp.from(start.minusSeconds(1800)))
+					.param("deadlineAt", Timestamp.from(start.minusSeconds(900)))
+					.param("decidedAt", Timestamp.from(start.minusSeconds(600)))
+					.param("key", "appointment-history-" + apptId)
+					.param("createdAt", Timestamp.from(start.minusSeconds(1800))).update();
+			appointmentIds.add(apptId);
 		}
-		
-		// Query by creditId - should detect intermediate truncation even if final lists are small
-		mvc.perform(get("/api/v1/admin/commercial/provenance")
+
+		var fixtureCount = jdbc.sql("select count(*) from appointment where service_credit_id=:creditId")
+				.param("creditId", creditId).query(Integer.class).single();
+		assertThat(fixtureCount).isEqualTo(fixtureSize);
+
+		var result = mvc.perform(get("/api/v1/admin/commercial/provenance")
 				.param("creditId", creditId.toString())
 				.with(role(UUID.randomUUID(), "ROLE_ADMIN")))
 				.andExpect(status().isOk())
 				.andExpect(jsonPath("$.found").value(true))
-				.andExpect(jsonPath("$.truncated").value(true))  // MUST be true due to 101 appointments
-				.andExpect(jsonPath("$.appointments.length()").value(100)); // Trimmed to 100
+				.andExpect(jsonPath("$.appointments.length()").value(expectedReturned))
+				.andExpect(jsonPath("$.truncated").value(expectedTruncated))
+				.andReturn();
+
+		var body = json.readTree(result.getResponse().getContentAsByteArray());
+		var returnedAppointmentIds = new HashSet<String>();
+		body.path("appointments").forEach(node -> {
+			assertThat(node.path("serviceCreditId").asText()).isEqualTo(creditId.toString());
+			returnedAppointmentIds.add(node.path("appointmentId").asText());
+		});
+		assertThat(returnedAppointmentIds).hasSize(expectedReturned);
+		assertThat(returnedAppointmentIds).allMatch(id -> appointmentIds.contains(UUID.fromString(id)));
 	}
 
 	private org.springframework.test.web.servlet.request.RequestPostProcessor role(UUID id, String authority) {

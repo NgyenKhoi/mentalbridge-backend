@@ -7,7 +7,6 @@ import java.time.Instant;
 import java.util.ArrayList;
 import java.util.Collection;
 import java.util.Collections;
-import java.util.HashSet;
 import java.util.LinkedHashSet;
 import java.util.List;
 import java.util.Set;
@@ -51,7 +50,7 @@ public class AdminCommercialReconciliationController {
 				   or (p1.failure_code in ('PAYMENT_ALREADY_FINAL', 'MOMO_PAYMENT_FAILED', 'PAYMENT_EXPIRED'))
 				   or (p1.trans_id > 0 and exists (select 1 from momo_payment_ipn p2 where p2.id <> p1.id and p2.trans_id = p1.trans_id and p2.order_id <> p1.order_id))
 				   or (exists (select 1 from momo_payment_ipn p2 where p2.id <> p1.id and p2.order_id = p1.order_id and p2.request_id = p1.request_id and p2.result_code = p1.result_code))
-				order by p1.received_at desc limit 50
+				order by p1.received_at desc, p1.id desc limit 50
 				""").query((row, ignored) -> new AdminCommercialDiscrepancyResponse.WebhookDiscrepancy(
 						row.getObject("id", UUID.class),
 						row.getString("order_id"),
@@ -69,7 +68,7 @@ public class AdminCommercialReconciliationController {
 				from specialist_payout p
 				join specialist_payout_destination d on d.id=p.destination_id
 				where p.status in ('FAILED', 'UNKNOWN') or p.last_failure_code is not null
-				order by p.requested_at desc limit 50
+				order by p.requested_at desc, p.id desc limit 50
 				""").query((row, ignored) -> new AdminCommercialDiscrepancyResponse.PayoutDiscrepancy(
 						row.getObject("id", UUID.class),
 						row.getObject("specialist_account_id", UUID.class),
@@ -91,7 +90,7 @@ public class AdminCommercialReconciliationController {
 				from specialist_earning e
 				where e.status = 'PENDING_SETTLEMENT'
 				   or exists (select 1 from appointment_dispute d where d.appointment_id=e.appointment_id and d.status='OPEN')
-				order by e.earned_at desc limit 50
+				order by e.earned_at desc, e.id desc limit 50
 				""").query((row, ignored) -> new AdminCommercialDiscrepancyResponse.HeldEarningDiscrepancy(
 						row.getObject("id", UUID.class),
 						row.getObject("appointment_id", UUID.class),
@@ -107,7 +106,7 @@ public class AdminCommercialReconciliationController {
 				select id, appointment_id, opened_by_role, reason_code, status, resolution_outcome, opened_at, eligible_until
 				from appointment_dispute
 				where status = 'OPEN' or resolution_outcome = 'RELEASE_USER_CREDIT'
-				order by opened_at desc limit 50
+				order by opened_at desc, id desc limit 50
 				""").query((row, ignored) -> new AdminCommercialDiscrepancyResponse.DisputeDiscrepancy(
 						row.getObject("id", UUID.class),
 						row.getObject("appointment_id", UUID.class),
@@ -217,14 +216,15 @@ public class AdminCommercialReconciliationController {
 		Set<UUID> creditIds = new LinkedHashSet<>();
 		if (creditId != null) creditIds.add(creditId);
 
-		// Track truncation from intermediate relationship queries
 		boolean intermediateTruncated = false;
 
 		if ("PAYOUT".equals(queryType)) {
 			payoutIds.add(payoutId);
-			var relEarnings = jdbc.sql("select earning_id from specialist_payout_item where payout_id = :payoutId")
+			final int FETCH_LIMIT = 100;
+			var relEarnings = jdbc.sql("select earning_id from specialist_payout_item where payout_id = :payoutId order by earning_id limit " + (FETCH_LIMIT + 1))
 					.param("payoutId", payoutId).query(UUID.class).list();
-			earningIds.addAll(relEarnings);
+			if (relEarnings.size() > FETCH_LIMIT) intermediateTruncated = true;
+			earningIds.addAll(relEarnings.subList(0, Math.min(relEarnings.size(), FETCH_LIMIT)));
 
 			if (!earningIds.isEmpty()) {
 				var inClause = inClause(earningIds);
@@ -284,38 +284,9 @@ public class AdminCommercialReconciliationController {
 			creditIds.add(creditId);
 			if (resolveOriginatingSubscriptions(creditIds, subscriptionIds)) intermediateTruncated = true;
 			if (resolveSubscriptionPayments(subscriptionIds, paymentIds)) intermediateTruncated = true;
-
-			final int FETCH_LIMIT = 100;
-			var creditAppointments = jdbc.sql("select id from appointment where service_credit_id = :creditId order by scheduled_start_at asc limit " + (FETCH_LIMIT + 1))
-					.param("creditId", creditId).query(UUID.class).list();
-			if (creditAppointments.size() > FETCH_LIMIT) {
-				intermediateTruncated = true;
-				appointmentIds.addAll(creditAppointments.subList(0, FETCH_LIMIT));
-			} else {
-				appointmentIds.addAll(creditAppointments);
-			}
-			if (!appointmentIds.isEmpty()) {
-				var inClause = inClause(appointmentIds);
-				var apptEarnings = jdbc.sql("select id from specialist_earning where appointment_id in (" + inClause + ") limit " + (FETCH_LIMIT + 1))
-						.query(UUID.class).list();
-				if (apptEarnings.size() > FETCH_LIMIT) {
-					intermediateTruncated = true;
-					earningIds.addAll(apptEarnings.subList(0, FETCH_LIMIT));
-				} else {
-					earningIds.addAll(apptEarnings);
-				}
-				if (!earningIds.isEmpty()) {
-					var earnInClause = inClause(earningIds);
-					var pIds = jdbc.sql("select payout_id from specialist_payout_item where earning_id in (" + earnInClause + ") limit " + (FETCH_LIMIT + 1))
-							.query(UUID.class).list();
-					if (pIds.size() > FETCH_LIMIT) {
-						intermediateTruncated = true;
-						payoutIds.addAll(pIds.subList(0, FETCH_LIMIT));
-					} else {
-						payoutIds.addAll(pIds);
-					}
-				}
-			}
+			if (resolveCreditAppointments(creditIds, appointmentIds)) intermediateTruncated = true;
+			if (resolveAppointmentEarnings(appointmentIds, earningIds)) intermediateTruncated = true;
+			if (resolveEarningPayouts(earningIds, payoutIds)) intermediateTruncated = true;
 
 		} else if ("PAYMENT".equals(queryType) || "SUBSCRIPTION".equals(queryType)) {
 			if ("PAYMENT".equals(queryType)) {
@@ -333,7 +304,7 @@ public class AdminCommercialReconciliationController {
 			if (!subscriptionIds.isEmpty()) {
 				var inClause = inClause(subscriptionIds);
 				var subCredits = jdbc.sql("""
-						select c.id, c.appointment_id
+						select c.id
 						from service_credit c
 						join service_credit_period p on p.id=c.period_id
 						where (p.source = 'PAID' and p.source_reference in (""" + inClause + """
@@ -341,10 +312,8 @@ public class AdminCommercialReconciliationController {
 						    select 1 from subscription_upgrade_credit uc
 						    join subscription_upgrade u on u.id = uc.upgrade_id
 						    where uc.credit_id = c.id and u.subscription_id in (""" + inClause + """
-						)) limit """ + " " + (FETCH_LIMIT + 1))
-						.query((row, ignored) -> new Pair(row.getObject("id", UUID.class),
-								row.getObject("appointment_id", UUID.class)))
-						.list();
+						)) order by c.created_at, c.id limit """ + " " + (FETCH_LIMIT + 1))
+						.query(UUID.class).list();
 
 				int subCreditsSize = subCredits.size();
 				if (subCreditsSize > FETCH_LIMIT) {
@@ -352,35 +321,12 @@ public class AdminCommercialReconciliationController {
 					subCredits = subCredits.subList(0, FETCH_LIMIT);
 				}
 
-				for (var sc : subCredits) {
-					creditIds.add(sc.first);
-					if (sc.second != null) appointmentIds.add(sc.second);
-				}
+				creditIds.addAll(subCredits);
 			}
 
-			if (!appointmentIds.isEmpty()) {
-				var inClause = inClause(appointmentIds);
-				var apptEarnings = jdbc.sql("select id from specialist_earning where appointment_id in (" + inClause + ") limit " + (FETCH_LIMIT + 1))
-						.query(UUID.class).list();
-				if (apptEarnings.size() > FETCH_LIMIT) {
-					intermediateTruncated = true;
-					earningIds.addAll(apptEarnings.subList(0, FETCH_LIMIT));
-				} else {
-					earningIds.addAll(apptEarnings);
-				}
-			}
-
-			if (!earningIds.isEmpty()) {
-				var inClause = inClause(earningIds);
-				var pIds = jdbc.sql("select payout_id from specialist_payout_item where earning_id in (" + inClause + ") limit " + (FETCH_LIMIT + 1))
-						.query(UUID.class).list();
-				if (pIds.size() > FETCH_LIMIT) {
-					intermediateTruncated = true;
-					payoutIds.addAll(pIds.subList(0, FETCH_LIMIT));
-				} else {
-					payoutIds.addAll(pIds);
-				}
-			}
+			if (resolveCreditAppointments(creditIds, appointmentIds)) intermediateTruncated = true;
+			if (resolveAppointmentEarnings(appointmentIds, earningIds)) intermediateTruncated = true;
+			if (resolveEarningPayouts(earningIds, payoutIds)) intermediateTruncated = true;
 		}
 
 		final int FETCH_LIMIT = 100;
@@ -394,7 +340,7 @@ public class AdminCommercialReconciliationController {
 					 s.status, s.current_period_start, s.current_period_end, s.created_at
 					from user_subscription s
 					join subscription_plan_version v on v.id=s.plan_version_id
-					where s.id in (""" + inClause + ") order by s.created_at desc limit " + (FETCH_LIMIT + 1))
+					where s.id in (""" + inClause + ") order by s.created_at desc, s.id desc limit " + (FETCH_LIMIT + 1))
 					.query((row, ignored) -> new AdminCommercialProvenanceResponse.AdminSubscriptionSummary(
 							row.getObject("id", UUID.class),
 							row.getObject("user_id", UUID.class),
@@ -410,7 +356,7 @@ public class AdminCommercialReconciliationController {
 
 		// Load payments
 		List<AdminPaymentResponse.Item> payments = Collections.emptyList();
-		if (!paymentIds.isEmpty() || !subscriptionIds.isEmpty()) {
+		if (!paymentIds.isEmpty()) {
 			var sql = new StringBuilder("""
 					select pt.id, pt.subscription_id, pt.target_plan_version_id, v.plan_code, v.pricing_policy_version,
 					 pt.purpose, pt.payment_provider, pt.status, pt.amount_minor, pt.currency,
@@ -422,11 +368,12 @@ public class AdminCommercialReconciliationController {
 				var inClause = inClause(paymentIds);
 				sql.append(" or pt.id in (").append(inClause).append(")");
 			}
-			if (!subscriptionIds.isEmpty()) {
-				var inClause = inClause(subscriptionIds);
-				sql.append(" or pt.subscription_id in (").append(inClause).append(")");
+			if (paymentId != null) {
+				sql.append(" order by case when pt.id = '").append(paymentId).append("' then 0 else 1 end,");
+			} else {
+				sql.append(" order by");
 			}
-			sql.append(" order by pt.created_at desc limit ").append(FETCH_LIMIT + 1);
+			sql.append(" pt.created_at desc, pt.id desc limit ").append(FETCH_LIMIT + 1);
 
 			payments = jdbc.sql(sql.toString())
 					.query((row, ignored) -> new AdminPaymentResponse.Item(
@@ -454,7 +401,7 @@ public class AdminCommercialReconciliationController {
 					select c.id, c.period_id, c.ordinal, c.state, p.credit_allocation_minor, c.appointment_id, c.created_at
 					from service_credit c
 					join service_credit_period p on p.id=c.period_id
-					where c.id in (""" + inClause + ") order by p.period_start desc, c.ordinal asc limit " + (FETCH_LIMIT + 1))
+					where c.id in (""" + inClause + ") order by p.period_start desc, c.ordinal asc, c.id asc limit " + (FETCH_LIMIT + 1))
 					.query((row, ignored) -> new AdminCommercialProvenanceResponse.AdminCreditSummary(
 							row.getObject("id", UUID.class),
 							row.getObject("period_id", UUID.class),
@@ -473,7 +420,7 @@ public class AdminCommercialReconciliationController {
 			appointments = jdbc.sql("""
 					select id, specialist_account_id, service_credit_id, status, modality, session_outcome,
 					 completion_fact_id, scheduled_start_at, scheduled_end_at, session_settled_at
-					from appointment where id in (""" + inClause + ") order by scheduled_start_at desc limit " + (FETCH_LIMIT + 1))
+					from appointment where id in (""" + inClause + ") order by scheduled_start_at desc, id desc limit " + (FETCH_LIMIT + 1))
 					.query((row, ignored) -> new AdminCommercialProvenanceResponse.AdminAppointmentSummary(
 							row.getObject("id", UUID.class),
 							row.getObject("specialist_account_id", UUID.class),
@@ -495,7 +442,7 @@ public class AdminCommercialReconciliationController {
 			disputes = jdbc.sql("""
 					select id, appointment_id, opened_by_role, reason_code, status, resolution_outcome,
 					 resolution_reason, opened_at, resolved_at
-					from appointment_dispute where appointment_id in (""" + inClause + ") order by opened_at desc limit " + (FETCH_LIMIT + 1))
+					from appointment_dispute where appointment_id in (""" + inClause + ") order by opened_at desc, id desc limit " + (FETCH_LIMIT + 1))
 					.query((row, ignored) -> new AdminCommercialProvenanceResponse.AdminDisputeSummary(
 							row.getObject("id", UUID.class),
 							row.getObject("appointment_id", UUID.class),
@@ -517,7 +464,7 @@ public class AdminCommercialReconciliationController {
 					select id, appointment_id, consumed_credit_id, specialist_account_id, plan_version,
 					 credit_allocation_minor, specialist_share_bps, specialist_amount_minor,
 					 platform_allocation_minor, status, earned_at, settlement_available_at, paid_at
-					from specialist_earning where id in (""" + inClause + ") order by earned_at desc limit " + (FETCH_LIMIT + 1))
+					from specialist_earning where id in (""" + inClause + ") order by earned_at desc, id desc limit " + (FETCH_LIMIT + 1))
 					.query((row, ignored) -> new AdminCommercialProvenanceResponse.AdminEarningSummary(
 							row.getObject("id", UUID.class),
 							row.getObject("appointment_id", UUID.class),
@@ -552,7 +499,7 @@ public class AdminCommercialReconciliationController {
 					where p.id in (""" + inClause + """
 					)
 					group by p.id, d.display_hint
-					order by p.requested_at desc limit
+					order by p.requested_at desc, p.id desc limit
 					""" + (FETCH_LIMIT + 1))
 					.query((row, ignored) -> new AdminPayoutResponse.Item(
 							row.getObject("id", UUID.class),
@@ -616,7 +563,7 @@ public class AdminCommercialReconciliationController {
 		var creditRows = jdbc.sql("""
 				select c.id, p.source, p.source_reference
 				from service_credit c join service_credit_period p on p.id=c.period_id
-				where c.id in (""" + inClause + ") limit " + (FETCH_LIMIT + 1))
+				where c.id in (""" + inClause + ") order by c.id limit " + (FETCH_LIMIT + 1))
 				.query((row, ignored) -> new CreditPeriodRow(
 						row.getObject("id", UUID.class),
 						null,
@@ -637,9 +584,9 @@ public class AdminCommercialReconciliationController {
 		}
 
 		var upgradeSubs = jdbc.sql("""
-				select u.subscription_id from subscription_upgrade_credit uc
+				select distinct u.subscription_id from subscription_upgrade_credit uc
 				join subscription_upgrade u on u.id=uc.upgrade_id
-				where uc.credit_id in (""" + inClause + ") limit " + (FETCH_LIMIT + 1))
+				where uc.credit_id in (""" + inClause + ") order by u.subscription_id limit " + (FETCH_LIMIT + 1))
 				.query(UUID.class).list();
 		if (upgradeSubs.size() > FETCH_LIMIT) wasTruncated = true;
 		limitedSize = Math.min(upgradeSubs.size(), FETCH_LIMIT);
@@ -651,12 +598,42 @@ public class AdminCommercialReconciliationController {
 		if (subscriptionIds.isEmpty()) return false;
 		final int FETCH_LIMIT = 100;
 		var inClause = inClause(subscriptionIds);
-		var subPaymentIds = jdbc.sql("select id from payment_transaction where subscription_id in (" + inClause + ") limit " + (FETCH_LIMIT + 1))
+		var subPaymentIds = jdbc.sql("select id from payment_transaction where subscription_id in (" + inClause + ") order by created_at desc, id desc limit " + (FETCH_LIMIT + 1))
 				.query(UUID.class).list();
 		boolean wasTruncated = subPaymentIds.size() > FETCH_LIMIT;
 		int limitedSize = Math.min(subPaymentIds.size(), FETCH_LIMIT);
 		paymentIds.addAll(subPaymentIds.subList(0, limitedSize));
 		return wasTruncated;
+	}
+
+	private boolean resolveCreditAppointments(Set<UUID> creditIds, Set<UUID> appointmentIds) {
+		if (creditIds.isEmpty()) return false;
+		final int FETCH_LIMIT = 100;
+		var relatedIds = jdbc.sql("select id from appointment where service_credit_id in (" + inClause(creditIds)
+				+ ") order by scheduled_start_at, id limit " + (FETCH_LIMIT + 1))
+				.query(UUID.class).list();
+		appointmentIds.addAll(relatedIds.subList(0, Math.min(relatedIds.size(), FETCH_LIMIT)));
+		return relatedIds.size() > FETCH_LIMIT;
+	}
+
+	private boolean resolveAppointmentEarnings(Set<UUID> appointmentIds, Set<UUID> earningIds) {
+		if (appointmentIds.isEmpty()) return false;
+		final int FETCH_LIMIT = 100;
+		var relatedIds = jdbc.sql("select id from specialist_earning where appointment_id in (" + inClause(appointmentIds)
+				+ ") order by earned_at, id limit " + (FETCH_LIMIT + 1))
+				.query(UUID.class).list();
+		earningIds.addAll(relatedIds.subList(0, Math.min(relatedIds.size(), FETCH_LIMIT)));
+		return relatedIds.size() > FETCH_LIMIT;
+	}
+
+	private boolean resolveEarningPayouts(Set<UUID> earningIds, Set<UUID> payoutIds) {
+		if (earningIds.isEmpty()) return false;
+		final int FETCH_LIMIT = 100;
+		var relatedIds = jdbc.sql("select distinct payout_id from specialist_payout_item where earning_id in (" + inClause(earningIds)
+				+ ") order by payout_id limit " + (FETCH_LIMIT + 1))
+				.query(UUID.class).list();
+		payoutIds.addAll(relatedIds.subList(0, Math.min(relatedIds.size(), FETCH_LIMIT)));
+		return relatedIds.size() > FETCH_LIMIT;
 	}
 
 	private static String inClause(Collection<UUID> ids) {
