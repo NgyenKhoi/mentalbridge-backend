@@ -1,5 +1,28 @@
 # Consultation Service
 
+## Migration naming and applied history (MB-717)
+
+New Consultation SQL migrations use UTC `yyyyMMddHHmmss-description.sql`, for
+example `20261022210000-add-owner-audit.sql`. Use a real calendar instant, lowercase
+kebab-case description and a timestamp not already used by another new file.
+Append its explicit include to `db.changelog-master.yaml` after the existing
+history; master include order, not filename sorting, determines execution order.
+Use a new changeset ID such as `consultation-20261022210000-add-owner-audit`.
+
+The 29 legacy changesets through `028` are frozen, including both `021` prefixes.
+They are different full identities and have both been applied. Do not renumber,
+rename, reorder or rewrite them, add `runAlways`/`runOnChange`, clear checksums,
+or change shared `DATABASECHANGELOG` rows to make filenames look sequential.
+The [MB-717 decision and evidence](../docs/story-mb-717-consultation-migration-names.md)
+records the inspected metadata and compatibility reasoning.
+
+`ConsultationLiquibaseChangelogTests` checks the ordered legacy identities and
+version-9 checksums against `src/test/resources/db/changelog/consultation-legacy-v1.tsv`,
+requires every SQL file to be included, and validates timestamp names/uniqueness
+for all files outside that fixed baseline. Do not regenerate the legacy fixture
+when adding a migration. `ConsultationLiquibaseMigrationTests` validates a fresh
+disposable PostgreSQL history and proves a second update does not replay it.
+
 MB-623 consolidates the existing online journey in the versioned
 [state/settlement map](../docs/policies/consultation-journey-state-map-v1.md).
 Its [verification runbook](../docs/runbooks/mb-623-consultation-journey.md)
