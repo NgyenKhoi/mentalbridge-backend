@@ -1022,6 +1022,315 @@ class AdminCommercialReconciliationIntegrationTests extends ConsultationTestProp
 		assertThat(returnedAppointmentIds).allMatch(id -> appointmentIds.contains(UUID.fromString(id)));
 	}
 
+	@Test
+	void paymentProvenanceDistinguishesDirectPaymentFromRelatedSubscriptionHistoryAndPendingUpgrade() throws Exception {
+		var specialistId = UUID.randomUUID();
+		var adminId = UUID.randomUUID();
+		jdbc.sql("""
+				insert into specialist_profile (
+				 account_id, display_name, biography, years_experience, timezone, approval_status,
+				 submitted_at, reviewed_at, reviewed_by
+				) values (:id, 'Spec A', 'Bio', 5, 'Asia/Ho_Chi_Minh', 'APPROVED', now(), now(), :admin)
+				""").param("id", specialistId).param("admin", adminId).update();
+
+		var userId = UUID.randomUUID();
+		var purchaseCheckout = billing.checkout(userId, PLUS, "purchase-idem-" + UUID.randomUUID());
+		var p1 = purchaseCheckout.paymentId();
+		var subId = purchaseCheckout.subscriptionId();
+
+		// Succeeded purchase
+		jdbc.sql("update payment_transaction set status='SUCCEEDED', paid_at=now() where id=:id").param("id", p1).update();
+		jdbc.sql("update user_subscription set status='ACTIVE', current_period_start=now(), current_period_end=now() + interval '30 days' where id=:id").param("id", subId).update();
+
+		// Credit C1 for purchase
+		var periodId = UUID.randomUUID();
+		var c1 = UUID.randomUUID();
+		jdbc.sql("""
+				insert into service_credit_period (
+				 id, account_id, plan_version, credit_policy_version, package_code, source, source_reference,
+				 period_start, period_end, allocated_count, credit_allocation_minor, created_at, updated_at
+				) values (:id, :userId, 'v1', 'consultation-credit-v1', 'PLUS', 'PAID', :ref, now(), now() + interval '30 days', 1, 200000, now(), now())
+				""").param("id", periodId).param("userId", userId).param("ref", subId.toString()).update();
+		jdbc.sql("insert into service_credit (id, period_id, ordinal, state, created_at, updated_at) values (:id, :periodId, 1, 'AVAILABLE', now(), now())")
+				.param("id", c1).param("periodId", periodId).update();
+
+		// Appointment A1 consuming C1 -> E1 -> Payout1
+		var slot1 = UUID.randomUUID();
+		var a1 = UUID.randomUUID();
+		var fact1 = UUID.randomUUID();
+		jdbc.sql("""
+				insert into availability_slot (id, specialist_account_id, start_at, end_at, timezone, modality, idempotency_key, created_at, updated_at)
+				values (:id, :spec, now() - interval '3 hours', now() - interval '2 hours', 'Asia/Ho_Chi_Minh', 'IN_APP_CHAT', :k, now(), now())
+				""").param("id", slot1).param("spec", specialistId).param("k", "slot-" + slot1).update();
+		jdbc.sql("""
+				insert into appointment (id, user_account_id, specialist_account_id, availability_slot_id, service_credit_id, status, modality, scheduled_start_at, scheduled_end_at, display_timezone, requested_at, decision_deadline_at, idempotency_key, created_at, updated_at)
+				values (:id, :user, :spec, :slot, :credit, 'REQUESTED', 'IN_APP_CHAT', now() - interval '3 hours', now() - interval '2 hours', 'Asia/Ho_Chi_Minh', now() - interval '5 hours', now() - interval '2 hours 30 minutes', :k, now(), now())
+				""").param("id", a1).param("user", userId).param("spec", specialistId).param("slot", slot1).param("credit", c1).param("k", "app-" + a1).update();
+		jdbc.sql("""
+				update appointment set status='COMPLETED', decided_at=now() - interval '2 hours 45 minutes', decision_reason='SPECIALIST_ACCEPTED',
+				 session_outcome='COMPLETED', session_outcome_reason='EVIDENCE_REQUIREMENTS_MET', session_policy_version='chat-session-completion-v1',
+				 session_ended_at=now() - interval '2 hours', session_settled_at=now() - interval '2 hours', completion_fact_id=:fact where id=:id
+				""").param("id", a1).param("fact", fact1).update();
+		jdbc.sql("update service_credit set state='CONSUMED', appointment_id=:appId where id=:creditId")
+				.param("appId", a1).param("creditId", c1).update();
+
+		var earn1 = UUID.randomUUID();
+		jdbc.sql("""
+				insert into specialist_earning (
+				 id, appointment_id, completion_fact_id, consumed_credit_id, specialist_account_id,
+				 plan_version, currency, credit_allocation_minor, specialist_share_bps,
+				 specialist_amount_minor, platform_allocation_minor, idempotency_source,
+				 status, earned_at, settlement_available_at, paid_at, created_at, updated_at
+				) values (:id, :appId, :fact, :creditId, :spec, 'v1', 'VND', 200000, 5000, 100000, 100000, :src, 'PAID', now(), now(), now(), now(), now())
+				""").param("id", earn1).param("appId", a1).param("fact", fact1).param("creditId", c1).param("spec", specialistId).param("src", "src-" + earn1).update();
+
+		var dest1 = UUID.randomUUID();
+		var payout1 = UUID.randomUUID();
+		jdbc.sql("""
+				insert into specialist_payout_destination (id, specialist_account_id, payout_provider, destination_type, destination_ciphertext, encryption_key_version, destination_fingerprint, display_hint, status, verified_at, created_at, updated_at)
+				values (:id, :spec, 'MOMO', 'MOMO_WALLET', 'cipher', 'v1', 'fp', '0911***', 'VERIFIED', now(), now(), now())
+				""").param("id", dest1).param("spec", specialistId).update();
+		jdbc.sql("""
+				insert into specialist_payout (id, specialist_account_id, destination_id, amount_minor, currency, status, payout_provider, idempotency_key, requested_at, requested_on, completed_at, created_at, updated_at)
+				values (:id, :spec, :dest, 100000, 'VND', 'SUCCEEDED', 'MOMO', :k, now(), current_date, now(), now(), now())
+				""").param("id", payout1).param("spec", specialistId).param("dest", dest1).param("k", "payout-" + payout1).update();
+		jdbc.sql("insert into specialist_payout_item (payout_id, earning_id, amount_minor) values (:payoutId, :earn, 100000)")
+				.param("payoutId", payout1).param("earn", earn1).update();
+
+		// Now user creates a PENDING upgrade payment P2
+		var p2 = UUID.randomUUID();
+		var upgradeId = UUID.randomUUID();
+		var premiumPlanVersionId = UUID.fromString("62200000-0000-4000-8000-000000000003");
+		jdbc.sql("""
+				insert into payment_transaction (
+				 id, subscription_id, target_plan_version_id, payment_provider, momo_order_id, momo_request_id,
+				 amount_minor, currency, status, purpose, idempotency_key, expires_at, created_at, updated_at
+				) values (
+				 :id, :subId, :planId, 'MOMO', :orderId, :reqId,
+				 150000, 'VND', 'PENDING', 'UPGRADE', :key, now() + interval '1 hour', now(), now()
+				)
+				""").param("id", p2).param("subId", subId).param("planId", premiumPlanVersionId)
+				.param("orderId", "order-" + p2).param("reqId", "req-" + p2).param("key", "idem-" + p2).update();
+
+		jdbc.sql("""
+				insert into subscription_upgrade (
+				 id, subscription_id, from_plan_version_id, to_plan_version_id, payment_id,
+				 old_period_start, old_period_end, total_period_seconds, remaining_period_seconds,
+				 remaining_feature_value_minor, available_credit_value_minor, offset_minor, amount_due_minor,
+				 currency, status, idempotency_key, quoted_at, quote_expires_at, created_at, updated_at
+				) values (
+				 :id, :subId, :fromPlan, :toPlan, :paymentId,
+				 now(), now() + interval '30 days', 2592000, 2592000,
+				 50000, 0, 50000, 150000,
+				 'VND', 'PENDING_PAYMENT', :key, now(), now() + interval '1 hour', now(), now()
+				)
+				""").param("id", upgradeId).param("subId", subId)
+				.param("fromPlan", PLUS).param("toPlan", premiumPlanVersionId)
+				.param("paymentId", p2).param("key", "upg-idem-" + p2).update();
+
+		// 1. Query by pending upgrade payment P2: MUST NOT associate with previous purchase's credits, appointments, earnings, payouts!
+		mvc.perform(get("/api/v1/admin/commercial/provenance")
+				.param("paymentId", p2.toString())
+				.with(role(UUID.randomUUID(), "ROLE_ADMIN")))
+				.andExpect(status().isOk())
+				.andExpect(jsonPath("$.found").value(true))
+				.andExpect(jsonPath("$.queryIdentifierType").value("PAYMENT"))
+				.andExpect(jsonPath("$.queryIdentifierValue").value(p2.toString()))
+				.andExpect(jsonPath("$.payments.length()").value(1))
+				.andExpect(jsonPath("$.payments[0].paymentId").value(p2.toString()))
+				.andExpect(jsonPath("$.credits").isEmpty())
+				.andExpect(jsonPath("$.appointments").isEmpty())
+				.andExpect(jsonPath("$.earnings").isEmpty())
+				.andExpect(jsonPath("$.payouts").isEmpty())
+				.andExpect(jsonPath("$.subscription.subscriptionId").value(subId.toString()));
+
+		// 2. Query by succeeded purchase payment P1: correctly traces C1, A1, E1, Payout1!
+		mvc.perform(get("/api/v1/admin/commercial/provenance")
+				.param("paymentId", p1.toString())
+				.with(role(UUID.randomUUID(), "ROLE_ADMIN")))
+				.andExpect(status().isOk())
+				.andExpect(jsonPath("$.found").value(true))
+				.andExpect(jsonPath("$.payments.length()").value(1))
+				.andExpect(jsonPath("$.payments[0].paymentId").value(p1.toString()))
+				.andExpect(jsonPath("$.credits.length()").value(1))
+				.andExpect(jsonPath("$.credits[0].creditId").value(c1.toString()))
+				.andExpect(jsonPath("$.appointments.length()").value(1))
+				.andExpect(jsonPath("$.appointments[0].appointmentId").value(a1.toString()))
+				.andExpect(jsonPath("$.earnings.length()").value(1))
+				.andExpect(jsonPath("$.earnings[0].earningId").value(earn1.toString()))
+				.andExpect(jsonPath("$.payouts.length()").value(1))
+				.andExpect(jsonPath("$.payouts[0].payoutId").value(payout1.toString()));
+
+		// 3. Query by subscriptionId: returns whole subscription history (both payments)
+		mvc.perform(get("/api/v1/admin/commercial/provenance")
+				.param("subscriptionId", subId.toString())
+				.with(role(UUID.randomUUID(), "ROLE_ADMIN")))
+				.andExpect(status().isOk())
+				.andExpect(jsonPath("$.found").value(true))
+				.andExpect(jsonPath("$.payments.length()").value(2))
+				.andExpect(jsonPath("$.credits.length()").value(1))
+				.andExpect(jsonPath("$.appointments.length()").value(1));
+	}
+
+	@Test
+	void creditProvenanceWith100DeclinedAnd1CompletedPreservesConsumingAppointmentAndEarnings() throws Exception {
+		var specialistId = UUID.randomUUID();
+		var adminId = UUID.randomUUID();
+		jdbc.sql("""
+				insert into specialist_profile (
+				 account_id, display_name, biography, years_experience, timezone, approval_status,
+				 submitted_at, reviewed_at, reviewed_by
+				) values (:id, 'Spec Preserved', 'Bio', 5, 'Asia/Ho_Chi_Minh', 'APPROVED', now(), now(), :admin)
+				""").param("id", specialistId).param("admin", adminId).update();
+
+		var userId = UUID.randomUUID();
+		var checkout = billing.checkout(userId, PLUS, "cred-trunc-pres-" + UUID.randomUUID());
+		var periodId = UUID.randomUUID();
+		var creditId = UUID.randomUUID();
+		var base = Instant.parse("2025-01-01T00:00:00Z");
+
+		jdbc.sql("""
+				insert into service_credit_period (
+				 id, account_id, plan_version, credit_policy_version, package_code, source, source_reference,
+				 period_start, period_end, allocated_count, credit_allocation_minor, created_at, updated_at
+				) values (:id, :userId, 'v1', 'consultation-credit-v1', 'PLUS', 'PAID', :ref,
+				 :periodStart, :periodEnd, 1, 200000, :createdAt, :createdAt)
+				""").param("id", periodId).param("userId", userId)
+				.param("ref", checkout.subscriptionId().toString())
+				.param("periodStart", Timestamp.from(base.minusSeconds(86400)))
+				.param("periodEnd", Timestamp.from(base.plusSeconds(365 * 86400L)))
+				.param("createdAt", Timestamp.from(base.minusSeconds(86400))).update();
+
+		jdbc.sql("""
+				insert into service_credit (id, period_id, ordinal, state, created_at, updated_at)
+				values (:id, :periodId, 1, 'AVAILABLE', :createdAt, :createdAt)
+				""").param("id", creditId).param("periodId", periodId)
+				.param("createdAt", Timestamp.from(base)).update();
+
+		// Insert 100 REJECTED appointments
+		for (int i = 0; i < 100; i++) {
+			var apptId = UUID.randomUUID();
+			var slotId = UUID.randomUUID();
+			var start = base.plusSeconds(i * 7200L);
+
+			jdbc.sql("""
+					insert into availability_slot (
+					 id, specialist_account_id, start_at, end_at, timezone, modality,
+					 idempotency_key, created_at, updated_at
+					) values (:id, :specId, :startAt, :endAt, 'Asia/Ho_Chi_Minh', 'IN_APP_CHAT',
+					 :key, :createdAt, :createdAt)
+					""").param("id", slotId).param("specId", specialistId)
+					.param("startAt", Timestamp.from(start)).param("endAt", Timestamp.from(start.plusSeconds(3600)))
+					.param("key", "slot-declined-" + slotId).param("createdAt", Timestamp.from(base)).update();
+
+			jdbc.sql("""
+					insert into appointment (
+					 id, user_account_id, specialist_account_id, availability_slot_id, service_credit_id,
+					 status, modality, scheduled_start_at, scheduled_end_at, display_timezone,
+					 requested_at, decision_deadline_at, idempotency_key, decided_at, decision_reason,
+					 created_at, updated_at
+					) values (:id, :userId, :specId, :slotId, :creditId,
+					 'REJECTED', 'IN_APP_CHAT', :startAt, :endAt, 'Asia/Ho_Chi_Minh',
+					 :requestedAt, :deadlineAt, :key, :decidedAt, 'SPECIALIST_REJECTED',
+					 :createdAt, :createdAt)
+					""").param("id", apptId).param("userId", userId).param("specId", specialistId)
+					.param("creditId", creditId).param("slotId", slotId)
+					.param("startAt", Timestamp.from(start)).param("endAt", Timestamp.from(start.plusSeconds(3600)))
+					.param("requestedAt", Timestamp.from(start.minusSeconds(1800)))
+					.param("deadlineAt", Timestamp.from(start.minusSeconds(900)))
+					.param("decidedAt", Timestamp.from(start.minusSeconds(600)))
+					.param("key", "app-declined-" + apptId)
+					.param("createdAt", Timestamp.from(start.minusSeconds(1800))).update();
+		}
+
+		// Insert 101st appointment: COMPLETED, consumes the credit!
+		var completedApptId = UUID.randomUUID();
+		var completedSlotId = UUID.randomUUID();
+		var completedFact = UUID.randomUUID();
+		var completedStart = base.plusSeconds(100 * 7200L);
+
+		jdbc.sql("""
+				insert into availability_slot (
+				 id, specialist_account_id, start_at, end_at, timezone, modality,
+				 idempotency_key, created_at, updated_at
+				) values (:id, :specId, :startAt, :endAt, 'Asia/Ho_Chi_Minh', 'IN_APP_CHAT',
+				 :key, :createdAt, :createdAt)
+				""").param("id", completedSlotId).param("specId", specialistId)
+				.param("startAt", Timestamp.from(completedStart)).param("endAt", Timestamp.from(completedStart.plusSeconds(3600)))
+				.param("key", "slot-completed-" + completedSlotId).param("createdAt", Timestamp.from(base)).update();
+
+		jdbc.sql("""
+				insert into appointment (
+				 id, user_account_id, specialist_account_id, availability_slot_id, service_credit_id,
+				 status, modality, scheduled_start_at, scheduled_end_at, display_timezone,
+				 requested_at, decision_deadline_at, idempotency_key, created_at, updated_at
+				) values (:id, :userId, :specId, :slotId, :creditId,
+				 'REQUESTED', 'IN_APP_CHAT', :startAt, :endAt, 'Asia/Ho_Chi_Minh',
+				 :requestedAt, :deadlineAt, :key, :createdAt, :createdAt)
+				""").param("id", completedApptId).param("userId", userId).param("specId", specialistId)
+				.param("creditId", creditId).param("slotId", completedSlotId)
+				.param("startAt", Timestamp.from(completedStart)).param("endAt", Timestamp.from(completedStart.plusSeconds(3600)))
+				.param("requestedAt", Timestamp.from(completedStart.minusSeconds(1800)))
+				.param("deadlineAt", Timestamp.from(completedStart.minusSeconds(900)))
+				.param("key", "app-completed-" + completedApptId)
+				.param("createdAt", Timestamp.from(completedStart.minusSeconds(1800))).update();
+
+		jdbc.sql("""
+				update appointment set status='COMPLETED', decided_at=:decidedAt, decision_reason='SPECIALIST_ACCEPTED',
+				 session_outcome='COMPLETED', session_outcome_reason='EVIDENCE_REQUIREMENTS_MET', session_policy_version='chat-session-completion-v1',
+				 session_ended_at=:endAt, session_settled_at=:endAt, completion_fact_id=:fact where id=:id
+				""").param("id", completedApptId).param("decidedAt", Timestamp.from(completedStart.minusSeconds(600)))
+				.param("endAt", Timestamp.from(completedStart.plusSeconds(3600)))
+				.param("fact", completedFact).update();
+
+		jdbc.sql("update service_credit set state='CONSUMED', appointment_id=:appId where id=:creditId")
+				.param("appId", completedApptId).param("creditId", creditId).update();
+
+		// Earning for the completed appointment
+		var earningId = UUID.randomUUID();
+		jdbc.sql("""
+				insert into specialist_earning (
+				 id, appointment_id, completion_fact_id, consumed_credit_id, specialist_account_id,
+				 plan_version, currency, credit_allocation_minor, specialist_share_bps,
+				 specialist_amount_minor, platform_allocation_minor, idempotency_source,
+				 status, earned_at, settlement_available_at, paid_at, created_at, updated_at
+				) values (:id, :appId, :fact, :creditId, :spec, 'v1', 'VND', 200000, 5000, 100000, 100000, :src, 'PAID', now(), now(), now(), now(), now())
+				""").param("id", earningId).param("appId", completedApptId).param("fact", completedFact)
+				.param("creditId", creditId).param("spec", specialistId).param("src", "src-" + earningId).update();
+
+		// Payout for the earning
+		var destId = UUID.randomUUID();
+		var payoutId = UUID.randomUUID();
+		jdbc.sql("""
+				insert into specialist_payout_destination (id, specialist_account_id, payout_provider, destination_type, destination_ciphertext, encryption_key_version, destination_fingerprint, display_hint, status, verified_at, created_at, updated_at)
+				values (:id, :spec, 'MOMO', 'MOMO_WALLET', 'cipher', 'v1', 'fp-trunc', '0919***', 'VERIFIED', now(), now(), now())
+				""").param("id", destId).param("spec", specialistId).update();
+
+		jdbc.sql("""
+				insert into specialist_payout (id, specialist_account_id, destination_id, amount_minor, currency, status, payout_provider, idempotency_key, requested_at, requested_on, completed_at, created_at, updated_at)
+				values (:id, :spec, :dest, 100000, 'VND', 'SUCCEEDED', 'MOMO', :k, now(), current_date, now(), now(), now())
+				""").param("id", payoutId).param("spec", specialistId).param("dest", destId).param("k", "payout-" + payoutId).update();
+
+		jdbc.sql("insert into specialist_payout_item (payout_id, earning_id, amount_minor) values (:payoutId, :earn, 100000)")
+				.param("payoutId", payoutId).param("earn", earningId).update();
+
+		// Query provenance by creditId: 101 appointments exist.
+		// Truncation must be reported (truncated = true), BUT the consuming completed appointment, its earning and payout MUST be preserved!
+		mvc.perform(get("/api/v1/admin/commercial/provenance")
+				.param("creditId", creditId.toString())
+				.with(role(UUID.randomUUID(), "ROLE_ADMIN")))
+				.andExpect(status().isOk())
+				.andExpect(jsonPath("$.found").value(true))
+				.andExpect(jsonPath("$.truncated").value(true))
+				.andExpect(jsonPath("$.appointments.length()").value(100))
+				.andExpect(jsonPath("$.appointments[0].appointmentId").value(completedApptId.toString()))
+				.andExpect(jsonPath("$.appointments[0].status").value("COMPLETED"))
+				.andExpect(jsonPath("$.earnings.length()").value(1))
+				.andExpect(jsonPath("$.earnings[0].earningId").value(earningId.toString()))
+				.andExpect(jsonPath("$.payouts.length()").value(1))
+				.andExpect(jsonPath("$.payouts[0].payoutId").value(payoutId.toString()));
+	}
+
 	private org.springframework.test.web.servlet.request.RequestPostProcessor role(UUID id, String authority) {
 		return jwt().jwt(token -> token.subject(id.toString())).authorities(new SimpleGrantedAuthority(authority));
 	}
