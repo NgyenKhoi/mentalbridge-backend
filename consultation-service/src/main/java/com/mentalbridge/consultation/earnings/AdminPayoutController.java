@@ -37,6 +37,8 @@ public class AdminPayoutController {
 			@RequestParam(required = false) String to,
 			@RequestParam(required = false) UUID specialistAccountId,
 			@RequestParam(required = false) UUID payoutId,
+			@RequestParam(required = false) String idempotencyKey,
+			@RequestParam(required = false) String providerReference,
 			@RequestParam(required = false) String correlationId,
 			@RequestParam(required = false, defaultValue = "0") Integer offset,
 			@RequestParam(required = false, defaultValue = "200") Integer limit) {
@@ -65,7 +67,13 @@ public class AdminPayoutController {
 		if (payoutId != null) {
 			sql.append(" and p.id = :payoutId");
 		}
-		if (correlationId != null && !correlationId.isBlank()) {
+		if (idempotencyKey != null && !idempotencyKey.isBlank()) {
+			sql.append(" and p.idempotency_key = :idempotencyKey");
+		}
+		if (providerReference != null && !providerReference.isBlank()) {
+			sql.append(" and a.provider_payout_reference = :providerReference");
+		}
+		if (correlationId != null && !correlationId.isBlank() && (idempotencyKey == null || idempotencyKey.isBlank())) {
 			sql.append(" and p.idempotency_key = :correlationId");
 		}
 		if (from != null && !from.isBlank()) {
@@ -90,19 +98,33 @@ public class AdminPayoutController {
 		if (payoutId != null) {
 			query = query.param("payoutId", payoutId);
 		}
-		if (correlationId != null && !correlationId.isBlank()) {
+		if (idempotencyKey != null && !idempotencyKey.isBlank()) {
+			query = query.param("idempotencyKey", idempotencyKey.trim());
+		}
+		if (providerReference != null && !providerReference.isBlank()) {
+			query = query.param("providerReference", providerReference.trim());
+		}
+		if (correlationId != null && !correlationId.isBlank() && (idempotencyKey == null || idempotencyKey.isBlank())) {
 			query = query.param("correlationId", correlationId.trim());
 		}
+		OffsetDateTime fromDt = null;
 		if (from != null && !from.isBlank()) {
 			try {
-				query = query.param("from", OffsetDateTime.ofInstant(Instant.parse(from), ZoneOffset.UTC));
+				fromDt = OffsetDateTime.ofInstant(Instant.parse(from), ZoneOffset.UTC);
+				query = query.param("from", fromDt);
 			} catch (Exception e) {
 				throw new ApiException(HttpStatus.BAD_REQUEST, "INVALID_DATE_RANGE", "Invalid 'from' timestamp format");
 			}
 		}
 		if (to != null && !to.isBlank()) {
 			try {
-				query = query.param("to", OffsetDateTime.ofInstant(Instant.parse(to), ZoneOffset.UTC));
+				var toDt = OffsetDateTime.ofInstant(Instant.parse(to), ZoneOffset.UTC);
+				if (fromDt != null && toDt.isBefore(fromDt)) {
+					throw new ApiException(HttpStatus.BAD_REQUEST, "INVALID_DATE_RANGE", "'to' date cannot be before 'from' date");
+				}
+				query = query.param("to", toDt);
+			} catch (ApiException e) {
+				throw e;
 			} catch (Exception e) {
 				throw new ApiException(HttpStatus.BAD_REQUEST, "INVALID_DATE_RANGE", "Invalid 'to' timestamp format");
 			}

@@ -5,6 +5,7 @@ import java.sql.SQLException;
 import java.time.Clock;
 import java.time.Instant;
 import java.util.ArrayList;
+import java.util.Collection;
 import java.util.Collections;
 import java.util.HashSet;
 import java.util.LinkedHashSet;
@@ -39,16 +40,17 @@ public class AdminCommercialReconciliationController {
 	public AdminCommercialDiscrepancyResponse discrepancies() {
 		var webhooks = jdbc.sql("""
 				select p1.id, p1.order_id, 'MOMO' as provider, p1.trans_id, p1.processing_status, p1.failure_code, p1.received_at,
-				 case when exists (select 1 from momo_payment_ipn p2 where p2.id <> p1.id and p2.trans_id = p1.trans_id and p1.trans_id > 0) then 'DUPLICATE_TRANS_ID'
-				      when exists (select 1 from momo_payment_ipn p2 where p2.id <> p1.id and p2.order_id = p1.order_id and p2.request_id = p1.request_id) then 'DUPLICATE_DELIVERY'
+				 case when p1.trans_id > 0 and exists (select 1 from momo_payment_ipn p2 where p2.id <> p1.id and p2.trans_id = p1.trans_id and p2.order_id <> p1.order_id) then 'DUPLICATE_TRANS_ID'
+				      when p1.failure_code = 'PAYMENT_ALREADY_FINAL' or exists (select 1 from momo_payment_ipn p2 where p2.id <> p1.id and p2.order_id = p1.order_id and p2.request_id = p1.request_id and p2.result_code = p1.result_code) then 'DUPLICATE_DELIVERY'
 				      when p1.processing_status = 'RECEIVED' then 'PENDING_PROCESSING'
 				      when p1.processing_status = 'VERIFIED_UNMATCHED' then 'VERIFIED_UNMATCHED'
-				      when p1.processing_status = 'PROCESSING_FAILED' then 'PROCESSING_FAILED'
+				      when p1.processing_status = 'PROCESSING_FAILED' or p1.failure_code in ('MOMO_PAYMENT_FAILED', 'PAYMENT_EXPIRED') then 'PROCESSING_FAILED'
 				      else 'DISCREPANCY' end as discrepancy_type
 				from momo_payment_ipn p1
-				where p1.processing_status <> 'PROCESSED'
-				   or exists (select 1 from momo_payment_ipn p2 where p2.id <> p1.id and p2.trans_id = p1.trans_id and p1.trans_id > 0)
-				   or exists (select 1 from momo_payment_ipn p2 where p2.id <> p1.id and p2.order_id = p1.order_id and p2.request_id = p1.request_id)
+				where (p1.processing_status in ('RECEIVED', 'VERIFIED_UNMATCHED', 'PROCESSING_FAILED'))
+				   or (p1.failure_code in ('PAYMENT_ALREADY_FINAL', 'MOMO_PAYMENT_FAILED', 'PAYMENT_EXPIRED'))
+				   or (p1.trans_id > 0 and exists (select 1 from momo_payment_ipn p2 where p2.id <> p1.id and p2.trans_id = p1.trans_id and p2.order_id <> p1.order_id))
+				   or (exists (select 1 from momo_payment_ipn p2 where p2.id <> p1.id and p2.order_id = p1.order_id and p2.request_id = p1.request_id and p2.result_code = p1.result_code))
 				order by p1.received_at desc limit 50
 				""").query((row, ignored) -> new AdminCommercialDiscrepancyResponse.WebhookDiscrepancy(
 						row.getObject("id", UUID.class),
@@ -119,9 +121,10 @@ public class AdminCommercialReconciliationController {
 
 		int totalWebhooks = jdbc.sql("""
 				select count(*) from momo_payment_ipn p1
-				where p1.processing_status <> 'PROCESSED'
-				   or exists (select 1 from momo_payment_ipn p2 where p2.id <> p1.id and p2.trans_id = p1.trans_id and p1.trans_id > 0)
-				   or exists (select 1 from momo_payment_ipn p2 where p2.id <> p1.id and p2.order_id = p1.order_id and p2.request_id = p1.request_id)
+				where (p1.processing_status in ('RECEIVED', 'VERIFIED_UNMATCHED', 'PROCESSING_FAILED'))
+				   or (p1.failure_code in ('PAYMENT_ALREADY_FINAL', 'MOMO_PAYMENT_FAILED', 'PAYMENT_EXPIRED'))
+				   or (p1.trans_id > 0 and exists (select 1 from momo_payment_ipn p2 where p2.id <> p1.id and p2.trans_id = p1.trans_id and p2.order_id <> p1.order_id))
+				   or (exists (select 1 from momo_payment_ipn p2 where p2.id <> p1.id and p2.order_id = p1.order_id and p2.request_id = p1.request_id and p2.result_code = p1.result_code))
 				""").query(Integer.class).single();
 
 		int totalPayouts = jdbc.sql("""
@@ -202,118 +205,130 @@ public class AdminCommercialReconciliationController {
 		Set<UUID> creditIds = new LinkedHashSet<>();
 		if (creditId != null) creditIds.add(creditId);
 
-		// Resolve from payoutIds
-		if (!payoutIds.isEmpty()) {
-			var inClause = String.join(",", payoutIds.stream().map(id -> "'" + id + "'").toList());
-			var relatedEarnings = jdbc.sql("select earning_id from specialist_payout_item where payout_id in (" + inClause + ")")
-					.query(UUID.class).list();
-			earningIds.addAll(relatedEarnings);
-		}
+		if ("PAYOUT".equals(queryType)) {
+			payoutIds.add(payoutId);
+			var relEarnings = jdbc.sql("select earning_id from specialist_payout_item where payout_id = :payoutId")
+					.param("payoutId", payoutId).query(UUID.class).list();
+			earningIds.addAll(relEarnings);
 
-		// Resolve from earningIds
-		if (!earningIds.isEmpty()) {
-			var inClause = String.join(",", earningIds.stream().map(id -> "'" + id + "'").toList());
-			var earningRows = jdbc.sql("select appointment_id, consumed_credit_id from specialist_earning where id in (" + inClause + ")")
-					.query((row, ignored) -> new Pair(row.getObject("appointment_id", UUID.class),
-							row.getObject("consumed_credit_id", UUID.class)))
-					.list();
-			for (var row : earningRows) {
-				if (row.first != null) appointmentIds.add(row.first);
-				if (row.second != null) creditIds.add(row.second);
-			}
-			var relPayouts = jdbc.sql("select payout_id from specialist_payout_item where earning_id in (" + inClause + ")")
-					.query(UUID.class).list();
-			payoutIds.addAll(relPayouts);
-		}
-
-		// Resolve from appointmentIds
-		if (!appointmentIds.isEmpty()) {
-			var inClause = String.join(",", appointmentIds.stream().map(id -> "'" + id + "'").toList());
-			var apptCredits = jdbc.sql("select service_credit_id from appointment where id in (" + inClause + ") and service_credit_id is not null")
-					.query(UUID.class).list();
-			creditIds.addAll(apptCredits);
-
-			var apptEarnings = jdbc.sql("select id from specialist_earning where appointment_id in (" + inClause + ")")
-					.query(UUID.class).list();
-			earningIds.addAll(apptEarnings);
-
-			if (!apptEarnings.isEmpty()) {
-				var eInClause = String.join(",", apptEarnings.stream().map(id -> "'" + id + "'").toList());
-				var pIds = jdbc.sql("select payout_id from specialist_payout_item where earning_id in (" + eInClause + ")")
-						.query(UUID.class).list();
-				payoutIds.addAll(pIds);
-			}
-		}
-
-		// Resolve from creditIds
-		if (!creditIds.isEmpty()) {
-			var inClause = String.join(",", creditIds.stream().map(id -> "'" + id + "'").toList());
-			var creditRows = jdbc.sql("""
-					select c.id, c.appointment_id, p.source, p.source_reference
-					from service_credit c join service_credit_period p on p.id=c.period_id
-					where c.id in (""" + inClause + ")")
-					.query((row, ignored) -> new CreditPeriodRow(
-							row.getObject("id", UUID.class),
-							row.getObject("appointment_id", UUID.class),
-							row.getString("source"),
-							row.getString("source_reference")))
-					.list();
-
-			for (var cr : creditRows) {
-				if (cr.appointmentId != null) appointmentIds.add(cr.appointmentId);
-				if ("PAID".equals(cr.source) && cr.sourceReference != null) {
-					try {
-						subscriptionIds.add(UUID.fromString(cr.sourceReference));
-					} catch (IllegalArgumentException ignored) {
-					}
+			if (!earningIds.isEmpty()) {
+				var inClause = inClause(earningIds);
+				var rows = jdbc.sql("select appointment_id, consumed_credit_id from specialist_earning where id in (" + inClause + ")")
+						.query((row, ignored) -> new Pair(row.getObject("appointment_id", UUID.class),
+								row.getObject("consumed_credit_id", UUID.class)))
+						.list();
+				for (var r : rows) {
+					if (r.first != null) appointmentIds.add(r.first);
+					if (r.second != null) creditIds.add(r.second);
 				}
 			}
 
-			var upgradeSubs = jdbc.sql("""
-					select u.subscription_id from subscription_upgrade_credit uc
-					join subscription_upgrade u on u.id=uc.upgrade_id
-					where uc.credit_id in (""" + inClause + ")")
-					.query(UUID.class).list();
-			subscriptionIds.addAll(upgradeSubs);
-		}
+			resolveOriginatingSubscriptions(creditIds, subscriptionIds);
+			resolveSubscriptionPayments(subscriptionIds, paymentIds);
 
-		// If subscriptions found, load all their credits (canonical relationship without account_id fallback)
-		if (!subscriptionIds.isEmpty()) {
-			var inClause = String.join(",", subscriptionIds.stream().map(id -> "'" + id + "'").toList());
-			var subCredits = jdbc.sql("""
-					select c.id, c.appointment_id
-					from service_credit c
-					join service_credit_period p on p.id=c.period_id
-					where (p.source = 'PAID' and p.source_reference in (""" + inClause + """
-					)) or exists (
-					    select 1 from subscription_upgrade_credit uc
-					    join subscription_upgrade u on u.id = uc.upgrade_id
-					    where uc.credit_id = c.id and u.subscription_id in (""" + inClause + """
-					))
-					""").query((row, ignored) -> new Pair(row.getObject("id", UUID.class),
-							row.getObject("appointment_id", UUID.class)))
-					.list();
+		} else if ("EARNING".equals(queryType)) {
+			earningIds.add(earningId);
+			var relPayouts = jdbc.sql("select payout_id from specialist_payout_item where earning_id = :earningId")
+					.param("earningId", earningId).query(UUID.class).list();
+			payoutIds.addAll(relPayouts);
 
-			for (var sc : subCredits) {
-				creditIds.add(sc.first);
-				if (sc.second != null) appointmentIds.add(sc.second);
+			var row = jdbc.sql("select appointment_id, consumed_credit_id from specialist_earning where id = :earningId")
+					.param("earningId", earningId)
+					.query((r, ignored) -> new Pair(r.getObject("appointment_id", UUID.class),
+							r.getObject("consumed_credit_id", UUID.class)))
+					.optional().orElse(null);
+			if (row != null) {
+				if (row.first != null) appointmentIds.add(row.first);
+				if (row.second != null) creditIds.add(row.second);
 			}
 
-			// Add payments for all subscriptions
-			var subPaymentIds = jdbc.sql("select id from payment_transaction where subscription_id in (" + inClause + ")")
-					.query(UUID.class).list();
-			paymentIds.addAll(subPaymentIds);
-		}
+			resolveOriginatingSubscriptions(creditIds, subscriptionIds);
+			resolveSubscriptionPayments(subscriptionIds, paymentIds);
 
-		// Re-expand earnings and payouts from all discovered appointmentIds
-		if (!appointmentIds.isEmpty()) {
-			var inClause = String.join(",", appointmentIds.stream().map(id -> "'" + id + "'").toList());
-			var newlyFoundEarnings = jdbc.sql("select id from specialist_earning where appointment_id in (" + inClause + ")")
-					.query(UUID.class).list();
-			earningIds.addAll(newlyFoundEarnings);
-			if (!newlyFoundEarnings.isEmpty()) {
-				var eInClause = String.join(",", newlyFoundEarnings.stream().map(id -> "'" + id + "'").toList());
-				var pIds = jdbc.sql("select payout_id from specialist_payout_item where earning_id in (" + eInClause + ")")
+		} else if ("APPOINTMENT".equals(queryType)) {
+			appointmentIds.add(appointmentId);
+			var cId = jdbc.sql("select service_credit_id from appointment where id = :appointmentId")
+					.param("appointmentId", appointmentId).query(UUID.class).optional().orElse(null);
+			if (cId != null) creditIds.add(cId);
+
+			resolveOriginatingSubscriptions(creditIds, subscriptionIds);
+			resolveSubscriptionPayments(subscriptionIds, paymentIds);
+
+			var apptEarnings = jdbc.sql("select id from specialist_earning where appointment_id = :appointmentId")
+					.param("appointmentId", appointmentId).query(UUID.class).list();
+			earningIds.addAll(apptEarnings);
+
+			if (!earningIds.isEmpty()) {
+				var inClause = inClause(earningIds);
+				var pIds = jdbc.sql("select payout_id from specialist_payout_item where earning_id in (" + inClause + ")")
+						.query(UUID.class).list();
+				payoutIds.addAll(pIds);
+			}
+
+		} else if ("CREDIT".equals(queryType)) {
+			creditIds.add(creditId);
+			resolveOriginatingSubscriptions(creditIds, subscriptionIds);
+			resolveSubscriptionPayments(subscriptionIds, paymentIds);
+
+			var aId = jdbc.sql("select id from appointment where service_credit_id = :creditId")
+					.param("creditId", creditId).query(UUID.class).optional().orElse(null);
+			if (aId != null) {
+				appointmentIds.add(aId);
+				var apptEarnings = jdbc.sql("select id from specialist_earning where appointment_id = :appointmentId")
+						.param("appointmentId", aId).query(UUID.class).list();
+				earningIds.addAll(apptEarnings);
+				if (!earningIds.isEmpty()) {
+					var inClause = inClause(earningIds);
+					var pIds = jdbc.sql("select payout_id from specialist_payout_item where earning_id in (" + inClause + ")")
+							.query(UUID.class).list();
+					payoutIds.addAll(pIds);
+				}
+			}
+
+		} else if ("PAYMENT".equals(queryType) || "SUBSCRIPTION".equals(queryType)) {
+			if ("PAYMENT".equals(queryType)) {
+				paymentIds.add(paymentId);
+				var subId = jdbc.sql("select subscription_id from payment_transaction where id = :paymentId")
+						.param("paymentId", paymentId).query(UUID.class).optional().orElse(null);
+				if (subId != null) subscriptionIds.add(subId);
+			} else {
+				subscriptionIds.add(subscriptionId);
+			}
+
+			resolveSubscriptionPayments(subscriptionIds, paymentIds);
+
+			if (!subscriptionIds.isEmpty()) {
+				var inClause = inClause(subscriptionIds);
+				var subCredits = jdbc.sql("""
+						select c.id, c.appointment_id
+						from service_credit c
+						join service_credit_period p on p.id=c.period_id
+						where (p.source = 'PAID' and p.source_reference in (""" + inClause + """
+						)) or exists (
+						    select 1 from subscription_upgrade_credit uc
+						    join subscription_upgrade u on u.id = uc.upgrade_id
+						    where uc.credit_id = c.id and u.subscription_id in (""" + inClause + """
+						)) limit 100
+						""").query((row, ignored) -> new Pair(row.getObject("id", UUID.class),
+								row.getObject("appointment_id", UUID.class)))
+						.list();
+
+				for (var sc : subCredits) {
+					creditIds.add(sc.first);
+					if (sc.second != null) appointmentIds.add(sc.second);
+				}
+			}
+
+			if (!appointmentIds.isEmpty()) {
+				var inClause = inClause(appointmentIds);
+				var apptEarnings = jdbc.sql("select id from specialist_earning where appointment_id in (" + inClause + ") limit 100")
+						.query(UUID.class).list();
+				earningIds.addAll(apptEarnings);
+			}
+
+			if (!earningIds.isEmpty()) {
+				var inClause = inClause(earningIds);
+				var pIds = jdbc.sql("select payout_id from specialist_payout_item where earning_id in (" + inClause + ") limit 100")
 						.query(UUID.class).list();
 				payoutIds.addAll(pIds);
 			}
@@ -322,13 +337,13 @@ public class AdminCommercialReconciliationController {
 		// Load subscriptions
 		List<AdminCommercialProvenanceResponse.AdminSubscriptionSummary> subscriptions = Collections.emptyList();
 		if (!subscriptionIds.isEmpty()) {
-			var inClause = String.join(",", subscriptionIds.stream().map(id -> "'" + id + "'").toList());
+			var inClause = inClause(subscriptionIds);
 			subscriptions = jdbc.sql("""
 					select s.id, s.user_id, s.plan_version_id, v.plan_code, v.pricing_policy_version,
 					 s.status, s.current_period_start, s.current_period_end, s.created_at
 					from user_subscription s
 					join subscription_plan_version v on v.id=s.plan_version_id
-					where s.id in (""" + inClause + ") order by s.created_at desc")
+					where s.id in (""" + inClause + ") order by s.created_at desc limit 100")
 					.query((row, ignored) -> new AdminCommercialProvenanceResponse.AdminSubscriptionSummary(
 							row.getObject("id", UUID.class),
 							row.getObject("user_id", UUID.class),
@@ -353,14 +368,14 @@ public class AdminCommercialReconciliationController {
 					where 1=0
 					""");
 			if (!paymentIds.isEmpty()) {
-				var inClause = String.join(",", paymentIds.stream().map(id -> "'" + id + "'").toList());
+				var inClause = inClause(paymentIds);
 				sql.append(" or pt.id in (").append(inClause).append(")");
 			}
 			if (!subscriptionIds.isEmpty()) {
-				var inClause = String.join(",", subscriptionIds.stream().map(id -> "'" + id + "'").toList());
+				var inClause = inClause(subscriptionIds);
 				sql.append(" or pt.subscription_id in (").append(inClause).append(")");
 			}
-			sql.append(" order by pt.created_at desc");
+			sql.append(" order by pt.created_at desc limit 100");
 
 			payments = jdbc.sql(sql.toString())
 					.query((row, ignored) -> new AdminPaymentResponse.Item(
@@ -383,12 +398,12 @@ public class AdminCommercialReconciliationController {
 		// Load credits
 		List<AdminCommercialProvenanceResponse.AdminCreditSummary> credits = Collections.emptyList();
 		if (!creditIds.isEmpty()) {
-			var inClause = String.join(",", creditIds.stream().map(id -> "'" + id + "'").toList());
+			var inClause = inClause(creditIds);
 			credits = jdbc.sql("""
 					select c.id, c.period_id, c.ordinal, c.state, p.credit_allocation_minor, c.appointment_id, c.created_at
 					from service_credit c
 					join service_credit_period p on p.id=c.period_id
-					where c.id in (""" + inClause + ") order by p.period_start desc, c.ordinal asc")
+					where c.id in (""" + inClause + ") order by p.period_start desc, c.ordinal asc limit 100")
 					.query((row, ignored) -> new AdminCommercialProvenanceResponse.AdminCreditSummary(
 							row.getObject("id", UUID.class),
 							row.getObject("period_id", UUID.class),
@@ -403,11 +418,11 @@ public class AdminCommercialReconciliationController {
 		// Load appointments
 		List<AdminCommercialProvenanceResponse.AdminAppointmentSummary> appointments = Collections.emptyList();
 		if (!appointmentIds.isEmpty()) {
-			var inClause = String.join(",", appointmentIds.stream().map(id -> "'" + id + "'").toList());
+			var inClause = inClause(appointmentIds);
 			appointments = jdbc.sql("""
 					select id, specialist_account_id, service_credit_id, status, modality, session_outcome,
 					 completion_fact_id, scheduled_start_at, scheduled_end_at, session_settled_at
-					from appointment where id in (""" + inClause + ") order by scheduled_start_at desc")
+					from appointment where id in (""" + inClause + ") order by scheduled_start_at desc limit 100")
 					.query((row, ignored) -> new AdminCommercialProvenanceResponse.AdminAppointmentSummary(
 							row.getObject("id", UUID.class),
 							row.getObject("specialist_account_id", UUID.class),
@@ -425,11 +440,11 @@ public class AdminCommercialReconciliationController {
 		// Load disputes
 		List<AdminCommercialProvenanceResponse.AdminDisputeSummary> disputes = Collections.emptyList();
 		if (!appointmentIds.isEmpty()) {
-			var inClause = String.join(",", appointmentIds.stream().map(id -> "'" + id + "'").toList());
+			var inClause = inClause(appointmentIds);
 			disputes = jdbc.sql("""
 					select id, appointment_id, opened_by_role, reason_code, status, resolution_outcome,
 					 resolution_reason, opened_at, resolved_at
-					from appointment_dispute where appointment_id in (""" + inClause + ") order by opened_at desc")
+					from appointment_dispute where appointment_id in (""" + inClause + ") order by opened_at desc limit 100")
 					.query((row, ignored) -> new AdminCommercialProvenanceResponse.AdminDisputeSummary(
 							row.getObject("id", UUID.class),
 							row.getObject("appointment_id", UUID.class),
@@ -446,12 +461,12 @@ public class AdminCommercialReconciliationController {
 		// Load earnings
 		List<AdminCommercialProvenanceResponse.AdminEarningSummary> earnings = Collections.emptyList();
 		if (!earningIds.isEmpty()) {
-			var inClause = String.join(",", earningIds.stream().map(id -> "'" + id + "'").toList());
+			var inClause = inClause(earningIds);
 			earnings = jdbc.sql("""
 					select id, appointment_id, consumed_credit_id, specialist_account_id, plan_version,
 					 credit_allocation_minor, specialist_share_bps, specialist_amount_minor,
 					 platform_allocation_minor, status, earned_at, settlement_available_at, paid_at
-					from specialist_earning where id in (""" + inClause + ") order by earned_at desc")
+					from specialist_earning where id in (""" + inClause + ") order by earned_at desc limit 100")
 					.query((row, ignored) -> new AdminCommercialProvenanceResponse.AdminEarningSummary(
 							row.getObject("id", UUID.class),
 							row.getObject("appointment_id", UUID.class),
@@ -472,7 +487,7 @@ public class AdminCommercialReconciliationController {
 		// Load payouts
 		List<AdminPayoutResponse.Item> payouts = Collections.emptyList();
 		if (!payoutIds.isEmpty()) {
-			var inClause = String.join(",", payoutIds.stream().map(id -> "'" + id + "'").toList());
+			var inClause = inClause(payoutIds);
 			payouts = jdbc.sql("""
 					select p.id, p.specialist_account_id, d.display_hint, p.amount_minor, p.currency,
 					 p.payout_provider, p.status, count(i.earning_id)::integer earning_count,
@@ -486,7 +501,7 @@ public class AdminCommercialReconciliationController {
 					where p.id in (""" + inClause + """
 					)
 					group by p.id, d.display_hint
-					order by p.requested_at desc
+					order by p.requested_at desc limit 100
 					""").query((row, ignored) -> new AdminPayoutResponse.Item(
 							row.getObject("id", UUID.class),
 							row.getObject("specialist_account_id", UUID.class),
@@ -522,6 +537,49 @@ public class AdminCommercialReconciliationController {
 				disputes,
 				earnings,
 				payouts);
+	}
+
+	private void resolveOriginatingSubscriptions(Set<UUID> creditIds, Set<UUID> subscriptionIds) {
+		if (creditIds.isEmpty()) return;
+		var inClause = inClause(creditIds);
+		var creditRows = jdbc.sql("""
+				select c.id, p.source, p.source_reference
+				from service_credit c join service_credit_period p on p.id=c.period_id
+				where c.id in (""" + inClause + ") limit 100")
+				.query((row, ignored) -> new CreditPeriodRow(
+						row.getObject("id", UUID.class),
+						null,
+						row.getString("source"),
+						row.getString("source_reference")))
+				.list();
+
+		for (var cr : creditRows) {
+			if ("PAID".equals(cr.source) && cr.sourceReference != null) {
+				try {
+					subscriptionIds.add(UUID.fromString(cr.sourceReference));
+				} catch (IllegalArgumentException ignored) {
+				}
+			}
+		}
+
+		var upgradeSubs = jdbc.sql("""
+				select u.subscription_id from subscription_upgrade_credit uc
+				join subscription_upgrade u on u.id=uc.upgrade_id
+				where uc.credit_id in (""" + inClause + ") limit 100")
+				.query(UUID.class).list();
+		subscriptionIds.addAll(upgradeSubs);
+	}
+
+	private void resolveSubscriptionPayments(Set<UUID> subscriptionIds, Set<UUID> paymentIds) {
+		if (subscriptionIds.isEmpty()) return;
+		var inClause = inClause(subscriptionIds);
+		var subPaymentIds = jdbc.sql("select id from payment_transaction where subscription_id in (" + inClause + ") limit 100")
+				.query(UUID.class).list();
+		paymentIds.addAll(subPaymentIds);
+	}
+
+	private static String inClause(Collection<UUID> ids) {
+		return String.join(",", ids.stream().map(id -> "'" + id + "'").toList());
 	}
 
 	private static Instant instant(ResultSet row, String column) throws SQLException {
