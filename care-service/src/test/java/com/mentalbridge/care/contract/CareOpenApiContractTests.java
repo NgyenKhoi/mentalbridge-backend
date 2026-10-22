@@ -54,6 +54,7 @@ class CareOpenApiContractTests {
 			"GET /api/v1/screening-episodes/current",
 			"GET /api/v1/screening-episodes/history",
 			"GET /api/v1/guided-journey/current",
+			"GET /api/v1/home-next-step",
 			"POST /api/v1/screening-episodes/{episodeId}/assessments/{instrument}",
 			"POST /api/v1/screening-episodes/{episodeId}/support-evaluation",
 			"POST /api/v1/reassessment-self-reports",
@@ -144,6 +145,7 @@ class CareOpenApiContractTests {
 			"/api/v1/screening-episodes/current",
 			"/api/v1/screening-episodes/history",
 			"/api/v1/guided-journey/current",
+			"/api/v1/home-next-step",
 			"/api/v1/screening-episodes/{episodeId}/assessments/{instrument}",
 			"/api/v1/screening-episodes/{episodeId}/support-evaluation",
 			"/api/v1/reassessment-self-reports",
@@ -228,6 +230,7 @@ class CareOpenApiContractTests {
 			"GET /api/v1/screening-episodes/history",
 			"GET /api/v1/guided-journey/current",
 			"POST /api/v1/screening-episodes/{episodeId}/assessments/{instrument}",
+			"GET /api/v1/home-next-step",
 			"POST /api/v1/screening-episodes/{episodeId}/support-evaluation",
 			"POST /api/v1/reassessment-self-reports",
 			"GET /api/v1/reassessment-self-reports/current",
@@ -494,6 +497,74 @@ class CareOpenApiContractTests {
 		assertThat(enumValues(property(journey, "nextAction").getOneOf().getFirst())).containsExactlyElementsOf(
 				java.util.Arrays.stream(com.mentalbridge.care.guidedjourney.GuidedJourneyService.NextAction.values())
 						.map(Enum::name).toList());
+	}
+
+	@Test
+	void homeNextStepReusesTheJourneyAndKeepsPlanContextMinimizedWithSevenExamples() {
+		var contract = Path.of("..", "contracts", "openapi", "care-service-v1.yaml").toAbsolutePath();
+		var openApi = new OpenAPIV3Parser().readLocation(contract.toUri().toString(), null, null).getOpenAPI();
+		var schemas = openApi.getComponents().getSchemas();
+		var home = schemas.get("HomeNextStep");
+		var plan = schemas.get("HomePlanStep");
+		var occurrence = schemas.get("HomeNextOccurrence");
+		var operation = openApi.getPaths().get("/api/v1/home-next-step").getGet();
+
+		assertThat(home.getRequired()).containsExactlyInAnyOrder("homePolicyVersion", "journey", "plan",
+				"lastCompletedPlan");
+		assertThat(home.getProperties().keySet()).containsExactlyInAnyOrderElementsOf(home.getRequired());
+		assertThat(allowsAdditionalProperties(home)).isFalse();
+		assertThat(property(home, "homePolicyVersion").getConst()).isEqualTo("mb-home-next-step-v1");
+		assertThat(property(home, "journey").get$ref()).isEqualTo("#/components/schemas/GuidedJourney");
+		assertThat(property(home, "plan").getOneOf().getFirst().get$ref())
+				.isEqualTo("#/components/schemas/HomePlanStep");
+		assertThat(property(home, "plan").getOneOf().get(1).getTypes()).containsExactly("null");
+		assertThat(property(home, "lastCompletedPlan").getOneOf().getFirst().get$ref())
+				.isEqualTo("#/components/schemas/HomeCompletedPlan");
+		assertThat(property(home, "lastCompletedPlan").getOneOf().get(1).getTypes()).containsExactly("null");
+		assertThat(plan.getRequired()).containsExactlyInAnyOrder("supportPlanId", "status", "focus", "reviewDueOn",
+				"cycleDay", "cycleLengthDays", "localDate", "timeZone", "today", "nextOccurrence");
+		assertThat(plan.getProperties().keySet()).containsExactlyInAnyOrderElementsOf(plan.getRequired());
+		assertThat(property(plan, "cycleDay").getTypes()).containsExactlyInAnyOrder("integer", "null");
+		assertThat(property(plan, "cycleLengthDays").getTypes()).containsExactlyInAnyOrder("integer", "null");
+		assertThat(enumValues(property(plan, "focus"))).containsExactly("RESUME_PAUSED", "REVIEW_DUE", "DO_TODAY",
+				"TODAY_DONE", "NOTHING_TODAY");
+		assertThat(property(plan, "nextOccurrence").getOneOf().get(1).getTypes()).containsExactly("null");
+		assertThat(occurrence.getRequired()).containsExactlyInAnyOrder("occurrenceId", "actionId", "actionType",
+				"title", "displayState", "scheduledAt", "estimatedDurationMinutes");
+		assertThat(enumValues(property(occurrence, "displayState"))).containsExactly("SCHEDULED", "OVERDUE");
+		assertThat(enumValues(property(occurrence, "actionType")))
+				.containsExactlyElementsOf(enumValues(property(schemas.get("ActionOccurrence"), "actionType")));
+		assertThat(operation.getOperationId()).isEqualTo("getOwnHomeNextStep");
+		assertThat(operation.getResponses()).containsOnlyKeys("200", "400", "401", "403", "503");
+		assertThat(operation.getResponses().get("200").getHeaders().get("Cache-Control").getSchema().getConst())
+				.isEqualTo("no-store");
+		var examples = operation.getResponses().get("200").getContent().get("application/json").getExamples();
+		assertThat(examples).containsOnlyKeys("assessmentRequired", "freeResources", "plusProposal", "doToday",
+				"resumePaused", "reviewDue", "lastCompletedPlan");
+		examples.values().forEach(example -> {
+			JsonNode body = io.swagger.v3.core.util.Json.mapper().valueToTree(example.getValue());
+			assertThat(body.size()).isEqualTo(4);
+			assertThat(body.path("homePolicyVersion").asText()).isEqualTo("mb-home-next-step-v1");
+			assertThat(body.hasNonNull("journey")).isTrue();
+			assertThat(body.has("plan")).isTrue();
+			assertThat(body.has("lastCompletedPlan")).isTrue();
+			if (body.hasNonNull("plan")) {
+				assertThat(body.path("plan").properties()).extracting(Map.Entry::getKey)
+						.containsExactlyInAnyOrderElementsOf(plan.getRequired());
+			}
+			for (var excluded : List.of("answers", "totalScore", "compositeScore", "journal", "emotion")) {
+				assertThat(body.findValues(excluded)).as("private field %s", excluded).isEmpty();
+			}
+		});
+		var doToday = io.swagger.v3.core.util.Json.mapper().valueToTree(examples.get("doToday").getValue()).path("plan");
+		assertThat(doToday.path("cycleDay").intValue()).isEqualTo(1);
+		assertThat(doToday.path("cycleLengthDays").intValue()).isEqualTo(14);
+		var paused = io.swagger.v3.core.util.Json.mapper().valueToTree(examples.get("resumePaused").getValue()).path("plan");
+		assertThat(paused.path("cycleDay").isNull()).isTrue();
+		assertThat(paused.path("cycleLengthDays").isNull()).isTrue();
+		var reviewDue = io.swagger.v3.core.util.Json.mapper().valueToTree(examples.get("reviewDue").getValue()).path("plan");
+		assertThat(reviewDue.path("cycleDay").intValue()).isEqualTo(14);
+		assertThat(reviewDue.path("cycleLengthDays").intValue()).isEqualTo(14);
 	}
 
 	@Test
