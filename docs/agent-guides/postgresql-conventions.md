@@ -2,7 +2,7 @@
 
 ## Ownership and consistency
 
-Each service owns a separate database and database user, even when services share one PostgreSQL server locally. Service tables use the owned database's default `public` schema. Owner migrations are executable runtime truth. The read-only [`postgresql-logical-schema.sql`](../domain-model/relational/postgresql-logical-schema.sql) groups tables into visual owner namespaces for documentation only; its cross-owner identifiers are logical/external relationships, never physical foreign keys. No runtime query or ORM relationship may cross a service boundary.
+Each service owns a separate database and database user, even when services share one PostgreSQL server locally. Service tables use the owned database's default `public` schema. Owner migrations are executable runtime truth. The read-only [logical models by service](../domain-model/relational/README.md) group tables into visual owner namespaces for documentation only; their cross-owner identifiers are logical/external relationships, never physical foreign keys. No runtime query or ORM relationship may cross a service boundary.
 
 Before adding or changing persisted data, inspect both the owner migration
 history and the canonical model. A migration PR that adds, removes, renames, or
@@ -25,7 +25,7 @@ Every new or changed table and column must have a plain-language description tha
 - whether it is authoritative, derived, encrypted, hashed, external, nullable, or retained for audit;
 - which service owns the value and which operation changes it when that is not obvious.
 
-Descriptions belong in `docs/database/postgresql-field-data-dictionary.md`, with aggregate-level reasoning and access patterns added to the owning module README when useful. Do not add descriptions as SQL comments merely to duplicate this documentation.
+Descriptions belong in `docs/database/postgresql/<owning-service>.md`, found through the [field dictionary index](../database/postgresql-field-data-dictionary.md), with aggregate-level reasoning and access patterns added to the owning module README when useful. Pair migrations with that owner's dictionary and logical SQL; editing another owner's file or the shared router does not satisfy the check. Do not add descriptions as SQL comments merely to duplicate this documentation.
 
 Example:
 
