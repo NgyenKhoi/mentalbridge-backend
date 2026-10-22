@@ -707,6 +707,158 @@ class AdminCommercialReconciliationIntegrationTests extends ConsultationTestProp
 				.andExpect(jsonPath("$.count").value(0));
 	}
 
+	@Test
+	void fixE_provenanceAmbiguousIdentifierReturns400() throws Exception {
+		var checkout = billing.checkout(UUID.randomUUID(), PLUS, "amb-" + UUID.randomUUID());
+
+		// Zero identifiers -> 400 MISSING
+		mvc.perform(get("/api/v1/admin/commercial/provenance")
+				.with(role(UUID.randomUUID(), "ROLE_ADMIN")))
+				.andExpect(status().isBadRequest())
+				.andExpect(jsonPath("$.code").value("MISSING_PROVENANCE_IDENTIFIER"));
+
+		// Multiple identifiers -> 400 AMBIGUOUS
+		mvc.perform(get("/api/v1/admin/commercial/provenance")
+				.param("paymentId", checkout.paymentId().toString())
+				.param("subscriptionId", checkout.subscriptionId().toString())
+				.with(role(UUID.randomUUID(), "ROLE_ADMIN")))
+				.andExpect(status().isBadRequest())
+				.andExpect(jsonPath("$.code").value("AMBIGUOUS_PROVENANCE_IDENTIFIER"));
+
+		// One valid identifier -> 200
+		mvc.perform(get("/api/v1/admin/commercial/provenance")
+				.param("paymentId", checkout.paymentId().toString())
+				.with(role(UUID.randomUUID(), "ROLE_ADMIN")))
+				.andExpect(status().isOk())
+				.andExpect(jsonPath("$.found").value(true));
+
+		// Unknown UUID -> 200 found=false
+		mvc.perform(get("/api/v1/admin/commercial/provenance")
+				.param("paymentId", UUID.randomUUID().toString())
+				.with(role(UUID.randomUUID(), "ROLE_ADMIN")))
+				.andExpect(status().isOk())
+				.andExpect(jsonPath("$.found").value(false));
+	}
+
+	@Test
+	void fixF_creditWithMultipleHistoricalAppointmentsReturnsAllHistory() throws Exception {
+		var specialistId = UUID.randomUUID();
+		var adminId = UUID.randomUUID();
+		jdbc.sql("""
+				insert into specialist_profile (
+				 account_id, display_name, biography, years_experience, timezone, approval_status,
+				 submitted_at, reviewed_at, reviewed_by
+				) values (:id, 'Test Spec', 'Bio', 5, 'Asia/Ho_Chi_Minh', 'APPROVED', now(), now(), :admin)
+				""").param("id", specialistId).param("admin", adminId).update();
+
+		var userId = UUID.randomUUID();
+		var checkout = billing.checkout(userId, PLUS, "multi-hist-" + UUID.randomUUID());
+		var period = UUID.randomUUID();
+		var creditId = UUID.randomUUID();
+
+		jdbc.sql("""
+				insert into service_credit_period (
+				 id, account_id, plan_version, credit_policy_version, package_code, source, source_reference,
+				 period_start, period_end, allocated_count, credit_allocation_minor, created_at, updated_at
+				) values (:id, :userId, 'v1', 'consultation-credit-v1', 'PLUS', 'PAID', :ref, now() - interval '10 days', now() + interval '20 days', 1, 100000, now(), now())
+				""").param("id", period).param("userId", userId).param("ref", checkout.subscriptionId().toString()).update();
+		jdbc.sql("""
+				insert into service_credit (id, period_id, ordinal, state, created_at, updated_at)
+				values (:id, :periodId, 1, 'AVAILABLE', now(), now())
+				""").param("id", creditId).param("periodId", period).update();
+
+		// First appointment: REJECTED (terminal, releases credit back)
+		var slot1 = UUID.randomUUID();
+		var app1 = UUID.randomUUID();
+		jdbc.sql("""
+				insert into availability_slot (id, specialist_account_id, start_at, end_at, timezone, modality, idempotency_key, created_at, updated_at)
+				values (:id, :spec, now() - interval '8 days', now() - interval '8 days' + interval '1 hour', 'Asia/Ho_Chi_Minh', 'IN_APP_CHAT', :k, now(), now())
+				""").param("id", slot1).param("spec", specialistId).param("k", "slot1-" + slot1).update();
+		jdbc.sql("""
+				insert into appointment (id, user_account_id, specialist_account_id, availability_slot_id, service_credit_id, status, modality,
+				 scheduled_start_at, scheduled_end_at, display_timezone, requested_at, decision_deadline_at, idempotency_key, created_at, updated_at)
+				values (:id, :user, :spec, :slot, :credit, 'REQUESTED', 'IN_APP_CHAT',
+				 now() - interval '8 days', now() - interval '8 days' + interval '1 hour', 'Asia/Ho_Chi_Minh',
+				 now() - interval '8 days' - interval '30 minutes', now() - interval '8 days' + interval '30 minutes', :k, now(), now())
+				""").param("id", app1).param("user", userId).param("spec", specialistId).param("slot", slot1)
+				.param("credit", creditId).param("k", "app1-" + app1).update();
+		jdbc.sql("update appointment set status='REJECTED', decided_at=now() - interval '8 days' + interval '15 minutes', decision_reason='SPECIALIST_REJECTED' where id=:id")
+				.param("id", app1).update();
+
+		// Second appointment: COMPLETED (credit consumed here) — multi-step status transition
+		var slot2 = UUID.randomUUID();
+		var app2 = UUID.randomUUID();
+		var fact2 = UUID.randomUUID();
+		jdbc.sql("""
+				insert into availability_slot (id, specialist_account_id, start_at, end_at, timezone, modality, idempotency_key, created_at, updated_at)
+				values (:id, :spec, now() - interval '5 days', now() - interval '5 days' + interval '1 hour', 'Asia/Ho_Chi_Minh', 'IN_APP_CHAT', :k, now(), now())
+				""").param("id", slot2).param("spec", specialistId).param("k", "slot2-" + slot2).update();
+		jdbc.sql("""
+				insert into appointment (id, user_account_id, specialist_account_id, availability_slot_id, service_credit_id, status, modality,
+				 scheduled_start_at, scheduled_end_at, display_timezone, requested_at, decision_deadline_at, idempotency_key, created_at, updated_at)
+				values (:id, :user, :spec, :slot, :credit, 'REQUESTED', 'IN_APP_CHAT',
+				 now() - interval '5 days', now() - interval '5 days' + interval '1 hour', 'Asia/Ho_Chi_Minh',
+				 now() - interval '5 days' - interval '30 minutes', now() - interval '5 days' + interval '30 minutes', :k, now(), now())
+				""").param("id", app2).param("user", userId).param("spec", specialistId).param("slot", slot2)
+				.param("credit", creditId).param("k", "app2-" + app2).update();
+		jdbc.sql("update appointment set status='COMPLETED', decided_at=now() - interval '5 days' + interval '5 minutes', decision_reason='SPECIALIST_ACCEPTED', session_outcome='COMPLETED', session_outcome_reason='EVIDENCE_REQUIREMENTS_MET', session_policy_version='chat-session-completion-v1', session_ended_at=now() - interval '5 days' + interval '55 minutes', session_settled_at=now() - interval '5 days' + interval '56 minutes', completion_fact_id=:fact where id=:id")
+				.param("id", app2).param("fact", fact2).update();
+		jdbc.sql("update service_credit set state='CONSUMED', appointment_id=:appId where id=:creditId")
+				.param("appId", app2).param("creditId", creditId).update();
+
+		var earn1 = UUID.randomUUID();
+		jdbc.sql("""
+				insert into specialist_earning (
+				 id, appointment_id, completion_fact_id, consumed_credit_id, specialist_account_id,
+				 plan_version, currency, credit_allocation_minor, specialist_share_bps,
+				 specialist_amount_minor, platform_allocation_minor, idempotency_source,
+				 status, earned_at, settlement_available_at, created_at, updated_at
+				) values (:id, :appId, :fact, :creditId, :spec, 'v1', 'VND', 100000, 7000, 70000, 30000, :src, 'AVAILABLE', now(), now() + interval '7 days', now(), now())
+				""").param("id", earn1).param("appId", app2).param("fact", fact2)
+				.param("creditId", creditId).param("spec", specialistId).param("src", "src-" + earn1).update();
+
+		// Trace by creditId: must return both appointments, one earning, no duplicates
+		mvc.perform(get("/api/v1/admin/commercial/provenance")
+				.param("creditId", creditId.toString())
+				.with(role(UUID.randomUUID(), "ROLE_ADMIN")))
+				.andExpect(status().isOk())
+				.andExpect(jsonPath("$.found").value(true))
+				.andExpect(jsonPath("$.appointments.length()").value(2))
+				.andExpect(jsonPath("$.earnings.length()").value(1))
+				.andExpect(jsonPath("$.earnings[0].earningId").value(earn1.toString()))
+				.andExpect(jsonPath("$.truncated").value(false));
+	}
+
+	@Test
+	void fixG_paymentsQueryByMomoRefAndIdempotencyKeyAreDistinct() throws Exception {
+		var userId = UUID.randomUUID();
+		var idemKey = "idem-momo-" + UUID.randomUUID();
+		var checkout = billing.checkout(userId, PLUS, idemKey);
+
+		// idempotencyKey returns only exact match
+		mvc.perform(get("/api/v1/admin/payments")
+				.param("idempotencyKey", idemKey)
+				.with(role(UUID.randomUUID(), "ROLE_ADMIN")))
+				.andExpect(status().isOk())
+				.andExpect(jsonPath("$.count").value(1));
+
+		// momoRef with non-existent value -> 0 (does not fallback to idempotency)
+		mvc.perform(get("/api/v1/admin/payments")
+				.param("momoRef", "non-existent-momo-order")
+				.with(role(UUID.randomUUID(), "ROLE_ADMIN")))
+				.andExpect(status().isOk())
+				.andExpect(jsonPath("$.count").value(0));
+
+		// correlationId param no longer accepted (gets ignored, treated as unrecognized)
+		// Verify idempotencyKey alone is enough to find the payment
+		mvc.perform(get("/api/v1/admin/payments")
+				.param("idempotencyKey", idemKey)
+				.param("subscriptionId", checkout.subscriptionId().toString())
+				.with(role(UUID.randomUUID(), "ROLE_ADMIN")))
+				.andExpect(status().isOk())
+				.andExpect(jsonPath("$.count").value(1));
+	}
+
 	private org.springframework.test.web.servlet.request.RequestPostProcessor role(UUID id, String authority) {
 		return jwt().jwt(token -> token.subject(id.toString())).authorities(new SimpleGrantedAuthority(authority));
 	}

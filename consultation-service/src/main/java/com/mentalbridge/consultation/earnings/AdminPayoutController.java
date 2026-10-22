@@ -39,7 +39,6 @@ public class AdminPayoutController {
 			@RequestParam(required = false) UUID payoutId,
 			@RequestParam(required = false) String idempotencyKey,
 			@RequestParam(required = false) String providerReference,
-			@RequestParam(required = false) String correlationId,
 			@RequestParam(required = false, defaultValue = "0") Integer offset,
 			@RequestParam(required = false, defaultValue = "200") Integer limit) {
 
@@ -73,9 +72,6 @@ public class AdminPayoutController {
 		if (providerReference != null && !providerReference.isBlank()) {
 			sql.append(" and a.provider_payout_reference = :providerReference");
 		}
-		if (correlationId != null && !correlationId.isBlank() && (idempotencyKey == null || idempotencyKey.isBlank())) {
-			sql.append(" and p.idempotency_key = :correlationId");
-		}
 		if (from != null && !from.isBlank()) {
 			sql.append(" and p.requested_at >= :from");
 		}
@@ -103,9 +99,6 @@ public class AdminPayoutController {
 		}
 		if (providerReference != null && !providerReference.isBlank()) {
 			query = query.param("providerReference", providerReference.trim());
-		}
-		if (correlationId != null && !correlationId.isBlank() && (idempotencyKey == null || idempotencyKey.isBlank())) {
-			query = query.param("correlationId", correlationId.trim());
 		}
 		OffsetDateTime fromDt = null;
 		if (from != null && !from.isBlank()) {

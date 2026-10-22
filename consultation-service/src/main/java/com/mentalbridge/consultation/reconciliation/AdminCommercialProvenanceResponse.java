@@ -12,6 +12,7 @@ public record AdminCommercialProvenanceResponse(
 		String queryIdentifierType,
 		String queryIdentifierValue,
 		boolean found,
+		boolean truncated,
 		AdminSubscriptionSummary subscription,
 		List<AdminSubscriptionSummary> subscriptions,
 		List<AdminPaymentResponse.Item> payments,
@@ -33,7 +34,7 @@ public record AdminCommercialProvenanceResponse(
 			List<AdminDisputeSummary> disputes,
 			List<AdminEarningSummary> earnings,
 			List<AdminPayoutResponse.Item> payouts) {
-		this(generatedAt, queryIdentifierType, queryIdentifierValue, found, subscription,
+		this(generatedAt, queryIdentifierType, queryIdentifierValue, found, false, subscription,
 				subscription == null ? List.of() : List.of(subscription),
 				payments, credits, appointments, disputes, earnings, payouts);
 	}

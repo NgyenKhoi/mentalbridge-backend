@@ -38,7 +38,7 @@ public class AdminPaymentController {
 			@RequestParam(required = false) UUID paymentId,
 			@RequestParam(required = false) String orderId,
 			@RequestParam(required = false) String idempotencyKey,
-			@RequestParam(required = false) String correlationId,
+			@RequestParam(required = false) String momoRef,
 			@RequestParam(required = false, defaultValue = "0") Integer offset,
 			@RequestParam(required = false, defaultValue = "200") Integer limit) {
 
@@ -67,8 +67,8 @@ public class AdminPaymentController {
 		if (idempotencyKey != null && !idempotencyKey.isBlank()) {
 			sql.append(" and pt.idempotency_key = :idempotencyKey");
 		}
-		if (correlationId != null && !correlationId.isBlank() && (idempotencyKey == null || idempotencyKey.isBlank())) {
-			sql.append(" and (pt.idempotency_key = :correlationId or pt.momo_order_id = :correlationId or pt.momo_request_id = :correlationId)");
+		if (momoRef != null && !momoRef.isBlank()) {
+			sql.append(" and (pt.momo_order_id = :momoRef or pt.momo_request_id = :momoRef)");
 		}
 		if (from != null && !from.isBlank()) {
 			sql.append(" and pt.created_at >= :from");
@@ -95,8 +95,8 @@ public class AdminPaymentController {
 		if (idempotencyKey != null && !idempotencyKey.isBlank()) {
 			query = query.param("idempotencyKey", idempotencyKey.trim());
 		}
-		if (correlationId != null && !correlationId.isBlank() && (idempotencyKey == null || idempotencyKey.isBlank())) {
-			query = query.param("correlationId", correlationId.trim());
+		if (momoRef != null && !momoRef.isBlank()) {
+			query = query.param("momoRef", momoRef.trim());
 		}
 		OffsetDateTime fromDt = null;
 		if (from != null && !from.isBlank()) {
