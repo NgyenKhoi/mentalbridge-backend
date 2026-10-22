@@ -41,6 +41,14 @@ statement/connect/socket timeouts were bounded, and the transaction was rolled
 back. No Spring application or Liquibase command ran against that database.
 No business tables, credentials, hosts or database URLs are recorded here.
 
+Exact reads inside that read-only JDBC transaction (then `rollback()`):
+
+```sql
+show transaction_read_only;
+select id, author, filename, md5sum, orderexecuted, exectype, liquibase
+from public.databasechangelog order by orderexecuted;
+```
+
 There were **29 rows**, all `EXECUTED`, Liquibase `5.0.3`. Relevant rows, all by
 author `mentalbridge`, in actual `ORDEREXECUTED` order:
 
@@ -105,3 +113,16 @@ Maven wrapper attempt failed before Maven started because the sandbox account's
 Maven home lookup returned a null symlink target; the same checked-in wrapper
 under the normal user environment is used for the actual checks. No wrapper or
 test assertions were weakened.
+
+PostgreSQL migration check: `./mvnw.cmd -B -q
+-Dtest=ConsultationLiquibaseMigrationTests test`, Java 21, Testcontainers
+PostgreSQL **18.6** (`postgres:latest`, the existing repository fixture): **7
+passed, zero failures/errors/skips**. Validation and pending-change inspection
+passed; the second update left every `DATABASECHANGELOG` column unchanged.
+The first attempt had one test cleanup error after the Liquibase assertions
+because both the database wrapper and Liquibase owned connection cleanup. Giving
+Liquibase sole ownership fixed it; the complete seven-test rerun passed.
+
+The full Consultation `clean verify` module gate is running; its result is not
+claimed yet. Unchanged services remain in repository CI; no local repository-wide
+suite is needed for these Consultation-only test/documentation changes.
