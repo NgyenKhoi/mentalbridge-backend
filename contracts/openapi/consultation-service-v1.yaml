@@ -1526,10 +1526,11 @@ paths:
           in: query
           required: false
           schema: { type: string }
-        - name: correlationId
+        - name: momoRef
           in: query
           required: false
           schema: { type: string }
+          description: Search payments by MoMo orderId or requestId
         - name: offset
           in: query
           required: false
@@ -1578,10 +1579,6 @@ paths:
           required: false
           schema: { type: string }
         - name: providerReference
-          in: query
-          required: false
-          schema: { type: string }
-        - name: correlationId
           in: query
           required: false
           schema: { type: string }
@@ -3265,12 +3262,13 @@ components:
     AdminCommercialProvenance:
       type: object
       additionalProperties: false
-      required: [generatedAt, queryIdentifierType, queryIdentifierValue, found, subscriptions, payments, credits, appointments, disputes, earnings, payouts]
+      required: [generatedAt, queryIdentifierType, queryIdentifierValue, found, subscriptions, payments, credits, appointments, disputes, earnings, payouts, truncated]
       properties:
         generatedAt: { type: string, format: date-time }
         queryIdentifierType: { type: string }
         queryIdentifierValue: { type: string }
         found: { type: boolean }
+        truncated: { type: boolean, description: True when at least one entity category exceeded the fetch limit }
         subscription:
           type: [object, 'null']
           additionalProperties: false
