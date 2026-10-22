@@ -30,6 +30,7 @@ class CommunityOpenApiContractTests {
 			"POST /api/v1/community/chat/groups/{conversationId}/ownership",
 			"GET /api/v1/community/chat/conversations/{conversationId}/messages",
 			"POST /api/v1/community/chat/conversations/{conversationId}/messages",
+			"DELETE /api/v1/community/chat/conversations/{conversationId}/messages/{messageId}",
 			"PUT /api/v1/community/chat/conversations/{conversationId}/read-cursor",
 			"GET /api/v1/community/chat/privacy", "PUT /api/v1/community/chat/privacy",
 			"POST /api/v1/community/chat/direct-conversations", "GET /api/v1/community/chat/requests",
@@ -84,6 +85,7 @@ class CommunityOpenApiContractTests {
 			"POST /api/v1/community/chat/groups/{conversationId}/ownership",
 			"GET /api/v1/community/chat/conversations/{conversationId}/messages",
 			"POST /api/v1/community/chat/conversations/{conversationId}/messages",
+			"DELETE /api/v1/community/chat/conversations/{conversationId}/messages/{messageId}",
 			"PUT /api/v1/community/chat/conversations/{conversationId}/read-cursor",
 			"GET /api/v1/community/chat/privacy", "PUT /api/v1/community/chat/privacy",
 			"POST /api/v1/community/chat/direct-conversations", "GET /api/v1/community/chat/requests",
@@ -174,7 +176,7 @@ class CommunityOpenApiContractTests {
 	@Test
 	void sensitiveContentWarningContractIsBoundedAndVersioned() {
 		var api = new OpenAPIV3Parser().read(contract().toString());
-		assertThat(api.getInfo().getVersion()).isEqualTo("1.13.0");
+		assertThat(api.getInfo().getVersion()).isEqualTo("1.14.0");
 		assertThat(api.getComponents().getSchemas().get("CommunitySensitiveContentWarning").getEnum())
 				.containsExactly("SENSITIVE_CONTENT");
 		assertThat(api.getComponents().getSchemas().get("ModerationAction").getEnum())
