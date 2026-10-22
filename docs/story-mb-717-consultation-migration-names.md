@@ -123,6 +123,21 @@ The first attempt had one test cleanup error after the Liquibase assertions
 because both the database wrapper and Liquibase owned connection cleanup. Giving
 Liquibase sole ownership fixed it; the complete seven-test rerun passed.
 
-The full Consultation `clean verify` module gate is running; its result is not
-claimed yet. Unchanged services remain in repository CI; no local repository-wide
-suite is needed for these Consultation-only test/documentation changes.
+Full Consultation gate: `./mvnw.cmd -B -q clean verify`, with
+`SPRINGDOTENV_ENABLED=false`, Java 21 and Docker Testcontainers: **exit 0**, JAR
+built, **293 test cases / 44 suites: 290 passed, 3 skipped, zero failures/errors**.
+The three pre-existing opt-in cases require `mb622.frontend`, `mb623.frontend`
+or `mb384.cloud`; no browser/cloud run is claimed. Both MB-717 test classes ran
+all 16 cases without skips. The existing suite emitted local Kafka-unavailable
+and Mockito instrumentation warnings; no assertion, infrastructure setting or
+skip condition was changed to obtain the passing result.
+
+Repository/paired-change policy, ten local Markdown references, whitespace and
+secret/diff review passed. `origin/dev...HEAD` contains six test/documentation
+files; the runtime changelog-directory diff is empty. The overlap report found
+no shared file with another open PR. Unchanged services remain in repository CI;
+no local repository-wide rerun is needed for these Consultation-only changes.
+
+Review delivery: [backend PR #221](https://github.com/NgyenKhoi/mentalbridge-backend/pull/221).
+The PR verification table records required CI for the final HEAD separately from
+these local results. No deployment or Jira Done transition is performed here.
