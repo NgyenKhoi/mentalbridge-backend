@@ -6,6 +6,7 @@ import static org.springframework.test.web.servlet.request.MockMvcRequestBuilder
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.jsonPath;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.status;
 
+import java.sql.Timestamp;
 import java.time.Instant;
 import java.util.UUID;
 
@@ -148,6 +149,321 @@ class AdminCommercialReconciliationIntegrationTests extends ConsultationTestProp
 		mvc.perform(get("/api/v1/admin/commercial/provenance")
 				.with(role(UUID.randomUUID(), "ROLE_ADMIN")))
 				.andExpect(status().isBadRequest());
+	}
+
+	@Test
+	void fix1_creditsBelongStrictlyToSubscriptionAndNeverLeakUnrelatedDemoOrOtherSubCredits() throws Exception {
+		var userId = UUID.randomUUID();
+		var checkoutA = billing.checkout(userId, PLUS, "checkout-a-" + UUID.randomUUID());
+		jdbc.sql("update payment_transaction set status='SUCCEEDED', paid_at=now() where id=:id")
+				.param("id", checkoutA.paymentId()).update();
+		jdbc.sql("update user_subscription set status='ENDED', ended_at=now() where id=:id")
+				.param("id", checkoutA.subscriptionId()).update();
+
+		var checkoutB = billing.checkout(userId, PLUS, "checkout-b-" + UUID.randomUUID());
+
+		var periodA = UUID.randomUUID();
+		var creditA = UUID.randomUUID();
+		var periodB = UUID.randomUUID();
+		var creditB = UUID.randomUUID();
+		var demoPeriod = UUID.randomUUID();
+		var demoCredit = UUID.randomUUID();
+
+		// Insert paid period & credit for sub A
+		jdbc.sql("""
+				insert into service_credit_period (
+				 id, account_id, plan_version, credit_policy_version, package_code, source, source_reference,
+				 period_start, period_end, allocated_count, credit_allocation_minor, created_at, updated_at
+				) values (:id, :userId, 'v1', 'consultation-credit-v1', 'PLUS', 'PAID', :refA, now() - interval '60 days', now() - interval '31 days', 1, 100000, now(), now())
+				""").param("id", periodA).param("userId", userId).param("refA", checkoutA.subscriptionId().toString()).update();
+		jdbc.sql("""
+				insert into service_credit (id, period_id, ordinal, state, created_at, updated_at)
+				values (:id, :periodId, 1, 'AVAILABLE', now(), now())
+				""").param("id", creditA).param("periodId", periodA).update();
+
+		// Insert paid period & credit for sub B
+		jdbc.sql("""
+				insert into service_credit_period (
+				 id, account_id, plan_version, credit_policy_version, package_code, source, source_reference,
+				 period_start, period_end, allocated_count, credit_allocation_minor, created_at, updated_at
+				) values (:id, :userId, 'v1', 'consultation-credit-v1', 'PLUS', 'PAID', :refB, now() - interval '30 days', now() - interval '1 day', 1, 100000, now(), now())
+				""").param("id", periodB).param("userId", userId).param("refB", checkoutB.subscriptionId().toString()).update();
+		jdbc.sql("""
+				insert into service_credit (id, period_id, ordinal, state, created_at, updated_at)
+				values (:id, :periodId, 1, 'AVAILABLE', now(), now())
+				""").param("id", creditB).param("periodId", periodB).update();
+
+		// Insert demo credit for the same user
+		jdbc.sql("""
+				insert into service_credit_period (
+				 id, account_id, plan_version, credit_policy_version, package_code, source, source_reference,
+				 period_start, period_end, allocated_count, credit_allocation_minor, created_at, updated_at
+				) values (:id, :userId, 'v1', 'consultation-credit-v1', 'PLUS', 'DEMO', 'demo-grant', now(), now() + interval '30 days', 1, 100000, now(), now())
+				""").param("id", demoPeriod).param("userId", userId).update();
+		jdbc.sql("""
+				insert into service_credit (id, period_id, ordinal, state, created_at, updated_at)
+				values (:id, :periodId, 1, 'AVAILABLE', now(), now())
+				""").param("id", demoCredit).param("periodId", demoPeriod).update();
+
+		// 1. Check AdminSubscriptionController: /api/v1/admin/subscriptions/{subA}
+		mvc.perform(get("/api/v1/admin/subscriptions/{subscriptionId}", checkoutA.subscriptionId())
+				.with(role(UUID.randomUUID(), "ROLE_ADMIN")))
+				.andExpect(status().isOk())
+				.andExpect(jsonPath("$.subscriptionId").value(checkoutA.subscriptionId().toString()))
+				.andExpect(jsonPath("$.credits.length()").value(1))
+				.andExpect(jsonPath("$.credits[0].creditId").value(creditA.toString()));
+
+		// 2. Check AdminCommercialReconciliationController provenance by subscriptionId
+		mvc.perform(get("/api/v1/admin/commercial/provenance")
+				.param("subscriptionId", checkoutA.subscriptionId().toString())
+				.with(role(UUID.randomUUID(), "ROLE_ADMIN")))
+				.andExpect(status().isOk())
+				.andExpect(jsonPath("$.found").value(true))
+				.andExpect(jsonPath("$.credits.length()").value(1))
+				.andExpect(jsonPath("$.credits[0].creditId").value(creditA.toString()));
+	}
+
+	@Test
+	void fix2_payoutProvenanceResolvesMultipleEarningsAcrossDifferentSubscriptions() throws Exception {
+		var specialistId = UUID.randomUUID();
+		var adminId = UUID.randomUUID();
+		jdbc.sql("""
+				insert into specialist_profile (
+				 account_id, display_name, biography, years_experience, timezone, approval_status,
+				 submitted_at, reviewed_at, reviewed_by
+				) values (:id, 'Multi Spec', 'Bio', 5, 'Asia/Ho_Chi_Minh', 'APPROVED', now(), now(), :admin)
+				""").param("id", specialistId).param("admin", adminId).update();
+
+		var user1 = UUID.randomUUID();
+		var user2 = UUID.randomUUID();
+		var checkout1 = billing.checkout(user1, PLUS, "co-1-" + UUID.randomUUID());
+		var checkout2 = billing.checkout(user2, PLUS, "co-2-" + UUID.randomUUID());
+
+		// Period & Credit 1
+		var period1 = UUID.randomUUID();
+		var credit1 = UUID.randomUUID();
+		jdbc.sql("""
+				insert into service_credit_period (
+				 id, account_id, plan_version, credit_policy_version, package_code, source, source_reference,
+				 period_start, period_end, allocated_count, credit_allocation_minor, created_at, updated_at
+				) values (:id, :userId, 'v1', 'consultation-credit-v1', 'PLUS', 'PAID', :ref, now(), now() + interval '30 days', 1, 100000, now(), now())
+				""").param("id", period1).param("userId", user1).param("ref", checkout1.subscriptionId().toString()).update();
+		jdbc.sql("""
+				insert into service_credit (id, period_id, ordinal, state, created_at, updated_at)
+				values (:id, :periodId, 1, 'AVAILABLE', now(), now())
+				""").param("id", credit1).param("periodId", period1).update();
+
+		// Period & Credit 2
+		var period2 = UUID.randomUUID();
+		var credit2 = UUID.randomUUID();
+		jdbc.sql("""
+				insert into service_credit_period (
+				 id, account_id, plan_version, credit_policy_version, package_code, source, source_reference,
+				 period_start, period_end, allocated_count, credit_allocation_minor, created_at, updated_at
+				) values (:id, :userId, 'v1', 'consultation-credit-v1', 'PLUS', 'PAID', :ref, now(), now() + interval '30 days', 1, 100000, now(), now())
+				""").param("id", period2).param("userId", user2).param("ref", checkout2.subscriptionId().toString()).update();
+		jdbc.sql("""
+				insert into service_credit (id, period_id, ordinal, state, created_at, updated_at)
+				values (:id, :periodId, 1, 'AVAILABLE', now(), now())
+				""").param("id", credit2).param("periodId", period2).update();
+
+		// Appointments
+		var app1 = UUID.randomUUID();
+		var app2 = UUID.randomUUID();
+		var slot1 = UUID.randomUUID();
+		var slot2 = UUID.randomUUID();
+
+		var fact1 = UUID.randomUUID();
+		var fact2 = UUID.randomUUID();
+
+		jdbc.sql("""
+				insert into availability_slot (id, specialist_account_id, start_at, end_at, timezone, modality, idempotency_key, created_at, updated_at)
+				values (:id, :spec, now() - interval '3 hours', now() - interval '2 hours', 'Asia/Ho_Chi_Minh', 'IN_APP_CHAT', :k, now(), now())
+				""").param("id", slot1).param("spec", specialistId).param("k", "slot1-" + slot1).update();
+		jdbc.sql("""
+				insert into appointment (id, user_account_id, specialist_account_id, availability_slot_id, service_credit_id, status, modality, scheduled_start_at, scheduled_end_at, display_timezone, requested_at, decision_deadline_at, idempotency_key, created_at, updated_at)
+				values (:id, :user, :spec, :slot, :credit, 'REQUESTED', 'IN_APP_CHAT', now() - interval '3 hours', now() - interval '2 hours', 'Asia/Ho_Chi_Minh', now() - interval '5 hours', now() - interval '2 hours 30 minutes', :k, now(), now())
+				""").param("id", app1).param("user", user1).param("spec", specialistId).param("slot", slot1).param("credit", credit1).param("k", "app1-" + app1).update();
+		jdbc.sql("""
+				update appointment set status='COMPLETED', decided_at=now() - interval '2 hours 45 minutes', decision_reason='SPECIALIST_ACCEPTED',
+				 session_outcome='COMPLETED', session_outcome_reason='EVIDENCE_REQUIREMENTS_MET', session_policy_version='chat-session-completion-v1',
+				 session_ended_at=now() - interval '2 hours', session_settled_at=now() - interval '2 hours', completion_fact_id=:fact where id=:id
+				""").param("id", app1).param("fact", fact1).update();
+		jdbc.sql("update service_credit set state='CONSUMED', appointment_id=:appId where id=:creditId")
+				.param("appId", app1).param("creditId", credit1).update();
+
+		jdbc.sql("""
+				insert into availability_slot (id, specialist_account_id, start_at, end_at, timezone, modality, idempotency_key, created_at, updated_at)
+				values (:id, :spec, now() - interval '2 hours', now() - interval '1 hour', 'Asia/Ho_Chi_Minh', 'IN_APP_CHAT', :k, now(), now())
+				""").param("id", slot2).param("spec", specialistId).param("k", "slot2-" + slot2).update();
+		jdbc.sql("""
+				insert into appointment (id, user_account_id, specialist_account_id, availability_slot_id, service_credit_id, status, modality, scheduled_start_at, scheduled_end_at, display_timezone, requested_at, decision_deadline_at, idempotency_key, created_at, updated_at)
+				values (:id, :user, :spec, :slot, :credit, 'REQUESTED', 'IN_APP_CHAT', now() - interval '2 hours', now() - interval '1 hour', 'Asia/Ho_Chi_Minh', now() - interval '4 hours', now() - interval '1 hour 30 minutes', :k, now(), now())
+				""").param("id", app2).param("user", user2).param("spec", specialistId).param("slot", slot2).param("credit", credit2).param("k", "app2-" + app2).update();
+		jdbc.sql("""
+				update appointment set status='COMPLETED', decided_at=now() - interval '1 hour 45 minutes', decision_reason='SPECIALIST_ACCEPTED',
+				 session_outcome='COMPLETED', session_outcome_reason='EVIDENCE_REQUIREMENTS_MET', session_policy_version='chat-session-completion-v1',
+				 session_ended_at=now() - interval '1 hour', session_settled_at=now() - interval '1 hour', completion_fact_id=:fact where id=:id
+				""").param("id", app2).param("fact", fact2).update();
+		jdbc.sql("update service_credit set state='CONSUMED', appointment_id=:appId where id=:creditId")
+				.param("appId", app2).param("creditId", credit2).update();
+
+		// Earnings
+		var earn1 = UUID.randomUUID();
+		var earn2 = UUID.randomUUID();
+		jdbc.sql("""
+				insert into specialist_earning (
+				 id, appointment_id, completion_fact_id, consumed_credit_id, specialist_account_id,
+				 plan_version, currency, credit_allocation_minor, specialist_share_bps,
+				 specialist_amount_minor, platform_allocation_minor, idempotency_source,
+				 status, earned_at, settlement_available_at, paid_at, created_at, updated_at
+				) values (:id, :appId, :fact, :creditId, :spec, 'v1', 'VND', 100000, 7000, 70000, 30000, :src, 'PAID', now(), now(), now(), now(), now())
+				""").param("id", earn1).param("appId", app1).param("fact", fact1).param("creditId", credit1).param("spec", specialistId).param("src", "src-" + earn1).update();
+
+		jdbc.sql("""
+				insert into specialist_earning (
+				 id, appointment_id, completion_fact_id, consumed_credit_id, specialist_account_id,
+				 plan_version, currency, credit_allocation_minor, specialist_share_bps,
+				 specialist_amount_minor, platform_allocation_minor, idempotency_source,
+				 status, earned_at, settlement_available_at, paid_at, created_at, updated_at
+				) values (:id, :appId, :fact, :creditId, :spec, 'v1', 'VND', 100000, 7000, 70000, 30000, :src, 'PAID', now(), now(), now(), now(), now())
+				""").param("id", earn2).param("appId", app2).param("fact", fact2).param("creditId", credit2).param("spec", specialistId).param("src", "src-" + earn2).update();
+
+		// Destination & Payout
+		var destId = UUID.randomUUID();
+		var payoutId = UUID.randomUUID();
+		jdbc.sql("""
+				insert into specialist_payout_destination (
+				 id, specialist_account_id, payout_provider, destination_type,
+				 destination_ciphertext, encryption_key_version, destination_fingerprint,
+				 display_hint, status, verified_at, created_at, updated_at
+				) values (
+				 :id, :spec, 'MOMO', 'MOMO_WALLET',
+				 'cipher', 'v1', 'fingerprint',
+				 '0912***', 'VERIFIED', now(), now(), now()
+				)
+				""").param("id", destId).param("spec", specialistId).update();
+
+		jdbc.sql("""
+				insert into specialist_payout (id, specialist_account_id, destination_id, amount_minor, currency, status, payout_provider, idempotency_key, requested_at, requested_on, completed_at, created_at, updated_at)
+				values (:id, :spec, :dest, 140000, 'VND', 'SUCCEEDED', 'MOMO', :k, now(), current_date, now(), now(), now())
+				""").param("id", payoutId).param("spec", specialistId).param("dest", destId).param("k", "payout-" + payoutId).update();
+
+		// Link payout items
+		jdbc.sql("""
+				insert into specialist_payout_item (payout_id, earning_id, amount_minor)
+				values (:payoutId, :earn1, 70000), (:payoutId, :earn2, 70000)
+				""").param("payoutId", payoutId).param("earn1", earn1).param("earn2", earn2).update();
+
+		// Query provenance by payoutId
+		mvc.perform(get("/api/v1/admin/commercial/provenance")
+				.param("payoutId", payoutId.toString())
+				.with(role(UUID.randomUUID(), "ROLE_ADMIN")))
+				.andExpect(status().isOk())
+				.andExpect(jsonPath("$.found").value(true))
+				.andExpect(jsonPath("$.payouts.length()").value(1))
+				.andExpect(jsonPath("$.payouts[0].payoutId").value(payoutId.toString()))
+				.andExpect(jsonPath("$.earnings.length()").value(2))
+				.andExpect(jsonPath("$.appointments.length()").value(2))
+				.andExpect(jsonPath("$.credits.length()").value(2))
+				.andExpect(jsonPath("$.subscriptions.length()").value(2))
+				.andExpect(jsonPath("$.subscription").isMap());
+	}
+
+	@Test
+	void fix3_discrepanciesClassifyDuplicateIpnAndCalculateAccurateTotalCounts() throws Exception {
+		var orderIdDup = "order-dup-" + UUID.randomUUID();
+		var reqIdDup = "req-dup-" + UUID.randomUUID();
+		var transIdDup = Math.abs(UUID.randomUUID().getMostSignificantBits());
+
+		// Insert 2 IPN records that share order_id + request_id (DUPLICATE_DELIVERY)
+		jdbc.sql("""
+				insert into momo_payment_ipn (
+				 id, contract_version, deduplication_key, partner_code, order_id, request_id,
+				 amount_minor, currency, order_info_sha256, order_type, trans_id, result_code,
+				 result_message, pay_type, response_time_epoch_ms, extra_data_sha256,
+				 provider_occurred_at, payload_sha256, signature_key_version, signature_verified_at,
+				 processing_status, received_at
+				) values (
+				 :id, 'v1', :key, 'MOMO', :orderId, :reqId,
+				 50000, 'VND', 'hash', 'momo_wallet', :transId, 0,
+				 'Success', 'qr', 1700000000, 'hash', now(), 'hash', 'v1', now(),
+				 'PROCESSED', now()
+				)
+				""").param("id", UUID.randomUUID()).param("key", "k1-" + UUID.randomUUID())
+				.param("orderId", orderIdDup).param("reqId", reqIdDup).param("transId", transIdDup).update();
+
+		jdbc.sql("""
+				insert into momo_payment_ipn (
+				 id, contract_version, deduplication_key, partner_code, order_id, request_id,
+				 amount_minor, currency, order_info_sha256, order_type, trans_id, result_code,
+				 result_message, pay_type, response_time_epoch_ms, extra_data_sha256,
+				 provider_occurred_at, payload_sha256, signature_key_version, signature_verified_at,
+				 processing_status, received_at
+				) values (
+				 :id, 'v1', :key, 'MOMO', :orderId, :reqId,
+				 50000, 'VND', 'hash', 'momo_wallet', :transId, 0,
+				 'Success', 'qr', 1700000000, 'hash', now(), 'hash', 'v1', now(),
+				 'PROCESSED', now()
+				)
+				""").param("id", UUID.randomUUID()).param("key", "k2-" + UUID.randomUUID())
+				.param("orderId", orderIdDup).param("reqId", reqIdDup).param("transId", transIdDup).update();
+
+		var result = mvc.perform(get("/api/v1/admin/commercial/discrepancies")
+				.with(role(UUID.randomUUID(), "ROLE_ADMIN")))
+				.andExpect(status().isOk())
+				.andReturn();
+
+		var body = json.readTree(result.getResponse().getContentAsByteArray());
+		assertThat(body.get("totalDiscrepancies").asLong()).isGreaterThanOrEqualTo(2);
+
+		var webhooks = body.get("webhooks");
+		assertThat(webhooks.isArray()).isTrue();
+		boolean foundDup = false;
+		for (var w : webhooks) {
+			if (orderIdDup.equals(w.get("orderId").asText())) {
+				foundDup = true;
+				assertThat(w.get("discrepancyType").asText()).isIn("DUPLICATE_TRANS_ID", "DUPLICATE_DELIVERY");
+			}
+		}
+		assertThat(foundDup).isTrue();
+	}
+
+	@Test
+	void fix4_filteringAndPaginationWithSafeTimestampAndCorrelationId() throws Exception {
+		var userId = UUID.randomUUID();
+		var checkout = billing.checkout(userId, PLUS, "filter-test-" + UUID.randomUUID());
+
+		// Test payments with correlationId & offset
+		mvc.perform(get("/api/v1/admin/payments")
+				.param("status", "PENDING")
+				.param("offset", "0")
+				.param("limit", "10")
+				.with(role(UUID.randomUUID(), "ROLE_ADMIN")))
+				.andExpect(status().isOk())
+				.andExpect(jsonPath("$.count").isNumber());
+
+		// Test payouts with offset & limit
+		mvc.perform(get("/api/v1/admin/payouts")
+				.param("status", "FAILED")
+				.param("offset", "0")
+				.param("limit", "10")
+				.with(role(UUID.randomUUID(), "ROLE_ADMIN")))
+				.andExpect(status().isOk())
+				.andExpect(jsonPath("$.count").isNumber());
+
+		// Invalid timestamp in date range returns 400 INVALID_DATE_RANGE
+		mvc.perform(get("/api/v1/admin/payments")
+				.param("from", "invalid-timestamp")
+				.with(role(UUID.randomUUID(), "ROLE_ADMIN")))
+				.andExpect(status().isBadRequest())
+				.andExpect(jsonPath("$.code").value("INVALID_DATE_RANGE"));
+
+		mvc.perform(get("/api/v1/admin/payouts")
+				.param("from", "invalid-timestamp")
+				.with(role(UUID.randomUUID(), "ROLE_ADMIN")))
+				.andExpect(status().isBadRequest())
+				.andExpect(jsonPath("$.code").value("INVALID_DATE_RANGE"));
 	}
 
 	private org.springframework.test.web.servlet.request.RequestPostProcessor role(UUID id, String authority) {

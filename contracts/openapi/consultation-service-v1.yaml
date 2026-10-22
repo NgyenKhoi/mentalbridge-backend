@@ -1518,6 +1518,18 @@ paths:
           in: query
           required: false
           schema: { type: integer, minimum: 1, maximum: 200, default: 200 }
+        - name: orderId
+          in: query
+          required: false
+          schema: { type: string }
+        - name: correlationId
+          in: query
+          required: false
+          schema: { type: string }
+        - name: offset
+          in: query
+          required: false
+          schema: { type: integer, minimum: 0, default: 0 }
       responses:
         '200':
           description: Recent canonical payment facts
@@ -1557,6 +1569,14 @@ paths:
           in: query
           required: false
           schema: { type: integer, minimum: 1, maximum: 200, default: 200 }
+        - name: correlationId
+          in: query
+          required: false
+          schema: { type: string }
+        - name: offset
+          in: query
+          required: false
+          schema: { type: integer, minimum: 0, default: 0 }
       responses:
         '200':
           description: Recent provider payout reconciliation rows
@@ -3233,7 +3253,7 @@ components:
     AdminCommercialProvenance:
       type: object
       additionalProperties: false
-      required: [generatedAt, queryIdentifierType, queryIdentifierValue, found, payments, credits, appointments, disputes, earnings, payouts]
+      required: [generatedAt, queryIdentifierType, queryIdentifierValue, found, subscriptions, payments, credits, appointments, disputes, earnings, payouts]
       properties:
         generatedAt: { type: string, format: date-time }
         queryIdentifierType: { type: string }
@@ -3253,6 +3273,22 @@ components:
             currentPeriodStart: { type: [string, 'null'], format: date-time }
             currentPeriodEnd: { type: [string, 'null'], format: date-time }
             createdAt: { type: string, format: date-time }
+        subscriptions:
+          type: array
+          items:
+            type: object
+            additionalProperties: false
+            required: [subscriptionId, userAccountId, planVersionId, planCode, pricingPolicyVersion, status, createdAt]
+            properties:
+              subscriptionId: { type: string, format: uuid }
+              userAccountId: { type: string, format: uuid }
+              planVersionId: { type: string, format: uuid }
+              planCode: { type: string }
+              pricingPolicyVersion: { type: string }
+              status: { type: string }
+              currentPeriodStart: { type: [string, 'null'], format: date-time }
+              currentPeriodEnd: { type: [string, 'null'], format: date-time }
+              createdAt: { type: string, format: date-time }
         payments:
           type: array
           items: { $ref: '#/components/schemas/AdminPayment' }

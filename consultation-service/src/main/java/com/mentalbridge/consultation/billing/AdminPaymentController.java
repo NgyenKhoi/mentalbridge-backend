@@ -8,11 +8,14 @@ import java.time.OffsetDateTime;
 import java.time.ZoneOffset;
 import java.util.UUID;
 
+import org.springframework.http.HttpStatus;
 import org.springframework.jdbc.core.simple.JdbcClient;
 import org.springframework.transaction.annotation.Transactional;
 import org.springframework.web.bind.annotation.GetMapping;
 import org.springframework.web.bind.annotation.RequestParam;
 import org.springframework.web.bind.annotation.RestController;
+
+import com.mentalbridge.consultation.shared.ApiException;
 
 @RestController
 public class AdminPaymentController {
@@ -33,9 +36,13 @@ public class AdminPaymentController {
 			@RequestParam(required = false) String to,
 			@RequestParam(required = false) UUID subscriptionId,
 			@RequestParam(required = false) UUID paymentId,
+			@RequestParam(required = false) String orderId,
+			@RequestParam(required = false) String correlationId,
+			@RequestParam(required = false, defaultValue = "0") Integer offset,
 			@RequestParam(required = false, defaultValue = "200") Integer limit) {
 
 		int effectiveLimit = (limit == null || limit <= 0 || limit > 200) ? 200 : limit;
+		int effectiveOffset = (offset == null || offset < 0) ? 0 : offset;
 		var sql = new StringBuilder("""
 				select pt.id, pt.subscription_id, pt.target_plan_version_id, v.plan_code, v.pricing_policy_version,
 				 pt.purpose, pt.payment_provider, pt.status, pt.amount_minor, pt.currency,
@@ -53,13 +60,20 @@ public class AdminPaymentController {
 		if (paymentId != null) {
 			sql.append(" and pt.id = :paymentId");
 		}
+		if (orderId != null && !orderId.isBlank()) {
+			sql.append(" and pt.momo_order_id = :orderId");
+		}
+		if (correlationId != null && !correlationId.isBlank()) {
+			sql.append(" and (pt.idempotency_key = :correlationId or pt.momo_order_id = :correlationId or pt.momo_request_id = :correlationId)");
+		}
 		if (from != null && !from.isBlank()) {
 			sql.append(" and pt.created_at >= :from");
 		}
 		if (to != null && !to.isBlank()) {
 			sql.append(" and pt.created_at <= :to");
 		}
-		sql.append(" order by pt.created_at desc, pt.id desc limit ").append(effectiveLimit);
+		sql.append(" order by pt.created_at desc, pt.id desc limit ").append(effectiveLimit)
+				.append(" offset ").append(effectiveOffset);
 
 		var query = jdbc.sql(sql.toString());
 		if (status != null && !status.isBlank() && !"ALL".equalsIgnoreCase(status)) {
@@ -71,11 +85,25 @@ public class AdminPaymentController {
 		if (paymentId != null) {
 			query = query.param("paymentId", paymentId);
 		}
+		if (orderId != null && !orderId.isBlank()) {
+			query = query.param("orderId", orderId.trim());
+		}
+		if (correlationId != null && !correlationId.isBlank()) {
+			query = query.param("correlationId", correlationId.trim());
+		}
 		if (from != null && !from.isBlank()) {
-			query = query.param("from", OffsetDateTime.ofInstant(Instant.parse(from), ZoneOffset.UTC));
+			try {
+				query = query.param("from", OffsetDateTime.ofInstant(Instant.parse(from), ZoneOffset.UTC));
+			} catch (Exception e) {
+				throw new ApiException(HttpStatus.BAD_REQUEST, "INVALID_DATE_RANGE", "Invalid 'from' timestamp format");
+			}
 		}
 		if (to != null && !to.isBlank()) {
-			query = query.param("to", OffsetDateTime.ofInstant(Instant.parse(to), ZoneOffset.UTC));
+			try {
+				query = query.param("to", OffsetDateTime.ofInstant(Instant.parse(to), ZoneOffset.UTC));
+			} catch (Exception e) {
+				throw new ApiException(HttpStatus.BAD_REQUEST, "INVALID_DATE_RANGE", "Invalid 'to' timestamp format");
+			}
 		}
 
 		var items = query.query((row, ignored) -> new AdminPaymentResponse.Item(

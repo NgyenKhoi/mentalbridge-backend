@@ -75,9 +75,14 @@ public class AdminSubscriptionController {
 				select c.id, c.period_id, c.ordinal, c.state, p.credit_allocation_minor, c.appointment_id, c.created_at
 				from service_credit c
 				join service_credit_period p on p.id=c.period_id
-				where p.source_reference = :subIdText or p.account_id = :userId
+				where (p.source = 'PAID' and p.source_reference = :subIdText)
+				   or exists (
+				       select 1 from subscription_upgrade_credit uc
+				       join subscription_upgrade u on u.id = uc.upgrade_id
+				       where uc.credit_id = c.id and u.subscription_id = :subscriptionId
+				   )
 				order by p.period_start desc, c.ordinal asc
-				""").param("subIdText", subscriptionId.toString()).param("userId", sub.userId())
+				""").param("subIdText", subscriptionId.toString()).param("subscriptionId", subscriptionId)
 				.query((row, ignored) -> new AdminSubscriptionDetailResponse.CreditItem(
 						row.getObject("id", UUID.class),
 						row.getObject("period_id", UUID.class),

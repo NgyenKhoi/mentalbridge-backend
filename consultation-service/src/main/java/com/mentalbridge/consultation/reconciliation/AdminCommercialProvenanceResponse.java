@@ -13,12 +13,30 @@ public record AdminCommercialProvenanceResponse(
 		String queryIdentifierValue,
 		boolean found,
 		AdminSubscriptionSummary subscription,
+		List<AdminSubscriptionSummary> subscriptions,
 		List<AdminPaymentResponse.Item> payments,
 		List<AdminCreditSummary> credits,
 		List<AdminAppointmentSummary> appointments,
 		List<AdminDisputeSummary> disputes,
 		List<AdminEarningSummary> earnings,
 		List<AdminPayoutResponse.Item> payouts) {
+
+	public AdminCommercialProvenanceResponse(
+			Instant generatedAt,
+			String queryIdentifierType,
+			String queryIdentifierValue,
+			boolean found,
+			AdminSubscriptionSummary subscription,
+			List<AdminPaymentResponse.Item> payments,
+			List<AdminCreditSummary> credits,
+			List<AdminAppointmentSummary> appointments,
+			List<AdminDisputeSummary> disputes,
+			List<AdminEarningSummary> earnings,
+			List<AdminPayoutResponse.Item> payouts) {
+		this(generatedAt, queryIdentifierType, queryIdentifierValue, found, subscription,
+				subscription == null ? List.of() : List.of(subscription),
+				payments, credits, appointments, disputes, earnings, payouts);
+	}
 
 	public record AdminSubscriptionSummary(
 			UUID subscriptionId,

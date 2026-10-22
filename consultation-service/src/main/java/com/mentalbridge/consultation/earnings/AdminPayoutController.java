@@ -37,9 +37,12 @@ public class AdminPayoutController {
 			@RequestParam(required = false) String to,
 			@RequestParam(required = false) UUID specialistAccountId,
 			@RequestParam(required = false) UUID payoutId,
+			@RequestParam(required = false) String correlationId,
+			@RequestParam(required = false, defaultValue = "0") Integer offset,
 			@RequestParam(required = false, defaultValue = "200") Integer limit) {
 
 		int effectiveLimit = (limit == null || limit <= 0 || limit > 200) ? 200 : limit;
+		int effectiveOffset = (offset == null || offset < 0) ? 0 : offset;
 		var sql = new StringBuilder("""
 				select p.id, p.specialist_account_id, d.display_hint, p.amount_minor, p.currency,
 				 p.payout_provider, p.status, count(i.earning_id)::integer earning_count,
@@ -62,6 +65,9 @@ public class AdminPayoutController {
 		if (payoutId != null) {
 			sql.append(" and p.id = :payoutId");
 		}
+		if (correlationId != null && !correlationId.isBlank()) {
+			sql.append(" and p.idempotency_key = :correlationId");
+		}
 		if (from != null && !from.isBlank()) {
 			sql.append(" and p.requested_at >= :from");
 		}
@@ -72,7 +78,7 @@ public class AdminPayoutController {
 		sql.append("""
 				 group by p.id, d.display_hint
 				 order by p.requested_at desc, p.id desc limit
-				""").append(effectiveLimit);
+				""").append(effectiveLimit).append(" offset ").append(effectiveOffset);
 
 		var query = jdbc.sql(sql.toString());
 		if (status != null && !status.isBlank() && !"ALL".equalsIgnoreCase(status)) {
@@ -84,11 +90,22 @@ public class AdminPayoutController {
 		if (payoutId != null) {
 			query = query.param("payoutId", payoutId);
 		}
+		if (correlationId != null && !correlationId.isBlank()) {
+			query = query.param("correlationId", correlationId.trim());
+		}
 		if (from != null && !from.isBlank()) {
-			query = query.param("from", OffsetDateTime.ofInstant(Instant.parse(from), ZoneOffset.UTC));
+			try {
+				query = query.param("from", OffsetDateTime.ofInstant(Instant.parse(from), ZoneOffset.UTC));
+			} catch (Exception e) {
+				throw new ApiException(HttpStatus.BAD_REQUEST, "INVALID_DATE_RANGE", "Invalid 'from' timestamp format");
+			}
 		}
 		if (to != null && !to.isBlank()) {
-			query = query.param("to", OffsetDateTime.ofInstant(Instant.parse(to), ZoneOffset.UTC));
+			try {
+				query = query.param("to", OffsetDateTime.ofInstant(Instant.parse(to), ZoneOffset.UTC));
+			} catch (Exception e) {
+				throw new ApiException(HttpStatus.BAD_REQUEST, "INVALID_DATE_RANGE", "Invalid 'to' timestamp format");
+			}
 		}
 
 		var items = query.query((row, ignored) -> new AdminPayoutResponse.Item(
