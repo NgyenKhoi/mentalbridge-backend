@@ -159,7 +159,7 @@ PLUS / PREMIUM
           user-confirmed SupportPlan change
 ```
 
-MB-672 adds Care's owner-only `GET /api/v1/home-next-step`, embedding the unchanged guided journey with an ordered current-plan focus and bounded completed-plan context for web/native Home; see [ADR 0044](adr/0044-home-next-step-read.md) (`MB-HOME-NEXT-STEP-001`).
+MB-672 adds Care's owner-only `GET /api/v1/home-next-step`, embedding the unchanged guided journey with an ordered current-plan focus and bounded completed-plan context for web/native Home; see [ADR 0045](adr/0045-home-next-step-read.md) (`MB-HOME-NEXT-STEP-001`).
 
 ## 4. Support Guide versus SupportPlan
 

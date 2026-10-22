@@ -1,4 +1,4 @@
-# ADR 0044: Care-owned Home next step
+# ADR 0045: Care-owned Home next step
 
 - Status: Accepted for MB-672 implementation
 - Date: 2026-10-22

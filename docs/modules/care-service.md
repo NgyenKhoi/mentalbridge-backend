@@ -62,7 +62,7 @@ Kafka, Redis, WebSocket, notification, or directory delivery.
   support policy remains 503 `SUPPORT_POLICY_UNAVAILABLE`; unverifiable
   entitlement retains the journey's resources fallback. This read adds no
   table, migration, assessment answers/scores, Journal/emotion data or inferred
-  progress. See [ADR 0044](../adr/0044-home-next-step-read.md)
+  progress. See [ADR 0045](../adr/0045-home-next-step-read.md)
   (`MB-HOME-NEXT-STEP-001`). MB-372 adds the bounded initial
   `PLUS`/`PREMIUM` draft and exact persisted reload. MB-373 adds admitted-choice
   mutation, exact revalidation, explicit activation, one-current-plan
