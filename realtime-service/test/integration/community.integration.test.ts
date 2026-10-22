@@ -283,6 +283,10 @@ describe('Community two-replica Kafka, Redis and Socket.IO delivery', { concurre
     client.events
       .filter((event) => event.eventType === 'community.message.created')
       .map((event) => messageSchema.parse(event.payload.message));
+  const updated = (client: { events: Event[] }): CommunityMessage[] =>
+    client.events
+      .filter((event) => event.eventType === 'community.message.updated')
+      .map((event) => messageSchema.parse(event.payload.message));
   const unread = (client: { events: Event[] }) =>
     client.events.filter((event) => event.eventType === 'community.read-state.changed').at(-1)
       ?.payload.unreadCount;
@@ -435,6 +439,26 @@ describe('Community two-replica Kafka, Redis and Socket.IO delivery', { concurre
     await publish(owner.fact(next));
     await expect.poll(() => [unread(first), unread(second)]).toEqual([1, 1]);
     for (const client of [first, second]) expect(delivered(client)).toHaveLength(2);
+  });
+  it('replaces an existing cell with a content-free retraction without appending a message', async () => {
+    const bob = await connect(0);
+    const alice = await connect(1, communityAlice);
+    await subscribe(bob);
+    await subscribe(alice);
+    const message = owner.save();
+    await publish(owner.fact(message));
+    await expect.poll(() => [delivered(bob).length, delivered(alice).length]).toEqual([1, 1]);
+    expect(unread(bob)).toBe(1);
+
+    const tombstone = owner.retract(message);
+    await publish(owner.retraction(tombstone), owner.readStateFact(communityBob));
+    await expect.poll(() => [updated(bob).length, updated(alice).length]).toEqual([1, 1]);
+    await expect.poll(() => unread(bob)).toBe(0);
+    for (const client of [bob, alice]) {
+      expect(delivered(client)).toHaveLength(1);
+      expect(updated(client)[0]).toEqual(tombstone);
+      expect(updated(client)[0]).not.toHaveProperty('content');
+    }
   });
   it('requires fresh credentials and resynchronization after offline reconnect without rebroadcasting retained history', async () => {
     const first = await connect();
