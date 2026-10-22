@@ -13,6 +13,9 @@ merges. Real Android execution remains in the MB-666 staging batch.
 
 Baseline: backend `d53fc722187f9f03c802c6b8cbe0b9fae79725ba`, frontend
 `7be39d3adc0402152c989dde34ae3847b8bb4e6a`. Jira UC/QA owner: Thao Nguyen.
+Continuation after the owner confirmed MB-688 merged: frontend dev synchronized
+to `8183da7` (#215); the real web/service evidence below now resolves that provider
+dependency. The initial matrix and backend runtime are unchanged.
 Community owns permissions, history and isolated report intake; Realtime owns
 transport/presence; Content/Notification owns inbox delivery and preferences.
 
@@ -42,7 +45,7 @@ Sources of truth:
 | Quiet hours / recipient opt-out | Existing inbox readable; new notice delayed or cancelled | New inbox publication during quiet hours; delivery after permission loss | Content-owned preference; MB-691 tests plus MB-693 deferred revocation test |
 | Reporter with current message access | Idempotent report of one exact message | Surrounding transcript or unrelated message evidence | `CommunityChatReportIntegrationTests`; isolated encrypted evidence |
 | ADMIN / specialist / outsider | Only separately authorized public capabilities | Arbitrary chat browse/join/presence or transcript access through report intake | USER-only chat; no general chat moderation browse API in this baseline |
-| Multiple devices / reconnect | Another foreground lease keeps presence; fresh authorization/history repair | Duplicated durable message, stale badge, raw bearer/ticket persistence | MB-689/690 integration tests; true browser/device pairing remains pending |
+| Multiple devices / reconnect | Another foreground lease keeps presence; fresh authorization/history repair | Duplicated durable message, stale badge, raw bearer/ticket persistence | MB-689/690 integration tests; real-owner two-socket revocation plus three browser contexts below; automatic browser realtime/native device pairing remains pending |
 
 ## Ordered slices and smallest checks
 
@@ -77,8 +80,9 @@ Sources of truth:
 | Permission matrix / frozen scope | AUTHORED | This document; executable evidence below must be recorded after execution |
 | Real Community → notification boundary | LOCAL_SERVICE_PASS | `CommunityChatNotificationCrossServiceIT`: 3 passed, no skipped; see execution below |
 | Realtime / spam / report / race regression | LOCAL_SERVICE_PASS | Community gate 200 passed (109 chat tests); Realtime Community/presence integration 22 passed; see limits below |
-| Web direct two-context integration | NOT_RUN | Existing fixture Playwright is not live cross-stack proof |
-| Web group integration | BLOCKED_PROVIDER | MB-688 frontend PR #215 is owned on the other device; wait for merged dev |
+| Web direct two-context integration | LOCAL_SERVICE_PASS | Real Identity/BFF/Community/Content consent, generic notification navigation, response-loss retry and bilateral block; see frontend #222 |
+| Web group integration | LOCAL_SERVICE_PASS | MB-688 #215 merged; real consent, stale revision, removal/rejoin, old-cursor denial, report and ownership UI cases; see continuation below |
+| Web automatic realtime / reconnect UI | KNOWN_LIMIT | Current web workspace is REST-only; explicit browser reload and real-owner Node socket probes do not prove browser live update/reconnect |
 | Native Android Community journeys | TEST_AUTHORED_NOT_RUN | MB-692 Maestro source exists; real execution belongs to MB-666 |
 | Actual PUSH delivery | DEFERRED | MB-675/679; MB-691 only provides generic payload contract |
 | Admin report-case administration | OUT_OF_SCOPE | Current provider is exact-message intake; do not invent admin transcript APIs |
@@ -156,7 +160,7 @@ The broker restart/failure cases deliberately emit transport-unavailable logs;
 the final test assertions passed. Required GitHub checks are separate from
 these local results. This PR does not activate chat flags in a shared environment.
 
-## Remaining client acceptance run
+## Client acceptance execution and remaining limits
 
 Use two synthetic USER accounts A/B and a third unrelated USER C. Record the
 frontend/backend SHA pair, browser/device versions and fixture reset identifier.
@@ -164,12 +168,12 @@ Do not point a destructive fixture reset at the shared dev/staging data plane.
 
 | Journey | Actions / proof to capture | Current execution boundary |
 | --- | --- | --- |
-| Direct consent and privacy | A requests B; B sees minimal request but no transcript; B accepts; exchange a synthetic message; change privacy on the second context and verify the server-owned revision/conflict behavior | Browser fixture tests exist; true two-context service walkthrough NOT_RUN |
-| Cross-device revoke | Keep B's thread open, block A from another context, attempt history/send/reconnect and open an old notification; generic unavailable state, no queued new content or sensitive error payload | Owner/service tests cover decisions; browser two-context execution NOT_RUN |
-| Private group consent / epoch | Invite B, prove no pre-accept history; accept, send, remove B, reinvite/rejoin; deny old cursor/history/notice and allow a new-epoch message | Backend executable; web BLOCKED_PROVIDER until MB-688 merge |
-| Role/capacity race | Two contexts compete for the last seat or transfer ownership from the same group revision; one winner, refresh stale state, exactly one OWNER | Automated owner tests; web group walkthrough after MB-688 |
-| Retry/reconnect/noise | Drop one send response and retry the same client ID; disconnect/reconnect with fresh ticket; verify one message and one logical notice; quiet hours/opt-out and current eligibility still win | Service tests; live web integration NOT_RUN, Android batch MB-666 |
-| Report isolation | Report one readable synthetic message; retry returns the same case; outsider/removed viewer cannot report it; show no surrounding transcript or unsupported moderation UI | Owner automated tests; UI capture after integration |
+| Direct consent and privacy | A requests B; B sees minimal request but no transcript; B accepts; exchange a synthetic message; change privacy on the second context and verify the server-owned revision/conflict behavior | Real web consent, exchange and block passed; full privacy preference/conflict matrix remains owner-suite evidence |
+| Cross-device revoke | Keep B's thread open, block A from another context, attempt history/send/reconnect and open an old notification; generic unavailable state, no queued new content or sensitive error payload | Real A/A2/B history and revoked-link denial passed; two recipient sockets invalidate on group removal. Automatic browser invalidation/reconnect remains unproved |
+| Private group consent / epoch | Invite B, prove no pre-accept history; accept, send, remove B, reinvite/rejoin; deny old cursor/history/notice and allow a new-epoch message | Real web/service pass after MB-688; generic revoked target and rejoined mobile-width captures in frontend #222 |
+| Role/capacity race | Two contexts compete for the last seat or transfer ownership from the same group revision; one winner, refresh stale state, exactly one OWNER | Owner concurrent capacity/transfer tests; web competing role revision, fresh removal and ownership-transfer viewer-role refresh passed |
+| Retry/reconnect/noise | Drop one send response and retry the same client ID; disconnect/reconnect with fresh ticket; verify one message and one logical notice; quiet hours/opt-out and current eligibility still win | Real web retry after durable 201 produces one message; notifications/queued revocation covered by service IT. Browser reconnect and Android MB-666 remain open |
+| Report isolation | Report one readable synthetic message; retry returns the same case; outsider/removed viewer cannot report it; show no surrounding transcript or unsupported moderation UI | Real exact-message report UI and stable retry case passed; removed/blocked report denied. Outsider/encrypted evidence boundaries remain owner-suite proof |
 
 Capture only generic state screenshots and redacted logs (action, safe error,
 correlation, result). Browser tracing/video may retain chat bodies or auth data;
@@ -178,3 +182,36 @@ evidence must use the MB-666 approved build and public edge; the older controlle
 Community edge routes all Community paths to the owner and does not demonstrate
 the native realtime-ticket route or Socket.IO upgrade. Repair/verify that fixture
 at the staging batch boundary before claiming native realtime success.
+
+## Continuation after merged MB-688 — 2026-10-22
+
+Frontend [PR #222](https://github.com/NgyenKhoi/mentalbridge-frontend/pull/222)
+contains the opt-in isolated runner, three executed browser journeys, safe logs,
+full-frame synthetic screenshots and two narrow integration repairs. The
+[frontend ledger](https://github.com/NgyenKhoi/mentalbridge-frontend/blob/04ecfa9fcbff434f4b268becc6935b4183fbe706/mentalbridge/docs/mb-693-community-safety-qa.md)
+records commands, setup failures, the reproduced stale-owner UI bug and final
+passes. Identity generated drift is isolated in prerequisite frontend #221;
+merge that before retargeting/rebasing #222 onto dev and running its required CI.
+
+Actual runtime pair: frontend `ae0c86ad6bf6ffa793ae3b9cbfb87bb8a06e0b10`,
+backend `5ab0d84b8760a181853813eac36b6b270772f590` (runtime `d53fc722`).
+Frontend QA/evidence delivery commit: `04ecfa9fcbff434f4b268becc6935b4183fbe706`.
+`npm run quality` passed format/lint/TypeScript/contracts/budget, **1,887 tests /
+285 suites** and production build. `node scripts/run-community-safety-e2e.mjs`
+exited 0: **3 passed, 0 skipped**, 26.4-second browser phase; cleanup completed.
+
+This run boots actual Identity with two synthetic seeded USER accounts, Community,
+Content, Realtime and Next production BFF; three disposable PostgreSQL databases,
+Kafka/KRaft, Redis and MongoDB; ephemeral keys and random loopback ports. It never
+loads developer `.env` or resets a shared stack. Three browser contexts A/A2/B
+exercise consent, generic notices, revisions, retry, block, reports and group
+epochs. Two recipient Node socket probes use actual Identity login/native
+credential exchange and signed Community authorization; a sender delivery barrier
+guards the removal assertion. Service log scanning passes without synthetic
+password/service key, JWT or raw chat canary on these exercised paths.
+
+Web chat currently has no Community socket consumer. The browser explicitly
+reloads history, while Node probes prove live transport/current authorization.
+Do not claim automatic browser updates/reconnect, public-edge execution, native
+Android or actual PUSH delivery. No deployment/runtime feature flag changed.
+MB-693 remains In Progress with these client/release limits visible.
