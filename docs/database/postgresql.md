@@ -176,6 +176,11 @@ ADR 0042 is the explicit scoped exception to the appointment/MongoDB chat baseli
 
 MB-685 migration 0018 adds Community-owned encrypted messages and private per-reader cursors. Content expires at its save-time 90-day cutoff and is removed by bounded owner sweeps; content-free identity records prevent late retry resurrection. Sequence allocation, idempotency and minimized outbox facts commit atomically. This is the accepted ADR 0042 exception to appointment chat storage; no canonical SQL is executed and no other owner storage is read.
 
+MB-745 migration 0022 adds the one-way `ACTIVE` to `RETRACTED` message lifecycle
+and an owner retraction instant. The same transaction removes ciphertext, retains
+the original private sequence and retry identity, and writes a minimized outbox
+pointer. Retraction does not touch read state or isolated report snapshots.
+
 MB-687 adds Community Liquibase 0019: private group discriminator/name/cap, explicit invitation lifecycle, current membership epochs and deferred exactly-one-owner/cap guards. Existing direct pair identity and encrypted message storage remain Community-owned.
 
 Group messages bind an immutable `sender_membership_id` to the exact membership

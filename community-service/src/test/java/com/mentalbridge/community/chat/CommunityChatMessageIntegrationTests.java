@@ -35,7 +35,8 @@ class CommunityChatMessageIntegrationTests extends ChatIntegrationSupport {
                 .andExpect(jsonPath("$.persistence").value("SAVED")).andExpect(jsonPath("$.delivery").value("UNCONFIRMED"))
                 .andExpect(jsonPath("$.message.sequence").doesNotExist()));
         var messageId = first.path("message").path("messageId").asText();
-        assertThat(first.path("message").size()).isEqualTo(6);
+        assertThat(first.path("message").size()).isEqualTo(7);
+        assertThat(first.path("message").path("state").asText()).isEqualTo("ACTIVE");
         assertThat(first.path("message").path("sender").path("communityProfileId").asText()).isEqualTo(ap.toString());
         assertThat(json(send(a, conversation, clientId, key, text).andExpect(status().isCreated())).path("message").path("messageId").asText()).isEqualTo(messageId);
         assertThat(json(send(a, conversation, clientId, UUID.randomUUID(), text).andExpect(status().isCreated())).path("message").path("messageId").asText()).isEqualTo(messageId);
@@ -233,6 +234,44 @@ class CommunityChatMessageIntegrationTests extends ChatIntegrationSupport {
     }
 
     @Test
+    void senderRetractionErasesContentKeepsPositionAndIsIdempotentWithoutUnread() throws Exception {
+        var conversation = active(a, bp);
+        var client = UUID.randomUUID(); var key = UUID.randomUUID();
+        var first = json(send(a, conversation, client, key, "Nội dung riêng cần gỡ").andExpect(status().isCreated()));
+        var id = UUID.fromString(first.path("message").path("messageId").asText());
+        assertThat(unread(b, conversation)).isOne();
+
+        var retracted = json(retract(a, conversation, id).andExpect(status().isOk()));
+        assertThat(retracted.path("messageId").asText()).isEqualTo(id.toString());
+        assertThat(retracted.path("state").asText()).isEqualTo("RETRACTED");
+        assertThat(retracted.has("content")).isFalse();
+        assertThat(retracted.path("retractedAt").asText()).isNotBlank();
+        assertThat(unread(b, conversation)).isZero();
+        assertThat(sequence(conversation)).isOne();
+
+        var history = json(history(b, conversation, null, 20).andExpect(status().isOk()));
+        assertThat(history.path("items").size()).isOne();
+        assertThat(history.path("items").get(0)).isEqualTo(retracted);
+        read(b, conversation, id).andExpect(status().isOk())
+                .andExpect(jsonPath("$.lastReadMessageId").value(id.toString()))
+                .andExpect(jsonPath("$.unreadCount").value(0));
+
+        var factCount = jdbc.sql("select count(*) from community_chat_outbox where event_payload->'payload'->>'kind' = 'MESSAGE_RETRACTED'")
+                .query(Long.class).single();
+        assertThat(factCount).isOne();
+        assertThat(jdbc.sql("select state from community_chat_message where id = :id").param("id", id).query(String.class).single())
+                .isEqualTo("RETRACTED");
+        assertThat(jdbc.sql("select content_ciphertext from community_chat_message where id = :id").param("id", id).query(String.class).optional())
+                .isEmpty();
+
+        assertThat(json(retract(a, conversation, id).andExpect(status().isOk()))).isEqualTo(retracted);
+        assertThat(jdbc.sql("select count(*) from community_chat_outbox where event_payload->'payload'->>'kind' = 'MESSAGE_RETRACTED'")
+                .query(Long.class).single()).isOne();
+        retract(b, conversation, id).andExpect(status().isNotFound());
+        send(a, conversation, client, key, "Nội dung riêng cần gỡ").andExpect(status().isConflict());
+    }
+
+    @Test
     void failedOutboxCommitRollsBackMessageSequenceAndRetryIdentity() throws Exception {
         var conversation = active(a, bp); var key = UUID.randomUUID(); var client = UUID.randomUUID();
         jdbc.sql("alter table community_chat_outbox add constraint test_chat_outbox_atomicity check (event_payload->'payload'->>'kind' <> 'MESSAGE_RECEIVED')").update();
@@ -348,6 +387,9 @@ class CommunityChatMessageIntegrationTests extends ChatIntegrationSupport {
         var request = get(ROOT + "/conversations/{id}/messages", conversation).with(user(actor)).param("limit", Integer.toString(limit));
         if (cursor != null) request.param("cursor", cursor);
         return mvc.perform(request);
+    }
+    ResultActions retract(UUID actor, UUID conversation, UUID message) throws Exception {
+        return mvc.perform(delete(ROOT + "/conversations/{conversation}/messages/{message}", conversation, message).with(user(actor)));
     }
     ResultActions read(UUID actor, UUID conversation, UUID message) throws Exception {
         return mvc.perform(put(ROOT + "/conversations/{id}/read-cursor", conversation).with(user(actor))

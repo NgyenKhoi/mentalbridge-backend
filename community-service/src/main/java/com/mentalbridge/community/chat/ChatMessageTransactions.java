@@ -90,7 +90,7 @@ class ChatMessageTransactions {
     @Transactional
     ChatModels.ReadResult read(UUID subject, UUID conversationId, UUID peerId, UUID messageId, UUID correlation) {
         var context = context(subject, conversationId, peerId);
-        var message = messages.findById(messageId).filter(value -> value.conversationId.equals(conversationId) && value.readable(clock.instant()))
+        var message = messages.findById(messageId).filter(value -> value.conversationId.equals(conversationId) && value.visible(clock.instant()))
                 .orElseThrow(ChatException::target);
         var state = reads.findById(new ChatReadStateEntity.ReadId(conversationId, context.actor().id()))
                 .orElseGet(() -> new ChatReadStateEntity(conversationId, context.actor().id()));
@@ -107,7 +107,23 @@ class ChatMessageTransactions {
     ChatModels.Message projection(UUID subject, UUID conversation, UUID peer, UUID id) {
         var context = context(subject, conversation, peer);
         return message(messages.findById(id).filter(value -> value.conversationId.equals(conversation)
-                && value.readable(clock.instant())).orElseThrow(ChatException::target), context);
+                && value.visible(clock.instant())).orElseThrow(ChatException::target), context);
+    }
+    @Transactional
+    ChatModels.Message retract(UUID subject, UUID conversationId, UUID peerId, UUID messageId, UUID correlation) {
+        var context = context(subject, conversationId, peerId);
+        var message = messages.lock(messageId).filter(value -> value.conversationId.equals(conversationId)
+                && value.senderProfileId.equals(context.actor().id()) && value.visible(clock.instant()))
+                .orElseThrow(ChatException::target);
+        if (message.state.equals("ACTIVE")) {
+            var now = clock.instant().truncatedTo(ChronoUnit.MICROS);
+            message.retract(now);
+            messages.saveAndFlush(message);
+            context.conversation().eventVersion++;
+            facts.publish(context.conversation(), "MESSAGE_RETRACTED", message.id, null, null, correlation, null);
+            facts.publish(context.conversation(), "READ_STATE_CHANGED", null, null, context.peer().subject(), correlation, null);
+        }
+        return message(message, context);
     }
     @Transactional
     ChatDeliveryCursor.Projection replay(UUID subject, UUID conversation, UUID peer, String cursor) {
@@ -133,8 +149,10 @@ class ChatMessageTransactions {
     private ChatModels.Message message(ChatMessageEntity value, Context context) {
         var sender = value.senderProfileId.equals(context.actor().id()) ? context.actor() : context.peer();
         if (!sender.id().equals(value.senderProfileId)) throw ChatException.target();
+        var content = value.state.equals("ACTIVE")
+                ? crypto.open(contentPurpose(value.conversationId, value.id, value.senderProfileId), value.contentCiphertext) : null;
         return new ChatModels.Message(value.id, value.conversationId, value.clientMessageId, access.peer(sender),
-                crypto.open(contentPurpose(value.conversationId, value.id, value.senderProfileId), value.contentCiphertext), value.createdAt);
+                value.state, content, value.createdAt, value.retractedAt);
     }
     private String historyPurpose(Context context) {
         return context.actor().id() + ":messages:" + context.conversation().id + ":" + access.privacy(context.actor().id()).visibilityEpoch;

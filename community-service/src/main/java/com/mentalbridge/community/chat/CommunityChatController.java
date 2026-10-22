@@ -70,6 +70,13 @@ class CommunityChatController {
             @RequestHeader(value = "X-Correlation-Id", required = false) String correlation) {
         return messages.history(subject(jwt), ChatModels.uuid(conversationId), cursor, limit, correlation(correlation));
     }
+    @DeleteMapping("/conversations/{conversationId}/messages/{messageId}")
+    ResponseEntity<ChatModels.Message> retract(@AuthenticationPrincipal Jwt jwt, @PathVariable String conversationId,
+            @PathVariable String messageId,
+            @RequestHeader(value = "X-Correlation-Id", required = false) String correlation) {
+        return ResponseEntity.ok().cacheControl(CacheControl.noStore()).body(messages.retract(subject(jwt),
+                ChatModels.uuid(conversationId), ChatModels.uuid(messageId), correlation(correlation)));
+    }
     @PutMapping("/conversations/{conversationId}/read-cursor")
     ChatModels.ReadResult read(@AuthenticationPrincipal Jwt jwt, @PathVariable String conversationId,
             @RequestBody ChatModels.ReadCursor request,

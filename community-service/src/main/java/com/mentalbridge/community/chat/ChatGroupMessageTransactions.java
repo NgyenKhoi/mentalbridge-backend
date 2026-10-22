@@ -80,7 +80,7 @@ class ChatGroupMessageTransactions {
     @Transactional
     ChatModels.ReadResult read(UUID conversation, ChatGroupAccess.Authorization auth, UUID id, UUID correlation) {
         var context = access.lock(conversation, auth, true);
-        var message = messages.findById(id).filter(m -> m.readable(clock.instant()) && access.messageVisible(context, m)).orElseThrow(ChatException::target);
+        var message = messages.findById(id).filter(m -> m.visible(clock.instant()) && access.messageVisible(context, m)).orElseThrow(ChatException::target);
         var read = reads.findById(new ChatReadStateEntity.ReadId(conversation, auth.actor())).orElseGet(() -> new ChatReadStateEntity(conversation, auth.actor()));
         boolean advanced = read.lastReadSequence < message.serverSequence;
         read.lastReadSequence = Math.max(read.lastReadSequence, message.serverSequence); reads.saveAndFlush(read);
@@ -93,8 +93,26 @@ class ChatGroupMessageTransactions {
     @Transactional
     ChatModels.Message projection(UUID conversation, ChatGroupAccess.Authorization auth, UUID id) {
         var context = access.lock(conversation, auth, true);
-        return message(messages.findById(id).filter(value -> value.readable(clock.instant())
+        return message(messages.findById(id).filter(value -> value.visible(clock.instant())
                 && access.messageVisible(context, value)).orElseThrow(ChatException::target), context);
+    }
+    @Transactional
+    ChatModels.Message retract(UUID conversation, ChatGroupAccess.Authorization auth, UUID id, UUID correlation) {
+        var context = access.lock(conversation, auth, true);
+        var message = messages.lock(id).filter(value -> value.visible(clock.instant())
+                && access.messageVisible(context, value) && value.senderProfileId.equals(auth.actor()))
+                .orElseThrow(ChatException::target);
+        if (message.state.equals("ACTIVE")) {
+            var now = clock.instant().truncatedTo(ChronoUnit.MICROS);
+            message.retract(now);
+            messages.saveAndFlush(message);
+            context.group().eventVersion++;
+            facts.publish(context.group(), "MESSAGE_RETRACTED", message.id, null, null, correlation, null);
+            for (var member : context.members()) if (!member.profileId.equals(auth.actor()) && access.visible(context, member.profileId))
+                facts.publish(context.group(), "READ_STATE_CHANGED", null, null,
+                        context.eligible().get(member.profileId).subject(), correlation, null);
+        }
+        return message(message, context);
     }
     @Transactional
     ChatDeliveryCursor.Projection replay(UUID conversation, ChatGroupAccess.Authorization auth, String cursor) {
@@ -129,8 +147,10 @@ class ChatGroupMessageTransactions {
         return new ChatModels.SendResult(message(message, context), "SAVED", "UNCONFIRMED");
     }
     private ChatModels.Message message(ChatMessageEntity message, ChatGroupAccess.Context context) {
+        var content = message.state.equals("ACTIVE")
+                ? crypto.open(purpose(message.conversationId, message.id, message.senderProfileId), message.contentCiphertext) : null;
         return new ChatModels.Message(message.id, message.conversationId, message.clientMessageId, access.peer(context, message.senderProfileId),
-                crypto.open(purpose(message.conversationId, message.id, message.senderProfileId), message.contentCiphertext), message.createdAt);
+                message.state, content, message.createdAt, message.retractedAt);
     }
     private String cursorPurpose(ChatGroupAccess.Context context) {
         var epoch = privacy.findById(context.actor().id()).map(p -> p.visibilityEpoch).orElse(0L);

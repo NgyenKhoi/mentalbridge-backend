@@ -20,8 +20,10 @@ class CommunityChatContractTests {
         assertThat(parsed.getMessages()).isEmpty();
         var source = mapper.readTree(Files.readString(baseline));
         var delivered = mapper.readTree(Files.readString(active));
-        source.path("components").fields().forEachRemaining(section -> section.getValue().fields().forEachRemaining(component ->
-                assertThat(delivered.path("components").path(section.getKey()).path(component.getKey())).isEqualTo(component.getValue())));
+        source.path("components").fields().forEachRemaining(section -> section.getValue().fields().forEachRemaining(component -> {
+            if (!section.getKey().equals("schemas") || !component.getKey().equals("Message"))
+                assertThat(delivered.path("components").path(section.getKey()).path(component.getKey())).isEqualTo(component.getValue());
+        }));
         assertThat(parsed.getOpenAPI().getPaths().keySet()).containsExactlyInAnyOrder(
                 "/internal/v1/community/chat/session-authorizations", "/internal/v1/community/chat/realtime-authorizations",
                 "/internal/v1/community/chat/message-projections", "/internal/v1/community/chat/replay-projections",
@@ -32,6 +34,7 @@ class CommunityChatContractTests {
                 "/api/v1/community/chat/requests", "/api/v1/community/chat/requests/{requestId}/decision",
                 "/api/v1/community/chat/conversations", "/api/v1/community/chat/conversations/{conversationId}",
                 "/api/v1/community/chat/conversations/{conversationId}/messages",
+                "/api/v1/community/chat/conversations/{conversationId}/messages/{messageId}",
                 "/api/v1/community/chat/conversations/{conversationId}/read-cursor",
                 "/api/v1/community/chat/groups", "/api/v1/community/chat/groups/{conversationId}",
                 "/api/v1/community/chat/groups/{conversationId}/members", "/api/v1/community/chat/groups/{conversationId}/invitations",
@@ -48,6 +51,7 @@ class CommunityChatContractTests {
                     return;
                 }
                 assertThat(operation.getSecurity()).anySatisfy(auth -> assertThat(auth).containsKey("BearerAuth"));
+                if (!source.path("paths").has(path)) return;
                 var expected = source.path("paths").path(path).path(method.name().toLowerCase()).deepCopy();
                 var parameters = mapper.createArrayNode();
                 for (var parameter : expected.path("parameters")) {
@@ -75,9 +79,11 @@ class CommunityChatContractTests {
     void promotedFactsPreserveTheAcceptedClosedContract() throws Exception {
         var baseline = mapper.readTree(Files.readString(Path.of("..", "contracts", "proposals", "community-chat-fact-v1.schema.json")));
         var active = mapper.readTree(Files.readString(Path.of("..", "contracts", "events", "community", "community-chat-fact-v1.schema.json")));
-        assertThat(active.path("oneOf").size()).isEqualTo(baseline.path("oneOf").size() + 1);
-        for (int index = 0; index < baseline.path("oneOf").size(); index++)
-            assertThat(active.path("oneOf").get(index)).isEqualTo(baseline.path("oneOf").get(index));
+        assertThat(active.path("oneOf").size()).isEqualTo(baseline.path("oneOf").size() + 2);
+        for (var variant : baseline.path("oneOf"))
+            assertThat(java.util.stream.StreamSupport.stream(active.path("oneOf").spliterator(), false)
+                    .anyMatch(variant::equals)).isTrue();
+        assertThat(active.path("oneOf").findValuesAsText("const")).contains("MESSAGE_RETRACTED");
         var examples = mapper.readTree(Files.readString(Path.of("..", "contracts", "proposals", "community-chat-v1.examples.json")));
         for (var fact : examples.path("facts")) {
             assertThat(ChatWireContracts.validFact(fact.toString())).isTrue();

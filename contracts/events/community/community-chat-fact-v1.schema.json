@@ -92,6 +92,44 @@
         "payload"
       ],
       "properties": {
+        "messageId": { "type": "string", "format": "uuid" },
+        "messageType": { "const": "community.chat.fact" },
+        "schemaVersion": { "const": "1.0" },
+        "producer": { "const": "community-service" },
+        "occurredAt": { "type": "string", "format": "date-time" },
+        "correlationId": { "type": "string", "format": "uuid" },
+        "aggregateId": { "type": "string", "format": "uuid" },
+        "aggregateVersion": {
+          "type": "string",
+          "pattern": "^(0|[1-9][0-9]{0,18})$"
+        },
+        "payload": {
+          "type": "object",
+          "additionalProperties": false,
+          "required": ["kind", "conversationId", "targetId"],
+          "properties": {
+            "kind": { "const": "MESSAGE_RETRACTED" },
+            "conversationId": { "type": "string", "format": "uuid" },
+            "targetId": { "type": "string", "format": "uuid" }
+          }
+        }
+      }
+    },
+    {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "messageId",
+        "messageType",
+        "schemaVersion",
+        "producer",
+        "occurredAt",
+        "correlationId",
+        "aggregateId",
+        "aggregateVersion",
+        "payload"
+      ],
+      "properties": {
         "messageId": {
           "type": "string",
           "format": "uuid"
