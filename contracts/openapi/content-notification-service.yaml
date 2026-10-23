@@ -1,7 +1,7 @@
 openapi: 3.1.0
 info:
   title: Content-Notification Service API
-  version: 1.9.0
+  version: 1.10.0
   description: >
     MentalBridge Content/Notification bounded context.
     Manages reviewed self-help resources, reviewed Vietnam safety-directory
@@ -28,6 +28,54 @@ tags:
     description: Owner-scoped durable in-app notification history and read lifecycle
 
 paths:
+  /api/v1/reminder-overview:
+    x-mentalbridge-status: implemented
+    get:
+      tags: [Notification preferences]
+      operationId: getReminderOverview
+      summary: Read the USER's current reminder facts and bounded eligibility estimates
+      description: >
+        Owner is derived only from the authenticated USER. No actor, date or timezone
+        override is accepted. Reuses persisted notification preferences and the
+        note-free Journal/Emotion projection. Today contains only enabled Journal/
+        Emotion categories with factual DUE/COMPLETED states; notification read
+        status is never activity completion. Previews are estimates for the current
+        local day, not scheduled jobs or guaranteed sends. Appointment email keeps
+        its separate delivery ledger and requires owner revalidation before sending;
+        no eligibility time is inferred from that ledger. Unsupported categories
+        are explicit. No producer, claim, provider call or domain mutation runs on
+        this read. Existing GET/PATCH notification-preferences remains the sole
+        settings boundary, with its existing validation and strong If-Match.
+      security: [{ BearerAuth: [] }]
+      responses:
+        "200":
+          description: Current owner facts and at most five reminder previews
+          headers:
+            Cache-Control:
+              schema: { type: string, const: "private, no-store" }
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ReminderOverview"
+        "401":
+          description: Authentication required
+        "403":
+          description: USER role required
+        "409":
+          description: Preferences changed while composing the overview; retry the read
+          content:
+            application/problem+json:
+              schema: { $ref: "#/components/schemas/ProblemDetails" }
+        "422":
+          description: Query parameters are unsupported
+          content:
+            application/problem+json:
+              schema: { $ref: "#/components/schemas/ProblemDetails" }
+        "503":
+          description: Preferences, delivery storage or current activity authority unavailable
+          content:
+            application/problem+json:
+              schema: { $ref: "#/components/schemas/ProblemDetails" }
   /health/live:
     x-mentalbridge-status: implemented
     get:
@@ -3545,3 +3593,110 @@ components:
         failed: { type: integer, minimum: 0 }
         suppressed: { type: integer, minimum: 0 }
         invalidated: { type: integer, minimum: 0 }
+
+    ReminderOverview:
+      type: object
+      additionalProperties: false
+      required:
+        [
+          schemaVersion,
+          asOf,
+          localDate,
+          timeZone,
+          preferences,
+          today,
+          previews,
+          unavailableCategories,
+        ]
+      properties:
+        schemaVersion: { type: string, const: "1.0" }
+        asOf: { type: string, format: date-time }
+        localDate: { type: string, format: date }
+        timeZone: { type: string, minLength: 1, maxLength: 64 }
+        preferences: { $ref: "#/components/schemas/NotificationPreferences" }
+        today:
+          type: array
+          maxItems: 2
+          items: { $ref: "#/components/schemas/ReminderActivity" }
+        previews:
+          type: array
+          maxItems: 5
+          items: { $ref: "#/components/schemas/ReminderPreview" }
+        unavailableCategories:
+          type: array
+          uniqueItems: true
+          maxItems: 4
+          items:
+            { type: string, enum: [SUPPORT_PLAN, RESOURCES, ASSESSMENT, PUSH] }
+
+    ReminderActivity:
+      type: object
+      additionalProperties: false
+      required: [id, category, status, action]
+      properties:
+        id: { type: string, minLength: 1, maxLength: 64 }
+        category: { type: string, enum: [JOURNAL, EMOTION_CHECK_IN] }
+        status: { type: string, enum: [DUE, COMPLETED] }
+        action: { type: string, enum: [OPEN_JOURNAL, OPEN_EMOTION_CHECK_IN] }
+
+    ReminderPreview:
+      type: object
+      additionalProperties: false
+      required: [kind, channel, state, nextEligibleAt, estimate, latestDelivery]
+      properties:
+        kind:
+          {
+            type: string,
+            enum:
+              [
+                JOURNAL_REMINDER,
+                EMOTION_CHECKIN_REMINDER,
+                DAILY_DIGEST,
+                RESOURCE_REMINDER,
+                APPOINTMENT_EMAIL,
+              ],
+          }
+        channel: { type: string, enum: [IN_APP, EMAIL] }
+        state:
+          type: string
+          enum:
+            [
+              ELIGIBLE,
+              SCHEDULED,
+              QUIET_HOURS,
+              PAUSED,
+              DISABLED,
+              COMPLETED,
+              NOT_NEEDED,
+              ALREADY_DELIVERED,
+              IN_PROGRESS,
+              UNAVAILABLE,
+            ]
+        nextEligibleAt: { type: [string, "null"], format: date-time }
+        estimate: { type: boolean, const: true }
+        latestDelivery:
+          oneOf:
+            - { type: "null" }
+            - { $ref: "#/components/schemas/ReminderDeliveryFact" }
+
+    ReminderDeliveryFact:
+      type: object
+      additionalProperties: false
+      required: [state, recordedAt]
+      properties:
+        state:
+          type: string
+          enum:
+            [
+              PENDING,
+              PROCESSING,
+              CLAIMED,
+              DELIVERED,
+              FAILED,
+              CANCELLED,
+              INVALIDATED,
+              SUPPRESSED,
+              EXPIRED,
+              UNKNOWN,
+            ]
+        recordedAt: { type: string, format: date-time }

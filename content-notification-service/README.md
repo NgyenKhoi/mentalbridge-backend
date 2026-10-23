@@ -1,5 +1,14 @@
 # Content and Notification Service
 
+## Mobile reminder overview (MB-676)
+
+`GET /api/v1/reminder-overview` is a USER-only, non-cacheable read in OpenAPI
+v1.10.0 (payload v1.0). It composes current note-free Journal/Emotion facts,
+persisted preferences and Content-owned delivery ledgers. Eligibility times are
+bounded estimates; reads never run a producer or send a message. Settings stay
+at the existing strong-ETag notification-preferences boundary.
+See [scope, semantics and verification](../docs/mb-676-reminder-overview.md).
+
 MB-691 implements the accepted [Community chat policy](../docs/policies/community-chat-policy-v1.md)
 through recipient-specific `MESSAGE_RECEIVED`, `DIRECT_REQUESTED`, `GROUP_INVITED`
 facts and separate comment-reaction facts. Content owns durable notice jobs and

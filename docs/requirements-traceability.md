@@ -1,5 +1,11 @@
 # Requirements Traceability
 
+MB-676 (2026-10-22) adds the USER reminder overview under the existing MB-562,
+MB-564, MB-514 and MB-517 boundaries. OpenAPI v1.10.0 exposes factual daily
+activity, current preferences and bounded eligibility estimates without a new
+scheduler or persisted model. MB-678 consumes it through the mobile reminder
+feature. See [delivery evidence](mb-676-reminder-overview.md).
+
 MB-749 supplies the additive Identity-authenticated native Community socket
 credential exchange required by MB-692. Current Community issue/consume checks,
 one-use tickets and original Identity expiry preserve the accepted privacy
