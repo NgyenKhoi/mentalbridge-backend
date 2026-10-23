@@ -34,6 +34,7 @@ public class AdminPaymentController {
 			@RequestParam(required = false) String status,
 			@RequestParam(required = false) String from,
 			@RequestParam(required = false) String to,
+			@RequestParam(required = false) String toExclusive,
 			@RequestParam(required = false) UUID subscriptionId,
 			@RequestParam(required = false) UUID paymentId,
 			@RequestParam(required = false) String orderId,
@@ -76,6 +77,9 @@ public class AdminPaymentController {
 		if (to != null && !to.isBlank()) {
 			sql.append(" and pt.created_at <= :to");
 		}
+		if (toExclusive != null && !toExclusive.isBlank()) {
+			sql.append(" and pt.created_at < :toExclusive");
+		}
 		sql.append(" order by pt.created_at desc, pt.id desc limit ").append(effectiveLimit)
 				.append(" offset ").append(effectiveOffset);
 
@@ -99,6 +103,9 @@ public class AdminPaymentController {
 			query = query.param("momoRef", momoRef.trim());
 		}
 		OffsetDateTime fromDt = null;
+		if (to != null && !to.isBlank() && toExclusive != null && !toExclusive.isBlank()) {
+			throw new ApiException(HttpStatus.BAD_REQUEST, "INVALID_DATE_RANGE", "Use either 'to' or 'toExclusive'");
+		}
 		if (from != null && !from.isBlank()) {
 			try {
 				fromDt = OffsetDateTime.ofInstant(Instant.parse(from), ZoneOffset.UTC);
@@ -118,6 +125,19 @@ public class AdminPaymentController {
 				throw e;
 			} catch (Exception e) {
 				throw new ApiException(HttpStatus.BAD_REQUEST, "INVALID_DATE_RANGE", "Invalid 'to' timestamp format");
+			}
+		}
+		if (toExclusive != null && !toExclusive.isBlank()) {
+			try {
+				var end = OffsetDateTime.ofInstant(Instant.parse(toExclusive), ZoneOffset.UTC);
+				if (fromDt != null && !end.isAfter(fromDt)) {
+					throw new ApiException(HttpStatus.BAD_REQUEST, "INVALID_DATE_RANGE", "'toExclusive' must be after 'from'");
+				}
+				query = query.param("toExclusive", end);
+			} catch (ApiException e) {
+				throw e;
+			} catch (Exception e) {
+				throw new ApiException(HttpStatus.BAD_REQUEST, "INVALID_DATE_RANGE", "Invalid 'toExclusive' timestamp format");
 			}
 		}
 

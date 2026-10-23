@@ -89,6 +89,38 @@ class AdminCommercialReconciliationIntegrationTests extends ConsultationTestProp
 	}
 
 	@Test
+	void adminPaymentDateWindowIsHalfOpenAndLegacyToRemainsInclusive() throws Exception {
+		var checkout = billing.checkout(UUID.randomUUID(), PLUS, "date-window-" + UUID.randomUUID());
+		var boundary = Instant.parse("2026-10-23T17:00:00Z");
+		jdbc.sql("update payment_transaction set created_at=:at, expires_at=:expires where id=:id")
+				.param("at", Timestamp.from(boundary.minusNanos(1000)))
+				.param("expires", Timestamp.from(boundary.plusSeconds(900)))
+				.param("id", checkout.paymentId()).update();
+		var request = get("/api/v1/admin/payments")
+				.param("paymentId", checkout.paymentId().toString())
+				.param("from", "2026-10-22T17:00:00Z")
+				.with(role(UUID.randomUUID(), "ROLE_ADMIN"));
+		mvc.perform(request.param("toExclusive", boundary.toString()))
+				.andExpect(status().isOk()).andExpect(jsonPath("$.count").value(1));
+		jdbc.sql("update payment_transaction set created_at=:at, expires_at=:expires where id=:id")
+				.param("at", Timestamp.from(boundary))
+				.param("expires", Timestamp.from(boundary.plusSeconds(900)))
+				.param("id", checkout.paymentId()).update();
+		mvc.perform(get("/api/v1/admin/payments").param("paymentId", checkout.paymentId().toString())
+					.param("toExclusive", boundary.toString()).with(role(UUID.randomUUID(), "ROLE_ADMIN")))
+				.andExpect(status().isOk()).andExpect(jsonPath("$.count").value(0));
+		mvc.perform(get("/api/v1/admin/payments").param("paymentId", checkout.paymentId().toString())
+					.param("to", boundary.toString()).with(role(UUID.randomUUID(), "ROLE_ADMIN")))
+				.andExpect(status().isOk()).andExpect(jsonPath("$.count").value(1));
+		mvc.perform(get("/api/v1/admin/payments").param("to", boundary.toString())
+					.param("toExclusive", boundary.toString()).with(role(UUID.randomUUID(), "ROLE_ADMIN")))
+				.andExpect(status().isBadRequest());
+		mvc.perform(get("/api/v1/admin/payments").param("from", boundary.toString())
+					.param("toExclusive", boundary.toString()).with(role(UUID.randomUUID(), "ROLE_ADMIN")))
+				.andExpect(status().isBadRequest());
+	}
+
+	@Test
 	void adminCanReadSubscriptionDetail() throws Exception {
 		var userId = UUID.randomUUID();
 		var checkout = billing.checkout(userId, PLUS, "detail-test-" + UUID.randomUUID());
@@ -356,6 +388,42 @@ class AdminCommercialReconciliationIntegrationTests extends ConsultationTestProp
 				insert into specialist_payout_item (payout_id, earning_id, amount_minor)
 				values (:payoutId, :earn1, 70000), (:payoutId, :earn2, 70000)
 				""").param("payoutId", payoutId).param("earn1", earn1).param("earn2", earn2).update();
+		var oldReference = "old-ref-" + payoutId;
+		var latestReference = "latest-ref-" + payoutId;
+		for (int attempt = 1; attempt <= 2; attempt++) {
+			jdbc.sql("""
+					insert into specialist_payout_attempt (id, payout_id, payout_provider, attempt_number,
+					 provider_idempotency_key, provider_payout_reference, status, requested_at, created_at, updated_at)
+					values (:id, :payoutId, 'MOMO', :attempt, :key, :reference, :status, now(), now(), now())
+					""").param("id", UUID.randomUUID()).param("payoutId", payoutId).param("attempt", attempt)
+					.param("key", "attempt-" + attempt + "-" + payoutId)
+					.param("reference", attempt == 1 ? oldReference : latestReference)
+					.param("status", attempt == 1 ? "FAILED" : "SUCCEEDED").update();
+		}
+		mvc.perform(get("/api/v1/admin/payouts").param("providerReference", oldReference)
+					.with(role(UUID.randomUUID(), "ROLE_ADMIN")))
+				.andExpect(status().isOk()).andExpect(jsonPath("$.count").value(1))
+				.andExpect(jsonPath("$.items[0].payoutId").value(payoutId.toString()))
+				.andExpect(jsonPath("$.items[0].providerReference").value(latestReference));
+
+		var payoutBoundary = Instant.parse("2026-10-23T17:00:00Z");
+		jdbc.sql("update specialist_payout set requested_at=:at where id=:id")
+				.param("at", Timestamp.from(payoutBoundary.minusNanos(1000))).param("id", payoutId).update();
+		mvc.perform(get("/api/v1/admin/payouts").param("payoutId", payoutId.toString())
+					.param("toExclusive", payoutBoundary.toString()).with(role(UUID.randomUUID(), "ROLE_ADMIN")))
+				.andExpect(status().isOk()).andExpect(jsonPath("$.count").value(1))
+				.andExpect(jsonPath("$.items[0].earningCount").value(2));
+		jdbc.sql("update specialist_payout set requested_at=:at where id=:id")
+				.param("at", Timestamp.from(payoutBoundary)).param("id", payoutId).update();
+		mvc.perform(get("/api/v1/admin/payouts").param("payoutId", payoutId.toString())
+					.param("toExclusive", payoutBoundary.toString()).with(role(UUID.randomUUID(), "ROLE_ADMIN")))
+				.andExpect(status().isOk()).andExpect(jsonPath("$.count").value(0));
+		mvc.perform(get("/api/v1/admin/payouts").param("payoutId", payoutId.toString())
+					.param("to", payoutBoundary.toString()).with(role(UUID.randomUUID(), "ROLE_ADMIN")))
+				.andExpect(status().isOk()).andExpect(jsonPath("$.count").value(1));
+		mvc.perform(get("/api/v1/admin/payouts").param("to", payoutBoundary.toString())
+					.param("toExclusive", payoutBoundary.toString()).with(role(UUID.randomUUID(), "ROLE_ADMIN")))
+				.andExpect(status().isBadRequest());
 
 		// Query provenance by payoutId
 		mvc.perform(get("/api/v1/admin/commercial/provenance")
@@ -432,18 +500,25 @@ class AdminCommercialReconciliationIntegrationTests extends ConsultationTestProp
 	}
 
 	@Test
-	void fix4_filteringAndPaginationWithSafeTimestampAndCorrelationId() throws Exception {
+	void adminListsValidateDatesAndExposeOnlyPageLocalCounts() throws Exception {
 		var userId = UUID.randomUUID();
 		var checkout = billing.checkout(userId, PLUS, "filter-test-" + UUID.randomUUID());
 
-		// Test payments with correlationId & offset
+		// Payment count covers only the requested page, including an empty page beyond the result.
 		mvc.perform(get("/api/v1/admin/payments")
-				.param("status", "PENDING")
+				.param("paymentId", checkout.paymentId().toString())
 				.param("offset", "0")
-				.param("limit", "10")
+				.param("limit", "1")
 				.with(role(UUID.randomUUID(), "ROLE_ADMIN")))
 				.andExpect(status().isOk())
-				.andExpect(jsonPath("$.count").isNumber());
+				.andExpect(jsonPath("$.count").value(1));
+		mvc.perform(get("/api/v1/admin/payments")
+				.param("paymentId", checkout.paymentId().toString())
+				.param("offset", "1")
+				.param("limit", "1")
+				.with(role(UUID.randomUUID(), "ROLE_ADMIN")))
+				.andExpect(status().isOk())
+				.andExpect(jsonPath("$.count").value(0));
 
 		// Test payouts with offset & limit
 		mvc.perform(get("/api/v1/admin/payouts")

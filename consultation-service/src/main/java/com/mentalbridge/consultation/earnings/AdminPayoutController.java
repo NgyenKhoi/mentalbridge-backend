@@ -35,6 +35,7 @@ public class AdminPayoutController {
 			@RequestParam(required = false) String status,
 			@RequestParam(required = false) String from,
 			@RequestParam(required = false) String to,
+			@RequestParam(required = false) String toExclusive,
 			@RequestParam(required = false) UUID specialistAccountId,
 			@RequestParam(required = false) UUID payoutId,
 			@RequestParam(required = false) String idempotencyKey,
@@ -70,13 +71,16 @@ public class AdminPayoutController {
 			sql.append(" and p.idempotency_key = :idempotencyKey");
 		}
 		if (providerReference != null && !providerReference.isBlank()) {
-			sql.append(" and a.provider_payout_reference = :providerReference");
+			sql.append(" and exists (select 1 from specialist_payout_attempt ref where ref.payout_id=p.id and ref.provider_payout_reference=:providerReference)");
 		}
 		if (from != null && !from.isBlank()) {
 			sql.append(" and p.requested_at >= :from");
 		}
 		if (to != null && !to.isBlank()) {
 			sql.append(" and p.requested_at <= :to");
+		}
+		if (toExclusive != null && !toExclusive.isBlank()) {
+			sql.append(" and p.requested_at < :toExclusive");
 		}
 
 		sql.append("""
@@ -101,6 +105,9 @@ public class AdminPayoutController {
 			query = query.param("providerReference", providerReference.trim());
 		}
 		OffsetDateTime fromDt = null;
+		if (to != null && !to.isBlank() && toExclusive != null && !toExclusive.isBlank()) {
+			throw new ApiException(HttpStatus.BAD_REQUEST, "INVALID_DATE_RANGE", "Use either 'to' or 'toExclusive'");
+		}
 		if (from != null && !from.isBlank()) {
 			try {
 				fromDt = OffsetDateTime.ofInstant(Instant.parse(from), ZoneOffset.UTC);
@@ -120,6 +127,19 @@ public class AdminPayoutController {
 				throw e;
 			} catch (Exception e) {
 				throw new ApiException(HttpStatus.BAD_REQUEST, "INVALID_DATE_RANGE", "Invalid 'to' timestamp format");
+			}
+		}
+		if (toExclusive != null && !toExclusive.isBlank()) {
+			try {
+				var end = OffsetDateTime.ofInstant(Instant.parse(toExclusive), ZoneOffset.UTC);
+				if (fromDt != null && !end.isAfter(fromDt)) {
+					throw new ApiException(HttpStatus.BAD_REQUEST, "INVALID_DATE_RANGE", "'toExclusive' must be after 'from'");
+				}
+				query = query.param("toExclusive", end);
+			} catch (ApiException e) {
+				throw e;
+			} catch (Exception e) {
+				throw new ApiException(HttpStatus.BAD_REQUEST, "INVALID_DATE_RANGE", "Invalid 'toExclusive' timestamp format");
 			}
 		}
 

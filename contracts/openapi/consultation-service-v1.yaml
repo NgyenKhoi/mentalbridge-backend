@@ -1506,6 +1506,12 @@ paths:
           in: query
           required: false
           schema: { type: string, format: date-time }
+          description: Inclusive upper bound on createdAt; retained for existing clients. Do not combine with toExclusive.
+        - name: toExclusive
+          in: query
+          required: false
+          schema: { type: string, format: date-time }
+          description: Exclusive upper bound on createdAt. Must be after from; do not combine with to.
         - name: subscriptionId
           in: query
           required: false
@@ -1562,6 +1568,12 @@ paths:
           in: query
           required: false
           schema: { type: string, format: date-time }
+          description: Inclusive upper bound on requestedAt; retained for existing clients. Do not combine with toExclusive.
+        - name: toExclusive
+          in: query
+          required: false
+          schema: { type: string, format: date-time }
+          description: Exclusive upper bound on requestedAt. Must be after from; do not combine with to.
         - name: specialistAccountId
           in: query
           required: false
@@ -1582,6 +1594,7 @@ paths:
           in: query
           required: false
           schema: { type: string }
+          description: Exact provider payout reference from any persisted attempt; the list item displays the latest attempt's reference.
         - name: offset
           in: query
           required: false
@@ -3056,7 +3069,7 @@ components:
       required: [generatedAt, count, items]
       properties:
         generatedAt: { type: string, format: date-time }
-        count: { type: integer, minimum: 0, maximum: 200 }
+        count: { type: integer, minimum: 0, maximum: 200, description: Number of items in this response page; not a total across matching payments. }
         items:
           type: array
           maxItems: 200
@@ -3378,7 +3391,7 @@ components:
       required: [generatedAt, count, items]
       properties:
         generatedAt: { type: string, format: date-time }
-        count: { type: integer, minimum: 0, maximum: 200 }
+        count: { type: integer, minimum: 0, maximum: 200, description: Number of items in this response page; not a total across matching payouts. }
         items:
           type: array
           maxItems: 200
