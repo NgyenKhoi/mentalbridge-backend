@@ -34,3 +34,10 @@ export interface PushDeliveryClaim {
   readonly actionTargetId: string | null;
   readonly attemptCount: number;
 }
+
+export interface PushReceiptClaim {
+  readonly id: string;
+  readonly deviceId: string;
+  readonly providerTicketId: string;
+  readonly receiptAttemptCount: number;
+}

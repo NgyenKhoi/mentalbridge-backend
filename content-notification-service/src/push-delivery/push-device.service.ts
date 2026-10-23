@@ -1,5 +1,7 @@
 import {
   Inject,
+  HttpException,
+  HttpStatus,
   Injectable,
   NotFoundException,
   ServiceUnavailableException,
@@ -33,6 +35,7 @@ export class PushDeviceService {
     installationId: string,
     body: unknown,
   ): Promise<PushDeviceRegistration> {
+    await this.enforceRateLimit(ownerId);
     if (!this.config.CONTENT_PUSH_TOKEN_ENCRYPTION_KEY) throw new ServiceUnavailableException();
     try {
       const input = PushDeviceRegistrationSchema.parse(body);
@@ -56,7 +59,21 @@ export class PushDeviceService {
   }
 
   async revoke(ownerId: string, installationId: string): Promise<void> {
+    await this.enforceRateLimit(ownerId);
     if (!(await this.repository.revoke(ownerId, installationId)))
       throw new NotFoundException(problem(404, 'PUSH_DEVICE_NOT_FOUND', 'Push device not found'));
+  }
+
+  private async enforceRateLimit(ownerId: string): Promise<void> {
+    const accepted = await this.repository.consumeCommandRateLimit(
+      ownerId,
+      this.config.CONTENT_PUSH_DEVICE_RATE_LIMIT,
+      this.config.CONTENT_PUSH_DEVICE_RATE_WINDOW_SECONDS,
+    );
+    if (!accepted)
+      throw new HttpException(
+        problem(429, 'PUSH_DEVICE_RATE_LIMITED', 'Push device request rate exceeded'),
+        HttpStatus.TOO_MANY_REQUESTS,
+      );
   }
 }

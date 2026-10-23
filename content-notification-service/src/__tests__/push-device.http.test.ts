@@ -25,6 +25,7 @@ beforeAll(async () => {
 
 beforeEach(async () => {
   repository = {
+    consumeCommandRateLimit: vi.fn(async () => true),
     register: vi.fn(async (ownerId, input) => ({
       installationId: input.installationId,
       platform: input.platform,
@@ -57,11 +58,13 @@ beforeEach(async () => {
     IDENTITY_JWT_CLOCK_TOLERANCE_SECONDS: 0,
     CONTENT_PUSH_TOKEN_ENCRYPTION_KEY: randomBytes(32).toString('base64'),
     CONTENT_PUSH_DELIVERY_ENABLED: false,
+    CONTENT_PUSH_DEVICE_RATE_LIMIT: 30,
+    CONTENT_PUSH_DEVICE_RATE_WINDOW_SECONDS: 60,
   } as ServiceConfiguration;
   app = await createApplication(configuration, {
     readinessProbe: { check: async () => undefined },
     pushDeviceRepository: repository,
-    pushProvider: { send: vi.fn() },
+    pushProvider: { send: vi.fn(), getReceipts: vi.fn() },
   });
   await app.init();
 });
@@ -123,5 +126,24 @@ describe('push device HTTP boundary', () => {
       .set('Authorization', authorization)
       .expect(204);
     expect(repository.revoke).toHaveBeenCalledWith(OWNER, INSTALLATION);
+  });
+
+  it('rate limits device registration and revocation per authenticated owner', async () => {
+    vi.mocked(repository.consumeCommandRateLimit).mockResolvedValue(false);
+    const authorization = `Bearer ${await token()}`;
+
+    const response = await request(app.getHttpServer())
+      .put(`/api/v1/push-devices/${INSTALLATION}`)
+      .set('Authorization', authorization)
+      .send({
+        platform: 'ANDROID',
+        provider: 'EXPO',
+        providerToken: 'ExponentPushToken[test-device-token]',
+        permissionStatus: 'GRANTED',
+      })
+      .expect(429);
+
+    expect(response.body.code).toBe('PUSH_DEVICE_RATE_LIMITED');
+    expect(repository.register).not.toHaveBeenCalled();
   });
 });

@@ -133,8 +133,11 @@ const implementedResponses = new Map([
     'PATCH /api/v1/notification-preferences',
     new Set(['200', '400', '401', '412', '422', '428', '503']),
   ],
-  ['PUT /api/v1/push-devices/{installationId}', new Set(['200', '401', '422', '503'])],
-  ['DELETE /api/v1/push-devices/{installationId}', new Set(['204', '401', '404', '422', '503'])],
+  ['PUT /api/v1/push-devices/{installationId}', new Set(['200', '401', '422', '429', '503'])],
+  [
+    'DELETE /api/v1/push-devices/{installationId}',
+    new Set(['204', '401', '404', '422', '429', '503']),
+  ],
   ['GET /api/v1/notifications', new Set(['200', '401', '422', '503'])],
   [
     'PATCH /api/v1/notifications/{notificationId}/read',

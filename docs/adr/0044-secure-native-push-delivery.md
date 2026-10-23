@@ -22,10 +22,13 @@ not change the public registration contract.
 
 `PUT /api/v1/push-devices/{installationId}` is a natural idempotent replacement
 operation. The verified JWT supplies the owner; client-supplied owner identifiers
-are prohibited. One provider token may be active for only one owner/installation,
-so registration atomically revokes a prior assignment. `DELETE` is an idempotent
+are prohibited. One installation and one provider token may each be active for
+only one owner, so registration atomically revokes every prior assignment even
+when both the owner and token change. An identical PUT is a no-op and does not
+advance eligibility timestamps or versions. `DELETE` is an idempotent
 owner-only sign-out/revocation transition. Permission denial keeps a durable
 disabled registration, while provider `DeviceNotRegistered` makes it invalid.
+Both commands share a database-atomic per-owner fixed-window rate limit.
 
 Provider tokens are encrypted with AES-256-GCM under an externally injected key.
 Only a SHA-256 token hash is used for uniqueness and rotation. Tokens, provider
@@ -33,10 +36,13 @@ payloads, and provider responses are excluded from logs and REST responses.
 
 The worker derives one delivery attempt per authoritative inbox notification and
 active device. Top-level/PUSH preference, device permission, quiet hours, and
-notification retention remain authoritative. Claims use database locking, at
+notification retention remain authoritative and are rechecked before submission.
+Deletion atomically suppresses unsent attempts. Claims use database locking, at
 most three provider submissions, and bounded exponential retry. Expo ticket
-acceptance is recorded as `ACCEPTED`, never `DELIVERED`; a later receipt slice may
-add confirmed provider outcomes without rewriting historical acceptance.
+acceptance is recorded as `ACCEPTED`, never `DELIVERED`. Bounded delayed receipt
+lookups record `CONFIRMED`, provider rejection, or unknown outcome and invalidate
+the device when Expo reports `DeviceNotRegistered`. A successful Expo receipt
+still does not prove that the user saw or physically received the notification.
 
 Every push contains only a reviewed title, generic body, notification UUID, and
 closed action pointer. It excludes assessment answers, Journal/emotion text,

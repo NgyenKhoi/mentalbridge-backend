@@ -369,6 +369,7 @@ CREATE TABLE content.push_device_registration (
     status varchar(16) NOT NULL,
     app_version varchar(32),
     last_registered_at timestamptz NOT NULL,
+    delivery_eligible_from_at timestamptz NOT NULL,
     revoked_at timestamptz,
     invalidated_at timestamptz,
     created_at timestamptz NOT NULL,
@@ -379,6 +380,10 @@ CREATE TABLE content.push_device_registration (
 
 CREATE UNIQUE INDEX uq_push_device_active_token
     ON content.push_device_registration (provider, provider_token_hash)
+    WHERE status IN ('ACTIVE', 'DISABLED');
+
+CREATE UNIQUE INDEX uq_push_device_active_installation
+    ON content.push_device_registration (installation_id)
     WHERE status IN ('ACTIVE', 'DISABLED');
 
 CREATE TABLE content.push_delivery_attempt (
@@ -393,9 +398,18 @@ CREATE TABLE content.push_delivery_attempt (
     failure_code varchar(48),
     last_attempt_at timestamptz,
     accepted_at timestamptz,
+    receipt_attempt_count smallint NOT NULL,
+    receipt_checked_at timestamptz,
     created_at timestamptz NOT NULL,
     updated_at timestamptz NOT NULL,
     UNIQUE (notification_id, device_registration_id)
+);
+
+CREATE TABLE content.push_device_command_rate_limit (
+    owner_id uuid PRIMARY KEY, -- external -> identity.account.id
+    window_started_at timestamptz NOT NULL,
+    request_count smallint NOT NULL,
+    updated_at timestamptz NOT NULL
 );
 
 CREATE TABLE content.appointment_reminder_checkpoint (

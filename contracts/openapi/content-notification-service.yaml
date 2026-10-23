@@ -1376,6 +1376,7 @@ paths:
             application/json:
               schema: { $ref: "#/components/schemas/PushDeviceRegistration" }
         "401": { $ref: "#/components/responses/Unauthorized" }
+        "429": { $ref: "#/components/responses/PushDeviceRateLimited" }
         "422": { $ref: "#/components/responses/ValidationError" }
         "503": { $ref: "#/components/responses/ServiceUnavailable" }
     delete:
@@ -1388,6 +1389,7 @@ paths:
         "204": { description: Device registration is revoked or was already revoked }
         "401": { $ref: "#/components/responses/Unauthorized" }
         "404": { $ref: "#/components/responses/NotFound" }
+        "429": { $ref: "#/components/responses/PushDeviceRateLimited" }
         "422": { $ref: "#/components/responses/ValidationError" }
         "503": { $ref: "#/components/responses/ServiceUnavailable" }
 
@@ -1622,6 +1624,16 @@ components:
       content:
         application/problem+json:
           schema: { $ref: "#/components/schemas/ProblemDetails" }
+    PushDeviceRateLimited:
+      description: The authenticated owner exceeded the bounded push-device command rate
+      content:
+        application/problem+json:
+          schema: { $ref: "#/components/schemas/ProblemDetails" }
+          example:
+            type: https://mentalbridge.io/errors/PUSH_DEVICE_RATE_LIMITED
+            title: Push device request rate exceeded
+            status: 429
+            code: PUSH_DEVICE_RATE_LIMITED
     IdempotencyConflict:
       description: The actor reused an idempotency key with a different create payload
       content:

@@ -4,6 +4,7 @@ import { DATABASE_SERVICE_TOKEN } from '../application.tokens.js';
 import type { DatabaseService } from '../database/database.service.js';
 import type {
   PushDeliveryClaim,
+  PushReceiptClaim,
   PushDeviceRegistration,
   PushDeviceRegistrationInput,
 } from './push-device.types.js';
@@ -18,6 +19,10 @@ interface DeviceRow {
   readonly app_version: string | null;
   readonly last_registered_at: Date | string;
   readonly version: number | string;
+}
+
+interface StoredDeviceRow extends DeviceRow {
+  readonly provider_token_hash: string;
 }
 
 const mapDevice = (row: DeviceRow): PushDeviceRegistration => ({
@@ -41,15 +46,38 @@ export class PushDeviceRepository {
     encrypted: EncryptedPushToken,
   ): Promise<PushDeviceRegistration> {
     return this.db.withTransaction(async (client) => {
-      await client.query('SELECT pg_advisory_xact_lock(hashtextextended($1, 0))', [
+      const lockKeys = [
+        `PUSH_INSTALLATION:${input.installationId}`,
         `PUSH_TOKEN:${encrypted.hash}`,
-      ]);
+      ].sort();
+      for (const lockKey of lockKeys)
+        await client.query('SELECT pg_advisory_xact_lock(hashtextextended($1, 0))', [lockKey]);
+      const current = await client.query<StoredDeviceRow>(
+        `SELECT installation_id, platform, provider, provider_token_hash, permission_status,
+                status, app_version, last_registered_at, version
+         FROM push_device_registration
+         WHERE owner_id = $1 AND installation_id = $2
+         FOR UPDATE`,
+        [ownerId, input.installationId],
+      );
+      const desiredStatus = input.permissionStatus === 'GRANTED' ? 'ACTIVE' : 'DISABLED';
+      const existing: StoredDeviceRow | undefined = current.rows.at(0);
+      if (
+        existing &&
+        existing.platform === input.platform &&
+        existing.provider_token_hash === encrypted.hash &&
+        existing.permission_status === input.permissionStatus &&
+        existing.status === desiredStatus &&
+        existing.app_version === (input.appVersion ?? null)
+      )
+        return mapDevice(existing);
       await client.query(
         `UPDATE push_device_registration
          SET status = 'REVOKED', revoked_at = now(), updated_at = now(), version = version + 1
-         WHERE provider = 'EXPO' AND provider_token_hash = $1
-           AND (owner_id <> $2 OR installation_id <> $3) AND status IN ('ACTIVE', 'DISABLED')`,
-        [encrypted.hash, ownerId, input.installationId],
+         WHERE provider = 'EXPO' AND status IN ('ACTIVE', 'DISABLED')
+           AND (installation_id = $1 OR provider_token_hash = $2)
+           AND NOT (owner_id = $3 AND installation_id = $1)`,
+        [input.installationId, encrypted.hash, ownerId],
       );
       const result = await client.query<DeviceRow>(
         `INSERT INTO push_device_registration
@@ -68,6 +96,13 @@ export class PushDeviceRepository {
            permission_status = EXCLUDED.permission_status,
            status = CASE WHEN EXCLUDED.permission_status = 'GRANTED' THEN 'ACTIVE' ELSE 'DISABLED' END,
            app_version = EXCLUDED.app_version,
+           delivery_eligible_from_at = CASE
+             WHEN push_device_registration.status IN ('REVOKED', 'INVALID')
+               OR (push_device_registration.permission_status <> 'GRANTED'
+                   AND EXCLUDED.permission_status = 'GRANTED')
+               THEN now()
+             ELSE push_device_registration.delivery_eligible_from_at
+           END,
            last_registered_at = now(), revoked_at = NULL, invalidated_at = NULL,
            updated_at = now(), version = push_device_registration.version + 1
          RETURNING installation_id, platform, provider, permission_status, status,
@@ -87,6 +122,35 @@ export class PushDeviceRepository {
       );
       return mapDevice(result.rows[0]);
     });
+  }
+
+  async consumeCommandRateLimit(
+    ownerId: string,
+    limit: number,
+    windowSeconds: number,
+  ): Promise<boolean> {
+    const result = await this.db.query(
+      `INSERT INTO push_device_command_rate_limit
+         (owner_id, window_started_at, request_count, updated_at)
+       VALUES ($1, now(), 1, now())
+       ON CONFLICT (owner_id) DO UPDATE SET
+         window_started_at = CASE
+           WHEN push_device_command_rate_limit.window_started_at <= now() - make_interval(secs => $3)
+             THEN now()
+           ELSE push_device_command_rate_limit.window_started_at
+         END,
+         request_count = CASE
+           WHEN push_device_command_rate_limit.window_started_at <= now() - make_interval(secs => $3)
+             THEN 1
+           ELSE push_device_command_rate_limit.request_count + 1
+         END,
+         updated_at = now()
+       WHERE push_device_command_rate_limit.window_started_at <= now() - make_interval(secs => $3)
+          OR push_device_command_rate_limit.request_count < $2
+       RETURNING request_count`,
+      [ownerId, limit, windowSeconds],
+    );
+    return Boolean(result.rows[0]);
   }
 
   async revoke(ownerId: string, installationId: string): Promise<boolean> {
@@ -143,7 +207,7 @@ export class PushDeviceRepository {
        JOIN notification_preference p ON p.user_id = n.recipient_id
        JOIN push_device_registration d ON d.owner_id = n.recipient_id
        WHERE n.delivery_state = 'DELIVERED' AND n.deleted_at IS NULL AND n.expires_at > now()
-         AND n.created_at >= d.last_registered_at
+         AND n.created_at >= d.delivery_eligible_from_at
          AND NOT EXISTS (
            SELECT 1 FROM push_delivery_attempt a
            WHERE a.notification_id = n.id AND a.device_registration_id = d.id
@@ -161,6 +225,9 @@ export class PushDeviceRepository {
       `UPDATE push_delivery_attempt a
        SET state = 'SUPPRESSED',
            failure_code = CASE
+             WHEN n.deleted_at IS NOT NULL THEN 'NOTIFICATION_DELETED'
+             WHEN n.expires_at <= now() THEN 'NOTIFICATION_EXPIRED'
+             WHEN n.delivery_state <> 'DELIVERED' THEN 'NOTIFICATION_UNAVAILABLE'
              WHEN d.status = 'INVALID' THEN 'DEVICE_NOT_REGISTERED'
              WHEN d.status <> 'ACTIVE' OR d.permission_status <> 'GRANTED' THEN 'DEVICE_DISABLED'
              WHEN NOT p.notifications_enabled OR NOT p.channel_push_enabled THEN 'PREFERENCE_DISABLED'
@@ -170,7 +237,9 @@ export class PushDeviceRepository {
        FROM push_device_registration d, notification n, notification_preference p
        WHERE d.id = a.device_registration_id AND n.id = a.notification_id
          AND p.user_id = n.recipient_id AND a.state IN ('PENDING', 'FAILED')
-         AND (d.status <> 'ACTIVE' OR d.permission_status <> 'GRANTED'
+         AND (n.deleted_at IS NOT NULL OR n.expires_at <= now()
+              OR n.delivery_state <> 'DELIVERED'
+              OR d.status <> 'ACTIVE' OR d.permission_status <> 'GRANTED'
               OR NOT p.notifications_enabled OR NOT p.channel_push_enabled
               OR NOT (CASE
                 WHEN n.category = 'JOURNAL_REMINDER' THEN p.group_journal_reminder_enabled
@@ -212,6 +281,7 @@ export class PushDeviceRepository {
            JOIN notification_preference p ON p.user_id = n.recipient_id
            WHERE a.state IN ('PENDING', 'FAILED') AND a.available_at <= now()
              AND a.attempt_count < 3 AND d.status = 'ACTIVE' AND d.permission_status = 'GRANTED'
+             AND n.delivery_state = 'DELIVERED' AND n.deleted_at IS NULL AND n.expires_at > now()
              AND p.notifications_enabled AND p.channel_push_enabled
              AND (CASE
                WHEN n.category = 'JOURNAL_REMINDER' THEN p.group_journal_reminder_enabled
@@ -261,12 +331,115 @@ export class PushDeviceRepository {
     });
   }
 
-  async accepted(id: string, ticketId: string): Promise<void> {
+  async isDeliverable(id: string): Promise<boolean> {
+    const result = await this.db.query(
+      `SELECT 1
+       FROM push_delivery_attempt a
+       JOIN push_device_registration d ON d.id = a.device_registration_id
+       JOIN notification n ON n.id = a.notification_id
+       JOIN notification_preference p ON p.user_id = n.recipient_id
+       WHERE a.id = $1 AND a.state = 'PROCESSING'
+         AND n.delivery_state = 'DELIVERED' AND n.deleted_at IS NULL AND n.expires_at > now()
+         AND d.status = 'ACTIVE' AND d.permission_status = 'GRANTED'
+         AND p.notifications_enabled AND p.channel_push_enabled
+         AND (CASE
+           WHEN n.category = 'JOURNAL_REMINDER' THEN p.group_journal_reminder_enabled
+           WHEN n.category = 'EMOTION_CHECKIN_REMINDER' THEN p.group_emotion_check_in_enabled
+           WHEN n.category IN ('JOURNAL_STREAK_MILESTONE', 'EMOTION_STREAK_MILESTONE', 'STREAK_MILESTONE') THEN p.group_streak_milestone_enabled
+           WHEN n.category IN ('ASSESSMENT_REASSESSMENT', 'ASSESSMENT_RESULT_AVAILABLE', 'ASSESSMENT') THEN p.group_screening_reassessment_enabled
+           WHEN n.category IN ('APPOINTMENT', 'MESSAGE', 'CHAT') THEN p.group_appointment_message_enabled
+           WHEN n.category IN ('COMMUNITY_COMMENT', 'COMMUNITY_REPLY', 'COMMUNITY_REACTION', 'COMMUNITY_MESSAGE', 'COMMUNITY_REQUEST', 'COMMUNITY_INVITATION') THEN p.group_community_interaction_enabled
+           WHEN n.category IN ('SYSTEM_RESOURCE', 'SUPPORT_GUIDE_AVAILABLE', 'ACCOUNT_STATUS', 'SYSTEM') THEN p.group_resource_system_enabled
+           ELSE true
+         END)`,
+      [id],
+    );
+    return Boolean(result.rows[0]);
+  }
+
+  async suppressClaim(id: string, code: string): Promise<void> {
     await this.db.query(
       `UPDATE push_delivery_attempt
-       SET state = 'ACCEPTED', provider_ticket_id = $2, accepted_at = now(), updated_at = now()
+       SET state = 'SUPPRESSED', failure_code = $2, updated_at = now()
        WHERE id = $1 AND state = 'PROCESSING'`,
-      [id, ticketId],
+      [id, code],
+    );
+  }
+
+  async accepted(id: string, ticketId: string, receiptDelaySeconds: number): Promise<void> {
+    await this.db.query(
+      `UPDATE push_delivery_attempt
+       SET state = 'ACCEPTED', provider_ticket_id = $2, accepted_at = now(),
+           available_at = now() + make_interval(secs => $3), updated_at = now()
+       WHERE id = $1 AND state = 'PROCESSING'`,
+      [id, ticketId, receiptDelaySeconds],
+    );
+  }
+
+  async claimReceipts(
+    limit: number,
+    retryDelaySeconds: number,
+  ): Promise<readonly PushReceiptClaim[]> {
+    return this.db.withTransaction(async (client) => {
+      const result = await client.query<{
+        id: string;
+        device_id: string;
+        provider_ticket_id: string;
+        receipt_attempt_count: number | string;
+      }>(
+        `WITH due AS (
+           SELECT id
+           FROM push_delivery_attempt
+           WHERE state = 'ACCEPTED' AND available_at <= now() AND receipt_attempt_count < 3
+           ORDER BY available_at, id
+           FOR UPDATE SKIP LOCKED
+           LIMIT $1
+         )
+         UPDATE push_delivery_attempt a
+         SET receipt_attempt_count = receipt_attempt_count + 1,
+             receipt_checked_at = now(),
+             available_at = now() + make_interval(secs => $2),
+             updated_at = now()
+         FROM due
+         WHERE a.id = due.id
+         RETURNING a.id, a.device_registration_id AS device_id, a.provider_ticket_id,
+                   a.receipt_attempt_count`,
+        [limit, retryDelaySeconds],
+      );
+      return result.rows.map((row) => ({
+        id: row.id,
+        deviceId: row.device_id,
+        providerTicketId: row.provider_ticket_id,
+        receiptAttemptCount: Number(row.receipt_attempt_count),
+      }));
+    });
+  }
+
+  async confirmReceipt(id: string): Promise<void> {
+    await this.db.query(
+      `UPDATE push_delivery_attempt
+       SET state = 'CONFIRMED', failure_code = NULL, receipt_checked_at = now(), updated_at = now()
+       WHERE id = $1 AND state = 'ACCEPTED'`,
+      [id],
+    );
+  }
+
+  async failReceipt(id: string, code: string): Promise<void> {
+    await this.db.query(
+      `UPDATE push_delivery_attempt
+       SET state = 'SUPPRESSED', failure_code = $2, receipt_checked_at = now(), updated_at = now()
+       WHERE id = $1 AND state = 'ACCEPTED'`,
+      [id, code],
+    );
+  }
+
+  async retryReceipt(id: string, code: string): Promise<void> {
+    await this.db.query(
+      `UPDATE push_delivery_attempt
+       SET state = CASE WHEN receipt_attempt_count < 3 THEN 'ACCEPTED' ELSE 'UNKNOWN' END,
+           failure_code = $2, receipt_checked_at = now(), updated_at = now()
+       WHERE id = $1 AND state = 'ACCEPTED'`,
+      [id, code],
     );
   }
 

@@ -47,7 +47,10 @@ describe('native push delivery', () => {
       version: 0,
       encrypted,
     }));
-    const service = new PushDeviceService({ register } as never, configuration);
+    const service = new PushDeviceService(
+      { register, consumeCommandRateLimit: vi.fn(async () => true) } as never,
+      configuration,
+    );
     const result = await service.register(
       '10000000-0000-4000-8000-000000000001',
       '20000000-0000-4000-8000-000000000002',
@@ -133,6 +136,39 @@ describe('native push delivery', () => {
     ).rejects.toBeInstanceOf(TransientPushProviderError);
   });
 
+  it('maps Expo receipts without treating ticket acceptance as final delivery', async () => {
+    vi.stubGlobal(
+      'fetch',
+      vi.fn(
+        async () =>
+          new Response(
+            JSON.stringify({
+              data: {
+                'ticket-ok': { status: 'ok' },
+                'ticket-invalid': {
+                  status: 'error',
+                  details: { error: 'DeviceNotRegistered' },
+                },
+              },
+            }),
+            { status: 200 },
+          ),
+      ),
+    );
+    const receipts = await new ExpoPushProvider(configuration).getReceipts([
+      'ticket-ok',
+      'ticket-invalid',
+      'ticket-pending',
+    ]);
+
+    expect(receipts.get('ticket-ok')).toEqual({ status: 'CONFIRMED' });
+    expect(receipts.get('ticket-invalid')).toEqual({
+      status: 'ERROR',
+      code: 'DEVICE_NOT_REGISTERED',
+    });
+    expect(receipts.get('ticket-pending')).toEqual({ status: 'PENDING' });
+  });
+
   it('prunes an invalid device without retrying or claiming delivery', async () => {
     const encrypted = new PushTokenCrypto(encryptionKey).encrypt(
       'ExponentPushToken[invalid-device]',
@@ -154,18 +190,26 @@ describe('native push delivery', () => {
           attemptCount: 1,
         },
       ]),
+      isDeliverable: vi.fn(async () => true),
+      suppressClaim: vi.fn(),
       accepted: vi.fn(),
       failed: vi.fn(async () => undefined),
       unknown: vi.fn(),
       invalidateDevice: vi.fn(async () => undefined),
+      claimReceipts: vi.fn(async () => []),
     };
-    const provider = { send: vi.fn(async () => Promise.reject(new InvalidPushTokenError())) };
+    const provider = {
+      send: vi.fn(async () => Promise.reject(new InvalidPushTokenError())),
+      getReceipts: vi.fn(),
+    };
     const worker = new PushDeliveryWorker(
       {
         ...configuration,
         CONTENT_PUSH_DELIVERY_ENABLED: true,
         CONTENT_PUSH_DELIVERY_BATCH_SIZE: 10,
         CONTENT_PUSH_DELIVERY_INTERVAL_MS: 60_000,
+        CONTENT_PUSH_RECEIPT_INITIAL_DELAY_SECONDS: 900,
+        CONTENT_PUSH_RECEIPT_RETRY_DELAY_SECONDS: 300,
       } as ServiceConfiguration,
       repository as never,
       provider,
@@ -176,5 +220,92 @@ describe('native push delivery', () => {
     expect(repository.invalidateDevice).toHaveBeenCalledWith('device-1');
     expect(repository.failed).toHaveBeenCalledWith('attempt-1', 'DEVICE_NOT_REGISTERED', false);
     expect(repository.accepted).not.toHaveBeenCalled();
+  });
+
+  it('invalidates a device when Expo reports DeviceNotRegistered in a receipt', async () => {
+    const repository = {
+      materializeCandidates: vi.fn(async () => 0),
+      settleIneligible: vi.fn(),
+      claim: vi.fn(async () => []),
+      claimReceipts: vi.fn(async () => [
+        {
+          id: 'attempt-1',
+          deviceId: 'device-1',
+          providerTicketId: 'ticket-1',
+          receiptAttemptCount: 1,
+        },
+      ]),
+      confirmReceipt: vi.fn(),
+      failReceipt: vi.fn(),
+      retryReceipt: vi.fn(),
+      invalidateDevice: vi.fn(),
+    };
+    const provider = {
+      send: vi.fn(),
+      getReceipts: vi.fn(
+        async () =>
+          new Map([['ticket-1', { status: 'ERROR' as const, code: 'DEVICE_NOT_REGISTERED' }]]),
+      ),
+    };
+    const worker = new PushDeliveryWorker(
+      {
+        ...configuration,
+        CONTENT_PUSH_DELIVERY_ENABLED: true,
+        CONTENT_PUSH_DELIVERY_BATCH_SIZE: 10,
+        CONTENT_PUSH_DELIVERY_INTERVAL_MS: 60_000,
+        CONTENT_PUSH_RECEIPT_INITIAL_DELAY_SECONDS: 900,
+        CONTENT_PUSH_RECEIPT_RETRY_DELAY_SECONDS: 300,
+      } as ServiceConfiguration,
+      repository as never,
+      provider,
+    );
+
+    await worker.runOnce();
+
+    expect(repository.invalidateDevice).toHaveBeenCalledWith('device-1');
+    expect(repository.failReceipt).toHaveBeenCalledWith('attempt-1', 'DEVICE_NOT_REGISTERED');
+    expect(repository.confirmReceipt).not.toHaveBeenCalled();
+  });
+
+  it('revalidates a claimed notification before calling the provider', async () => {
+    const repository = {
+      materializeCandidates: vi.fn(async () => 0),
+      settleIneligible: vi.fn(),
+      claim: vi.fn(async () => [
+        {
+          id: 'attempt-1',
+          deviceId: 'device-1',
+          tokenCiphertext: 'ciphertext',
+          tokenIv: 'iv',
+          tokenAuthTag: 'tag',
+          title: 'MentalBridge',
+          notificationId: 'notification-1',
+          actionType: null,
+          actionTargetId: null,
+          attemptCount: 1,
+        },
+      ]),
+      isDeliverable: vi.fn(async () => false),
+      suppressClaim: vi.fn(),
+      claimReceipts: vi.fn(async () => []),
+    };
+    const provider = { send: vi.fn(), getReceipts: vi.fn() };
+    const worker = new PushDeliveryWorker(
+      {
+        ...configuration,
+        CONTENT_PUSH_DELIVERY_ENABLED: true,
+        CONTENT_PUSH_DELIVERY_BATCH_SIZE: 10,
+        CONTENT_PUSH_DELIVERY_INTERVAL_MS: 60_000,
+        CONTENT_PUSH_RECEIPT_INITIAL_DELAY_SECONDS: 900,
+        CONTENT_PUSH_RECEIPT_RETRY_DELAY_SECONDS: 300,
+      } as ServiceConfiguration,
+      repository as never,
+      provider,
+    );
+
+    await worker.runOnce();
+
+    expect(repository.suppressClaim).toHaveBeenCalledWith('attempt-1', 'NOTIFICATION_UNAVAILABLE');
+    expect(provider.send).not.toHaveBeenCalled();
   });
 });

@@ -17,7 +17,13 @@ export interface PushProviderMessage {
 
 export interface PushProvider {
   send(message: PushProviderMessage): Promise<string>;
+  getReceipts(ticketIds: readonly string[]): Promise<ReadonlyMap<string, PushReceiptResult>>;
 }
+
+export type PushReceiptResult =
+  | { readonly status: 'CONFIRMED' }
+  | { readonly status: 'ERROR'; readonly code: string }
+  | { readonly status: 'PENDING' };
 
 @Injectable()
 export class ExpoPushProvider implements PushProvider {
@@ -64,5 +70,54 @@ export class ExpoPushProvider implements PushProvider {
     if (payload.data?.details?.error === 'DeviceNotRegistered') throw new InvalidPushTokenError();
     if (payload.data?.status !== 'ok' || !payload.data.id) throw new Error('EXPO_REJECTED');
     return payload.data.id;
+  }
+
+  async getReceipts(ticketIds: readonly string[]): Promise<ReadonlyMap<string, PushReceiptResult>> {
+    if (ticketIds.length === 0) return new Map();
+    const controller = new AbortController();
+    const timeout = setTimeout(() => {
+      controller.abort();
+    }, this.config.CONTENT_PUSH_PROVIDER_TIMEOUT_MS);
+    let response: Response;
+    try {
+      response = await fetch(
+        new URL('/--/api/v2/push/getReceipts', this.config.EXPO_PUSH_BASE_URL),
+        {
+          method: 'POST',
+          headers: {
+            authorization: `Bearer ${this.config.EXPO_ACCESS_TOKEN ?? ''}`,
+            'content-type': 'application/json',
+            accept: 'application/json',
+          },
+          body: JSON.stringify({ ids: ticketIds }),
+          signal: controller.signal,
+        },
+      );
+    } catch {
+      throw new TransientPushProviderError('EXPO_RECEIPT_NETWORK');
+    } finally {
+      clearTimeout(timeout);
+    }
+    if (response.status === 408 || response.status === 429 || response.status >= 500)
+      throw new TransientPushProviderError(`EXPO_RECEIPT_${String(response.status)}`);
+    if (!response.ok) throw new Error(`EXPO_RECEIPT_${String(response.status)}`);
+    const payload = (await response.json()) as {
+      data?: Record<string, { status?: string; details?: { error?: string } }>;
+    };
+    const results = new Map<string, PushReceiptResult>();
+    for (const ticketId of ticketIds) {
+      const receipt = payload.data?.[ticketId];
+      if (!receipt) results.set(ticketId, { status: 'PENDING' });
+      else if (receipt.status === 'ok') results.set(ticketId, { status: 'CONFIRMED' });
+      else
+        results.set(ticketId, {
+          status: 'ERROR',
+          code:
+            receipt.details?.error === 'DeviceNotRegistered'
+              ? 'DEVICE_NOT_REGISTERED'
+              : 'PROVIDER_RECEIPT_REJECTED',
+        });
+    }
+    return results;
   }
 }

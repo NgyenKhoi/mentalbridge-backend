@@ -57,6 +57,10 @@ export class PushDeliveryWorker implements OnModuleInit, OnApplicationShutdown {
       const crypto = new PushTokenCrypto(this.config.CONTENT_PUSH_TOKEN_ENCRYPTION_KEY ?? '');
       for (const claim of claims) {
         try {
+          if (!(await this.repository.isDeliverable(claim.id))) {
+            await this.repository.suppressClaim(claim.id, 'NOTIFICATION_UNAVAILABLE');
+            continue;
+          }
           const ticketId = await this.provider.send({
             token: crypto.decrypt(claim.tokenCiphertext, claim.tokenIv, claim.tokenAuthTag),
             title: claim.title,
@@ -64,7 +68,11 @@ export class PushDeliveryWorker implements OnModuleInit, OnApplicationShutdown {
             actionType: claim.actionType,
             actionTargetId: claim.actionTargetId,
           });
-          await this.repository.accepted(claim.id, ticketId);
+          await this.repository.accepted(
+            claim.id,
+            ticketId,
+            this.config.CONTENT_PUSH_RECEIPT_INITIAL_DELAY_SECONDS,
+          );
         } catch (error) {
           if (error instanceof InvalidPushTokenError) {
             await this.repository.invalidateDevice(claim.deviceId);
@@ -76,6 +84,32 @@ export class PushDeliveryWorker implements OnModuleInit, OnApplicationShutdown {
           } else {
             await this.repository.failed(claim.id, 'PROVIDER_REJECTED', false);
           }
+        }
+      }
+      const receiptClaims = await this.repository.claimReceipts(
+        this.config.CONTENT_PUSH_DELIVERY_BATCH_SIZE,
+        this.config.CONTENT_PUSH_RECEIPT_RETRY_DELAY_SECONDS,
+      );
+      if (receiptClaims.length > 0) {
+        try {
+          const receipts = await this.provider.getReceipts(
+            receiptClaims.map((claim) => claim.providerTicketId),
+          );
+          for (const claim of receiptClaims) {
+            const receipt = receipts.get(claim.providerTicketId) ?? { status: 'PENDING' as const };
+            if (receipt.status === 'CONFIRMED') {
+              await this.repository.confirmReceipt(claim.id);
+            } else if (receipt.status === 'ERROR') {
+              if (receipt.code === 'DEVICE_NOT_REGISTERED')
+                await this.repository.invalidateDevice(claim.deviceId);
+              await this.repository.failReceipt(claim.id, receipt.code);
+            } else {
+              await this.repository.retryReceipt(claim.id, 'PROVIDER_RECEIPT_PENDING');
+            }
+          }
+        } catch {
+          for (const claim of receiptClaims)
+            await this.repository.retryReceipt(claim.id, 'PROVIDER_RECEIPT_UNAVAILABLE');
         }
       }
     } catch {

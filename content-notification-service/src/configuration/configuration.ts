@@ -81,6 +81,20 @@ const environmentSchema = z
       .default(60_000),
     CONTENT_PUSH_DELIVERY_BATCH_SIZE: z.coerce.number().int().min(1).max(100).default(50),
     CONTENT_PUSH_PROVIDER_TIMEOUT_MS: z.coerce.number().int().min(500).max(10_000).default(3_000),
+    CONTENT_PUSH_RECEIPT_INITIAL_DELAY_SECONDS: z.coerce
+      .number()
+      .int()
+      .min(60)
+      .max(86_400)
+      .default(900),
+    CONTENT_PUSH_RECEIPT_RETRY_DELAY_SECONDS: z.coerce
+      .number()
+      .int()
+      .min(60)
+      .max(3_600)
+      .default(300),
+    CONTENT_PUSH_DEVICE_RATE_LIMIT: z.coerce.number().int().min(1).max(1_000).default(30),
+    CONTENT_PUSH_DEVICE_RATE_WINDOW_SECONDS: z.coerce.number().int().min(1).max(3_600).default(60),
     EXPO_PUSH_BASE_URL: z.url().default('https://exp.host'),
     EXPO_ACCESS_TOKEN: z.string().min(1).optional(),
     CONTENT_PUSH_TOKEN_ENCRYPTION_KEY: z.string().optional(),

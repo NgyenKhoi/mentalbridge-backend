@@ -163,8 +163,11 @@ Native push delivery is disabled by default. Registration requires
 `CONTENT_PUSH_TOKEN_ENCRYPTION_KEY` (base64-encoded 32-byte key). Provider work
 also requires `CONTENT_PUSH_DELIVERY_ENABLED=true`, `EXPO_ACCESS_TOKEN`, and the
 same encryption key. `EXPO_PUSH_BASE_URL`, `CONTENT_PUSH_PROVIDER_TIMEOUT_MS`,
-`CONTENT_PUSH_DELIVERY_INTERVAL_MS`, and `CONTENT_PUSH_DELIVERY_BATCH_SIZE` are
-bounded operational overrides. Disable the worker before rolling back; additive
+`CONTENT_PUSH_DELIVERY_INTERVAL_MS`, `CONTENT_PUSH_DELIVERY_BATCH_SIZE`, receipt
+delays, and the per-owner device-command rate/window are bounded operational
+overrides. Accepted Expo tickets are checked through delayed bounded receipts;
+`DeviceNotRegistered` invalidates the registration, while a successful receipt
+does not claim physical display. Disable the worker before rolling back; additive
 registration and attempt evidence remains intact. CI uses a mocked provider and
 does not constitute staging or real-device delivery evidence.
 MB-548 adds a separate, opt-in appointment email reminder. A minimized

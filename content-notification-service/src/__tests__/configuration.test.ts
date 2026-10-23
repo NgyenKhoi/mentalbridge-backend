@@ -51,6 +51,10 @@ describe('configuration', () => {
     expect(configuration.CONSULTATION_SERVICE_URL).toBe('http://localhost:8082');
     expect(configuration.IDENTITY_SERVICE_URL).toBe('http://localhost:8080');
     expect(configuration.CONTENT_PUSH_DELIVERY_ENABLED).toBe(false);
+    expect(configuration.CONTENT_PUSH_RECEIPT_INITIAL_DELAY_SECONDS).toBe(900);
+    expect(configuration.CONTENT_PUSH_RECEIPT_RETRY_DELAY_SECONDS).toBe(300);
+    expect(configuration.CONTENT_PUSH_DEVICE_RATE_LIMIT).toBe(30);
+    expect(configuration.CONTENT_PUSH_DEVICE_RATE_WINDOW_SECONDS).toBe(60);
   });
 
   it('normalizes configured CORS origins', () => {

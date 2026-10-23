@@ -45,6 +45,7 @@ const specialistNotificationPreferences = requiredMigration(
   '24_add_specialist_notification_preferences.sql',
 );
 const nativePushDelivery = requiredMigration('28_add_native_push_delivery.sql');
+const hardenedNativePushDelivery = requiredMigration('29_harden_native_push_delivery.sql');
 const review1Seed = await readFile(
   new URL('../migrations/review1/1_seed_review1_controlled_resource.sql', import.meta.url),
   'utf8',
@@ -103,6 +104,11 @@ assert.match(
   nativePushDelivery,
   /state IN \('PENDING', 'PROCESSING', 'ACCEPTED', 'FAILED', 'SUPPRESSED', 'UNKNOWN'\)/,
 );
+assert.match(hardenedNativePushDelivery, /uq_push_device_active_installation\b/);
+assert.match(hardenedNativePushDelivery, /ADD COLUMN receipt_attempt_count\b/);
+assert.match(hardenedNativePushDelivery, /ADD COLUMN delivery_eligible_from_at\b/);
+assert.match(hardenedNativePushDelivery, /'CONFIRMED'/);
+assert.match(hardenedNativePushDelivery, /CREATE TABLE push_device_command_rate_limit\b/);
 for (const table of [
   'resource_eligibility_publication',
   'resource_eligibility_declaration',
