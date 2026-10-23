@@ -1,5 +1,12 @@
 # MentalBridge policy register
 
+[Companion Voice policy v1](companion-voice-policy-v1.md) and its
+[machine-readable snapshot](companion-voice-policy-v1.json) are the MB-755
+approved target under [ADR 0046](../adr/0046-ai-voice-companion-contract.md).
+They freeze finite PLUS/PREMIUM voice quotas and independent Care voice consent.
+All voice APIs remain planned; existing text policy, consent and quotas remain
+unchanged. Provider/account readiness and speech quality are separate gates.
+
 [Community chat policy v1](community-chat-policy-v1.md) is the MB-684 candidate
 under [MB-COMMUNITY-CHAT-001](../adr/0042-community-chat-contract.md).
 It is proposed for owner/security approval, including numeric defaults and
