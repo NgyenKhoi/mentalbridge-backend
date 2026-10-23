@@ -11,6 +11,15 @@ All language-neutral integration contracts live under this directory. Service-lo
 
 ## OpenAPI lifecycle
 
+MB-755 freezes the accepted [AI Voice target](proposals/companion-voice-v1.openapi.json)
+under [ADR 0046](../docs/adr/0046-ai-voice-companion-contract.md). Journal/AI voice,
+Care's separate voice consent and narrow owner authorization reads are all
+`planned`; no active OpenAPI or runtime handler is promoted. Its closed worker
+envelope, policy schema, lifecycle, synthetic fixtures and executable contract
+tests are linked in the [proposal index](proposals/README.md). The approved
+target is separate from text-chat quotas and Consultation appointment/media
+contracts. The existing Journal CI lane runs the new proposal tests.
+
 MB-684's accepted [Community chat baseline](proposals/community-chat-v1.openapi.json)
 remains frozen in proposals with its original planned markers. Its closed
 [commands](proposals/community-chat-command-v1.schema.json),

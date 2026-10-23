@@ -1,5 +1,14 @@
 # Architecture
 
+The accepted MB-755 [AI Voice contract](adr/0046-ai-voice-companion-contract.md)
+adds a planned Journal/AI-owned modality with Care dual consent and current
+Consultation entitlement. A dedicated Node agent uses isolated LiveKit Cloud
+media/dispatch and Vietnamese speech inference; its business turns use
+Journal/AI REST and the existing approved Bedrock route. This narrow provider
+media exception introduces no general business WebSocket API, Kafka dependency,
+new financial owner or access to ADR 0039 specialist rooms. No voice runtime is
+activated by the contract-first publication.
+
 Community peer chat is an accepted scoped extension in
 [ADR 0042 / MB-COMMUNITY-CHAT-001](adr/0042-community-chat-contract.md).
 Community owns its peer messages/membership in its own PostgreSQL;
