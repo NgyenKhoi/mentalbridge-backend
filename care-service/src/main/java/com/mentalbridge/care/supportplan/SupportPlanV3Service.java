@@ -5,6 +5,7 @@ import java.time.Clock;
 import java.time.Instant;
 import java.time.LocalDate;
 import java.time.LocalTime;
+import java.time.ZoneId;
 import java.util.ArrayList;
 import java.util.Comparator;
 import java.util.LinkedHashMap;
@@ -111,6 +112,22 @@ public class SupportPlanV3Service {
 		return plans.findAllByUserIdAndStatusIn(userId, List.of("ACTIVE", "PAUSED", "DRAFT")).stream()
 				.min(Comparator.comparing(plan -> "DRAFT".equals(plan.status())))
 				.map(plan -> new PlanStatusView(plan.id(), plan.status()));
+	}
+
+	@Transactional(readOnly = true)
+	public Optional<PlanHistoryStatusView> latestHistoryStatus(UUID userId) {
+		return plans.findTerminalHistory(userId, null, null, 1).stream().findFirst()
+				.map(plan -> new PlanHistoryStatusView(plan.id(), plan.status(), plan.completedAt()));
+	}
+
+	@Transactional
+	public Optional<CurrentDayView> currentDay(UUID userId, ZoneId requestedZone) {
+		return plans.findByUserIdAndStatusInForUpdate(userId, List.of("ACTIVE", "PAUSED"))
+				.map(plan -> {
+					ZoneId zone = requestedZone == null ? ZoneId.of(activities.planTimezone(plan)) : requestedZone;
+					LocalDate date = LocalDate.ofInstant(clock.instant(), zone);
+					return new CurrentDayView(view(plan), date, zone.getId(), occurrences(userId, date, date).occurrences());
+				});
 	}
 
 	@Transactional(readOnly = true)
@@ -382,6 +399,9 @@ public class SupportPlanV3Service {
 			CompletionEvidenceView completionEvidence) { }
 
 	public record PlanStatusView(UUID supportPlanId, String status) { }
+	public record PlanHistoryStatusView(UUID supportPlanId, String status, Instant completedAt) { }
+	public record CurrentDayView(SupportPlanV3View plan, LocalDate localDate, String timeZone,
+			List<ActionOccurrenceView> occurrences) { }
 	public record SupportPlanV3View(UUID supportPlanId, int modelVersion, String planPolicyVersion, String representationMode,
 			String status, long version, SafetyView safety, List<PlanFocusView> focuses, Instant createdAt, Instant updatedAt,
 			Instant activatedAt, Instant completedAt, String completionReason, Instant supersededAt,

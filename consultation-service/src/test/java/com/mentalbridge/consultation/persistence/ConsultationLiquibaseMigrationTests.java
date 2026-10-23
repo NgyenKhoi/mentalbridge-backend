@@ -6,6 +6,8 @@ import static org.assertj.core.api.Assertions.assertThatThrownBy;
 import java.time.OffsetDateTime;
 import java.util.UUID;
 
+import javax.sql.DataSource;
+
 import org.junit.jupiter.api.Test;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.boot.test.context.SpringBootTest;
@@ -16,11 +18,42 @@ import org.springframework.jdbc.core.simple.JdbcClient;
 import com.mentalbridge.consultation.ConsultationTestProperties;
 import com.mentalbridge.consultation.TestcontainersConfiguration;
 
+import liquibase.Contexts;
+import liquibase.LabelExpression;
+import liquibase.Liquibase;
+import liquibase.database.DatabaseFactory;
+import liquibase.database.jvm.JdbcConnection;
+import liquibase.resource.ClassLoaderResourceAccessor;
+
 @Import(TestcontainersConfiguration.class)
 @SpringBootTest
 class ConsultationLiquibaseMigrationTests extends ConsultationTestProperties {
 
 	@Autowired JdbcClient jdbc;
+	@Autowired DataSource dataSource;
+
+	@Test
+	void appliedLegacyHistoryValidatesAndAnUpgradeDoesNotReplayIt() throws Exception {
+		var baseline = ConsultationLiquibaseChangelogTests.legacyHistory();
+		var before = jdbc.sql("select * from databasechangelog order by orderexecuted").query().listOfRows();
+		assertThat(before).hasSizeGreaterThanOrEqualTo(baseline.size());
+		for (int index = 0; index < baseline.size(); index++) {
+			var expected = baseline.get(index);
+			assertThat(before.get(index)).containsEntry("id", expected.id()).containsEntry("author", expected.author())
+					.containsEntry("filename", expected.filename()).containsEntry("md5sum", expected.checksum())
+					.containsEntry("orderexecuted", index + 1).containsEntry("exectype", "EXECUTED");
+		}
+		try (var resources = new ClassLoaderResourceAccessor();
+				var liquibase = new Liquibase("db/changelog/db.changelog-master.yaml", resources,
+						DatabaseFactory.getInstance()
+								.findCorrectDatabaseImplementation(new JdbcConnection(dataSource.getConnection())))) {
+			liquibase.validate();
+			assertThat(liquibase.listUnrunChangeSets(new Contexts(), new LabelExpression())).isEmpty();
+			liquibase.update(new Contexts(), new LabelExpression());
+		}
+		assertThat(jdbc.sql("select * from databasechangelog order by orderexecuted").query().listOfRows())
+				.isEqualTo(before);
+	}
 
 	@Test
 	void migrationCreatesConsultationTablesInPublic() {

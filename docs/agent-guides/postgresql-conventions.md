@@ -64,3 +64,22 @@ Do not use descriptions that merely repeat the name, such as â€œappointment ID.â
 - Pagination is deterministic and bounded. Use cursor/keyset pagination for growing histories and include a unique tie-breaker.
 - Never expose persistence entities directly from REST or messages.
 - Repository integration tests run against real PostgreSQL and verify migration application, constraints, locking, and query mapping. Review checks verify that the Markdown data dictionary covers all application-owned tables/fields.
+
+### Consultation migration names
+
+After MB-717, new Consultation SQL filenames use UTC
+`yyyyMMddHHmmss-lowercase-kebab-description.sql`, with valid calendar timestamps
+and no repeated timestamp prefix. Append an explicit master include after the
+frozen legacy history; timestamp naming does not authorize sorting or moving old
+includes. New changeset IDs should include the same timestamp and description.
+
+The 29 existing changesets retain their full `id + author + filepath` identities,
+version-9 checksums and execution order. Both legacy `021` filenames are retained:
+their full IDs and paths differ, and both appear in the applied history. Numeric
+prefix equality is not Liquibase identity equality. Do not repair this cosmetic
+ambiguity by renaming applied files or editing migration-history rows. This
+scoped change does not renumber other services' existing migration histories.
+
+See the [Consultation README](../../consultation-service/README.md#migration-naming-and-applied-history-mb-717)
+for the enforced naming check and the [MB-717 evidence](../story-mb-717-consultation-migration-names.md)
+for the compatibility decision and validation commands.
