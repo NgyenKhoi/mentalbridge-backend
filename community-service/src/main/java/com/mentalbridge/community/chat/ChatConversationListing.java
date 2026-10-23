@@ -20,11 +20,14 @@ class ChatConversationListing {
     private final ChatUnread unread;
     private final ChatCursors cursors;
     private final Clock clock;
+    private final ChatHistoryVisibility visibility;
     ChatConversationListing(ChatConversationRepository conversations, ChatMembershipRepository memberships,
             CommunityChatProfiles profiles, ChatPrivacyRepository privacy, ChatGroupAccess groups,
-            ChatGroupMessageTransactions groupMessages, ChatMessageRepository messages, ChatUnread unread, ChatCursors cursors, Clock clock) {
+            ChatGroupMessageTransactions groupMessages, ChatMessageRepository messages, ChatUnread unread, ChatCursors cursors,
+            Clock clock, ChatHistoryVisibility visibility) {
         this.conversations = conversations; this.memberships = memberships; this.profiles = profiles; this.privacy = privacy;
         this.groups = groups; this.groupMessages = groupMessages; this.messages = messages; this.unread = unread; this.cursors = cursors; this.clock = clock;
+        this.visibility = visibility;
     }
     @Transactional(readOnly = true)
     Snapshot snapshot(UUID subject) {
@@ -58,16 +61,22 @@ class ChatConversationListing {
             if (conversation.kind.equals("GROUP")) {
                 if (memberships.findByConversationIdAndProfileIdAndDepartedAtIsNull(id, actor.id()).isEmpty()) continue;
                 var context = groups.lock(id, authorized, true);
+                var state = visibility.state(id, actor.id());
+                long floor = Math.max(context.member().joinedAfterSequence, state.clearedThroughSequence);
+                var recent = messages.groupActivity(id, groupMessages.visible(context), floor, clock.instant());
+                if (state.clearedAt != null && recent.isEmpty()) continue;
                 view = groupMessages.conversation(context);
-                activity = messages.groupActivity(id, groupMessages.visible(context), context.member().joinedAfterSequence, clock.instant())
-                        .orElse(context.member().joinedAt);
+                activity = recent.orElse(context.member().joinedAt);
             } else {
                 if (!conversation.state.equals("ACTIVE")) continue;
                 var peer = current.get(conversation.other(actor.id()));
                 if (peer == null || !peer.active() || !active.contains(peer.subject()) || privacy.restricted(List.of(peer.id())) || privacy.blocked(actor.id(), peer.id())) continue;
+                var state = visibility.state(id, actor.id());
+                var recent = messages.directActivity(id, state.clearedThroughSequence, clock.instant());
+                if (state.clearedAt != null && recent.isEmpty()) continue;
                 view = new ChatModels.Conversation(id, "DIRECT", "ACTIVE", List.of(new ChatModels.Peer("AVAILABLE", actor.id(), actor.displayName()),
                         new ChatModels.Peer("AVAILABLE", peer.id(), peer.displayName())), unread.count(id, actor.id()), Long.toString(conversation.managementVersion));
-                activity = messages.directActivity(id, clock.instant()).orElse(conversation.activatedAt);
+                activity = recent.orElse(conversation.activatedAt);
             }
             if (activity.isBefore(before.time()) || (activity.equals(before.time()) && id.toString().compareTo(before.id().toString()) < 0)) selected.add(new Row(id, activity, view));
         }

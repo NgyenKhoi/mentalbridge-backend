@@ -200,6 +200,27 @@ existing cell. Kafka, Redis, logs and errors never carry the removed content.
 Already captured report evidence remains unchanged and isolated inside the report
 case flow; retraction creates no new report snapshot or transcript authority.
 
+### Clear only for me
+
+A current direct participant or current active-group member may clear a
+conversation only from their own view. The confirmation must say that other
+participants keep their history. Community atomically records the current
+server sequence as that profile's private cutoff; clients cannot submit a time,
+sequence, peer selector or deletion scope.
+
+The actor's inbox row disappears on every device and messages at or below the
+cutoff become unavailable through REST history, exact projections, replay,
+reports, notification authorization and previously issued cursors. Unread and
+the private read reference are computed only above the cutoff. Other users'
+history, unread and live subscription remain unchanged, and no peer-facing fact
+or message announces the clear.
+
+The relationship or membership remains active. The first later eligible message
+from either side makes the row visible again with only post-cutoff history.
+Blocked or otherwise hidden traffic cannot do so. An idempotent retry preserves
+the original cutoff; a fresh deliberate command may advance it. Reconnect,
+offline queues, retraction and send retries cannot resurrect pre-cutoff content.
+
 ## Presence, typing and receipts
 
 Default `presenceVisible=false`, `typingVisible=false`, `readReceiptsVisible=false`.

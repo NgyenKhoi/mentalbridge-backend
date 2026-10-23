@@ -341,6 +341,9 @@ CREATE TABLE community.community_chat_read_state (
   conversation_id uuid NOT NULL REFERENCES community.community_chat_conversation(id) ON DELETE CASCADE,
   profile_id uuid NOT NULL REFERENCES community.community_profile(id),
   last_read_sequence bigint NOT NULL DEFAULT 0 CHECK (last_read_sequence >= 0),
+  cleared_through_sequence bigint NOT NULL DEFAULT 0 CHECK (cleared_through_sequence >= 0),
+  cleared_at timestamptz,
+  CHECK (last_read_sequence >= cleared_through_sequence),
   PRIMARY KEY (conversation_id, profile_id)
 );
 

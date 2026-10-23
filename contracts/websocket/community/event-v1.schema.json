@@ -2,7 +2,7 @@
   "$schema": "https://json-schema.org/draft/2020-12/schema",
   "$id": "https://mentalbridge.dev/contracts/websocket/community/event-v1.schema.json",
   "title": "community-chat-realtime-v1.schema.json",
-  "description": "MB-689 message/private-read transport, MB-690 opt-in privacy-aware presence and MB-745 authorized message replacement. Typing and shared receipt variants remain deferred.",
+  "description": "MB-689 message/private-read transport, MB-690 opt-in privacy-aware presence, MB-745 authorized message replacement and MB-746 private conversation invalidation. Typing and shared receipt variants remain deferred.",
   "oneOf": [
     {
       "type": "object",

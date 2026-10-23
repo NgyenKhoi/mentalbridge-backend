@@ -287,6 +287,23 @@ export class CommunityOwnerFixture {
       },
     });
   }
+  cleared(recipient: string): CommunityFact {
+    return factSchema.parse({
+      messageId: randomUUID(),
+      messageType: 'community.chat.fact',
+      schemaVersion: '1.0',
+      producer: 'community-service',
+      occurredAt: new Date().toISOString(),
+      correlationId: randomUUID(),
+      aggregateId: communityConversation,
+      aggregateVersion: String(this.messages.length + 3),
+      payload: {
+        kind: 'CONVERSATION_CLEARED',
+        conversationId: communityConversation,
+        recipientRoutingReference: recipient,
+      },
+    });
+  }
   fact(message?: CommunityMessage): CommunityFact {
     return factSchema.parse({
       messageId: randomUUID(),

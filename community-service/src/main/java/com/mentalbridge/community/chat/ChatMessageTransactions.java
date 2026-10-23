@@ -23,12 +23,15 @@ class ChatMessageTransactions {
     private final ChatUnread unread;
     private final Clock clock;
     private final ChatDeliveryCursor delivery;
+    private final ChatHistoryVisibility visibility;
     ChatMessageTransactions(CommunityChatProfiles profiles, ChatAccess access, ChatConversationRepository conversations,
             ChatMessageRepository messages, ChatCommandRepository commands, ChatReadStateRepository reads,
-            ChatCrypto crypto, ChatFacts facts, ChatUnread unread, Clock clock, ChatDeliveryCursor delivery) {
+            ChatCrypto crypto, ChatFacts facts, ChatUnread unread, Clock clock, ChatDeliveryCursor delivery,
+            ChatHistoryVisibility visibility) {
         this.profiles = profiles; this.access = access; this.conversations = conversations; this.messages = messages;
         this.commands = commands; this.reads = reads; this.crypto = crypto; this.facts = facts; this.unread = unread; this.clock = clock;
         this.delivery = delivery;
+        this.visibility = visibility;
     }
     @Transactional
     ChatModels.SendResult send(UUID subject, UUID conversationId, UUID peerId, UUID key, ChatModels.SendMessage input, UUID correlation) {
@@ -71,14 +74,15 @@ class ChatMessageTransactions {
     ChatModels.Page<ChatModels.Message> history(UUID subject, UUID conversationId, UUID peerId, String cursor, int limit) {
         var context = context(subject, conversationId, peerId);
         var purpose = historyPurpose(context);
-        long after = 0; long through = context.conversation().lastSequence;
+        long floor = visibility.floor(conversationId, context.actor().id());
+        long after = floor; long through = context.conversation().lastSequence;
         if (cursor != null) {
             if (cursor.isBlank() || cursor.length() > 1024) throw ChatException.invalid();
             try {
                 var parts = crypto.open(purpose, cursor).split("/", -1);
                 if (parts.length != 2) throw ChatException.target();
                 after = Long.parseLong(parts[0]); through = Long.parseLong(parts[1]);
-                if (after < 0 || through < after || through > context.conversation().lastSequence) throw ChatException.target();
+                if (after < floor || through < after || through > context.conversation().lastSequence) throw ChatException.target();
             } catch (RuntimeException exception) { throw ChatException.target(); }
         }
         var eligible = messages.history(conversationId, after, through, clock.instant(), limit + 1);
@@ -90,7 +94,8 @@ class ChatMessageTransactions {
     @Transactional
     ChatModels.ReadResult read(UUID subject, UUID conversationId, UUID peerId, UUID messageId, UUID correlation) {
         var context = context(subject, conversationId, peerId);
-        var message = messages.findById(messageId).filter(value -> value.conversationId.equals(conversationId) && value.visible(clock.instant()))
+        var message = messages.findById(messageId).filter(value -> value.conversationId.equals(conversationId) && value.visible(clock.instant())
+                && visibility.visible(conversationId, context.actor().id(), value))
                 .orElseThrow(ChatException::target);
         var state = reads.findById(new ChatReadStateEntity.ReadId(conversationId, context.actor().id()))
                 .orElseGet(() -> new ChatReadStateEntity(conversationId, context.actor().id()));
@@ -107,13 +112,15 @@ class ChatMessageTransactions {
     ChatModels.Message projection(UUID subject, UUID conversation, UUID peer, UUID id) {
         var context = context(subject, conversation, peer);
         return message(messages.findById(id).filter(value -> value.conversationId.equals(conversation)
-                && value.visible(clock.instant())).orElseThrow(ChatException::target), context);
+                && value.visible(clock.instant()) && visibility.visible(conversation, context.actor().id(), value))
+                .orElseThrow(ChatException::target), context);
     }
     @Transactional
     ChatModels.Message retract(UUID subject, UUID conversationId, UUID peerId, UUID messageId, UUID correlation) {
         var context = context(subject, conversationId, peerId);
         var message = messages.lock(messageId).filter(value -> value.conversationId.equals(conversationId)
-                && value.senderProfileId.equals(context.actor().id()) && value.visible(clock.instant()))
+                && value.senderProfileId.equals(context.actor().id()) && value.visible(clock.instant())
+                && visibility.visible(conversationId, context.actor().id(), value))
                 .orElseThrow(ChatException::target);
         if (message.state.equals("ACTIVE")) {
             var now = clock.instant().truncatedTo(ChronoUnit.MICROS);
@@ -129,7 +136,8 @@ class ChatMessageTransactions {
     ChatDeliveryCursor.Projection replay(UUID subject, UUID conversation, UUID peer, String cursor) {
         var context = context(subject, conversation, peer);
         var purpose = historyPurpose(context) + ":delivery";
-        long after = delivery.after(purpose, cursor, 0, context.conversation().lastSequence);
+        long floor = visibility.floor(conversation, context.actor().id());
+        long after = delivery.after(purpose, cursor, floor, context.conversation().lastSequence);
         var eligible = cursor == null ? List.<ChatMessageEntity>of()
                 : messages.history(conversation, after, context.conversation().lastSequence, clock.instant(), 51);
         return delivery.page(purpose, after, eligible, unread.result(conversation, context.actor().id()));
@@ -137,13 +145,13 @@ class ChatMessageTransactions {
     private Context context(UUID subject, UUID conversationId, UUID peerId) {
         var actor = profiles.bySubject(subject).orElseThrow(ChatException::target);
         var pair = access.pair(actor.id(), peerId);
-        var conversation = conversations.findById(conversationId).orElseThrow(ChatException::target);
+        var conversation = conversations.lock(conversationId).orElseThrow(ChatException::target);
         if (!conversation.state.equals("ACTIVE") || !conversation.other(actor.id()).equals(peerId)) throw ChatException.target();
         return new Context(conversation, pair.stream().filter(p -> p.id().equals(actor.id())).findFirst().orElseThrow(),
                 pair.stream().filter(p -> p.id().equals(peerId)).findFirst().orElseThrow());
     }
     private ChatModels.SendResult saved(ChatMessageEntity value, Context context) {
-        if (!value.readable(clock.instant())) throw ChatException.conflict();
+        if (!value.readable(clock.instant()) || !visibility.visible(value.conversationId, context.actor().id(), value)) throw ChatException.conflict();
         return new ChatModels.SendResult(message(value, context), "SAVED", "UNCONFIRMED");
     }
     private ChatModels.Message message(ChatMessageEntity value, Context context) {
@@ -155,7 +163,8 @@ class ChatMessageTransactions {
                 value.state, content, value.createdAt, value.retractedAt);
     }
     private String historyPurpose(Context context) {
-        return context.actor().id() + ":messages:" + context.conversation().id + ":" + access.privacy(context.actor().id()).visibilityEpoch;
+        return context.actor().id() + ":messages:" + context.conversation().id + ":" + access.privacy(context.actor().id()).visibilityEpoch
+                + ":" + visibility.cursorScope(context.conversation().id, context.actor().id());
     }
     private String contentPurpose(UUID conversation, UUID message, UUID sender) { return "message:" + conversation + ":" + message + ":" + sender; }
     private record Context(ChatConversationEntity conversation, Profile actor, Profile peer) {}

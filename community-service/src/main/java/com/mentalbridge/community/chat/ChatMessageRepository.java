@@ -22,8 +22,8 @@ interface ChatMessageRepository extends JpaRepository<ChatMessageEntity, UUID> {
             and ((m.state = 'ACTIVE' and m.content_ciphertext is not null and m.expires_at > :now) or m.state = 'RETRACTED')
             """, nativeQuery = true)
     Optional<Instant> groupActivity(@Param("group") UUID group, @Param("visible") List<UUID> visible, @Param("floor") long floor, @Param("now") Instant now);
-    @Query("select max(m.createdAt) from ChatMessageEntity m where m.conversationId = :id and ((m.state = 'ACTIVE' and m.contentCiphertext is not null and m.expiresAt > :now) or m.state = 'RETRACTED')")
-    Optional<Instant> directActivity(@Param("id") UUID id, @Param("now") Instant now);
+    @Query("select max(m.createdAt) from ChatMessageEntity m where m.conversationId = :id and m.serverSequence > :floor and ((m.state = 'ACTIVE' and m.contentCiphertext is not null and m.expiresAt > :now) or m.state = 'RETRACTED')")
+    Optional<Instant> directActivity(@Param("id") UUID id, @Param("floor") long floor, @Param("now") Instant now);
     @Query(value = """
             select m.* from community_chat_message m join community_chat_membership s on s.conversation_id = m.conversation_id
             and s.id = m.sender_membership_id and s.profile_id = m.sender_profile_id and m.server_sequence > s.joined_after_sequence
@@ -68,10 +68,11 @@ interface ChatMessageRepository extends JpaRepository<ChatMessageEntity, UUID> {
             @Param("read") long read, @Param("now") Instant now);
     @Query(value = """
             select * from community_chat_message where conversation_id = :conversation
-            and server_sequence <= :read and ((state = 'ACTIVE' and content_ciphertext is not null and expires_at > :now) or state = 'RETRACTED')
+            and server_sequence > :floor and server_sequence <= :read and ((state = 'ACTIVE' and content_ciphertext is not null and expires_at > :now) or state = 'RETRACTED')
             order by server_sequence desc limit 1
             """, nativeQuery = true)
-    Optional<ChatMessageEntity> lastRead(@Param("conversation") UUID conversation, @Param("read") long read, @Param("now") Instant now);
+    Optional<ChatMessageEntity> lastRead(@Param("conversation") UUID conversation, @Param("floor") long floor,
+            @Param("read") long read, @Param("now") Instant now);
     @Modifying(clearAutomatically = true, flushAutomatically = true)
     @Query(value = """
             update community_chat_message set content_ciphertext = null, purged_at = :now

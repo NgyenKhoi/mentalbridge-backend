@@ -52,6 +52,7 @@ class CommunityChatContractTests {
                 }
                 assertThat(operation.getSecurity()).anySatisfy(auth -> assertThat(auth).containsKey("BearerAuth"));
                 if (!source.path("paths").has(path)) return;
+                if (!source.path("paths").path(path).has(method.name().toLowerCase())) return;
                 var expected = source.path("paths").path(path).path(method.name().toLowerCase()).deepCopy();
                 var parameters = mapper.createArrayNode();
                 for (var parameter : expected.path("parameters")) {
@@ -79,11 +80,11 @@ class CommunityChatContractTests {
     void promotedFactsPreserveTheAcceptedClosedContract() throws Exception {
         var baseline = mapper.readTree(Files.readString(Path.of("..", "contracts", "proposals", "community-chat-fact-v1.schema.json")));
         var active = mapper.readTree(Files.readString(Path.of("..", "contracts", "events", "community", "community-chat-fact-v1.schema.json")));
-        assertThat(active.path("oneOf").size()).isEqualTo(baseline.path("oneOf").size() + 2);
+        assertThat(active.path("oneOf").size()).isEqualTo(baseline.path("oneOf").size() + 3);
         for (var variant : baseline.path("oneOf"))
             assertThat(java.util.stream.StreamSupport.stream(active.path("oneOf").spliterator(), false)
                     .anyMatch(variant::equals)).isTrue();
-        assertThat(active.path("oneOf").findValuesAsText("const")).contains("MESSAGE_RETRACTED");
+        assertThat(active.path("oneOf").findValuesAsText("const")).contains("MESSAGE_RETRACTED", "CONVERSATION_CLEARED");
         var examples = mapper.readTree(Files.readString(Path.of("..", "contracts", "proposals", "community-chat-v1.examples.json")));
         for (var fact : examples.path("facts")) {
             assertThat(ChatWireContracts.validFact(fact.toString())).isTrue();
