@@ -2,7 +2,9 @@
 
 Task: [MB-718](https://vunguyenkhoi47.atlassian.net/browse/MB-718).
 Original split baseline: `b7f225e2`, backend `dev` after merged MB-717 PR #221.
-Current synchronized base: `752ed16b`, including merged MB-672 PR #223.
+Current synchronized base: `2ac6d3d65199ba8c7657fa489e1f44333b575cfd`, including
+merged MB-676 PR #218. Merge commit `711d0f06` preserves the published review
+history while resolving the traceability conflict into the correct story file.
 Branch: `docs/database-split-shared-hotspots-(MB-718)`.
 
 ## Design and scope
@@ -31,7 +33,7 @@ order preserve the original append order, including nonmonotonic dates.
 | --- | --- | --- |
 | `docs/database/postgresql-field-data-dictionary.md` | Five `docs/database/postgresql/<owning-service>.md` files and `shared-concepts.md` | [Field dictionary router](database/postgresql-field-data-dictionary.md), including all legacy headings |
 | `docs/domain-model/relational/postgresql-logical-schema.sql` | Five `docs/domain-model/relational/<owning-service>.sql` files | [Comment-only SQL router](domain-model/relational/postgresql-logical-schema.sql) and [linked model index](domain-model/relational/README.md) |
-| `docs/requirements-traceability.md` | 57 historical story files, `baseline.md` and `decisions.md` under `docs/requirements-traceability/`; MB-718 adds its own story record | [Traceability router](requirements-traceability.md), preserving six old section headings and related-story aliases, plus a stable directory link for new stories |
+| `docs/requirements-traceability.md` | 57 original historical story files plus the newly merged MB-676 record, `baseline.md` and `decisions.md` under `docs/requirements-traceability/`; MB-718 adds its own story record | [Traceability router](requirements-traceability.md), preserving six old section headings and related-story aliases, plus a stable directory link for new stories |
 
 Owner dictionaries link to their matching logical SQL, module README and
 executable migration history. Shared guides, data-model navigation and existing
@@ -63,6 +65,34 @@ split maps remain supporting artifacts under `.task-tools/mb718-*`.
 The same audit also passes against synchronized base `752ed16b`; MB-672 changed
 none of the three original shared sources.
 
+After the request-changes review, the audit also passes against exact refreshed
+base `2ac6d3d65199ba8c7657fa489e1f44333b575cfd`. It checks 532 traceability
+nonblank lines, including all five MB-676 lines and the unchanged evidence link
+rebased into [the MB-676 story](requirements-traceability/stories/mb-676.md).
+The evidence file from `dev` remains unchanged at
+[mb-676-reminder-overview.md](mb-676-reminder-overview.md).
+
+## Request-changes reconciliation
+
+The repository gate now runs the preservation audit automatically when its
+supplied base has the old SQL monolith and the working tree has the split
+router. It uses that exact `BaseSha`, so CI covers additions merged after the
+original split baseline. Branches already based on the split skip this one-off
+exact comparison, allowing normal owner schema evolution.
+
+A real temporary Git-repository regression reproduces the stale-base bug:
+the old baseline passes when MB-676 is missing, the refreshed baseline rejects
+all five missing lines, the correctly rebased story passes, and an altered
+evidence target fails.
+
+The pending deltas from #222, #216 and #220 are mapped into eight owner/story
+destinations as [SHA-pinned adoption packets](reconciliation/mb-718/README.md).
+For each feature, the verifier combines its authored monolith delta with current
+`dev`, applies the corresponding owner/story patch in a disposable directory,
+and proves SQL/content/link preservation. These pending changes are not applied
+to MB-718's active models or another author's branch. Owners still adopt the
+packets after integrator coordination; no merge-order approval is claimed.
+
 ## Follow-up review and implementation
 
 The fresh review on 2026-10-23 found and fixed two SQL policy defects:
@@ -74,7 +104,7 @@ The fresh review on 2026-10-23 found and fixed two SQL policy defects:
   mistaken for table/foreign-key declarations. Literal bodies are masked for
   structural checks while the SQL router remains strictly comment-only.
 
-Regression cases cover both findings. Three preservation-verifier regressions
+Regression cases cover both findings. Four preservation-verifier regressions
 also cover repeated-line loss, correct link rebasing and altered facts/targets.
 The repository gate runs these tests automatically.
 
@@ -90,11 +120,12 @@ Commands ran in the MB-718 worktree and exited `0`:
 
 | Command | Result |
 | --- | --- |
-| `node --test --test-reporter=dot scripts/documentation-policy.test.mjs scripts/verify-documentation-preservation.test.mjs` | 19 regression tests passed: 16 policy cases and 3 preservation cases. |
+| `node --test --test-reporter=dot scripts/documentation-policy.test.mjs scripts/verify-documentation-preservation.test.mjs` | 20 regression tests passed: 16 policy cases and 4 preservation cases. |
 | `node scripts/documentation-policy.mjs` | Required sources, owner SQL warnings/local physical references, comment-only SQL router, moved-source links and fragments passed. |
-| `powershell -NoProfile -ExecutionPolicy Bypass -File scripts/verify-repository.ps1 -BaseSha origin/dev` | Repository and paired-change policy passed; automatically includes all 19 documentation regression tests. |
+| `powershell -NoProfile -ExecutionPolicy Bypass -File scripts/verify-repository.ps1 -BaseSha origin/dev` | Repository and paired-change policy passed; automatically includes all 20 documentation regression tests and the refreshed-base preservation audit during the layout transition. |
 | `node scripts/verify-documentation-preservation.mjs --base b7f225e2` | Original SQL statements and all three sources' nonblank-line multisets preserved. |
-| `node scripts/verify-documentation-preservation.mjs --base 752ed16b` | Preservation also passes against the latest synchronized base. |
+| `node scripts/verify-documentation-preservation.mjs --base 2ac6d3d65199ba8c7657fa489e1f44333b575cfd` | Preservation passes against the latest synchronized base, including MB-676. |
+| `node scripts/verify-documentation-reconciliation.mjs` | All three SHA-pinned pending patches apply; their expected SQL/dictionary/traceability and 25 moved local links/anchors pass in disposable snapshots. |
 | `git diff --check` | Passed. |
 
 The repository policy now requires each changed PostgreSQL migration to have its
