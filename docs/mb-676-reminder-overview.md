@@ -3,7 +3,13 @@
 ## Contract and ownership
 
 Branch: `feat/content-notification-reminder-overview-(MB-676)`, based on backend
-`origin/dev` at `d53fc722187f9f03c802c6b8cbe0b9fae79725ba`.
+`origin/dev` at `752ed16b86899bc82b0ccd8f68bcdcacb962efd6` after the
+2026-10-23 review refresh. A normal merge preserves the published feature and
+review history; the approved reminder implementation and OpenAPI are unchanged.
+
+The integrator approved the original `0cab2d78` head and confirmed that PR #218
+merges before PR #216, whose traceability documentation must then reconcile.
+The refreshed head requires its own CI result and integrator re-review.
 
 OpenAPI `contracts/openapi/content-notification-service.yaml` v1.10.0 adds
 `GET /api/v1/reminder-overview`, payload `schemaVersion: 1.0`. Identity's JWT
