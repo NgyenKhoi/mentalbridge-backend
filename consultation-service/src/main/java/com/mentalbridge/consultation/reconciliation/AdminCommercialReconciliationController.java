@@ -311,17 +311,38 @@ public class AdminCommercialReconciliationController {
 			if (paymentRecord != null && "SUCCEEDED".equals(paymentRecord.status())) {
 				List<UUID> directCredits = Collections.emptyList();
 				if (paymentRecord.subscriptionId() != null) {
-					directCredits = jdbc.sql("""
-							select c.id
-							from service_credit c
-							join service_credit_period p on p.id = c.period_id
-							where p.source = 'PAID'
-							  and p.source_reference = :subIdText
-							order by c.created_at, c.id
-							limit %d
-							""".formatted(FETCH_LIMIT + 1))
-							.param("subIdText", paymentRecord.subscriptionId().toString())
-							.query(UUID.class).list();
+					if ("UPGRADE".equals(paymentRecord.purpose())) {
+						directCredits = jdbc.sql("""
+								select c.id
+								from service_credit c
+								join service_credit_period p on p.id = c.period_id
+								join subscription_upgrade u on u.payment_id = :paymentId
+								where p.source = 'PAID'
+								  and p.source_reference = :subIdText
+								  and p.period_start > u.old_period_end
+								order by c.created_at, c.id
+								limit %d
+								""".formatted(FETCH_LIMIT + 1))
+								.param("paymentId", paymentId)
+								.param("subIdText", paymentRecord.subscriptionId().toString())
+								.query(UUID.class).list();
+					} else {
+						directCredits = jdbc.sql("""
+								select c.id
+								from service_credit c
+								join service_credit_period p on p.id = c.period_id
+								join payment_transaction pt on pt.id = :paymentId
+								where p.source = 'PAID'
+								  and p.source_reference = :subIdText
+								  and p.period_start >= pt.paid_at
+								  and p.period_start < pt.paid_at + interval '1 minute'
+								order by c.created_at, c.id
+								limit %d
+								""".formatted(FETCH_LIMIT + 1))
+								.param("paymentId", paymentId)
+								.param("subIdText", paymentRecord.subscriptionId().toString())
+								.query(UUID.class).list();
+					}
 				}
 
 				if (directCredits.size() > FETCH_LIMIT) {

@@ -1332,6 +1332,140 @@ class AdminCommercialReconciliationIntegrationTests extends ConsultationTestProp
 				.andExpect(jsonPath("$.payouts[0].payoutId").value(payoutId.toString()));
 	}
 
+	@Test
+	void paymentProvenanceDistinguishesPurchaseCreditsFromUpgradeCredits() throws Exception {
+		var userId = UUID.randomUUID();
+		var specialistId = UUID.randomUUID();
+		var adminId = UUID.randomUUID();
+		
+		jdbc.sql("""
+				insert into specialist_profile (
+				 account_id, display_name, biography, years_experience, timezone, approval_status,
+				 submitted_at, reviewed_at, reviewed_by
+				) values (:id, 'Spec Purchase Upgrade', 'Bio', 5, 'Asia/Ho_Chi_Minh', 'APPROVED', now(), now(), :admin)
+				""").param("id", specialistId).param("admin", adminId).update();
+
+		// Step 1: PURCHASE PLUS via billing service
+		var purchaseCheckout = billing.checkout(userId, PLUS, "prov-test-purchase-" + UUID.randomUUID());
+		var p1 = purchaseCheckout.paymentId();
+		var subId = purchaseCheckout.subscriptionId();
+
+		jdbc.sql("update payment_transaction set status='SUCCEEDED', paid_at=now() where id=:id").param("id", p1).update();
+		jdbc.sql("update user_subscription set status='ACTIVE', current_period_start=now(), current_period_end=now() + interval '30 days' where id=:id").param("id", subId).update();
+
+		// Provision C1 (simulating ServiceCreditService flow)
+		var period1 = UUID.randomUUID();
+		var c1 = UUID.randomUUID();
+		jdbc.sql("""
+				insert into service_credit_period (
+				 id, account_id, plan_version, credit_policy_version, package_code, source, source_reference,
+				 period_start, period_end, allocated_count, credit_allocation_minor, created_at, updated_at
+				) values (:id, :userId, 'v1', 'consultation-credit-v1', 'PLUS', 'PAID', :ref, now(), now() + interval '30 days', 1, 200000, now(), now())
+				""").param("id", period1).param("userId", userId).param("ref", subId.toString()).update();
+		jdbc.sql("insert into service_credit (id, period_id, ordinal, state, created_at, updated_at) values (:id, :periodId, 1, 'AVAILABLE', now(), now())")
+				.param("id", c1).param("periodId", period1).update();
+
+		// Verify P1 owns C1
+		mvc.perform(get("/api/v1/admin/commercial/provenance")
+				.param("paymentId", p1.toString())
+				.with(role(UUID.randomUUID(), "ROLE_ADMIN")))
+				.andExpect(status().isOk())
+				.andExpect(jsonPath("$.credits.length()").value(1))
+				.andExpect(jsonPath("$.credits[0].creditId").value(c1.toString()));
+
+		// Step 2: Initiate UPGRADE to PREMIUM - capture old period
+		var oldStart = jdbc.sql("select current_period_start from user_subscription where id=:id").param("id", subId).query(Timestamp.class).single().toInstant();
+		var oldEnd = jdbc.sql("select current_period_end from user_subscription where id=:id").param("id", subId).query(Timestamp.class).single().toInstant();
+
+		var premiumPlanVersionId = UUID.fromString("62200000-0000-4000-8000-000000000003");
+		var upgradeId = UUID.randomUUID();
+		var p2 = UUID.randomUUID();
+		
+		jdbc.sql("""
+				insert into payment_transaction (
+				 id, subscription_id, target_plan_version_id, payment_provider, momo_order_id, momo_request_id,
+				 amount_minor, currency, status, purpose, idempotency_key, expires_at, checkout_url, created_at, updated_at
+				) values (
+				 :id, :subId, :planId, 'MOMO', :orderId, :reqId,
+				 150000, 'VND', 'PENDING', 'UPGRADE', :key, now() + interval '1 hour', :checkoutUrl, now(), now()
+				)
+				""").param("id", p2).param("subId", subId).param("planId", premiumPlanVersionId)
+				.param("orderId", "order-" + p2).param("reqId", "req-" + p2).param("key", "idem-upgrade-" + p2)
+				.param("checkoutUrl", "https://test.momo.vn/checkout/" + p2).update();
+
+		jdbc.sql("""
+				insert into subscription_upgrade (
+				 id, subscription_id, from_plan_version_id, to_plan_version_id, payment_id,
+				 old_period_start, old_period_end, total_period_seconds, remaining_period_seconds,
+				 remaining_feature_value_minor, available_credit_value_minor, offset_minor, amount_due_minor,
+				 currency, status, idempotency_key, quoted_at, quote_expires_at, created_at, updated_at, pricing_policy_version)
+				values (
+				 :id, :subId, :fromPlan, :toPlan, :paymentId,
+				 :oldStart, :oldEnd, 2592000, 2160000,
+				 100000, 200000, 300000, 50000,
+				 'VND', 'PENDING_PAYMENT', :key, now(), now() + interval '1 hour', now(), now(), 'upgrade-offset-v1')
+				""").param("id", upgradeId).param("subId", subId)
+				.param("fromPlan", PLUS).param("toPlan", premiumPlanVersionId)
+				.param("paymentId", p2).param("key", "upg-idem-" + upgradeId)
+				.param("oldStart", Timestamp.from(oldStart))
+				.param("oldEnd", Timestamp.from(oldEnd)).update();
+
+		jdbc.sql("insert into subscription_upgrade_credit (upgrade_id, credit_id, allocated_value_minor) values (:upgradeId, :creditId, 200000)")
+				.param("upgradeId", upgradeId).param("creditId", c1).update();
+		jdbc.sql("update service_credit set state='UPGRADE_HELD' where id=:id").param("id", c1).update();
+
+		// Step 3: Complete P2 (UPGRADE succeeds)
+		jdbc.sql("update payment_transaction set status='SUCCEEDED', paid_at=now() where id=:id").param("id", p2).update();
+		jdbc.sql("update subscription_upgrade set status='APPLIED', applied_at=now() where id=:id").param("id", upgradeId).update();
+		jdbc.sql("update service_credit set state='REVOKED' where id=:id").param("id", c1).update();
+		jdbc.sql("update user_subscription set plan_version_id=:planId, current_period_start=now(), current_period_end=now() + interval '30 days' where id=:id")
+				.param("planId", premiumPlanVersionId).param("id", subId).update();
+
+		// Provision C2 (NEW PREMIUM credits) - period_start must be AFTER old_period_end to distinguish from P1
+		var period2 = UUID.randomUUID();
+		var c2a = UUID.randomUUID();
+		var c2b = UUID.randomUUID();
+		var c2c = UUID.randomUUID();
+		jdbc.sql("""
+				insert into service_credit_period (
+				 id, account_id, plan_version, credit_policy_version, package_code, source, source_reference,
+				 period_start, period_end, allocated_count, credit_allocation_minor, created_at, updated_at
+				) values (:id, :userId, 'v1', 'consultation-credit-v1', 'PREMIUM', 'PAID', :ref, (:oldEnd::timestamptz + interval '1 second'), (:oldEnd::timestamptz + interval '30 days'), 3, 300000, now(), now())
+				""").param("id", period2).param("userId", userId).param("ref", subId.toString()).param("oldEnd", Timestamp.from(oldEnd)).update();
+		jdbc.sql("insert into service_credit (id, period_id, ordinal, state, created_at, updated_at) values (:id, :periodId, 1, 'AVAILABLE', now(), now())")
+				.param("id", c2a).param("periodId", period2).update();
+		jdbc.sql("insert into service_credit (id, period_id, ordinal, state, created_at, updated_at) values (:id, :periodId, 2, 'AVAILABLE', now(), now())")
+				.param("id", c2b).param("periodId", period2).update();
+		jdbc.sql("insert into service_credit (id, period_id, ordinal, state, created_at, updated_at) values (:id, :periodId, 3, 'AVAILABLE', now(), now())")
+				.param("id", c2c).param("periodId", period2).update();
+
+		// CRITICAL: P1 still owns C1 (even though revoked)
+		mvc.perform(get("/api/v1/admin/commercial/provenance")
+				.param("paymentId", p1.toString())
+				.with(role(UUID.randomUUID(), "ROLE_ADMIN")))
+				.andExpect(status().isOk())
+				.andExpect(jsonPath("$.credits.length()").value(1))
+				.andExpect(jsonPath("$.credits[0].creditId").value(c1.toString()));
+
+		// CRITICAL: P2 owns C2a, C2b, C2c (NOT C1)
+		mvc.perform(get("/api/v1/admin/commercial/provenance")
+				.param("paymentId", p2.toString())
+				.with(role(UUID.randomUUID(), "ROLE_ADMIN")))
+				.andExpect(status().isOk())
+				.andExpect(jsonPath("$.credits.length()").value(3))
+				.andExpect(jsonPath("$.credits[?(@.creditId == '" + c2a.toString() + "')]").exists())
+				.andExpect(jsonPath("$.credits[?(@.creditId == '" + c2b.toString() + "')]").exists())
+				.andExpect(jsonPath("$.credits[?(@.creditId == '" + c2c.toString() + "')]").exists());
+
+		// Subscription shows all historical credits
+		mvc.perform(get("/api/v1/admin/commercial/provenance")
+				.param("subscriptionId", subId.toString())
+				.with(role(UUID.randomUUID(), "ROLE_ADMIN")))
+				.andExpect(status().isOk())
+				.andExpect(jsonPath("$.payments.length()").value(2))
+				.andExpect(jsonPath("$.credits.length()").value(4));
+	}
+
 	private org.springframework.test.web.servlet.request.RequestPostProcessor role(UUID id, String authority) {
 		return jwt().jwt(token -> token.subject(id.toString())).authorities(new SimpleGrantedAuthority(authority));
 	}
