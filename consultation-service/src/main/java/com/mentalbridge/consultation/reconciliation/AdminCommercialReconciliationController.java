@@ -291,70 +291,37 @@ public class AdminCommercialReconciliationController {
 		} else if ("PAYMENT".equals(queryType)) {
 			paymentIds.add(paymentId);
 			final int FETCH_LIMIT = 100;
-			var paymentRecord = jdbc.sql("""
-					select id, subscription_id, purpose, status
-					from payment_transaction
-					where id = :paymentId
-					""")
-					.param("paymentId", paymentId)
-					.query((row, ignored) -> new PaymentRecord(
-							row.getObject("id", UUID.class),
-							row.getObject("subscription_id", UUID.class),
-							row.getString("purpose"),
-							row.getString("status")))
-					.optional().orElse(null);
+			var directCredits = jdbc.sql("""
+					select c.id
+					from payment_transaction pt
+					join user_subscription s on s.id = pt.subscription_id
+					join service_credit_period p on p.source = 'PAID'
+					  and p.source_reference = pt.subscription_id::text
+					  and p.account_id = s.user_id
+					  and p.plan_version = pt.target_plan_version_id::text
+					  and p.period_start = pt.paid_at
+					join service_credit c on c.period_id = p.id
+					where pt.id = :paymentId and pt.status = 'SUCCEEDED'
+					  and not exists (
+					    select 1 from payment_transaction other
+					    where other.id <> pt.id and other.subscription_id = pt.subscription_id
+					      and other.target_plan_version_id = pt.target_plan_version_id
+					      and other.status = 'SUCCEEDED' and other.paid_at = pt.paid_at
+					  )
+					order by c.created_at, c.id
+					limit %d
+					""".formatted(FETCH_LIMIT + 1))
+					.param("paymentId", paymentId).query(UUID.class).list();
 
-			if (paymentRecord != null && paymentRecord.subscriptionId() != null) {
-				subscriptionIds.add(paymentRecord.subscriptionId());
+			if (directCredits.size() > FETCH_LIMIT) {
+				intermediateTruncated = true;
+				directCredits = directCredits.subList(0, FETCH_LIMIT);
 			}
+			creditIds.addAll(directCredits);
 
-			if (paymentRecord != null && "SUCCEEDED".equals(paymentRecord.status())) {
-				List<UUID> directCredits = Collections.emptyList();
-				if (paymentRecord.subscriptionId() != null) {
-					if ("UPGRADE".equals(paymentRecord.purpose())) {
-						directCredits = jdbc.sql("""
-								select c.id
-								from service_credit c
-								join service_credit_period p on p.id = c.period_id
-								join subscription_upgrade u on u.payment_id = :paymentId
-								where p.source = 'PAID'
-								  and p.source_reference = :subIdText
-								  and p.period_start > u.old_period_end
-								order by c.created_at, c.id
-								limit %d
-								""".formatted(FETCH_LIMIT + 1))
-								.param("paymentId", paymentId)
-								.param("subIdText", paymentRecord.subscriptionId().toString())
-								.query(UUID.class).list();
-					} else {
-						directCredits = jdbc.sql("""
-								select c.id
-								from service_credit c
-								join service_credit_period p on p.id = c.period_id
-								join payment_transaction pt on pt.id = :paymentId
-								where p.source = 'PAID'
-								  and p.source_reference = :subIdText
-								  and p.period_start >= pt.paid_at
-								  and p.period_start < pt.paid_at + interval '1 minute'
-								order by c.created_at, c.id
-								limit %d
-								""".formatted(FETCH_LIMIT + 1))
-								.param("paymentId", paymentId)
-								.param("subIdText", paymentRecord.subscriptionId().toString())
-								.query(UUID.class).list();
-					}
-				}
-
-				if (directCredits.size() > FETCH_LIMIT) {
-					intermediateTruncated = true;
-					directCredits = directCredits.subList(0, FETCH_LIMIT);
-				}
-				creditIds.addAll(directCredits);
-
-				if (resolveCreditAppointments(creditIds, appointmentIds)) intermediateTruncated = true;
-				if (resolveAppointmentEarnings(appointmentIds, earningIds)) intermediateTruncated = true;
-				if (resolveEarningPayouts(earningIds, payoutIds)) intermediateTruncated = true;
-			}
+			if (resolveCreditAppointments(creditIds, appointmentIds)) intermediateTruncated = true;
+			if (resolveAppointmentEarnings(appointmentIds, earningIds)) intermediateTruncated = true;
+			if (resolveEarningPayouts(earningIds, payoutIds)) intermediateTruncated = true;
 		} else if ("SUBSCRIPTION".equals(queryType)) {
 			subscriptionIds.add(subscriptionId);
 			if (resolveSubscriptionPayments(subscriptionIds, paymentIds)) intermediateTruncated = true;
@@ -716,8 +683,5 @@ public class AdminCommercialReconciliationController {
 	}
 
 	private record CreditPeriodRow(UUID creditId, UUID appointmentId, String source, String sourceReference) {
-	}
-
-	private record PaymentRecord(UUID id, UUID subscriptionId, String purpose, String status) {
 	}
 }
