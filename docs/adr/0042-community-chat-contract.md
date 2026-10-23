@@ -108,5 +108,24 @@ accepted contract only after providers are compatible. MB-693 supplies cross-sta
 acceptance. Each runtime story promotes only its delivered operations and updates
 the canonical data model together with its owner migration.
 
+MB-745 adds sender retraction without changing conversation ordering or report
+evidence. The currently authorized sender may retract retained content with no
+additional minute-based window. Community erases ciphertext and returns a
+structured `RETRACTED` projection at the original message identity and position;
+Realtime carries only the minimized change pointer and reauthorizes each viewer.
+The transition creates no unread item, never moves a read watermark backward,
+and cannot be reversed or resurrected by a send retry. Evidence already captured
+for an authorized report remains isolated under the report case authority.
+
+MB-746 adds a per-profile conversation cutoff owned by Community. DELETE locks
+the conversation in the same order as send, captures the current private server
+sequence, advances the actor's read watermark, and emits only a recipient-routed
+`CONVERSATION_CLEARED` invalidation. The command is idempotent by actor and key;
+a later deliberate clear uses a fresh key and may advance the cutoff. No client
+timestamp, message deletion, peer notification, system bubble, block or leave is
+created. All owner reads apply the cutoff before pagination, unread, projection,
+replay, report and notification authorization. A later eligible message makes
+the row visible again without restoring older history.
+
 No clinical, consent, retention, permission or payload widening is an additive
 implementation detail. Such a change requires explicit policy/schema review.

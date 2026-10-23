@@ -2,8 +2,8 @@
   "openapi": "3.1.0",
   "info": {
     "title": "MentalBridge Community direct chat API",
-    "version": "1.2.0",
-    "description": "Implemented Community direct/group chat, current signed Realtime projections, presence peers and scoped notification authorization. Community owns all content and permission truth."
+    "version": "1.3.0",
+    "description": "Implemented Community direct/group chat, per-user conversation history clearing, current signed Realtime projections, presence peers and scoped notification authorization. Community owns all content and permission truth."
   },
   "x-mentalbridge-decision": "MB-COMMUNITY-CHAT-001",
   "servers": [
@@ -492,6 +492,27 @@
             "$ref": "#/components/responses/DependencyUnavailable"
           }
         }
+      },
+      "delete": {
+        "operationId": "clearConversationForCurrentUser",
+        "summary": "Clear a conversation and its history only for the current user",
+        "description": "Atomically records a server-ordered private cutoff for the current user. The conversation disappears from that user's inbox and pre-cutoff messages remain unavailable through history, projection, replay, report, notification and old cursors. Other participants are unchanged. A later authorized message after the cutoff makes the conversation visible again with only post-cutoff history.",
+        "x-mentalbridge-role": "USER",
+        "security": [{ "BearerAuth": [] }],
+        "parameters": [
+          { "name": "conversationId", "in": "path", "required": true, "schema": { "type": "string", "format": "uuid" } },
+          { "name": "Idempotency-Key", "in": "header", "required": true, "schema": { "type": "string", "format": "uuid" } }
+        ],
+        "responses": {
+          "204": { "description": "The private cutoff was committed; no body is returned." },
+          "400": { "$ref": "#/components/responses/InvalidRequest" },
+          "401": { "$ref": "#/components/responses/Unauthenticated" },
+          "403": { "$ref": "#/components/responses/Forbidden" },
+          "404": { "$ref": "#/components/responses/TargetUnavailable" },
+          "409": { "$ref": "#/components/responses/Conflict" },
+          "429": { "$ref": "#/components/responses/RateLimited" },
+          "503": { "$ref": "#/components/responses/DependencyUnavailable" }
+        }
       }
     },
     "/api/v1/community/chat/conversations/{conversationId}/messages": {
@@ -645,6 +666,46 @@
               }
             }
           }
+        }
+      }
+    },
+    "/api/v1/community/chat/conversations/{conversationId}/messages/{messageId}": {
+      "x-mentalbridge-status": "implemented",
+      "x-mentalbridge-owner": "community-service",
+      "delete": {
+        "operationId": "retractOwnMessage",
+        "summary": "Retract one own retained message",
+        "description": "The authenticated current participant may retract only their own retained message in this exact direct conversation or current group membership epoch. The first success erases ciphertext and returns the durable RETRACTED projection at the original position. An identical retry returns the same tombstone without another fact. Wrong conversation, another sender, block, restriction, departure, prior epoch or unknown target is uniformly TARGET_UNAVAILABLE. Retraction creates no unread item and does not move read watermarks or alter an existing report snapshot.",
+        "x-mentalbridge-role": "USER",
+        "security": [{ "BearerAuth": [] }],
+        "parameters": [
+          {
+            "name": "conversationId",
+            "in": "path",
+            "required": true,
+            "schema": { "type": "string", "format": "uuid" }
+          },
+          {
+            "name": "messageId",
+            "in": "path",
+            "required": true,
+            "schema": { "type": "string", "format": "uuid" }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Authoritative RETRACTED projection; no optimistic or appended message.",
+            "content": {
+              "application/json": { "schema": { "$ref": "#/components/schemas/Message" } }
+            }
+          },
+          "400": { "$ref": "#/components/responses/InvalidRequest" },
+          "401": { "$ref": "#/components/responses/Unauthenticated" },
+          "403": { "$ref": "#/components/responses/Forbidden" },
+          "404": { "$ref": "#/components/responses/TargetUnavailable" },
+          "409": { "$ref": "#/components/responses/Conflict" },
+          "429": { "$ref": "#/components/responses/RateLimited" },
+          "503": { "$ref": "#/components/responses/DependencyUnavailable" }
         }
       }
     },
@@ -2467,7 +2528,7 @@
           "conversationId",
           "clientMessageId",
           "sender",
-          "content",
+          "state",
           "createdAt"
         ],
         "properties": {
@@ -2486,17 +2547,43 @@
           "sender": {
             "$ref": "#/components/schemas/Peer"
           },
-          "content": {
+          "state": {
             "type": "string",
+            "enum": ["ACTIVE", "RETRACTED"]
+          },
+          "content": {
+            "type": ["string", "null"],
             "minLength": 1,
             "maxLength": 4000
           },
           "createdAt": {
             "type": "string",
             "format": "date-time"
+          },
+          "retractedAt": {
+            "type": ["string", "null"],
+            "format": "date-time"
           }
         },
-        "description": "Authorized message identity/content only. Conversation-global ordering remains private; IDs are random opaque UUIDs, never sequence-encoded IDs. REST page order is authoritative; a socket event alone does not define transcript order."
+        "oneOf": [
+          {
+            "required": ["content"],
+            "properties": {
+              "state": { "const": "ACTIVE" },
+              "content": { "type": "string", "minLength": 1, "maxLength": 4000 },
+              "retractedAt": false
+            }
+          },
+          {
+            "required": ["retractedAt"],
+            "properties": {
+              "state": { "const": "RETRACTED" },
+              "content": false,
+              "retractedAt": { "type": "string", "format": "date-time" }
+            }
+          }
+        ],
+        "description": "Authorized active content or content-free retraction tombstone. Conversation-global ordering remains private; IDs are random opaque UUIDs, never sequence-encoded IDs. REST page order is authoritative; a socket event alone does not define transcript order."
       },
       "SendMessage": {
         "type": "object",

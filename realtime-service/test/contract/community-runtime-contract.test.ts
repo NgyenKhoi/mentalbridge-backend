@@ -122,6 +122,32 @@ describe('Community MB-689 runtime contracts', () => {
       expect(event({ ...presence, payload: { ...presence.payload, [field]: communityBob } })).toBe(
         false,
       );
+    const retracted = {
+      ...header,
+      eventType: 'community.message.updated',
+      payload: {
+        message: {
+          messageId: randomUUID(),
+          conversationId: communityConversation,
+          clientMessageId: randomUUID(),
+          sender: {
+            state: 'AVAILABLE',
+            communityProfileId: communityBob,
+            displayName: 'Thành viên cộng đồng',
+          },
+          state: 'RETRACTED',
+          createdAt: new Date().toISOString(),
+          retractedAt: new Date().toISOString(),
+        },
+      },
+    };
+    expect(event(retracted)).toBe(true);
+    expect(
+      event({
+        ...retracted,
+        payload: { message: { ...retracted.payload.message, content: 'private' } },
+      }),
+    ).toBe(false);
     expect(
       event({
         ...header,

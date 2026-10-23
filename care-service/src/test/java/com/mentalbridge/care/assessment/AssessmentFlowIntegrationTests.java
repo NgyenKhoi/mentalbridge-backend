@@ -65,6 +65,7 @@ class AssessmentFlowIntegrationTests extends CareTestProperties {
 			"GET /api/v1/screening-episodes/current",
 			"GET /api/v1/screening-episodes/history",
 			"GET /api/v1/guided-journey/current",
+			"GET /api/v1/home-next-step",
 			"POST /api/v1/screening-episodes/{episodeId}/assessments/{instrument}",
 			"POST /api/v1/screening-episodes/{episodeId}/support-evaluation",
 			"POST /api/v1/screening-episodes/{episodeId}/support-guide",

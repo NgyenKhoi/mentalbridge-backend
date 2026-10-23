@@ -5,7 +5,7 @@ import java.time.LocalDate;
 import java.time.ZoneId;
 import java.time.temporal.ChronoUnit;
 
-final class SupportPlanCycle {
+public final class SupportPlanCycle {
 
 	static final String POLICY = "support-plan-cycle-v1";
 	static final int LENGTH_DAYS = 14;

@@ -101,6 +101,22 @@ class CommunityChatReportIntegrationTests extends ChatGroupIntegrationSupport {
         assertThat(crypto.open("chat-report-evidence:" + result.path("caseId").asText(), evidence)).contains("Tin nguồn tổng hợp");
         report(b, message, "PRIVACY_CONCERN", "", UUID.randomUUID()).andExpect(status().isNotFound());
     }
+    @Test
+    void retractionLeavesAlreadyCapturedReportEvidenceUnchanged() throws Exception {
+        var group = group(); join(b, group, bp);
+        var content = "Nội dung riêng đã được chụp làm bằng chứng";
+        var message = saved(a, group, content);
+        var result = json(report(b, message, "PRIVACY_CONCERN", "", UUID.randomUUID()).andExpect(status().isCreated()));
+        var before = jdbc.sql("select evidence_ciphertext from community_chat_report_case").query(String.class).single();
+
+        mvc.perform(delete(ROOT + "/conversations/{conversation}/messages/{message}", group, message).with(user(a)))
+                .andExpect(status().isOk()).andExpect(jsonPath("$.state").value("RETRACTED"))
+                .andExpect(jsonPath("$.content").doesNotExist());
+
+        var after = jdbc.sql("select evidence_ciphertext from community_chat_report_case").query(String.class).single();
+        assertThat(after).isEqualTo(before);
+        assertThat(crypto.open("chat-report-evidence:" + result.path("caseId").asText(), after)).contains(content);
+    }
     ResultActions report(UUID actor, UUID message, String reason, String details, UUID key) throws Exception {
         return mvc.perform(post(ROOT + "/reports").with(user(actor)).header("Idempotency-Key", key).contentType(MediaType.APPLICATION_JSON)
                 .content(mapper.writeValueAsString(Map.of("messageId", message, "reasonCode", reason, "details", details))));
