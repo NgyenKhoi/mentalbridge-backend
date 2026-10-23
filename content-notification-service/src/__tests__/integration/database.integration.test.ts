@@ -45,6 +45,7 @@ import {
   UserNotificationDedupeConflictError,
   UserNotificationRepository,
 } from '../../user-notifications/user-notification.repository.js';
+import { PushDeviceRepository } from '../../push-delivery/push-device.repository.js';
 
 const __dirname = dirname(fileURLToPath(import.meta.url));
 
@@ -111,6 +112,7 @@ describe('Database Integration', () => {
       '25_add_general_user_notification_producers.sql',
       '26_add_community_notice_delivery.sql',
       '27_plan_scoped_resource_bingo.sql',
+      '28_add_native_push_delivery.sql',
     ]) {
       if (migration === '10_persist_notification_preferences.sql') {
         await pool.query(
@@ -199,6 +201,107 @@ describe('Database Integration', () => {
   afterAll(async () => {
     if (pool) await pool.end();
     if (container) await container.stop();
+  });
+
+  describe('native push device lifecycle', () => {
+    const database = (): DatabaseService =>
+      ({
+        query: (text: string, parameters?: never[]) => pool.query(text, parameters),
+        withTransaction: async <T>(operation: (client: DatabaseClient) => Promise<T>) => {
+          const client = await pool.connect();
+          try {
+            await client.query('BEGIN');
+            const result = await operation(client);
+            await client.query('COMMIT');
+            return result;
+          } catch (error) {
+            await client.query('ROLLBACK');
+            throw error;
+          } finally {
+            client.release();
+          }
+        },
+      }) as DatabaseService;
+
+    it('rotates one provider token to its latest owner and revokes idempotently', async () => {
+      const repository = new PushDeviceRepository(database());
+      const token = {
+        ciphertext: 'encrypted-token',
+        iv: 'synthetic-iv',
+        authTag: 'synthetic-tag',
+        hash: 'a'.repeat(64),
+      };
+      const firstOwner = randomUUID();
+      const secondOwner = randomUUID();
+      await repository.register(
+        firstOwner,
+        {
+          installationId: randomUUID(),
+          platform: 'ANDROID',
+          provider: 'EXPO',
+          providerToken: 'not-persisted-by-repository',
+          permissionStatus: 'GRANTED',
+        },
+        token,
+      );
+      const secondInstallation = randomUUID();
+      await repository.register(
+        secondOwner,
+        {
+          installationId: secondInstallation,
+          platform: 'IOS',
+          provider: 'EXPO',
+          providerToken: 'not-persisted-by-repository',
+          permissionStatus: 'GRANTED',
+        },
+        token,
+      );
+
+      const states = await pool.query<{ owner_id: string; status: string }>(
+        `SELECT owner_id::text, status FROM push_device_registration
+         WHERE provider_token_hash = $1 ORDER BY created_at`,
+        [token.hash],
+      );
+      expect(states.rows).toEqual([
+        { owner_id: firstOwner, status: 'REVOKED' },
+        { owner_id: secondOwner, status: 'ACTIVE' },
+      ]);
+      await new NotificationPreferenceRepository(database()).getOrCreate(secondOwner, 'USER');
+      await pool.query(
+        'UPDATE notification_preference SET channel_push_enabled = true WHERE user_id = $1',
+        [secondOwner],
+      );
+      const notificationId = randomUUID();
+      await pool.query(
+        `INSERT INTO notification
+           (id, recipient_id, category, title, body, priority, expires_at, occurred_at,
+            source, source_identity, request_fingerprint, delivery_state, version)
+         VALUES ($1, $2, 'SYSTEM_RESOURCE', 'MentalBridge', 'Generic inbox copy', 'NORMAL',
+                 now() + interval '1 day', now(), 'CONTENT', $3, $4, 'DELIVERED', 0)`,
+        [notificationId, secondOwner, `push-test:${notificationId}`, 'b'.repeat(64)],
+      );
+      await expect(repository.materializeCandidates(10)).resolves.toBe(1);
+      expect(
+        (
+          await pool.query<{ state: string }>(
+            'SELECT state FROM push_delivery_attempt WHERE notification_id = $1',
+            [notificationId],
+          )
+        ).rows[0].state,
+      ).toBe('PENDING');
+      await expect(repository.revoke(secondOwner, secondInstallation)).resolves.toBe(true);
+      await repository.settleIneligible();
+      expect(
+        (
+          await pool.query<{ state: string; failure_code: string }>(
+            'SELECT state, failure_code FROM push_delivery_attempt WHERE notification_id = $1',
+            [notificationId],
+          )
+        ).rows[0],
+      ).toEqual({ state: 'SUPPRESSED', failure_code: 'DEVICE_DISABLED' });
+      await expect(repository.revoke(secondOwner, secondInstallation)).resolves.toBe(true);
+      await expect(repository.revoke(firstOwner, randomUUID())).resolves.toBe(false);
+    });
   });
 
   describe('resource engagement migration', () => {

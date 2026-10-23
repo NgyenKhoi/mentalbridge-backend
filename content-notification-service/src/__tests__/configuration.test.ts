@@ -50,6 +50,7 @@ describe('configuration', () => {
     expect(configuration.CONTENT_CARE_USER_NOTIFICATION_CONSUMER_ENABLED).toBe(false);
     expect(configuration.CONSULTATION_SERVICE_URL).toBe('http://localhost:8082');
     expect(configuration.IDENTITY_SERVICE_URL).toBe('http://localhost:8080');
+    expect(configuration.CONTENT_PUSH_DELIVERY_ENABLED).toBe(false);
   });
 
   it('normalizes configured CORS origins', () => {
@@ -191,5 +192,36 @@ describe('configuration', () => {
     });
 
     expect(configuration.CONTENT_COMMUNITY_INTERACTION_CONSUMER_ENABLED).toBe(true);
+  });
+
+  it('requires push credentials and a valid encryption key when delivery is enabled', () => {
+    expect(() =>
+      loadConfiguration({
+        ...requiredEnvironment,
+        CONTENT_PUSH_TOKEN_ENCRYPTION_KEY: 'not-a-key',
+      }),
+    ).toThrow();
+    expect(() =>
+      loadConfiguration({
+        ...requiredEnvironment,
+        CONTENT_PUSH_DELIVERY_ENABLED: 'true',
+      }),
+    ).toThrow();
+    expect(() =>
+      loadConfiguration({
+        ...requiredEnvironment,
+        CONTENT_PUSH_DELIVERY_ENABLED: 'true',
+        EXPO_ACCESS_TOKEN: 'synthetic-token',
+        CONTENT_PUSH_TOKEN_ENCRYPTION_KEY: 'not-a-key',
+      }),
+    ).toThrow();
+    expect(
+      loadConfiguration({
+        ...requiredEnvironment,
+        CONTENT_PUSH_DELIVERY_ENABLED: 'true',
+        EXPO_ACCESS_TOKEN: 'synthetic-token',
+        CONTENT_PUSH_TOKEN_ENCRYPTION_KEY: Buffer.alloc(32, 1).toString('base64'),
+      }).CONTENT_PUSH_DELIVERY_ENABLED,
+    ).toBe(true);
   });
 });

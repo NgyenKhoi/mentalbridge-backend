@@ -65,10 +65,9 @@ enabling the end-user journey. A pending request/invitation never grants history
 This slice makes no browser/mobile `ui-ready` claim.
 
 `community-push-v1.schema.json` and `communityPushPayload` define only the generic
-Vietnamese body plus opaque notification ID. PUSH remains preference/contract
-only; this delivery does not register devices or send to a provider. Backend
-device registration/provider delivery belongs to MB-675, with device permission,
-token and safe-link handling in MB-679. Appointment chat, message retraction and
+Vietnamese body plus opaque notification ID. MB-675 now supplies backend device
+registration and provider submission; mobile permission prompts and safe-link
+handling remain MB-679 client work. Appointment chat, message retraction and
 per-user conversation deletion remain independent.
 
 Roll out migrations, the authorization provider, then compatible consumers;
@@ -137,9 +136,11 @@ Admin resource create, draft update/delete, exact-version review, publish, archi
 
 MB-562 also implements `GET|PATCH /api/v1/notification-preferences` for the
 authenticated owner. The atomic preference aggregate covers `IN_APP`, `EMAIL`,
-and future `PUSH` channel choices, six independent content groups,
-timezone-aware quiet hours, and email cadence/opt-ins. `PUSH` is persisted only;
-device registration and provider delivery remain deferred.
+and `PUSH` channel choices, six independent content groups, timezone-aware quiet
+hours, and email cadence/opt-ins. MB-675 adds authenticated owner-only Expo
+device registration, encrypted token rotation/revocation, and privacy-minimized
+native provider delivery. Expo ticket acceptance is recorded separately and is
+never reported as end-device delivery.
 
 MB-514 extends that same preference aggregate with the owner's local daily
 digest and explicit resource-reminder times. The bounded wellbeing scheduler
@@ -157,6 +158,15 @@ Keep the interval and database page size bounded with
 `WELLBEING_DIGEST_SCHEDULER_INTERVAL_MS` and
 `WELLBEING_DIGEST_BATCH_SIZE`. `BREVO_BASE_URL` and `BREVO_SENDER_NAME` are
 optional operational overrides.
+
+Native push delivery is disabled by default. Registration requires
+`CONTENT_PUSH_TOKEN_ENCRYPTION_KEY` (base64-encoded 32-byte key). Provider work
+also requires `CONTENT_PUSH_DELIVERY_ENABLED=true`, `EXPO_ACCESS_TOKEN`, and the
+same encryption key. `EXPO_PUSH_BASE_URL`, `CONTENT_PUSH_PROVIDER_TIMEOUT_MS`,
+`CONTENT_PUSH_DELIVERY_INTERVAL_MS`, and `CONTENT_PUSH_DELIVERY_BATCH_SIZE` are
+bounded operational overrides. Disable the worker before rolling back; additive
+registration and attempt evidence remains intact. CI uses a mocked provider and
+does not constitute staging or real-device delivery evidence.
 MB-548 adds a separate, opt-in appointment email reminder. A minimized
 Consultation status event materializes at most one row per
 recipient/appointment/version, and rejection, expiry, cancellation, reschedule,
