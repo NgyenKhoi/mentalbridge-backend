@@ -202,6 +202,7 @@ try {
 
     $changedFiles = @()
     $materialPostgresServices = @()
+    $preservationRequired = $false
     if (-not [string]::IsNullOrWhiteSpace($BaseSha)) {
         & git cat-file -e "$BaseSha^{commit}" 2>$null
         if ($LASTEXITCODE -eq 0) {
@@ -222,6 +223,16 @@ try {
                 throw 'Unable to inspect staged files'
             }
             $changedFiles = @($changedFiles + $untrackedFiles + $workingFiles + $stagedFiles | Sort-Object -Unique)
+            if (Test-Path -LiteralPath $canonicalRelationalModel) {
+                $currentLogicalSchema = Get-Content -LiteralPath $canonicalRelationalModel -Raw
+                if ($currentLogicalSchema -notmatch '(?im)^\s*CREATE\s+TABLE\b') {
+                    $baseLogicalSchema = @(& git show "${BaseSha}:$canonicalRelationalModel")
+                    if ($LASTEXITCODE -ne 0) {
+                        throw "Unable to inspect the canonical relational model at $BaseSha"
+                    }
+                    $preservationRequired = ($baseLogicalSchema -join "`n") -match '(?im)^\s*CREATE\s+TABLE\b'
+                }
+            }
         }
         else {
             Add-Failure "Base commit $BaseSha is unavailable; fetch full history before verification"
@@ -326,6 +337,14 @@ try {
     $documentationResult = $documentationOutput | ConvertFrom-Json
     foreach ($failure in $documentationResult.failures) {
         Add-Failure $failure
+    }
+
+    if ($preservationRequired) {
+        Write-Output "Verifying documentation layout preservation against $BaseSha."
+        & node (Join-Path $PSScriptRoot 'verify-documentation-preservation.mjs') --base $BaseSha
+        if ($LASTEXITCODE -ne 0) {
+            Add-Failure "Documentation layout changed without preserving the original sources from $BaseSha"
+        }
     }
 
     if ($failures.Count -gt 0) {
