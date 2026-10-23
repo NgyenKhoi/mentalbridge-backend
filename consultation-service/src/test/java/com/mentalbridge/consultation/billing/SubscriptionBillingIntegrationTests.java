@@ -211,12 +211,16 @@ class SubscriptionBillingIntegrationTests extends ConsultationTestProperties {
 		postIpn(failed, 204);
 		assertThat(billing.payment(userId, payment.paymentId()).status()).isEqualTo("FAILED");
 		assertServiceCreditAccess(userId, "FREE", "DEFAULT_FREE", false);
+		assertThat(jdbc.sql("select count(*) from service_credit_period where source='PAID' and source_reference=:id")
+				.param("id", payment.subscriptionId().toString()).query(Long.class).single()).isZero();
 
 		var lateSuccess = fixture(payment.paymentId(), 0, base + 2, 810003);
 		sign(lateSuccess);
 		postIpn(lateSuccess, 204);
 		assertThat(billing.payment(userId, payment.paymentId()).status()).isEqualTo("FAILED");
 		assertServiceCreditAccess(userId, "FREE", "DEFAULT_FREE", false);
+		assertThat(jdbc.sql("select count(*) from service_credit_period where source='PAID' and source_reference=:id")
+				.param("id", payment.subscriptionId().toString()).query(Long.class).single()).isZero();
 		assertThat(jdbc.sql("select failure_code from momo_payment_ipn where trans_id=810003")
 				.query(String.class).single()).isEqualTo("PAYMENT_ALREADY_FINAL");
 	}

@@ -275,7 +275,13 @@ class SpecialistPayoutFlowIntegrationTests extends ConsultationTestProperties {
 						.isEqualTo("MOMO_PAYOUT_CALLBACK_MISMATCH"));
 
 		var valid = momoCallback(prepared, requestId, prepared.amountVnd());
+		assertThat(jdbc.sql("select count(*) from payout_provider_event where payout_attempt_id=:id")
+				.param("id", prepared.attemptId()).query(Long.class).single()).isZero();
 		transactions.reconcileMomo(valid, "b".repeat(64));
+		assertThat(jdbc.sql("select count(*) from payout_provider_event where payout_attempt_id=:id")
+				.param("id", prepared.attemptId()).query(Long.class).single()).isOne();
+		assertThat(jdbc.sql("select count(*) from specialist_payout_status_history where payout_id=:id")
+				.param("id", prepared.payoutId()).query(Long.class).single()).isEqualTo(2);
 		transactions.reconcileMomo(valid, "b".repeat(64));
 
 		assertThat(jdbc.sql("select status from specialist_payout where id=:id")
