@@ -77,7 +77,7 @@ class CommunityServiceApplicationTests extends CommunityTestProperties {
 				"0012-community-topic-governance", "0013-community-resource-attachment",
 				"0014-community-sensitive-content-warning", "0015-community-saved-post-ordering",
 				"0016-community-profile-avatar", "0017-community-direct-chat", "0018-community-chat-messages", "0019-community-private-groups", "0020-community-chat-report-intake", "0021-community-comment-reactions",
-				"0022-community-chat-message-retraction");
+				"0022-community-chat-message-retraction", "0023-community-chat-personal-clear");
 		assertThat(businessTables).containsExactly("community_access_restriction", "community_block",
 				"community_chat_command", "community_chat_conversation", "community_chat_invitation", "community_chat_membership", "community_chat_message", "community_chat_outbox",
 				"community_chat_privacy", "community_chat_read_state", "community_chat_report_case", "community_chat_request",

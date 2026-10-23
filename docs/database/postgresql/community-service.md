@@ -360,6 +360,12 @@ a notification or another owner's database.
 | `conversation_id` | Physical owner-local conversation key, removed when the conversation is erased. |
 | `profile_id` | Exact Community reader; composite primary key isolates devices' shared private unread truth per owner/conversation. |
 | `last_read_sequence` | Private monotonic max of authorized exact-message acknowledgements. Not a delivery proof, shared-receipt preference or public counter; retention/visibility changes never decrease it. |
+| `cleared_through_sequence` | Private monotonic server-ordered history floor. Messages at or below it are unavailable to this profile across list, history, projection, replay, unread, report and notification authorization. |
+| `cleared_at` | UTC microsecond instant of the latest deliberate clear command. It distinguishes a cleared empty view and invalidates cursors when a later clear commits at the same sequence. |
+
+Migration 0023 adds the two personal-clear fields and constrains the private read
+watermark to remain at or above the cutoff. The shared conversation and message
+rows are unchanged, so another participant's history is never erased.
 
 Migration 0018 also adds `community_chat_command.conversation_id`, a required physical aggregate reference. Existing ACTIVE/PENDING pointers are backfilled inside the owner database; erasing a conversation cascades its retry identities, preventing dangling owner identifiers. It never references another service's table.
 

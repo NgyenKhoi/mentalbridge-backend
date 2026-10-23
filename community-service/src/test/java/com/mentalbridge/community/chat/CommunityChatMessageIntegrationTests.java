@@ -373,6 +373,74 @@ class CommunityChatMessageIntegrationTests extends ChatIntegrationSupport {
                 .param("id", conversation).query(Long.class).single()).isEqualTo(3);
     }
 
+    @Test
+    void personalClearAndConcurrentSendCommitInOneConversationOrder() throws Exception {
+        var conversation = active(a, bp);
+        send(a, conversation, UUID.randomUUID(), UUID.randomUUID(), "Tin trước điểm xóa").andExpect(status().isCreated());
+        try (var executor = Executors.newFixedThreadPool(2)) {
+            var barrier = new CyclicBarrier(2);
+            var results = executor.invokeAll(List.<Callable<Integer>>of(
+                    () -> { barrier.await(); return clear(b, conversation, UUID.randomUUID()).andReturn().getResponse().getStatus(); },
+                    () -> { barrier.await(); return send(a, conversation, UUID.randomUUID(), UUID.randomUUID(), "Tin chạy đồng thời")
+                            .andReturn().getResponse().getStatus(); }));
+            var statuses = new ArrayList<Integer>();
+            for (var result : results) statuses.add(result.get());
+            assertThat(statuses).containsExactlyInAnyOrder(201, 204);
+        }
+
+        var floor = jdbc.sql("select cleared_through_sequence from community_chat_read_state where conversation_id = :conversation and profile_id = :viewer")
+                .param("conversation", conversation).param("viewer", bp).query(Long.class).single();
+        assertThat(floor).isIn(1L, 2L);
+        assertThat(sequence(conversation)).isEqualTo(2);
+        history(a, conversation, null, 20).andExpect(status().isOk()).andExpect(jsonPath("$.items.length()").value(2));
+        history(b, conversation, null, 20).andExpect(status().isOk())
+                .andExpect(jsonPath("$.items.length()").value(2 - floor));
+        mvc.perform(get(ROOT + "/conversations").with(user(b))).andExpect(status().isOk())
+                .andExpect(jsonPath("$.items.length()").value(2 - floor));
+        assertThat(unread(b, conversation)).isEqualTo(2 - floor);
+    }
+
+    @Test
+    void personalClearHidesOnlyTheActorHistoryAndNewMessagesStartASeparateView() throws Exception {
+        var conversation = active(a, bp);
+        var firstClient = UUID.randomUUID(); var firstKey = UUID.randomUUID();
+        var ownClient = UUID.randomUUID(); var ownKey = UUID.randomUUID();
+        send(a, conversation, firstClient, firstKey, "Tin cũ một").andExpect(status().isCreated());
+        send(b, conversation, ownClient, ownKey, "Tin cũ hai").andExpect(status().isCreated());
+        var oldCursor = json(history(b, conversation, null, 1).andExpect(status().isOk())).path("nextCursor").asText();
+        var clearKey = UUID.randomUUID();
+
+        clear(b, conversation, clearKey).andExpect(status().isNoContent());
+        clear(b, conversation, clearKey).andExpect(status().isNoContent());
+
+        mvc.perform(get(ROOT + "/conversations").with(user(b))).andExpect(status().isOk())
+                .andExpect(jsonPath("$.items.length()").value(0));
+        mvc.perform(get(ROOT + "/conversations").with(user(a))).andExpect(status().isOk())
+                .andExpect(jsonPath("$.items[0].conversationId").value(conversation.toString()));
+        history(b, conversation, null, 20).andExpect(status().isOk()).andExpect(jsonPath("$.items.length()").value(0));
+        history(b, conversation, oldCursor, 1).andExpect(status().isNotFound());
+        history(a, conversation, null, 20).andExpect(status().isOk()).andExpect(jsonPath("$.items.length()").value(2));
+        send(a, conversation, firstClient, firstKey, "Tin cũ một").andExpect(status().isCreated());
+        send(b, conversation, ownClient, ownKey, "Tin cũ hai").andExpect(status().isConflict());
+        mvc.perform(get(ROOT + "/conversations").with(user(b))).andExpect(status().isOk())
+                .andExpect(jsonPath("$.items.length()").value(0));
+        assertThat(jdbc.sql("select cleared_through_sequence from community_chat_read_state where conversation_id = :conversation and profile_id = :viewer")
+                .param("conversation", conversation).param("viewer", bp).query(Long.class).single()).isEqualTo(2);
+        assertThat(jdbc.sql("select count(*) from community_chat_outbox where event_payload->'payload'->>'kind' = 'CONVERSATION_CLEARED'")
+                .query(Long.class).single()).isOne();
+        assertThat(jdbc.sql("select event_payload->'payload'->>'recipientRoutingReference' from community_chat_outbox where event_payload->'payload'->>'kind' = 'CONVERSATION_CLEARED'")
+                .query(String.class).single()).isEqualTo(b.toString());
+
+        var fresh = json(send(a, conversation, UUID.randomUUID(), UUID.randomUUID(), "Tin mới")
+                .andExpect(status().isCreated())).path("message").path("messageId").asText();
+        mvc.perform(get(ROOT + "/conversations").with(user(b))).andExpect(status().isOk())
+                .andExpect(jsonPath("$.items[0].conversationId").value(conversation.toString()))
+                .andExpect(jsonPath("$.items[0].unreadCount").value(1));
+        history(b, conversation, null, 20).andExpect(status().isOk())
+                .andExpect(jsonPath("$.items.length()").value(1))
+                .andExpect(jsonPath("$.items[0].messageId").value(fresh));
+    }
+
     UUID active(UUID actor, UUID target) throws Exception {
         var subject = jdbc.sql("select account_subject from community_profile where id = :id").param("id", target).query(UUID.class).single();
         var version = json(mvc.perform(get(ROOT + "/privacy").with(user(subject))).andExpect(status().isOk())).path("version").asText();
@@ -390,6 +458,10 @@ class CommunityChatMessageIntegrationTests extends ChatIntegrationSupport {
     }
     ResultActions retract(UUID actor, UUID conversation, UUID message) throws Exception {
         return mvc.perform(delete(ROOT + "/conversations/{conversation}/messages/{message}", conversation, message).with(user(actor)));
+    }
+    ResultActions clear(UUID actor, UUID conversation, UUID key) throws Exception {
+        return mvc.perform(delete(ROOT + "/conversations/{conversation}", conversation).with(user(actor))
+                .header("Idempotency-Key", key));
     }
     ResultActions read(UUID actor, UUID conversation, UUID message) throws Exception {
         return mvc.perform(put(ROOT + "/conversations/{id}/read-cursor", conversation).with(user(actor))

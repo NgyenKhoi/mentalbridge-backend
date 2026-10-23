@@ -260,6 +260,26 @@ export class CommunityGateway implements OnGatewayInit, OnGatewayConnection, OnG
   private receive(fact: CommunityFact): void {
     const { conversationId, kind } = fact.payload;
     for (const socket of this.sockets) {
+      if (
+        kind === 'CONVERSATION_CLEARED' &&
+        this.current(socket) &&
+        fact.payload.recipientRoutingReference === this.session(socket).subject
+      ) {
+        const current = socket.data.subscriptions?.get(conversationId);
+        if (current) {
+          current.generation++;
+          current.presence?.clear();
+          current.presenceRoutes?.clear();
+          socket.data.subscriptions?.delete(conversationId);
+        }
+        this.emit(
+          socket,
+          'community.conversation.invalidated',
+          { conversationId },
+          fact.correlationId,
+        );
+        continue;
+      }
       const subscription = socket.data.subscriptions?.get(conversationId);
       if (!subscription || !this.current(socket)) continue;
       if (kind === 'AUTHORIZATION_CHANGED') {
@@ -285,6 +305,7 @@ export class CommunityGateway implements OnGatewayInit, OnGatewayConnection, OnG
           'MESSAGE_RETRACTED',
           'AUTHORIZATION_CHANGED',
           'READ_STATE_CHANGED',
+          'CONVERSATION_CLEARED',
         ].includes(kind)
       )
         continue;

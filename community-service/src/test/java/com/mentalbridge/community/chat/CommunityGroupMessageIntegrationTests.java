@@ -30,6 +30,27 @@ class CommunityGroupMessageIntegrationTests extends ChatGroupIntegrationSupport 
         assertThat(json(conversation(b, group).andExpect(status().isOk())).path("viewerRole").asText()).isEqualTo("MEMBER");
     }
     @Test
+    void personalGroupClearKeepsOtherMembersHistoryAndShowsOnlyLaterVisibleMessages() throws Exception {
+        var group = group(); join(b, group, bp);
+        saved(a, group); var old = saved(a, group);
+        var cursor = json(history(b, group, null, 1).andExpect(status().isOk())).path("nextCursor").asText();
+
+        clear(b, group, UUID.randomUUID()).andExpect(status().isNoContent());
+
+        mvc.perform(get(ROOT + "/conversations").with(user(b))).andExpect(status().isOk())
+                .andExpect(jsonPath("$.items.length()").value(0));
+        history(b, group, null, 20).andExpect(status().isOk()).andExpect(jsonPath("$.items.length()").value(0));
+        history(b, group, cursor, 20).andExpect(status().isNotFound());
+        history(a, group, null, 20).andExpect(status().isOk()).andExpect(jsonPath("$.items.length()").value(2));
+        read(b, group, old).andExpect(status().isNotFound());
+
+        var fresh = saved(a, group);
+        history(b, group, null, 20).andExpect(status().isOk())
+                .andExpect(jsonPath("$.items.length()").value(1))
+                .andExpect(jsonPath("$.items[0].messageId").value(fresh.toString()));
+        conversation(b, group).andExpect(status().isOk()).andExpect(jsonPath("$.unreadCount").value(1));
+    }
+    @Test
     void concurrentRetriesCommitOneEncryptedMessageAndExactRecipientFactsWithoutBumpingManagementVersion() throws Exception {
         var group = group(); join(b, group, bp); join(outsider, group, profile(outsider));
         var version = version(group); var key = UUID.randomUUID(); var client = UUID.randomUUID();
@@ -305,6 +326,10 @@ class CommunityGroupMessageIntegrationTests extends ChatGroupIntegrationSupport 
     }
     ResultActions retract(UUID actor, UUID group, UUID message) throws Exception {
         return mvc.perform(delete(ROOT + "/conversations/{conversation}/messages/{message}", group, message).with(user(actor)));
+    }
+    ResultActions clear(UUID actor, UUID group, UUID key) throws Exception {
+        return mvc.perform(delete(ROOT + "/conversations/{id}", group).with(user(actor))
+                .header("Idempotency-Key", key));
     }
     ResultActions read(UUID actor, UUID group, UUID message) throws Exception {
         return mvc.perform(put(ROOT + "/conversations/{id}/read-cursor", group).with(user(actor)).contentType(MediaType.APPLICATION_JSON)

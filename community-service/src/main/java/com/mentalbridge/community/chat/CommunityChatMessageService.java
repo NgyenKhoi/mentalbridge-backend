@@ -14,10 +14,12 @@ class CommunityChatMessageService {
     private final ChatMessageTransactions transactions;
     private final ChatGroupAccess groups;
     private final ChatGroupMessageTransactions groupMessages;
+    private final ChatClearTransactions clears;
     CommunityChatMessageService(ChatConversationRepository conversations, CommunityChatProfiles profiles,
-            ChatAccountAuthorizer accounts, ChatMessageTransactions transactions, ChatGroupAccess groups, ChatGroupMessageTransactions groupMessages) {
+            ChatAccountAuthorizer accounts, ChatMessageTransactions transactions, ChatGroupAccess groups,
+            ChatGroupMessageTransactions groupMessages, ChatClearTransactions clears) {
         this.conversations = conversations; this.profiles = profiles; this.accounts = accounts; this.transactions = transactions;
-        this.groups = groups; this.groupMessages = groupMessages;
+        this.groups = groups; this.groupMessages = groupMessages; this.clears = clears;
     }
     ChatModels.SendResult send(UUID subject, UUID conversationId, UUID key, ChatModels.SendMessage request, UUID correlation) {
         if (request.clientMessageId() == null || request.content() == null) throw ChatException.invalid();
@@ -47,6 +49,15 @@ class CommunityChatMessageService {
                 groups.authorize(subject, conversationId, null, correlation), messageId, correlation);
         var peer = peer(subject, conversationId, correlation);
         return transactions.retract(subject, conversationId, peer.id(), messageId, correlation);
+    }
+    void clear(UUID subject, UUID conversationId, UUID key, UUID correlation) {
+        if (group(conversationId)) {
+            clears.clearGroup(conversationId, groups.authorize(subject, conversationId, null, correlation), subject, key, correlation);
+            return;
+        }
+        var actor = profiles.bySubject(subject).orElseThrow(ChatException::target);
+        var peer = peer(subject, conversationId, correlation);
+        clears.clearDirect(conversationId, actor.id(), peer.id(), subject, key, correlation);
     }
     ChatModels.Message projection(UUID subject, UUID conversation, UUID id, UUID correlation) {
         if (group(conversation)) return groupMessages.projection(conversation, groups.authorize(subject, conversation, null, correlation), id);

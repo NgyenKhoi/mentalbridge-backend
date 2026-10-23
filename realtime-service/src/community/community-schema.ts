@@ -140,7 +140,7 @@ export const factSchema = z
         ...header,
         payload: z
           .object({
-            kind: z.literal('READ_STATE_CHANGED'),
+            kind: z.enum(['READ_STATE_CHANGED', 'CONVERSATION_CLEARED']),
             conversationId: uuid,
             recipientRoutingReference: uuid,
           })

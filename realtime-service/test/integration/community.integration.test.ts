@@ -416,6 +416,43 @@ describe('Community two-replica Kafka, Redis and Socket.IO delivery', { concurre
       .toBe(true);
     expect(delivered(bob)).toEqual([]);
   });
+  it('privately invalidates every actor device and cancels queued delivery after a clear', async () => {
+    const first = await connect(0);
+    const second = await connect(1);
+    const peer = await connect(0, communityAlice);
+    await subscribe(first);
+    await subscribe(second);
+    await subscribe(peer);
+    const message = owner.save();
+    let release: () => void = () => undefined;
+    owner.projectionGate = new Promise<void>((resolve) => {
+      release = resolve;
+    });
+    await publish(owner.fact(message));
+    await expect
+      .poll(() => owner.calls.filter((call) => call.message === message.messageId).length)
+      .toBeGreaterThan(0);
+
+    await publish(owner.cleared(communityBob));
+    release();
+    delete owner.projectionGate;
+
+    await expect
+      .poll(() =>
+        [first, second].map(
+          (client) =>
+            client.events.filter(
+              (event) => event.eventType === 'community.conversation.invalidated',
+            ).length,
+        ),
+      )
+      .toEqual([1, 1]);
+    expect(
+      peer.events.filter((event) => event.eventType === 'community.conversation.invalidated'),
+    ).toHaveLength(0);
+    expect(delivered(first)).toEqual([]);
+    expect(delivered(second)).toEqual([]);
+  });
   it('replaces unread with the current private read state on every device', async () => {
     const first = await connect(0);
     const second = await connect(1);

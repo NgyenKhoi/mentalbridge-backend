@@ -17,11 +17,14 @@ class ChatGroupMessageTransactions {
     private final ChatPrivacyRepository privacy;
     private final Clock clock;
     private final ChatDeliveryCursor delivery;
+    private final ChatHistoryVisibility visibility;
     ChatGroupMessageTransactions(ChatGroupAccess access, ChatMessageRepository messages, ChatCommandRepository commands,
-            ChatReadStateRepository reads, ChatCrypto crypto, ChatFacts facts, ChatPrivacyRepository privacy, Clock clock, ChatDeliveryCursor delivery) {
+            ChatReadStateRepository reads, ChatCrypto crypto, ChatFacts facts, ChatPrivacyRepository privacy, Clock clock,
+            ChatDeliveryCursor delivery, ChatHistoryVisibility visibility) {
         this.access = access; this.messages = messages; this.commands = commands; this.reads = reads;
         this.crypto = crypto; this.facts = facts; this.privacy = privacy; this.clock = clock;
         this.delivery = delivery;
+        this.visibility = visibility;
     }
     @Transactional
     ChatModels.SendResult send(UUID conversation, ChatGroupAccess.Authorization auth, UUID key, ChatModels.SendMessage input, UUID correlation) {
@@ -62,14 +65,15 @@ class ChatGroupMessageTransactions {
     ChatModels.Page<ChatModels.Message> history(UUID conversation, ChatGroupAccess.Authorization auth, String cursor, int limit) {
         var context = access.lock(conversation, auth, true);
         var purpose = cursorPurpose(context);
-        long after = context.member().joinedAfterSequence; long through = context.group().lastSequence;
+        long floor = Math.max(context.member().joinedAfterSequence, visibility.floor(conversation, auth.actor()));
+        long after = floor; long through = context.group().lastSequence;
         if (cursor != null) {
             if (cursor.isBlank() || cursor.length() > 1024) throw ChatException.invalid();
             try {
                 var parts = crypto.open(purpose, cursor).split("/", -1);
                 if (parts.length != 2) throw ChatException.target();
                 after = Long.parseLong(parts[0]); through = Long.parseLong(parts[1]);
-                if (after < context.member().joinedAfterSequence || through < after || through > context.group().lastSequence) throw ChatException.target();
+                if (after < floor || through < after || through > context.group().lastSequence) throw ChatException.target();
             } catch (RuntimeException exception) { throw ChatException.target(); }
         }
         var eligible = messages.groupHistory(conversation, visible(context), after, through, clock.instant(), limit + 1);
@@ -80,7 +84,8 @@ class ChatGroupMessageTransactions {
     @Transactional
     ChatModels.ReadResult read(UUID conversation, ChatGroupAccess.Authorization auth, UUID id, UUID correlation) {
         var context = access.lock(conversation, auth, true);
-        var message = messages.findById(id).filter(m -> m.visible(clock.instant()) && access.messageVisible(context, m)).orElseThrow(ChatException::target);
+        var message = messages.findById(id).filter(m -> m.visible(clock.instant()) && access.messageVisible(context, m)
+                && visibility.visible(conversation, auth.actor(), m)).orElseThrow(ChatException::target);
         var read = reads.findById(new ChatReadStateEntity.ReadId(conversation, auth.actor())).orElseGet(() -> new ChatReadStateEntity(conversation, auth.actor()));
         boolean advanced = read.lastReadSequence < message.serverSequence;
         read.lastReadSequence = Math.max(read.lastReadSequence, message.serverSequence); reads.saveAndFlush(read);
@@ -94,13 +99,15 @@ class ChatGroupMessageTransactions {
     ChatModels.Message projection(UUID conversation, ChatGroupAccess.Authorization auth, UUID id) {
         var context = access.lock(conversation, auth, true);
         return message(messages.findById(id).filter(value -> value.visible(clock.instant())
-                && access.messageVisible(context, value)).orElseThrow(ChatException::target), context);
+                && access.messageVisible(context, value) && visibility.visible(conversation, auth.actor(), value))
+                .orElseThrow(ChatException::target), context);
     }
     @Transactional
     ChatModels.Message retract(UUID conversation, ChatGroupAccess.Authorization auth, UUID id, UUID correlation) {
         var context = access.lock(conversation, auth, true);
         var message = messages.lock(id).filter(value -> value.visible(clock.instant())
-                && access.messageVisible(context, value) && value.senderProfileId.equals(auth.actor()))
+                && access.messageVisible(context, value) && value.senderProfileId.equals(auth.actor())
+                && visibility.visible(conversation, auth.actor(), value))
                 .orElseThrow(ChatException::target);
         if (message.state.equals("ACTIVE")) {
             var now = clock.instant().truncatedTo(ChronoUnit.MICROS);
@@ -118,15 +125,17 @@ class ChatGroupMessageTransactions {
     ChatDeliveryCursor.Projection replay(UUID conversation, ChatGroupAccess.Authorization auth, String cursor) {
         var context = access.lock(conversation, auth, true);
         var purpose = cursorPurpose(context) + ":delivery";
-        long after = delivery.after(purpose, cursor, context.member().joinedAfterSequence, context.group().lastSequence);
+        long floor = Math.max(context.member().joinedAfterSequence, visibility.floor(conversation, auth.actor()));
+        long after = delivery.after(purpose, cursor, floor, context.group().lastSequence);
         var eligible = cursor == null ? List.<ChatMessageEntity>of()
                 : messages.groupHistory(conversation, visible(context), after, context.group().lastSequence, clock.instant(), 51);
         return delivery.page(purpose, after, eligible, result(context));
     }
     ChatModels.ReadResult result(ChatGroupAccess.Context context) {
-        long mark = Math.max(context.member().joinedAfterSequence, reads.findById(new ChatReadStateEntity.ReadId(context.group().id, context.actor().id()))
+        long floor = Math.max(context.member().joinedAfterSequence, visibility.floor(context.group().id, context.actor().id()));
+        long mark = Math.max(floor, reads.findById(new ChatReadStateEntity.ReadId(context.group().id, context.actor().id()))
                 .map(r -> r.lastReadSequence).orElse(0L));
-        var last = messages.groupLastRead(context.group().id, visible(context), context.member().joinedAfterSequence, mark, clock.instant());
+        var last = messages.groupLastRead(context.group().id, visible(context), floor, mark, clock.instant());
         return new ChatModels.ReadResult(last.map(m -> m.id).orElse(null), count(context, mark));
     }
     int count(ChatGroupAccess.Context context, long after) {
@@ -144,6 +153,7 @@ class ChatGroupMessageTransactions {
         return context.eligible().keySet().stream().filter(id -> access.visible(context, id)).toList();
     }
     private ChatModels.SendResult saved(ChatMessageEntity message, ChatGroupAccess.Context context) {
+        if (!visibility.visible(message.conversationId, context.actor().id(), message)) throw ChatException.conflict();
         return new ChatModels.SendResult(message(message, context), "SAVED", "UNCONFIRMED");
     }
     private ChatModels.Message message(ChatMessageEntity message, ChatGroupAccess.Context context) {
@@ -154,7 +164,8 @@ class ChatGroupMessageTransactions {
     }
     private String cursorPurpose(ChatGroupAccess.Context context) {
         var epoch = privacy.findById(context.actor().id()).map(p -> p.visibilityEpoch).orElse(0L);
-        return context.actor().id() + ":group-messages:" + context.group().id + ":" + context.member().id + ":" + epoch;
+        return context.actor().id() + ":group-messages:" + context.group().id + ":" + context.member().id + ":" + epoch
+                + ":" + visibility.cursorScope(context.group().id, context.actor().id());
     }
     static String purpose(UUID group, UUID message, UUID sender) { return "message:" + group + ":" + message + ":" + sender; }
 }

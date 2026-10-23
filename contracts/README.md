@@ -31,6 +31,9 @@ operation, structured active/retracted Message projections, minimized
 `MESSAGE_RETRACTED` owner facts and the promoted
 `websocket/community/event-v1.schema.json` change event. The accepted
 MB-684 proposal artifacts remain frozen.
+MB-746 adds the implemented per-user conversation DELETE operation, a durable
+server-ordered cutoff in Community, and a recipient-routed
+`CONVERSATION_CLEARED` fact used only to invalidate the actor's live sockets.
 See [ADR 0042](../docs/adr/0042-community-chat-contract.md).
 Existing appointment and Community interaction schemas are unchanged.
 
