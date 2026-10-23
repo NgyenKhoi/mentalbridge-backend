@@ -44,9 +44,12 @@ Content transaction. No service reads another service's database.
 
 Community migration `0021-community-comment-reactions.yaml` and Content migration
 `26_add_community_notice_delivery.sql` are the executable data truth. Their
-[canonical model](domain-model/relational/postgresql-logical-schema.sql),
-[entity index](domain-model/canonical-entities.md) and
-[field dictionary](database/postgresql-field-data-dictionary.md) change with them.
+[Community logical model](domain-model/relational/community-service.sql),
+[Content/Notification logical model](domain-model/relational/content-notification-service.sql),
+[entity index](domain-model/canonical-entities.md),
+[Community field dictionary](database/postgresql/community-service.md) and
+[Content/Notification field dictionary](database/postgresql/content-notification-service.md)
+change with them.
 The logical SQL is documentation and must never provision a runtime database.
 
 ## Acceptance states

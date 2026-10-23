@@ -1,12 +1,12 @@
 # PostgreSQL Data Model
 
 Start with the [canonical domain model](../domain-model/README.md) and its
-[PostgreSQL logical schema](../domain-model/relational/postgresql-logical-schema.sql)
+[PostgreSQL logical models by service](../domain-model/relational/README.md)
 for entities, ownership, and diagrams. That SQL is read-only documentation and
 must never be executed. Each module owns a separate PostgreSQL database and its
 default `public` schema; the service's migration history is the only executable
 runtime source of truth. Exact field purposes are documented in the
-[PostgreSQL field data dictionary](postgresql-field-data-dictionary.md).
+[PostgreSQL field data dictionary by service](postgresql-field-data-dictionary.md).
 
 ## Ownership
 
@@ -168,7 +168,7 @@ At capstone scale, do not partition by default. Consider owner-local partitionin
 3. Never edit an applied migration; add a new migration.
 4. Seed questionnaire definitions and reviewed resources through versioned reference-data migrations; introduce any future template entity only with an approved owner migration and canonical-model update.
 5. Use synthetic development data only.
-6. Every table and column has a useful entry in `postgresql-field-data-dictionary.md`. The same change that materially changes persisted domain structure must also update `docs/domain-model/relational/postgresql-logical-schema.sql` while preserving migrations as runtime truth.
+6. Every table and column has a useful entry in the owning service's `docs/database/postgresql/<owning-service>.md`. The same change that materially changes persisted domain structure must also update `docs/domain-model/relational/<owning-service>.sql` while preserving migrations as runtime truth. Shared entry points remain indexes; ordinary feature changes edit the owner files.
 
 ## Community direct chat (MB-685)
 
