@@ -310,38 +310,18 @@ public class AdminCommercialReconciliationController {
 
 			if (paymentRecord != null && "SUCCEEDED".equals(paymentRecord.status())) {
 				List<UUID> directCredits = Collections.emptyList();
-				if ("UPGRADE".equals(paymentRecord.purpose())) {
+				if (paymentRecord.subscriptionId() != null) {
 					directCredits = jdbc.sql("""
-							select uc.credit_id
-							from subscription_upgrade_credit uc
-							join subscription_upgrade u on u.id = uc.upgrade_id
-							where u.payment_id = :paymentId
-							order by uc.credit_id
+							select c.id
+							from service_credit c
+							join service_credit_period p on p.id = c.period_id
+							where p.source = 'PAID'
+							  and p.source_reference = :subIdText
+							order by c.created_at, c.id
 							limit %d
 							""".formatted(FETCH_LIMIT + 1))
-							.param("paymentId", paymentId)
+							.param("subIdText", paymentRecord.subscriptionId().toString())
 							.query(UUID.class).list();
-				} else {
-					if (paymentRecord.subscriptionId() != null) {
-						directCredits = jdbc.sql("""
-								select c.id
-								from service_credit c
-								join service_credit_period p on p.id = c.period_id
-								where p.source = 'PAID'
-								  and p.source_reference = :subIdText
-								  and not exists (
-								      select 1 from subscription_upgrade_credit uc
-								      join subscription_upgrade u on u.id = uc.upgrade_id
-								      where uc.credit_id = c.id
-								        and u.subscription_id = :subId
-								  )
-								order by c.created_at, c.id
-								limit %d
-								""".formatted(FETCH_LIMIT + 1))
-								.param("subIdText", paymentRecord.subscriptionId().toString())
-								.param("subId", paymentRecord.subscriptionId())
-								.query(UUID.class).list();
-					}
 				}
 
 				if (directCredits.size() > FETCH_LIMIT) {
@@ -365,12 +345,8 @@ public class AdminCommercialReconciliationController {
 						select c.id
 						from service_credit c
 						join service_credit_period p on p.id=c.period_id
-						where (p.source = 'PAID' and p.source_reference in (""" + inClause + """
-						)) or exists (
-						    select 1 from subscription_upgrade_credit uc
-						    join subscription_upgrade u on u.id = uc.upgrade_id
-						    where uc.credit_id = c.id and u.subscription_id in (""" + inClause + """
-						)) order by c.created_at, c.id limit """ + " " + (FETCH_LIMIT + 1))
+						where p.source = 'PAID' and p.source_reference in (""" + inClause + """
+						) order by c.created_at, c.id limit """ + " " + (FETCH_LIMIT + 1))
 						.query(UUID.class).list();
 
 			int subCreditsSize = subCredits.size();
