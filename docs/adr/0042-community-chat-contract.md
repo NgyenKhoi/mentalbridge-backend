@@ -108,5 +108,14 @@ accepted contract only after providers are compatible. MB-693 supplies cross-sta
 acceptance. Each runtime story promotes only its delivered operations and updates
 the canonical data model together with its owner migration.
 
+MB-745 adds sender retraction without changing conversation ordering or report
+evidence. The currently authorized sender may retract retained content with no
+additional minute-based window. Community erases ciphertext and returns a
+structured `RETRACTED` projection at the original message identity and position;
+Realtime carries only the minimized change pointer and reauthorizes each viewer.
+The transition creates no unread item, never moves a read watermark backward,
+and cannot be reversed or resurrected by a send retry. Evidence already captured
+for an authorized report remains isolated under the report case authority.
+
 No clinical, consent, retention, permission or payload widening is an additive
 implementation detail. Such a change requires explicit policy/schema review.

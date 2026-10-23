@@ -202,7 +202,7 @@ the active model.
 
 | Entity | Owner | Storage | Status | Invariant |
 | --- | --- | --- | --- | --- |
-| `community_chat_message` | community-service | PostgreSQL | ACTIVE | Migrations 0018/0019; encrypted text, unique sender/conversation/client identity, immutable GROUP author membership epoch and private sequence; 90-day content expiry, content-free retry tombstone. |
+| `community_chat_message` | community-service | PostgreSQL | ACTIVE | Migrations 0018/0019/0022; encrypted active text or sender-retracted content-free tombstone, unique sender/conversation/client identity, immutable GROUP author membership epoch and private sequence; 90-day content expiry and no retry resurrection. |
 | `community_chat_read_state` | community-service | PostgreSQL | ACTIVE | Migration 0018; one private monotonic read cursor per current reader/conversation; no shared-receipt opt-in implied. |
 
 ### MB-687 private group extension — ACTIVE

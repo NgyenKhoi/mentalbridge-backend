@@ -26,7 +26,11 @@ fragment and separate `community-comment-reaction-v1.schema.json` fact. Existing
 interaction-v1 producers and schemas remain compatible. The new generic
 `community-push-v1.schema.json` defines a payload only; actual PUSH provider/device
 delivery remains MB-675/679. Typing/shared receipts and ADMIN case operations
-remain future runtime work.
+remain future runtime work. MB-745 adds the implemented sender-retraction DELETE
+operation, structured active/retracted Message projections, minimized
+`MESSAGE_RETRACTED` owner facts and the promoted
+`websocket/community/event-v1.schema.json` change event. The accepted
+MB-684 proposal artifacts remain frozen.
 See [ADR 0042](../docs/adr/0042-community-chat-contract.md).
 Existing appointment and Community interaction schemas are unchanged.
 

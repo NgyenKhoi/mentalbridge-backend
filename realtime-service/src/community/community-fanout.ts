@@ -179,9 +179,12 @@ export class CommunityFanout implements OnModuleInit, OnApplicationShutdown {
               return;
             }
             if (
-              ['MESSAGE_SAVED', 'AUTHORIZATION_CHANGED', 'READ_STATE_CHANGED'].includes(
-                parsed.data.payload.kind,
-              )
+              [
+                'MESSAGE_SAVED',
+                'MESSAGE_RETRACTED',
+                'AUTHORIZATION_CHANGED',
+                'READ_STATE_CHANGED',
+              ].includes(parsed.data.payload.kind)
             )
               await this.publish(parsed.data);
           },

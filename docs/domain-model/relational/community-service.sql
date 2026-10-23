@@ -324,13 +324,18 @@ CREATE TABLE community.community_chat_message (
   server_sequence bigint NOT NULL CHECK (server_sequence > 0),
   content_ciphertext text,
   content_fingerprint varchar(100) NOT NULL,
+  state varchar(12) NOT NULL DEFAULT 'ACTIVE' CHECK (state IN ('ACTIVE', 'RETRACTED')),
   created_at timestamptz NOT NULL,
   expires_at timestamptz NOT NULL,
+  retracted_at timestamptz,
   purged_at timestamptz,
   UNIQUE (conversation_id, sender_profile_id, client_message_id),
   UNIQUE (conversation_id, server_sequence),
   CHECK (expires_at > created_at),
-  CHECK ((content_ciphertext IS NULL) = (purged_at IS NOT NULL))
+  CHECK ((content_ciphertext IS NULL) = (purged_at IS NOT NULL)),
+  CHECK ((state = 'ACTIVE' AND retracted_at IS NULL) OR
+    (state = 'RETRACTED' AND retracted_at IS NOT NULL AND content_ciphertext IS NULL AND purged_at = retracted_at)),
+  CHECK (retracted_at IS NULL OR retracted_at >= created_at)
 );
 CREATE TABLE community.community_chat_read_state (
   conversation_id uuid NOT NULL REFERENCES community.community_chat_conversation(id) ON DELETE CASCADE,

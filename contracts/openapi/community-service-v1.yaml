@@ -1,8 +1,8 @@
 openapi: 3.1.0
 info:
   title: MentalBridge Community API
-  version: 1.13.0
-  description: Privacy-isolated peer-support Community Contract v1.11. Feed and saved-post ordering never use Care, Journal, emotion, SupportPlan, inferred severity, or AI data. Optional owner-selected uploaded avatars use verified Community media only and never expose anonymous/deleted identity. MB-616 adds an owner-private newest-saved query over the bookmark facts delivered by MB-579; inaccessible posts fail closed and bookmark state never becomes a recommendation profile.
+  version: 1.14.0
+  description: Privacy-isolated peer-support Community Contract v1.11. Feed and saved-post ordering never use Care, Journal, emotion, SupportPlan, inferred severity, or AI data. Optional owner-selected uploaded avatars use verified Community media only and never expose anonymous/deleted identity. MB-616 adds an owner-private newest-saved query over the bookmark facts delivered by MB-579; inaccessible posts fail closed and bookmark state never becomes a recommendation profile. MB-745 adds sender-only message retraction with content-free tombstones at the original message identity and position.
 servers:
   - url: http://localhost:8084
 paths:
@@ -48,6 +48,9 @@ paths:
   /api/v1/community/chat/conversations/{conversationId}/messages:
     x-mentalbridge-status: implemented
     $ref: './community-chat-v1.json#/paths/~1api~1v1~1community~1chat~1conversations~1%7BconversationId%7D~1messages'
+  /api/v1/community/chat/conversations/{conversationId}/messages/{messageId}:
+    x-mentalbridge-status: implemented
+    $ref: './community-chat-v1.json#/paths/~1api~1v1~1community~1chat~1conversations~1%7BconversationId%7D~1messages~1%7BmessageId%7D'
   /api/v1/community/chat/conversations/{conversationId}/read-cursor:
     x-mentalbridge-status: implemented
     $ref: './community-chat-v1.json#/paths/~1api~1v1~1community~1chat~1conversations~1%7BconversationId%7D~1read-cursor'
