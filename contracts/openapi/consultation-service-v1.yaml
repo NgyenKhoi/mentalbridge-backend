@@ -1493,6 +1493,54 @@ paths:
       operationId: listAdminPayments
       description: ADMIN-only bounded read of canonical purchase/upgrade facts. No customer profile, checkout destination, raw provider payload, or computed revenue is returned.
       security: [{ bearerAuth: [] }]
+      parameters:
+        - name: status
+          in: query
+          required: false
+          schema: { type: string, enum: [ALL, PENDING, SUCCEEDED, FAILED, CHARGEBACK] }
+        - name: from
+          in: query
+          required: false
+          schema: { type: string, format: date-time }
+        - name: to
+          in: query
+          required: false
+          schema: { type: string, format: date-time }
+          description: Inclusive upper bound on createdAt; retained for existing clients. Do not combine with toExclusive.
+        - name: toExclusive
+          in: query
+          required: false
+          schema: { type: string, format: date-time }
+          description: Exclusive upper bound on createdAt. Must be after from; do not combine with to.
+        - name: subscriptionId
+          in: query
+          required: false
+          schema: { type: string, format: uuid }
+        - name: paymentId
+          in: query
+          required: false
+          schema: { type: string, format: uuid }
+        - name: limit
+          in: query
+          required: false
+          schema: { type: integer, minimum: 1, maximum: 200, default: 200 }
+        - name: orderId
+          in: query
+          required: false
+          schema: { type: string }
+        - name: idempotencyKey
+          in: query
+          required: false
+          schema: { type: string }
+        - name: momoRef
+          in: query
+          required: false
+          schema: { type: string }
+          description: Search payments by MoMo orderId or requestId
+        - name: offset
+          in: query
+          required: false
+          schema: { type: integer, minimum: 0, default: 0 }
       responses:
         '200':
           description: Recent canonical payment facts
@@ -1507,12 +1555,150 @@ paths:
       operationId: listAdminPayouts
       description: Returns a bounded reconciliation view with masked destinations and no raw provider payload or destination data.
       security: [{ bearerAuth: [] }]
+      parameters:
+        - name: status
+          in: query
+          required: false
+          schema: { type: string, enum: [ALL, PENDING, PROCESSING, SUCCEEDED, FAILED, UNKNOWN] }
+        - name: from
+          in: query
+          required: false
+          schema: { type: string, format: date-time }
+        - name: to
+          in: query
+          required: false
+          schema: { type: string, format: date-time }
+          description: Inclusive upper bound on requestedAt; retained for existing clients. Do not combine with toExclusive.
+        - name: toExclusive
+          in: query
+          required: false
+          schema: { type: string, format: date-time }
+          description: Exclusive upper bound on requestedAt. Must be after from; do not combine with to.
+        - name: specialistAccountId
+          in: query
+          required: false
+          schema: { type: string, format: uuid }
+        - name: payoutId
+          in: query
+          required: false
+          schema: { type: string, format: uuid }
+        - name: limit
+          in: query
+          required: false
+          schema: { type: integer, minimum: 1, maximum: 200, default: 200 }
+        - name: idempotencyKey
+          in: query
+          required: false
+          schema: { type: string }
+        - name: providerReference
+          in: query
+          required: false
+          schema: { type: string }
+          description: Exact provider payout reference from any persisted attempt; the list item displays the latest attempt's reference.
+        - name: offset
+          in: query
+          required: false
+          schema: { type: integer, minimum: 0, default: 0 }
       responses:
         '200':
           description: Recent provider payout reconciliation rows
           content:
             application/json:
               schema: { $ref: '#/components/schemas/AdminPayoutList' }
+        '401': { $ref: '#/components/responses/UnauthorizedProblem' }
+        '403': { $ref: '#/components/responses/ForbiddenProblem' }
+  /api/v1/admin/payouts/{payoutId}:
+    x-mentalbridge-status: implemented
+    get:
+      operationId: getAdminPayoutDetail
+      description: Returns payout details including masked destination, attempts, earnings, and provider events.
+      security: [{ bearerAuth: [] }]
+      parameters:
+        - name: payoutId
+          in: path
+          required: true
+          schema: { type: string, format: uuid }
+      responses:
+        '200':
+          description: Detailed payout reconciliation record
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/AdminPayoutDetail' }
+        '401': { $ref: '#/components/responses/UnauthorizedProblem' }
+        '403': { $ref: '#/components/responses/ForbiddenProblem' }
+        '404': { $ref: '#/components/responses/NotFoundProblem' }
+  /api/v1/admin/subscriptions/{subscriptionId}:
+    x-mentalbridge-status: implemented
+    get:
+      operationId: getAdminSubscriptionDetail
+      description: Returns subscription details including payments, credits, and upgrades.
+      security: [{ bearerAuth: [] }]
+      parameters:
+        - name: subscriptionId
+          in: path
+          required: true
+          schema: { type: string, format: uuid }
+      responses:
+        '200':
+          description: Detailed subscription commercial record
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/AdminSubscriptionDetail' }
+        '401': { $ref: '#/components/responses/UnauthorizedProblem' }
+        '403': { $ref: '#/components/responses/ForbiddenProblem' }
+        '404': { $ref: '#/components/responses/NotFoundProblem' }
+  /api/v1/admin/commercial/discrepancies:
+    x-mentalbridge-status: implemented
+    get:
+      operationId: getAdminCommercialDiscrepancies
+      description: Returns authoritative commercial discrepancies including pending/failed/duplicate webhooks, failed payouts, held earnings, and disputed settlements.
+      security: [{ bearerAuth: [] }]
+      responses:
+        '200':
+          description: Authoritative discrepancy report
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/AdminCommercialDiscrepancyReport' }
+        '401': { $ref: '#/components/responses/UnauthorizedProblem' }
+        '403': { $ref: '#/components/responses/ForbiddenProblem' }
+  /api/v1/admin/commercial/provenance:
+    x-mentalbridge-status: implemented
+    get:
+      operationId: getAdminCommercialProvenance
+      description: Traces canonical commercial provenance across Payment, Subscription/Credit, Appointment/Settlement, Specialist Earning, and Payout.
+      security: [{ bearerAuth: [] }]
+      parameters:
+        - name: paymentId
+          in: query
+          required: false
+          schema: { type: string, format: uuid }
+        - name: subscriptionId
+          in: query
+          required: false
+          schema: { type: string, format: uuid }
+        - name: creditId
+          in: query
+          required: false
+          schema: { type: string, format: uuid }
+        - name: appointmentId
+          in: query
+          required: false
+          schema: { type: string, format: uuid }
+        - name: earningId
+          in: query
+          required: false
+          schema: { type: string, format: uuid }
+        - name: payoutId
+          in: query
+          required: false
+          schema: { type: string, format: uuid }
+      responses:
+        '200':
+          description: Complete provenance trace across the commercial bounded context
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/AdminCommercialProvenance' }
+        '400': { $ref: '#/components/responses/ValidationProblem' }
         '401': { $ref: '#/components/responses/UnauthorizedProblem' }
         '403': { $ref: '#/components/responses/ForbiddenProblem' }
   /internal/v1/payouts/momo/ipn:
@@ -2883,7 +3069,7 @@ components:
       required: [generatedAt, count, items]
       properties:
         generatedAt: { type: string, format: date-time }
-        count: { type: integer, minimum: 0, maximum: 200 }
+        count: { type: integer, minimum: 0, maximum: 200, description: Number of items in this response page; not a total across matching payments. }
         items:
           type: array
           maxItems: 200
@@ -2923,13 +3109,289 @@ components:
         failureCode: { type: [string, 'null'], maxLength: 64 }
         requestedAt: { type: string, format: date-time }
         completedAt: { type: [string, 'null'], format: date-time }
+    AdminPayoutDetail:
+      type: object
+      additionalProperties: false
+      required: [payout, attempts, earnings, events]
+      properties:
+        payout: { $ref: '#/components/schemas/AdminPayout' }
+        attempts:
+          type: array
+          items:
+            type: object
+            additionalProperties: false
+            required: [attemptId, attemptNumber, provider, status, requestedAt]
+            properties:
+              attemptId: { type: string, format: uuid }
+              attemptNumber: { type: integer, minimum: 1 }
+              provider: { type: string, enum: [FAKE, MOMO] }
+              status: { type: string, enum: [PENDING, PROCESSING, SUCCEEDED, FAILED, UNKNOWN] }
+              providerReference: { type: [string, 'null'] }
+              failureCode: { type: [string, 'null'] }
+              requestedAt: { type: string, format: date-time }
+              confirmedAt: { type: [string, 'null'], format: date-time }
+              failedAt: { type: [string, 'null'], format: date-time }
+        earnings:
+          type: array
+          items:
+            type: object
+            additionalProperties: false
+            required: [earningId, appointmentId, amountVnd, status, earnedAt]
+            properties:
+              earningId: { type: string, format: uuid }
+              appointmentId: { type: string, format: uuid }
+              amountVnd: { type: integer, format: int64, minimum: 0 }
+              status: { type: string }
+              earnedAt: { type: string, format: date-time }
+              paidAt: { type: [string, 'null'], format: date-time }
+        events:
+          type: array
+          items:
+            type: object
+            additionalProperties: false
+            required: [eventId, provider, eventType, processingStatus, receivedAt]
+            properties:
+              eventId: { type: string, format: uuid }
+              provider: { type: string }
+              eventType: { type: string }
+              processingStatus: { type: string }
+              failureCode: { type: [string, 'null'] }
+              receivedAt: { type: string, format: date-time }
+              processedAt: { type: [string, 'null'], format: date-time }
+    AdminSubscriptionDetail:
+      type: object
+      additionalProperties: false
+      required: [subscriptionId, userAccountId, planVersionId, planCode, pricingPolicyVersion, status, createdAt, payments, credits, upgrades]
+      properties:
+        subscriptionId: { type: string, format: uuid }
+        userAccountId: { type: string, format: uuid }
+        planVersionId: { type: string, format: uuid }
+        planCode: { type: string, enum: [FREE, PLUS, PREMIUM] }
+        pricingPolicyVersion: { type: string }
+        status: { type: string, enum: [PENDING_PAYMENT, ACTIVE, ENDED] }
+        currentPeriodStart: { type: [string, 'null'], format: date-time }
+        currentPeriodEnd: { type: [string, 'null'], format: date-time }
+        createdAt: { type: string, format: date-time }
+        payments:
+          type: array
+          items: { $ref: '#/components/schemas/AdminPayment' }
+        credits:
+          type: array
+          items:
+            type: object
+            additionalProperties: false
+            required: [creditId, periodId, ordinal, state, creditAllocationVnd, createdAt]
+            properties:
+              creditId: { type: string, format: uuid }
+              periodId: { type: string, format: uuid }
+              ordinal: { type: integer, minimum: 1, maximum: 10 }
+              state: { type: string }
+              creditAllocationVnd: { type: integer, format: int64 }
+              appointmentId: { type: [string, 'null'], format: uuid }
+              createdAt: { type: string, format: date-time }
+        upgrades:
+          type: array
+          items:
+            type: object
+            additionalProperties: false
+            required: [upgradeId, fromPlanVersionId, toPlanVersionId, offsetVnd, amountDueVnd, status, quotedAt]
+            properties:
+              upgradeId: { type: string, format: uuid }
+              fromPlanVersionId: { type: string, format: uuid }
+              toPlanVersionId: { type: string, format: uuid }
+              offsetVnd: { type: integer, format: int64 }
+              amountDueVnd: { type: integer, format: int64 }
+              status: { type: string }
+              quotedAt: { type: string, format: date-time }
+              appliedAt: { type: [string, 'null'], format: date-time }
+    AdminCommercialDiscrepancyReport:
+      type: object
+      additionalProperties: false
+      required: [generatedAt, totalDiscrepancies, webhooks, payouts, heldEarnings, disputes]
+      properties:
+        generatedAt: { type: string, format: date-time }
+        totalDiscrepancies: { type: integer, minimum: 0 }
+        webhooks:
+          type: array
+          items:
+            type: object
+            additionalProperties: false
+            required: [id, orderId, provider, discrepancyType, status, receivedAt]
+            properties:
+              id: { type: string, format: uuid }
+              orderId: { type: string }
+              provider: { type: string }
+              transId: { type: [integer, 'null'], format: int64 }
+              discrepancyType: { type: string }
+              status: { type: string }
+              failureCode: { type: [string, 'null'] }
+              receivedAt: { type: string, format: date-time }
+        payouts:
+          type: array
+          items:
+            type: object
+            additionalProperties: false
+            required: [payoutId, specialistAccountId, destinationHint, amountVnd, currency, provider, status, requestedAt]
+            properties:
+              payoutId: { type: string, format: uuid }
+              specialistAccountId: { type: string, format: uuid }
+              destinationHint: { type: string }
+              amountVnd: { type: integer, format: int64 }
+              currency: { type: string, const: VND }
+              provider: { type: string }
+              status: { type: string }
+              failureCode: { type: [string, 'null'] }
+              requestedAt: { type: string, format: date-time }
+        heldEarnings:
+          type: array
+          items:
+            type: object
+            additionalProperties: false
+            required: [earningId, appointmentId, specialistAccountId, amountVnd, status, holdReason, earnedAt, settlementAvailableAt]
+            properties:
+              earningId: { type: string, format: uuid }
+              appointmentId: { type: string, format: uuid }
+              specialistAccountId: { type: string, format: uuid }
+              amountVnd: { type: integer, format: int64 }
+              status: { type: string }
+              holdReason: { type: string }
+              earnedAt: { type: string, format: date-time }
+              settlementAvailableAt: { type: string, format: date-time }
+        disputes:
+          type: array
+          items:
+            type: object
+            additionalProperties: false
+            required: [disputeId, appointmentId, openedByRole, reasonCode, status, openedAt, eligibleUntil]
+            properties:
+              disputeId: { type: string, format: uuid }
+              appointmentId: { type: string, format: uuid }
+              openedByRole: { type: string }
+              reasonCode: { type: string }
+              status: { type: string }
+              resolutionOutcome: { type: [string, 'null'] }
+              openedAt: { type: string, format: date-time }
+              eligibleUntil: { type: string, format: date-time }
+    AdminCommercialProvenance:
+      type: object
+      additionalProperties: false
+      required: [generatedAt, queryIdentifierType, queryIdentifierValue, found, subscriptions, payments, credits, appointments, disputes, earnings, payouts, truncated]
+      properties:
+        generatedAt: { type: string, format: date-time }
+        queryIdentifierType: { type: string }
+        queryIdentifierValue: { type: string }
+        found: { type: boolean }
+        truncated: { type: boolean, description: True when at least one entity category exceeded the fetch limit }
+        subscription:
+          type: [object, 'null']
+          additionalProperties: false
+          required: [subscriptionId, userAccountId, planVersionId, planCode, pricingPolicyVersion, status, createdAt]
+          properties:
+            subscriptionId: { type: string, format: uuid }
+            userAccountId: { type: string, format: uuid }
+            planVersionId: { type: string, format: uuid }
+            planCode: { type: string }
+            pricingPolicyVersion: { type: string }
+            status: { type: string }
+            currentPeriodStart: { type: [string, 'null'], format: date-time }
+            currentPeriodEnd: { type: [string, 'null'], format: date-time }
+            createdAt: { type: string, format: date-time }
+        subscriptions:
+          type: array
+          items:
+            type: object
+            additionalProperties: false
+            required: [subscriptionId, userAccountId, planVersionId, planCode, pricingPolicyVersion, status, createdAt]
+            properties:
+              subscriptionId: { type: string, format: uuid }
+              userAccountId: { type: string, format: uuid }
+              planVersionId: { type: string, format: uuid }
+              planCode: { type: string }
+              pricingPolicyVersion: { type: string }
+              status: { type: string }
+              currentPeriodStart: { type: [string, 'null'], format: date-time }
+              currentPeriodEnd: { type: [string, 'null'], format: date-time }
+              createdAt: { type: string, format: date-time }
+        payments:
+          type: array
+          items: { $ref: '#/components/schemas/AdminPayment' }
+        credits:
+          type: array
+          items:
+            type: object
+            additionalProperties: false
+            required: [creditId, periodId, ordinal, state, creditAllocationVnd, createdAt]
+            properties:
+              creditId: { type: string, format: uuid }
+              periodId: { type: string, format: uuid }
+              ordinal: { type: integer }
+              state: { type: string }
+              creditAllocationVnd: { type: integer, format: int64 }
+              appointmentId: { type: [string, 'null'], format: uuid }
+              createdAt: { type: string, format: date-time }
+        appointments:
+          type: array
+          items:
+            type: object
+            additionalProperties: false
+            required: [appointmentId, specialistAccountId, serviceCreditId, status, modality, scheduledStartAt, scheduledEndAt]
+            properties:
+              appointmentId: { type: string, format: uuid }
+              specialistAccountId: { type: string, format: uuid }
+              serviceCreditId: { type: string, format: uuid }
+              status: { type: string }
+              modality: { type: string }
+              sessionOutcome: { type: [string, 'null'] }
+              completionFactId: { type: [string, 'null'], format: uuid }
+              scheduledStartAt: { type: string, format: date-time }
+              scheduledEndAt: { type: string, format: date-time }
+              sessionSettledAt: { type: [string, 'null'], format: date-time }
+        disputes:
+          type: array
+          items:
+            type: object
+            additionalProperties: false
+            required: [disputeId, appointmentId, openedByRole, reasonCode, status, openedAt]
+            properties:
+              disputeId: { type: string, format: uuid }
+              appointmentId: { type: string, format: uuid }
+              openedByRole: { type: string }
+              reasonCode: { type: string }
+              status: { type: string }
+              resolutionOutcome: { type: [string, 'null'] }
+              resolutionReason: { type: [string, 'null'] }
+              openedAt: { type: string, format: date-time }
+              resolvedAt: { type: [string, 'null'], format: date-time }
+        earnings:
+          type: array
+          items:
+            type: object
+            additionalProperties: false
+            required: [earningId, appointmentId, consumedCreditId, specialistAccountId, planVersion, creditAllocationVnd, specialistShareBps, specialistAmountVnd, platformAllocationVnd, status, earnedAt, settlementAvailableAt]
+            properties:
+              earningId: { type: string, format: uuid }
+              appointmentId: { type: string, format: uuid }
+              consumedCreditId: { type: string, format: uuid }
+              specialistAccountId: { type: string, format: uuid }
+              planVersion: { type: string }
+              creditAllocationVnd: { type: integer, format: int64 }
+              specialistShareBps: { type: integer }
+              specialistAmountVnd: { type: integer, format: int64 }
+              platformAllocationVnd: { type: integer, format: int64 }
+              status: { type: string }
+              earnedAt: { type: string, format: date-time }
+              settlementAvailableAt: { type: string, format: date-time }
+              paidAt: { type: [string, 'null'], format: date-time }
+        payouts:
+          type: array
+          items: { $ref: '#/components/schemas/AdminPayout' }
     AdminPayoutList:
       type: object
       additionalProperties: false
       required: [generatedAt, count, items]
       properties:
         generatedAt: { type: string, format: date-time }
-        count: { type: integer, minimum: 0, maximum: 200 }
+        count: { type: integer, minimum: 0, maximum: 200, description: Number of items in this response page; not a total across matching payouts. }
         items:
           type: array
           maxItems: 200
