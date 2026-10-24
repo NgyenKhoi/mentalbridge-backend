@@ -6,6 +6,24 @@ A proposal is not a callable API. Move an accepted REST contract into `contracts
 
 ## Active proposals
 
+MB-755 publishes the accepted target, still planned for runtime:
+
+- [Voice REST/OpenAPI v1](companion-voice-v1.openapi.json), including Care voice
+  disclosure/decisions and new Journal-only owner authorization prerequisites;
+- [closed owner/worker envelopes](companion-voice-worker-v1.schema.json);
+- [frozen policy schema](companion-voice-policy-v1.schema.json), validating the
+  [approved quota/privacy snapshot](../../docs/policies/companion-voice-policy-v1.json);
+- [nine-state lifecycle](companion-voice-lifecycle-v1.json) and
+  [synthetic positive/negative fixtures](companion-voice-v1.examples.json);
+- [executable contract tests](companion-voice-contract.test.mjs), run locally and
+  in the Journal/AI CI job; they prove schema/design consistency, not deployed
+  quota, media or provider behavior.
+
+See [ADR 0046](../../docs/adr/0046-ai-voice-companion-contract.md),
+[Voice policy](../../docs/policies/companion-voice-policy-v1.md),
+[demo runbook](../../docs/ai-voice-demo-runbook.md) and
+[MB-755 evidence](../../docs/story-mb-755-ai-voice-contract-evidence.md).
+
 MB-684 adds the [Community chat OpenAPI candidate](community-chat-v1.openapi.json),
 [client commands](community-chat-command-v1.schema.json),
 [namespace handshake](community-chat-handshake-v1.schema.json),

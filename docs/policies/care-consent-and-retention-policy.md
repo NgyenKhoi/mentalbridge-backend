@@ -14,6 +14,28 @@
 
 ## Separate consent and disclosure paths
 
+### Accepted prospective Voice consent boundary (MB-755)
+
+[ADR 0046](../adr/0046-ai-voice-companion-contract.md) approves a future independent
+`AI_VOICE_PROCESSING` stream under `ai-voice-processing-capstone-v1`. Voice
+requires both that stream and current `AI_PROCESSING`; neither substitutes for
+the other. Care owns disclosure, server-issued acceptance/withdrawal timestamps
+and current decision. The immutable Vietnamese target notice is in
+[Companion Voice policy v1](companion-voice-policy-v1.md). Material audio-provider
+or processing-purpose changes require a new voice version and explicit voice
+reconsent, without resetting text consent.
+
+This is an accepted target only. MB-755 changes no current Care handler,
+`ConsentType`, collection limit, active OpenAPI constant or migration. Runtime
+delivery must add voice decisions/disclosure/current authorization before
+Journal/AI can enable voice; existing user-bearer reads cannot substitute for
+the planned service-only current owner checks. Withdrawal of either consent
+ends voice processing and purges session context. Voice usage/operational
+metadata has a separate 30-day bound; it does not rewrite existing assessment,
+text-history or Care decision retention.
+
+### Existing runtime consent purposes
+
 MentalBridge must not combine these purposes into one broad toggle:
 
 | Purpose | Required treatment |

@@ -39,6 +39,7 @@ still planned. Native-only credential ingress is the scoped
 | [0043-plan-scoped-resource-progress.md](0043-plan-scoped-resource-progress.md) | `MB-PLAN-RESOURCE-PROGRESS-001` | Accepted for MB-670 implementation | Care-owned minimized plan resources, Content-owned plan-scoped Bingo and exact-version completion facts, and bounded Care occurrence reconciliation |
 | [0044-secure-native-push-delivery.md](0044-secure-native-push-delivery.md) | `MB-NATIVE-PUSH-DELIVERY-001` | Accepted for MB-675 implementation | Content-owned encrypted device registrations, Expo adapter, privacy-minimized payloads, and bounded delivery evidence |
 | [0045-home-next-step-read.md](0045-home-next-step-read.md) | `MB-HOME-NEXT-STEP-001` | Accepted for MB-672 implementation | Care-owned Home read embedding the unchanged journey with ordered current-plan focus and bounded completed-plan context |
+| [0046-ai-voice-companion-contract.md](0046-ai-voice-companion-contract.md) | `MB-AI-VOICE-COMPANION-001` | Accepted target for MB-755; runtime not implemented | AI Companion voice, independent finite quotas, Care dual consent, ephemeral content, isolated LiveKit agents and planned owner/worker contracts |
 
 For clauses explicitly amended by ADR 0022, ADR 0024, ADR 0034, or [0043-plan-scoped-resource-progress.md](0043-plan-scoped-resource-progress.md), the relevant
 latest amendment is the current prospective authority. Historical records keep
