@@ -1,5 +1,47 @@
 # Consultation Service
 
+## Voice entitlement prerequisite (MB-756)
+
+`POST /internal/v1/ai-companion/voice-entitlement-authorizations` is a narrow
+read-only Journal/AI prerequisite for [ADR 0046](../docs/adr/0046-ai-voice-companion-contract.md).
+It delegates to `CurrentServiceEntitlementService.current(ownerId)`. Missing,
+expired and not-yet-effective grants return `FREE` / `DEFAULT_FREE` without
+`validUntil`; current PLUS/PREMIUM PAID/DEMO grants include their strict future
+expiry. The response echoes the exact opaque owner/session/purpose binding and
+returns policy/source/version provenance (for example
+`service-entitlement-v1:PAID:7`) in the frozen `entitlementVersion` string field
+(at most 128 characters). It contains no
+payment, source-reference, credit, balance or profile data.
+
+Inject `CONSULTATION_VOICE_JOURNAL_SERVICE_TOKEN` only into Consultation and
+Journal/AI's service-owned secret configuration. The exact header is
+`X-MentalBridge-Voice-Entitlement-Token`. An absent or empty configuration disables
+access without preventing startup. A configured token must contain 32–256
+printable ASCII characters without whitespace; malformed configuration fails
+startup. Reuse of Consultation's evidence or appointment-reminder token also
+fails startup. Use independent secrets for credentials held by other services;
+Consultation cannot compare secrets that are not configured locally.
+This credential is distinct from browser JWTs, worker, Care, reminder and
+general internal credentials; do not forward a user Authorization header.
+Only the trusted Journal caller may submit `ownerId`, `voiceSessionId` and
+`purpose: AI_COMPANION_VOICE`. Consultation echoes this session reference; it
+does not query Journal's session database or grant media access.
+
+Success and all authentication/validation/dependency errors use `no-store`.
+Voice errors retain the closed MB-755 Problem shape and codes with absolute
+type URIs; legacy Consultation routes keep their existing error behavior.
+No migration, financial mutation, provider call, voice admission, room or
+deployment is introduced. Care's independent consent prerequisite and final
+Journal integration remain separate owner deliveries.
+
+Focused verification:
+
+```sh
+./mvnw -B -Dspringdotenv.enabled=false -Dtest=VoiceEntitlementPropertiesTests,VoiceEntitlementControllerTests,ConsultationOpenApiContractTests,AdminOperationsSecurityIntegrationTests test
+```
+The HTTP slice uses the real current-entitlement service, a mocked owner
+repository and fixed time, without a database or external providers.
+
 ## Migration naming and applied history (MB-717)
 
 New Consultation SQL migrations use UTC `yyyyMMddHHmmss-description.sql`, for
