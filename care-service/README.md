@@ -1,5 +1,59 @@
 # Care Service
 
+## MB-756 independent voice consent prerequisite
+
+Care implements four operations from the accepted
+[Voice contract](../contracts/proposals/companion-voice-v1.openapi.json) under
+[ADR 0046](../docs/adr/0046-ai-voice-companion-contract.md): authenticated USER
+disclosure retrieval, current voice consent, append-only grant/withdrawal, and
+Journal-only current dual-consent authorization. Their deployed wire contract
+is [care-service-v1.yaml](../contracts/openapi/care-service-v1.yaml). Journal
+voice admission, media, worker execution and actual voice enablement remain
+separate downstream work.
+
+`AI_VOICE_PROCESSING` uses the exact Vietnamese
+`ai-voice-processing-capstone-v1` notice. Existing `AI_PROCESSING` v2 is unchanged.
+The generic consent API still exposes only privacy and AI-processing streams;
+its enum, two-item collection and existing clients are unchanged. Voice writes
+require an existing owned Care profile, serialize on that profile, keep immutable
+decision history and persist an HMAC of the owner-scoped idempotency UUID rather
+than the raw key. An exact replay returns its original decision without making
+that historical decision current authority. Current authorization always reads
+the latest two independent grants in one repeatable-read snapshot.
+
+`GET /api/v1/ai-voice-processing-disclosure` and
+`GET|POST /api/v1/consents/ai-voice-processing` require an Identity USER bearer.
+The response `current` means the decision uses the current voice policy version;
+absence or an outdated version returns `current: false, granted: false`.
+Grant/withdrawal timestamps are server-issued. Withdrawing does not require a
+text grant or paid entitlement and never deletes historical decisions. The
+30-day Journal voice-usage retention does not alter Care consent retention.
+
+`POST /internal/v1/ai-companion/voice-consent-authorizations` accepts only
+`X-MentalBridge-Voice-Care-Token`, configured by
+`CARE_VOICE_JOURNAL_SERVICE_TOKEN` (empty disables access; otherwise 32–256
+printable characters). Startup rejects reuse of the configured SupportPlan
+Companion service credential or idempotency HMAC secret. It is a distinct Journal-to-Care credential transported
+over TLS, never a worker token or end-user JWT. Journal must derive the owner
+from its admitted session; Care validates the exact UUID owner/session assertion
+and constant `AI_COMPANION_VOICE` purpose, echoes that binding and resolves its
+own current grants. It does not call Journal or another owner's database.
+Journal validates the echoed binding and applies the accepted two-second read
+deadline and ten-second authority lease; a Care response is not a reusable grant.
+
+All four operations use `Cache-Control: no-store`, including security and
+validation errors. Voice-only errors retain the closed frozen Problem shape,
+absolute error URI and stable status/code mapping; legacy errors are unaffected.
+`CARE_IDEMPOTENCY_HMAC_KEY` remains the existing required secret, reused only
+with the explicit `voice-consent-key` purpose and owner prefix. Preserve it
+across retries; rotation needs a reviewed replay-compatibility procedure.
+
+Migration `032-ai-voice-processing-consent.sql` only extends the owner check
+constraint and preserves existing rows/checksums. Apply through Liquibase to
+the owner database before enabling voice consent writes; never execute the
+documentation-only logical model. No provider call, transcript, audio, Kafka
+message, text-quota change or financial side effect is introduced.
+
 MB-375 adds the Care-authoritative reassessment review and the single audited,
 idempotent, atomic SupportPlan replacement path described below.
 

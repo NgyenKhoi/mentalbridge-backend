@@ -1,0 +1,15 @@
+Đồng ý trò chuyện bằng giọng nói với AI
+
+Khi bạn chủ động bắt đầu, MentalBridge dùng micro để trò chuyện với AI bằng tiếng Việt. LiveKit truyền âm thanh; LiveKit Inference chuyển lời nói của bạn thành văn bản và chuyển câu trả lời thành giọng nói. MentalBridge gửi phần văn bản cần thiết của cuộc gọi hiện tại đến AI Claude qua AWS Bedrock để tạo câu trả lời.
+
+Dữ liệu có thể được xử lý ở nhiều quốc gia. Tuyến xử lý toàn cầu của AWS Bedrock có thể chuyển dữ liệu ra ngoài Singapore; việc kết nối tại Singapore không có nghĩa dữ liệu chỉ được xử lý ở Singapore hoặc Việt Nam.
+
+Nội dung chỉ được giữ tạm trong bộ nhớ của cuộc gọi hiện tại. Tính năng này không đọc lại nhật ký, cuộc trò chuyện bằng văn bản hoặc lịch sử riêng trước đó của bạn. MentalBridge không ghi âm, lưu bản chuyển lời nói thành văn bản hoặc lưu nội dung trả lời; không đưa những nội dung này vào nhật ký hệ thống. Các chế độ ghi lại và theo dõi nội dung trên nền tảng đám mây được tắt. Khi cuộc gọi kết thúc, phần nội dung tạm trong bộ nhớ được xóa.
+
+MentalBridge chỉ giữ thông tin tối thiểu để tính lượt, thời gian sử dụng và xử lý sự cố trong 30 ngày, như mã cuộc gọi, thời điểm, thời lượng và lý do kết thúc. Thông tin này không chứa âm thanh hoặc nội dung trò chuyện.
+
+Bạn đang trò chuyện với AI, không phải nhà trị liệu hay chuyên gia tư vấn. AI chỉ hỗ trợ trao đổi; không chẩn đoán, không quyết định an toàn và không tự thay đổi kế hoạch hỗ trợ, đặt lịch hoặc liên hệ người khác.
+
+Bạn cần đồng ý riêng cho cả xử lý bằng AI và trò chuyện bằng giọng nói. Quyền dùng micro hoặc gói trả phí không thay thế hai sự đồng ý này. Bạn có thể dừng cuộc gọi hoặc rút lại một trong hai sự đồng ý; MentalBridge sẽ chặn xử lý tiếp, kết thúc cuộc gọi và xóa nội dung tạm. Khi mất kết nối, việc dừng được thực hiện theo thời hạn bảo vệ của hệ thống, không phải tức thời trong mọi sự cố mạng.
+
+Nếu mục đích hoặc nhà cung cấp xử lý giọng nói thay đổi đáng kể, MentalBridge sẽ thông báo và xin lại sự đồng ý cho giọng nói. Việc này không thay đổi sự đồng ý hoặc đặt lại hạn mức trò chuyện bằng văn bản của bạn.
