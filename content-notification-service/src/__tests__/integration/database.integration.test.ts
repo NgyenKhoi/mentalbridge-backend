@@ -1641,6 +1641,55 @@ describe('Database Integration', () => {
       expect(attempts.rows[0].count).toBe(2);
     });
 
+    it('terminally reconciles a crashed final processing lease without another claim', async () => {
+      const repository = reminderRepository();
+      const appointmentId = '24000000-0000-4000-8000-000000000040';
+      await repository.apply(
+        statusEvent(appointmentId, 1, 'CONFIRMED'),
+        new Date('2030-01-01T00:00:00.000Z'),
+      );
+
+      for (const claimAt of [
+        '2030-01-02T02:00:00.000Z',
+        '2030-01-02T02:00:31.000Z',
+        '2030-01-02T02:01:02.000Z',
+      ]) {
+        const claims = await repository.claimPushDue(new Date(claimAt), 100);
+        expect(claims.some((row) => row.appointmentId === appointmentId)).toBe(true);
+      }
+
+      await expect(
+        repository.reconcilePushLeases(new Date('2030-01-02T02:01:31.000Z')),
+      ).resolves.toBe(0);
+      await expect(
+        repository.reconcilePushLeases(new Date('2030-01-02T02:01:33.000Z')),
+      ).resolves.toBeGreaterThanOrEqual(1);
+
+      const terminal = await pool.query<{
+        state: string;
+        attempt_count: number;
+        failure_code: string;
+        terminal_at: Date;
+      }>(
+        `SELECT state, attempt_count, failure_code, terminal_at
+         FROM appointment_push_reminder WHERE appointment_id=$1`,
+        [appointmentId],
+      );
+      expect(terminal.rows).toEqual([
+        {
+          state: 'FAILED',
+          attempt_count: 3,
+          failure_code: 'PROCESSING_LEASE_EXHAUSTED',
+          terminal_at: new Date('2030-01-02T02:01:33.000Z'),
+        },
+      ]);
+      const afterTerminal = await repository.claimPushDue(
+        new Date('2030-01-02T02:02:00.000Z'),
+        100,
+      );
+      expect(afterTerminal.some((row) => row.appointmentId === appointmentId)).toBe(false);
+    });
+
     it('deduplicates one reminder per recipient, appointment and version', async () => {
       const values = [
         '21000000-0000-4000-8000-000000000001',

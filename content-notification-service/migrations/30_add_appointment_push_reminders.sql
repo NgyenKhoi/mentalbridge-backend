@@ -30,6 +30,7 @@ CREATE TABLE appointment_push_reminder (
   notification_id uuid REFERENCES notification(id),
   failure_code varchar(64),
   invalidated_at timestamptz,
+  terminal_at timestamptz,
   created_at timestamptz NOT NULL DEFAULT now(),
   updated_at timestamptz NOT NULL DEFAULT now(),
   CONSTRAINT uq_appointment_push_reminder_identity
@@ -43,7 +44,9 @@ CREATE TABLE appointment_push_reminder (
   CONSTRAINT ck_appointment_push_reminder_time
     CHECK (target_at = scheduled_start_at - interval '60 minutes' AND due_at <= scheduled_start_at),
   CONSTRAINT ck_appointment_push_reminder_notification
-    CHECK (state <> 'MATERIALIZED' OR notification_id IS NOT NULL)
+    CHECK (state <> 'MATERIALIZED' OR notification_id IS NOT NULL),
+  CONSTRAINT ck_appointment_push_reminder_terminal
+    CHECK ((state IN ('MATERIALIZED', 'INVALIDATED', 'SUPPRESSED', 'FAILED', 'EXPIRED')) = (terminal_at IS NOT NULL))
 );
 
 CREATE INDEX ix_appointment_push_reminder_due

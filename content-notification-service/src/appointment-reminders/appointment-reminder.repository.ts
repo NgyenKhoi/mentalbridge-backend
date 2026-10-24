@@ -11,6 +11,8 @@ import type {
   ClaimedAppointmentReminder,
 } from './appointment-reminder.types.js';
 
+export class AppointmentPushReminderConflictError extends Error {}
+
 function providerKey(ownerId: string, appointmentId: string, version: number): string {
   const value = Buffer.from(
     createHash('sha256')
@@ -97,7 +99,7 @@ export class AppointmentReminderRepository {
       const invalidatedPush = await client.query<{ notification_id: string | null }>(
         `UPDATE appointment_push_reminder
          SET state='INVALIDATED', invalidated_at=$3, updated_at=$3,
-             failure_code='APPOINTMENT_VERSION_INVALIDATED'
+             terminal_at=$3, failure_code='APPOINTMENT_VERSION_INVALIDATED'
          WHERE appointment_id=$1 AND appointment_version<$2
            AND state IN ('PENDING','PROCESSING','MATERIALIZED')
          RETURNING notification_id`,
@@ -153,8 +155,8 @@ export class AppointmentReminderRepository {
       await client.query(
         `INSERT INTO appointment_push_reminder (
            recipient_id, appointment_id, appointment_version, modality,
-           scheduled_start_at, target_at, due_at, state, failure_code
-         ) VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9)
+           scheduled_start_at, target_at, due_at, state, failure_code, terminal_at
+         ) VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10)
          ON CONFLICT (recipient_id, appointment_id, appointment_version) DO NOTHING`,
         [
           event.payload.ownerAccountId,
@@ -166,9 +168,21 @@ export class AppointmentReminderRepository {
           dueAt,
           state === 'EXPIRED' ? 'EXPIRED' : 'PENDING',
           state === 'EXPIRED' ? 'LATE_CONFIRMATION' : null,
+          state === 'EXPIRED' ? observedAt : null,
         ],
       );
     });
+  }
+
+  async reconcilePushLeases(now: Date): Promise<number> {
+    const result = await this.db.query(
+      `UPDATE appointment_push_reminder
+       SET state='FAILED', next_attempt_at=NULL,
+           failure_code='PROCESSING_LEASE_EXHAUSTED', terminal_at=$1, updated_at=$1
+       WHERE state='PROCESSING' AND attempt_count>=3 AND next_attempt_at<=$1`,
+      [now],
+    );
+    return result.rowCount ?? 0;
   }
 
   async claimPushDue(now: Date, limit: number): Promise<readonly ClaimedAppointmentPushReminder[]> {
@@ -210,7 +224,7 @@ export class AppointmentReminderRepository {
         await client.query(
           `UPDATE appointment_push_reminder
            SET state='INVALIDATED', invalidated_at=$2, failure_code='APPOINTMENT_NOT_ELIGIBLE',
-               next_attempt_at=NULL, updated_at=$2
+               next_attempt_at=NULL, terminal_at=$2, updated_at=$2
            WHERE id=$1 AND state='PROCESSING'`,
           [reminder.id, now],
         );
@@ -257,13 +271,15 @@ export class AppointmentReminderRepository {
           [reminder.recipientId, sourceIdentity],
         );
         if (existing.rows[0]?.request_fingerprint !== fingerprint)
-          throw new Error('Conflicting appointment push reminder identity');
+          throw new AppointmentPushReminderConflictError(
+            'Conflicting appointment push reminder identity',
+          );
         notificationId = existing.rows[0].id;
       }
       await client.query(
         `UPDATE appointment_push_reminder
          SET state='MATERIALIZED', notification_id=$2, next_attempt_at=NULL,
-             failure_code=NULL, updated_at=$3
+             failure_code=NULL, terminal_at=$3, updated_at=$3
          WHERE id=$1 AND state='PROCESSING'`,
         [reminder.id, notificationId, now],
       );
@@ -290,7 +306,7 @@ export class AppointmentReminderRepository {
       `UPDATE appointment_push_reminder
        SET state=$2, next_attempt_at=NULL, failure_code=$3,
            invalidated_at=CASE WHEN $2='INVALIDATED' THEN $4 ELSE invalidated_at END,
-           updated_at=$4
+           terminal_at=$4, updated_at=$4
        WHERE id=$1 AND state='PROCESSING'`,
       [id, state, code, now],
     );

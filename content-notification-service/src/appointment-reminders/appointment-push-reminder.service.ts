@@ -12,8 +12,14 @@ import type { NotificationPreferenceService } from '../notification-preferences/
 import type { NotificationPreferences } from '../notification-preferences/notification-preference.types.js';
 import type { PushDeliveryClaim } from '../push-delivery/push-device.types.js';
 import type { ReminderClock } from '../reminders/reminder-materialization.service.js';
-import type { AppointmentTruthClient } from './appointment-reminder.clients.js';
-import type { AppointmentReminderRepository } from './appointment-reminder.repository.js';
+import type {
+  AppointmentEligibility,
+  AppointmentTruthClient,
+} from './appointment-reminder.clients.js';
+import {
+  AppointmentPushReminderConflictError,
+  type AppointmentReminderRepository,
+} from './appointment-reminder.repository.js';
 import type { ClaimedAppointmentPushReminder } from './appointment-reminder.types.js';
 
 type AuthorizationDecision =
@@ -63,6 +69,40 @@ function preferenceAllowsPush(preferences: NotificationPreferences): boolean {
   );
 }
 
+function timingDecision(
+  now: Date,
+  scheduledStartAt: Date,
+  preferences: NotificationPreferences,
+): AuthorizationDecision | null {
+  if (now >= scheduledStartAt) return { outcome: 'SUPPRESS', code: 'APPOINTMENT_STARTED' };
+  if (!inQuietHours(now, preferences)) return null;
+  const availableAt = quietEnd(now, preferences);
+  return availableAt >= scheduledStartAt
+    ? { outcome: 'SUPPRESS', code: 'QUIET_HOURS_OVERLAP_START' }
+    : { outcome: 'DEFER', availableAt, code: 'QUIET_HOURS_DEFERRED' };
+}
+
+function matchesTruth(
+  truth: AppointmentEligibility,
+  reminder: Readonly<{
+    recipientId: string;
+    appointmentId: string;
+    appointmentVersion: number;
+    modality: 'IN_APP_CHAT' | 'IN_APP_VIDEO';
+    scheduledStartAt: Date;
+  }>,
+): boolean {
+  return (
+    truth.eligible &&
+    truth.appointmentId === reminder.appointmentId &&
+    truth.status === 'CONFIRMED' &&
+    truth.ownerAccountId === reminder.recipientId &&
+    truth.version === reminder.appointmentVersion &&
+    truth.modality === reminder.modality &&
+    new Date(truth.scheduledStartAt).getTime() === reminder.scheduledStartAt.getTime()
+  );
+}
+
 @Injectable()
 export class AppointmentPushReminderService {
   constructor(
@@ -78,16 +118,24 @@ export class AppointmentPushReminderService {
   async runDue(limit: number): Promise<{ materialized: number; failed: number }> {
     if (!this.configuration.CONTENT_PUSH_DELIVERY_ENABLED) return { materialized: 0, failed: 0 };
     const now = this.clock.now();
+    await this.repository.reconcilePushLeases(now);
     const reminders = await this.repository.claimPushDue(now, limit);
     let materialized = 0;
     let failed = 0;
     for (const reminder of reminders) {
       try {
         if (await this.process(reminder, now)) materialized += 1;
-      } catch {
-        await this.repository
-          .finishPush(reminder.id, 'FAILED', now, 'UNEXPECTED_PROCESSING_FAILURE')
-          .catch(() => undefined);
+      } catch (error) {
+        const failedAt = this.clock.now();
+        if (error instanceof AppointmentPushReminderConflictError) {
+          await this.repository
+            .finishPush(reminder.id, 'FAILED', failedAt, 'MATERIALIZATION_CONFLICT')
+            .catch(() => undefined);
+        } else {
+          await this.retry(reminder, failedAt, 'MATERIALIZATION_UNAVAILABLE').catch(
+            () => undefined,
+          );
+        }
         failed += 1;
       }
     }
@@ -113,31 +161,22 @@ export class AppointmentPushReminderService {
     } catch {
       return { outcome: 'SUPPRESS', code: 'INVALID_TIME_ZONE' };
     }
-    if (inQuietHours(now, preferences)) {
-      const availableAt = quietEnd(now, preferences);
-      return availableAt >= reminder.scheduledStartAt
-        ? { outcome: 'SUPPRESS', code: 'QUIET_HOURS_OVERLAP_START' }
-        : { outcome: 'DEFER', availableAt, code: 'QUIET_HOURS_DEFERRED' };
-    }
+    const initialTiming = timingDecision(now, reminder.scheduledStartAt, preferences);
+    if (initialTiming) return initialTiming;
     try {
       const truth = await this.appointments.get(
         reminder.appointmentId,
         reminder.appointmentVersion,
       );
-      if (
-        !truth.eligible ||
-        truth.status !== 'CONFIRMED' ||
-        truth.ownerAccountId !== reminder.recipientId ||
-        truth.version !== reminder.appointmentVersion ||
-        truth.modality !== reminder.modality ||
-        new Date(truth.scheduledStartAt).getTime() !== reminder.scheduledStartAt.getTime()
-      ) {
+      if (!matchesTruth(truth, reminder)) {
         return { outcome: 'SUPPRESS', code: 'APPOINTMENT_NOT_ELIGIBLE' };
       }
     } catch {
       return { outcome: 'RETRY', code: 'CONSULTATION_UNAVAILABLE' };
     }
-    return { outcome: 'SEND' };
+    const authorizedAt = this.clock.now();
+    const finalTiming = timingDecision(authorizedAt, reminder.scheduledStartAt, preferences);
+    return finalTiming ?? { outcome: 'SEND' };
   }
 
   private async process(reminder: ClaimedAppointmentPushReminder, now: Date): Promise<boolean> {
@@ -181,14 +220,7 @@ export class AppointmentPushReminderService {
         reminder.appointmentId,
         reminder.appointmentVersion,
       );
-      if (
-        !truth.eligible ||
-        truth.status !== 'CONFIRMED' ||
-        truth.ownerAccountId !== reminder.recipientId ||
-        truth.version !== reminder.appointmentVersion ||
-        truth.modality !== reminder.modality ||
-        new Date(truth.scheduledStartAt).getTime() !== reminder.scheduledStartAt.getTime()
-      ) {
+      if (!matchesTruth(truth, reminder)) {
         await this.repository.finishPush(
           reminder.id,
           'INVALIDATED',

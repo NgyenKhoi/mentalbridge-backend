@@ -373,6 +373,7 @@ CREATE TABLE content.appointment_push_reminder (
     notification_id uuid REFERENCES content.notification(id),
     failure_code varchar(64),
     invalidated_at timestamptz,
+    terminal_at timestamptz,
     created_at timestamptz NOT NULL,
     updated_at timestamptz NOT NULL,
     UNIQUE (recipient_id, appointment_id, appointment_version)

@@ -372,6 +372,7 @@ consultation content or health data.
 | `notification_id` | Nullable physical reference to the one authoritative minimized inbox fact after successful materialization. |
 | `failure_code` | Safe coarse reason such as disabled preference, owner dependency outage, lifecycle invalidation, quiet-hour suppression, or expiry. |
 | `invalidated_at` | UTC instant a newer Consultation version made this intent stale. |
+| `terminal_at` | UTC audit instant for every terminal materialized, invalidated, suppressed, failed, or expired outcome. |
 | `created_at`, `updated_at` | Immutable insertion and latest persisted state-change instants in UTC. |
 
 ### `content.appointment_reminder_checkpoint`

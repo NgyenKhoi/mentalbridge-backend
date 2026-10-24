@@ -181,7 +181,10 @@ hours and exact appointment version are checked before materialization and
 again before Expo submission. Quiet hours always win: work waits until quiet
 hours end only when that instant is still before appointment start; otherwise
 it is suppressed. Cancellation/reschedule invalidates the old fact and unsent
-device attempts. The provider payload remains generic and carries only the
+device attempts. Transient materialization failures retry within the same
+three-attempt/start-time bound; an expired final processing lease is reconciled
+to a timestamped terminal failure and cannot be sent later. The provider
+payload remains generic and carries only the
 notification UUID plus `OPEN_APPOINTMENT` and the opaque appointment UUID.
 SupportPlan activity push is deferred because Care's current occurrence v2
 event does not publish an approved reminder instant, timezone or reminder
